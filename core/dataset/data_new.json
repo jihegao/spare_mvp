@@ -1,0 +1,1820 @@
+{
+  "constraints": [
+    {
+      "targetType": "出动架次率",
+      "symbol": "≥",
+      "targetValue": 0.9996
+    }
+  ],
+  "optimizationTargets": [
+    {
+      "id": "2054457346163240962",
+      "targetType": "任务可靠度",
+      "symbol": "≥",
+      "targetValue": 0.9999
+    },
+    {
+      "id": "2054456915907342338",
+      "targetType": "保障设备利用率",
+      "symbol": "≥",
+      "targetValue": 1
+    }
+  ],
+  "experimentConfig": {
+    "simulationType": "单波次",
+    "aircraftReplacementRule": "就近更换",
+    "resourceConflictStrategy": "优先级抢占",
+    "crewWorkTime": 12,
+    "crewRestTime": 12,
+    "handoverTime": 10,
+    "safetyRadius": 0,
+    "taskFailureMinEquipment": 0,
+    "taskSuccessRate": 0.95,
+    "randomControl": "random",
+    "description": "",
+    "indexList": [
+      {
+        "id": "1",
+        "indexName": "出动架次率",
+        "targetValue": 4.8
+      },
+      {
+        "id": "2",
+        "indexName": "装备完好率",
+        "targetValue": 95
+      },
+      {
+        "id": "3",
+        "indexName": "使用可用度",
+        "targetValue": 0.9
+      },
+      {
+        "id": "4",
+        "indexName": "再次出动准备时间",
+        "targetValue": 55
+      },
+      {
+        "id": "5",
+        "indexName": "任务可靠度",
+        "targetValue": 0.95
+      },
+      {
+        "id": "6",
+        "indexName": "平均保障延误时间",
+        "targetValue": 25
+      },
+      {
+        "id": "7",
+        "indexName": "保障设备利用率",
+        "targetValue": 79
+      },
+      {
+        "id": "8",
+        "indexName": "保障设备满足率",
+        "targetValue": 100
+      },
+      {
+        "id": "9",
+        "indexName": "保障人员利用率",
+        "targetValue": 79
+      },
+      {
+        "id": "10",
+        "indexName": "保障人员满足率",
+        "targetValue": 100
+      }
+    ]
+  },
+  "shipTypes": [
+    {
+      "shipTypeCode": "1",
+      "shipTypeName": "1号船"
+    }
+  ],
+  "supportStations": [
+    {
+      "id": "11",
+      "stationCode": "ST-11",
+      "stationName": "保障站位11",
+      "isOneStop": "否",
+      "canTestDrive": "否"
+    },
+    {
+      "id": "12",
+      "stationCode": "ST-12",
+      "stationName": "保障站位12",
+      "isOneStop": "否",
+      "canTestDrive": "否"
+    },
+    {
+      "id": "13",
+      "stationCode": "ST-13",
+      "stationName": "保障站位13",
+      "isOneStop": "否",
+      "canTestDrive": "否"
+    },
+    {
+      "id": "14",
+      "stationCode": "ST-14",
+      "stationName": "保障站位14",
+      "isOneStop": "否",
+      "canTestDrive": "否"
+    },
+    {
+      "id": "15",
+      "stationCode": "ST-15",
+      "stationName": "保障站位15",
+      "isOneStop": "否",
+      "canTestDrive": "否"
+    },
+    {
+      "id": "16",
+      "stationCode": "ST-16",
+      "stationName": "保障站位16",
+      "isOneStop": "否",
+      "canTestDrive": "否"
+    },
+    {
+      "id": "17",
+      "stationCode": "ST-17",
+      "stationName": "保障站位17",
+      "isOneStop": "否",
+      "canTestDrive": "否"
+    },
+    {
+      "id": "18",
+      "stationCode": "ST-18",
+      "stationName": "保障站位18",
+      "isOneStop": "否",
+      "canTestDrive": "否"
+    },
+    {
+      "id": "19",
+      "stationCode": "ST-19",
+      "stationName": "保障站位19",
+      "isOneStop": "否",
+      "canTestDrive": "否"
+    },
+    {
+      "id": "1",
+      "stationCode": "ST-01",
+      "stationName": "保障站位1",
+      "isOneStop": "否",
+      "canTestDrive": "是"
+    },
+    {
+      "id": "2",
+      "stationCode": "ST-02",
+      "stationName": "保障站位2",
+      "isOneStop": "是",
+      "canTestDrive": "否"
+    },
+    {
+      "id": "3",
+      "stationCode": "ST-03",
+      "stationName": "保障站位3",
+      "isOneStop": "否",
+      "canTestDrive": "否"
+    },
+    {
+      "id": "4",
+      "stationCode": "ST-04",
+      "stationName": "保障站位4",
+      "isOneStop": "否",
+      "canTestDrive": "否"
+    },
+    {
+      "id": "5",
+      "stationCode": "ST-05",
+      "stationName": "保障站位5",
+      "isOneStop": "否",
+      "canTestDrive": "否"
+    },
+    {
+      "id": "6",
+      "stationCode": "ST-06",
+      "stationName": "保障站位6",
+      "isOneStop": "否",
+      "canTestDrive": "否"
+    },
+    {
+      "id": "7",
+      "stationCode": "ST-07",
+      "stationName": "保障站位7",
+      "isOneStop": "否",
+      "canTestDrive": "否"
+    },
+    {
+      "id": "8",
+      "stationCode": "ST-08",
+      "stationName": "保障站位8",
+      "isOneStop": "否",
+      "canTestDrive": "否"
+    },
+    {
+      "id": "9",
+      "stationCode": "ST-09",
+      "stationName": "保障站位9",
+      "isOneStop": "否",
+      "canTestDrive": "否"
+    },
+    {
+      "id": "20",
+      "stationCode": "ST-20",
+      "stationName": "保障站位20",
+      "isOneStop": "否",
+      "canTestDrive": "否"
+    },
+    {
+      "id": "10",
+      "stationCode": "ST-10",
+      "stationName": "保障站位10",
+      "isOneStop": "否",
+      "canTestDrive": "否"
+    }
+  ],
+  "nonSupportStations": [
+    {
+      "id": "1102",
+      "stationCode": "P02",
+      "stationName": "1 号船 -P02 非保障停机位"
+    },
+    {
+      "id": "1101",
+      "stationCode": "P01",
+      "stationName": "1 号船 -P01 非保障停机位"
+    }
+  ],
+  "supportFacilities": [
+    {
+      "id": "2054410658891431938",
+      "facilityCode": "TEST",
+      "functionType": "",
+      "facilityName": "测试设置"
+    },
+    {
+      "id": "2062458719366602753",
+      "facilityCode": "GD-01",
+      "functionType": "",
+      "facilityName": "挂弹01"
+    },
+    {
+      "id": "2055231296401145858",
+      "facilityCode": "345",
+      "functionType": "",
+      "facilityName": "地方豆腐干地方发士大夫十分士大夫打发士大夫手动阀手动阀"
+    },
+    {
+      "id": "10",
+      "facilityCode": "FAC-10-S2",
+      "functionType": "",
+      "facilityName": "压缩空气站2-2号船"
+    },
+    {
+      "id": "11",
+      "facilityCode": "FAC-11-S2",
+      "functionType": "",
+      "facilityName": "液压源车1-2号船"
+    },
+    {
+      "id": "12",
+      "facilityCode": "FAC-12-S2",
+      "functionType": "",
+      "facilityName": "液压源车2-2号船"
+    },
+    {
+      "id": "13",
+      "facilityCode": "FAC-13-S2",
+      "functionType": "",
+      "facilityName": "座舱通风机1-2号船"
+    },
+    {
+      "id": "14",
+      "facilityCode": "FAC-14-S2",
+      "functionType": "",
+      "facilityName": "座舱通风机2-2号船"
+    },
+    {
+      "id": "15",
+      "facilityCode": "FAC-15-S2",
+      "functionType": "",
+      "facilityName": "设备舱通风机1-2号船"
+    },
+    {
+      "id": "2055227296121454593",
+      "facilityCode": "FAC-23-S1",
+      "functionType": "",
+      "facilityName": "维修机位A-1号船"
+    },
+    {
+      "id": "16",
+      "facilityCode": "FAC-16-S2",
+      "functionType": "",
+      "facilityName": "设备舱通风机2-2号船"
+    },
+    {
+      "id": "17",
+      "facilityCode": "FAC-17-S2",
+      "functionType": "",
+      "facilityName": "淡水补给站1-2号船"
+    },
+    {
+      "id": "18",
+      "facilityCode": "FAC-18-S2",
+      "functionType": "",
+      "facilityName": "淡水补给站2-2号船"
+    },
+    {
+      "id": "19",
+      "facilityCode": "FAC-19-S2",
+      "functionType": "",
+      "facilityName": "惯导校准设备1-2号船"
+    },
+    {
+      "id": "1",
+      "facilityCode": "FAC-01-S2",
+      "functionType": "",
+      "facilityName": "甲板供电站1-2号船"
+    },
+    {
+      "id": "2",
+      "facilityCode": "FAC-02-S2",
+      "functionType": "",
+      "facilityName": "甲板供电站2-2号船"
+    },
+    {
+      "id": "3",
+      "facilityCode": "FAC-03-S2",
+      "functionType": "",
+      "facilityName": "机翼加油站1-2号船"
+    },
+    {
+      "id": "4",
+      "facilityCode": "FAC-04-S2",
+      "functionType": "",
+      "facilityName": "机翼加油站2-2号船"
+    },
+    {
+      "id": "5",
+      "facilityCode": "FAC-05-S2",
+      "functionType": "",
+      "facilityName": "机翼氧气站1-2号船"
+    },
+    {
+      "id": "6",
+      "facilityCode": "FAC-06-S2",
+      "functionType": "",
+      "facilityName": "机翼氧气站2-2号船"
+    },
+    {
+      "id": "2054410912072204290",
+      "facilityCode": "FAC-21-S2",
+      "functionType": "",
+      "facilityName": "机体接地装置1-2号船"
+    },
+    {
+      "id": "7",
+      "facilityCode": "FAC-07-S2",
+      "functionType": "",
+      "facilityName": "机翼氮气站1-2号船"
+    },
+    {
+      "id": "2055227373145653250",
+      "facilityCode": "FAC-24-S1",
+      "functionType": "",
+      "facilityName": "试车机位A-1号船"
+    },
+    {
+      "id": "8",
+      "facilityCode": "FAC-08-S2",
+      "functionType": "",
+      "facilityName": "机翼氮气站2-2号船"
+    },
+    {
+      "id": "2054410977771782146",
+      "facilityCode": "FAC-22-S2",
+      "functionType": "",
+      "facilityName": "机体接地装置2-2号船"
+    },
+    {
+      "id": "9",
+      "facilityCode": "FAC-09-S2",
+      "functionType": "",
+      "facilityName": "压缩空气站1-2号船"
+    },
+    {
+      "id": "20",
+      "facilityCode": "FAC-20-S2",
+      "functionType": "",
+      "facilityName": "惯导校准设备2-2号船"
+    }
+  ],
+  "stationFacilityMatrix": [
+    {
+      "stationName": "保障站位1",
+      "facilityMap": {
+        "code": "FAC-04-S2,FAC-03-S2",
+        "name": "机翼加油站2-2号船,机翼加油站1-2号船",
+        "functionType": "加油"
+      }
+    },
+    {
+      "stationName": "保障站位2",
+      "facilityMap": {
+        "code": "FAC-17-S2,FAC-18-S2",
+        "name": "淡水补给站1-2号船,淡水补给站2-2号船",
+        "functionType": "淡水"
+      }
+    }
+  ],
+  "equipmentTree": [
+    {
+      "nodeLevel": "1",
+      "nodeName": "J35"
+    },
+    {
+      "nodeLevel": "1",
+      "nodeName": "直-20F"
+    },
+    {
+      "nodeLevel": "1",
+      "nodeName": "J15"
+    },
+    {
+      "nodeLevel": "2",
+      "nodeName": "航电系统",
+      "model": "SYS-AV-01",
+      "quantity": 2,
+      "isLru": 1,
+      "lruFailureRate": 1,
+      "kValue": 1,
+      "faultDistribution": "1",
+      "repairDistribution": "1",
+      "isDetectable": 0
+    },
+    {
+      "nodeLevel": "2",
+      "nodeName": "通信导航系统",
+      "model": "SYS-TX-01",
+      "quantity": 1,
+      "isLru": 0,
+      "isDetectable": 0
+    },
+    {
+      "nodeLevel": "2",
+      "nodeName": "分系统1",
+      "quantity": 1,
+      "isLru": 0
+    },
+    {
+      "nodeLevel": "1",
+      "nodeName": "KE-600"
+    },
+    {
+      "nodeLevel": "2",
+      "nodeName": "分系统2",
+      "quantity": 1,
+      "isLru": 0
+    },
+    {
+      "nodeLevel": "2",
+      "nodeName": "分系统1",
+      "quantity": 1,
+      "isLru": 0
+    },
+    {
+      "nodeLevel": "2",
+      "nodeName": "液压系统",
+      "model": "SYS-HY-01",
+      "quantity": 2,
+      "isLru": 0
+    },
+    {
+      "nodeLevel": "3",
+      "nodeName": "任务计算机模块",
+      "model": "LRU-RW-01",
+      "quantity": 2,
+      "isLru": 1,
+      "lruFailureRate": 0.033,
+      "mtbcf": 10,
+      "kValue": 1,
+      "faultDistribution": "4",
+      "mttr": "20",
+      "repairDistribution": "1",
+      "isDetectable": 1,
+      "detectionTime": "12"
+    },
+    {
+      "nodeLevel": "3",
+      "nodeName": "雷达接收机模块",
+      "model": "LRU-LD-02",
+      "quantity": 1,
+      "isLru": 1,
+      "isDetectable": 1
+    },
+    {
+      "nodeLevel": "3",
+      "nodeName": "惯导处理模块",
+      "model": "LRU-GD-03",
+      "quantity": 1,
+      "isLru": 1,
+      "faultDistribution": "1",
+      "repairDistribution": "1",
+      "isDetectable": 0
+    },
+    {
+      "nodeLevel": "2",
+      "nodeName": "动力系统",
+      "model": "SYS-DL-01",
+      "quantity": 1,
+      "isLru": 0
+    },
+    {
+      "nodeLevel": "2",
+      "nodeName": "旋翼传动系统",
+      "model": "SYS-XY-01",
+      "quantity": 1,
+      "isLru": 0,
+      "isDetectable": 0
+    },
+    {
+      "nodeLevel": "3",
+      "nodeName": "北斗导航接收机",
+      "model": "LRU-BD-01",
+      "quantity": 1,
+      "isLru": 1,
+      "lruFailureRate": 0.023,
+      "isDetectable": 0
+    },
+    {
+      "nodeLevel": "3",
+      "nodeName": "机载通信终端",
+      "model": "LRU-TX-02",
+      "quantity": 1,
+      "isLru": 1,
+      "lruFailureRate": 0.016,
+      "faultDistribution": "1",
+      "isDetectable": 0
+    },
+    {
+      "nodeLevel": "3",
+      "nodeName": "主减速器监测单元",
+      "model": "LRU-JS-01",
+      "quantity": 1,
+      "isLru": 1,
+      "lruFailureRate": 0.016,
+      "faultDistribution": "1",
+      "isDetectable": 0
+    },
+    {
+      "nodeLevel": "3",
+      "nodeName": "起动控制盒",
+      "model": "LRU-QD-02",
+      "quantity": 1,
+      "isLru": 1,
+      "lruFailureRate": 0.0011,
+      "faultDistribution": "1",
+      "isDetectable": 0
+    },
+    {
+      "nodeLevel": "1",
+      "nodeName": "F35"
+    },
+    {
+      "nodeLevel": "1",
+      "nodeName": "Z20"
+    },
+    {
+      "nodeLevel": "1",
+      "nodeName": "F15"
+    },
+    {
+      "nodeLevel": "1",
+      "nodeName": "E2D"
+    },
+    {
+      "nodeLevel": "2",
+      "nodeName": "分系统1",
+      "quantity": 1,
+      "isLru": 0
+    },
+    {
+      "nodeLevel": "2",
+      "nodeName": "分系统2",
+      "quantity": 1,
+      "isLru": 0
+    },
+    {
+      "nodeLevel": "2",
+      "nodeName": "航电系统",
+      "model": "SYS-AV-01",
+      "quantity": 2,
+      "isLru": 0,
+      "isDetectable": 0,
+      "detectionTime": ""
+    },
+    {
+      "nodeLevel": "3",
+      "nodeName": "任务计算机模块",
+      "model": "LRU-RW-01",
+      "quantity": 2,
+      "isLru": 1,
+      "lruFailureRate": 0.0012,
+      "faultDistribution": "2",
+      "mttr": "",
+      "repairDistribution": "2",
+      "isDetectable": 0,
+      "detectionTime": ""
+    },
+    {
+      "nodeLevel": "3",
+      "nodeName": "雷达接收机模块",
+      "model": "LRU-LD-02",
+      "quantity": 1,
+      "isLru": 1,
+      "lruFailureRate": 0.0008,
+      "faultDistribution": "2",
+      "mttr": "",
+      "repairDistribution": "2",
+      "isDetectable": 0,
+      "detectionTime": ""
+    },
+    {
+      "nodeLevel": "3",
+      "nodeName": "惯导处理模块",
+      "model": "LRU-GD-03",
+      "quantity": 1,
+      "isLru": 1,
+      "lruFailureRate": 0.001,
+      "faultDistribution": "2",
+      "mttr": "",
+      "repairDistribution": "2",
+      "isDetectable": 0,
+      "detectionTime": ""
+    },
+    {
+      "nodeLevel": "2",
+      "nodeName": "液压系统",
+      "model": "SYS-HY-01",
+      "quantity": 2,
+      "isLru": 0,
+      "isDetectable": 0,
+      "detectionTime": ""
+    },
+    {
+      "nodeLevel": "3",
+      "nodeName": "液压泵控制器",
+      "model": "LRU-YY-01",
+      "quantity": 1,
+      "isLru": 1,
+      "lruFailureRate": 0.0025,
+      "faultDistribution": "2",
+      "mttr": "",
+      "repairDistribution": "2",
+      "isDetectable": 0,
+      "detectionTime": ""
+    },
+    {
+      "nodeLevel": "3",
+      "nodeName": "作动筒监测组件",
+      "model": "LRU-ZD-02",
+      "quantity": 1,
+      "isLru": 1,
+      "lruFailureRate": 0.0019,
+      "faultDistribution": "2",
+      "mttr": "",
+      "repairDistribution": "2",
+      "isDetectable": 0,
+      "detectionTime": ""
+    },
+    {
+      "nodeLevel": "2",
+      "nodeName": "动力系统",
+      "model": "SYS-DL-01",
+      "quantity": 1,
+      "isLru": 0,
+      "isDetectable": 0,
+      "detectionTime": ""
+    },
+    {
+      "nodeLevel": "3",
+      "nodeName": "燃油计量控制器",
+      "model": "LRU-RY-01",
+      "quantity": 1,
+      "isLru": 1,
+      "lruFailureRate": 0.0016,
+      "faultDistribution": "2",
+      "mttr": "",
+      "repairDistribution": "2",
+      "isDetectable": 0,
+      "detectionTime": ""
+    },
+    {
+      "nodeLevel": "3",
+      "nodeName": "起动控制盒",
+      "model": "LRU-QD-02",
+      "quantity": 1,
+      "isLru": 1,
+      "lruFailureRate": 0.0011,
+      "faultDistribution": "2",
+      "mttr": "",
+      "repairDistribution": "2",
+      "isDetectable": 0,
+      "detectionTime": ""
+    },
+    {
+      "nodeLevel": "2",
+      "nodeName": "通信导航系统",
+      "model": "SYS-TX-01",
+      "quantity": 1,
+      "isLru": 0,
+      "isDetectable": 0,
+      "detectionTime": ""
+    },
+    {
+      "nodeLevel": "3",
+      "nodeName": "北斗导航接收机",
+      "model": "LRU-BD-01",
+      "quantity": 1,
+      "isLru": 1,
+      "lruFailureRate": 0.0015,
+      "faultDistribution": "2",
+      "mttr": "",
+      "repairDistribution": "2",
+      "isDetectable": 0,
+      "detectionTime": ""
+    },
+    {
+      "nodeLevel": "3",
+      "nodeName": "机载通信终端",
+      "model": "LRU-TX-02",
+      "quantity": 1,
+      "isLru": 1,
+      "lruFailureRate": 0.0017,
+      "faultDistribution": "2",
+      "mttr": "",
+      "repairDistribution": "2",
+      "isDetectable": 0,
+      "detectionTime": ""
+    },
+    {
+      "nodeLevel": "2",
+      "nodeName": "旋翼传动系统",
+      "model": "SYS-XY-01",
+      "quantity": 2,
+      "isLru": 0,
+      "isDetectable": 0,
+      "detectionTime": ""
+    },
+    {
+      "nodeLevel": "3",
+      "nodeName": "主减速器监测单元",
+      "model": "LRU-JS-01",
+      "quantity": 1,
+      "isLru": 1,
+      "lruFailureRate": 0.0021,
+      "faultDistribution": "2",
+      "mttr": "",
+      "repairDistribution": "2",
+      "isDetectable": 0,
+      "detectionTime": ""
+    },
+    {
+      "nodeLevel": "3",
+      "nodeName": "尾桨控制组件",
+      "model": "LRU-WJ-02",
+      "quantity": 1,
+      "isLru": 1,
+      "lruFailureRate": 0.0014,
+      "faultDistribution": "2",
+      "mttr": "",
+      "repairDistribution": "2",
+      "isDetectable": 0,
+      "detectionTime": ""
+    },
+    {
+      "nodeLevel": "2",
+      "nodeName": "武器控制系统",
+      "model": "SYS-WQ-01",
+      "quantity": 2,
+      "isLru": 0,
+      "isDetectable": 0,
+      "detectionTime": ""
+    },
+    {
+      "nodeLevel": "3",
+      "nodeName": "火控处理器",
+      "model": "LRU-HK-01",
+      "quantity": 1,
+      "isLru": 1,
+      "lruFailureRate": 0.0013,
+      "faultDistribution": "2",
+      "mttr": "",
+      "repairDistribution": "2",
+      "isDetectable": 0,
+      "detectionTime": ""
+    },
+    {
+      "nodeLevel": "3",
+      "nodeName": "挂架接口模块",
+      "model": "LRU-GJ-02",
+      "quantity": 2,
+      "isLru": 1,
+      "lruFailureRate": 0.0018,
+      "faultDistribution": "2",
+      "mttr": "",
+      "repairDistribution": "2",
+      "isDetectable": 0,
+      "detectionTime": ""
+    },
+    {
+      "nodeLevel": "2",
+      "nodeName": "起落架系统",
+      "model": "SYS-QL-01",
+      "quantity": 1,
+      "isLru": 0,
+      "isDetectable": 0,
+      "detectionTime": ""
+    },
+    {
+      "nodeLevel": "3",
+      "nodeName": "前起控制组件",
+      "model": "LRU-QQ-01",
+      "quantity": 1,
+      "isLru": 1,
+      "lruFailureRate": 0.0022,
+      "faultDistribution": "2",
+      "mttr": "",
+      "repairDistribution": "2",
+      "isDetectable": 0,
+      "detectionTime": ""
+    },
+    {
+      "nodeLevel": "3",
+      "nodeName": "刹车控制阀组",
+      "model": "LRU-SC-02",
+      "quantity": 1,
+      "isLru": 1,
+      "lruFailureRate": 0.0016,
+      "faultDistribution": "2",
+      "mttr": "",
+      "repairDistribution": "2",
+      "isDetectable": 0,
+      "detectionTime": ""
+    },
+    {
+      "nodeLevel": "2",
+      "nodeName": "任务雷达系统",
+      "model": "SYS-RD-01",
+      "quantity": 1,
+      "isLru": 0,
+      "isDetectable": 0,
+      "detectionTime": ""
+    },
+    {
+      "nodeLevel": "3",
+      "nodeName": "相控阵收发模块",
+      "model": "LRU-XKZ-01",
+      "quantity": 2,
+      "isLru": 1,
+      "lruFailureRate": 0.0011,
+      "faultDistribution": "2",
+      "mttr": "",
+      "repairDistribution": "2",
+      "isDetectable": 0,
+      "detectionTime": ""
+    },
+    {
+      "nodeLevel": "3",
+      "nodeName": "任务处理服务器",
+      "model": "LRU-RW-KE-01",
+      "quantity": 1,
+      "isLru": 1,
+      "lruFailureRate": 0.0009,
+      "faultDistribution": "2",
+      "mttr": "",
+      "repairDistribution": "2",
+      "isDetectable": 0,
+      "detectionTime": ""
+    },
+    {
+      "nodeLevel": "2",
+      "nodeName": "数据链通信系统",
+      "model": "SYS-DL-KE-01",
+      "quantity": 1,
+      "isLru": 0,
+      "isDetectable": 0,
+      "detectionTime": ""
+    },
+    {
+      "nodeLevel": "3",
+      "nodeName": "宽带数据链终端",
+      "model": "LRU-DL-01",
+      "quantity": 1,
+      "isLru": 1,
+      "lruFailureRate": 0.0012,
+      "faultDistribution": "2",
+      "mttr": "",
+      "repairDistribution": "2",
+      "isDetectable": 0,
+      "detectionTime": ""
+    },
+    {
+      "nodeLevel": "3",
+      "nodeName": "卫通加密模块",
+      "model": "LRU-WT-01",
+      "quantity": 1,
+      "isLru": 1,
+      "lruFailureRate": 0.001,
+      "faultDistribution": "2",
+      "mttr": "",
+      "repairDistribution": "2",
+      "isDetectable": 0,
+      "detectionTime": ""
+    }
+  ],
+  "initialLayouts": [
+    {
+      "shipType": "1号船",
+      "layoutName": "对海打击布列"
+    },
+    {
+      "shipType": "1号船",
+      "layoutName": "标准出动布列"
+    },
+    {
+      "shipType": "1号船",
+      "layoutName": "防空值班布列"
+    }
+  ],
+  "supportStationCodes": [
+    {
+      "shipType": "1号船",
+      "layoutName": "标准出动布列",
+      "stationNumber": "ST-01",
+      "aircraftModel": "直-20F"
+    },
+    {
+      "shipType": "1号船",
+      "layoutName": "标准出动布列",
+      "stationNumber": "ST-02",
+      "aircraftModel": "直-20F"
+    },
+    {
+      "shipType": "1号船",
+      "layoutName": "标准出动布列",
+      "stationNumber": "ST-03",
+      "aircraftModel": "直-20F"
+    },
+    {
+      "shipType": "1号船",
+      "layoutName": "对海打击布列",
+      "stationNumber": "ST-01",
+      "aircraftModel": "J35"
+    },
+    {
+      "shipType": "1号船",
+      "layoutName": "对海打击布列",
+      "stationNumber": "ST-02",
+      "aircraftModel": "直-20F"
+    }
+  ],
+  "nonSupportStationCodes": [
+    {
+      "shipType": "1号船",
+      "layoutName": "标准出动布列",
+      "stationNumber": "P01",
+      "aircraftModel": "J35"
+    },
+    {
+      "shipType": "1号船",
+      "layoutName": "对海打击布列",
+      "stationNumber": "P01",
+      "aircraftModel": "J35"
+    }
+  ],
+  "supportOrganizationTree": [
+    {
+      "id": "2059159042537832456",
+      "orgName": "机电组",
+      "orgDescription": "",
+      "parentId": "2059159042537832455"
+    },
+    {
+      "id": "2059159042537832478",
+      "orgName": "起降保障中队",
+      "orgDescription": "",
+      "parentId": "2059159042537832468"
+    },
+    {
+      "id": "2059159042537832457",
+      "orgName": "军械组",
+      "orgDescription": "",
+      "parentId": "2059159042537832455"
+    },
+    {
+      "id": "2059159042537832479",
+      "orgName": "起飞系统区队",
+      "orgDescription": "",
+      "parentId": "2059159042537832478"
+    },
+    {
+      "id": "2059159042537832458",
+      "orgName": "航电组",
+      "orgDescription": "",
+      "parentId": "2059159042537832455"
+    },
+    {
+      "id": "2059159042537832459",
+      "orgName": "飞参组",
+      "orgDescription": "",
+      "parentId": "2059159042537832455"
+    },
+    {
+      "id": "2059159042537832452",
+      "orgName": "放飞保障组",
+      "orgDescription": "",
+      "parentId": "2059159042537832451"
+    },
+    {
+      "id": "2059159042537832474",
+      "orgName": "航空油料区队",
+      "orgDescription": "",
+      "parentId": "2059159042537832473"
+    },
+    {
+      "id": "2059159042537832453",
+      "orgName": "放飞组",
+      "orgDescription": "",
+      "parentId": "2059159042537832452"
+    },
+    {
+      "id": "2059159042537832475",
+      "orgName": "气电区队",
+      "orgDescription": "",
+      "parentId": "2059159042537832473"
+    },
+    {
+      "id": "2059159042537832454",
+      "orgName": "流道组",
+      "orgDescription": "",
+      "parentId": "2059159042537832452"
+    },
+    {
+      "id": "2059159042537832476",
+      "orgName": "舰面支持设备区队",
+      "orgDescription": "",
+      "parentId": "2059159042537832473"
+    },
+    {
+      "id": "2059159042537832455",
+      "orgName": "技术保障组",
+      "orgDescription": "",
+      "parentId": "2059159042537832451"
+    },
+    {
+      "id": "2059159042537832477",
+      "orgName": "维修航材区队",
+      "orgDescription": "",
+      "parentId": "2059159042537832473"
+    },
+    {
+      "id": "2059159042537832470",
+      "orgName": "机械区队",
+      "orgDescription": "",
+      "parentId": "2059159042537832469"
+    },
+    {
+      "id": "2059159042537832471",
+      "orgName": "转运区队",
+      "orgDescription": "",
+      "parentId": "2059159042537832469"
+    },
+    {
+      "id": "2059159042537832450",
+      "orgName": "航空联队（机务）",
+      "orgDescription": "",
+      "parentId": "0"
+    },
+    {
+      "id": "2059159042537832472",
+      "orgName": "信息调度引导区队",
+      "orgDescription": "",
+      "parentId": "2059159042537832469"
+    },
+    {
+      "id": "2059159042537832451",
+      "orgName": "舰载战斗机分队",
+      "orgDescription": "",
+      "parentId": "2059159042537832450"
+    },
+    {
+      "id": "2059159042537832473",
+      "orgName": "舰面保障中队",
+      "orgDescription": "",
+      "parentId": "2059159042537832468"
+    },
+    {
+      "id": "2059159042537832467",
+      "orgName": "舰载预警机分队",
+      "orgDescription": "",
+      "parentId": "2059159042537832450"
+    },
+    {
+      "id": "2059159042537832468",
+      "orgName": "航空联队（勤务）",
+      "orgDescription": "",
+      "parentId": "0"
+    },
+    {
+      "id": "2059159042537832469",
+      "orgName": "调运中队",
+      "orgDescription": "",
+      "parentId": "2059159042537832468"
+    },
+    {
+      "id": "2059159042537832463",
+      "orgName": "机加组",
+      "orgDescription": "",
+      "parentId": "2059159042537832461"
+    },
+    {
+      "id": "2059159042537832464",
+      "orgName": "油液分析组",
+      "orgDescription": "",
+      "parentId": "2059159042537832461"
+    },
+    {
+      "id": "2059159042537832465",
+      "orgName": "探伤组",
+      "orgDescription": "",
+      "parentId": "2059159042537832461"
+    },
+    {
+      "id": "2059159042537832466",
+      "orgName": "舰载直升机分队",
+      "orgDescription": "",
+      "parentId": "2059159042537832450"
+    },
+    {
+      "id": "2059159042537832481",
+      "orgName": "着舰光学引导区队",
+      "orgDescription": "",
+      "parentId": "2059159042537832478"
+    },
+    {
+      "id": "2059159042537832460",
+      "orgName": "发监组",
+      "orgDescription": "",
+      "parentId": "2059159042537832455"
+    },
+    {
+      "id": "2059159042537832482",
+      "orgName": "机载弹药保障中队",
+      "orgDescription": "",
+      "parentId": "2059159042537832468"
+    },
+    {
+      "id": "2059159042537832461",
+      "orgName": "修理保障组",
+      "orgDescription": "",
+      "parentId": "2059159042537832451"
+    },
+    {
+      "id": "2059159042537832483",
+      "orgName": "保管测试区队",
+      "orgDescription": "",
+      "parentId": "2059159042537832482"
+    },
+    {
+      "id": "2059159042537832462",
+      "orgName": "附件组",
+      "orgDescription": "",
+      "parentId": "2059159042537832461"
+    },
+    {
+      "id": "2059159042537832484",
+      "orgName": "弹药转运区队",
+      "orgDescription": "",
+      "parentId": "2059159042537832482"
+    },
+    {
+      "id": "2059159042537832480",
+      "orgName": "拦阻系统区队",
+      "orgDescription": "",
+      "parentId": "2059159042537832478"
+    }
+  ],
+  "aircraftPools": [
+    {
+      "id": "2057737386674114561",
+      "aircraftType": "J35",
+      "aircraftCode": "J35-132",
+      "supportOrg": "舰载战斗机分队",
+      "currentStatus": "在册完好",
+      "factoryDate": "2017-03-15",
+      "totalServiceYears": 30,
+      "totalServiceLife": "2009:00",
+      "totalServiceTakeoffLanding": 3036,
+      "totalFlightTime": "279:45",
+      "totalTakeoffLandingCount": 302,
+      "overhauledServiceYears": "8",
+      "overhauledServiceLife": "1006:00",
+      "overhauledServiceTakeoffLanding": 1524,
+      "flightTime": "279:45",
+      "remainingLife": "726:15",
+      "flightTakeoffLandingCount": 302
+    },
+    {
+      "id": "2057737315412889602",
+      "aircraftType": "J35",
+      "aircraftCode": "J35-118",
+      "supportOrg": "舰载战斗机分队",
+      "currentStatus": "在册完好",
+      "factoryDate": "2018-02-15",
+      "totalServiceYears": 30,
+      "totalServiceLife": "2006:00",
+      "totalServiceTakeoffLanding": 3024,
+      "totalFlightTime": "278:30",
+      "totalTakeoffLandingCount": 297,
+      "overhauledServiceYears": "8",
+      "overhauledServiceLife": "1004:00",
+      "overhauledServiceTakeoffLanding": 1516,
+      "flightTime": "278:30",
+      "remainingLife": "725:30",
+      "flightTakeoffLandingCount": 297
+    },
+    {
+      "id": "2057737480861405185",
+      "aircraftType": "J15",
+      "aircraftCode": "J15T-001",
+      "supportOrg": "舰载战斗机分队",
+      "currentStatus": "在册完好",
+      "factoryDate": "2014-02-15",
+      "totalServiceYears": 30,
+      "totalServiceLife": "2006:00",
+      "totalServiceTakeoffLanding": 3024,
+      "totalFlightTime": "278:30",
+      "totalTakeoffLandingCount": 297,
+      "overhauledServiceYears": "8",
+      "overhauledServiceLife": "1004:00",
+      "overhauledServiceTakeoffLanding": 1516,
+      "flightTime": "278:30",
+      "remainingLife": "564:23",
+      "flightTakeoffLandingCount": 297
+    },
+    {
+      "id": "2057737545533378561",
+      "aircraftType": "J15",
+      "aircraftCode": "J15T-002",
+      "supportOrg": "舰载直升机分队",
+      "currentStatus": "在册完好",
+      "factoryDate": "2015-01-15",
+      "totalServiceYears": 30,
+      "totalServiceLife": "2003:00",
+      "totalServiceTakeoffLanding": 3012,
+      "totalFlightTime": "277:15",
+      "totalTakeoffLandingCount": 292,
+      "overhauledServiceYears": "8",
+      "overhauledServiceLife": "1002:00",
+      "overhauledServiceTakeoffLanding": 1508,
+      "flightTime": "277:15",
+      "remainingLife": "724:45",
+      "flightTakeoffLandingCount": 292
+    }
+  ],
+  "supportStaff": [
+    {
+      "id": "2062709229889908738",
+      "organization": "航空联队（机务）",
+      "major": "放飞",
+      "serviceAircraft": "J35,直-20F",
+      "majorLevel": "L1",
+      "count": 3
+    },
+    {
+      "id": "2054836866027692033",
+      "major": "飞参",
+      "serviceAircraft": "直-20F,J15",
+      "majorLevel": "L2",
+      "count": 1
+    },
+    {
+      "id": "2055207153445457922",
+      "major": "军械",
+      "serviceAircraft": "",
+      "majorLevel": "L2",
+      "count": 5
+    },
+    {
+      "id": "2057382111702802434",
+      "major": "机加",
+      "serviceAircraft": "直-20F,J15",
+      "majorLevel": "L2",
+      "count": 8
+    },
+    {
+      "id": "2054840118295207938",
+      "major": "机加",
+      "serviceAircraft": "",
+      "majorLevel": "L2",
+      "count": 4
+    },
+    {
+      "id": "2055201631602262018",
+      "major": "机加",
+      "serviceAircraft": "KE-600,J35",
+      "majorLevel": "L2",
+      "count": 12
+    }
+  ],
+  "supportEquipment": [
+    {
+      "id": "2055207820708892673",
+      "name": "放飞保障拖车",
+      "applicableAircraft": "直-20F",
+      "model": "FF-TR1",
+      "count": 12,
+      "unit": "台",
+      "organizeName": "技术保障组"
+    },
+    {
+      "id": "2055207966028943361",
+      "name": "技术综合检测仪",
+      "applicableAircraft": "",
+      "model": "JS-ATE",
+      "count": 12,
+      "unit": "台",
+      "organizeName": "机电组"
+    }
+  ],
+  "spareParts": [
+    {
+      "id": "2054853428717604866",
+      "name": "飞行检查包",
+      "model": "FX-06",
+      "count": 12
+    },
+    {
+      "id": "2054853633181536258",
+      "name": "机体紧固件包",
+      "model": "JT-17",
+      "count": 12
+    }
+  ],
+  "ammunition": [
+    {
+      "id": "2054852866529873921",
+      "name": "放飞流程训练弹",
+      "model": "FF-TR",
+      "count": 12
+    },
+    {
+      "id": "2054852921114546177",
+      "name": "航电校验训练弹",
+      "model": "HD-03",
+      "count": 12
+    }
+  ],
+  "usageSupportActivities": [
+    {
+      "id": "2056955298928779265",
+      "activityName": "歼-35快速出动保障方案2",
+      "planType": "直接准备方案",
+      "simulationRunningRules": "先到先服务（流道组内）",
+      "basicActivityCode": "OPS-004",
+      "planWorkItem": "通电检查",
+      "precedingWork": ""
+    },
+    {
+      "id": "2056955402645528578",
+      "activityName": "歼-35快速出动保障方案2",
+      "planType": "直接准备方案",
+      "simulationRunningRules": "先到先服务（流道组内）",
+      "basicActivityCode": "OPS-005",
+      "planWorkItem": "惯导对准",
+      "precedingWork": "null"
+    },
+    {
+      "id": "2056955496128176130",
+      "activityName": "歼-35快速出动保障方案2",
+      "planType": "直接准备方案",
+      "simulationRunningRules": "先到先服务（流道组内）",
+      "basicActivityCode": "OPS-006",
+      "planWorkItem": "系统自检",
+      "precedingWork": "null,null"
+    },
+    {
+      "id": "2056955580769230850",
+      "activityName": "歼-35快速出动保障方案2",
+      "planType": "直接准备方案",
+      "simulationRunningRules": "先到先服务（流道组内）",
+      "basicActivityCode": "OPS-012",
+      "planWorkItem": "飞行参数装订",
+      "precedingWork": "null,null"
+    },
+    {
+      "id": "2057748866458996739",
+      "activityName": "歼-15T弹射保障方案2",
+      "planType": "直接准备方案",
+      "simulationRunningRules": "先到先服务（流道组内）,排队等待（按流道组）",
+      "basicActivityCode": "OPS-007",
+      "planWorkItem": "机务检查",
+      "precedingWork": ""
+    },
+    {
+      "id": "2061706187736395784",
+      "activityName": "歼-35快速出动保障方案2",
+      "planType": "直接准备方案",
+      "simulationRunningRules": "先到先服务（流道组内）",
+      "basicActivityCode": "OPS-007",
+      "planWorkItem": "机务检查",
+      "precedingWork": ""
+    },
+    {
+      "id": "2062360875980914690",
+      "activityName": "歼-35快速出动保障方案2",
+      "planType": "直接准备方案",
+      "simulationRunningRules": "先到先服务（流道组内）",
+      "precedingWork": ""
+    },
+    {
+      "id": "2062731402058678273",
+      "activityName": "歼-35快速出动保障方案2",
+      "planType": "再次出动准备方案",
+      "simulationRunningRules": "先到先服务（流道组内）",
+      "basicActivityCode": "OPS-012",
+      "planWorkItem": "飞行参数装订",
+      "precedingWork": ""
+    },
+    {
+      "id": "2062731496455684097",
+      "activityName": "歼-35快速出动保障方案2",
+      "planType": "再次出动准备方案",
+      "simulationRunningRules": "先到先服务（流道组内）",
+      "basicActivityCode": "OPS-006",
+      "planWorkItem": "系统自检",
+      "precedingWork": ""
+    }
+  ],
+  "preventiveMaintenance": [
+    {
+      "id": "2062733922613071874",
+      "schemeName": "8小时定检",
+      "planStopTime": "20",
+      "precedingWork": ""
+    },
+    {
+      "id": "2062734083460435971",
+      "schemeName": "8小时定检",
+      "planStopTime": "20",
+      "precedingWork": ""
+    },
+    {
+      "id": "2062734179333836801",
+      "schemeName": "12小时定检",
+      "precedingWork": ""
+    },
+    {
+      "id": "2062734229661290497",
+      "schemeName": "12小时定检",
+      "precedingWork": ""
+    }
+  ],
+  "correctiveMaintenance": [
+    {
+      "id": "2062720536101781505",
+      "repairObject": "任务计算机模块",
+      "repairType": "原位维修,换件维修",
+      "precedingWork": ""
+    }
+  ],
+  "basicActivityLibrary": [
+    {
+      "id": "2057748866458996738",
+      "activityType": "1",
+      "activityName": "机务检查",
+      "activityCode": "OPS-007",
+      "aircraftName": "J35",
+      "workDuration": "2",
+      "crewList": [
+        {
+          "specialty": "机械",
+          "specialtyLevel": "L1",
+          "requiredCount": "2"
+        },
+        {
+          "specialty": "军械",
+          "specialtyLevel": "L1",
+          "requiredCount": "3"
+        },
+        {
+          "specialty": "机械",
+          "specialtyLevel": "L3",
+          "requiredCount": "1"
+        },
+        {
+          "specialty": "军械",
+          "specialtyLevel": "L3",
+          "requiredCount": "1"
+        }
+      ],
+      "serviceList": [
+        {
+          "organization": "机械区队",
+          "specialtyLevel": "L1",
+          "requiredCount": "1"
+        },
+        {
+          "organization": "转运区队",
+          "specialtyLevel": "L2",
+          "requiredCount": "2"
+        }
+      ],
+      "facilityList": [
+        "供电",
+        "供氧",
+        "加油",
+        "液压"
+      ],
+      "equipmentList": [
+        {
+          "equipmentName": "技术综合检测仪",
+          "equipmentModel": "JS-ATE",
+          "requiredCount": "1"
+        },
+        {
+          "equipmentName": "放飞保障拖车",
+          "equipmentModel": "FF-TR1",
+          "requiredCount": "2"
+        }
+      ],
+      "ammoList": [
+        {
+          "ammoName": "放飞流程训练弹",
+          "ammoModel": "FF-TR",
+          "requiredCount": "1"
+        },
+        {
+          "ammoName": "航电校验训练弹",
+          "ammoModel": "HD-03",
+          "requiredCount": "1"
+        }
+      ],
+      "spareList": [
+        {
+          "spareName": "机体紧固件包",
+          "spareModel": "JT-17",
+          "requiredCount": "1"
+        },
+        {
+          "spareName": "飞行检查包",
+          "spareModel": "FX-06",
+          "requiredCount": "1"
+        }
+      ]
+    },
+    {
+      "id": "2056955580769230849",
+      "activityType": "1",
+      "activityName": "飞行参数装订",
+      "activityCode": "OPS-012",
+      "aircraftName": "J35",
+      "workDuration": "20",
+      "crewList": [],
+      "serviceList": [],
+      "facilityList": [],
+      "equipmentList": [],
+      "ammoList": [],
+      "spareList": []
+    },
+    {
+      "id": "2056955496128176129",
+      "activityType": "1",
+      "activityName": "系统自检",
+      "activityCode": "OPS-006",
+      "aircraftName": "J35",
+      "workDuration": "20",
+      "crewList": [],
+      "serviceList": [],
+      "facilityList": [],
+      "equipmentList": [],
+      "ammoList": [],
+      "spareList": []
+    },
+    {
+      "id": "2056955402586808321",
+      "activityType": "1",
+      "activityName": "惯导对准",
+      "activityCode": "OPS-005",
+      "aircraftName": "J35",
+      "workDuration": "0",
+      "crewList": [],
+      "serviceList": [],
+      "facilityList": [],
+      "equipmentList": [],
+      "ammoList": [],
+      "spareList": []
+    },
+    {
+      "id": "2056955298895224834",
+      "activityType": "1",
+      "activityName": "通电检查",
+      "activityCode": "OPS-004",
+      "aircraftName": "J35",
+      "workDuration": "0",
+      "crewList": [],
+      "serviceList": [],
+      "facilityList": [],
+      "equipmentList": [],
+      "ammoList": [],
+      "spareList": []
+    },
+    {
+      "id": "1",
+      "activityType": "1",
+      "activityName": "威威123456",
+      "activityCode": "1098",
+      "aircraftName": "J35",
+      "workDuration": "2",
+      "crewList": [
+        {
+          "specialty": "放飞",
+          "specialtyLevel": "L2",
+          "requiredCount": "1"
+        }
+      ],
+      "serviceList": [],
+      "facilityList": [
+        "供电",
+        "供氧"
+      ],
+      "equipmentList": [],
+      "ammoList": [],
+      "spareList": []
+    }
+  ],
+  "basicTasks": [
+    {
+      "id": "2056648118283272194",
+      "aircraftModel": "J35",
+      "taskName": "对海突击任务A",
+      "taskNo": "BT-2026519-001",
+      "equipmentAmount": 1,
+      "duration": "120",
+      "prepTime": "15",
+      "cancelTime": "20",
+      "usageGuarantee": "歼-35快速出动保障方案2",
+      "areaDescription": "近海突击航线",
+      "updateTime": "2026-06-05 17:22:55"
+    },
+    {
+      "id": "2056655589244719105",
+      "aircraftModel": "J35",
+      "taskName": "挂弹训练任务B",
+      "taskNo": "BT-20260519-001",
+      "equipmentAmount": 1,
+      "duration": "20",
+      "prepTime": "15",
+      "usageGuarantee": "歼-35快速出动保障方案2",
+      "areaDescription": "南海训练打击区",
+      "updateTime": "2026-05-27 16:47:44"
+    },
+    {
+      "id": "2057749112702390274",
+      "aircraftModel": "J15",
+      "taskName": "拦截待战任务A",
+      "taskNo": "BT-20260522-002",
+      "equipmentAmount": 2,
+      "duration": "12",
+      "prepTime": "35",
+      "cancelTime": "10",
+      "usageGuarantee": "歼-15T弹射保障方案2",
+      "areaDescription": "东海北部拦截区",
+      "updateTime": "2026-05-27 12:26:01"
+    },
+    {
+      "id": "2057711534980837377",
+      "aircraftModel": "J35",
+      "taskName": "连续出动任务C",
+      "taskNo": "BT-20260522-001",
+      "equipmentAmount": 2,
+      "duration": "190",
+      "prepTime": "15",
+      "cancelTime": "20",
+      "usageGuarantee": "歼-35快速出动保障方案2",
+      "areaDescription": "远海支援航线",
+      "updateTime": "2026-06-03 10:36:34"
+    }
+  ],
+  "compositeTasks": [
+    {
+      "id": "2056648118283272194",
+      "compositeTaskName": "复合任务A",
+      "basicTaskName": "对海突击任务A",
+      "equipmentType": "J35",
+      "equipmentAmount": "1",
+      "formationName": "编队1",
+      "issueTime": "06:00",
+      "firstDispatchTime": "06:15",
+      "dayRepeatTimes": 3,
+      "intervalHours": 2
+    },
+    {
+      "id": "2056655589244719105",
+      "compositeTaskName": "复合任务A",
+      "basicTaskName": "挂弹训练任务B",
+      "equipmentType": "J35",
+      "equipmentAmount": "1",
+      "formationName": "编队2",
+      "issueTime": "06:20",
+      "firstDispatchTime": "07:35",
+      "dayRepeatTimes": 3,
+      "intervalHours": 3
+    },
+    {
+      "id": "2057749112702390274",
+      "compositeTaskName": "复合任务A",
+      "basicTaskName": "拦截待战任务A",
+      "equipmentType": "J15",
+      "equipmentAmount": "2",
+      "formationName": "编队3",
+      "issueTime": "09:00",
+      "firstDispatchTime": "09:40",
+      "dayRepeatTimes": 3,
+      "intervalHours": 2
+    },
+    {
+      "id": "2057711534980837377",
+      "compositeTaskName": "复合任务A",
+      "basicTaskName": "连续出动任务C",
+      "equipmentType": "J35",
+      "equipmentAmount": "2",
+      "formationName": "编队4",
+      "issueTime": "07:00",
+      "firstDispatchTime": "07:30",
+      "dayRepeatTimes": 3,
+      "intervalHours": 12
+    }
+  ],
+  "periodicTasks": [
+    {
+      "id": "2057653703795650562",
+      "taskName": "周期性任务A",
+      "repeatWeeks": "2",
+      "subTasks": [
+        {
+          "week": "1",
+          "compositeTask": "复合任务A"
+        },
+        {
+          "week": "2",
+          "compositeTask": "复合任务A"
+        },
+        {
+          "week": "3",
+          "compositeTask": "复合任务A"
+        },
+        {
+          "week": "4",
+          "compositeTask": "复合任务A"
+        },
+        {
+          "week": "5",
+          "compositeTask": "复合任务A"
+        },
+        {
+          "week": "6",
+          "compositeTask": "复合任务B"
+        },
+        {
+          "week": "7",
+          "compositeTask": "复合任务B"
+        }
+      ]
+    }
+  ],
+  "basicUsageUnits": [
+    {
+      "formationName": "编队1",
+      "equipmentType": "歼-35",
+      "demandAmount": 2,
+      "setupAmount": 2,
+      "memberNos": "J35-132、J35-118"
+    },
+    {
+      "formationName": "编队2",
+      "equipmentType": "歼-35",
+      "demandAmount": 2,
+      "setupAmount": 2,
+      "memberNos": "J35-132、J35-118"
+    },
+    {
+      "formationName": "编队3",
+      "equipmentType": "歼-15T",
+      "demandAmount": 2,
+      "setupAmount": 2,
+      "memberNos": "J15T-002、J15T-001"
+    }
+  ]
+}
