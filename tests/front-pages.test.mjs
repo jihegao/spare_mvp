@@ -32,6 +32,18 @@ test("front app includes the system support module from CSCI 1.4.2", () => {
 test("front index loads modeling contracts before the app script", () => {
 	assert.match(
 		indexSource,
-		/<script src="modeling-contract\.js"><\/script>\s*<script src="project-json-contract\.js"><\/script>\s*<script src="app\.js"><\/script>/
+		/<script src="modeling-contract\.js"[^>]*><\/script>\s*<script src="project-json-contract\.js"[^>]*><\/script>\s*<script src="app\.js"[^>]*><\/script>/
 	);
+});
+
+test("front index reports critical script load failures instead of staying on loading", () => {
+	assert.match(indexSource, /window\.FRONT_BOOTSTRAP/);
+	assert.match(indexSource, /data-critical-script="modeling-contract"/);
+	assert.match(indexSource, /data-critical-script="project-json-contract"/);
+	assert.match(indexSource, /data-critical-script="app"/);
+	assert.match(indexSource, /前端资源加载失败/);
+});
+
+test("front app marks the bootstrap as ready after rendering", () => {
+	assert.match(appSource, /window\.FRONT_BOOTSTRAP\.markReady\(\)/);
 });

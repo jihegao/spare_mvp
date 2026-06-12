@@ -21,8 +21,51 @@
 		<noscript>
 			<div class="card noscript-card">当前原型依赖 JavaScript，请启用后重新访问。</div>
 		</noscript>
-		<script src="modeling-contract.js"></script>
-		<script src="project-json-contract.js"></script>
-		<script src="app.js"></script>
+		<script>
+			(function () {
+				var ready = false;
+				var app = document.getElementById("app");
+
+				function escapeHtml(value) {
+					return String(value)
+						.replace(/&/g, "&amp;")
+						.replace(/</g, "&lt;")
+						.replace(/>/g, "&gt;")
+						.replace(/"/g, "&quot;");
+				}
+
+				function showLoadError(detail) {
+					if (ready || !app) return;
+					app.innerHTML =
+						'<div class="page loading-page">' +
+							'<div class="card loading-card">' +
+								"<h2>前端资源加载失败</h2>" +
+								'<p class="muted">请确认当前页面从 front/ 目录启动，并刷新浏览器。</p>' +
+								'<p class="muted">错误：' + escapeHtml(detail) + "</p>" +
+							"</div>" +
+						"</div>";
+				}
+
+				window.FRONT_BOOTSTRAP = {
+					markReady: function () {
+						ready = true;
+					}
+				};
+
+				window.addEventListener("error", function (event) {
+					var target = event.target;
+					if (target && target.dataset && target.dataset.criticalScript) {
+						showLoadError("无法加载 " + target.getAttribute("src"));
+						return;
+					}
+					if (!ready && event.message) {
+						showLoadError(event.message);
+					}
+				}, true);
+			}());
+		</script>
+		<script src="modeling-contract.js" data-critical-script="modeling-contract"></script>
+		<script src="project-json-contract.js" data-critical-script="project-json-contract"></script>
+		<script src="app.js" data-critical-script="app"></script>
 	</body>
 </html>

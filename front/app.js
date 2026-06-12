@@ -1476,6 +1476,9 @@ function render() {
 	const page = getRoutePage();
 	const content = page ? renderAnalysisPage(page) : renderHomePage();
 	document.getElementById("app").innerHTML = renderLayout(content, page);
+	if (window.FRONT_BOOTSTRAP) {
+		window.FRONT_BOOTSTRAP.markReady();
+	}
 }
 
 function showToast(message) {
