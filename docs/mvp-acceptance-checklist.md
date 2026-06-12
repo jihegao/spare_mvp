@@ -2,8 +2,8 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | V0.4 |
-| 更新日期 | 2026-06-12 |
+| 文档版本 | V0.5 |
+| 更新日期 | 2026-06-13 |
 | 验收范围 | 覆盖 CSCI 完整部件范围的前后端最小闭环 MVP |
 | 覆盖对象 | `front/`、`core/`、后端 API 或等价本地服务、运行产物、字段契约、`docs/prd.md`、`docs/development-handoff-plan.md` |
 | 当前状态 | Phase 0 静态前端基线已存在；完整 MVP 尚待后续阶段实现和验收 |
@@ -62,6 +62,10 @@ Phase 0 静态前端基线仍然有效，但它只是页面、路由、字段表
 | B-03 | 项目数据对象 | 示例项目可保存或导出为可检查 JSON | Phase 4 | 待验收 |
 | B-04 | 字段来源说明 | 每个建模字段标注用户输入、默认值、样例数据、`core/` 输入或待确认来源 | Phase 2 | 待验收 |
 | B-05 | 校验规则 | 必填字段、枚举字段、数值范围和错误提示有最小规则 | Phase 2 | 待验收 |
+| B-06 | 完整项目 JSON 生产 | 用户可以在建模页面创建、编辑、删除、校验、预览、导入和导出完整 MVP 项目 JSON | Phase 2 / Phase 5 | 待验收 |
+| B-07 | 标准对象覆盖 | 建模页面产出的项目 JSON 覆盖 `missionProfiles`、`equipmentAssets`、`equipmentTree`、`supportResources`、`inventoryResources`、`supportActivities`、`metricPlans` | Phase 2 / Phase 5 | 待验收 |
+| B-08 | 共享项目数据 | 备件规划建模页和任务可靠度建模页共享同一项目 JSON，不产生彼此割裂的项目数据 | Phase 5 | 待验收 |
+| B-09 | 导入清洗 | 页面导入项目 JSON 或工作簿式来源数据时，数字字符串、布尔 0/1、分隔字符串、`"null"` 字符串和空字符串按 schema 口径转换 | Phase 5 | 待验收 |
 
 ## 5. 实验方案与运行验收
 

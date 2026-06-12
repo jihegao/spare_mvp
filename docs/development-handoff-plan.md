@@ -2,12 +2,12 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | V0.5 |
-| 更新日期 | 2026-06-12 |
+| 文档版本 | V0.6 |
+| 更新日期 | 2026-06-13 |
 | 文档性质 | MVP 总体开发计划与阶段状态控制文档 |
-| 当前阶段 | Phase 1：MVP 范围与验收契约收口 |
-| 当前目标 | 将项目从静态前端评审原型推进为覆盖全部 CSCI 部件的前后端最小闭环 |
-| 适用范围 | `agent.md`、`front/`、`core/`、后端 API、运行产物、`docs/prd.md`、`docs/modeling-detailed-requirements.md`、`docs/mvp-acceptance-checklist.md`、`docs/3概要设计方案.docx` |
+| 当前阶段 | Phase 2：MVP 详细设计与字段契约 |
+| 当前目标 | 先让建模页成为完整项目 JSON 的生产端，再推进实验、运行、结果、服务和前端接入闭环 |
+| 适用范围 | `agent.md`、`front/`、`core/`、后端 API、运行产物、`docs/prd.md`、`docs/modeling-detailed-requirements.md`、`docs/modeling-json-schema.md`、`docs/mvp-acceptance-checklist.md`、`docs/3概要设计方案.docx` |
 | 更新规则 | 每个阶段完成后必须更新本文件的阶段状态、交付物、验证证据、遗留问题和下一阶段入口 |
 
 ## 1. 文档定位
@@ -78,8 +78,8 @@
 | 阶段 | 状态 | 目标 | 主要输出物 | 阶段完成判定 |
 | --- | --- | --- | --- | --- |
 | Phase 0：静态前端 CSCI 基线 | 已完成 | 形成覆盖 CSCI 入口的静态前端评审基线 | 9 个功能页面、首页导航、前端渲染测试 | 前端页面测试通过，页面入口覆盖建模、实验、结果分析和运行支持 |
-| Phase 1：MVP 范围与验收契约收口 | 进行中 | 统一 PRD、验收清单、agent 指南和总体计划中的 MVP 定义 | 更新版总体计划、PRD、验收清单、agent 指南 | 旧的“静态前端即 MVP”口径被移除或标注为历史基线 |
-| Phase 2：MVP 详细设计与字段契约 | 未开始 | 固化项目数据、实验方案、运行记录、样本结果、分析结果和 API 字段 | MVP 详细设计、接口与字段契约、运行产物契约 | 前端字段、API 字段、`core/` 输出字段和结果 JSON 能一一映射 |
+| Phase 1：MVP 范围与验收契约收口 | 已完成 | 统一 PRD、验收清单、agent 指南和总体计划中的 MVP 定义 | 更新版总体计划、PRD、验收清单、agent 指南 | 旧的“静态前端即 MVP”口径被移除或标注为历史基线 |
+| Phase 2：MVP 详细设计与字段契约 | 进行中 | 固化项目数据、实验方案、运行记录、样本结果、分析结果和 API 字段 | MVP 详细设计、建模 JSON schema、接口与字段契约、运行产物契约 | 前端字段、API 字段、`core/` 输出字段和结果 JSON 能一一映射 |
 | Phase 3：后端仿真与结果聚合 | 未开始 | 改造或封装 `core/`，产生支撑四个结果分析页的聚合输出 | 后端字段契约测试、聚合模块、样例运行结果 | 固定种子样例运行可生成可检查的聚合结果 |
 | Phase 4：本地服务/API 与产物持久化 | 未开始 | 提供项目、实验、运行、结果查询和产物读取能力 | 本地 API 或等价服务、运行目录、日志和结果 JSON | API 或服务可启动，运行产物可重复生成和读取 |
 | Phase 5：前端接入和运行状态闭环 | 未开始 | 将前端从静态常量切到后端结果或产物驱动 | 前端 API 接入、运行状态、空状态和错误状态 | 页面结果能由后端产物驱动，演示夹具边界清晰 |
@@ -136,25 +136,30 @@
 
 建议任务：
 
-1. 定义项目数据、实验方案、运行记录、样本结果和分析结果的数据结构。
-2. 定义前端页面、后端 API、`core/` 聚合层和运行产物目录的边界。
-3. 明确建模字段、实验字段、运行状态字段和四个结果分析页面字段。
-4. 标注字段来源：用户输入、项目数据、实验方案、后端可计算指标、规则映射指标或待确认指标。
-5. 区分“真实仿真指标”“最小规则指标”“演示夹具字段”和“待确认字段”。
+1. 以 `docs/modeling-json-schema.md` 为输入，先定义建模页如何完整生产 MVP 项目 JSON。
+2. 明确两个建模页的创建、编辑、删除、导入、导出、校验、JSON 预览、脏状态、保存状态和错误状态。
+3. 将页面可编辑区域映射到 7 类标准对象：`missionProfiles`、`equipmentAssets`、`equipmentTree`、`supportResources`、`inventoryResources`、`supportActivities`、`metricPlans`。
+4. 在项目 JSON 边界稳定后，再定义实验方案、运行记录、样本结果、聚合结果和分析结果的数据结构。
+5. 定义前端页面、后端 API、`core/` 聚合层和运行产物目录的边界。
+6. 明确建模字段、实验字段、运行状态字段和四个结果分析页面字段。
+7. 标注字段来源：用户输入、项目数据、实验方案、后端可计算指标、规则映射指标或待确认指标。
+8. 区分“真实仿真指标”“最小规则指标”“演示夹具字段”和“待确认字段”。
 
 阶段输出物：
 
 1. MVP 详细设计文档。
-2. 接口与字段契约文档。
-3. 运行产物契约文档。
-4. 页面字段、API 字段、`core/` 输出字段和结果 JSON 映射表。
+2. 建模页完整项目 JSON authoring workflow 文档。
+3. 接口与字段契约文档。
+4. 运行产物契约文档。
+5. 页面字段、API 字段、`core/` 输出字段和结果 JSON 映射表。
 
 阶段验收检查：
 
-1. 每个前端页面都有字段来源说明。
-2. 每个 API 或服务能力都有输入、输出和错误状态说明。
-3. 每个结果 JSON 都有示例结构。
-4. 每个 CSCI 能力都能追踪到至少一个数据对象和验收路径。
+1. 建模页功能文档明确用户可以在页面上产生完整项目 JSON，而不是只查看静态字段。
+2. 每个前端页面都有字段来源说明。
+3. 每个 API 或服务能力都有输入、输出和错误状态说明。
+4. 每个结果 JSON 都有示例结构。
+5. 每个 CSCI 能力都能追踪到至少一个数据对象和验收路径。
 
 ### Phase 3：后端仿真与结果聚合
 
@@ -283,7 +288,7 @@
 3. 写明验证命令、验证结果和关键产物路径。
 4. 记录偏离原计划的范围变更。
 5. 将遗留问题移动到“待确认问题”或下一阶段任务。
-6. 更新“当前阶段”和“下一步建议”。
+6. 更新“当前阶段”和“当前执行状态与后续 PR 队列”。
 7. 如果创建了 PR，补充 PR 编号或链接。
 
 推荐阶段收尾模板：
@@ -326,19 +331,41 @@
 | Q-06 | MVP 验收样例数据是否以概要设计字段、`core/dataset/` 数据，还是人工整理的标准示例项目为准 | Phase 2 / Phase 3 |
 | Q-07 | 系统运行支持模块在 MVP 中的最小并发、样本数和日志粒度要求 | Phase 2 / Phase 4 |
 
-## 10. 当前下一步建议
+## 10. 当前执行状态与后续 PR 队列
 
-下一步执行 Phase 1：MVP 范围与验收契约收口。
+本节记录当前可执行的小阶段计划。`## 5` 保留长期 Phase 路线；本节只记录已经形成的短期 PR 队列、当前入口和顺序约束。
 
-最小可执行工作包：
+当前状态：
 
-1. 更新 `agent.md`，把当前范围从静态前端原型修正为全功能最小闭环 MVP。
-2. 更新 `docs/prd.md`，把“前端原型 PRD”升级为“全功能最小闭环 MVP PRD”，同时保留静态前端是 Phase 0 基线的说明。
-3. 更新 `docs/mvp-acceptance-checklist.md`，把静态页面验收升级为前端、后端、仿真运行、结果产物和接口联调验收。
-4. 用 `rg` 检查旧口径残留，确认保留处只作为历史基线或演示夹具说明。
-5. 运行前端测试和 `core` 编译检查。
+1. Phase 1 已完成，PR #10 已把 MVP 口径统一为覆盖全部 CSCI 部件的前后端最小闭环。
+2. Phase 2 已开始，PR #11 已抽离 `front/modeling-contract.js`，PR #12 已新增 `docs/modeling-json-schema.md`。
+3. 下一步执行 PR #13：`[codex] Define frontend modeling JSON authoring workflow`。
 
-完成 Phase 1 后，再进入 Phase 2，先固化字段契约和运行产物契约，再按 TDD 推进后端仿真、API、前端接入和验收闭环。
+PR #13-#18 是 Phase 2 到 Phase 5 的当前执行队列。它们不是把页面继续做成静态字段说明，而是把系统推进到“页面可产生完整项目 JSON、后端可消费、运行产物可检查、前端可展示真实或明确标注来源的数据”的最小闭环。
+
+| PR | 建议标题 | 所属阶段 | 目标 | 必须输出 | 合并门槛 |
+| --- | --- | --- | --- | --- | --- |
+| PR #13 | `[codex] Define frontend modeling JSON authoring workflow` | Phase 2 | 讲清楚两个建模页如何从用户输入完整产生 MVP 项目 JSON | 建模页功能细化文档、UI 状态、对象到页面映射、导入导出边界、验收测试计划 | 文档明确用户可创建、编辑、删除、校验、预览、导入、导出完整项目 JSON；不再把目标描述成只读展示或局部最小表单 |
+| PR #14 | `[codex] Add frontend project JSON state and validation contract` | Phase 2 / Phase 5 前置 | 为前端实现项目 JSON 生产准备共享状态、字段元数据和校验口径 | 前端项目 JSON 状态模型、schema 元数据入口、字段级校验函数、测试 | 页面可在无后端条件下生成完整 normalized project JSON；校验覆盖必填、唯一、引用、数量、概率、时间单位和导入清洗 |
+| PR #15 | `[codex] Implement editable modeling JSON authoring pages` | Phase 5 前置 | 将两个建模页从静态展示升级为完整项目 JSON 作者界面 | 可编辑建模 UI、对象增删改、JSON 预览、导入、导出、脏状态/保存状态/错误状态 | 用户能在页面上产生覆盖 7 类标准对象的项目 JSON；备件规划页和任务可靠度页共享同一项目数据但有不同重点视图 |
+| PR #16 | `[codex] Define experiment, run, and artifact contracts` | Phase 2 | 在建模 JSON 之后定义实验方案、运行记录、样本结果、聚合结果、前端结果 payload 和 artifact manifest | 契约文档、示例 JSON、结果页字段映射、测试 guard | 四个结果分析页字段均能追踪到实验/运行/结果对象；每个字段标注真实仿真输出、最小规则、演示夹具或待确认 |
+| PR #17 | `[codex] Add core adapter and fixed-seed artifact smoke` | Phase 3 | 让 `core/` 或聚合层最小消费项目 JSON，并产生可检查样例产物 | adapter 测试、固定种子样例运行、样本结果、聚合结果、前端结果 JSON | 相同项目 JSON、实验方案和种子生成稳定结构；不支持的指标明确标注为最小规则或待确认 |
+| PR #18 | `[codex] Connect local service and frontend artifact flow` | Phase 4 / Phase 5 | 提供本地服务或等价 CLI 产物读取能力，并让前端读取项目、实验、运行和结果产物 | 本地 API/CLI、运行目录、前端数据访问层、运行管理页产物检查、端到端烟测 | 前端能从产物或服务读取结果；后端不可用时显示明确降级状态；运行产物路径和验收命令可重复 |
+
+PR #13 最小可执行工作包：
+
+1. 新增或更新建模页 workflow 文档，说明用户如何在页面上完整产生 MVP 项目 JSON。
+2. 覆盖创建、编辑、删除、导入、导出、校验、JSON 预览、脏状态、保存状态和错误状态。
+3. 将两个建模页的 UI 区域映射到 `docs/modeling-json-schema.md` 的 7 类标准对象。
+4. 明确备件规划页和任务可靠度页共享同一项目 JSON，只是页面重点不同。
+5. 新增文档测试或搜索 guard，防止后续把目标退回成只读展示、局部最小表单或静态字段说明。
+
+执行顺序约束：
+
+1. PR #13 必须先于 PR #14/#15 合入，因为它定义页面完整生产项目 JSON 的功能边界。
+2. PR #14/#15 完成前，不应把实验方案或后端 adapter 绑定到半成品建模字段。
+3. PR #16 应以 PR #15 产出的项目 JSON 为输入边界，避免继续围绕 `data_new.json` 的工作簿 sheet 直接设计实验和结果对象。
+4. PR #17/#18 只能在契约、样例项目 JSON 和字段来源稳定后推进。
 
 ## 11. 阶段完成记录
 
@@ -352,3 +379,25 @@
 - 关键产物：`front/`、`tests/front-pages.test.mjs`、`tests/front-render.test.mjs`。
 - 遗留问题：静态前端尚未接入后端、仿真运行、数据持久化和运行产物。
 - 下一阶段入口：Phase 1：MVP 范围与验收契约收口。
+
+### Phase 1 完成记录
+
+- 完成日期：2026-06-12。
+- 分支：已合入 `main`。
+- PR：PR #10。
+- 主要变更：统一 MVP 为覆盖全部 CSCI 部件的前后端最小闭环，保留 Phase 0 静态前端为页面基线而非最终 MVP。
+- 验证命令：以 PR #10 验证记录为准。
+- 关键产物：`docs/prd.md`、`docs/mvp-acceptance-checklist.md`、`docs/development-handoff-plan.md`、`agent.md`。
+- 遗留问题：Phase 2 需要继续细化字段契约和页面数据生产能力。
+- 下一阶段入口：Phase 2：MVP 详细设计与字段契约。
+
+### Phase 2 进展记录
+
+- 完成日期：进行中。
+- 分支：已合入 `main` 的阶段切片包括 PR #11 和 PR #12。
+- PR：PR #11、PR #12。
+- 主要变更：PR #11 抽离 `front/modeling-contract.js`；PR #12 新增 `docs/modeling-json-schema.md`，形成建模字段契约输入。
+- 验证命令：以各 PR 验证记录为准。
+- 关键产物：`front/modeling-contract.js`、`docs/modeling-json-schema.md`、`tests/modeling-contract.test.mjs`、`tests/modeling-schema-doc.test.mjs`。
+- 遗留问题：建模页仍是静态展示，尚不能让用户在页面上完整产生项目 JSON。
+- 下一阶段入口：PR #13：定义 frontend modeling JSON authoring workflow。
