@@ -10,11 +10,28 @@ if (!MODELING_CONTRACT) {
 	throw new Error("Missing MODELING_CONTRACT. Load modeling-contract.js before app.js.");
 }
 
+const PROJECT_JSON_CONTRACT = globalThis.PROJECT_JSON_CONTRACT;
+
+if (!PROJECT_JSON_CONTRACT) {
+	throw new Error("Missing PROJECT_JSON_CONTRACT. Load project-json-contract.js before app.js.");
+}
+
 const {
 	MODELING_CONTEXT_ITEMS,
 	MODELING_FUTURE_FIELDS,
 	MODELING_SCOPE
 } = MODELING_CONTRACT;
+
+const {
+	MODELING_OBJECT_METADATA,
+	PROJECT_JSON_SCHEMA_VERSION,
+	STANDARD_MODELING_OBJECTS,
+	applyProjectRecordDelete,
+	createProjectJsonState,
+	exportProjectJson,
+	normalizeProjectJson,
+	upsertProjectRecord
+} = PROJECT_JSON_CONTRACT;
 
 const MODULES = [
 	{
@@ -65,6 +82,146 @@ const SYSTEM_SUPPORT_ITEMS = [
 	{ name: "固定种子", value: "20260612", detail: "用于后续联调时复现实验产物。" },
 	{ name: "错误记录", value: "0 条阻断", detail: "展示运行异常、失败样本和产物缺失的检查入口。" }
 ];
+
+const DEMO_PROJECT_JSON = {
+	projectId: "demo-601",
+	projectName: "601 备件评估演示项目",
+	schemaVersion: PROJECT_JSON_SCHEMA_VERSION,
+	tables: {
+		missionProfiles: [
+			{
+				id: "mission-1",
+				taskNo: "BT-001",
+				taskName: "对海突击任务A",
+				aircraftModel: "J35",
+				equipmentAmount: 1,
+				durationMinutes: 120,
+				prepTimeMinutes: 30,
+				memberNos: ["J35-132"],
+				usageGuarantee: "歼-35快速出动保障方案2"
+			}
+		],
+		equipmentAssets: [
+			{
+				id: "asset-1",
+				aircraftType: "J35",
+				aircraftCode: "J35-132",
+				supportOrg: "航空联队机务组",
+				currentStatus: "在册完好",
+				totalServiceYears: 3,
+				totalServiceTakeoffLanding: 420
+			}
+		],
+		equipmentTree: [
+			{
+				id: "equipment-1",
+				nodeLevel: 1,
+				nodeName: "J35",
+				model: "J35",
+				quantity: 1,
+				isLru: false
+			},
+			{
+				id: "equipment-2",
+				nodeLevel: 3,
+				nodeName: "任务计算机模块",
+				model: "LRU-RW-01",
+				quantity: 2,
+				isLru: true,
+				lruFailureRate: 0.033,
+				mtbcf: 30,
+				mttr: 20,
+				detectionTime: 12,
+				isDetectable: true
+			}
+		],
+		supportResources: [
+			{
+				id: "support-1",
+				orgName: "航空联队机务组",
+				major: "机加",
+				majorLevel: "L2",
+				serviceAircraft: ["J35"],
+				staffCount: 4
+			},
+			{
+				id: "support-2",
+				equipmentName: "技术综合检测仪",
+				equipmentCount: 2,
+				stationCode: "ST-01",
+				stationName: "保障站位1"
+			}
+		],
+		inventoryResources: [
+			{
+				id: "spare-1",
+				resourceType: "sparePart",
+				name: "飞行检查包",
+				model: "FX-06",
+				count: 12,
+				relatedComponentId: "equipment-2"
+			},
+			{
+				id: "ammo-1",
+				resourceType: "ammunition",
+				name: "放飞流程训练弹",
+				model: "FF-TR",
+				count: 4
+			}
+		],
+		supportActivities: [
+			{
+				id: "activity-1",
+				activityCode: "OPS-007",
+				activityName: "机务检查",
+				activityType: "basic",
+				aircraftName: "J35",
+				workDurationHours: 2,
+				spareList: [{ spareName: "飞行检查包", spareModel: "FX-06", requiredCount: 1 }]
+			},
+			{
+				id: "activity-2",
+				activityName: "歼-35快速出动保障方案2",
+				activityType: "usage",
+				basicActivityCode: "OPS-007",
+				precedingWork: "机务检查"
+			}
+		],
+		metricPlans: [
+			{
+				id: "metric-1",
+				indexName: "任务可靠度",
+				targetType: "任务可靠度",
+				symbol: "≥",
+				targetValue: 0.95,
+				simulationType: "单波次",
+				taskSuccessRate: 0.95
+			}
+		]
+	},
+	sourceTrace: { origin: "demo-fixture", importedSheets: [] }
+};
+
+const MODELING_AUTHORING_SECTIONS = {
+	"spare-planning": [
+		{ label: "任务建模", tableName: "missionProfiles", detail: "任务编号、任务名称、机型、数量、时长和保障方案引用" },
+		{ label: "装备资产", tableName: "equipmentAssets", detail: "飞机池、飞机状态、寿命和保障组织引用" },
+		{ label: "装备组成", tableName: "equipmentTree", detail: "装备层级、部件/LRU、数量和当前故障参数" },
+		{ label: "备件与弹药", tableName: "inventoryResources", detail: "备件、弹药、型号、库存和关联部件" },
+		{ label: "保障组织与资源", tableName: "supportResources", detail: "保障组织、人员、设备、站位和设施" },
+		{ label: "保障活动", tableName: "supportActivities", detail: "活动库、使用保障、预防维修和修复维修方案" },
+		{ label: "指标方案", tableName: "metricPlans", detail: "优化目标、约束阈值和指标目标值" }
+	],
+	"mission-reliability": [
+		{ label: "任务剖面", tableName: "missionProfiles", detail: "波次、周期任务、首次出动时间和重复规则" },
+		{ label: "飞机与装备组成", tableName: "equipmentAssets", detail: "飞机状态、寿命和可用性输入" },
+		{ label: "故障模型", tableName: "equipmentTree", detail: "LRU 故障率、维修分布、MTBCF、MTTR 和检测时间" },
+		{ label: "装备可靠性框图", tableName: "equipmentTree", detail: "基于装备层级预览结构；parentId、relationType 和 successThreshold 为待补字段" },
+		{ label: "保障组织与资源", tableName: "supportResources", detail: "保障人员、设备、备件、弹药、站位和设施" },
+		{ label: "保障活动", tableName: "supportActivities", detail: "故障维修、预防维修、任务间保障和使用保障" },
+		{ label: "指标分配", tableName: "metricPlans", detail: "任务可靠度、可用度、利用率等指标方案" }
+	]
+};
 
 const SPARE_SHORTFALL_ROWS = [
 	{ name: "P1", satisfy: 0.5, delay: 24, baseCount: 1, stock: 1, shortage: 1, level: "关注" },
@@ -133,6 +290,16 @@ const state = {
 	carrySatisfyRate: "90",
 	carryUtilizationRate: "80",
 	carryObjective: "availability",
+	modeling: createProjectJsonState({ projectJson: DEMO_PROJECT_JSON }),
+	activeModelingTable: {
+		"spare-planning": "missionProfiles",
+		"mission-reliability": "missionProfiles"
+	},
+	selectedModelingRecords: {},
+	modelingImportDraft: "",
+	modelingImportMessage: "",
+	modelingExport: null,
+	modelingSequence: 1,
 	lastRun: {}
 };
 
@@ -147,6 +314,169 @@ function htmlEscape(value) {
 		.replaceAll(">", "&gt;")
 		.replaceAll('"', "&quot;")
 		.replaceAll("'", "&#39;");
+}
+
+function cloneJson(value) {
+	return JSON.parse(JSON.stringify(value));
+}
+
+function getModelingSections(moduleId) {
+	return MODELING_AUTHORING_SECTIONS[moduleId] || MODELING_AUTHORING_SECTIONS["spare-planning"];
+}
+
+function getActiveModelingTable(moduleId) {
+	const sections = getModelingSections(moduleId);
+	const activeTable = state.activeModelingTable[moduleId];
+	return sections.some((section) => section.tableName === activeTable) ? activeTable : sections[0].tableName;
+}
+
+function getSelectedModelingRecord(tableName) {
+	const records = state.modeling.project.tables[tableName] || [];
+	const selectedId = state.selectedModelingRecords[tableName];
+	return records.find((record) => record.id === selectedId) || records[0] || null;
+}
+
+function getRecordTitle(record, metadata) {
+	if (!record) return "无记录";
+	const preferredFields = [
+		"taskName",
+		"aircraftCode",
+		"nodeName",
+		"name",
+		"orgName",
+		"equipmentName",
+		"activityName",
+		"indexName",
+		"targetType",
+		"id"
+	];
+	const fieldName = preferredFields.find((field) => record[field]);
+	const value = fieldName ? record[fieldName] : record.id;
+	return `${metadata.label} / ${value}`;
+}
+
+function getStatusText(status) {
+	const labels = {
+		clean: "无未保存修改",
+		dirty: "有未保存修改",
+		saving: "正在保存",
+		saved: "已保存到浏览器内存",
+		save_failed: "保存失败"
+	};
+	return labels[status] || status;
+}
+
+function validationTone(status) {
+	if (status === "valid") return "success";
+	if (status === "warning") return "warn";
+	if (status === "invalid") return "danger";
+	return "";
+}
+
+function getValidationSummary() {
+	const validation = state.modeling.project.validation || { status: "draft", errors: [], warnings: [] };
+	return {
+		status: validation.status,
+		errors: validation.errors || [],
+		warnings: validation.warnings || []
+	};
+}
+
+function fieldValueToText(value, fieldMeta) {
+	if (value === undefined || value === null) return "";
+	if (fieldMeta.kind === "list" || fieldMeta.kind === "referenceList") return Array.isArray(value) ? value.join(", ") : String(value);
+	if (fieldMeta.kind === "object") return typeof value === "object" ? JSON.stringify(value, null, 2) : String(value);
+	return String(value);
+}
+
+function parseModelingFieldValue(rawValue, fieldMeta) {
+	const value = String(rawValue ?? "").trim();
+	if (!value) {
+		if (fieldMeta.kind === "list" || fieldMeta.kind === "referenceList") return [];
+		if (fieldMeta.kind === "object") return {};
+		return fieldMeta.required ? "" : null;
+	}
+	if (fieldMeta.kind === "nonNegativeInteger") {
+		const numberValue = Number(value);
+		return Number.isFinite(numberValue) ? Math.trunc(numberValue) : rawValue;
+	}
+	if (["nonNegativeNumber", "probability", "probabilityOrNumber"].includes(fieldMeta.kind)) {
+		const numberValue = Number(value);
+		return Number.isFinite(numberValue) ? numberValue : rawValue;
+	}
+	if (fieldMeta.kind === "boolean") return value === "true";
+	if (fieldMeta.kind === "list" || fieldMeta.kind === "referenceList") {
+		return value.split(/[,、\n]/).map((item) => item.trim()).filter(Boolean);
+	}
+	if (fieldMeta.kind === "object") {
+		try {
+			return JSON.parse(value);
+		} catch {
+			return rawValue;
+		}
+	}
+	return rawValue;
+}
+
+function getDefaultRecord(tableName) {
+	const sequence = state.modelingSequence++;
+	const draftId = `${tableName}:draft-${sequence}`;
+	const defaults = {
+		missionProfiles: {
+			id: draftId,
+			taskNo: `TASK-${String(sequence).padStart(3, "0")}`,
+			taskName: `新任务 ${sequence}`,
+			aircraftModel: "J35",
+			equipmentAmount: 1,
+			durationMinutes: 60
+		},
+		equipmentAssets: {
+			id: draftId,
+			aircraftType: "J35",
+			aircraftCode: `J35-NEW-${sequence}`,
+			currentStatus: "在册完好"
+		},
+		equipmentTree: {
+			id: draftId,
+			nodeLevel: 2,
+			nodeName: `新增装备节点 ${sequence}`,
+			model: `LRU-${sequence}`,
+			quantity: 1,
+			isLru: false
+		},
+		supportResources: {
+			id: draftId,
+			orgName: `新增保障资源 ${sequence}`,
+			major: "机加",
+			majorLevel: "L1",
+			staffCount: 1
+		},
+		inventoryResources: {
+			id: draftId,
+			resourceType: "sparePart",
+			name: `新增备件 ${sequence}`,
+			model: `SP-${sequence}`,
+			count: 1
+		},
+		supportActivities: {
+			id: draftId,
+			activityCode: `ACT-${String(sequence).padStart(3, "0")}`,
+			activityName: `新增保障活动 ${sequence}`,
+			activityType: "basic"
+		},
+		metricPlans: {
+			id: draftId,
+			indexName: "任务可靠度",
+			targetType: "任务可靠度",
+			symbol: "≥",
+			targetValue: 0.9
+		}
+	};
+	return defaults[tableName] || { id: draftId };
+}
+
+function refreshExportPreview() {
+	state.modelingExport = exportProjectJson(state.modeling.project);
 }
 
 function thresholdLabel(value) {
@@ -283,6 +613,7 @@ function renderAnalysisPage(page) {
 	const pageKey = getPageKey(page);
 	const lastRun = state.lastRun[pageKey];
 	const hasConfig = ["modeling", "experiment", "carry-list", "run-management"].includes(page.id);
+	const isModelingPage = page.id === "modeling";
 	return `
 		<div class="page-head">
 			<div class="page-head-left">
@@ -312,15 +643,15 @@ function renderAnalysisPage(page) {
 			</div>
 			<div class="deck-modeling-content">
 				<div class="analysis-content-stack">
-					<div class="card analysis-config-panel ${hasConfig ? "" : "analysis-config-panel-compact"}">
+						<div class="card analysis-config-panel ${hasConfig ? "" : "analysis-config-panel-compact"} ${isModelingPage ? "modeling-authoring-config-panel" : ""}">
 						<div class="analysis-section-head ${hasConfig ? "" : "analysis-section-head-only"}">
 							${hasConfig ? "<h3>参数配置</h3>" : ""}
 							<button class="btn-primary analysis-start-btn" data-action="start-analysis" data-page="${htmlEscape(pageKey)}">启动</button>
 						</div>
 						${hasConfig ? `<div class="analysis-config-scroll">${renderConfig(page)}</div>` : ""}
 					</div>
-					<div class="card analysis-result-panel">
-						<h3>结果展示</h3>
+						<div class="card analysis-result-panel ${isModelingPage ? "modeling-authoring-result-panel" : ""}">
+							<h3>${isModelingPage ? "项目 JSON 作者界面" : "结果展示"}</h3>
 						<div class="analysis-result-scroll">
 							<div class="analysis-result-inner-scroll">
 								${renderResults(page)}
@@ -345,31 +676,36 @@ function renderModelingConfig(page) {
 	const rows = MODELING_SCOPE[page.moduleId] || [];
 	const uniqueSheets = new Set(rows.flatMap((row) => row.sheets || []));
 	const isMission = page.moduleId === "mission-reliability";
+	const validation = getValidationSummary();
+	const recordTotal = STANDARD_MODELING_OBJECTS.reduce((sum, tableName) => sum + state.modeling.project.tables[tableName].length, 0);
 	return `
 		<div class="modeling-contract-summary">
 			<div class="modeling-summary-item">
-				<span>数据源</span>
-				<strong>core/dataset/data_new.json</strong>
+				<span>当前项目</span>
+				<strong>${htmlEscape(state.modeling.project.projectName)}</strong>
 			</div>
 			<div class="modeling-summary-item">
-				<span>建模域</span>
-				<strong>${rows.length} 类</strong>
+				<span>共享项目 JSON</span>
+				<strong>${recordTotal} 条 / ${STANDARD_MODELING_OBJECTS.length} 类对象</strong>
 			</div>
 			<div class="modeling-summary-item">
-				<span>对齐 sheet</span>
-				<strong>${uniqueSheets.size} 个</strong>
+				<span>保存状态</span>
+				<strong>${htmlEscape(getStatusText(state.modeling.dirtyStatus))}</strong>
 			</div>
 			<div class="modeling-summary-item">
-				<span>页面边界</span>
-				<strong>场景/舰船/布列不进入建模表单</strong>
+				<span>校验状态</span>
+				<strong>${htmlEscape(validation.status)} / ${validation.errors.length} 错误</strong>
 			</div>
 		</div>
 		<div class="modeling-boundary-panel">
 			<div>
-				<h4>${isMission ? "任务可靠度建模边界" : "备件规划建模边界"}</h4>
-				<p class="muted">前端先按 JSON 工作簿 sheet 聚合任务、装备、保障资源、保障活动和实验指标字段。启动按钮仍为静态反馈，不代表已接入后端适配。</p>
+				<h4>${isMission ? "任务可靠度建模视图" : "备件规划建模视图"}</h4>
+				<p class="muted">本页从 core/dataset/data_new.json 对齐的字段契约出发，直接编辑 normalized project JSON。当前保存为浏览器内存/导出草稿，尚未接入后端持久化。</p>
 			</div>
 			<div class="sheet-chip-row">
+				<span class="sheet-chip">建模域 ${rows.length} 类</span>
+				<span class="sheet-chip">对齐 sheet ${uniqueSheets.size} 个</span>
+				<span class="sheet-chip">场景/舰船/布列不进入建模表单</span>
 				<span class="muted">历史工作簿/后续环境配置项</span>
 				${MODELING_CONTEXT_ITEMS.map((sheet) => `<span class="sheet-chip muted-chip">${htmlEscape(sheet)}</span>`).join("")}
 			</div>
@@ -539,43 +875,212 @@ function renderModelingResults(page) {
 	const isMission = page.moduleId === "mission-reliability";
 	const uniqueSheets = new Set(rows.flatMap((row) => row.sheets || []));
 	return `
-		${renderMetricGrid([
-			{ label: "建模域", value: `${rows.length} 类` },
-			{ label: "对齐 sheet", value: `${uniqueSheets.size} 个` },
-			{ label: "关键对象", value: isMission ? "可靠性框图" : "备件与弹药" },
-			{ label: "后端状态", value: "待适配", tone: "danger" }
-		])}
-		${renderModelingDomainCards(rows)}
-		<div class="table-wrap">
+		${renderModelingAuthoringWorkbench(page)}
+		<div class="modeling-reference-block">
+			${renderMetricGrid([
+				{ label: "建模域", value: `${rows.length} 类` },
+				{ label: "对齐 sheet", value: `${uniqueSheets.size} 个` },
+				{ label: "关键对象", value: isMission ? "可靠性框图" : "备件与弹药" },
+				{ label: "后端状态", value: "待适配", tone: "danger" }
+			])}
+			${renderModelingDomainCards(rows)}
+			<div class="chart-panel">
+				<div class="chart-title">导入清洗规则</div>
+				<div class="modeling-rule-list">
+					<span>数字字符串转数字</span>
+					<span>"null" 字符串转空值</span>
+					<span>名称引用先保留，后续收敛 ID</span>
+					<span>equipmentTree 先按 nodeLevel 展示层级，待补 parentId/串并联关系</span>
+				</div>
+			</div>
+		</div>
+	`;
+}
+
+function renderModelingAuthoringWorkbench(page) {
+	const moduleId = page.moduleId;
+	const sections = getModelingSections(moduleId);
+	const activeTableName = getActiveModelingTable(moduleId);
+	const metadata = MODELING_OBJECT_METADATA[activeTableName];
+	const records = state.modeling.project.tables[activeTableName] || [];
+	const selectedRecord = getSelectedModelingRecord(activeTableName);
+	const validation = getValidationSummary();
+	const preview = state.modelingExport || exportProjectJson(state.modeling.project);
+	const viewTitle = moduleId === "mission-reliability" ? "任务可靠度建模视图" : "备件规划建模视图";
+	return `
+		<section class="modeling-authoring-workbench">
+			<div class="authoring-topline">
+				<div>
+					<h4>${htmlEscape(viewTitle)}</h4>
+					<p class="muted">两个建模页共用同一份共享项目 JSON；页面仅切换业务重点，不复制项目数据。</p>
+				</div>
+				<div class="authoring-action-row">
+					<button type="button" data-action="save-modeling-draft">保存草稿</button>
+					<button type="button" class="btn-primary" data-action="export-modeling-json">导出 JSON</button>
+				</div>
+			</div>
+			<div class="authoring-status-row">
+				<span class="status-badge ${state.modeling.dirtyStatus === "dirty" ? "warn" : "success"}">${htmlEscape(getStatusText(state.modeling.dirtyStatus))}</span>
+				<span class="status-badge ${validationTone(validation.status)}">validation: ${htmlEscape(validation.status)}</span>
+				<span class="status-badge ${validation.errors.length ? "danger" : "success"}">${validation.errors.length} errors</span>
+				<span class="status-badge ${validation.warnings.length ? "warn" : "success"}">${validation.warnings.length} warnings</span>
+			</div>
+			<div class="modeling-authoring-grid">
+				<div class="authoring-object-panel">
+					<div class="authoring-panel-title">对象列表</div>
+					${sections.map((section) => renderModelingObjectButton(moduleId, section, activeTableName)).join("")}
+				</div>
+				<div class="authoring-record-panel">
+					<div class="authoring-panel-title">
+						<span>${htmlEscape(metadata.label)}</span>
+						<button type="button" data-action="add-modeling-record" data-table-name="${htmlEscape(activeTableName)}">新增记录</button>
+					</div>
+					${renderModelingRecordTable(activeTableName, records, selectedRecord)}
+				</div>
+				<div class="authoring-detail-panel">
+					<div class="authoring-panel-title">详情编辑</div>
+					${renderModelingDetailEditor(activeTableName, selectedRecord)}
+				</div>
+			</div>
+			<div class="modeling-json-panel">
+				<div class="modeling-import-panel">
+					<div class="authoring-panel-title">导入 JSON</div>
+					<textarea rows="7" data-modeling-import placeholder="粘贴 normalized project JSON 或工作簿式 JSON">${htmlEscape(state.modelingImportDraft)}</textarea>
+					<div class="authoring-action-row">
+						<button type="button" data-action="import-modeling-json">导入 JSON</button>
+						<span class="muted">${htmlEscape(state.modelingImportMessage || "支持 normalized project JSON 和 workbook-style JSON。")}</span>
+					</div>
+				</div>
+				<div class="modeling-preview-panel">
+					<div class="authoring-panel-title">
+						<span>JSON 预览</span>
+						<span class="status-badge ${preview.runnable ? "success" : "warn"}">${preview.runnable ? "可运行 JSON" : "草稿 JSON"}</span>
+					</div>
+					<div class="export-summary">
+						<span>${htmlEscape(preview.fileName)}</span>
+						<a download="${htmlEscape(preview.fileName)}" href="data:application/json;charset=utf-8,${encodeURIComponent(JSON.stringify(preview.projectJson, null, 2))}">下载 normalized project JSON</a>
+					</div>
+					<pre class="json-preview">${htmlEscape(JSON.stringify(preview.projectJson, null, 2))}</pre>
+				</div>
+			</div>
+			${renderValidationMessages(validation)}
+		</section>
+	`;
+}
+
+function renderModelingObjectButton(moduleId, section, activeTableName) {
+	const count = state.modeling.project.tables[section.tableName]?.length || 0;
+	return `
+		<button type="button" class="authoring-object-button ${section.tableName === activeTableName ? "active" : ""}" data-action="set-modeling-table" data-module-id="${htmlEscape(moduleId)}" data-table-name="${htmlEscape(section.tableName)}">
+			<span>${htmlEscape(section.label)}</span>
+			<strong>${count}</strong>
+			<em>${htmlEscape(section.detail)}</em>
+		</button>
+	`;
+}
+
+function renderModelingRecordTable(tableName, records, selectedRecord) {
+	const metadata = MODELING_OBJECT_METADATA[tableName];
+	const fieldNames = Object.keys(metadata.fields).filter((fieldName) => fieldName !== "id").slice(0, 4);
+	if (records.length === 0) {
+		return `<div class="empty-authoring-state">当前对象暂无记录，可新增记录或从 JSON 导入。</div>`;
+	}
+	return `
+		<div class="authoring-table-wrap">
 			<table>
 				<thead>
 					<tr>
-						<th>建模域</th>
-						<th>来源 sheet</th>
-						<th>字段示例</th>
-						<th>样例数据</th>
+						<th>记录</th>
+						${fieldNames.map((fieldName) => `<th>${htmlEscape(fieldName)}</th>`).join("")}
+						<th>操作</th>
 					</tr>
 				</thead>
 				<tbody>
-					${rows.map((row) => `
-						<tr>
-							<td>${htmlEscape(row.name)}</td>
-							<td>${htmlEscape((row.sheets || []).join(" / "))}</td>
-							<td>${htmlEscape((row.fields || []).slice(0, 6).join(" / "))}</td>
-							<td>${htmlEscape(row.sample)}</td>
+					${records.map((record) => `
+						<tr class="${selectedRecord?.id === record.id ? "selected-row" : ""}">
+							<td>
+								<button type="button" class="record-select-button" data-action="select-modeling-record" data-table-name="${htmlEscape(tableName)}" data-record-id="${htmlEscape(record.id)}">
+									${htmlEscape(getRecordTitle(record, metadata))}
+								</button>
+							</td>
+							${fieldNames.map((fieldName) => `<td>${htmlEscape(fieldValueToText(record[fieldName], metadata.fields[fieldName]))}</td>`).join("")}
+							<td>
+								<button type="button" class="btn-link danger-link" data-action="delete-modeling-record" data-table-name="${htmlEscape(tableName)}" data-record-id="${htmlEscape(record.id)}">删除</button>
+							</td>
 						</tr>
 					`).join("")}
 				</tbody>
 			</table>
 		</div>
-		<div class="chart-panel">
-			<div class="chart-title">导入清洗规则</div>
-			<div class="modeling-rule-list">
-				<span>数字字符串转数字</span>
-				<span>"null" 字符串转空值</span>
-				<span>名称引用先保留，后续收敛 ID</span>
-				<span>equipmentTree 先按 nodeLevel 展示层级，待补 parentId/串并联关系</span>
+	`;
+}
+
+function renderModelingDetailEditor(tableName, record) {
+	const metadata = MODELING_OBJECT_METADATA[tableName];
+	if (!record) {
+		return `<div class="empty-authoring-state">选择或新增一条 ${htmlEscape(metadata.label)} 记录后开始编辑。</div>`;
+	}
+	return `
+		<div class="authoring-field-grid">
+			${Object.entries(metadata.fields).map(([fieldName, fieldMeta]) => renderModelingField(tableName, record, fieldName, fieldMeta)).join("")}
+		</div>
+	`;
+}
+
+function renderModelingField(tableName, record, fieldName, fieldMeta) {
+	const value = fieldValueToText(record[fieldName], fieldMeta);
+	const commonAttrs = `data-model-field="${htmlEscape(fieldName)}" data-table-name="${htmlEscape(tableName)}" data-record-id="${htmlEscape(record.id)}" data-field-name="${htmlEscape(fieldName)}"`;
+	const requiredMark = fieldMeta.required ? " *" : "";
+	const unitLabel = fieldMeta.unit ? ` (${fieldMeta.unit})` : "";
+	if (fieldMeta.kind === "enum") {
+		return `
+			<div class="form-item authoring-field">
+				<label>${htmlEscape(fieldName)}${requiredMark}${unitLabel}</label>
+				<select ${commonAttrs}>
+					${fieldMeta.values.map((option) => `<option value="${htmlEscape(option)}" ${option === record[fieldName] ? "selected" : ""}>${htmlEscape(option)}</option>`).join("")}
+				</select>
 			</div>
+		`;
+	}
+	if (fieldMeta.kind === "boolean") {
+		return `
+			<div class="form-item authoring-field">
+				<label>${htmlEscape(fieldName)}${requiredMark}${unitLabel}</label>
+				<select ${commonAttrs}>
+					<option value="true" ${record[fieldName] === true ? "selected" : ""}>true</option>
+					<option value="false" ${record[fieldName] === false ? "selected" : ""}>false</option>
+				</select>
+			</div>
+		`;
+	}
+	if (["list", "referenceList", "object"].includes(fieldMeta.kind)) {
+		return `
+			<div class="form-item authoring-field wide">
+				<label>${htmlEscape(fieldName)}${requiredMark}${unitLabel}</label>
+				<textarea rows="3" ${commonAttrs}>${htmlEscape(value)}</textarea>
+			</div>
+		`;
+	}
+	const type = ["nonNegativeInteger", "nonNegativeNumber", "probability", "probabilityOrNumber"].includes(fieldMeta.kind) ? "number" : "text";
+	const step = fieldMeta.kind === "nonNegativeInteger" ? "1" : "any";
+	const readonly = fieldName === "id" ? "readonly" : "";
+	return `
+		<div class="form-item authoring-field">
+			<label>${htmlEscape(fieldName)}${requiredMark}${unitLabel}</label>
+			<input type="${type}" step="${step}" value="${htmlEscape(value)}" ${readonly} ${commonAttrs} />
+		</div>
+	`;
+}
+
+function renderValidationMessages(validation) {
+	if (!validation.errors.length && !validation.warnings.length) {
+		return `<div class="validation-panel success">当前项目 JSON 通过最小校验，可作为后续实验契约输入。</div>`;
+	}
+	const messages = [...validation.errors, ...validation.warnings].slice(0, 8);
+	return `
+		<div class="validation-panel ${validation.errors.length ? "danger" : "warn"}">
+			<strong>错误状态</strong>
+			${messages.map((item) => `<span>${htmlEscape(item.tableName || "project")}.${htmlEscape(item.field || item.rule)}: ${htmlEscape(item.message || item.rule)}</span>`).join("")}
 		</div>
 	`;
 }
@@ -880,7 +1385,91 @@ function renderLineChart(points) {
 			<circle cx="${padding.left}" cy="${height - 16}" r="6" fill="#f2b300"></circle>
 			<text x="${padding.left + 14}" y="${height - 12}" font-size="13" fill="#1f2d3d">任务波次</text>
 		</svg>
-	`;
+		`;
+}
+
+function setActiveModelingTable(moduleId, tableName) {
+	if (!STANDARD_MODELING_OBJECTS.includes(tableName)) return false;
+	state.activeModelingTable[moduleId] = tableName;
+	const selected = getSelectedModelingRecord(tableName);
+	if (selected) state.selectedModelingRecords[tableName] = selected.id;
+	return true;
+}
+
+function selectModelingRecord(tableName, recordId) {
+	const records = state.modeling.project.tables[tableName] || [];
+	if (!records.some((record) => record.id === recordId)) return false;
+	state.selectedModelingRecords[tableName] = recordId;
+	return true;
+}
+
+function addModelingRecord(tableName) {
+	const record = getDefaultRecord(tableName);
+	state.modeling = upsertProjectRecord(state.modeling, tableName, record);
+	state.selectedModelingRecords[tableName] = record.id;
+	state.modelingExport = null;
+	state.modelingImportMessage = "";
+	showToast("已新增建模记录");
+}
+
+function deleteModelingRecord(tableName, recordId) {
+	const result = applyProjectRecordDelete(state.modeling, tableName, recordId);
+	state.modeling = result.state;
+	state.modelingExport = null;
+	if (!result.deleted) {
+		showToast("记录被引用，无法删除");
+		return;
+	}
+	const selected = getSelectedModelingRecord(tableName);
+	if (selected) state.selectedModelingRecords[tableName] = selected.id;
+	else delete state.selectedModelingRecords[tableName];
+	showToast("已删除建模记录");
+}
+
+function updateModelingField(input) {
+	const { tableName, recordId, fieldName } = input.dataset;
+	const metadata = MODELING_OBJECT_METADATA[tableName];
+	const fieldMeta = metadata?.fields?.[fieldName];
+	if (!metadata || !fieldMeta) return;
+	const record = state.modeling.project.tables[tableName]?.find((item) => item.id === recordId);
+	if (!record) return;
+	const nextRecord = {
+		...record,
+		[fieldName]: parseModelingFieldValue(input.value, fieldMeta)
+	};
+	state.modeling = upsertProjectRecord(state.modeling, tableName, nextRecord);
+	state.selectedModelingRecords[tableName] = record.id;
+	state.modelingExport = null;
+}
+
+function saveModelingDraft() {
+	state.modeling = {
+		...state.modeling,
+		dirtyStatus: "saved",
+		lastSavedProjectJson: cloneJson(state.modeling.project)
+	};
+	showToast("已保存到浏览器内存");
+}
+
+function importModelingJson() {
+	try {
+		const parsed = JSON.parse(state.modelingImportDraft || "{}");
+		const normalized = normalizeProjectJson(parsed);
+		state.modeling = createProjectJsonState({ projectJson: normalized });
+		state.modeling.dirtyStatus = "dirty";
+		state.selectedModelingRecords = {};
+		state.modelingExport = null;
+		state.modelingImportMessage = `导入完成：${normalized.projectName}`;
+		showToast("导入 JSON 完成");
+	} catch (error) {
+		state.modelingImportMessage = `导入失败：${error.message}`;
+		showToast("导入 JSON 失败");
+	}
+}
+
+function exportModelingJson() {
+	refreshExportPreview();
+	showToast(state.modelingExport.runnable ? "已生成可运行 JSON" : "已生成草稿 JSON");
 }
 
 function render() {
@@ -905,6 +1494,55 @@ document.addEventListener("click", (event) => {
 		return;
 	}
 
+	const modelingTableButton = event.target.closest("[data-action='set-modeling-table']");
+	if (modelingTableButton) {
+		setActiveModelingTable(modelingTableButton.dataset.moduleId, modelingTableButton.dataset.tableName);
+		render();
+		return;
+	}
+
+	const modelingRecordButton = event.target.closest("[data-action='select-modeling-record']");
+	if (modelingRecordButton) {
+		selectModelingRecord(modelingRecordButton.dataset.tableName, modelingRecordButton.dataset.recordId);
+		render();
+		return;
+	}
+
+	const addModelingButton = event.target.closest("[data-action='add-modeling-record']");
+	if (addModelingButton) {
+		addModelingRecord(addModelingButton.dataset.tableName);
+		render();
+		return;
+	}
+
+	const deleteModelingButton = event.target.closest("[data-action='delete-modeling-record']");
+	if (deleteModelingButton) {
+		deleteModelingRecord(deleteModelingButton.dataset.tableName, deleteModelingButton.dataset.recordId);
+		render();
+		return;
+	}
+
+	const saveModelingButton = event.target.closest("[data-action='save-modeling-draft']");
+	if (saveModelingButton) {
+		saveModelingDraft();
+		render();
+		return;
+	}
+
+	const importModelingButton = event.target.closest("[data-action='import-modeling-json']");
+	if (importModelingButton) {
+		importModelingJson();
+		render();
+		return;
+	}
+
+	const exportModelingButton = event.target.closest("[data-action='export-modeling-json']");
+	if (exportModelingButton) {
+		exportModelingJson();
+		render();
+		return;
+	}
+
 	const wheelButton = event.target.closest("[data-action='set-wheel-value']");
 	if (wheelButton) {
 		setCarryThreshold(wheelButton.dataset.wheelKey, wheelButton.dataset.value);
@@ -918,6 +1556,21 @@ document.addEventListener("click", (event) => {
 		state.lastRun[pageId] = formatTime(new Date());
 		render();
 		showToast("启动分析计算（模拟）");
+	}
+});
+
+document.addEventListener("input", (event) => {
+	const modelingField = event.target.closest("[data-model-field]");
+	if (modelingField) {
+		updateModelingField(modelingField);
+		render();
+		return;
+	}
+
+	const importDraft = event.target.closest("[data-modeling-import]");
+	if (importDraft) {
+		state.modelingImportDraft = importDraft.value;
+		state.modelingImportMessage = "";
 	}
 });
 
@@ -936,6 +1589,13 @@ document.addEventListener("wheel", (event) => {
 }, { passive: false });
 
 document.addEventListener("change", (event) => {
+	const modelingField = event.target.closest("[data-model-field]");
+	if (modelingField) {
+		updateModelingField(modelingField);
+		render();
+		return;
+	}
+
 	const objectiveSelect = event.target.closest("[data-action='set-carry-objective']");
 	if (objectiveSelect) {
 		state.carryObjective = objectiveSelect.value || "availability";

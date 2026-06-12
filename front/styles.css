@@ -783,6 +783,272 @@ h4 {
 	overflow-wrap: anywhere;
 }
 
+.modeling-authoring-config-panel {
+	flex-basis: 250px;
+	min-height: 230px;
+}
+
+.modeling-authoring-result-panel {
+	flex: 1;
+}
+
+.modeling-authoring-workbench {
+	display: flex;
+	flex-direction: column;
+	gap: 14px;
+	margin-bottom: 16px;
+}
+
+.authoring-topline {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 12px;
+	padding: 12px;
+	border: 1px solid #dbe5f2;
+	border-radius: 8px;
+	background: #fbfdff;
+}
+
+.authoring-topline h4,
+.authoring-topline p {
+	margin: 0;
+}
+
+.authoring-topline h4 {
+	margin-bottom: 6px;
+}
+
+.authoring-action-row,
+.authoring-status-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex-wrap: wrap;
+}
+
+.authoring-action-row {
+	justify-content: flex-end;
+}
+
+.authoring-status-row {
+	padding: 0 2px;
+}
+
+.modeling-authoring-grid {
+	display: grid;
+	grid-template-columns: minmax(190px, 0.78fr) minmax(280px, 1.15fr) minmax(340px, 1.35fr);
+	gap: 12px;
+	align-items: stretch;
+}
+
+.authoring-object-panel,
+.authoring-record-panel,
+.authoring-detail-panel,
+.modeling-import-panel,
+.modeling-preview-panel,
+.validation-panel {
+	min-width: 0;
+	border: 1px solid #dbe5f2;
+	border-radius: 8px;
+	background: #fff;
+	padding: 12px;
+}
+
+.authoring-object-panel {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+
+.authoring-panel-title {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 10px;
+	margin-bottom: 10px;
+	font-weight: 700;
+	color: #1f2d3d;
+}
+
+.authoring-panel-title button {
+	padding: 5px 10px;
+	font-size: 13px;
+}
+
+.authoring-object-button {
+	width: 100%;
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto;
+	gap: 4px 8px;
+	text-align: left;
+	align-items: start;
+	padding: 10px;
+}
+
+.authoring-object-button span {
+	font-weight: 700;
+	line-height: 1.35;
+}
+
+.authoring-object-button strong {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 28px;
+	height: 24px;
+	border-radius: 6px;
+	background: #eef4ff;
+	color: #1f4f8f;
+	font-size: 12px;
+}
+
+.authoring-object-button em {
+	grid-column: 1 / -1;
+	color: var(--muted);
+	font-style: normal;
+	font-size: 12px;
+	line-height: 1.45;
+}
+
+.authoring-object-button.active {
+	border-color: var(--primary);
+	background: #eef4ff;
+	color: #1f3f75;
+}
+
+.authoring-table-wrap {
+	max-height: 360px;
+	overflow: auto;
+	border: 1px solid var(--line);
+	border-radius: 8px;
+}
+
+.authoring-table-wrap table {
+	min-width: 640px;
+}
+
+.selected-row td {
+	background: #f0f7ff;
+}
+
+.record-select-button {
+	width: 100%;
+	padding: 0;
+	border: none;
+	background: transparent;
+	text-align: left;
+	color: var(--primary);
+	font-weight: 700;
+}
+
+.record-select-button:hover {
+	background: transparent;
+}
+
+.danger-link {
+	color: var(--danger);
+}
+
+.authoring-field-grid {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 10px;
+	max-height: 430px;
+	overflow: auto;
+	padding-right: 4px;
+}
+
+.authoring-field.wide {
+	grid-column: 1 / -1;
+}
+
+.authoring-field label {
+	overflow-wrap: anywhere;
+}
+
+.modeling-json-panel {
+	display: grid;
+	grid-template-columns: minmax(280px, 0.9fr) minmax(360px, 1.35fr);
+	gap: 12px;
+}
+
+.modeling-import-panel textarea,
+.modeling-preview-panel textarea {
+	resize: vertical;
+}
+
+.export-summary {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 10px;
+	margin-bottom: 8px;
+	font-size: 13px;
+	color: var(--muted);
+}
+
+.export-summary a {
+	color: var(--primary);
+	text-decoration: none;
+	white-space: nowrap;
+}
+
+.json-preview {
+	max-height: 360px;
+	overflow: auto;
+	margin: 0;
+	padding: 10px;
+	border: 1px solid #e2e8f0;
+	border-radius: 8px;
+	background: #f8fafc;
+	font-size: 12px;
+	line-height: 1.5;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+
+.validation-panel {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	font-size: 13px;
+	line-height: 1.45;
+}
+
+.validation-panel.success {
+	border-color: #b7dfc4;
+	background: #f3fbf6;
+	color: #256d3f;
+}
+
+.validation-panel.warn {
+	border-color: #f1d094;
+	background: #fffaf0;
+	color: #895b00;
+}
+
+.validation-panel.danger {
+	border-color: #efb4b4;
+	background: #fff7f7;
+	color: #9a2323;
+}
+
+.empty-authoring-state {
+	padding: 18px;
+	border: 1px dashed #cbd5e1;
+	border-radius: 8px;
+	background: #f8fafc;
+	color: var(--muted);
+	font-size: 13px;
+	line-height: 1.5;
+}
+
+.modeling-reference-block {
+	border-top: 1px solid #e2e8f0;
+	padding-top: 14px;
+}
+
 .carry-config-grid {
 	grid-template-columns: minmax(180px, 0.9fr) repeat(3, minmax(150px, 1fr));
 	align-items: stretch;
@@ -1265,12 +1531,19 @@ tbody tr:hover td {
 		grid-template-columns: repeat(2, minmax(180px, 1fr));
 	}
 
-	.modeling-config-grid,
-	.modeling-contract-summary,
-	.modeling-domain-grid,
-	.timeline {
-		grid-template-columns: repeat(2, minmax(180px, 1fr));
-	}
+		.modeling-config-grid,
+		.modeling-contract-summary,
+		.modeling-domain-grid,
+		.modeling-authoring-grid,
+		.modeling-json-panel,
+		.timeline {
+			grid-template-columns: repeat(2, minmax(180px, 1fr));
+		}
+
+		.authoring-detail-panel,
+		.modeling-preview-panel {
+			grid-column: 1 / -1;
+		}
 
 	.deck-modeling-content,
 	.analysis-content-stack,
@@ -1328,25 +1601,42 @@ tbody tr:hover td {
 		grid-template-rows: 110px 110px;
 	}
 
-	.home-module-row {
-		grid-template-columns: 1fr;
-	}
+		.home-module-row {
+			grid-template-columns: 1fr;
+		}
 
-	.home-module-content .entry-list,
-	.form-grid,
+		.deck-modeling-nav {
+			grid-template-columns: 1fr;
+		}
+
+		.home-module-content .entry-list,
+		.form-grid,
 	.form-grid.two,
-	.modeling-config-grid,
-	.modeling-contract-summary,
-	.modeling-boundary-panel,
-	.modeling-domain-grid,
-	.timeline,
-	.metric-grid,
-	.factor-grid {
-		grid-template-columns: 1fr;
-	}
+		.modeling-config-grid,
+		.modeling-contract-summary,
+		.modeling-boundary-panel,
+		.modeling-domain-grid,
+		.modeling-authoring-grid,
+		.modeling-json-panel,
+		.timeline,
+		.metric-grid,
+		.factor-grid {
+			grid-template-columns: 1fr;
+		}
 
-	.analysis-config-panel {
-		flex-basis: auto;
+		.authoring-topline,
+		.export-summary {
+			flex-direction: column;
+			align-items: flex-start;
+		}
+
+		.authoring-field-grid {
+			grid-template-columns: 1fr;
+			max-height: none;
+		}
+
+		.analysis-config-panel {
+			flex-basis: auto;
 		max-height: none;
 	}
 }

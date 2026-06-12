@@ -43,9 +43,9 @@ If `docs/development-handoff-plan.md` still says the next step is Phase 1, treat
 
 The short-term PR queue is tracked in `docs/development-handoff-plan.md` section 10. Treat that section as the source of truth for the next PR number, title, scope, and ordering constraints.
 
-PR #14 defined the product workflow for the complete project JSON authoring surface. The next product target is PR #15: add the frontend project JSON state and validation contract that will let later UI work create, edit, validate, preview, import, and export the full MVP modeling JSON from the page.
+PR #14 defined the product workflow for the complete project JSON authoring surface. PR #15 added the frontend project JSON state and validation contract. PR #16 upgraded the two modeling pages into editable authoring UI that can create, edit, validate, preview, import, and export the full MVP modeling JSON from the page.
 
-Only after PR #15/#16 stabilize the modeling JSON production path should the plan move on to experiment plan, run record, sample result, aggregate result, frontend result payload, artifact manifest, backend/API, and artifact persistence work.
+The next product target is PR #17: define the experiment plan, run record, sample result, aggregate result, frontend result payload, and artifact manifest contracts using the PR #16 normalized project JSON as input.
 
 ## Development Method
 

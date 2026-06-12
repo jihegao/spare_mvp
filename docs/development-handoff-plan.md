@@ -6,7 +6,7 @@
 | 更新日期 | 2026-06-13 |
 | 文档性质 | MVP 总体开发计划与阶段状态控制文档 |
 | 当前阶段 | Phase 2：MVP 详细设计与字段契约 |
-| 当前目标 | 完成 PR #15 的前端项目 JSON 状态和校验契约，并准备 PR #16 的可编辑建模页面 |
+| 当前目标 | 完成 PR #16 的可编辑建模页面，并准备 PR #17 的实验、运行和产物契约 |
 | 适用范围 | `agent.md`、`front/`、`core/`、后端 API、运行产物、`docs/prd.md`、`docs/modeling-detailed-requirements.md`、`docs/modeling-json-schema.md`、`docs/modeling-json-authoring-workflow.md`、`docs/mvp-acceptance-checklist.md`、`docs/3概要设计方案.docx` |
 | 更新规则 | 每个阶段完成后必须更新本文件的阶段状态、交付物、验证证据、遗留问题和下一阶段入口 |
 
@@ -341,7 +341,7 @@
 2. Phase 2 已开始，PR #11 已抽离 `front/modeling-contract.js`，PR #12 已新增 `docs/modeling-json-schema.md`。
 3. PR #13 已规划后续执行队列和同步验收边界。
 4. PR #14 定义建模页项目 JSON authoring workflow。
-5. PR #15 当前新增前端 project JSON 状态模型、字段元数据、导入清洗、校验和导出契约；下一步执行 PR #16：`[codex] Implement editable modeling JSON authoring pages`。
+5. PR #15 已新增前端 project JSON 状态模型、字段元数据、导入清洗、校验和导出契约；PR #16 已将两个建模页升级为可编辑 project JSON 作者界面；下一步执行 PR #17：`[codex] Define experiment, run, and artifact contracts`。
 
 PR #13-#19 是 Phase 2 到 Phase 5 的当前执行队列。它们不是把页面继续做成静态字段说明，而是把系统推进到“页面可产生完整项目 JSON、后端可消费、运行产物可检查、前端可展示真实或明确标注来源的数据”的最小闭环。
 
@@ -372,11 +372,19 @@ PR #15 最小可执行工作包：
 5. 提供导出函数，允许 invalid 项目保存为草稿 JSON，但不标记为可运行输入。
 6. 新增 `tests/project-json-contract.test.mjs` 并更新 `tests/front-pages.test.mjs`，确保新契约模块在 `app.js` 前加载。
 
+PR #16 最小可执行工作包：
+
+1. 将备件规划建模页和任务可靠度建模页从静态字段说明升级为项目 JSON 作者界面。
+2. 页面提供对象列表、记录表、详情编辑、对象新增、引用阻断删除、JSON 预览、导入、导出、脏状态、保存状态和错误状态。
+3. 两个建模页共用 `PROJECT_JSON_CONTRACT` 的同一份 project JSON 状态；页面切换后编辑结果不丢失。
+4. 备件规划页和任务可靠度页保留不同业务重点视图，但导出对象统一覆盖 `missionProfiles`、`equipmentAssets`、`equipmentTree`、`supportResources`、`inventoryResources`、`supportActivities`、`metricPlans`。
+5. 新增 `tests/front-render.test.mjs` 的 PR #16 行为覆盖，并通过浏览器检查桌面和移动视口下的 authoring UI。
+
 执行顺序约束：
 
 1. PR #14 必须先于 PR #15/#16 合入，因为它定义页面完整生产项目 JSON 的功能边界。
-2. PR #16 完成前，不应把实验方案或后端 adapter 绑定到半成品建模 UI。
-3. PR #17 应以 PR #16 产出的项目 JSON 为输入边界，避免继续围绕 `data_new.json` 的工作簿 sheet 直接设计实验和结果对象。
+2. PR #17 应以 PR #16 产出的项目 JSON 为输入边界，避免继续围绕 `data_new.json` 的工作簿 sheet 直接设计实验和结果对象。
+3. 实验方案或后端 adapter 不应绕过 PR #16 的 normalized project JSON authoring 输出。
 4. PR #18/#19 只能在契约、样例项目 JSON 和字段来源稳定后推进。
 
 ## 11. 阶段完成记录
@@ -406,10 +414,10 @@ PR #15 最小可执行工作包：
 ### Phase 2 进展记录
 
 - 完成日期：进行中。
-- 分支：已合入 `main` 的阶段切片包括 PR #11、PR #12 和 PR #14；PR #15 当前分支为 `codex/frontend-project-json-state-validation`。
-- PR：PR #11、PR #12、PR #14、PR #15。
-- 主要变更：PR #11 抽离 `front/modeling-contract.js`；PR #12 新增 `docs/modeling-json-schema.md`，形成建模字段契约输入；PR #14 新增 `docs/modeling-json-authoring-workflow.md`，定义两个建模页共享项目 JSON 的 authoring workflow；PR #15 新增 `front/project-json-contract.js`，提供共享项目 JSON 状态、标准对象元数据、字段级校验、导入清洗和导出契约。
-- 验证命令：以各 PR 验证记录为准；PR #14 增加 `node --test tests/modeling-authoring-workflow-doc.test.mjs`；PR #15 增加 `node --test tests/project-json-contract.test.mjs tests/front-pages.test.mjs`。
-- 关键产物：`front/modeling-contract.js`、`front/project-json-contract.js`、`docs/modeling-json-schema.md`、`docs/modeling-json-authoring-workflow.md`、`tests/modeling-contract.test.mjs`、`tests/modeling-schema-doc.test.mjs`、`tests/modeling-authoring-workflow-doc.test.mjs`、`tests/project-json-contract.test.mjs`。
-- 遗留问题：建模页仍未实现可编辑 UI、JSON 预览、导入/导出按钮、脏状态/保存状态和页面切换共享数据行为。
-- 下一阶段入口：PR #16：实现 editable modeling JSON authoring pages。
+- 分支：已合入 `main` 的阶段切片包括 PR #11、PR #12、PR #14 和 PR #15；PR #16 当前分支为 `codex/pr16-editable-modeling-pages`。
+- PR：PR #11、PR #12、PR #14、PR #15、PR #16。
+- 主要变更：PR #11 抽离 `front/modeling-contract.js`；PR #12 新增 `docs/modeling-json-schema.md`，形成建模字段契约输入；PR #14 新增 `docs/modeling-json-authoring-workflow.md`，定义两个建模页共享项目 JSON 的 authoring workflow；PR #15 新增 `front/project-json-contract.js`，提供共享项目 JSON 状态、标准对象元数据、字段级校验、导入清洗和导出契约；PR #16 在两个建模页实现可编辑 UI、对象增删改、JSON 预览、导入导出、脏状态/保存状态/错误状态和页面切换共享数据行为。
+- 验证命令：以各 PR 验证记录为准；PR #14 增加 `node --test tests/modeling-authoring-workflow-doc.test.mjs`；PR #15 增加 `node --test tests/project-json-contract.test.mjs tests/front-pages.test.mjs`；PR #16 增加 `node --test tests/front-render.test.mjs` 并通过全量 `node --test tests/*.mjs`。
+- 关键产物：`front/modeling-contract.js`、`front/project-json-contract.js`、`front/app.js`、`front/styles.css`、`docs/modeling-json-schema.md`、`docs/modeling-json-authoring-workflow.md`、`tests/modeling-contract.test.mjs`、`tests/modeling-schema-doc.test.mjs`、`tests/modeling-authoring-workflow-doc.test.mjs`、`tests/project-json-contract.test.mjs`、`tests/front-render.test.mjs`。
+- 遗留问题：实验方案、运行记录、样本结果、聚合结果、前端结果 payload 和 artifact manifest 仍未定义。
+- 下一阶段入口：PR #17：定义 experiment, run, and artifact contracts。
