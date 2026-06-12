@@ -6,11 +6,13 @@
 | Date | 2026-06-12 |
 | Scope | Frontend modeling pages, table-to-JSON contract, equipment reliability block diagram design |
 | Applies to | `#/spare-planning/modeling`, `#/mission-reliability/modeling` |
-| Source baseline | `front/app.js`, `docs/modeling-detailed-requirements.md`, `core/dataset/data_new.json` |
+| Source baseline | `front/app.js`, `core/dataset/data_new.json`, and the pending modeling detailed requirements draft in PR #4 |
 
 ## 1. Purpose
 
-The current frontend already exposes the spare-planning and mission-reliability modeling routes and groups their fields by JSON sheet. It is still a static review prototype: the user can inspect modeling domains and field examples, but cannot edit records, validate references, import or export project data, or build a reliability block diagram.
+The current frontend already exposes the spare-planning and mission-reliability modeling routes and high-level modeling domains. It is still a static review prototype: the user can inspect modeling domains and field examples, but cannot edit records, validate references, import or export project data, or build a reliability block diagram.
+
+This spec should be merged after the pending modeling detailed requirements draft in PR #4, or rebased after that PR lands. Until then, the PR #4 document is an upstream design dependency rather than a file that exists on `main`.
 
 This design turns the modeling pages into a table-first modeling workspace. Data tables are the authoritative editable source. JSON mapping and validation explain how each table maps to the project data contract. The reliability block diagram is a structured view derived from equipment rows, not a standalone drawing that can drift away from data.
 
@@ -19,10 +21,10 @@ This design turns the modeling pages into a table-first modeling workspace. Data
 The current frontend has these completed foundations:
 
 1. Home navigation covers the spare-planning module, mission-reliability module, and system-support module.
-2. Both modeling routes render and expose JSON-aligned modeling domains.
+2. Both modeling routes render and expose high-level modeling domains.
 3. The modeling pages already separate spare-planning emphasis from mission-reliability emphasis.
-4. `equipmentTree` is already recognized as the source for equipment composition, failure-model fields, and the reliability block diagram seed.
-5. Tests cover route rendering and verify that old scene example fields are not shown.
+4. The mission-reliability route includes "装备可靠性框图" as a visible modeling domain.
+5. Tests cover route rendering and expected page content.
 
 The current gaps are:
 
@@ -31,6 +33,7 @@ The current gaps are:
 3. JSON export/import is described but not represented in the UI.
 4. `equipmentTree` lacks a stable parent-child contract; it currently relies on `nodeLevel` and row order.
 5. The reliability block diagram is only a named domain. It does not yet support graph structure, serial/parallel logic, k-out-of-n logic, or validation.
+6. JSON sheet mapping, typed metadata, source paths, normalized paths, and `equipmentTree`-driven RBD seed generation are design targets in this spec, not current runtime behavior.
 
 ## 3. Product Approach
 
@@ -84,6 +87,8 @@ Minimum table-level capabilities:
 4. Export the current model to a normalized project JSON object.
 5. Import workbook-style JSON and normalize it into frontend table records.
 6. Preserve a raw-source reference for fields that still map directly to `data_new.json`.
+
+Draft default: frontend display uses minutes for MTTR and detection time. The contract stage must still confirm the canonical backend unit before implementation.
 
 ## 6. Standard Project JSON Shape
 
@@ -279,7 +284,16 @@ After this design is approved, implementation should proceed in test-first slice
 5. Render the RBD workspace and validation panel.
 6. Add responsive checks and route-level render tests.
 
-## 16. Acceptance Criteria
+## 16. This PR Acceptance
+
+| ID | Criterion |
+| --- | --- |
+| PR-01 | Add a design document for table-first modeling pages, JSON mapping, and equipment reliability block diagram design |
+| PR-02 | Keep the PR documentation-only, with no runtime or frontend behavior changes |
+| PR-03 | State that editable tables, JSON import/export, RBD editing, and backend reliability calculation are future implementation work |
+| PR-04 | Note that PR #4 is an upstream design dependency until it is merged into `main` |
+
+## 17. Future Implementation Acceptance Criteria
 
 | ID | Criterion |
 | --- | --- |
@@ -295,10 +309,10 @@ After this design is approved, implementation should proceed in test-first slice
 | QA-01 | Existing frontend route tests remain green |
 | QA-02 | New render tests cover table metadata, JSON mapping, and RBD workspace markers |
 
-## 17. Open Questions
+## 18. Open Questions
 
 1. Should the first editable version persist only in browser memory, in local storage, or through a draft JSON file import/export flow?
 2. Should `equipmentTree` gain stable IDs in the normalized frontend contract immediately, or should IDs be generated only inside the frontend for now?
 3. Does the MVP need manual diagram layout coordinates, or is automatic tree layout sufficient for the first reviewable version?
-4. Which unit should be canonical for MTTR and detection time: minutes or hours?
+4. Should the backend canonical unit for MTTR and detection time match the frontend draft default of minutes, or should import/export convert from another backend unit?
 5. Should reliability logic be authored at every subsystem level, or only below selected mission-critical systems in the MVP?
