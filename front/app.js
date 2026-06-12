@@ -42,20 +42,116 @@ const MODULES = [
 
 const MODELING_SCOPE = {
 	"spare-planning": [
-		{ name: "任务建模", detail: "内置场景、基本作战单元、基本任务、任务剖面", status: "已形成最小字段" },
-		{ name: "装备建模", detail: "装备组成、装备故障、备件关联", status: "已形成最小字段" },
-		{ name: "保障组织建模", detail: "保障组织结构、备件、保障人员、保障设备", status: "已形成最小字段" },
-		{ name: "保障活动建模", detail: "保障资源需求组、修复性维修、预防性维修、使用保障方案", status: "待接后端" },
-		{ name: "指标分配方案管理", detail: "结果导入与指标方案占位", status: "占位" }
+		{
+			name: "任务建模",
+			detail: "基本任务、复合任务、周期任务、基本使用单元",
+			status: "JSON 对齐",
+			sheets: ["basicTasks", "compositeTasks", "periodicTasks", "basicUsageUnits"],
+			fields: ["taskNo", "taskName", "aircraftModel", "equipmentAmount", "duration", "prepTime", "compositeTaskName", "dayRepeatTimes", "intervalHours", "formationName"],
+			sample: "对海突击任务A / 复合任务A / 编队1"
+		},
+		{
+			name: "装备建模",
+			detail: "飞机池、装备组成、部件/LRU、故障参数",
+			status: "JSON 对齐",
+			sheets: ["aircraftPools", "equipmentTree"],
+			fields: ["aircraftType", "aircraftCode", "currentStatus", "nodeLevel", "nodeName", "model", "quantity", "isLru"],
+			sample: "J35-132 / 任务计算机模块 / LRU-RW-01"
+		},
+		{
+			name: "备件与弹药",
+			detail: "备件、弹药、活动资源需求",
+			status: "JSON 对齐",
+			sheets: ["spareParts", "ammunition", "basicActivityLibrary.spareList", "basicActivityLibrary.ammoList"],
+			fields: ["id", "name", "model", "count", "spareName", "spareModel", "ammoName", "ammoModel", "requiredCount"],
+			sample: "飞行检查包 / 机体紧固件包 / 放飞流程训练弹"
+		},
+		{
+			name: "保障组织与资源",
+			detail: "组织树、人员、设备、站位、设施",
+			status: "JSON 对齐",
+			sheets: ["supportOrganizationTree", "supportStaff", "supportEquipment", "supportStations", "supportFacilities", "stationFacilityMatrix"],
+			fields: ["orgName", "parentId", "major", "majorLevel", "serviceAircraft", "count", "stationCode", "facilityCode", "functionType"],
+			sample: "航空联队（机务） / 技术综合检测仪 / 保障站位1"
+		},
+		{
+			name: "保障活动",
+			detail: "基本活动库、使用保障、预防性维修、修复性维修",
+			status: "JSON 对齐",
+			sheets: ["basicActivityLibrary", "usageSupportActivities", "preventiveMaintenance", "correctiveMaintenance"],
+			fields: ["activityName", "activityCode", "workDuration", "crewList", "equipmentList", "spareList", "planType", "planWorkItem", "repairObject"],
+			sample: "机务检查 / 歼-35快速出动保障方案2 / 8小时定检"
+		},
+		{
+			name: "指标方案",
+			detail: "实验指标、约束条件、优化目标",
+			status: "JSON 对齐",
+			sheets: ["experimentConfig.indexList", "constraints", "optimizationTargets"],
+			fields: ["indexName", "targetType", "symbol", "targetValue", "simulationType", "taskSuccessRate", "randomControl"],
+			sample: "出动架次率 / 任务可靠度 / 保障设备利用率"
+		}
 	],
 	"mission-reliability": [
-		{ name: "任务建模", detail: "内置场景、基本作战单元、基本任务、任务剖面", status: "已形成最小字段" },
-		{ name: "装备建模", detail: "装备组成、装备故障、装备可靠性框图", status: "已形成最小字段" },
-		{ name: "保障组织建模", detail: "保障组织结构、备件、保障人员、保障设备", status: "已形成最小字段" },
-		{ name: "保障活动建模", detail: "保障资源需求组、修复性维修、预防性维修、使用保障方案", status: "待接后端" },
-		{ name: "指标分配方案管理", detail: "系统可靠度、失效率、平均无故障工作时间、整机到 LRU 级 RMS 导入", status: "占位" }
+		{
+			name: "任务剖面",
+			detail: "基本任务、复合任务、周期任务、基本使用单元",
+			status: "JSON 对齐",
+			sheets: ["basicTasks", "compositeTasks", "periodicTasks", "basicUsageUnits"],
+			fields: ["taskNo", "taskName", "aircraftModel", "equipmentAmount", "duration", "prepTime", "issueTime", "firstDispatchTime", "dayRepeatTimes", "intervalHours", "repeatWeeks"],
+			sample: "对海突击任务A / 06:15 首次出动 / 3 次重复"
+		},
+		{
+			name: "飞机与装备组成",
+			detail: "飞机池、装备树、部件/LRU",
+			status: "JSON 对齐",
+			sheets: ["aircraftPools", "equipmentTree"],
+			fields: ["aircraftType", "aircraftCode", "currentStatus", "remainingLife", "nodeLevel", "nodeName", "model", "quantity", "isLru"],
+			sample: "J35-132 / 航电系统 / 任务计算机模块"
+		},
+		{
+			name: "故障模型",
+			detail: "LRU 故障率、维修分布、检测时间",
+			status: "JSON 对齐",
+			sheets: ["equipmentTree"],
+			fields: ["lruFailureRate", "kValue", "faultDistribution", "repairDistribution", "mtbcf", "mttr", "detectionTime", "isDetectable"],
+			sample: "lruFailureRate 0.033 / mtbcf / mttr"
+		},
+		{
+			name: "装备可靠性框图",
+			detail: "当前按 nodeLevel 展示层级，串/并联关系作为后续字段补充项",
+			status: "待补父子关系",
+			sheets: ["equipmentTree"],
+			fields: ["nodeLevel", "nodeName", "model", "quantity", "isLru", "parentId"],
+			sample: "系统 -> 分系统 -> 部件/LRU"
+		},
+		{
+			name: "保障组织与资源",
+			detail: "组织树、人员、设备、备件、弹药、站位、设施",
+			status: "JSON 对齐",
+			sheets: ["supportOrganizationTree", "supportStaff", "supportEquipment", "spareParts", "ammunition", "supportStations", "supportFacilities"],
+			fields: ["orgName", "parentId", "major", "majorLevel", "serviceAircraft", "count", "name", "model", "unit", "stationCode", "facilityCode"],
+			sample: "舰载战斗机分队 / 机加 L2 / 技术综合检测仪"
+		},
+		{
+			name: "保障活动",
+			detail: "故障维修、预防性维修、任务间保障、使用保障",
+			status: "JSON 对齐",
+			sheets: ["basicActivityLibrary", "usageSupportActivities", "preventiveMaintenance", "correctiveMaintenance"],
+			fields: ["activityName", "activityCode", "aircraftName", "workDuration", "crewList", "equipmentList", "spareList", "planType", "schemeName", "repairType"],
+			sample: "机务检查 / 再次出动准备方案 / 原位维修"
+		},
+		{
+			name: "指标分配",
+			detail: "实验指标、约束条件、优化目标",
+			status: "JSON 对齐",
+			sheets: ["experimentConfig.indexList", "constraints", "optimizationTargets"],
+			fields: ["indexName", "targetType", "symbol", "targetValue", "taskSuccessRate", "simulationType"],
+			sample: "任务可靠度 / 使用可用度 / 保障设备利用率"
+		}
 	]
 };
+
+const MODELING_EXCLUDED_SHEETS = ["shipTypes", "initialLayouts", "supportStationCodes", "nonSupportStationCodes"];
 
 const EXPERIMENT_SCOPE = [
 	{ name: "仿真实验方案管理", detail: "创建、编辑实验方案，保存固定种子和样本参数", status: "可评审" },
@@ -347,25 +443,36 @@ function renderConfig(page) {
 }
 
 function renderModelingConfig(page) {
+	const rows = MODELING_SCOPE[page.moduleId] || [];
+	const uniqueSheets = new Set(rows.flatMap((row) => row.sheets || []));
 	const isMission = page.moduleId === "mission-reliability";
 	return `
-		<div class="form-grid modeling-config-grid">
-			<div class="form-item">
-				<label>示例场景</label>
-				<input value="601 舰载机连续出动场景" readonly />
+		<div class="modeling-contract-summary">
+			<div class="modeling-summary-item">
+				<span>数据源</span>
+				<strong>core/dataset/data_new.json</strong>
 			</div>
-			<div class="form-item">
-				<label>建模对象</label>
-				<input value="${isMission ? "任务剖面 / 可靠性框图" : "任务 / 装备 / 备件"}" readonly />
+			<div class="modeling-summary-item">
+				<span>建模域</span>
+				<strong>${rows.length} 类</strong>
 			</div>
-			<div class="form-item">
-				<label>数据状态</label>
-				<input value="静态评审数据，待后端字段契约接入" readonly />
+			<div class="modeling-summary-item">
+				<span>对齐 sheet</span>
+				<strong>${uniqueSheets.size} 个</strong>
+			</div>
+			<div class="modeling-summary-item">
+				<span>页面边界</span>
+				<strong>场景/舰船/布列不进入建模表单</strong>
 			</div>
 		</div>
-		<div class="form-section">
-			<h4>建模边界</h4>
-			<p class="muted">本页覆盖 1.4.2 中的任务建模、装备建模、保障组织建模、保障活动建模和指标分配方案管理，当前仅固定最小字段和页面表达。</p>
+		<div class="modeling-boundary-panel">
+			<div>
+				<h4>${isMission ? "任务可靠度建模边界" : "备件规划建模边界"}</h4>
+				<p class="muted">前端先按 JSON 工作簿 sheet 聚合任务、装备、保障资源、保障活动和实验指标字段。启动按钮仍为静态反馈，不代表已接入后端适配。</p>
+			</div>
+			<div class="sheet-chip-row">
+				${MODELING_EXCLUDED_SHEETS.map((sheet) => `<span class="sheet-chip muted-chip">${htmlEscape(sheet)}</span>`).join("")}
+			</div>
 		</div>
 	`;
 }
@@ -476,33 +583,85 @@ function renderScopeCards(items) {
 	`;
 }
 
+function renderSheetChips(sheets) {
+	return `
+		<div class="sheet-chip-row">
+			${sheets.map((sheet) => `<span class="sheet-chip">${htmlEscape(sheet)}</span>`).join("")}
+		</div>
+	`;
+}
+
+function renderFieldChips(fields) {
+	return `
+		<div class="field-chip-row">
+			${fields.map((field) => `<span class="field-chip">${htmlEscape(field)}</span>`).join("")}
+		</div>
+	`;
+}
+
+function renderModelingDomainCards(rows) {
+	return `
+		<div class="modeling-domain-grid">
+			${rows.map((row) => `
+				<section class="modeling-domain-card">
+					<div class="modeling-domain-head">
+						<div>
+							<h4>${htmlEscape(row.name)}</h4>
+							<p class="muted">${htmlEscape(row.detail)}</p>
+						</div>
+						<span class="status-badge ${row.status === "待补父子关系" ? "warn" : "success"}">${htmlEscape(row.status)}</span>
+					</div>
+					${renderSheetChips(row.sheets || [])}
+					${renderFieldChips(row.fields || [])}
+					<div class="sample-row"><span>示例</span><strong>${htmlEscape(row.sample)}</strong></div>
+				</section>
+			`).join("")}
+		</div>
+	`;
+}
+
 function renderModelingResults(page) {
 	const rows = MODELING_SCOPE[page.moduleId] || [];
 	const isMission = page.moduleId === "mission-reliability";
+	const uniqueSheets = new Set(rows.flatMap((row) => row.sheets || []));
 	return `
 		${renderMetricGrid([
-			{ label: "建模域", value: "5 类" },
-			{ label: "关键对象", value: isMission ? "可靠性框图" : "备件需求" },
-			{ label: "字段状态", value: "最小字段" },
-			{ label: "后端状态", value: "待接入", tone: "danger" }
+			{ label: "建模域", value: `${rows.length} 类` },
+			{ label: "对齐 sheet", value: `${uniqueSheets.size} 个` },
+			{ label: "关键对象", value: isMission ? "可靠性框图" : "备件与弹药" },
+			{ label: "后端状态", value: "待适配", tone: "danger" }
 		])}
-		${renderScopeCards(rows)}
+		${renderModelingDomainCards(rows)}
 		<div class="table-wrap">
 			<table>
 				<thead>
 					<tr>
-						<th>建模数据</th>
-						<th>示例内容</th>
-						<th>后续来源</th>
+						<th>建模域</th>
+						<th>来源 sheet</th>
+						<th>字段示例</th>
+						<th>样例数据</th>
 					</tr>
 				</thead>
 				<tbody>
-					<tr><td>任务</td><td>对海突击任务A、挂弹训练任务B、连续出动任务C</td><td>项目数据 JSON</td></tr>
-					<tr><td>装备</td><td>歼-35、歼-15T、任务计算机模块、任务雷达系统</td><td>core/dataset/data_new.json</td></tr>
-					<tr><td>保障资源</td><td>保障站位、保障人员、保障设备、维修机位</td><td>后端资源聚合</td></tr>
-					<tr><td>保障活动</td><td>使用保障方案、修复性维修方案、预防性维修方案</td><td>后端字段契约</td></tr>
+					${rows.map((row) => `
+						<tr>
+							<td>${htmlEscape(row.name)}</td>
+							<td>${htmlEscape((row.sheets || []).join(" / "))}</td>
+							<td>${htmlEscape((row.fields || []).slice(0, 6).join(" / "))}</td>
+							<td>${htmlEscape(row.sample)}</td>
+						</tr>
+					`).join("")}
 				</tbody>
 			</table>
+		</div>
+		<div class="chart-panel">
+			<div class="chart-title">导入清洗规则</div>
+			<div class="modeling-rule-list">
+				<span>数字字符串转数字</span>
+				<span>"null" 字符串转空值</span>
+				<span>名称引用先保留，后续收敛 ID</span>
+				<span>equipmentTree 先按 nodeLevel 展示层级</span>
+			</div>
 		</div>
 	`;
 }

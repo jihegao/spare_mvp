@@ -5,7 +5,7 @@
 | 文档版本 | V0.4 |
 | 文档性质 | MVP 全功能最小闭环开发交接与细化计划 |
 | 当前阶段 | 当前 MVP：覆盖全部 CSCI 部件的前后端最小实现 |
-| 适用范围 | `agent.md`、`front/` 前端、`core/` 仿真内核、后端 API、运行产物、`docs/prd.md`、`docs/mvp-acceptance-checklist.md`、`docs/3概要设计方案.docx` |
+| 适用范围 | `agent.md`、`front/` 前端、`core/` 仿真内核、后端 API、运行产物、`docs/prd.md`、`docs/modeling-detailed-requirements.md`、`docs/mvp-acceptance-checklist.md`、`docs/3概要设计方案.docx` |
 | 编写依据 | 项目最新背景、概要设计方案 CSCI 部件、当前 PRD、当前前端代码、当前 `core/` 候选实现 |
 
 ## 1. 项目背景
@@ -34,6 +34,7 @@
 | `front/image/screenshots/` | 首页展示用参考截图 |
 | `agent.md` | 项目级 agent 协作指南和开发规则 |
 | `docs/prd.md` | 当前前端原型 PRD，需升级为全功能最小闭环 MVP PRD |
+| `docs/modeling-detailed-requirements.md` | 建模页面字段、业务规则、校验规则和验收标准细化需求，是后续接口与字段契约的前置输入 |
 | `docs/mvp-acceptance-checklist.md` | 当前静态页面验收清单，需升级为前后端闭环验收清单 |
 | `docs/3概要设计方案.docx` | 远期平台概要设计历史输入文档 |
 
@@ -223,6 +224,8 @@
 ### 阶段 3：接口与字段契约
 
 目标：把前端页面、后端 API、仿真内核和运行产物之间的字段、类型、口径和示例数据固定下来。
+
+前置输入：先以 `docs/modeling-detailed-requirements.md` 固化两类建模页面的字段、业务规则、校验规则和验收标准，再拆解 API、JSON Schema、前端表单和 `core/` 适配任务。
 
 建议任务：
 
