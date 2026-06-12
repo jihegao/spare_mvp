@@ -18,6 +18,8 @@ test("modeling contract exposes support resource sheets without current-code she
 	assert.ok(spareSupport.sheets.includes("nonSupportStations"));
 	assert.ok(missionSupport.sheets.includes("nonSupportStations"));
 	assert.ok(!spareSupport.sheets.includes("supportStationCodes"));
+	assert.ok(!spareSupport.sheets.includes("nonSupportStationCodes"));
+	assert.ok(!missionSupport.sheets.includes("supportStationCodes"));
 	assert.ok(!missionSupport.sheets.includes("nonSupportStationCodes"));
 	assert.deepEqual(MODELING_CONTEXT_ITEMS, ["shipTypes", "initialLayouts", "supportStationCodes", "nonSupportStationCodes"]);
 });

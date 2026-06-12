@@ -4,11 +4,17 @@ const APP_CONFIG = {
 	project: "601 备件评估演示项目"
 };
 
+const MODELING_CONTRACT = globalThis.MODELING_CONTRACT;
+
+if (!MODELING_CONTRACT) {
+	throw new Error("Missing MODELING_CONTRACT. Load modeling-contract.js before app.js.");
+}
+
 const {
 	MODELING_CONTEXT_ITEMS,
 	MODELING_FUTURE_FIELDS,
 	MODELING_SCOPE
-} = globalThis.MODELING_CONTRACT;
+} = MODELING_CONTRACT;
 
 const MODULES = [
 	{

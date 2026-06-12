@@ -54,6 +54,31 @@ function renderAt(hash) {
 	return elements.app.innerHTML;
 }
 
+test("app script reports a clear error when the modeling contract is missing", () => {
+	const context = createContext({
+		window: {
+			location: { hash: "" },
+			addEventListener() {},
+			clearTimeout() {},
+			setTimeout() {
+				return 0;
+			}
+		},
+		document: {
+			getElementById() {
+				return { innerHTML: "" };
+			},
+			addEventListener() {}
+		},
+		console
+	});
+	context.globalThis = context;
+	assert.throws(
+		() => new Script(appSource).runInContext(context),
+		/Missing MODELING_CONTRACT\. Load modeling-contract\.js before app\.js\./
+	);
+});
+
 test("home renders the three CSCI modules and nine function entries", () => {
 	const html = renderAt("");
 	assert.match(html, /备件规划评估模块/);
