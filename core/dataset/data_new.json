@@ -85,12 +85,6 @@
       }
     ]
   },
-  "shipTypes": [
-    {
-      "shipTypeCode": "1",
-      "shipTypeName": "1号船"
-    }
-  ],
   "supportStations": [
     {
       "id": "11",
@@ -931,66 +925,6 @@
       "repairDistribution": "2",
       "isDetectable": 0,
       "detectionTime": ""
-    }
-  ],
-  "initialLayouts": [
-    {
-      "shipType": "1号船",
-      "layoutName": "对海打击布列"
-    },
-    {
-      "shipType": "1号船",
-      "layoutName": "标准出动布列"
-    },
-    {
-      "shipType": "1号船",
-      "layoutName": "防空值班布列"
-    }
-  ],
-  "supportStationCodes": [
-    {
-      "shipType": "1号船",
-      "layoutName": "标准出动布列",
-      "stationNumber": "ST-01",
-      "aircraftModel": "直-20F"
-    },
-    {
-      "shipType": "1号船",
-      "layoutName": "标准出动布列",
-      "stationNumber": "ST-02",
-      "aircraftModel": "直-20F"
-    },
-    {
-      "shipType": "1号船",
-      "layoutName": "标准出动布列",
-      "stationNumber": "ST-03",
-      "aircraftModel": "直-20F"
-    },
-    {
-      "shipType": "1号船",
-      "layoutName": "对海打击布列",
-      "stationNumber": "ST-01",
-      "aircraftModel": "J35"
-    },
-    {
-      "shipType": "1号船",
-      "layoutName": "对海打击布列",
-      "stationNumber": "ST-02",
-      "aircraftModel": "直-20F"
-    }
-  ],
-  "nonSupportStationCodes": [
-    {
-      "shipType": "1号船",
-      "layoutName": "标准出动布列",
-      "stationNumber": "P01",
-      "aircraftModel": "J35"
-    },
-    {
-      "shipType": "1号船",
-      "layoutName": "对海打击布列",
-      "stationNumber": "P01",
-      "aircraftModel": "J35"
     }
   ],
   "supportOrganizationTree": [
