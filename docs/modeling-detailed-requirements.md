@@ -2,7 +2,7 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | V0.1 |
+| 文档版本 | V0.2 |
 | 更新日期 | 2026-06-12 |
 | 文档性质 | 建模页面细化需求与后续字段契约输入 |
 | 覆盖页面 | `#/spare-planning/modeling`、`#/mission-reliability/modeling` |
@@ -94,6 +94,51 @@
 | 引用存在 | 备件引用部件、活动引用资源、故障模型引用装备时，被引用对象必须存在 |
 | 删除保护 | 被实验方案或其他对象引用的记录不能直接删除 |
 | 单位明确 | 时间、数量、概率、频次等字段必须有单位或口径说明 |
+
+### 3.5 `data_new.json` 对齐边界
+
+`core/dataset/data_new.json` 是工作簿式 JSON，顶层 key 对应不同业务表。前端建模页应先按业务域聚合这些 sheet，再逐步形成标准表单、导入导出契约、JSON Schema 和 `core/` 数据适配映射。
+
+| 前端建模域 | 对齐 JSON sheet | 进入前端建模页的方式 |
+| --- | --- | --- |
+| 任务建模 | `basicTasks`、`compositeTasks`、`periodicTasks`、`basicUsageUnits` | 作为任务、复合任务、周期任务和基本使用单元表单 |
+| 装备建模 | `aircraftPools`、`equipmentTree` | 作为飞机池、装备组成、部件/LRU、故障参数和可靠性参数表单 |
+| 保障组织与资源 | `supportOrganizationTree`、`supportStaff`、`supportEquipment`、`spareParts`、`ammunition`、`supportStations`、`nonSupportStations`、`supportFacilities`、`stationFacilityMatrix` | 作为组织树、人员、设备、备件、弹药、保障站位和保障设施资源表单 |
+| 保障活动 | `basicActivityLibrary`、`usageSupportActivities`、`preventiveMaintenance`、`correctiveMaintenance` | 作为基本活动库、使用保障、预防性维修和修复性维修方案表单 |
+| 实验指标与约束 | `experimentConfig.indexList`、`constraints`、`optimizationTargets` | 作为实验页和指标分配页的前置字段，不作为单独建模域 |
+
+以下 sheet 暂不进入前端建模页主表单：
+
+| JSON sheet | 处理方式 | 原因 |
+| --- | --- | --- |
+| `shipTypes` | 后端环境配置或实验运行配置读取 | 属于舰船基础环境，不是本阶段前端建模对象 |
+| `initialLayouts` | 后端环境配置或实验运行配置读取 | 属于布列方案，不作为建模页独立编辑对象 |
+| `supportStationCodes` | 后端环境配置或实验运行配置读取 | 属于布列与站位映射，不作为建模页独立编辑对象 |
+| `nonSupportStationCodes` | 后端环境配置或实验运行配置读取 | 属于布列与非保障停机位映射，不作为建模页独立编辑对象 |
+
+### 3.6 导入清洗与标准化规则
+
+1. 数字字符串应在导入契约中归一化为数字，例如 `duration`、`prepTime`、`cancelTime`、`equipmentAmount`、`planStopTime`、`workDuration`、`requiredCount`。
+2. 字符串 `"null"`、空字符串和缺失字段应按字段语义转换为空值或空列表，不应原样进入前端表单。
+3. `equipmentTree` 当前依赖 `nodeLevel` 表达层级；后续字段契约应补充父子关系规则，优先新增 `parentId`，若暂不新增则必须声明按顺序推断父节点。
+4. 现有 JSON 中多处通过名称引用，如 `basicTaskName`、`activityName`、`basicActivityCode`、`spareName`、`spareModel`。MVP 可先保留名称引用，但字段契约应标注引用来源，并在后续版本收敛到稳定 ID。
+5. `supportStations`、`supportFacilities` 等站位和设施数据若在前端出现，应归入保障组织与资源，不单独形成“场景/舰船/布列”建模域。
+
+### 3.7 标准对象方向
+
+后续接口与字段契约可以采用前端友好的标准对象命名，但必须记录来源 sheet 和字段映射。
+
+| 标准对象方向 | 来源 JSON sheet | 用途 |
+| --- | --- | --- |
+| `missionProfiles` / `tasks` | `basicTasks`、`compositeTasks`、`periodicTasks`、`basicUsageUnits` | 记录基本任务、复合任务、周期任务、使用单元、出动需求、波次和调度时间 |
+| `equipmentAssets` | `aircraftPools` | 记录飞机型号、编号、归属组织、在册状态、寿命和飞行时间 |
+| `equipmentTree` | `equipmentTree` | 记录装备组成、系统、分系统、部件/LRU、数量、故障率和维修参数 |
+| `failureModels` | `equipmentTree` | 记录故障率、MTBCF、MTTR、检测时间、故障分布和维修分布 |
+| `reliabilityBlockDiagram` | `equipmentTree` plus user-authored logic | 记录系统-部件层级和成功判定所需结构；当前 JSON 只提供层级，后续需补父子关系和串并联关系 |
+| `supportResources` | `supportOrganizationTree`、`supportStaff`、`supportEquipment`、`supportStations`、`supportFacilities`、`stationFacilityMatrix` | 记录保障组织、人员、设备、站位、设施和设施能力 |
+| `inventoryResources` | `spareParts`、`ammunition` | 记录备件、弹药、型号和数量 |
+| `supportActivities` | `basicActivityLibrary`、`usageSupportActivities`、`preventiveMaintenance`、`correctiveMaintenance` | 记录基本活动、保障方案、预防性维修、修复性维修和资源需求 |
+| `metricPlans` | `experimentConfig.indexList`、`constraints`、`optimizationTargets` | 记录满足率、延误时间、可用度、出动架次率、任务可靠度、资源利用率等目标 |
 
 ## 4. 备件规划仿真建模需求
 
