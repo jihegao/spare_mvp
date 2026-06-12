@@ -88,6 +88,7 @@ test("modeling schema document allows service aircraft references through asset 
 test("modeling schema document states generated ids for current sheets without raw ids", () => {
 	const doc = schemaDoc();
 
+	assert.match(doc, /normalized `id` 应使用 `sourceSheet:rawId`/);
 	assert.match(doc, /`basicUsageUnits` 没有 raw `id`，adapter 生成 `missionProfiles\.id`/);
 	assert.match(doc, /`stationFacilityMatrix` 没有 raw `id`，adapter 生成 `supportResources\.id`/);
 	assert.match(doc, /`constraints` 没有 raw `id`，adapter 生成 `metricPlans\.id`/);

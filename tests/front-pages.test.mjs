@@ -29,6 +29,9 @@ test("front app includes the system support module from CSCI 1.4.2", () => {
 	assert.match(appSource, /长周期大样本运行优化/);
 });
 
-test("front index loads the modeling contract before the app script", () => {
-	assert.match(indexSource, /<script src="modeling-contract\.js"><\/script>\s*<script src="app\.js"><\/script>/);
+test("front index loads modeling contracts before the app script", () => {
+	assert.match(
+		indexSource,
+		/<script src="modeling-contract\.js"><\/script>\s*<script src="project-json-contract\.js"><\/script>\s*<script src="app\.js"><\/script>/
+	);
 });
