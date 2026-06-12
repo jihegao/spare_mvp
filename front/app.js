@@ -70,7 +70,7 @@ const MODELING_SCOPE = {
 			name: "保障组织与资源",
 			detail: "组织树、人员、设备、站位、设施",
 			status: "JSON 对齐",
-			sheets: ["supportOrganizationTree", "supportStaff", "supportEquipment", "supportStations", "supportFacilities", "stationFacilityMatrix"],
+			sheets: ["supportOrganizationTree", "supportStaff", "supportEquipment", "supportStations", "nonSupportStations", "supportFacilities", "stationFacilityMatrix"],
 			fields: ["orgName", "parentId", "major", "majorLevel", "serviceAircraft", "count", "stationCode", "facilityCode", "functionType"],
 			sample: "航空联队（机务） / 技术综合检测仪 / 保障站位1"
 		},
@@ -118,17 +118,18 @@ const MODELING_SCOPE = {
 		},
 		{
 			name: "装备可靠性框图",
-			detail: "当前按 nodeLevel 展示层级，串/并联关系作为后续字段补充项",
+			detail: "当前按 nodeLevel 展示层级，parentId 和串并联关系作为后续字段补充项",
 			status: "待补父子关系",
 			sheets: ["equipmentTree"],
-			fields: ["nodeLevel", "nodeName", "model", "quantity", "isLru", "parentId"],
+			fields: ["nodeLevel", "nodeName", "model", "quantity", "isLru"],
+			futureFields: ["parentId", "relationType", "successThreshold"],
 			sample: "系统 -> 分系统 -> 部件/LRU"
 		},
 		{
 			name: "保障组织与资源",
 			detail: "组织树、人员、设备、备件、弹药、站位、设施",
 			status: "JSON 对齐",
-			sheets: ["supportOrganizationTree", "supportStaff", "supportEquipment", "spareParts", "ammunition", "supportStations", "supportFacilities"],
+			sheets: ["supportOrganizationTree", "supportStaff", "supportEquipment", "spareParts", "ammunition", "supportStations", "nonSupportStations", "supportFacilities"],
 			fields: ["orgName", "parentId", "major", "majorLevel", "serviceAircraft", "count", "name", "model", "unit", "stationCode", "facilityCode"],
 			sample: "舰载战斗机分队 / 机加 L2 / 技术综合检测仪"
 		},
@@ -151,7 +152,7 @@ const MODELING_SCOPE = {
 	]
 };
 
-const MODELING_EXCLUDED_SHEETS = ["shipTypes", "initialLayouts", "supportStationCodes", "nonSupportStationCodes"];
+const MODELING_CONTEXT_ITEMS = ["shipTypes", "initialLayouts", "supportStationCodes", "nonSupportStationCodes"];
 
 const EXPERIMENT_SCOPE = [
 	{ name: "仿真实验方案管理", detail: "创建、编辑实验方案，保存固定种子和样本参数", status: "可评审" },
@@ -471,7 +472,8 @@ function renderModelingConfig(page) {
 				<p class="muted">前端先按 JSON 工作簿 sheet 聚合任务、装备、保障资源、保障活动和实验指标字段。启动按钮仍为静态反馈，不代表已接入后端适配。</p>
 			</div>
 			<div class="sheet-chip-row">
-				${MODELING_EXCLUDED_SHEETS.map((sheet) => `<span class="sheet-chip muted-chip">${htmlEscape(sheet)}</span>`).join("")}
+				<span class="muted">历史工作簿/后续环境配置项</span>
+				${MODELING_CONTEXT_ITEMS.map((sheet) => `<span class="sheet-chip muted-chip">${htmlEscape(sheet)}</span>`).join("")}
 			</div>
 		</div>
 	`;
@@ -599,6 +601,16 @@ function renderFieldChips(fields) {
 	`;
 }
 
+function renderFutureFieldChips(futureFields) {
+	if (!futureFields?.length) return "";
+	return `
+		<div class="field-chip-row">
+			<span>待补字段</span>
+			${futureFields.map((field) => `<span class="field-chip muted-chip">${htmlEscape(field)}</span>`).join("")}
+		</div>
+	`;
+}
+
 function renderModelingDomainCards(rows) {
 	return `
 		<div class="modeling-domain-grid">
@@ -613,6 +625,7 @@ function renderModelingDomainCards(rows) {
 					</div>
 					${renderSheetChips(row.sheets || [])}
 					${renderFieldChips(row.fields || [])}
+					${renderFutureFieldChips(row.futureFields)}
 					<div class="sample-row"><span>示例</span><strong>${htmlEscape(row.sample)}</strong></div>
 				</section>
 			`).join("")}
@@ -660,7 +673,7 @@ function renderModelingResults(page) {
 				<span>数字字符串转数字</span>
 				<span>"null" 字符串转空值</span>
 				<span>名称引用先保留，后续收敛 ID</span>
-				<span>equipmentTree 先按 nodeLevel 展示层级</span>
+				<span>equipmentTree 先按 nodeLevel 展示层级，待补 parentId/串并联关系</span>
 			</div>
 		</div>
 	`;
