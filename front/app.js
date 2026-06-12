@@ -9,8 +9,10 @@ const MODULES = [
 		id: "spare-planning",
 		code: "BJ",
 		title: "备件规划评估模块",
-		desc: "围绕备件满足率、延误时间和库存约束，识别短板并形成转场携行建议。",
+		desc: "围绕任务、装备、保障资源和备件约束，完成建模、实验、短板识别和携行建议。",
 		pages: [
+			{ id: "modeling", code: "JM", title: "备件规划仿真建模", desc: "维护任务、装备、保障组织、备件和保障活动的最小建模数据。", route: "#/spare-planning/modeling" },
+			{ id: "experiment", code: "SY", title: "备件规划仿真实验", desc: "创建备件规划实验方案，启动可视化推演和小样本蒙特卡洛实验。", route: "#/spare-planning/experiment" },
 			{ id: "shortfall", code: "DB", title: "备件短板分析", desc: "分析备件满足率、延误时间与不满足次数，定位影响任务保障的关键短板。", route: "#/spare-planning/shortfall" },
 			{ id: "carry-list", code: "ZX", title: "转场携行清单分析", desc: "按优化条件和备件约束生成转场携行数量与保障优先级建议。", route: "#/spare-planning/carry-list" }
 		]
@@ -19,12 +21,54 @@ const MODULES = [
 		id: "mission-reliability",
 		code: "RW",
 		title: "任务可靠度评估模块",
-		desc: "面向多波次任务执行，评估任务完成概率，并拆解造成停机的关键因素。",
+		desc: "面向多波次任务执行，完成可靠度建模、实验运行、任务完成概率评估和停机归因。",
 		pages: [
+			{ id: "modeling", code: "JM", title: "任务可靠度仿真建模", desc: "维护任务剖面、装备故障、可靠性框图和指标分配的最小建模数据。", route: "#/mission-reliability/modeling" },
+			{ id: "experiment", code: "SY", title: "任务可靠度仿真实验", desc: "创建任务可靠度实验方案，启动可视化推演和小样本蒙特卡洛实验。", route: "#/mission-reliability/experiment" },
 			{ id: "completion", code: "WC", title: "任务完成度评估", desc: "跟踪多波次任务成功概率变化，评估当前保障方案对任务完成度的支撑能力。", route: "#/mission-reliability/completion" },
 			{ id: "downtime", code: "TJ", title: "停机因素分析", desc: "从不可用飞机、维修状态、备件与保障设备满足率等维度定位停机主因。", route: "#/mission-reliability/downtime" }
 		]
+	},
+	{
+		id: "system-support",
+		code: "XT",
+		title: "系统运行支持模块",
+		desc: "面向长周期大样本运行优化，提供运行状态、日志、样本统计和结果产物检查入口。",
+		pages: [
+			{ id: "run-management", code: "YX", title: "运行管理和产物检查", desc: "检查运行目录、固定种子、错误记录、样本统计和结果 JSON 产物。", route: "#/system-support/run-management" }
+		]
 	}
+];
+
+const MODELING_SCOPE = {
+	"spare-planning": [
+		{ name: "任务建模", detail: "内置场景、基本作战单元、基本任务、任务剖面", status: "已形成最小字段" },
+		{ name: "装备建模", detail: "装备组成、装备故障、备件关联", status: "已形成最小字段" },
+		{ name: "保障组织建模", detail: "保障组织结构、备件、保障人员、保障设备", status: "已形成最小字段" },
+		{ name: "保障活动建模", detail: "保障资源需求组、修复性维修、预防性维修、使用保障方案", status: "待接后端" },
+		{ name: "指标分配方案管理", detail: "结果导入与指标方案占位", status: "占位" }
+	],
+	"mission-reliability": [
+		{ name: "任务建模", detail: "内置场景、基本作战单元、基本任务、任务剖面", status: "已形成最小字段" },
+		{ name: "装备建模", detail: "装备组成、装备故障、装备可靠性框图", status: "已形成最小字段" },
+		{ name: "保障组织建模", detail: "保障组织结构、备件、保障人员、保障设备", status: "已形成最小字段" },
+		{ name: "保障活动建模", detail: "保障资源需求组、修复性维修、预防性维修、使用保障方案", status: "待接后端" },
+		{ name: "指标分配方案管理", detail: "系统可靠度、失效率、平均无故障工作时间、整机到 LRU 级 RMS 导入", status: "占位" }
+	]
+};
+
+const EXPERIMENT_SCOPE = [
+	{ name: "仿真实验方案管理", detail: "创建、编辑实验方案，保存固定种子和样本参数", status: "可评审" },
+	{ name: "可视化推演", detail: "可视化实验启动与停止、场景切换、关键事件时间线", status: "可评审" },
+	{ name: "蒙特卡洛实验", detail: "小样本批量运行配置、样本状态记录、失败样本日志", status: "可评审" },
+	{ name: "结果分析", detail: "蒙特卡洛实验结果展示入口与结果产物链接", status: "待接后端" }
+];
+
+const SYSTEM_SUPPORT_ITEMS = [
+	{ name: "长周期大样本运行优化", value: "最小批量约束 20 样本", detail: "当前页面只展示运行约束和样本统计，不承诺真实大规模调度。" },
+	{ name: "运行目录", value: "runs/demo-601/latest", detail: "保留输入规格、运行配置、日志、结果 JSON 和指标汇总位置。" },
+	{ name: "固定种子", value: "20260612", detail: "用于后续联调时复现实验产物。" },
+	{ name: "错误记录", value: "0 条阻断", detail: "展示运行异常、失败样本和产物缺失的检查入口。" }
 ];
 
 const SPARE_SHORTFALL_ROWS = [
@@ -96,6 +140,10 @@ const state = {
 	carryObjective: "availability",
 	lastRun: {}
 };
+
+function getPageKey(page) {
+	return `${page.moduleId}:${page.id}`;
+}
 
 function htmlEscape(value) {
 	return String(value ?? "")
@@ -205,7 +253,7 @@ function renderHomePage() {
 			<div class="nav-right-panel">
 				<div class="page-head nav-page-head">
 					<h2>${htmlEscape(APP_CONFIG.systemName)}</h2>
-					<p class="muted">参照保障方案分析模块的布局方式，将备件规划评估与任务可靠度评估拆分为两个模块、四个子页面。页面按业务需要保留启动计算、参数配置、结果展示、表格与图形化结果区。</p>
+					<p class="muted">按 CSCI 完整部件范围组织为备件规划评估、任务可靠度评估和系统运行支持三个模块。当前为静态前端评审页，覆盖建模、实验、结果分析和运行产物检查入口。</p>
 				</div>
 				<div class="nav-module-list">
 					${MODULES.map(renderModuleRow).join("")}
@@ -237,8 +285,9 @@ function renderModuleRow(module) {
 
 function renderAnalysisPage(page) {
 	const module = getModule(page.moduleId);
-	const lastRun = state.lastRun[page.id];
-	const hasConfig = page.id === "carry-list";
+	const pageKey = getPageKey(page);
+	const lastRun = state.lastRun[pageKey];
+	const hasConfig = ["modeling", "experiment", "carry-list", "run-management"].includes(page.id);
 	return `
 		<div class="page-head">
 			<div class="page-head-left">
@@ -271,7 +320,7 @@ function renderAnalysisPage(page) {
 					<div class="card analysis-config-panel ${hasConfig ? "" : "analysis-config-panel-compact"}">
 						<div class="analysis-section-head ${hasConfig ? "" : "analysis-section-head-only"}">
 							${hasConfig ? "<h3>参数配置</h3>" : ""}
-							<button class="btn-primary analysis-start-btn" data-action="start-analysis" data-page="${htmlEscape(page.id)}">启动</button>
+							<button class="btn-primary analysis-start-btn" data-action="start-analysis" data-page="${htmlEscape(pageKey)}">启动</button>
 						</div>
 						${hasConfig ? `<div class="analysis-config-scroll">${renderConfig(page)}</div>` : ""}
 					</div>
@@ -291,7 +340,77 @@ function renderAnalysisPage(page) {
 
 function renderConfig(page) {
 	if (page.id === "carry-list") return renderCarryListConfig();
+	if (page.id === "modeling") return renderModelingConfig(page);
+	if (page.id === "experiment") return renderExperimentConfig(page);
+	if (page.id === "run-management") return renderSystemSupportConfig();
 	return "";
+}
+
+function renderModelingConfig(page) {
+	const isMission = page.moduleId === "mission-reliability";
+	return `
+		<div class="form-grid modeling-config-grid">
+			<div class="form-item">
+				<label>示例场景</label>
+				<input value="601 舰载机连续出动场景" readonly />
+			</div>
+			<div class="form-item">
+				<label>建模对象</label>
+				<input value="${isMission ? "任务剖面 / 可靠性框图" : "任务 / 装备 / 备件"}" readonly />
+			</div>
+			<div class="form-item">
+				<label>数据状态</label>
+				<input value="静态评审数据，待后端字段契约接入" readonly />
+			</div>
+		</div>
+		<div class="form-section">
+			<h4>建模边界</h4>
+			<p class="muted">本页覆盖 1.4.2 中的任务建模、装备建模、保障组织建模、保障活动建模和指标分配方案管理，当前仅固定最小字段和页面表达。</p>
+		</div>
+	`;
+}
+
+function renderExperimentConfig(page) {
+	const label = page.moduleId === "mission-reliability" ? "任务可靠度实验方案" : "备件规划实验方案";
+	return `
+		<div class="form-grid">
+			<div class="form-item">
+				<label>实验方案</label>
+				<input value="${label} A" readonly />
+			</div>
+			<div class="form-item">
+				<label>样本数</label>
+				<input value="20" readonly />
+			</div>
+			<div class="form-item">
+				<label>随机种子</label>
+				<input value="20260612" readonly />
+			</div>
+		</div>
+		<div class="form-section">
+			<h4>实验边界</h4>
+			<p class="muted">本页覆盖实验方案创建/编辑、可视化推演、蒙特卡洛实验配置和蒙特卡洛结果展示入口。当前启动为模拟反馈，不代表真实仿真运行。</p>
+		</div>
+	`;
+}
+
+function renderSystemSupportConfig() {
+	return `
+		<div class="form-grid">
+			<div class="form-item">
+				<label>运行根目录</label>
+				<input value="runs/demo-601/latest" readonly />
+			</div>
+			<div class="form-item">
+				<label>运行模式</label>
+				<input value="小样本批量评审" readonly />
+			</div>
+			<div class="form-item">
+				<label>产物状态</label>
+				<input value="静态示例，待后端写入" readonly />
+			</div>
+		</div>
+	`;
 }
 
 function renderCarryListConfig() {
@@ -316,9 +435,12 @@ function renderCarryListConfig() {
 }
 
 function renderResults(page) {
+	if (page.id === "modeling") return renderModelingResults(page);
+	if (page.id === "experiment") return renderExperimentResults(page);
 	if (page.id === "shortfall") return renderShortfallResults();
 	if (page.id === "carry-list") return renderCarryListResults();
 	if (page.id === "completion") return renderCompletionResults();
+	if (page.id === "run-management") return renderSystemSupportResults();
 	return renderDowntimeResults();
 }
 
@@ -334,6 +456,114 @@ function renderMetricGrid(items) {
 					</div>`
 				)
 				.join("")}
+		</div>
+	`;
+}
+
+function renderScopeCards(items) {
+	return `
+		<div class="scope-grid">
+			${items.map((item) => `
+				<div class="scope-card">
+					<div class="scope-card-head">
+						<h4>${htmlEscape(item.name)}</h4>
+						<span class="status-badge ${item.status === "占位" ? "warn" : item.status === "待接后端" ? "warn" : "success"}">${htmlEscape(item.status)}</span>
+					</div>
+					<p class="muted">${htmlEscape(item.detail)}</p>
+				</div>
+			`).join("")}
+		</div>
+	`;
+}
+
+function renderModelingResults(page) {
+	const rows = MODELING_SCOPE[page.moduleId] || [];
+	const isMission = page.moduleId === "mission-reliability";
+	return `
+		${renderMetricGrid([
+			{ label: "建模域", value: "5 类" },
+			{ label: "关键对象", value: isMission ? "可靠性框图" : "备件需求" },
+			{ label: "字段状态", value: "最小字段" },
+			{ label: "后端状态", value: "待接入", tone: "danger" }
+		])}
+		${renderScopeCards(rows)}
+		<div class="table-wrap">
+			<table>
+				<thead>
+					<tr>
+						<th>建模数据</th>
+						<th>示例内容</th>
+						<th>后续来源</th>
+					</tr>
+				</thead>
+				<tbody>
+					<tr><td>任务</td><td>对海突击任务A、挂弹训练任务B、连续出动任务C</td><td>项目数据 JSON</td></tr>
+					<tr><td>装备</td><td>歼-35、歼-15T、任务计算机模块、任务雷达系统</td><td>core/dataset/data_new.json</td></tr>
+					<tr><td>保障资源</td><td>保障站位、保障人员、保障设备、维修机位</td><td>后端资源聚合</td></tr>
+					<tr><td>保障活动</td><td>使用保障方案、修复性维修方案、预防性维修方案</td><td>后端字段契约</td></tr>
+				</tbody>
+			</table>
+		</div>
+	`;
+}
+
+function renderExperimentResults(page) {
+	const isMission = page.moduleId === "mission-reliability";
+	return `
+		${renderMetricGrid([
+			{ label: "实验方案", value: isMission ? "任务可靠度实验 A" : "备件规划实验 A" },
+			{ label: "样本数", value: "20" },
+			{ label: "固定种子", value: "20260612" },
+			{ label: "运行状态", value: "待启动" }
+		])}
+		${renderScopeCards(EXPERIMENT_SCOPE)}
+		<div class="chart-panel">
+			<div class="chart-title">可视化推演时间线</div>
+			<div class="timeline">
+				<div class="timeline-step active"><span>1</span><strong>加载场景</strong><em>内置场景和项目数据</em></div>
+				<div class="timeline-step"><span>2</span><strong>启动推演</strong><em>记录开始/停止状态</em></div>
+				<div class="timeline-step"><span>3</span><strong>批量样本</strong><em>生成蒙特卡洛统计</em></div>
+				<div class="timeline-step"><span>4</span><strong>输出产物</strong><em>结果 JSON 与指标汇总</em></div>
+			</div>
+		</div>
+	`;
+}
+
+function renderSystemSupportResults() {
+	return `
+		${renderMetricGrid([
+			{ label: "运行批次", value: "RUN-20260612-001" },
+			{ label: "样本统计", value: "20 / 20" },
+			{ label: "结果 JSON", value: "4 类" },
+			{ label: "错误记录", value: "0", tone: "success" }
+		])}
+		<div class="scope-grid system-support-grid">
+			${SYSTEM_SUPPORT_ITEMS.map((item) => `
+				<div class="scope-card">
+					<div class="scope-card-head">
+						<h4>${htmlEscape(item.name)}</h4>
+						<span class="status-badge success">${htmlEscape(item.value)}</span>
+					</div>
+					<p class="muted">${htmlEscape(item.detail)}</p>
+				</div>
+			`).join("")}
+		</div>
+		<div class="table-wrap">
+			<table>
+				<thead>
+					<tr>
+						<th>产物类型</th>
+						<th>示例路径</th>
+						<th>检查状态</th>
+					</tr>
+				</thead>
+				<tbody>
+					<tr><td>输入规格</td><td>runs/demo-601/latest/input.json</td><td><span class="status-badge success">存在</span></td></tr>
+					<tr><td>运行配置</td><td>runs/demo-601/latest/run-config.json</td><td><span class="status-badge success">存在</span></td></tr>
+					<tr><td>运行日志</td><td>runs/demo-601/latest/events.log</td><td><span class="status-badge warn">示例</span></td></tr>
+					<tr><td>结果汇总</td><td>runs/demo-601/latest/results/summary.json</td><td><span class="status-badge warn">待后端</span></td></tr>
+				</tbody>
+			</table>
 		</div>
 	`;
 }
