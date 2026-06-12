@@ -3,6 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 const appSource = readFileSync(new URL("../front/app.js", import.meta.url), "utf8");
+const indexSource = readFileSync(new URL("../front/index.html", import.meta.url), "utf8");
 
 const expectedPages = [
 	["#/spare-planning/modeling", "备件规划仿真建模"],
@@ -26,4 +27,8 @@ test("front app exposes the MVP pages mapped from the full CSCI scope", () => {
 test("front app includes the system support module from CSCI 1.4.2", () => {
 	assert.match(appSource, /系统运行支持模块/);
 	assert.match(appSource, /长周期大样本运行优化/);
+});
+
+test("front index loads the modeling contract before the app script", () => {
+	assert.match(indexSource, /<script src="modeling-contract\.js"><\/script>\s*<script src="app\.js"><\/script>/);
 });

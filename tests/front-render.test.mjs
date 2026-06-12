@@ -1,8 +1,9 @@
 import { readFileSync } from "node:fs";
-import { Script, createContext } from "node:vm";
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { Script, createContext } from "node:vm";
 
+const contractSource = readFileSync(new URL("../front/modeling-contract.js", import.meta.url), "utf8");
 const appSource = readFileSync(new URL("../front/app.js", import.meta.url), "utf8");
 
 const routes = [
@@ -47,6 +48,8 @@ function renderAt(hash) {
 		},
 		console
 	});
+	context.globalThis = context;
+	new Script(contractSource).runInContext(context);
 	new Script(appSource).runInContext(context);
 	return elements.app.innerHTML;
 }
