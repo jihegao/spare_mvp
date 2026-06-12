@@ -2,12 +2,12 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | V0.6 |
+| 文档版本 | V0.7 |
 | 更新日期 | 2026-06-13 |
 | 文档性质 | MVP 总体开发计划与阶段状态控制文档 |
 | 当前阶段 | Phase 2：MVP 详细设计与字段契约 |
-| 当前目标 | 先让建模页成为完整项目 JSON 的生产端，再推进实验、运行、结果、服务和前端接入闭环 |
-| 适用范围 | `agent.md`、`front/`、`core/`、后端 API、运行产物、`docs/prd.md`、`docs/modeling-detailed-requirements.md`、`docs/modeling-json-schema.md`、`docs/mvp-acceptance-checklist.md`、`docs/3概要设计方案.docx` |
+| 当前目标 | 在 PR #14 已定义 authoring workflow 后，推进 PR #15 的前端项目 JSON 状态和校验契约 |
+| 适用范围 | `agent.md`、`front/`、`core/`、后端 API、运行产物、`docs/prd.md`、`docs/modeling-detailed-requirements.md`、`docs/modeling-json-schema.md`、`docs/modeling-json-authoring-workflow.md`、`docs/mvp-acceptance-checklist.md`、`docs/3概要设计方案.docx` |
 | 更新规则 | 每个阶段完成后必须更新本文件的阶段状态、交付物、验证证据、遗留问题和下一阶段入口 |
 
 ## 1. 文档定位
@@ -339,15 +339,16 @@
 
 1. Phase 1 已完成，PR #10 已把 MVP 口径统一为覆盖全部 CSCI 部件的前后端最小闭环。
 2. Phase 2 已开始，PR #11 已抽离 `front/modeling-contract.js`，PR #12 已新增 `docs/modeling-json-schema.md`。
-3. PR #13 用于规划后续执行队列和同步验收边界。
-4. 下一步执行 PR #14：`[codex] Define frontend modeling JSON authoring workflow`。
+3. PR #13 已规划后续执行队列和同步验收边界。
+4. PR #14 定义建模页项目 JSON authoring workflow。
+5. 下一步执行 PR #15：`[codex] Add frontend project JSON state and validation contract`。
 
 PR #13-#19 是 Phase 2 到 Phase 5 的当前执行队列。它们不是把页面继续做成静态字段说明，而是把系统推进到“页面可产生完整项目 JSON、后端可消费、运行产物可检查、前端可展示真实或明确标注来源的数据”的最小闭环。
 
 | PR | 建议标题 | 所属阶段 | 目标 | 必须输出 | 合并门槛 |
 | --- | --- | --- | --- | --- | --- |
 | PR #13 | `[codex] Plan PR 14-19 execution queue` | Phase 2 | 对齐 Phase 2 后续入口、短期 PR 队列和验收边界 | 更新 `agent.md`、总体计划和验收清单 | 合入后文档不再自引用；下一步明确指向 PR #14 |
-| PR #14 | `[codex] Define frontend modeling JSON authoring workflow` | Phase 2 | 讲清楚两个建模页如何从用户输入完整产生 MVP 项目 JSON | 建模页功能细化文档、UI 状态、对象到页面映射、导入导出边界、验收测试计划 | 文档明确用户可创建、编辑、删除、校验、预览、导入、导出完整项目 JSON；不再把目标描述成只读展示或局部最小表单 |
+| PR #14 | `[codex] Define frontend modeling JSON authoring workflow` | Phase 2 | 讲清楚两个建模页如何从用户输入完整产生 MVP 项目 JSON | 建模页功能细化文档、UI 状态、对象到页面映射、导入导出边界、验收测试计划 | 已在 `docs/modeling-json-authoring-workflow.md` 定义用户创建、编辑、删除、校验、预览、导入、导出完整项目 JSON 的 workflow |
 | PR #15 | `[codex] Add frontend project JSON state and validation contract` | Phase 2 / Phase 5 前置 | 为前端实现项目 JSON 生产准备共享状态、字段元数据和校验口径 | 前端项目 JSON 状态模型、schema 元数据入口、字段级校验函数、测试 | 页面可在无后端条件下生成完整 normalized project JSON；校验覆盖必填、唯一、引用、数量、概率、时间单位和导入清洗 |
 | PR #16 | `[codex] Implement editable modeling JSON authoring pages` | Phase 5 前置 | 将两个建模页从静态展示升级为完整项目 JSON 作者界面 | 可编辑建模 UI、对象增删改、JSON 预览、导入、导出、脏状态/保存状态/错误状态 | 用户能在页面上产生覆盖 7 类标准对象的项目 JSON；备件规划页和任务可靠度页共享同一项目数据但有不同重点视图 |
 | PR #17 | `[codex] Define experiment, run, and artifact contracts` | Phase 2 | 在建模 JSON 之后定义实验方案、运行记录、样本结果、聚合结果、前端结果 payload 和 artifact manifest | 契约文档、示例 JSON、结果页字段映射、测试 guard | 四个结果分析页字段均能追踪到实验/运行/结果对象；每个字段标注真实仿真输出、最小规则、演示夹具或待确认 |
@@ -356,11 +357,11 @@ PR #13-#19 是 Phase 2 到 Phase 5 的当前执行队列。它们不是把页面
 
 PR #14 最小可执行工作包：
 
-1. 新增或更新建模页 workflow 文档，说明用户如何在页面上完整产生 MVP 项目 JSON。
-2. 覆盖创建、编辑、删除、导入、导出、校验、JSON 预览、脏状态、保存状态和错误状态。
-3. 将两个建模页的 UI 区域映射到 `docs/modeling-json-schema.md` 的 7 类标准对象。
-4. 明确备件规划页和任务可靠度页共享同一项目 JSON，只是页面重点不同。
-5. 新增文档测试或搜索 guard，防止后续把目标退回成只读展示、局部最小表单或静态字段说明。
+1. 已新增 `docs/modeling-json-authoring-workflow.md`，说明用户如何在页面上完整产生 MVP 项目 JSON。
+2. 已覆盖创建、编辑、删除、导入、导出、校验、JSON 预览、脏状态、保存状态和错误状态。
+3. 已将两个建模页的 UI 区域映射到 `docs/modeling-json-schema.md` 的 7 类标准对象。
+4. 已明确备件规划页和任务可靠度页共享同一项目 JSON，只是页面重点不同。
+5. 已新增 `tests/modeling-authoring-workflow-doc.test.mjs` 作为文档 guard。
 
 执行顺序约束：
 
@@ -396,10 +397,10 @@ PR #14 最小可执行工作包：
 ### Phase 2 进展记录
 
 - 完成日期：进行中。
-- 分支：已合入 `main` 的阶段切片包括 PR #11 和 PR #12。
-- PR：PR #11、PR #12。
-- 主要变更：PR #11 抽离 `front/modeling-contract.js`；PR #12 新增 `docs/modeling-json-schema.md`，形成建模字段契约输入。
-- 验证命令：以各 PR 验证记录为准。
-- 关键产物：`front/modeling-contract.js`、`docs/modeling-json-schema.md`、`tests/modeling-contract.test.mjs`、`tests/modeling-schema-doc.test.mjs`。
-- 遗留问题：建模页仍是静态展示，尚不能让用户在页面上完整产生项目 JSON。
-- 下一阶段入口：PR #14：定义 frontend modeling JSON authoring workflow。
+- 分支：已合入 `main` 的阶段切片包括 PR #11 和 PR #12；PR #14 当前用于 authoring workflow 定义。
+- PR：PR #11、PR #12、PR #14。
+- 主要变更：PR #11 抽离 `front/modeling-contract.js`；PR #12 新增 `docs/modeling-json-schema.md`，形成建模字段契约输入；PR #14 新增 `docs/modeling-json-authoring-workflow.md`，定义两个建模页共享项目 JSON 的 authoring workflow。
+- 验证命令：以各 PR 验证记录为准；PR #14 增加 `node --test tests/modeling-authoring-workflow-doc.test.mjs`。
+- 关键产物：`front/modeling-contract.js`、`docs/modeling-json-schema.md`、`docs/modeling-json-authoring-workflow.md`、`tests/modeling-contract.test.mjs`、`tests/modeling-schema-doc.test.mjs`、`tests/modeling-authoring-workflow-doc.test.mjs`。
+- 遗留问题：建模页仍未实现共享 project JSON 状态、字段级校验函数和可编辑 UI。
+- 下一阶段入口：PR #15：新增 frontend project JSON state and validation contract。

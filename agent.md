@@ -30,6 +30,7 @@ The current committed baseline is a static CSCI frontend review baseline plus ca
 - `docs/mvp-acceptance-checklist.md`: full MVP acceptance contract covering frontend, backend, simulation, artifacts, and integration evidence.
 - `docs/modeling-detailed-requirements.md`: modeling field and business-rule input for the MVP field contract.
 - `docs/modeling-json-schema.md`: accepted human-readable MVP modeling schema input for frontend forms, backend APIs, future `core/` adapters, and import/export mapping.
+- `docs/modeling-json-authoring-workflow.md`: accepted PR #14 workflow for turning the two modeling pages into one shared project JSON authoring surface.
 - `core/`: candidate backend simulation code. It is in MVP scope, but its product contract is not accepted until a backend-alignment phase defines field tests, result mapping, and artifact evidence.
 
 Treat `docs/development-handoff-plan.md` as the phase-control source of truth. Treat `docs/prd.md` and `docs/mvp-acceptance-checklist.md` as the product and acceptance sources of truth. Treat `front/` as the Phase 0 page baseline. Treat `core/` as candidate implementation material that must be validated through the MVP contract before its outputs are described as accepted product behavior.
@@ -42,9 +43,9 @@ If `docs/development-handoff-plan.md` still says the next step is Phase 1, treat
 
 The short-term PR queue is tracked in `docs/development-handoff-plan.md` section 10. Treat that section as the source of truth for the next PR number, title, scope, and ordering constraints.
 
-The next product target is not just more static contract text and not a partial "minimum editable form". The modeling pages must become a complete project JSON authoring surface: a user should be able to create, edit, validate, preview, import, and export the full MVP modeling JSON from the page.
+PR #14 defined the product workflow for the complete project JSON authoring surface. The next product target is PR #15: add the frontend project JSON state and validation contract that will let later UI work create, edit, validate, preview, import, and export the full MVP modeling JSON from the page.
 
-Only after the modeling JSON authoring workflow is specified should the plan move on to experiment plan, run record, sample result, aggregate result, frontend result payload, artifact manifest, backend/API, and artifact persistence work.
+Only after PR #15/#16 stabilize the modeling JSON production path should the plan move on to experiment plan, run record, sample result, aggregate result, frontend result payload, artifact manifest, backend/API, and artifact persistence work.
 
 ## Development Method
 
