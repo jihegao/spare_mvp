@@ -339,20 +339,22 @@
 
 1. Phase 1 已完成，PR #10 已把 MVP 口径统一为覆盖全部 CSCI 部件的前后端最小闭环。
 2. Phase 2 已开始，PR #11 已抽离 `front/modeling-contract.js`，PR #12 已新增 `docs/modeling-json-schema.md`。
-3. 下一步执行 PR #13：`[codex] Define frontend modeling JSON authoring workflow`。
+3. PR #13 用于规划后续执行队列和同步验收边界。
+4. 下一步执行 PR #14：`[codex] Define frontend modeling JSON authoring workflow`。
 
-PR #13-#18 是 Phase 2 到 Phase 5 的当前执行队列。它们不是把页面继续做成静态字段说明，而是把系统推进到“页面可产生完整项目 JSON、后端可消费、运行产物可检查、前端可展示真实或明确标注来源的数据”的最小闭环。
+PR #13-#19 是 Phase 2 到 Phase 5 的当前执行队列。它们不是把页面继续做成静态字段说明，而是把系统推进到“页面可产生完整项目 JSON、后端可消费、运行产物可检查、前端可展示真实或明确标注来源的数据”的最小闭环。
 
 | PR | 建议标题 | 所属阶段 | 目标 | 必须输出 | 合并门槛 |
 | --- | --- | --- | --- | --- | --- |
-| PR #13 | `[codex] Define frontend modeling JSON authoring workflow` | Phase 2 | 讲清楚两个建模页如何从用户输入完整产生 MVP 项目 JSON | 建模页功能细化文档、UI 状态、对象到页面映射、导入导出边界、验收测试计划 | 文档明确用户可创建、编辑、删除、校验、预览、导入、导出完整项目 JSON；不再把目标描述成只读展示或局部最小表单 |
-| PR #14 | `[codex] Add frontend project JSON state and validation contract` | Phase 2 / Phase 5 前置 | 为前端实现项目 JSON 生产准备共享状态、字段元数据和校验口径 | 前端项目 JSON 状态模型、schema 元数据入口、字段级校验函数、测试 | 页面可在无后端条件下生成完整 normalized project JSON；校验覆盖必填、唯一、引用、数量、概率、时间单位和导入清洗 |
-| PR #15 | `[codex] Implement editable modeling JSON authoring pages` | Phase 5 前置 | 将两个建模页从静态展示升级为完整项目 JSON 作者界面 | 可编辑建模 UI、对象增删改、JSON 预览、导入、导出、脏状态/保存状态/错误状态 | 用户能在页面上产生覆盖 7 类标准对象的项目 JSON；备件规划页和任务可靠度页共享同一项目数据但有不同重点视图 |
-| PR #16 | `[codex] Define experiment, run, and artifact contracts` | Phase 2 | 在建模 JSON 之后定义实验方案、运行记录、样本结果、聚合结果、前端结果 payload 和 artifact manifest | 契约文档、示例 JSON、结果页字段映射、测试 guard | 四个结果分析页字段均能追踪到实验/运行/结果对象；每个字段标注真实仿真输出、最小规则、演示夹具或待确认 |
-| PR #17 | `[codex] Add core adapter and fixed-seed artifact smoke` | Phase 3 | 让 `core/` 或聚合层最小消费项目 JSON，并产生可检查样例产物 | adapter 测试、固定种子样例运行、样本结果、聚合结果、前端结果 JSON | 相同项目 JSON、实验方案和种子生成稳定结构；不支持的指标明确标注为最小规则或待确认 |
-| PR #18 | `[codex] Connect local service and frontend artifact flow` | Phase 4 / Phase 5 | 提供本地服务或等价 CLI 产物读取能力，并让前端读取项目、实验、运行和结果产物 | 本地 API/CLI、运行目录、前端数据访问层、运行管理页产物检查、端到端烟测 | 前端能从产物或服务读取结果；后端不可用时显示明确降级状态；运行产物路径和验收命令可重复 |
+| PR #13 | `[codex] Plan PR 14-19 execution queue` | Phase 2 | 对齐 Phase 2 后续入口、短期 PR 队列和验收边界 | 更新 `agent.md`、总体计划和验收清单 | 合入后文档不再自引用；下一步明确指向 PR #14 |
+| PR #14 | `[codex] Define frontend modeling JSON authoring workflow` | Phase 2 | 讲清楚两个建模页如何从用户输入完整产生 MVP 项目 JSON | 建模页功能细化文档、UI 状态、对象到页面映射、导入导出边界、验收测试计划 | 文档明确用户可创建、编辑、删除、校验、预览、导入、导出完整项目 JSON；不再把目标描述成只读展示或局部最小表单 |
+| PR #15 | `[codex] Add frontend project JSON state and validation contract` | Phase 2 / Phase 5 前置 | 为前端实现项目 JSON 生产准备共享状态、字段元数据和校验口径 | 前端项目 JSON 状态模型、schema 元数据入口、字段级校验函数、测试 | 页面可在无后端条件下生成完整 normalized project JSON；校验覆盖必填、唯一、引用、数量、概率、时间单位和导入清洗 |
+| PR #16 | `[codex] Implement editable modeling JSON authoring pages` | Phase 5 前置 | 将两个建模页从静态展示升级为完整项目 JSON 作者界面 | 可编辑建模 UI、对象增删改、JSON 预览、导入、导出、脏状态/保存状态/错误状态 | 用户能在页面上产生覆盖 7 类标准对象的项目 JSON；备件规划页和任务可靠度页共享同一项目数据但有不同重点视图 |
+| PR #17 | `[codex] Define experiment, run, and artifact contracts` | Phase 2 | 在建模 JSON 之后定义实验方案、运行记录、样本结果、聚合结果、前端结果 payload 和 artifact manifest | 契约文档、示例 JSON、结果页字段映射、测试 guard | 四个结果分析页字段均能追踪到实验/运行/结果对象；每个字段标注真实仿真输出、最小规则、演示夹具或待确认 |
+| PR #18 | `[codex] Add core adapter and fixed-seed artifact smoke` | Phase 3 | 让 `core/` 或聚合层最小消费项目 JSON，并产生可检查样例产物 | adapter 测试、固定种子样例运行、样本结果、聚合结果、前端结果 JSON | 相同项目 JSON、实验方案和种子生成稳定结构；不支持的指标明确标注为最小规则或待确认 |
+| PR #19 | `[codex] Connect local service and frontend artifact flow` | Phase 4 / Phase 5 | 提供本地服务或等价 CLI 产物读取能力，并让前端读取项目、实验、运行和结果产物 | 本地 API/CLI、运行目录、前端数据访问层、运行管理页产物检查、端到端烟测 | 前端能从产物或服务读取结果；后端不可用时显示明确降级状态；运行产物路径和验收命令可重复 |
 
-PR #13 最小可执行工作包：
+PR #14 最小可执行工作包：
 
 1. 新增或更新建模页 workflow 文档，说明用户如何在页面上完整产生 MVP 项目 JSON。
 2. 覆盖创建、编辑、删除、导入、导出、校验、JSON 预览、脏状态、保存状态和错误状态。
@@ -362,10 +364,10 @@ PR #13 最小可执行工作包：
 
 执行顺序约束：
 
-1. PR #13 必须先于 PR #14/#15 合入，因为它定义页面完整生产项目 JSON 的功能边界。
-2. PR #14/#15 完成前，不应把实验方案或后端 adapter 绑定到半成品建模字段。
-3. PR #16 应以 PR #15 产出的项目 JSON 为输入边界，避免继续围绕 `data_new.json` 的工作簿 sheet 直接设计实验和结果对象。
-4. PR #17/#18 只能在契约、样例项目 JSON 和字段来源稳定后推进。
+1. PR #14 必须先于 PR #15/#16 合入，因为它定义页面完整生产项目 JSON 的功能边界。
+2. PR #15/#16 完成前，不应把实验方案或后端 adapter 绑定到半成品建模字段。
+3. PR #17 应以 PR #16 产出的项目 JSON 为输入边界，避免继续围绕 `data_new.json` 的工作簿 sheet 直接设计实验和结果对象。
+4. PR #18/#19 只能在契约、样例项目 JSON 和字段来源稳定后推进。
 
 ## 11. 阶段完成记录
 
@@ -400,4 +402,4 @@ PR #13 最小可执行工作包：
 - 验证命令：以各 PR 验证记录为准。
 - 关键产物：`front/modeling-contract.js`、`docs/modeling-json-schema.md`、`tests/modeling-contract.test.mjs`、`tests/modeling-schema-doc.test.mjs`。
 - 遗留问题：建模页仍是静态展示，尚不能让用户在页面上完整产生项目 JSON。
-- 下一阶段入口：PR #13：定义 frontend modeling JSON authoring workflow。
+- 下一阶段入口：PR #14：定义 frontend modeling JSON authoring workflow。

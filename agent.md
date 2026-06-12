@@ -40,15 +40,11 @@ The project has moved past the original Phase 1 governance-only discussion. PR #
 
 If `docs/development-handoff-plan.md` still says the next step is Phase 1, treat that as documentation lag rather than current execution truth. Do not restart Phase 1 unless the user explicitly asks to revise governance scope.
 
-The next recommended target is not just more static contract text and not a partial "minimum editable form". The modeling pages must become a complete project JSON authoring surface: a user should be able to create, edit, validate, preview, import, and export the full MVP modeling JSON from the page.
+The short-term PR queue is tracked in `docs/development-handoff-plan.md` section 10. Treat that section as the source of truth for the next PR number, title, scope, and ordering constraints.
 
-Before writing the PR #13-#18 execution plan, insert a dedicated frontend modeling-data production phase:
+The next product target is not just more static contract text and not a partial "minimum editable form". The modeling pages must become a complete project JSON authoring surface: a user should be able to create, edit, validate, preview, import, and export the full MVP modeling JSON from the page.
 
-1. Define the modeling page workflow for producing complete project JSON from user input, covering create/edit/delete, import, export, validation, reference checks, dirty/saved/error states, and JSON preview.
-2. Map every editable UI section to `docs/modeling-json-schema.md` standard objects: `missionProfiles`, `equipmentAssets`, `equipmentTree`, `supportResources`, `inventoryResources`, `supportActivities`, and `metricPlans`.
-3. Specify how both modeling routes share the same project JSON while emphasizing different views: spare planning focuses inventory/support resources, mission reliability focuses mission profile/equipment/RBD fields.
-4. Keep the first implementation file-based or browser-state-based if needed, but the produced JSON must be complete enough for later experiment plans, backend/API contracts, and `core/` adapters.
-5. Only after this modeling JSON authoring workflow is specified should the plan move on to experiment plan, run record, sample result, aggregate result, frontend result payload, artifact manifest, backend/API, and artifact persistence work.
+Only after the modeling JSON authoring workflow is specified should the plan move on to experiment plan, run record, sample result, aggregate result, frontend result payload, artifact manifest, backend/API, and artifact persistence work.
 
 ## Development Method
 
