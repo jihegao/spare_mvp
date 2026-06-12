@@ -218,7 +218,13 @@ function toBooleanOrNull(value) {
 function splitList(value, separator = /[,、]/) {
 	const cleaned = cleanNullable(value);
 	if (cleaned === null) return [];
-	if (Array.isArray(cleaned)) return cleaned.map((item) => String(item).trim()).filter(Boolean);
+	if (Array.isArray(cleaned)) {
+		return cleaned
+			.map((item) => cleanNullable(item))
+			.filter((item) => item !== null)
+			.map((item) => String(item).trim())
+			.filter((item) => item && item.toLowerCase() !== "null");
+	}
 	return String(cleaned)
 		.split(separator)
 		.map((item) => item.trim())
@@ -253,8 +259,9 @@ function hasNormalizedTables(input) {
 }
 
 function normalizeProjectJson(input = {}) {
-	if (hasNormalizedTables(input)) return normalizeExistingProjectJson(input);
-	return normalizeWorkbookJson(input);
+	const project = hasNormalizedTables(input) ? normalizeExistingProjectJson(input) : normalizeWorkbookJson(input);
+	project.validation = validateNormalizedProjectJson(project);
+	return project;
 }
 
 function normalizeExistingProjectJson(input) {
@@ -610,7 +617,11 @@ function addError(errors, rule, tableName, recordId, field, message) {
 }
 
 function validateProjectJson(projectJson) {
-	const project = normalizeExistingProjectJson(normalizeProjectJson(projectJson));
+	const project = hasNormalizedTables(projectJson) ? normalizeExistingProjectJson(projectJson) : normalizeWorkbookJson(projectJson);
+	return validateNormalizedProjectJson(project);
+}
+
+function validateNormalizedProjectJson(project) {
 	const errors = [];
 	const warnings = [];
 
@@ -665,7 +676,14 @@ function validateFieldKinds(records, metadata, errors) {
 				addError(errors, "timeUnit", metadata.tableName, record.id, fieldName, `${fieldName} must be a number with ${fieldMeta.unit} unit`);
 				continue;
 			}
-			if ((fieldMeta.kind === "nonNegativeInteger" || fieldMeta.kind === "nonNegativeNumber") && !isNonNegativeNumber(value)) {
+			if (fieldMeta.kind === "nonNegativeInteger") {
+				if (!isNonNegativeNumber(value)) {
+					addError(errors, "nonNegative", metadata.tableName, record.id, fieldName, `${fieldName} must be non-negative`);
+				} else if (!Number.isInteger(value)) {
+					addError(errors, "integer", metadata.tableName, record.id, fieldName, `${fieldName} must be an integer`);
+				}
+			}
+			if (fieldMeta.kind === "nonNegativeNumber" && !isNonNegativeNumber(value)) {
 				addError(errors, "nonNegative", metadata.tableName, record.id, fieldName, `${fieldName} must be non-negative`);
 			}
 			if (fieldMeta.kind === "probability" && !isProbability(value)) {
@@ -673,6 +691,21 @@ function validateFieldKinds(records, metadata, errors) {
 			}
 			if (fieldMeta.kind === "probabilityOrNumber" && looksLikeProbabilityField(record) && !isProbability(value)) {
 				addError(errors, "probability", metadata.tableName, record.id, fieldName, `${fieldName} must be normalized to 0..1`);
+			}
+			if (fieldMeta.kind === "enum" && !fieldMeta.values.includes(value)) {
+				addError(errors, "enum", metadata.tableName, record.id, fieldName, `${fieldName} must be one of ${fieldMeta.values.join(", ")}`);
+			}
+			if (fieldMeta.kind === "boolean" && typeof value !== "boolean") {
+				addError(errors, "boolean", metadata.tableName, record.id, fieldName, `${fieldName} must be boolean`);
+			}
+			if (fieldMeta.kind === "list" && !Array.isArray(value)) {
+				addError(errors, "list", metadata.tableName, record.id, fieldName, `${fieldName} must be an array`);
+			}
+			if (fieldMeta.kind === "referenceList" && !Array.isArray(value)) {
+				addError(errors, "referenceList", metadata.tableName, record.id, fieldName, `${fieldName} must be an array of references`);
+			}
+			if (fieldMeta.kind === "object" && (typeof value !== "object" || Array.isArray(value))) {
+				addError(errors, "object", metadata.tableName, record.id, fieldName, `${fieldName} must be an object`);
 			}
 		}
 		validateNestedNonNegative(metadata.tableName, record, errors);
@@ -706,6 +739,7 @@ function isProbability(value) {
 function validateReferences(project, errors) {
 	const aircraftCodes = new Set(project.tables.equipmentAssets.map((record) => record.aircraftCode).filter(Boolean));
 	const aircraftTypes = new Set(project.tables.equipmentAssets.map((record) => record.aircraftType).filter(Boolean));
+	const equipmentNodeNames = new Set(project.tables.equipmentTree.map((record) => record.nodeName).filter(Boolean));
 	const activityNames = new Set(project.tables.supportActivities.map((record) => record.activityName).filter(Boolean));
 	const activityCodes = new Set(project.tables.supportActivities.map((record) => record.activityCode).filter(Boolean));
 	const inventoryKeys = new Set(project.tables.inventoryResources.map((record) => `${record.name}::${record.model}`));
@@ -730,6 +764,9 @@ function validateReferences(project, errors) {
 		}
 		if (activity.basicActivityCode && !activityCodes.has(activity.basicActivityCode)) {
 			addError(errors, "reference", "supportActivities", activity.id, "basicActivityCode", `Unknown basic activity ${activity.basicActivityCode}`);
+		}
+		if (activity.repairObject && !equipmentNodeNames.has(activity.repairObject)) {
+			addError(errors, "reference", "supportActivities", activity.id, "repairObject", `Unknown equipment node ${activity.repairObject}`);
 		}
 		for (const item of listFrom(activity.spareList)) {
 			const key = `${item.spareName}::${item.spareModel}`;
@@ -781,6 +818,14 @@ function findRecordReferences(projectJson, tableName, recordId) {
 		for (const activity of project.tables.supportActivities) {
 			if (record.activityCode && activity.basicActivityCode === record.activityCode) {
 				references.push({ tableName: "supportActivities", recordId: activity.id, field: "basicActivityCode", value: record.activityCode });
+			}
+		}
+	}
+
+	if (tableName === "equipmentTree") {
+		for (const activity of project.tables.supportActivities) {
+			if (record.nodeName && activity.repairObject === record.nodeName) {
+				references.push({ tableName: "supportActivities", recordId: activity.id, field: "repairObject", value: record.nodeName });
 			}
 		}
 	}

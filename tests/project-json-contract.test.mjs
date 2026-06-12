@@ -182,6 +182,29 @@ test("validation covers required fields, uniqueness, references, quantities, pro
 	assert.match(result.errors.map((error) => error.rule).join(","), /timeUnit/);
 });
 
+test("validation rejects invalid metadata kinds and integer decimals", () => {
+	const invalidProject = validProjectJson();
+	invalidProject.tables.missionProfiles[0].equipmentAmount = 1.5;
+	invalidProject.tables.equipmentTree[0].isLru = "maybe";
+	invalidProject.tables.supportResources[0].serviceAircraft = "J35";
+	invalidProject.tables.supportResources[0].facilityMap = "not an object";
+	invalidProject.tables.inventoryResources[0].resourceType = "foo";
+	invalidProject.tables.supportActivities[0].crewList = { specialty: "机加" };
+	invalidProject.tables.metricPlans[0].symbol = ">";
+
+	const result = validateProjectJson(invalidProject);
+	const rulesByField = result.errors.map((error) => `${error.rule}:${error.field}`);
+
+	assert.equal(result.status, "invalid");
+	assert.ok(rulesByField.includes("integer:equipmentAmount"));
+	assert.ok(rulesByField.includes("boolean:isLru"));
+	assert.ok(rulesByField.includes("referenceList:serviceAircraft"));
+	assert.ok(rulesByField.includes("object:facilityMap"));
+	assert.ok(rulesByField.includes("enum:resourceType"));
+	assert.ok(rulesByField.includes("list:crewList"));
+	assert.ok(rulesByField.includes("enum:symbol"));
+});
+
 test("referenced records cannot be deleted from the shared project state", () => {
 	const state = createProjectJsonState({ projectJson: validProjectJson() });
 	const blocked = applyProjectRecordDelete(state, "equipmentAssets", "asset-1");
@@ -196,6 +219,24 @@ test("referenced records cannot be deleted from the shared project state", () =>
 	assert.equal(deleted.deleted, true);
 	assert.equal(deleted.state.project.tables.metricPlans.length, 0);
 	assert.equal(deleted.state.dirtyStatus, "dirty");
+});
+
+test("equipment tree nodes referenced by corrective repair objects cannot be deleted", () => {
+	const project = validProjectJson();
+	project.tables.supportActivities.push({
+		id: "repair-1",
+		activityName: "任务计算机模块修复",
+		activityType: "correctiveMaintenance",
+		repairObject: "任务计算机模块"
+	});
+	const state = createProjectJsonState({ projectJson: project });
+	const blocked = applyProjectRecordDelete(state, "equipmentTree", "equipmentTree:任务计算机模块");
+
+	assert.equal(blocked.deleted, false);
+	assert.equal(blocked.state.project.tables.equipmentTree.length, 1);
+	assert.equal(blocked.state.project.validation.status, "invalid");
+	assert.equal(blocked.state.project.validation.errors[0].rule, "deleteBlockedByReference");
+	assert.match(blocked.state.project.validation.errors[0].message, /repairObject/);
 });
 
 test("workbook-style JSON import cleans raw values into normalized project JSON", () => {
@@ -218,7 +259,10 @@ test("workbook-style JSON import cleans raw values into normalized project JSON"
 		basicUsageUnits: [{ formationName: "编队1", equipmentType: "J35", memberNos: "J35-132、 J35-118" }],
 		aircraftPools: [{ id: "ac-1", aircraftType: "J35", aircraftCode: "J35-132", currentStatus: "在册完好" }],
 		equipmentTree: [{ nodeLevel: "3", nodeName: "任务计算机模块", quantity: "2", isLru: 1, isDetectable: 0, detectionTime: "12" }],
-		supportStaff: [{ id: "staff-1", major: "机加", majorLevel: "L2", serviceAircraft: "J35, 直-20F", count: "4" }],
+		supportStaff: [
+			{ id: "staff-1", major: "机加", majorLevel: "L2", serviceAircraft: "J35, 直-20F", count: "4" },
+			{ id: "staff-2", major: "飞参", majorLevel: "L1", serviceAircraft: ["J35", "null", "", "直-20F"], count: "2" }
+		],
 		spareParts: [{ id: "spare-1", name: "飞行检查包", model: "FX-06", count: "12" }],
 		ammunition: [{ id: "ammo-1", name: "训练弹", model: "FF-TR", count: "2" }],
 		basicActivityLibrary: [{
@@ -249,6 +293,7 @@ test("workbook-style JSON import cleans raw values into normalized project JSON"
 	assert.equal(project.tables.equipmentTree[0].isLru, true);
 	assert.equal(project.tables.equipmentTree[0].isDetectable, false);
 	assert.deepEqual(project.tables.supportResources[0].serviceAircraft, ["J35", "直-20F"]);
+	assert.deepEqual(project.tables.supportResources[1].serviceAircraft, ["J35", "直-20F"]);
 	assert.equal(project.tables.inventoryResources[0].count, 12);
 	assert.equal(project.tables.supportActivities[1].precedingWork, null);
 	assert.equal(project.tables.metricPlans[0].targetValue, 0.95);
@@ -270,6 +315,20 @@ test("current data_new workbook import generates unique normalized identifiers",
 	for (const objectName of standardObjects) {
 		assert.ok(project.tables[objectName].length > 0, `${objectName} should import records`);
 	}
+});
+
+test("normalized project JSON import recomputes stale validation", () => {
+	const staleProject = validProjectJson();
+	staleProject.validation = { status: "valid", errors: [], warnings: [] };
+	staleProject.tables.inventoryResources[0].resourceType = "foo";
+
+	const normalized = normalizeProjectJson(staleProject);
+	const state = createProjectJsonState({ projectJson: staleProject });
+
+	assert.equal(normalized.validation.status, "invalid");
+	assert.equal(normalized.validation.errors[0].rule, "enum");
+	assert.equal(state.project.validation.status, "invalid");
+	assert.equal(state.project.validation.errors[0].rule, "enum");
 });
 
 test("export keeps invalid projects as drafts and valid projects as runnable normalized JSON", () => {
