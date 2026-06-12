@@ -80,15 +80,15 @@
 
 ### 3.2 稳定 ID 生成规则
 
-标准对象必须有稳定 `id`，但不是每个当前 JSON sheet 都提供 raw `id`。对没有 raw `id` 的来源，adapter 必须生成可重复、可追溯的稳定 ID，推荐格式为 `<sourceSheet>:<stable-field-or-row-index>`，并在导出时保留来源信息。
+标准对象必须有稳定 `id`，但不同来源 sheet 的 raw `id` 可能在同一个标准对象集合内碰撞。导入清洗后的 normalized `id` 应使用 `sourceSheet:rawId`；对没有 raw `id` 的来源，adapter 必须生成可重复、可追溯的稳定 ID，推荐格式为 `<sourceSheet>:<stable-field-or-row-index>`，并在导出时保留来源信息。
 
 | 来源 | 规则 |
 | --- | --- |
-| `basicTasks`、`compositeTasks`、`periodicTasks` | 使用 raw `id` 作为 `missionProfiles.id`。 |
+| `basicTasks`、`compositeTasks`、`periodicTasks` | 使用 `sourceSheet:rawId` 作为 `missionProfiles.id`，避免多个任务 sheet 合并后 raw `id` 碰撞。 |
 | `basicUsageUnits` | `basicUsageUnits` 没有 raw `id`，adapter 生成 `missionProfiles.id`，推荐使用 `basicUsageUnits:<formationName>`。 |
-| `supportOrganizationTree`、`supportStaff`、`supportEquipment`、`supportStations`、`nonSupportStations`、`supportFacilities` | 使用 raw `id` 作为 `supportResources.id`。 |
+| `supportOrganizationTree`、`supportStaff`、`supportEquipment`、`supportStations`、`nonSupportStations`、`supportFacilities` | 使用 `sourceSheet:rawId` 作为 `supportResources.id`，避免组织、人员、站位和设施合并后 raw `id` 碰撞。 |
 | `stationFacilityMatrix` | `stationFacilityMatrix` 没有 raw `id`，adapter 生成 `supportResources.id`，推荐使用 `stationFacilityMatrix:<stationName>`。 |
-| `experimentConfig.indexList`、`optimizationTargets` | 使用 raw `id` 作为 `metricPlans.id`。 |
+| `experimentConfig.indexList`、`optimizationTargets` | 使用 `sourceSheet:rawId` 作为 `metricPlans.id`。 |
 | `constraints` | `constraints` 没有 raw `id`，adapter 生成 `metricPlans.id`，推荐使用 `constraints:<targetType>:<symbol>:<targetValue>`。 |
 
 ## 4. 标准对象字段
