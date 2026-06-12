@@ -6,13 +6,13 @@
 | Date | 2026-06-12 |
 | Scope | Frontend modeling pages, table-to-JSON contract, equipment reliability block diagram design |
 | Applies to | `#/spare-planning/modeling`, `#/mission-reliability/modeling` |
-| Source baseline | `front/app.js`, `core/dataset/data_new.json`, and the pending modeling detailed requirements draft in PR #4 |
+| Source baseline | `front/app.js`, `docs/modeling-detailed-requirements.md`, `core/dataset/data_new.json` |
 
 ## 1. Purpose
 
 The current frontend already exposes the spare-planning and mission-reliability modeling routes and high-level modeling domains. It is still a static review prototype: the user can inspect modeling domains and field examples, but cannot edit records, validate references, import or export project data, or build a reliability block diagram.
 
-This spec should be merged after the pending modeling detailed requirements draft in PR #4, or rebased after that PR lands. Until then, the PR #4 document is an upstream design dependency rather than a file that exists on `main`.
+This spec builds on the modeling detailed requirements document now present on `main`. It should remain a design document until the table metadata, import/export flow, and RBD workspace are implemented in later frontend work.
 
 This design turns the modeling pages into a table-first modeling workspace. Data tables are the authoritative editable source. JSON mapping and validation explain how each table maps to the project data contract. The reliability block diagram is a structured view derived from equipment rows, not a standalone drawing that can drift away from data.
 
@@ -291,7 +291,7 @@ After this design is approved, implementation should proceed in test-first slice
 | PR-01 | Add a design document for table-first modeling pages, JSON mapping, and equipment reliability block diagram design |
 | PR-02 | Keep the PR documentation-only, with no runtime or frontend behavior changes |
 | PR-03 | State that editable tables, JSON import/export, RBD editing, and backend reliability calculation are future implementation work |
-| PR-04 | Note that PR #4 is an upstream design dependency until it is merged into `main` |
+| PR-04 | Build on the merged modeling detailed requirements document without treating future table/RBD behavior as already implemented |
 
 ## 17. Future Implementation Acceptance Criteria
 
