@@ -75,9 +75,11 @@ test("modeling pages render JSON-aligned field groups without the old scene plac
 	assert.match(spareHtml, /data_new\.json/);
 	assert.match(spareHtml, /basicTasks/);
 	assert.match(spareHtml, /spareParts/);
+	assert.match(spareHtml, /nonSupportStations/);
 	assert.match(spareHtml, /usageSupportActivities/);
 	assert.match(spareHtml, /optimizationTargets/);
 	assert.match(spareHtml, /场景\/舰船\/布列不进入建模表单/);
+	assert.match(spareHtml, /历史工作簿\/后续环境配置项/);
 	assert.doesNotMatch(spareHtml, /<label>示例场景<\/label>/);
 	assert.doesNotMatch(spareHtml, /601 舰载机连续出动场景/);
 
@@ -87,7 +89,12 @@ test("modeling pages render JSON-aligned field groups without the old scene plac
 	assert.match(missionHtml, /mtbcf/);
 	assert.match(missionHtml, /mttr/);
 	assert.match(missionHtml, /可靠性框图/);
-	assert.match(missionHtml, /串\/并联关系作为后续字段补充项/);
+	assert.match(missionHtml, /待补 parentId\/串并联关系/);
+	const rbdCard = missionHtml.match(/<h4>装备可靠性框图<\/h4>[\s\S]*?<\/section>/)?.[0] || "";
+	assert.match(rbdCard, /<span>待补字段<\/span>/);
+	assert.match(rbdCard, /parentId/);
+	assert.match(rbdCard, /relationType/);
+	assert.doesNotMatch(rbdCard, /<span class="field-chip">parentId<\/span>/);
 	assert.doesNotMatch(missionHtml, /<label>示例场景<\/label>/);
 	assert.doesNotMatch(missionHtml, /601 舰载机连续出动场景/);
 });

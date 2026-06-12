@@ -107,14 +107,16 @@
 | 保障活动 | `basicActivityLibrary`、`usageSupportActivities`、`preventiveMaintenance`、`correctiveMaintenance` | 作为基本活动库、使用保障、预防性维修和修复性维修方案表单 |
 | 实验指标与约束 | `experimentConfig.indexList`、`constraints`、`optimizationTargets` | 作为实验页和指标分配页的前置字段，不作为单独建模域 |
 
-以下 sheet 暂不进入前端建模页主表单：
+当前 `data_new.json` 没有独立的场景、舰船或布列配置 sheet；`supportStations` 和 `nonSupportStations` 是当前 JSON 的真实 key，已归入保障组织与资源。历史工作簿或后续环境配置中可能出现的编码表不应混写成当前 JSON key。
 
-| JSON sheet | 处理方式 | 原因 |
+以下名称作为历史工作簿 / 后续环境配置项处理，暂不进入前端建模页主表单：
+
+| 名称 | 处理方式 | 原因 |
 | --- | --- | --- |
-| `shipTypes` | 后端环境配置或实验运行配置读取 | 属于舰船基础环境，不是本阶段前端建模对象 |
-| `initialLayouts` | 后端环境配置或实验运行配置读取 | 属于布列方案，不作为建模页独立编辑对象 |
-| `supportStationCodes` | 后端环境配置或实验运行配置读取 | 属于布列与站位映射，不作为建模页独立编辑对象 |
-| `nonSupportStationCodes` | 后端环境配置或实验运行配置读取 | 属于布列与非保障停机位映射，不作为建模页独立编辑对象 |
+| `shipTypes` | 后端环境配置或实验运行配置读取 | 属于舰船基础环境，不是本阶段前端建模对象；当前 `data_new.json` 无此顶层 key |
+| `initialLayouts` | 后端环境配置或实验运行配置读取 | 属于布列方案，不作为建模页独立编辑对象；当前 `data_new.json` 无此顶层 key |
+| `supportStationCodes` | 历史工作簿或后续环境配置读取 | 属于布列与站位编码映射，不是当前 `data_new.json` 的真实 key |
+| `nonSupportStationCodes` | 历史工作簿或后续环境配置读取 | 属于布列与非保障停机位编码映射，不是当前 `data_new.json` 的真实 key；当前真实 key 是 `nonSupportStations` |
 
 ### 3.6 导入清洗与标准化规则
 
@@ -134,8 +136,8 @@
 | `equipmentAssets` | `aircraftPools` | 记录飞机型号、编号、归属组织、在册状态、寿命和飞行时间 |
 | `equipmentTree` | `equipmentTree` | 记录装备组成、系统、分系统、部件/LRU、数量、故障率和维修参数 |
 | `failureModels` | `equipmentTree` | 记录故障率、MTBCF、MTTR、检测时间、故障分布和维修分布 |
-| `reliabilityBlockDiagram` | `equipmentTree` plus user-authored logic | 记录系统-部件层级和成功判定所需结构；当前 JSON 只提供层级，后续需补父子关系和串并联关系 |
-| `supportResources` | `supportOrganizationTree`、`supportStaff`、`supportEquipment`、`supportStations`、`supportFacilities`、`stationFacilityMatrix` | 记录保障组织、人员、设备、站位、设施和设施能力 |
+| `reliabilityBlockDiagram` | `equipmentTree` plus user-authored logic | 记录系统-部件层级和成功判定所需结构；当前 JSON 只提供 `nodeLevel` 层级，后续需补 `parentId`、串并联关系和成功阈值 |
+| `supportResources` | `supportOrganizationTree`、`supportStaff`、`supportEquipment`、`supportStations`、`nonSupportStations`、`supportFacilities`、`stationFacilityMatrix` | 记录保障组织、人员、设备、保障站位、非保障停机位、设施和设施能力 |
 | `inventoryResources` | `spareParts`、`ammunition` | 记录备件、弹药、型号和数量 |
 | `supportActivities` | `basicActivityLibrary`、`usageSupportActivities`、`preventiveMaintenance`、`correctiveMaintenance` | 记录基本活动、保障方案、预防性维修、修复性维修和资源需求 |
 | `metricPlans` | `experimentConfig.indexList`、`constraints`、`optimizationTargets` | 记录满足率、延误时间、可用度、出动架次率、任务可靠度、资源利用率等目标 |
@@ -292,7 +294,6 @@
 | `quantity` | integer | 是 | 装备数量 |
 | `lruId` | string | 是 | LRU 或部件编号 |
 | `lruName` | string | 是 | LRU 或部件名称 |
-| `parentId` | string | 否 | 上级系统或部件编号 |
 | `isMissionCritical` | boolean | 否 | 是否任务关键部件 |
 
 #### 5.2.3 故障模型
@@ -318,6 +319,8 @@
 | `parentNodeId` | string | 否 | 父节点编号 |
 | `relationType` | enum | 否 | serial / parallel / k-out-of-n |
 | `successThreshold` | number | 否 | k-out-of-n 或并联系统成功阈值 |
+
+说明：当前 `data_new.json` 的 `equipmentTree` 只稳定提供 `nodeLevel`、`nodeName` 等层级展示字段；`parentId` / `parentNodeId`、`relationType` 和 `successThreshold` 是后续标准建模契约字段，不应伪装成当前 JSON 已有字段。
 
 #### 5.2.5 保障组织与活动
 
