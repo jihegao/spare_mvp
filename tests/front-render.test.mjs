@@ -69,3 +69,25 @@ test("each CSCI function route renders its expected page content", () => {
 		assert.match(html, /返回导航/, `${route} missing back navigation`);
 	}
 });
+
+test("modeling pages render JSON-aligned field groups without the old scene placeholder", () => {
+	const spareHtml = renderAt("#/spare-planning/modeling");
+	assert.match(spareHtml, /data_new\.json/);
+	assert.match(spareHtml, /basicTasks/);
+	assert.match(spareHtml, /spareParts/);
+	assert.match(spareHtml, /usageSupportActivities/);
+	assert.match(spareHtml, /optimizationTargets/);
+	assert.match(spareHtml, /场景\/舰船\/布列不进入建模表单/);
+	assert.doesNotMatch(spareHtml, /<label>示例场景<\/label>/);
+	assert.doesNotMatch(spareHtml, /601 舰载机连续出动场景/);
+
+	const missionHtml = renderAt("#/mission-reliability/modeling");
+	assert.match(missionHtml, /equipmentTree/);
+	assert.match(missionHtml, /lruFailureRate/);
+	assert.match(missionHtml, /mtbcf/);
+	assert.match(missionHtml, /mttr/);
+	assert.match(missionHtml, /可靠性框图/);
+	assert.match(missionHtml, /串\/并联关系作为后续字段补充项/);
+	assert.doesNotMatch(missionHtml, /<label>示例场景<\/label>/);
+	assert.doesNotMatch(missionHtml, /601 舰载机连续出动场景/);
+});
