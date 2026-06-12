@@ -29,9 +29,22 @@ The current committed baseline is a static CSCI frontend review baseline plus ca
 - `docs/development-handoff-plan.md`: overall phase plan and status control document.
 - `docs/mvp-acceptance-checklist.md`: full MVP acceptance contract covering frontend, backend, simulation, artifacts, and integration evidence.
 - `docs/modeling-detailed-requirements.md`: modeling field and business-rule input for the MVP field contract.
+- `docs/modeling-json-schema.md`: accepted human-readable MVP modeling schema input for frontend forms, backend APIs, future `core/` adapters, and import/export mapping.
 - `core/`: candidate backend simulation code. It is in MVP scope, but its product contract is not accepted until a backend-alignment phase defines field tests, result mapping, and artifact evidence.
 
 Treat `docs/development-handoff-plan.md` as the phase-control source of truth. Treat `docs/prd.md` and `docs/mvp-acceptance-checklist.md` as the product and acceptance sources of truth. Treat `front/` as the Phase 0 page baseline. Treat `core/` as candidate implementation material that must be validated through the MVP contract before its outputs are described as accepted product behavior.
+
+## Current Phase Alignment
+
+The project has moved past the original Phase 1 governance-only discussion. PR #10 established MVP governance, PR #11 extracted the frontend modeling contract, and PR #12 added `docs/modeling-json-schema.md`. That means Phase 2 has started, but only the modeling schema slice is complete.
+
+If `docs/development-handoff-plan.md` still says the next step is Phase 1, treat that as documentation lag rather than current execution truth. Do not restart Phase 1 unless the user explicitly asks to revise governance scope.
+
+The short-term PR queue is tracked in `docs/development-handoff-plan.md` section 10. Treat that section as the source of truth for the next PR number, title, scope, and ordering constraints.
+
+The next product target is not just more static contract text and not a partial "minimum editable form". The modeling pages must become a complete project JSON authoring surface: a user should be able to create, edit, validate, preview, import, and export the full MVP modeling JSON from the page.
+
+Only after the modeling JSON authoring workflow is specified should the plan move on to experiment plan, run record, sample result, aggregate result, frontend result payload, artifact manifest, backend/API, and artifact persistence work.
 
 ## Development Method
 
