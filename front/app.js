@@ -34,9 +34,72 @@ const SUPPORT_ORG_TREE = [
   ] }
 ];
 const SUPPORT_ACTIVITY_PLANS = [
-  { type: "使用保障活动建模", name: "歼-35快速出动保障方案1", jobs: ["机务检查", "燃油加注", "挂弹作业", "通电检查"] },
-  { type: "预防性维修活动建模", name: "8小时周期检查方案", jobs: ["定检准备", "航电检查", "液压系统检查", "记录归档"] },
-  { type: "修复性维修活动建模", name: "航电故障换件维修方案", jobs: ["故障定位", "备件领用", "换件维修", "功能复测"] }
+  {
+    type: "基本保障活动建模",
+    name: "基本保障活动分类",
+    treeTitle: "基本保障活动分类树",
+    path: ["保障活动", "基本保障活动", "机务保障"],
+    jobs: ["机务检查", "燃油加注", "挂弹作业", "通电检查"],
+    tree: {
+      id: "basic-root",
+      name: "基本保障活动",
+      children: [
+        { id: "basic-flightline", name: "飞行线保障", children: [{ id: "basic-inspection", name: "机务检查" }, { id: "basic-fuel", name: "燃油加注" }, { id: "basic-power", name: "通电检查" }] },
+        { id: "basic-ordnance", name: "军械保障", children: [{ id: "basic-load", name: "挂弹作业" }, { id: "basic-safety", name: "安全检查" }] },
+        { id: "basic-repair", name: "维修保障", children: [{ id: "basic-fault", name: "故障定位" }, { id: "basic-replace", name: "换件维修" }, { id: "basic-test", name: "功能复测" }] }
+      ]
+    }
+  },
+  {
+    type: "使用保障活动建模",
+    name: "歼-35近海巡逻飞行前准备方案",
+    treeTitle: "使用保障活动树",
+    path: ["J-35", "近海巡逻任务", "飞行前准备"],
+    jobs: ["机务检查", "燃油加注", "挂弹作业", "通电检查"],
+    tree: {
+      id: "ops-root",
+      name: "使用保障活动",
+      children: [
+        { id: "ops-j35", name: "J-35", children: [
+          { id: "ops-j35-patrol", name: "近海巡逻任务", children: [{ id: "ops-j35-patrol-pre", name: "飞行前准备" }, { id: "ops-j35-patrol-turn", name: "再次出动准备" }, { id: "ops-j35-patrol-post", name: "飞行后检查" }] },
+          { id: "ops-j35-alert", name: "远海警戒任务", children: [{ id: "ops-j35-alert-pre", name: "飞行前准备" }, { id: "ops-j35-alert-turn", name: "再次出动准备" }, { id: "ops-j35-alert-post", name: "飞行后检查" }] }
+        ] },
+        { id: "ops-j15", name: "J-15", children: [
+          { id: "ops-j15-strike", name: "对海突击任务", children: [{ id: "ops-j15-strike-pre", name: "飞行前准备" }, { id: "ops-j15-strike-turn", name: "再次出动准备" }, { id: "ops-j15-strike-post", name: "飞行后检查" }] }
+        ] }
+      ]
+    }
+  },
+  {
+    type: "预防性维修活动建模",
+    name: "J-35日检预防性维修方案",
+    treeTitle: "预防性维修活动树",
+    path: ["J-35", "日检"],
+    jobs: ["定检准备", "航电检查", "液压系统检查", "记录归档"],
+    tree: {
+      id: "preventive-root",
+      name: "预防性维修活动",
+      children: [
+        { id: "preventive-j35", name: "J-35", children: [{ id: "preventive-j35-daily", name: "日检" }, { id: "preventive-j35-weekly", name: "周检" }, { id: "preventive-j35-phase", name: "阶段检" }] },
+        { id: "preventive-j15", name: "J-15", children: [{ id: "preventive-j15-daily", name: "日检" }, { id: "preventive-j15-weekly", name: "周检" }] }
+      ]
+    }
+  },
+  {
+    type: "修复性维修活动建模",
+    name: "J-35航电模块故障修复方案",
+    treeTitle: "修复性维修活动树",
+    path: ["J-35", "航电模块故障"],
+    jobs: ["故障定位", "备件领用", "换件维修", "功能复测"],
+    tree: {
+      id: "corrective-root",
+      name: "修复性维修活动",
+      children: [
+        { id: "corrective-j35", name: "J-35", children: [{ id: "corrective-j35-engine", name: "发动机备件故障" }, { id: "corrective-j35-avionics", name: "航电模块故障" }, { id: "corrective-j35-hydraulic", name: "液压备件故障" }] },
+        { id: "corrective-j15", name: "J-15", children: [{ id: "corrective-j15-engine", name: "发动机备件故障" }, { id: "corrective-j15-parachute", name: "制动伞检查" }] }
+      ]
+    }
+  }
 ];
 
 let scenario = cloneScenario(defaultScenario);
@@ -378,7 +441,9 @@ function renderMainComponent(page) {
   if (page.name === "内置场景") return renderBuiltInScenario(page);
   if (page.name === "基本作战单元建模") return renderCombatUnitModeling(page);
   if (page.name === "基本任务建模") return renderBasicMissionModeling(page);
-  if (page.name === "任务剖面建模") return renderMissionProfileModeling(page);
+  if (page.name === "任务剖面参数") return renderMissionProfileParameters(page);
+  if (page.name === "复合任务建模") return renderCompositeTaskModeling(page);
+  if (page.name === "周期性任务建模") return renderPeriodicTaskModeling(page);
   return renderTaskModel(page);
 }
 
@@ -501,8 +566,7 @@ function edgePath(from, to) {
 
 function renderTaskModel(page) {
   return `
-    <div class="section-head">
-      <h3>${page.name}字段</h3>
+    <div class="section-head section-context">
       <span>${page.dataObjects.join(" / ")}</span>
     </div>
     <div class="form-table-grid">
@@ -523,10 +587,37 @@ function renderTaskModel(page) {
   `;
 }
 
+function renderMissionProfileParameters(page) {
+  return `
+    <div class="section-head section-context">
+      <span>${page.dataObjects.join(" / ")}</span>
+    </div>
+    <div class="organization-layout">
+      <div class="tree-container">
+        <h4>任务剖面参数</h4>
+        <div class="object-tree">
+          <div class="tree-node root">${htmlEscape(scenario.missionProfile.profileType)}<span>任务类型</span></div>
+          <div class="tree-node">${htmlEscape(scenario.missionProfile.repeatCycleHours)} h<span>重复周期</span></div>
+          <div class="tree-node">${htmlEscape(scenario.missionProfile.endCondition)}<span>结束条件</span></div>
+        </div>
+      </div>
+      <div class="detail-panel">
+        <div class="detail-card">
+          <h4>任务剖面参数编辑</h4>
+          <div class="form-table-grid">
+            ${field("任务类型", "missionProfile.profileType")}
+            ${field("重复周期", "missionProfile.repeatCycleHours", "number")}
+            ${field("结束条件", "missionProfile.endCondition")}
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 function renderBuiltInScenario(page) {
   return `
-    <div class="section-head">
-      <h3>${page.name}配置</h3>
+    <div class="section-head section-context">
       <span>${page.dataObjects.join(" / ")}</span>
     </div>
     <div class="form-table-grid">
@@ -568,8 +659,7 @@ function renderCombatUnitModeling(page) {
   const executionMembers = members.filter((member) => member.status !== "备用").slice(0, scenario.combatUnit.requiredCount);
   const standbyMembers = members.filter((member) => member.status === "备用");
   return `
-    <div class="section-head">
-      <h3>${page.name}</h3>
+    <div class="section-head section-context">
       <span>${page.dataObjects.join(" / ")}</span>
     </div>
     <div class="organization-layout">
@@ -640,8 +730,7 @@ function renderBasicMissionModeling(page) {
   const mission = scenario.basicMission;
   const phases = scenario.missionPhases || [];
   return `
-    <div class="section-head">
-      <h3>${htmlEscape(page.name)}</h3>
+    <div class="section-head section-context">
       <span>${page.dataObjects.join(" / ")}</span>
     </div>
     <div class="organization-layout">
@@ -698,25 +787,12 @@ function renderBasicMissionModeling(page) {
   `;
 }
 
-function renderMissionProfileModeling(page) {
+function renderCompositeTaskModeling(page) {
   const compositeTasks = scenario.missionProfile.compositeTasks || [];
-  const periodicTasks = scenario.missionProfile.periodicTasks || [];
   const composite = compositeTasks[0] || { name: "", taskItems: [] };
-  const periodic = periodicTasks[0] || { name: "", repeatWeeks: 1, weekdayAssignments: {} };
-  const compositeOptions = compositeTasks.map((task) => ({ value: task.id, label: task.name }));
-  const weekdayFields = [
-    ["monday", "星期一"],
-    ["tuesday", "星期二"],
-    ["wednesday", "星期三"],
-    ["thursday", "星期四"],
-    ["friday", "星期五"],
-    ["saturday", "星期六"],
-    ["sunday", "星期日"]
-  ];
   const timelineRows = buildCompositeTimelineRows(composite);
   return `
-    <div class="section-head">
-      <h3>${htmlEscape(page.name)}</h3>
+    <div class="section-head section-context">
       <span>${page.dataObjects.join(" / ")}</span>
     </div>
     <div class="organization-layout">
@@ -731,21 +807,6 @@ function renderMissionProfileModeling(page) {
                   <td>${index + 1}</td>
                   <td>${htmlEscape(task.name)}</td>
                   <td>${htmlEscape((task.taskItems || []).map((item) => item.basicTaskName).join("、") || "未关联基本任务")}</td>
-                </tr>
-              `).join("")}
-            </tbody>
-          </table>
-        </div>
-        <h4 style="margin-top:16px;">周期性任务列表</h4>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>序号</th><th>周期性任务名称</th><th>重复周数</th></tr></thead>
-            <tbody>
-              ${periodicTasks.map((task, index) => `
-                <tr class="${index === 0 ? "active" : ""}">
-                  <td>${index + 1}</td>
-                  <td>${htmlEscape(task.name)}</td>
-                  <td>${htmlEscape(task.repeatWeeks)}</td>
                 </tr>
               `).join("")}
             </tbody>
@@ -800,6 +861,47 @@ function renderMissionProfileModeling(page) {
             </table>
           </div>
         </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderPeriodicTaskModeling(page) {
+  const compositeTasks = scenario.missionProfile.compositeTasks || [];
+  const periodicTasks = scenario.missionProfile.periodicTasks || [];
+  const compositeOptions = compositeTasks.map((task) => ({ value: task.id, label: task.name }));
+  const weekdayFields = [
+    ["monday", "星期一"],
+    ["tuesday", "星期二"],
+    ["wednesday", "星期三"],
+    ["thursday", "星期四"],
+    ["friday", "星期五"],
+    ["saturday", "星期六"],
+    ["sunday", "星期日"]
+  ];
+  return `
+    <div class="section-head section-context">
+      <span>${page.dataObjects.join(" / ")}</span>
+    </div>
+    <div class="organization-layout">
+      <div class="tree-container">
+        <h4>周期性任务列表</h4>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>序号</th><th>周期性任务名称</th><th>重复周数</th></tr></thead>
+            <tbody>
+              ${periodicTasks.map((task, index) => `
+                <tr class="${index === 0 ? "active" : ""}">
+                  <td>${index + 1}</td>
+                  <td>${htmlEscape(task.name)}</td>
+                  <td>${htmlEscape(task.repeatWeeks)}</td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="detail-panel">
         <div class="detail-card">
           <h4>周期性任务建模</h4>
           <div class="form-table-grid">
@@ -868,8 +970,7 @@ function renderEquipmentModeling(page) {
   const selected = scenario.components[0] || {};
   const isFailurePage = page.name.includes("故障");
   return `
-    <div class="section-head">
-      <h3>${page.name}</h3>
+    <div class="section-head section-context">
       <span>${isFailurePage ? "故障属性 / 数量 / N中取K参数 / RMS指标" : "组成树 / 组成属性"}</span>
     </div>
     <div class="organization-layout">
@@ -1009,8 +1110,7 @@ function renderResourceTable(page) {
     equipment: node.equipmentCapacity
   })));
   return `
-    <div class="section-head">
-      <h3>${page.name}</h3>
+    <div class="section-head section-context">
       <span>组织 / 人员 / 设备 / 备件</span>
     </div>
     <div class="table-wrap">
@@ -1024,8 +1124,7 @@ function renderResourceTable(page) {
 
 function renderActivityGantt(page) {
   return `
-    <div class="section-head">
-      <h3>${page.name}</h3>
+    <div class="section-head section-context">
       <span>保障活动流程</span>
     </div>
     <div class="gantt-chart">
@@ -1076,7 +1175,7 @@ function renderSupportOrganizationWorkbench(page) {
         <section class="detail-panel">
           <div class="detail-card">
             <div class="section-head">
-              <h3>${activeTab === "保障组织结构建模" ? "组织详情" : activeTab}</h3>
+              <h3>${activeTab === "保障组织结构建模" ? "组织详情" : "资源清单"}</h3>
               <span>${activeResourceType ? `${activeResourceType}资源清单` : "对齐 ship_front 树 + 表格编辑结构"}</span>
             </div>
             ${activeTab === "保障组织结构建模" ? `
@@ -1118,28 +1217,26 @@ function renderOrgTreeNode(node) {
 }
 
 function renderSupportActivityWorkbench(page) {
-  const activePlan = page.name.includes("预防") ? SUPPORT_ACTIVITY_PLANS[1] : page.name.includes("修复") ? SUPPORT_ACTIVITY_PLANS[2] : SUPPORT_ACTIVITY_PLANS[0];
+  const activePlan = SUPPORT_ACTIVITY_PLANS.find((plan) => plan.type === page.name) || SUPPORT_ACTIVITY_PLANS[0];
   return `
     <div class="ship-front-workbench">
-      <div class="comprehensive-layout">
-        <aside class="card plan-tree-card">
-          <h3>${activePlan.type.replace("建模", "列表")}</h3>
-          <div class="toolbar-row"><button type="button" class="btn-primary">新增方案</button><button type="button">删除方案</button></div>
-          ${SUPPORT_ACTIVITY_PLANS.map((plan) => `
-            <button type="button" class="plan-list-item ${plan.type === activePlan.type ? "active" : ""}">
-              <strong>${htmlEscape(plan.name)}</strong>
-              <span>${htmlEscape(plan.type)}</span>
-            </button>
-          `).join("")}
+      <div class="organization-layout">
+        <aside class="tree-container">
+          <div class="tree-toolbar">
+            <h4>${htmlEscape(activePlan.treeTitle)}</h4>
+            <div><button type="button" class="btn-primary">新增分类</button><button type="button">导入</button></div>
+          </div>
+          ${renderSupportActivityTreeNode(activePlan.tree, activePlan.path.at(-1))}
         </aside>
         <section class="detail-panel">
-          <div class="card activity-editor-card">
+          <div class="detail-card activity-editor-card">
             <div class="section-head">
               <h3>${activePlan.type.replace("建模", "编辑")}</h3>
-              <span>${htmlEscape(activePlan.name)}</span>
+              <span>${activePlan.path.map((item) => htmlEscape(item)).join(" / ")}</span>
             </div>
             <div class="form-table-grid">
               <label>活动名称<input value="${htmlEscape(activePlan.name)}"></label>
+              <label>活动类别<input value="${htmlEscape(activePlan.type.replace("建模", ""))}"></label>
               <label>仿真运行规则<input value="按流道组并行排队"></label>
               <label>最大工作时间参考(min)<input type="number" value="${Math.max(...scenario.supportActivities.map((activity) => activity.durationHours * 60))}"></label>
               <label>适用对象<input value="${htmlEscape(scenario.equipment.model)} / ${htmlEscape(currentProject.name)}"></label>
@@ -1163,6 +1260,19 @@ function renderSupportActivityWorkbench(page) {
           </div>
         </section>
       </div>
+    </div>
+  `;
+}
+
+function renderSupportActivityTreeNode(node, selectedName) {
+  const isSelected = node.name === selectedName;
+  return `
+    <div class="tree-node-item">
+      <div class="tree-node-label ${isSelected ? "selected" : ""}">
+        <span class="tree-node-toggle">${node.children?.length ? "▼" : "•"}</span>
+        <span class="tree-node-text">${htmlEscape(node.name)}</span>
+      </div>
+      ${node.children?.length ? `<div class="tree-node-children">${node.children.map((child) => renderSupportActivityTreeNode(child, selectedName)).join("")}</div>` : ""}
     </div>
   `;
 }
@@ -1502,8 +1612,7 @@ function renderAnalysis(page) {
         ? singleResult.downtimeFactors.map((row) => [row.label, `${row.count} 次`, pct(row.contribution), row.reason])
         : [["任务可靠度", pct(final.mission_success_rate), "单次仿真", "由任务波次判定"], ["出动架次率", pct(final.sortie_rate), "单次仿真", "由出动成功数判定"], ["战备完好率", pct(final.ready_rate), "单次仿真", "由 ready 状态判定"]];
   return `
-    <div class="section-head">
-      <h3>${page.name}</h3>
+    <div class="section-head section-context">
       <span>结果分析</span>
     </div>
     <div class="rank-list">
