@@ -134,7 +134,7 @@ h4 {
 
 .workspace-shell {
   display: grid;
-  grid-template-columns: 300px minmax(0, 1fr) 320px;
+  grid-template-columns: 300px minmax(0, 1fr);
   gap: 16px;
   padding: 16px;
   min-height: calc(100vh - 76px);
@@ -142,7 +142,6 @@ h4 {
 
 .feature-nav,
 .feature-page,
-.ontology-panel,
 .panel {
   background: var(--surface);
   border: 1px solid var(--line);
@@ -180,44 +179,51 @@ h4 {
   margin-bottom: 18px;
 }
 
-.nav-module h2 {
+.nav-module summary,
+.nav-secondary summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.nav-module summary::-webkit-details-marker,
+.nav-secondary summary::-webkit-details-marker {
+  display: none;
+}
+
+.nav-module > summary {
   margin-bottom: 10px;
   font-size: 15px;
+  font-weight: 700;
 }
 
 .nav-secondary {
+  display: grid;
+  gap: 8px;
   margin-bottom: 14px;
+  padding-left: 8px;
 }
 
-.nav-secondary h3 {
+.nav-secondary > summary {
   margin: 0 0 8px;
   color: var(--teal);
   font-size: 13px;
+  font-weight: 700;
 }
 
-.deck-modeling-nav {
-  display: grid;
-  gap: 6px;
-  padding-left: 8px;
-  border-left: 2px solid #edf1f5;
-}
-
-.nav-tertiary {
+.nav-tertiary-link {
+  width: calc(100% - 8px);
+  min-height: 34px;
+  margin-left: 8px;
+  padding: 7px 9px;
+  text-align: left;
+  border-radius: 6px;
+  background: #fbfcfd;
   color: var(--muted);
   font-size: 12px;
   font-weight: 700;
 }
 
-.feature-nav-item {
-  width: 100%;
-  min-height: 34px;
-  padding: 7px 9px;
-  text-align: left;
-  border-radius: 6px;
-  background: #fbfcfd;
-}
-
-.feature-nav-item.active {
+.nav-tertiary-link.active {
   border-color: var(--primary);
   background: var(--primary);
   color: #fff;
@@ -259,35 +265,48 @@ h4 {
   background: #fbfcfd;
 }
 
-.experiment-main-tabs {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 4px;
+.feature-entry-panel {
   margin-bottom: 14px;
-  padding: 4px;
+  padding: 12px;
   border: 1px solid var(--line);
   border-radius: 8px;
+  background: #fbfcfd;
+}
+
+.feature-entry-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 10px;
+}
+
+.feature-entry-card {
+  min-height: 76px;
+  display: grid;
+  align-content: center;
+  gap: 5px;
+  padding: 10px 12px;
+  text-align: left;
+  border-radius: 6px;
   background: #fff;
 }
 
-.experiment-subtabs .tab-btn {
-  padding: 8px 12px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--muted);
+.feature-entry-card strong {
+  color: var(--ink);
 }
 
-.experiment-subtabs .tab-btn.active {
+.feature-entry-card span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.feature-entry-card.active {
+  border-color: var(--primary);
   background: var(--primary-soft);
-  color: var(--primary);
-  font-weight: 700;
 }
 
 .page-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 280px;
+  grid-template-columns: minmax(0, 1fr);
   gap: 14px;
 }
 
@@ -383,8 +402,7 @@ tr:last-child td {
   margin-top: 12px;
 }
 
-.badge,
-.tag-list span {
+.badge {
   display: inline-flex;
   align-items: center;
   border-radius: 999px;
@@ -524,7 +542,6 @@ tr:last-child td {
 
 .list-row,
 .rank-row,
-.output-list div,
 .event,
 .issue,
 .ok {
@@ -609,99 +626,9 @@ tr:last-child td {
   font-weight: 400;
 }
 
-.tag-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.output-list {
-  display: grid;
-  gap: 8px;
-}
-
-.output-list div {
-  grid-template-columns: 1fr;
-}
-
-.ontology-panel {
-  max-height: calc(100vh - 108px);
-  overflow: auto;
-  padding: 14px;
-}
-
-.ontology-graph {
-  width: 100%;
-  height: auto;
-  margin: 6px 0 12px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #fbfcfd;
-}
-
-.ontology-graph line {
-  stroke: #b9c3cf;
-  stroke-width: 1.5;
-}
-
-.ontology-node circle {
-  fill: #fff;
-  stroke: var(--primary);
-  stroke-width: 2;
-}
-
-.ontology-node.data circle {
-  stroke: var(--teal);
-}
-
-.ontology-node.downstream circle {
-  stroke: var(--amber);
-}
-
-.ontology-node.validation circle {
-  stroke: var(--red);
-}
-
-.ontology-node text {
-  text-anchor: middle;
-  dominant-baseline: middle;
-  fill: var(--ink);
-  font-size: 9px;
-  pointer-events: none;
-}
-
-.ontology-edge-list {
-  display: grid;
-  gap: 8px;
-}
-
-.ontology-edge-list div {
-  display: grid;
-  gap: 3px;
-  padding: 8px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: #fbfcfd;
-}
-
-.ontology-edge-list strong {
-  color: var(--primary);
-  font-size: 12px;
-}
-
-.ontology-edge-list span {
-  color: var(--muted);
-  font-size: 12px;
-}
-
 @media (max-width: 1280px) {
   .workspace-shell {
     grid-template-columns: 280px minmax(0, 1fr);
-  }
-
-  .ontology-panel {
-    grid-column: 1 / -1;
-    max-height: none;
   }
 }
 

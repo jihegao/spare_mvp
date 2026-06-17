@@ -4,8 +4,7 @@ import {
   cloneScenario,
   defaultScenario,
   runMonteCarlo,
-  runSimulation,
-  validateScenario
+  runSimulation
 } from "./sim-engine.mjs";
 
 const app = document.querySelector("#app");
@@ -31,21 +30,6 @@ function bindEvents() {
       selectedFeatureId = featureButton.dataset.featureId;
       location.hash = `feature=${selectedFeatureId}`;
       render();
-      return;
-    }
-
-    const action = event.target.closest("[data-action]")?.dataset.action;
-    if (!action) return;
-    if (action === "run-single") {
-      singleResult = runSimulation(scenario);
-      render();
-    }
-    if (action === "run-mc") {
-      monteCarloResult = runMonteCarlo(scenario, { samples: Number(document.querySelector("#mc-samples")?.value || 4) });
-      render();
-    }
-    if (action === "export-json") {
-      downloadJson("spare-mvp-scenario.json", scenario);
     }
   });
 
@@ -69,46 +53,35 @@ function render() {
           <p>${page.module} / ${page.secondary} / ${page.tertiary}</p>
         </div>
       </div>
-      <div class="right">
-        <button class="btn-primary" type="button" data-action="run-single">运行单次仿真</button>
-        <button type="button" data-action="run-mc">运行 Monte Carlo</button>
-        <button type="button" data-action="export-json">导出方案 JSON</button>
-      </div>
     </header>
     <main class="workspace-shell">
       ${renderNavigation(page)}
       ${renderFeaturePage(page)}
-      ${renderOntologyPanel(page)}
     </main>
   `;
 }
 
 function renderNavigation(activePage) {
   return `
-    <aside class="feature-nav" aria-label="四级功能导航">
+    <aside class="feature-nav" aria-label="功能导航">
       <div class="nav-summary">
-        <strong>四级功能页</strong>
-        <span>${FEATURE_PAGES.length} 个页面</span>
+        <strong>功能导航</strong>
+        <span>三级折叠菜单</span>
       </div>
       ${Object.entries(groups).map(([moduleName, secondaryGroups]) => `
-        <section class="nav-module">
-          <h2>${moduleName}</h2>
+        <details class="nav-module" ${moduleName === activePage.module ? "open" : ""}>
+          <summary>${moduleName}</summary>
           ${Object.entries(secondaryGroups).map(([secondaryName, tertiaryGroups]) => `
-            <div class="nav-secondary">
-              <h3>${secondaryName}</h3>
+            <details class="nav-secondary" ${secondaryName === activePage.secondary ? "open" : ""}>
+              <summary>${secondaryName}</summary>
               ${Object.entries(tertiaryGroups).map(([tertiaryName, pages]) => `
-                <div class="deck-modeling-nav">
-                  <div class="nav-tertiary">${tertiaryName}</div>
-                  ${pages.map((page) => `
-                    <button type="button" class="feature-nav-item ${page.id === activePage.id ? "active" : ""}" data-feature-id="${page.id}">
-                      ${page.name}
-                    </button>
-                  `).join("")}
-                </div>
+                <button type="button" class="nav-tertiary-link ${isActiveTertiary(activePage, pages) ? "active" : ""}" data-feature-id="${pages[0].id}">
+                  ${tertiaryName}
+                </button>
               `).join("")}
-            </div>
+            </details>
           `).join("")}
-        </section>
+        </details>
       `).join("")}
     </aside>
   `;
@@ -129,20 +102,31 @@ function renderFeaturePage(page) {
           <strong>${scenario.experiment.name}</strong>
         </div>
       </div>
-      <nav class="experiment-main-tabs experiment-subtabs" aria-label="同组四级功能">
-        ${siblingPages.map((item) => `
-          <button class="tab-btn ${item.id === page.id ? "active" : ""}" type="button" data-feature-id="${item.id}">
-            ${item.name}
-          </button>
-        `).join("")}
-      </nav>
+      ${renderFeatureEntryPanel(page, siblingPages)}
       <div class="page-grid">
         <section class="panel main-panel">
           ${renderMainComponent(page)}
         </section>
-        <section class="panel side-panel">
-          ${renderValidationAndOutputs(page)}
-        </section>
+      </div>
+    </section>
+  `;
+}
+
+function renderFeatureEntryPanel(page, siblingPages) {
+  if (siblingPages.length <= 1) return "";
+  return `
+    <section class="feature-entry-panel" aria-label="四级功能入口">
+      <div class="section-head">
+        <h3>${page.tertiary}入口</h3>
+        <span>${siblingPages.length} 个四级功能</span>
+      </div>
+      <div class="feature-entry-grid">
+        ${siblingPages.map((item) => `
+          <button class="feature-entry-card ${item.id === page.id ? "active" : ""}" type="button" data-feature-id="${item.id}">
+            <strong>${item.name}</strong>
+            <span>${item.component}</span>
+          </button>
+        `).join("")}
       </div>
     </section>
   `;
@@ -350,7 +334,7 @@ function renderMonteCarloConfig() {
 function renderMonteCarloResults() {
   return `
     <div class="section-head">
-      <h3>蒙特卡洛实验结果展示</h3>
+      <h3>蒙特卡洛实验结果</h3>
       <span>${monteCarloResult.runs.length} 个样本</span>
     </div>
     <div class="table-wrap">
@@ -409,69 +393,12 @@ function renderScenarioSwitch() {
   `;
 }
 
-function renderValidationAndOutputs(page) {
-  const issues = validateScenario(scenario);
-  return `
-    <div class="section-head">
-      <h3>校验与输出</h3>
-      <span>${page.component}</span>
-    </div>
-    <div class="check-list">
-      ${issues.length ? issues.map((issue) => `<div class="issue">${issue}</div>`).join("") : `<div class="ok">共享 scenario 校验通过</div>`}
-    </div>
-    <h4>写入对象</h4>
-    <div class="tag-list">${page.dataObjects.map((item) => `<span>${item}</span>`).join("")}</div>
-    <h4>输出联动</h4>
-    <div class="output-list">${page.outputs.map((item) => `<div>${item}</div>`).join("")}</div>
-  `;
-}
-
-function renderOntologyPanel(page) {
-  return `
-    <aside class="ontology-panel">
-      <div class="section-head">
-        <h3>Ontology 上下文</h3>
-        <span>${page.ontology.nodes.length} 节点 / ${page.ontology.edges.length} 关系</span>
-      </div>
-      ${renderOntologyGraph(page)}
-      <div class="ontology-edge-list">
-        ${page.ontology.edges.slice(-6).map((edge) => `<div><strong>${edge.label}</strong><span>${nodeLabel(page, edge.from)} -> ${nodeLabel(page, edge.to)}</span></div>`).join("")}
-      </div>
-    </aside>
-  `;
-}
-
-function renderOntologyGraph(page) {
-  const graphNodes = page.ontology.nodes.slice(0, 8);
-  const positions = [
-    [170, 40],
-    [70, 100],
-    [170, 100],
-    [270, 100],
-    [70, 170],
-    [170, 170],
-    [270, 170],
-    [170, 240]
-  ];
-  return `
-    <svg class="ontology-graph" viewBox="0 0 340 280" role="img" aria-label="${page.name} ontology graph">
-      ${page.ontology.edges.slice(0, 10).map((edge) => {
-        const fromIndex = Math.max(0, graphNodes.findIndex((node) => node.id === edge.from));
-        const toIndex = Math.max(0, graphNodes.findIndex((node) => node.id === edge.to));
-        const [x1, y1] = positions[fromIndex];
-        const [x2, y2] = positions[toIndex];
-        return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" />`;
-      }).join("")}
-      ${graphNodes.map((node, index) => {
-        const [x, y] = positions[index];
-        return `<g class="ontology-node ${node.type}" transform="translate(${x} ${y})"><circle r="24"></circle><text>${truncate(node.label, 9)}</text></g>`;
-      }).join("")}
-    </svg>
-  `;
-}
-
 function field(label, path, type = "text") {
   return `<label>${label}<input data-path="${path}" type="${type}" value="${htmlEscape(getPath(scenario, path))}"></label>`;
+}
+
+function isActiveTertiary(activePage, pages) {
+  return pages.some((page) => page.id === activePage.id);
 }
 
 function readFeatureIdFromHash() {
@@ -496,16 +423,6 @@ function parseInput(input) {
   return input.type === "number" ? Number(input.value) : input.value;
 }
 
-function downloadJson(filename, data) {
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = filename;
-  anchor.click();
-  URL.revokeObjectURL(url);
-}
-
 function stateLabel(state) {
   const labels = {
     available: "可用",
@@ -518,21 +435,12 @@ function stateLabel(state) {
   return labels[state] || state;
 }
 
-function nodeLabel(page, id) {
-  return page.ontology.nodes.find((node) => node.id === id)?.label || id;
-}
-
 function pct(value) {
   return `${Math.round(Number(value || 0) * 100)}%`;
 }
 
 function fixed(value, digits = 2) {
   return Number(value || 0).toFixed(digits);
-}
-
-function truncate(value, maxLength) {
-  const text = String(value || "");
-  return text.length > maxLength ? `${text.slice(0, maxLength - 1)}…` : text;
 }
 
 function htmlEscape(value) {
