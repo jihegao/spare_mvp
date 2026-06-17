@@ -1,0 +1,15 @@
+{
+  "experiment_name": "spare_planning_smoke",
+  "model_class": "SpareMvpModel",
+  "steps": 48,
+  "primary_metric": "spare_fill_rate",
+  "seeds": [101, 102, 103],
+  "parameters": {
+    "mode": "spare_planning",
+    "equipment_count": 8,
+    "min_required_sorties": 5,
+    "initial_spare_stock": [4, 8, 12],
+    "failure_rate": 0.08,
+    "support_capacity": 2
+  }
+}
