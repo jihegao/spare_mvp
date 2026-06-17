@@ -73,3 +73,11 @@ test("topbar omits run and export actions", async () => {
   assert.doesNotMatch(appSource, /data-action/);
   assert.doesNotMatch(appSource, /downloadJson/);
 });
+
+test("monte carlo configuration drives the displayed result sample count", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  assert.doesNotMatch(appSource, /runMonteCarlo\(scenario, \{ samples: 4 \}\)/);
+  assert.match(appSource, /let monteCarloResult = runMonteCarlo\(scenario\)/);
+  assert.match(appSource, /id="mc-samples"[^>]*data-path="experiment\.samples"/);
+  assert.match(appSource, /monteCarloResult = runMonteCarlo\(scenario\)/);
+});

@@ -12,7 +12,7 @@ const groups = groupFeaturePages(FEATURE_PAGES);
 
 let scenario = cloneScenario(defaultScenario);
 let singleResult = runSimulation(scenario);
-let monteCarloResult = runMonteCarlo(scenario, { samples: 4 });
+let monteCarloResult = runMonteCarlo(scenario);
 let selectedFeatureId = readFeatureIdFromHash() || FEATURE_PAGES[0].id;
 
 render();
@@ -38,6 +38,7 @@ function bindEvents() {
     if (!input) return;
     setPath(scenario, input.dataset.path, parseInput(input));
     singleResult = runSimulation(scenario);
+    monteCarloResult = runMonteCarlo(scenario);
     render();
   });
 }
@@ -323,7 +324,7 @@ function renderMonteCarloConfig() {
       <span>扫参 / 样本 / seed</span>
     </div>
     <div class="form-table-grid">
-      <label>样本数<input id="mc-samples" type="number" min="1" value="${scenario.experiment.samples}"></label>
+      <label>样本数<input id="mc-samples" data-path="experiment.samples" type="number" min="1" value="${scenario.experiment.samples}"></label>
       <label>故障率扫描<input value="${scenario.monteCarlo.failureRates.join(",")}"></label>
       <label>备件倍数<input value="${scenario.monteCarlo.spareMultipliers.join(",")}"></label>
       <label>保障容量<input value="${scenario.monteCarlo.supportCapacities.join(",")}"></label>
