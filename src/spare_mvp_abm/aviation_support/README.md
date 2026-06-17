@@ -1,53 +1,34 @@
-# Aviation Support Scenario
+# 航空保障 Mesa 场景包
 
-This scenario pack models sortie generation for a single flightline with
-resource-constrained support operations.
+该场景包用于描述单条飞行保障线的出动生成过程，并显式考虑保障资源约束。
 
-## Scope
+## 范围
 
-- Missions specify planned departure time, duration, required aircraft type, and
-  required aircraft count.
-- Aircraft keep a history of flight hours, landings, calendar days since
-  overhaul, and a small subsystem/LRU reliability tree.
-- Support plans are composed from basic operations. The first version includes
-  pre-mission support, post-mission support, and LRU maintenance support.
-- Resources are constrained pools for mechanic teams, fuel trucks, power carts,
-  weapons crews, and maintenance bays.
-- `ontology.json` is the source for configurable aircraft types, aircraft
-  inventories, mission plans, support tasks, support plans, resources, and spare
-  parts. `ontology.normalized.json` and `ontology.report.json` record the local
-  ontology-IR normalization result.
+- 任务定义计划起飞时间、任务时长、所需飞机类型和所需飞机数量。
+- 飞机记录飞行小时、着陆次数、距大修日历天数，并包含小型子系统 / LRU 可靠性树。
+- 保障方案由基础作业组成，当前版本包含飞行前保障、飞行后保障和 LRU 维修保障。
+- 资源被建模为受限池，包括机务班组、加油车、电源车、挂弹班组和维修工位。
+- `ontology.json` 是飞机类型、飞机库存、任务计划、保障作业、保障方案、资源和备件配置的来源；`ontology.normalized.json` 和 `ontology.report.json` 记录本地 ontology IR 规范化结果。
 
-## Model Boundary
+## 模型边界
 
-`model.py` keeps Mesa as the executable model surface. Ordered support tasks use
-DES-style logic inside the Mesa model: each task waits for resources, occupies
-them for a duration, releases them, and advances the aircraft state.
+`model.py` 是 Mesa 可执行模型入口。有序保障作业在 Mesa 模型内部使用离散事件风格逻辑：每个作业等待资源、占用资源一段时间、释放资源，并推进飞机状态。
 
-The current slice does not claim calibrated aircraft reliability. LRU failures
-use seeded exponential failure sampling from the encoded MTBF values.
+当前切片不声称已经校准真实飞机可靠性。LRU 故障使用固定随机种子和已编码 MTBF 值进行指数分布采样。
 
-The ontology describes structure and scenario configuration. Mesa rules still
-implement the dynamic behavior: launch decisions, support queues, resource
-occupation, task durations, LRU failure sampling, spare consumption, and spare
-replenishment.
+本体描述结构和场景配置；动态行为仍由 Mesa 规则实现，包括出动决策、保障排队、资源占用、作业时长、LRU 故障采样、备件消耗和备件补充。
 
-## Visualization
+## 可视化
 
-Open `visualization.html` through a local HTTP server for browser inspection.
-The page has three coordinated views:
+通过本地 HTTP 服务打开 `visualization.html` 可进行浏览器检查。页面包含三个联动视图：
 
-- Aircraft view: select one aircraft and inspect mission status, support status,
-  flight history, systems, LRUs, health state, MTBF, MTTR, and spare mapping.
-- Mission view: inspect the mission schedule table, execution progress, assigned
-  aircraft group, and each assigned aircraft's current state.
-- Support view: inspect resource working/idle status, accumulated work time,
-  work counts, support jobs, event log, spare stock, consumed count, replenished
-  count, and pending replenishment quantity.
+- 飞机视图：选择单架飞机，检查任务状态、保障状态、飞行历史、系统、LRU、健康状态、MTBF、MTTR 和备件映射。
+- 任务视图：检查任务计划表、执行进度、指派飞机组，以及每架指派飞机的当前状态。
+- 保障视图：检查资源工作/空闲状态、累计工作时间、工作次数、保障作业、事件日志、备件库存、消耗数量、补充数量和待补充数量。
 
-## Evidence
+## 证据命令
 
-Run the deterministic smoke scenario:
+运行确定性烟测场景：
 
 ```bash
 python3 /Users/gaojihe/apps/mesa-abm-skill/mesa-abm-skill/scripts/run_mesa_experiment.py \
@@ -57,7 +38,7 @@ python3 /Users/gaojihe/apps/mesa-abm-skill/mesa-abm-skill/scripts/run_mesa_exper
   --install-dir .abm-mesa-env
 ```
 
-Run the resource-capacity sweep:
+运行资源容量扫参：
 
 ```bash
 python3 /Users/gaojihe/apps/mesa-abm-skill/mesa-abm-skill/scripts/run_mesa_experiment.py \
@@ -67,5 +48,4 @@ python3 /Users/gaojihe/apps/mesa-abm-skill/mesa-abm-skill/scripts/run_mesa_exper
   --install-dir .abm-mesa-env
 ```
 
-Primary outputs are per-step CSV files and `summary.json`. Open
-`visualization.html` for a browser inspection surface.
+主要输出为逐步 CSV 文件和 `summary.json`。需要浏览器检查时，通过本地 HTTP 服务打开 `visualization.html`。
