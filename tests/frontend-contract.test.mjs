@@ -173,6 +173,20 @@ test("basic mission page follows ship front basic task modeling structure", asyn
   assert.doesNotMatch(appSource, /基本任务建模字段[\s\S]*任务类型/);
 });
 
+test("mission profile page follows ship front composite and periodic task modeling", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  assert.match(appSource, /if \(page\.name === "任务剖面建模"\) return renderMissionProfileModeling\(page\)/);
+  assert.match(appSource, /function renderMissionProfileModeling\(page\)/);
+  assert.match(appSource, /复合任务列表/);
+  assert.match(appSource, /当前复合任务包含的基本任务/);
+  assert.match(appSource, /典型组合任务时序表/);
+  assert.match(appSource, /周期性任务列表/);
+  assert.match(appSource, /周期性任务建模/);
+  assert.match(appSource, /星期/);
+  assert.match(appSource, /复合任务名称/);
+  assert.doesNotMatch(appSource, /任务剖面建模字段[\s\S]*任务类型/);
+});
+
 test("topbar omits run and export actions", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   assert.doesNotMatch(appSource, /运行单次仿真/);

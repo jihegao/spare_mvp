@@ -36,6 +36,15 @@ test("default scenario includes basic mission modeling attributes", () => {
   assert.equal(defaultScenario.basicMission.supportActivityName, "飞行前保障");
 });
 
+test("default scenario includes mission profile composite and periodic tasks", () => {
+  assert.equal(defaultScenario.missionProfile.compositeTasks[0].name, "昼间巡逻复合任务");
+  assert.equal(defaultScenario.missionProfile.compositeTasks[0].taskItems[0].basicTaskName, "近海巡逻任务");
+  assert.equal(defaultScenario.missionProfile.compositeTasks[0].taskItems[0].dailyRepeatCount, 2);
+  assert.equal(defaultScenario.missionProfile.periodicTasks[0].name, "昼夜保障周期任务");
+  assert.equal(defaultScenario.missionProfile.periodicTasks[0].repeatWeeks, 2);
+  assert.equal(defaultScenario.missionProfile.periodicTasks[0].weekdayAssignments.monday, "composite-day-patrol");
+});
+
 test("single simulation is reproducible for the same seed", () => {
   const scenario = cloneScenario(defaultScenario);
   const first = runSimulation(scenario, { seed: 77, steps: 36 });

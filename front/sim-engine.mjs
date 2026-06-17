@@ -54,7 +54,63 @@ export const defaultScenario = {
     profileId: "MP-01",
     profileType: "多机集群任务",
     repeatCycleHours: 6,
-    endCondition: "完成 8 个任务波次"
+    endCondition: "完成 8 个任务波次",
+    compositeTasks: [
+      {
+        id: "composite-day-patrol",
+        name: "昼间巡逻复合任务",
+        taskItems: [
+          {
+            id: "day-patrol-main",
+            basicTaskName: "近海巡逻任务",
+            equipmentType: "A-Prototype",
+            equipmentQuantity: 5,
+            groupName: "第一出动编队",
+            taskDispatchTime: "07:15",
+            firstWaveTime: "08:00",
+            recoveryTime: "11:00",
+            dailyRepeatCount: 2,
+            intervalHours: 6,
+            preparationMinutes: 45
+          }
+        ]
+      },
+      {
+        id: "composite-night-alert",
+        name: "夜间警戒复合任务",
+        taskItems: [
+          {
+            id: "night-alert-main",
+            basicTaskName: "远海警戒任务",
+            equipmentType: "A-Prototype",
+            equipmentQuantity: 4,
+            groupName: "夜间警戒编队",
+            taskDispatchTime: "19:30",
+            firstWaveTime: "20:15",
+            recoveryTime: "23:30",
+            dailyRepeatCount: 1,
+            intervalHours: 8,
+            preparationMinutes: 45
+          }
+        ]
+      }
+    ],
+    periodicTasks: [
+      {
+        id: "periodic-day-night",
+        name: "昼夜保障周期任务",
+        repeatWeeks: 2,
+        weekdayAssignments: {
+          monday: "composite-day-patrol",
+          tuesday: "composite-day-patrol",
+          wednesday: "composite-night-alert",
+          thursday: "composite-day-patrol",
+          friday: "composite-day-patrol",
+          saturday: "composite-night-alert",
+          sunday: "composite-day-patrol"
+        }
+      }
+    ]
   },
   basicMission: {
     missionId: "BM-01",

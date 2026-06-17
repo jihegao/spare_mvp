@@ -382,6 +382,7 @@ function renderMainComponent(page) {
   if (page.name === "内置场景") return renderBuiltInScenario(page);
   if (page.name === "基本作战单元建模") return renderCombatUnitModeling(page);
   if (page.name === "基本任务建模") return renderBasicMissionModeling(page);
+  if (page.name === "任务剖面建模") return renderMissionProfileModeling(page);
   return renderTaskModel(page);
 }
 
@@ -699,6 +700,172 @@ function renderBasicMissionModeling(page) {
       </div>
     </div>
   `;
+}
+
+function renderMissionProfileModeling(page) {
+  const compositeTasks = scenario.missionProfile.compositeTasks || [];
+  const periodicTasks = scenario.missionProfile.periodicTasks || [];
+  const composite = compositeTasks[0] || { name: "", taskItems: [] };
+  const periodic = periodicTasks[0] || { name: "", repeatWeeks: 1, weekdayAssignments: {} };
+  const compositeOptions = compositeTasks.map((task) => ({ value: task.id, label: task.name }));
+  const weekdayFields = [
+    ["monday", "星期一"],
+    ["tuesday", "星期二"],
+    ["wednesday", "星期三"],
+    ["thursday", "星期四"],
+    ["friday", "星期五"],
+    ["saturday", "星期六"],
+    ["sunday", "星期日"]
+  ];
+  const timelineRows = buildCompositeTimelineRows(composite);
+  return `
+    <div class="section-head">
+      <h3>${htmlEscape(page.name)}</h3>
+      <span>${page.dataObjects.join(" / ")}</span>
+    </div>
+    <div class="organization-layout">
+      <div class="tree-container">
+        <h4>复合任务列表</h4>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>序号</th><th>复合任务名称</th><th>基本任务</th></tr></thead>
+            <tbody>
+              ${compositeTasks.map((task, index) => `
+                <tr class="${index === 0 ? "active" : ""}">
+                  <td>${index + 1}</td>
+                  <td>${htmlEscape(task.name)}</td>
+                  <td>${htmlEscape((task.taskItems || []).map((item) => item.basicTaskName).join("、") || "未关联基本任务")}</td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+        <h4 style="margin-top:16px;">周期性任务列表</h4>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>序号</th><th>周期性任务名称</th><th>重复周数</th></tr></thead>
+            <tbody>
+              ${periodicTasks.map((task, index) => `
+                <tr class="${index === 0 ? "active" : ""}">
+                  <td>${index + 1}</td>
+                  <td>${htmlEscape(task.name)}</td>
+                  <td>${htmlEscape(task.repeatWeeks)}</td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="detail-panel">
+        <div class="detail-card">
+          <h4>当前复合任务包含的基本任务</h4>
+          <div class="form-table-grid" style="grid-template-columns:1fr;margin-bottom:12px;">
+            ${field("复合任务名称", "missionProfile.compositeTasks.0.name")}
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>序号</th><th>基本任务名称</th><th>装备类型</th><th>装备数量</th><th>编队名称</th><th>任务下达时间</th><th>首波次出动时刻</th><th>单日重复次数</th><th>间隔小时数</th></tr></thead>
+              <tbody>
+                ${(composite.taskItems || []).map((item, index) => `
+                  <tr>
+                    <td>${index + 1}</td>
+                    <td>${valueInput(`missionProfile.compositeTasks.0.taskItems.${index}.basicTaskName`)}</td>
+                    <td>${valueInput(`missionProfile.compositeTasks.0.taskItems.${index}.equipmentType`)}</td>
+                    <td>${valueInput(`missionProfile.compositeTasks.0.taskItems.${index}.equipmentQuantity`, "number")}</td>
+                    <td>${valueInput(`missionProfile.compositeTasks.0.taskItems.${index}.groupName`)}</td>
+                    <td>${valueInput(`missionProfile.compositeTasks.0.taskItems.${index}.taskDispatchTime`, "time")}</td>
+                    <td>${valueInput(`missionProfile.compositeTasks.0.taskItems.${index}.firstWaveTime`, "time")}</td>
+                    <td>${valueInput(`missionProfile.compositeTasks.0.taskItems.${index}.dailyRepeatCount`, "number")}</td>
+                    <td>${valueInput(`missionProfile.compositeTasks.0.taskItems.${index}.intervalHours`, "number")}</td>
+                  </tr>
+                `).join("")}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="detail-card network-card">
+          <h4>典型组合任务时序表</h4>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>波次序号</th><th>基本任务名称</th><th>编队名称</th><th>任务下达时刻</th><th>准备时间(min)</th><th>出动时刻</th><th>回收时刻</th></tr></thead>
+              <tbody>
+                ${timelineRows.map((row) => `
+                  <tr>
+                    <td>${row.sequence}</td>
+                    <td>${htmlEscape(row.basicTaskName)}</td>
+                    <td>${htmlEscape(row.groupName)}</td>
+                    <td>${htmlEscape(row.taskDispatchTime)}</td>
+                    <td>${htmlEscape(row.preparationMinutes)}</td>
+                    <td>${htmlEscape(row.departureTime)}</td>
+                    <td>${htmlEscape(row.recoveryTime)}</td>
+                  </tr>
+                `).join("")}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="detail-card">
+          <h4>周期性任务建模</h4>
+          <div class="form-table-grid">
+            ${field("周期性任务名称", "missionProfile.periodicTasks.0.name")}
+            ${field("重复周数", "missionProfile.periodicTasks.0.repeatWeeks", "number")}
+          </div>
+          <div class="table-wrap" style="margin-top:12px;">
+            <table>
+              <thead><tr><th>星期</th><th>复合任务名称</th></tr></thead>
+              <tbody>
+                ${weekdayFields.map(([key, label]) => `
+                  <tr>
+                    <td>${label}</td>
+                    <td>${valueSelect(`missionProfile.periodicTasks.0.weekdayAssignments.${key}`, compositeOptions)}</td>
+                  </tr>
+                `).join("")}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function buildCompositeTimelineRows(composite) {
+  return (composite.taskItems || []).flatMap((item) => {
+    const repeatCount = Math.max(1, Number(item.dailyRepeatCount || 1));
+    const intervalHours = Math.max(1, Number(item.intervalHours || 1));
+    const durationMinutes = diffTimeMinutes(item.firstWaveTime, item.recoveryTime) || Number(item.taskDurationMinutes || scenario.basicMission.taskDurationMinutes || 180);
+    return Array.from({ length: repeatCount }, (_, index) => {
+      const departureTime = addHoursToTime(item.firstWaveTime, index * intervalHours);
+      return {
+        sequence: index + 1,
+        basicTaskName: item.basicTaskName,
+        groupName: item.groupName,
+        taskDispatchTime: item.taskDispatchTime,
+        preparationMinutes: item.preparationMinutes,
+        departureTime,
+        recoveryTime: addMinutesToTime(departureTime, durationMinutes)
+      };
+    });
+  });
+}
+
+function addHoursToTime(value, hours) {
+  return addMinutesToTime(value, Number(hours || 0) * 60);
+}
+
+function addMinutesToTime(value, minutes) {
+  const [hour, minute] = String(value || "00:00").split(":").map((part) => Number(part));
+  const total = (((Number(hour) || 0) * 60 + (Number(minute) || 0) + Number(minutes || 0)) % 1440 + 1440) % 1440;
+  return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+}
+
+function diffTimeMinutes(start, end) {
+  const [startHour, startMinute] = String(start || "").split(":").map((part) => Number(part));
+  const [endHour, endMinute] = String(end || "").split(":").map((part) => Number(part));
+  if (![startHour, startMinute, endHour, endMinute].every(Number.isFinite)) return 0;
+  const startTotal = startHour * 60 + startMinute;
+  const endTotal = endHour * 60 + endMinute;
+  return endTotal >= startTotal ? endTotal - startTotal : endTotal + 1440 - startTotal;
 }
 
 function renderEquipmentTable(page) {
@@ -1483,6 +1650,18 @@ function field(label, path, type = "text") {
 
 function valueInput(path, type = "text") {
   return `<input data-path="${path}" type="${type}" value="${htmlEscape(getPath(scenario, path))}">`;
+}
+
+function valueSelect(path, options) {
+  const selectedValue = String(getPath(scenario, path));
+  return `
+    <select data-path="${path}">
+      ${options.map((option) => {
+        const value = String(option.value);
+        return `<option value="${htmlEscape(value)}" ${value === selectedValue ? "selected" : ""}>${htmlEscape(option.label)}</option>`;
+      }).join("")}
+    </select>
+  `;
 }
 
 function isActiveTertiary(activePage, pages) {
