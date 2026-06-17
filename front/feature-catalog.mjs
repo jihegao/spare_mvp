@@ -1,0 +1,204 @@
+const MODULE_PREFIX = {
+  "备件规划评估模块": "spare-planning",
+  "任务可靠度评估模块": "mission-reliability"
+};
+
+const FEATURE_SLUGS = {
+  内置场景: "built-in-scenario",
+  基本作战单元建模: "combat-unit",
+  基本任务建模: "basic-mission",
+  任务剖面建模: "mission-profile",
+  装备组成建模: "equipment-composition",
+  装备故障建模: "equipment-failure",
+  装备可靠性框图建模: "reliability-block-diagram",
+  保障组织结构建模: "support-organization",
+  备件建模: "spare-part",
+  保障人员建模: "support-personnel",
+  保障设备建模: "support-equipment",
+  保障资源需求组: "support-resource-demand",
+  装备修复性维修方案: "corrective-maintenance-plan",
+  装备预防性维修方案: "preventive-maintenance-plan",
+  装备使用保障方案: "operations-support-plan",
+  结果导入: "result-import",
+  仿真实验方案创建: "experiment-create",
+  仿真实验方案编辑: "experiment-edit",
+  可视化实验启动与停止: "visual-start-stop",
+  场景切换: "scenario-switch",
+  可视化结果展示: "visual-results",
+  蒙特卡洛实验配置: "monte-carlo-config",
+  蒙特卡洛实验结果展示: "monte-carlo-results",
+  备件短板分析: "spare-shortfall-analysis",
+  飞机转场携行清单分析: "carry-list-analysis",
+  飞机任务可靠性分析: "aircraft-task-reliability",
+  任务可靠度评估: "task-reliability",
+  停机因素分析: "downtime-factor-analysis"
+};
+
+const SOURCE_ROWS = [
+  ["备件规划评估模块", "仿真建模", "任务建模", "内置场景"],
+  ["备件规划评估模块", "仿真建模", "任务建模", "基本作战单元建模"],
+  ["备件规划评估模块", "仿真建模", "任务建模", "基本任务建模"],
+  ["备件规划评估模块", "仿真建模", "任务建模", "任务剖面建模"],
+  ["备件规划评估模块", "仿真建模", "装备建模", "装备组成建模"],
+  ["备件规划评估模块", "仿真建模", "装备建模", "装备故障建模"],
+  ["备件规划评估模块", "仿真建模", "保障组织建模", "保障组织结构建模"],
+  ["备件规划评估模块", "仿真建模", "保障组织建模", "备件建模"],
+  ["备件规划评估模块", "仿真建模", "保障组织建模", "保障人员建模"],
+  ["备件规划评估模块", "仿真建模", "保障组织建模", "保障设备建模"],
+  ["备件规划评估模块", "仿真建模", "保障活动建模", "保障资源需求组"],
+  ["备件规划评估模块", "仿真建模", "保障活动建模", "装备修复性维修方案"],
+  ["备件规划评估模块", "仿真建模", "保障活动建模", "装备预防性维修方案"],
+  ["备件规划评估模块", "仿真建模", "保障活动建模", "装备使用保障方案"],
+  ["备件规划评估模块", "仿真建模", "指标分配方案管理", "结果导入"],
+  ["备件规划评估模块", "仿真实验", "仿真实验方案管理", "仿真实验方案创建"],
+  ["备件规划评估模块", "仿真实验", "仿真实验方案管理", "仿真实验方案编辑"],
+  ["备件规划评估模块", "仿真实验", "可视化推演", "可视化实验启动与停止"],
+  ["备件规划评估模块", "仿真实验", "可视化推演", "场景切换"],
+  ["备件规划评估模块", "仿真实验", "可视化推演", "可视化结果展示"],
+  ["备件规划评估模块", "仿真实验", "蒙特卡洛实验", "蒙特卡洛实验配置"],
+  ["备件规划评估模块", "结果分析", "结果分析", "蒙特卡洛实验结果展示"],
+  ["备件规划评估模块", "结果分析", "结果分析", "备件短板分析"],
+  ["备件规划评估模块", "结果分析", "结果分析", "飞机转场携行清单分析"],
+  ["任务可靠度评估模块", "仿真建模", "任务建模", "内置场景"],
+  ["任务可靠度评估模块", "仿真建模", "任务建模", "基本作战单元建模"],
+  ["任务可靠度评估模块", "仿真建模", "任务建模", "基本任务建模"],
+  ["任务可靠度评估模块", "仿真建模", "任务建模", "任务剖面建模"],
+  ["任务可靠度评估模块", "仿真建模", "装备建模", "装备组成建模"],
+  ["任务可靠度评估模块", "仿真建模", "装备建模", "装备故障建模"],
+  ["任务可靠度评估模块", "仿真建模", "装备建模", "装备可靠性框图建模"],
+  ["任务可靠度评估模块", "仿真建模", "保障组织建模", "保障组织结构建模"],
+  ["任务可靠度评估模块", "仿真建模", "保障组织建模", "备件建模"],
+  ["任务可靠度评估模块", "仿真建模", "保障组织建模", "保障人员建模"],
+  ["任务可靠度评估模块", "仿真建模", "保障组织建模", "保障设备建模"],
+  ["任务可靠度评估模块", "仿真建模", "保障活动建模", "保障资源需求组"],
+  ["任务可靠度评估模块", "仿真建模", "保障活动建模", "装备修复性维修方案"],
+  ["任务可靠度评估模块", "仿真建模", "保障活动建模", "装备预防性维修方案"],
+  ["任务可靠度评估模块", "仿真建模", "保障活动建模", "装备使用保障方案"],
+  ["任务可靠度评估模块", "仿真实验", "仿真实验方案管理", "仿真实验方案创建"],
+  ["任务可靠度评估模块", "仿真实验", "仿真实验方案管理", "仿真实验方案编辑"],
+  ["任务可靠度评估模块", "仿真实验", "可视化推演", "可视化实验启动与停止"],
+  ["任务可靠度评估模块", "仿真实验", "可视化推演", "场景切换"],
+  ["任务可靠度评估模块", "仿真实验", "可视化推演", "可视化结果展示"],
+  ["任务可靠度评估模块", "仿真实验", "蒙特卡洛实验", "蒙特卡洛实验配置"],
+  ["任务可靠度评估模块", "结果分析", "结果分析", "蒙特卡洛实验结果展示"],
+  ["任务可靠度评估模块", "结果分析", "结果分析", "飞机任务可靠性分析"],
+  ["任务可靠度评估模块", "结果分析", "结果分析", "任务可靠度评估"],
+  ["任务可靠度评估模块", "结果分析", "结果分析", "停机因素分析"]
+];
+
+export const FEATURE_PAGES = SOURCE_ROWS.map(([module, secondary, tertiary, name]) => {
+  const id = `${MODULE_PREFIX[module]}-${FEATURE_SLUGS[name]}`;
+  const component = resolveComponent(name, secondary, tertiary);
+  const dataObjects = resolveDataObjects(name, secondary, tertiary);
+  return {
+    id,
+    module,
+    secondary,
+    tertiary,
+    name,
+    component,
+    dataObjects,
+    summary: buildSummary(module, secondary, tertiary, name),
+    outputs: buildOutputs(name, component),
+    ontology: buildOntology({ id, module, secondary, tertiary, name, dataObjects, component })
+  };
+});
+
+export function groupFeaturePages(pages = FEATURE_PAGES) {
+  return pages.reduce((acc, page) => {
+    acc[page.module] ||= {};
+    acc[page.module][page.secondary] ||= {};
+    acc[page.module][page.secondary][page.tertiary] ||= [];
+    acc[page.module][page.secondary][page.tertiary].push(page);
+    return acc;
+  }, {});
+}
+
+export function getFeaturePageById(id) {
+  return FEATURE_PAGES.find((page) => page.id === id) || FEATURE_PAGES[0];
+}
+
+function resolveComponent(name, secondary, tertiary) {
+  if (name.includes("可靠性框图")) return "reliability-block-diagram";
+  if (name.includes("可视化")) return "visual-simulation";
+  if (name.includes("场景切换")) return "scenario-switch";
+  if (name.includes("蒙特卡洛实验配置")) return "monte-carlo-config";
+  if (name.includes("蒙特卡洛实验结果")) return "monte-carlo-results";
+  if (secondary === "结果分析") return "analysis";
+  if (name.includes("仿真实验方案")) return "experiment-form";
+  if (name.includes("结果导入")) return "import-table";
+  if (tertiary === "保障活动建模") return "activity-gantt";
+  if (tertiary === "保障组织建模") return "resource-table";
+  if (tertiary === "装备建模") return "equipment-table";
+  return "task-model";
+}
+
+function resolveDataObjects(name, secondary, tertiary) {
+  if (name.includes("内置场景")) return ["scenarioId", "missionProfile", "supportNodes"];
+  if (name.includes("作战单元")) return ["combatUnit", "equipment", "supportNodes"];
+  if (name.includes("基本任务")) return ["basicMission", "missionPhases"];
+  if (name.includes("任务剖面")) return ["missionProfile", "missionPhases"];
+  if (name.includes("装备组成")) return ["equipment", "components"];
+  if (name.includes("装备故障")) return ["components", "failureModel"];
+  if (name.includes("可靠性框图")) return ["reliabilityBlockDiagram", "components"];
+  if (name.includes("保障组织结构")) return ["supportNodes", "organizationTree"];
+  if (name.includes("备件")) return ["supportNodes.inventory", "spares"];
+  if (name.includes("保障人员")) return ["supportNodes.personnelCapacity", "resources"];
+  if (name.includes("保障设备")) return ["supportNodes.equipmentCapacity", "resources"];
+  if (tertiary === "保障活动建模") return ["supportActivities", "resources", "spares"];
+  if (name.includes("仿真实验方案")) return ["experiment", "scenario"];
+  if (name.includes("可视化") || name.includes("场景切换")) return ["visualizationState", "experiment", "scenario"];
+  if (name.includes("蒙特卡洛")) return ["monteCarlo", "runs", "summary"];
+  if (secondary === "结果分析") return ["runs", "summary", "decisionOutputs"];
+  return ["scenario"];
+}
+
+function buildSummary(module, secondary, tertiary, name) {
+  return `${module} / ${secondary} / ${tertiary} 下的 ${name} 页面，围绕共享 scenario 数据提供编辑、校验和实验联动。`;
+}
+
+function buildOutputs(name, component) {
+  if (component === "visual-simulation") return ["航空保障状态帧", "事件流", "任务与资源态势"];
+  if (component === "analysis") return ["指标分解", "排序表", "影响因素摘要"];
+  if (component === "activity-gantt") return ["保障活动清单", "资源需求", "甘特预览"];
+  if (component === "reliability-block-diagram") return ["可靠性结构", "故障传播关系", "任务可靠度输入"];
+  if (component === "monte-carlo-config") return ["扫参配置", "样本设置", "运行前校验"];
+  if (component === "monte-carlo-results") return ["结果表", "参数组统计", "决策摘要"];
+  return [`${name} 数据对象`, "页面校验", "下游联动摘要"];
+}
+
+function buildOntology(page) {
+  const nodes = [
+    { id: "feature", label: page.name, type: "feature" },
+    { id: "module", label: page.module, type: "module" },
+    { id: "secondary", label: page.secondary, type: "function" },
+    { id: "tertiary", label: page.tertiary, type: "group" },
+    ...page.dataObjects.map((objectName, index) => ({ id: `data-${index}`, label: objectName, type: "data" })),
+    { id: "experiment", label: page.secondary === "仿真实验" ? page.name : "仿真实验", type: "downstream" },
+    { id: "analysis", label: page.secondary === "结果分析" ? page.name : "结果分析", type: "downstream" },
+    { id: "validation", label: validationLabel(page.component), type: "validation" }
+  ];
+  const edges = [
+    { from: "module", to: "secondary", label: "contains" },
+    { from: "secondary", to: "tertiary", label: "contains" },
+    { from: "tertiary", to: "feature", label: "contains" },
+    ...page.dataObjects.map((_, index) => ({ from: "feature", to: `data-${index}`, label: "writes_to" })),
+    { from: "feature", to: "experiment", label: "drives" },
+    { from: "feature", to: "analysis", label: "drives" },
+    { from: "feature", to: "validation", label: "validates" }
+  ];
+  return { nodes, edges };
+}
+
+function validationLabel(component) {
+  const labels = {
+    "reliability-block-diagram": "端点完整、连接类型、故障参数",
+    "visual-simulation": "实验输入、状态帧、事件顺序",
+    "monte-carlo-config": "样本数、seed、扫参范围",
+    "activity-gantt": "资源需求、紧前关系、持续时间",
+    "resource-table": "库存非负、容量非负",
+    "equipment-table": "装备数量、故障参数",
+    analysis: "结果来源、指标口径"
+  };
+  return labels[component] || "字段完整、关系一致";
+}

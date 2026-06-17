@@ -1,0 +1,1259 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Aviation Support ABM</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #111315;
+        --panel: #191d20;
+        --panel-2: #22272b;
+        --line: #343a40;
+        --text: #f2f5f7;
+        --muted: #a9b2ba;
+        --ready: #58d38b;
+        --support: #f4c95d;
+        --flying: #6ab7ff;
+        --maintenance: #ff7d73;
+        --available: #bcc6cf;
+        --accent: #63d4c5;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: var(--bg);
+        color: var(--text);
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        letter-spacing: 0;
+      }
+
+      main {
+        min-height: 100vh;
+        display: grid;
+        grid-template-rows: auto 1fr;
+      }
+
+      header {
+        min-height: 62px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 18px;
+        padding: 12px 18px;
+        border-bottom: 1px solid var(--line);
+        background: #15181b;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 18px;
+        font-weight: 700;
+      }
+
+      h2 {
+        margin: 16px 0 8px;
+        font-size: 14px;
+        color: var(--muted);
+        font-weight: 700;
+      }
+
+      .view-tabs {
+        display: inline-grid;
+        grid-template-columns: repeat(4, minmax(82px, 1fr));
+        gap: 6px;
+        min-width: min(480px, 52vw);
+      }
+
+      .tab,
+      button {
+        min-height: 38px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: var(--panel-2);
+        color: var(--text);
+        font: inherit;
+        cursor: pointer;
+      }
+
+      .tab.active,
+      button.primary {
+        background: #14665e;
+        border-color: #268b80;
+      }
+
+      button:hover,
+      .tab:hover {
+        border-color: var(--accent);
+      }
+
+      .clock {
+        color: var(--muted);
+        font-size: 14px;
+        white-space: nowrap;
+      }
+
+      .shell {
+        min-height: 0;
+        display: grid;
+        grid-template-columns: 330px minmax(0, 1fr) 380px;
+      }
+
+      aside,
+      section {
+        min-height: 0;
+      }
+
+      .left,
+      .right {
+        overflow: auto;
+        padding: 14px;
+        background: var(--panel);
+      }
+
+      .left {
+        border-right: 1px solid var(--line);
+      }
+
+      .right {
+        border-left: 1px solid var(--line);
+      }
+
+      .actions,
+      .metric-grid,
+      .resource-list,
+      .mission-list,
+      .job-list,
+      .event-list,
+      .spare-list,
+      .equipment-list {
+        display: grid;
+        gap: 8px;
+      }
+
+      .actions {
+        grid-template-columns: repeat(3, 1fr);
+        margin-bottom: 12px;
+      }
+
+      .control-row {
+        display: grid;
+        gap: 7px;
+        padding: 10px;
+        margin-bottom: 8px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: #161a1d;
+      }
+
+      .label-line {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      input[type="range"],
+      select {
+        width: 100%;
+        accent-color: var(--accent);
+      }
+
+      select {
+        min-height: 38px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: #15191d;
+        color: var(--text);
+        padding: 0 10px;
+      }
+
+      .metric-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .metric,
+      .resource,
+      .mission,
+      .job,
+      .event,
+      .detail,
+      .spare,
+      .equipment,
+      .ontology-edge {
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: #161a1d;
+      }
+
+      .metric {
+        min-height: 68px;
+        padding: 10px;
+      }
+
+      .metric span,
+      .resource span,
+      .mission span,
+      .job span,
+      .event span,
+      .detail span,
+      .spare span,
+      .equipment span,
+      .ontology-edge span {
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .metric strong {
+        display: block;
+        margin-top: 6px;
+        font-size: 21px;
+      }
+
+      .detail,
+      .resource,
+      .mission,
+      .job,
+      .event,
+      .spare,
+      .equipment,
+      .ontology-edge {
+        padding: 9px;
+      }
+
+      .stage {
+        position: relative;
+        min-width: 0;
+        min-height: 0;
+        display: grid;
+        grid-template-rows: minmax(0, 1fr) 126px;
+        background:
+          linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+          linear-gradient(0deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+        background-size: 44px 44px;
+      }
+
+      canvas {
+        width: 100%;
+        height: 100%;
+        display: block;
+      }
+
+      .legend {
+        position: absolute;
+        top: 12px;
+        right: 12px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        max-width: min(560px, calc(100% - 24px));
+        padding: 8px 10px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: rgba(17, 19, 21, 0.88);
+        font-size: 12px;
+      }
+
+      .legend-item {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        color: var(--muted);
+      }
+
+      .dot {
+        width: 9px;
+        height: 9px;
+        border-radius: 999px;
+      }
+
+      .timeline {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 10px;
+        padding: 12px;
+        border-top: 1px solid var(--line);
+        background: #15181b;
+      }
+
+      .mission {
+        min-height: 86px;
+      }
+
+      .mission strong,
+      .job strong,
+      .spare strong,
+      .equipment strong,
+      .detail strong,
+      .ontology-edge strong {
+        display: block;
+        margin-top: 4px;
+        font-size: 15px;
+      }
+
+      .bar {
+        height: 8px;
+        margin-top: 8px;
+        overflow: hidden;
+        border-radius: 999px;
+        background: #2b3136;
+      }
+
+      .bar > i {
+        display: block;
+        height: 100%;
+        width: 0%;
+        background: var(--accent);
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        font-size: 13px;
+      }
+
+      th,
+      td {
+        padding: 8px;
+        border-bottom: 1px solid var(--line);
+        text-align: left;
+      }
+
+      th {
+        color: var(--muted);
+        background: #15191d;
+        font-weight: 700;
+      }
+
+      tr:last-child td {
+        border-bottom: 0;
+      }
+
+      .hidden {
+        display: none;
+      }
+
+      @media (max-width: 1100px) {
+        .shell {
+          grid-template-columns: 310px minmax(0, 1fr);
+        }
+
+        .right {
+          display: none;
+        }
+      }
+
+      @media (max-width: 780px) {
+        header {
+          align-items: stretch;
+          flex-direction: column;
+        }
+
+        .view-tabs {
+          min-width: 0;
+          width: 100%;
+        }
+
+        .shell {
+          grid-template-columns: 1fr;
+          grid-template-rows: auto 62vh auto;
+        }
+
+        .left,
+        .right {
+          border: 0;
+        }
+
+        .right {
+          display: block;
+          border-top: 1px solid var(--line);
+        }
+
+        .timeline {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>航空保障 Mesa ABM</h1>
+        <div class="view-tabs" role="tablist">
+          <button class="tab active" data-view="aircraft">飞机视图</button>
+          <button class="tab" data-view="mission">任务视图</button>
+          <button class="tab" data-view="support">保障视图</button>
+          <button class="tab" data-view="ontology">Ontology视图</button>
+        </div>
+        <div class="clock" id="clock">T+0000 min</div>
+      </header>
+      <div class="shell">
+        <aside class="left">
+          <div class="actions">
+            <button class="primary" id="play">运行</button>
+            <button id="step">单步</button>
+            <button id="reset">重置</button>
+          </div>
+          <label class="control-row">
+            <span class="label-line"><span>维修班组</span><b id="mechanicValue">4</b></span>
+            <input id="mechanicTeams" type="range" min="1" max="6" value="4" />
+          </label>
+          <label class="control-row">
+            <span class="label-line"><span>加油车</span><b id="fuelValue">2</b></span>
+            <input id="fuelTrucks" type="range" min="1" max="4" value="2" />
+          </label>
+          <label class="control-row">
+            <span class="label-line"><span>维修间</span><b id="bayValue">1</b></span>
+            <input id="maintenanceBays" type="range" min="1" max="3" value="1" />
+          </label>
+          <h2>指标</h2>
+          <div class="metric-grid" id="metrics"></div>
+          <h2>资源概览</h2>
+          <div class="resource-list" id="resourceOverview"></div>
+        </aside>
+
+        <section class="stage">
+          <canvas id="stage"></canvas>
+          <div class="legend">
+            <span class="legend-item"><i class="dot" style="background: var(--available)"></i>可用</span>
+            <span class="legend-item"><i class="dot" style="background: var(--support)"></i>保障</span>
+            <span class="legend-item"><i class="dot" style="background: var(--ready)"></i>待出动</span>
+            <span class="legend-item"><i class="dot" style="background: var(--flying)"></i>任务中</span>
+            <span class="legend-item"><i class="dot" style="background: var(--maintenance)"></i>维修</span>
+          </div>
+          <div class="timeline" id="missionCards"></div>
+        </section>
+
+        <aside class="right">
+          <div id="aircraftPanel" class="view-panel">
+            <h2>单机状态</h2>
+            <select id="aircraftSelect"></select>
+            <div id="aircraftDetail"></div>
+            <h2>飞机内部装备</h2>
+            <div class="equipment-list" id="equipmentList"></div>
+          </div>
+          <div id="missionPanel" class="view-panel hidden">
+            <h2>任务计划表</h2>
+            <div id="missionTable"></div>
+            <h2>执行进度</h2>
+            <div class="mission-list" id="missionProgress"></div>
+            <h2>执飞飞机编组</h2>
+            <div class="job-list" id="missionGroups"></div>
+          </div>
+          <div id="supportPanel" class="view-panel hidden">
+            <h2>保障资源</h2>
+            <div class="resource-list" id="supportResources"></div>
+            <h2>备件库存量 / 已消耗 / 已补充</h2>
+            <div class="spare-list" id="spares"></div>
+            <h2>保障作业</h2>
+            <div class="job-list" id="jobs"></div>
+            <h2>事件</h2>
+            <div class="event-list" id="events"></div>
+          </div>
+          <div id="ontologyPanel" class="view-panel hidden">
+            <h2>Ontology关系图</h2>
+            <div id="ontologySummary"></div>
+            <h2>实体关系清单</h2>
+            <div class="event-list" id="ontologyEdges"></div>
+          </div>
+        </aside>
+      </div>
+    </main>
+
+    <script>
+      const DATA = {
+        tick: 10,
+        aircraftTypes: {
+          fighter: {
+            tailPrefix: "FTR",
+            systems: [
+              { id: "propulsion", name: "Propulsion", lrus: [{ id: "engine_control_unit", name: "Engine Control Unit", mtbf: 320, mttr: 90, spare: "engine_control_unit" }] },
+              { id: "hydraulic", name: "Hydraulic", lrus: [{ id: "hydraulic_pump", name: "Hydraulic Pump", mtbf: 260, mttr: 75, spare: "hydraulic_pump" }] },
+              { id: "avionics", name: "Avionics", lrus: [{ id: "radar_processor", name: "Radar Processor", mtbf: 420, mttr: 110, spare: "radar_processor" }] },
+            ],
+          },
+          transport: {
+            tailPrefix: "TRN",
+            systems: [
+              { id: "propulsion", name: "Propulsion", lrus: [{ id: "engine_fade_monitor", name: "Engine Fade Monitor", mtbf: 520, mttr: 120, spare: "engine_fade_monitor" }] },
+              { id: "electrical", name: "Electrical", lrus: [{ id: "generator_control_unit", name: "Generator Control Unit", mtbf: 460, mttr: 100, spare: "generator_control_unit" }] },
+            ],
+          },
+        },
+        aircraft: [
+          ["FTR-01", "fighter", 120, 40, 20],
+          ["FTR-02", "fighter", 132, 44, 21],
+          ["FTR-03", "fighter", 144, 48, 22],
+          ["FTR-04", "fighter", 156, 52, 23],
+          ["FTR-05", "fighter", 168, 56, 24],
+          ["FTR-06", "fighter", 180, 60, 25],
+          ["TRN-01", "transport", 220, 80, 30],
+          ["TRN-02", "transport", 244, 86, 31],
+        ],
+        missions: [
+          { id: 1, planned: 120, duration: 90, type: "fighter", required: 3 },
+          { id: 2, planned: 300, duration: 90, type: "fighter", required: 3 },
+          { id: 3, planned: 420, duration: 120, type: "transport", required: 1 },
+        ],
+        resources: [
+          ["mechanic_team", "维修班组", "personnel", 4],
+          ["fuel_truck", "加油车", "equipment", 2],
+          ["power_cart", "电源车", "equipment", 2],
+          ["weapons_crew", "挂载组", "personnel", 2],
+          ["maintenance_bay", "维修间", "facility", 1],
+        ],
+        tasks: {
+          power_check: { name: "通电检查", duration: 20, resources: { mechanic_team: 1, power_cart: 1 } },
+          refuel: { name: "加油", duration: 30, resources: { mechanic_team: 1, fuel_truck: 1 } },
+          weapons_load: { name: "挂载", duration: 35, resources: { mechanic_team: 1, weapons_crew: 1 } },
+          preflight_inspection: { name: "放飞检查", duration: 25, resources: { mechanic_team: 1 } },
+          postflight_inspection: { name: "着陆后检查", duration: 25, resources: { mechanic_team: 1 } },
+          turnaround_refuel: { name: "恢复加油", duration: 20, resources: { mechanic_team: 1, fuel_truck: 1 } },
+          fault_isolation: { name: "故障隔离", duration: 30, resources: { mechanic_team: 1, maintenance_bay: 1 } },
+          lru_replacement: { name: "LRU更换", duration: 0, resources: { mechanic_team: 1, maintenance_bay: 1 }, repairFailedLru: true },
+          functional_test: { name: "功能测试", duration: 20, resources: { mechanic_team: 1, power_cart: 1 } },
+        },
+        plans: {
+          pre_mission: ["power_check", "refuel", "weapons_load", "preflight_inspection"],
+          post_mission: ["postflight_inspection", "turnaround_refuel"],
+          maintenance: ["fault_isolation", "lru_replacement", "functional_test"],
+        },
+        spares: [
+          ["engine_control_unit", "Engine Control Unit", 2, 1, 2, 120],
+          ["hydraulic_pump", "Hydraulic Pump", 2, 1, 2, 120],
+          ["radar_processor", "Radar Processor", 2, 1, 2, 120],
+          ["engine_fade_monitor", "Engine Fade Monitor", 1, 1, 1, 180],
+          ["generator_control_unit", "Generator Control Unit", 1, 1, 1, 180],
+        ],
+        ontology: {
+          entityTypes: ["任务", "飞机", "保障活动", "保障资源", "备件"],
+          relationships: [
+            "任务 -> 飞机：按机型需求形成候选编组",
+            "飞机 -> 保障活动：任务前/任务后/维修触发作业链",
+            "保障活动 -> 保障资源：作业占用人员、设备、设施",
+            "保障活动 -> 备件：LRU更换消耗对应备件",
+          ],
+        },
+      };
+
+      const canvas = document.getElementById("stage");
+      const ctx = canvas.getContext("2d");
+      const controls = {
+        mechanicTeams: document.getElementById("mechanicTeams"),
+        fuelTrucks: document.getElementById("fuelTrucks"),
+        maintenanceBays: document.getElementById("maintenanceBays"),
+      };
+      const values = {
+        mechanicTeams: document.getElementById("mechanicValue"),
+        fuelTrucks: document.getElementById("fuelValue"),
+        maintenanceBays: document.getElementById("bayValue"),
+      };
+      const colors = {
+        available: "#bcc6cf",
+        pre_support: "#f4c95d",
+        post_support: "#f4c95d",
+        mission_ready: "#58d38b",
+        flying: "#6ab7ff",
+        maintenance: "#ff7d73",
+      };
+      let running = false;
+      let timer = null;
+      let state = null;
+      let selectedTail = "FTR-01";
+      let activeView = "aircraft";
+
+      function clone(value) {
+        return JSON.parse(JSON.stringify(value));
+      }
+
+      function randomFactory(seed) {
+        let value = seed % 2147483647;
+        return () => {
+          value = (value * 48271) % 2147483647;
+          return value / 2147483647;
+        };
+      }
+
+      function reset() {
+        const resourceOverrides = {
+          mechanic_team: Number(controls.mechanicTeams.value),
+          fuel_truck: Number(controls.fuelTrucks.value),
+          maintenance_bay: Number(controls.maintenanceBays.value),
+        };
+        state = {
+          time: 0,
+          tick: DATA.tick,
+          random: randomFactory(17),
+          aircraft: DATA.aircraft.map(([tail, type, hours, landings, overhaulDays], index) => ({
+            tail,
+            type,
+            state: "available",
+            x: index % 4,
+            y: Math.floor(index / 4),
+            flightHours: hours,
+            landings,
+            overhaulDays,
+            missionId: null,
+            returnTime: null,
+            failedLru: null,
+            supportJobId: null,
+            systems: clone(DATA.aircraftTypes[type].systems).map((system) => ({
+              ...system,
+              health: "healthy",
+              lrus: system.lrus.map((lru) => ({ ...lru, health: "healthy" })),
+            })),
+          })),
+          resources: Object.fromEntries(
+            DATA.resources.map(([id, label, category, capacity]) => [
+              id,
+              {
+                id,
+                label,
+                category,
+                capacity: resourceOverrides[id] || capacity,
+                inUse: 0,
+                busy: 0,
+                workCount: 0,
+              },
+            ]),
+          ),
+          spares: Object.fromEntries(
+            DATA.spares.map(([id, name, quantity, reorderPoint, reorderQuantity, leadTime]) => [
+              id,
+              { id, name, quantity, reorderPoint, reorderQuantity, leadTime, consumed: 0, replenished: 0, pending: [] },
+            ]),
+          ),
+          missions: DATA.missions.map((mission) => ({ ...mission, status: "scheduled", actual: null, returnTime: null, assigned: [] })),
+          jobs: [],
+          events: [],
+          nextJobId: 1,
+          metrics: { launched: 0, completed: 0, delayed: 0, cancelled: 0, delayTotal: 0, failures: 0 },
+        };
+        log("model_initialized", "ontology 场景已载入");
+        render();
+      }
+
+      function log(kind, text) {
+        state.events.push({ time: state.time, kind, text });
+        state.events = state.events.slice(-30);
+      }
+
+      function labelKind(kind) {
+        return kind === "pre_mission" ? "任务前" : kind === "post_mission" ? "任务后" : "维修";
+      }
+
+      function jobTasks(kind, aircraft) {
+        return DATA.plans[kind].map((taskId) => {
+          const base = clone(DATA.tasks[taskId]);
+          base.id = taskId;
+          base.spares = {};
+          if (base.repairFailedLru && aircraft.failedLru) {
+            base.duration = aircraft.failedLru.mttr;
+            base.spares[aircraft.failedLru.spare] = 1;
+          }
+          return base;
+        });
+      }
+
+      function createJob(aircraft, kind) {
+        aircraft.state = kind === "pre_mission" ? "pre_support" : kind === "post_mission" ? "post_support" : "maintenance";
+        const job = {
+          id: state.nextJobId++,
+          aircraft,
+          kind,
+          tasks: jobTasks(kind, aircraft),
+          index: 0,
+          status: "waiting",
+          remaining: 0,
+          activeTask: null,
+          resources: {},
+          created: state.time,
+        };
+        aircraft.supportJobId = job.id;
+        state.jobs.push(job);
+        log("job_created", `${aircraft.tail} ${labelKind(kind)}作业`);
+      }
+
+      function canStart(task) {
+        const hasResources = Object.entries(task.resources).every(([name, amount]) => {
+          const resource = state.resources[name];
+          return resource && resource.capacity - resource.inUse >= amount;
+        });
+        const hasSpares = Object.entries(task.spares || {}).every(([partId, amount]) => {
+          const spare = state.spares[partId];
+          return spare && spare.quantity >= amount;
+        });
+        return hasResources && hasSpares;
+      }
+
+      function allocate(task, sign) {
+        Object.entries(task.resources).forEach(([name, amount]) => {
+          const resource = state.resources[name];
+          resource.inUse += amount * sign;
+          resource.inUse = Math.max(0, resource.inUse);
+          if (sign > 0) resource.workCount += amount;
+        });
+      }
+
+      function consumeSpares(task) {
+        Object.entries(task.spares || {}).forEach(([partId, amount]) => {
+          const spare = state.spares[partId];
+          spare.quantity -= amount;
+          spare.consumed += amount;
+          log("spare_consumed", `${spare.name} ${amount}`);
+          if (spare.quantity + pendingQuantity(spare) <= spare.reorderPoint) {
+            spare.pending.push({ due: state.time + spare.leadTime, quantity: spare.reorderQuantity });
+            log("spare_reorder", `${spare.name} ${spare.reorderQuantity}`);
+          }
+        });
+      }
+
+      function pendingQuantity(spare) {
+        return spare.pending.reduce((total, item) => total + item.quantity, 0);
+      }
+
+      function receiveSpares() {
+        Object.values(state.spares).forEach((spare) => {
+          const due = spare.pending.filter((item) => item.due <= state.time);
+          if (!due.length) return;
+          spare.pending = spare.pending.filter((item) => item.due > state.time);
+          const received = due.reduce((total, item) => total + item.quantity, 0);
+          spare.quantity += received;
+          spare.replenished += received;
+          log("spare_replenished", `${spare.name} ${received}`);
+        });
+      }
+
+      function dispatchAvailable() {
+        const openMission = state.missions.some((mission) => mission.status === "scheduled" || mission.status === "delayed");
+        if (!openMission) return;
+        state.aircraft.filter((aircraft) => aircraft.state === "available").forEach((aircraft) => createJob(aircraft, "pre_mission"));
+      }
+
+      function launchMissions() {
+        state.missions.forEach((mission) => {
+          if (!["scheduled", "delayed"].includes(mission.status) || state.time < mission.planned) return;
+          const ready = state.aircraft.filter((aircraft) => aircraft.state === "mission_ready" && aircraft.type === mission.type).slice(0, mission.required);
+          if (ready.length < mission.required) {
+            mission.status = "delayed";
+            if (state.time >= mission.planned + 180) {
+              mission.status = "cancelled";
+              state.metrics.cancelled += mission.required;
+              log("mission_cancelled", `任务 ${mission.id} 取消`);
+            }
+            return;
+          }
+          mission.status = "flying";
+          mission.actual = state.time;
+          mission.returnTime = state.time + mission.duration;
+          mission.assigned = ready.map((aircraft) => aircraft.tail);
+          const delay = Math.max(0, state.time - mission.planned);
+          state.metrics.launched += ready.length;
+          state.metrics.delayTotal += delay * ready.length;
+          if (delay > 0) state.metrics.delayed += ready.length;
+          ready.forEach((aircraft) => {
+            aircraft.state = "flying";
+            aircraft.missionId = mission.id;
+            aircraft.returnTime = mission.returnTime;
+            aircraft.supportJobId = null;
+          });
+          log("mission_launched", `任务 ${mission.id} 放飞 ${ready.length} 架`);
+        });
+      }
+
+      function returnFlights() {
+        state.aircraft.forEach((aircraft) => {
+          if (aircraft.state !== "flying" || aircraft.returnTime > state.time) return;
+          const mission = state.missions.find((item) => item.id === aircraft.missionId);
+          aircraft.flightHours += mission.duration / 60;
+          aircraft.landings += 1;
+          aircraft.missionId = null;
+          aircraft.returnTime = null;
+          const failed = sampleFailure(aircraft, mission.duration / 60);
+          if (failed) {
+            markFailed(aircraft, failed);
+            state.metrics.failures += 1;
+            log("lru_failure", `${aircraft.tail} ${failed.name}`);
+          }
+          createJob(aircraft, "post_mission");
+        });
+        state.missions.forEach((mission) => {
+          if (mission.status !== "flying") return;
+          const stillFlying = state.aircraft.some((aircraft) => aircraft.missionId === mission.id);
+          if (!stillFlying && state.time >= mission.returnTime) {
+            mission.status = "completed";
+            state.metrics.completed += mission.assigned.length;
+            log("mission_completed", `任务 ${mission.id} 回收完成`);
+          }
+        });
+      }
+
+      function sampleFailure(aircraft, missionHours) {
+        for (const system of aircraft.systems) {
+          for (const lru of system.lrus) {
+            const probability = 1 - Math.exp(-(missionHours / lru.mtbf) * 1.2);
+            if (state.random() < probability) return lru;
+          }
+        }
+        return null;
+      }
+
+      function markFailed(aircraft, failedLru) {
+        aircraft.failedLru = { ...failedLru };
+        aircraft.systems.forEach((system) => {
+          system.lrus.forEach((lru) => {
+            if (lru.id === failedLru.id) {
+              lru.health = "failed";
+              system.health = "degraded";
+            }
+          });
+        });
+      }
+
+      function restoreFailed(aircraft) {
+        if (!aircraft.failedLru) return;
+        aircraft.systems.forEach((system) => {
+          system.lrus.forEach((lru) => {
+            if (lru.id === aircraft.failedLru.id) lru.health = "healthy";
+          });
+          system.health = system.lrus.every((lru) => lru.health === "healthy") ? "healthy" : "degraded";
+        });
+        aircraft.failedLru = null;
+      }
+
+      function startJobs() {
+        const priority = { pre_mission: 0, maintenance: 1, post_mission: 2 };
+        state.jobs
+          .filter((job) => job.status === "waiting")
+          .sort((a, b) => priority[a.kind] - priority[b.kind] || a.created - b.created)
+          .forEach((job) => {
+            const task = job.tasks[job.index];
+            if (!task || !canStart(task)) return;
+            allocate(task, 1);
+            consumeSpares(task);
+            job.status = "active";
+            job.activeTask = task;
+            job.remaining = task.duration;
+            job.resources = task.resources;
+          });
+      }
+
+      function advanceJobs() {
+        Object.values(state.resources).forEach((resource) => {
+          resource.busy += resource.inUse * state.tick;
+        });
+        state.jobs
+          .filter((job) => job.status === "active")
+          .forEach((job) => {
+            job.remaining -= state.tick;
+            if (job.remaining > 0) return;
+            allocate(job.activeTask, -1);
+            job.index += 1;
+            job.activeTask = null;
+            if (job.index < job.tasks.length) {
+              job.status = "waiting";
+              return;
+            }
+            job.status = "completed";
+            job.aircraft.supportJobId = null;
+            if (job.kind === "pre_mission") job.aircraft.state = "mission_ready";
+            if (job.kind === "post_mission") {
+              if (job.aircraft.failedLru) createJob(job.aircraft, "maintenance");
+              else job.aircraft.state = "available";
+            }
+            if (job.kind === "maintenance") {
+              restoreFailed(job.aircraft);
+              job.aircraft.state = "available";
+            }
+            log("job_completed", `${job.aircraft.tail} ${labelKind(job.kind)}完成`);
+          });
+        state.jobs = state.jobs.filter((job) => job.status !== "completed").slice(-40);
+      }
+
+      function stepSimulation() {
+        receiveSpares();
+        returnFlights();
+        launchMissions();
+        dispatchAvailable();
+        startJobs();
+        advanceJobs();
+        state.time += state.tick;
+        render();
+      }
+
+      function snapshot() {
+        const counts = state.aircraft.reduce((acc, aircraft) => {
+          acc[aircraft.state] = (acc[aircraft.state] || 0) + 1;
+          return acc;
+        }, {});
+        const planned = state.missions.reduce((total, mission) => total + mission.required, 0);
+        return {
+          ready: counts.mission_ready || 0,
+          flying: counts.flying || 0,
+          support: (counts.pre_support || 0) + (counts.post_support || 0),
+          maintenance: counts.maintenance || 0,
+          completed: state.metrics.completed,
+          completion: planned ? state.metrics.completed / planned : 0,
+          delayed: state.metrics.delayed,
+          cancelled: state.metrics.cancelled,
+          avgDelay: state.metrics.launched ? state.metrics.delayTotal / state.metrics.launched : 0,
+          failures: state.metrics.failures,
+          spareStock: Object.values(state.spares).reduce((total, spare) => total + spare.quantity, 0),
+          spareConsumed: Object.values(state.spares).reduce((total, spare) => total + spare.consumed, 0),
+        };
+      }
+
+      function render() {
+        Object.entries(values).forEach(([key, node]) => {
+          node.textContent = controls[key].value;
+        });
+        document.getElementById("clock").textContent = `T+${String(state.time).padStart(4, "0")} min`;
+        renderMetrics();
+        renderResourceOverview();
+        renderMissionCards();
+        renderPanels();
+        drawMainCanvas();
+      }
+
+      function renderMetrics() {
+        const data = snapshot();
+        const rows = [
+          ["待出动", data.ready],
+          ["任务中", data.flying],
+          ["保障中", data.support],
+          ["维修中", data.maintenance],
+          ["完成架次", data.completed],
+          ["出动率", `${Math.round(data.completion * 100)}%`],
+          ["备件库存", data.spareStock],
+          ["已消耗", data.spareConsumed],
+        ];
+        document.getElementById("metrics").innerHTML = rows.map(([label, value]) => `<div class="metric"><span>${label}</span><strong>${value}</strong></div>`).join("");
+      }
+
+      function renderResourceOverview() {
+        const elapsed = Math.max(state.time, state.tick);
+        document.getElementById("resourceOverview").innerHTML = Object.values(state.resources)
+          .map((resource) => {
+            const current = resource.capacity ? resource.inUse / resource.capacity : 0;
+            const util = resource.capacity ? resource.busy / (resource.capacity * elapsed) : 0;
+            return `<div class="resource"><span>${resource.category}</span><strong>${resource.label} ${resource.inUse}/${resource.capacity}</strong><div class="bar"><i style="width:${Math.min(100, current * 100)}%"></i></div><span>累计利用率 ${Math.round(util * 100)}%</span></div>`;
+          })
+          .join("");
+      }
+
+      function renderMissionCards() {
+        document.getElementById("missionCards").innerHTML = state.missions
+          .map((mission) => {
+            const progress = missionProgress(mission);
+            return `<div class="mission"><span>任务 ${mission.id} / ${mission.type} / ${mission.required} 架 / T+${mission.planned}</span><strong>${mission.status}</strong><div class="bar"><i style="width:${progress}%"></i></div></div>`;
+          })
+          .join("");
+      }
+
+      function missionProgress(mission) {
+        if (mission.status === "completed" || mission.status === "cancelled") return 100;
+        if (mission.status === "flying") return Math.min(95, Math.max(45, ((state.time - mission.actual) / mission.duration) * 100));
+        if (mission.status === "delayed") return 35;
+        return state.time >= mission.planned ? 25 : 10;
+      }
+
+      function renderPanels() {
+        document.getElementById("aircraftPanel").classList.toggle("hidden", activeView !== "aircraft");
+        document.getElementById("missionPanel").classList.toggle("hidden", activeView !== "mission");
+        document.getElementById("supportPanel").classList.toggle("hidden", activeView !== "support");
+        document.getElementById("ontologyPanel").classList.toggle("hidden", activeView !== "ontology");
+        if (activeView === "aircraft") renderAircraftPanel();
+        if (activeView === "mission") renderMissionPanel();
+        if (activeView === "support") renderSupportPanel();
+        if (activeView === "ontology") renderOntologyPanel();
+      }
+
+      function renderAircraftPanel() {
+        const select = document.getElementById("aircraftSelect");
+        select.innerHTML = state.aircraft.map((aircraft) => `<option value="${aircraft.tail}">${aircraft.tail} / ${aircraft.type}</option>`).join("");
+        if (!state.aircraft.some((aircraft) => aircraft.tail === selectedTail)) selectedTail = state.aircraft[0].tail;
+        select.value = selectedTail;
+        const aircraft = state.aircraft.find((item) => item.tail === selectedTail);
+        document.getElementById("aircraftDetail").innerHTML = `<div class="detail"><span>任务状态 / 保障状态</span><strong>${aircraft.state}</strong><span>任务 ${aircraft.missionId || "-"} / 作业 ${aircraft.supportJobId || "-"}</span><br /><span>履历：${aircraft.flightHours.toFixed(1)} 小时 / ${aircraft.landings} 起降 / 大修后 ${aircraft.overhaulDays} 天</span></div>`;
+        document.getElementById("equipmentList").innerHTML = aircraft.systems
+          .map((system) => `<div class="equipment"><span>${system.id} / ${system.health}</span><strong>${system.name}</strong>${system.lrus.map((lru) => `<div><span>${lru.name} / ${lru.health} / MTBF ${lru.mtbf}h / MTTR ${lru.mttr}min</span></div>`).join("")}</div>`)
+          .join("");
+      }
+
+      function renderMissionPanel() {
+        document.getElementById("missionTable").innerHTML = `<table><thead><tr><th>任务</th><th>机型</th><th>计划</th><th>状态</th><th>数量</th></tr></thead><tbody>${state.missions.map((mission) => `<tr><td>${mission.id}</td><td>${mission.type}</td><td>T+${mission.planned}</td><td>${mission.status}</td><td>${mission.required}</td></tr>`).join("")}</tbody></table>`;
+        document.getElementById("missionProgress").innerHTML = state.missions
+          .map((mission) => `<div class="mission"><span>任务 ${mission.id} 执行进度</span><strong>${mission.status}</strong><div class="bar"><i style="width:${missionProgress(mission)}%"></i></div></div>`)
+          .join("");
+        document.getElementById("missionGroups").innerHTML = state.missions
+          .map((mission) => {
+            const group = mission.assigned.length
+              ? mission.assigned.map((tail) => {
+                  const aircraft = state.aircraft.find((item) => item.tail === tail);
+                  return `${tail}:${aircraft?.state || "-"}`;
+                }).join(" / ")
+              : "未编组";
+            return `<div class="job"><span>任务 ${mission.id} 编组</span><strong>${group}</strong></div>`;
+          })
+          .join("");
+      }
+
+      function renderSupportPanel() {
+        const elapsed = Math.max(state.time, state.tick);
+        document.getElementById("supportResources").innerHTML = Object.values(state.resources)
+          .map((resource) => {
+            const util = resource.capacity ? resource.busy / (resource.capacity * elapsed) : 0;
+            return `<div class="resource"><span>${resource.category} / ${resource.inUse ? "working" : "idle"}</span><strong>${resource.label}</strong><span>工作时长 ${Math.round(resource.busy)} min / 工作次数 ${resource.workCount} / 利用率 ${Math.round(util * 100)}%</span></div>`;
+          })
+          .join("");
+        document.getElementById("spares").innerHTML = Object.values(state.spares)
+          .map((spare) => `<div class="spare"><span>${spare.id}</span><strong>${spare.name}</strong><span>库存量 ${spare.quantity} / 已消耗 ${spare.consumed} / 已补充 ${spare.replenished} / 在途 ${pendingQuantity(spare)}</span></div>`)
+          .join("");
+        document.getElementById("jobs").innerHTML = state.jobs.length
+          ? state.jobs
+              .map((job) => {
+                const taskName = job.activeTask ? job.activeTask.name : job.tasks[job.index]?.name || "";
+                return `<div class="job"><span>${job.aircraft.tail} / ${labelKind(job.kind)} / ${job.status}</span><strong>${taskName}</strong><span>${Math.max(0, Math.ceil(job.remaining))} min</span></div>`;
+              })
+              .join("")
+          : `<div class="job"><span>无等待作业</span><strong>idle</strong></div>`;
+        document.getElementById("events").innerHTML = state.events
+          .slice()
+          .reverse()
+          .map((event) => `<div class="event"><span>T+${event.time} / ${event.kind}</span><br />${event.text}</div>`)
+          .join("");
+      }
+
+      function renderOntologyPanel() {
+        const graph = buildOntologyGraph();
+        document.getElementById("ontologySummary").innerHTML = `<div class="detail"><span>结构来源</span><strong>ontology.json / lightweight IR</strong><span>${graph.nodes.length} 个实体节点 / ${graph.edges.length} 条关系边</span><br /><span>该视图展示结构依赖，不代表 OWL 推理结果。</span></div>`;
+        document.getElementById("ontologyEdges").innerHTML = graph.edges
+          .slice(0, 34)
+          .map((edge) => `<div class="ontology-edge"><span>${edge.label}</span><strong>${edge.fromLabel} -> ${edge.toLabel}</strong></div>`)
+          .join("");
+      }
+
+      function buildOntologyGraph() {
+        const nodes = [];
+        const edges = [];
+        const addNode = (id, label, group) => {
+          if (!nodes.some((node) => node.id === id)) nodes.push({ id, label, group });
+        };
+        const addEdge = (from, to, label) => {
+          const source = nodes.find((node) => node.id === from);
+          const target = nodes.find((node) => node.id === to);
+          if (source && target) edges.push({ from, to, label, fromLabel: source.label, toLabel: target.label });
+        };
+
+        state.missions.forEach((mission) => addNode(`mission:${mission.id}`, `任务${mission.id}`, "任务"));
+        state.aircraft.forEach((aircraft) => addNode(`aircraft:${aircraft.tail}`, aircraft.tail, "飞机"));
+        Object.entries(DATA.tasks).forEach(([taskId, task]) => addNode(`task:${taskId}`, task.name, "保障活动"));
+        Object.values(state.resources).forEach((resource) => addNode(`resource:${resource.id}`, resource.label, "保障资源"));
+        Object.values(state.spares).forEach((spare) => addNode(`spare:${spare.id}`, spare.name, "备件"));
+
+        state.missions.forEach((mission) => {
+          state.aircraft
+            .filter((aircraft) => aircraft.type === mission.type)
+            .forEach((aircraft) => addEdge(`mission:${mission.id}`, `aircraft:${aircraft.tail}`, "机型需求/候选编组"));
+        });
+        const selected = state.aircraft.find((aircraft) => aircraft.tail === selectedTail) || state.aircraft[0];
+        DATA.plans.pre_mission.forEach((taskId) => addEdge(`aircraft:${selected.tail}`, `task:${taskId}`, "任务前保障"));
+        DATA.plans.post_mission.forEach((taskId) => addEdge(`aircraft:${selected.tail}`, `task:${taskId}`, "任务后保障"));
+        DATA.plans.maintenance.forEach((taskId) => addEdge(`aircraft:${selected.tail}`, `task:${taskId}`, "维修保障"));
+        Object.entries(DATA.tasks).forEach(([taskId, task]) => {
+          Object.keys(task.resources).forEach((resourceId) => addEdge(`task:${taskId}`, `resource:${resourceId}`, "占用资源"));
+          if (task.repairFailedLru) {
+            Object.keys(state.spares).forEach((partId) => addEdge(`task:${taskId}`, `spare:${partId}`, "可消耗备件"));
+          }
+        });
+
+        return { nodes, edges };
+      }
+
+      function drawMainCanvas() {
+        if (activeView === "ontology") drawOntologyGraph();
+        else drawAircraft();
+      }
+
+      function drawOntologyGraph() {
+        const ratio = window.devicePixelRatio || 1;
+        const rect = canvas.getBoundingClientRect();
+        canvas.width = Math.max(1, Math.floor(rect.width * ratio));
+        canvas.height = Math.max(1, Math.floor(rect.height * ratio));
+        ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+        const width = rect.width;
+        const height = rect.height;
+        ctx.clearRect(0, 0, width, height);
+        ctx.fillStyle = "rgba(255,255,255,0.035)";
+        ctx.fillRect(0, 0, width, height);
+
+        const graph = buildOntologyGraph();
+        const groups = ["任务", "飞机", "保障活动", "保障资源", "备件"];
+        const groupColors = {
+          任务: "#6ab7ff",
+          飞机: "#58d38b",
+          保障活动: "#f4c95d",
+          保障资源: "#c9a7ff",
+          备件: "#ff9f7a",
+        };
+        const groupNodes = Object.fromEntries(groups.map((group) => [group, graph.nodes.filter((node) => node.group === group)]));
+        const positions = {};
+        const top = 78;
+        const bottom = Math.max(top + 80, height - 42);
+        const columnWidth = width / groups.length;
+
+        groups.forEach((group, groupIndex) => {
+          const nodes = groupNodes[group];
+          const x = columnWidth * groupIndex + columnWidth / 2;
+          ctx.fillStyle = "#a9b2ba";
+          ctx.font = "13px system-ui, sans-serif";
+          ctx.textAlign = "center";
+          ctx.fillText(group, x, 34);
+          const gap = nodes.length > 1 ? (bottom - top) / (nodes.length - 1) : 0;
+          nodes.forEach((node, index) => {
+            positions[node.id] = { x, y: nodes.length > 1 ? top + gap * index : (top + bottom) / 2 };
+          });
+        });
+
+        ctx.lineWidth = 1.2;
+        graph.edges.forEach((edge) => {
+          const from = positions[edge.from];
+          const to = positions[edge.to];
+          if (!from || !to) return;
+          ctx.strokeStyle = edge.from === `aircraft:${selectedTail}` || edge.to === `aircraft:${selectedTail}` ? "rgba(99, 212, 197, 0.7)" : "rgba(180, 190, 199, 0.18)";
+          ctx.beginPath();
+          ctx.moveTo(from.x + 48, from.y);
+          const midX = (from.x + to.x) / 2;
+          ctx.bezierCurveTo(midX, from.y, midX, to.y, to.x - 48, to.y);
+          ctx.stroke();
+        });
+
+        graph.nodes.forEach((node) => {
+          const pos = positions[node.id];
+          if (!pos) return;
+          const isSelected = node.id === `aircraft:${selectedTail}`;
+          const boxWidth = node.group === "保障活动" ? 118 : 104;
+          const boxHeight = 30;
+          ctx.fillStyle = groupColors[node.group] || "#bcc6cf";
+          ctx.globalAlpha = isSelected ? 1 : 0.88;
+          ctx.beginPath();
+          ctx.roundRect(pos.x - boxWidth / 2, pos.y - boxHeight / 2, boxWidth, boxHeight, 6);
+          ctx.fill();
+          ctx.globalAlpha = 1;
+          ctx.strokeStyle = isSelected ? "#ffffff" : "rgba(0,0,0,0.45)";
+          ctx.lineWidth = isSelected ? 2.5 : 1.4;
+          ctx.stroke();
+          ctx.fillStyle = "#111315";
+          ctx.font = "12px system-ui, sans-serif";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText(shortLabel(node.label, node.group === "保障活动" ? 12 : 10), pos.x, pos.y);
+        });
+
+        ctx.textAlign = "left";
+        ctx.textBaseline = "alphabetic";
+        ctx.fillStyle = "#a9b2ba";
+        ctx.font = "12px system-ui, sans-serif";
+        ctx.fillText(`Ontology关系图：${graph.nodes.length} 节点 / ${graph.edges.length} 关系，选中飞机 ${selectedTail}`, 18, height - 18);
+      }
+
+      function shortLabel(label, limit) {
+        return label.length > limit ? `${label.slice(0, limit - 1)}...` : label;
+      }
+
+      function drawAircraft() {
+        const ratio = window.devicePixelRatio || 1;
+        const rect = canvas.getBoundingClientRect();
+        canvas.width = Math.max(1, Math.floor(rect.width * ratio));
+        canvas.height = Math.max(1, Math.floor(rect.height * ratio));
+        ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+        const width = rect.width;
+        const height = rect.height;
+        ctx.clearRect(0, 0, width, height);
+        drawZone(28, 62, width * 0.42, height - 104, "停机坪");
+        drawZone(width * 0.48, 62, width * 0.23, height - 104, "保障线");
+        drawZone(width * 0.74, 62, width * 0.2, (height - 124) / 2, "任务空域");
+        drawZone(width * 0.74, height / 2 + 20, width * 0.2, (height - 124) / 2, "维修区");
+        state.aircraft.forEach((aircraft, index) => drawAircraftSymbol(aircraft, index, width, height));
+      }
+
+      function drawZone(x, y, w, h, label) {
+        ctx.fillStyle = "rgba(255,255,255,0.045)";
+        ctx.strokeStyle = "#343a40";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.roundRect(x, y, w, h, 8);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = "#a9b2ba";
+        ctx.font = "13px system-ui, sans-serif";
+        ctx.fillText(label, x + 12, y + 24);
+      }
+
+      function drawAircraftSymbol(aircraft, index, width, height) {
+        let x = 58 + aircraft.x * 88;
+        let y = 118 + aircraft.y * 90;
+        if (aircraft.state === "pre_support" || aircraft.state === "post_support") {
+          x = width * 0.52 + (index % 2) * 76;
+          y = 130 + Math.floor(index / 2) * 64;
+        }
+        if (aircraft.state === "flying") {
+          x = width * 0.8 + (index % 2) * 58;
+          y = 140 + Math.floor(index / 2) * 46;
+        }
+        if (aircraft.state === "maintenance") {
+          x = width * 0.8 + (index % 2) * 58;
+          y = height / 2 + 88 + Math.floor(index / 2) * 46;
+        }
+        ctx.fillStyle = colors[aircraft.state] || colors.available;
+        ctx.strokeStyle = aircraft.tail === selectedTail ? "#ffffff" : "rgba(0,0,0,0.45)";
+        ctx.lineWidth = aircraft.tail === selectedTail ? 3 : 2;
+        ctx.beginPath();
+        ctx.moveTo(x, y - 15);
+        ctx.lineTo(x + 38, y);
+        ctx.lineTo(x, y + 15);
+        ctx.lineTo(x + 8, y);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = "#f2f5f7";
+        ctx.font = "12px system-ui, sans-serif";
+        ctx.fillText(aircraft.tail, x - 8, y + 32);
+      }
+
+      document.getElementById("step").addEventListener("click", stepSimulation);
+      document.getElementById("reset").addEventListener("click", reset);
+      document.getElementById("play").addEventListener("click", () => {
+        running = !running;
+        document.getElementById("play").textContent = running ? "暂停" : "运行";
+        if (running) timer = setInterval(stepSimulation, 420);
+        else clearInterval(timer);
+      });
+      document.getElementById("aircraftSelect").addEventListener("change", (event) => {
+        selectedTail = event.target.value;
+        render();
+      });
+      document.querySelectorAll(".tab").forEach((button) => {
+        button.addEventListener("click", () => {
+          activeView = button.dataset.view;
+          document.querySelectorAll(".tab").forEach((item) => item.classList.toggle("active", item === button));
+          render();
+        });
+      });
+      Object.values(controls).forEach((control) => control.addEventListener("input", reset));
+      window.addEventListener("resize", () => render());
+      reset();
+    </script>
+  </body>
+</html>

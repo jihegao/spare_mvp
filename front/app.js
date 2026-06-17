@@ -1,3 +1,5 @@
+import { FEATURE_PAGES, getFeaturePageById, groupFeaturePages } from "./feature-catalog.mjs";
+import { AVIATION_SUPPORT_DEMO_STATE, normalizeAviationSupportState } from "./aviation-support-state.mjs";
 import {
   cloneScenario,
   defaultScenario,
@@ -6,293 +8,492 @@ import {
   validateScenario
 } from "./sim-engine.mjs";
 
+const app = document.querySelector("#app");
+const groups = groupFeaturePages(FEATURE_PAGES);
+
 let scenario = cloneScenario(defaultScenario);
 let singleResult = runSimulation(scenario);
 let monteCarloResult = runMonteCarlo(scenario, { samples: 4 });
-let selectedStep = singleResult.timeline.length - 1;
+let selectedFeatureId = readFeatureIdFromHash() || FEATURE_PAGES[0].id;
 
-const $ = (selector) => document.querySelector(selector);
-const $$ = (selector) => [...document.querySelectorAll(selector)];
-const pct = (value) => `${Math.round(Number(value || 0) * 100)}%`;
-const fixed = (value, digits = 2) => Number(value || 0).toFixed(digits);
+render();
+bindEvents();
 
-init();
+function bindEvents() {
+  window.addEventListener("hashchange", () => {
+    selectedFeatureId = readFeatureIdFromHash() || FEATURE_PAGES[0].id;
+    render();
+  });
 
-function init() {
-  bindNavigation();
-  bindForm();
-  bindActions();
-  renderAll();
-}
-
-function bindNavigation() {
-  $$(".nav-item").forEach((button) => {
-    button.addEventListener("click", () => {
-      $$(".nav-item").forEach((item) => item.classList.toggle("active", item === button));
-      $$(".view").forEach((view) => view.classList.toggle("active", view.id === button.dataset.target));
-    });
-  });
-}
-
-function bindForm() {
-  fillForm();
-  $("#scenario-form").addEventListener("input", () => {
-    readForm();
-    singleResult = runSimulation(scenario);
-    selectedStep = singleResult.timeline.length - 1;
-    renderAll();
-  });
-  $("#module-select").addEventListener("change", (event) => {
-    scenario.activeModule = event.target.value;
-    renderAll();
-  });
-}
-
-function bindActions() {
-  $("#run-single").addEventListener("click", () => {
-    readForm();
-    singleResult = runSimulation(scenario);
-    selectedStep = singleResult.timeline.length - 1;
-    renderAll();
-  });
-  $("#run-mc").addEventListener("click", () => {
-    readForm();
-    monteCarloResult = runMonteCarlo(scenario, { samples: Number($("#mc-samples").value || 4), sweep: readSweep() });
-    renderAll();
-  });
-  $("#export-json").addEventListener("click", () => downloadJson("scenario.json", scenario));
-  $("#step-back").addEventListener("click", () => {
-    selectedStep = 0;
-    renderSimulationView();
-  });
-  $("#step-forward").addEventListener("click", () => {
-    selectedStep = Math.min(selectedStep + 1, singleResult.timeline.length - 1);
-    renderSimulationView();
-  });
-  $("#step-slider").addEventListener("input", (event) => {
-    selectedStep = Number(event.target.value);
-    renderSimulationView();
-  });
-}
-
-function renderAll() {
-  renderModeling();
-  renderReliability();
-  renderGantt();
-  renderSimulationView();
-  renderMonteCarloView();
-  renderAnalysis();
-}
-
-function fillForm() {
-  for (const input of $$("[name]")) {
-    if (input.name === "failureRate") {
-      input.value = fixed(avg(scenario.components.map((item) => item.failureRate)), 2);
-    } else {
-      input.value = getPath(scenario, input.name) ?? "";
+  app.addEventListener("click", (event) => {
+    const featureButton = event.target.closest("[data-feature-id]");
+    if (featureButton) {
+      selectedFeatureId = featureButton.dataset.featureId;
+      location.hash = `feature=${selectedFeatureId}`;
+      render();
+      return;
     }
-  }
-  $("#module-select").value = scenario.activeModule;
-  $("#mc-samples").value = scenario.experiment.samples;
-}
 
-function readForm() {
-  for (const input of $$("[name]")) {
-    if (input.name === "failureRate") {
-      const value = Number(input.value || 0);
-      scenario.components.forEach((component) => {
-        component.failureRate = value;
-      });
-      scenario.reliabilityBlockDiagram.nodes.forEach((node) => {
-        if (node.type === "component") node.failureRate = value;
-      });
-    } else {
-      setPath(scenario, input.name, parseInput(input));
+    const action = event.target.closest("[data-action]")?.dataset.action;
+    if (!action) return;
+    if (action === "run-single") {
+      singleResult = runSimulation(scenario);
+      render();
     }
-  }
-  scenario.equipment.initialReady = Math.min(scenario.equipment.quantity, scenario.equipment.initialReady || scenario.equipment.quantity);
+    if (action === "run-mc") {
+      monteCarloResult = runMonteCarlo(scenario, { samples: Number(document.querySelector("#mc-samples")?.value || 4) });
+      render();
+    }
+    if (action === "export-json") {
+      downloadJson("spare-mvp-scenario.json", scenario);
+    }
+  });
+
+  app.addEventListener("change", (event) => {
+    const input = event.target.closest("[data-path]");
+    if (!input) return;
+    setPath(scenario, input.dataset.path, parseInput(input));
+    singleResult = runSimulation(scenario);
+    render();
+  });
 }
 
-function renderModeling() {
-  $("#model-tree").innerHTML = `
-    <ul>
-      <li><strong>${scenario.missionProfile.profileType}</strong><div class="node-meta">任务剖面 ${scenario.missionProfile.repeatCycleHours}h 周期</div>
-        <ul>
-          <li>${scenario.basicMission.missionId}<div class="node-meta">最低出动 ${scenario.basicMission.minRequiredSorties} 架 优先级 ${scenario.basicMission.priority}</div>
-            <ul>${scenario.missionPhases.map((phase) => `<li>${phase.name}<div class="node-meta">${phase.state} / ${phase.transitionCondition}</div></li>`).join("")}</ul>
-          </li>
-          <li>${scenario.combatUnit.unitId}<div class="node-meta">${scenario.combatUnit.equipmentType} ${scenario.equipment.quantity} 架 / ${scenario.equipment.deploymentLocation}</div>
-            <ul>${scenario.components.map((component) => `<li>${component.name}<div class="node-meta">${component.failureModel} / ${component.spareType} / 故障率 ${component.failureRate}</div></li>`).join("")}</ul>
-          </li>
-          <li>保障节点<div class="node-meta">${scenario.supportNodes.map((node) => node.name).join("、")}</div>
-            <ul>${scenario.supportActivities.map((activity) => `<li>${activity.activityType}<div class="node-meta">${activity.durationHours}h / 人员 ${activity.requiredPersonnel} / 设备 ${activity.requiredDevices}</div></li>`).join("")}</ul>
-          </li>
-        </ul>
-      </li>
-    </ul>
+function render() {
+  const page = getFeaturePageById(selectedFeatureId);
+  app.innerHTML = `
+    <header class="topbar">
+      <div class="left">
+        <div class="brand-mark">BJGH</div>
+        <div>
+          <h1>备件规划及任务可靠度验证评估平台</h1>
+          <p>${page.module} / ${page.secondary} / ${page.tertiary}</p>
+        </div>
+      </div>
+      <div class="right">
+        <button class="btn-primary" type="button" data-action="run-single">运行单次仿真</button>
+        <button type="button" data-action="run-mc">运行 Monte Carlo</button>
+        <button type="button" data-action="export-json">导出方案 JSON</button>
+      </div>
+    </header>
+    <main class="workspace-shell">
+      ${renderNavigation(page)}
+      ${renderFeaturePage(page)}
+      ${renderOntologyPanel(page)}
+    </main>
   `;
-  const issues = validateScenario(scenario);
-  $("#validation-panel").innerHTML = issues.length
-    ? issues.map((issue) => `<div class="issue">${issue}</div>`).join("")
-    : `<div class="ok">方案字段、关系端点和核心对象校验通过</div>`;
-  $("#json-preview").textContent = JSON.stringify(scenario, null, 2);
 }
 
-function renderReliability() {
+function renderNavigation(activePage) {
+  return `
+    <aside class="feature-nav" aria-label="四级功能导航">
+      <div class="nav-summary">
+        <strong>四级功能页</strong>
+        <span>${FEATURE_PAGES.length} 个页面</span>
+      </div>
+      ${Object.entries(groups).map(([moduleName, secondaryGroups]) => `
+        <section class="nav-module">
+          <h2>${moduleName}</h2>
+          ${Object.entries(secondaryGroups).map(([secondaryName, tertiaryGroups]) => `
+            <div class="nav-secondary">
+              <h3>${secondaryName}</h3>
+              ${Object.entries(tertiaryGroups).map(([tertiaryName, pages]) => `
+                <div class="deck-modeling-nav">
+                  <div class="nav-tertiary">${tertiaryName}</div>
+                  ${pages.map((page) => `
+                    <button type="button" class="feature-nav-item ${page.id === activePage.id ? "active" : ""}" data-feature-id="${page.id}">
+                      ${page.name}
+                    </button>
+                  `).join("")}
+                </div>
+              `).join("")}
+            </div>
+          `).join("")}
+        </section>
+      `).join("")}
+    </aside>
+  `;
+}
+
+function renderFeaturePage(page) {
+  const siblingPages = groups[page.module][page.secondary][page.tertiary];
+  return `
+    <section class="deck-modeling-content feature-page">
+      <div class="page-head">
+        <div>
+          <div class="breadcrumb">${page.module} / ${page.secondary} / ${page.tertiary}</div>
+          <h2>${page.name}</h2>
+          <p>${page.summary}</p>
+        </div>
+        <div class="page-head-current-context">
+          <span>当前方案</span>
+          <strong>${scenario.experiment.name}</strong>
+        </div>
+      </div>
+      <nav class="experiment-main-tabs experiment-subtabs" aria-label="同组四级功能">
+        ${siblingPages.map((item) => `
+          <button class="tab-btn ${item.id === page.id ? "active" : ""}" type="button" data-feature-id="${item.id}">
+            ${item.name}
+          </button>
+        `).join("")}
+      </nav>
+      <div class="page-grid">
+        <section class="panel main-panel">
+          ${renderMainComponent(page)}
+        </section>
+        <section class="panel side-panel">
+          ${renderValidationAndOutputs(page)}
+        </section>
+      </div>
+    </section>
+  `;
+}
+
+function renderMainComponent(page) {
+  if (page.component === "visual-simulation") return renderVisualSimulation(page);
+  if (page.component === "reliability-block-diagram") return renderReliabilityBlockDiagram();
+  if (page.component === "activity-gantt") return renderActivityGantt(page);
+  if (page.component === "resource-table") return renderResourceTable(page);
+  if (page.component === "equipment-table") return renderEquipmentTable(page);
+  if (page.component === "experiment-form") return renderExperimentForm(page);
+  if (page.component === "monte-carlo-config") return renderMonteCarloConfig();
+  if (page.component === "monte-carlo-results") return renderMonteCarloResults();
+  if (page.component === "analysis") return renderAnalysis(page);
+  if (page.component === "import-table") return renderImportTable();
+  if (page.component === "scenario-switch") return renderScenarioSwitch();
+  return renderTaskModel(page);
+}
+
+function renderTaskModel(page) {
+  return `
+    <div class="section-head">
+      <h3>${page.name}字段</h3>
+      <span>${page.dataObjects.join(" / ")}</span>
+    </div>
+    <div class="form-table-grid">
+      ${field("任务类型", "missionProfile.profileType")}
+      ${field("重复周期", "missionProfile.repeatCycleHours", "number")}
+      ${field("结束条件", "missionProfile.endCondition")}
+      ${field("基本任务", "basicMission.missionId")}
+      ${field("成功点", "basicMission.successPoint")}
+      ${field("最低出动数量", "basicMission.minRequiredSorties", "number")}
+      ${field("装备型号", "equipment.model")}
+      ${field("装备数量", "equipment.quantity", "number")}
+    </div>
+    <div class="object-tree">
+      <div class="tree-node root">${scenario.missionProfile.profileType}</div>
+      ${scenario.missionPhases.map((phase) => `<div class="tree-node">${phase.name}<span>${phase.state}</span></div>`).join("")}
+      <div class="tree-node">${scenario.combatUnit.unitId}<span>${scenario.equipment.quantity} 架</span></div>
+    </div>
+  `;
+}
+
+function renderEquipmentTable(page) {
+  return `
+    <div class="section-head">
+      <h3>${page.name}</h3>
+      <span>装备组成 / 故障参数</span>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>组件</th><th>备件类型</th><th>故障模型</th><th>失效率</th><th>MTBF</th><th>连接类型</th></tr></thead>
+        <tbody>
+          ${scenario.components.map((component) => `
+            <tr>
+              <td>${component.name}</td>
+              <td>${component.spareType}</td>
+              <td>${component.failureModel}</td>
+              <td>${component.failureRate}</td>
+              <td>${component.mtbfHours}h</td>
+              <td><span class="badge">${component.connectionType}</span></td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderReliabilityBlockDiagram() {
   const nodes = scenario.reliabilityBlockDiagram.nodes;
-  const childrenByParent = nodes.reduce((acc, node) => {
-    const key = node.parentId || "root";
-    acc[key] ||= [];
-    acc[key].push(node);
-    return acc;
-  }, {});
-  const renderNode = (node) => {
-    const className = node.connectionType === "串联" ? "series" : node.connectionType === "并联" ? "parallel" : "standby";
-    const children = childrenByParent[node.id] || [];
-    return `<div class="reliability-node">
-      <strong>${node.name}</strong>
-      <div class="node-meta"><span class="badge ${className}">${node.connectionType}</span><span>失效率 ${node.failureRate}</span><span>MTBF ${node.mtbfHours}h</span></div>
-      ${children.length ? `<ul>${children.map((child) => `<li>${renderNode(child)}</li>`).join("")}</ul>` : ""}
-    </div>`;
-  };
-  $("#reliability-tree").innerHTML = (childrenByParent.root || []).map(renderNode).join("");
-  const checks = validateScenario(scenario);
-  $("#rbd-checks").innerHTML = checks.length
-    ? checks.map((issue) => `<div class="issue">${issue}</div>`).join("")
-    : `<div class="ok">无环路、端点完整，组件故障参数已赋值</div>`;
-  const critical = [...nodes].filter((node) => node.type === "component").sort((a, b) => b.failureRate - a.failureRate);
-  $("#critical-components").innerHTML = critical.map((node) => rankRow(node.name, `失效率 ${node.failureRate}`, `MTBF ${node.mtbfHours}`, node.connectionType)).join("");
+  return `
+    <div class="section-head">
+      <h3>装备可靠性框图</h3>
+      <span>串联 / 并联 / 备用</span>
+    </div>
+    <div class="rbd-canvas">
+      ${nodes.map((node, index) => `
+        <div class="rbd-node ${node.type}" style="grid-column:${index === 0 ? "1 / -1" : "auto"}">
+          <strong>${node.name}</strong>
+          <span>${node.connectionType}</span>
+          <small>失效率 ${node.failureRate} / MTBF ${node.mtbfHours}h</small>
+        </div>
+      `).join("")}
+    </div>
+    <div class="table-wrap compact-table">
+      <table>
+        <thead><tr><th>起点</th><th>终点</th><th>关系</th><th>权重</th></tr></thead>
+        <tbody>${scenario.reliabilityBlockDiagram.edges.map((edge) => `<tr><td>${edge.from}</td><td>${edge.to}</td><td>${edge.type}</td><td>${edge.weight}</td></tr>`).join("")}</tbody>
+      </table>
+    </div>
+  `;
 }
 
-function renderGantt() {
-  const activities = scenario.supportActivities;
-  const lanes = scenario.supportNodes.map((node, nodeIndex) => {
-    const bars = activities.map((activity, index) => {
-      const start = 6 + index * 17 + nodeIndex * 4;
-      const width = Math.max(12, activity.durationHours * 9);
-      const klass = activity.activityType.includes("维修") ? "maintenance" : activity.activityType.includes("预防") ? "preventive" : "";
-      return `<div class="gantt-bar ${klass}" style="left:${start}%;width:${Math.min(width, 32)}%">${activity.activityType}</div>`;
-    }).join("");
-    return `<div class="gantt-row"><strong>${node.name}</strong><div class="gantt-lane">${bars}</div></div>`;
-  });
-  $("#gantt-chart").innerHTML = lanes.join("");
+function renderResourceTable(page) {
+  const rows = scenario.supportNodes.flatMap((node) => Object.entries(node.inventory || {}).map(([spareType, quantity]) => ({
+    node: node.name,
+    spareType,
+    quantity,
+    personnel: node.personnelCapacity,
+    equipment: node.equipmentCapacity
+  })));
+  return `
+    <div class="section-head">
+      <h3>${page.name}</h3>
+      <span>组织 / 人员 / 设备 / 备件</span>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>保障节点</th><th>备件</th><th>库存</th><th>人员容量</th><th>设备容量</th></tr></thead>
+        <tbody>${rows.map((row) => `<tr><td>${row.node}</td><td>${row.spareType}</td><td>${row.quantity}</td><td>${row.personnel}</td><td>${row.equipment}</td></tr>`).join("")}</tbody>
+      </table>
+    </div>
+  `;
 }
 
-function renderSimulationView() {
-  const slider = $("#step-slider");
-  slider.max = Math.max(0, singleResult.timeline.length - 1);
-  slider.value = selectedStep;
-  const row = singleResult.timeline[selectedStep] || singleResult.final;
-  $("#kpi-strip").innerHTML = [
-    ["战备完好率", pct(row.ready_rate)],
-    ["任务可靠度", pct(row.mission_success_rate)],
-    ["出动架次率", pct(row.sortie_rate)],
-    ["备件满足率", pct(row.spare_fill_rate)],
-    ["短缺事件", fixed(row.shortage_events, 0)],
-    ["维修积压", fixed(row.repair_backlog, 0)]
-  ].map(([label, value]) => `<div class="kpi-card"><span>${label}</span><strong>${value}</strong></div>`).join("");
-  $("#mission-state").innerHTML = [
-    ["ready", "待命/可用", row.ready_count],
-    ["preparing", "准备", row.preparing_count],
-    ["sortie", "出动", row.sortie_count],
-    ["failed", "故障", row.failed_count],
-    ["repairing", "维修", row.repairing_count]
-  ].map(([key, label, value]) => stateLine(label, Number(value || 0), scenario.equipment.quantity, key)).join("");
-  $("#airport-board").innerHTML = makePlaneTiles(row).join("");
-  $("#event-feed").innerHTML = singleResult.events
-    .filter((event) => event.step <= row.step)
-    .slice(-18)
-    .reverse()
-    .map((event) => `<div class="event ${event.severity}"><strong>T+${event.step}</strong> ${event.message}</div>`)
-    .join("");
+function renderActivityGantt(page) {
+  return `
+    <div class="section-head">
+      <h3>${page.name}</h3>
+      <span>保障活动流程</span>
+    </div>
+    <div class="gantt-chart">
+      ${scenario.supportActivities.map((activity, index) => `
+        <div class="gantt-row">
+          <strong>${activity.activityType}</strong>
+          <div class="gantt-lane">
+            <span style="left:${8 + index * 12}%;width:${Math.min(32, activity.durationHours * 9)}%">${activity.durationHours}h</span>
+          </div>
+        </div>
+      `).join("")}
+    </div>
+    <div class="table-wrap compact-table">
+      <table>
+        <thead><tr><th>活动</th><th>人员</th><th>设备</th><th>备件</th><th>优先级</th></tr></thead>
+        <tbody>${scenario.supportActivities.map((activity) => `<tr><td>${activity.activityType}</td><td>${activity.requiredPersonnel}</td><td>${activity.requiredDevices}</td><td>${activity.spareType || "-"}</td><td>${activity.priority}</td></tr>`).join("")}</tbody>
+      </table>
+    </div>
+  `;
 }
 
-function renderMonteCarloView() {
-  const groups = monteCarloResult.groups || [];
-  $("#mc-summary").innerHTML = [
-    ["参数组", groups.length],
-    ["样本数", monteCarloResult.runs.length],
-    ["短缺类型", monteCarloResult.spareShortfalls.length],
-    ["最高任务可靠度", pct(Math.max(...groups.map((group) => group.mission_success_rate.mean), 0))]
-  ].map(([label, value]) => `<div class="kpi-card"><span>${label}</span><strong>${value}</strong></div>`).join("");
-  $("#mc-table").innerHTML = `<table>
-    <thead><tr><th>参数组</th><th>样本数</th><th>任务可靠度</th><th>战备完好率</th><th>出动架次率</th><th>备件满足率</th><th>短缺事件</th><th>平均出动时间</th></tr></thead>
-    <tbody>
-      ${groups.map((group) => `<tr>
-        <td>${group.group}</td>
-        <td>${group.count}</td>
-        <td>${pct(group.mission_success_rate.mean)}</td>
-        <td>${pct(group.ready_rate.mean)}</td>
-        <td>${pct(group.sortie_rate.mean)}</td>
-        <td>${pct(group.spare_fill_rate.mean)}</td>
-        <td>${fixed(group.shortage_events.mean, 1)}</td>
-        <td>${fixed(group.mean_launch_time.mean, 1)}h</td>
-      </tr>`).join("")}
-    </tbody>
-  </table>`;
+function renderExperimentForm(page) {
+  return `
+    <div class="section-head">
+      <h3>${page.name}</h3>
+      <span>实验方案参数</span>
+    </div>
+    <div class="form-table-grid">
+      ${field("实验名称", "experiment.name")}
+      ${field("仿真步数", "experiment.steps", "number")}
+      ${field("样本数", "experiment.samples", "number")}
+      ${field("随机种子", "experiment.seed", "number")}
+      ${field("并行核心数", "experiment.parallelCores", "number")}
+      ${field("停止条件", "experiment.stopCondition")}
+    </div>
+  `;
 }
 
-function renderAnalysis() {
-  const source = monteCarloResult.runs.length ? monteCarloResult : singleResult;
-  $("#shortfall-analysis").innerHTML = source.spareShortfalls.map((row) => rankRow(row.spareType, `需求 ${row.demand}`, `短缺 ${row.shortage}`, `${pct(row.fillRate)} 满足`)).join("");
-  $("#carry-list").innerHTML = source.carryList.map((row) => rankRow(row.spareType, `建议 ${row.recommended}`, `短缺 ${row.shortage}`, `${row.riskLevel}风险`)).join("");
+function renderVisualSimulation(page) {
+  const state = normalizeAviationSupportState(AVIATION_SUPPORT_DEMO_STATE);
+  return `
+    <div class="section-head">
+      <h3>${page.name}</h3>
+      <span>本地 aviation_support 状态帧</span>
+    </div>
+    <div class="kpi-strip">
+      ${state.kpis.map((item) => `<div class="kpi-card"><span>${item.label}</span><strong>${item.value}</strong></div>`).join("")}
+    </div>
+    <div class="simulation-layout">
+      <div class="aircraft-board">
+        ${state.aircraft.map((aircraft) => `<div class="aircraft-tile ${aircraft.state}"><strong>${aircraft.label}</strong><span>${aircraft.type}</span><em>${stateLabel(aircraft.state)}</em></div>`).join("")}
+      </div>
+      <div class="stack-list">
+        <h4>任务</h4>
+        ${state.missions.map((mission) => `<div class="list-row"><strong>M-${mission.id}</strong><span>${mission.status}</span><span>${mission.assignedCount}/${mission.requiredAircraft}</span></div>`).join("")}
+        <h4>保障资源</h4>
+        ${state.resources.map((resource) => `<div class="metric-line"><strong>${resource.label}</strong><div class="bar"><span style="width:${Math.round(resource.utilization * 100)}%"></span></div><span>${resource.inUse}/${resource.capacity}</span></div>`).join("")}
+      </div>
+      <div class="stack-list">
+        <h4>备件与作业</h4>
+        ${state.spares.map((spare) => `<div class="list-row"><strong>${spare.label}</strong><span>库存 ${spare.quantity}</span><span>消耗 ${spare.consumed}</span></div>`).join("")}
+        ${state.jobs.map((job) => `<div class="event info"><strong>${job.tailNumber}</strong> ${job.task} / ${job.remaining}min</div>`).join("")}
+        ${state.events.map((event) => `<div class="event success"><strong>T+${event.time}</strong> ${event.message}</div>`).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function renderMonteCarloConfig() {
+  return `
+    <div class="section-head">
+      <h3>蒙特卡洛实验配置</h3>
+      <span>扫参 / 样本 / seed</span>
+    </div>
+    <div class="form-table-grid">
+      <label>样本数<input id="mc-samples" type="number" min="1" value="${scenario.experiment.samples}"></label>
+      <label>故障率扫描<input value="${scenario.monteCarlo.failureRates.join(",")}"></label>
+      <label>备件倍数<input value="${scenario.monteCarlo.spareMultipliers.join(",")}"></label>
+      <label>保障容量<input value="${scenario.monteCarlo.supportCapacities.join(",")}"></label>
+    </div>
+  `;
+}
+
+function renderMonteCarloResults() {
+  return `
+    <div class="section-head">
+      <h3>蒙特卡洛实验结果展示</h3>
+      <span>${monteCarloResult.runs.length} 个样本</span>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>参数组</th><th>样本数</th><th>任务可靠度</th><th>战备完好率</th><th>短缺事件</th></tr></thead>
+        <tbody>${monteCarloResult.groups.map((group) => `<tr><td>${group.group}</td><td>${group.count}</td><td>${pct(group.mission_success_rate.mean)}</td><td>${pct(group.ready_rate.mean)}</td><td>${fixed(group.shortage_events.mean, 1)}</td></tr>`).join("")}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderAnalysis(page) {
   const final = singleResult.final;
-  $("#task-reliability").innerHTML = [
-    ["任务可靠度", final.mission_success_rate],
-    ["战备完好率", final.ready_rate],
-    ["出动架次率", final.sortie_rate],
-    ["备件满足率", final.spare_fill_rate]
-  ].map(([label, value]) => metricLine(label, value)).join("");
-  $("#downtime-analysis").innerHTML = source.downtimeFactors.map((row) => metricLine(row.label, row.contribution, `${row.count} 次`)).join("");
+  const rows = page.name.includes("备件短板")
+    ? singleResult.spareShortfalls.map((row) => [row.spareType, `需求 ${row.demand}`, `短缺 ${row.shortage}`, `${pct(row.fillRate)} 满足`])
+    : page.name.includes("携行")
+      ? singleResult.carryList.map((row) => [row.spareType, `建议 ${row.recommended}`, `短缺 ${row.shortage}`, `${row.riskLevel}风险`])
+      : page.name.includes("停机")
+        ? singleResult.downtimeFactors.map((row) => [row.label, `${row.count} 次`, pct(row.contribution), row.reason])
+        : [["任务可靠度", pct(final.mission_success_rate), "单次仿真", "由任务波次判定"], ["出动架次率", pct(final.sortie_rate), "单次仿真", "由出动成功数判定"], ["战备完好率", pct(final.ready_rate), "单次仿真", "由 ready 状态判定"]];
+  return `
+    <div class="section-head">
+      <h3>${page.name}</h3>
+      <span>结果分析</span>
+    </div>
+    <div class="rank-list">
+      ${rows.map((row) => `<div class="rank-row"><strong>${row[0]}</strong><span>${row[1]}</span><span>${row[2]}</span><span>${row[3]}</span></div>`).join("")}
+    </div>
+  `;
 }
 
-function stateLine(label, value, total, key) {
-  return `<div class="state-row"><strong>${label}</strong><div class="bar"><span style="width:${Math.min(100, (value / Math.max(1, total)) * 100)}%"></span></div><span>${value}</span></div>`;
+function renderImportTable() {
+  return `
+    <div class="section-head">
+      <h3>结果导入</h3>
+      <span>指标分配方案管理</span>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>结果集</th><th>来源实验</th><th>主指标</th><th>状态</th></tr></thead>
+        <tbody><tr><td>local-smoke-summary</td><td>aviation_support_smoke</td><td>sortie_completion_rate</td><td>待导入校验</td></tr></tbody>
+      </table>
+    </div>
+  `;
 }
 
-function makePlaneTiles(row) {
-  const entries = [];
-  const states = [
-    ["ready", row.ready_count],
-    ["preparing", row.preparing_count],
-    ["sortie", row.sortie_count],
-    ["failed", row.failed_count],
-    ["repairing", row.repairing_count]
+function renderScenarioSwitch() {
+  return `
+    <div class="section-head">
+      <h3>场景切换</h3>
+      <span>宏观任务视图 / 机场保障视图 / 指标统计视图</span>
+    </div>
+    <div class="scenario-grid">
+      ${["宏观任务视图", "陆基/舰基保障视图", "指标统计视图"].map((name) => `<button type="button" class="scenario-card">${name}<span>${scenario.scenarioId}</span></button>`).join("")}
+    </div>
+  `;
+}
+
+function renderValidationAndOutputs(page) {
+  const issues = validateScenario(scenario);
+  return `
+    <div class="section-head">
+      <h3>校验与输出</h3>
+      <span>${page.component}</span>
+    </div>
+    <div class="check-list">
+      ${issues.length ? issues.map((issue) => `<div class="issue">${issue}</div>`).join("") : `<div class="ok">共享 scenario 校验通过</div>`}
+    </div>
+    <h4>写入对象</h4>
+    <div class="tag-list">${page.dataObjects.map((item) => `<span>${item}</span>`).join("")}</div>
+    <h4>输出联动</h4>
+    <div class="output-list">${page.outputs.map((item) => `<div>${item}</div>`).join("")}</div>
+  `;
+}
+
+function renderOntologyPanel(page) {
+  return `
+    <aside class="ontology-panel">
+      <div class="section-head">
+        <h3>Ontology 上下文</h3>
+        <span>${page.ontology.nodes.length} 节点 / ${page.ontology.edges.length} 关系</span>
+      </div>
+      ${renderOntologyGraph(page)}
+      <div class="ontology-edge-list">
+        ${page.ontology.edges.slice(-6).map((edge) => `<div><strong>${edge.label}</strong><span>${nodeLabel(page, edge.from)} -> ${nodeLabel(page, edge.to)}</span></div>`).join("")}
+      </div>
+    </aside>
+  `;
+}
+
+function renderOntologyGraph(page) {
+  const graphNodes = page.ontology.nodes.slice(0, 8);
+  const positions = [
+    [170, 40],
+    [70, 100],
+    [170, 100],
+    [270, 100],
+    [70, 170],
+    [170, 170],
+    [270, 170],
+    [170, 240]
   ];
-  let index = 1;
-  for (const [state, count] of states) {
-    for (let i = 0; i < Number(count || 0); i += 1) {
-      entries.push(`<div class="plane ${state}">EQ-${String(index).padStart(2, "0")}<br>${state}</div>`);
-      index += 1;
-    }
+  return `
+    <svg class="ontology-graph" viewBox="0 0 340 280" role="img" aria-label="${page.name} ontology graph">
+      ${page.ontology.edges.slice(0, 10).map((edge) => {
+        const fromIndex = Math.max(0, graphNodes.findIndex((node) => node.id === edge.from));
+        const toIndex = Math.max(0, graphNodes.findIndex((node) => node.id === edge.to));
+        const [x1, y1] = positions[fromIndex];
+        const [x2, y2] = positions[toIndex];
+        return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" />`;
+      }).join("")}
+      ${graphNodes.map((node, index) => {
+        const [x, y] = positions[index];
+        return `<g class="ontology-node ${node.type}" transform="translate(${x} ${y})"><circle r="24"></circle><text>${truncate(node.label, 9)}</text></g>`;
+      }).join("")}
+    </svg>
+  `;
+}
+
+function field(label, path, type = "text") {
+  return `<label>${label}<input data-path="${path}" type="${type}" value="${htmlEscape(getPath(scenario, path))}"></label>`;
+}
+
+function readFeatureIdFromHash() {
+  const match = location.hash.match(/feature=([^&]+)/);
+  return match ? decodeURIComponent(match[1]) : "";
+}
+
+function getPath(obj, path) {
+  return path.split(".").reduce((current, part) => current?.[part], obj) ?? "";
+}
+
+function setPath(obj, path, value) {
+  const parts = path.split(".");
+  let current = obj;
+  for (const part of parts.slice(0, -1)) {
+    current = current[part];
   }
-  return entries;
+  current[parts.at(-1)] = value;
 }
 
-function metricLine(label, value, note = pct(value)) {
-  const numeric = Number(value || 0);
-  return `<div class="metric-line"><strong>${label}</strong><div class="bar"><span style="width:${Math.min(100, numeric * 100)}%"></span></div><span>${note}</span></div>`;
-}
-
-function rankRow(name, a, b, c) {
-  return `<div class="rank-row"><strong>${name}</strong><span>${a}</span><span>${b}</span><span>${c}</span></div>`;
-}
-
-function readSweep() {
-  const rates = readNumberList($("#mc-failure").value);
-  const spares = readNumberList($("#mc-spares").value);
-  const capacities = readNumberList($("#mc-capacity").value);
-  return rates.flatMap((failureRate) => spares.flatMap((spareMultiplier) => capacities.map((supportCapacity) => ({
-    name: `故障${failureRate}/备件${spareMultiplier}/容量${supportCapacity}`,
-    failureRate,
-    spareMultiplier,
-    supportCapacity,
-    minRequiredSorties: scenario.basicMission.minRequiredSorties
-  }))));
-}
-
-function readNumberList(text) {
-  return String(text).split(",").map((item) => Number(item.trim())).filter((item) => Number.isFinite(item));
+function parseInput(input) {
+  return input.type === "number" ? Number(input.value) : input.value;
 }
 
 function downloadJson(filename, data) {
@@ -305,24 +506,39 @@ function downloadJson(filename, data) {
   URL.revokeObjectURL(url);
 }
 
-function parseInput(input) {
-  if (input.type === "number") return Number(input.value);
-  return input.value;
+function stateLabel(state) {
+  const labels = {
+    available: "可用",
+    pre_support: "保障中",
+    mission_ready: "待出动",
+    flying: "飞行",
+    post_support: "回收",
+    maintenance: "维修"
+  };
+  return labels[state] || state;
 }
 
-function getPath(obj, path) {
-  return path.split(".").reduce((current, part) => current?.[part], obj);
+function nodeLabel(page, id) {
+  return page.ontology.nodes.find((node) => node.id === id)?.label || id;
 }
 
-function setPath(obj, path, value) {
-  const parts = path.split(".");
-  let current = obj;
-  for (const part of parts.slice(0, -1)) {
-    current = current[part];
-  }
-  current[parts.at(-1)] = value;
+function pct(value) {
+  return `${Math.round(Number(value || 0) * 100)}%`;
 }
 
-function avg(values) {
-  return values.reduce((sum, value) => sum + Number(value || 0), 0) / Math.max(1, values.length);
+function fixed(value, digits = 2) {
+  return Number(value || 0).toFixed(digits);
+}
+
+function truncate(value, maxLength) {
+  const text = String(value || "");
+  return text.length > maxLength ? `${text.slice(0, maxLength - 1)}…` : text;
+}
+
+function htmlEscape(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
 }

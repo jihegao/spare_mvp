@@ -1,0 +1,14 @@
+{
+  "experiment_name": "aviation_support_resource_sweep",
+  "model_class": "AviationSupportModel",
+  "steps": 120,
+  "primary_metric": "sortie_completion_rate",
+  "seeds": [17, 23, 41],
+  "parameters": {
+    "ontology_path": "src/spare_mvp_abm/aviation_support/ontology.json",
+    "use_ontology_scenario": true,
+    "mechanic_teams": [1, 2, 4],
+    "fuel_trucks": [1, 2],
+    "lru_failure_multiplier": 0
+  }
+}

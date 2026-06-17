@@ -1,0 +1,291 @@
+{
+  "name": "Aviation Support Ontology",
+  "description": "Configurable ontology for aircraft sortie support, missions, support plans, resources, and spares.",
+  "entityTypes": [
+    {
+      "id": "aircraft-type",
+      "name": "Aircraft Type",
+      "description": "A model of aircraft with configured systems and support requirements.",
+      "properties": [
+        {"name": "typeId", "type": "string", "isIdentifier": true},
+        {"name": "tailPrefix", "type": "string"}
+      ]
+    },
+    {
+      "id": "aircraft",
+      "name": "Aircraft",
+      "description": "A physical aircraft with flight history, task state, support state, and equipment health.",
+      "properties": [
+        {"name": "tailNumber", "type": "string", "isIdentifier": true},
+        {"name": "flightHours", "type": "decimal", "unit": "hours"},
+        {"name": "landings", "type": "integer"},
+        {"name": "overhaulDays", "type": "decimal", "unit": "days"}
+      ]
+    },
+    {
+      "id": "system",
+      "name": "System",
+      "description": "Aircraft system or subsystem containing LRUs.",
+      "properties": [
+        {"name": "systemId", "type": "string", "isIdentifier": true},
+        {"name": "health", "type": "enum", "values": ["healthy", "degraded", "failed"]}
+      ]
+    },
+    {
+      "id": "lru",
+      "name": "LRU",
+      "description": "Line replaceable unit with reliability and repair parameters.",
+      "properties": [
+        {"name": "lruId", "type": "string", "isIdentifier": true},
+        {"name": "mtbfHours", "type": "decimal", "unit": "hours"},
+        {"name": "mttrMinutes", "type": "decimal", "unit": "minutes"},
+        {"name": "health", "type": "enum", "values": ["healthy", "failed"]}
+      ]
+    },
+    {
+      "id": "mission",
+      "name": "Mission",
+      "description": "Scheduled sortie demand with aircraft type and count requirements.",
+      "properties": [
+        {"name": "missionId", "type": "integer", "isIdentifier": true},
+        {"name": "plannedStart", "type": "decimal", "unit": "minutes"},
+        {"name": "duration", "type": "decimal", "unit": "minutes"},
+        {"name": "requiredAircraft", "type": "integer"}
+      ]
+    },
+    {
+      "id": "support-plan",
+      "name": "Support Plan",
+      "description": "Ordered plan composed from basic support tasks.",
+      "properties": [
+        {"name": "planId", "type": "string", "isIdentifier": true},
+        {"name": "phase", "type": "enum", "values": ["pre_mission", "post_mission", "maintenance"]}
+      ]
+    },
+    {
+      "id": "support-task",
+      "name": "Support Task",
+      "description": "Basic support operation with duration, resource dependencies, and optional spare consumption.",
+      "properties": [
+        {"name": "taskId", "type": "string", "isIdentifier": true},
+        {"name": "duration", "type": "decimal", "unit": "minutes"}
+      ]
+    },
+    {
+      "id": "support-resource",
+      "name": "Support Resource",
+      "description": "Personnel, equipment, or facility capacity used by support tasks.",
+      "properties": [
+        {"name": "resourceId", "type": "string", "isIdentifier": true},
+        {"name": "category", "type": "enum", "values": ["personnel", "equipment", "facility"]},
+        {"name": "capacity", "type": "integer"}
+      ]
+    },
+    {
+      "id": "spare-part",
+      "name": "Spare Part",
+      "description": "Inventory item consumed by LRU replacement and replenished after lead time.",
+      "properties": [
+        {"name": "partId", "type": "string", "isIdentifier": true},
+        {"name": "quantity", "type": "integer"},
+        {"name": "leadTime", "type": "decimal", "unit": "minutes"}
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "id": "aircraft-has-type",
+      "name": "has type",
+      "from": "aircraft",
+      "to": "aircraft-type",
+      "cardinality": "many-to-one"
+    },
+    {
+      "id": "type-has-system",
+      "name": "has system",
+      "from": "aircraft-type",
+      "to": "system",
+      "cardinality": "one-to-many"
+    },
+    {
+      "id": "system-contains-lru",
+      "name": "contains LRU",
+      "from": "system",
+      "to": "lru",
+      "cardinality": "one-to-many"
+    },
+    {
+      "id": "mission-requires-type",
+      "name": "requires aircraft type",
+      "from": "mission",
+      "to": "aircraft-type",
+      "cardinality": "many-to-one"
+    },
+    {
+      "id": "aircraft-flies-mission",
+      "name": "flies mission",
+      "from": "aircraft",
+      "to": "mission",
+      "cardinality": "many-to-many"
+    },
+    {
+      "id": "plan-includes-task",
+      "name": "includes task",
+      "from": "support-plan",
+      "to": "support-task",
+      "cardinality": "one-to-many"
+    },
+    {
+      "id": "task-requires-resource",
+      "name": "requires resource",
+      "from": "support-task",
+      "to": "support-resource",
+      "cardinality": "many-to-many"
+    },
+    {
+      "id": "task-consumes-spare",
+      "name": "consumes spare",
+      "from": "support-task",
+      "to": "spare-part",
+      "cardinality": "many-to-many"
+    },
+    {
+      "id": "lru-backed-by-spare",
+      "name": "backed by spare",
+      "from": "lru",
+      "to": "spare-part",
+      "cardinality": "many-to-one"
+    }
+  ],
+  "simulation": {
+    "tick_minutes": 10,
+    "max_departure_delay": 180,
+    "default_aircraft_type": "fighter",
+    "aircraft_types": [
+      {
+        "id": "fighter",
+        "name": "Fighter",
+        "tail_prefix": "FTR",
+        "systems": [
+          {
+            "id": "propulsion",
+            "name": "Propulsion",
+            "lrus": [
+              {
+                "id": "engine_control_unit",
+                "name": "Engine Control Unit",
+                "mtbf_hours": 320,
+                "mttr_minutes": 90,
+                "spare_part": "engine_control_unit"
+              }
+            ]
+          },
+          {
+            "id": "hydraulic",
+            "name": "Hydraulic",
+            "lrus": [
+              {
+                "id": "hydraulic_pump",
+                "name": "Hydraulic Pump",
+                "mtbf_hours": 260,
+                "mttr_minutes": 75,
+                "spare_part": "hydraulic_pump"
+              }
+            ]
+          },
+          {
+            "id": "avionics",
+            "name": "Avionics",
+            "lrus": [
+              {
+                "id": "radar_processor",
+                "name": "Radar Processor",
+                "mtbf_hours": 420,
+                "mttr_minutes": 110,
+                "spare_part": "radar_processor"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "transport",
+        "name": "Transport",
+        "tail_prefix": "TRN",
+        "systems": [
+          {
+            "id": "propulsion",
+            "name": "Propulsion",
+            "lrus": [
+              {
+                "id": "engine_fade_monitor",
+                "name": "Engine Fade Monitor",
+                "mtbf_hours": 520,
+                "mttr_minutes": 120,
+                "spare_part": "engine_fade_monitor"
+              }
+            ]
+          },
+          {
+            "id": "electrical",
+            "name": "Electrical",
+            "lrus": [
+              {
+                "id": "generator_control_unit",
+                "name": "Generator Control Unit",
+                "mtbf_hours": 460,
+                "mttr_minutes": 100,
+                "spare_part": "generator_control_unit"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "aircraft": [
+      {"tail_number": "FTR-01", "aircraft_type": "fighter", "history": {"flight_hours": 120, "landings": 40, "overhaul_days": 20}},
+      {"tail_number": "FTR-02", "aircraft_type": "fighter", "history": {"flight_hours": 132, "landings": 44, "overhaul_days": 21}},
+      {"tail_number": "FTR-03", "aircraft_type": "fighter", "history": {"flight_hours": 144, "landings": 48, "overhaul_days": 22}},
+      {"tail_number": "FTR-04", "aircraft_type": "fighter", "history": {"flight_hours": 156, "landings": 52, "overhaul_days": 23}},
+      {"tail_number": "FTR-05", "aircraft_type": "fighter", "history": {"flight_hours": 168, "landings": 56, "overhaul_days": 24}},
+      {"tail_number": "FTR-06", "aircraft_type": "fighter", "history": {"flight_hours": 180, "landings": 60, "overhaul_days": 25}},
+      {"tail_number": "TRN-01", "aircraft_type": "transport", "history": {"flight_hours": 220, "landings": 80, "overhaul_days": 30}},
+      {"tail_number": "TRN-02", "aircraft_type": "transport", "history": {"flight_hours": 244, "landings": 86, "overhaul_days": 31}}
+    ],
+    "missions": [
+      {"mission_id": 1, "planned_start": 120, "duration": 90, "aircraft_type": "fighter", "required_aircraft": 3},
+      {"mission_id": 2, "planned_start": 300, "duration": 90, "aircraft_type": "fighter", "required_aircraft": 3},
+      {"mission_id": 3, "planned_start": 420, "duration": 120, "aircraft_type": "transport", "required_aircraft": 1}
+    ],
+    "resources": [
+      {"id": "mechanic_team", "name": "Mechanic Team", "category": "personnel", "capacity": 4},
+      {"id": "fuel_truck", "name": "Fuel Truck", "category": "equipment", "capacity": 2},
+      {"id": "power_cart", "name": "Power Cart", "category": "equipment", "capacity": 2},
+      {"id": "weapons_crew", "name": "Weapons Crew", "category": "personnel", "capacity": 2},
+      {"id": "maintenance_bay", "name": "Maintenance Bay", "category": "facility", "capacity": 1}
+    ],
+    "support_tasks": {
+      "power_check": {"name": "Power Check", "duration": 20, "resources": {"mechanic_team": 1, "power_cart": 1}},
+      "refuel": {"name": "Refuel", "duration": 30, "resources": {"mechanic_team": 1, "fuel_truck": 1}},
+      "weapons_load": {"name": "Weapons Load", "duration": 35, "resources": {"mechanic_team": 1, "weapons_crew": 1}},
+      "preflight_inspection": {"name": "Preflight Inspection", "duration": 25, "resources": {"mechanic_team": 1}},
+      "postflight_inspection": {"name": "Postflight Inspection", "duration": 25, "resources": {"mechanic_team": 1}},
+      "turnaround_refuel": {"name": "Turnaround Refuel", "duration": 20, "resources": {"mechanic_team": 1, "fuel_truck": 1}},
+      "fault_isolation": {"name": "Fault Isolation", "duration": 30, "resources": {"mechanic_team": 1, "maintenance_bay": 1}},
+      "lru_replacement": {"name": "LRU Replacement", "duration": 0, "resources": {"mechanic_team": 1, "maintenance_bay": 1}, "repair_failed_lru": true},
+      "functional_test": {"name": "Functional Test", "duration": 20, "resources": {"mechanic_team": 1, "power_cart": 1}}
+    },
+    "support_plans": {
+      "pre_mission": ["power_check", "refuel", "weapons_load", "preflight_inspection"],
+      "post_mission": ["postflight_inspection", "turnaround_refuel"],
+      "maintenance": ["fault_isolation", "lru_replacement", "functional_test"]
+    },
+    "spares": [
+      {"id": "engine_control_unit", "name": "Engine Control Unit", "initial_quantity": 2, "reorder_point": 1, "reorder_quantity": 2, "lead_time": 120},
+      {"id": "hydraulic_pump", "name": "Hydraulic Pump", "initial_quantity": 2, "reorder_point": 1, "reorder_quantity": 2, "lead_time": 120},
+      {"id": "radar_processor", "name": "Radar Processor", "initial_quantity": 2, "reorder_point": 1, "reorder_quantity": 2, "lead_time": 120},
+      {"id": "engine_fade_monitor", "name": "Engine Fade Monitor", "initial_quantity": 1, "reorder_point": 1, "reorder_quantity": 1, "lead_time": 180},
+      {"id": "generator_control_unit", "name": "Generator Control Unit", "initial_quantity": 1, "reorder_point": 1, "reorder_quantity": 1, "lead_time": 180}
+    ]
+  }
+}

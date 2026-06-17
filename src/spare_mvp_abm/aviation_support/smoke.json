@@ -1,0 +1,12 @@
+{
+  "experiment_name": "aviation_support_deterministic_smoke",
+  "model_class": "AviationSupportModel",
+  "steps": 90,
+  "primary_metric": "sortie_completion_rate",
+  "seeds": [17],
+  "parameters": {
+    "ontology_path": "src/spare_mvp_abm/aviation_support/ontology.json",
+    "use_ontology_scenario": true,
+    "lru_failure_multiplier": 0
+  }
+}
