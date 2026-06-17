@@ -7,6 +7,7 @@ const FEATURE_SLUGS = {
   内置场景: "built-in-scenario",
   基本作战单元建模: "combat-unit",
   基本任务建模: "basic-mission",
+  任务剖面参数: "mission-profile-parameters",
   复合任务建模: "composite-task",
   周期性任务建模: "periodic-task",
   装备组成建模: "equipment-composition",
@@ -19,7 +20,7 @@ const FEATURE_SLUGS = {
   基本保障活动建模: "basic-support-activity",
   使用保障活动建模: "operations-support-activity",
   预防性维修活动建模: "preventive-maintenance-activity",
-  修复型维修活动建模: "corrective-maintenance-activity",
+  修复性维修活动建模: "corrective-maintenance-activity",
   结果导入: "result-import",
   仿真实验方案管理: "experiment-plan-management",
   方案列表: "experiment-plan-list",
@@ -40,6 +41,7 @@ const SOURCE_ROWS = [
   ["备件规划评估模块", "仿真建模", "任务建模", "内置场景"],
   ["备件规划评估模块", "仿真建模", "任务建模", "基本作战单元建模"],
   ["备件规划评估模块", "仿真建模", "任务建模", "基本任务建模"],
+  ["备件规划评估模块", "仿真建模", "任务建模", "任务剖面参数"],
   ["备件规划评估模块", "仿真建模", "任务建模", "复合任务建模"],
   ["备件规划评估模块", "仿真建模", "任务建模", "周期性任务建模"],
   ["备件规划评估模块", "仿真建模", "装备建模", "装备组成建模"],
@@ -51,7 +53,7 @@ const SOURCE_ROWS = [
   ["备件规划评估模块", "仿真建模", "保障活动建模", "基本保障活动建模"],
   ["备件规划评估模块", "仿真建模", "保障活动建模", "使用保障活动建模"],
   ["备件规划评估模块", "仿真建模", "保障活动建模", "预防性维修活动建模"],
-  ["备件规划评估模块", "仿真建模", "保障活动建模", "修复型维修活动建模"],
+  ["备件规划评估模块", "仿真建模", "保障活动建模", "修复性维修活动建模"],
   ["备件规划评估模块", "仿真建模", "指标分配方案管理", "结果导入"],
   ["备件规划评估模块", "仿真实验", "仿真实验方案管理", "方案列表"],
   ["备件规划评估模块", "仿真实验", "仿真实验方案管理", "方案编辑"],
@@ -63,6 +65,7 @@ const SOURCE_ROWS = [
   ["任务可靠度评估模块", "仿真建模", "任务建模", "内置场景"],
   ["任务可靠度评估模块", "仿真建模", "任务建模", "基本作战单元建模"],
   ["任务可靠度评估模块", "仿真建模", "任务建模", "基本任务建模"],
+  ["任务可靠度评估模块", "仿真建模", "任务建模", "任务剖面参数"],
   ["任务可靠度评估模块", "仿真建模", "任务建模", "复合任务建模"],
   ["任务可靠度评估模块", "仿真建模", "任务建模", "周期性任务建模"],
   ["任务可靠度评估模块", "仿真建模", "装备建模", "装备组成建模"],
@@ -75,7 +78,7 @@ const SOURCE_ROWS = [
   ["任务可靠度评估模块", "仿真建模", "保障活动建模", "基本保障活动建模"],
   ["任务可靠度评估模块", "仿真建模", "保障活动建模", "使用保障活动建模"],
   ["任务可靠度评估模块", "仿真建模", "保障活动建模", "预防性维修活动建模"],
-  ["任务可靠度评估模块", "仿真建模", "保障活动建模", "修复型维修活动建模"],
+  ["任务可靠度评估模块", "仿真建模", "保障活动建模", "修复性维修活动建模"],
   ["任务可靠度评估模块", "仿真实验", "仿真实验方案管理", "方案列表"],
   ["任务可靠度评估模块", "仿真实验", "仿真实验方案管理", "方案编辑"],
   ["任务可靠度评估模块", "仿真实验", "可视化推演", "可视化实验启动与停止"],
@@ -164,6 +167,7 @@ function resolveDataObjects(name, secondary, tertiary) {
   if (name.includes("内置场景")) return ["scenarioId", "airports", "missionAreas", "supportNodes"];
   if (name.includes("作战单元")) return ["combatUnit", "equipment", "supportNodes"];
   if (name.includes("基本任务")) return ["basicMission", "missionPhases"];
+  if (name.includes("任务剖面参数")) return ["missionProfile"];
   if (name.includes("复合任务")) return ["missionProfile", "basicMission"];
   if (name.includes("周期性任务")) return ["missionProfile", "missionPhases"];
   if (name.includes("装备组成")) return ["equipment", "components"];

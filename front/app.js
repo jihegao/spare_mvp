@@ -86,14 +86,14 @@ const SUPPORT_ACTIVITY_PLANS = [
     }
   },
   {
-    type: "修复型维修活动建模",
+    type: "修复性维修活动建模",
     name: "J-35航电模块故障修复方案",
-    treeTitle: "修复型维修活动树",
+    treeTitle: "修复性维修活动树",
     path: ["J-35", "航电模块故障"],
     jobs: ["故障定位", "备件领用", "换件维修", "功能复测"],
     tree: {
       id: "corrective-root",
-      name: "修复型维修活动",
+      name: "修复性维修活动",
       children: [
         { id: "corrective-j35", name: "J-35", children: [{ id: "corrective-j35-engine", name: "发动机备件故障" }, { id: "corrective-j35-avionics", name: "航电模块故障" }, { id: "corrective-j35-hydraulic", name: "液压备件故障" }] },
         { id: "corrective-j15", name: "J-15", children: [{ id: "corrective-j15-engine", name: "发动机备件故障" }, { id: "corrective-j15-parachute", name: "制动伞检查" }] }
@@ -441,6 +441,7 @@ function renderMainComponent(page) {
   if (page.name === "内置场景") return renderBuiltInScenario(page);
   if (page.name === "基本作战单元建模") return renderCombatUnitModeling(page);
   if (page.name === "基本任务建模") return renderBasicMissionModeling(page);
+  if (page.name === "任务剖面参数") return renderMissionProfileParameters(page);
   if (page.name === "复合任务建模") return renderCompositeTaskModeling(page);
   if (page.name === "周期性任务建模") return renderPeriodicTaskModeling(page);
   return renderTaskModel(page);
@@ -582,6 +583,34 @@ function renderTaskModel(page) {
       <div class="tree-node root">${scenario.missionProfile.profileType}</div>
       ${scenario.missionPhases.map((phase) => `<div class="tree-node">${phase.name}<span>${phase.state}</span></div>`).join("")}
       <div class="tree-node">${scenario.combatUnit.unitId}<span>${scenario.equipment.quantity} 架</span></div>
+    </div>
+  `;
+}
+
+function renderMissionProfileParameters(page) {
+  return `
+    <div class="section-head section-context">
+      <span>${page.dataObjects.join(" / ")}</span>
+    </div>
+    <div class="organization-layout">
+      <div class="tree-container">
+        <h4>任务剖面参数</h4>
+        <div class="object-tree">
+          <div class="tree-node root">${htmlEscape(scenario.missionProfile.profileType)}<span>任务类型</span></div>
+          <div class="tree-node">${htmlEscape(scenario.missionProfile.repeatCycleHours)} h<span>重复周期</span></div>
+          <div class="tree-node">${htmlEscape(scenario.missionProfile.endCondition)}<span>结束条件</span></div>
+        </div>
+      </div>
+      <div class="detail-panel">
+        <div class="detail-card">
+          <h4>任务剖面参数编辑</h4>
+          <div class="form-table-grid">
+            ${field("任务类型", "missionProfile.profileType")}
+            ${field("重复周期", "missionProfile.repeatCycleHours", "number")}
+            ${field("结束条件", "missionProfile.endCondition")}
+          </div>
+        </div>
+      </div>
     </div>
   `;
 }
