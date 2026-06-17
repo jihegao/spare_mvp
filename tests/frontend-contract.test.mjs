@@ -44,6 +44,27 @@ test("feature grouping preserves three-level navigation and internal fourth-leve
   assert.equal(getFeaturePageById("mission-reliability-task-reliability").name, "任务可靠度评估");
 });
 
+test("support organization fourth-level tab ids resolve to distinct resource pages", () => {
+  const expectedPages = [
+    ["spare-planning-support-organization", "保障组织结构建模"],
+    ["spare-planning-spare-part", "备件建模"],
+    ["spare-planning-support-personnel", "保障人员建模"],
+    ["spare-planning-support-equipment", "保障设备建模"],
+    ["mission-reliability-support-organization", "保障组织结构建模"],
+    ["mission-reliability-spare-part", "备件建模"],
+    ["mission-reliability-support-personnel", "保障人员建模"],
+    ["mission-reliability-support-equipment", "保障设备建模"]
+  ];
+
+  for (const [id, name] of expectedPages) {
+    const page = getFeaturePageById(id);
+    assert.equal(page.id, id);
+    assert.equal(page.name, name);
+    assert.equal(page.tertiary, "保障组织建模");
+    assert.equal(page.component, "resource-table");
+  }
+});
+
 test("scheme list is the post-login landing page and plan name links back to it", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const styleSource = await readFile(new URL("../front/styles.css", import.meta.url), "utf8");
