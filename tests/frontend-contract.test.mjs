@@ -124,6 +124,8 @@ test("frontend source omits removed page-side context panels", async () => {
 
 test("modeling and experiment pages use compact Chinese fourth-level tabs when needed", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  assert.match(appSource, /<h2>\$\{htmlEscape\(page\.tertiary\)\}<\/h2>/);
+  assert.doesNotMatch(appSource, /<h2>\$\{page\.name\}<\/h2>/);
   assert.match(appSource, /class="nav-tertiary-link/);
   assert.doesNotMatch(appSource, /进入\$\{tertiaryName\}/);
   assert.match(appSource, /class="compact-fourth-tabs"/);

@@ -320,15 +320,15 @@ function renderFeaturePage(page) {
 }
 
 function renderPageHeading(page) {
-  const breadcrumb = `<div class="breadcrumb">${page.module} / ${page.secondary} / ${page.tertiary}</div>`;
+  const breadcrumb = `<div class="breadcrumb">${htmlEscape(page.module)} / ${htmlEscape(page.secondary)} / ${htmlEscape(page.tertiary)}</div>`;
   if (isVisualSimulationPage(page)) {
     return `<div>${breadcrumb}</div>`;
   }
   return `
     <div>
       ${breadcrumb}
-      <h2>${page.name}</h2>
-      <p>${page.summary}</p>
+      <h2>${htmlEscape(page.tertiary)}</h2>
+      <p>${htmlEscape(page.summary)}</p>
     </div>
   `;
 }
