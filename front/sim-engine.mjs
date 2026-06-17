@@ -72,9 +72,23 @@ export const defaultScenario = {
   ],
   combatUnit: {
     unitId: "CU-01",
+    groupName: "第一出动编队",
+    basicTaskName: "近海巡逻任务",
     equipmentType: "舰载机",
     quantity: 8,
-    deploymentLocation: "甲板机场"
+    requiredCount: 5,
+    deploymentLocation: "甲板机场",
+    standbyCount: 3,
+    members: [
+      { aircraftNo: "A-01", model: "A-Prototype", role: "长机", status: "执行", remainingLifeHours: 180, deploymentLocation: "甲板机场" },
+      { aircraftNo: "A-02", model: "A-Prototype", role: "僚机", status: "执行", remainingLifeHours: 176, deploymentLocation: "甲板机场" },
+      { aircraftNo: "A-03", model: "A-Prototype", role: "僚机", status: "执行", remainingLifeHours: 169, deploymentLocation: "甲板机场" },
+      { aircraftNo: "A-04", model: "A-Prototype", role: "僚机", status: "执行", remainingLifeHours: 164, deploymentLocation: "甲板机场" },
+      { aircraftNo: "A-05", model: "A-Prototype", role: "僚机", status: "执行", remainingLifeHours: 158, deploymentLocation: "甲板机场" },
+      { aircraftNo: "A-06", model: "A-Prototype", role: "备份", status: "备用", remainingLifeHours: 171, deploymentLocation: "甲板机场" },
+      { aircraftNo: "A-07", model: "A-Prototype", role: "备份", status: "备用", remainingLifeHours: 166, deploymentLocation: "甲板机场" },
+      { aircraftNo: "A-08", model: "A-Prototype", role: "备份", status: "备用", remainingLifeHours: 152, deploymentLocation: "甲板机场" }
+    ]
   },
   equipment: {
     model: "A-Prototype",

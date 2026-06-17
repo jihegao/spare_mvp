@@ -380,6 +380,7 @@ function renderMainComponent(page) {
   if (page.component === "import-table") return renderImportTable();
   if (page.component === "scenario-switch") return renderScenarioSwitch();
   if (page.name === "内置场景") return renderBuiltInScenario(page);
+  if (page.name === "基本作战单元建模") return renderCombatUnitModeling(page);
   return renderTaskModel(page);
 }
 
@@ -560,6 +561,79 @@ function renderBuiltInScenario(page) {
           <span>${htmlEscape(area.areaType)} / 距出发机场 ${htmlEscape(area.distanceFromDepartureKm)} km</span>
         </div>
       `).join("")}
+    </div>
+  `;
+}
+
+function renderCombatUnitModeling(page) {
+  const members = scenario.combatUnit.members || [];
+  const executionMembers = members.filter((member) => member.status !== "备用").slice(0, scenario.combatUnit.requiredCount);
+  const standbyMembers = members.filter((member) => member.status === "备用");
+  return `
+    <div class="section-head">
+      <h3>${page.name}</h3>
+      <span>${page.dataObjects.join(" / ")}</span>
+    </div>
+    <div class="organization-layout">
+      <div class="tree-container">
+        <h4>编队需求</h4>
+        <div class="object-tree">
+          <div class="tree-node root">${htmlEscape(scenario.combatUnit.groupName)}<span>${htmlEscape(scenario.combatUnit.requiredCount)} / ${htmlEscape(scenario.combatUnit.quantity)} 架</span></div>
+          <div class="tree-node">${htmlEscape(scenario.combatUnit.basicTaskName)}<span>${htmlEscape(scenario.combatUnit.equipmentType)}</span></div>
+          <div class="tree-node">${htmlEscape(scenario.combatUnit.deploymentLocation)}<span>部署位置</span></div>
+        </div>
+        <div class="form-table-grid" style="grid-template-columns:1fr;margin-top:12px;">
+          ${field("编队名称", "combatUnit.groupName")}
+          ${field("基本任务名称", "combatUnit.basicTaskName")}
+          ${field("装备类型", "combatUnit.equipmentType")}
+          ${field("装备数量", "combatUnit.quantity", "number")}
+          ${field("需求数量", "combatUnit.requiredCount", "number")}
+          ${field("部署位置", "combatUnit.deploymentLocation")}
+        </div>
+      </div>
+      <div class="detail-panel">
+        <div class="detail-card">
+          <h4>基本使用单元</h4>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>序号</th><th>编队</th><th>基本任务名称</th><th>飞机类型</th><th>飞机编号</th><th>角色</th><th>剩余寿命</th><th>部署位置</th></tr></thead>
+              <tbody>
+                ${executionMembers.map((member, index) => `
+                  <tr>
+                    <td>${index + 1}</td>
+                    <td>${htmlEscape(scenario.combatUnit.groupName)}</td>
+                    <td>${htmlEscape(scenario.combatUnit.basicTaskName)}</td>
+                    <td>${htmlEscape(member.model)}</td>
+                    <td>${htmlEscape(member.aircraftNo)}</td>
+                    <td>${htmlEscape(member.role)}</td>
+                    <td>${htmlEscape(member.remainingLifeHours)} h</td>
+                    <td>${htmlEscape(member.deploymentLocation)}</td>
+                  </tr>
+                `).join("")}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="detail-card network-card">
+          <h4>备用机清单</h4>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>序号</th><th>飞机类型</th><th>飞机编号</th><th>剩余寿命</th><th>部署位置</th></tr></thead>
+              <tbody>
+                ${standbyMembers.map((member, index) => `
+                  <tr>
+                    <td>${index + 1}</td>
+                    <td>${htmlEscape(member.model)}</td>
+                    <td>${htmlEscape(member.aircraftNo)}</td>
+                    <td>${htmlEscape(member.remainingLifeHours)} h</td>
+                    <td>${htmlEscape(member.deploymentLocation)}</td>
+                  </tr>
+                `).join("") || "<tr><td colspan='5'>当前无备用机</td></tr>"}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
     </div>
   `;
 }

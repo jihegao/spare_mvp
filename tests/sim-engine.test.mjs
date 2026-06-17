@@ -20,6 +20,13 @@ test("default scenario includes airport and mission area attributes", () => {
   assert.equal(defaultScenario.missionAreas[0].distanceFromDepartureKm, 320);
 });
 
+test("default scenario includes combat unit member aircraft", () => {
+  assert.equal(defaultScenario.combatUnit.groupName, "第一出动编队");
+  assert.equal(defaultScenario.combatUnit.requiredCount, 5);
+  assert.equal(defaultScenario.combatUnit.members.length, 8);
+  assert.deepEqual(defaultScenario.combatUnit.members.slice(0, 2).map((member) => member.aircraftNo), ["A-01", "A-02"]);
+});
+
 test("single simulation is reproducible for the same seed", () => {
   const scenario = cloneScenario(defaultScenario);
   const first = runSimulation(scenario, { seed: 77, steps: 36 });

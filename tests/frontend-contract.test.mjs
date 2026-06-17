@@ -148,6 +148,18 @@ test("built-in scenario page configures airport and mission area attributes", as
   assert.match(catalogSource, /return \["scenarioId", "airports", "missionAreas", "supportNodes"\]/);
 });
 
+test("combat unit page follows ship front basic unit modeling structure", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  assert.match(appSource, /if \(page\.name === "基本作战单元建模"\) return renderCombatUnitModeling\(page\)/);
+  assert.match(appSource, /function renderCombatUnitModeling\(page\)/);
+  assert.match(appSource, /编队需求/);
+  assert.match(appSource, /基本使用单元/);
+  assert.match(appSource, /备用机清单/);
+  assert.match(appSource, /飞机编号/);
+  assert.match(appSource, /部署位置/);
+  assert.doesNotMatch(appSource, /基本作战单元建模字段[\s\S]*任务类型/);
+});
+
 test("topbar omits run and export actions", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   assert.doesNotMatch(appSource, /运行单次仿真/);
