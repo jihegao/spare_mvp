@@ -103,7 +103,6 @@ const EDGE_DEFINITIONS = [
     edge("mission-profile", "scenario", "组成想定"),
     edge("basic-mission", "mission-profile", "归属于"),
     edge("component", "equipment", "安装在"),
-    edge("reliability-block-diagram", "component", "描述连接"),
     edge("spare-part", "support-node", "存放于"),
     edge("support-resource", "support-node", "配置到"),
     edge("support-activity", "support-resource", "消耗资源"),

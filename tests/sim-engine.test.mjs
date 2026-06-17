@@ -59,3 +59,21 @@ test("monte carlo summarizes scenario groups and preserves decision outputs", ()
   assert.ok(result.carryList.length > 0);
   assert.ok(result.downtimeFactors.length >= 4);
 });
+
+test("monte carlo default sweep is driven by scenario sweep arrays", () => {
+  const scenario = cloneScenario(defaultScenario);
+  scenario.experiment.samples = 1;
+  scenario.monteCarlo = {
+    failureRates: [0.01, 0.02],
+    spareMultipliers: [2],
+    supportCapacities: [4, 5]
+  };
+  const result = runMonteCarlo(scenario);
+  assert.equal(result.runs.length, 4);
+  assert.deepEqual(result.groups.map((group) => group.group), [
+    "F0.01-S2-C4",
+    "F0.01-S2-C5",
+    "F0.02-S2-C4",
+    "F0.02-S2-C5"
+  ]);
+});

@@ -310,12 +310,7 @@ export function runSimulation(inputScenario = defaultScenario, overrides = {}) {
 export function runMonteCarlo(inputScenario = defaultScenario, options = {}) {
   const scenario = mergeScenario(inputScenario, options);
   const samples = Number(options.samples ?? scenario.experiment.samples);
-  const sweep = options.sweep ?? [
-    { name: "低故障-基准备件", failureRate: 0.04, spareMultiplier: 1, supportCapacity: 3, minRequiredSorties: 5 },
-    { name: "基准方案", failureRate: 0.08, spareMultiplier: 1, supportCapacity: 3, minRequiredSorties: 5 },
-    { name: "高故障-备件不足", failureRate: 0.12, spareMultiplier: 0.75, supportCapacity: 2, minRequiredSorties: 5 },
-    { name: "高保障容量", failureRate: 0.08, spareMultiplier: 1.25, supportCapacity: 4, minRequiredSorties: 6 }
-  ];
+  const sweep = options.sweep ?? buildMonteCarloSweep(scenario);
   const runs = [];
   for (const group of sweep) {
     for (let index = 0; index < samples; index += 1) {
@@ -333,6 +328,36 @@ export function runMonteCarlo(inputScenario = defaultScenario, options = {}) {
     }
   }
   return summarizeMonteCarlo(runs);
+}
+
+function buildMonteCarloSweep(scenario) {
+  const monteCarlo = scenario.monteCarlo || {};
+  const failureRates = normalizeSweepValues(monteCarlo.failureRates, [0.08]);
+  const spareMultipliers = normalizeSweepValues(monteCarlo.spareMultipliers, [1]);
+  const supportCapacities = normalizeSweepValues(monteCarlo.supportCapacities, [3]);
+  const minRequiredSorties = Number(scenario.basicMission?.minRequiredSorties ?? 5);
+  const sweep = [];
+  for (const failureRate of failureRates) {
+    for (const spareMultiplier of spareMultipliers) {
+      for (const supportCapacity of supportCapacities) {
+        sweep.push({
+          name: `F${failureRate}-S${spareMultiplier}-C${supportCapacity}`,
+          failureRate,
+          spareMultiplier,
+          supportCapacity,
+          minRequiredSorties
+        });
+      }
+    }
+  }
+  return sweep;
+}
+
+function normalizeSweepValues(values, fallback) {
+  const parsed = (Array.isArray(values) ? values : [])
+    .map((value) => Number(value))
+    .filter((value) => Number.isFinite(value));
+  return parsed.length ? parsed : fallback;
 }
 
 export function summarizeMonteCarlo(runs) {

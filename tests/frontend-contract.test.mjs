@@ -135,6 +135,17 @@ test("monte carlo configuration drives the displayed result sample count", async
   assert.match(appSource, /monteCarloResult = runMonteCarlo\(scenario\)/);
 });
 
+test("monte carlo sweep inputs update scenario arrays and rerun grouped results", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  assert.match(appSource, /data-mc-array-path="monteCarlo\.failureRates"/);
+  assert.match(appSource, /data-mc-array-path="monteCarlo\.spareMultipliers"/);
+  assert.match(appSource, /data-mc-array-path="monteCarlo\.supportCapacities"/);
+  assert.match(appSource, /const mcArrayInput = event\.target\.closest\("\[data-mc-array-path\]"\)/);
+  assert.match(appSource, /setPath\(scenario, mcArrayInput\.dataset\.mcArrayPath, parseNumberList\(mcArrayInput\.value\)\)/);
+  assert.match(appSource, /function parseNumberList/);
+  assert.match(appSource, /monteCarloResult = runMonteCarlo\(scenario\)/);
+});
+
 test("monte carlo experiment page is a launch-only parameter form and returns to running plan list", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const styleSource = await readFile(new URL("../front/styles.css", import.meta.url), "utf8");
@@ -179,6 +190,10 @@ test("project ontology is generated from an Ontology Playground compatible shape
   assert.equal(PROJECT_ONTOLOGY_PLAYGROUND.name, "备件规划与任务可靠度项目Ontology");
   assert.equal(PROJECT_ONTOLOGY_PLAYGROUND.entityTypes.length, PROJECT_ONTOLOGY.nodes.length);
   assert.equal(PROJECT_ONTOLOGY_PLAYGROUND.relationships.length, PROJECT_ONTOLOGY.edges.length);
+  assert.equal(
+    new Set(PROJECT_ONTOLOGY_PLAYGROUND.relationships.map((relationship) => relationship.id)).size,
+    PROJECT_ONTOLOGY_PLAYGROUND.relationships.length
+  );
   for (const entity of PROJECT_ONTOLOGY_PLAYGROUND.entityTypes) {
     assert.ok(entity.id);
     assert.ok(entity.name);
@@ -258,6 +273,15 @@ test("frontend removes the standalone ontology visualization route", async () =>
   assert.doesNotMatch(appSource, /ONTOLOGY_PAGE_ID/);
   assert.doesNotMatch(appSource, /renderOntologyVisualizationPage/);
   assert.doesNotMatch(appSource, /data-feature-id="ontology-map"/);
+});
+
+test("editable and project text values are escaped before template insertion", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  assert.match(appSource, /htmlEscape\(currentProject\.name\)/);
+  assert.match(appSource, /htmlEscape\(project\.name\)/);
+  assert.match(appSource, /htmlEscape\(project\.summary\)/);
+  assert.match(appSource, /htmlEscape\(scenario\.experiment\.name\)/);
+  assert.match(appSource, /htmlEscape\(plan\.name\)/);
 });
 
 test("visual simulation page embeds Mesa visualization and ontology views", async () => {

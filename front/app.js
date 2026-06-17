@@ -138,12 +138,24 @@ function bindEvents() {
   });
 
   app.addEventListener("change", (event) => {
+    const mcArrayInput = event.target.closest("[data-mc-array-path]");
+    if (mcArrayInput) {
+      updateMonteCarloArrayInput(mcArrayInput);
+      render();
+      return;
+    }
+
     const input = event.target.closest("[data-path]");
     if (!input) return;
     setPath(scenario, input.dataset.path, parseInput(input));
     singleResult = runSimulation(scenario);
     monteCarloResult = runMonteCarlo(scenario);
     render();
+  });
+
+  app.addEventListener("input", (event) => {
+    const mcArrayInput = event.target.closest("[data-mc-array-path]");
+    if (mcArrayInput) updateMonteCarloArrayInput(mcArrayInput);
   });
 }
 
@@ -164,7 +176,7 @@ function render() {
         <div class="brand-mark">BJGH</div>
         <div>
           <h1>备件规划及任务可靠度验证评估平台</h1>
-          <p>${currentProject.name} / ${page.module} / ${page.secondary} / ${page.tertiary}</p>
+          <p>${htmlEscape(currentProject.name)} / ${htmlEscape(page.module)} / ${htmlEscape(page.secondary)} / ${htmlEscape(page.tertiary)}</p>
         </div>
       </div>
       <div class="right">
@@ -224,8 +236,8 @@ function renderProjectListPage() {
           <article class="project-card ${project.id === currentProject.id ? "active" : ""}">
             <div>
               <span>舰型 ${project.shipType}</span>
-              <h3>${project.name}</h3>
-              <p>${project.summary}</p>
+              <h3>${htmlEscape(project.name)}</h3>
+              <p>${htmlEscape(project.summary)}</p>
             </div>
             <div class="project-card-foot">
               <small>更新 ${project.updatedAt}</small>
@@ -272,7 +284,7 @@ function renderFeaturePage(page) {
         ${renderPageHeading(page)}
         <button class="page-head-current-context" type="button" data-plan-list-link>
           <span>当前方案</span>
-          <strong>${scenario.experiment.name}</strong>
+          <strong>${htmlEscape(scenario.experiment.name)}</strong>
         </button>
       </div>
       ${renderFourthLevelTabs(page, siblingPages)}
@@ -665,8 +677,8 @@ function renderSupportActivityWorkbench(page) {
           <div class="toolbar-row"><button type="button" class="btn-primary">新增方案</button><button type="button">删除方案</button></div>
           ${SUPPORT_ACTIVITY_PLANS.map((plan) => `
             <button type="button" class="plan-list-item ${plan.type === activePlan.type ? "active" : ""}">
-              <strong>${plan.name}</strong>
-              <span>${plan.type}</span>
+              <strong>${htmlEscape(plan.name)}</strong>
+              <span>${htmlEscape(plan.type)}</span>
             </button>
           `).join("")}
         </aside>
@@ -674,13 +686,13 @@ function renderSupportActivityWorkbench(page) {
           <div class="card activity-editor-card">
             <div class="section-head">
               <h3>${activePlan.type.replace("建模", "编辑")}</h3>
-              <span>${activePlan.name}</span>
+              <span>${htmlEscape(activePlan.name)}</span>
             </div>
             <div class="form-table-grid">
-              <label>活动名称<input value="${activePlan.name}"></label>
+              <label>活动名称<input value="${htmlEscape(activePlan.name)}"></label>
               <label>仿真运行规则<input value="按流道组并行排队"></label>
               <label>最大工作时间参考(min)<input type="number" value="${Math.max(...scenario.supportActivities.map((activity) => activity.durationHours * 60))}"></label>
-              <label>适用对象<input value="${scenario.equipment.model} / ${currentProject.name}"></label>
+              <label>适用对象<input value="${htmlEscape(scenario.equipment.model)} / ${htmlEscape(currentProject.name)}"></label>
             </div>
             <h4>工作项目清单</h4>
             <div class="toolbar-row"><button type="button" class="btn-primary">新增基本保障活动</button><button type="button">批量删除</button></div>
@@ -746,12 +758,12 @@ function renderExperimentPlanList(page) {
         <tbody>
           ${plans.map((plan) => `
             <tr>
-              <td>${plan.name}</td>
-              <td>${plan.module}</td>
-              <td>${plan.scenarioId}</td>
+              <td>${htmlEscape(plan.name)}</td>
+              <td>${htmlEscape(plan.module)}</td>
+              <td>${htmlEscape(plan.scenarioId)}</td>
               <td>${plan.steps}</td>
               <td>${plan.samples}</td>
-              <td><span class="badge">${plan.status}</span></td>
+              <td><span class="badge">${htmlEscape(plan.status)}</span></td>
               <td><button type="button" class="inline-action" data-feature-id="${editFeatureId}">编辑</button></td>
             </tr>
           `).join("")}
@@ -955,7 +967,7 @@ function renderMonteCarloConfig() {
         <div class="mc-form">
           <label>选择仿真实验
             <select>
-              <option selected>${scenario.experiment.name}</option>
+              <option selected>${htmlEscape(scenario.experiment.name)}</option>
               <option>高强度出动保障验证</option>
               <option>低库存敏感性实验</option>
             </select>
@@ -964,9 +976,9 @@ function renderMonteCarloConfig() {
             <label>仿真次数<input id="mc-samples" data-path="experiment.samples" type="number" min="1" value="${scenario.experiment.samples}"></label>
             <label>随机种子<input data-path="experiment.seed" type="number" value="${scenario.experiment.seed}"></label>
           </div>
-          <label>故障率扫描<input value="${scenario.monteCarlo.failureRates.join(",")}"></label>
-          <label>备件倍数<input value="${scenario.monteCarlo.spareMultipliers.join(",")}"></label>
-          <label>保障容量<input value="${scenario.monteCarlo.supportCapacities.join(",")}"></label>
+          <label>故障率扫描<input data-mc-array-path="monteCarlo.failureRates" value="${scenario.monteCarlo.failureRates.join(",")}"></label>
+          <label>备件倍数<input data-mc-array-path="monteCarlo.spareMultipliers" value="${scenario.monteCarlo.spareMultipliers.join(",")}"></label>
+          <label>保障容量<input data-mc-array-path="monteCarlo.supportCapacities" value="${scenario.monteCarlo.supportCapacities.join(",")}"></label>
           <div class="mc-action-row">
             <button type="button" class="btn-primary" data-mc-action="start">启动</button>
           </div>
@@ -1295,6 +1307,19 @@ function setPath(obj, path, value) {
 
 function parseInput(input) {
   return input.type === "number" ? Number(input.value) : input.value;
+}
+
+function parseNumberList(value) {
+  return String(value)
+    .split(",")
+    .map((part) => Number(part.trim()))
+    .filter((number) => Number.isFinite(number));
+}
+
+function updateMonteCarloArrayInput(mcArrayInput) {
+  setPath(scenario, mcArrayInput.dataset.mcArrayPath, parseNumberList(mcArrayInput.value));
+  singleResult = runSimulation(scenario);
+  monteCarloResult = runMonteCarlo(scenario);
 }
 
 function stateLabel(state) {
