@@ -21,6 +21,8 @@ const FEATURE_SLUGS = {
   装备使用保障方案: "operations-support-plan",
   结果导入: "result-import",
   仿真实验方案管理: "experiment-plan-management",
+  方案列表: "experiment-plan-list",
+  方案编辑: "experiment-plan-edit",
   可视化实验启动与停止: "visual-start-stop",
   场景切换: "scenario-switch",
   可视化结果展示: "visual-results",
@@ -49,7 +51,8 @@ const SOURCE_ROWS = [
   ["备件规划评估模块", "仿真建模", "保障活动建模", "装备预防性维修方案"],
   ["备件规划评估模块", "仿真建模", "保障活动建模", "装备使用保障方案"],
   ["备件规划评估模块", "仿真建模", "指标分配方案管理", "结果导入"],
-  ["备件规划评估模块", "仿真实验", "仿真实验方案管理", "仿真实验方案管理"],
+  ["备件规划评估模块", "仿真实验", "仿真实验方案管理", "方案列表"],
+  ["备件规划评估模块", "仿真实验", "仿真实验方案管理", "方案编辑"],
   ["备件规划评估模块", "仿真实验", "可视化推演", "可视化实验启动与停止"],
   ["备件规划评估模块", "仿真实验", "可视化推演", "场景切换"],
   ["备件规划评估模块", "仿真实验", "可视化推演", "可视化结果展示"],
@@ -72,7 +75,8 @@ const SOURCE_ROWS = [
   ["任务可靠度评估模块", "仿真建模", "保障活动建模", "装备修复性维修方案"],
   ["任务可靠度评估模块", "仿真建模", "保障活动建模", "装备预防性维修方案"],
   ["任务可靠度评估模块", "仿真建模", "保障活动建模", "装备使用保障方案"],
-  ["任务可靠度评估模块", "仿真实验", "仿真实验方案管理", "仿真实验方案管理"],
+  ["任务可靠度评估模块", "仿真实验", "仿真实验方案管理", "方案列表"],
+  ["任务可靠度评估模块", "仿真实验", "仿真实验方案管理", "方案编辑"],
   ["任务可靠度评估模块", "仿真实验", "可视化推演", "可视化实验启动与停止"],
   ["任务可靠度评估模块", "仿真实验", "可视化推演", "场景切换"],
   ["任务可靠度评估模块", "仿真实验", "可视化推演", "可视化结果展示"],
@@ -115,16 +119,21 @@ export function getFeaturePageById(id) {
 }
 
 const FEATURE_ID_ALIASES = {
-  "spare-planning-experiment-create": "spare-planning-experiment-plan-management",
-  "spare-planning-experiment-edit": "spare-planning-experiment-plan-management",
-  "mission-reliability-experiment-create": "mission-reliability-experiment-plan-management",
-  "mission-reliability-experiment-edit": "mission-reliability-experiment-plan-management",
+  "spare-planning-experiment-plan-management": "spare-planning-experiment-plan-list",
+  "mission-reliability-experiment-plan-management": "mission-reliability-experiment-plan-list",
+  "spare-planning-experiment-create": "spare-planning-experiment-plan-edit",
+  "spare-planning-experiment-edit": "spare-planning-experiment-plan-edit",
+  "mission-reliability-experiment-create": "mission-reliability-experiment-plan-edit",
+  "mission-reliability-experiment-edit": "mission-reliability-experiment-plan-edit",
   "spare-planning-monte-carlo-results-display": "spare-planning-monte-carlo-results",
   "mission-reliability-monte-carlo-results-display": "mission-reliability-monte-carlo-results"
 };
 
 function resolveComponent(name, secondary, tertiary) {
+  if (name === "方案列表") return "experiment-plan-list";
+  if (name === "方案编辑") return "experiment-plan-editor";
   if (name.includes("可靠性框图")) return "reliability-block-diagram";
+  if (tertiary === "可视化推演") return "visual-simulation";
   if (name.includes("可视化")) return "visual-simulation";
   if (name.includes("场景切换")) return "scenario-switch";
   if (name.includes("蒙特卡洛实验配置")) return "monte-carlo-config";
@@ -139,7 +148,7 @@ function resolveComponent(name, secondary, tertiary) {
 }
 
 function resolveDataObjects(name, secondary, tertiary) {
-  if (name.includes("内置场景")) return ["scenarioId", "missionProfile", "supportNodes"];
+  if (name.includes("内置场景")) return ["scenarioId", "airports", "missionAreas", "supportNodes"];
   if (name.includes("作战单元")) return ["combatUnit", "equipment", "supportNodes"];
   if (name.includes("基本任务")) return ["basicMission", "missionPhases"];
   if (name.includes("任务剖面")) return ["missionProfile", "missionPhases"];
@@ -151,7 +160,7 @@ function resolveDataObjects(name, secondary, tertiary) {
   if (name.includes("保障人员")) return ["supportNodes.personnelCapacity", "resources"];
   if (name.includes("保障设备")) return ["supportNodes.equipmentCapacity", "resources"];
   if (tertiary === "保障活动建模") return ["supportActivities", "resources", "spares"];
-  if (name.includes("仿真实验方案")) return ["experiment", "scenario"];
+  if (name.includes("方案") || name.includes("仿真实验方案")) return ["experiment", "scenario"];
   if (name.includes("可视化") || name.includes("场景切换")) return ["visualizationState", "experiment", "scenario"];
   if (name.includes("蒙特卡洛")) return ["monteCarlo", "runs", "summary"];
   if (secondary === "结果分析") return ["runs", "summary", "decisionOutputs"];

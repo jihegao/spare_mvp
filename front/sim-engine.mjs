@@ -6,6 +6,42 @@ export const MODULES = {
 export const defaultScenario = {
   scenarioId: "carrier-turnaround-demo",
   activeModule: "sparePlanning",
+  airports: [
+    {
+      id: "deck-airport",
+      name: "甲板机场",
+      location: "航母飞行甲板",
+      runwayType: "舰面弹射/拦阻",
+      distanceToMissionKm: 320,
+      supportNodeId: "deck-airport"
+    },
+    {
+      id: "forward-airport",
+      name: "前进保障机场",
+      location: "近岸前进保障点",
+      runwayType: "短距起降跑道",
+      distanceToMissionKm: 180,
+      supportNodeId: "rear-stock"
+    }
+  ],
+  missionAreas: [
+    {
+      id: "near-sea-patrol",
+      name: "近海巡逻区",
+      areaType: "巡逻",
+      distanceFromDepartureKm: 320,
+      patrolRadiusKm: 120,
+      threatLevel: "中"
+    },
+    {
+      id: "far-sea-alert",
+      name: "远海警戒区",
+      areaType: "警戒",
+      distanceFromDepartureKm: 540,
+      patrolRadiusKm: 180,
+      threatLevel: "高"
+    }
+  ],
   experiment: {
     name: "舰基飞机保障原型实验",
     steps: 48,
@@ -18,10 +54,76 @@ export const defaultScenario = {
     profileId: "MP-01",
     profileType: "多机集群任务",
     repeatCycleHours: 6,
-    endCondition: "完成 8 个任务波次"
+    endCondition: "完成 8 个任务波次",
+    compositeTasks: [
+      {
+        id: "composite-day-patrol",
+        name: "昼间巡逻复合任务",
+        taskItems: [
+          {
+            id: "day-patrol-main",
+            basicTaskName: "近海巡逻任务",
+            equipmentType: "A-Prototype",
+            equipmentQuantity: 5,
+            groupName: "第一出动编队",
+            taskDispatchTime: "07:15",
+            firstWaveTime: "08:00",
+            recoveryTime: "11:00",
+            dailyRepeatCount: 2,
+            intervalHours: 6,
+            preparationMinutes: 45
+          }
+        ]
+      },
+      {
+        id: "composite-night-alert",
+        name: "夜间警戒复合任务",
+        taskItems: [
+          {
+            id: "night-alert-main",
+            basicTaskName: "远海警戒任务",
+            equipmentType: "A-Prototype",
+            equipmentQuantity: 4,
+            groupName: "夜间警戒编队",
+            taskDispatchTime: "19:30",
+            firstWaveTime: "20:15",
+            recoveryTime: "23:30",
+            dailyRepeatCount: 1,
+            intervalHours: 8,
+            preparationMinutes: 45
+          }
+        ]
+      }
+    ],
+    periodicTasks: [
+      {
+        id: "periodic-day-night",
+        name: "昼夜保障周期任务",
+        repeatWeeks: 2,
+        weekdayAssignments: {
+          monday: "composite-day-patrol",
+          tuesday: "composite-day-patrol",
+          wednesday: "composite-night-alert",
+          thursday: "composite-day-patrol",
+          friday: "composite-day-patrol",
+          saturday: "composite-night-alert",
+          sunday: "composite-day-patrol"
+        }
+      }
+    ]
   },
   basicMission: {
     missionId: "BM-01",
+    name: "近海巡逻任务",
+    taskNo: "BM-01",
+    taskArea: "近海巡逻区",
+    equipmentType: "A-Prototype",
+    equipmentQuantity: 5,
+    taskDurationMinutes: 180,
+    preparationMinutes: 45,
+    cancelMinutes: 20,
+    supportActivityName: "飞行前保障",
+    updatedAt: "2026-06-18 09:00",
     successPoint: "任务区巡逻完成",
     startHour: 1,
     returnRatio: 0.35,
@@ -36,9 +138,23 @@ export const defaultScenario = {
   ],
   combatUnit: {
     unitId: "CU-01",
+    groupName: "第一出动编队",
+    basicTaskName: "近海巡逻任务",
     equipmentType: "舰载机",
     quantity: 8,
-    deploymentLocation: "甲板机场"
+    requiredCount: 5,
+    deploymentLocation: "甲板机场",
+    standbyCount: 3,
+    members: [
+      { aircraftNo: "A-01", model: "A-Prototype", role: "长机", status: "执行", remainingLifeHours: 180, deploymentLocation: "甲板机场" },
+      { aircraftNo: "A-02", model: "A-Prototype", role: "僚机", status: "执行", remainingLifeHours: 176, deploymentLocation: "甲板机场" },
+      { aircraftNo: "A-03", model: "A-Prototype", role: "僚机", status: "执行", remainingLifeHours: 169, deploymentLocation: "甲板机场" },
+      { aircraftNo: "A-04", model: "A-Prototype", role: "僚机", status: "执行", remainingLifeHours: 164, deploymentLocation: "甲板机场" },
+      { aircraftNo: "A-05", model: "A-Prototype", role: "僚机", status: "执行", remainingLifeHours: 158, deploymentLocation: "甲板机场" },
+      { aircraftNo: "A-06", model: "A-Prototype", role: "备份", status: "备用", remainingLifeHours: 171, deploymentLocation: "甲板机场" },
+      { aircraftNo: "A-07", model: "A-Prototype", role: "备份", status: "备用", remainingLifeHours: 166, deploymentLocation: "甲板机场" },
+      { aircraftNo: "A-08", model: "A-Prototype", role: "备份", status: "备用", remainingLifeHours: 152, deploymentLocation: "甲板机场" }
+    ]
   },
   equipment: {
     model: "A-Prototype",
@@ -48,9 +164,9 @@ export const defaultScenario = {
     minRequiredSorties: 5
   },
   components: [
-    { id: "engine", name: "发动机", parentId: null, spareType: "发动机备件", failureModel: "随机", failureRate: 0.07, mtbfHours: 80, lifeLimitHours: 220, connectionType: "串联" },
-    { id: "avionics", name: "航电系统", parentId: null, spareType: "航电模块", failureModel: "退化", failureRate: 0.04, mtbfHours: 110, lifeLimitHours: 260, connectionType: "并联" },
-    { id: "hydraulic", name: "液压组件", parentId: null, spareType: "液压备件", failureModel: "寿命", failureRate: 0.06, mtbfHours: 95, lifeLimitHours: 200, connectionType: "备用" }
+    { id: "engine", name: "发动机", parentId: "aircraft-root", spareType: "发动机备件", failureModel: "随机", failureRate: 0.07, mtbfHours: 80, lifeLimitHours: 220, connectionType: "串联", quantity: 2, kOutOfN: { enabled: true, n: 2, k: 1 }, rms: { reliability: 0.93, maintainability: 0.88, supportability: 0.9, mttrHours: 3.5, mldtHours: 1.2, availability: 0.96 } },
+    { id: "avionics", name: "航电系统", parentId: "aircraft-root", spareType: "航电模块", failureModel: "退化", failureRate: 0.04, mtbfHours: 110, lifeLimitHours: 260, connectionType: "并联", quantity: 2, kOutOfN: { enabled: true, n: 2, k: 1 }, rms: { reliability: 0.95, maintainability: 0.91, supportability: 0.89, mttrHours: 2.8, mldtHours: 1.4, availability: 0.97 } },
+    { id: "hydraulic", name: "液压组件", parentId: "aircraft-root", spareType: "液压备件", failureModel: "寿命", failureRate: 0.06, mtbfHours: 95, lifeLimitHours: 200, connectionType: "备用", quantity: 1, kOutOfN: { enabled: false, n: 1, k: 1 }, rms: { reliability: 0.92, maintainability: 0.86, supportability: 0.88, mttrHours: 3.2, mldtHours: 1.6, availability: 0.95 } }
   ],
   supportNodes: [
     {
@@ -310,12 +426,7 @@ export function runSimulation(inputScenario = defaultScenario, overrides = {}) {
 export function runMonteCarlo(inputScenario = defaultScenario, options = {}) {
   const scenario = mergeScenario(inputScenario, options);
   const samples = Number(options.samples ?? scenario.experiment.samples);
-  const sweep = options.sweep ?? [
-    { name: "低故障-基准备件", failureRate: 0.04, spareMultiplier: 1, supportCapacity: 3, minRequiredSorties: 5 },
-    { name: "基准方案", failureRate: 0.08, spareMultiplier: 1, supportCapacity: 3, minRequiredSorties: 5 },
-    { name: "高故障-备件不足", failureRate: 0.12, spareMultiplier: 0.75, supportCapacity: 2, minRequiredSorties: 5 },
-    { name: "高保障容量", failureRate: 0.08, spareMultiplier: 1.25, supportCapacity: 4, minRequiredSorties: 6 }
-  ];
+  const sweep = options.sweep ?? buildMonteCarloSweep(scenario);
   const runs = [];
   for (const group of sweep) {
     for (let index = 0; index < samples; index += 1) {
@@ -333,6 +444,36 @@ export function runMonteCarlo(inputScenario = defaultScenario, options = {}) {
     }
   }
   return summarizeMonteCarlo(runs);
+}
+
+function buildMonteCarloSweep(scenario) {
+  const monteCarlo = scenario.monteCarlo || {};
+  const failureRates = normalizeSweepValues(monteCarlo.failureRates, [0.08]);
+  const spareMultipliers = normalizeSweepValues(monteCarlo.spareMultipliers, [1]);
+  const supportCapacities = normalizeSweepValues(monteCarlo.supportCapacities, [3]);
+  const minRequiredSorties = Number(scenario.basicMission?.minRequiredSorties ?? 5);
+  const sweep = [];
+  for (const failureRate of failureRates) {
+    for (const spareMultiplier of spareMultipliers) {
+      for (const supportCapacity of supportCapacities) {
+        sweep.push({
+          name: `F${failureRate}-S${spareMultiplier}-C${supportCapacity}`,
+          failureRate,
+          spareMultiplier,
+          supportCapacity,
+          minRequiredSorties
+        });
+      }
+    }
+  }
+  return sweep;
+}
+
+function normalizeSweepValues(values, fallback) {
+  const parsed = (Array.isArray(values) ? values : [])
+    .map((value) => Number(value))
+    .filter((value) => Number.isFinite(value));
+  return parsed.length ? parsed : fallback;
 }
 
 export function summarizeMonteCarlo(runs) {

@@ -1,244 +1,94 @@
-# Local Aviation And Ship Front Integration Implementation Plan
-
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
-**Goal:** Copy the aviation support Mesa asset and the ship_front prototype into this repository, then adapt the spare_mvp frontend into a four-level feature-page workbench with ontology context and aviation support visualization state.
-
-**Architecture:** Keep source copies local and traceable, but run the product UI from focused spare_mvp modules. `src/spare_mvp_abm/aviation_support/` owns the local Mesa model copy and frame exporter; `vendor/ship_front/` preserves the referenced prototype; `front/feature-catalog.mjs`, `front/aviation-support-state.mjs`, `front/app.js`, and `front/styles.css` provide the static workbench.
-
-**Tech Stack:** Static HTML/CSS/ES modules, Node test runner, Python 3.12, Mesa 3 through the existing Mesa runner.
-
----
-
-### Task 1: Local Source Copies And Provenance
-
-**Files:**
-- Create: `src/spare_mvp_abm/aviation_support/model.py`
-- Create: `src/spare_mvp_abm/aviation_support/ontology.json`
-- Create: `src/spare_mvp_abm/aviation_support/ontology.normalized.json`
-- Create: `src/spare_mvp_abm/aviation_support/ontology.report.json`
-- Create: `src/spare_mvp_abm/aviation_support/smoke.json`
-- Create: `src/spare_mvp_abm/aviation_support/experiment.json`
-- Create: `src/spare_mvp_abm/aviation_support/visualization.html`
-- Create: `src/spare_mvp_abm/aviation_support/README.md`
-- Create: `src/spare_mvp_abm/aviation_support/SOURCE.md`
-- Create: `vendor/ship_front/index.html`
-- Create: `vendor/ship_front/app.js`
-- Create: `vendor/ship_front/styles.css`
-- Create: `vendor/ship_front/image/网络图示例.png`
-- Create: `vendor/ship_front/SOURCE.md`
-- Test: `tests/local-assets.test.mjs`
-
-- [ ] **Step 1: Write the failing local asset test**
-
-```js
-import assert from "node:assert/strict";
-import { access, readdir, readFile } from "node:fs/promises";
-import path from "node:path";
-import test from "node:test";
-
-const root = new URL("..", import.meta.url);
-
-test("local aviation support copy is project-owned and provenance-tagged", async () => {
-  const base = new URL("../src/spare_mvp_abm/aviation_support/", import.meta.url);
-  for (const file of ["model.py", "ontology.json", "ontology.normalized.json", "ontology.report.json", "smoke.json", "experiment.json", "visualization.html", "README.md", "SOURCE.md"]) {
-    await access(new URL(file, base));
-  }
-  const smoke = JSON.parse(await readFile(new URL("smoke.json", base), "utf8"));
-  assert.equal(smoke.parameters.ontology_path, "src/spare_mvp_abm/aviation_support/ontology.json");
-  const source = await readFile(new URL("SOURCE.md", base), "utf8");
-  assert.match(source, /mesa-abm-skill\/mesa-abm-skill\/assets\/aviation_support/);
-});
-
-test("ship_front prototype is copied locally without runtime dependency on home path", async () => {
-  const base = new URL("../vendor/ship_front/", import.meta.url);
-  for (const file of ["index.html", "app.js", "styles.css", "SOURCE.md"]) {
-    await access(new URL(file, base));
-  }
-  const source = await readFile(new URL("SOURCE.md", base), "utf8");
-  assert.match(source, /\/Users\/gaojihe\/Models\/ship_front/);
-  const entries = await readdir(new URL("../vendor/", import.meta.url), { recursive: true });
-  assert.ok(!entries.some((entry) => String(entry).includes("__pycache__")));
-});
-```
-
-- [ ] **Step 2: Run the test to verify it fails**
-
-Run: `node --test tests/local-assets.test.mjs`
-
-Expected: FAIL because the local copy directories do not exist yet.
-
-- [ ] **Step 3: Copy only required files**
-
-Copy the aviation support files from `/Users/gaojihe/apps/mesa-abm-skill/mesa-abm-skill/assets/aviation_support/` into `src/spare_mvp_abm/aviation_support/`, excluding `__pycache__`. Copy `ship_front` HTML/CSS/JS/image into `vendor/ship_front/`.
-
-- [ ] **Step 4: Patch local smoke provenance**
-
-Change `src/spare_mvp_abm/aviation_support/smoke.json` so `parameters.ontology_path` is `src/spare_mvp_abm/aviation_support/ontology.json`, and add SOURCE files with the original paths and copy date.
-
-- [ ] **Step 5: Run the test to verify it passes**
-
-Run: `node --test tests/local-assets.test.mjs`
-
-Expected: PASS.
-
-### Task 2: Four-Level Feature Catalog
-
-**Files:**
-- Create: `front/feature-catalog.mjs`
-- Modify: `tests/frontend-contract.test.mjs`
-
-- [ ] **Step 1: Write the failing feature catalog tests**
-
-```js
-import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
-import test from "node:test";
-import { FEATURE_PAGES, groupFeaturePages, getFeaturePageById } from "../front/feature-catalog.mjs";
-
-test("feature catalog exposes all table-2 four-level pages", () => {
-  assert.equal(FEATURE_PAGES.length, 49);
-  assert.equal(new Set(FEATURE_PAGES.map((page) => page.id)).size, 49);
-  assert.equal(FEATURE_PAGES.filter((page) => page.module === "备件规划评估模块").length, 24);
-  assert.equal(FEATURE_PAGES.filter((page) => page.module === "任务可靠度评估模块").length, 25);
-  for (const label of ["装备可靠性框图建模", "可视化结果展示", "飞机转场携行清单分析", "任务可靠度评估", "停机因素分析"]) {
-    assert.ok(FEATURE_PAGES.some((page) => page.name === label), label);
-  }
-});
-
-test("each feature page has page template metadata and ontology context", () => {
-  for (const page of FEATURE_PAGES) {
-    assert.ok(page.id);
-    assert.ok(page.module);
-    assert.ok(page.secondary);
-    assert.ok(page.tertiary);
-    assert.ok(page.name);
-    assert.ok(page.component);
-    assert.ok(page.dataObjects.length > 0);
-    assert.ok(page.ontology.nodes.length >= 4, page.id);
-    assert.ok(page.ontology.edges.length >= 3, page.id);
-  }
-});
-
-test("feature grouping preserves four-level navigation hierarchy", () => {
-  const grouped = groupFeaturePages(FEATURE_PAGES);
-  assert.ok(grouped["备件规划评估模块"]["仿真建模"]["任务建模"].length >= 4);
-  assert.ok(grouped["任务可靠度评估模块"]["仿真建模"]["装备建模"].some((page) => page.name === "装备可靠性框图建模"));
-  assert.equal(getFeaturePageById("mission-reliability-task-reliability").name, "任务可靠度评估");
-});
-
-test("frontend shell mounts a feature workbench rather than six static summary views", async () => {
-  const html = await readFile(new URL("../front/index.html", import.meta.url), "utf8");
-  assert.match(html, /id="app"/);
-  assert.match(html, /feature-workbench/);
-});
-```
-
-- [ ] **Step 2: Run the test to verify it fails**
-
-Run: `npm test`
-
-Expected: FAIL because `front/feature-catalog.mjs` and the new shell contract do not exist yet.
-
-- [ ] **Step 3: Implement the catalog**
-
-Create a data-driven `FEATURE_PAGES` array from table 2. Every entry has `id`, `module`, `secondary`, `tertiary`, `name`, `component`, `dataObjects`, `summary`, `outputs`, and generated ontology context.
-
-- [ ] **Step 4: Run the tests to verify they pass**
-
-Run: `npm test`
-
-Expected: PASS for catalog and existing simulation tests.
-
-### Task 3: Aviation Support State Adapter
-
-**Files:**
-- Create: `front/aviation-support-state.mjs`
-- Create: `src/spare_mvp_abm/aviation_support/export_frames.py`
-- Create: `tests/aviation-support-state.test.mjs`
-- Create: `tests/test_aviation_support_local.py`
-
-- [ ] **Step 1: Write failing adapter and Python tests**
-
-The Node test imports `normalizeAviationSupportState()` and verifies `aircraft`, `resources`, `spares`, `missions`, `jobs`, and `events` are preserved in frontend-friendly groups. The Python test imports the local `AviationSupportModel`, instantiates it from local `ontology.json`, steps it, and verifies `visualization_state()` exposes the same keys.
-
-- [ ] **Step 2: Run tests to verify failure**
-
-Run: `node --test tests/aviation-support-state.test.mjs`
-
-Expected: FAIL because the adapter is missing.
-
-Run: `/Users/gaojihe/apps/mesa-abm-skill/.abm-mesa-env/bin/python -m unittest tests/test_aviation_support_local.py -v`
-
-Expected: FAIL until the local copy and exporter are in place.
-
-- [ ] **Step 3: Implement adapter and exporter**
-
-`normalizeAviationSupportState()` maps the Mesa state into KPI cards, aircraft board rows, resource rows, spare rows, mission rows, active jobs, and event rows. `export_frames.py` writes sampled `visualization_state()` frames to JSON for static frontend consumption.
-
-- [ ] **Step 4: Run tests to verify they pass**
-
-Run: `node --test tests/aviation-support-state.test.mjs`
-
-Run: `/Users/gaojihe/apps/mesa-abm-skill/.abm-mesa-env/bin/python -m unittest tests/test_aviation_support_local.py -v`
-
-Expected: PASS.
-
-### Task 4: Ship Front-Inspired Frontend Workbench
-
-**Files:**
-- Modify: `front/index.html`
-- Modify: `front/app.js`
-- Modify: `front/styles.css`
-
-- [ ] **Step 1: Replace the six-view shell with the feature workbench**
-
-`index.html` should expose `#app`, keep a visible loading fallback, and load `app.js` as an ES module. `app.js` should render a topbar, four-level navigation, a selected feature page, and a right-side ontology graph.
-
-- [ ] **Step 2: Borrow ship_front layout patterns without copying its monolith**
-
-Use workbench patterns equivalent to `nav-page-layout`, `home-module-row`, `deck-modeling-nav`, `deck-modeling-content`, `experiment-subtabs`, and dense tables. Do not depend on `vendor/ship_front/app.js` at runtime.
-
-- [ ] **Step 3: Connect the visualization page to aviation support state**
-
-For pages with `component === "visual-simulation"`, render aircraft, mission, support resource, spare, job, and event views from the normalized aviation support state.
-
-- [ ] **Step 4: Run frontend tests**
-
-Run: `npm test`
-
-Expected: PASS.
-
-### Task 5: Smoke, Browser Check, And Commit
-
-**Files:**
-- No additional files unless verification reveals issues.
-
-- [ ] **Step 1: Run local Mesa smoke**
-
-Run:
+# 本地航空保障与 ship_front 前端集成记录
+
+日期：2026-06-17  
+当前状态更新：2026-06-18
+
+## 目标
+
+将航空保障 Mesa 场景包和 `ship_front` / `备件_front` 参考原型纳入本仓库，并把 `spare_mvp` 前端改造成可登录、可选项目、可按四级功能进入的静态工作台。
+
+## 当前实现状态
+
+已完成：
+
+1. 本地保存航空保障 Mesa 场景包，位置为 `src/spare_mvp_abm/aviation_support/`。
+2. 本地保存 `ship_front` 和 `备件_front` 参考原型，位置为 `vendor/ship_front/` 和 `vendor/ship_front/备件_front/`。
+3. 前端从旧的少量静态视图改为登录页、项目列表页、功能工作台和四级功能页面。
+4. 登录后的默认着陆页是项目列表；从项目列表进入当前项目后进入仿真实验方案列表。
+5. 非建模页面右上角显示当前方案名称，点击可回到对应模块的方案列表。
+6. 仿真建模页面不显示右上角“当前方案”卡片；仿真建模和仿真实验页面不再显示“xxx入口”框，四级功能通过紧凑中文标签切换。
+7. 可视化推演页面直接嵌入 Mesa 航空保障可视化状态，不再显示外层“可视化实验启动与停止”标题和外层四级导航。
+8. `仿真实验方案管理` 已包含 `方案列表` 和 `方案编辑`。
+9. `保障组织建模` 已对齐 `vendor/ship_front` 的组织树、资源表和编辑面板。
+10. `保障活动建模` 已对齐 `vendor/ship_front` 的活动方案、作业清单和网络图形态。
+11. 两个模块的结果分析页面已对齐 `vendor/ship_front/备件_front` 的四个分析页形态。
+12. Monte Carlo 配置页只保留参数配置和“启动”；启动后回方案列表并把当前方案状态置为“运行中”。
+13. Monte Carlo 评估结果已经移动到 `结果分析 / 蒙特卡洛实验结果展示`。
+14. Monte Carlo 扫参输入已真实绑定 `scenario.monteCarlo`，修改故障率、备件倍数和保障容量后会重算分组结果。
+15. Ontology Playground 导出关系 ID 已加唯一性测试，重复关系已清理。
+
+## 主要文件
+
+| 文件或目录 | 说明 |
+| --- | --- |
+| `front/feature-catalog.mjs` | 四级功能清单、导航归属和页面元数据。 |
+| `front/app.js` | 静态工作台渲染、页面交互、Monte Carlo 配置和结果页。 |
+| `front/styles.css` | 工作台、建模页、分析页和 Monte Carlo 页样式。 |
+| `front/aviation-support-state.mjs` | 将 Mesa 可视化状态规范化为前端可渲染数据。 |
+| `front/sim-engine.mjs` | 浏览器内单次仿真和 Monte Carlo 汇总逻辑。 |
+| `front/ontology-context.mjs` | 项目 ontology 上下文和 Ontology Playground 导出形态。 |
+| `src/spare_mvp_abm/aviation_support/` | 本地航空保障 Mesa 场景包。 |
+| `vendor/ship_front/` | 舰载保障前端参考快照。 |
+| `tests/frontend-contract.test.mjs` | 前端结构、页面流转和契约断言。 |
+| `tests/sim-engine.test.mjs` | 仿真引擎和 Monte Carlo 结果断言。 |
+
+## 验收证据
+
+当前验证命令：
 
 ```bash
-/opt/homebrew/bin/python3.12 /Users/gaojihe/apps/mesa-abm-skill/mesa-abm-skill/scripts/run_mesa_experiment.py \
-  --model src/spare_mvp_abm/aviation_support/model.py \
-  --config src/spare_mvp_abm/aviation_support/smoke.json \
-  --output-dir /tmp/spare-mvp-local-aviation-support-smoke \
-  --install-dir /Users/gaojihe/apps/mesa-abm-skill/.abm-mesa-env
+npm test
 ```
 
-Expected: `summary.json` exists and reports one deterministic run.
+当前测试覆盖：
 
-- [ ] **Step 2: Start the static server and inspect the page**
+1. 四级功能目录数量、唯一 ID 和导航层级。
+2. 登录后项目列表着陆页和方案名称回跳。
+3. 结果分析四个页面的对齐结构。
+4. 保障组织建模、保障活动建模的 ship_front 风格结构。
+5. 可视化推演直嵌 Mesa 页面。
+6. Monte Carlo 配置页只保留参数和启动动作。
+7. Monte Carlo 扫参输入更新场景数组并重算结果。
+8. Monte Carlo 结果页显示分组评估结果。
+9. Ontology Playground 关系 ID 唯一。
+10. 用户可编辑文本进入模板前进行 HTML 转义。
 
-Run: `python3 -m http.server 4173`
+## 浏览器验证口径
 
-Open `http://localhost:4173/front/` and confirm the workbench renders, navigation has four-level pages, ontology graph is visible, and visualization state cards are populated.
-
-- [ ] **Step 3: Commit the verified changes**
-
-Run:
+本地启动：
 
 ```bash
-git add docs/superpowers/plans/2026-06-17-local-aviation-ship-front-integration.md src/spare_mvp_abm/aviation_support vendor/ship_front front tests
-git commit -m "feat: integrate local aviation support frontend"
+python3 -m http.server 4173
 ```
+
+访问：
+
+```text
+http://127.0.0.1:4173/front/
+```
+
+建议检查：
+
+1. 登录后先进入项目列表。
+2. 进入当前项目后默认显示仿真实验方案列表。
+3. 从左侧导航进入 `蒙特卡洛实验`。
+4. 修改故障率扫描、备件倍数和保障容量。
+5. 进入 `结果分析 / 蒙特卡洛实验结果展示`，确认参数组来自新输入。
+6. 回到 Monte Carlo 配置页点击“启动”，确认回到方案列表且状态为“运行中”。
+
+## 边界
+
+1. 当前仍是静态前端原型，状态保存在浏览器内存中，没有后端持久化。
+2. Mesa 和浏览器内仿真用于说明规则和页面流转，不代表校准后的工程级仿真平台。
+3. `vendor/` 目录只作为本地参考快照，运行时代码不得直接依赖外部原型路径。
+4. 大样本并行调度、权限系统、真实任务队列和工程级校准不在当前切片内。

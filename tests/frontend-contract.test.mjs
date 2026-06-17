@@ -3,12 +3,13 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { FEATURE_PAGES, getFeaturePageById, groupFeaturePages } from "../front/feature-catalog.mjs";
+import { buildOntologyContext, PROJECT_ONTOLOGY, PROJECT_ONTOLOGY_PLAYGROUND } from "../front/ontology-context.mjs";
 
 test("feature catalog exposes all table-2 four-level pages", () => {
-  assert.equal(FEATURE_PAGES.length, 47);
-  assert.equal(new Set(FEATURE_PAGES.map((page) => page.id)).size, 47);
-  assert.equal(FEATURE_PAGES.filter((page) => page.module === "备件规划评估模块").length, 23);
-  assert.equal(FEATURE_PAGES.filter((page) => page.module === "任务可靠度评估模块").length, 24);
+  assert.equal(FEATURE_PAGES.length, 49);
+  assert.equal(new Set(FEATURE_PAGES.map((page) => page.id)).size, 49);
+  assert.equal(FEATURE_PAGES.filter((page) => page.module === "备件规划评估模块").length, 24);
+  assert.equal(FEATURE_PAGES.filter((page) => page.module === "任务可靠度评估模块").length, 25);
   for (const label of ["装备可靠性框图建模", "可视化结果展示", "蒙特卡洛实验结果", "飞机转场携行清单分析", "任务可靠度评估", "停机因素分析"]) {
     assert.ok(FEATURE_PAGES.some((page) => page.name === label), label);
   }
@@ -32,13 +33,184 @@ test("feature grouping preserves three-level navigation and internal fourth-leve
   const grouped = groupFeaturePages(FEATURE_PAGES);
   assert.ok(grouped["备件规划评估模块"]["仿真建模"]["任务建模"].length >= 4);
   assert.ok(grouped["任务可靠度评估模块"]["仿真建模"]["装备建模"].some((page) => page.name === "装备可靠性框图建模"));
-  assert.deepEqual(grouped["备件规划评估模块"]["仿真实验"]["仿真实验方案管理"].map((page) => page.name), ["仿真实验方案管理"]);
+  assert.deepEqual(grouped["备件规划评估模块"]["仿真实验"]["仿真实验方案管理"].map((page) => page.name), ["方案列表", "方案编辑"]);
+  assert.deepEqual(grouped["任务可靠度评估模块"]["仿真实验"]["仿真实验方案管理"].map((page) => page.name), ["方案列表", "方案编辑"]);
   assert.deepEqual(Object.keys(grouped["备件规划评估模块"]["结果分析"]), ["蒙特卡洛实验结果", "备件短板分析", "飞机转场携行清单分析"]);
   assert.deepEqual(grouped["备件规划评估模块"]["结果分析"]["备件短板分析"].map((page) => page.name), ["备件短板分析"]);
   assert.equal(FEATURE_PAGES.some((page) => page.name === "仿真实验方案创建"), false);
   assert.equal(FEATURE_PAGES.some((page) => page.name === "仿真实验方案编辑"), false);
-  assert.equal(getFeaturePageById("spare-planning-experiment-create").name, "仿真实验方案管理");
+  assert.equal(getFeaturePageById("spare-planning-experiment-create").name, "方案编辑");
+  assert.equal(getFeaturePageById("spare-planning-experiment-edit").name, "方案编辑");
   assert.equal(getFeaturePageById("mission-reliability-task-reliability").name, "任务可靠度评估");
+});
+
+test("support organization fourth-level tab ids resolve to distinct resource pages", () => {
+  const expectedPages = [
+    ["spare-planning-support-organization", "保障组织结构建模"],
+    ["spare-planning-spare-part", "备件建模"],
+    ["spare-planning-support-personnel", "保障人员建模"],
+    ["spare-planning-support-equipment", "保障设备建模"],
+    ["mission-reliability-support-organization", "保障组织结构建模"],
+    ["mission-reliability-spare-part", "备件建模"],
+    ["mission-reliability-support-personnel", "保障人员建模"],
+    ["mission-reliability-support-equipment", "保障设备建模"]
+  ];
+
+  for (const [id, name] of expectedPages) {
+    const page = getFeaturePageById(id);
+    assert.equal(page.id, id);
+    assert.equal(page.name, name);
+    assert.equal(page.tertiary, "保障组织建模");
+    assert.equal(page.component, "resource-table");
+  }
+});
+
+test("scheme list is the post-login landing page and plan name links back to it", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const styleSource = await readFile(new URL("../front/styles.css", import.meta.url), "utf8");
+  assert.match(appSource, /const DEFAULT_FEATURE_ID = "spare-planning-experiment-plan-list"/);
+  assert.match(appSource, /const DEFAULT_ROUTE = "login"/);
+  assert.match(appSource, /function renderLoginPage/);
+  assert.match(appSource, /function renderProjectListPage/);
+  assert.match(appSource, /selectedRoute = readRouteFromHash\(\) \|\| DEFAULT_ROUTE/);
+  assert.match(appSource, /selectedRoute = "projects"/);
+  assert.match(appSource, /data-enter-workbench/);
+  assert.match(appSource, /selectedFeatureId = readFeatureIdFromHash\(\) \|\| DEFAULT_FEATURE_ID/);
+  assert.match(appSource, /data-plan-list-link/);
+  assert.match(appSource, /location\.hash = `feature=\$\{getPlanListFeatureId\(page\.module\)\}`/);
+  assert.match(appSource, /function renderExperimentPlanList/);
+  assert.match(appSource, /function renderExperimentPlanEditor/);
+  assert.match(appSource, /data-project-menu-toggle/);
+  assert.match(appSource, /htmlEscape\(currentProject\.name\)/);
+  assert.match(appSource, /返回项目列表/);
+  assert.match(appSource, /data-project-list/);
+  assert.doesNotMatch(appSource, /<button type="button" data-project-list>项目列表<\/button>/);
+  assert.match(styleSource, /\.project-menu/);
+  assert.match(styleSource, /\.project-menu-panel/);
+});
+
+test("results analysis pages are rendered as four dedicated ship-front aligned dashboards", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  assert.match(appSource, /function renderSpareShortfallAnalysis/);
+  assert.match(appSource, /function renderCarryListAnalysis/);
+  assert.match(appSource, /function renderTaskReliabilityAnalysis/);
+  assert.match(appSource, /function renderDowntimeFactorAnalysis/);
+  assert.match(appSource, /class="analysis-dashboard"/);
+  assert.match(appSource, /class="analysis-filter-bar"/);
+  assert.match(appSource, /class="analysis-chart-panel"/);
+  assert.match(appSource, /class="decision-support-card"/);
+  assert.match(appSource, /备件需求量降序/);
+  assert.match(appSource, /携行清单迭代建议/);
+  assert.match(appSource, /任务可靠度指标分解/);
+  assert.match(appSource, /停机贡献因素排序/);
+});
+
+test("support organization and activity pages follow ship_front tree table editor structure", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  assert.match(appSource, /function renderSupportOrganizationWorkbench/);
+  assert.match(appSource, /function renderSupportActivityWorkbench/);
+  assert.match(appSource, /class="organization-layout"/);
+  assert.match(appSource, /class="tree-container"/);
+  assert.match(appSource, /class="detail-panel"/);
+  assert.match(appSource, /保障组织结构树/);
+  assert.match(appSource, /备件建模/);
+  assert.match(appSource, /保障人员建模/);
+  assert.match(appSource, /保障设备建模/);
+  assert.match(appSource, /使用保障活动建模/);
+  assert.match(appSource, /预防性维修活动建模/);
+  assert.match(appSource, /修复性维修活动建模/);
+  assert.match(appSource, /保障活动节点网络图/);
+});
+
+test("modeling page headers omit generic scenario helper summaries", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  assert.doesNotMatch(appSource, /<p>\$\{htmlEscape\(page\.summary\)\}<\/p>/);
+  assert.doesNotMatch(appSource, /围绕共享 scenario 数据提供编辑和实验查看能力/);
+});
+
+test("support organization workbench does not render duplicate inner tabs", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const supportOrgSource = appSource.slice(
+    appSource.indexOf("function renderSupportOrganizationWorkbench"),
+    appSource.indexOf("function renderOrgTreeNode")
+  );
+  assert.doesNotMatch(supportOrgSource, /ship-front-tabs/);
+  assert.doesNotMatch(supportOrgSource, /\["保障组织结构建模", "保障资源建模", "保障人员建模", "保障设备建模", "备件建模"\]/);
+});
+
+test("support organization fourth-level pages render matching resource panels", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const supportOrgSource = appSource.slice(
+    appSource.indexOf("function renderSupportOrganizationWorkbench"),
+    appSource.indexOf("function renderOrgTreeNode")
+  );
+  assert.match(supportOrgSource, /const activeResourceType =/);
+  assert.match(supportOrgSource, /const visibleResourceRows = activeResourceType/);
+  assert.match(supportOrgSource, /page\.name\.includes\("人员"\) \? "保障人员"/);
+  assert.match(supportOrgSource, /page\.name\.includes\("设备"\) \? "保障设备"/);
+  assert.match(supportOrgSource, /page\.name\.includes\("备件"\) \? "备件"/);
+  assert.match(supportOrgSource, /resourceRows\.filter\(\(row\) => row\.type === activeResourceType\)/);
+  assert.match(supportOrgSource, /<h3>\$\{activeTab === "保障组织结构建模" \? "组织详情" : activeTab\}<\/h3>/);
+});
+
+test("support activity workbench does not render duplicate inner tabs", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const supportActivitySource = appSource.slice(
+    appSource.indexOf("function renderSupportActivityWorkbench"),
+    appSource.indexOf("function renderExperimentPlanList")
+  );
+  assert.doesNotMatch(supportActivitySource, /ship-front-tabs/);
+  assert.doesNotMatch(supportActivitySource, /基本保障活动列表库/);
+});
+
+test("equipment modeling pages use ship front tree attributes with quantity and n-out-of-k", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  assert.match(appSource, /function renderEquipmentModeling\(page\)/);
+  assert.match(appSource, /装备组成树/);
+  assert.match(appSource, /组成属性/);
+  assert.match(appSource, /数量 n/);
+  assert.match(appSource, /成功数 k/);
+  assert.match(appSource, /启用 n 中取 k/);
+  assert.match(appSource, /故障属性/);
+  assert.match(appSource, /data-path="components\.0\.quantity"/);
+  assert.match(appSource, /data-path="components\.0\.kOutOfN\.k"/);
+  assert.doesNotMatch(appSource, /<thead><tr><th>组件<\/th><th>备件类型<\/th><th>故障模型<\/th><th>失效率<\/th><th>MTBF<\/th><th>连接类型<\/th><\/tr><\/thead>/);
+});
+
+test("equipment composition page only renders tree and basic composition fields", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const equipmentSource = appSource.slice(
+    appSource.indexOf("function renderEquipmentModeling"),
+    appSource.indexOf("function renderEquipmentFailureRmsFields")
+  );
+  assert.match(equipmentSource, /function renderEquipmentCompositionFields/);
+  assert.match(equipmentSource, /isFailurePage \? renderEquipmentFailureFields\(selected\) : renderEquipmentCompositionFields\(selected\)/);
+  assert.match(equipmentSource, /field\("组件名称", "components\.0\.name"\)/);
+  assert.match(equipmentSource, /field\("父节点", "components\.0\.parentId"\)/);
+  assert.match(equipmentSource, /field\("备件类型", "components\.0\.spareType"\)/);
+  assert.match(equipmentSource, /field\("连接类型", "components\.0\.connectionType"\)/);
+  assert.match(equipmentSource, /isFailurePage \? renderEquipmentComponentTable\(\) : ""/);
+});
+
+test("equipment failure page exposes RMS attributes separately from composition fields", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const equipmentSource = appSource.slice(
+    appSource.indexOf("function renderEquipmentModeling"),
+    appSource.indexOf("function renderReliabilityBlockDiagram")
+  );
+  assert.match(equipmentSource, /renderEquipmentFailureRmsFields\(selected\)/);
+  assert.match(equipmentSource, /function renderEquipmentFailureRmsFields/);
+  assert.match(equipmentSource, /RMS指标/);
+  assert.match(equipmentSource, /可靠度 R\(t\)/);
+  assert.match(equipmentSource, /维修度 M\(t\)/);
+  assert.match(equipmentSource, /保障性 S\(t\)/);
+  assert.match(equipmentSource, /平均修复时间 MTTR\(h\)/);
+  assert.match(equipmentSource, /固有可用度 Ai/);
+  assert.match(equipmentSource, /field\("可靠度 R\(t\)", "components\.0\.rms\.reliability", "number"\)/);
+  assert.match(equipmentSource, /field\("维修度 M\(t\)", "components\.0\.rms\.maintainability", "number"\)/);
+  assert.match(equipmentSource, /field\("保障性 S\(t\)", "components\.0\.rms\.supportability", "number"\)/);
+  assert.match(equipmentSource, /field\("平均修复时间 MTTR\(h\)", "components\.0\.rms\.mttrHours", "number"\)/);
+  assert.match(equipmentSource, /field\("固有可用度 Ai", "components\.0\.rms\.availability", "number"\)/);
 });
 
 test("frontend shell mounts a feature workbench rather than six static summary views", async () => {
@@ -49,20 +221,84 @@ test("frontend shell mounts a feature workbench rather than six static summary v
 
 test("frontend source omits removed page-side context panels", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const styleSource = await readFile(new URL("../front/styles.css", import.meta.url), "utf8");
   assert.doesNotMatch(appSource, /Ontology 上下文/);
   assert.doesNotMatch(appSource, /校验与输出/);
   assert.doesNotMatch(appSource, /写入对象/);
   assert.doesNotMatch(appSource, /输出联动/);
   assert.match(appSource, /aria-label="功能导航"/);
-  assert.match(appSource, /aria-label="四级功能入口"/);
+  assert.doesNotMatch(appSource, /nav-summary/);
+  assert.doesNotMatch(appSource, /三级折叠菜单/);
+  assert.doesNotMatch(styleSource, /\.nav-summary/);
+  assert.doesNotMatch(appSource, /aria-label="四级功能入口"/);
+  assert.doesNotMatch(appSource, /\$\{page\.tertiary\}入口/);
+  assert.doesNotMatch(appSource, /feature-entry-card/);
+  assert.doesNotMatch(appSource, /\$\{item\.component\}/);
 });
 
-test("tertiary sidebar entries navigate directly and fourth-level navigation is not duplicated", async () => {
+test("modeling and experiment pages use compact Chinese fourth-level tabs when needed", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  assert.match(appSource, /<h2>\$\{htmlEscape\(page\.tertiary\)\}<\/h2>/);
+  assert.doesNotMatch(appSource, /<h2>\$\{page\.name\}<\/h2>/);
+  assert.match(appSource, /function shouldShowCurrentContext\(page\)/);
+  assert.match(appSource, /page\.secondary !== "仿真建模"/);
   assert.match(appSource, /class="nav-tertiary-link/);
   assert.doesNotMatch(appSource, /进入\$\{tertiaryName\}/);
-  assert.doesNotMatch(appSource, /compact-tabs/);
+  assert.match(appSource, /class="compact-fourth-tabs"/);
+  assert.match(appSource, /shouldShowFourthTabs/);
   assert.doesNotMatch(appSource, /aria-label="同组四级功能"/);
+});
+
+test("built-in scenario page configures airport and mission area attributes", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const catalogSource = await readFile(new URL("../front/feature-catalog.mjs", import.meta.url), "utf8");
+  assert.match(appSource, /if \(page\.name === "内置场景"\) return renderBuiltInScenario\(page\)/);
+  assert.match(appSource, /function renderBuiltInScenario\(page\)/);
+  assert.match(appSource, /出发机场/);
+  assert.match(appSource, /任务区/);
+  assert.match(appSource, /距任务区/);
+  assert.match(appSource, /distanceToMissionKm/);
+  assert.match(appSource, /distanceFromDepartureKm/);
+  assert.match(catalogSource, /return \["scenarioId", "airports", "missionAreas", "supportNodes"\]/);
+});
+
+test("combat unit page follows ship front basic unit modeling structure", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  assert.match(appSource, /if \(page\.name === "基本作战单元建模"\) return renderCombatUnitModeling\(page\)/);
+  assert.match(appSource, /function renderCombatUnitModeling\(page\)/);
+  assert.match(appSource, /编队需求/);
+  assert.match(appSource, /基本使用单元/);
+  assert.match(appSource, /备用机清单/);
+  assert.match(appSource, /飞机编号/);
+  assert.match(appSource, /部署位置/);
+  assert.doesNotMatch(appSource, /基本作战单元建模字段[\s\S]*任务类型/);
+});
+
+test("basic mission page follows ship front basic task modeling structure", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  assert.match(appSource, /if \(page\.name === "基本任务建模"\) return renderBasicMissionModeling\(page\)/);
+  assert.match(appSource, /function renderBasicMissionModeling\(page\)/);
+  assert.match(appSource, /基本任务结构树/);
+  assert.match(appSource, /基本任务信息编辑/);
+  assert.match(appSource, /任务编号/);
+  assert.match(appSource, /任务时长（分钟）/);
+  assert.match(appSource, /使用保障活动/);
+  assert.match(appSource, /任务区域描述/);
+  assert.doesNotMatch(appSource, /基本任务建模字段[\s\S]*任务类型/);
+});
+
+test("mission profile page follows ship front composite and periodic task modeling", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  assert.match(appSource, /if \(page\.name === "任务剖面建模"\) return renderMissionProfileModeling\(page\)/);
+  assert.match(appSource, /function renderMissionProfileModeling\(page\)/);
+  assert.match(appSource, /复合任务列表/);
+  assert.match(appSource, /当前复合任务包含的基本任务/);
+  assert.match(appSource, /典型组合任务时序表/);
+  assert.match(appSource, /周期性任务列表/);
+  assert.match(appSource, /周期性任务建模/);
+  assert.match(appSource, /星期/);
+  assert.match(appSource, /复合任务名称/);
+  assert.doesNotMatch(appSource, /任务剖面建模字段[\s\S]*任务类型/);
 });
 
 test("topbar omits run and export actions", async () => {
@@ -70,7 +306,6 @@ test("topbar omits run and export actions", async () => {
   assert.doesNotMatch(appSource, /运行单次仿真/);
   assert.doesNotMatch(appSource, /运行 Monte Carlo/);
   assert.doesNotMatch(appSource, /导出方案 JSON/);
-  assert.doesNotMatch(appSource, /data-action/);
   assert.doesNotMatch(appSource, /downloadJson/);
 });
 
@@ -80,4 +315,169 @@ test("monte carlo configuration drives the displayed result sample count", async
   assert.match(appSource, /let monteCarloResult = runMonteCarlo\(scenario\)/);
   assert.match(appSource, /id="mc-samples"[^>]*data-path="experiment\.samples"/);
   assert.match(appSource, /monteCarloResult = runMonteCarlo\(scenario\)/);
+});
+
+test("monte carlo sweep inputs update scenario arrays and rerun grouped results", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  assert.match(appSource, /data-mc-array-path="monteCarlo\.failureRates"/);
+  assert.match(appSource, /data-mc-array-path="monteCarlo\.spareMultipliers"/);
+  assert.match(appSource, /data-mc-array-path="monteCarlo\.supportCapacities"/);
+  assert.match(appSource, /const mcArrayInput = event\.target\.closest\("\[data-mc-array-path\]"\)/);
+  assert.match(appSource, /setPath\(scenario, mcArrayInput\.dataset\.mcArrayPath, parseNumberList\(mcArrayInput\.value\)\)/);
+  assert.match(appSource, /function parseNumberList/);
+  assert.match(appSource, /monteCarloResult = runMonteCarlo\(scenario\)/);
+});
+
+test("monte carlo experiment page is a launch-only parameter form and returns to running plan list", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const styleSource = await readFile(new URL("../front/styles.css", import.meta.url), "utf8");
+  assert.match(appSource, /class="mc-workbench"/);
+  assert.match(appSource, /蒙特卡洛实验参数配置/);
+  assert.match(appSource, /选择仿真实验/);
+  assert.match(appSource, /仿真次数/);
+  assert.match(appSource, /data-mc-action="start"/);
+  assert.match(appSource, /experimentRunStatus = "运行中"/);
+  assert.match(appSource, /selectedFeatureId = getPlanListFeatureId\(page\.module\)/);
+  assert.match(appSource, /status: experimentRunStatus/);
+  assert.doesNotMatch(appSource, /class="mc-main-tabs"/);
+  assert.doesNotMatch(appSource, /class="mc-subtabs"/);
+  assert.doesNotMatch(appSource, /正交实验配置与分析/);
+  assert.doesNotMatch(appSource, /正交因素/);
+  assert.doesNotMatch(appSource, /预检查/);
+  assert.match(styleSource, /\.mc-workbench/);
+  assert.match(styleSource, /\.mc-config-panel/);
+});
+
+test("monte carlo evaluation result is rendered in result analysis page", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  assert.match(appSource, /function renderMonteCarloResults/);
+  assert.match(appSource, /蒙特卡洛评估结果/);
+  assert.match(appSource, /蒙特卡洛评估值/);
+  assert.match(appSource, /目标值/);
+  assert.match(appSource, /mc-result-cards/);
+  assert.match(appSource, /mc-evaluation-table/);
+});
+
+test("project ontology covers modeling objects experiments and computation artifacts", () => {
+  const groups = new Set(PROJECT_ONTOLOGY.nodes.map((node) => node.group));
+  assert.ok(groups.has("modeling-object"));
+  assert.ok(groups.has("simulation-experiment"));
+  assert.ok(groups.has("computation-artifact"));
+  assert.ok(PROJECT_ONTOLOGY.nodes.some((node) => node.id === "monte-carlo-config"));
+  assert.ok(PROJECT_ONTOLOGY.nodes.some((node) => node.id === "metric-time-series"));
+  assert.ok(PROJECT_ONTOLOGY.edges.some((edge) => edge.from === "monte-carlo-config" && edge.to === "simulation-run"));
+});
+
+test("project ontology is generated from an Ontology Playground compatible shape", () => {
+  assert.equal(PROJECT_ONTOLOGY_PLAYGROUND.name, "备件规划与任务可靠度项目Ontology");
+  assert.equal(PROJECT_ONTOLOGY_PLAYGROUND.entityTypes.length, PROJECT_ONTOLOGY.nodes.length);
+  assert.equal(PROJECT_ONTOLOGY_PLAYGROUND.relationships.length, PROJECT_ONTOLOGY.edges.length);
+  assert.equal(
+    new Set(PROJECT_ONTOLOGY_PLAYGROUND.relationships.map((relationship) => relationship.id)).size,
+    PROJECT_ONTOLOGY_PLAYGROUND.relationships.length
+  );
+  for (const entity of PROJECT_ONTOLOGY_PLAYGROUND.entityTypes) {
+    assert.ok(entity.id);
+    assert.ok(entity.name);
+    assert.ok(entity.description);
+    assert.ok(entity.color);
+    assert.ok(entity.icon);
+    assert.ok(entity.properties.some((property) => property.isIdentifier), entity.id);
+  }
+  for (const relationship of PROJECT_ONTOLOGY_PLAYGROUND.relationships) {
+    assert.ok(relationship.id);
+    assert.ok(relationship.name);
+    assert.ok(relationship.from);
+    assert.ok(relationship.to);
+    assert.ok(["one-to-one", "one-to-many", "many-to-one", "many-to-many"].includes(relationship.cardinality));
+  }
+});
+
+test("modeling object layer expands internal scenario task unit and equipment relations", () => {
+  const nodeIds = new Set(PROJECT_ONTOLOGY.nodes.map((node) => node.id));
+  for (const id of [
+    "airport",
+    "mission-area",
+    "task",
+    "daily-profile",
+    "long-cycle-profile",
+    "aircraft-model",
+    "aircraft-quantity",
+    "equipment-system",
+    "analysis-diagram",
+    "component-parent",
+    "lru-flag"
+  ]) {
+    assert.ok(nodeIds.has(id), id);
+  }
+
+  const edgeKeys = new Set(PROJECT_ONTOLOGY.edges.map((edge) => `${edge.from}:${edge.label}:${edge.to}`));
+  for (const key of [
+    "built-in-scenario:包含:airport",
+    "built-in-scenario:包含:mission-area",
+    "task:包含:basic-mission",
+    "task:包含:daily-profile",
+    "task:包含:long-cycle-profile",
+    "daily-profile:包含:basic-mission",
+    "long-cycle-profile:由N个日剖面组成:daily-profile",
+    "basic-mission:要求:aircraft-model",
+    "basic-mission:要求:aircraft-quantity",
+    "combat-unit:包含:aircraft-model",
+    "combat-unit:包含:aircraft-quantity",
+    "equipment:包含:equipment-system",
+    "equipment-system:包含:component",
+    "component:具有上级节点:component-parent",
+    "component:标记:lru-flag"
+  ]) {
+    assert.ok(edgeKeys.has(key), key);
+  }
+});
+
+test("modeling object nodes are laid out as a two-dimensional layer", () => {
+  const modelingPositions = PROJECT_ONTOLOGY.nodes
+    .filter((node) => node.group === "modeling-object")
+    .map((node) => node.layout)
+    .filter(Boolean);
+  assert.ok(new Set(modelingPositions.map((position) => position.x)).size >= 3);
+  assert.ok(new Set(modelingPositions.map((position) => position.y)).size >= 3);
+});
+
+test("feature pages can build ontology focus contexts", () => {
+  const page = getFeaturePageById("spare-planning-monte-carlo-config");
+  const context = buildOntologyContext(page);
+  assert.ok(context.focusNodeIds.includes("monte-carlo-config"));
+  assert.ok(context.nodes.length >= 4);
+  assert.ok(context.edges.length >= 3);
+});
+
+test("frontend removes the standalone ontology visualization route", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  assert.doesNotMatch(appSource, /ONTOLOGY_PAGE_ID/);
+  assert.doesNotMatch(appSource, /renderOntologyVisualizationPage/);
+  assert.doesNotMatch(appSource, /data-feature-id="ontology-map"/);
+});
+
+test("editable and project text values are escaped before template insertion", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  assert.match(appSource, /htmlEscape\(currentProject\.name\)/);
+  assert.match(appSource, /htmlEscape\(project\.name\)/);
+  assert.match(appSource, /htmlEscape\(project\.summary\)/);
+  assert.match(appSource, /htmlEscape\(scenario\.experiment\.name\)/);
+  assert.match(appSource, /htmlEscape\(plan\.name\)/);
+});
+
+test("visual simulation page embeds Mesa visualization and ontology views", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  assert.match(appSource, /mesa-visual-shell/);
+  assert.match(appSource, /mesaTab\("aircraft"/);
+  assert.match(appSource, /mesaTab\("mission"/);
+  assert.match(appSource, /mesaTab\("support"/);
+  assert.match(appSource, /mesaTab\("ontology"/);
+  assert.match(appSource, /Mesa ABM/);
+  assert.match(appSource, /renderMesaOntologyPanel/);
+  assert.match(appSource, /renderOntologySvg\(PROJECT_ONTOLOGY/);
+  assert.match(appSource, /isVisualSimulationPage/);
+  assert.match(appSource, /<h2>\$\{htmlEscape\(page\.tertiary\)\}<\/h2>/);
+  assert.doesNotMatch(appSource, /return `<div>\$\{breadcrumb\}<\/div>`;/);
+  assert.doesNotMatch(appSource, /可视化实验启动与停止<\/h2>/);
 });

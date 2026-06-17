@@ -2,6 +2,16 @@
 
 来源文档：`docs/3概要设计方案.md`，原始文档：`docs/3概要设计方案.docx`。
 
+## 当前状态
+
+截至 2026-06-18，本计划已从“待重构计划”推进为可运行原型：
+
+1. `ontology/spare_mvp.ontology.json`、`ontology/spare_mvp.normalized.json`、`ontology/spare_mvp.validation.json` 已建立。
+2. `src/spare_mvp_abm/model.py`、`scenarios/spare-planning-smoke/`、`scenarios/mission-reliability-smoke/` 已提供 Mesa smoke 入口。
+3. `src/spare_mvp_abm/aviation_support/` 已保存本地航空保障 Mesa 场景包，并用于前端可视化状态。
+4. `front/` 已提供静态工作台、四级功能页面、结果分析页、Monte Carlo 配置与结果页。
+5. 当前文档保留原重构思路和边界说明，新的项目入口见 `docs/README.md`。
+
 ## 目标
 
 把概要设计中的“任务、装备、保障、备件、实验、指标”先整理成轻量本体，再映射为可运行的 Mesa ABM。第一阶段不追求完整平台复刻，而是用最小可运行模型证明三件事：
@@ -258,4 +268,9 @@ python3 /Users/gaojihe/.codex/skills/ontology-mesa-modeling/scripts/normalize_on
 
 ## 下一步建议
 
-下一步直接做 M1：从 `docs/3概要设计方案.md` 手工整理 `ontology/spare_mvp.ontology.json`，再调用 `normalize_ontology.py` 生成规范化文件和校验报告。M1 完成后再进入 Mesa 结构烟测，避免先写仿真代码导致实体和关系口径漂移。
+当前不再以“直接做 M1”为下一步；M1 到 M4 的第一版链路已经具备可运行原型。后续建议按以下顺序推进：
+
+1. 将 `front/app.js` 中继续增长的页面渲染逻辑拆分为更小的页面模块。
+2. 为关键浏览器流转补轻量 DOM 测试，重点覆盖登录、项目进入、Monte Carlo 扫参、启动回方案列表和结果页分组。
+3. 若要提升仿真可信度，先补参数来源、校准口径和实验设计文档，再扩大 Monte Carlo 样本或并行调度。
+4. 保持本体结构和 Mesa 行为规则的边界清晰：本体说明对象和关系，Mesa 规则说明动态行为。

@@ -1,9 +1,7 @@
-# Source
+# 来源说明
 
-Copied on 2026-06-17 from:
+本目录于 2026-06-17 从以下路径复制：
 
 `/Users/gaojihe/Models/ship_front`
 
-This directory preserves the referenced frontend prototype locally. Runtime
-code in `front/` may borrow layout patterns from this snapshot, but should not
-import or depend on this monolithic prototype directly.
+本目录用于在仓库内保存参考前端原型快照。`front/` 中的运行时代码可以参考该快照的布局形态，但不应直接导入或依赖这个整体原型。
