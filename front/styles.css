@@ -819,6 +819,26 @@ input {
   background: #fff;
 }
 
+.readonly-field {
+  display: grid;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--soft);
+  padding: 10px 12px;
+}
+
+.readonly-field span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.readonly-field strong {
+  color: var(--text);
+  font-size: 14px;
+}
+
 .mc-inline-fields {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

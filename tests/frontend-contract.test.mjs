@@ -6,11 +6,11 @@ import { FEATURE_PAGES, getFeaturePageById, groupFeaturePages } from "../front/f
 import { buildOntologyContext, PROJECT_ONTOLOGY, PROJECT_ONTOLOGY_PLAYGROUND } from "../front/ontology-context.mjs";
 
 test("feature catalog exposes all table-2 four-level pages", () => {
-  assert.equal(FEATURE_PAGES.length, 49);
-  assert.equal(new Set(FEATURE_PAGES.map((page) => page.id)).size, 49);
-  assert.equal(FEATURE_PAGES.filter((page) => page.module === "备件规划评估模块").length, 24);
-  assert.equal(FEATURE_PAGES.filter((page) => page.module === "任务可靠度评估模块").length, 25);
-  for (const label of ["装备可靠性框图建模", "可视化结果展示", "蒙特卡洛实验结果", "飞机转场携行清单分析", "任务可靠度评估", "停机因素分析"]) {
+  assert.equal(FEATURE_PAGES.length, 45);
+  assert.equal(new Set(FEATURE_PAGES.map((page) => page.id)).size, 45);
+  assert.equal(FEATURE_PAGES.filter((page) => page.module === "备件规划评估模块").length, 22);
+  assert.equal(FEATURE_PAGES.filter((page) => page.module === "任务可靠度评估模块").length, 23);
+  for (const label of ["装备可靠性框图建模", "蒙特卡洛实验结果", "飞机转场携行清单分析", "任务可靠度评估", "停机因素分析"]) {
     assert.ok(FEATURE_PAGES.some((page) => page.name === label), label);
   }
 });
@@ -35,12 +35,18 @@ test("feature grouping preserves three-level navigation and internal fourth-leve
   assert.ok(grouped["任务可靠度评估模块"]["仿真建模"]["装备建模"].some((page) => page.name === "装备可靠性框图建模"));
   assert.deepEqual(grouped["备件规划评估模块"]["仿真实验"]["仿真实验方案管理"].map((page) => page.name), ["方案列表", "方案编辑"]);
   assert.deepEqual(grouped["任务可靠度评估模块"]["仿真实验"]["仿真实验方案管理"].map((page) => page.name), ["方案列表", "方案编辑"]);
+  assert.deepEqual(grouped["备件规划评估模块"]["仿真实验"]["可视化推演"].map((page) => page.name), ["可视化实验启动与停止"]);
+  assert.deepEqual(grouped["任务可靠度评估模块"]["仿真实验"]["可视化推演"].map((page) => page.name), ["可视化实验启动与停止"]);
   assert.deepEqual(Object.keys(grouped["备件规划评估模块"]["结果分析"]), ["蒙特卡洛实验结果", "备件短板分析", "飞机转场携行清单分析"]);
   assert.deepEqual(grouped["备件规划评估模块"]["结果分析"]["备件短板分析"].map((page) => page.name), ["备件短板分析"]);
   assert.equal(FEATURE_PAGES.some((page) => page.name === "仿真实验方案创建"), false);
   assert.equal(FEATURE_PAGES.some((page) => page.name === "仿真实验方案编辑"), false);
+  assert.equal(FEATURE_PAGES.some((page) => page.name === "场景切换"), false);
+  assert.equal(FEATURE_PAGES.some((page) => page.name === "可视化结果展示"), false);
   assert.equal(getFeaturePageById("spare-planning-experiment-create").name, "方案编辑");
   assert.equal(getFeaturePageById("spare-planning-experiment-edit").name, "方案编辑");
+  assert.equal(getFeaturePageById("spare-planning-scenario-switch").component, "visual-simulation");
+  assert.equal(getFeaturePageById("spare-planning-visual-results").component, "visual-simulation");
   assert.equal(getFeaturePageById("mission-reliability-task-reliability").name, "任务可靠度评估");
 });
 
@@ -333,7 +339,9 @@ test("monte carlo experiment page is a launch-only parameter form and returns to
   const styleSource = await readFile(new URL("../front/styles.css", import.meta.url), "utf8");
   assert.match(appSource, /class="mc-workbench"/);
   assert.match(appSource, /蒙特卡洛实验参数配置/);
-  assert.match(appSource, /选择仿真实验/);
+  assert.match(appSource, /当前仿真实验/);
+  assert.match(appSource, /class="readonly-field"/);
+  assert.doesNotMatch(appSource, /<label>选择仿真实验[\s\S]*?<select>/);
   assert.match(appSource, /仿真次数/);
   assert.match(appSource, /data-mc-action="start"/);
   assert.match(appSource, /experimentRunStatus = "运行中"/);
@@ -346,6 +354,19 @@ test("monte carlo experiment page is a launch-only parameter form and returns to
   assert.doesNotMatch(appSource, /预检查/);
   assert.match(styleSource, /\.mc-workbench/);
   assert.match(styleSource, /\.mc-config-panel/);
+});
+
+test("carry list analysis maps Chinese risk levels to visible priority badges", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const carrySource = appSource.slice(
+    appSource.indexOf("function renderCarryListAnalysis"),
+    appSource.indexOf("function renderTaskReliabilityAnalysis")
+  );
+  assert.match(carrySource, /priority: carryPriority\(row\.riskLevel\)/);
+  assert.match(appSource, /function carryPriority\(riskLevel\)/);
+  assert.match(appSource, /case "高":/);
+  assert.match(appSource, /case "中":/);
+  assert.match(appSource, /case "低":/);
 });
 
 test("monte carlo evaluation result is rendered in result analysis page", async () => {
