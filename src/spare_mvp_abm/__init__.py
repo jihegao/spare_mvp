@@ -1,5 +1,7 @@
 """Spare planning and mission reliability ABM prototype."""
 
-from .model import SpareMvpModel
+from .smoke_model import SmokeSpareMvpModel
 
-__all__ = ["SpareMvpModel"]
+SpareMvpModel = SmokeSpareMvpModel
+
+__all__ = ["SmokeSpareMvpModel", "SpareMvpModel"]

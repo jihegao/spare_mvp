@@ -1,6 +1,6 @@
 {
   "experiment_name": "mission_reliability_smoke",
-  "model_class": "SpareMvpModel",
+  "model_class": "SmokeSpareMvpModel",
   "steps": 48,
   "primary_metric": "mission_success_rate",
   "seeds": [201, 202, 203],

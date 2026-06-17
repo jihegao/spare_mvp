@@ -1,10 +1,90 @@
 {
+  "bindings": [
+    {
+      "boundEntityId": "mission_profile",
+      "columnMapping": {
+        "endCondition": "endCondition",
+        "profileId": "id",
+        "profileType": "profileType",
+        "repeatCycleHours": "repeatCycleHours"
+      },
+      "id": "binding_mission_profile",
+      "source": "project-json",
+      "table": "missionProfiles"
+    },
+    {
+      "boundEntityId": "basic_mission",
+      "columnMapping": {
+        "minRequiredSorties": "minRequiredSorties",
+        "missionId": "id",
+        "priority": "priority",
+        "startHour": "startHour",
+        "successPoint": "successPoint"
+      },
+      "id": "binding_basic_mission",
+      "source": "project-json",
+      "table": "missionProfiles.tasks"
+    },
+    {
+      "boundEntityId": "equipment",
+      "columnMapping": {
+        "equipmentId": "id",
+        "failureRate": "failureRate",
+        "model": "model",
+        "state": "state"
+      },
+      "id": "binding_equipment",
+      "source": "project-json",
+      "table": "equipmentAssets"
+    },
+    {
+      "boundEntityId": "component",
+      "columnMapping": {
+        "componentId": "id",
+        "connectionType": "connectionType",
+        "failureModel": "failureModel",
+        "mtbfHours": "mtbfHours",
+        "name": "name",
+        "spareType": "spareType"
+      },
+      "id": "binding_component",
+      "source": "project-json",
+      "table": "equipmentTree.components"
+    },
+    {
+      "boundEntityId": "support_node",
+      "columnMapping": {
+        "equipmentCapacity": "equipmentCapacity",
+        "nodeId": "id",
+        "nodeType": "nodeType",
+        "personnelCapacity": "personnelCapacity",
+        "policy": "policy"
+      },
+      "id": "binding_support_node",
+      "source": "project-json",
+      "table": "supportResources"
+    },
+    {
+      "boundEntityId": "support_activity",
+      "columnMapping": {
+        "activityId": "id",
+        "activityType": "activityType",
+        "durationHours": "durationHours",
+        "priority": "priority",
+        "requiredDevices": "requiredDevices",
+        "requiredPersonnel": "requiredPersonnel"
+      },
+      "id": "binding_support_activity",
+      "source": "project-json",
+      "table": "supportActivities"
+    }
+  ],
   "description": "Lightweight ontology extracted from the design document for spare planning and mission reliability ABM prototyping.",
   "entityTypes": [
     {
-      "color": "",
+      "color": "#0078D4",
       "description": "Long-period, clustered, or single-equipment mission profile.",
-      "icon": "",
+      "icon": "route",
       "id": "mission-profile",
       "name": "\u4efb\u52a1\u5256\u9762",
       "properties": [
@@ -33,9 +113,9 @@
       ]
     },
     {
-      "color": "",
+      "color": "#107C10",
       "description": "Mission definition with timing, priority, success point, and minimum equipment requirement.",
-      "icon": "",
+      "icon": "target",
       "id": "basic-mission",
       "name": "\u57fa\u672c\u4efb\u52a1",
       "properties": [
@@ -67,9 +147,9 @@
       ]
     },
     {
-      "color": "",
+      "color": "#00A9E0",
       "description": "Finite-state mission phase with transition condition and duration limit.",
-      "icon": "",
+      "icon": "timer",
       "id": "mission-phase",
       "name": "\u4efb\u52a1\u9636\u6bb5",
       "properties": [
@@ -101,9 +181,9 @@
       ]
     },
     {
-      "color": "",
+      "color": "#5C2D91",
       "description": "Deployed unit containing mission equipment.",
-      "icon": "",
+      "icon": "group",
       "id": "combat-unit",
       "name": "\u57fa\u672c\u4f5c\u6218\u5355\u5143",
       "properties": [
@@ -127,9 +207,9 @@
       ]
     },
     {
-      "color": "",
+      "color": "#D83B01",
       "description": "Aircraft or equipment that can prepare, sortie, fail, repair, and return to ready state.",
-      "icon": "",
+      "icon": "plane",
       "id": "equipment",
       "name": "\u88c5\u5907",
       "properties": [
@@ -161,9 +241,9 @@
       ]
     },
     {
-      "color": "",
+      "color": "#8764B8",
       "description": "Component installed on equipment with failure model, spare type, and reliability block role.",
-      "icon": "",
+      "icon": "cpu",
       "id": "component",
       "name": "\u4ea7\u54c1/\u7ec4\u4ef6",
       "properties": [
@@ -205,9 +285,9 @@
       ]
     },
     {
-      "color": "",
+      "color": "#038387",
       "description": "Airport or support point with stock, personnel, device capacity, and transfer policy.",
-      "icon": "",
+      "icon": "warehouse",
       "id": "support-node",
       "name": "\u4fdd\u969c\u8282\u70b9",
       "properties": [
@@ -240,9 +320,9 @@
       ]
     },
     {
-      "color": "",
+      "color": "#FFB900",
       "description": "Maintenance or support activity requiring personnel, devices, spares, and time.",
-      "icon": "",
+      "icon": "wrench",
       "id": "support-activity",
       "name": "\u4fdd\u969c\u6d3b\u52a8",
       "properties": [

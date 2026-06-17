@@ -52,13 +52,13 @@ python3 /Users/gaojihe/.codex/skills/ontology-mesa-modeling/scripts/normalize_on
 
 ```bash
 /opt/homebrew/bin/python3.12 /Users/gaojihe/.codex/skills/mesa-abm-skill/scripts/run_mesa_experiment.py \
-  --model src/spare_mvp_abm/model.py \
+  --model src/spare_mvp_abm/smoke_model.py \
   --config scenarios/spare-planning-smoke/experiment.json \
   --output-dir runs/spare-planning-smoke/latest \
   --install-dir .abm-mesa-env
 
 /opt/homebrew/bin/python3.12 /Users/gaojihe/.codex/skills/mesa-abm-skill/scripts/run_mesa_experiment.py \
-  --model src/spare_mvp_abm/model.py \
+  --model src/spare_mvp_abm/smoke_model.py \
   --config scenarios/mission-reliability-smoke/experiment.json \
   --output-dir runs/mission-reliability-smoke/latest \
   --install-dir .abm-mesa-env

@@ -7,7 +7,7 @@
 截至 2026-06-18，本计划已从“待重构计划”推进为可运行原型：
 
 1. `ontology/spare_mvp.ontology.json`、`ontology/spare_mvp.normalized.json`、`ontology/spare_mvp.validation.json` 已建立。
-2. `src/spare_mvp_abm/model.py`、`scenarios/spare-planning-smoke/`、`scenarios/mission-reliability-smoke/` 已提供 Mesa smoke 入口。
+2. `src/spare_mvp_abm/smoke_model.py`、`scenarios/spare-planning-smoke/`、`scenarios/mission-reliability-smoke/` 已提供项目级 Mesa smoke 入口；`src/spare_mvp_abm/model.py` 仅保留旧导入兼容。
 3. `src/spare_mvp_abm/aviation_support/` 已保存本地航空保障 Mesa 场景包，并用于前端可视化状态。
 4. `front/` 已提供静态工作台、四级功能页面、结果分析页、Monte Carlo 配置与结果页。
 5. 当前文档保留原重构思路和边界说明，新的项目入口见 `docs/README.md`。
@@ -152,7 +152,8 @@ scenarios/
 src/
   spare_mvp_abm/
     __init__.py
-    model.py
+    smoke_model.py
+    model.py  # legacy compatibility shim
     ontology_loader.py
 tests/
   test_ontology_contract.py

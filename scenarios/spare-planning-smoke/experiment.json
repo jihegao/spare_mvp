@@ -1,6 +1,6 @@
 {
   "experiment_name": "spare_planning_smoke",
-  "model_class": "SpareMvpModel",
+  "model_class": "SmokeSpareMvpModel",
   "steps": 48,
   "primary_metric": "spare_fill_rate",
   "seeds": [101, 102, 103],
