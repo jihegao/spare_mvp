@@ -332,9 +332,6 @@ function shouldShowCurrentContext(page) {
 
 function renderPageHeading(page) {
   const breadcrumb = `<div class="breadcrumb">${htmlEscape(page.module)} / ${htmlEscape(page.secondary)} / ${htmlEscape(page.tertiary)}</div>`;
-  if (isVisualSimulationPage(page)) {
-    return `<div>${breadcrumb}</div>`;
-  }
   return `
     <div>
       ${breadcrumb}

@@ -403,6 +403,7 @@ test("visual simulation page embeds Mesa visualization and ontology views", asyn
   assert.match(appSource, /renderMesaOntologyPanel/);
   assert.match(appSource, /renderOntologySvg\(PROJECT_ONTOLOGY/);
   assert.match(appSource, /isVisualSimulationPage/);
-  assert.match(appSource, /if \(isVisualSimulationPage\(page\)\) \{\n    return `<div>\$\{breadcrumb\}<\/div>`;\n  \}/);
+  assert.match(appSource, /<h2>\$\{htmlEscape\(page\.tertiary\)\}<\/h2>/);
+  assert.doesNotMatch(appSource, /return `<div>\$\{breadcrumb\}<\/div>`;/);
   assert.doesNotMatch(appSource, /可视化实验启动与停止<\/h2>/);
 });
