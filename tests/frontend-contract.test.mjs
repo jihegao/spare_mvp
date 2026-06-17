@@ -99,11 +99,15 @@ test("frontend shell mounts a feature workbench rather than six static summary v
 
 test("frontend source omits removed page-side context panels", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const styleSource = await readFile(new URL("../front/styles.css", import.meta.url), "utf8");
   assert.doesNotMatch(appSource, /Ontology 上下文/);
   assert.doesNotMatch(appSource, /校验与输出/);
   assert.doesNotMatch(appSource, /写入对象/);
   assert.doesNotMatch(appSource, /输出联动/);
   assert.match(appSource, /aria-label="功能导航"/);
+  assert.doesNotMatch(appSource, /nav-summary/);
+  assert.doesNotMatch(appSource, /三级折叠菜单/);
+  assert.doesNotMatch(styleSource, /\.nav-summary/);
   assert.doesNotMatch(appSource, /aria-label="四级功能入口"/);
   assert.doesNotMatch(appSource, /\$\{page\.tertiary\}入口/);
   assert.doesNotMatch(appSource, /feature-entry-card/);

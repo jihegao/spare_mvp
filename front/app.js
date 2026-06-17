@@ -253,10 +253,6 @@ function renderProjectListPage() {
 function renderNavigation(activePage) {
   return `
     <aside class="feature-nav" aria-label="功能导航">
-      <div class="nav-summary">
-        <strong>功能导航</strong>
-        <span>三级折叠菜单</span>
-      </div>
       ${Object.entries(groups).map(([moduleName, secondaryGroups]) => `
         <details class="nav-module" ${moduleName === activePage.module ? "open" : ""}>
           <summary>${moduleName}</summary>

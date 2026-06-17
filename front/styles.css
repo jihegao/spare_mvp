@@ -264,19 +264,6 @@ h4 {
   padding: 14px;
 }
 
-.nav-summary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 12px;
-  margin-bottom: 12px;
-  border: 1px solid #d8e4ff;
-  border-radius: 8px;
-  background: var(--primary-soft);
-  color: #1f3f75;
-}
-
-.nav-summary span,
 .page-head span,
 .section-head span {
   color: var(--muted);
