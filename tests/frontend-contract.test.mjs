@@ -177,6 +177,21 @@ test("equipment modeling pages use ship front tree attributes with quantity and 
   assert.doesNotMatch(appSource, /<thead><tr><th>组件<\/th><th>备件类型<\/th><th>故障模型<\/th><th>失效率<\/th><th>MTBF<\/th><th>连接类型<\/th><\/tr><\/thead>/);
 });
 
+test("equipment composition page only renders tree and basic composition fields", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const equipmentSource = appSource.slice(
+    appSource.indexOf("function renderEquipmentModeling"),
+    appSource.indexOf("function renderEquipmentFailureRmsFields")
+  );
+  assert.match(equipmentSource, /function renderEquipmentCompositionFields/);
+  assert.match(equipmentSource, /isFailurePage \? renderEquipmentFailureFields\(selected\) : renderEquipmentCompositionFields\(selected\)/);
+  assert.match(equipmentSource, /field\("组件名称", "components\.0\.name"\)/);
+  assert.match(equipmentSource, /field\("父节点", "components\.0\.parentId"\)/);
+  assert.match(equipmentSource, /field\("备件类型", "components\.0\.spareType"\)/);
+  assert.match(equipmentSource, /field\("连接类型", "components\.0\.connectionType"\)/);
+  assert.match(equipmentSource, /isFailurePage \? renderEquipmentComponentTable\(\) : ""/);
+});
+
 test("equipment failure page exposes RMS attributes separately from composition fields", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const equipmentSource = appSource.slice(

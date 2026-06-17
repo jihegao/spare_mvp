@@ -870,7 +870,7 @@ function renderEquipmentModeling(page) {
   return `
     <div class="section-head">
       <h3>${page.name}</h3>
-      <span>${isFailurePage ? "故障属性" : "组成属性"} / 数量 / N中取K参数</span>
+      <span>${isFailurePage ? "故障属性 / 数量 / N中取K参数 / RMS指标" : "组成树 / 组成属性"}</span>
     </div>
     <div class="organization-layout">
       <aside class="tree-container">
@@ -895,47 +895,63 @@ function renderEquipmentModeling(page) {
             <span>${htmlEscape(selected.name || "")}</span>
           </div>
           <div class="form-table-grid">
-            ${field("组件名称", "components.0.name")}
-            ${field("父节点", "components.0.parentId")}
-            ${field("备件类型", "components.0.spareType")}
-            ${field("连接类型", "components.0.connectionType")}
-            <label>数量 n<input data-path="components.0.quantity" type="number" value="${htmlEscape(getPath(scenario, "components.0.quantity"))}"></label>
-            <label>成功数 k<input data-path="components.0.kOutOfN.k" type="number" value="${htmlEscape(getPath(scenario, "components.0.kOutOfN.k"))}"></label>
-            ${field("N中取K总数", "components.0.kOutOfN.n", "number")}
-            ${field("启用 n 中取 k", "components.0.kOutOfN.enabled")}
-            ${isFailurePage ? `
-              ${field("故障模型", "components.0.failureModel")}
-              ${field("失效率", "components.0.failureRate", "number")}
-              ${field("MTBF(h)", "components.0.mtbfHours", "number")}
-              ${field("寿命限制(h)", "components.0.lifeLimitHours", "number")}
-            ` : ""}
+            ${isFailurePage ? renderEquipmentFailureFields(selected) : renderEquipmentCompositionFields(selected)}
           </div>
         </div>
         ${isFailurePage ? renderEquipmentFailureRmsFields(selected) : ""}
-        <div class="detail-card network-card">
-          <h4>组件属性表</h4>
-          <div class="table-wrap">
-            <table>
-              <thead><tr><th>组件</th><th>父节点</th><th>数量</th><th>启用 n 中取 k</th><th>n</th><th>k</th><th>故障模型</th><th>失效率</th><th>MTBF</th></tr></thead>
-              <tbody>
-                ${scenario.components.map((component) => `
-                  <tr>
-                    <td>${htmlEscape(component.name)}</td>
-                    <td>${htmlEscape(component.parentId)}</td>
-                    <td>${htmlEscape(component.quantity)}</td>
-                    <td>${component.kOutOfN?.enabled ? "是" : "否"}</td>
-                    <td>${htmlEscape(component.kOutOfN?.n ?? component.quantity)}</td>
-                    <td>${htmlEscape(component.kOutOfN?.k ?? component.quantity)}</td>
-                    <td>${htmlEscape(component.failureModel)}</td>
-                    <td>${htmlEscape(component.failureRate)}</td>
-                    <td>${htmlEscape(component.mtbfHours)}h</td>
-                  </tr>
-                `).join("")}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        ${isFailurePage ? renderEquipmentComponentTable() : ""}
       </section>
+    </div>
+  `;
+}
+
+function renderEquipmentCompositionFields() {
+  return `
+    ${field("组件名称", "components.0.name")}
+    ${field("父节点", "components.0.parentId")}
+    ${field("备件类型", "components.0.spareType")}
+    ${field("连接类型", "components.0.connectionType")}
+  `;
+}
+
+function renderEquipmentFailureFields() {
+  return `
+    ${renderEquipmentCompositionFields()}
+    <label>数量 n<input data-path="components.0.quantity" type="number" value="${htmlEscape(getPath(scenario, "components.0.quantity"))}"></label>
+    <label>成功数 k<input data-path="components.0.kOutOfN.k" type="number" value="${htmlEscape(getPath(scenario, "components.0.kOutOfN.k"))}"></label>
+    ${field("N中取K总数", "components.0.kOutOfN.n", "number")}
+    ${field("启用 n 中取 k", "components.0.kOutOfN.enabled")}
+    ${field("故障模型", "components.0.failureModel")}
+    ${field("失效率", "components.0.failureRate", "number")}
+    ${field("MTBF(h)", "components.0.mtbfHours", "number")}
+    ${field("寿命限制(h)", "components.0.lifeLimitHours", "number")}
+  `;
+}
+
+function renderEquipmentComponentTable() {
+  return `
+    <div class="detail-card network-card">
+      <h4>组件属性表</h4>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>组件</th><th>父节点</th><th>数量</th><th>启用 n 中取 k</th><th>n</th><th>k</th><th>故障模型</th><th>失效率</th><th>MTBF</th></tr></thead>
+          <tbody>
+            ${scenario.components.map((component) => `
+              <tr>
+                <td>${htmlEscape(component.name)}</td>
+                <td>${htmlEscape(component.parentId)}</td>
+                <td>${htmlEscape(component.quantity)}</td>
+                <td>${component.kOutOfN?.enabled ? "是" : "否"}</td>
+                <td>${htmlEscape(component.kOutOfN?.n ?? component.quantity)}</td>
+                <td>${htmlEscape(component.kOutOfN?.k ?? component.quantity)}</td>
+                <td>${htmlEscape(component.failureModel)}</td>
+                <td>${htmlEscape(component.failureRate)}</td>
+                <td>${htmlEscape(component.mtbfHours)}h</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
     </div>
   `;
 }
