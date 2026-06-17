@@ -304,10 +304,7 @@ function renderFeaturePage(page) {
     <section class="deck-modeling-content feature-page">
       <div class="page-head">
         ${renderPageHeading(page)}
-        <button class="page-head-current-context" type="button" data-plan-list-link>
-          <span>当前方案</span>
-          <strong>${htmlEscape(scenario.experiment.name)}</strong>
-        </button>
+        ${renderCurrentContext(page)}
       </div>
       ${renderFourthLevelTabs(page, siblingPages)}
       <div class="page-grid">
@@ -317,6 +314,20 @@ function renderFeaturePage(page) {
       </div>
     </section>
   `;
+}
+
+function renderCurrentContext(page) {
+  if (!shouldShowCurrentContext(page)) return "";
+  return `
+    <button class="page-head-current-context" type="button" data-plan-list-link>
+      <span>当前方案</span>
+      <strong>${htmlEscape(scenario.experiment.name)}</strong>
+    </button>
+  `;
+}
+
+function shouldShowCurrentContext(page) {
+  return page.secondary !== "仿真建模";
 }
 
 function renderPageHeading(page) {

@@ -126,6 +126,8 @@ test("modeling and experiment pages use compact Chinese fourth-level tabs when n
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   assert.match(appSource, /<h2>\$\{htmlEscape\(page\.tertiary\)\}<\/h2>/);
   assert.doesNotMatch(appSource, /<h2>\$\{page\.name\}<\/h2>/);
+  assert.match(appSource, /function shouldShowCurrentContext\(page\)/);
+  assert.match(appSource, /page\.secondary !== "仿真建模"/);
   assert.match(appSource, /class="nav-tertiary-link/);
   assert.doesNotMatch(appSource, /进入\$\{tertiaryName\}/);
   assert.match(appSource, /class="compact-fourth-tabs"/);
