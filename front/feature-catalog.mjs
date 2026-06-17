@@ -54,8 +54,6 @@ const SOURCE_ROWS = [
   ["备件规划评估模块", "仿真实验", "仿真实验方案管理", "方案列表"],
   ["备件规划评估模块", "仿真实验", "仿真实验方案管理", "方案编辑"],
   ["备件规划评估模块", "仿真实验", "可视化推演", "可视化实验启动与停止"],
-  ["备件规划评估模块", "仿真实验", "可视化推演", "场景切换"],
-  ["备件规划评估模块", "仿真实验", "可视化推演", "可视化结果展示"],
   ["备件规划评估模块", "仿真实验", "蒙特卡洛实验", "蒙特卡洛实验配置"],
   ["备件规划评估模块", "结果分析", "蒙特卡洛实验结果", "蒙特卡洛实验结果"],
   ["备件规划评估模块", "结果分析", "备件短板分析", "备件短板分析"],
@@ -78,8 +76,6 @@ const SOURCE_ROWS = [
   ["任务可靠度评估模块", "仿真实验", "仿真实验方案管理", "方案列表"],
   ["任务可靠度评估模块", "仿真实验", "仿真实验方案管理", "方案编辑"],
   ["任务可靠度评估模块", "仿真实验", "可视化推演", "可视化实验启动与停止"],
-  ["任务可靠度评估模块", "仿真实验", "可视化推演", "场景切换"],
-  ["任务可靠度评估模块", "仿真实验", "可视化推演", "可视化结果展示"],
   ["任务可靠度评估模块", "仿真实验", "蒙特卡洛实验", "蒙特卡洛实验配置"],
   ["任务可靠度评估模块", "结果分析", "蒙特卡洛实验结果", "蒙特卡洛实验结果"],
   ["任务可靠度评估模块", "结果分析", "飞机任务可靠性分析", "飞机任务可靠性分析"],
@@ -126,7 +122,11 @@ const FEATURE_ID_ALIASES = {
   "mission-reliability-experiment-create": "mission-reliability-experiment-plan-edit",
   "mission-reliability-experiment-edit": "mission-reliability-experiment-plan-edit",
   "spare-planning-monte-carlo-results-display": "spare-planning-monte-carlo-results",
-  "mission-reliability-monte-carlo-results-display": "mission-reliability-monte-carlo-results"
+  "mission-reliability-monte-carlo-results-display": "mission-reliability-monte-carlo-results",
+  "spare-planning-scenario-switch": "spare-planning-visual-start-stop",
+  "spare-planning-visual-results": "spare-planning-visual-start-stop",
+  "mission-reliability-scenario-switch": "mission-reliability-visual-start-stop",
+  "mission-reliability-visual-results": "mission-reliability-visual-start-stop"
 };
 
 function resolveComponent(name, secondary, tertiary) {

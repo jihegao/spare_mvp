@@ -1415,13 +1415,10 @@ function renderMonteCarloConfig() {
           <span>样本 / seed / 扫参</span>
         </div>
         <div class="mc-form">
-          <label>选择仿真实验
-            <select>
-              <option selected>${htmlEscape(scenario.experiment.name)}</option>
-              <option>高强度出动保障验证</option>
-              <option>低库存敏感性实验</option>
-            </select>
-          </label>
+          <div class="readonly-field">
+            <span>当前仿真实验</span>
+            <strong>${htmlEscape(scenario.experiment.name)}</strong>
+          </div>
           <div class="mc-inline-fields">
             <label>仿真次数<input id="mc-samples" data-path="experiment.samples" type="number" min="1" value="${scenario.experiment.samples}"></label>
             <label>随机种子<input data-path="experiment.seed" type="number" value="${scenario.experiment.seed}"></label>
@@ -1560,7 +1557,7 @@ function renderCarryListAnalysis() {
     satisfy: Math.max(0, 1 - row.shortage / Math.max(row.recommended, 1)),
     delay: row.shortage * 18 + index * 2,
     qty: row.recommended,
-    priority: row.riskLevel === "high" ? "高" : row.riskLevel === "medium" ? "中" : "低"
+    priority: carryPriority(row.riskLevel)
   }));
   return renderAnalysisDashboard({
     title: "飞机转场携行清单分析",
@@ -1593,6 +1590,22 @@ function renderCarryListAnalysis() {
       <div class="decision-support-card"><strong>携行清单说明</strong><span>以${objective.label}为优化目标，优先补足低满足率且短缺次数高的备件，形成转场前装箱评审清单。</span></div>
     `
   });
+}
+
+function carryPriority(riskLevel) {
+  switch (riskLevel) {
+    case "高":
+    case "high":
+      return "高";
+    case "中":
+    case "medium":
+      return "中";
+    case "低":
+    case "low":
+      return "低";
+    default:
+      return "低";
+  }
 }
 
 function renderTaskReliabilityAnalysis() {
