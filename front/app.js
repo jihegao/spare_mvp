@@ -50,6 +50,7 @@ let selectedFeatureId = readFeatureIdFromHash() || DEFAULT_FEATURE_ID;
 let selectedMesaView = "aircraft";
 let carryObjective = CARRY_OBJECTIVES[0].id;
 let experimentRunStatus = "当前";
+let isProjectMenuOpen = false;
 
 render();
 bindEvents();
@@ -87,7 +88,15 @@ function bindEvents() {
       isLoggedIn = true;
       selectedRoute = "workbench";
       selectedFeatureId = DEFAULT_FEATURE_ID;
+      isProjectMenuOpen = false;
       location.hash = `feature=${DEFAULT_FEATURE_ID}`;
+      render();
+      return;
+    }
+
+    const projectMenuButton = event.target.closest("[data-project-menu-toggle]");
+    if (projectMenuButton) {
+      isProjectMenuOpen = !isProjectMenuOpen;
       render();
       return;
     }
@@ -95,6 +104,7 @@ function bindEvents() {
     const projectListButton = event.target.closest("[data-project-list]");
     if (projectListButton) {
       selectedRoute = "projects";
+      isProjectMenuOpen = false;
       location.hash = "route=projects";
       render();
       return;
@@ -180,7 +190,7 @@ function render() {
         </div>
       </div>
       <div class="right">
-        <button type="button" data-project-list>项目列表</button>
+        ${renderProjectMenu()}
         <button type="button" data-logout>退出</button>
       </div>
     </header>
@@ -208,6 +218,22 @@ function renderLoginPage() {
         </div>
       </section>
     </main>
+  `;
+}
+
+function renderProjectMenu() {
+  return `
+    <div class="project-menu">
+      <button type="button" class="project-menu-toggle" data-project-menu-toggle aria-expanded="${isProjectMenuOpen}">
+        <span>${htmlEscape(currentProject.name)}</span>
+        <span aria-hidden="true">▾</span>
+      </button>
+      ${isProjectMenuOpen ? `
+        <div class="project-menu-panel" role="menu">
+          <button type="button" data-project-list role="menuitem">返回项目列表</button>
+        </div>
+      ` : ""}
+    </div>
   `;
 }
 

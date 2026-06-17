@@ -46,6 +46,7 @@ test("feature grouping preserves three-level navigation and internal fourth-leve
 
 test("scheme list is the post-login landing page and plan name links back to it", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const styleSource = await readFile(new URL("../front/styles.css", import.meta.url), "utf8");
   assert.match(appSource, /const DEFAULT_FEATURE_ID = "spare-planning-experiment-plan-list"/);
   assert.match(appSource, /const DEFAULT_ROUTE = "login"/);
   assert.match(appSource, /function renderLoginPage/);
@@ -58,6 +59,13 @@ test("scheme list is the post-login landing page and plan name links back to it"
   assert.match(appSource, /location\.hash = `feature=\$\{getPlanListFeatureId\(page\.module\)\}`/);
   assert.match(appSource, /function renderExperimentPlanList/);
   assert.match(appSource, /function renderExperimentPlanEditor/);
+  assert.match(appSource, /data-project-menu-toggle/);
+  assert.match(appSource, /htmlEscape\(currentProject\.name\)/);
+  assert.match(appSource, /返回项目列表/);
+  assert.match(appSource, /data-project-list/);
+  assert.doesNotMatch(appSource, /<button type="button" data-project-list>项目列表<\/button>/);
+  assert.match(styleSource, /\.project-menu/);
+  assert.match(styleSource, /\.project-menu-panel/);
 });
 
 test("results analysis pages are rendered as four dedicated ship-front aligned dashboards", async () => {

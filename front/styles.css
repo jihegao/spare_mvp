@@ -240,6 +240,42 @@ h4 {
   padding: 8px 12px;
 }
 
+.project-menu {
+  position: relative;
+}
+
+.project-menu-toggle {
+  max-width: 260px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.project-menu-toggle span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-menu-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  z-index: 20;
+  min-width: 180px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.project-menu-panel button {
+  width: 100%;
+  justify-content: flex-start;
+}
+
 .workspace-shell {
   display: grid;
   grid-template-columns: 300px minmax(0, 1fr);
