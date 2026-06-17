@@ -47,3 +47,20 @@ test("front index reports critical script load failures instead of staying on lo
 test("front app marks the bootstrap as ready after rendering", () => {
 	assert.match(appSource, /window\.FRONT_BOOTSTRAP\.markReady\(\)/);
 });
+
+test("modeling detail input updates state without rerendering the full app on each keystroke", () => {
+	const inputListener = appSource.slice(
+		appSource.indexOf('document.addEventListener("input"'),
+		appSource.indexOf('document.addEventListener("wheel"')
+	);
+	assert.match(inputListener, /updateModelingField\(modelingField\)/);
+	assert.doesNotMatch(inputListener, /render\(\)/);
+});
+
+test("modeling list fields preserve structured JSON arrays instead of flattening objects", () => {
+	assert.match(appSource, /function fieldValueToText/);
+	assert.match(appSource, /function parseModelingFieldValue/);
+	assert.match(appSource, /JSON\.stringify\(value, null, 2\)/);
+	assert.match(appSource, /JSON\.parse\(value\)/);
+	assert.doesNotMatch(appSource, /fieldMeta\.kind === "list" \|\| fieldMeta\.kind === "referenceList"\) return Array\.isArray\(value\) \? value\.join/);
+});

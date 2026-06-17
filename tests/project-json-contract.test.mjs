@@ -239,6 +239,19 @@ test("equipment tree nodes referenced by corrective repair objects cannot be del
 	assert.match(blocked.state.project.validation.errors[0].message, /repairObject/);
 });
 
+test("equipment tree nodes referenced by inventory resources cannot be deleted", () => {
+	const project = validProjectJson();
+	project.tables.inventoryResources[0].relatedComponentId = "equipmentTree:任务计算机模块";
+	const state = createProjectJsonState({ projectJson: project });
+	const blocked = applyProjectRecordDelete(state, "equipmentTree", "equipmentTree:任务计算机模块");
+
+	assert.equal(blocked.deleted, false);
+	assert.equal(blocked.state.project.tables.equipmentTree.length, 1);
+	assert.equal(blocked.state.project.validation.status, "invalid");
+	assert.equal(blocked.state.project.validation.errors[0].rule, "deleteBlockedByReference");
+	assert.match(blocked.state.project.validation.errors[0].message, /relatedComponentId/);
+});
+
 test("workbook-style JSON import cleans raw values into normalized project JSON", () => {
 	const project = normalizeProjectJson({
 		projectId: "imported",

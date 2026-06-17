@@ -69,6 +69,15 @@ function createHarness(hash) {
 				}
 			});
 		},
+		changeWithClosest(selector, node) {
+			listeners.change({
+				target: {
+					closest(requestedSelector) {
+						return requestedSelector === selector ? node : null;
+					}
+				}
+			});
+		},
 		clickWithClosest(selector, node) {
 			listeners.click({
 				preventDefault() {},
@@ -174,6 +183,14 @@ test("editing one modeling page updates the shared project JSON seen by the othe
 	assert.match(harness.html(), /对海突击任务A/);
 
 	harness.inputWithClosest("[data-model-field]", {
+		value: "更新后的跨页面任务",
+		dataset: {
+			tableName: "missionProfiles",
+			recordId: "mission-1",
+			fieldName: "taskName"
+		}
+	});
+	harness.changeWithClosest("[data-model-field]", {
 		value: "更新后的跨页面任务",
 		dataset: {
 			tableName: "missionProfiles",

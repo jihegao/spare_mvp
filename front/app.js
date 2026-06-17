@@ -384,7 +384,11 @@ function getValidationSummary() {
 
 function fieldValueToText(value, fieldMeta) {
 	if (value === undefined || value === null) return "";
-	if (fieldMeta.kind === "list" || fieldMeta.kind === "referenceList") return Array.isArray(value) ? value.join(", ") : String(value);
+	if (fieldMeta.kind === "list" || fieldMeta.kind === "referenceList") {
+		if (!Array.isArray(value)) return String(value);
+		if (value.some((item) => item && typeof item === "object")) return JSON.stringify(value, null, 2);
+		return value.join(", ");
+	}
 	if (fieldMeta.kind === "object") return typeof value === "object" ? JSON.stringify(value, null, 2) : String(value);
 	return String(value);
 }
@@ -406,6 +410,14 @@ function parseModelingFieldValue(rawValue, fieldMeta) {
 	}
 	if (fieldMeta.kind === "boolean") return value === "true";
 	if (fieldMeta.kind === "list" || fieldMeta.kind === "referenceList") {
+		if (/^[\[{]/.test(value)) {
+			try {
+				const parsed = JSON.parse(value);
+				return Array.isArray(parsed) ? parsed : rawValue;
+			} catch {
+				return rawValue;
+			}
+		}
 		return value.split(/[,、\n]/).map((item) => item.trim()).filter(Boolean);
 	}
 	if (fieldMeta.kind === "object") {
@@ -1566,7 +1578,6 @@ document.addEventListener("input", (event) => {
 	const modelingField = event.target.closest("[data-model-field]");
 	if (modelingField) {
 		updateModelingField(modelingField);
-		render();
 		return;
 	}
 

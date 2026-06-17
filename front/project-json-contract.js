@@ -823,6 +823,11 @@ function findRecordReferences(projectJson, tableName, recordId) {
 	}
 
 	if (tableName === "equipmentTree") {
+		for (const inventory of project.tables.inventoryResources) {
+			if (inventory.relatedComponentId === record.id) {
+				references.push({ tableName: "inventoryResources", recordId: inventory.id, field: "relatedComponentId", value: record.id });
+			}
+		}
 		for (const activity of project.tables.supportActivities) {
 			if (record.nodeName && activity.repairObject === record.nodeName) {
 				references.push({ tableName: "supportActivities", recordId: activity.id, field: "repairObject", value: record.nodeName });
