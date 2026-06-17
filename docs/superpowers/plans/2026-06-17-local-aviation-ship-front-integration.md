@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Copy the aviation support Mesa asset and the ship_front prototype into this repository, then adapt the spare_mvp frontend into a four-level feature-page workbench with ontology context and aviation support visualization state.
+**Goal:** Copy the aviation support Mesa asset and the ship_front prototype into this repository, then adapt the spare_mvp frontend into a feature-page workbench with login, a post-login project list landing page, compact fourth-level tabs, aviation support visualization state, ship_front-aligned support modeling pages, ship_front-aligned Monte Carlo experiment pages, and `@备件_front`-aligned result analysis pages.
 
-**Architecture:** Keep source copies local and traceable, but run the product UI from focused spare_mvp modules. `src/spare_mvp_abm/aviation_support/` owns the local Mesa model copy and frame exporter; `vendor/ship_front/` preserves the referenced prototype; `front/feature-catalog.mjs`, `front/aviation-support-state.mjs`, `front/app.js`, and `front/styles.css` provide the static workbench.
+**Architecture:** Keep source copies local and traceable, but run the product UI from focused spare_mvp modules. `src/spare_mvp_abm/aviation_support/` owns the local Mesa model copy and frame exporter; `vendor/ship_front/` and `vendor/ship_front/备件_front/` preserve the referenced prototypes; `front/feature-catalog.mjs`, `front/aviation-support-state.mjs`, `front/app.js`, and `front/styles.css` provide the static workbench.
 
 **Tech Stack:** Static HTML/CSS/ES modules, Node test runner, Python 3.12, Mesa 3 through the existing Mesa runner.
 
@@ -191,19 +191,35 @@ Expected: PASS.
 - Modify: `front/app.js`
 - Modify: `front/styles.css`
 
-- [ ] **Step 1: Replace the six-view shell with the feature workbench**
+- [x] **Step 1: Replace the six-view shell with the feature workbench**
 
-`index.html` should expose `#app`, keep a visible loading fallback, and load `app.js` as an ES module. `app.js` should render a topbar, four-level navigation, a selected feature page, and a right-side ontology graph.
+`index.html` should expose `#app`, keep a visible loading fallback, and load `app.js` as an ES module. `app.js` should render login, the project list landing page, a topbar, three-level navigation, the selected feature page, and a clickable current-plan name that returns to the module's plan list. After selecting a project, the default workbench route is `spare-planning-experiment-plan-list`.
 
-- [ ] **Step 2: Borrow ship_front layout patterns without copying its monolith**
+- [x] **Step 2: Borrow ship_front layout patterns without copying its monolith**
 
-Use workbench patterns equivalent to `nav-page-layout`, `home-module-row`, `deck-modeling-nav`, `deck-modeling-content`, `experiment-subtabs`, and dense tables. Do not depend on `vendor/ship_front/app.js` at runtime.
+Use workbench patterns equivalent to `nav-page-layout`, `home-module-row`, `deck-modeling-nav`, `deck-modeling-content`, compact subtabs, and dense tables. Do not depend on `vendor/ship_front/app.js` at runtime. Do not render the old “xxx入口” card panel; modeling and experiment groups use short Chinese-only fourth-level tabs when multiple pages exist.
 
-- [ ] **Step 3: Connect the visualization page to aviation support state**
+- [x] **Step 3: Connect the visualization page to aviation support state**
 
-For pages with `component === "visual-simulation"`, render aircraft, mission, support resource, spare, job, and event views from the normalized aviation support state.
+For pages with `component === "visual-simulation"`, render aircraft, mission, support resource, spare, job, event, and ontology views from the normalized aviation support state. The visual simulation route should not show the outer “可视化实验启动与停止” title or the outer fourth-level navigation, because start/stop, scenario switching, and result display live inside the Mesa page.
 
-- [ ] **Step 4: Run frontend tests**
+- [x] **Step 4: Add experiment plan list and edit pages**
+
+`仿真实验方案管理` contains `方案列表` and `方案编辑` for both top-level modules. The plan list is the landing page and the page-head current plan control links back to it from tertiary feature pages.
+
+- [x] **Step 5: Align result analysis pages with @备件_front**
+
+Both top-level modules use dedicated analysis dashboards for `备件短板分析`, `飞机转场携行清单分析`, `任务可靠度评估`, and `停机因素分析`. These pages follow `vendor/ship_front/备件_front` by using a launch/filter strip, KPI cards, dense tables, compact chart panels, and decision-support notes. The carry-list page keeps optimization objective and constraint controls.
+
+- [x] **Step 6: Align support organization and activity pages with ship_front**
+
+`保障组织建模` renders a ship_front-style organization tree, resource/detail tables, and edit panel. `保障活动建模` renders activity plan tabs, a plan list, basic support activity table, and a node-network panel.
+
+- [x] **Step 7: Align Monte Carlo experiment page with ship_front**
+
+`蒙特卡洛实验配置` renders a ship_front-style experiment page with main tabs, `蒙特卡洛配置与评价` and `正交实验配置与分析` subtabs, experiment selection, simulation count, start/precheck actions, Monte Carlo evaluation rows, grouped sweep results, and an orthogonal-factor summary table.
+
+- [x] **Step 8: Run frontend tests**
 
 Run: `npm test`
 
