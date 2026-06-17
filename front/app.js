@@ -903,12 +903,15 @@ function renderEquipmentModeling(page) {
             <label>成功数 k<input data-path="components.0.kOutOfN.k" type="number" value="${htmlEscape(getPath(scenario, "components.0.kOutOfN.k"))}"></label>
             ${field("N中取K总数", "components.0.kOutOfN.n", "number")}
             ${field("启用 n 中取 k", "components.0.kOutOfN.enabled")}
-            ${field("故障模型", "components.0.failureModel")}
-            ${field("失效率", "components.0.failureRate", "number")}
-            ${field("MTBF(h)", "components.0.mtbfHours", "number")}
-            ${field("寿命限制(h)", "components.0.lifeLimitHours", "number")}
+            ${isFailurePage ? `
+              ${field("故障模型", "components.0.failureModel")}
+              ${field("失效率", "components.0.failureRate", "number")}
+              ${field("MTBF(h)", "components.0.mtbfHours", "number")}
+              ${field("寿命限制(h)", "components.0.lifeLimitHours", "number")}
+            ` : ""}
           </div>
         </div>
+        ${isFailurePage ? renderEquipmentFailureRmsFields(selected) : ""}
         <div class="detail-card network-card">
           <h4>组件属性表</h4>
           <div class="table-wrap">
@@ -933,6 +936,25 @@ function renderEquipmentModeling(page) {
           </div>
         </div>
       </section>
+    </div>
+  `;
+}
+
+function renderEquipmentFailureRmsFields(selected) {
+  return `
+    <div class="detail-card">
+      <div class="section-head">
+        <h3>RMS指标</h3>
+        <span>${htmlEscape(selected.name || "")}</span>
+      </div>
+      <div class="form-table-grid">
+        ${field("可靠度 R(t)", "components.0.rms.reliability", "number")}
+        ${field("维修度 M(t)", "components.0.rms.maintainability", "number")}
+        ${field("保障性 S(t)", "components.0.rms.supportability", "number")}
+        ${field("平均修复时间 MTTR(h)", "components.0.rms.mttrHours", "number")}
+        ${field("平均保障延迟 MLDT(h)", "components.0.rms.mldtHours", "number")}
+        ${field("固有可用度 Ai", "components.0.rms.availability", "number")}
+      </div>
     </div>
   `;
 }

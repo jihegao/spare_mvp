@@ -177,6 +177,27 @@ test("equipment modeling pages use ship front tree attributes with quantity and 
   assert.doesNotMatch(appSource, /<thead><tr><th>组件<\/th><th>备件类型<\/th><th>故障模型<\/th><th>失效率<\/th><th>MTBF<\/th><th>连接类型<\/th><\/tr><\/thead>/);
 });
 
+test("equipment failure page exposes RMS attributes separately from composition fields", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const equipmentSource = appSource.slice(
+    appSource.indexOf("function renderEquipmentModeling"),
+    appSource.indexOf("function renderReliabilityBlockDiagram")
+  );
+  assert.match(equipmentSource, /renderEquipmentFailureRmsFields\(selected\)/);
+  assert.match(equipmentSource, /function renderEquipmentFailureRmsFields/);
+  assert.match(equipmentSource, /RMS指标/);
+  assert.match(equipmentSource, /可靠度 R\(t\)/);
+  assert.match(equipmentSource, /维修度 M\(t\)/);
+  assert.match(equipmentSource, /保障性 S\(t\)/);
+  assert.match(equipmentSource, /平均修复时间 MTTR\(h\)/);
+  assert.match(equipmentSource, /固有可用度 Ai/);
+  assert.match(equipmentSource, /field\("可靠度 R\(t\)", "components\.0\.rms\.reliability", "number"\)/);
+  assert.match(equipmentSource, /field\("维修度 M\(t\)", "components\.0\.rms\.maintainability", "number"\)/);
+  assert.match(equipmentSource, /field\("保障性 S\(t\)", "components\.0\.rms\.supportability", "number"\)/);
+  assert.match(equipmentSource, /field\("平均修复时间 MTTR\(h\)", "components\.0\.rms\.mttrHours", "number"\)/);
+  assert.match(equipmentSource, /field\("固有可用度 Ai", "components\.0\.rms\.availability", "number"\)/);
+});
+
 test("frontend shell mounts a feature workbench rather than six static summary views", async () => {
   const html = await readFile(new URL("../front/index.html", import.meta.url), "utf8");
   assert.match(html, /id="app"/);

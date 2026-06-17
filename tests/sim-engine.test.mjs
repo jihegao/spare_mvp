@@ -53,6 +53,17 @@ test("default scenario includes equipment tree quantity and n-out-of-k attribute
   assert.equal(defaultScenario.components[1].parentId, "aircraft-root");
 });
 
+test("default scenario includes component RMS attributes", () => {
+  for (const component of defaultScenario.components) {
+    assert.equal(typeof component.rms.reliability, "number", `${component.id} reliability`);
+    assert.equal(typeof component.rms.maintainability, "number", `${component.id} maintainability`);
+    assert.equal(typeof component.rms.supportability, "number", `${component.id} supportability`);
+    assert.equal(typeof component.rms.mttrHours, "number", `${component.id} mttr`);
+    assert.equal(typeof component.rms.mldtHours, "number", `${component.id} mldt`);
+    assert.equal(typeof component.rms.availability, "number", `${component.id} availability`);
+  }
+});
+
 test("single simulation is reproducible for the same seed", () => {
   const scenario = cloneScenario(defaultScenario);
   const first = runSimulation(scenario, { seed: 77, steps: 36 });
