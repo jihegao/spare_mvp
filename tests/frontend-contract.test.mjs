@@ -92,7 +92,9 @@ test("support organization and activity pages follow ship_front tree table edito
   assert.match(appSource, /class="tree-container"/);
   assert.match(appSource, /class="detail-panel"/);
   assert.match(appSource, /保障组织结构树/);
-  assert.match(appSource, /保障资源建模/);
+  assert.match(appSource, /备件建模/);
+  assert.match(appSource, /保障人员建模/);
+  assert.match(appSource, /保障设备建模/);
   assert.match(appSource, /使用保障活动建模/);
   assert.match(appSource, /预防性维修活动建模/);
   assert.match(appSource, /修复性维修活动建模/);
@@ -113,6 +115,21 @@ test("support organization workbench does not render duplicate inner tabs", asyn
   );
   assert.doesNotMatch(supportOrgSource, /ship-front-tabs/);
   assert.doesNotMatch(supportOrgSource, /\["保障组织结构建模", "保障资源建模", "保障人员建模", "保障设备建模", "备件建模"\]/);
+});
+
+test("support organization fourth-level pages render matching resource panels", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const supportOrgSource = appSource.slice(
+    appSource.indexOf("function renderSupportOrganizationWorkbench"),
+    appSource.indexOf("function renderOrgTreeNode")
+  );
+  assert.match(supportOrgSource, /const activeResourceType =/);
+  assert.match(supportOrgSource, /const visibleResourceRows = activeResourceType/);
+  assert.match(supportOrgSource, /page\.name\.includes\("人员"\) \? "保障人员"/);
+  assert.match(supportOrgSource, /page\.name\.includes\("设备"\) \? "保障设备"/);
+  assert.match(supportOrgSource, /page\.name\.includes\("备件"\) \? "备件"/);
+  assert.match(supportOrgSource, /resourceRows\.filter\(\(row\) => row\.type === activeResourceType\)/);
+  assert.match(supportOrgSource, /<h3>\$\{activeTab === "保障组织结构建模" \? "组织详情" : activeTab\}<\/h3>/);
 });
 
 test("support activity workbench does not render duplicate inner tabs", async () => {

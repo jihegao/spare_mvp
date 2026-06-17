@@ -1023,6 +1023,8 @@ function renderSupportOrganizationWorkbench(page) {
     }))
   ]);
   const activeTab = page.name.includes("人员") ? "保障人员建模" : page.name.includes("设备") ? "保障设备建模" : page.name.includes("备件") ? "备件建模" : "保障组织结构建模";
+  const activeResourceType = page.name.includes("人员") ? "保障人员" : page.name.includes("设备") ? "保障设备" : page.name.includes("备件") ? "备件" : "";
+  const visibleResourceRows = activeResourceType ? resourceRows.filter((row) => row.type === activeResourceType) : resourceRows;
   return `
     <div class="ship-front-workbench">
       <div class="organization-layout">
@@ -1036,8 +1038,8 @@ function renderSupportOrganizationWorkbench(page) {
         <section class="detail-panel">
           <div class="detail-card">
             <div class="section-head">
-              <h3>${activeTab === "保障组织结构建模" ? "组织详情" : "保障资源建模"}</h3>
-              <span>对齐 ship_front 树 + 表格编辑结构</span>
+              <h3>${activeTab === "保障组织结构建模" ? "组织详情" : activeTab}</h3>
+              <span>${activeResourceType ? `${activeResourceType}资源清单` : "对齐 ship_front 树 + 表格编辑结构"}</span>
             </div>
             ${activeTab === "保障组织结构建模" ? `
               <div class="form-table-grid">
@@ -1055,7 +1057,7 @@ function renderSupportOrganizationWorkbench(page) {
               <div class="table-wrap">
                 <table>
                   <thead><tr><th>序号</th><th>组织节点</th><th>资源类型</th><th>名称</th><th>型号/专业</th><th>数量</th><th>适用机型</th><th>操作</th></tr></thead>
-                  <tbody>${resourceRows.map((row, index) => `
+                  <tbody>${visibleResourceRows.map((row, index) => `
                     <tr><td>${index + 1}</td><td>${row.scope}</td><td>${row.type}</td><td>${row.name}</td><td>${row.model}</td><td>${row.quantity}</td><td>${row.aircraft}</td><td><button type="button" class="inline-action">编辑</button></td></tr>
                   `).join("")}</tbody>
                 </table>
