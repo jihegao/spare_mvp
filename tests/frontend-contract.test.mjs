@@ -115,6 +115,16 @@ test("support organization workbench does not render duplicate inner tabs", asyn
   assert.doesNotMatch(supportOrgSource, /\["保障组织结构建模", "保障资源建模", "保障人员建模", "保障设备建模", "备件建模"\]/);
 });
 
+test("support activity workbench does not render duplicate inner tabs", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const supportActivitySource = appSource.slice(
+    appSource.indexOf("function renderSupportActivityWorkbench"),
+    appSource.indexOf("function renderExperimentPlanList")
+  );
+  assert.doesNotMatch(supportActivitySource, /ship-front-tabs/);
+  assert.doesNotMatch(supportActivitySource, /基本保障活动列表库/);
+});
+
 test("equipment modeling pages use ship front tree attributes with quantity and n-out-of-k", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   assert.match(appSource, /function renderEquipmentModeling\(page\)/);

@@ -1082,14 +1082,8 @@ function renderOrgTreeNode(node) {
 
 function renderSupportActivityWorkbench(page) {
   const activePlan = page.name.includes("预防") ? SUPPORT_ACTIVITY_PLANS[1] : page.name.includes("修复") ? SUPPORT_ACTIVITY_PLANS[2] : SUPPORT_ACTIVITY_PLANS[0];
-  const activityTabs = SUPPORT_ACTIVITY_PLANS.map((plan) => plan.type);
   return `
     <div class="ship-front-workbench">
-      <div class="ship-front-tabs">
-        ${activityTabs.concat(["基本保障活动列表库"]).map((tab) => `
-          <button type="button" class="${tab === activePlan.type ? "active" : ""}">${tab}</button>
-        `).join("")}
-      </div>
       <div class="comprehensive-layout">
         <aside class="card plan-tree-card">
           <h3>${activePlan.type.replace("建模", "列表")}</h3>
