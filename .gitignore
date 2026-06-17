@@ -1,4 +1,5 @@
 node_modules/
+.DS_Store
 .abm-mesa-env/
 .pytest_cache/
 __pycache__/
