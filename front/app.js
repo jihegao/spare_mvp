@@ -49,6 +49,7 @@ let selectedRoute = readRouteFromHash() || DEFAULT_ROUTE;
 let selectedFeatureId = readFeatureIdFromHash() || DEFAULT_FEATURE_ID;
 let selectedMesaView = "aircraft";
 let carryObjective = CARRY_OBJECTIVES[0].id;
+let experimentRunStatus = "当前";
 
 render();
 bindEvents();
@@ -112,6 +113,17 @@ function bindEvents() {
     const mesaViewButton = event.target.closest("[data-mesa-view]");
     if (mesaViewButton) {
       selectedMesaView = mesaViewButton.dataset.mesaView;
+      render();
+      return;
+    }
+
+    const monteCarloStartButton = event.target.closest("[data-mc-action='start']");
+    if (monteCarloStartButton) {
+      const page = getFeaturePageById(selectedFeatureId);
+      experimentRunStatus = "运行中";
+      selectedRoute = "workbench";
+      selectedFeatureId = getPlanListFeatureId(page.module);
+      location.hash = `feature=${selectedFeatureId}`;
       render();
       return;
     }
@@ -704,7 +716,7 @@ function renderExperimentPlanList(page) {
       scenarioId: scenario.scenarioId,
       steps: scenario.experiment.steps,
       samples: scenario.experiment.samples,
-      status: "当前"
+      status: experimentRunStatus
     },
     {
       name: "高强度出动保障验证",
@@ -933,90 +945,33 @@ function missionProgressWidth(mission) {
 }
 
 function renderMonteCarloConfig() {
-  const groups = monteCarloResult.groups || [];
-  const resultRows = buildMonteCarloEvaluationRows();
-  const orthogonalRows = [
-    ["故障率倍率", scenario.monteCarlo.failureRates.join(" / "), "影响装备故障注入强度"],
-    ["备件倍率", scenario.monteCarlo.spareMultipliers.join(" / "), "影响初始库存与补给缓冲"],
-    ["保障容量", scenario.monteCarlo.supportCapacities.join(" / "), "影响保障队伍与关键设备可用容量"]
-  ];
   return `
     <div class="mc-workbench">
-      <div class="mc-main-tabs" role="tablist" aria-label="仿真实验页签">
-        <button type="button" class="tab-btn">仿真实验参数</button>
-        <button type="button" class="tab-btn active">蒙特卡洛实验</button>
-      </div>
-      <div class="mc-layout">
-        <section class="mc-config-panel">
-          <div class="section-head">
-            <h3>蒙特卡洛实验</h3>
-            <span>配置与评价</span>
+      <section class="mc-config-panel mc-config-panel-single">
+        <div class="section-head">
+          <h3>蒙特卡洛实验参数配置</h3>
+          <span>样本 / seed / 扫参</span>
+        </div>
+        <div class="mc-form">
+          <label>选择仿真实验
+            <select>
+              <option selected>${scenario.experiment.name}</option>
+              <option>高强度出动保障验证</option>
+              <option>低库存敏感性实验</option>
+            </select>
+          </label>
+          <div class="mc-inline-fields">
+            <label>仿真次数<input id="mc-samples" data-path="experiment.samples" type="number" min="1" value="${scenario.experiment.samples}"></label>
+            <label>随机种子<input data-path="experiment.seed" type="number" value="${scenario.experiment.seed}"></label>
           </div>
-          <div class="mc-subtabs" role="tablist" aria-label="蒙特卡洛实验子页签">
-            <button type="button" class="tab-btn active">蒙特卡洛配置与评价</button>
-            <button type="button" class="tab-btn">正交实验配置与分析</button>
+          <label>故障率扫描<input value="${scenario.monteCarlo.failureRates.join(",")}"></label>
+          <label>备件倍数<input value="${scenario.monteCarlo.spareMultipliers.join(",")}"></label>
+          <label>保障容量<input value="${scenario.monteCarlo.supportCapacities.join(",")}"></label>
+          <div class="mc-action-row">
+            <button type="button" class="btn-primary" data-mc-action="start">启动</button>
           </div>
-          <div class="mc-form">
-            <label>选择仿真实验
-              <select>
-                <option selected>${scenario.experiment.name}</option>
-                <option>高强度出动保障压力测试</option>
-                <option>维修资源动态重配评估</option>
-              </select>
-            </label>
-            <div class="mc-inline-fields">
-              <label>仿真次数<input id="mc-samples" data-path="experiment.samples" type="number" min="1" value="${scenario.experiment.samples}"></label>
-              <label>随机种子<input data-path="experiment.seed" type="number" value="${scenario.experiment.seed}"></label>
-            </div>
-            <label>故障率扫描<input value="${scenario.monteCarlo.failureRates.join(",")}"></label>
-            <label>备件倍数<input value="${scenario.monteCarlo.spareMultipliers.join(",")}"></label>
-            <label>保障容量<input value="${scenario.monteCarlo.supportCapacities.join(",")}"></label>
-            <div class="mc-action-row">
-              <button type="button" class="btn-primary" data-mc-action="start">启动</button>
-              <button type="button">预检查</button>
-            </div>
-          </div>
-          <div class="mc-orthogonal-card">
-            <div class="section-head">
-              <h4>正交因素</h4>
-              <span>${orthogonalRows.length} 类因素</span>
-            </div>
-            <div class="table-wrap">
-              <table>
-                <thead><tr><th>因素</th><th>水平</th><th>说明</th></tr></thead>
-                <tbody>${orthogonalRows.map((row) => `<tr><td>${row[0]}</td><td>${row[1]}</td><td>${row[2]}</td></tr>`).join("")}</tbody>
-              </table>
-            </div>
-          </div>
-        </section>
-        <section class="mc-result-panel">
-          <div class="section-head">
-            <h3>蒙特卡洛评估结果</h3>
-            <span>${monteCarloResult.runs.length} 次样本</span>
-          </div>
-          <div class="mc-result-cards">
-            ${resultRows.map((row) => `
-              <div class="metric-card">
-                <span>${row.name}</span>
-                <strong>${row.value}</strong>
-                <em>目标值 ${row.target}</em>
-              </div>
-            `).join("")}
-          </div>
-          <div class="table-wrap mc-evaluation-table">
-            <table>
-              <thead><tr><th>序号</th><th>指标名称</th><th>蒙特卡洛评估值</th><th>目标值</th></tr></thead>
-              <tbody>${resultRows.map((row, index) => `<tr><td>${index + 1}</td><td>${row.name}</td><td>${row.value}</td><td>${row.target}</td></tr>`).join("")}</tbody>
-            </table>
-          </div>
-          <div class="table-wrap mc-group-table">
-            <table>
-              <thead><tr><th>参数组</th><th>样本数</th><th>任务可靠度</th><th>战备完好率</th><th>短缺事件</th></tr></thead>
-              <tbody>${groups.map((group) => `<tr><td>${group.group}</td><td>${group.count}</td><td>${pct(group.mission_success_rate.mean)}</td><td>${pct(group.ready_rate.mean)}</td><td>${fixed(group.shortage_events.mean, 1)}</td></tr>`).join("")}</tbody>
-            </table>
-          </div>
-        </section>
-      </div>
+        </div>
+      </section>
     </div>
   `;
 }
@@ -1041,16 +996,35 @@ function averageGroupMetric(metric) {
 }
 
 function renderMonteCarloResults() {
+  const groups = monteCarloResult.groups || [];
+  const resultRows = buildMonteCarloEvaluationRows();
   return `
-    <div class="section-head">
-      <h3>蒙特卡洛实验结果</h3>
-      <span>${monteCarloResult.runs.length} 个样本</span>
-    </div>
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th>参数组</th><th>样本数</th><th>任务可靠度</th><th>战备完好率</th><th>短缺事件</th></tr></thead>
-        <tbody>${monteCarloResult.groups.map((group) => `<tr><td>${group.group}</td><td>${group.count}</td><td>${pct(group.mission_success_rate.mean)}</td><td>${pct(group.ready_rate.mean)}</td><td>${fixed(group.shortage_events.mean, 1)}</td></tr>`).join("")}</tbody>
-      </table>
+    <div class="mc-result-panel">
+      <div class="section-head">
+        <h3>蒙特卡洛评估结果</h3>
+        <span>${monteCarloResult.runs.length} 个样本</span>
+      </div>
+      <div class="mc-result-cards">
+        ${resultRows.map((row) => `
+          <div class="metric-card">
+            <span>${row.name}</span>
+            <strong>${row.value}</strong>
+            <em>目标值 ${row.target}</em>
+          </div>
+        `).join("")}
+      </div>
+      <div class="table-wrap mc-evaluation-table">
+        <table>
+          <thead><tr><th>序号</th><th>指标名称</th><th>蒙特卡洛评估值</th><th>目标值</th></tr></thead>
+          <tbody>${resultRows.map((row, index) => `<tr><td>${index + 1}</td><td>${row.name}</td><td>${row.value}</td><td>${row.target}</td></tr>`).join("")}</tbody>
+        </table>
+      </div>
+      <div class="table-wrap mc-group-table">
+        <table>
+          <thead><tr><th>参数组</th><th>样本数</th><th>任务可靠度</th><th>战备完好率</th><th>短缺事件</th></tr></thead>
+          <tbody>${groups.map((group) => `<tr><td>${group.group}</td><td>${group.count}</td><td>${pct(group.mission_success_rate.mean)}</td><td>${pct(group.ready_rate.mean)}</td><td>${fixed(group.shortage_events.mean, 1)}</td></tr>`).join("")}</tbody>
+        </table>
+      </div>
     </div>
   `;
 }

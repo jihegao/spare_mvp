@@ -217,7 +217,7 @@ Both top-level modules use dedicated analysis dashboards for `备件短板分析
 
 - [x] **Step 7: Align Monte Carlo experiment page with ship_front**
 
-`蒙特卡洛实验配置` renders a ship_front-style experiment page with main tabs, `蒙特卡洛配置与评价` and `正交实验配置与分析` subtabs, experiment selection, simulation count, start/precheck actions, Monte Carlo evaluation rows, grouped sweep results, and an orthogonal-factor summary table.
+`蒙特卡洛实验配置` renders a focused Monte Carlo parameter form with experiment selection, simulation count, seed, sweep parameters, and a single start action. Starting the experiment returns to the experiment-plan list and marks the current plan as `运行中`. Monte Carlo evaluation rows and grouped sweep results render only under `结果分析 / 蒙特卡洛实验结果展示`; the configuration page no longer shows main tabs, orthogonal analysis, precheck, or result panels.
 
 - [x] **Step 8: Run frontend tests**
 

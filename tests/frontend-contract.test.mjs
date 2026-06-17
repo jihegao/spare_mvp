@@ -135,24 +135,34 @@ test("monte carlo configuration drives the displayed result sample count", async
   assert.match(appSource, /monteCarloResult = runMonteCarlo\(scenario\)/);
 });
 
-test("monte carlo experiment page follows ship_front configuration and evaluation layout", async () => {
+test("monte carlo experiment page is a launch-only parameter form and returns to running plan list", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const styleSource = await readFile(new URL("../front/styles.css", import.meta.url), "utf8");
   assert.match(appSource, /class="mc-workbench"/);
-  assert.match(appSource, /class="mc-main-tabs"/);
-  assert.match(appSource, /仿真实验参数/);
-  assert.match(appSource, /蒙特卡洛配置与评价/);
-  assert.match(appSource, /正交实验配置与分析/);
+  assert.match(appSource, /蒙特卡洛实验参数配置/);
   assert.match(appSource, /选择仿真实验/);
   assert.match(appSource, /仿真次数/);
+  assert.match(appSource, /data-mc-action="start"/);
+  assert.match(appSource, /experimentRunStatus = "运行中"/);
+  assert.match(appSource, /selectedFeatureId = getPlanListFeatureId\(page\.module\)/);
+  assert.match(appSource, /status: experimentRunStatus/);
+  assert.doesNotMatch(appSource, /class="mc-main-tabs"/);
+  assert.doesNotMatch(appSource, /class="mc-subtabs"/);
+  assert.doesNotMatch(appSource, /正交实验配置与分析/);
+  assert.doesNotMatch(appSource, /正交因素/);
+  assert.doesNotMatch(appSource, /预检查/);
+  assert.match(styleSource, /\.mc-workbench/);
+  assert.match(styleSource, /\.mc-config-panel/);
+});
+
+test("monte carlo evaluation result is rendered in result analysis page", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  assert.match(appSource, /function renderMonteCarloResults/);
   assert.match(appSource, /蒙特卡洛评估结果/);
   assert.match(appSource, /蒙特卡洛评估值/);
   assert.match(appSource, /目标值/);
-  assert.match(appSource, /正交因素/);
-  assert.match(appSource, /data-mc-action="start"/);
-  assert.match(styleSource, /\.mc-workbench/);
-  assert.match(styleSource, /\.mc-subtabs/);
-  assert.match(styleSource, /\.mc-result-panel/);
+  assert.match(appSource, /mc-result-cards/);
+  assert.match(appSource, /mc-evaluation-table/);
 });
 
 test("project ontology covers modeling objects experiments and computation artifacts", () => {
