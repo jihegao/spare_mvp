@@ -111,6 +111,8 @@ let currentProject = DEMO_PROJECTS[0];
 let selectedRoute = readRouteFromHash() || DEFAULT_ROUTE;
 let selectedFeatureId = readFeatureIdFromHash() || DEFAULT_FEATURE_ID;
 let selectedMesaView = "aircraft";
+let isOntologyFullscreen = false;
+let selectedOntologyItem = null;
 let carryObjective = CARRY_OBJECTIVES[0].id;
 let experimentRunStatus = "当前";
 let isProjectMenuOpen = false;
@@ -186,6 +188,30 @@ function bindEvents() {
     const mesaViewButton = event.target.closest("[data-mesa-view]");
     if (mesaViewButton) {
       selectedMesaView = mesaViewButton.dataset.mesaView;
+      render();
+      return;
+    }
+
+    const ontologyFullscreenButton = event.target.closest("[data-ontology-fullscreen]");
+    if (ontologyFullscreenButton) {
+      isOntologyFullscreen = !isOntologyFullscreen;
+      selectedMesaView = "ontology";
+      render();
+      return;
+    }
+
+    const ontologyNode = event.target.closest("[data-ontology-node-id]");
+    if (ontologyNode) {
+      selectedOntologyItem = { type: "node", id: ontologyNode.dataset.ontologyNodeId };
+      selectedMesaView = "ontology";
+      render();
+      return;
+    }
+
+    const ontologyEdge = event.target.closest("[data-ontology-edge-id]");
+    if (ontologyEdge) {
+      selectedOntologyItem = { type: "edge", id: ontologyEdge.dataset.ontologyEdgeId };
+      selectedMesaView = "ontology";
       render();
       return;
     }
@@ -447,7 +473,7 @@ function renderMainComponent(page) {
   return renderTaskModel(page);
 }
 
-function renderOntologySvg(ontology, focusSet) {
+function renderOntologySvg(ontology, focusSet, selectedItem = null) {
   const positions = buildOntologyPositions(ontology.nodes);
   const bands = ontologyBands();
   const clusters = buildOntologyClusters(ontology.nodes);
@@ -475,18 +501,22 @@ function renderOntologySvg(ontology, focusSet) {
           const from = positions[edgeItem.from];
           const to = positions[edgeItem.to];
           const isFocused = focusSet.has(edgeItem.from) || focusSet.has(edgeItem.to);
+          const isSelected = selectedItem?.type === "edge" && selectedItem.id === edgeItem.id;
           const path = edgePath(from, to);
           return `
-            <path class="${isFocused ? "focused" : ""}" d="${path}"></path>
-            <text class="edge-label ${isFocused ? "focused" : ""}" x="${(from.x + to.x) / 2 + 42}" y="${(from.y + to.y) / 2 - 5}">${edgeItem.label}</text>
+            <g class="ontology-edge ${isSelected ? "selected" : ""}" data-ontology-edge-id="${htmlEscape(edgeItem.id)}" role="button" tabindex="0" aria-label="${htmlEscape(`${nodeLabel(edgeItem.from)} ${edgeItem.label} ${nodeLabel(edgeItem.to)}`)}">
+              <path class="${isFocused ? "focused" : ""}" d="${path}"></path>
+              <text class="edge-label ${isFocused ? "focused" : ""}" x="${(from.x + to.x) / 2 + 42}" y="${(from.y + to.y) / 2 - 5}">${edgeItem.label}</text>
+            </g>
           `;
         }).join("")}
       </g>
       <g class="ontology-nodes">
         ${ontology.nodes.map((node) => {
           const position = positions[node.id];
+          const isSelected = selectedItem?.type === "node" && selectedItem.id === node.id;
           return `
-            <g class="ontology-node ${node.group} ${focusSet.has(node.id) ? "focused" : ""}" transform="translate(${position.x}, ${position.y - 22})">
+            <g class="ontology-node ${node.group} ${focusSet.has(node.id) ? "focused" : ""} ${isSelected ? "selected" : ""}" data-ontology-node-id="${htmlEscape(node.id)}" role="button" tabindex="0" aria-label="${htmlEscape(node.label)}" transform="translate(${position.x}, ${position.y - 22})">
               <rect width="208" height="44" rx="7"></rect>
               <text x="12" y="27">${node.label}</text>
             </g>
@@ -1357,8 +1387,9 @@ function renderExperimentPlanEditor(page) {
 function renderVisualSimulation(page) {
   const state = normalizeAviationSupportState(AVIATION_SUPPORT_DEMO_STATE);
   const activeView = ["aircraft", "mission", "support", "ontology"].includes(selectedMesaView) ? selectedMesaView : "aircraft";
+  const shellClass = activeView === "ontology" && isOntologyFullscreen ? "mesa-visual-shell ontology-fullscreen" : "mesa-visual-shell";
   return `
-    <div class="mesa-visual-shell">
+    <div class="${shellClass}">
       <div class="mesa-visual-header">
         <div>
           <div class="breadcrumb">Mesa ABM / aviation_support</div>
@@ -1378,6 +1409,7 @@ function renderVisualSimulation(page) {
           <button type="button" class="btn-primary" data-mesa-control="play">运行</button>
           <button type="button" data-mesa-control="step">单步</button>
           <button type="button" data-mesa-control="reset">重置</button>
+          ${activeView === "ontology" ? `<button type="button" data-ontology-fullscreen>${isOntologyFullscreen ? "退出全屏" : "全屏查看"}</button>` : ""}
         </div>
       </div>
       <div class="kpi-strip">
@@ -1489,12 +1521,13 @@ function renderMesaSupportPanel(state) {
 function renderMesaOntologyPanel() {
   return `
     <div class="mesa-ontology-stage">
-      ${renderOntologySvg(PROJECT_ONTOLOGY, new Set(["task", "equipment", "support-activity", "experiment-plan", "simulation-run", "metric-time-series"]))}
+      ${renderOntologySvg(PROJECT_ONTOLOGY, new Set(["task", "equipment", "support-activity", "experiment-plan", "simulation-run", "metric-time-series"]), selectedOntologyItem)}
     </div>
   `;
 }
 
 function renderMesaOntologySidePanel() {
+  if (selectedOntologyItem) return renderMesaOntologyDetailPanel(selectedOntologyItem);
   const groups = Object.entries(ONTOLOGY_GROUPS);
   return `
     <div class="section-head">
@@ -1507,6 +1540,68 @@ function renderMesaOntologySidePanel() {
       return `<details class="ontology-group" ${groupId === "modeling-object" ? "open" : ""}><summary class="ontology-group-head"><strong>${meta.label}</strong><span>${count}</span></summary><p>${meta.summary}</p></details>`;
     }).join("")}
   `;
+}
+
+function renderMesaOntologyDetailPanel(item) {
+  const nodeItem = item.type === "node" ? PROJECT_ONTOLOGY.nodes.find((node) => node.id === item.id) : null;
+  const edgeItem = item.type === "edge" ? PROJECT_ONTOLOGY.edges.find((edge) => edge.id === item.id) : null;
+  if (nodeItem) return renderOntologyNodeDetail(nodeItem);
+  if (edgeItem) return renderOntologyEdgeDetail(edgeItem);
+  selectedOntologyItem = null;
+  return renderMesaOntologySidePanel();
+}
+
+function renderOntologyNodeDetail(nodeItem) {
+  const group = ONTOLOGY_GROUPS[nodeItem.group] || {};
+  const relatedEdges = PROJECT_ONTOLOGY.edges.filter((edge) => edge.from === nodeItem.id || edge.to === nodeItem.id);
+  return `
+    <div class="section-head">
+      <h3>属性详情</h3>
+      <span>对象</span>
+    </div>
+    <div class="event info"><strong>${htmlEscape(nodeItem.label)}</strong>${htmlEscape(nodeItem.description)}</div>
+    <dl class="ontology-detail-list">
+      ${detailRow("对象 ID", nodeItem.id)}
+      ${detailRow("名称", nodeItem.label)}
+      ${detailRow("所属层", group.label || nodeItem.group)}
+      ${detailRow("分组", nodeItem.layout?.cluster || "-")}
+      ${detailRow("关联关系", `${relatedEdges.length} 条`)}
+    </dl>
+    <h4>相关关系</h4>
+    <div class="stack-list">
+      ${relatedEdges.slice(0, 8).map((edge) => `<button type="button" class="ontology-related-row" data-ontology-edge-id="${htmlEscape(edge.id)}">${htmlEscape(nodeLabel(edge.from))} ${htmlEscape(edge.label)} ${htmlEscape(nodeLabel(edge.to))}</button>`).join("")}
+    </div>
+  `;
+}
+
+function renderOntologyEdgeDetail(edgeItem) {
+  return `
+    <div class="section-head">
+      <h3>属性详情</h3>
+      <span>关系</span>
+    </div>
+    <div class="event info"><strong>${htmlEscape(edgeItem.label)}</strong>${htmlEscape(nodeLabel(edgeItem.from))} -> ${htmlEscape(nodeLabel(edgeItem.to))}</div>
+    <dl class="ontology-detail-list">
+      ${detailRow("关系 ID", edgeItem.id)}
+      ${detailRow("关系名称", edgeItem.label)}
+      ${detailRow("起点对象", `${nodeLabel(edgeItem.from)} / ${edgeItem.from}`)}
+      ${detailRow("终点对象", `${nodeLabel(edgeItem.to)} / ${edgeItem.to}`)}
+      ${detailRow("语义", `${nodeLabel(edgeItem.from)} ${edgeItem.label} ${nodeLabel(edgeItem.to)}`)}
+    </dl>
+    <h4>端点对象</h4>
+    <div class="stack-list">
+      <button type="button" class="ontology-related-row" data-ontology-node-id="${htmlEscape(edgeItem.from)}">${htmlEscape(nodeLabel(edgeItem.from))}</button>
+      <button type="button" class="ontology-related-row" data-ontology-node-id="${htmlEscape(edgeItem.to)}">${htmlEscape(nodeLabel(edgeItem.to))}</button>
+    </div>
+  `;
+}
+
+function detailRow(label, value) {
+  return `<div><dt>${htmlEscape(label)}</dt><dd>${htmlEscape(String(value))}</dd></div>`;
+}
+
+function nodeLabel(id) {
+  return PROJECT_ONTOLOGY.nodes.find((item) => item.id === id)?.label || id;
 }
 
 function missionProgressWidth(mission) {

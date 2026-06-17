@@ -1082,6 +1082,32 @@ tr:last-child td {
   gap: 12px;
 }
 
+.mesa-visual-shell.ontology-fullscreen {
+  position: fixed;
+  inset: 14px;
+  z-index: 1000;
+  overflow: auto;
+  padding: 16px;
+  border: 1px solid #b8c7dc;
+  border-radius: 8px;
+  background: #f8fafc;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.28);
+}
+
+.mesa-visual-shell.ontology-fullscreen .mesa-visual-grid {
+  grid-template-columns: minmax(720px, 1fr) 360px;
+  min-height: calc(100vh - 210px);
+}
+
+.mesa-visual-shell.ontology-fullscreen .mesa-stage-panel,
+.mesa-visual-shell.ontology-fullscreen .mesa-side-panel {
+  min-height: calc(100vh - 230px);
+}
+
+.mesa-visual-shell.ontology-fullscreen .mesa-ontology-stage .ontology-svg {
+  min-height: calc(100vh - 260px);
+}
+
 .mesa-visual-header,
 .mesa-toolbar {
   display: flex;
@@ -1285,6 +1311,45 @@ tr:last-child td {
   min-height: 560px;
 }
 
+.ontology-detail-list {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 16px;
+}
+
+.ontology-detail-list div {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+}
+
+.ontology-detail-list dt {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.ontology-detail-list dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.ontology-related-row {
+  width: 100%;
+  justify-content: flex-start;
+  min-height: 34px;
+  border-color: #d8e4ff;
+  background: #fff;
+  text-align: left;
+  color: var(--ink);
+}
+
 .aircraft-board {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(82px, 1fr));
@@ -1483,9 +1548,36 @@ tr:last-child td {
   marker-end: url("#arrow-head");
 }
 
+.ontology-edge,
+.ontology-node {
+  cursor: pointer;
+}
+
+.ontology-edge:hover path,
+.ontology-edge:focus path {
+  stroke: #0f5cbf;
+  stroke-width: 2.2;
+}
+
+.ontology-edge:hover .edge-label,
+.ontology-edge:focus .edge-label {
+  fill: #0f5cbf;
+  font-weight: 800;
+}
+
 .ontology-edges path.focused {
   stroke: var(--primary);
   stroke-width: 2.1;
+}
+
+.ontology-edge.selected path {
+  stroke: #d83b01;
+  stroke-width: 3;
+}
+
+.ontology-edge.selected .edge-label {
+  fill: #a83a00;
+  font-weight: 800;
 }
 
 .ontology-edges marker path,
@@ -1530,6 +1622,22 @@ tr:last-child td {
   fill: #eaf1ff;
   stroke: var(--primary);
   stroke-width: 2.2;
+}
+
+.ontology-node:hover rect,
+.ontology-node:focus rect {
+  stroke: #0f5cbf;
+  stroke-width: 2.4;
+}
+
+.ontology-node.selected rect {
+  fill: #fff7ed;
+  stroke: #d83b01;
+  stroke-width: 3;
+}
+
+.ontology-node.selected text {
+  fill: #7c2d12;
 }
 
 .ontology-inspector {

@@ -50,6 +50,11 @@ python3 /Users/gaojihe/.codex/skills/ontology-mesa-modeling/scripts/normalize_on
 
 需要 Python 3.10+。本机验证使用 Python 3.12 和 `mesa-abm-skill` runner：
 
+`SmokeSpareMvpModel` 的场景输入来自前端数据模型快照
+`scenarios/frontend-project-smoke/project.json`。两个 smoke experiment 只传
+`projectJsonPath` 和前端 Monte Carlo 风格的 sweep 参数，不再使用
+`equipment_count`、`initial_spare_stock` 等旧标量输入。
+
 ```bash
 /opt/homebrew/bin/python3.12 /Users/gaojihe/.codex/skills/mesa-abm-skill/scripts/run_mesa_experiment.py \
   --model src/spare_mvp_abm/smoke_model.py \

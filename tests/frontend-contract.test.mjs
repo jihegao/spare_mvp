@@ -582,3 +582,22 @@ test("visual simulation page embeds Mesa visualization and ontology views", asyn
   assert.doesNotMatch(appSource, /return `<div>\$\{breadcrumb\}<\/div>`;/);
   assert.doesNotMatch(appSource, /可视化实验启动与停止<\/h2>/);
 });
+
+test("mesa ontology view supports fullscreen toggle and selectable graph details", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const styleSource = await readFile(new URL("../front/styles.css", import.meta.url), "utf8");
+
+  assert.match(appSource, /data-ontology-fullscreen/);
+  assert.match(appSource, /ontology-fullscreen/);
+  assert.match(appSource, /selectedOntologyItem/);
+  assert.match(appSource, /data-ontology-node-id/);
+  assert.match(appSource, /data-ontology-edge-id/);
+  assert.match(appSource, /renderMesaOntologyDetailPanel/);
+  assert.match(appSource, /renderOntologyNodeDetail/);
+  assert.match(appSource, /renderOntologyEdgeDetail/);
+  assert.match(appSource, /属性详情/);
+  assert.match(styleSource, /\.mesa-visual-shell\.ontology-fullscreen/);
+  assert.match(styleSource, /\.ontology-detail-list/);
+  assert.match(styleSource, /\.ontology-node\.selected rect/);
+  assert.match(styleSource, /\.ontology-edge\.selected path/);
+});

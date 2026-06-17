@@ -1,0 +1,105 @@
+{
+  "scenarioId": "carrier-turnaround-demo",
+  "activeModule": "sparePlanning",
+  "experiment": {
+    "name": "舰基飞机保障原型实验",
+    "steps": 48,
+    "samples": 24,
+    "seed": 20260617,
+    "parallelCores": 4,
+    "stopCondition": "达到样本数或备件满足率稳定"
+  },
+  "missionProfile": {
+    "profileId": "MP-01",
+    "profileType": "多机集群任务",
+    "repeatCycleHours": 6,
+    "endCondition": "完成 8 个任务波次"
+  },
+  "basicMission": {
+    "missionId": "BM-01",
+    "name": "近海巡逻任务",
+    "taskNo": "BM-01",
+    "taskArea": "近海巡逻区",
+    "equipmentType": "A-Prototype",
+    "equipmentQuantity": 5,
+    "taskDurationMinutes": 180,
+    "preparationMinutes": 45,
+    "cancelMinutes": 20,
+    "supportActivityName": "飞行前保障",
+    "successPoint": "任务区巡逻完成",
+    "startHour": 1,
+    "returnRatio": 0.35,
+    "priority": 1,
+    "minRequiredSorties": 5
+  },
+  "missionPhases": [
+    { "id": "phase-standby", "name": "待命", "state": "idle", "transitionCondition": "任务波次触发", "limitHours": 1 },
+    { "id": "phase-prep", "name": "飞行前准备", "state": "preparing", "transitionCondition": "保障完成", "limitHours": 2 },
+    { "id": "phase-sortie", "name": "出动执行", "state": "sortie", "transitionCondition": "任务完成或故障", "limitHours": 4 },
+    { "id": "phase-recovery", "name": "回收检查", "state": "ready", "transitionCondition": "检查完成", "limitHours": 1 }
+  ],
+  "combatUnit": {
+    "unitId": "CU-01",
+    "groupName": "第一出动编队",
+    "basicTaskName": "近海巡逻任务",
+    "equipmentType": "舰载机",
+    "quantity": 8,
+    "requiredCount": 5,
+    "deploymentLocation": "甲板机场",
+    "standbyCount": 3,
+    "members": [
+      { "aircraftNo": "A-01", "model": "A-Prototype", "role": "长机", "status": "执行", "remainingLifeHours": 180, "deploymentLocation": "甲板机场" },
+      { "aircraftNo": "A-02", "model": "A-Prototype", "role": "僚机", "status": "执行", "remainingLifeHours": 176, "deploymentLocation": "甲板机场" },
+      { "aircraftNo": "A-03", "model": "A-Prototype", "role": "僚机", "status": "执行", "remainingLifeHours": 169, "deploymentLocation": "甲板机场" },
+      { "aircraftNo": "A-04", "model": "A-Prototype", "role": "僚机", "status": "执行", "remainingLifeHours": 164, "deploymentLocation": "甲板机场" },
+      { "aircraftNo": "A-05", "model": "A-Prototype", "role": "僚机", "status": "执行", "remainingLifeHours": 158, "deploymentLocation": "甲板机场" },
+      { "aircraftNo": "A-06", "model": "A-Prototype", "role": "备份", "status": "备用", "remainingLifeHours": 171, "deploymentLocation": "甲板机场" },
+      { "aircraftNo": "A-07", "model": "A-Prototype", "role": "备份", "status": "备用", "remainingLifeHours": 166, "deploymentLocation": "甲板机场" },
+      { "aircraftNo": "A-08", "model": "A-Prototype", "role": "备份", "status": "备用", "remainingLifeHours": 152, "deploymentLocation": "甲板机场" }
+    ]
+  },
+  "equipment": {
+    "model": "A-Prototype",
+    "quantity": 8,
+    "deploymentLocation": "甲板机场",
+    "initialReady": 8,
+    "minRequiredSorties": 5
+  },
+  "components": [
+    { "id": "engine", "name": "发动机", "parentId": "aircraft-root", "spareType": "发动机备件", "failureModel": "随机", "failureRate": 0.07, "mtbfHours": 80, "lifeLimitHours": 220, "connectionType": "串联", "quantity": 2 },
+    { "id": "avionics", "name": "航电系统", "parentId": "aircraft-root", "spareType": "航电模块", "failureModel": "退化", "failureRate": 0.04, "mtbfHours": 110, "lifeLimitHours": 260, "connectionType": "并联", "quantity": 2 },
+    { "id": "hydraulic", "name": "液压组件", "parentId": "aircraft-root", "spareType": "液压备件", "failureModel": "寿命", "failureRate": 0.06, "mtbfHours": 95, "lifeLimitHours": 200, "connectionType": "备用", "quantity": 1 }
+  ],
+  "supportNodes": [
+    {
+      "id": "deck-airport",
+      "name": "甲板机场",
+      "nodeType": "机场",
+      "personnelCapacity": 5,
+      "equipmentCapacity": 3,
+      "policy": "优先保障高优先级任务",
+      "inventory": { "发动机备件": 4, "航电模块": 6, "液压备件": 5 }
+    },
+    {
+      "id": "rear-stock",
+      "name": "后方保障点",
+      "nodeType": "保障点",
+      "personnelCapacity": 3,
+      "equipmentCapacity": 2,
+      "policy": "短缺时 2 tick 后调运",
+      "inventory": { "发动机备件": 6, "航电模块": 6, "液压备件": 6 }
+    }
+  ],
+  "supportActivities": [
+    { "id": "preflight", "activityType": "飞行前保障", "durationHours": 1, "requiredPersonnel": 2, "requiredDevices": 1, "spareType": null, "spareQuantity": 0, "priority": 1 },
+    { "id": "corrective", "activityType": "修复性维修", "durationHours": 3, "requiredPersonnel": 3, "requiredDevices": 1, "spareType": "发动机备件", "spareQuantity": 1, "priority": 1 },
+    { "id": "preventive", "activityType": "预防性维修", "durationHours": 2, "requiredPersonnel": 1, "requiredDevices": 1, "spareType": "液压备件", "spareQuantity": 1, "priority": 2 },
+    { "id": "turnaround", "activityType": "再次出动准备", "durationHours": 2, "requiredPersonnel": 2, "requiredDevices": 1, "spareType": null, "spareQuantity": 0, "priority": 1 }
+  ],
+  "monteCarlo": {
+    "failureRates": [0.04, 0.08, 0.12],
+    "spareMultipliers": [0.75, 1, 1.25],
+    "supportCapacities": [2, 3],
+    "minRequiredSorties": [4, 5, 6]
+  }
+}
