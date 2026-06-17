@@ -27,6 +27,15 @@ test("default scenario includes combat unit member aircraft", () => {
   assert.deepEqual(defaultScenario.combatUnit.members.slice(0, 2).map((member) => member.aircraftNo), ["A-01", "A-02"]);
 });
 
+test("default scenario includes basic mission modeling attributes", () => {
+  assert.equal(defaultScenario.basicMission.name, "近海巡逻任务");
+  assert.equal(defaultScenario.basicMission.taskNo, "BM-01");
+  assert.equal(defaultScenario.basicMission.taskArea, "近海巡逻区");
+  assert.equal(defaultScenario.basicMission.equipmentQuantity, 5);
+  assert.equal(defaultScenario.basicMission.taskDurationMinutes, 180);
+  assert.equal(defaultScenario.basicMission.supportActivityName, "飞行前保障");
+});
+
 test("single simulation is reproducible for the same seed", () => {
   const scenario = cloneScenario(defaultScenario);
   const first = runSimulation(scenario, { seed: 77, steps: 36 });

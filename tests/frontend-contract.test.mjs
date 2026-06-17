@@ -160,6 +160,19 @@ test("combat unit page follows ship front basic unit modeling structure", async 
   assert.doesNotMatch(appSource, /基本作战单元建模字段[\s\S]*任务类型/);
 });
 
+test("basic mission page follows ship front basic task modeling structure", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  assert.match(appSource, /if \(page\.name === "基本任务建模"\) return renderBasicMissionModeling\(page\)/);
+  assert.match(appSource, /function renderBasicMissionModeling\(page\)/);
+  assert.match(appSource, /基本任务结构树/);
+  assert.match(appSource, /基本任务信息编辑/);
+  assert.match(appSource, /任务编号/);
+  assert.match(appSource, /任务时长（分钟）/);
+  assert.match(appSource, /使用保障活动/);
+  assert.match(appSource, /任务区域描述/);
+  assert.doesNotMatch(appSource, /基本任务建模字段[\s\S]*任务类型/);
+});
+
 test("topbar omits run and export actions", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   assert.doesNotMatch(appSource, /运行单次仿真/);

@@ -381,6 +381,7 @@ function renderMainComponent(page) {
   if (page.component === "scenario-switch") return renderScenarioSwitch();
   if (page.name === "内置场景") return renderBuiltInScenario(page);
   if (page.name === "基本作战单元建模") return renderCombatUnitModeling(page);
+  if (page.name === "基本任务建模") return renderBasicMissionModeling(page);
   return renderTaskModel(page);
 }
 
@@ -629,6 +630,68 @@ function renderCombatUnitModeling(page) {
                     <td>${htmlEscape(member.deploymentLocation)}</td>
                   </tr>
                 `).join("") || "<tr><td colspan='5'>当前无备用机</td></tr>"}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderBasicMissionModeling(page) {
+  const mission = scenario.basicMission;
+  const phases = scenario.missionPhases || [];
+  return `
+    <div class="section-head">
+      <h3>${htmlEscape(page.name)}</h3>
+      <span>${page.dataObjects.join(" / ")}</span>
+    </div>
+    <div class="organization-layout">
+      <div class="tree-container">
+        <h4>基本任务结构树</h4>
+        <p class="muted">按装备构型飞机节点组织：飞机类型 → 基本任务名称</p>
+        <div class="object-tree">
+          <div class="tree-node root">${htmlEscape(mission.equipmentType)}<span>${htmlEscape(mission.equipmentQuantity)} 架</span></div>
+          <div class="tree-node">${htmlEscape(mission.name)}<span>${htmlEscape(mission.taskNo)}</span></div>
+          <div class="tree-node">${htmlEscape(mission.taskArea)}<span>任务区域描述</span></div>
+        </div>
+      </div>
+      <div class="detail-panel">
+        <div class="detail-card">
+          <h4>基本任务信息编辑</h4>
+          <div class="table-wrap">
+            <table>
+              <tbody>
+                <tr><th>基本任务名称</th><td>${valueInput("basicMission.name")}</td></tr>
+                <tr><th>任务编号</th><td>${valueInput("basicMission.taskNo")}</td></tr>
+                <tr><th>装备类型</th><td>${valueInput("basicMission.equipmentType")}</td></tr>
+                <tr><th>装备数量</th><td>${valueInput("basicMission.equipmentQuantity", "number")}</td></tr>
+                <tr><th>任务时长（分钟）</th><td>${valueInput("basicMission.taskDurationMinutes", "number")}</td></tr>
+                <tr><th>准备时间（min）</th><td>${valueInput("basicMission.preparationMinutes", "number")}</td></tr>
+                <tr><th>取消时间（min）</th><td>${valueInput("basicMission.cancelMinutes", "number")}</td></tr>
+                <tr><th>使用保障活动</th><td>${valueInput("basicMission.supportActivityName")}</td></tr>
+                <tr><th>任务区域描述</th><td>${valueInput("basicMission.taskArea")}</td></tr>
+                <tr><th>更新时间</th><td>${valueInput("basicMission.updatedAt")}</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="detail-card network-card">
+          <h4>任务阶段</h4>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>序号</th><th>阶段名称</th><th>状态</th><th>转移条件</th><th>阶段时限(h)</th></tr></thead>
+              <tbody>
+                ${phases.map((phase, index) => `
+                  <tr>
+                    <td>${index + 1}</td>
+                    <td>${htmlEscape(phase.name)}</td>
+                    <td>${htmlEscape(phase.state)}</td>
+                    <td>${htmlEscape(phase.transitionCondition)}</td>
+                    <td>${htmlEscape(phase.limitHours)}</td>
+                  </tr>
+                `).join("")}
               </tbody>
             </table>
           </div>
@@ -1415,7 +1478,11 @@ function renderScenarioSwitch() {
 }
 
 function field(label, path, type = "text") {
-  return `<label>${label}<input data-path="${path}" type="${type}" value="${htmlEscape(getPath(scenario, path))}"></label>`;
+  return `<label>${label}${valueInput(path, type)}</label>`;
+}
+
+function valueInput(path, type = "text") {
+  return `<input data-path="${path}" type="${type}" value="${htmlEscape(getPath(scenario, path))}">`;
 }
 
 function isActiveTertiary(activePage, pages) {
