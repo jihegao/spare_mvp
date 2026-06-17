@@ -6,10 +6,10 @@ import { FEATURE_PAGES, getFeaturePageById, groupFeaturePages } from "../front/f
 import { buildOntologyContext, PROJECT_ONTOLOGY, PROJECT_ONTOLOGY_PLAYGROUND } from "../front/ontology-context.mjs";
 
 test("feature catalog exposes all table-2 four-level pages", () => {
-  assert.equal(FEATURE_PAGES.length, 45);
-  assert.equal(new Set(FEATURE_PAGES.map((page) => page.id)).size, 45);
-  assert.equal(FEATURE_PAGES.filter((page) => page.module === "备件规划评估模块").length, 22);
-  assert.equal(FEATURE_PAGES.filter((page) => page.module === "任务可靠度评估模块").length, 23);
+  assert.equal(FEATURE_PAGES.length, 47);
+  assert.equal(new Set(FEATURE_PAGES.map((page) => page.id)).size, 47);
+  assert.equal(FEATURE_PAGES.filter((page) => page.module === "备件规划评估模块").length, 23);
+  assert.equal(FEATURE_PAGES.filter((page) => page.module === "任务可靠度评估模块").length, 24);
   for (const label of ["装备可靠性框图建模", "蒙特卡洛实验结果", "飞机转场携行清单分析", "任务可靠度评估", "停机因素分析"]) {
     assert.ok(FEATURE_PAGES.some((page) => page.name === label), label);
   }
@@ -31,7 +31,32 @@ test("each feature page has page template metadata for grouped entry pages", () 
 
 test("feature grouping preserves three-level navigation and internal fourth-level entries", () => {
   const grouped = groupFeaturePages(FEATURE_PAGES);
-  assert.ok(grouped["备件规划评估模块"]["仿真建模"]["任务建模"].length >= 4);
+  assert.deepEqual(grouped["备件规划评估模块"]["仿真建模"]["任务建模"].map((page) => page.name), [
+    "内置场景",
+    "基本作战单元建模",
+    "基本任务建模",
+    "复合任务建模",
+    "周期性任务建模"
+  ]);
+  assert.deepEqual(grouped["任务可靠度评估模块"]["仿真建模"]["任务建模"].map((page) => page.name), [
+    "内置场景",
+    "基本作战单元建模",
+    "基本任务建模",
+    "复合任务建模",
+    "周期性任务建模"
+  ]);
+  assert.deepEqual(grouped["备件规划评估模块"]["仿真建模"]["保障活动建模"].map((page) => page.name), [
+    "基本保障活动建模",
+    "使用保障活动建模",
+    "预防性维修活动建模",
+    "修复型维修活动建模"
+  ]);
+  assert.deepEqual(grouped["任务可靠度评估模块"]["仿真建模"]["保障活动建模"].map((page) => page.name), [
+    "基本保障活动建模",
+    "使用保障活动建模",
+    "预防性维修活动建模",
+    "修复型维修活动建模"
+  ]);
   assert.ok(grouped["任务可靠度评估模块"]["仿真建模"]["装备建模"].some((page) => page.name === "装备可靠性框图建模"));
   assert.deepEqual(grouped["备件规划评估模块"]["仿真实验"]["仿真实验方案管理"].map((page) => page.name), ["方案列表", "方案编辑"]);
   assert.deepEqual(grouped["任务可靠度评估模块"]["仿真实验"]["仿真实验方案管理"].map((page) => page.name), ["方案列表", "方案编辑"]);
@@ -43,6 +68,11 @@ test("feature grouping preserves three-level navigation and internal fourth-leve
   assert.equal(FEATURE_PAGES.some((page) => page.name === "仿真实验方案编辑"), false);
   assert.equal(FEATURE_PAGES.some((page) => page.name === "场景切换"), false);
   assert.equal(FEATURE_PAGES.some((page) => page.name === "可视化结果展示"), false);
+  assert.equal(FEATURE_PAGES.some((page) => page.name === "任务剖面建模"), false);
+  assert.equal(FEATURE_PAGES.some((page) => page.name === "保障资源需求组"), false);
+  assert.equal(FEATURE_PAGES.some((page) => page.name === "装备使用保障方案"), false);
+  assert.equal(FEATURE_PAGES.some((page) => page.name === "装备预防性维修方案"), false);
+  assert.equal(FEATURE_PAGES.some((page) => page.name === "装备修复性维修方案"), false);
   assert.equal(getFeaturePageById("spare-planning-experiment-create").name, "方案编辑");
   assert.equal(getFeaturePageById("spare-planning-experiment-edit").name, "方案编辑");
   assert.equal(getFeaturePageById("spare-planning-scenario-switch").component, "visual-simulation");
@@ -122,9 +152,19 @@ test("support organization and activity pages follow ship_front tree table edito
   assert.match(appSource, /备件建模/);
   assert.match(appSource, /保障人员建模/);
   assert.match(appSource, /保障设备建模/);
+  assert.match(appSource, /基本保障活动建模/);
   assert.match(appSource, /使用保障活动建模/);
   assert.match(appSource, /预防性维修活动建模/);
-  assert.match(appSource, /修复性维修活动建模/);
+  assert.match(appSource, /修复型维修活动建模/);
+  assert.match(appSource, /飞行前准备/);
+  assert.match(appSource, /再次出动准备/);
+  assert.match(appSource, /飞行后检查/);
+  assert.match(appSource, /制动伞检查/);
+  assert.match(appSource, /日检/);
+  assert.match(appSource, /周检/);
+  assert.match(appSource, /发动机备件故障/);
+  assert.match(appSource, /航电模块故障/);
+  assert.match(appSource, /renderSupportActivityTreeNode/);
   assert.match(appSource, /保障活动节点网络图/);
 });
 
@@ -132,6 +172,13 @@ test("modeling page headers omit generic scenario helper summaries", async () =>
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   assert.doesNotMatch(appSource, /<p>\$\{htmlEscape\(page\.summary\)\}<\/p>/);
   assert.doesNotMatch(appSource, /围绕共享 scenario 数据提供编辑和实验查看能力/);
+});
+
+test("fourth-level pages do not repeat their own title inside the main panel", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  assert.doesNotMatch(appSource, /<h3>\$\{(?:htmlEscape\()?page\.name/);
+  assert.doesNotMatch(appSource, /\$\{page\.name\}字段/);
+  assert.doesNotMatch(appSource, /\$\{page\.name\}配置/);
 });
 
 test("support organization workbench does not render duplicate inner tabs", async () => {
@@ -156,7 +203,7 @@ test("support organization fourth-level pages render matching resource panels", 
   assert.match(supportOrgSource, /page\.name\.includes\("设备"\) \? "保障设备"/);
   assert.match(supportOrgSource, /page\.name\.includes\("备件"\) \? "备件"/);
   assert.match(supportOrgSource, /resourceRows\.filter\(\(row\) => row\.type === activeResourceType\)/);
-  assert.match(supportOrgSource, /<h3>\$\{activeTab === "保障组织结构建模" \? "组织详情" : activeTab\}<\/h3>/);
+  assert.match(supportOrgSource, /<h3>\$\{activeTab === "保障组织结构建模" \? "组织详情" : "资源清单"\}<\/h3>/);
 });
 
 test("support activity workbench does not render duplicate inner tabs", async () => {
@@ -293,18 +340,35 @@ test("basic mission page follows ship front basic task modeling structure", asyn
   assert.doesNotMatch(appSource, /基本任务建模字段[\s\S]*任务类型/);
 });
 
-test("mission profile page follows ship front composite and periodic task modeling", async () => {
+test("mission task profile pages split composite and periodic task modeling", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
-  assert.match(appSource, /if \(page\.name === "任务剖面建模"\) return renderMissionProfileModeling\(page\)/);
-  assert.match(appSource, /function renderMissionProfileModeling\(page\)/);
-  assert.match(appSource, /复合任务列表/);
-  assert.match(appSource, /当前复合任务包含的基本任务/);
-  assert.match(appSource, /典型组合任务时序表/);
-  assert.match(appSource, /周期性任务列表/);
-  assert.match(appSource, /周期性任务建模/);
-  assert.match(appSource, /星期/);
-  assert.match(appSource, /复合任务名称/);
-  assert.doesNotMatch(appSource, /任务剖面建模字段[\s\S]*任务类型/);
+  const catalogSource = await readFile(new URL("../front/feature-catalog.mjs", import.meta.url), "utf8");
+  assert.match(catalogSource, /复合任务建模: "composite-task"/);
+  assert.match(catalogSource, /周期性任务建模: "periodic-task"/);
+  assert.doesNotMatch(catalogSource, /任务剖面建模: "mission-profile"/);
+  assert.match(appSource, /if \(page\.name === "复合任务建模"\) return renderCompositeTaskModeling\(page\)/);
+  assert.match(appSource, /if \(page\.name === "周期性任务建模"\) return renderPeriodicTaskModeling\(page\)/);
+
+  const compositeSource = appSource.slice(
+    appSource.indexOf("function renderCompositeTaskModeling"),
+    appSource.indexOf("function renderPeriodicTaskModeling")
+  );
+  assert.match(compositeSource, /复合任务列表/);
+  assert.match(compositeSource, /当前复合任务包含的基本任务/);
+  assert.match(compositeSource, /典型组合任务时序表/);
+  assert.doesNotMatch(compositeSource, /周期性任务列表/);
+  assert.doesNotMatch(compositeSource, /周期性任务建模/);
+
+  const periodicSource = appSource.slice(
+    appSource.indexOf("function renderPeriodicTaskModeling"),
+    appSource.indexOf("function buildCompositeTimelineRows")
+  );
+  assert.match(periodicSource, /周期性任务列表/);
+  assert.match(periodicSource, /周期性任务建模/);
+  assert.match(periodicSource, /星期/);
+  assert.match(periodicSource, /复合任务名称/);
+  assert.doesNotMatch(periodicSource, /当前复合任务包含的基本任务/);
+  assert.doesNotMatch(periodicSource, /典型组合任务时序表/);
 });
 
 test("topbar omits run and export actions", async () => {

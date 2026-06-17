@@ -26,6 +26,7 @@
 13. Monte Carlo 评估结果已经移动到 `结果分析 / 蒙特卡洛实验结果展示`。
 14. Monte Carlo 扫参输入已真实绑定 `scenario.monteCarlo`，修改故障率、备件倍数和保障容量后会重算分组结果。
 15. Ontology Playground 导出关系 ID 已加唯一性测试，重复关系已清理。
+16. 页面侧 `Ontology 上下文` 面板和独立 ontology 可视化路由已经移除；项目级 ontology 关系图现在嵌入 `可视化推演` 的 Mesa 页面内部，通过 `Ontology视图` 标签展示，侧栏按建模对象、仿真实验、计算产物三层汇总节点数量。
 
 ## 主要文件
 
@@ -36,7 +37,7 @@
 | `front/styles.css` | 工作台、建模页、分析页和 Monte Carlo 页样式。 |
 | `front/aviation-support-state.mjs` | 将 Mesa 可视化状态规范化为前端可渲染数据。 |
 | `front/sim-engine.mjs` | 浏览器内单次仿真和 Monte Carlo 汇总逻辑。 |
-| `front/ontology-context.mjs` | 项目 ontology 上下文和 Ontology Playground 导出形态。 |
+| `front/ontology-context.mjs` | 项目级 ontology 定义、页面 focus context 构造辅助和 Ontology Playground 导出形态；当前可见图谱由 Mesa `Ontology视图` 消费，不再作为每个四级页面的右侧上下文面板。 |
 | `src/spare_mvp_abm/aviation_support/` | 本地航空保障 Mesa 场景包。 |
 | `vendor/ship_front/` | 舰载保障前端参考快照。 |
 | `tests/frontend-contract.test.mjs` | 前端结构、页面流转和契约断言。 |
@@ -61,7 +62,9 @@ npm test
 7. Monte Carlo 扫参输入更新场景数组并重算结果。
 8. Monte Carlo 结果页显示分组评估结果。
 9. Ontology Playground 关系 ID 唯一。
-10. 用户可编辑文本进入模板前进行 HTML 转义。
+10. 页面侧上下文面板和独立 ontology 路由已经移除。
+11. 可视化推演页面嵌入 Mesa 飞机、任务、保障和 `Ontology视图`。
+12. 用户可编辑文本进入模板前进行 HTML 转义。
 
 ## 浏览器验证口径
 
@@ -85,6 +88,15 @@ http://127.0.0.1:4173/front/
 4. 修改故障率扫描、备件倍数和保障容量。
 5. 进入 `结果分析 / 蒙特卡洛实验结果展示`，确认参数组来自新输入。
 6. 回到 Monte Carlo 配置页点击“启动”，确认回到方案列表且状态为“运行中”。
+7. 进入 `可视化推演`，切换到 `Ontology视图`，确认页面显示项目级 ontology 关系图和三层节点汇总，而不是独立 ontology 页面或每个四级页面的右侧上下文面板。
+
+## 文档维护复盘
+
+本记录曾只更新了 Monte Carlo、结果分析和可视化入口状态，没有同步说明 ontology 表达方式已经从“每页右侧上下文图”收敛为“Mesa 内部项目级 Ontology视图”。根因不是代码缺少测试，而是文档约定只要求“同步更新相关文档”，没有形成可执行检查点：
+
+1. `tests/frontend-contract.test.mjs` 已经断言页面侧上下文面板被移除、独立 ontology 路由被移除、Mesa 页面嵌入 `Ontology视图`。
+2. 设计规格和实现记录没有被同一轮搜索并更新，导致文档仍容易让读者以为每个四级页面都有右侧 ontology 上下文面板。
+3. 后续凡是测试中出现 `doesNotMatch` 删除旧 UI、移除路由、迁移入口或改变结果来源，必须同时搜索并更新 `README.md`、`docs/README.md`、对应设计规格和实现记录里的旧入口、旧标题、旧区域名。
 
 ## 边界
 

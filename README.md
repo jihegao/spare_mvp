@@ -7,6 +7,7 @@
 统一文档入口见 [`docs/README.md`](docs/README.md)。常用文档：
 
 - [`docs/3概要设计方案.md`](docs/3概要设计方案.md)：原始概要设计的 Markdown 转换稿。
+- [`docs/product-roadmap.md`](docs/product-roadmap.md)：从当前原型到真实系统的产品里程碑、阶段依赖和验收口径。
 - [`docs/ontology-mesa-rebuild-plan.md`](docs/ontology-mesa-rebuild-plan.md)：Ontology + Mesa 重构边界和当前状态。
 - [`docs/superpowers/specs/2026-06-17-four-level-function-page-design.md`](docs/superpowers/specs/2026-06-17-four-level-function-page-design.md)：四级功能页面化设计规格。
 - [`docs/superpowers/plans/2026-06-17-local-aviation-ship-front-integration.md`](docs/superpowers/plans/2026-06-17-local-aviation-ship-front-integration.md)：本轮前端集成实现记录。
@@ -17,7 +18,7 @@
 - 前端建模：任务剖面、基本任务、任务阶段、装备、组件、保障节点、保障活动字段。
 - 可靠性框图：树状展示串联、并联、备用关系及组件故障参数。
 - 保障活动建模：按保障节点展示飞行前保障、修复性维修、预防性维修、再次出动准备甘特图。
-- 可视化仿真：单次仿真的任务态势、机场保障视图、指标和事件流。
+- 可视化仿真：单次仿真的任务态势、机场保障视图、指标、事件流和 Mesa 内部 `Ontology视图`。
 - 蒙特卡洛实验：只读展示当前仿真实验，配置样本数、随机种子、故障率、备件倍数、保障容量扫参；配置页只保留参数和启动按钮，评估结果统一在“结果分析 / 蒙特卡洛实验结果展示”中查看。
 - 结果分析：备件短板分析、飞机转场携行清单、飞机任务可靠性分析、停机因素分析。
 
