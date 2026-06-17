@@ -379,6 +379,7 @@ function renderMainComponent(page) {
   if (page.component === "analysis") return renderAnalysis(page);
   if (page.component === "import-table") return renderImportTable();
   if (page.component === "scenario-switch") return renderScenarioSwitch();
+  if (page.name === "内置场景") return renderBuiltInScenario(page);
   return renderTaskModel(page);
 }
 
@@ -519,6 +520,46 @@ function renderTaskModel(page) {
       <div class="tree-node root">${scenario.missionProfile.profileType}</div>
       ${scenario.missionPhases.map((phase) => `<div class="tree-node">${phase.name}<span>${phase.state}</span></div>`).join("")}
       <div class="tree-node">${scenario.combatUnit.unitId}<span>${scenario.equipment.quantity} 架</span></div>
+    </div>
+  `;
+}
+
+function renderBuiltInScenario(page) {
+  return `
+    <div class="section-head">
+      <h3>${page.name}配置</h3>
+      <span>${page.dataObjects.join(" / ")}</span>
+    </div>
+    <div class="form-table-grid">
+      ${field("场景编号", "scenarioId")}
+      ${field("出发机场名称", "airports.0.name")}
+      ${field("出发机场位置", "airports.0.location")}
+      ${field("出发机场跑道类型", "airports.0.runwayType")}
+      ${field("距任务区(km)", "airports.0.distanceToMissionKm", "number")}
+      ${field("关联保障节点", "airports.0.supportNodeId")}
+      ${field("备用机场名称", "airports.1.name")}
+      ${field("备用机场位置", "airports.1.location")}
+      ${field("备用机场跑道类型", "airports.1.runwayType")}
+      ${field("备用机场距任务区(km)", "airports.1.distanceToMissionKm", "number")}
+      ${field("任务区名称", "missionAreas.0.name")}
+      ${field("任务区类型", "missionAreas.0.areaType")}
+      ${field("距出发机场(km)", "missionAreas.0.distanceFromDepartureKm", "number")}
+      ${field("任务区半径(km)", "missionAreas.0.patrolRadiusKm", "number")}
+      ${field("威胁等级", "missionAreas.0.threatLevel")}
+    </div>
+    <div class="object-tree">
+      ${scenario.airports.map((airport) => `
+        <div class="tree-node">
+          ${htmlEscape(airport.name)}
+          <span>${htmlEscape(airport.location)} / 距任务区 ${htmlEscape(airport.distanceToMissionKm)} km</span>
+        </div>
+      `).join("")}
+      ${scenario.missionAreas.map((area) => `
+        <div class="tree-node root">
+          ${htmlEscape(area.name)}
+          <span>${htmlEscape(area.areaType)} / 距出发机场 ${htmlEscape(area.distanceFromDepartureKm)} km</span>
+        </div>
+      `).join("")}
     </div>
   `;
 }

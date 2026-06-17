@@ -6,6 +6,42 @@ export const MODULES = {
 export const defaultScenario = {
   scenarioId: "carrier-turnaround-demo",
   activeModule: "sparePlanning",
+  airports: [
+    {
+      id: "deck-airport",
+      name: "甲板机场",
+      location: "航母飞行甲板",
+      runwayType: "舰面弹射/拦阻",
+      distanceToMissionKm: 320,
+      supportNodeId: "deck-airport"
+    },
+    {
+      id: "forward-airport",
+      name: "前进保障机场",
+      location: "近岸前进保障点",
+      runwayType: "短距起降跑道",
+      distanceToMissionKm: 180,
+      supportNodeId: "rear-stock"
+    }
+  ],
+  missionAreas: [
+    {
+      id: "near-sea-patrol",
+      name: "近海巡逻区",
+      areaType: "巡逻",
+      distanceFromDepartureKm: 320,
+      patrolRadiusKm: 120,
+      threatLevel: "中"
+    },
+    {
+      id: "far-sea-alert",
+      name: "远海警戒区",
+      areaType: "警戒",
+      distanceFromDepartureKm: 540,
+      patrolRadiusKm: 180,
+      threatLevel: "高"
+    }
+  ],
   experiment: {
     name: "舰基飞机保障原型实验",
     steps: 48,

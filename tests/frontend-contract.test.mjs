@@ -135,6 +135,19 @@ test("modeling and experiment pages use compact Chinese fourth-level tabs when n
   assert.doesNotMatch(appSource, /aria-label="同组四级功能"/);
 });
 
+test("built-in scenario page configures airport and mission area attributes", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const catalogSource = await readFile(new URL("../front/feature-catalog.mjs", import.meta.url), "utf8");
+  assert.match(appSource, /if \(page\.name === "内置场景"\) return renderBuiltInScenario\(page\)/);
+  assert.match(appSource, /function renderBuiltInScenario\(page\)/);
+  assert.match(appSource, /出发机场/);
+  assert.match(appSource, /任务区/);
+  assert.match(appSource, /距任务区/);
+  assert.match(appSource, /distanceToMissionKm/);
+  assert.match(appSource, /distanceFromDepartureKm/);
+  assert.match(catalogSource, /return \["scenarioId", "airports", "missionAreas", "supportNodes"\]/);
+});
+
 test("topbar omits run and export actions", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   assert.doesNotMatch(appSource, /运行单次仿真/);

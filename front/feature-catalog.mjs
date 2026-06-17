@@ -148,7 +148,7 @@ function resolveComponent(name, secondary, tertiary) {
 }
 
 function resolveDataObjects(name, secondary, tertiary) {
-  if (name.includes("内置场景")) return ["scenarioId", "missionProfile", "supportNodes"];
+  if (name.includes("内置场景")) return ["scenarioId", "airports", "missionAreas", "supportNodes"];
   if (name.includes("作战单元")) return ["combatUnit", "equipment", "supportNodes"];
   if (name.includes("基本任务")) return ["basicMission", "missionPhases"];
   if (name.includes("任务剖面")) return ["missionProfile", "missionPhases"];

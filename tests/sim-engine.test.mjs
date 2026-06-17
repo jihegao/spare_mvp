@@ -13,6 +13,13 @@ test("default scenario passes structural validation", () => {
   assert.deepEqual(validateScenario(defaultScenario), []);
 });
 
+test("default scenario includes airport and mission area attributes", () => {
+  assert.deepEqual(defaultScenario.airports.map((airport) => airport.name), ["甲板机场", "前进保障机场"]);
+  assert.equal(defaultScenario.airports[0].distanceToMissionKm, 320);
+  assert.deepEqual(defaultScenario.missionAreas.map((area) => area.name), ["近海巡逻区", "远海警戒区"]);
+  assert.equal(defaultScenario.missionAreas[0].distanceFromDepartureKm, 320);
+});
+
 test("single simulation is reproducible for the same seed", () => {
   const scenario = cloneScenario(defaultScenario);
   const first = runSimulation(scenario, { seed: 77, steps: 36 });
