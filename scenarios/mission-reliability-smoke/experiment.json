@@ -1,0 +1,15 @@
+{
+  "experiment_name": "mission_reliability_smoke",
+  "model_class": "SpareMvpModel",
+  "steps": 48,
+  "primary_metric": "mission_success_rate",
+  "seeds": [201, 202, 203],
+  "parameters": {
+    "mode": "mission_reliability",
+    "equipment_count": 8,
+    "min_required_sorties": [4, 5, 6],
+    "initial_spare_stock": 8,
+    "failure_rate": 0.08,
+    "support_capacity": 2
+  }
+}
