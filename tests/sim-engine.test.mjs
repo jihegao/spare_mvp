@@ -45,6 +45,14 @@ test("default scenario includes mission profile composite and periodic tasks", (
   assert.equal(defaultScenario.missionProfile.periodicTasks[0].weekdayAssignments.monday, "composite-day-patrol");
 });
 
+test("default scenario includes equipment tree quantity and n-out-of-k attributes", () => {
+  assert.equal(defaultScenario.components[0].quantity, 2);
+  assert.equal(defaultScenario.components[0].kOutOfN.enabled, true);
+  assert.equal(defaultScenario.components[0].kOutOfN.n, 2);
+  assert.equal(defaultScenario.components[0].kOutOfN.k, 1);
+  assert.equal(defaultScenario.components[1].parentId, "aircraft-root");
+});
+
 test("single simulation is reproducible for the same seed", () => {
   const scenario = cloneScenario(defaultScenario);
   const first = runSimulation(scenario, { seed: 77, steps: 36 });

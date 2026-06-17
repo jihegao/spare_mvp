@@ -164,9 +164,9 @@ export const defaultScenario = {
     minRequiredSorties: 5
   },
   components: [
-    { id: "engine", name: "发动机", parentId: null, spareType: "发动机备件", failureModel: "随机", failureRate: 0.07, mtbfHours: 80, lifeLimitHours: 220, connectionType: "串联" },
-    { id: "avionics", name: "航电系统", parentId: null, spareType: "航电模块", failureModel: "退化", failureRate: 0.04, mtbfHours: 110, lifeLimitHours: 260, connectionType: "并联" },
-    { id: "hydraulic", name: "液压组件", parentId: null, spareType: "液压备件", failureModel: "寿命", failureRate: 0.06, mtbfHours: 95, lifeLimitHours: 200, connectionType: "备用" }
+    { id: "engine", name: "发动机", parentId: "aircraft-root", spareType: "发动机备件", failureModel: "随机", failureRate: 0.07, mtbfHours: 80, lifeLimitHours: 220, connectionType: "串联", quantity: 2, kOutOfN: { enabled: true, n: 2, k: 1 } },
+    { id: "avionics", name: "航电系统", parentId: "aircraft-root", spareType: "航电模块", failureModel: "退化", failureRate: 0.04, mtbfHours: 110, lifeLimitHours: 260, connectionType: "并联", quantity: 2, kOutOfN: { enabled: true, n: 2, k: 1 } },
+    { id: "hydraulic", name: "液压组件", parentId: "aircraft-root", spareType: "液压备件", failureModel: "寿命", failureRate: 0.06, mtbfHours: 95, lifeLimitHours: 200, connectionType: "备用", quantity: 1, kOutOfN: { enabled: false, n: 1, k: 1 } }
   ],
   supportNodes: [
     {

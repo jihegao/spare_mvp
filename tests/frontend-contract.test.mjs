@@ -99,6 +99,36 @@ test("support organization and activity pages follow ship_front tree table edito
   assert.match(appSource, /保障活动节点网络图/);
 });
 
+test("modeling page headers omit generic scenario helper summaries", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  assert.doesNotMatch(appSource, /<p>\$\{htmlEscape\(page\.summary\)\}<\/p>/);
+  assert.doesNotMatch(appSource, /围绕共享 scenario 数据提供编辑和实验查看能力/);
+});
+
+test("support organization workbench does not render duplicate inner tabs", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const supportOrgSource = appSource.slice(
+    appSource.indexOf("function renderSupportOrganizationWorkbench"),
+    appSource.indexOf("function renderOrgTreeNode")
+  );
+  assert.doesNotMatch(supportOrgSource, /ship-front-tabs/);
+  assert.doesNotMatch(supportOrgSource, /\["保障组织结构建模", "保障资源建模", "保障人员建模", "保障设备建模", "备件建模"\]/);
+});
+
+test("equipment modeling pages use ship front tree attributes with quantity and n-out-of-k", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  assert.match(appSource, /function renderEquipmentModeling\(page\)/);
+  assert.match(appSource, /装备组成树/);
+  assert.match(appSource, /组成属性/);
+  assert.match(appSource, /数量 n/);
+  assert.match(appSource, /成功数 k/);
+  assert.match(appSource, /启用 n 中取 k/);
+  assert.match(appSource, /故障属性/);
+  assert.match(appSource, /data-path="components\.0\.quantity"/);
+  assert.match(appSource, /data-path="components\.0\.kOutOfN\.k"/);
+  assert.doesNotMatch(appSource, /<thead><tr><th>组件<\/th><th>备件类型<\/th><th>故障模型<\/th><th>失效率<\/th><th>MTBF<\/th><th>连接类型<\/th><\/tr><\/thead>/);
+});
+
 test("frontend shell mounts a feature workbench rather than six static summary views", async () => {
   const html = await readFile(new URL("../front/index.html", import.meta.url), "utf8");
   assert.match(html, /id="app"/);

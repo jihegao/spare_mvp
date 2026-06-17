@@ -339,7 +339,6 @@ function renderPageHeading(page) {
     <div>
       ${breadcrumb}
       <h2>${htmlEscape(page.tertiary)}</h2>
-      <p>${htmlEscape(page.summary)}</p>
     </div>
   `;
 }
@@ -370,7 +369,7 @@ function renderMainComponent(page) {
   if (page.component === "reliability-block-diagram") return renderReliabilityBlockDiagram();
   if (page.component === "activity-gantt") return renderSupportActivityWorkbench(page);
   if (page.component === "resource-table") return renderSupportOrganizationWorkbench(page);
-  if (page.component === "equipment-table") return renderEquipmentTable(page);
+  if (page.component === "equipment-table") return renderEquipmentModeling(page);
   if (page.component === "experiment-plan-list") return renderExperimentPlanList(page);
   if (page.component === "experiment-plan-editor") return renderExperimentPlanEditor(page);
   if (page.component === "experiment-form") return renderExperimentPlanEditor(page);
@@ -868,28 +867,75 @@ function diffTimeMinutes(start, end) {
   return endTotal >= startTotal ? endTotal - startTotal : endTotal + 1440 - startTotal;
 }
 
-function renderEquipmentTable(page) {
+function renderEquipmentModeling(page) {
+  const selected = scenario.components[0] || {};
+  const isFailurePage = page.name.includes("故障");
   return `
     <div class="section-head">
       <h3>${page.name}</h3>
-      <span>装备组成 / 故障参数</span>
+      <span>${isFailurePage ? "故障属性" : "组成属性"} / 数量 / N中取K参数</span>
     </div>
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th>组件</th><th>备件类型</th><th>故障模型</th><th>失效率</th><th>MTBF</th><th>连接类型</th></tr></thead>
-        <tbody>
+    <div class="organization-layout">
+      <aside class="tree-container">
+        <div class="tree-toolbar">
+          <h4>装备组成树</h4>
+          <div><button type="button" class="btn-primary">新增节点</button><button type="button">导入</button></div>
+        </div>
+        <div class="object-tree">
+          <div class="tree-node root">${htmlEscape(scenario.equipment.model)}<span>${htmlEscape(scenario.equipment.quantity)} 架</span></div>
           ${scenario.components.map((component) => `
-            <tr>
-              <td>${component.name}</td>
-              <td>${component.spareType}</td>
-              <td>${component.failureModel}</td>
-              <td>${component.failureRate}</td>
-              <td>${component.mtbfHours}h</td>
-              <td><span class="badge">${component.connectionType}</span></td>
-            </tr>
+            <div class="tree-node">
+              ${htmlEscape(component.name)}
+              <span>${htmlEscape(component.quantity)} 件 / ${htmlEscape(component.connectionType)}</span>
+            </div>
           `).join("")}
-        </tbody>
-      </table>
+        </div>
+      </aside>
+      <section class="detail-panel">
+        <div class="detail-card">
+          <div class="section-head">
+            <h3>${isFailurePage ? "故障属性" : "组成属性"}</h3>
+            <span>${htmlEscape(selected.name || "")}</span>
+          </div>
+          <div class="form-table-grid">
+            ${field("组件名称", "components.0.name")}
+            ${field("父节点", "components.0.parentId")}
+            ${field("备件类型", "components.0.spareType")}
+            ${field("连接类型", "components.0.connectionType")}
+            <label>数量 n<input data-path="components.0.quantity" type="number" value="${htmlEscape(getPath(scenario, "components.0.quantity"))}"></label>
+            <label>成功数 k<input data-path="components.0.kOutOfN.k" type="number" value="${htmlEscape(getPath(scenario, "components.0.kOutOfN.k"))}"></label>
+            ${field("N中取K总数", "components.0.kOutOfN.n", "number")}
+            ${field("启用 n 中取 k", "components.0.kOutOfN.enabled")}
+            ${field("故障模型", "components.0.failureModel")}
+            ${field("失效率", "components.0.failureRate", "number")}
+            ${field("MTBF(h)", "components.0.mtbfHours", "number")}
+            ${field("寿命限制(h)", "components.0.lifeLimitHours", "number")}
+          </div>
+        </div>
+        <div class="detail-card network-card">
+          <h4>组件属性表</h4>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>组件</th><th>父节点</th><th>数量</th><th>启用 n 中取 k</th><th>n</th><th>k</th><th>故障模型</th><th>失效率</th><th>MTBF</th></tr></thead>
+              <tbody>
+                ${scenario.components.map((component) => `
+                  <tr>
+                    <td>${htmlEscape(component.name)}</td>
+                    <td>${htmlEscape(component.parentId)}</td>
+                    <td>${htmlEscape(component.quantity)}</td>
+                    <td>${component.kOutOfN?.enabled ? "是" : "否"}</td>
+                    <td>${htmlEscape(component.kOutOfN?.n ?? component.quantity)}</td>
+                    <td>${htmlEscape(component.kOutOfN?.k ?? component.quantity)}</td>
+                    <td>${htmlEscape(component.failureModel)}</td>
+                    <td>${htmlEscape(component.failureRate)}</td>
+                    <td>${htmlEscape(component.mtbfHours)}h</td>
+                  </tr>
+                `).join("")}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
     </div>
   `;
 }
@@ -982,11 +1028,6 @@ function renderSupportOrganizationWorkbench(page) {
   const activeTab = page.name.includes("人员") ? "保障人员建模" : page.name.includes("设备") ? "保障设备建模" : page.name.includes("备件") ? "备件建模" : "保障组织结构建模";
   return `
     <div class="ship-front-workbench">
-      <div class="ship-front-tabs">
-        ${["保障组织结构建模", "保障资源建模", "保障人员建模", "保障设备建模", "备件建模"].map((tab) => `
-          <button type="button" class="${tab === activeTab ? "active" : ""}">${tab}</button>
-        `).join("")}
-      </div>
       <div class="organization-layout">
         <aside class="tree-container">
           <div class="tree-toolbar">
