@@ -70,3 +70,28 @@ test("frontend app routes project save run and result reads through API client",
   assert.doesNotMatch(appSource, /runSimulation\(scenario/);
   assert.doesNotMatch(appSource, /runMonteCarlo\(scenario/);
 });
+
+test("frontend generic editing remains local until explicit save or run", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const changeHandlerSource = appSource.slice(
+    appSource.indexOf('app.addEventListener("change"'),
+    appSource.indexOf('app.addEventListener("input"')
+  );
+  const monteCarloArraySource = appSource.slice(
+    appSource.indexOf("function updateMonteCarloArrayInput"),
+    appSource.indexOf("function stateLabel")
+  );
+  const saveButtonSource = appSource.slice(
+    appSource.indexOf('const savePlanButton = event.target.closest("[data-save-plan]"'),
+    appSource.indexOf('const monteCarloStartButton = event.target.closest("[data-mc-action=')
+  );
+
+  assert.match(changeHandlerSource, /setPath\(scenario, input\.dataset\.path, parseInput\(input\)\)/);
+  assert.match(changeHandlerSource, /updateDemoResultsThroughApiClient\(\)/);
+  assert.doesNotMatch(changeHandlerSource, /saveCurrentProjectThroughApi\(\)/);
+  assert.match(monteCarloArraySource, /updateDemoResultsThroughApiClient\(\)/);
+  assert.doesNotMatch(monteCarloArraySource, /saveCurrentProjectThroughApi\(\)/);
+  assert.match(appSource, /data-save-plan/);
+  assert.match(saveButtonSource, /saveCurrentProjectThroughApi\(\)/);
+  assert.match(saveButtonSource, /render\(\)/);
+});

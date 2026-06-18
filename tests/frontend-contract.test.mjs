@@ -401,7 +401,7 @@ test("monte carlo configuration drives the displayed result sample count", async
   assert.match(appSource, /let \{ singleResult, monteCarloResult \} = buildDemoResultState\(scenario\)/);
   assert.match(appSource, /id="mc-samples"[^>]*data-path="experiment\.samples"/);
   assert.match(appSource, /function updateDemoResultsThroughApiClient/);
-  assert.match(appSource, /saveCurrentProjectThroughApi\(\)/);
+  assert.match(appSource, /data-save-plan/);
 });
 
 test("monte carlo sweep inputs update scenario arrays and rerun grouped results", async () => {
@@ -413,7 +413,7 @@ test("monte carlo sweep inputs update scenario arrays and rerun grouped results"
   assert.match(appSource, /setPath\(scenario, mcArrayInput\.dataset\.mcArrayPath, parseNumberList\(mcArrayInput\.value\)\)/);
   assert.match(appSource, /function parseNumberList/);
   assert.match(appSource, /updateDemoResultsThroughApiClient\(\)/);
-  assert.match(appSource, /saveCurrentProjectThroughApi\(\)/);
+  assert.match(appSource, /const savePlanButton = event\.target\.closest\("\[data-save-plan\]"\)/);
 });
 
 test("monte carlo experiment page is a launch-only parameter form and returns to running plan list", async () => {

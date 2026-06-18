@@ -281,6 +281,12 @@ function bindEvents() {
       return;
     }
 
+    const savePlanButton = event.target.closest("[data-save-plan]");
+    if (savePlanButton) {
+      saveCurrentProjectThroughApi().finally(() => render());
+      return;
+    }
+
     const monteCarloStartButton = event.target.closest("[data-mc-action='start']");
     if (monteCarloStartButton) {
       const page = getFeaturePageById(selectedFeatureId);
@@ -314,7 +320,6 @@ function bindEvents() {
     if (!input) return;
     setPath(scenario, input.dataset.path, parseInput(input));
     updateDemoResultsThroughApiClient();
-    saveCurrentProjectThroughApi();
     render();
   });
 
@@ -1657,7 +1662,7 @@ function renderExperimentPlanEditor(page) {
     </div>
     <div class="plan-editor-actions">
       <button type="button" data-plan-list-link>返回方案列表</button>
-      <button type="button" class="btn-primary" data-feature-id="${page.id}">保存方案</button>
+      <button type="button" class="btn-primary" data-save-plan>保存方案</button>
     </div>
   `;
 }
@@ -2462,7 +2467,6 @@ function parseNumberList(value) {
 function updateMonteCarloArrayInput(mcArrayInput) {
   setPath(scenario, mcArrayInput.dataset.mcArrayPath, parseNumberList(mcArrayInput.value));
   updateDemoResultsThroughApiClient();
-  saveCurrentProjectThroughApi();
 }
 
 function stateLabel(state) {
