@@ -13,6 +13,69 @@
     "compiled_from",
     "simulation_inputs"
   ],
+  "oneOf": [
+    {
+      "type": "object",
+      "required": ["simulation_model", "simulation_inputs"],
+      "properties": {
+        "simulation_model": {
+          "type": "object",
+          "required": ["family", "model_id", "contract_version"],
+          "properties": {
+            "family": { "const": "smoke" },
+            "model_id": { "const": "SmokeSpareMvpModel" },
+            "contract_version": { "const": "1.0.0" }
+          },
+          "additionalProperties": false
+        },
+        "simulation_inputs": {
+          "type": "object",
+          "required": [
+            "project_snapshot",
+            "project_version",
+            "active_module",
+            "spare_multiplier",
+            "failure_rate",
+            "support_capacity",
+            "min_required_sorties",
+            "seed"
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    {
+      "type": "object",
+      "required": ["simulation_model", "simulation_inputs"],
+      "properties": {
+        "simulation_model": {
+          "type": "object",
+          "required": ["family", "model_id", "contract_version"],
+          "properties": {
+            "family": { "const": "aviation_support" },
+            "model_id": { "const": "AviationSupportModel" },
+            "contract_version": { "const": "1.0.0" }
+          },
+          "additionalProperties": false
+        },
+        "simulation_inputs": {
+          "type": "object",
+          "required": [
+            "ontology_version",
+            "aircraft_count",
+            "mission_count",
+            "mission_aircraft_required",
+            "mechanic_teams",
+            "fuel_trucks",
+            "maintenance_bays",
+            "lru_failure_multiplier",
+            "seed"
+          ]
+        }
+      },
+      "additionalProperties": true
+    }
+  ],
   "properties": {
     "schema_version": { "type": "string", "const": "scenario-v0" },
     "scenario_id": { "type": "string" },

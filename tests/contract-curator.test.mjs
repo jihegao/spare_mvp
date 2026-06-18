@@ -136,6 +136,27 @@ test("minimal contract fixtures form a consistent end-to-end object graph", asyn
   }
 });
 
+test("scenario schema rejects mismatched model selector and simulation inputs", async () => {
+  const schema = await readJson("contracts/scenario.schema.json");
+  const smokeScenario = await readJson("tests/fixtures/smoke_scenario.json");
+  const aviationScenario = await readJson("tests/fixtures/aviation_support_scenario.json");
+
+  const smokeModelWithAviationInputs = {
+    ...smokeScenario,
+    simulation_inputs: aviationScenario.simulation_inputs,
+  };
+  const aviationFamilyWithSmokeModelId = {
+    ...aviationScenario,
+    simulation_model: {
+      ...aviationScenario.simulation_model,
+      model_id: "SmokeSpareMvpModel",
+    },
+  };
+
+  assert.notDeepEqual(validateSchema(schema, smokeModelWithAviationInputs), []);
+  assert.notDeepEqual(validateSchema(schema, aviationFamilyWithSmokeModelId), []);
+});
+
 test("scenario schema rejects inputs that SmokeSpareMvpModel would coerce upward", async () => {
   const schema = await readJson("contracts/scenario.schema.json");
   const fixture = await readJson("tests/fixtures/smoke_scenario.json");
