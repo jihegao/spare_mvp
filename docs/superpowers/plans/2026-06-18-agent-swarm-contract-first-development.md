@@ -75,13 +75,19 @@ Expected: PASS.
 - Create: `src/spare_mvp_contract/adapter.py`
 - Create: `tests/test_simulation_adapter.py`
 
-- [ ] **Step 1: Write validate / compile / run tests**
+- [x] **Step 1: Write validate / compile / run tests**
 
 The adapter must validate a Project JSON fixture, compile a Scenario JSON with `compiled_from`, run Mesa through the governed service boundary, and return an artifact manifest.
 
-- [ ] **Step 2: Implement minimal adapter**
+- [x] **Step 2: Implement minimal adapter**
 
 Do not modify `src/spare_mvp_abm/` behavior without Claude alignment.
+
+Implemented scope: the first PR-C slice validates Project JSON contract roots,
+compiles the approved `smoke` Scenario path, runs `SmokeSpareMvpModel`, and
+writes input project, compiled scenario, snapshot, result summary, and artifact
+manifest files. `aviation_support` Scenario compilation remains explicitly
+blocked until its field derivation rules are approved under Mesa governance.
 
 ### Task 4: Database Persistence Slice
 
