@@ -1,0 +1,100 @@
+PRAGMA foreign_keys = ON;
+
+CREATE TABLE IF NOT EXISTS users (
+  user_id TEXT PRIMARY KEY,
+  username TEXT NOT NULL,
+  role TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS projects (
+  project_id TEXT PRIMARY KEY,
+  schema_version TEXT NOT NULL,
+  project_version TEXT NOT NULL,
+  scenario_id TEXT,
+  active_module TEXT,
+  payload_json TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS experiment_plans (
+  experiment_plan_id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  schema_version TEXT NOT NULL,
+  project_version TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'draft',
+  payload_json TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (project_id) REFERENCES projects(project_id)
+);
+
+CREATE TABLE IF NOT EXISTS modeling_snapshots (
+  snapshot_id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  schema_version TEXT NOT NULL,
+  project_version TEXT NOT NULL,
+  payload_json TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (project_id) REFERENCES projects(project_id)
+);
+
+CREATE TABLE IF NOT EXISTS scenarios (
+  scenario_id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  schema_version TEXT NOT NULL,
+  scenario_version TEXT NOT NULL,
+  simulation_model_family TEXT NOT NULL,
+  simulation_model_id TEXT NOT NULL,
+  mesa_contract_version TEXT,
+  compiled_by TEXT,
+  payload_json TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (project_id) REFERENCES projects(project_id)
+);
+
+CREATE TABLE IF NOT EXISTS simulation_runs (
+  run_id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  experiment_plan_id TEXT,
+  scenario_id TEXT NOT NULL,
+  scenario_version TEXT NOT NULL,
+  schema_version TEXT NOT NULL,
+  model_family TEXT NOT NULL,
+  model_id TEXT NOT NULL,
+  status TEXT NOT NULL,
+  run_type TEXT,
+  seed INTEGER,
+  result_summary_id TEXT,
+  artifact_manifest_id TEXT NOT NULL,
+  payload_json TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (project_id) REFERENCES projects(project_id),
+  FOREIGN KEY (scenario_id) REFERENCES scenarios(scenario_id)
+);
+
+CREATE TABLE IF NOT EXISTS result_summaries (
+  result_summary_id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  scenario_id TEXT NOT NULL,
+  scenario_version TEXT,
+  schema_version TEXT NOT NULL,
+  model_family TEXT NOT NULL,
+  payload_json TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (run_id) REFERENCES simulation_runs(run_id),
+  FOREIGN KEY (scenario_id) REFERENCES scenarios(scenario_id)
+);
+
+CREATE TABLE IF NOT EXISTS artifact_manifests (
+  artifact_manifest_id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  scenario_id TEXT,
+  scenario_version TEXT,
+  schema_version TEXT NOT NULL,
+  payload_json TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (run_id) REFERENCES simulation_runs(run_id)
+);

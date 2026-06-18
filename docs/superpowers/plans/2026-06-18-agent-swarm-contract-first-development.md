@@ -95,13 +95,19 @@ blocked until its field derivation rules are approved under Mesa governance.
 - Create: `src/spare_mvp_backend/schema.sql`
 - Create: `tests/test_database_contract.py`
 
-- [ ] **Step 1: Add migration contract tests**
+- [x] **Step 1: Add migration contract tests**
 
 Check tables for `projects`, `users`, `experiment_plans`, `modeling_snapshots`, `scenarios`, `simulation_runs`, `result_summaries`, and `artifact_manifests`.
 
-- [ ] **Step 2: Add schema and repository helpers**
+- [x] **Step 2: Add schema and repository helpers**
 
 Persist schema versions and artifact manifest identifiers without interpreting Mesa semantics.
+
+Implemented scope: the PR-D slice adds a SQLite `schema.sql` plus repository
+helpers that persist Project, Scenario, Run, Result summary, and ArtifactManifest
+contract objects. The repository preserves schema versions and run identity
+chains; it does not compile Scenario JSON, execute Mesa, or interpret simulation
+metrics.
 
 ### Task 5: Backend API Slice
 
