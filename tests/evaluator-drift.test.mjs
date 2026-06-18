@@ -87,6 +87,27 @@ test("schema manifest traces Result contracts to normalized model snapshots", as
   assert.equal(manifest.source_inputs.some((source) => source.includes("ontology_mapping()")), false);
 });
 
+test("schema validator rejects null for object-typed values", () => {
+  const schema = {
+    type: "object",
+    required: ["payload"],
+    properties: {
+      payload: {
+        type: "object",
+        required: ["id"],
+        properties: {
+          id: { type: "string" },
+        },
+        additionalProperties: false,
+      },
+    },
+    additionalProperties: false,
+  };
+
+  const errors = validateSchema(schema, { payload: null });
+  assert.ok(errors.some((error) => error.includes("$.payload expected type \"object\"")));
+});
+
 test("scenario adapter mapping covers every compiled simulation input for each model family", async () => {
   const scenarioSchema = await readJson("contracts/scenario.schema.json");
   const mapping = await readJson("contracts/scenario_adapter_mapping.json");
@@ -104,6 +125,9 @@ test("scenario adapter mapping covers every compiled simulation input for each m
       if (entry.status === "unsupported") {
         assert.equal(entry.constructor_param, undefined, `${family}.${field} must not expose an executable constructor_param before alignment`);
         assert.match(entry.reason, /requires Claude-approved compilation rule/);
+      } else if (entry.status === "metadata_only") {
+        assert.equal(entry.constructor_param, undefined, `${family}.${field} must not expose an executable constructor_param`);
+        assert.equal(typeof entry.reason, "string", `${family}.${field} is missing metadata reason`);
       } else {
         assert.equal(typeof entry.constructor_param, "string", `${family}.${field} is missing constructor_param`);
       }
@@ -114,12 +138,23 @@ test("scenario adapter mapping covers every compiled simulation input for each m
   assert.equal(mapping.model_families.smoke.simulation_inputs.failure_rate.constructor_param, "failureRate");
   assert.equal(mapping.model_families.smoke.simulation_inputs.min_required_sorties.constructor_param, "minRequiredSorties");
   assert.equal(mapping.model_families.smoke.simulation_inputs.project_snapshot.constructor_param, "projectData");
+  assert.equal(mapping.model_families.smoke.simulation_inputs.project_version.status, "metadata_only");
+  assert.equal(mapping.model_families.smoke.simulation_inputs.project_version.constructor_param, undefined);
   assert.equal(mapping.model_families.smoke.simulation_inputs.spare_multiplier.constructor_param, "spareMultiplier");
   assert.equal(mapping.model_families.smoke.simulation_inputs.support_capacity.constructor_param, "supportCapacity");
   assert.equal(mapping.model_families.aviation_support.simulation_inputs.aircraft_count.constructor_param, "aircraft_count");
   assert.equal(mapping.model_families.aviation_support.simulation_inputs.lru_failure_multiplier.status, "unsupported");
   assert.equal(mapping.model_families.aviation_support.simulation_inputs.maintenance_bays.status, "unsupported");
   assert.equal(mapping.model_families.aviation_support.simulation_inputs.mission_count.constructor_param, "mission_count");
+});
+
+test("smoke project_version is adapter bookkeeping, not a model constructor path", async () => {
+  const mapping = await readJson("contracts/scenario_adapter_mapping.json");
+  const projectVersion = mapping.model_families.smoke.simulation_inputs.project_version;
+
+  assert.equal(projectVersion.status, "metadata_only");
+  assert.equal(projectVersion.constructor_param, undefined);
+  assert.match(projectVersion.reason, /Project version is audit metadata/);
 });
 
 test("aviation mapping marks semantic compilation rules unsupported until Claude approval", async () => {

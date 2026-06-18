@@ -63,5 +63,6 @@ function matchesJsonType(type, value) {
   if (type === "integer") return Number.isInteger(value);
   if (type === "number") return typeof value === "number" && Number.isFinite(value);
   if (type === "null") return value === null;
+  if (type === "object") return value !== null && typeof value === "object" && !Array.isArray(value);
   return typeof value === type && !Array.isArray(value);
 }

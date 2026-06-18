@@ -12,7 +12,8 @@
         },
         "project_version": {
           "source": "Project JSON application envelope",
-          "constructor_param": "projectJsonPath"
+          "status": "metadata_only",
+          "reason": "Project version is audit metadata for adapter bookkeeping; project_snapshot carries model input data."
         },
         "active_module": {
           "source": "project.activeModule",
