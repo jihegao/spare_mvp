@@ -21,6 +21,7 @@
 13. 蒙特卡洛评估结果已经迁移到“结果分析 / 蒙特卡洛实验结果展示”。
 14. 两个模块的结果分析页面已对齐 `vendor/ship_front/备件_front` 的页面形态。
 15. Ontology Playground 导出关系 ID 已加唯一性约束；Monte Carlo 扫参输入会真实更新场景并重算结果。
+16. Mesa `Ontology视图` 的后续约定为四层纵向画布：`建模对象 -> 仿真实验 -> 模型实例 -> 计算产物`；建模对象层对齐前端四级功能，模型实例层按 `AviationSupportModel` 的真实 Mesa/Python 运行时对象绘制，并包含当前 step 的指标对象。
 
 ## 文档地图
 
@@ -29,7 +30,7 @@
 | [`../README.md`](../README.md) | 仓库概览、运行方式、能力范围和边界。 |
 | [`3概要设计方案.md`](3概要设计方案.md) | 原始概要设计转换稿，是功能范围和术语来源。 |
 | [`product-roadmap.md`](product-roadmap.md) | 从当前原型到真实系统的产品里程碑、阶段依赖和验收口径。 |
-| [`ontology-mesa-rebuild-plan.md`](ontology-mesa-rebuild-plan.md) | Ontology + Mesa 重构边界、里程碑和当前状态说明。 |
+| [`ontology-mesa-rebuild-plan.md`](ontology-mesa-rebuild-plan.md) | Ontology + Mesa 重构边界、里程碑、当前状态和四层可视化约定。 |
 | [`superpowers/specs/2026-06-17-four-level-function-page-design.md`](superpowers/specs/2026-06-17-four-level-function-page-design.md) | 四级功能页面化设计规格。 |
 | [`superpowers/plans/2026-06-17-local-aviation-ship-front-integration.md`](superpowers/plans/2026-06-17-local-aviation-ship-front-integration.md) | 当前前端集成实现记录和验收情况。 |
 | [`../src/spare_mvp_abm/aviation_support/README.md`](../src/spare_mvp_abm/aviation_support/README.md) | 本地 Mesa 航空保障场景包说明。 |

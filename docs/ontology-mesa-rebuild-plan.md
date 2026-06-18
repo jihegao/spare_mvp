@@ -10,7 +10,8 @@
 2. `src/spare_mvp_abm/smoke_model.py`、`scenarios/spare-planning-smoke/`、`scenarios/mission-reliability-smoke/` 已提供项目级 Mesa smoke 入口；输入来自 `scenarios/frontend-project-smoke/project.json` 的前端场景数据模型，`src/spare_mvp_abm/model.py` 仅保留旧导入兼容。
 3. `src/spare_mvp_abm/aviation_support/` 已保存本地航空保障 Mesa 场景包，并用于前端可视化状态。
 4. `front/` 已提供静态工作台、四级功能页面、结果分析页、Monte Carlo 配置与结果页。
-5. 当前文档保留原重构思路和边界说明，新的项目入口见 `docs/README.md`。
+5. Mesa `Ontology视图` 已收敛为四层纵向关系图约定：`建模对象 -> 仿真实验 -> 模型实例 -> 计算产物`。
+6. 当前文档保留原重构思路和边界说明，新的项目入口见 `docs/README.md`。
 
 ## 目标
 
@@ -129,6 +130,44 @@
 - `shortage_events`：备件不足事件数。
 - `repair_backlog`：待维修队列长度。
 - `mean_launch_time`、`mean_recovery_time`、`mean_turnaround_time`。
+
+## Mesa Ontology 可视化四层约定
+
+`可视化推演 / Ontology视图` 不再按旧的三层结构理解为静态项目 ontology 图。后续图谱约定为四个纵向堆叠画布，每层可折叠/展开：
+
+```text
+建模对象
+--------
+仿真实验
+--------
+模型实例
+--------
+计算产物
+```
+
+这四层不是视觉分组的简单拆分，而是 Simulation-Contract-First 链路中的四类对象：
+
+| 层级 | 数据来源 | 语义边界 | 典型节点 |
+| --- | --- | --- | --- |
+| 建模对象 | `front/feature-catalog.mjs`、前端 project JSON contract、`front/ontology-context.mjs` | 与前端四级功能和可编辑建模数据对齐，描述用户能维护的领域对象和字段约束。 | 四级功能页、任务、装备、组件、保障组织、保障活动、备件、资源、指标方案。 |
+| 仿真实验 | 实验方案、实验想定、Monte Carlo 配置、runner config | 描述如何把建模对象编译或组合成可运行输入，不表示运行时对象已经存在。 | experiment plan、scenario、sweep parameter、seed/sample、stop condition、run request。 |
+| 模型实例 | `AviationSupportModel` 及其 `visualization_state()` / 后续 `snapshot()` 输出 | 描述实际 Mesa/Python 运行时对象实例和它们的当前关系。该层应按模型真实实现绘制，而不是从静态 ontology 猜测。 | aircraft、mission、resource、spare、support_task、support_plan、Mesa agent、Python domain object、当前 step 指标对象。 |
+| 计算产物 | run CSV/JSON、summary、前端结果分析数据 | 描述运行后的可追踪产物和分析结论。 | run dataset、metric time series、summary dataset、spare shortfall analysis、carry list analysis、task reliability analysis、downtime factor analysis。 |
+
+关键约束：
+
+1. **建模对象层必须和前端四级功能对齐**。后续不应再手写一套和 `FEATURE_PAGES` 脱节的“建模对象”节点；至少要能追踪到四级功能页、页面 `dataObjects` 或 project JSON 字段路径。
+2. **仿真实验层负责输入编译关系**。它表达“实验方案引用哪些建模对象、生成哪些运行配置、如何触发 Mesa 模型”，不承载 Mesa 运行时实例。
+3. **模型实例层必须来自真实模型状态**。优先使用 `src/spare_mvp_abm/aviation_support/model.py` 的对象集合和 `visualization_state()`；当模型实现中存在 Mesa agent 时显示 agent，当实现是普通 Python 对象时显示 Python domain object。`SmokeSpareMvpModel` 仅作为 legacy smoke / teaching scaffold，不作为模型实例层主语义来源。
+4. **指标对象要分层**：指标定义或分配方案属于建模对象层；当前 step 的指标观测对象属于模型实例层；指标时间序列、汇总和分析结论属于计算产物层。
+5. **可视化关系要按层间数据流表达**：`建模对象 -> 仿真实验` 表示组装输入，`仿真实验 -> 模型实例` 表示实例化/运行，`模型实例 -> 计算产物` 表示采样、聚合和分析输出。
+6. **画布交互以检查为目的**。纵向四层画布、折叠/展开、节点拖拽和布局算法只服务结构检查，不代表自动修改 ontology/source contract。
+
+建议推进顺序：
+
+1. 先把现有 `Ontology视图` 改为四层 accordion 画布，允许“模型实例”层先占位。
+2. 再把建模对象层改由 `FEATURE_PAGES + project JSON contract` 生成。
+3. 最后接入 `AviationSupportModel.visualization_state()` 或后续 `snapshot()`，用真实运行时对象填充模型实例层。
 
 ## 目录建议
 
