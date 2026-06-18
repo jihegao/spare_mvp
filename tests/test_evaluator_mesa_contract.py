@@ -45,7 +45,7 @@ class EvaluatorMesaContractTest(unittest.TestCase):
         snapshot_keys = set(model.snapshot())
         self.assertLessEqual(self._required_metrics("smoke"), snapshot_keys)
 
-    def test_aviation_result_schema_metrics_exist_in_snapshot_and_visualization_metrics(self) -> None:
+    def test_aviation_result_schema_metrics_exist_in_live_snapshot(self) -> None:
         module = _load_aviation_module()
         asset_dir = REPO_ROOT / "src" / "spare_mvp_abm" / "aviation_support"
         model = module.AviationSupportModel(
@@ -58,12 +58,9 @@ class EvaluatorMesaContractTest(unittest.TestCase):
             model.step()
 
         required_metrics = self._required_metrics("aviation_support")
-        state = model.visualization_state()
-        snapshot_keys = set(state["snapshot"])
-        visualization_metric_ids = {metric["metric_id"] for metric in state["metrics"]}
+        snapshot_keys = set(model.snapshot())
 
         self.assertLessEqual(required_metrics, snapshot_keys)
-        self.assertLessEqual(required_metrics, visualization_metric_ids)
 
 
 if __name__ == "__main__":

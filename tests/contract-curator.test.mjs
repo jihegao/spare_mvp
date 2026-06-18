@@ -77,9 +77,16 @@ test("scenario and result schemas preserve simulation contract boundaries", asyn
     "scenario_id",
     "project_id",
     "scenario_version",
+    "simulation_model",
     "compiled_from",
     "simulation_inputs",
   ]);
+  assert.ok(scenarioSchema.properties.simulation_model.properties.family);
+  assert.equal(scenarioSchema.properties.simulation_inputs.oneOf.length, 2);
+  assert.ok(runSchema.required.includes("model_family"));
+  assert.ok(runSchema.required.includes("model_id"));
+  assert.ok(runSchema.properties.model_family);
+  assert.ok(runSchema.properties.model_id);
   assert.ok(scenarioSchema.properties.compiled_from.properties.project_schema_version);
   assert.ok(resultSchema.properties.model_family);
   assert.ok(resultSchema.properties.metrics.properties.mission_success_rate);
@@ -90,12 +97,16 @@ test("scenario and result schemas preserve simulation contract boundaries", asyn
 
 test("minimal contract fixtures validate against their schemas", async () => {
   const fixturePairs = [
-    ["contracts/project.schema.json", "tests/fixtures/minimal_project.json"],
-    ["contracts/scenario.schema.json", "tests/fixtures/minimal_scenario.json"],
-    ["contracts/run.schema.json", "tests/fixtures/minimal_run.json"],
-    ["contracts/result.schema.json", "tests/fixtures/minimal_result_smoke.json"],
-    ["contracts/result.schema.json", "tests/fixtures/minimal_result_aviation_support.json"],
-    ["contracts/artifact_manifest.schema.json", "tests/fixtures/minimal_artifact_manifest.json"],
+    ["contracts/project.schema.json", "tests/fixtures/smoke_project.json"],
+    ["contracts/scenario.schema.json", "tests/fixtures/smoke_scenario.json"],
+    ["contracts/run.schema.json", "tests/fixtures/smoke_run.json"],
+    ["contracts/result.schema.json", "tests/fixtures/smoke_result.json"],
+    ["contracts/artifact_manifest.schema.json", "tests/fixtures/smoke_artifact_manifest.json"],
+    ["contracts/project.schema.json", "tests/fixtures/aviation_support_project.json"],
+    ["contracts/scenario.schema.json", "tests/fixtures/aviation_support_scenario.json"],
+    ["contracts/run.schema.json", "tests/fixtures/aviation_support_run.json"],
+    ["contracts/result.schema.json", "tests/fixtures/aviation_support_result.json"],
+    ["contracts/artifact_manifest.schema.json", "tests/fixtures/aviation_support_artifact_manifest.json"],
   ];
 
   for (const [schemaPath, fixturePath] of fixturePairs) {
@@ -105,21 +116,39 @@ test("minimal contract fixtures validate against their schemas", async () => {
   }
 });
 
+test("minimal contract fixtures form a consistent end-to-end object graph", async () => {
+  for (const family of ["smoke", "aviation_support"]) {
+    const project = await readJson(`tests/fixtures/${family}_project.json`);
+    const scenario = await readJson(`tests/fixtures/${family}_scenario.json`);
+    const run = await readJson(`tests/fixtures/${family}_run.json`);
+    const result = await readJson(`tests/fixtures/${family}_result.json`);
+    const manifest = await readJson(`tests/fixtures/${family}_artifact_manifest.json`);
+
+    assert.equal(scenario.project_id, project.project_id);
+    assert.equal(run.scenario_id, scenario.scenario_id);
+    assert.equal(result.run_id, run.run_id);
+    assert.equal(result.result_id, run.result_summary_id);
+    assert.equal(manifest.run_id, run.run_id);
+    assert.equal(result.model_family, scenario.simulation_model.family);
+    assert.equal(run.model_family, scenario.simulation_model.family);
+    assert.equal(run.model_id, scenario.simulation_model.model_id);
+    assert.equal(run.model_family, result.model_family);
+  }
+});
+
 test("scenario schema rejects inputs that SmokeSpareMvpModel would coerce upward", async () => {
   const schema = await readJson("contracts/scenario.schema.json");
-  const fixture = await readJson("tests/fixtures/minimal_scenario.json");
+  const fixture = await readJson("tests/fixtures/smoke_scenario.json");
   const invalidScenario = {
     ...fixture,
     simulation_inputs: {
       ...fixture.simulation_inputs,
-      aircraft_count: 0,
-      mission_count: 0,
       support_capacity: 0,
+      min_required_sorties: 0,
     },
   };
 
   const errors = validateSchema(schema, invalidScenario);
-  assert.ok(errors.some((error) => error.includes("$.simulation_inputs.aircraft_count expected minimum 1")));
-  assert.ok(errors.some((error) => error.includes("$.simulation_inputs.mission_count expected minimum 1")));
   assert.ok(errors.some((error) => error.includes("$.simulation_inputs.support_capacity expected minimum 1")));
+  assert.ok(errors.some((error) => error.includes("$.simulation_inputs.min_required_sorties expected minimum 1")));
 });

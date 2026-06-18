@@ -1,0 +1,38 @@
+{
+  "schema_version": "project-v0",
+  "project_id": "project-smoke-contract-001",
+  "project_version": "project-v0.1",
+  "scenarioId": "smoke-contract-demo",
+  "activeModule": "sparePlanning",
+  "airports": [],
+  "missionAreas": [],
+  "experiment": {
+    "seed": 20260618
+  },
+  "missionProfile": {},
+  "basicMission": {
+    "minRequiredSorties": 5
+  },
+  "missionPhases": [],
+  "combatUnit": {},
+  "equipment": {
+    "minRequiredSorties": 5
+  },
+  "components": [
+    {
+      "id": "engine",
+      "failureRate": 0.07
+    }
+  ],
+  "supportNodes": [
+    {
+      "id": "deck",
+      "equipmentCapacity": 3
+    }
+  ],
+  "supportActivities": [],
+  "reliabilityBlockDiagram": {},
+  "monteCarlo": {
+    "spareMultipliers": [1]
+  }
+}

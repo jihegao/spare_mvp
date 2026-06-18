@@ -1,9 +1,9 @@
 {
   "schema_version": "result-v0",
   "model_family": "aviation_support",
-  "result_id": "result-aviation-support-001",
-  "run_id": "run-carrier-turnaround-demo-001",
-  "scenario_id": "scenario-carrier-turnaround-demo-v0",
+  "result_id": "result-aviation-support-contract-001",
+  "run_id": "run-aviation-support-contract-001",
+  "scenario_id": "scenario-aviation-support-contract-001",
   "scenario_version": "scenario-v0.1",
   "metrics": {
     "sortie_completion_rate": 0.67,

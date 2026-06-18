@@ -1,9 +1,9 @@
 {
   "schema_version": "result-v0",
   "model_family": "smoke",
-  "result_id": "result-smoke-001",
-  "run_id": "run-carrier-turnaround-demo-001",
-  "scenario_id": "scenario-carrier-turnaround-demo-v0",
+  "result_id": "result-smoke-contract-001",
+  "run_id": "run-smoke-contract-001",
+  "scenario_id": "scenario-smoke-contract-001",
   "scenario_version": "scenario-v0.1",
   "metrics": {
     "mission_success_rate": 0.8,

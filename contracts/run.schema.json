@@ -10,6 +10,8 @@
     "project_id",
     "scenario_id",
     "scenario_version",
+    "model_family",
+    "model_id",
     "status",
     "artifact_manifest_id"
   ],
@@ -20,6 +22,8 @@
     "experiment_plan_id": { "type": "string" },
     "scenario_id": { "type": "string" },
     "scenario_version": { "type": "string" },
+    "model_family": { "type": "string", "enum": ["smoke", "aviation_support"] },
+    "model_id": { "type": "string", "enum": ["SmokeSpareMvpModel", "AviationSupportModel"] },
     "status": { "type": "string", "enum": ["queued", "running", "succeeded", "failed", "cancelled"] },
     "run_type": { "type": "string", "enum": ["single", "monte_carlo"] },
     "seed": { "type": "integer" },

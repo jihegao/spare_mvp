@@ -5,32 +5,34 @@
     "smoke": {
       "model_class": "SmokeSpareMvpModel",
       "simulation_inputs": {
-        "aircraft_count": {
-          "source": "project.equipment.quantity",
+        "project_snapshot": {
+          "source": "Project JSON snapshot selected by Scenario compiler",
           "constructor_param": "projectData",
           "derived_by": "Simulation Adapter Agent"
         },
-        "mission_count": {
-          "source": "project.missionProfile.compositeTasks / project.basicMission",
-          "constructor_param": "projectData",
-          "derived_by": "Simulation Adapter Agent"
+        "project_version": {
+          "source": "Project JSON application envelope",
+          "constructor_param": "projectJsonPath"
         },
-        "support_capacity": {
-          "source": "project.supportNodes[].equipmentCapacity",
-          "constructor_param": "supportCapacity"
+        "active_module": {
+          "source": "project.activeModule",
+          "constructor_param": "activeModule"
         },
-        "initial_spare_stock": {
-          "source": "project.supportNodes[].inventory",
-          "constructor_param": "projectData",
-          "derived_by": "Simulation Adapter Agent"
+        "spare_multiplier": {
+          "source": "project.monteCarlo.spareMultipliers[]",
+          "constructor_param": "spareMultiplier"
         },
         "failure_rate": {
           "source": "project.components[].failureRate",
           "constructor_param": "failureRate"
         },
-        "spare_multiplier": {
-          "source": "project.monteCarlo.spareMultipliers[]",
-          "constructor_param": "spareMultiplier"
+        "support_capacity": {
+          "source": "project.supportNodes[].equipmentCapacity",
+          "constructor_param": "supportCapacity"
+        },
+        "min_required_sorties": {
+          "source": "project.equipment.minRequiredSorties / project.basicMission.minRequiredSorties",
+          "constructor_param": "minRequiredSorties"
         },
         "seed": {
           "source": "project.experiment.seed",
@@ -41,6 +43,11 @@
     "aviation_support": {
       "model_class": "AviationSupportModel",
       "simulation_inputs": {
+        "ontology_version": {
+          "source": "ontology/spare_mvp.ontology.json",
+          "status": "unsupported",
+          "reason": "requires Claude-approved compilation rule"
+        },
         "aircraft_count": {
           "source": "project.equipment.quantity",
           "constructor_param": "aircraft_count"
@@ -49,24 +56,29 @@
           "source": "project.basicMission / project.missionProfile",
           "constructor_param": "mission_count"
         },
-        "support_capacity": {
+        "mission_aircraft_required": {
+          "source": "project.basicMission.equipmentQuantity",
+          "constructor_param": "mission_aircraft_required"
+        },
+        "mechanic_teams": {
+          "source": "project.supportNodes[].personnelCapacity",
+          "status": "unsupported",
+          "reason": "requires Claude-approved compilation rule"
+        },
+        "fuel_trucks": {
+          "source": "project.supportActivities / ontology resources",
+          "status": "unsupported",
+          "reason": "requires Claude-approved compilation rule"
+        },
+        "maintenance_bays": {
           "source": "project.supportNodes[].equipmentCapacity",
-          "constructor_param": "maintenance_bays"
+          "status": "unsupported",
+          "reason": "requires Claude-approved compilation rule"
         },
-        "initial_spare_stock": {
-          "source": "project.supportNodes[].inventory",
-          "constructor_param": "use_ontology_scenario",
-          "derived_by": "ontology scenario load"
-        },
-        "failure_rate": {
-          "source": "project.components[].failureRate",
-          "constructor_param": "lru_failure_multiplier",
-          "derived_by": "Simulation Adapter Agent"
-        },
-        "spare_multiplier": {
-          "source": "project.monteCarlo.spareMultipliers[]",
-          "constructor_param": "use_ontology_scenario",
-          "derived_by": "Simulation Adapter Agent"
+        "lru_failure_multiplier": {
+          "source": "project.components[].failureRate normalized by Simulation Adapter",
+          "status": "unsupported",
+          "reason": "requires Claude-approved compilation rule"
         },
         "seed": {
           "source": "project.experiment.seed",

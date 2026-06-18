@@ -15,4 +15,10 @@ These schemas are not a replacement for the Mesa model, ontology, or Claude-gove
 
 The current frontend Project JSON is the raw `defaultScenario` shape from `front/sim-engine.mjs`; `schema_version` and `project_id` may be supplied later by an application envelope but are not required inside that raw payload.
 
+`scenario.schema.json` requires an explicit `simulation_model` with `family`, `model_id`, and `contract_version`. Its `simulation_inputs` field is split with `oneOf` branches for `smoke` and `aviation_support`, so the Simulation Adapter must compile model-specific inputs instead of coercing a mixed parameter bag.
+
+`run.schema.json` repeats `model_family` and `model_id` for query, audit, and Result validation.
+
 `result.schema.json` distinguishes `smoke` and `aviation_support` through `model_family`. It does not normalize aviation metrics into smoke metrics, because that would change metric semantics and must go through the Mesa governance process.
+
+Result fixture metrics are treated as Simulation Adapter normalized summaries derived from `src/spare_mvp_abm/smoke_model.py snapshot()` and `src/spare_mvp_abm/aviation_support/model.py snapshot()`. `visualization_state().metrics` remains a visualization surface and is not the Result schema source.
