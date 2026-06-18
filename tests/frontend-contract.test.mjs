@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { FEATURE_PAGES, getFeaturePageById, groupFeaturePages } from "../front/feature-catalog.mjs";
-import { buildOntologyContext, PROJECT_ONTOLOGY, PROJECT_ONTOLOGY_PLAYGROUND } from "../front/ontology-context.mjs";
+import { buildOntologyContext, buildProjectOntology, PROJECT_ONTOLOGY, PROJECT_ONTOLOGY_PLAYGROUND } from "../front/ontology-context.mjs";
 
 test("feature catalog exposes all table-2 four-level pages", () => {
   assert.equal(FEATURE_PAGES.length, 49);
@@ -459,14 +459,20 @@ test("monte carlo evaluation result is rendered in result analysis page", async 
   assert.match(appSource, /mc-evaluation-table/);
 });
 
-test("project ontology covers modeling objects experiments and computation artifacts", () => {
+test("project ontology covers the four rebuild-plan layers", () => {
   const groups = new Set(PROJECT_ONTOLOGY.nodes.map((node) => node.group));
   assert.ok(groups.has("modeling-object"));
   assert.ok(groups.has("simulation-experiment"));
+  assert.ok(groups.has("model-instance"));
   assert.ok(groups.has("computation-artifact"));
   assert.ok(PROJECT_ONTOLOGY.nodes.some((node) => node.id === "monte-carlo-config"));
+  assert.ok(PROJECT_ONTOLOGY.nodes.some((node) => node.id.startsWith("aircraft:")));
+  assert.ok(PROJECT_ONTOLOGY.nodes.some((node) => node.id.startsWith("support_task:")));
+  assert.ok(PROJECT_ONTOLOGY.nodes.some((node) => node.id.startsWith("metric:")));
   assert.ok(PROJECT_ONTOLOGY.nodes.some((node) => node.id === "metric-time-series"));
   assert.ok(PROJECT_ONTOLOGY.edges.some((edge) => edge.from === "monte-carlo-config" && edge.to === "simulation-run"));
+  assert.ok(PROJECT_ONTOLOGY.edges.some((edge) => edge.from === "simulation-run" && edge.to.startsWith("aircraft:")));
+  assert.ok(PROJECT_ONTOLOGY.edges.some((edge) => edge.from.startsWith("metric:") && edge.to === "metric-time-series"));
 });
 
 test("project ontology is generated from an Ontology Playground compatible shape", () => {
@@ -494,61 +500,102 @@ test("project ontology is generated from an Ontology Playground compatible shape
   }
 });
 
-test("modeling object layer expands internal scenario task unit and equipment relations", () => {
-  const nodeIds = new Set(PROJECT_ONTOLOGY.nodes.map((node) => node.id));
-  for (const id of [
-    "airport",
-    "mission-area",
-    "task",
-    "daily-profile",
-    "long-cycle-profile",
-    "aircraft-model",
-    "aircraft-quantity",
-    "equipment-system",
-    "analysis-diagram",
-    "component-parent",
-    "lru-flag"
-  ]) {
-    assert.ok(nodeIds.has(id), id);
-  }
+test("modeling object layer is generated from feature pages and the project JSON contract", () => {
+  const missionProfilePage = getFeaturePageById("spare-planning-mission-profile-parameters");
+  const contractNode = PROJECT_ONTOLOGY.nodes.find((node) => node.id === "project:missionProfile");
 
-  const edgeKeys = new Set(PROJECT_ONTOLOGY.edges.map((edge) => `${edge.from}:${edge.label}:${edge.to}`));
-  for (const key of [
-    "built-in-scenario:包含:airport",
-    "built-in-scenario:包含:mission-area",
-    "task:包含:basic-mission",
-    "task:包含:daily-profile",
-    "task:包含:long-cycle-profile",
-    "daily-profile:包含:basic-mission",
-    "long-cycle-profile:由N个日剖面组成:daily-profile",
-    "basic-mission:要求:aircraft-model",
-    "basic-mission:要求:aircraft-quantity",
-    "combat-unit:包含:aircraft-model",
-    "combat-unit:包含:aircraft-quantity",
-    "equipment:包含:equipment-system",
-    "equipment-system:包含:component",
-    "component:具有上级节点:component-parent",
-    "component:标记:lru-flag"
-  ]) {
-    assert.ok(edgeKeys.has(key), key);
-  }
+  assert.equal(PROJECT_ONTOLOGY.nodes.some((node) => node.id === `feature:${missionProfilePage.id}`), false);
+
+  assert.ok(contractNode);
+  assert.equal(contractNode.group, "modeling-object");
+  assert.equal(contractNode.source.kind, "project-json-contract");
+  assert.ok(contractNode.source.fieldPaths.includes("missionProfile.profileType"));
+  assert.ok(contractNode.source.fieldPaths.includes("missionProfile.repeatCycleHours"));
+  assert.ok(contractNode.source.featurePages.some((page) => page.featureId === missionProfilePage.id));
+  assert.ok(contractNode.source.featurePages.some((page) => page.name === "任务剖面参数"));
+  assert.equal(PROJECT_ONTOLOGY.nodes.some((node) => node.id === "task"), false);
 });
 
-test("modeling object nodes are laid out as a two-dimensional layer", () => {
-  const modelingPositions = PROJECT_ONTOLOGY.nodes
-    .filter((node) => node.group === "modeling-object")
-    .map((node) => node.layout)
-    .filter(Boolean);
-  assert.ok(new Set(modelingPositions.map((position) => position.x)).size >= 3);
-  assert.ok(new Set(modelingPositions.map((position) => position.y)).size >= 3);
+test("modeling object layer keeps form pages as project object metadata", () => {
+  const modelingPages = FEATURE_PAGES.filter((page) => page.secondary === "仿真建模");
+  const experimentAndAnalysisPages = FEATURE_PAGES.filter((page) => page.secondary !== "仿真建模");
+
+  for (const page of modelingPages) {
+    assert.equal(PROJECT_ONTOLOGY.nodes.some((node) => node.id === `feature:${page.id}`), false, page.id);
+    for (const objectPath of page.dataObjects) {
+      const objectNode = PROJECT_ONTOLOGY.nodes.find((node) => node.id === `project:${objectPath.split(".")[0]}`);
+      assert.ok(objectNode, `${page.id}:${objectPath}`);
+      assert.ok(objectNode.source.featurePages.some((sourcePage) => sourcePage.featureId === page.id), page.id);
+    }
+  }
+
+  for (const page of experimentAndAnalysisPages) {
+    assert.equal(PROJECT_ONTOLOGY.nodes.some((node) => node.id === `feature:${page.id}`), false, page.id);
+  }
+
+  for (const id of ["project:experiment", "project:monteCarlo", "project:runs", "project:summary", "project:decisionOutputs"]) {
+    assert.equal(PROJECT_ONTOLOGY.nodes.some((node) => node.id === id && node.group === "modeling-object"), false, id);
+  }
+
+  assert.ok(PROJECT_ONTOLOGY.nodes.some((node) => node.id === "experiment-plan" && node.group === "simulation-experiment"));
+  assert.ok(PROJECT_ONTOLOGY.nodes.some((node) => node.id === "monte-carlo-config" && node.group === "simulation-experiment"));
+  assert.ok(PROJECT_ONTOLOGY.nodes.some((node) => node.id === "spare-shortfall-analysis" && node.group === "computation-artifact"));
 });
 
-test("feature pages can build ontology focus contexts", () => {
-  const page = getFeaturePageById("spare-planning-monte-carlo-config");
+test("modeling object layer does not promote object fields into standalone project nodes", () => {
+  const nestedProjectNodes = PROJECT_ONTOLOGY.nodes.filter((node) => (
+    node.group === "modeling-object"
+    && node.id.startsWith("project:")
+    && node.id.includes(".")
+  ));
+
+  assert.deepEqual(nestedProjectNodes.map((node) => node.id), []);
+});
+
+test("module-scoped ontology only loads modeling objects from the launching module", () => {
+  const spareOntology = buildProjectOntology({ module: "备件规划评估模块" });
+  const reliabilityOntology = buildProjectOntology({ module: "任务可靠度评估模块" });
+
+  const spareFeatureSources = spareOntology.nodes
+    .filter((node) => node.group === "modeling-object" && node.id.startsWith("project:"))
+    .flatMap((node) => node.source.featurePages);
+  const reliabilityFeatureSources = reliabilityOntology.nodes
+    .filter((node) => node.group === "modeling-object" && node.id.startsWith("project:"))
+    .flatMap((node) => node.source.featurePages);
+
+  assert.equal(spareOntology.nodes.some((node) => node.id.startsWith("feature:")), false);
+  assert.ok(spareFeatureSources.some((page) => page.featureId === "spare-planning-support-personnel"));
+  assert.equal(spareFeatureSources.some((page) => page.featureId.startsWith("mission-reliability-")), false);
+  assert.equal(spareOntology.nodes.some((node) => node.id === "project:reliabilityBlockDiagram"), false);
+
+  assert.equal(reliabilityOntology.nodes.some((node) => node.id.startsWith("feature:")), false);
+  assert.ok(reliabilityFeatureSources.some((page) => page.featureId === "mission-reliability-support-personnel"));
+  assert.equal(reliabilityFeatureSources.some((page) => page.featureId.startsWith("spare-planning-")), false);
+  assert.ok(reliabilityOntology.nodes.some((node) => node.id === "project:reliabilityBlockDiagram"));
+});
+
+test("modeling feature pages can build ontology focus contexts", () => {
+  const page = getFeaturePageById("spare-planning-mission-profile-parameters");
   const context = buildOntologyContext(page);
-  assert.ok(context.focusNodeIds.includes("monte-carlo-config"));
-  assert.ok(context.nodes.length >= 4);
-  assert.ok(context.edges.length >= 3);
+  assert.equal(context.focusNodeIds.includes(`feature:${page.id}`), false);
+  assert.ok(context.focusNodeIds.includes("project:missionProfile"));
+  assert.equal(context.nodes.some((node) => node.id === `feature:${page.id}`), false);
+  assert.ok(context.nodes.some((node) => node.id === "project:missionProfile"));
+  assert.ok(context.nodes.some((node) => node.id === "scenario"));
+  assert.ok(context.edges.some((edge) => edge.from === "project:missionProfile" && edge.to === "scenario"));
+});
+
+test("experiment and analysis focus contexts do not reintroduce modeling-layer objects", () => {
+  const monteCarloPage = getFeaturePageById("spare-planning-monte-carlo-config");
+  const monteCarloContext = buildOntologyContext(monteCarloPage);
+  assert.ok(monteCarloContext.focusNodeIds.includes("monte-carlo-config"));
+  assert.equal(monteCarloContext.focusNodeIds.includes(`feature:${monteCarloPage.id}`), false);
+  assert.equal(monteCarloContext.nodes.some((node) => node.id === "project:monteCarlo"), false);
+
+  const analysisPage = getFeaturePageById("spare-planning-spare-shortfall-analysis");
+  const analysisContext = buildOntologyContext(analysisPage);
+  assert.ok(analysisContext.focusNodeIds.includes("spare-shortfall-analysis"));
+  assert.equal(analysisContext.focusNodeIds.includes(`feature:${analysisPage.id}`), false);
 });
 
 test("frontend removes the standalone ontology visualization route", async () => {
@@ -576,9 +623,96 @@ test("visual simulation page embeds Mesa visualization and ontology views", asyn
   assert.match(appSource, /mesaTab\("ontology"/);
   assert.match(appSource, /Mesa ABM/);
   assert.match(appSource, /renderMesaOntologyPanel/);
-  assert.match(appSource, /renderOntologySvg\(PROJECT_ONTOLOGY/);
+  assert.match(appSource, /renderOntologySvg\(ontology/);
+  assert.match(appSource, /buildMesaOntologyFocusSet/);
   assert.match(appSource, /isVisualSimulationPage/);
   assert.match(appSource, /<h2>\$\{htmlEscape\(page\.tertiary\)\}<\/h2>/);
   assert.doesNotMatch(appSource, /return `<div>\$\{breadcrumb\}<\/div>`;/);
   assert.doesNotMatch(appSource, /可视化实验启动与停止<\/h2>/);
+});
+
+test("mesa ontology graph is scoped to the selected feature module", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+
+  assert.match(appSource, /buildProjectOntology/);
+  assert.match(appSource, /function currentMesaOntology/);
+  assert.match(appSource, /buildProjectOntology\(\{ module: page\.module \}\)/);
+  assert.doesNotMatch(appSource, /renderOntologySvg\(PROJECT_ONTOLOGY/);
+});
+
+test("mesa ontology canvas uses four vertical collapsible layers", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+
+  assert.match(appSource, /group: "modeling-object"/);
+  assert.match(appSource, /group: "simulation-experiment"/);
+  assert.match(appSource, /group: "model-instance"/);
+  assert.match(appSource, /group: "computation-artifact"/);
+  assert.match(appSource, /data-ontology-band-toggle/);
+  assert.match(appSource, /collapsedOntologyGroups/);
+});
+
+test("mesa ontology view supports fullscreen toggle and selectable graph details", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const styleSource = await readFile(new URL("../front/styles.css", import.meta.url), "utf8");
+
+  assert.match(appSource, /data-ontology-fullscreen/);
+  assert.match(appSource, /ontology-fullscreen/);
+  assert.match(appSource, /selectedOntologyItem/);
+  assert.match(appSource, /data-ontology-node-id/);
+  assert.match(appSource, /data-ontology-edge-id/);
+  assert.match(appSource, /renderMesaOntologyDetailPanel/);
+  assert.match(appSource, /renderOntologyNodeDetail/);
+  assert.match(appSource, /renderOntologyEdgeDetail/);
+  assert.match(appSource, /属性详情/);
+  assert.match(styleSource, /\.mesa-visual-shell\.ontology-fullscreen/);
+  assert.match(styleSource, /\.ontology-detail-list/);
+  assert.match(styleSource, /\.ontology-node\.selected circle/);
+  assert.match(styleSource, /\.ontology-edge\.selected path/);
+});
+
+test("mesa ontology graph supports resizable layers draggable nodes and field panels", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const styleSource = await readFile(new URL("../front/styles.css", import.meta.url), "utf8");
+
+  assert.match(appSource, /ontologyBandLayout/);
+  assert.match(appSource, /ontologyNodePositionOverrides/);
+  assert.match(appSource, /activeOntologyDrag/);
+  assert.match(appSource, /data-ontology-band-resize/);
+  assert.match(appSource, /getOntologySvgPoint/);
+  assert.match(appSource, /sortOntologyNodesForRender/);
+  assert.match(appSource, /renderOntologyFieldRows/);
+  assert.match(appSource, /renderOntologyRelationList/);
+  assert.match(appSource, /字段/);
+  assert.match(appSource, /关联关系/);
+  assert.match(styleSource, /\.ontology-band-resize-handle/);
+  assert.match(styleSource, /\.ontology-node\.dragging circle/);
+  assert.match(styleSource, /\.ontology-field-table/);
+  assert.match(styleSource, /\.ontology-relation-list/);
+});
+
+test("mesa ontology svg does not render a separate framed canvas", async () => {
+  const styleSource = await readFile(new URL("../front/styles.css", import.meta.url), "utf8");
+  const mesaSvgRule = styleSource.match(/\.mesa-ontology-stage \.ontology-svg\s*\{[^}]+\}/)?.[0] || "";
+
+  assert.match(mesaSvgRule, /border:\s*0/);
+  assert.match(mesaSvgRule, /border-radius:\s*0/);
+  assert.match(mesaSvgRule, /background:\s*transparent/);
+});
+
+test("mesa ontology fullscreen uses canvas-first spring layout with compact circular nodes", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const styleSource = await readFile(new URL("../front/styles.css", import.meta.url), "utf8");
+
+  assert.match(appSource, /isOntologyDetailCollapsed/);
+  assert.match(appSource, /data-ontology-detail-toggle/);
+  assert.match(appSource, /renderMesaOntologyCollapsedPanel/);
+  assert.match(appSource, /calculateOntologySpringLayout/);
+  assert.match(appSource, /springIterations/);
+  assert.match(appSource, /nodeRadius/);
+  assert.match(appSource, /edgePath\(from, to, ONTOLOGY_NODE_RADIUS\)/);
+  assert.match(appSource, /<circle r="\$\{ONTOLOGY_NODE_RADIUS\}"/);
+  assert.match(styleSource, /\.ontology-fullscreen \.mesa-visual-grid/);
+  assert.match(styleSource, /\.ontology-fullscreen \.mesa-side-panel\.collapsed/);
+  assert.match(styleSource, /\.ontology-detail-toggle/);
+  assert.match(styleSource, /\.ontology-node circle/);
 });

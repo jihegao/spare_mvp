@@ -49,6 +49,49 @@ export const AVIATION_SUPPORT_DEMO_STATE = {
     { job_id: 12, tail_number: "AC-02", kind: "pre_support", state: "active", task: "通电检查", remaining: 8 },
     { job_id: 13, tail_number: "AC-06", kind: "post_support", state: "waiting", task: "回收检查", remaining: 25 }
   ],
+  support_tasks: [
+    {
+      task_id: "support-task-12",
+      job_id: 12,
+      tail_number: "AC-02",
+      kind: "pre_support",
+      state: "active",
+      current_task: "通电检查",
+      remaining: 8,
+      required_resources: { mechanic_team: 1, power_cart: 1 },
+      required_spares: {}
+    },
+    {
+      task_id: "support-task-13",
+      job_id: 13,
+      tail_number: "AC-06",
+      kind: "post_support",
+      state: "waiting",
+      current_task: "回收检查",
+      remaining: 25,
+      required_resources: { mechanic_team: 1 },
+      required_spares: {}
+    }
+  ],
+  metrics: [
+    { metric_id: "sortie_completion_rate", name: "出动完成率", value: 0.71, unit: "ratio" },
+    { metric_id: "available_aircraft", name: "可用飞机", value: 3, unit: "count" },
+    { metric_id: "active_jobs", name: "活动作业", value: 2, unit: "count" },
+    { metric_id: "spare_stock_total", name: "备件库存", value: 8, unit: "count" }
+  ],
+  object_relationships: [
+    { from: "aircraft:AC-04", to: "mission:1", type: "assigned_to", label: "执行任务" },
+    { from: "aircraft:AC-05", to: "mission:1", type: "assigned_to", label: "执行任务" },
+    { from: "aircraft:AC-03", to: "mission:2", type: "assigned_to", label: "执行任务" },
+    { from: "aircraft:AC-02", to: "support_task:support-task-12", type: "has_support_task", label: "生成保障作业" },
+    { from: "aircraft:AC-06", to: "support_task:support-task-13", type: "has_support_task", label: "生成保障作业" },
+    { from: "support_task:support-task-12", to: "resource:mechanic_team", type: "uses_resource", label: "占用资源" },
+    { from: "support_task:support-task-12", to: "resource:power_cart", type: "uses_resource", label: "占用资源" },
+    { from: "support_task:support-task-13", to: "resource:mechanic_team", type: "uses_resource", label: "占用资源" },
+    { from: "mission:1", to: "metric:sortie_completion_rate", type: "observed_as", label: "采样指标" },
+    { from: "resource:mechanic_team", to: "metric:active_jobs", type: "observed_as", label: "采样指标" },
+    { from: "spare:engine_lru", to: "metric:spare_stock_total", type: "observed_as", label: "采样指标" }
+  ],
   events: [
     { time: 252, event: "launch", message: "AC-03 延迟 12 分钟后出动" },
     { time: 226, event: "support_start", message: "AC-02 开始飞行前保障" },
@@ -119,8 +162,200 @@ export function normalizeAviationSupportState(state = AVIATION_SUPPORT_DEMO_STAT
   };
 }
 
+export const AVIATION_SUPPORT_OBJECT_GRAPH = buildAviationSupportObjectGraph(AVIATION_SUPPORT_DEMO_STATE);
+
+export function buildAviationSupportObjectGraph(state = AVIATION_SUPPORT_DEMO_STATE) {
+  const nodes = [
+    modelNode(
+      "snapshot",
+      "当前快照",
+      "snapshot",
+      `T+${Number(state.snapshot?.elapsed_hours || 0).toFixed(1)}h 运行状态快照`,
+      "snapshot",
+      "snapshot"
+    ),
+    ...(state.aircraft || []).map((item) => modelNode(
+      `aircraft:${item.tail_number}`,
+      item.tail_number,
+      "aircraft",
+      `飞机 ${item.tail_number} / ${item.state}`,
+      "aircraft",
+      item.tail_number
+    )),
+    ...(state.missions || []).map((item) => modelNode(
+      `mission:${item.mission_id}`,
+      `任务 ${item.mission_id}`,
+      "mission",
+      `任务状态 ${item.status}，需求 ${number(item.required_aircraft)} 架`,
+      "missions",
+      item.mission_id
+    )),
+    ...(state.resources || []).map((item) => modelNode(
+      `resource:${item.name}`,
+      item.display_name || item.name,
+      "resource",
+      `${item.category || "resource"} 容量 ${number(item.capacity)} / 占用 ${number(item.in_use)}`,
+      "resources",
+      item.name
+    )),
+    ...(state.spares || []).map((item) => modelNode(
+      `spare:${item.part_id}`,
+      item.name || item.part_id,
+      "spare",
+      `库存 ${number(item.quantity)} / 消耗 ${number(item.consumed)}`,
+      "spares",
+      item.part_id
+    )),
+    ...supportTasksForState(state).map((item) => modelNode(
+      `support_task:${item.task_id}`,
+      item.current_task || item.task || String(item.task_id),
+      "support_task",
+      `${item.kind || "support"} / ${item.state || "waiting"} / ${item.tail_number || "-"}`,
+      "support_tasks",
+      item.task_id
+    )),
+    ...metricsForState(state).map((item) => modelNode(
+      `metric:${item.metric_id}`,
+      item.name || item.metric_id,
+      "metric",
+      `${item.metric_id}: ${item.value}${item.unit ? ` ${item.unit}` : ""}`,
+      "metrics",
+      item.metric_id
+    ))
+  ];
+
+  const nodeIds = new Set(nodes.map((node) => node.id));
+  const edges = relationshipsForState(state)
+    .filter((relationship) => nodeIds.has(relationship.from) && nodeIds.has(relationship.to))
+    .map((relationship) => ({
+      id: `${relationship.from}__${relationship.type || relationship.label}__${relationship.to}`,
+      from: relationship.from,
+      to: relationship.to,
+      label: relationship.label || relationLabel(relationship.type),
+      source: {
+        kind: "visualization_state",
+        relationshipType: relationship.type || "related_to"
+      }
+    }));
+
+  return { nodes, edges };
+}
+
 function kpi(key, label, value) {
   return { key, label, value };
+}
+
+function modelNode(id, label, runtimeType, description, stateCollection, stateId) {
+  return {
+    id,
+    label,
+    group: "model-instance",
+    description,
+    source: {
+      kind: "visualization_state",
+      runtimeType,
+      stateCollection,
+      stateId
+    },
+    layout: { cluster: runtimeType }
+  };
+}
+
+function supportTasksForState(state) {
+  if (Array.isArray(state.support_tasks) && state.support_tasks.length > 0) {
+    return state.support_tasks.map((item) => ({
+      ...item,
+      task_id: item.task_id || `support-task-${item.job_id}`
+    }));
+  }
+  return (state.jobs || []).map((item) => ({
+    task_id: `support-task-${item.job_id}`,
+    job_id: item.job_id,
+    tail_number: item.tail_number,
+    kind: item.kind,
+    state: item.state,
+    current_task: item.task,
+    remaining: item.remaining,
+    required_resources: item.required_resources || {},
+    required_spares: item.required_spares || {}
+  }));
+}
+
+function metricsForState(state) {
+  if (Array.isArray(state.metrics) && state.metrics.length > 0) return state.metrics;
+  const snapshot = state.snapshot || {};
+  return [
+    { metric_id: "sortie_completion_rate", name: "出动完成率", value: snapshot.sortie_completion_rate ?? 0, unit: "ratio" },
+    { metric_id: "available_aircraft", name: "可用飞机", value: snapshot.available_aircraft ?? 0, unit: "count" },
+    { metric_id: "active_jobs", name: "活动作业", value: snapshot.active_jobs ?? 0, unit: "count" },
+    { metric_id: "spare_stock_total", name: "备件库存", value: snapshot.spare_stock_total ?? 0, unit: "count" }
+  ];
+}
+
+function relationshipsForState(state) {
+  if (Array.isArray(state.object_relationships) && state.object_relationships.length > 0) {
+    return state.object_relationships;
+  }
+
+  const relationships = [];
+  for (const mission of state.missions || []) {
+    for (const tailNumber of mission.assigned_tail_numbers || []) {
+      relationships.push({
+        from: `aircraft:${tailNumber}`,
+        to: `mission:${mission.mission_id}`,
+        type: "assigned_to",
+        label: relationLabel("assigned_to")
+      });
+    }
+  }
+
+  for (const task of supportTasksForState(state)) {
+    relationships.push({
+      from: `aircraft:${task.tail_number}`,
+      to: `support_task:${task.task_id}`,
+      type: "has_support_task",
+      label: relationLabel("has_support_task")
+    });
+    for (const resourceName of Object.keys(task.required_resources || {})) {
+      relationships.push({
+        from: `support_task:${task.task_id}`,
+        to: `resource:${resourceName}`,
+        type: "uses_resource",
+        label: relationLabel("uses_resource")
+      });
+    }
+    for (const spareId of Object.keys(task.required_spares || {})) {
+      relationships.push({
+        from: `support_task:${task.task_id}`,
+        to: `spare:${spareId}`,
+        type: "consumes_spare",
+        label: relationLabel("consumes_spare")
+      });
+    }
+  }
+
+  for (const metric of metricsForState(state)) {
+    relationships.push({
+      from: `metric:${metric.metric_id}`,
+      to: "snapshot",
+      type: "sampled_from",
+      label: relationLabel("sampled_from")
+    });
+  }
+
+  return relationships;
+}
+
+function relationLabel(type) {
+  const labels = {
+    assigned_to: "执行任务",
+    has_support_task: "生成保障作业",
+    uses_resource: "占用资源",
+    consumes_spare: "消耗备件",
+    observed_as: "采样指标",
+    sampled_from: "采样自"
+  };
+  return labels[type] || "关联";
 }
 
 function percent(value) {

@@ -1,6 +1,6 @@
 import { FEATURE_PAGES, getFeaturePageById, groupFeaturePages } from "./feature-catalog.mjs";
 import { AVIATION_SUPPORT_DEMO_STATE, normalizeAviationSupportState } from "./aviation-support-state.mjs";
-import { ONTOLOGY_GROUPS, PROJECT_ONTOLOGY } from "./ontology-context.mjs";
+import { buildProjectOntology, ONTOLOGY_GROUPS } from "./ontology-context.mjs?v=20260618-no-feature-nodes";
 import {
   cloneScenario,
   defaultScenario,
@@ -27,6 +27,13 @@ const CARRY_OBJECTIVES = [
   { id: "sortie-rate", label: "出动架次率", metricLabel: "预计出动架次率", metricValue: "86%" },
   { id: "turnaround-time", label: "再次出动准备时间", metricLabel: "预计准备时间", metricValue: "42 min" }
 ];
+const DEFAULT_ONTOLOGY_BANDS = [
+  { group: "modeling-object", label: ONTOLOGY_GROUPS["modeling-object"].label, x: 28, width: 1372, height: 390 },
+  { group: "simulation-experiment", label: ONTOLOGY_GROUPS["simulation-experiment"].label, x: 28, width: 1372, height: 145 },
+  { group: "model-instance", label: ONTOLOGY_GROUPS["model-instance"].label, x: 28, width: 1372, height: 235 },
+  { group: "computation-artifact", label: ONTOLOGY_GROUPS["computation-artifact"].label, x: 28, width: 1372, height: 145 }
+];
+const ONTOLOGY_NODE_RADIUS = 30;
 const SUPPORT_ORG_TREE = [
   { id: "wing", name: "舰载机保障大队", children: [
     { id: "service", name: "机务保障中队", children: [{ id: "fuel", name: "油料组" }, { id: "avionics", name: "航电组" }, { id: "ordnance", name: "军械组" }] },
@@ -111,6 +118,14 @@ let currentProject = DEMO_PROJECTS[0];
 let selectedRoute = readRouteFromHash() || DEFAULT_ROUTE;
 let selectedFeatureId = readFeatureIdFromHash() || DEFAULT_FEATURE_ID;
 let selectedMesaView = "aircraft";
+let isOntologyFullscreen = false;
+let selectedOntologyItem = null;
+let isOntologyDetailCollapsed = true;
+let ontologyBandLayout = {};
+let ontologyNodePositionOverrides = {};
+let collapsedOntologyGroups = new Set();
+let activeOntologyDrag = null;
+let suppressOntologyClick = false;
 let carryObjective = CARRY_OBJECTIVES[0].id;
 let experimentRunStatus = "当前";
 let isProjectMenuOpen = false;
@@ -126,6 +141,13 @@ function bindEvents() {
   });
 
   app.addEventListener("click", (event) => {
+    if (suppressOntologyClick) {
+      suppressOntologyClick = false;
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+
     const loginButton = event.target.closest("[data-login-submit]");
     if (loginButton) {
       isLoggedIn = true;
@@ -190,6 +212,48 @@ function bindEvents() {
       return;
     }
 
+    const ontologyFullscreenButton = event.target.closest("[data-ontology-fullscreen]");
+    if (ontologyFullscreenButton) {
+      isOntologyFullscreen = !isOntologyFullscreen;
+      isOntologyDetailCollapsed = isOntologyFullscreen;
+      selectedMesaView = "ontology";
+      render();
+      return;
+    }
+
+    const ontologyDetailToggle = event.target.closest("[data-ontology-detail-toggle]");
+    if (ontologyDetailToggle) {
+      isOntologyDetailCollapsed = !isOntologyDetailCollapsed;
+      selectedMesaView = "ontology";
+      render();
+      return;
+    }
+
+    const ontologyBandToggle = event.target.closest("[data-ontology-band-toggle]");
+    if (ontologyBandToggle) {
+      const group = ontologyBandToggle.dataset.ontologyBandToggle;
+      collapsedOntologyGroups = toggleSetValue(collapsedOntologyGroups, group);
+      selectedMesaView = "ontology";
+      render();
+      return;
+    }
+
+    const ontologyNode = event.target.closest("[data-ontology-node-id]");
+    if (ontologyNode) {
+      selectedOntologyItem = { type: "node", id: ontologyNode.dataset.ontologyNodeId };
+      selectedMesaView = "ontology";
+      render();
+      return;
+    }
+
+    const ontologyEdge = event.target.closest("[data-ontology-edge-id]");
+    if (ontologyEdge) {
+      selectedOntologyItem = { type: "edge", id: ontologyEdge.dataset.ontologyEdgeId };
+      selectedMesaView = "ontology";
+      render();
+      return;
+    }
+
     const monteCarloStartButton = event.target.closest("[data-mc-action='start']");
     if (monteCarloStartButton) {
       const page = getFeaturePageById(selectedFeatureId);
@@ -230,6 +294,110 @@ function bindEvents() {
     const mcArrayInput = event.target.closest("[data-mc-array-path]");
     if (mcArrayInput) updateMonteCarloArrayInput(mcArrayInput);
   });
+
+  app.addEventListener("pointerdown", (event) => {
+    const resizeHandle = event.target.closest("[data-ontology-band-resize]");
+    if (resizeHandle) {
+      const point = getOntologySvgPoint(event);
+      const band = ontologyBands().find((item) => item.group === resizeHandle.dataset.ontologyBandResize);
+      if (!point || !band) return;
+      activeOntologyDrag = {
+        kind: "band",
+        group: band.group,
+        startX: point.x,
+        startY: point.y,
+        originWidth: band.width,
+        originHeight: band.height,
+        originX: band.x,
+        originY: band.y,
+        moved: false
+      };
+      event.preventDefault();
+      return;
+    }
+
+    const nodeElement = event.target.closest("[data-ontology-node-id]");
+    if (nodeElement && event.target.closest(".ontology-svg")) {
+      const ontology = currentMesaOntology();
+      const nodeItem = ontology.nodes.find((node) => node.id === nodeElement.dataset.ontologyNodeId);
+      const point = getOntologySvgPoint(event);
+      if (!nodeItem || !point) return;
+      const positions = buildOntologyPositions(ontology.nodes, ontology.edges);
+      const position = positions[nodeItem.id];
+      selectedOntologyItem = { type: "node", id: nodeItem.id };
+      selectedMesaView = "ontology";
+      activeOntologyDrag = {
+        kind: "node",
+        id: nodeItem.id,
+        startX: point.x,
+        startY: point.y,
+        originX: position.x,
+        originY: position.y,
+        moved: false
+      };
+      event.preventDefault();
+    }
+  });
+
+  window.addEventListener("pointermove", handleOntologyPointerMove);
+  window.addEventListener("pointerup", finishOntologyPointerDrag);
+}
+
+function handleOntologyPointerMove(event) {
+  if (!activeOntologyDrag) return;
+  const point = getOntologySvgPoint(event);
+  if (!point) return;
+  const dx = point.x - activeOntologyDrag.startX;
+  const dy = point.y - activeOntologyDrag.startY;
+  activeOntologyDrag.moved ||= Math.abs(dx) > 3 || Math.abs(dy) > 3;
+
+  if (activeOntologyDrag.kind === "band") {
+    ontologyBandLayout[activeOntologyDrag.group] = {
+      width: clamp(activeOntologyDrag.originWidth + dx, 240, 1430 - activeOntologyDrag.originX - 12),
+      height: clamp(activeOntologyDrag.originHeight + dy, 260, 1040 - activeOntologyDrag.originY - 12)
+    };
+    render();
+    return;
+  }
+
+  if (activeOntologyDrag.kind === "node") {
+    ontologyNodePositionOverrides[activeOntologyDrag.id] = {
+      x: clamp(activeOntologyDrag.originX + dx, ONTOLOGY_NODE_RADIUS + 10, 1430 - ONTOLOGY_NODE_RADIUS - 10),
+      y: clamp(activeOntologyDrag.originY + dy, ONTOLOGY_NODE_RADIUS + 10, 1040 - ONTOLOGY_NODE_RADIUS - 10)
+    };
+    render();
+  }
+}
+
+function finishOntologyPointerDrag() {
+  if (!activeOntologyDrag) return;
+  suppressOntologyClick = activeOntologyDrag.moved;
+  activeOntologyDrag = null;
+  render();
+}
+
+function getOntologySvgPoint(event) {
+  const svg = event.target?.closest?.(".ontology-svg") || document.querySelector(".mesa-ontology-stage .ontology-svg");
+  if (!svg) return null;
+  const point = svg.createSVGPoint();
+  point.x = event.clientX;
+  point.y = event.clientY;
+  const matrix = svg.getScreenCTM();
+  return matrix ? point.matrixTransform(matrix.inverse()) : null;
+}
+
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function toggleSetValue(sourceSet, value) {
+  const next = new Set(sourceSet);
+  if (next.has(value)) {
+    next.delete(value);
+  } else {
+    next.add(value);
+  }
+  return next;
 }
 
 function render() {
@@ -447,10 +615,13 @@ function renderMainComponent(page) {
   return renderTaskModel(page);
 }
 
-function renderOntologySvg(ontology, focusSet) {
-  const positions = buildOntologyPositions(ontology.nodes);
+function renderOntologySvg(ontology, focusSet, selectedItem = null) {
   const bands = ontologyBands();
-  const clusters = buildOntologyClusters(ontology.nodes);
+  const visibleNodes = ontology.nodes.filter((node) => !collapsedOntologyGroups.has(node.group));
+  const visibleNodeIds = new Set(visibleNodes.map((node) => node.id));
+  const visibleEdges = ontology.edges.filter((edge) => visibleNodeIds.has(edge.from) && visibleNodeIds.has(edge.to));
+  const positions = buildOntologyPositions(visibleNodes, visibleEdges);
+  const clusters = buildOntologyClusters(visibleNodes, positions);
   return `
     <svg class="ontology-svg" viewBox="0 0 1430 1040" role="img" aria-label="项目级 ontology 关系图">
       <defs>
@@ -459,9 +630,14 @@ function renderOntologySvg(ontology, focusSet) {
         </marker>
       </defs>
       ${bands.map((band) => `
-        <g class="ontology-band band-${band.group}">
+        <g class="ontology-band band-${band.group} ${band.collapsed ? "collapsed" : ""}">
           <rect x="${band.x}" y="${band.y}" width="${band.width}" height="${band.height}" rx="8"></rect>
           <text x="${band.x + 16}" y="${band.y + 30}">${band.label}</text>
+          <text class="ontology-band-count" x="${band.x + 128}" y="${band.y + 30}">${ontology.nodes.filter((node) => node.group === band.group).length} 节点</text>
+          <rect class="ontology-band-toggle" x="${band.x + band.width - 66}" y="${band.y + 10}" width="28" height="28" rx="6" data-ontology-band-toggle="${htmlEscape(band.group)}" role="button" tabindex="0" aria-label="${band.collapsed ? "展开" : "折叠"}${htmlEscape(band.label)}层"></rect>
+          <text class="ontology-band-toggle-glyph" x="${band.x + band.width - 52}" y="${band.y + 30}">${band.collapsed ? "+" : "-"}</text>
+          <path class="ontology-band-resize-glyph" d="M ${band.x + band.width - 24} ${band.y + 35} L ${band.x + band.width - 8} ${band.y + 19} M ${band.x + band.width - 16} ${band.y + 35} L ${band.x + band.width - 8} ${band.y + 27}"></path>
+          <rect class="ontology-band-resize-handle" x="${band.x + band.width - 30}" y="${band.y + 10}" width="28" height="28" rx="6" data-ontology-band-resize="${htmlEscape(band.group)}" role="button" tabindex="0" aria-label="调整${htmlEscape(band.label)}层大小"></rect>
         </g>
       `).join("")}
       ${clusters.map((cluster) => `
@@ -471,24 +647,30 @@ function renderOntologySvg(ontology, focusSet) {
         </g>
       `).join("")}
       <g class="ontology-edges">
-        ${ontology.edges.map((edgeItem) => {
+        ${visibleEdges.map((edgeItem) => {
           const from = positions[edgeItem.from];
           const to = positions[edgeItem.to];
           const isFocused = focusSet.has(edgeItem.from) || focusSet.has(edgeItem.to);
-          const path = edgePath(from, to);
+          const isSelected = selectedItem?.type === "edge" && selectedItem.id === edgeItem.id;
+          const path = edgePath(from, to, ONTOLOGY_NODE_RADIUS);
           return `
-            <path class="${isFocused ? "focused" : ""}" d="${path}"></path>
-            <text class="edge-label ${isFocused ? "focused" : ""}" x="${(from.x + to.x) / 2 + 42}" y="${(from.y + to.y) / 2 - 5}">${edgeItem.label}</text>
+            <g class="ontology-edge ${isSelected ? "selected" : ""}" data-ontology-edge-id="${htmlEscape(edgeItem.id)}" role="button" tabindex="0" aria-label="${htmlEscape(`${nodeLabel(edgeItem.from, ontology)} ${edgeItem.label} ${nodeLabel(edgeItem.to, ontology)}`)}">
+              <path class="${isFocused ? "focused" : ""}" d="${path}"></path>
+              <text class="edge-label ${isFocused ? "focused" : ""}" x="${(from.x + to.x) / 2 + 42}" y="${(from.y + to.y) / 2 - 5}">${edgeItem.label}</text>
+            </g>
           `;
         }).join("")}
       </g>
       <g class="ontology-nodes">
-        ${ontology.nodes.map((node) => {
+        ${sortOntologyNodesForRender(visibleNodes, selectedItem).map((node) => {
           const position = positions[node.id];
+          const isSelected = selectedItem?.type === "node" && selectedItem.id === node.id;
+          const isDragging = activeOntologyDrag?.kind === "node" && activeOntologyDrag.id === node.id;
           return `
-            <g class="ontology-node ${node.group} ${focusSet.has(node.id) ? "focused" : ""}" transform="translate(${position.x}, ${position.y - 22})">
-              <rect width="208" height="44" rx="7"></rect>
-              <text x="12" y="27">${node.label}</text>
+            <g class="ontology-node ${node.group} ${focusSet.has(node.id) ? "focused" : ""} ${isSelected ? "selected" : ""} ${isDragging ? "dragging" : ""}" data-ontology-node-id="${htmlEscape(node.id)}" role="button" tabindex="0" aria-label="${htmlEscape(node.label)}" transform="translate(${position.x}, ${position.y})">
+              <title>${htmlEscape(node.label)}</title>
+              <circle r="${ONTOLOGY_NODE_RADIUS}"></circle>
+              <text x="0" y="4">${htmlEscape(compactNodeLabel(node.label))}</text>
             </g>
           `;
         }).join("")}
@@ -497,50 +679,139 @@ function renderOntologySvg(ontology, focusSet) {
   `;
 }
 
-function buildOntologyPositions(nodes) {
-  const columns = {
-    "modeling-object": { x: 70, y: 92, step: 42 },
-    "simulation-experiment": { x: 770, y: 160, step: 72 },
-    "computation-artifact": { x: 1115, y: 172, step: 72 }
-  };
-  const counters = {};
+function sortOntologyNodesForRender(nodes, selectedItem) {
+  return [...nodes].sort((left, right) => {
+    const leftActive = (selectedItem?.type === "node" && selectedItem.id === left.id) || (activeOntologyDrag?.kind === "node" && activeOntologyDrag.id === left.id);
+    const rightActive = (selectedItem?.type === "node" && selectedItem.id === right.id) || (activeOntologyDrag?.kind === "node" && activeOntologyDrag.id === right.id);
+    return Number(leftActive) - Number(rightActive);
+  });
+}
+
+function buildOntologyPositions(nodes, edges = []) {
+  const springPositions = calculateOntologySpringLayout(nodes, edges, ontologyBands());
   return nodes.reduce((acc, item) => {
-    if (item.layout) {
-      acc[item.id] = { x: item.layout.x, y: item.layout.y };
+    if (ontologyNodePositionOverrides[item.id]) {
+      acc[item.id] = ontologyNodePositionOverrides[item.id];
       return acc;
     }
-    counters[item.group] = counters[item.group] || 0;
-    const column = columns[item.group];
-    acc[item.id] = {
-      x: column.x,
-      y: column.y + counters[item.group] * column.step
-    };
-    counters[item.group] += 1;
+    acc[item.id] = springPositions[item.id];
     return acc;
   }, {});
 }
 
-function ontologyBands() {
-  return [
-    { group: "modeling-object", label: ONTOLOGY_GROUPS["modeling-object"].label, x: 28, y: 22, width: 650, height: 995 },
-    { group: "simulation-experiment", label: ONTOLOGY_GROUPS["simulation-experiment"].label, x: 720, y: 22, width: 300, height: 995 },
-    { group: "computation-artifact", label: ONTOLOGY_GROUPS["computation-artifact"].label, x: 1070, y: 22, width: 330, height: 995 }
-  ];
+function calculateOntologySpringLayout(nodes, edges, bands) {
+  const nodeRadius = ONTOLOGY_NODE_RADIUS;
+  const springIterations = 120;
+  const positions = {};
+  const velocities = {};
+  const bandsByGroup = Object.fromEntries(bands.map((band) => [band.group, band]));
+  const groupCounts = nodes.reduce((acc, node) => {
+    acc[node.group] = (acc[node.group] || 0) + 1;
+    return acc;
+  }, {});
+  const groupIndexes = {};
+
+  for (const node of nodes) {
+    const band = bandsByGroup[node.group] || bands[0];
+    groupIndexes[node.group] = groupIndexes[node.group] || 0;
+    const index = groupIndexes[node.group]++;
+    const count = groupCounts[node.group] || 1;
+    const columns = Math.max(1, Math.ceil(Math.sqrt(count * (band.width / Math.max(band.height, 1)))));
+    const row = Math.floor(index / columns);
+    const column = index % columns;
+    const rows = Math.max(1, Math.ceil(count / columns));
+    positions[node.id] = {
+      x: band.x + nodeRadius + 18 + ((column + 0.5) * Math.max(1, band.width - nodeRadius * 2 - 36)) / columns,
+      y: band.y + 70 + ((row + 0.5) * Math.max(1, band.height - nodeRadius * 2 - 90)) / rows
+    };
+    velocities[node.id] = { x: 0, y: 0 };
+  }
+
+  for (let iteration = 0; iteration < springIterations; iteration += 1) {
+    for (let leftIndex = 0; leftIndex < nodes.length; leftIndex += 1) {
+      for (let rightIndex = leftIndex + 1; rightIndex < nodes.length; rightIndex += 1) {
+        const left = positions[nodes[leftIndex].id];
+        const right = positions[nodes[rightIndex].id];
+        const dx = right.x - left.x || 0.01;
+        const dy = right.y - left.y || 0.01;
+        const distanceSquared = dx * dx + dy * dy;
+        const distance = Math.sqrt(distanceSquared);
+        const force = Math.min(2.6, 9500 / Math.max(distanceSquared, 1600));
+        const fx = (dx / distance) * force;
+        const fy = (dy / distance) * force;
+        velocities[nodes[leftIndex].id].x -= fx;
+        velocities[nodes[leftIndex].id].y -= fy;
+        velocities[nodes[rightIndex].id].x += fx;
+        velocities[nodes[rightIndex].id].y += fy;
+      }
+    }
+
+    for (const edgeItem of edges) {
+      const from = positions[edgeItem.from];
+      const to = positions[edgeItem.to];
+      if (!from || !to) continue;
+      const dx = to.x - from.x || 0.01;
+      const dy = to.y - from.y || 0.01;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      const targetDistance = edgeItem.from === edgeItem.to ? 80 : 145;
+      const force = (distance - targetDistance) * 0.018;
+      const fx = (dx / distance) * force;
+      const fy = (dy / distance) * force;
+      velocities[edgeItem.from].x += fx;
+      velocities[edgeItem.from].y += fy;
+      velocities[edgeItem.to].x -= fx;
+      velocities[edgeItem.to].y -= fy;
+    }
+
+    for (const node of nodes) {
+      const band = bandsByGroup[node.group] || bands[0];
+      const position = positions[node.id];
+      const velocity = velocities[node.id];
+      const anchorX = band.x + band.width / 2;
+      const anchorY = band.y + band.height / 2;
+      velocity.x += (anchorX - position.x) * 0.012;
+      velocity.y += (anchorY - position.y) * 0.012;
+      velocity.x *= 0.74;
+      velocity.y *= 0.74;
+      position.x = clamp(position.x + velocity.x, band.x + nodeRadius + 10, band.x + band.width - nodeRadius - 10);
+      position.y = clamp(position.y + velocity.y, band.y + nodeRadius + 44, band.y + band.height - nodeRadius - 10);
+    }
+  }
+
+  return positions;
 }
 
-function buildOntologyClusters(nodes) {
+function ontologyBands() {
+  let y = 22;
+  return DEFAULT_ONTOLOGY_BANDS.map((baseBand) => {
+    const overrides = ontologyBandLayout[baseBand.group] || {};
+    const collapsed = collapsedOntologyGroups.has(baseBand.group);
+    const band = {
+      ...baseBand,
+      ...overrides,
+      y,
+      height: collapsed ? 54 : overrides.height || baseBand.height,
+      collapsed
+    };
+    y += band.height + 24;
+    return band;
+  });
+}
+
+function buildOntologyClusters(nodes, positions = buildOntologyPositions(nodes)) {
   const grouped = nodes
     .filter((node) => node.group === "modeling-object" && node.layout?.cluster)
     .reduce((acc, node) => {
+      const position = positions[node.id];
       acc[node.layout.cluster] ||= [];
-      acc[node.layout.cluster].push(node.layout);
+      acc[node.layout.cluster].push(position);
       return acc;
     }, {});
   return Object.entries(grouped).map(([label, layouts]) => {
-    const minX = Math.min(...layouts.map((item) => item.x)) - 18;
-    const minY = Math.min(...layouts.map((item) => item.y)) - 50;
-    const maxX = Math.max(...layouts.map((item) => item.x)) + 226;
-    const maxY = Math.max(...layouts.map((item) => item.y)) + 34;
+    const minX = Math.min(...layouts.map((item) => item.x)) - ONTOLOGY_NODE_RADIUS - 12;
+    const minY = Math.min(...layouts.map((item) => item.y)) - ONTOLOGY_NODE_RADIUS - 34;
+    const maxX = Math.max(...layouts.map((item) => item.x)) + ONTOLOGY_NODE_RADIUS + 12;
+    const maxY = Math.max(...layouts.map((item) => item.y)) + ONTOLOGY_NODE_RADIUS + 12;
     return {
       label,
       x: minX,
@@ -551,17 +822,26 @@ function buildOntologyClusters(nodes) {
   });
 }
 
-function edgePath(from, to) {
-  const startX = from.x + 104;
-  const startY = from.y;
-  const endX = to.x - 10;
-  const endY = to.y;
-  const deltaX = Math.abs(endX - startX);
-  const controlOffset = Math.max(80, Math.min(190, deltaX * 0.55));
-  if (to.x >= from.x) {
-    return `M ${startX} ${startY} C ${startX + controlOffset} ${startY}, ${endX - controlOffset} ${endY}, ${endX} ${endY}`;
-  }
-  return `M ${startX} ${startY} C ${startX + 50} ${startY + 26}, ${endX - 50} ${endY - 26}, ${endX} ${endY}`;
+function edgePath(from, to, nodeRadius = ONTOLOGY_NODE_RADIUS) {
+  const dx = to.x - from.x || 0.01;
+  const dy = to.y - from.y || 0.01;
+  const distance = Math.sqrt(dx * dx + dy * dy);
+  const ux = dx / distance;
+  const uy = dy / distance;
+  const startX = from.x + ux * nodeRadius;
+  const startY = from.y + uy * nodeRadius;
+  const endX = to.x - ux * nodeRadius;
+  const endY = to.y - uy * nodeRadius;
+  const curve = Math.min(70, distance * 0.14);
+  const normalX = -uy * curve;
+  const normalY = ux * curve;
+  const controlX = (startX + endX) / 2 + normalX;
+  const controlY = (startY + endY) / 2 + normalY;
+  return `M ${startX} ${startY} Q ${controlX} ${controlY}, ${endX} ${endY}`;
+}
+
+function compactNodeLabel(label) {
+  return label.length > 5 ? `${label.slice(0, 4)}…` : label;
 }
 
 function renderTaskModel(page) {
@@ -1357,8 +1637,10 @@ function renderExperimentPlanEditor(page) {
 function renderVisualSimulation(page) {
   const state = normalizeAviationSupportState(AVIATION_SUPPORT_DEMO_STATE);
   const activeView = ["aircraft", "mission", "support", "ontology"].includes(selectedMesaView) ? selectedMesaView : "aircraft";
+  const shellClass = activeView === "ontology" && isOntologyFullscreen ? "mesa-visual-shell ontology-fullscreen" : "mesa-visual-shell";
+  const sidePanelClass = activeView === "ontology" && isOntologyFullscreen && isOntologyDetailCollapsed ? "mesa-side-panel collapsed" : "mesa-side-panel";
   return `
-    <div class="mesa-visual-shell">
+    <div class="${shellClass}">
       <div class="mesa-visual-header">
         <div>
           <div class="breadcrumb">Mesa ABM / aviation_support</div>
@@ -1378,6 +1660,7 @@ function renderVisualSimulation(page) {
           <button type="button" class="btn-primary" data-mesa-control="play">运行</button>
           <button type="button" data-mesa-control="step">单步</button>
           <button type="button" data-mesa-control="reset">重置</button>
+          ${activeView === "ontology" ? `<button type="button" data-ontology-fullscreen>${isOntologyFullscreen ? "退出全屏" : "全屏查看"}</button>` : ""}
         </div>
       </div>
       <div class="kpi-strip">
@@ -1387,8 +1670,8 @@ function renderVisualSimulation(page) {
         <section class="mesa-stage-panel">
           ${activeView === "ontology" ? renderMesaOntologyPanel() : renderMesaStage(state)}
         </section>
-        <aside class="mesa-side-panel">
-          ${renderMesaSidePanel(activeView, state)}
+        <aside class="${sidePanelClass}">
+          ${activeView === "ontology" && isOntologyFullscreen && isOntologyDetailCollapsed ? renderMesaOntologyCollapsedPanel(currentMesaOntology()) : renderMesaSidePanel(activeView, state)}
         </aside>
       </div>
     </div>
@@ -1429,7 +1712,7 @@ function renderMesaStage(state) {
 function renderMesaSidePanel(activeView, state) {
   if (activeView === "mission") return renderMesaMissionPanel(state);
   if (activeView === "support") return renderMesaSupportPanel(state);
-  if (activeView === "ontology") return renderMesaOntologySidePanel();
+  if (activeView === "ontology") return renderMesaOntologySidePanel(currentMesaOntology());
   return renderMesaAircraftPanel(state);
 }
 
@@ -1487,26 +1770,181 @@ function renderMesaSupportPanel(state) {
 }
 
 function renderMesaOntologyPanel() {
+  const ontology = currentMesaOntology();
   return `
     <div class="mesa-ontology-stage">
-      ${renderOntologySvg(PROJECT_ONTOLOGY, new Set(["task", "equipment", "support-activity", "experiment-plan", "simulation-run", "metric-time-series"]))}
+      ${renderOntologySvg(ontology, buildMesaOntologyFocusSet(ontology), selectedOntologyItem)}
     </div>
   `;
 }
 
-function renderMesaOntologySidePanel() {
+function currentMesaOntology() {
+  const page = getFeaturePageById(selectedFeatureId);
+  return buildProjectOntology({ module: page.module });
+}
+
+function buildMesaOntologyFocusSet(ontology = currentMesaOntology()) {
+  const page = getFeaturePageById(selectedFeatureId);
+  const context = page.component === "visual-simulation"
+    ? { focusNodeIds: ["visual-run-control", "simulation-run", "scenario-view", "metric-time-series"] }
+    : { focusNodeIds: [] };
+  const modelInstanceIds = ontology.nodes
+    .filter((node) => node.group === "model-instance")
+    .slice(0, 10)
+    .map((node) => node.id);
+  return new Set([
+    ...page.dataObjects.map((path) => `project:${path.split(".")[0]}`),
+    ...context.focusNodeIds,
+    ...modelInstanceIds
+  ]);
+}
+
+function renderMesaOntologySidePanel(ontology = currentMesaOntology()) {
+  const toggleButton = isOntologyFullscreen
+    ? `<button type="button" class="ontology-detail-toggle" data-ontology-detail-toggle>折叠</button>`
+    : "";
+  if (selectedOntologyItem) return renderMesaOntologyDetailPanel(selectedOntologyItem, ontology);
   const groups = Object.entries(ONTOLOGY_GROUPS);
   return `
     <div class="section-head">
       <h3>Ontology关系图</h3>
-      <span>${PROJECT_ONTOLOGY.nodes.length} 节点 / ${PROJECT_ONTOLOGY.edges.length} 关系</span>
+      <span>${ontology.nodes.length} 节点 / ${ontology.edges.length} 关系</span>
+      ${toggleButton}
     </div>
     <div class="event info"><strong>Mesa ABM 映射</strong>该视图展示结构依赖，不代表 OWL 推理结果。</div>
     ${groups.map(([groupId, meta]) => {
-      const count = PROJECT_ONTOLOGY.nodes.filter((node) => node.group === groupId).length;
+      const count = ontology.nodes.filter((node) => node.group === groupId).length;
       return `<details class="ontology-group" ${groupId === "modeling-object" ? "open" : ""}><summary class="ontology-group-head"><strong>${meta.label}</strong><span>${count}</span></summary><p>${meta.summary}</p></details>`;
     }).join("")}
   `;
+}
+
+function renderMesaOntologyCollapsedPanel(ontology = currentMesaOntology()) {
+  const selectedLabel = selectedOntologyItem
+    ? selectedOntologyItem.type === "node"
+      ? nodeLabel(selectedOntologyItem.id, ontology)
+      : "已选关系"
+    : "属性";
+  return `
+    <button type="button" class="ontology-detail-toggle collapsed" data-ontology-detail-toggle aria-label="展开属性面板">
+      <span>属性面板</span>
+      <strong>${htmlEscape(selectedLabel)}</strong>
+    </button>
+  `;
+}
+
+function renderMesaOntologyDetailPanel(item, ontology = currentMesaOntology()) {
+  const nodeItem = item.type === "node" ? ontology.nodes.find((node) => node.id === item.id) : null;
+  const edgeItem = item.type === "edge" ? ontology.edges.find((edge) => edge.id === item.id) : null;
+  if (nodeItem) return renderOntologyNodeDetail(nodeItem, ontology);
+  if (edgeItem) return renderOntologyEdgeDetail(edgeItem, ontology);
+  selectedOntologyItem = null;
+  return renderMesaOntologySidePanel(ontology);
+}
+
+function renderOntologyNodeDetail(nodeItem, ontology = currentMesaOntology()) {
+  const group = ONTOLOGY_GROUPS[nodeItem.group] || {};
+  const relatedEdges = ontology.edges.filter((edge) => edge.from === nodeItem.id || edge.to === nodeItem.id);
+  const positions = buildOntologyPositions(ontology.nodes, ontology.edges);
+  const position = positions[nodeItem.id];
+  const fields = [
+    ["id", nodeItem.id],
+    ["label", nodeItem.label],
+    ["group", group.label || nodeItem.group],
+    ["description", nodeItem.description],
+    ["source.kind", nodeItem.source?.kind || "-"],
+    ["source.path", nodeItem.source?.path || "-"],
+    ["字段数量", nodeItem.source?.fieldPaths?.length ?? "-"],
+    ["来源表单", renderSourceFormNames(nodeItem)],
+    ["layout.x", nodeItem.layout?.x ?? "-"],
+    ["layout.y", nodeItem.layout?.y ?? "-"],
+    ["layout.cluster", nodeItem.layout?.cluster || "-"],
+    ["view.x", Math.round(position.x)],
+    ["view.y", Math.round(position.y)],
+    ["relations", `${relatedEdges.length} 条`]
+  ];
+  return `
+    <div class="section-head">
+      <h3>属性详情</h3>
+      <span>对象</span>
+      ${isOntologyFullscreen ? `<button type="button" class="ontology-detail-toggle" data-ontology-detail-toggle>折叠</button>` : ""}
+    </div>
+    <div class="event info"><strong>${htmlEscape(nodeItem.label)}</strong>${htmlEscape(nodeItem.description)}</div>
+    <h4>字段</h4>
+    ${renderOntologyFieldRows(fields)}
+    <h4>关联关系</h4>
+    ${renderOntologyRelationList(nodeItem, ontology)}
+  `;
+}
+
+function renderSourceFormNames(nodeItem) {
+  const featurePages = nodeItem.source?.featurePages || [];
+  if (featurePages.length === 0) return "-";
+  return featurePages.map((page) => `${page.name} (${page.featureId})`).join(" / ");
+}
+
+function renderOntologyEdgeDetail(edgeItem, ontology = currentMesaOntology()) {
+  const fields = [
+    ["id", edgeItem.id],
+    ["label", edgeItem.label],
+    ["from", edgeItem.from],
+    ["fromLabel", nodeLabel(edgeItem.from, ontology)],
+    ["to", edgeItem.to],
+    ["toLabel", nodeLabel(edgeItem.to, ontology)],
+    ["semantic", `${nodeLabel(edgeItem.from, ontology)} ${edgeItem.label} ${nodeLabel(edgeItem.to, ontology)}`]
+  ];
+  return `
+    <div class="section-head">
+      <h3>属性详情</h3>
+      <span>关系</span>
+      ${isOntologyFullscreen ? `<button type="button" class="ontology-detail-toggle" data-ontology-detail-toggle>折叠</button>` : ""}
+    </div>
+    <div class="event info"><strong>${htmlEscape(edgeItem.label)}</strong>${htmlEscape(nodeLabel(edgeItem.from, ontology))} -> ${htmlEscape(nodeLabel(edgeItem.to, ontology))}</div>
+    <h4>字段</h4>
+    ${renderOntologyFieldRows(fields)}
+    <h4>关联关系</h4>
+    <div class="ontology-relation-list">
+      <div>
+        <strong>端点对象</strong>
+        <button type="button" class="ontology-related-row" data-ontology-node-id="${htmlEscape(edgeItem.from)}">${htmlEscape(nodeLabel(edgeItem.from, ontology))}</button>
+        <button type="button" class="ontology-related-row" data-ontology-node-id="${htmlEscape(edgeItem.to)}">${htmlEscape(nodeLabel(edgeItem.to, ontology))}</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderOntologyFieldRows(fields) {
+  return `
+    <table class="ontology-field-table">
+      <tbody>
+        ${fields.map(([name, value]) => `<tr><th>${htmlEscape(name)}</th><td>${htmlEscape(String(value))}</td></tr>`).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+function renderOntologyRelationList(nodeItem, ontology = currentMesaOntology()) {
+  const outgoingEdges = ontology.edges.filter((edge) => edge.from === nodeItem.id);
+  const incomingEdges = ontology.edges.filter((edge) => edge.to === nodeItem.id);
+  const renderEdges = (edges, emptyText) => edges.length
+    ? edges.map((edge) => `<button type="button" class="ontology-related-row" data-ontology-edge-id="${htmlEscape(edge.id)}">${htmlEscape(nodeLabel(edge.from, ontology))} ${htmlEscape(edge.label)} ${htmlEscape(nodeLabel(edge.to, ontology))}</button>`).join("")
+    : `<div class="ontology-empty-note">${htmlEscape(emptyText)}</div>`;
+  return `
+    <div class="ontology-relation-list">
+      <div>
+        <strong>出向关系</strong>
+        ${renderEdges(outgoingEdges, "无出向关系")}
+      </div>
+      <div>
+        <strong>入向关系</strong>
+        ${renderEdges(incomingEdges, "无入向关系")}
+      </div>
+    </div>
+  `;
+}
+
+function nodeLabel(id, ontology = currentMesaOntology()) {
+  return ontology.nodes.find((item) => item.id === id)?.label || id;
 }
 
 function missionProgressWidth(mission) {

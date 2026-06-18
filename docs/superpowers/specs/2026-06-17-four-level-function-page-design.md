@@ -144,7 +144,7 @@
 
 当前实现已经不再为每个四级页面渲染右侧 `Ontology 上下文` 面板，也不再保留独立 ontology 可视化路由。项目级 ontology 仍保留在 `front/ontology-context.mjs` 中，但它的可见呈现位置已经收敛到 `可视化推演` 页面内部的 Mesa `Ontology视图` 标签。
 
-当前 ontology 分三层：
+本规格早期使用过三层口径：
 
 | 层级 | 含义 |
 | --- | --- |
@@ -152,12 +152,21 @@
 | `simulation-experiment` | 实验方案、想定、可视化运行控制和 Monte Carlo 配置。 |
 | `computation-artifact` | 运行数据、指标时间序列、聚合摘要、短板/携行/可靠度/停机因素分析结果。 |
 
+该三层描述已经被 `docs/ontology-mesa-rebuild-plan.md` 中的四层约定取代；后续实现应以四层纵向画布为准：
+
+| 层级 | 含义 |
+| --- | --- |
+| 建模对象 | 与前端四级功能、页面 `dataObjects` 和 project JSON 字段路径对齐。 |
+| 仿真实验 | 描述实验方案、想定、扫参、seed/sample、停止条件和运行请求。 |
+| 模型实例 | 按 `AviationSupportModel` 的真实 Mesa agent 或 Python domain object 绘制运行时对象关系，并包含当前 step 的指标对象。 |
+| 计算产物 | 描述运行数据集、指标时间序列、summary 和结果分析产物。 |
+
 实际可见行为：
 
 1. `可视化推演` 仍是唯一可导航入口。
 2. Mesa 页面内提供 `飞机视图`、`任务视图`、`保障视图`、`Ontology视图` 四个标签。
 3. `Ontology视图` 使用 `renderOntologySvg(PROJECT_ONTOLOGY, ...)` 展示项目级关系图。
-4. 右侧栏显示 `Ontology关系图`、节点总数、关系总数，以及三层节点汇总。
+4. 右侧栏显示 `Ontology关系图`、节点总数、关系总数，以及当前四层图谱的节点汇总和选中对象属性。
 5. `front/ontology-context.mjs` 仍提供 `buildOntologyContext(page)`，用于测试、导出和后续契约服务的 focus context，不代表页面会渲染局部右侧面板。
 
 关系标签以当前项目级图谱为准，例如 `包含`、`要求`、`部署在`、`隶属于`、`安装在`、`导入约束`、`引用`、`驱动`、`启动停止`、`观察`、`批量生成`、`保存`、`逐步计算`、`聚合`、`支撑`。不要再使用旧设计中的 `depends_on`、`writes_to`、`drives`、`validates`、`shares_with` 作为已实现 UI 关系标签。

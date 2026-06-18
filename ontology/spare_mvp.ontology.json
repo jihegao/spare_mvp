@@ -2,11 +2,20 @@
   "name": "Spare Planning and Mission Reliability Prototype",
   "description": "Lightweight ontology extracted from the design document for spare planning and mission reliability ABM prototyping.",
   "source": "docs/3概要设计方案.md",
+  "metadata": {
+    "developmentMode": "Simulation-Contract-First Development",
+    "format": "Ontology-Playground-compatible JSON",
+    "namespace": "https://spare-mvp.local/ontology",
+    "version": "0.2.0",
+    "contractRole": "Simulation/Ontology Contract"
+  },
   "entityTypes": [
     {
       "id": "mission_profile",
       "name": "任务剖面",
       "description": "Long-period, clustered, or single-equipment mission profile.",
+      "icon": "route",
+      "color": "#0078D4",
       "properties": [
         {"name": "profileId", "type": "string", "isIdentifier": true},
         {"name": "profileType", "type": "enum", "values": ["长周期任务", "多机集群任务", "单机任务"]},
@@ -18,6 +27,8 @@
       "id": "basic_mission",
       "name": "基本任务",
       "description": "Mission definition with timing, priority, success point, and minimum equipment requirement.",
+      "icon": "target",
+      "color": "#107C10",
       "properties": [
         {"name": "missionId", "type": "string", "isIdentifier": true},
         {"name": "successPoint", "type": "string"},
@@ -31,6 +42,8 @@
       "id": "mission_phase",
       "name": "任务阶段",
       "description": "Finite-state mission phase with transition condition and duration limit.",
+      "icon": "timer",
+      "color": "#00A9E0",
       "properties": [
         {"name": "phaseId", "type": "string", "isIdentifier": true},
         {"name": "state", "type": "enum", "values": ["待命", "准备", "出动", "任务执行", "回收", "飞行后检查"]},
@@ -42,6 +55,8 @@
       "id": "combat_unit",
       "name": "基本作战单元",
       "description": "Deployed unit containing mission equipment.",
+      "icon": "group",
+      "color": "#5C2D91",
       "properties": [
         {"name": "unitId", "type": "string", "isIdentifier": true},
         {"name": "equipmentType", "type": "string"},
@@ -53,6 +68,8 @@
       "id": "equipment",
       "name": "装备",
       "description": "Aircraft or equipment that can prepare, sortie, fail, repair, and return to ready state.",
+      "icon": "plane",
+      "color": "#D83B01",
       "properties": [
         {"name": "equipmentId", "type": "string", "isIdentifier": true},
         {"name": "model", "type": "string"},
@@ -64,6 +81,8 @@
       "id": "component",
       "name": "产品/组件",
       "description": "Component installed on equipment with failure model, spare type, and reliability block role.",
+      "icon": "cpu",
+      "color": "#8764B8",
       "properties": [
         {"name": "componentId", "type": "string", "isIdentifier": true},
         {"name": "name", "type": "string"},
@@ -77,6 +96,8 @@
       "id": "support_node",
       "name": "保障节点",
       "description": "Airport or support point with stock, personnel, device capacity, and transfer policy.",
+      "icon": "warehouse",
+      "color": "#038387",
       "properties": [
         {"name": "nodeId", "type": "string", "isIdentifier": true},
         {"name": "nodeType", "type": "enum", "values": ["机场", "保障点", "库存点"]},
@@ -89,6 +110,8 @@
       "id": "support_activity",
       "name": "保障活动",
       "description": "Maintenance or support activity requiring personnel, devices, spares, and time.",
+      "icon": "wrench",
+      "color": "#FFB900",
       "properties": [
         {"name": "activityId", "type": "string", "isIdentifier": true},
         {"name": "activityType", "type": "enum", "values": ["飞行前保障", "修复性维修", "预防性维修", "再次出动准备"]},
@@ -97,6 +120,86 @@
         {"name": "requiredDevices", "type": "integer"},
         {"name": "priority", "type": "integer"}
       ]
+    }
+  ],
+  "bindings": [
+    {
+      "id": "binding_mission_profile",
+      "boundEntityId": "mission_profile",
+      "source": "project-json",
+      "table": "missionProfiles",
+      "columnMapping": {
+        "profileId": "id",
+        "profileType": "profileType",
+        "repeatCycleHours": "repeatCycleHours",
+        "endCondition": "endCondition"
+      }
+    },
+    {
+      "id": "binding_basic_mission",
+      "boundEntityId": "basic_mission",
+      "source": "project-json",
+      "table": "missionProfiles.tasks",
+      "columnMapping": {
+        "missionId": "id",
+        "successPoint": "successPoint",
+        "startHour": "startHour",
+        "priority": "priority",
+        "minRequiredSorties": "minRequiredSorties"
+      }
+    },
+    {
+      "id": "binding_equipment",
+      "boundEntityId": "equipment",
+      "source": "project-json",
+      "table": "equipmentAssets",
+      "columnMapping": {
+        "equipmentId": "id",
+        "model": "model",
+        "state": "state",
+        "failureRate": "failureRate"
+      }
+    },
+    {
+      "id": "binding_component",
+      "boundEntityId": "component",
+      "source": "project-json",
+      "table": "equipmentTree.components",
+      "columnMapping": {
+        "componentId": "id",
+        "name": "name",
+        "spareType": "spareType",
+        "failureModel": "failureModel",
+        "mtbfHours": "mtbfHours",
+        "connectionType": "connectionType"
+      }
+    },
+    {
+      "id": "binding_support_node",
+      "boundEntityId": "support_node",
+      "source": "project-json",
+      "table": "supportResources",
+      "columnMapping": {
+        "nodeId": "id",
+        "nodeType": "nodeType",
+        "personnelCapacity": "personnelCapacity",
+        "equipmentCapacity": "equipmentCapacity",
+        "policy": "policy"
+      }
+    },
+    {
+      "id": "binding_support_activity",
+      "boundEntityId": "support_activity",
+      "source": "project-json",
+      "table": "supportActivities",
+      "columnMapping": {
+        "activityId": "id",
+        "activityType": "activityType",
+        "durationHours": "durationHours",
+        "requiredPersonnel": "requiredPersonnel",
+        "requiredDevices": "requiredDevices",
+        "priority": "priority"
+      }
     }
   ],
   "relationships": [
