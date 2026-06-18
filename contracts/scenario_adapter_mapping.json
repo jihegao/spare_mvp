@@ -1,0 +1,78 @@
+{
+  "schema_version": "scenario-adapter-mapping-v0",
+  "role": "Evaluator-visible mapping from compiled Scenario JSON fields to Mesa model constructor inputs",
+  "model_families": {
+    "smoke": {
+      "model_class": "SmokeSpareMvpModel",
+      "simulation_inputs": {
+        "aircraft_count": {
+          "source": "project.equipment.quantity",
+          "constructor_param": "projectData",
+          "derived_by": "Simulation Adapter Agent"
+        },
+        "mission_count": {
+          "source": "project.missionProfile.compositeTasks / project.basicMission",
+          "constructor_param": "projectData",
+          "derived_by": "Simulation Adapter Agent"
+        },
+        "support_capacity": {
+          "source": "project.supportNodes[].equipmentCapacity",
+          "constructor_param": "supportCapacity"
+        },
+        "initial_spare_stock": {
+          "source": "project.supportNodes[].inventory",
+          "constructor_param": "projectData",
+          "derived_by": "Simulation Adapter Agent"
+        },
+        "failure_rate": {
+          "source": "project.components[].failureRate",
+          "constructor_param": "failureRate"
+        },
+        "spare_multiplier": {
+          "source": "project.monteCarlo.spareMultipliers[]",
+          "constructor_param": "spareMultiplier"
+        },
+        "seed": {
+          "source": "project.experiment.seed",
+          "constructor_param": "seed"
+        }
+      }
+    },
+    "aviation_support": {
+      "model_class": "AviationSupportModel",
+      "simulation_inputs": {
+        "aircraft_count": {
+          "source": "project.equipment.quantity",
+          "constructor_param": "aircraft_count"
+        },
+        "mission_count": {
+          "source": "project.basicMission / project.missionProfile",
+          "constructor_param": "mission_count"
+        },
+        "support_capacity": {
+          "source": "project.supportNodes[].equipmentCapacity",
+          "constructor_param": "maintenance_bays"
+        },
+        "initial_spare_stock": {
+          "source": "project.supportNodes[].inventory",
+          "constructor_param": "use_ontology_scenario",
+          "derived_by": "ontology scenario load"
+        },
+        "failure_rate": {
+          "source": "project.components[].failureRate",
+          "constructor_param": "lru_failure_multiplier",
+          "derived_by": "Simulation Adapter Agent"
+        },
+        "spare_multiplier": {
+          "source": "project.monteCarlo.spareMultipliers[]",
+          "constructor_param": "use_ontology_scenario",
+          "derived_by": "Simulation Adapter Agent"
+        },
+        "seed": {
+          "source": "project.experiment.seed",
+          "constructor_param": "seed"
+        }
+      }
+    }
+  }
+}

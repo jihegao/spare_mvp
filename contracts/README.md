@@ -9,6 +9,7 @@ The files here are draft JSON Schema contracts for the application-facing bounda
 - `run.schema.json`: persisted run lifecycle record.
 - `result.schema.json`: metrics and summary returned from a Mesa-backed run.
 - `artifact_manifest.schema.json`: versioned index of run artifacts.
+- `scenario_adapter_mapping.json`: evaluator-visible mapping from compiled Scenario JSON input fields to Mesa constructor inputs.
 
 These schemas are not a replacement for the Mesa model, ontology, or Claude-governed simulation semantics. They define the application data boundary that backend, database, frontend integration, and evaluator agents can consume.
 

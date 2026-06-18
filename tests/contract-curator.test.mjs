@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { PROJECT_JSON_CONTRACT } from "../front/project-json-contract.mjs";
+import { validateSchema } from "./schema-test-utils.mjs";
 
 const contractFiles = [
   "project.schema.json",
@@ -13,74 +14,6 @@ const contractFiles = [
 
 async function readJson(relativePath) {
   return JSON.parse(await readFile(new URL(`../${relativePath}`, import.meta.url), "utf8"));
-}
-
-function validateSchema(schema, value, path = "$") {
-  const errors = [];
-  collectSchemaErrors(schema, value, path, errors);
-  return errors;
-}
-
-function collectSchemaErrors(schema, value, path, errors) {
-  if (schema.oneOf) {
-    const branchResults = schema.oneOf.map((branch) => validateSchema(branch, value, path));
-    if (!branchResults.some((branchErrors) => branchErrors.length === 0)) {
-      errors.push(`${path} did not match oneOf: ${branchResults.map((branchErrors) => branchErrors.join("; ")).join(" | ")}`);
-    }
-  }
-
-  if (schema.const !== undefined && value !== schema.const) {
-    errors.push(`${path} expected const ${JSON.stringify(schema.const)}, got ${JSON.stringify(value)}`);
-  }
-
-  if (schema.enum && !schema.enum.includes(value)) {
-    errors.push(`${path} expected one of ${schema.enum.join(", ")}, got ${JSON.stringify(value)}`);
-  }
-
-  if (schema.type && !matchesJsonType(schema.type, value)) {
-    errors.push(`${path} expected type ${JSON.stringify(schema.type)}, got ${Array.isArray(value) ? "array" : typeof value}`);
-    return;
-  }
-
-  if (typeof value === "number") {
-    if (schema.minimum !== undefined && value < schema.minimum) {
-      errors.push(`${path} expected minimum ${schema.minimum}, got ${value}`);
-    }
-    if (schema.maximum !== undefined && value > schema.maximum) {
-      errors.push(`${path} expected maximum ${schema.maximum}, got ${value}`);
-    }
-  }
-
-  if (schema.type === "object" && value && typeof value === "object" && !Array.isArray(value)) {
-    for (const key of schema.required || []) {
-      if (!(key in value)) {
-        errors.push(`${path}.${key} is required`);
-      }
-    }
-    const properties = schema.properties || {};
-    for (const [key, childValue] of Object.entries(value)) {
-      if (properties[key]) {
-        collectSchemaErrors(properties[key], childValue, `${path}.${key}`, errors);
-      } else if (schema.additionalProperties === false) {
-        errors.push(`${path}.${key} is not allowed`);
-      }
-    }
-  }
-
-  if (schema.type === "array" && Array.isArray(value) && schema.items) {
-    value.forEach((item, index) => collectSchemaErrors(schema.items, item, `${path}[${index}]`, errors));
-  }
-}
-
-function matchesJsonType(type, value) {
-  if (Array.isArray(type)) {
-    return type.some((item) => matchesJsonType(item, value));
-  }
-  if (type === "array") return Array.isArray(value);
-  if (type === "integer") return Number.isInteger(value);
-  if (type === "number") return typeof value === "number" && Number.isFinite(value);
-  if (type === "null") return value === null;
-  return typeof value === type && !Array.isArray(value);
 }
 
 test("simulation service governance defines the six-agent swarm execution plan", async () => {
@@ -115,6 +48,10 @@ test("contract curator publishes the versioned schema bundle", async () => {
     assert.equal(typeof schema.type, "string");
     assert.ok(schema.properties.schema_version);
   }
+
+  const mapping = await readJson("contracts/scenario_adapter_mapping.json");
+  assert.deepEqual(manifest.mapping_files, ["scenario_adapter_mapping.json"]);
+  assert.equal(mapping.schema_version, "scenario-adapter-mapping-v0");
 });
 
 test("project schema covers required frontend project JSON contract objects", async () => {

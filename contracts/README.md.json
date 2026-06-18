@@ -14,6 +14,9 @@
     "result.schema.json",
     "artifact_manifest.schema.json"
   ],
+  "mapping_files": [
+    "scenario_adapter_mapping.json"
+  ],
   "fixture_files": [
     "tests/fixtures/minimal_project.json",
     "tests/fixtures/minimal_scenario.json",

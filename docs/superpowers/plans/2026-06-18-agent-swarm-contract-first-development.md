@@ -55,11 +55,11 @@ Expected: PASS.
 - Modify: `tests/contract-curator.test.mjs`
 - Create: `tests/contract-drift.test.mjs`
 
-- [ ] **Step 1: Add drift checks**
+- [x] **Step 1: Add drift checks**
 
 Check that frontend project roots, schema properties, result metrics, and artifact manifest identifiers remain aligned.
 
-- [ ] **Step 2: Run evaluator tests**
+- [x] **Step 2: Run evaluator tests**
 
 Run: `npm test`
 
