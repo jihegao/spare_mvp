@@ -144,7 +144,7 @@
 
 当前实现已经不再为每个四级页面渲染右侧 `Ontology 上下文` 面板，也不再保留独立 ontology 可视化路由。项目级 ontology 仍保留在 `front/ontology-context.mjs` 中，但它的可见呈现位置已经收敛到 `可视化推演` 页面内部的 Mesa `Ontology视图` 标签。
 
-本规格写作时，当前 ontology 曾分三层。该三层描述已经被 `docs/ontology-mesa-rebuild-plan.md` 中的四层约定取代；后续实现应以四层纵向画布为准：
+本规格早期使用过三层口径：
 
 | 层级 | 含义 |
 | --- | --- |
@@ -152,7 +152,7 @@
 | `simulation-experiment` | 实验方案、想定、可视化运行控制和 Monte Carlo 配置。 |
 | `computation-artifact` | 运行数据、指标时间序列、聚合摘要、短板/携行/可靠度/停机因素分析结果。 |
 
-新的目标层级为：
+该三层描述已经被 `docs/ontology-mesa-rebuild-plan.md` 中的四层约定取代；后续实现应以四层纵向画布为准：
 
 | 层级 | 含义 |
 | --- | --- |
