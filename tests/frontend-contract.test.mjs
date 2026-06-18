@@ -601,3 +601,23 @@ test("mesa ontology view supports fullscreen toggle and selectable graph details
   assert.match(styleSource, /\.ontology-node\.selected rect/);
   assert.match(styleSource, /\.ontology-edge\.selected path/);
 });
+
+test("mesa ontology graph supports resizable layers draggable nodes and field panels", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const styleSource = await readFile(new URL("../front/styles.css", import.meta.url), "utf8");
+
+  assert.match(appSource, /ontologyBandLayout/);
+  assert.match(appSource, /ontologyNodePositionOverrides/);
+  assert.match(appSource, /activeOntologyDrag/);
+  assert.match(appSource, /data-ontology-band-resize/);
+  assert.match(appSource, /getOntologySvgPoint/);
+  assert.match(appSource, /sortOntologyNodesForRender/);
+  assert.match(appSource, /renderOntologyFieldRows/);
+  assert.match(appSource, /renderOntologyRelationList/);
+  assert.match(appSource, /字段/);
+  assert.match(appSource, /关联关系/);
+  assert.match(styleSource, /\.ontology-band-resize-handle/);
+  assert.match(styleSource, /\.ontology-node\.dragging rect/);
+  assert.match(styleSource, /\.ontology-field-table/);
+  assert.match(styleSource, /\.ontology-relation-list/);
+});
