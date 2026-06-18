@@ -1,0 +1,26 @@
+{
+  "schema_version": "spare-mvp-contracts-v0",
+  "role": "Contract Curator Agent schema bundle manifest",
+  "source_inputs": [
+    "front/project-json-contract.mjs",
+    "ontology/spare_mvp.ontology.json",
+    "src/spare_mvp_abm/aviation_support/model.py visualization_state()",
+    "src/spare_mvp_abm/smoke_model.py ontology_mapping()"
+  ],
+  "schema_files": [
+    "project.schema.json",
+    "scenario.schema.json",
+    "run.schema.json",
+    "result.schema.json",
+    "artifact_manifest.schema.json"
+  ],
+  "fixture_files": [
+    "tests/fixtures/minimal_project.json",
+    "tests/fixtures/minimal_scenario.json",
+    "tests/fixtures/minimal_run.json",
+    "tests/fixtures/minimal_result_smoke.json",
+    "tests/fixtures/minimal_result_aviation_support.json",
+    "tests/fixtures/minimal_artifact_manifest.json"
+  ],
+  "governance": "Project JSON may be edited by the frontend; Scenario JSON must be compiled by the Simulation Adapter; Mesa semantics remain Claude-governed."
+}
