@@ -17,6 +17,8 @@ The current frontend Project JSON is the raw `defaultScenario` shape from `front
 
 `scenario.schema.json` requires an explicit `simulation_model` with `family`, `model_id`, and `contract_version`. Its `simulation_inputs` field is split with `oneOf` branches for `smoke` and `aviation_support`, so the Simulation Adapter must compile model-specific inputs instead of coercing a mixed parameter bag.
 
+The first implemented Simulation Adapter lives at `src/spare_mvp_contract/adapter.py`. It validates current Project JSON contract roots, compiles the approved `smoke` Scenario path, runs `SmokeSpareMvpModel`, and writes traceable run artifacts. It does not compile `aviation_support` Scenario JSON yet because that path still needs a Claude-approved field derivation rule under Mesa governance.
+
 `run.schema.json` repeats `model_family` and `model_id` for query, audit, and Result validation.
 
 `result.schema.json` distinguishes `smoke` and `aviation_support` through `model_family`. It does not normalize aviation metrics into smoke metrics, because that would change metric semantics and must go through the Mesa governance process.

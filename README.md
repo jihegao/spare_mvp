@@ -22,6 +22,8 @@
 - Ontology 约定：`Ontology视图` 后续按 `建模对象 -> 仿真实验 -> 模型实例 -> 计算产物` 四层纵向画布组织；建模对象层对齐前端四级功能，模型实例层按 `AviationSupportModel` 的真实 Mesa/Python 运行时对象关系绘制，并包含当前 step 的指标对象。
 - 蒙特卡洛实验：只读展示当前仿真实验，配置样本数、随机种子、故障率、备件倍数、保障容量扫参；配置页只保留参数和启动按钮，评估结果统一在“结果分析 / 蒙特卡洛实验结果展示”中查看。
 - 结果分析：备件短板分析、飞机转场携行清单、飞机任务可靠性分析、停机因素分析。
+- M2a 契约适配：`src/spare_mvp_contract/adapter.py` 已支持 Project JSON 校验、已批准的 `smoke` Scenario 编译、`SmokeSpareMvpModel` 运行、Result summary 和 ArtifactManifest 生成；`aviation_support` Scenario 编译仍需先完成治理批准的字段派生规则。
+- PR-D 数据持久化：`src/spare_mvp_backend/schema.sql` 和 repository helper 已提供 SQLite 版 Project / Scenario / Run / Result / ArtifactManifest 持久化与 `run_id` 身份链查询；尚未实现后端 API。
 
 ## 本地运行
 
