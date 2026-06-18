@@ -148,10 +148,12 @@ Project editing remains local until save; run and result views consume backend r
 - Create: `tests/e2e-contract-flow.test.mjs`
 - Create: `reports/contract-first-smoke/README.md`
 
-- [ ] **Step 1: Add end-to-end smoke**
+- [x] **Step 1: Add end-to-end smoke**
 
 Run modeling snapshot -> save -> compile scenario -> start run -> fetch result summary -> fetch artifact manifest.
 
-- [ ] **Step 2: Publish smoke evidence**
+- [x] **Step 2: Publish smoke evidence**
 
 Record commands, versions, run IDs, and known limitations without overclaiming calibration quality.
+
+**Implemented scope:** PR-G added a Node `node:test` e2e smoke that drives the Python `BackendApi` facade through Project validation, save, modeling snapshot, experiment plan, smoke Scenario compilation, run start, result fetch, artifact manifest fetch, and run-chain validation. The evidence report records local commands, runtime versions, deterministic smoke run IDs, artifact kinds, and limitations. This remains a contract-first smoke over `SmokeSpareMvpModel`; it does not claim calibration quality, unblock `aviation_support` Scenario compilation, or change Mesa behavior.
