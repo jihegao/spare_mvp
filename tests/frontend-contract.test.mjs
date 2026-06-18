@@ -631,6 +631,19 @@ test("visual simulation page embeds Mesa visualization and ontology views", asyn
   assert.doesNotMatch(appSource, /可视化实验启动与停止<\/h2>/);
 });
 
+test("visual simulation consumes the Mesa contract provider with demo fallback", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  // 数据源指向契约服务 8521，服务不可用时回退演示快照
+  assert.match(appSource, /const CONTRACT_BASE = "http:\/\/127\.0\.0\.1:8521"/);
+  assert.match(appSource, /fetch\(`\$\{CONTRACT_BASE\}\/visualization/);
+  assert.match(appSource, /liveAviationState \|\| AVIATION_SUPPORT_DEMO_STATE/);
+  assert.match(appSource, /aviationSource = "live"/);
+  assert.match(appSource, /aviationSource = "demo"/);
+  // 运行 / 单步 / 重置 驱动契约请求
+  assert.match(appSource, /data-mesa-control/);
+  assert.match(appSource, /loadAviationSupportState\(\)/);
+});
+
 test("mesa ontology graph is scoped to the selected feature module", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
 

@@ -16,6 +16,7 @@
 ```bash
 npm test
 python3 -m http.server 4173
+.abm-mesa-env/bin/python src/spare_mvp_abm/contract_server.py  # Mesa 契约服务（默认 8521）
 ```
 
 浏览器检查入口：
@@ -32,6 +33,84 @@ http://127.0.0.1:4173/front/
 4. Monte Carlo 配置页修改扫参后，结果分析页显示新参数组。
 5. 点击 Monte Carlo “启动”后返回方案列表，当前方案状态为“运行中”。
 6. 可视化推演页面直接显示 Mesa 页面内容，不显示外层四级导航。
+
+## Mesa 后台契约服务（Contract Provider）
+
+本仓库提供一个零依赖（Python 标准库 `http.server`）的 Mesa 契约服务，把 `AviationSupportModel` 与 `SmokeSpareMvpModel` 的状态暴露为稳定 JSON 端点，供 swarm agent 只读消费，避免每个 agent 直接 import 模型代码或耦合本地 Mesa 环境。服务源文件为 `src/spare_mvp_abm/contract_server.py`。
+
+### 默认端口
+
+`127.0.0.1:8521`（Mesa 惯例端口，不与前端静态服务 4173 冲突）。
+
+### 启动命令
+
+依赖本地 `.abm-mesa-env`（Python 3.12 + mesa 3.5.1，已被 `.gitignore` 忽略，仅本机可用，不进 CI）：
+
+```bash
+.abm-mesa-env/bin/python src/spare_mvp_abm/contract_server.py --host 127.0.0.1 --port 8521
+```
+
+验证存活：
+
+```bash
+curl -s http://127.0.0.1:8521/health
+```
+
+### 端点契约
+
+所有响应为统一信封 `{"ok": bool, "contract_version": "1.0.0", "data": ..., "error": {...}|null}`。错误码：`400 bad_param`（参数非法或模型与端点不匹配）、`404 not_found`（未知端点或 experiment 配置缺失）、`500 model_error`（模型异常，附带 traceback）。CORS 已开放（`Access-Control-Allow-Origin: *`），为将来前端跨域 fetch 预留。
+
+| 方法 | 路径 | 查询参数 | 返回 |
+|---|---|---|---|
+| GET | `/health` | 无 | 存活状态 + `contract_version` + 可用模型 |
+| GET | `/contract` | 无 | 自描述：端点 / 信封 / 错误 / 所有权 |
+| GET | `/snapshot` | `model`（aviation\|smoke）、`steps`（int 0..1000，默认 0）、航空模型入参（见下）、`project`（smoke 的 project.json 路径） | `model.snapshot()` |
+| GET | `/visualization` | `model=aviation`（仅）、`steps` | snapshot/aircraft/resources/spares/missions/jobs/support_tasks/metrics/object_relationships/events |
+| GET | `/ontology-mapping` | `model=smoke`（仅）、`project` | development_mode/.../added_behavior_rules |
+| GET | `/experiment` | `name`（`scenarios/<name>/experiment.json`，缺省读 `aviation_support/experiment.json`） | experiment.json 原文 |
+
+两个模型能力不对称：`/visualization` 仅 `aviation` 暴露，`/ontology-mapping` 仅 `smoke` 暴露；错配返回 400。
+
+可覆盖的航空模型入参（白名单）：`aircraft_count`、`aircraft_type`、`mission_count`、`mechanic_teams`、`fuel_trucks`、`power_carts`、`weapons_crews`、`maintenance_bays`、`tick_minutes`、`lru_failure_multiplier`、`seed`。未列入的构造参数不可通过 HTTP 修改。
+
+### 消费示例
+
+```bash
+curl -s "http://127.0.0.1:8521/snapshot?model=aviation&steps=10&seed=17"
+curl -s "http://127.0.0.1:8521/visualization?model=aviation&steps=5"
+curl -s "http://127.0.0.1:8521/ontology-mapping?model=smoke"
+curl -s "http://127.0.0.1:8521/experiment?name=mission-reliability-smoke"
+```
+
+本机存在全局 HTTP 代理，Python 消费必须禁用代理，否则 127.0.0.1 请求会被转发给代理返回 502：
+
+```python
+import urllib.request
+opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+opener.open("http://127.0.0.1:8521/health").read().decode()
+```
+
+### 所有权声明
+
+以下资产归 Claude（主控 agent）维护，其他 swarm agent 为只读消费者：
+
+1. 服务源文件 `src/spare_mvp_abm/contract_server.py`。
+2. 本段落（`## Mesa 后台契约服务`）的契约文本。
+3. 默认端口 `8521`、端点清单与路径、查询参数白名单、统一信封结构、`CONTRACT_VERSION`。
+4. 契约测试 `tests/test_contract_server.py`。
+
+其他 agent 不得：修改服务源文件、改端口、增删或重命名端点、改查询参数白名单、改信封结构、改 `CONTRACT_VERSION`。只读消费（`curl` / fetch `/contract` 及各 GET 端点）允许。
+
+### 契约变更流程
+
+任何对上述受保护资产的变更，按顺序执行：
+
+1. 先在本段落登记变更（端点、参数、版本、行为），按 semver 升 `CONTRACT_VERSION`。
+2. 再改 `contract_server.py` 与 `tests/test_contract_server.py`，保持测试通过。
+3. 同步 `/contract` 自描述响应与本段落文本一致。
+4. 在最终回复中说明：变更了哪个端点、版本从什么升到什么、是否破坏性。
+
+破坏性变更（删端点、改字段语义、改默认行为）必须升主版本号并在回复顶部标注。
 
 ## 文档同步检查
 
