@@ -1,0 +1,17 @@
+{
+  "scenarioId": "carrier-turnaround-demo",
+  "activeModule": "sparePlanning",
+  "airports": [],
+  "missionAreas": [],
+  "experiment": {},
+  "missionProfile": {},
+  "basicMission": {},
+  "missionPhases": [],
+  "combatUnit": {},
+  "equipment": {},
+  "components": [],
+  "supportNodes": [],
+  "supportActivities": [],
+  "reliabilityBlockDiagram": {},
+  "monteCarlo": {}
+}
