@@ -1156,6 +1156,26 @@ tr:last-child td {
   text-align: center;
 }
 
+.mesa-source {
+  display: inline-block;
+  margin-left: 0.5rem;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  vertical-align: middle;
+}
+
+.mesa-source-live {
+  background: rgba(34, 197, 94, 0.16);
+  color: #15803d;
+}
+
+.mesa-source-demo {
+  background: rgba(234, 179, 8, 0.18);
+  color: #a16207;
+}
+
 .mesa-tabs,
 .mesa-actions {
   display: flex;

@@ -10,6 +10,7 @@ import {
 
 const app = document.querySelector("#app");
 const groups = groupFeaturePages(FEATURE_PAGES);
+const CONTRACT_BASE = "http://127.0.0.1:8521"; // Mesa 契约服务（见 agent.md「Mesa 后台契约服务」）
 const DEFAULT_ROUTE = "login";
 const DEFAULT_FEATURE_ID = "spare-planning-experiment-plan-list";
 const DEMO_USERS = [
@@ -118,6 +119,10 @@ let currentProject = DEMO_PROJECTS[0];
 let selectedRoute = readRouteFromHash() || DEFAULT_ROUTE;
 let selectedFeatureId = readFeatureIdFromHash() || DEFAULT_FEATURE_ID;
 let selectedMesaView = "aircraft";
+let liveAviationState = null; // 来自契约服务的活仿真状态；为 null 时回退演示快照
+let aviationSource = "demo"; // "live"（契约服务）或 "demo"（静态快照）
+let aviationSteps = 12; // 向契约服务请求的仿真步数
+let aviationLoadInFlight = false; // 防止重复并发拉取
 let isOntologyFullscreen = false;
 let selectedOntologyItem = null;
 let isOntologyDetailCollapsed = true;
@@ -209,6 +214,16 @@ function bindEvents() {
     if (mesaViewButton) {
       selectedMesaView = mesaViewButton.dataset.mesaView;
       render();
+      return;
+    }
+
+    const mesaControlButton = event.target.closest("[data-mesa-control]");
+    if (mesaControlButton) {
+      const action = mesaControlButton.dataset.mesaControl;
+      if (action === "step") aviationSteps += 1;
+      else if (action === "play") aviationSteps += 12;
+      else if (action === "reset") aviationSteps = 0;
+      loadAviationSupportState();
       return;
     }
 
@@ -1634,11 +1649,40 @@ function renderExperimentPlanEditor(page) {
   `;
 }
 
+async function loadAviationSupportState(steps = aviationSteps) {
+  if (typeof fetch === "undefined") {
+    liveAviationState = null;
+    aviationSource = "demo";
+    return;
+  }
+  aviationLoadInFlight = true;
+  try {
+    const params = new URLSearchParams({ model: "aviation", steps: String(steps), seed: "17" });
+    const resp = await fetch(`${CONTRACT_BASE}/visualization?${params.toString()}`);
+    if (!resp.ok) throw new Error(`contract provider HTTP ${resp.status}`);
+    const envelope = await resp.json();
+    if (!envelope || envelope.ok !== true || !envelope.data) throw new Error("bad contract envelope");
+    liveAviationState = envelope.data;
+    aviationSource = "live";
+  } catch (err) {
+    liveAviationState = null;
+    aviationSource = "demo";
+    console.warn("[aviation] 契约服务不可用，回退演示快照：", err && err.message ? err.message : err);
+  } finally {
+    aviationLoadInFlight = false;
+    render();
+  }
+}
+
 function renderVisualSimulation(page) {
-  const state = normalizeAviationSupportState(AVIATION_SUPPORT_DEMO_STATE);
+  const source = liveAviationState || AVIATION_SUPPORT_DEMO_STATE;
+  const state = normalizeAviationSupportState(source);
   const activeView = ["aircraft", "mission", "support", "ontology"].includes(selectedMesaView) ? selectedMesaView : "aircraft";
   const shellClass = activeView === "ontology" && isOntologyFullscreen ? "mesa-visual-shell ontology-fullscreen" : "mesa-visual-shell";
   const sidePanelClass = activeView === "ontology" && isOntologyFullscreen && isOntologyDetailCollapsed ? "mesa-side-panel collapsed" : "mesa-side-panel";
+  if (!liveAviationState && !aviationLoadInFlight) {
+    loadAviationSupportState();
+  }
   return `
     <div class="${shellClass}">
       <div class="mesa-visual-header">
@@ -1647,7 +1691,7 @@ function renderVisualSimulation(page) {
           <h3>航空保障 Mesa ABM</h3>
           <p>从 mesa-abm-skill 的可视化仿真迁移而来，基于本地状态帧展示飞机、任务、保障资源和 ontology 结构。</p>
         </div>
-        <div class="mesa-clock">T+${Number(AVIATION_SUPPORT_DEMO_STATE.snapshot.elapsed_hours || 0).toFixed(1)}h</div>
+        <div class="mesa-clock">T+${Number((source.snapshot && source.snapshot.elapsed_hours) || 0).toFixed(1)}h <span class="mesa-source mesa-source-${aviationSource}" title="数据来源：${aviationSource === "live" ? "契约服务 127.0.0.1:8521" : "演示快照（契约服务未启动）"}">${aviationSource === "live" ? "契约服务" : "演示快照"}</span></div>
       </div>
       <div class="mesa-toolbar">
         <div class="mesa-tabs" role="tablist" aria-label="Mesa 可视化视图">
