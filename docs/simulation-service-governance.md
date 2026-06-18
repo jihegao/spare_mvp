@@ -54,7 +54,7 @@
 
 | Agent | 职责 | 主要产物 | 关键边界 |
 | --- | --- | --- | --- |
-| Contract Curator Agent | 读取前端 project-json-contract、ontology、Mesa `snapshot()` / `visualization_state()` 输出，整理统一 contract。 | `contracts/project.schema.json`、`contracts/scenario.schema.json`、`contracts/run.schema.json`、`contracts/result.schema.json`、`contracts/artifact_manifest.schema.json`、OpenAPI 草案和 fixture。 | 不直接修改 Mesa model、runner、Scenario 编译逻辑；只能提出 contract diff。 |
+| Contract Curator Agent | 读取前端 project-json-contract、ontology、Mesa `snapshot()` 输出，整理统一 contract；`visualization_state()` 只能作为可视化契约参考，不能作为 Result 指标来源。 | `contracts/project.schema.json`、`contracts/scenario.schema.json`、`contracts/run.schema.json`、`contracts/result.schema.json`、`contracts/artifact_manifest.schema.json`、OpenAPI 草案和 fixture。 | 不直接修改 Mesa model、runner、Scenario 编译逻辑；只能提出 contract diff。 |
 | Simulation Adapter Agent | 把 Project JSON 编译成 Mesa Scenario，调用 `SpareMvpModel` / `AviationSupportModel`，保存 run artifact，返回 summary 和 metrics。 | `POST /validate/project`、`POST /compile-scenario`、`POST /runs`、`GET /runs/{run_id}`、`GET /runs/{run_id}/artifacts`。 | Scenario 编译规则、核心指标、artifact 结构必须先与 Claude 对齐。 |
 | Backend API Agent | 实现 Project、ExperimentPlan、Scenario、SimulationRun、ArtifactManifest 的应用 API。 | `POST /projects`、`GET /projects/{project_id}`、`POST /projects/{project_id}/modeling-snapshot`、`POST /experiment-plans`、`POST /simulation-runs`。 | 只能引用 contract 和 Simulation Adapter；不能自己拼最终 Scenario。 |
 | Database Agent | 设计数据库表、迁移和 repository，保证版本与产物可追溯。 | `projects`、`users`、`experiment_plans`、`modeling_snapshots`、`scenarios`、`simulation_runs`、`result_summaries`、`artifact_manifests`。 | 数据库不是仿真语义来源；字段必须来自 contract 或应用生命周期对象。 |

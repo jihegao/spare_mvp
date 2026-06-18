@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { PROJECT_JSON_CONTRACT } from "../front/project-json-contract.mjs";
+import { validateSchema } from "./schema-test-utils.mjs";
 
 const contractFiles = [
   "project.schema.json",
@@ -13,74 +14,6 @@ const contractFiles = [
 
 async function readJson(relativePath) {
   return JSON.parse(await readFile(new URL(`../${relativePath}`, import.meta.url), "utf8"));
-}
-
-function validateSchema(schema, value, path = "$") {
-  const errors = [];
-  collectSchemaErrors(schema, value, path, errors);
-  return errors;
-}
-
-function collectSchemaErrors(schema, value, path, errors) {
-  if (schema.oneOf) {
-    const branchResults = schema.oneOf.map((branch) => validateSchema(branch, value, path));
-    if (!branchResults.some((branchErrors) => branchErrors.length === 0)) {
-      errors.push(`${path} did not match oneOf: ${branchResults.map((branchErrors) => branchErrors.join("; ")).join(" | ")}`);
-    }
-  }
-
-  if (schema.const !== undefined && value !== schema.const) {
-    errors.push(`${path} expected const ${JSON.stringify(schema.const)}, got ${JSON.stringify(value)}`);
-  }
-
-  if (schema.enum && !schema.enum.includes(value)) {
-    errors.push(`${path} expected one of ${schema.enum.join(", ")}, got ${JSON.stringify(value)}`);
-  }
-
-  if (schema.type && !matchesJsonType(schema.type, value)) {
-    errors.push(`${path} expected type ${JSON.stringify(schema.type)}, got ${Array.isArray(value) ? "array" : typeof value}`);
-    return;
-  }
-
-  if (typeof value === "number") {
-    if (schema.minimum !== undefined && value < schema.minimum) {
-      errors.push(`${path} expected minimum ${schema.minimum}, got ${value}`);
-    }
-    if (schema.maximum !== undefined && value > schema.maximum) {
-      errors.push(`${path} expected maximum ${schema.maximum}, got ${value}`);
-    }
-  }
-
-  if (schema.type === "object" && value && typeof value === "object" && !Array.isArray(value)) {
-    for (const key of schema.required || []) {
-      if (!(key in value)) {
-        errors.push(`${path}.${key} is required`);
-      }
-    }
-    const properties = schema.properties || {};
-    for (const [key, childValue] of Object.entries(value)) {
-      if (properties[key]) {
-        collectSchemaErrors(properties[key], childValue, `${path}.${key}`, errors);
-      } else if (schema.additionalProperties === false) {
-        errors.push(`${path}.${key} is not allowed`);
-      }
-    }
-  }
-
-  if (schema.type === "array" && Array.isArray(value) && schema.items) {
-    value.forEach((item, index) => collectSchemaErrors(schema.items, item, `${path}[${index}]`, errors));
-  }
-}
-
-function matchesJsonType(type, value) {
-  if (Array.isArray(type)) {
-    return type.some((item) => matchesJsonType(item, value));
-  }
-  if (type === "array") return Array.isArray(value);
-  if (type === "integer") return Number.isInteger(value);
-  if (type === "number") return typeof value === "number" && Number.isFinite(value);
-  if (type === "null") return value === null;
-  return typeof value === type && !Array.isArray(value);
 }
 
 test("simulation service governance defines the six-agent swarm execution plan", async () => {
@@ -115,6 +48,10 @@ test("contract curator publishes the versioned schema bundle", async () => {
     assert.equal(typeof schema.type, "string");
     assert.ok(schema.properties.schema_version);
   }
+
+  const mapping = await readJson("contracts/scenario_adapter_mapping.json");
+  assert.deepEqual(manifest.mapping_files, ["scenario_adapter_mapping.json"]);
+  assert.equal(mapping.schema_version, "scenario-adapter-mapping-v0");
 });
 
 test("project schema covers required frontend project JSON contract objects", async () => {
@@ -140,9 +77,16 @@ test("scenario and result schemas preserve simulation contract boundaries", asyn
     "scenario_id",
     "project_id",
     "scenario_version",
+    "simulation_model",
     "compiled_from",
     "simulation_inputs",
   ]);
+  assert.ok(scenarioSchema.properties.simulation_model.properties.family);
+  assert.equal(scenarioSchema.properties.simulation_inputs.oneOf.length, 2);
+  assert.ok(runSchema.required.includes("model_family"));
+  assert.ok(runSchema.required.includes("model_id"));
+  assert.ok(runSchema.properties.model_family);
+  assert.ok(runSchema.properties.model_id);
   assert.ok(scenarioSchema.properties.compiled_from.properties.project_schema_version);
   assert.ok(resultSchema.properties.model_family);
   assert.ok(resultSchema.properties.metrics.properties.mission_success_rate);
@@ -153,12 +97,16 @@ test("scenario and result schemas preserve simulation contract boundaries", asyn
 
 test("minimal contract fixtures validate against their schemas", async () => {
   const fixturePairs = [
-    ["contracts/project.schema.json", "tests/fixtures/minimal_project.json"],
-    ["contracts/scenario.schema.json", "tests/fixtures/minimal_scenario.json"],
-    ["contracts/run.schema.json", "tests/fixtures/minimal_run.json"],
-    ["contracts/result.schema.json", "tests/fixtures/minimal_result_smoke.json"],
-    ["contracts/result.schema.json", "tests/fixtures/minimal_result_aviation_support.json"],
-    ["contracts/artifact_manifest.schema.json", "tests/fixtures/minimal_artifact_manifest.json"],
+    ["contracts/project.schema.json", "tests/fixtures/smoke_project.json"],
+    ["contracts/scenario.schema.json", "tests/fixtures/smoke_scenario.json"],
+    ["contracts/run.schema.json", "tests/fixtures/smoke_run.json"],
+    ["contracts/result.schema.json", "tests/fixtures/smoke_result.json"],
+    ["contracts/artifact_manifest.schema.json", "tests/fixtures/smoke_artifact_manifest.json"],
+    ["contracts/project.schema.json", "tests/fixtures/aviation_support_project.json"],
+    ["contracts/scenario.schema.json", "tests/fixtures/aviation_support_scenario.json"],
+    ["contracts/run.schema.json", "tests/fixtures/aviation_support_run.json"],
+    ["contracts/result.schema.json", "tests/fixtures/aviation_support_result.json"],
+    ["contracts/artifact_manifest.schema.json", "tests/fixtures/aviation_support_artifact_manifest.json"],
   ];
 
   for (const [schemaPath, fixturePath] of fixturePairs) {
@@ -168,21 +116,60 @@ test("minimal contract fixtures validate against their schemas", async () => {
   }
 });
 
+test("minimal contract fixtures form a consistent end-to-end object graph", async () => {
+  for (const family of ["smoke", "aviation_support"]) {
+    const project = await readJson(`tests/fixtures/${family}_project.json`);
+    const scenario = await readJson(`tests/fixtures/${family}_scenario.json`);
+    const run = await readJson(`tests/fixtures/${family}_run.json`);
+    const result = await readJson(`tests/fixtures/${family}_result.json`);
+    const manifest = await readJson(`tests/fixtures/${family}_artifact_manifest.json`);
+
+    assert.equal(scenario.project_id, project.project_id);
+    assert.equal(run.scenario_id, scenario.scenario_id);
+    assert.equal(result.run_id, run.run_id);
+    assert.equal(result.result_id, run.result_summary_id);
+    assert.equal(manifest.run_id, run.run_id);
+    assert.equal(result.model_family, scenario.simulation_model.family);
+    assert.equal(run.model_family, scenario.simulation_model.family);
+    assert.equal(run.model_id, scenario.simulation_model.model_id);
+    assert.equal(run.model_family, result.model_family);
+  }
+});
+
+test("scenario schema rejects mismatched model selector and simulation inputs", async () => {
+  const schema = await readJson("contracts/scenario.schema.json");
+  const smokeScenario = await readJson("tests/fixtures/smoke_scenario.json");
+  const aviationScenario = await readJson("tests/fixtures/aviation_support_scenario.json");
+
+  const smokeModelWithAviationInputs = {
+    ...smokeScenario,
+    simulation_inputs: aviationScenario.simulation_inputs,
+  };
+  const aviationFamilyWithSmokeModelId = {
+    ...aviationScenario,
+    simulation_model: {
+      ...aviationScenario.simulation_model,
+      model_id: "SmokeSpareMvpModel",
+    },
+  };
+
+  assert.notDeepEqual(validateSchema(schema, smokeModelWithAviationInputs), []);
+  assert.notDeepEqual(validateSchema(schema, aviationFamilyWithSmokeModelId), []);
+});
+
 test("scenario schema rejects inputs that SmokeSpareMvpModel would coerce upward", async () => {
   const schema = await readJson("contracts/scenario.schema.json");
-  const fixture = await readJson("tests/fixtures/minimal_scenario.json");
+  const fixture = await readJson("tests/fixtures/smoke_scenario.json");
   const invalidScenario = {
     ...fixture,
     simulation_inputs: {
       ...fixture.simulation_inputs,
-      aircraft_count: 0,
-      mission_count: 0,
       support_capacity: 0,
+      min_required_sorties: 0,
     },
   };
 
   const errors = validateSchema(schema, invalidScenario);
-  assert.ok(errors.some((error) => error.includes("$.simulation_inputs.aircraft_count expected minimum 1")));
-  assert.ok(errors.some((error) => error.includes("$.simulation_inputs.mission_count expected minimum 1")));
   assert.ok(errors.some((error) => error.includes("$.simulation_inputs.support_capacity expected minimum 1")));
+  assert.ok(errors.some((error) => error.includes("$.simulation_inputs.min_required_sorties expected minimum 1")));
 });

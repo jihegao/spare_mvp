@@ -20,12 +20,16 @@
 - Create: `contracts/run.schema.json`
 - Create: `contracts/result.schema.json`
 - Create: `contracts/artifact_manifest.schema.json`
-- Create: `tests/fixtures/minimal_project.json`
-- Create: `tests/fixtures/minimal_scenario.json`
-- Create: `tests/fixtures/minimal_run.json`
-- Create: `tests/fixtures/minimal_result_smoke.json`
-- Create: `tests/fixtures/minimal_result_aviation_support.json`
-- Create: `tests/fixtures/minimal_artifact_manifest.json`
+- Create: `tests/fixtures/smoke_project.json`
+- Create: `tests/fixtures/smoke_scenario.json`
+- Create: `tests/fixtures/smoke_run.json`
+- Create: `tests/fixtures/smoke_result.json`
+- Create: `tests/fixtures/smoke_artifact_manifest.json`
+- Create: `tests/fixtures/aviation_support_project.json`
+- Create: `tests/fixtures/aviation_support_scenario.json`
+- Create: `tests/fixtures/aviation_support_run.json`
+- Create: `tests/fixtures/aviation_support_result.json`
+- Create: `tests/fixtures/aviation_support_artifact_manifest.json`
 - Test: `tests/contract-curator.test.mjs`
 - Modify: `docs/simulation-service-governance.md`
 
@@ -41,7 +45,7 @@ Create the five schema files with root-object coverage for current frontend Proj
 
 - [x] **Step 3: Add minimal fixtures and schema instance checks**
 
-Add minimal Project, Scenario, Run, smoke Result, aviation support Result, and ArtifactManifest fixtures. Validate those fixtures against the draft schemas in `tests/contract-curator.test.mjs`.
+Add separate smoke and aviation support Project -> Scenario -> Run -> Result -> ArtifactManifest fixture chains. Validate those fixtures against the draft schemas in `tests/contract-curator.test.mjs`.
 
 - [x] **Step 4: Run focused verification**
 
@@ -55,11 +59,11 @@ Expected: PASS.
 - Modify: `tests/contract-curator.test.mjs`
 - Create: `tests/contract-drift.test.mjs`
 
-- [ ] **Step 1: Add drift checks**
+- [x] **Step 1: Add drift checks**
 
 Check that frontend project roots, schema properties, result metrics, and artifact manifest identifiers remain aligned.
 
-- [ ] **Step 2: Run evaluator tests**
+- [x] **Step 2: Run evaluator tests**
 
 Run: `npm test`
 

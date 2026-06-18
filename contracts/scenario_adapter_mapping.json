@@ -1,0 +1,91 @@
+{
+  "schema_version": "scenario-adapter-mapping-v0",
+  "role": "Evaluator-visible mapping from compiled Scenario JSON fields to Mesa model constructor inputs",
+  "model_families": {
+    "smoke": {
+      "model_class": "SmokeSpareMvpModel",
+      "simulation_inputs": {
+        "project_snapshot": {
+          "source": "Project JSON snapshot selected by Scenario compiler",
+          "constructor_param": "projectData",
+          "derived_by": "Simulation Adapter Agent"
+        },
+        "project_version": {
+          "source": "Project JSON application envelope",
+          "status": "metadata_only",
+          "reason": "Project version is audit metadata for adapter bookkeeping; project_snapshot carries model input data."
+        },
+        "active_module": {
+          "source": "project.activeModule",
+          "constructor_param": "activeModule"
+        },
+        "spare_multiplier": {
+          "source": "project.monteCarlo.spareMultipliers[]",
+          "constructor_param": "spareMultiplier"
+        },
+        "failure_rate": {
+          "source": "project.components[].failureRate",
+          "constructor_param": "failureRate"
+        },
+        "support_capacity": {
+          "source": "project.supportNodes[].equipmentCapacity",
+          "constructor_param": "supportCapacity"
+        },
+        "min_required_sorties": {
+          "source": "project.equipment.minRequiredSorties / project.basicMission.minRequiredSorties",
+          "constructor_param": "minRequiredSorties"
+        },
+        "seed": {
+          "source": "project.experiment.seed",
+          "constructor_param": "seed"
+        }
+      }
+    },
+    "aviation_support": {
+      "model_class": "AviationSupportModel",
+      "simulation_inputs": {
+        "ontology_version": {
+          "source": "ontology/spare_mvp.ontology.json",
+          "status": "unsupported",
+          "reason": "requires Claude-approved compilation rule"
+        },
+        "aircraft_count": {
+          "source": "project.equipment.quantity",
+          "constructor_param": "aircraft_count"
+        },
+        "mission_count": {
+          "source": "project.basicMission / project.missionProfile",
+          "constructor_param": "mission_count"
+        },
+        "mission_aircraft_required": {
+          "source": "project.basicMission.equipmentQuantity",
+          "constructor_param": "mission_aircraft_required"
+        },
+        "mechanic_teams": {
+          "source": "project.supportNodes[].personnelCapacity",
+          "status": "unsupported",
+          "reason": "requires Claude-approved compilation rule"
+        },
+        "fuel_trucks": {
+          "source": "project.supportActivities / ontology resources",
+          "status": "unsupported",
+          "reason": "requires Claude-approved compilation rule"
+        },
+        "maintenance_bays": {
+          "source": "project.supportNodes[].equipmentCapacity",
+          "status": "unsupported",
+          "reason": "requires Claude-approved compilation rule"
+        },
+        "lru_failure_multiplier": {
+          "source": "project.components[].failureRate normalized by Simulation Adapter",
+          "status": "unsupported",
+          "reason": "requires Claude-approved compilation rule"
+        },
+        "seed": {
+          "source": "project.experiment.seed",
+          "constructor_param": "seed"
+        }
+      }
+    }
+  }
+}
