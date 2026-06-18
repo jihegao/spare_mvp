@@ -885,8 +885,15 @@ class AviationSupportModel(Model):
         return pool.utilization(max(self.sim_time, self.tick_minutes))
 
     def visualization_state(self) -> dict:
+        snapshot = self.snapshot()
+        support_tasks = [
+            self._support_task_visualization(job)
+            for job in self.support_jobs
+            if job.state != "completed"
+        ]
+        metrics = self._metric_visualization(snapshot)
         return {
-            "snapshot": self.snapshot(),
+            "snapshot": snapshot,
             "aircraft": [
                 {
                     "tail_number": aircraft.tail_number,
@@ -963,7 +970,118 @@ class AviationSupportModel(Model):
                 for job in self.support_jobs
                 if job.state != "completed"
             ],
+            "support_tasks": support_tasks,
+            "metrics": metrics,
+            "object_relationships": self._object_relationships(support_tasks, metrics),
             "events": list(self.event_log[-20:]),
+        }
+
+    def _support_task_visualization(self, job: SupportJob) -> dict:
+        task = job.active_task or job.current_task
+        return {
+            "task_id": f"support-task-{job.job_id}",
+            "job_id": job.job_id,
+            "tail_number": job.aircraft.tail_number,
+            "kind": job.kind,
+            "state": job.state,
+            "current_task": task.name if task else "",
+            "remaining": max(0.0, job.remaining),
+            "required_resources": dict(task.resources if task else job.allocated_resources),
+            "required_spares": dict(task.spare_parts if task else {}),
+        }
+
+    def _metric_visualization(self, snapshot: dict) -> list[dict]:
+        metric_specs = [
+            ("sortie_completion_rate", "Sortie completion rate", "ratio"),
+            ("available_aircraft", "Available aircraft", "count"),
+            ("active_jobs", "Active support jobs", "count"),
+            ("spare_stock_total", "Spare stock total", "count"),
+            ("avg_departure_delay", "Average departure delay", "minutes"),
+        ]
+        return [
+            {
+                "metric_id": metric_id,
+                "name": display_name,
+                "value": snapshot.get(metric_id, 0),
+                "unit": unit,
+            }
+            for metric_id, display_name, unit in metric_specs
+        ]
+
+    def _object_relationships(self, support_tasks: list[dict], metrics: list[dict]) -> list[dict]:
+        relationships: list[dict] = []
+        for mission in self.missions:
+            for tail_number in mission.assigned_tail_numbers:
+                relationships.append(
+                    self._relationship(
+                        f"aircraft:{tail_number}",
+                        f"mission:{mission.mission_id}",
+                        "assigned_to",
+                        "执行任务",
+                    )
+                )
+
+        for task in support_tasks:
+            task_id = str(task["task_id"])
+            relationships.append(
+                self._relationship(
+                    f"aircraft:{task['tail_number']}",
+                    f"support_task:{task_id}",
+                    "has_support_task",
+                    "生成保障作业",
+                )
+            )
+            for resource_name in task.get("required_resources", {}):
+                relationships.append(
+                    self._relationship(
+                        f"support_task:{task_id}",
+                        f"resource:{resource_name}",
+                        "uses_resource",
+                        "占用资源",
+                    )
+                )
+            for spare_id in task.get("required_spares", {}):
+                relationships.append(
+                    self._relationship(
+                        f"support_task:{task_id}",
+                        f"spare:{spare_id}",
+                        "consumes_spare",
+                        "消耗备件",
+                    )
+                )
+
+        if self.missions:
+            relationships.append(
+                self._relationship(
+                    f"mission:{self.missions[0].mission_id}",
+                    "metric:sortie_completion_rate",
+                    "observed_as",
+                    "采样指标",
+                )
+            )
+        relationships.append(self._relationship("resource:mechanic_team", "metric:active_jobs", "observed_as", "采样指标"))
+        first_spare = next(iter(self.spares), None)
+        if first_spare:
+            relationships.append(
+                self._relationship(f"spare:{first_spare}", "metric:spare_stock_total", "observed_as", "采样指标")
+            )
+        for metric in metrics:
+            relationships.append(
+                self._relationship(
+                    f"metric:{metric['metric_id']}",
+                    "snapshot",
+                    "sampled_from",
+                    "采样自",
+                )
+            )
+        return relationships
+
+    def _relationship(self, source: str, target: str, relationship_type: str, label: str) -> dict:
+        return {
+            "from": source,
+            "to": target,
+            "type": relationship_type,
+            "label": label,
         }
 
     def _state_counts(self) -> dict[str, int]:

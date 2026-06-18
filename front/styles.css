@@ -1126,6 +1126,9 @@ tr:last-child td {
 
 .mesa-visual-shell.ontology-fullscreen .mesa-ontology-stage .ontology-svg {
   min-height: calc(100vh - 132px);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .mesa-visual-header,
@@ -1329,6 +1332,9 @@ tr:last-child td {
 
 .mesa-ontology-stage .ontology-svg {
   min-height: 560px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .ontology-detail-toggle {
@@ -1576,6 +1582,37 @@ tr:last-child td {
   font-weight: 700;
 }
 
+.ontology-band .ontology-band-count {
+  fill: #64748b;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.ontology-band.collapsed rect:first-child {
+  fill: rgba(241, 245, 249, 0.9);
+}
+
+.ontology-band-toggle {
+  cursor: pointer;
+  fill: rgba(255, 255, 255, 0.72);
+  stroke: #cbd5e1;
+}
+
+.ontology-band-toggle:hover,
+.ontology-band-toggle:focus {
+  fill: #eaf1ff;
+  stroke: #0f5cbf;
+  stroke-width: 2;
+}
+
+.ontology-band-toggle-glyph {
+  pointer-events: none;
+  fill: #334155;
+  font-size: 18px;
+  font-weight: 800;
+  text-anchor: middle;
+}
+
 .ontology-band-resize-glyph {
   pointer-events: none;
   fill: none;
@@ -1690,6 +1727,10 @@ tr:last-child td {
 
 .ontology-node.simulation-experiment circle {
   stroke: #5eead4;
+}
+
+.ontology-node.model-instance circle {
+  stroke: #c084fc;
 }
 
 .ontology-node.computation-artifact circle {
