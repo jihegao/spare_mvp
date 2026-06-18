@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spare-mvp.local/contracts/scenario.schema.json",
+  "title": "Spare MVP Compiled Scenario",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "scenario_id",
+    "project_id",
+    "scenario_version",
+    "simulation_model",
+    "compiled_from",
+    "simulation_inputs"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "const": "scenario-v0" },
+    "scenario_id": { "type": "string" },
+    "project_id": { "type": "string" },
+    "scenario_version": { "type": "string" },
+    "simulation_model": {
+      "type": "object",
+      "required": ["family", "model_id", "contract_version"],
+      "properties": {
+        "family": { "type": "string", "enum": ["smoke", "aviation_support"] },
+        "model_id": { "type": "string", "enum": ["SmokeSpareMvpModel", "AviationSupportModel"] },
+        "contract_version": { "type": "string", "const": "1.0.0" }
+      },
+      "additionalProperties": false
+    },
+    "compiled_at": { "type": "string" },
+    "compiled_by": { "type": "string", "const": "Simulation Adapter Agent" },
+    "compiled_from": {
+      "type": "object",
+      "required": ["project_id", "project_version", "project_schema_version"],
+      "properties": {
+        "project_id": { "type": "string" },
+        "project_version": { "type": "string" },
+        "project_schema_version": { "type": "string" },
+        "ontology_version": { "type": "string" },
+        "mesa_contract_version": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "simulation_inputs": {
+      "oneOf": [
+        {
+          "title": "smoke",
+          "type": "object",
+          "required": [
+            "project_snapshot",
+            "project_version",
+            "active_module",
+            "spare_multiplier",
+            "failure_rate",
+            "support_capacity",
+            "min_required_sorties",
+            "seed"
+          ],
+          "properties": {
+            "project_snapshot": { "type": "object" },
+            "project_version": { "type": "string" },
+            "active_module": { "type": "string", "enum": ["sparePlanning", "missionReliability"] },
+            "spare_multiplier": { "type": "number", "minimum": 0 },
+            "failure_rate": { "type": "number", "minimum": 0 },
+            "support_capacity": { "type": "integer", "minimum": 1 },
+            "min_required_sorties": { "type": "integer", "minimum": 1 },
+            "seed": { "type": "integer" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "title": "aviation_support",
+          "type": "object",
+          "required": [
+            "ontology_version",
+            "aircraft_count",
+            "mission_count",
+            "mission_aircraft_required",
+            "mechanic_teams",
+            "fuel_trucks",
+            "maintenance_bays",
+            "lru_failure_multiplier",
+            "seed"
+          ],
+          "properties": {
+            "ontology_version": { "type": "string" },
+            "aircraft_count": { "type": "integer", "minimum": 1 },
+            "mission_count": { "type": "integer", "minimum": 1 },
+            "mission_aircraft_required": { "type": "integer", "minimum": 1 },
+            "mechanic_teams": { "type": "integer", "minimum": 1 },
+            "fuel_trucks": { "type": "integer", "minimum": 1 },
+            "maintenance_bays": { "type": "integer", "minimum": 1 },
+            "lru_failure_multiplier": { "type": "number", "minimum": 0 },
+            "seed": { "type": "integer" }
+          },
+          "additionalProperties": false
+        }
+      ]
+    }
+  }
+}

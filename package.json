@@ -1,0 +1,10 @@
+{
+  "name": "spare-mvp-ontology-mesa-prototype",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "test": "node --test",
+    "serve": "python -m http.server 4173"
+  }
+}

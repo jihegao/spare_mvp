@@ -1,0 +1,37 @@
+{
+  "schema_version": "project-v0",
+  "project_id": "project-aviation-support-contract-001",
+  "project_version": "project-v0.1",
+  "scenarioId": "aviation-support-contract-demo",
+  "activeModule": "sparePlanning",
+  "airports": [],
+  "missionAreas": [],
+  "experiment": {
+    "seed": 20260618
+  },
+  "missionProfile": {},
+  "basicMission": {
+    "equipmentQuantity": 5
+  },
+  "missionPhases": [],
+  "combatUnit": {},
+  "equipment": {
+    "quantity": 8
+  },
+  "components": [
+    {
+      "id": "radar",
+      "failureRate": 0.07
+    }
+  ],
+  "supportNodes": [
+    {
+      "id": "deck",
+      "personnelCapacity": 3,
+      "equipmentCapacity": 2
+    }
+  ],
+  "supportActivities": [],
+  "reliabilityBlockDiagram": {},
+  "monteCarlo": {}
+}

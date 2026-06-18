@@ -1,0 +1,435 @@
+{
+  "experiment": "mission_reliability_smoke",
+  "framework": "mesa",
+  "interpretation": "Ran 9 seeded Mesa runs for 48 steps. Final mission_success_rate averaged 1.0000 (range 1.0000 to 1.0000). Grouped by minRequiredSorties, mean final mission_success_rate was 4: 1.0000, 5: 1.0000, 6: 1.0000. Treat these results as simulation evidence under the encoded rules; they do not prove external-world causality without calibration and sensitivity checks.",
+  "metrics": {
+    "downtime_failure_events": {
+      "max": 12.0,
+      "mean": 8.555555555555555,
+      "min": 5.0
+    },
+    "downtime_resource_delay_events": {
+      "max": 0.0,
+      "mean": 0.0,
+      "min": 0.0
+    },
+    "downtime_spare_shortage_events": {
+      "max": 0.0,
+      "mean": 0.0,
+      "min": 0.0
+    },
+    "failed_count": {
+      "max": 0.0,
+      "mean": 0.0,
+      "min": 0.0
+    },
+    "mean_launch_time": {
+      "max": 1.0,
+      "mean": 1.0,
+      "min": 1.0
+    },
+    "mean_recovery_time": {
+      "max": 3.0,
+      "mean": 3.0,
+      "min": 3.0
+    },
+    "mean_turnaround_time": {
+      "max": 4.0,
+      "mean": 4.0,
+      "min": 4.0
+    },
+    "mission_success_rate": {
+      "max": 1.0,
+      "mean": 1.0,
+      "min": 1.0
+    },
+    "ontology_bound_entities": {
+      "max": 6.0,
+      "mean": 6.0,
+      "min": 6.0
+    },
+    "ontology_entity_types": {
+      "max": 8.0,
+      "mean": 8.0,
+      "min": 8.0
+    },
+    "ontology_relationships": {
+      "max": 13.0,
+      "mean": 13.0,
+      "min": 13.0
+    },
+    "ontology_simulated_entity_types": {
+      "max": 6.0,
+      "mean": 6.0,
+      "min": 6.0
+    },
+    "ontology_simulated_relationships": {
+      "max": 9.0,
+      "mean": 9.0,
+      "min": 9.0
+    },
+    "ready_rate": {
+      "max": 1.0,
+      "mean": 0.9444444444444444,
+      "min": 0.875
+    },
+    "repair_backlog": {
+      "max": 0.0,
+      "mean": 0.0,
+      "min": 0.0
+    },
+    "repairing_count": {
+      "max": 1.0,
+      "mean": 0.4444444444444444,
+      "min": 0.0
+    },
+    "shortage_events": {
+      "max": 0.0,
+      "mean": 0.0,
+      "min": 0.0
+    },
+    "sortie_count": {
+      "max": 0.0,
+      "mean": 0.0,
+      "min": 0.0
+    },
+    "sortie_rate": {
+      "max": 1.0,
+      "mean": 1.0,
+      "min": 1.0
+    },
+    "spare_fill_rate": {
+      "max": 1.0,
+      "mean": 1.0,
+      "min": 1.0
+    },
+    "spare_utilization": {
+      "max": 0.8,
+      "mean": 0.5703703703703704,
+      "min": 0.3333333333333333
+    }
+  },
+  "model_class": "SmokeSpareMvpModel",
+  "parameter_effects": {
+    "minRequiredSorties": {
+      "4": 1.0,
+      "5": 1.0,
+      "6": 1.0
+    }
+  },
+  "run_count": 9,
+  "runs": [
+    {
+      "csv": "run_000.csv",
+      "final": {
+        "downtime_failure_events": 6.0,
+        "downtime_resource_delay_events": 0.0,
+        "downtime_spare_shortage_events": 0.0,
+        "failed_count": 0.0,
+        "mean_launch_time": 1.0,
+        "mean_recovery_time": 3.0,
+        "mean_turnaround_time": 4.0,
+        "mission_success_rate": 1.0,
+        "ontology_bound_entities": 6.0,
+        "ontology_entity_types": 8.0,
+        "ontology_relationships": 13.0,
+        "ontology_simulated_entity_types": 6.0,
+        "ontology_simulated_relationships": 9.0,
+        "ready_rate": 1.0,
+        "repair_backlog": 0.0,
+        "repairing_count": 0.0,
+        "shortage_events": 0.0,
+        "sortie_count": 0.0,
+        "sortie_rate": 1.0,
+        "spare_fill_rate": 1.0,
+        "spare_utilization": 0.4,
+        "step": 48
+      },
+      "parameters": {
+        "activeModule": "missionReliability",
+        "minRequiredSorties": 4,
+        "projectJsonPath": "scenarios/frontend-project-smoke/project.json"
+      },
+      "run_id": 0,
+      "seed": 201
+    },
+    {
+      "csv": "run_001.csv",
+      "final": {
+        "downtime_failure_events": 8.0,
+        "downtime_resource_delay_events": 0.0,
+        "downtime_spare_shortage_events": 0.0,
+        "failed_count": 0.0,
+        "mean_launch_time": 1.0,
+        "mean_recovery_time": 3.0,
+        "mean_turnaround_time": 4.0,
+        "mission_success_rate": 1.0,
+        "ontology_bound_entities": 6.0,
+        "ontology_entity_types": 8.0,
+        "ontology_relationships": 13.0,
+        "ontology_simulated_entity_types": 6.0,
+        "ontology_simulated_relationships": 9.0,
+        "ready_rate": 0.875,
+        "repair_backlog": 0.0,
+        "repairing_count": 1.0,
+        "shortage_events": 0.0,
+        "sortie_count": 0.0,
+        "sortie_rate": 1.0,
+        "spare_fill_rate": 1.0,
+        "spare_utilization": 0.5333333333333333,
+        "step": 48
+      },
+      "parameters": {
+        "activeModule": "missionReliability",
+        "minRequiredSorties": 4,
+        "projectJsonPath": "scenarios/frontend-project-smoke/project.json"
+      },
+      "run_id": 1,
+      "seed": 202
+    },
+    {
+      "csv": "run_002.csv",
+      "final": {
+        "downtime_failure_events": 5.0,
+        "downtime_resource_delay_events": 0.0,
+        "downtime_spare_shortage_events": 0.0,
+        "failed_count": 0.0,
+        "mean_launch_time": 1.0,
+        "mean_recovery_time": 3.0,
+        "mean_turnaround_time": 4.0,
+        "mission_success_rate": 1.0,
+        "ontology_bound_entities": 6.0,
+        "ontology_entity_types": 8.0,
+        "ontology_relationships": 13.0,
+        "ontology_simulated_entity_types": 6.0,
+        "ontology_simulated_relationships": 9.0,
+        "ready_rate": 1.0,
+        "repair_backlog": 0.0,
+        "repairing_count": 0.0,
+        "shortage_events": 0.0,
+        "sortie_count": 0.0,
+        "sortie_rate": 1.0,
+        "spare_fill_rate": 1.0,
+        "spare_utilization": 0.3333333333333333,
+        "step": 48
+      },
+      "parameters": {
+        "activeModule": "missionReliability",
+        "minRequiredSorties": 4,
+        "projectJsonPath": "scenarios/frontend-project-smoke/project.json"
+      },
+      "run_id": 2,
+      "seed": 203
+    },
+    {
+      "csv": "run_003.csv",
+      "final": {
+        "downtime_failure_events": 10.0,
+        "downtime_resource_delay_events": 0.0,
+        "downtime_spare_shortage_events": 0.0,
+        "failed_count": 0.0,
+        "mean_launch_time": 1.0,
+        "mean_recovery_time": 3.0,
+        "mean_turnaround_time": 4.0,
+        "mission_success_rate": 1.0,
+        "ontology_bound_entities": 6.0,
+        "ontology_entity_types": 8.0,
+        "ontology_relationships": 13.0,
+        "ontology_simulated_entity_types": 6.0,
+        "ontology_simulated_relationships": 9.0,
+        "ready_rate": 0.875,
+        "repair_backlog": 0.0,
+        "repairing_count": 1.0,
+        "shortage_events": 0.0,
+        "sortie_count": 0.0,
+        "sortie_rate": 1.0,
+        "spare_fill_rate": 1.0,
+        "spare_utilization": 0.6666666666666666,
+        "step": 48
+      },
+      "parameters": {
+        "activeModule": "missionReliability",
+        "minRequiredSorties": 5,
+        "projectJsonPath": "scenarios/frontend-project-smoke/project.json"
+      },
+      "run_id": 3,
+      "seed": 201
+    },
+    {
+      "csv": "run_004.csv",
+      "final": {
+        "downtime_failure_events": 11.0,
+        "downtime_resource_delay_events": 0.0,
+        "downtime_spare_shortage_events": 0.0,
+        "failed_count": 0.0,
+        "mean_launch_time": 1.0,
+        "mean_recovery_time": 3.0,
+        "mean_turnaround_time": 4.0,
+        "mission_success_rate": 1.0,
+        "ontology_bound_entities": 6.0,
+        "ontology_entity_types": 8.0,
+        "ontology_relationships": 13.0,
+        "ontology_simulated_entity_types": 6.0,
+        "ontology_simulated_relationships": 9.0,
+        "ready_rate": 1.0,
+        "repair_backlog": 0.0,
+        "repairing_count": 0.0,
+        "shortage_events": 0.0,
+        "sortie_count": 0.0,
+        "sortie_rate": 1.0,
+        "spare_fill_rate": 1.0,
+        "spare_utilization": 0.7333333333333333,
+        "step": 48
+      },
+      "parameters": {
+        "activeModule": "missionReliability",
+        "minRequiredSorties": 5,
+        "projectJsonPath": "scenarios/frontend-project-smoke/project.json"
+      },
+      "run_id": 4,
+      "seed": 202
+    },
+    {
+      "csv": "run_005.csv",
+      "final": {
+        "downtime_failure_events": 6.0,
+        "downtime_resource_delay_events": 0.0,
+        "downtime_spare_shortage_events": 0.0,
+        "failed_count": 0.0,
+        "mean_launch_time": 1.0,
+        "mean_recovery_time": 3.0,
+        "mean_turnaround_time": 4.0,
+        "mission_success_rate": 1.0,
+        "ontology_bound_entities": 6.0,
+        "ontology_entity_types": 8.0,
+        "ontology_relationships": 13.0,
+        "ontology_simulated_entity_types": 6.0,
+        "ontology_simulated_relationships": 9.0,
+        "ready_rate": 1.0,
+        "repair_backlog": 0.0,
+        "repairing_count": 0.0,
+        "shortage_events": 0.0,
+        "sortie_count": 0.0,
+        "sortie_rate": 1.0,
+        "spare_fill_rate": 1.0,
+        "spare_utilization": 0.4,
+        "step": 48
+      },
+      "parameters": {
+        "activeModule": "missionReliability",
+        "minRequiredSorties": 5,
+        "projectJsonPath": "scenarios/frontend-project-smoke/project.json"
+      },
+      "run_id": 5,
+      "seed": 203
+    },
+    {
+      "csv": "run_006.csv",
+      "final": {
+        "downtime_failure_events": 12.0,
+        "downtime_resource_delay_events": 0.0,
+        "downtime_spare_shortage_events": 0.0,
+        "failed_count": 0.0,
+        "mean_launch_time": 1.0,
+        "mean_recovery_time": 3.0,
+        "mean_turnaround_time": 4.0,
+        "mission_success_rate": 1.0,
+        "ontology_bound_entities": 6.0,
+        "ontology_entity_types": 8.0,
+        "ontology_relationships": 13.0,
+        "ontology_simulated_entity_types": 6.0,
+        "ontology_simulated_relationships": 9.0,
+        "ready_rate": 0.875,
+        "repair_backlog": 0.0,
+        "repairing_count": 1.0,
+        "shortage_events": 0.0,
+        "sortie_count": 0.0,
+        "sortie_rate": 1.0,
+        "spare_fill_rate": 1.0,
+        "spare_utilization": 0.8,
+        "step": 48
+      },
+      "parameters": {
+        "activeModule": "missionReliability",
+        "minRequiredSorties": 6,
+        "projectJsonPath": "scenarios/frontend-project-smoke/project.json"
+      },
+      "run_id": 6,
+      "seed": 201
+    },
+    {
+      "csv": "run_007.csv",
+      "final": {
+        "downtime_failure_events": 12.0,
+        "downtime_resource_delay_events": 0.0,
+        "downtime_spare_shortage_events": 0.0,
+        "failed_count": 0.0,
+        "mean_launch_time": 1.0,
+        "mean_recovery_time": 3.0,
+        "mean_turnaround_time": 4.0,
+        "mission_success_rate": 1.0,
+        "ontology_bound_entities": 6.0,
+        "ontology_entity_types": 8.0,
+        "ontology_relationships": 13.0,
+        "ontology_simulated_entity_types": 6.0,
+        "ontology_simulated_relationships": 9.0,
+        "ready_rate": 1.0,
+        "repair_backlog": 0.0,
+        "repairing_count": 0.0,
+        "shortage_events": 0.0,
+        "sortie_count": 0.0,
+        "sortie_rate": 1.0,
+        "spare_fill_rate": 1.0,
+        "spare_utilization": 0.8,
+        "step": 48
+      },
+      "parameters": {
+        "activeModule": "missionReliability",
+        "minRequiredSorties": 6,
+        "projectJsonPath": "scenarios/frontend-project-smoke/project.json"
+      },
+      "run_id": 7,
+      "seed": 202
+    },
+    {
+      "csv": "run_008.csv",
+      "final": {
+        "downtime_failure_events": 7.0,
+        "downtime_resource_delay_events": 0.0,
+        "downtime_spare_shortage_events": 0.0,
+        "failed_count": 0.0,
+        "mean_launch_time": 1.0,
+        "mean_recovery_time": 3.0,
+        "mean_turnaround_time": 4.0,
+        "mission_success_rate": 1.0,
+        "ontology_bound_entities": 6.0,
+        "ontology_entity_types": 8.0,
+        "ontology_relationships": 13.0,
+        "ontology_simulated_entity_types": 6.0,
+        "ontology_simulated_relationships": 9.0,
+        "ready_rate": 0.875,
+        "repair_backlog": 0.0,
+        "repairing_count": 1.0,
+        "shortage_events": 0.0,
+        "sortie_count": 0.0,
+        "sortie_rate": 1.0,
+        "spare_fill_rate": 1.0,
+        "spare_utilization": 0.4666666666666667,
+        "step": 48
+      },
+      "parameters": {
+        "activeModule": "missionReliability",
+        "minRequiredSorties": 6,
+        "projectJsonPath": "scenarios/frontend-project-smoke/project.json"
+      },
+      "run_id": 8,
+      "seed": 203
+    }
+  ],
+  "seeds": [
+    201,
+    202,
+    203
+  ],
+  "steps": 48
+}

@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spare-mvp.local/contracts/result.schema.json",
+  "title": "Spare MVP Result Summary",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "model_family",
+    "result_id",
+    "run_id",
+    "scenario_id",
+    "metrics"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "const": "result-v0" },
+    "model_family": { "type": "string", "enum": ["smoke", "aviation_support"] },
+    "result_id": { "type": "string" },
+    "run_id": { "type": "string" },
+    "scenario_id": { "type": "string" },
+    "scenario_version": { "type": "string" },
+    "metrics": {
+      "type": "object",
+      "properties": {
+        "mission_success_rate": { "type": "number", "minimum": 0, "maximum": 1 },
+        "sortie_rate": { "type": "number", "minimum": 0, "maximum": 1 },
+        "spare_fill_rate": { "type": "number", "minimum": 0, "maximum": 1 },
+        "spare_utilization": { "type": "number", "minimum": 0 },
+        "shortage_events": { "type": "number", "minimum": 0 },
+        "repair_backlog": { "type": "number", "minimum": 0 },
+        "mean_launch_time": { "type": "number", "minimum": 0 },
+        "mean_recovery_time": { "type": "number", "minimum": 0 },
+        "mean_turnaround_time": { "type": "number", "minimum": 0 },
+        "sortie_completion_rate": { "type": "number", "minimum": 0, "maximum": 1 },
+        "available_aircraft": { "type": "integer", "minimum": 0 },
+        "active_jobs": { "type": "integer", "minimum": 0 },
+        "spare_stock_total": { "type": "integer", "minimum": 0 },
+        "avg_departure_delay": { "type": "number", "minimum": 0 },
+        "spare_consumed_total": { "type": "integer", "minimum": 0 },
+        "maintenance_backlog": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": true
+    },
+    "analysis_outputs": {
+      "type": "object",
+      "properties": {
+        "spare_shortage": { "type": "array", "items": { "type": "object" } },
+        "carry_list": { "type": "array", "items": { "type": "object" } },
+        "mission_reliability": { "type": "object" },
+        "downtime_factors": { "type": "array", "items": { "type": "object" } }
+      },
+      "additionalProperties": true
+    }
+  },
+  "oneOf": [
+    {
+      "type": "object",
+      "required": ["model_family", "metrics"],
+      "additionalProperties": true,
+      "properties": {
+        "model_family": { "const": "smoke" },
+        "metrics": {
+          "type": "object",
+          "required": ["mission_success_rate", "spare_fill_rate"],
+          "properties": {
+            "mission_success_rate": { "type": "number", "minimum": 0, "maximum": 1 },
+            "spare_fill_rate": { "type": "number", "minimum": 0, "maximum": 1 }
+          },
+          "additionalProperties": true
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": ["model_family", "metrics"],
+      "additionalProperties": true,
+      "properties": {
+        "model_family": { "const": "aviation_support" },
+        "metrics": {
+          "type": "object",
+          "required": [
+            "sortie_completion_rate",
+            "available_aircraft",
+            "active_jobs",
+            "spare_stock_total",
+            "avg_departure_delay"
+          ],
+          "properties": {
+            "sortie_completion_rate": { "type": "number", "minimum": 0, "maximum": 1 },
+            "available_aircraft": { "type": "integer", "minimum": 0 },
+            "active_jobs": { "type": "integer", "minimum": 0 },
+            "spare_stock_total": { "type": "integer", "minimum": 0 },
+            "avg_departure_delay": { "type": "number", "minimum": 0 }
+          },
+          "additionalProperties": true
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,292 @@
+{
+  "description": "Configurable ontology for aircraft sortie support, missions, support plans, resources, and spares.",
+  "entityTypes": [
+    {
+      "color": "",
+      "description": "A model of aircraft with configured systems and support requirements.",
+      "icon": "",
+      "id": "aircraft-type",
+      "name": "Aircraft Type",
+      "properties": [
+        {
+          "isIdentifier": true,
+          "name": "typeId",
+          "type": "string"
+        },
+        {
+          "name": "tailPrefix",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "color": "",
+      "description": "A physical aircraft with flight history, task state, support state, and equipment health.",
+      "icon": "",
+      "id": "aircraft",
+      "name": "Aircraft",
+      "properties": [
+        {
+          "isIdentifier": true,
+          "name": "tailNumber",
+          "type": "string"
+        },
+        {
+          "name": "flightHours",
+          "type": "decimal",
+          "unit": "hours"
+        },
+        {
+          "name": "landings",
+          "type": "integer"
+        },
+        {
+          "name": "overhaulDays",
+          "type": "decimal",
+          "unit": "days"
+        }
+      ]
+    },
+    {
+      "color": "",
+      "description": "Aircraft system or subsystem containing LRUs.",
+      "icon": "",
+      "id": "system",
+      "name": "System",
+      "properties": [
+        {
+          "isIdentifier": true,
+          "name": "systemId",
+          "type": "string"
+        },
+        {
+          "name": "health",
+          "type": "enum",
+          "values": [
+            "healthy",
+            "degraded",
+            "failed"
+          ]
+        }
+      ]
+    },
+    {
+      "color": "",
+      "description": "Line replaceable unit with reliability and repair parameters.",
+      "icon": "",
+      "id": "lru",
+      "name": "LRU",
+      "properties": [
+        {
+          "isIdentifier": true,
+          "name": "lruId",
+          "type": "string"
+        },
+        {
+          "name": "mtbfHours",
+          "type": "decimal",
+          "unit": "hours"
+        },
+        {
+          "name": "mttrMinutes",
+          "type": "decimal",
+          "unit": "minutes"
+        },
+        {
+          "name": "health",
+          "type": "enum",
+          "values": [
+            "healthy",
+            "failed"
+          ]
+        }
+      ]
+    },
+    {
+      "color": "",
+      "description": "Scheduled sortie demand with aircraft type and count requirements.",
+      "icon": "",
+      "id": "mission",
+      "name": "Mission",
+      "properties": [
+        {
+          "isIdentifier": true,
+          "name": "missionId",
+          "type": "integer"
+        },
+        {
+          "name": "plannedStart",
+          "type": "decimal",
+          "unit": "minutes"
+        },
+        {
+          "name": "duration",
+          "type": "decimal",
+          "unit": "minutes"
+        },
+        {
+          "name": "requiredAircraft",
+          "type": "integer"
+        }
+      ]
+    },
+    {
+      "color": "",
+      "description": "Ordered plan composed from basic support tasks.",
+      "icon": "",
+      "id": "support-plan",
+      "name": "Support Plan",
+      "properties": [
+        {
+          "isIdentifier": true,
+          "name": "planId",
+          "type": "string"
+        },
+        {
+          "name": "phase",
+          "type": "enum",
+          "values": [
+            "pre_mission",
+            "post_mission",
+            "maintenance"
+          ]
+        }
+      ]
+    },
+    {
+      "color": "",
+      "description": "Basic support operation with duration, resource dependencies, and optional spare consumption.",
+      "icon": "",
+      "id": "support-task",
+      "name": "Support Task",
+      "properties": [
+        {
+          "isIdentifier": true,
+          "name": "taskId",
+          "type": "string"
+        },
+        {
+          "name": "duration",
+          "type": "decimal",
+          "unit": "minutes"
+        }
+      ]
+    },
+    {
+      "color": "",
+      "description": "Personnel, equipment, or facility capacity used by support tasks.",
+      "icon": "",
+      "id": "support-resource",
+      "name": "Support Resource",
+      "properties": [
+        {
+          "isIdentifier": true,
+          "name": "resourceId",
+          "type": "string"
+        },
+        {
+          "name": "category",
+          "type": "enum",
+          "values": [
+            "personnel",
+            "equipment",
+            "facility"
+          ]
+        },
+        {
+          "name": "capacity",
+          "type": "integer"
+        }
+      ]
+    },
+    {
+      "color": "",
+      "description": "Inventory item consumed by LRU replacement and replenished after lead time.",
+      "icon": "",
+      "id": "spare-part",
+      "name": "Spare Part",
+      "properties": [
+        {
+          "isIdentifier": true,
+          "name": "partId",
+          "type": "string"
+        },
+        {
+          "name": "quantity",
+          "type": "integer"
+        },
+        {
+          "name": "leadTime",
+          "type": "decimal",
+          "unit": "minutes"
+        }
+      ]
+    }
+  ],
+  "name": "Aviation Support Ontology",
+  "relationships": [
+    {
+      "cardinality": "many-to-one",
+      "from": "aircraft",
+      "id": "aircraft-has-type",
+      "name": "has type",
+      "to": "aircraft-type"
+    },
+    {
+      "cardinality": "one-to-many",
+      "from": "aircraft-type",
+      "id": "type-has-system",
+      "name": "has system",
+      "to": "system"
+    },
+    {
+      "cardinality": "one-to-many",
+      "from": "system",
+      "id": "system-contains-lru",
+      "name": "contains LRU",
+      "to": "lru"
+    },
+    {
+      "cardinality": "many-to-one",
+      "from": "mission",
+      "id": "mission-requires-type",
+      "name": "requires aircraft type",
+      "to": "aircraft-type"
+    },
+    {
+      "cardinality": "many-to-many",
+      "from": "aircraft",
+      "id": "aircraft-flies-mission",
+      "name": "flies mission",
+      "to": "mission"
+    },
+    {
+      "cardinality": "one-to-many",
+      "from": "support-plan",
+      "id": "plan-includes-task",
+      "name": "includes task",
+      "to": "support-task"
+    },
+    {
+      "cardinality": "many-to-many",
+      "from": "support-task",
+      "id": "task-requires-resource",
+      "name": "requires resource",
+      "to": "support-resource"
+    },
+    {
+      "cardinality": "many-to-many",
+      "from": "support-task",
+      "id": "task-consumes-spare",
+      "name": "consumes spare",
+      "to": "spare-part"
+    },
+    {
+      "cardinality": "many-to-one",
+      "from": "lru",
+      "id": "lru-backed-by-spare",
+      "name": "backed by spare",
+      "to": "spare-part"
+    }
+  ]
+}

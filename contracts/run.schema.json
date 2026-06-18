@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spare-mvp.local/contracts/run.schema.json",
+  "title": "Spare MVP Simulation Run",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "run_id",
+    "project_id",
+    "scenario_id",
+    "scenario_version",
+    "model_family",
+    "status",
+    "artifact_manifest_id"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "const": "run-v0" },
+    "run_id": { "type": "string" },
+    "project_id": { "type": "string" },
+    "experiment_plan_id": { "type": "string" },
+    "scenario_id": { "type": "string" },
+    "scenario_version": { "type": "string" },
+    "model_family": { "type": "string", "enum": ["smoke", "aviation_support"] },
+    "status": { "type": "string", "enum": ["queued", "running", "succeeded", "failed", "cancelled"] },
+    "run_type": { "type": "string", "enum": ["single", "monte_carlo"] },
+    "seed": { "type": "integer" },
+    "progress": { "type": "number", "minimum": 0, "maximum": 1 },
+    "started_at": { "type": "string" },
+    "completed_at": { "type": "string" },
+    "result_summary_id": { "type": "string" },
+    "artifact_manifest_id": { "type": "string" },
+    "error": { "type": ["object", "null"] }
+  }
+}

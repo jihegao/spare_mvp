@@ -1,0 +1,12 @@
+{
+  "experiment_name": "spare_planning_smoke",
+  "model_class": "SmokeSpareMvpModel",
+  "steps": 48,
+  "primary_metric": "spare_fill_rate",
+  "seeds": [101, 102, 103],
+  "parameters": {
+    "projectJsonPath": "scenarios/frontend-project-smoke/project.json",
+    "activeModule": "sparePlanning",
+    "spareMultiplier": [0.75, 1, 1.25]
+  }
+}

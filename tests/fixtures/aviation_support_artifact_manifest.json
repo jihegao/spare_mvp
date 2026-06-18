@@ -1,0 +1,18 @@
+{
+  "schema_version": "artifact-manifest-v0",
+  "artifact_manifest_id": "artifact-manifest-aviation-support-contract-001",
+  "run_id": "run-aviation-support-contract-001",
+  "scenario_id": "scenario-aviation-support-contract-001",
+  "scenario_version": "scenario-v0.1",
+  "artifacts": [
+    {
+      "artifact_id": "artifact-aviation-support-result-summary-001",
+      "kind": "result_summary",
+      "path": "runs/run-aviation-support-contract-001/summary.json",
+      "media_type": "application/json",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "size_bytes": 256,
+      "schema_version": "result-v0"
+    }
+  ]
+}
