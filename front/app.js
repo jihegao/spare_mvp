@@ -2,15 +2,21 @@ import { FEATURE_PAGES, getFeaturePageById, groupFeaturePages } from "./feature-
 import { AVIATION_SUPPORT_DEMO_STATE, normalizeAviationSupportState } from "./aviation-support-state.mjs";
 import { buildProjectOntology, ONTOLOGY_GROUPS } from "./ontology-context.mjs?v=20260618-no-feature-nodes";
 import {
+  buildBackendProjectJson,
+  buildDemoResultState,
+  buildExperimentPlanConfig,
+  buildFrontendResultState,
+  createBackendApiClient
+} from "./api-client.mjs";
+import {
   cloneScenario,
-  defaultScenario,
-  runMonteCarlo,
-  runSimulation
+  defaultScenario
 } from "./sim-engine.mjs";
 
 const app = document.querySelector("#app");
 const groups = groupFeaturePages(FEATURE_PAGES);
 const CONTRACT_BASE = "http://127.0.0.1:8521"; // Mesa 契约服务（见 agent.md「Mesa 后台契约服务」）
+const backendApi = createBackendApiClient({ baseUrl: "/api" });
 const DEFAULT_ROUTE = "login";
 const DEFAULT_FEATURE_ID = "spare-planning-experiment-plan-list";
 const DEMO_USERS = [
@@ -111,8 +117,14 @@ const SUPPORT_ACTIVITY_PLANS = [
 ];
 
 let scenario = cloneScenario(defaultScenario);
-let singleResult = runSimulation(scenario);
-let monteCarloResult = runMonteCarlo(scenario);
+let { singleResult, monteCarloResult } = buildDemoResultState(scenario);
+let savedProject = null;
+let modelingSnapshot = null;
+let experimentPlan = null;
+let backendRun = null;
+let backendRunResult = null;
+let backendArtifactManifest = null;
+let backendApiStatus = "离线演示";
 let isLoggedIn = false;
 let currentUser = DEMO_USERS[2];
 let currentProject = DEMO_PROJECTS[0];
@@ -269,10 +281,17 @@ function bindEvents() {
       return;
     }
 
+    const savePlanButton = event.target.closest("[data-save-plan]");
+    if (savePlanButton) {
+      saveCurrentProjectThroughApi().finally(() => render());
+      return;
+    }
+
     const monteCarloStartButton = event.target.closest("[data-mc-action='start']");
     if (monteCarloStartButton) {
       const page = getFeaturePageById(selectedFeatureId);
       experimentRunStatus = "运行中";
+      startExperimentRunThroughApi();
       selectedRoute = "workbench";
       selectedFeatureId = getPlanListFeatureId(page.module);
       location.hash = `feature=${selectedFeatureId}`;
@@ -300,8 +319,7 @@ function bindEvents() {
     const input = event.target.closest("[data-path]");
     if (!input) return;
     setPath(scenario, input.dataset.path, parseInput(input));
-    singleResult = runSimulation(scenario);
-    monteCarloResult = runMonteCarlo(scenario);
+    updateDemoResultsThroughApiClient();
     render();
   });
 
@@ -1644,9 +1662,69 @@ function renderExperimentPlanEditor(page) {
     </div>
     <div class="plan-editor-actions">
       <button type="button" data-plan-list-link>返回方案列表</button>
-      <button type="button" class="btn-primary" data-feature-id="${page.id}">保存方案</button>
+      <button type="button" class="btn-primary" data-save-plan>保存方案</button>
     </div>
   `;
+}
+
+async function saveCurrentProjectThroughApi() {
+  const projectJson = buildBackendProjectJson(scenario, currentProject);
+  try {
+    savedProject = await backendApi.saveProject(projectJson);
+    modelingSnapshot = await backendApi.createModelingSnapshot(savedProject.project_id);
+    backendApiStatus = "已保存";
+  } catch (err) {
+    savedProject = {
+      project_id: projectJson.project_id,
+      project_version: projectJson.project_version,
+      status: "offline-demo"
+    };
+    modelingSnapshot = null;
+    backendApiStatus = `离线演示：${err && err.message ? err.message : "Backend API 不可用"}`;
+  }
+}
+
+async function startExperimentRunThroughApi() {
+  const projectJson = buildBackendProjectJson(scenario, currentProject);
+  updateDemoResultsThroughApiClient();
+  try {
+    savedProject = await backendApi.saveProject(projectJson);
+    modelingSnapshot = await backendApi.createModelingSnapshot(savedProject.project_id);
+    experimentPlan = await backendApi.createExperimentPlan(
+      savedProject.project_id,
+      buildExperimentPlanConfig(projectJson)
+    );
+    backendRun = await backendApi.startSimulationRun(savedProject.project_id, experimentPlan.experiment_plan_id, "smoke");
+    await refreshRunResultThroughApi(backendRun.run_id);
+    experimentRunStatus = backendRun.status === "succeeded" ? "完成" : backendRun.status;
+    backendApiStatus = "运行完成";
+  } catch (err) {
+    backendRun = {
+      run_id: "offline-demo-run",
+      project_id: projectJson.project_id,
+      status: "offline-demo"
+    };
+    backendRunResult = null;
+    backendArtifactManifest = null;
+    backendApiStatus = `离线演示：${err && err.message ? err.message : "Backend API 不可用"}`;
+  } finally {
+    render();
+  }
+}
+
+async function refreshRunResultThroughApi(runId = backendRun?.run_id) {
+  if (!runId) return;
+  backendRunResult = await backendApi.getRunResult(runId);
+  backendArtifactManifest = await backendApi.getRunArtifacts(runId);
+  const state = buildFrontendResultState(buildBackendProjectJson(scenario, currentProject), backendRunResult);
+  singleResult = state.singleResult;
+  monteCarloResult = state.monteCarloResult;
+}
+
+function updateDemoResultsThroughApiClient() {
+  const state = buildDemoResultState(buildBackendProjectJson(scenario, currentProject));
+  singleResult = state.singleResult;
+  monteCarloResult = state.monteCarloResult;
 }
 
 async function loadAviationSupportState(steps = aviationSteps) {
@@ -2388,8 +2466,7 @@ function parseNumberList(value) {
 
 function updateMonteCarloArrayInput(mcArrayInput) {
   setPath(scenario, mcArrayInput.dataset.mcArrayPath, parseNumberList(mcArrayInput.value));
-  singleResult = runSimulation(scenario);
-  monteCarloResult = runMonteCarlo(scenario);
+  updateDemoResultsThroughApiClient();
 }
 
 function stateLabel(state) {

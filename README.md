@@ -23,7 +23,9 @@
 - 蒙特卡洛实验：只读展示当前仿真实验，配置样本数、随机种子、故障率、备件倍数、保障容量扫参；配置页只保留参数和启动按钮，评估结果统一在“结果分析 / 蒙特卡洛实验结果展示”中查看。
 - 结果分析：备件短板分析、飞机转场携行清单、飞机任务可靠性分析、停机因素分析。
 - M2a 契约适配：`src/spare_mvp_contract/adapter.py` 已支持 Project JSON 校验、已批准的 `smoke` Scenario 编译、`SmokeSpareMvpModel` 运行、Result summary 和 ArtifactManifest 生成；`aviation_support` Scenario 编译仍需先完成治理批准的字段派生规则。
-- PR-D 数据持久化：`src/spare_mvp_backend/schema.sql` 和 repository helper 已提供 SQLite 版 Project / Scenario / Run / Result / ArtifactManifest 持久化与 `run_id` 身份链查询；尚未实现后端 API。
+- PR-D 数据持久化：`src/spare_mvp_backend/schema.sql` 和 repository helper 已提供 SQLite 版 Project / Scenario / Run / Result / ArtifactManifest 持久化与 `run_id` 身份链查询。
+- PR-E 后端 API：`src/spare_mvp_backend/api.py` 提供函数级 Backend API facade，按 Project -> Snapshot -> ExperimentPlan -> Adapter 编译 Scenario -> Mesa 运行 -> Result/Artifact 持久化编排；API 层不自行拼接 Scenario JSON，不改写 Mesa 指标。
+- PR-F 前端接入：`front/api-client.mjs` 提供前端 API client，`front/app.js` 的项目保存、实验计划创建、仿真启动、结果摘要和产物读取通过 API client 编排；静态演示结果也封装在 client 内，避免 app 直接生成最终 Scenario 或直接运行本地仿真函数。
 
 ## 本地运行
 

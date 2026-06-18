@@ -398,9 +398,10 @@ test("topbar omits run and export actions", async () => {
 test("monte carlo configuration drives the displayed result sample count", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   assert.doesNotMatch(appSource, /runMonteCarlo\(scenario, \{ samples: 4 \}\)/);
-  assert.match(appSource, /let monteCarloResult = runMonteCarlo\(scenario\)/);
+  assert.match(appSource, /let \{ singleResult, monteCarloResult \} = buildDemoResultState\(scenario\)/);
   assert.match(appSource, /id="mc-samples"[^>]*data-path="experiment\.samples"/);
-  assert.match(appSource, /monteCarloResult = runMonteCarlo\(scenario\)/);
+  assert.match(appSource, /function updateDemoResultsThroughApiClient/);
+  assert.match(appSource, /data-save-plan/);
 });
 
 test("monte carlo sweep inputs update scenario arrays and rerun grouped results", async () => {
@@ -411,7 +412,8 @@ test("monte carlo sweep inputs update scenario arrays and rerun grouped results"
   assert.match(appSource, /const mcArrayInput = event\.target\.closest\("\[data-mc-array-path\]"\)/);
   assert.match(appSource, /setPath\(scenario, mcArrayInput\.dataset\.mcArrayPath, parseNumberList\(mcArrayInput\.value\)\)/);
   assert.match(appSource, /function parseNumberList/);
-  assert.match(appSource, /monteCarloResult = runMonteCarlo\(scenario\)/);
+  assert.match(appSource, /updateDemoResultsThroughApiClient\(\)/);
+  assert.match(appSource, /const savePlanButton = event\.target\.closest\("\[data-save-plan\]"\)/);
 });
 
 test("monte carlo experiment page is a launch-only parameter form and returns to running plan list", async () => {

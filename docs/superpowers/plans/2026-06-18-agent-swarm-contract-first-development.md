@@ -115,13 +115,15 @@ metrics.
 - Create: `src/spare_mvp_backend/api.py`
 - Create: `tests/test_backend_api_contract.py`
 
-- [ ] **Step 1: Add API contract tests**
+- [x] **Step 1: Add API contract tests**
 
 Cover Project, modeling snapshot, experiment plan, simulation run, and artifact manifest endpoints.
 
-- [ ] **Step 2: Implement API orchestration**
+- [x] **Step 2: Implement API orchestration**
 
 Call the Simulation Adapter for Scenario compilation and runs; do not build Scenario JSON inside CRUD handlers.
+
+**Implemented scope:** PR-E added a function-level Backend API facade and contract tests for Project validation/save, modeling snapshots, experiment plans, smoke simulation runs, result summaries, artifact manifests, and `run_id` chain reads. The API layer delegates Scenario compilation and Mesa execution to `SimulationAdapter`, preserves the unsupported `aviation_support` path, and does not change DB schema or Mesa behavior.
 
 ### Task 6: Frontend Integration Slice
 
@@ -130,13 +132,15 @@ Call the Simulation Adapter for Scenario compilation and runs; do not build Scen
 - Create: `front/api-client.mjs`
 - Modify: `tests/frontend-contract.test.mjs`
 
-- [ ] **Step 1: Add frontend API contract tests**
+- [x] **Step 1: Add frontend API contract tests**
 
 Assert that save/run/result flows call API client functions instead of directly compiling final Scenario JSON.
 
-- [ ] **Step 2: Preserve UX while replacing in-memory persistence**
+- [x] **Step 2: Preserve UX while replacing in-memory persistence**
 
 Project editing remains local until save; run and result views consume backend records and artifacts.
+
+**Implemented scope:** PR-F added `front/api-client.mjs` and routed explicit save, run start, result summary, and artifact reads through the API client. Generic field edits and Monte Carlo sweep edits remain local until the user explicitly saves a plan or starts a run; the frontend does not compile final Scenario JSON.
 
 ### Task 7: End-to-End Evaluation
 

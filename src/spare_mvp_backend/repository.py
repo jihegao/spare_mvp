@@ -53,6 +53,56 @@ class ContractRepository:
         )
         self.connection.commit()
 
+    def upsert_experiment_plan(self, plan: dict[str, Any]) -> None:
+        self.connection.execute(
+            """
+            INSERT INTO experiment_plans (
+              experiment_plan_id, project_id, schema_version, project_version,
+              status, payload_json, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(experiment_plan_id) DO UPDATE SET
+              project_id = excluded.project_id,
+              schema_version = excluded.schema_version,
+              project_version = excluded.project_version,
+              status = excluded.status,
+              payload_json = excluded.payload_json,
+              updated_at = CURRENT_TIMESTAMP
+            """,
+            (
+                _required(plan, "experiment_plan_id"),
+                _required(plan, "project_id"),
+                _required(plan, "schema_version"),
+                _required(plan, "project_version"),
+                plan.get("status", "draft"),
+                _to_json(plan),
+            ),
+        )
+        self.connection.commit()
+
+    def upsert_modeling_snapshot(self, snapshot: dict[str, Any]) -> None:
+        self.connection.execute(
+            """
+            INSERT INTO modeling_snapshots (
+              snapshot_id, project_id, schema_version, project_version, payload_json
+            )
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(snapshot_id) DO UPDATE SET
+              project_id = excluded.project_id,
+              schema_version = excluded.schema_version,
+              project_version = excluded.project_version,
+              payload_json = excluded.payload_json
+            """,
+            (
+                _required(snapshot, "snapshot_id"),
+                _required(snapshot, "project_id"),
+                _required(snapshot, "schema_version"),
+                _required(snapshot, "project_version"),
+                _to_json(snapshot),
+            ),
+        )
+        self.connection.commit()
+
     def upsert_scenario(self, scenario: dict[str, Any]) -> None:
         model = scenario.get("simulation_model", {})
         self.connection.execute(
@@ -185,6 +235,41 @@ class ContractRepository:
         )
         self.connection.commit()
 
+    def get_project(self, project_id: str) -> dict[str, Any]:
+        return self._get_payload("projects", "project_id", project_id)
+
+    def get_experiment_plan(self, experiment_plan_id: str) -> dict[str, Any]:
+        return self._get_payload("experiment_plans", "experiment_plan_id", experiment_plan_id)
+
+    def get_run(self, run_id: str) -> dict[str, Any]:
+        return self._get_payload("simulation_runs", "run_id", run_id)
+
+    def get_result_summary_for_run(self, run_id: str) -> dict[str, Any]:
+        return self._get_joined_payload(
+            """
+            SELECT rs.payload_json
+            FROM simulation_runs r
+            JOIN result_summaries rs
+              ON rs.result_summary_id = r.result_summary_id
+             AND rs.run_id = r.run_id
+            WHERE r.run_id = ?
+            """,
+            run_id,
+        )
+
+    def get_artifact_manifest_for_run(self, run_id: str) -> dict[str, Any]:
+        return self._get_joined_payload(
+            """
+            SELECT am.payload_json
+            FROM simulation_runs r
+            JOIN artifact_manifests am
+              ON am.artifact_manifest_id = r.artifact_manifest_id
+             AND am.run_id = r.run_id
+            WHERE r.run_id = ?
+            """,
+            run_id,
+        )
+
     def get_run_chain(self, run_id: str) -> dict[str, str]:
         cursor = self.connection.execute(
             """
@@ -227,6 +312,23 @@ class ContractRepository:
         del chain["referenced_result_summary_id"]
         del chain["referenced_artifact_manifest_id"]
         return chain
+
+    def _get_payload(self, table: str, key_field: str, key: str) -> dict[str, Any]:
+        cursor = self.connection.execute(
+            f"SELECT payload_json FROM {table} WHERE {key_field} = ?",
+            (key,),
+        )
+        row = cursor.fetchone()
+        if row is None:
+            raise KeyError(key)
+        return json.loads(row[0])
+
+    def _get_joined_payload(self, query: str, key: str) -> dict[str, Any]:
+        cursor = self.connection.execute(query, (key,))
+        row = cursor.fetchone()
+        if row is None:
+            raise KeyError(key)
+        return json.loads(row[0])
 
 
 def _required(payload: dict[str, Any], field: str) -> Any:

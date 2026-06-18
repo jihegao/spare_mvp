@@ -24,6 +24,8 @@
 16. Mesa `Ontology视图` 的后续约定为四层纵向画布：`建模对象 -> 仿真实验 -> 模型实例 -> 计算产物`；建模对象层对齐前端四级功能，模型实例层按 `AviationSupportModel` 的真实 Mesa/Python 运行时对象绘制，并包含当前 step 的指标对象。
 17. M2a / PR-C 已增加最小 `SimulationAdapter`：当前支持 Project JSON 根字段校验、`smoke` Scenario 编译、`SmokeSpareMvpModel` 运行、Result summary 和 ArtifactManifest 生成；`aviation_support` Scenario 编译仍需先完成治理批准的字段派生规则。
 18. PR-D 已增加 SQLite 数据持久化切片：`schema.sql` 声明项目、用户、方案、建模快照、场景、运行、结果摘要和产物清单表；repository helper 可保存 contract 对象并按 `run_id` 查询版本化身份链。
+19. PR-E 已增加函数级 Backend API facade：API 层只编排 Project 校验、项目保存、建模快照、实验计划、Adapter Scenario 编译、Mesa 运行、结果与产物持久化和按 `run_id` 查询，不在前端或 CRUD handler 中生成最终 Scenario。
+20. PR-F 已增加前端 API client 接入：`front/api-client.mjs` 定义保存 Project、创建建模快照、创建实验计划、启动仿真运行、读取结果摘要和产物清单的稳定方法；`front/app.js` 通过该 client 编排保存、运行和结果读取，不再直接调用本地仿真函数生成页面结果。
 
 ## 文档地图
 
@@ -37,6 +39,8 @@
 | [`../contracts/README.md`](../contracts/README.md) | Contract Curator Agent 发布的 Project / Scenario / Run / Result / ArtifactManifest schema bundle。 |
 | [`../src/spare_mvp_contract/adapter.py`](../src/spare_mvp_contract/adapter.py) | M2a / PR-C 的最小 Simulation Adapter，负责已批准的 Project -> Scenario -> Run/Result/ArtifactManifest 链路。 |
 | [`../src/spare_mvp_backend/schema.sql`](../src/spare_mvp_backend/schema.sql) | PR-D 的 SQLite 持久化 schema，用于保存版本化 contract 对象和运行身份链。 |
+| [`../src/spare_mvp_backend/api.py`](../src/spare_mvp_backend/api.py) | PR-E 的函数级 Backend API facade，用于稳定 PR-F 前端接入前的保存、运行和结果读取边界。 |
+| [`../front/api-client.mjs`](../front/api-client.mjs) | PR-F 的前端 API client，用于让静态前端通过后端 API contract 执行保存、运行和结果读取。 |
 | [`superpowers/specs/2026-06-17-four-level-function-page-design.md`](superpowers/specs/2026-06-17-four-level-function-page-design.md) | 四级功能页面化设计规格。 |
 | [`superpowers/plans/2026-06-18-agent-swarm-contract-first-development.md`](superpowers/plans/2026-06-18-agent-swarm-contract-first-development.md) | contract-first agent swarm 分阶段开发计划。 |
 | [`superpowers/plans/2026-06-17-local-aviation-ship-front-integration.md`](superpowers/plans/2026-06-17-local-aviation-ship-front-integration.md) | 当前前端集成实现记录和验收情况。 |
