@@ -15,7 +15,6 @@ SCHEMA_PATH = REPO_ROOT / "src" / "spare_mvp_backend" / "schema.sql"
 class DatabaseContractTest(unittest.TestCase):
     def setUp(self) -> None:
         self.connection = sqlite3.connect(":memory:")
-        self.connection.row_factory = sqlite3.Row
         initialize_database(self.connection)
         self.repository = ContractRepository(self.connection)
 
@@ -28,7 +27,7 @@ class DatabaseContractTest(unittest.TestCase):
     def test_schema_declares_required_persistence_tables(self) -> None:
         self.assertTrue(SCHEMA_PATH.exists())
         tables = {
-            row["name"]
+            row[0]
             for row in self.connection.execute(
                 "select name from sqlite_master where type = 'table' and name not like 'sqlite_%'"
             )
@@ -91,7 +90,7 @@ class DatabaseContractTest(unittest.TestCase):
 
         for table, columns in required_columns.items():
             with self.subTest(table=table):
-                actual = {row["name"] for row in self.connection.execute(f"pragma table_info({table})")}
+                actual = {row[1] for row in self.connection.execute(f"pragma table_info({table})")}
                 self.assertLessEqual(columns, actual)
 
     def test_repository_persists_contract_identity_chain(self) -> None:
@@ -126,6 +125,47 @@ class DatabaseContractTest(unittest.TestCase):
                 "artifact_manifest_schema_version": "artifact-manifest-v0",
             },
         )
+
+    def test_repository_does_not_silently_return_mismatched_run_artifacts(self) -> None:
+        project = self._fixture("smoke_project.json")
+        scenario = self._fixture("smoke_scenario.json")
+        run = self._fixture("smoke_run.json")
+        result = self._fixture("smoke_result.json")
+        manifest = self._fixture("smoke_artifact_manifest.json")
+        other_run = {**run, "run_id": "run-smoke-contract-002"}
+        other_result = {
+            **result,
+            "result_id": "result-smoke-contract-002",
+            "run_id": other_run["run_id"],
+        }
+        other_manifest = {
+            **manifest,
+            "artifact_manifest_id": "artifact-manifest-smoke-contract-002",
+            "run_id": other_run["run_id"],
+        }
+
+        self.repository.upsert_project(project)
+        self.repository.upsert_scenario(scenario)
+        self.repository.upsert_run(run)
+        self.repository.upsert_run(other_run)
+        self.repository.upsert_result_summary(other_result)
+        self.repository.upsert_artifact_manifest(other_manifest)
+        self.connection.execute(
+            """
+            UPDATE simulation_runs
+            SET result_summary_id = ?, artifact_manifest_id = ?
+            WHERE run_id = ?
+            """,
+            (
+                other_result["result_id"],
+                other_manifest["artifact_manifest_id"],
+                run["run_id"],
+            ),
+        )
+        self.connection.commit()
+
+        with self.assertRaisesRegex(ValueError, "identity chain mismatch"):
+            self.repository.get_run_chain(run["run_id"])
 
 
 if __name__ == "__main__":

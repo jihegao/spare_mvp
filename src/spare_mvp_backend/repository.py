@@ -186,7 +186,7 @@ class ContractRepository:
         self.connection.commit()
 
     def get_run_chain(self, run_id: str) -> dict[str, str]:
-        row = self.connection.execute(
+        cursor = self.connection.execute(
             """
             SELECT
               p.project_id,
@@ -197,6 +197,8 @@ class ContractRepository:
               s.schema_version AS scenario_schema_version,
               r.run_id,
               r.schema_version AS run_schema_version,
+              r.result_summary_id AS referenced_result_summary_id,
+              r.artifact_manifest_id AS referenced_artifact_manifest_id,
               rs.result_summary_id,
               rs.schema_version AS result_schema_version,
               am.artifact_manifest_id,
@@ -204,15 +206,27 @@ class ContractRepository:
             FROM simulation_runs r
             JOIN projects p ON p.project_id = r.project_id
             JOIN scenarios s ON s.scenario_id = r.scenario_id
-            LEFT JOIN result_summaries rs ON rs.result_summary_id = r.result_summary_id
-            LEFT JOIN artifact_manifests am ON am.artifact_manifest_id = r.artifact_manifest_id
+            LEFT JOIN result_summaries rs
+              ON rs.result_summary_id = r.result_summary_id
+             AND rs.run_id = r.run_id
+            LEFT JOIN artifact_manifests am
+              ON am.artifact_manifest_id = r.artifact_manifest_id
+             AND am.run_id = r.run_id
             WHERE r.run_id = ?
             """,
             (run_id,),
-        ).fetchone()
+        )
+        row = cursor.fetchone()
         if row is None:
             raise KeyError(run_id)
-        return dict(row)
+        chain = _row_to_dict(cursor, row)
+        if chain["referenced_result_summary_id"] and chain["result_summary_id"] is None:
+            raise ValueError(f"identity chain mismatch for result summary on run {run_id}")
+        if chain["referenced_artifact_manifest_id"] and chain["artifact_manifest_id"] is None:
+            raise ValueError(f"identity chain mismatch for artifact manifest on run {run_id}")
+        del chain["referenced_result_summary_id"]
+        del chain["referenced_artifact_manifest_id"]
+        return chain
 
 
 def _required(payload: dict[str, Any], field: str) -> Any:
@@ -224,3 +238,7 @@ def _required(payload: dict[str, Any], field: str) -> Any:
 
 def _to_json(payload: dict[str, Any]) -> str:
     return json.dumps(payload, ensure_ascii=False, sort_keys=True)
+
+
+def _row_to_dict(cursor: sqlite3.Cursor, row: sqlite3.Row | tuple[Any, ...]) -> dict[str, Any]:
+    return {description[0]: row[index] for index, description in enumerate(cursor.description or [])}
