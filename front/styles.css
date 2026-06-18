@@ -1094,18 +1094,38 @@ tr:last-child td {
   box-shadow: 0 24px 60px rgba(15, 23, 42, 0.28);
 }
 
+.mesa-visual-shell.ontology-fullscreen .mesa-visual-header,
+.mesa-visual-shell.ontology-fullscreen .kpi-strip {
+  display: none;
+}
+
 .mesa-visual-shell.ontology-fullscreen .mesa-visual-grid {
-  grid-template-columns: minmax(720px, 1fr) 360px;
-  min-height: calc(100vh - 210px);
+  grid-template-columns: minmax(760px, 1fr) 44px;
+  min-height: calc(100vh - 92px);
+}
+
+.mesa-visual-shell.ontology-fullscreen .mesa-visual-grid:has(.mesa-side-panel:not(.collapsed)) {
+  grid-template-columns: minmax(760px, 1fr) 360px;
 }
 
 .mesa-visual-shell.ontology-fullscreen .mesa-stage-panel,
 .mesa-visual-shell.ontology-fullscreen .mesa-side-panel {
-  min-height: calc(100vh - 230px);
+  min-height: calc(100vh - 112px);
+}
+
+.mesa-visual-shell.ontology-fullscreen .mesa-stage-panel {
+  padding: 8px;
+}
+
+.mesa-visual-shell.ontology-fullscreen .mesa-side-panel.collapsed {
+  display: grid;
+  place-items: stretch;
+  overflow: hidden;
+  padding: 6px;
 }
 
 .mesa-visual-shell.ontology-fullscreen .mesa-ontology-stage .ontology-svg {
-  min-height: calc(100vh - 260px);
+  min-height: calc(100vh - 132px);
 }
 
 .mesa-visual-header,
@@ -1309,6 +1329,33 @@ tr:last-child td {
 
 .mesa-ontology-stage .ontology-svg {
   min-height: 560px;
+}
+
+.ontology-detail-toggle {
+  min-height: 30px;
+  border-color: #cbd5e1;
+  background: #fff;
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.ontology-detail-toggle.collapsed {
+  width: 100%;
+  min-width: 30px;
+  min-height: 100%;
+  display: grid;
+  place-items: center;
+  gap: 8px;
+  padding: 8px 4px;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+}
+
+.ontology-detail-toggle.collapsed strong {
+  max-height: 160px;
+  overflow: hidden;
+  color: var(--primary);
+  text-overflow: ellipsis;
 }
 
 .ontology-detail-list {
@@ -1623,42 +1670,45 @@ tr:last-child td {
   font-weight: 700;
 }
 
-.ontology-node rect {
+.ontology-node circle {
   fill: #fff;
   stroke: #cbd5e1;
 }
 
 .ontology-node text {
   fill: var(--ink);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
+  text-anchor: middle;
+  dominant-baseline: middle;
+  pointer-events: none;
 }
 
-.ontology-node.modeling-object rect {
+.ontology-node.modeling-object circle {
   stroke: #93c5fd;
 }
 
-.ontology-node.simulation-experiment rect {
+.ontology-node.simulation-experiment circle {
   stroke: #5eead4;
 }
 
-.ontology-node.computation-artifact rect {
+.ontology-node.computation-artifact circle {
   stroke: #fbbf24;
 }
 
-.ontology-node.focused rect {
+.ontology-node.focused circle {
   fill: #eaf1ff;
   stroke: var(--primary);
   stroke-width: 2.2;
 }
 
-.ontology-node:hover rect,
-.ontology-node:focus rect {
+.ontology-node:hover circle,
+.ontology-node:focus circle {
   stroke: #0f5cbf;
   stroke-width: 2.4;
 }
 
-.ontology-node.selected rect {
+.ontology-node.selected circle {
   fill: #fff7ed;
   stroke: #d83b01;
   stroke-width: 3;
@@ -1668,7 +1718,7 @@ tr:last-child td {
   fill: #7c2d12;
 }
 
-.ontology-node.dragging rect {
+.ontology-node.dragging circle {
   fill: #fff7ed;
   stroke: #d83b01;
   stroke-width: 3;

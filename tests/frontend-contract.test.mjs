@@ -598,7 +598,7 @@ test("mesa ontology view supports fullscreen toggle and selectable graph details
   assert.match(appSource, /属性详情/);
   assert.match(styleSource, /\.mesa-visual-shell\.ontology-fullscreen/);
   assert.match(styleSource, /\.ontology-detail-list/);
-  assert.match(styleSource, /\.ontology-node\.selected rect/);
+  assert.match(styleSource, /\.ontology-node\.selected circle/);
   assert.match(styleSource, /\.ontology-edge\.selected path/);
 });
 
@@ -617,7 +617,25 @@ test("mesa ontology graph supports resizable layers draggable nodes and field pa
   assert.match(appSource, /字段/);
   assert.match(appSource, /关联关系/);
   assert.match(styleSource, /\.ontology-band-resize-handle/);
-  assert.match(styleSource, /\.ontology-node\.dragging rect/);
+  assert.match(styleSource, /\.ontology-node\.dragging circle/);
   assert.match(styleSource, /\.ontology-field-table/);
   assert.match(styleSource, /\.ontology-relation-list/);
+});
+
+test("mesa ontology fullscreen uses canvas-first spring layout with compact circular nodes", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const styleSource = await readFile(new URL("../front/styles.css", import.meta.url), "utf8");
+
+  assert.match(appSource, /isOntologyDetailCollapsed/);
+  assert.match(appSource, /data-ontology-detail-toggle/);
+  assert.match(appSource, /renderMesaOntologyCollapsedPanel/);
+  assert.match(appSource, /calculateOntologySpringLayout/);
+  assert.match(appSource, /springIterations/);
+  assert.match(appSource, /nodeRadius/);
+  assert.match(appSource, /edgePath\(from, to, ONTOLOGY_NODE_RADIUS\)/);
+  assert.match(appSource, /<circle r="\$\{ONTOLOGY_NODE_RADIUS\}"/);
+  assert.match(styleSource, /\.ontology-fullscreen \.mesa-visual-grid/);
+  assert.match(styleSource, /\.ontology-fullscreen \.mesa-side-panel\.collapsed/);
+  assert.match(styleSource, /\.ontology-detail-toggle/);
+  assert.match(styleSource, /\.ontology-node circle/);
 });

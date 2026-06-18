@@ -32,7 +32,7 @@ const DEFAULT_ONTOLOGY_BANDS = [
   { group: "simulation-experiment", label: ONTOLOGY_GROUPS["simulation-experiment"].label, x: 720, y: 22, width: 300, height: 995 },
   { group: "computation-artifact", label: ONTOLOGY_GROUPS["computation-artifact"].label, x: 1070, y: 22, width: 330, height: 995 }
 ];
-const ONTOLOGY_NODE_SIZE = { width: 208, height: 44 };
+const ONTOLOGY_NODE_RADIUS = 30;
 const SUPPORT_ORG_TREE = [
   { id: "wing", name: "舰载机保障大队", children: [
     { id: "service", name: "机务保障中队", children: [{ id: "fuel", name: "油料组" }, { id: "avionics", name: "航电组" }, { id: "ordnance", name: "军械组" }] },
@@ -119,6 +119,7 @@ let selectedFeatureId = readFeatureIdFromHash() || DEFAULT_FEATURE_ID;
 let selectedMesaView = "aircraft";
 let isOntologyFullscreen = false;
 let selectedOntologyItem = null;
+let isOntologyDetailCollapsed = true;
 let ontologyBandLayout = {};
 let ontologyNodePositionOverrides = {};
 let activeOntologyDrag = null;
@@ -212,6 +213,15 @@ function bindEvents() {
     const ontologyFullscreenButton = event.target.closest("[data-ontology-fullscreen]");
     if (ontologyFullscreenButton) {
       isOntologyFullscreen = !isOntologyFullscreen;
+      isOntologyDetailCollapsed = isOntologyFullscreen;
+      selectedMesaView = "ontology";
+      render();
+      return;
+    }
+
+    const ontologyDetailToggle = event.target.closest("[data-ontology-detail-toggle]");
+    if (ontologyDetailToggle) {
+      isOntologyDetailCollapsed = !isOntologyDetailCollapsed;
       selectedMesaView = "ontology";
       render();
       return;
@@ -300,7 +310,7 @@ function bindEvents() {
       const nodeItem = PROJECT_ONTOLOGY.nodes.find((node) => node.id === nodeElement.dataset.ontologyNodeId);
       const point = getOntologySvgPoint(event);
       if (!nodeItem || !point) return;
-      const positions = buildOntologyPositions(PROJECT_ONTOLOGY.nodes);
+      const positions = buildOntologyPositions(PROJECT_ONTOLOGY.nodes, PROJECT_ONTOLOGY.edges);
       const position = positions[nodeItem.id];
       selectedOntologyItem = { type: "node", id: nodeItem.id };
       selectedMesaView = "ontology";
@@ -340,8 +350,8 @@ function handleOntologyPointerMove(event) {
 
   if (activeOntologyDrag.kind === "node") {
     ontologyNodePositionOverrides[activeOntologyDrag.id] = {
-      x: clamp(activeOntologyDrag.originX + dx, 16, 1430 - ONTOLOGY_NODE_SIZE.width - 16),
-      y: clamp(activeOntologyDrag.originY + dy, 52, 1040 - ONTOLOGY_NODE_SIZE.height)
+      x: clamp(activeOntologyDrag.originX + dx, ONTOLOGY_NODE_RADIUS + 10, 1430 - ONTOLOGY_NODE_RADIUS - 10),
+      y: clamp(activeOntologyDrag.originY + dy, ONTOLOGY_NODE_RADIUS + 10, 1040 - ONTOLOGY_NODE_RADIUS - 10)
     };
     render();
   }
@@ -584,7 +594,7 @@ function renderMainComponent(page) {
 }
 
 function renderOntologySvg(ontology, focusSet, selectedItem = null) {
-  const positions = buildOntologyPositions(ontology.nodes);
+  const positions = buildOntologyPositions(ontology.nodes, ontology.edges);
   const bands = ontologyBands();
   const clusters = buildOntologyClusters(ontology.nodes, positions);
   return `
@@ -614,7 +624,7 @@ function renderOntologySvg(ontology, focusSet, selectedItem = null) {
           const to = positions[edgeItem.to];
           const isFocused = focusSet.has(edgeItem.from) || focusSet.has(edgeItem.to);
           const isSelected = selectedItem?.type === "edge" && selectedItem.id === edgeItem.id;
-          const path = edgePath(from, to);
+          const path = edgePath(from, to, ONTOLOGY_NODE_RADIUS);
           return `
             <g class="ontology-edge ${isSelected ? "selected" : ""}" data-ontology-edge-id="${htmlEscape(edgeItem.id)}" role="button" tabindex="0" aria-label="${htmlEscape(`${nodeLabel(edgeItem.from)} ${edgeItem.label} ${nodeLabel(edgeItem.to)}`)}">
               <path class="${isFocused ? "focused" : ""}" d="${path}"></path>
@@ -629,9 +639,10 @@ function renderOntologySvg(ontology, focusSet, selectedItem = null) {
           const isSelected = selectedItem?.type === "node" && selectedItem.id === node.id;
           const isDragging = activeOntologyDrag?.kind === "node" && activeOntologyDrag.id === node.id;
           return `
-            <g class="ontology-node ${node.group} ${focusSet.has(node.id) ? "focused" : ""} ${isSelected ? "selected" : ""} ${isDragging ? "dragging" : ""}" data-ontology-node-id="${htmlEscape(node.id)}" role="button" tabindex="0" aria-label="${htmlEscape(node.label)}" transform="translate(${position.x}, ${position.y - 22})">
-              <rect width="208" height="44" rx="7"></rect>
-              <text x="12" y="27">${node.label}</text>
+            <g class="ontology-node ${node.group} ${focusSet.has(node.id) ? "focused" : ""} ${isSelected ? "selected" : ""} ${isDragging ? "dragging" : ""}" data-ontology-node-id="${htmlEscape(node.id)}" role="button" tabindex="0" aria-label="${htmlEscape(node.label)}" transform="translate(${position.x}, ${position.y})">
+              <title>${htmlEscape(node.label)}</title>
+              <circle r="${ONTOLOGY_NODE_RADIUS}"></circle>
+              <text x="0" y="4">${htmlEscape(compactNodeLabel(node.label))}</text>
             </g>
           `;
         }).join("")}
@@ -648,31 +659,98 @@ function sortOntologyNodesForRender(nodes, selectedItem) {
   });
 }
 
-function buildOntologyPositions(nodes) {
-  const columns = {
-    "modeling-object": { x: 70, y: 92, step: 42 },
-    "simulation-experiment": { x: 770, y: 160, step: 72 },
-    "computation-artifact": { x: 1115, y: 172, step: 72 }
-  };
-  const counters = {};
+function buildOntologyPositions(nodes, edges = PROJECT_ONTOLOGY.edges) {
+  const springPositions = calculateOntologySpringLayout(nodes, edges, ontologyBands());
   return nodes.reduce((acc, item) => {
     if (ontologyNodePositionOverrides[item.id]) {
       acc[item.id] = ontologyNodePositionOverrides[item.id];
       return acc;
     }
-    if (item.layout) {
-      acc[item.id] = { x: item.layout.x, y: item.layout.y };
-      return acc;
-    }
-    counters[item.group] = counters[item.group] || 0;
-    const column = columns[item.group];
-    acc[item.id] = {
-      x: column.x,
-      y: column.y + counters[item.group] * column.step
-    };
-    counters[item.group] += 1;
+    acc[item.id] = springPositions[item.id];
     return acc;
   }, {});
+}
+
+function calculateOntologySpringLayout(nodes, edges, bands) {
+  const nodeRadius = ONTOLOGY_NODE_RADIUS;
+  const springIterations = 120;
+  const positions = {};
+  const velocities = {};
+  const bandsByGroup = Object.fromEntries(bands.map((band) => [band.group, band]));
+  const groupCounts = nodes.reduce((acc, node) => {
+    acc[node.group] = (acc[node.group] || 0) + 1;
+    return acc;
+  }, {});
+  const groupIndexes = {};
+
+  for (const node of nodes) {
+    const band = bandsByGroup[node.group] || bands[0];
+    groupIndexes[node.group] = groupIndexes[node.group] || 0;
+    const index = groupIndexes[node.group]++;
+    const count = groupCounts[node.group] || 1;
+    const columns = Math.max(1, Math.ceil(Math.sqrt(count * (band.width / Math.max(band.height, 1)))));
+    const row = Math.floor(index / columns);
+    const column = index % columns;
+    const rows = Math.max(1, Math.ceil(count / columns));
+    positions[node.id] = {
+      x: band.x + nodeRadius + 18 + ((column + 0.5) * Math.max(1, band.width - nodeRadius * 2 - 36)) / columns,
+      y: band.y + 70 + ((row + 0.5) * Math.max(1, band.height - nodeRadius * 2 - 90)) / rows
+    };
+    velocities[node.id] = { x: 0, y: 0 };
+  }
+
+  for (let iteration = 0; iteration < springIterations; iteration += 1) {
+    for (let leftIndex = 0; leftIndex < nodes.length; leftIndex += 1) {
+      for (let rightIndex = leftIndex + 1; rightIndex < nodes.length; rightIndex += 1) {
+        const left = positions[nodes[leftIndex].id];
+        const right = positions[nodes[rightIndex].id];
+        const dx = right.x - left.x || 0.01;
+        const dy = right.y - left.y || 0.01;
+        const distanceSquared = dx * dx + dy * dy;
+        const distance = Math.sqrt(distanceSquared);
+        const force = Math.min(2.6, 9500 / Math.max(distanceSquared, 1600));
+        const fx = (dx / distance) * force;
+        const fy = (dy / distance) * force;
+        velocities[nodes[leftIndex].id].x -= fx;
+        velocities[nodes[leftIndex].id].y -= fy;
+        velocities[nodes[rightIndex].id].x += fx;
+        velocities[nodes[rightIndex].id].y += fy;
+      }
+    }
+
+    for (const edgeItem of edges) {
+      const from = positions[edgeItem.from];
+      const to = positions[edgeItem.to];
+      if (!from || !to) continue;
+      const dx = to.x - from.x || 0.01;
+      const dy = to.y - from.y || 0.01;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      const targetDistance = edgeItem.from === edgeItem.to ? 80 : 145;
+      const force = (distance - targetDistance) * 0.018;
+      const fx = (dx / distance) * force;
+      const fy = (dy / distance) * force;
+      velocities[edgeItem.from].x += fx;
+      velocities[edgeItem.from].y += fy;
+      velocities[edgeItem.to].x -= fx;
+      velocities[edgeItem.to].y -= fy;
+    }
+
+    for (const node of nodes) {
+      const band = bandsByGroup[node.group] || bands[0];
+      const position = positions[node.id];
+      const velocity = velocities[node.id];
+      const anchorX = band.x + band.width / 2;
+      const anchorY = band.y + band.height / 2;
+      velocity.x += (anchorX - position.x) * 0.012;
+      velocity.y += (anchorY - position.y) * 0.012;
+      velocity.x *= 0.74;
+      velocity.y *= 0.74;
+      position.x = clamp(position.x + velocity.x, band.x + nodeRadius + 10, band.x + band.width - nodeRadius - 10);
+      position.y = clamp(position.y + velocity.y, band.y + nodeRadius + 44, band.y + band.height - nodeRadius - 10);
+    }
+  }
+
+  return positions;
 }
 
 function ontologyBands() {
@@ -689,10 +767,10 @@ function buildOntologyClusters(nodes, positions = buildOntologyPositions(nodes))
       return acc;
     }, {});
   return Object.entries(grouped).map(([label, layouts]) => {
-    const minX = Math.min(...layouts.map((item) => item.x)) - 18;
-    const minY = Math.min(...layouts.map((item) => item.y)) - 50;
-    const maxX = Math.max(...layouts.map((item) => item.x)) + 226;
-    const maxY = Math.max(...layouts.map((item) => item.y)) + 34;
+    const minX = Math.min(...layouts.map((item) => item.x)) - ONTOLOGY_NODE_RADIUS - 12;
+    const minY = Math.min(...layouts.map((item) => item.y)) - ONTOLOGY_NODE_RADIUS - 34;
+    const maxX = Math.max(...layouts.map((item) => item.x)) + ONTOLOGY_NODE_RADIUS + 12;
+    const maxY = Math.max(...layouts.map((item) => item.y)) + ONTOLOGY_NODE_RADIUS + 12;
     return {
       label,
       x: minX,
@@ -703,17 +781,26 @@ function buildOntologyClusters(nodes, positions = buildOntologyPositions(nodes))
   });
 }
 
-function edgePath(from, to) {
-  const startX = from.x + 104;
-  const startY = from.y;
-  const endX = to.x - 10;
-  const endY = to.y;
-  const deltaX = Math.abs(endX - startX);
-  const controlOffset = Math.max(80, Math.min(190, deltaX * 0.55));
-  if (to.x >= from.x) {
-    return `M ${startX} ${startY} C ${startX + controlOffset} ${startY}, ${endX - controlOffset} ${endY}, ${endX} ${endY}`;
-  }
-  return `M ${startX} ${startY} C ${startX + 50} ${startY + 26}, ${endX - 50} ${endY - 26}, ${endX} ${endY}`;
+function edgePath(from, to, nodeRadius = ONTOLOGY_NODE_RADIUS) {
+  const dx = to.x - from.x || 0.01;
+  const dy = to.y - from.y || 0.01;
+  const distance = Math.sqrt(dx * dx + dy * dy);
+  const ux = dx / distance;
+  const uy = dy / distance;
+  const startX = from.x + ux * nodeRadius;
+  const startY = from.y + uy * nodeRadius;
+  const endX = to.x - ux * nodeRadius;
+  const endY = to.y - uy * nodeRadius;
+  const curve = Math.min(70, distance * 0.14);
+  const normalX = -uy * curve;
+  const normalY = ux * curve;
+  const controlX = (startX + endX) / 2 + normalX;
+  const controlY = (startY + endY) / 2 + normalY;
+  return `M ${startX} ${startY} Q ${controlX} ${controlY}, ${endX} ${endY}`;
+}
+
+function compactNodeLabel(label) {
+  return label.length > 5 ? `${label.slice(0, 4)}…` : label;
 }
 
 function renderTaskModel(page) {
@@ -1510,6 +1597,7 @@ function renderVisualSimulation(page) {
   const state = normalizeAviationSupportState(AVIATION_SUPPORT_DEMO_STATE);
   const activeView = ["aircraft", "mission", "support", "ontology"].includes(selectedMesaView) ? selectedMesaView : "aircraft";
   const shellClass = activeView === "ontology" && isOntologyFullscreen ? "mesa-visual-shell ontology-fullscreen" : "mesa-visual-shell";
+  const sidePanelClass = activeView === "ontology" && isOntologyFullscreen && isOntologyDetailCollapsed ? "mesa-side-panel collapsed" : "mesa-side-panel";
   return `
     <div class="${shellClass}">
       <div class="mesa-visual-header">
@@ -1541,8 +1629,8 @@ function renderVisualSimulation(page) {
         <section class="mesa-stage-panel">
           ${activeView === "ontology" ? renderMesaOntologyPanel() : renderMesaStage(state)}
         </section>
-        <aside class="mesa-side-panel">
-          ${renderMesaSidePanel(activeView, state)}
+        <aside class="${sidePanelClass}">
+          ${activeView === "ontology" && isOntologyFullscreen && isOntologyDetailCollapsed ? renderMesaOntologyCollapsedPanel() : renderMesaSidePanel(activeView, state)}
         </aside>
       </div>
     </div>
@@ -1649,18 +1737,36 @@ function renderMesaOntologyPanel() {
 }
 
 function renderMesaOntologySidePanel() {
+  const toggleButton = isOntologyFullscreen
+    ? `<button type="button" class="ontology-detail-toggle" data-ontology-detail-toggle>折叠</button>`
+    : "";
   if (selectedOntologyItem) return renderMesaOntologyDetailPanel(selectedOntologyItem);
   const groups = Object.entries(ONTOLOGY_GROUPS);
   return `
     <div class="section-head">
       <h3>Ontology关系图</h3>
       <span>${PROJECT_ONTOLOGY.nodes.length} 节点 / ${PROJECT_ONTOLOGY.edges.length} 关系</span>
+      ${toggleButton}
     </div>
     <div class="event info"><strong>Mesa ABM 映射</strong>该视图展示结构依赖，不代表 OWL 推理结果。</div>
     ${groups.map(([groupId, meta]) => {
       const count = PROJECT_ONTOLOGY.nodes.filter((node) => node.group === groupId).length;
       return `<details class="ontology-group" ${groupId === "modeling-object" ? "open" : ""}><summary class="ontology-group-head"><strong>${meta.label}</strong><span>${count}</span></summary><p>${meta.summary}</p></details>`;
     }).join("")}
+  `;
+}
+
+function renderMesaOntologyCollapsedPanel() {
+  const selectedLabel = selectedOntologyItem
+    ? selectedOntologyItem.type === "node"
+      ? nodeLabel(selectedOntologyItem.id)
+      : "已选关系"
+    : "属性";
+  return `
+    <button type="button" class="ontology-detail-toggle collapsed" data-ontology-detail-toggle aria-label="展开属性面板">
+      <span>属性面板</span>
+      <strong>${htmlEscape(selectedLabel)}</strong>
+    </button>
   `;
 }
 
@@ -1694,6 +1800,7 @@ function renderOntologyNodeDetail(nodeItem) {
     <div class="section-head">
       <h3>属性详情</h3>
       <span>对象</span>
+      ${isOntologyFullscreen ? `<button type="button" class="ontology-detail-toggle" data-ontology-detail-toggle>折叠</button>` : ""}
     </div>
     <div class="event info"><strong>${htmlEscape(nodeItem.label)}</strong>${htmlEscape(nodeItem.description)}</div>
     <h4>字段</h4>
@@ -1717,6 +1824,7 @@ function renderOntologyEdgeDetail(edgeItem) {
     <div class="section-head">
       <h3>属性详情</h3>
       <span>关系</span>
+      ${isOntologyFullscreen ? `<button type="button" class="ontology-detail-toggle" data-ontology-detail-toggle>折叠</button>` : ""}
     </div>
     <div class="event info"><strong>${htmlEscape(edgeItem.label)}</strong>${htmlEscape(nodeLabel(edgeItem.from))} -> ${htmlEscape(nodeLabel(edgeItem.to))}</div>
     <h4>字段</h4>
