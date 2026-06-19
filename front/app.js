@@ -11,7 +11,7 @@ import {
 import {
   cloneScenario,
   defaultScenario
-} from "./sim-engine.mjs";
+} from "./sim-engine.mjs?v=20260619-support-activity";
 import {
   calculateRmsAllocation,
   createDefaultRmsAllocationPlan,
@@ -32,9 +32,9 @@ const DEMO_USERS = [
   { username: "user", role: "普通用户" }
 ];
 const DEMO_PROJECTS = [
-  { id: "carrier-day-night", name: "航母编队昼夜保障验证", shipType: "01", updatedAt: "2026-04-26", summary: "验证昼夜连续出动下的甲板保障流程与资源配置。" },
-  { id: "high-tempo-support", name: "高强度出动保障压力测试", shipType: "03", updatedAt: "2026-04-28", summary: "评估多波次出动下备件、人员和保障设备的瓶颈。" },
-  { id: "maintenance-rebalance", name: "维修资源动态重配评估", shipType: "02", updatedAt: "2026-05-02", summary: "分析维修资源重配对任务可靠度和停机贡献的影响。" }
+  { id: "landbase-day-night", name: "陆基机群昼夜保障验证", baseCode: "LB-01", updatedAt: "2026-04-26", summary: "验证昼夜连续出动下的机场保障流程与资源配置。" },
+  { id: "high-tempo-support", name: "陆基高强度出动保障压力测试", baseCode: "LB-03", updatedAt: "2026-04-28", summary: "评估多波次出动下备件、人员和保障设备的瓶颈。" },
+  { id: "maintenance-rebalance", name: "陆基维修资源动态重配评估", baseCode: "LB-02", updatedAt: "2026-05-02", summary: "分析维修资源重配对任务可靠度和停机贡献的影响。" }
 ];
 const CARRY_OBJECTIVES = [
   { id: "availability", label: "使用可用度", metricLabel: "预计使用可用度", metricValue: "0.91" },
@@ -49,7 +49,7 @@ const DEFAULT_ONTOLOGY_BANDS = [
 ];
 const ONTOLOGY_NODE_RADIUS = 30;
 const SUPPORT_ORG_TREE = [
-  { id: "wing", name: "舰载机保障大队", children: [
+  { id: "wing", name: "陆基航空保障大队", children: [
     { id: "service", name: "机务保障中队", children: [{ id: "fuel", name: "油料组" }, { id: "avionics", name: "航电组" }, { id: "ordnance", name: "军械组" }] },
     { id: "repair", name: "维修保障中队", children: [{ id: "line", name: "外场维修组" }, { id: "spare", name: "备件保障组" }] }
   ] }
@@ -121,6 +121,41 @@ const SUPPORT_ACTIVITY_PLANS = [
       ]
     }
   }
+];
+
+const SYSTEM_PROJECT_DATA_ROWS = [
+  { key: "projectId", label: "项目标识", value: "landbase-day-night", owner: "项目主数据" },
+  { key: "baseProfile", label: "机场保障资源", value: "主基地 / 前进保障点 / 后方保障点", owner: "项目独有数据" },
+  { key: "missionPackage", label: "任务包数据", value: "昼间巡逻、夜间警戒、周期波次", owner: "项目独有数据" },
+  { key: "spareBaseline", label: "备件基线", value: "发动机备件、航电模块、液压备件", owner: "项目独有数据" }
+];
+
+const SYSTEM_MODELING_GRANULARITY_ROWS = [
+  { level: "项目层", object: "项目", relation: "包含任务剖面、装备、保障节点" },
+  { level: "任务层", object: "任务剖面 / 基本任务 / 复合任务", relation: "复合任务编排基本任务，周期任务引用复合任务" },
+  { level: "装备层", object: "整机 / 系统 / LRU", relation: "装备组成树与可靠性框图共用节点标识" },
+  { level: "保障层", object: "保障组织 / 人员 / 设备 / 备件 / 活动", relation: "保障活动消耗资源并作用于装备节点" }
+];
+
+const SYSTEM_USERS = [
+  { username: "admin", name: "系统管理员", role: "系统管理员", status: "启用" },
+  { username: "data", name: "数据管理员", role: "数据管理员", status: "启用" },
+  { username: "user", name: "普通用户", role: "项目用户", status: "启用" }
+];
+
+const SYSTEM_PERMISSION_ROWS = [
+  { feature: "项目管理", admin: "管理", data: "编辑", user: "查看" },
+  { feature: "装备RMS指标分配", admin: "管理", data: "编辑", user: "查看" },
+  { feature: "系统基础配置", admin: "管理", data: "查看", user: "无权限" },
+  { feature: "仿真建模", admin: "管理", data: "编辑", user: "编辑" },
+  { feature: "结果分析", admin: "查看", data: "查看", user: "查看" }
+];
+
+const SYSTEM_FORM_ROWS = [
+  { level: "任务建模", form: "任务剖面参数", field: "任务类型、重复周期、结束条件", relation: "关联基本任务与复合任务" },
+  { level: "装备建模", form: "装备组成建模", field: "父节点、数量、连接类型、n中取k", relation: "关联装备故障与RMS指标" },
+  { level: "保障组织建模", form: "备件建模", field: "备件名称、型号、库存、适用机型", relation: "关联保障节点库存" },
+  { level: "保障活动建模", form: "使用保障活动建模", field: "活动类别、工序、资源需求", relation: "关联保障人员、设备、备件" }
 ];
 
 let scenario = cloneScenario(defaultScenario);
@@ -496,7 +531,7 @@ function render() {
 }
 
 function renderTopbarContext(page) {
-  if (page.module === "系统管理") return "系统管理 / 装备RMS指标分配";
+  if (page.module === "系统管理") return `系统管理 / ${htmlEscape(page.secondary)} / ${htmlEscape(page.tertiary)}`;
   return `${htmlEscape(page.module)} / ${htmlEscape(page.secondary)} / ${htmlEscape(page.tertiary)}`;
 }
 
@@ -560,7 +595,7 @@ function renderProjectListPage() {
         ${DEMO_PROJECTS.map((project) => `
           <article class="project-card ${project.id === currentProject.id ? "active" : ""}">
             <div>
-              <span>舰型 ${project.shipType}</span>
+              <span>基地 ${project.baseCode}</span>
               <h3>${htmlEscape(project.name)}</h3>
               <p>${htmlEscape(project.summary)}</p>
             </div>
@@ -600,13 +635,16 @@ function renderNavigation(activePage) {
 }
 
 function renderSystemManagementNavigation(activePage, secondaryGroups) {
-  return Object.values(secondaryGroups).flatMap((tertiaryGroups) => (
-    Object.values(tertiaryGroups).map((pages) => `
-      <button type="button" class="nav-tertiary-link ${pages.some((page) => page.id === activePage.id) ? "active" : ""}" data-feature-id="${pages[0].id}">
-        ${pages[0].name}
-      </button>
-    `)
-  )).join("");
+  return Object.entries(secondaryGroups).map(([secondaryName, tertiaryGroups]) => `
+    <details class="nav-secondary" ${secondaryName === activePage.secondary ? "open" : ""}>
+      <summary>${secondaryName}</summary>
+      ${Object.values(tertiaryGroups).map((pages) => `
+        <button type="button" class="nav-tertiary-link ${pages.some((page) => page.id === activePage.id) ? "active" : ""}" data-feature-id="${pages[0].id}">
+          ${pages[0].name}
+        </button>
+      `).join("")}
+    </details>
+  `).join("");
 }
 
 function renderFeaturePage(page) {
@@ -638,12 +676,12 @@ function renderCurrentContext(page) {
 }
 
 function shouldShowCurrentContext(page) {
-  return page.secondary !== "仿真建模";
+  return page.module !== "系统管理" && page.secondary !== "仿真建模";
 }
 
 function renderPageHeading(page) {
   const breadcrumb = page.module === "系统管理"
-    ? `<div class="breadcrumb">系统管理 / 装备RMS指标分配</div>`
+    ? `<div class="breadcrumb">系统管理 / ${htmlEscape(page.secondary)} / ${htmlEscape(page.tertiary)}</div>`
     : `<div class="breadcrumb">${htmlEscape(page.module)} / ${htmlEscape(page.secondary)} / ${htmlEscape(page.tertiary)}</div>`;
   return `
     <div>
@@ -683,6 +721,8 @@ function renderMainComponent(page) {
   if (page.component === "experiment-plan-list") return renderExperimentPlanList(page);
   if (page.component === "experiment-plan-editor") return renderExperimentPlanEditor(page);
   if (page.component === "experiment-form") return renderExperimentPlanEditor(page);
+  if (page.component === "system-project-management") return renderSystemProjectManagement(page);
+  if (page.component === "system-basic-config") return renderSystemBasicConfig(page);
   if (page.component === "rms-allocation") return renderRmsAllocationWorkbench({
     project: rmsAllocationProject,
     plan: rmsAllocationPlan,
@@ -935,6 +975,157 @@ function compactNodeLabel(label) {
   return label.length > 5 ? `${label.slice(0, 4)}…` : label;
 }
 
+function renderSystemProjectManagement(page) {
+  const isGranularityPage = page.name === "建模颗粒度管理";
+  return `
+    <div class="system-config-workbench">
+      <div class="section-head">
+        <h3>${isGranularityPage ? "建模颗粒度配置" : "项目数据管理"}</h3>
+        <span>${page.dataObjects.join(" / ")}</span>
+      </div>
+      <div class="system-config-layout">
+        <aside class="tree-container">
+          <div class="tree-toolbar">
+            <h4>${isGranularityPage ? "建模数据层级" : "项目独有数据"}</h4>
+            <button type="button" class="btn-primary">${isGranularityPage ? "新增层级" : "新增项目数据"}</button>
+          </div>
+          <div class="object-tree">
+            ${(isGranularityPage ? SYSTEM_MODELING_GRANULARITY_ROWS : SYSTEM_PROJECT_DATA_ROWS).map((row, index) => `
+              <div class="tree-node ${index === 0 ? "root" : ""}">
+                ${htmlEscape(isGranularityPage ? row.level : row.label)}
+                <span>${htmlEscape(isGranularityPage ? row.object : row.owner)}</span>
+              </div>
+            `).join("")}
+          </div>
+        </aside>
+        <section class="detail-panel">
+          <div class="detail-card">
+            ${isGranularityPage ? renderModelingGranularityTable() : renderProjectDataTable()}
+          </div>
+        </section>
+      </div>
+    </div>
+  `;
+}
+
+function renderProjectDataTable() {
+  return `
+    <div class="section-head">
+      <h3>项目标识与数据集</h3>
+      <span>按项目标识创建和维护项目独有数据</span>
+    </div>
+    <div class="form-table-grid">
+      <label>项目标识<input value="${htmlEscape(currentProject.id)}"></label>
+      <label>项目名称<input value="${htmlEscape(currentProject.name)}"></label>
+      <label>基地编码<input value="${htmlEscape(currentProject.baseCode)}"></label>
+      <label>数据隔离策略<input value="项目标识 + 数据对象命名空间"></label>
+    </div>
+    <div class="table-wrap compact-table">
+      <table>
+        <thead><tr><th>数据项</th><th>字段标识</th><th>当前值</th><th>归属</th><th>操作</th></tr></thead>
+        <tbody>${SYSTEM_PROJECT_DATA_ROWS.map((row) => `
+          <tr><td>${row.label}</td><td>${row.key}</td><td>${row.value}</td><td>${row.owner}</td><td><button type="button" class="inline-action">配置</button></td></tr>
+        `).join("")}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderModelingGranularityTable() {
+  return `
+    <div class="section-head">
+      <h3>层级、对象及关系</h3>
+      <span>定义项目所需的建模数据层级、对象及关系</span>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>建模层级</th><th>建模对象</th><th>对象关系</th><th>启用</th><th>操作</th></tr></thead>
+        <tbody>${SYSTEM_MODELING_GRANULARITY_ROWS.map((row) => `
+          <tr><td>${row.level}</td><td>${row.object}</td><td>${row.relation}</td><td><span class="status-badge success">已启用</span></td><td><button type="button" class="inline-action">编辑</button></td></tr>
+        `).join("")}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderSystemBasicConfig(page) {
+  const configTitle = page.name;
+  return `
+    <div class="system-config-workbench">
+      <div class="section-head">
+        <h3>${htmlEscape(configTitle)}</h3>
+        <span>${page.dataObjects.join(" / ")}</span>
+      </div>
+      ${page.name === "用户管理" ? renderUserManagementConfig() : ""}
+      ${page.name === "系统功能权限管理" ? renderPermissionManagementConfig() : ""}
+      ${page.name === "建模表单管理" ? renderFormManagementConfig() : ""}
+    </div>
+  `;
+}
+
+function renderUserManagementConfig() {
+  return `
+    <div class="toolbar-row">
+      <button type="button" class="btn-primary">新增用户</button>
+      <button type="button">批量停用</button>
+      <input value="" placeholder="按用户名、角色搜索">
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>用户名</th><th>姓名</th><th>角色</th><th>状态</th><th>操作</th></tr></thead>
+        <tbody>${SYSTEM_USERS.map((user) => `
+          <tr><td>${user.username}</td><td>${user.name}</td><td>${user.role}</td><td><span class="status-badge success">${user.status}</span></td><td><button type="button" class="inline-action">编辑</button></td></tr>
+        `).join("")}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderPermissionManagementConfig() {
+  return `
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>功能层级</th><th>系统管理员</th><th>数据管理员</th><th>项目用户</th><th>操作</th></tr></thead>
+        <tbody>${SYSTEM_PERMISSION_ROWS.map((row) => `
+          <tr><td>${row.feature}</td><td>${row.admin}</td><td>${row.data}</td><td>${row.user}</td><td><button type="button" class="inline-action">配置权限</button></td></tr>
+        `).join("")}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderFormManagementConfig() {
+  return `
+    <div class="system-config-layout">
+      <aside class="tree-container">
+        <div class="tree-toolbar">
+          <h4>表单功能层级</h4>
+          <button type="button" class="btn-primary">新增表单</button>
+        </div>
+        <div class="object-tree">
+          ${SYSTEM_FORM_ROWS.map((row, index) => `<div class="tree-node ${index === 0 ? "root" : ""}">${row.form}<span>${row.level}</span></div>`).join("")}
+        </div>
+      </aside>
+      <section class="detail-panel">
+        <div class="detail-card">
+          <div class="section-head">
+            <h3>字段与关联关系</h3>
+            <span>配置表单字段、功能层级和对象关联</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>功能层级</th><th>表单</th><th>字段</th><th>关联关系</th><th>操作</th></tr></thead>
+              <tbody>${SYSTEM_FORM_ROWS.map((row) => `
+                <tr><td>${row.level}</td><td>${row.form}</td><td>${row.field}</td><td>${row.relation}</td><td><button type="button" class="inline-action">编辑字段</button></td></tr>
+              `).join("")}</tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </div>
+  `;
+}
+
 function renderTaskModel(page) {
   return `
     <div class="section-head section-context">
@@ -1124,6 +1315,11 @@ function renderBasicMissionModeling(page) {
                 <tr><th>任务编号</th><td>${valueInput("basicMission.taskNo")}</td></tr>
                 <tr><th>装备类型</th><td>${valueInput("basicMission.equipmentType")}</td></tr>
                 <tr><th>装备数量</th><td>${valueInput("basicMission.equipmentQuantity", "number")}</td></tr>
+                <tr><th>任务成功点</th><td>${valueInput("basicMission.successPoint")}</td></tr>
+                <tr><th>出发时间(h)</th><td>${valueInput("basicMission.startHour", "number")}</td></tr>
+                <tr><th>返回时间比</th><td>${valueInput("basicMission.returnRatio", "number")}</td></tr>
+                <tr><th>任务优先级</th><td>${valueInput("basicMission.priority", "number")}</td></tr>
+                <tr><th>最小系统数量</th><td>${valueInput("basicMission.minRequiredSorties", "number")}</td></tr>
                 <tr><th>任务时长（分钟）</th><td>${valueInput("basicMission.taskDurationMinutes", "number")}</td></tr>
                 <tr><th>准备时间（min）</th><td>${valueInput("basicMission.preparationMinutes", "number")}</td></tr>
                 <tr><th>取消时间（min）</th><td>${valueInput("basicMission.cancelMinutes", "number")}</td></tr>
@@ -1192,7 +1388,7 @@ function renderCompositeTaskModeling(page) {
           </div>
           <div class="table-wrap">
             <table>
-              <thead><tr><th>序号</th><th>基本任务名称</th><th>装备类型</th><th>装备数量</th><th>编队名称</th><th>任务下达时间</th><th>首波次出动时刻</th><th>单日重复次数</th><th>间隔小时数</th></tr></thead>
+              <thead><tr><th>序号</th><th>基本任务名称</th><th>装备类型</th><th>装备数量</th><th>编队名称</th><th>任务下达时间</th><th>首波次出动时刻</th><th>回收时刻</th><th>任务优先级</th><th>最小系统数量</th><th>单日重复次数</th><th>间隔小时数</th></tr></thead>
               <tbody>
                 ${(composite.taskItems || []).map((item, index) => `
                   <tr>
@@ -1203,6 +1399,9 @@ function renderCompositeTaskModeling(page) {
                     <td>${valueInput(`missionProfile.compositeTasks.0.taskItems.${index}.groupName`)}</td>
                     <td>${valueInput(`missionProfile.compositeTasks.0.taskItems.${index}.taskDispatchTime`, "time")}</td>
                     <td>${valueInput(`missionProfile.compositeTasks.0.taskItems.${index}.firstWaveTime`, "time")}</td>
+                    <td>${valueInput(`missionProfile.compositeTasks.0.taskItems.${index}.recoveryTime`, "time")}</td>
+                    <td>${valueInput(`missionProfile.compositeTasks.0.taskItems.${index}.priority`, "number")}</td>
+                    <td>${valueInput(`missionProfile.compositeTasks.0.taskItems.${index}.minRequiredSystems`, "number")}</td>
                     <td>${valueInput(`missionProfile.compositeTasks.0.taskItems.${index}.dailyRepeatCount`, "number")}</td>
                     <td>${valueInput(`missionProfile.compositeTasks.0.taskItems.${index}.intervalHours`, "number")}</td>
                   </tr>
@@ -1372,6 +1571,7 @@ function renderEquipmentModeling(page) {
         </div>
         ${isFailurePage ? renderEquipmentFailureRmsFields(selected) : ""}
         ${isFailurePage ? renderEquipmentComponentTable() : ""}
+        ${isFailurePage ? renderAircraftStateDataTable() : ""}
       </section>
     </div>
   `;
@@ -1381,6 +1581,7 @@ function renderEquipmentCompositionFields() {
   return `
     ${field("组件名称", "components.0.name")}
     ${field("父节点", "components.0.parentId")}
+    ${field("产品类型", "components.0.productType")}
     ${field("备件类型", "components.0.spareType")}
     ${field("连接类型", "components.0.connectionType")}
   `;
@@ -1394,9 +1595,12 @@ function renderEquipmentFailureFields() {
     ${field("N中取K总数", "components.0.kOutOfN.n", "number")}
     ${field("启用 n 中取 k", "components.0.kOutOfN.enabled")}
     ${field("故障模型", "components.0.failureModel")}
+    ${field("失效分布类型", "components.0.failureDistribution.distributionType")}
+    ${field("失效分布参数", "components.0.failureDistribution.parameters")}
     ${field("失效率", "components.0.failureRate", "number")}
     ${field("MTBF(h)", "components.0.mtbfHours", "number")}
     ${field("寿命限制(h)", "components.0.lifeLimitHours", "number")}
+    ${field("前置寿命要求(h)", "equipment.preLifeRequirementHours", "number")}
   `;
 }
 
@@ -1406,17 +1610,19 @@ function renderEquipmentComponentTable() {
       <h4>组件属性表</h4>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>组件</th><th>父节点</th><th>数量</th><th>启用 n 中取 k</th><th>n</th><th>k</th><th>故障模型</th><th>失效率</th><th>MTBF</th></tr></thead>
+          <thead><tr><th>组件</th><th>产品类型</th><th>父节点</th><th>数量</th><th>启用 n 中取 k</th><th>n</th><th>k</th><th>故障模型</th><th>失效分布</th><th>失效率</th><th>MTBF</th></tr></thead>
           <tbody>
             ${scenario.components.map((component) => `
               <tr>
                 <td>${htmlEscape(component.name)}</td>
+                <td>${htmlEscape(component.productType || "-")}</td>
                 <td>${htmlEscape(component.parentId)}</td>
                 <td>${htmlEscape(component.quantity)}</td>
                 <td>${component.kOutOfN?.enabled ? "是" : "否"}</td>
                 <td>${htmlEscape(component.kOutOfN?.n ?? component.quantity)}</td>
                 <td>${htmlEscape(component.kOutOfN?.k ?? component.quantity)}</td>
                 <td>${htmlEscape(component.failureModel)}</td>
+                <td>${htmlEscape(component.failureDistribution?.distributionType || "-")} / ${htmlEscape(component.failureDistribution?.parameters || "-")}</td>
                 <td>${htmlEscape(component.failureRate)}</td>
                 <td>${htmlEscape(component.mtbfHours)}h</td>
               </tr>
@@ -1447,12 +1653,36 @@ function renderEquipmentFailureRmsFields(selected) {
   `;
 }
 
+function renderAircraftStateDataTable() {
+  const requirement = Number(scenario.equipment.preLifeRequirementHours || 0);
+  return `
+    <div class="detail-card network-card">
+      <h4>飞机状态数据表</h4>
+      <div class="table-wrap compact-table">
+        <table>
+          <thead><tr><th>飞机编号</th><th>当前状态</th><th>部署位置</th><th>剩余寿命(h)</th><th>前置寿命要求(h)</th><th>可出动标识</th></tr></thead>
+          <tbody>${(scenario.combatUnit.members || []).map((member) => `
+            <tr>
+              <td>${htmlEscape(member.aircraftNo)}</td>
+              <td>${htmlEscape(member.status)}</td>
+              <td>${htmlEscape(member.deploymentLocation)}</td>
+              <td>${htmlEscape(member.remainingLifeHours)}</td>
+              <td>${htmlEscape(requirement)}</td>
+              <td><span class="status-badge ${Number(member.remainingLifeHours) >= requirement ? "success" : "warn"}">${Number(member.remainingLifeHours) >= requirement ? "满足" : "不足"}</span></td>
+            </tr>
+          `).join("")}</tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
 function renderReliabilityBlockDiagram() {
   const nodes = scenario.reliabilityBlockDiagram.nodes;
   return `
     <div class="section-head">
       <h3>装备可靠性框图</h3>
-      <span>串联 / 并联 / 备用</span>
+      <span>串联 / 并联 / 备用 / k-out-of-n</span>
     </div>
     <div class="rbd-canvas">
       ${nodes.map((node, index) => `
@@ -1465,7 +1695,16 @@ function renderReliabilityBlockDiagram() {
     </div>
     <div class="table-wrap compact-table">
       <table>
-        <thead><tr><th>起点</th><th>终点</th><th>关系</th><th>权重</th></tr></thead>
+        <thead><tr><th>节点</th><th>节点类型</th><th>连接关系</th><th>节点可靠度</th><th>失效率</th><th>MTBF</th><th>k-out-of-n</th></tr></thead>
+        <tbody>${nodes.map((node) => {
+          const component = scenario.components.find((item) => item.id === node.id);
+          return `<tr><td>${node.name}</td><td>${node.type}</td><td>${node.connectionType}</td><td>${component?.rms?.reliability ?? "-"}</td><td>${node.failureRate}</td><td>${node.mtbfHours}h</td><td>${component?.kOutOfN?.enabled ? `${component.kOutOfN.k}/${component.kOutOfN.n}` : "-"}</td></tr>`;
+        }).join("")}</tbody>
+      </table>
+    </div>
+    <div class="table-wrap compact-table">
+      <table>
+        <thead><tr><th>起点</th><th>终点</th><th>串联/并联/备用/k-out-of-n</th><th>权重</th></tr></thead>
         <tbody>${scenario.reliabilityBlockDiagram.edges.map((edge) => `<tr><td>${edge.from}</td><td>${edge.to}</td><td>${edge.type}</td><td>${edge.weight}</td></tr>`).join("")}</tbody>
       </table>
     </div>
@@ -1551,11 +1790,15 @@ function renderSupportOrganizationWorkbench(page) {
             </div>
             ${activeTab === "保障组织结构建模" ? `
               <div class="form-table-grid">
-                <label>组织名称<input value="舰载机保障大队"></label>
+                <label>组织名称<input value="陆基航空保障大队"></label>
                 <label>上级组织<input value="当前项目"></label>
                 <label>组织描述<input value="承担机务、维修、备件和设备保障资源调配"></label>
                 <label>适用机型<input value="${scenario.equipment.model}"></label>
+                <label>保障层级<input value="${htmlEscape(scenario.supportNodes[0]?.supportLevel || "一线保障")}"></label>
+                <label>保障策略<input value="${htmlEscape(scenario.supportNodes[0]?.organizationStrategy || scenario.supportNodes[0]?.policy || "-")}"></label>
+                <label>横向保障组织<input value="${htmlEscape((scenario.supportNodes[0]?.lateralSupportNodes || []).join("、") || "-")}"></label>
               </div>
+              ${renderSupportTransportPolicyTable()}
             ` : `
               <div class="toolbar-row">
                 <button type="button" class="btn-primary">新增</button>
@@ -1587,8 +1830,266 @@ function renderOrgTreeNode(node) {
   `;
 }
 
+function renderSupportTransportPolicyTable() {
+  const rows = (scenario.supportNodes || []).flatMap((node) =>
+    (node.transportPolicies || []).map((policy) => ({
+      nodeName: node.name,
+      ...policy
+    }))
+  );
+  return `
+    <div class="table-wrap compact-table" style="margin-top:12px;">
+      <table>
+        <thead><tr><th>保障节点</th><th>运输起点</th><th>运输终点</th><th>运输方式</th><th>运输时间(h)</th><th>运输优先级</th><th>运输能力</th></tr></thead>
+        <tbody>${rows.map((row) => `
+          <tr>
+            <td>${htmlEscape(row.nodeName)}</td>
+            <td>${htmlEscape(row.from)}</td>
+            <td>${htmlEscape(row.to)}</td>
+            <td>${htmlEscape(row.transportMode)}</td>
+            <td>${htmlEscape(row.transportTimeHours)}</td>
+            <td>${htmlEscape(row.priority)}</td>
+            <td>${htmlEscape(row.capacity)}</td>
+          </tr>
+        `).join("")}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+function findSupportActivityForPage(page) {
+  const activities = scenario.supportActivities || [];
+  if (page.name.includes("预防性")) {
+    return activities.find((activity) => activity.activityType === "预防性维修") || activities[0] || {};
+  }
+  if (page.name.includes("修复性")) {
+    return activities.find((activity) => activity.activityType === "修复性维修") || activities[0] || {};
+  }
+  if (page.name.includes("使用")) {
+    return activities.find((activity) => activity.planType === "直接准备方案")
+      || activities.find((activity) => activity.activityType === "飞行前保障")
+      || activities[0]
+      || {};
+  }
+  return activities[0] || {};
+}
+
+function supportActivityJobs(activity) {
+  return Array.isArray(activity.jobs) && activity.jobs.length > 0
+    ? activity.jobs
+    : [{ activityCode: "BA-001", workName: activity.activityType || "保障作业", predecessors: [], durationMinutes: Number(activity.durationHours || 1) * 60 }];
+}
+
+function describeDurationProfile(profile, fallbackMinutes) {
+  if (!profile || typeof profile !== "object") return `${Number(fallbackMinutes || 0)}min 固定值`;
+  if (profile.distributionType === "正态分布") return `正态分布 mean=${profile.mean ?? fallbackMinutes}, std=${profile.stdDev ?? "-"}`;
+  if (profile.distributionType === "均匀分布") return `均匀分布 ${profile.min ?? "-"}-${profile.max ?? "-"}min`;
+  if (profile.distributionType === "三角分布") return `三角分布 ${profile.min ?? "-"} / ${profile.mode ?? "-"} / ${profile.max ?? "-"}min`;
+  if (profile.distributionType === "对数正态分布") return `对数正态分布 ${profile.params || ""}`.trim();
+  return `${profile.distributionType || "固定值"} ${profile.value ?? fallbackMinutes ?? ""}min`.trim();
+}
+
+function renderSupportActivityJobRows(activity, tabKey) {
+  return supportActivityJobs(activity).map((job, index) => `
+    <tr>
+      <td>${index + 1}</td>
+      <td>${htmlEscape(job.activityCode || `BA-${String(index + 1).padStart(3, "0")}`)}</td>
+      <td>${htmlEscape(job.workName || "-")}</td>
+      <td>${htmlEscape(Array.isArray(job.subJobs) && job.subJobs.length ? job.subJobs.join("、") : "检查 / 执行 / 复核")}</td>
+      <td>${htmlEscape(Array.isArray(job.predecessors) && job.predecessors.length ? job.predecessors.join("、") : "-")}</td>
+      <td>${Number(job.durationMinutes || 0)}</td>
+      <td>${htmlEscape(describeDurationProfile(job.durationProfile, job.durationMinutes))}</td>
+      <td><button type="button" class="inline-action" data-support-activity-job="${htmlEscape(tabKey)}-${index}">编辑</button></td>
+    </tr>
+  `).join("");
+}
+
+function renderSupportActivityNetwork(activity) {
+  const jobs = supportActivityJobs(activity);
+  return `
+    <div class="network-card">
+      <div class="section-head"><h4>保障活动节点网络图</h4><button type="button" class="btn-primary">生成</button></div>
+      <div class="activity-network">
+        ${jobs.map((job, index) => `<span>${String.fromCharCode(65 + index)} ${htmlEscape(job.workName || "-")}</span>${index < jobs.length - 1 ? "<i></i>" : ""}`).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function renderSupportActivityJobTable(activity, tabKey) {
+  return `
+    <h4>工作项目清单</h4>
+    <div class="toolbar-row"><button type="button" class="btn-primary">新增基本保障活动</button><button type="button">批量删除</button></div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>序号</th><th>基本保障活动编号</th><th>作业项</th><th>子作业</th><th>紧前作业</th><th>工期(min)</th><th>工期分布摘要</th><th>操作</th></tr></thead>
+        <tbody>${renderSupportActivityJobRows(activity, tabKey)}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderBasicActivityLibrary() {
+  const rows = (scenario.supportActivities || []).flatMap((activity) =>
+    supportActivityJobs(activity).map((job) => ({
+      type: activity.activityType === "修复性维修" || activity.activityType === "预防性维修" ? "维修保障" : "使用保障",
+      activityCode: job.activityCode,
+      workName: job.workName,
+      scope: activity.activityType === "修复性维修" ? "航电系统" : scenario.equipment.model,
+      durationMinutes: job.durationMinutes,
+      personnel: job.personnel,
+      servicePersonnel: job.servicePersonnel,
+      facility: job.facility,
+      equipment: job.equipment,
+      ammunition: job.ammunition,
+      spare: job.spare
+    }))
+  );
+  return `
+    <div class="detail-card activity-editor-card">
+      <div class="section-head">
+        <h3>基本保障活动列表库</h3>
+        <span>支持新增、导入、编辑、删除基本保障活动</span>
+      </div>
+      <div class="toolbar-row"><button type="button" class="btn-primary">新增</button><button type="button">导入</button></div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>序号</th><th>类型</th><th>基本保障活动名称</th><th>基本保障活动编号</th><th>适用对象</th><th>工期(min)</th>
+              <th>机务/维修人员</th><th>勤务人员</th><th>保障/维修设施</th><th>保障/维修设备</th><th>弹药需求</th><th>备件需求</th><th>操作</th>
+            </tr>
+          </thead>
+          <tbody>${rows.map((row, index) => `
+            <tr>
+              <td>${index + 1}</td>
+              <td>${htmlEscape(row.type || "-")}</td>
+              <td>${htmlEscape(row.workName || "-")}</td>
+              <td>${htmlEscape(row.activityCode || "-")}</td>
+              <td>${htmlEscape(row.scope || "-")}</td>
+              <td>${Number(row.durationMinutes || 0)}</td>
+              <td>${htmlEscape(row.personnel || "-")}</td>
+              <td>${htmlEscape(row.servicePersonnel || "-")}</td>
+              <td>${htmlEscape(row.facility || "-")}</td>
+              <td>${htmlEscape(row.equipment || "-")}</td>
+              <td>${htmlEscape(row.ammunition || "-")}</td>
+              <td>${htmlEscape(row.spare || "-")}</td>
+              <td><button type="button" class="inline-action">编辑</button></td>
+            </tr>
+          `).join("")}</tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+function renderOperationsSupportActivity(activePlan, activity) {
+  const planTypes = ["直接准备方案", "再次出动准备方案", "飞行后检查方案", "加油方案", "挂载方案"];
+  return `
+    <div class="detail-card activity-editor-card">
+      <div class="section-head">
+        <h3>使用保障活动编辑</h3>
+        <span>${activePlan.path.map((item) => htmlEscape(item)).join(" / ")}</span>
+      </div>
+      <div class="form-table-grid">
+        <label>使用保障活动名称<input value="${htmlEscape(activity.activityName || activePlan.name)}"></label>
+        <label>最大工作时间参考(min)<input type="number" value="${Number(activity.maxWorkTimeRefMinutes || activity.durationHours * 60 || 0)}"></label>
+        <label>仿真运行规则<input value="${htmlEscape(activity.simulationRunRule || "按流道组并行排队")}"></label>
+      </div>
+      <div class="ops-plan-type-tabs" aria-label="方案类型">
+        ${planTypes.map((type) => `<button type="button" class="tab-btn ${type === activity.planType ? "active" : ""}">${htmlEscape(type)}</button>`).join("")}
+      </div>
+      ${renderSupportActivityJobTable(activity, "ops_plan")}
+      ${renderSupportActivityNetwork(activity)}
+    </div>
+  `;
+}
+
+function renderPreventiveMaintenanceActivity(activePlan, activity) {
+  const enabled = new Set(activity.triggerModes || []);
+  return `
+    <div class="detail-card activity-editor-card">
+      <div class="section-head">
+        <h3>预防性维修活动编辑</h3>
+        <span>${activePlan.path.map((item) => htmlEscape(item)).join(" / ")}</span>
+      </div>
+      <div class="form-table-grid">
+        <label>方案名称<input value="${htmlEscape(activity.activityName || activePlan.name)}"></label>
+        <label>计划停机小时<input type="number" value="${Number(activity.plannedDowntimeHours || activity.durationHours || 0)}"></label>
+        <label>启动日历时间<input value="${enabled.has("日历时间") ? "启用" : "停用"}"></label>
+        <label>日历日间隔<input type="number" value="${Number(activity.calendarDayInterval || 1)}"></label>
+        <label>日历日间隔上下浮动比例(%)<input type="number" value="${Number(activity.calendarDayFloatRatio || 0)}"></label>
+        <label>启动飞行小时<input value="${enabled.has("飞行小时") ? "启用" : "停用"}"></label>
+        <label>飞行小时间隔<input type="number" value="${Number(activity.runHourInterval || 0)}"></label>
+        <label>飞行小时上下浮动比例(%)<input type="number" value="${Number(activity.runHourFloatRatio || 0)}"></label>
+        <label>启动起落次数<input value="${enabled.has("起落次数") ? "启用" : "停用"}"></label>
+        <label>起落次数间隔<input type="number" value="${Number(activity.takeoffLandingInterval || 0)}"></label>
+        <label>起落次数间隔上下浮动比例(%)<input type="number" value="${Number(activity.takeoffLandingFloatRatio || 0)}"></label>
+      </div>
+      ${renderSupportActivityJobTable(activity, "prev_repair")}
+      ${renderSupportActivityNetwork(activity)}
+    </div>
+  `;
+}
+
+function renderEquipmentConfigTree() {
+  return `
+    <aside class="tree-container">
+      <div class="tree-toolbar"><h4>装备构型树</h4></div>
+      <div class="tree-node-item">
+        <div class="tree-node-label selected"><span class="tree-node-toggle">▼</span><span class="tree-node-text">${htmlEscape(scenario.equipment.model)}</span></div>
+        <div class="tree-node-children">
+          ${(scenario.components || []).map((component) => `
+            <div class="tree-node-item">
+              <div class="tree-node-label"><span class="tree-node-toggle">•</span><span class="tree-node-text">${htmlEscape(component.name)}</span></div>
+            </div>
+          `).join("")}
+        </div>
+      </div>
+    </aside>
+  `;
+}
+
+function renderCorrectiveMaintenanceActivity(activity) {
+  return `
+    <div class="organization-layout">
+      ${renderEquipmentConfigTree()}
+      <section class="detail-panel">
+        <div class="detail-card activity-editor-card">
+          <div class="section-head">
+            <h3>修复性维修活动编辑</h3>
+            <span>${htmlEscape(activity.activityName || "修复性维修方案")}</span>
+          </div>
+          <div class="form-table-grid">
+            <label>平均修复时间(min)<input type="number" value="${Number(activity.meanRepairTimeMinutes || activity.durationHours * 60 || 0)}"></label>
+            <label>维修时间分布类型<input value="${htmlEscape(activity.repairDistribution?.distributionType || "-")}"></label>
+            <label>分布参数<input value="${htmlEscape(activity.repairDistribution?.params || "-")}"></label>
+            <label>维修类型<input value="${htmlEscape((activity.repairTypes || []).join("、") || "-")}"></label>
+            <label>特殊产品适用对象<input value="${htmlEscape(scenario.components[0]?.name || "-")} / ${htmlEscape(scenario.components[0]?.productType || "-")}"></label>
+            <label>特殊产品维修时间(min)<input type="number" value="${Number(scenario.components[0]?.specialRepairProfile?.repairTimeMinutes || activity.meanRepairTimeMinutes || 0)}"></label>
+            <label>维修比例<input type="number" value="${Number(scenario.components[0]?.specialRepairProfile?.repairRatio || 0)}"></label>
+            <label>换件比例<input type="number" value="${Number(scenario.components[0]?.specialRepairProfile?.replacementRatio || 0)}"></label>
+          </div>
+          ${renderSupportActivityJobTable(activity, "corr_repair")}
+          ${renderSupportActivityNetwork(activity)}
+        </div>
+      </section>
+    </div>
+  `;
+}
+
 function renderSupportActivityWorkbench(page) {
   const activePlan = SUPPORT_ACTIVITY_PLANS.find((plan) => plan.type === page.name) || SUPPORT_ACTIVITY_PLANS[0];
+  const activity = findSupportActivityForPage(page);
+  if (page.name.includes("基本保障活动")) {
+    return `<div class="ship-front-workbench">${renderBasicActivityLibrary()}</div>`;
+  }
+  if (page.name.includes("修复性")) {
+    return `<div class="ship-front-workbench">${renderCorrectiveMaintenanceActivity(activity)}</div>`;
+  }
+  const editor = page.name.includes("预防性")
+    ? renderPreventiveMaintenanceActivity(activePlan, activity)
+    : renderOperationsSupportActivity(activePlan, activity);
   return `
     <div class="ship-front-workbench">
       <div class="organization-layout">
@@ -1600,35 +2101,7 @@ function renderSupportActivityWorkbench(page) {
           ${renderSupportActivityTreeNode(activePlan.tree, activePlan.path.at(-1))}
         </aside>
         <section class="detail-panel">
-          <div class="detail-card activity-editor-card">
-            <div class="section-head">
-              <h3>${activePlan.type.replace("建模", "编辑")}</h3>
-              <span>${activePlan.path.map((item) => htmlEscape(item)).join(" / ")}</span>
-            </div>
-            <div class="form-table-grid">
-              <label>活动名称<input value="${htmlEscape(activePlan.name)}"></label>
-              <label>活动类别<input value="${htmlEscape(activePlan.type.replace("建模", ""))}"></label>
-              <label>仿真运行规则<input value="按流道组并行排队"></label>
-              <label>最大工作时间参考(min)<input type="number" value="${Math.max(...scenario.supportActivities.map((activity) => activity.durationHours * 60))}"></label>
-              <label>适用对象<input value="${htmlEscape(scenario.equipment.model)} / ${htmlEscape(currentProject.name)}"></label>
-            </div>
-            <h4>工作项目清单</h4>
-            <div class="toolbar-row"><button type="button" class="btn-primary">新增基本保障活动</button><button type="button">批量删除</button></div>
-            <div class="table-wrap">
-              <table>
-                <thead><tr><th>序号</th><th>基本保障活动编号</th><th>作业项</th><th>紧前作业</th><th>工期(min)</th><th>操作</th></tr></thead>
-                <tbody>${activePlan.jobs.map((job, index) => `
-                  <tr><td>${index + 1}</td><td>BA-${String(index + 1).padStart(3, "0")}</td><td>${job}</td><td>${index === 0 ? "-" : activePlan.jobs[index - 1]}</td><td>${(scenario.supportActivities[index % scenario.supportActivities.length]?.durationHours || 1) * 60}</td><td><button type="button" class="inline-action">编辑</button></td></tr>
-                `).join("")}</tbody>
-              </table>
-            </div>
-            <div class="network-card">
-              <div class="section-head"><h4>保障活动节点网络图</h4><button type="button" class="btn-primary">生成</button></div>
-              <div class="activity-network">
-                ${activePlan.jobs.map((job, index) => `<span>${String.fromCharCode(65 + index)} ${job}</span>${index < activePlan.jobs.length - 1 ? "<i></i>" : ""}`).join("")}
-              </div>
-            </div>
-          </div>
+          ${editor}
         </section>
       </div>
     </div>
@@ -2458,6 +2931,12 @@ function renderLineChart(points) {
 }
 
 function renderImportTable() {
+  const writebackRows = [
+    { target: "装备 RMS", field: "可靠度 R(t) / 维修度 M(t) / 保障性 S(t)", status: "待校验" },
+    { target: "LRU/SRU 指标", field: "MTBF / MTTR / MLDT", status: "待回写" },
+    { target: "维修参数", field: "特殊产品维修时间 / 维修比例 / 换件比例", status: "可回写" },
+    { target: "仿真参数", field: "失效分布参数 / 保障资源容量", status: "待校验" }
+  ];
   return `
     <div class="section-head">
       <h3>结果导入</h3>
@@ -2469,6 +2948,18 @@ function renderImportTable() {
         <tbody><tr><td>local-smoke-summary</td><td>aviation_support_smoke</td><td>sortie_completion_rate</td><td>待导入校验</td></tr></tbody>
       </table>
     </div>
+    <div class="detail-card network-card" style="margin-top:12px;">
+      <div class="section-head">
+        <h3>导入结果回写对象</h3>
+        <span>原型展示导入结果可回写到哪些模型对象</span>
+      </div>
+      <div class="table-wrap compact-table">
+        <table>
+          <thead><tr><th>回写对象</th><th>回写字段</th><th>状态</th></tr></thead>
+          <tbody>${writebackRows.map((row) => `<tr><td>${row.target}</td><td>${row.field}</td><td><span class="status-badge ${row.status === "可回写" ? "success" : "warn"}">${row.status}</span></td></tr>`).join("")}</tbody>
+        </table>
+      </div>
+    </div>
   `;
 }
 
@@ -2479,7 +2970,7 @@ function renderScenarioSwitch() {
       <span>宏观任务视图 / 机场保障视图 / 指标统计视图</span>
     </div>
     <div class="scenario-grid">
-      ${["宏观任务视图", "陆基/舰基保障视图", "指标统计视图"].map((name) => `<button type="button" class="scenario-card">${name}<span>${scenario.scenarioId}</span></button>`).join("")}
+      ${["宏观任务视图", "陆基保障视图", "指标统计视图"].map((name) => `<button type="button" class="scenario-card">${name}<span>${scenario.scenarioId}</span></button>`).join("")}
     </div>
   `;
 }

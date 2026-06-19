@@ -14,7 +14,7 @@ test("default scenario passes structural validation", () => {
 });
 
 test("default scenario includes airport and mission area attributes", () => {
-  assert.deepEqual(defaultScenario.airports.map((airport) => airport.name), ["甲板机场", "前进保障机场"]);
+  assert.deepEqual(defaultScenario.airports.map((airport) => airport.name), ["主基地机场", "前进保障机场"]);
   assert.equal(defaultScenario.airports[0].distanceToMissionKm, 320);
   assert.deepEqual(defaultScenario.missionAreas.map((area) => area.name), ["近海巡逻区", "远海警戒区"]);
   assert.equal(defaultScenario.missionAreas[0].distanceFromDepartureKm, 320);
@@ -61,6 +61,45 @@ test("default scenario includes component RMS attributes", () => {
     assert.equal(typeof component.rms.mttrHours, "number", `${component.id} mttr`);
     assert.equal(typeof component.rms.mldtHours, "number", `${component.id} mldt`);
     assert.equal(typeof component.rms.availability, "number", `${component.id} availability`);
+  }
+});
+
+test("default scenario includes ship-front comprehensive support activity fields", () => {
+  const activities = defaultScenario.supportActivities;
+  assert.ok(activities.some((activity) => activity.planType === "直接准备方案"));
+  assert.ok(activities.some((activity) => activity.planType === "预防性维修方案"));
+  assert.ok(activities.some((activity) => activity.planType === "修复性维修方案"));
+
+  const operations = activities.find((activity) => activity.planType === "直接准备方案");
+  assert.equal(typeof operations.activityName, "string");
+  assert.equal(typeof operations.maxWorkTimeRefMinutes, "number");
+  assert.equal(typeof operations.simulationRunRule, "string");
+
+  const preventive = activities.find((activity) => activity.planType === "预防性维修方案");
+  assert.deepEqual(preventive.triggerModes, ["日历时间", "飞行小时", "起落次数"]);
+  assert.equal(typeof preventive.plannedDowntimeHours, "number");
+
+  const corrective = activities.find((activity) => activity.planType === "修复性维修方案");
+  assert.equal(typeof corrective.meanRepairTimeMinutes, "number");
+  assert.equal(typeof corrective.repairDistribution.distributionType, "string");
+  assert.ok(Array.isArray(corrective.repairTypes));
+
+  for (const activity of activities) {
+    assert.ok(Array.isArray(activity.jobs), `${activity.id} jobs`);
+    assert.ok(activity.jobs.length > 0, `${activity.id} job count`);
+    for (const job of activity.jobs) {
+      assert.equal(typeof job.activityCode, "string", `${activity.id} activityCode`);
+      assert.equal(typeof job.workName, "string", `${activity.id} workName`);
+      assert.ok(Array.isArray(job.predecessors), `${activity.id} predecessors`);
+      assert.equal(typeof job.durationMinutes, "number", `${activity.id} durationMinutes`);
+      assert.equal(typeof job.durationProfile.distributionType, "string", `${activity.id} durationProfile`);
+      assert.equal(typeof job.personnel, "string", `${activity.id} personnel`);
+      assert.equal(typeof job.servicePersonnel, "string", `${activity.id} servicePersonnel`);
+      assert.equal(typeof job.facility, "string", `${activity.id} facility`);
+      assert.equal(typeof job.equipment, "string", `${activity.id} equipment`);
+      assert.equal(typeof job.ammunition, "string", `${activity.id} ammunition`);
+      assert.equal(typeof job.spare, "string", `${activity.id} spare`);
+    }
   }
 });
 

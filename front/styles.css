@@ -498,6 +498,18 @@ input {
   gap: 12px;
 }
 
+.system-config-workbench {
+  display: grid;
+  gap: 12px;
+}
+
+.system-config-layout {
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
 .ship-front-tabs {
   display: flex;
   flex-wrap: wrap;
@@ -515,6 +527,30 @@ input {
 }
 
 .ship-front-tabs button.active {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: #fff;
+}
+
+.ops-plan-type-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.ops-plan-type-tabs .tab-btn {
+  min-height: 30px;
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.ops-plan-type-tabs .tab-btn.active {
   border-color: var(--primary);
   background: var(--primary);
   color: #fff;
@@ -2054,6 +2090,7 @@ tr:last-child td {
   .simulation-layout,
   .ontology-layout,
   .mesa-visual-grid,
+  .system-config-layout,
   .rms-layout,
   .rms-bottom-grid {
     grid-template-columns: 1fr;
