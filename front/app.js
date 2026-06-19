@@ -1785,7 +1785,7 @@ function renderCombatUnitModeling(page) {
           <h4>飞机列表</h4>
         <div class="toolbar-row" style="margin-bottom:0;">
           <button type="button" class="btn-primary" data-combat-unit-add>新增</button>
-          <button type="button" data-combat-unit-edit>编辑</button>
+          <button type="button" data-combat-unit-edit disabled>编辑</button>
           <button type="button" class="btn-danger" data-combat-unit-delete>删除</button>
         </div>
       </div>
@@ -1853,7 +1853,7 @@ function renderBasicMissionModeling(page) {
           <h4>基本任务结构树</h4>
           <div class="equipment-toolbar">
             <button type="button" class="btn-primary" data-basic-mission-add>新增</button>
-            <button type="button" data-basic-mission-edit>编辑</button>
+            <button type="button" data-basic-mission-edit disabled>编辑</button>
             <button type="button" class="btn-danger" data-basic-mission-delete>删除</button>
           </div>
         </div>
@@ -1923,7 +1923,7 @@ function renderCompositeTaskModeling(page) {
           <h4>复合任务列表</h4>
           <div class="toolbar-row" style="margin-bottom:0;">
             <button type="button" class="btn-primary" data-composite-task-add>新增</button>
-            <button type="button" data-composite-task-edit>编辑</button>
+            <button type="button" data-composite-task-edit disabled>编辑</button>
             <button type="button" class="btn-danger" data-composite-task-delete>删除</button>
           </div>
         </div>
@@ -1947,7 +1947,7 @@ function renderCompositeTaskModeling(page) {
             <h4>当前复合任务包含的基本任务</h4>
             <div class="toolbar-row" style="margin-bottom:0;">
               <button type="button" class="btn-primary" data-composite-task-item-add>新增</button>
-              <button type="button" data-composite-task-item-edit>编辑</button>
+              <button type="button" data-composite-task-item-edit disabled>编辑</button>
             </div>
           </div>
           ${selected.task ? `
@@ -1972,7 +1972,7 @@ function renderCompositeTaskModeling(page) {
                       <td>${valueInput(`${compositePath}.taskItems.${index}.minRequiredSystems`, "number")}</td>
                       <td>${valueInput(`${compositePath}.taskItems.${index}.dailyRepeatCount`, "number")}</td>
                       <td>${valueInput(`${compositePath}.taskItems.${index}.intervalHours`, "number")}</td>
-                      <td class="table-actions"><button type="button" class="inline-action" data-composite-task-item-edit="${index}">编辑</button><button type="button" class="btn-danger" data-composite-task-item-delete="${index}">删除</button></td>
+                      <td class="table-actions"><button type="button" class="inline-action" data-composite-task-item-edit="${index}" disabled>编辑</button><button type="button" class="btn-danger" data-composite-task-item-delete="${index}">删除</button></td>
                     </tr>
                   `).join("") || `<tr><td colspan="13">暂无基本任务</td></tr>`}
                 </tbody>
@@ -2332,8 +2332,8 @@ function renderEquipmentModeling(page) {
           <h4>装备组成树</h4>
           <div class="equipment-toolbar">
             <button type="button" class="btn-primary" data-equipment-add-node>新增节点</button>
-            <button type="button" data-equipment-edit-node>编辑</button>
-            <button type="button" class="btn-danger" data-equipment-delete-node>删除</button>
+            <button type="button" data-equipment-edit-node disabled>编辑</button>
+            <button type="button" class="btn-danger" data-equipment-delete-node disabled>删除</button>
             <button type="button">导入</button>
           </div>
         </div>
@@ -2684,9 +2684,9 @@ function renderSupportOrganizationWorkbench(page) {
           <div class="tree-toolbar">
             <h4>保障组织结构树</h4>
             <div class="equipment-toolbar">
-              <button type="button" class="btn-primary" data-support-org-add-node>新增节点</button>
-              <button type="button" data-support-org-edit-node>编辑</button>
-              <button type="button" class="btn-danger" data-support-org-delete-node>删除</button>
+              <button type="button" class="btn-primary" data-support-org-add-node disabled>新增节点</button>
+              <button type="button" data-support-org-edit-node disabled>编辑</button>
+              <button type="button" class="btn-danger" data-support-org-delete-node disabled>删除</button>
               <button type="button">导入</button>
             </div>
           </div>
@@ -2700,9 +2700,9 @@ function renderSupportOrganizationWorkbench(page) {
             </div>
             ${activeTab === "保障组织结构建模" ? `
               <div class="form-table-grid">
-                <label>组织名称<input value="${htmlEscape(selectedSupportOrgNode?.name || "")}"></label>
-                <label>上级组织<input value="${htmlEscape(selectedSupportOrgParentName)}"></label>
-                <label>组织描述<input value="${htmlEscape(selectedSupportOrgNode?.description || "承担机务、维修、备件和设备保障资源调配")}"></label>
+                <label>组织名称<input value="${htmlEscape(selectedSupportOrgNode?.name || "")}" readonly></label>
+                <label>上级组织<input value="${htmlEscape(selectedSupportOrgParentName)}" readonly></label>
+                <label>组织描述<input value="${htmlEscape(selectedSupportOrgNode?.description || "承担机务、维修、备件和设备保障资源调配")}" readonly></label>
               </div>
             ` : `
               <div class="toolbar-row">
@@ -2920,12 +2920,12 @@ function renderBasicActivityLibrary() {
     <div class="detail-card activity-editor-card">
       <div class="section-head">
         <h3>基本保障活动列表库</h3>
-        <span>支持新增、导入、编辑、删除基本保障活动</span>
+        <span>展示基本保障活动清单，编辑能力待接入保存契约</span>
       </div>
       <div class="toolbar-row">
-        <button type="button" class="btn-primary" data-basic-activity-add>新增</button>
+        <button type="button" class="btn-primary" data-basic-activity-add disabled>新增</button>
         <button type="button">导入</button>
-        <button type="button" class="btn-danger" data-basic-activity-delete>删除</button>
+        <button type="button" class="btn-danger" data-basic-activity-delete disabled>删除</button>
       </div>
       <div class="table-wrap">
         <table>
@@ -2947,7 +2947,7 @@ function renderBasicActivityLibrary() {
               <td>${htmlEscape(row.equipment || "-")}</td>
               <td>${htmlEscape(row.ammunition || "-")}</td>
               <td>${htmlEscape(row.spare || "-")}</td>
-              <td><button type="button" class="inline-action" data-basic-activity-edit="${index}">编辑</button><button type="button" class="btn-danger" data-basic-activity-delete="${index}">删除</button></td>
+              <td><button type="button" class="inline-action" data-basic-activity-edit="${index}" disabled>编辑</button><button type="button" class="btn-danger" data-basic-activity-delete="${index}" disabled>删除</button></td>
             </tr>
           `).join("")}</tbody>
         </table>
@@ -3079,7 +3079,7 @@ function renderLogisticsSupportActivity(activePlan, activity) {
                 <td>${valueSelect(`${basePath}.from`, supportNodeOptions)}</td>
                 <td>${valueSelect(`${basePath}.to`, supportNodeOptions)}</td>
                 <td>${valueInput(`${basePath}.transportTimeHours`, "number", { min: "0", step: "0.1" })}</td>
-                <td><button type="button" class="inline-action" data-logistics-transport-edit="${index}">\u7f16\u8f91</button><button type="button" class="inline-action" data-logistics-transport-delete="${index}">\u5220\u9664</button></td>
+                <td><button type="button" class="inline-action" data-logistics-transport-edit="${index}" disabled>\u7f16\u8f91</button><button type="button" class="inline-action" data-logistics-transport-delete="${index}">\u5220\u9664</button></td>
               </tr>
             `;
           }).join("") || `<tr><td colspan="8" class="muted">\u6682\u65e0\u8fd0\u8f93\u7b56\u7565</td></tr>`}</tbody>
@@ -3203,8 +3203,8 @@ function renderExperimentPlanList(page) {
       <span>仿真实验方案管理</span>
     </div>
     <div class="toolbar-row">
-      <button type="button" class="btn-primary" data-experiment-plan-add>新增</button>
-      <button type="button" class="btn-danger" data-experiment-plan-delete>批量删除</button>
+      <button type="button" class="btn-primary" data-experiment-plan-add disabled>新增</button>
+      <button type="button" class="btn-danger" data-experiment-plan-delete disabled>批量删除</button>
     </div>
     <div class="table-wrap">
       <table>
@@ -3218,7 +3218,7 @@ function renderExperimentPlanList(page) {
               <td>${plan.steps}</td>
               <td>${plan.samples}</td>
               <td><span class="badge">${htmlEscape(plan.status)}</span></td>
-              <td><button type="button" class="inline-action" data-feature-id="${editFeatureId}" data-experiment-plan-edit>编辑</button><button type="button" class="btn-danger" data-experiment-plan-delete>删除</button></td>
+              <td><button type="button" class="inline-action" data-feature-id="${editFeatureId}" data-experiment-plan-edit>编辑</button><button type="button" class="btn-danger" data-experiment-plan-delete disabled>删除</button></td>
             </tr>
           `).join("")}
         </tbody>
@@ -4102,9 +4102,8 @@ function readRouteFromHash() {
 }
 
 function getPlanListFeatureId(moduleName) {
-  return moduleName === "任务可靠度评估模块"
-    ? "mission-reliability-experiment-plan-list"
-    : DEFAULT_FEATURE_ID;
+  if (moduleName === "任务可靠度评估模块") return "mission-reliability-experiment-plan-list";
+  return "spare-planning-experiment-plan-list";
 }
 
 function getPath(obj, path) {

@@ -694,15 +694,15 @@ test("editable modeling lists expose add edit and delete action entries", async 
     appSource.indexOf("function buildEquipmentTreeNodes")
   );
   assert.match(equipmentSource, /data-equipment-add-node/);
-  assert.match(equipmentSource, /data-equipment-edit-node/);
-  assert.match(equipmentSource, /data-equipment-delete-node/);
+  assert.match(equipmentSource, /data-equipment-edit-node disabled/);
+  assert.match(equipmentSource, /data-equipment-delete-node disabled/);
 
   const basicMissionSource = appSource.slice(
     appSource.indexOf("function renderBasicMissionModeling"),
     appSource.indexOf("function renderCompositeTaskModeling")
   );
   assert.match(basicMissionSource, /data-basic-mission-add/);
-  assert.match(basicMissionSource, /data-basic-mission-edit/);
+  assert.match(basicMissionSource, /data-basic-mission-edit disabled/);
   assert.match(basicMissionSource, /data-basic-mission-delete/);
 
   const compositeSource = appSource.slice(
@@ -710,10 +710,11 @@ test("editable modeling lists expose add edit and delete action entries", async 
     appSource.indexOf("function renderPeriodicTaskModeling")
   );
   assert.match(compositeSource, /data-composite-task-add/);
-  assert.match(compositeSource, /data-composite-task-edit/);
+  assert.match(compositeSource, /data-composite-task-edit disabled/);
   assert.match(compositeSource, /data-composite-task-delete/);
   assert.match(compositeSource, /data-composite-task-item-add/);
-  assert.match(compositeSource, /data-composite-task-item-edit/);
+  assert.match(compositeSource, /data-composite-task-item-edit disabled/);
+  assert.match(compositeSource, /data-composite-task-item-edit="\$\{index\}" disabled/);
   assert.match(compositeSource, /data-composite-task-item-delete/);
 
   const combatUnitSource = appSource.slice(
@@ -721,40 +722,43 @@ test("editable modeling lists expose add edit and delete action entries", async 
     appSource.indexOf("function addCombatUnitMember")
   );
   assert.match(combatUnitSource, /data-combat-unit-add/);
-  assert.match(combatUnitSource, /data-combat-unit-edit/);
+  assert.match(combatUnitSource, /data-combat-unit-edit disabled/);
   assert.match(combatUnitSource, /data-combat-unit-delete/);
 
   const supportOrgSource = appSource.slice(
     appSource.indexOf("function renderSupportOrganizationWorkbench"),
     appSource.indexOf("function renderOrgTreeNode")
   );
-  assert.match(supportOrgSource, /data-support-org-add-node/);
-  assert.match(supportOrgSource, /data-support-org-edit-node/);
-  assert.match(supportOrgSource, /data-support-org-delete-node/);
+  assert.match(supportOrgSource, /data-support-org-add-node disabled/);
+  assert.match(supportOrgSource, /data-support-org-edit-node disabled/);
+  assert.match(supportOrgSource, /data-support-org-delete-node disabled/);
+  assert.match(supportOrgSource, /组织名称<input value="\$\{htmlEscape\(selectedSupportOrgNode\?\.name \|\| ""\)\}" readonly>/);
 
   const basicActivitySource = appSource.slice(
     appSource.indexOf("function renderBasicActivityLibrary"),
     appSource.indexOf("function renderLogisticsSupportActivity")
   );
-  assert.match(basicActivitySource, /data-basic-activity-add/);
-  assert.match(basicActivitySource, /data-basic-activity-edit/);
-  assert.match(basicActivitySource, /data-basic-activity-delete/);
+  assert.match(basicActivitySource, /data-basic-activity-add disabled/);
+  assert.match(basicActivitySource, /data-basic-activity-edit="\$\{index\}" disabled/);
+  assert.match(basicActivitySource, /data-basic-activity-delete disabled/);
+  assert.match(basicActivitySource, /data-basic-activity-delete="\$\{index\}" disabled/);
 
   const logisticsSource = appSource.slice(
     appSource.indexOf("function renderLogisticsSupportActivity"),
     appSource.indexOf("function findLogisticsSupportActivity")
   );
   assert.match(logisticsSource, /data-logistics-transport-add/);
-  assert.match(logisticsSource, /data-logistics-transport-edit/);
+  assert.match(logisticsSource, /data-logistics-transport-edit="\$\{index\}" disabled/);
   assert.match(logisticsSource, /data-logistics-transport-delete/);
 
   const experimentPlanSource = appSource.slice(
     appSource.indexOf("function renderExperimentPlanList"),
     appSource.indexOf("function renderExperimentPlanEditor")
   );
-  assert.match(experimentPlanSource, /data-experiment-plan-add/);
+  assert.match(experimentPlanSource, /data-experiment-plan-add disabled/);
   assert.match(experimentPlanSource, /data-experiment-plan-edit/);
-  assert.match(experimentPlanSource, /data-experiment-plan-delete/);
+  assert.match(experimentPlanSource, /data-experiment-plan-delete disabled/);
+  assert.match(appSource, /return "spare-planning-experiment-plan-list"/);
 });
 
 test("reliability block diagram prototype exposes node edge and k-out-of-n fields", async () => {
