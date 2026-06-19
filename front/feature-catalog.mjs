@@ -1,6 +1,7 @@
 const MODULE_PREFIX = {
   "备件规划评估模块": "spare-planning",
-  "任务可靠度评估模块": "mission-reliability"
+  "任务可靠度评估模块": "mission-reliability",
+  "系统管理": "system-management"
 };
 
 const FEATURE_SLUGS = {
@@ -22,6 +23,8 @@ const FEATURE_SLUGS = {
   预防性维修活动建模: "preventive-maintenance-activity",
   修复性维修活动建模: "corrective-maintenance-activity",
   结果导入: "result-import",
+  RMS分配方案编辑: "rms-allocation",
+  装备RMS指标分配: "equipment-rms-allocation",
   仿真实验方案管理: "experiment-plan-management",
   方案列表: "experiment-plan-list",
   方案编辑: "experiment-plan-edit",
@@ -86,7 +89,8 @@ const SOURCE_ROWS = [
   ["任务可靠度评估模块", "结果分析", "蒙特卡洛实验结果", "蒙特卡洛实验结果"],
   ["任务可靠度评估模块", "结果分析", "飞机任务可靠性分析", "飞机任务可靠性分析"],
   ["任务可靠度评估模块", "结果分析", "任务可靠度评估", "任务可靠度评估"],
-  ["任务可靠度评估模块", "结果分析", "停机因素分析", "停机因素分析"]
+  ["任务可靠度评估模块", "结果分析", "停机因素分析", "停机因素分析"],
+  ["系统管理", "装备RMS指标分配", "装备RMS指标分配", "装备RMS指标分配"]
 ];
 
 export const FEATURE_PAGES = SOURCE_ROWS.map(([module, secondary, tertiary, name]) => {
@@ -142,13 +146,15 @@ const FEATURE_ID_ALIASES = {
   "spare-planning-scenario-switch": "spare-planning-visual-start-stop",
   "spare-planning-visual-results": "spare-planning-visual-start-stop",
   "mission-reliability-scenario-switch": "mission-reliability-visual-start-stop",
-  "mission-reliability-visual-results": "mission-reliability-visual-start-stop"
+  "mission-reliability-visual-results": "mission-reliability-visual-start-stop",
+  "mission-reliability-rms-allocation": "system-management-equipment-rms-allocation"
 };
 
 function resolveComponent(name, secondary, tertiary) {
   if (name === "方案列表") return "experiment-plan-list";
   if (name === "方案编辑") return "experiment-plan-editor";
   if (name.includes("可靠性框图")) return "reliability-block-diagram";
+  if (name.includes("RMS分配") || name.includes("RMS指标分配")) return "rms-allocation";
   if (tertiary === "可视化推演") return "visual-simulation";
   if (name.includes("可视化")) return "visual-simulation";
   if (name.includes("场景切换")) return "scenario-switch";
@@ -173,6 +179,7 @@ function resolveDataObjects(name, secondary, tertiary) {
   if (name.includes("装备组成")) return ["equipment", "components"];
   if (name.includes("装备故障")) return ["components", "failureModel"];
   if (name.includes("可靠性框图")) return ["reliabilityBlockDiagram", "components"];
+  if (name.includes("RMS分配") || name.includes("RMS指标分配")) return ["rmsAllocationPlan", "equipmentNodes", "missionExposure", "allocationResults"];
   if (name.includes("保障组织结构")) return ["supportNodes", "organizationTree"];
   if (name.includes("备件")) return ["supportNodes.inventory", "spares"];
   if (name.includes("保障人员")) return ["supportNodes.personnelCapacity", "resources"];

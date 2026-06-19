@@ -26,6 +26,7 @@
 18. PR-D 已增加 SQLite 数据持久化切片：`schema.sql` 声明项目、用户、方案、建模快照、场景、运行、结果摘要和产物清单表；repository helper 可保存 contract 对象并按 `run_id` 查询版本化身份链。
 19. PR-E 已增加函数级 Backend API facade：API 层只编排 Project 校验、项目保存、建模快照、实验计划、Adapter Scenario 编译、Mesa 运行、结果与产物持久化和按 `run_id` 查询，不在前端或 CRUD handler 中生成最终 Scenario。
 20. PR-F 已增加前端 API client 接入：`front/api-client.mjs` 定义保存 Project、创建建模快照、创建实验计划、启动仿真运行、读取结果摘要和产物清单的稳定方法；`front/app.js` 通过该 client 编排保存、运行和结果读取，不再直接调用本地仿真函数生成页面结果。
+21. 系统管理新增“装备RMS指标分配”本地计算工作台：使用模拟装备构型和任务剖面，支持页面调节装备级 R/M/S、MTBF、MTTR、MLDT、Ai/Ao 目标，选择等分配、比例分配、AGREE 和评分分配方法，生成任务暴露矩阵、节点级 RMS target、敏感度排名和自底向上校核结果。当前发布操作只在浏览器内写入模拟装备节点的 `rms.target`，不覆盖 `prediction` 或 `actual`，也尚未接入后端持久化、复杂 RBD 数值求解或真实仿真消费。
 
 ## 文档地图
 
@@ -33,6 +34,7 @@
 | --- | --- |
 | [`../README.md`](../README.md) | 仓库概览、运行方式、能力范围和边界。 |
 | [`3概要设计方案.md`](3概要设计方案.md) | 原始概要设计转换稿，是功能范围和术语来源。 |
+| [`spare_mvp_rms_allocation_design.md`](spare_mvp_rms_allocation_design.md) | 装备 RMS 指标分配页面的输入设计文档，描述 RMS 口径、分配算法、页面结构、契约和阶段验收。 |
 | [`product-roadmap.md`](product-roadmap.md) | 从当前原型到真实系统的产品里程碑、阶段依赖和验收口径。 |
 | [`simulation-service-governance.md`](simulation-service-governance.md) | Mesa 仿真服务治理、Claude 对齐规则和 6 类 agent swarm 分工。 |
 | [`ontology-mesa-rebuild-plan.md`](ontology-mesa-rebuild-plan.md) | Ontology + Mesa 重构边界、里程碑、当前状态和四层可视化约定。 |
@@ -41,6 +43,8 @@
 | [`../src/spare_mvp_backend/schema.sql`](../src/spare_mvp_backend/schema.sql) | PR-D 的 SQLite 持久化 schema，用于保存版本化 contract 对象和运行身份链。 |
 | [`../src/spare_mvp_backend/api.py`](../src/spare_mvp_backend/api.py) | PR-E 的函数级 Backend API facade，用于稳定 PR-F 前端接入前的保存、运行和结果读取边界。 |
 | [`../front/api-client.mjs`](../front/api-client.mjs) | PR-F 的前端 API client，用于让静态前端通过后端 API contract 执行保存、运行和结果读取。 |
+| [`../front/rms-allocation-engine.mjs`](../front/rms-allocation-engine.mjs) | RMS 分配 MVP 的本地计算入口，覆盖风险预算分配、MTTR/MLDT 加权、自底向上校核和发布到模拟 `rms.target`。 |
+| [`../front/rms-allocation-workbench.mjs`](../front/rms-allocation-workbench.mjs) | RMS 分配页面渲染模块，展示装备树、目标输入、方法选择、节点级结果表、任务暴露矩阵和校核摘要。 |
 | [`superpowers/specs/2026-06-17-four-level-function-page-design.md`](superpowers/specs/2026-06-17-four-level-function-page-design.md) | 四级功能页面化设计规格。 |
 | [`superpowers/plans/2026-06-18-agent-swarm-contract-first-development.md`](superpowers/plans/2026-06-18-agent-swarm-contract-first-development.md) | contract-first agent swarm 分阶段开发计划。 |
 | [`superpowers/plans/2026-06-17-local-aviation-ship-front-integration.md`](superpowers/plans/2026-06-17-local-aviation-ship-front-integration.md) | 当前前端集成实现记录和验收情况。 |

@@ -7,6 +7,7 @@
 统一文档入口见 [`docs/README.md`](docs/README.md)。常用文档：
 
 - [`docs/3概要设计方案.md`](docs/3概要设计方案.md)：原始概要设计的 Markdown 转换稿。
+- [`docs/spare_mvp_rms_allocation_design.md`](docs/spare_mvp_rms_allocation_design.md)：装备 RMS 指标分配页面的输入设计文档。
 - [`docs/product-roadmap.md`](docs/product-roadmap.md)：从当前原型到真实系统的产品里程碑、阶段依赖和验收口径。
 - [`docs/ontology-mesa-rebuild-plan.md`](docs/ontology-mesa-rebuild-plan.md)：Ontology + Mesa 重构边界和当前状态。
 - [`docs/superpowers/specs/2026-06-17-four-level-function-page-design.md`](docs/superpowers/specs/2026-06-17-four-level-function-page-design.md)：四级功能页面化设计规格。
@@ -21,6 +22,7 @@
 - 可视化仿真：单次仿真的任务态势、机场保障视图、指标、事件流和 Mesa 内部 `Ontology视图`。
 - Ontology 约定：`Ontology视图` 后续按 `建模对象 -> 仿真实验 -> 模型实例 -> 计算产物` 四层纵向画布组织；建模对象层对齐前端四级功能，模型实例层按 `AviationSupportModel` 的真实 Mesa/Python 运行时对象关系绘制，并包含当前 step 的指标对象。
 - 蒙特卡洛实验：只读展示当前仿真实验，配置样本数、随机种子、故障率、备件倍数、保障容量扫参；配置页只保留参数和启动按钮，评估结果统一在“结果分析 / 蒙特卡洛实验结果展示”中查看。
+- RMS 指标分配：系统管理新增“装备RMS指标分配”本地计算页，使用模拟装备构型和任务剖面，支持调节装备级 R/M/S、MTBF、MTTR、MLDT、Ai/Ao 目标，选择等分配、比例分配、AGREE 和评分分配方法，并展示节点级 RMS target、任务暴露矩阵和自底向上校核。
 - 结果分析：备件短板分析、飞机转场携行清单、飞机任务可靠性分析、停机因素分析。
 - M2a 契约适配：`src/spare_mvp_contract/adapter.py` 已支持 Project JSON 校验、已批准的 `smoke` Scenario 编译、`SmokeSpareMvpModel` 运行、Result summary 和 ArtifactManifest 生成；`aviation_support` Scenario 编译仍需先完成治理批准的字段派生规则。
 - PR-D 数据持久化：`src/spare_mvp_backend/schema.sql` 和 repository helper 已提供 SQLite 版 Project / Scenario / Run / Result / ArtifactManifest 持久化与 `run_id` 身份链查询。

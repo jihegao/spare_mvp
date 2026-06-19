@@ -10,6 +10,9 @@ The files here are draft JSON Schema contracts for the application-facing bounda
 - `result.schema.json`: metrics and summary returned from a Mesa-backed run.
 - `artifact_manifest.schema.json`: versioned index of run artifacts.
 - `scenario_adapter_mapping.json`: evaluator-visible mapping from compiled Scenario JSON input fields to Mesa constructor inputs.
+- `rms_allocation_plan.schema.json`: local RMS allocation plan boundary for top-level R/M/S targets, method selection, and algorithm versioning.
+- `rms_allocation_result.schema.json`: RMS allocation result boundary for node-level targets, bottom-up verification, warnings, and assumptions.
+- `mission_exposure.schema.json`: task-profile exposure matrix boundary for node/phase equivalent mission hours.
 
 These schemas are not a replacement for the Mesa model, ontology, or Claude-governed simulation semantics. They define the application data boundary that backend, database, frontend integration, and evaluator agents can consume.
 

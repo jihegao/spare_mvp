@@ -777,6 +777,119 @@ input {
   text-anchor: middle;
 }
 
+.rms-allocation-workbench {
+  display: grid;
+  gap: 14px;
+}
+
+.rms-plan-bar,
+.rms-equipment-tree,
+.rms-input-panel,
+.rms-verification-panel {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfd;
+}
+
+.rms-plan-bar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.rms-plan-bar h3 {
+  margin: 3px 0;
+}
+
+.rms-plan-bar p,
+.rms-equipment-tree span,
+.rms-warning-list {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.rms-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.rms-layout {
+  display: grid;
+  grid-template-columns: minmax(210px, 0.85fr) minmax(360px, 1.5fr) minmax(260px, 1fr);
+  gap: 12px;
+  align-items: stretch;
+}
+
+.rms-equipment-tree ul {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rms-equipment-tree li {
+  display: grid;
+  gap: 2px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.rms-input-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(160px, 1fr));
+  gap: 10px;
+}
+
+.rms-input-grid label {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.rms-input-grid input,
+.rms-input-grid select {
+  min-width: 0;
+}
+
+.rms-verification-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.rms-warning-list {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.rms-warning-list span {
+  display: block;
+  padding: 8px 10px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.rms-bottom-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
+  gap: 12px;
+}
+
+.table-wrap.compact table {
+  font-size: 12px;
+}
+
 .mc-workbench {
   display: flex;
   flex-direction: column;
@@ -1940,14 +2053,21 @@ tr:last-child td {
   .page-grid,
   .simulation-layout,
   .ontology-layout,
-  .mesa-visual-grid {
+  .mesa-visual-grid,
+  .rms-layout,
+  .rms-bottom-grid {
     grid-template-columns: 1fr;
   }
 
   .mesa-visual-header,
-  .mesa-toolbar {
+  .mesa-toolbar,
+  .rms-plan-bar {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .rms-actions {
+    justify-content: flex-start;
   }
 
   .mesa-side-panel {
@@ -1968,7 +2088,9 @@ tr:last-child td {
 
   .form-table-grid,
   .kpi-strip,
-  .scenario-grid {
+  .scenario-grid,
+  .rms-input-grid,
+  .rms-verification-metrics {
     grid-template-columns: 1fr;
   }
 }

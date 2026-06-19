@@ -12,6 +12,13 @@ import {
   cloneScenario,
   defaultScenario
 } from "./sim-engine.mjs";
+import {
+  calculateRmsAllocation,
+  createDefaultRmsAllocationPlan,
+  createDemoRmsAllocationProject,
+  publishRmsAllocation
+} from "./rms-allocation-engine.mjs";
+import { renderRmsAllocationWorkbench } from "./rms-allocation-workbench.mjs";
 
 const app = document.querySelector("#app");
 const groups = groupFeaturePages(FEATURE_PAGES);
@@ -118,6 +125,10 @@ const SUPPORT_ACTIVITY_PLANS = [
 
 let scenario = cloneScenario(defaultScenario);
 let { singleResult, monteCarloResult } = buildDemoResultState(scenario);
+let rmsAllocationProject = createDemoRmsAllocationProject();
+let rmsAllocationPlan = createDefaultRmsAllocationPlan(rmsAllocationProject);
+let rmsAllocationResult = calculateRmsAllocation(rmsAllocationPlan, rmsAllocationProject);
+let rmsPublishedProject = null;
 let savedProject = null;
 let modelingSnapshot = null;
 let experimentPlan = null;
@@ -287,6 +298,17 @@ function bindEvents() {
       return;
     }
 
+    const rmsActionButton = event.target.closest("[data-rms-action]");
+    if (rmsActionButton) {
+      if (rmsActionButton.dataset.rmsAction === "publish") {
+        rmsPublishedProject = publishRmsAllocation(rmsAllocationProject, rmsAllocationResult);
+      } else {
+        recalculateRmsAllocation();
+      }
+      render();
+      return;
+    }
+
     const monteCarloStartButton = event.target.closest("[data-mc-action='start']");
     if (monteCarloStartButton) {
       const page = getFeaturePageById(selectedFeatureId);
@@ -309,6 +331,14 @@ function bindEvents() {
   });
 
   app.addEventListener("change", (event) => {
+    const rmsInput = event.target.closest("[data-rms-path]");
+    if (rmsInput) {
+      setPath(rmsAllocationPlan, rmsInput.dataset.rmsPath, parseInput(rmsInput));
+      recalculateRmsAllocation();
+      render();
+      return;
+    }
+
     const mcArrayInput = event.target.closest("[data-mc-array-path]");
     if (mcArrayInput) {
       updateMonteCarloArrayInput(mcArrayInput);
@@ -450,7 +480,7 @@ function render() {
         <div class="brand-mark">BJGH</div>
         <div>
           <h1>备件规划及任务可靠度验证评估平台</h1>
-          <p>${htmlEscape(currentProject.name)} / ${htmlEscape(page.module)} / ${htmlEscape(page.secondary)} / ${htmlEscape(page.tertiary)}</p>
+          <p>${htmlEscape(currentProject.name)} / ${renderTopbarContext(page)}</p>
         </div>
       </div>
       <div class="right">
@@ -463,6 +493,11 @@ function render() {
       ${renderFeaturePage(page)}
     </main>
   `;
+}
+
+function renderTopbarContext(page) {
+  if (page.module === "系统管理") return "系统管理 / 装备RMS指标分配";
+  return `${htmlEscape(page.module)} / ${htmlEscape(page.secondary)} / ${htmlEscape(page.tertiary)}`;
 }
 
 function renderLoginPage() {
@@ -546,20 +581,32 @@ function renderNavigation(activePage) {
       ${Object.entries(groups).map(([moduleName, secondaryGroups]) => `
         <details class="nav-module" ${moduleName === activePage.module ? "open" : ""}>
           <summary>${moduleName}</summary>
-          ${Object.entries(secondaryGroups).map(([secondaryName, tertiaryGroups]) => `
-            <details class="nav-secondary" ${secondaryName === activePage.secondary ? "open" : ""}>
-              <summary>${secondaryName}</summary>
-              ${Object.entries(tertiaryGroups).map(([tertiaryName, pages]) => `
-                <button type="button" class="nav-tertiary-link ${isActiveTertiary(activePage, pages) ? "active" : ""}" data-feature-id="${pages[0].id}">
-                  ${tertiaryName}
-                </button>
-              `).join("")}
-            </details>
-          `).join("")}
+          ${moduleName === "系统管理"
+            ? renderSystemManagementNavigation(activePage, secondaryGroups)
+            : Object.entries(secondaryGroups).map(([secondaryName, tertiaryGroups]) => `
+              <details class="nav-secondary" ${secondaryName === activePage.secondary ? "open" : ""}>
+                <summary>${secondaryName}</summary>
+                ${Object.entries(tertiaryGroups).map(([tertiaryName, pages]) => `
+                  <button type="button" class="nav-tertiary-link ${isActiveTertiary(activePage, pages) ? "active" : ""}" data-feature-id="${pages[0].id}">
+                    ${tertiaryName}
+                  </button>
+                `).join("")}
+              </details>
+            `).join("")}
         </details>
       `).join("")}
     </aside>
   `;
+}
+
+function renderSystemManagementNavigation(activePage, secondaryGroups) {
+  return Object.values(secondaryGroups).flatMap((tertiaryGroups) => (
+    Object.values(tertiaryGroups).map((pages) => `
+      <button type="button" class="nav-tertiary-link ${pages.some((page) => page.id === activePage.id) ? "active" : ""}" data-feature-id="${pages[0].id}">
+        ${pages[0].name}
+      </button>
+    `)
+  )).join("");
 }
 
 function renderFeaturePage(page) {
@@ -595,7 +642,9 @@ function shouldShowCurrentContext(page) {
 }
 
 function renderPageHeading(page) {
-  const breadcrumb = `<div class="breadcrumb">${htmlEscape(page.module)} / ${htmlEscape(page.secondary)} / ${htmlEscape(page.tertiary)}</div>`;
+  const breadcrumb = page.module === "系统管理"
+    ? `<div class="breadcrumb">系统管理 / 装备RMS指标分配</div>`
+    : `<div class="breadcrumb">${htmlEscape(page.module)} / ${htmlEscape(page.secondary)} / ${htmlEscape(page.tertiary)}</div>`;
   return `
     <div>
       ${breadcrumb}
@@ -634,6 +683,15 @@ function renderMainComponent(page) {
   if (page.component === "experiment-plan-list") return renderExperimentPlanList(page);
   if (page.component === "experiment-plan-editor") return renderExperimentPlanEditor(page);
   if (page.component === "experiment-form") return renderExperimentPlanEditor(page);
+  if (page.component === "rms-allocation") return renderRmsAllocationWorkbench({
+    project: rmsAllocationProject,
+    plan: rmsAllocationPlan,
+    result: rmsAllocationResult,
+    publishedProject: rmsPublishedProject,
+    htmlEscape,
+    fixed,
+    pct
+  });
   if (page.component === "monte-carlo-config") return renderMonteCarloConfig();
   if (page.component === "monte-carlo-results") return renderMonteCarloResults();
   if (page.component === "analysis") return renderAnalysis(page);
@@ -1725,6 +1783,34 @@ function updateDemoResultsThroughApiClient() {
   const state = buildDemoResultState(buildBackendProjectJson(scenario, currentProject));
   singleResult = state.singleResult;
   monteCarloResult = state.monteCarloResult;
+}
+
+function recalculateRmsAllocation() {
+  try {
+    rmsAllocationResult = calculateRmsAllocation(rmsAllocationPlan, rmsAllocationProject);
+  } catch (err) {
+    rmsAllocationResult = {
+      ok: false,
+      planId: rmsAllocationPlan.planId,
+      planVersion: rmsAllocationPlan.planVersion,
+      status: "method_not_applicable",
+      algorithmVersion: rmsAllocationPlan.algorithmVersion || "rms-engine-1.0.0",
+      exposure: { rows: [], warnings: [] },
+      nodeResults: [],
+      verification: {
+        equipmentTarget: {
+          reliability: Number(rmsAllocationPlan.targets.reliability.value),
+          mttrHours: Number(rmsAllocationPlan.targets.mttrHours),
+          mldtHours: Number(rmsAllocationPlan.targets.mldtHours)
+        },
+        calculated: { reliability: 0, mttrHours: 0, mldtHours: 0 },
+        margin: { reliability: 0, mttrHours: 0, mldtHours: 0 },
+        status: "method_not_applicable"
+      },
+      warnings: [{ code: "RMS_METHOD_NOT_APPLICABLE", message: err && err.message ? err.message : "当前分配方法不适用" }],
+      assumptions: rmsAllocationPlan.assumptions || []
+    };
+  }
 }
 
 async function loadAviationSupportState(steps = aviationSteps) {

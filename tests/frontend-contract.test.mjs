@@ -6,10 +6,11 @@ import { FEATURE_PAGES, getFeaturePageById, groupFeaturePages } from "../front/f
 import { buildOntologyContext, buildProjectOntology, PROJECT_ONTOLOGY, PROJECT_ONTOLOGY_PLAYGROUND } from "../front/ontology-context.mjs";
 
 test("feature catalog exposes all table-2 four-level pages", () => {
-  assert.equal(FEATURE_PAGES.length, 49);
-  assert.equal(new Set(FEATURE_PAGES.map((page) => page.id)).size, 49);
+  assert.equal(FEATURE_PAGES.length, 50);
+  assert.equal(new Set(FEATURE_PAGES.map((page) => page.id)).size, 50);
   assert.equal(FEATURE_PAGES.filter((page) => page.module === "备件规划评估模块").length, 24);
   assert.equal(FEATURE_PAGES.filter((page) => page.module === "任务可靠度评估模块").length, 25);
+  assert.equal(FEATURE_PAGES.filter((page) => page.module === "系统管理").length, 1);
   for (const label of ["装备可靠性框图建模", "蒙特卡洛实验结果", "飞机转场携行清单分析", "任务可靠度评估", "停机因素分析"]) {
     assert.ok(FEATURE_PAGES.some((page) => page.name === label), label);
   }
@@ -60,6 +61,7 @@ test("feature grouping preserves three-level navigation and internal fourth-leve
     "修复性维修活动建模"
   ]);
   assert.ok(grouped["任务可靠度评估模块"]["仿真建模"]["装备建模"].some((page) => page.name === "装备可靠性框图建模"));
+  assert.deepEqual(grouped["系统管理"]["装备RMS指标分配"]["装备RMS指标分配"].map((page) => page.name), ["装备RMS指标分配"]);
   assert.deepEqual(grouped["备件规划评估模块"]["仿真实验"]["仿真实验方案管理"].map((page) => page.name), ["方案列表", "方案编辑"]);
   assert.deepEqual(grouped["任务可靠度评估模块"]["仿真实验"]["仿真实验方案管理"].map((page) => page.name), ["方案列表", "方案编辑"]);
   assert.deepEqual(grouped["备件规划评估模块"]["仿真实验"]["可视化推演"].map((page) => page.name), ["可视化实验启动与停止"]);
@@ -80,6 +82,8 @@ test("feature grouping preserves three-level navigation and internal fourth-leve
   assert.equal(getFeaturePageById("spare-planning-scenario-switch").component, "visual-simulation");
   assert.equal(getFeaturePageById("spare-planning-visual-results").component, "visual-simulation");
   assert.equal(getFeaturePageById("mission-reliability-task-reliability").name, "任务可靠度评估");
+  assert.equal(getFeaturePageById("system-management-equipment-rms-allocation").component, "rms-allocation");
+  assert.equal(getFeaturePageById("mission-reliability-rms-allocation").id, "system-management-equipment-rms-allocation");
 });
 
 test("task profile parameter page keeps mission profile fields reachable", async () => {
@@ -459,6 +463,40 @@ test("monte carlo evaluation result is rendered in result analysis page", async 
   assert.match(appSource, /目标值/);
   assert.match(appSource, /mc-result-cards/);
   assert.match(appSource, /mc-evaluation-table/);
+});
+
+test("system management exposes an independent equipment RMS allocation workbench", async () => {
+  const page = getFeaturePageById("system-management-equipment-rms-allocation");
+  assert.equal(page.module, "系统管理");
+  assert.equal(page.secondary, "装备RMS指标分配");
+  assert.equal(page.tertiary, "装备RMS指标分配");
+  assert.equal(page.name, "装备RMS指标分配");
+  assert.deepEqual(page.dataObjects, ["rmsAllocationPlan", "equipmentNodes", "missionExposure", "allocationResults"]);
+
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const styleSource = await readFile(new URL("../front/styles.css", import.meta.url), "utf8");
+  assert.match(appSource, /renderRmsAllocationWorkbench/);
+  assert.match(appSource, /data-rms-path/);
+  assert.match(appSource, /calculateRmsAllocation\(rmsAllocationPlan, rmsAllocationProject\)/);
+  assert.match(appSource, /publishRmsAllocation\(rmsAllocationProject, rmsAllocationResult\)/);
+  assert.match(appSource, /function renderTopbarContext\(page\)/);
+  assert.match(appSource, /htmlEscape\(currentProject\.name\)} \/ \$\{renderTopbarContext\(page\)\}/);
+  assert.match(appSource, /系统管理 \/ 装备RMS指标分配/);
+  assert.match(styleSource, /\.rms-allocation-workbench/);
+  assert.match(styleSource, /\.rms-equipment-tree/);
+  assert.match(styleSource, /\.rms-verification-panel/);
+
+  const workbenchSource = await readFile(new URL("../front/rms-allocation-workbench.mjs", import.meta.url), "utf8");
+  assert.match(workbenchSource, /可靠性分配 \/ RMS 分配/);
+  assert.match(workbenchSource, /data-rms-action="publish"/);
+  assert.match(workbenchSource, /装备级任务可靠度 R\(T\)/);
+  assert.match(workbenchSource, /可靠性分配方法/);
+  assert.match(workbenchSource, /等分配法/);
+  assert.match(workbenchSource, /比例分配法/);
+  assert.match(workbenchSource, /AGREE 分配法/);
+  assert.match(workbenchSource, /评分分配法/);
+  assert.match(workbenchSource, /任务暴露矩阵/);
+  assert.match(workbenchSource, /自底向上校核/);
 });
 
 test("project ontology covers the four rebuild-plan layers", () => {
