@@ -1,0 +1,131 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spare-mvp.local/contracts/modeling_import.schema.json",
+  "title": "M5 Modeling Import Package",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["schemaVersion", "importId", "projectId", "lifecycle", "objects"],
+  "properties": {
+    "schemaVersion": { "const": "modeling-import-v1" },
+    "importId": { "type": "string" },
+    "projectId": { "type": "string" },
+    "source": {
+      "type": "object",
+      "required": ["type", "name"],
+      "properties": {
+        "type": { "type": "string", "enum": ["json_fixture", "csv_stub"] },
+        "name": { "type": "string" }
+      }
+    },
+    "lifecycle": {
+      "type": "object",
+      "required": ["state", "version", "referencedRunIds"],
+      "properties": {
+        "state": { "type": "string", "enum": ["draft", "published"] },
+        "version": { "type": "integer", "minimum": 1 },
+        "referencedRunIds": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "objects": {
+      "type": "object",
+      "required": ["missionProfiles", "equipmentAssets", "supportResources", "supportActivities"],
+      "properties": {
+        "missionProfiles": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/missionProfile" }
+        },
+        "equipmentAssets": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/equipmentAsset" }
+        },
+        "supportResources": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/supportResource" }
+        },
+        "supportActivities": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/supportActivity" }
+        }
+      }
+    },
+    "changes": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/change" }
+    },
+    "validation": {
+      "type": "object",
+      "required": ["status", "issues"],
+      "properties": {
+        "status": { "type": "string", "enum": ["valid", "invalid"] },
+        "issues": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/validationIssue" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "missionProfile": {
+      "type": "object",
+      "required": ["id", "name", "durationHours"],
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "durationHours": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+    "equipmentAsset": {
+      "type": "object",
+      "required": ["id", "name", "quantity"],
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "parentId": { "type": "string" },
+        "quantity": { "type": "number", "exclusiveMinimum": 0 },
+        "mtbfHours": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+    "supportResource": {
+      "type": "object",
+      "required": ["id", "name", "capacity"],
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "capacity": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+    "supportActivity": {
+      "type": "object",
+      "required": ["id", "name", "equipmentId", "resourceId", "durationHours"],
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "equipmentId": { "type": "string" },
+        "resourceId": { "type": "string" },
+        "durationHours": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+    "change": {
+      "type": "object",
+      "required": ["operation", "objectType", "objectId", "fieldPath"],
+      "properties": {
+        "operation": { "type": "string", "enum": ["create", "update", "delete"] },
+        "objectType": { "type": "string" },
+        "objectId": { "type": "string" },
+        "fieldPath": { "type": "string" }
+      }
+    },
+    "validationIssue": {
+      "type": "object",
+      "required": ["code", "severity", "page", "object_id", "field_path", "message"],
+      "properties": {
+        "code": { "type": "string" },
+        "severity": { "type": "string", "enum": ["error", "warning"] },
+        "page": { "type": "string" },
+        "object_id": { "type": "string" },
+        "field_path": { "type": "string" },
+        "message": { "type": "string" }
+      }
+    }
+  }
+}

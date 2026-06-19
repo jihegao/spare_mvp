@@ -16,6 +16,9 @@
   "mapping_files": [
     "scenario_adapter_mapping.json"
   ],
+  "m5_schema_files": [
+    "modeling_import.schema.json"
+  ],
   "fixture_files": [
     "tests/fixtures/smoke_project.json",
     "tests/fixtures/smoke_scenario.json",
@@ -27,6 +30,9 @@
     "tests/fixtures/aviation_support_run.json",
     "tests/fixtures/aviation_support_result.json",
     "tests/fixtures/aviation_support_artifact_manifest.json"
+  ],
+  "m5_fixture_files": [
+    "tests/fixtures/modeling_import_project.json"
   ],
   "governance": "Project JSON may be edited by the frontend; Scenario JSON must be compiled by the Simulation Adapter; Mesa semantics remain Claude-governed."
 }

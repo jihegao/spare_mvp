@@ -1,6 +1,6 @@
 # 产品里程碑路线图
 
-日期：2026-06-18
+日期：2026-06-19
 
 ## 定位
 
@@ -230,10 +230,10 @@ M3-1 当前收束：已完成浏览器同源后端闭环 smoke，证据见 `repo
 
 核心工作：
 
-1. 支持 Excel/JSON 导入。
+1. 首片先支持 JSON fixture 或简化 CSV 导入/校验；Excel 作为后续导入适配层。
 2. 支持字段清洗、引用校验、对象增删改。
 3. 支持版本保存、差异对比、草稿/已发布状态。
-4. 支持错误定位和导出后端可消费的 `Scenario`。
+4. 支持错误定位，并通过 Simulation Adapter 生成后端可消费的 `Scenario`。
 5. 校验任务、装备、保障组织、保障活动、备件、指标方案之间的引用关系。
 
 必须阻断的问题：
@@ -249,6 +249,12 @@ M3-1 当前收束：已完成浏览器同源后端闭环 smoke，证据见 `repo
 1. 用户可以从真实项目资料导入或维护一个项目。
 2. 系统可以从已发布项目数据生成后端可消费的 `Scenario`。
 3. 错误提示能定位到字段、对象和引用路径。
+
+当前首片实现入口：
+
+1. `contracts/modeling_import.schema.json` 定义导入包、草稿/发布生命周期、对象集合、变更和校验问题结构。
+2. `front/modeling-import-contract.mjs` 校验重复编号、悬空引用、非法数值和已发布且被运行引用后的覆盖保护。
+3. `tests/modeling-import-contract.test.mjs` 和 `tests/fixtures/modeling_import_project.json` 固化 JSON fixture 首片，不包含完整 Excel UI、权限审计、生产 worker、Mesa 行为变更或 `aviation_support` Scenario 编译解锁。
 
 ## M6：仿真引擎服务化
 
