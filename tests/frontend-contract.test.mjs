@@ -131,10 +131,14 @@ test("support organization fourth-level tab ids resolve to distinct resource pag
   }
 });
 
-test("scheme list is the post-login landing page and plan name links back to it", async () => {
+test("equipment composition modeling is the post-project landing page and plan name links back to plan list", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const styleSource = await readFile(new URL("../front/styles.css", import.meta.url), "utf8");
-  assert.match(appSource, /const DEFAULT_FEATURE_ID = "spare-planning-experiment-plan-list"/);
+  assert.match(appSource, /const DEFAULT_FEATURE_ID = "spare-planning-equipment-composition"/);
+  assert.equal(getFeaturePageById("spare-planning-equipment-composition").module, "备件规划评估模块");
+  assert.equal(getFeaturePageById("spare-planning-equipment-composition").secondary, "仿真建模");
+  assert.equal(getFeaturePageById("spare-planning-equipment-composition").tertiary, "装备系统建模");
+  assert.equal(getFeaturePageById("spare-planning-equipment-composition").name, "装备组成建模");
   assert.match(appSource, /const DEFAULT_ROUTE = "login"/);
   assert.match(appSource, /function renderLoginPage/);
   assert.match(appSource, /function renderProjectListPage/);
@@ -349,15 +353,32 @@ test("equipment modeling pages use ship front tree attributes with quantity and 
 
 test("equipment tree selection drives the selected component edit path", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
-  assert.match(appSource, /let selectedEquipmentComponentIndex = 0/);
-  assert.match(appSource, /data-select-equipment-component="\$\{componentIndex\}"/);
-  assert.match(appSource, /selectedEquipmentComponentIndex = clampEquipmentComponentIndex\(Number\(equipmentComponentNode\.dataset\.selectEquipmentComponent\)\)/);
+  assert.match(appSource, /let selectedEquipmentNodeKey = ""/);
+  assert.match(appSource, /data-select-equipment-aircraft="\$\{htmlEscape\(model\)\}"/);
+  assert.match(appSource, /data-select-equipment-component="\$\{htmlEscape\(component\.id\)\}"/);
+  assert.match(appSource, /selectedEquipmentNodeKey = `aircraft:\$\{equipmentAircraftNode\.dataset\.selectEquipmentAircraft\}`/);
+  assert.match(appSource, /selectedEquipmentNodeKey = `component:\$\{equipmentComponentNode\.dataset\.selectEquipmentComponent\}`/);
   assert.match(appSource, /function clampEquipmentComponentIndex\(index\)/);
-  assert.match(appSource, /const selectedIndex = clampEquipmentComponentIndex\(selectedEquipmentComponentIndex\)/);
+  assert.match(appSource, /const selectedState = resolveSelectedEquipmentNode\(\)/);
   assert.match(appSource, /renderEquipmentCompositionFields\(selectedIndex\)/);
   assert.match(appSource, /renderEquipmentFailureFields\(selectedIndex\)/);
   assert.match(appSource, /renderEquipmentFailureRmsFields\(selected, selectedIndex\)/);
   assert.match(appSource, /field\("组件名称", `components\.\$\{selectedIndex\}\.name`\)/);
+});
+
+test("equipment tree add node follows ship front selected aircraft and subsystem behavior", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const equipmentSource = appSource.slice(
+    appSource.indexOf("function renderEquipmentModeling"),
+    appSource.indexOf("function renderEquipmentFailureRmsFields")
+  );
+  assert.match(equipmentSource, /data-equipment-add-node/);
+  assert.match(equipmentSource, /function buildEquipmentTreeNodes\(\)/);
+  assert.match(equipmentSource, /function buildEquipmentComponentTreeNodes\(aircraftModel, parentId\)/);
+  assert.match(appSource, /function addEquipmentNodeForSelection\(\)/);
+  assert.match(appSource, /parentId: selectedState\.kind === "aircraft" \? "aircraft-root" : selectedState\.component\.id/);
+  assert.match(appSource, /productType: selectedState\.kind === "aircraft" \? "SRU" : "LRU"/);
+  assert.match(appSource, /selectedEquipmentNodeKey = `component:\$\{newComponent\.id\}`/);
 });
 
 test("equipment composition page only renders tree and basic composition fields", async () => {

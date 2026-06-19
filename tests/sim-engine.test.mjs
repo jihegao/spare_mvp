@@ -23,9 +23,10 @@ test("default scenario includes airport and mission area attributes", () => {
 test("default scenario includes combat unit member aircraft", () => {
   assert.equal(defaultScenario.combatUnit.groupName, "第一出动编队");
   assert.equal(defaultScenario.combatUnit.requiredCount, 5);
-  assert.equal(defaultScenario.combatUnit.members.length, 8);
-  assert.deepEqual(defaultScenario.equipment.wholeMachineModels, ["F35", "F15", "Z20"]);
-  assert.deepEqual(new Set(defaultScenario.combatUnit.members.map((member) => member.model)), new Set(["F35", "F15", "Z20"]));
+  assert.equal(defaultScenario.combatUnit.members.length, 6);
+  assert.deepEqual(defaultScenario.equipment.wholeMachineModels, ["F35", "F15"]);
+  assert.deepEqual(new Set(defaultScenario.combatUnit.members.map((member) => member.model)), new Set(["F35", "F15"]));
+  assert.equal(defaultScenario.combatUnit.members.some((member) => member.model === "Z20"), false);
   assert.deepEqual(defaultScenario.combatUnit.members.slice(0, 2).map((member) => member.aircraftNo), ["F35-01", "F35-02"]);
 });
 
@@ -59,7 +60,10 @@ test("default scenario includes equipment tree quantity and n-out-of-k attribute
   assert.equal(defaultScenario.components[0].kOutOfN.enabled, true);
   assert.equal(defaultScenario.components[0].kOutOfN.n, 2);
   assert.equal(defaultScenario.components[0].kOutOfN.k, 1);
-  assert.equal(defaultScenario.components[1].parentId, "aircraft-root");
+  assert.equal(defaultScenario.components[0].aircraftModel, "F35");
+  assert.equal(defaultScenario.components[1].parentId, "f35-engine");
+  assert.equal(defaultScenario.components.some((component) => component.aircraftModel === "Z20"), false);
+  assert.ok(defaultScenario.components.some((component) => component.aircraftModel === "F15" && component.parentId === "aircraft-root"));
 });
 
 test("default scenario includes component RMS attributes", () => {

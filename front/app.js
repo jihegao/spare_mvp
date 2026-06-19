@@ -26,7 +26,7 @@ const CONTRACT_BASE = "http://127.0.0.1:8521"; // Mesa 契约服务（见 agent.
 const backendApi = createBackendApiClient({ baseUrl: "/api" });
 const LAST_BACKEND_RUN_STORAGE_KEY = "spare-mvp:lastBackendRun";
 const DEFAULT_ROUTE = "login";
-const DEFAULT_FEATURE_ID = "spare-planning-experiment-plan-list";
+const DEFAULT_FEATURE_ID = "spare-planning-equipment-composition";
 const DEMO_USERS = [
   { username: "admin", role: "系统管理员" },
   { username: "data", role: "数据管理员" },
@@ -88,9 +88,6 @@ const SUPPORT_ACTIVITY_PLANS = [
         ] },
         { id: "ops-f15", name: "F15", children: [
           { id: "ops-f15-strike", name: "对海突击任务", children: [{ id: "ops-f15-strike-pre", name: "飞行前准备" }, { id: "ops-f15-strike-turn", name: "再次出动准备" }, { id: "ops-f15-strike-post", name: "飞行后检查" }] }
-        ] },
-        { id: "ops-z20", name: "Z20", children: [
-          { id: "ops-z20-transport", name: "低空转运任务", children: [{ id: "ops-z20-transport-pre", name: "飞行前准备" }, { id: "ops-z20-transport-turn", name: "再次出动准备" }, { id: "ops-z20-transport-post", name: "飞行后检查" }] }
         ] }
       ]
     }
@@ -106,8 +103,7 @@ const SUPPORT_ACTIVITY_PLANS = [
       name: "预防性维修活动",
       children: [
         { id: "preventive-f35", name: "F35", children: [{ id: "preventive-f35-daily", name: "日检" }, { id: "preventive-f35-weekly", name: "周检" }, { id: "preventive-f35-phase", name: "阶段检" }] },
-        { id: "preventive-f15", name: "F15", children: [{ id: "preventive-f15-daily", name: "日检" }, { id: "preventive-f15-weekly", name: "周检" }] },
-        { id: "preventive-z20", name: "Z20", children: [{ id: "preventive-z20-daily", name: "日检" }, { id: "preventive-z20-weekly", name: "周检" }] }
+        { id: "preventive-f15", name: "F15", children: [{ id: "preventive-f15-daily", name: "日检" }, { id: "preventive-f15-weekly", name: "周检" }] }
       ]
     }
   },
@@ -122,8 +118,7 @@ const SUPPORT_ACTIVITY_PLANS = [
       name: "修复性维修活动",
       children: [
         { id: "corrective-f35", name: "F35", children: [{ id: "corrective-f35-engine", name: "发动机备件故障" }, { id: "corrective-f35-avionics", name: "航电模块故障" }, { id: "corrective-f35-hydraulic", name: "液压备件故障" }] },
-        { id: "corrective-f15", name: "F15", children: [{ id: "corrective-f15-engine", name: "发动机备件故障" }, { id: "corrective-f15-parachute", name: "制动伞检查" }] },
-        { id: "corrective-z20", name: "Z20", children: [{ id: "corrective-z20-engine", name: "发动机备件故障" }, { id: "corrective-z20-rotor", name: "旋翼系统故障" }] }
+        { id: "corrective-f15", name: "F15", children: [{ id: "corrective-f15-engine", name: "发动机备件故障" }, { id: "corrective-f15-parachute", name: "制动伞检查" }] }
       ]
     }
   },
@@ -217,6 +212,7 @@ let experimentRunStatus = "当前";
 let isProjectMenuOpen = false;
 let selectedPeriodicTaskId = "";
 let selectedEquipmentComponentIndex = 0;
+let selectedEquipmentNodeKey = "";
 
 const PERIODIC_WEEKDAY_FIELDS = [
   { key: "mondayCompositeTaskId", legacyKey: "monday", label: "周一" },
@@ -258,6 +254,29 @@ function bindEvents() {
       suppressOntologyClick = false;
       event.preventDefault();
       event.stopPropagation();
+      return;
+    }
+
+    const clickedTreeToggleIcon = event.target.closest(".tree-node-toggle");
+    const equipmentAddNodeButton = event.target.closest("[data-equipment-add-node]");
+    if (equipmentAddNodeButton) {
+      addEquipmentNodeForSelection();
+      render();
+      return;
+    }
+
+    const equipmentAircraftNode = event.target.closest("[data-select-equipment-aircraft]");
+    if (equipmentAircraftNode && !clickedTreeToggleIcon) {
+      selectedEquipmentNodeKey = `aircraft:${equipmentAircraftNode.dataset.selectEquipmentAircraft}`;
+      render();
+      return;
+    }
+
+    const equipmentComponentNode = event.target.closest("[data-select-equipment-component]");
+    if (equipmentComponentNode && !clickedTreeToggleIcon) {
+      selectedEquipmentNodeKey = `component:${equipmentComponentNode.dataset.selectEquipmentComponent}`;
+      selectedEquipmentComponentIndex = clampEquipmentComponentIndex(findEquipmentComponentIndexById(equipmentComponentNode.dataset.selectEquipmentComponent));
+      render();
       return;
     }
 
@@ -461,13 +480,6 @@ function bindEvents() {
       selectedRoute = "workbench";
       selectedFeatureId = getPlanListFeatureId(page.module);
       location.hash = `feature=${selectedFeatureId}`;
-      render();
-      return;
-    }
-
-    const equipmentComponentNode = event.target.closest("[data-select-equipment-component]");
-    if (equipmentComponentNode) {
-      selectedEquipmentComponentIndex = clampEquipmentComponentIndex(Number(equipmentComponentNode.dataset.selectEquipmentComponent));
       render();
       return;
     }
@@ -1940,50 +1952,64 @@ function diffTimeMinutes(start, end) {
 }
 
 function renderEquipmentModeling(page) {
-  const selectedIndex = clampEquipmentComponentIndex(selectedEquipmentComponentIndex);
+  const selectedState = resolveSelectedEquipmentNode();
+  const selectedIndex = selectedState.componentIndex ?? clampEquipmentComponentIndex(selectedEquipmentComponentIndex);
   const selected = scenario.components[selectedIndex] || {};
   const isFailurePage = page.name.includes("故障");
-  const equipmentModels = wholeMachineModels();
   return `
     <div class="section-head section-context">
       <span>${isFailurePage ? "故障属性 / 数量 / N中取K参数 / RMS指标" : "组成树 / 组成属性"}</span>
     </div>
-    <div class="organization-layout">
+    <div class="organization-layout equipment-layout">
       <aside class="tree-container">
         <div class="tree-toolbar">
           <h4>装备组成树</h4>
-          <div><button type="button" class="btn-primary">新增节点</button><button type="button">导入</button></div>
+          <div class="equipment-toolbar"><button type="button" class="btn-primary" data-equipment-add-node>新增节点</button><button type="button">导入</button></div>
         </div>
-        ${renderCollapsibleTree(equipmentModels.map((model, index) => ({
-          id: `equipment-tree:${model}`,
-          label: model,
-          meta: index === 0 ? `${scenario.equipment.quantity} 架` : "整机级",
-          root: true,
-          children: scenario.components.map((component, componentIndex) => ({
-            id: `equipment-component:${model}:${component.id || component.name}`,
-            label: component.name,
-            meta: `${component.quantity} 件 / ${component.connectionType}`,
-            selected: componentIndex === selectedIndex,
-            actionAttrs: `data-select-equipment-component="${componentIndex}"`
-          }))
-        })))}
+        ${renderCollapsibleTree(buildEquipmentTreeNodes())}
       </aside>
       <section class="detail-panel">
         <div class="detail-card">
           <div class="section-head">
-            <h3>${isFailurePage ? "故障属性" : "组成属性"}</h3>
-            <span>${htmlEscape(selected.name || "")}</span>
+            <h3>${selectedState.kind === "aircraft" ? "飞机属性" : isFailurePage ? "故障属性" : "组成属性"}</h3>
+            <span>${htmlEscape(selectedState.kind === "aircraft" ? selectedState.aircraftModel : selected.name || "")}</span>
           </div>
           <div class="form-table-grid">
-            ${isFailurePage ? renderEquipmentFailureFields(selectedIndex) : renderEquipmentCompositionFields(selectedIndex)}
+            ${selectedState.kind === "aircraft" ? renderEquipmentAircraftFields(selectedState.aircraftModel) : isFailurePage ? renderEquipmentFailureFields(selectedIndex) : renderEquipmentCompositionFields(selectedIndex)}
           </div>
         </div>
-        ${isFailurePage ? renderEquipmentFailureRmsFields(selected, selectedIndex) : ""}
+        ${isFailurePage && selectedState.kind !== "aircraft" ? renderEquipmentFailureRmsFields(selected, selectedIndex) : ""}
         ${isFailurePage ? renderEquipmentComponentTable() : ""}
         ${isFailurePage ? renderAircraftStateDataTable() : ""}
       </section>
     </div>
   `;
+}
+
+function buildEquipmentTreeNodes() {
+  const selectedState = resolveSelectedEquipmentNode();
+  return wholeMachineModels().map((model) => ({
+    id: `equipment-tree:${model}`,
+    label: model,
+    meta: "整机级",
+    root: true,
+    selected: selectedState.kind === "aircraft" && selectedState.aircraftModel === model,
+    actionAttrs: `data-select-equipment-aircraft="${htmlEscape(model)}"`,
+    children: buildEquipmentComponentTreeNodes(model, "aircraft-root")
+  }));
+}
+
+function buildEquipmentComponentTreeNodes(aircraftModel, parentId) {
+  return (scenario.components || [])
+    .filter((component) => componentBelongsToAircraft(component, aircraftModel) && String(component.parentId || "aircraft-root") === parentId)
+    .map((component) => ({
+      id: `equipment-component:${aircraftModel}:${component.id || component.name}`,
+      label: component.name,
+      meta: `${component.quantity} 件 / ${component.connectionType}`,
+      selected: selectedEquipmentNodeKey === `component:${component.id}`,
+      actionAttrs: `data-select-equipment-component="${htmlEscape(component.id)}"`,
+      children: buildEquipmentComponentTreeNodes(aircraftModel, component.id)
+    }));
 }
 
 function wholeMachineModels() {
@@ -1993,17 +2019,93 @@ function wholeMachineModels() {
   return Array.from(new Set(models.filter(Boolean)));
 }
 
+function componentBelongsToAircraft(component, aircraftModel) {
+  return !component.aircraftModel || String(component.aircraftModel) === String(aircraftModel);
+}
+
+function findEquipmentComponentIndexById(componentId) {
+  return (scenario.components || []).findIndex((component) => String(component.id || "") === String(componentId || ""));
+}
+
+function resolveSelectedEquipmentNode() {
+  const models = wholeMachineModels();
+  if (selectedEquipmentNodeKey.startsWith("aircraft:")) {
+    const aircraftModel = selectedEquipmentNodeKey.slice("aircraft:".length);
+    if (models.includes(aircraftModel)) return { kind: "aircraft", aircraftModel };
+  }
+  if (selectedEquipmentNodeKey.startsWith("component:")) {
+    const componentId = selectedEquipmentNodeKey.slice("component:".length);
+    const componentIndex = findEquipmentComponentIndexById(componentId);
+    const component = scenario.components[componentIndex];
+    if (component) return { kind: "component", component, componentIndex, aircraftModel: component.aircraftModel || models[0] || "" };
+  }
+  const componentIndex = clampEquipmentComponentIndex(selectedEquipmentComponentIndex);
+  const component = scenario.components[componentIndex];
+  if (component) {
+    selectedEquipmentNodeKey = `component:${component.id}`;
+    return { kind: "component", component, componentIndex, aircraftModel: component.aircraftModel || models[0] || "" };
+  }
+  return { kind: "aircraft", aircraftModel: models[0] || "" };
+}
+
 function clampEquipmentComponentIndex(index) {
   return clamp(Number.isFinite(index) ? index : 0, 0, Math.max((scenario.components || []).length - 1, 0));
+}
+
+function addEquipmentNodeForSelection() {
+  const selectedState = resolveSelectedEquipmentNode();
+  const aircraftModel = selectedState.aircraftModel || wholeMachineModels()[0] || scenario.equipment.model || "装备";
+  const parentId = selectedState.kind === "aircraft" ? "aircraft-root" : selectedState.component.id;
+  const siblingCount = (scenario.components || []).filter((component) => componentBelongsToAircraft(component, aircraftModel) && String(component.parentId || "aircraft-root") === String(parentId)).length;
+  const newComponent = {
+    id: nextEquipmentComponentId(aircraftModel, parentId),
+    aircraftModel,
+    parentId: selectedState.kind === "aircraft" ? "aircraft-root" : selectedState.component.id,
+    name: selectedState.kind === "aircraft" ? `新增分系统${siblingCount + 1}` : `新增子系统${siblingCount + 1}`,
+    productType: selectedState.kind === "aircraft" ? "SRU" : "LRU",
+    spareType: selectedState.kind === "aircraft" ? "通用备件" : (selectedState.component.spareType || "通用备件"),
+    failureModel: "随机",
+    failureDistribution: { distributionType: "指数分布", parameters: "lambda=0.03" },
+    failureRate: 0.03,
+    mtbfHours: 120,
+    lifeLimitHours: 240,
+    connectionType: selectedState.kind === "aircraft" ? "串联" : "并联",
+    quantity: 1,
+    kOutOfN: { enabled: false, n: 1, k: 1 },
+    specialRepairProfile: { repairTimeMinutes: 120, repairRatio: 0.5, replacementRatio: 0.5 },
+    rms: { reliability: 0.95, maintainability: 0.9, supportability: 0.9, mttrHours: 2.5, mldtHours: 1.2, availability: 0.97 }
+  };
+  scenario.components.push(newComponent);
+  selectedEquipmentComponentIndex = scenario.components.length - 1;
+  selectedEquipmentNodeKey = `component:${newComponent.id}`;
+  updateDemoResultsThroughApiClient();
+}
+
+function nextEquipmentComponentId(aircraftModel, parentId) {
+  const prefix = `${String(aircraftModel || "equipment").toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${String(parentId || "node").toLowerCase().replace(/[^a-z0-9]+/g, "-")}-node`;
+  const existingIds = new Set((scenario.components || []).map((component) => String(component.id || "")));
+  let index = existingIds.size + 1;
+  while (existingIds.has(`${prefix}-${index}`)) index += 1;
+  return `${prefix}-${index}`;
 }
 
 function renderEquipmentCompositionFields(selectedIndex) {
   return `
     ${field("组件名称", `components.${selectedIndex}.name`)}
     ${field("父节点", `components.${selectedIndex}.parentId`)}
+    ${field("所属飞机", `components.${selectedIndex}.aircraftModel`)}
     <label>产品类型${valueSelect(`components.${selectedIndex}.productType`, PRODUCT_TYPE_OPTIONS)}</label>
     ${field("备件类型", `components.${selectedIndex}.spareType`)}
     ${field("连接类型", `components.${selectedIndex}.connectionType`)}
+  `;
+}
+
+function renderEquipmentAircraftFields(aircraftModel) {
+  return `
+    <label>飞机型号<input readonly value="${htmlEscape(aircraftModel)}"></label>
+    <label>节点类型<input readonly value="整机级"></label>
+    <label>整机数量<input readonly value="${htmlEscape(aircraftModel === scenario.equipment.model ? scenario.equipment.quantity : "整机级")}"></label>
+    <label>新增规则<input readonly value="选中飞机新增分系统，选中分系统新增子系统"></label>
   `;
 }
 
