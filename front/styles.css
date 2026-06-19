@@ -664,8 +664,21 @@ input {
   cursor: pointer;
 }
 
+.tree-node-label[data-select-basic-mission],
+.tree-node-label[data-select-basic-mission-equipment],
+.tree-node-label[data-select-support-org-node] {
+  cursor: pointer;
+}
+
 .tree-node-label:hover {
   background: var(--primary-soft);
+}
+
+.tree-node-label.selected {
+  border-color: var(--primary);
+  background: #e8f0ff;
+  color: #173a70;
+  font-weight: 700;
 }
 
 .tree-node-label.root {
@@ -1176,6 +1189,12 @@ input {
   background: var(--primary-soft);
 }
 
+.object-tree > .tree-node-item > .tree-node-label.selected,
+.tree-node-list > .tree-node-item > .tree-node-label.selected {
+  border-color: var(--primary);
+  background: #e8f0ff;
+}
+
 .tree-node {
   display: flex;
   justify-content: space-between;
@@ -1196,6 +1215,11 @@ input {
   overflow: auto;
   border: 1px solid var(--line);
   border-radius: 8px;
+}
+
+.table-wrap.unframed-table {
+  border: 0;
+  border-radius: 0;
 }
 
 table {
@@ -1220,6 +1244,14 @@ th {
 
 tr:last-child td {
   border-bottom: none;
+}
+
+tr[data-select-combat-unit-member] {
+  cursor: pointer;
+}
+
+tr.selected-table-row {
+  background: #e8f1ff;
 }
 
 .compact-table {

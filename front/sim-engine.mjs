@@ -170,12 +170,12 @@ export const defaultScenario = {
     deploymentLocation: "主基地机场",
     standbyCount: 1,
     members: [
-      { aircraftNo: "F35-01", model: "F35", role: "长机", status: "执行", remainingLifeHours: 180, deploymentLocation: "主基地机场" },
-      { aircraftNo: "F35-02", model: "F35", role: "僚机", status: "执行", remainingLifeHours: 176, deploymentLocation: "主基地机场" },
-      { aircraftNo: "F35-03", model: "F35", role: "僚机", status: "执行", remainingLifeHours: 169, deploymentLocation: "主基地机场" },
-      { aircraftNo: "F15-01", model: "F15", role: "僚机", status: "执行", remainingLifeHours: 164, deploymentLocation: "主基地机场" },
-      { aircraftNo: "F15-02", model: "F15", role: "备份", status: "备用", remainingLifeHours: 171, deploymentLocation: "主基地机场" },
-      { aircraftNo: "F35-04", model: "F35", role: "备份", status: "备用", remainingLifeHours: 152, deploymentLocation: "主基地机场" }
+      { aircraftNo: "F35-01", model: "F35", role: "长机", status: "执行", remainingLifeHours: 180, preLifeRequirementHours: 120, takeoffLandingCount: 36, deploymentLocation: "主基地机场" },
+      { aircraftNo: "F35-02", model: "F35", role: "僚机", status: "执行", remainingLifeHours: 176, preLifeRequirementHours: 120, takeoffLandingCount: 34, deploymentLocation: "主基地机场" },
+      { aircraftNo: "F35-03", model: "F35", role: "僚机", status: "执行", remainingLifeHours: 169, preLifeRequirementHours: 120, takeoffLandingCount: 32, deploymentLocation: "主基地机场" },
+      { aircraftNo: "F15-01", model: "F15", role: "僚机", status: "执行", remainingLifeHours: 164, preLifeRequirementHours: 120, takeoffLandingCount: 42, deploymentLocation: "主基地机场" },
+      { aircraftNo: "F15-02", model: "F15", role: "备份", status: "备用", remainingLifeHours: 171, preLifeRequirementHours: 120, takeoffLandingCount: 39, deploymentLocation: "主基地机场" },
+      { aircraftNo: "F35-04", model: "F35", role: "备份", status: "备用", remainingLifeHours: 152, preLifeRequirementHours: 120, takeoffLandingCount: 31, deploymentLocation: "主基地机场" }
     ]
   },
   equipment: {
