@@ -11,7 +11,7 @@ import {
 import {
   cloneScenario,
   defaultScenario
-} from "./sim-engine.mjs?v=20260619-support-activity";
+} from "./sim-engine.mjs?v=20260619-task-modeling";
 import {
   calculateRmsAllocation,
   createDefaultRmsAllocationPlan,
@@ -73,51 +73,71 @@ const SUPPORT_ACTIVITY_PLANS = [
   },
   {
     type: "使用保障活动建模",
-    name: "歼-35近海巡逻飞行前准备方案",
+    name: "F35近海巡逻飞行前准备方案",
     treeTitle: "使用保障活动树",
-    path: ["J-35", "近海巡逻任务", "飞行前准备"],
+    path: ["F35", "近海巡逻任务", "飞行前准备"],
     jobs: ["机务检查", "燃油加注", "挂弹作业", "通电检查"],
     tree: {
       id: "ops-root",
       name: "使用保障活动",
       children: [
-        { id: "ops-j35", name: "J-35", children: [
-          { id: "ops-j35-patrol", name: "近海巡逻任务", children: [{ id: "ops-j35-patrol-pre", name: "飞行前准备" }, { id: "ops-j35-patrol-turn", name: "再次出动准备" }, { id: "ops-j35-patrol-post", name: "飞行后检查" }] },
-          { id: "ops-j35-alert", name: "远海警戒任务", children: [{ id: "ops-j35-alert-pre", name: "飞行前准备" }, { id: "ops-j35-alert-turn", name: "再次出动准备" }, { id: "ops-j35-alert-post", name: "飞行后检查" }] }
+        { id: "ops-f35", name: "F35", children: [
+          { id: "ops-f35-patrol", name: "近海巡逻任务", children: [{ id: "ops-f35-patrol-pre", name: "飞行前准备" }, { id: "ops-f35-patrol-turn", name: "再次出动准备" }, { id: "ops-f35-patrol-post", name: "飞行后检查" }] },
+          { id: "ops-f35-alert", name: "远海警戒任务", children: [{ id: "ops-f35-alert-pre", name: "飞行前准备" }, { id: "ops-f35-alert-turn", name: "再次出动准备" }, { id: "ops-f35-alert-post", name: "飞行后检查" }] }
         ] },
-        { id: "ops-j15", name: "J-15", children: [
-          { id: "ops-j15-strike", name: "对海突击任务", children: [{ id: "ops-j15-strike-pre", name: "飞行前准备" }, { id: "ops-j15-strike-turn", name: "再次出动准备" }, { id: "ops-j15-strike-post", name: "飞行后检查" }] }
+        { id: "ops-f15", name: "F15", children: [
+          { id: "ops-f15-strike", name: "对海突击任务", children: [{ id: "ops-f15-strike-pre", name: "飞行前准备" }, { id: "ops-f15-strike-turn", name: "再次出动准备" }, { id: "ops-f15-strike-post", name: "飞行后检查" }] }
+        ] },
+        { id: "ops-z20", name: "Z20", children: [
+          { id: "ops-z20-transport", name: "低空转运任务", children: [{ id: "ops-z20-transport-pre", name: "飞行前准备" }, { id: "ops-z20-transport-turn", name: "再次出动准备" }, { id: "ops-z20-transport-post", name: "飞行后检查" }] }
         ] }
       ]
     }
   },
   {
     type: "预防性维修活动建模",
-    name: "J-35日检预防性维修方案",
+    name: "F35日检预防性维修方案",
     treeTitle: "预防性维修活动树",
-    path: ["J-35", "日检"],
+    path: ["F35", "日检"],
     jobs: ["定检准备", "航电检查", "液压系统检查", "记录归档"],
     tree: {
       id: "preventive-root",
       name: "预防性维修活动",
       children: [
-        { id: "preventive-j35", name: "J-35", children: [{ id: "preventive-j35-daily", name: "日检" }, { id: "preventive-j35-weekly", name: "周检" }, { id: "preventive-j35-phase", name: "阶段检" }] },
-        { id: "preventive-j15", name: "J-15", children: [{ id: "preventive-j15-daily", name: "日检" }, { id: "preventive-j15-weekly", name: "周检" }] }
+        { id: "preventive-f35", name: "F35", children: [{ id: "preventive-f35-daily", name: "日检" }, { id: "preventive-f35-weekly", name: "周检" }, { id: "preventive-f35-phase", name: "阶段检" }] },
+        { id: "preventive-f15", name: "F15", children: [{ id: "preventive-f15-daily", name: "日检" }, { id: "preventive-f15-weekly", name: "周检" }] },
+        { id: "preventive-z20", name: "Z20", children: [{ id: "preventive-z20-daily", name: "日检" }, { id: "preventive-z20-weekly", name: "周检" }] }
       ]
     }
   },
   {
     type: "修复性维修活动建模",
-    name: "J-35航电模块故障修复方案",
+    name: "F35航电模块故障修复方案",
     treeTitle: "修复性维修活动树",
-    path: ["J-35", "航电模块故障"],
+    path: ["F35", "航电模块故障"],
     jobs: ["故障定位", "备件领用", "换件维修", "功能复测"],
     tree: {
       id: "corrective-root",
       name: "修复性维修活动",
       children: [
-        { id: "corrective-j35", name: "J-35", children: [{ id: "corrective-j35-engine", name: "发动机备件故障" }, { id: "corrective-j35-avionics", name: "航电模块故障" }, { id: "corrective-j35-hydraulic", name: "液压备件故障" }] },
-        { id: "corrective-j15", name: "J-15", children: [{ id: "corrective-j15-engine", name: "发动机备件故障" }, { id: "corrective-j15-parachute", name: "制动伞检查" }] }
+        { id: "corrective-f35", name: "F35", children: [{ id: "corrective-f35-engine", name: "发动机备件故障" }, { id: "corrective-f35-avionics", name: "航电模块故障" }, { id: "corrective-f35-hydraulic", name: "液压备件故障" }] },
+        { id: "corrective-f15", name: "F15", children: [{ id: "corrective-f15-engine", name: "发动机备件故障" }, { id: "corrective-f15-parachute", name: "制动伞检查" }] },
+        { id: "corrective-z20", name: "Z20", children: [{ id: "corrective-z20-engine", name: "发动机备件故障" }, { id: "corrective-z20-rotor", name: "旋翼系统故障" }] }
+      ]
+    }
+  },
+  {
+    type: "后勤保障活动建模",
+    name: "多级保障组织后勤保障方案",
+    treeTitle: "后勤保障活动树",
+    path: ["后勤保障", "组织策略与运输策略"],
+    jobs: ["后勤需求汇总", "横向/纵向运输调度"],
+    tree: {
+      id: "logistics-root",
+      name: "后勤保障",
+      children: [
+        { id: "logistics-org-strategy", name: "保障组织策略", children: [{ id: "logistics-level", name: "分级保障策略" }, { id: "logistics-lateral-org", name: "横向保障组织" }] },
+        { id: "logistics-transport", name: "运输策略", children: [{ id: "logistics-horizontal", name: "横向运输" }, { id: "logistics-vertical", name: "纵向运输" }] }
       ]
     }
   }
@@ -152,8 +172,8 @@ const SYSTEM_PERMISSION_ROWS = [
 ];
 
 const SYSTEM_FORM_ROWS = [
-  { level: "任务建模", form: "任务剖面参数", field: "任务类型、重复周期、结束条件", relation: "关联基本任务与复合任务" },
-  { level: "装备建模", form: "装备组成建模", field: "父节点、数量、连接类型、n中取k", relation: "关联装备故障与RMS指标" },
+  { level: "装备任务建模", form: "基本任务/复合任务建模", field: "任务成功点、出发时间、任务编排", relation: "关联基本任务与复合任务" },
+  { level: "装备系统建模", form: "装备组成建模", field: "父节点、数量、连接类型、n中取k", relation: "关联装备故障与RMS指标" },
   { level: "保障组织建模", form: "备件建模", field: "备件名称、型号、库存、适用机型", relation: "关联保障节点库存" },
   { level: "保障活动建模", form: "使用保障活动建模", field: "活动类别、工序、资源需求", relation: "关联保障人员、设备、备件" }
 ];
@@ -187,11 +207,37 @@ let isOntologyDetailCollapsed = true;
 let ontologyBandLayout = {};
 let ontologyNodePositionOverrides = {};
 let collapsedOntologyGroups = new Set();
+let collapsedTreeNodes = new Set();
 let activeOntologyDrag = null;
 let suppressOntologyClick = false;
 let carryObjective = CARRY_OBJECTIVES[0].id;
 let experimentRunStatus = "当前";
 let isProjectMenuOpen = false;
+let selectedPeriodicTaskId = "";
+
+const PERIODIC_WEEKDAY_FIELDS = [
+  { key: "mondayCompositeTaskId", legacyKey: "monday", label: "周一" },
+  { key: "tuesdayCompositeTaskId", legacyKey: "tuesday", label: "周二" },
+  { key: "wednesdayCompositeTaskId", legacyKey: "wednesday", label: "周三" },
+  { key: "thursdayCompositeTaskId", legacyKey: "thursday", label: "周四" },
+  { key: "fridayCompositeTaskId", legacyKey: "friday", label: "周五" },
+  { key: "saturdayCompositeTaskId", legacyKey: "saturday", label: "周六" },
+  { key: "sundayCompositeTaskId", legacyKey: "sunday", label: "周日" }
+];
+
+const PERIODIC_DAY_FIELDS = [
+  { value: "1", label: "第一天" },
+  { value: "2", label: "第二天" },
+  { value: "3", label: "第三天" },
+  { value: "4", label: "第四天" },
+  { value: "5", label: "第五天" },
+  { value: "6", label: "第六天" },
+  { value: "7", label: "第七天" }
+];
+const PRODUCT_TYPE_OPTIONS = [
+  { value: "LRU", label: "LRU" },
+  { value: "SRU", label: "SRU" }
+];
 
 render();
 bindEvents();
@@ -208,6 +254,38 @@ function bindEvents() {
       suppressOntologyClick = false;
       event.preventDefault();
       event.stopPropagation();
+      return;
+    }
+
+    const treeToggle = event.target.closest("[data-tree-toggle]");
+    if (treeToggle) {
+      const nodeId = treeToggle.dataset.treeToggle;
+      if (collapsedTreeNodes.has(nodeId)) {
+        collapsedTreeNodes.delete(nodeId);
+      } else {
+        collapsedTreeNodes.add(nodeId);
+      }
+      render();
+      return;
+    }
+
+    const logisticsAddButton = event.target.closest("[data-logistics-transport-add]");
+    if (logisticsAddButton) {
+      const activity = findLogisticsSupportActivity();
+      activity.transportStrategies = [
+        ...(Array.isArray(activity.transportStrategies) ? activity.transportStrategies : []),
+        { direction: "\u6a2a\u5411\u8fd0\u8f93", spareType: spareModelingNames()[0] || "", triggerMode: "\u4e34\u754c\u5e93\u5b58", criticalInventory: 1, from: scenario.supportNodes[0]?.id || "", to: scenario.supportNodes[1]?.id || "", transportTimeHours: 1 }
+      ];
+      render();
+      return;
+    }
+
+    const logisticsDeleteButton = event.target.closest("[data-logistics-transport-delete]");
+    if (logisticsDeleteButton) {
+      const activity = findLogisticsSupportActivity();
+      const index = Number(logisticsDeleteButton.dataset.logisticsTransportDelete);
+      activity.transportStrategies = (Array.isArray(activity.transportStrategies) ? activity.transportStrategies : []).filter((_, rowIndex) => rowIndex !== index);
+      render();
       return;
     }
 
@@ -333,6 +411,33 @@ function bindEvents() {
       return;
     }
 
+    const periodicAddButton = event.target.closest("[data-periodic-add]");
+    if (periodicAddButton) {
+      const task = createPeriodicTaskDraft();
+      scenario.missionProfile.periodicTasks = [...periodicTaskList(), task];
+      selectedPeriodicTaskId = task.id;
+      updateDemoResultsThroughApiClient();
+      render();
+      return;
+    }
+
+    const periodicDeleteButton = event.target.closest("[data-periodic-delete]");
+    if (periodicDeleteButton) {
+      const taskId = periodicDeleteButton.dataset.periodicDelete;
+      scenario.missionProfile.periodicTasks = periodicTaskList().filter((task) => String(task.id) !== taskId);
+      selectedPeriodicTaskId = String(periodicTaskList()[0]?.id || "");
+      updateDemoResultsThroughApiClient();
+      render();
+      return;
+    }
+
+    const periodicSelectButton = event.target.closest("[data-periodic-select]");
+    if (periodicSelectButton) {
+      selectedPeriodicTaskId = periodicSelectButton.dataset.periodicSelect;
+      render();
+      return;
+    }
+
     const rmsActionButton = event.target.closest("[data-rms-action]");
     if (rmsActionButton) {
       if (rmsActionButton.dataset.rmsAction === "publish") {
@@ -366,6 +471,12 @@ function bindEvents() {
   });
 
   app.addEventListener("change", (event) => {
+    const periodicInput = event.target.closest("[data-periodic-field]");
+    if (periodicInput) {
+      updateSelectedPeriodicTask(periodicInput.dataset.periodicField, parseInput(periodicInput));
+      return;
+    }
+
     const rmsInput = event.target.closest("[data-rms-path]");
     if (rmsInput) {
       setPath(rmsAllocationPlan, rmsInput.dataset.rmsPath, parseInput(rmsInput));
@@ -746,6 +857,70 @@ function renderMainComponent(page) {
   return renderTaskModel(page);
 }
 
+function renderCollapsibleTree(nodes, options = {}) {
+  const className = options.className || "object-tree";
+  return `
+    <div class="${className}">
+      ${nodes.map((node) => renderCollapsibleTreeNode(node, options)).join("")}
+    </div>
+  `;
+}
+
+function renderCollapsibleTreeNode(node, options = {}) {
+  const children = Array.isArray(node.children) ? node.children : [];
+  const hasChildren = children.length > 0;
+  const nodeId = node.id || stableTreeNodeId(node.label, node.meta);
+  const isCollapsed = hasChildren && collapsedTreeNodes.has(nodeId);
+  const labelClass = [
+    "tree-node-label",
+    node.root ? "root" : "",
+    node.selected ? "selected" : ""
+  ].filter(Boolean).join(" ");
+  return `
+    <div class="tree-node-item ${isCollapsed ? "collapsed" : ""}" data-tree-node="${htmlEscape(nodeId)}">
+      <button type="button" class="${labelClass}" ${hasChildren ? `data-tree-toggle="${htmlEscape(nodeId)}"` : ""} aria-expanded="${hasChildren ? String(!isCollapsed) : "false"}">
+        <span class="tree-node-toggle">${hasChildren ? (isCollapsed ? "▶" : "▼") : "•"}</span>
+        <span class="tree-node-text">${htmlEscape(node.label)}</span>
+        ${node.meta ? `<span class="tree-node-meta">${htmlEscape(node.meta)}</span>` : ""}
+      </button>
+      ${hasChildren ? `<div class="tree-node-children">${children.map((child) => renderCollapsibleTreeNode(child, options)).join("")}</div>` : ""}
+    </div>
+  `;
+}
+
+function stableTreeNodeId(label, meta = "") {
+  return `tree:${String(label)}:${String(meta)}`.replace(/\s+/g, "-");
+}
+
+function basicMissionTreeNodes() {
+  const tasks = [
+    scenario.basicMission,
+    ...(scenario.missionProfile.compositeTasks || []).flatMap((composite) => composite.taskItems || [])
+  ].filter(Boolean);
+  const grouped = new Map();
+  for (const task of tasks) {
+    const equipmentType = task.equipmentType || scenario.basicMission.equipmentType || scenario.equipment.model || "未指定飞机类型";
+    const taskName = task.name || task.basicTaskName || task.taskName || scenario.basicMission.name || "未命名基本任务";
+    const taskNo = task.taskNo || task.basicTaskId || task.id || "";
+    const existing = grouped.get(equipmentType) || [];
+    if (!existing.some((item) => item.label === taskName && item.meta === taskNo)) {
+      existing.push({
+        id: `basic-task:${equipmentType}:${taskNo || taskName}`,
+        label: taskName,
+        meta: taskNo || task.taskArea || ""
+      });
+    }
+    grouped.set(equipmentType, existing);
+  }
+  return Array.from(grouped.entries()).map(([equipmentType, children]) => ({
+    id: `basic-task-equipment:${equipmentType}`,
+    label: equipmentType,
+    meta: `${children.length} 项基本任务`,
+    root: true,
+    children
+  }));
+}
+
 function renderOntologySvg(ontology, focusSet, selectedItem = null) {
   const bands = ontologyBands();
   const visibleNodes = ontology.nodes.filter((node) => !collapsedOntologyGroups.has(node.group));
@@ -989,14 +1164,12 @@ function renderSystemProjectManagement(page) {
             <h4>${isGranularityPage ? "建模数据层级" : "项目独有数据"}</h4>
             <button type="button" class="btn-primary">${isGranularityPage ? "新增层级" : "新增项目数据"}</button>
           </div>
-          <div class="object-tree">
-            ${(isGranularityPage ? SYSTEM_MODELING_GRANULARITY_ROWS : SYSTEM_PROJECT_DATA_ROWS).map((row, index) => `
-              <div class="tree-node ${index === 0 ? "root" : ""}">
-                ${htmlEscape(isGranularityPage ? row.level : row.label)}
-                <span>${htmlEscape(isGranularityPage ? row.object : row.owner)}</span>
-              </div>
-            `).join("")}
-          </div>
+          ${renderCollapsibleTree((isGranularityPage ? SYSTEM_MODELING_GRANULARITY_ROWS : SYSTEM_PROJECT_DATA_ROWS).map((row, index) => ({
+            id: `system-tree:${isGranularityPage ? row.level : row.key}`,
+            label: isGranularityPage ? row.level : row.label,
+            meta: isGranularityPage ? row.object : row.owner,
+            root: index === 0
+          })))}
         </aside>
         <section class="detail-panel">
           <div class="detail-card">
@@ -1102,9 +1275,12 @@ function renderFormManagementConfig() {
           <h4>表单功能层级</h4>
           <button type="button" class="btn-primary">新增表单</button>
         </div>
-        <div class="object-tree">
-          ${SYSTEM_FORM_ROWS.map((row, index) => `<div class="tree-node ${index === 0 ? "root" : ""}">${row.form}<span>${row.level}</span></div>`).join("")}
-        </div>
+        ${renderCollapsibleTree(SYSTEM_FORM_ROWS.map((row, index) => ({
+          id: `system-form:${row.level}:${row.form}`,
+          label: row.form,
+          meta: row.level,
+          root: index === 0
+        })))}
       </aside>
       <section class="detail-panel">
         <div class="detail-card">
@@ -1136,16 +1312,28 @@ function renderTaskModel(page) {
       ${field("重复周期", "missionProfile.repeatCycleHours", "number")}
       ${field("结束条件", "missionProfile.endCondition")}
       ${field("基本任务", "basicMission.missionId")}
-      ${field("成功点", "basicMission.successPoint")}
+      ${field("成功点", "basicMission.successPoint", "number", { min: "0", max: "1", step: "0.01" })}
       ${field("最低出动数量", "basicMission.minRequiredSorties", "number")}
       ${field("装备型号", "equipment.model")}
       ${field("装备数量", "equipment.quantity", "number")}
     </div>
-    <div class="object-tree">
-      <div class="tree-node root">${scenario.missionProfile.profileType}</div>
-      ${scenario.missionPhases.map((phase) => `<div class="tree-node">${phase.name}<span>${phase.state}</span></div>`).join("")}
-      <div class="tree-node">${scenario.combatUnit.unitId}<span>${scenario.equipment.quantity} 架</span></div>
-    </div>
+    ${renderCollapsibleTree([{
+      id: `task-model:${scenario.missionProfile.profileType}`,
+      label: scenario.missionProfile.profileType,
+      root: true,
+      children: [
+        ...scenario.missionPhases.map((phase) => ({
+          id: `task-model-phase:${phase.id || phase.name}`,
+          label: phase.name,
+          meta: phase.state
+        })),
+        {
+          id: `task-model-combat-unit:${scenario.combatUnit.unitId}`,
+          label: scenario.combatUnit.unitId,
+          meta: `${scenario.equipment.quantity} 架`
+        }
+      ]
+    }])}
   `;
 }
 
@@ -1157,11 +1345,16 @@ function renderMissionProfileParameters(page) {
     <div class="organization-layout">
       <div class="tree-container">
         <h4>任务剖面参数</h4>
-        <div class="object-tree">
-          <div class="tree-node root">${htmlEscape(scenario.missionProfile.profileType)}<span>任务类型</span></div>
-          <div class="tree-node">${htmlEscape(scenario.missionProfile.repeatCycleHours)} h<span>重复周期</span></div>
-          <div class="tree-node">${htmlEscape(scenario.missionProfile.endCondition)}<span>结束条件</span></div>
-        </div>
+        ${renderCollapsibleTree([{
+          id: `mission-profile:${scenario.missionProfile.profileType}`,
+          label: scenario.missionProfile.profileType,
+          meta: "任务类型",
+          root: true,
+          children: [
+            { id: "mission-profile:repeat-cycle", label: `${scenario.missionProfile.repeatCycleHours} h`, meta: "重复周期" },
+            { id: "mission-profile:end-condition", label: scenario.missionProfile.endCondition, meta: "结束条件" }
+          ]
+        }])}
       </div>
       <div class="detail-panel">
         <div class="detail-card">
@@ -1199,20 +1392,32 @@ function renderBuiltInScenario(page) {
       ${field("任务区半径(km)", "missionAreas.0.patrolRadiusKm", "number")}
       ${field("威胁等级", "missionAreas.0.threatLevel")}
     </div>
-    <div class="object-tree">
-      ${scenario.airports.map((airport) => `
-        <div class="tree-node">
-          ${htmlEscape(airport.name)}
-          <span>${htmlEscape(airport.location)} / 距任务区 ${htmlEscape(airport.distanceToMissionKm)} km</span>
-        </div>
-      `).join("")}
-      ${scenario.missionAreas.map((area) => `
-        <div class="tree-node root">
-          ${htmlEscape(area.name)}
-          <span>${htmlEscape(area.areaType)} / 距出发机场 ${htmlEscape(area.distanceFromDepartureKm)} km</span>
-        </div>
-      `).join("")}
-    </div>
+    ${renderCollapsibleTree([{
+      id: `scenario-tree:${scenario.scenarioId}`,
+      label: scenario.scenarioId,
+      meta: "内置场景",
+      root: true,
+      children: [
+        {
+          id: "scenario-tree:airports",
+          label: "机场",
+          children: scenario.airports.map((airport) => ({
+            id: `scenario-airport:${airport.id || airport.name}`,
+            label: airport.name,
+            meta: `${airport.location} / 距任务区 ${airport.distanceToMissionKm} km`
+          }))
+        },
+        {
+          id: "scenario-tree:mission-areas",
+          label: "任务区",
+          children: scenario.missionAreas.map((area) => ({
+            id: `scenario-area:${area.id || area.name}`,
+            label: area.name,
+            meta: `${area.areaType} / 距出发机场 ${area.distanceFromDepartureKm} km`
+          }))
+        }
+      ]
+    }])}
   `;
 }
 
@@ -1227,11 +1432,24 @@ function renderCombatUnitModeling(page) {
     <div class="organization-layout">
       <div class="tree-container">
         <h4>编队需求</h4>
-        <div class="object-tree">
-          <div class="tree-node root">${htmlEscape(scenario.combatUnit.groupName)}<span>${htmlEscape(scenario.combatUnit.requiredCount)} / ${htmlEscape(scenario.combatUnit.quantity)} 架</span></div>
-          <div class="tree-node">${htmlEscape(scenario.combatUnit.basicTaskName)}<span>${htmlEscape(scenario.combatUnit.equipmentType)}</span></div>
-          <div class="tree-node">${htmlEscape(scenario.combatUnit.deploymentLocation)}<span>部署位置</span></div>
-        </div>
+        ${renderCollapsibleTree([{
+          id: `combat-unit:${scenario.combatUnit.unitId}`,
+          label: scenario.combatUnit.groupName,
+          meta: `${scenario.combatUnit.requiredCount} / ${scenario.combatUnit.quantity} 架`,
+          root: true,
+          children: [
+            {
+              id: `combat-unit-task:${scenario.combatUnit.basicTaskName}`,
+              label: scenario.combatUnit.basicTaskName,
+              meta: scenario.combatUnit.equipmentType
+            },
+            {
+              id: `combat-unit-location:${scenario.combatUnit.deploymentLocation}`,
+              label: scenario.combatUnit.deploymentLocation,
+              meta: "部署位置"
+            }
+          ]
+        }])}
         <div class="form-table-grid" style="grid-template-columns:1fr;margin-top:12px;">
           ${field("编队名称", "combatUnit.groupName")}
           ${field("基本任务名称", "combatUnit.basicTaskName")}
@@ -1298,12 +1516,8 @@ function renderBasicMissionModeling(page) {
     <div class="organization-layout">
       <div class="tree-container">
         <h4>基本任务结构树</h4>
-        <p class="muted">按装备构型飞机节点组织：飞机类型 → 基本任务名称</p>
-        <div class="object-tree">
-          <div class="tree-node root">${htmlEscape(mission.equipmentType)}<span>${htmlEscape(mission.equipmentQuantity)} 架</span></div>
-          <div class="tree-node">${htmlEscape(mission.name)}<span>${htmlEscape(mission.taskNo)}</span></div>
-          <div class="tree-node">${htmlEscape(mission.taskArea)}<span>任务区域描述</span></div>
-        </div>
+        <p class="muted">按飞机类型组织：飞机类型 → 多种基本任务</p>
+        ${renderCollapsibleTree(basicMissionTreeNodes())}
       </div>
       <div class="detail-panel">
         <div class="detail-card">
@@ -1315,8 +1529,7 @@ function renderBasicMissionModeling(page) {
                 <tr><th>任务编号</th><td>${valueInput("basicMission.taskNo")}</td></tr>
                 <tr><th>装备类型</th><td>${valueInput("basicMission.equipmentType")}</td></tr>
                 <tr><th>装备数量</th><td>${valueInput("basicMission.equipmentQuantity", "number")}</td></tr>
-                <tr><th>任务成功点</th><td>${valueInput("basicMission.successPoint")}</td></tr>
-                <tr><th>出发时间(h)</th><td>${valueInput("basicMission.startHour", "number")}</td></tr>
+                <tr><th>任务成功点</th><td>${valueInput("basicMission.successPoint", "number", { min: "0", max: "1", step: "0.01" })}</td></tr>
                 <tr><th>返回时间比</th><td>${valueInput("basicMission.returnRatio", "number")}</td></tr>
                 <tr><th>任务优先级</th><td>${valueInput("basicMission.priority", "number")}</td></tr>
                 <tr><th>最小系统数量</th><td>${valueInput("basicMission.minRequiredSorties", "number")}</td></tr>
@@ -1325,7 +1538,6 @@ function renderBasicMissionModeling(page) {
                 <tr><th>取消时间（min）</th><td>${valueInput("basicMission.cancelMinutes", "number")}</td></tr>
                 <tr><th>使用保障活动</th><td>${valueInput("basicMission.supportActivityName")}</td></tr>
                 <tr><th>任务区域描述</th><td>${valueInput("basicMission.taskArea")}</td></tr>
-                <tr><th>更新时间</th><td>${valueInput("basicMission.updatedAt")}</td></tr>
               </tbody>
             </table>
           </div>
@@ -1388,7 +1600,7 @@ function renderCompositeTaskModeling(page) {
           </div>
           <div class="table-wrap">
             <table>
-              <thead><tr><th>序号</th><th>基本任务名称</th><th>装备类型</th><th>装备数量</th><th>编队名称</th><th>任务下达时间</th><th>首波次出动时刻</th><th>回收时刻</th><th>任务优先级</th><th>最小系统数量</th><th>单日重复次数</th><th>间隔小时数</th></tr></thead>
+              <thead><tr><th>序号</th><th>基本任务名称</th><th>装备类型</th><th>装备数量</th><th>编队名称</th><th>任务下达时间</th><th>出发时间</th><th>回收时刻</th><th>任务优先级</th><th>最小系统数量</th><th>单日重复次数</th><th>间隔小时数</th></tr></thead>
               <tbody>
                 ${(composite.taskItems || []).map((item, index) => `
                   <tr>
@@ -1438,62 +1650,241 @@ function renderCompositeTaskModeling(page) {
 
 function renderPeriodicTaskModeling(page) {
   const compositeTasks = scenario.missionProfile.compositeTasks || [];
-  const periodicTasks = scenario.missionProfile.periodicTasks || [];
-  const compositeOptions = compositeTasks.map((task) => ({ value: task.id, label: task.name }));
-  const weekdayFields = [
-    ["monday", "星期一"],
-    ["tuesday", "星期二"],
-    ["wednesday", "星期三"],
-    ["thursday", "星期四"],
-    ["friday", "星期五"],
-    ["saturday", "星期六"],
-    ["sunday", "星期日"]
+  const periodicTasks = periodicTaskList();
+  const selectedTask = selectedPeriodicTask(periodicTasks);
+  const selectedDraft = selectedTask ? normalizePeriodicTask(selectedTask) : null;
+  const compositeOptions = [
+    { value: "", label: "请选择复合任务" },
+    ...compositeTasks.map((task) => ({ value: task.id, label: task.name }))
   ];
   return `
     <div class="section-head section-context">
       <span>${page.dataObjects.join(" / ")}</span>
     </div>
-    <div class="organization-layout">
+    <div class="organization-layout task-modeling-periodic-layout">
       <div class="tree-container">
-        <h4>周期性任务列表</h4>
+        <div class="tree-toolbar">
+          <h4>周期性任务列表</h4>
+          <button type="button" class="btn-primary" data-periodic-add>新增</button>
+        </div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>序号</th><th>周期性任务名称</th><th>重复周数</th></tr></thead>
+            <thead><tr><th>序号</th><th>周期性任务名称</th><th>操作</th></tr></thead>
             <tbody>
               ${periodicTasks.map((task, index) => `
-                <tr class="${index === 0 ? "active" : ""}">
+                <tr class="${String(task.id) === String(selectedTask?.id) ? "active" : ""}" data-periodic-select="${htmlEscape(task.id)}">
                   <td>${index + 1}</td>
                   <td>${htmlEscape(task.name)}</td>
-                  <td>${htmlEscape(task.repeatWeeks)}</td>
+                  <td class="table-actions">
+                    <button type="button" data-periodic-select="${htmlEscape(task.id)}">选择</button>
+                    <button type="button" class="btn-danger" data-periodic-delete="${htmlEscape(task.id)}">删除</button>
+                  </td>
                 </tr>
-              `).join("")}
+              `).join("") || `<tr><td colspan="3" class="muted">暂无周期性任务数据</td></tr>`}
             </tbody>
           </table>
         </div>
       </div>
       <div class="detail-panel">
         <div class="detail-card">
-          <h4>周期性任务建模</h4>
-          <div class="form-table-grid">
-            ${field("周期性任务名称", "missionProfile.periodicTasks.0.name")}
-            ${field("重复周数", "missionProfile.periodicTasks.0.repeatWeeks", "number")}
+          <div class="periodic-panel-head">
+            <div>
+              <h4>周期性任务建模</h4>
+              <p class="muted">左侧选择周期性任务，右侧按周期天数维护每天对应的复合任务与重复轮次。</p>
+            </div>
+            ${selectedDraft ? `<span class="status-badge">当前：${htmlEscape(selectedDraft.name)}</span>` : ""}
           </div>
-          <div class="table-wrap" style="margin-top:12px;">
-            <table>
-              <thead><tr><th>星期</th><th>复合任务名称</th></tr></thead>
-              <tbody>
-                ${weekdayFields.map(([key, label]) => `
-                  <tr>
-                    <td>${label}</td>
-                    <td>${valueSelect(`missionProfile.periodicTasks.0.weekdayAssignments.${key}`, compositeOptions)}</td>
-                  </tr>
-                `).join("")}
-              </tbody>
-            </table>
-          </div>
+          ${selectedDraft ? `
+            ${compositeTasks.length === 0 ? `<div class="alert warn">请先在复合任务建模中维护复合任务。</div>` : ""}
+            <div class="form-table-grid">
+              <label>周期性任务名称 *<input data-periodic-field="name" value="${htmlEscape(selectedDraft.name)}" placeholder="例如：一周飞行训练计划A"></label>
+              <label>任务周期天数 *<input data-periodic-field="cycleDays" type="number" min="1" max="7" step="1" value="${htmlEscape(selectedDraft.cycleDays)}"></label>
+              <label>重复轮次 *<input data-periodic-field="repeatWeeks" type="number" min="1" step="1" value="${htmlEscape(selectedDraft.repeatWeeks)}"></label>
+            </div>
+            <div class="table-wrap" style="margin-top:12px;">
+              <table>
+                <thead><tr><th style="width:120px;">任务周期</th><th>复合任务名称</th></tr></thead>
+                <tbody>
+                  ${selectedDraft.compositeTasks.map((row, index) => `
+                    <tr>
+                      <td>${htmlEscape(periodicDayLabel(row.week))}</td>
+                      <td>${periodicValueSelect(`dayComposite:${index}`, row.compositeTaskId, compositeOptions)}</td>
+                    </tr>
+                  `).join("")}
+                </tbody>
+              </table>
+            </div>
+          ` : `<div class="alert warn">暂无周期性任务，请先在左侧列表新增。</div>`}
         </div>
       </div>
     </div>
+  `;
+}
+
+function periodicTaskList() {
+  if (!Array.isArray(scenario.missionProfile.periodicTasks)) {
+    scenario.missionProfile.periodicTasks = [];
+  }
+  scenario.missionProfile.periodicTasks = scenario.missionProfile.periodicTasks.map((task) => normalizePeriodicTask(task));
+  return scenario.missionProfile.periodicTasks;
+}
+
+function selectedPeriodicTask(periodicTasks = periodicTaskList()) {
+  if (!periodicTasks.length) {
+    selectedPeriodicTaskId = "";
+    return null;
+  }
+  const selected = periodicTasks.find((task) => String(task.id) === String(selectedPeriodicTaskId)) || periodicTasks[0];
+  selectedPeriodicTaskId = String(selected.id);
+  return selected;
+}
+
+function createPeriodicTaskDraft(source = {}) {
+  const order = periodicTaskList().length + 1;
+  return normalizePeriodicTask({
+    id: source.id || `periodic-${Date.now()}`,
+    name: source.name || `周期性任务${order}`,
+    cycleDays: source.cycleDays || source.taskPeriodDays || 7,
+    repeatWeeks: source.repeatWeeks || source.repeatRounds || 1
+  });
+}
+
+function normalizePeriodicTaskCycleDays(source = {}) {
+  const explicitDays = source.cycleDays ?? source.taskPeriodDays ?? source.periodDays ?? source.repeatCycleDays;
+  if (explicitDays != null) {
+    return clampPeriodicCycleDays(explicitDays);
+  }
+  const cycleValue = Math.max(1, Math.floor(Number(source.repeatCycleValue ?? 1)));
+  const cycleUnit = String(source.repeatCycleUnit || "").trim();
+  if (cycleUnit === "week") return clampPeriodicCycleDays(cycleValue * 7);
+  if (cycleUnit === "month") return clampPeriodicCycleDays(cycleValue * 30);
+  return clampPeriodicCycleDays(cycleValue);
+}
+
+function clampPeriodicCycleDays(value) {
+  return Math.min(7, Math.max(1, Math.floor(Number(value || 1))));
+}
+
+function parsePeriodicCompositeTasks(source, cycleDays, weekdayAssignments, validCompositeIds) {
+  const rawRows = Array.isArray(source.compositeTasks)
+    ? source.compositeTasks
+    : typeof source.compositeTasks === "string"
+      ? safeJsonParse(source.compositeTasks, [])
+      : [];
+  const byWeek = new Map();
+  rawRows.forEach((row, index) => {
+    if (!row || typeof row !== "object") return;
+    const week = String(row.week || index + 1);
+    const compositeTaskId = String(row.compositeTaskId || row.compositeTask || row.taskId || "");
+    byWeek.set(week, validCompositeIds.has(compositeTaskId) ? compositeTaskId : "");
+  });
+  return PERIODIC_DAY_FIELDS.slice(0, cycleDays).map((field, index) => {
+    const legacyField = PERIODIC_WEEKDAY_FIELDS[index];
+    const legacyCompositeId = legacyField ? String(weekdayAssignments[legacyField.key] || "") : "";
+    return {
+      week: field.value,
+      compositeTaskId: byWeek.has(field.value) ? byWeek.get(field.value) : legacyCompositeId
+    };
+  });
+}
+
+function safeJsonParse(value, fallback) {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+}
+
+function periodicDayLabel(value) {
+  return PERIODIC_DAY_FIELDS.find((field) => field.value === String(value))?.label || `第${value}天`;
+}
+
+function normalizePeriodicTask(source = {}) {
+  const validCompositeIds = new Set((scenario.missionProfile.compositeTasks || []).map((task) => String(task.id)));
+  const rawAssignments = source.weekdayAssignments && typeof source.weekdayAssignments === "object" ? source.weekdayAssignments : {};
+  const weekdayAssignments = {};
+  PERIODIC_WEEKDAY_FIELDS.forEach((field) => {
+    const candidate = String(rawAssignments[field.key] || rawAssignments[field.legacyKey] || source[field.key] || "");
+    weekdayAssignments[field.key] = validCompositeIds.has(candidate) ? candidate : "";
+    weekdayAssignments[field.legacyKey] = weekdayAssignments[field.key];
+  });
+  const cycleDays = normalizePeriodicTaskCycleDays(source);
+  const repeatWeeks = Math.max(1, Math.floor(Number(source.repeatWeeks ?? source.repeatRounds ?? source.rounds ?? source.repeatCount ?? source.dailyRepeatCount ?? 1)));
+  const compositeTasks = parsePeriodicCompositeTasks(source, cycleDays, weekdayAssignments, validCompositeIds);
+  const legacyLinkedCompositeIds = PERIODIC_WEEKDAY_FIELDS
+    .map((field) => weekdayAssignments[field.key])
+    .filter(Boolean);
+  const linkedCompositeIds = Array.isArray(source.compositeTaskIds)
+    ? source.compositeTaskIds.map((id) => String(id)).filter((id) => validCompositeIds.has(id))
+    : [...compositeTasks.map((row) => row.compositeTaskId).filter(Boolean), ...legacyLinkedCompositeIds];
+  return {
+    ...source,
+    id: String(source.id || `periodic-${Date.now()}`),
+    name: String(source.name || source.periodicTaskName || source.experimentName || "未命名周期性任务"),
+    taskName: String(source.taskName || source.name || source.periodicTaskName || source.experimentName || "未命名周期性任务"),
+    periodicTaskName: String(source.periodicTaskName || source.name || source.experimentName || "未命名周期性任务"),
+    experimentName: String(source.experimentName || source.name || source.periodicTaskName || "未命名周期性任务"),
+    taskCategory: "periodic",
+    cycleDays,
+    taskPeriodDays: cycleDays,
+    periodDays: cycleDays,
+    repeatCycleDays: cycleDays,
+    repeatCycleValue: cycleDays,
+    repeatCycleUnit: "day",
+    repeatRounds: repeatWeeks,
+    repeatWeeks,
+    repeatCount: repeatWeeks,
+    dailyRepeatCount: repeatWeeks,
+    weekdayAssignments,
+    compositeTasks,
+    compositeTaskIds: Array.from(new Set(linkedCompositeIds)),
+    ...Object.fromEntries(PERIODIC_WEEKDAY_FIELDS.map((field) => [field.key, weekdayAssignments[field.key]]))
+  };
+}
+
+function updateSelectedPeriodicTask(field, value) {
+  const tasks = periodicTaskList();
+  const selectedTask = selectedPeriodicTask(tasks);
+  if (!selectedTask) return;
+  const draft = normalizePeriodicTask(selectedTask);
+  if (field === "name") {
+    draft.name = String(value || "").trim() || "未命名周期性任务";
+    draft.taskName = draft.name;
+    draft.periodicTaskName = draft.name;
+    draft.experimentName = draft.name;
+  } else if (field === "cycleDays") {
+    draft.cycleDays = clampPeriodicCycleDays(value);
+    draft.taskPeriodDays = draft.cycleDays;
+    draft.periodDays = draft.cycleDays;
+    draft.repeatCycleDays = draft.cycleDays;
+    draft.repeatCycleValue = draft.cycleDays;
+    draft.repeatCycleUnit = "day";
+  } else if (field === "repeatWeeks") {
+    draft.repeatWeeks = Math.max(1, Math.floor(Number(value || 1)));
+    draft.repeatRounds = draft.repeatWeeks;
+    draft.repeatCount = draft.repeatWeeks;
+    draft.dailyRepeatCount = draft.repeatWeeks;
+  } else if (field.startsWith("dayComposite:")) {
+    const index = Number(field.split(":")[1]);
+    if (Number.isInteger(index) && draft.compositeTasks[index]) {
+      draft.compositeTasks[index] = { ...draft.compositeTasks[index], compositeTaskId: String(value || "") };
+    }
+  }
+  const nextTask = normalizePeriodicTask(draft);
+  scenario.missionProfile.periodicTasks = tasks.map((task) => (String(task.id) === String(nextTask.id) ? nextTask : task));
+  updateDemoResultsThroughApiClient();
+  render();
+}
+
+function periodicValueSelect(field, selectedValue, options) {
+  return `
+    <select data-periodic-field="${htmlEscape(field)}">
+      ${options.map((option) => {
+        const value = String(option.value);
+        return `<option value="${htmlEscape(value)}" ${value === String(selectedValue) ? "selected" : ""}>${htmlEscape(option.label)}</option>`;
+      }).join("")}
+    </select>
   `;
 }
 
@@ -1539,6 +1930,7 @@ function diffTimeMinutes(start, end) {
 function renderEquipmentModeling(page) {
   const selected = scenario.components[0] || {};
   const isFailurePage = page.name.includes("故障");
+  const equipmentModels = wholeMachineModels();
   return `
     <div class="section-head section-context">
       <span>${isFailurePage ? "故障属性 / 数量 / N中取K参数 / RMS指标" : "组成树 / 组成属性"}</span>
@@ -1549,15 +1941,17 @@ function renderEquipmentModeling(page) {
           <h4>装备组成树</h4>
           <div><button type="button" class="btn-primary">新增节点</button><button type="button">导入</button></div>
         </div>
-        <div class="object-tree">
-          <div class="tree-node root">${htmlEscape(scenario.equipment.model)}<span>${htmlEscape(scenario.equipment.quantity)} 架</span></div>
-          ${scenario.components.map((component) => `
-            <div class="tree-node">
-              ${htmlEscape(component.name)}
-              <span>${htmlEscape(component.quantity)} 件 / ${htmlEscape(component.connectionType)}</span>
-            </div>
-          `).join("")}
-        </div>
+        ${renderCollapsibleTree(equipmentModels.map((model, index) => ({
+          id: `equipment-tree:${model}`,
+          label: model,
+          meta: index === 0 ? `${scenario.equipment.quantity} 架` : "整机级",
+          root: true,
+          children: scenario.components.map((component) => ({
+            id: `equipment-component:${model}:${component.id || component.name}`,
+            label: component.name,
+            meta: `${component.quantity} 件 / ${component.connectionType}`
+          }))
+        })))}
       </aside>
       <section class="detail-panel">
         <div class="detail-card">
@@ -1577,11 +1971,18 @@ function renderEquipmentModeling(page) {
   `;
 }
 
+function wholeMachineModels() {
+  const models = Array.isArray(scenario.equipment.wholeMachineModels) && scenario.equipment.wholeMachineModels.length
+    ? scenario.equipment.wholeMachineModels
+    : [scenario.equipment.model];
+  return Array.from(new Set(models.filter(Boolean)));
+}
+
 function renderEquipmentCompositionFields() {
   return `
     ${field("组件名称", "components.0.name")}
     ${field("父节点", "components.0.parentId")}
-    ${field("产品类型", "components.0.productType")}
+    <label>产品类型${valueSelect("components.0.productType", PRODUCT_TYPE_OPTIONS)}</label>
     ${field("备件类型", "components.0.spareType")}
     ${field("连接类型", "components.0.connectionType")}
   `;
@@ -1794,11 +2195,7 @@ function renderSupportOrganizationWorkbench(page) {
                 <label>上级组织<input value="当前项目"></label>
                 <label>组织描述<input value="承担机务、维修、备件和设备保障资源调配"></label>
                 <label>适用机型<input value="${scenario.equipment.model}"></label>
-                <label>保障层级<input value="${htmlEscape(scenario.supportNodes[0]?.supportLevel || "一线保障")}"></label>
-                <label>保障策略<input value="${htmlEscape(scenario.supportNodes[0]?.organizationStrategy || scenario.supportNodes[0]?.policy || "-")}"></label>
-                <label>横向保障组织<input value="${htmlEscape((scenario.supportNodes[0]?.lateralSupportNodes || []).join("、") || "-")}"></label>
               </div>
-              ${renderSupportTransportPolicyTable()}
             ` : `
               <div class="toolbar-row">
                 <button type="button" class="btn-primary">新增</button>
@@ -1822,43 +2219,20 @@ function renderSupportOrganizationWorkbench(page) {
 }
 
 function renderOrgTreeNode(node) {
-  return `
-    <div class="tree-node-item">
-      <div class="tree-node-label"><span class="tree-node-toggle">${node.children?.length ? "▼" : "•"}</span><span class="tree-node-text">${node.name}</span></div>
-      ${node.children?.length ? `<div class="tree-node-children">${node.children.map((child) => renderOrgTreeNode(child)).join("")}</div>` : ""}
-    </div>
-  `;
+  return renderCollapsibleTreeNode(orgTreeNode(node));
 }
 
-function renderSupportTransportPolicyTable() {
-  const rows = (scenario.supportNodes || []).flatMap((node) =>
-    (node.transportPolicies || []).map((policy) => ({
-      nodeName: node.name,
-      ...policy
-    }))
-  );
-  return `
-    <div class="table-wrap compact-table" style="margin-top:12px;">
-      <table>
-        <thead><tr><th>保障节点</th><th>运输起点</th><th>运输终点</th><th>运输方式</th><th>运输时间(h)</th><th>运输优先级</th><th>运输能力</th></tr></thead>
-        <tbody>${rows.map((row) => `
-          <tr>
-            <td>${htmlEscape(row.nodeName)}</td>
-            <td>${htmlEscape(row.from)}</td>
-            <td>${htmlEscape(row.to)}</td>
-            <td>${htmlEscape(row.transportMode)}</td>
-            <td>${htmlEscape(row.transportTimeHours)}</td>
-            <td>${htmlEscape(row.priority)}</td>
-            <td>${htmlEscape(row.capacity)}</td>
-          </tr>
-        `).join("")}</tbody>
-      </table>
-    </div>
-  `;
+function orgTreeNode(node) {
+  return {
+    id: `support-org:${node.id || node.name}`,
+    label: node.name,
+    children: (node.children || []).map((child) => orgTreeNode(child))
+  };
 }
 
 function findSupportActivityForPage(page) {
   const activities = scenario.supportActivities || [];
+  if (page.name.includes("后勤")) return findLogisticsSupportActivity();
   if (page.name.includes("预防性")) {
     return activities.find((activity) => activity.activityType === "预防性维修") || activities[0] || {};
   }
@@ -1902,18 +2276,6 @@ function renderSupportActivityJobRows(activity, tabKey) {
       <td><button type="button" class="inline-action" data-support-activity-job="${htmlEscape(tabKey)}-${index}">编辑</button></td>
     </tr>
   `).join("");
-}
-
-function renderSupportActivityNetwork(activity) {
-  const jobs = supportActivityJobs(activity);
-  return `
-    <div class="network-card">
-      <div class="section-head"><h4>保障活动节点网络图</h4><button type="button" class="btn-primary">生成</button></div>
-      <div class="activity-network">
-        ${jobs.map((job, index) => `<span>${String.fromCharCode(65 + index)} ${htmlEscape(job.workName || "-")}</span>${index < jobs.length - 1 ? "<i></i>" : ""}`).join("")}
-      </div>
-    </div>
-  `;
 }
 
 function renderSupportActivityJobTable(activity, tabKey) {
@@ -1984,7 +2346,6 @@ function renderBasicActivityLibrary() {
 }
 
 function renderOperationsSupportActivity(activePlan, activity) {
-  const planTypes = ["直接准备方案", "再次出动准备方案", "飞行后检查方案", "加油方案", "挂载方案"];
   return `
     <div class="detail-card activity-editor-card">
       <div class="section-head">
@@ -1994,13 +2355,8 @@ function renderOperationsSupportActivity(activePlan, activity) {
       <div class="form-table-grid">
         <label>使用保障活动名称<input value="${htmlEscape(activity.activityName || activePlan.name)}"></label>
         <label>最大工作时间参考(min)<input type="number" value="${Number(activity.maxWorkTimeRefMinutes || activity.durationHours * 60 || 0)}"></label>
-        <label>仿真运行规则<input value="${htmlEscape(activity.simulationRunRule || "按流道组并行排队")}"></label>
-      </div>
-      <div class="ops-plan-type-tabs" aria-label="方案类型">
-        ${planTypes.map((type) => `<button type="button" class="tab-btn ${type === activity.planType ? "active" : ""}">${htmlEscape(type)}</button>`).join("")}
       </div>
       ${renderSupportActivityJobTable(activity, "ops_plan")}
-      ${renderSupportActivityNetwork(activity)}
     </div>
   `;
 }
@@ -2027,25 +2383,24 @@ function renderPreventiveMaintenanceActivity(activePlan, activity) {
         <label>起落次数间隔上下浮动比例(%)<input type="number" value="${Number(activity.takeoffLandingFloatRatio || 0)}"></label>
       </div>
       ${renderSupportActivityJobTable(activity, "prev_repair")}
-      ${renderSupportActivityNetwork(activity)}
     </div>
   `;
 }
 
 function renderEquipmentConfigTree() {
+  const equipmentModels = wholeMachineModels();
   return `
     <aside class="tree-container">
       <div class="tree-toolbar"><h4>装备构型树</h4></div>
-      <div class="tree-node-item">
-        <div class="tree-node-label selected"><span class="tree-node-toggle">▼</span><span class="tree-node-text">${htmlEscape(scenario.equipment.model)}</span></div>
-        <div class="tree-node-children">
-          ${(scenario.components || []).map((component) => `
-            <div class="tree-node-item">
-              <div class="tree-node-label"><span class="tree-node-toggle">•</span><span class="tree-node-text">${htmlEscape(component.name)}</span></div>
-            </div>
-          `).join("")}
-        </div>
-      </div>
+      ${renderCollapsibleTree(equipmentModels.map((model, index) => ({
+        id: `equipment-config:${model}`,
+        label: model,
+        selected: index === 0,
+        children: (scenario.components || []).map((component) => ({
+          id: `equipment-config-component:${model}:${component.id || component.name}`,
+          label: component.name
+        }))
+      })), { className: "tree-node-list" })}
     </aside>
   `;
 }
@@ -2071,11 +2426,77 @@ function renderCorrectiveMaintenanceActivity(activity) {
             <label>换件比例<input type="number" value="${Number(scenario.components[0]?.specialRepairProfile?.replacementRatio || 0)}"></label>
           </div>
           ${renderSupportActivityJobTable(activity, "corr_repair")}
-          ${renderSupportActivityNetwork(activity)}
-        </div>
+            </div>
       </section>
     </div>
   `;
+}
+
+function renderLogisticsSupportActivity(activePlan, activity) {
+  const activityIndex = Math.max(0, (scenario.supportActivities || []).indexOf(activity));
+  const transportStrategies = Array.isArray(activity.transportStrategies) ? activity.transportStrategies : [];
+  const supportNodeOptions = (scenario.supportNodes || []).map((node) => ({ value: node.id, label: node.name }));
+  const spareTypeOptions = spareModelingNames().map((name) => ({ value: name, label: name }));
+  const directionOptions = [
+    { value: "\u6a2a\u5411\u8fd0\u8f93", label: "\u6a2a\u5411\u8fd0\u8f93" },
+    { value: "\u7eb5\u5411\u8fd0\u8f93", label: "\u7eb5\u5411\u8fd0\u8f93" }
+  ];
+  const triggerModeOptions = [
+    { value: "\u4e34\u754c\u5e93\u5b58", label: "\u4e34\u754c\u5e93\u5b58" },
+    { value: "\u5468\u671f\u6027\u8c03\u8fd0", label: "\u5468\u671f\u6027\u8c03\u8fd0" }
+  ];
+  return `
+    <div class="detail-card activity-editor-card">
+      <div class="section-head">
+        <h3>\u540e\u52e4\u4fdd\u969c\u8fd0\u8f93\u7b56\u7565\u914d\u7f6e</h3>
+        <button type="button" class="btn-primary" data-logistics-transport-add>\u65b0\u589e\u8fd0\u8f93\u7b56\u7565</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>\u7b56\u7565\u65b9\u5411</th><th>\u5907\u4ef6\u79cd\u7c7b</th><th>\u89e6\u53d1\u65b9\u5f0f</th><th>\u89e6\u53d1\u53c2\u6570</th><th>\u8fd0\u8f93\u8d77\u70b9</th><th>\u8fd0\u8f93\u7ec8\u70b9</th><th>\u8fd0\u8f93\u65f6\u95f4(h)</th><th>\u64cd\u4f5c</th></tr></thead>
+          <tbody>${transportStrategies.map((row, index) => {
+            const basePath = `supportActivities.${activityIndex}.transportStrategies.${index}`;
+            const triggerControl = row.triggerMode === "\u5468\u671f\u6027\u8c03\u8fd0"
+              ? `<label class="inline-field">\u8c03\u8fd0\u5468\u671f(h)${valueInput(`${basePath}.transferCycleHours`, "number", { min: "1", step: "1" })}</label>`
+              : `<label class="inline-field">\u4e34\u754c\u5e93\u5b58\u6570${valueInput(`${basePath}.criticalInventory`, "number", { min: "0", step: "1" })}</label>`;
+            return `
+              <tr>
+                <td>${valueSelect(`${basePath}.direction`, directionOptions)}</td>
+                <td>${valueSelect(`${basePath}.spareType`, spareTypeOptions)}</td>
+                <td>${valueSelect(`${basePath}.triggerMode`, triggerModeOptions)}</td>
+                <td>${triggerControl}</td>
+                <td>${valueSelect(`${basePath}.from`, supportNodeOptions)}</td>
+                <td>${valueSelect(`${basePath}.to`, supportNodeOptions)}</td>
+                <td>${valueInput(`${basePath}.transportTimeHours`, "number", { min: "0", step: "0.1" })}</td>
+                <td><button type="button" class="inline-action" data-logistics-transport-delete="${index}">\u5220\u9664</button></td>
+              </tr>
+            `;
+          }).join("") || `<tr><td colspan="8" class="muted">\u6682\u65e0\u8fd0\u8f93\u7b56\u7565</td></tr>`}</tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+function findLogisticsSupportActivity() {
+  const activities = scenario.supportActivities || [];
+  let activity = activities.find((item) => item.activityType === "后勤保障")
+    || activities.find((item) => item.planType === "后勤保障活动方案");
+  if (!activity) {
+    activity = { id: "logistics-support", activityType: "后勤保障", activityName: "后勤保障运输策略", transportStrategies: [] };
+    scenario.supportActivities = [...activities, activity];
+  }
+  return activity;
+}
+
+function supportNodeName(id) {
+  return scenario.supportNodes.find((node) => node.id === id)?.name || id || "-";
+}
+
+function spareModelingNames() {
+  return Array.from(new Set(
+    (scenario.supportNodes || []).flatMap((node) => Object.keys(node.inventory || {}))
+  ));
 }
 
 function renderSupportActivityWorkbench(page) {
@@ -2086,6 +2507,15 @@ function renderSupportActivityWorkbench(page) {
   }
   if (page.name.includes("修复性")) {
     return `<div class="ship-front-workbench">${renderCorrectiveMaintenanceActivity(activity)}</div>`;
+  }
+  if (page.name.includes("后勤")) {
+    return `
+      <div class="ship-front-workbench">
+        <section class="detail-panel">
+          ${renderLogisticsSupportActivity(activePlan, activity)}
+        </section>
+      </div>
+    `;
   }
   const editor = page.name.includes("预防性")
     ? renderPreventiveMaintenanceActivity(activePlan, activity)
@@ -2109,16 +2539,16 @@ function renderSupportActivityWorkbench(page) {
 }
 
 function renderSupportActivityTreeNode(node, selectedName) {
-  const isSelected = node.name === selectedName;
-  return `
-    <div class="tree-node-item">
-      <div class="tree-node-label ${isSelected ? "selected" : ""}">
-        <span class="tree-node-toggle">${node.children?.length ? "▼" : "•"}</span>
-        <span class="tree-node-text">${htmlEscape(node.name)}</span>
-      </div>
-      ${node.children?.length ? `<div class="tree-node-children">${node.children.map((child) => renderSupportActivityTreeNode(child, selectedName)).join("")}</div>` : ""}
-    </div>
-  `;
+  return renderCollapsibleTreeNode(supportActivityTreeNode(node, selectedName));
+}
+
+function supportActivityTreeNode(node, selectedName) {
+  return {
+    id: `support-activity:${node.id || node.name}`,
+    label: node.name,
+    selected: node.name === selectedName,
+    children: (node.children || []).map((child) => supportActivityTreeNode(child, selectedName))
+  };
 }
 
 function renderExperimentPlanList(page) {
@@ -2975,12 +3405,15 @@ function renderScenarioSwitch() {
   `;
 }
 
-function field(label, path, type = "text") {
-  return `<label>${label}${valueInput(path, type)}</label>`;
+function field(label, path, type = "text", attrs = {}) {
+  return `<label>${label}${valueInput(path, type, attrs)}</label>`;
 }
 
-function valueInput(path, type = "text") {
-  return `<input data-path="${path}" type="${type}" value="${htmlEscape(getPath(scenario, path))}">`;
+function valueInput(path, type = "text", attrs = {}) {
+  const attrText = Object.entries(attrs)
+    .map(([key, value]) => ` ${key}="${htmlEscape(value)}"`)
+    .join("");
+  return `<input data-path="${path}" type="${type}" value="${htmlEscape(getPath(scenario, path))}"${attrText}>`;
 }
 
 function valueSelect(path, options) {

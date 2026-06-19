@@ -63,7 +63,7 @@ export const defaultScenario = {
           {
             id: "day-patrol-main",
             basicTaskName: "近海巡逻任务",
-            equipmentType: "A-Prototype",
+            equipmentType: "F35",
             equipmentQuantity: 5,
             groupName: "第一出动编队",
             taskDispatchTime: "07:15",
@@ -84,7 +84,7 @@ export const defaultScenario = {
           {
             id: "night-alert-main",
             basicTaskName: "远海警戒任务",
-            equipmentType: "A-Prototype",
+            equipmentType: "F15",
             equipmentQuantity: 4,
             groupName: "夜间警戒编队",
             taskDispatchTime: "19:30",
@@ -103,7 +103,27 @@ export const defaultScenario = {
       {
         id: "periodic-day-night",
         name: "昼夜保障周期任务",
+        taskName: "昼夜保障周期任务",
+        cycleDays: 7,
+        taskPeriodDays: 7,
+        periodDays: 7,
+        repeatCycleDays: 7,
+        repeatCycleValue: 7,
+        repeatCycleUnit: "day",
+        repeatRounds: 2,
+        repeatCount: 2,
+        dailyRepeatCount: 2,
         repeatWeeks: 2,
+        compositeTasks: [
+          { week: "1", compositeTaskId: "composite-day-patrol" },
+          { week: "2", compositeTaskId: "composite-day-patrol" },
+          { week: "3", compositeTaskId: "composite-night-alert" },
+          { week: "4", compositeTaskId: "composite-day-patrol" },
+          { week: "5", compositeTaskId: "composite-day-patrol" },
+          { week: "6", compositeTaskId: "composite-night-alert" },
+          { week: "7", compositeTaskId: "composite-day-patrol" }
+        ],
+        compositeTaskIds: ["composite-day-patrol", "composite-night-alert"],
         weekdayAssignments: {
           monday: "composite-day-patrol",
           tuesday: "composite-day-patrol",
@@ -121,14 +141,14 @@ export const defaultScenario = {
     name: "近海巡逻任务",
     taskNo: "BM-01",
     taskArea: "近海巡逻区",
-    equipmentType: "A-Prototype",
+    equipmentType: "F35",
     equipmentQuantity: 5,
     taskDurationMinutes: 180,
     preparationMinutes: 45,
     cancelMinutes: 20,
     supportActivityName: "飞行前保障",
     updatedAt: "2026-06-18 09:00",
-    successPoint: "任务区巡逻完成",
+    successPoint: 0.95,
     startHour: 1,
     returnRatio: 0.35,
     priority: 1,
@@ -144,24 +164,25 @@ export const defaultScenario = {
     unitId: "CU-01",
     groupName: "第一出动编队",
     basicTaskName: "近海巡逻任务",
-    equipmentType: "陆基飞机",
+    equipmentType: "F35 / F15 / Z20",
     quantity: 8,
     requiredCount: 5,
     deploymentLocation: "主基地机场",
     standbyCount: 3,
     members: [
-      { aircraftNo: "A-01", model: "A-Prototype", role: "长机", status: "执行", remainingLifeHours: 180, deploymentLocation: "主基地机场" },
-      { aircraftNo: "A-02", model: "A-Prototype", role: "僚机", status: "执行", remainingLifeHours: 176, deploymentLocation: "主基地机场" },
-      { aircraftNo: "A-03", model: "A-Prototype", role: "僚机", status: "执行", remainingLifeHours: 169, deploymentLocation: "主基地机场" },
-      { aircraftNo: "A-04", model: "A-Prototype", role: "僚机", status: "执行", remainingLifeHours: 164, deploymentLocation: "主基地机场" },
-      { aircraftNo: "A-05", model: "A-Prototype", role: "僚机", status: "执行", remainingLifeHours: 158, deploymentLocation: "主基地机场" },
-      { aircraftNo: "A-06", model: "A-Prototype", role: "备份", status: "备用", remainingLifeHours: 171, deploymentLocation: "主基地机场" },
-      { aircraftNo: "A-07", model: "A-Prototype", role: "备份", status: "备用", remainingLifeHours: 166, deploymentLocation: "主基地机场" },
-      { aircraftNo: "A-08", model: "A-Prototype", role: "备份", status: "备用", remainingLifeHours: 152, deploymentLocation: "主基地机场" }
+      { aircraftNo: "F35-01", model: "F35", role: "长机", status: "执行", remainingLifeHours: 180, deploymentLocation: "主基地机场" },
+      { aircraftNo: "F35-02", model: "F35", role: "僚机", status: "执行", remainingLifeHours: 176, deploymentLocation: "主基地机场" },
+      { aircraftNo: "F35-03", model: "F35", role: "僚机", status: "执行", remainingLifeHours: 169, deploymentLocation: "主基地机场" },
+      { aircraftNo: "F15-01", model: "F15", role: "僚机", status: "执行", remainingLifeHours: 164, deploymentLocation: "主基地机场" },
+      { aircraftNo: "Z20-01", model: "Z20", role: "僚机", status: "执行", remainingLifeHours: 158, deploymentLocation: "主基地机场" },
+      { aircraftNo: "F15-02", model: "F15", role: "备份", status: "备用", remainingLifeHours: 171, deploymentLocation: "主基地机场" },
+      { aircraftNo: "Z20-02", model: "Z20", role: "备份", status: "备用", remainingLifeHours: 166, deploymentLocation: "主基地机场" },
+      { aircraftNo: "F35-04", model: "F35", role: "备份", status: "备用", remainingLifeHours: 152, deploymentLocation: "主基地机场" }
     ]
   },
   equipment: {
-    model: "A-Prototype",
+    model: "F35",
+    wholeMachineModels: ["F35", "F15", "Z20"],
     quantity: 8,
     deploymentLocation: "主基地机场",
     initialReady: 8,
@@ -171,7 +192,7 @@ export const defaultScenario = {
   components: [
     { id: "engine", name: "发动机", parentId: "aircraft-root", productType: "LRU", spareType: "发动机备件", failureModel: "随机", failureDistribution: { distributionType: "指数分布", parameters: "lambda=0.07" }, failureRate: 0.07, mtbfHours: 80, lifeLimitHours: 220, connectionType: "串联", quantity: 2, kOutOfN: { enabled: true, n: 2, k: 1 }, specialRepairProfile: { repairTimeMinutes: 220, repairRatio: 0.35, replacementRatio: 0.65 }, rms: { reliability: 0.93, maintainability: 0.88, supportability: 0.9, mttrHours: 3.5, mldtHours: 1.2, availability: 0.96 } },
     { id: "avionics", name: "航电系统", parentId: "aircraft-root", productType: "SRU", spareType: "航电模块", failureModel: "退化", failureDistribution: { distributionType: "威布尔分布", parameters: "beta=1.8, eta=120" }, failureRate: 0.04, mtbfHours: 110, lifeLimitHours: 260, connectionType: "并联", quantity: 2, kOutOfN: { enabled: true, n: 2, k: 1 }, specialRepairProfile: { repairTimeMinutes: 160, repairRatio: 0.55, replacementRatio: 0.45 }, rms: { reliability: 0.95, maintainability: 0.91, supportability: 0.89, mttrHours: 2.8, mldtHours: 1.4, availability: 0.97 } },
-    { id: "hydraulic", name: "液压组件", parentId: "aircraft-root", productType: "组件", spareType: "液压备件", failureModel: "寿命", failureDistribution: { distributionType: "正态分布", parameters: "mean=95, sigma=12" }, failureRate: 0.06, mtbfHours: 95, lifeLimitHours: 200, connectionType: "备用", quantity: 1, kOutOfN: { enabled: false, n: 1, k: 1 }, specialRepairProfile: { repairTimeMinutes: 140, repairRatio: 0.7, replacementRatio: 0.3 }, rms: { reliability: 0.92, maintainability: 0.86, supportability: 0.88, mttrHours: 3.2, mldtHours: 1.6, availability: 0.95 } }
+    { id: "hydraulic", name: "液压组件", parentId: "aircraft-root", productType: "SRU", spareType: "液压备件", failureModel: "寿命", failureDistribution: { distributionType: "正态分布", parameters: "mean=95, sigma=12" }, failureRate: 0.06, mtbfHours: 95, lifeLimitHours: 200, connectionType: "备用", quantity: 1, kOutOfN: { enabled: false, n: 1, k: 1 }, specialRepairProfile: { repairTimeMinutes: 140, repairRatio: 0.7, replacementRatio: 0.3 }, rms: { reliability: 0.92, maintainability: 0.86, supportability: 0.88, mttrHours: 3.2, mldtHours: 1.6, availability: 0.95 } }
   ],
   supportNodes: [
     {
@@ -209,7 +230,7 @@ export const defaultScenario = {
     {
       id: "preflight",
       activityType: "飞行前保障",
-      activityName: "A-Prototype直接准备方案",
+      activityName: "F35直接准备方案",
       planType: "直接准备方案",
       durationHours: 1,
       requiredPersonnel: 2,
@@ -218,7 +239,6 @@ export const defaultScenario = {
       spareQuantity: 0,
       priority: 1,
       maxWorkTimeRefMinutes: 90,
-      simulationRunRule: "按流道组并行排队",
       jobs: [
         {
           activityCode: "OPS-001",
@@ -368,7 +388,7 @@ export const defaultScenario = {
     {
       id: "turnaround",
       activityType: "再次出动准备",
-      activityName: "A-Prototype再次出动准备方案",
+      activityName: "F35再次出动准备方案",
       planType: "再次出动准备方案",
       durationHours: 2,
       requiredPersonnel: 2,
@@ -377,7 +397,6 @@ export const defaultScenario = {
       spareQuantity: 0,
       priority: 1,
       maxWorkTimeRefMinutes: 75,
-      simulationRunRule: "按任务优先级抢占保障资源",
       jobs: [
         {
           activityCode: "OPS-101",
@@ -405,6 +424,26 @@ export const defaultScenario = {
           ammunition: "无",
           spare: "无"
         }
+      ]
+    },
+    {
+      id: "logistics-support",
+      activityType: "后勤保障",
+      activityName: "多级保障组织后勤保障方案",
+      planType: "后勤保障活动方案",
+      durationHours: 2,
+      requiredPersonnel: 2,
+      requiredDevices: 2,
+      spareType: "发动机备件",
+      spareQuantity: 1,
+      priority: 1,
+      organizationStrategies: [
+        { supportNodeId: "main-airbase", supportLevel: "一线保障", organizationStrategy: "任务优先 + 备件安全库存", lateralSupportNodes: ["forward-airport"] },
+        { supportNodeId: "rear-stock", supportLevel: "后方保障", organizationStrategy: "集中库存 + 纵向补给", lateralSupportNodes: ["main-airbase"] }
+      ],
+      transportStrategies: [
+        { direction: "\u7eb5\u5411\u8fd0\u8f93", spareType: "\u53d1\u52a8\u673a\u5907\u4ef6", triggerMode: "\u4e34\u754c\u5e93\u5b58", criticalInventory: 2, from: "rear-stock", to: "main-airbase", transportTimeHours: 2 },
+        { direction: "\u6a2a\u5411\u8fd0\u8f93", spareType: "\u822a\u7535\u6a21\u5757", triggerMode: "\u5468\u671f\u6027\u8c03\u8fd0", transferCycleHours: 24, from: "main-airbase", to: "forward-airport", transportTimeHours: 1 }
       ]
     }
   ],

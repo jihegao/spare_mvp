@@ -575,6 +575,52 @@ input {
   background: #fbfcfd;
 }
 
+.task-modeling-periodic-layout {
+  grid-template-columns: minmax(320px, 360px) minmax(0, 1fr);
+}
+
+.periodic-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.periodic-panel-head h4 {
+  margin-top: 0;
+}
+
+.periodic-panel-head p {
+  margin: 4px 0 0;
+}
+
+.table-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.btn-danger {
+  border-color: #fecdd3;
+  background: #fff1f2;
+  color: var(--red);
+}
+
+.alert {
+  margin: 8px 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.alert.warn {
+  border-color: #fde68a;
+  background: #fffbeb;
+  color: #92400e;
+}
+
 .tree-toolbar,
 .toolbar-row {
   display: flex;
@@ -599,30 +645,62 @@ input {
 }
 
 .tree-node-label {
+  width: 100%;
   display: flex;
   align-items: center;
   gap: 6px;
   min-height: 30px;
   padding: 5px 8px;
+  border: 0;
   border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
   cursor: default;
+}
+
+.tree-node-label[data-tree-toggle] {
+  cursor: pointer;
 }
 
 .tree-node-label:hover {
   background: var(--primary-soft);
 }
 
+.tree-node-label.root {
+  background: var(--primary-soft);
+  color: #173a70;
+  font-weight: 700;
+}
+
 .tree-node-toggle {
+  flex: 0 0 18px;
   width: 18px;
   color: var(--primary);
   font-size: 12px;
   text-align: center;
 }
 
+.tree-node-text {
+  min-width: 0;
+}
+
+.tree-node-meta {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
 .tree-node-children {
   margin-left: 16px;
   padding-left: 8px;
   border-left: 1px dashed var(--line);
+}
+
+.tree-node-item.collapsed > .tree-node-children {
+  display: none;
 }
 
 .detail-panel {
@@ -1082,6 +1160,20 @@ input {
   display: grid;
   gap: 8px;
   margin-top: 14px;
+}
+
+.object-tree > .tree-node-item > .tree-node-label,
+.tree-node-list > .tree-node-item > .tree-node-label {
+  min-height: 38px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  background: #fbfcfd;
+}
+
+.object-tree > .tree-node-item > .tree-node-label.root,
+.tree-node-list > .tree-node-item > .tree-node-label.root {
+  border-color: #d8e4ff;
+  background: var(--primary-soft);
 }
 
 .tree-node {

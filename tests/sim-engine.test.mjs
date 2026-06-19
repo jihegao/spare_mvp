@@ -24,13 +24,16 @@ test("default scenario includes combat unit member aircraft", () => {
   assert.equal(defaultScenario.combatUnit.groupName, "第一出动编队");
   assert.equal(defaultScenario.combatUnit.requiredCount, 5);
   assert.equal(defaultScenario.combatUnit.members.length, 8);
-  assert.deepEqual(defaultScenario.combatUnit.members.slice(0, 2).map((member) => member.aircraftNo), ["A-01", "A-02"]);
+  assert.deepEqual(defaultScenario.equipment.wholeMachineModels, ["F35", "F15", "Z20"]);
+  assert.deepEqual(new Set(defaultScenario.combatUnit.members.map((member) => member.model)), new Set(["F35", "F15", "Z20"]));
+  assert.deepEqual(defaultScenario.combatUnit.members.slice(0, 2).map((member) => member.aircraftNo), ["F35-01", "F35-02"]);
 });
 
 test("default scenario includes basic mission modeling attributes", () => {
   assert.equal(defaultScenario.basicMission.name, "近海巡逻任务");
   assert.equal(defaultScenario.basicMission.taskNo, "BM-01");
   assert.equal(defaultScenario.basicMission.taskArea, "近海巡逻区");
+  assert.equal(defaultScenario.basicMission.equipmentType, "F35");
   assert.equal(defaultScenario.basicMission.equipmentQuantity, 5);
   assert.equal(defaultScenario.basicMission.taskDurationMinutes, 180);
   assert.equal(defaultScenario.basicMission.supportActivityName, "飞行前保障");
@@ -39,10 +42,16 @@ test("default scenario includes basic mission modeling attributes", () => {
 test("default scenario includes mission profile composite and periodic tasks", () => {
   assert.equal(defaultScenario.missionProfile.compositeTasks[0].name, "昼间巡逻复合任务");
   assert.equal(defaultScenario.missionProfile.compositeTasks[0].taskItems[0].basicTaskName, "近海巡逻任务");
+  assert.equal(defaultScenario.missionProfile.compositeTasks[0].taskItems[0].equipmentType, "F35");
+  assert.equal(defaultScenario.missionProfile.compositeTasks[1].taskItems[0].equipmentType, "F15");
   assert.equal(defaultScenario.missionProfile.compositeTasks[0].taskItems[0].dailyRepeatCount, 2);
   assert.equal(defaultScenario.missionProfile.periodicTasks[0].name, "昼夜保障周期任务");
+  assert.equal(defaultScenario.missionProfile.periodicTasks[0].cycleDays, 7);
+  assert.equal(defaultScenario.missionProfile.periodicTasks[0].taskPeriodDays, 7);
   assert.equal(defaultScenario.missionProfile.periodicTasks[0].repeatWeeks, 2);
-  assert.equal(defaultScenario.missionProfile.periodicTasks[0].weekdayAssignments.monday, "composite-day-patrol");
+  assert.equal(defaultScenario.missionProfile.periodicTasks[0].repeatRounds, 2);
+  assert.equal(defaultScenario.missionProfile.periodicTasks[0].compositeTasks[2].compositeTaskId, "composite-night-alert");
+  assert.deepEqual(defaultScenario.missionProfile.periodicTasks[0].compositeTaskIds, ["composite-day-patrol", "composite-night-alert"]);
 });
 
 test("default scenario includes equipment tree quantity and n-out-of-k attributes", () => {
@@ -69,11 +78,12 @@ test("default scenario includes ship-front comprehensive support activity fields
   assert.ok(activities.some((activity) => activity.planType === "直接准备方案"));
   assert.ok(activities.some((activity) => activity.planType === "预防性维修方案"));
   assert.ok(activities.some((activity) => activity.planType === "修复性维修方案"));
+  assert.ok(activities.some((activity) => activity.planType === "后勤保障活动方案"));
 
   const operations = activities.find((activity) => activity.planType === "直接准备方案");
   assert.equal(typeof operations.activityName, "string");
   assert.equal(typeof operations.maxWorkTimeRefMinutes, "number");
-  assert.equal(typeof operations.simulationRunRule, "string");
+  assert.equal(Object.hasOwn(operations, "simulationRunRule"), false);
 
   const preventive = activities.find((activity) => activity.planType === "预防性维修方案");
   assert.deepEqual(preventive.triggerModes, ["日历时间", "飞行小时", "起落次数"]);
@@ -84,7 +94,18 @@ test("default scenario includes ship-front comprehensive support activity fields
   assert.equal(typeof corrective.repairDistribution.distributionType, "string");
   assert.ok(Array.isArray(corrective.repairTypes));
 
-  for (const activity of activities) {
+  const logistics = activities.find((activity) => activity.activityType === "后勤保障");
+  assert.ok(Array.isArray(logistics.transportStrategies));
+  assert.ok(logistics.transportStrategies.some((strategy) => strategy.direction === "横向运输"));
+  assert.ok(logistics.transportStrategies.some((strategy) => strategy.direction === "纵向运输"));
+  assert.ok(logistics.transportStrategies.every((strategy) => Object.hasOwn(strategy, "direction") && Object.hasOwn(strategy, "spareType") && Object.hasOwn(strategy, "triggerMode") && Object.hasOwn(strategy, "from") && Object.hasOwn(strategy, "to") && Object.hasOwn(strategy, "transportTimeHours")));
+  const criticalStrategy = logistics.transportStrategies.find((strategy) => strategy.triggerMode === "\u4e34\u754c\u5e93\u5b58");
+  const periodicStrategy = logistics.transportStrategies.find((strategy) => strategy.triggerMode === "\u5468\u671f\u6027\u8c03\u8fd0");
+  assert.equal(typeof criticalStrategy.criticalInventory, "number");
+  assert.equal(typeof periodicStrategy.transferCycleHours, "number");
+  assert.equal(Object.hasOwn(logistics, "jobs"), false);
+
+  for (const activity of activities.filter((item) => item.activityType !== "后勤保障")) {
     assert.ok(Array.isArray(activity.jobs), `${activity.id} jobs`);
     assert.ok(activity.jobs.length > 0, `${activity.id} job count`);
     for (const job of activity.jobs) {
