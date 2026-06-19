@@ -24,6 +24,13 @@ import {
   publishRmsAllocation
 } from "./rms-allocation-engine.mjs";
 import { renderRmsAllocationWorkbench } from "./rms-allocation-workbench.mjs";
+import { validateModelingImportPackage } from "./modeling-import-contract.mjs";
+import {
+  cloneModelingImportPackage,
+  diffModelingImports,
+  normalizeModelingImportRecord,
+  renderModelingImportWorkbench
+} from "./modeling-import-workbench.mjs";
 
 const app = document.querySelector("#app");
 const groups = groupFeaturePages(FEATURE_PAGES);
@@ -178,6 +185,65 @@ const SYSTEM_FORM_ROWS = [
   { level: "保障组织建模", form: "备件建模", field: "备件名称、型号、库存、适用机型", relation: "关联保障节点库存" },
   { level: "保障活动建模", form: "使用保障活动建模", field: "活动类别、工序、资源需求", relation: "关联保障人员、设备、备件" }
 ];
+const MODELING_IMPORT_DEMO_FIXTURE = {
+  schemaVersion: "modeling-import-v1",
+  importId: "import-carrier-day-night-001",
+  projectId: "project-carrier-day-night",
+  source: {
+    type: "json_fixture",
+    name: "modeling_import_project.json"
+  },
+  lifecycle: {
+    state: "draft",
+    version: 1,
+    referencedRunIds: []
+  },
+  objects: {
+    missionProfiles: [
+      {
+        id: "mission-profile-day-night",
+        name: "昼夜混合出动任务剖面",
+        durationHours: 3
+      }
+    ],
+    equipmentAssets: [
+      {
+        id: "aircraft-root",
+        name: "舰载机",
+        quantity: 4,
+        mtbfHours: 600
+      },
+      {
+        id: "radar-lru",
+        name: "雷达 LRU",
+        parentId: "aircraft-root",
+        quantity: 1,
+        mtbfHours: 900
+      }
+    ],
+    supportResources: [
+      {
+        id: "avionics-team",
+        name: "航电维修组",
+        capacity: 2
+      }
+    ],
+    supportActivities: [
+      {
+        id: "inspect-radar",
+        name: "雷达通电检查",
+        equipmentId: "radar-lru",
+        resourceId: "avionics-team",
+        durationHours: 0.5
+      }
+    ]
+  },
+  changes: [],
+  validation: {
+    status: "valid",
+    issues: []
+  }
+};
 
 let scenario = cloneScenario(defaultScenario);
 let { singleResult, monteCarloResult } = buildDemoResultState(scenario);
@@ -185,6 +251,12 @@ let rmsAllocationProject = createDemoRmsAllocationProject();
 let rmsAllocationPlan = createDefaultRmsAllocationPlan(rmsAllocationProject);
 let rmsAllocationResult = calculateRmsAllocation(rmsAllocationPlan, rmsAllocationProject);
 let rmsPublishedProject = null;
+let modelingImportPackage = cloneModelingImportPackage(MODELING_IMPORT_DEMO_FIXTURE);
+let modelingImportPublishedPackage = null;
+let modelingImportValidation = cloneModelingImportPackage(MODELING_IMPORT_DEMO_FIXTURE.validation);
+let modelingImportCompileResult = null;
+let modelingImportStatus = "样例导入包已加载";
+let modelingImportSaved = false;
 let savedProject = null;
 let modelingSnapshot = null;
 let experimentPlan = null;
@@ -547,6 +619,12 @@ function bindEvents() {
       selectedOntologyItem = { type: "edge", id: ontologyEdge.dataset.ontologyEdgeId };
       selectedMesaView = "ontology";
       render();
+      return;
+    }
+
+    const modelingImportActionButton = event.target.closest("[data-modeling-import-action]");
+    if (modelingImportActionButton) {
+      handleModelingImportAction(modelingImportActionButton.dataset.modelingImportAction).finally(() => render());
       return;
     }
 
@@ -1008,6 +1086,18 @@ function renderMainComponent(page) {
   if (page.component === "experiment-form") return renderExperimentPlanEditor(page);
   if (page.component === "system-project-management") return renderSystemProjectManagement(page);
   if (page.component === "system-basic-config") return renderSystemBasicConfig(page);
+  if (page.component === "modeling-import-workbench") return renderModelingImportWorkbench({
+    importPackage: modelingImportPackage,
+    publishedPackage: modelingImportPublishedPackage,
+    validation: modelingImportValidation,
+    diff: diffModelingImports(modelingImportPublishedPackage, modelingImportPackage),
+    compileResult: modelingImportCompileResult,
+    actionStatus: modelingImportStatus,
+    canPublish: modelingImportSaved,
+    canCompile: Boolean(modelingImportPublishedPackage)
+  }, {
+    htmlEscape
+  });
   if (page.component === "rms-allocation") return renderRmsAllocationWorkbench({
     project: rmsAllocationProject,
     plan: rmsAllocationPlan,
@@ -3390,6 +3480,146 @@ function recalculateRmsAllocation() {
       assumptions: rmsAllocationPlan.assumptions || []
     };
   }
+}
+
+async function handleModelingImportAction(action) {
+  if (action === "load-fixture") {
+    try {
+      const stored = await backendApi.getModelingImport(MODELING_IMPORT_DEMO_FIXTURE.importId);
+      applyModelingImportRecord(stored);
+      modelingImportCompileResult = null;
+      modelingImportStatus = "已从后端恢复导入草稿和发布快照";
+    } catch {
+      modelingImportPackage = cloneModelingImportPackage(MODELING_IMPORT_DEMO_FIXTURE);
+      modelingImportPublishedPackage = null;
+      modelingImportValidation = cloneModelingImportPackage(MODELING_IMPORT_DEMO_FIXTURE.validation);
+      modelingImportCompileResult = null;
+      modelingImportStatus = "样例导入包已加载";
+      modelingImportSaved = false;
+    }
+    return;
+  }
+
+  if (action === "load-invalid-fixture") {
+    modelingImportPackage = createInvalidModelingImportFixture();
+    modelingImportPublishedPackage = null;
+    modelingImportValidation = {
+      ok: false,
+      status: "invalid",
+      issues: validateModelingImportPackage(modelingImportPackage)
+    };
+    modelingImportPackage.validation = cloneModelingImportPackage(modelingImportValidation);
+    modelingImportCompileResult = null;
+    modelingImportStatus = "错误样例已加载，字段级问题已定位";
+    modelingImportSaved = false;
+    return;
+  }
+
+  if (action === "validate") {
+    try {
+      modelingImportValidation = await backendApi.validateModelingImport(modelingImportPackage);
+      modelingImportPackage = {
+        ...modelingImportPackage,
+        validation: cloneModelingImportPackage(modelingImportValidation)
+      };
+      modelingImportStatus = modelingImportValidation.ok === false ? "校验未通过" : "校验通过";
+    } catch (err) {
+      setModelingImportActionError("校验失败", "backendApi.validateModelingImport", err);
+    }
+    return;
+  }
+
+  if (action === "save-draft") {
+    try {
+      modelingImportPackage = {
+        ...cloneModelingImportPackage(modelingImportPackage),
+        lifecycle: {
+          ...(modelingImportPackage.lifecycle || {}),
+          state: "draft"
+        }
+      };
+      const saved = await backendApi.saveModelingImport(modelingImportPackage);
+      const stored = await backendApi.getModelingImport(modelingImportPackage.importId);
+      applyModelingImportRecord(stored);
+      if (saved.validation_status) {
+        modelingImportValidation = {
+          ...modelingImportValidation,
+          status: saved.validation_status,
+          issues: saved.validation_status === "valid" ? [] : (modelingImportValidation.issues || [])
+        };
+      }
+      modelingImportSaved = true;
+      modelingImportStatus = `草稿已保存：${saved.import_id || modelingImportPackage.importId}`;
+    } catch (err) {
+      setModelingImportActionError("草稿保存失败", "backendApi.saveModelingImport", err);
+    }
+    return;
+  }
+
+  if (action === "publish") {
+    if (!modelingImportSaved) {
+      modelingImportStatus = "请先保存草稿，再发布导入包";
+      return;
+    }
+    try {
+      const published = await backendApi.publishModelingImport(modelingImportPackage.importId);
+      applyModelingImportRecord(published);
+      modelingImportSaved = true;
+      modelingImportStatus = `已发布：${modelingImportPackage.importId}`;
+    } catch (err) {
+      setModelingImportActionError("发布失败", "backendApi.publishModelingImport", err);
+    }
+    return;
+  }
+
+  if (action === "compile-scenario") {
+    if (!modelingImportPublishedPackage) {
+      modelingImportStatus = "请先发布导入包，再生成 Scenario";
+      return;
+    }
+    try {
+      modelingImportCompileResult = await backendApi.compileModelingImportScenario(modelingImportPackage.importId, "smoke");
+      const scenarioId = modelingImportCompileResult?.scenario?.scenario_id || modelingImportCompileResult?.scenario?.scenarioId || "Scenario";
+      modelingImportStatus = `已生成 ${scenarioId}`;
+    } catch (err) {
+      setModelingImportActionError("Scenario 生成失败", "backendApi.compileModelingImportScenario", err);
+    }
+  }
+}
+
+function applyModelingImportRecord(record) {
+  const state = normalizeModelingImportRecord(record, MODELING_IMPORT_DEMO_FIXTURE);
+  modelingImportPackage = state.importPackage;
+  modelingImportPublishedPackage = state.publishedPackage;
+  modelingImportValidation = state.validation;
+  modelingImportSaved = state.saved;
+}
+
+function createInvalidModelingImportFixture() {
+  const draft = cloneModelingImportPackage(MODELING_IMPORT_DEMO_FIXTURE);
+  draft.importId = "import-carrier-day-night-invalid";
+  draft.objects.equipmentAssets[1].quantity = 0;
+  draft.objects.supportActivities[0].resourceId = "missing-resource";
+  draft.validation = { status: "invalid", issues: [] };
+  return draft;
+}
+
+function setModelingImportActionError(label, fieldPath, err) {
+  const message = `${label}：${err && err.message ? err.message : "Backend API 不可用"}`;
+  const backendIssues = Array.isArray(err?.details?.issues) ? err.details.issues : null;
+  modelingImportStatus = message;
+  modelingImportValidation = {
+    status: backendIssues ? "invalid" : "blocked",
+    issues: backendIssues || [
+      {
+        severity: "error",
+        page: "建模数据入口",
+        object_id: modelingImportPackage.importId || "modeling-import-package",
+        field_path: fieldPath,
+        message
+      }
+    ]
+  };
 }
 
 async function loadAviationSupportState(steps = aviationSteps) {

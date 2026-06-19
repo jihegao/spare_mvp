@@ -71,6 +71,7 @@ function validatePackageRoots(importPackage, issues) {
       message: `${field} 是导入包必填字段。`
     }));
   }
+  validateLifecycle(importPackage, issues);
 
   for (const collection of Object.keys(COLLECTION_RULES)) {
     if (Array.isArray(importPackage?.objects?.[collection])) continue;
@@ -80,6 +81,48 @@ function validatePackageRoots(importPackage, issues) {
       objectId: "modeling-import-package",
       fieldPath: `objects.${collection}`,
       message: `objects.${collection} 是导入包必填对象集合。`
+    }));
+  }
+}
+
+function validateLifecycle(importPackage, issues) {
+  const lifecycle = importPackage?.lifecycle;
+  if (lifecycle === undefined || lifecycle === null || lifecycle === "") return;
+  if (typeof lifecycle !== "object" || Array.isArray(lifecycle)) {
+    issues.push(createIssue({
+      code: "invalid_lifecycle",
+      collection: undefined,
+      objectId: "modeling-import-package",
+      fieldPath: "lifecycle",
+      message: "lifecycle 必须是包含 state、version 和 referencedRunIds 的对象。"
+    }));
+    return;
+  }
+  if (!["draft", "published"].includes(lifecycle.state)) {
+    issues.push(createIssue({
+      code: "invalid_lifecycle_state",
+      collection: undefined,
+      objectId: "modeling-import-package",
+      fieldPath: "lifecycle.state",
+      message: "lifecycle.state 必须是 draft 或 published。"
+    }));
+  }
+  if (!Number.isInteger(lifecycle.version) || lifecycle.version < 1) {
+    issues.push(createIssue({
+      code: "invalid_lifecycle_version",
+      collection: undefined,
+      objectId: "modeling-import-package",
+      fieldPath: "lifecycle.version",
+      message: "lifecycle.version 必须是大于等于 1 的整数。"
+    }));
+  }
+  if (!Array.isArray(lifecycle.referencedRunIds) || lifecycle.referencedRunIds.some((item) => typeof item !== "string")) {
+    issues.push(createIssue({
+      code: "invalid_lifecycle_references",
+      collection: undefined,
+      objectId: "modeling-import-package",
+      fieldPath: "lifecycle.referencedRunIds",
+      message: "lifecycle.referencedRunIds 必须是 run_id 字符串数组。"
     }));
   }
 }

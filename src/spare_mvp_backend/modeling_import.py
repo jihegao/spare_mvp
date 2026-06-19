@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from math import isfinite
 from typing import Any
 
@@ -64,6 +65,41 @@ def validate_modeling_import_package(import_package: dict[str, Any]) -> dict[str
     }
 
 
+def modeling_import_to_project(import_package: dict[str, Any]) -> dict[str, Any]:
+    objects = import_package.get("objects", {})
+    mission = _first_dict(objects.get("missionProfiles")) or {}
+    equipment_assets = [row for row in objects.get("equipmentAssets", []) if isinstance(row, dict)]
+    resources = [row for row in objects.get("supportResources", []) if isinstance(row, dict)]
+    activities = [row for row in objects.get("supportActivities", []) if isinstance(row, dict)]
+    lifecycle = import_package.get("lifecycle") if isinstance(import_package.get("lifecycle"), dict) else {}
+    version = _safe_positive_int(lifecycle.get("version"), 1)
+    duration_hours = _safe_positive_float(mission.get("durationHours"), 1)
+
+    return {
+        "schema_version": "project-v0",
+        "project_id": str(import_package["projectId"]),
+        "project_version": f"import-v{version}",
+        "scenarioId": str(import_package["importId"]).replace("_", "-"),
+        "activeModule": "sparePlanning",
+        "airports": [],
+        "missionAreas": [],
+        "experiment": {"seed": 20260619, "steps": max(1, int(duration_hours))},
+        "missionProfile": {
+            "sourceImportId": import_package["importId"],
+            "durationHours": mission.get("durationHours"),
+        },
+        "basicMission": {"minRequiredSorties": max(1, len(activities))},
+        "missionPhases": [],
+        "combatUnit": {},
+        "equipment": {"minRequiredSorties": max(1, len(equipment_assets))},
+        "components": [_equipment_asset_to_component(row) for row in equipment_assets],
+        "supportNodes": [_support_resource_to_node(row) for row in resources],
+        "supportActivities": deepcopy(activities),
+        "reliabilityBlockDiagram": {},
+        "monteCarlo": {"spareMultipliers": [1]},
+    }
+
+
 def _validate_package_roots(import_package: dict[str, Any], issues: list[dict[str, Any]]) -> None:
     if import_package.get("schemaVersion") != "modeling-import-v1":
         issues.append(_issue("invalid_schema_version", None, "modeling-import-package", "schemaVersion", "schemaVersion 必须是 modeling-import-v1。"))
@@ -72,12 +108,30 @@ def _validate_package_roots(import_package: dict[str, Any], issues: list[dict[st
         if import_package.get(field) not in (None, ""):
             continue
         issues.append(_issue("missing_required_root", None, "modeling-import-package", field, f"{field} 是导入包必填字段。"))
+    _validate_lifecycle(import_package, issues)
 
     objects = import_package.get("objects") if isinstance(import_package.get("objects"), dict) else {}
     for collection in COLLECTION_RULES:
         if isinstance(objects.get(collection), list):
             continue
         issues.append(_issue("missing_required_root", None, "modeling-import-package", f"objects.{collection}", f"objects.{collection} 是导入包必填对象集合。"))
+
+
+def _validate_lifecycle(import_package: dict[str, Any], issues: list[dict[str, Any]]) -> None:
+    lifecycle = import_package.get("lifecycle")
+    if lifecycle in (None, ""):
+        return
+    if not isinstance(lifecycle, dict):
+        issues.append(_issue("invalid_lifecycle", None, "modeling-import-package", "lifecycle", "lifecycle 必须是包含 state、version 和 referencedRunIds 的对象。"))
+        return
+    if lifecycle.get("state") not in ("draft", "published"):
+        issues.append(_issue("invalid_lifecycle_state", None, "modeling-import-package", "lifecycle.state", "lifecycle.state 必须是 draft 或 published。"))
+    version = lifecycle.get("version")
+    if not _is_positive_integer_value(version):
+        issues.append(_issue("invalid_lifecycle_version", None, "modeling-import-package", "lifecycle.version", "lifecycle.version 必须是大于等于 1 的整数。"))
+    referenced_run_ids = lifecycle.get("referencedRunIds")
+    if not isinstance(referenced_run_ids, list) or any(not isinstance(item, str) for item in referenced_run_ids):
+        issues.append(_issue("invalid_lifecycle_references", None, "modeling-import-package", "lifecycle.referencedRunIds", "lifecycle.referencedRunIds 必须是 run_id 字符串数组。"))
 
 
 def _collect_object_ids(objects: dict[str, Any], issues: list[dict[str, Any]]) -> dict[str, set[str]]:
@@ -164,3 +218,64 @@ def _issue(code: str, collection: str | None, object_id: str, field_path: str, m
         "field_path": field_path,
         "message": message,
     }
+
+
+def _first_dict(rows: Any) -> dict[str, Any] | None:
+    if not isinstance(rows, list):
+        return None
+    for row in rows:
+        if isinstance(row, dict):
+            return row
+    return None
+
+
+def _equipment_asset_to_component(row: dict[str, Any]) -> dict[str, Any]:
+    component = {
+        "id": str(row.get("id") or "equipment"),
+        "name": str(row.get("name") or row.get("id") or "equipment"),
+        "quantity": _safe_positive_int(row.get("quantity"), 1),
+    }
+    if row.get("parentId") not in (None, ""):
+        component["parentId"] = str(row["parentId"])
+    mtbf_hours = _safe_positive_float(row.get("mtbfHours"), 0)
+    if mtbf_hours > 0:
+        component["mtbfHours"] = mtbf_hours
+        component["failureRate"] = 1 / mtbf_hours
+    return component
+
+
+def _support_resource_to_node(row: dict[str, Any]) -> dict[str, Any]:
+    capacity = _safe_positive_int(row.get("capacity"), 1)
+    return {
+        "id": str(row.get("id") or "support-resource"),
+        "name": str(row.get("name") or row.get("id") or "support-resource"),
+        "capacity": capacity,
+        "equipmentCapacity": capacity,
+    }
+
+
+def _safe_positive_int(value: Any, fallback: int) -> int:
+    number = _safe_positive_float(value, fallback)
+    return max(1, int(number))
+
+
+def _is_positive_integer_value(value: Any) -> bool:
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, int):
+        return value >= 1
+    if isinstance(value, float):
+        return isfinite(value) and value.is_integer() and value >= 1
+    return False
+
+
+def _safe_positive_float(value: Any, fallback: float) -> float:
+    if isinstance(value, bool):
+        return float(fallback)
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return float(fallback)
+    if not isfinite(number) or number <= 0:
+        return float(fallback)
+    return number

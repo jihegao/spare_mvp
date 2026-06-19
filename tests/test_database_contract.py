@@ -96,6 +96,8 @@ class DatabaseContractTest(unittest.TestCase):
                 "validation_status",
                 "referenced_run_ids_json",
                 "payload_json",
+                "draft_payload_json",
+                "published_payload_json",
             },
         }
 
@@ -168,19 +170,76 @@ class DatabaseContractTest(unittest.TestCase):
         self.repository.upsert_modeling_import(import_package, validation)
         stored = self.repository.get_modeling_import(import_package["importId"])
 
-        self.assertEqual(stored["importId"], import_package["importId"])
-        self.assertEqual(stored["projectId"], import_package["projectId"])
+        self.assertEqual(stored["draftPackage"]["importId"], import_package["importId"])
+        self.assertEqual(stored["draftPackage"]["projectId"], import_package["projectId"])
         self.assertEqual(stored["validation"], validation)
         self.assertEqual(stored["lifecycle"]["state"], "draft")
+        self.assertIsNone(stored["publishedPackage"])
 
         published = self.repository.publish_modeling_import(import_package["importId"])
 
-        self.assertEqual(published["lifecycle"]["state"], "published")
+        self.assertEqual(published["draftPackage"]["lifecycle"]["state"], "published")
+        self.assertEqual(published["publishedPackage"]["lifecycle"]["state"], "published")
         self.assertEqual(published["validation"], validation)
         self.assertEqual(
-            self.repository.get_modeling_import(import_package["importId"])["lifecycle"]["state"],
+            self.repository.get_modeling_import(import_package["importId"])["publishedPackage"]["lifecycle"]["state"],
             "published",
         )
+
+    def test_repository_keeps_published_snapshot_after_new_draft_and_reopen(self) -> None:
+        import_package = self._fixture("modeling_import_project.json")
+        validation = {"ok": True, "status": "valid", "issues": []}
+
+        with self.subTest("red path: publish then save a changed draft"):
+            self.repository.upsert_modeling_import(import_package, validation)
+            self.repository.publish_modeling_import(import_package["importId"])
+
+            changed_package = self._fixture("modeling_import_project.json")
+            changed_package["lifecycle"] = {
+                "state": "draft",
+                "version": 2,
+                "referencedRunIds": [],
+            }
+            changed_package["objects"]["equipmentAssets"][1]["quantity"] = 2
+            self.repository.upsert_modeling_import(changed_package, validation)
+
+            stored = self.repository.get_modeling_import(import_package["importId"])
+            self.assertEqual(stored["draftPackage"]["lifecycle"]["state"], "draft")
+            self.assertEqual(stored["draftPackage"]["lifecycle"]["version"], 2)
+            self.assertEqual(stored["draftPackage"]["objects"]["equipmentAssets"][1]["quantity"], 2)
+            self.assertEqual(stored["publishedPackage"]["lifecycle"]["state"], "published")
+            self.assertEqual(stored["publishedPackage"]["lifecycle"]["version"], 1)
+            self.assertEqual(stored["publishedPackage"]["objects"]["equipmentAssets"][1]["quantity"], 1)
+
+    def test_repository_reopens_modeling_import_draft_and_published_payloads(self) -> None:
+        import tempfile
+
+        validation = {"ok": True, "status": "valid", "issues": []}
+        with tempfile.TemporaryDirectory() as tempdir:
+            database_path = Path(tempdir) / "spare-mvp.sqlite"
+            connection = sqlite3.connect(database_path)
+            try:
+                initialize_database(connection)
+                repository = ContractRepository(connection)
+                import_package = self._fixture("modeling_import_project.json")
+                repository.upsert_modeling_import(import_package, validation)
+                repository.publish_modeling_import(import_package["importId"])
+                changed_package = self._fixture("modeling_import_project.json")
+                changed_package["lifecycle"] = {"state": "draft", "version": 2, "referencedRunIds": []}
+                changed_package["objects"]["equipmentAssets"][1]["quantity"] = 2
+                repository.upsert_modeling_import(changed_package, validation)
+            finally:
+                connection.close()
+
+            reopened = sqlite3.connect(database_path)
+            try:
+                initialize_database(reopened)
+                stored = ContractRepository(reopened).get_modeling_import("import-carrier-day-night-001")
+            finally:
+                reopened.close()
+
+        self.assertEqual(stored["draftPackage"]["objects"]["equipmentAssets"][1]["quantity"], 2)
+        self.assertEqual(stored["publishedPackage"]["objects"]["equipmentAssets"][1]["quantity"], 1)
 
     def test_repository_blocks_publishing_referenced_modeling_import_without_new_version(self) -> None:
         import_package = self._fixture("modeling_import_project.json")
@@ -196,15 +255,23 @@ class DatabaseContractTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "published modeling import is referenced"):
             self.repository.assert_modeling_import_can_publish(import_package["importId"])
 
-    def test_repository_blocks_overwriting_referenced_published_modeling_import(self) -> None:
+    def test_repository_blocks_overwriting_referenced_published_modeling_import_on_publish(self) -> None:
         import_package = self._fixture("modeling_import_project.json")
-        import_package["lifecycle"] = {
-            "state": "published",
-            "version": 1,
-            "referencedRunIds": ["run-smoke-contract-001"],
-        }
         validation = {"ok": True, "status": "valid", "issues": []}
         self.repository.upsert_modeling_import(import_package, validation)
+        self.repository.publish_modeling_import(import_package["importId"])
+        self.connection.execute(
+            """
+            UPDATE modeling_imports
+            SET referenced_run_ids_json = ?
+            WHERE import_id = ?
+            """,
+            (
+                json.dumps(["run-smoke-contract-001"]),
+                import_package["importId"],
+            ),
+        )
+        self.connection.commit()
 
         changed_package = self._fixture("modeling_import_project.json")
         changed_package["lifecycle"] = {
@@ -213,9 +280,10 @@ class DatabaseContractTest(unittest.TestCase):
             "referencedRunIds": [],
         }
         changed_package["objects"]["missionProfiles"][0]["name"] = "changed silently"
+        self.repository.upsert_modeling_import(changed_package, validation)
 
         with self.assertRaisesRegex(ValueError, "published modeling import is referenced"):
-            self.repository.upsert_modeling_import(changed_package, validation)
+            self.repository.publish_modeling_import(changed_package["importId"])
 
     def test_repository_does_not_silently_return_mismatched_run_artifacts(self) -> None:
         project = self._fixture("smoke_project.json")

@@ -6,6 +6,7 @@ const MODULE_PREFIX = {
 
 const FEATURE_SLUGS = {
   内置场景: "built-in-scenario",
+  建模数据导入: "modeling-import-workbench",
   基本作战单元建模: "combat-unit",
   基本任务建模: "basic-mission",
   任务剖面参数: "mission-profile-parameters",
@@ -47,6 +48,7 @@ const FEATURE_SLUGS = {
 
 const SOURCE_ROWS = [
   ["系统管理", "项目管理", "数据管理", "数据管理"],
+  ["系统管理", "项目管理", "建模数据导入", "建模数据导入"],
   ["系统管理", "项目管理", "建模颗粒度管理", "建模颗粒度管理"],
   ["系统管理", "装备RMS指标分配", "装备RMS指标分配", "装备RMS指标分配"],
   ["系统管理", "系统基础配置", "用户管理", "用户管理"],
@@ -162,6 +164,7 @@ const FEATURE_ID_ALIASES = {
 function resolveComponent(name, secondary, tertiary) {
   if (name === "方案列表") return "experiment-plan-list";
   if (name === "方案编辑") return "experiment-plan-editor";
+  if (name === "建模数据导入") return "modeling-import-workbench";
   if (name.includes("可靠性框图")) return "reliability-block-diagram";
   if (name.includes("RMS分配") || name.includes("RMS指标分配")) return "rms-allocation";
   if (secondary === "项目管理") return "system-project-management";
@@ -191,6 +194,7 @@ function resolveDataObjects(name, secondary, tertiary) {
   if (name.includes("可靠性框图")) return ["reliabilityBlockDiagram", "components"];
   if (name.includes("RMS分配") || name.includes("RMS指标分配")) return ["rmsAllocationPlan", "equipmentNodes", "missionExposure", "allocationResults"];
   if (name.includes("数据管理")) return ["projects", "projectDataSets", "dataOwnership"];
+  if (name.includes("建模数据导入")) return ["modelingImportPackage", "validationIssues", "scenarioPreview"];
   if (name.includes("建模颗粒度")) return ["modelingLevels", "modelingObjects", "objectRelations"];
   if (name.includes("用户管理")) return ["users", "roles", "organizations"];
   if (name.includes("功能权限")) return ["features", "roles", "permissionRules"];

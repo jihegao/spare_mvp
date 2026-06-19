@@ -9,7 +9,7 @@ from pathlib import Path
 import threading
 from typing import Any
 
-from src.spare_mvp_backend.modeling_import import validate_modeling_import_package
+from src.spare_mvp_backend.modeling_import import modeling_import_to_project, validate_modeling_import_package
 from src.spare_mvp_backend.repository import ContractRepository
 from src.spare_mvp_contract.adapter import AdapterError, SimulationAdapter
 
@@ -92,6 +92,39 @@ class BackendApi:
             return self.repository.publish_modeling_import(import_id)
         except ValueError as exc:
             raise BackendApiError("published_import_referenced", str(exc), import_id=import_id) from exc
+
+    def compile_modeling_import_scenario(self, import_id: str, model_family: str = "smoke") -> dict[str, Any]:
+        stored = self.repository.get_modeling_import(import_id)
+        import_package = stored.get("publishedPackage")
+        if import_package is None:
+            raise BackendApiError(
+                "unpublished_modeling_import",
+                "Modeling import must be published before Scenario compilation",
+                import_id=import_id,
+            )
+        validation = self.validate_modeling_import(import_package)
+        if not validation["ok"]:
+            raise BackendApiError(
+                "invalid_modeling_import",
+                "Modeling import package failed validation",
+                issues=validation["issues"],
+            )
+
+        project = modeling_import_to_project(import_package)
+        try:
+            scenario = self.adapter.compile_scenario(project, model_family=model_family)
+        except AdapterError as exc:
+            raise self._to_backend_error(exc, model_family) from exc
+        return {
+            "compiled_from_import": {
+                "import_id": import_id,
+                "import_version": int(import_package.get("lifecycle", {}).get("version") or 1),
+                "project_id": project["project_id"],
+                "model_family": model_family,
+            },
+            "project": project,
+            "scenario": scenario,
+        }
 
     def create_modeling_snapshot(self, project_id: str) -> dict[str, Any]:
         project = self.repository.get_project(project_id)

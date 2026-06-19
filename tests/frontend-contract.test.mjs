@@ -6,11 +6,11 @@ import { FEATURE_PAGES, getFeaturePageById, groupFeaturePages } from "../front/f
 import { buildOntologyContext, buildProjectOntology, PROJECT_ONTOLOGY, PROJECT_ONTOLOGY_PLAYGROUND } from "../front/ontology-context.mjs";
 
 test("feature catalog exposes all table-2 four-level pages", () => {
-  assert.equal(FEATURE_PAGES.length, 52);
-  assert.equal(new Set(FEATURE_PAGES.map((page) => page.id)).size, 52);
+  assert.equal(FEATURE_PAGES.length, 53);
+  assert.equal(new Set(FEATURE_PAGES.map((page) => page.id)).size, 53);
   assert.equal(FEATURE_PAGES.filter((page) => page.module === "备件规划评估模块").length, 22);
   assert.equal(FEATURE_PAGES.filter((page) => page.module === "任务可靠度评估模块").length, 24);
-  assert.equal(FEATURE_PAGES.filter((page) => page.module === "系统管理").length, 6);
+  assert.equal(FEATURE_PAGES.filter((page) => page.module === "系统管理").length, 7);
   for (const label of ["装备可靠性框图建模", "蒙特卡洛实验结果", "飞机转场携行清单分析", "任务可靠度评估", "停机因素分析"]) {
     assert.ok(FEATURE_PAGES.some((page) => page.name === label), label);
   }
@@ -35,6 +35,7 @@ test("feature grouping preserves three-level navigation and internal fourth-leve
   assert.deepEqual(Object.keys(grouped), ["系统管理", "备件规划评估模块", "任务可靠度评估模块"]);
   assert.deepEqual(Object.keys(grouped["系统管理"]), ["项目管理", "装备RMS指标分配", "系统基础配置"]);
   assert.deepEqual(grouped["系统管理"]["项目管理"]["数据管理"].map((page) => page.name), ["数据管理"]);
+  assert.deepEqual(grouped["系统管理"]["项目管理"]["建模数据导入"].map((page) => page.name), ["建模数据导入"]);
   assert.deepEqual(grouped["系统管理"]["项目管理"]["建模颗粒度管理"].map((page) => page.name), ["建模颗粒度管理"]);
   assert.deepEqual(grouped["系统管理"]["系统基础配置"]["用户管理"].map((page) => page.name), ["用户管理"]);
   assert.deepEqual(grouped["系统管理"]["系统基础配置"]["系统功能权限管理"].map((page) => page.name), ["系统功能权限管理"]);
