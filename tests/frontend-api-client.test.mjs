@@ -82,9 +82,27 @@ test("frontend API client exposes explicit M5 modeling import methods", async ()
       calls.push(request);
       if (request.path === "/modeling-imports/validate") return { ok: true, status: "valid", issues: [] };
       if (request.path === "/modeling-imports") return { import_id: "import/ui demo", validation_status: "valid" };
-      if (request.path === "/modeling-imports/import%2Fui%20demo") return { importId: "import/ui demo" };
+      if (request.path === "/modeling-imports/import%2Fui%20demo") {
+        return {
+          importId: "import/ui demo",
+          lifecycle: { state: "draft", version: 2 },
+          draftPackage: { importId: "import/ui demo", lifecycle: { state: "draft", version: 2 } },
+          publishedPackage: { importId: "import/ui demo", lifecycle: { state: "published", version: 1 } }
+        };
+      }
       if (request.path === "/modeling-imports/import%2Fui%20demo/publish") {
-        return { importId: "import/ui demo", lifecycle: { state: "published" } };
+        return {
+          importId: "import/ui demo",
+          lifecycle: { state: "published", version: 2 },
+          draftPackage: { importId: "import/ui demo", lifecycle: { state: "published", version: 2 } },
+          publishedPackage: { importId: "import/ui demo", lifecycle: { state: "published", version: 2 } }
+        };
+      }
+      if (request.path === "/modeling-imports/import%2Fui%20demo/compile-scenario") {
+        return {
+          compiled_from_import: { import_id: "import/ui demo", model_family: request.body.model_family },
+          scenario: { scenario_id: "import-ui-demo" }
+        };
       }
       throw new Error(`unexpected request ${request.method} ${request.path}`);
     }
@@ -95,19 +113,64 @@ test("frontend API client exposes explicit M5 modeling import methods", async ()
   const saved = await client.saveModelingImport(importPackage);
   const stored = await client.getModelingImport(importPackage.importId);
   const published = await client.publishModelingImport(importPackage.importId);
+  const compiled = await client.compileModelingImportScenario(importPackage.importId);
 
   assert.equal(validation.status, "valid");
   assert.equal(saved.import_id, "import/ui demo");
   assert.equal(stored.importId, "import/ui demo");
+  assert.equal(stored.draftPackage.lifecycle.version, 2);
+  assert.equal(stored.publishedPackage.lifecycle.version, 1);
   assert.equal(published.lifecycle.state, "published");
+  assert.equal(published.publishedPackage.lifecycle.state, "published");
+  assert.equal(compiled.compiled_from_import.model_family, "smoke");
   assert.deepEqual(calls.map((call) => `${call.method} ${call.path}`), [
     "POST /modeling-imports/validate",
     "POST /modeling-imports",
     "GET /modeling-imports/import%2Fui%20demo",
-    "POST /modeling-imports/import%2Fui%20demo/publish"
+    "POST /modeling-imports/import%2Fui%20demo/publish",
+    "POST /modeling-imports/import%2Fui%20demo/compile-scenario"
   ]);
   assert.equal(calls[0].body, importPackage);
   assert.equal(calls[1].body, importPackage);
+  assert.deepEqual(calls[4].body, { model_family: "smoke" });
+});
+
+test("frontend API fetch transport preserves structured backend details", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({
+    ok: false,
+    status: 400,
+    json: async () => ({
+      code: "invalid_modeling_import",
+      message: "Modeling import package failed validation",
+      details: {
+        issues: [
+          {
+            severity: "error",
+            page: "保障活动建模",
+            object_id: "inspect-radar",
+            field_path: "objects.supportActivities[0].resourceId",
+            message: "resourceId 引用了不存在的 supportResources 对象 missing-resource。"
+          }
+        ]
+      }
+    })
+  });
+  try {
+    const client = createBackendApiClient({ baseUrl: "/api" });
+
+    await assert.rejects(
+      () => client.saveModelingImport({ importId: "bad-import" }),
+      (err) => {
+        assert.equal(err.code, "invalid_modeling_import");
+        assert.equal(err.status, 400);
+        assert.equal(err.details.issues[0].field_path, "objects.supportActivities[0].resourceId");
+        return true;
+      }
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("frontend app routes project save run and result reads through API client", async () => {
@@ -162,4 +225,28 @@ test("frontend generic editing remains local until explicit save or run", async 
   assert.match(appSource, /data-save-plan/);
   assert.match(saveButtonSource, /saveCurrentProjectThroughApi\(\)/);
   assert.match(saveButtonSource, /render\(\)/);
+});
+
+test("frontend app wires modeling import workbench through explicit backend actions", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const featureCatalogSource = await readFile(new URL("../front/feature-catalog.mjs", import.meta.url), "utf8");
+  const changeHandlerSource = appSource.slice(
+    appSource.indexOf('app.addEventListener("change"'),
+    appSource.indexOf('app.addEventListener("input"')
+  );
+
+  assert.match(featureCatalogSource, /建模数据导入/);
+  assert.match(featureCatalogSource, /modeling-import-workbench/);
+  assert.match(appSource, /from "\.\/modeling-import-workbench\.mjs"/);
+  assert.match(appSource, /renderModelingImportWorkbench/);
+  assert.match(appSource, /data-modeling-import-action/);
+  assert.match(appSource, /load-invalid-fixture/);
+  assert.match(appSource, /backendApi\.validateModelingImport/);
+  assert.match(appSource, /backendApi\.saveModelingImport/);
+  assert.match(appSource, /backendApi\.getModelingImport/);
+  assert.match(appSource, /backendApi\.publishModelingImport/);
+  assert.match(appSource, /backendApi\.compileModelingImportScenario/);
+  assert.match(appSource, /applyModelingImportRecord/);
+  assert.match(appSource, /normalizeModelingImportRecord/);
+  assert.doesNotMatch(changeHandlerSource, /validateModelingImport|saveModelingImport|publishModelingImport|compileModelingImportScenario/);
 });

@@ -5,7 +5,7 @@
 ## 基本原则
 
 1. 先读取当前仓库状态，再判断实现边界；不要只按历史记忆修改。
-2. 保持 PR 切片边界清晰。当前工作主要集中在 `front/`、`tests/`、`docs/`、`contracts/`、`reports/`、`src/spare_mvp_backend/`、`src/spare_mvp_contract/`、`src/spare_mvp_abm/aviation_support/` 和 `vendor/ship_front/`；M5 数据入口切片还会触达导入 fixture、contract 测试、`modeling_imports` 持久化和 `/api/modeling-imports/*` 本地后端路径。
+2. 保持 PR 切片边界清晰。当前工作主要集中在 `front/`、`tests/`、`docs/`、`contracts/`、`reports/`、`src/spare_mvp_backend/`、`src/spare_mvp_contract/`、`src/spare_mvp_abm/aviation_support/` 和 `vendor/ship_front/`；M5 数据入口切片还会触达导入 fixture、contract 测试、`modeling_imports` 持久化、`/api/modeling-imports/*` 本地后端路径和 M5.2 的「建模数据导入」系统管理工作台。
 3. 不把静态原型、小样本 Monte Carlo 或 Mesa 烟测描述成工程级校准平台。
 4. 修改功能流转、页面入口、仿真参数或结果口径时，必须同步更新 `README.md`、`docs/README.md` 或对应设计/实现文档。
 5. 运行时代码不得依赖 `/Users/gaojihe/...` 下的外部原型路径；这些路径只能出现在来源说明或本地验证命令中。
@@ -38,7 +38,8 @@ http://127.0.0.1:4173/front/
 8. `/api` 不可用时，前端必须显示阻断状态，不创建 `offline-demo-run`。
 9. RMS 分配发布只允许写入 `rms.target` 或 allocation plan，不覆盖 `prediction` 或 `actual`。
 10. M5 建模数据入口必须校验重复 ID、悬空引用、非法数值和已发布且被运行引用后的覆盖保护，并返回页面、对象、字段路径和严重级别。
-11. M5.1 本地后端路径必须通过 `/api/modeling-imports/validate`、`/api/modeling-imports`、`/api/modeling-imports/{import_id}` 和 `/api/modeling-imports/{import_id}/publish` 验证；同一 `import_id` 被 run 引用后不可覆盖，新版本需使用新 `import_id`。
+11. M5.1 本地后端路径必须通过 `/api/modeling-imports/validate`、`/api/modeling-imports`、`/api/modeling-imports/{import_id}` 和 `/api/modeling-imports/{import_id}/publish` 验证；`modeling_imports` 必须保留 `draft_payload_json` 和 `published_payload_json`，`GET /api/modeling-imports/{import_id}` 返回 `draftPackage`、`publishedPackage`、`validation` 和 `lifecycle`；同一 `import_id` 被 run 引用后不可再发布覆盖，新版本需使用新 `import_id`。
+12. M5.2 新增系统管理下的「建模数据导入」工作台、映射/错误/后端可恢复版本预览，以及经 `SimulationAdapter.compile_scenario()` 生成的后端 Scenario 预览（`/api/modeling-imports/{import_id}/compile-scenario`）；`compile-scenario` 必须读取持久化 published payload，而不是当前 draft 或前端内存快照；该切片仍不包含完整 Excel 解析、worker 基础设施、权限/审计或 `aviation_support` 编译解锁。
 
 ## Mesa 后台契约服务（Contract Provider）
 

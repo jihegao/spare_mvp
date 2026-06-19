@@ -27,6 +27,8 @@ CREATE TABLE IF NOT EXISTS modeling_imports (
   validation_status TEXT NOT NULL,
   referenced_run_ids_json TEXT NOT NULL,
   payload_json TEXT NOT NULL,
+  draft_payload_json TEXT,
+  published_payload_json TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );

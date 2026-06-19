@@ -1013,6 +1013,83 @@ input {
   gap: 12px;
 }
 
+.modeling-import-workbench {
+  display: grid;
+  gap: 14px;
+}
+
+.modeling-import-bar,
+.modeling-import-compile-panel {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfd;
+}
+
+.modeling-import-bar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.modeling-import-bar h3 {
+  margin: 3px 0;
+}
+
+.modeling-import-bar p,
+.modeling-import-action-status,
+.modeling-import-empty,
+.modeling-import-summary span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.modeling-import-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.modeling-import-action-status {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.modeling-import-status-grid,
+.modeling-import-compile-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(120px, 1fr));
+  gap: 10px;
+}
+
+.modeling-import-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.modeling-import-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(120px, 1fr));
+  gap: 8px;
+  margin: 10px 0;
+}
+
+.modeling-import-summary div {
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
 .table-wrap.compact table {
   font-size: 12px;
 }
@@ -2216,18 +2293,24 @@ tr.selected-table-row {
   .mesa-visual-grid,
   .system-config-layout,
   .rms-layout,
-  .rms-bottom-grid {
+  .rms-bottom-grid,
+  .modeling-import-layout,
+  .modeling-import-summary,
+  .modeling-import-status-grid,
+  .modeling-import-compile-grid {
     grid-template-columns: 1fr;
   }
 
   .mesa-visual-header,
   .mesa-toolbar,
-  .rms-plan-bar {
+  .rms-plan-bar,
+  .modeling-import-bar {
     align-items: stretch;
     flex-direction: column;
   }
 
-  .rms-actions {
+  .rms-actions,
+  .modeling-import-actions {
     justify-content: flex-start;
   }
 

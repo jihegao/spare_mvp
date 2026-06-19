@@ -15,6 +15,8 @@ def initialize_database(connection: sqlite3.Connection) -> None:
     """Create the PR-D persistence schema in an existing SQLite connection."""
     connection.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
     _ensure_column(connection, "experiment_plans", "modeling_snapshot_id", "TEXT")
+    _ensure_column(connection, "modeling_imports", "draft_payload_json", "TEXT")
+    _ensure_column(connection, "modeling_imports", "published_payload_json", "TEXT")
     connection.commit()
 
 
@@ -56,15 +58,24 @@ class ContractRepository:
 
     def upsert_modeling_import(self, import_package: dict[str, Any], validation: dict[str, Any]) -> None:
         payload = _modeling_import_payload(import_package, validation)
-        self._assert_modeling_import_can_upsert(payload["importId"])
+        existing = self._get_modeling_import_row(payload["importId"])
         lifecycle = payload.get("lifecycle", {})
+        state = str(lifecycle.get("state") or "draft")
+        draft_payload_json = _to_json(payload)
+        published_payload_json = (existing or {}).get("published_payload_json")
+        if state == "published":
+            published_payload_json = _to_json(payload)
+        referenced_run_ids = lifecycle.get("referencedRunIds") or []
+        if state != "published" and existing and existing.get("referenced_run_ids_json"):
+            referenced_run_ids = json.loads(existing["referenced_run_ids_json"])
         self.connection.execute(
             """
             INSERT INTO modeling_imports (
               import_id, project_id, schema_version, import_version, status,
-              validation_status, referenced_run_ids_json, payload_json, updated_at
+              validation_status, referenced_run_ids_json, payload_json,
+              draft_payload_json, published_payload_json, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             ON CONFLICT(import_id) DO UPDATE SET
               project_id = excluded.project_id,
               schema_version = excluded.schema_version,
@@ -73,6 +84,8 @@ class ContractRepository:
               validation_status = excluded.validation_status,
               referenced_run_ids_json = excluded.referenced_run_ids_json,
               payload_json = excluded.payload_json,
+              draft_payload_json = excluded.draft_payload_json,
+              published_payload_json = COALESCE(excluded.published_payload_json, modeling_imports.published_payload_json),
               updated_at = CURRENT_TIMESTAMP
             """,
             (
@@ -80,43 +93,67 @@ class ContractRepository:
                 _required(payload, "projectId"),
                 _required(payload, "schemaVersion"),
                 int(lifecycle.get("version") or 1),
-                str(lifecycle.get("state") or "draft"),
+                state,
                 str(validation.get("status") or ("valid" if validation.get("ok") else "invalid")),
-                json.dumps(lifecycle.get("referencedRunIds") or [], ensure_ascii=False, sort_keys=True),
+                json.dumps(referenced_run_ids, ensure_ascii=False, sort_keys=True),
                 _to_json(payload),
+                draft_payload_json,
+                published_payload_json,
             ),
         )
         self.connection.commit()
 
-    def _assert_modeling_import_can_upsert(self, import_id: str) -> None:
-        try:
-            stored = self.get_modeling_import(import_id)
-        except KeyError:
-            return
-        lifecycle = stored.get("lifecycle", {})
-        if lifecycle.get("state") == "published" and lifecycle.get("referencedRunIds"):
-            raise ValueError(f"published modeling import is referenced by runs: {', '.join(lifecycle['referencedRunIds'])}")
-
     def get_modeling_import(self, import_id: str) -> dict[str, Any]:
-        return self._get_payload("modeling_imports", "import_id", import_id)
+        row = self._get_modeling_import_row(import_id)
+        if row is None:
+            raise KeyError(import_id)
+        draft_package = _json_or_none(row.get("draft_payload_json")) or _json_or_none(row.get("payload_json"))
+        published_package = _json_or_none(row.get("published_payload_json"))
+        current_package = draft_package or published_package
+        if current_package is None:
+            raise KeyError(import_id)
+        validation = current_package.get("validation") or {"ok": row.get("validation_status") == "valid", "status": row.get("validation_status"), "issues": []}
+        lifecycle = current_package.get("lifecycle", {})
+        return {
+            "importId": import_id,
+            "projectId": current_package.get("projectId") or row.get("project_id"),
+            "schemaVersion": current_package.get("schemaVersion") or row.get("schema_version"),
+            "lifecycle": lifecycle,
+            "validation": validation,
+            "draftPackage": draft_package,
+            "publishedPackage": published_package,
+        }
 
     def assert_modeling_import_can_publish(self, import_id: str) -> None:
         stored = self.get_modeling_import(import_id)
-        lifecycle = stored.get("lifecycle", {})
+        lifecycle = (stored.get("publishedPackage") or {}).get("lifecycle", {})
+        referenced_run_ids = lifecycle.get("referencedRunIds") or json.loads((self._get_modeling_import_row(import_id) or {}).get("referenced_run_ids_json") or "[]")
         if lifecycle.get("state") == "published" and lifecycle.get("referencedRunIds"):
             raise ValueError(f"published modeling import is referenced by runs: {', '.join(lifecycle['referencedRunIds'])}")
+        if referenced_run_ids:
+            raise ValueError(f"published modeling import is referenced by runs: {', '.join(referenced_run_ids)}")
 
     def publish_modeling_import(self, import_id: str) -> dict[str, Any]:
         self.assert_modeling_import_can_publish(import_id)
         stored = self.get_modeling_import(import_id)
+        draft = stored.get("draftPackage") or stored.get("publishedPackage")
+        if draft is None:
+            raise KeyError(import_id)
         lifecycle = {
-            **stored.get("lifecycle", {}),
+            **draft.get("lifecycle", {}),
             "state": "published",
         }
-        stored["lifecycle"] = lifecycle
-        validation = stored.get("validation") or {"ok": True, "status": "valid", "issues": []}
-        self.upsert_modeling_import(stored, validation)
+        published = {**json.loads(_to_json(draft)), "lifecycle": lifecycle}
+        validation = published.get("validation") or stored.get("validation") or {"ok": True, "status": "valid", "issues": []}
+        self.upsert_modeling_import(published, validation)
         return self.get_modeling_import(import_id)
+
+    def get_published_modeling_import(self, import_id: str) -> dict[str, Any]:
+        stored = self.get_modeling_import(import_id)
+        published = stored.get("publishedPackage")
+        if published is None:
+            raise KeyError(import_id)
+        return published
 
     def upsert_experiment_plan(self, plan: dict[str, Any]) -> None:
         self.connection.execute(
@@ -471,6 +508,30 @@ class ContractRepository:
             raise KeyError(key)
         return json.loads(row[0])
 
+    def _get_modeling_import_row(self, import_id: str) -> dict[str, Any] | None:
+        cursor = self.connection.execute(
+            """
+            SELECT
+              import_id,
+              project_id,
+              schema_version,
+              import_version,
+              status,
+              validation_status,
+              referenced_run_ids_json,
+              payload_json,
+              draft_payload_json,
+              published_payload_json
+            FROM modeling_imports
+            WHERE import_id = ?
+            """,
+            (import_id,),
+        )
+        row = cursor.fetchone()
+        if row is None:
+            return None
+        return _row_to_dict(cursor, row)
+
 
 def _required(payload: dict[str, Any], field: str) -> Any:
     value = payload.get(field)
@@ -481,6 +542,12 @@ def _required(payload: dict[str, Any], field: str) -> Any:
 
 def _to_json(payload: dict[str, Any]) -> str:
     return json.dumps(payload, ensure_ascii=False, sort_keys=True)
+
+
+def _json_or_none(value: str | None) -> dict[str, Any] | None:
+    if value in (None, ""):
+        return None
+    return json.loads(value)
 
 
 def _modeling_import_payload(import_package: dict[str, Any], validation: dict[str, Any]) -> dict[str, Any]:

@@ -61,11 +61,13 @@ status TEXT NOT NULL
 validation_status TEXT NOT NULL
 referenced_run_ids_json TEXT NOT NULL
 payload_json TEXT NOT NULL
+draft_payload_json TEXT
+published_payload_json TEXT
 created_at TEXT
 updated_at TEXT
 ```
 
-`payload_json` 保存完整导入包和 validation summary。`referenced_run_ids_json` 是最小引用保护入口；后续可迁移为独立 join table。M5.1 不把导入包编译为 Scenario，不写入 `scenarios`。
+`payload_json` 保留兼容性快照，`draft_payload_json` 与 `published_payload_json` 保存可恢复的草稿/发布版本。`referenced_run_ids_json` 是最小引用保护入口；后续可迁移为独立 join table。M5.1 不把导入包编译为 Scenario，不写入 `scenarios`。
 
 ## 校验规则
 

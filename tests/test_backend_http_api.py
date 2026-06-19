@@ -208,7 +208,92 @@ class BackendHttpApiTest(unittest.TestCase):
                 self.assertEqual(saved["import_id"], import_package["importId"])
                 self.assertEqual(saved["validation_status"], "valid")
                 self.assertEqual(stored["importId"], import_package["importId"])
+                self.assertEqual(stored["draftPackage"]["importId"], import_package["importId"])
+                self.assertIsNone(stored["publishedPackage"])
                 self.assertEqual(published["lifecycle"]["state"], "published")
+                self.assertEqual(published["publishedPackage"]["lifecycle"]["state"], "published")
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
+    def test_http_modeling_import_get_restores_draft_and_published_after_restart(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            database_path = Path(tmp) / "m5-2-import.sqlite3"
+            artifact_dir = Path(tmp) / "artifacts"
+            first_server = create_backend_server(
+                ("127.0.0.1", 0),
+                repo_root=REPO_ROOT,
+                database_path=database_path,
+                output_dir=artifact_dir,
+            )
+            first_thread = Thread(target=first_server.serve_forever, daemon=True)
+            first_thread.start()
+            try:
+                base_url = f"http://127.0.0.1:{first_server.server_address[1]}/api"
+                import_package = self._fixture("modeling_import_project.json")
+                import_id = quote(import_package["importId"], safe="")
+                self._json(base_url, "POST", "/modeling-imports", import_package)
+                self._json(base_url, "POST", f"/modeling-imports/{import_id}/publish")
+
+                changed_package = self._fixture("modeling_import_project.json")
+                changed_package["lifecycle"] = {"state": "draft", "version": 2, "referencedRunIds": []}
+                changed_package["objects"]["equipmentAssets"][1]["quantity"] = 2
+                self._json(base_url, "POST", "/modeling-imports", changed_package)
+            finally:
+                first_server.shutdown()
+                first_server.server_close()
+                first_thread.join(timeout=5)
+
+            second_server = create_backend_server(
+                ("127.0.0.1", 0),
+                repo_root=REPO_ROOT,
+                database_path=database_path,
+                output_dir=artifact_dir,
+            )
+            second_thread = Thread(target=second_server.serve_forever, daemon=True)
+            second_thread.start()
+            try:
+                base_url = f"http://127.0.0.1:{second_server.server_address[1]}/api"
+                stored = self._json(base_url, "GET", f"/modeling-imports/{import_id}")
+
+                self.assertEqual(stored["draftPackage"]["lifecycle"]["state"], "draft")
+                self.assertEqual(stored["draftPackage"]["lifecycle"]["version"], 2)
+                self.assertEqual(stored["draftPackage"]["objects"]["equipmentAssets"][1]["quantity"], 2)
+                self.assertEqual(stored["publishedPackage"]["lifecycle"]["state"], "published")
+                self.assertEqual(stored["publishedPackage"]["lifecycle"]["version"], 1)
+                self.assertEqual(stored["publishedPackage"]["objects"]["equipmentAssets"][1]["quantity"], 1)
+            finally:
+                second_server.shutdown()
+                second_server.server_close()
+                second_thread.join(timeout=5)
+
+    def test_http_modeling_import_compile_scenario_route_uses_simulation_adapter(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            server = create_backend_server(
+                ("127.0.0.1", 0),
+                repo_root=REPO_ROOT,
+                database_path=":memory:",
+                output_dir=Path(tmp) / "artifacts",
+            )
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                base_url = f"http://127.0.0.1:{server.server_address[1]}/api"
+                import_package = self._fixture("modeling_import_project.json")
+
+                self._json(base_url, "POST", "/modeling-imports", import_package)
+                self._json(base_url, "POST", f"/modeling-imports/{import_package['importId']}/publish")
+                compiled = self._json(
+                    base_url,
+                    "POST",
+                    f"/modeling-imports/{import_package['importId']}/compile-scenario",
+                    {"model_family": "smoke"},
+                )
+
+                self.assertEqual(compiled["compiled_from_import"]["import_id"], import_package["importId"])
+                self.assertEqual(compiled["scenario"]["project_id"], import_package["projectId"])
+                self.assertEqual(compiled["scenario"]["compiled_by"], "Simulation Adapter Agent")
             finally:
                 server.shutdown()
                 server.server_close()

@@ -189,6 +189,48 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(published["lifecycle"]["state"], "published")
         self.assertEqual(stored["validation"]["status"], "valid")
 
+    def test_compile_modeling_import_scenario_requires_published_valid_import(self) -> None:
+        import_package = self._fixture("modeling_import_project.json")
+        self.api.save_modeling_import(import_package)
+
+        with self.assertRaises(BackendApiError) as ctx:
+            self.api.compile_modeling_import_scenario(import_package["importId"])
+
+        self.assertEqual(ctx.exception.code, "unpublished_modeling_import")
+
+    def test_compile_modeling_import_scenario_uses_simulation_adapter(self) -> None:
+        import_package = self._fixture("modeling_import_project.json")
+        self.api.save_modeling_import(import_package)
+        self.api.publish_modeling_import(import_package["importId"])
+
+        compiled = self.api.compile_modeling_import_scenario(import_package["importId"])
+
+        self.assertEqual(compiled["compiled_from_import"]["import_id"], import_package["importId"])
+        self.assertEqual(compiled["project"]["project_id"], import_package["projectId"])
+        self.assertEqual(compiled["scenario"]["project_id"], import_package["projectId"])
+        self.assertEqual(compiled["scenario"]["compiled_by"], "Simulation Adapter Agent")
+        self.assertEqual(len(self.adapter.compile_calls), 1)
+        self.assertEqual(self.adapter.compile_calls[0][1], "smoke")
+
+    def test_compile_modeling_import_scenario_preserves_aviation_support_error_mapping(self) -> None:
+        import_package = self._fixture("modeling_import_project.json")
+        self.api.save_modeling_import(import_package)
+        self.api.publish_modeling_import(import_package["importId"])
+
+        with self.assertRaises(BackendApiError) as ctx:
+            self.api.compile_modeling_import_scenario(
+                import_package["importId"],
+                model_family="aviation_support",
+            )
+
+        self.assertEqual(ctx.exception.code, "unsupported_model_family")
+        self.assertEqual(
+            str(ctx.exception),
+            "aviation_support scenario compilation is blocked until governed field derivation rules are approved",
+        )
+        self.assertEqual(len(self.adapter.compile_calls), 1)
+        self.assertEqual(self.adapter.compile_calls[0][1], "aviation_support")
+
     def test_modeling_import_api_reports_field_level_issues(self) -> None:
         import_package = self._fixture("modeling_import_project.json")
         import_package["objects"]["supportActivities"][0]["resourceId"] = "missing-resource"
@@ -284,10 +326,68 @@ class BackendApiContractTest(unittest.TestCase):
 
         self.assertEqual(publish_ctx.exception.code, "published_import_referenced")
 
+        changed_package = copy.deepcopy(import_package)
+        changed_package["lifecycle"] = {"state": "draft", "version": 2, "referencedRunIds": []}
+        changed_package["objects"]["equipmentAssets"][1]["quantity"] = 2
+        saved = self.api.save_modeling_import(changed_package)
+        stored = self.api.get_modeling_import(import_package["importId"])
+
+        self.assertEqual(saved["status"], "draft")
+        self.assertEqual(stored["draftPackage"]["objects"]["equipmentAssets"][1]["quantity"], 2)
+        self.assertEqual(stored["publishedPackage"]["objects"]["equipmentAssets"][1]["quantity"], 1)
+
+        with self.assertRaises(BackendApiError) as republish_ctx:
+            self.api.publish_modeling_import(import_package["importId"])
+
+        self.assertEqual(republish_ctx.exception.code, "published_import_referenced")
+
+    def test_compile_modeling_import_scenario_uses_persisted_published_snapshot_after_new_draft(self) -> None:
+        import_package = self._fixture("modeling_import_project.json")
+        self.api.save_modeling_import(import_package)
+        self.api.publish_modeling_import(import_package["importId"])
+
+        changed_package = copy.deepcopy(import_package)
+        changed_package["lifecycle"] = {"state": "draft", "version": 2, "referencedRunIds": []}
+        changed_package["objects"]["equipmentAssets"][1]["quantity"] = 2
+        self.api.save_modeling_import(changed_package)
+
+        compiled = self.api.compile_modeling_import_scenario(import_package["importId"])
+
+        self.assertEqual(compiled["compiled_from_import"]["import_version"], 1)
+        self.assertEqual(compiled["project"]["project_version"], "import-v1")
+        self.assertEqual(
+            next(component for component in compiled["project"]["components"] if component["id"] == "radar-lru")["quantity"],
+            1,
+        )
+
+    def test_modeling_import_api_rejects_invalid_lifecycle_before_compile(self) -> None:
+        import_package = self._fixture("modeling_import_project.json")
+        import_package["lifecycle"] = {
+            "state": "published",
+            "version": 0,
+            "referencedRunIds": "run-smoke-contract-001",
+        }
+
+        validation = self.api.validate_modeling_import(import_package)
+
+        self.assertFalse(validation["ok"])
+        self.assertEqual(
+            [issue["code"] for issue in validation["issues"]],
+            ["invalid_lifecycle_version", "invalid_lifecycle_references"],
+        )
+
         with self.assertRaises(BackendApiError) as save_ctx:
             self.api.save_modeling_import(import_package)
 
-        self.assertEqual(save_ctx.exception.code, "published_import_referenced")
+        self.assertEqual(save_ctx.exception.code, "invalid_modeling_import")
+
+    def test_modeling_import_api_accepts_json_schema_integer_version_semantics(self) -> None:
+        import_package = self._fixture("modeling_import_project.json")
+        import_package["lifecycle"]["version"] = 1.0
+
+        validation = self.api.validate_modeling_import(import_package)
+
+        self.assertTrue(validation["ok"])
 
 
 if __name__ == "__main__":

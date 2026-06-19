@@ -162,6 +162,29 @@ test("modeling import validation reports missing required fields with field path
   assert.ok(issues.every((issue) => issue.page === "任务剖面参数"));
 });
 
+test("modeling import validation rejects malformed lifecycle state and version", async () => {
+  const fixture = await readJson("tests/fixtures/modeling_import_project.json");
+  const invalidPackage = {
+    ...fixture,
+    lifecycle: {
+      state: "published",
+      version: 0,
+      referencedRunIds: "run-smoke-001"
+    }
+  };
+
+  const issues = validateModelingImportPackage(invalidPackage);
+
+  assert.deepEqual(issues.map((issue) => issue.code), [
+    "invalid_lifecycle_version",
+    "invalid_lifecycle_references"
+  ]);
+  assert.deepEqual(issues.map((issue) => issue.field_path), [
+    "lifecycle.version",
+    "lifecycle.referencedRunIds"
+  ]);
+});
+
 test("modeling import page map routes validation issues to four-level modeling pages", () => {
   assert.equal(MODELING_IMPORT_PAGE_MAP.missionProfiles, "任务剖面参数");
   assert.equal(MODELING_IMPORT_PAGE_MAP.equipmentAssets, "装备组成建模");

@@ -82,6 +82,8 @@ def create_backend_server(
                 return api.get_modeling_import(parts[1])
             if self.command == "POST" and len(parts) == 3 and parts[0] == "modeling-imports" and parts[2] == "publish":
                 return api.publish_modeling_import(parts[1])
+            if self.command == "POST" and len(parts) == 3 and parts[0] == "modeling-imports" and parts[2] == "compile-scenario":
+                return api.compile_modeling_import_scenario(parts[1], body.get("model_family", "smoke"))
             if self.command == "GET" and len(parts) == 2 and parts[0] == "projects":
                 return api.get_project(parts[1])
             if self.command == "POST" and len(parts) == 3 and parts[0] == "projects" and parts[2] == "modeling-snapshots":

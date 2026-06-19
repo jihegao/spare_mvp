@@ -23,6 +23,13 @@ export function createBackendApiClient({ baseUrl = DEFAULT_API_BASE, transport }
     publishModelingImport(importId) {
       return request({ method: "POST", path: `/modeling-imports/${encodeURIComponent(importId)}/publish` });
     },
+    compileModelingImportScenario(importId, modelFamily = "smoke") {
+      return request({
+        method: "POST",
+        path: `/modeling-imports/${encodeURIComponent(importId)}/compile-scenario`,
+        body: { model_family: modelFamily }
+      });
+    },
     async saveProject(projectJson) {
       await request({ method: "POST", path: "/projects/validate", body: projectJson });
       return request({ method: "POST", path: "/projects", body: projectJson });
@@ -113,7 +120,12 @@ function createFetchTransport(baseUrl) {
     });
     const payload = await response.json().catch(() => null);
     if (!response.ok) {
-      throw new Error(payload?.message || `Backend API HTTP ${response.status}`);
+      const error = new Error(payload?.message || `Backend API HTTP ${response.status}`);
+      error.code = payload?.code;
+      error.details = payload?.details || {};
+      error.payload = payload;
+      error.status = response.status;
+      throw error;
     }
     return payload;
   };
