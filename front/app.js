@@ -35,8 +35,10 @@ import {
 const app = document.querySelector("#app");
 const groups = groupFeaturePages(FEATURE_PAGES);
 const CONTRACT_BASE = "http://127.0.0.1:8521"; // Mesa 契约服务（见 agent.md「Mesa 后台契约服务」）
-const backendApi = createBackendApiClient({ baseUrl: "/api" });
 const LAST_BACKEND_RUN_STORAGE_KEY = "spare-mvp:lastBackendRun";
+const AUTH_SESSION_STORAGE_KEY = "spare-mvp:m4Session";
+let backendAuthToken = readStoredBackendAuthToken();
+const backendApi = createBackendApiClient({ baseUrl: "/api", getAuthToken: () => backendAuthToken });
 const DEFAULT_ROUTE = "login";
 const DEFAULT_FEATURE_ID = "spare-planning-equipment-composition";
 const DEMO_USERS = [
@@ -508,17 +510,15 @@ function bindEvents() {
 
     const loginButton = event.target.closest("[data-login-submit]");
     if (loginButton) {
-      isLoggedIn = true;
-      currentUser = DEMO_USERS.find((user) => user.username === "user") || DEMO_USERS[0];
-      selectedRoute = "projects";
-      location.hash = "route=projects";
-      render();
+      handleLogin().finally(() => render());
       return;
     }
 
     const logoutButton = event.target.closest("[data-logout]");
     if (logoutButton) {
       isLoggedIn = false;
+      backendAuthToken = "";
+      localStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
       selectedRoute = DEFAULT_ROUTE;
       location.hash = "route=login";
       render();
@@ -906,8 +906,8 @@ function renderLoginPage() {
         <h1>备件规划及任务可靠度验证评估平台</h1>
         <p>登录后进入项目列表，再选择项目进入功能导航页。</p>
         <div class="auth-form">
-          <label>用户名<input value="${currentUser.username}" aria-label="用户名"></label>
-          <label>密码<input value="123456" type="password" aria-label="密码"></label>
+          <label>用户名<input value="${currentUser.username}" aria-label="用户名" data-login-username></label>
+          <label>密码<input value="${currentUser.username}" type="password" aria-label="密码" data-login-password></label>
           <button type="button" class="btn-primary" data-login-submit>登录</button>
         </div>
         <div class="auth-users">
@@ -3347,6 +3347,33 @@ function renderExperimentPlanEditor(page) {
   `;
 }
 
+async function handleLogin() {
+  const username = app.querySelector("[data-login-username]")?.value?.trim() || "user";
+  const password = app.querySelector("[data-login-password]")?.value || username;
+  try {
+    const session = await backendApi.login(username, password);
+    backendAuthToken = session.session.token;
+    localStorage.setItem(AUTH_SESSION_STORAGE_KEY, JSON.stringify(session));
+    currentUser = {
+      username: session.user.username,
+      role: session.user.role
+    };
+    backendApiStatus = "M4 会话已建立";
+  } catch (err) {
+    if (err?.code === "invalid_credentials" || err?.code === "forbidden") {
+      backendApiStatus = `登录失败：${err.message}`;
+      return;
+    }
+    backendAuthToken = "";
+    localStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
+    currentUser = DEMO_USERS.find((user) => user.username === username) || DEMO_USERS[2];
+    backendApiStatus = `离线演示：${err && err.message ? err.message : "Backend API 不可用"}`;
+  }
+  isLoggedIn = true;
+  selectedRoute = "projects";
+  location.hash = "route=projects";
+}
+
 async function saveCurrentProjectThroughApi() {
   const projectJson = buildBackendProjectJson(scenario, currentProject);
   try {
@@ -4338,6 +4365,14 @@ function readRouteFromHash() {
   if (match) return decodeURIComponent(match[1]);
   if (location.hash.includes("feature=")) return "workbench";
   return "";
+}
+
+function readStoredBackendAuthToken() {
+  try {
+    return JSON.parse(localStorage.getItem(AUTH_SESSION_STORAGE_KEY) || "null")?.session?.token || "";
+  } catch {
+    return "";
+  }
 }
 
 function getPlanListFeatureId(moduleName) {

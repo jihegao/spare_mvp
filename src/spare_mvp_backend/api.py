@@ -40,6 +40,33 @@ class BackendApi:
     def validate_project(self, project_json: dict[str, Any]) -> dict[str, Any]:
         return self.adapter.validate_project(project_json)
 
+    def login(self, username: str, password: str) -> dict[str, Any]:
+        try:
+            user = self.repository.get_user_by_username(username)
+        except KeyError as exc:
+            raise BackendApiError("invalid_credentials", "Invalid username or password") from exc
+        if user.get("status") != "active" or user.get("password_hash") != _password_hash(password):
+            raise BackendApiError("invalid_credentials", "Invalid username or password")
+        session = self.repository.create_session(user["user_id"])
+        self.repository.insert_audit_event(
+            actor_user_id=user["user_id"],
+            action="auth.login",
+            resource_type="session",
+            resource_id=_session_audit_id(session["token"]),
+            outcome="allowed",
+            details={"username": username},
+        )
+        return {
+            "user": _public_user(user),
+            "session": {"token": session["token"]},
+        }
+
+    def get_session_user(self, token: str) -> dict[str, Any]:
+        user = self.repository.get_session_user(token)
+        if user.get("status") != "active":
+            raise KeyError(token)
+        return _public_user(user)
+
     def get_project(self, project_id: str) -> dict[str, Any]:
         return self.repository.get_project(project_id)
 
@@ -63,7 +90,19 @@ class BackendApi:
     def validate_modeling_import(self, import_package: dict[str, Any]) -> dict[str, Any]:
         return validate_modeling_import_package(import_package)
 
-    def save_modeling_import(self, import_package: dict[str, Any]) -> dict[str, Any]:
+    def save_modeling_import(
+        self,
+        import_package: dict[str, Any],
+        *,
+        actor_user_id: str | None = None,
+    ) -> dict[str, Any]:
+        self._require_role(
+            actor_user_id,
+            {"系统管理员", "数据管理员"},
+            action="modeling_import.save",
+            resource_type="modeling_import",
+            resource_id=str(import_package.get("importId") or ""),
+        )
         validation = self.validate_modeling_import(import_package)
         if not validation["ok"]:
             raise BackendApiError(
@@ -75,6 +114,13 @@ class BackendApi:
             self.repository.upsert_modeling_import(import_package, validation)
         except ValueError as exc:
             raise BackendApiError("published_import_referenced", str(exc), import_id=import_package["importId"]) from exc
+        self._audit_allowed(
+            actor_user_id,
+            action="modeling_import.save",
+            resource_type="modeling_import",
+            resource_id=import_package["importId"],
+            details={"project_id": import_package["projectId"]},
+        )
         return {
             "import_id": import_package["importId"],
             "project_id": import_package["projectId"],
@@ -87,11 +133,26 @@ class BackendApi:
     def get_modeling_import(self, import_id: str) -> dict[str, Any]:
         return self.repository.get_modeling_import(import_id)
 
-    def publish_modeling_import(self, import_id: str) -> dict[str, Any]:
+    def publish_modeling_import(self, import_id: str, *, actor_user_id: str | None = None) -> dict[str, Any]:
+        self._require_role(
+            actor_user_id,
+            {"系统管理员", "数据管理员"},
+            action="modeling_import.publish",
+            resource_type="modeling_import",
+            resource_id=import_id,
+        )
         try:
-            return self.repository.publish_modeling_import(import_id)
+            published = self.repository.publish_modeling_import(import_id)
         except ValueError as exc:
             raise BackendApiError("published_import_referenced", str(exc), import_id=import_id) from exc
+        self._audit_allowed(
+            actor_user_id,
+            action="modeling_import.publish",
+            resource_type="modeling_import",
+            resource_id=import_id,
+            details={"project_id": published["projectId"]},
+        )
+        return published
 
     def compile_modeling_import_scenario(self, import_id: str, model_family: str = "smoke") -> dict[str, Any]:
         stored = self.repository.get_modeling_import(import_id)
@@ -249,6 +310,60 @@ class BackendApi:
             )
         return BackendApiError(exc.code, str(exc), **exc.details)
 
+    def _require_role(
+        self,
+        actor_user_id: str | None,
+        allowed_roles: set[str],
+        *,
+        action: str,
+        resource_type: str,
+        resource_id: str,
+    ) -> None:
+        if actor_user_id is None:
+            return
+        try:
+            user = self.repository.get_user(actor_user_id)
+        except KeyError as exc:
+            self.repository.insert_audit_event(
+                actor_user_id=actor_user_id,
+                action=action,
+                resource_type=resource_type,
+                resource_id=resource_id,
+                outcome="denied",
+                details={"reason": "unknown_user"},
+            )
+            raise BackendApiError("forbidden", "User is not allowed to perform this action") from exc
+        if user.get("status") != "active" or user.get("role") not in allowed_roles:
+            self.repository.insert_audit_event(
+                actor_user_id=actor_user_id,
+                action=action,
+                resource_type=resource_type,
+                resource_id=resource_id,
+                outcome="denied",
+                details={"role": user.get("role")},
+            )
+            raise BackendApiError("forbidden", "User is not allowed to perform this action")
+
+    def _audit_allowed(
+        self,
+        actor_user_id: str | None,
+        *,
+        action: str,
+        resource_type: str,
+        resource_id: str,
+        details: dict[str, Any],
+    ) -> None:
+        if actor_user_id is None:
+            return
+        self.repository.insert_audit_event(
+            actor_user_id=actor_user_id,
+            action=action,
+            resource_type=resource_type,
+            resource_id=resource_id,
+            outcome="allowed",
+            details=details,
+        )
+
 
 def _stable_hash(payload: dict[str, Any]) -> str:
     encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
@@ -263,3 +378,20 @@ def _steps_from_plan(plan: dict[str, Any]) -> int:
         return max(0, int(steps))
     except (TypeError, ValueError):
         return 3
+
+
+def _public_user(user: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "user_id": user["user_id"],
+        "username": user["username"],
+        "role": user["role"],
+        "display_name": user.get("display_name") or user["username"],
+    }
+
+
+def _password_hash(password: str) -> str:
+    return hashlib.sha256(password.encode("utf-8")).hexdigest()
+
+
+def _session_audit_id(token: str) -> str:
+    return f"session-{hashlib.sha256(token.encode('utf-8')).hexdigest()[:16]}"

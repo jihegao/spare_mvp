@@ -29,8 +29,9 @@
 21. M3-0 真实后端闭环已收束：`src/spare_mvp_backend/http_server.py`、`tests/test_backend_http_api.py`、`tests/e2e-contract-flow.test.mjs` 和 `reports/m3-0-real-backend-loop/README.md` 覆盖同源 `/api` + Project -> Snapshot -> ExperimentPlan -> Scenario -> Run -> Result -> ArtifactManifest smoke；当前仍是本地标准库 HTTP server、SQLite 和临时 artifact 目录，不等同于生产 Web API、worker 或长期对象存储。
 22. M3-1 浏览器后端闭环已验证：`reports/m3-1-browser-backend-smoke/README.md` 记录浏览器从同源 `/front/` 通过 `/api` 保存项目、启动 smoke run、读取结果和 artifact manifest，并在刷新后从持久 SQLite 恢复同一个 `run_id`；`/api` 不可用时前端显示阻断状态，不创建 `offline-demo-run`。
 23. 系统管理新增“装备RMS指标分配”本地计算工作台：使用模拟装备构型和任务剖面，支持页面调节装备级 R/M/S、MTBF、MTTR、MLDT、Ai/Ao 目标，选择等分配、比例分配、AGREE 和评分分配方法，生成任务暴露矩阵、节点级 RMS target、敏感度排名和自底向上校核结果。当前发布操作只在浏览器内写入模拟装备节点的 `rms.target`，不覆盖 `prediction` 或 `actual`，也尚未接入后端持久化、复杂 RBD 数值求解或真实仿真消费。
-24. M5 建模数据入口已进入 M5.1 服务化切片：`contracts/modeling_import.schema.json` 定义导入包、草稿/发布生命周期、对象集合、变更和校验问题结构；`front/modeling-import-contract.mjs` 提供纯校验函数，`src/spare_mvp_backend/modeling_import.py` 在后端复用同一语义，`src/spare_mvp_backend/http_server.py` 暴露 `/api/modeling-imports/*` validate/save/get/publish 路径，SQLite `modeling_imports` 表持久化 `draft_payload_json`、`published_payload_json` 和 validation summary。`GET /api/modeling-imports/{import_id}` 返回 `draftPackage`、`publishedPackage`、`validation` 和 `lifecycle`，发布后再保存草稿不会覆盖已发布快照；同一 `import_id` 被 run 引用后不可再发布覆盖，新版本需使用新 `import_id`。
-25. M5.2 新增系统管理下的「建模数据导入」工作台、映射/错误/版本预览，以及经 `SimulationAdapter.compile_scenario()` 生成的后端 Scenario 预览（`compile-scenario`）。该入口消费 M5.1 的显式 API、后端恢复的草稿/发布快照和已发布导入包；该阶段仍不包含完整 Excel 解析、worker 基础设施、权限/审计或 `aviation_support` 编译解锁。
+24. M4 权限审计 backfill 已建立本地用户、会话和审计边界：SQLite schema 包含 `users`、`sessions`、`project_access` 和 `audit_events`；`/api/auth/login` 返回 bearer token；`front/app.js` 登录后保存 M4 会话，`front/api-client.mjs` 对受保护请求附加 token。建模导入 save/publish/compile-scenario 的 HTTP 路径要求真实会话，普通用户发布会被后端阻断并写入审计。
+25. M5 建模数据入口已进入 M5.1 服务化切片：`contracts/modeling_import.schema.json` 定义导入包、草稿/发布生命周期、对象集合、变更和校验问题结构；`front/modeling-import-contract.mjs` 提供纯校验函数，`src/spare_mvp_backend/modeling_import.py` 在后端复用同一语义，`src/spare_mvp_backend/http_server.py` 暴露 `/api/modeling-imports/*` validate/save/get/publish 路径，SQLite `modeling_imports` 表持久化 `draft_payload_json`、`published_payload_json` 和 validation summary。`GET /api/modeling-imports/{import_id}` 返回 `draftPackage`、`publishedPackage`、`validation` 和 `lifecycle`，发布后再保存草稿不会覆盖已发布快照；同一 `import_id` 被 run 引用后不可再发布覆盖，新版本需使用新 `import_id`。
+26. M5.2 新增系统管理下的「建模数据导入」工作台、映射/错误/版本预览，以及经 `SimulationAdapter.compile_scenario()` 生成的后端 Scenario 预览（`compile-scenario`）。该入口消费 M5.1 的显式 API、后端恢复的草稿/发布快照和已发布导入包；完整 Excel 解析、worker 基础设施或 `aviation_support` 编译解锁仍不在本阶段。
 
 ## 文档地图
 
@@ -44,10 +45,10 @@
 | [`ontology-mesa-rebuild-plan.md`](ontology-mesa-rebuild-plan.md) | Ontology + Mesa 重构边界、里程碑、当前状态和四层可视化约定。 |
 | [`../contracts/README.md`](../contracts/README.md) | Contract Curator Agent 发布的 Project / Scenario / Run / Result / ArtifactManifest schema bundle。 |
 | [`../src/spare_mvp_contract/adapter.py`](../src/spare_mvp_contract/adapter.py) | M2a / PR-C 的最小 Simulation Adapter，负责已批准的 Project -> Scenario -> Run/Result/ArtifactManifest 链路。 |
-| [`../src/spare_mvp_backend/schema.sql`](../src/spare_mvp_backend/schema.sql) | PR-D 的 SQLite 持久化 schema，用于保存版本化 contract 对象和运行身份链。 |
-| [`../src/spare_mvp_backend/api.py`](../src/spare_mvp_backend/api.py) | PR-E 的函数级 Backend API facade，用于稳定 PR-F 前端接入前的保存、运行和结果读取边界。 |
-| [`../src/spare_mvp_backend/http_server.py`](../src/spare_mvp_backend/http_server.py) | M3 的本地标准库 HTTP facade，同源服务 `/api` 与 `front/` 静态文件，用于 M3-0/M3-1 真实后端闭环 smoke。 |
-| [`../front/api-client.mjs`](../front/api-client.mjs) | PR-F 的前端 API client，用于让静态前端通过后端 API contract 执行保存、运行和结果读取。 |
+| [`../src/spare_mvp_backend/schema.sql`](../src/spare_mvp_backend/schema.sql) | SQLite 持久化 schema，用于保存版本化 contract 对象、运行身份链、M4 用户会话和审计事件。 |
+| [`../src/spare_mvp_backend/api.py`](../src/spare_mvp_backend/api.py) | 函数级 Backend API facade，用于保存、运行、结果读取，以及 actor-aware 的 M4 建模导入授权审计。 |
+| [`../src/spare_mvp_backend/http_server.py`](../src/spare_mvp_backend/http_server.py) | 本地标准库 HTTP facade，同源服务 `/api` 与 `front/` 静态文件，并暴露 M4 `/auth/login`、受保护 M5 mutation 和审计查询路径。 |
+| [`../front/api-client.mjs`](../front/api-client.mjs) | 前端 API client，用于让静态前端通过后端 API contract 执行登录、保存、运行、建模导入和结果读取。 |
 | [`../front/rms-allocation-engine.mjs`](../front/rms-allocation-engine.mjs) | RMS 分配 MVP 的本地计算入口，覆盖风险预算分配、MTTR/MLDT 加权、自底向上校核和发布到模拟 `rms.target`。 |
 | [`../front/rms-allocation-workbench.mjs`](../front/rms-allocation-workbench.mjs) | RMS 分配页面渲染模块，展示装备树、目标输入、方法选择、节点级结果表、任务暴露矩阵和校核摘要。 |
 | [`../reports/m3-0-real-backend-loop/README.md`](../reports/m3-0-real-backend-loop/README.md) | M3-0 真实后端闭环收束证据，记录后端 smoke 链路、验证命令、分阶段评审和当前边界。 |

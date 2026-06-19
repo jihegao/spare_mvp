@@ -27,7 +27,7 @@
 3. 前端已有 `front/api-client.mjs` 边界，显式保存、启动运行、读取结果和读取产物通过 API client 表达；通用建模编辑仍保持本地，直到显式保存或运行。
 4. Monte Carlo 页面仍保留前端局部演示/扫参能力，尚未升级为后端 worker 或批量运行产物。
 5. Mesa 可视化页已嵌入本地航空保障状态，但 `aviation_support` Project 到 Scenario 的字段派生规则仍按治理边界保持未批准。
-6. 登录、用户、权限、审计、运行管理、长期 artifact storage 和生产 Web API 还没有真实系统实现。
+6. 本地 M4 backfill 已补入最小用户、会话、建模导入授权和审计边界；完整用户管理、项目级权限矩阵、SSO、运行管理、长期 artifact storage 和生产 Web API 还没有真实系统实现。
 
 ## M0：稳定当前原型基线
 
@@ -222,11 +222,13 @@ M3-1 当前收束：已完成浏览器同源后端闭环 smoke，证据见 `repo
 2. 关键操作有审计记录。
 3. 未授权访问被后端阻断，而不只是前端隐藏按钮。
 
+当前 backfill 口径：M5.1/M5.2 已先行落地后，本阶段补入本地 M4 最小边界。SQLite 已包含用户、会话、项目访问和审计事件表；`/api/auth/login` 返回 bearer token；建模导入 save/publish/compile-scenario 的 HTTP 路径要求真实会话。数据管理员和系统管理员可以保存/发布建模导入，普通用户发布会被后端 `403` 阻断并记录审计。该 backfill 仍不是完整用户管理、密码重置、SSO、生产权限矩阵或试点部署安全方案。
+
 ## M5：建模数据从页面表单升级为可校验项目数据
 
 目标：让建模页成为真实项目资料维护和场景生成入口，而不是静态表单集合。
 
-当前推进口径：用户选择跳过 M4 的用户、权限和审计实施，先收束 M3-1/RMS 当前分支，并把 M5 作为下一条产品数据主线。M5 首片不做完整 Excel UI；先定义建模数据导入/校验 contract、错误定位结构、草稿/发布版本和运行引用保护。M5.1 将该 contract 接入本地后端 API、SQLite 持久化和前端 API client。M5.2 新增系统管理下的「建模数据导入」工作台、映射/错误/版本预览，以及经 `SimulationAdapter.compile_scenario()` 生成的后端 Scenario 预览（`compile-scenario`）。
+当前推进口径：M5 数据入口曾在跳过 M4 的前提下先行推进；当前 M4 backfill 已补入本地会话、角色和审计边界，因此 M5 的 save/publish/compile-scenario HTTP 路径必须带 M4 bearer token。M5 首片不做完整 Excel UI；先定义建模数据导入/校验 contract、错误定位结构、草稿/发布版本和运行引用保护。M5.1 将该 contract 接入本地后端 API、SQLite 持久化和前端 API client。M5.2 新增系统管理下的「建模数据导入」工作台、映射/错误/版本预览，以及经 `SimulationAdapter.compile_scenario()` 生成的后端 Scenario 预览（`compile-scenario`）。
 
 核心工作：
 
@@ -254,7 +256,7 @@ M3-1 当前收束：已完成浏览器同源后端闭环 smoke，证据见 `repo
 
 1. `contracts/modeling_import.schema.json` 定义导入包、草稿/发布生命周期、对象集合、变更和校验问题结构。
 2. `front/modeling-import-contract.mjs` 校验重复编号、悬空引用、非法数值和已发布且被运行引用后的覆盖保护。
-3. `tests/modeling-import-contract.test.mjs` 和 `tests/fixtures/modeling_import_project.json` 固化 JSON fixture 首片，不包含完整 Excel UI、权限审计、生产 worker、Mesa 行为变更或 `aviation_support` Scenario 编译解锁。
+3. `tests/modeling-import-contract.test.mjs` 和 `tests/fixtures/modeling_import_project.json` 固化 JSON fixture 首片，不包含完整 Excel UI、生产 worker、Mesa 行为变更或 `aviation_support` Scenario 编译解锁；权限审计由当前 M4 backfill 作为独立边界补入。
 
 M5.1 服务化入口：
 
@@ -268,7 +270,7 @@ M5.2 工作台与 Scenario 预览入口：
 1. 系统管理 / 项目管理新增「建模数据导入」入口，用于查看导入包摘要、目标页面/字段映射、校验错误和草稿/发布版本差异。
 2. 映射、错误和版本预览继续消费 M5.1 的 modeling-import contract issue shape 和后端恢复的 `draftPackage`/`publishedPackage`，不新增自动保存或自由 Excel 映射器。
 3. 已发布且通过校验的导入包可请求后端 Scenario 预览，后端必须读取持久化的 `publishedPackage` 并经 `SimulationAdapter.compile_scenario()` 生成，前端和 Backend API handler 不直接拼最终 Scenario JSON。
-4. M5.2 仍不包含完整 Excel 解析、worker 基础设施、权限/审计、Mesa 行为变更或 `aviation_support` 编译解锁。
+4. M5.2 仍不包含完整 Excel 解析、worker 基础设施、Mesa 行为变更或 `aviation_support` 编译解锁；HTTP 侧 save/publish/compile-scenario 已接入 M4 会话和审计边界。
 
 ## M6：仿真引擎服务化
 
@@ -489,7 +491,7 @@ M3/M6 的第一步不是直接建设完整后端，而是把 `Simulation Contrac
 ## 近期建议
 
 1. 保持 M3-1/RMS 浏览器后端闭环、RMS 分配页面、测试和证据报告一致。
-2. 继续跳过 M4 的实现切片，暂不做真实用户、权限和审计。
+2. M4 backfill 当前只覆盖本地用户、会话、建模导入授权和审计；后续若进入试点，需要继续补项目级访问控制、权限矩阵、密码/SSO 和部署安全。
 3. M5.1 已将建模数据导入/校验 contract 接入本地后端 API、SQLite 持久化和前端显式 API client。
-4. M5.2 当前聚焦系统管理下「建模数据导入」工作台、映射/错误/版本预览和经 `SimulationAdapter` 编译的后端 Scenario 预览；完整 Excel UI、权限审计或生产 worker 仍不在本阶段。
+4. M5.2 当前聚焦系统管理下「建模数据导入」工作台、映射/错误/版本预览和经 `SimulationAdapter` 编译的后端 Scenario 预览；完整 Excel UI 或生产 worker 仍不在本阶段。
 5. 每次 PR 更新页面流转、数据对象或结果口径时，同步更新本文档或相关验收清单。

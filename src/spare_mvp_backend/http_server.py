@@ -57,7 +57,12 @@ def create_backend_server(
             except KeyError as exc:
                 self._send_json(404, {"code": "not_found", "message": str(exc)})
             except BackendApiError as exc:
-                self._send_json(400, {"code": exc.code, "message": str(exc), "details": exc.details})
+                status = 400
+                if exc.code == "unauthorized":
+                    status = 401
+                elif exc.code == "forbidden":
+                    status = 403
+                self._send_json(status, {"code": exc.code, "message": str(exc), "details": exc.details})
             except ValueError as exc:
                 self._send_json(400, {"code": "bad_request", "message": str(exc)})
 
@@ -68,6 +73,17 @@ def create_backend_server(
             route = path[4:] or "/"
             body = self._read_json()
 
+            if self.command == "POST" and route == "/auth/login":
+                return api.login(str(body.get("username") or ""), str(body.get("password") or ""))
+            if self.command == "GET" and route == "/auth/session":
+                return {"user": self._require_user()}
+            if self.command == "GET" and route.startswith("/audit-events"):
+                actor = self._require_user({"系统管理员", "数据管理员"})
+                query = urlparse(self.path).query
+                resource_id = None
+                if query.startswith("resource_id="):
+                    resource_id = unquote(query.removeprefix("resource_id="))
+                return {"actor": actor, "events": api.repository.list_audit_events(resource_id=resource_id)}
             if self.command == "POST" and route == "/projects/validate":
                 return api.validate_project(body)
             if self.command == "POST" and route == "/projects":
@@ -75,14 +91,17 @@ def create_backend_server(
             if self.command == "POST" and route == "/modeling-imports/validate":
                 return api.validate_modeling_import(body)
             if self.command == "POST" and route == "/modeling-imports":
-                return api.save_modeling_import(body)
+                actor = self._require_user()
+                return api.save_modeling_import(body, actor_user_id=actor["user_id"])
 
             parts = [unquote(part) for part in route.split("/") if part]
             if self.command == "GET" and len(parts) == 2 and parts[0] == "modeling-imports":
                 return api.get_modeling_import(parts[1])
             if self.command == "POST" and len(parts) == 3 and parts[0] == "modeling-imports" and parts[2] == "publish":
-                return api.publish_modeling_import(parts[1])
+                actor = self._require_user()
+                return api.publish_modeling_import(parts[1], actor_user_id=actor["user_id"])
             if self.command == "POST" and len(parts) == 3 and parts[0] == "modeling-imports" and parts[2] == "compile-scenario":
+                self._require_user()
                 return api.compile_modeling_import_scenario(parts[1], body.get("model_family", "smoke"))
             if self.command == "GET" and len(parts) == 2 and parts[0] == "projects":
                 return api.get_project(parts[1])
@@ -108,6 +127,20 @@ def create_backend_server(
                 return api.get_run_chain(parts[1])
 
             raise KeyError(route)
+
+        def _require_user(self, allowed_roles: set[str] | None = None) -> dict[str, Any]:
+            auth_header = self.headers.get("authorization") or ""
+            prefix = "Bearer "
+            if not auth_header.startswith(prefix):
+                raise BackendApiError("unauthorized", "M4 session is required")
+            token = auth_header.removeprefix(prefix).strip()
+            try:
+                user = api.get_session_user(token)
+            except KeyError as exc:
+                raise BackendApiError("unauthorized", "M4 session is invalid") from exc
+            if allowed_roles is not None and user["role"] not in allowed_roles:
+                raise BackendApiError("forbidden", "User is not allowed to perform this action")
+            return user
 
         def _read_json(self) -> dict[str, Any]:
             length = int(self.headers.get("content-length", "0") or "0")

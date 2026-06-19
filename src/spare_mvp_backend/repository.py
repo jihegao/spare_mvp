@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import json
+import hashlib
+import secrets
 import sqlite3
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 
 SCHEMA_PATH = Path(__file__).with_name("schema.sql")
@@ -14,9 +17,13 @@ SCHEMA_PATH = Path(__file__).with_name("schema.sql")
 def initialize_database(connection: sqlite3.Connection) -> None:
     """Create the PR-D persistence schema in an existing SQLite connection."""
     connection.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
+    _ensure_column(connection, "users", "password_hash", "TEXT")
+    _ensure_column(connection, "users", "display_name", "TEXT")
+    _ensure_column(connection, "users", "status", "TEXT NOT NULL DEFAULT 'active'")
     _ensure_column(connection, "experiment_plans", "modeling_snapshot_id", "TEXT")
     _ensure_column(connection, "modeling_imports", "draft_payload_json", "TEXT")
     _ensure_column(connection, "modeling_imports", "published_payload_json", "TEXT")
+    _seed_m4_users(connection)
     connection.commit()
 
 
@@ -25,6 +32,126 @@ class ContractRepository:
 
     def __init__(self, connection: sqlite3.Connection) -> None:
         self.connection = connection
+
+    def get_user_by_username(self, username: str) -> dict[str, Any]:
+        cursor = self.connection.execute(
+            """
+            SELECT user_id, username, password_hash, role, display_name, status, created_at
+            FROM users
+            WHERE username = ?
+            """,
+            (username,),
+        )
+        row = cursor.fetchone()
+        if row is None:
+            raise KeyError(username)
+        return _row_to_dict(cursor, row)
+
+    def get_user(self, user_id: str) -> dict[str, Any]:
+        cursor = self.connection.execute(
+            """
+            SELECT user_id, username, password_hash, role, display_name, status, created_at
+            FROM users
+            WHERE user_id = ?
+            """,
+            (user_id,),
+        )
+        row = cursor.fetchone()
+        if row is None:
+            raise KeyError(user_id)
+        return _row_to_dict(cursor, row)
+
+    def create_session(self, user_id: str) -> dict[str, Any]:
+        user = self.get_user(user_id)
+        token = f"m4-{secrets.token_urlsafe(24)}"
+        self.connection.execute(
+            """
+            INSERT INTO sessions (session_token, user_id)
+            VALUES (?, ?)
+            """,
+            (token, user_id),
+        )
+        self.connection.commit()
+        return {
+            "token": token,
+            "user_id": user_id,
+            "role": user["role"],
+        }
+
+    def get_session_user(self, session_token: str) -> dict[str, Any]:
+        cursor = self.connection.execute(
+            """
+            SELECT u.user_id, u.username, u.password_hash, u.role, u.display_name, u.status, u.created_at
+            FROM sessions s
+            JOIN users u ON u.user_id = s.user_id
+            WHERE s.session_token = ?
+            """,
+            (session_token,),
+        )
+        row = cursor.fetchone()
+        if row is None:
+            raise KeyError(session_token)
+        return _row_to_dict(cursor, row)
+
+    def insert_audit_event(
+        self,
+        *,
+        actor_user_id: str | None,
+        action: str,
+        resource_type: str,
+        resource_id: str,
+        outcome: str,
+        details: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        event = {
+            "audit_event_id": f"audit-{uuid4()}",
+            "actor_user_id": actor_user_id,
+            "action": action,
+            "resource_type": resource_type,
+            "resource_id": resource_id,
+            "outcome": outcome,
+            "details": details or {},
+        }
+        self.connection.execute(
+            """
+            INSERT INTO audit_events (
+              audit_event_id, actor_user_id, action, resource_type,
+              resource_id, outcome, details_json
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                event["audit_event_id"],
+                event["actor_user_id"],
+                event["action"],
+                event["resource_type"],
+                event["resource_id"],
+                event["outcome"],
+                _to_json(event["details"]),
+            ),
+        )
+        self.connection.commit()
+        return event
+
+    def list_audit_events(self, resource_id: str | None = None) -> list[dict[str, Any]]:
+        query = """
+            SELECT rowid, audit_event_id, actor_user_id, action, resource_type,
+                   resource_id, outcome, details_json, created_at
+            FROM audit_events
+        """
+        params: tuple[Any, ...] = ()
+        if resource_id is not None:
+            query += " WHERE resource_id = ?"
+            params = (resource_id,)
+        query += " ORDER BY rowid ASC"
+        cursor = self.connection.execute(query, params)
+        events = []
+        for row in cursor.fetchall():
+            event = _row_to_dict(cursor, row)
+            event.pop("rowid", None)
+            event["details"] = json.loads(event.pop("details_json"))
+            events.append(event)
+        return events
 
     def upsert_project(self, project: dict[str, Any]) -> None:
         project_id = _required(project, "project_id")
@@ -564,3 +691,29 @@ def _ensure_column(connection: sqlite3.Connection, table: str, column: str, defi
     columns = {row[1] for row in connection.execute(f"PRAGMA table_info({table})")}
     if column not in columns:
         connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+
+
+def _seed_m4_users(connection: sqlite3.Connection) -> None:
+    users = [
+        ("user-admin", "admin", _password_hash("admin"), "系统管理员", "系统管理员"),
+        ("user-data", "data", _password_hash("data"), "数据管理员", "数据管理员"),
+        ("user-basic", "user", _password_hash("user"), "普通用户", "普通评估用户"),
+    ]
+    for user_id, username, password_hash, role, display_name in users:
+        connection.execute(
+            """
+            INSERT INTO users (user_id, username, password_hash, role, display_name, status)
+            VALUES (?, ?, ?, ?, ?, 'active')
+            ON CONFLICT(user_id) DO UPDATE SET
+              username = excluded.username,
+              password_hash = excluded.password_hash,
+              role = excluded.role,
+              display_name = excluded.display_name,
+              status = excluded.status
+            """,
+            (user_id, username, password_hash, role, display_name),
+        )
+
+
+def _password_hash(password: str) -> str:
+    return hashlib.sha256(password.encode("utf-8")).hexdigest()

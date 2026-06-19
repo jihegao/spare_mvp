@@ -109,6 +109,7 @@ async function loginAndEnterProject(page) {
   await page.getByRole("button", { name: "登录" }).click();
   await expectHeading(page, "项目列表");
   await page.getByRole("button", { name: "进入当前项目" }).click();
+  await clickFeature(page, "spare-planning-experiment-plan-list");
   await expectHeading(page, "仿真实验方案管理");
 }
 
