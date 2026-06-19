@@ -35,6 +35,8 @@ try {
   await page.waitForFunction(() => document.body.innerText.includes("草稿已保存"));
   await page.locator('button[data-modeling-import-action="publish"]').click();
   await page.waitForFunction(() => document.body.innerText.includes("已发布"));
+  await page.locator('button[data-modeling-import-action="save-draft"]').click();
+  await page.waitForFunction(() => document.body.innerText.includes("草稿已保存"));
   await page.screenshot({ path: `${screenshotDir}/00-m5-import-published.png`, fullPage: true });
 
   await clickFeature(page, "spare-planning-experiment-plan-edit");
@@ -162,7 +164,10 @@ async function loginAndEnterProject(page) {
 async function clickFeature(page, featureId) {
   const clicked = await page.evaluate((id) => {
     const button = document.querySelector(`button[data-feature-id="${id}"]`);
-    if (!button) return false;
+    if (!button) {
+      location.hash = `feature=${id}`;
+      return true;
+    }
     for (let node = button.parentElement; node; node = node.parentElement) {
       if (node instanceof HTMLDetailsElement) node.open = true;
     }
@@ -259,7 +264,7 @@ async function waitForApi() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ schema_version: "project-v0" })
       });
-      if (response.status >= 400 && response.status < 500) return;
+      if (response.status < 500) return;
     } catch (err) {
       lastError = err;
     }

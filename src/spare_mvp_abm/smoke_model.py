@@ -107,12 +107,12 @@ class SmokeSpareMvpModel(BaseModel):
             return dict(project_data)
         if project_path is None:
             raise ValueError("SmokeSpareMvpModel requires frontend projectData or projectJsonPath")
-        return json.loads(project_path.read_text(encoding="utf-8"))
+        return json.loads(project_path.read_text(encoding="utf-8-sig"))
 
     def _load_ontology(self, ontology_path: Path | None) -> dict[str, Any]:
         if ontology_path is None:
             return {"entityTypes": [], "relationships": [], "bindings": [], "metadata": {}}
-        return json.loads(ontology_path.read_text(encoding="utf-8"))
+        return json.loads(ontology_path.read_text(encoding="utf-8-sig"))
 
     def _derive_equipment(self) -> list[EquipmentState]:
         equipment_data = self.project_data.get("equipment", {})

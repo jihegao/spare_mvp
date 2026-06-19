@@ -26,12 +26,50 @@ stop_port() {
   sleep 1
 }
 
+wait_for_port() {
+  local port="$1"
+  local label="$2"
+  for _ in {1..30}; do
+    if lsof -tiTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1; then
+      return
+    fi
+    sleep 0.5
+  done
+  echo "$label did not start listening on port $port" >&2
+  exit 1
+}
+
 require_executable() {
   local path="$1"
   if [[ ! -x "$path" ]]; then
     echo "Missing executable: $path" >&2
     exit 1
   fi
+}
+
+start_detached() {
+  local launcher_python="$1"
+  local log_path="$2"
+  shift 2
+  "$launcher_python" - "$ROOT_DIR" "$log_path" "$@" <<'PY'
+import subprocess
+import sys
+
+cwd = sys.argv[1]
+log_path = sys.argv[2]
+cmd = sys.argv[3:]
+log = open(log_path, "ab")
+process = subprocess.Popen(
+    cmd,
+    cwd=cwd,
+    stdin=subprocess.DEVNULL,
+    stdout=log,
+    stderr=subprocess.STDOUT,
+    close_fds=True,
+    start_new_session=True,
+)
+print(process.pid)
+PY
 }
 
 stop_system() {
@@ -48,20 +86,15 @@ start_system() {
   stop_system
 
   echo "Starting spare_mvp app on http://$HOST:$APP_PORT/front/"
-  pushd "$ROOT_DIR" >/dev/null
-  nohup "$APP_PY" -m src.spare_mvp_backend.http_server --host "$HOST" --port "$APP_PORT" --database "$DATABASE_PATH" >"$RUN_DIR/app.log" 2>&1 &
-  APP_PID="$!"
-  popd >/dev/null
+  APP_PID="$(start_detached "$APP_PY" "$RUN_DIR/app.log" "$APP_PY" -m src.spare_mvp_backend.http_server --host "$HOST" --port "$APP_PORT" --database "$DATABASE_PATH")"
   echo "$APP_PID" >"$RUN_DIR/app.pid"
 
   echo "Starting Mesa contract provider on http://$HOST:$CONTRACT_PORT"
-  pushd "$ROOT_DIR" >/dev/null
-  nohup "$CONTRACT_PY" src/spare_mvp_abm/contract_server.py --host "$HOST" --port "$CONTRACT_PORT" >"$RUN_DIR/contract.log" 2>&1 &
-  CONTRACT_PID="$!"
-  popd >/dev/null
+  CONTRACT_PID="$(start_detached "$CONTRACT_PY" "$RUN_DIR/contract.log" "$CONTRACT_PY" src/spare_mvp_abm/contract_server.py --host "$HOST" --port "$CONTRACT_PORT")"
   echo "$CONTRACT_PID" >"$RUN_DIR/contract.pid"
 
-  sleep 1
+  wait_for_port "$APP_PORT" "spare_mvp app"
+  wait_for_port "$CONTRACT_PORT" "Mesa contract provider"
 
   echo "App PID: $APP_PID"
   echo "Contract PID: $CONTRACT_PID"

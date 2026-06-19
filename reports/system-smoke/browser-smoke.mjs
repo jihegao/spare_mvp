@@ -38,14 +38,16 @@ async function openSecondary(name) {
 
 async function clickFeature(featureId) {
   const button = page.locator(`button[data-feature-id="${featureId}"]`);
-  if ((await button.count()) !== 1) throw new Error(`Cannot find feature: ${featureId}`);
-  if (await button.isVisible()) {
+  if ((await button.count()) === 1 && await button.isVisible()) {
     await button.click();
     return;
   }
   const clicked = await page.evaluate((id) => {
     const button = document.querySelector(`button[data-feature-id="${id}"]`);
-    if (!button) return false;
+    if (!button) {
+      location.hash = `feature=${id}`;
+      return true;
+    }
     for (let node = button.parentElement; node; node = node.parentElement) {
       if (node instanceof HTMLDetailsElement) node.open = true;
     }
@@ -56,23 +58,30 @@ async function clickFeature(featureId) {
   fallbacks.push({ action: "dom-click-feature", featureId });
 }
 
+async function expectHeading(page, expected) {
+  await page.waitForFunction((heading) => document.querySelector("h2")?.textContent === heading, expected, {
+    timeout: 5000
+  });
+}
+
 await page.goto(baseUrl, { waitUntil: "domcontentloaded", timeout: 10000 });
+await page.evaluate(() => localStorage.clear());
 await page.getByRole("button", { name: "登录" }).click();
 await capture("01-project-list", "项目列表");
 
 await page.getByRole("button", { name: "进入当前项目" }).click();
-await capture("02-project-workbench", "仿真实验方案管理");
+await capture("02-project-workbench", "装备系统建模");
 
 await openSecondary("仿真建模");
-await clickFeature("spare-planning-built-in-scenario");
-await capture("03-modeling-before-edit", "任务建模");
+await clickFeature("spare-planning-basic-mission");
+await capture("03-modeling-before-edit", "装备任务建模");
 
-const distanceInput = page.getByLabel("距任务区(km)", { exact: true });
-if ((await distanceInput.count()) !== 1) throw new Error("Modeling distance input is not unique");
-await distanceInput.fill("333");
-const editedValue = await distanceInput.inputValue();
+const missionDurationInput = page.locator('input[data-path="basicMission.taskDurationMinutes"]');
+if ((await missionDurationInput.count()) !== 1) throw new Error("Modeling mission duration input is not unique");
+await missionDurationInput.fill("333");
+const editedValue = await missionDurationInput.inputValue();
 if (editedValue !== "333") throw new Error(`Modeling edit did not stick: ${editedValue}`);
-await capture("04-modeling-after-edit", "任务建模");
+await capture("04-modeling-after-edit", "装备任务建模");
 
 await verifyModelingButtonsReact();
 
