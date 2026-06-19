@@ -164,35 +164,39 @@ export const defaultScenario = {
     unitId: "CU-01",
     groupName: "第一出动编队",
     basicTaskName: "近海巡逻任务",
-    equipmentType: "F35 / F15 / Z20",
-    quantity: 8,
+    equipmentType: "F35 / F15",
+    quantity: 6,
     requiredCount: 5,
     deploymentLocation: "主基地机场",
-    standbyCount: 3,
+    standbyCount: 1,
     members: [
-      { aircraftNo: "F35-01", model: "F35", role: "长机", status: "执行", remainingLifeHours: 180, deploymentLocation: "主基地机场" },
-      { aircraftNo: "F35-02", model: "F35", role: "僚机", status: "执行", remainingLifeHours: 176, deploymentLocation: "主基地机场" },
-      { aircraftNo: "F35-03", model: "F35", role: "僚机", status: "执行", remainingLifeHours: 169, deploymentLocation: "主基地机场" },
-      { aircraftNo: "F15-01", model: "F15", role: "僚机", status: "执行", remainingLifeHours: 164, deploymentLocation: "主基地机场" },
-      { aircraftNo: "Z20-01", model: "Z20", role: "僚机", status: "执行", remainingLifeHours: 158, deploymentLocation: "主基地机场" },
-      { aircraftNo: "F15-02", model: "F15", role: "备份", status: "备用", remainingLifeHours: 171, deploymentLocation: "主基地机场" },
-      { aircraftNo: "Z20-02", model: "Z20", role: "备份", status: "备用", remainingLifeHours: 166, deploymentLocation: "主基地机场" },
-      { aircraftNo: "F35-04", model: "F35", role: "备份", status: "备用", remainingLifeHours: 152, deploymentLocation: "主基地机场" }
+      { aircraftNo: "F35-01", model: "F35", role: "长机", status: "执行", remainingLifeHours: 180, preLifeRequirementHours: 120, takeoffLandingCount: 36, deploymentLocation: "主基地机场" },
+      { aircraftNo: "F35-02", model: "F35", role: "僚机", status: "执行", remainingLifeHours: 176, preLifeRequirementHours: 120, takeoffLandingCount: 34, deploymentLocation: "主基地机场" },
+      { aircraftNo: "F35-03", model: "F35", role: "僚机", status: "执行", remainingLifeHours: 169, preLifeRequirementHours: 120, takeoffLandingCount: 32, deploymentLocation: "主基地机场" },
+      { aircraftNo: "F15-01", model: "F15", role: "僚机", status: "执行", remainingLifeHours: 164, preLifeRequirementHours: 120, takeoffLandingCount: 42, deploymentLocation: "主基地机场" },
+      { aircraftNo: "F15-02", model: "F15", role: "备份", status: "备用", remainingLifeHours: 171, preLifeRequirementHours: 120, takeoffLandingCount: 39, deploymentLocation: "主基地机场" },
+      { aircraftNo: "F35-04", model: "F35", role: "备份", status: "备用", remainingLifeHours: 152, preLifeRequirementHours: 120, takeoffLandingCount: 31, deploymentLocation: "主基地机场" }
     ]
   },
   equipment: {
     model: "F35",
-    wholeMachineModels: ["F35", "F15", "Z20"],
-    quantity: 8,
+    wholeMachineModels: ["F35", "F15"],
+    quantity: 6,
     deploymentLocation: "主基地机场",
-    initialReady: 8,
+    initialReady: 6,
     minRequiredSorties: 5,
     preLifeRequirementHours: 120
   },
   components: [
-    { id: "engine", name: "发动机", parentId: "aircraft-root", productType: "LRU", spareType: "发动机备件", failureModel: "随机", failureDistribution: { distributionType: "指数分布", parameters: "lambda=0.07" }, failureRate: 0.07, mtbfHours: 80, lifeLimitHours: 220, connectionType: "串联", quantity: 2, kOutOfN: { enabled: true, n: 2, k: 1 }, specialRepairProfile: { repairTimeMinutes: 220, repairRatio: 0.35, replacementRatio: 0.65 }, rms: { reliability: 0.93, maintainability: 0.88, supportability: 0.9, mttrHours: 3.5, mldtHours: 1.2, availability: 0.96 } },
-    { id: "avionics", name: "航电系统", parentId: "aircraft-root", productType: "SRU", spareType: "航电模块", failureModel: "退化", failureDistribution: { distributionType: "威布尔分布", parameters: "beta=1.8, eta=120" }, failureRate: 0.04, mtbfHours: 110, lifeLimitHours: 260, connectionType: "并联", quantity: 2, kOutOfN: { enabled: true, n: 2, k: 1 }, specialRepairProfile: { repairTimeMinutes: 160, repairRatio: 0.55, replacementRatio: 0.45 }, rms: { reliability: 0.95, maintainability: 0.91, supportability: 0.89, mttrHours: 2.8, mldtHours: 1.4, availability: 0.97 } },
-    { id: "hydraulic", name: "液压组件", parentId: "aircraft-root", productType: "SRU", spareType: "液压备件", failureModel: "寿命", failureDistribution: { distributionType: "正态分布", parameters: "mean=95, sigma=12" }, failureRate: 0.06, mtbfHours: 95, lifeLimitHours: 200, connectionType: "备用", quantity: 1, kOutOfN: { enabled: false, n: 1, k: 1 }, specialRepairProfile: { repairTimeMinutes: 140, repairRatio: 0.7, replacementRatio: 0.3 }, rms: { reliability: 0.92, maintainability: 0.86, supportability: 0.88, mttrHours: 3.2, mldtHours: 1.6, availability: 0.95 } }
+    { id: "f35-engine", aircraftModel: "F35", name: "发动机", parentId: "aircraft-root", productType: "SRU", spareType: "发动机备件", failureModel: "随机", failureDistribution: { distributionType: "指数分布", parameters: "lambda=0.07" }, failureRate: 0.07, mtbfHours: 80, lifeLimitHours: 220, connectionType: "串联", quantity: 2, kOutOfN: { enabled: true, n: 2, k: 1 }, specialRepairProfile: { repairTimeMinutes: 220, repairRatio: 0.35, replacementRatio: 0.65 }, rms: { reliability: 0.93, maintainability: 0.88, supportability: 0.9, mttrHours: 3.5, mldtHours: 1.2, availability: 0.96 } },
+    { id: "f35-engine-control", aircraftModel: "F35", name: "发动机控制模块", parentId: "f35-engine", productType: "LRU", spareType: "发动机备件", failureModel: "随机", failureDistribution: { distributionType: "指数分布", parameters: "lambda=0.05" }, failureRate: 0.05, mtbfHours: 96, lifeLimitHours: 240, connectionType: "串联", quantity: 1, kOutOfN: { enabled: false, n: 1, k: 1 }, specialRepairProfile: { repairTimeMinutes: 180, repairRatio: 0.45, replacementRatio: 0.55 }, rms: { reliability: 0.94, maintainability: 0.9, supportability: 0.9, mttrHours: 3.0, mldtHours: 1.2, availability: 0.96 } },
+    { id: "f35-avionics", aircraftModel: "F35", name: "航电系统", parentId: "aircraft-root", productType: "SRU", spareType: "航电模块", failureModel: "退化", failureDistribution: { distributionType: "威布尔分布", parameters: "beta=1.8, eta=120" }, failureRate: 0.04, mtbfHours: 110, lifeLimitHours: 260, connectionType: "并联", quantity: 2, kOutOfN: { enabled: true, n: 2, k: 1 }, specialRepairProfile: { repairTimeMinutes: 160, repairRatio: 0.55, replacementRatio: 0.45 }, rms: { reliability: 0.95, maintainability: 0.91, supportability: 0.89, mttrHours: 2.8, mldtHours: 1.4, availability: 0.97 } },
+    { id: "f35-mission-computer", aircraftModel: "F35", name: "任务计算机模块", parentId: "f35-avionics", productType: "LRU", spareType: "航电模块", failureModel: "退化", failureDistribution: { distributionType: "威布尔分布", parameters: "beta=1.6, eta=140" }, failureRate: 0.03, mtbfHours: 130, lifeLimitHours: 280, connectionType: "并联", quantity: 2, kOutOfN: { enabled: true, n: 2, k: 1 }, specialRepairProfile: { repairTimeMinutes: 130, repairRatio: 0.6, replacementRatio: 0.4 }, rms: { reliability: 0.96, maintainability: 0.92, supportability: 0.9, mttrHours: 2.4, mldtHours: 1.1, availability: 0.98 } },
+    { id: "f35-hydraulic", aircraftModel: "F35", name: "液压组件", parentId: "aircraft-root", productType: "SRU", spareType: "液压备件", failureModel: "寿命", failureDistribution: { distributionType: "正态分布", parameters: "mean=95, sigma=12" }, failureRate: 0.06, mtbfHours: 95, lifeLimitHours: 200, connectionType: "备用", quantity: 1, kOutOfN: { enabled: false, n: 1, k: 1 }, specialRepairProfile: { repairTimeMinutes: 140, repairRatio: 0.7, replacementRatio: 0.3 }, rms: { reliability: 0.92, maintainability: 0.86, supportability: 0.88, mttrHours: 3.2, mldtHours: 1.6, availability: 0.95 } },
+    { id: "f15-engine", aircraftModel: "F15", name: "发动机", parentId: "aircraft-root", productType: "SRU", spareType: "发动机备件", failureModel: "随机", failureDistribution: { distributionType: "指数分布", parameters: "lambda=0.06" }, failureRate: 0.06, mtbfHours: 90, lifeLimitHours: 230, connectionType: "串联", quantity: 2, kOutOfN: { enabled: true, n: 2, k: 1 }, specialRepairProfile: { repairTimeMinutes: 210, repairRatio: 0.4, replacementRatio: 0.6 }, rms: { reliability: 0.94, maintainability: 0.89, supportability: 0.9, mttrHours: 3.4, mldtHours: 1.2, availability: 0.96 } },
+    { id: "f15-avionics", aircraftModel: "F15", name: "航电系统", parentId: "aircraft-root", productType: "SRU", spareType: "航电模块", failureModel: "退化", failureDistribution: { distributionType: "威布尔分布", parameters: "beta=1.7, eta=125" }, failureRate: 0.04, mtbfHours: 115, lifeLimitHours: 250, connectionType: "并联", quantity: 2, kOutOfN: { enabled: true, n: 2, k: 1 }, specialRepairProfile: { repairTimeMinutes: 155, repairRatio: 0.56, replacementRatio: 0.44 }, rms: { reliability: 0.95, maintainability: 0.91, supportability: 0.89, mttrHours: 2.7, mldtHours: 1.4, availability: 0.97 } },
+    { id: "f15-radar-receiver", aircraftModel: "F15", name: "雷达接收机模块", parentId: "f15-avionics", productType: "LRU", spareType: "航电模块", failureModel: "退化", failureDistribution: { distributionType: "威布尔分布", parameters: "beta=1.5, eta=135" }, failureRate: 0.035, mtbfHours: 125, lifeLimitHours: 260, connectionType: "并联", quantity: 1, kOutOfN: { enabled: false, n: 1, k: 1 }, specialRepairProfile: { repairTimeMinutes: 145, repairRatio: 0.58, replacementRatio: 0.42 }, rms: { reliability: 0.95, maintainability: 0.91, supportability: 0.9, mttrHours: 2.5, mldtHours: 1.3, availability: 0.97 } },
+    { id: "f15-hydraulic", aircraftModel: "F15", name: "液压组件", parentId: "aircraft-root", productType: "SRU", spareType: "液压备件", failureModel: "寿命", failureDistribution: { distributionType: "正态分布", parameters: "mean=98, sigma=13" }, failureRate: 0.055, mtbfHours: 100, lifeLimitHours: 205, connectionType: "备用", quantity: 1, kOutOfN: { enabled: false, n: 1, k: 1 }, specialRepairProfile: { repairTimeMinutes: 135, repairRatio: 0.72, replacementRatio: 0.28 }, rms: { reliability: 0.93, maintainability: 0.87, supportability: 0.88, mttrHours: 3.1, mldtHours: 1.5, availability: 0.95 } }
   ],
   supportNodes: [
     {

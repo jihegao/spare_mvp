@@ -112,7 +112,6 @@ const FOCUS_BY_COMPONENT = {
   "monte-carlo-config": ["monte-carlo-config", "simulation-run", "run-dataset", "summary-dataset"],
   "monte-carlo-results": ["run-dataset", "summary-dataset", "metric-time-series"],
   analysis: ["summary-dataset", "spare-shortfall-analysis", "carry-list-analysis", "task-reliability-analysis", "downtime-factor-analysis"],
-  "import-table": ["summary-dataset", "scenario"]
 };
 
 export function buildOntologyContext(page) {
