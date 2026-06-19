@@ -11,6 +11,18 @@ export function createBackendApiClient({ baseUrl = DEFAULT_API_BASE, transport }
     validateProject(projectJson) {
       return request({ method: "POST", path: "/projects/validate", body: projectJson });
     },
+    validateModelingImport(importPackage) {
+      return request({ method: "POST", path: "/modeling-imports/validate", body: importPackage });
+    },
+    saveModelingImport(importPackage) {
+      return request({ method: "POST", path: "/modeling-imports", body: importPackage });
+    },
+    getModelingImport(importId) {
+      return request({ method: "GET", path: `/modeling-imports/${encodeURIComponent(importId)}` });
+    },
+    publishModelingImport(importId) {
+      return request({ method: "POST", path: `/modeling-imports/${encodeURIComponent(importId)}/publish` });
+    },
     async saveProject(projectJson) {
       await request({ method: "POST", path: "/projects/validate", body: projectJson });
       return request({ method: "POST", path: "/projects", body: projectJson });

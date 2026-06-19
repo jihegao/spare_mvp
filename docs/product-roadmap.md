@@ -226,7 +226,7 @@ M3-1 当前收束：已完成浏览器同源后端闭环 smoke，证据见 `repo
 
 目标：让建模页成为真实项目资料维护和场景生成入口，而不是静态表单集合。
 
-当前推进口径：用户选择跳过 M4 的用户、权限和审计实施，先收束 M3-1/RMS 当前分支，并把 M5 作为下一条产品数据主线。M5 首片不做完整 Excel UI；先定义建模数据导入/校验 contract、错误定位结构、草稿/发布版本和运行引用保护。
+当前推进口径：用户选择跳过 M4 的用户、权限和审计实施，先收束 M3-1/RMS 当前分支，并把 M5 作为下一条产品数据主线。M5 首片不做完整 Excel UI；先定义建模数据导入/校验 contract、错误定位结构、草稿/发布版本和运行引用保护。M5.1 将该 contract 接入本地后端 API、SQLite 持久化和前端 API client。
 
 核心工作：
 
@@ -255,6 +255,13 @@ M3-1 当前收束：已完成浏览器同源后端闭环 smoke，证据见 `repo
 1. `contracts/modeling_import.schema.json` 定义导入包、草稿/发布生命周期、对象集合、变更和校验问题结构。
 2. `front/modeling-import-contract.mjs` 校验重复编号、悬空引用、非法数值和已发布且被运行引用后的覆盖保护。
 3. `tests/modeling-import-contract.test.mjs` 和 `tests/fixtures/modeling_import_project.json` 固化 JSON fixture 首片，不包含完整 Excel UI、权限审计、生产 worker、Mesa 行为变更或 `aviation_support` Scenario 编译解锁。
+
+M5.1 服务化入口：
+
+1. `src/spare_mvp_backend/modeling_import.py` 提供服务端纯 Python 校验器，保持与前端 contract issue shape 一致。
+2. `src/spare_mvp_backend/schema.sql` 和 `ContractRepository` 增加 `modeling_imports` 持久化，用于保存导入包、validation summary、草稿/发布状态和引用保护信息。
+3. `BackendApi` 和本地 HTTP facade 暴露 `validate/save/get/publish` 路径；前端 `api-client` 只新增显式调用方法，不从通用编辑事件自动保存。
+4. M5.1 明确同一 `import_id` 被 run 引用后不可覆盖；该切片选择“新版本使用新 `import_id`”，暂不引入 `(import_id, import_version)` 复合主键。
 
 ## M6：仿真引擎服务化
 
@@ -474,8 +481,8 @@ M3/M6 的第一步不是直接建设完整后端，而是把 `Simulation Contrac
 
 ## 近期建议
 
-1. 先收束当前 M3-1/RMS 分支，保持浏览器后端闭环、RMS 分配页面、测试和证据报告一致。
-2. 跳过 M4 的实现切片，暂不做真实用户、权限和审计。
-3. 启动 M5 首片：建模数据导入/校验 contract、错误定位结构、草稿/发布版本和运行引用保护。
-4. M5 首片通过后，再决定是否补完整 Excel UI、权限审计或生产 worker。
+1. 保持 M3-1/RMS 浏览器后端闭环、RMS 分配页面、测试和证据报告一致。
+2. 继续跳过 M4 的实现切片，暂不做真实用户、权限和审计。
+3. M5.1 已将建模数据导入/校验 contract 接入本地后端 API、SQLite 持久化和前端显式 API client。
+4. 下一步优先做 M5.2 的最小页面入口或导入映射预览；完整 Excel UI、权限审计或生产 worker 仍待 M5.1 稳定后再决定。
 5. 每次 PR 更新页面流转、数据对象或结果口径时，同步更新本文档或相关验收清单。

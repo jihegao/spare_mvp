@@ -172,6 +172,123 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(self.adapter.compile_calls[0][1], "aviation_support")
         self.assertEqual(self.adapter.run_calls, [])
 
+    def test_modeling_import_api_validates_saves_and_publishes_package(self) -> None:
+        import_package = self._fixture("modeling_import_project.json")
+
+        validation = self.api.validate_modeling_import(import_package)
+        saved = self.api.save_modeling_import(import_package)
+        published = self.api.publish_modeling_import(import_package["importId"])
+        stored = self.api.get_modeling_import(import_package["importId"])
+
+        self.assertTrue(validation["ok"])
+        self.assertEqual(validation["status"], "valid")
+        self.assertEqual(validation["issues"], [])
+        self.assertEqual(saved["import_id"], import_package["importId"])
+        self.assertEqual(saved["project_id"], import_package["projectId"])
+        self.assertEqual(saved["validation_status"], "valid")
+        self.assertEqual(published["lifecycle"]["state"], "published")
+        self.assertEqual(stored["validation"]["status"], "valid")
+
+    def test_modeling_import_api_reports_field_level_issues(self) -> None:
+        import_package = self._fixture("modeling_import_project.json")
+        import_package["objects"]["supportActivities"][0]["resourceId"] = "missing-resource"
+        import_package["objects"]["equipmentAssets"][1]["quantity"] = 0
+
+        validation = self.api.validate_modeling_import(import_package)
+
+        self.assertFalse(validation["ok"])
+        self.assertEqual(validation["status"], "invalid")
+        self.assertEqual(
+            sorted(issue["code"] for issue in validation["issues"]),
+            ["invalid_number", "missing_reference"],
+        )
+        self.assertEqual(
+            {issue["field_path"] for issue in validation["issues"]},
+            {
+                "objects.equipmentAssets[1].quantity",
+                "objects.supportActivities[0].resourceId",
+            },
+        )
+
+    def test_modeling_import_api_covers_contract_parity_issues(self) -> None:
+        import_package = self._fixture("modeling_import_project.json")
+        import_package["schemaVersion"] = "modeling-import-v0"
+        import_package["objects"].pop("supportResources")
+        import_package["objects"]["equipmentAssets"].append(
+            {
+                "id": "radar-lru",
+                "name": "重复雷达 LRU",
+                "parentId": "aircraft-root",
+                "quantity": 1,
+                "mtbfHours": 900,
+            }
+        )
+        import_package["lifecycle"] = {
+            "state": "published",
+            "version": 1,
+            "referencedRunIds": ["run-smoke-contract-001"],
+        }
+        import_package["changes"] = [
+            {
+                "operation": "update",
+                "objectType": "equipmentAssets",
+                "objectId": "radar-lru",
+                "fieldPath": "objects.equipmentAssets[1].name",
+            }
+        ]
+
+        validation = self.api.validate_modeling_import(import_package)
+        issues_by_code = {issue["code"]: issue for issue in validation["issues"]}
+
+        self.assertFalse(validation["ok"])
+        self.assertIn("invalid_schema_version", issues_by_code)
+        self.assertIn("missing_required_root", issues_by_code)
+        self.assertIn("duplicate_id", issues_by_code)
+        self.assertIn("published_reference_protection", issues_by_code)
+        self.assertEqual(
+            issues_by_code["published_reference_protection"]["field_path"],
+            "objects.equipmentAssets[1].name",
+        )
+        self.assertEqual(
+            issues_by_code["published_reference_protection"]["page"],
+            "装备组成建模",
+        )
+
+    def test_modeling_import_api_rejects_invalid_save_and_referenced_publish(self) -> None:
+        import_package = self._fixture("modeling_import_project.json")
+        invalid_package = copy.deepcopy(import_package)
+        invalid_package["objects"]["missionProfiles"][0].pop("name")
+
+        with self.assertRaises(BackendApiError) as invalid_ctx:
+            self.api.save_modeling_import(invalid_package)
+
+        self.assertEqual(invalid_ctx.exception.code, "invalid_modeling_import")
+        self.assertEqual(
+            invalid_ctx.exception.details["issues"][0]["field_path"],
+            "objects.missionProfiles[0].name",
+        )
+
+        referenced_package = copy.deepcopy(import_package)
+        referenced_package["lifecycle"] = {
+            "state": "published",
+            "version": 1,
+            "referencedRunIds": ["run-smoke-contract-001"],
+        }
+        self.repository.upsert_modeling_import(
+            referenced_package,
+            {"ok": True, "status": "valid", "issues": []},
+        )
+
+        with self.assertRaises(BackendApiError) as publish_ctx:
+            self.api.publish_modeling_import(import_package["importId"])
+
+        self.assertEqual(publish_ctx.exception.code, "published_import_referenced")
+
+        with self.assertRaises(BackendApiError) as save_ctx:
+            self.api.save_modeling_import(import_package)
+
+        self.assertEqual(save_ctx.exception.code, "published_import_referenced")
+
 
 if __name__ == "__main__":
     unittest.main()

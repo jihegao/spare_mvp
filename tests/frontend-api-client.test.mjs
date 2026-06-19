@@ -75,6 +75,41 @@ test("frontend API client exposes stable PR-F save run and result methods", asyn
   assert.equal(calls[5].body.model_family, "smoke");
 });
 
+test("frontend API client exposes explicit M5 modeling import methods", async () => {
+  const calls = [];
+  const client = createBackendApiClient({
+    transport: async (request) => {
+      calls.push(request);
+      if (request.path === "/modeling-imports/validate") return { ok: true, status: "valid", issues: [] };
+      if (request.path === "/modeling-imports") return { import_id: "import/ui demo", validation_status: "valid" };
+      if (request.path === "/modeling-imports/import%2Fui%20demo") return { importId: "import/ui demo" };
+      if (request.path === "/modeling-imports/import%2Fui%20demo/publish") {
+        return { importId: "import/ui demo", lifecycle: { state: "published" } };
+      }
+      throw new Error(`unexpected request ${request.method} ${request.path}`);
+    }
+  });
+  const importPackage = { schemaVersion: "modeling-import-v1", importId: "import/ui demo" };
+
+  const validation = await client.validateModelingImport(importPackage);
+  const saved = await client.saveModelingImport(importPackage);
+  const stored = await client.getModelingImport(importPackage.importId);
+  const published = await client.publishModelingImport(importPackage.importId);
+
+  assert.equal(validation.status, "valid");
+  assert.equal(saved.import_id, "import/ui demo");
+  assert.equal(stored.importId, "import/ui demo");
+  assert.equal(published.lifecycle.state, "published");
+  assert.deepEqual(calls.map((call) => `${call.method} ${call.path}`), [
+    "POST /modeling-imports/validate",
+    "POST /modeling-imports",
+    "GET /modeling-imports/import%2Fui%20demo",
+    "POST /modeling-imports/import%2Fui%20demo/publish"
+  ]);
+  assert.equal(calls[0].body, importPackage);
+  assert.equal(calls[1].body, importPackage);
+});
+
 test("frontend app routes project save run and result reads through API client", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
 

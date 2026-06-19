@@ -6,6 +6,7 @@ import tempfile
 from threading import Thread
 import unittest
 from urllib import request
+from urllib.parse import quote
 
 from src.spare_mvp_backend.http_server import create_backend_server
 
@@ -182,6 +183,93 @@ class BackendHttpApiTest(unittest.TestCase):
                 server.server_close()
                 thread.join(timeout=5)
 
+    def test_http_modeling_import_routes_validate_save_get_and_publish(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            server = create_backend_server(
+                ("127.0.0.1", 0),
+                repo_root=REPO_ROOT,
+                database_path=":memory:",
+                output_dir=Path(tmp) / "artifacts",
+            )
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                base_url = f"http://127.0.0.1:{server.server_address[1]}/api"
+                import_package = self._fixture("modeling_import_project.json")
+                import_package["importId"] = "import/http demo"
+                encoded_import_id = quote(import_package["importId"], safe="")
+
+                validation = self._json(base_url, "POST", "/modeling-imports/validate", import_package)
+                saved = self._json(base_url, "POST", "/modeling-imports", import_package)
+                stored = self._json(base_url, "GET", f"/modeling-imports/{encoded_import_id}")
+                published = self._json(base_url, "POST", f"/modeling-imports/{encoded_import_id}/publish")
+
+                self.assertTrue(validation["ok"])
+                self.assertEqual(saved["import_id"], import_package["importId"])
+                self.assertEqual(saved["validation_status"], "valid")
+                self.assertEqual(stored["importId"], import_package["importId"])
+                self.assertEqual(published["lifecycle"]["state"], "published")
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
+    def test_http_modeling_import_invalid_package_returns_field_level_issues(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            server = create_backend_server(
+                ("127.0.0.1", 0),
+                repo_root=REPO_ROOT,
+                database_path=":memory:",
+                output_dir=Path(tmp) / "artifacts",
+            )
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                base_url = f"http://127.0.0.1:{server.server_address[1]}/api"
+                import_package = self._fixture("modeling_import_project.json")
+                import_package["objects"]["supportActivities"][0]["resourceId"] = "missing-resource"
+
+                error = self._json_error(base_url, "POST", "/modeling-imports", import_package)
+
+                self.assertEqual(error["code"], "invalid_modeling_import")
+                self.assertEqual(
+                    error["details"]["issues"][0]["field_path"],
+                    "objects.supportActivities[0].resourceId",
+                )
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
+    def test_http_modeling_import_publish_rejects_referenced_import(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            server = create_backend_server(
+                ("127.0.0.1", 0),
+                repo_root=REPO_ROOT,
+                database_path=":memory:",
+                output_dir=Path(tmp) / "artifacts",
+            )
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                base_url = f"http://127.0.0.1:{server.server_address[1]}/api"
+                import_package = self._fixture("modeling_import_project.json")
+                import_package["lifecycle"] = {
+                    "state": "published",
+                    "version": 1,
+                    "referencedRunIds": ["run-smoke-contract-001"],
+                }
+                self._json(base_url, "POST", "/modeling-imports", import_package)
+
+                error = self._json_error(base_url, "POST", f"/modeling-imports/{import_package['importId']}/publish")
+
+                self.assertEqual(error["code"], "published_import_referenced")
+                self.assertEqual(error["details"]["import_id"], import_package["importId"])
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
     def _json(self, base_url: str, method: str, path: str, payload: dict | None = None) -> dict:
         data = None if payload is None else json.dumps(payload).encode("utf-8")
         req = request.Request(
@@ -194,6 +282,24 @@ class BackendHttpApiTest(unittest.TestCase):
         with opener.open(req, timeout=10) as response:
             self.assertEqual(response.status, 200)
             return json.loads(response.read().decode("utf-8"))
+
+    def _json_error(self, base_url: str, method: str, path: str, payload: dict | None = None) -> dict:
+        data = None if payload is None else json.dumps(payload).encode("utf-8")
+        req = request.Request(
+            f"{base_url}{path}",
+            data=data,
+            method=method,
+            headers={"content-type": "application/json"} if payload is not None else {},
+        )
+        opener = request.build_opener(request.ProxyHandler({}))
+        try:
+            opener.open(req, timeout=10)
+        except Exception as exc:
+            response = exc
+            if not hasattr(response, "read"):
+                raise
+            return json.loads(response.read().decode("utf-8"))
+        self.fail("request unexpectedly succeeded")
 
 
 if __name__ == "__main__":

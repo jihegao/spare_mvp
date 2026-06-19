@@ -18,6 +18,19 @@ CREATE TABLE IF NOT EXISTS projects (
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS modeling_imports (
+  import_id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  schema_version TEXT NOT NULL,
+  import_version INTEGER NOT NULL,
+  status TEXT NOT NULL,
+  validation_status TEXT NOT NULL,
+  referenced_run_ids_json TEXT NOT NULL,
+  payload_json TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS experiment_plans (
   experiment_plan_id TEXT PRIMARY KEY,
   project_id TEXT NOT NULL,

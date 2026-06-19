@@ -62,7 +62,7 @@ def create_backend_server(
                 self._send_json(400, {"code": "bad_request", "message": str(exc)})
 
         def _dispatch(self) -> dict[str, Any]:
-            path = unquote(urlparse(self.path).path)
+            path = urlparse(self.path).path
             if not path.startswith("/api"):
                 raise KeyError(path)
             route = path[4:] or "/"
@@ -72,8 +72,16 @@ def create_backend_server(
                 return api.validate_project(body)
             if self.command == "POST" and route == "/projects":
                 return api.save_project(body)
+            if self.command == "POST" and route == "/modeling-imports/validate":
+                return api.validate_modeling_import(body)
+            if self.command == "POST" and route == "/modeling-imports":
+                return api.save_modeling_import(body)
 
-            parts = [part for part in route.split("/") if part]
+            parts = [unquote(part) for part in route.split("/") if part]
+            if self.command == "GET" and len(parts) == 2 and parts[0] == "modeling-imports":
+                return api.get_modeling_import(parts[1])
+            if self.command == "POST" and len(parts) == 3 and parts[0] == "modeling-imports" and parts[2] == "publish":
+                return api.publish_modeling_import(parts[1])
             if self.command == "GET" and len(parts) == 2 and parts[0] == "projects":
                 return api.get_project(parts[1])
             if self.command == "POST" and len(parts) == 3 and parts[0] == "projects" and parts[2] == "modeling-snapshots":

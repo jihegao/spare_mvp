@@ -9,6 +9,7 @@ from pathlib import Path
 import threading
 from typing import Any
 
+from src.spare_mvp_backend.modeling_import import validate_modeling_import_package
 from src.spare_mvp_backend.repository import ContractRepository
 from src.spare_mvp_contract.adapter import AdapterError, SimulationAdapter
 
@@ -58,6 +59,39 @@ class BackendApi:
             "schema_version": project["schema_version"],
             "status": "saved",
         }
+
+    def validate_modeling_import(self, import_package: dict[str, Any]) -> dict[str, Any]:
+        return validate_modeling_import_package(import_package)
+
+    def save_modeling_import(self, import_package: dict[str, Any]) -> dict[str, Any]:
+        validation = self.validate_modeling_import(import_package)
+        if not validation["ok"]:
+            raise BackendApiError(
+                "invalid_modeling_import",
+                "Modeling import package failed validation",
+                issues=validation["issues"],
+            )
+        try:
+            self.repository.upsert_modeling_import(import_package, validation)
+        except ValueError as exc:
+            raise BackendApiError("published_import_referenced", str(exc), import_id=import_package["importId"]) from exc
+        return {
+            "import_id": import_package["importId"],
+            "project_id": import_package["projectId"],
+            "schema_version": import_package["schemaVersion"],
+            "import_version": int(import_package.get("lifecycle", {}).get("version") or 1),
+            "status": import_package.get("lifecycle", {}).get("state", "draft"),
+            "validation_status": validation["status"],
+        }
+
+    def get_modeling_import(self, import_id: str) -> dict[str, Any]:
+        return self.repository.get_modeling_import(import_id)
+
+    def publish_modeling_import(self, import_id: str) -> dict[str, Any]:
+        try:
+            return self.repository.publish_modeling_import(import_id)
+        except ValueError as exc:
+            raise BackendApiError("published_import_referenced", str(exc), import_id=import_id) from exc
 
     def create_modeling_snapshot(self, project_id: str) -> dict[str, Any]:
         project = self.repository.get_project(project_id)

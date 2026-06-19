@@ -29,7 +29,7 @@
 21. M3-0 真实后端闭环已收束：`src/spare_mvp_backend/http_server.py`、`tests/test_backend_http_api.py`、`tests/e2e-contract-flow.test.mjs` 和 `reports/m3-0-real-backend-loop/README.md` 覆盖同源 `/api` + Project -> Snapshot -> ExperimentPlan -> Scenario -> Run -> Result -> ArtifactManifest smoke；当前仍是本地标准库 HTTP server、SQLite 和临时 artifact 目录，不等同于生产 Web API、worker 或长期对象存储。
 22. M3-1 浏览器后端闭环已验证：`reports/m3-1-browser-backend-smoke/README.md` 记录浏览器从同源 `/front/` 通过 `/api` 保存项目、启动 smoke run、读取结果和 artifact manifest，并在刷新后从持久 SQLite 恢复同一个 `run_id`；`/api` 不可用时前端显示阻断状态，不创建 `offline-demo-run`。
 23. 系统管理新增“装备RMS指标分配”本地计算工作台：使用模拟装备构型和任务剖面，支持页面调节装备级 R/M/S、MTBF、MTTR、MLDT、Ai/Ao 目标，选择等分配、比例分配、AGREE 和评分分配方法，生成任务暴露矩阵、节点级 RMS target、敏感度排名和自底向上校核结果。当前发布操作只在浏览器内写入模拟装备节点的 `rms.target`，不覆盖 `prediction` 或 `actual`，也尚未接入后端持久化、复杂 RBD 数值求解或真实仿真消费。
-24. M5 建模数据入口首片已新增 contract：`contracts/modeling_import.schema.json` 定义导入包、草稿/发布生命周期、对象集合、变更和校验问题结构；`front/modeling-import-contract.mjs` 提供纯校验函数，错误可定位到四级页面、对象和字段路径。该首片不包含完整 Excel UI，不绕过 Simulation Adapter 直接生成最终 Scenario。
+24. M5 建模数据入口已进入 M5.1 服务化切片：`contracts/modeling_import.schema.json` 定义导入包、草稿/发布生命周期、对象集合、变更和校验问题结构；`front/modeling-import-contract.mjs` 提供纯校验函数，`src/spare_mvp_backend/modeling_import.py` 在后端复用同一语义，`src/spare_mvp_backend/http_server.py` 暴露 `/api/modeling-imports/*` validate/save/get/publish 路径，SQLite `modeling_imports` 表持久化导入包和 validation summary。同一 `import_id` 被 run 引用后不可无痕覆盖，新版本需使用新 `import_id`。该切片不包含完整 Excel UI，不绕过 Simulation Adapter 直接生成最终 Scenario。
 
 ## 文档地图
 
@@ -55,6 +55,8 @@
 | [`superpowers/specs/2026-06-19-m3-1-rms-m5-data-entry-design.md`](superpowers/specs/2026-06-19-m3-1-rms-m5-data-entry-design.md) | 当前分支 M3-1/RMS 收束和 M5 建模数据入口的阶段边界设计。 |
 | [`superpowers/plans/2026-06-19-m3-1-rms-m5-data-entry.md`](superpowers/plans/2026-06-19-m3-1-rms-m5-data-entry.md) | 当前分支验收收束和 M5 首片入口的实施计划。 |
 | [`../contracts/modeling_import.schema.json`](../contracts/modeling_import.schema.json) | M5 首片建模数据导入/校验 contract，描述导入包、对象集合、生命周期、变更和字段级问题定位结构。 |
+| [`superpowers/specs/2026-06-19-m5-1-modeling-import-service-design.md`](superpowers/specs/2026-06-19-m5-1-modeling-import-service-design.md) | M5.1 建模导入服务化设计，限定本地后端 API、SQLite 持久化、发布保护和非目标。 |
+| [`superpowers/plans/2026-06-19-m5-1-modeling-import-service.md`](superpowers/plans/2026-06-19-m5-1-modeling-import-service.md) | M5.1 后端 API、repository、HTTP facade、前端 API client 和文档同步实施计划。 |
 | [`superpowers/plans/2026-06-18-agent-swarm-contract-first-development.md`](superpowers/plans/2026-06-18-agent-swarm-contract-first-development.md) | contract-first agent swarm 分阶段开发计划。 |
 | [`superpowers/plans/2026-06-17-local-aviation-ship-front-integration.md`](superpowers/plans/2026-06-17-local-aviation-ship-front-integration.md) | 当前前端集成实现记录和验收情况。 |
 | [`../src/spare_mvp_abm/aviation_support/README.md`](../src/spare_mvp_abm/aviation_support/README.md) | 本地 Mesa 航空保障场景包说明。 |
