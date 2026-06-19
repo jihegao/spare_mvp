@@ -25,7 +25,7 @@ const SIMULATION_EXPERIMENT_NODES = [
   node("experiment-plan", "仿真实验方案", "simulation-experiment", "用户创建和编辑的实验方案入口。"),
   node("scenario", "实验想定", "simulation-experiment", "由建模对象组装出的单次或批量实验输入。"),
   node("visual-run-control", "可视化运行控制", "simulation-experiment", "启动、停止和切换运行视图。"),
-  node("scenario-view", "场景视图", "simulation-experiment", "宏观任务、陆基/舰基和指标统计视图。"),
+  node("scenario-view", "场景视图", "simulation-experiment", "宏观任务、陆基保障和指标统计视图。"),
   node("monte-carlo-config", "蒙特卡洛配置", "simulation-experiment", "样本数、seed、故障率、备件倍数和保障容量扫参。"),
   node("simulation-run", "仿真运行", "simulation-experiment", "单次运行或批量样本的执行实例。")
 ];
