@@ -294,8 +294,10 @@ test("frontend app routes project save run and result reads through API client",
   assert.match(appSource, /backendArtifactManifest\.artifacts/);
   assert.match(appSource, /ArtifactManifest/);
   assert.match(appSource, /hydrateLastBackendRunFromApi/);
-  assert.match(appSource, /localStorage\.setItem\("spare-mvp:lastBackendRun"/);
-  assert.match(appSource, /localStorage\.getItem\("spare-mvp:lastBackendRun"/);
+  assert.match(appSource, /const LAST_BACKEND_RUN_STORAGE_KEY = "spare-mvp:lastBackendRun"/);
+  assert.match(appSource, /localStorage\.setItem\(LAST_BACKEND_RUN_STORAGE_KEY/);
+  assert.match(appSource, /localStorage\.getItem\(LAST_BACKEND_RUN_STORAGE_KEY/);
+  assert.match(appSource, /experiment_plan_project_json: experimentPlanProjectJson/);
   assert.doesNotMatch(appSource, /run_id: "offline-demo-run"/);
   assert.doesNotMatch(appSource, /runSimulation\(scenario/);
   assert.doesNotMatch(appSource, /runMonteCarlo\(scenario/);

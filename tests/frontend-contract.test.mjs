@@ -939,6 +939,60 @@ test("monte carlo launch creates a run from the current experiment plan branch",
   assert.match(launchSource, /backendApi\.startSimulationRun\(savedProject\.project_id, experimentPlan\.experiment_plan_id, "smoke"\)/);
 });
 
+test("click-based modeling mutations mark project draft dirty before rendering", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const requiredActions = [
+    ["equipment add node", 'const equipmentAddNodeButton = event.target.closest("[data-equipment-add-node]"'],
+    ["basic mission add", 'const basicMissionAddButton = event.target.closest("[data-basic-mission-add]"'],
+    ["basic mission delete", 'const basicMissionDeleteButton = event.target.closest("[data-basic-mission-delete]"'],
+    ["composite task add", 'const compositeTaskAddButton = event.target.closest("[data-composite-task-add]"'],
+    ["composite task delete", 'const compositeTaskDeleteButton = event.target.closest("[data-composite-task-delete]"'],
+    ["composite task item add", 'const compositeTaskItemAddButton = event.target.closest("[data-composite-task-item-add]"'],
+    ["composite task item delete", 'const compositeTaskItemDeleteButton = event.target.closest("[data-composite-task-item-delete]"'],
+    ["combat unit add", 'const combatUnitAddButton = event.target.closest("[data-combat-unit-add]"'],
+    ["combat unit delete", 'const combatUnitDeleteButton = event.target.closest("[data-combat-unit-delete]"'],
+    ["logistics transport add", 'const logisticsAddButton = event.target.closest("[data-logistics-transport-add]"'],
+    ["logistics transport delete", 'const logisticsDeleteButton = event.target.closest("[data-logistics-transport-delete]"'],
+    ["support activity job delete", 'const supportActivityJobDeleteButton = event.target.closest("[data-support-activity-job-delete]"'],
+    ["support activity job batch delete", 'const supportActivityBatchDeleteButton = event.target.closest("[data-support-activity-job-batch-delete]"'],
+    ["periodic task add", 'const periodicAddButton = event.target.closest("[data-periodic-add]"'],
+    ["periodic task delete", 'const periodicDeleteButton = event.target.closest("[data-periodic-delete]"']
+  ];
+
+  for (const [label, marker] of requiredActions) {
+    const start = appSource.indexOf(marker);
+    assert.notEqual(start, -1, label);
+    const returnIndex = appSource.indexOf("return;", start);
+    const actionSource = appSource.slice(start, returnIndex);
+    assert.match(actionSource, /markProjectDraftChanged\(\)/, label);
+    assert.ok(actionSource.indexOf("markProjectDraftChanged()") < actionSource.indexOf("render()"), label);
+  }
+});
+
+test("run result refresh rebuilds frontend state from the experiment plan branch", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const launchSource = appSource.slice(
+    appSource.indexOf("async function startExperimentRunThroughApi"),
+    appSource.indexOf("async function refreshRunResultThroughApi")
+  );
+  const refreshSource = appSource.slice(
+    appSource.indexOf("async function refreshRunResultThroughApi"),
+    appSource.indexOf("async function hydrateLastBackendRunFromApi")
+  );
+  const runPlanSource = appSource.slice(
+    appSource.indexOf("function currentRunExperimentPlanProjectJson"),
+    appSource.indexOf("function updateDemoResultsThroughApiClient")
+  );
+
+  assert.match(launchSource, /lastRunExperimentPlanProjectJson = \{\s*run_id: backendRun\.run_id,\s*project_json: planProjectJson\s*\}/);
+  assert.match(refreshSource, /const planProjectJson = currentRunExperimentPlanProjectJson\(runId\)/);
+  assert.match(refreshSource, /if \(!planProjectJson\)/);
+  assert.match(runPlanSource, /lastRunExperimentPlanProjectJson\?\.run_id === runId/);
+  assert.match(runPlanSource, /lastRunExperimentPlanProjectJson\.project_json/);
+  assert.doesNotMatch(refreshSource, /buildBackendProjectJson\(scenario, currentProject\)/);
+  assert.doesNotMatch(refreshSource, /buildBackendProjectJson\(experimentPlanDraft, currentProject\)/);
+});
+
 test("carry list analysis maps Chinese risk levels to visible priority badges", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const carrySource = appSource.slice(

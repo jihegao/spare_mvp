@@ -251,6 +251,7 @@ const MODELING_IMPORT_DEMO_FIXTURE = {
 let scenario = cloneScenario(defaultScenario);
 let experimentPlanDraft = cloneScenario(scenario);
 let experimentPlanBranchActive = false;
+let lastRunExperimentPlanProjectJson = null;
 let { singleResult, monteCarloResult } = buildDemoResultState(scenario);
 let rmsAllocationProject = createDemoRmsAllocationProject();
 let rmsAllocationPlan = createDefaultRmsAllocationPlan(rmsAllocationProject);
@@ -352,6 +353,7 @@ function bindEvents() {
     const equipmentAddNodeButton = event.target.closest("[data-equipment-add-node]");
     if (equipmentAddNodeButton) {
       addEquipmentNodeForSelection();
+      markProjectDraftChanged();
       render();
       return;
     }
@@ -359,6 +361,7 @@ function bindEvents() {
     const basicMissionAddButton = event.target.closest("[data-basic-mission-add]");
     if (basicMissionAddButton) {
       addBasicMission();
+      markProjectDraftChanged();
       render();
       return;
     }
@@ -366,6 +369,7 @@ function bindEvents() {
     const basicMissionDeleteButton = event.target.closest("[data-basic-mission-delete]");
     if (basicMissionDeleteButton) {
       deleteSelectedBasicMission();
+      markProjectDraftChanged();
       render();
       return;
     }
@@ -391,6 +395,7 @@ function bindEvents() {
     const compositeTaskAddButton = event.target.closest("[data-composite-task-add]");
     if (compositeTaskAddButton) {
       addCompositeTask();
+      markProjectDraftChanged();
       render();
       return;
     }
@@ -398,6 +403,7 @@ function bindEvents() {
     const compositeTaskDeleteButton = event.target.closest("[data-composite-task-delete]");
     if (compositeTaskDeleteButton) {
       deleteSelectedCompositeTask();
+      markProjectDraftChanged();
       render();
       return;
     }
@@ -405,6 +411,7 @@ function bindEvents() {
     const compositeTaskItemAddButton = event.target.closest("[data-composite-task-item-add]");
     if (compositeTaskItemAddButton) {
       addCompositeTaskItem();
+      markProjectDraftChanged();
       render();
       return;
     }
@@ -412,6 +419,7 @@ function bindEvents() {
     const compositeTaskItemDeleteButton = event.target.closest("[data-composite-task-item-delete]");
     if (compositeTaskItemDeleteButton) {
       deleteCompositeTaskItem(Number(compositeTaskItemDeleteButton.dataset.compositeTaskItemDelete));
+      markProjectDraftChanged();
       render();
       return;
     }
@@ -433,6 +441,7 @@ function bindEvents() {
     const combatUnitAddButton = event.target.closest("[data-combat-unit-add]");
     if (combatUnitAddButton) {
       addCombatUnitMember();
+      markProjectDraftChanged();
       render();
       return;
     }
@@ -440,6 +449,7 @@ function bindEvents() {
     const combatUnitDeleteButton = event.target.closest("[data-combat-unit-delete]");
     if (combatUnitDeleteButton) {
       deleteSelectedCombatUnitMember();
+      markProjectDraftChanged();
       render();
       return;
     }
@@ -492,6 +502,7 @@ function bindEvents() {
         ...(Array.isArray(activity.transportStrategies) ? activity.transportStrategies : []),
         { direction: "\u6a2a\u5411\u8fd0\u8f93", spareType: spareModelingNames()[0] || "", triggerMode: "\u4e34\u754c\u5e93\u5b58", criticalInventory: 1, from: scenario.supportNodes[0]?.id || "", to: scenario.supportNodes[1]?.id || "", transportTimeHours: 1 }
       ];
+      markProjectDraftChanged();
       render();
       return;
     }
@@ -501,6 +512,7 @@ function bindEvents() {
       const activity = findLogisticsSupportActivity();
       const index = Number(logisticsDeleteButton.dataset.logisticsTransportDelete);
       activity.transportStrategies = (Array.isArray(activity.transportStrategies) ? activity.transportStrategies : []).filter((_, rowIndex) => rowIndex !== index);
+      markProjectDraftChanged();
       render();
       return;
     }
@@ -508,6 +520,7 @@ function bindEvents() {
     const supportActivityJobDeleteButton = event.target.closest("[data-support-activity-job-delete]");
     if (supportActivityJobDeleteButton) {
       deleteSupportActivityJob(supportActivityJobDeleteButton.dataset.supportActivityJobDelete);
+      markProjectDraftChanged();
       render();
       return;
     }
@@ -515,6 +528,7 @@ function bindEvents() {
     const supportActivityBatchDeleteButton = event.target.closest("[data-support-activity-job-batch-delete]");
     if (supportActivityBatchDeleteButton) {
       deleteSelectedSupportActivityJobs(supportActivityBatchDeleteButton.dataset.supportActivityJobBatchDelete);
+      markProjectDraftChanged();
       render();
       return;
     }
@@ -672,6 +686,7 @@ function bindEvents() {
       scenario.missionProfile.periodicTasks = [...periodicTaskList(), task];
       selectedPeriodicTaskId = task.id;
       updateDemoResultsThroughApiClient();
+      markProjectDraftChanged();
       render();
       return;
     }
@@ -682,6 +697,7 @@ function bindEvents() {
       scenario.missionProfile.periodicTasks = periodicTaskList().filter((task) => String(task.id) !== taskId);
       selectedPeriodicTaskId = String(periodicTaskList()[0]?.id || "");
       updateDemoResultsThroughApiClient();
+      markProjectDraftChanged();
       render();
       return;
     }
@@ -3578,8 +3594,12 @@ async function startExperimentRunThroughApi() {
       buildExperimentPlanConfig(planProjectJson)
     );
     backendRun = await backendApi.startSimulationRun(savedProject.project_id, experimentPlan.experiment_plan_id, "smoke");
+    lastRunExperimentPlanProjectJson = {
+      run_id: backendRun.run_id,
+      project_json: planProjectJson
+    };
     await refreshRunResultThroughApi(backendRun.run_id);
-    rememberLastBackendRun(backendRun.run_id, savedProject.project_id);
+    rememberLastBackendRun(backendRun.run_id, savedProject.project_id, planProjectJson);
     experimentRunStatus = backendRun.status === "succeeded" ? "完成" : backendRun.status;
     backendApiStatus = "运行完成";
   } catch (err) {
@@ -3604,7 +3624,11 @@ async function refreshRunResultThroughApi(runId = backendRun?.run_id) {
   if (backendRun.project_id) {
     savedProject = await backendApi.getProject(backendRun.project_id);
   }
-  const state = buildFrontendResultState(buildBackendProjectJson(scenario, currentProject), backendRunResult);
+  const planProjectJson = currentRunExperimentPlanProjectJson(runId);
+  if (!planProjectJson) {
+    throw new Error(`缺少 run ${runId} 的 ExperimentPlan 分支快照，已阻止用当前 Project draft 重建结果`);
+  }
+  const state = buildFrontendResultState(planProjectJson, backendRunResult);
   singleResult = state.singleResult;
   monteCarloResult = state.monteCarloResult;
 }
@@ -3626,10 +3650,15 @@ async function hydrateLastBackendRunFromApi() {
   }
 }
 
-function rememberLastBackendRun(runId, projectId) {
+function rememberLastBackendRun(runId, projectId, experimentPlanProjectJson = null) {
   if (!runId) return;
   try {
-    localStorage.setItem("spare-mvp:lastBackendRun", JSON.stringify({ run_id: runId, project_id: projectId || "", saved_at: new Date().toISOString() }));
+    localStorage.setItem(LAST_BACKEND_RUN_STORAGE_KEY, JSON.stringify({
+      run_id: runId,
+      project_id: projectId || "",
+      experiment_plan_project_json: experimentPlanProjectJson,
+      saved_at: new Date().toISOString()
+    }));
   } catch (err) {
     return;
   }
@@ -3637,7 +3666,7 @@ function rememberLastBackendRun(runId, projectId) {
 
 function readLastBackendRun() {
   try {
-    return JSON.parse(localStorage.getItem("spare-mvp:lastBackendRun") || "null");
+    return JSON.parse(localStorage.getItem(LAST_BACKEND_RUN_STORAGE_KEY) || "null");
   } catch (err) {
     return null;
   }
@@ -3645,10 +3674,24 @@ function readLastBackendRun() {
 
 function forgetLastBackendRun() {
   try {
+    lastRunExperimentPlanProjectJson = null;
     localStorage.removeItem(LAST_BACKEND_RUN_STORAGE_KEY);
   } catch (err) {
     return;
   }
+}
+
+function currentRunExperimentPlanProjectJson(runId) {
+  if (lastRunExperimentPlanProjectJson?.run_id === runId) return lastRunExperimentPlanProjectJson.project_json;
+  const stored = readLastBackendRun();
+  if (stored?.run_id === runId && stored.experiment_plan_project_json) {
+    lastRunExperimentPlanProjectJson = {
+      run_id: stored.run_id,
+      project_json: stored.experiment_plan_project_json
+    };
+    return lastRunExperimentPlanProjectJson.project_json;
+  }
+  return null;
 }
 
 function updateDemoResultsThroughApiClient(projectJsonSource = scenario) {
