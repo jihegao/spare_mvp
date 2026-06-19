@@ -159,6 +159,9 @@ let suppressOntologyClick = false;
 let carryObjective = CARRY_OBJECTIVES[0].id;
 let experimentRunStatus = "当前";
 let isProjectMenuOpen = false;
+let selectedBuiltInScenarioItem = { type: "missionArea", index: 0 };
+let selectedCombatUnitSection = "group";
+let selectedEquipmentComponentIndex = 0;
 
 render();
 bindEvents();
@@ -320,6 +323,27 @@ function bindEvents() {
       selectedRoute = "workbench";
       selectedFeatureId = getPlanListFeatureId(page.module);
       location.hash = `feature=${selectedFeatureId}`;
+      render();
+      return;
+    }
+
+    const builtInScenarioNode = event.target.closest("[data-select-built-in-type]");
+    if (builtInScenarioNode) {
+      selectedBuiltInScenarioItem = { type: builtInScenarioNode.dataset.selectBuiltInType, index: Number(builtInScenarioNode.dataset.selectBuiltInIndex || 0) };
+      render();
+      return;
+    }
+
+    const combatUnitNode = event.target.closest("[data-select-combat-unit]");
+    if (combatUnitNode) {
+      selectedCombatUnitSection = combatUnitNode.dataset.selectCombatUnit;
+      render();
+      return;
+    }
+
+    const equipmentComponentNode = event.target.closest("[data-select-equipment-component]");
+    if (equipmentComponentNode) {
+      selectedEquipmentComponentIndex = Number(equipmentComponentNode.dataset.selectEquipmentComponent);
       render();
       return;
     }
@@ -994,36 +1018,65 @@ function renderBuiltInScenario(page) {
     <div class="section-head section-context">
       <span>${page.dataObjects.join(" / ")}</span>
     </div>
-    <div class="form-table-grid">
-      ${field("场景编号", "scenarioId")}
-      ${field("出发机场名称", "airports.0.name")}
-      ${field("出发机场位置", "airports.0.location")}
-      ${field("出发机场跑道类型", "airports.0.runwayType")}
-      ${field("距任务区(km)", "airports.0.distanceToMissionKm", "number")}
-      ${field("关联保障节点", "airports.0.supportNodeId")}
-      ${field("备用机场名称", "airports.1.name")}
-      ${field("备用机场位置", "airports.1.location")}
-      ${field("备用机场跑道类型", "airports.1.runwayType")}
-      ${field("备用机场距任务区(km)", "airports.1.distanceToMissionKm", "number")}
-      ${field("任务区名称", "missionAreas.0.name")}
-      ${field("任务区类型", "missionAreas.0.areaType")}
-      ${field("距出发机场(km)", "missionAreas.0.distanceFromDepartureKm", "number")}
-      ${field("任务区半径(km)", "missionAreas.0.patrolRadiusKm", "number")}
-      ${field("威胁等级", "missionAreas.0.threatLevel")}
+    <div class="organization-layout">
+      <div class="tree-container">
+        <h4>内置场景对象</h4>
+        <div class="form-table-grid" style="grid-template-columns:1fr;margin-top:12px;">
+          ${field("场景编号", "scenarioId")}
+        </div>
+        <div class="object-tree">
+          ${scenario.airports.map((airport, index) => `
+            <button type="button" class="tree-node ${selectedBuiltInScenarioItem.type === "airport" && selectedBuiltInScenarioItem.index === index ? "active" : ""}" data-select-built-in-type="airport" data-select-built-in-index="${index}">
+              ${htmlEscape(airport.name)}
+              <span>${htmlEscape(airport.location)} / 距任务区 ${htmlEscape(airport.distanceToMissionKm)} km</span>
+            </button>
+          `).join("")}
+          ${scenario.missionAreas.map((area, index) => `
+            <button type="button" class="tree-node root ${selectedBuiltInScenarioItem.type === "missionArea" && selectedBuiltInScenarioItem.index === index ? "active" : ""}" data-select-built-in-type="missionArea" data-select-built-in-index="${index}">
+              ${htmlEscape(area.name)}
+              <span>${htmlEscape(area.areaType)} / 距出发机场 ${htmlEscape(area.distanceFromDepartureKm)} km</span>
+            </button>
+          `).join("")}
+        </div>
+      </div>
+      <div class="detail-panel">
+        ${renderBuiltInScenarioEditor(selectedBuiltInScenarioItem)}
+      </div>
     </div>
-    <div class="object-tree">
-      ${scenario.airports.map((airport) => `
-        <div class="tree-node">
-          ${htmlEscape(airport.name)}
-          <span>${htmlEscape(airport.location)} / 距任务区 ${htmlEscape(airport.distanceToMissionKm)} km</span>
+  `;
+}
+
+function renderBuiltInScenarioEditor(selectedBuiltInScenarioItem) {
+  if (selectedBuiltInScenarioItem.type === "airport") {
+    return `
+      <div class="detail-card">
+        <div class="section-head">
+          <h3>机场属性</h3>
+          <span>${htmlEscape(getPath(scenario, `airports.${selectedBuiltInScenarioItem.index}.name`) || "")}</span>
         </div>
-      `).join("")}
-      ${scenario.missionAreas.map((area) => `
-        <div class="tree-node root">
-          ${htmlEscape(area.name)}
-          <span>${htmlEscape(area.areaType)} / 距出发机场 ${htmlEscape(area.distanceFromDepartureKm)} km</span>
+        <div class="form-table-grid">
+          ${field("机场名称", `airports.${selectedBuiltInScenarioItem.index}.name`)}
+          ${field("机场位置", `airports.${selectedBuiltInScenarioItem.index}.location`)}
+          ${field("跑道类型", `airports.${selectedBuiltInScenarioItem.index}.runwayType`)}
+          ${field("距任务区(km)", `airports.${selectedBuiltInScenarioItem.index}.distanceToMissionKm`, "number")}
+          ${field("关联保障节点", `airports.${selectedBuiltInScenarioItem.index}.supportNodeId`)}
         </div>
-      `).join("")}
+      </div>
+    `;
+  }
+  return `
+    <div class="detail-card">
+      <div class="section-head">
+        <h3>任务区属性</h3>
+        <span>${htmlEscape(getPath(scenario, `missionAreas.${selectedBuiltInScenarioItem.index}.name`) || "")}</span>
+      </div>
+      <div class="form-table-grid">
+        ${field("任务区名称", `missionAreas.${selectedBuiltInScenarioItem.index}.name`)}
+        ${field("任务区类型", `missionAreas.${selectedBuiltInScenarioItem.index}.areaType`)}
+        ${field("距出发机场(km)", `missionAreas.${selectedBuiltInScenarioItem.index}.distanceFromDepartureKm`, "number")}
+        ${field("任务区半径(km)", `missionAreas.${selectedBuiltInScenarioItem.index}.patrolRadiusKm`, "number")}
+        ${field("威胁等级", `missionAreas.${selectedBuiltInScenarioItem.index}.threatLevel`)}
+      </div>
     </div>
   `;
 }
@@ -1040,20 +1093,13 @@ function renderCombatUnitModeling(page) {
       <div class="tree-container">
         <h4>编队需求</h4>
         <div class="object-tree">
-          <div class="tree-node root">${htmlEscape(scenario.combatUnit.groupName)}<span>${htmlEscape(scenario.combatUnit.requiredCount)} / ${htmlEscape(scenario.combatUnit.quantity)} 架</span></div>
-          <div class="tree-node">${htmlEscape(scenario.combatUnit.basicTaskName)}<span>${htmlEscape(scenario.combatUnit.equipmentType)}</span></div>
-          <div class="tree-node">${htmlEscape(scenario.combatUnit.deploymentLocation)}<span>部署位置</span></div>
-        </div>
-        <div class="form-table-grid" style="grid-template-columns:1fr;margin-top:12px;">
-          ${field("编队名称", "combatUnit.groupName")}
-          ${field("基本任务名称", "combatUnit.basicTaskName")}
-          ${field("装备类型", "combatUnit.equipmentType")}
-          ${field("装备数量", "combatUnit.quantity", "number")}
-          ${field("需求数量", "combatUnit.requiredCount", "number")}
-          ${field("部署位置", "combatUnit.deploymentLocation")}
+          <button type="button" class="tree-node root ${selectedCombatUnitSection === "group" ? "active" : ""}" data-select-combat-unit="group">${htmlEscape(scenario.combatUnit.groupName)}<span>${htmlEscape(scenario.combatUnit.requiredCount)} / ${htmlEscape(scenario.combatUnit.quantity)} 架</span></button>
+          <button type="button" class="tree-node ${selectedCombatUnitSection === "basicTask" ? "active" : ""}" data-select-combat-unit="basicTask">${htmlEscape(scenario.combatUnit.basicTaskName)}<span>${htmlEscape(scenario.combatUnit.equipmentType)}</span></button>
+          <button type="button" class="tree-node ${selectedCombatUnitSection === "deployment" ? "active" : ""}" data-select-combat-unit="deployment">${htmlEscape(scenario.combatUnit.deploymentLocation)}<span>部署位置</span></button>
         </div>
       </div>
       <div class="detail-panel">
+        ${renderCombatUnitEditor(selectedCombatUnitSection)}
         <div class="detail-card">
           <h4>基本使用单元</h4>
           <div class="table-wrap">
@@ -1095,6 +1141,41 @@ function renderCombatUnitModeling(page) {
             </table>
           </div>
         </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderCombatUnitEditor(selectedCombatUnitSection) {
+  if (selectedCombatUnitSection === "basicTask") {
+    return `
+      <div class="detail-card">
+        <h4>基本任务编辑</h4>
+        <div class="form-table-grid" style="grid-template-columns:1fr;">
+          ${field("基本任务名称", "combatUnit.basicTaskName")}
+          ${field("装备类型", "combatUnit.equipmentType")}
+          ${field("需求数量", "combatUnit.requiredCount", "number")}
+        </div>
+      </div>
+    `;
+  }
+  if (selectedCombatUnitSection === "deployment") {
+    return `
+      <div class="detail-card">
+        <h4>部署位置编辑</h4>
+        <div class="form-table-grid" style="grid-template-columns:1fr;">
+          ${field("部署位置", "combatUnit.deploymentLocation")}
+        </div>
+      </div>
+    `;
+  }
+  return `
+    <div class="detail-card">
+      <h4>编队需求编辑</h4>
+      <div class="form-table-grid" style="grid-template-columns:1fr;">
+        ${field("编队名称", "combatUnit.groupName")}
+        ${field("装备数量", "combatUnit.quantity", "number")}
+        ${field("需求数量", "combatUnit.requiredCount", "number")}
       </div>
     </div>
   `;
@@ -1341,7 +1422,9 @@ function diffTimeMinutes(start, end) {
 }
 
 function renderEquipmentModeling(page) {
-  const selected = scenario.components[0] || {};
+  const selectedIndex = Math.min(Math.max(selectedEquipmentComponentIndex, 0), Math.max((scenario.components || []).length - 1, 0));
+  selectedEquipmentComponentIndex = selectedIndex;
+  const selected = scenario.components[selectedIndex] || {};
   const isFailurePage = page.name.includes("故障");
   return `
     <div class="section-head section-context">
@@ -1355,11 +1438,11 @@ function renderEquipmentModeling(page) {
         </div>
         <div class="object-tree">
           <div class="tree-node root">${htmlEscape(scenario.equipment.model)}<span>${htmlEscape(scenario.equipment.quantity)} 架</span></div>
-          ${scenario.components.map((component) => `
-            <div class="tree-node">
+          ${scenario.components.map((component, index) => `
+            <button type="button" class="tree-node ${index === selectedIndex ? "active" : ""}" data-select-equipment-component="${index}">
               ${htmlEscape(component.name)}
               <span>${htmlEscape(component.quantity)} 件 / ${htmlEscape(component.connectionType)}</span>
-            </div>
+            </button>
           `).join("")}
         </div>
       </aside>
@@ -1370,36 +1453,36 @@ function renderEquipmentModeling(page) {
             <span>${htmlEscape(selected.name || "")}</span>
           </div>
           <div class="form-table-grid">
-            ${isFailurePage ? renderEquipmentFailureFields(selected) : renderEquipmentCompositionFields(selected)}
+            ${isFailurePage ? renderEquipmentFailureFields(selectedIndex) : renderEquipmentCompositionFields(selectedIndex)}
           </div>
         </div>
-        ${isFailurePage ? renderEquipmentFailureRmsFields(selected) : ""}
+        ${isFailurePage ? renderEquipmentFailureRmsFields(selected, selectedIndex) : ""}
         ${isFailurePage ? renderEquipmentComponentTable() : ""}
       </section>
     </div>
   `;
 }
 
-function renderEquipmentCompositionFields() {
+function renderEquipmentCompositionFields(selectedIndex) {
   return `
-    ${field("组件名称", "components.0.name")}
-    ${field("父节点", "components.0.parentId")}
-    ${field("备件类型", "components.0.spareType")}
-    ${field("连接类型", "components.0.connectionType")}
+    ${field("组件名称", `components.${selectedIndex}.name`)}
+    ${field("父节点", `components.${selectedIndex}.parentId`)}
+    ${field("备件类型", `components.${selectedIndex}.spareType`)}
+    ${field("连接类型", `components.${selectedIndex}.connectionType`)}
   `;
 }
 
-function renderEquipmentFailureFields() {
+function renderEquipmentFailureFields(selectedIndex) {
   return `
-    ${renderEquipmentCompositionFields()}
-    <label>数量 n<input data-path="components.0.quantity" type="number" value="${htmlEscape(getPath(scenario, "components.0.quantity"))}"></label>
-    <label>成功数 k<input data-path="components.0.kOutOfN.k" type="number" value="${htmlEscape(getPath(scenario, "components.0.kOutOfN.k"))}"></label>
-    ${field("N中取K总数", "components.0.kOutOfN.n", "number")}
-    ${field("启用 n 中取 k", "components.0.kOutOfN.enabled")}
-    ${field("故障模型", "components.0.failureModel")}
-    ${field("失效率", "components.0.failureRate", "number")}
-    ${field("MTBF(h)", "components.0.mtbfHours", "number")}
-    ${field("寿命限制(h)", "components.0.lifeLimitHours", "number")}
+    ${renderEquipmentCompositionFields(selectedIndex)}
+    <label>数量 n<input data-path="components.${selectedIndex}.quantity" type="number" value="${htmlEscape(getPath(scenario, `components.${selectedIndex}.quantity`))}"></label>
+    <label>成功数 k<input data-path="components.${selectedIndex}.kOutOfN.k" type="number" value="${htmlEscape(getPath(scenario, `components.${selectedIndex}.kOutOfN.k`))}"></label>
+    ${field("N中取K总数", `components.${selectedIndex}.kOutOfN.n`, "number")}
+    ${field("启用 n 中取 k", `components.${selectedIndex}.kOutOfN.enabled`)}
+    ${field("故障模型", `components.${selectedIndex}.failureModel`)}
+    ${field("失效率", `components.${selectedIndex}.failureRate`, "number")}
+    ${field("MTBF(h)", `components.${selectedIndex}.mtbfHours`, "number")}
+    ${field("寿命限制(h)", `components.${selectedIndex}.lifeLimitHours`, "number")}
   `;
 }
 
@@ -1431,7 +1514,7 @@ function renderEquipmentComponentTable() {
   `;
 }
 
-function renderEquipmentFailureRmsFields(selected) {
+function renderEquipmentFailureRmsFields(selected, selectedIndex) {
   return `
     <div class="detail-card">
       <div class="section-head">
@@ -1439,12 +1522,12 @@ function renderEquipmentFailureRmsFields(selected) {
         <span>${htmlEscape(selected.name || "")}</span>
       </div>
       <div class="form-table-grid">
-        ${field("可靠度 R(t)", "components.0.rms.reliability", "number")}
-        ${field("维修度 M(t)", "components.0.rms.maintainability", "number")}
-        ${field("保障性 S(t)", "components.0.rms.supportability", "number")}
-        ${field("平均修复时间 MTTR(h)", "components.0.rms.mttrHours", "number")}
-        ${field("平均保障延迟 MLDT(h)", "components.0.rms.mldtHours", "number")}
-        ${field("固有可用度 Ai", "components.0.rms.availability", "number")}
+        ${field("可靠度 R(t)", `components.${selectedIndex}.rms.reliability`, "number")}
+        ${field("维修度 M(t)", `components.${selectedIndex}.rms.maintainability`, "number")}
+        ${field("保障性 S(t)", `components.${selectedIndex}.rms.supportability`, "number")}
+        ${field("平均修复时间 MTTR(h)", `components.${selectedIndex}.rms.mttrHours`, "number")}
+        ${field("平均保障延迟 MLDT(h)", `components.${selectedIndex}.rms.mldtHours`, "number")}
+        ${field("固有可用度 Ai", `components.${selectedIndex}.rms.availability`, "number")}
       </div>
     </div>
   `;

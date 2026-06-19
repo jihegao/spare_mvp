@@ -1087,16 +1087,30 @@ input {
   display: flex;
   justify-content: space-between;
   gap: 12px;
+  width: 100%;
   padding: 9px 10px;
   border: 1px solid var(--line);
   border-radius: 6px;
   background: #fbfcfd;
+  color: inherit;
+  font: inherit;
+  text-align: left;
 }
 
 .tree-node.root {
   border-color: #d8e4ff;
   background: var(--primary-soft);
   font-weight: 700;
+}
+
+button.tree-node {
+  cursor: pointer;
+}
+
+button.tree-node:hover,
+.tree-node.active {
+  border-color: var(--primary);
+  background: var(--primary-soft);
 }
 
 .table-wrap {

@@ -245,9 +245,18 @@ test("equipment modeling pages use ship front tree attributes with quantity and 
   assert.match(appSource, /成功数 k/);
   assert.match(appSource, /启用 n 中取 k/);
   assert.match(appSource, /故障属性/);
-  assert.match(appSource, /data-path="components\.0\.quantity"/);
-  assert.match(appSource, /data-path="components\.0\.kOutOfN\.k"/);
+  assert.match(appSource, /data-path="components\.\$\{selectedIndex\}\.quantity"/);
+  assert.match(appSource, /data-path="components\.\$\{selectedIndex\}\.kOutOfN\.k"/);
   assert.doesNotMatch(appSource, /<thead><tr><th>组件<\/th><th>备件类型<\/th><th>故障模型<\/th><th>失效率<\/th><th>MTBF<\/th><th>连接类型<\/th><\/tr><\/thead>/);
+});
+
+test("equipment composition tree node selection drives the detail form path", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  assert.match(appSource, /let selectedEquipmentComponentIndex = 0/);
+  assert.match(appSource, /data-select-equipment-component="\$\{index\}"/);
+  assert.match(appSource, /selectedEquipmentComponentIndex = Number\(equipmentComponentNode\.dataset\.selectEquipmentComponent\)/);
+  assert.match(appSource, /renderEquipmentCompositionFields\(selectedIndex\)/);
+  assert.match(appSource, /field\("组件名称", `components\.\$\{selectedIndex\}\.name`\)/);
 });
 
 test("equipment composition page only renders tree and basic composition fields", async () => {
@@ -257,11 +266,11 @@ test("equipment composition page only renders tree and basic composition fields"
     appSource.indexOf("function renderEquipmentFailureRmsFields")
   );
   assert.match(equipmentSource, /function renderEquipmentCompositionFields/);
-  assert.match(equipmentSource, /isFailurePage \? renderEquipmentFailureFields\(selected\) : renderEquipmentCompositionFields\(selected\)/);
-  assert.match(equipmentSource, /field\("组件名称", "components\.0\.name"\)/);
-  assert.match(equipmentSource, /field\("父节点", "components\.0\.parentId"\)/);
-  assert.match(equipmentSource, /field\("备件类型", "components\.0\.spareType"\)/);
-  assert.match(equipmentSource, /field\("连接类型", "components\.0\.connectionType"\)/);
+  assert.match(equipmentSource, /isFailurePage \? renderEquipmentFailureFields\(selectedIndex\) : renderEquipmentCompositionFields\(selectedIndex\)/);
+  assert.match(equipmentSource, /field\("组件名称", `components\.\$\{selectedIndex\}\.name`\)/);
+  assert.match(equipmentSource, /field\("父节点", `components\.\$\{selectedIndex\}\.parentId`\)/);
+  assert.match(equipmentSource, /field\("备件类型", `components\.\$\{selectedIndex\}\.spareType`\)/);
+  assert.match(equipmentSource, /field\("连接类型", `components\.\$\{selectedIndex\}\.connectionType`\)/);
   assert.match(equipmentSource, /isFailurePage \? renderEquipmentComponentTable\(\) : ""/);
 });
 
@@ -271,7 +280,7 @@ test("equipment failure page exposes RMS attributes separately from composition 
     appSource.indexOf("function renderEquipmentModeling"),
     appSource.indexOf("function renderReliabilityBlockDiagram")
   );
-  assert.match(equipmentSource, /renderEquipmentFailureRmsFields\(selected\)/);
+  assert.match(equipmentSource, /renderEquipmentFailureRmsFields\(selected, selectedIndex\)/);
   assert.match(equipmentSource, /function renderEquipmentFailureRmsFields/);
   assert.match(equipmentSource, /RMS指标/);
   assert.match(equipmentSource, /可靠度 R\(t\)/);
@@ -279,11 +288,11 @@ test("equipment failure page exposes RMS attributes separately from composition 
   assert.match(equipmentSource, /保障性 S\(t\)/);
   assert.match(equipmentSource, /平均修复时间 MTTR\(h\)/);
   assert.match(equipmentSource, /固有可用度 Ai/);
-  assert.match(equipmentSource, /field\("可靠度 R\(t\)", "components\.0\.rms\.reliability", "number"\)/);
-  assert.match(equipmentSource, /field\("维修度 M\(t\)", "components\.0\.rms\.maintainability", "number"\)/);
-  assert.match(equipmentSource, /field\("保障性 S\(t\)", "components\.0\.rms\.supportability", "number"\)/);
-  assert.match(equipmentSource, /field\("平均修复时间 MTTR\(h\)", "components\.0\.rms\.mttrHours", "number"\)/);
-  assert.match(equipmentSource, /field\("固有可用度 Ai", "components\.0\.rms\.availability", "number"\)/);
+  assert.match(equipmentSource, /field\("可靠度 R\(t\)", `components\.\$\{selectedIndex\}\.rms\.reliability`, "number"\)/);
+  assert.match(equipmentSource, /field\("维修度 M\(t\)", `components\.\$\{selectedIndex\}\.rms\.maintainability`, "number"\)/);
+  assert.match(equipmentSource, /field\("保障性 S\(t\)", `components\.\$\{selectedIndex\}\.rms\.supportability`, "number"\)/);
+  assert.match(equipmentSource, /field\("平均修复时间 MTTR\(h\)", `components\.\$\{selectedIndex\}\.rms\.mttrHours`, "number"\)/);
+  assert.match(equipmentSource, /field\("固有可用度 Ai", `components\.\$\{selectedIndex\}\.rms\.availability`, "number"\)/);
 });
 
 test("frontend shell mounts a feature workbench rather than six static summary views", async () => {
@@ -335,6 +344,16 @@ test("built-in scenario page configures airport and mission area attributes", as
   assert.match(catalogSource, /return \["scenarioId", "airports", "missionAreas", "supportNodes"\]/);
 });
 
+test("built-in scenario tree nodes select the displayed airport or mission area editor", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  assert.match(appSource, /let selectedBuiltInScenarioItem = \{ type: "missionArea", index: 0 \}/);
+  assert.match(appSource, /data-select-built-in-type="airport"/);
+  assert.match(appSource, /data-select-built-in-type="missionArea"/);
+  assert.match(appSource, /selectedBuiltInScenarioItem = \{ type: builtInScenarioNode\.dataset\.selectBuiltInType/);
+  assert.match(appSource, /renderBuiltInScenarioEditor\(selectedBuiltInScenarioItem\)/);
+  assert.match(appSource, /missionAreas\.\$\{selectedBuiltInScenarioItem\.index\}\.name/);
+});
+
 test("combat unit page follows ship front basic unit modeling structure", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   assert.match(appSource, /if \(page\.name === "基本作战单元建模"\) return renderCombatUnitModeling\(page\)/);
@@ -345,6 +364,15 @@ test("combat unit page follows ship front basic unit modeling structure", async 
   assert.match(appSource, /飞机编号/);
   assert.match(appSource, /部署位置/);
   assert.doesNotMatch(appSource, /基本作战单元建模字段[\s\S]*任务类型/);
+});
+
+test("combat unit tree switches the right-side editor section", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  assert.match(appSource, /let selectedCombatUnitSection = "group"/);
+  assert.match(appSource, /data-select-combat-unit="basicTask"/);
+  assert.match(appSource, /selectedCombatUnitSection = combatUnitNode\.dataset\.selectCombatUnit/);
+  assert.match(appSource, /renderCombatUnitEditor\(selectedCombatUnitSection\)/);
+  assert.match(appSource, /selectedCombatUnitSection === "basicTask"/);
 });
 
 test("basic mission page follows ship front basic task modeling structure", async () => {
