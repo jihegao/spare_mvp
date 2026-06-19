@@ -13,6 +13,11 @@ import {
   defaultScenario
 } from "./sim-engine.mjs?v=20260619-task-modeling";
 import {
+  deleteSupportActivityJobAt,
+  deleteSupportActivityJobsAtIndexes,
+  supportActivityJobs
+} from "./support-activity-jobs.mjs";
+import {
   calculateRmsAllocation,
   createDefaultRmsAllocationPlan,
   createDemoRmsAllocationProject,
@@ -2334,7 +2339,7 @@ function renderEquipmentModeling(page) {
             <button type="button" class="btn-primary" data-equipment-add-node>新增节点</button>
             <button type="button" data-equipment-edit-node disabled>编辑</button>
             <button type="button" class="btn-danger" data-equipment-delete-node disabled>删除</button>
-            <button type="button">导入</button>
+            <button type="button" disabled>导入</button>
           </div>
         </div>
         ${renderCollapsibleTree(buildEquipmentTreeNodes())}
@@ -2687,7 +2692,7 @@ function renderSupportOrganizationWorkbench(page) {
               <button type="button" class="btn-primary" data-support-org-add-node disabled>新增节点</button>
               <button type="button" data-support-org-edit-node disabled>编辑</button>
               <button type="button" class="btn-danger" data-support-org-delete-node disabled>删除</button>
-              <button type="button">导入</button>
+              <button type="button" disabled>导入</button>
             </div>
           </div>
           ${SUPPORT_ORG_TREE.map((node) => renderOrgTreeNode(node)).join("")}
@@ -2783,12 +2788,6 @@ function findSupportActivityForPage(page) {
   return activities[0] || {};
 }
 
-function supportActivityJobs(activity) {
-  return Array.isArray(activity.jobs) && activity.jobs.length > 0
-    ? activity.jobs
-    : [{ activityCode: "BA-001", workName: activity.activityType || "保障作业", predecessors: [], durationMinutes: Number(activity.durationHours || 1) * 60 }];
-}
-
 function supportActivityJobKey(tabKey, index) {
   return `${tabKey}:${index}`;
 }
@@ -2831,11 +2830,7 @@ function deleteSupportActivityJob(key) {
   const [tabKey, rawIndex] = String(key || "").split(":");
   const index = Number(rawIndex);
   const activity = findSupportActivityByJobTabKey(tabKey);
-  if (!activity || !Number.isInteger(index)) return;
-  const jobs = supportActivityJobs(activity).slice();
-  if (index < 0 || index >= jobs.length) return;
-  jobs.splice(index, 1);
-  activity.jobs = jobs;
+  if (!deleteSupportActivityJobAt(activity, index)) return;
   selectedSupportActivityJobKeys.delete(key);
   renumberSupportActivityJobSelections(tabKey);
   updateDemoResultsThroughApiClient();
@@ -2850,9 +2845,7 @@ function deleteSelectedSupportActivityJobs(tabKey) {
       return keyTab === tabKey ? Number(rawIndex) : NaN;
     })
     .filter(Number.isInteger);
-  if (selectedIndexes.length === 0) return;
-  const selectedSet = new Set(selectedIndexes);
-  activity.jobs = supportActivityJobs(activity).filter((_, index) => !selectedSet.has(index));
+  if (!deleteSupportActivityJobsAtIndexes(activity, selectedIndexes)) return;
   selectedSupportActivityJobKeys = new Set(Array.from(selectedSupportActivityJobKeys).filter((key) => !String(key).startsWith(`${tabKey}:`)));
   updateDemoResultsThroughApiClient();
 }
@@ -2881,7 +2874,7 @@ function renderSupportActivityJobRows(activity, tabKey) {
       <td>${htmlEscape(Array.isArray(job.predecessors) && job.predecessors.length ? job.predecessors.join("、") : "-")}</td>
       <td>${Number(job.durationMinutes || 0)}</td>
       <td>${htmlEscape(describeDurationProfile(job.durationProfile, job.durationMinutes))}</td>
-      <td><button type="button" class="inline-action" data-support-activity-job="${htmlEscape(tabKey)}-${index}">编辑</button><button type="button" class="btn-danger" data-support-activity-job-delete="${htmlEscape(supportActivityJobKey(tabKey, index))}">删除</button></td>
+      <td><button type="button" class="inline-action" data-support-activity-job="${htmlEscape(tabKey)}-${index}" disabled>编辑</button><button type="button" class="btn-danger" data-support-activity-job-delete="${htmlEscape(supportActivityJobKey(tabKey, index))}">删除</button></td>
     </tr>
   `).join("");
 }
@@ -2890,13 +2883,16 @@ function renderSupportActivityJobTable(activity, tabKey) {
   const jobs = supportActivityJobs(activity);
   const selectedCount = jobs.filter((_, index) => selectedSupportActivityJobKeys.has(supportActivityJobKey(tabKey, index))).length;
   const allSelected = jobs.length > 0 && selectedCount === jobs.length;
+  const body = jobs.length
+    ? renderSupportActivityJobRows(activity, tabKey)
+    : `<tr><td colspan="9" class="muted">暂无工作项目</td></tr>`;
   return `
     <h4>工作项目清单</h4>
-    <div class="toolbar-row"><button type="button" class="btn-primary">新增基本保障活动</button><button type="button" class="btn-danger" data-support-activity-job-batch-delete="${htmlEscape(tabKey)}">批量删除</button></div>
+    <div class="toolbar-row"><button type="button" class="btn-primary" data-support-activity-job-add disabled>新增基本保障活动</button><button type="button" class="btn-danger" data-support-activity-job-batch-delete="${htmlEscape(tabKey)}">批量删除</button></div>
     <div class="table-wrap">
       <table>
         <thead><tr><th><input type="checkbox" data-support-activity-job-select-all="${htmlEscape(tabKey)}" ${allSelected ? "checked" : ""}></th><th>序号</th><th>基本保障活动编号</th><th>作业项</th><th>子作业</th><th>紧前作业</th><th>工期(min)</th><th>工期分布摘要</th><th>操作</th></tr></thead>
-        <tbody>${renderSupportActivityJobRows(activity, tabKey)}</tbody>
+        <tbody>${body}</tbody>
       </table>
     </div>
   `;
@@ -2924,7 +2920,7 @@ function renderBasicActivityLibrary() {
       </div>
       <div class="toolbar-row">
         <button type="button" class="btn-primary" data-basic-activity-add disabled>新增</button>
-        <button type="button">导入</button>
+        <button type="button" disabled>导入</button>
         <button type="button" class="btn-danger" data-basic-activity-delete disabled>删除</button>
       </div>
       <div class="table-wrap">
@@ -2964,8 +2960,8 @@ function renderOperationsSupportActivity(activePlan, activity) {
         <span>${activePlan.path.map((item) => htmlEscape(item)).join(" / ")}</span>
       </div>
       <div class="form-table-grid">
-        <label>使用保障活动名称<input value="${htmlEscape(activity.activityName || activePlan.name)}"></label>
-        <label>最大工作时间参考(min)<input type="number" value="${Number(activity.maxWorkTimeRefMinutes || activity.durationHours * 60 || 0)}"></label>
+        <label>使用保障活动名称<input value="${htmlEscape(activity.activityName || activePlan.name)}" readonly></label>
+        <label>最大工作时间参考(min)<input type="number" value="${Number(activity.maxWorkTimeRefMinutes || activity.durationHours * 60 || 0)}" readonly></label>
       </div>
       ${renderSupportActivityJobTable(activity, "ops_plan")}
     </div>
@@ -2981,17 +2977,17 @@ function renderPreventiveMaintenanceActivity(activePlan, activity) {
         <span>${activePlan.path.map((item) => htmlEscape(item)).join(" / ")}</span>
       </div>
       <div class="form-table-grid">
-        <label>方案名称<input value="${htmlEscape(activity.activityName || activePlan.name)}"></label>
-        <label>计划停机小时<input type="number" value="${Number(activity.plannedDowntimeHours || activity.durationHours || 0)}"></label>
-        <label>启动日历时间<input value="${enabled.has("日历时间") ? "启用" : "停用"}"></label>
-        <label>日历日间隔<input type="number" value="${Number(activity.calendarDayInterval || 1)}"></label>
-        <label>日历日间隔上下浮动比例(%)<input type="number" value="${Number(activity.calendarDayFloatRatio || 0)}"></label>
-        <label>启动飞行小时<input value="${enabled.has("飞行小时") ? "启用" : "停用"}"></label>
-        <label>飞行小时间隔<input type="number" value="${Number(activity.runHourInterval || 0)}"></label>
-        <label>飞行小时上下浮动比例(%)<input type="number" value="${Number(activity.runHourFloatRatio || 0)}"></label>
-        <label>启动起落次数<input value="${enabled.has("起落次数") ? "启用" : "停用"}"></label>
-        <label>起落次数间隔<input type="number" value="${Number(activity.takeoffLandingInterval || 0)}"></label>
-        <label>起落次数间隔上下浮动比例(%)<input type="number" value="${Number(activity.takeoffLandingFloatRatio || 0)}"></label>
+        <label>方案名称<input value="${htmlEscape(activity.activityName || activePlan.name)}" readonly></label>
+        <label>计划停机小时<input type="number" value="${Number(activity.plannedDowntimeHours || activity.durationHours || 0)}" readonly></label>
+        <label>启动日历时间<input value="${enabled.has("日历时间") ? "启用" : "停用"}" readonly></label>
+        <label>日历日间隔<input type="number" value="${Number(activity.calendarDayInterval || 1)}" readonly></label>
+        <label>日历日间隔上下浮动比例(%)<input type="number" value="${Number(activity.calendarDayFloatRatio || 0)}" readonly></label>
+        <label>启动飞行小时<input value="${enabled.has("飞行小时") ? "启用" : "停用"}" readonly></label>
+        <label>飞行小时间隔<input type="number" value="${Number(activity.runHourInterval || 0)}" readonly></label>
+        <label>飞行小时上下浮动比例(%)<input type="number" value="${Number(activity.runHourFloatRatio || 0)}" readonly></label>
+        <label>启动起落次数<input value="${enabled.has("起落次数") ? "启用" : "停用"}" readonly></label>
+        <label>起落次数间隔<input type="number" value="${Number(activity.takeoffLandingInterval || 0)}" readonly></label>
+        <label>起落次数间隔上下浮动比例(%)<input type="number" value="${Number(activity.takeoffLandingFloatRatio || 0)}" readonly></label>
       </div>
       ${renderSupportActivityJobTable(activity, "prev_repair")}
     </div>
@@ -3002,21 +2998,34 @@ function renderEquipmentConfigTree() {
   const equipmentModels = wholeMachineModels();
   return `
     <aside class="tree-container">
-      <div class="tree-toolbar"><h4>装备构型树</h4></div>
+      <div class="tree-toolbar"><h4>装备构型树</h4><span class="muted">只读参考</span></div>
       ${renderCollapsibleTree(equipmentModels.map((model, index) => ({
         id: `equipment-config:${model}`,
         label: model,
         selected: index === 0,
-        children: (scenario.components || []).map((component) => ({
-          id: `equipment-config-component:${model}:${component.id || component.name}`,
-          label: component.name
-        }))
+        children: buildReadonlyEquipmentConfigComponentTreeNodes(model, "aircraft-root")
       })), { className: "tree-node-list" })}
     </aside>
   `;
 }
 
+function buildReadonlyEquipmentConfigComponentTreeNodes(aircraftModel, parentId) {
+  return (scenario.components || [])
+    .filter((component) => componentBelongsToAircraft(component, aircraftModel) && String(component.parentId || "aircraft-root") === parentId)
+    .map((component) => ({
+      id: `equipment-config-component:${aircraftModel}:${component.id || component.name}`,
+      label: component.name,
+      meta: `${component.quantity} 件 / ${component.connectionType}`,
+      children: buildReadonlyEquipmentConfigComponentTreeNodes(aircraftModel, component.id)
+    }));
+}
+
+function correctiveReferenceComponent() {
+  return (scenario.components || []).find((component) => component.specialRepairProfile) || (scenario.components || [])[0] || {};
+}
+
 function renderCorrectiveMaintenanceActivity(activity) {
+  const referenceComponent = correctiveReferenceComponent();
   return `
     <div class="organization-layout">
       ${renderEquipmentConfigTree()}
@@ -3027,14 +3036,14 @@ function renderCorrectiveMaintenanceActivity(activity) {
             <span>${htmlEscape(activity.activityName || "修复性维修方案")}</span>
           </div>
           <div class="form-table-grid">
-            <label>平均修复时间(min)<input type="number" value="${Number(activity.meanRepairTimeMinutes || activity.durationHours * 60 || 0)}"></label>
-            <label>维修时间分布类型<input value="${htmlEscape(activity.repairDistribution?.distributionType || "-")}"></label>
-            <label>分布参数<input value="${htmlEscape(activity.repairDistribution?.params || "-")}"></label>
-            <label>维修类型<input value="${htmlEscape((activity.repairTypes || []).join("、") || "-")}"></label>
-            <label>特殊产品适用对象<input value="${htmlEscape(scenario.components[0]?.name || "-")} / ${htmlEscape(scenario.components[0]?.productType || "-")}"></label>
-            <label>特殊产品维修时间(min)<input type="number" value="${Number(scenario.components[0]?.specialRepairProfile?.repairTimeMinutes || activity.meanRepairTimeMinutes || 0)}"></label>
-            <label>维修比例<input type="number" value="${Number(scenario.components[0]?.specialRepairProfile?.repairRatio || 0)}"></label>
-            <label>换件比例<input type="number" value="${Number(scenario.components[0]?.specialRepairProfile?.replacementRatio || 0)}"></label>
+            <label>平均修复时间(min)<input type="number" value="${Number(activity.meanRepairTimeMinutes || activity.durationHours * 60 || 0)}" readonly></label>
+            <label>维修时间分布类型<input value="${htmlEscape(activity.repairDistribution?.distributionType || "-")}" readonly></label>
+            <label>分布参数<input value="${htmlEscape(activity.repairDistribution?.params || "-")}" readonly></label>
+            <label>维修类型<input value="${htmlEscape((activity.repairTypes || []).join("、") || "-")}" readonly></label>
+            <label>特殊产品适用对象<input value="${htmlEscape(referenceComponent.name || "-")} / ${htmlEscape(referenceComponent.productType || "-")}" readonly></label>
+            <label>特殊产品维修时间(min)<input type="number" value="${Number(referenceComponent.specialRepairProfile?.repairTimeMinutes || activity.meanRepairTimeMinutes || 0)}" readonly></label>
+            <label>维修比例<input type="number" value="${Number(referenceComponent.specialRepairProfile?.repairRatio || 0)}" readonly></label>
+            <label>换件比例<input type="number" value="${Number(referenceComponent.specialRepairProfile?.replacementRatio || 0)}" readonly></label>
           </div>
           ${renderSupportActivityJobTable(activity, "corr_repair")}
             </div>
@@ -3138,10 +3147,10 @@ function renderSupportActivityWorkbench(page) {
           <div class="tree-toolbar">
             <h4>${htmlEscape(activePlan.treeTitle)}</h4>
             <div class="equipment-toolbar">
-              <button type="button" class="btn-primary">新增分类</button>
-              <button type="button">编辑</button>
-              <button type="button" class="btn-danger">删除</button>
-              <button type="button">导入</button>
+              <button type="button" class="btn-primary" disabled>新增分类</button>
+              <button type="button" disabled>编辑</button>
+              <button type="button" class="btn-danger" disabled>删除</button>
+              <button type="button" disabled>导入</button>
             </div>
           </div>
           ${renderSupportActivityTreeNode(activePlan.tree, activePlan.path.at(-1))}

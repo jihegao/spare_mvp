@@ -761,6 +761,41 @@ test("editable modeling lists expose add edit and delete action entries", async 
   assert.match(appSource, /return "spare-planning-experiment-plan-list"/);
 });
 
+test("unwired support activity controls are disabled and read-only", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+
+  const basicActivitySource = appSource.slice(
+    appSource.indexOf("function renderBasicActivityLibrary"),
+    appSource.indexOf("function renderOperationsSupportActivity")
+  );
+  assert.match(basicActivitySource, /<button type="button" disabled>导入<\/button>/);
+
+  const jobTableSource = appSource.slice(
+    appSource.indexOf("function renderSupportActivityJobTable"),
+    appSource.indexOf("function renderBasicActivityLibrary")
+  );
+  assert.match(jobTableSource, /data-support-activity-job-add disabled/);
+
+  const operationsSource = appSource.slice(
+    appSource.indexOf("function renderOperationsSupportActivity"),
+    appSource.indexOf("function renderPreventiveMaintenanceActivity")
+  );
+  assert.doesNotMatch(operationsSource, /<input(?![^>]*(data-path|readonly|disabled))/);
+
+  const preventiveSource = appSource.slice(
+    appSource.indexOf("function renderPreventiveMaintenanceActivity"),
+    appSource.indexOf("function renderEquipmentConfigTree")
+  );
+  assert.doesNotMatch(preventiveSource, /<input(?![^>]*(data-path|readonly|disabled))/);
+
+  const correctiveSource = appSource.slice(
+    appSource.indexOf("function renderCorrectiveMaintenanceActivity"),
+    appSource.indexOf("function renderLogisticsSupportActivity")
+  );
+  assert.doesNotMatch(correctiveSource, /<input(?![^>]*(data-path|readonly|disabled))/);
+  assert.doesNotMatch(correctiveSource, /scenario\.components\[0\]/);
+});
+
 test("reliability block diagram prototype exposes node edge and k-out-of-n fields", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const rbdSource = appSource.slice(
