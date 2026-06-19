@@ -5,9 +5,9 @@ export const RMS_ALLOCATION_ALGORITHM_VERSION = "rms-engine-1.0.0";
 
 export function createDemoRmsAllocationProject() {
   return {
-    projectId: "carrier-day-night",
+    projectId: "landbase-day-night",
     rootId: "aircraft-root",
-    name: "航母编队昼夜保障验证",
+    name: "陆基机群昼夜保障验证",
     missionProfile: {
       profileId: "MP-01",
       name: "近海巡逻任务剖面",

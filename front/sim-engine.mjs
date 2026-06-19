@@ -4,16 +4,16 @@ export const MODULES = {
 };
 
 export const defaultScenario = {
-  scenarioId: "carrier-turnaround-demo",
+  scenarioId: "landbase-turnaround-demo",
   activeModule: "sparePlanning",
   airports: [
     {
-      id: "deck-airport",
-      name: "甲板机场",
-      location: "航母飞行甲板",
-      runwayType: "舰面弹射/拦阻",
+      id: "main-airbase",
+      name: "主基地机场",
+      location: "陆基主保障机场",
+      runwayType: "常规跑道",
       distanceToMissionKm: 320,
-      supportNodeId: "deck-airport"
+      supportNodeId: "main-airbase"
     },
     {
       id: "forward-airport",
@@ -43,7 +43,7 @@ export const defaultScenario = {
     }
   ],
   experiment: {
-    name: "舰基飞机保障原型实验",
+    name: "陆基飞机保障原型实验",
     steps: 48,
     samples: 24,
     seed: 20260617,
@@ -63,12 +63,14 @@ export const defaultScenario = {
           {
             id: "day-patrol-main",
             basicTaskName: "近海巡逻任务",
-            equipmentType: "A-Prototype",
+            equipmentType: "F35",
             equipmentQuantity: 5,
             groupName: "第一出动编队",
             taskDispatchTime: "07:15",
             firstWaveTime: "08:00",
             recoveryTime: "11:00",
+            priority: 1,
+            minRequiredSystems: 5,
             dailyRepeatCount: 2,
             intervalHours: 6,
             preparationMinutes: 45
@@ -82,12 +84,14 @@ export const defaultScenario = {
           {
             id: "night-alert-main",
             basicTaskName: "远海警戒任务",
-            equipmentType: "A-Prototype",
+            equipmentType: "F15",
             equipmentQuantity: 4,
             groupName: "夜间警戒编队",
             taskDispatchTime: "19:30",
             firstWaveTime: "20:15",
             recoveryTime: "23:30",
+            priority: 2,
+            minRequiredSystems: 4,
             dailyRepeatCount: 1,
             intervalHours: 8,
             preparationMinutes: 45
@@ -99,7 +103,27 @@ export const defaultScenario = {
       {
         id: "periodic-day-night",
         name: "昼夜保障周期任务",
+        taskName: "昼夜保障周期任务",
+        cycleDays: 7,
+        taskPeriodDays: 7,
+        periodDays: 7,
+        repeatCycleDays: 7,
+        repeatCycleValue: 7,
+        repeatCycleUnit: "day",
+        repeatRounds: 2,
+        repeatCount: 2,
+        dailyRepeatCount: 2,
         repeatWeeks: 2,
+        compositeTasks: [
+          { week: "1", compositeTaskId: "composite-day-patrol" },
+          { week: "2", compositeTaskId: "composite-day-patrol" },
+          { week: "3", compositeTaskId: "composite-night-alert" },
+          { week: "4", compositeTaskId: "composite-day-patrol" },
+          { week: "5", compositeTaskId: "composite-day-patrol" },
+          { week: "6", compositeTaskId: "composite-night-alert" },
+          { week: "7", compositeTaskId: "composite-day-patrol" }
+        ],
+        compositeTaskIds: ["composite-day-patrol", "composite-night-alert"],
         weekdayAssignments: {
           monday: "composite-day-patrol",
           tuesday: "composite-day-patrol",
@@ -117,14 +141,14 @@ export const defaultScenario = {
     name: "近海巡逻任务",
     taskNo: "BM-01",
     taskArea: "近海巡逻区",
-    equipmentType: "A-Prototype",
+    equipmentType: "F35",
     equipmentQuantity: 5,
     taskDurationMinutes: 180,
     preparationMinutes: 45,
     cancelMinutes: 20,
     supportActivityName: "飞行前保障",
     updatedAt: "2026-06-18 09:00",
-    successPoint: "任务区巡逻完成",
+    successPoint: 0.95,
     startHour: 1,
     returnRatio: 0.35,
     priority: 1,
@@ -140,59 +164,288 @@ export const defaultScenario = {
     unitId: "CU-01",
     groupName: "第一出动编队",
     basicTaskName: "近海巡逻任务",
-    equipmentType: "舰载机",
+    equipmentType: "F35 / F15 / Z20",
     quantity: 8,
     requiredCount: 5,
-    deploymentLocation: "甲板机场",
+    deploymentLocation: "主基地机场",
     standbyCount: 3,
     members: [
-      { aircraftNo: "A-01", model: "A-Prototype", role: "长机", status: "执行", remainingLifeHours: 180, deploymentLocation: "甲板机场" },
-      { aircraftNo: "A-02", model: "A-Prototype", role: "僚机", status: "执行", remainingLifeHours: 176, deploymentLocation: "甲板机场" },
-      { aircraftNo: "A-03", model: "A-Prototype", role: "僚机", status: "执行", remainingLifeHours: 169, deploymentLocation: "甲板机场" },
-      { aircraftNo: "A-04", model: "A-Prototype", role: "僚机", status: "执行", remainingLifeHours: 164, deploymentLocation: "甲板机场" },
-      { aircraftNo: "A-05", model: "A-Prototype", role: "僚机", status: "执行", remainingLifeHours: 158, deploymentLocation: "甲板机场" },
-      { aircraftNo: "A-06", model: "A-Prototype", role: "备份", status: "备用", remainingLifeHours: 171, deploymentLocation: "甲板机场" },
-      { aircraftNo: "A-07", model: "A-Prototype", role: "备份", status: "备用", remainingLifeHours: 166, deploymentLocation: "甲板机场" },
-      { aircraftNo: "A-08", model: "A-Prototype", role: "备份", status: "备用", remainingLifeHours: 152, deploymentLocation: "甲板机场" }
+      { aircraftNo: "F35-01", model: "F35", role: "长机", status: "执行", remainingLifeHours: 180, deploymentLocation: "主基地机场" },
+      { aircraftNo: "F35-02", model: "F35", role: "僚机", status: "执行", remainingLifeHours: 176, deploymentLocation: "主基地机场" },
+      { aircraftNo: "F35-03", model: "F35", role: "僚机", status: "执行", remainingLifeHours: 169, deploymentLocation: "主基地机场" },
+      { aircraftNo: "F15-01", model: "F15", role: "僚机", status: "执行", remainingLifeHours: 164, deploymentLocation: "主基地机场" },
+      { aircraftNo: "Z20-01", model: "Z20", role: "僚机", status: "执行", remainingLifeHours: 158, deploymentLocation: "主基地机场" },
+      { aircraftNo: "F15-02", model: "F15", role: "备份", status: "备用", remainingLifeHours: 171, deploymentLocation: "主基地机场" },
+      { aircraftNo: "Z20-02", model: "Z20", role: "备份", status: "备用", remainingLifeHours: 166, deploymentLocation: "主基地机场" },
+      { aircraftNo: "F35-04", model: "F35", role: "备份", status: "备用", remainingLifeHours: 152, deploymentLocation: "主基地机场" }
     ]
   },
   equipment: {
-    model: "A-Prototype",
+    model: "F35",
+    wholeMachineModels: ["F35", "F15", "Z20"],
     quantity: 8,
-    deploymentLocation: "甲板机场",
+    deploymentLocation: "主基地机场",
     initialReady: 8,
-    minRequiredSorties: 5
+    minRequiredSorties: 5,
+    preLifeRequirementHours: 120
   },
   components: [
-    { id: "engine", name: "发动机", parentId: "aircraft-root", spareType: "发动机备件", failureModel: "随机", failureRate: 0.07, mtbfHours: 80, lifeLimitHours: 220, connectionType: "串联", quantity: 2, kOutOfN: { enabled: true, n: 2, k: 1 }, rms: { reliability: 0.93, maintainability: 0.88, supportability: 0.9, mttrHours: 3.5, mldtHours: 1.2, availability: 0.96 } },
-    { id: "avionics", name: "航电系统", parentId: "aircraft-root", spareType: "航电模块", failureModel: "退化", failureRate: 0.04, mtbfHours: 110, lifeLimitHours: 260, connectionType: "并联", quantity: 2, kOutOfN: { enabled: true, n: 2, k: 1 }, rms: { reliability: 0.95, maintainability: 0.91, supportability: 0.89, mttrHours: 2.8, mldtHours: 1.4, availability: 0.97 } },
-    { id: "hydraulic", name: "液压组件", parentId: "aircraft-root", spareType: "液压备件", failureModel: "寿命", failureRate: 0.06, mtbfHours: 95, lifeLimitHours: 200, connectionType: "备用", quantity: 1, kOutOfN: { enabled: false, n: 1, k: 1 }, rms: { reliability: 0.92, maintainability: 0.86, supportability: 0.88, mttrHours: 3.2, mldtHours: 1.6, availability: 0.95 } }
+    { id: "engine", name: "发动机", parentId: "aircraft-root", productType: "LRU", spareType: "发动机备件", failureModel: "随机", failureDistribution: { distributionType: "指数分布", parameters: "lambda=0.07" }, failureRate: 0.07, mtbfHours: 80, lifeLimitHours: 220, connectionType: "串联", quantity: 2, kOutOfN: { enabled: true, n: 2, k: 1 }, specialRepairProfile: { repairTimeMinutes: 220, repairRatio: 0.35, replacementRatio: 0.65 }, rms: { reliability: 0.93, maintainability: 0.88, supportability: 0.9, mttrHours: 3.5, mldtHours: 1.2, availability: 0.96 } },
+    { id: "avionics", name: "航电系统", parentId: "aircraft-root", productType: "SRU", spareType: "航电模块", failureModel: "退化", failureDistribution: { distributionType: "威布尔分布", parameters: "beta=1.8, eta=120" }, failureRate: 0.04, mtbfHours: 110, lifeLimitHours: 260, connectionType: "并联", quantity: 2, kOutOfN: { enabled: true, n: 2, k: 1 }, specialRepairProfile: { repairTimeMinutes: 160, repairRatio: 0.55, replacementRatio: 0.45 }, rms: { reliability: 0.95, maintainability: 0.91, supportability: 0.89, mttrHours: 2.8, mldtHours: 1.4, availability: 0.97 } },
+    { id: "hydraulic", name: "液压组件", parentId: "aircraft-root", productType: "SRU", spareType: "液压备件", failureModel: "寿命", failureDistribution: { distributionType: "正态分布", parameters: "mean=95, sigma=12" }, failureRate: 0.06, mtbfHours: 95, lifeLimitHours: 200, connectionType: "备用", quantity: 1, kOutOfN: { enabled: false, n: 1, k: 1 }, specialRepairProfile: { repairTimeMinutes: 140, repairRatio: 0.7, replacementRatio: 0.3 }, rms: { reliability: 0.92, maintainability: 0.86, supportability: 0.88, mttrHours: 3.2, mldtHours: 1.6, availability: 0.95 } }
   ],
   supportNodes: [
     {
-      id: "deck-airport",
-      name: "甲板机场",
+      id: "main-airbase",
+      name: "主基地机场",
       nodeType: "机场",
+      supportLevel: "一线保障",
       personnelCapacity: 5,
       equipmentCapacity: 3,
       policy: "优先保障高优先级任务",
+      organizationStrategy: "任务优先 + 备件安全库存",
+      lateralSupportNodes: ["forward-airport"],
+      transportPolicies: [
+        { from: "rear-stock", to: "main-airbase", transportMode: "地面运输", transportTimeHours: 2, priority: 1, capacity: 4 }
+      ],
       inventory: { "发动机备件": 4, "航电模块": 6, "液压备件": 5 }
     },
     {
       id: "rear-stock",
       name: "后方保障点",
       nodeType: "保障点",
+      supportLevel: "后方保障",
       personnelCapacity: 3,
       equipmentCapacity: 2,
       policy: "短缺时 2 tick 后调运",
+      organizationStrategy: "集中库存 + 横向调拨",
+      lateralSupportNodes: ["main-airbase"],
+      transportPolicies: [
+        { from: "main-airbase", to: "rear-stock", transportMode: "返修转运", transportTimeHours: 3, priority: 2, capacity: 3 }
+      ],
       inventory: { "发动机备件": 6, "航电模块": 6, "液压备件": 6 }
     }
   ],
   supportActivities: [
-    { id: "preflight", activityType: "飞行前保障", durationHours: 1, requiredPersonnel: 2, requiredDevices: 1, spareType: null, spareQuantity: 0, priority: 1 },
-    { id: "corrective", activityType: "修复性维修", durationHours: 3, requiredPersonnel: 3, requiredDevices: 1, spareType: "发动机备件", spareQuantity: 1, priority: 1 },
-    { id: "preventive", activityType: "预防性维修", durationHours: 2, requiredPersonnel: 1, requiredDevices: 1, spareType: "液压备件", spareQuantity: 1, priority: 2 },
-    { id: "turnaround", activityType: "再次出动准备", durationHours: 2, requiredPersonnel: 2, requiredDevices: 1, spareType: null, spareQuantity: 0, priority: 1 }
+    {
+      id: "preflight",
+      activityType: "飞行前保障",
+      activityName: "F35直接准备方案",
+      planType: "直接准备方案",
+      durationHours: 1,
+      requiredPersonnel: 2,
+      requiredDevices: 1,
+      spareType: null,
+      spareQuantity: 0,
+      priority: 1,
+      maxWorkTimeRefMinutes: 90,
+      jobs: [
+        {
+          activityCode: "OPS-001",
+          workName: "机务检查",
+          predecessors: [],
+          durationMinutes: 45,
+          durationProfile: { distributionType: "三角分布", min: 35, mode: 45, max: 60 },
+          personnel: "机务/航电,2",
+          servicePersonnel: "勤务一组,1",
+          facility: "保障站位-检查",
+          equipment: "检测仪,DT-01,1",
+          ammunition: "无",
+          spare: "无"
+        },
+        {
+          activityCode: "OPS-002",
+          workName: "燃油加注",
+          predecessors: ["OPS-001"],
+          durationMinutes: 60,
+          durationProfile: { distributionType: "均匀分布", min: 50, max: 70 },
+          personnel: "机务/油料,1",
+          servicePersonnel: "油料组,2",
+          facility: "保障站位-加油",
+          equipment: "加油车,F-01,1",
+          ammunition: "无",
+          spare: "无"
+        },
+        {
+          activityCode: "OPS-003",
+          workName: "挂弹作业",
+          predecessors: ["OPS-002"],
+          durationMinutes: 90,
+          durationProfile: { distributionType: "正态分布", mean: 90, stdDev: 12 },
+          personnel: "机务/军械,2",
+          servicePersonnel: "军械组,2",
+          facility: "保障站位-挂载",
+          equipment: "挂弹车,LD-02,1",
+          ammunition: "训练弹,AAM-1,2",
+          spare: "挂架保险销,STD,2"
+        }
+      ]
+    },
+    {
+      id: "corrective",
+      activityType: "修复性维修",
+      activityName: "航电模块故障修复方案",
+      planType: "修复性维修方案",
+      durationHours: 3,
+      requiredPersonnel: 3,
+      requiredDevices: 1,
+      spareType: "发动机备件",
+      spareQuantity: 1,
+      priority: 1,
+      meanRepairTimeMinutes: 180,
+      repairDistribution: { distributionType: "对数正态分布", params: "mu=5.1, sigma=0.35" },
+      repairTypes: ["换件修复", "功能复测"],
+      jobs: [
+        {
+          activityCode: "REP-001",
+          workName: "故障定位",
+          predecessors: [],
+          durationMinutes: 40,
+          durationProfile: { distributionType: "三角分布", min: 30, mode: 40, max: 55 },
+          personnel: "维修/航电,2",
+          servicePersonnel: "勤务二组,1",
+          facility: "维修工位",
+          equipment: "检测仪,DT-01,1",
+          ammunition: "无",
+          spare: "无"
+        },
+        {
+          activityCode: "REP-002",
+          workName: "备件领用",
+          predecessors: ["REP-001"],
+          durationMinutes: 30,
+          durationProfile: { distributionType: "固定值", value: 30 },
+          personnel: "维修/航电,1",
+          servicePersonnel: "备件保障组,1",
+          facility: "备件库",
+          equipment: "转运车,TR-01,1",
+          ammunition: "无",
+          spare: "航电模块,LRU,1"
+        },
+        {
+          activityCode: "REP-003",
+          workName: "换件维修",
+          predecessors: ["REP-002"],
+          durationMinutes: 90,
+          durationProfile: { distributionType: "正态分布", mean: 90, stdDev: 15 },
+          personnel: "维修/航电,2",
+          servicePersonnel: "勤务二组,1",
+          facility: "维修工位",
+          equipment: "通用工具箱,TK-01,1",
+          ammunition: "无",
+          spare: "航电模块,LRU,1"
+        }
+      ]
+    },
+    {
+      id: "preventive",
+      activityType: "预防性维修",
+      activityName: "8小时定检",
+      planType: "预防性维修方案",
+      durationHours: 2,
+      requiredPersonnel: 1,
+      requiredDevices: 1,
+      spareType: "液压备件",
+      spareQuantity: 1,
+      priority: 2,
+      plannedDowntimeHours: 2,
+      triggerModes: ["日历时间", "飞行小时", "起落次数"],
+      calendarDayInterval: 1,
+      calendarDayFloatRatio: 10,
+      runHourInterval: 8,
+      runHourFloatRatio: 15,
+      takeoffLandingInterval: 6,
+      takeoffLandingFloatRatio: 10,
+      jobs: [
+        {
+          activityCode: "PM-001",
+          workName: "定检准备",
+          predecessors: [],
+          durationMinutes: 30,
+          durationProfile: { distributionType: "固定值", value: 30 },
+          personnel: "维修/机体,1",
+          servicePersonnel: "勤务一组,1",
+          facility: "定检工位",
+          equipment: "检查灯,LT-01,1",
+          ammunition: "无",
+          spare: "无"
+        },
+        {
+          activityCode: "PM-002",
+          workName: "液压系统检查",
+          predecessors: ["PM-001"],
+          durationMinutes: 70,
+          durationProfile: { distributionType: "三角分布", min: 55, mode: 70, max: 90 },
+          personnel: "维修/液压,2",
+          servicePersonnel: "勤务一组,1",
+          facility: "定检工位",
+          equipment: "液压测试台,HY-01,1",
+          ammunition: "无",
+          spare: "液压密封件,SRU,1"
+        }
+      ]
+    },
+    {
+      id: "turnaround",
+      activityType: "再次出动准备",
+      activityName: "F35再次出动准备方案",
+      planType: "再次出动准备方案",
+      durationHours: 2,
+      requiredPersonnel: 2,
+      requiredDevices: 1,
+      spareType: null,
+      spareQuantity: 0,
+      priority: 1,
+      maxWorkTimeRefMinutes: 75,
+      jobs: [
+        {
+          activityCode: "OPS-101",
+          workName: "回收检查",
+          predecessors: [],
+          durationMinutes: 35,
+          durationProfile: { distributionType: "固定值", value: 35 },
+          personnel: "机务/外场,2",
+          servicePersonnel: "勤务一组,1",
+          facility: "回收站位",
+          equipment: "检测仪,DT-01,1",
+          ammunition: "无",
+          spare: "无"
+        },
+        {
+          activityCode: "OPS-102",
+          workName: "再次通电检查",
+          predecessors: ["OPS-101"],
+          durationMinutes: 40,
+          durationProfile: { distributionType: "均匀分布", min: 35, max: 50 },
+          personnel: "机务/航电,1",
+          servicePersonnel: "勤务一组,1",
+          facility: "保障站位-检查",
+          equipment: "电源车,PW-01,1",
+          ammunition: "无",
+          spare: "无"
+        }
+      ]
+    },
+    {
+      id: "logistics-support",
+      activityType: "后勤保障",
+      activityName: "多级保障组织后勤保障方案",
+      planType: "后勤保障活动方案",
+      durationHours: 2,
+      requiredPersonnel: 2,
+      requiredDevices: 2,
+      spareType: "发动机备件",
+      spareQuantity: 1,
+      priority: 1,
+      organizationStrategies: [
+        { supportNodeId: "main-airbase", supportLevel: "一线保障", organizationStrategy: "任务优先 + 备件安全库存", lateralSupportNodes: ["forward-airport"] },
+        { supportNodeId: "rear-stock", supportLevel: "后方保障", organizationStrategy: "集中库存 + 纵向补给", lateralSupportNodes: ["main-airbase"] }
+      ],
+      transportStrategies: [
+        { direction: "\u7eb5\u5411\u8fd0\u8f93", spareType: "\u53d1\u52a8\u673a\u5907\u4ef6", triggerMode: "\u4e34\u754c\u5e93\u5b58", criticalInventory: 2, from: "rear-stock", to: "main-airbase", transportTimeHours: 2 },
+        { direction: "\u6a2a\u5411\u8fd0\u8f93", spareType: "\u822a\u7535\u6a21\u5757", triggerMode: "\u5468\u671f\u6027\u8c03\u8fd0", transferCycleHours: 24, from: "main-airbase", to: "forward-airport", transportTimeHours: 1 }
+      ]
+    }
   ],
   reliabilityBlockDiagram: {
     nodes: [
