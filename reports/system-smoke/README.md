@@ -4,9 +4,9 @@ Date: 2026-06-19 (Asia/Shanghai)
 
 ## Conclusion
 
-M0/M1 static frontend and local simulation contracts pass the current smoke baseline. The tested path covers login, project selection, modeling edit, Monte Carlo configuration/start, result analysis, visual simulation, and Mesa Ontology view.
+M0/M1 static frontend and local simulation contracts pass the preserved smoke baseline. The tested path covers login, project selection, modeling edit, Monte Carlo configuration/start, result analysis, visual simulation, and Mesa Ontology view.
 
-This is suitable as the acceptance baseline before M3 backend service work, with the environment notes and future backend items below carried forward.
+This remains the M0/M1 static baseline preserved for comparison with later M3 backend smoke reports. It is no longer the current backend-service state; M3-0 and M3-1 evidence live under `reports/m3-0-real-backend-loop/` and `reports/m3-1-browser-backend-smoke/`.
 
 ## Automated Baseline
 

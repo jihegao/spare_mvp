@@ -1,6 +1,6 @@
 # Mesa 仿真服务治理约定
 
-日期：2026-06-18
+日期：2026-06-19
 
 ## 背景
 
@@ -74,6 +74,8 @@
 | PR-E | Backend API Agent | 实现 Project / ExperimentPlan / SimulationRun / ArtifactManifest CRUD 和运行编排。 | API 只消费 contract 和 adapter 返回，不直接解释仿真语义。 |
 | PR-F | Frontend Integration Agent | 前端改为保存 Project JSON、提交运行、读取真实 result/artifact。 | 当前 UX 保持，页面不再直接拼最终 Scenario。 |
 | PR-G / M3-0 | Evaluator / Test Agent | 跑通建模 -> 保存 -> 编译 -> 运行 -> 结果查看端到端闭环，并用本地同源 `/api` 验证前端可访问的真实后端 smoke。 | contract、smoke、HTTP API、e2e 全部通过；明确 `smoke` 已收束、`aviation_support` Scenario 编译仍受治理阻断，不扩大 calibration 或生产 Web API 声明。 |
+| M3-1 | Evaluator / Test Agent | 用真实浏览器验证同源 `/front/` -> `/api` 保存项目、启动 smoke run、读取 Result/ArtifactManifest，并刷新恢复同一个 `run_id`。 | `/api` 不可用时前端阻断并且不创建 `offline-demo-run`；仍不声明生产 Web API、worker 队列或长期 artifact storage。 |
+| M5 首片 | Contract Curator Agent / Evaluator Agent | 定义建模数据导入/校验 contract、JSON fixture、对象 ID/引用/数值/版本保护错误结构。 | 不做完整 Excel UI，不跳过 Simulation Adapter 拼最终 Scenario，不解锁 `aviation_support` Scenario 编译，不改变 Mesa 行为或指标口径。 |
 
 ## PR 审核规则
 

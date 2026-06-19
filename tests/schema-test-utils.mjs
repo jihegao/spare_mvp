@@ -1,12 +1,26 @@
 export function validateSchema(schema, value, path = "$") {
   const errors = [];
-  collectSchemaErrors(schema, value, path, errors);
+  collectSchemaErrors(schema, value, path, errors, schema);
   return errors;
 }
 
-function collectSchemaErrors(schema, value, path, errors) {
+function collectSchemaErrors(schema, value, path, errors, rootSchema) {
+  if (schema.$ref) {
+    const resolved = resolveLocalRef(rootSchema, schema.$ref);
+    if (!resolved) {
+      errors.push(`${path} unresolved ref ${schema.$ref}`);
+      return;
+    }
+    collectSchemaErrors(resolved, value, path, errors, rootSchema);
+    return;
+  }
+
   if (schema.oneOf) {
-    const branchResults = schema.oneOf.map((branch) => validateSchema(branch, value, path));
+    const branchResults = schema.oneOf.map((branch) => {
+      const branchErrors = [];
+      collectSchemaErrors(branch, value, path, branchErrors, rootSchema);
+      return branchErrors;
+    });
     if (!branchResults.some((branchErrors) => branchErrors.length === 0)) {
       errors.push(`${path} did not match oneOf: ${branchResults.map((branchErrors) => branchErrors.join("; ")).join(" | ")}`);
     }
@@ -29,8 +43,14 @@ function collectSchemaErrors(schema, value, path, errors) {
     if (schema.minimum !== undefined && value < schema.minimum) {
       errors.push(`${path} expected minimum ${schema.minimum}, got ${value}`);
     }
+    if (schema.exclusiveMinimum !== undefined && value <= schema.exclusiveMinimum) {
+      errors.push(`${path} expected exclusiveMinimum ${schema.exclusiveMinimum}, got ${value}`);
+    }
     if (schema.maximum !== undefined && value > schema.maximum) {
       errors.push(`${path} expected maximum ${schema.maximum}, got ${value}`);
+    }
+    if (schema.exclusiveMaximum !== undefined && value >= schema.exclusiveMaximum) {
+      errors.push(`${path} expected exclusiveMaximum ${schema.exclusiveMaximum}, got ${value}`);
     }
   }
 
@@ -43,7 +63,7 @@ function collectSchemaErrors(schema, value, path, errors) {
     const properties = schema.properties || {};
     for (const [key, childValue] of Object.entries(value)) {
       if (properties[key]) {
-        collectSchemaErrors(properties[key], childValue, `${path}.${key}`, errors);
+        collectSchemaErrors(properties[key], childValue, `${path}.${key}`, errors, rootSchema);
       } else if (schema.additionalProperties === false) {
         errors.push(`${path}.${key} is not allowed`);
       }
@@ -51,8 +71,16 @@ function collectSchemaErrors(schema, value, path, errors) {
   }
 
   if (schema.type === "array" && Array.isArray(value) && schema.items) {
-    value.forEach((item, index) => collectSchemaErrors(schema.items, item, `${path}[${index}]`, errors));
+    value.forEach((item, index) => collectSchemaErrors(schema.items, item, `${path}[${index}]`, errors, rootSchema));
   }
+}
+
+function resolveLocalRef(rootSchema, ref) {
+  if (!ref.startsWith("#/")) return null;
+  return ref
+    .slice(2)
+    .split("/")
+    .reduce((current, segment) => current?.[segment], rootSchema);
 }
 
 function matchesJsonType(type, value) {

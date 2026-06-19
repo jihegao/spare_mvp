@@ -154,13 +154,16 @@ M3-1 已验证真实浏览器同源后端闭环；RMS 指标分配页面是当�
 
 Expected: historical design docs remain historical unless they claim to be current state.
 
-### Task 5: Phase B M5 First Slice Design Stub
+### Task 5: Phase B M5 First Slice Contract
 
 **Files:**
 - Modify: `docs/product-roadmap.md`
-- Create or Modify later: `contracts/modeling_import.schema.json`
-- Create or Modify later: `tests/fixtures/modeling_import_project.json`
-- Create or Modify later: `tests/modeling-import-contract.test.mjs`
+- Create: `contracts/modeling_import.schema.json`
+- Create: `front/modeling-import-contract.mjs`
+- Create: `tests/fixtures/modeling_import_project.json`
+- Create: `tests/modeling-import-contract.test.mjs`
+- Modify: `contracts/README.md`
+- Modify: `contracts/README.md.json`
 
 - [ ] **Step 1: Add M5 first-slice acceptance wording**
 
@@ -172,9 +175,32 @@ M5 首片不做完整 Excel UI；先定义建模数据导入/校验 contract、�
 
 Expected: roadmap does not imply M5 starts with a full spreadsheet editor.
 
-- [ ] **Step 2: Leave code implementation for the next branch**
+- [ ] **Step 2: Write failing M5 modeling import contract test**
 
-Do not create `modeling_import.schema.json` in Phase A unless the user explicitly expands this branch. The next branch should begin with a failing `tests/modeling-import-contract.test.mjs` that validates duplicate IDs, missing references, invalid numeric fields, and published-version protection.
+Run:
+
+```bash
+node --test tests/modeling-import-contract.test.mjs
+```
+
+Expected before implementation: FAIL because `front/modeling-import-contract.mjs`, `contracts/modeling_import.schema.json`, and `tests/fixtures/modeling_import_project.json` do not exist.
+
+- [ ] **Step 3: Implement the minimal contract slice**
+
+Create `contracts/modeling_import.schema.json`, `front/modeling-import-contract.mjs`, and `tests/fixtures/modeling_import_project.json` so the test validates:
+
+1. valid JSON fixture and schema version `modeling-import-v1`;
+2. duplicate IDs;
+3. missing references;
+4. invalid numeric fields;
+5. published-version protection when referenced by runs;
+6. page/object/field-path/severity/message issue shape.
+
+- [ ] **Step 4: Register the M5 contract docs**
+
+Update `contracts/README.md`, `contracts/README.md.json`, `README.md`, `docs/README.md`, `docs/product-roadmap.md`, `docs/simulation-service-governance.md`, and `agent.md`.
+
+Expected: docs say this is an M5 first slice, not complete Excel UI, not a production worker, not a Mesa behavior change, and not direct frontend Scenario generation.
 
 ### Task 6: Final Verification and PR Readiness
 

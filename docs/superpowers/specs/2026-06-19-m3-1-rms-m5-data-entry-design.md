@@ -2,7 +2,7 @@
 
 ## 背景
 
-当前分支 `codex/equipment-rms-allocation-page` 已经包含两类工作：
+当前分支正在从 M3-1/RMS 收束推进到 M5 数据入口首片，已有基础包含两类工作：
 
 1. M3-1 真实浏览器后端闭环：同源 `/api`、持久 SQLite、Project -> Snapshot -> ExperimentPlan -> Scenario -> Run -> Result -> ArtifactManifest 链路，以及 `/api` 不可用时阻断离线假 run。
 2. RMS 指标分配页面：装备 RMS 分配设计、前端页面入口、分配结果、后端 contract 和测试补充。
