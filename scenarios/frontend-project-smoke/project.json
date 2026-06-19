@@ -330,6 +330,19 @@
       }
     },
     {
+      "id": "forward-airport",
+      "name": "前进保障机场",
+      "nodeType": "机场",
+      "personnelCapacity": 4,
+      "equipmentCapacity": 2,
+      "policy": "承接主基地横向调拨",
+      "inventory": {
+        "发动机备件": 2,
+        "航电模块": 3,
+        "液压备件": 2
+      }
+    },
+    {
       "id": "rear-stock",
       "name": "后方保障点",
       "nodeType": "保障点",

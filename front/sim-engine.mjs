@@ -211,6 +211,21 @@ export const defaultScenario = {
       inventory: { "发动机备件": 4, "航电模块": 6, "液压备件": 5 }
     },
     {
+      id: "forward-airport",
+      name: "前进保障机场",
+      nodeType: "机场",
+      supportLevel: "前进保障",
+      personnelCapacity: 4,
+      equipmentCapacity: 2,
+      policy: "承接主基地横向调拨",
+      organizationStrategy: "前置库存 + 横向支援",
+      lateralSupportNodes: ["main-airbase"],
+      transportPolicies: [
+        { from: "main-airbase", to: "forward-airport", transportMode: "场站转运", transportTimeHours: 1, priority: 1, capacity: 2 }
+      ],
+      inventory: { "发动机备件": 2, "航电模块": 3, "液压备件": 2 }
+    },
+    {
       id: "rear-stock",
       name: "后方保障点",
       nodeType: "保障点",

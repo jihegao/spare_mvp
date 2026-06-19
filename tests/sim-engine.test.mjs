@@ -124,6 +124,25 @@ test("default scenario includes ship-front comprehensive support activity fields
   }
 });
 
+test("default scenario support node references resolve to declared support nodes", () => {
+  const supportNodeIds = new Set(defaultScenario.supportNodes.map((node) => node.id));
+  assert.ok(supportNodeIds.size > 0);
+
+  for (const activity of defaultScenario.supportActivities) {
+    for (const strategy of activity.organizationStrategies || []) {
+      assert.ok(supportNodeIds.has(strategy.supportNodeId), `organization supportNodeId ${strategy.supportNodeId}`);
+      for (const lateralId of strategy.lateralSupportNodes || []) {
+        assert.ok(supportNodeIds.has(lateralId), `lateralSupportNodes ${lateralId}`);
+      }
+    }
+
+    for (const strategy of activity.transportStrategies || []) {
+      assert.ok(supportNodeIds.has(strategy.from), `transport from ${strategy.from}`);
+      assert.ok(supportNodeIds.has(strategy.to), `transport to ${strategy.to}`);
+    }
+  }
+});
+
 test("single simulation is reproducible for the same seed", () => {
   const scenario = cloneScenario(defaultScenario);
   const first = runSimulation(scenario, { seed: 77, steps: 36 });

@@ -342,9 +342,22 @@ test("equipment modeling pages use ship front tree attributes with quantity and 
   assert.match(appSource, /成功数 k/);
   assert.match(appSource, /启用 n 中取 k/);
   assert.match(appSource, /故障属性/);
-  assert.match(appSource, /data-path="components\.0\.quantity"/);
-  assert.match(appSource, /data-path="components\.0\.kOutOfN\.k"/);
+  assert.match(appSource, /data-path="components\.\$\{selectedIndex\}\.quantity"/);
+  assert.match(appSource, /data-path="components\.\$\{selectedIndex\}\.kOutOfN\.k"/);
   assert.doesNotMatch(appSource, /<thead><tr><th>组件<\/th><th>备件类型<\/th><th>故障模型<\/th><th>失效率<\/th><th>MTBF<\/th><th>连接类型<\/th><\/tr><\/thead>/);
+});
+
+test("equipment tree selection drives the selected component edit path", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  assert.match(appSource, /let selectedEquipmentComponentIndex = 0/);
+  assert.match(appSource, /data-select-equipment-component="\$\{componentIndex\}"/);
+  assert.match(appSource, /selectedEquipmentComponentIndex = clampEquipmentComponentIndex\(Number\(equipmentComponentNode\.dataset\.selectEquipmentComponent\)\)/);
+  assert.match(appSource, /function clampEquipmentComponentIndex\(index\)/);
+  assert.match(appSource, /const selectedIndex = clampEquipmentComponentIndex\(selectedEquipmentComponentIndex\)/);
+  assert.match(appSource, /renderEquipmentCompositionFields\(selectedIndex\)/);
+  assert.match(appSource, /renderEquipmentFailureFields\(selectedIndex\)/);
+  assert.match(appSource, /renderEquipmentFailureRmsFields\(selected, selectedIndex\)/);
+  assert.match(appSource, /field\("组件名称", `components\.\$\{selectedIndex\}\.name`\)/);
 });
 
 test("equipment composition page only renders tree and basic composition fields", async () => {
@@ -354,13 +367,13 @@ test("equipment composition page only renders tree and basic composition fields"
     appSource.indexOf("function renderEquipmentFailureRmsFields")
   );
   assert.match(equipmentSource, /function renderEquipmentCompositionFields/);
-  assert.match(equipmentSource, /isFailurePage \? renderEquipmentFailureFields\(selected\) : renderEquipmentCompositionFields\(selected\)/);
-  assert.match(equipmentSource, /field\("组件名称", "components\.0\.name"\)/);
-  assert.match(equipmentSource, /field\("父节点", "components\.0\.parentId"\)/);
+  assert.match(equipmentSource, /isFailurePage \? renderEquipmentFailureFields\(selectedIndex\) : renderEquipmentCompositionFields\(selectedIndex\)/);
+  assert.match(equipmentSource, /field\("组件名称", `components\.\$\{selectedIndex\}\.name`\)/);
+  assert.match(equipmentSource, /field\("父节点", `components\.\$\{selectedIndex\}\.parentId`\)/);
   assert.match(equipmentSource, /PRODUCT_TYPE_OPTIONS/);
-  assert.match(equipmentSource, /valueSelect\("components\.0\.productType", PRODUCT_TYPE_OPTIONS\)/);
-  assert.match(equipmentSource, /field\("备件类型", "components\.0\.spareType"\)/);
-  assert.match(equipmentSource, /field\("连接类型", "components\.0\.connectionType"\)/);
+  assert.match(equipmentSource, /valueSelect\(`components\.\$\{selectedIndex\}\.productType`, PRODUCT_TYPE_OPTIONS\)/);
+  assert.match(equipmentSource, /field\("备件类型", `components\.\$\{selectedIndex\}\.spareType`\)/);
+  assert.match(equipmentSource, /field\("连接类型", `components\.\$\{selectedIndex\}\.connectionType`\)/);
   assert.match(equipmentSource, /isFailurePage \? renderEquipmentComponentTable\(\) : ""/);
 });
 
@@ -370,7 +383,7 @@ test("equipment failure page exposes RMS attributes separately from composition 
     appSource.indexOf("function renderEquipmentModeling"),
     appSource.indexOf("function renderReliabilityBlockDiagram")
   );
-  assert.match(equipmentSource, /renderEquipmentFailureRmsFields\(selected\)/);
+  assert.match(equipmentSource, /renderEquipmentFailureRmsFields\(selected, selectedIndex\)/);
   assert.match(equipmentSource, /function renderEquipmentFailureRmsFields/);
   assert.match(equipmentSource, /RMS指标/);
   assert.match(equipmentSource, /可靠度 R\(t\)/);
@@ -383,11 +396,11 @@ test("equipment failure page exposes RMS attributes separately from composition 
   assert.match(equipmentSource, /前置寿命要求\(h\)/);
   assert.match(equipmentSource, /飞机状态数据表/);
   assert.match(equipmentSource, /可出动标识/);
-  assert.match(equipmentSource, /field\("可靠度 R\(t\)", "components\.0\.rms\.reliability", "number"\)/);
-  assert.match(equipmentSource, /field\("维修度 M\(t\)", "components\.0\.rms\.maintainability", "number"\)/);
-  assert.match(equipmentSource, /field\("保障性 S\(t\)", "components\.0\.rms\.supportability", "number"\)/);
-  assert.match(equipmentSource, /field\("平均修复时间 MTTR\(h\)", "components\.0\.rms\.mttrHours", "number"\)/);
-  assert.match(equipmentSource, /field\("固有可用度 Ai", "components\.0\.rms\.availability", "number"\)/);
+  assert.match(equipmentSource, /field\("可靠度 R\(t\)", `components\.\$\{selectedIndex\}\.rms\.reliability`, "number"\)/);
+  assert.match(equipmentSource, /field\("维修度 M\(t\)", `components\.\$\{selectedIndex\}\.rms\.maintainability`, "number"\)/);
+  assert.match(equipmentSource, /field\("保障性 S\(t\)", `components\.\$\{selectedIndex\}\.rms\.supportability`, "number"\)/);
+  assert.match(equipmentSource, /field\("平均修复时间 MTTR\(h\)", `components\.\$\{selectedIndex\}\.rms\.mttrHours`, "number"\)/);
+  assert.match(equipmentSource, /field\("固有可用度 Ai", `components\.\$\{selectedIndex\}\.rms\.availability`, "number"\)/);
 });
 
 test("frontend shell mounts a feature workbench rather than six static summary views", async () => {

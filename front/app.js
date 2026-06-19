@@ -216,6 +216,7 @@ let carryObjective = CARRY_OBJECTIVES[0].id;
 let experimentRunStatus = "当前";
 let isProjectMenuOpen = false;
 let selectedPeriodicTaskId = "";
+let selectedEquipmentComponentIndex = 0;
 
 const PERIODIC_WEEKDAY_FIELDS = [
   { key: "mondayCompositeTaskId", legacyKey: "monday", label: "周一" },
@@ -460,6 +461,13 @@ function bindEvents() {
       selectedRoute = "workbench";
       selectedFeatureId = getPlanListFeatureId(page.module);
       location.hash = `feature=${selectedFeatureId}`;
+      render();
+      return;
+    }
+
+    const equipmentComponentNode = event.target.closest("[data-select-equipment-component]");
+    if (equipmentComponentNode) {
+      selectedEquipmentComponentIndex = clampEquipmentComponentIndex(Number(equipmentComponentNode.dataset.selectEquipmentComponent));
       render();
       return;
     }
@@ -879,9 +887,10 @@ function renderCollapsibleTreeNode(node, options = {}) {
     node.root ? "root" : "",
     node.selected ? "selected" : ""
   ].filter(Boolean).join(" ");
+  const actionAttrs = node.actionAttrs ? ` ${node.actionAttrs}` : "";
   return `
     <div class="tree-node-item ${isCollapsed ? "collapsed" : ""}" data-tree-node="${htmlEscape(nodeId)}">
-      <button type="button" class="${labelClass}" ${hasChildren ? `data-tree-toggle="${htmlEscape(nodeId)}"` : ""} aria-expanded="${hasChildren ? String(!isCollapsed) : "false"}">
+      <button type="button" class="${labelClass}" ${hasChildren ? `data-tree-toggle="${htmlEscape(nodeId)}"` : ""}${actionAttrs} aria-expanded="${hasChildren ? String(!isCollapsed) : "false"}">
         <span class="tree-node-toggle">${hasChildren ? (isCollapsed ? "▶" : "▼") : "•"}</span>
         <span class="tree-node-text">${htmlEscape(node.label)}</span>
         ${node.meta ? `<span class="tree-node-meta">${htmlEscape(node.meta)}</span>` : ""}
@@ -1931,7 +1940,8 @@ function diffTimeMinutes(start, end) {
 }
 
 function renderEquipmentModeling(page) {
-  const selected = scenario.components[0] || {};
+  const selectedIndex = clampEquipmentComponentIndex(selectedEquipmentComponentIndex);
+  const selected = scenario.components[selectedIndex] || {};
   const isFailurePage = page.name.includes("故障");
   const equipmentModels = wholeMachineModels();
   return `
@@ -1949,10 +1959,12 @@ function renderEquipmentModeling(page) {
           label: model,
           meta: index === 0 ? `${scenario.equipment.quantity} 架` : "整机级",
           root: true,
-          children: scenario.components.map((component) => ({
+          children: scenario.components.map((component, componentIndex) => ({
             id: `equipment-component:${model}:${component.id || component.name}`,
             label: component.name,
-            meta: `${component.quantity} 件 / ${component.connectionType}`
+            meta: `${component.quantity} 件 / ${component.connectionType}`,
+            selected: componentIndex === selectedIndex,
+            actionAttrs: `data-select-equipment-component="${componentIndex}"`
           }))
         })))}
       </aside>
@@ -1963,10 +1975,10 @@ function renderEquipmentModeling(page) {
             <span>${htmlEscape(selected.name || "")}</span>
           </div>
           <div class="form-table-grid">
-            ${isFailurePage ? renderEquipmentFailureFields(selected) : renderEquipmentCompositionFields(selected)}
+            ${isFailurePage ? renderEquipmentFailureFields(selectedIndex) : renderEquipmentCompositionFields(selectedIndex)}
           </div>
         </div>
-        ${isFailurePage ? renderEquipmentFailureRmsFields(selected) : ""}
+        ${isFailurePage ? renderEquipmentFailureRmsFields(selected, selectedIndex) : ""}
         ${isFailurePage ? renderEquipmentComponentTable() : ""}
         ${isFailurePage ? renderAircraftStateDataTable() : ""}
       </section>
@@ -1981,29 +1993,33 @@ function wholeMachineModels() {
   return Array.from(new Set(models.filter(Boolean)));
 }
 
-function renderEquipmentCompositionFields() {
+function clampEquipmentComponentIndex(index) {
+  return clamp(Number.isFinite(index) ? index : 0, 0, Math.max((scenario.components || []).length - 1, 0));
+}
+
+function renderEquipmentCompositionFields(selectedIndex) {
   return `
-    ${field("组件名称", "components.0.name")}
-    ${field("父节点", "components.0.parentId")}
-    <label>产品类型${valueSelect("components.0.productType", PRODUCT_TYPE_OPTIONS)}</label>
-    ${field("备件类型", "components.0.spareType")}
-    ${field("连接类型", "components.0.connectionType")}
+    ${field("组件名称", `components.${selectedIndex}.name`)}
+    ${field("父节点", `components.${selectedIndex}.parentId`)}
+    <label>产品类型${valueSelect(`components.${selectedIndex}.productType`, PRODUCT_TYPE_OPTIONS)}</label>
+    ${field("备件类型", `components.${selectedIndex}.spareType`)}
+    ${field("连接类型", `components.${selectedIndex}.connectionType`)}
   `;
 }
 
-function renderEquipmentFailureFields() {
+function renderEquipmentFailureFields(selectedIndex) {
   return `
-    ${renderEquipmentCompositionFields()}
-    <label>数量 n<input data-path="components.0.quantity" type="number" value="${htmlEscape(getPath(scenario, "components.0.quantity"))}"></label>
-    <label>成功数 k<input data-path="components.0.kOutOfN.k" type="number" value="${htmlEscape(getPath(scenario, "components.0.kOutOfN.k"))}"></label>
-    ${field("N中取K总数", "components.0.kOutOfN.n", "number")}
-    ${field("启用 n 中取 k", "components.0.kOutOfN.enabled")}
-    ${field("故障模型", "components.0.failureModel")}
-    ${field("失效分布类型", "components.0.failureDistribution.distributionType")}
-    ${field("失效分布参数", "components.0.failureDistribution.parameters")}
-    ${field("失效率", "components.0.failureRate", "number")}
-    ${field("MTBF(h)", "components.0.mtbfHours", "number")}
-    ${field("寿命限制(h)", "components.0.lifeLimitHours", "number")}
+    ${renderEquipmentCompositionFields(selectedIndex)}
+    <label>数量 n<input data-path="components.${selectedIndex}.quantity" type="number" value="${htmlEscape(getPath(scenario, `components.${selectedIndex}.quantity`))}"></label>
+    <label>成功数 k<input data-path="components.${selectedIndex}.kOutOfN.k" type="number" value="${htmlEscape(getPath(scenario, `components.${selectedIndex}.kOutOfN.k`))}"></label>
+    ${field("N中取K总数", `components.${selectedIndex}.kOutOfN.n`, "number")}
+    ${field("启用 n 中取 k", `components.${selectedIndex}.kOutOfN.enabled`)}
+    ${field("故障模型", `components.${selectedIndex}.failureModel`)}
+    ${field("失效分布类型", `components.${selectedIndex}.failureDistribution.distributionType`)}
+    ${field("失效分布参数", `components.${selectedIndex}.failureDistribution.parameters`)}
+    ${field("失效率", `components.${selectedIndex}.failureRate`, "number")}
+    ${field("MTBF(h)", `components.${selectedIndex}.mtbfHours`, "number")}
+    ${field("寿命限制(h)", `components.${selectedIndex}.lifeLimitHours`, "number")}
     ${field("前置寿命要求(h)", "equipment.preLifeRequirementHours", "number")}
   `;
 }
@@ -2038,7 +2054,7 @@ function renderEquipmentComponentTable() {
   `;
 }
 
-function renderEquipmentFailureRmsFields(selected) {
+function renderEquipmentFailureRmsFields(selected, selectedIndex) {
   return `
     <div class="detail-card">
       <div class="section-head">
@@ -2046,12 +2062,12 @@ function renderEquipmentFailureRmsFields(selected) {
         <span>${htmlEscape(selected.name || "")}</span>
       </div>
       <div class="form-table-grid">
-        ${field("可靠度 R(t)", "components.0.rms.reliability", "number")}
-        ${field("维修度 M(t)", "components.0.rms.maintainability", "number")}
-        ${field("保障性 S(t)", "components.0.rms.supportability", "number")}
-        ${field("平均修复时间 MTTR(h)", "components.0.rms.mttrHours", "number")}
-        ${field("平均保障延迟 MLDT(h)", "components.0.rms.mldtHours", "number")}
-        ${field("固有可用度 Ai", "components.0.rms.availability", "number")}
+        ${field("可靠度 R(t)", `components.${selectedIndex}.rms.reliability`, "number")}
+        ${field("维修度 M(t)", `components.${selectedIndex}.rms.maintainability`, "number")}
+        ${field("保障性 S(t)", `components.${selectedIndex}.rms.supportability`, "number")}
+        ${field("平均修复时间 MTTR(h)", `components.${selectedIndex}.rms.mttrHours`, "number")}
+        ${field("平均保障延迟 MLDT(h)", `components.${selectedIndex}.rms.mldtHours`, "number")}
+        ${field("固有可用度 Ai", `components.${selectedIndex}.rms.availability`, "number")}
       </div>
     </div>
   `;
