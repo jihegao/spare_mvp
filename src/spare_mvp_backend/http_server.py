@@ -84,6 +84,12 @@ def create_backend_server(
                 if query.startswith("resource_id="):
                     resource_id = unquote(query.removeprefix("resource_id="))
                 return {"actor": actor, "events": api.repository.list_audit_events(resource_id=resource_id)}
+            if self.command == "GET" and route == "/users":
+                actor = self._require_user({"系统管理员"})
+                return api.list_users(actor_user_id=actor["user_id"])
+            if self.command == "POST" and route == "/users":
+                actor = self._require_user()
+                return api.create_user(body, actor_user_id=actor["user_id"])
             if self.command == "POST" and route == "/projects/validate":
                 return api.validate_project(body)
             if self.command == "POST" and route == "/projects":
@@ -97,6 +103,9 @@ def create_backend_server(
             parts = [unquote(part) for part in route.split("/") if part]
             if self.command == "GET" and len(parts) == 2 and parts[0] == "modeling-imports":
                 return api.get_modeling_import(parts[1])
+            if self.command == "POST" and len(parts) == 2 and parts[0] == "users":
+                actor = self._require_user()
+                return api.update_user(parts[1], body, actor_user_id=actor["user_id"])
             if self.command == "POST" and len(parts) == 3 and parts[0] == "modeling-imports" and parts[2] == "publish":
                 actor = self._require_user()
                 return api.publish_modeling_import(parts[1], actor_user_id=actor["user_id"])

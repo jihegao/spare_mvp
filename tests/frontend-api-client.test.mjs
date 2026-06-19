@@ -166,6 +166,40 @@ test("frontend API client logs in and attaches M4 bearer token to protected call
   assert.equal(calls[1].headers.authorization, "Bearer session-data");
 });
 
+test("frontend API client exposes user management methods with M4 bearer token", async () => {
+  const calls = [];
+  const client = createBackendApiClient({
+    getAuthToken: () => "session-admin",
+    transport: async (request) => {
+      calls.push(request);
+      if (request.path === "/users") {
+        if (request.method === "GET") return { users: [{ user_id: "user-admin", username: "admin" }] };
+        return { user_id: "user-planner", username: request.body.username, role: request.body.role };
+      }
+      if (request.path === "/users/user-planner") {
+        return { user_id: "user-planner", username: "planner", display_name: request.body.display_name };
+      }
+      throw new Error(`unexpected request ${request.method} ${request.path}`);
+    }
+  });
+
+  const listed = await client.listUsers();
+  const created = await client.createUser({ username: "planner", password: "planner", role: "数据管理员" });
+  const updated = await client.updateUser("user-planner", { display_name: "规划员二号" });
+
+  assert.equal(listed.users[0].username, "admin");
+  assert.equal(created.username, "planner");
+  assert.equal(updated.display_name, "规划员二号");
+  assert.deepEqual(calls.map((call) => `${call.method} ${call.path}`), [
+    "GET /users",
+    "POST /users",
+    "POST /users/user-planner"
+  ]);
+  assert.equal(calls[0].headers.authorization, "Bearer session-admin");
+  assert.equal(calls[1].headers.authorization, "Bearer session-admin");
+  assert.equal(calls[2].headers.authorization, "Bearer session-admin");
+});
+
 test("frontend API fetch transport preserves structured backend details", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => ({

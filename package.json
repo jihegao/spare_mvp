@@ -5,6 +5,8 @@
   "private": true,
   "scripts": {
     "test": "node --test",
-    "serve": "python3 -m http.server 4173"
+    "serve": "python3 -m http.server 4173",
+    "start:system": "bash scripts/start-system.sh start",
+    "stop:system": "bash scripts/start-system.sh stop"
   }
 }

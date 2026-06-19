@@ -47,6 +47,16 @@ class ContractRepository:
             raise KeyError(username)
         return _row_to_dict(cursor, row)
 
+    def list_users(self) -> list[dict[str, Any]]:
+        cursor = self.connection.execute(
+            """
+            SELECT user_id, username, password_hash, role, display_name, status, created_at
+            FROM users
+            ORDER BY username ASC
+            """
+        )
+        return [_row_to_dict(cursor, row) for row in cursor.fetchall()]
+
     def get_user(self, user_id: str) -> dict[str, Any]:
         cursor = self.connection.execute(
             """
@@ -60,6 +70,61 @@ class ContractRepository:
         if row is None:
             raise KeyError(user_id)
         return _row_to_dict(cursor, row)
+
+    def create_user(self, user: dict[str, Any]) -> dict[str, Any]:
+        username = str(_required(user, "username")).strip()
+        if not username:
+            raise ValueError("username is required")
+        try:
+            self.get_user_by_username(username)
+        except KeyError:
+            pass
+        else:
+            raise ValueError(f"user already exists: {username}")
+
+        user_id = str(user.get("user_id") or f"user-{_stable_hash({'username': username})}")
+        password = str(user.get("password") or username)
+        role = str(user.get("role") or "普通用户")
+        display_name = str(user.get("display_name") or user.get("name") or username)
+        status = _normalize_user_status(str(user.get("status") or "active"))
+        self.connection.execute(
+            """
+            INSERT INTO users (user_id, username, password_hash, role, display_name, status)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (user_id, username, _password_hash(password), role, display_name, status),
+        )
+        self.connection.commit()
+        return self.get_user(user_id)
+
+    def update_user(self, user_id: str, updates: dict[str, Any]) -> dict[str, Any]:
+        current = self.get_user(user_id)
+        username = str(updates.get("username") or current["username"]).strip()
+        if not username:
+            raise ValueError("username is required")
+        if username != current["username"]:
+            try:
+                self.get_user_by_username(username)
+            except KeyError:
+                pass
+            else:
+                raise ValueError(f"user already exists: {username}")
+        password_hash = current.get("password_hash")
+        if "password" in updates and str(updates.get("password") or ""):
+            password_hash = _password_hash(str(updates["password"]))
+        role = str(updates.get("role") or current["role"])
+        display_name = str(updates.get("display_name") or updates.get("name") or current.get("display_name") or username)
+        status = _normalize_user_status(str(updates.get("status") or current.get("status") or "active"))
+        self.connection.execute(
+            """
+            UPDATE users
+            SET username = ?, password_hash = ?, role = ?, display_name = ?, status = ?
+            WHERE user_id = ?
+            """,
+            (username, password_hash, role, display_name, status, user_id),
+        )
+        self.connection.commit()
+        return self.get_user(user_id)
 
     def create_session(self, user_id: str) -> dict[str, Any]:
         user = self.get_user(user_id)
@@ -717,3 +782,17 @@ def _seed_m4_users(connection: sqlite3.Connection) -> None:
 
 def _password_hash(password: str) -> str:
     return hashlib.sha256(password.encode("utf-8")).hexdigest()
+
+
+def _stable_hash(payload: dict[str, Any]) -> str:
+    encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()[:12]
+
+
+def _normalize_user_status(status: str) -> str:
+    normalized = status.strip().lower()
+    if normalized in {"启用", "enabled"}:
+        return "active"
+    if normalized in {"停用", "禁用", "disabled", "inactive"}:
+        return "disabled"
+    return normalized or "active"

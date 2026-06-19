@@ -74,6 +74,8 @@ const editedValue = await distanceInput.inputValue();
 if (editedValue !== "333") throw new Error(`Modeling edit did not stick: ${editedValue}`);
 await capture("04-modeling-after-edit", "任务建模");
 
+await verifyModelingButtonsReact();
+
 await openSecondary("仿真实验");
 await clickFeature("spare-planning-monte-carlo-config");
 await capture("05-monte-carlo-config", "蒙特卡洛实验");
@@ -122,3 +124,55 @@ await writeFile(
 
 console.log(JSON.stringify({ ok: true, baseUrl, evidence, fallbacks, result }, null, 2));
 await browser.close();
+
+async function verifyModelingButtonsReact() {
+  await clickFeature("spare-planning-basic-mission");
+  await expectHeading(page, "装备任务建模");
+  await clickAndExpectChange(
+    'button[data-basic-mission-add]',
+    () => page.locator("[data-select-basic-mission]").count(),
+    "basic mission add button did not add a selectable task"
+  );
+
+  await clickFeature("spare-planning-composite-task");
+  await expectHeading(page, "装备任务建模");
+  await clickAndExpectChange(
+    'button[data-composite-task-add]',
+    () => page.locator("[data-select-composite-task]").count(),
+    "composite task add button did not add a task row"
+  );
+  await clickAndExpectChange(
+    'button[data-composite-task-item-add]',
+    () => page.locator("button[data-composite-task-item-delete]").count(),
+    "composite task item add button did not add a task item"
+  );
+
+  await clickFeature("spare-planning-equipment-composition");
+  await expectHeading(page, "装备系统建模");
+  await clickAndExpectChange(
+    'button[data-equipment-add-node]',
+    () => page.locator("[data-select-equipment-component]").count(),
+    "equipment add node button did not add a component"
+  );
+
+  await clickFeature("spare-planning-basic-support-activity");
+  await expectHeading(page, "保障活动建模");
+  const firstJob = page.locator("[data-support-activity-job-select]").first();
+  if ((await firstJob.count()) > 0) {
+    await firstJob.check();
+    await clickAndExpectChange(
+      'button[data-support-activity-job-batch-delete]',
+      () => page.locator("button[data-support-activity-job-delete]").count(),
+      "support activity batch delete button did not remove selected jobs"
+    );
+  }
+  await capture("04b-modeling-buttons-react", "保障活动建模");
+}
+
+async function clickAndExpectChange(selector, readState, message) {
+  const before = await readState();
+  await page.locator(selector).click();
+  await page.waitForTimeout(100);
+  const after = await readState();
+  if (after === before) throw new Error(`${message}: ${before}`);
+}

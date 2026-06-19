@@ -1,10 +1,16 @@
 import { mkdir, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { chromium } from "file:///Users/gaojihe/.npm/_npx/31e32ef8478fbf80/node_modules/playwright-core/index.mjs";
 
 const baseUrl = process.env.SMOKE_BASE_URL || "http://127.0.0.1:4173/front/";
+const apiBaseUrl = baseUrl.replace(/\/front\/?$/, "/api");
 const screenshotDir = process.env.SMOKE_SCREENSHOT_DIR || "output/playwright/m3-1-browser-backend-smoke";
 const chromePath =
   process.env.SMOKE_CHROME_PATH || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+const restartStopCommand = process.env.SMOKE_STOP_COMMAND || "";
+const restartStartCommand = process.env.SMOKE_START_COMMAND || "";
+const execFileAsync = promisify(execFile);
 
 await mkdir(screenshotDir, { recursive: true });
 
@@ -23,6 +29,14 @@ try {
   await page.evaluate(() => localStorage.clear());
 
   await loginAndEnterProject(page);
+  await clickFeature(page, "system-management-modeling-import-workbench");
+  await expectHeading(page, "建模数据导入");
+  await page.locator('button[data-modeling-import-action="save-draft"]').click();
+  await page.waitForFunction(() => document.body.innerText.includes("草稿已保存"));
+  await page.locator('button[data-modeling-import-action="publish"]').click();
+  await page.waitForFunction(() => document.body.innerText.includes("已发布"));
+  await page.screenshot({ path: `${screenshotDir}/00-m5-import-published.png`, fullPage: true });
+
   await clickFeature(page, "spare-planning-experiment-plan-edit");
   await expectSectionTitle(page, "方案编辑");
   await Promise.all([
@@ -60,6 +74,31 @@ try {
   }
   await page.screenshot({ path: `${screenshotDir}/02-refresh-restored-result.png`, fullPage: true });
 
+  const restartInfo = await restartBackendServer();
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.waitForFunction(() => document.body.innerText.includes("已从后端恢复"));
+  await page.waitForFunction(() => document.body.innerText.includes("ArtifactManifest"));
+  const afterRestartRun = await readBackendEvidence(page);
+  assertHasIdentityChain(afterRestartRun.chain, "after restart");
+  if (afterRestartRun.chain.Run !== beforeRefresh.chain.Run) {
+    throw new Error(`Restart loaded a different run: ${afterRestartRun.chain.Run} != ${beforeRefresh.chain.Run}`);
+  }
+
+  await clickFeature(page, "system-management-modeling-import-workbench");
+  await expectHeading(page, "建模数据导入");
+  await page.locator('button[data-modeling-import-action="load-fixture"]').click();
+  await page.waitForFunction(() => document.body.innerText.includes("已从后端恢复导入草稿和发布快照"));
+  const afterRestartImport = await page.evaluate(() => ({
+    statusText: document.querySelector(".modeling-import-action-status")?.textContent?.trim() || "",
+    bodyText: document.body.innerText,
+    hasDraft: document.body.innerText.includes("draft"),
+    hasPublished: document.body.innerText.includes("published")
+  }));
+  if (!afterRestartImport.hasDraft || !afterRestartImport.hasPublished) {
+    throw new Error(`Restart did not restore M5 import draft and published state: ${JSON.stringify(afterRestartImport)}`);
+  }
+  await page.screenshot({ path: `${screenshotDir}/02b-restart-restored-import.png`, fullPage: true });
+
   const offlinePage = await context.newPage();
   trackApiEvents(offlinePage, apiEvents);
   await offlinePage.route("**/api/**", (route) =>
@@ -88,12 +127,17 @@ try {
     ok: true,
     baseUrl,
     screenshots: [
+      `${screenshotDir}/00-m5-import-published.png`,
       `${screenshotDir}/01-real-backend-result.png`,
       `${screenshotDir}/02-refresh-restored-result.png`,
+      `${screenshotDir}/02b-restart-restored-import.png`,
       `${screenshotDir}/03-api-unavailable-blocked.png`
     ],
     beforeRefresh,
     afterRefresh,
+    afterRestartRun,
+    afterRestartImport,
+    restartInfo,
     offlineBlocked: {
       hasNoFakeRun: !offlineText.includes("offline-demo-run"),
       statusText: firstMatchingLine(offlineText, "未创建 run_id")
@@ -106,6 +150,8 @@ try {
 }
 
 async function loginAndEnterProject(page) {
+  await page.getByLabel("用户名").fill("data");
+  await page.getByLabel("密码").fill("data");
   await page.getByRole("button", { name: "登录" }).click();
   await expectHeading(page, "项目列表");
   await page.getByRole("button", { name: "进入当前项目" }).click();
@@ -191,4 +237,33 @@ function trackApiEvents(page, events) {
       events.push({ type: "response", status: response.status(), url: response.url() });
     }
   });
+}
+
+async function restartBackendServer() {
+  if (!restartStopCommand || !restartStartCommand) {
+    return { managed: false, reason: "SMOKE_STOP_COMMAND and SMOKE_START_COMMAND were not set" };
+  }
+  await execFileAsync("/bin/zsh", ["-lc", restartStopCommand], { cwd: process.cwd() });
+  await execFileAsync("/bin/zsh", ["-lc", restartStartCommand], { cwd: process.cwd() });
+  await waitForApi();
+  return { managed: true, stopCommand: restartStopCommand, startCommand: restartStartCommand };
+}
+
+async function waitForApi() {
+  const deadline = Date.now() + 15000;
+  let lastError = null;
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch(`${apiBaseUrl}/projects/validate`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ schema_version: "project-v0" })
+      });
+      if (response.status >= 400 && response.status < 500) return;
+    } catch (err) {
+      lastError = err;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  throw new Error(`Backend did not restart before timeout: ${lastError?.message || "no response"}`);
 }

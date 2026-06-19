@@ -326,6 +326,107 @@ class BackendHttpApiTest(unittest.TestCase):
                 server.server_close()
                 thread.join(timeout=5)
 
+    def test_http_user_management_routes_list_create_and_update_users(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            server = create_backend_server(
+                ("127.0.0.1", 0),
+                repo_root=REPO_ROOT,
+                database_path=":memory:",
+                output_dir=Path(tmp) / "artifacts",
+            )
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                base_url = f"http://127.0.0.1:{server.server_address[1]}/api"
+                admin_token = self._login_token(base_url, "admin", "admin")
+
+                before = self._json(base_url, "GET", "/users", auth_token=admin_token)
+                created = self._json(
+                    base_url,
+                    "POST",
+                    "/users",
+                    {
+                        "username": "planner",
+                        "password": "planner",
+                        "role": "数据管理员",
+                        "display_name": "规划员",
+                        "status": "active",
+                    },
+                    auth_token=admin_token,
+                )
+                updated = self._json(
+                    base_url,
+                    "POST",
+                    f"/users/{quote(created['user_id'], safe='')}",
+                    {"display_name": "规划员二号", "role": "普通用户", "status": "disabled"},
+                    auth_token=admin_token,
+                )
+                after = self._json(base_url, "GET", "/users", auth_token=admin_token)
+
+                self.assertIn("admin", {user["username"] for user in before["users"]})
+                self.assertEqual(created["username"], "planner")
+                self.assertNotIn("password_hash", created)
+                self.assertEqual(updated["display_name"], "规划员二号")
+                self.assertEqual(updated["role"], "普通用户")
+                self.assertEqual(updated["status"], "disabled")
+                self.assertIn("planner", {user["username"] for user in after["users"]})
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
+    def test_http_user_management_denies_regular_user_and_records_audit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            server = create_backend_server(
+                ("127.0.0.1", 0),
+                repo_root=REPO_ROOT,
+                database_path=":memory:",
+                output_dir=Path(tmp) / "artifacts",
+            )
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                base_url = f"http://127.0.0.1:{server.server_address[1]}/api"
+                admin_token = self._login_token(base_url, "admin", "admin")
+                user_token = self._login_token(base_url, "user", "user")
+                created = self._json(
+                    base_url,
+                    "POST",
+                    "/users",
+                    {"username": "readonly", "password": "readonly", "role": "普通用户"},
+                    auth_token=admin_token,
+                )
+
+                denied_create = self._json_error(
+                    base_url,
+                    "POST",
+                    "/users",
+                    {"username": "blocked", "password": "blocked", "role": "普通用户"},
+                    auth_token=user_token,
+                )
+                denied_update = self._json_error(
+                    base_url,
+                    "POST",
+                    f"/users/{quote(created['user_id'], safe='')}",
+                    {"display_name": "不应修改"},
+                    auth_token=user_token,
+                )
+                audit = self._json(
+                    base_url,
+                    "GET",
+                    f"/audit-events?resource_id={quote(created['user_id'], safe='')}",
+                    auth_token=admin_token,
+                )
+
+                self.assertEqual(denied_create["code"], "forbidden")
+                self.assertEqual(denied_update["code"], "forbidden")
+                self.assertEqual(audit["events"][-1]["action"], "users.update")
+                self.assertEqual(audit["events"][-1]["outcome"], "denied")
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
     def test_http_modeling_import_get_restores_draft_and_published_after_restart(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             database_path = Path(tmp) / "m5-2-import.sqlite3"

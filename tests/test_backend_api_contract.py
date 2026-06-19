@@ -249,6 +249,74 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(events[-1]["action"], "modeling_import.save")
         self.assertEqual(events[-1]["outcome"], "denied")
 
+    def test_m4_admin_can_list_create_and_update_users_with_audit(self) -> None:
+        admin_session = self.api.login("admin", "admin")
+
+        created = self.api.create_user(
+            {
+                "username": "planner",
+                "password": "planner",
+                "role": "数据管理员",
+                "display_name": "规划员",
+                "status": "active",
+            },
+            actor_user_id=admin_session["user"]["user_id"],
+        )
+        updated = self.api.update_user(
+            created["user_id"],
+            {
+                "display_name": "规划员二号",
+                "role": "普通用户",
+                "status": "disabled",
+            },
+            actor_user_id=admin_session["user"]["user_id"],
+        )
+        users = self.api.list_users(actor_user_id=admin_session["user"]["user_id"])
+
+        self.assertEqual(created["username"], "planner")
+        self.assertNotIn("password_hash", created)
+        self.assertEqual(updated["display_name"], "规划员二号")
+        self.assertEqual(updated["role"], "普通用户")
+        self.assertEqual(updated["status"], "disabled")
+        self.assertIn("planner", {user["username"] for user in users["users"]})
+        events = self.repository.list_audit_events(resource_id=created["user_id"])
+        self.assertEqual(
+            [(event["action"], event["outcome"]) for event in events],
+            [
+                ("users.create", "allowed"),
+                ("users.update", "allowed"),
+            ],
+        )
+
+    def test_m4_regular_user_cannot_create_or_update_users_and_denial_is_audited(self) -> None:
+        admin_session = self.api.login("admin", "admin")
+        user_session = self.api.login("user", "user")
+        created = self.api.create_user(
+            {"username": "readonly", "password": "readonly", "role": "普通用户", "display_name": "只读用户"},
+            actor_user_id=admin_session["user"]["user_id"],
+        )
+
+        with self.assertRaises(BackendApiError) as create_ctx:
+            self.api.create_user(
+                {"username": "blocked", "password": "blocked", "role": "普通用户"},
+                actor_user_id=user_session["user"]["user_id"],
+            )
+        with self.assertRaises(BackendApiError) as update_ctx:
+            self.api.update_user(
+                created["user_id"],
+                {"display_name": "不应修改"},
+                actor_user_id=user_session["user"]["user_id"],
+            )
+
+        self.assertEqual(create_ctx.exception.code, "forbidden")
+        self.assertEqual(update_ctx.exception.code, "forbidden")
+        create_events = self.repository.list_audit_events(resource_id="blocked")
+        update_events = self.repository.list_audit_events(resource_id=created["user_id"])
+        self.assertEqual(create_events[-1]["action"], "users.create")
+        self.assertEqual(create_events[-1]["outcome"], "denied")
+        self.assertEqual(update_events[-1]["action"], "users.update")
+        self.assertEqual(update_events[-1]["outcome"], "denied")
+
     def test_compile_modeling_import_scenario_requires_published_valid_import(self) -> None:
         import_package = self._fixture("modeling_import_project.json")
         self.api.save_modeling_import(import_package)

@@ -14,6 +14,15 @@ export function createBackendApiClient({ baseUrl = DEFAULT_API_BASE, transport, 
     getSession() {
       return request({ method: "GET", path: "/auth/session" });
     },
+    listUsers() {
+      return request({ method: "GET", path: "/users" });
+    },
+    createUser(user) {
+      return request({ method: "POST", path: "/users", body: user });
+    },
+    updateUser(userId, updates) {
+      return request({ method: "POST", path: `/users/${encodeURIComponent(userId)}`, body: updates });
+    },
     validateProject(projectJson) {
       return request({ method: "POST", path: "/projects/validate", body: projectJson });
     },

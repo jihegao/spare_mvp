@@ -67,6 +67,59 @@ class BackendApi:
             raise KeyError(token)
         return _public_user(user)
 
+    def list_users(self, *, actor_user_id: str | None = None) -> dict[str, Any]:
+        self._require_role(
+            actor_user_id,
+            {"系统管理员"},
+            action="users.list",
+            resource_type="users",
+            resource_id="users",
+        )
+        return {"users": [_public_user(user) for user in self.repository.list_users()]}
+
+    def create_user(self, user: dict[str, Any], *, actor_user_id: str | None = None) -> dict[str, Any]:
+        resource_id = str(user.get("username") or "")
+        self._require_role(
+            actor_user_id,
+            {"系统管理员"},
+            action="users.create",
+            resource_type="user",
+            resource_id=resource_id,
+        )
+        created = self.repository.create_user(user)
+        self._audit_allowed(
+            actor_user_id,
+            action="users.create",
+            resource_type="user",
+            resource_id=created["user_id"],
+            details={"username": created["username"], "role": created["role"]},
+        )
+        return _public_user(created)
+
+    def update_user(
+        self,
+        user_id: str,
+        updates: dict[str, Any],
+        *,
+        actor_user_id: str | None = None,
+    ) -> dict[str, Any]:
+        self._require_role(
+            actor_user_id,
+            {"系统管理员"},
+            action="users.update",
+            resource_type="user",
+            resource_id=user_id,
+        )
+        updated = self.repository.update_user(user_id, updates)
+        self._audit_allowed(
+            actor_user_id,
+            action="users.update",
+            resource_type="user",
+            resource_id=updated["user_id"],
+            details={"username": updated["username"], "role": updated["role"], "status": updated.get("status")},
+        )
+        return _public_user(updated)
+
     def get_project(self, project_id: str) -> dict[str, Any]:
         return self.repository.get_project(project_id)
 
@@ -386,6 +439,7 @@ def _public_user(user: dict[str, Any]) -> dict[str, Any]:
         "username": user["username"],
         "role": user["role"],
         "display_name": user.get("display_name") or user["username"],
+        "status": user.get("status") or "active",
     }
 
 
