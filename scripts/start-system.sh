@@ -10,7 +10,7 @@ RUN_DIR="$ROOT_DIR/runs/system-start"
 DATABASE_PATH="${DATABASE_PATH:-$RUN_DIR/spare_mvp.sqlite3}"
 
 APP_PY="$ROOT_DIR/.abm-mesa-test-env/bin/python"
-CONTRACT_PY="$ROOT_DIR/.abm-mesa-env/bin/python"
+CONTRACT_PY="$ROOT_DIR/.abm-mesa-test-env/bin/python"
 
 stop_port() {
   local port="$1"

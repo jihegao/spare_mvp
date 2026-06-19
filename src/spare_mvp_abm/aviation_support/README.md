@@ -35,7 +35,7 @@ python3 /Users/gaojihe/apps/mesa-abm-skill/mesa-abm-skill/scripts/run_mesa_exper
   --model src/spare_mvp_abm/aviation_support/model.py \
   --config src/spare_mvp_abm/aviation_support/smoke.json \
   --output-dir /tmp/aviation-support-smoke \
-  --install-dir .abm-mesa-env
+  --install-dir .abm-mesa-test-env
 ```
 
 运行资源容量扫参：
@@ -45,7 +45,7 @@ python3 /Users/gaojihe/apps/mesa-abm-skill/mesa-abm-skill/scripts/run_mesa_exper
   --model src/spare_mvp_abm/aviation_support/model.py \
   --config src/spare_mvp_abm/aviation_support/experiment.json \
   --output-dir /tmp/aviation-support-sweep \
-  --install-dir .abm-mesa-env
+  --install-dir .abm-mesa-test-env
 ```
 
 主要输出为逐步 CSV 文件和 `summary.json`。需要浏览器检查时，通过本地 HTTP 服务打开 `visualization.html`。

@@ -16,23 +16,12 @@ async function readJson(relativePath) {
   return JSON.parse(await readFile(new URL(`../${relativePath}`, import.meta.url), "utf8"));
 }
 
-test("simulation service governance defines the six-agent swarm execution plan", async () => {
-  const doc = await readFile(new URL("../docs/simulation-service-governance.md", import.meta.url), "utf8");
+test("simulation service governance is archived as deprecated historical context", async () => {
+  const doc = await readFile(new URL("../docs/archive/deprecated/simulation-service-governance.md", import.meta.url), "utf8");
 
-  for (const agentName of [
-    "Contract Curator Agent",
-    "Simulation Adapter Agent",
-    "Backend API Agent",
-    "Database Agent",
-    "Frontend Integration Agent",
-    "Evaluator / Test Agent",
-  ]) {
-    assert.match(doc, new RegExp(agentName.replace("/", "\\/")));
-  }
-
-  assert.match(doc, /PR-A[\s\S]*Contract Curator/);
-  assert.match(doc, /PR-G[\s\S]*Evaluator/);
-  assert.match(doc, /Project JSON[\s\S]*Scenario JSON[\s\S]*Simulation Adapter/);
+  assert.match(doc, /状态：已过期/);
+  assert.match(doc, /Simulation-Contract-First Development/);
+  assert.match(doc, /仅作历史参考|历史模式/);
 });
 
 test("contract curator publishes the versioned schema bundle", async () => {

@@ -149,12 +149,25 @@ class BackendApi:
         *,
         actor_user_id: str | None = None,
     ) -> dict[str, Any]:
+        return self._save_modeling_import_trusted(import_package, actor_user_id=actor_user_id, allow_system=False)
+
+    def save_modeling_import_as_system(self, import_package: dict[str, Any]) -> dict[str, Any]:
+        return self._save_modeling_import_trusted(import_package, actor_user_id=None, allow_system=True)
+
+    def _save_modeling_import_trusted(
+        self,
+        import_package: dict[str, Any],
+        *,
+        actor_user_id: str | None,
+        allow_system: bool,
+    ) -> dict[str, Any]:
         self._require_role(
             actor_user_id,
             {"系统管理员", "数据管理员"},
             action="modeling_import.save",
             resource_type="modeling_import",
             resource_id=str(import_package.get("importId") or ""),
+            allow_system=allow_system,
         )
         validation = self.validate_modeling_import(import_package)
         if not validation["ok"]:
@@ -172,7 +185,8 @@ class BackendApi:
             action="modeling_import.save",
             resource_type="modeling_import",
             resource_id=import_package["importId"],
-            details={"project_id": import_package["projectId"]},
+            details={"project_id": import_package["projectId"], **({"actor": "system"} if allow_system else {})},
+            allow_system=allow_system,
         )
         return {
             "import_id": import_package["importId"],
@@ -187,12 +201,25 @@ class BackendApi:
         return self.repository.get_modeling_import(import_id)
 
     def publish_modeling_import(self, import_id: str, *, actor_user_id: str | None = None) -> dict[str, Any]:
+        return self._publish_modeling_import_trusted(import_id, actor_user_id=actor_user_id, allow_system=False)
+
+    def publish_modeling_import_as_system(self, import_id: str) -> dict[str, Any]:
+        return self._publish_modeling_import_trusted(import_id, actor_user_id=None, allow_system=True)
+
+    def _publish_modeling_import_trusted(
+        self,
+        import_id: str,
+        *,
+        actor_user_id: str | None,
+        allow_system: bool,
+    ) -> dict[str, Any]:
         self._require_role(
             actor_user_id,
             {"系统管理员", "数据管理员"},
             action="modeling_import.publish",
             resource_type="modeling_import",
             resource_id=import_id,
+            allow_system=allow_system,
         )
         try:
             published = self.repository.publish_modeling_import(import_id)
@@ -203,7 +230,8 @@ class BackendApi:
             action="modeling_import.publish",
             resource_type="modeling_import",
             resource_id=import_id,
-            details={"project_id": published["projectId"]},
+            details={"project_id": published["projectId"], **({"actor": "system"} if allow_system else {})},
+            allow_system=allow_system,
         )
         return published
 
@@ -371,9 +399,20 @@ class BackendApi:
         action: str,
         resource_type: str,
         resource_id: str,
+        allow_system: bool = False,
     ) -> None:
         if actor_user_id is None:
-            return
+            if allow_system:
+                return
+            self.repository.insert_audit_event(
+                actor_user_id=None,
+                action=action,
+                resource_type=resource_type,
+                resource_id=resource_id,
+                outcome="denied",
+                details={"reason": "missing_actor"},
+            )
+            raise BackendApiError("unauthorized", "M4 actor is required")
         try:
             user = self.repository.get_user(actor_user_id)
         except KeyError as exc:
@@ -405,8 +444,9 @@ class BackendApi:
         resource_type: str,
         resource_id: str,
         details: dict[str, Any],
+        allow_system: bool = False,
     ) -> None:
-        if actor_user_id is None:
+        if actor_user_id is None and not allow_system:
             return
         self.repository.insert_audit_event(
             actor_user_id=actor_user_id,

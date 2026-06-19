@@ -17,7 +17,7 @@
 npm test
 python3 -m http.server 4173
 .abm-mesa-test-env/bin/python -m src.spare_mvp_backend.http_server --port 4173
-.abm-mesa-env/bin/python src/spare_mvp_abm/contract_server.py  # Mesa 契约服务（默认 8521）
+.abm-mesa-test-env/bin/python src/spare_mvp_abm/contract_server.py  # Mesa 契约服务（默认 8521）
 ```
 
 浏览器检查入口：
@@ -52,10 +52,10 @@ http://127.0.0.1:4173/front/
 
 ### 启动命令
 
-依赖本地 `.abm-mesa-env`（Python 3.12 + mesa 3.5.1，已被 `.gitignore` 忽略，仅本机可用，不进 CI）：
+依赖本地 `.abm-mesa-test-env`（Python 3.12 + mesa 3.5.1，已被 `.gitignore` 忽略，仅本机可用，不进 CI）：
 
 ```bash
-.abm-mesa-env/bin/python src/spare_mvp_abm/contract_server.py --host 127.0.0.1 --port 8521
+.abm-mesa-test-env/bin/python src/spare_mvp_abm/contract_server.py --host 127.0.0.1 --port 8521
 ```
 
 验证存活：

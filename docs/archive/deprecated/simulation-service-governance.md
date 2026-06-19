@@ -1,5 +1,9 @@
 # Mesa 仿真服务治理约定
 
+> **状态：已过期，归档于 2026-06-20。**
+>
+> 本文档记录早期 Simulation-Contract-First Development 和 Mesa 仿真服务治理设想。当前产品路线图已将“仿真契约先行开发模式（Simulation-Contract-First Development）”标记为历史模式；后续不再以该治理文档作为当前阶段约束，新的边界以 `docs/product-roadmap.md` 和当前 M4/M5.x 计划为准。
+
 日期：2026-06-19
 
 ## 背景

@@ -7,6 +7,6 @@
     "test": "node --test",
     "serve": "python3 -m http.server 4173",
     "start:system": "bash scripts/start-system.sh start",
-    "stop:system": "bash scripts/start-system.sh stop"
+    "stop:system": "bash scripts/stop-system.sh"
   }
 }
