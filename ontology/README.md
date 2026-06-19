@@ -33,7 +33,7 @@ Do not edit generated files by hand. Regenerate them after changing
 `spare_mvp.ontology.json`:
 
 ```bash
-python3 /Users/gaojihe/.codex/skills/ontology-mesa-modeling/scripts/normalize_ontology.py \
+python3 scripts/normalize_ontology.py \
   --input ontology/spare_mvp.ontology.json \
   --output ontology/spare_mvp.normalized.json \
   --report ontology/spare_mvp.validation.json

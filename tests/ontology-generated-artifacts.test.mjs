@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { access, mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -8,7 +8,7 @@ import test from "node:test";
 
 const execFileAsync = promisify(execFile);
 const repoRoot = new URL("../", import.meta.url);
-const normalizeScript = "/Users/gaojihe/.codex/skills/ontology-mesa-modeling/scripts/normalize_ontology.py";
+const normalizeScript = new URL("../scripts/normalize_ontology.py", import.meta.url).pathname;
 
 async function readJson(pathUrl) {
   return JSON.parse(await readFile(pathUrl, "utf8"));
@@ -25,6 +25,9 @@ test("ontology directory documents source, generated, and report ownership", asy
 });
 
 test("checked-in normalized ontology artifacts are regenerated from source", async () => {
+  assert.doesNotMatch(normalizeScript, /^\/Users\//);
+  await access(normalizeScript);
+
   const tempDir = await mkdtemp(join(tmpdir(), "spare-mvp-ontology-"));
   const generatedOntology = join(tempDir, "spare_mvp.normalized.json");
   const generatedReport = join(tempDir, "spare_mvp.validation.json");
