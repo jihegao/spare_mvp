@@ -1,10 +1,10 @@
 # 产品里程碑路线图
 
-日期：2026-06-19
+日期：2026-06-20
 
 ## 定位
 
-本文档定义 `spare_mvp` 从静态可交互原型走向真实系统的产品里程碑。它不替代 `docs/ontology-mesa-rebuild-plan.md` 中的 Ontology + Mesa 技术重构记录，也不替代具体 PR 的实现记录；它用于约束后续产品、数据契约、后端、仿真运行、工程化和试点验收的推进顺序。
+本文档定义 `spare_mvp` 从静态可交互原型走向真实系统的产品里程碑，是当前产品推进顺序的主入口。早期 Ontology + Mesa 重构记录和 Mesa 服务治理文档已归档到 `docs/archive/deprecated/`，仅作为历史背景，不再作为当前产品约束。
 
 当前仓库已经具备登录页、项目列表、四级功能导航、建模页、Monte Carlo 配置与结果、结果分析、Mesa 可视化嵌入等原型能力。但页面数量稳定不等于业务流稳定。后续不能直接跳到后端接入，必须先把前端业务语义、最小闭环、数据对象和结果口径冻结下来。
 
@@ -16,7 +16,7 @@
 4. 结果分析和可视化推演最终必须由 `run_id`、数据库记录或 run artifacts 驱动；静态 demo frame 只能作为 fixture 或 fallback。
 5. 测试必须覆盖行为，不只检查页面数量、源码字符串或静态结构。
 6. 文档不得把静态原型、小样本 Monte Carlo 或 Mesa 烟测描述成工程级校准平台。
-7. 仿真 ontology 可以作为 M2 的语义契约提供者，但不能单独替代应用系统 schema；项目版本、权限、审计、运行生命周期和产物治理仍属于应用数据契约。
+7. 早期仿真 ontology 与 contract-first 设想仅作为历史参考；当前数据契约必须以应用系统 schema、Project draft、run identity chain、权限、审计和产物治理为主。
 
 ## 当前基线判断
 
@@ -26,8 +26,8 @@
 2. `src/spare_mvp_backend/http_server.py`、`BackendApi`、`SimulationAdapter` 和 SQLite repository 已跑通同源 `/api` + `Project -> Snapshot -> ExperimentPlan -> Scenario -> Run -> Result -> ArtifactManifest` 真实后端闭环 smoke，并已通过 M3-1 浏览器刷新恢复和 API 不可用阻断验收。
 3. 前端已有 `front/api-client.mjs` 边界，显式保存、启动运行、读取结果和读取产物通过 API client 表达；通用建模编辑仍保持本地，直到显式保存或运行。
 4. Monte Carlo 页面仍保留前端局部演示/扫参能力，尚未升级为后端 worker 或批量运行产物。
-5. Mesa 可视化页已嵌入本地航空保障状态，但 `aviation_support` Project 到 Scenario 的字段派生规则仍按治理边界保持未批准。
-6. 登录、用户、权限、审计、运行管理、长期 artifact storage 和生产 Web API 还没有真实系统实现。
+5. Mesa 可视化页已嵌入本地航空保障状态；产品口径不再保留 Mesa 内部 `Ontology视图`，`aviation_support` Project 到 Scenario 的字段派生规则仍保持未批准。
+6. 本地 M4 backfill 已补入最小用户、会话、建模导入授权和审计边界；完整用户管理、项目级权限矩阵、SSO、运行管理、长期 artifact storage 和生产 Web API 还没有真实系统实现。
 
 ## M0：稳定当前原型基线
 
@@ -35,7 +35,7 @@
 
 核心工作：
 
-1. 修正可视化推演下的入口可达性，保证四级入口与 Mesa 页面内部能力一致。
+1. 修正可视化推演下的入口可达性，保证四级入口与 Mesa 页面内部运行/状态能力一致，并移除 Mesa 内部 Ontology 视图的产品依赖。
 2. 验证 Monte Carlo 实验选择、样本数、故障率、备件倍数、保障容量等配置是否真实生效。
 3. 修正携行清单、短板分析、可靠度和停机因素等结果页的风险等级、指标解释和数据来源显示。
 4. 检查登录、项目列表、方案列表、建模页、Monte Carlo 配置、Monte Carlo 结果、结果分析、Mesa 可视化的完整路径。
@@ -95,16 +95,18 @@
 2. 明确 `project JSON`、`scenario JSON`、`run JSON`、`result JSON` 的边界和转换规则。
 3. 将 `scenario`、`experiment`、`monteCarlo`、`runs`、`summary` 等前端概念收敛为正式对象。
 4. 定义导入、保存、发布、运行、归档过程中对象版本如何变化。
-5. 将 M2 拆成 `Simulation/Ontology Contract` 和 `Application Data Contract` 两层：前者由仿真模型和 ontology 提供任务、装备、保障、备件、场景输入、运行输出和指标产物定义；后者补齐项目、用户、权限、方案草稿/发布、运行记录、artifact metadata 和迁移策略。
+5. 不再把 M2 拆成可见的 `Simulation/Ontology Contract` 与 `Application Data Contract` 双轨。M2 统一收敛到应用数据契约：Project、ModelingObject、Scenario、SimulationRun、Result、ArtifactManifest、用户权限、审计和迁移策略。
 
 完成标准：
 
 1. 数据对象关系图和 schema 草案完成。
 2. 关键对象可用 JSON Schema 或等价校验规则验证。
 3. 页面临时对象不能绕过数据契约直接驱动后端运行。
-4. 仿真契约服务能校验一个最小项目数据样例，并编译出后端仿真可消费的 `Scenario`。
+4. 后端应用 API 能校验一个最小项目数据样例，并通过当前受支持的 adapter 编译出后端仿真可消费的 `Scenario`。
 
-## 仿真契约先行开发模式（Simulation-Contract-First Development）
+## 已过期：仿真契约先行开发模式（Simulation-Contract-First Development）
+
+> 状态：已过期。该模式来自早期 Ontology + Mesa 重构和 agent swarm 分工设想，相关治理文档已移动到 `docs/archive/deprecated/`。当前产品路线不再要求先建设独立 Simulation Contract Service，也不再把 Mesa ontology 作为可见产品视图或主契约入口。
 
 目标：先让仿真模型和 ontology 成为可执行契约提供者，再用 TDD 推进前端、数据库和后端 API 对接。
 
@@ -172,7 +174,7 @@ M3-1 当前收束：已完成浏览器同源后端闭环 smoke，证据见 `repo
 11. 产物下载。
 12. 用户登录与基础会话接口。
 
-正式后端可以复用或包裹 `Simulation Contract Service`，但必须把契约服务返回的 schema version、scenario version、run_id 和 artifact manifest 持久化下来。
+正式后端应通过当前受支持的 `SimulationAdapter` 或后续 worker 边界编排仿真运行，并必须把 schema version、scenario version、run_id 和 artifact manifest 持久化下来。
 
 数据库最小覆盖：
 
@@ -195,7 +197,7 @@ M3-1 当前收束：已完成浏览器同源后端闭环 smoke，证据见 `repo
 1. 刷新浏览器、换设备、重新登录后，项目和方案仍然存在。
 2. 运行结果可追溯到输入项目版本、方案版本和场景版本。
 3. API 不依赖前端内存状态才能解释结果。
-4. 后端保存的数据能通过契约服务重新校验，并能重新编译出同版本 `Scenario`。
+4. 后端保存的数据能通过应用 schema 重新校验，并能经受支持的 adapter 重新编译出同版本 `Scenario`。
 
 ## M4：真实用户、权限和审计
 
@@ -222,11 +224,13 @@ M3-1 当前收束：已完成浏览器同源后端闭环 smoke，证据见 `repo
 2. 关键操作有审计记录。
 3. 未授权访问被后端阻断，而不只是前端隐藏按钮。
 
+当前 backfill 口径：M5.1/M5.2 已先行落地后，本阶段补入本地 M4 最小边界。SQLite 已包含用户、会话、项目访问和审计事件表；`/api/auth/login` 返回 bearer token；建模导入 save/publish/compile-scenario 的 HTTP 路径要求真实会话。数据管理员和系统管理员可以保存/发布建模导入，普通用户发布会被后端 `403` 阻断并记录审计。该 backfill 仍不是完整用户管理、密码重置、SSO、生产权限矩阵或试点部署安全方案。
+
 ## M5：建模数据从页面表单升级为可校验项目数据
 
 目标：让建模页成为真实项目资料维护和场景生成入口，而不是静态表单集合。
 
-当前推进口径：用户选择跳过 M4 的用户、权限和审计实施，先收束 M3-1/RMS 当前分支，并把 M5 作为下一条产品数据主线。M5 首片不做完整 Excel UI；先定义建模数据导入/校验 contract、错误定位结构、草稿/发布版本和运行引用保护。M5.1 将该 contract 接入本地后端 API、SQLite 持久化和前端 API client。M5.2 新增系统管理下的「建模数据导入」工作台、映射/错误/版本预览，以及经 `SimulationAdapter.compile_scenario()` 生成的后端 Scenario 预览（`compile-scenario`）。
+当前推进口径：M5 数据入口曾在跳过 M4 的前提下先行推进；当前 M4 backfill 已补入本地会话、角色和审计边界，因此 M5 的 save/publish/compile-scenario HTTP 路径必须带 M4 bearer token。M5 首片不做完整 Excel UI；先定义建模数据导入/校验 contract、错误定位结构、草稿/发布版本和运行引用保护。M5.1 将该 contract 接入本地后端 API、SQLite 持久化和前端 API client。M5.2 新增系统管理下的「建模数据导入」工作台、映射/错误/版本预览，以及经 `SimulationAdapter.compile_scenario()` 生成的后端 Scenario 预览（`compile-scenario`）。
 
 核心工作：
 
@@ -254,7 +258,7 @@ M3-1 当前收束：已完成浏览器同源后端闭环 smoke，证据见 `repo
 
 1. `contracts/modeling_import.schema.json` 定义导入包、草稿/发布生命周期、对象集合、变更和校验问题结构。
 2. `front/modeling-import-contract.mjs` 校验重复编号、悬空引用、非法数值和已发布且被运行引用后的覆盖保护。
-3. `tests/modeling-import-contract.test.mjs` 和 `tests/fixtures/modeling_import_project.json` 固化 JSON fixture 首片，不包含完整 Excel UI、权限审计、生产 worker、Mesa 行为变更或 `aviation_support` Scenario 编译解锁。
+3. `tests/modeling-import-contract.test.mjs` 和 `tests/fixtures/modeling_import_project.json` 固化 JSON fixture 首片，不包含完整 Excel UI、生产 worker、Mesa 行为变更或 `aviation_support` Scenario 编译解锁；权限审计由当前 M4 backfill 作为独立边界补入。
 
 M5.1 服务化入口：
 
@@ -268,13 +272,13 @@ M5.2 工作台与 Scenario 预览入口：
 1. 系统管理 / 项目管理新增「建模数据导入」入口，用于查看导入包摘要、目标页面/字段映射、校验错误和草稿/发布版本差异。
 2. 映射、错误和版本预览继续消费 M5.1 的 modeling-import contract issue shape 和后端恢复的 `draftPackage`/`publishedPackage`，不新增自动保存或自由 Excel 映射器。
 3. 已发布且通过校验的导入包可请求后端 Scenario 预览，后端必须读取持久化的 `publishedPackage` 并经 `SimulationAdapter.compile_scenario()` 生成，前端和 Backend API handler 不直接拼最终 Scenario JSON。
-4. M5.2 仍不包含完整 Excel 解析、worker 基础设施、权限/审计、Mesa 行为变更或 `aviation_support` 编译解锁。
+4. M5.2 仍不包含完整 Excel 解析、worker 基础设施、Mesa 行为变更或 `aviation_support` 编译解锁；HTTP 侧 save/publish/compile-scenario 已接入 M4 会话和审计边界。
 
 ## M6：仿真引擎服务化
 
 目标：把前端 JS 重算和本地 Mesa 状态帧升级为后端服务或 worker 运行。
 
-推进方式：先让仿真模型以 `Simulation Contract Service` 形态提供契约校验、场景编译和最小运行接口；后续再拆成正式 API + worker + artifact storage。开发期可以由 subagent 启动和观察本地仿真服务，但服务本身必须保持可脚本化启动、可测试、可停止。
+推进方式：以正式后端 API + worker + artifact storage 为目标演进；开发期可以继续使用本地 adapter 和 smoke model 做可脚本化验证，但不再要求先建设独立 `Simulation Contract Service`。
 
 核心能力：
 
@@ -458,7 +462,7 @@ Web API + DB + worker + artifact storage + frontend static hosting
 
 这条主线先完成原型基线、MVP 闭环、页面数据映射和版本化 schema。它是后端、仿真运行和权限系统的前置约束。
 
-M2 采用仿真契约先行：先让仿真模型和 ontology 输出可测试契约，再补齐应用数据契约。
+M2 采用应用数据契约先行：先冻结 Project、ModelingObject、Scenario、Run、Result、ArtifactManifest 和权限审计对象，再决定哪些仿真 adapter 能消费这些对象。
 
 ### 主线二：后端与仿真运行
 
@@ -466,7 +470,7 @@ M2 采用仿真契约先行：先让仿真模型和 ontology 输出可测试契�
 
 这条主线负责把项目资料、方案、场景、运行和产物落到真实系统。M5 虽然编号在 M4 后，但会反向影响 M2/M3 的数据契约和数据库设计，应尽早并行细化。
 
-M3/M6 的第一步不是直接建设完整后端，而是把 `Simulation Contract Service` 接成可测试的本地服务边界。
+M3/M6 的第一步不是直接建设完整生产平台，而是把保存、编译、运行、结果和 artifact identity chain 接成可测试的本地后端闭环，再逐步替换为 worker 化运行。
 
 ### 主线三：工程化与上线
 
@@ -480,7 +484,7 @@ M3/M6 的第一步不是直接建设完整后端，而是把 `Simulation Contrac
 | --- | --- |
 | M0 -> M1 | 只有核心路径无死入口、无假按钮后，MVP 闭环验收才有意义。 |
 | M1 -> M2 | 页面输入、写入、输出和结果来源明确后，才能冻结真实数据契约。 |
-| M2 -> M3 | API 和数据库必须围绕版本化对象设计，不能直接复制前端临时状态；仿真契约服务先提供可执行的 schema、校验和场景编译边界。 |
+| M2 -> M3 | API 和数据库必须围绕版本化对象设计，不能直接复制前端临时状态；应用 schema、Project draft、Scenario 编译和 run identity chain 必须先形成可测试闭环。 |
 | M2/M3 -> M5 | 建模数据导入、校验、发布会反向修正 schema 和持久化设计。 |
 | M3/M6 -> M7 | 只有真实 run、契约版本、worker 产物和 artifact manifest 存在后，运行管理才能闭环。 |
 | M7 -> M8/M9 | 结果分析和可视化推演必须消费 run artifacts 或 run_id 状态序列。 |
@@ -489,7 +493,7 @@ M3/M6 的第一步不是直接建设完整后端，而是把 `Simulation Contrac
 ## 近期建议
 
 1. 保持 M3-1/RMS 浏览器后端闭环、RMS 分配页面、测试和证据报告一致。
-2. 继续跳过 M4 的实现切片，暂不做真实用户、权限和审计。
+2. M4 backfill 当前只覆盖本地用户、会话、建模导入授权和审计；后续若进入试点，需要继续补项目级访问控制、权限矩阵、密码/SSO 和部署安全。
 3. M5.1 已将建模数据导入/校验 contract 接入本地后端 API、SQLite 持久化和前端显式 API client。
-4. M5.2 当前聚焦系统管理下「建模数据导入」工作台、映射/错误/版本预览和经 `SimulationAdapter` 编译的后端 Scenario 预览；完整 Excel UI、权限审计或生产 worker 仍不在本阶段。
+4. M5.2 当前聚焦系统管理下「建模数据导入」工作台、映射/错误/版本预览和经 `SimulationAdapter` 编译的后端 Scenario 预览；完整 Excel UI 或生产 worker 仍不在本阶段。
 5. 每次 PR 更新页面流转、数据对象或结果口径时，同步更新本文档或相关验收清单。

@@ -965,6 +965,26 @@ test("system management exposes project management and base configuration pages"
   assert.match(styleSource, /\.system-config-layout/);
 });
 
+test("user management add and edit actions open an editable user form", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+
+  assert.match(appSource, /let systemUserEditor/);
+  assert.match(appSource, /let systemUsersLoadStatus/);
+  assert.match(appSource, /data-system-user-action="add"/);
+  assert.match(appSource, /data-system-user-edit="\$\{htmlEscape\(user\.username\)\}"/);
+  assert.match(appSource, /const systemUserActionButton = event\.target\.closest\("\[data-system-user-action\]"\)/);
+  assert.match(appSource, /const systemUserEditButton = event\.target\.closest\("\[data-system-user-edit\]"\)/);
+  assert.match(appSource, /ensureSystemUsersLoaded\(\)/);
+  assert.match(appSource, /function openSystemUserEditor/);
+  assert.match(appSource, /async function saveSystemUserEditor/);
+  assert.match(appSource, /backendApi\.listUsers/);
+  assert.match(appSource, /backendApi\.createUser/);
+  assert.match(appSource, /backendApi\.updateUser/);
+  assert.match(appSource, /data-system-user-field="username"/);
+  assert.match(appSource, /data-system-user-field="role"/);
+  assert.match(appSource, /data-system-user-status/);
+});
+
 test("project ontology covers the four rebuild-plan layers", () => {
   const groups = new Set(PROJECT_ONTOLOGY.nodes.map((node) => node.group));
   assert.ok(groups.has("modeling-object"));

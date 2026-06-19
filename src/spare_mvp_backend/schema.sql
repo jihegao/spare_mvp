@@ -3,8 +3,40 @@ PRAGMA foreign_keys = ON;
 CREATE TABLE IF NOT EXISTS users (
   user_id TEXT PRIMARY KEY,
   username TEXT NOT NULL,
+  password_hash TEXT,
   role TEXT NOT NULL,
+  display_name TEXT,
+  status TEXT NOT NULL DEFAULT 'active',
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS sessions (
+  session_token TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  expires_at TEXT,
+  FOREIGN KEY (user_id) REFERENCES users(user_id)
+);
+
+CREATE TABLE IF NOT EXISTS project_access (
+  user_id TEXT NOT NULL,
+  project_id TEXT NOT NULL,
+  access_role TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (user_id, project_id),
+  FOREIGN KEY (user_id) REFERENCES users(user_id)
+);
+
+CREATE TABLE IF NOT EXISTS audit_events (
+  audit_event_id TEXT PRIMARY KEY,
+  actor_user_id TEXT,
+  action TEXT NOT NULL,
+  resource_type TEXT NOT NULL,
+  resource_id TEXT NOT NULL,
+  outcome TEXT NOT NULL,
+  details_json TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (actor_user_id) REFERENCES users(user_id)
 );
 
 CREATE TABLE IF NOT EXISTS projects (

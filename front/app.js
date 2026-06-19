@@ -35,8 +35,10 @@ import {
 const app = document.querySelector("#app");
 const groups = groupFeaturePages(FEATURE_PAGES);
 const CONTRACT_BASE = "http://127.0.0.1:8521"; // Mesa 契约服务（见 agent.md「Mesa 后台契约服务」）
-const backendApi = createBackendApiClient({ baseUrl: "/api" });
 const LAST_BACKEND_RUN_STORAGE_KEY = "spare-mvp:lastBackendRun";
+const AUTH_SESSION_STORAGE_KEY = "spare-mvp:m4Session";
+let backendAuthToken = readStoredBackendAuthToken();
+const backendApi = createBackendApiClient({ baseUrl: "/api", getAuthToken: () => backendAuthToken });
 const DEFAULT_ROUTE = "login";
 const DEFAULT_FEATURE_ID = "spare-planning-equipment-composition";
 const DEMO_USERS = [
@@ -165,7 +167,7 @@ const SYSTEM_MODELING_GRANULARITY_ROWS = [
   { level: "保障层", object: "保障组织 / 人员 / 设备 / 备件 / 活动", relation: "保障活动消耗资源并作用于装备节点" }
 ];
 
-const SYSTEM_USERS = [
+let systemUsers = [
   { username: "admin", name: "系统管理员", role: "系统管理员", status: "启用" },
   { username: "data", name: "数据管理员", role: "数据管理员", status: "启用" },
   { username: "user", name: "普通用户", role: "项目用户", status: "启用" }
@@ -265,6 +267,9 @@ let backendRunResult = null;
 let backendArtifactManifest = null;
 let backendRunChain = null;
 let backendApiStatus = "离线演示";
+let systemUserEditor = null;
+let systemUsersLoadStatus = "未加载";
+let systemUsersLoaded = false;
 let isLoggedIn = false;
 let currentUser = DEMO_USERS[2];
 let currentProject = DEMO_PROJECTS[0];
@@ -508,17 +513,15 @@ function bindEvents() {
 
     const loginButton = event.target.closest("[data-login-submit]");
     if (loginButton) {
-      isLoggedIn = true;
-      currentUser = DEMO_USERS.find((user) => user.username === "user") || DEMO_USERS[0];
-      selectedRoute = "projects";
-      location.hash = "route=projects";
-      render();
+      handleLogin().finally(() => render());
       return;
     }
 
     const logoutButton = event.target.closest("[data-logout]");
     if (logoutButton) {
       isLoggedIn = false;
+      backendAuthToken = "";
+      localStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
       selectedRoute = DEFAULT_ROUTE;
       location.hash = "route=login";
       render();
@@ -625,6 +628,19 @@ function bindEvents() {
     const modelingImportActionButton = event.target.closest("[data-modeling-import-action]");
     if (modelingImportActionButton) {
       handleModelingImportAction(modelingImportActionButton.dataset.modelingImportAction).finally(() => render());
+      return;
+    }
+
+    const systemUserActionButton = event.target.closest("[data-system-user-action]");
+    if (systemUserActionButton) {
+      handleSystemUserAction(systemUserActionButton.dataset.systemUserAction).finally(() => render());
+      return;
+    }
+
+    const systemUserEditButton = event.target.closest("[data-system-user-edit]");
+    if (systemUserEditButton) {
+      openSystemUserEditor(systemUserEditButton.dataset.systemUserEdit);
+      render();
       return;
     }
 
@@ -754,6 +770,17 @@ function bindEvents() {
 
     const mcArrayInput = event.target.closest("[data-mc-array-path]");
     if (mcArrayInput) updateMonteCarloArrayInput(mcArrayInput);
+
+    const systemUserInput = event.target.closest("[data-system-user-field]");
+    if (systemUserInput && systemUserEditor) {
+      systemUserEditor = {
+        ...systemUserEditor,
+        user: {
+          ...systemUserEditor.user,
+          [systemUserInput.dataset.systemUserField]: systemUserInput.value
+        }
+      };
+    }
   });
 
   app.addEventListener("pointerdown", (event) => {
@@ -906,8 +933,8 @@ function renderLoginPage() {
         <h1>备件规划及任务可靠度验证评估平台</h1>
         <p>登录后进入项目列表，再选择项目进入功能导航页。</p>
         <div class="auth-form">
-          <label>用户名<input value="${currentUser.username}" aria-label="用户名"></label>
-          <label>密码<input value="123456" type="password" aria-label="密码"></label>
+          <label>用户名<input value="${currentUser.username}" aria-label="用户名" data-login-username></label>
+          <label>密码<input value="${currentUser.username}" type="password" aria-label="密码" data-login-password></label>
           <button type="button" class="btn-primary" data-login-submit>登录</button>
         </div>
         <div class="auth-users">
@@ -1679,20 +1706,47 @@ function renderSystemBasicConfig(page) {
 }
 
 function renderUserManagementConfig() {
+  ensureSystemUsersLoaded();
   return `
     <div class="toolbar-row">
-      <button type="button" class="btn-primary">新增用户</button>
-      <button type="button">批量停用</button>
-      <button type="button" class="btn-danger">批量删除</button>
+      <button type="button" class="btn-primary" data-system-user-action="add">新增用户</button>
+      <button type="button" disabled title="批量停用尚未接入后端批处理接口">批量停用</button>
+      <button type="button" class="btn-danger" disabled title="批量删除尚未接入后端批处理接口">批量删除</button>
       <input value="" placeholder="按用户名、角色搜索">
     </div>
+    <p class="inline-status" data-system-user-status>${htmlEscape(systemUsersLoadStatus)}</p>
+    ${systemUserEditor ? renderSystemUserEditor() : ""}
     <div class="table-wrap">
       <table>
         <thead><tr><th>用户名</th><th>姓名</th><th>角色</th><th>状态</th><th>操作</th></tr></thead>
-        <tbody>${SYSTEM_USERS.map((user) => `
-          <tr><td>${user.username}</td><td>${user.name}</td><td>${user.role}</td><td><span class="status-badge success">${user.status}</span></td><td><button type="button" class="inline-action">编辑</button></td></tr>
+        <tbody>${systemUsers.map((user) => `
+          <tr><td>${htmlEscape(user.username)}</td><td>${htmlEscape(user.name)}</td><td>${htmlEscape(user.role)}</td><td><span class="status-badge ${user.status === "停用" ? "warning" : "success"}">${htmlEscape(user.status)}</span></td><td><button type="button" class="inline-action" data-system-user-edit="${htmlEscape(user.username)}">编辑</button></td></tr>
         `).join("")}</tbody>
       </table>
+    </div>
+  `;
+}
+
+function renderSystemUserEditor() {
+  const user = systemUserEditor.user;
+  const title = systemUserEditor.mode === "add" ? "新增用户" : `编辑用户：${user.username}`;
+  return `
+    <div class="detail-card activity-editor-card system-user-editor">
+      <div class="section-head">
+        <h4>${htmlEscape(title)}</h4>
+        <span>本地原型配置，保存后更新当前表格</span>
+      </div>
+      <div class="form-grid">
+        <label>用户名<input value="${htmlEscape(user.username)}" ${systemUserEditor.mode === "edit" ? "disabled" : ""} data-system-user-field="username"></label>
+        <label>姓名<input value="${htmlEscape(user.name)}" data-system-user-field="name"></label>
+        <label>角色<input value="${htmlEscape(user.role)}" data-system-user-field="role"></label>
+        <label>状态<input value="${htmlEscape(user.status)}" data-system-user-field="status"></label>
+        ${systemUserEditor.mode === "add" ? `<label>初始密码<input value="${htmlEscape(user.password || "")}" type="password" data-system-user-field="password"></label>` : ""}
+      </div>
+      <div class="toolbar-row">
+        <button type="button" class="btn-primary" data-system-user-action="save">保存</button>
+        <button type="button" data-system-user-action="cancel">取消</button>
+      </div>
     </div>
   `;
 }
@@ -3347,6 +3401,33 @@ function renderExperimentPlanEditor(page) {
   `;
 }
 
+async function handleLogin() {
+  const username = app.querySelector("[data-login-username]")?.value?.trim() || "user";
+  const password = app.querySelector("[data-login-password]")?.value || username;
+  try {
+    const session = await backendApi.login(username, password);
+    backendAuthToken = session.session.token;
+    localStorage.setItem(AUTH_SESSION_STORAGE_KEY, JSON.stringify(session));
+    currentUser = {
+      username: session.user.username,
+      role: session.user.role
+    };
+    backendApiStatus = "M4 会话已建立";
+  } catch (err) {
+    if (err?.code === "invalid_credentials" || err?.code === "forbidden") {
+      backendApiStatus = `登录失败：${err.message}`;
+      return;
+    }
+    backendAuthToken = "";
+    localStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
+    currentUser = DEMO_USERS.find((user) => user.username === username) || DEMO_USERS[2];
+    backendApiStatus = `离线演示：${err && err.message ? err.message : "Backend API 不可用"}`;
+  }
+  isLoggedIn = true;
+  selectedRoute = "projects";
+  location.hash = "route=projects";
+}
+
 async function saveCurrentProjectThroughApi() {
   const projectJson = buildBackendProjectJson(scenario, currentProject);
   try {
@@ -3480,6 +3561,115 @@ function recalculateRmsAllocation() {
       assumptions: rmsAllocationPlan.assumptions || []
     };
   }
+}
+
+async function handleSystemUserAction(action) {
+  if (action === "add") {
+    openSystemUserEditor();
+    return;
+  }
+  if (action === "save") {
+    await saveSystemUserEditor();
+    return;
+  }
+  if (action === "cancel") {
+    systemUserEditor = null;
+  }
+}
+
+function openSystemUserEditor(username = "") {
+  const existingUser = systemUsers.find((user) => user.username === username);
+  systemUserEditor = {
+    mode: existingUser ? "edit" : "add",
+    originalUserId: existingUser?.user_id || "",
+    originalUsername: existingUser?.username || "",
+    user: existingUser
+      ? { ...existingUser }
+      : { username: "", name: "", role: "普通用户", status: "启用", password: "" }
+  };
+}
+
+async function saveSystemUserEditor() {
+  if (!systemUserEditor) return;
+  const user = normalizeSystemUser(systemUserEditor.user);
+  if (!user.username) {
+    systemUsersLoadStatus = "用户名不能为空";
+    return;
+  }
+  try {
+    if (systemUserEditor.mode === "edit") {
+      const userId = systemUserEditor.originalUserId || systemUsers.find((item) => item.username === systemUserEditor.originalUsername)?.user_id;
+      const updated = await backendApi.updateUser(userId, toBackendUserPayload(user));
+      systemUsers = systemUsers.map((item) => item.username === systemUserEditor.originalUsername ? fromBackendUser(updated) : item);
+      systemUsersLoadStatus = `用户已更新：${updated.username}`;
+    } else {
+      const created = await backendApi.createUser(toBackendUserPayload(user));
+      systemUsers = [...systemUsers.filter((item) => item.username !== created.username), fromBackendUser(created)];
+      systemUsersLoadStatus = `用户已创建：${created.username}`;
+    }
+    systemUsersLoaded = true;
+    systemUserEditor = null;
+  } catch (err) {
+    systemUsersLoadStatus = `用户保存失败：${err && err.message ? err.message : "Backend API 不可用"}`;
+  }
+}
+
+function normalizeSystemUser(user) {
+  const username = String(user.username || "").trim();
+  const name = String(user.name || "").trim() || username || "未命名用户";
+  const role = String(user.role || "").trim() || "普通用户";
+  const status = String(user.status || "").trim() || "启用";
+  const password = String(user.password || "").trim();
+  return { ...user, username, name, role, status, password };
+}
+
+function ensureSystemUsersLoaded() {
+  if (systemUsersLoaded || systemUsersLoadStatus === "加载中") return;
+  systemUsersLoadStatus = "加载中";
+  backendApi.listUsers()
+    .then((payload) => {
+      systemUsers = (payload.users || []).map(fromBackendUser);
+      systemUsersLoaded = true;
+      systemUsersLoadStatus = "已从后端加载用户";
+      render();
+    })
+    .catch((err) => {
+      systemUsersLoaded = true;
+      systemUsersLoadStatus = `用户后端不可用：${err && err.message ? err.message : "Backend API 不可用"}`;
+      render();
+    });
+}
+
+function fromBackendUser(user) {
+  return {
+    user_id: user.user_id,
+    username: user.username,
+    name: user.display_name || user.name || user.username,
+    role: user.role || "普通用户",
+    status: displayUserStatus(user.status)
+  };
+}
+
+function toBackendUserPayload(user) {
+  return {
+    username: user.username,
+    password: user.password || undefined,
+    role: user.role,
+    display_name: user.name,
+    status: backendUserStatus(user.status)
+  };
+}
+
+function displayUserStatus(status) {
+  if (status === "active" || status === "enabled") return "启用";
+  if (status === "disabled" || status === "inactive") return "停用";
+  return status || "启用";
+}
+
+function backendUserStatus(status) {
+  if (status === "启用") return "active";
+  if (status === "停用" || status === "禁用") return "disabled";
+  return status || "active";
 }
 
 async function handleModelingImportAction(action) {
@@ -4338,6 +4528,14 @@ function readRouteFromHash() {
   if (match) return decodeURIComponent(match[1]);
   if (location.hash.includes("feature=")) return "workbench";
   return "";
+}
+
+function readStoredBackendAuthToken() {
+  try {
+    return JSON.parse(localStorage.getItem(AUTH_SESSION_STORAGE_KEY) || "null")?.session?.token || "";
+  } catch {
+    return "";
+  }
 }
 
 function getPlanListFeatureId(moduleName) {

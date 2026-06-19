@@ -198,11 +198,12 @@ class BackendHttpApiTest(unittest.TestCase):
                 import_package = self._fixture("modeling_import_project.json")
                 import_package["importId"] = "import/http demo"
                 encoded_import_id = quote(import_package["importId"], safe="")
+                auth_token = self._login_token(base_url, "data", "data")
 
                 validation = self._json(base_url, "POST", "/modeling-imports/validate", import_package)
-                saved = self._json(base_url, "POST", "/modeling-imports", import_package)
+                saved = self._json(base_url, "POST", "/modeling-imports", import_package, auth_token=auth_token)
                 stored = self._json(base_url, "GET", f"/modeling-imports/{encoded_import_id}")
-                published = self._json(base_url, "POST", f"/modeling-imports/{encoded_import_id}/publish")
+                published = self._json(base_url, "POST", f"/modeling-imports/{encoded_import_id}/publish", auth_token=auth_token)
 
                 self.assertTrue(validation["ok"])
                 self.assertEqual(saved["import_id"], import_package["importId"])
@@ -212,6 +213,215 @@ class BackendHttpApiTest(unittest.TestCase):
                 self.assertIsNone(stored["publishedPackage"])
                 self.assertEqual(published["lifecycle"]["state"], "published")
                 self.assertEqual(published["publishedPackage"]["lifecycle"]["state"], "published")
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
+    def test_http_modeling_import_mutations_require_m4_session(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            server = create_backend_server(
+                ("127.0.0.1", 0),
+                repo_root=REPO_ROOT,
+                database_path=":memory:",
+                output_dir=Path(tmp) / "artifacts",
+            )
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                base_url = f"http://127.0.0.1:{server.server_address[1]}/api"
+                import_package = self._fixture("modeling_import_project.json")
+
+                unauthenticated = self._json_error(base_url, "POST", "/modeling-imports", import_package)
+                session = self._json(
+                    base_url,
+                    "POST",
+                    "/auth/login",
+                    {"username": "data", "password": "data"},
+                )
+                saved = self._json(
+                    base_url,
+                    "POST",
+                    "/modeling-imports",
+                    import_package,
+                    auth_token=session["session"]["token"],
+                )
+
+                self.assertEqual(unauthenticated["code"], "unauthorized")
+                self.assertEqual(session["user"]["role"], "数据管理员")
+                self.assertEqual(saved["import_id"], import_package["importId"])
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
+    def test_http_modeling_import_compile_scenario_requires_m4_session(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            server = create_backend_server(
+                ("127.0.0.1", 0),
+                repo_root=REPO_ROOT,
+                database_path=":memory:",
+                output_dir=Path(tmp) / "artifacts",
+            )
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                base_url = f"http://127.0.0.1:{server.server_address[1]}/api"
+
+                unauthenticated = self._json_error(
+                    base_url,
+                    "POST",
+                    "/modeling-imports/import-carrier-day-night-001/compile-scenario",
+                    {"model_family": "smoke"},
+                )
+
+                self.assertEqual(unauthenticated["code"], "unauthorized")
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
+    def test_http_modeling_import_publish_denies_regular_user_and_records_audit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            server = create_backend_server(
+                ("127.0.0.1", 0),
+                repo_root=REPO_ROOT,
+                database_path=":memory:",
+                output_dir=Path(tmp) / "artifacts",
+            )
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                base_url = f"http://127.0.0.1:{server.server_address[1]}/api"
+                import_package = self._fixture("modeling_import_project.json")
+                data_session = self._json(base_url, "POST", "/auth/login", {"username": "data", "password": "data"})
+                user_session = self._json(base_url, "POST", "/auth/login", {"username": "user", "password": "user"})
+
+                self._json(
+                    base_url,
+                    "POST",
+                    "/modeling-imports",
+                    import_package,
+                    auth_token=data_session["session"]["token"],
+                )
+                denied = self._json_error(
+                    base_url,
+                    "POST",
+                    f"/modeling-imports/{import_package['importId']}/publish",
+                    auth_token=user_session["session"]["token"],
+                )
+                audit = self._json(
+                    base_url,
+                    "GET",
+                    f"/audit-events?resource_id={quote(import_package['importId'], safe='')}",
+                    auth_token=data_session["session"]["token"],
+                )
+
+                self.assertEqual(denied["code"], "forbidden")
+                self.assertEqual(audit["events"][-1]["action"], "modeling_import.publish")
+                self.assertEqual(audit["events"][-1]["outcome"], "denied")
+                self.assertEqual(audit["events"][-1]["actor_user_id"], user_session["user"]["user_id"])
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
+    def test_http_user_management_routes_list_create_and_update_users(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            server = create_backend_server(
+                ("127.0.0.1", 0),
+                repo_root=REPO_ROOT,
+                database_path=":memory:",
+                output_dir=Path(tmp) / "artifacts",
+            )
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                base_url = f"http://127.0.0.1:{server.server_address[1]}/api"
+                admin_token = self._login_token(base_url, "admin", "admin")
+
+                before = self._json(base_url, "GET", "/users", auth_token=admin_token)
+                created = self._json(
+                    base_url,
+                    "POST",
+                    "/users",
+                    {
+                        "username": "planner",
+                        "password": "planner",
+                        "role": "数据管理员",
+                        "display_name": "规划员",
+                        "status": "active",
+                    },
+                    auth_token=admin_token,
+                )
+                updated = self._json(
+                    base_url,
+                    "POST",
+                    f"/users/{quote(created['user_id'], safe='')}",
+                    {"display_name": "规划员二号", "role": "普通用户", "status": "disabled"},
+                    auth_token=admin_token,
+                )
+                after = self._json(base_url, "GET", "/users", auth_token=admin_token)
+
+                self.assertIn("admin", {user["username"] for user in before["users"]})
+                self.assertEqual(created["username"], "planner")
+                self.assertNotIn("password_hash", created)
+                self.assertEqual(updated["display_name"], "规划员二号")
+                self.assertEqual(updated["role"], "普通用户")
+                self.assertEqual(updated["status"], "disabled")
+                self.assertIn("planner", {user["username"] for user in after["users"]})
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
+    def test_http_user_management_denies_regular_user_and_records_audit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            server = create_backend_server(
+                ("127.0.0.1", 0),
+                repo_root=REPO_ROOT,
+                database_path=":memory:",
+                output_dir=Path(tmp) / "artifacts",
+            )
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                base_url = f"http://127.0.0.1:{server.server_address[1]}/api"
+                admin_token = self._login_token(base_url, "admin", "admin")
+                user_token = self._login_token(base_url, "user", "user")
+                created = self._json(
+                    base_url,
+                    "POST",
+                    "/users",
+                    {"username": "readonly", "password": "readonly", "role": "普通用户"},
+                    auth_token=admin_token,
+                )
+
+                denied_create = self._json_error(
+                    base_url,
+                    "POST",
+                    "/users",
+                    {"username": "blocked", "password": "blocked", "role": "普通用户"},
+                    auth_token=user_token,
+                )
+                denied_update = self._json_error(
+                    base_url,
+                    "POST",
+                    f"/users/{quote(created['user_id'], safe='')}",
+                    {"display_name": "不应修改"},
+                    auth_token=user_token,
+                )
+                audit = self._json(
+                    base_url,
+                    "GET",
+                    f"/audit-events?resource_id={quote(created['user_id'], safe='')}",
+                    auth_token=admin_token,
+                )
+
+                self.assertEqual(denied_create["code"], "forbidden")
+                self.assertEqual(denied_update["code"], "forbidden")
+                self.assertEqual(audit["events"][-1]["action"], "users.update")
+                self.assertEqual(audit["events"][-1]["outcome"], "denied")
             finally:
                 server.shutdown()
                 server.server_close()
@@ -233,13 +443,14 @@ class BackendHttpApiTest(unittest.TestCase):
                 base_url = f"http://127.0.0.1:{first_server.server_address[1]}/api"
                 import_package = self._fixture("modeling_import_project.json")
                 import_id = quote(import_package["importId"], safe="")
-                self._json(base_url, "POST", "/modeling-imports", import_package)
-                self._json(base_url, "POST", f"/modeling-imports/{import_id}/publish")
+                auth_token = self._login_token(base_url, "data", "data")
+                self._json(base_url, "POST", "/modeling-imports", import_package, auth_token=auth_token)
+                self._json(base_url, "POST", f"/modeling-imports/{import_id}/publish", auth_token=auth_token)
 
                 changed_package = self._fixture("modeling_import_project.json")
                 changed_package["lifecycle"] = {"state": "draft", "version": 2, "referencedRunIds": []}
                 changed_package["objects"]["equipmentAssets"][1]["quantity"] = 2
-                self._json(base_url, "POST", "/modeling-imports", changed_package)
+                self._json(base_url, "POST", "/modeling-imports", changed_package, auth_token=auth_token)
             finally:
                 first_server.shutdown()
                 first_server.server_close()
@@ -281,14 +492,16 @@ class BackendHttpApiTest(unittest.TestCase):
             try:
                 base_url = f"http://127.0.0.1:{server.server_address[1]}/api"
                 import_package = self._fixture("modeling_import_project.json")
+                auth_token = self._login_token(base_url, "data", "data")
 
-                self._json(base_url, "POST", "/modeling-imports", import_package)
-                self._json(base_url, "POST", f"/modeling-imports/{import_package['importId']}/publish")
+                self._json(base_url, "POST", "/modeling-imports", import_package, auth_token=auth_token)
+                self._json(base_url, "POST", f"/modeling-imports/{import_package['importId']}/publish", auth_token=auth_token)
                 compiled = self._json(
                     base_url,
                     "POST",
                     f"/modeling-imports/{import_package['importId']}/compile-scenario",
                     {"model_family": "smoke"},
+                    auth_token=auth_token,
                 )
 
                 self.assertEqual(compiled["compiled_from_import"]["import_id"], import_package["importId"])
@@ -313,8 +526,9 @@ class BackendHttpApiTest(unittest.TestCase):
                 base_url = f"http://127.0.0.1:{server.server_address[1]}/api"
                 import_package = self._fixture("modeling_import_project.json")
                 import_package["objects"]["supportActivities"][0]["resourceId"] = "missing-resource"
+                auth_token = self._login_token(base_url, "data", "data")
 
-                error = self._json_error(base_url, "POST", "/modeling-imports", import_package)
+                error = self._json_error(base_url, "POST", "/modeling-imports", import_package, auth_token=auth_token)
 
                 self.assertEqual(error["code"], "invalid_modeling_import")
                 self.assertEqual(
@@ -344,9 +558,15 @@ class BackendHttpApiTest(unittest.TestCase):
                     "version": 1,
                     "referencedRunIds": ["run-smoke-contract-001"],
                 }
-                self._json(base_url, "POST", "/modeling-imports", import_package)
+                auth_token = self._login_token(base_url, "data", "data")
+                self._json(base_url, "POST", "/modeling-imports", import_package, auth_token=auth_token)
 
-                error = self._json_error(base_url, "POST", f"/modeling-imports/{import_package['importId']}/publish")
+                error = self._json_error(
+                    base_url,
+                    "POST",
+                    f"/modeling-imports/{import_package['importId']}/publish",
+                    auth_token=auth_token,
+                )
 
                 self.assertEqual(error["code"], "published_import_referenced")
                 self.assertEqual(error["details"]["import_id"], import_package["importId"])
@@ -355,26 +575,52 @@ class BackendHttpApiTest(unittest.TestCase):
                 server.server_close()
                 thread.join(timeout=5)
 
-    def _json(self, base_url: str, method: str, path: str, payload: dict | None = None) -> dict:
+    def _login_token(self, base_url: str, username: str, password: str) -> str:
+        session = self._json(base_url, "POST", "/auth/login", {"username": username, "password": password})
+        return session["session"]["token"]
+
+    def _json(
+        self,
+        base_url: str,
+        method: str,
+        path: str,
+        payload: dict | None = None,
+        *,
+        auth_token: str | None = None,
+    ) -> dict:
         data = None if payload is None else json.dumps(payload).encode("utf-8")
+        headers = {"content-type": "application/json"} if payload is not None else {}
+        if auth_token is not None:
+            headers["authorization"] = f"Bearer {auth_token}"
         req = request.Request(
             f"{base_url}{path}",
             data=data,
             method=method,
-            headers={"content-type": "application/json"} if payload is not None else {},
+            headers=headers,
         )
         opener = request.build_opener(request.ProxyHandler({}))
         with opener.open(req, timeout=10) as response:
             self.assertEqual(response.status, 200)
             return json.loads(response.read().decode("utf-8"))
 
-    def _json_error(self, base_url: str, method: str, path: str, payload: dict | None = None) -> dict:
+    def _json_error(
+        self,
+        base_url: str,
+        method: str,
+        path: str,
+        payload: dict | None = None,
+        *,
+        auth_token: str | None = None,
+    ) -> dict:
         data = None if payload is None else json.dumps(payload).encode("utf-8")
+        headers = {"content-type": "application/json"} if payload is not None else {}
+        if auth_token is not None:
+            headers["authorization"] = f"Bearer {auth_token}"
         req = request.Request(
             f"{base_url}{path}",
             data=data,
             method=method,
-            headers={"content-type": "application/json"} if payload is not None else {},
+            headers=headers,
         )
         opener = request.build_opener(request.ProxyHandler({}))
         try:

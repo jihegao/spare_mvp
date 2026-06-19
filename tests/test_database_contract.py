@@ -38,6 +38,9 @@ class DatabaseContractTest(unittest.TestCase):
             {
                 "projects",
                 "users",
+                "sessions",
+                "project_access",
+                "audit_events",
                 "modeling_imports",
                 "experiment_plans",
                 "modeling_snapshots",
@@ -50,6 +53,18 @@ class DatabaseContractTest(unittest.TestCase):
 
     def test_schema_preserves_version_and_traceability_columns(self) -> None:
         required_columns = {
+            "users": {"user_id", "username", "password_hash", "role", "display_name", "status"},
+            "sessions": {"session_token", "user_id", "created_at", "expires_at"},
+            "project_access": {"user_id", "project_id", "access_role"},
+            "audit_events": {
+                "audit_event_id",
+                "actor_user_id",
+                "action",
+                "resource_type",
+                "resource_id",
+                "outcome",
+                "details_json",
+            },
             "projects": {"project_id", "schema_version", "project_version", "payload_json"},
             "modeling_snapshots": {
                 "snapshot_id",
@@ -162,6 +177,26 @@ class DatabaseContractTest(unittest.TestCase):
             self.assertIn("modeling_snapshot_id", columns)
         finally:
             connection.close()
+
+    def test_repository_seeds_m4_users_and_persists_audit_events(self) -> None:
+        data_user = self.repository.get_user_by_username("data")
+        session = self.repository.create_session(data_user["user_id"])
+        event = self.repository.insert_audit_event(
+            actor_user_id=data_user["user_id"],
+            action="modeling_import.save",
+            resource_type="modeling_import",
+            resource_id="import-carrier-day-night-001",
+            outcome="allowed",
+            details={"project_id": "project-carrier-day-night"},
+        )
+
+        self.assertEqual(data_user["role"], "数据管理员")
+        self.assertEqual(self.repository.get_session_user(session["token"])["user_id"], data_user["user_id"])
+        self.assertEqual(event["actor_user_id"], data_user["user_id"])
+        self.assertEqual(
+            self.repository.list_audit_events(resource_id="import-carrier-day-night-001")[0]["details"],
+            {"project_id": "project-carrier-day-night"},
+        )
 
     def test_repository_persists_modeling_import_package_and_publish_state(self) -> None:
         import_package = self._fixture("modeling_import_project.json")

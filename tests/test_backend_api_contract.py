@@ -172,12 +172,12 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(self.adapter.compile_calls[0][1], "aviation_support")
         self.assertEqual(self.adapter.run_calls, [])
 
-    def test_modeling_import_api_validates_saves_and_publishes_package(self) -> None:
+    def test_modeling_import_api_validates_saves_and_publishes_package_as_system(self) -> None:
         import_package = self._fixture("modeling_import_project.json")
 
         validation = self.api.validate_modeling_import(import_package)
-        saved = self.api.save_modeling_import(import_package)
-        published = self.api.publish_modeling_import(import_package["importId"])
+        saved = self.api.save_modeling_import_as_system(import_package)
+        published = self.api.publish_modeling_import_as_system(import_package["importId"])
         stored = self.api.get_modeling_import(import_package["importId"])
 
         self.assertTrue(validation["ok"])
@@ -188,10 +188,174 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(saved["validation_status"], "valid")
         self.assertEqual(published["lifecycle"]["state"], "published")
         self.assertEqual(stored["validation"]["status"], "valid")
+        events = self.repository.list_audit_events(resource_id=import_package["importId"])
+        self.assertEqual(
+            [(event["action"], event["outcome"], event["actor_user_id"]) for event in events],
+            [
+                ("modeling_import.save", "allowed", None),
+                ("modeling_import.publish", "allowed", None),
+            ],
+        )
+        self.assertTrue(all(event["details"].get("actor") == "system" for event in events))
+
+    def test_modeling_import_api_rejects_missing_actor_for_save(self) -> None:
+        import_package = self._fixture("modeling_import_project.json")
+
+        with self.assertRaises(BackendApiError) as ctx:
+            self.api.save_modeling_import(import_package)
+
+        self.assertEqual(ctx.exception.code, "unauthorized")
+        events = self.repository.list_audit_events(resource_id=import_package["importId"])
+        self.assertEqual(events[-1]["action"], "modeling_import.save")
+        self.assertEqual(events[-1]["outcome"], "denied")
+        self.assertIsNone(events[-1]["actor_user_id"])
+        self.assertEqual(events[-1]["details"]["reason"], "missing_actor")
+
+    def test_modeling_import_api_rejects_missing_actor_for_publish(self) -> None:
+        import_package = self._fixture("modeling_import_project.json")
+        self.api.save_modeling_import_as_system(import_package)
+
+        with self.assertRaises(BackendApiError) as ctx:
+            self.api.publish_modeling_import(import_package["importId"])
+
+        self.assertEqual(ctx.exception.code, "unauthorized")
+        events = self.repository.list_audit_events(resource_id=import_package["importId"])
+        self.assertEqual(events[-1]["action"], "modeling_import.publish")
+        self.assertEqual(events[-1]["outcome"], "denied")
+        self.assertIsNone(events[-1]["actor_user_id"])
+        self.assertEqual(events[-1]["details"]["reason"], "missing_actor")
+
+    def test_m4_data_admin_can_save_publish_and_audit_modeling_import(self) -> None:
+        import_package = self._fixture("modeling_import_project.json")
+        session = self.api.login("data", "data")
+
+        saved = self.api.save_modeling_import(import_package, actor_user_id=session["user"]["user_id"])
+        published = self.api.publish_modeling_import(
+            import_package["importId"],
+            actor_user_id=session["user"]["user_id"],
+        )
+
+        self.assertEqual(session["user"]["role"], "数据管理员")
+        self.assertEqual(saved["status"], "draft")
+        self.assertEqual(published["lifecycle"]["state"], "published")
+        events = self.repository.list_audit_events(resource_id=import_package["importId"])
+        self.assertEqual(
+            [(event["action"], event["outcome"]) for event in events],
+            [
+                ("modeling_import.save", "allowed"),
+                ("modeling_import.publish", "allowed"),
+            ],
+        )
+        self.assertEqual({event["actor_user_id"] for event in events}, {session["user"]["user_id"]})
+        login_events = self.repository.list_audit_events()
+        login_event = next(event for event in login_events if event["action"] == "auth.login")
+        self.assertNotEqual(login_event["resource_id"], session["session"]["token"])
+        self.assertRegex(login_event["resource_id"], r"^session-[0-9a-f]{16}$")
+
+    def test_m4_regular_user_cannot_publish_modeling_import_and_denial_is_audited(self) -> None:
+        import_package = self._fixture("modeling_import_project.json")
+        data_session = self.api.login("data", "data")
+        user_session = self.api.login("user", "user")
+        self.api.save_modeling_import(import_package, actor_user_id=data_session["user"]["user_id"])
+
+        with self.assertRaises(BackendApiError) as ctx:
+            self.api.publish_modeling_import(
+                import_package["importId"],
+                actor_user_id=user_session["user"]["user_id"],
+            )
+
+        self.assertEqual(ctx.exception.code, "forbidden")
+        events = self.repository.list_audit_events(resource_id=import_package["importId"])
+        self.assertEqual(events[-1]["action"], "modeling_import.publish")
+        self.assertEqual(events[-1]["outcome"], "denied")
+        self.assertEqual(events[-1]["actor_user_id"], user_session["user"]["user_id"])
+
+    def test_m4_regular_user_cannot_save_modeling_import_and_denial_is_audited(self) -> None:
+        import_package = self._fixture("modeling_import_project.json")
+        user_session = self.api.login("user", "user")
+
+        with self.assertRaises(BackendApiError) as ctx:
+            self.api.save_modeling_import(
+                import_package,
+                actor_user_id=user_session["user"]["user_id"],
+            )
+
+        self.assertEqual(ctx.exception.code, "forbidden")
+        events = self.repository.list_audit_events(resource_id=import_package["importId"])
+        self.assertEqual(events[-1]["action"], "modeling_import.save")
+        self.assertEqual(events[-1]["outcome"], "denied")
+
+    def test_m4_admin_can_list_create_and_update_users_with_audit(self) -> None:
+        admin_session = self.api.login("admin", "admin")
+
+        created = self.api.create_user(
+            {
+                "username": "planner",
+                "password": "planner",
+                "role": "数据管理员",
+                "display_name": "规划员",
+                "status": "active",
+            },
+            actor_user_id=admin_session["user"]["user_id"],
+        )
+        updated = self.api.update_user(
+            created["user_id"],
+            {
+                "display_name": "规划员二号",
+                "role": "普通用户",
+                "status": "disabled",
+            },
+            actor_user_id=admin_session["user"]["user_id"],
+        )
+        users = self.api.list_users(actor_user_id=admin_session["user"]["user_id"])
+
+        self.assertEqual(created["username"], "planner")
+        self.assertNotIn("password_hash", created)
+        self.assertEqual(updated["display_name"], "规划员二号")
+        self.assertEqual(updated["role"], "普通用户")
+        self.assertEqual(updated["status"], "disabled")
+        self.assertIn("planner", {user["username"] for user in users["users"]})
+        events = self.repository.list_audit_events(resource_id=created["user_id"])
+        self.assertEqual(
+            [(event["action"], event["outcome"]) for event in events],
+            [
+                ("users.create", "allowed"),
+                ("users.update", "allowed"),
+            ],
+        )
+
+    def test_m4_regular_user_cannot_create_or_update_users_and_denial_is_audited(self) -> None:
+        admin_session = self.api.login("admin", "admin")
+        user_session = self.api.login("user", "user")
+        created = self.api.create_user(
+            {"username": "readonly", "password": "readonly", "role": "普通用户", "display_name": "只读用户"},
+            actor_user_id=admin_session["user"]["user_id"],
+        )
+
+        with self.assertRaises(BackendApiError) as create_ctx:
+            self.api.create_user(
+                {"username": "blocked", "password": "blocked", "role": "普通用户"},
+                actor_user_id=user_session["user"]["user_id"],
+            )
+        with self.assertRaises(BackendApiError) as update_ctx:
+            self.api.update_user(
+                created["user_id"],
+                {"display_name": "不应修改"},
+                actor_user_id=user_session["user"]["user_id"],
+            )
+
+        self.assertEqual(create_ctx.exception.code, "forbidden")
+        self.assertEqual(update_ctx.exception.code, "forbidden")
+        create_events = self.repository.list_audit_events(resource_id="blocked")
+        update_events = self.repository.list_audit_events(resource_id=created["user_id"])
+        self.assertEqual(create_events[-1]["action"], "users.create")
+        self.assertEqual(create_events[-1]["outcome"], "denied")
+        self.assertEqual(update_events[-1]["action"], "users.update")
+        self.assertEqual(update_events[-1]["outcome"], "denied")
 
     def test_compile_modeling_import_scenario_requires_published_valid_import(self) -> None:
         import_package = self._fixture("modeling_import_project.json")
-        self.api.save_modeling_import(import_package)
+        self.api.save_modeling_import_as_system(import_package)
 
         with self.assertRaises(BackendApiError) as ctx:
             self.api.compile_modeling_import_scenario(import_package["importId"])
@@ -200,8 +364,8 @@ class BackendApiContractTest(unittest.TestCase):
 
     def test_compile_modeling_import_scenario_uses_simulation_adapter(self) -> None:
         import_package = self._fixture("modeling_import_project.json")
-        self.api.save_modeling_import(import_package)
-        self.api.publish_modeling_import(import_package["importId"])
+        self.api.save_modeling_import_as_system(import_package)
+        self.api.publish_modeling_import_as_system(import_package["importId"])
 
         compiled = self.api.compile_modeling_import_scenario(import_package["importId"])
 
@@ -214,8 +378,8 @@ class BackendApiContractTest(unittest.TestCase):
 
     def test_compile_modeling_import_scenario_preserves_aviation_support_error_mapping(self) -> None:
         import_package = self._fixture("modeling_import_project.json")
-        self.api.save_modeling_import(import_package)
-        self.api.publish_modeling_import(import_package["importId"])
+        self.api.save_modeling_import_as_system(import_package)
+        self.api.publish_modeling_import_as_system(import_package["importId"])
 
         with self.assertRaises(BackendApiError) as ctx:
             self.api.compile_modeling_import_scenario(
@@ -302,7 +466,7 @@ class BackendApiContractTest(unittest.TestCase):
         invalid_package["objects"]["missionProfiles"][0].pop("name")
 
         with self.assertRaises(BackendApiError) as invalid_ctx:
-            self.api.save_modeling_import(invalid_package)
+            self.api.save_modeling_import_as_system(invalid_package)
 
         self.assertEqual(invalid_ctx.exception.code, "invalid_modeling_import")
         self.assertEqual(
@@ -322,14 +486,14 @@ class BackendApiContractTest(unittest.TestCase):
         )
 
         with self.assertRaises(BackendApiError) as publish_ctx:
-            self.api.publish_modeling_import(import_package["importId"])
+            self.api.publish_modeling_import_as_system(import_package["importId"])
 
         self.assertEqual(publish_ctx.exception.code, "published_import_referenced")
 
         changed_package = copy.deepcopy(import_package)
         changed_package["lifecycle"] = {"state": "draft", "version": 2, "referencedRunIds": []}
         changed_package["objects"]["equipmentAssets"][1]["quantity"] = 2
-        saved = self.api.save_modeling_import(changed_package)
+        saved = self.api.save_modeling_import_as_system(changed_package)
         stored = self.api.get_modeling_import(import_package["importId"])
 
         self.assertEqual(saved["status"], "draft")
@@ -337,19 +501,19 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(stored["publishedPackage"]["objects"]["equipmentAssets"][1]["quantity"], 1)
 
         with self.assertRaises(BackendApiError) as republish_ctx:
-            self.api.publish_modeling_import(import_package["importId"])
+            self.api.publish_modeling_import_as_system(import_package["importId"])
 
         self.assertEqual(republish_ctx.exception.code, "published_import_referenced")
 
     def test_compile_modeling_import_scenario_uses_persisted_published_snapshot_after_new_draft(self) -> None:
         import_package = self._fixture("modeling_import_project.json")
-        self.api.save_modeling_import(import_package)
-        self.api.publish_modeling_import(import_package["importId"])
+        self.api.save_modeling_import_as_system(import_package)
+        self.api.publish_modeling_import_as_system(import_package["importId"])
 
         changed_package = copy.deepcopy(import_package)
         changed_package["lifecycle"] = {"state": "draft", "version": 2, "referencedRunIds": []}
         changed_package["objects"]["equipmentAssets"][1]["quantity"] = 2
-        self.api.save_modeling_import(changed_package)
+        self.api.save_modeling_import_as_system(changed_package)
 
         compiled = self.api.compile_modeling_import_scenario(import_package["importId"])
 
@@ -377,7 +541,7 @@ class BackendApiContractTest(unittest.TestCase):
         )
 
         with self.assertRaises(BackendApiError) as save_ctx:
-            self.api.save_modeling_import(import_package)
+            self.api.save_modeling_import_as_system(import_package)
 
         self.assertEqual(save_ctx.exception.code, "invalid_modeling_import")
 

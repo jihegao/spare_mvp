@@ -142,7 +142,7 @@
 
 ## Ontology 关系视图与上下文数据
 
-当前实现已经不再为每个四级页面渲染右侧 `Ontology 上下文` 面板，也不再保留独立 ontology 可视化路由。项目级 ontology 仍保留在 `front/ontology-context.mjs` 中，但它的可见呈现位置已经收敛到 `可视化推演` 页面内部的 Mesa `Ontology视图` 标签。
+> M5 当前口径：本节早期的 Mesa `Ontology视图` 约定已过期。`docs/ontology-mesa-rebuild-plan.md` 已移动到 `docs/archive/deprecated/ontology-mesa-rebuild-plan.md`，仅作历史参考。当前产品路线不再要求在 Mesa 仿真中展示 ontology 视图。
 
 本规格早期使用过三层口径：
 
@@ -152,7 +152,7 @@
 | `simulation-experiment` | 实验方案、想定、可视化运行控制和 Monte Carlo 配置。 |
 | `computation-artifact` | 运行数据、指标时间序列、聚合摘要、短板/携行/可靠度/停机因素分析结果。 |
 
-该三层描述已经被 `docs/ontology-mesa-rebuild-plan.md` 中的四层约定取代；后续实现应以四层纵向画布为准：
+该三层描述曾被早期四层纵向画布约定取代，但该四层约定现已归档过期：
 
 | 层级 | 含义 |
 | --- | --- |
@@ -164,10 +164,9 @@
 实际可见行为：
 
 1. `可视化推演` 仍是唯一可导航入口。
-2. Mesa 页面内提供 `飞机视图`、`任务视图`、`保障视图`、`Ontology视图` 四个标签。
-3. `Ontology视图` 使用 `renderOntologySvg(PROJECT_ONTOLOGY, ...)` 展示项目级关系图。
-4. 右侧栏显示 `Ontology关系图`、节点总数、关系总数，以及当前四层图谱的节点汇总和选中对象属性。
-5. `front/ontology-context.mjs` 仍提供 `buildOntologyContext(page)`，用于测试、导出和后续契约服务的 focus context，不代表页面会渲染局部右侧面板。
+2. Mesa 页面产品口径保留飞机、任务、保障等状态视图。
+3. Mesa 内部 `Ontology视图` 不再作为当前产品能力或验收口径。
+4. `front/ontology-context.mjs` 可继续作为测试、导出或历史兼容辅助存在，但不代表可见页面必须渲染 ontology 图谱。
 
 关系标签以当前项目级图谱为准，例如 `包含`、`要求`、`部署在`、`隶属于`、`安装在`、`导入约束`、`引用`、`驱动`、`启动停止`、`观察`、`批量生成`、`保存`、`逐步计算`、`聚合`、`支撑`。不要再使用旧设计中的 `depends_on`、`writes_to`、`drives`、`validates`、`shares_with` 作为已实现 UI 关系标签。
 
@@ -188,7 +187,7 @@
 ## 错误处理
 
 1. 缺失字段：在校验区显示字段路径和中文说明。
-2. 关系端点缺失：由页面校验区或后续契约服务返回字段路径和引用问题；Mesa `Ontology视图` 仅用于检查结构关系，不承担每页内联报错。
+2. 关系端点缺失：由页面校验区或后端应用校验返回字段路径和引用问题；Mesa ontology 图谱不承担每页内联报错。
 3. 参数超出范围：阻止保存该字段并提示允许范围。
 4. 页面没有专属数据时：显示空状态和可创建入口，不降级成空白页。
 5. 仿真输入不完整：实验页面显示阻塞原因，不启动运行。
@@ -201,7 +200,7 @@
 1. `feature-catalog`：声明表 2 列出的四级页面、归属路径、数据对象和组件类型。
 2. `feature-router`：根据当前功能 ID 渲染页面，并维护导航高亮。
 3. `feature-page-template`：渲染标题、主编辑区、校验区和输出摘要。
-4. `ontology-context`：维护项目级 ontology、页面 focus context 辅助和 Ontology Playground 导出形态；可见图谱由 Mesa `Ontology视图` 消费。
+4. `ontology-context`：仅作为项目级 ontology、页面 focus context 辅助和 Ontology Playground 导出形态的历史兼容模块；当前产品不要求可见图谱消费它。
 
 现有 `front/app.js` 已经过长，实际实现时应优先拆分配置和渲染模块，避免继续把全部四级页面逻辑堆入单文件。
 
@@ -218,5 +217,5 @@
 9. 两个模块的四个指定结果分析页呈现 `@备件_front` 风格的独立分析面板。
 10. 保障组织建模和保障活动建模呈现 `vendor/ship_front` 风格的树表编辑和活动网络结构。
 11. 蒙特卡洛实验配置页只读展示当前仿真实验，并呈现仿真次数、随机种子和扫参配置；点击启动后回到方案列表并显示“运行中”，蒙特卡洛评价结果只在结果分析页展示。
-12. 页面侧 `Ontology 上下文` 面板和独立 ontology 可视化路由不再出现；项目级 ontology 图谱在 Mesa `Ontology视图` 中呈现。
+12. 页面侧 `Ontology 上下文` 面板、独立 ontology 可视化路由和 Mesa 内部 `Ontology视图` 均不再作为当前产品验收口径。
 13. `npm test` 通过，并新增或更新前端结构测试覆盖登录、项目列表、结果分析页、保障组织/活动建模、蒙特卡洛实验页、紧凑四级标签、页面侧上下文面板移除和 Mesa 可视化直嵌。

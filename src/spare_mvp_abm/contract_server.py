@@ -71,7 +71,7 @@ def _bootstrap_or_die() -> dict[str, type]:
             "[contract_server] failed to import Mesa models: "
             f"{exc}\n"
             "Run the service with the project's Mesa environment, e.g.\n"
-            "  .abm-mesa-env/bin/python src/spare_mvp_abm/contract_server.py\n"
+            "  .abm-mesa-test-env/bin/python src/spare_mvp_abm/contract_server.py\n"
         )
         sys.exit(1)
 

@@ -5,9 +5,24 @@ import {
 
 const DEFAULT_API_BASE = "/api";
 
-export function createBackendApiClient({ baseUrl = DEFAULT_API_BASE, transport } = {}) {
-  const request = transport || createFetchTransport(baseUrl);
+export function createBackendApiClient({ baseUrl = DEFAULT_API_BASE, transport, getAuthToken } = {}) {
+  const request = wrapAuthTransport(transport || createFetchTransport(baseUrl), getAuthToken);
   return {
+    login(username, password) {
+      return request({ method: "POST", path: "/auth/login", body: { username, password }, auth: false });
+    },
+    getSession() {
+      return request({ method: "GET", path: "/auth/session" });
+    },
+    listUsers() {
+      return request({ method: "GET", path: "/users" });
+    },
+    createUser(user) {
+      return request({ method: "POST", path: "/users", body: user });
+    },
+    updateUser(userId, updates) {
+      return request({ method: "POST", path: `/users/${encodeURIComponent(userId)}`, body: updates });
+    },
     validateProject(projectJson) {
       return request({ method: "POST", path: "/projects/validate", body: projectJson });
     },
@@ -108,14 +123,32 @@ export function buildFrontendResultState(projectJson, resultSummary = null) {
   return state;
 }
 
+function wrapAuthTransport(transport, getAuthToken) {
+  return (request) => {
+    const token = request.auth === false ? "" : getAuthToken?.();
+    if (!token) return transport(request);
+    return transport({
+      ...request,
+      headers: {
+        ...(request.headers || {}),
+        authorization: `Bearer ${token}`
+      }
+    });
+  };
+}
+
 function createFetchTransport(baseUrl) {
-  return async ({ method, path, body }) => {
+  return async ({ method, path, body, headers = {} }) => {
     if (typeof fetch !== "function") {
       throw new Error("Backend API fetch transport is unavailable");
     }
+    const requestHeaders = {
+      ...headers,
+      ...(body === undefined ? {} : { "content-type": "application/json" })
+    };
     const response = await fetch(`${baseUrl}${path}`, {
       method,
-      headers: body === undefined ? undefined : { "content-type": "application/json" },
+      headers: Object.keys(requestHeaders).length === 0 ? undefined : requestHeaders,
       body: body === undefined ? undefined : JSON.stringify(body)
     });
     const payload = await response.json().catch(() => null);

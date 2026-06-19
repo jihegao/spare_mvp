@@ -1,5 +1,9 @@
 # Ontology + Mesa 重构工作计划
 
+> **状态：已过期，归档于 2026-06-20。**
+>
+> 本文档记录早期 Ontology + Mesa 重构思路和四层 Ontology 视图约定。当前产品路线图已不再把 Mesa 仿真中的 Ontology 视图作为可见产品能力；后续以 `docs/product-roadmap.md`、M5.x 建模数据入口和后端 Project draft / run identity chain 为准。
+
 来源文档：`docs/3概要设计方案.md`，原始文档：`docs/3概要设计方案.docx`。
 
 ## 当前状态

@@ -1,5 +1,9 @@
 # Mesa 仿真服务治理约定
 
+> **状态：已过期，归档于 2026-06-20。**
+>
+> 本文档记录早期 Simulation-Contract-First Development 和 Mesa 仿真服务治理设想。当前产品路线图已将“仿真契约先行开发模式（Simulation-Contract-First Development）”标记为历史模式；后续不再以该治理文档作为当前阶段约束，新的边界以 `docs/product-roadmap.md` 和当前 M4/M5.x 计划为准。
+
 日期：2026-06-19
 
 ## 背景
@@ -76,8 +80,9 @@
 | PR-G / M3-0 | Evaluator / Test Agent | 跑通建模 -> 保存 -> 编译 -> 运行 -> 结果查看端到端闭环，并用本地同源 `/api` 验证前端可访问的真实后端 smoke。 | contract、smoke、HTTP API、e2e 全部通过；明确 `smoke` 已收束、`aviation_support` Scenario 编译仍受治理阻断，不扩大 calibration 或生产 Web API 声明。 |
 | M3-1 | Evaluator / Test Agent | 用真实浏览器验证同源 `/front/` -> `/api` 保存项目、启动 smoke run、读取 Result/ArtifactManifest，并刷新恢复同一个 `run_id`。 | `/api` 不可用时前端阻断并且不创建 `offline-demo-run`；仍不声明生产 Web API、worker 队列或长期 artifact storage。 |
 | M5 首片 | Contract Curator Agent / Evaluator Agent | 定义建模数据导入/校验 contract、JSON fixture、对象 ID/引用/数值/版本保护错误结构。 | 不做完整 Excel UI，不跳过 Simulation Adapter 拼最终 Scenario，不解锁 `aviation_support` Scenario 编译，不改变 Mesa 行为或指标口径。 |
-| M5.1 | Backend API Agent / Database Agent / Frontend Integration Agent | 将 `modeling-import-v1` 接入本地 `/api/modeling-imports/*`、SQLite `modeling_imports` 表和前端显式 API client 方法。 | 只做 validate/save/get/publish；`modeling_imports` 保存 draft/published 双 payload；同一 `import_id` 被 run 引用后不可再发布覆盖，新版本需新 `import_id`；不做 Excel UI、权限审计、worker、Scenario 生成或 Mesa 语义变更。 |
-| M5.2 | Backend API Agent / Frontend Integration Agent / Evaluator Agent | 在系统管理新增「建模数据导入」工作台，展示映射/错误/后端可恢复的草稿发布版本预览，并通过 `compile-scenario` 返回经 `SimulationAdapter.compile_scenario()` 生成的后端 Scenario 预览。 | 仍不做完整 Excel 解析、worker 基础设施、权限/审计、`aviation_support` 编译解锁或 Mesa 语义变更。 |
+| M4 backfill | Backend API Agent / Database Agent / Frontend Integration Agent | 补入本地用户、会话、建模导入授权和审计边界。 | `/api/auth/login` 返回 bearer token；HTTP 侧建模导入 save/publish/compile-scenario 需要 M4 session；普通用户发布被 `403` 阻断并写入 `audit_events`；不做完整用户管理、SSO、密码重置或试点部署安全。 |
+| M5.1 | Backend API Agent / Database Agent / Frontend Integration Agent | 将 `modeling-import-v1` 接入本地 `/api/modeling-imports/*`、SQLite `modeling_imports` 表和前端显式 API client 方法。 | 只做 validate/save/get/publish；`modeling_imports` 保存 draft/published 双 payload；同一 `import_id` 被 run 引用后不可再发布覆盖，新版本需新 `import_id`；不做 Excel UI、worker、Scenario 生成或 Mesa 语义变更；HTTP mutation 已接入 M4 session。 |
+| M5.2 | Backend API Agent / Frontend Integration Agent / Evaluator Agent | 在系统管理新增「建模数据导入」工作台，展示映射/错误/后端可恢复的草稿发布版本预览，并通过 `compile-scenario` 返回经 `SimulationAdapter.compile_scenario()` 生成的后端 Scenario 预览。 | 仍不做完整 Excel 解析、worker 基础设施、`aviation_support` 编译解锁或 Mesa 语义变更；HTTP compile-scenario 已接入 M4 session。 |
 
 ## PR 审核规则
 
