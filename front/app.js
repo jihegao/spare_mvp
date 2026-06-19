@@ -343,7 +343,7 @@ function bindEvents() {
 
     const equipmentComponentNode = event.target.closest("[data-select-equipment-component]");
     if (equipmentComponentNode) {
-      selectedEquipmentComponentIndex = Number(equipmentComponentNode.dataset.selectEquipmentComponent);
+      selectedEquipmentComponentIndex = clampEquipmentComponentIndex(Number(equipmentComponentNode.dataset.selectEquipmentComponent));
       render();
       return;
     }
@@ -1422,8 +1422,7 @@ function diffTimeMinutes(start, end) {
 }
 
 function renderEquipmentModeling(page) {
-  const selectedIndex = Math.min(Math.max(selectedEquipmentComponentIndex, 0), Math.max((scenario.components || []).length - 1, 0));
-  selectedEquipmentComponentIndex = selectedIndex;
+  const selectedIndex = clampEquipmentComponentIndex(selectedEquipmentComponentIndex);
   const selected = scenario.components[selectedIndex] || {};
   const isFailurePage = page.name.includes("故障");
   return `
@@ -1461,6 +1460,10 @@ function renderEquipmentModeling(page) {
       </section>
     </div>
   `;
+}
+
+function clampEquipmentComponentIndex(index) {
+  return clamp(Number.isFinite(index) ? index : 0, 0, Math.max((scenario.components || []).length - 1, 0));
 }
 
 function renderEquipmentCompositionFields(selectedIndex) {

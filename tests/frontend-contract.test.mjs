@@ -254,7 +254,8 @@ test("equipment composition tree node selection drives the detail form path", as
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   assert.match(appSource, /let selectedEquipmentComponentIndex = 0/);
   assert.match(appSource, /data-select-equipment-component="\$\{index\}"/);
-  assert.match(appSource, /selectedEquipmentComponentIndex = Number\(equipmentComponentNode\.dataset\.selectEquipmentComponent\)/);
+  assert.match(appSource, /selectedEquipmentComponentIndex = clampEquipmentComponentIndex\(Number\(equipmentComponentNode\.dataset\.selectEquipmentComponent\)\)/);
+  assert.match(appSource, /function clampEquipmentComponentIndex\(index\)/);
   assert.match(appSource, /renderEquipmentCompositionFields\(selectedIndex\)/);
   assert.match(appSource, /field\("组件名称", `components\.\$\{selectedIndex\}\.name`\)/);
 });
