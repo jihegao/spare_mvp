@@ -4,7 +4,7 @@
 
 ## 结论
 
-M3-1 把 M3-0 的函数/API smoke 推进到真实浏览器路径：前端从同源 `/front/` 加载，并通过同源 `/api` 执行 `Project -> Snapshot -> ExperimentPlan -> Scenario -> Run -> Result -> ArtifactManifest`。验收使用持久 SQLite 文件启动 HTTP facade，浏览器点击保存方案、启动 run、进入结果页读取 run identity chain 与 artifact manifest；刷新后，前端从后端恢复同一个 `run_id`，Project/Run/Result/Artifact 仍可查。
+M3-1 把 M3-0 的函数/API smoke 推进到真实浏览器路径；M5.3 在同一脚本中追加两个独立持久化面验证：建模页保存当前 Project draft，`仿真实验方案管理` 保存从 Project 复制出的 ExperimentPlan 分支。前端从同源 `/front/` 加载，并通过同源 `/api` 执行 `Project -> Snapshot -> ExperimentPlan -> Scenario -> Run -> Result -> ArtifactManifest`。验收使用持久 SQLite 文件启动 HTTP facade，浏览器保存 Project draft、重启后恢复建模字段，再点击保存方案、启动 run、进入结果页读取 run identity chain 与 artifact manifest；刷新后，前端从后端恢复同一个 `run_id`，Project/Run/Result/Artifact 仍可查。
 
 `/api` 不可用时，前端不再生成 `offline-demo-run`。页面会显式显示后端不可用和未创建 run_id，避免把离线演示误判为闭环。
 
@@ -25,6 +25,8 @@ SMOKE_BASE_URL=http://127.0.0.1:4173/front/ node reports/m3-1-browser-backend-sm
 脚本输出：
 
 - `output/playwright/m3-1-browser-backend-smoke/browser-backend-smoke-result.json`
+- `output/playwright/m3-1-browser-backend-smoke/00-project-draft-saved.png`
+- `output/playwright/m3-1-browser-backend-smoke/00b-project-draft-restored.png`
 - `output/playwright/m3-1-browser-backend-smoke/01-real-backend-result.png`
 - `output/playwright/m3-1-browser-backend-smoke/02-refresh-restored-result.png`
 - `output/playwright/m3-1-browser-backend-smoke/03-api-unavailable-blocked.png`
@@ -41,12 +43,14 @@ SMOKE_BASE_URL=http://127.0.0.1:4173/front/ node reports/m3-1-browser-backend-sm
 ## 覆盖链路
 
 1. 浏览器登录并进入项目工作台。
-2. 点击方案编辑页的保存方案，经 `/api/projects` 保存 Project 并创建 Snapshot。
-3. 点击蒙特卡洛实验启动，经 `/api/projects/:id/experiment-plans` 创建 ExperimentPlan，经 `/api/simulation-runs` 启动 smoke run。
-4. 结果页显示 Project、Snapshot、ExperimentPlan、Scenario、Run、Result、ArtifactManifest 身份链。
-5. 结果页显示 artifact manifest 中的 input project、compiled scenario、snapshot、result summary。
-6. 刷新后，前端从持久 SQLite 后端读取同一个 run_id、Result 和 ArtifactManifest。
-7. 浏览器拦截 `/api` 为 503 时，页面显示未创建 run_id，不生成离线演示 run。
+2. 在建模页修改 Project draft 字段，经 `/api/projects` 保存 Project；重启后重新登录，字段从持久 SQLite 恢复。
+3. 进入 `仿真实验方案管理 / 方案列表 / 方案编辑`，验证方案编辑和保存动作仍可用。
+4. 点击方案编辑页的保存方案，经 `/api/projects` 保存 Project，经 `/api/projects/:id/modeling-snapshots` 创建 Snapshot，并经 `/api/projects/:id/experiment-plans` 创建 ExperimentPlan 分支。
+5. 点击蒙特卡洛实验启动，经 ExperimentPlan 分支创建 smoke run。
+6. 结果页显示 Project、Snapshot、ExperimentPlan、Scenario、Run、Result、ArtifactManifest 身份链。
+7. 结果页显示 artifact manifest 中的 input project、compiled scenario、snapshot、result summary。
+8. 刷新后，前端从持久 SQLite 后端读取同一个 run_id、Result 和 ArtifactManifest。
+9. 浏览器拦截 `/api` 为 503 时，页面显示未创建 run_id，不生成离线演示 run。
 
 ## 验证命令
 

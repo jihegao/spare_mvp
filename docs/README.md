@@ -4,7 +4,7 @@
 
 ## 当前开发状态
 
-截至 2026-06-19，当前原型已经具备以下能力：
+截至 2026-06-20，当前原型已经具备以下能力：
 
 1. 登录页和登录后的项目列表着陆页。
 2. 从项目列表进入功能工作台，左侧按一级、二级、三级组织导航，主区显示四级功能页面。
@@ -32,6 +32,7 @@
 24. M4 权限审计 backfill 已建立本地用户、会话和审计边界：SQLite schema 包含 `users`、`sessions`、`project_access` 和 `audit_events`；`/api/auth/login` 返回 bearer token；`front/app.js` 登录后保存 M4 会话，`front/api-client.mjs` 对受保护请求附加 token。建模导入 save/publish/compile-scenario 的 HTTP 路径要求真实会话，普通用户发布会被后端阻断并写入审计。
 25. M5 建模数据入口已进入 M5.1 服务化切片：`contracts/modeling_import.schema.json` 定义导入包、草稿/发布生命周期、对象集合、变更和校验问题结构；`front/modeling-import-contract.mjs` 提供纯校验函数，`src/spare_mvp_backend/modeling_import.py` 在后端复用同一语义，`src/spare_mvp_backend/http_server.py` 暴露 `/api/modeling-imports/*` validate/save/get/publish 路径，SQLite `modeling_imports` 表持久化 `draft_payload_json`、`published_payload_json` 和 validation summary。`GET /api/modeling-imports/{import_id}` 返回 `draftPackage`、`publishedPackage`、`validation` 和 `lifecycle`，发布后再保存草稿不会覆盖已发布快照；同一 `import_id` 被 run 引用后不可再发布覆盖，新版本需使用新 `import_id`。
 26. M5.2 新增系统管理下的「建模数据导入」工作台、映射/错误/版本预览，以及经 `SimulationAdapter.compile_scenario()` 生成的后端 Scenario 预览（`compile-scenario`）。该入口消费 M5.1 的显式 API、后端恢复的草稿/发布快照和已发布导入包；完整 Excel 解析、worker 基础设施或 `aviation_support` 编译解锁仍不在本阶段。
+27. M5.3 建模页保存当前 Project draft；`仿真实验方案管理` 仍保留为概要设计要求的实验方案分支工作流。用户可从项目数据创建多个实验方案，编辑方案不回写项目数据，仿真运行和 Monte Carlo 使用选中的实验方案生成 run identity chain。
 
 ## 文档地图
 

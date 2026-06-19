@@ -136,6 +136,30 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(first_chain["run_id"], first_run["run_id"])
         self.assertEqual(second_chain["run_id"], second_run["run_id"])
 
+    def test_experiment_plan_config_branch_does_not_mutate_source_project(self) -> None:
+        project = self._fixture("smoke_project.json")
+        saved = self.api.save_project(project)
+
+        plan = self.api.create_experiment_plan(
+            saved["project_id"],
+            {
+                "name": "branch before mutation",
+                "steps": 4,
+                "assumptions": {
+                    "support_capacity": 2,
+                },
+            },
+        )
+        plan["config"]["name"] = "branch after mutation"
+        plan["config"]["assumptions"]["support_capacity"] = 99
+        self.repository.upsert_experiment_plan(plan)
+
+        stored_project = self.api.get_project(saved["project_id"])
+
+        self.assertEqual(stored_project, project)
+        self.assertEqual(stored_project["experiment"]["seed"], project["experiment"]["seed"])
+        self.assertNotIn("assumptions", stored_project["experiment"])
+
     def test_repeated_smoke_runs_create_distinct_run_chains(self) -> None:
         project = self._fixture("smoke_project.json")
 

@@ -101,7 +101,8 @@ export function buildExperimentPlanConfig(projectJson) {
     name: projectJson.experiment?.name || "frontend experiment",
     steps: Number(projectJson.experiment?.steps ?? 3),
     samples: Number(projectJson.experiment?.samples ?? 1),
-    seed: Number(projectJson.experiment?.seed ?? 0)
+    seed: Number(projectJson.experiment?.seed ?? 0),
+    monteCarlo: cloneJson(projectJson.monteCarlo || {})
   };
 }
 

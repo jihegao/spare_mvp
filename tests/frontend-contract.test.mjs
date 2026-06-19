@@ -90,6 +90,8 @@ test("feature grouping preserves three-level navigation and internal fourth-leve
   assert.equal(FEATURE_PAGES.some((page) => page.name === "装备修复性维修方案"), false);
   assert.equal(getFeaturePageById("spare-planning-experiment-create").name, "方案编辑");
   assert.equal(getFeaturePageById("spare-planning-experiment-edit").name, "方案编辑");
+  assert.equal(getFeaturePageById("mission-reliability-experiment-create").name, "方案编辑");
+  assert.equal(getFeaturePageById("mission-reliability-experiment-edit").name, "方案编辑");
   assert.equal(getFeaturePageById("spare-planning-scenario-switch").component, "visual-simulation");
   assert.equal(getFeaturePageById("spare-planning-visual-results").component, "visual-simulation");
   assert.equal(getFeaturePageById("mission-reliability-task-reliability").name, "任务可靠度评估");
@@ -100,6 +102,27 @@ test("feature grouping preserves three-level navigation and internal fourth-leve
   assert.equal(getFeaturePageById("system-management-modeling-form-management").component, "system-basic-config");
   assert.equal(getFeaturePageById("system-management-equipment-rms-allocation").component, "rms-allocation");
   assert.equal(getFeaturePageById("mission-reliability-rms-allocation").id, "system-management-equipment-rms-allocation");
+});
+
+test("experiment plan management remains visible because it is source design scope", async () => {
+  const catalogSource = await readFile(new URL("../front/feature-catalog.mjs", import.meta.url), "utf8");
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+
+  assert.match(catalogSource, /仿真实验方案管理/);
+  assert.match(catalogSource, /experiment-plan-list/);
+  assert.match(catalogSource, /experiment-plan-editor/);
+  assert.match(appSource, /function renderExperimentPlanList/);
+  assert.match(appSource, /function renderExperimentPlanEditor/);
+});
+
+test("modeling pages expose project draft persistence without replacing experiment plans", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+
+  assert.match(appSource, /data-project-draft-save/);
+  assert.match(appSource, /function saveCurrentProjectDraftThroughApi/);
+  assert.match(appSource, /function hydrateCurrentProjectDraftFromApi/);
+  assert.match(appSource, /projectDraftSaveStatus/);
+  assert.match(appSource, /data-save-plan/);
 });
 
 test("equipment task modeling omits built-in scenario and task profile parameter pages", async () => {
@@ -835,7 +858,7 @@ test("monte carlo configuration drives the displayed result sample count", async
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   assert.doesNotMatch(appSource, /runMonteCarlo\(scenario, \{ samples: 4 \}\)/);
   assert.match(appSource, /let \{ singleResult, monteCarloResult \} = buildDemoResultState\(scenario\)/);
-  assert.match(appSource, /id="mc-samples"[^>]*data-path="experiment\.samples"/);
+  assert.match(appSource, /id="mc-samples"[^>]*data-experiment-plan-path="experiment\.samples"/);
   assert.match(appSource, /function updateDemoResultsThroughApiClient/);
   assert.match(appSource, /data-save-plan/);
 });
@@ -846,9 +869,9 @@ test("monte carlo sweep inputs update scenario arrays and rerun grouped results"
   assert.match(appSource, /data-mc-array-path="monteCarlo\.spareMultipliers"/);
   assert.match(appSource, /data-mc-array-path="monteCarlo\.supportCapacities"/);
   assert.match(appSource, /const mcArrayInput = event\.target\.closest\("\[data-mc-array-path\]"\)/);
-  assert.match(appSource, /setPath\(scenario, mcArrayInput\.dataset\.mcArrayPath, parseNumberList\(mcArrayInput\.value\)\)/);
+  assert.match(appSource, /setPath\(experimentPlanDraft, mcArrayInput\.dataset\.mcArrayPath, parseNumberList\(mcArrayInput\.value\)\)/);
   assert.match(appSource, /function parseNumberList/);
-  assert.match(appSource, /updateDemoResultsThroughApiClient\(\)/);
+  assert.match(appSource, /updateDemoResultsThroughApiClient\(experimentPlanDraft\)/);
   assert.match(appSource, /const savePlanButton = event\.target\.closest\("\[data-save-plan\]"\)/);
 });
 
@@ -872,6 +895,48 @@ test("monte carlo experiment page is a launch-only parameter form and returns to
   assert.doesNotMatch(appSource, /预检查/);
   assert.match(styleSource, /\.mc-workbench/);
   assert.match(styleSource, /\.mc-config-panel/);
+});
+
+test("experiment plan editor edits an isolated branch rather than the project draft", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const editorSource = appSource.slice(
+    appSource.indexOf("function renderExperimentPlanEditor"),
+    appSource.indexOf("async function handleLogin")
+  );
+  const experimentPlanChangeSource = appSource.slice(
+    appSource.indexOf('const experimentPlanInput = event.target.closest("[data-experiment-plan-path]"'),
+    appSource.indexOf('const rmsInput = event.target.closest("[data-rms-path]"')
+  );
+  const saveButtonSource = appSource.slice(
+    appSource.indexOf('const savePlanButton = event.target.closest("[data-save-plan]"'),
+    appSource.indexOf('const periodicAddButton = event.target.closest("[data-periodic-add]"')
+  );
+  const createBranchSource = appSource.slice(
+    appSource.indexOf("function createExperimentPlanBranchFromCurrentProject"),
+    appSource.indexOf("function renderCollapsibleTree")
+  );
+
+  assert.match(editorSource, /data-experiment-plan-path/);
+  assert.match(appSource, /function createExperimentPlanBranchFromCurrentProject/);
+  assert.match(appSource, /createExperimentPlanBranchFromCurrentProject\(\)/);
+  assert.match(createBranchSource, /if \(experimentPlanBranchActive\) return/);
+  assert.match(experimentPlanChangeSource, /setPath\(experimentPlanDraft, experimentPlanInput\.dataset\.experimentPlanPath/);
+  assert.doesNotMatch(experimentPlanChangeSource, /setPath\(scenario/);
+  assert.match(saveButtonSource, /saveCurrentExperimentPlanThroughApi\(\)/);
+  assert.doesNotMatch(saveButtonSource, /saveCurrentProjectThroughApi\(\)/);
+});
+
+test("monte carlo launch creates a run from the current experiment plan branch", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const launchSource = appSource.slice(
+    appSource.indexOf("async function startExperimentRunThroughApi"),
+    appSource.indexOf("async function refreshRunResultThroughApi")
+  );
+
+  assert.match(launchSource, /const planProjectJson = buildBackendProjectJson\(experimentPlanDraft, currentProject\)/);
+  assert.match(launchSource, /backendApi\.createExperimentPlan/);
+  assert.match(launchSource, /buildExperimentPlanConfig\(planProjectJson\)/);
+  assert.match(launchSource, /backendApi\.startSimulationRun\(savedProject\.project_id, experimentPlan\.experiment_plan_id, "smoke"\)/);
 });
 
 test("carry list analysis maps Chinese risk levels to visible priority badges", async () => {

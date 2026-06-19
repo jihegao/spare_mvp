@@ -230,7 +230,7 @@ M3-1 当前收束：已完成浏览器同源后端闭环 smoke，证据见 `repo
 
 目标：让建模页成为真实项目资料维护和场景生成入口，而不是静态表单集合。
 
-当前推进口径：M5 数据入口曾在跳过 M4 的前提下先行推进；当前 M4 backfill 已补入本地会话、角色和审计边界，因此 M5 的 save/publish/compile-scenario HTTP 路径必须带 M4 bearer token。M5 首片不做完整 Excel UI；先定义建模数据导入/校验 contract、错误定位结构、草稿/发布版本和运行引用保护。M5.1 将该 contract 接入本地后端 API、SQLite 持久化和前端 API client。M5.2 新增系统管理下的「建模数据导入」工作台、映射/错误/版本预览，以及经 `SimulationAdapter.compile_scenario()` 生成的后端 Scenario 预览（`compile-scenario`）。
+当前推进口径：M5 数据入口曾在跳过 M4 的前提下先行推进；当前 M4 backfill 已补入本地会话、角色和审计边界，因此 M5 的 save/publish/compile-scenario HTTP 路径必须带 M4 bearer token。M5 首片不做完整 Excel UI；先定义建模数据导入/校验 contract、错误定位结构、草稿/发布版本和运行引用保护。M5.1 将该 contract 接入本地后端 API、SQLite 持久化和前端 API client。M5.2 新增系统管理下的「建模数据导入」工作台、映射/错误/版本预览，以及经 `SimulationAdapter.compile_scenario()` 生成的后端 Scenario 预览（`compile-scenario`）。M5.3 把建模页当前数据保存为后端 Project draft，同时保留概要设计中的 `仿真实验方案管理` 作为 ExperimentPlan 分支工作流。
 
 核心工作：
 
@@ -273,6 +273,17 @@ M5.2 工作台与 Scenario 预览入口：
 2. 映射、错误和版本预览继续消费 M5.1 的 modeling-import contract issue shape 和后端恢复的 `draftPackage`/`publishedPackage`，不新增自动保存或自由 Excel 映射器。
 3. 已发布且通过校验的导入包可请求后端 Scenario 预览，后端必须读取持久化的 `publishedPackage` 并经 `SimulationAdapter.compile_scenario()` 生成，前端和 Backend API handler 不直接拼最终 Scenario JSON。
 4. M5.2 仍不包含完整 Excel 解析、worker 基础设施、Mesa 行为变更或 `aviation_support` 编译解锁；HTTP 侧 save/publish/compile-scenario 已接入 M4 会话和审计边界。
+
+### M5.3 建模草稿持久化与实验方案分支
+
+目标：把建模页的项目数据保存为后端 Project draft，同时保留概要设计中的 `仿真实验方案管理`。ExperimentPlan 是从 Project 复制出的可编辑仿真分支，编辑方案不影响项目数据；运行仿真和 Monte Carlo 时使用选中的方案保留可复现 run identity chain。
+
+边界：
+
+1. Project draft 持久化只负责当前项目建模数据的保存与恢复，不替代 `方案列表` 和 `方案编辑`。
+2. `data-save-plan` 属于 ExperimentPlan 分支保存动作；通用建模字段编辑使用 Project draft 保存路径。
+3. 创建或运行 ExperimentPlan 时从当前 Project 建模快照复制配置，方案编辑状态不回写 source Project。
+4. 本阶段不扩大 M4 用户、会话、授权或审计范围，也不把 M5.1/M5.2 的建模导入工作台扩展为完整 Excel UI。
 
 ## M6：仿真引擎服务化
 

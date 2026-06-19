@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-import { createBackendApiClient } from "../front/api-client.mjs";
+import { buildExperimentPlanConfig, createBackendApiClient } from "../front/api-client.mjs";
 
 test("frontend API client exposes stable PR-F save run and result methods", async () => {
   const calls = [];
@@ -133,6 +133,36 @@ test("frontend API client exposes explicit M5 modeling import methods", async ()
   assert.equal(calls[0].body, importPackage);
   assert.equal(calls[1].body, importPackage);
   assert.deepEqual(calls[4].body, { model_family: "smoke" });
+});
+
+test("experiment plan config preserves Monte Carlo branch sweep settings", () => {
+  const config = buildExperimentPlanConfig({
+    experiment: {
+      name: "branch config",
+      steps: 12,
+      samples: 24,
+      seed: 20260620
+    },
+    monteCarlo: {
+      failureRates: [0.06, 0.08, 0.1],
+      spareMultipliers: [0.75, 1, 1.25],
+      supportCapacities: [2, 3],
+      minRequiredSorties: [4, 5]
+    }
+  });
+
+  assert.deepEqual(config, {
+    name: "branch config",
+    steps: 12,
+    samples: 24,
+    seed: 20260620,
+    monteCarlo: {
+      failureRates: [0.06, 0.08, 0.1],
+      spareMultipliers: [0.75, 1, 1.25],
+      supportCapacities: [2, 3],
+      minRequiredSorties: [4, 5]
+    }
+  });
 });
 
 test("frontend API client logs in and attaches M4 bearer token to protected calls", async () => {
@@ -289,11 +319,24 @@ test("frontend generic editing remains local until explicit save or run", async 
   assert.match(changeHandlerSource, /setPath\(scenario, input\.dataset\.path, parseInput\(input\)\)/);
   assert.match(changeHandlerSource, /updateDemoResultsThroughApiClient\(\)/);
   assert.doesNotMatch(changeHandlerSource, /saveCurrentProjectThroughApi\(\)/);
-  assert.match(monteCarloArraySource, /updateDemoResultsThroughApiClient\(\)/);
+  assert.match(changeHandlerSource, /markProjectDraftChanged\(\)/);
+  assert.match(monteCarloArraySource, /updateDemoResultsThroughApiClient\(experimentPlanDraft\)/);
   assert.doesNotMatch(monteCarloArraySource, /saveCurrentProjectThroughApi\(\)/);
   assert.match(appSource, /data-save-plan/);
-  assert.match(saveButtonSource, /saveCurrentProjectThroughApi\(\)/);
+  assert.match(saveButtonSource, /saveCurrentExperimentPlanThroughApi\(\)/);
+  assert.doesNotMatch(saveButtonSource, /saveCurrentProjectThroughApi\(\)/);
   assert.match(saveButtonSource, /render\(\)/);
+});
+
+test("app hydrates and saves current project draft through project API", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+
+  assert.match(appSource, /const PROJECT_DRAFT_AUTOSAVE_DELAY_MS = 800/);
+  assert.match(appSource, /function currentBackendProjectId/);
+  assert.match(appSource, /async function hydrateCurrentProjectDraftFromApi/);
+  assert.match(appSource, /async function saveCurrentProjectDraftThroughApi/);
+  assert.match(appSource, /backendApi\.getProject\(currentBackendProjectId\(\)\)/);
+  assert.match(appSource, /backendApi\.saveProject\(projectJson\)/);
 });
 
 test("frontend app wires modeling import workbench through explicit backend actions", async () => {

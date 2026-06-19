@@ -37,6 +37,7 @@ const groups = groupFeaturePages(FEATURE_PAGES);
 const CONTRACT_BASE = "http://127.0.0.1:8521"; // Mesa 契约服务（见 agent.md「Mesa 后台契约服务」）
 const LAST_BACKEND_RUN_STORAGE_KEY = "spare-mvp:lastBackendRun";
 const AUTH_SESSION_STORAGE_KEY = "spare-mvp:m4Session";
+const PROJECT_DRAFT_AUTOSAVE_DELAY_MS = 800;
 let backendAuthToken = readStoredBackendAuthToken();
 const backendApi = createBackendApiClient({ baseUrl: "/api", getAuthToken: () => backendAuthToken });
 const DEFAULT_ROUTE = "login";
@@ -248,6 +249,8 @@ const MODELING_IMPORT_DEMO_FIXTURE = {
 };
 
 let scenario = cloneScenario(defaultScenario);
+let experimentPlanDraft = cloneScenario(scenario);
+let experimentPlanBranchActive = false;
 let { singleResult, monteCarloResult } = buildDemoResultState(scenario);
 let rmsAllocationProject = createDemoRmsAllocationProject();
 let rmsAllocationPlan = createDefaultRmsAllocationPlan(rmsAllocationProject);
@@ -262,6 +265,10 @@ let modelingImportSaved = false;
 let savedProject = null;
 let modelingSnapshot = null;
 let experimentPlan = null;
+let projectDraftSaveStatus = "未保存";
+let projectDraftHydrateStatus = "";
+let projectDraftAutosaveTimer = null;
+let projectDraftLastSavedAt = "";
 let backendRun = null;
 let backendRunResult = null;
 let backendArtifactManifest = null;
@@ -329,6 +336,7 @@ function bindEvents() {
   window.addEventListener("hashchange", () => {
     selectedRoute = readRouteFromHash() || DEFAULT_ROUTE;
     selectedFeatureId = readFeatureIdFromHash() || DEFAULT_FEATURE_ID;
+    createExperimentPlanBranchFromCurrentProject();
     render();
   });
 
@@ -536,6 +544,8 @@ function bindEvents() {
       selectedFeatureId = DEFAULT_FEATURE_ID;
       isProjectMenuOpen = false;
       location.hash = `feature=${DEFAULT_FEATURE_ID}`;
+      projectDraftHydrateStatus = "正在读取 Project draft";
+      hydrateCurrentProjectDraftFromApi().finally(() => render());
       render();
       return;
     }
@@ -631,6 +641,12 @@ function bindEvents() {
       return;
     }
 
+    const projectDraftSaveButton = event.target.closest("[data-project-draft-save]");
+    if (projectDraftSaveButton) {
+      saveCurrentProjectDraftThroughApi().finally(() => render());
+      return;
+    }
+
     const systemUserActionButton = event.target.closest("[data-system-user-action]");
     if (systemUserActionButton) {
       handleSystemUserAction(systemUserActionButton.dataset.systemUserAction).finally(() => render());
@@ -646,7 +662,7 @@ function bindEvents() {
 
     const savePlanButton = event.target.closest("[data-save-plan]");
     if (savePlanButton) {
-      saveCurrentProjectThroughApi().finally(() => render());
+      saveCurrentExperimentPlanThroughApi().finally(() => render());
       return;
     }
 
@@ -704,6 +720,7 @@ function bindEvents() {
     if (featureButton) {
       selectedRoute = "workbench";
       selectedFeatureId = featureButton.dataset.featureId;
+      createExperimentPlanBranchFromCurrentProject();
       location.hash = `feature=${selectedFeatureId}`;
       render();
     }
@@ -726,7 +743,17 @@ function bindEvents() {
 
     const periodicInput = event.target.closest("[data-periodic-field]");
     if (periodicInput) {
+      markProjectDraftChanged();
       updateSelectedPeriodicTask(periodicInput.dataset.periodicField, parseInput(periodicInput));
+      return;
+    }
+
+    const experimentPlanInput = event.target.closest("[data-experiment-plan-path]");
+    if (experimentPlanInput) {
+      experimentPlanBranchActive = true;
+      setPath(experimentPlanDraft, experimentPlanInput.dataset.experimentPlanPath, parseInput(experimentPlanInput));
+      updateDemoResultsThroughApiClient(experimentPlanDraft);
+      render();
       return;
     }
 
@@ -757,6 +784,7 @@ function bindEvents() {
     setPath(scenario, input.dataset.path, parseInput(input));
     normalizeEquipmentKOutOfNForPath(input.dataset.path);
     updateDemoResultsThroughApiClient();
+    if (isCurrentModelingPage()) markProjectDraftChanged();
     render();
   });
 
@@ -1048,10 +1076,24 @@ function renderFeaturePage(page) {
       ${renderFourthLevelTabs(page, siblingPages)}
       <div class="page-grid">
         <section class="panel main-panel">
+          ${renderProjectDraftToolbar(page)}
           ${renderMainComponent(page)}
         </section>
       </div>
     </section>
+  `;
+}
+
+function renderProjectDraftToolbar(page) {
+  if (page.secondary !== "仿真建模") return "";
+  const savedAtText = projectDraftLastSavedAt ? ` / ${htmlEscape(projectDraftLastSavedAt)}` : "";
+  const hydrateText = projectDraftHydrateStatus ? `<span>${htmlEscape(projectDraftHydrateStatus)}</span>` : "";
+  return `
+    <div class="toolbar-row project-draft-toolbar">
+      <button type="button" class="btn-primary" data-project-draft-save>保存 Project draft</button>
+      <span class="badge">${htmlEscape(projectDraftSaveStatus)}${savedAtText}</span>
+      ${hydrateText}
+    </div>
   `;
 }
 
@@ -1145,6 +1187,15 @@ function renderMainComponent(page) {
   if (page.name === "复合任务建模") return renderCompositeTaskModeling(page);
   if (page.name === "周期性任务建模") return renderPeriodicTaskModeling(page);
   return renderTaskModel(page);
+}
+
+function createExperimentPlanBranchFromCurrentProject() {
+  const page = getFeaturePageById(selectedFeatureId);
+  if (!["experiment-plan-editor", "experiment-form", "monte-carlo-config"].includes(page.component)) return;
+  if (experimentPlanBranchActive) return;
+  experimentPlanDraft = cloneScenario(scenario);
+  experimentPlanBranchActive = true;
+  updateDemoResultsThroughApiClient(experimentPlanDraft);
 }
 
 function renderCollapsibleTree(nodes, options = {}) {
@@ -3387,18 +3438,22 @@ function renderExperimentPlanEditor(page) {
       <span>实验方案参数</span>
     </div>
     <div class="form-table-grid">
-      ${field("实验名称", "experiment.name")}
-      ${field("仿真步数", "experiment.steps", "number")}
-      ${field("样本数", "experiment.samples", "number")}
-      ${field("随机种子", "experiment.seed", "number")}
-      ${field("并行核心数", "experiment.parallelCores", "number")}
-      ${field("停止条件", "experiment.stopCondition")}
+      ${experimentPlanField("实验名称", "experiment.name")}
+      ${experimentPlanField("仿真步数", "experiment.steps", "number")}
+      ${experimentPlanField("样本数", "experiment.samples", "number")}
+      ${experimentPlanField("随机种子", "experiment.seed", "number")}
+      ${experimentPlanField("并行核心数", "experiment.parallelCores", "number")}
+      ${experimentPlanField("停止条件", "experiment.stopCondition")}
     </div>
     <div class="plan-editor-actions">
       <button type="button" data-plan-list-link>返回方案列表</button>
       <button type="button" class="btn-primary" data-save-plan>保存方案</button>
     </div>
   `;
+}
+
+function experimentPlanField(label, path, type = "text") {
+  return `<label>${label}<input data-experiment-plan-path="${path}" type="${type}" value="${htmlEscape(getPath(experimentPlanDraft, path))}"></label>`;
 }
 
 async function handleLogin() {
@@ -3429,31 +3484,98 @@ async function handleLogin() {
 }
 
 async function saveCurrentProjectThroughApi() {
+  return saveCurrentProjectDraftThroughApi();
+}
+
+function currentBackendProjectId() {
+  return currentProject.id ? `project-${currentProject.id}` : `project-${scenario.scenarioId}`;
+}
+
+function isCurrentModelingPage() {
+  return getFeaturePageById(selectedFeatureId).secondary === "仿真建模";
+}
+
+function markProjectDraftChanged() {
+  if (!isCurrentModelingPage()) return;
+  experimentPlanBranchActive = false;
+  projectDraftSaveStatus = "有未保存修改";
+  scheduleProjectDraftAutosave();
+}
+
+function scheduleProjectDraftAutosave() {
+  if (projectDraftAutosaveTimer) clearTimeout(projectDraftAutosaveTimer);
+  projectDraftAutosaveTimer = setTimeout(() => {
+    projectDraftAutosaveTimer = null;
+    saveCurrentProjectDraftThroughApi().finally(() => render());
+  }, PROJECT_DRAFT_AUTOSAVE_DELAY_MS);
+}
+
+async function hydrateCurrentProjectDraftFromApi() {
+  try {
+    const projectJson = await backendApi.getProject(currentBackendProjectId());
+    scenario = cloneScenario(projectJson);
+    experimentPlanDraft = cloneScenario(projectJson);
+    updateDemoResultsThroughApiClient();
+    savedProject = {
+      project_id: projectJson.project_id || currentBackendProjectId(),
+      project_version: projectJson.project_version || "project-v0.1",
+      status: "hydrated"
+    };
+    projectDraftSaveStatus = "已保存";
+    projectDraftHydrateStatus = "已从 Project draft 恢复";
+    backendApiStatus = "Project draft 已恢复";
+  } catch (err) {
+    projectDraftHydrateStatus = `未读取到 Project draft：${err && err.message ? err.message : "Backend API 不可用"}`;
+  }
+}
+
+async function saveCurrentProjectDraftThroughApi() {
   const projectJson = buildBackendProjectJson(scenario, currentProject);
   try {
     savedProject = await backendApi.saveProject(projectJson);
-    modelingSnapshot = await backendApi.createModelingSnapshot(savedProject.project_id);
-    backendApiStatus = "已保存";
+    projectDraftSaveStatus = "已保存";
+    projectDraftLastSavedAt = new Date().toLocaleTimeString("zh-CN", { hour12: false });
+    projectDraftHydrateStatus = "";
+    backendApiStatus = "Project draft 已保存";
   } catch (err) {
     savedProject = {
       project_id: projectJson.project_id,
       project_version: projectJson.project_version,
       status: "offline-demo"
     };
-    modelingSnapshot = null;
+    projectDraftSaveStatus = "保存失败";
     backendApiStatus = `离线演示：${err && err.message ? err.message : "Backend API 不可用"}`;
   }
 }
 
-async function startExperimentRunThroughApi() {
+async function saveCurrentExperimentPlanThroughApi() {
   const projectJson = buildBackendProjectJson(scenario, currentProject);
-  updateDemoResultsThroughApiClient();
+  const planProjectJson = buildBackendProjectJson(experimentPlanDraft, currentProject);
   try {
     savedProject = await backendApi.saveProject(projectJson);
     modelingSnapshot = await backendApi.createModelingSnapshot(savedProject.project_id);
     experimentPlan = await backendApi.createExperimentPlan(
       savedProject.project_id,
-      buildExperimentPlanConfig(projectJson)
+      buildExperimentPlanConfig(planProjectJson)
+    );
+    backendApiStatus = "实验方案分支已保存";
+  } catch (err) {
+    modelingSnapshot = null;
+    experimentPlan = null;
+    backendApiStatus = `实验方案保存失败：${err && err.message ? err.message : "Backend API 不可用"}`;
+  }
+}
+
+async function startExperimentRunThroughApi() {
+  const projectJson = buildBackendProjectJson(scenario, currentProject);
+  const planProjectJson = buildBackendProjectJson(experimentPlanDraft, currentProject);
+  updateDemoResultsThroughApiClient(experimentPlanDraft);
+  try {
+    savedProject = await backendApi.saveProject(projectJson);
+    modelingSnapshot = await backendApi.createModelingSnapshot(savedProject.project_id);
+    experimentPlan = await backendApi.createExperimentPlan(
+      savedProject.project_id,
+      buildExperimentPlanConfig(planProjectJson)
     );
     backendRun = await backendApi.startSimulationRun(savedProject.project_id, experimentPlan.experiment_plan_id, "smoke");
     await refreshRunResultThroughApi(backendRun.run_id);
@@ -3529,8 +3651,8 @@ function forgetLastBackendRun() {
   }
 }
 
-function updateDemoResultsThroughApiClient() {
-  const state = buildDemoResultState(buildBackendProjectJson(scenario, currentProject));
+function updateDemoResultsThroughApiClient(projectJsonSource = scenario) {
+  const state = buildDemoResultState(buildBackendProjectJson(projectJsonSource, currentProject));
   singleResult = state.singleResult;
   monteCarloResult = state.monteCarloResult;
 }
@@ -4172,15 +4294,15 @@ function renderMonteCarloConfig() {
         <div class="mc-form">
           <div class="readonly-field">
             <span>当前仿真实验</span>
-            <strong>${htmlEscape(scenario.experiment.name)}</strong>
+            <strong>${htmlEscape(experimentPlanDraft.experiment.name)}</strong>
           </div>
           <div class="mc-inline-fields">
-            <label>仿真次数<input id="mc-samples" data-path="experiment.samples" type="number" min="1" value="${scenario.experiment.samples}"></label>
-            <label>随机种子<input data-path="experiment.seed" type="number" value="${scenario.experiment.seed}"></label>
+            <label>仿真次数<input id="mc-samples" data-experiment-plan-path="experiment.samples" type="number" min="1" value="${experimentPlanDraft.experiment.samples}"></label>
+            <label>随机种子<input data-experiment-plan-path="experiment.seed" type="number" value="${experimentPlanDraft.experiment.seed}"></label>
           </div>
-          <label>故障率扫描<input data-mc-array-path="monteCarlo.failureRates" value="${scenario.monteCarlo.failureRates.join(",")}"></label>
-          <label>备件倍数<input data-mc-array-path="monteCarlo.spareMultipliers" value="${scenario.monteCarlo.spareMultipliers.join(",")}"></label>
-          <label>保障容量<input data-mc-array-path="monteCarlo.supportCapacities" value="${scenario.monteCarlo.supportCapacities.join(",")}"></label>
+          <label>故障率扫描<input data-mc-array-path="monteCarlo.failureRates" value="${experimentPlanDraft.monteCarlo.failureRates.join(",")}"></label>
+          <label>备件倍数<input data-mc-array-path="monteCarlo.spareMultipliers" value="${experimentPlanDraft.monteCarlo.spareMultipliers.join(",")}"></label>
+          <label>保障容量<input data-mc-array-path="monteCarlo.supportCapacities" value="${experimentPlanDraft.monteCarlo.supportCapacities.join(",")}"></label>
           <div class="mc-action-row">
             <button type="button" class="btn-primary" data-mc-action="start">启动</button>
           </div>
@@ -4589,8 +4711,9 @@ function parseNumberList(value) {
 }
 
 function updateMonteCarloArrayInput(mcArrayInput) {
-  setPath(scenario, mcArrayInput.dataset.mcArrayPath, parseNumberList(mcArrayInput.value));
-  updateDemoResultsThroughApiClient();
+  experimentPlanBranchActive = true;
+  setPath(experimentPlanDraft, mcArrayInput.dataset.mcArrayPath, parseNumberList(mcArrayInput.value));
+  updateDemoResultsThroughApiClient(experimentPlanDraft);
 }
 
 function stateLabel(state) {
