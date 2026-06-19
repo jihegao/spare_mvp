@@ -218,6 +218,7 @@ let selectedBasicMissionEquipmentType = scenario.basicMission.equipmentType || s
 let selectedCompositeTaskId = "";
 let selectedCombatUnitMemberIndex = 0;
 let selectedSupportOrgNodeId = "base-level";
+let selectedSupportActivityJobKeys = new Set();
 
 const PERIODIC_WEEKDAY_FIELDS = [
   { key: "mondayCompositeTaskId", legacyKey: "monday", label: "周一" },
@@ -414,6 +415,20 @@ function bindEvents() {
       return;
     }
 
+    const supportActivityJobDeleteButton = event.target.closest("[data-support-activity-job-delete]");
+    if (supportActivityJobDeleteButton) {
+      deleteSupportActivityJob(supportActivityJobDeleteButton.dataset.supportActivityJobDelete);
+      render();
+      return;
+    }
+
+    const supportActivityBatchDeleteButton = event.target.closest("[data-support-activity-job-batch-delete]");
+    if (supportActivityBatchDeleteButton) {
+      deleteSelectedSupportActivityJobs(supportActivityBatchDeleteButton.dataset.supportActivityJobBatchDelete);
+      render();
+      return;
+    }
+
     const loginButton = event.target.closest("[data-login-submit]");
     if (loginButton) {
       isLoggedIn = true;
@@ -596,6 +611,20 @@ function bindEvents() {
   });
 
   app.addEventListener("change", (event) => {
+    const supportActivitySelectAll = event.target.closest("[data-support-activity-job-select-all]");
+    if (supportActivitySelectAll) {
+      toggleAllSupportActivityJobSelection(supportActivitySelectAll.dataset.supportActivityJobSelectAll, supportActivitySelectAll.checked);
+      render();
+      return;
+    }
+
+    const supportActivityJobSelect = event.target.closest("[data-support-activity-job-select]");
+    if (supportActivityJobSelect) {
+      toggleSupportActivityJobSelection(supportActivityJobSelect.dataset.supportActivityJobSelect, supportActivityJobSelect.checked);
+      render();
+      return;
+    }
+
     const periodicInput = event.target.closest("[data-periodic-field]");
     if (periodicInput) {
       updateSelectedPeriodicTask(periodicInput.dataset.periodicField, parseInput(periodicInput));
@@ -2760,6 +2789,78 @@ function supportActivityJobs(activity) {
     : [{ activityCode: "BA-001", workName: activity.activityType || "保障作业", predecessors: [], durationMinutes: Number(activity.durationHours || 1) * 60 }];
 }
 
+function supportActivityJobKey(tabKey, index) {
+  return `${tabKey}:${index}`;
+}
+
+function findSupportActivityByJobTabKey(tabKey) {
+  if (tabKey === "ops_plan") {
+    return (scenario.supportActivities || []).find((activity) => activity.planType === "直接准备方案")
+      || (scenario.supportActivities || []).find((activity) => activity.activityType === "飞行前保障")
+      || scenario.supportActivities?.[0]
+      || null;
+  }
+  if (tabKey === "prev_repair") {
+    return (scenario.supportActivities || []).find((activity) => activity.activityType === "预防性维修") || scenario.supportActivities?.[0] || null;
+  }
+  if (tabKey === "corr_repair") {
+    return (scenario.supportActivities || []).find((activity) => activity.activityType === "修复性维修") || scenario.supportActivities?.[0] || null;
+  }
+  return null;
+}
+
+function toggleSupportActivityJobSelection(key, checked) {
+  const next = new Set(selectedSupportActivityJobKeys);
+  if (checked) next.add(key);
+  else next.delete(key);
+  selectedSupportActivityJobKeys = next;
+}
+
+function toggleAllSupportActivityJobSelection(tabKey, checked) {
+  const activity = findSupportActivityByJobTabKey(tabKey);
+  const keys = supportActivityJobs(activity || {}).map((_, index) => supportActivityJobKey(tabKey, index));
+  const next = new Set(selectedSupportActivityJobKeys);
+  for (const key of keys) {
+    if (checked) next.add(key);
+    else next.delete(key);
+  }
+  selectedSupportActivityJobKeys = next;
+}
+
+function deleteSupportActivityJob(key) {
+  const [tabKey, rawIndex] = String(key || "").split(":");
+  const index = Number(rawIndex);
+  const activity = findSupportActivityByJobTabKey(tabKey);
+  if (!activity || !Number.isInteger(index)) return;
+  const jobs = supportActivityJobs(activity).slice();
+  if (index < 0 || index >= jobs.length) return;
+  jobs.splice(index, 1);
+  activity.jobs = jobs;
+  selectedSupportActivityJobKeys.delete(key);
+  renumberSupportActivityJobSelections(tabKey);
+  updateDemoResultsThroughApiClient();
+}
+
+function deleteSelectedSupportActivityJobs(tabKey) {
+  const activity = findSupportActivityByJobTabKey(tabKey);
+  if (!activity) return;
+  const selectedIndexes = Array.from(selectedSupportActivityJobKeys)
+    .map((key) => {
+      const [keyTab, rawIndex] = String(key).split(":");
+      return keyTab === tabKey ? Number(rawIndex) : NaN;
+    })
+    .filter(Number.isInteger);
+  if (selectedIndexes.length === 0) return;
+  const selectedSet = new Set(selectedIndexes);
+  activity.jobs = supportActivityJobs(activity).filter((_, index) => !selectedSet.has(index));
+  selectedSupportActivityJobKeys = new Set(Array.from(selectedSupportActivityJobKeys).filter((key) => !String(key).startsWith(`${tabKey}:`)));
+  updateDemoResultsThroughApiClient();
+}
+
+function renumberSupportActivityJobSelections(tabKey) {
+  selectedSupportActivityJobKeys = new Set(Array.from(selectedSupportActivityJobKeys).filter((key) => !String(key).startsWith(`${tabKey}:`)));
+}
+
 function describeDurationProfile(profile, fallbackMinutes) {
   if (!profile || typeof profile !== "object") return `${Number(fallbackMinutes || 0)}min 固定值`;
   if (profile.distributionType === "正态分布") return `正态分布 mean=${profile.mean ?? fallbackMinutes}, std=${profile.stdDev ?? "-"}`;
@@ -2771,7 +2872,8 @@ function describeDurationProfile(profile, fallbackMinutes) {
 
 function renderSupportActivityJobRows(activity, tabKey) {
   return supportActivityJobs(activity).map((job, index) => `
-    <tr>
+    <tr class="${selectedSupportActivityJobKeys.has(supportActivityJobKey(tabKey, index)) ? "selected-table-row" : ""}">
+      <td><input type="checkbox" data-support-activity-job-select="${htmlEscape(supportActivityJobKey(tabKey, index))}" ${selectedSupportActivityJobKeys.has(supportActivityJobKey(tabKey, index)) ? "checked" : ""}></td>
       <td>${index + 1}</td>
       <td>${htmlEscape(job.activityCode || `BA-${String(index + 1).padStart(3, "0")}`)}</td>
       <td>${htmlEscape(job.workName || "-")}</td>
@@ -2779,18 +2881,21 @@ function renderSupportActivityJobRows(activity, tabKey) {
       <td>${htmlEscape(Array.isArray(job.predecessors) && job.predecessors.length ? job.predecessors.join("、") : "-")}</td>
       <td>${Number(job.durationMinutes || 0)}</td>
       <td>${htmlEscape(describeDurationProfile(job.durationProfile, job.durationMinutes))}</td>
-      <td><button type="button" class="inline-action" data-support-activity-job="${htmlEscape(tabKey)}-${index}">编辑</button></td>
+      <td><button type="button" class="inline-action" data-support-activity-job="${htmlEscape(tabKey)}-${index}">编辑</button><button type="button" class="btn-danger" data-support-activity-job-delete="${htmlEscape(supportActivityJobKey(tabKey, index))}">删除</button></td>
     </tr>
   `).join("");
 }
 
 function renderSupportActivityJobTable(activity, tabKey) {
+  const jobs = supportActivityJobs(activity);
+  const selectedCount = jobs.filter((_, index) => selectedSupportActivityJobKeys.has(supportActivityJobKey(tabKey, index))).length;
+  const allSelected = jobs.length > 0 && selectedCount === jobs.length;
   return `
     <h4>工作项目清单</h4>
-    <div class="toolbar-row"><button type="button" class="btn-primary">新增基本保障活动</button><button type="button">批量删除</button></div>
+    <div class="toolbar-row"><button type="button" class="btn-primary">新增基本保障活动</button><button type="button" class="btn-danger" data-support-activity-job-batch-delete="${htmlEscape(tabKey)}">批量删除</button></div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>序号</th><th>基本保障活动编号</th><th>作业项</th><th>子作业</th><th>紧前作业</th><th>工期(min)</th><th>工期分布摘要</th><th>操作</th></tr></thead>
+        <thead><tr><th><input type="checkbox" data-support-activity-job-select-all="${htmlEscape(tabKey)}" ${allSelected ? "checked" : ""}></th><th>序号</th><th>基本保障活动编号</th><th>作业项</th><th>子作业</th><th>紧前作业</th><th>工期(min)</th><th>工期分布摘要</th><th>操作</th></tr></thead>
         <tbody>${renderSupportActivityJobRows(activity, tabKey)}</tbody>
       </table>
     </div>

@@ -352,6 +352,18 @@ test("support activity pages align to ship_front_0515 comprehensive activity fie
   assert.match(supportActivitySource, /renderPreventiveMaintenanceActivity/);
   assert.match(supportActivitySource, /renderCorrectiveMaintenanceActivity/);
   assert.match(supportActivitySource, /renderLogisticsSupportActivity/);
+  const supportActivityJobSource = supportActivitySource.slice(
+    supportActivitySource.indexOf("function renderSupportActivityJobRows"),
+    supportActivitySource.indexOf("function renderBasicActivityLibrary")
+  );
+  assert.match(supportActivityJobSource, /data-support-activity-job-select/);
+  assert.match(supportActivityJobSource, /data-support-activity-job-select-all/);
+  assert.match(supportActivityJobSource, /data-support-activity-job-batch-delete/);
+  assert.match(supportActivityJobSource, /data-support-activity-job-delete/);
+  assert.match(supportActivityJobSource, /selectedSupportActivityJobKeys/);
+  assert.match(supportActivitySource, /function toggleSupportActivityJobSelection/);
+  assert.match(supportActivitySource, /function deleteSelectedSupportActivityJobs/);
+  assert.match(supportActivitySource, /function deleteSupportActivityJob/);
   const basicActivityLibrarySource = supportActivitySource.slice(
     supportActivitySource.indexOf("function renderBasicActivityLibrary"),
     supportActivitySource.indexOf("function renderOperationsSupportActivity")
