@@ -24,6 +24,7 @@ const app = document.querySelector("#app");
 const groups = groupFeaturePages(FEATURE_PAGES);
 const CONTRACT_BASE = "http://127.0.0.1:8521"; // Mesa 契约服务（见 agent.md「Mesa 后台契约服务」）
 const backendApi = createBackendApiClient({ baseUrl: "/api" });
+const LAST_BACKEND_RUN_STORAGE_KEY = "spare-mvp:lastBackendRun";
 const DEFAULT_ROUTE = "login";
 const DEFAULT_FEATURE_ID = "spare-planning-experiment-plan-list";
 const DEMO_USERS = [
@@ -135,6 +136,7 @@ let experimentPlan = null;
 let backendRun = null;
 let backendRunResult = null;
 let backendArtifactManifest = null;
+let backendRunChain = null;
 let backendApiStatus = "离线演示";
 let isLoggedIn = false;
 let currentUser = DEMO_USERS[2];
@@ -160,6 +162,7 @@ let isProjectMenuOpen = false;
 
 render();
 bindEvents();
+hydrateLastBackendRunFromApi();
 
 function bindEvents() {
   window.addEventListener("hashchange", () => {
@@ -1732,13 +1735,9 @@ async function saveCurrentProjectThroughApi() {
     modelingSnapshot = await backendApi.createModelingSnapshot(savedProject.project_id);
     backendApiStatus = "已保存";
   } catch (err) {
-    savedProject = {
-      project_id: projectJson.project_id,
-      project_version: projectJson.project_version,
-      status: "offline-demo"
-    };
+    savedProject = null;
     modelingSnapshot = null;
-    backendApiStatus = `离线演示：${err && err.message ? err.message : "Backend API 不可用"}`;
+    backendApiStatus = `后端不可用，保存未进入闭环：${err && err.message ? err.message : "Backend API 不可用"}`;
   }
 }
 
@@ -1754,17 +1753,17 @@ async function startExperimentRunThroughApi() {
     );
     backendRun = await backendApi.startSimulationRun(savedProject.project_id, experimentPlan.experiment_plan_id, "smoke");
     await refreshRunResultThroughApi(backendRun.run_id);
+    rememberLastBackendRun(backendRun.run_id, savedProject.project_id);
     experimentRunStatus = backendRun.status === "succeeded" ? "完成" : backendRun.status;
     backendApiStatus = "运行完成";
   } catch (err) {
-    backendRun = {
-      run_id: "offline-demo-run",
-      project_id: projectJson.project_id,
-      status: "offline-demo"
-    };
+    backendRun = null;
     backendRunResult = null;
     backendArtifactManifest = null;
-    backendApiStatus = `离线演示：${err && err.message ? err.message : "Backend API 不可用"}`;
+    backendRunChain = null;
+    forgetLastBackendRun();
+    experimentRunStatus = "后端不可用";
+    backendApiStatus = `后端不可用，未创建 run_id：${err && err.message ? err.message : "Backend API 不可用"}`;
   } finally {
     render();
   }
@@ -1772,11 +1771,58 @@ async function startExperimentRunThroughApi() {
 
 async function refreshRunResultThroughApi(runId = backendRun?.run_id) {
   if (!runId) return;
+  backendRun = await backendApi.getRun(runId);
   backendRunResult = await backendApi.getRunResult(runId);
   backendArtifactManifest = await backendApi.getRunArtifacts(runId);
+  backendRunChain = await backendApi.getRunChain(runId);
+  if (backendRun.project_id) {
+    savedProject = await backendApi.getProject(backendRun.project_id);
+  }
   const state = buildFrontendResultState(buildBackendProjectJson(scenario, currentProject), backendRunResult);
   singleResult = state.singleResult;
   monteCarloResult = state.monteCarloResult;
+}
+
+async function hydrateLastBackendRunFromApi() {
+  const stored = readLastBackendRun();
+  if (!stored?.run_id) return;
+  try {
+    await refreshRunResultThroughApi(stored.run_id);
+    backendApiStatus = "已从后端恢复";
+    experimentRunStatus = backendRun?.status === "succeeded" ? "完成" : backendRun?.status || "已恢复";
+    isLoggedIn = true;
+    if (selectedRoute === DEFAULT_ROUTE) selectedRoute = "workbench";
+    render();
+  } catch (err) {
+    forgetLastBackendRun();
+    backendApiStatus = `后端不可用，刷新恢复已阻断：${err && err.message ? err.message : "Backend API 不可用"}`;
+    render();
+  }
+}
+
+function rememberLastBackendRun(runId, projectId) {
+  if (!runId) return;
+  try {
+    localStorage.setItem("spare-mvp:lastBackendRun", JSON.stringify({ run_id: runId, project_id: projectId || "", saved_at: new Date().toISOString() }));
+  } catch (err) {
+    return;
+  }
+}
+
+function readLastBackendRun() {
+  try {
+    return JSON.parse(localStorage.getItem("spare-mvp:lastBackendRun") || "null");
+  } catch (err) {
+    return null;
+  }
+}
+
+function forgetLastBackendRun() {
+  try {
+    localStorage.removeItem(LAST_BACKEND_RUN_STORAGE_KEY);
+  } catch (err) {
+    return;
+  }
 }
 
 function updateDemoResultsThroughApiClient() {
@@ -2213,11 +2259,34 @@ function averageGroupMetric(metric) {
 function renderMonteCarloResults() {
   const groups = monteCarloResult.groups || [];
   const resultRows = buildMonteCarloEvaluationRows();
+  const backendChainRows = backendRunChain
+    ? [
+        ["Project", backendRunChain.project_id],
+        ["Snapshot", backendRunChain.modeling_snapshot_id],
+        ["ExperimentPlan", backendRunChain.experiment_plan_id],
+        ["Scenario", backendRunChain.scenario_id],
+        ["Run", backendRunChain.run_id],
+        ["Result", backendRunChain.result_summary_id],
+        ["ArtifactManifest", backendRunChain.artifact_manifest_id]
+      ]
+    : [];
+  const artifactRows = backendArtifactManifest && backendArtifactManifest.artifacts
+    ? backendArtifactManifest.artifacts
+    : [];
   return `
     <div class="mc-result-panel">
       <div class="section-head">
         <h3>蒙特卡洛评估结果</h3>
         <span>${monteCarloResult.runs.length} 个样本</span>
+      </div>
+      <div class="backend-run-chain">
+        <span>后端状态：${htmlEscape(backendApiStatus)}</span>
+        ${backendChainRows.length
+          ? `<table><tbody>${backendChainRows.map(([label, value]) => `<tr><th>${htmlEscape(label)}</th><td>${htmlEscape(value)}</td></tr>`).join("")}</tbody></table>`
+          : `<p>${htmlEscape(backendRun?.run_id || "尚未读取 run_id 身份链")}</p>`}
+        ${artifactRows.length
+          ? `<table><tbody>${artifactRows.map((artifact) => `<tr><th>${htmlEscape(artifact.kind)}</th><td>${htmlEscape(artifact.path)}</td></tr>`).join("")}</tbody></table>`
+          : ""}
       </div>
       <div class="mc-result-cards">
         ${resultRows.map((row) => `

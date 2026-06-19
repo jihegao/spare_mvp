@@ -73,7 +73,7 @@
 | PR-D | Database Agent | 增加数据库 migration 和 repository。 | `schema_version`、`project_version`、`scenario_version`、`run_id`、`artifact_manifest_id` 可追溯。 |
 | PR-E | Backend API Agent | 实现 Project / ExperimentPlan / SimulationRun / ArtifactManifest CRUD 和运行编排。 | API 只消费 contract 和 adapter 返回，不直接解释仿真语义。 |
 | PR-F | Frontend Integration Agent | 前端改为保存 Project JSON、提交运行、读取真实 result/artifact。 | 当前 UX 保持，页面不再直接拼最终 Scenario。 |
-| PR-G | Evaluator / Test Agent | 跑通建模 -> 保存 -> 编译 -> 运行 -> 结果查看端到端闭环。 | contract、smoke、e2e 全部通过，并产出字段漂移检查报告。 |
+| PR-G / M3-0 | Evaluator / Test Agent | 跑通建模 -> 保存 -> 编译 -> 运行 -> 结果查看端到端闭环，并用本地同源 `/api` 验证前端可访问的真实后端 smoke。 | contract、smoke、HTTP API、e2e 全部通过；明确 `smoke` 已收束、`aviation_support` Scenario 编译仍受治理阻断，不扩大 calibration 或生产 Web API 声明。 |
 
 ## PR 审核规则
 

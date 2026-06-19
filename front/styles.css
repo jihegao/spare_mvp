@@ -912,6 +912,41 @@ input {
   max-width: 760px;
 }
 
+.backend-run-chain {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fafc;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.backend-run-chain span {
+  font-weight: 700;
+}
+
+.backend-run-chain table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.backend-run-chain th,
+.backend-run-chain td {
+  padding: 4px 0;
+  border-top: 1px solid var(--line);
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.backend-run-chain th {
+  width: 132px;
+  color: var(--muted);
+}
+
 .mc-form {
   display: grid;
   gap: 12px;

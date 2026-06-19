@@ -20,13 +20,14 @@
 
 ## 当前基线判断
 
-截至 2026-06-18，当前原型已经完成四级功能页面化和核心静态工作台整合，但仍处在原型阶段：
+截至 2026-06-19，M3-1 已在 M3-0 函数/API smoke 基础上收束出浏览器可访问的同源后端闭环 smoke，但整体系统仍处在原型到真实系统迁移阶段：
 
-1. 前端状态主要保存在浏览器内存中，没有后端持久化。
-2. Monte Carlo 可以在前端重算并响应扫参输入，但还不是后端 worker 运行产物。
-3. Mesa 可视化页已嵌入本地航空保障状态，但仍以本地状态帧和原型数据为主。
-4. 结果分析页面形态已经接近目标，但部分指标仍来自前端演示逻辑或局部推导。
-5. 登录、用户、权限、审计、运行管理和产物管理还没有真实系统实现。
+1. 四级功能页面化和核心静态工作台已经稳定，M0/M1 浏览器 smoke 可作为后续后端接入的对照基线。
+2. `src/spare_mvp_backend/http_server.py`、`BackendApi`、`SimulationAdapter` 和 SQLite repository 已跑通同源 `/api` + `Project -> Snapshot -> ExperimentPlan -> Scenario -> Run -> Result -> ArtifactManifest` 真实后端闭环 smoke，并已通过 M3-1 浏览器刷新恢复和 API 不可用阻断验收。
+3. 前端已有 `front/api-client.mjs` 边界，显式保存、启动运行、读取结果和读取产物通过 API client 表达；通用建模编辑仍保持本地，直到显式保存或运行。
+4. Monte Carlo 页面仍保留前端局部演示/扫参能力，尚未升级为后端 worker 或批量运行产物。
+5. Mesa 可视化页已嵌入本地航空保障状态，但 `aviation_support` Project 到 Scenario 的字段派生规则仍按治理边界保持未批准。
+6. 登录、用户、权限、审计、运行管理、长期 artifact storage 和生产 Web API 还没有真实系统实现。
 
 ## M0：稳定当前原型基线
 
@@ -152,6 +153,10 @@ Simulation Contract Service
 
 目标：建立原型到真实系统的持久化分水岭。
 
+M3-0 当前收束：已完成本地标准库 HTTP facade + 函数级 Backend API 的真实后端闭环 smoke，证据见 `reports/m3-0-real-backend-loop/README.md`。该收束证明已批准的 `smoke` 模型族可以通过同源 `/api`、Backend API facade 和 repository 完成保存、编译、运行、结果、产物和身份链读取；它不代表生产 Web API、worker 队列、长期对象存储、权限体系或 `aviation_support` Scenario 编译已经完成。
+
+M3-1 当前收束：已完成浏览器同源后端闭环 smoke，证据见 `reports/m3-1-browser-backend-smoke/README.md`。该收束证明前端可从 `/front/` 通过 `/api` 保存项目、启动 smoke run、读取 Result/ArtifactManifest，并在刷新后从持久 SQLite 恢复同一个 `run_id`；`/api` 不可用时不再生成 `offline-demo-run`。
+
 核心 API：
 
 1. 契约查询与版本查询。
@@ -220,6 +225,8 @@ Simulation Contract Service
 ## M5：建模数据从页面表单升级为可校验项目数据
 
 目标：让建模页成为真实项目资料维护和场景生成入口，而不是静态表单集合。
+
+当前推进口径：用户选择跳过 M4 的用户、权限和审计实施，先收束 M3-1/RMS 当前分支，并把 M5 作为下一条产品数据主线。M5 首片不做完整 Excel UI；先定义建模数据导入/校验 contract、错误定位结构、草稿/发布版本和运行引用保护。
 
 核心工作：
 
@@ -461,9 +468,8 @@ M3/M6 的第一步不是直接建设完整后端，而是把 `Simulation Contrac
 
 ## 近期建议
 
-1. 先把 M0 作为当前前端收敛阶段的完成口径。
-2. 并行起草 M1 的 MVP 验收清单和页面到数据对象映射。
-3. 在 M1 稳定后启动 M2a：把现有仿真模型和 ontology 包装为 `Simulation Contract Service`，先写契约测试，再写服务实现。
-4. 启动 M2b：补齐 `Project`、`ExperimentPlan`、权限、运行记录和 artifact metadata 等应用数据契约。
-5. 用 TDD 串接前端、数据库和仿真服务：先红测最小项目数据校验、场景编译、运行提交和结果查询，再补实现。
-6. 每次 PR 更新页面流转、数据对象或结果口径时，同步更新本文档或相关验收清单。
+1. 先收束当前 M3-1/RMS 分支，保持浏览器后端闭环、RMS 分配页面、测试和证据报告一致。
+2. 跳过 M4 的实现切片，暂不做真实用户、权限和审计。
+3. 启动 M5 首片：建模数据导入/校验 contract、错误定位结构、草稿/发布版本和运行引用保护。
+4. M5 首片通过后，再决定是否补完整 Excel UI、权限审计或生产 worker。
+5. 每次 PR 更新页面流转、数据对象或结果口径时，同步更新本文档或相关验收清单。

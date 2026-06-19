@@ -18,13 +18,15 @@ test("contract-first smoke flow saves modeling state and fetches run outputs", a
   assert.equal(flow.plan.project_id, flow.saved.project_id);
   assert.equal(flow.plan.config.steps, 4);
   assert.equal(flow.run.status, "succeeded");
-  assert.equal(flow.run.run_id, "run-scenario-smoke-contract-demo");
+  assert.match(flow.run.run_id, /^run-scenario-smoke-contract-demo-[0-9a-f]{12}-\d{4}$/);
   assert.equal(flow.storedRun.experiment_plan_id, flow.plan.experiment_plan_id);
   assert.equal(flow.result.result_id, flow.run.result_summary_id);
   assert.equal(flow.result.run_id, flow.run.run_id);
   assert.equal(flow.artifactManifest.artifact_manifest_id, flow.run.artifact_manifest_id);
   assert.equal(flow.artifactManifest.run_id, flow.run.run_id);
   assert.equal(flow.chain.project_id, flow.saved.project_id);
+  assert.equal(flow.chain.modeling_snapshot_id, flow.snapshot.snapshot_id);
+  assert.equal(flow.chain.experiment_plan_id, flow.plan.experiment_plan_id);
   assert.equal(flow.chain.scenario_id, flow.run.scenario_id);
   assert.equal(flow.chain.run_id, flow.run.run_id);
   assert.equal(flow.chain.result_summary_id, flow.run.result_summary_id);
@@ -52,11 +54,57 @@ test("contract-first smoke flow saves modeling state and fetches run outputs", a
   assert.match(report, /node --test tests\/e2e-contract-flow\.test\.mjs/);
   assert.match(report, /python3 --version/);
   assert.match(report, /node --version/);
-  assert.match(report, new RegExp(flow.run.run_id));
-  assert.match(report, new RegExp(flow.run.result_summary_id));
-  assert.match(report, new RegExp(flow.run.artifact_manifest_id));
+  assert.match(report, /run-scenario-smoke-contract-demo-<plan-hash>-0001/);
+  assert.match(report, /result-run-scenario-smoke-contract-demo-<plan-hash>-0001/);
+  assert.match(report, /artifact-manifest-run-scenario-smoke-contract-demo-<plan-hash>-0001/);
   assert.match(report, /已知限制/);
   assert.match(report, /不代表 calibration quality/);
+});
+
+test("M3-0 backend loop closeout remains documented and roadmap points to M3-1 current boundary", async () => {
+  const closeoutPath = new URL("../reports/m3-0-real-backend-loop/README.md", import.meta.url);
+  assert.equal(existsSync(closeoutPath), true, "M3-0 closeout report must exist");
+  const closeout = await readFile(closeoutPath, "utf8");
+  assert.match(closeout, /# M3-0 真实后端闭环收束/);
+  assert.match(closeout, /Project -> Snapshot -> ExperimentPlan -> Scenario -> Run -> Result -> ArtifactManifest/);
+  assert.match(closeout, /npm test/);
+  assert.match(closeout, /\.abm-mesa-test-env\/bin\/python -m unittest/);
+  assert.match(closeout, /不改变 Mesa 行为/);
+
+  const repoReadme = await readFile(new URL("../README.md", import.meta.url), "utf8");
+  assert.match(repoReadme, /M3-0 真实后端闭环/);
+  assert.match(repoReadme, /reports\/m3-0-real-backend-loop\/README\.md/);
+
+  const docsReadme = await readFile(new URL("../docs/README.md", import.meta.url), "utf8");
+  assert.match(docsReadme, /M3-0 真实后端闭环/);
+
+  const roadmap = await readFile(new URL("../docs/product-roadmap.md", import.meta.url), "utf8");
+  assert.match(roadmap, /截至 2026-06-19，M3-1/);
+  assert.match(roadmap, /M3-0 函数\/API smoke/);
+  assert.match(roadmap, /真实后端闭环 smoke/);
+  assert.doesNotMatch(roadmap, /前端状态主要保存在浏览器内存中，没有后端持久化。/);
+});
+
+test("M3-1 browser backend smoke closeout documents the real browser acceptance boundary", async () => {
+  const closeoutPath = new URL("../reports/m3-1-browser-backend-smoke/README.md", import.meta.url);
+  assert.equal(existsSync(closeoutPath), true, "M3-1 browser backend smoke report must exist");
+  const closeout = await readFile(closeoutPath, "utf8");
+  assert.match(closeout, /# M3-1 同源后端浏览器闭环验收/);
+  assert.match(closeout, /\.abm-mesa-test-env\/bin\/python -m src\.spare_mvp_backend\.http_server --port 4173/);
+  assert.match(closeout, /reports\/m3-1-browser-backend-smoke\/browser-backend-smoke\.mjs/);
+  assert.match(closeout, /Project -> Snapshot -> ExperimentPlan -> Scenario -> Run -> Result -> ArtifactManifest/);
+  assert.match(closeout, /持久 SQLite/);
+  assert.match(closeout, /刷新后/);
+  assert.match(closeout, /离线演示/);
+  assert.match(closeout, /未创建 run_id/);
+  assert.match(closeout, /不做生产账号\/权限/);
+  assert.match(closeout, /不做 worker 队列/);
+  assert.match(closeout, /不解锁 aviation_support Scenario 编译/);
+  assert.match(closeout, /不扩展 Mesa 行为/);
+
+  const roadmap = await readFile(new URL("../docs/product-roadmap.md", import.meta.url), "utf8");
+  assert.match(roadmap, /M3-1 当前收束/);
+  assert.match(roadmap, /offline-demo-run/);
 });
 
 function runPythonContractFlow() {

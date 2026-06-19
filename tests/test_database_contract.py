@@ -114,6 +114,7 @@ class DatabaseContractTest(unittest.TestCase):
                 "project_id": "project-smoke-contract-001",
                 "project_version": "project-v0.1",
                 "project_schema_version": "project-v0",
+                "experiment_plan_id": "experiment-plan-smoke-001",
                 "scenario_id": "scenario-smoke-contract-001",
                 "scenario_version": "scenario-v0.1",
                 "scenario_schema_version": "scenario-v0",
@@ -125,6 +126,29 @@ class DatabaseContractTest(unittest.TestCase):
                 "artifact_manifest_schema_version": "artifact-manifest-v0",
             },
         )
+
+    def test_initialize_database_migrates_existing_experiment_plan_table(self) -> None:
+        connection = sqlite3.connect(":memory:")
+        try:
+            connection.executescript(
+                """
+                CREATE TABLE experiment_plans (
+                  experiment_plan_id TEXT PRIMARY KEY,
+                  project_id TEXT NOT NULL,
+                  schema_version TEXT NOT NULL,
+                  project_version TEXT NOT NULL,
+                  status TEXT NOT NULL DEFAULT 'draft',
+                  payload_json TEXT NOT NULL,
+                  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+                """
+            )
+            initialize_database(connection)
+            columns = {row[1] for row in connection.execute("pragma table_info(experiment_plans)")}
+            self.assertIn("modeling_snapshot_id", columns)
+        finally:
+            connection.close()
 
     def test_repository_does_not_silently_return_mismatched_run_artifacts(self) -> None:
         project = self._fixture("smoke_project.json")

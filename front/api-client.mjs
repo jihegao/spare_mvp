@@ -15,6 +15,9 @@ export function createBackendApiClient({ baseUrl = DEFAULT_API_BASE, transport }
       await request({ method: "POST", path: "/projects/validate", body: projectJson });
       return request({ method: "POST", path: "/projects", body: projectJson });
     },
+    getProject(projectId) {
+      return request({ method: "GET", path: `/projects/${encodeURIComponent(projectId)}` });
+    },
     createModelingSnapshot(projectId) {
       return request({ method: "POST", path: `/projects/${encodeURIComponent(projectId)}/modeling-snapshots` });
     },
