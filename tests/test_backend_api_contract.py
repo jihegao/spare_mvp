@@ -25,9 +25,15 @@ class RecordingAdapter(SimulationAdapter):
         self.compile_calls.append((copy.deepcopy(project), model_family))
         return super().compile_scenario(project, model_family=model_family)
 
-    def run_scenario(self, scenario: dict, output_dir: Path | str, steps: int = 3) -> dict[str, dict]:
-        self.run_calls.append((copy.deepcopy(scenario), steps))
-        return super().run_scenario(scenario, output_dir=output_dir, steps=steps)
+    def run_scenario(
+        self,
+        scenario: dict,
+        output_dir: Path | str,
+        steps: int = 3,
+        run_id: str | None = None,
+    ) -> dict[str, dict]:
+        self.run_calls.append((copy.deepcopy(scenario), steps, run_id))
+        return super().run_scenario(scenario, output_dir=output_dir, steps=steps, run_id=run_id)
 
 
 class BackendApiContractTest(unittest.TestCase):
@@ -61,23 +67,19 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(snapshot["project_version"], "project-v0.1")
         self.assertEqual(plan["project_id"], saved["project_id"])
         self.assertEqual(plan["config"]["steps"], 4)
-        self.assertEqual(
-            run,
-            {
-                "run_id": "run-scenario-smoke-contract-demo",
-                "project_id": "project-smoke-contract-001",
-                "scenario_id": "scenario-smoke-contract-demo",
-                "result_summary_id": "result-run-scenario-smoke-contract-demo",
-                "artifact_manifest_id": "artifact-manifest-run-scenario-smoke-contract-demo",
-                "status": "succeeded",
-            },
-        )
+        self.assertRegex(run["run_id"], r"^run-scenario-smoke-contract-demo-[0-9a-f]{12}-\d{4}$")
+        self.assertEqual(run["project_id"], "project-smoke-contract-001")
+        self.assertRegex(run["scenario_id"], r"^scenario-smoke-contract-demo-[0-9a-f]{12}-\d{4}$")
+        self.assertEqual(run["result_summary_id"], f"result-{run['run_id']}")
+        self.assertEqual(run["artifact_manifest_id"], f"artifact-manifest-{run['run_id']}")
+        self.assertEqual(run["status"], "succeeded")
 
         self.assertEqual(len(self.adapter.compile_calls), 1)
         self.assertEqual(self.adapter.compile_calls[0], (project, "smoke"))
         self.assertEqual(len(self.adapter.run_calls), 1)
         self.assertEqual(self.adapter.run_calls[0][0]["scenario_id"], run["scenario_id"])
         self.assertEqual(self.adapter.run_calls[0][1], 4)
+        self.assertEqual(self.adapter.run_calls[0][2], run["run_id"])
 
         stored_run = self.api.get_run(run["run_id"])
         result = self.api.get_run_result(run["run_id"])
@@ -92,10 +94,62 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(manifest["artifact_manifest_id"], run["artifact_manifest_id"])
         self.assertEqual(manifest["run_id"], run["run_id"])
         self.assertEqual(chain["project_id"], run["project_id"])
+        self.assertEqual(chain["modeling_snapshot_id"], snapshot["snapshot_id"])
+        self.assertEqual(chain["experiment_plan_id"], plan["experiment_plan_id"])
         self.assertEqual(chain["scenario_id"], run["scenario_id"])
         self.assertEqual(chain["run_id"], run["run_id"])
         self.assertEqual(chain["result_summary_id"], run["result_summary_id"])
         self.assertEqual(chain["artifact_manifest_id"], run["artifact_manifest_id"])
+
+    def test_run_chain_preserves_snapshot_and_plan_after_project_resave(self) -> None:
+        project = self._fixture("smoke_project.json")
+
+        first_saved = self.api.save_project(project)
+        first_snapshot = self.api.create_modeling_snapshot(first_saved["project_id"])
+        first_plan = self.api.create_experiment_plan(first_saved["project_id"], {"name": "same config", "steps": 1})
+        first_run = self.api.start_simulation_run(
+            first_saved["project_id"],
+            first_plan["experiment_plan_id"],
+            model_family="smoke",
+        )
+
+        changed_project = copy.deepcopy(project)
+        changed_project["experiment"]["name"] = "changed after first run"
+        second_saved = self.api.save_project(changed_project)
+        second_snapshot = self.api.create_modeling_snapshot(second_saved["project_id"])
+        second_plan = self.api.create_experiment_plan(second_saved["project_id"], {"name": "same config", "steps": 1})
+        second_run = self.api.start_simulation_run(
+            second_saved["project_id"],
+            second_plan["experiment_plan_id"],
+            model_family="smoke",
+        )
+
+        first_chain = self.api.get_run_chain(first_run["run_id"])
+        second_chain = self.api.get_run_chain(second_run["run_id"])
+
+        self.assertNotEqual(first_snapshot["snapshot_id"], second_snapshot["snapshot_id"])
+        self.assertNotEqual(first_plan["experiment_plan_id"], second_plan["experiment_plan_id"])
+        self.assertEqual(first_chain["modeling_snapshot_id"], first_snapshot["snapshot_id"])
+        self.assertEqual(first_chain["experiment_plan_id"], first_plan["experiment_plan_id"])
+        self.assertEqual(second_chain["modeling_snapshot_id"], second_snapshot["snapshot_id"])
+        self.assertEqual(second_chain["experiment_plan_id"], second_plan["experiment_plan_id"])
+        self.assertEqual(first_chain["run_id"], first_run["run_id"])
+        self.assertEqual(second_chain["run_id"], second_run["run_id"])
+
+    def test_repeated_smoke_runs_create_distinct_run_chains(self) -> None:
+        project = self._fixture("smoke_project.json")
+
+        saved = self.api.save_project(project)
+        plan = self.api.create_experiment_plan(saved["project_id"], {"name": "repeatable smoke", "steps": 1})
+        first = self.api.start_simulation_run(saved["project_id"], plan["experiment_plan_id"], model_family="smoke")
+        second = self.api.start_simulation_run(saved["project_id"], plan["experiment_plan_id"], model_family="smoke")
+
+        self.assertNotEqual(first["run_id"], second["run_id"])
+        self.assertNotEqual(first["scenario_id"], second["scenario_id"])
+        self.assertNotEqual(first["result_summary_id"], second["result_summary_id"])
+        self.assertNotEqual(first["artifact_manifest_id"], second["artifact_manifest_id"])
+        self.assertEqual(self.api.get_run_chain(first["run_id"])["run_id"], first["run_id"])
+        self.assertEqual(self.api.get_run_chain(second["run_id"])["run_id"], second["run_id"])
 
     def test_unsupported_aviation_support_path_is_explicit(self) -> None:
         project = self._fixture("aviation_support_project.json")
@@ -117,6 +171,123 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(len(self.adapter.compile_calls), 1)
         self.assertEqual(self.adapter.compile_calls[0][1], "aviation_support")
         self.assertEqual(self.adapter.run_calls, [])
+
+    def test_modeling_import_api_validates_saves_and_publishes_package(self) -> None:
+        import_package = self._fixture("modeling_import_project.json")
+
+        validation = self.api.validate_modeling_import(import_package)
+        saved = self.api.save_modeling_import(import_package)
+        published = self.api.publish_modeling_import(import_package["importId"])
+        stored = self.api.get_modeling_import(import_package["importId"])
+
+        self.assertTrue(validation["ok"])
+        self.assertEqual(validation["status"], "valid")
+        self.assertEqual(validation["issues"], [])
+        self.assertEqual(saved["import_id"], import_package["importId"])
+        self.assertEqual(saved["project_id"], import_package["projectId"])
+        self.assertEqual(saved["validation_status"], "valid")
+        self.assertEqual(published["lifecycle"]["state"], "published")
+        self.assertEqual(stored["validation"]["status"], "valid")
+
+    def test_modeling_import_api_reports_field_level_issues(self) -> None:
+        import_package = self._fixture("modeling_import_project.json")
+        import_package["objects"]["supportActivities"][0]["resourceId"] = "missing-resource"
+        import_package["objects"]["equipmentAssets"][1]["quantity"] = 0
+
+        validation = self.api.validate_modeling_import(import_package)
+
+        self.assertFalse(validation["ok"])
+        self.assertEqual(validation["status"], "invalid")
+        self.assertEqual(
+            sorted(issue["code"] for issue in validation["issues"]),
+            ["invalid_number", "missing_reference"],
+        )
+        self.assertEqual(
+            {issue["field_path"] for issue in validation["issues"]},
+            {
+                "objects.equipmentAssets[1].quantity",
+                "objects.supportActivities[0].resourceId",
+            },
+        )
+
+    def test_modeling_import_api_covers_contract_parity_issues(self) -> None:
+        import_package = self._fixture("modeling_import_project.json")
+        import_package["schemaVersion"] = "modeling-import-v0"
+        import_package["objects"].pop("supportResources")
+        import_package["objects"]["equipmentAssets"].append(
+            {
+                "id": "radar-lru",
+                "name": "重复雷达 LRU",
+                "parentId": "aircraft-root",
+                "quantity": 1,
+                "mtbfHours": 900,
+            }
+        )
+        import_package["lifecycle"] = {
+            "state": "published",
+            "version": 1,
+            "referencedRunIds": ["run-smoke-contract-001"],
+        }
+        import_package["changes"] = [
+            {
+                "operation": "update",
+                "objectType": "equipmentAssets",
+                "objectId": "radar-lru",
+                "fieldPath": "objects.equipmentAssets[1].name",
+            }
+        ]
+
+        validation = self.api.validate_modeling_import(import_package)
+        issues_by_code = {issue["code"]: issue for issue in validation["issues"]}
+
+        self.assertFalse(validation["ok"])
+        self.assertIn("invalid_schema_version", issues_by_code)
+        self.assertIn("missing_required_root", issues_by_code)
+        self.assertIn("duplicate_id", issues_by_code)
+        self.assertIn("published_reference_protection", issues_by_code)
+        self.assertEqual(
+            issues_by_code["published_reference_protection"]["field_path"],
+            "objects.equipmentAssets[1].name",
+        )
+        self.assertEqual(
+            issues_by_code["published_reference_protection"]["page"],
+            "装备组成建模",
+        )
+
+    def test_modeling_import_api_rejects_invalid_save_and_referenced_publish(self) -> None:
+        import_package = self._fixture("modeling_import_project.json")
+        invalid_package = copy.deepcopy(import_package)
+        invalid_package["objects"]["missionProfiles"][0].pop("name")
+
+        with self.assertRaises(BackendApiError) as invalid_ctx:
+            self.api.save_modeling_import(invalid_package)
+
+        self.assertEqual(invalid_ctx.exception.code, "invalid_modeling_import")
+        self.assertEqual(
+            invalid_ctx.exception.details["issues"][0]["field_path"],
+            "objects.missionProfiles[0].name",
+        )
+
+        referenced_package = copy.deepcopy(import_package)
+        referenced_package["lifecycle"] = {
+            "state": "published",
+            "version": 1,
+            "referencedRunIds": ["run-smoke-contract-001"],
+        }
+        self.repository.upsert_modeling_import(
+            referenced_package,
+            {"ok": True, "status": "valid", "issues": []},
+        )
+
+        with self.assertRaises(BackendApiError) as publish_ctx:
+            self.api.publish_modeling_import(import_package["importId"])
+
+        self.assertEqual(publish_ctx.exception.code, "published_import_referenced")
+
+        with self.assertRaises(BackendApiError) as save_ctx:
+            self.api.save_modeling_import(import_package)
+
+        self.assertEqual(save_ctx.exception.code, "published_import_referenced")
 
 
 if __name__ == "__main__":

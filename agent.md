@@ -5,7 +5,7 @@
 ## 基本原则
 
 1. 先读取当前仓库状态，再判断实现边界；不要只按历史记忆修改。
-2. 保持 PR 切片边界清晰。当前前端工作主要集中在 `front/`、`tests/`、`docs/`、`src/spare_mvp_abm/aviation_support/` 和 `vendor/ship_front/`。
+2. 保持 PR 切片边界清晰。当前工作主要集中在 `front/`、`tests/`、`docs/`、`contracts/`、`reports/`、`src/spare_mvp_backend/`、`src/spare_mvp_contract/`、`src/spare_mvp_abm/aviation_support/` 和 `vendor/ship_front/`；M5 数据入口切片还会触达导入 fixture、contract 测试、`modeling_imports` 持久化和 `/api/modeling-imports/*` 本地后端路径。
 3. 不把静态原型、小样本 Monte Carlo 或 Mesa 烟测描述成工程级校准平台。
 4. 修改功能流转、页面入口、仿真参数或结果口径时，必须同步更新 `README.md`、`docs/README.md` 或对应设计/实现文档。
 5. 运行时代码不得依赖 `/Users/gaojihe/...` 下的外部原型路径；这些路径只能出现在来源说明或本地验证命令中。
@@ -16,6 +16,7 @@
 ```bash
 npm test
 python3 -m http.server 4173
+.abm-mesa-test-env/bin/python -m src.spare_mvp_backend.http_server --port 4173
 .abm-mesa-env/bin/python src/spare_mvp_abm/contract_server.py  # Mesa 契约服务（默认 8521）
 ```
 
@@ -33,6 +34,11 @@ http://127.0.0.1:4173/front/
 4. Monte Carlo 配置页修改扫参后，结果分析页显示新参数组。
 5. 点击 Monte Carlo “启动”后返回方案列表，当前方案状态为“运行中”。
 6. 可视化推演页面直接显示 Mesa 页面内容，不显示外层四级导航。
+7. M3-1 同源后端路径用 `.abm-mesa-test-env/bin/python -m src.spare_mvp_backend.http_server --port 4173` 启动后，浏览器从 `/front/` 通过 `/api` 保存项目、启动 smoke run、读取结果，并在刷新后恢复同一个 `run_id`。
+8. `/api` 不可用时，前端必须显示阻断状态，不创建 `offline-demo-run`。
+9. RMS 分配发布只允许写入 `rms.target` 或 allocation plan，不覆盖 `prediction` 或 `actual`。
+10. M5 建模数据入口必须校验重复 ID、悬空引用、非法数值和已发布且被运行引用后的覆盖保护，并返回页面、对象、字段路径和严重级别。
+11. M5.1 本地后端路径必须通过 `/api/modeling-imports/validate`、`/api/modeling-imports`、`/api/modeling-imports/{import_id}` 和 `/api/modeling-imports/{import_id}/publish` 验证；同一 `import_id` 被 run 引用后不可覆盖，新版本需使用新 `import_id`。
 
 ## Mesa 后台契约服务（Contract Provider）
 

@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spare-mvp.local/contracts/rms_allocation_result.schema.json",
+  "title": "RMS Allocation Result",
+  "type": "object",
+  "required": ["ok", "planId", "planVersion", "status", "algorithmVersion", "nodeResults", "verification", "warnings", "assumptions"],
+  "additionalProperties": true,
+  "properties": {
+    "ok": { "type": "boolean" },
+    "planId": { "type": "string", "minLength": 1 },
+    "planVersion": { "type": "integer", "minimum": 1 },
+    "status": { "type": "string" },
+    "algorithmVersion": { "type": "string", "minLength": 1 },
+    "nodeResults": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["nodeId", "nodeName", "reliability", "failureRate", "mtbfHours", "mttrHours", "mldtHours", "inherentAvailability", "operationalAvailability", "status"],
+        "properties": {
+          "nodeId": { "type": "string", "minLength": 1 },
+          "nodeName": { "type": "string", "minLength": 1 },
+          "level": { "type": "string" },
+          "equivalentHours": { "type": "number", "minimum": 0 },
+          "riskWeight": { "type": "number", "minimum": 0, "maximum": 1 },
+          "riskBudget": { "type": "number", "minimum": 0 },
+          "reliability": { "type": "number", "minimum": 0, "maximum": 1 },
+          "failureRate": { "type": "number", "minimum": 0 },
+          "mtbfHours": { "type": "number", "exclusiveMinimum": 0 },
+          "mttrHours": { "type": "number", "minimum": 0 },
+          "mldtHours": { "type": "number", "minimum": 0 },
+          "inherentAvailability": { "type": "number", "minimum": 0, "maximum": 1 },
+          "operationalAvailability": { "type": "number", "minimum": 0, "maximum": 1 },
+          "status": { "type": "string" }
+        }
+      }
+    },
+    "verification": {
+      "type": "object",
+      "required": ["equipmentTarget", "calculated", "margin", "status"]
+    },
+    "warnings": { "type": "array" },
+    "assumptions": { "type": "array", "items": { "type": "string" } }
+  }
+}

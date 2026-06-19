@@ -12,11 +12,19 @@ import {
   cloneScenario,
   defaultScenario
 } from "./sim-engine.mjs";
+import {
+  calculateRmsAllocation,
+  createDefaultRmsAllocationPlan,
+  createDemoRmsAllocationProject,
+  publishRmsAllocation
+} from "./rms-allocation-engine.mjs";
+import { renderRmsAllocationWorkbench } from "./rms-allocation-workbench.mjs";
 
 const app = document.querySelector("#app");
 const groups = groupFeaturePages(FEATURE_PAGES);
 const CONTRACT_BASE = "http://127.0.0.1:8521"; // Mesa 契约服务（见 agent.md「Mesa 后台契约服务」）
 const backendApi = createBackendApiClient({ baseUrl: "/api" });
+const LAST_BACKEND_RUN_STORAGE_KEY = "spare-mvp:lastBackendRun";
 const DEFAULT_ROUTE = "login";
 const DEFAULT_FEATURE_ID = "spare-planning-experiment-plan-list";
 const DEMO_USERS = [
@@ -118,12 +126,17 @@ const SUPPORT_ACTIVITY_PLANS = [
 
 let scenario = cloneScenario(defaultScenario);
 let { singleResult, monteCarloResult } = buildDemoResultState(scenario);
+let rmsAllocationProject = createDemoRmsAllocationProject();
+let rmsAllocationPlan = createDefaultRmsAllocationPlan(rmsAllocationProject);
+let rmsAllocationResult = calculateRmsAllocation(rmsAllocationPlan, rmsAllocationProject);
+let rmsPublishedProject = null;
 let savedProject = null;
 let modelingSnapshot = null;
 let experimentPlan = null;
 let backendRun = null;
 let backendRunResult = null;
 let backendArtifactManifest = null;
+let backendRunChain = null;
 let backendApiStatus = "离线演示";
 let isLoggedIn = false;
 let currentUser = DEMO_USERS[2];
@@ -146,9 +159,13 @@ let suppressOntologyClick = false;
 let carryObjective = CARRY_OBJECTIVES[0].id;
 let experimentRunStatus = "当前";
 let isProjectMenuOpen = false;
+let selectedBuiltInScenarioItem = { type: "missionArea", index: 0 };
+let selectedCombatUnitSection = "group";
+let selectedEquipmentComponentIndex = 0;
 
 render();
 bindEvents();
+hydrateLastBackendRunFromApi();
 
 function bindEvents() {
   window.addEventListener("hashchange", () => {
@@ -287,6 +304,17 @@ function bindEvents() {
       return;
     }
 
+    const rmsActionButton = event.target.closest("[data-rms-action]");
+    if (rmsActionButton) {
+      if (rmsActionButton.dataset.rmsAction === "publish") {
+        rmsPublishedProject = publishRmsAllocation(rmsAllocationProject, rmsAllocationResult);
+      } else {
+        recalculateRmsAllocation();
+      }
+      render();
+      return;
+    }
+
     const monteCarloStartButton = event.target.closest("[data-mc-action='start']");
     if (monteCarloStartButton) {
       const page = getFeaturePageById(selectedFeatureId);
@@ -295,6 +323,27 @@ function bindEvents() {
       selectedRoute = "workbench";
       selectedFeatureId = getPlanListFeatureId(page.module);
       location.hash = `feature=${selectedFeatureId}`;
+      render();
+      return;
+    }
+
+    const builtInScenarioNode = event.target.closest("[data-select-built-in-type]");
+    if (builtInScenarioNode) {
+      selectedBuiltInScenarioItem = { type: builtInScenarioNode.dataset.selectBuiltInType, index: Number(builtInScenarioNode.dataset.selectBuiltInIndex || 0) };
+      render();
+      return;
+    }
+
+    const combatUnitNode = event.target.closest("[data-select-combat-unit]");
+    if (combatUnitNode) {
+      selectedCombatUnitSection = combatUnitNode.dataset.selectCombatUnit;
+      render();
+      return;
+    }
+
+    const equipmentComponentNode = event.target.closest("[data-select-equipment-component]");
+    if (equipmentComponentNode) {
+      selectedEquipmentComponentIndex = clampEquipmentComponentIndex(Number(equipmentComponentNode.dataset.selectEquipmentComponent));
       render();
       return;
     }
@@ -309,6 +358,14 @@ function bindEvents() {
   });
 
   app.addEventListener("change", (event) => {
+    const rmsInput = event.target.closest("[data-rms-path]");
+    if (rmsInput) {
+      setPath(rmsAllocationPlan, rmsInput.dataset.rmsPath, parseInput(rmsInput));
+      recalculateRmsAllocation();
+      render();
+      return;
+    }
+
     const mcArrayInput = event.target.closest("[data-mc-array-path]");
     if (mcArrayInput) {
       updateMonteCarloArrayInput(mcArrayInput);
@@ -450,7 +507,7 @@ function render() {
         <div class="brand-mark">BJGH</div>
         <div>
           <h1>备件规划及任务可靠度验证评估平台</h1>
-          <p>${htmlEscape(currentProject.name)} / ${htmlEscape(page.module)} / ${htmlEscape(page.secondary)} / ${htmlEscape(page.tertiary)}</p>
+          <p>${htmlEscape(currentProject.name)} / ${renderTopbarContext(page)}</p>
         </div>
       </div>
       <div class="right">
@@ -463,6 +520,11 @@ function render() {
       ${renderFeaturePage(page)}
     </main>
   `;
+}
+
+function renderTopbarContext(page) {
+  if (page.module === "系统管理") return "系统管理 / 装备RMS指标分配";
+  return `${htmlEscape(page.module)} / ${htmlEscape(page.secondary)} / ${htmlEscape(page.tertiary)}`;
 }
 
 function renderLoginPage() {
@@ -546,20 +608,32 @@ function renderNavigation(activePage) {
       ${Object.entries(groups).map(([moduleName, secondaryGroups]) => `
         <details class="nav-module" ${moduleName === activePage.module ? "open" : ""}>
           <summary>${moduleName}</summary>
-          ${Object.entries(secondaryGroups).map(([secondaryName, tertiaryGroups]) => `
-            <details class="nav-secondary" ${secondaryName === activePage.secondary ? "open" : ""}>
-              <summary>${secondaryName}</summary>
-              ${Object.entries(tertiaryGroups).map(([tertiaryName, pages]) => `
-                <button type="button" class="nav-tertiary-link ${isActiveTertiary(activePage, pages) ? "active" : ""}" data-feature-id="${pages[0].id}">
-                  ${tertiaryName}
-                </button>
-              `).join("")}
-            </details>
-          `).join("")}
+          ${moduleName === "系统管理"
+            ? renderSystemManagementNavigation(activePage, secondaryGroups)
+            : Object.entries(secondaryGroups).map(([secondaryName, tertiaryGroups]) => `
+              <details class="nav-secondary" ${secondaryName === activePage.secondary ? "open" : ""}>
+                <summary>${secondaryName}</summary>
+                ${Object.entries(tertiaryGroups).map(([tertiaryName, pages]) => `
+                  <button type="button" class="nav-tertiary-link ${isActiveTertiary(activePage, pages) ? "active" : ""}" data-feature-id="${pages[0].id}">
+                    ${tertiaryName}
+                  </button>
+                `).join("")}
+              </details>
+            `).join("")}
         </details>
       `).join("")}
     </aside>
   `;
+}
+
+function renderSystemManagementNavigation(activePage, secondaryGroups) {
+  return Object.values(secondaryGroups).flatMap((tertiaryGroups) => (
+    Object.values(tertiaryGroups).map((pages) => `
+      <button type="button" class="nav-tertiary-link ${pages.some((page) => page.id === activePage.id) ? "active" : ""}" data-feature-id="${pages[0].id}">
+        ${pages[0].name}
+      </button>
+    `)
+  )).join("");
 }
 
 function renderFeaturePage(page) {
@@ -595,7 +669,9 @@ function shouldShowCurrentContext(page) {
 }
 
 function renderPageHeading(page) {
-  const breadcrumb = `<div class="breadcrumb">${htmlEscape(page.module)} / ${htmlEscape(page.secondary)} / ${htmlEscape(page.tertiary)}</div>`;
+  const breadcrumb = page.module === "系统管理"
+    ? `<div class="breadcrumb">系统管理 / 装备RMS指标分配</div>`
+    : `<div class="breadcrumb">${htmlEscape(page.module)} / ${htmlEscape(page.secondary)} / ${htmlEscape(page.tertiary)}</div>`;
   return `
     <div>
       ${breadcrumb}
@@ -634,6 +710,15 @@ function renderMainComponent(page) {
   if (page.component === "experiment-plan-list") return renderExperimentPlanList(page);
   if (page.component === "experiment-plan-editor") return renderExperimentPlanEditor(page);
   if (page.component === "experiment-form") return renderExperimentPlanEditor(page);
+  if (page.component === "rms-allocation") return renderRmsAllocationWorkbench({
+    project: rmsAllocationProject,
+    plan: rmsAllocationPlan,
+    result: rmsAllocationResult,
+    publishedProject: rmsPublishedProject,
+    htmlEscape,
+    fixed,
+    pct
+  });
   if (page.component === "monte-carlo-config") return renderMonteCarloConfig();
   if (page.component === "monte-carlo-results") return renderMonteCarloResults();
   if (page.component === "analysis") return renderAnalysis(page);
@@ -933,36 +1018,65 @@ function renderBuiltInScenario(page) {
     <div class="section-head section-context">
       <span>${page.dataObjects.join(" / ")}</span>
     </div>
-    <div class="form-table-grid">
-      ${field("场景编号", "scenarioId")}
-      ${field("出发机场名称", "airports.0.name")}
-      ${field("出发机场位置", "airports.0.location")}
-      ${field("出发机场跑道类型", "airports.0.runwayType")}
-      ${field("距任务区(km)", "airports.0.distanceToMissionKm", "number")}
-      ${field("关联保障节点", "airports.0.supportNodeId")}
-      ${field("备用机场名称", "airports.1.name")}
-      ${field("备用机场位置", "airports.1.location")}
-      ${field("备用机场跑道类型", "airports.1.runwayType")}
-      ${field("备用机场距任务区(km)", "airports.1.distanceToMissionKm", "number")}
-      ${field("任务区名称", "missionAreas.0.name")}
-      ${field("任务区类型", "missionAreas.0.areaType")}
-      ${field("距出发机场(km)", "missionAreas.0.distanceFromDepartureKm", "number")}
-      ${field("任务区半径(km)", "missionAreas.0.patrolRadiusKm", "number")}
-      ${field("威胁等级", "missionAreas.0.threatLevel")}
+    <div class="organization-layout">
+      <div class="tree-container">
+        <h4>内置场景对象</h4>
+        <div class="form-table-grid" style="grid-template-columns:1fr;margin-top:12px;">
+          ${field("场景编号", "scenarioId")}
+        </div>
+        <div class="object-tree">
+          ${scenario.airports.map((airport, index) => `
+            <button type="button" class="tree-node ${selectedBuiltInScenarioItem.type === "airport" && selectedBuiltInScenarioItem.index === index ? "active" : ""}" data-select-built-in-type="airport" data-select-built-in-index="${index}">
+              ${htmlEscape(airport.name)}
+              <span>${htmlEscape(airport.location)} / 距任务区 ${htmlEscape(airport.distanceToMissionKm)} km</span>
+            </button>
+          `).join("")}
+          ${scenario.missionAreas.map((area, index) => `
+            <button type="button" class="tree-node root ${selectedBuiltInScenarioItem.type === "missionArea" && selectedBuiltInScenarioItem.index === index ? "active" : ""}" data-select-built-in-type="missionArea" data-select-built-in-index="${index}">
+              ${htmlEscape(area.name)}
+              <span>${htmlEscape(area.areaType)} / 距出发机场 ${htmlEscape(area.distanceFromDepartureKm)} km</span>
+            </button>
+          `).join("")}
+        </div>
+      </div>
+      <div class="detail-panel">
+        ${renderBuiltInScenarioEditor(selectedBuiltInScenarioItem)}
+      </div>
     </div>
-    <div class="object-tree">
-      ${scenario.airports.map((airport) => `
-        <div class="tree-node">
-          ${htmlEscape(airport.name)}
-          <span>${htmlEscape(airport.location)} / 距任务区 ${htmlEscape(airport.distanceToMissionKm)} km</span>
+  `;
+}
+
+function renderBuiltInScenarioEditor(selectedBuiltInScenarioItem) {
+  if (selectedBuiltInScenarioItem.type === "airport") {
+    return `
+      <div class="detail-card">
+        <div class="section-head">
+          <h3>机场属性</h3>
+          <span>${htmlEscape(getPath(scenario, `airports.${selectedBuiltInScenarioItem.index}.name`) || "")}</span>
         </div>
-      `).join("")}
-      ${scenario.missionAreas.map((area) => `
-        <div class="tree-node root">
-          ${htmlEscape(area.name)}
-          <span>${htmlEscape(area.areaType)} / 距出发机场 ${htmlEscape(area.distanceFromDepartureKm)} km</span>
+        <div class="form-table-grid">
+          ${field("机场名称", `airports.${selectedBuiltInScenarioItem.index}.name`)}
+          ${field("机场位置", `airports.${selectedBuiltInScenarioItem.index}.location`)}
+          ${field("跑道类型", `airports.${selectedBuiltInScenarioItem.index}.runwayType`)}
+          ${field("距任务区(km)", `airports.${selectedBuiltInScenarioItem.index}.distanceToMissionKm`, "number")}
+          ${field("关联保障节点", `airports.${selectedBuiltInScenarioItem.index}.supportNodeId`)}
         </div>
-      `).join("")}
+      </div>
+    `;
+  }
+  return `
+    <div class="detail-card">
+      <div class="section-head">
+        <h3>任务区属性</h3>
+        <span>${htmlEscape(getPath(scenario, `missionAreas.${selectedBuiltInScenarioItem.index}.name`) || "")}</span>
+      </div>
+      <div class="form-table-grid">
+        ${field("任务区名称", `missionAreas.${selectedBuiltInScenarioItem.index}.name`)}
+        ${field("任务区类型", `missionAreas.${selectedBuiltInScenarioItem.index}.areaType`)}
+        ${field("距出发机场(km)", `missionAreas.${selectedBuiltInScenarioItem.index}.distanceFromDepartureKm`, "number")}
+        ${field("任务区半径(km)", `missionAreas.${selectedBuiltInScenarioItem.index}.patrolRadiusKm`, "number")}
+        ${field("威胁等级", `missionAreas.${selectedBuiltInScenarioItem.index}.threatLevel`)}
+      </div>
     </div>
   `;
 }
@@ -979,20 +1093,13 @@ function renderCombatUnitModeling(page) {
       <div class="tree-container">
         <h4>编队需求</h4>
         <div class="object-tree">
-          <div class="tree-node root">${htmlEscape(scenario.combatUnit.groupName)}<span>${htmlEscape(scenario.combatUnit.requiredCount)} / ${htmlEscape(scenario.combatUnit.quantity)} 架</span></div>
-          <div class="tree-node">${htmlEscape(scenario.combatUnit.basicTaskName)}<span>${htmlEscape(scenario.combatUnit.equipmentType)}</span></div>
-          <div class="tree-node">${htmlEscape(scenario.combatUnit.deploymentLocation)}<span>部署位置</span></div>
-        </div>
-        <div class="form-table-grid" style="grid-template-columns:1fr;margin-top:12px;">
-          ${field("编队名称", "combatUnit.groupName")}
-          ${field("基本任务名称", "combatUnit.basicTaskName")}
-          ${field("装备类型", "combatUnit.equipmentType")}
-          ${field("装备数量", "combatUnit.quantity", "number")}
-          ${field("需求数量", "combatUnit.requiredCount", "number")}
-          ${field("部署位置", "combatUnit.deploymentLocation")}
+          <button type="button" class="tree-node root ${selectedCombatUnitSection === "group" ? "active" : ""}" data-select-combat-unit="group">${htmlEscape(scenario.combatUnit.groupName)}<span>${htmlEscape(scenario.combatUnit.requiredCount)} / ${htmlEscape(scenario.combatUnit.quantity)} 架</span></button>
+          <button type="button" class="tree-node ${selectedCombatUnitSection === "basicTask" ? "active" : ""}" data-select-combat-unit="basicTask">${htmlEscape(scenario.combatUnit.basicTaskName)}<span>${htmlEscape(scenario.combatUnit.equipmentType)}</span></button>
+          <button type="button" class="tree-node ${selectedCombatUnitSection === "deployment" ? "active" : ""}" data-select-combat-unit="deployment">${htmlEscape(scenario.combatUnit.deploymentLocation)}<span>部署位置</span></button>
         </div>
       </div>
       <div class="detail-panel">
+        ${renderCombatUnitEditor(selectedCombatUnitSection)}
         <div class="detail-card">
           <h4>基本使用单元</h4>
           <div class="table-wrap">
@@ -1034,6 +1141,41 @@ function renderCombatUnitModeling(page) {
             </table>
           </div>
         </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderCombatUnitEditor(selectedCombatUnitSection) {
+  if (selectedCombatUnitSection === "basicTask") {
+    return `
+      <div class="detail-card">
+        <h4>基本任务编辑</h4>
+        <div class="form-table-grid" style="grid-template-columns:1fr;">
+          ${field("基本任务名称", "combatUnit.basicTaskName")}
+          ${field("装备类型", "combatUnit.equipmentType")}
+          ${field("需求数量", "combatUnit.requiredCount", "number")}
+        </div>
+      </div>
+    `;
+  }
+  if (selectedCombatUnitSection === "deployment") {
+    return `
+      <div class="detail-card">
+        <h4>部署位置编辑</h4>
+        <div class="form-table-grid" style="grid-template-columns:1fr;">
+          ${field("部署位置", "combatUnit.deploymentLocation")}
+        </div>
+      </div>
+    `;
+  }
+  return `
+    <div class="detail-card">
+      <h4>编队需求编辑</h4>
+      <div class="form-table-grid" style="grid-template-columns:1fr;">
+        ${field("编队名称", "combatUnit.groupName")}
+        ${field("装备数量", "combatUnit.quantity", "number")}
+        ${field("需求数量", "combatUnit.requiredCount", "number")}
       </div>
     </div>
   `;
@@ -1280,7 +1422,8 @@ function diffTimeMinutes(start, end) {
 }
 
 function renderEquipmentModeling(page) {
-  const selected = scenario.components[0] || {};
+  const selectedIndex = clampEquipmentComponentIndex(selectedEquipmentComponentIndex);
+  const selected = scenario.components[selectedIndex] || {};
   const isFailurePage = page.name.includes("故障");
   return `
     <div class="section-head section-context">
@@ -1294,11 +1437,11 @@ function renderEquipmentModeling(page) {
         </div>
         <div class="object-tree">
           <div class="tree-node root">${htmlEscape(scenario.equipment.model)}<span>${htmlEscape(scenario.equipment.quantity)} 架</span></div>
-          ${scenario.components.map((component) => `
-            <div class="tree-node">
+          ${scenario.components.map((component, index) => `
+            <button type="button" class="tree-node ${index === selectedIndex ? "active" : ""}" data-select-equipment-component="${index}">
               ${htmlEscape(component.name)}
               <span>${htmlEscape(component.quantity)} 件 / ${htmlEscape(component.connectionType)}</span>
-            </div>
+            </button>
           `).join("")}
         </div>
       </aside>
@@ -1309,36 +1452,40 @@ function renderEquipmentModeling(page) {
             <span>${htmlEscape(selected.name || "")}</span>
           </div>
           <div class="form-table-grid">
-            ${isFailurePage ? renderEquipmentFailureFields(selected) : renderEquipmentCompositionFields(selected)}
+            ${isFailurePage ? renderEquipmentFailureFields(selectedIndex) : renderEquipmentCompositionFields(selectedIndex)}
           </div>
         </div>
-        ${isFailurePage ? renderEquipmentFailureRmsFields(selected) : ""}
+        ${isFailurePage ? renderEquipmentFailureRmsFields(selected, selectedIndex) : ""}
         ${isFailurePage ? renderEquipmentComponentTable() : ""}
       </section>
     </div>
   `;
 }
 
-function renderEquipmentCompositionFields() {
+function clampEquipmentComponentIndex(index) {
+  return clamp(Number.isFinite(index) ? index : 0, 0, Math.max((scenario.components || []).length - 1, 0));
+}
+
+function renderEquipmentCompositionFields(selectedIndex) {
   return `
-    ${field("组件名称", "components.0.name")}
-    ${field("父节点", "components.0.parentId")}
-    ${field("备件类型", "components.0.spareType")}
-    ${field("连接类型", "components.0.connectionType")}
+    ${field("组件名称", `components.${selectedIndex}.name`)}
+    ${field("父节点", `components.${selectedIndex}.parentId`)}
+    ${field("备件类型", `components.${selectedIndex}.spareType`)}
+    ${field("连接类型", `components.${selectedIndex}.connectionType`)}
   `;
 }
 
-function renderEquipmentFailureFields() {
+function renderEquipmentFailureFields(selectedIndex) {
   return `
-    ${renderEquipmentCompositionFields()}
-    <label>数量 n<input data-path="components.0.quantity" type="number" value="${htmlEscape(getPath(scenario, "components.0.quantity"))}"></label>
-    <label>成功数 k<input data-path="components.0.kOutOfN.k" type="number" value="${htmlEscape(getPath(scenario, "components.0.kOutOfN.k"))}"></label>
-    ${field("N中取K总数", "components.0.kOutOfN.n", "number")}
-    ${field("启用 n 中取 k", "components.0.kOutOfN.enabled")}
-    ${field("故障模型", "components.0.failureModel")}
-    ${field("失效率", "components.0.failureRate", "number")}
-    ${field("MTBF(h)", "components.0.mtbfHours", "number")}
-    ${field("寿命限制(h)", "components.0.lifeLimitHours", "number")}
+    ${renderEquipmentCompositionFields(selectedIndex)}
+    <label>数量 n<input data-path="components.${selectedIndex}.quantity" type="number" value="${htmlEscape(getPath(scenario, `components.${selectedIndex}.quantity`))}"></label>
+    <label>成功数 k<input data-path="components.${selectedIndex}.kOutOfN.k" type="number" value="${htmlEscape(getPath(scenario, `components.${selectedIndex}.kOutOfN.k`))}"></label>
+    ${field("N中取K总数", `components.${selectedIndex}.kOutOfN.n`, "number")}
+    ${field("启用 n 中取 k", `components.${selectedIndex}.kOutOfN.enabled`)}
+    ${field("故障模型", `components.${selectedIndex}.failureModel`)}
+    ${field("失效率", `components.${selectedIndex}.failureRate`, "number")}
+    ${field("MTBF(h)", `components.${selectedIndex}.mtbfHours`, "number")}
+    ${field("寿命限制(h)", `components.${selectedIndex}.lifeLimitHours`, "number")}
   `;
 }
 
@@ -1370,7 +1517,7 @@ function renderEquipmentComponentTable() {
   `;
 }
 
-function renderEquipmentFailureRmsFields(selected) {
+function renderEquipmentFailureRmsFields(selected, selectedIndex) {
   return `
     <div class="detail-card">
       <div class="section-head">
@@ -1378,12 +1525,12 @@ function renderEquipmentFailureRmsFields(selected) {
         <span>${htmlEscape(selected.name || "")}</span>
       </div>
       <div class="form-table-grid">
-        ${field("可靠度 R(t)", "components.0.rms.reliability", "number")}
-        ${field("维修度 M(t)", "components.0.rms.maintainability", "number")}
-        ${field("保障性 S(t)", "components.0.rms.supportability", "number")}
-        ${field("平均修复时间 MTTR(h)", "components.0.rms.mttrHours", "number")}
-        ${field("平均保障延迟 MLDT(h)", "components.0.rms.mldtHours", "number")}
-        ${field("固有可用度 Ai", "components.0.rms.availability", "number")}
+        ${field("可靠度 R(t)", `components.${selectedIndex}.rms.reliability`, "number")}
+        ${field("维修度 M(t)", `components.${selectedIndex}.rms.maintainability`, "number")}
+        ${field("保障性 S(t)", `components.${selectedIndex}.rms.supportability`, "number")}
+        ${field("平均修复时间 MTTR(h)", `components.${selectedIndex}.rms.mttrHours`, "number")}
+        ${field("平均保障延迟 MLDT(h)", `components.${selectedIndex}.rms.mldtHours`, "number")}
+        ${field("固有可用度 Ai", `components.${selectedIndex}.rms.availability`, "number")}
       </div>
     </div>
   `;
@@ -1674,13 +1821,9 @@ async function saveCurrentProjectThroughApi() {
     modelingSnapshot = await backendApi.createModelingSnapshot(savedProject.project_id);
     backendApiStatus = "已保存";
   } catch (err) {
-    savedProject = {
-      project_id: projectJson.project_id,
-      project_version: projectJson.project_version,
-      status: "offline-demo"
-    };
+    savedProject = null;
     modelingSnapshot = null;
-    backendApiStatus = `离线演示：${err && err.message ? err.message : "Backend API 不可用"}`;
+    backendApiStatus = `后端不可用，保存未进入闭环：${err && err.message ? err.message : "Backend API 不可用"}`;
   }
 }
 
@@ -1696,17 +1839,17 @@ async function startExperimentRunThroughApi() {
     );
     backendRun = await backendApi.startSimulationRun(savedProject.project_id, experimentPlan.experiment_plan_id, "smoke");
     await refreshRunResultThroughApi(backendRun.run_id);
+    rememberLastBackendRun(backendRun.run_id, savedProject.project_id);
     experimentRunStatus = backendRun.status === "succeeded" ? "完成" : backendRun.status;
     backendApiStatus = "运行完成";
   } catch (err) {
-    backendRun = {
-      run_id: "offline-demo-run",
-      project_id: projectJson.project_id,
-      status: "offline-demo"
-    };
+    backendRun = null;
     backendRunResult = null;
     backendArtifactManifest = null;
-    backendApiStatus = `离线演示：${err && err.message ? err.message : "Backend API 不可用"}`;
+    backendRunChain = null;
+    forgetLastBackendRun();
+    experimentRunStatus = "后端不可用";
+    backendApiStatus = `后端不可用，未创建 run_id：${err && err.message ? err.message : "Backend API 不可用"}`;
   } finally {
     render();
   }
@@ -1714,17 +1857,92 @@ async function startExperimentRunThroughApi() {
 
 async function refreshRunResultThroughApi(runId = backendRun?.run_id) {
   if (!runId) return;
+  backendRun = await backendApi.getRun(runId);
   backendRunResult = await backendApi.getRunResult(runId);
   backendArtifactManifest = await backendApi.getRunArtifacts(runId);
+  backendRunChain = await backendApi.getRunChain(runId);
+  if (backendRun.project_id) {
+    savedProject = await backendApi.getProject(backendRun.project_id);
+  }
   const state = buildFrontendResultState(buildBackendProjectJson(scenario, currentProject), backendRunResult);
   singleResult = state.singleResult;
   monteCarloResult = state.monteCarloResult;
+}
+
+async function hydrateLastBackendRunFromApi() {
+  const stored = readLastBackendRun();
+  if (!stored?.run_id) return;
+  try {
+    await refreshRunResultThroughApi(stored.run_id);
+    backendApiStatus = "已从后端恢复";
+    experimentRunStatus = backendRun?.status === "succeeded" ? "完成" : backendRun?.status || "已恢复";
+    isLoggedIn = true;
+    if (selectedRoute === DEFAULT_ROUTE) selectedRoute = "workbench";
+    render();
+  } catch (err) {
+    forgetLastBackendRun();
+    backendApiStatus = `后端不可用，刷新恢复已阻断：${err && err.message ? err.message : "Backend API 不可用"}`;
+    render();
+  }
+}
+
+function rememberLastBackendRun(runId, projectId) {
+  if (!runId) return;
+  try {
+    localStorage.setItem("spare-mvp:lastBackendRun", JSON.stringify({ run_id: runId, project_id: projectId || "", saved_at: new Date().toISOString() }));
+  } catch (err) {
+    return;
+  }
+}
+
+function readLastBackendRun() {
+  try {
+    return JSON.parse(localStorage.getItem("spare-mvp:lastBackendRun") || "null");
+  } catch (err) {
+    return null;
+  }
+}
+
+function forgetLastBackendRun() {
+  try {
+    localStorage.removeItem(LAST_BACKEND_RUN_STORAGE_KEY);
+  } catch (err) {
+    return;
+  }
 }
 
 function updateDemoResultsThroughApiClient() {
   const state = buildDemoResultState(buildBackendProjectJson(scenario, currentProject));
   singleResult = state.singleResult;
   monteCarloResult = state.monteCarloResult;
+}
+
+function recalculateRmsAllocation() {
+  try {
+    rmsAllocationResult = calculateRmsAllocation(rmsAllocationPlan, rmsAllocationProject);
+  } catch (err) {
+    rmsAllocationResult = {
+      ok: false,
+      planId: rmsAllocationPlan.planId,
+      planVersion: rmsAllocationPlan.planVersion,
+      status: "method_not_applicable",
+      algorithmVersion: rmsAllocationPlan.algorithmVersion || "rms-engine-1.0.0",
+      exposure: { rows: [], warnings: [] },
+      nodeResults: [],
+      verification: {
+        equipmentTarget: {
+          reliability: Number(rmsAllocationPlan.targets.reliability.value),
+          mttrHours: Number(rmsAllocationPlan.targets.mttrHours),
+          mldtHours: Number(rmsAllocationPlan.targets.mldtHours)
+        },
+        calculated: { reliability: 0, mttrHours: 0, mldtHours: 0 },
+        margin: { reliability: 0, mttrHours: 0, mldtHours: 0 },
+        status: "method_not_applicable"
+      },
+      warnings: [{ code: "RMS_METHOD_NOT_APPLICABLE", message: err && err.message ? err.message : "当前分配方法不适用" }],
+      assumptions: rmsAllocationPlan.assumptions || []
+    };
+  }
 }
 
 async function loadAviationSupportState(steps = aviationSteps) {
@@ -2127,11 +2345,34 @@ function averageGroupMetric(metric) {
 function renderMonteCarloResults() {
   const groups = monteCarloResult.groups || [];
   const resultRows = buildMonteCarloEvaluationRows();
+  const backendChainRows = backendRunChain
+    ? [
+        ["Project", backendRunChain.project_id],
+        ["Snapshot", backendRunChain.modeling_snapshot_id],
+        ["ExperimentPlan", backendRunChain.experiment_plan_id],
+        ["Scenario", backendRunChain.scenario_id],
+        ["Run", backendRunChain.run_id],
+        ["Result", backendRunChain.result_summary_id],
+        ["ArtifactManifest", backendRunChain.artifact_manifest_id]
+      ]
+    : [];
+  const artifactRows = backendArtifactManifest && backendArtifactManifest.artifacts
+    ? backendArtifactManifest.artifacts
+    : [];
   return `
     <div class="mc-result-panel">
       <div class="section-head">
         <h3>蒙特卡洛评估结果</h3>
         <span>${monteCarloResult.runs.length} 个样本</span>
+      </div>
+      <div class="backend-run-chain">
+        <span>后端状态：${htmlEscape(backendApiStatus)}</span>
+        ${backendChainRows.length
+          ? `<table><tbody>${backendChainRows.map(([label, value]) => `<tr><th>${htmlEscape(label)}</th><td>${htmlEscape(value)}</td></tr>`).join("")}</tbody></table>`
+          : `<p>${htmlEscape(backendRun?.run_id || "尚未读取 run_id 身份链")}</p>`}
+        ${artifactRows.length
+          ? `<table><tbody>${artifactRows.map((artifact) => `<tr><th>${htmlEscape(artifact.kind)}</th><td>${htmlEscape(artifact.path)}</td></tr>`).join("")}</tbody></table>`
+          : ""}
       </div>
       <div class="mc-result-cards">
         ${resultRows.map((row) => `

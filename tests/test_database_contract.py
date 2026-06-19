@@ -38,6 +38,7 @@ class DatabaseContractTest(unittest.TestCase):
             {
                 "projects",
                 "users",
+                "modeling_imports",
                 "experiment_plans",
                 "modeling_snapshots",
                 "scenarios",
@@ -86,6 +87,16 @@ class DatabaseContractTest(unittest.TestCase):
                 "schema_version",
                 "payload_json",
             },
+            "modeling_imports": {
+                "import_id",
+                "project_id",
+                "schema_version",
+                "import_version",
+                "status",
+                "validation_status",
+                "referenced_run_ids_json",
+                "payload_json",
+            },
         }
 
         for table, columns in required_columns.items():
@@ -114,6 +125,7 @@ class DatabaseContractTest(unittest.TestCase):
                 "project_id": "project-smoke-contract-001",
                 "project_version": "project-v0.1",
                 "project_schema_version": "project-v0",
+                "experiment_plan_id": "experiment-plan-smoke-001",
                 "scenario_id": "scenario-smoke-contract-001",
                 "scenario_version": "scenario-v0.1",
                 "scenario_schema_version": "scenario-v0",
@@ -125,6 +137,85 @@ class DatabaseContractTest(unittest.TestCase):
                 "artifact_manifest_schema_version": "artifact-manifest-v0",
             },
         )
+
+    def test_initialize_database_migrates_existing_experiment_plan_table(self) -> None:
+        connection = sqlite3.connect(":memory:")
+        try:
+            connection.executescript(
+                """
+                CREATE TABLE experiment_plans (
+                  experiment_plan_id TEXT PRIMARY KEY,
+                  project_id TEXT NOT NULL,
+                  schema_version TEXT NOT NULL,
+                  project_version TEXT NOT NULL,
+                  status TEXT NOT NULL DEFAULT 'draft',
+                  payload_json TEXT NOT NULL,
+                  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+                """
+            )
+            initialize_database(connection)
+            columns = {row[1] for row in connection.execute("pragma table_info(experiment_plans)")}
+            self.assertIn("modeling_snapshot_id", columns)
+        finally:
+            connection.close()
+
+    def test_repository_persists_modeling_import_package_and_publish_state(self) -> None:
+        import_package = self._fixture("modeling_import_project.json")
+        validation = {"ok": True, "status": "valid", "issues": []}
+
+        self.repository.upsert_modeling_import(import_package, validation)
+        stored = self.repository.get_modeling_import(import_package["importId"])
+
+        self.assertEqual(stored["importId"], import_package["importId"])
+        self.assertEqual(stored["projectId"], import_package["projectId"])
+        self.assertEqual(stored["validation"], validation)
+        self.assertEqual(stored["lifecycle"]["state"], "draft")
+
+        published = self.repository.publish_modeling_import(import_package["importId"])
+
+        self.assertEqual(published["lifecycle"]["state"], "published")
+        self.assertEqual(published["validation"], validation)
+        self.assertEqual(
+            self.repository.get_modeling_import(import_package["importId"])["lifecycle"]["state"],
+            "published",
+        )
+
+    def test_repository_blocks_publishing_referenced_modeling_import_without_new_version(self) -> None:
+        import_package = self._fixture("modeling_import_project.json")
+        import_package["lifecycle"] = {
+            "state": "published",
+            "version": 1,
+            "referencedRunIds": ["run-smoke-contract-001"],
+        }
+        validation = {"ok": True, "status": "valid", "issues": []}
+
+        self.repository.upsert_modeling_import(import_package, validation)
+
+        with self.assertRaisesRegex(ValueError, "published modeling import is referenced"):
+            self.repository.assert_modeling_import_can_publish(import_package["importId"])
+
+    def test_repository_blocks_overwriting_referenced_published_modeling_import(self) -> None:
+        import_package = self._fixture("modeling_import_project.json")
+        import_package["lifecycle"] = {
+            "state": "published",
+            "version": 1,
+            "referencedRunIds": ["run-smoke-contract-001"],
+        }
+        validation = {"ok": True, "status": "valid", "issues": []}
+        self.repository.upsert_modeling_import(import_package, validation)
+
+        changed_package = self._fixture("modeling_import_project.json")
+        changed_package["lifecycle"] = {
+            "state": "draft",
+            "version": 2,
+            "referencedRunIds": [],
+        }
+        changed_package["objects"]["missionProfiles"][0]["name"] = "changed silently"
+
+        with self.assertRaisesRegex(ValueError, "published modeling import is referenced"):
+            self.repository.upsert_modeling_import(changed_package, validation)
 
     def test_repository_does_not_silently_return_mismatched_run_artifacts(self) -> None:
         project = self._fixture("smoke_project.json")

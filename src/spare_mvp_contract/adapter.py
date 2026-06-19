@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 import hashlib
 import json
 from pathlib import Path
+import re
 from typing import Any
 
 from src.spare_mvp_abm.smoke_model import SmokeSpareMvpModel
@@ -89,7 +90,7 @@ class SimulationAdapter:
 
         project_id = validation["project_id"]
         project_version = validation["project_version"]
-        scenario_key = str(project.get("scenarioId") or project_id)
+        scenario_key = _safe_identifier(str(project.get("scenarioId") or project_id))
         inputs = self._compile_smoke_inputs(project, project_version)
         now = _utc_now()
 
@@ -115,7 +116,13 @@ class SimulationAdapter:
             "simulation_inputs": inputs,
         }
 
-    def run_scenario(self, scenario: dict[str, Any], output_dir: Path | str, steps: int = 3) -> dict[str, dict[str, Any]]:
+    def run_scenario(
+        self,
+        scenario: dict[str, Any],
+        output_dir: Path | str,
+        steps: int = 3,
+        run_id: str | None = None,
+    ) -> dict[str, dict[str, Any]]:
         """Run a compiled smoke Scenario and write traceable contract artifacts."""
         self._assert_smoke_scenario(scenario)
         if steps < 0:
@@ -136,7 +143,7 @@ class SimulationAdapter:
             model.step()
         snapshot = model.snapshot()
 
-        run_id = f"run-{scenario['scenario_id']}"
+        run_id = run_id or f"run-{scenario['scenario_id']}"
         result_id = f"result-{run_id}"
         manifest_id = f"artifact-manifest-{run_id}"
         now = _utc_now()
@@ -298,3 +305,9 @@ class SimulationAdapter:
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _safe_identifier(value: str) -> str:
+    safe = re.sub(r"[^A-Za-z0-9_.-]+", "-", value).strip(".-")
+    safe = safe.replace("..", ".")
+    return safe or "scenario"

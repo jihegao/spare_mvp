@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spare-mvp.local/contracts/rms_allocation_plan.schema.json",
+  "title": "RMS Allocation Plan",
+  "type": "object",
+  "required": ["schemaVersion", "planId", "name", "status", "projectId", "targets", "methods", "algorithmVersion"],
+  "additionalProperties": true,
+  "properties": {
+    "schemaVersion": { "const": "rms-allocation-plan-v1" },
+    "planId": { "type": "string", "minLength": 1 },
+    "planVersion": { "type": "integer", "minimum": 1 },
+    "name": { "type": "string", "minLength": 1 },
+    "status": {
+      "type": "string",
+      "enum": ["draft", "calculated", "validated", "published", "stale", "superseded"]
+    },
+    "projectId": { "type": "string", "minLength": 1 },
+    "targets": {
+      "type": "object",
+      "required": ["reliability", "maintainability", "supportability", "mtbfHours", "mttrHours", "mldtHours"],
+      "properties": {
+        "reliability": {
+          "type": "object",
+          "required": ["value", "atHours"],
+          "properties": {
+            "value": { "type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1 },
+            "atHours": { "type": "number", "exclusiveMinimum": 0 }
+          }
+        },
+        "maintainability": {
+          "type": "object",
+          "required": ["value", "withinHours"],
+          "properties": {
+            "value": { "type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1 },
+            "withinHours": { "type": "number", "exclusiveMinimum": 0 }
+          }
+        },
+        "supportability": {
+          "type": "object",
+          "required": ["value", "withinHours"],
+          "properties": {
+            "value": { "type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1 },
+            "withinHours": { "type": "number", "exclusiveMinimum": 0 }
+          }
+        },
+        "mtbfHours": { "type": "number", "exclusiveMinimum": 0 },
+        "mttrHours": { "type": "number", "exclusiveMinimum": 0 },
+        "mldtHours": { "type": "number", "minimum": 0 },
+        "inherentAvailability": { "type": "number", "minimum": 0, "maximum": 1 },
+        "operationalAvailability": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "methods": {
+      "type": "object",
+      "required": ["reliability", "maintainability", "supportability"],
+      "properties": {
+        "reliability": { "enum": ["equal", "proportional", "agree", "scoring"] },
+        "maintainability": { "type": "string" },
+        "supportability": { "type": "string" }
+      }
+    },
+    "algorithmVersion": { "type": "string", "minLength": 1 }
+  }
+}

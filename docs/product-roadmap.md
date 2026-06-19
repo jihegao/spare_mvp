@@ -1,6 +1,6 @@
 # 产品里程碑路线图
 
-日期：2026-06-18
+日期：2026-06-19
 
 ## 定位
 
@@ -20,13 +20,14 @@
 
 ## 当前基线判断
 
-截至 2026-06-18，当前原型已经完成四级功能页面化和核心静态工作台整合，但仍处在原型阶段：
+截至 2026-06-19，M3-1 已在 M3-0 函数/API smoke 基础上收束出浏览器可访问的同源后端闭环 smoke，但整体系统仍处在原型到真实系统迁移阶段：
 
-1. 前端状态主要保存在浏览器内存中，没有后端持久化。
-2. Monte Carlo 可以在前端重算并响应扫参输入，但还不是后端 worker 运行产物。
-3. Mesa 可视化页已嵌入本地航空保障状态，但仍以本地状态帧和原型数据为主。
-4. 结果分析页面形态已经接近目标，但部分指标仍来自前端演示逻辑或局部推导。
-5. 登录、用户、权限、审计、运行管理和产物管理还没有真实系统实现。
+1. 四级功能页面化和核心静态工作台已经稳定，M0/M1 浏览器 smoke 可作为后续后端接入的对照基线。
+2. `src/spare_mvp_backend/http_server.py`、`BackendApi`、`SimulationAdapter` 和 SQLite repository 已跑通同源 `/api` + `Project -> Snapshot -> ExperimentPlan -> Scenario -> Run -> Result -> ArtifactManifest` 真实后端闭环 smoke，并已通过 M3-1 浏览器刷新恢复和 API 不可用阻断验收。
+3. 前端已有 `front/api-client.mjs` 边界，显式保存、启动运行、读取结果和读取产物通过 API client 表达；通用建模编辑仍保持本地，直到显式保存或运行。
+4. Monte Carlo 页面仍保留前端局部演示/扫参能力，尚未升级为后端 worker 或批量运行产物。
+5. Mesa 可视化页已嵌入本地航空保障状态，但 `aviation_support` Project 到 Scenario 的字段派生规则仍按治理边界保持未批准。
+6. 登录、用户、权限、审计、运行管理、长期 artifact storage 和生产 Web API 还没有真实系统实现。
 
 ## M0：稳定当前原型基线
 
@@ -152,6 +153,10 @@ Simulation Contract Service
 
 目标：建立原型到真实系统的持久化分水岭。
 
+M3-0 当前收束：已完成本地标准库 HTTP facade + 函数级 Backend API 的真实后端闭环 smoke，证据见 `reports/m3-0-real-backend-loop/README.md`。该收束证明已批准的 `smoke` 模型族可以通过同源 `/api`、Backend API facade 和 repository 完成保存、编译、运行、结果、产物和身份链读取；它不代表生产 Web API、worker 队列、长期对象存储、权限体系或 `aviation_support` Scenario 编译已经完成。
+
+M3-1 当前收束：已完成浏览器同源后端闭环 smoke，证据见 `reports/m3-1-browser-backend-smoke/README.md`。该收束证明前端可从 `/front/` 通过 `/api` 保存项目、启动 smoke run、读取 Result/ArtifactManifest，并在刷新后从持久 SQLite 恢复同一个 `run_id`；`/api` 不可用时不再生成 `offline-demo-run`。
+
 核心 API：
 
 1. 契约查询与版本查询。
@@ -221,12 +226,14 @@ Simulation Contract Service
 
 目标：让建模页成为真实项目资料维护和场景生成入口，而不是静态表单集合。
 
+当前推进口径：用户选择跳过 M4 的用户、权限和审计实施，先收束 M3-1/RMS 当前分支，并把 M5 作为下一条产品数据主线。M5 首片不做完整 Excel UI；先定义建模数据导入/校验 contract、错误定位结构、草稿/发布版本和运行引用保护。M5.1 将该 contract 接入本地后端 API、SQLite 持久化和前端 API client。
+
 核心工作：
 
-1. 支持 Excel/JSON 导入。
+1. 首片先支持 JSON fixture 或简化 CSV 导入/校验；Excel 作为后续导入适配层。
 2. 支持字段清洗、引用校验、对象增删改。
 3. 支持版本保存、差异对比、草稿/已发布状态。
-4. 支持错误定位和导出后端可消费的 `Scenario`。
+4. 支持错误定位，并通过 Simulation Adapter 生成后端可消费的 `Scenario`。
 5. 校验任务、装备、保障组织、保障活动、备件、指标方案之间的引用关系。
 
 必须阻断的问题：
@@ -242,6 +249,19 @@ Simulation Contract Service
 1. 用户可以从真实项目资料导入或维护一个项目。
 2. 系统可以从已发布项目数据生成后端可消费的 `Scenario`。
 3. 错误提示能定位到字段、对象和引用路径。
+
+当前首片实现入口：
+
+1. `contracts/modeling_import.schema.json` 定义导入包、草稿/发布生命周期、对象集合、变更和校验问题结构。
+2. `front/modeling-import-contract.mjs` 校验重复编号、悬空引用、非法数值和已发布且被运行引用后的覆盖保护。
+3. `tests/modeling-import-contract.test.mjs` 和 `tests/fixtures/modeling_import_project.json` 固化 JSON fixture 首片，不包含完整 Excel UI、权限审计、生产 worker、Mesa 行为变更或 `aviation_support` Scenario 编译解锁。
+
+M5.1 服务化入口：
+
+1. `src/spare_mvp_backend/modeling_import.py` 提供服务端纯 Python 校验器，保持与前端 contract issue shape 一致。
+2. `src/spare_mvp_backend/schema.sql` 和 `ContractRepository` 增加 `modeling_imports` 持久化，用于保存导入包、validation summary、草稿/发布状态和引用保护信息。
+3. `BackendApi` 和本地 HTTP facade 暴露 `validate/save/get/publish` 路径；前端 `api-client` 只新增显式调用方法，不从通用编辑事件自动保存。
+4. M5.1 明确同一 `import_id` 被 run 引用后不可覆盖；该切片选择“新版本使用新 `import_id`”，暂不引入 `(import_id, import_version)` 复合主键。
 
 ## M6：仿真引擎服务化
 
@@ -461,9 +481,8 @@ M3/M6 的第一步不是直接建设完整后端，而是把 `Simulation Contrac
 
 ## 近期建议
 
-1. 先把 M0 作为当前前端收敛阶段的完成口径。
-2. 并行起草 M1 的 MVP 验收清单和页面到数据对象映射。
-3. 在 M1 稳定后启动 M2a：把现有仿真模型和 ontology 包装为 `Simulation Contract Service`，先写契约测试，再写服务实现。
-4. 启动 M2b：补齐 `Project`、`ExperimentPlan`、权限、运行记录和 artifact metadata 等应用数据契约。
-5. 用 TDD 串接前端、数据库和仿真服务：先红测最小项目数据校验、场景编译、运行提交和结果查询，再补实现。
-6. 每次 PR 更新页面流转、数据对象或结果口径时，同步更新本文档或相关验收清单。
+1. 保持 M3-1/RMS 浏览器后端闭环、RMS 分配页面、测试和证据报告一致。
+2. 继续跳过 M4 的实现切片，暂不做真实用户、权限和审计。
+3. M5.1 已将建模数据导入/校验 contract 接入本地后端 API、SQLite 持久化和前端显式 API client。
+4. 下一步优先做 M5.2 的最小页面入口或导入映射预览；完整 Excel UI、权限审计或生产 worker 仍待 M5.1 稳定后再决定。
+5. 每次 PR 更新页面流转、数据对象或结果口径时，同步更新本文档或相关验收清单。

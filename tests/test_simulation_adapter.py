@@ -115,6 +115,23 @@ class SimulationAdapterTest(unittest.TestCase):
                 self.assertGreater(artifact["size_bytes"], 0)
                 self.assertRegex(artifact["sha256"], r"^[0-9a-f]{64}$")
 
+    def test_run_smoke_scenario_sanitizes_scenario_id_for_artifact_paths(self) -> None:
+        project = self._load_fixture("smoke_project.json")
+        project["scenarioId"] = "../escape/path"
+        scenario = self.adapter.compile_scenario(project)
+
+        self.assertNotIn("/", scenario["scenario_id"])
+        self.assertNotIn("..", scenario["scenario_id"])
+        with tempfile.TemporaryDirectory() as tmp:
+            output_root = Path(tmp).resolve()
+            bundle = self.adapter.run_scenario(scenario, output_dir=output_root, steps=1)
+
+            for artifact in bundle["artifact_manifest"]["artifacts"]:
+                artifact_path = artifact["path"]
+                self.assertNotIn("..", artifact_path.split("/"))
+                target = (output_root / artifact_path).resolve()
+                self.assertTrue(target.is_relative_to(output_root))
+
 
 if __name__ == "__main__":
     unittest.main()
