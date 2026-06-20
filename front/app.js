@@ -3567,13 +3567,9 @@ async function saveCurrentProjectDraftThroughApi() {
     projectDraftHydrateStatus = "";
     backendApiStatus = "Project draft 已保存";
   } catch (err) {
-    savedProject = {
-      project_id: projectJson.project_id,
-      project_version: projectJson.project_version,
-      status: "offline-demo"
-    };
+    savedProject = null;
     projectDraftSaveStatus = "保存失败";
-    backendApiStatus = `离线演示：${err && err.message ? err.message : "Backend API 不可用"}`;
+    backendApiStatus = `后端保存失败，Project draft 未保存：${err && err.message ? err.message : "Backend API 不可用"}`;
   }
 }
 
@@ -3589,6 +3585,7 @@ async function saveCurrentExperimentPlanThroughApi() {
     );
     backendApiStatus = "实验方案分支已保存";
   } catch (err) {
+    savedProject = null;
     modelingSnapshot = null;
     experimentPlan = null;
     backendApiStatus = `实验方案保存失败：${err && err.message ? err.message : "Backend API 不可用"}`;
@@ -3631,6 +3628,7 @@ async function startExperimentRunThroughApi() {
     experimentRunStatus = backendRun.status === "succeeded" ? "完成" : backendRun.status;
     backendApiStatus = "运行完成";
   } catch (err) {
+    savedProject = null;
     backendRun = null;
     backendRunResult = null;
     backendArtifactManifest = null;
@@ -4098,10 +4096,10 @@ function renderMesaStage(state) {
       <div class="mesa-flight-deck">
         ${state.aircraft.map((aircraft) => {
           const [x, y] = aircraft.position;
-          return `<div class="mesa-aircraft-node ${aircraft.state}" style="left:${12 + x * 21}%;top:${16 + y * 34}%">
-            <strong>${aircraft.label}</strong>
-            <span>${aircraft.type}</span>
-            <em>${stateLabel(aircraft.state)}</em>
+          return `<div class="mesa-aircraft-node ${mesaStateClass(aircraft.state)}" style="left:${12 + x * 21}%;top:${16 + y * 34}%">
+            <strong>${htmlEscape(aircraft.label)}</strong>
+            <span>${htmlEscape(aircraft.type)}</span>
+            <em>${htmlEscape(stateLabel(aircraft.state))}</em>
           </div>`;
         }).join("")}
       </div>
@@ -4113,7 +4111,7 @@ function renderMesaStage(state) {
         <span class="legend-item"><i class="dot maintenance"></i>维修</span>
       </div>
       <div class="mesa-mission-strip">
-        ${state.missions.map((mission) => `<div class="mission"><span>任务 ${mission.id} / 需求 ${mission.requiredAircraft} 架</span><strong>${mission.status}</strong><div class="bar"><i style="width:${missionProgressWidth(mission)}%"></i></div></div>`).join("")}
+        ${state.missions.map((mission) => `<div class="mission"><span>任务 ${htmlEscape(mission.id)} / 需求 ${htmlEscape(mission.requiredAircraft)} 架</span><strong>${htmlEscape(mission.status)}</strong><div class="bar"><i style="width:${missionProgressWidth(mission)}%"></i></div></div>`).join("")}
       </div>
     </div>
   `;
@@ -4134,10 +4132,10 @@ function renderMesaAircraftPanel(state) {
       <span>${state.aircraft.length} 架</span>
     </div>
     <div class="mesa-aircraft-list">
-      ${state.aircraft.map((aircraft) => `<div class="list-row"><strong>${aircraft.label}</strong><span>${aircraft.type}</span><span>${stateLabel(aircraft.state)}</span></div>`).join("")}
+      ${state.aircraft.map((aircraft) => `<div class="list-row"><strong>${htmlEscape(aircraft.label)}</strong><span>${htmlEscape(aircraft.type)}</span><span>${htmlEscape(stateLabel(aircraft.state))}</span></div>`).join("")}
     </div>
     <h4>飞机内部装备</h4>
-    <div class="event info"><strong>${selectedAircraft.label}</strong> 系统数量 ${selectedAircraft.systemCount} / 失效 LRU ${selectedAircraft.failedLru || "-"}</div>
+    <div class="event info"><strong>${htmlEscape(selectedAircraft.label)}</strong> 系统数量 ${htmlEscape(selectedAircraft.systemCount)} / 失效 LRU ${htmlEscape(selectedAircraft.failedLru || "-")}</div>
   `;
 }
 
@@ -4150,12 +4148,12 @@ function renderMesaMissionPanel(state) {
     <div class="table-wrap compact-table">
       <table>
         <thead><tr><th>任务</th><th>计划</th><th>实际</th><th>状态</th><th>编组</th></tr></thead>
-        <tbody>${state.missions.map((mission) => `<tr><td>M-${mission.id}</td><td>T+${mission.plannedStart}</td><td>${mission.actualStart ? `T+${mission.actualStart}` : "-"}</td><td>${mission.status}</td><td>${mission.assignedCount}/${mission.requiredAircraft}</td></tr>`).join("")}</tbody>
+        <tbody>${state.missions.map((mission) => `<tr><td>M-${htmlEscape(mission.id)}</td><td>T+${htmlEscape(mission.plannedStart)}</td><td>${mission.actualStart ? `T+${htmlEscape(mission.actualStart)}` : "-"}</td><td>${htmlEscape(mission.status)}</td><td>${htmlEscape(mission.assignedCount)}/${htmlEscape(mission.requiredAircraft)}</td></tr>`).join("")}</tbody>
       </table>
     </div>
     <h4>执飞飞机编组</h4>
     <div class="stack-list">
-      ${state.missions.map((mission) => `<div class="job"><span>任务 ${mission.id}</span><strong>${mission.assignedTailNumbers.length ? mission.assignedTailNumbers.join(" / ") : "未编组"}</strong></div>`).join("")}
+      ${state.missions.map((mission) => `<div class="job"><span>任务 ${htmlEscape(mission.id)}</span><strong>${mission.assignedTailNumbers.length ? mission.assignedTailNumbers.map((tailNumber) => htmlEscape(tailNumber)).join(" / ") : "未编组"}</strong></div>`).join("")}
     </div>
   `;
 }
@@ -4167,15 +4165,15 @@ function renderMesaSupportPanel(state) {
       <span>资源 / 备件 / 作业</span>
     </div>
     <div class="stack-list">
-      ${state.resources.map((resource) => `<div class="metric-line"><strong>${resource.label}</strong><div class="bar"><span style="width:${Math.round(resource.utilization * 100)}%"></span></div><span>${resource.inUse}/${resource.capacity}</span></div>`).join("")}
+      ${state.resources.map((resource) => `<div class="metric-line"><strong>${htmlEscape(resource.label)}</strong><div class="bar"><span style="width:${Math.round(resource.utilization * 100)}%"></span></div><span>${htmlEscape(resource.inUse)}/${htmlEscape(resource.capacity)}</span></div>`).join("")}
     </div>
     <h4>备件库存量 / 已消耗 / 在途</h4>
     <div class="stack-list">
-      ${state.spares.map((spare) => `<div class="list-row"><strong>${spare.label}</strong><span>库存 ${spare.quantity}</span><span>消耗 ${spare.consumed} / 在途 ${spare.pending}</span></div>`).join("")}
+      ${state.spares.map((spare) => `<div class="list-row"><strong>${htmlEscape(spare.label)}</strong><span>库存 ${htmlEscape(spare.quantity)}</span><span>消耗 ${htmlEscape(spare.consumed)} / 在途 ${htmlEscape(spare.pending)}</span></div>`).join("")}
     </div>
     <h4>保障作业与事件</h4>
-    ${state.jobs.map((job) => `<div class="event info"><strong>${job.tailNumber}</strong> ${job.task} / ${job.state} / ${job.remaining}min</div>`).join("")}
-    ${state.events.map((event) => `<div class="event success"><strong>T+${event.time}</strong> ${event.message}</div>`).join("")}
+    ${state.jobs.map((job) => `<div class="event info"><strong>${htmlEscape(job.tailNumber)}</strong> ${htmlEscape(job.task)} / ${htmlEscape(job.state)} / ${htmlEscape(job.remaining)}min</div>`).join("")}
+    ${state.events.map((event) => `<div class="event success"><strong>T+${htmlEscape(event.time)}</strong> ${htmlEscape(event.message)}</div>`).join("")}
   `;
 }
 
@@ -4852,6 +4850,10 @@ function stateLabel(state) {
     maintenance: "维修"
   };
   return labels[state] || state;
+}
+
+function mesaStateClass(state) {
+  return String(state || "unknown").replace(/[^a-zA-Z0-9_-]/g, "");
 }
 
 function pct(value) {

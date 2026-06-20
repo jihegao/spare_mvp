@@ -254,6 +254,8 @@ class ContractRepository:
         existing = self._get_modeling_import_row(payload["importId"])
         lifecycle = payload.get("lifecycle", {})
         state = str(lifecycle.get("state") or "draft")
+        if state == "published" and existing and existing.get("published_payload_json"):
+            self.assert_modeling_import_can_publish(payload["importId"])
         draft_payload_json = _to_json(payload)
         published_payload_json = (existing or {}).get("published_payload_json")
         if state == "published":

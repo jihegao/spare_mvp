@@ -212,6 +212,71 @@ test("M6.1 formal result boundary labels local analysis projections", async () =
   assert.doesNotMatch(appSource, /analysis\|projection\|shortfall\|carry\|reliability\|downtime/);
 });
 
+test("project draft save failure does not mint offline savedProject identity", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const saveSource = appSource.slice(
+    appSource.indexOf("async function saveCurrentProjectDraftThroughApi"),
+    appSource.indexOf("async function saveCurrentExperimentPlanThroughApi")
+  );
+  const catchSource = saveSource.slice(saveSource.indexOf("} catch"));
+
+  assert.match(saveSource, /backendApi\.saveProject\(projectJson\)/);
+  assert.match(catchSource, /savedProject\s*=\s*null/);
+  assert.match(catchSource, /保存失败/);
+  assert.doesNotMatch(catchSource, /savedProject\s*=\s*\{/);
+  assert.doesNotMatch(catchSource, /offline-demo/);
+  assert.doesNotMatch(catchSource, /离线演示/);
+});
+
+test("mesa visualization escapes contract-provider fields before innerHTML insertion", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const stageSource = appSource.slice(
+    appSource.indexOf("function renderMesaStage"),
+    appSource.indexOf("function renderMesaSidePanel")
+  );
+  const aircraftSource = appSource.slice(
+    appSource.indexOf("function renderMesaAircraftPanel"),
+    appSource.indexOf("function renderMesaMissionPanel")
+  );
+  const missionSource = appSource.slice(
+    appSource.indexOf("function renderMesaMissionPanel"),
+    appSource.indexOf("function renderMesaSupportPanel")
+  );
+  const supportSource = appSource.slice(
+    appSource.indexOf("function renderMesaSupportPanel"),
+    appSource.indexOf("function renderMesaOntologyPanel")
+  );
+
+  assert.match(stageSource, /mesaStateClass\(aircraft\.state\)/);
+  assert.match(stageSource, /htmlEscape\(aircraft\.label\)/);
+  assert.match(stageSource, /htmlEscape\(aircraft\.type\)/);
+  assert.match(stageSource, /htmlEscape\(stateLabel\(aircraft\.state\)\)/);
+  assert.match(stageSource, /htmlEscape\(mission\.id\)/);
+  assert.match(stageSource, /htmlEscape\(mission\.status\)/);
+  assert.doesNotMatch(stageSource, /\$\{aircraft\.state\}/);
+  assert.doesNotMatch(stageSource, /\$\{aircraft\.label\}/);
+  assert.doesNotMatch(stageSource, /\$\{mission\.status\}/);
+
+  assert.match(aircraftSource, /htmlEscape\(aircraft\.label\)/);
+  assert.match(aircraftSource, /htmlEscape\(aircraft\.type\)/);
+  assert.match(aircraftSource, /htmlEscape\(selectedAircraft\.label\)/);
+  assert.match(aircraftSource, /htmlEscape\(selectedAircraft\.failedLru/);
+  assert.doesNotMatch(aircraftSource, /\$\{selectedAircraft\.label\}/);
+
+  assert.match(missionSource, /htmlEscape\(mission\.id\)/);
+  assert.match(missionSource, /htmlEscape\(mission\.status\)/);
+  assert.match(missionSource, /assignedTailNumbers\.map/);
+  assert.match(missionSource, /htmlEscape\(tailNumber\)/);
+  assert.doesNotMatch(missionSource, /assignedTailNumbers\.join\(" \/ "\)/);
+
+  assert.match(supportSource, /htmlEscape\(resource\.label\)/);
+  assert.match(supportSource, /htmlEscape\(spare\.label\)/);
+  assert.match(supportSource, /htmlEscape\(job\.tailNumber\)/);
+  assert.match(supportSource, /htmlEscape\(job\.task\)/);
+  assert.match(supportSource, /htmlEscape\(job\.state\)/);
+  assert.match(supportSource, /htmlEscape\(event\.message\)/);
+});
+
 test("support organization and activity pages follow ship_front tree table editor structure", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   assert.match(appSource, /function renderSupportOrganizationWorkbench/);

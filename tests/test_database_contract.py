@@ -400,6 +400,7 @@ class DatabaseContractTest(unittest.TestCase):
     def test_repository_blocks_overwriting_referenced_published_modeling_import_on_publish(self) -> None:
         import_package = self._fixture("modeling_import_project.json")
         validation = {"ok": True, "status": "valid", "issues": []}
+        original_mission_name = import_package["objects"]["missionProfiles"][0]["name"]
         self.repository.upsert_modeling_import(import_package, validation)
         self.repository.publish_modeling_import(import_package["importId"])
         self.connection.execute(
@@ -426,6 +427,41 @@ class DatabaseContractTest(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "published modeling import is referenced"):
             self.repository.publish_modeling_import(changed_package["importId"])
+
+    def test_repository_blocks_direct_published_upsert_over_referenced_published_import(self) -> None:
+        import_package = self._fixture("modeling_import_project.json")
+        validation = {"ok": True, "status": "valid", "issues": []}
+        original_mission_name = import_package["objects"]["missionProfiles"][0]["name"]
+        self.repository.upsert_modeling_import(import_package, validation)
+        self.repository.publish_modeling_import(import_package["importId"])
+        self.connection.execute(
+            """
+            UPDATE modeling_imports
+            SET referenced_run_ids_json = ?
+            WHERE import_id = ?
+            """,
+            (
+                json.dumps(["run-smoke-contract-001"]),
+                import_package["importId"],
+            ),
+        )
+        self.connection.commit()
+
+        changed_package = self._fixture("modeling_import_project.json")
+        changed_package["lifecycle"] = {
+            "state": "published",
+            "version": 2,
+            "referencedRunIds": [],
+        }
+        changed_package["objects"]["missionProfiles"][0]["name"] = "changed through direct save"
+
+        with self.assertRaisesRegex(ValueError, "published modeling import is referenced"):
+            self.repository.upsert_modeling_import(changed_package, validation)
+
+        stored = self.repository.get_modeling_import(import_package["importId"])
+        self.assertEqual(stored["publishedPackage"]["objects"]["missionProfiles"][0]["name"], original_mission_name)
+        row = self.repository._get_modeling_import_row(import_package["importId"])
+        self.assertEqual(json.loads(row["referenced_run_ids_json"]), ["run-smoke-contract-001"])
 
     def test_repository_does_not_silently_return_mismatched_run_artifacts(self) -> None:
         project = self._fixture("smoke_project.json")
