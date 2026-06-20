@@ -3606,7 +3606,12 @@ async function startExperimentRunThroughApi() {
       savedProject.project_id,
       buildExperimentPlanConfig(planProjectJson)
     );
-    backendRun = await backendApi.startSimulationRun(savedProject.project_id, experimentPlan.experiment_plan_id, "smoke");
+    backendRun = await backendApi.submitRun({
+      project_id: savedProject.project_id,
+      experiment_plan_id: experimentPlan.experiment_plan_id,
+      model_family: "smoke",
+      run_type: "single"
+    });
     lastRunExperimentPlanProjectJson = {
       run_id: backendRun.run_id,
       project_json: planProjectJson
@@ -3630,7 +3635,7 @@ async function startExperimentRunThroughApi() {
 
 async function refreshRunResultThroughApi(runId = backendRun?.run_id) {
   if (!runId) return;
-  backendRun = await backendApi.getRun(runId);
+  backendRun = await backendApi.getRunStatus(runId);
   backendRunResult = await backendApi.getRunResult(runId);
   backendArtifactManifest = await backendApi.getRunArtifacts(runId);
   backendRunChain = await backendApi.getRunChain(runId);
@@ -4412,6 +4417,12 @@ function renderMonteCarloResults() {
       </div>
       <div class="backend-run-chain">
         <span>后端状态：${htmlEscape(backendApiStatus)}</span>
+        <div class="result-source-note">
+          <strong>后端产物来源</strong>
+          <span>Run status、ResultSummary、ArtifactManifest 和 identity chain 来自后端 /api/runs。</span>
+          <strong>前端展示桥接</strong>
+          <span>下方蒙特卡洛分组表仍由当前 ExperimentPlan 分支快照在前端重算，用于展示过渡；不作为 M6.0 真实批量 Monte Carlo artifact。</span>
+        </div>
         ${backendChainRows.length
           ? `<table><tbody>${backendChainRows.map(([label, value]) => `<tr><th>${htmlEscape(label)}</th><td>${htmlEscape(value)}</td></tr>`).join("")}</tbody></table>`
           : `<p>${htmlEscape(backendRun?.run_id || "尚未读取 run_id 身份链")}</p>`}

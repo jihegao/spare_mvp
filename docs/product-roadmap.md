@@ -291,7 +291,7 @@ M5.2 工作台与 Scenario 预览入口：
 
 推进方式：以正式后端 API + worker + artifact storage 为目标演进；开发期可以继续使用本地 adapter 和 smoke model 做可脚本化验证，但不再要求先建设独立 `Simulation Contract Service`。
 
-M6.0 首片：新增 `RunService` 与 canonical `/api/runs`，把当前同步 smoke run 包装成可轮询的运行服务边界。前端启动运行后先拿 `run_id`，再查询 status/result/artifact/chain。该首片的后端输入是 ExperimentPlan 绑定的 ModelingSnapshot 加当前支持的 `steps` 配置，仍使用本地同步执行器，不包含完整 ExperimentPlan payload 编译、完整 worker 队列、取消、重试、超时、资源隔离、真实批量 Monte Carlo fan-out、长期 artifact storage 或 `aviation_support` 编译解锁。
+M6.0 当前收束：已新增 `RunService` 与 canonical `/api/runs`，把当前同步 smoke run 包装成可轮询的运行服务边界。前端启动运行后先拿 `run_id`，再查询 status/result/artifact/chain；旧 `/api/simulation-runs` 路径继续兼容。RunService 在当前进程内串行化 run id 生成，并能在执行器失败后返回 failed status envelope。该首片的后端输入是 ExperimentPlan 绑定的 ModelingSnapshot 加当前支持的 `steps` 配置，仍使用本地同步执行器，不包含完整 ExperimentPlan payload 编译、完整 worker 队列、取消、重试、超时、资源隔离、真实批量 Monte Carlo fan-out、长期 artifact storage 或 `aviation_support` 编译解锁。
 
 M6.1 建议切片：理顺“仿真实验方案 -> Monte Carlo 运行监控 -> 方案状态”的业务流。仿真实验方案保存实验基本信息（实验名称、仿真总时长、随机种子）和实验类型配置。实验类型包含通用“大样本评估”、备件规划评估模块的“备件短板”“携行清单”、任务可靠度评估模块的“任务可靠度”“停机因素”；勾选后打开对应配置面板，未勾选则不生成正式分析请求。Monte Carlo 实验页面点击启动后，页面显示大样本完成进度和日志输出；回到仿真实验方案管理时，同一方案状态显示为“运行中”“已完成”或“运行失败”。
 

@@ -14,20 +14,22 @@ test("frontend API client exposes stable PR-F save run and result methods", asyn
       if (request.path === "/projects/project-ui") return { project_id: "project-ui", project_version: "project-v0.1" };
       if (request.path === "/projects/project-ui/modeling-snapshots") return { snapshot_id: "snapshot-ui" };
       if (request.path === "/projects/project-ui/experiment-plans") return { experiment_plan_id: "plan-ui" };
-      if (request.path === "/simulation-runs") {
+      if (request.path === "/runs") {
         return {
           run_id: "run-ui",
           project_id: "project-ui",
           scenario_id: "scenario-ui",
           result_summary_id: "result-ui",
           artifact_manifest_id: "artifact-ui",
-          status: "succeeded"
+          status: "succeeded",
+          phase: "completed",
+          progress: 1
         };
       }
-      if (request.path === "/simulation-runs/run-ui") return { run_id: "run-ui", status: "succeeded" };
-      if (request.path === "/simulation-runs/run-ui/result") return { result_id: "result-ui", metrics: { mission_success_rate: 0.9 } };
-      if (request.path === "/simulation-runs/run-ui/artifacts") return { artifact_manifest_id: "artifact-ui", artifacts: [] };
-      if (request.path === "/simulation-runs/run-ui/chain") {
+      if (request.path === "/runs/run-ui") return { run_id: "run-ui", status: "succeeded", phase: "completed", progress: 1 };
+      if (request.path === "/runs/run-ui/result") return { result_id: "result-ui", metrics: { mission_success_rate: 0.9 } };
+      if (request.path === "/runs/run-ui/artifacts") return { artifact_manifest_id: "artifact-ui", artifacts: [] };
+      if (request.path === "/runs/run-ui/chain") {
         return {
           project_id: "project-ui",
           modeling_snapshot_id: "snapshot-ui",
@@ -47,8 +49,13 @@ test("frontend API client exposes stable PR-F save run and result methods", asyn
   const storedProject = await client.getProject(saved.project_id);
   const snapshot = await client.createModelingSnapshot(saved.project_id);
   const plan = await client.createExperimentPlan(saved.project_id, { steps: 2 });
-  const run = await client.startSimulationRun(saved.project_id, plan.experiment_plan_id);
-  const storedRun = await client.getRun(run.run_id);
+  const run = await client.submitRun({
+    project_id: saved.project_id,
+    experiment_plan_id: plan.experiment_plan_id,
+    model_family: "smoke",
+    run_type: "single"
+  });
+  const storedRun = await client.getRunStatus(run.run_id);
   const result = await client.getRunResult(run.run_id);
   const artifacts = await client.getRunArtifacts(run.run_id);
   const chain = await client.getRunChain(run.run_id);
@@ -56,6 +63,7 @@ test("frontend API client exposes stable PR-F save run and result methods", asyn
   assert.equal(storedProject.project_id, "project-ui");
   assert.equal(snapshot.snapshot_id, "snapshot-ui");
   assert.equal(run.status, "succeeded");
+  assert.equal(run.phase, "completed");
   assert.equal(storedRun.run_id, "run-ui");
   assert.equal(result.result_id, "result-ui");
   assert.equal(artifacts.artifact_manifest_id, "artifact-ui");
@@ -66,13 +74,44 @@ test("frontend API client exposes stable PR-F save run and result methods", asyn
     "GET /projects/project-ui",
     "POST /projects/project-ui/modeling-snapshots",
     "POST /projects/project-ui/experiment-plans",
-    "POST /simulation-runs",
-    "GET /simulation-runs/run-ui",
-    "GET /simulation-runs/run-ui/result",
-    "GET /simulation-runs/run-ui/artifacts",
-    "GET /simulation-runs/run-ui/chain"
+    "POST /runs",
+    "GET /runs/run-ui",
+    "GET /runs/run-ui/result",
+    "GET /runs/run-ui/artifacts",
+    "GET /runs/run-ui/chain"
   ]);
   assert.equal(calls[5].body.model_family, "smoke");
+  assert.equal(calls[5].body.run_type, "single");
+});
+
+test("frontend API client keeps legacy run aliases on canonical run routes", async () => {
+  const calls = [];
+  const client = createBackendApiClient({
+    transport: async (request) => {
+      calls.push(request);
+      if (request.path === "/runs") return { run_id: "run-alias", status: "succeeded", phase: "completed" };
+      if (request.path === "/simulation-runs/run-alias") {
+        return { run_id: "run-alias", schema_version: "run-v0", model_id: "SmokeSpareMvpModel" };
+      }
+      throw new Error(`unexpected request ${request.method} ${request.path}`);
+    }
+  });
+
+  const submitted = await client.startSimulationRun("project-ui", "plan-ui");
+  const rawRun = await client.getRun(submitted.run_id);
+
+  assert.equal(rawRun.schema_version, "run-v0");
+  assert.equal(rawRun.model_id, "SmokeSpareMvpModel");
+  assert.deepEqual(calls.map((call) => `${call.method} ${call.path}`), [
+    "POST /runs",
+    "GET /simulation-runs/run-alias"
+  ]);
+  assert.deepEqual(calls[0].body, {
+    project_id: "project-ui",
+    experiment_plan_id: "plan-ui",
+    model_family: "smoke",
+    run_type: "single"
+  });
 });
 
 test("frontend API client exposes explicit M5 modeling import methods", async () => {
@@ -284,8 +323,10 @@ test("frontend app routes project save run and result reads through API client",
   assert.match(appSource, /backendApi\.getProject/);
   assert.match(appSource, /backendApi\.createModelingSnapshot/);
   assert.match(appSource, /backendApi\.createExperimentPlan/);
-  assert.match(appSource, /backendApi\.startSimulationRun/);
-  assert.match(appSource, /backendApi\.getRun\(/);
+  assert.match(appSource, /backendApi\.submitRun/);
+  assert.match(appSource, /backendApi\.getRunStatus/);
+  assert.doesNotMatch(appSource, /backendApi\.startSimulationRun/);
+  assert.doesNotMatch(appSource, /backendApi\.getRun\(/);
   assert.match(appSource, /backendApi\.getRunResult/);
   assert.match(appSource, /backendApi\.getRunArtifacts/);
   assert.match(appSource, /backendApi\.getRunChain/);
@@ -293,6 +334,8 @@ test("frontend app routes project save run and result reads through API client",
   assert.match(appSource, /backend-run-chain/);
   assert.match(appSource, /backendArtifactManifest\.artifacts/);
   assert.match(appSource, /ArtifactManifest/);
+  assert.match(appSource, /后端产物来源/);
+  assert.match(appSource, /前端展示桥接/);
   assert.match(appSource, /hydrateLastBackendRunFromApi/);
   assert.match(appSource, /const LAST_BACKEND_RUN_STORAGE_KEY = "spare-mvp:lastBackendRun"/);
   assert.match(appSource, /localStorage\.setItem\(LAST_BACKEND_RUN_STORAGE_KEY/);

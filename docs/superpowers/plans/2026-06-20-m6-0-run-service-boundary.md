@@ -10,6 +10,10 @@
 
 ---
 
+## 当前实现状态
+
+截至 2026-06-20，本计划的 M6.0 首片已实现到代码路径：`RunService` 承接同步 smoke run 的提交和 status envelope，`BackendApi` 委托 `submit_run()` / `get_run_status()`，HTTP 暴露 canonical `/api/runs` 并保留 `/api/simulation-runs` 兼容路径，前端通过 `submitRun()` / `getRunStatus()` 再读取 result/artifacts/chain，浏览器 smoke 等待 canonical `/api/runs` 或旧兼容入口。RunService 在当前进程内串行化 run id 生成，并在执行器失败后持久化 failed run 和空 ArtifactManifest，供 status 查询。计划正文保留 TDD 实施步骤和验收口径，供后续审计和回归使用。
+
 ## File Structure
 
 - Create: `src/spare_mvp_backend/run_service.py`

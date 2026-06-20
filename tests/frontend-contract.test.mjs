@@ -936,7 +936,12 @@ test("monte carlo launch creates a run from the current experiment plan branch",
   assert.match(launchSource, /const planProjectJson = buildBackendProjectJson\(experimentPlanDraft, currentProject\)/);
   assert.match(launchSource, /backendApi\.createExperimentPlan/);
   assert.match(launchSource, /buildExperimentPlanConfig\(planProjectJson\)/);
-  assert.match(launchSource, /backendApi\.startSimulationRun\(savedProject\.project_id, experimentPlan\.experiment_plan_id, "smoke"\)/);
+  assert.match(launchSource, /backendApi\.submitRun/);
+  assert.match(launchSource, /project_id: savedProject\.project_id/);
+  assert.match(launchSource, /experiment_plan_id: experimentPlan\.experiment_plan_id/);
+  assert.match(launchSource, /model_family: "smoke"/);
+  assert.match(launchSource, /run_type: "single"/);
+  assert.doesNotMatch(launchSource, /backendApi\.startSimulationRun/);
 });
 
 test("click-based modeling mutations mark project draft dirty before rendering", async () => {
@@ -985,6 +990,8 @@ test("run result refresh rebuilds frontend state from the experiment plan branch
   );
 
   assert.match(launchSource, /lastRunExperimentPlanProjectJson = \{\s*run_id: backendRun\.run_id,\s*project_json: planProjectJson\s*\}/);
+  assert.match(refreshSource, /backendApi\.getRunStatus\(runId\)/);
+  assert.doesNotMatch(refreshSource, /backendApi\.getRun\(runId\)/);
   assert.match(refreshSource, /const planProjectJson = currentRunExperimentPlanProjectJson\(runId\)/);
   assert.match(refreshSource, /if \(!planProjectJson\)/);
   assert.match(runPlanSource, /lastRunExperimentPlanProjectJson\?\.run_id === runId/);
@@ -1011,6 +1018,8 @@ test("monte carlo evaluation result is rendered in result analysis page", async 
   assert.match(appSource, /function renderMonteCarloResults/);
   assert.match(appSource, /蒙特卡洛评估结果/);
   assert.match(appSource, /蒙特卡洛评估值/);
+  assert.match(appSource, /后端产物来源/);
+  assert.match(appSource, /前端展示桥接/);
   assert.match(appSource, /目标值/);
   assert.match(appSource, /mc-result-cards/);
   assert.match(appSource, /mc-evaluation-table/);

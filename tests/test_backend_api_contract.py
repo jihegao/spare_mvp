@@ -9,7 +9,8 @@ import unittest
 
 from src.spare_mvp_backend.api import BackendApi, BackendApiError
 from src.spare_mvp_backend.repository import ContractRepository, initialize_database
-from src.spare_mvp_contract.adapter import SimulationAdapter
+from src.spare_mvp_backend.run_service import RunService, RunServiceError
+from src.spare_mvp_contract.adapter import AdapterError, SimulationAdapter
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -34,6 +35,18 @@ class RecordingAdapter(SimulationAdapter):
     ) -> dict[str, dict]:
         self.run_calls.append((copy.deepcopy(scenario), steps, run_id))
         return super().run_scenario(scenario, output_dir=output_dir, steps=steps, run_id=run_id)
+
+
+class FailingRunAdapter(RecordingAdapter):
+    def run_scenario(
+        self,
+        scenario: dict,
+        output_dir: Path | str,
+        steps: int = 3,
+        run_id: str | None = None,
+    ) -> dict[str, dict]:
+        self.run_calls.append((copy.deepcopy(scenario), steps, run_id))
+        raise AdapterError("executor_failed", "synthetic executor failure", run_id=run_id)
 
 
 class BackendApiContractTest(unittest.TestCase):
@@ -100,6 +113,155 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(chain["run_id"], run["run_id"])
         self.assertEqual(chain["result_summary_id"], run["result_summary_id"])
         self.assertEqual(chain["artifact_manifest_id"], run["artifact_manifest_id"])
+
+    def test_run_service_submits_smoke_run_and_returns_status_envelope(self) -> None:
+        project = self._fixture("smoke_project.json")
+        saved = self.api.save_project(project)
+        snapshot = self.api.create_modeling_snapshot(saved["project_id"])
+        plan = self.api.create_experiment_plan(saved["project_id"], {"name": "m6 status", "steps": 2})
+
+        service = RunService(self.repository, self.adapter, self.api.output_dir)
+        submitted = service.submit_run(
+            {
+                "project_id": saved["project_id"],
+                "experiment_plan_id": plan["experiment_plan_id"],
+                "model_family": "smoke",
+                "run_type": "single",
+            }
+        )
+        status = service.get_run_status(submitted["run_id"])
+
+        self.assertEqual(submitted["status"], "succeeded")
+        self.assertEqual(submitted["phase"], "completed")
+        self.assertEqual(submitted["progress"], 1)
+        self.assertEqual(submitted["run_type"], "single")
+        self.assertEqual(submitted["model_family"], "smoke")
+        self.assertEqual(status["run_id"], submitted["run_id"])
+        self.assertEqual(status["experiment_plan_id"], plan["experiment_plan_id"])
+        self.assertEqual(status["modeling_snapshot_id"], snapshot["snapshot_id"])
+        self.assertEqual(status["result_summary_id"], submitted["result_summary_id"])
+        self.assertEqual(status["artifact_manifest_id"], submitted["artifact_manifest_id"])
+        self.assertEqual(self.adapter.run_calls[0][1], 2)
+
+    def test_run_service_rejects_missing_model_family_on_canonical_submit(self) -> None:
+        project = self._fixture("smoke_project.json")
+        saved = self.api.save_project(project)
+        self.api.create_modeling_snapshot(saved["project_id"])
+        plan = self.api.create_experiment_plan(saved["project_id"], {"name": "missing family", "steps": 2})
+        service = RunService(self.repository, self.adapter, self.api.output_dir)
+
+        with self.assertRaises(RunServiceError) as ctx:
+            service.submit_run(
+                {
+                    "project_id": saved["project_id"],
+                    "experiment_plan_id": plan["experiment_plan_id"],
+                    "run_type": "single",
+                }
+            )
+
+        self.assertEqual(ctx.exception.code, "bad_run_request")
+
+    def test_backend_api_submit_run_uses_m6_status_envelope(self) -> None:
+        project = self._fixture("smoke_project.json")
+        saved = self.api.save_project(project)
+        self.api.create_modeling_snapshot(saved["project_id"])
+        plan = self.api.create_experiment_plan(saved["project_id"], {"name": "submit run", "steps": 1})
+
+        submitted = self.api.submit_run(
+            {
+                "project_id": saved["project_id"],
+                "experiment_plan_id": plan["experiment_plan_id"],
+                "model_family": "smoke",
+                "run_type": "single",
+            }
+        )
+        status = self.api.get_run_status(submitted["run_id"])
+
+        self.assertEqual(submitted["status"], "succeeded")
+        self.assertEqual(submitted["phase"], "completed")
+        self.assertEqual(status["run_id"], submitted["run_id"])
+        self.assertEqual(status["experiment_plan_id"], plan["experiment_plan_id"])
+
+    def test_backend_api_submit_run_rejects_project_plan_mismatch(self) -> None:
+        project = self._fixture("smoke_project.json")
+        saved = self.api.save_project(project)
+        self.api.create_modeling_snapshot(saved["project_id"])
+        plan = self.api.create_experiment_plan(saved["project_id"], {"name": "mismatch", "steps": 1})
+        other_project = copy.deepcopy(project)
+        other_project["project_id"] = "project-other"
+        other_project["scenarioId"] = "other-smoke-contract-demo"
+        other_saved = self.api.save_project(other_project)
+
+        with self.assertRaises(BackendApiError) as ctx:
+            self.api.submit_run(
+                {
+                    "project_id": other_saved["project_id"],
+                    "experiment_plan_id": plan["experiment_plan_id"],
+                    "model_family": "smoke",
+                    "run_type": "single",
+                }
+            )
+
+        self.assertEqual(ctx.exception.code, "project_plan_mismatch")
+
+    def test_backend_api_submit_run_keeps_aviation_support_blocked(self) -> None:
+        project = self._fixture("aviation_support_project.json")
+        saved = self.api.save_project(project)
+        self.api.create_modeling_snapshot(saved["project_id"])
+        plan = self.api.create_experiment_plan(saved["project_id"], {"name": "aviation blocked", "steps": 1})
+
+        with self.assertRaises(BackendApiError) as ctx:
+            self.api.submit_run(
+                {
+                    "project_id": saved["project_id"],
+                    "experiment_plan_id": plan["experiment_plan_id"],
+                    "model_family": "aviation_support",
+                    "run_type": "single",
+                }
+            )
+
+        self.assertEqual(ctx.exception.code, "unsupported_model_family")
+
+    def test_backend_api_start_simulation_run_delegates_to_m6_run_service(self) -> None:
+        project = self._fixture("smoke_project.json")
+        saved = self.api.save_project(project)
+        self.api.create_modeling_snapshot(saved["project_id"])
+        plan = self.api.create_experiment_plan(saved["project_id"], {"name": "compat", "steps": 1})
+
+        run = self.api.start_simulation_run(saved["project_id"], plan["experiment_plan_id"], model_family="smoke")
+        status = self.api.get_run_status(run["run_id"])
+
+        self.assertEqual(run["status"], "succeeded")
+        self.assertEqual(status["phase"], "completed")
+        self.assertEqual(status["run_id"], run["run_id"])
+        self.assertEqual(status["experiment_plan_id"], plan["experiment_plan_id"])
+
+    def test_run_service_persists_failed_status_when_executor_fails_after_scenario_compile(self) -> None:
+        project = self._fixture("smoke_project.json")
+        saved = self.api.save_project(project)
+        self.api.create_modeling_snapshot(saved["project_id"])
+        plan = self.api.create_experiment_plan(saved["project_id"], {"name": "failed executor", "steps": 1})
+        failing_adapter = FailingRunAdapter()
+        service = RunService(self.repository, failing_adapter, self.api.output_dir)
+
+        submitted = service.submit_run(
+            {
+                "project_id": saved["project_id"],
+                "experiment_plan_id": plan["experiment_plan_id"],
+                "model_family": "smoke",
+                "run_type": "single",
+            }
+        )
+        stored = self.api.get_run(submitted["run_id"])
+        artifacts = self.api.get_run_artifacts(submitted["run_id"])
+
+        self.assertEqual(submitted["status"], "failed")
+        self.assertEqual(submitted["phase"], "failed")
+        self.assertEqual(submitted["progress"], 0)
+        self.assertEqual(submitted["error"]["code"], "executor_failed")
+        self.assertEqual(stored["status"], "failed")
+        self.assertEqual(artifacts["run_id"], submitted["run_id"])
+        self.assertEqual(artifacts["artifacts"], [])
 
     def test_run_chain_preserves_snapshot_and_plan_after_project_resave(self) -> None:
         project = self._fixture("smoke_project.json")

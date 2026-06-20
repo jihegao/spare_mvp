@@ -71,6 +71,72 @@ class BackendHttpApiTest(unittest.TestCase):
                 server.server_close()
                 thread.join(timeout=5)
 
+    def test_http_api_exposes_canonical_run_status_routes_and_keeps_legacy_raw_run(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            server = create_backend_server(
+                ("127.0.0.1", 0),
+                repo_root=REPO_ROOT,
+                database_path=":memory:",
+                output_dir=Path(tmp) / "artifacts",
+            )
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                base_url = f"http://127.0.0.1:{server.server_address[1]}/api"
+                project = self._fixture("smoke_project.json")
+                saved = self._json(base_url, "POST", "/projects", project)
+                snapshot = self._json(base_url, "POST", f"/projects/{saved['project_id']}/modeling-snapshots")
+                plan = self._json(
+                    base_url,
+                    "POST",
+                    f"/projects/{saved['project_id']}/experiment-plans",
+                    {"config": {"name": "canonical runs", "steps": 2}},
+                )
+
+                missing_family = self._json_error(
+                    base_url,
+                    "POST",
+                    "/runs",
+                    {
+                        "project_id": saved["project_id"],
+                        "experiment_plan_id": plan["experiment_plan_id"],
+                        "run_type": "single",
+                    },
+                )
+                submitted = self._json(
+                    base_url,
+                    "POST",
+                    "/runs",
+                    {
+                        "project_id": saved["project_id"],
+                        "experiment_plan_id": plan["experiment_plan_id"],
+                        "model_family": "smoke",
+                        "run_type": "single",
+                    },
+                )
+                status = self._json(base_url, "GET", f"/runs/{submitted['run_id']}")
+                result = self._json(base_url, "GET", f"/runs/{submitted['run_id']}/result")
+                artifacts = self._json(base_url, "GET", f"/runs/{submitted['run_id']}/artifacts")
+                chain = self._json(base_url, "GET", f"/runs/{submitted['run_id']}/chain")
+                legacy_run = self._json(base_url, "GET", f"/simulation-runs/{submitted['run_id']}")
+
+                self.assertEqual(missing_family["code"], "bad_run_request")
+                self.assertEqual(submitted["phase"], "completed")
+                self.assertEqual(submitted["progress"], 1)
+                self.assertEqual(submitted["experiment_plan_id"], plan["experiment_plan_id"])
+                self.assertEqual(status["run_id"], submitted["run_id"])
+                self.assertEqual(status["modeling_snapshot_id"], snapshot["snapshot_id"])
+                self.assertEqual(result["run_id"], submitted["run_id"])
+                self.assertEqual(artifacts["run_id"], submitted["run_id"])
+                self.assertEqual(chain["run_id"], submitted["run_id"])
+                self.assertEqual(legacy_run["run_id"], submitted["run_id"])
+                self.assertEqual(legacy_run["schema_version"], "run-v0")
+                self.assertIn("model_id", legacy_run)
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
     def test_http_server_serves_static_frontend_on_same_origin(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             server = create_backend_server(
