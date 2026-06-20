@@ -4,9 +4,10 @@ import {
 } from "./sim-engine.mjs";
 
 const DEFAULT_API_BASE = "/api";
+const DEFAULT_TIMEOUT_MS = 10000;
 
-export function createBackendApiClient({ baseUrl = DEFAULT_API_BASE, transport, getAuthToken } = {}) {
-  const request = wrapAuthTransport(transport || createFetchTransport(baseUrl), getAuthToken);
+export function createBackendApiClient({ baseUrl = DEFAULT_API_BASE, transport, getAuthToken, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
+  const request = wrapAuthTransport(transport || createFetchTransport(baseUrl, { timeoutMs }), getAuthToken);
   return {
     login(username, password) {
       return request({ method: "POST", path: "/auth/login", body: { username, password }, auth: false });
@@ -150,20 +151,39 @@ function wrapAuthTransport(transport, getAuthToken) {
   };
 }
 
-function createFetchTransport(baseUrl) {
+function createFetchTransport(baseUrl, { timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
   return async ({ method, path, body, headers = {} }) => {
     if (typeof fetch !== "function") {
       throw new Error("Backend API fetch transport is unavailable");
     }
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
     const requestHeaders = {
       ...headers,
       ...(body === undefined ? {} : { "content-type": "application/json" })
     };
-    const response = await fetch(`${baseUrl}${path}`, {
-      method,
-      headers: Object.keys(requestHeaders).length === 0 ? undefined : requestHeaders,
-      body: body === undefined ? undefined : JSON.stringify(body)
-    });
+    let response;
+    try {
+      response = await fetch(`${baseUrl}${path}`, {
+        method,
+        signal: controller.signal,
+        headers: Object.keys(requestHeaders).length === 0 ? undefined : requestHeaders,
+        body: body === undefined ? undefined : JSON.stringify(body)
+      });
+    } catch (err) {
+      const timedOut = controller.signal.aborted;
+      const error = new Error(
+        timedOut
+          ? `Backend API request timed out after ${timeoutMs}ms`
+          : `Backend API network request failed: ${err && err.message ? err.message : "unknown error"}`
+      );
+      error.code = timedOut ? "backend_request_timeout" : "backend_network_error";
+      error.details = { method, path, timeoutMs };
+      error.cause = err;
+      throw error;
+    } finally {
+      clearTimeout(timeoutId);
+    }
     const payload = await response.json().catch(() => null);
     if (!response.ok) {
       const error = new Error(payload?.message || `Backend API HTTP ${response.status}`);

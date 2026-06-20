@@ -46,6 +46,7 @@ http://127.0.0.1:4173/front/
 16. M6.1 前端 formal-result boundary 必须保留：四个结果分析页缺少 compiler provenance 或官方 analysis artifact 时，只能显示“本地预览，不是正式后端仿真结果”和“缺少 compiler provenance”等边界信息，不能把本地 `singleResult` 投影呈现为正式后端产物。
 17. M6.1.1 单次仿真输入对齐必须保留：ExperimentPlan config 携带完整分支 `projectJson`，RunService 编译单次 smoke run 时优先使用该分支输入，并在 mapping provenance 中记录 `experiment_plan_id` 和 `modeling_snapshot_id`；旧计划缺少 `projectJson` 时才回退 ModelingSnapshot。
 18. M6.2 才做统一 Monte Carlo / analysis profile：基于 M6.1/M6.1.1 编译通过的 Scenario 产出统一 MC artifacts；“大样本评估、备件短板、携行清单、任务可靠度、停机因素”只能作为 artifact projection 展示。M6.1/M6.1.1 不包含 Monte Carlo fan-out、官方四类 analysis artifact、worker queue、object storage、取消/重试或新的 auth/audit scope；未配置、运行中、运行失败或输入未通过编译时，结果分析页不得显示正式结果图表。
+19. 执行 `reports/2026-06-19-page-revision-suggestions/README.md` 页面建议时，必须保留系统管理下的「建模数据导入」工作台；已取消“删除此页面”。页面建议收口只修 M6.1.1 前置输入可用性、死按钮和字段口径，不得顺手实现 M6.1.1、M6.2 或删除 M5.2 导入入口。
 
 ## Mesa 后台契约服务（Contract Provider）
 
