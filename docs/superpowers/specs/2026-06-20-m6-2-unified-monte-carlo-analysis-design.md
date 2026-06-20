@@ -4,23 +4,28 @@
 
 M6.2 必须建立在 M6.1 输入一致性和 M6.1.1 单次仿真输入对齐之上。只有当前端 Project / ExperimentPlan 分支已经能被 compiler 转换为可审计 Scenario input，Monte Carlo 样本和四类分析投影才有可信输入来源。
 
-M6.2 的目标是把大样本运行和分析类型统一到一套实验对象中：仿真实验方案是可编辑输入分支，Monte Carlo 实验是批量运行历史，备件短板、携行清单、任务可靠度、停机因素是绑定 Monte Carlo artifact 的分析任务或 projection，而不是各自独立做一套 demo 计算。
+M6.2 的目标是把单次仿真、大样本运行和分析类型统一到一套实验对象族中：仿真实验方案是可编辑输入分支，单次仿真实验和 Monte Carlo 实验共享公共运行字段，再按单次/批量语义分别扩展；备件短板、携行清单、任务可靠度、停机因素是绑定 Monte Carlo artifact 的分析任务或 projection，而不是各自独立做一套 demo 计算。
 
 ## 对象定位
 
 1. `ExperimentPlan`：仿真实验方案，保存从项目建模数据复制出的参数分支。方案编辑可以按三级功能、四级功能、字段和值定位覆盖项，也可以通过字段搜索定位；方案修改不回写 Project draft。
-2. `MonteCarloExperiment`：批量运行记录，保存 `mc_experiment_id`、关联方案、样本量、随机种子、状态、进度、`run_id` 和 artifact 引用。可视化推演仍是单次或交互式运行入口，Monte Carlo 实验是批量运行主账本。
-3. `AnalysisTask`：结果分析任务，保存分析类型、关联方案、分析参数和 `linkedMonteCarloExperimentId`。四个分析页可以提供列表、创建、编辑、删除和详情体验，但它们必须绑定 Monte Carlo 实验或其 artifact，不直接各自重新定义一套仿真运行。
+2. `SimulationExperimentBase`：单次仿真实验和 Monte Carlo 实验共享的运行对象契约，不直接对应独立页面。最小字段包括 `experiment_id`、`experiment_type`、模块、关联方案、Scenario identity、随机种子、状态、进度、`run_id`、artifact 引用和 mapping/provenance。所有正式实验入口都必须先落到该公共契约，再按类型扩展。
+3. `SingleSimulationExperiment`：单次或交互式仿真记录，服务于可视化推演。它复用 `SimulationExperimentBase`，扩展当前仿真步、状态帧或交互会话信息；不包含样本量、sweep 和聚合指标。
+4. `MonteCarloExperiment`：批量运行记录，复用 `SimulationExperimentBase`，并扩展 `mc_experiment_id`、样本量、sweep 参数、样本批次、聚合结果和 analysis projection artifact 引用。`mc_experiment_id` 可以作为该类型的业务主键，但不能替代公共 `experiment_id` 语义。Monte Carlo 实验是批量运行主账本。
+5. `AnalysisTask`：结果分析任务，保存分析类型、关联方案、分析参数和 `linkedMonteCarloExperimentId`。四个分析页可以提供列表、创建、编辑、删除和详情体验，但它们必须绑定 Monte Carlo 实验或其 artifact，不直接各自重新定义一套仿真运行。
 
 允许用户在分析页选择方案和参数后自动创建一个新的 Monte Carlo 实验，并把新实验的 `mc_experiment_id` 写入分析任务的 `linkedMonteCarloExperimentId`。页面必须显式展示该绑定关系，防止用户误以为分析页独立运行了另一套样本。
+
+当前前端原型中，Monte Carlo 实验详情页启动时仍复用 `run_type: "single"` 的运行服务路径，这是过渡实现。正式 M6.2 目标必须把 `run_type` 或等价调度类型拆成 `single` 与 `monte_carlo`，并让两者共享 `SimulationExperimentBase`，而不是把 Monte Carlo 批量实验伪装成单次运行。
 
 ## 目标
 
 1. ExperimentPlan 保存可运行的方案分支和默认运行配置。
-2. Monte Carlo 实验基于 M6.1 编译通过的 Scenario 执行统一样本，并保存全部实验运行历史。
-3. 产出统一 Monte Carlo artifacts，包含样本输入、样本输出、聚合指标、mapping/provenance 和随机种子。
-4. 四类分析页面管理 AnalysisTask，只从绑定的正式 artifacts 做 projection。
-5. 未创建任务、未绑定 Monte Carlo 实验、运行中、运行失败、输入不一致的分析页必须显示对应状态，不能显示静态正式结果。
+2. 单次仿真实验与 Monte Carlo 实验共享 `SimulationExperimentBase` 的身份、方案、状态、进度、run 和 artifact 字段。
+3. Monte Carlo 实验基于 M6.1 编译通过的 Scenario 执行统一样本，并保存全部实验运行历史。
+4. 产出统一 Monte Carlo artifacts，包含样本输入、样本输出、聚合指标、mapping/provenance 和随机种子。
+5. 四类分析页面管理 AnalysisTask，只从绑定的正式 artifacts 做 projection。
+6. 未创建任务、未绑定 Monte Carlo 实验、运行中、运行失败、输入不一致的分析页必须显示对应状态，不能显示静态正式结果。
 
 ## Analysis Profile
 
@@ -71,11 +76,11 @@ M6.2 的目标是把大样本运行和分析类型统一到一套实验对象中
    - 方案列表：每个方案提供“启动可视化推演”和“创建蒙特卡洛实验”。
    - 方案编辑：修改方案输入参数和默认实验配置。
 2. 可视化推演：
-   - 选择方案，启动单次或交互式仿真。
+   - 选择方案，启动单次或交互式仿真，并创建或关联 `SingleSimulationExperiment`。
 3. 蒙特卡洛实验：
    - 实验列表：保存全部运行历史。
    - 添加/编辑实验：选择方案、样本量、随机种子和 sweep 参数。
-   - 实验详情：启动实验、查看进度、日志、结果和 artifact。
+   - 实验详情：启动 `run_type = "monte_carlo"` 或等价批量调度，查看进度、日志、结果和 artifact。
 4. 结果分析：
    - 每个分析类型先进入分析任务列表。
    - 创建任务时选择方案和分析参数；没有可用 Monte Carlo 实验时允许自动创建并绑定。
@@ -123,8 +128,9 @@ M6.2 artifact 应分为两层：
 
 ## 验收标准
 
-1. 同一 ExperimentPlan、mapping version 和 seed 能复现 Monte Carlo aggregate。
-2. 修改 M6.1 consumed field 后，Monte Carlo artifact 的输入版本或指标发生可解释变化。
-3. 未勾选的分析页显示“未配置”。
-4. 四类分析 projection 均能追溯到同一个基础 Monte Carlo artifact。
-5. 任何绕过 Scenario compiler 的 demo 或前端局部推导不得标记为正式后端结果。
+1. 单次仿真实验与 Monte Carlo 实验都能落到 `SimulationExperimentBase`，并共享方案、Scenario identity、seed、status、progress、run id 和 artifact 引用字段。
+2. 同一 ExperimentPlan、mapping version 和 seed 能复现 Monte Carlo aggregate。
+3. 修改 M6.1 consumed field 后，Monte Carlo artifact 的输入版本或指标发生可解释变化。
+4. 未勾选的分析页显示“未配置”。
+5. 四类分析 projection 均能追溯到同一个基础 Monte Carlo artifact。
+6. Monte Carlo 正式运行不得继续标记为 `run_type: "single"`；任何绕过 Scenario compiler 的 demo 或前端局部推导不得标记为正式后端结果。
