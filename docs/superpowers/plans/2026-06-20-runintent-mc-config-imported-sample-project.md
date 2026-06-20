@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 收敛前端到仿真的完整数据流：正式运行只走 `RunIntent -> /api/runs -> RunService -> artifacts`，Monte Carlo 输入只由一个 canonical config 解释，同时把页面内置静态数据逐步替换为“已发布建模导入包生成的示例项目”。
+**Goal:** 收敛前端到仿真的完整数据流：正式运行只走 `RunIntent -> /api/runs -> RunService -> artifacts`，Monte Carlo 输入只由一个 canonical config 解释，同时把页面内置静态项目从正式路径中移出，功能测试和正式 single/Monte Carlo run 先通过“已发布建模导入包生成的示例项目”创建 imported sample Project。
 
-**Architecture:** 后端新增 `MonteCarloRunConfig` 作为 `ExperimentPlan.config.analysisRequests.largeSample` 的唯一正式解释层；`RunService` 只编排 config、compiler 和 executor，不再从 request、Project draft 或 Adapter fallback 中猜测 MC 输入。前端新增 `RunIntent` helper 统一保存 Project、创建 Snapshot/Plan 和提交 run；本地 demo 结果保留为明确标注的 preview。示例项目由后端读取已发布 modeling import package，经 `modeling_import_to_project()` 生成并保存为 Project draft，静态 `defaultScenario` 只保留为离线 fixture/fallback。
+**Architecture:** 后端新增 `MonteCarloRunConfig` 作为 `ExperimentPlan.config.analysisRequests.largeSample` 的唯一正式解释层；`RunService` 只编排 config、compiler 和 executor，不再从 request、Project draft 或 Adapter fallback 中猜测 MC 输入。前端新增 `RunIntent` helper 统一保存 Project、创建 Snapshot/Plan 和提交 run；本地 demo 结果保留为明确标注的 preview。示例项目由后端读取已发布 modeling import package，经 `modeling_import_to_project()` 生成并保存为 Project draft，静态 `defaultScenario` 只保留为本地预览/fixture。正式 single/Monte Carlo run 如果收到页面内置 preview fixture 项目，应 fail closed 并提示先生成 imported sample Project，不得把静态 seed 当正式输入。
 
 **Tech Stack:** Python stdlib + `unittest` backend contract tests, Node.js `node:test` frontend contract tests, existing SQLite repository, existing browser frontend, existing M4 bearer-token HTTP facade.
 
@@ -58,18 +58,30 @@ Do not implement worker queues, cancellation, retry, object storage, new auth sc
 
 ---
 
+## Current Status And Boundary
+
+As of the 2026-06-21 documentation sync, this plan is the active record for a small convergence slice rather than evidence that all static data has been deleted.
+
+- Formal single and Monte Carlo runs should start from a real Project created by the project-list action `从导入数据生成示例项目`, backed by a published modeling import package.
+- The page-bundled static Project/default scenario remains only for local preview, offline fixture use, and UI smoke tests.
+- A formal run request against that bundled preview fixture must fail closed. It must not silently promote `defaultScenario` into official `Project -> Snapshot -> ExperimentPlan -> Scenario` input.
+- Static analysis cards that still do not read projection payloads remain scheduled for M8 artifact payload consumption.
+- Static Mesa visualization frames remain scheduled for M9 state replay/streaming.
+
+---
+
 ## Static Data Exit Schedule
 
 The project should not delete all static data in one PR. Remove each kind only after the replacement data source exists and has tests.
 
 | Static source | Remove from formal path when | Replacement source | Keep as |
 | --- | --- | --- | --- |
-| `front/sim-engine.mjs:defaultScenario` as current project seed | After imported sample Project can be generated from a published modeling import and selected from the project list | `modeling_import_to_project(publishedPackage)` saved through BackendApi | `tests/fixtures` and offline fallback only |
-| `buildDemoResultState()` / `runSimulation()` / `runMonteCarlo()` as analysis values | After `RunIntent` formal runs and `ArtifactManifest` source checks are in place | `ResultSummary`, `monte_carlo_base`, `analysis_projection_*` | Explicit `PreviewProjection` with “本地预览，不是正式后端仿真结果” label |
+| `front/sim-engine.mjs:defaultScenario` as current project seed | After imported sample Project can be generated from a published modeling import, selected from the project list, and used by formal run tests | `modeling_import_to_project(publishedPackage)` saved through BackendApi | Local preview, `tests/fixtures`, and UI smoke fallback only |
+| `buildDemoResultState()` / `runSimulation()` / `runMonteCarlo()` as analysis values | After `RunIntent` formal runs and `ArtifactManifest` source checks are in place, with preview fixture runs blocked from formal execution | `ResultSummary`, `monte_carlo_base`, `analysis_projection_*` | Explicit `PreviewProjection` with “本地预览，不是正式后端仿真结果” label |
 | Static analysis cards that do not read artifact payload | During M8 artifact payload consumption | Projection artifact payloads | Empty/configuration states |
 | Static Mesa visualization frame | During M9 state replay/streaming | `run_id` state series or event stream | Fixture for UI smoke tests |
 
-This plan implements the first two rows as boundary work. It prepares the imported sample Project path now, but final removal of static analysis cards belongs to M8 and final removal of static visualization frames belongs to M9.
+This slice implements the first two rows as boundary work: imported sample Project creation becomes the functional-test and formal-run path, while the bundled preview fixture is kept but blocked from official single/Monte Carlo runs. It does not claim that every static source is gone. Final removal of static analysis cards belongs to M8 and final removal of static visualization frames belongs to M9.
 
 ---
 
