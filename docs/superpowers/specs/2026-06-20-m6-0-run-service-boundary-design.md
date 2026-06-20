@@ -96,6 +96,29 @@ Project draft -> persisted ExperimentPlan identity + ModelingSnapshot -> POST /a
 
 Monte Carlo 配置页的“启动”按钮可以继续复用当前 ExperimentPlan 创建逻辑，但不得绕过持久化 ExperimentPlan identity 或用当前可变 Project draft 重建 run identity。M6.0 只承诺后端 smoke run 使用 ExperimentPlan 绑定的 ModelingSnapshot 和 `steps`；前端若仍用本地保留的 plan draft 辅助展示，必须清楚区别于后端 artifact 的来源。启动后页面显示 run id、状态、进度和结果来源；如果 API 不可用，继续显示阻断状态，不创建 `offline-demo-run`。
 
+### 实验方案、运行监控与结果分析关系
+
+仿真实验方案是运行和分析的配置源，不是结果页的附属表单。后续 ExperimentPlan 需要保留三类信息：
+
+1. 基本信息：实验名称、仿真总时长、随机种子。
+2. 实验类型配置：以 `analysisRequests` 或等价结构记录勾选项和配置面板参数。
+3. 运行身份：Project、ModelingSnapshot、Scenario、Run、Result 和 ArtifactManifest 的 identity chain。
+
+实验类型按业务模块分组：
+
+1. 通用实验：大样本评估。
+2. 备件规划评估模块：备件短板、携行清单。
+3. 任务可靠度评估模块：任务可靠度、停机因素。
+
+用户在仿真实验方案中勾选某个实验类型后，页面打开对应配置面板；未勾选的实验类型不生成正式分析请求。M6.0 只稳定 run service/status 边界，不实现这些配置面板和完整 payload 编译。建议把配置面板、运行监控和方案列表状态收敛到 M6.1：Monte Carlo 实验页面点击启动后，方案进入运行状态，页面显示大样本完成进度和日志输出；回到仿真实验方案管理时，同一方案显示“运行中”“已完成”或“运行失败”。
+
+结果分析页只消费 ExperimentPlan 中已配置的实验类型和 run artifacts。M8.0 应按以下状态展示：
+
+1. 已配置且运行完成：显示对应分析结果，并展示 `run_id`、样本数、输入版本和指标口径。
+2. 已配置且运行中：显示运行中状态、进度和最近日志摘要。
+3. 已配置且运行失败：显示失败原因、日志入口和重试入口。
+4. 未配置：显示“未配置”，不得用静态演示图表冒充正式结果。
+
 ### 权限与审计边界
 
 M6.0 不扩大 M4 的用户、会话、授权和审计范围。当前 `/api/runs` 与旧 `/api/simulation-runs` 保持现有运行 API 的访问语义。后续若要求普通评估用户提交运行、系统管理员管理资源，需要单独做 M4/M7 权限切片。

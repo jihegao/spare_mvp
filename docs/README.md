@@ -34,6 +34,7 @@
 26. M5.2 新增系统管理下的「建模数据导入」工作台、映射/错误/版本预览，以及经 `SimulationAdapter.compile_scenario()` 生成的后端 Scenario 预览（`compile-scenario`）。该入口消费 M5.1 的显式 API、后端恢复的草稿/发布快照和已发布导入包；完整 Excel 解析、worker 基础设施或 `aviation_support` 编译解锁仍不在本阶段。
 27. M5.3 建模页保存当前 Project draft；`仿真实验方案管理` 仍保留为概要设计要求的实验方案分支工作流。用户可从项目数据创建多个实验方案，编辑方案不回写项目数据，仿真运行和 Monte Carlo 使用选中的实验方案生成 run identity chain。
 28. M6.0 设计把当前同步 smoke run 收敛到 `RunService` 和 canonical `/api/runs` 边界；前端启动运行后通过 run status/result/artifact/chain 刷新状态。该切片的后端输入是 ExperimentPlan 绑定的 ModelingSnapshot 加当前支持的 `steps` 配置，仍不是完整 ExperimentPlan payload 编译、完整 worker 队列、取消、重试、真实批量 Monte Carlo 或 `aviation_support` 编译解锁。
+29. 后续 M6.1/M8.0 的产品流已明确：仿真实验方案保存实验名称、仿真总时长、随机种子和实验类型配置；Monte Carlo 启动后显示大样本进度与日志，方案列表显示“运行中”“已完成”“运行失败”；结果分析页按“大样本评估、备件短板、携行清单、任务可靠度、停机因素”的配置和 run artifacts 展示结果、运行中、运行失败或“未配置”。
 
 ## 文档地图
 

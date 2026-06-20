@@ -33,6 +33,15 @@
 - Test: `tests/frontend-api-client.test.mjs`
 - Test: `tests/frontend-contract.test.mjs`
 
+## M6.1/M8 产品流程后续切片
+
+M6.0 只交付 run service/status 边界。用户侧“仿真实验方案 -> Monte Carlo 运行监控 -> 结果分析”的完整关系在后续切片中落地：
+
+1. M6.1：ExperimentPlan 增加实验基本信息和实验类型配置。基本信息包含实验名称、仿真总时长、随机种子；实验类型以 `analysisRequests` 或等价结构记录“大样本评估”“备件短板”“携行清单”“任务可靠度”“停机因素”的勾选状态和配置面板参数。
+2. M6.1：Monte Carlo 实验页面点击启动后，方案进入运行状态，页面显示大样本完成进度和日志输出；回到仿真实验方案管理时，同一方案状态显示为“运行中”“已完成”或“运行失败”。
+3. M8.0：结果分析页面按 ExperimentPlan 的实验类型配置和 run artifacts 解锁。已配置且完成则显示结果，已配置且运行中则显示进度/日志摘要，已配置且失败则显示失败原因/重试入口，未配置则显示“未配置”。
+4. 非目标：M6.0 不实现配置面板、不把 `seed`/Monte Carlo sweep 纳入后端正式编译、不生成真实批量 Monte Carlo artifact，也不让未配置的结果页显示静态演示图表。
+
 ### Task 1: Backend RunService Boundary
 
 **Files:**
