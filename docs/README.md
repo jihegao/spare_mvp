@@ -38,7 +38,8 @@
 29. M6.1 输入一致性已落地：`smoke` Scenario 返回 `compiled_from.mapping_provenance`，记录 consumed/ignored/derived 字段；`aviation_support` 有 compiler skeleton 并 fail closed 返回字段级 diagnostics；被 gate 阻断的 run 返回 failed status envelope、无 `result_summary_id`、空 ArtifactManifest；前端保留 compile gate error details，并在四个结果分析 dashboard 缺少 compiler provenance 或官方 analysis artifact 时标注“本地预览，不是正式后端仿真结果”。
 30. M6.1.1 单次仿真输入对齐已落地：ExperimentPlan config 持久化完整分支 `projectJson`，单次 smoke run 编译优先消费该分支 Project JSON，并在 mapping provenance 中记录 `experiment_plan_id` 和 `modeling_snapshot_id`；分支 seed、故障率、保障容量会进入后端 Scenario input。旧计划缺少 `projectJson` 时仍回退到 ModelingSnapshot。
 31. M6.2 当前收束：基于 M6.1/M6.1.1 编译通过的 Scenario 跑同步本地 Monte Carlo 样本，产出统一 MC artifacts，并把备件短板、携行清单、任务可靠度、停机因素作为同一个基础 MC artifact 的 projection。未创建任务、未绑定 MC、运行中、运行失败或输入未通过编译时，结果页不得显示正式结果图表。仍未包含生产 worker queue、object storage、取消/重试、新 auth/audit scope、`aviation_support` 正式执行或前端 projection payload 解析替换 KPI。
-32. 页面建议收口执行 `reports/2026-06-19-page-revision-suggestions/README.md`：已取消删除「建模数据导入」页，M5.2 工作台继续保留；其余页面建议优先修复死按钮、字段口径、选择/批量操作和建模输入可用性，作为 M6.1.1 前的页面输入稳定工作，不扩大为 M6.1.1/M6.2 实现。
+32. 后续收敛计划已写入 `docs/superpowers/plans/2026-06-20-runintent-mc-config-imported-sample-project.md`：正式运行入口收敛为 RunIntent，正式 Monte Carlo 数值配置收敛为 `ExperimentPlan.config.analysisRequests.largeSample -> MonteCarloRunConfig`，并把页面内置 Project seed 逐步替换为已发布建模导入包生成的示例项目。`defaultScenario`、`runSimulation` 和 `runMonteCarlo` 在该计划中只保留为离线 fixture、本地预览或测试 fallback，不作为正式结果来源。
+33. 页面建议收口执行 `reports/2026-06-19-page-revision-suggestions/README.md`：已取消删除「建模数据导入」页，M5.2 工作台继续保留；其余页面建议优先修复死按钮、字段口径、选择/批量操作和建模输入可用性，作为 M6.1.1 前的页面输入稳定工作，不扩大为 M6.1.1/M6.2 实现。
 
 ## 文档地图
 
@@ -71,6 +72,7 @@
 | [`superpowers/specs/2026-06-20-m6-0-run-service-boundary-design.md`](superpowers/specs/2026-06-20-m6-0-run-service-boundary-design.md) | M6.0 仿真运行服务边界设计，限定 RunService、canonical `/api/runs`、status envelope 和非目标。 |
 | [`superpowers/specs/2026-06-20-m6-1-input-consistency-design.md`](superpowers/specs/2026-06-20-m6-1-input-consistency-design.md) | M6.1 输入一致性、Scenario compiler mapping、默认值策略、provenance 和 fail-closed 编译 gate。 |
 | [`superpowers/specs/2026-06-20-m6-2-unified-monte-carlo-analysis-design.md`](superpowers/specs/2026-06-20-m6-2-unified-monte-carlo-analysis-design.md) | M6.2 统一 Monte Carlo artifact、analysis profile 和四类分析 projection 的阶段边界。 |
+| [`superpowers/plans/2026-06-20-runintent-mc-config-imported-sample-project.md`](superpowers/plans/2026-06-20-runintent-mc-config-imported-sample-project.md) | RunIntent、canonical MonteCarloRunConfig、预览/正式结果分界和“由建模导入生成示例项目”的后续收敛计划。 |
 | [`../reports/2026-06-19-page-revision-suggestions/README.md`](../reports/2026-06-19-page-revision-suggestions/README.md) | 2026-06-19 页面走查建议；已取消删除「建模数据导入」页，其余建议作为页面收口输入。 |
 | [`superpowers/plans/2026-06-20-page-suggestion-alignment.md`](superpowers/plans/2026-06-20-page-suggestion-alignment.md) | 页面建议收口实施计划，限定保留 M5.2 建模数据导入工作台并先处理 M6.1.1 前置输入可用性。 |
 | [`superpowers/plans/2026-06-20-m6-1-1-single-simulation-input-alignment.md`](superpowers/plans/2026-06-20-m6-1-1-single-simulation-input-alignment.md) | M6.1.1 单次仿真输入对齐执行计划，要求可视化推演和单次运行先通过 `ExperimentPlan + ModelingSnapshot -> Scenario compiler -> compiled Scenario`。 |
