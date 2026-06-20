@@ -8,11 +8,11 @@ import { buildOntologyContext, buildProjectOntology, PROJECT_ONTOLOGY, PROJECT_O
 const PAGE_REVISION_REPORT_URL = new URL("../reports/2026-06-19-page-revision-suggestions/README.md", import.meta.url);
 
 test("feature catalog exposes all table-2 four-level pages", () => {
-  assert.equal(FEATURE_PAGES.length, 57);
-  assert.equal(new Set(FEATURE_PAGES.map((page) => page.id)).size, 57);
+  assert.equal(FEATURE_PAGES.length, 56);
+  assert.equal(new Set(FEATURE_PAGES.map((page) => page.id)).size, 56);
   assert.equal(FEATURE_PAGES.filter((page) => page.module === "备件规划评估模块").length, 24);
   assert.equal(FEATURE_PAGES.filter((page) => page.module === "任务可靠度评估模块").length, 26);
-  assert.equal(FEATURE_PAGES.filter((page) => page.module === "系统管理").length, 7);
+  assert.equal(FEATURE_PAGES.filter((page) => page.module === "系统管理").length, 6);
   for (const label of ["装备可靠性框图建模", "蒙特卡洛实验结果", "飞机转场携行清单分析", "任务可靠度评估", "停机因素分析"]) {
     assert.ok(FEATURE_PAGES.some((page) => page.name === label), label);
   }
