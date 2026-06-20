@@ -552,15 +552,7 @@ function bindEvents() {
 
     const enterWorkbenchButton = event.target.closest("[data-enter-workbench]");
     if (enterWorkbenchButton) {
-      currentProject = DEMO_PROJECTS.find((project) => project.id === enterWorkbenchButton.dataset.projectId) || DEMO_PROJECTS[0];
-      isLoggedIn = true;
-      selectedRoute = "workbench";
-      selectedFeatureId = DEFAULT_FEATURE_ID;
-      isProjectMenuOpen = false;
-      location.hash = `feature=${DEFAULT_FEATURE_ID}`;
-      projectDraftHydrateStatus = "正在读取 Project draft";
-      hydrateCurrentProjectDraftFromApi().finally(() => render());
-      render();
+      handleEnterWorkbench(enterWorkbenchButton.dataset.projectId).finally(() => render());
       return;
     }
 
@@ -3501,6 +3493,27 @@ async function handleLogin() {
 
 async function saveCurrentProjectThroughApi() {
   return saveCurrentProjectDraftThroughApi();
+}
+
+async function handleEnterWorkbench(projectId) {
+  await flushPendingProjectDraftAutosave();
+  currentProject = DEMO_PROJECTS.find((project) => project.id === projectId) || DEMO_PROJECTS[0];
+  isLoggedIn = true;
+  selectedRoute = "workbench";
+  selectedFeatureId = DEFAULT_FEATURE_ID;
+  isProjectMenuOpen = false;
+  location.hash = `feature=${DEFAULT_FEATURE_ID}`;
+  projectDraftHydrateStatus = "正在读取 Project draft";
+  await hydrateCurrentProjectDraftFromApi();
+}
+
+async function flushPendingProjectDraftAutosave() {
+  if (!projectDraftAutosaveTimer) return;
+  clearTimeout(projectDraftAutosaveTimer);
+  projectDraftAutosaveTimer = null;
+  if (projectDraftSaveStatus === "有未保存修改") {
+    await saveCurrentProjectDraftThroughApi();
+  }
 }
 
 function currentBackendProjectId() {

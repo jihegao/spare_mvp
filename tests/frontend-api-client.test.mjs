@@ -341,6 +341,33 @@ test("app hydrates and saves current project draft through project API", async (
   assert.match(appSource, /backendApi\.saveProject\(projectJson\)/);
 });
 
+test("project switch flushes pending project draft autosave before changing project context", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const enterHandlerSource = appSource.slice(
+    appSource.indexOf('const enterWorkbenchButton = event.target.closest("[data-enter-workbench]"'),
+    appSource.indexOf('const projectMenuButton = event.target.closest("[data-project-menu-toggle]"')
+  );
+  const enterWorkbenchSource = appSource.slice(
+    appSource.indexOf("async function handleEnterWorkbench"),
+    appSource.indexOf("function currentBackendProjectId")
+  );
+  const flushSource = appSource.slice(
+    appSource.indexOf("async function flushPendingProjectDraftAutosave"),
+    appSource.indexOf("function currentBackendProjectId")
+  );
+
+  assert.match(enterHandlerSource, /handleEnterWorkbench\(enterWorkbenchButton\.dataset\.projectId\)\.finally\(\(\) => render\(\)\)/);
+  assert.doesNotMatch(enterHandlerSource, /currentProject =/);
+  assert.ok(
+    enterWorkbenchSource.indexOf("await flushPendingProjectDraftAutosave()") < enterWorkbenchSource.indexOf("currentProject ="),
+    "pending draft save must flush before currentProject changes"
+  );
+  assert.match(flushSource, /clearTimeout\(projectDraftAutosaveTimer\)/);
+  assert.match(flushSource, /projectDraftAutosaveTimer = null/);
+  assert.match(flushSource, /projectDraftSaveStatus === "有未保存修改"/);
+  assert.match(flushSource, /await saveCurrentProjectDraftThroughApi\(\)/);
+});
+
 test("frontend app wires modeling import workbench through explicit backend actions", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const featureCatalogSource = await readFile(new URL("../front/feature-catalog.mjs", import.meta.url), "utf8");
