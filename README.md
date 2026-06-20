@@ -30,7 +30,7 @@
 - 保障活动建模：以树编辑、工作项目清单和节点网络图展示基本保障、使用保障、预防性维修、修复性维修活动。
 - 可视化仿真：单次仿真的任务态势、机场保障视图、指标和事件流；Mesa 内部 `Ontology视图` 不再作为当前产品能力。
 - 蒙特卡洛实验：只读展示当前仿真实验，配置样本数、随机种子、故障率、备件倍数、保障容量扫参；配置页只保留参数和启动按钮，评估结果统一在“结果分析 / 蒙特卡洛实验结果展示”中查看。
-- 仿真实验方案流程：M6.1 已补齐 smoke 输入 mapping provenance、`aviation_support` fail-closed compiler skeleton 和 blocked run status envelope；M6.2 才基于通过编译的 Scenario 统一运行 Monte Carlo 并生成 analysis projections。未配置、缺少 compiler provenance 或缺少官方 analysis artifact 的分析页只能显示“本地预览，不是正式后端仿真结果”。
+- 仿真实验方案流程：M6.1 已补齐 smoke 输入 mapping provenance、`aviation_support` fail-closed compiler skeleton 和 blocked run status envelope；M6.1.1 已让单次 run 优先从 ExperimentPlan 分支 Project JSON 编译 Scenario，确保 seed、故障率、保障容量等分支输入进入后端仿真，而不是只消费 Project snapshot + steps；M6.2 才基于通过编译的 Scenario 统一运行 Monte Carlo 并生成 analysis projections。未配置、缺少 compiler provenance 或缺少官方 analysis artifact 的分析页只能显示“本地预览，不是正式后端仿真结果”。
 - RMS 指标分配：系统管理新增“装备RMS指标分配”本地计算页，使用模拟装备构型和任务剖面，支持调节装备级 R/M/S、MTBF、MTTR、MLDT、Ai/Ao 目标，选择等分配、比例分配、AGREE 和评分分配方法，并展示节点级 RMS target、任务暴露矩阵和自底向上校核；当前发布仅在浏览器内写入模拟装备节点的 `rms.target`，不覆盖 `prediction` 或 `actual`，尚未后端持久化或真实仿真消费。
 - 结果分析：备件短板分析、飞机转场携行清单、飞机任务可靠性分析、停机因素分析；M6.1 阶段均受 formal-result boundary 保护，缺少 compiler provenance 或官方 analysis artifact 时只显示前端本地预览标签。
 - M2a 契约适配：`src/spare_mvp_contract/adapter.py` 已支持 Project JSON 校验、已批准的 `smoke` Scenario 编译、`SmokeSpareMvpModel` 运行、Result summary 和 ArtifactManifest 生成；M6.1 为 `aviation_support` 增加 compiler skeleton 和字段级 fail-closed diagnostics，但仍未解锁正式执行。
@@ -43,7 +43,8 @@
 - M5 数据入口：`contracts/modeling_import.schema.json`、`front/modeling-import-contract.mjs` 和 `tests/modeling-import-contract.test.mjs` 定义建模数据导入/校验 contract；M5.1 已通过本地 `/api/modeling-imports/*`、`BackendApi` 和 SQLite repository 服务化 validation/save/publish/get，覆盖对象 ID、引用关系、非法数值、错误定位和已发布且被运行引用后的覆盖保护。`modeling_imports` 持久化 `draft_payload_json` 与 `published_payload_json`，`GET /api/modeling-imports/{import_id}` 返回 `draftPackage`、`publishedPackage`、`validation` 和 `lifecycle`，发布后再保存草稿不会覆盖已发布快照。同一 `import_id` 被 run 引用后不可再发布覆盖，新版本需使用新 `import_id`。M5.2 新增系统管理下的「建模数据导入」工作台、映射/错误/版本预览，以及经 `SimulationAdapter.compile_scenario()` 生成的后端 Scenario 预览（`compile-scenario`）；完整 Excel 解析、worker 基础设施和 `aviation_support` 正式执行仍不在本阶段。
 - M6.0 运行服务边界：`src/spare_mvp_backend/run_service.py` 已承接 run request 校验、ExperimentPlan 绑定 ModelingSnapshot 解析、同步 smoke 执行、status envelope 和结果/产物持久化；HTTP 暴露 canonical `/api/runs`，前端通过 `submitRun()`、`getRunStatus()`、result/artifacts/chain 刷新结果，同时保留 `/api/simulation-runs` 兼容路径。RunService 在当前进程内串行化 run id 生成，并能返回 failed status envelope。该切片仍不是完整 worker 队列、取消、重试、真实批量 Monte Carlo fan-out、对象存储或 `aviation_support` 正式执行。
 - M6.1 输入一致性收束：`smoke` Scenario 已带 `compiled_from.mapping_provenance`，`aviation_support` compiler skeleton fail closed 并返回字段级 diagnostics；被 gate 阻断的 run 返回 failed status envelope、无 `result_summary_id`、空 ArtifactManifest。前端 `submitRun()`/API 错误保留 compile gate details，四个结果分析 dashboard 在缺少 compiler provenance 或官方 analysis artifact 时只显示本地预览边界。
-- M6.2 非目标边界：M6.1 不包含 Monte Carlo fan-out、官方四类 analysis artifact、worker queue、object storage、取消/重试，也不扩展新的 auth/audit scope；M6.2 才基于已对齐 Scenario 运行统一 Monte Carlo，生成大样本 artifact，并把备件短板、携行清单、任务可靠度和停机因素作为 artifact projection。
+- M6.1.1 单次仿真输入对齐：ExperimentPlan config 现在持久化完整分支 `projectJson`，RunService 编译单次 smoke run 时优先使用该分支 Project JSON，并把 `experiment_plan_id`、`modeling_snapshot_id` 写入 mapping provenance；修改分支 seed、组件故障率或保障容量会进入后端 compiled Scenario 和 run artifact。旧计划缺少 `projectJson` 时仍回退到 ModelingSnapshot。
+- M6.2 非目标边界：M6.1/M6.1.1 不包含 Monte Carlo fan-out、官方四类 analysis artifact、worker queue、object storage、取消/重试，也不扩展新的 auth/audit scope；M6.2 才基于已对齐 Scenario 运行统一 Monte Carlo，生成大样本 artifact，并把备件短板、携行清单、任务可靠度和停机因素作为 artifact projection。
 
 ## 本地运行
 

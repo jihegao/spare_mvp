@@ -113,6 +113,7 @@ export function buildExperimentPlanConfig(projectJson) {
     steps: Number(projectJson.experiment?.steps ?? 3),
     samples: Number(projectJson.experiment?.samples ?? 1),
     seed: Number(projectJson.experiment?.seed ?? 0),
+    projectJson: cloneJson(projectJson),
     monteCarlo: cloneJson(projectJson.monteCarlo || {})
   };
 }

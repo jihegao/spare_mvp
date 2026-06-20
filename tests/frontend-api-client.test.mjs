@@ -175,7 +175,7 @@ test("frontend API client exposes explicit M5 modeling import methods", async ()
 });
 
 test("experiment plan config preserves Monte Carlo branch sweep settings", () => {
-  const config = buildExperimentPlanConfig({
+  const projectJson = {
     experiment: {
       name: "branch config",
       steps: 12,
@@ -188,13 +188,15 @@ test("experiment plan config preserves Monte Carlo branch sweep settings", () =>
       supportCapacities: [2, 3],
       minRequiredSorties: [4, 5]
     }
-  });
+  };
+  const config = buildExperimentPlanConfig(projectJson);
 
   assert.deepEqual(config, {
     name: "branch config",
     steps: 12,
     samples: 24,
     seed: 20260620,
+    projectJson,
     monteCarlo: {
       failureRates: [0.06, 0.08, 0.1],
       spareMultipliers: [0.75, 1, 1.25],
@@ -202,6 +204,32 @@ test("experiment plan config preserves Monte Carlo branch sweep settings", () =>
       minRequiredSorties: [4, 5]
     }
   });
+});
+
+test("frontend API client sends experiment plan branch project JSON to backend", async () => {
+  const calls = [];
+  const client = createBackendApiClient({
+    transport: async (request) => {
+      calls.push(request);
+      if (request.path === "/projects/project-branch/experiment-plans") {
+        return { experiment_plan_id: "plan-branch", config: request.body.config };
+      }
+      throw new Error(`unexpected request ${request.method} ${request.path}`);
+    }
+  });
+  const projectJson = {
+    project_id: "project-branch",
+    experiment: { name: "branch run", steps: 6, seed: 42 },
+    components: [{ id: "radar", failureRate: 0.12 }],
+    supportNodes: [{ id: "line", equipmentCapacity: 7 }]
+  };
+
+  await client.createExperimentPlan("project-branch", buildExperimentPlanConfig(projectJson));
+
+  assert.equal(calls[0].path, "/projects/project-branch/experiment-plans");
+  assert.deepEqual(calls[0].body.config.projectJson, projectJson);
+  assert.notEqual(calls[0].body.config.projectJson, projectJson);
+  assert.equal(calls[0].body.config.projectJson.experiment.seed, 42);
 });
 
 test("frontend API client logs in and attaches M4 bearer token to protected calls", async () => {

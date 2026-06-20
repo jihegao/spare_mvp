@@ -44,7 +44,8 @@ http://127.0.0.1:4173/front/
 14. M6.0 运行服务首片必须通过 canonical `/api/runs` 创建和查询 run status，同时保留 `/api/simulation-runs` 兼容路径；运行 identity 必须来自 ExperimentPlan，后端输入使用该计划绑定的 ModelingSnapshot 和当前支持的 `steps` 配置，不能绕过 M5.3 的 Project/Plan 分界。
 15. M6.1 输入一致性已形成窄闭环：`smoke` Scenario 必须带 `compiled_from.mapping_provenance`；`aviation_support` compiler skeleton 必须 fail closed 并返回字段级 diagnostics；无法编译的 ExperimentPlan 必须返回 failed status envelope、保留 `error.details.issues/provenance`、不生成 `result_summary_id`、只给空 ArtifactManifest，不能回退到 demo 或前端局部推导。
 16. M6.1 前端 formal-result boundary 必须保留：四个结果分析页缺少 compiler provenance 或官方 analysis artifact 时，只能显示“本地预览，不是正式后端仿真结果”和“缺少 compiler provenance”等边界信息，不能把本地 `singleResult` 投影呈现为正式后端产物。
-17. M6.2 才做统一 Monte Carlo / analysis profile：基于 M6.1 编译通过的 Scenario 产出统一 MC artifacts；“大样本评估、备件短板、携行清单、任务可靠度、停机因素”只能作为 artifact projection 展示。M6.1 不包含 Monte Carlo fan-out、官方四类 analysis artifact、worker queue、object storage、取消/重试或新的 auth/audit scope；未配置、运行中、运行失败或输入未通过编译时，结果分析页不得显示正式结果图表。
+17. M6.1.1 单次仿真输入对齐必须保留：ExperimentPlan config 携带完整分支 `projectJson`，RunService 编译单次 smoke run 时优先使用该分支输入，并在 mapping provenance 中记录 `experiment_plan_id` 和 `modeling_snapshot_id`；旧计划缺少 `projectJson` 时才回退 ModelingSnapshot。
+18. M6.2 才做统一 Monte Carlo / analysis profile：基于 M6.1/M6.1.1 编译通过的 Scenario 产出统一 MC artifacts；“大样本评估、备件短板、携行清单、任务可靠度、停机因素”只能作为 artifact projection 展示。M6.1/M6.1.1 不包含 Monte Carlo fan-out、官方四类 analysis artifact、worker queue、object storage、取消/重试或新的 auth/audit scope；未配置、运行中、运行失败或输入未通过编译时，结果分析页不得显示正式结果图表。
 
 ## Mesa 后台契约服务（Contract Provider）
 
