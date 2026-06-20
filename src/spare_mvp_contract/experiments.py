@@ -500,18 +500,9 @@ def _int_list(value: Any, path: str) -> list[int]:
             raise AdapterError("bad_analysis_request", f"{path} must include at least one numeric value", field_path=path)
         numbers = []
         for index, item in enumerate(value):
-            if not _is_number(item):
-                raise AdapterError(
-                    "bad_analysis_request",
-                    f"{path}[{index}] must be numeric",
-                    field_path=f"{path}[{index}]",
-                    value=item,
-                )
-            numbers.append(max(1, int(round(float(item)))))
+            numbers.append(_strict_int(item, f"{path}[{index}]", min_value=1))
         return numbers
-    if _is_number(value):
-        return [max(1, int(round(float(value))))]
-    raise AdapterError("bad_analysis_request", f"{path} must be numeric", field_path=path, value=value)
+    return [_strict_int(value, path, min_value=1)]
 
 
 def _optional_float(value: Any, path: str) -> float:
@@ -521,9 +512,24 @@ def _optional_float(value: Any, path: str) -> float:
 
 
 def _optional_int(value: Any, path: str, *, allow_zero: bool = False) -> int:
+    return _strict_int(value, path, min_value=0 if allow_zero else 1)
+
+
+def _strict_int(value: Any, path: str, *, min_value: int) -> int:
     if not _is_number(value):
         raise AdapterError("bad_analysis_request", f"{path} must be numeric", field_path=path, value=value)
-    return max(0 if allow_zero else 1, int(round(float(value))))
+    parsed = float(value)
+    if not parsed.is_integer():
+        raise AdapterError("bad_analysis_request", f"{path} must be an integer", field_path=path, value=value)
+    int_value = int(parsed)
+    if int_value < min_value:
+        raise AdapterError(
+            "bad_analysis_request",
+            f"{path} must be >= {min_value}",
+            field_path=path,
+            value=value,
+        )
+    return int_value
 
 
 def _is_number(value: Any) -> bool:

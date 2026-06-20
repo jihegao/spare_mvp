@@ -555,32 +555,54 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(result["analysis_outputs"]["carryList"]["status"], "unconfigured")
 
     def test_monte_carlo_invalid_analysis_request_persists_failed_status_envelope(self) -> None:
-        project = self._fixture("smoke_project.json")
-        saved = self.api.save_project(project)
-        self.api.create_modeling_snapshot(saved["project_id"])
-        config = self._m62_analysis_config(project, samples=2)
-        config["analysisRequests"]["largeSample"]["sweep"]["failureRates"] = [0.05, "bad"]
-        plan = self.api.create_experiment_plan(saved["project_id"], config)
+        invalid_cases = [
+            (
+                lambda config: config["analysisRequests"]["largeSample"].update({"samples": 0}),
+                "analysisRequests.largeSample.samples",
+            ),
+            (
+                lambda config: config["analysisRequests"]["largeSample"].update({"samples": -1}),
+                "analysisRequests.largeSample.samples",
+            ),
+            (
+                lambda config: config["analysisRequests"]["largeSample"].update({"seed": -1}),
+                "analysisRequests.largeSample.seed",
+            ),
+            (
+                lambda config: config["analysisRequests"]["largeSample"]["sweep"].update({"capacities": [0]}),
+                "analysisRequests.largeSample.sweep.capacities[0]",
+            ),
+            (
+                lambda config: config["analysisRequests"]["largeSample"]["sweep"].update({"capacities": [-2]}),
+                "analysisRequests.largeSample.sweep.capacities[0]",
+            ),
+        ]
 
-        submitted = self.api.submit_run(
-            {
-                "project_id": saved["project_id"],
-                "experiment_plan_id": plan["experiment_plan_id"],
-                "model_family": "smoke",
-                "run_type": "monte_carlo",
-            }
-        )
-        artifacts = self.api.get_run_artifacts(submitted["run_id"])
+        for mutate_config, expected_path in invalid_cases:
+            with self.subTest(expected_path=expected_path):
+                project = self._fixture("smoke_project.json")
+                saved = self.api.save_project(project)
+                self.api.create_modeling_snapshot(saved["project_id"])
+                config = self._m62_analysis_config(project, samples=2)
+                mutate_config(config)
+                plan = self.api.create_experiment_plan(saved["project_id"], config)
 
-        self.assertEqual(submitted["status"], "failed")
-        self.assertEqual(submitted["phase"], "failed")
-        self.assertEqual(submitted["run_type"], "monte_carlo")
-        self.assertEqual(submitted["error"]["code"], "bad_analysis_request")
-        self.assertEqual(
-            submitted["error"]["details"]["field_path"],
-            "analysisRequests.largeSample.sweep.failureRates[1]",
-        )
-        self.assertEqual(artifacts["artifacts"], [])
+                submitted = self.api.submit_run(
+                    {
+                        "project_id": saved["project_id"],
+                        "experiment_plan_id": plan["experiment_plan_id"],
+                        "model_family": "smoke",
+                        "run_type": "monte_carlo",
+                    }
+                )
+                artifacts = self.api.get_run_artifacts(submitted["run_id"])
+
+                self.assertEqual(submitted["status"], "failed")
+                self.assertEqual(submitted["phase"], "failed")
+                self.assertEqual(submitted["run_type"], "monte_carlo")
+                self.assertEqual(submitted["error"]["code"], "bad_analysis_request")
+                self.assertEqual(submitted["error"]["details"]["field_path"], expected_path)
+                self.assertEqual(artifacts["artifacts"], [])
         self.assertFalse(list(Path(self.tempdir.name).rglob("monte-carlo-base.json")))
 
     def test_repeated_smoke_runs_create_distinct_run_chains(self) -> None:

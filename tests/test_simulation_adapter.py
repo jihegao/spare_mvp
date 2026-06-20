@@ -365,7 +365,31 @@ class SimulationAdapterTest(unittest.TestCase):
             (
                 {
                     "analysisRequests": {
+                        "largeSample": {"enabled": True, "samples": 0},
+                    },
+                },
+                "analysisRequests.largeSample.samples",
+            ),
+            (
+                {
+                    "analysisRequests": {
+                        "largeSample": {"enabled": True, "samples": -1},
+                    },
+                },
+                "analysisRequests.largeSample.samples",
+            ),
+            (
+                {
+                    "analysisRequests": {
                         "largeSample": {"enabled": True, "samples": 2, "seed": "bad"},
+                    },
+                },
+                "analysisRequests.largeSample.seed",
+            ),
+            (
+                {
+                    "analysisRequests": {
+                        "largeSample": {"enabled": True, "samples": 2, "seed": -1},
                     },
                 },
                 "analysisRequests.largeSample.seed",
@@ -381,6 +405,30 @@ class SimulationAdapterTest(unittest.TestCase):
                     },
                 },
                 "analysisRequests.largeSample.sweep.failureRates[1]",
+            ),
+            (
+                {
+                    "analysisRequests": {
+                        "largeSample": {
+                            "enabled": True,
+                            "samples": 2,
+                            "sweep": {"capacities": [0]},
+                        },
+                    },
+                },
+                "analysisRequests.largeSample.sweep.capacities[0]",
+            ),
+            (
+                {
+                    "analysisRequests": {
+                        "largeSample": {
+                            "enabled": True,
+                            "samples": 2,
+                            "sweep": {"capacities": [-2]},
+                        },
+                    },
+                },
+                "analysisRequests.largeSample.sweep.capacities[0]",
             ),
             (
                 {
