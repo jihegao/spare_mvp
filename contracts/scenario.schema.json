@@ -61,7 +61,6 @@
         "simulation_inputs": {
           "type": "object",
           "required": [
-            "ontology_version",
             "aircraft_count",
             "mission_count",
             "mission_aircraft_required",
@@ -100,7 +99,6 @@
         "project_id": { "type": "string" },
         "project_version": { "type": "string" },
         "project_schema_version": { "type": "string" },
-        "ontology_version": { "type": "string" },
         "mesa_contract_version": { "type": "string" },
         "mapping_provenance": {
           "type": "object",
@@ -162,7 +160,6 @@
           "title": "aviation_support",
           "type": "object",
           "required": [
-            "ontology_version",
             "aircraft_count",
             "mission_count",
             "mission_aircraft_required",
@@ -173,7 +170,6 @@
             "seed"
           ],
           "properties": {
-            "ontology_version": { "type": "string" },
             "aircraft_count": { "type": "integer", "minimum": 1 },
             "mission_count": { "type": "integer", "minimum": 1 },
             "mission_aircraft_required": { "type": "integer", "minimum": 1 },

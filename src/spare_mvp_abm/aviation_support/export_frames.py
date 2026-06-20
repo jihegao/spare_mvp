@@ -36,8 +36,8 @@ def load_model_class() -> Any:
 def export_frames(steps: int, sample_every: int, seed: int) -> list[dict[str, Any]]:
     model_cls = load_model_class()
     model = model_cls(
-        ontology_path=str(ASSET_DIR / "ontology.json"),
-        use_ontology_scenario=True,
+        scenario_config_path=str(ASSET_DIR / "scenario_config.json"),
+        use_scenario_config=True,
         lru_failure_multiplier=0,
         seed=seed,
     )

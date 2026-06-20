@@ -11,7 +11,7 @@ from src.spare_mvp_abm.smoke_model import SmokeSpareMvpModel
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
-class SpareMvpOntologyMesaTest(unittest.TestCase):
+class SpareMvpSmokeMesaTest(unittest.TestCase):
     def test_smoke_model_is_explicit_runtime_for_project_level_smokes(self) -> None:
         scenario_paths = [
             REPO_ROOT / "scenarios" / "spare-planning-smoke" / "experiment.json",
@@ -61,7 +61,6 @@ class SpareMvpOntologyMesaTest(unittest.TestCase):
 
         model = SmokeSpareMvpModel(
             projectData=project_data,
-            ontologyPath=str(REPO_ROOT / "ontology" / "spare_mvp.ontology.json"),
             spareMultiplier=0.5,
             supportCapacity=3,
             minRequiredSorties=2,
@@ -84,10 +83,9 @@ class SpareMvpOntologyMesaTest(unittest.TestCase):
         with self.assertRaises(TypeError):
             SmokeSpareMvpModel(equipment_count=4, initial_spare_stock=3)
 
-    def test_model_exposes_ontology_mapping_contract(self) -> None:
+    def test_model_snapshot_does_not_require_project_ontology(self) -> None:
         model = SmokeSpareMvpModel(
             projectJsonPath=str(REPO_ROOT / "scenarios" / "frontend-project-smoke" / "project.json"),
-            ontologyPath=str(REPO_ROOT / "ontology" / "spare_mvp.ontology.json"),
             seed=23,
         )
 
@@ -95,18 +93,11 @@ class SpareMvpOntologyMesaTest(unittest.TestCase):
             model.step()
 
         snapshot = model.snapshot()
-        self.assertEqual(snapshot["ontology_entity_types"], 8.0)
-        self.assertEqual(snapshot["ontology_relationships"], 13.0)
-        self.assertEqual(snapshot["ontology_bound_entities"], 6.0)
-        self.assertGreaterEqual(snapshot["ontology_simulated_entity_types"], 5.0)
-        self.assertGreaterEqual(snapshot["ontology_simulated_relationships"], 6.0)
-
-        contract = model.ontology_mapping()
-        self.assertIn("equipment", contract["simulated_entity_types"])
-        self.assertIn("support_activity", contract["simulated_entity_types"])
-        self.assertIn("equipment_creates_support_activity", contract["simulated_relationships"])
-        self.assertIn("activity_updates_inventory", contract["simulated_relationships"])
-        self.assertEqual(contract["development_mode"], "Simulation-Contract-First Development")
+        self.assertIn("mission_success_rate", snapshot)
+        self.assertIn("spare_fill_rate", snapshot)
+        self.assertNotIn("ontology_entity_types", snapshot)
+        self.assertNotIn("ontology_relationships", snapshot)
+        self.assertFalse(hasattr(model, "ontology_mapping"))
 
 
 if __name__ == "__main__":

@@ -33,7 +33,7 @@ http://127.0.0.1:4173/front/
 3. 当前方案名称可回到方案列表。
 4. Monte Carlo 配置页修改扫参后，结果分析页显示新参数组。
 5. 点击 Monte Carlo “启动”后返回方案列表，当前方案状态为“运行中”。
-6. 可视化推演页面直接显示 Mesa 页面内容，不显示外层四级导航。
+6. 可视化推演页面直接显示 Mesa 页面内容，不显示外层四级导航，也不显示旧 `Ontology视图`。
 7. M3-1 同源后端路径用 `.abm-mesa-test-env/bin/python -m src.spare_mvp_backend.http_server --port 4173` 启动后，浏览器从 `/front/` 通过 `/api` 保存项目、启动 smoke run、读取结果，并在刷新后恢复同一个 `run_id`。
 8. `/api` 不可用时，前端必须显示阻断状态，不创建 `offline-demo-run`。
 9. RMS 分配发布只允许写入 `rms.target` 或 allocation plan，不覆盖 `prediction` 或 `actual`。
@@ -80,10 +80,9 @@ curl -s http://127.0.0.1:8521/health
 | GET | `/contract` | 无 | 自描述：端点 / 信封 / 错误 / 所有权 |
 | GET | `/snapshot` | `model`（aviation\|smoke）、`steps`（int 0..1000，默认 0）、航空模型入参（见下）、`project`（smoke 的 project.json 路径） | `model.snapshot()` |
 | GET | `/visualization` | `model=aviation`（仅）、`steps` | snapshot/aircraft/resources/spares/missions/jobs/support_tasks/metrics/object_relationships/events |
-| GET | `/ontology-mapping` | `model=smoke`（仅）、`project` | development_mode/.../added_behavior_rules |
 | GET | `/experiment` | `name`（`scenarios/<name>/experiment.json`，缺省读 `aviation_support/experiment.json`） | experiment.json 原文 |
 
-两个模型能力不对称：`/visualization` 仅 `aviation` 暴露，`/ontology-mapping` 仅 `smoke` 暴露；错配返回 400。
+模型能力不对称：`/visualization` 仅 `aviation` 暴露；`smoke` 通过 `/snapshot` 和后端 RunService 参与 Project -> Scenario -> Run smoke 链路。旧 `/ontology-mapping` 端点已随 ontology 需求删除，不再作为只读契约服务能力。
 
 可覆盖的航空模型入参（白名单）：`aircraft_count`、`aircraft_type`、`mission_count`、`mechanic_teams`、`fuel_trucks`、`power_carts`、`weapons_crews`、`maintenance_bays`、`tick_minutes`、`lru_failure_multiplier`、`seed`。未列入的构造参数不可通过 HTTP 修改。
 
@@ -92,7 +91,6 @@ curl -s http://127.0.0.1:8521/health
 ```bash
 curl -s "http://127.0.0.1:8521/snapshot?model=aviation&steps=10&seed=17"
 curl -s "http://127.0.0.1:8521/visualization?model=aviation&steps=5"
-curl -s "http://127.0.0.1:8521/ontology-mapping?model=smoke"
 curl -s "http://127.0.0.1:8521/experiment?name=mission-reliability-smoke"
 ```
 
@@ -128,9 +126,9 @@ opener.open("http://127.0.0.1:8521/health").read().decode()
 
 ## 文档同步检查
 
-修改前端页面结构、功能入口、ontology 呈现、仿真参数、结果来源或测试断言时，完成前必须执行一次文档同步检查：
+修改前端页面结构、功能入口、仿真参数、结果来源或测试断言时，完成前必须执行一次文档同步检查：
 
-1. 用旧文案和新文案分别搜索文档，例如 `rg -n "Ontology 上下文|ontology-map|Ontology视图|可视化推演" README.md docs agent.md`。
+1. 用旧文案和新文案分别搜索文档，例如 `rg -n "Ontology 上下文|ontology-map|Ontology视图|可视化推演" README.md docs agent.md`，确认命中仅限归档历史或删除说明。
 2. 如果测试中新增了 `doesNotMatch` 删除旧 UI 或旧路由，必须用被删除的字符串搜索文档，确认没有当前状态文档仍按旧 UI 描述。
 3. 至少检查 `README.md`、`docs/README.md`、相关 `docs/superpowers/specs/`、相关 `docs/superpowers/plans/` 和 `agent.md`。
 4. 最终回复要说明更新了哪些文档，或者说明为什么某个命中文档是历史记录而不需要改。

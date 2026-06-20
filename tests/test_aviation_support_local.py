@@ -23,8 +23,8 @@ class LocalAviationSupportModelTest(unittest.TestCase):
         spec.loader.exec_module(module)
 
         model = module.AviationSupportModel(
-            ontology_path=str(ASSET_DIR / "ontology.json"),
-            use_ontology_scenario=True,
+            scenario_config_path=str(ASSET_DIR / "scenario_config.json"),
+            use_scenario_config=True,
             lru_failure_multiplier=0,
             seed=17,
         )

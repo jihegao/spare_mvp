@@ -33,7 +33,7 @@ M3-0 已把当前 contract-first 后端闭环收束为可回归 smoke：同源 `
 | 命令 | 当前结果 |
 | --- | --- |
 | `node --test tests/e2e-contract-flow.test.mjs` | RED 后 GREEN：新增 M3-0 文档契约；2 个测试通过 |
-| `npm test` | 91 个 Node contract/frontend/ontology 测试通过，0 失败 |
+| `npm test` | 历史记录：当时 91 个 Node contract/frontend/ontology 测试通过，0 失败；当前 ontology 测试门已删除 |
 | `.abm-mesa-test-env/bin/python -m unittest tests.test_backend_api_contract tests.test_backend_http_api tests.test_simulation_adapter tests.test_database_contract tests.test_evaluator_mesa_contract` | 20 个后端、HTTP API、adapter、database、evaluator 测试通过，0 失败 |
 | `.abm-mesa-test-env/bin/python -m unittest discover tests` | 37 个 Python unittest 通过，0 失败 |
 | `.abm-mesa-test-env/bin/python -m src.spare_mvp_backend.http_server --port 4173` | 可同源服务 `http://127.0.0.1:4173/front/` 和 `/api` |

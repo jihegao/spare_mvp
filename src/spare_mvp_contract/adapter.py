@@ -24,7 +24,6 @@ RUN_SCHEMA_VERSION = "run-v0"
 RESULT_SCHEMA_VERSION = "result-v0"
 ARTIFACT_MANIFEST_SCHEMA_VERSION = "artifact-manifest-v0"
 MESA_CONTRACT_VERSION = "1.0.0"
-ONTOLOGY_CONTRACT_VERSION = "spare-mvp-ontology-v0"
 ADAPTER_NAME = "Simulation Adapter Agent"
 
 
@@ -43,7 +42,6 @@ class SimulationAdapter:
     def __init__(self, repo_root: Path | str | None = None) -> None:
         self.repo_root = Path(repo_root).resolve() if repo_root else Path(__file__).resolve().parents[2]
         self.contracts_dir = self.repo_root / "contracts"
-        self.ontology_path = self.repo_root / "ontology" / "spare_mvp.ontology.json"
 
     def validate_project(self, project: dict[str, Any]) -> dict[str, Any]:
         """Validate the roots required by the current Project JSON contract."""
@@ -178,7 +176,6 @@ class SimulationAdapter:
                 "project_id": project_id,
                 "project_version": project_version,
                 "project_schema_version": validation["project_schema_version"],
-                "ontology_version": ONTOLOGY_CONTRACT_VERSION,
                 "mesa_contract_version": MESA_CONTRACT_VERSION,
                 "mapping_provenance": self._smoke_mapping_provenance(project_id, project),
             },
@@ -200,7 +197,6 @@ class SimulationAdapter:
         inputs = scenario["simulation_inputs"]
         model = SmokeSpareMvpModel(
             projectData=copy.deepcopy(inputs["project_snapshot"]),
-            ontologyPath=str(self.ontology_path),
             activeModule=inputs["active_module"],
             spareMultiplier=inputs["spare_multiplier"],
             failureRate=inputs["failure_rate"],

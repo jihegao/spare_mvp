@@ -4,7 +4,7 @@
 
 ## 定位
 
-本文档定义 `spare_mvp` 从静态可交互原型走向真实系统的产品里程碑，是当前产品推进顺序的主入口。早期 Ontology + Mesa 重构记录和 Mesa 服务治理文档已归档到 `docs/archive/deprecated/`，仅作为历史背景，不再作为当前产品约束。
+本文档定义 `spare_mvp` 从静态可交互原型走向真实系统的产品里程碑，是当前产品推进顺序的主入口。早期 Ontology + Mesa 重构记录和 Mesa 服务治理文档已归档到 `docs/archive/deprecated/`，仅作为历史背景，不再作为当前产品约束；当前产品、运行时代码和测试门不再维护 ontology 需求。
 
 当前仓库已经具备登录页、项目列表、四级功能导航、建模页、Monte Carlo 配置与结果、结果分析、Mesa 可视化嵌入等原型能力。但页面数量稳定不等于业务流稳定。后续不能直接跳到后端接入，必须先把前端业务语义、最小闭环、数据对象和结果口径冻结下来。
 
@@ -16,7 +16,7 @@
 4. 结果分析和可视化推演最终必须由 `run_id`、数据库记录或 run artifacts 驱动；静态 demo frame 只能作为 fixture 或 fallback。
 5. 测试必须覆盖行为，不只检查页面数量、源码字符串或静态结构。
 6. 文档不得把静态原型、小样本 Monte Carlo 或 Mesa 烟测描述成工程级校准平台。
-7. 早期仿真 ontology 与 contract-first 设想仅作为历史参考；当前数据契约必须以应用系统 schema、Project draft、run identity chain、权限、审计和产物治理为主。
+7. 早期仿真 ontology 与 contract-first 设想仅作为历史参考；当前数据契约必须以应用系统 schema、Project draft、run identity chain、权限、审计和产物治理为主，active schema 不再引入 ontology 版本字段。
 8. `reports/2026-06-19-page-revision-suggestions/README.md` 的页面建议先作为 M6.1.1 前置输入可用性和死按钮收口处理；已取消删除「建模数据导入」页，M5.2 工作台必须保留，页面清理不得顺手扩大为 M6.1.1 或 M6.2。
 
 ## 当前基线判断
@@ -27,7 +27,7 @@
 2. `src/spare_mvp_backend/http_server.py`、`BackendApi`、`SimulationAdapter` 和 SQLite repository 已跑通同源 `/api` + `Project -> Snapshot -> ExperimentPlan -> Scenario -> Run -> Result -> ArtifactManifest` 真实后端闭环 smoke，并已通过 M3-1 浏览器刷新恢复和 API 不可用阻断验收。
 3. 前端已有 `front/api-client.mjs` 边界，显式保存、启动运行、读取结果和读取产物通过 API client 表达；通用建模编辑仍保持本地，直到显式保存或运行。
 4. Monte Carlo 页面仍保留前端局部演示/扫参能力，尚未升级为后端 worker 或批量运行产物。
-5. Mesa 可视化页已嵌入本地航空保障状态；产品口径不再保留 Mesa 内部 `Ontology视图`，`aviation_support` Project 到 Scenario 的字段派生规则仍保持未批准。
+5. Mesa 可视化页已嵌入本地航空保障状态；产品口径已删除 Mesa 内部 `Ontology视图`、Ontology Playground 导出和 repo 根目录 ontology 产物，`aviation_support` Project 到 Scenario 的字段派生规则仍保持未批准。
 6. 本地 M4 backfill 已补入最小用户、会话、建模导入授权和审计边界；完整用户管理、项目级权限矩阵、SSO、运行管理、长期 artifact storage 和生产 Web API 还没有真实系统实现。
 7. 2026-06-19 页面走查建议正在收口：优先处理项目列表、系统管理、装备/任务/保障建模页面中的死按钮、字段口径、选择/批量操作和 M6.1.1 输入风险；「建模数据导入」入口保留。
 
@@ -98,7 +98,7 @@
 2. 明确 `project JSON`、`scenario JSON`、`run JSON`、`result JSON` 的边界和转换规则。
 3. 将 `scenario`、`experiment`、`monteCarlo`、`runs`、`summary` 等前端概念收敛为正式对象。
 4. 定义导入、保存、发布、运行、归档过程中对象版本如何变化。
-5. 不再把 M2 拆成可见的 `Simulation/Ontology Contract` 与 `Application Data Contract` 双轨。M2 统一收敛到应用数据契约：Project、ModelingObject、Scenario、SimulationRun、Result、ArtifactManifest、用户权限、审计和迁移策略。
+5. 不再把 M2 拆成可见的 `Simulation/Ontology Contract` 与 `Application Data Contract` 双轨。M2 统一收敛到应用数据契约：Project、ModelingObject、Scenario、SimulationRun、Result、ArtifactManifest、用户权限、审计和迁移策略；ontology 不再是当前 schema 或运行链路的一部分。
 
 完成标准：
 

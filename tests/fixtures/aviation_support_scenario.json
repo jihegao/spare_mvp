@@ -13,11 +13,9 @@
     "project_id": "project-aviation-support-contract-001",
     "project_version": "project-v0.1",
     "project_schema_version": "project-v0",
-    "ontology_version": "0.2.0",
     "mesa_contract_version": "1.0.0"
   },
   "simulation_inputs": {
-    "ontology_version": "0.2.0",
     "aircraft_count": 8,
     "mission_count": 3,
     "mission_aircraft_required": 5,

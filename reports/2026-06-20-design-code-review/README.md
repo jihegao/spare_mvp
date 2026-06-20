@@ -8,7 +8,7 @@
 
 ## 范围
 
-覆盖 `front/`（原生 ES module 前端）、`src/spare_mvp_backend/`（Python 标准库 + SQLite 后端）、`src/spare_mvp_contract/adapter.py`（契约适配）、`src/spare_mvp_backend/repository.py` + `schema.sql`（持久化）、`src/spare_mvp_backend/http_server.py`（HTTP 边界）。Mesa ABM 模型本体（`aviation_support/model.py`、`smoke_model.py`）与 `docs/`、`contracts/` 不在本次重点评审范围。
+覆盖 `front/`（原生 ES module 前端）、`src/spare_mvp_backend/`（Python 标准库 + SQLite 后端）、`src/spare_mvp_contract/adapter.py`（契约适配）、`src/spare_mvp_backend/repository.py` + `schema.sql`（持久化）、`src/spare_mvp_backend/http_server.py`（HTTP 边界）。Mesa ABM 模型实现（`aviation_support/model.py`、`smoke_model.py`）与 `docs/`、`contracts/` 不在本次重点评审范围。
 
 ## 总体判断
 

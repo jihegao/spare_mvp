@@ -1,6 +1,6 @@
 # 备件规划与任务可靠度验证评估平台原型
 
-本仓库当前是基于 `docs/3概要设计方案.docx` 重构出的备件规划与任务可靠度验证评估原型。当前开发分支已经包含登录、项目列表着陆页、四级功能导航、Mesa 可视化嵌入、蒙特卡洛扫参与结果分析页、以及 ship_front / 备件_front 对齐页面；早期 Ontology + Mesa 重构和 Simulation-Contract-First 治理文档已归档为历史材料。
+本仓库当前是基于 `docs/3概要设计方案.docx` 重构出的备件规划与任务可靠度验证评估原型。当前开发分支已经包含登录、项目列表着陆页、四级功能导航、Mesa 可视化嵌入、蒙特卡洛扫参与结果分析页、以及 ship_front / 备件_front 对齐页面；早期 Ontology + Mesa 重构和 Simulation-Contract-First 治理文档已归档为历史材料，当前产品、运行时代码和测试门不再保留 ontology 需求。
 
 ## 项目文档入口
 
@@ -30,7 +30,7 @@
 - 前端建模：任务剖面参数、复合任务、周期性任务、基本任务、任务阶段、装备、组件、保障节点、保障活动字段。
 - 可靠性框图：树状展示串联、并联、备用关系及组件故障参数。
 - 保障活动建模：以树编辑、工作项目清单和节点网络图展示基本保障、使用保障、预防性维修、修复性维修活动。
-- 可视化仿真：单次仿真的任务态势、机场保障视图、指标和事件流；Mesa 内部 `Ontology视图` 不再作为当前产品能力。
+- 可视化仿真：单次仿真的任务态势、机场保障视图、指标和事件流；Mesa 内部 `Ontology视图`、Ontology Playground 导出和项目级本体校验已从当前产品范围删除。
 - 蒙特卡洛实验：已拆分为实验列表、添加/编辑实验和实验详情。实验对象保存 `mc_experiment_id`、关联方案、样本量、随机种子、状态、进度、`run_id` 和 artifact 引用；旧 `monte-carlo-config` hash 兼容到添加/编辑页。
 - 仿真实验方案流程：M6.1 已补齐 smoke 输入 mapping provenance、`aviation_support` fail-closed compiler skeleton 和 blocked run status envelope；M6.1.1 已让单次 run 优先从 ExperimentPlan 分支 Project JSON 编译 Scenario，确保 seed、故障率、保障容量等分支输入进入后端仿真，而不是只消费 Project snapshot + steps；M6.2 才基于通过编译的 Scenario 统一运行 Monte Carlo 并生成 analysis projections。未配置、缺少 compiler provenance 或缺少官方 analysis artifact 的分析页只能显示“本地预览，不是正式后端仿真结果”。
 - 实验对象一致性目标：M6.2 需要让单次仿真实验和 Monte Carlo 实验共享 `SimulationExperimentBase`，统一实验身份、方案、Scenario identity、随机种子、状态、进度、`run_id` 和 artifact 引用；单次实验扩展可视化状态帧，Monte Carlo 扩展样本量、sweep、批次和聚合 artifact。当前 MC 启动仍复用单次运行服务路径，属于过渡实现，正式 MC 不能继续标记为 `run_type: "single"`。
@@ -75,17 +75,6 @@ http://127.0.0.1:4173/front/index.html
 ```text
 http://127.0.0.1:4173/front/
 ```
-
-## 本体校验
-
-```bash
-python3 /Users/gaojihe/.codex/skills/ontology-mesa-modeling/scripts/normalize_ontology.py \
-  --input ontology/spare_mvp.ontology.json \
-  --output ontology/spare_mvp.normalized.json \
-  --report ontology/spare_mvp.validation.json
-```
-
-当前本体包含 8 个实体、13 条关系、39 个属性，校验报告见 `ontology/spare_mvp.validation.json`。
 
 ## Mesa 烟测
 

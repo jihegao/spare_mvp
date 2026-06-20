@@ -111,17 +111,11 @@ await openSecondary("仿真实验");
 await clickFeature("spare-planning-visual-start-stop");
 await capture("08-visual-simulation", "可视化推演");
 
-const ontologyTab = page.locator('button[data-mesa-view="ontology"]');
-if ((await ontologyTab.count()) !== 1) throw new Error("Mesa ontology tab is not unique");
-await ontologyTab.click();
-await capture("09-mesa-ontology", "可视化推演");
-
 const result = await page.evaluate(() => ({
   title: document.title,
   heading: document.querySelector("h2")?.textContent,
   breadcrumb: document.querySelector(".breadcrumb")?.textContent,
-  hasOntologySvg: Boolean(document.querySelector(".ontology-svg")),
-  hasOntologySidePanel: document.body.innerText.includes("Ontology关系图"),
+  visualTabs: [...document.querySelectorAll("[data-mesa-view]")].map((item) => item.textContent),
   hasMesaFallback: document.body.innerText.includes("演示快照"),
   monteCarloSampleText: document.body.innerText.match(/\d+\s*个样本/)?.[0] || null
 }));

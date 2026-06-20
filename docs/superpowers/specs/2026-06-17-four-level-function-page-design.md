@@ -172,7 +172,7 @@
 1. `可视化推演` 仍是唯一可导航入口。
 2. Mesa 页面产品口径保留飞机、任务、保障等状态视图。
 3. Mesa 内部 `Ontology视图` 不再作为当前产品能力或验收口径。
-4. `front/ontology-context.mjs` 可继续作为测试、导出或历史兼容辅助存在，但不代表可见页面必须渲染 ontology 图谱。
+4. `front/ontology-context.mjs`、Ontology Playground 导出和 repo 根目录 ontology 产物均已从当前代码、契约和测试门删除；旧关系图描述只作为历史背景。
 
 关系标签以当前项目级图谱为准，例如 `包含`、`要求`、`部署在`、`隶属于`、`安装在`、`导入约束`、`引用`、`驱动`、`启动停止`、`观察`、`批量生成`、`保存`、`逐步计算`、`聚合`、`支撑`。不要再使用旧设计中的 `depends_on`、`writes_to`、`drives`、`validates`、`shares_with` 作为已实现 UI 关系标签。
 
@@ -206,7 +206,6 @@
 1. `feature-catalog`：声明表 2 列出的四级页面、归属路径、数据对象和组件类型。
 2. `feature-router`：根据当前功能 ID 渲染页面，并维护导航高亮。
 3. `feature-page-template`：渲染标题、主编辑区、校验区和输出摘要。
-4. `ontology-context`：仅作为项目级 ontology、页面 focus context 辅助和 Ontology Playground 导出形态的历史兼容模块；当前产品不要求可见图谱消费它。
 
 现有 `front/app.js` 已经过长，实际实现时应优先拆分配置和渲染模块，避免继续把全部四级页面逻辑堆入单文件。
 

@@ -44,11 +44,6 @@
     "aviation_support": {
       "model_class": "AviationSupportModel",
       "simulation_inputs": {
-        "ontology_version": {
-          "source": "ontology/spare_mvp.ontology.json",
-          "status": "unsupported",
-          "reason": "requires Claude-approved compilation rule"
-        },
         "aircraft_count": {
           "source": "project.equipment.quantity",
           "constructor_param": "aircraft_count"
@@ -67,7 +62,7 @@
           "reason": "requires Claude-approved compilation rule"
         },
         "fuel_trucks": {
-          "source": "project.supportActivities / ontology resources",
+          "source": "project.supportActivities / support resource configuration",
           "status": "unsupported",
           "reason": "requires Claude-approved compilation rule"
         },
