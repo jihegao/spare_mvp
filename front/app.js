@@ -275,6 +275,11 @@ let scenario = cloneScenario(defaultScenario);
 let experimentPlanDraft = cloneScenario(scenario);
 let experimentPlanBranchActive = false;
 let lastRunExperimentPlanProjectJson = null;
+let selectedMonteCarloExperimentId = "";
+let monteCarloExperiments = createDefaultMonteCarloExperiments();
+let analysisTasks = [];
+let selectedAnalysisTaskId = "";
+let analysisTaskForms = {};
 let { singleResult, monteCarloResult } = buildDemoResultState(scenario);
 let rmsAllocationProject = createDemoRmsAllocationProject();
 let rmsAllocationPlan = createDefaultRmsAllocationPlan(rmsAllocationProject);
@@ -871,14 +876,74 @@ function bindEvents() {
       return;
     }
 
+    const monteCarloExperimentButton = event.target.closest("[data-mc-experiment-action]");
+    if (monteCarloExperimentButton) {
+      const page = getFeaturePageById(selectedFeatureId);
+      const action = monteCarloExperimentButton.dataset.mcExperimentAction;
+      if (action === "add") {
+        const experiment = createMonteCarloExperiment(page.module);
+        monteCarloExperiments = [...monteCarloExperiments, experiment];
+        selectedMonteCarloExperimentId = experiment.id;
+        selectedFeatureId = getMonteCarloExperimentEditFeatureId(page.module);
+      } else if (action === "detail") {
+        selectedMonteCarloExperimentId = monteCarloExperimentButton.dataset.mcExperimentId || selectedMonteCarloExperimentId;
+        selectedFeatureId = getMonteCarloExperimentDetailFeatureId(page.module);
+      } else if (action === "edit") {
+        selectedMonteCarloExperimentId = monteCarloExperimentButton.dataset.mcExperimentId || selectedMonteCarloExperimentId;
+        selectedFeatureId = getMonteCarloExperimentEditFeatureId(page.module);
+      } else if (action === "list") {
+        selectedFeatureId = getMonteCarloExperimentListFeatureId(page.module);
+      }
+      createExperimentPlanBranchFromCurrentProject();
+      location.hash = `feature=${selectedFeatureId}`;
+      render();
+      return;
+    }
+
     const monteCarloStartButton = event.target.closest("[data-mc-action='start']");
     if (monteCarloStartButton) {
       const page = getFeaturePageById(selectedFeatureId);
+      const experiment = currentMonteCarloExperiment(page.module);
+      selectedMonteCarloExperimentId = experiment.id;
+      monteCarloExperiments = monteCarloExperiments.map((item) => item.id === experiment.id
+        ? { ...item, status: "运行中", progress: 35, runId: backendRun?.run_id || item.runId }
+        : item);
       experimentRunStatus = "运行中";
       startExperimentRunThroughApi();
       selectedRoute = "workbench";
-      selectedFeatureId = getPlanListFeatureId(page.module);
+      selectedFeatureId = getMonteCarloExperimentDetailFeatureId(page.module);
       location.hash = `feature=${selectedFeatureId}`;
+      render();
+      return;
+    }
+
+    const analysisActionButton = event.target.closest("[data-analysis-action]");
+    if (analysisActionButton) {
+      const page = getFeaturePageById(selectedFeatureId);
+      const action = analysisActionButton.dataset.analysisAction;
+      if (action === "create-with-mc") {
+        const task = createAnalysisTaskForPage(page, analysisTaskFormForPage(page));
+        const experiment = ensureAnalysisTaskMonteCarloExperiment(task, { forceNew: true });
+        selectedMonteCarloExperimentId = experiment.id;
+        backendApiStatus = `已自动创建 ${experiment.id} 并绑定分析任务 ${task.id}`;
+      } else if (action === "edit") {
+        const task = analysisTasks.find((item) => item.id === analysisActionButton.dataset.analysisTaskId);
+        if (task) {
+          selectedAnalysisTaskId = task.id;
+          analysisTaskForms = { ...analysisTaskForms, [analysisFormKey(page)]: analysisFormFromTask(task) };
+        }
+      } else if (action === "save") {
+        const task = updateSelectedAnalysisTaskFromForm(page);
+        if (task) {
+          const experiment = ensureAnalysisTaskMonteCarloExperiment(task, { forceNew: true });
+          selectedMonteCarloExperimentId = experiment.id;
+          backendApiStatus = `已按新参数创建 ${experiment.id} 并重新绑定分析任务 ${task.id}`;
+        }
+      } else if (action === "delete") {
+        const taskId = analysisActionButton.dataset.analysisTaskId || selectedAnalysisTaskId;
+        analysisTasks = analysisTasks.filter((item) => item.id !== taskId);
+        if (selectedAnalysisTaskId === taskId) selectedAnalysisTaskId = "";
+      }
       render();
       return;
     }
@@ -1001,6 +1066,26 @@ function bindEvents() {
       return;
     }
 
+    const monteCarloExperimentInput = event.target.closest("[data-mc-experiment-field]");
+    if (monteCarloExperimentInput) {
+      const page = getFeaturePageById(selectedFeatureId);
+      const experiment = currentMonteCarloExperiment(page.module);
+      selectedMonteCarloExperimentId = experiment.id;
+      monteCarloExperiments = monteCarloExperiments.map((item) => item.id === experiment.id
+        ? { ...item, [monteCarloExperimentInput.dataset.mcExperimentField]: parseInput(monteCarloExperimentInput) }
+        : item);
+      render();
+      return;
+    }
+
+    const analysisTaskInput = event.target.closest("[data-analysis-task-field]");
+    if (analysisTaskInput) {
+      const page = getFeaturePageById(selectedFeatureId);
+      updateAnalysisTaskFormField(page, analysisTaskInput);
+      if (analysisTaskInput.tagName === "SELECT") render();
+      return;
+    }
+
     const experimentPlanInput = event.target.closest("[data-experiment-plan-path]");
     if (experimentPlanInput) {
       experimentPlanBranchActive = true;
@@ -1051,6 +1136,12 @@ function bindEvents() {
 
     const mcArrayInput = event.target.closest("[data-mc-array-path]");
     if (mcArrayInput) updateMonteCarloArrayInput(mcArrayInput);
+
+    const analysisTaskInput = event.target.closest("[data-analysis-task-field]");
+    if (analysisTaskInput) {
+      updateAnalysisTaskFormField(getFeaturePageById(selectedFeatureId), analysisTaskInput);
+      return;
+    }
 
     const systemUserInput = event.target.closest("[data-system-user-field]");
     if (systemUserInput && systemUserEditor) {
@@ -1436,6 +1527,9 @@ function renderMainComponent(page) {
     fixed,
     pct
   });
+  if (page.component === "monte-carlo-experiment-list") return renderMonteCarloExperimentList(page);
+  if (page.component === "monte-carlo-experiment-editor") return renderMonteCarloExperimentEditor(page);
+  if (page.component === "monte-carlo-experiment-detail") return renderMonteCarloExperimentDetail(page);
   if (page.component === "monte-carlo-config") return renderMonteCarloConfig();
   if (page.component === "monte-carlo-results") return renderMonteCarloResults();
   if (page.component === "analysis") return renderAnalysis(page);
@@ -1451,7 +1545,7 @@ function renderMainComponent(page) {
 
 function createExperimentPlanBranchFromCurrentProject() {
   const page = getFeaturePageById(selectedFeatureId);
-  if (!["experiment-plan-editor", "experiment-form", "monte-carlo-config"].includes(page.component)) return;
+  if (!["experiment-plan-editor", "experiment-form", "monte-carlo-config", "monte-carlo-experiment-editor"].includes(page.component)) return;
   if (experimentPlanBranchActive) return;
   experimentPlanDraft = cloneScenario(scenario);
   experimentPlanBranchActive = true;
@@ -3871,6 +3965,8 @@ function renderExperimentPlanList(page) {
   const editFeatureId = page.module === "任务可靠度评估模块"
     ? "mission-reliability-experiment-plan-edit"
     : "spare-planning-experiment-plan-edit";
+  const visualFeatureId = getVisualSimulationFeatureId(page.module);
+  const monteCarloFeatureId = getMonteCarloExperimentEditFeatureId(page.module);
   const plans = [
     {
       name: scenario.experiment.name,
@@ -3918,7 +4014,12 @@ function renderExperimentPlanList(page) {
               <td>${plan.steps}</td>
               <td>${plan.samples}</td>
               <td><span class="badge">${htmlEscape(plan.status)}</span></td>
-              <td><button type="button" class="inline-action" data-feature-id="${editFeatureId}" data-experiment-plan-edit>编辑</button><button type="button" class="btn-danger" data-experiment-plan-delete disabled>删除</button></td>
+              <td class="table-action-cell">
+                <button type="button" class="inline-action" data-feature-id="${editFeatureId}" data-experiment-plan-edit>编辑</button>
+                <button type="button" class="inline-action" data-feature-id="${visualFeatureId}">启动可视化推演</button>
+                <button type="button" class="inline-action" data-feature-id="${monteCarloFeatureId}">创建蒙特卡洛实验</button>
+                <button type="button" class="btn-danger" data-experiment-plan-delete disabled>删除</button>
+              </td>
             </tr>
           `).join("")}
         </tbody>
@@ -4923,7 +5024,180 @@ function missionProgressWidth(mission) {
   return 18;
 }
 
+function createDefaultMonteCarloExperiments() {
+  return [
+    createMonteCarloExperiment("备件规划评估模块", {
+      id: "mc-exp-spare-planning-baseline",
+      name: "陆基昼夜保障大样本实验",
+      status: "当前",
+      progress: 100,
+      runId: "run-local-preview",
+      artifactId: "artifact-local-preview"
+    }),
+    createMonteCarloExperiment("任务可靠度评估模块", {
+      id: "mc-exp-mission-reliability-baseline",
+      name: "任务可靠度波次稳定性实验",
+      status: "待运行",
+      progress: 0,
+      runId: "",
+      artifactId: ""
+    })
+  ];
+}
+
+function createMonteCarloExperiment(moduleName, overrides = {}) {
+  const sequence = overrides.id ? Number(overrides.sequence ?? 1) : monteCarloExperiments.length + 1;
+  const id = overrides.id || `mc-exp-${moduleName === "任务可靠度评估模块" ? "mission" : "spare"}-${String(sequence).padStart(3, "0")}`;
+  return {
+    id,
+    mc_experiment_id: id,
+    name: overrides.name || `${experimentPlanDraft.experiment.name} MC-${sequence}`,
+    module: moduleName,
+    experimentPlanName: overrides.experimentPlanName || experimentPlanDraft.experiment.name,
+    scenarioId: overrides.scenarioId || experimentPlanDraft.scenarioId,
+    samples: Number(overrides.samples ?? experimentPlanDraft.experiment.samples),
+    seed: Number(overrides.seed ?? experimentPlanDraft.experiment.seed),
+    status: overrides.status || "草稿",
+    progress: Number(overrides.progress ?? 0),
+    runId: overrides.runId || "",
+    artifactId: overrides.artifactId || "",
+    source: overrides.source || "manual"
+  };
+}
+
+function monteCarloExperimentListForModule(moduleName) {
+  const items = monteCarloExperiments.filter((experiment) => experiment.module === moduleName);
+  if (items.length) return items;
+  const experiment = createMonteCarloExperiment(moduleName);
+  monteCarloExperiments = [...monteCarloExperiments, experiment];
+  return [experiment];
+}
+
+function currentMonteCarloExperiment(moduleName) {
+  const items = monteCarloExperimentListForModule(moduleName);
+  return items.find((experiment) => experiment.id === selectedMonteCarloExperimentId) || items[0];
+}
+
+function experimentPlanOptionsForModule(moduleName) {
+  return [
+    scenario.experiment.name,
+    moduleName === "任务可靠度评估模块" ? "任务可靠度高波次验证" : "高强度出动保障验证",
+    "低库存敏感性实验"
+  ];
+}
+
+function renderMonteCarloExperimentList(page) {
+  const experiments = monteCarloExperimentListForModule(page.module);
+  return `
+    <div class="mc-workbench">
+      <section class="mc-config-panel">
+        <div class="section-head">
+          <h3>蒙特卡洛实验列表</h3>
+          <span>保存全部实验运行历史</span>
+        </div>
+        <div class="toolbar-row">
+          <button type="button" class="btn-primary" data-mc-experiment-action="add">新增实验</button>
+          <button type="button" class="btn-danger" disabled>批量删除</button>
+        </div>
+        <div class="table-wrap mc-history-grid">
+          <table>
+            <thead><tr><th>实验 ID</th><th>实验名称</th><th>关联方案</th><th>样本量</th><th>随机种子</th><th>状态</th><th>进度</th><th>操作</th></tr></thead>
+            <tbody>${experiments.map((experiment) => `
+              <tr>
+                <td>${htmlEscape(experiment.mc_experiment_id)}</td>
+                <td>${htmlEscape(experiment.name)}</td>
+                <td>${htmlEscape(experiment.experimentPlanName)}</td>
+                <td>${experiment.samples}</td>
+                <td>${experiment.seed}</td>
+                <td><span class="badge">${htmlEscape(experiment.status)}</span></td>
+                <td>${experiment.progress}%</td>
+                <td class="table-action-cell">
+                  <button type="button" class="inline-action" data-mc-experiment-action="detail" data-mc-experiment-id="${htmlEscape(experiment.id)}">详情</button>
+                  <button type="button" class="inline-action" data-mc-experiment-action="edit" data-mc-experiment-id="${htmlEscape(experiment.id)}">编辑</button>
+                  <button type="button" class="btn-danger" disabled>删除</button>
+                </td>
+              </tr>
+            `).join("")}</tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  `;
+}
+
+function renderMonteCarloExperimentEditor(page) {
+  const experiment = currentMonteCarloExperiment(page.module);
+  const detailFeatureId = getMonteCarloExperimentDetailFeatureId(page.module);
+  return `
+    <div class="mc-workbench">
+      <section class="mc-config-panel mc-config-panel-single">
+        <div class="section-head">
+          <h3>添加/编辑蒙特卡洛实验</h3>
+          <span>选择方案 / 样本量 / 随机种子</span>
+        </div>
+        <div class="mc-form">
+          <div class="readonly-field">
+            <span>mc_experiment_id</span>
+            <strong>${htmlEscape(experiment.mc_experiment_id)}</strong>
+          </div>
+          <label>实验名称<input data-mc-experiment-field="name" value="${htmlEscape(experiment.name)}"></label>
+          <label>选择方案<select data-mc-experiment-field="experimentPlanName">
+            ${experimentPlanOptionsForModule(page.module).map((option) => `<option ${option === experiment.experimentPlanName ? "selected" : ""}>${htmlEscape(option)}</option>`).join("")}
+          </select></label>
+          <div class="mc-inline-fields">
+            <label>仿真次数<input id="mc-samples" data-experiment-plan-path="experiment.samples" data-mc-experiment-field="samples" type="number" min="1" value="${experiment.samples}"></label>
+            <label>随机种子<input data-experiment-plan-path="experiment.seed" data-mc-experiment-field="seed" type="number" value="${experiment.seed}"></label>
+          </div>
+          <label>故障率扫描<input data-mc-array-path="monteCarlo.failureRates" value="${experimentPlanDraft.monteCarlo.failureRates.join(",")}"></label>
+          <label>备件倍数<input data-mc-array-path="monteCarlo.spareMultipliers" value="${experimentPlanDraft.monteCarlo.spareMultipliers.join(",")}"></label>
+          <label>保障容量<input data-mc-array-path="monteCarlo.supportCapacities" value="${experimentPlanDraft.monteCarlo.supportCapacities.join(",")}"></label>
+          <div class="mc-action-row">
+            <button type="button" data-mc-experiment-action="list">返回实验列表</button>
+            <button type="button" class="btn-primary" data-feature-id="${detailFeatureId}">保存并查看详情</button>
+          </div>
+        </div>
+      </section>
+    </div>
+  `;
+}
+
+function renderMonteCarloExperimentDetail(page) {
+  const experiment = currentMonteCarloExperiment(page.module);
+  return `
+    <div class="mc-workbench">
+      <section class="mc-config-panel">
+        <div class="section-head">
+          <h3>蒙特卡洛实验详情</h3>
+          <span>${htmlEscape(experiment.status)}</span>
+        </div>
+        <div class="mc-detail-grid">
+          <div class="readonly-field"><span>实验 ID</span><strong>${htmlEscape(experiment.mc_experiment_id)}</strong></div>
+          <div class="readonly-field"><span>关联方案</span><strong>${htmlEscape(experiment.experimentPlanName)}</strong></div>
+          <div class="readonly-field"><span>样本量</span><strong>${experiment.samples}</strong></div>
+          <div class="readonly-field"><span>随机种子</span><strong>${experiment.seed}</strong></div>
+          <div class="readonly-field"><span>run_id</span><strong>${htmlEscape(backendRun?.run_id || experiment.runId || "尚未启动")}</strong></div>
+          <div class="readonly-field"><span>artifact_id</span><strong>${htmlEscape(backendArtifactManifest?.artifact_manifest_id || experiment.artifactId || "等待生成")}</strong></div>
+        </div>
+        <div class="mc-progress">
+          <span>实验进度</span>
+          <div class="bar-track"><span class="bar-fill blue" style="width:${Math.max(8, experiment.progress)}%"></span></div>
+          <strong>${experiment.progress}%</strong>
+        </div>
+        <div class="mc-action-row">
+          <button type="button" data-mc-experiment-action="list">返回实验列表</button>
+          <button type="button" class="btn-primary" data-mc-action="start">启动实验</button>
+        </div>
+        ${renderMonteCarloResults()}
+      </section>
+    </div>
+  `;
+}
+
 function renderMonteCarloConfig() {
+  return renderMonteCarloExperimentEditor(getFeaturePageById(selectedFeatureId));
+}
+
+function renderLegacyMonteCarloConfig() {
   return `
     <div class="mc-workbench">
       <section class="mc-config-panel mc-config-panel-single">
@@ -5211,6 +5485,174 @@ function renderDowntimeFactorAnalysis() {
   });
 }
 
+function analysisTypeForPage(page) {
+  if (page.name.includes("备件短板")) return "spare_shortfall";
+  if (page.name.includes("携行")) return "carry_list";
+  if (page.name.includes("停机")) return "downtime_factors";
+  if (page.name.includes("任务可靠度") || page.name.includes("飞机任务可靠性")) return "mission_reliability";
+  return "large_sample_summary";
+}
+
+function analysisTaskListForPage(page) {
+  const analysisType = analysisTypeForPage(page);
+  return analysisTasks.filter((task) => task.module === page.module && task.analysisType === analysisType);
+}
+
+function analysisFormKey(page) {
+  return `${page.module}:${analysisTypeForPage(page)}`;
+}
+
+function defaultAnalysisTaskForm(page) {
+  return {
+    name: `${page.name}任务 ${analysisTasks.length + 1}`,
+    experimentPlanName: experimentPlanDraft.experiment.name,
+    samples: Number(experimentPlanDraft.experiment.samples),
+    seed: Number(experimentPlanDraft.experiment.seed)
+  };
+}
+
+function analysisTaskFormForPage(page) {
+  const key = analysisFormKey(page);
+  return analysisTaskForms[key] || defaultAnalysisTaskForm(page);
+}
+
+function updateAnalysisTaskFormField(page, input) {
+  const key = analysisFormKey(page);
+  analysisTaskForms = {
+    ...analysisTaskForms,
+    [key]: {
+      ...analysisTaskFormForPage(page),
+      [input.dataset.analysisTaskField]: parseInput(input)
+    }
+  };
+}
+
+function analysisFormFromTask(task) {
+  return {
+    name: task.name,
+    experimentPlanName: task.experimentPlanName,
+    samples: Number(task.samples),
+    seed: Number(task.seed)
+  };
+}
+
+function createAnalysisTaskForPage(page, formOverrides = {}) {
+  const analysisType = analysisTypeForPage(page);
+  const form = { ...defaultAnalysisTaskForm(page), ...formOverrides };
+  const task = {
+    id: `analysis-${analysisType}-${String(analysisTasks.length + 1).padStart(3, "0")}`,
+    module: page.module,
+    analysisType,
+    name: form.name,
+    experimentPlanName: form.experimentPlanName,
+    samples: Number(form.samples),
+    seed: Number(form.seed),
+    status: "已创建",
+    linkedMonteCarloExperimentId: ""
+  };
+  analysisTasks = [...analysisTasks, task];
+  selectedAnalysisTaskId = task.id;
+  return task;
+}
+
+function updateSelectedAnalysisTaskFromForm(page) {
+  const task = analysisTasks.find((item) => item.id === selectedAnalysisTaskId);
+  if (!task) return null;
+  const form = analysisTaskFormForPage(page);
+  const updatedTask = {
+    ...task,
+    name: form.name,
+    experimentPlanName: form.experimentPlanName,
+    samples: Number(form.samples),
+    seed: Number(form.seed),
+    status: "已配置"
+  };
+  analysisTasks = analysisTasks.map((item) => item.id === task.id ? updatedTask : item);
+  return updatedTask;
+}
+
+function ensureAnalysisTaskMonteCarloExperiment(task, options = {}) {
+  const existing = monteCarloExperiments.find((experiment) => experiment.mc_experiment_id === task.linkedMonteCarloExperimentId);
+  if (existing && !options.forceNew) return existing;
+  const experiment = createMonteCarloExperiment(task.module, {
+    name: `${task.name} 绑定MC实验`,
+    experimentPlanName: task.experimentPlanName,
+    samples: task.samples,
+    seed: task.seed,
+    status: "待运行",
+    source: "analysis:auto-created"
+  });
+  monteCarloExperiments = [...monteCarloExperiments, experiment];
+  task.linkedMonteCarloExperimentId = experiment.mc_experiment_id;
+  analysisTasks = analysisTasks.map((item) => item.id === task.id ? { ...item, linkedMonteCarloExperimentId: experiment.mc_experiment_id } : item);
+  return experiment;
+}
+
+function renderAnalysisTaskList(page, title) {
+  const tasks = analysisTaskListForPage(page);
+  const form = analysisTaskFormForPage(page);
+  const selectedTask = tasks.find((task) => task.id === selectedAnalysisTaskId);
+  const displayTasks = tasks.length
+    ? tasks
+    : [{
+        id: `analysis-preview-${analysisTypeForPage(page)}`,
+        name: `${title}默认任务`,
+        experimentPlanName: experimentPlanDraft.experiment.name,
+        samples: Number(experimentPlanDraft.experiment.samples),
+        seed: Number(experimentPlanDraft.experiment.seed),
+        status: "待创建",
+        linkedMonteCarloExperimentId: "未绑定",
+        preview: true
+      }];
+  return `
+    <section class="analysis-task-panel">
+      <div class="section-head">
+        <h3>分析任务列表</h3>
+        <span>创建/编辑/删除</span>
+      </div>
+      <div class="result-source-note">
+        <strong>自动绑定规则</strong>
+        <span>选择方案 + 参数后自动创建一个新的蒙特卡洛实验并绑定分析任务；详情页展示 linkedMonteCarloExperimentId / mc_experiment_id。</span>
+      </div>
+      <div class="mc-form analysis-task-form">
+        <label>任务名称<input data-analysis-task-field="name" value="${htmlEscape(form.name)}"></label>
+        <label>选择方案<select data-analysis-task-field="experimentPlanName">
+          ${experimentPlanOptionsForModule(page.module).map((option) => `<option ${option === form.experimentPlanName ? "selected" : ""}>${htmlEscape(option)}</option>`).join("")}
+        </select></label>
+        <div class="mc-inline-fields">
+          <label>实验样本量<input data-analysis-task-field="samples" type="number" min="1" value="${form.samples}"></label>
+          <label>随机种子<input data-analysis-task-field="seed" type="number" value="${form.seed}"></label>
+        </div>
+      </div>
+      <div class="toolbar-row">
+        <button type="button" class="btn-primary" data-analysis-action="create-with-mc">创建分析任务并绑定MC实验</button>
+        <button type="button" data-analysis-action="save" ${selectedTask ? "" : "disabled"}>保存编辑并新建绑定MC实验</button>
+        <button type="button" class="btn-danger" data-analysis-action="delete" ${selectedTask ? "" : "disabled"}>删除选中任务</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>任务</th><th>方案</th><th>样本量</th><th>随机种子</th><th>状态</th><th>linkedMonteCarloExperimentId</th><th>mc_experiment_id</th><th>操作</th></tr></thead>
+          <tbody>${displayTasks.map((task) => `
+            <tr>
+              <td>${htmlEscape(task.name)}</td>
+              <td>${htmlEscape(task.experimentPlanName)}</td>
+              <td>${task.samples}</td>
+              <td>${task.seed}</td>
+              <td><span class="badge">${htmlEscape(task.status)}</span></td>
+              <td>${htmlEscape(task.linkedMonteCarloExperimentId)}</td>
+              <td>${htmlEscape(task.linkedMonteCarloExperimentId)}</td>
+              <td class="table-action-cell">
+                <button type="button" class="inline-action" data-analysis-action="edit" data-analysis-task-id="${htmlEscape(task.id)}" ${task.preview ? "disabled" : ""}>编辑</button>
+                <button type="button" class="btn-danger" data-analysis-action="delete" data-analysis-task-id="${htmlEscape(task.id)}" ${task.preview ? "disabled" : ""}>删除</button>
+              </td>
+            </tr>
+          `).join("")}</tbody>
+        </table>
+      </div>
+    </section>
+  `;
+}
+
 function formalAnalysisBoundary() {
   const provenance = backendRun?.compiler_provenance
     || backendRun?.compiled_from?.mapping_provenance
@@ -5250,8 +5692,10 @@ function renderFormalAnalysisBoundaryNote(boundary) {
 function renderAnalysisDashboard({ title, mode, subtitle, config = "", metrics, body }) {
   const boundary = formalAnalysisBoundary();
   const metricSuffix = boundary.formalUnlocked ? "" : "<em>本地预览</em>";
+  const page = getFeaturePageById(selectedFeatureId);
   return `
     <div class="analysis-dashboard">
+      ${renderAnalysisTaskList(page, title)}
       <section class="analysis-filter-bar">
         <div><h3>${title}</h3><span>${subtitle}</span></div>
         <button type="button" class="btn-primary">启动</button>
@@ -5348,6 +5792,26 @@ function readStoredBackendAuthToken() {
 function getPlanListFeatureId(moduleName) {
   if (moduleName === "任务可靠度评估模块") return "mission-reliability-experiment-plan-list";
   return "spare-planning-experiment-plan-list";
+}
+
+function getVisualSimulationFeatureId(moduleName) {
+  if (moduleName === "任务可靠度评估模块") return "mission-reliability-visual-start-stop";
+  return "spare-planning-visual-start-stop";
+}
+
+function getMonteCarloExperimentListFeatureId(moduleName) {
+  if (moduleName === "任务可靠度评估模块") return "mission-reliability-monte-carlo-experiment-list";
+  return "spare-planning-monte-carlo-experiment-list";
+}
+
+function getMonteCarloExperimentEditFeatureId(moduleName) {
+  if (moduleName === "任务可靠度评估模块") return "mission-reliability-monte-carlo-experiment-edit";
+  return "spare-planning-monte-carlo-experiment-edit";
+}
+
+function getMonteCarloExperimentDetailFeatureId(moduleName) {
+  if (moduleName === "任务可靠度评估模块") return "mission-reliability-monte-carlo-experiment-detail";
+  return "spare-planning-monte-carlo-experiment-detail";
 }
 
 function getPath(obj, path) {

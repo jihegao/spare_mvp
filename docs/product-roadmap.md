@@ -299,7 +299,7 @@ M6.1 当前收束：输入一致性与 Scenario 编译 gate 已落地为窄闭�
 
 M6.1.1 当前收束：单次仿真输入已经从“ExperimentPlan 绑定 snapshot + steps”收敛为“ExperimentPlan 分支 Project JSON -> Scenario compiler”。前端创建实验方案时把完整分支 `projectJson` 写入 plan config；RunService 编译单次 smoke run 时优先消费该分支 Project JSON，并把 `experiment_plan_id`、`modeling_snapshot_id` 写入 mapping provenance。修改分支 seed、组件故障率或保障容量会进入后端 Scenario input 和 run artifact；旧计划缺少 `projectJson` 时仍回退到 ModelingSnapshot。
 
-M6.2 建议切片：统一 Monte Carlo / analysis profile。基于 M6.1/M6.1.1 已对齐的 Scenario 跑样本，产出统一 MC artifacts；“大样本评估”是基础 artifact，“备件短板”“携行清单”“任务可靠度”“停机因素”是同一 artifact 的 projection。仿真实验方案在 M6.2 保存实验基本信息（实验名称、仿真总时长、随机种子）和 `analysisRequests` 配置；Monte Carlo 实验页面显示样本完成进度和日志输出；方案列表显示“运行中”“已完成”或“运行失败”；未勾选或未通过编译的分析页显示“未配置”或编译失败，不渲染正式结果图表。M6.1/M6.1.1 明确不包含 Monte Carlo fan-out、官方四类 analysis artifact、worker queue、object storage、取消/重试或新的 auth/audit scope。
+M6.2 建议切片：统一 Monte Carlo / analysis profile。基于 M6.1/M6.1.1 已对齐的 Scenario 跑样本，产出统一 MC artifacts；“大样本评估”是基础 artifact，“备件短板”“携行清单”“任务可靠度”“停机因素”是同一 artifact 的 projection。仿真实验方案在 M6.2 保存方案分支和默认运行配置；Monte Carlo 实验作为批量运行主账本，拆分为实验列表、添加/编辑实验和实验详情，保存 `mc_experiment_id`、关联方案、样本量、随机种子、进度、`run_id` 和 artifact 引用。结果分析页管理 AnalysisTask，可选择方案和参数后自动创建新的 Monte Carlo 实验并绑定 `linkedMonteCarloExperimentId`；未勾选、未运行或未通过编译的分析页显示“未配置”或编译失败，不渲染正式结果图表。M6.1/M6.1.1 明确不包含 Monte Carlo fan-out、官方四类 analysis artifact、worker queue、object storage、取消/重试或新的 auth/audit scope。
 
 核心能力：
 
@@ -357,7 +357,7 @@ report.json 或 report.html
 
 目标：所有分析页都随真实运行产物变化，并能追溯计算来源。
 
-M8.0 建议切片：结果分析按 ExperimentPlan 的实验类型配置和 M6.2 run artifacts 解锁。已配置且运行完成的分析页显示对应 projection；已配置且运行中显示进度和日志摘要；已配置且运行失败显示失败原因、日志入口和重试入口；未配置或缺少 M6.1 compiler provenance 的分析页统一显示“未配置”或“输入未通过编译”，不能用静态演示图表冒充正式结果。
+M8.0 建议切片：结果分析按 AnalysisTask、绑定的 MonteCarloExperiment 和 M6.2 run artifacts 解锁。已绑定且运行完成的分析页显示对应 projection；已绑定且运行中显示进度和日志摘要；已绑定且运行失败显示失败原因、日志入口和重试入口；未创建任务、未绑定 MC 实验或缺少 M6.1 compiler provenance 的分析页统一显示“未配置”或“输入未通过编译”，不能用静态演示图表冒充正式结果。
 
 核心工作：
 

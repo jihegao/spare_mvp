@@ -17,8 +17,8 @@
 9. 装备组成建模、装备故障建模页面对齐 `vendor/ship_front` 的装备组成树和属性配置形态；组成页默认进入装备组成建模，只显示装备组成树以及组件名称、父节点、所属飞机、数量、组件属性和 N 中取 K，故障页显示 MTBF、故障分布、修复时间分布和 RMS 指标。
 10. 保障组织建模、保障活动建模页面保留外层四级导航，删除内部重复页签；保障组织的备件、人员、设备四级页会跳转到对应资源表，保障活动页面已对齐 `vendor/ship_front` 的树编辑、工作项目清单和网络图形态。
 11. 可视化推演页面恢复三级标题“可视化推演”，只保留一个可导航入口并直接嵌入 Mesa 航空保障可视化状态；当前产品口径保留飞机、任务、保障等状态视图，Mesa 内部 `Ontology视图` 不再作为当前产品能力。
-12. 蒙特卡洛实验配置页只读展示当前仿真实验，只保留参数配置和“启动”；启动后回到方案列表并显示“运行中”。
-13. 蒙特卡洛评估结果已经迁移到“结果分析 / 蒙特卡洛实验结果展示”。
+12. 蒙特卡洛实验已拆为实验列表、添加/编辑实验和实验详情；实验对象保存 `mc_experiment_id`、关联方案、样本量、随机种子、状态、进度、`run_id` 和 artifact 引用。
+13. 蒙特卡洛评估结果已经迁移到“结果分析 / 蒙特卡洛实验结果展示”；四个结果分析页先展示分析任务列表，并允许按方案和参数自动创建新的 MC 实验后绑定分析任务。
 14. 两个模块的结果分析页面已对齐 `vendor/ship_front/备件_front` 的页面形态。
 15. Ontology Playground 导出关系 ID 已加唯一性约束；Monte Carlo 扫参输入会真实更新场景并重算结果。
 16. 早期 Mesa `Ontology视图` 四层纵向画布约定已归档为历史设计；当前产品路线不再要求在 Mesa 仿真中展示 ontology 视图。
@@ -36,7 +36,7 @@
 28. M6.0 已把当前同步 smoke run 收敛到 `RunService` 和 canonical `/api/runs` 边界；`BackendApi.submit_run()`、HTTP `/api/runs`、前端 `submitRun()` / `getRunStatus()` 共同使用 run status/result/artifact/chain 刷新状态，并保留 `/api/simulation-runs` 兼容路径。RunService 会在当前进程内串行化 run id 生成，执行器失败后持久化 failed run 和空 ArtifactManifest 供 status 查询。该切片仍不是完整 worker 队列、取消、重试、真实批量 Monte Carlo fan-out、对象存储或 `aviation_support` 正式执行。
 29. M6.1 输入一致性已落地：`smoke` Scenario 返回 `compiled_from.mapping_provenance`，记录 consumed/ignored/derived 字段；`aviation_support` 有 compiler skeleton 并 fail closed 返回字段级 diagnostics；被 gate 阻断的 run 返回 failed status envelope、无 `result_summary_id`、空 ArtifactManifest；前端保留 compile gate error details，并在四个结果分析 dashboard 缺少 compiler provenance 或官方 analysis artifact 时标注“本地预览，不是正式后端仿真结果”。
 30. M6.1.1 单次仿真输入对齐已落地：ExperimentPlan config 持久化完整分支 `projectJson`，单次 smoke run 编译优先消费该分支 Project JSON，并在 mapping provenance 中记录 `experiment_plan_id` 和 `modeling_snapshot_id`；分支 seed、故障率、保障容量会进入后端 Scenario input。旧计划缺少 `projectJson` 时仍回退到 ModelingSnapshot。
-31. M6.2 后续切片再做统一 Monte Carlo / analysis profile：基于 M6.1/M6.1.1 编译通过的 Scenario 跑样本，产出统一 MC artifacts，并把“大样本评估、备件短板、携行清单、任务可靠度、停机因素”作为 artifact projection；未配置、运行中、运行失败或输入未通过编译时，结果页不得显示正式结果图表。M6.1/M6.1.1 明确不包含 Monte Carlo fan-out、官方四类 analysis artifact、worker queue、object storage、取消/重试或新的 auth/audit scope。
+31. M6.2 后续切片再做统一 Monte Carlo / analysis profile：基于 M6.1/M6.1.1 编译通过的 Scenario 跑样本，产出统一 MC artifacts，并把“大样本评估、备件短板、携行清单、任务可靠度、停机因素”作为 artifact projection。Monte Carlo 实验是批量运行主账本，AnalysisTask 通过 `linkedMonteCarloExperimentId` 绑定 `mc_experiment_id`；未创建任务、未绑定 MC、运行中、运行失败或输入未通过编译时，结果页不得显示正式结果图表。M6.1/M6.1.1 明确不包含 Monte Carlo fan-out、官方四类 analysis artifact、worker queue、object storage、取消/重试或新的 auth/audit scope。
 32. 页面建议收口执行 `reports/2026-06-19-page-revision-suggestions/README.md`：已取消删除「建模数据导入」页，M5.2 工作台继续保留；其余页面建议优先修复死按钮、字段口径、选择/批量操作和建模输入可用性，作为 M6.1.1 前的页面输入稳定工作，不扩大为 M6.1.1/M6.2 实现。
 
 ## 文档地图

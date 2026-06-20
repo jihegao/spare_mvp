@@ -31,10 +31,10 @@
 - 可靠性框图：树状展示串联、并联、备用关系及组件故障参数。
 - 保障活动建模：以树编辑、工作项目清单和节点网络图展示基本保障、使用保障、预防性维修、修复性维修活动。
 - 可视化仿真：单次仿真的任务态势、机场保障视图、指标和事件流；Mesa 内部 `Ontology视图` 不再作为当前产品能力。
-- 蒙特卡洛实验：只读展示当前仿真实验，配置样本数、随机种子、故障率、备件倍数、保障容量扫参；配置页只保留参数和启动按钮，评估结果统一在“结果分析 / 蒙特卡洛实验结果展示”中查看。
+- 蒙特卡洛实验：已拆分为实验列表、添加/编辑实验和实验详情。实验对象保存 `mc_experiment_id`、关联方案、样本量、随机种子、状态、进度、`run_id` 和 artifact 引用；旧 `monte-carlo-config` hash 兼容到添加/编辑页。
 - 仿真实验方案流程：M6.1 已补齐 smoke 输入 mapping provenance、`aviation_support` fail-closed compiler skeleton 和 blocked run status envelope；M6.1.1 已让单次 run 优先从 ExperimentPlan 分支 Project JSON 编译 Scenario，确保 seed、故障率、保障容量等分支输入进入后端仿真，而不是只消费 Project snapshot + steps；M6.2 才基于通过编译的 Scenario 统一运行 Monte Carlo 并生成 analysis projections。未配置、缺少 compiler provenance 或缺少官方 analysis artifact 的分析页只能显示“本地预览，不是正式后端仿真结果”。
 - RMS 指标分配：系统管理新增“装备RMS指标分配”本地计算页，使用模拟装备构型和任务剖面，支持调节装备级 R/M/S、MTBF、MTTR、MLDT、Ai/Ao 目标，选择等分配、比例分配、AGREE 和评分分配方法，并展示节点级 RMS target、任务暴露矩阵和自底向上校核；当前发布仅在浏览器内写入模拟装备节点的 `rms.target`，不覆盖 `prediction` 或 `actual`，尚未后端持久化或真实仿真消费。
-- 结果分析：备件短板分析、飞机转场携行清单、飞机任务可靠性分析、停机因素分析；M6.1 阶段均受 formal-result boundary 保护，缺少 compiler provenance 或官方 analysis artifact 时只显示前端本地预览标签。
+- 结果分析：备件短板分析、飞机转场携行清单、飞机任务可靠性分析、停机因素分析；每个分析页先进入分析任务列表，支持选择方案和参数后自动创建新的 Monte Carlo 实验并绑定分析任务。M6.1 阶段均受 formal-result boundary 保护，缺少 compiler provenance 或官方 analysis artifact 时只显示前端本地预览标签。
 - M2a 契约适配：`src/spare_mvp_contract/adapter.py` 已支持 Project JSON 校验、已批准的 `smoke` Scenario 编译、`SmokeSpareMvpModel` 运行、Result summary 和 ArtifactManifest 生成；M6.1 为 `aviation_support` 增加 compiler skeleton 和字段级 fail-closed diagnostics，但仍未解锁正式执行。
 - PR-D 数据持久化：`src/spare_mvp_backend/schema.sql` 和 repository helper 已提供 SQLite 版 Project / Scenario / Run / Result / ArtifactManifest 持久化与 `run_id` 身份链查询。
 - PR-E 后端 API：`src/spare_mvp_backend/api.py` 提供函数级 Backend API facade，按 Project -> Snapshot -> ExperimentPlan -> Adapter 编译 Scenario -> Mesa 运行 -> Result/Artifact 持久化编排；API 层不自行拼接 Scenario JSON，不改写 Mesa 指标。

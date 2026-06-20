@@ -8,11 +8,11 @@ import { buildOntologyContext, buildProjectOntology, PROJECT_ONTOLOGY, PROJECT_O
 const PAGE_REVISION_REPORT_URL = new URL("../reports/2026-06-19-page-revision-suggestions/README.md", import.meta.url);
 
 test("feature catalog exposes all table-2 four-level pages", () => {
-  assert.equal(FEATURE_PAGES.length, 52);
-  assert.equal(new Set(FEATURE_PAGES.map((page) => page.id)).size, 52);
-  assert.equal(FEATURE_PAGES.filter((page) => page.module === "备件规划评估模块").length, 22);
-  assert.equal(FEATURE_PAGES.filter((page) => page.module === "任务可靠度评估模块").length, 24);
-  assert.equal(FEATURE_PAGES.filter((page) => page.module === "系统管理").length, 6);
+  assert.equal(FEATURE_PAGES.length, 57);
+  assert.equal(new Set(FEATURE_PAGES.map((page) => page.id)).size, 57);
+  assert.equal(FEATURE_PAGES.filter((page) => page.module === "备件规划评估模块").length, 24);
+  assert.equal(FEATURE_PAGES.filter((page) => page.module === "任务可靠度评估模块").length, 26);
+  assert.equal(FEATURE_PAGES.filter((page) => page.module === "系统管理").length, 7);
   for (const label of ["装备可靠性框图建模", "蒙特卡洛实验结果", "飞机转场携行清单分析", "任务可靠度评估", "停机因素分析"]) {
     assert.ok(FEATURE_PAGES.some((page) => page.name === label), label);
   }
@@ -79,6 +79,8 @@ test("feature grouping preserves three-level navigation and internal fourth-leve
   assert.deepEqual(grouped["任务可靠度评估模块"]["仿真实验"]["仿真实验方案管理"].map((page) => page.name), ["方案列表", "方案编辑"]);
   assert.deepEqual(grouped["备件规划评估模块"]["仿真实验"]["可视化推演"].map((page) => page.name), ["可视化实验启动与停止"]);
   assert.deepEqual(grouped["任务可靠度评估模块"]["仿真实验"]["可视化推演"].map((page) => page.name), ["可视化实验启动与停止"]);
+  assert.deepEqual(grouped["备件规划评估模块"]["仿真实验"]["蒙特卡洛实验"].map((page) => page.name), ["实验列表", "添加/编辑实验", "实验详情"]);
+  assert.deepEqual(grouped["任务可靠度评估模块"]["仿真实验"]["蒙特卡洛实验"].map((page) => page.name), ["实验列表", "添加/编辑实验", "实验详情"]);
   assert.deepEqual(Object.keys(grouped["备件规划评估模块"]["结果分析"]), ["蒙特卡洛实验结果", "备件短板分析", "飞机转场携行清单分析"]);
   assert.deepEqual(grouped["备件规划评估模块"]["结果分析"]["备件短板分析"].map((page) => page.name), ["备件短板分析"]);
   assert.equal(FEATURE_PAGES.some((page) => page.name === "仿真实验方案创建"), false);
@@ -94,6 +96,8 @@ test("feature grouping preserves three-level navigation and internal fourth-leve
   assert.equal(getFeaturePageById("spare-planning-experiment-edit").name, "方案编辑");
   assert.equal(getFeaturePageById("mission-reliability-experiment-create").name, "方案编辑");
   assert.equal(getFeaturePageById("mission-reliability-experiment-edit").name, "方案编辑");
+  assert.equal(getFeaturePageById("spare-planning-monte-carlo-config").name, "添加/编辑实验");
+  assert.equal(getFeaturePageById("mission-reliability-monte-carlo-config").name, "添加/编辑实验");
   assert.equal(getFeaturePageById("spare-planning-scenario-switch").component, "visual-simulation");
   assert.equal(getFeaturePageById("spare-planning-visual-results").component, "visual-simulation");
   assert.equal(getFeaturePageById("mission-reliability-task-reliability").name, "任务可靠度评估");
@@ -141,6 +145,19 @@ test("experiment plan management remains visible because it is source design sco
   assert.match(catalogSource, /experiment-plan-editor/);
   assert.match(appSource, /function renderExperimentPlanList/);
   assert.match(appSource, /function renderExperimentPlanEditor/);
+});
+
+test("experiment plan list exposes visual simulation and monte carlo experiment actions", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const listSource = appSource.slice(
+    appSource.indexOf("function renderExperimentPlanList"),
+    appSource.indexOf("function renderExperimentPlanEditor")
+  );
+
+  assert.match(listSource, /启动可视化推演/);
+  assert.match(listSource, /创建蒙特卡洛实验/);
+  assert.match(listSource, /getVisualSimulationFeatureId\(page\.module\)/);
+  assert.match(listSource, /getMonteCarloExperimentEditFeatureId\(page\.module\)/);
 });
 
 test("modeling pages expose project draft persistence without replacing experiment plans", async () => {
@@ -1118,19 +1135,24 @@ test("monte carlo sweep inputs update scenario arrays and rerun grouped results"
   assert.match(appSource, /const savePlanButton = event\.target\.closest\("\[data-save-plan\]"\)/);
 });
 
-test("monte carlo experiment page is a launch-only parameter form and returns to running plan list", async () => {
+test("monte carlo experiment management has list, editor, and detail pages", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const styleSource = await readFile(new URL("../front/styles.css", import.meta.url), "utf8");
   assert.match(appSource, /class="mc-workbench"/);
-  assert.match(appSource, /蒙特卡洛实验参数配置/);
-  assert.match(appSource, /当前仿真实验/);
+  assert.match(appSource, /function renderMonteCarloExperimentList/);
+  assert.match(appSource, /function renderMonteCarloExperimentEditor/);
+  assert.match(appSource, /function renderMonteCarloExperimentDetail/);
+  assert.match(appSource, /蒙特卡洛实验列表/);
+  assert.match(appSource, /保存全部实验运行历史/);
+  assert.match(appSource, /添加\/编辑蒙特卡洛实验/);
+  assert.match(appSource, /蒙特卡洛实验详情/);
+  assert.match(appSource, /选择方案/);
   assert.match(appSource, /class="readonly-field"/);
-  assert.doesNotMatch(appSource, /<label>选择仿真实验[\s\S]*?<select>/);
   assert.match(appSource, /仿真次数/);
   assert.match(appSource, /data-mc-action="start"/);
   assert.match(appSource, /experimentRunStatus = "运行中"/);
-  assert.match(appSource, /selectedFeatureId = getPlanListFeatureId\(page\.module\)/);
-  assert.match(appSource, /status: experimentRunStatus/);
+  assert.match(appSource, /htmlEscape\(experiment\.status\)/);
+  assert.match(appSource, /selectedFeatureId = getMonteCarloExperimentDetailFeatureId\(page\.module\)/);
   assert.doesNotMatch(appSource, /class="mc-main-tabs"/);
   assert.doesNotMatch(appSource, /class="mc-subtabs"/);
   assert.doesNotMatch(appSource, /正交实验配置与分析/);
@@ -1138,6 +1160,31 @@ test("monte carlo experiment page is a launch-only parameter form and returns to
   assert.doesNotMatch(appSource, /预检查/);
   assert.match(styleSource, /\.mc-workbench/);
   assert.match(styleSource, /\.mc-config-panel/);
+});
+
+test("analysis pages manage analysis tasks and can auto-create a bound monte carlo experiment", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const analysisSource = appSource.slice(
+    appSource.indexOf("function renderAnalysisTaskList"),
+    appSource.indexOf("function renderBar")
+  );
+
+  assert.match(appSource, /function ensureAnalysisTaskMonteCarloExperiment/);
+  assert.match(appSource, /function createAnalysisTaskForPage/);
+  assert.match(appSource, /function updateAnalysisTaskFormField/);
+  assert.match(appSource, /function updateSelectedAnalysisTaskFromForm/);
+  assert.match(appSource, /analysisTaskInput\.tagName === "SELECT"/);
+  assert.match(analysisSource, /分析任务列表/);
+  assert.match(analysisSource, /创建\/编辑\/删除/);
+  assert.match(analysisSource, /data-analysis-action="create-with-mc"/);
+  assert.match(analysisSource, /data-analysis-action="edit"/);
+  assert.match(analysisSource, /data-analysis-action="save"/);
+  assert.match(analysisSource, /data-analysis-action="delete"/);
+  assert.match(analysisSource, /data-analysis-task-field="experimentPlanName"/);
+  assert.match(analysisSource, /data-analysis-task-field="samples"/);
+  assert.match(analysisSource, /选择方案 \+ 参数后自动创建一个新的蒙特卡洛实验并绑定分析任务/);
+  assert.match(analysisSource, /linkedMonteCarloExperimentId/);
+  assert.match(analysisSource, /mc_experiment_id/);
 });
 
 test("experiment plan editor edits an isolated branch rather than the project draft", async () => {

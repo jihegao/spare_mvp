@@ -782,6 +782,7 @@ input {
 .analysis-filter-bar,
 .analysis-chart-panel,
 .analysis-config-grid,
+.analysis-task-panel,
 .decision-support-card {
   padding: 14px;
   border: 1px solid var(--line);
@@ -809,6 +810,15 @@ input {
   display: grid;
   grid-template-columns: repeat(3, minmax(160px, 1fr));
   gap: 12px;
+}
+
+.analysis-task-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.analysis-task-form {
+  margin: 2px 0;
 }
 
 .decision-support-card {
@@ -1184,6 +1194,24 @@ input {
   gap: 12px;
 }
 
+.mc-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(160px, 1fr));
+  gap: 10px;
+  margin: 12px 0;
+}
+
+.mc-progress {
+  display: grid;
+  grid-template-columns: max-content 120px max-content;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .mc-action-row {
   display: flex;
   justify-content: center;
@@ -1193,6 +1221,12 @@ input {
 
 .mc-action-row button {
   min-width: 104px;
+}
+
+.table-action-cell {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .mc-result-cards {

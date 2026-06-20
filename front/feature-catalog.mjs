@@ -36,6 +36,9 @@ const FEATURE_SLUGS = {
   可视化实验启动与停止: "visual-start-stop",
   场景切换: "scenario-switch",
   可视化结果展示: "visual-results",
+  实验列表: "monte-carlo-experiment-list",
+  "添加/编辑实验": "monte-carlo-experiment-edit",
+  实验详情: "monte-carlo-experiment-detail",
   蒙特卡洛实验配置: "monte-carlo-config",
   蒙特卡洛实验结果: "monte-carlo-results",
   备件短板分析: "spare-shortfall-analysis",
@@ -70,7 +73,9 @@ const SOURCE_ROWS = [
   ["备件规划评估模块", "仿真实验", "仿真实验方案管理", "方案列表"],
   ["备件规划评估模块", "仿真实验", "仿真实验方案管理", "方案编辑"],
   ["备件规划评估模块", "仿真实验", "可视化推演", "可视化实验启动与停止"],
-  ["备件规划评估模块", "仿真实验", "蒙特卡洛实验", "蒙特卡洛实验配置"],
+  ["备件规划评估模块", "仿真实验", "蒙特卡洛实验", "实验列表"],
+  ["备件规划评估模块", "仿真实验", "蒙特卡洛实验", "添加/编辑实验"],
+  ["备件规划评估模块", "仿真实验", "蒙特卡洛实验", "实验详情"],
   ["备件规划评估模块", "结果分析", "蒙特卡洛实验结果", "蒙特卡洛实验结果"],
   ["备件规划评估模块", "结果分析", "备件短板分析", "备件短板分析"],
   ["备件规划评估模块", "结果分析", "飞机转场携行清单分析", "飞机转场携行清单分析"],
@@ -93,7 +98,9 @@ const SOURCE_ROWS = [
   ["任务可靠度评估模块", "仿真实验", "仿真实验方案管理", "方案列表"],
   ["任务可靠度评估模块", "仿真实验", "仿真实验方案管理", "方案编辑"],
   ["任务可靠度评估模块", "仿真实验", "可视化推演", "可视化实验启动与停止"],
-  ["任务可靠度评估模块", "仿真实验", "蒙特卡洛实验", "蒙特卡洛实验配置"],
+  ["任务可靠度评估模块", "仿真实验", "蒙特卡洛实验", "实验列表"],
+  ["任务可靠度评估模块", "仿真实验", "蒙特卡洛实验", "添加/编辑实验"],
+  ["任务可靠度评估模块", "仿真实验", "蒙特卡洛实验", "实验详情"],
   ["任务可靠度评估模块", "结果分析", "蒙特卡洛实验结果", "蒙特卡洛实验结果"],
   ["任务可靠度评估模块", "结果分析", "飞机任务可靠性分析", "飞机任务可靠性分析"],
   ["任务可靠度评估模块", "结果分析", "任务可靠度评估", "任务可靠度评估"],
@@ -138,6 +145,8 @@ const FEATURE_ID_ALIASES = {
   "spare-planning-experiment-edit": "spare-planning-experiment-plan-edit",
   "mission-reliability-experiment-create": "mission-reliability-experiment-plan-edit",
   "mission-reliability-experiment-edit": "mission-reliability-experiment-plan-edit",
+  "spare-planning-monte-carlo-config": "spare-planning-monte-carlo-experiment-edit",
+  "mission-reliability-monte-carlo-config": "mission-reliability-monte-carlo-experiment-edit",
   "spare-planning-monte-carlo-results-display": "spare-planning-monte-carlo-results",
   "mission-reliability-monte-carlo-results-display": "mission-reliability-monte-carlo-results",
   "spare-planning-mission-profile": "spare-planning-composite-task",
@@ -170,6 +179,9 @@ function resolveComponent(name, secondary, tertiary) {
   if (tertiary === "可视化推演") return "visual-simulation";
   if (name.includes("可视化")) return "visual-simulation";
   if (name.includes("场景切换")) return "scenario-switch";
+  if (tertiary === "蒙特卡洛实验" && name === "实验列表") return "monte-carlo-experiment-list";
+  if (tertiary === "蒙特卡洛实验" && name === "添加/编辑实验") return "monte-carlo-experiment-editor";
+  if (tertiary === "蒙特卡洛实验" && name === "实验详情") return "monte-carlo-experiment-detail";
   if (name.includes("蒙特卡洛实验配置")) return "monte-carlo-config";
   if (name.includes("蒙特卡洛实验结果")) return "monte-carlo-results";
   if (secondary === "结果分析") return "analysis";
@@ -203,8 +215,9 @@ function resolveDataObjects(name, secondary, tertiary) {
   if (tertiary === "保障活动建模") return ["supportActivities", "resources", "spares"];
   if (name.includes("方案") || name.includes("仿真实验方案")) return ["experiment", "scenario"];
   if (name.includes("可视化") || name.includes("场景切换")) return ["visualizationState", "experiment", "scenario"];
+  if (tertiary === "蒙特卡洛实验") return ["monteCarloExperiments", "experimentPlans", "runs", "artifacts"];
   if (name.includes("蒙特卡洛")) return ["monteCarlo", "runs", "summary"];
-  if (secondary === "结果分析") return ["runs", "summary", "decisionOutputs"];
+  if (secondary === "结果分析") return ["analysisTasks", "monteCarloExperiments", "runs", "decisionOutputs"];
   return ["scenario"];
 }
 
