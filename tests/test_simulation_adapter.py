@@ -353,26 +353,59 @@ class SimulationAdapterTest(unittest.TestCase):
     def test_monte_carlo_batch_rejects_invalid_analysis_request_before_writing_artifacts(self) -> None:
         project = self._load_fixture("smoke_project.json")
         scenario = self.adapter.compile_scenario(project)
-        plan_config = {
-            "steps": 2,
-            "seed": 7,
-            "analysisRequests": {
-                "largeSample": {"enabled": True, "samples": 2},
-                "spareShortfall": {"enabled": True, "threshold": "bad"},
-            },
-        }
+        invalid_cases = [
+            (
+                {
+                    "analysisRequests": {
+                        "largeSample": {"enabled": True, "samples": "bad"},
+                    },
+                },
+                "analysisRequests.largeSample.samples",
+            ),
+            (
+                {
+                    "analysisRequests": {
+                        "largeSample": {"enabled": True, "samples": 2, "seed": "bad"},
+                    },
+                },
+                "analysisRequests.largeSample.seed",
+            ),
+            (
+                {
+                    "analysisRequests": {
+                        "largeSample": {
+                            "enabled": True,
+                            "samples": 2,
+                            "sweep": {"failureRates": [0.05, "bad"]},
+                        },
+                    },
+                },
+                "analysisRequests.largeSample.sweep.failureRates[1]",
+            ),
+            (
+                {
+                    "analysisRequests": {
+                        "largeSample": {"enabled": True, "samples": 2},
+                        "spareShortfall": {"enabled": True, "threshold": "bad"},
+                    },
+                },
+                "analysisRequests.spareShortfall.threshold",
+            ),
+        ]
 
-        with tempfile.TemporaryDirectory() as tmp:
-            with self.assertRaises(AdapterError) as ctx:
-                self.adapter.run_monte_carlo_batch(
-                    scenario,
-                    plan_config=plan_config,
-                    output_dir=Path(tmp),
-                    run_id="run-invalid-analysis-config",
-                )
+        for plan_config, expected_path in invalid_cases:
+            with self.subTest(expected_path=expected_path), tempfile.TemporaryDirectory() as tmp:
+                with self.assertRaises(AdapterError) as ctx:
+                    self.adapter.run_monte_carlo_batch(
+                        scenario,
+                        plan_config={"steps": 2, "seed": 7, **plan_config},
+                        output_dir=Path(tmp),
+                        run_id="run-invalid-analysis-config",
+                    )
 
-            self.assertEqual(ctx.exception.code, "bad_analysis_request")
-            self.assertFalse(list(Path(tmp).rglob("monte-carlo-base.json")))
+                self.assertEqual(ctx.exception.code, "bad_analysis_request")
+                self.assertEqual(ctx.exception.details["field_path"], expected_path)
+                self.assertFalse(list(Path(tmp).rglob("monte-carlo-base.json")))
 
 
 if __name__ == "__main__":

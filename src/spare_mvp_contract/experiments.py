@@ -361,7 +361,7 @@ def _normalize_analysis_profile(plan_config: dict[str, Any], scenario: dict[str,
     analysis_requests = copy.deepcopy(plan_config.get("analysisRequests") or {})
     monte_carlo = plan_config.get("monteCarlo") or {}
     inputs = scenario["simulation_inputs"]
-    top_seed = _int_or(plan_config.get("seed"), inputs.get("seed", 0), allow_zero=True)
+    top_seed = plan_config.get("seed", inputs.get("seed", 0))
     large_sample = analysis_requests.setdefault("largeSample", {})
     large_sample.setdefault("enabled", True)
     large_sample.setdefault("samples", plan_config.get("samples", 1))
@@ -376,12 +376,22 @@ def _normalize_analysis_profile(plan_config: dict[str, Any], scenario: dict[str,
     analysis_requests.setdefault("downtimeFactors", {"enabled": True, "topN": 10})
     _validate_analysis_requests(analysis_requests)
     return {
-        "seed": _int_or(large_sample.get("seed"), top_seed, allow_zero=True),
-        "sample_count": max(1, _int_or(large_sample.get("samples"), 1)),
+        "seed": _optional_int(
+            large_sample.get("seed"),
+            "analysisRequests.largeSample.seed",
+            allow_zero=True,
+        ),
+        "sample_count": _optional_int(large_sample.get("samples"), "analysisRequests.largeSample.samples"),
         "sweep_dimensions": {
-            "failureRates": _number_list(sweep.get("failureRates"), inputs["failure_rate"]),
-            "spareMultipliers": _number_list(sweep.get("spareMultipliers"), inputs["spare_multiplier"]),
-            "capacities": _int_list(sweep.get("capacities"), inputs["support_capacity"]),
+            "failureRates": _number_list(
+                sweep.get("failureRates"),
+                "analysisRequests.largeSample.sweep.failureRates",
+            ),
+            "spareMultipliers": _number_list(
+                sweep.get("spareMultipliers"),
+                "analysisRequests.largeSample.sweep.spareMultipliers",
+            ),
+            "capacities": _int_list(sweep.get("capacities"), "analysisRequests.largeSample.sweep.capacities"),
         },
         "analysis_requests": analysis_requests,
     }
@@ -434,6 +444,14 @@ def _analysis_output_summary(profile: dict[str, Any], projection_payloads: dict[
 
 
 def _validate_analysis_requests(analysis_requests: dict[str, Any]) -> None:
+    large_sample = analysis_requests.get("largeSample", {})
+    if large_sample.get("enabled"):
+        _optional_int(large_sample.get("samples", 1), "analysisRequests.largeSample.samples")
+        _optional_int(large_sample.get("seed", 0), "analysisRequests.largeSample.seed", allow_zero=True)
+        sweep = large_sample.get("sweep") or {}
+        _number_list(sweep.get("failureRates", [0.05]), "analysisRequests.largeSample.sweep.failureRates")
+        _number_list(sweep.get("spareMultipliers", [1.0]), "analysisRequests.largeSample.sweep.spareMultipliers")
+        _int_list(sweep.get("capacities", [1]), "analysisRequests.largeSample.sweep.capacities")
     if analysis_requests.get("spareShortfall", {}).get("enabled"):
         _optional_float(
             analysis_requests.get("spareShortfall", {}).get("threshold", 0.95),
@@ -456,31 +474,44 @@ def _validate_analysis_requests(analysis_requests: dict[str, Any]) -> None:
         )
 
 
-def _number_list(value: Any, fallback: float) -> list[float]:
+def _number_list(value: Any, path: str) -> list[float]:
     if isinstance(value, list):
-        numbers = [float(item) for item in value if _is_number(item)]
-        if numbers:
-            return numbers
+        if not value:
+            raise AdapterError("bad_analysis_request", f"{path} must include at least one numeric value", field_path=path)
+        numbers = []
+        for index, item in enumerate(value):
+            if not _is_number(item):
+                raise AdapterError(
+                    "bad_analysis_request",
+                    f"{path}[{index}] must be numeric",
+                    field_path=f"{path}[{index}]",
+                    value=item,
+                )
+            numbers.append(float(item))
+        return numbers
     if _is_number(value):
         return [float(value)]
-    return [float(fallback)]
+    raise AdapterError("bad_analysis_request", f"{path} must be numeric", field_path=path, value=value)
 
 
-def _int_list(value: Any, fallback: int) -> list[int]:
+def _int_list(value: Any, path: str) -> list[int]:
     if isinstance(value, list):
-        numbers = [max(1, int(round(float(item)))) for item in value if _is_number(item)]
-        if numbers:
-            return numbers
+        if not value:
+            raise AdapterError("bad_analysis_request", f"{path} must include at least one numeric value", field_path=path)
+        numbers = []
+        for index, item in enumerate(value):
+            if not _is_number(item):
+                raise AdapterError(
+                    "bad_analysis_request",
+                    f"{path}[{index}] must be numeric",
+                    field_path=f"{path}[{index}]",
+                    value=item,
+                )
+            numbers.append(max(1, int(round(float(item)))))
+        return numbers
     if _is_number(value):
         return [max(1, int(round(float(value))))]
-    return [max(1, int(fallback))]
-
-
-def _int_or(value: Any, fallback: Any, *, allow_zero: bool = False) -> int:
-    if not _is_number(value):
-        value = fallback
-    parsed = int(round(float(value)))
-    return max(0 if allow_zero else 1, parsed)
+    raise AdapterError("bad_analysis_request", f"{path} must be numeric", field_path=path, value=value)
 
 
 def _optional_float(value: Any, path: str) -> float:
@@ -489,10 +520,10 @@ def _optional_float(value: Any, path: str) -> float:
     return float(value)
 
 
-def _optional_int(value: Any, path: str) -> int:
+def _optional_int(value: Any, path: str, *, allow_zero: bool = False) -> int:
     if not _is_number(value):
         raise AdapterError("bad_analysis_request", f"{path} must be numeric", field_path=path, value=value)
-    return max(1, int(round(float(value))))
+    return max(0 if allow_zero else 1, int(round(float(value))))
 
 
 def _is_number(value: Any) -> bool:

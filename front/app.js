@@ -4413,8 +4413,6 @@ function averageGroupMetric(metric) {
 }
 
 function renderMonteCarloResults() {
-  const groups = monteCarloResult.groups || [];
-  const resultRows = buildMonteCarloEvaluationRows();
   const backendChainRows = backendRunChain
     ? [
         ["Project", backendRunChain.project_id],
@@ -4429,19 +4427,45 @@ function renderMonteCarloResults() {
   const artifactRows = backendArtifactManifest && backendArtifactManifest.artifacts
     ? backendArtifactManifest.artifacts
     : [];
+  const baseArtifact = findAnalysisProjectionArtifact("monte_carlo_base");
+  const largeSampleArtifact = findAnalysisProjectionArtifact("large_sample_summary");
+  const hasFormalMonteCarloArtifact = Boolean(
+    backendRun?.status === "succeeded"
+      && backendRunResult?.compiler_provenance
+      && baseArtifact
+      && largeSampleArtifact
+  );
+  const state = !backendRun?.run_id
+    ? "待运行"
+    : backendRun.status === "failed"
+      ? "运行失败"
+      : backendRun.status === "succeeded"
+        ? hasFormalMonteCarloArtifact ? "完成" : "待运行"
+        : "运行中";
+  const resultMetrics = backendRunResult?.metrics || {};
+  const aggregateMetrics = resultMetrics.aggregate_metrics || {};
+  const formalMetricRows = [
+    ["运行状态", state],
+    ["Run", backendRun?.run_id || "-"],
+    ["样本数", resultMetrics.sample_count ?? "-"],
+    ["随机种子", resultMetrics.seed ?? backendRun?.seed ?? "-"],
+    ["Base Artifact", baseArtifact?.artifact_id || "-"],
+    ["Large Sample Artifact", largeSampleArtifact?.artifact_id || "-"]
+  ];
+  const aggregateRows = Object.entries(aggregateMetrics)
+    .filter(([, value]) => typeof value === "number")
+    .slice(0, 8);
   return `
     <div class="mc-result-panel">
       <div class="section-head">
         <h3>蒙特卡洛评估结果</h3>
-        <span>${monteCarloResult.runs.length} 个样本</span>
+        <span>${htmlEscape(state)}</span>
       </div>
       <div class="backend-run-chain">
         <span>后端状态：${htmlEscape(backendApiStatus)}</span>
         <div class="result-source-note">
-          <strong>后端产物来源</strong>
-          <span>Run status、ResultSummary、ArtifactManifest 和 identity chain 来自后端 /api/runs。</span>
-          <strong>前端展示桥接</strong>
-          <span>下方蒙特卡洛分组表仍由当前 ExperimentPlan 分支快照在前端重算，用于展示过渡；不作为 M6.0 真实批量 Monte Carlo artifact。</span>
+          <strong>${hasFormalMonteCarloArtifact ? "正式 Monte Carlo artifact metadata" : "本地预览，不是正式后端仿真结果"}</strong>
+          <span>${hasFormalMonteCarloArtifact ? "已读取 monte_carlo_base、large_sample_summary、ResultSummary 和 identity chain；artifact payload API 接入前只展示 metadata 与聚合摘要。" : "尚未读取正式 monte_carlo_base / large_sample_summary，等待后端 run artifact 完成。"}</span>
         </div>
         ${backendChainRows.length
           ? `<table><tbody>${backendChainRows.map(([label, value]) => `<tr><th>${htmlEscape(label)}</th><td>${htmlEscape(value)}</td></tr>`).join("")}</tbody></table>`
@@ -4451,24 +4475,19 @@ function renderMonteCarloResults() {
           : ""}
       </div>
       <div class="mc-result-cards">
-        ${resultRows.map((row) => `
+        ${formalMetricRows.map(([label, value]) => `
           <div class="metric-card">
-            <span>${row.name}</span>
-            <strong>${row.value}</strong>
-            <em>目标值 ${row.target}</em>
+            <span>${htmlEscape(label)}</span>
+            <strong>${htmlEscape(value)}</strong>
           </div>
         `).join("")}
       </div>
       <div class="table-wrap mc-evaluation-table">
         <table>
-          <thead><tr><th>序号</th><th>指标名称</th><th>蒙特卡洛评估值</th><th>目标值</th></tr></thead>
-          <tbody>${resultRows.map((row, index) => `<tr><td>${index + 1}</td><td>${row.name}</td><td>${row.value}</td><td>${row.target}</td></tr>`).join("")}</tbody>
-        </table>
-      </div>
-      <div class="table-wrap mc-group-table">
-        <table>
-          <thead><tr><th>参数组</th><th>样本数</th><th>任务可靠度</th><th>战备完好率</th><th>短缺事件</th></tr></thead>
-          <tbody>${groups.map((group) => `<tr><td>${group.group}</td><td>${group.count}</td><td>${pct(group.mission_success_rate.mean)}</td><td>${pct(group.ready_rate.mean)}</td><td>${fixed(group.shortage_events.mean, 1)}</td></tr>`).join("")}</tbody>
+          <thead><tr><th>指标</th><th>后端聚合值</th><th>来源</th></tr></thead>
+          <tbody>${aggregateRows.length
+            ? aggregateRows.map(([key, value]) => `<tr><td>${htmlEscape(key)}</td><td>${fixed(value, 3)}</td><td>ResultSummary aggregate_metrics</td></tr>`).join("")
+            : `<tr><td colspan="3">${hasFormalMonteCarloArtifact ? "artifact payload API 接入后展示详细聚合表" : "待运行正式 Monte Carlo 后显示后端聚合指标"}</td></tr>`}</tbody>
         </table>
       </div>
     </div>
@@ -4654,6 +4673,7 @@ function renderDowntimeFactorAnalysis() {
 
 function analysisTypeForPage(page = null) {
   const name = page?.name || "";
+  if (name.includes("蒙特卡洛实验结果")) return "large_sample_summary";
   if (name.includes("备件短板")) return "spare_shortfall";
   if (name.includes("携行")) return "carry_list";
   if (name.includes("停机")) return "downtime_factors";
@@ -4667,7 +4687,7 @@ function findAnalysisProjectionArtifact(kind) {
 }
 
 function analysisArtifactKindsContract() {
-  return "spare_shortfall|carry_list|mission_reliability|downtime_factors";
+  return "large_sample_summary|spare_shortfall|carry_list|mission_reliability|downtime_factors";
 }
 
 function analysisRunStateForKind(kind) {

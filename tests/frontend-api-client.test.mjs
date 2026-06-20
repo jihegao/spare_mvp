@@ -436,8 +436,9 @@ test("frontend app routes project save run and result reads through API client",
   assert.match(appSource, /backend-run-chain/);
   assert.match(appSource, /backendArtifactManifest\.artifacts/);
   assert.match(appSource, /ArtifactManifest/);
-  assert.match(appSource, /后端产物来源/);
-  assert.match(appSource, /前端展示桥接/);
+  assert.match(appSource, /正式 Monte Carlo artifact metadata/);
+  assert.match(appSource, /monte_carlo_base/);
+  assert.doesNotMatch(appSource, /前端展示桥接/);
   assert.match(appSource, /hydrateLastBackendRunFromApi/);
   assert.match(appSource, /const LAST_BACKEND_RUN_STORAGE_KEY = "spare-mvp:lastBackendRun"/);
   assert.match(appSource, /localStorage\.setItem\(LAST_BACKEND_RUN_STORAGE_KEY/);

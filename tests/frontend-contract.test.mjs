@@ -215,7 +215,7 @@ test("M6.2 formal result boundary unlocks from projection artifacts", async () =
   assert.match(appSource, /待运行/);
   assert.match(appSource, /运行中/);
   assert.match(appSource, /运行失败/);
-  assert.match(appSource, /spare_shortfall\|carry_list\|mission_reliability\|downtime_factors/);
+  assert.match(appSource, /large_sample_summary\|spare_shortfall\|carry_list\|mission_reliability\|downtime_factors/);
 });
 
 test("support organization and activity pages follow ship_front tree table editor structure", async () => {
@@ -1033,12 +1033,12 @@ test("monte carlo evaluation result is rendered in result analysis page", async 
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   assert.match(appSource, /function renderMonteCarloResults/);
   assert.match(appSource, /蒙特卡洛评估结果/);
-  assert.match(appSource, /蒙特卡洛评估值/);
-  assert.match(appSource, /后端产物来源/);
-  assert.match(appSource, /前端展示桥接/);
-  assert.match(appSource, /目标值/);
-  assert.match(appSource, /mc-result-cards/);
-  assert.match(appSource, /mc-evaluation-table/);
+  assert.match(appSource, /monte_carlo_base/);
+  assert.match(appSource, /large_sample_summary/);
+  assert.match(appSource, /backendRunResult\?\.metrics\?\.sample_count/);
+  assert.match(appSource, /正式 Monte Carlo artifact metadata/);
+  assert.doesNotMatch(appSource, /前端展示桥接/);
+  assert.doesNotMatch(appSource, /不作为 M6\.0 真实批量 Monte Carlo artifact/);
 });
 
 test("system management exposes an independent equipment RMS allocation workbench", async () => {

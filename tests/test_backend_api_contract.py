@@ -559,7 +559,7 @@ class BackendApiContractTest(unittest.TestCase):
         saved = self.api.save_project(project)
         self.api.create_modeling_snapshot(saved["project_id"])
         config = self._m62_analysis_config(project, samples=2)
-        config["analysisRequests"]["spareShortfall"]["threshold"] = "bad"
+        config["analysisRequests"]["largeSample"]["sweep"]["failureRates"] = [0.05, "bad"]
         plan = self.api.create_experiment_plan(saved["project_id"], config)
 
         submitted = self.api.submit_run(
@@ -576,6 +576,10 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(submitted["phase"], "failed")
         self.assertEqual(submitted["run_type"], "monte_carlo")
         self.assertEqual(submitted["error"]["code"], "bad_analysis_request")
+        self.assertEqual(
+            submitted["error"]["details"]["field_path"],
+            "analysisRequests.largeSample.sweep.failureRates[1]",
+        )
         self.assertEqual(artifacts["artifacts"], [])
         self.assertFalse(list(Path(self.tempdir.name).rglob("monte-carlo-base.json")))
 
