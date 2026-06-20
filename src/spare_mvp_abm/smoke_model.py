@@ -1,9 +1,8 @@
 """Project-level Mesa smoke model for spare planning and mission reliability.
 
 This is a runnable evidence scaffold, not the aviation support scenario package
-runtime. It keeps ontology-derived structures visible while adding explicit
-behavior rules for failure, spare consumption, repair, mission success, and
-downtime attribution.
+runtime. It derives behavior from project contract data for failure, spare
+consumption, repair, mission success, and downtime attribution.
 """
 
 from __future__ import annotations
@@ -44,17 +43,12 @@ class SmokeSpareMvpModel(BaseModel):
         failureRate: float | None = None,
         supportCapacity: int | None = None,
         minRequiredSorties: int | None = None,
-        ontologyPath: str | None = None,
         seed: int | None = None,
     ) -> None:
         if mesa is not None:
             super().__init__(rng=seed)
         self.project_path = self._resolve_repo_path(projectJsonPath)
         self.project_data = self._load_project_data(projectData, self.project_path)
-        self.ontology_path = self._resolve_ontology_path(ontologyPath)
-        self.ontology = self._load_ontology(self.ontology_path)
-        self._simulated_entity_type_ids = self._select_simulated_entity_types()
-        self._simulated_relationship_ids = self._select_simulated_relationships()
         self.project_id = str(self.project_data.get("scenarioId", "frontend-project"))
         self.mode = str(activeModule or self.project_data.get("activeModule", "sparePlanning"))
         self.random = random.Random(seed)
@@ -95,24 +89,12 @@ class SmokeSpareMvpModel(BaseModel):
             return Path(__file__).resolve().parents[2] / candidate
         return None
 
-    def _resolve_ontology_path(self, ontology_path: str | None) -> Path | None:
-        explicit = self._resolve_repo_path(ontology_path)
-        if explicit is not None:
-            return explicit
-        default_path = Path(__file__).resolve().parents[2] / "ontology" / "spare_mvp.ontology.json"
-        return default_path if default_path.exists() else None
-
     def _load_project_data(self, project_data: dict[str, Any] | None, project_path: Path | None) -> dict[str, Any]:
         if project_data is not None:
             return dict(project_data)
         if project_path is None:
             raise ValueError("SmokeSpareMvpModel requires frontend projectData or projectJsonPath")
         return json.loads(project_path.read_text(encoding="utf-8-sig"))
-
-    def _load_ontology(self, ontology_path: Path | None) -> dict[str, Any]:
-        if ontology_path is None:
-            return {"entityTypes": [], "relationships": [], "bindings": [], "metadata": {}}
-        return json.loads(ontology_path.read_text(encoding="utf-8-sig"))
 
     def _derive_equipment(self) -> list[EquipmentState]:
         equipment_data = self.project_data.get("equipment", {})
@@ -208,58 +190,6 @@ class SmokeSpareMvpModel(BaseModel):
         except (TypeError, ValueError):
             return False
         return True
-
-    def _ontology_entity_ids(self) -> set[str]:
-        return {str(entity.get("id")) for entity in self.ontology.get("entityTypes", [])}
-
-    def _ontology_relationship_ids(self) -> set[str]:
-        return {str(relationship.get("id")) for relationship in self.ontology.get("relationships", [])}
-
-    def _select_simulated_entity_types(self) -> list[str]:
-        implemented = {
-            "mission_profile",
-            "basic_mission",
-            "equipment",
-            "component",
-            "support_node",
-            "support_activity",
-        }
-        return sorted(implemented & self._ontology_entity_ids())
-
-    def _select_simulated_relationships(self) -> list[str]:
-        implemented = {
-            "mission_belongs_to_profile",
-            "equipment_assigned_to_mission",
-            "component_installed_on_equipment",
-            "equipment_creates_support_activity",
-            "activity_staged_at_node",
-            "node_dispatches_activity",
-            "activity_repairs_component",
-            "activity_updates_inventory",
-            "activity_changes_equipment_state",
-        }
-        return sorted(implemented & self._ontology_relationship_ids())
-
-    def ontology_mapping(self) -> dict[str, Any]:
-        """Return the explicit boundary between ontology structure and Mesa rules."""
-        return {
-            "development_mode": self.ontology.get("metadata", {}).get(
-                "developmentMode", "Simulation-Contract-First Development"
-            ),
-            "ontology_path": str(self.ontology_path) if self.ontology_path else "",
-            "project_path": str(self.project_path) if self.project_path else "",
-            "project_id": self.project_id,
-            "input_contract": "front/sim-engine.mjs defaultScenario",
-            "simulated_entity_types": list(self._simulated_entity_type_ids),
-            "simulated_relationships": list(self._simulated_relationship_ids),
-            "added_behavior_rules": [
-                "seeded equipment failure events",
-                "spare stock consumption and shortage accounting",
-                "resource-constrained repair queue",
-                "mission success checks over sortie demand",
-                "downtime attribution by failure, spare shortage, and resource delay",
-            ],
-        }
 
     def step(self) -> None:
         self.step_count += 1
@@ -361,11 +291,4 @@ class SmokeSpareMvpModel(BaseModel):
             "downtime_failure_events": float(self.downtime_failure_events),
             "downtime_spare_shortage_events": float(self.downtime_spare_shortage_events),
             "downtime_resource_delay_events": float(self.downtime_resource_delay_events),
-            "ontology_entity_types": float(len(self.ontology.get("entityTypes", []))),
-            "ontology_relationships": float(len(self.ontology.get("relationships", []))),
-            "ontology_bound_entities": float(
-                len({binding.get("boundEntityId") for binding in self.ontology.get("bindings", [])})
-            ),
-            "ontology_simulated_entity_types": float(len(self._simulated_entity_type_ids)),
-            "ontology_simulated_relationships": float(len(self._simulated_relationship_ids)),
         }

@@ -87,10 +87,10 @@ class ContractServerTest(unittest.TestCase):
             "/contract",
             "/snapshot",
             "/visualization",
-            "/ontology-mapping",
             "/experiment",
         ]:
             self.assertIn(endpoint, paths)
+        self.assertNotIn("/ontology-mapping", paths)
         self.assertIn("ownership", body["data"])
         self.assertIn("change_policy", body["data"])
 
@@ -118,19 +118,18 @@ class ContractServerTest(unittest.TestCase):
         for key in VISUALIZATION_KEYS:
             self.assertIn(key, body["data"])
 
-    def test_smoke_ontology_mapping(self):
-        status, body = self._get("/ontology-mapping?model=smoke")
+    def test_smoke_snapshot_contract_does_not_include_ontology_metrics(self):
+        status, body = self._get("/snapshot?model=smoke&steps=3")
         self.assertEqual(status, 200)
         data = body["data"]
         for key in [
-            "development_mode",
-            "ontology_path",
-            "project_id",
-            "simulated_entity_types",
-            "simulated_relationships",
-            "added_behavior_rules",
+            "mission_success_rate",
+            "spare_fill_rate",
+            "repair_backlog",
         ]:
             self.assertIn(key, data)
+        self.assertNotIn("ontology_entity_types", data)
+        self.assertNotIn("ontology_relationships", data)
 
     def test_experiment_default_and_named(self):
         status, body = self._get("/experiment")
@@ -161,10 +160,10 @@ class ContractServerTest(unittest.TestCase):
         self.assertEqual(status, 400)
         self.assertEqual(body["error"]["code"], "bad_param")
 
-    def test_ontology_mapping_aviation_model_rejected(self):
-        status, body = self._get("/ontology-mapping?model=aviation")
-        self.assertEqual(status, 400)
-        self.assertEqual(body["error"]["code"], "bad_param")
+    def test_ontology_mapping_endpoint_removed(self):
+        status, body = self._get("/ontology-mapping?model=smoke")
+        self.assertEqual(status, 404)
+        self.assertEqual(body["error"]["code"], "not_found")
 
 
 if __name__ == "__main__":

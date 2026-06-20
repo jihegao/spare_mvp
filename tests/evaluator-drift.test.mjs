@@ -161,7 +161,7 @@ test("aviation mapping marks semantic compilation rules unsupported until Claude
   const mapping = await readJson("contracts/scenario_adapter_mapping.json");
   const aviationInputs = mapping.model_families.aviation_support.simulation_inputs;
 
-  for (const field of ["ontology_version", "mechanic_teams", "fuel_trucks", "maintenance_bays", "lru_failure_multiplier"]) {
+  for (const field of ["mechanic_teams", "fuel_trucks", "maintenance_bays", "lru_failure_multiplier"]) {
     assert.equal(aviationInputs[field].status, "unsupported", `${field} should not be executable before Claude alignment`);
     assert.equal(aviationInputs[field].constructor_param, undefined, `${field} should not publish a constructor mapping`);
     assert.match(aviationInputs[field].reason, /requires Claude-approved compilation rule/);

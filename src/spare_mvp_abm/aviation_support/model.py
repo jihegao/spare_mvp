@@ -100,7 +100,7 @@ class MissionSpec:
 
 
 class AircraftAgent(Agent):
-    """Aircraft with history, mission state, and ontology-configured equipment."""
+    """Aircraft with history, mission state, and scenario-configured equipment."""
 
     def __init__(
         self,
@@ -226,16 +226,16 @@ class AviationSupportModel(Model):
         initial_flight_hours: float = 120.0,
         initial_landings: int = 40,
         initial_overhaul_days: float = 20.0,
-        ontology_path: str | None = None,
-        use_ontology_scenario: bool = False,
+        scenario_config_path: str | None = None,
+        use_scenario_config: bool = False,
         spare_reorder_enabled: bool = True,
         seed: int | None = None,
     ):
         super().__init__(rng=seed)
-        self.ontology_path = self._resolve_ontology_path(ontology_path)
-        self.ontology = self._load_ontology(self.ontology_path)
-        self.simulation_config = self.ontology.get("simulation", {})
-        self.use_ontology_scenario = bool(use_ontology_scenario or ontology_path)
+        self.scenario_config_path = self._resolve_scenario_config_path(scenario_config_path)
+        self.scenario_config = self._load_scenario_config(self.scenario_config_path)
+        self.simulation_config = self.scenario_config.get("simulation", {})
+        self.use_scenario_config = bool(use_scenario_config or scenario_config_path)
         self.spare_reorder_enabled = bool(spare_reorder_enabled)
 
         self.aircraft_type_configs = {
@@ -302,8 +302,8 @@ class AviationSupportModel(Model):
             functional_test_duration,
         )
 
-        self.aircraft = self._build_aircraft(scenario_aircraft if self.use_ontology_scenario else [])
-        self.missions = self._build_missions(scenario_missions if self.use_ontology_scenario else [])
+        self.aircraft = self._build_aircraft(scenario_aircraft if self.use_scenario_config else [])
+        self.missions = self._build_missions(scenario_missions if self.use_scenario_config else [])
 
         self._log("model_initialized", f"{self.aircraft_count} aircraft and {self.mission_count} missions loaded")
 
@@ -319,24 +319,22 @@ class AviationSupportModel(Model):
         if self.mission_duration <= 0:
             raise ValueError("mission_duration must be positive")
 
-    def _resolve_ontology_path(self, ontology_path: str | None) -> Path:
-        if ontology_path:
-            path = Path(ontology_path).expanduser()
+    def _resolve_scenario_config_path(self, scenario_config_path: str | None) -> Path:
+        if scenario_config_path:
+            path = Path(scenario_config_path).expanduser()
             if not path.is_absolute() and not path.exists():
                 path = Path(__file__).resolve().parent / path
             return path.resolve()
-        return Path(__file__).resolve().with_name("ontology.json")
+        return Path(__file__).resolve().with_name("scenario_config.json")
 
-    def _load_ontology(self, ontology_path: Path) -> dict[str, Any]:
-        if ontology_path.exists():
-            return json.loads(ontology_path.read_text(encoding="utf-8"))
-        return self._fallback_ontology()
+    def _load_scenario_config(self, scenario_config_path: Path) -> dict[str, Any]:
+        if scenario_config_path.exists():
+            return json.loads(scenario_config_path.read_text(encoding="utf-8"))
+        return self._fallback_scenario_config()
 
-    def _fallback_ontology(self) -> dict[str, Any]:
+    def _fallback_scenario_config(self) -> dict[str, Any]:
         return {
             "name": "Aviation Support",
-            "entityTypes": [],
-            "relationships": [],
             "simulation": {
                 "default_aircraft_type": "fighter",
                 "aircraft_types": [self.default_aircraft_type_config()],
@@ -399,7 +397,7 @@ class AviationSupportModel(Model):
         }
 
     def _build_resources(self, capacity_overrides: dict[str, int | None]) -> dict[str, ResourcePool]:
-        configured = self.simulation_config.get("resources") or self._fallback_ontology()["simulation"]["resources"]
+        configured = self.simulation_config.get("resources") or self._fallback_scenario_config()["simulation"]["resources"]
         resources = {}
         for item in configured:
             resource_id = str(item["id"])

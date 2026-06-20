@@ -250,9 +250,6 @@ class ContractHandler(BaseHTTPRequestHandler):
             _require_model(query, "aviation")
             steps = _steps(query)
             return _run_model("aviation", steps, _build_aviation_params(query)).visualization_state()
-        if path == "/ontology-mapping":
-            _require_model(query, "smoke")
-            return MODEL_REGISTRY["smoke"](**_build_smoke_params(query)).ontology_mapping()
         if path == "/experiment":
             return self._experiment(query)
         raise ContractError("not_found", f"unknown endpoint: {path}", status=404)
@@ -294,12 +291,6 @@ class ContractHandler(BaseHTTPRequestHandler):
                     "method": "GET",
                     "params": {"model": "aviation（仅）", "steps": "int"},
                     "returns": "snapshot/aircraft/resources/spares/missions/jobs/support_tasks/metrics/object_relationships/events",
-                },
-                {
-                    "path": "/ontology-mapping",
-                    "method": "GET",
-                    "params": {"model": "smoke（仅）", "project": "可选 project.json 路径"},
-                    "returns": "development_mode/ontology_path/project_path/project_id/input_contract/simulated_entity_types/simulated_relationships/added_behavior_rules",
                 },
                 {
                     "path": "/experiment",

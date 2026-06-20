@@ -65,7 +65,6 @@ class SimulationAdapterTest(unittest.TestCase):
                 "project_id": "project-smoke-contract-001",
                 "project_version": "project-v0.1",
                 "project_schema_version": "project-v0",
-                "ontology_version": "spare-mvp-ontology-v0",
                 "mesa_contract_version": "1.0.0",
                 "mapping_provenance": {
                     "project_id": "project-smoke-contract-001",
@@ -89,6 +88,7 @@ class SimulationAdapterTest(unittest.TestCase):
                 },
             },
         )
+        self.assertNotIn("ontology_version", scenario["compiled_from"])
         self.assertEqual(scenario["simulation_inputs"]["active_module"], "sparePlanning")
         self.assertEqual(scenario["simulation_inputs"]["spare_multiplier"], 1)
         self.assertEqual(scenario["simulation_inputs"]["failure_rate"], 0.07)
@@ -141,6 +141,15 @@ class SimulationAdapterTest(unittest.TestCase):
         scenario = self.adapter.compile_scenario(project)
 
         jsonschema.validate(instance=scenario, schema=schema)
+
+    def test_smoke_scenario_schema_rejects_ontology_version_in_compiled_from(self) -> None:
+        project = self._load_fixture("smoke_project.json")
+        schema = json.loads((REPO_ROOT / "contracts" / "scenario.schema.json").read_text(encoding="utf-8"))
+        scenario = self.adapter.compile_scenario(project)
+        scenario["compiled_from"]["ontology_version"] = "spare-mvp-ontology-v0"
+
+        with self.assertRaises(jsonschema.ValidationError):
+            jsonschema.validate(instance=scenario, schema=schema)
 
     def test_compile_invalid_project_raises_invalid_project_with_validation_errors(self) -> None:
         with self.assertRaises(AdapterError) as ctx:

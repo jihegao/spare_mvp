@@ -15,7 +15,7 @@ The files here are draft JSON Schema contracts for the application-facing bounda
 - `mission_exposure.schema.json`: task-profile exposure matrix boundary for node/phase equivalent mission hours.
 - `modeling_import.schema.json`: M5 first-slice modeling data import and validation boundary for draft/published lifecycle, object collections, field-level validation issues, and run-reference overwrite protection.
 
-These schemas are not a replacement for the Mesa model, ontology, or Claude-governed simulation semantics. They define the application data boundary that backend, database, frontend integration, and evaluator agents can consume.
+These schemas are not a replacement for the Mesa model or Claude-governed simulation semantics. They define the application data boundary that backend, database, frontend integration, and evaluator agents can consume. The earlier project ontology contract has been removed from active schema/runtime/test scope.
 
 The current frontend Project JSON is the raw `defaultScenario` shape from `front/sim-engine.mjs`; `schema_version` and `project_id` may be supplied later by an application envelope but are not required inside that raw payload.
 

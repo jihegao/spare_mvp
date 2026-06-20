@@ -16,13 +16,13 @@
 8. 任务建模下的任务剖面能力拆为“任务剖面参数”“复合任务建模”“周期性任务建模”：参数页维护任务类型、重复周期和结束条件；复合/周期页对齐 `vendor/ship_front` 的复合任务、周期性任务建模形态，包含复合任务列表、基本任务引用、典型组合任务时序表和按周期天数分配复合任务。
 9. 装备组成建模、装备故障建模页面对齐 `vendor/ship_front` 的装备组成树和属性配置形态；组成页默认进入装备组成建模，只显示装备组成树以及组件名称、父节点、所属飞机、数量、组件属性和 N 中取 K，故障页显示 MTBF、故障分布、修复时间分布和 RMS 指标。
 10. 保障组织建模、保障活动建模页面保留外层四级导航，删除内部重复页签；保障组织的备件、人员、设备四级页会跳转到对应资源表，保障活动页面已对齐 `vendor/ship_front` 的树编辑、工作项目清单和网络图形态。
-11. 可视化推演页面恢复三级标题“可视化推演”，只保留一个可导航入口并直接嵌入 Mesa 航空保障可视化状态；当前产品口径保留飞机、任务、保障等状态视图，Mesa 内部 `Ontology视图` 不再作为当前产品能力。
+11. 可视化推演页面恢复三级标题“可视化推演”，只保留一个可导航入口并直接嵌入 Mesa 航空保障可视化状态；当前产品口径保留飞机、任务、保障等状态视图，Mesa 内部 `Ontology视图`、Ontology Playground 导出和项目级本体校验已从当前产品、运行时代码和测试门删除。
 12. 蒙特卡洛实验已拆为实验列表、添加/编辑实验和实验详情；实验对象保存 `mc_experiment_id`、关联方案、样本量、随机种子、状态、进度、`run_id` 和 artifact 引用。
 13. 蒙特卡洛评估结果已经迁移到“结果分析 / 蒙特卡洛实验结果展示”；四个结果分析页先展示分析任务列表，并允许按方案和参数自动创建新的 MC 实验后绑定分析任务。
 14. M6.2 对象一致性目标：单次仿真实验和 Monte Carlo 实验必须共享 `SimulationExperimentBase`，统一实验身份、关联方案、Scenario identity、随机种子、状态、进度、`run_id` 和 artifact 引用；单次实验扩展可视化状态帧，Monte Carlo 实验扩展样本量、sweep、批次和聚合/projection artifact。当前 MC 启动仍复用 `run_type: "single"` 属于原型过渡，正式批量运行必须拆出 MC 调度类型。
 14. 两个模块的结果分析页面已对齐 `vendor/ship_front/备件_front` 的页面形态。
-15. Ontology Playground 导出关系 ID 已加唯一性约束；Monte Carlo 扫参输入会真实更新场景并重算结果。
-16. 早期 Mesa `Ontology视图` 四层纵向画布约定已归档为历史设计；当前产品路线不再要求在 Mesa 仿真中展示 ontology 视图。
+15. Monte Carlo 扫参输入会真实更新场景并重算结果。
+16. 早期 Mesa `Ontology视图` 四层纵向画布约定已归档为历史设计；当前产品路线不再要求在 Mesa 仿真中展示 ontology 视图，也不再维护 repo 根目录 ontology 产物。
 17. M2a / PR-C 已增加最小 `SimulationAdapter`：当前支持 Project JSON 根字段校验、`smoke` Scenario 编译、`SmokeSpareMvpModel` 运行、Result summary 和 ArtifactManifest 生成；M6.1 为 `aviation_support` 增加 compiler skeleton 和字段级 fail-closed diagnostics，但仍未解锁正式执行。
 18. PR-D 已增加 SQLite 数据持久化切片：`schema.sql` 声明项目、用户、方案、建模快照、场景、运行、结果摘要和产物清单表；repository helper 可保存 contract 对象并按 `run_id` 查询版本化身份链。
 19. PR-E 已增加函数级 Backend API facade：API 层只编排 Project 校验、项目保存、建模快照、实验计划、Adapter Scenario 编译、Mesa 运行、结果与产物持久化和按 `run_id` 查询，不在前端或 CRUD handler 中生成最终 Scenario。

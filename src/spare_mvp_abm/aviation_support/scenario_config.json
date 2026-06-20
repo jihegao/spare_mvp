@@ -1,0 +1,351 @@
+{
+  "name": "Aviation Support Scenario Config",
+  "description": "Configurable scenario data for aircraft sortie support, missions, support plans, resources, and spares.",
+  "simulation": {
+    "tick_minutes": 10,
+    "max_departure_delay": 180,
+    "default_aircraft_type": "fighter",
+    "aircraft_types": [
+      {
+        "id": "fighter",
+        "name": "Fighter",
+        "tail_prefix": "FTR",
+        "systems": [
+          {
+            "id": "propulsion",
+            "name": "Propulsion",
+            "lrus": [
+              {
+                "id": "engine_control_unit",
+                "name": "Engine Control Unit",
+                "mtbf_hours": 320,
+                "mttr_minutes": 90,
+                "spare_part": "engine_control_unit"
+              }
+            ]
+          },
+          {
+            "id": "hydraulic",
+            "name": "Hydraulic",
+            "lrus": [
+              {
+                "id": "hydraulic_pump",
+                "name": "Hydraulic Pump",
+                "mtbf_hours": 260,
+                "mttr_minutes": 75,
+                "spare_part": "hydraulic_pump"
+              }
+            ]
+          },
+          {
+            "id": "avionics",
+            "name": "Avionics",
+            "lrus": [
+              {
+                "id": "radar_processor",
+                "name": "Radar Processor",
+                "mtbf_hours": 420,
+                "mttr_minutes": 110,
+                "spare_part": "radar_processor"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "transport",
+        "name": "Transport",
+        "tail_prefix": "TRN",
+        "systems": [
+          {
+            "id": "propulsion",
+            "name": "Propulsion",
+            "lrus": [
+              {
+                "id": "engine_fade_monitor",
+                "name": "Engine Fade Monitor",
+                "mtbf_hours": 520,
+                "mttr_minutes": 120,
+                "spare_part": "engine_fade_monitor"
+              }
+            ]
+          },
+          {
+            "id": "electrical",
+            "name": "Electrical",
+            "lrus": [
+              {
+                "id": "generator_control_unit",
+                "name": "Generator Control Unit",
+                "mtbf_hours": 460,
+                "mttr_minutes": 100,
+                "spare_part": "generator_control_unit"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "aircraft": [
+      {
+        "tail_number": "FTR-01",
+        "aircraft_type": "fighter",
+        "history": {
+          "flight_hours": 120,
+          "landings": 40,
+          "overhaul_days": 20
+        }
+      },
+      {
+        "tail_number": "FTR-02",
+        "aircraft_type": "fighter",
+        "history": {
+          "flight_hours": 132,
+          "landings": 44,
+          "overhaul_days": 21
+        }
+      },
+      {
+        "tail_number": "FTR-03",
+        "aircraft_type": "fighter",
+        "history": {
+          "flight_hours": 144,
+          "landings": 48,
+          "overhaul_days": 22
+        }
+      },
+      {
+        "tail_number": "FTR-04",
+        "aircraft_type": "fighter",
+        "history": {
+          "flight_hours": 156,
+          "landings": 52,
+          "overhaul_days": 23
+        }
+      },
+      {
+        "tail_number": "FTR-05",
+        "aircraft_type": "fighter",
+        "history": {
+          "flight_hours": 168,
+          "landings": 56,
+          "overhaul_days": 24
+        }
+      },
+      {
+        "tail_number": "FTR-06",
+        "aircraft_type": "fighter",
+        "history": {
+          "flight_hours": 180,
+          "landings": 60,
+          "overhaul_days": 25
+        }
+      },
+      {
+        "tail_number": "TRN-01",
+        "aircraft_type": "transport",
+        "history": {
+          "flight_hours": 220,
+          "landings": 80,
+          "overhaul_days": 30
+        }
+      },
+      {
+        "tail_number": "TRN-02",
+        "aircraft_type": "transport",
+        "history": {
+          "flight_hours": 244,
+          "landings": 86,
+          "overhaul_days": 31
+        }
+      }
+    ],
+    "missions": [
+      {
+        "mission_id": 1,
+        "planned_start": 120,
+        "duration": 90,
+        "aircraft_type": "fighter",
+        "required_aircraft": 3
+      },
+      {
+        "mission_id": 2,
+        "planned_start": 300,
+        "duration": 90,
+        "aircraft_type": "fighter",
+        "required_aircraft": 3
+      },
+      {
+        "mission_id": 3,
+        "planned_start": 420,
+        "duration": 120,
+        "aircraft_type": "transport",
+        "required_aircraft": 1
+      }
+    ],
+    "resources": [
+      {
+        "id": "mechanic_team",
+        "name": "Mechanic Team",
+        "category": "personnel",
+        "capacity": 4
+      },
+      {
+        "id": "fuel_truck",
+        "name": "Fuel Truck",
+        "category": "equipment",
+        "capacity": 2
+      },
+      {
+        "id": "power_cart",
+        "name": "Power Cart",
+        "category": "equipment",
+        "capacity": 2
+      },
+      {
+        "id": "weapons_crew",
+        "name": "Weapons Crew",
+        "category": "personnel",
+        "capacity": 2
+      },
+      {
+        "id": "maintenance_bay",
+        "name": "Maintenance Bay",
+        "category": "facility",
+        "capacity": 1
+      }
+    ],
+    "support_tasks": {
+      "power_check": {
+        "name": "Power Check",
+        "duration": 20,
+        "resources": {
+          "mechanic_team": 1,
+          "power_cart": 1
+        }
+      },
+      "refuel": {
+        "name": "Refuel",
+        "duration": 30,
+        "resources": {
+          "mechanic_team": 1,
+          "fuel_truck": 1
+        }
+      },
+      "weapons_load": {
+        "name": "Weapons Load",
+        "duration": 35,
+        "resources": {
+          "mechanic_team": 1,
+          "weapons_crew": 1
+        }
+      },
+      "preflight_inspection": {
+        "name": "Preflight Inspection",
+        "duration": 25,
+        "resources": {
+          "mechanic_team": 1
+        }
+      },
+      "postflight_inspection": {
+        "name": "Postflight Inspection",
+        "duration": 25,
+        "resources": {
+          "mechanic_team": 1
+        }
+      },
+      "turnaround_refuel": {
+        "name": "Turnaround Refuel",
+        "duration": 20,
+        "resources": {
+          "mechanic_team": 1,
+          "fuel_truck": 1
+        }
+      },
+      "fault_isolation": {
+        "name": "Fault Isolation",
+        "duration": 30,
+        "resources": {
+          "mechanic_team": 1,
+          "maintenance_bay": 1
+        }
+      },
+      "lru_replacement": {
+        "name": "LRU Replacement",
+        "duration": 0,
+        "resources": {
+          "mechanic_team": 1,
+          "maintenance_bay": 1
+        },
+        "repair_failed_lru": true
+      },
+      "functional_test": {
+        "name": "Functional Test",
+        "duration": 20,
+        "resources": {
+          "mechanic_team": 1,
+          "power_cart": 1
+        }
+      }
+    },
+    "support_plans": {
+      "pre_mission": [
+        "power_check",
+        "refuel",
+        "weapons_load",
+        "preflight_inspection"
+      ],
+      "post_mission": [
+        "postflight_inspection",
+        "turnaround_refuel"
+      ],
+      "maintenance": [
+        "fault_isolation",
+        "lru_replacement",
+        "functional_test"
+      ]
+    },
+    "spares": [
+      {
+        "id": "engine_control_unit",
+        "name": "Engine Control Unit",
+        "initial_quantity": 2,
+        "reorder_point": 1,
+        "reorder_quantity": 2,
+        "lead_time": 120
+      },
+      {
+        "id": "hydraulic_pump",
+        "name": "Hydraulic Pump",
+        "initial_quantity": 2,
+        "reorder_point": 1,
+        "reorder_quantity": 2,
+        "lead_time": 120
+      },
+      {
+        "id": "radar_processor",
+        "name": "Radar Processor",
+        "initial_quantity": 2,
+        "reorder_point": 1,
+        "reorder_quantity": 2,
+        "lead_time": 120
+      },
+      {
+        "id": "engine_fade_monitor",
+        "name": "Engine Fade Monitor",
+        "initial_quantity": 1,
+        "reorder_point": 1,
+        "reorder_quantity": 1,
+        "lead_time": 180
+      },
+      {
+        "id": "generator_control_unit",
+        "name": "Generator Control Unit",
+        "initial_quantity": 1,
+        "reorder_point": 1,
+        "reorder_quantity": 1,
+        "lead_time": 180
+      }
+    ]
+  }
+}

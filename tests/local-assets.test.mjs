@@ -6,9 +6,7 @@ test("local aviation support copy is project-owned and provenance-tagged", async
   const base = new URL("../src/spare_mvp_abm/aviation_support/", import.meta.url);
   for (const file of [
     "model.py",
-    "ontology.json",
-    "ontology.normalized.json",
-    "ontology.report.json",
+    "scenario_config.json",
     "smoke.json",
     "experiment.json",
     "visualization.html",
@@ -19,7 +17,7 @@ test("local aviation support copy is project-owned and provenance-tagged", async
   }
 
   const smoke = JSON.parse(await readFile(new URL("smoke.json", base), "utf8"));
-  assert.equal(smoke.parameters.ontology_path, "src/spare_mvp_abm/aviation_support/ontology.json");
+  assert.equal(smoke.parameters.scenario_config_path, "src/spare_mvp_abm/aviation_support/scenario_config.json");
 
   const source = await readFile(new URL("SOURCE.md", base), "utf8");
   assert.match(source, /mesa-abm-skill\/mesa-abm-skill\/assets\/aviation_support/);

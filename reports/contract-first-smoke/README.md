@@ -11,7 +11,7 @@
 | `node --version` | `v25.3.0` |
 | `node --test tests/e2e-contract-flow.test.mjs` | GREEN：1 个 e2e 测试通过，0 失败。 |
 | `python3 -m unittest tests.test_backend_api_contract tests.test_simulation_adapter` | 7 个相邻后端/adapter 合约测试通过，0 失败。 |
-| `npm test` | 91 个 Node contract/frontend/ontology 测试通过，0 失败。 |
+| `npm test` | 历史记录：当时 91 个 Node contract/frontend/ontology 测试通过，0 失败；当前 ontology 测试门已删除。 |
 | `.abm-mesa-env/bin/python --version` | `Python 3.12.13` |
 | `.abm-mesa-env/bin/python -c "import mesa; print(mesa.__version__)"` | `3.5.1` |
 | `.abm-mesa-env/bin/python -m unittest discover tests` | 30 个 Python unittest 通过，0 失败。 |

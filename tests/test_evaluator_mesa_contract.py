@@ -36,7 +36,6 @@ class EvaluatorMesaContractTest(unittest.TestCase):
     def test_smoke_result_schema_metrics_exist_in_live_snapshot(self) -> None:
         model = SmokeSpareMvpModel(
             projectJsonPath=str(REPO_ROOT / "scenarios" / "frontend-project-smoke" / "project.json"),
-            ontologyPath=str(REPO_ROOT / "ontology" / "spare_mvp.ontology.json"),
             seed=20260618,
         )
         for _ in range(3):
@@ -49,8 +48,8 @@ class EvaluatorMesaContractTest(unittest.TestCase):
         module = _load_aviation_module()
         asset_dir = REPO_ROOT / "src" / "spare_mvp_abm" / "aviation_support"
         model = module.AviationSupportModel(
-            ontology_path=str(asset_dir / "ontology.json"),
-            use_ontology_scenario=True,
+            scenario_config_path=str(asset_dir / "scenario_config.json"),
+            use_scenario_config=True,
             lru_failure_multiplier=0,
             seed=20260618,
         )

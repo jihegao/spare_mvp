@@ -5,8 +5,8 @@
   "primary_metric": "sortie_completion_rate",
   "seeds": [17],
   "parameters": {
-    "ontology_path": "src/spare_mvp_abm/aviation_support/ontology.json",
-    "use_ontology_scenario": true,
+    "scenario_config_path": "src/spare_mvp_abm/aviation_support/scenario_config.json",
+    "use_scenario_config": true,
     "lru_failure_multiplier": 0
   }
 }

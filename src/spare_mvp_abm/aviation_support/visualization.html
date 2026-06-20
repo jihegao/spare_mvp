@@ -187,8 +187,7 @@
       .event,
       .detail,
       .spare,
-      .equipment,
-      .ontology-edge {
+      .equipment {
         border: 1px solid var(--line);
         border-radius: 6px;
         background: #161a1d;
@@ -206,8 +205,7 @@
       .event span,
       .detail span,
       .spare span,
-      .equipment span,
-      .ontology-edge span {
+      .equipment span {
         color: var(--muted);
         font-size: 12px;
       }
@@ -224,8 +222,7 @@
       .job,
       .event,
       .spare,
-      .equipment,
-      .ontology-edge {
+      .equipment {
         padding: 9px;
       }
 
@@ -292,8 +289,7 @@
       .job strong,
       .spare strong,
       .equipment strong,
-      .detail strong,
-      .ontology-edge strong {
+      .detail strong {
         display: block;
         margin-top: 4px;
         font-size: 15px;
@@ -394,7 +390,6 @@
           <button class="tab active" data-view="aircraft">飞机视图</button>
           <button class="tab" data-view="mission">任务视图</button>
           <button class="tab" data-view="support">保障视图</button>
-          <button class="tab" data-view="ontology">Ontology视图</button>
         </div>
         <div class="clock" id="clock">T+0000 min</div>
       </header>
@@ -460,12 +455,6 @@
             <div class="job-list" id="jobs"></div>
             <h2>事件</h2>
             <div class="event-list" id="events"></div>
-          </div>
-          <div id="ontologyPanel" class="view-panel hidden">
-            <h2>Ontology关系图</h2>
-            <div id="ontologySummary"></div>
-            <h2>实体关系清单</h2>
-            <div class="event-list" id="ontologyEdges"></div>
           </div>
         </aside>
       </div>
@@ -536,15 +525,6 @@
           ["engine_fade_monitor", "Engine Fade Monitor", 1, 1, 1, 180],
           ["generator_control_unit", "Generator Control Unit", 1, 1, 1, 180],
         ],
-        ontology: {
-          entityTypes: ["任务", "飞机", "保障活动", "保障资源", "备件"],
-          relationships: [
-            "任务 -> 飞机：按机型需求形成候选编组",
-            "飞机 -> 保障活动：任务前/任务后/维修触发作业链",
-            "保障活动 -> 保障资源：作业占用人员、设备、设施",
-            "保障活动 -> 备件：LRU更换消耗对应备件",
-          ],
-        },
       };
 
       const canvas = document.getElementById("stage");
@@ -640,7 +620,7 @@
           nextJobId: 1,
           metrics: { launched: 0, completed: 0, delayed: 0, cancelled: 0, delayTotal: 0, failures: 0 },
         };
-        log("model_initialized", "ontology 场景已载入");
+        log("model_initialized", "scenario config loaded");
         render();
       }
 
@@ -972,11 +952,9 @@
         document.getElementById("aircraftPanel").classList.toggle("hidden", activeView !== "aircraft");
         document.getElementById("missionPanel").classList.toggle("hidden", activeView !== "mission");
         document.getElementById("supportPanel").classList.toggle("hidden", activeView !== "support");
-        document.getElementById("ontologyPanel").classList.toggle("hidden", activeView !== "ontology");
         if (activeView === "aircraft") renderAircraftPanel();
         if (activeView === "mission") renderMissionPanel();
         if (activeView === "support") renderSupportPanel();
-        if (activeView === "ontology") renderOntologyPanel();
       }
 
       function renderAircraftPanel() {
@@ -1035,137 +1013,8 @@
           .join("");
       }
 
-      function renderOntologyPanel() {
-        const graph = buildOntologyGraph();
-        document.getElementById("ontologySummary").innerHTML = `<div class="detail"><span>结构来源</span><strong>ontology.json / lightweight IR</strong><span>${graph.nodes.length} 个实体节点 / ${graph.edges.length} 条关系边</span><br /><span>该视图展示结构依赖，不代表 OWL 推理结果。</span></div>`;
-        document.getElementById("ontologyEdges").innerHTML = graph.edges
-          .slice(0, 34)
-          .map((edge) => `<div class="ontology-edge"><span>${edge.label}</span><strong>${edge.fromLabel} -> ${edge.toLabel}</strong></div>`)
-          .join("");
-      }
-
-      function buildOntologyGraph() {
-        const nodes = [];
-        const edges = [];
-        const addNode = (id, label, group) => {
-          if (!nodes.some((node) => node.id === id)) nodes.push({ id, label, group });
-        };
-        const addEdge = (from, to, label) => {
-          const source = nodes.find((node) => node.id === from);
-          const target = nodes.find((node) => node.id === to);
-          if (source && target) edges.push({ from, to, label, fromLabel: source.label, toLabel: target.label });
-        };
-
-        state.missions.forEach((mission) => addNode(`mission:${mission.id}`, `任务${mission.id}`, "任务"));
-        state.aircraft.forEach((aircraft) => addNode(`aircraft:${aircraft.tail}`, aircraft.tail, "飞机"));
-        Object.entries(DATA.tasks).forEach(([taskId, task]) => addNode(`task:${taskId}`, task.name, "保障活动"));
-        Object.values(state.resources).forEach((resource) => addNode(`resource:${resource.id}`, resource.label, "保障资源"));
-        Object.values(state.spares).forEach((spare) => addNode(`spare:${spare.id}`, spare.name, "备件"));
-
-        state.missions.forEach((mission) => {
-          state.aircraft
-            .filter((aircraft) => aircraft.type === mission.type)
-            .forEach((aircraft) => addEdge(`mission:${mission.id}`, `aircraft:${aircraft.tail}`, "机型需求/候选编组"));
-        });
-        const selected = state.aircraft.find((aircraft) => aircraft.tail === selectedTail) || state.aircraft[0];
-        DATA.plans.pre_mission.forEach((taskId) => addEdge(`aircraft:${selected.tail}`, `task:${taskId}`, "任务前保障"));
-        DATA.plans.post_mission.forEach((taskId) => addEdge(`aircraft:${selected.tail}`, `task:${taskId}`, "任务后保障"));
-        DATA.plans.maintenance.forEach((taskId) => addEdge(`aircraft:${selected.tail}`, `task:${taskId}`, "维修保障"));
-        Object.entries(DATA.tasks).forEach(([taskId, task]) => {
-          Object.keys(task.resources).forEach((resourceId) => addEdge(`task:${taskId}`, `resource:${resourceId}`, "占用资源"));
-          if (task.repairFailedLru) {
-            Object.keys(state.spares).forEach((partId) => addEdge(`task:${taskId}`, `spare:${partId}`, "可消耗备件"));
-          }
-        });
-
-        return { nodes, edges };
-      }
-
       function drawMainCanvas() {
-        if (activeView === "ontology") drawOntologyGraph();
-        else drawAircraft();
-      }
-
-      function drawOntologyGraph() {
-        const ratio = window.devicePixelRatio || 1;
-        const rect = canvas.getBoundingClientRect();
-        canvas.width = Math.max(1, Math.floor(rect.width * ratio));
-        canvas.height = Math.max(1, Math.floor(rect.height * ratio));
-        ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-        const width = rect.width;
-        const height = rect.height;
-        ctx.clearRect(0, 0, width, height);
-        ctx.fillStyle = "rgba(255,255,255,0.035)";
-        ctx.fillRect(0, 0, width, height);
-
-        const graph = buildOntologyGraph();
-        const groups = ["任务", "飞机", "保障活动", "保障资源", "备件"];
-        const groupColors = {
-          任务: "#6ab7ff",
-          飞机: "#58d38b",
-          保障活动: "#f4c95d",
-          保障资源: "#c9a7ff",
-          备件: "#ff9f7a",
-        };
-        const groupNodes = Object.fromEntries(groups.map((group) => [group, graph.nodes.filter((node) => node.group === group)]));
-        const positions = {};
-        const top = 78;
-        const bottom = Math.max(top + 80, height - 42);
-        const columnWidth = width / groups.length;
-
-        groups.forEach((group, groupIndex) => {
-          const nodes = groupNodes[group];
-          const x = columnWidth * groupIndex + columnWidth / 2;
-          ctx.fillStyle = "#a9b2ba";
-          ctx.font = "13px system-ui, sans-serif";
-          ctx.textAlign = "center";
-          ctx.fillText(group, x, 34);
-          const gap = nodes.length > 1 ? (bottom - top) / (nodes.length - 1) : 0;
-          nodes.forEach((node, index) => {
-            positions[node.id] = { x, y: nodes.length > 1 ? top + gap * index : (top + bottom) / 2 };
-          });
-        });
-
-        ctx.lineWidth = 1.2;
-        graph.edges.forEach((edge) => {
-          const from = positions[edge.from];
-          const to = positions[edge.to];
-          if (!from || !to) return;
-          ctx.strokeStyle = edge.from === `aircraft:${selectedTail}` || edge.to === `aircraft:${selectedTail}` ? "rgba(99, 212, 197, 0.7)" : "rgba(180, 190, 199, 0.18)";
-          ctx.beginPath();
-          ctx.moveTo(from.x + 48, from.y);
-          const midX = (from.x + to.x) / 2;
-          ctx.bezierCurveTo(midX, from.y, midX, to.y, to.x - 48, to.y);
-          ctx.stroke();
-        });
-
-        graph.nodes.forEach((node) => {
-          const pos = positions[node.id];
-          if (!pos) return;
-          const isSelected = node.id === `aircraft:${selectedTail}`;
-          const boxWidth = node.group === "保障活动" ? 118 : 104;
-          const boxHeight = 30;
-          ctx.fillStyle = groupColors[node.group] || "#bcc6cf";
-          ctx.globalAlpha = isSelected ? 1 : 0.88;
-          ctx.beginPath();
-          ctx.roundRect(pos.x - boxWidth / 2, pos.y - boxHeight / 2, boxWidth, boxHeight, 6);
-          ctx.fill();
-          ctx.globalAlpha = 1;
-          ctx.strokeStyle = isSelected ? "#ffffff" : "rgba(0,0,0,0.45)";
-          ctx.lineWidth = isSelected ? 2.5 : 1.4;
-          ctx.stroke();
-          ctx.fillStyle = "#111315";
-          ctx.font = "12px system-ui, sans-serif";
-          ctx.textAlign = "center";
-          ctx.textBaseline = "middle";
-          ctx.fillText(shortLabel(node.label, node.group === "保障活动" ? 12 : 10), pos.x, pos.y);
-        });
-
-        ctx.textAlign = "left";
-        ctx.textBaseline = "alphabetic";
-        ctx.fillStyle = "#a9b2ba";
-        ctx.font = "12px system-ui, sans-serif";
-        ctx.fillText(`Ontology关系图：${graph.nodes.length} 节点 / ${graph.edges.length} 关系，选中飞机 ${selectedTail}`, 18, height - 18);
+        drawAircraft();
       }
 
       function shortLabel(label, limit) {

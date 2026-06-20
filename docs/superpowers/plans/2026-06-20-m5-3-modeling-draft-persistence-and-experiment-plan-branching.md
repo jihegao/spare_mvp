@@ -43,8 +43,8 @@ The 2026-06-19 page review is handled by `docs/superpowers/plans/2026-06-20-page
 - Modify: `front/api-client.mjs`
   - Keep existing Project and ExperimentPlan methods.
   - Add helpers only if `front/app.js` needs clearer Project-draft or ExperimentPlan-branch calls.
-- Modify: `front/ontology-context.mjs`
-  - Keep `experiment-plan-list` and `experiment-plan-editor` mapped as visible experiment concepts.
+- Removed scope: `front/ontology-context.mjs`
+  - This historical helper has been deleted with the ontology requirement; experiment-plan list/editor coverage must live in the active catalog, app, and frontend contract tests instead.
 - Modify: `tests/frontend-contract.test.mjs`
   - Keep assertions that require `仿真实验方案管理 -> 方案列表 / 方案编辑`.
   - Add assertions for Project draft controls and plan-branch isolation.
