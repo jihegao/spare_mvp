@@ -4,7 +4,7 @@
 
 M3-0/M3-1 已经跑通 `Project -> ModelingSnapshot -> ExperimentPlan -> Scenario -> Run -> Result -> ArtifactManifest` 的本地后端闭环。M5.3 进一步明确了 Project draft 与 ExperimentPlan 分支的边界：建模页保存 Project，仿真实验方案保存可运行的分支身份，运行必须从选中的 ExperimentPlan 生成 identity chain。
 
-M6 的目标是把前端 JS 重算和本地 Mesa 状态帧升级为后端服务或 worker 运行。M6.0 不直接建设完整 worker 平台；它先把当前同步 `BackendApi.start_simulation_run()` 收敛到可替换的 run service 边界，提供 canonical run submission/status API，并让前端按 run status 轮询结果。后续 M6.1/M6.2 再替换执行器为队列/worker、补取消/重试/超时和批量 Monte Carlo fan-out。
+M6 的目标是把前端 JS 重算和本地 Mesa 状态帧升级为后端服务或 worker 运行。M6.0 不直接建设完整 worker 平台；它先把当前同步 `BackendApi.start_simulation_run()` 收敛到可替换的 run service 边界，提供 canonical run submission/status API，并让前端按 run status 轮询结果。后续 M6.1 先补齐 Frontend Project / ExperimentPlan 到 Mesa Scenario input 的编译一致性，M6.2 再基于已对齐的 Scenario 建设统一 Monte Carlo 和 analysis projection。
 
 ## 目标
 
@@ -82,7 +82,7 @@ Canonical `POST /api/runs` 接收：
 }
 ```
 
-M6.0 只执行 `model_family=smoke` 和 `run_type=single`。Canonical `/api/runs` 缺少 `model_family` 时返回 `bad_run_request`；旧 `startSimulationRun()` / `/api/simulation-runs` 兼容入口可以继续默认 `smoke`。`aviation_support` 继续返回 `unsupported_model_family`。真实批量 Monte Carlo fan-out、取消、重试、超时、资源隔离和运行日志是后续 M6.x/M7 范围。
+M6.0 只执行 `model_family=smoke` 和 `run_type=single`。Canonical `/api/runs` 缺少 `model_family` 时返回 `bad_run_request`；旧 `startSimulationRun()` / `/api/simulation-runs` 兼容入口可以继续默认 `smoke`。`aviation_support` 继续返回 `unsupported_model_family`。M6.1 负责为 `aviation_support` 或正式业务模型族补 Scenario compiler skeleton、字段 mapping、默认值和阻断策略；真实批量 Monte Carlo fan-out、取消、重试、超时、资源隔离和运行日志是 M6.2/M7 范围。
 
 ### 前端行为
 
@@ -110,9 +110,13 @@ Monte Carlo 配置页的“启动”按钮可以继续复用当前 ExperimentPla
 2. 备件规划评估模块：备件短板、携行清单。
 3. 任务可靠度评估模块：任务可靠度、停机因素。
 
-用户在仿真实验方案中勾选某个实验类型后，页面打开对应配置面板；未勾选的实验类型不生成正式分析请求。M6.0 只稳定 run service/status 边界，不实现这些配置面板和完整 payload 编译。建议把配置面板、运行监控和方案列表状态收敛到 M6.1：Monte Carlo 实验页面点击启动后，方案进入运行状态，页面显示大样本完成进度和日志输出；回到仿真实验方案管理时，同一方案显示“运行中”“已完成”或“运行失败”。
+用户在仿真实验方案中勾选某个实验类型后，页面打开对应配置面板；未勾选的实验类型不生成正式分析请求。M6.0 只稳定 run service/status 边界，不实现这些配置面板和完整 payload 编译。
 
-结果分析页只消费 ExperimentPlan 中已配置的实验类型和 run artifacts。M8.0 应按以下状态展示：
+M6.1 的优先目标是输入一致性：定义哪些 Project / ExperimentPlan 字段进入目标模型族 Scenario，哪些字段默认、派生、忽略或阻断，并在无法编译时 fail closed。
+
+配置面板、运行监控和方案列表状态应在 M6.2 基于已通过编译的 Scenario 落地，避免先做出“看起来运行了”但实际仍是 demo 的分析结果。
+
+结果分析页只消费 ExperimentPlan 中已配置的实验类型和 run artifacts。M6.2/M8.0 应按以下状态展示：
 
 1. 已配置且运行完成：显示对应分析结果，并展示 `run_id`、样本数、输入版本和指标口径。
 2. 已配置且运行中：显示运行中状态、进度和最近日志摘要。

@@ -293,12 +293,14 @@ M5.2 工作台与 Scenario 预览入口：
 
 M6.0 当前收束：已新增 `RunService` 与 canonical `/api/runs`，把当前同步 smoke run 包装成可轮询的运行服务边界。前端启动运行后先拿 `run_id`，再查询 status/result/artifact/chain；旧 `/api/simulation-runs` 路径继续兼容。RunService 在当前进程内串行化 run id 生成，并能在执行器失败后返回 failed status envelope。该首片的后端输入是 ExperimentPlan 绑定的 ModelingSnapshot 加当前支持的 `steps` 配置，仍使用本地同步执行器，不包含完整 ExperimentPlan payload 编译、完整 worker 队列、取消、重试、超时、资源隔离、真实批量 Monte Carlo fan-out、长期 artifact storage 或 `aviation_support` 编译解锁。
 
-M6.1 建议切片：理顺“仿真实验方案 -> Monte Carlo 运行监控 -> 方案状态”的业务流。仿真实验方案保存实验基本信息（实验名称、仿真总时长、随机种子）和实验类型配置。实验类型包含通用“大样本评估”、备件规划评估模块的“备件短板”“携行清单”、任务可靠度评估模块的“任务可靠度”“停机因素”；勾选后打开对应配置面板，未勾选则不生成正式分析请求。Monte Carlo 实验页面点击启动后，页面显示大样本完成进度和日志输出；回到仿真实验方案管理时，同一方案状态显示为“运行中”“已完成”或“运行失败”。
+M6.1 建议切片：输入一致性与 Scenario 编译 gate。真正做统一 Monte Carlo、四类分析模板和正式结果 artifact 前，必须先打通 `Frontend Project / ExperimentPlan -> Scenario compiler / adapter mapping -> Mesa simulation input`。M6.1 定义哪些前端任务、装备、保障活动和实验方案字段进入仿真，建立字段 mapping、默认值、派生规则、ignored/unsupported 字段和 provenance；无法编译的 ExperimentPlan 必须 fail closed，返回字段级错误并阻断 run，不能回退到 demo 或前端局部推导。`smoke` 继续保留窄兼容输入，`aviation_support` 或正式模型族至少补 compiler skeleton 和显式 unsupported 策略。
+
+M6.2 建议切片：统一 Monte Carlo / analysis profile。基于 M6.1 已对齐的 Scenario 跑样本，产出统一 MC artifacts；“大样本评估”是基础 artifact，“备件短板”“携行清单”“任务可靠度”“停机因素”是同一 artifact 的 projection。仿真实验方案在 M6.2 保存实验基本信息（实验名称、仿真总时长、随机种子）和 `analysisRequests` 配置；Monte Carlo 实验页面显示样本完成进度和日志输出；方案列表显示“运行中”“已完成”或“运行失败”；未勾选或未通过编译的分析页显示“未配置”或编译失败，不渲染正式结果图表。
 
 核心能力：
 
 1. 单次仿真。
-2. 批量 Monte Carlo。
+2. 输入一致性编译 gate。
 3. 固定随机种子。
 4. 参数 sweep。
 5. 运行取消。
@@ -306,15 +308,15 @@ M6.1 建议切片：理顺“仿真实验方案 -> Monte Carlo 运行监控 -> �
 7. 错误重试。
 8. 资源隔离。
 9. 运行日志。
-10. 结果产物写入。
+10. 统一 MC artifact 与 analysis projection。
 
 完成标准：
 
 1. 前端点击启动后，后端创建 run。
-2. worker 执行真实模型。
-3. 前端轮询或订阅运行状态。
-4. 最终结果来自真实 run artifacts。
-5. 同一输入版本、契约版本、运行配置和 seed 能复现运行摘要。
+2. Run 创建前先通过模型族 Scenario compiler；无法编译时返回字段级错误并阻断正式结果。
+3. worker 或本地执行器只消费编译后的 Scenario input，不读取前端当前 draft。
+4. 前端轮询或订阅运行状态。
+5. 最终结果来自真实 run artifacts，且能追溯 mapping version、输入版本、运行配置和 seed。
 
 ## M7：运行管理和产物管理
 
@@ -351,7 +353,7 @@ report.json 或 report.html
 
 目标：所有分析页都随真实运行产物变化，并能追溯计算来源。
 
-M8.0 建议切片：结果分析按 ExperimentPlan 的实验类型配置和 run artifacts 解锁。已配置且运行完成的分析页显示对应结果；已配置且运行中显示进度和日志摘要；已配置且运行失败显示失败原因、日志入口和重试入口；未配置的分析页统一显示“未配置”，不能用静态演示图表冒充正式结果。
+M8.0 建议切片：结果分析按 ExperimentPlan 的实验类型配置和 M6.2 run artifacts 解锁。已配置且运行完成的分析页显示对应 projection；已配置且运行中显示进度和日志摘要；已配置且运行失败显示失败原因、日志入口和重试入口；未配置或缺少 M6.1 compiler provenance 的分析页统一显示“未配置”或“输入未通过编译”，不能用静态演示图表冒充正式结果。
 
 核心工作：
 

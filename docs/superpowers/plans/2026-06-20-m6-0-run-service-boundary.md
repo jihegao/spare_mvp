@@ -37,14 +37,15 @@
 - Test: `tests/frontend-api-client.test.mjs`
 - Test: `tests/frontend-contract.test.mjs`
 
-## M6.1/M8 产品流程后续切片
+## M6.1/M6.2/M8 后续切片
 
 M6.0 只交付 run service/status 边界。用户侧“仿真实验方案 -> Monte Carlo 运行监控 -> 结果分析”的完整关系在后续切片中落地：
 
-1. M6.1：ExperimentPlan 增加实验基本信息和实验类型配置。基本信息包含实验名称、仿真总时长、随机种子；实验类型以 `analysisRequests` 或等价结构记录“大样本评估”“备件短板”“携行清单”“任务可靠度”“停机因素”的勾选状态和配置面板参数。
-2. M6.1：Monte Carlo 实验页面点击启动后，方案进入运行状态，页面显示大样本完成进度和日志输出；回到仿真实验方案管理时，同一方案状态显示为“运行中”“已完成”或“运行失败”。
-3. M8.0：结果分析页面按 ExperimentPlan 的实验类型配置和 run artifacts 解锁。已配置且完成则显示结果，已配置且运行中则显示进度/日志摘要，已配置且失败则显示失败原因/重试入口，未配置则显示“未配置”。
-4. 非目标：M6.0 不实现配置面板、不把 `seed`/Monte Carlo sweep 纳入后端正式编译、不生成真实批量 Monte Carlo artifact，也不让未配置的结果页显示静态演示图表。
+1. M6.1：输入一致性与 Scenario 编译 gate。定义 Frontend Project / ExperimentPlan 中哪些任务、装备、保障活动和实验方案字段进入目标模型族 Scenario，建立字段 mapping、默认值、派生规则、ignored/unsupported 字段和 provenance；无法编译的 ExperimentPlan 必须 fail closed，返回字段级错误并阻断正式 run 或正式结果。
+2. M6.1：为 `aviation_support` 或正式业务模型族补 compiler skeleton。未覆盖字段不能静默消费，必须显式标记 unsupported 或 ignored；`smoke` 继续作为窄兼容模型族，但 provenance 必须说明它只消费有限字段。
+3. M6.2：统一 Monte Carlo / analysis profile。ExperimentPlan 增加实验基本信息和 `analysisRequests`，基于 M6.1 编译通过的 Scenario 跑样本，产出统一 MC artifacts；“大样本评估”是基础 artifact，“备件短板”“携行清单”“任务可靠度”“停机因素”是 artifact projection。
+4. M6.2/M8.0：结果分析页面按 ExperimentPlan 的实验类型配置和 run artifacts 解锁。已配置且完成则显示 projection，已配置且运行中则显示进度/日志摘要，已配置且失败则显示失败原因/重试入口，未配置则显示“未配置”。
+5. 非目标：M6.0 不实现配置面板、不把 `seed`/Monte Carlo sweep 纳入后端正式编译、不生成真实批量 Monte Carlo artifact，也不让未配置的结果页显示静态演示图表。M6.1 也不生成四类正式结果 artifact；M6.2 不允许缺少 compiler provenance 的 artifact 标记为正式结果。
 
 ### Task 1: Backend RunService Boundary
 
