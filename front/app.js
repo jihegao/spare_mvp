@@ -37,6 +37,7 @@ const groups = groupFeaturePages(FEATURE_PAGES);
 const CONTRACT_BASE = "http://127.0.0.1:8521"; // Mesa 契约服务（见 agent.md「Mesa 后台契约服务」）
 const LAST_BACKEND_RUN_STORAGE_KEY = "spare-mvp:lastBackendRun";
 const AUTH_SESSION_STORAGE_KEY = "spare-mvp:m4Session";
+const PROJECT_DRAFT_AUTOSAVE_DELAY_MS = 800;
 let backendAuthToken = readStoredBackendAuthToken();
 const backendApi = createBackendApiClient({ baseUrl: "/api", getAuthToken: () => backendAuthToken });
 const DEFAULT_ROUTE = "login";
@@ -248,6 +249,9 @@ const MODELING_IMPORT_DEMO_FIXTURE = {
 };
 
 let scenario = cloneScenario(defaultScenario);
+let experimentPlanDraft = cloneScenario(scenario);
+let experimentPlanBranchActive = false;
+let lastRunExperimentPlanProjectJson = null;
 let { singleResult, monteCarloResult } = buildDemoResultState(scenario);
 let rmsAllocationProject = createDemoRmsAllocationProject();
 let rmsAllocationPlan = createDefaultRmsAllocationPlan(rmsAllocationProject);
@@ -262,6 +266,10 @@ let modelingImportSaved = false;
 let savedProject = null;
 let modelingSnapshot = null;
 let experimentPlan = null;
+let projectDraftSaveStatus = "未保存";
+let projectDraftHydrateStatus = "";
+let projectDraftAutosaveTimer = null;
+let projectDraftLastSavedAt = "";
 let backendRun = null;
 let backendRunResult = null;
 let backendArtifactManifest = null;
@@ -329,6 +337,7 @@ function bindEvents() {
   window.addEventListener("hashchange", () => {
     selectedRoute = readRouteFromHash() || DEFAULT_ROUTE;
     selectedFeatureId = readFeatureIdFromHash() || DEFAULT_FEATURE_ID;
+    createExperimentPlanBranchFromCurrentProject();
     render();
   });
 
@@ -344,6 +353,7 @@ function bindEvents() {
     const equipmentAddNodeButton = event.target.closest("[data-equipment-add-node]");
     if (equipmentAddNodeButton) {
       addEquipmentNodeForSelection();
+      markProjectDraftChanged();
       render();
       return;
     }
@@ -351,6 +361,7 @@ function bindEvents() {
     const basicMissionAddButton = event.target.closest("[data-basic-mission-add]");
     if (basicMissionAddButton) {
       addBasicMission();
+      markProjectDraftChanged();
       render();
       return;
     }
@@ -358,6 +369,7 @@ function bindEvents() {
     const basicMissionDeleteButton = event.target.closest("[data-basic-mission-delete]");
     if (basicMissionDeleteButton) {
       deleteSelectedBasicMission();
+      markProjectDraftChanged();
       render();
       return;
     }
@@ -383,6 +395,7 @@ function bindEvents() {
     const compositeTaskAddButton = event.target.closest("[data-composite-task-add]");
     if (compositeTaskAddButton) {
       addCompositeTask();
+      markProjectDraftChanged();
       render();
       return;
     }
@@ -390,6 +403,7 @@ function bindEvents() {
     const compositeTaskDeleteButton = event.target.closest("[data-composite-task-delete]");
     if (compositeTaskDeleteButton) {
       deleteSelectedCompositeTask();
+      markProjectDraftChanged();
       render();
       return;
     }
@@ -397,6 +411,7 @@ function bindEvents() {
     const compositeTaskItemAddButton = event.target.closest("[data-composite-task-item-add]");
     if (compositeTaskItemAddButton) {
       addCompositeTaskItem();
+      markProjectDraftChanged();
       render();
       return;
     }
@@ -404,6 +419,7 @@ function bindEvents() {
     const compositeTaskItemDeleteButton = event.target.closest("[data-composite-task-item-delete]");
     if (compositeTaskItemDeleteButton) {
       deleteCompositeTaskItem(Number(compositeTaskItemDeleteButton.dataset.compositeTaskItemDelete));
+      markProjectDraftChanged();
       render();
       return;
     }
@@ -425,6 +441,7 @@ function bindEvents() {
     const combatUnitAddButton = event.target.closest("[data-combat-unit-add]");
     if (combatUnitAddButton) {
       addCombatUnitMember();
+      markProjectDraftChanged();
       render();
       return;
     }
@@ -432,6 +449,7 @@ function bindEvents() {
     const combatUnitDeleteButton = event.target.closest("[data-combat-unit-delete]");
     if (combatUnitDeleteButton) {
       deleteSelectedCombatUnitMember();
+      markProjectDraftChanged();
       render();
       return;
     }
@@ -484,6 +502,7 @@ function bindEvents() {
         ...(Array.isArray(activity.transportStrategies) ? activity.transportStrategies : []),
         { direction: "\u6a2a\u5411\u8fd0\u8f93", spareType: spareModelingNames()[0] || "", triggerMode: "\u4e34\u754c\u5e93\u5b58", criticalInventory: 1, from: scenario.supportNodes[0]?.id || "", to: scenario.supportNodes[1]?.id || "", transportTimeHours: 1 }
       ];
+      markProjectDraftChanged();
       render();
       return;
     }
@@ -493,6 +512,7 @@ function bindEvents() {
       const activity = findLogisticsSupportActivity();
       const index = Number(logisticsDeleteButton.dataset.logisticsTransportDelete);
       activity.transportStrategies = (Array.isArray(activity.transportStrategies) ? activity.transportStrategies : []).filter((_, rowIndex) => rowIndex !== index);
+      markProjectDraftChanged();
       render();
       return;
     }
@@ -500,6 +520,7 @@ function bindEvents() {
     const supportActivityJobDeleteButton = event.target.closest("[data-support-activity-job-delete]");
     if (supportActivityJobDeleteButton) {
       deleteSupportActivityJob(supportActivityJobDeleteButton.dataset.supportActivityJobDelete);
+      markProjectDraftChanged();
       render();
       return;
     }
@@ -507,6 +528,7 @@ function bindEvents() {
     const supportActivityBatchDeleteButton = event.target.closest("[data-support-activity-job-batch-delete]");
     if (supportActivityBatchDeleteButton) {
       deleteSelectedSupportActivityJobs(supportActivityBatchDeleteButton.dataset.supportActivityJobBatchDelete);
+      markProjectDraftChanged();
       render();
       return;
     }
@@ -530,13 +552,7 @@ function bindEvents() {
 
     const enterWorkbenchButton = event.target.closest("[data-enter-workbench]");
     if (enterWorkbenchButton) {
-      currentProject = DEMO_PROJECTS.find((project) => project.id === enterWorkbenchButton.dataset.projectId) || DEMO_PROJECTS[0];
-      isLoggedIn = true;
-      selectedRoute = "workbench";
-      selectedFeatureId = DEFAULT_FEATURE_ID;
-      isProjectMenuOpen = false;
-      location.hash = `feature=${DEFAULT_FEATURE_ID}`;
-      render();
+      handleEnterWorkbench(enterWorkbenchButton.dataset.projectId).finally(() => render());
       return;
     }
 
@@ -631,6 +647,12 @@ function bindEvents() {
       return;
     }
 
+    const projectDraftSaveButton = event.target.closest("[data-project-draft-save]");
+    if (projectDraftSaveButton) {
+      saveCurrentProjectDraftThroughApi().finally(() => render());
+      return;
+    }
+
     const systemUserActionButton = event.target.closest("[data-system-user-action]");
     if (systemUserActionButton) {
       handleSystemUserAction(systemUserActionButton.dataset.systemUserAction).finally(() => render());
@@ -646,7 +668,7 @@ function bindEvents() {
 
     const savePlanButton = event.target.closest("[data-save-plan]");
     if (savePlanButton) {
-      saveCurrentProjectThroughApi().finally(() => render());
+      saveCurrentExperimentPlanThroughApi().finally(() => render());
       return;
     }
 
@@ -656,6 +678,7 @@ function bindEvents() {
       scenario.missionProfile.periodicTasks = [...periodicTaskList(), task];
       selectedPeriodicTaskId = task.id;
       updateDemoResultsThroughApiClient();
+      markProjectDraftChanged();
       render();
       return;
     }
@@ -666,6 +689,7 @@ function bindEvents() {
       scenario.missionProfile.periodicTasks = periodicTaskList().filter((task) => String(task.id) !== taskId);
       selectedPeriodicTaskId = String(periodicTaskList()[0]?.id || "");
       updateDemoResultsThroughApiClient();
+      markProjectDraftChanged();
       render();
       return;
     }
@@ -704,6 +728,7 @@ function bindEvents() {
     if (featureButton) {
       selectedRoute = "workbench";
       selectedFeatureId = featureButton.dataset.featureId;
+      createExperimentPlanBranchFromCurrentProject();
       location.hash = `feature=${selectedFeatureId}`;
       render();
     }
@@ -726,7 +751,17 @@ function bindEvents() {
 
     const periodicInput = event.target.closest("[data-periodic-field]");
     if (periodicInput) {
+      markProjectDraftChanged();
       updateSelectedPeriodicTask(periodicInput.dataset.periodicField, parseInput(periodicInput));
+      return;
+    }
+
+    const experimentPlanInput = event.target.closest("[data-experiment-plan-path]");
+    if (experimentPlanInput) {
+      experimentPlanBranchActive = true;
+      setPath(experimentPlanDraft, experimentPlanInput.dataset.experimentPlanPath, parseInput(experimentPlanInput));
+      updateDemoResultsThroughApiClient(experimentPlanDraft);
+      render();
       return;
     }
 
@@ -757,6 +792,7 @@ function bindEvents() {
     setPath(scenario, input.dataset.path, parseInput(input));
     normalizeEquipmentKOutOfNForPath(input.dataset.path);
     updateDemoResultsThroughApiClient();
+    if (isCurrentModelingPage()) markProjectDraftChanged();
     render();
   });
 
@@ -1048,10 +1084,24 @@ function renderFeaturePage(page) {
       ${renderFourthLevelTabs(page, siblingPages)}
       <div class="page-grid">
         <section class="panel main-panel">
+          ${renderProjectDraftToolbar(page)}
           ${renderMainComponent(page)}
         </section>
       </div>
     </section>
+  `;
+}
+
+function renderProjectDraftToolbar(page) {
+  if (page.secondary !== "仿真建模") return "";
+  const savedAtText = projectDraftLastSavedAt ? ` / ${htmlEscape(projectDraftLastSavedAt)}` : "";
+  const hydrateText = projectDraftHydrateStatus ? `<span>${htmlEscape(projectDraftHydrateStatus)}</span>` : "";
+  return `
+    <div class="toolbar-row project-draft-toolbar">
+      <button type="button" class="btn-primary" data-project-draft-save>保存 Project draft</button>
+      <span class="badge">${htmlEscape(projectDraftSaveStatus)}${savedAtText}</span>
+      ${hydrateText}
+    </div>
   `;
 }
 
@@ -1145,6 +1195,15 @@ function renderMainComponent(page) {
   if (page.name === "复合任务建模") return renderCompositeTaskModeling(page);
   if (page.name === "周期性任务建模") return renderPeriodicTaskModeling(page);
   return renderTaskModel(page);
+}
+
+function createExperimentPlanBranchFromCurrentProject() {
+  const page = getFeaturePageById(selectedFeatureId);
+  if (!["experiment-plan-editor", "experiment-form", "monte-carlo-config"].includes(page.component)) return;
+  if (experimentPlanBranchActive) return;
+  experimentPlanDraft = cloneScenario(scenario);
+  experimentPlanBranchActive = true;
+  updateDemoResultsThroughApiClient(experimentPlanDraft);
 }
 
 function renderCollapsibleTree(nodes, options = {}) {
@@ -3387,18 +3446,22 @@ function renderExperimentPlanEditor(page) {
       <span>实验方案参数</span>
     </div>
     <div class="form-table-grid">
-      ${field("实验名称", "experiment.name")}
-      ${field("仿真步数", "experiment.steps", "number")}
-      ${field("样本数", "experiment.samples", "number")}
-      ${field("随机种子", "experiment.seed", "number")}
-      ${field("并行核心数", "experiment.parallelCores", "number")}
-      ${field("停止条件", "experiment.stopCondition")}
+      ${experimentPlanField("实验名称", "experiment.name")}
+      ${experimentPlanField("仿真步数", "experiment.steps", "number")}
+      ${experimentPlanField("样本数", "experiment.samples", "number")}
+      ${experimentPlanField("随机种子", "experiment.seed", "number")}
+      ${experimentPlanField("并行核心数", "experiment.parallelCores", "number")}
+      ${experimentPlanField("停止条件", "experiment.stopCondition")}
     </div>
     <div class="plan-editor-actions">
       <button type="button" data-plan-list-link>返回方案列表</button>
       <button type="button" class="btn-primary" data-save-plan>保存方案</button>
     </div>
   `;
+}
+
+function experimentPlanField(label, path, type = "text") {
+  return `<label>${label}<input data-experiment-plan-path="${path}" type="${type}" value="${htmlEscape(getPath(experimentPlanDraft, path))}"></label>`;
 }
 
 async function handleLogin() {
@@ -3429,35 +3492,127 @@ async function handleLogin() {
 }
 
 async function saveCurrentProjectThroughApi() {
+  return saveCurrentProjectDraftThroughApi();
+}
+
+async function handleEnterWorkbench(projectId) {
+  await flushPendingProjectDraftAutosave();
+  currentProject = DEMO_PROJECTS.find((project) => project.id === projectId) || DEMO_PROJECTS[0];
+  isLoggedIn = true;
+  selectedRoute = "workbench";
+  selectedFeatureId = DEFAULT_FEATURE_ID;
+  isProjectMenuOpen = false;
+  location.hash = `feature=${DEFAULT_FEATURE_ID}`;
+  projectDraftHydrateStatus = "正在读取 Project draft";
+  await hydrateCurrentProjectDraftFromApi();
+}
+
+async function flushPendingProjectDraftAutosave() {
+  if (!projectDraftAutosaveTimer) return;
+  clearTimeout(projectDraftAutosaveTimer);
+  projectDraftAutosaveTimer = null;
+  if (projectDraftSaveStatus === "有未保存修改") {
+    await saveCurrentProjectDraftThroughApi();
+  }
+}
+
+function currentBackendProjectId() {
+  return currentProject.id ? `project-${currentProject.id}` : `project-${scenario.scenarioId}`;
+}
+
+function isCurrentModelingPage() {
+  return getFeaturePageById(selectedFeatureId).secondary === "仿真建模";
+}
+
+function markProjectDraftChanged() {
+  if (!isCurrentModelingPage()) return;
+  experimentPlanBranchActive = false;
+  projectDraftSaveStatus = "有未保存修改";
+  scheduleProjectDraftAutosave();
+}
+
+function scheduleProjectDraftAutosave() {
+  if (projectDraftAutosaveTimer) clearTimeout(projectDraftAutosaveTimer);
+  projectDraftAutosaveTimer = setTimeout(() => {
+    projectDraftAutosaveTimer = null;
+    saveCurrentProjectDraftThroughApi().finally(() => render());
+  }, PROJECT_DRAFT_AUTOSAVE_DELAY_MS);
+}
+
+async function hydrateCurrentProjectDraftFromApi() {
+  try {
+    const projectJson = await backendApi.getProject(currentBackendProjectId());
+    scenario = cloneScenario(projectJson);
+    experimentPlanDraft = cloneScenario(projectJson);
+    updateDemoResultsThroughApiClient();
+    savedProject = {
+      project_id: projectJson.project_id || currentBackendProjectId(),
+      project_version: projectJson.project_version || "project-v0.1",
+      status: "hydrated"
+    };
+    projectDraftSaveStatus = "已保存";
+    projectDraftHydrateStatus = "已从 Project draft 恢复";
+    backendApiStatus = "Project draft 已恢复";
+  } catch (err) {
+    projectDraftHydrateStatus = `未读取到 Project draft：${err && err.message ? err.message : "Backend API 不可用"}`;
+  }
+}
+
+async function saveCurrentProjectDraftThroughApi() {
   const projectJson = buildBackendProjectJson(scenario, currentProject);
   try {
     savedProject = await backendApi.saveProject(projectJson);
-    modelingSnapshot = await backendApi.createModelingSnapshot(savedProject.project_id);
-    backendApiStatus = "已保存";
+    projectDraftSaveStatus = "已保存";
+    projectDraftLastSavedAt = new Date().toLocaleTimeString("zh-CN", { hour12: false });
+    projectDraftHydrateStatus = "";
+    backendApiStatus = "Project draft 已保存";
   } catch (err) {
     savedProject = {
       project_id: projectJson.project_id,
       project_version: projectJson.project_version,
       status: "offline-demo"
     };
-    modelingSnapshot = null;
+    projectDraftSaveStatus = "保存失败";
     backendApiStatus = `离线演示：${err && err.message ? err.message : "Backend API 不可用"}`;
   }
 }
 
-async function startExperimentRunThroughApi() {
+async function saveCurrentExperimentPlanThroughApi() {
   const projectJson = buildBackendProjectJson(scenario, currentProject);
-  updateDemoResultsThroughApiClient();
+  const planProjectJson = buildBackendProjectJson(experimentPlanDraft, currentProject);
   try {
     savedProject = await backendApi.saveProject(projectJson);
     modelingSnapshot = await backendApi.createModelingSnapshot(savedProject.project_id);
     experimentPlan = await backendApi.createExperimentPlan(
       savedProject.project_id,
-      buildExperimentPlanConfig(projectJson)
+      buildExperimentPlanConfig(planProjectJson)
+    );
+    backendApiStatus = "实验方案分支已保存";
+  } catch (err) {
+    modelingSnapshot = null;
+    experimentPlan = null;
+    backendApiStatus = `实验方案保存失败：${err && err.message ? err.message : "Backend API 不可用"}`;
+  }
+}
+
+async function startExperimentRunThroughApi() {
+  const projectJson = buildBackendProjectJson(scenario, currentProject);
+  const planProjectJson = buildBackendProjectJson(experimentPlanDraft, currentProject);
+  updateDemoResultsThroughApiClient(experimentPlanDraft);
+  try {
+    savedProject = await backendApi.saveProject(projectJson);
+    modelingSnapshot = await backendApi.createModelingSnapshot(savedProject.project_id);
+    experimentPlan = await backendApi.createExperimentPlan(
+      savedProject.project_id,
+      buildExperimentPlanConfig(planProjectJson)
     );
     backendRun = await backendApi.startSimulationRun(savedProject.project_id, experimentPlan.experiment_plan_id, "smoke");
+    lastRunExperimentPlanProjectJson = {
+      run_id: backendRun.run_id,
+      project_json: planProjectJson
+    };
     await refreshRunResultThroughApi(backendRun.run_id);
-    rememberLastBackendRun(backendRun.run_id, savedProject.project_id);
+    rememberLastBackendRun(backendRun.run_id, savedProject.project_id, planProjectJson);
     experimentRunStatus = backendRun.status === "succeeded" ? "完成" : backendRun.status;
     backendApiStatus = "运行完成";
   } catch (err) {
@@ -3482,7 +3637,11 @@ async function refreshRunResultThroughApi(runId = backendRun?.run_id) {
   if (backendRun.project_id) {
     savedProject = await backendApi.getProject(backendRun.project_id);
   }
-  const state = buildFrontendResultState(buildBackendProjectJson(scenario, currentProject), backendRunResult);
+  const planProjectJson = currentRunExperimentPlanProjectJson(runId);
+  if (!planProjectJson) {
+    throw new Error(`缺少 run ${runId} 的 ExperimentPlan 分支快照，已阻止用当前 Project draft 重建结果`);
+  }
+  const state = buildFrontendResultState(planProjectJson, backendRunResult);
   singleResult = state.singleResult;
   monteCarloResult = state.monteCarloResult;
 }
@@ -3504,10 +3663,15 @@ async function hydrateLastBackendRunFromApi() {
   }
 }
 
-function rememberLastBackendRun(runId, projectId) {
+function rememberLastBackendRun(runId, projectId, experimentPlanProjectJson = null) {
   if (!runId) return;
   try {
-    localStorage.setItem("spare-mvp:lastBackendRun", JSON.stringify({ run_id: runId, project_id: projectId || "", saved_at: new Date().toISOString() }));
+    localStorage.setItem(LAST_BACKEND_RUN_STORAGE_KEY, JSON.stringify({
+      run_id: runId,
+      project_id: projectId || "",
+      experiment_plan_project_json: experimentPlanProjectJson,
+      saved_at: new Date().toISOString()
+    }));
   } catch (err) {
     return;
   }
@@ -3515,7 +3679,7 @@ function rememberLastBackendRun(runId, projectId) {
 
 function readLastBackendRun() {
   try {
-    return JSON.parse(localStorage.getItem("spare-mvp:lastBackendRun") || "null");
+    return JSON.parse(localStorage.getItem(LAST_BACKEND_RUN_STORAGE_KEY) || "null");
   } catch (err) {
     return null;
   }
@@ -3523,14 +3687,28 @@ function readLastBackendRun() {
 
 function forgetLastBackendRun() {
   try {
+    lastRunExperimentPlanProjectJson = null;
     localStorage.removeItem(LAST_BACKEND_RUN_STORAGE_KEY);
   } catch (err) {
     return;
   }
 }
 
-function updateDemoResultsThroughApiClient() {
-  const state = buildDemoResultState(buildBackendProjectJson(scenario, currentProject));
+function currentRunExperimentPlanProjectJson(runId) {
+  if (lastRunExperimentPlanProjectJson?.run_id === runId) return lastRunExperimentPlanProjectJson.project_json;
+  const stored = readLastBackendRun();
+  if (stored?.run_id === runId && stored.experiment_plan_project_json) {
+    lastRunExperimentPlanProjectJson = {
+      run_id: stored.run_id,
+      project_json: stored.experiment_plan_project_json
+    };
+    return lastRunExperimentPlanProjectJson.project_json;
+  }
+  return null;
+}
+
+function updateDemoResultsThroughApiClient(projectJsonSource = scenario) {
+  const state = buildDemoResultState(buildBackendProjectJson(projectJsonSource, currentProject));
   singleResult = state.singleResult;
   monteCarloResult = state.monteCarloResult;
 }
@@ -4172,15 +4350,15 @@ function renderMonteCarloConfig() {
         <div class="mc-form">
           <div class="readonly-field">
             <span>当前仿真实验</span>
-            <strong>${htmlEscape(scenario.experiment.name)}</strong>
+            <strong>${htmlEscape(experimentPlanDraft.experiment.name)}</strong>
           </div>
           <div class="mc-inline-fields">
-            <label>仿真次数<input id="mc-samples" data-path="experiment.samples" type="number" min="1" value="${scenario.experiment.samples}"></label>
-            <label>随机种子<input data-path="experiment.seed" type="number" value="${scenario.experiment.seed}"></label>
+            <label>仿真次数<input id="mc-samples" data-experiment-plan-path="experiment.samples" type="number" min="1" value="${experimentPlanDraft.experiment.samples}"></label>
+            <label>随机种子<input data-experiment-plan-path="experiment.seed" type="number" value="${experimentPlanDraft.experiment.seed}"></label>
           </div>
-          <label>故障率扫描<input data-mc-array-path="monteCarlo.failureRates" value="${scenario.monteCarlo.failureRates.join(",")}"></label>
-          <label>备件倍数<input data-mc-array-path="monteCarlo.spareMultipliers" value="${scenario.monteCarlo.spareMultipliers.join(",")}"></label>
-          <label>保障容量<input data-mc-array-path="monteCarlo.supportCapacities" value="${scenario.monteCarlo.supportCapacities.join(",")}"></label>
+          <label>故障率扫描<input data-mc-array-path="monteCarlo.failureRates" value="${experimentPlanDraft.monteCarlo.failureRates.join(",")}"></label>
+          <label>备件倍数<input data-mc-array-path="monteCarlo.spareMultipliers" value="${experimentPlanDraft.monteCarlo.spareMultipliers.join(",")}"></label>
+          <label>保障容量<input data-mc-array-path="monteCarlo.supportCapacities" value="${experimentPlanDraft.monteCarlo.supportCapacities.join(",")}"></label>
           <div class="mc-action-row">
             <button type="button" class="btn-primary" data-mc-action="start">启动</button>
           </div>
@@ -4589,8 +4767,9 @@ function parseNumberList(value) {
 }
 
 function updateMonteCarloArrayInput(mcArrayInput) {
-  setPath(scenario, mcArrayInput.dataset.mcArrayPath, parseNumberList(mcArrayInput.value));
-  updateDemoResultsThroughApiClient();
+  experimentPlanBranchActive = true;
+  setPath(experimentPlanDraft, mcArrayInput.dataset.mcArrayPath, parseNumberList(mcArrayInput.value));
+  updateDemoResultsThroughApiClient(experimentPlanDraft);
 }
 
 function stateLabel(state) {

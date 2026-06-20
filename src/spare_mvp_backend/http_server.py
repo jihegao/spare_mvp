@@ -8,6 +8,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import mimetypes
 from pathlib import Path
 import sqlite3
+import traceback
 from typing import Any
 from urllib.parse import unquote, urlparse
 
@@ -65,6 +66,9 @@ def create_backend_server(
                 self._send_json(status, {"code": exc.code, "message": str(exc), "details": exc.details})
             except ValueError as exc:
                 self._send_json(400, {"code": "bad_request", "message": str(exc)})
+            except Exception as exc:  # pragma: no cover - defensive HTTP boundary
+                traceback.print_exc()
+                self._send_json(500, {"code": "internal_error", "message": str(exc)})
 
         def _dispatch(self) -> dict[str, Any]:
             path = urlparse(self.path).path

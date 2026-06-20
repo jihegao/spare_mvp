@@ -2,6 +2,8 @@
 
 日期：2026-06-17
 
+> M5.3 update: `仿真实验方案管理 / 方案列表 / 方案编辑` remains visible because it is source-design scope in `docs/3概要设计方案.md`. Project draft persistence complements it; it does not replace experiment-plan branching.
+
 ## 背景
 
 当前前端已经覆盖备件规划、任务可靠度、仿真实验和结果分析的核心概念，但页面组织仍偏向 6 个大视图：建模中心、可靠性框图、保障甘特、可视化仿真、蒙特卡洛、结果分析。这个结构适合原型演示，不适合承载 `docs/3概要设计方案.md` 中明确列出的 2 个一级功能、6 个二级功能、16 个三级功能和四级功能清单。

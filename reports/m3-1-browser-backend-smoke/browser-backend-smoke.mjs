@@ -8,8 +8,9 @@ const apiBaseUrl = baseUrl.replace(/\/front\/?$/, "/api");
 const screenshotDir = process.env.SMOKE_SCREENSHOT_DIR || "output/playwright/m3-1-browser-backend-smoke";
 const chromePath =
   process.env.SMOKE_CHROME_PATH || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
-const restartStopCommand = process.env.SMOKE_STOP_COMMAND || "";
-const restartStartCommand = process.env.SMOKE_START_COMMAND || "";
+const canManageLocalSystem = baseUrl.startsWith("http://127.0.0.1:4173/");
+const restartStopCommand = process.env.SMOKE_STOP_COMMAND || (canManageLocalSystem ? "bash scripts/start-system.sh stop" : "");
+const restartStartCommand = process.env.SMOKE_START_COMMAND || (canManageLocalSystem ? "bash scripts/start-system.sh start" : "");
 const execFileAsync = promisify(execFile);
 
 await mkdir(screenshotDir, { recursive: true });
@@ -29,6 +30,8 @@ try {
   await page.evaluate(() => localStorage.clear());
 
   await loginAndEnterProject(page);
+  const projectDraftEvidence = await verifyProjectDraftPersistence(page);
+
   await clickFeature(page, "system-management-modeling-import-workbench");
   await expectHeading(page, "建模数据导入");
   await page.locator('button[data-modeling-import-action="save-draft"]').click();
@@ -129,6 +132,8 @@ try {
     ok: true,
     baseUrl,
     screenshots: [
+      `${screenshotDir}/00-project-draft-saved.png`,
+      `${screenshotDir}/00b-project-draft-restored.png`,
       `${screenshotDir}/00-m5-import-published.png`,
       `${screenshotDir}/01-real-backend-result.png`,
       `${screenshotDir}/02-refresh-restored-result.png`,
@@ -139,6 +144,7 @@ try {
     afterRefresh,
     afterRestartRun,
     afterRestartImport,
+    projectDraftEvidence,
     restartInfo,
     offlineBlocked: {
       hasNoFakeRun: !offlineText.includes("offline-demo-run"),
@@ -187,6 +193,45 @@ async function clickMonteCarloStartWithDomFallback(page) {
   const runResponsePromise = page.waitForResponse((response) => response.url().endsWith("/api/simulation-runs") && response.status() === 200, { timeout: 10000 }).catch(() => null);
   await page.evaluate(() => document.querySelector('button[data-mc-action="start"]')?.click());
   return runResponsePromise;
+}
+
+async function verifyProjectDraftPersistence(page) {
+  const draftName = `M5.3 Project draft ${Date.now()}`;
+  await clickFeature(page, "spare-planning-equipment-composition");
+  await expectHeading(page, "装备系统建模");
+  const nameInput = page.locator('input[data-path="components.0.name"]').first();
+  await nameInput.fill(draftName);
+  await nameInput.dispatchEvent("change");
+  const saveResponsePromise = page.waitForResponse((response) =>
+    response.url().endsWith("/api/projects") && response.request().method() === "POST" && response.status() === 200
+  );
+  await page.locator("[data-project-draft-save]").click();
+  await saveResponsePromise;
+  await page.waitForFunction(() => document.body.innerText.includes("Project draft 已保存") || document.body.innerText.includes("已保存"));
+  await page.screenshot({ path: `${screenshotDir}/00-project-draft-saved.png`, fullPage: true });
+
+  const restartInfo = await restartBackendServer();
+  await page.evaluate(() => {
+    location.hash = "route=login";
+  });
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await loginAndEnterProject(page);
+  await clickFeature(page, "spare-planning-equipment-composition");
+  await expectHeading(page, "装备系统建模");
+  await page.waitForFunction((expectedName) =>
+    document.querySelector('input[data-path="components.0.name"]')?.value === expectedName,
+    draftName
+  );
+  const restoredValue = await page.locator('input[data-path="components.0.name"]').first().inputValue();
+  if (restoredValue !== draftName) {
+    throw new Error(`Project draft did not hydrate after backend restart: ${restoredValue} != ${draftName}`);
+  }
+  await page.screenshot({ path: `${screenshotDir}/00b-project-draft-restored.png`, fullPage: true });
+  return {
+    projectDraftName: draftName,
+    restoredValue,
+    restartInfo
+  };
 }
 
 async function expectHeading(page, expected) {
