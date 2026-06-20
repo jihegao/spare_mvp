@@ -2,7 +2,7 @@
 
 ## 背景
 
-M6.2 必须建立在 M6.1 输入一致性之上。只有当前端 Project / ExperimentPlan 已经能被 compiler 转换为可审计 Scenario input，Monte Carlo 样本和四类分析投影才有可信输入来源。
+M6.2 必须建立在 M6.1 输入一致性和 M6.1.1 单次仿真输入对齐之上。只有当前端 Project / ExperimentPlan 分支已经能被 compiler 转换为可审计 Scenario input，Monte Carlo 样本和四类分析投影才有可信输入来源。
 
 M6.2 的目标是把大样本运行和分析类型统一到一个 analysis profile 中：大样本评估生成基础 Monte Carlo artifact，备件短板、携行清单、任务可靠度、停机因素作为同一 artifact 的 projection，而不是各自独立做一套 demo 计算。
 
@@ -92,7 +92,7 @@ M6.2 artifact 应分为两层：
 
 ## 非目标
 
-1. M6.2 不修补 M6.1 未覆盖的输入字段。
+1. M6.2 不修补 M6.1/M6.1.1 未覆盖的输入字段。
 2. M6.2 不允许为缺少 compiler provenance 的结果生成正式 artifact。
 3. M6.2 不要求生产级分布式 worker，但必须保留向异步 worker 替换的 status/progress contract。
 4. M6.2 不扩大权限审计边界。

@@ -72,11 +72,16 @@ class RunService:
             if plan.get("modeling_snapshot_id")
             else None
         )
-        project_for_run = copy.deepcopy(snapshot["project"]) if snapshot else project
+        project_for_run = _project_for_experiment_plan(project, plan, snapshot)
 
         compile_gate = getattr(self.adapter, "compile_scenario_with_gate", None)
         if callable(compile_gate):
             compile_result = compile_gate(project_for_run, model_family=model_family)
+            _annotate_mapping_provenance(
+                compile_result.get("provenance"),
+                experiment_plan_id=experiment_plan_id,
+                modeling_snapshot_id=plan.get("modeling_snapshot_id"),
+            )
             if compile_result.get("status") != "compiled" or compile_result.get("scenario") is None:
                 return self._persist_failed_compile_run(
                     project_id=project_id,
@@ -94,6 +99,11 @@ class RunService:
                 raise RunServiceError(exc.code, str(exc), **exc.details) from exc
 
         scenario = copy.deepcopy(scenario)
+        _annotate_mapping_provenance(
+            scenario.get("compiled_from", {}).get("mapping_provenance"),
+            experiment_plan_id=experiment_plan_id,
+            modeling_snapshot_id=plan.get("modeling_snapshot_id"),
+        )
         scenario_base_id = f"{scenario['scenario_id']}-{_stable_hash({'experiment_plan_id': experiment_plan_id})}"
         run_id = self.repository.next_run_id(scenario_base_id)
         scenario["scenario_id"] = run_id.removeprefix("run-")
@@ -285,6 +295,39 @@ def _steps_from_plan(plan: dict[str, Any]) -> int:
         return max(0, int(steps))
     except (TypeError, ValueError):
         return 3
+
+
+def _project_for_experiment_plan(project: dict[str, Any], plan: dict[str, Any], snapshot: dict[str, Any] | None) -> dict[str, Any]:
+    config = plan.get("config") or {}
+    branch_project = config.get("projectJson") or config.get("project_json")
+    if isinstance(branch_project, dict):
+        project_for_run = copy.deepcopy(branch_project)
+        expected_project_id = project.get("project_id")
+        branch_project_id = project_for_run.get("project_id") or project_for_run.get("scenarioId")
+        if branch_project_id and expected_project_id and branch_project_id != expected_project_id:
+            raise RunServiceError(
+                "project_plan_mismatch",
+                "experiment plan projectJson does not belong to project",
+                project_id=expected_project_id,
+                experiment_plan_id=plan.get("experiment_plan_id"),
+                branch_project_id=branch_project_id,
+            )
+        if expected_project_id:
+            project_for_run["project_id"] = expected_project_id
+        return project_for_run
+    return copy.deepcopy(snapshot["project"]) if snapshot else project
+
+
+def _annotate_mapping_provenance(
+    provenance: dict[str, Any] | None,
+    *,
+    experiment_plan_id: str,
+    modeling_snapshot_id: str | None,
+) -> None:
+    if not isinstance(provenance, dict):
+        return
+    provenance["experiment_plan_id"] = experiment_plan_id
+    provenance["modeling_snapshot_id"] = modeling_snapshot_id
 
 
 def _compile_gate_error_code(compile_result: dict[str, Any]) -> str:

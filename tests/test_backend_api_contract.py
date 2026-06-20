@@ -367,6 +367,43 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(stored_project["experiment"]["seed"], project["experiment"]["seed"])
         self.assertNotIn("assumptions", stored_project["experiment"])
 
+    def test_single_run_compiles_from_experiment_plan_project_branch(self) -> None:
+        project = self._fixture("smoke_project.json")
+        branch_project = copy.deepcopy(project)
+        branch_project["experiment"]["seed"] = 99
+        branch_project["components"][0]["failureRate"] = 0.21
+        branch_project["supportNodes"][0]["equipmentCapacity"] = 8
+
+        saved = self.api.save_project(project)
+        snapshot = self.api.create_modeling_snapshot(saved["project_id"])
+        plan = self.api.create_experiment_plan(
+            saved["project_id"],
+            {
+                "name": "single input branch",
+                "steps": 5,
+                "projectJson": branch_project,
+            },
+        )
+
+        run = self.api.start_simulation_run(saved["project_id"], plan["experiment_plan_id"], model_family="smoke")
+
+        compiled_project, model_family = self.adapter.compile_calls[-1]
+        compiled_scenario, steps, run_id = self.adapter.run_calls[-1]
+        provenance = compiled_scenario["compiled_from"]["mapping_provenance"]
+
+        self.assertEqual(model_family, "smoke")
+        self.assertEqual(compiled_project["experiment"]["seed"], 99)
+        self.assertEqual(compiled_project["components"][0]["failureRate"], 0.21)
+        self.assertEqual(compiled_project["supportNodes"][0]["equipmentCapacity"], 8)
+        self.assertEqual(compiled_scenario["simulation_inputs"]["seed"], 99)
+        self.assertEqual(compiled_scenario["simulation_inputs"]["failure_rate"], 0.21)
+        self.assertEqual(compiled_scenario["simulation_inputs"]["support_capacity"], 8)
+        self.assertEqual(steps, 5)
+        self.assertEqual(run_id, run["run_id"])
+        self.assertEqual(provenance["experiment_plan_id"], plan["experiment_plan_id"])
+        self.assertEqual(provenance["modeling_snapshot_id"], snapshot["snapshot_id"])
+        self.assertEqual(self.api.get_project(saved["project_id"]), project)
+
     def test_repeated_smoke_runs_create_distinct_run_chains(self) -> None:
         project = self._fixture("smoke_project.json")
 
