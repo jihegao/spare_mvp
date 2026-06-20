@@ -307,6 +307,52 @@ test("frontend API fetch transport preserves structured backend details", async 
   }
 });
 
+test("frontend API client preserves compile gate error payload for submitRun", async () => {
+  const compileGateError = new Error("aviation_support input is not supported by the Scenario compiler");
+  compileGateError.code = "unsupported_model_family";
+  compileGateError.details = {
+    issues: [
+      {
+        severity: "error",
+        page: "保障活动建模",
+        field_path: "objects.supportActivities[0].durationMinutes",
+        message: "缺少可编译的保障活动工期。"
+      }
+    ],
+    provenance: {
+      model_family: "aviation_support",
+      mapping_version: "aviation-support-input-v0"
+    }
+  };
+  compileGateError.payload = {
+    code: compileGateError.code,
+    message: compileGateError.message,
+    details: compileGateError.details
+  };
+
+  const client = createBackendApiClient({
+    transport: async (request) => {
+      assert.equal(request.path, "/runs");
+      throw compileGateError;
+    }
+  });
+
+  await assert.rejects(
+    () => client.submitRun({
+      project_id: "project-aviation",
+      experiment_plan_id: "plan-aviation",
+      model_family: "aviation_support",
+      run_type: "single"
+    }),
+    (err) => {
+      assert.equal(err.code, "unsupported_model_family");
+      assert.equal(err.details.issues[0].field_path, "objects.supportActivities[0].durationMinutes");
+      assert.equal(err.payload.details.provenance.model_family, "aviation_support");
+      return true;
+    }
+  );
+});
+
 test("frontend app routes project save run and result reads through API client", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
 

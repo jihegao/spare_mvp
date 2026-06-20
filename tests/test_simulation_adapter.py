@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import copy
 import json
 import tempfile
 from pathlib import Path
 import unittest
+
+import jsonschema
 
 from src.spare_mvp_contract.adapter import AdapterError, SimulationAdapter
 
@@ -64,6 +67,26 @@ class SimulationAdapterTest(unittest.TestCase):
                 "project_schema_version": "project-v0",
                 "ontology_version": "spare-mvp-ontology-v0",
                 "mesa_contract_version": "1.0.0",
+                "mapping_provenance": {
+                    "project_id": "project-smoke-contract-001",
+                    "modeling_snapshot_id": None,
+                    "experiment_plan_id": None,
+                    "model_family": "smoke",
+                    "mapping_version": "smoke-input-v0",
+                    "consumed_fields": [
+                        "activeModule",
+                        "monteCarlo.spareMultipliers",
+                        "components[].failureRate",
+                        "supportNodes[].equipmentCapacity",
+                        "equipment.minRequiredSorties",
+                        "basicMission.minRequiredSorties",
+                        "experiment.seed",
+                    ],
+                    "defaults_applied": [],
+                    "derived_fields": ["simulation_inputs.failure_rate"],
+                    "ignored_fields": ["monteCarlo.failureRates", "monteCarlo.supportCapacities"],
+                    "unsupported_fields": [],
+                },
             },
         )
         self.assertEqual(scenario["simulation_inputs"]["active_module"], "sparePlanning")
@@ -73,6 +96,85 @@ class SimulationAdapterTest(unittest.TestCase):
         self.assertEqual(scenario["simulation_inputs"]["min_required_sorties"], 5)
         self.assertEqual(scenario["simulation_inputs"]["seed"], 20260618)
 
+    def test_compile_smoke_scenario_includes_mapping_provenance(self) -> None:
+        project = self._load_fixture("smoke_project.json")
+
+        scenario = self.adapter.compile_scenario(project)
+
+        provenance = scenario["compiled_from"]["mapping_provenance"]
+        self.assertEqual(provenance["model_family"], "smoke")
+        self.assertEqual(provenance["mapping_version"], "smoke-input-v0")
+        self.assertIn("components[].failureRate", provenance["consumed_fields"])
+        self.assertIn("monteCarlo.failureRates", provenance["ignored_fields"])
+
+    def test_smoke_mapping_provenance_records_defaults_that_feed_inputs(self) -> None:
+        project = self._load_fixture("smoke_project.json")
+        project["monteCarlo"]["spareMultipliers"] = []
+        project["components"] = []
+        project["supportNodes"] = []
+        project["equipment"] = {}
+        project["basicMission"] = {}
+        project["experiment"] = {}
+
+        scenario = self.adapter.compile_scenario(project)
+
+        self.assertEqual(
+            scenario["compiled_from"]["mapping_provenance"]["defaults_applied"],
+            [
+                "monteCarlo.spareMultipliers=1.0",
+                "components[].failureRate=0.05",
+                "supportNodes[].equipmentCapacity=1",
+                "equipment.minRequiredSorties|basicMission.minRequiredSorties=1",
+                "experiment.seed=0",
+            ],
+        )
+        self.assertEqual(scenario["simulation_inputs"]["spare_multiplier"], 1.0)
+        self.assertEqual(scenario["simulation_inputs"]["failure_rate"], 0.05)
+        self.assertEqual(scenario["simulation_inputs"]["support_capacity"], 1)
+        self.assertEqual(scenario["simulation_inputs"]["min_required_sorties"], 1)
+        self.assertEqual(scenario["simulation_inputs"]["seed"], 0)
+
+    def test_generated_smoke_scenario_with_mapping_provenance_validates_against_schema(self) -> None:
+        project = self._load_fixture("smoke_project.json")
+        schema = json.loads((REPO_ROOT / "contracts" / "scenario.schema.json").read_text(encoding="utf-8"))
+
+        scenario = self.adapter.compile_scenario(project)
+
+        jsonschema.validate(instance=scenario, schema=schema)
+
+    def test_compile_invalid_project_raises_invalid_project_with_validation_errors(self) -> None:
+        with self.assertRaises(AdapterError) as ctx:
+            self.adapter.compile_scenario({})
+
+        self.assertEqual(ctx.exception.code, "invalid_project")
+        self.assertIn("errors", ctx.exception.details)
+        self.assertTrue(ctx.exception.details["errors"])
+        self.assertEqual(ctx.exception.details["errors"][0]["code"], "missing_required")
+
+    def test_smoke_compile_inputs_change_when_consumed_project_fields_change(self) -> None:
+        project = self._load_fixture("smoke_project.json")
+        baseline = self.adapter.compile_scenario(project)["simulation_inputs"]
+
+        changed_failure_rate = copy.deepcopy(project)
+        changed_failure_rate["components"][0]["failureRate"] = 0.21
+        changed_support_capacity = copy.deepcopy(project)
+        changed_support_capacity["supportNodes"][0]["equipmentCapacity"] = 8
+        changed_seed = copy.deepcopy(project)
+        changed_seed["experiment"]["seed"] = 99
+
+        self.assertNotEqual(
+            baseline["failure_rate"],
+            self.adapter.compile_scenario(changed_failure_rate)["simulation_inputs"]["failure_rate"],
+        )
+        self.assertNotEqual(
+            baseline["support_capacity"],
+            self.adapter.compile_scenario(changed_support_capacity)["simulation_inputs"]["support_capacity"],
+        )
+        self.assertNotEqual(
+            baseline["seed"],
+            self.adapter.compile_scenario(changed_seed)["simulation_inputs"]["seed"],
+        )
+
     def test_aviation_support_compilation_requires_approved_rules(self) -> None:
         project = self._load_fixture("aviation_support_project.json")
 
@@ -81,6 +183,20 @@ class SimulationAdapterTest(unittest.TestCase):
 
         self.assertEqual(ctx.exception.code, "unsupported_model_family")
         self.assertIn("Claude-approved compilation rule", str(ctx.exception))
+
+    def test_aviation_support_compile_gate_returns_field_level_diagnostics(self) -> None:
+        project = self._load_fixture("aviation_support_project.json")
+
+        result = self.adapter.compile_scenario_with_gate(project, model_family="aviation_support")
+
+        self.assertEqual(result["status"], "unsupported")
+        self.assertIsNone(result["scenario"])
+        self.assertEqual(result["provenance"]["model_family"], "aviation_support")
+        self.assertTrue(result["issues"])
+        self.assertEqual(
+            {"code", "message", "field_path", "page", "severity", "suggestion"},
+            set(result["issues"][0]),
+        )
 
     def test_run_smoke_scenario_writes_result_and_artifact_manifest(self) -> None:
         project = self._load_fixture("smoke_project.json")

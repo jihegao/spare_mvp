@@ -26,6 +26,10 @@ class RecordingAdapter(SimulationAdapter):
         self.compile_calls.append((copy.deepcopy(project), model_family))
         return super().compile_scenario(project, model_family=model_family)
 
+    def compile_scenario_with_gate(self, project: dict, model_family: str = "smoke") -> dict:
+        self.compile_calls.append((copy.deepcopy(project), model_family))
+        return super().compile_scenario_with_gate(project, model_family=model_family)
+
     def run_scenario(
         self,
         scenario: dict,
@@ -161,6 +165,44 @@ class BackendApiContractTest(unittest.TestCase):
 
         self.assertEqual(ctx.exception.code, "bad_run_request")
 
+    def test_run_service_fail_closed_when_compiler_gate_blocks_model_family(self) -> None:
+        project = self._fixture("aviation_support_project.json")
+        saved = self.api.save_project(project)
+        self.api.create_modeling_snapshot(saved["project_id"])
+        plan = self.api.create_experiment_plan(saved["project_id"], {"name": "aviation blocked", "steps": 1})
+        service = RunService(self.repository, self.adapter, self.api.output_dir)
+
+        submitted = service.submit_run(
+            {
+                "project_id": saved["project_id"],
+                "experiment_plan_id": plan["experiment_plan_id"],
+                "model_family": "aviation_support",
+                "run_type": "single",
+            }
+        )
+        artifacts = self.api.get_run_artifacts(submitted["run_id"])
+        chain = self.api.get_run_chain(submitted["run_id"])
+        scenario_rows = self.connection.execute(
+            "SELECT scenario_id FROM scenarios WHERE scenario_id LIKE 'uncompiled-%'"
+        ).fetchall()
+
+        self.assertEqual(submitted["status"], "failed")
+        self.assertEqual(submitted["phase"], "failed")
+        self.assertEqual(submitted["progress"], 0)
+        self.assertIsNone(submitted["scenario_id"])
+        self.assertEqual(submitted["error"]["code"], "unsupported_model_family")
+        self.assertIn("issues", submitted["error"]["details"])
+        self.assertIn("provenance", submitted["error"]["details"])
+        self.assertEqual(submitted["result_summary_id"], None)
+        self.assertIsNone(artifacts["scenario_id"])
+        self.assertEqual(artifacts["artifacts"], [])
+        self.assertIsNone(chain.get("scenario_id"))
+        self.assertIsNone(chain.get("scenario_version"))
+        self.assertIsNone(chain.get("scenario_schema_version"))
+        self.assertEqual(chain["artifact_manifest_id"], submitted["artifact_manifest_id"])
+        self.assertEqual(scenario_rows, [])
+        self.assertEqual(self.adapter.run_calls, [])
+
     def test_backend_api_submit_run_uses_m6_status_envelope(self) -> None:
         project = self._fixture("smoke_project.json")
         saved = self.api.save_project(project)
@@ -210,17 +252,20 @@ class BackendApiContractTest(unittest.TestCase):
         self.api.create_modeling_snapshot(saved["project_id"])
         plan = self.api.create_experiment_plan(saved["project_id"], {"name": "aviation blocked", "steps": 1})
 
-        with self.assertRaises(BackendApiError) as ctx:
-            self.api.submit_run(
-                {
-                    "project_id": saved["project_id"],
-                    "experiment_plan_id": plan["experiment_plan_id"],
-                    "model_family": "aviation_support",
-                    "run_type": "single",
-                }
-            )
+        submitted = self.api.submit_run(
+            {
+                "project_id": saved["project_id"],
+                "experiment_plan_id": plan["experiment_plan_id"],
+                "model_family": "aviation_support",
+                "run_type": "single",
+            }
+        )
 
-        self.assertEqual(ctx.exception.code, "unsupported_model_family")
+        self.assertEqual(submitted["status"], "failed")
+        self.assertEqual(submitted["phase"], "failed")
+        self.assertEqual(submitted["error"]["code"], "unsupported_model_family")
+        self.assertEqual(submitted["error"]["details"]["provenance"]["model_family"], "aviation_support")
+        self.assertEqual(self.adapter.run_calls, [])
 
     def test_backend_api_start_simulation_run_delegates_to_m6_run_service(self) -> None:
         project = self._fixture("smoke_project.json")
@@ -342,16 +387,18 @@ class BackendApiContractTest(unittest.TestCase):
         self.api.save_project(project)
         plan = self.api.create_experiment_plan(project["project_id"], {"steps": 1})
 
-        with self.assertRaises(BackendApiError) as ctx:
-            self.api.start_simulation_run(
-                project["project_id"],
-                plan["experiment_plan_id"],
-                model_family="aviation_support",
-            )
+        submitted = self.api.start_simulation_run(
+            project["project_id"],
+            plan["experiment_plan_id"],
+            model_family="aviation_support",
+        )
 
-        self.assertEqual(ctx.exception.code, "unsupported_model_family")
+        self.assertEqual(submitted["status"], "failed")
+        self.assertEqual(submitted["phase"], "failed")
+        self.assertEqual(submitted["error"]["code"], "unsupported_model_family")
+        self.assertIn("issues", submitted["error"]["details"])
         self.assertEqual(
-            str(ctx.exception),
+            submitted["error"]["message"],
             "aviation_support scenario compilation is blocked until governed field derivation rules are approved",
         )
         self.assertEqual(len(self.adapter.compile_calls), 1)
@@ -577,6 +624,11 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(
             str(ctx.exception),
             "aviation_support scenario compilation is blocked until governed field derivation rules are approved",
+        )
+        self.assertEqual(ctx.exception.details["provenance"]["model_family"], "aviation_support")
+        self.assertEqual(
+            ctx.exception.details["issues"][0]["field_path"],
+            "missionProfile.durationHours",
         )
         self.assertEqual(len(self.adapter.compile_calls), 1)
         self.assertEqual(self.adapter.compile_calls[0][1], "aviation_support")

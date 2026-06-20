@@ -17,6 +17,7 @@ SCHEMA_PATH = Path(__file__).with_name("schema.sql")
 def initialize_database(connection: sqlite3.Connection) -> None:
     """Create the PR-D persistence schema in an existing SQLite connection."""
     connection.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
+    _relax_simulation_run_scenario_constraints(connection)
     _ensure_column(connection, "users", "password_hash", "TEXT")
     _ensure_column(connection, "users", "display_name", "TEXT")
     _ensure_column(connection, "users", "status", "TEXT NOT NULL DEFAULT 'active'")
@@ -462,8 +463,8 @@ class ContractRepository:
                 _required(run, "run_id"),
                 _required(run, "project_id"),
                 run.get("experiment_plan_id"),
-                _required(run, "scenario_id"),
-                _required(run, "scenario_version"),
+                run.get("scenario_id"),
+                run.get("scenario_version"),
                 _required(run, "schema_version"),
                 _required(run, "model_family"),
                 _required(run, "model_id"),
@@ -618,7 +619,7 @@ class ContractRepository:
             run_id,
         )
 
-    def get_run_chain(self, run_id: str) -> dict[str, str]:
+    def get_run_chain(self, run_id: str) -> dict[str, Any]:
         cursor = self.connection.execute(
             """
             SELECT
@@ -641,7 +642,7 @@ class ContractRepository:
               am.schema_version AS artifact_manifest_schema_version
             FROM simulation_runs r
             JOIN projects p ON p.project_id = r.project_id
-            JOIN scenarios s ON s.scenario_id = r.scenario_id
+            LEFT JOIN scenarios s ON s.scenario_id = r.scenario_id
             LEFT JOIN experiment_plans ep
               ON ep.experiment_plan_id = r.experiment_plan_id
             LEFT JOIN result_summaries rs
@@ -756,6 +757,61 @@ def _ensure_column(connection: sqlite3.Connection, table: str, column: str, defi
     columns = {row[1] for row in connection.execute(f"PRAGMA table_info({table})")}
     if column not in columns:
         connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+
+
+def _relax_simulation_run_scenario_constraints(connection: sqlite3.Connection) -> None:
+    columns = {row[1]: row for row in connection.execute("PRAGMA table_info(simulation_runs)")}
+    if not columns:
+        return
+    if not any(columns.get(column, (None, None, None, 0))[3] for column in ("scenario_id", "scenario_version")):
+        return
+
+    foreign_keys_enabled = connection.execute("PRAGMA foreign_keys").fetchone()[0]
+    connection.execute("PRAGMA foreign_keys = OFF")
+    try:
+        connection.executescript(
+            """
+            CREATE TABLE simulation_runs_migrated (
+              run_id TEXT PRIMARY KEY,
+              project_id TEXT NOT NULL,
+              experiment_plan_id TEXT,
+              scenario_id TEXT,
+              scenario_version TEXT,
+              schema_version TEXT NOT NULL,
+              model_family TEXT NOT NULL,
+              model_id TEXT NOT NULL,
+              status TEXT NOT NULL,
+              run_type TEXT,
+              seed INTEGER,
+              result_summary_id TEXT,
+              artifact_manifest_id TEXT NOT NULL,
+              payload_json TEXT NOT NULL,
+              created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              FOREIGN KEY (project_id) REFERENCES projects(project_id),
+              FOREIGN KEY (scenario_id) REFERENCES scenarios(scenario_id)
+            );
+
+            INSERT INTO simulation_runs_migrated (
+              run_id, project_id, experiment_plan_id, scenario_id, scenario_version,
+              schema_version, model_family, model_id, status, run_type, seed,
+              result_summary_id, artifact_manifest_id, payload_json, created_at, updated_at
+            )
+            SELECT
+              run_id, project_id, experiment_plan_id, scenario_id, scenario_version,
+              schema_version, model_family, model_id, status, run_type, seed,
+              result_summary_id, artifact_manifest_id, payload_json, created_at, updated_at
+            FROM simulation_runs;
+
+            DROP TABLE simulation_runs;
+            ALTER TABLE simulation_runs_migrated RENAME TO simulation_runs;
+            """
+        )
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        connection.execute(f"PRAGMA foreign_keys = {'ON' if foreign_keys_enabled else 'OFF'}")
 
 
 def _seed_m4_users(connection: sqlite3.Connection) -> None:

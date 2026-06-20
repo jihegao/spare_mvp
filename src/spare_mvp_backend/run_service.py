@@ -74,10 +74,24 @@ class RunService:
         )
         project_for_run = copy.deepcopy(snapshot["project"]) if snapshot else project
 
-        try:
-            scenario = self.adapter.compile_scenario(project_for_run, model_family=model_family)
-        except AdapterError as exc:
-            raise RunServiceError(exc.code, str(exc), **exc.details) from exc
+        compile_gate = getattr(self.adapter, "compile_scenario_with_gate", None)
+        if callable(compile_gate):
+            compile_result = compile_gate(project_for_run, model_family=model_family)
+            if compile_result.get("status") != "compiled" or compile_result.get("scenario") is None:
+                return self._persist_failed_compile_run(
+                    project_id=project_id,
+                    experiment_plan_id=experiment_plan_id,
+                    modeling_snapshot_id=plan.get("modeling_snapshot_id"),
+                    project_for_run=project_for_run,
+                    model_family=model_family,
+                    compile_result=compile_result,
+                )
+            scenario = compile_result["scenario"]
+        else:
+            try:
+                scenario = self.adapter.compile_scenario(project_for_run, model_family=model_family)
+            except AdapterError as exc:
+                raise RunServiceError(exc.code, str(exc), **exc.details) from exc
 
         scenario = copy.deepcopy(scenario)
         scenario_base_id = f"{scenario['scenario_id']}-{_stable_hash({'experiment_plan_id': experiment_plan_id})}"
@@ -170,13 +184,74 @@ class RunService:
         self.repository.upsert_artifact_manifest(manifest)
         return self._status_from_run(run)
 
+    def _persist_failed_compile_run(
+        self,
+        *,
+        project_id: str,
+        experiment_plan_id: str,
+        modeling_snapshot_id: str | None,
+        project_for_run: dict[str, Any],
+        model_family: str,
+        compile_result: dict[str, Any],
+    ) -> dict[str, Any]:
+        now = _utc_now()
+        run_base_id = f"compile-gate-{_stable_hash({'project_id': project_id, 'experiment_plan_id': experiment_plan_id, 'model_family': model_family})}"
+        run_id = self.repository.next_run_id(run_base_id)
+        manifest_id = f"artifact-manifest-{run_id}"
+        issues = copy.deepcopy(compile_result.get("issues") or [])
+        provenance = copy.deepcopy(compile_result.get("provenance") or {})
+        run = {
+            "schema_version": RUN_SCHEMA_VERSION,
+            "run_id": run_id,
+            "project_id": project_id,
+            "experiment_plan_id": experiment_plan_id,
+            "modeling_snapshot_id": modeling_snapshot_id,
+            "project_version": project_for_run.get("project_version"),
+            "project_schema_version": project_for_run.get("schema_version"),
+            "scenario_id": None,
+            "scenario_version": None,
+            "scenario_schema_version": None,
+            "model_family": model_family,
+            "model_id": "ScenarioCompilerGate",
+            "status": "failed",
+            "phase": "failed",
+            "run_type": "single",
+            "seed": _seed_from_project(project_for_run),
+            "progress": 0,
+            "queued_at": now,
+            "started_at": now,
+            "completed_at": now,
+            "result_summary_id": None,
+            "artifact_manifest_id": manifest_id,
+            "error": {
+                "code": _compile_gate_error_code(compile_result),
+                "message": _compile_gate_error_message(compile_result, model_family),
+                "details": {
+                    "issues": issues,
+                    "provenance": provenance,
+                },
+            },
+        }
+        manifest = {
+            "schema_version": ARTIFACT_MANIFEST_SCHEMA_VERSION,
+            "artifact_manifest_id": manifest_id,
+            "run_id": run_id,
+            "scenario_id": None,
+            "scenario_version": None,
+            "created_at": now,
+            "artifacts": [],
+        }
+        self.repository.upsert_run(run)
+        self.repository.upsert_artifact_manifest(manifest)
+        return self._status_from_run(run)
+
     def _status_from_run(self, run: dict[str, Any]) -> dict[str, Any]:
         return {
             "run_id": run["run_id"],
             "project_id": run["project_id"],
             "experiment_plan_id": run.get("experiment_plan_id"),
             "modeling_snapshot_id": run.get("modeling_snapshot_id"),
-            "scenario_id": run["scenario_id"],
+            "scenario_id": run.get("scenario_id"),
             "status": run["status"],
             "phase": run.get("phase") or _phase_from_status(run["status"]),
             "progress": run.get("progress", 0),
@@ -210,6 +285,28 @@ def _steps_from_plan(plan: dict[str, Any]) -> int:
         return max(0, int(steps))
     except (TypeError, ValueError):
         return 3
+
+
+def _compile_gate_error_code(compile_result: dict[str, Any]) -> str:
+    if compile_result.get("status") == "blocked":
+        return "invalid_project"
+    return "unsupported_model_family"
+
+
+def _compile_gate_error_message(compile_result: dict[str, Any], model_family: str) -> str:
+    if compile_result.get("status") == "blocked":
+        return "Project JSON failed Scenario compiler gate validation"
+    return f"{model_family} scenario compilation is blocked until governed field derivation rules are approved"
+
+
+def _seed_from_project(project: dict[str, Any]) -> int | None:
+    seed = project.get("experiment", {}).get("seed")
+    if isinstance(seed, bool):
+        return None
+    try:
+        return int(seed)
+    except (TypeError, ValueError):
+        return None
 
 
 def _stable_hash(payload: dict[str, Any]) -> str:

@@ -178,6 +178,113 @@ class DatabaseContractTest(unittest.TestCase):
         finally:
             connection.close()
 
+    def test_initialize_database_relaxes_legacy_simulation_run_scenario_constraints(self) -> None:
+        connection = sqlite3.connect(":memory:")
+        try:
+            connection.executescript(
+                """
+                CREATE TABLE projects (
+                  project_id TEXT PRIMARY KEY
+                );
+
+                CREATE TABLE scenarios (
+                  scenario_id TEXT PRIMARY KEY
+                );
+
+                CREATE TABLE simulation_runs (
+                  run_id TEXT PRIMARY KEY,
+                  project_id TEXT NOT NULL,
+                  experiment_plan_id TEXT,
+                  scenario_id TEXT NOT NULL,
+                  scenario_version TEXT NOT NULL,
+                  schema_version TEXT NOT NULL,
+                  model_family TEXT NOT NULL,
+                  model_id TEXT NOT NULL,
+                  status TEXT NOT NULL,
+                  run_type TEXT,
+                  seed INTEGER,
+                  result_summary_id TEXT,
+                  artifact_manifest_id TEXT NOT NULL,
+                  payload_json TEXT NOT NULL,
+                  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+
+                INSERT INTO projects (project_id) VALUES ('project-legacy');
+                INSERT INTO scenarios (scenario_id) VALUES ('scenario-legacy');
+                INSERT INTO simulation_runs (
+                  run_id, project_id, scenario_id, scenario_version, schema_version,
+                  model_family, model_id, status, artifact_manifest_id, payload_json
+                )
+                VALUES (
+                  'run-legacy', 'project-legacy', 'scenario-legacy', 'scenario-v0.1',
+                  'run-v0', 'mesa', 'aviation-support', 'completed',
+                  'artifact-legacy', '{"run_id": "run-legacy"}'
+                );
+                """
+            )
+
+            initialize_database(connection)
+
+            columns = {
+                row[1]: {"notnull": row[3]}
+                for row in connection.execute("pragma table_info(simulation_runs)")
+            }
+            self.assertEqual(columns["scenario_id"]["notnull"], 0)
+            self.assertEqual(columns["scenario_version"]["notnull"], 0)
+            self.assertEqual(
+                connection.execute("SELECT scenario_id, scenario_version FROM simulation_runs WHERE run_id = 'run-legacy'").fetchone(),
+                ("scenario-legacy", "scenario-v0.1"),
+            )
+        finally:
+            connection.close()
+
+    def test_failed_simulation_run_constraint_migration_restores_foreign_keys(self) -> None:
+        connection = sqlite3.connect(":memory:")
+        try:
+            connection.execute("PRAGMA foreign_keys = ON")
+            connection.executescript(
+                """
+                CREATE TABLE projects (
+                  project_id TEXT PRIMARY KEY
+                );
+
+                CREATE TABLE scenarios (
+                  scenario_id TEXT PRIMARY KEY
+                );
+
+                CREATE TABLE simulation_runs (
+                  run_id TEXT PRIMARY KEY,
+                  project_id TEXT NOT NULL,
+                  scenario_id TEXT NOT NULL,
+                  scenario_version TEXT NOT NULL,
+                  schema_version TEXT NOT NULL,
+                  model_family TEXT NOT NULL,
+                  model_id TEXT NOT NULL,
+                  status TEXT NOT NULL,
+                  artifact_manifest_id TEXT NOT NULL
+                );
+
+                INSERT INTO projects (project_id) VALUES ('project-legacy');
+                INSERT INTO scenarios (scenario_id) VALUES ('scenario-legacy');
+                INSERT INTO simulation_runs (
+                  run_id, project_id, scenario_id, scenario_version, schema_version,
+                  model_family, model_id, status, artifact_manifest_id
+                )
+                VALUES (
+                  'run-legacy', 'project-legacy', 'scenario-legacy', 'scenario-v0.1',
+                  'run-v0', 'mesa', 'aviation-support', 'completed', 'artifact-legacy'
+                );
+                """
+            )
+
+            with self.assertRaises(sqlite3.OperationalError):
+                initialize_database(connection)
+
+            self.assertEqual(connection.execute("PRAGMA foreign_keys").fetchone()[0], 1)
+        finally:
+            connection.close()
+
     def test_repository_seeds_m4_users_and_persists_audit_events(self) -> None:
         data_user = self.repository.get_user_by_username("data")
         session = self.repository.create_session(data_user["user_id"])

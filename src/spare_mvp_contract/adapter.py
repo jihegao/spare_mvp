@@ -78,16 +78,84 @@ class SimulationAdapter:
 
     def compile_scenario(self, project: dict[str, Any], model_family: str = "smoke") -> dict[str, Any]:
         """Compile a validated Project JSON document into a model-specific Scenario."""
+        result = self._compile_scenario_with_gate(project, model_family=model_family)
+        if result["status"] == "compiled" and result["scenario"] is not None:
+            return result["scenario"]
+        if result["status"] == "blocked":
+            raise AdapterError(
+                "invalid_project",
+                "Project JSON failed validation",
+                errors=result.get("errors", []),
+                issues=result["issues"],
+                provenance=result["provenance"],
+            )
+        raise AdapterError(
+            "unsupported_model_family",
+            "aviation_support requires a Claude-approved compilation rule before Scenario JSON can be emitted",
+            model_family=model_family,
+            issues=result["issues"],
+            provenance=result["provenance"],
+        )
+
+    def compile_scenario_with_gate(self, project: dict[str, Any], model_family: str = "smoke") -> dict[str, Any]:
+        """Compile with an explicit fail-closed gate result for unsupported paths."""
+        return self._compile_scenario_with_gate(project, model_family=model_family)
+
+    def _compile_scenario_with_gate(self, project: dict[str, Any], model_family: str = "smoke") -> dict[str, Any]:
         validation = self.validate_project(project)
         if not validation["ok"]:
-            raise AdapterError("invalid_project", "Project JSON failed validation", errors=validation["errors"])
-        if model_family != "smoke":
-            raise AdapterError(
-                "unsupported_model_family",
-                "aviation_support requires a Claude-approved compilation rule before Scenario JSON can be emitted",
-                model_family=model_family,
-            )
+            issues = [
+                {
+                    "code": error["code"],
+                    "message": error["message"],
+                    "field_path": error["path"],
+                    "page": "Project JSON",
+                    "severity": "error",
+                    "suggestion": "Provide the required Project JSON field before compiling a Scenario.",
+                }
+                for error in validation["errors"]
+            ]
+            return {
+                "status": "blocked",
+                "scenario": None,
+                "provenance": self._compile_gate_provenance(project, model_family),
+                "issues": issues,
+                "errors": validation["errors"],
+            }
+        if model_family == "smoke":
+            scenario = self._compile_smoke_scenario(project, validation)
+            return {
+                "status": "compiled",
+                "scenario": scenario,
+                "provenance": scenario["compiled_from"]["mapping_provenance"],
+                "issues": [],
+            }
+        if model_family == "aviation_support":
+            provenance = self._compile_gate_provenance(project, model_family)
+            return {
+                "status": "unsupported",
+                "scenario": None,
+                "provenance": provenance,
+                "issues": self._aviation_support_compile_issues(),
+            }
+        provenance = self._compile_gate_provenance(project, model_family)
+        return {
+            "status": "unsupported",
+            "scenario": None,
+            "provenance": provenance,
+            "issues": [
+                {
+                    "code": "unsupported_model_family",
+                    "message": f"{model_family} does not have an approved Project to Scenario compiler.",
+                    "field_path": "model_family",
+                    "page": "Simulation run",
+                    "severity": "error",
+                    "suggestion": "Choose smoke or add a governed compiler before submitting this run.",
+                }
+            ],
+        }
 
+    def _compile_smoke_scenario(self, project: dict[str, Any], validation: dict[str, Any]) -> dict[str, Any]:
         project_id = validation["project_id"]
         project_version = validation["project_version"]
         scenario_key = _safe_identifier(str(project.get("scenarioId") or project_id))
@@ -112,6 +180,7 @@ class SimulationAdapter:
                 "project_schema_version": validation["project_schema_version"],
                 "ontology_version": ONTOLOGY_CONTRACT_VERSION,
                 "mesa_contract_version": MESA_CONTRACT_VERSION,
+                "mapping_provenance": self._smoke_mapping_provenance(project_id, project),
             },
             "simulation_inputs": inputs,
         }
@@ -222,6 +291,97 @@ class SimulationAdapter:
             "seed": self._positive_int(project.get("experiment", {}).get("seed"), 0),
         }
 
+    def _smoke_mapping_provenance(self, project_id: str, project: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "project_id": project_id,
+            "modeling_snapshot_id": None,
+            "experiment_plan_id": None,
+            "model_family": "smoke",
+            "mapping_version": "smoke-input-v0",
+            "consumed_fields": [
+                "activeModule",
+                "monteCarlo.spareMultipliers",
+                "components[].failureRate",
+                "supportNodes[].equipmentCapacity",
+                "equipment.minRequiredSorties",
+                "basicMission.minRequiredSorties",
+                "experiment.seed",
+            ],
+            "defaults_applied": self._smoke_defaults_applied(project),
+            "derived_fields": ["simulation_inputs.failure_rate"],
+            "ignored_fields": ["monteCarlo.failureRates", "monteCarlo.supportCapacities"],
+            "unsupported_fields": [],
+        }
+
+    def _smoke_defaults_applied(self, project: dict[str, Any]) -> list[str]:
+        defaults: list[str] = []
+        if not self._has_any_number(project.get("monteCarlo", {}).get("spareMultipliers")):
+            defaults.append("monteCarlo.spareMultipliers=1.0")
+        if not any(self._is_number(component.get("failureRate")) for component in project.get("components", [])):
+            defaults.append("components[].failureRate=0.05")
+        if not any(
+            isinstance(node, dict) and self._is_positive_number(node.get("equipmentCapacity"))
+            for node in project.get("supportNodes", [])
+        ):
+            defaults.append("supportNodes[].equipmentCapacity=1")
+        sortie_candidates = [
+            project.get("equipment", {}).get("minRequiredSorties"),
+            project.get("basicMission", {}).get("minRequiredSorties"),
+        ]
+        if not any(self._is_positive_number(value) for value in sortie_candidates):
+            defaults.append("equipment.minRequiredSorties|basicMission.minRequiredSorties=1")
+        if not self._is_number(project.get("experiment", {}).get("seed")):
+            defaults.append("experiment.seed=0")
+        return defaults
+
+    def _compile_gate_provenance(self, project: dict[str, Any], model_family: str) -> dict[str, Any]:
+        return {
+            "project_id": self._project_id(project),
+            "modeling_snapshot_id": None,
+            "experiment_plan_id": None,
+            "model_family": model_family,
+            "mapping_version": f"{model_family}-input-v0",
+            "consumed_fields": [],
+            "defaults_applied": [],
+            "derived_fields": [],
+            "ignored_fields": [],
+            "unsupported_fields": [
+                "missionProfile.durationHours",
+                "components[].mtbfHours",
+                "supportActivities[].durationHours",
+            ]
+            if model_family == "aviation_support"
+            else ["model_family"],
+        }
+
+    def _aviation_support_compile_issues(self) -> list[dict[str, str]]:
+        return [
+            {
+                "code": "missing_compilation_rule",
+                "message": "Mission duration cannot be compiled into aviation_support runtime inputs yet.",
+                "field_path": "missionProfile.durationHours",
+                "page": "任务剖面建模",
+                "severity": "error",
+                "suggestion": "Approve a field derivation rule for mission duration before enabling aviation_support runs.",
+            },
+            {
+                "code": "missing_compilation_rule",
+                "message": "Component MTBF cannot be compiled into aviation_support failure parameters yet.",
+                "field_path": "components[].mtbfHours",
+                "page": "装备组成建模",
+                "severity": "error",
+                "suggestion": "Approve an MTBF to failure-parameter mapping before enabling aviation_support runs.",
+            },
+            {
+                "code": "missing_compilation_rule",
+                "message": "Support activity duration cannot be compiled into aviation_support service-time inputs yet.",
+                "field_path": "supportActivities[].durationHours",
+                "page": "保障活动建模",
+                "severity": "error",
+                "suggestion": "Approve a support activity duration mapping before enabling aviation_support runs.",
+            },
+        ]
+
     def _assert_smoke_scenario(self, scenario: dict[str, Any]) -> None:
         model = scenario.get("simulation_model", {})
         if scenario.get("schema_version") != SCENARIO_SCHEMA_VERSION:
@@ -274,6 +434,14 @@ class SimulationAdapter:
         except (TypeError, ValueError):
             return False
         return True
+
+    def _is_positive_number(self, value: Any) -> bool:
+        return self._is_number(value) and float(value) > 0
+
+    def _has_any_number(self, value: Any) -> bool:
+        if isinstance(value, list):
+            return any(self._is_number(item) for item in value)
+        return self._is_number(value)
 
     def _write_artifact(
         self,

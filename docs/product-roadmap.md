@@ -291,11 +291,11 @@ M5.2 工作台与 Scenario 预览入口：
 
 推进方式：以正式后端 API + worker + artifact storage 为目标演进；开发期可以继续使用本地 adapter 和 smoke model 做可脚本化验证，但不再要求先建设独立 `Simulation Contract Service`。
 
-M6.0 当前收束：已新增 `RunService` 与 canonical `/api/runs`，把当前同步 smoke run 包装成可轮询的运行服务边界。前端启动运行后先拿 `run_id`，再查询 status/result/artifact/chain；旧 `/api/simulation-runs` 路径继续兼容。RunService 在当前进程内串行化 run id 生成，并能在执行器失败后返回 failed status envelope。该首片的后端输入是 ExperimentPlan 绑定的 ModelingSnapshot 加当前支持的 `steps` 配置，仍使用本地同步执行器，不包含完整 ExperimentPlan payload 编译、完整 worker 队列、取消、重试、超时、资源隔离、真实批量 Monte Carlo fan-out、长期 artifact storage 或 `aviation_support` 编译解锁。
+M6.0 当前收束：已新增 `RunService` 与 canonical `/api/runs`，把当前同步 smoke run 包装成可轮询的运行服务边界。前端启动运行后先拿 `run_id`，再查询 status/result/artifact/chain；旧 `/api/simulation-runs` 路径继续兼容。RunService 在当前进程内串行化 run id 生成，并能在执行器失败后返回 failed status envelope。该首片的后端输入是 ExperimentPlan 绑定的 ModelingSnapshot 加当前支持的 `steps` 配置，仍使用本地同步执行器，不包含完整 ExperimentPlan payload 编译、完整 worker 队列、取消、重试、超时、资源隔离、真实批量 Monte Carlo fan-out、长期 artifact storage 或 `aviation_support` 正式执行。
 
-M6.1 建议切片：输入一致性与 Scenario 编译 gate。真正做统一 Monte Carlo、四类分析模板和正式结果 artifact 前，必须先打通 `Frontend Project / ExperimentPlan -> Scenario compiler / adapter mapping -> Mesa simulation input`。M6.1 定义哪些前端任务、装备、保障活动和实验方案字段进入仿真，建立字段 mapping、默认值、派生规则、ignored/unsupported 字段和 provenance；无法编译的 ExperimentPlan 必须 fail closed，返回字段级错误并阻断 run，不能回退到 demo 或前端局部推导。`smoke` 继续保留窄兼容输入，`aviation_support` 或正式模型族至少补 compiler skeleton 和显式 unsupported 策略。
+M6.1 当前收束：输入一致性与 Scenario 编译 gate 已落地为窄闭环。真正做统一 Monte Carlo、四类分析模板和正式结果 artifact 前，当前实现先打通 `Frontend Project / ExperimentPlan -> Scenario compiler / adapter mapping -> Mesa simulation input` 的可审计边界：`smoke` Scenario 带 `compiled_from.mapping_provenance`，记录 consumed/ignored/derived 字段；`aviation_support` 有 compiler skeleton，暂以字段级 diagnostics fail closed；无法编译的 ExperimentPlan 会返回 failed run status envelope，`error.details.issues` 和 `error.details.provenance` 可供前端展示，且没有 `result_summary_id`，ArtifactManifest 为空。前端四个结果分析 dashboard 在缺少 compiler provenance 或官方 analysis artifact 时只显示“本地预览，不是正式后端仿真结果”，不能把 `singleResult` 局部推导包装成正式后端结果。
 
-M6.2 建议切片：统一 Monte Carlo / analysis profile。基于 M6.1 已对齐的 Scenario 跑样本，产出统一 MC artifacts；“大样本评估”是基础 artifact，“备件短板”“携行清单”“任务可靠度”“停机因素”是同一 artifact 的 projection。仿真实验方案在 M6.2 保存实验基本信息（实验名称、仿真总时长、随机种子）和 `analysisRequests` 配置；Monte Carlo 实验页面显示样本完成进度和日志输出；方案列表显示“运行中”“已完成”或“运行失败”；未勾选或未通过编译的分析页显示“未配置”或编译失败，不渲染正式结果图表。
+M6.2 建议切片：统一 Monte Carlo / analysis profile。基于 M6.1 已对齐的 Scenario 跑样本，产出统一 MC artifacts；“大样本评估”是基础 artifact，“备件短板”“携行清单”“任务可靠度”“停机因素”是同一 artifact 的 projection。仿真实验方案在 M6.2 保存实验基本信息（实验名称、仿真总时长、随机种子）和 `analysisRequests` 配置；Monte Carlo 实验页面显示样本完成进度和日志输出；方案列表显示“运行中”“已完成”或“运行失败”；未勾选或未通过编译的分析页显示“未配置”或编译失败，不渲染正式结果图表。M6.1 明确不包含 Monte Carlo fan-out、官方四类 analysis artifact、worker queue、object storage、取消/重试或新的 auth/audit scope。
 
 核心能力：
 

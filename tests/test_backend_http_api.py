@@ -137,6 +137,63 @@ class BackendHttpApiTest(unittest.TestCase):
                 server.server_close()
                 thread.join(timeout=5)
 
+    def test_http_canonical_runs_return_compile_gate_diagnostics(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            server = create_backend_server(
+                ("127.0.0.1", 0),
+                repo_root=REPO_ROOT,
+                database_path=":memory:",
+                output_dir=Path(tmp) / "artifacts",
+            )
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                base_url = f"http://127.0.0.1:{server.server_address[1]}/api"
+                project = self._fixture("aviation_support_project.json")
+                saved = self._json(base_url, "POST", "/projects", project)
+                self._json(base_url, "POST", f"/projects/{saved['project_id']}/modeling-snapshots")
+                plan = self._json(
+                    base_url,
+                    "POST",
+                    f"/projects/{saved['project_id']}/experiment-plans",
+                    {"config": {"name": "http compiler gate", "steps": 1}},
+                )
+
+                submitted = self._json(
+                    base_url,
+                    "POST",
+                    "/runs",
+                    {
+                        "project_id": saved["project_id"],
+                        "experiment_plan_id": plan["experiment_plan_id"],
+                        "model_family": "aviation_support",
+                        "run_type": "single",
+                    },
+                )
+                artifacts = self._json(base_url, "GET", f"/runs/{submitted['run_id']}/artifacts")
+                chain = self._json(base_url, "GET", f"/runs/{submitted['run_id']}/chain")
+
+                self.assertEqual(submitted["status"], "failed")
+                self.assertEqual(submitted["phase"], "failed")
+                self.assertIsNone(submitted["scenario_id"])
+                self.assertEqual(submitted["error"]["code"], "unsupported_model_family")
+                self.assertEqual(
+                    submitted["error"]["details"]["issues"][0]["field_path"],
+                    "missionProfile.durationHours",
+                )
+                self.assertEqual(submitted["error"]["details"]["provenance"]["model_family"], "aviation_support")
+                self.assertEqual(submitted["result_summary_id"], None)
+                self.assertIsNone(artifacts["scenario_id"])
+                self.assertEqual(artifacts["artifacts"], [])
+                self.assertIsNone(chain.get("scenario_id"))
+                self.assertIsNone(chain.get("scenario_version"))
+                self.assertIsNone(chain.get("scenario_schema_version"))
+                self.assertEqual(chain["artifact_manifest_id"], submitted["artifact_manifest_id"])
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
     def test_http_server_serves_static_frontend_on_same_origin(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             server = create_backend_server(

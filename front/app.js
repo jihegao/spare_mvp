@@ -3612,6 +3612,16 @@ async function startExperimentRunThroughApi() {
       model_family: "smoke",
       run_type: "single"
     });
+    if (backendRun.status === "failed") {
+      backendRunResult = null;
+      backendArtifactManifest = { artifacts: [] };
+      backendRunChain = null;
+      lastRunExperimentPlanProjectJson = null;
+      forgetLastBackendRun();
+      experimentRunStatus = "运行失败";
+      backendApiStatus = compileGateStatusText(backendRun);
+      return;
+    }
     lastRunExperimentPlanProjectJson = {
       run_id: backendRun.run_id,
       project_json: planProjectJson
@@ -3716,6 +3726,16 @@ function updateDemoResultsThroughApiClient(projectJsonSource = scenario) {
   const state = buildDemoResultState(buildBackendProjectJson(projectJsonSource, currentProject));
   singleResult = state.singleResult;
   monteCarloResult = state.monteCarloResult;
+}
+
+function compileGateStatusText(run) {
+  const error = run?.error || {};
+  if (error.code === "unsupported_model_family" || error.details?.issues?.length) {
+    const firstIssue = error.details?.issues?.[0];
+    const location = firstIssue?.field_path || firstIssue?.page || "Scenario compiler";
+    return `输入未通过 Scenario compiler：${location}`;
+  }
+  return `运行失败：${error.message || run?.status || "Backend run failed"}`;
 }
 
 function recalculateRmsAllocation() {
@@ -4632,17 +4652,56 @@ function renderDowntimeFactorAnalysis() {
   });
 }
 
+function formalAnalysisBoundary() {
+  const provenance = backendRun?.compiler_provenance
+    || backendRun?.compiled_from?.mapping_provenance
+    || backendRunResult?.compiler_provenance
+    || backendRunResult?.compiled_from?.mapping_provenance
+    || backendRunChain?.compiler_provenance
+    || backendRun?.error?.details?.provenance
+    || null;
+  const formalUnlocked = false;
+  return {
+    formalUnlocked,
+    provenance,
+    analysisArtifacts: [],
+    reason: provenance ? "缺少正式 analysis artifact" : "缺少 compiler provenance"
+  };
+}
+
+function renderFormalAnalysisBoundaryNote(boundary) {
+  if (boundary.formalUnlocked) {
+    return `
+      <div class="result-source-note">
+        <strong>正式后端结果</strong>
+        <span>已读取 compiler provenance 和 analysis artifact，当前页面按后端产物展示。</span>
+      </div>
+    `;
+  }
+  const failedCompiler = backendRun?.status === "failed" && backendRun?.error?.details?.issues?.length;
+  return `
+    <div class="result-source-note">
+      <strong>${failedCompiler ? "输入未通过 Scenario compiler" : "本地预览，不是正式后端仿真结果"}</strong>
+      <span>${failedCompiler ? compileGateStatusText(backendRun) : "本页四类分析值来自前端 singleResult 局部推导，仅保留为本地预览。"}</span>
+      <span>${boundary.reason}；M6.1 尚未产出正式四类分析 artifact。</span>
+    </div>
+  `;
+}
+
 function renderAnalysisDashboard({ title, mode, subtitle, config = "", metrics, body }) {
+  const boundary = formalAnalysisBoundary();
+  const metricSuffix = boundary.formalUnlocked ? "" : "<em>本地预览</em>";
   return `
     <div class="analysis-dashboard">
       <section class="analysis-filter-bar">
         <div><h3>${title}</h3><span>${subtitle}</span></div>
         <button type="button" class="btn-primary">启动</button>
       </section>
+      ${renderFormalAnalysisBoundaryNote(boundary)}
       ${config ? `<section class="analysis-config-grid">${config}</section>` : ""}
-      <section class="kpi-strip">${metrics.map(([label, value]) => `<div class="kpi-card"><span>${label}</span><strong>${value}</strong></div>`).join("")}</section>
+      <section class="kpi-strip">${metrics.map(([label, value]) => `<div class="kpi-card"><span>${label}</span><strong>${value}</strong>${metricSuffix}</div>`).join("")}</section>
       <section class="analysis-chart-panel">${body}</section>
-      <div class="decision-support-card"><strong>${mode}</strong><span>结果已按 @备件_front 页面结构展示，供当前项目快速评审。</span></div>
+      <div class="decision-support-card"><strong>${mode}</strong><span>${boundary.formalUnlocked ? "结果已按后端 analysis artifact 展示，供当前项目评审。" : "本地预览，不是正式后端仿真结果；正式结果需等待 compiler provenance 与 analysis artifact 同时存在。"}</span></div>
     </div>
   `;
 }
