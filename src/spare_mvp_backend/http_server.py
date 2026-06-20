@@ -122,6 +122,16 @@ def create_backend_server(
                 return api.create_modeling_snapshot(parts[1])
             if self.command == "POST" and len(parts) == 3 and parts[0] == "projects" and parts[2] == "experiment-plans":
                 return api.create_experiment_plan(parts[1], body.get("config", {}))
+            if self.command == "POST" and route == "/runs":
+                return api.submit_run(body)
+            if self.command == "GET" and len(parts) == 2 and parts[0] == "runs":
+                return api.get_run_status(parts[1])
+            if self.command == "GET" and len(parts) == 3 and parts[0] == "runs" and parts[2] == "result":
+                return api.get_run_result(parts[1])
+            if self.command == "GET" and len(parts) == 3 and parts[0] == "runs" and parts[2] == "artifacts":
+                return api.get_run_artifacts(parts[1])
+            if self.command == "GET" and len(parts) == 3 and parts[0] == "runs" and parts[2] == "chain":
+                return api.get_run_chain(parts[1])
             if self.command == "POST" and route == "/simulation-runs":
                 if "project_id" not in body or "experiment_plan_id" not in body:
                     raise ValueError("project_id and experiment_plan_id are required")

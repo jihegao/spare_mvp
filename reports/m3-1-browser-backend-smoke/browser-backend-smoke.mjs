@@ -55,7 +55,7 @@ try {
   let runResponse = await clickMonteCarloStart(page);
   if (!runResponse) runResponse = await clickMonteCarloStartWithDomFallback(page);
   if (!runResponse) {
-    throw new Error(`No successful /api/simulation-runs response. Recent API events: ${JSON.stringify(apiEvents.slice(-20))}. Page text: ${await page.locator("body").innerText()}`);
+    throw new Error(`No successful run submit response on /api/runs or /api/simulation-runs. Recent API events: ${JSON.stringify(apiEvents.slice(-20))}. Page text: ${await page.locator("body").innerText()}`);
   }
   await page.waitForFunction(() => Boolean(JSON.parse(localStorage.getItem("spare-mvp:lastBackendRun") || "null")?.run_id));
 
@@ -184,15 +184,23 @@ async function clickFeature(page, featureId) {
 }
 
 async function clickMonteCarloStart(page) {
-  const runResponsePromise = page.waitForResponse((response) => response.url().endsWith("/api/simulation-runs") && response.status() === 200, { timeout: 3000 }).catch(() => null);
+  const runResponsePromise = page.waitForResponse(isRunSubmitResponse, { timeout: 3000 }).catch(() => null);
   await page.locator('button[data-mc-action="start"]').click();
   return runResponsePromise;
 }
 
 async function clickMonteCarloStartWithDomFallback(page) {
-  const runResponsePromise = page.waitForResponse((response) => response.url().endsWith("/api/simulation-runs") && response.status() === 200, { timeout: 10000 }).catch(() => null);
+  const runResponsePromise = page.waitForResponse(isRunSubmitResponse, { timeout: 10000 }).catch(() => null);
   await page.evaluate(() => document.querySelector('button[data-mc-action="start"]')?.click());
   return runResponsePromise;
+}
+
+function isRunSubmitResponse(response) {
+  return (
+    (response.url().endsWith("/api/runs") || response.url().endsWith("/api/simulation-runs")) &&
+    response.request().method() === "POST" &&
+    response.status() === 200
+  );
 }
 
 async function verifyProjectDraftPersistence(page) {

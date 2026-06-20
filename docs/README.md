@@ -22,7 +22,7 @@
 14. 两个模块的结果分析页面已对齐 `vendor/ship_front/备件_front` 的页面形态。
 15. Ontology Playground 导出关系 ID 已加唯一性约束；Monte Carlo 扫参输入会真实更新场景并重算结果。
 16. 早期 Mesa `Ontology视图` 四层纵向画布约定已归档为历史设计；当前产品路线不再要求在 Mesa 仿真中展示 ontology 视图。
-17. M2a / PR-C 已增加最小 `SimulationAdapter`：当前支持 Project JSON 根字段校验、`smoke` Scenario 编译、`SmokeSpareMvpModel` 运行、Result summary 和 ArtifactManifest 生成；`aviation_support` Scenario 编译仍需先完成治理批准的字段派生规则。
+17. M2a / PR-C 已增加最小 `SimulationAdapter`：当前支持 Project JSON 根字段校验、`smoke` Scenario 编译、`SmokeSpareMvpModel` 运行、Result summary 和 ArtifactManifest 生成；M6.1 为 `aviation_support` 增加 compiler skeleton 和字段级 fail-closed diagnostics，但仍未解锁正式执行。
 18. PR-D 已增加 SQLite 数据持久化切片：`schema.sql` 声明项目、用户、方案、建模快照、场景、运行、结果摘要和产物清单表；repository helper 可保存 contract 对象并按 `run_id` 查询版本化身份链。
 19. PR-E 已增加函数级 Backend API facade：API 层只编排 Project 校验、项目保存、建模快照、实验计划、Adapter Scenario 编译、Mesa 运行、结果与产物持久化和按 `run_id` 查询，不在前端或 CRUD handler 中生成最终 Scenario。
 20. PR-F 已增加前端 API client 接入：`front/api-client.mjs` 定义保存 Project、创建建模快照、创建实验计划、启动仿真运行、读取结果摘要和产物清单的稳定方法；`front/app.js` 通过该 client 编排保存、运行和结果读取，不再直接调用本地仿真函数生成页面结果。
@@ -31,8 +31,11 @@
 23. 系统管理新增“装备RMS指标分配”本地计算工作台：使用模拟装备构型和任务剖面，支持页面调节装备级 R/M/S、MTBF、MTTR、MLDT、Ai/Ao 目标，选择等分配、比例分配、AGREE 和评分分配方法，生成任务暴露矩阵、节点级 RMS target、敏感度排名和自底向上校核结果。当前发布操作只在浏览器内写入模拟装备节点的 `rms.target`，不覆盖 `prediction` 或 `actual`，也尚未接入后端持久化、复杂 RBD 数值求解或真实仿真消费。
 24. M4 权限审计 backfill 已建立本地用户、会话和审计边界：SQLite schema 包含 `users`、`sessions`、`project_access` 和 `audit_events`；`/api/auth/login` 返回 bearer token；`front/app.js` 登录后保存 M4 会话，`front/api-client.mjs` 对受保护请求附加 token。建模导入 save/publish/compile-scenario 的 HTTP 路径要求真实会话，普通用户发布会被后端阻断并写入审计。
 25. M5 建模数据入口已进入 M5.1 服务化切片：`contracts/modeling_import.schema.json` 定义导入包、草稿/发布生命周期、对象集合、变更和校验问题结构；`front/modeling-import-contract.mjs` 提供纯校验函数，`src/spare_mvp_backend/modeling_import.py` 在后端复用同一语义，`src/spare_mvp_backend/http_server.py` 暴露 `/api/modeling-imports/*` validate/save/get/publish 路径，SQLite `modeling_imports` 表持久化 `draft_payload_json`、`published_payload_json` 和 validation summary。`GET /api/modeling-imports/{import_id}` 返回 `draftPackage`、`publishedPackage`、`validation` 和 `lifecycle`，发布后再保存草稿不会覆盖已发布快照；同一 `import_id` 被 run 引用后不可再发布覆盖，新版本需使用新 `import_id`。
-26. M5.2 新增系统管理下的「建模数据导入」工作台、映射/错误/版本预览，以及经 `SimulationAdapter.compile_scenario()` 生成的后端 Scenario 预览（`compile-scenario`）。该入口消费 M5.1 的显式 API、后端恢复的草稿/发布快照和已发布导入包；完整 Excel 解析、worker 基础设施或 `aviation_support` 编译解锁仍不在本阶段。
+26. M5.2 新增系统管理下的「建模数据导入」工作台、映射/错误/版本预览，以及经 `SimulationAdapter.compile_scenario()` 生成的后端 Scenario 预览（`compile-scenario`）。该入口消费 M5.1 的显式 API、后端恢复的草稿/发布快照和已发布导入包；完整 Excel 解析、worker 基础设施或 `aviation_support` 正式执行仍不在本阶段。
 27. M5.3 建模页保存当前 Project draft；`仿真实验方案管理` 仍保留为概要设计要求的实验方案分支工作流。用户可从项目数据创建多个实验方案，编辑方案不回写项目数据，仿真运行和 Monte Carlo 使用选中的实验方案生成 run identity chain。
+28. M6.0 已把当前同步 smoke run 收敛到 `RunService` 和 canonical `/api/runs` 边界；`BackendApi.submit_run()`、HTTP `/api/runs`、前端 `submitRun()` / `getRunStatus()` 共同使用 run status/result/artifact/chain 刷新状态，并保留 `/api/simulation-runs` 兼容路径。RunService 会在当前进程内串行化 run id 生成，执行器失败后持久化 failed run 和空 ArtifactManifest 供 status 查询。该切片的后端输入是 ExperimentPlan 绑定的 ModelingSnapshot 加当前支持的 `steps` 配置，仍不是完整 ExperimentPlan payload 编译、完整 worker 队列、取消、重试、真实批量 Monte Carlo fan-out、对象存储或 `aviation_support` 正式执行。
+29. M6.1 输入一致性已落地：`smoke` Scenario 返回 `compiled_from.mapping_provenance`，记录 consumed/ignored/derived 字段；`aviation_support` 有 compiler skeleton 并 fail closed 返回字段级 diagnostics；被 gate 阻断的 run 返回 failed status envelope、无 `result_summary_id`、空 ArtifactManifest；前端保留 compile gate error details，并在四个结果分析 dashboard 缺少 compiler provenance 或官方 analysis artifact 时标注“本地预览，不是正式后端仿真结果”。
+30. M6.2 后续切片再做统一 Monte Carlo / analysis profile：基于 M6.1 编译通过的 Scenario 跑样本，产出统一 MC artifacts，并把“大样本评估、备件短板、携行清单、任务可靠度、停机因素”作为 artifact projection；未配置、运行中、运行失败或输入未通过编译时，结果页不得显示正式结果图表。M6.1 明确不包含 Monte Carlo fan-out、官方四类 analysis artifact、worker queue、object storage、取消/重试或新的 auth/audit scope。
 
 ## 文档地图
 
@@ -62,6 +65,10 @@
 | [`superpowers/plans/2026-06-19-m5-1-modeling-import-service.md`](superpowers/plans/2026-06-19-m5-1-modeling-import-service.md) | M5.1 后端 API、repository、HTTP facade、前端 API client 和文档同步实施计划。 |
 | [`superpowers/specs/2026-06-19-m5-2-modeling-import-workbench-design.md`](superpowers/specs/2026-06-19-m5-2-modeling-import-workbench-design.md) | M5.2 建模导入工作台和受控 Scenario 预览设计，限定系统管理入口、映射/错误/版本预览和非目标。 |
 | [`superpowers/plans/2026-06-19-m5-2-modeling-import-workbench.md`](superpowers/plans/2026-06-19-m5-2-modeling-import-workbench.md) | M5.2 import workbench、`compile-scenario` 后端预览和文档同步实施计划。 |
+| [`superpowers/specs/2026-06-20-m6-0-run-service-boundary-design.md`](superpowers/specs/2026-06-20-m6-0-run-service-boundary-design.md) | M6.0 仿真运行服务边界设计，限定 RunService、canonical `/api/runs`、status envelope 和非目标。 |
+| [`superpowers/specs/2026-06-20-m6-1-input-consistency-design.md`](superpowers/specs/2026-06-20-m6-1-input-consistency-design.md) | M6.1 输入一致性、Scenario compiler mapping、默认值策略、provenance 和 fail-closed 编译 gate。 |
+| [`superpowers/specs/2026-06-20-m6-2-unified-monte-carlo-analysis-design.md`](superpowers/specs/2026-06-20-m6-2-unified-monte-carlo-analysis-design.md) | M6.2 统一 Monte Carlo artifact、analysis profile 和四类分析 projection 的阶段边界。 |
+| [`superpowers/plans/2026-06-20-m6-0-run-service-boundary.md`](superpowers/plans/2026-06-20-m6-0-run-service-boundary.md) | M6.0 RunService、HTTP run routes、前端 status polling、浏览器 smoke 和文档同步实施计划。 |
 | [`superpowers/plans/2026-06-18-agent-swarm-contract-first-development.md`](superpowers/plans/2026-06-18-agent-swarm-contract-first-development.md) | contract-first agent swarm 分阶段开发计划。 |
 | [`superpowers/plans/2026-06-17-local-aviation-ship-front-integration.md`](superpowers/plans/2026-06-17-local-aviation-ship-front-integration.md) | 当前前端集成实现记录和验收情况。 |
 | [`../src/spare_mvp_abm/aviation_support/README.md`](../src/spare_mvp_abm/aviation_support/README.md) | 本地 Mesa 航空保障场景包说明。 |

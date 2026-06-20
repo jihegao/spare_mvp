@@ -101,7 +101,33 @@
         "project_version": { "type": "string" },
         "project_schema_version": { "type": "string" },
         "ontology_version": { "type": "string" },
-        "mesa_contract_version": { "type": "string" }
+        "mesa_contract_version": { "type": "string" },
+        "mapping_provenance": {
+          "type": "object",
+          "required": [
+            "project_id",
+            "model_family",
+            "mapping_version",
+            "consumed_fields",
+            "defaults_applied",
+            "derived_fields",
+            "ignored_fields",
+            "unsupported_fields"
+          ],
+          "properties": {
+            "project_id": { "type": "string" },
+            "modeling_snapshot_id": { "type": ["string", "null"] },
+            "experiment_plan_id": { "type": ["string", "null"] },
+            "model_family": { "type": "string" },
+            "mapping_version": { "type": "string" },
+            "consumed_fields": { "type": "array", "items": { "type": "string" } },
+            "defaults_applied": { "type": "array", "items": { "type": "string" } },
+            "derived_fields": { "type": "array", "items": { "type": "string" } },
+            "ignored_fields": { "type": "array", "items": { "type": "string" } },
+            "unsupported_fields": { "type": "array", "items": { "type": "string" } }
+          },
+          "additionalProperties": false
+        }
       },
       "additionalProperties": false
     },

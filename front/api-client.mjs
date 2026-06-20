@@ -62,28 +62,39 @@ export function createBackendApiClient({ baseUrl = DEFAULT_API_BASE, transport, 
         body: { config }
       });
     },
+    submitRun(runRequest) {
+      return request({
+        method: "POST",
+        path: "/runs",
+        body: runRequest
+      });
+    },
     startSimulationRun(projectId, experimentPlanId, modelFamily = "smoke") {
       return request({
         method: "POST",
-        path: "/simulation-runs",
+        path: "/runs",
         body: {
           project_id: projectId,
           experiment_plan_id: experimentPlanId,
-          model_family: modelFamily
+          model_family: modelFamily,
+          run_type: "single"
         }
       });
+    },
+    getRunStatus(runId) {
+      return request({ method: "GET", path: `/runs/${encodeURIComponent(runId)}` });
     },
     getRun(runId) {
       return request({ method: "GET", path: `/simulation-runs/${encodeURIComponent(runId)}` });
     },
     getRunResult(runId) {
-      return request({ method: "GET", path: `/simulation-runs/${encodeURIComponent(runId)}/result` });
+      return request({ method: "GET", path: `/runs/${encodeURIComponent(runId)}/result` });
     },
     getRunArtifacts(runId) {
-      return request({ method: "GET", path: `/simulation-runs/${encodeURIComponent(runId)}/artifacts` });
+      return request({ method: "GET", path: `/runs/${encodeURIComponent(runId)}/artifacts` });
     },
     getRunChain(runId) {
-      return request({ method: "GET", path: `/simulation-runs/${encodeURIComponent(runId)}/chain` });
+      return request({ method: "GET", path: `/runs/${encodeURIComponent(runId)}/chain` });
     }
   };
 }

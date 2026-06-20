@@ -1116,6 +1116,23 @@ input {
   max-width: 760px;
 }
 
+.result-source-note {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 10px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fafc;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.result-source-note strong {
+  color: var(--ink);
+}
+
 .mc-form {
   display: grid;
   gap: 12px;
