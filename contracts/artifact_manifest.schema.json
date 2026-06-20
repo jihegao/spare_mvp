@@ -14,8 +14,8 @@
     "schema_version": { "type": "string", "const": "artifact-manifest-v0" },
     "artifact_manifest_id": { "type": "string" },
     "run_id": { "type": "string" },
-    "scenario_id": { "type": "string" },
-    "scenario_version": { "type": "string" },
+    "scenario_id": { "type": ["string", "null"] },
+    "scenario_version": { "type": ["string", "null"] },
     "created_at": { "type": "string" },
     "artifacts": {
       "type": "array",
@@ -26,15 +26,63 @@
           "artifact_id": { "type": "string" },
           "kind": {
             "type": "string",
-            "enum": ["input_project", "compiled_scenario", "snapshot", "time_series", "result_summary", "report", "log"]
+            "enum": [
+              "input_project",
+              "compiled_scenario",
+              "snapshot",
+              "time_series",
+              "result_summary",
+              "report",
+              "log",
+              "monte_carlo_base",
+              "analysis_projection_spare_shortfall",
+              "analysis_projection_carry_list",
+              "analysis_projection_mission_reliability",
+              "analysis_projection_downtime_factors"
+            ]
           },
+          "analysis_type": {
+            "type": "string",
+            "enum": ["spare_shortfall", "carry_list", "mission_reliability", "downtime_factors"]
+          },
+          "source_artifact_id": { "type": "string" },
           "path": { "type": "string" },
           "media_type": { "type": "string" },
           "sha256": { "type": "string" },
           "size_bytes": { "type": "integer", "minimum": 0 },
           "schema_version": { "type": "string" }
         },
-        "additionalProperties": false
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": { "properties": { "kind": { "const": "analysis_projection_spare_shortfall" } }, "required": ["kind"] },
+            "then": {
+              "required": ["analysis_type", "source_artifact_id"],
+              "properties": { "analysis_type": { "const": "spare_shortfall" } }
+            }
+          },
+          {
+            "if": { "properties": { "kind": { "const": "analysis_projection_carry_list" } }, "required": ["kind"] },
+            "then": {
+              "required": ["analysis_type", "source_artifact_id"],
+              "properties": { "analysis_type": { "const": "carry_list" } }
+            }
+          },
+          {
+            "if": { "properties": { "kind": { "const": "analysis_projection_mission_reliability" } }, "required": ["kind"] },
+            "then": {
+              "required": ["analysis_type", "source_artifact_id"],
+              "properties": { "analysis_type": { "const": "mission_reliability" } }
+            }
+          },
+          {
+            "if": { "properties": { "kind": { "const": "analysis_projection_downtime_factors" } }, "required": ["kind"] },
+            "then": {
+              "required": ["analysis_type", "source_artifact_id"],
+              "properties": { "analysis_type": { "const": "downtime_factors" } }
+            }
+          }
+        ]
       }
     }
   }

@@ -300,7 +300,7 @@ M6.1 当前收束：输入一致性与 Scenario 编译 gate 已落地为窄闭�
 
 M6.1.1 当前收束：单次仿真输入已经从“ExperimentPlan 绑定 snapshot + steps”收敛为“ExperimentPlan 分支 Project JSON -> Scenario compiler”。前端创建实验方案时把完整分支 `projectJson` 写入 plan config；RunService 编译单次 smoke run 时优先消费该分支 Project JSON，并把 `experiment_plan_id`、`modeling_snapshot_id` 写入 mapping provenance。修改分支 seed、组件故障率或保障容量会进入后端 Scenario input 和 run artifact；旧计划缺少 `projectJson` 时仍回退到 ModelingSnapshot。
 
-M6.2 建议切片：统一 Monte Carlo / analysis profile，并补齐单次仿真实验与 Monte Carlo 实验的对象一致性。基于 M6.1/M6.1.1 已对齐的 Scenario 跑样本，产出统一 MC artifacts；“大样本评估”是基础 artifact，“备件短板”“携行清单”“任务可靠度”“停机因素”是同一 artifact 的 projection。仿真实验方案在 M6.2 保存方案分支和默认运行配置；单次仿真实验与 Monte Carlo 实验先落到 `SimulationExperimentBase`，共享 `experiment_id`、`experiment_type`、关联方案、Scenario identity、随机种子、状态、进度、`run_id` 和 artifact 引用，再分别扩展可视化状态帧或批量样本字段。Monte Carlo 实验作为批量运行主账本，拆分为实验列表、添加/编辑实验和实验详情，保存 `mc_experiment_id`、样本量、sweep、聚合结果和 projection artifact；正式 MC 调度不能继续伪装成 `run_type: "single"`。结果分析页管理 AnalysisTask，可选择方案和参数后自动创建新的 Monte Carlo 实验并绑定 `linkedMonteCarloExperimentId`；未勾选、未运行或未通过编译的分析页显示“未配置”或编译失败，不渲染正式结果图表。M6.1/M6.1.1 明确不包含 Monte Carlo fan-out、官方四类 analysis artifact、worker queue、object storage、取消/重试或新的 auth/audit scope。
+M6.2 当前收束：统一 Monte Carlo / analysis profile 已落地为同步本地执行切片，并补齐单次仿真实验与 Monte Carlo 实验的对象一致性。基于 M6.1/M6.1.1 已对齐的 Scenario 跑样本，产出统一 MC artifacts；`monte_carlo_base` 是基础 artifact，“备件短板”“携行清单”“任务可靠度”“停机因素”是同一 artifact 的 `analysis_projection_*`。单次仿真实验与 Monte Carlo 实验共享 `SimulationExperimentBase` 的 `experiment_id`、`experiment_type`、关联方案、Scenario identity、随机种子、状态、进度、`run_id` 和 artifact 引用；Monte Carlo 实验保存 `mc_experiment_id`、样本量、sweep、聚合结果和 projection artifact，正式 MC 调度不再伪装成 `run_type: "single"`。结果分析页管理 AnalysisTask，可选择方案和参数后自动创建新的 Monte Carlo 实验并绑定 `linkedMonteCarloExperimentId`；未勾选、未运行、运行中、运行失败、缺少 compiler provenance 或缺少 projection artifact 时不渲染正式结果图表。该收束仍不是生产 worker queue、object storage、取消/重试、长期 artifact storage、`aviation_support` 正式执行，也尚未让前端解析 projection payload 替换本地 KPI 数值。
 
 核心能力：
 
@@ -322,7 +322,7 @@ M6.2 建议切片：统一 Monte Carlo / analysis profile，并补齐单次仿�
 3. worker 或本地执行器只消费编译后的 Scenario input，不读取前端当前 draft。
 4. 前端轮询或订阅运行状态。
 5. 最终结果来自真实 run artifacts，且能追溯 mapping version、输入版本、运行配置和 seed。
-6. M6.1.1 完成前，不进入 M6.2 的 Monte Carlo fan-out 和 analysis projection 实现。
+6. M6.2 当前只提供同步本地 Monte Carlo artifact/projection 切片；生产级 worker、取消/重试、对象存储和 projection payload 驱动的正式 KPI 展示仍留给后续 M7/M8。
 
 ## M7：运行管理和产物管理
 

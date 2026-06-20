@@ -56,6 +56,12 @@ const CARRY_OBJECTIVES = [
   { id: "sortie-rate", label: "出动架次率", metricLabel: "预计出动架次率", metricValue: "86%" },
   { id: "turnaround-time", label: "再次出动准备时间", metricLabel: "预计准备时间", metricValue: "42 min" }
 ];
+const ANALYSIS_PROJECTION_TYPES = [
+  { analysisType: "spare_shortfall", artifactKind: "analysis_projection_spare_shortfall", source_artifact_id: "monte_carlo_base_artifact" },
+  { analysisType: "carry_list", artifactKind: "analysis_projection_carry_list", source_artifact_id: "monte_carlo_base_artifact" },
+  { analysisType: "mission_reliability", artifactKind: "analysis_projection_mission_reliability", source_artifact_id: "monte_carlo_base_artifact" },
+  { analysisType: "downtime_factors", artifactKind: "analysis_projection_downtime_factors", source_artifact_id: "monte_carlo_base_artifact" }
+];
 const SUPPORT_ORG_TREE = [
   { id: "base-level", name: "基地级", description: "基地级保障组织", children: [
     { id: "frontline-level-1", name: "基层级1", description: "基层保障节点1", children: [{ id: "maintenance-squadron-1", name: "机务保障中队1", description: "机务保障中队1" }] },
@@ -841,10 +847,10 @@ function bindEvents() {
       const experiment = currentMonteCarloExperiment(page.module);
       selectedMonteCarloExperimentId = experiment.id;
       monteCarloExperiments = monteCarloExperiments.map((item) => item.id === experiment.id
-        ? { ...item, status: "运行中", progress: 35, runId: backendRun?.run_id || item.runId }
+        ? { ...item, status: "运行中", progress: 35, runType: "monte_carlo", runId: backendRun?.run_id || item.runId }
         : item);
       experimentRunStatus = "运行中";
-      startExperimentRunThroughApi();
+      startMonteCarloRunThroughApi({ monteCarloExperimentId: experiment.mc_experiment_id });
       selectedRoute = "workbench";
       selectedFeatureId = getMonteCarloExperimentDetailFeatureId(page.module);
       location.hash = `feature=${selectedFeatureId}`;
@@ -3837,7 +3843,8 @@ async function saveCurrentExperimentPlanThroughApi() {
   }
 }
 
-async function startExperimentRunThroughApi() {
+async function startMonteCarloRunThroughApi({ monteCarloExperimentId = selectedMonteCarloExperimentId } = {}) {
+  const runType = "monte_carlo";
   const projectJson = buildBackendProjectJson(scenario, currentProject);
   const planProjectJson = buildBackendProjectJson(experimentPlanDraft, currentProject);
   updateDemoResultsThroughApiClient(experimentPlanDraft);
@@ -3852,7 +3859,8 @@ async function startExperimentRunThroughApi() {
       project_id: savedProject.project_id,
       experiment_plan_id: experimentPlan.experiment_plan_id,
       model_family: "smoke",
-      run_type: "single"
+      run_type: "monte_carlo",
+      ...(monteCarloExperimentId ? { mc_experiment_id: monteCarloExperimentId } : {})
     });
     if (backendRun.status === "failed") {
       backendRunResult = null;
@@ -3862,6 +3870,16 @@ async function startExperimentRunThroughApi() {
       forgetLastBackendRun();
       experimentRunStatus = "运行失败";
       backendApiStatus = compileGateStatusText(backendRun);
+      syncMonteCarloExperimentRun(monteCarloExperimentId, {
+        status: "运行失败",
+        progress: Number(backendRun.progress ?? 0),
+        runId: backendRun.run_id || "",
+        runType,
+        artifactId: "",
+        artifactManifestId: "",
+        projectionArtifactIds: [],
+        source: "backend:run-failed"
+      });
       return;
     }
     lastRunExperimentPlanProjectJson = {
@@ -3872,6 +3890,16 @@ async function startExperimentRunThroughApi() {
     rememberLastBackendRun(backendRun.run_id, savedProject.project_id, planProjectJson);
     experimentRunStatus = backendRun.status === "succeeded" ? "完成" : backendRun.status;
     backendApiStatus = "运行完成";
+    syncMonteCarloExperimentRun(monteCarloExperimentId, {
+      status: experimentRunStatus,
+      progress: Number(backendRun.progress ?? 1) * 100,
+      runId: backendRun.run_id,
+      runType,
+      artifactId: backendArtifactManifest?.artifact_manifest_id || "",
+      artifactManifestId: backendArtifactManifest?.artifact_manifest_id || "",
+      projectionArtifactIds: allAnalysisProjectionArtifacts().map((artifact) => artifact.artifact_id || artifact.id || artifact.path || artifact.kind).filter(Boolean),
+      source: "backend:run-service"
+    });
   } catch (err) {
     savedProject = null;
     backendRun = null;
@@ -3881,6 +3909,12 @@ async function startExperimentRunThroughApi() {
     forgetLastBackendRun();
     experimentRunStatus = "后端不可用";
     backendApiStatus = `后端不可用，未创建 run_id：${err && err.message ? err.message : "Backend API 不可用"}`;
+    syncMonteCarloExperimentRun(monteCarloExperimentId, {
+      status: "运行失败",
+      progress: 0,
+      runType,
+      source: "backend:submit-error"
+    });
   } finally {
     render();
   }
@@ -4482,21 +4516,52 @@ function createDefaultMonteCarloExperiments() {
 function createMonteCarloExperiment(moduleName, overrides = {}) {
   const sequence = overrides.id ? Number(overrides.sequence ?? 1) : monteCarloExperiments.length + 1;
   const id = overrides.id || `mc-exp-${moduleName === "任务可靠度评估模块" ? "mission" : "spare"}-${String(sequence).padStart(3, "0")}`;
+  const scenarioId = overrides.scenario_id || overrides.scenarioId || experimentPlanDraft.scenarioId;
   return {
     id,
+    experiment_id: overrides.experiment_id || id,
+    experiment_type: "monte_carlo",
     mc_experiment_id: id,
     name: overrides.name || `${experimentPlanDraft.experiment.name} MC-${sequence}`,
     module: moduleName,
     experimentPlanName: overrides.experimentPlanName || experimentPlanDraft.experiment.name,
-    scenarioId: overrides.scenarioId || experimentPlanDraft.scenarioId,
+    experiment_plan_id: overrides.experiment_plan_id || "",
+    scenario_id: scenarioId,
+    scenarioId: scenarioId,
+    scenario_version: overrides.scenario_version || experimentPlanDraft.schema_version || "project-v0",
+    project_id: overrides.project_id || "",
+    mapping_version: overrides.mapping_version || "",
     samples: Number(overrides.samples ?? experimentPlanDraft.experiment.samples),
     seed: Number(overrides.seed ?? experimentPlanDraft.experiment.seed),
     status: overrides.status || "草稿",
     progress: Number(overrides.progress ?? 0),
+    runType: overrides.runType || "monte_carlo",
     runId: overrides.runId || "",
     artifactId: overrides.artifactId || "",
+    artifactManifestId: overrides.artifactManifestId || overrides.artifactId || "",
+    projectionArtifactIds: overrides.projectionArtifactIds || [],
     source: overrides.source || "manual"
   };
+}
+
+function syncMonteCarloExperimentRun(mcExperimentId, updates = {}) {
+  if (!mcExperimentId) return;
+  monteCarloExperiments = monteCarloExperiments.map((experiment) => {
+    if (experiment.mc_experiment_id !== mcExperimentId && experiment.id !== mcExperimentId) return experiment;
+    return {
+      ...experiment,
+      ...updates,
+      progress: normalizeProgress(updates.progress ?? experiment.progress),
+      artifactManifestId: updates.artifactManifestId ?? updates.artifactId ?? experiment.artifactManifestId,
+      artifactId: updates.artifactId ?? updates.artifactManifestId ?? experiment.artifactId
+    };
+  });
+}
+
+function normalizeProgress(progress) {
+  const value = Number(progress ?? 0);
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(100, value <= 1 ? Math.round(value * 100) : Math.round(value)));
 }
 
 function monteCarloExperimentListForModule(moduleName) {
@@ -4510,6 +4575,20 @@ function monteCarloExperimentListForModule(moduleName) {
 function currentMonteCarloExperiment(moduleName) {
   const items = monteCarloExperimentListForModule(moduleName);
   return items.find((experiment) => experiment.id === selectedMonteCarloExperimentId) || items[0];
+}
+
+function monteCarloExperimentByBusinessId(mcExperimentId) {
+  return monteCarloExperiments.find((experiment) => experiment.mc_experiment_id === mcExperimentId || experiment.id === mcExperimentId) || null;
+}
+
+function monteCarloExperimentSourceRows(experiment) {
+  const projectionIds = (experiment.projectionArtifactIds || []).join(" / ") || allAnalysisProjectionArtifacts().map((artifact) => artifact.artifact_id || artifact.id || artifact.path || artifact.kind).filter(Boolean).join(" / ");
+  return [
+    ["run source", experiment.runId || backendRun?.run_id || "待运行"],
+    ["artifact source", experiment.artifactManifestId || experiment.artifactId || backendArtifactManifest?.artifact_manifest_id || "等待正式 MC artifact"],
+    ["projection source", projectionIds || "等待 analysis projection artifact"],
+    ["mapping/provenance", experiment.mapping_version || mappingProvenanceVersion() || "等待 compiler provenance"]
+  ];
 }
 
 function experimentPlanOptionsForModule(moduleName) {
@@ -4535,9 +4614,10 @@ function renderMonteCarloExperimentList(page) {
         </div>
         <div class="table-wrap mc-history-grid">
           <table>
-            <thead><tr><th>实验 ID</th><th>实验名称</th><th>关联方案</th><th>样本量</th><th>随机种子</th><th>状态</th><th>进度</th><th>操作</th></tr></thead>
+            <thead><tr><th>experiment_id</th><th>mc_experiment_id</th><th>实验名称</th><th>关联方案</th><th>样本量</th><th>随机种子</th><th>状态</th><th>进度</th><th>操作</th></tr></thead>
             <tbody>${experiments.map((experiment) => `
               <tr>
+                <td>${htmlEscape(experiment.experiment_id)}</td>
                 <td>${htmlEscape(experiment.mc_experiment_id)}</td>
                 <td>${htmlEscape(experiment.name)}</td>
                 <td>${htmlEscape(experiment.experimentPlanName)}</td>
@@ -4597,6 +4677,7 @@ function renderMonteCarloExperimentEditor(page) {
 
 function renderMonteCarloExperimentDetail(page) {
   const experiment = currentMonteCarloExperiment(page.module);
+  const sourceRows = monteCarloExperimentSourceRows(experiment);
   return `
     <div class="mc-workbench">
       <section class="mc-config-panel">
@@ -4605,12 +4686,22 @@ function renderMonteCarloExperimentDetail(page) {
           <span>${htmlEscape(experiment.status)}</span>
         </div>
         <div class="mc-detail-grid">
-          <div class="readonly-field"><span>实验 ID</span><strong>${htmlEscape(experiment.mc_experiment_id)}</strong></div>
+          <div class="readonly-field"><span>SimulationExperimentBase</span><strong>${htmlEscape(experiment.experiment_type)}</strong></div>
+          <div class="readonly-field"><span>experiment_id</span><strong>${htmlEscape(experiment.experiment_id)}</strong></div>
+          <div class="readonly-field"><span>mc_experiment_id</span><strong>${htmlEscape(experiment.mc_experiment_id)}</strong></div>
+          <div class="readonly-field"><span>模块</span><strong>${htmlEscape(experiment.module)}</strong></div>
           <div class="readonly-field"><span>关联方案</span><strong>${htmlEscape(experiment.experimentPlanName)}</strong></div>
+          <div class="readonly-field"><span>scenario_id</span><strong>${htmlEscape(experiment.scenario_id || experiment.scenarioId)}</strong></div>
+          <div class="readonly-field"><span>scenario_version</span><strong>${htmlEscape(experiment.scenario_version)}</strong></div>
           <div class="readonly-field"><span>样本量</span><strong>${experiment.samples}</strong></div>
           <div class="readonly-field"><span>随机种子</span><strong>${experiment.seed}</strong></div>
+          <div class="readonly-field"><span>run_type</span><strong>${htmlEscape(experiment.runType || "monte_carlo")}</strong></div>
           <div class="readonly-field"><span>run_id</span><strong>${htmlEscape(backendRun?.run_id || experiment.runId || "尚未启动")}</strong></div>
-          <div class="readonly-field"><span>artifact_id</span><strong>${htmlEscape(backendArtifactManifest?.artifact_manifest_id || experiment.artifactId || "等待生成")}</strong></div>
+          <div class="readonly-field"><span>artifact_manifest_id</span><strong>${htmlEscape(backendArtifactManifest?.artifact_manifest_id || experiment.artifactManifestId || experiment.artifactId || "等待生成")}</strong></div>
+        </div>
+        <div class="backend-run-chain">
+          <span>run / artifact / projection 来源</span>
+          <table><tbody>${sourceRows.map(([label, value]) => `<tr><th>${htmlEscape(label)}</th><td>${htmlEscape(value)}</td></tr>`).join("")}</tbody></table>
         </div>
         <div class="mc-progress">
           <span>实验进度</span>
@@ -5038,6 +5129,17 @@ function renderAnalysisTaskList(page, title) {
         linkedMonteCarloExperimentId: "未绑定",
         preview: true
       }];
+  const taskRows = displayTasks.map((task) => {
+    const linkedExperiment = monteCarloExperimentByBusinessId(task.linkedMonteCarloExperimentId);
+    const sourceRows = linkedExperiment ? monteCarloExperimentSourceRows(linkedExperiment) : [];
+    return {
+      task,
+      linkedExperiment,
+      runSource: sourceRows.find(([label]) => label === "run source")?.[1] || "未绑定",
+      artifactSource: sourceRows.find(([label]) => label === "artifact source")?.[1] || "未绑定",
+      projectionSource: sourceRows.find(([label]) => label === "projection source")?.[1] || "未配置"
+    };
+  });
   return `
     <section class="analysis-task-panel">
       <div class="section-head">
@@ -5065,8 +5167,8 @@ function renderAnalysisTaskList(page, title) {
       </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>任务</th><th>方案</th><th>样本量</th><th>随机种子</th><th>状态</th><th>linkedMonteCarloExperimentId</th><th>mc_experiment_id</th><th>操作</th></tr></thead>
-          <tbody>${displayTasks.map((task) => `
+          <thead><tr><th>任务</th><th>方案</th><th>样本量</th><th>随机种子</th><th>状态</th><th>linkedMonteCarloExperimentId</th><th>mc_experiment_id</th><th>experiment_id</th><th>run/artifact/projection 来源</th><th>操作</th></tr></thead>
+          <tbody>${taskRows.map(({ task, linkedExperiment, runSource, artifactSource, projectionSource }) => `
             <tr>
               <td>${htmlEscape(task.name)}</td>
               <td>${htmlEscape(task.experimentPlanName)}</td>
@@ -5074,7 +5176,9 @@ function renderAnalysisTaskList(page, title) {
               <td>${task.seed}</td>
               <td><span class="badge">${htmlEscape(task.status)}</span></td>
               <td>${htmlEscape(task.linkedMonteCarloExperimentId)}</td>
-              <td>${htmlEscape(task.linkedMonteCarloExperimentId)}</td>
+              <td>${htmlEscape(linkedExperiment?.mc_experiment_id || task.linkedMonteCarloExperimentId)}</td>
+              <td>${htmlEscape(linkedExperiment?.experiment_id || "未绑定")}</td>
+              <td>${htmlEscape(`run=${runSource}; artifact=${artifactSource}; projection=${projectionSource}`)}</td>
               <td class="table-action-cell">
                 <button type="button" class="inline-action" data-analysis-action="edit" data-analysis-task-id="${htmlEscape(task.id)}" ${task.preview ? "disabled" : ""}>编辑</button>
                 <button type="button" class="btn-danger" data-analysis-action="delete" data-analysis-task-id="${htmlEscape(task.id)}" ${task.preview ? "disabled" : ""}>删除</button>
@@ -5087,7 +5191,107 @@ function renderAnalysisTaskList(page, title) {
   `;
 }
 
-function formalAnalysisBoundary() {
+function currentAnalysisTaskForPage(page) {
+  const tasks = analysisTaskListForPage(page);
+  return tasks.find((task) => task.id === selectedAnalysisTaskId) || tasks[0] || null;
+}
+
+function artifactText(artifact) {
+  return [
+    artifact?.kind,
+    artifact?.type,
+    artifact?.artifact_type,
+    artifact?.name,
+    artifact?.path,
+    artifact?.artifact_id,
+    artifact?.id
+  ].filter(Boolean).join("|").toLowerCase();
+}
+
+function artifactMatchesAny(artifact, tokens) {
+  const text = artifactText(artifact);
+  return tokens.some((token) => text.includes(token));
+}
+
+function currentArtifactRows() {
+  return Array.isArray(backendArtifactManifest?.artifacts) ? backendArtifactManifest.artifacts : [];
+}
+
+function monteCarloBaseArtifacts() {
+  return currentArtifactRows().filter((artifact) => artifactMatchesAny(artifact, [
+    "monte_carlo",
+    "monte-carlo",
+    "large_sample",
+    "large-sample",
+    "sample_metrics",
+    "aggregate"
+  ]));
+}
+
+function analysisProjectionArtifacts(analysisType = "") {
+  const projectionType = analysisProjectionTypeForAnalysisType(analysisType);
+  return currentArtifactRows().filter((artifact) => {
+    const text = artifactText(artifact);
+    return text.includes(projectionType)
+      || artifact?.projection_type === projectionType
+      || artifact?.analysis_type === projectionType;
+  });
+}
+
+function allAnalysisProjectionArtifacts() {
+  return [
+    "spare_shortfall",
+    "carry_list",
+    "mission_reliability",
+    "downtime_factors"
+  ].flatMap((analysisType) => analysisProjectionArtifacts(analysisType));
+}
+
+function analysisProjectionTypeForAnalysisType(analysisType) {
+  return ANALYSIS_PROJECTION_TYPES.find((item) => item.analysisType === analysisType)?.analysisType || "large_sample_summary";
+}
+
+function mappingProvenanceVersion() {
+  const provenance = backendRun?.compiler_provenance
+    || backendRun?.compiled_from?.mapping_provenance
+    || backendRun?.simulation_experiment_base?.mapping_provenance
+    || backendRunResult?.compiler_provenance
+    || backendRunResult?.compiled_from?.mapping_provenance
+    || backendRunChain?.compiler_provenance
+    || null;
+  return provenance?.mapping_version || provenance?.version || provenance?.model_family || "";
+}
+
+function formalAnalysisBoundaryReason({ state, provenance, linkedExperiment, runMatchesLinkedExperiment, runTypeIsMonteCarlo, projectionArtifacts, failedCompiler }) {
+  if (state === "unconfigured") return "未创建分析任务或未绑定 linkedMonteCarloExperimentId。";
+  if (state === "pending") return "已配置分析任务，但绑定的 Monte Carlo 实验尚未运行。";
+  if (state === "running") return `绑定的 Monte Carlo 实验正在运行，进度 ${normalizeProgress(linkedExperiment?.progress)}%。`;
+  if (state === "failed") return failedCompiler ? compileGateStatusText(backendRun) : "绑定的 Monte Carlo 实验运行失败。";
+  if (!runMatchesLinkedExperiment) return "当前后端 run_id 与 linkedMonteCarloExperimentId 绑定的实验不一致。";
+  if (!runTypeIsMonteCarlo) return "当前 run 不是 run_type=monte_carlo。";
+  if (!provenance) return "缺少 compiler provenance。";
+  if (monteCarloBaseArtifacts().length === 0) return "缺少正式 Monte Carlo artifact。";
+  if (projectionArtifacts.length === 0) return "缺少当前分析类型的 analysis projection artifact。";
+  return "本页四类分析值来自前端 singleResult 局部推导，仅保留为本地预览。";
+}
+
+function renderFormalAnalysisSourceTable(boundary) {
+  const linkedExperiment = boundary.linkedExperiment;
+  const rows = [
+    ["linkedMonteCarloExperimentId", boundary.task?.linkedMonteCarloExperimentId || "未绑定"],
+    ["mc_experiment_id", linkedExperiment?.mc_experiment_id || "未绑定"],
+    ["run_id", linkedExperiment?.runId || backendRun?.run_id || "未运行"],
+    ["run_type", backendRun?.run_type || linkedExperiment?.runType || "未知"],
+    ["artifact_manifest_id", backendArtifactManifest?.artifact_manifest_id || linkedExperiment?.artifactManifestId || "等待生成"],
+    ["projection", boundary.analysisArtifacts.map((artifact) => artifact.artifact_id || artifact.id || artifact.path || artifact.kind).filter(Boolean).join(" / ") || "未配置"],
+    ["mapping/provenance", mappingProvenanceVersion() || "等待 compiler provenance"]
+  ];
+  return `<table><tbody>${rows.map(([label, value]) => `<tr><th>${htmlEscape(label)}</th><td>${htmlEscape(value)}</td></tr>`).join("")}</tbody></table>`;
+}
+
+function formalAnalysisBoundary(page) {
+  const task = currentAnalysisTaskForPage(page);
+  const linkedExperiment = task?.linkedMonteCarloExperimentId ? monteCarloExperimentByBusinessId(task.linkedMonteCarloExperimentId) : null;
   const provenance = backendRun?.compiler_provenance
     || backendRun?.compiled_from?.mapping_provenance
     || backendRunResult?.compiler_provenance
@@ -5095,12 +5299,47 @@ function formalAnalysisBoundary() {
     || backendRunChain?.compiler_provenance
     || backendRun?.error?.details?.provenance
     || null;
-  const formalUnlocked = false;
+  const runStatus = backendRun?.status || linkedExperiment?.status || "";
+  const failedCompiler = backendRun?.status === "failed" && backendRun?.error?.details?.issues?.length;
+  const runFailed = backendRun?.status === "failed" || linkedExperiment?.status === "运行失败";
+  const running = ["queued", "running", "pending", "运行中"].includes(String(runStatus).toLowerCase()) || linkedExperiment?.status === "运行中";
+  const runMatchesLinkedExperiment = Boolean(linkedExperiment?.runId && backendRun?.run_id && linkedExperiment.runId === backendRun.run_id);
+  const runTypeIsMonteCarlo = backendRun?.run_type === "monte_carlo"
+    || linkedExperiment?.runType === "monte_carlo"
+    || monteCarloBaseArtifacts().length > 0;
+  const projectionArtifacts = analysisProjectionArtifacts(analysisTypeForPage(page));
+  const analysisArtifacts = projectionArtifacts;
+  const formalUnlocked = Boolean(
+    task
+    && linkedExperiment
+    && runMatchesLinkedExperiment
+    && runTypeIsMonteCarlo
+    && !runFailed
+    && !running
+    && provenance
+    && monteCarloBaseArtifacts().length > 0
+    && analysisArtifacts.length > 0
+  );
+  const state = !task || task.preview || !task.linkedMonteCarloExperimentId
+    ? "unconfigured"
+    : !linkedExperiment || !linkedExperiment.runId
+      ? "pending"
+      : runFailed
+        ? "failed"
+        : running
+          ? "running"
+          : formalUnlocked
+            ? "formal"
+            : "local_preview";
   return {
     formalUnlocked,
+    state,
+    task,
+    linkedExperiment,
     provenance,
-    analysisArtifacts: [],
-    reason: provenance ? "缺少正式 analysis artifact" : "缺少 compiler provenance"
+    analysisArtifacts,
+    monteCarloArtifacts: monteCarloBaseArtifacts(),
+    reason: formalAnalysisBoundaryReason({ state, provenance, linkedExperiment, runMatchesLinkedExperiment, runTypeIsMonteCarlo, projectionArtifacts, failedCompiler })
   };
 }
 
@@ -5109,24 +5348,33 @@ function renderFormalAnalysisBoundaryNote(boundary) {
     return `
       <div class="result-source-note">
         <strong>正式后端结果</strong>
-        <span>已读取 compiler provenance 和 analysis artifact，当前页面按后端产物展示。</span>
+        <span>已读取正式 Monte Carlo artifact 和 analysis projection，当前页面按绑定的 MC 产物展示。</span>
+        ${renderFormalAnalysisSourceTable(boundary)}
       </div>
     `;
   }
-  const failedCompiler = backendRun?.status === "failed" && backendRun?.error?.details?.issues?.length;
+  const failedCompiler = boundary.state === "failed" && backendRun?.error?.details?.issues?.length;
+  const titleByState = {
+    unconfigured: "未配置",
+    pending: "待运行",
+    running: "运行中",
+    failed: failedCompiler ? "输入未通过 Scenario compiler" : "运行失败",
+    local_preview: "本地预览，不是正式后端仿真结果"
+  };
   return `
     <div class="result-source-note">
-      <strong>${failedCompiler ? "输入未通过 Scenario compiler" : "本地预览，不是正式后端仿真结果"}</strong>
-      <span>${failedCompiler ? compileGateStatusText(backendRun) : "本页四类分析值来自前端 singleResult 局部推导，仅保留为本地预览。"}</span>
-      <span>${boundary.reason}；M6.1 尚未产出正式四类分析 artifact。</span>
+      <strong>${titleByState[boundary.state] || "本地预览，不是正式后端仿真结果"}</strong>
+      <span>${failedCompiler ? compileGateStatusText(backendRun) : boundary.reason}</span>
+      <span>只有绑定的 Monte Carlo 实验完成并产出正式 MC artifact/projection 后，才显示正式结果。</span>
+      ${renderFormalAnalysisSourceTable(boundary)}
     </div>
   `;
 }
 
 function renderAnalysisDashboard({ title, mode, subtitle, config = "", metrics, body }) {
-  const boundary = formalAnalysisBoundary();
-  const metricSuffix = boundary.formalUnlocked ? "" : "<em>本地预览</em>";
   const page = getFeaturePageById(selectedFeatureId);
+  const boundary = formalAnalysisBoundary(page);
+  const metricSuffix = boundary.formalUnlocked ? "" : "<em>本地预览</em>";
   return `
     <div class="analysis-dashboard">
       ${renderAnalysisTaskList(page, title)}

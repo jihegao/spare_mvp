@@ -82,6 +82,19 @@ export function createBackendApiClient({ baseUrl = DEFAULT_API_BASE, transport, 
         }
       });
     },
+    startMonteCarloRun(projectId, experimentPlanId, modelFamily = "smoke", monteCarloExperimentId = "") {
+      return request({
+        method: "POST",
+        path: "/runs",
+        body: {
+          project_id: projectId,
+          experiment_plan_id: experimentPlanId,
+          model_family: modelFamily,
+          run_type: "monte_carlo",
+          ...(monteCarloExperimentId ? { mc_experiment_id: monteCarloExperimentId } : {})
+        }
+      });
+    },
     getRunStatus(runId) {
       return request({ method: "GET", path: `/runs/${encodeURIComponent(runId)}` });
     },

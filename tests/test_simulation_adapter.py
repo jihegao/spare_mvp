@@ -257,6 +257,35 @@ class SimulationAdapterTest(unittest.TestCase):
                 target = (output_root / artifact_path).resolve()
                 self.assertTrue(target.is_relative_to(output_root))
 
+    def test_run_monte_carlo_scenario_rejects_invalid_inputs_before_writing_artifacts(self) -> None:
+        project = self._load_fixture("smoke_project.json")
+        scenario = self.adapter.compile_scenario(project)
+        invalid_cases = [
+            ("samples zero", {"sample_count": 0}, "samples"),
+            ("samples negative", {"sample_count": -1}, "samples"),
+            ("samples non numeric", {"sample_count": "bad"}, "samples"),
+            ("samples above limit", {"sample_count": 2000}, "samples"),
+            ("support capacity zero", {"sweep": {"supportCapacities": [0]}}, "monteCarlo.supportCapacities"),
+            ("support capacity negative", {"sweep": {"supportCapacities": [-2]}}, "monteCarlo.supportCapacities"),
+            ("failure rate non numeric", {"sweep": {"failureRates": [0.05, "bad"]}}, "monteCarlo.failureRates"),
+            ("spare multiplier non numeric", {"sweep": {"spareMultipliers": [1.0, "bad"]}}, "monteCarlo.spareMultipliers"),
+        ]
+
+        for label, kwargs, field_path in invalid_cases:
+            with self.subTest(label), tempfile.TemporaryDirectory() as tmp:
+                with self.assertRaises(AdapterError) as ctx:
+                    self.adapter.run_monte_carlo_scenario(
+                        scenario,
+                        output_dir=Path(tmp),
+                        steps=1,
+                        run_id=f"run-invalid-{label.replace(' ', '-')}",
+                        **kwargs,
+                    )
+
+                self.assertEqual(ctx.exception.code, "bad_analysis_request")
+                self.assertEqual(ctx.exception.details["field_path"], field_path)
+                self.assertEqual(list(Path(tmp).glob("**/artifact-manifest.json")), [])
+
 
 if __name__ == "__main__":
     unittest.main()

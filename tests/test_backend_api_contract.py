@@ -14,6 +14,13 @@ from src.spare_mvp_contract.adapter import AdapterError, SimulationAdapter
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+M6_2_MONTE_CARLO_ARTIFACT_KINDS = {
+    "monte_carlo_base",
+    "analysis_projection_spare_shortfall",
+    "analysis_projection_carry_list",
+    "analysis_projection_mission_reliability",
+    "analysis_projection_downtime_factors",
+}
 
 
 class RecordingAdapter(SimulationAdapter):
@@ -146,6 +153,109 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(status["result_summary_id"], submitted["result_summary_id"])
         self.assertEqual(status["artifact_manifest_id"], submitted["artifact_manifest_id"])
         self.assertEqual(self.adapter.run_calls[0][1], 2)
+
+    def test_run_service_submits_formal_monte_carlo_run_and_persists_projection_artifacts(self) -> None:
+        project = self._fixture("smoke_project.json")
+        branch_project = copy.deepcopy(project)
+        branch_project["experiment"]["samples"] = 8
+        branch_project["monteCarlo"] = {
+            "failureRates": [0.06, 0.08],
+            "spareMultipliers": [0.75, 1.0],
+            "supportCapacities": [2, 3],
+        }
+        saved = self.api.save_project(project)
+        snapshot = self.api.create_modeling_snapshot(saved["project_id"])
+        plan = self.api.create_experiment_plan(
+            saved["project_id"],
+            {
+                "name": "formal mc status",
+                "steps": 2,
+                "samples": 8,
+                "seed": branch_project["experiment"]["seed"],
+                "projectJson": branch_project,
+                "analysisRequests": {
+                    "spareShortfall": {"enabled": True},
+                    "carryList": {"enabled": True},
+                    "missionReliability": {"enabled": True},
+                    "downtimeFactors": {"enabled": True},
+                },
+            },
+        )
+        service = RunService(self.repository, self.adapter, self.api.output_dir)
+
+        submitted = service.submit_run(
+            {
+                "project_id": saved["project_id"],
+                "experiment_plan_id": plan["experiment_plan_id"],
+                "model_family": "smoke",
+                "run_type": "monte_carlo",
+            }
+        )
+        status = service.get_run_status(submitted["run_id"])
+        stored_run = self.api.get_run(submitted["run_id"])
+        manifest = self.api.get_run_artifacts(submitted["run_id"])
+        kinds = {artifact["kind"] for artifact in manifest["artifacts"]}
+        base_artifact = next(artifact for artifact in manifest["artifacts"] if artifact["kind"] == "monte_carlo_base")
+        projection_artifacts = [
+            artifact
+            for artifact in manifest["artifacts"]
+            if artifact["kind"].startswith("analysis_projection_")
+        ]
+
+        self.assertEqual(submitted["status"], "succeeded")
+        self.assertEqual(submitted["run_type"], "monte_carlo")
+        self.assertEqual(status["run_type"], "monte_carlo")
+        self.assertEqual(stored_run["run_type"], "monte_carlo")
+        self.assertEqual(status["modeling_snapshot_id"], snapshot["snapshot_id"])
+        self.assertEqual(kinds, M6_2_MONTE_CARLO_ARTIFACT_KINDS)
+        self.assertEqual(len(projection_artifacts), 4)
+        self.assertTrue(all(artifact["source_artifact_id"] == base_artifact["artifact_id"] for artifact in projection_artifacts))
+        self.assertTrue(all(artifact["schema_version"] == "analysis-projection-v0" for artifact in projection_artifacts))
+
+    def test_run_service_rejects_invalid_monte_carlo_inputs_without_formal_artifacts(self) -> None:
+        project = self._fixture("smoke_project.json")
+        saved = self.api.save_project(project)
+        self.api.create_modeling_snapshot(saved["project_id"])
+        plan = self.api.create_experiment_plan(
+            saved["project_id"],
+            {
+                "name": "invalid mc inputs",
+                "steps": 1,
+                "samples": 8,
+                "projectJson": project,
+            },
+        )
+        service = RunService(self.repository, self.adapter, self.api.output_dir)
+        invalid_cases = [
+            ("samples zero", {"samples": 0}, "samples"),
+            ("samples negative", {"samples": -1}, "samples"),
+            ("samples non numeric", {"samples": "bad"}, "samples"),
+            ("samples above limit", {"samples": 2000}, "samples"),
+            ("support capacity zero", {"sweep": {"supportCapacities": [0]}}, "monteCarlo.supportCapacities"),
+            ("support capacity negative", {"sweep": {"supportCapacities": [-2]}}, "monteCarlo.supportCapacities"),
+            ("failure rate non numeric", {"sweep": {"failureRates": [0.05, "bad"]}}, "monteCarlo.failureRates"),
+            ("spare multiplier non numeric", {"sweep": {"spareMultipliers": [1.0, "bad"]}}, "monteCarlo.spareMultipliers"),
+        ]
+
+        for label, overrides, field_path in invalid_cases:
+            with self.subTest(label):
+                submitted = service.submit_run(
+                    {
+                        "project_id": saved["project_id"],
+                        "experiment_plan_id": plan["experiment_plan_id"],
+                        "model_family": "smoke",
+                        "run_type": "monte_carlo",
+                        **overrides,
+                    }
+                )
+                manifest = self.api.get_run_artifacts(submitted["run_id"])
+
+                self.assertEqual(submitted["status"], "failed")
+                self.assertEqual(submitted["run_type"], "monte_carlo")
+                self.assertIsNone(submitted["result_summary_id"])
+                self.assertEqual(submitted["error"]["code"], "bad_analysis_request")
+                self.assertEqual(submitted["error"]["details"]["field_path"], field_path)
+                self.assertEqual(manifest["artifacts"], [])
 
     def test_run_service_rejects_missing_model_family_on_canonical_submit(self) -> None:
         project = self._fixture("smoke_project.json")

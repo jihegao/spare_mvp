@@ -114,6 +114,54 @@ test("frontend API client keeps legacy run aliases on canonical run routes", asy
   });
 });
 
+test("frontend API client preserves formal M6.2 monte carlo SimulationExperimentBase fields", async () => {
+  const calls = [];
+  const client = createBackendApiClient({
+    transport: async (request) => {
+      calls.push(request);
+      if (request.path === "/runs") {
+        return {
+          ...request.body,
+          run_id: "run-mc-ui",
+          scenario_id: "scenario-ui",
+          artifact_manifest_id: "artifact-manifest-run-mc-ui",
+          status: "queued",
+          phase: "queued",
+          progress: 0
+        };
+      }
+      throw new Error(`unexpected request ${request.method} ${request.path}`);
+    }
+  });
+  const runRequest = {
+    experiment_id: "experiment-mc-ui",
+    experiment_type: "monte_carlo",
+    module: "备件规划评估模块",
+    project_id: "project-ui",
+    experiment_plan_id: "plan-ui",
+    scenario_id: "scenario-ui",
+    scenario_version: "scenario-v0.1",
+    model_family: "smoke",
+    run_type: "monte_carlo",
+    seed: 20260620,
+    mc_experiment_id: "mc-exp-ui-001",
+    analysis_requests: {
+      spare_shortfall: true,
+      carry_list: true,
+      mission_reliability: true,
+      downtime_factors: true
+    }
+  };
+
+  const submitted = await client.submitRun(runRequest);
+
+  assert.equal(submitted.run_type, "monte_carlo");
+  assert.equal(submitted.experiment_id, "experiment-mc-ui");
+  assert.equal(submitted.mc_experiment_id, "mc-exp-ui-001");
+  assert.deepEqual(calls.map((call) => `${call.method} ${call.path}`), ["POST /runs"]);
+  assert.deepEqual(calls[0].body, runRequest);
+});
+
 test("frontend API client exposes explicit M5 modeling import methods", async () => {
   const calls = [];
   const client = createBackendApiClient({
@@ -444,7 +492,7 @@ test("frontend app routes project save run and result reads through API client",
   assert.match(appSource, /backendApi\.login/);
   assert.match(appSource, /localStorage\.setItem\(AUTH_SESSION_STORAGE_KEY/);
   assert.match(appSource, /async function saveCurrentProjectThroughApi/);
-  assert.match(appSource, /async function startExperimentRunThroughApi/);
+  assert.match(appSource, /async function startMonteCarloRunThroughApi/);
   assert.match(appSource, /async function refreshRunResultThroughApi/);
   assert.match(appSource, /backendApi\.saveProject/);
   assert.match(appSource, /backendApi\.getProject/);

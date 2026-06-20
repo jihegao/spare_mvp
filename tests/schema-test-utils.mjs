@@ -26,6 +26,23 @@ function collectSchemaErrors(schema, value, path, errors, rootSchema) {
     }
   }
 
+  if (schema.allOf) {
+    for (const branch of schema.allOf) {
+      collectSchemaErrors(branch, value, path, errors, rootSchema);
+    }
+  }
+
+  if (schema.if) {
+    const ifErrors = [];
+    collectSchemaErrors(schema.if, value, path, ifErrors, rootSchema);
+    if (ifErrors.length === 0 && schema.then) {
+      collectSchemaErrors(schema.then, value, path, errors, rootSchema);
+    }
+    if (ifErrors.length > 0 && schema.else) {
+      collectSchemaErrors(schema.else, value, path, errors, rootSchema);
+    }
+  }
+
   if (schema.const !== undefined && value !== schema.const) {
     errors.push(`${path} expected const ${JSON.stringify(schema.const)}, got ${JSON.stringify(value)}`);
   }
@@ -54,7 +71,11 @@ function collectSchemaErrors(schema, value, path, errors, rootSchema) {
     }
   }
 
-  if (schema.type === "object" && value && typeof value === "object" && !Array.isArray(value)) {
+  const hasObjectConstraints = schema.type === "object"
+    || schema.required
+    || schema.properties
+    || schema.additionalProperties === false;
+  if (hasObjectConstraints && value && typeof value === "object" && !Array.isArray(value)) {
     for (const key of schema.required || []) {
       if (!(key in value)) {
         errors.push(`${path}.${key} is required`);
