@@ -47,6 +47,7 @@ http://127.0.0.1:4173/front/
 17. M6.1.1 单次仿真输入对齐必须保留：ExperimentPlan config 携带完整分支 `projectJson`，RunService 编译单次 smoke run 时优先使用该分支输入，并在 mapping provenance 中记录 `experiment_plan_id` 和 `modeling_snapshot_id`；旧计划缺少 `projectJson` 时才回退 ModelingSnapshot。
 18. M6.2 统一 Monte Carlo / analysis profile 已形成同步本地切片：基于 M6.1/M6.1.1 编译通过的 Scenario 产出 `monte_carlo_base` 和四类 `analysis_projection_*` artifacts；单次仿真实验和 Monte Carlo 实验必须共享 `SimulationExperimentBase`，统一实验身份、方案、Scenario identity、随机种子、状态、进度、`run_id` 和 artifact 引用；Monte Carlo 实验是批量运行主账本，AnalysisTask 通过 `linkedMonteCarloExperimentId` 绑定 `mc_experiment_id`；正式 MC 必须使用 `run_type: "monte_carlo"`，不得回退到 `single`。未创建任务、未绑定 MC、运行中、运行失败、缺少 compiler provenance 或缺少 projection artifact 时，结果分析页不得显示正式结果图表。生产 worker queue、object storage、取消/重试、新 auth/audit scope、`aviation_support` 正式执行和 projection payload 驱动 KPI 仍是后续范围。
 19. 执行 `reports/2026-06-19-page-revision-suggestions/README.md` 页面建议时，必须保留系统管理下的「建模数据导入」工作台；已取消“删除此页面”。页面建议收口只修 M6.1.1 前置输入可用性、死按钮和字段口径，不得顺手实现 M6.1.1、M6.2 或删除 M5.2 导入入口。
+20. 执行 RunIntent / MonteCarloRunConfig / imported sample Project 收敛计划时，正式 MC 数值配置只能从 `ExperimentPlan.config.analysisRequests.largeSample` 生成 canonical `MonteCarloRunConfig`；不得继续让 request、Project draft、Adapter 和前端本地 sweep 多处猜值。页面静态数据不得一次性删除：先用已发布建模导入包生成示例 Project，`defaultScenario`、`runSimulation` 和 `runMonteCarlo` 只能保留为离线 fixture、本地预览或测试 fallback，不能作为正式结果来源。
 
 ## Mesa 后台契约服务（Contract Provider）
 

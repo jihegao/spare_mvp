@@ -21,6 +21,7 @@
 - [`reports/2026-06-19-page-revision-suggestions/README.md`](reports/2026-06-19-page-revision-suggestions/README.md)：2026-06-19 页面走查建议；已取消删除“建模数据导入”页，保留 M5.2 工作台。
 - [`docs/superpowers/plans/2026-06-20-page-suggestion-alignment.md`](docs/superpowers/plans/2026-06-20-page-suggestion-alignment.md)：页面建议收口计划，先修 M6.1.1 前置输入可用性和死按钮问题。
 - [`docs/superpowers/specs/2026-06-20-m6-2-unified-monte-carlo-analysis-design.md`](docs/superpowers/specs/2026-06-20-m6-2-unified-monte-carlo-analysis-design.md)：M6.2 统一 Monte Carlo artifact 和四类 analysis projection 设计。
+- [`docs/superpowers/plans/2026-06-20-runintent-mc-config-imported-sample-project.md`](docs/superpowers/plans/2026-06-20-runintent-mc-config-imported-sample-project.md)：RunIntent、canonical MonteCarloRunConfig 和“由建模导入生成示例项目”的后续收敛计划。
 - [`docs/superpowers/specs/2026-06-17-four-level-function-page-design.md`](docs/superpowers/specs/2026-06-17-four-level-function-page-design.md)：四级功能页面化设计规格。
 - [`docs/superpowers/plans/2026-06-17-local-aviation-ship-front-integration.md`](docs/superpowers/plans/2026-06-17-local-aviation-ship-front-integration.md)：本轮前端集成实现记录。
 - [`agent.md`](agent.md)：后续 agent 协作规则和 subagent 使用约定。
