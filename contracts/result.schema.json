@@ -19,6 +19,10 @@
     "run_id": { "type": "string" },
     "scenario_id": { "type": "string" },
     "scenario_version": { "type": "string" },
+    "compiler_provenance": {
+      "type": "object",
+      "additionalProperties": true
+    },
     "metrics": {
       "type": "object",
       "properties": {

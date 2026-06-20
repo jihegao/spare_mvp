@@ -202,14 +202,20 @@ test("results analysis pages are rendered as four dedicated ship-front aligned d
   assert.match(appSource, /停机贡献因素排序/);
 });
 
-test("M6.1 formal result boundary labels local analysis projections", async () => {
+test("M6.2 formal result boundary unlocks from projection artifacts", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   assert.match(appSource, /输入未通过 Scenario compiler/);
   assert.match(appSource, /本地预览，不是正式后端仿真结果/);
   assert.match(appSource, /缺少 compiler provenance/);
-  assert.match(appSource, /const formalUnlocked = false/);
-  assert.doesNotMatch(appSource, /analysisArtifacts\.length\s*>\s*0/);
-  assert.doesNotMatch(appSource, /analysis\|projection\|shortfall\|carry\|reliability\|downtime/);
+  assert.doesNotMatch(appSource, /const formalUnlocked = false/);
+  assert.match(appSource, /function analysisTypeForPage/);
+  assert.match(appSource, /function findAnalysisProjectionArtifact/);
+  assert.match(appSource, /analysisArtifacts\.length\s*>\s*0/);
+  assert.match(appSource, /未配置/);
+  assert.match(appSource, /待运行/);
+  assert.match(appSource, /运行中/);
+  assert.match(appSource, /运行失败/);
+  assert.match(appSource, /spare_shortfall\|carry_list\|mission_reliability\|downtime_factors/);
 });
 
 test("support organization and activity pages follow ship_front tree table editor structure", async () => {
@@ -950,7 +956,7 @@ test("monte carlo launch creates a run from the current experiment plan branch",
   assert.match(launchSource, /project_id: savedProject\.project_id/);
   assert.match(launchSource, /experiment_plan_id: experimentPlan\.experiment_plan_id/);
   assert.match(launchSource, /model_family: "smoke"/);
-  assert.match(launchSource, /run_type: "single"/);
+  assert.match(launchSource, /run_type: "monte_carlo"/);
   assert.doesNotMatch(launchSource, /backendApi\.startSimulationRun/);
 });
 

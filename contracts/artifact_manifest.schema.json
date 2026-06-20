@@ -26,7 +26,21 @@
           "artifact_id": { "type": "string" },
           "kind": {
             "type": "string",
-            "enum": ["input_project", "compiled_scenario", "snapshot", "time_series", "result_summary", "report", "log"]
+            "enum": [
+              "input_project",
+              "compiled_scenario",
+              "snapshot",
+              "time_series",
+              "result_summary",
+              "report",
+              "log",
+              "monte_carlo_base",
+              "large_sample_summary",
+              "spare_shortfall",
+              "carry_list",
+              "mission_reliability",
+              "downtime_factors"
+            ]
           },
           "path": { "type": "string" },
           "media_type": { "type": "string" },

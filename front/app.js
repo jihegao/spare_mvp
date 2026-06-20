@@ -3610,7 +3610,7 @@ async function startExperimentRunThroughApi() {
       project_id: savedProject.project_id,
       experiment_plan_id: experimentPlan.experiment_plan_id,
       model_family: "smoke",
-      run_type: "single"
+      run_type: "monte_carlo"
     });
     if (backendRun.status === "failed") {
       backendRunResult = null;
@@ -4652,7 +4652,40 @@ function renderDowntimeFactorAnalysis() {
   });
 }
 
-function formalAnalysisBoundary() {
+function analysisTypeForPage(page = null) {
+  const name = page?.name || "";
+  if (name.includes("备件短板")) return "spare_shortfall";
+  if (name.includes("携行")) return "carry_list";
+  if (name.includes("停机")) return "downtime_factors";
+  if (name.includes("任务可靠度") || name.includes("飞机任务可靠性")) return "mission_reliability";
+  return "";
+}
+
+function findAnalysisProjectionArtifact(kind) {
+  const artifacts = backendArtifactManifest?.artifacts || [];
+  return artifacts.find((artifact) => artifact.kind === kind) || null;
+}
+
+function analysisArtifactKindsContract() {
+  return "spare_shortfall|carry_list|mission_reliability|downtime_factors";
+}
+
+function analysisRunStateForKind(kind) {
+  if (!kind) return "未配置";
+  const output = Object.values(backendRunResult?.analysis_outputs || {})
+    .find((item) => item?.artifact_kind === kind);
+  if (output?.status === "unconfigured") return "未配置";
+  if (backendRun?.status === "failed") return "运行失败";
+  if (backendRun?.status && backendRun.status !== "succeeded") return "运行中";
+  if (!backendRun?.run_id) return "待运行";
+  return findAnalysisProjectionArtifact(kind) ? "完成" : "待运行";
+}
+
+function formalAnalysisBoundary(page = null) {
+  const analysisKind = analysisTypeForPage(page);
+  const analysisArtifact = findAnalysisProjectionArtifact(analysisKind);
+  const analysisArtifacts = (backendArtifactManifest?.artifacts || [])
+    .filter((artifact) => artifact.kind && analysisArtifactKindsContract().split("|").includes(artifact.kind));
   const provenance = backendRun?.compiler_provenance
     || backendRun?.compiled_from?.mapping_provenance
     || backendRunResult?.compiler_provenance
@@ -4660,11 +4693,19 @@ function formalAnalysisBoundary() {
     || backendRunChain?.compiler_provenance
     || backendRun?.error?.details?.provenance
     || null;
-  const formalUnlocked = false;
+  const formalUnlocked = Boolean(
+    provenance
+      && analysisArtifacts.length > 0
+      && analysisArtifact
+      && backendRun?.status === "succeeded"
+  );
   return {
     formalUnlocked,
     provenance,
-    analysisArtifacts: [],
+    analysisArtifacts,
+    analysisArtifact,
+    analysisKind,
+    state: analysisRunStateForKind(analysisKind),
     reason: provenance ? "缺少正式 analysis artifact" : "缺少 compiler provenance"
   };
 }
@@ -4674,7 +4715,8 @@ function renderFormalAnalysisBoundaryNote(boundary) {
     return `
       <div class="result-source-note">
         <strong>正式后端结果</strong>
-        <span>已读取 compiler provenance 和 analysis artifact，当前页面按后端产物展示。</span>
+        <span>已读取 compiler provenance 和 analysis artifact metadata，当前页面按后端产物状态展示。</span>
+        <span>状态：${htmlEscape(boundary.state)}；Artifact：${htmlEscape(boundary.analysisArtifact?.artifact_id || "-")}</span>
       </div>
     `;
   }
@@ -4683,14 +4725,30 @@ function renderFormalAnalysisBoundaryNote(boundary) {
     <div class="result-source-note">
       <strong>${failedCompiler ? "输入未通过 Scenario compiler" : "本地预览，不是正式后端仿真结果"}</strong>
       <span>${failedCompiler ? compileGateStatusText(backendRun) : "本页四类分析值来自前端 singleResult 局部推导，仅保留为本地预览。"}</span>
-      <span>${boundary.reason}；M6.1 尚未产出正式四类分析 artifact。</span>
+      <span>状态：${htmlEscape(boundary.state || "待运行")}；${boundary.reason}。</span>
     </div>
   `;
 }
 
 function renderAnalysisDashboard({ title, mode, subtitle, config = "", metrics, body }) {
-  const boundary = formalAnalysisBoundary();
+  const boundary = formalAnalysisBoundary({ name: title });
   const metricSuffix = boundary.formalUnlocked ? "" : "<em>本地预览</em>";
+  const dashboardMetrics = boundary.formalUnlocked
+    ? [
+        ["运行状态", boundary.state],
+        ["Run", backendRun?.run_id || "-"],
+        ["Artifact", boundary.analysisArtifact?.artifact_id || "-"],
+        ["样本数", backendRunResult?.metrics?.sample_count ?? "-"]
+      ]
+    : metrics;
+  const dashboardBody = boundary.formalUnlocked
+    ? `
+      <div class="decision-support-card">
+        <strong>正式 projection artifact 已生成</strong>
+        <span>当前 HTTP API 暂只返回 ArtifactManifest metadata；图表 payload API 接入前，本页不把前端 singleResult 局部推导标记为正式结果。</span>
+      </div>
+    `
+    : body;
   return `
     <div class="analysis-dashboard">
       <section class="analysis-filter-bar">
@@ -4699,9 +4757,9 @@ function renderAnalysisDashboard({ title, mode, subtitle, config = "", metrics, 
       </section>
       ${renderFormalAnalysisBoundaryNote(boundary)}
       ${config ? `<section class="analysis-config-grid">${config}</section>` : ""}
-      <section class="kpi-strip">${metrics.map(([label, value]) => `<div class="kpi-card"><span>${label}</span><strong>${value}</strong>${metricSuffix}</div>`).join("")}</section>
-      <section class="analysis-chart-panel">${body}</section>
-      <div class="decision-support-card"><strong>${mode}</strong><span>${boundary.formalUnlocked ? "结果已按后端 analysis artifact 展示，供当前项目评审。" : "本地预览，不是正式后端仿真结果；正式结果需等待 compiler provenance 与 analysis artifact 同时存在。"}</span></div>
+      <section class="kpi-strip">${dashboardMetrics.map(([label, value]) => `<div class="kpi-card"><span>${label}</span><strong>${value}</strong>${metricSuffix}</div>`).join("")}</section>
+      <section class="analysis-chart-panel">${dashboardBody}</section>
+      <div class="decision-support-card"><strong>${mode}</strong><span>${boundary.formalUnlocked ? "结果已按后端 analysis artifact metadata 展示；正式图表等待 artifact payload API 接入。" : "本地预览，不是正式后端仿真结果；正式结果需等待 compiler provenance 与 analysis artifact 同时存在。"}</span></div>
     </div>
   `;
 }

@@ -6,6 +6,10 @@ M6.2 必须建立在 M6.1 输入一致性和 M6.1.1 单次仿真输入对齐之�
 
 M6.2 的目标是把大样本运行和分析类型统一到一个 analysis profile 中：大样本评估生成基础 Monte Carlo artifact，备件短板、携行清单、任务可靠度、停机因素作为同一 artifact 的 projection，而不是各自独立做一套 demo 计算。
 
+## 当前实现状态
+
+截至 2026-06-20，本仓库已完成 M6.2 最小同步闭环：ExperimentPlan config 写入 `analysisRequests`，`RunService` 支持 `run_type=monte_carlo`，复用 M6.1/M6.1.1 Scenario compiler gate 后由 contract 层 `SimulationExperimentBase` / `MonteCarloBatchExperiment` 产出一个 `monte_carlo_base` artifact 和五类 projection artifact。前端结果分析页当前按 `ArtifactManifest.artifacts` metadata、ResultSummary `analysis_outputs` 和 run status 判定未配置、待运行、运行中、运行失败或完成；尚未实现独立 artifact payload 浏览 API、生产级 worker queue、对象存储、取消/重试或新的 auth/audit scope。
+
 ## 目标
 
 1. ExperimentPlan 增加 `analysisRequests` 或等价结构，记录实验类型勾选状态和配置面板参数。

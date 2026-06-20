@@ -248,6 +248,132 @@ class SimulationAdapterTest(unittest.TestCase):
                 target = (output_root / artifact_path).resolve()
                 self.assertTrue(target.is_relative_to(output_root))
 
+    def test_run_monte_carlo_batch_writes_base_artifact_with_provenance_seed_and_samples(self) -> None:
+        project = self._load_fixture("smoke_project.json")
+        scenario = self.adapter.compile_scenario(project)
+        plan_config = {
+            "name": "m6.2 batch",
+            "steps": 2,
+            "seed": 20260620,
+            "analysisRequests": {
+                "largeSample": {
+                    "enabled": True,
+                    "samples": 4,
+                    "sweep": {
+                        "failureRates": [0.05, 0.08],
+                        "spareMultipliers": [1.0, 1.25],
+                        "capacities": [2],
+                    },
+                },
+                "spareShortfall": {"enabled": True, "threshold": 0.95},
+                "carryList": {"enabled": True, "missionWindowHours": 72},
+                "missionReliability": {"enabled": True, "target": 0.9},
+                "downtimeFactors": {"enabled": True, "topN": 3},
+            },
+        }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            bundle = self.adapter.run_monte_carlo_batch(
+                scenario,
+                plan_config=plan_config,
+                output_dir=Path(tmp),
+                run_id="run-m6-2-batch",
+            )
+            manifest = bundle["artifact_manifest"]
+            base_artifact = next(artifact for artifact in manifest["artifacts"] if artifact["kind"] == "monte_carlo_base")
+            base_payload = json.loads((Path(tmp) / base_artifact["path"]).read_text(encoding="utf-8"))
+            projection_artifacts = [
+                artifact for artifact in manifest["artifacts"] if artifact["kind"] in {
+                    "large_sample_summary",
+                    "spare_shortfall",
+                    "carry_list",
+                    "mission_reliability",
+                    "downtime_factors",
+                }
+            ]
+
+            self.assertEqual(bundle["run"]["run_type"], "monte_carlo")
+            self.assertEqual(bundle["run"]["seed"], 20260620)
+            self.assertEqual(bundle["result"]["metrics"]["sample_count"], 4)
+            self.assertEqual(base_payload["compiled_scenario_identity"]["scenario_id"], scenario["scenario_id"])
+            self.assertEqual(base_payload["mapping_version"], "smoke-input-v0")
+            self.assertEqual(base_payload["seed"], 20260620)
+            self.assertEqual(base_payload["sample_count"], 4)
+            self.assertEqual(len(base_payload["per_sample_metrics"]), 4)
+            self.assertIn("failureRates", base_payload["sweep_dimensions"])
+            self.assertIn("mission_success_rate", base_payload["aggregate_metrics"])
+            self.assertIn("logs_summary", base_payload)
+            self.assertEqual(len(projection_artifacts), 5)
+            for artifact in projection_artifacts:
+                payload = json.loads((Path(tmp) / artifact["path"]).read_text(encoding="utf-8"))
+                self.assertEqual(payload["base_monte_carlo_artifact_id"], base_artifact["artifact_id"])
+                if artifact["kind"] == "carry_list":
+                    self.assertEqual(payload["summary"]["recommended_spare_multiplier"], 1.125)
+
+    def test_monte_carlo_batch_is_reproducible_for_same_seed_mapping_and_plan(self) -> None:
+        project = self._load_fixture("smoke_project.json")
+        scenario = self.adapter.compile_scenario(project)
+        plan_config = {
+            "steps": 2,
+            "seed": 7,
+            "analysisRequests": {
+                "largeSample": {
+                    "enabled": True,
+                    "samples": 3,
+                    "sweep": {
+                        "failureRates": [0.05, 0.08],
+                        "spareMultipliers": [1.0],
+                        "capacities": [2, 3],
+                    },
+                }
+            },
+        }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            first = self.adapter.run_monte_carlo_batch(
+                scenario,
+                plan_config=plan_config,
+                output_dir=Path(tmp),
+                run_id="run-mc-first",
+            )
+            second = self.adapter.run_monte_carlo_batch(
+                scenario,
+                plan_config=plan_config,
+                output_dir=Path(tmp),
+                run_id="run-mc-second",
+            )
+            first_base = next(artifact for artifact in first["artifact_manifest"]["artifacts"] if artifact["kind"] == "monte_carlo_base")
+            second_base = next(artifact for artifact in second["artifact_manifest"]["artifacts"] if artifact["kind"] == "monte_carlo_base")
+            first_payload = json.loads((Path(tmp) / first_base["path"]).read_text(encoding="utf-8"))
+            second_payload = json.loads((Path(tmp) / second_base["path"]).read_text(encoding="utf-8"))
+
+            self.assertEqual(first_payload["aggregate_metrics"], second_payload["aggregate_metrics"])
+            self.assertEqual(first_payload["per_sample_inputs"], second_payload["per_sample_inputs"])
+
+    def test_monte_carlo_batch_rejects_invalid_analysis_request_before_writing_artifacts(self) -> None:
+        project = self._load_fixture("smoke_project.json")
+        scenario = self.adapter.compile_scenario(project)
+        plan_config = {
+            "steps": 2,
+            "seed": 7,
+            "analysisRequests": {
+                "largeSample": {"enabled": True, "samples": 2},
+                "spareShortfall": {"enabled": True, "threshold": "bad"},
+            },
+        }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(AdapterError) as ctx:
+                self.adapter.run_monte_carlo_batch(
+                    scenario,
+                    plan_config=plan_config,
+                    output_dir=Path(tmp),
+                    run_id="run-invalid-analysis-config",
+                )
+
+            self.assertEqual(ctx.exception.code, "bad_analysis_request")
+            self.assertFalse(list(Path(tmp).rglob("monte-carlo-base.json")))
+
 
 if __name__ == "__main__":
     unittest.main()

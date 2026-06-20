@@ -297,7 +297,7 @@ M6.1 当前收束：输入一致性与 Scenario 编译 gate 已落地为窄闭�
 
 M6.1.1 当前收束：单次仿真输入已经从“ExperimentPlan 绑定 snapshot + steps”收敛为“ExperimentPlan 分支 Project JSON -> Scenario compiler”。前端创建实验方案时把完整分支 `projectJson` 写入 plan config；RunService 编译单次 smoke run 时优先消费该分支 Project JSON，并把 `experiment_plan_id`、`modeling_snapshot_id` 写入 mapping provenance。修改分支 seed、组件故障率或保障容量会进入后端 Scenario input 和 run artifact；旧计划缺少 `projectJson` 时仍回退到 ModelingSnapshot。
 
-M6.2 建议切片：统一 Monte Carlo / analysis profile。基于 M6.1/M6.1.1 已对齐的 Scenario 跑样本，产出统一 MC artifacts；“大样本评估”是基础 artifact，“备件短板”“携行清单”“任务可靠度”“停机因素”是同一 artifact 的 projection。仿真实验方案在 M6.2 保存实验基本信息（实验名称、仿真总时长、随机种子）和 `analysisRequests` 配置；Monte Carlo 实验页面显示样本完成进度和日志输出；方案列表显示“运行中”“已完成”或“运行失败”；未勾选或未通过编译的分析页显示“未配置”或编译失败，不渲染正式结果图表。M6.1/M6.1.1 明确不包含 Monte Carlo fan-out、官方四类 analysis artifact、worker queue、object storage、取消/重试或新的 auth/audit scope。
+M6.2 当前收束：统一 Monte Carlo / analysis profile 已完成同步本地最小闭环。基于 M6.1/M6.1.1 已对齐的 Scenario 跑样本，产出 `monte_carlo_base` artifact；“大样本评估”“备件短板”“携行清单”“任务可靠度”“停机因素”作为同一 artifact 的 projection，并在 ArtifactManifest 中引用同一个 base artifact。仿真实验方案保存 `analysisRequests` 配置，结果分析页按 ArtifactManifest metadata、ResultSummary `analysis_outputs` 和 run status 显示“未配置”“待运行”“运行中”“运行失败”或完成状态。当前仍未实现生产 worker queue、object storage、取消/重试、artifact payload 浏览 API 或新的 auth/audit scope。
 
 核心能力：
 

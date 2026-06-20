@@ -271,6 +271,25 @@ class SimulationAdapter:
 
         return {"run": run, "result": result, "artifact_manifest": manifest}
 
+    def run_monte_carlo_batch(
+        self,
+        scenario: dict[str, Any],
+        *,
+        plan_config: dict[str, Any],
+        output_dir: Path | str,
+        run_id: str | None = None,
+    ) -> dict[str, dict[str, Any]]:
+        """Run one local Monte Carlo batch from a compiled smoke Scenario."""
+        from src.spare_mvp_contract.experiments import MonteCarloBatchExperiment
+
+        experiment = MonteCarloBatchExperiment(ontology_path=self.ontology_path, output_dir=output_dir)
+        return experiment.run(
+            scenario,
+            plan_config=plan_config,
+            steps=_steps_from_plan_config(plan_config),
+            run_id=run_id,
+        )
+
     def _project_required_fields(self) -> list[str]:
         schema = json.loads((self.contracts_dir / "project.schema.json").read_text(encoding="utf-8"))
         return list(schema["required"])
@@ -479,3 +498,10 @@ def _safe_identifier(value: str) -> str:
     safe = re.sub(r"[^A-Za-z0-9_.-]+", "-", value).strip(".-")
     safe = safe.replace("..", ".")
     return safe or "scenario"
+
+
+def _steps_from_plan_config(plan_config: dict[str, Any]) -> int:
+    try:
+        return max(0, int(plan_config.get("steps", 3)))
+    except (TypeError, ValueError):
+        return 3

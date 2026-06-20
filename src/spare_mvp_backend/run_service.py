@@ -54,8 +54,12 @@ class RunService:
         if not project_id or not experiment_plan_id or raw_model_family in (None, ""):
             raise RunServiceError("bad_run_request", "project_id, experiment_plan_id, and model_family are required")
         model_family = str(raw_model_family)
-        if run_type != "single":
-            raise RunServiceError("unsupported_run_type", "M6.0 only supports run_type=single", run_type=run_type)
+        if run_type not in {"single", "monte_carlo"}:
+            raise RunServiceError(
+                "unsupported_run_type",
+                "M6.2 supports run_type=single or run_type=monte_carlo",
+                run_type=run_type,
+            )
 
         project = self.repository.get_project(project_id)
         plan = self.repository.get_experiment_plan(experiment_plan_id)
@@ -89,6 +93,7 @@ class RunService:
                     modeling_snapshot_id=plan.get("modeling_snapshot_id"),
                     project_for_run=project_for_run,
                     model_family=model_family,
+                    run_type=run_type,
                     compile_result=compile_result,
                 )
             scenario = compile_result["scenario"]
@@ -110,12 +115,27 @@ class RunService:
 
         self.repository.upsert_scenario(scenario)
         try:
-            bundle = self.adapter.run_scenario(
-                scenario,
-                output_dir=self.output_dir,
-                steps=_steps_from_plan(plan),
-                run_id=run_id,
-            )
+            if run_type == "monte_carlo":
+                run_monte_carlo_batch = getattr(self.adapter, "run_monte_carlo_batch", None)
+                if not callable(run_monte_carlo_batch):
+                    raise AdapterError(
+                        "unsupported_run_type",
+                        "adapter does not support Monte Carlo batch runs",
+                        run_type=run_type,
+                    )
+                bundle = run_monte_carlo_batch(
+                    scenario,
+                    plan_config=plan.get("config") or {},
+                    output_dir=self.output_dir,
+                    run_id=run_id,
+                )
+            else:
+                bundle = self.adapter.run_scenario(
+                    scenario,
+                    output_dir=self.output_dir,
+                    steps=_steps_from_plan(plan),
+                    run_id=run_id,
+                )
         except AdapterError as exc:
             return self._persist_failed_run(
                 run_id=run_id,
@@ -123,6 +143,7 @@ class RunService:
                 experiment_plan_id=experiment_plan_id,
                 modeling_snapshot_id=plan.get("modeling_snapshot_id"),
                 project_for_run=project_for_run,
+                run_type=run_type,
                 error=exc,
             )
 
@@ -151,6 +172,7 @@ class RunService:
         experiment_plan_id: str,
         modeling_snapshot_id: str | None,
         project_for_run: dict[str, Any],
+        run_type: str,
         error: AdapterError,
     ) -> dict[str, Any]:
         now = _utc_now()
@@ -171,7 +193,7 @@ class RunService:
             "model_id": model.get("model_id", "unknown"),
             "status": "failed",
             "phase": "failed",
-            "run_type": "single",
+            "run_type": run_type,
             "seed": scenario.get("simulation_inputs", {}).get("seed"),
             "progress": 0,
             "queued_at": now,
@@ -202,6 +224,7 @@ class RunService:
         modeling_snapshot_id: str | None,
         project_for_run: dict[str, Any],
         model_family: str,
+        run_type: str,
         compile_result: dict[str, Any],
     ) -> dict[str, Any]:
         now = _utc_now()
@@ -225,7 +248,7 @@ class RunService:
             "model_id": "ScenarioCompilerGate",
             "status": "failed",
             "phase": "failed",
-            "run_type": "single",
+            "run_type": run_type,
             "seed": _seed_from_project(project_for_run),
             "progress": 0,
             "queued_at": now,

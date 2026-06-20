@@ -21,6 +21,7 @@ class RecordingAdapter(SimulationAdapter):
         super().__init__(REPO_ROOT)
         self.compile_calls: list[tuple[dict, str]] = []
         self.run_calls: list[tuple[dict, int]] = []
+        self.monte_carlo_calls: list[tuple[dict, dict, str | None]] = []
 
     def compile_scenario(self, project: dict, model_family: str = "smoke") -> dict:
         self.compile_calls.append((copy.deepcopy(project), model_family))
@@ -39,6 +40,22 @@ class RecordingAdapter(SimulationAdapter):
     ) -> dict[str, dict]:
         self.run_calls.append((copy.deepcopy(scenario), steps, run_id))
         return super().run_scenario(scenario, output_dir=output_dir, steps=steps, run_id=run_id)
+
+    def run_monte_carlo_batch(
+        self,
+        scenario: dict,
+        *,
+        plan_config: dict,
+        output_dir: Path | str,
+        run_id: str | None = None,
+    ) -> dict[str, dict]:
+        self.monte_carlo_calls.append((copy.deepcopy(scenario), copy.deepcopy(plan_config), run_id))
+        return super().run_monte_carlo_batch(
+            scenario,
+            plan_config=plan_config,
+            output_dir=output_dir,
+            run_id=run_id,
+        )
 
 
 class FailingRunAdapter(RecordingAdapter):
@@ -68,6 +85,32 @@ class BackendApiContractTest(unittest.TestCase):
 
     def _fixture(self, name: str) -> dict:
         return json.loads((REPO_ROOT / "tests" / "fixtures" / name).read_text(encoding="utf-8"))
+
+    def _m62_analysis_config(self, project: dict, *, samples: int) -> dict:
+        return {
+            "name": "m6.2 analysis profile",
+            "steps": 2,
+            "seed": 20260620,
+            "projectJson": copy.deepcopy(project),
+            "analysisRequests": {
+                "largeSample": {
+                    "enabled": True,
+                    "samples": samples,
+                    "sweep": {
+                        "failureRates": [0.05, 0.08],
+                        "spareMultipliers": [1.0, 1.25],
+                        "capacities": [2, 3],
+                    },
+                },
+                "spareShortfall": {"enabled": True, "threshold": 0.95},
+                "carryList": {"enabled": True, "missionWindowHours": 72},
+                "missionReliability": {"enabled": True, "target": 0.9},
+                "downtimeFactors": {"enabled": True, "topN": 3},
+            },
+        }
+
+    def _read_artifact_payload(self, artifact: dict) -> dict:
+        return json.loads((Path(self.tempdir.name) / artifact["path"]).read_text(encoding="utf-8"))
 
     def test_smoke_backend_flow_persists_complete_run_chain(self) -> None:
         project = self._fixture("smoke_project.json")
@@ -403,6 +446,138 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(provenance["experiment_plan_id"], plan["experiment_plan_id"])
         self.assertEqual(provenance["modeling_snapshot_id"], snapshot["snapshot_id"])
         self.assertEqual(self.api.get_project(saved["project_id"]), project)
+
+    def test_run_service_accepts_monte_carlo_run_type_and_persists_mc_artifact_chain(self) -> None:
+        project = self._fixture("smoke_project.json")
+        saved = self.api.save_project(project)
+        snapshot = self.api.create_modeling_snapshot(saved["project_id"])
+        plan = self.api.create_experiment_plan(saved["project_id"], self._m62_analysis_config(project, samples=4))
+
+        submitted = self.api.submit_run(
+            {
+                "project_id": saved["project_id"],
+                "experiment_plan_id": plan["experiment_plan_id"],
+                "model_family": "smoke",
+                "run_type": "monte_carlo",
+            }
+        )
+        stored = self.api.get_run(submitted["run_id"])
+        result = self.api.get_run_result(submitted["run_id"])
+        manifest = self.api.get_run_artifacts(submitted["run_id"])
+        chain = self.api.get_run_chain(submitted["run_id"])
+
+        artifact_kinds = {artifact["kind"] for artifact in manifest["artifacts"]}
+        base_artifact = next(artifact for artifact in manifest["artifacts"] if artifact["kind"] == "monte_carlo_base")
+        projection_artifacts = [
+            artifact for artifact in manifest["artifacts"] if artifact["kind"] in {
+                "large_sample_summary",
+                "spare_shortfall",
+                "carry_list",
+                "mission_reliability",
+                "downtime_factors",
+            }
+        ]
+        base_payload = self._read_artifact_payload(base_artifact)
+        projection_base_ids = {
+            self._read_artifact_payload(artifact)["base_monte_carlo_artifact_id"]
+            for artifact in projection_artifacts
+        }
+
+        self.assertEqual(submitted["status"], "succeeded")
+        self.assertEqual(submitted["phase"], "completed")
+        self.assertEqual(submitted["progress"], 1)
+        self.assertEqual(submitted["run_type"], "monte_carlo")
+        self.assertEqual(stored["run_type"], "monte_carlo")
+        self.assertEqual(result["metrics"]["sample_count"], 4)
+        self.assertEqual(result["metrics"]["seed"], 20260620)
+        self.assertIn("aggregate_metrics", result["metrics"])
+        self.assertEqual(result["compiler_provenance"]["experiment_plan_id"], plan["experiment_plan_id"])
+        self.assertEqual(chain["modeling_snapshot_id"], snapshot["snapshot_id"])
+        self.assertEqual(chain["experiment_plan_id"], plan["experiment_plan_id"])
+        self.assertEqual(chain["artifact_manifest_id"], submitted["artifact_manifest_id"])
+        self.assertIn("monte_carlo_base", artifact_kinds)
+        self.assertEqual(len(projection_artifacts), 5)
+        self.assertEqual(projection_base_ids, {base_artifact["artifact_id"]})
+        self.assertEqual(base_payload["compiled_scenario_identity"]["scenario_id"], submitted["scenario_id"])
+        self.assertEqual(base_payload["mapping_provenance"]["experiment_plan_id"], plan["experiment_plan_id"])
+        self.assertEqual(base_payload["mapping_provenance"]["modeling_snapshot_id"], snapshot["snapshot_id"])
+        self.assertEqual(len(self.adapter.monte_carlo_calls), 1)
+        self.assertEqual(self.adapter.run_calls, [])
+
+    def test_monte_carlo_run_reuses_compiler_gate_and_blocks_uncompiled_model_family(self) -> None:
+        project = self._fixture("aviation_support_project.json")
+        saved = self.api.save_project(project)
+        self.api.create_modeling_snapshot(saved["project_id"])
+        plan = self.api.create_experiment_plan(saved["project_id"], self._m62_analysis_config(project, samples=2))
+
+        submitted = self.api.submit_run(
+            {
+                "project_id": saved["project_id"],
+                "experiment_plan_id": plan["experiment_plan_id"],
+                "model_family": "aviation_support",
+                "run_type": "monte_carlo",
+            }
+        )
+        artifacts = self.api.get_run_artifacts(submitted["run_id"])
+
+        self.assertEqual(submitted["status"], "failed")
+        self.assertEqual(submitted["phase"], "failed")
+        self.assertIsNone(submitted["scenario_id"])
+        self.assertEqual(submitted["run_type"], "monte_carlo")
+        self.assertEqual(submitted["error"]["code"], "unsupported_model_family")
+        self.assertEqual(artifacts["artifacts"], [])
+        self.assertEqual(self.adapter.run_calls, [])
+        self.assertEqual(self.adapter.monte_carlo_calls, [])
+
+    def test_analysis_projection_artifacts_only_created_for_enabled_requests(self) -> None:
+        project = self._fixture("smoke_project.json")
+        saved = self.api.save_project(project)
+        self.api.create_modeling_snapshot(saved["project_id"])
+        config = self._m62_analysis_config(project, samples=3)
+        config["analysisRequests"]["carryList"]["enabled"] = False
+        plan = self.api.create_experiment_plan(saved["project_id"], config)
+
+        submitted = self.api.submit_run(
+            {
+                "project_id": saved["project_id"],
+                "experiment_plan_id": plan["experiment_plan_id"],
+                "model_family": "smoke",
+                "run_type": "monte_carlo",
+            }
+        )
+        manifest = self.api.get_run_artifacts(submitted["run_id"])
+        result = self.api.get_run_result(submitted["run_id"])
+
+        artifact_kinds = {artifact["kind"] for artifact in manifest["artifacts"]}
+        self.assertIn("monte_carlo_base", artifact_kinds)
+        self.assertIn("spare_shortfall", artifact_kinds)
+        self.assertNotIn("carry_list", artifact_kinds)
+        self.assertEqual(result["analysis_outputs"]["carryList"]["status"], "unconfigured")
+
+    def test_monte_carlo_invalid_analysis_request_persists_failed_status_envelope(self) -> None:
+        project = self._fixture("smoke_project.json")
+        saved = self.api.save_project(project)
+        self.api.create_modeling_snapshot(saved["project_id"])
+        config = self._m62_analysis_config(project, samples=2)
+        config["analysisRequests"]["spareShortfall"]["threshold"] = "bad"
+        plan = self.api.create_experiment_plan(saved["project_id"], config)
+
+        submitted = self.api.submit_run(
+            {
+                "project_id": saved["project_id"],
+                "experiment_plan_id": plan["experiment_plan_id"],
+                "model_family": "smoke",
+                "run_type": "monte_carlo",
+            }
+        )
+        artifacts = self.api.get_run_artifacts(submitted["run_id"])
+
+        self.assertEqual(submitted["status"], "failed")
+        self.assertEqual(submitted["phase"], "failed")
+        self.assertEqual(submitted["run_type"], "monte_carlo")
+        self.assertEqual(submitted["error"]["code"], "bad_analysis_request")
+        self.assertEqual(artifacts["artifacts"], [])
+        self.assertFalse(list(Path(self.tempdir.name).rglob("monte-carlo-base.json")))
 
     def test_repeated_smoke_runs_create_distinct_run_chains(self) -> None:
         project = self._fixture("smoke_project.json")

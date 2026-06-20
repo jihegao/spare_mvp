@@ -108,13 +108,44 @@ export function buildBackendProjectJson(scenario, project = {}) {
 }
 
 export function buildExperimentPlanConfig(projectJson) {
+  const samples = Number(projectJson.experiment?.samples ?? 1);
+  const seed = Number(projectJson.experiment?.seed ?? 0);
+  const monteCarlo = cloneJson(projectJson.monteCarlo || {});
   return {
     name: projectJson.experiment?.name || "frontend experiment",
     steps: Number(projectJson.experiment?.steps ?? 3),
-    samples: Number(projectJson.experiment?.samples ?? 1),
-    seed: Number(projectJson.experiment?.seed ?? 0),
+    samples,
+    seed,
     projectJson: cloneJson(projectJson),
-    monteCarlo: cloneJson(projectJson.monteCarlo || {})
+    monteCarlo,
+    analysisRequests: {
+      largeSample: {
+        enabled: true,
+        samples,
+        seed,
+        sweep: {
+          failureRates: cloneJson(monteCarlo.failureRates || []),
+          spareMultipliers: cloneJson(monteCarlo.spareMultipliers || []),
+          capacities: cloneJson(monteCarlo.supportCapacities || [])
+        }
+      },
+      spareShortfall: {
+        enabled: true,
+        threshold: 0.95
+      },
+      carryList: {
+        enabled: true,
+        missionWindowHours: 72
+      },
+      missionReliability: {
+        enabled: true,
+        target: 0.9
+      },
+      downtimeFactors: {
+        enabled: true,
+        topN: 10
+      }
+    }
   };
 }
 

@@ -202,6 +202,34 @@ test("experiment plan config preserves Monte Carlo branch sweep settings", () =>
       spareMultipliers: [0.75, 1, 1.25],
       supportCapacities: [2, 3],
       minRequiredSorties: [4, 5]
+    },
+    analysisRequests: {
+      largeSample: {
+        enabled: true,
+        samples: 24,
+        seed: 20260620,
+        sweep: {
+          failureRates: [0.06, 0.08, 0.1],
+          spareMultipliers: [0.75, 1, 1.25],
+          capacities: [2, 3]
+        }
+      },
+      spareShortfall: {
+        enabled: true,
+        threshold: 0.95
+      },
+      carryList: {
+        enabled: true,
+        missionWindowHours: 72
+      },
+      missionReliability: {
+        enabled: true,
+        target: 0.9
+      },
+      downtimeFactors: {
+        enabled: true,
+        topN: 10
+      }
     }
   });
 });
