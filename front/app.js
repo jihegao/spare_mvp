@@ -47,7 +47,7 @@ const DEMO_USERS = [
   { username: "data", role: "数据管理员" },
   { username: "user", role: "普通用户" }
 ];
-const DEMO_PROJECTS = [
+let demoProjects = [
   { id: "landbase-day-night", name: "陆基机群昼夜保障验证", baseCode: "LB-01", updatedAt: "2026-04-26", summary: "验证昼夜连续出动下的机场保障流程与资源配置。" },
   { id: "high-tempo-support", name: "陆基高强度出动保障压力测试", baseCode: "LB-03", updatedAt: "2026-04-28", summary: "评估多波次出动下备件、人员和保障设备的瓶颈。" },
   { id: "maintenance-rebalance", name: "陆基维修资源动态重配评估", baseCode: "LB-02", updatedAt: "2026-05-02", summary: "分析维修资源重配对任务可靠度和停机贡献的影响。" }
@@ -95,7 +95,7 @@ const SUPPORT_ACTIVITY_PLANS = [
     jobs: ["机务检查", "燃油加注", "挂弹作业", "通电检查"],
     tree: {
       id: "ops-root",
-      name: "使用保障活动",
+      name: "全部机型",
       children: [
         { id: "ops-f35", name: "F35", children: [
           { id: "ops-f35-patrol", name: "近海巡逻任务", children: [{ id: "ops-f35-patrol-pre", name: "飞行前准备" }, { id: "ops-f35-patrol-turn", name: "再次出动准备" }, { id: "ops-f35-patrol-post", name: "飞行后检查" }] },
@@ -115,7 +115,7 @@ const SUPPORT_ACTIVITY_PLANS = [
     jobs: ["定检准备", "航电检查", "液压系统检查", "记录归档"],
     tree: {
       id: "preventive-root",
-      name: "预防性维修活动",
+      name: "全部机型",
       children: [
         { id: "preventive-f35", name: "F35", children: [{ id: "preventive-f35-daily", name: "日检" }, { id: "preventive-f35-weekly", name: "周检" }, { id: "preventive-f35-phase", name: "阶段检" }] },
         { id: "preventive-f15", name: "F15", children: [{ id: "preventive-f15-daily", name: "日检" }, { id: "preventive-f15-weekly", name: "周检" }] }
@@ -161,6 +161,30 @@ const SYSTEM_PROJECT_DATA_ROWS = [
   { key: "spareBaseline", label: "备件基线", value: "发动机备件、航电模块、液压备件", owner: "项目独有数据" }
 ];
 
+const SYSTEM_DATA_MANAGEMENT_TABS = [
+  {
+    key: "modeling",
+    label: "建模数据",
+    rows: SYSTEM_PROJECT_DATA_ROWS
+  },
+  {
+    key: "experiment",
+    label: "实验配置",
+    rows: [
+      { key: "experimentPlans", label: "仿真实验方案", value: "方案列表 / 方案编辑 / Monte Carlo 实验", owner: "实验配置" },
+      { key: "runConfig", label: "运行配置", value: "steps / seed / 样本数 / sweep", owner: "实验配置" }
+    ]
+  },
+  {
+    key: "results",
+    label: "实验结果",
+    rows: [
+      { key: "runStatus", label: "运行状态", value: "run status / result summary / artifact manifest", owner: "实验结果" },
+      { key: "analysisTasks", label: "分析任务", value: "备件短板 / 携行清单 / 可靠度 / 停机因素", owner: "实验结果" }
+    ]
+  }
+];
+
 const SYSTEM_MODELING_GRANULARITY_ROWS = [
   { level: "项目层", object: "项目", relation: "包含任务剖面、装备、保障节点" },
   { level: "任务层", object: "任务剖面 / 基本任务 / 复合任务", relation: "复合任务编排基本任务，周期任务引用复合任务" },
@@ -174,6 +198,11 @@ let systemUsers = [
   { username: "user", name: "普通用户", role: "项目用户", status: "启用" }
 ];
 
+let selectedSystemUsernames = new Set();
+let permissionConfigFeature = "";
+let permissionConfigStatus = "请选择权限项配置角色权限";
+let activeSystemDataTab = "modeling";
+
 const SYSTEM_PERMISSION_ROWS = [
   { feature: "项目管理", admin: "管理", data: "编辑", user: "查看" },
   { feature: "装备RMS指标分配", admin: "管理", data: "编辑", user: "查看" },
@@ -182,12 +211,6 @@ const SYSTEM_PERMISSION_ROWS = [
   { feature: "结果分析", admin: "查看", data: "查看", user: "查看" }
 ];
 
-const SYSTEM_FORM_ROWS = [
-  { level: "装备任务建模", form: "基本任务/复合任务建模", field: "任务成功点、出发时间、任务编排", relation: "关联基本任务与复合任务" },
-  { level: "装备系统建模", form: "装备组成建模", field: "父节点、数量、连接类型、n中取k", relation: "关联装备故障与RMS指标" },
-  { level: "保障组织建模", form: "备件建模", field: "备件名称、型号、库存、适用机型", relation: "关联保障节点库存" },
-  { level: "保障活动建模", form: "使用保障活动建模", field: "活动类别、工序、资源需求", relation: "关联保障人员、设备、备件" }
-];
 const MODELING_IMPORT_DEMO_FIXTURE = {
   schemaVersion: "modeling-import-v1",
   importId: "import-carrier-day-night-001",
@@ -280,7 +303,8 @@ let systemUsersLoadStatus = "未加载";
 let systemUsersLoaded = false;
 let isLoggedIn = false;
 let currentUser = DEMO_USERS[2];
-let currentProject = DEMO_PROJECTS[0];
+let currentProject = demoProjects[0];
+let projectListStatus = "可添加项目，也可在项目条目中编辑或删除。";
 let selectedRoute = readRouteFromHash() || DEFAULT_ROUTE;
 let selectedFeatureId = readFeatureIdFromHash() || DEFAULT_FEATURE_ID;
 let selectedMesaView = "aircraft";
@@ -309,6 +333,9 @@ let selectedCompositeTaskId = "";
 let selectedCombatUnitMemberIndex = 0;
 let selectedSupportOrgNodeId = "base-level";
 let selectedSupportActivityJobKeys = new Set();
+let selectedSupportResourceKeys = new Set();
+let deletedSupportResourceKeys = new Set();
+let selectedBasicActivityKeys = new Set();
 
 const PERIODIC_WEEKDAY_FIELDS = [
   { key: "mondayCompositeTaskId", legacyKey: "monday", label: "周一" },
@@ -320,15 +347,10 @@ const PERIODIC_WEEKDAY_FIELDS = [
   { key: "sundayCompositeTaskId", legacyKey: "sunday", label: "周日" }
 ];
 
-const PERIODIC_DAY_FIELDS = [
-  { value: "1", label: "第一天" },
-  { value: "2", label: "第二天" },
-  { value: "3", label: "第三天" },
-  { value: "4", label: "第四天" },
-  { value: "5", label: "第五天" },
-  { value: "6", label: "第六天" },
-  { value: "7", label: "第七天" }
-];
+const PERIODIC_DAY_FIELDS = Array.from({ length: 30 }, (_, index) => ({
+  value: String(index + 1),
+  label: `第${index + 1}天`
+}));
 render();
 bindEvents();
 hydrateLastBackendRunFromApi();
@@ -369,6 +391,22 @@ function bindEvents() {
     const basicMissionDeleteButton = event.target.closest("[data-basic-mission-delete]");
     if (basicMissionDeleteButton) {
       deleteSelectedBasicMission();
+      markProjectDraftChanged();
+      render();
+      return;
+    }
+
+    const basicMissionPhaseAddButton = event.target.closest("[data-basic-mission-phase-add]");
+    if (basicMissionPhaseAddButton) {
+      addMissionPhase();
+      markProjectDraftChanged();
+      render();
+      return;
+    }
+
+    const basicMissionPhaseDeleteButton = event.target.closest("[data-basic-mission-phase-delete]");
+    if (basicMissionPhaseDeleteButton) {
+      deleteMissionPhase(Number(basicMissionPhaseDeleteButton.dataset.basicMissionPhaseDelete));
       markProjectDraftChanged();
       render();
       return;
@@ -434,6 +472,14 @@ function bindEvents() {
     const supportOrgNode = event.target.closest("[data-select-support-org-node]");
     if (supportOrgNode && !clickedTreeToggleIcon) {
       selectedSupportOrgNodeId = supportOrgNode.dataset.selectSupportOrgNode;
+      render();
+      return;
+    }
+
+    const supportResourceBatchDeleteButton = event.target.closest("[data-support-resource-batch-delete]");
+    if (supportResourceBatchDeleteButton) {
+      deleteSelectedSupportResources();
+      markProjectDraftChanged();
       render();
       return;
     }
@@ -525,9 +571,62 @@ function bindEvents() {
       return;
     }
 
+    const supportActivityJobAddButton = event.target.closest("[data-support-activity-job-add]");
+    if (supportActivityJobAddButton) {
+      addSupportActivityJob(supportActivityJobAddButton.dataset.supportActivityJobAdd);
+      markProjectDraftChanged();
+      render();
+      return;
+    }
+
     const supportActivityBatchDeleteButton = event.target.closest("[data-support-activity-job-batch-delete]");
     if (supportActivityBatchDeleteButton) {
       deleteSelectedSupportActivityJobs(supportActivityBatchDeleteButton.dataset.supportActivityJobBatchDelete);
+      markProjectDraftChanged();
+      render();
+      return;
+    }
+
+    const supportActivityJobEditButton = event.target.closest("[data-support-activity-job]");
+    if (supportActivityJobEditButton) {
+      selectSupportActivityJobForEdit(supportActivityJobEditButton.dataset.supportActivityJob);
+      render();
+      return;
+    }
+
+    const basicActivityAddButton = event.target.closest("[data-basic-activity-add]");
+    if (basicActivityAddButton) {
+      addBasicActivityLibraryJob();
+      markProjectDraftChanged();
+      render();
+      return;
+    }
+
+    const basicActivityBatchDeleteButton = event.target.closest("[data-basic-activity-batch-delete]");
+    if (basicActivityBatchDeleteButton) {
+      deleteSelectedBasicActivityJobs();
+      markProjectDraftChanged();
+      render();
+      return;
+    }
+
+    const basicActivityEditButton = event.target.closest("[data-basic-activity-edit]");
+    if (basicActivityEditButton) {
+      selectedBasicActivityKeys = new Set([basicActivityEditButton.dataset.basicActivityEdit]);
+      render();
+      return;
+    }
+
+    const supportResourceEditButton = event.target.closest("[data-support-resource-edit]");
+    if (supportResourceEditButton) {
+      activateSupportResourceEdit(supportResourceEditButton.dataset.supportResourceEdit);
+      render();
+      return;
+    }
+
+    const basicActivityDeleteButton = event.target.closest("[data-basic-activity-delete]");
+    if (basicActivityDeleteButton) {
+      deleteBasicActivityJob(basicActivityDeleteButton.dataset.basicActivityDelete);
       markProjectDraftChanged();
       render();
       return;
@@ -546,6 +645,36 @@ function bindEvents() {
       localStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
       selectedRoute = DEFAULT_ROUTE;
       location.hash = "route=login";
+      render();
+      return;
+    }
+
+    const addProjectButton = event.target.closest("[data-project-add]");
+    if (addProjectButton) {
+      addDemoProject();
+      render();
+      return;
+    }
+
+    const editProjectButton = event.target.closest("[data-project-edit]");
+    if (editProjectButton) {
+      editDemoProject(editProjectButton.dataset.projectEdit);
+      render();
+      return;
+    }
+
+    const deleteProjectButton = event.target.closest("[data-project-delete]");
+    if (deleteProjectButton) {
+      deleteDemoProject(deleteProjectButton.dataset.projectDelete);
+      render();
+      return;
+    }
+
+    const systemManagementButton = event.target.closest("[data-system-management-entry]");
+    if (systemManagementButton) {
+      selectedRoute = "workbench";
+      selectedFeatureId = "system-management-project-data-management";
+      location.hash = `feature=${selectedFeatureId}`;
       render();
       return;
     }
@@ -659,6 +788,36 @@ function bindEvents() {
       return;
     }
 
+    const systemUserDeleteButton = event.target.closest("[data-system-user-delete]");
+    if (systemUserDeleteButton) {
+      deleteSystemUsers([systemUserDeleteButton.dataset.systemUserDelete]);
+      render();
+      return;
+    }
+
+    const systemDataTabButton = event.target.closest("[data-system-data-tab]");
+    if (systemDataTabButton) {
+      activeSystemDataTab = systemDataTabButton.dataset.systemDataTab;
+      render();
+      return;
+    }
+
+    const systemDataExportButton = event.target.closest("[data-system-data-export]");
+    if (systemDataExportButton) {
+      const tab = SYSTEM_DATA_MANAGEMENT_TABS.find((item) => item.key === activeSystemDataTab) || SYSTEM_DATA_MANAGEMENT_TABS[0];
+      projectListStatus = `${tab.label}已生成导出预览`;
+      render();
+      return;
+    }
+
+    const permissionConfigureButton = event.target.closest("[data-permission-configure]");
+    if (permissionConfigureButton) {
+      permissionConfigFeature = permissionConfigureButton.dataset.permissionConfigure;
+      permissionConfigStatus = `正在配置权限：${permissionConfigFeature}`;
+      render();
+      return;
+    }
+
     const systemUserEditButton = event.target.closest("[data-system-user-edit]");
     if (systemUserEditButton) {
       openSystemUserEditor(systemUserEditButton.dataset.systemUserEdit);
@@ -735,6 +894,81 @@ function bindEvents() {
   });
 
   app.addEventListener("change", (event) => {
+    const basicActivitySelectAll = event.target.closest("[data-basic-activity-select-all]");
+    if (basicActivitySelectAll) {
+      toggleAllBasicActivitySelection(basicActivitySelectAll.checked);
+      render();
+      return;
+    }
+
+    const basicActivitySelect = event.target.closest("[data-basic-activity-select]");
+    if (basicActivitySelect) {
+      selectedBasicActivityKeys = toggleSetValue(selectedBasicActivityKeys, basicActivitySelect.dataset.basicActivitySelect);
+      render();
+      return;
+    }
+
+    const supportResourceSelectAll = event.target.closest("[data-support-resource-select-all]");
+    if (supportResourceSelectAll) {
+      toggleAllSupportResourceSelection(supportResourceSelectAll.dataset.supportResourceSelectAll, supportResourceSelectAll.checked);
+      render();
+      return;
+    }
+
+    const supportResourceSelect = event.target.closest("[data-support-resource-select]");
+    if (supportResourceSelect) {
+      selectedSupportResourceKeys = toggleSetValue(selectedSupportResourceKeys, supportResourceSelect.dataset.supportResourceSelect);
+      render();
+      return;
+    }
+
+    const supportResourceField = event.target.closest("[data-support-resource-field]");
+    if (supportResourceField) {
+      updateSupportResourceOverride(
+        supportResourceField.dataset.supportResourceKey,
+        supportResourceField.dataset.supportResourceField,
+        parseInput(supportResourceField)
+      );
+      markProjectDraftChanged();
+      render();
+      return;
+    }
+
+    const supportResourceAircraft = event.target.closest("[data-support-resource-aircraft]");
+    if (supportResourceAircraft) {
+      updateSupportResourceOverride(
+        supportResourceAircraft.dataset.supportResourceAircraft,
+        "aircraft",
+        Array.from(supportResourceAircraft.selectedOptions).map((option) => option.value)
+      );
+      markProjectDraftChanged();
+      render();
+      return;
+    }
+
+    const systemUserSelectAll = event.target.closest("[data-system-user-select-all]");
+    if (systemUserSelectAll) {
+      selectedSystemUsernames = systemUserSelectAll.checked
+        ? new Set(systemUsers.map((user) => user.username))
+        : new Set();
+      render();
+      return;
+    }
+
+    const systemUserSelect = event.target.closest("[data-system-user-select]");
+    if (systemUserSelect) {
+      selectedSystemUsernames = toggleSetValue(selectedSystemUsernames, systemUserSelect.dataset.systemUserSelect);
+      render();
+      return;
+    }
+
+    const permissionRoleSelect = event.target.closest("[data-permission-role]");
+    if (permissionRoleSelect) {
+      updatePermissionRole(permissionRoleSelect.dataset.permissionRole, permissionRoleSelect.value);
+      render();
+      return;
+    }
+
     const supportActivitySelectAll = event.target.closest("[data-support-activity-job-select-all]");
     if (supportActivitySelectAll) {
       toggleAllSupportActivityJobSelection(supportActivitySelectAll.dataset.supportActivityJobSelectAll, supportActivitySelectAll.checked);
@@ -745,6 +979,17 @@ function bindEvents() {
     const supportActivityJobSelect = event.target.closest("[data-support-activity-job-select]");
     if (supportActivityJobSelect) {
       toggleSupportActivityJobSelection(supportActivityJobSelect.dataset.supportActivityJobSelect, supportActivityJobSelect.checked);
+      render();
+      return;
+    }
+
+    const supportActivityPredecessors = event.target.closest("[data-support-activity-predecessors]");
+    if (supportActivityPredecessors) {
+      updateSupportActivityJobPredecessors(
+        supportActivityPredecessors.dataset.supportActivityPredecessors,
+        Array.from(supportActivityPredecessors.selectedOptions).map((option) => option.value)
+      );
+      markProjectDraftChanged();
       render();
       return;
     }
@@ -1002,23 +1247,26 @@ function renderProjectListPage() {
     <header class="topbar">
       <div class="left">
         <div class="brand-mark">BJGH</div>
-        <div>
+      <div>
           <h1>项目列表</h1>
           <p>${currentUser.role} / 选择项目后进入功能导航页</p>
         </div>
       </div>
-      <div class="right"><button type="button" data-logout>退出</button></div>
+      <div class="right">
+        <button type="button" data-system-management-entry>系统管理</button>
+        <button type="button" data-logout>退出</button>
+      </div>
     </header>
     <main class="project-page">
       <section class="project-toolbar">
         <div>
           <h2>项目列表</h2>
-          <p>当前保留静态原型数据，项目选择会切换顶部上下文。</p>
+          <p>${htmlEscape(projectListStatus)}</p>
         </div>
-        <button type="button" class="btn-primary" data-enter-workbench data-project-id="${currentProject.id}">进入当前项目</button>
+        <button type="button" class="btn-primary" data-project-add>添加</button>
       </section>
       <section class="project-grid">
-        ${DEMO_PROJECTS.map((project) => `
+        ${demoProjects.map((project) => `
           <article class="project-card ${project.id === currentProject.id ? "active" : ""}">
             <div>
               <span>基地 ${project.baseCode}</span>
@@ -1027,7 +1275,11 @@ function renderProjectListPage() {
             </div>
             <div class="project-card-foot">
               <small>更新 ${project.updatedAt}</small>
-              <button type="button" data-enter-workbench data-project-id="${project.id}">进入</button>
+              <span class="toolbar-row compact-actions">
+                <button type="button" data-enter-workbench data-project-id="${project.id}">进入</button>
+                <button type="button" data-project-edit="${project.id}">编辑</button>
+                <button type="button" class="btn-danger" data-project-delete="${project.id}">删除</button>
+              </span>
             </div>
           </article>
         `).join("")}
@@ -1430,9 +1682,9 @@ function createCompositeTaskItem(index) {
     id: `composite-task-item-${Date.now()}-${index + 1}`,
     basicTaskName: taskName,
     equipmentType,
-    equipmentQuantity: Number(basic.equipmentQuantity || basic.minRequiredSorties || 1),
+    taskDurationMinutes: Number(basic.taskDurationMinutes || 180),
+    requiredEquipmentQuantity: Number(basic.equipmentQuantity || basic.minRequiredSorties || 1),
     groupName: `新增编队${index + 1}`,
-    taskDispatchTime: "08:00",
     firstWaveTime: "08:45",
     recoveryTime: "11:45",
     priority: index + 1,
@@ -1441,6 +1693,25 @@ function createCompositeTaskItem(index) {
     intervalHours: 6,
     preparationMinutes: 45
   };
+}
+
+function basicMissionOptions() {
+  return editableBasicMissionRecords().map((record) => {
+    const task = record.task || {};
+    const name = task.name || task.basicTaskName || task.missionId || record.key;
+    return { value: name, label: name };
+  });
+}
+
+function findBasicMissionByName(name) {
+  return editableBasicMissionRecords().map((record) => record.task).find((task) => {
+    const taskName = task?.name || task?.basicTaskName || task?.missionId || "";
+    return String(taskName) === String(name);
+  });
+}
+
+function basicMissionSelect(path, selectedValue) {
+  return valueSelect(path, basicMissionOptions());
 }
 
 function renderOntologySvg(ontology, focusSet, selectedItem = null) {
@@ -1684,11 +1955,7 @@ function renderSystemProjectManagement(page) {
         <aside class="tree-container">
           <div class="tree-toolbar">
             <h4>${isGranularityPage ? "建模数据层级" : "项目独有数据"}</h4>
-            <div class="equipment-toolbar">
-              <button type="button" class="btn-primary">${isGranularityPage ? "新增层级" : "新增项目数据"}</button>
-              <button type="button">编辑</button>
-              <button type="button" class="btn-danger">删除</button>
-            </div>
+            ${isGranularityPage ? "" : `<button type="button" class="btn-primary">新增项目数据</button>`}
           </div>
           ${renderCollapsibleTree((isGranularityPage ? SYSTEM_MODELING_GRANULARITY_ROWS : SYSTEM_PROJECT_DATA_ROWS).map((row, index) => ({
             id: `system-tree:${isGranularityPage ? row.level : row.key}`,
@@ -1708,10 +1975,16 @@ function renderSystemProjectManagement(page) {
 }
 
 function renderProjectDataTable() {
+  const activeTab = SYSTEM_DATA_MANAGEMENT_TABS.find((tab) => tab.key === activeSystemDataTab) || SYSTEM_DATA_MANAGEMENT_TABS[0];
   return `
     <div class="section-head">
-      <h3>项目标识与数据集</h3>
-      <span>按项目标识创建和维护项目独有数据</span>
+      <h3>项目数据列表</h3>
+      <span>按建模数据、实验配置、实验结果分组管理，可导出当前列表</span>
+    </div>
+    <div class="compact-fourth-tabs" aria-label="数据管理分类">
+      ${SYSTEM_DATA_MANAGEMENT_TABS.map((tab) => `
+        <button type="button" class="${tab.key === activeTab.key ? "active" : ""}" data-system-data-tab="${tab.key}">${tab.label}</button>
+      `).join("")}
     </div>
     <div class="form-table-grid">
       <label>项目标识<input value="${htmlEscape(currentProject.id)}"></label>
@@ -1719,11 +1992,11 @@ function renderProjectDataTable() {
       <label>基地编码<input value="${htmlEscape(currentProject.baseCode)}"></label>
       <label>数据隔离策略<input value="项目标识 + 数据对象命名空间"></label>
     </div>
-    <div class="toolbar-row"><button type="button" class="btn-primary">新增</button><button type="button" class="btn-danger">批量删除</button></div>
+    <div class="toolbar-row"><button type="button" class="btn-primary">新增</button><button type="button" class="btn-danger">批量删除</button><button type="button" data-system-data-export>导出</button></div>
     <div class="table-wrap compact-table">
       <table>
         <thead><tr><th>数据项</th><th>字段标识</th><th>当前值</th><th>归属</th><th>操作</th></tr></thead>
-        <tbody>${SYSTEM_PROJECT_DATA_ROWS.map((row) => `
+        <tbody>${activeTab.rows.map((row) => `
           <tr><td>${row.label}</td><td>${row.key}</td><td>${row.value}</td><td>${row.owner}</td><td><button type="button" class="inline-action">配置</button></td></tr>
         `).join("")}</tbody>
       </table>
@@ -1759,27 +2032,26 @@ function renderSystemBasicConfig(page) {
       </div>
       ${page.name === "用户管理" ? renderUserManagementConfig() : ""}
       ${page.name === "系统功能权限管理" ? renderPermissionManagementConfig() : ""}
-      ${page.name === "建模表单管理" ? renderFormManagementConfig() : ""}
     </div>
   `;
 }
 
 function renderUserManagementConfig() {
   ensureSystemUsersLoaded();
+  const allSelected = systemUsers.length > 0 && systemUsers.every((user) => selectedSystemUsernames.has(user.username));
   return `
     <div class="toolbar-row">
       <button type="button" class="btn-primary" data-system-user-action="add">新增用户</button>
-      <button type="button" disabled title="批量停用尚未接入后端批处理接口">批量停用</button>
-      <button type="button" class="btn-danger" disabled title="批量删除尚未接入后端批处理接口">批量删除</button>
+      <button type="button" class="btn-danger" data-system-user-action="delete-selected">删除用户</button>
       <input value="" placeholder="按用户名、角色搜索">
     </div>
     <p class="inline-status" data-system-user-status>${htmlEscape(systemUsersLoadStatus)}</p>
     ${systemUserEditor ? renderSystemUserEditor() : ""}
     <div class="table-wrap">
       <table>
-        <thead><tr><th>用户名</th><th>姓名</th><th>角色</th><th>状态</th><th>操作</th></tr></thead>
+        <thead><tr><th><input type="checkbox" data-system-user-select-all ${allSelected ? "checked" : ""}></th><th>用户名</th><th>姓名</th><th>角色</th><th>状态</th><th>操作</th></tr></thead>
         <tbody>${systemUsers.map((user) => `
-          <tr><td>${htmlEscape(user.username)}</td><td>${htmlEscape(user.name)}</td><td>${htmlEscape(user.role)}</td><td><span class="status-badge ${user.status === "停用" ? "warning" : "success"}">${htmlEscape(user.status)}</span></td><td><button type="button" class="inline-action" data-system-user-edit="${htmlEscape(user.username)}">编辑</button></td></tr>
+          <tr><td><input type="checkbox" data-system-user-select="${htmlEscape(user.username)}" ${selectedSystemUsernames.has(user.username) ? "checked" : ""}></td><td>${htmlEscape(user.username)}</td><td>${htmlEscape(user.name)}</td><td>${htmlEscape(user.role)}</td><td><span class="status-badge ${user.status === "停用" ? "warning" : "success"}">${htmlEscape(user.status)}</span></td><td><button type="button" class="inline-action" data-system-user-edit="${htmlEscape(user.username)}">编辑</button><button type="button" class="btn-danger" data-system-user-delete="${htmlEscape(user.username)}">删除</button></td></tr>
         `).join("")}</tbody>
       </table>
     </div>
@@ -1813,53 +2085,34 @@ function renderSystemUserEditor() {
 function renderPermissionManagementConfig() {
   return `
     <div class="toolbar-row"><button type="button" class="btn-primary">新增权限项</button><button type="button" class="btn-danger">批量删除</button></div>
+    <p class="inline-status">${htmlEscape(permissionConfigStatus)}</p>
+    ${permissionConfigFeature ? renderPermissionConfigEditor() : ""}
     <div class="table-wrap">
       <table>
         <thead><tr><th>功能层级</th><th>系统管理员</th><th>数据管理员</th><th>项目用户</th><th>操作</th></tr></thead>
         <tbody>${SYSTEM_PERMISSION_ROWS.map((row) => `
-          <tr><td>${row.feature}</td><td>${row.admin}</td><td>${row.data}</td><td>${row.user}</td><td><button type="button" class="inline-action">配置权限</button></td></tr>
+          <tr><td>${row.feature}</td><td>${row.admin}</td><td>${row.data}</td><td>${row.user}</td><td><button type="button" class="inline-action" data-permission-configure="${htmlEscape(row.feature)}">配置权限</button></td></tr>
         `).join("")}</tbody>
       </table>
     </div>
   `;
 }
 
-function renderFormManagementConfig() {
+function renderPermissionConfigEditor() {
+  const row = SYSTEM_PERMISSION_ROWS.find((item) => item.feature === permissionConfigFeature) || SYSTEM_PERMISSION_ROWS[0];
+  const options = ["管理", "编辑", "查看", "无权限"];
   return `
-    <div class="system-config-layout">
-      <aside class="tree-container">
-        <div class="tree-toolbar">
-          <h4>表单功能层级</h4>
-          <div class="equipment-toolbar">
-            <button type="button" class="btn-primary">新增表单</button>
-            <button type="button">编辑</button>
-            <button type="button" class="btn-danger">删除</button>
-          </div>
-        </div>
-        ${renderCollapsibleTree(SYSTEM_FORM_ROWS.map((row, index) => ({
-          id: `system-form:${row.level}:${row.form}`,
-          label: row.form,
-          meta: row.level,
-          root: index === 0
-        })))}
-      </aside>
-      <section class="detail-panel">
-        <div class="detail-card">
-          <div class="section-head">
-            <h3>字段与关联关系</h3>
-            <span>配置表单字段、功能层级和对象关联</span>
-          </div>
-          <div class="toolbar-row"><button type="button" class="btn-primary">新增字段</button><button type="button" class="btn-danger">批量删除</button></div>
-          <div class="table-wrap">
-            <table>
-              <thead><tr><th>功能层级</th><th>表单</th><th>字段</th><th>关联关系</th><th>操作</th></tr></thead>
-              <tbody>${SYSTEM_FORM_ROWS.map((row) => `
-                <tr><td>${row.level}</td><td>${row.form}</td><td>${row.field}</td><td>${row.relation}</td><td><button type="button" class="inline-action">编辑字段</button></td></tr>
-              `).join("")}</tbody>
-            </table>
-          </div>
-        </div>
-      </section>
+    <div class="detail-card">
+      <div class="section-head"><h4>配置权限：${htmlEscape(row.feature)}</h4><span>浏览器本地原型配置</span></div>
+      <div class="form-grid">
+        ${["admin", "data", "user"].map((roleKey) => `
+          <label>${permissionRoleLabel(roleKey)}
+            <select data-permission-role="${htmlEscape(row.feature)}" data-role-key="${roleKey}">
+              ${options.map((option) => `<option value="${roleKey}:${option}" ${row[roleKey] === option ? "selected" : ""}>${option}</option>`).join("")}
+            </select>
+          </label>
+        `).join("")}
+      </div>
     </div>
   `;
 }
@@ -2051,6 +2304,8 @@ function renderBasicMissionModeling(page) {
   const selectedMission = resolveSelectedBasicMission();
   const missionPath = selectedMission.path || "basicMission";
   const phases = scenario.missionPhases || [];
+  const phaseRatioTotal = missionPhaseRatioTotal(phases);
+  const phaseRatioValid = phases.length === 0 || Math.abs(phaseRatioTotal - 1) < 0.001;
   return `
     <div class="section-head section-context">
       <span>${page.dataObjects.join(" / ")}</span>
@@ -2061,7 +2316,6 @@ function renderBasicMissionModeling(page) {
           <h4>基本任务结构树</h4>
           <div class="equipment-toolbar">
             <button type="button" class="btn-primary" data-basic-mission-add>新增</button>
-            <button type="button" data-basic-mission-edit disabled>编辑</button>
             <button type="button" class="btn-danger" data-basic-mission-delete>删除</button>
           </div>
         </div>
@@ -2078,12 +2332,11 @@ function renderBasicMissionModeling(page) {
                 <tr><th>任务编号</th><td>${valueInput(`${missionPath}.taskNo`)}</td></tr>
                 <tr><th>装备类型</th><td>${valueInput(`${missionPath}.equipmentType`)}</td></tr>
                 <tr><th>装备数量</th><td>${valueInput(`${missionPath}.equipmentQuantity`, "number")}</td></tr>
+                <tr><th>最小装备数量</th><td>${valueInput(`${missionPath}.minRequiredSorties`, "number")}</td></tr>
                 <tr><th>任务成功点</th><td>${valueInput(`${missionPath}.successPoint`, "number", { min: "0", max: "1", step: "0.01" })}</td></tr>
                 <tr><th>返回时间比</th><td>${valueInput(`${missionPath}.returnRatio`, "number")}</td></tr>
                 <tr><th>任务优先级</th><td>${valueInput(`${missionPath}.priority`, "number")}</td></tr>
-                <tr><th>最小系统数量</th><td>${valueInput(`${missionPath}.minRequiredSorties`, "number")}</td></tr>
                 <tr><th>任务时长（分钟）</th><td>${valueInput(`${missionPath}.taskDurationMinutes`, "number")}</td></tr>
-                <tr><th>准备时间（min）</th><td>${valueInput(`${missionPath}.preparationMinutes`, "number")}</td></tr>
                 <tr><th>取消时间（min）</th><td>${valueInput(`${missionPath}.cancelMinutes`, "number")}</td></tr>
                 <tr><th>使用保障活动</th><td>${valueInput(`${missionPath}.supportActivityName`)}</td></tr>
                 <tr><th>任务区域描述</th><td>${valueInput(`${missionPath}.taskArea`)}</td></tr>
@@ -2092,18 +2345,25 @@ function renderBasicMissionModeling(page) {
           </div>
         </div>
         <div class="detail-card network-card">
-          <h4>任务阶段</h4>
+          <div class="tree-toolbar">
+            <h4>任务阶段</h4>
+            <div class="toolbar-row" style="margin-bottom:0;">
+              <button type="button" class="btn-primary" data-basic-mission-phase-add>添加</button>
+              <button type="button" disabled>编辑</button>
+            </div>
+          </div>
+          <div class="inline-status ${phaseRatioValid ? "success" : "warn"}">阶段占比合计 ${fixed(phaseRatioTotal, 2)}；${phaseRatioValid ? "满足合计为 1" : "必须调整为 1 后才能作为正式编译输入"}</div>
           <div class="table-wrap">
             <table>
-              <thead><tr><th>序号</th><th>阶段名称</th><th>状态</th><th>转移条件</th><th>阶段时限(h)</th></tr></thead>
+              <thead><tr><th>序号</th><th>阶段名称</th><th>阶段占比</th><th>任务时间系数</th><th>操作</th></tr></thead>
               <tbody>
                 ${phases.map((phase, index) => `
                   <tr>
                     <td>${index + 1}</td>
-                    <td>${htmlEscape(phase.name)}</td>
-                    <td>${htmlEscape(phase.state)}</td>
-                    <td>${htmlEscape(phase.transitionCondition)}</td>
-                    <td>${htmlEscape(phase.limitHours)}</td>
+                    <td>${valueInput(`missionPhases.${index}.name`)}</td>
+                    <td>${valueInput(`missionPhases.${index}.phaseRatio`, "number", { min: "0", max: "1", step: "0.01" })}</td>
+                    <td>${renderMissionPhaseSystemCoefficients(index, selectedMission.task.equipmentType || scenario.equipment.model)}</td>
+                    <td><button type="button" class="btn-danger" data-basic-mission-phase-delete="${index}">删除</button></td>
                   </tr>
                 `).join("")}
               </tbody>
@@ -2113,6 +2373,37 @@ function renderBasicMissionModeling(page) {
       </div>
     </div>
   `;
+}
+
+function renderMissionPhaseSystemCoefficients(phaseIndex, equipmentType) {
+  const components = (scenario.components || []).filter((component) => componentBelongsToAircraft(component, equipmentType || component.aircraftModel || scenario.equipment.model));
+  const rows = components.length ? components : scenario.components.slice(0, 3);
+  return `
+    <div class="inline-dictionary">
+      ${rows.map((component) => `
+        <label>${htmlEscape(component.name || component.id)}
+          ${valueInput(`missionPhases.${phaseIndex}.systemTimeCoefficients.${component.id}`, "number", { min: "0", step: "0.1" })}
+        </label>
+      `).join("")}
+    </div>
+  `;
+}
+
+function missionPhaseRatioTotal(phases = scenario.missionPhases || []) {
+  return phases.reduce((sum, phase) => sum + Number(phase.phaseRatio || 0), 0);
+}
+
+function addMissionPhase() {
+  const phases = Array.isArray(scenario.missionPhases) ? scenario.missionPhases : [];
+  const remainingRatio = Math.max(0, 1 - missionPhaseRatioTotal(phases));
+  scenario.missionPhases = [
+    ...phases,
+    { name: `阶段${phases.length + 1}`, phaseRatio: Number(remainingRatio.toFixed(2)), systemTimeCoefficients: {} }
+  ];
+}
+
+function deleteMissionPhase(index) {
+  scenario.missionPhases = (Array.isArray(scenario.missionPhases) ? scenario.missionPhases : []).filter((_, rowIndex) => rowIndex !== index);
 }
 
 function renderCompositeTaskModeling(page) {
@@ -2129,22 +2420,20 @@ function renderCompositeTaskModeling(page) {
       <div class="tree-container">
         <div class="tree-toolbar">
           <h4>复合任务列表</h4>
-          <div class="toolbar-row" style="margin-bottom:0;">
-            <button type="button" class="btn-primary" data-composite-task-add>新增</button>
-            <button type="button" data-composite-task-edit disabled>编辑</button>
-            <button type="button" class="btn-danger" data-composite-task-delete>删除</button>
-          </div>
+            <div class="toolbar-row" style="margin-bottom:0;">
+              <button type="button" class="btn-primary" data-composite-task-add>新增</button>
+              <button type="button" class="btn-danger" data-composite-task-delete>删除</button>
+            </div>
         </div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>序号</th><th>复合任务名称</th></tr></thead>
+            <thead><tr><th>复合任务名称</th></tr></thead>
             <tbody>
               ${compositeTasks.map((task, index) => `
                 <tr class="${index === selected.index ? "active" : ""}" data-select-composite-task="${htmlEscape(task.id || index)}">
-                  <td>${index + 1}</td>
                   <td>${htmlEscape(task.name)}</td>
                 </tr>
-              `).join("") || `<tr><td colspan="2">暂无复合任务</td></tr>`}
+              `).join("") || `<tr><td>暂无复合任务</td></tr>`}
             </tbody>
           </table>
         </div>
@@ -2155,7 +2444,6 @@ function renderCompositeTaskModeling(page) {
             <h4>当前复合任务包含的基本任务</h4>
             <div class="toolbar-row" style="margin-bottom:0;">
               <button type="button" class="btn-primary" data-composite-task-item-add>新增</button>
-              <button type="button" data-composite-task-item-edit disabled>编辑</button>
             </div>
           </div>
           ${selected.task ? `
@@ -2164,25 +2452,25 @@ function renderCompositeTaskModeling(page) {
             </div>
             <div class="table-wrap">
               <table>
-                <thead><tr><th>序号</th><th>基本任务名称</th><th>装备类型</th><th>装备数量</th><th>编队名称</th><th>任务下达时间</th><th>出发时间</th><th>回收时刻</th><th>任务优先级</th><th>最小系统数量</th><th>单日重复次数</th><th>间隔小时数</th><th>操作</th></tr></thead>
+                <thead><tr><th>基本任务名称</th><th>装备类型</th><th>任务时长</th><th>要求装备数量</th><th>编队名称</th><th>出发时间</th><th>任务优先级</th><th>最小装备数量</th><th>单日重复次数</th><th>间隔小时数</th><th>操作</th></tr></thead>
                 <tbody>
-                  ${(composite.taskItems || []).map((item, index) => `
+                  ${(composite.taskItems || []).map((item, index) => {
+                    const basicTask = findBasicMissionByName(item.basicTaskName);
+                    return `
                     <tr>
-                      <td>${index + 1}</td>
-                      <td>${valueInput(`${compositePath}.taskItems.${index}.basicTaskName`)}</td>
-                      <td>${valueInput(`${compositePath}.taskItems.${index}.equipmentType`)}</td>
-                      <td>${valueInput(`${compositePath}.taskItems.${index}.equipmentQuantity`, "number")}</td>
+                      <td>${basicMissionSelect(`${compositePath}.taskItems.${index}.basicTaskName`, item.basicTaskName)}</td>
+                      <td><input readonly value="${htmlEscape(basicTask?.equipmentType || item.equipmentType || "")}"></td>
+                      <td><input readonly value="${htmlEscape(basicTask?.taskDurationMinutes || item.taskDurationMinutes || "")}"></td>
+                      <td>${valueInput(`${compositePath}.taskItems.${index}.requiredEquipmentQuantity`, "number", { min: "1", step: "1" })}</td>
                       <td>${valueInput(`${compositePath}.taskItems.${index}.groupName`)}</td>
-                      <td>${valueInput(`${compositePath}.taskItems.${index}.taskDispatchTime`, "time")}</td>
                       <td>${valueInput(`${compositePath}.taskItems.${index}.firstWaveTime`, "time")}</td>
-                      <td>${valueInput(`${compositePath}.taskItems.${index}.recoveryTime`, "time")}</td>
                       <td>${valueInput(`${compositePath}.taskItems.${index}.priority`, "number")}</td>
                       <td>${valueInput(`${compositePath}.taskItems.${index}.minRequiredSystems`, "number")}</td>
                       <td>${valueInput(`${compositePath}.taskItems.${index}.dailyRepeatCount`, "number")}</td>
                       <td>${valueInput(`${compositePath}.taskItems.${index}.intervalHours`, "number")}</td>
-                      <td class="table-actions"><button type="button" class="inline-action" data-composite-task-item-edit="${index}" disabled>编辑</button><button type="button" class="btn-danger" data-composite-task-item-delete="${index}">删除</button></td>
+                      <td class="table-actions"><button type="button" class="btn-danger" data-composite-task-item-delete="${index}">删除</button></td>
                     </tr>
-                  `).join("") || `<tr><td colspan="13">暂无基本任务</td></tr>`}
+                  `; }).join("") || `<tr><td colspan="11">暂无基本任务</td></tr>`}
                 </tbody>
               </table>
             </div>
@@ -2192,15 +2480,13 @@ function renderCompositeTaskModeling(page) {
           <h4>典型组合任务时序表</h4>
           <div class="table-wrap">
             <table>
-              <thead><tr><th>波次序号</th><th>基本任务名称</th><th>编队名称</th><th>任务下达时刻</th><th>准备时间(min)</th><th>出动时刻</th><th>回收时刻</th></tr></thead>
+              <thead><tr><th>波次序号</th><th>基本任务名称</th><th>编队名称</th><th>出动时刻</th><th>回收时刻</th></tr></thead>
               <tbody>
                 ${timelineRows.map((row) => `
                   <tr>
                     <td>${row.sequence}</td>
                     <td>${htmlEscape(row.basicTaskName)}</td>
                     <td>${htmlEscape(row.groupName)}</td>
-                    <td>${htmlEscape(row.taskDispatchTime)}</td>
-                    <td>${htmlEscape(row.preparationMinutes)}</td>
                     <td>${htmlEscape(row.departureTime)}</td>
                     <td>${htmlEscape(row.recoveryTime)}</td>
                   </tr>
@@ -2266,7 +2552,7 @@ function renderPeriodicTaskModeling(page) {
             ${compositeTasks.length === 0 ? `<div class="alert warn">请先在复合任务建模中维护复合任务。</div>` : ""}
             <div class="form-table-grid">
               <label>周期性任务名称 *<input data-periodic-field="name" value="${htmlEscape(selectedDraft.name)}" placeholder="例如：一周飞行训练计划A"></label>
-              <label>任务周期天数 *<input data-periodic-field="cycleDays" type="number" min="1" max="7" step="1" value="${htmlEscape(selectedDraft.cycleDays)}"></label>
+              <label>任务周期天数 *<input data-periodic-field="cycleDays" type="number" min="1" max="30" step="1" value="${htmlEscape(selectedDraft.cycleDays)}"></label>
               <label>重复轮次 *<input data-periodic-field="repeatWeeks" type="number" min="1" step="1" value="${htmlEscape(selectedDraft.repeatWeeks)}"></label>
             </div>
             <div class="table-wrap" style="margin-top:12px;">
@@ -2330,7 +2616,7 @@ function normalizePeriodicTaskCycleDays(source = {}) {
 }
 
 function clampPeriodicCycleDays(value) {
-  return Math.min(7, Math.max(1, Math.floor(Number(value || 1))));
+  return Math.min(30, Math.max(1, Math.floor(Number(value || 1))));
 }
 
 function parsePeriodicCompositeTasks(source, cycleDays, weekdayAssignments, validCompositeIds) {
@@ -2460,17 +2746,20 @@ function buildCompositeTimelineRows(composite) {
   return (composite.taskItems || []).flatMap((item) => {
     const repeatCount = Math.max(1, Number(item.dailyRepeatCount || 1));
     const intervalHours = Math.max(1, Number(item.intervalHours || 1));
-    const durationMinutes = diffTimeMinutes(item.firstWaveTime, item.recoveryTime) || Number(item.taskDurationMinutes || scenario.basicMission.taskDurationMinutes || 180);
+    const basicTask = findBasicMissionByName(item.basicTaskName);
+    const durationMinutes = Number(basicTask?.taskDurationMinutes || item.taskDurationMinutes || scenario.basicMission.taskDurationMinutes || 180);
     return Array.from({ length: repeatCount }, (_, index) => {
       const departureTime = addHoursToTime(item.firstWaveTime, index * intervalHours);
+      const totalStartMinutes = timeToDayMinutes(item.firstWaveTime) + index * intervalHours * 60;
+      const totalEndMinutes = totalStartMinutes + durationMinutes;
       return {
         sequence: index + 1,
         basicTaskName: item.basicTaskName,
         groupName: item.groupName,
-        taskDispatchTime: item.taskDispatchTime,
-        preparationMinutes: item.preparationMinutes,
         departureTime,
-        recoveryTime: addMinutesToTime(departureTime, durationMinutes)
+        recoveryTime: addMinutesToTime(departureTime, durationMinutes),
+        totalStartMinutes,
+        totalEndMinutes
       };
     });
   });
@@ -2480,25 +2769,38 @@ function renderCompositeTimelineChart(rows) {
   if (!rows.length) {
     return `<div class="alert warn">暂无时序数据</div>`;
   }
+  const tooLong = rows.some((row) => row.totalEndMinutes > 30 * 60);
+  const groupedRows = Array.from(rows.reduce((acc, row) => {
+    const key = row.basicTaskName || "未命名任务";
+    acc.set(key, [...(acc.get(key) || []), row]);
+    return acc;
+  }, new Map()).entries());
   return `
+    ${tooLong ? `<div class="alert warn">任务时长过长，应新建复合任务，在周期性任务中组合</div>` : ""}
     <div class="composite-timeline-chart" style="display:grid;gap:10px;margin-top:10px;">
-      ${rows.map((row) => {
-        const startMinutes = timeToDayMinutes(row.departureTime);
-        const endMinutes = timeToDayMinutes(row.recoveryTime);
-        const durationMinutes = Math.max(15, endMinutes >= startMinutes ? endMinutes - startMinutes : endMinutes + 1440 - startMinutes);
-        const startPercent = Math.min(92, Math.max(0, (startMinutes / 1440) * 100));
-        const widthPercent = Math.min(100 - startPercent, Math.max(6, (durationMinutes / 1440) * 100));
+      ${groupedRows.map(([taskName, taskRows]) => {
         return `
           <div class="timeline-chart-row" style="display:grid;grid-template-columns:120px 1fr;gap:10px;align-items:center;">
-            <div style="font-size:12px;color:#475569;">${htmlEscape(row.basicTaskName)}</div>
+            <div style="font-size:12px;color:#475569;">${htmlEscape(taskName)}</div>
             <div style="position:relative;height:28px;background:#f1f5f9;border:1px solid #dbe3ef;border-radius:6px;overflow:hidden;">
-              <div title="${htmlEscape(row.departureTime)} - ${htmlEscape(row.recoveryTime)}" style="position:absolute;left:${startPercent}%;width:${widthPercent}%;top:5px;height:16px;border-radius:4px;background:#2563eb;"></div>
+              ${taskRows.map((row) => {
+                const durationMinutes = Math.max(15, row.totalEndMinutes - row.totalStartMinutes);
+                const startPercent = Math.min(96, Math.max(0, (row.totalStartMinutes / (30 * 60)) * 100));
+                const widthPercent = Math.min(100 - startPercent, Math.max(4, (durationMinutes / (30 * 60)) * 100));
+                return `<div title="${htmlEscape(formatTimelineHour(row.totalStartMinutes))} - ${htmlEscape(formatTimelineHour(row.totalEndMinutes))}" style="position:absolute;left:${startPercent}%;width:${widthPercent}%;top:5px;height:16px;border-radius:4px;background:#2563eb;"><span class="timeline-time-label">${htmlEscape(formatTimelineHour(row.totalStartMinutes))}</span></div>`;
+              }).join("")}
             </div>
           </div>
         `;
       }).join("")}
     </div>
   `;
+}
+
+function formatTimelineHour(totalMinutes) {
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = Math.floor(totalMinutes % 60);
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
 }
 
 function timeToDayMinutes(value) {
@@ -2540,9 +2842,7 @@ function renderEquipmentModeling(page) {
           <h4>装备组成树</h4>
           <div class="equipment-toolbar">
             <button type="button" class="btn-primary" data-equipment-add-node>新增节点</button>
-            <button type="button" data-equipment-edit-node disabled>编辑</button>
             <button type="button" class="btn-danger" data-equipment-delete-node disabled>删除</button>
-            <button type="button" disabled>导入</button>
           </div>
         </div>
         ${renderCollapsibleTree(buildEquipmentTreeNodes())}
@@ -2705,21 +3005,22 @@ function renderEquipmentCompositionFields(selectedIndex) {
     ${field("组件名称", `components.${selectedIndex}.name`)}
     ${field("父节点", `components.${selectedIndex}.parentId`)}
     ${field("所属飞机", `components.${selectedIndex}.aircraftModel`)}
+    ${field("数量", `components.${selectedIndex}.quantity`, "number", { min: "1", step: "1" })}
     ${equipmentLruRadioGroup(selectedIndex)}
-    ${field("备件类型", `components.${selectedIndex}.spareType`)}
     ${equipmentKOutOfNInput(selectedIndex)}
   `;
 }
 
 function equipmentLruRadioGroup(selectedIndex) {
   const path = `components.${selectedIndex}.productType`;
-  const value = getPath(scenario, path) === "LRU" ? "LRU" : "非LRU";
+  const value = ["LRU", "SRU"].includes(getPath(scenario, path)) ? getPath(scenario, path) : "";
   const name = `equipment-product-type-${selectedIndex}`;
   return `
-    <label>是否为LRU
+    <label>组件属性
       <span class="inline-radio-group">
-        <label><input data-path="${path}" type="radio" name="${name}" value="LRU" ${value === "LRU" ? "checked" : ""}>是</label>
-        <label><input data-path="${path}" type="radio" name="${name}" value="非LRU" ${value !== "LRU" ? "checked" : ""}>否</label>
+        <label><input data-path="${path}" type="radio" name="${name}" value="LRU" ${value === "LRU" ? "checked" : ""}>LRU</label>
+        <label><input data-path="${path}" type="radio" name="${name}" value="SRU" ${value === "SRU" ? "checked" : ""}>SRU</label>
+        <label><input data-path="${path}" type="radio" name="${name}" value="" ${value === "" ? "checked" : ""}>空值</label>
       </span>
     </label>
   `;
@@ -2728,8 +3029,8 @@ function equipmentLruRadioGroup(selectedIndex) {
 function equipmentKOutOfNInput(selectedIndex) {
   const component = scenario.components[selectedIndex] || {};
   const quantity = Math.max(0, Math.trunc(Number(component.quantity) || 0));
-  const value = clamp(Math.trunc(Number(component.kOutOfN?.k) || 0), 0, quantity);
-  return `<label>N中取K<input data-equipment-k-out-of-n-index="${selectedIndex}" type="number" min="0" max="${htmlEscape(quantity)}" step="1" value="${htmlEscape(value)}"></label>`;
+  const value = quantity > 1 ? clamp(Math.trunc(Number(component.kOutOfN?.k) || 1), 1, quantity) : 0;
+  return `<label>N中取K<input data-equipment-k-out-of-n-index="${selectedIndex}" type="number" min="1" max="${htmlEscape(quantity)}" step="1" value="${htmlEscape(value)}" ${quantity > 1 ? "" : "disabled"}></label>`;
 }
 
 function renderEquipmentAircraftFields(aircraftModel) {
@@ -2751,19 +3052,49 @@ function renderEquipmentAircraftListFields() {
 }
 
 function renderEquipmentFailureFields(selectedIndex) {
+  const component = scenario.components[selectedIndex] || {};
+  const failureDistribution = component.failureDistribution || {};
+  const repairDistribution = component.repairDistribution || { distributionType: "正态分布" };
+  const distributionOptions = [
+    { value: "指数分布", label: "指数分布" },
+    { value: "威布尔分布", label: "威布尔分布" }
+  ];
+  const repairDistributionOptions = [
+    { value: "正态分布", label: "正态分布" },
+    { value: "均匀分布", label: "均匀分布" },
+    { value: "三角分布", label: "三角分布" }
+  ];
   return `
     ${renderEquipmentCompositionFields(selectedIndex)}
-    <label>数量 n<input data-path="components.${selectedIndex}.quantity" type="number" value="${htmlEscape(getPath(scenario, `components.${selectedIndex}.quantity`))}"></label>
-    <label>成功数 k<input data-path="components.${selectedIndex}.kOutOfN.k" type="number" value="${htmlEscape(getPath(scenario, `components.${selectedIndex}.kOutOfN.k`))}"></label>
-    ${field("N中取K总数", `components.${selectedIndex}.kOutOfN.n`, "number")}
-    ${field("启用 n 中取 k", `components.${selectedIndex}.kOutOfN.enabled`)}
-    ${field("故障模型", `components.${selectedIndex}.failureModel`)}
-    ${field("失效分布类型", `components.${selectedIndex}.failureDistribution.distributionType`)}
-    ${field("失效分布参数", `components.${selectedIndex}.failureDistribution.parameters`)}
-    ${field("失效率", `components.${selectedIndex}.failureRate`, "number")}
-    ${field("MTBF(h)", `components.${selectedIndex}.mtbfHours`, "number")}
-    ${field("寿命限制(h)", `components.${selectedIndex}.lifeLimitHours`, "number")}
-    ${field("前置寿命要求(h)", "equipment.preLifeRequirementHours", "number")}
+    ${field("MTBF", `components.${selectedIndex}.mtbfHours`, "number", { min: "0", step: "0.1" })}
+    <label>分布类型${valueSelect(`components.${selectedIndex}.failureDistribution.distributionType`, distributionOptions)}</label>
+    ${failureDistribution.distributionType === "威布尔分布" ? `
+      ${field("形状参数(k)", `components.${selectedIndex}.failureDistribution.shapeK`, "number", { min: "0", step: "0.01" })}
+      ${field("尺度参数(λ)", `components.${selectedIndex}.failureDistribution.scaleLambda`, "number", { min: "0", step: "0.01" })}
+    ` : ""}
+    ${field("平均修复时间（min）", `components.${selectedIndex}.meanRepairTimeMinutes`, "number", { min: "0", step: "1" })}
+    <label>修复时间分布${valueSelect(`components.${selectedIndex}.repairDistribution.distributionType`, repairDistributionOptions)}</label>
+    ${renderRepairDistributionParameters(selectedIndex, repairDistribution.distributionType)}
+  `;
+}
+
+function renderRepairDistributionParameters(selectedIndex, distributionType) {
+  if (distributionType === "均匀分布") {
+    return `
+      ${field("最小值", `components.${selectedIndex}.repairDistribution.min`, "number", { min: "0", step: "0.1" })}
+      ${field("最大值", `components.${selectedIndex}.repairDistribution.max`, "number", { min: "0", step: "0.1" })}
+    `;
+  }
+  if (distributionType === "三角分布") {
+    return `
+      ${field("最小值", `components.${selectedIndex}.repairDistribution.min`, "number", { min: "0", step: "0.1" })}
+      ${field("最大值", `components.${selectedIndex}.repairDistribution.max`, "number", { min: "0", step: "0.1" })}
+      ${field("模数", `components.${selectedIndex}.repairDistribution.mode`, "number", { min: "0", step: "0.1" })}
+    `;
+  }
+  return `
+    ${field("均值", `components.${selectedIndex}.repairDistribution.mean`, "number", { min: "0", step: "0.1" })}
+    ${field("方差", `components.${selectedIndex}.repairDistribution.variance`, "number", { min: "0", step: "0.1" })}
   `;
 }
 
@@ -2866,24 +3197,12 @@ function renderActivityGantt(page) {
 }
 
 function renderSupportOrganizationWorkbench(page) {
-  const supportOrgNodes = flattenSupportOrgTreeNodes();
-  const inventoryEntries = scenario.supportNodes.flatMap((node) => Object.entries(node.inventory || {}));
-  const resourceRows = supportOrgNodes.flatMap((orgNode, orgIndex) => [
-    { scope: orgNode.name, type: "保障人员", name: "机务人员", model: "专业/L2", quantity: Math.max(1, 5 - orgIndex), aircraft: scenario.equipment.model },
-    { scope: orgNode.name, type: "保障设备", name: "检测仪", model: "DT-01", quantity: Math.max(1, 3 - Math.floor(orgIndex / 2)), aircraft: scenario.equipment.model },
-    ...inventoryEntries.map(([spareType, quantity]) => ({
-      scope: orgNode.name,
-      type: "备件",
-      name: spareType,
-      model: "LRU",
-      quantity,
-      aircraft: scenario.equipment.model
-    }))
-  ]);
   const activeTab = page.name.includes("人员") ? "保障人员建模" : page.name.includes("设备") ? "保障设备建模" : page.name.includes("备件") ? "备件建模" : "保障组织结构建模";
   const activeResourceType = page.name.includes("人员") ? "保障人员" : page.name.includes("设备") ? "保障设备" : page.name.includes("备件") ? "备件" : "";
-  const visibleResourceRows = activeResourceType ? resourceRows.filter((row) => row.type === activeResourceType) : resourceRows;
   const selectedSupportOrgNode = findSupportOrgTreeNode(selectedSupportOrgNodeId) || SUPPORT_ORG_TREE[0];
+  const selectedIsLeaf = !(selectedSupportOrgNode?.children || []).length;
+  const visibleResourceRows = buildSupportResourceRows(activeResourceType, selectedSupportOrgNode).filter((row) => !supportResourceDeletedKeySet().has(row.key));
+  const allResourceRowsSelected = visibleResourceRows.length > 0 && visibleResourceRows.every((row) => selectedSupportResourceKeys.has(row.key));
   const selectedSupportOrgParentName = findSupportOrgParentName(selectedSupportOrgNode?.id) || "无";
   return `
     <div class="ship-front-workbench">
@@ -2891,14 +3210,9 @@ function renderSupportOrganizationWorkbench(page) {
         <aside class="tree-container">
           <div class="tree-toolbar">
             <h4>保障组织结构树</h4>
-            <div class="equipment-toolbar">
-              <button type="button" class="btn-primary" data-support-org-add-node disabled>新增节点</button>
-              <button type="button" data-support-org-edit-node disabled>编辑</button>
-              <button type="button" class="btn-danger" data-support-org-delete-node disabled>删除</button>
-              <button type="button" disabled>导入</button>
-            </div>
+            ${activeTab === "保障组织结构建模" ? `<button type="button" class="btn-primary" data-support-org-add-node disabled>新增节点</button>` : `<span class="muted">只读组织树</span>`}
           </div>
-          ${SUPPORT_ORG_TREE.map((node) => renderOrgTreeNode(node)).join("")}
+          ${SUPPORT_ORG_TREE.map((node) => renderOrgTreeNode(node, 0)).join("")}
         </aside>
         <section class="detail-panel">
           <div class="detail-card">
@@ -2914,16 +3228,17 @@ function renderSupportOrganizationWorkbench(page) {
               </div>
             ` : `
               <div class="toolbar-row">
-                <button type="button" class="btn-primary">新增</button>
-                <button type="button">批量删除</button>
+                <button type="button" class="btn-primary" ${selectedIsLeaf ? "" : "disabled"}>新增</button>
+                <button type="button" class="btn-danger" data-support-resource-batch-delete>批量删除</button>
                 <input value="" placeholder="请输入关键词进行搜索">
+                <span class="badge">${selectedIsLeaf ? "叶子节点可编辑" : "根节点汇总显示"}</span>
               </div>
               <div class="table-wrap">
                 <table>
-                  <thead><tr><th>序号</th><th>组织节点</th><th>名称</th><th>型号/专业</th><th>数量</th><th>适用机型</th><th>操作</th></tr></thead>
+                  <thead><tr><th><input type="checkbox" data-support-resource-select-all="${htmlEscape(activeResourceType)}" ${allResourceRowsSelected ? "checked" : ""}></th><th>序号</th><th>组织节点</th>${activeResourceType === "保障人员" ? "" : "<th>名称</th>"}<th>${activeResourceType === "保障人员" ? "专业" : "型号"}</th><th>数量</th><th>适用机型</th><th>操作</th></tr></thead>
                   <tbody>${visibleResourceRows.map((row, index) => `
-                    <tr><td>${index + 1}</td><td>${row.scope}</td><td>${row.name}</td><td>${row.model}</td><td>${row.quantity}</td><td>${row.aircraft}</td><td><button type="button" class="inline-action">编辑</button></td></tr>
-                  `).join("")}</tbody>
+                    <tr><td><input type="checkbox" data-support-resource-select="${htmlEscape(row.key)}" ${selectedSupportResourceKeys.has(row.key) ? "checked" : ""}></td><td>${index + 1}</td><td>${row.scope}</td>${activeResourceType === "保障人员" ? "" : `<td>${supportResourceInput(row, "name", "text", !selectedIsLeaf)}</td>`}<td>${supportResourceInput(row, "model", "text", !selectedIsLeaf)}</td><td>${supportResourceInput(row, "quantity", "number", !selectedIsLeaf)}</td><td>${aircraftMultiSelect(row.key, row.aircraft, !selectedIsLeaf)}</td><td><button type="button" class="inline-action" data-support-resource-edit="${htmlEscape(row.key)}" ${selectedIsLeaf ? "" : "disabled"}>编辑</button></td></tr>
+                  `).join("") || `<tr><td colspan="${activeResourceType === "保障人员" ? "7" : "8"}">暂无资源</td></tr>`}</tbody>
                 </table>
               </div>
             `}
@@ -2934,18 +3249,106 @@ function renderSupportOrganizationWorkbench(page) {
   `;
 }
 
-function renderOrgTreeNode(node) {
-  return renderCollapsibleTreeNode(orgTreeNode(node));
+function renderOrgTreeNode(node, depth = 0) {
+  return renderCollapsibleTreeNode(orgTreeNode(node, depth));
 }
 
-function orgTreeNode(node) {
+function orgTreeNode(node, depth = 0) {
   return {
     id: `support-org:${node.id || node.name}`,
     label: node.name,
     selected: selectedSupportOrgNodeId === node.id,
     actionAttrs: `data-select-support-org-node="${htmlEscape(node.id || node.name)}"`,
-    children: (node.children || []).map((child) => orgTreeNode(child))
+    children: depth >= 1 ? [] : (node.children || []).map((child) => orgTreeNode(child, depth + 1))
   };
+}
+
+function buildSupportResourceRows(activeResourceType, selectedOrgNode) {
+  const leafNodes = flattenSupportOrgTreeNodes(selectedOrgNode ? [selectedOrgNode] : SUPPORT_ORG_TREE).filter((node) => !(node.children || []).length);
+  const orgNodes = (selectedOrgNode?.children || []).length ? leafNodes : [selectedOrgNode].filter(Boolean);
+  const inventoryEntries = scenario.supportNodes.flatMap((node) => Object.entries(node.inventory || {}));
+  const overrides = supportResourceOverrides();
+  return orgNodes.flatMap((orgNode, orgIndex) => {
+    const rows = [
+      { key: `${orgNode.id}:personnel`, scope: orgNode.name, type: "保障人员", model: "机务专业", quantity: Math.max(1, 5 - orgIndex), aircraft: wholeMachineModels() },
+      { key: `${orgNode.id}:equipment`, scope: orgNode.name, type: "保障设备", name: "检测仪", model: "DT-01", quantity: Math.max(1, 3 - Math.floor(orgIndex / 2)), aircraft: wholeMachineModels() },
+      ...inventoryEntries.map(([spareType, quantity], index) => ({
+        key: `${orgNode.id}:spare:${index}:${spareType}`,
+        scope: orgNode.name,
+        type: "备件",
+        name: spareType,
+        model: spareType,
+        quantity,
+        aircraft: wholeMachineModels()
+      }))
+    ];
+    const mergedRows = rows.map((row) => ({ ...row, ...(overrides[row.key] || {}) }));
+    return activeResourceType ? mergedRows.filter((row) => row.type === activeResourceType) : mergedRows;
+  });
+}
+
+function supportResourceOverrides() {
+  if (!scenario.supportResourceOverrides || typeof scenario.supportResourceOverrides !== "object") {
+    scenario.supportResourceOverrides = {};
+  }
+  return scenario.supportResourceOverrides;
+}
+
+function supportResourceDeletedKeySet() {
+  if (!Array.isArray(scenario.deletedSupportResourceKeys)) {
+    scenario.deletedSupportResourceKeys = Array.from(deletedSupportResourceKeys);
+  }
+  return new Set(scenario.deletedSupportResourceKeys);
+}
+
+function supportResourceInput(row, fieldName, type = "text", disabled = false) {
+  return `<input data-support-resource-key="${htmlEscape(row.key)}" data-support-resource-field="${htmlEscape(fieldName)}" type="${type}" value="${htmlEscape(row[fieldName] ?? "")}" ${disabled ? "disabled" : ""}>`;
+}
+
+function aircraftMultiSelect(key, values, disabled = false) {
+  const selected = new Set(Array.isArray(values) ? values : [values].filter(Boolean));
+  return `
+    <select multiple data-support-resource-aircraft="${htmlEscape(key)}" ${disabled ? "disabled" : ""}>
+      ${wholeMachineModels().map((model) => `<option value="${htmlEscape(model)}" ${selected.has(model) ? "selected" : ""}>${htmlEscape(model)}</option>`).join("")}
+    </select>
+  `;
+}
+
+function updateSupportResourceOverride(key, fieldName, value) {
+  if (!key || !fieldName) return;
+  const overrides = supportResourceOverrides();
+  const nextValue = fieldName === "quantity" ? Math.max(0, Number(value || 0)) : value;
+  overrides[key] = { ...(overrides[key] || {}), [fieldName]: nextValue };
+  deletedSupportResourceKeys = supportResourceDeletedKeySet();
+  updateDemoResultsThroughApiClient();
+}
+
+function activateSupportResourceEdit(key) {
+  if (!key) return;
+  selectedSupportResourceKeys = new Set([key]);
+  supportResourceOverrides()[key] = { ...(supportResourceOverrides()[key] || {}) };
+}
+
+function toggleAllSupportResourceSelection(activeResourceType, checked) {
+  const selectedOrgNode = findSupportOrgTreeNode(selectedSupportOrgNodeId) || SUPPORT_ORG_TREE[0];
+  const keys = buildSupportResourceRows(activeResourceType, selectedOrgNode)
+    .filter((row) => !supportResourceDeletedKeySet().has(row.key))
+    .map((row) => row.key);
+  const next = new Set(selectedSupportResourceKeys);
+  for (const key of keys) {
+    if (checked) next.add(key);
+    else next.delete(key);
+  }
+  selectedSupportResourceKeys = next;
+}
+
+function deleteSelectedSupportResources() {
+  const nextDeleted = supportResourceDeletedKeySet();
+  for (const key of selectedSupportResourceKeys) nextDeleted.add(key);
+  scenario.deletedSupportResourceKeys = Array.from(nextDeleted);
+  deletedSupportResourceKeys = nextDeleted;
+  selectedSupportResourceKeys = new Set();
+  updateDemoResultsThroughApiClient();
 }
 
 function findSupportOrgTreeNode(id, nodes = SUPPORT_ORG_TREE) {
@@ -3053,6 +3456,42 @@ function deleteSelectedSupportActivityJobs(tabKey) {
   updateDemoResultsThroughApiClient();
 }
 
+function addSupportActivityJob(tabKey) {
+  const activity = findSupportActivityByJobTabKey(tabKey);
+  if (!activity) return;
+  const jobs = supportActivityJobs(activity).slice();
+  jobs.push({
+    activityCode: `BA-${String(jobs.length + 1).padStart(3, "0")}`,
+    workName: `新增基本保障活动${jobs.length + 1}`,
+    predecessors: [],
+    durationMinutes: 30,
+    personnel: "机务人员,1",
+    equipment: "检测仪,1",
+    spare: ""
+  });
+  activity.jobs = jobs;
+  updateDemoResultsThroughApiClient();
+}
+
+function selectSupportActivityJobForEdit(encodedJob) {
+  const [tabKey, rawIndex] = String(encodedJob || "").split("-");
+  const index = Number(rawIndex);
+  if (!tabKey || !Number.isInteger(index)) return;
+  selectedSupportActivityJobKeys = new Set([supportActivityJobKey(tabKey, index)]);
+}
+
+function updateSupportActivityJobPredecessors(encodedJob, predecessors) {
+  const [tabKey, rawIndex] = String(encodedJob || "").split(":");
+  const index = Number(rawIndex);
+  const activity = findSupportActivityByJobTabKey(tabKey);
+  if (!activity || !Number.isInteger(index)) return;
+  const jobs = supportActivityJobs(activity).slice();
+  if (!jobs[index]) return;
+  jobs[index] = { ...jobs[index], predecessors };
+  activity.jobs = jobs;
+  updateDemoResultsThroughApiClient();
+}
+
 function renumberSupportActivityJobSelections(tabKey) {
   selectedSupportActivityJobKeys = new Set(Array.from(selectedSupportActivityJobKeys).filter((key) => !String(key).startsWith(`${tabKey}:`)));
 }
@@ -3067,19 +3506,32 @@ function describeDurationProfile(profile, fallbackMinutes) {
 }
 
 function renderSupportActivityJobRows(activity, tabKey) {
+  const jobs = supportActivityJobs(activity);
   return supportActivityJobs(activity).map((job, index) => `
     <tr class="${selectedSupportActivityJobKeys.has(supportActivityJobKey(tabKey, index)) ? "selected-table-row" : ""}">
       <td><input type="checkbox" data-support-activity-job-select="${htmlEscape(supportActivityJobKey(tabKey, index))}" ${selectedSupportActivityJobKeys.has(supportActivityJobKey(tabKey, index)) ? "checked" : ""}></td>
       <td>${index + 1}</td>
       <td>${htmlEscape(job.activityCode || `BA-${String(index + 1).padStart(3, "0")}`)}</td>
       <td>${htmlEscape(job.workName || "-")}</td>
-      <td>${htmlEscape(Array.isArray(job.subJobs) && job.subJobs.length ? job.subJobs.join("、") : "检查 / 执行 / 复核")}</td>
-      <td>${htmlEscape(Array.isArray(job.predecessors) && job.predecessors.length ? job.predecessors.join("、") : "-")}</td>
+      <td>${predecessorMultiSelect(jobs, job, index, tabKey)}</td>
       <td>${Number(job.durationMinutes || 0)}</td>
-      <td>${htmlEscape(describeDurationProfile(job.durationProfile, job.durationMinutes))}</td>
-      <td><button type="button" class="inline-action" data-support-activity-job="${htmlEscape(tabKey)}-${index}" disabled>编辑</button><button type="button" class="btn-danger" data-support-activity-job-delete="${htmlEscape(supportActivityJobKey(tabKey, index))}">删除</button></td>
+      <td><button type="button" class="inline-action" data-support-activity-job="${htmlEscape(tabKey)}-${index}">编辑</button><button type="button" class="btn-danger" data-support-activity-job-delete="${htmlEscape(supportActivityJobKey(tabKey, index))}">删除</button></td>
     </tr>
   `).join("");
+}
+
+function predecessorMultiSelect(jobs, job, index, tabKey) {
+  const selected = new Set(Array.isArray(job.predecessors) ? job.predecessors : []);
+  return `
+    <select multiple data-support-activity-predecessors="${htmlEscape(supportActivityJobKey(tabKey, index))}">
+      ${jobs.map((candidate, candidateIndex) => {
+        if (candidateIndex === index) return "";
+        const value = candidate.activityCode || candidate.workName || `BA-${candidateIndex + 1}`;
+        const label = candidate.workName || value;
+        return `<option value="${htmlEscape(value)}" ${selected.has(value) ? "selected" : ""}>${htmlEscape(label)}</option>`;
+      }).join("")}
+    </select>
+  `;
 }
 
 function renderSupportActivityJobTable(activity, tabKey) {
@@ -3088,13 +3540,13 @@ function renderSupportActivityJobTable(activity, tabKey) {
   const allSelected = jobs.length > 0 && selectedCount === jobs.length;
   const body = jobs.length
     ? renderSupportActivityJobRows(activity, tabKey)
-    : `<tr><td colspan="9" class="muted">暂无工作项目</td></tr>`;
+    : `<tr><td colspan="7" class="muted">暂无工作项目</td></tr>`;
   return `
     <h4>工作项目清单</h4>
-    <div class="toolbar-row"><button type="button" class="btn-primary" data-support-activity-job-add disabled>新增基本保障活动</button><button type="button" class="btn-danger" data-support-activity-job-batch-delete="${htmlEscape(tabKey)}">批量删除</button></div>
+    <div class="toolbar-row"><button type="button" class="btn-primary" data-support-activity-job-add="${htmlEscape(tabKey)}">新增基本保障活动</button><button type="button" class="btn-danger" data-support-activity-job-batch-delete="${htmlEscape(tabKey)}">批量删除</button></div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th><input type="checkbox" data-support-activity-job-select-all="${htmlEscape(tabKey)}" ${allSelected ? "checked" : ""}></th><th>序号</th><th>基本保障活动编号</th><th>作业项</th><th>子作业</th><th>紧前作业</th><th>工期(min)</th><th>工期分布摘要</th><th>操作</th></tr></thead>
+        <thead><tr><th><input type="checkbox" data-support-activity-job-select-all="${htmlEscape(tabKey)}" ${allSelected ? "checked" : ""}></th><th>序号</th><th>基本保障活动编号</th><th>作业项</th><th>紧前作业</th><th>工期(min)</th><th>操作</th></tr></thead>
         <tbody>${body}</tbody>
       </table>
     </div>
@@ -3102,8 +3554,53 @@ function renderSupportActivityJobTable(activity, tabKey) {
 }
 
 function renderBasicActivityLibrary() {
-  const rows = (scenario.supportActivities || []).flatMap((activity) =>
-    supportActivityJobs(activity).map((job) => ({
+  const rows = basicActivityLibraryRows();
+  const allSelected = rows.length > 0 && rows.every((row) => selectedBasicActivityKeys.has(row.key));
+  return `
+    <div class="detail-card activity-editor-card">
+      <div class="section-head">
+        <h3>基本保障活动基础库</h3>
+        <span>展示基本保障活动清单，编辑后通过 Project draft 保存</span>
+      </div>
+      <div class="toolbar-row">
+        <button type="button" class="btn-primary" data-basic-activity-add>新增</button>
+        <button type="button" class="btn-danger" data-basic-activity-batch-delete>批量删除</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th><input type="checkbox" data-basic-activity-select-all ${allSelected ? "checked" : ""}></th>
+              <th>序号</th><th>类型</th><th>基本保障活动名称</th><th>基本保障活动编号</th><th>适用对象</th><th>工期(min)</th>
+              <th>保障人员要求</th><th>保障设备要求</th><th>弹药需求</th><th>备件需求</th><th>操作</th>
+            </tr>
+          </thead>
+          <tbody>${rows.map((row, index) => `
+            <tr>
+              <td><input type="checkbox" data-basic-activity-select="${htmlEscape(row.key)}" ${selectedBasicActivityKeys.has(row.key) ? "checked" : ""}></td>
+              <td>${index + 1}</td>
+              <td>${htmlEscape(row.type || "-")}</td>
+              <td>${htmlEscape(row.workName || "-")}</td>
+              <td>${htmlEscape(row.activityCode || "-")}</td>
+              <td>${htmlEscape(row.scope || "-")}</td>
+              <td>${Number(row.durationMinutes || 0)}</td>
+              <td>${htmlEscape(row.personnel || "-")}</td>
+              <td>${htmlEscape(row.equipment || "-")}</td>
+              <td>${htmlEscape(row.ammunition || "-")}</td>
+              <td>${htmlEscape(row.spare || "-")}</td>
+              <td><button type="button" class="inline-action" data-basic-activity-edit="${htmlEscape(row.key)}">编辑</button><button type="button" class="btn-danger" data-basic-activity-delete="${htmlEscape(row.key)}">删除</button></td>
+            </tr>
+          `).join("")}</tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+function basicActivityLibraryRows() {
+  return (scenario.supportActivities || []).flatMap((activity, activityIndex) =>
+    supportActivityJobs(activity).map((job, jobIndex) => ({
+      key: `${activityIndex}:${jobIndex}`,
       type: activity.activityType === "修复性维修" || activity.activityType === "预防性维修" ? "维修保障" : "使用保障",
       activityCode: job.activityCode,
       workName: job.workName,
@@ -3115,44 +3612,39 @@ function renderBasicActivityLibrary() {
       spare: job.spare
     }))
   );
-  return `
-    <div class="detail-card activity-editor-card">
-      <div class="section-head">
-        <h3>基本保障活动列表库</h3>
-        <span>展示基本保障活动清单，编辑能力待接入保存契约</span>
-      </div>
-      <div class="toolbar-row">
-        <button type="button" class="btn-primary" data-basic-activity-add disabled>新增</button>
-        <button type="button" disabled>导入</button>
-        <button type="button" class="btn-danger" data-basic-activity-delete disabled>删除</button>
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>序号</th><th>类型</th><th>基本保障活动名称</th><th>基本保障活动编号</th><th>适用对象</th><th>工期(min)</th>
-              <th>保障人员要求</th><th>保障设备要求</th><th>弹药需求</th><th>备件需求</th><th>操作</th>
-            </tr>
-          </thead>
-          <tbody>${rows.map((row, index) => `
-            <tr>
-              <td>${index + 1}</td>
-              <td>${htmlEscape(row.type || "-")}</td>
-              <td>${htmlEscape(row.workName || "-")}</td>
-              <td>${htmlEscape(row.activityCode || "-")}</td>
-              <td>${htmlEscape(row.scope || "-")}</td>
-              <td>${Number(row.durationMinutes || 0)}</td>
-              <td>${htmlEscape(row.personnel || "-")}</td>
-              <td>${htmlEscape(row.equipment || "-")}</td>
-              <td>${htmlEscape(row.ammunition || "-")}</td>
-              <td>${htmlEscape(row.spare || "-")}</td>
-              <td><button type="button" class="inline-action" data-basic-activity-edit="${index}" disabled>编辑</button><button type="button" class="btn-danger" data-basic-activity-delete="${index}" disabled>删除</button></td>
-            </tr>
-          `).join("")}</tbody>
-        </table>
-      </div>
-    </div>
-  `;
+}
+
+function addBasicActivityLibraryJob() {
+  const activity = (scenario.supportActivities || [])[0];
+  if (!activity) return;
+  const jobs = supportActivityJobs(activity).slice();
+  jobs.push({ activityCode: `BA-${String(jobs.length + 1).padStart(3, "0")}`, workName: `新增保障活动${jobs.length + 1}`, predecessors: [], durationMinutes: 30, personnel: "机务人员,1", equipment: "检测仪,1" });
+  activity.jobs = jobs;
+}
+
+function deleteBasicActivityJob(key) {
+  const [activityIndex, jobIndex] = String(key || "").split(":").map(Number);
+  const activity = (scenario.supportActivities || [])[activityIndex];
+  if (!activity) return;
+  deleteSupportActivityJobAt(activity, jobIndex);
+  selectedBasicActivityKeys.delete(key);
+}
+
+function deleteSelectedBasicActivityJobs() {
+  const byActivity = new Map();
+  for (const key of selectedBasicActivityKeys) {
+    const [activityIndex, jobIndex] = String(key).split(":").map(Number);
+    if (!Number.isInteger(activityIndex) || !Number.isInteger(jobIndex)) continue;
+    byActivity.set(activityIndex, [...(byActivity.get(activityIndex) || []), jobIndex]);
+  }
+  for (const [activityIndex, indexes] of byActivity.entries()) {
+    deleteSupportActivityJobsAtIndexes((scenario.supportActivities || [])[activityIndex], indexes);
+  }
+  selectedBasicActivityKeys = new Set();
+}
+
+function toggleAllBasicActivitySelection(checked) {
+  selectedBasicActivityKeys = checked ? new Set(basicActivityLibraryRows().map((row) => row.key)) : new Set();
 }
 
 function renderOperationsSupportActivity(activePlan, activity) {
@@ -3163,7 +3655,6 @@ function renderOperationsSupportActivity(activePlan, activity) {
         <span>${activePlan.path.map((item) => htmlEscape(item)).join(" / ")}</span>
       </div>
       <div class="form-table-grid">
-        <label>使用保障活动名称<input value="${htmlEscape(activity.activityName || activePlan.name)}" readonly></label>
         <label>最大工作时间参考(min)<input type="number" value="${Number(activity.maxWorkTimeRefMinutes || activity.durationHours * 60 || 0)}" readonly></label>
       </div>
       ${renderSupportActivityJobTable(activity, "ops_plan")}
@@ -3172,7 +3663,7 @@ function renderOperationsSupportActivity(activePlan, activity) {
 }
 
 function renderPreventiveMaintenanceActivity(activePlan, activity) {
-  const enabled = new Set(activity.triggerModes || []);
+  const activityIndex = Math.max(0, (scenario.supportActivities || []).indexOf(activity));
   return `
     <div class="detail-card activity-editor-card">
       <div class="section-head">
@@ -3180,17 +3671,17 @@ function renderPreventiveMaintenanceActivity(activePlan, activity) {
         <span>${activePlan.path.map((item) => htmlEscape(item)).join(" / ")}</span>
       </div>
       <div class="form-table-grid">
-        <label>方案名称<input value="${htmlEscape(activity.activityName || activePlan.name)}" readonly></label>
-        <label>计划停机小时<input type="number" value="${Number(activity.plannedDowntimeHours || activity.durationHours || 0)}" readonly></label>
-        <label>启动日历时间<input value="${enabled.has("日历时间") ? "启用" : "停用"}" readonly></label>
-        <label>日历日间隔<input type="number" value="${Number(activity.calendarDayInterval || 1)}" readonly></label>
-        <label>日历日间隔上下浮动比例(%)<input type="number" value="${Number(activity.calendarDayFloatRatio || 0)}" readonly></label>
-        <label>启动飞行小时<input value="${enabled.has("飞行小时") ? "启用" : "停用"}" readonly></label>
-        <label>飞行小时间隔<input type="number" value="${Number(activity.runHourInterval || 0)}" readonly></label>
-        <label>飞行小时上下浮动比例(%)<input type="number" value="${Number(activity.runHourFloatRatio || 0)}" readonly></label>
-        <label>启动起落次数<input value="${enabled.has("起落次数") ? "启用" : "停用"}" readonly></label>
-        <label>起落次数间隔<input type="number" value="${Number(activity.takeoffLandingInterval || 0)}" readonly></label>
-        <label>起落次数间隔上下浮动比例(%)<input type="number" value="${Number(activity.takeoffLandingFloatRatio || 0)}" readonly></label>
+        ${field("方案名称", `supportActivities.${activityIndex}.activityName`)}
+        ${field("计划停机小时", `supportActivities.${activityIndex}.plannedDowntimeHours`, "number", { min: "0", step: "0.1" })}
+        <label>启动日历时间<input type="checkbox" data-path="supportActivities.${activityIndex}.useCalendarRule" ${activity.useCalendarRule ? "checked" : ""}></label>
+        ${field("使用日历日间隔规则", `supportActivities.${activityIndex}.calendarDayInterval`, "number", { min: "0", step: "1" })}
+        ${field("日历日间隔上下浮动比例", `supportActivities.${activityIndex}.calendarDayFloatRatio`, "number", { min: "0", max: "1", step: "0.01" })}
+        <label>使用飞行小时规则<input type="checkbox" data-path="supportActivities.${activityIndex}.useFlightHourRule" ${activity.useFlightHourRule ? "checked" : ""}></label>
+        ${field("飞行小时间隔", `supportActivities.${activityIndex}.runHourInterval`, "number", { min: "0", step: "1" })}
+        ${field("飞行小时上下浮动比例", `supportActivities.${activityIndex}.runHourFloatRatio`, "number", { min: "0", max: "1", step: "0.01" })}
+        <label>启动起落次数<input type="checkbox" data-path="supportActivities.${activityIndex}.useTakeoffLandingRule" ${activity.useTakeoffLandingRule ? "checked" : ""}></label>
+        ${field("起落次数间隔", `supportActivities.${activityIndex}.takeoffLandingInterval`, "number", { min: "0", step: "1" })}
+        ${field("起落次数间隔上下浮动比例", `supportActivities.${activityIndex}.takeoffLandingFloatRatio`, "number", { min: "0", max: "1", step: "0.01" })}
       </div>
       ${renderSupportActivityJobTable(activity, "prev_repair")}
     </div>
@@ -3228,7 +3719,8 @@ function correctiveReferenceComponent() {
 }
 
 function renderCorrectiveMaintenanceActivity(activity) {
-  const referenceComponent = correctiveReferenceComponent();
+  const activityIndex = Math.max(0, (scenario.supportActivities || []).indexOf(activity));
+  const repairType = activity.repairType || "原位维修";
   return `
     <div class="organization-layout">
       ${renderEquipmentConfigTree()}
@@ -3239,14 +3731,13 @@ function renderCorrectiveMaintenanceActivity(activity) {
             <span>${htmlEscape(activity.activityName || "修复性维修方案")}</span>
           </div>
           <div class="form-table-grid">
-            <label>平均修复时间(min)<input type="number" value="${Number(activity.meanRepairTimeMinutes || activity.durationHours * 60 || 0)}" readonly></label>
-            <label>维修时间分布类型<input value="${htmlEscape(activity.repairDistribution?.distributionType || "-")}" readonly></label>
-            <label>分布参数<input value="${htmlEscape(activity.repairDistribution?.params || "-")}" readonly></label>
-            <label>维修类型<input value="${htmlEscape((activity.repairTypes || []).join("、") || "-")}" readonly></label>
-            <label>特殊产品适用对象<input value="${htmlEscape(referenceComponent.name || "-")} / ${htmlEscape(referenceComponent.productType || "-")}" readonly></label>
-            <label>特殊产品维修时间(min)<input type="number" value="${Number(referenceComponent.specialRepairProfile?.repairTimeMinutes || activity.meanRepairTimeMinutes || 0)}" readonly></label>
-            <label>维修比例<input type="number" value="${Number(referenceComponent.specialRepairProfile?.repairRatio || 0)}" readonly></label>
-            <label>换件比例<input type="number" value="${Number(referenceComponent.specialRepairProfile?.replacementRatio || 0)}" readonly></label>
+            ${field("最大修复时间(min)", `supportActivities.${activityIndex}.maxRepairTimeMinutes`, "number", { min: "0", step: "1" })}
+            <label>维修类型
+              <span class="inline-radio-group">
+                <label><input data-path="supportActivities.${activityIndex}.repairType" type="radio" name="corrective-repair-type" value="原位维修" ${repairType === "原位维修" ? "checked" : ""}>原位维修</label>
+                <label><input data-path="supportActivities.${activityIndex}.repairType" type="radio" name="corrective-repair-type" value="换件维修" ${repairType === "换件维修" ? "checked" : ""}>换件维修</label>
+              </span>
+            </label>
           </div>
           ${renderSupportActivityJobTable(activity, "corr_repair")}
             </div>
@@ -3350,10 +3841,7 @@ function renderSupportActivityWorkbench(page) {
           <div class="tree-toolbar">
             <h4>${htmlEscape(activePlan.treeTitle)}</h4>
             <div class="equipment-toolbar">
-              <button type="button" class="btn-primary" disabled>新增分类</button>
-              <button type="button" disabled>编辑</button>
-              <button type="button" class="btn-danger" disabled>删除</button>
-              <button type="button" disabled>导入</button>
+              ${page.name.includes("预防性") ? `<button type="button" class="btn-primary">新增</button>` : ""}
             </div>
           </div>
           ${renderSupportActivityTreeNode(activePlan.tree, activePlan.path.at(-1))}
@@ -3497,7 +3985,7 @@ async function saveCurrentProjectThroughApi() {
 
 async function handleEnterWorkbench(projectId) {
   await flushPendingProjectDraftAutosave();
-  currentProject = DEMO_PROJECTS.find((project) => project.id === projectId) || DEMO_PROJECTS[0];
+  currentProject = demoProjects.find((project) => project.id === projectId) || demoProjects[0];
   isLoggedIn = true;
   selectedRoute = "workbench";
   selectedFeatureId = DEFAULT_FEATURE_ID;
@@ -3505,6 +3993,45 @@ async function handleEnterWorkbench(projectId) {
   location.hash = `feature=${DEFAULT_FEATURE_ID}`;
   projectDraftHydrateStatus = "正在读取 Project draft";
   await hydrateCurrentProjectDraftFromApi();
+}
+
+function addDemoProject() {
+  const nextIndex = demoProjects.length + 1;
+  const project = {
+    id: `new-project-${nextIndex}`,
+    name: `新增项目${nextIndex}`,
+    baseCode: `NB-${String(nextIndex).padStart(2, "0")}`,
+    updatedAt: new Date().toISOString().slice(0, 10),
+    summary: "新建项目草稿，进入后可维护建模数据。"
+  };
+  demoProjects = [...demoProjects, project];
+  currentProject = project;
+  projectListStatus = `已添加项目：${project.name}`;
+}
+
+function editDemoProject(projectId) {
+  demoProjects = demoProjects.map((project) => {
+    if (project.id !== projectId) return project;
+    const updated = {
+      ...project,
+      name: project.name.endsWith("（编辑）") ? project.name : `${project.name}（编辑）`,
+      updatedAt: new Date().toISOString().slice(0, 10)
+    };
+    currentProject = updated;
+    return updated;
+  });
+  projectListStatus = "项目条目已进入本地编辑态";
+}
+
+function deleteDemoProject(projectId) {
+  if (demoProjects.length <= 1) {
+    projectListStatus = "至少保留一个项目";
+    return;
+  }
+  const removed = demoProjects.find((project) => project.id === projectId);
+  demoProjects = demoProjects.filter((project) => project.id !== projectId);
+  if (currentProject.id === projectId) currentProject = demoProjects[0];
+  projectListStatus = removed ? `已删除项目：${removed.name}` : "项目不存在";
 }
 
 async function flushPendingProjectDraftAutosave() {
@@ -3567,13 +4094,9 @@ async function saveCurrentProjectDraftThroughApi() {
     projectDraftHydrateStatus = "";
     backendApiStatus = "Project draft 已保存";
   } catch (err) {
-    savedProject = {
-      project_id: projectJson.project_id,
-      project_version: projectJson.project_version,
-      status: "offline-demo"
-    };
+    savedProject = null;
     projectDraftSaveStatus = "保存失败";
-    backendApiStatus = `离线演示：${err && err.message ? err.message : "Backend API 不可用"}`;
+    backendApiStatus = `后端保存失败，Project draft 未保存：${err && err.message ? err.message : "Backend API 不可用"}`;
   }
 }
 
@@ -3589,6 +4112,7 @@ async function saveCurrentExperimentPlanThroughApi() {
     );
     backendApiStatus = "实验方案分支已保存";
   } catch (err) {
+    savedProject = null;
     modelingSnapshot = null;
     experimentPlan = null;
     backendApiStatus = `实验方案保存失败：${err && err.message ? err.message : "Backend API 不可用"}`;
@@ -3631,6 +4155,7 @@ async function startExperimentRunThroughApi() {
     experimentRunStatus = backendRun.status === "succeeded" ? "完成" : backendRun.status;
     backendApiStatus = "运行完成";
   } catch (err) {
+    savedProject = null;
     backendRun = null;
     backendRunResult = null;
     backendArtifactManifest = null;
@@ -3778,6 +4303,9 @@ async function handleSystemUserAction(action) {
   if (action === "cancel") {
     systemUserEditor = null;
   }
+  if (action === "delete-selected") {
+    deleteSystemUsers(Array.from(selectedSystemUsernames));
+  }
 }
 
 function openSystemUserEditor(username = "") {
@@ -3790,6 +4318,37 @@ function openSystemUserEditor(username = "") {
       ? { ...existingUser }
       : { username: "", name: "", role: "普通用户", status: "启用", password: "" }
   };
+}
+
+function deleteSystemUsers(usernames) {
+  const targets = new Set(usernames.filter(Boolean));
+  if (!targets.size) {
+    systemUsersLoadStatus = "请先选择要删除的用户";
+    return;
+  }
+  if (targets.has("admin")) {
+    systemUsersLoadStatus = "系统管理员 admin 不允许删除";
+    selectedSystemUsernames = new Set(Array.from(selectedSystemUsernames).filter((username) => username !== "admin"));
+    return;
+  }
+  systemUsers = systemUsers.filter((user) => !targets.has(user.username));
+  selectedSystemUsernames = new Set(Array.from(selectedSystemUsernames).filter((username) => !targets.has(username)));
+  systemUsersLoaded = true;
+  systemUsersLoadStatus = `已删除 ${targets.size} 个用户`;
+}
+
+function updatePermissionRole(feature, encodedRole) {
+  const row = SYSTEM_PERMISSION_ROWS.find((item) => item.feature === feature);
+  if (!row) return;
+  const [roleKey, value] = String(encodedRole || "").split(":");
+  if (["admin", "data", "user"].includes(roleKey)) {
+    row[roleKey] = value || "查看";
+    permissionConfigStatus = `已更新 ${feature} / ${permissionRoleLabel(roleKey)}：${row[roleKey]}`;
+  }
+}
+
+function permissionRoleLabel(roleKey) {
+  return { admin: "系统管理员", data: "数据管理员", user: "项目用户" }[roleKey] || roleKey;
 }
 
 async function saveSystemUserEditor() {
@@ -4098,10 +4657,10 @@ function renderMesaStage(state) {
       <div class="mesa-flight-deck">
         ${state.aircraft.map((aircraft) => {
           const [x, y] = aircraft.position;
-          return `<div class="mesa-aircraft-node ${aircraft.state}" style="left:${12 + x * 21}%;top:${16 + y * 34}%">
-            <strong>${aircraft.label}</strong>
-            <span>${aircraft.type}</span>
-            <em>${stateLabel(aircraft.state)}</em>
+          return `<div class="mesa-aircraft-node ${mesaStateClass(aircraft.state)}" style="left:${12 + x * 21}%;top:${16 + y * 34}%">
+            <strong>${htmlEscape(aircraft.label)}</strong>
+            <span>${htmlEscape(aircraft.type)}</span>
+            <em>${htmlEscape(stateLabel(aircraft.state))}</em>
           </div>`;
         }).join("")}
       </div>
@@ -4113,7 +4672,7 @@ function renderMesaStage(state) {
         <span class="legend-item"><i class="dot maintenance"></i>维修</span>
       </div>
       <div class="mesa-mission-strip">
-        ${state.missions.map((mission) => `<div class="mission"><span>任务 ${mission.id} / 需求 ${mission.requiredAircraft} 架</span><strong>${mission.status}</strong><div class="bar"><i style="width:${missionProgressWidth(mission)}%"></i></div></div>`).join("")}
+        ${state.missions.map((mission) => `<div class="mission"><span>任务 ${htmlEscape(mission.id)} / 需求 ${htmlEscape(mission.requiredAircraft)} 架</span><strong>${htmlEscape(mission.status)}</strong><div class="bar"><i style="width:${missionProgressWidth(mission)}%"></i></div></div>`).join("")}
       </div>
     </div>
   `;
@@ -4134,10 +4693,10 @@ function renderMesaAircraftPanel(state) {
       <span>${state.aircraft.length} 架</span>
     </div>
     <div class="mesa-aircraft-list">
-      ${state.aircraft.map((aircraft) => `<div class="list-row"><strong>${aircraft.label}</strong><span>${aircraft.type}</span><span>${stateLabel(aircraft.state)}</span></div>`).join("")}
+      ${state.aircraft.map((aircraft) => `<div class="list-row"><strong>${htmlEscape(aircraft.label)}</strong><span>${htmlEscape(aircraft.type)}</span><span>${htmlEscape(stateLabel(aircraft.state))}</span></div>`).join("")}
     </div>
     <h4>飞机内部装备</h4>
-    <div class="event info"><strong>${selectedAircraft.label}</strong> 系统数量 ${selectedAircraft.systemCount} / 失效 LRU ${selectedAircraft.failedLru || "-"}</div>
+    <div class="event info"><strong>${htmlEscape(selectedAircraft.label)}</strong> 系统数量 ${htmlEscape(selectedAircraft.systemCount)} / 失效 LRU ${htmlEscape(selectedAircraft.failedLru || "-")}</div>
   `;
 }
 
@@ -4150,12 +4709,12 @@ function renderMesaMissionPanel(state) {
     <div class="table-wrap compact-table">
       <table>
         <thead><tr><th>任务</th><th>计划</th><th>实际</th><th>状态</th><th>编组</th></tr></thead>
-        <tbody>${state.missions.map((mission) => `<tr><td>M-${mission.id}</td><td>T+${mission.plannedStart}</td><td>${mission.actualStart ? `T+${mission.actualStart}` : "-"}</td><td>${mission.status}</td><td>${mission.assignedCount}/${mission.requiredAircraft}</td></tr>`).join("")}</tbody>
+        <tbody>${state.missions.map((mission) => `<tr><td>M-${htmlEscape(mission.id)}</td><td>T+${htmlEscape(mission.plannedStart)}</td><td>${mission.actualStart ? `T+${htmlEscape(mission.actualStart)}` : "-"}</td><td>${htmlEscape(mission.status)}</td><td>${htmlEscape(mission.assignedCount)}/${htmlEscape(mission.requiredAircraft)}</td></tr>`).join("")}</tbody>
       </table>
     </div>
     <h4>执飞飞机编组</h4>
     <div class="stack-list">
-      ${state.missions.map((mission) => `<div class="job"><span>任务 ${mission.id}</span><strong>${mission.assignedTailNumbers.length ? mission.assignedTailNumbers.join(" / ") : "未编组"}</strong></div>`).join("")}
+      ${state.missions.map((mission) => `<div class="job"><span>任务 ${htmlEscape(mission.id)}</span><strong>${mission.assignedTailNumbers.length ? mission.assignedTailNumbers.map((tailNumber) => htmlEscape(tailNumber)).join(" / ") : "未编组"}</strong></div>`).join("")}
     </div>
   `;
 }
@@ -4167,15 +4726,15 @@ function renderMesaSupportPanel(state) {
       <span>资源 / 备件 / 作业</span>
     </div>
     <div class="stack-list">
-      ${state.resources.map((resource) => `<div class="metric-line"><strong>${resource.label}</strong><div class="bar"><span style="width:${Math.round(resource.utilization * 100)}%"></span></div><span>${resource.inUse}/${resource.capacity}</span></div>`).join("")}
+      ${state.resources.map((resource) => `<div class="metric-line"><strong>${htmlEscape(resource.label)}</strong><div class="bar"><span style="width:${Math.round(resource.utilization * 100)}%"></span></div><span>${htmlEscape(resource.inUse)}/${htmlEscape(resource.capacity)}</span></div>`).join("")}
     </div>
     <h4>备件库存量 / 已消耗 / 在途</h4>
     <div class="stack-list">
-      ${state.spares.map((spare) => `<div class="list-row"><strong>${spare.label}</strong><span>库存 ${spare.quantity}</span><span>消耗 ${spare.consumed} / 在途 ${spare.pending}</span></div>`).join("")}
+      ${state.spares.map((spare) => `<div class="list-row"><strong>${htmlEscape(spare.label)}</strong><span>库存 ${htmlEscape(spare.quantity)}</span><span>消耗 ${htmlEscape(spare.consumed)} / 在途 ${htmlEscape(spare.pending)}</span></div>`).join("")}
     </div>
     <h4>保障作业与事件</h4>
-    ${state.jobs.map((job) => `<div class="event info"><strong>${job.tailNumber}</strong> ${job.task} / ${job.state} / ${job.remaining}min</div>`).join("")}
-    ${state.events.map((event) => `<div class="event success"><strong>T+${event.time}</strong> ${event.message}</div>`).join("")}
+    ${state.jobs.map((job) => `<div class="event info"><strong>${htmlEscape(job.tailNumber)}</strong> ${htmlEscape(job.task)} / ${htmlEscape(job.state)} / ${htmlEscape(job.remaining)}min</div>`).join("")}
+    ${state.events.map((event) => `<div class="event success"><strong>T+${htmlEscape(event.time)}</strong> ${htmlEscape(event.message)}</div>`).join("")}
   `;
 }
 
@@ -4877,12 +5436,14 @@ function setPath(obj, path, value) {
   const parts = path.split(".");
   let current = obj;
   for (const part of parts.slice(0, -1)) {
+    if (current[part] == null || typeof current[part] !== "object") current[part] = {};
     current = current[part];
   }
   current[parts.at(-1)] = value;
 }
 
 function parseInput(input) {
+  if (input.type === "checkbox") return input.checked;
   return input.type === "number" ? Number(input.value) : input.value;
 }
 
@@ -4890,8 +5451,8 @@ function updateEquipmentKOutOfNInput(input) {
   const component = scenario.components[Number(input.dataset.equipmentKOutOfNIndex)];
   if (!component) return;
   const quantity = Math.max(0, Math.trunc(Number(component.quantity) || 0));
-  const bounded = clamp(Math.trunc(Number(input.value) || 0), 0, quantity);
-  component.kOutOfN = { ...(component.kOutOfN || {}), enabled: bounded > 0, n: quantity, k: bounded };
+  const bounded = quantity > 1 ? clamp(Math.trunc(Number(input.value) || 1), 1, quantity) : 0;
+  component.kOutOfN = { ...(component.kOutOfN || {}), enabled: quantity > 1 && bounded > 0, n: quantity, k: bounded };
   input.value = String(bounded);
   updateDemoResultsThroughApiClient();
 }
@@ -4902,9 +5463,9 @@ function normalizeEquipmentKOutOfNForPath(path) {
   const component = scenario.components[Number(match[1])];
   if (!component) return;
   const quantity = Math.max(0, Math.trunc(Number(component.quantity) || 0));
-  const bounded = clamp(Math.trunc(Number(component.kOutOfN?.k) || 0), 0, quantity);
+  const bounded = quantity > 1 ? clamp(Math.trunc(Number(component.kOutOfN?.k) || 1), 1, quantity) : 0;
   component.quantity = quantity;
-  component.kOutOfN = { ...(component.kOutOfN || {}), enabled: bounded > 0, n: quantity, k: bounded };
+  component.kOutOfN = { ...(component.kOutOfN || {}), enabled: quantity > 1 && bounded > 0, n: quantity, k: bounded };
 }
 
 function parseNumberList(value) {
@@ -4930,6 +5491,10 @@ function stateLabel(state) {
     maintenance: "维修"
   };
   return labels[state] || state;
+}
+
+function mesaStateClass(state) {
+  return String(state || "unknown").replace(/[^a-zA-Z0-9_-]/g, "");
 }
 
 function pct(value) {

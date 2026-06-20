@@ -363,6 +363,59 @@ test("frontend API fetch transport preserves structured backend details", async 
   }
 });
 
+test("frontend API fetch transport sends an abort signal for timeout control", async () => {
+  const originalFetch = globalThis.fetch;
+  let observedSignal = null;
+  globalThis.fetch = async (_url, init = {}) => {
+    observedSignal = init.signal;
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({ user: { user_id: "user-admin" } })
+    };
+  };
+  try {
+    const client = createBackendApiClient({ baseUrl: "/api" });
+
+    await client.getSession();
+
+    assert.ok(observedSignal);
+    assert.equal(typeof observedSignal.aborted, "boolean");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("frontend API fetch transport classifies network failures for blocking UI", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => {
+    throw new TypeError("fetch failed");
+  };
+  try {
+    const client = createBackendApiClient({ baseUrl: "/api" });
+
+    await assert.rejects(
+      () => client.getSession(),
+      (err) => {
+        assert.equal(err.code, "backend_network_error");
+        assert.equal(err.details.path, "/auth/session");
+        assert.equal(err.details.method, "GET");
+        return true;
+      }
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("frontend API fetch transport defines an AbortController timeout path", async () => {
+  const apiSource = await readFile(new URL("../front/api-client.mjs", import.meta.url), "utf8");
+
+  assert.match(apiSource, /AbortController/);
+  assert.match(apiSource, /setTimeout/);
+  assert.match(apiSource, /backend_request_timeout/);
+});
+
 test("frontend API client preserves compile gate error payload for submitRun", async () => {
   const compileGateError = new Error("aviation_support input is not supported by the Scenario compiler");
   compileGateError.code = "unsupported_model_family";

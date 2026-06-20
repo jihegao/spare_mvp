@@ -11,10 +11,14 @@ import sqlite3
 import traceback
 from typing import Any
 from urllib.parse import unquote, urlparse
+from uuid import uuid4
 
 from src.spare_mvp_backend.api import BackendApi, BackendApiError
 from src.spare_mvp_backend.repository import ContractRepository, initialize_database
 from src.spare_mvp_contract.adapter import SimulationAdapter
+
+
+MAX_JSON_BODY_BYTES = 1024 * 1024
 
 
 def create_backend_server(
@@ -27,13 +31,22 @@ def create_backend_server(
     """Create a local HTTP server exposing the frontend `/api` contract."""
     root = Path(repo_root).resolve() if repo_root else Path(__file__).resolve().parents[2]
     artifact_dir = Path(output_dir).resolve() if output_dir else root / "runs" / "m3-0-http"
-    connection = sqlite3.connect(str(database_path), check_same_thread=False)
-    initialize_database(connection)
-    api = BackendApi(
-        ContractRepository(connection),
-        SimulationAdapter(root),
-        output_dir=artifact_dir,
-    )
+    database_target = str(database_path)
+    connect_kwargs: dict[str, Any] = {}
+    if database_target == ":memory:":
+        database_target = f"file:spare_mvp_{uuid4().hex}?mode=memory&cache=shared"
+        connect_kwargs["uri"] = True
+
+    def open_connection() -> sqlite3.Connection:
+        connection = sqlite3.connect(database_target, **connect_kwargs)
+        connection.execute("PRAGMA foreign_keys = ON")
+        connection.execute("PRAGMA busy_timeout = 5000")
+        connection.execute("PRAGMA journal_mode = WAL")
+        return connection
+
+    anchor_connection = open_connection()
+    initialize_database(anchor_connection)
+    adapter = SimulationAdapter(root)
 
     class BackendRequestHandler(BaseHTTPRequestHandler):
         server_version = "SpareMvpBackend/0.1"
@@ -52,7 +65,14 @@ def create_backend_server(
             if self.command == "GET" and not parsed_path.startswith("/api"):
                 self._send_static(parsed_path)
                 return
+            request_connection = None
             try:
+                request_connection = open_connection()
+                self._request_api = BackendApi(
+                    ContractRepository(request_connection),
+                    adapter,
+                    output_dir=artifact_dir,
+                )
                 payload = self._dispatch()
                 self._send_json(200, payload)
             except KeyError as exc:
@@ -63,14 +83,21 @@ def create_backend_server(
                     status = 401
                 elif exc.code == "forbidden":
                     status = 403
+                elif exc.code == "request_too_large":
+                    status = 413
                 self._send_json(status, {"code": exc.code, "message": str(exc), "details": exc.details})
             except ValueError as exc:
                 self._send_json(400, {"code": "bad_request", "message": str(exc)})
             except Exception as exc:  # pragma: no cover - defensive HTTP boundary
                 traceback.print_exc()
                 self._send_json(500, {"code": "internal_error", "message": str(exc)})
+            finally:
+                self._request_api = None
+                if request_connection is not None:
+                    request_connection.close()
 
         def _dispatch(self) -> dict[str, Any]:
+            api = self._request_api
             path = urlparse(self.path).path
             if not path.startswith("/api"):
                 raise KeyError(path)
@@ -152,6 +179,7 @@ def create_backend_server(
             raise KeyError(route)
 
         def _require_user(self, allowed_roles: set[str] | None = None) -> dict[str, Any]:
+            api = self._request_api
             auth_header = self.headers.get("authorization") or ""
             prefix = "Bearer "
             if not auth_header.startswith(prefix):
@@ -169,6 +197,13 @@ def create_backend_server(
             length = int(self.headers.get("content-length", "0") or "0")
             if length == 0:
                 return {}
+            if length > MAX_JSON_BODY_BYTES:
+                raise BackendApiError(
+                    "request_too_large",
+                    f"JSON request body exceeds {MAX_JSON_BODY_BYTES} bytes",
+                    limit_bytes=MAX_JSON_BODY_BYTES,
+                    received_bytes=length,
+                )
             raw = self.rfile.read(length).decode("utf-8")
             return json.loads(raw)
 
@@ -208,7 +243,7 @@ def create_backend_server(
     class BackendHTTPServer(ThreadingHTTPServer):
         def server_close(self) -> None:
             try:
-                connection.close()
+                anchor_connection.close()
             finally:
                 super().server_close()
 
