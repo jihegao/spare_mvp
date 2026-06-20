@@ -18,6 +18,8 @@ This plan must not delete visible `仿真实验方案管理` navigation, `方案
 
 M5.3 may improve the project save path, remove misleading wording, and replace temporary in-memory-only behavior. It must preserve the product distinction from `docs/3概要设计方案.md`: Project data is the reusable base; ExperimentPlan is a copied branch that users may edit before a simulation without changing Project data.
 
+The 2026-06-19 page review is handled by `docs/superpowers/plans/2026-06-20-page-suggestion-alignment.md`. It may change project-list and system-management entry points, but it must not collapse Project draft, ModelingSnapshot, and ExperimentPlan branch boundaries. In particular, the retained `建模数据导入` workbench remains an M5.2/M5 data-entry surface, while M5.3 continues to own Project draft persistence and ExperimentPlan branching.
+
 ---
 
 ## Source Contract
