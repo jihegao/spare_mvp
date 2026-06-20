@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import json
+import http.client
 from pathlib import Path
+import sqlite3
 import tempfile
 from threading import Thread
 import unittest
+from unittest import mock
 from urllib import request
 from urllib.parse import quote
 
@@ -213,6 +216,64 @@ class BackendHttpApiTest(unittest.TestCase):
                     self.assertIn("text/html", response.headers["content-type"])
                     body = response.read().decode("utf-8")
                 self.assertIn("备件规划", body)
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
+    def test_http_server_does_not_reuse_sqlite_connection_across_request_threads(self) -> None:
+        connection_calls = []
+        original_connect = sqlite3.connect
+
+        def spy_connect(*args, **kwargs):
+            connection_calls.append((args, kwargs))
+            return original_connect(*args, **kwargs)
+
+        with tempfile.TemporaryDirectory() as tmp, mock.patch(
+            "src.spare_mvp_backend.http_server.sqlite3.connect",
+            side_effect=spy_connect,
+        ):
+            server = create_backend_server(
+                ("127.0.0.1", 0),
+                repo_root=REPO_ROOT,
+                database_path=":memory:",
+                output_dir=Path(tmp) / "artifacts",
+            )
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                base_url = f"http://127.0.0.1:{server.server_address[1]}/api"
+                self._json(base_url, "POST", "/auth/login", {"username": "admin", "password": "admin"})
+                self._json(base_url, "POST", "/auth/login", {"username": "admin", "password": "admin"})
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
+        self.assertGreaterEqual(len(connection_calls), 3)
+        self.assertFalse(any(call[1].get("check_same_thread") is False for call in connection_calls))
+
+    def test_http_server_rejects_oversized_json_request_body(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            server = create_backend_server(
+                ("127.0.0.1", 0),
+                repo_root=REPO_ROOT,
+                database_path=":memory:",
+                output_dir=Path(tmp) / "artifacts",
+            )
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                connection = http.client.HTTPConnection("127.0.0.1", server.server_address[1], timeout=10)
+                connection.putrequest("POST", "/api/projects/validate")
+                connection.putheader("content-type", "application/json")
+                connection.putheader("content-length", str(1024 * 1024 + 1))
+                connection.endheaders()
+                response = connection.getresponse()
+                payload = json.loads(response.read().decode("utf-8"))
+                connection.close()
+                self.assertEqual(response.status, 413)
+                self.assertEqual(payload["code"], "request_too_large")
             finally:
                 server.shutdown()
                 server.server_close()
