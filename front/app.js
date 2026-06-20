@@ -46,10 +46,15 @@ const DEMO_USERS = [
   { username: "data", role: "数据管理员" },
   { username: "user", role: "普通用户" }
 ];
+const PROJECT_SOURCE = Object.freeze({
+  preview_fixture: "preview_fixture",
+  manual_draft: "manual_draft",
+  imported_sample: "imported_sample"
+});
 let demoProjects = [
-  { id: "landbase-day-night", name: "陆基机群昼夜保障验证", baseCode: "LB-01", updatedAt: "2026-04-26", summary: "验证昼夜连续出动下的机场保障流程与资源配置。" },
-  { id: "high-tempo-support", name: "陆基高强度出动保障压力测试", baseCode: "LB-03", updatedAt: "2026-04-28", summary: "评估多波次出动下备件、人员和保障设备的瓶颈。" },
-  { id: "maintenance-rebalance", name: "陆基维修资源动态重配评估", baseCode: "LB-02", updatedAt: "2026-05-02", summary: "分析维修资源重配对任务可靠度和停机贡献的影响。" }
+  { id: "landbase-day-night", name: "陆基机群昼夜保障验证", baseCode: "LB-01", updatedAt: "2026-04-26", summary: "验证昼夜连续出动下的机场保障流程与资源配置。", sourceKind: PROJECT_SOURCE.preview_fixture },
+  { id: "high-tempo-support", name: "陆基高强度出动保障压力测试", baseCode: "LB-03", updatedAt: "2026-04-28", summary: "评估多波次出动下备件、人员和保障设备的瓶颈。", sourceKind: PROJECT_SOURCE.preview_fixture },
+  { id: "maintenance-rebalance", name: "陆基维修资源动态重配评估", baseCode: "LB-02", updatedAt: "2026-05-02", summary: "分析维修资源重配对任务可靠度和停机贡献的影响。", sourceKind: PROJECT_SOURCE.preview_fixture }
 ];
 const CARRY_OBJECTIVES = [
   { id: "availability", label: "使用可用度", metricLabel: "预计使用可用度", metricValue: "0.91" },
@@ -200,6 +205,9 @@ let selectedSystemUsernames = new Set();
 let permissionConfigFeature = "";
 let permissionConfigStatus = "请选择权限项配置角色权限";
 let activeSystemDataTab = "modeling";
+let selectedSystemDataKeys = new Set();
+let systemDataStatus = "可新增、选择、批量删除或导出当前项目数据列表。";
+let systemDataExportPreview = null;
 
 const SYSTEM_PERMISSION_ROWS = [
   { feature: "项目管理", admin: "管理", data: "编辑", user: "查看" },
@@ -308,7 +316,8 @@ let systemUsersLoaded = false;
 let isLoggedIn = false;
 let currentUser = DEMO_USERS[2];
 let currentProject = demoProjects[0];
-let projectListStatus = "可添加项目，也可在项目条目中编辑或删除。";
+let projectListStatus = "可添加本地草稿，也可从已发布导入包生成示例项目。";
+let projectEditorDraft = null;
 let selectedRoute = readRouteFromHash() || DEFAULT_ROUTE;
 let selectedFeatureId = readFeatureIdFromHash() || DEFAULT_FEATURE_ID;
 let selectedMesaView = "aircraft";
@@ -324,6 +333,7 @@ let selectedPeriodicTaskId = "";
 let selectedEquipmentComponentIndex = 0;
 let selectedEquipmentNodeKey = "";
 let selectedBasicMissionKey = "primary";
+let selectedBasicMissionTreeLevel = "mission";
 let selectedBasicMissionEquipmentType = scenario.basicMission.equipmentType || scenario.equipment.model || "F35";
 let selectedCompositeTaskId = "";
 let selectedCombatUnitMemberIndex = 0;
@@ -403,18 +413,24 @@ function bindEvents() {
 
     const basicMissionNode = event.target.closest("[data-select-basic-mission]");
     if (basicMissionNode && !clickedTreeToggleIcon) {
-      selectedBasicMissionKey = basicMissionNode.dataset.selectBasicMission;
-      const selectedMission = editableBasicMissionRecords().find((record) => record.key === selectedBasicMissionKey);
-      selectedBasicMissionEquipmentType = selectedMission?.task?.equipmentType || selectedBasicMissionEquipmentType;
-      render();
+      const candidateBasicMissionKey = basicMissionNode.dataset.selectBasicMission;
+      const selectedMission = editableBasicMissionRecords().find((record) => record.key === candidateBasicMissionKey);
+      if (selectedMission) {
+        selectedBasicMissionKey = candidateBasicMissionKey;
+        selectedBasicMissionTreeLevel = "mission";
+        selectedBasicMissionEquipmentType = selectedMission?.task?.equipmentType || selectedBasicMissionEquipmentType;
+        render();
+      }
       return;
     }
 
     const basicMissionEquipmentNode = event.target.closest("[data-select-basic-mission-equipment]");
-    if (basicMissionEquipmentNode && !clickedTreeToggleIcon) {
+    if (basicMissionEquipmentNode) {
       selectedBasicMissionEquipmentType = basicMissionEquipmentNode.dataset.selectBasicMissionEquipment;
       const selectedEquipmentMission = editableBasicMissionRecords().find((record) => record.task.equipmentType === selectedBasicMissionEquipmentType);
-      selectedBasicMissionKey = selectedEquipmentMission?.key || "";
+      selectedBasicMissionKey = selectedEquipmentMission?.key || "primary";
+      selectedBasicMissionTreeLevel = "equipment";
+      toggleTreeNodeFromElement(clickedTreeToggleIcon);
       render();
       return;
     }
@@ -520,12 +536,7 @@ function bindEvents() {
 
     const treeToggle = event.target.closest("[data-tree-toggle]");
     if (treeToggle) {
-      const nodeId = treeToggle.dataset.treeToggle;
-      if (collapsedTreeNodes.has(nodeId)) {
-        collapsedTreeNodes.delete(nodeId);
-      } else {
-        collapsedTreeNodes.add(nodeId);
-      }
+      toggleTreeNodeFromElement(treeToggle);
       render();
       return;
     }
@@ -658,6 +669,21 @@ function bindEvents() {
       return;
     }
 
+    const saveProjectEditButton = event.target.closest("[data-project-edit-save]");
+    if (saveProjectEditButton) {
+      saveProjectEditorDraft();
+      render();
+      return;
+    }
+
+    const cancelProjectEditButton = event.target.closest("[data-project-edit-cancel]");
+    if (cancelProjectEditButton) {
+      projectEditorDraft = null;
+      projectListStatus = "已取消项目编辑";
+      render();
+      return;
+    }
+
     const deleteProjectButton = event.target.closest("[data-project-delete]");
     if (deleteProjectButton) {
       deleteDemoProject(deleteProjectButton.dataset.projectDelete);
@@ -753,14 +779,35 @@ function bindEvents() {
     const systemDataTabButton = event.target.closest("[data-system-data-tab]");
     if (systemDataTabButton) {
       activeSystemDataTab = systemDataTabButton.dataset.systemDataTab;
+      selectedSystemDataKeys = new Set();
+      systemDataExportPreview = null;
+      render();
+      return;
+    }
+
+    const systemDataAddButton = event.target.closest("[data-system-data-add]");
+    if (systemDataAddButton) {
+      addSystemDataRow();
+      render();
+      return;
+    }
+
+    const systemDataDeleteButton = event.target.closest("[data-system-data-delete-selected]");
+    if (systemDataDeleteButton) {
+      deleteSelectedSystemDataRows();
       render();
       return;
     }
 
     const systemDataExportButton = event.target.closest("[data-system-data-export]");
     if (systemDataExportButton) {
-      const tab = SYSTEM_DATA_MANAGEMENT_TABS.find((item) => item.key === activeSystemDataTab) || SYSTEM_DATA_MANAGEMENT_TABS[0];
-      projectListStatus = `${tab.label}已生成导出预览`;
+      exportSystemDataRows();
+      render();
+      return;
+    }
+
+    const modelingGranularityDetailButton = event.target.closest("[data-modeling-granularity-detail]");
+    if (modelingGranularityDetailButton) {
       render();
       return;
     }
@@ -988,6 +1035,23 @@ function bindEvents() {
       return;
     }
 
+    const systemDataSelectAll = event.target.closest("[data-system-data-select-all]");
+    if (systemDataSelectAll) {
+      const rows = currentSystemDataRows();
+      selectedSystemDataKeys = systemDataSelectAll.checked
+        ? new Set(rows.map((row) => row.key))
+        : new Set();
+      render();
+      return;
+    }
+
+    const systemDataSelect = event.target.closest("[data-system-data-select]");
+    if (systemDataSelect) {
+      selectedSystemDataKeys = toggleSetValue(selectedSystemDataKeys, systemDataSelect.dataset.systemDataSelect);
+      render();
+      return;
+    }
+
     const permissionRoleSelect = event.target.closest("[data-permission-role]");
     if (permissionRoleSelect) {
       updatePermissionRole(permissionRoleSelect.dataset.permissionRole, permissionRoleSelect.value);
@@ -1094,6 +1158,12 @@ function bindEvents() {
   });
 
   app.addEventListener("input", (event) => {
+    const projectEditInput = event.target.closest("[data-project-edit-field]");
+    if (projectEditInput) {
+      updateProjectEditorDraft(projectEditInput.dataset.projectEditField, projectEditInput.value);
+      return;
+    }
+
     const liveEquipmentKOutOfNInput = event.target.closest("[data-equipment-k-out-of-n-index]");
     if (liveEquipmentKOutOfNInput) {
       updateEquipmentKOutOfNInput(liveEquipmentKOutOfNInput);
@@ -1136,6 +1206,16 @@ function toggleSetValue(sourceSet, value) {
     next.add(value);
   }
   return next;
+}
+
+function toggleTreeNodeFromElement(treeToggleElement) {
+  const nodeId = treeToggleElement?.dataset?.treeToggle;
+  if (!nodeId) return;
+  if (collapsedTreeNodes.has(nodeId)) {
+    collapsedTreeNodes.delete(nodeId);
+  } else {
+    collapsedTreeNodes.add(nodeId);
+  }
 }
 
 function render() {
@@ -1231,6 +1311,7 @@ function renderProjectListPage() {
         <div>
           <h2>项目列表</h2>
           <p>${htmlEscape(projectListStatus)}</p>
+          <p class="inline-status">实际功能测试请先从已发布建模导入包生成示例项目；内置项目仅用于本地预览、离线 fixture 和页面 smoke。</p>
         </div>
         <div class="toolbar-row compact-actions">
           <button type="button" class="btn-secondary" data-project-create-from-import>从导入数据生成示例项目</button>
@@ -1242,9 +1323,22 @@ function renderProjectListPage() {
           <article class="project-card ${project.id === currentProject.id ? "active" : ""}">
             <div>
               <span>基地 ${project.baseCode}</span>
+              ${projectSourceBadge(project)}
               <h3>${htmlEscape(project.name)}</h3>
               <p>${htmlEscape(project.summary)}</p>
+              <p class="inline-status">${projectSourceHelpText(project)}</p>
             </div>
+            ${projectEditorDraft?.id === project.id ? `
+              <form class="project-edit-form" data-project-edit-form="${htmlEscape(project.id)}">
+                <label>项目名称<input data-project-edit-field="name" value="${htmlEscape(projectEditorDraft.name)}"></label>
+                <label>基地编码<input data-project-edit-field="baseCode" value="${htmlEscape(projectEditorDraft.baseCode)}"></label>
+                <label>项目说明<input data-project-edit-field="summary" value="${htmlEscape(projectEditorDraft.summary)}"></label>
+                <div class="toolbar-row compact-actions">
+                  <button type="button" class="btn-primary" data-project-edit-save>保存</button>
+                  <button type="button" data-project-edit-cancel>取消</button>
+                </div>
+              </form>
+            ` : ""}
             <div class="project-card-foot">
               <small>更新 ${project.updatedAt}</small>
               <span class="toolbar-row compact-actions">
@@ -1258,6 +1352,25 @@ function renderProjectListPage() {
       </section>
     </main>
   `;
+}
+
+function projectSourceBadge(project) {
+  const labels = {
+    [PROJECT_SOURCE.imported_sample]: "导入示例",
+    [PROJECT_SOURCE.manual_draft]: "本地草稿",
+    [PROJECT_SOURCE.preview_fixture]: "本地预览"
+  };
+  return `<span class="status-badge ${project.sourceKind === PROJECT_SOURCE.imported_sample ? "success" : ""}">${htmlEscape(labels[project.sourceKind] || labels[PROJECT_SOURCE.preview_fixture])}</span>`;
+}
+
+function projectSourceHelpText(project) {
+  if (project.sourceKind === PROJECT_SOURCE.imported_sample) {
+    return `来自已发布建模导入包 ${project.sourceImportId || "未知"}，可用于正式后端测试。`;
+  }
+  if (project.sourceKind === PROJECT_SOURCE.manual_draft) {
+    return "本地新增 Project draft；保存或运行前不会替代已发布导入示例。";
+  }
+  return "内置静态项目只保留为本地预览，不进入正式后端 run。";
 }
 
 function renderNavigation(activePage) {
@@ -1472,10 +1585,7 @@ function stableTreeNodeId(label, meta = "") {
 }
 
 function basicMissionTreeNodes() {
-  const tasks = [
-    ...editableBasicMissionRecords(),
-    ...readonlyCompositeBasicMissionRecords()
-  ];
+  const tasks = editableBasicMissionRecords();
   const grouped = new Map();
   for (const record of tasks) {
     const task = record.task;
@@ -1488,7 +1598,7 @@ function basicMissionTreeNodes() {
         id: `basic-task:${equipmentType}:${taskNo || taskName}`,
         label: taskName,
         meta: taskNo || task.taskArea || "",
-        selected: record.key === selectedBasicMissionKey,
+        selected: selectedBasicMissionTreeLevel === "mission" && record.key === selectedBasicMissionKey,
         actionAttrs: record.path ? `data-select-basic-mission="${htmlEscape(record.key)}"` : ""
       });
     }
@@ -1499,7 +1609,7 @@ function basicMissionTreeNodes() {
     label: equipmentType,
     meta: `${children.length} 项基本任务`,
     root: true,
-    selected: equipmentType === selectedBasicMissionEquipmentType && !children.some((child) => child.selected),
+    selected: selectedBasicMissionTreeLevel === "equipment" && equipmentType === selectedBasicMissionEquipmentType,
     actionAttrs: `data-select-basic-mission-equipment="${htmlEscape(equipmentType)}"`,
     children
   }));
@@ -1514,15 +1624,6 @@ function editableBasicMissionRecords() {
       task
     }))
   ].filter((record) => record.task);
-}
-
-function readonlyCompositeBasicMissionRecords() {
-  return (scenario.missionProfile.compositeTasks || []).flatMap((composite, compositeIndex) => (
-    (composite.taskItems || []).map((task, taskIndex) => ({
-      key: `composite:${compositeIndex}:${taskIndex}`,
-      task
-    }))
-  ));
 }
 
 function basicMissionExtras() {
@@ -1550,6 +1651,7 @@ function addBasicMission() {
   };
   extras.push(task);
   selectedBasicMissionKey = `extra:${task.id}`;
+  selectedBasicMissionTreeLevel = "mission";
   updatePreviewResultsThroughApiClient();
 }
 
@@ -1564,10 +1666,12 @@ function deleteSelectedBasicMission() {
       scenario.basicMission = createEmptyBasicMission();
     }
     selectedBasicMissionKey = "primary";
+    selectedBasicMissionTreeLevel = "mission";
   } else if (selected.key.startsWith("extra:")) {
     const index = extras.findIndex((task, taskIndex) => `extra:${task.id || taskIndex}` === selected.key);
     if (index >= 0) extras.splice(index, 1);
     selectedBasicMissionKey = "primary";
+    selectedBasicMissionTreeLevel = "mission";
   }
   updatePreviewResultsThroughApiClient();
 }
@@ -1691,37 +1795,36 @@ function basicMissionSelect(path, selectedValue) {
 
 function renderSystemProjectManagement(page) {
   const isGranularityPage = page.name === "建模颗粒度管理";
+  const body = isGranularityPage
+    ? `
+      <section class="detail-panel">
+        <div class="detail-card">
+          ${renderModelingGranularityTable()}
+        </div>
+      </section>
+    `
+    : `
+      <section class="detail-panel">
+        <div class="detail-card">
+          ${renderProjectDataTable()}
+        </div>
+      </section>
+    `;
   return `
     <div class="system-config-workbench">
       <div class="section-head">
         <h3>${isGranularityPage ? "建模颗粒度配置" : "项目数据管理"}</h3>
         <span>${page.dataObjects.join(" / ")}</span>
       </div>
-      <div class="system-config-layout">
-        <aside class="tree-container">
-          <div class="tree-toolbar">
-            <h4>${isGranularityPage ? "建模数据层级" : "项目独有数据"}</h4>
-            ${isGranularityPage ? "" : `<button type="button" class="btn-primary">新增项目数据</button>`}
-          </div>
-          ${renderCollapsibleTree((isGranularityPage ? SYSTEM_MODELING_GRANULARITY_ROWS : SYSTEM_PROJECT_DATA_ROWS).map((row, index) => ({
-            id: `system-tree:${isGranularityPage ? row.level : row.key}`,
-            label: isGranularityPage ? row.level : row.label,
-            meta: isGranularityPage ? row.object : row.owner,
-            root: index === 0
-          })))}
-        </aside>
-        <section class="detail-panel">
-          <div class="detail-card">
-            ${isGranularityPage ? renderModelingGranularityTable() : renderProjectDataTable()}
-          </div>
-        </section>
-      </div>
+      ${body}
     </div>
   `;
 }
 
 function renderProjectDataTable() {
   const activeTab = SYSTEM_DATA_MANAGEMENT_TABS.find((tab) => tab.key === activeSystemDataTab) || SYSTEM_DATA_MANAGEMENT_TABS[0];
+  const rows = activeTab.rows;
+  const allSelected = rows.length > 0 && rows.every((row) => selectedSystemDataKeys.has(row.key));
   return `
     <div class="section-head">
       <h3>项目数据列表</h3>
@@ -1738,12 +1841,19 @@ function renderProjectDataTable() {
       <label>基地编码<input value="${htmlEscape(currentProject.baseCode)}"></label>
       <label>数据隔离策略<input value="项目标识 + 数据对象命名空间"></label>
     </div>
-    <div class="toolbar-row"><button type="button" class="btn-primary">新增</button><button type="button" class="btn-danger">批量删除</button><button type="button" data-system-data-export>导出</button></div>
+    <div class="toolbar-row"><button type="button" class="btn-primary" data-system-data-add>新增</button><button type="button" class="btn-danger" data-system-data-delete-selected>批量删除</button><button type="button" data-system-data-export>导出</button></div>
+    <p class="inline-status" data-system-data-status>${htmlEscape(systemDataStatus)}</p>
+    ${systemDataExportPreview ? `
+      <div class="inline-status" data-system-data-export-preview>
+        导出预览：${htmlEscape(systemDataExportPreview.label)} / ${systemDataExportPreview.rowCount} 行 /
+        <span data-system-data-export-filename>${htmlEscape(systemDataExportPreview.filename)}</span>
+      </div>
+    ` : ""}
     <div class="table-wrap compact-table">
       <table>
-        <thead><tr><th>数据项</th><th>字段标识</th><th>当前值</th><th>归属</th><th>操作</th></tr></thead>
-        <tbody>${activeTab.rows.map((row) => `
-          <tr><td>${row.label}</td><td>${row.key}</td><td>${row.value}</td><td>${row.owner}</td><td><button type="button" class="inline-action">配置</button></td></tr>
+        <thead><tr><th><input type="checkbox" data-system-data-select-all ${allSelected ? "checked" : ""}></th><th>数据项</th><th>字段标识</th><th>当前值</th><th>归属</th></tr></thead>
+        <tbody>${rows.map((row) => `
+          <tr><td><input type="checkbox" data-system-data-select="${htmlEscape(row.key)}" ${selectedSystemDataKeys.has(row.key) ? "checked" : ""}></td><td>${htmlEscape(row.label)}</td><td>${htmlEscape(row.key)}</td><td>${htmlEscape(row.value)}</td><td>${htmlEscape(row.owner)}</td></tr>
         `).join("")}</tbody>
       </table>
     </div>
@@ -1756,16 +1866,105 @@ function renderModelingGranularityTable() {
       <h3>层级、对象及关系</h3>
       <span>定义项目所需的建模数据层级、对象及关系</span>
     </div>
-    <div class="toolbar-row"><button type="button" class="btn-primary">新增</button><button type="button" class="btn-danger">批量删除</button></div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>建模层级</th><th>建模对象</th><th>对象关系</th><th>启用</th><th>操作</th></tr></thead>
+        <thead><tr><th>建模层级</th><th>建模对象</th><th>对象关系</th><th>操作</th></tr></thead>
         <tbody>${SYSTEM_MODELING_GRANULARITY_ROWS.map((row) => `
-          <tr><td>${row.level}</td><td>${row.object}</td><td>${row.relation}</td><td><span class="status-badge success">已启用</span></td><td><button type="button" class="inline-action">编辑</button></td></tr>
+          <tr><td>${row.level}</td><td>${row.object}</td><td>${row.relation}</td><td><button type="button" class="inline-action" data-modeling-granularity-detail="${htmlEscape(row.level)}">查看详情</button></td></tr>
         `).join("")}</tbody>
       </table>
     </div>
   `;
+}
+
+function activeSystemDataDefinition() {
+  return SYSTEM_DATA_MANAGEMENT_TABS.find((tab) => tab.key === activeSystemDataTab) || SYSTEM_DATA_MANAGEMENT_TABS[0];
+}
+
+function currentSystemDataRows() {
+  return activeSystemDataDefinition().rows;
+}
+
+function addSystemDataRow() {
+  const tab = activeSystemDataDefinition();
+  const nextIndex = tab.rows.length + 1;
+  const row = {
+    key: `${tab.key}Local${Date.now()}`,
+    label: `${tab.label}新增项${nextIndex}`,
+    value: "本地新增数据",
+    owner: tab.label
+  };
+  tab.rows = [...tab.rows, row];
+  selectedSystemDataKeys = new Set([row.key]);
+  systemDataExportPreview = null;
+  systemDataStatus = `已新增${tab.label}：${row.label}`;
+}
+
+function deleteSelectedSystemDataRows() {
+  const tab = activeSystemDataDefinition();
+  if (!selectedSystemDataKeys.size) {
+    systemDataStatus = "请先选择要删除的数据项";
+    return;
+  }
+  const selectedKeys = new Set(selectedSystemDataKeys);
+  const beforeCount = tab.rows.length;
+  tab.rows = tab.rows.filter((row) => !selectedKeys.has(row.key));
+  selectedSystemDataKeys = new Set();
+  systemDataExportPreview = null;
+  systemDataStatus = `已删除 ${beforeCount - tab.rows.length} 条${tab.label}`;
+}
+
+function exportSystemDataRows() {
+  const tab = activeSystemDataDefinition();
+  const rows = currentSystemDataRows();
+  systemDataExportPreview = {
+    label: tab.label,
+    rowCount: rows.length,
+    filename: systemDataExportFilename(tab)
+  };
+  downloadSystemDataExport(systemDataExportPreview.filename, buildSystemDataExportPayload(tab, rows));
+  systemDataStatus = `已下载${tab.label}导出文件：${systemDataExportPreview.filename}（${rows.length} 行）`;
+}
+
+function systemDataExportFilename(tab) {
+  const now = new Date();
+  const date = [
+    now.getFullYear(),
+    String(now.getMonth() + 1).padStart(2, "0"),
+    String(now.getDate()).padStart(2, "0")
+  ].join("-");
+  return `spare-mvp-${tab.key}-data-${date}.json`;
+}
+
+function buildSystemDataExportPayload(tab, rows) {
+  return {
+    schemaVersion: "spare-mvp-system-data-export-v1",
+    exportedAt: new Date().toISOString(),
+    project: {
+      id: currentProject.id,
+      name: currentProject.name,
+      baseCode: currentProject.baseCode
+    },
+    dataGroup: {
+      key: tab.key,
+      label: tab.label
+    },
+    rows: rows.map((row) => ({ ...row }))
+  };
+}
+
+function downloadSystemDataExport(filename, payload) {
+  if (typeof document === "undefined" || typeof Blob === "undefined" || typeof URL === "undefined" || !URL.createObjectURL) return;
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.style.display = "none";
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
 }
 
 function renderSystemBasicConfig(page) {
@@ -2226,7 +2425,7 @@ function renderCompositeTaskModeling(page) {
           <h4>典型组合任务时序表</h4>
           <div class="table-wrap">
             <table>
-              <thead><tr><th>波次序号</th><th>基本任务名称</th><th>编队名称</th><th>出动时刻</th><th>回收时刻</th></tr></thead>
+              <thead><tr><th>波次序号</th><th>基本任务名称</th><th>编队名称</th><th>出动时刻</th></tr></thead>
               <tbody>
                 ${timelineRows.map((row) => `
                   <tr>
@@ -2234,7 +2433,6 @@ function renderCompositeTaskModeling(page) {
                     <td>${htmlEscape(row.basicTaskName)}</td>
                     <td>${htmlEscape(row.groupName)}</td>
                     <td>${htmlEscape(row.departureTime)}</td>
-                    <td>${htmlEscape(row.recoveryTime)}</td>
                   </tr>
                 `).join("")}
               </tbody>
@@ -2503,7 +2701,6 @@ function buildCompositeTimelineRows(composite) {
         basicTaskName: item.basicTaskName,
         groupName: item.groupName,
         departureTime,
-        recoveryTime: addMinutesToTime(departureTime, durationMinutes),
         totalStartMinutes,
         totalEndMinutes
       };
@@ -3756,7 +3953,8 @@ function addDemoProject() {
     name: `新增项目${nextIndex}`,
     baseCode: `NB-${String(nextIndex).padStart(2, "0")}`,
     updatedAt: new Date().toISOString().slice(0, 10),
-    summary: "新建项目草稿，进入后可维护建模数据。"
+    summary: "新建项目草稿，进入后可维护建模数据。",
+    sourceKind: PROJECT_SOURCE.manual_draft
   };
   demoProjects = [...demoProjects, project];
   currentProject = project;
@@ -3775,10 +3973,12 @@ async function createSampleProjectFromPublishedImport(importId = currentPublishe
     const projectId = projectJson.project_id || created.savedProject?.project_id || MODELING_IMPORT_DEMO_FIXTURE.projectId;
     const project = {
       id: String(projectId || "imported-sample").replace(/^project-/, ""),
-      name: projectJson.missionProfile?.sourceImportId || projectJson.experiment?.name || "导入示例项目",
+      name: projectJson.experiment?.name || "导入示例项目",
       baseCode: projectId || "imported-sample",
       updatedAt: new Date().toISOString().slice(0, 10),
-      summary: `由导入包 ${created.sourceImport?.import_id || importId} 生成`
+      summary: `由导入包 ${created.sourceImport?.import_id || importId} 生成`,
+      sourceKind: PROJECT_SOURCE.imported_sample,
+      sourceImportId: created.sourceImport?.import_id || importId
     };
     demoProjects = [project, ...demoProjects.filter((item) => item.id !== project.id)];
     currentProject = project;
@@ -3787,7 +3987,7 @@ async function createSampleProjectFromPublishedImport(importId = currentPublishe
     experimentPlanBranchActive = false;
     savedProject = created.savedProject || null;
     modelingSnapshot = created.modelingSnapshot || null;
-    projectListStatus = `已从导入数据生成示例项目：${project.name}`;
+    projectListStatus = `已从导入数据生成示例项目：${project.name}；可用于正式后端测试`;
     projectDraftSaveStatus = "已保存";
     projectDraftHydrateStatus = "示例项目来自已发布建模导入包";
     updatePreviewResultsThroughApiClient();
@@ -3803,17 +4003,36 @@ function currentPublishedModelingImportId() {
 }
 
 function editDemoProject(projectId) {
-  demoProjects = demoProjects.map((project) => {
-    if (project.id !== projectId) return project;
-    const updated = {
-      ...project,
-      name: project.name.endsWith("（编辑）") ? project.name : `${project.name}（编辑）`,
-      updatedAt: new Date().toISOString().slice(0, 10)
-    };
-    currentProject = updated;
-    return updated;
-  });
+  const project = demoProjects.find((item) => item.id === projectId);
+  if (!project) {
+    projectListStatus = "项目不存在";
+    return;
+  }
+  projectEditorDraft = { ...project };
   projectListStatus = "项目条目已进入本地编辑态";
+}
+
+function updateProjectEditorDraft(fieldName, value) {
+  if (!projectEditorDraft || !["name", "baseCode", "summary"].includes(fieldName)) return;
+  projectEditorDraft = {
+    ...projectEditorDraft,
+    [fieldName]: value
+  };
+}
+
+function saveProjectEditorDraft() {
+  if (!projectEditorDraft) return;
+  const saved = {
+    ...projectEditorDraft,
+    name: projectEditorDraft.name.trim() || "未命名项目",
+    baseCode: projectEditorDraft.baseCode.trim() || "NB-00",
+    summary: projectEditorDraft.summary.trim() || "项目说明待补充。",
+    updatedAt: new Date().toISOString().slice(0, 10)
+  };
+  demoProjects = demoProjects.map((project) => (project.id === saved.id ? saved : project));
+  if (currentProject.id === saved.id) currentProject = saved;
+  projectEditorDraft = null;
+  projectListStatus = `已保存项目：${saved.name}`;
 }
 
 function deleteDemoProject(projectId) {
@@ -3914,7 +4133,23 @@ async function saveCurrentExperimentPlanThroughApi() {
   }
 }
 
+function currentProjectCanStartFormalRun() {
+  if (currentProject.sourceKind === PROJECT_SOURCE.imported_sample) {
+    return { allowed: true, message: "" };
+  }
+  return {
+    allowed: false,
+    message: "请先从已发布建模导入包生成示例项目，再启动正式后端运行；内置静态项目只保留为本地预览，本地草稿需要先通过建模导入发布链路生成示例项目。"
+  };
+}
+
 async function startSingleRunThroughApi() {
+  const formalRunGate = currentProjectCanStartFormalRun();
+  if (!formalRunGate.allowed) {
+    backendApiStatus = formalRunGate.message;
+    experimentRunStatus = "未配置";
+    return;
+  }
   if (formalRunSubmitInFlight) {
     backendApiStatus = "已有正式运行正在提交，请等待当前请求返回";
     return;
@@ -3968,6 +4203,12 @@ async function startSingleRunThroughApi() {
 }
 
 async function startMonteCarloRunThroughApi({ monteCarloExperimentId = selectedMonteCarloExperimentId } = {}) {
+  const formalRunGate = currentProjectCanStartFormalRun();
+  if (!formalRunGate.allowed) {
+    backendApiStatus = formalRunGate.message;
+    experimentRunStatus = "未配置";
+    return;
+  }
   if (formalRunSubmitInFlight) {
     backendApiStatus = "已有正式运行正在提交，请等待当前请求返回";
     return;
