@@ -33,6 +33,7 @@
 25. M5 建模数据入口已进入 M5.1 服务化切片：`contracts/modeling_import.schema.json` 定义导入包、草稿/发布生命周期、对象集合、变更和校验问题结构；`front/modeling-import-contract.mjs` 提供纯校验函数，`src/spare_mvp_backend/modeling_import.py` 在后端复用同一语义，`src/spare_mvp_backend/http_server.py` 暴露 `/api/modeling-imports/*` validate/save/get/publish 路径，SQLite `modeling_imports` 表持久化 `draft_payload_json`、`published_payload_json` 和 validation summary。`GET /api/modeling-imports/{import_id}` 返回 `draftPackage`、`publishedPackage`、`validation` 和 `lifecycle`，发布后再保存草稿不会覆盖已发布快照；同一 `import_id` 被 run 引用后不可再发布覆盖，新版本需使用新 `import_id`。
 26. M5.2 新增系统管理下的「建模数据导入」工作台、映射/错误/版本预览，以及经 `SimulationAdapter.compile_scenario()` 生成的后端 Scenario 预览（`compile-scenario`）。该入口消费 M5.1 的显式 API、后端恢复的草稿/发布快照和已发布导入包；完整 Excel 解析、worker 基础设施或 `aviation_support` 编译解锁仍不在本阶段。
 27. M5.3 建模页保存当前 Project draft；`仿真实验方案管理` 仍保留为概要设计要求的实验方案分支工作流。用户可从项目数据创建多个实验方案，编辑方案不回写项目数据，仿真运行和 Monte Carlo 使用选中的实验方案生成 run identity chain。
+28. M6.0 设计把当前同步 smoke run 收敛到 `RunService` 和 canonical `/api/runs` 边界；前端启动运行后通过 run status/result/artifact/chain 刷新状态。该切片的后端输入是 ExperimentPlan 绑定的 ModelingSnapshot 加当前支持的 `steps` 配置，仍不是完整 ExperimentPlan payload 编译、完整 worker 队列、取消、重试、真实批量 Monte Carlo 或 `aviation_support` 编译解锁。
 
 ## 文档地图
 
@@ -62,6 +63,8 @@
 | [`superpowers/plans/2026-06-19-m5-1-modeling-import-service.md`](superpowers/plans/2026-06-19-m5-1-modeling-import-service.md) | M5.1 后端 API、repository、HTTP facade、前端 API client 和文档同步实施计划。 |
 | [`superpowers/specs/2026-06-19-m5-2-modeling-import-workbench-design.md`](superpowers/specs/2026-06-19-m5-2-modeling-import-workbench-design.md) | M5.2 建模导入工作台和受控 Scenario 预览设计，限定系统管理入口、映射/错误/版本预览和非目标。 |
 | [`superpowers/plans/2026-06-19-m5-2-modeling-import-workbench.md`](superpowers/plans/2026-06-19-m5-2-modeling-import-workbench.md) | M5.2 import workbench、`compile-scenario` 后端预览和文档同步实施计划。 |
+| [`superpowers/specs/2026-06-20-m6-0-run-service-boundary-design.md`](superpowers/specs/2026-06-20-m6-0-run-service-boundary-design.md) | M6.0 仿真运行服务边界设计，限定 RunService、canonical `/api/runs`、status envelope 和非目标。 |
+| [`superpowers/plans/2026-06-20-m6-0-run-service-boundary.md`](superpowers/plans/2026-06-20-m6-0-run-service-boundary.md) | M6.0 RunService、HTTP run routes、前端 status polling、浏览器 smoke 和文档同步实施计划。 |
 | [`superpowers/plans/2026-06-18-agent-swarm-contract-first-development.md`](superpowers/plans/2026-06-18-agent-swarm-contract-first-development.md) | contract-first agent swarm 分阶段开发计划。 |
 | [`superpowers/plans/2026-06-17-local-aviation-ship-front-integration.md`](superpowers/plans/2026-06-17-local-aviation-ship-front-integration.md) | 当前前端集成实现记录和验收情况。 |
 | [`../src/spare_mvp_abm/aviation_support/README.md`](../src/spare_mvp_abm/aviation_support/README.md) | 本地 Mesa 航空保障场景包说明。 |

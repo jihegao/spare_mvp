@@ -291,6 +291,8 @@ M5.2 工作台与 Scenario 预览入口：
 
 推进方式：以正式后端 API + worker + artifact storage 为目标演进；开发期可以继续使用本地 adapter 和 smoke model 做可脚本化验证，但不再要求先建设独立 `Simulation Contract Service`。
 
+M6.0 首片：新增 `RunService` 与 canonical `/api/runs`，把当前同步 smoke run 包装成可轮询的运行服务边界。前端启动运行后先拿 `run_id`，再查询 status/result/artifact/chain。该首片的后端输入是 ExperimentPlan 绑定的 ModelingSnapshot 加当前支持的 `steps` 配置，仍使用本地同步执行器，不包含完整 ExperimentPlan payload 编译、完整 worker 队列、取消、重试、超时、资源隔离、真实批量 Monte Carlo fan-out、长期 artifact storage 或 `aviation_support` 编译解锁。
+
 核心能力：
 
 1. 单次仿真。

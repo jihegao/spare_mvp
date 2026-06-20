@@ -41,6 +41,7 @@ http://127.0.0.1:4173/front/
 11. M4 backfill 后，HTTP 侧建模导入 save/publish/compile-scenario 必须带 `/api/auth/login` 返回的 bearer token；未登录请求返回 `unauthorized`，普通用户发布返回 `forbidden` 并写入 `audit_events`。
 12. M5.1 本地后端路径必须通过 `/api/modeling-imports/validate`、带 M4 session 的 `/api/modeling-imports`、`/api/modeling-imports/{import_id}` 和带 M4 session 的 `/api/modeling-imports/{import_id}/publish` 验证；`modeling_imports` 必须保留 `draft_payload_json` 和 `published_payload_json`，`GET /api/modeling-imports/{import_id}` 返回 `draftPackage`、`publishedPackage`、`validation` 和 `lifecycle`；同一 `import_id` 被 run 引用后不可再发布覆盖，新版本需使用新 `import_id`。
 13. M5.2 新增系统管理下的「建模数据导入」工作台、映射/错误/后端可恢复版本预览，以及经 `SimulationAdapter.compile_scenario()` 生成的后端 Scenario 预览（`/api/modeling-imports/{import_id}/compile-scenario`）；`compile-scenario` 必须读取持久化 published payload，而不是当前 draft 或前端内存快照；该切片仍不包含完整 Excel 解析、worker 基础设施或 `aviation_support` 编译解锁。
+14. M6.0 运行服务首片必须通过 canonical `/api/runs` 创建和查询 run status，同时保留 `/api/simulation-runs` 兼容路径；运行 identity 必须来自 ExperimentPlan，后端输入使用该计划绑定的 ModelingSnapshot 和当前支持的 `steps` 配置，不能绕过 M5.3 的 Project/Plan 分界。
 
 ## Mesa 后台契约服务（Contract Provider）
 

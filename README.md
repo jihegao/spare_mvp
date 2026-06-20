@@ -15,6 +15,8 @@
 - [`docs/superpowers/plans/2026-06-19-m5-1-modeling-import-service.md`](docs/superpowers/plans/2026-06-19-m5-1-modeling-import-service.md)：M5.1 后端 API、SQLite 持久化和前端 client 实施计划。
 - [`docs/superpowers/specs/2026-06-19-m5-2-modeling-import-workbench-design.md`](docs/superpowers/specs/2026-06-19-m5-2-modeling-import-workbench-design.md)：M5.2 建模导入工作台和 Scenario 预览设计。
 - [`docs/superpowers/plans/2026-06-19-m5-2-modeling-import-workbench.md`](docs/superpowers/plans/2026-06-19-m5-2-modeling-import-workbench.md)：M5.2 系统管理入口、映射/错误/版本预览和 `compile-scenario` 实施计划。
+- [`docs/superpowers/specs/2026-06-20-m6-0-run-service-boundary-design.md`](docs/superpowers/specs/2026-06-20-m6-0-run-service-boundary-design.md)：M6.0 仿真运行服务边界设计。
+- [`docs/superpowers/plans/2026-06-20-m6-0-run-service-boundary.md`](docs/superpowers/plans/2026-06-20-m6-0-run-service-boundary.md)：M6.0 canonical run API、status 轮询和同步本地执行器实施计划。
 - [`docs/superpowers/specs/2026-06-17-four-level-function-page-design.md`](docs/superpowers/specs/2026-06-17-four-level-function-page-design.md)：四级功能页面化设计规格。
 - [`docs/superpowers/plans/2026-06-17-local-aviation-ship-front-integration.md`](docs/superpowers/plans/2026-06-17-local-aviation-ship-front-integration.md)：本轮前端集成实现记录。
 - [`agent.md`](agent.md)：后续 agent 协作规则和 subagent 使用约定。
