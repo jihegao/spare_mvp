@@ -39,6 +39,12 @@ export function createBackendApiClient({ baseUrl = DEFAULT_API_BASE, transport, 
     publishModelingImport(importId) {
       return request({ method: "POST", path: `/modeling-imports/${encodeURIComponent(importId)}/publish` });
     },
+    createProjectFromModelingImport(importId) {
+      return request({
+        method: "POST",
+        path: `/modeling-imports/${encodeURIComponent(importId)}/create-project`
+      });
+    },
     compileModelingImportScenario(importId, modelFamily = "smoke") {
       return request({
         method: "POST",
@@ -122,25 +128,39 @@ export function buildBackendProjectJson(scenario, project = {}) {
 }
 
 export function buildExperimentPlanConfig(projectJson) {
-  return {
+  const config = {
     name: projectJson.experiment?.name || "frontend experiment",
     steps: Number(projectJson.experiment?.steps ?? 3),
     samples: Number(projectJson.experiment?.samples ?? 1),
     seed: Number(projectJson.experiment?.seed ?? 0),
     projectJson: cloneJson(projectJson),
-    monteCarlo: cloneJson(projectJson.monteCarlo || {})
+    monteCarlo: cloneJson(projectJson.monteCarlo || {}),
+    analysisRequests: cloneJson(projectJson.analysisRequests || {})
+  };
+  return config;
+}
+
+export function buildPreviewResultState(projectJson) {
+  return {
+    previewSingleResult: runSimulation(projectJson),
+    previewMonteCarloResult: runMonteCarlo(projectJson)
   };
 }
 
 export function buildDemoResultState(projectJson) {
+  const previewState = buildPreviewResultState(projectJson);
   return {
-    singleResult: runSimulation(projectJson),
-    monteCarloResult: runMonteCarlo(projectJson)
+    singleResult: previewState.previewSingleResult,
+    monteCarloResult: previewState.previewMonteCarloResult
   };
 }
 
 export function buildFrontendResultState(projectJson, resultSummary = null) {
-  const state = buildDemoResultState(projectJson);
+  const previewState = buildPreviewResultState(projectJson);
+  const state = {
+    singleResult: previewState.previewSingleResult,
+    monteCarloResult: previewState.previewMonteCarloResult
+  };
   const metrics = resultSummary?.metrics || {};
   state.singleResult.final = {
     ...state.singleResult.final,

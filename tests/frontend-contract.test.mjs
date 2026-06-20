@@ -1123,9 +1123,9 @@ test("topbar omits run and export actions", async () => {
 test("monte carlo configuration drives the displayed result sample count", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   assert.doesNotMatch(appSource, /runMonteCarlo\(scenario, \{ samples: 4 \}\)/);
-  assert.match(appSource, /let \{ singleResult, monteCarloResult \} = buildDemoResultState\(scenario\)/);
+  assert.match(appSource, /let \{ previewSingleResult: singleResult, previewMonteCarloResult: monteCarloResult \} = buildPreviewResultState\(scenario\)/);
   assert.match(appSource, /id="mc-samples"[^>]*data-experiment-plan-path="experiment\.samples"/);
-  assert.match(appSource, /function updateDemoResultsThroughApiClient/);
+  assert.match(appSource, /function updatePreviewResultsThroughApiClient/);
   assert.match(appSource, /data-save-plan/);
 });
 
@@ -1137,7 +1137,7 @@ test("monte carlo sweep inputs update scenario arrays and rerun grouped results"
   assert.match(appSource, /const mcArrayInput = event\.target\.closest\("\[data-mc-array-path\]"\)/);
   assert.match(appSource, /setPath\(experimentPlanDraft, mcArrayInput\.dataset\.mcArrayPath, parseNumberList\(mcArrayInput\.value\)\)/);
   assert.match(appSource, /function parseNumberList/);
-  assert.match(appSource, /updateDemoResultsThroughApiClient\(experimentPlanDraft\)/);
+  assert.match(appSource, /updatePreviewResultsThroughApiClient\(experimentPlanDraft\)/);
   assert.match(appSource, /const savePlanButton = event\.target\.closest\("\[data-save-plan\]"\)/);
 });
 
@@ -1255,17 +1255,96 @@ test("monte carlo launch creates a run from the current experiment plan branch",
   );
 
   assert.match(launchSource, /const planProjectJson = buildBackendProjectJson\(experimentPlanDraft, currentProject\)/);
-  assert.match(launchSource, /backendApi\.createExperimentPlan/);
-  assert.match(launchSource, /buildExperimentPlanConfig\(planProjectJson\)/);
-  assert.match(launchSource, /backendApi\.submitRun/);
-  assert.match(launchSource, /project_id: savedProject\.project_id/);
-  assert.match(launchSource, /experiment_plan_id: experimentPlan\.experiment_plan_id/);
-  assert.match(launchSource, /model_family: "smoke"/);
+  assert.match(appSource, /import \{[^}]*buildRunIntent[^}]*submitRunIntent[^}]*\} from "\.\/run-intent\.mjs"/s);
+  assert.match(launchSource, /submitRunIntent\(backendApi,\s*\{/);
   assert.match(launchSource, /const runType = "monte_carlo"/);
-  assert.match(launchSource, /run_type: "monte_carlo"/);
+  assert.match(launchSource, /runType,/);
+  assert.match(launchSource, /mcExperimentId: monteCarloExperimentId/);
   assert.match(appSource, /startMonteCarloRunThroughApi\(\{ monteCarloExperimentId: experiment\.mc_experiment_id/);
+  assert.doesNotMatch(launchSource, /sample_count\s*:/);
+  assert.doesNotMatch(launchSource, /samples\s*:/);
+  assert.doesNotMatch(launchSource, /sweep\s*:/);
   assert.doesNotMatch(launchSource, /run_type: "single"/);
   assert.doesNotMatch(launchSource, /backendApi\.startSimulationRun/);
+  assert.doesNotMatch(launchSource, /backendApi\.startMonteCarloRun/);
+});
+
+test("formal runs do not consume local preview outputs", async () => {
+  const apiClientSource = await readFile(new URL("../front/api-client.mjs", import.meta.url), "utf8");
+  const runIntentSource = await readFile(new URL("../front/run-intent.mjs", import.meta.url), "utf8");
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const launchSource = appSource.slice(
+    appSource.indexOf("async function startMonteCarloRunThroughApi"),
+    appSource.indexOf("async function refreshRunResultThroughApi")
+  );
+  const refreshSource = appSource.slice(
+    appSource.indexOf("async function refreshRunResultThroughApi"),
+    appSource.indexOf("async function hydrateLastBackendRunFromApi")
+  );
+  const formalBoundarySource = appSource.slice(
+    appSource.indexOf("function formalAnalysisBoundary"),
+    appSource.indexOf("function renderAnalysisDashboard")
+  );
+  const previewSource = apiClientSource.slice(
+    apiClientSource.indexOf("export function buildPreviewResultState"),
+    apiClientSource.indexOf("export function buildFrontendResultState")
+  );
+  const formalUnlockSource = formalBoundarySource.slice(
+    formalBoundarySource.indexOf("const formalUnlocked"),
+    formalBoundarySource.indexOf("const state")
+  );
+
+  assert.match(apiClientSource, /export function buildPreviewResultState/);
+  assert.match(previewSource, /runSimulation\(projectJson\)/);
+  assert.match(previewSource, /runMonteCarlo\(projectJson\)/);
+  assert.match(runIntentSource, /apiClient\.submitRun/);
+  assert.doesNotMatch(launchSource, /updateDemoResultsThroughApiClient|updatePreviewResultsThroughApiClient/);
+  assert.doesNotMatch(launchSource, /buildDemoResultState|buildPreviewResultState|runSimulation|runMonteCarlo|defaultScenario/);
+  assert.doesNotMatch(refreshSource, /buildDemoResultState|runSimulation|runMonteCarlo|defaultScenario/);
+  assert.doesNotMatch(formalUnlockSource, /\bsingleResult\b|\bmonteCarloResult\b|previewSingleResult|previewMonteCarloResult/);
+  assert.match(appSource, /本地预览，不是正式后端仿真结果/);
+});
+
+test("formal run launch preserves queued or running backend status without treating it as unavailable", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const launchSource = appSource.slice(
+    appSource.indexOf("async function startMonteCarloRunThroughApi"),
+    appSource.indexOf("async function refreshRunResultThroughApi")
+  );
+  const refreshIndex = launchSource.indexOf("await refreshRunResultThroughApi");
+  const queuedIndex = Math.max(
+    launchSource.indexOf('backendRun.status === "queued"'),
+    launchSource.indexOf('backendRun.status === "running"'),
+    launchSource.indexOf("queued"),
+    launchSource.indexOf("running")
+  );
+  const queuedBranch = queuedIndex >= 0 && refreshIndex >= 0
+    ? launchSource.slice(queuedIndex, refreshIndex)
+    : "";
+
+  assert.ok(queuedIndex >= 0, "launch path must branch on queued/running backend status");
+  assert.ok(queuedIndex < refreshIndex, "queued/running branch must run before fetching final result/artifacts");
+  assert.match(queuedBranch, /backendRun\s*=\s*submitted\.run|backendRun/);
+  assert.match(queuedBranch, /experimentRunStatus\s*=/);
+  assert.doesNotMatch(queuedBranch, /backendRun\s*=\s*null/);
+  assert.doesNotMatch(queuedBranch, /后端不可用/);
+});
+
+test("project creation from modeling import uses the current or passed import id", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const clickSource = appSource.slice(
+    appSource.indexOf('const createFromImportButton = event.target.closest("[data-project-create-from-import]"'),
+    appSource.indexOf('const editProjectButton = event.target.closest("[data-project-edit]"')
+  );
+  const createSource = appSource.slice(
+    appSource.indexOf("async function createSampleProjectFromPublishedImport"),
+    appSource.indexOf("async function enterProject")
+  );
+
+  assert.match(clickSource, /createSampleProjectFromPublishedImport\(currentPublishedModelingImportId\(\) \|\| MODELING_IMPORT_DEMO_FIXTURE\.importId\)/);
+  assert.match(createSource, /async function createSampleProjectFromPublishedImport\(importId/);
+  assert.match(createSource, /backendApi\.createProjectFromModelingImport\(importId\)/);
+  assert.doesNotMatch(createSource, /createProjectFromModelingImport\(MODELING_IMPORT_DEMO_FIXTURE\.importId\)/);
 });
 
 test("click-based modeling mutations mark project draft dirty before rendering", async () => {
@@ -1313,7 +1392,7 @@ test("run result refresh rebuilds frontend state from the experiment plan branch
     appSource.indexOf("function updateDemoResultsThroughApiClient")
   );
 
-  assert.match(launchSource, /lastRunExperimentPlanProjectJson = \{\s*run_id: backendRun\.run_id,\s*project_json: planProjectJson\s*\}/);
+  assert.match(launchSource, /lastRunExperimentPlanProjectJson = \{\s*run_id: backendRun\.run_id,\s*project_json: submitted\.intent\.planProjectJson\s*\}/);
   assert.match(refreshSource, /backendApi\.getRunStatus\(runId\)/);
   assert.doesNotMatch(refreshSource, /backendApi\.getRun\(runId\)/);
   assert.match(refreshSource, /const planProjectJson = currentRunExperimentPlanProjectJson\(runId\)/);

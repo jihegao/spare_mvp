@@ -2,11 +2,11 @@ import { FEATURE_PAGES, getFeaturePageById, groupFeaturePages } from "./feature-
 import { AVIATION_SUPPORT_DEMO_STATE, normalizeAviationSupportState } from "./aviation-support-state.mjs";
 import {
   buildBackendProjectJson,
-  buildDemoResultState,
-  buildExperimentPlanConfig,
+  buildPreviewResultState,
   buildFrontendResultState,
   createBackendApiClient
 } from "./api-client.mjs";
+import { buildRunIntent, submitRunIntent } from "./run-intent.mjs";
 import {
   cloneScenario,
   defaultScenario
@@ -278,7 +278,7 @@ let monteCarloExperiments = createDefaultMonteCarloExperiments();
 let analysisTasks = [];
 let selectedAnalysisTaskId = "";
 let analysisTaskForms = {};
-let { singleResult, monteCarloResult } = buildDemoResultState(scenario);
+let { previewSingleResult: singleResult, previewMonteCarloResult: monteCarloResult } = buildPreviewResultState(scenario);
 let rmsAllocationProject = createDemoRmsAllocationProject();
 let rmsAllocationPlan = createDefaultRmsAllocationPlan(rmsAllocationProject);
 let rmsAllocationResult = calculateRmsAllocation(rmsAllocationPlan, rmsAllocationProject);
@@ -301,6 +301,7 @@ let backendRunResult = null;
 let backendArtifactManifest = null;
 let backendRunChain = null;
 let backendApiStatus = "离线演示";
+let formalRunSubmitInFlight = false;
 let systemUserEditor = null;
 let systemUsersLoadStatus = "未加载";
 let systemUsersLoaded = false;
@@ -644,6 +645,12 @@ function bindEvents() {
       return;
     }
 
+    const createFromImportButton = event.target.closest("[data-project-create-from-import]");
+    if (createFromImportButton) {
+      createSampleProjectFromPublishedImport(currentPublishedModelingImportId() || MODELING_IMPORT_DEMO_FIXTURE.importId).finally(() => render());
+      return;
+    }
+
     const editProjectButton = event.target.closest("[data-project-edit]");
     if (editProjectButton) {
       editDemoProject(editProjectButton.dataset.projectEdit);
@@ -718,7 +725,9 @@ function bindEvents() {
 
     const modelingImportActionButton = event.target.closest("[data-modeling-import-action]");
     if (modelingImportActionButton) {
-      handleModelingImportAction(modelingImportActionButton.dataset.modelingImportAction).finally(() => render());
+      handleModelingImportAction(modelingImportActionButton.dataset.modelingImportAction, {
+        importId: modelingImportActionButton.dataset.modelingImportId
+      }).finally(() => render());
       return;
     }
 
@@ -777,12 +786,18 @@ function bindEvents() {
       return;
     }
 
+    const singleRunButton = event.target.closest("[data-run-intent-single]");
+    if (singleRunButton) {
+      startSingleRunThroughApi().finally(() => render());
+      return;
+    }
+
     const periodicAddButton = event.target.closest("[data-periodic-add]");
     if (periodicAddButton) {
       const task = createPeriodicTaskDraft();
       scenario.missionProfile.periodicTasks = [...periodicTaskList(), task];
       selectedPeriodicTaskId = task.id;
-      updateDemoResultsThroughApiClient();
+      updatePreviewResultsThroughApiClient();
       markProjectDraftChanged();
       render();
       return;
@@ -793,7 +808,7 @@ function bindEvents() {
       const taskId = periodicDeleteButton.dataset.periodicDelete;
       scenario.missionProfile.periodicTasks = periodicTaskList().filter((task) => String(task.id) !== taskId);
       selectedPeriodicTaskId = String(periodicTaskList()[0]?.id || "");
-      updateDemoResultsThroughApiClient();
+      updatePreviewResultsThroughApiClient();
       markProjectDraftChanged();
       render();
       return;
@@ -843,6 +858,11 @@ function bindEvents() {
 
     const monteCarloStartButton = event.target.closest("[data-mc-action='start']");
     if (monteCarloStartButton) {
+      if (formalRunSubmitInFlight) {
+        backendApiStatus = "已有正式运行正在提交，请等待当前请求返回";
+        render();
+        return;
+      }
       const page = getFeaturePageById(selectedFeatureId);
       const experiment = currentMonteCarloExperiment(page.module);
       selectedMonteCarloExperimentId = experiment.id;
@@ -1011,10 +1031,16 @@ function bindEvents() {
     if (monteCarloExperimentInput) {
       const page = getFeaturePageById(selectedFeatureId);
       const experiment = currentMonteCarloExperiment(page.module);
+      const parsedValue = parseInput(monteCarloExperimentInput);
       selectedMonteCarloExperimentId = experiment.id;
       monteCarloExperiments = monteCarloExperiments.map((item) => item.id === experiment.id
-        ? { ...item, [monteCarloExperimentInput.dataset.mcExperimentField]: parseInput(monteCarloExperimentInput) }
+        ? { ...item, [monteCarloExperimentInput.dataset.mcExperimentField]: parsedValue }
         : item);
+      if (monteCarloExperimentInput.dataset.experimentPlanPath) {
+        experimentPlanBranchActive = true;
+        setPath(experimentPlanDraft, monteCarloExperimentInput.dataset.experimentPlanPath, parsedValue);
+        updatePreviewResultsThroughApiClient(experimentPlanDraft);
+      }
       render();
       return;
     }
@@ -1031,7 +1057,7 @@ function bindEvents() {
     if (experimentPlanInput) {
       experimentPlanBranchActive = true;
       setPath(experimentPlanDraft, experimentPlanInput.dataset.experimentPlanPath, parseInput(experimentPlanInput));
-      updateDemoResultsThroughApiClient(experimentPlanDraft);
+      updatePreviewResultsThroughApiClient(experimentPlanDraft);
       render();
       return;
     }
@@ -1062,7 +1088,7 @@ function bindEvents() {
     if (!input) return;
     setPath(scenario, input.dataset.path, parseInput(input));
     normalizeEquipmentKOutOfNForPath(input.dataset.path);
-    updateDemoResultsThroughApiClient();
+    updatePreviewResultsThroughApiClient();
     if (isCurrentModelingPage()) markProjectDraftChanged();
     render();
   });
@@ -1206,7 +1232,10 @@ function renderProjectListPage() {
           <h2>项目列表</h2>
           <p>${htmlEscape(projectListStatus)}</p>
         </div>
-        <button type="button" class="btn-primary" data-project-add>添加</button>
+        <div class="toolbar-row compact-actions">
+          <button type="button" class="btn-secondary" data-project-create-from-import>从导入数据生成示例项目</button>
+          <button type="button" class="btn-primary" data-project-add>添加</button>
+        </div>
       </section>
       <section class="project-grid">
         ${demoProjects.map((project) => `
@@ -1401,7 +1430,7 @@ function createExperimentPlanBranchFromCurrentProject() {
   if (experimentPlanBranchActive) return;
   experimentPlanDraft = cloneScenario(scenario);
   experimentPlanBranchActive = true;
-  updateDemoResultsThroughApiClient(experimentPlanDraft);
+  updatePreviewResultsThroughApiClient(experimentPlanDraft);
 }
 
 function renderCollapsibleTree(nodes, options = {}) {
@@ -1521,7 +1550,7 @@ function addBasicMission() {
   };
   extras.push(task);
   selectedBasicMissionKey = `extra:${task.id}`;
-  updateDemoResultsThroughApiClient();
+  updatePreviewResultsThroughApiClient();
 }
 
 function deleteSelectedBasicMission() {
@@ -1540,7 +1569,7 @@ function deleteSelectedBasicMission() {
     if (index >= 0) extras.splice(index, 1);
     selectedBasicMissionKey = "primary";
   }
-  updateDemoResultsThroughApiClient();
+  updatePreviewResultsThroughApiClient();
 }
 
 function createEmptyBasicMission() {
@@ -1592,7 +1621,7 @@ function addCompositeTask() {
   };
   tasks.push(task);
   selectedCompositeTaskId = task.id;
-  updateDemoResultsThroughApiClient();
+  updatePreviewResultsThroughApiClient();
 }
 
 function deleteSelectedCompositeTask() {
@@ -1601,7 +1630,7 @@ function deleteSelectedCompositeTask() {
   const tasks = compositeTaskList();
   tasks.splice(selected.index, 1);
   selectedCompositeTaskId = String(tasks[Math.min(selected.index, tasks.length - 1)]?.id || "");
-  updateDemoResultsThroughApiClient();
+  updatePreviewResultsThroughApiClient();
 }
 
 function addCompositeTaskItem() {
@@ -1609,7 +1638,7 @@ function addCompositeTaskItem() {
   if (!selected.task) return;
   if (!Array.isArray(selected.task.taskItems)) selected.task.taskItems = [];
   selected.task.taskItems.push(createCompositeTaskItem(selected.task.taskItems.length));
-  updateDemoResultsThroughApiClient();
+  updatePreviewResultsThroughApiClient();
 }
 
 function deleteCompositeTaskItem(index) {
@@ -1617,7 +1646,7 @@ function deleteCompositeTaskItem(index) {
   if (!selected.task || !Array.isArray(selected.task.taskItems)) return;
   if (!Number.isInteger(index) || index < 0) return;
   selected.task.taskItems.splice(index, 1);
-  updateDemoResultsThroughApiClient();
+  updatePreviewResultsThroughApiClient();
 }
 
 function createCompositeTaskItem(index) {
@@ -2004,7 +2033,7 @@ function addCombatUnitMember() {
   });
   scenario.combatUnit.quantity = members.length;
   selectedCombatUnitMemberIndex = members.length - 1;
-  updateDemoResultsThroughApiClient();
+  updatePreviewResultsThroughApiClient();
 }
 
 function deleteSelectedCombatUnitMember() {
@@ -2014,7 +2043,7 @@ function deleteSelectedCombatUnitMember() {
   members.splice(index, 1);
   scenario.combatUnit.quantity = members.length;
   selectedCombatUnitMemberIndex = clamp(index, 0, Math.max(members.length - 1, 0));
-  updateDemoResultsThroughApiClient();
+  updatePreviewResultsThroughApiClient();
 }
 
 function renderBasicMissionModeling(page) {
@@ -2444,7 +2473,7 @@ function updateSelectedPeriodicTask(field, value) {
   }
   const nextTask = normalizePeriodicTask(draft);
   scenario.missionProfile.periodicTasks = tasks.map((task) => (String(task.id) === String(nextTask.id) ? nextTask : task));
-  updateDemoResultsThroughApiClient();
+  updatePreviewResultsThroughApiClient();
   render();
 }
 
@@ -2686,7 +2715,7 @@ function addEquipmentNodeForSelection() {
   scenario.components.push(newComponent);
   selectedEquipmentComponentIndex = scenario.components.length - 1;
   selectedEquipmentNodeKey = `component:${newComponent.id}`;
-  updateDemoResultsThroughApiClient();
+  updatePreviewResultsThroughApiClient();
 }
 
 function addEquipmentAircraftForSelection() {
@@ -2699,7 +2728,7 @@ function addEquipmentAircraftForSelection() {
     scenario.equipment.model = aircraftModel;
   }
   selectedEquipmentNodeKey = `aircraft:${aircraftModel}`;
-  updateDemoResultsThroughApiClient();
+  updatePreviewResultsThroughApiClient();
 }
 
 function nextEquipmentAircraftModel() {
@@ -3037,7 +3066,7 @@ function updateSupportResourceOverride(key, fieldName, value) {
   const nextValue = fieldName === "quantity" ? Math.max(0, Number(value || 0)) : value;
   overrides[key] = { ...(overrides[key] || {}), [fieldName]: nextValue };
   deletedSupportResourceKeys = supportResourceDeletedKeySet();
-  updateDemoResultsThroughApiClient();
+  updatePreviewResultsThroughApiClient();
 }
 
 function activateSupportResourceEdit(key) {
@@ -3065,7 +3094,7 @@ function deleteSelectedSupportResources() {
   scenario.deletedSupportResourceKeys = Array.from(nextDeleted);
   deletedSupportResourceKeys = nextDeleted;
   selectedSupportResourceKeys = new Set();
-  updateDemoResultsThroughApiClient();
+  updatePreviewResultsThroughApiClient();
 }
 
 function findSupportOrgTreeNode(id, nodes = SUPPORT_ORG_TREE) {
@@ -3156,7 +3185,7 @@ function deleteSupportActivityJob(key) {
   if (!deleteSupportActivityJobAt(activity, index)) return;
   selectedSupportActivityJobKeys.delete(key);
   renumberSupportActivityJobSelections(tabKey);
-  updateDemoResultsThroughApiClient();
+  updatePreviewResultsThroughApiClient();
 }
 
 function deleteSelectedSupportActivityJobs(tabKey) {
@@ -3170,7 +3199,7 @@ function deleteSelectedSupportActivityJobs(tabKey) {
     .filter(Number.isInteger);
   if (!deleteSupportActivityJobsAtIndexes(activity, selectedIndexes)) return;
   selectedSupportActivityJobKeys = new Set(Array.from(selectedSupportActivityJobKeys).filter((key) => !String(key).startsWith(`${tabKey}:`)));
-  updateDemoResultsThroughApiClient();
+  updatePreviewResultsThroughApiClient();
 }
 
 function addSupportActivityJob(tabKey) {
@@ -3187,7 +3216,7 @@ function addSupportActivityJob(tabKey) {
     spare: ""
   });
   activity.jobs = jobs;
-  updateDemoResultsThroughApiClient();
+  updatePreviewResultsThroughApiClient();
 }
 
 function selectSupportActivityJobForEdit(encodedJob) {
@@ -3206,7 +3235,7 @@ function updateSupportActivityJobPredecessors(encodedJob, predecessors) {
   if (!jobs[index]) return;
   jobs[index] = { ...jobs[index], predecessors };
   activity.jobs = jobs;
-  updateDemoResultsThroughApiClient();
+  updatePreviewResultsThroughApiClient();
 }
 
 function renumberSupportActivityJobSelections(tabKey) {
@@ -3668,6 +3697,7 @@ function renderExperimentPlanEditor(page) {
     <div class="plan-editor-actions">
       <button type="button" data-plan-list-link>返回方案列表</button>
       <button type="button" class="btn-primary" data-save-plan>保存方案</button>
+      <button type="button" class="btn-secondary" data-run-intent-single ${formalRunSubmitInFlight ? "disabled" : ""}>启动单次正式运行</button>
     </div>
   `;
 }
@@ -3733,6 +3763,45 @@ function addDemoProject() {
   projectListStatus = `已添加项目：${project.name}`;
 }
 
+async function createSampleProjectFromPublishedImport(importId = currentPublishedModelingImportId() || MODELING_IMPORT_DEMO_FIXTURE.importId) {
+  try {
+    if (!importId) {
+      projectListStatus = "请先选择或发布建模导入包，再生成示例项目";
+      return;
+    }
+    projectListStatus = "正在从已发布导入数据生成示例项目";
+    const created = await backendApi.createProjectFromModelingImport(importId);
+    const projectJson = created.project || {};
+    const projectId = projectJson.project_id || created.savedProject?.project_id || MODELING_IMPORT_DEMO_FIXTURE.projectId;
+    const project = {
+      id: String(projectId || "imported-sample").replace(/^project-/, ""),
+      name: projectJson.missionProfile?.sourceImportId || projectJson.experiment?.name || "导入示例项目",
+      baseCode: projectId || "imported-sample",
+      updatedAt: new Date().toISOString().slice(0, 10),
+      summary: `由导入包 ${created.sourceImport?.import_id || importId} 生成`
+    };
+    demoProjects = [project, ...demoProjects.filter((item) => item.id !== project.id)];
+    currentProject = project;
+    scenario = cloneScenario(projectJson);
+    experimentPlanDraft = cloneScenario(scenario);
+    experimentPlanBranchActive = false;
+    savedProject = created.savedProject || null;
+    modelingSnapshot = created.modelingSnapshot || null;
+    projectListStatus = `已从导入数据生成示例项目：${project.name}`;
+    projectDraftSaveStatus = "已保存";
+    projectDraftHydrateStatus = "示例项目来自已发布建模导入包";
+    updatePreviewResultsThroughApiClient();
+  } catch (err) {
+    projectListStatus = `导入示例项目生成失败：${err && err.message ? err.message : "Backend API 不可用"}`;
+  }
+}
+
+function currentPublishedModelingImportId() {
+  return modelingImportPublishedPackage?.importId
+    || modelingImportPublishedPackage?.import_id
+    || "";
+}
+
 function editDemoProject(projectId) {
   demoProjects = demoProjects.map((project) => {
     if (project.id !== projectId) return project;
@@ -3795,7 +3864,7 @@ async function hydrateCurrentProjectDraftFromApi() {
     const projectJson = await backendApi.getProject(currentBackendProjectId());
     scenario = cloneScenario(projectJson);
     experimentPlanDraft = cloneScenario(projectJson);
-    updateDemoResultsThroughApiClient();
+    updatePreviewResultsThroughApiClient();
     savedProject = {
       project_id: projectJson.project_id || currentBackendProjectId(),
       project_version: projectJson.project_version || "project-v0.1",
@@ -3830,10 +3899,12 @@ async function saveCurrentExperimentPlanThroughApi() {
   try {
     savedProject = await backendApi.saveProject(projectJson);
     modelingSnapshot = await backendApi.createModelingSnapshot(savedProject.project_id);
-    experimentPlan = await backendApi.createExperimentPlan(
-      savedProject.project_id,
-      buildExperimentPlanConfig(planProjectJson)
-    );
+    const runIntent = buildRunIntent({
+      runType: "single",
+      projectJson: savedProject,
+      planProjectJson
+    });
+    experimentPlan = await backendApi.createExperimentPlan(savedProject.project_id, runIntent.experimentPlanConfig);
     backendApiStatus = "实验方案分支已保存";
   } catch (err) {
     savedProject = null;
@@ -3843,25 +3914,79 @@ async function saveCurrentExperimentPlanThroughApi() {
   }
 }
 
+async function startSingleRunThroughApi() {
+  if (formalRunSubmitInFlight) {
+    backendApiStatus = "已有正式运行正在提交，请等待当前请求返回";
+    return;
+  }
+  formalRunSubmitInFlight = true;
+  const runType = "single";
+  const projectJson = buildBackendProjectJson(scenario, currentProject);
+  const planProjectJson = buildBackendProjectJson(experimentPlanDraft, currentProject);
+  try {
+    const submitted = await submitRunIntent(backendApi, {
+      runType,
+      projectJson,
+      planProjectJson
+    });
+    savedProject = submitted.savedProject;
+    modelingSnapshot = submitted.modelingSnapshot;
+    experimentPlan = submitted.experimentPlan;
+    backendRun = submitted.run;
+    if (backendRun.status === "failed") {
+      backendRunResult = null;
+      backendArtifactManifest = { artifacts: [] };
+      backendRunChain = null;
+      lastRunExperimentPlanProjectJson = null;
+      forgetLastBackendRun();
+      experimentRunStatus = "运行失败";
+      backendApiStatus = compileGateStatusText(backendRun);
+      return;
+    }
+    lastRunExperimentPlanProjectJson = {
+      run_id: backendRun.run_id,
+      project_json: submitted.intent.planProjectJson
+    };
+    rememberLastBackendRun(backendRun.run_id, savedProject.project_id, submitted.intent.planProjectJson);
+    await refreshRunResultThroughApi(backendRun.run_id);
+    experimentRunStatus = backendRun.status === "succeeded" ? "完成" : backendRun.status;
+    backendApiStatus = isRunComplete(backendRun)
+      ? "单次正式运行完成"
+      : `单次正式运行已提交：${backendRun.run_id || "等待 run_id"} / ${runStatusLabel(backendRun)}`;
+  } catch (err) {
+    savedProject = null;
+    backendRun = null;
+    backendRunResult = null;
+    backendArtifactManifest = null;
+    backendRunChain = null;
+    forgetLastBackendRun();
+    experimentRunStatus = "后端不可用";
+    backendApiStatus = `后端不可用，未创建 run_id：${err && err.message ? err.message : "Backend API 不可用"}`;
+  } finally {
+    formalRunSubmitInFlight = false;
+  }
+}
+
 async function startMonteCarloRunThroughApi({ monteCarloExperimentId = selectedMonteCarloExperimentId } = {}) {
+  if (formalRunSubmitInFlight) {
+    backendApiStatus = "已有正式运行正在提交，请等待当前请求返回";
+    return;
+  }
+  formalRunSubmitInFlight = true;
   const runType = "monte_carlo";
   const projectJson = buildBackendProjectJson(scenario, currentProject);
   const planProjectJson = buildBackendProjectJson(experimentPlanDraft, currentProject);
-  updateDemoResultsThroughApiClient(experimentPlanDraft);
   try {
-    savedProject = await backendApi.saveProject(projectJson);
-    modelingSnapshot = await backendApi.createModelingSnapshot(savedProject.project_id);
-    experimentPlan = await backendApi.createExperimentPlan(
-      savedProject.project_id,
-      buildExperimentPlanConfig(planProjectJson)
-    );
-    backendRun = await backendApi.submitRun({
-      project_id: savedProject.project_id,
-      experiment_plan_id: experimentPlan.experiment_plan_id,
-      model_family: "smoke",
-      run_type: "monte_carlo",
-      ...(monteCarloExperimentId ? { mc_experiment_id: monteCarloExperimentId } : {})
+    const submitted = await submitRunIntent(backendApi, {
+      runType,
+      projectJson,
+      planProjectJson,
+      mcExperimentId: monteCarloExperimentId
     });
+    savedProject = submitted.savedProject;
+    modelingSnapshot = submitted.modelingSnapshot;
+    experimentPlan = submitted.experimentPlan;
+    backendRun = submitted.run;
     if (backendRun.status === "failed") {
       backendRunResult = null;
       backendArtifactManifest = { artifacts: [] };
@@ -3878,21 +4003,41 @@ async function startMonteCarloRunThroughApi({ monteCarloExperimentId = selectedM
         artifactId: "",
         artifactManifestId: "",
         projectionArtifactIds: [],
-        source: "backend:run-failed"
+      source: "backend:run-failed"
       });
       return;
     }
     lastRunExperimentPlanProjectJson = {
       run_id: backendRun.run_id,
-      project_json: planProjectJson
+      project_json: submitted.intent.planProjectJson
     };
+    rememberLastBackendRun(backendRun.run_id, savedProject.project_id, submitted.intent.planProjectJson);
+    if (backendRun.status === "queued" || backendRun.status === "running") {
+      backendRunResult = null;
+      backendArtifactManifest = { artifacts: [] };
+      backendRunChain = null;
+      experimentRunStatus = backendRun.status;
+      backendApiStatus = `正式 Monte Carlo run 已提交：${backendRun.run_id || "等待 run_id"} / ${runStatusLabel(backendRun)}`;
+      syncMonteCarloExperimentRun(monteCarloExperimentId, {
+        status: "运行中",
+        progress: backendRun.progress ?? 0,
+        runId: backendRun.run_id,
+        runType,
+        artifactId: "",
+        artifactManifestId: "",
+        projectionArtifactIds: [],
+        source: "backend:run-service"
+      });
+      return;
+    }
     await refreshRunResultThroughApi(backendRun.run_id);
-    rememberLastBackendRun(backendRun.run_id, savedProject.project_id, planProjectJson);
     experimentRunStatus = backendRun.status === "succeeded" ? "完成" : backendRun.status;
-    backendApiStatus = "运行完成";
+    backendApiStatus = isRunComplete(backendRun)
+      ? "运行完成"
+      : `正式 Monte Carlo run 已提交：${backendRun.run_id || "等待 run_id"} / ${runStatusLabel(backendRun)}`;
     syncMonteCarloExperimentRun(monteCarloExperimentId, {
-      status: experimentRunStatus,
-      progress: Number(backendRun.progress ?? 1) * 100,
+      status: isRunComplete(backendRun) ? experimentRunStatus : "运行中",
+      progress: backendRun.progress ?? (isRunComplete(backendRun) ? 1 : 0),
       runId: backendRun.run_id,
       runType,
       artifactId: backendArtifactManifest?.artifact_manifest_id || "",
@@ -3916,6 +4061,7 @@ async function startMonteCarloRunThroughApi({ monteCarloExperimentId = selectedM
       source: "backend:submit-error"
     });
   } finally {
+    formalRunSubmitInFlight = false;
     render();
   }
 }
@@ -3923,6 +4069,19 @@ async function startMonteCarloRunThroughApi({ monteCarloExperimentId = selectedM
 async function refreshRunResultThroughApi(runId = backendRun?.run_id) {
   if (!runId) return;
   backendRun = await backendApi.getRunStatus(runId);
+  if (!isRunComplete(backendRun)) {
+    backendRunResult = null;
+    backendArtifactManifest = { artifacts: [] };
+    backendRunChain = null;
+    if (backendRun.project_id) {
+      try {
+        savedProject = await backendApi.getProject(backendRun.project_id);
+      } catch {
+        savedProject = savedProject || { project_id: backendRun.project_id };
+      }
+    }
+    return backendRun;
+  }
   backendRunResult = await backendApi.getRunResult(runId);
   backendArtifactManifest = await backendApi.getRunArtifacts(runId);
   backendRunChain = await backendApi.getRunChain(runId);
@@ -3936,6 +4095,21 @@ async function refreshRunResultThroughApi(runId = backendRun?.run_id) {
   const state = buildFrontendResultState(planProjectJson, backendRunResult);
   singleResult = state.singleResult;
   monteCarloResult = state.monteCarloResult;
+  return backendRun;
+}
+
+function isRunComplete(run) {
+  const status = String(run?.status || run?.phase || "").toLowerCase();
+  return ["succeeded", "success", "completed", "complete"].includes(status);
+}
+
+function runStatusLabel(run) {
+  const status = String(run?.status || run?.phase || "queued");
+  const progress = normalizeProgress(run?.progress ?? 0);
+  if (["succeeded", "success", "completed", "complete"].includes(status.toLowerCase())) return "完成";
+  if (["queued", "pending"].includes(status.toLowerCase())) return `排队中 ${progress}%`;
+  if (["running", "in_progress"].includes(status.toLowerCase())) return `运行中 ${progress}%`;
+  return `${status} ${progress}%`;
 }
 
 async function hydrateLastBackendRunFromApi() {
@@ -3999,10 +4173,10 @@ function currentRunExperimentPlanProjectJson(runId) {
   return null;
 }
 
-function updateDemoResultsThroughApiClient(projectJsonSource = scenario) {
-  const state = buildDemoResultState(buildBackendProjectJson(projectJsonSource, currentProject));
-  singleResult = state.singleResult;
-  monteCarloResult = state.monteCarloResult;
+function updatePreviewResultsThroughApiClient(projectJsonSource = scenario) {
+  const state = buildPreviewResultState(buildBackendProjectJson(projectJsonSource, currentProject));
+  singleResult = state.previewSingleResult;
+  monteCarloResult = state.previewMonteCarloResult;
 }
 
 function compileGateStatusText(run) {
@@ -4186,7 +4360,7 @@ function backendUserStatus(status) {
   return status || "active";
 }
 
-async function handleModelingImportAction(action) {
+async function handleModelingImportAction(action, options = {}) {
   if (action === "load-fixture") {
     try {
       const stored = await backendApi.getModelingImport(MODELING_IMPORT_DEMO_FIXTURE.importId);
@@ -4288,6 +4462,21 @@ async function handleModelingImportAction(action) {
     } catch (err) {
       setModelingImportActionError("Scenario 生成失败", "backendApi.compileModelingImportScenario", err);
     }
+    return;
+  }
+
+  if (action === "create-project") {
+    if (!modelingImportPublishedPackage) {
+      modelingImportStatus = "请先发布导入包，再生成示例 Project";
+      return;
+    }
+    const importId = options.importId || currentPublishedModelingImportId();
+    if (!importId) {
+      modelingImportStatus = "未找到当前发布导入包 importId";
+      return;
+    }
+    await createSampleProjectFromPublishedImport(importId);
+    modelingImportStatus = projectListStatus;
   }
 }
 
@@ -4710,7 +4899,7 @@ function renderMonteCarloExperimentDetail(page) {
         </div>
         <div class="mc-action-row">
           <button type="button" data-mc-experiment-action="list">返回实验列表</button>
-          <button type="button" class="btn-primary" data-mc-action="start">启动实验</button>
+          <button type="button" class="btn-primary" data-mc-action="start" ${formalRunSubmitInFlight ? "disabled" : ""}>启动实验</button>
         </div>
         ${renderMonteCarloResults()}
       </section>
@@ -4743,7 +4932,7 @@ function renderLegacyMonteCarloConfig() {
           <label>备件倍数<input data-mc-array-path="monteCarlo.spareMultipliers" value="${experimentPlanDraft.monteCarlo.spareMultipliers.join(",")}"></label>
           <label>保障容量<input data-mc-array-path="monteCarlo.supportCapacities" value="${experimentPlanDraft.monteCarlo.supportCapacities.join(",")}"></label>
           <div class="mc-action-row">
-            <button type="button" class="btn-primary" data-mc-action="start">启动</button>
+            <button type="button" class="btn-primary" data-mc-action="start" ${formalRunSubmitInFlight ? "disabled" : ""}>启动</button>
           </div>
         </div>
       </section>
@@ -5522,7 +5711,7 @@ function updateEquipmentKOutOfNInput(input) {
   const bounded = quantity > 1 ? clamp(Math.trunc(Number(input.value) || 1), 1, quantity) : 0;
   component.kOutOfN = { ...(component.kOutOfN || {}), enabled: quantity > 1 && bounded > 0, n: quantity, k: bounded };
   input.value = String(bounded);
-  updateDemoResultsThroughApiClient();
+  updatePreviewResultsThroughApiClient();
 }
 
 function normalizeEquipmentKOutOfNForPath(path) {
@@ -5546,7 +5735,7 @@ function parseNumberList(value) {
 function updateMonteCarloArrayInput(mcArrayInput) {
   experimentPlanBranchActive = true;
   setPath(experimentPlanDraft, mcArrayInput.dataset.mcArrayPath, parseNumberList(mcArrayInput.value));
-  updateDemoResultsThroughApiClient(experimentPlanDraft);
+  updatePreviewResultsThroughApiClient(experimentPlanDraft);
 }
 
 function stateLabel(state) {

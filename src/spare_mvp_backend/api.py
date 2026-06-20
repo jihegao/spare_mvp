@@ -9,19 +9,11 @@ from pathlib import Path
 import threading
 from typing import Any
 
+from src.spare_mvp_backend.errors import BackendApiError
 from src.spare_mvp_backend.modeling_import import modeling_import_to_project, validate_modeling_import_package
 from src.spare_mvp_backend.repository import ContractRepository
 from src.spare_mvp_backend.run_service import RunService, RunServiceError
 from src.spare_mvp_contract.adapter import AdapterError, SimulationAdapter
-
-
-class BackendApiError(ValueError):
-    """Structured API facade error."""
-
-    def __init__(self, code: str, message: str, **details: Any) -> None:
-        super().__init__(message)
-        self.code = code
-        self.details = details
 
 
 class BackendApi:
@@ -268,6 +260,83 @@ class BackendApi:
             },
             "project": project,
             "scenario": scenario,
+        }
+
+    def create_project_from_modeling_import(
+        self,
+        import_id: str,
+        *,
+        actor_user_id: str | None = None,
+    ) -> dict[str, Any]:
+        return self._create_project_from_modeling_import_trusted(
+            import_id,
+            actor_user_id=actor_user_id,
+            allow_system=False,
+        )
+
+    def create_project_from_modeling_import_as_system(self, import_id: str) -> dict[str, Any]:
+        return self._create_project_from_modeling_import_trusted(
+            import_id,
+            actor_user_id=None,
+            allow_system=True,
+        )
+
+    def _create_project_from_modeling_import_trusted(
+        self,
+        import_id: str,
+        *,
+        actor_user_id: str | None,
+        allow_system: bool,
+    ) -> dict[str, Any]:
+        self._require_role(
+            actor_user_id,
+            {"系统管理员", "数据管理员"},
+            action="modeling_import.create_project",
+            resource_type="modeling_import",
+            resource_id=import_id,
+            allow_system=allow_system,
+        )
+        stored = self.repository.get_modeling_import(import_id)
+        import_package = stored.get("publishedPackage")
+        if import_package is None:
+            raise BackendApiError(
+                "unpublished_modeling_import",
+                "Modeling import must be published before creating a sample Project",
+                import_id=import_id,
+            )
+        validation = self.validate_modeling_import(import_package)
+        if not validation["ok"]:
+            raise BackendApiError(
+                "invalid_modeling_import",
+                "Modeling import package failed validation",
+                issues=validation["issues"],
+            )
+
+        project_json = modeling_import_to_project(import_package)
+        saved = self.save_project(project_json)
+        project = self.repository.get_project(saved["project_id"])
+        snapshot = self.create_modeling_snapshot(saved["project_id"])
+        self._audit_allowed(
+            actor_user_id,
+            action="modeling_import.create_project",
+            resource_type="modeling_import",
+            resource_id=import_id,
+            details={
+                "project_id": saved["project_id"],
+                "import_version": int(import_package.get("lifecycle", {}).get("version") or 1),
+                **({"actor": "system"} if allow_system else {}),
+            },
+            allow_system=allow_system,
+        )
+        return {
+            "sourceImport": {
+                "import_id": import_id,
+                "import_version": int(import_package.get("lifecycle", {}).get("version") or 1),
+                "project_id": saved["project_id"],
+            },
+            "savedProject": saved,
+            "project": project,
+            "modelingSnapshot": snapshot,
         }
 
     def create_modeling_snapshot(self, project_id: str) -> dict[str, Any]:
