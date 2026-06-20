@@ -73,7 +73,7 @@ M6.1 应新增模型族级 mapping 说明，建议结构如下：
 
 ## 页面建议字段前置口径
 
-`docs/review/页面修改建议260619.md` 是 M6.1.1 前的页面输入收口来源。执行该文件时必须保留「建模数据导入」工作台；已取消删除该页面。下列页面字段会影响 M6.1.1 的 `ExperimentPlan + ModelingSnapshot -> Scenario compiler` 输入口径，必须在 mapping 中标注为 `required`、`defaulted`、`derived`、`unsupported` 或 `ignored`，不能由前端静默推导为正式仿真输入：
+`reports/2026-06-19-page-revision-suggestions/README.md` 是 M6.1.1 前的页面输入收口来源。执行该文件时必须保留「建模数据导入」工作台；已取消删除该页面。下列页面字段会影响 M6.1.1 的 `ExperimentPlan + ModelingSnapshot -> Scenario compiler` 输入口径，必须在 mapping 中标注为 `required`、`defaulted`、`derived`、`unsupported` 或 `ignored`，不能由前端静默推导为正式仿真输入：
 
 1. 装备组成：组件属性 LRU/SRU/空值、数量、N 中取 K。
 2. 装备故障：MTBF、指数/威布尔分布、威布尔形状参数和尺度参数。

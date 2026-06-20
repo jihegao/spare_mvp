@@ -12,7 +12,7 @@
 
 ## Scope And File Structure
 
-- Modify: `docs/review/页面修改建议260619.md`
+- Modify: `reports/2026-06-19-page-revision-suggestions/README.md`
   - Record that the modeling-import deletion request was canceled.
 - Modify: `README.md`, `docs/README.md`, `docs/product-roadmap.md`, `agent.md`, `AGENT.md`
   - Document this page-suggestion slice and its relationship to M6.1.1.
@@ -34,7 +34,7 @@ Do not implement M6.1.1 in this slice. Do not delete the modeling-import workben
 ## Task 1: Documentation And Scope Alignment
 
 **Files:**
-- Modify: `docs/review/页面修改建议260619.md`
+- Modify: `reports/2026-06-19-page-revision-suggestions/README.md`
 - Modify: `README.md`
 - Modify: `docs/README.md`
 - Modify: `docs/product-roadmap.md`
@@ -62,7 +62,7 @@ Expected before implementation: fail if the review doc still says to delete the 
 
 - [x] **Step 2: Update roadmap and agent docs**
 
-State that this slice executes `docs/review/页面修改建议260619.md` with the modeling-import page retained, and that M6.1.1 remains the next simulation-input boundary after M5/page-input usability is stable.
+State that this slice executes `reports/2026-06-19-page-revision-suggestions/README.md` with the modeling-import page retained, and that M6.1.1 remains the next simulation-input boundary after M5/page-input usability is stable.
 
 Run:
 

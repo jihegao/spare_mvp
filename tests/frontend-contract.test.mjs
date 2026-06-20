@@ -5,11 +5,13 @@ import test from "node:test";
 import { FEATURE_PAGES, getFeaturePageById, groupFeaturePages } from "../front/feature-catalog.mjs";
 import { buildOntologyContext, buildProjectOntology, PROJECT_ONTOLOGY, PROJECT_ONTOLOGY_PLAYGROUND } from "../front/ontology-context.mjs";
 
+const PAGE_REVISION_REPORT_URL = new URL("../reports/2026-06-19-page-revision-suggestions/README.md", import.meta.url);
+
 test("feature catalog exposes all table-2 four-level pages", () => {
-  assert.equal(FEATURE_PAGES.length, 56);
-  assert.equal(new Set(FEATURE_PAGES.map((page) => page.id)).size, 56);
-  assert.equal(FEATURE_PAGES.filter((page) => page.module === "备件规划评估模块").length, 24);
-  assert.equal(FEATURE_PAGES.filter((page) => page.module === "任务可靠度评估模块").length, 26);
+  assert.equal(FEATURE_PAGES.length, 52);
+  assert.equal(new Set(FEATURE_PAGES.map((page) => page.id)).size, 52);
+  assert.equal(FEATURE_PAGES.filter((page) => page.module === "备件规划评估模块").length, 22);
+  assert.equal(FEATURE_PAGES.filter((page) => page.module === "任务可靠度评估模块").length, 24);
   assert.equal(FEATURE_PAGES.filter((page) => page.module === "系统管理").length, 6);
   for (const label of ["装备可靠性框图建模", "蒙特卡洛实验结果", "飞机转场携行清单分析", "任务可靠度评估", "停机因素分析"]) {
     assert.ok(FEATURE_PAGES.some((page) => page.name === label), label);
@@ -106,7 +108,7 @@ test("feature grouping preserves three-level navigation and internal fourth-leve
 test("page suggestion alignment keeps modeling import but removes modeling form management", async () => {
   const catalogSource = await readFile(new URL("../front/feature-catalog.mjs", import.meta.url), "utf8");
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
-  const reviewSource = await readFile(new URL("../docs/review/页面修改建议260619.md", import.meta.url), "utf8");
+  const reviewSource = await readFile(PAGE_REVISION_REPORT_URL, "utf8");
 
   assert.match(reviewSource, /取消.*建模数据导入.*删除/);
   assert.match(catalogSource, /建模数据导入/);
@@ -116,6 +118,18 @@ test("page suggestion alignment keeps modeling import but removes modeling form 
   assert.equal(FEATURE_PAGES.some((page) => page.id === "system-management-modeling-import-workbench"), true);
   assert.equal(FEATURE_PAGES.some((page) => page.id === "system-management-modeling-form-management"), false);
   assert.equal(FEATURE_PAGES.some((page) => page.name === "建模表单管理"), false);
+});
+
+test("page revision report is archived under reports with its screenshot evidence", async () => {
+  const reviewSource = await readFile(PAGE_REVISION_REPORT_URL, "utf8");
+
+  assert.match(reviewSource, /2026-06-20 决策/);
+  assert.match(reviewSource, /image\/页面修改建议260619\/1781929442367\.png/);
+  assert.match(reviewSource, /image\/页面修改建议260619\/1781931686346\.png/);
+  assert.match(reviewSource, /项目列表页/);
+  assert.match(reviewSource, /系统管理 \/ 项目管理 \/ 数据管理/);
+  assert.match(reviewSource, /仿真建模 \/ 装备系统建模/);
+  assert.match(reviewSource, /仿真建模 \/ 保障组织建模 \/ 备件建模/);
 });
 
 test("experiment plan management remains visible because it is source design scope", async () => {
@@ -200,6 +214,54 @@ test("equipment composition modeling is the post-project landing page and plan n
   assert.match(styleSource, /\.project-menu-panel/);
 });
 
+test("page revision project and system management controls stay wired", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const projectListSource = appSource.slice(
+    appSource.indexOf("function renderProjectListPage"),
+    appSource.indexOf("function renderNavigation")
+  );
+  const systemProjectSource = appSource.slice(
+    appSource.indexOf("function renderSystemProjectManagement"),
+    appSource.indexOf("function renderSystemBasicConfig")
+  );
+  const userSource = appSource.slice(
+    appSource.indexOf("function renderUserManagementConfig"),
+    appSource.indexOf("function renderPermissionManagementConfig")
+  );
+  const permissionSource = appSource.slice(
+    appSource.indexOf("function renderPermissionManagementConfig"),
+    appSource.indexOf("function renderTaskModel")
+  );
+  const eventSource = appSource.slice(
+    appSource.indexOf("function bindEvents"),
+    appSource.indexOf("async function handleLogin")
+  );
+
+  assert.match(projectListSource, /data-project-add/);
+  assert.match(projectListSource, /data-project-edit/);
+  assert.match(projectListSource, /data-project-delete/);
+  assert.match(projectListSource, /data-system-management-entry/);
+  assert.doesNotMatch(projectListSource, /进入当前项目/);
+
+  assert.match(systemProjectSource, /activeSystemDataTab/);
+  assert.match(systemProjectSource, /建模数据/);
+  assert.match(systemProjectSource, /实验配置/);
+  assert.match(systemProjectSource, /实验结果/);
+  assert.match(systemProjectSource, /data-system-data-export/);
+  assert.match(systemProjectSource, /SYSTEM_MODELING_GRANULARITY_ROWS/);
+
+  assert.match(userSource, /data-system-user-select-all/);
+  assert.match(userSource, /data-system-user-select/);
+  assert.match(userSource, /data-system-user-delete/);
+  assert.doesNotMatch(userSource, /User is not allowed to perform this action/);
+
+  assert.match(permissionSource, /data-permission-configure/);
+  assert.match(permissionSource, /renderPermissionConfigEditor/);
+  assert.match(permissionSource, /data-permission-role/);
+  assert.match(eventSource, /const systemManagementButton = event\.target\.closest\("\[data-system-management-entry\]"\)/);
+  assert.match(eventSource, /const permissionConfigureButton = event\.target\.closest\("\[data-permission-configure\]"\)/);
+});
+
 test("results analysis pages are rendered as four dedicated ship-front aligned dashboards", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   assert.match(appSource, /function renderSpareShortfallAnalysis/);
@@ -281,6 +343,7 @@ test("support organization and activity pages follow ship_front tree table edito
   assert.match(supportOrgSource, /data-support-resource-select/);
   assert.match(supportOrgSource, /supportResourceInput\(row, "quantity", "number"/);
   assert.match(supportOrgSource, /aircraftMultiSelect\(row\.key, row\.aircraft/);
+  assert.match(supportOrgSource, /children:\s*depth\s*>=\s*1\s*\?\s*\[\]/);
   assert.match(appSource, /function updateSupportResourceOverride/);
   assert.match(appSource, /scenario\.supportResourceOverrides/);
   assert.match(appSource, /scenario\.deletedSupportResourceKeys/);
@@ -766,6 +829,59 @@ test("mission task profile pages split composite and periodic task modeling", as
   assert.doesNotMatch(periodicSource, /星期/);
   assert.doesNotMatch(periodicSource, /当前复合任务包含的基本任务/);
   assert.doesNotMatch(periodicSource, /典型组合任务时序表/);
+});
+
+test("page revision equipment and mission input constraints are guarded", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const equipmentSource = appSource.slice(
+    appSource.indexOf("function renderEquipmentModeling"),
+    appSource.indexOf("function renderReliabilityBlockDiagram")
+  );
+  const basicMissionSource = appSource.slice(
+    appSource.indexOf("function renderBasicMissionModeling"),
+    appSource.indexOf("function renderCompositeTaskModeling")
+  );
+  const compositeSource = appSource.slice(
+    appSource.indexOf("function renderCompositeTaskModeling"),
+    appSource.indexOf("function renderPeriodicTaskModeling")
+  );
+  const compositeItemSource = compositeSource.slice(
+    compositeSource.indexOf("<h4>当前复合任务包含的基本任务</h4>"),
+    compositeSource.indexOf("<h4>典型组合任务时序表</h4>")
+  );
+  const missionInfoStart = basicMissionSource.indexOf("<h4>基本任务信息编辑</h4>");
+  const equipmentQuantityIndex = basicMissionSource.indexOf("装备数量", missionInfoStart);
+  const minimumEquipmentIndex = basicMissionSource.indexOf("最小装备数量", missionInfoStart);
+
+  assert.match(equipmentSource, /function equipmentLruRadioGroup/);
+  assert.match(equipmentSource, /value="LRU"/);
+  assert.match(equipmentSource, /value="SRU"/);
+  assert.match(equipmentSource, /value=""[^>]*>空值/);
+  assert.match(equipmentSource, /function equipmentKOutOfNInput/);
+  assert.match(equipmentSource, /const quantity = Math\.max\(0, Math\.trunc\(Number\(component\.quantity\) \|\| 0\)\)/);
+  assert.match(equipmentSource, /clamp\(Math\.trunc\(Number\(component\.kOutOfN\?\.k\) \|\| 1\), 1, quantity\)/);
+  assert.match(equipmentSource, /quantity > 1 \? "" : "disabled"/);
+  assert.match(equipmentSource, /min="1" max="\$\{htmlEscape\(quantity\)\}" step="1"/);
+
+  assert.ok(equipmentQuantityIndex > -1, "basic mission equipment quantity field missing");
+  assert.ok(minimumEquipmentIndex > equipmentQuantityIndex, "minimum equipment quantity must follow equipment quantity");
+  assert.match(basicMissionSource, /data-basic-mission-add/);
+  assert.match(basicMissionSource, /data-basic-mission-delete/);
+  assert.match(basicMissionSource, /data-basic-mission-phase-add/);
+  assert.match(basicMissionSource, /data-basic-mission-phase-delete/);
+  assert.match(basicMissionSource, /missionPhaseRatioTotal/);
+  assert.match(basicMissionSource, /Math\.abs\(phaseRatioTotal - 1\) < 0\.001/);
+  assert.match(basicMissionSource, /renderMissionPhaseSystemCoefficients/);
+  assert.doesNotMatch(basicMissionSource, /<th>状态<\/th>/);
+  assert.doesNotMatch(basicMissionSource, /转移条件/);
+
+  assert.match(compositeItemSource, /basicMissionSelect/);
+  assert.match(compositeItemSource, /findBasicMissionByName/);
+  assert.match(compositeItemSource, /<td><input readonly value="\$\{htmlEscape\(basicTask\?\.equipmentType/);
+  assert.match(compositeItemSource, /<td><input readonly value="\$\{htmlEscape\(basicTask\?\.taskDurationMinutes/);
+  assert.match(compositeItemSource, /requiredEquipmentQuantity/);
+  assert.doesNotMatch(compositeItemSource, /任务下达时间/);
+  assert.doesNotMatch(compositeItemSource, /回收时刻/);
 });
 
 test("editable modeling lists expose page suggestion action entries", async () => {
