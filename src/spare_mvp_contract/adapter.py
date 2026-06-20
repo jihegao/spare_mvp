@@ -11,6 +11,7 @@ import copy
 from datetime import datetime, timezone
 import hashlib
 import json
+import math
 from pathlib import Path
 import re
 from typing import Any
@@ -525,26 +526,40 @@ class SimulationAdapter:
         project = inputs["project_snapshot"]
         project_sweep = project.get("monteCarlo", {})
         requested_sweep = sweep or {}
+        failure_rates = self._first_present(
+            requested_sweep,
+            ["failureRates", "failure_rates"],
+            project_sweep,
+            ["failureRates"],
+        )
+        spare_multipliers = self._first_present(
+            requested_sweep,
+            ["spareMultipliers", "spare_multipliers"],
+            project_sweep,
+            ["spareMultipliers"],
+        )
+        support_capacities = self._first_present(
+            requested_sweep,
+            ["supportCapacities", "support_capacities"],
+            project_sweep,
+            ["supportCapacities"],
+        )
         normalized = {
-            "failureRates": self._normalize_sweep_values(
-                requested_sweep.get("failureRates") or requested_sweep.get("failure_rates") or project_sweep.get("failureRates"),
+            "failureRates": self._normalize_numeric_sweep_values(
+                failure_rates,
                 [inputs["failure_rate"]],
+                field_path="monteCarlo.failureRates",
             ),
-            "spareMultipliers": self._normalize_sweep_values(
-                requested_sweep.get("spareMultipliers")
-                or requested_sweep.get("spare_multipliers")
-                or project_sweep.get("spareMultipliers"),
+            "spareMultipliers": self._normalize_numeric_sweep_values(
+                spare_multipliers,
                 [inputs["spare_multiplier"]],
+                field_path="monteCarlo.spareMultipliers",
             ),
-            "supportCapacities": [
-                int(value)
-                for value in self._normalize_sweep_values(
-                    requested_sweep.get("supportCapacities")
-                    or requested_sweep.get("support_capacities")
-                    or project_sweep.get("supportCapacities"),
-                    [inputs["support_capacity"]],
-                )
-            ],
+            "supportCapacities": self._normalize_support_capacities(
+                support_capacities,
+                [inputs["support_capacity"]],
+                field_path="monteCarlo.supportCapacities",
+            ),
         }
         points = []
         for failure_rate in normalized["failureRates"]:
@@ -554,10 +569,10 @@ class SimulationAdapter:
                         {
                             "failure_rate": failure_rate,
                             "spare_multiplier": spare_multiplier,
-                            "support_capacity": max(1, int(support_capacity)),
+                            "support_capacity": support_capacity,
                         }
                     )
-        count = max(1, min(1000, int(sample_count or len(points) or 1)))
+        count = self._validate_monte_carlo_sample_count(sample_count)
         sample_points = [copy.deepcopy(points[index % len(points)]) for index in range(count)]
         for index, point in enumerate(sample_points):
             point["seed"] = int(inputs["seed"]) + index
@@ -686,10 +701,86 @@ class SimulationAdapter:
             },
         }
 
-    def _normalize_sweep_values(self, values: Any, fallback: list[float]) -> list[float]:
+    def _first_present(
+        self,
+        primary: dict[str, Any],
+        primary_keys: list[str],
+        secondary: dict[str, Any],
+        secondary_keys: list[str],
+    ) -> Any:
+        for key in primary_keys:
+            if isinstance(primary, dict) and key in primary:
+                return primary[key]
+        for key in secondary_keys:
+            if isinstance(secondary, dict) and key in secondary:
+                return secondary[key]
+        return None
+
+    def _validate_monte_carlo_sample_count(self, value: Any) -> int:
+        if isinstance(value, bool) or not self._is_integer_like(value):
+            raise AdapterError(
+                "bad_analysis_request",
+                "monte carlo samples must be an integer between 1 and 1000",
+                field_path="samples",
+                value=value,
+            )
+        count = int(value)
+        if count < 1 or count > 1000:
+            raise AdapterError(
+                "bad_analysis_request",
+                "monte carlo samples must be an integer between 1 and 1000",
+                field_path="samples",
+                value=value,
+                minimum=1,
+                maximum=1000,
+            )
+        return count
+
+    def _normalize_numeric_sweep_values(self, values: Any, fallback: list[float], *, field_path: str) -> list[float]:
+        if values is None:
+            return [float(value) for value in fallback]
         raw_values = values if isinstance(values, list) else [values]
-        normalized = [float(value) for value in raw_values if self._is_number(value)]
-        return normalized or [float(value) for value in fallback]
+        if len(raw_values) == 0:
+            raise AdapterError(
+                "bad_analysis_request",
+                f"{field_path} must include at least one numeric value",
+                field_path=field_path,
+                value=values,
+            )
+        invalid = [value for value in raw_values if not self._is_json_number(value)]
+        if invalid:
+            raise AdapterError(
+                "bad_analysis_request",
+                f"{field_path} must contain only numeric values",
+                field_path=field_path,
+                invalid_values=invalid,
+            )
+        return [float(value) for value in raw_values]
+
+    def _normalize_support_capacities(self, values: Any, fallback: list[int], *, field_path: str) -> list[int]:
+        if values is None:
+            return [int(value) for value in fallback]
+        raw_values = values if isinstance(values, list) else [values]
+        if len(raw_values) == 0:
+            raise AdapterError(
+                "bad_analysis_request",
+                f"{field_path} must include at least one positive integer",
+                field_path=field_path,
+                value=values,
+            )
+        invalid = [
+            value
+            for value in raw_values
+            if isinstance(value, bool) or not self._is_integer_like(value) or int(value) < 1
+        ]
+        if invalid:
+            raise AdapterError(
+                "bad_analysis_request",
+                f"{field_path} must contain only integers greater than or equal to 1",
+                field_path=field_path,
+                invalid_values=invalid,
+            )
+        return [int(value) for value in raw_values]
 
     def _project_id(self, project: dict[str, Any]) -> str:
         return str(project.get("project_id") or project.get("scenarioId") or "project-unknown")
@@ -736,6 +827,15 @@ class SimulationAdapter:
         except (TypeError, ValueError):
             return False
         return True
+
+    def _is_json_number(self, value: Any) -> bool:
+        return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(float(value))
+
+    def _is_integer_like(self, value: Any) -> bool:
+        if not self._is_json_number(value):
+            return False
+        numeric = float(value)
+        return numeric.is_integer()
 
     def _is_positive_number(self, value: Any) -> bool:
         return self._is_number(value) and float(value) > 0

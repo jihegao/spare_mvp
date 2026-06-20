@@ -212,6 +212,51 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertTrue(all(artifact["source_artifact_id"] == base_artifact["artifact_id"] for artifact in projection_artifacts))
         self.assertTrue(all(artifact["schema_version"] == "analysis-projection-v0" for artifact in projection_artifacts))
 
+    def test_run_service_rejects_invalid_monte_carlo_inputs_without_formal_artifacts(self) -> None:
+        project = self._fixture("smoke_project.json")
+        saved = self.api.save_project(project)
+        self.api.create_modeling_snapshot(saved["project_id"])
+        plan = self.api.create_experiment_plan(
+            saved["project_id"],
+            {
+                "name": "invalid mc inputs",
+                "steps": 1,
+                "samples": 8,
+                "projectJson": project,
+            },
+        )
+        service = RunService(self.repository, self.adapter, self.api.output_dir)
+        invalid_cases = [
+            ("samples zero", {"samples": 0}, "samples"),
+            ("samples negative", {"samples": -1}, "samples"),
+            ("samples non numeric", {"samples": "bad"}, "samples"),
+            ("samples above limit", {"samples": 2000}, "samples"),
+            ("support capacity zero", {"sweep": {"supportCapacities": [0]}}, "monteCarlo.supportCapacities"),
+            ("support capacity negative", {"sweep": {"supportCapacities": [-2]}}, "monteCarlo.supportCapacities"),
+            ("failure rate non numeric", {"sweep": {"failureRates": [0.05, "bad"]}}, "monteCarlo.failureRates"),
+            ("spare multiplier non numeric", {"sweep": {"spareMultipliers": [1.0, "bad"]}}, "monteCarlo.spareMultipliers"),
+        ]
+
+        for label, overrides, field_path in invalid_cases:
+            with self.subTest(label):
+                submitted = service.submit_run(
+                    {
+                        "project_id": saved["project_id"],
+                        "experiment_plan_id": plan["experiment_plan_id"],
+                        "model_family": "smoke",
+                        "run_type": "monte_carlo",
+                        **overrides,
+                    }
+                )
+                manifest = self.api.get_run_artifacts(submitted["run_id"])
+
+                self.assertEqual(submitted["status"], "failed")
+                self.assertEqual(submitted["run_type"], "monte_carlo")
+                self.assertIsNone(submitted["result_summary_id"])
+                self.assertEqual(submitted["error"]["code"], "bad_analysis_request")
+                self.assertEqual(submitted["error"]["details"]["field_path"], field_path)
+                self.assertEqual(manifest["artifacts"], [])
+
     def test_run_service_rejects_missing_model_family_on_canonical_submit(self) -> None:
         project = self._fixture("smoke_project.json")
         saved = self.api.save_project(project)

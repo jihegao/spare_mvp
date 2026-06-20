@@ -329,7 +329,7 @@ def _steps_from_plan(plan: dict[str, Any]) -> int:
         return 3
 
 
-def _monte_carlo_sample_count(request: dict[str, Any], plan: dict[str, Any]) -> int:
+def _monte_carlo_sample_count(request: dict[str, Any], plan: dict[str, Any]) -> Any:
     config = plan.get("config") or {}
     candidates = [
         request.get("sample_count"),
@@ -350,12 +350,8 @@ def _monte_carlo_sample_count(request: dict[str, Any], plan: dict[str, Any]) -> 
         else None,
     ]
     for value in candidates:
-        if isinstance(value, bool):
-            continue
-        try:
-            return max(1, min(1000, int(value)))
-        except (TypeError, ValueError):
-            continue
+        if value is not None:
+            return value
     return 12
 
 
