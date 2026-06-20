@@ -140,6 +140,65 @@ class BackendHttpApiTest(unittest.TestCase):
                 server.server_close()
                 thread.join(timeout=5)
 
+    def test_http_canonical_runs_accept_formal_monte_carlo_run_type(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            server = create_backend_server(
+                ("127.0.0.1", 0),
+                repo_root=REPO_ROOT,
+                database_path=":memory:",
+                output_dir=Path(tmp) / "artifacts",
+            )
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                base_url = f"http://127.0.0.1:{server.server_address[1]}/api"
+                project = self._fixture("smoke_project.json")
+                saved = self._json(base_url, "POST", "/projects", project)
+                snapshot = self._json(base_url, "POST", f"/projects/{saved['project_id']}/modeling-snapshots")
+                plan = self._json(
+                    base_url,
+                    "POST",
+                    f"/projects/{saved['project_id']}/experiment-plans",
+                    {
+                        "config": {
+                            "name": "http formal monte carlo",
+                            "steps": 2,
+                            "samples": 8,
+                            "projectJson": project,
+                            "analysisRequests": {
+                                "spareShortfall": {"enabled": True},
+                                "carryList": {"enabled": True},
+                                "missionReliability": {"enabled": True},
+                                "downtimeFactors": {"enabled": True},
+                            },
+                        }
+                    },
+                )
+
+                submitted = self._json(
+                    base_url,
+                    "POST",
+                    "/runs",
+                    {
+                        "project_id": saved["project_id"],
+                        "experiment_plan_id": plan["experiment_plan_id"],
+                        "model_family": "smoke",
+                        "run_type": "monte_carlo",
+                    },
+                )
+                artifacts = self._json(base_url, "GET", f"/runs/{submitted['run_id']}/artifacts")
+                kinds = {artifact["kind"] for artifact in artifacts["artifacts"]}
+
+                self.assertEqual(submitted["status"], "succeeded")
+                self.assertEqual(submitted["run_type"], "monte_carlo")
+                self.assertEqual(submitted["modeling_snapshot_id"], snapshot["snapshot_id"])
+                self.assertIn("monte_carlo_base", kinds)
+                self.assertEqual(len([kind for kind in kinds if kind.startswith("analysis_projection_")]), 4)
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
     def test_http_canonical_runs_return_compile_gate_diagnostics(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             server = create_backend_server(

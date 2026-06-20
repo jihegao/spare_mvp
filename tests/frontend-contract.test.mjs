@@ -294,14 +294,21 @@ test("results analysis pages are rendered as four dedicated ship-front aligned d
   assert.match(appSource, /停机贡献因素排序/);
 });
 
-test("M6.1 formal result boundary labels local analysis projections", async () => {
+test("M6.2 formal result boundary unlocks only compiler-provenanced analysis artifacts", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   assert.match(appSource, /输入未通过 Scenario compiler/);
   assert.match(appSource, /本地预览，不是正式后端仿真结果/);
   assert.match(appSource, /缺少 compiler provenance/);
-  assert.match(appSource, /const formalUnlocked = false/);
-  assert.doesNotMatch(appSource, /analysisArtifacts\.length\s*>\s*0/);
-  assert.doesNotMatch(appSource, /analysis\|projection\|shortfall\|carry\|reliability\|downtime/);
+  assert.doesNotMatch(appSource, /const formalUnlocked = false/);
+  assert.match(appSource, /backendRun\?\.simulation_experiment_base\?\.mapping_provenance/);
+  assert.match(appSource, /analysisArtifacts\.length\s*>\s*0/);
+  assert.match(appSource, /analysisArtifacts,/);
+  assert.match(appSource, /function analysisProjectionArtifacts/);
+  assert.match(appSource, /monteCarloBaseArtifacts\(\)\.length > 0/);
+  assert.match(appSource, /spare_shortfall/);
+  assert.match(appSource, /carry_list/);
+  assert.match(appSource, /mission_reliability/);
+  assert.match(appSource, /downtime_factors/);
 });
 
 test("project draft save failure does not mint offline savedProject identity", async () => {
@@ -1137,10 +1144,27 @@ test("monte carlo sweep inputs update scenario arrays and rerun grouped results"
 test("monte carlo experiment management has list, editor, and detail pages", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const styleSource = await readFile(new URL("../front/styles.css", import.meta.url), "utf8");
+  const createExperimentSource = appSource.slice(
+    appSource.indexOf("function createMonteCarloExperiment"),
+    appSource.indexOf("function monteCarloExperimentListForModule")
+  );
   assert.match(appSource, /class="mc-workbench"/);
   assert.match(appSource, /function renderMonteCarloExperimentList/);
   assert.match(appSource, /function renderMonteCarloExperimentEditor/);
   assert.match(appSource, /function renderMonteCarloExperimentDetail/);
+  for (const sharedField of [
+    "experiment_id",
+    "experiment_type",
+    "experimentPlanName",
+    "scenarioId",
+    "seed",
+    "status",
+    "progress",
+    "runId",
+    "artifactId"
+  ]) {
+    assert.match(createExperimentSource, new RegExp(`${sharedField}(\\s*:|,)`), `MonteCarloExperiment must carry ${sharedField}`);
+  }
   assert.match(appSource, /蒙特卡洛实验列表/);
   assert.match(appSource, /保存全部实验运行历史/);
   assert.match(appSource, /添加\/编辑蒙特卡洛实验/);
@@ -1167,6 +1191,10 @@ test("analysis pages manage analysis tasks and can auto-create a bound monte car
     appSource.indexOf("function renderAnalysisTaskList"),
     appSource.indexOf("function renderBar")
   );
+  const bindingSource = appSource.slice(
+    appSource.indexOf("function ensureAnalysisTaskMonteCarloExperiment"),
+    appSource.indexOf("function renderAnalysisTaskList")
+  );
 
   assert.match(appSource, /function ensureAnalysisTaskMonteCarloExperiment/);
   assert.match(appSource, /function createAnalysisTaskForPage/);
@@ -1184,6 +1212,10 @@ test("analysis pages manage analysis tasks and can auto-create a bound monte car
   assert.match(analysisSource, /选择方案 \+ 参数后自动创建一个新的蒙特卡洛实验并绑定分析任务/);
   assert.match(analysisSource, /linkedMonteCarloExperimentId/);
   assert.match(analysisSource, /mc_experiment_id/);
+  assert.match(bindingSource, /experiment\.mc_experiment_id === task\.linkedMonteCarloExperimentId/);
+  assert.match(bindingSource, /if \(existing && !options\.forceNew\) return existing/);
+  assert.match(bindingSource, /source: "analysis:auto-created"/);
+  assert.match(bindingSource, /linkedMonteCarloExperimentId: experiment\.mc_experiment_id/);
 });
 
 test("experiment plan editor edits an isolated branch rather than the project draft", async () => {
@@ -1218,7 +1250,7 @@ test("experiment plan editor edits an isolated branch rather than the project dr
 test("monte carlo launch creates a run from the current experiment plan branch", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const launchSource = appSource.slice(
-    appSource.indexOf("async function startExperimentRunThroughApi"),
+    appSource.indexOf("async function startMonteCarloRunThroughApi"),
     appSource.indexOf("async function refreshRunResultThroughApi")
   );
 
@@ -1229,7 +1261,10 @@ test("monte carlo launch creates a run from the current experiment plan branch",
   assert.match(launchSource, /project_id: savedProject\.project_id/);
   assert.match(launchSource, /experiment_plan_id: experimentPlan\.experiment_plan_id/);
   assert.match(launchSource, /model_family: "smoke"/);
-  assert.match(launchSource, /run_type: "single"/);
+  assert.match(launchSource, /const runType = "monte_carlo"/);
+  assert.match(launchSource, /run_type: "monte_carlo"/);
+  assert.match(appSource, /startMonteCarloRunThroughApi\(\{ monteCarloExperimentId: experiment\.mc_experiment_id/);
+  assert.doesNotMatch(launchSource, /run_type: "single"/);
   assert.doesNotMatch(launchSource, /backendApi\.startSimulationRun/);
 });
 
@@ -1266,7 +1301,7 @@ test("click-based modeling mutations mark project draft dirty before rendering",
 test("run result refresh rebuilds frontend state from the experiment plan branch", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const launchSource = appSource.slice(
-    appSource.indexOf("async function startExperimentRunThroughApi"),
+    appSource.indexOf("async function startMonteCarloRunThroughApi"),
     appSource.indexOf("async function refreshRunResultThroughApi")
   );
   const refreshSource = appSource.slice(

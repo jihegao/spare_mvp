@@ -54,8 +54,12 @@ class RunService:
         if not project_id or not experiment_plan_id or raw_model_family in (None, ""):
             raise RunServiceError("bad_run_request", "project_id, experiment_plan_id, and model_family are required")
         model_family = str(raw_model_family)
-        if run_type != "single":
-            raise RunServiceError("unsupported_run_type", "M6.0 only supports run_type=single", run_type=run_type)
+        if run_type not in {"single", "monte_carlo"}:
+            raise RunServiceError(
+                "unsupported_run_type",
+                "run_type must be single or monte_carlo",
+                run_type=run_type,
+            )
 
         project = self.repository.get_project(project_id)
         plan = self.repository.get_experiment_plan(experiment_plan_id)
@@ -89,6 +93,7 @@ class RunService:
                     modeling_snapshot_id=plan.get("modeling_snapshot_id"),
                     project_for_run=project_for_run,
                     model_family=model_family,
+                    run_type=run_type,
                     compile_result=compile_result,
                 )
             scenario = compile_result["scenario"]
@@ -110,12 +115,23 @@ class RunService:
 
         self.repository.upsert_scenario(scenario)
         try:
-            bundle = self.adapter.run_scenario(
-                scenario,
-                output_dir=self.output_dir,
-                steps=_steps_from_plan(plan),
-                run_id=run_id,
-            )
+            if run_type == "monte_carlo":
+                bundle = self.adapter.run_monte_carlo_scenario(
+                    scenario,
+                    output_dir=self.output_dir,
+                    steps=_steps_from_plan(plan),
+                    run_id=run_id,
+                    sample_count=_monte_carlo_sample_count(request, plan),
+                    sweep=_monte_carlo_sweep(request, plan),
+                    mc_experiment_id=_monte_carlo_experiment_id(request, plan, run_id),
+                )
+            else:
+                bundle = self.adapter.run_scenario(
+                    scenario,
+                    output_dir=self.output_dir,
+                    steps=_steps_from_plan(plan),
+                    run_id=run_id,
+                )
         except AdapterError as exc:
             return self._persist_failed_run(
                 run_id=run_id,
@@ -123,6 +139,7 @@ class RunService:
                 experiment_plan_id=experiment_plan_id,
                 modeling_snapshot_id=plan.get("modeling_snapshot_id"),
                 project_for_run=project_for_run,
+                run_type=run_type,
                 error=exc,
             )
 
@@ -134,6 +151,15 @@ class RunService:
         run["scenario_schema_version"] = scenario["schema_version"]
         run["phase"] = run.get("phase") or _phase_from_status(run["status"])
         run["queued_at"] = run.get("queued_at") or run.get("started_at")
+        _attach_simulation_experiment_base(
+            run,
+            scenario=scenario,
+            run_type=run_type,
+            experiment_plan_id=experiment_plan_id,
+            modeling_snapshot_id=plan.get("modeling_snapshot_id"),
+            artifact_manifest=bundle["artifact_manifest"],
+            request=request,
+        )
 
         self.repository.upsert_run(run)
         self.repository.upsert_result_summary(bundle["result"])
@@ -151,6 +177,7 @@ class RunService:
         experiment_plan_id: str,
         modeling_snapshot_id: str | None,
         project_for_run: dict[str, Any],
+        run_type: str,
         error: AdapterError,
     ) -> dict[str, Any]:
         now = _utc_now()
@@ -171,7 +198,7 @@ class RunService:
             "model_id": model.get("model_id", "unknown"),
             "status": "failed",
             "phase": "failed",
-            "run_type": "single",
+            "run_type": run_type,
             "seed": scenario.get("simulation_inputs", {}).get("seed"),
             "progress": 0,
             "queued_at": now,
@@ -202,6 +229,7 @@ class RunService:
         modeling_snapshot_id: str | None,
         project_for_run: dict[str, Any],
         model_family: str,
+        run_type: str,
         compile_result: dict[str, Any],
     ) -> dict[str, Any]:
         now = _utc_now()
@@ -225,7 +253,7 @@ class RunService:
             "model_id": "ScenarioCompilerGate",
             "status": "failed",
             "phase": "failed",
-            "run_type": "single",
+            "run_type": run_type,
             "seed": _seed_from_project(project_for_run),
             "progress": 0,
             "queued_at": now,
@@ -274,6 +302,10 @@ class RunService:
             "error": run.get("error"),
             "result_summary_id": run.get("result_summary_id"),
             "artifact_manifest_id": run.get("artifact_manifest_id"),
+            "experiment_id": run.get("experiment_id"),
+            "experiment_type": run.get("experiment_type"),
+            "mc_experiment_id": run.get("mc_experiment_id"),
+            "simulation_experiment_base": run.get("simulation_experiment_base"),
         }
 
 
@@ -295,6 +327,113 @@ def _steps_from_plan(plan: dict[str, Any]) -> int:
         return max(0, int(steps))
     except (TypeError, ValueError):
         return 3
+
+
+def _monte_carlo_sample_count(request: dict[str, Any], plan: dict[str, Any]) -> int:
+    config = plan.get("config") or {}
+    candidates = [
+        request.get("sample_count"),
+        request.get("samples"),
+        (request.get("monte_carlo") or {}).get("sample_count") if isinstance(request.get("monte_carlo"), dict) else None,
+        (request.get("monte_carlo") or {}).get("samples") if isinstance(request.get("monte_carlo"), dict) else None,
+        config.get("sample_count"),
+        config.get("samples"),
+        (config.get("monteCarloExperiment") or {}).get("sample_count")
+        if isinstance(config.get("monteCarloExperiment"), dict)
+        else None,
+        (config.get("monteCarloExperiment") or {}).get("samples")
+        if isinstance(config.get("monteCarloExperiment"), dict)
+        else None,
+        (config.get("analysisRequests") or {}).get("largeSample", {}).get("samples")
+        if isinstance(config.get("analysisRequests"), dict)
+        and isinstance((config.get("analysisRequests") or {}).get("largeSample"), dict)
+        else None,
+    ]
+    for value in candidates:
+        if isinstance(value, bool):
+            continue
+        try:
+            return max(1, min(1000, int(value)))
+        except (TypeError, ValueError):
+            continue
+    return 12
+
+
+def _monte_carlo_sweep(request: dict[str, Any], plan: dict[str, Any]) -> dict[str, Any] | None:
+    config = plan.get("config") or {}
+    for value in [
+        request.get("sweep"),
+        (request.get("monte_carlo") or {}).get("sweep") if isinstance(request.get("monte_carlo"), dict) else None,
+        (config.get("monteCarloExperiment") or {}).get("sweep")
+        if isinstance(config.get("monteCarloExperiment"), dict)
+        else None,
+        (config.get("analysisRequests") or {}).get("largeSample", {}).get("sweep")
+        if isinstance(config.get("analysisRequests"), dict)
+        and isinstance((config.get("analysisRequests") or {}).get("largeSample"), dict)
+        else None,
+    ]:
+        if isinstance(value, dict):
+            return copy.deepcopy(value)
+    return None
+
+
+def _monte_carlo_experiment_id(request: dict[str, Any], plan: dict[str, Any], run_id: str) -> str:
+    config = plan.get("config") or {}
+    candidates = [
+        request.get("mc_experiment_id"),
+        request.get("experiment_id"),
+        (request.get("monte_carlo") or {}).get("mc_experiment_id") if isinstance(request.get("monte_carlo"), dict) else None,
+        (config.get("monteCarloExperiment") or {}).get("mc_experiment_id")
+        if isinstance(config.get("monteCarloExperiment"), dict)
+        else None,
+    ]
+    for value in candidates:
+        if value:
+            return str(value)
+    return f"mc-{run_id.removeprefix('run-')}"
+
+
+def _attach_simulation_experiment_base(
+    run: dict[str, Any],
+    *,
+    scenario: dict[str, Any],
+    run_type: str,
+    experiment_plan_id: str,
+    modeling_snapshot_id: str | None,
+    artifact_manifest: dict[str, Any],
+    request: dict[str, Any],
+) -> None:
+    experiment_type = "monte_carlo" if run_type == "monte_carlo" else "single"
+    experiment_id = str(request.get("experiment_id") or run.get("experiment_id") or f"experiment-{run['run_id']}")
+    artifact_ids = [
+        artifact.get("artifact_id")
+        for artifact in artifact_manifest.get("artifacts", [])
+        if isinstance(artifact, dict) and artifact.get("artifact_id")
+    ]
+    base = {
+        "experiment_id": experiment_id,
+        "experiment_type": experiment_type,
+        "module": scenario.get("simulation_inputs", {}).get("active_module"),
+        "project_id": run.get("project_id"),
+        "experiment_plan_id": experiment_plan_id,
+        "modeling_snapshot_id": modeling_snapshot_id,
+        "scenario_id": scenario.get("scenario_id"),
+        "scenario_version": scenario.get("scenario_version"),
+        "scenario_schema_version": scenario.get("schema_version"),
+        "mapping_provenance": copy.deepcopy(scenario.get("compiled_from", {}).get("mapping_provenance") or {}),
+        "seed": run.get("seed"),
+        "status": run.get("status"),
+        "progress": run.get("progress", 0),
+        "run_id": run.get("run_id"),
+        "artifact_manifest_id": run.get("artifact_manifest_id"),
+        "artifact_ids": artifact_ids,
+    }
+    run["experiment_id"] = experiment_id
+    run["experiment_type"] = experiment_type
+    if run_type == "monte_carlo":
+        run["mc_experiment_id"] = run.get("mc_experiment_id") or _monte_carlo_experiment_id(request, {"config": {}}, run["run_id"])
+        base["mc_experiment_id"] = run["mc_experiment_id"]
+    run["simulation_experiment_base"] = base
 
 
 def _project_for_experiment_plan(project: dict[str, Any], plan: dict[str, Any], snapshot: dict[str, Any] | None) -> dict[str, Any]:

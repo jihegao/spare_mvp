@@ -12,6 +12,36 @@ const contractFiles = [
   "artifact_manifest.schema.json",
 ];
 
+const M6_2_SIMULATION_EXPERIMENT_BASE_FIELDS = [
+  "experiment_id",
+  "experiment_type",
+  "module",
+  "experiment_plan_id",
+  "scenario_id",
+  "seed",
+  "status",
+  "progress",
+  "run_id",
+  "artifact_manifest_id"
+];
+
+const M6_2_MONTE_CARLO_ARTIFACT_KINDS = [
+  "monte_carlo_base",
+  "analysis_projection_spare_shortfall",
+  "analysis_projection_carry_list",
+  "analysis_projection_mission_reliability",
+  "analysis_projection_downtime_factors"
+];
+
+const RUN_SERVICE_STATUS_FIELDS = [
+  "modeling_snapshot_id",
+  "project_version",
+  "project_schema_version",
+  "scenario_schema_version",
+  "phase",
+  "queued_at"
+];
+
 async function readJson(relativePath) {
   return JSON.parse(await readFile(new URL(`../${relativePath}`, import.meta.url), "utf8"));
 }
@@ -82,6 +112,159 @@ test("scenario and result schemas preserve simulation contract boundaries", asyn
   assert.ok(resultSchema.properties.metrics.properties.sortie_completion_rate);
   assert.ok(runSchema.properties.artifact_manifest_id);
   assert.ok(artifactSchema.properties.artifacts.items.properties.sha256);
+});
+
+test("M6.2 run schema exposes formal monte carlo and shared SimulationExperimentBase fields", async () => {
+  const runSchema = await readJson("contracts/run.schema.json");
+
+  assert.ok(runSchema.properties.run_type.enum.includes("monte_carlo"));
+  for (const field of RUN_SERVICE_STATUS_FIELDS) {
+    assert.ok(runSchema.properties[field], `run schema must define persisted RunService field ${field}`);
+  }
+  assert.ok(runSchema.properties.model_id.enum.includes("ScenarioCompilerGate"));
+  assert.ok(runSchema.$defs?.SimulationExperimentBase, "run schema must define SimulationExperimentBase");
+  for (const field of M6_2_SIMULATION_EXPERIMENT_BASE_FIELDS) {
+    assert.ok(
+      runSchema.$defs.SimulationExperimentBase.required.includes(field),
+      `SimulationExperimentBase must require ${field}`
+    );
+    assert.ok(
+      runSchema.$defs.SimulationExperimentBase.properties[field],
+      `SimulationExperimentBase must define ${field}`
+    );
+  }
+  assert.ok(runSchema.$defs.SimulationExperimentBase.properties.scenario_version);
+  assert.ok(runSchema.$defs.SimulationExperimentBase.properties.mapping_provenance);
+});
+
+test("M6.2 run schema validates the persisted formal monte carlo status payload", async () => {
+  const runSchema = await readJson("contracts/run.schema.json");
+  const run = {
+    schema_version: "run-v0",
+    run_id: "run-mc-contract-001",
+    project_id: "project-smoke-contract",
+    experiment_plan_id: "plan-smoke-contract",
+    modeling_snapshot_id: "snapshot-smoke-contract",
+    project_version: "project-v0.1",
+    project_schema_version: "project-v0",
+    scenario_id: "scenario-smoke-contract-001",
+    scenario_version: "scenario-v0.1",
+    scenario_schema_version: "scenario-v0",
+    model_family: "smoke",
+    model_id: "SmokeSpareMvpModel",
+    status: "succeeded",
+    phase: "completed",
+    run_type: "monte_carlo",
+    experiment_id: "experiment-run-mc-contract-001",
+    experiment_type: "monte_carlo",
+    mc_experiment_id: "mc-contract-001",
+    seed: 42,
+    progress: 1,
+    queued_at: "2026-06-20T00:00:00Z",
+    started_at: "2026-06-20T00:00:00Z",
+    completed_at: "2026-06-20T00:00:00Z",
+    result_summary_id: "result-run-mc-contract-001",
+    artifact_manifest_id: "artifact-manifest-run-mc-contract-001",
+    simulation_experiment_base: {
+      experiment_id: "experiment-run-mc-contract-001",
+      experiment_type: "monte_carlo",
+      module: "ship_front",
+      project_id: "project-smoke-contract",
+      experiment_plan_id: "plan-smoke-contract",
+      modeling_snapshot_id: "snapshot-smoke-contract",
+      scenario_id: "scenario-smoke-contract-001",
+      scenario_version: "scenario-v0.1",
+      scenario_schema_version: "scenario-v0",
+      mapping_provenance: { mapping_version: "scenario-adapter-mapping-v0" },
+      seed: 42,
+      status: "succeeded",
+      progress: 1,
+      run_id: "run-mc-contract-001",
+      artifact_manifest_id: "artifact-manifest-run-mc-contract-001",
+      mc_experiment_id: "mc-contract-001",
+      artifact_ids: ["artifact-mc-base-001", "artifact-spare-shortfall-001"]
+    },
+    error: null
+  };
+
+  assert.deepEqual(validateSchema(runSchema, run), []);
+});
+
+test("M6.2 artifact manifest schema accepts monte carlo base and four analysis projections", async () => {
+  const artifactSchema = await readJson("contracts/artifact_manifest.schema.json");
+  const kindEnum = artifactSchema.properties.artifacts.items.properties.kind.enum;
+
+  for (const kind of M6_2_MONTE_CARLO_ARTIFACT_KINDS) {
+    assert.ok(kindEnum.includes(kind), `artifact kind enum must include ${kind}`);
+  }
+
+  const projectionProperties = artifactSchema.properties.artifacts.items.properties;
+  assert.ok(projectionProperties.source_artifact_id, "projection artifact must link to the monte_carlo_base artifact");
+  assert.ok(projectionProperties.analysis_type, "projection artifact must identify the analysis projection type");
+  assert.ok(artifactSchema.properties.artifacts.items.allOf?.length >= 4, "projection artifacts must conditionally require provenance fields");
+});
+
+test("M6.2 formal monte carlo manifest fixture shape validates against artifact schema", async () => {
+  const artifactSchema = await readJson("contracts/artifact_manifest.schema.json");
+  const manifest = {
+    schema_version: "artifact-manifest-v0",
+    artifact_manifest_id: "artifact-manifest-run-mc-contract-001",
+    run_id: "run-mc-contract-001",
+    scenario_id: "scenario-smoke-contract-001",
+    scenario_version: "scenario-v0.1",
+    artifacts: [
+      {
+        artifact_id: "artifact-mc-base-001",
+        kind: "monte_carlo_base",
+        path: "runs/run-mc-contract-001/monte-carlo-base.json",
+        media_type: "application/json",
+        sha256: "0000000000000000000000000000000000000000000000000000000000000000",
+        size_bytes: 1024,
+        schema_version: "monte-carlo-artifact-v0"
+      },
+      ...[
+        ["analysis_projection_spare_shortfall", "spare_shortfall"],
+        ["analysis_projection_carry_list", "carry_list"],
+        ["analysis_projection_mission_reliability", "mission_reliability"],
+        ["analysis_projection_downtime_factors", "downtime_factors"]
+      ].map(([kind, analysisType]) => ({
+        artifact_id: `artifact-${analysisType}-001`,
+        kind,
+        analysis_type: analysisType,
+        source_artifact_id: "artifact-mc-base-001",
+        path: `runs/run-mc-contract-001/${analysisType}.json`,
+        media_type: "application/json",
+        sha256: "1111111111111111111111111111111111111111111111111111111111111111",
+        size_bytes: 512,
+        schema_version: "analysis-projection-v0"
+      }))
+    ]
+  };
+
+  assert.deepEqual(validateSchema(artifactSchema, manifest), []);
+});
+
+test("M6.2 artifact manifest schema rejects untraceable analysis projections", async () => {
+  const artifactSchema = await readJson("contracts/artifact_manifest.schema.json");
+  const manifest = {
+    schema_version: "artifact-manifest-v0",
+    artifact_manifest_id: "artifact-manifest-run-mc-contract-002",
+    run_id: "run-mc-contract-002",
+    artifacts: [
+      {
+        artifact_id: "artifact-bad-projection-001",
+        kind: "analysis_projection_spare_shortfall",
+        path: "runs/run-mc-contract-002/spare-shortfall.json",
+        media_type: "application/json",
+        sha256: "2222222222222222222222222222222222222222222222222222222222222222"
+      }
+    ]
+  };
+
+  const errors = validateSchema(artifactSchema, manifest);
+  assert.notDeepEqual(errors, []);
+  assert.ok(errors.some((error) => error.includes("source_artifact_id is required")));
+  assert.ok(errors.some((error) => error.includes("analysis_type is required")));
 });
 
 test("minimal contract fixtures validate against their schemas", async () => {

@@ -267,6 +267,135 @@ class SimulationAdapter:
 
         return {"run": run, "result": result, "artifact_manifest": manifest}
 
+    def run_monte_carlo_scenario(
+        self,
+        scenario: dict[str, Any],
+        output_dir: Path | str,
+        steps: int = 3,
+        run_id: str | None = None,
+        sample_count: int = 12,
+        sweep: dict[str, Any] | None = None,
+        mc_experiment_id: str | None = None,
+    ) -> dict[str, dict[str, Any]]:
+        """Run a synchronous M6.2 Monte Carlo batch from a compiled smoke Scenario."""
+        self._assert_smoke_scenario(scenario)
+        if steps < 0:
+            raise AdapterError("bad_steps", "steps must be non-negative", steps=steps)
+
+        inputs = scenario["simulation_inputs"]
+        run_id = run_id or f"run-{scenario['scenario_id']}-mc"
+        result_id = f"result-{run_id}"
+        manifest_id = f"artifact-manifest-{run_id}"
+        mc_experiment_id = mc_experiment_id or f"mc-{run_id.removeprefix('run-')}"
+        now = _utc_now()
+
+        profile = self._monte_carlo_profile(scenario, sample_count=sample_count, sweep=sweep)
+        samples = [
+            self._run_monte_carlo_sample(inputs, profile["sample_points"][index], steps=steps, sample_index=index)
+            for index in range(profile["sample_count"])
+        ]
+        aggregate = self._aggregate_sample_metrics(samples)
+        base_artifact_id = f"monte_carlo_base-{run_id}"
+        projections = self._analysis_projections(aggregate, samples, base_artifact_id)
+        base_artifact = {
+            "artifact_type": "monte_carlo_base",
+            "run_id": run_id,
+            "mc_experiment_id": mc_experiment_id,
+            "scenario_id": scenario["scenario_id"],
+            "scenario_version": scenario["scenario_version"],
+            "mapping_provenance": copy.deepcopy(scenario["compiled_from"]["mapping_provenance"]),
+            "mapping_version": scenario["compiled_from"]["mapping_provenance"].get("mapping_version"),
+            "sample_count": profile["sample_count"],
+            "seed": inputs["seed"],
+            "sweep": profile["sweep"],
+            "sample_points": profile["sample_points"],
+            "samples": samples,
+            "aggregate_metrics": aggregate,
+            "logs_summary": {
+                "completed_samples": profile["sample_count"],
+                "failed_samples": 0,
+                "executor": "local_sync_smoke",
+            },
+        }
+
+        result = {
+            "schema_version": RESULT_SCHEMA_VERSION,
+            "model_family": "smoke",
+            "result_id": result_id,
+            "run_id": run_id,
+            "scenario_id": scenario["scenario_id"],
+            "scenario_version": scenario["scenario_version"],
+            "metrics": aggregate,
+            "analysis_outputs": {
+                "large_sample_summary": projections["large_sample_summary"]["data"],
+                "spare_shortage": projections["spare_shortfall"]["data"],
+                "carry_list": projections["carry_list"]["data"],
+                "mission_reliability": projections["mission_reliability"]["data"],
+                "downtime_factors": projections["downtime_factors"]["data"],
+            },
+        }
+        run = {
+            "schema_version": RUN_SCHEMA_VERSION,
+            "run_id": run_id,
+            "project_id": scenario["project_id"],
+            "scenario_id": scenario["scenario_id"],
+            "scenario_version": scenario["scenario_version"],
+            "model_family": "smoke",
+            "model_id": "SmokeSpareMvpModel",
+            "status": "succeeded",
+            "run_type": "monte_carlo",
+            "seed": inputs["seed"],
+            "progress": 1,
+            "started_at": now,
+            "completed_at": now,
+            "result_summary_id": result_id,
+            "artifact_manifest_id": manifest_id,
+            "error": None,
+            "experiment_id": f"experiment-{run_id}",
+            "experiment_type": "monte_carlo",
+            "mc_experiment_id": mc_experiment_id,
+        }
+
+        output_root = Path(output_dir)
+        run_dir = output_root / run_id
+        run_dir.mkdir(parents=True, exist_ok=True)
+        support_artifact_specs = [
+            ("input_project", "input-project.json", inputs["project_snapshot"], PROJECT_SCHEMA_VERSION),
+            ("compiled_scenario", "compiled-scenario.json", scenario, SCENARIO_SCHEMA_VERSION),
+            ("result_summary", "result-summary.json", result, RESULT_SCHEMA_VERSION),
+        ]
+        for kind, filename, payload, schema_version in support_artifact_specs:
+            self._write_artifact(run_dir, output_root, kind, filename, payload, schema_version)
+
+        artifact_specs = [
+            ("monte_carlo_base", "monte-carlo-base.json", base_artifact, None),
+            ("analysis_projection_spare_shortfall", "spare-shortfall.json", projections["spare_shortfall"], "analysis-projection-v0"),
+            ("analysis_projection_carry_list", "carry-list.json", projections["carry_list"], "analysis-projection-v0"),
+            ("analysis_projection_mission_reliability", "mission-reliability.json", projections["mission_reliability"], "analysis-projection-v0"),
+            ("analysis_projection_downtime_factors", "downtime-factors.json", projections["downtime_factors"], "analysis-projection-v0"),
+        ]
+        artifacts = [
+            self._write_artifact(run_dir, output_root, kind, filename, payload, schema_version)
+            for kind, filename, payload, schema_version in artifact_specs
+        ]
+        for artifact in artifacts:
+            kind = artifact.get("kind", "")
+            if str(kind).startswith("analysis_projection_"):
+                artifact["source_artifact_id"] = base_artifact_id
+                artifact["analysis_type"] = str(kind).removeprefix("analysis_projection_")
+        manifest = {
+            "schema_version": ARTIFACT_MANIFEST_SCHEMA_VERSION,
+            "artifact_manifest_id": manifest_id,
+            "run_id": run_id,
+            "scenario_id": scenario["scenario_id"],
+            "scenario_version": scenario["scenario_version"],
+            "created_at": now,
+            "artifacts": artifacts,
+        }
+        self._write_json(run_dir / "artifact-manifest.json", manifest)
+
+        return {"run": run, "result": result, "artifact_manifest": manifest}
+
     def _project_required_fields(self) -> list[str]:
         schema = json.loads((self.contracts_dir / "project.schema.json").read_text(encoding="utf-8"))
         return list(schema["required"])
@@ -384,6 +513,183 @@ class SimulationAdapter:
             raise AdapterError("invalid_scenario", "unsupported scenario schema version")
         if model.get("family") != "smoke" or model.get("model_id") != "SmokeSpareMvpModel":
             raise AdapterError("unsupported_model_family", "run_scenario currently supports only smoke scenarios")
+
+    def _monte_carlo_profile(
+        self,
+        scenario: dict[str, Any],
+        *,
+        sample_count: int,
+        sweep: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        inputs = scenario["simulation_inputs"]
+        project = inputs["project_snapshot"]
+        project_sweep = project.get("monteCarlo", {})
+        requested_sweep = sweep or {}
+        normalized = {
+            "failureRates": self._normalize_sweep_values(
+                requested_sweep.get("failureRates") or requested_sweep.get("failure_rates") or project_sweep.get("failureRates"),
+                [inputs["failure_rate"]],
+            ),
+            "spareMultipliers": self._normalize_sweep_values(
+                requested_sweep.get("spareMultipliers")
+                or requested_sweep.get("spare_multipliers")
+                or project_sweep.get("spareMultipliers"),
+                [inputs["spare_multiplier"]],
+            ),
+            "supportCapacities": [
+                int(value)
+                for value in self._normalize_sweep_values(
+                    requested_sweep.get("supportCapacities")
+                    or requested_sweep.get("support_capacities")
+                    or project_sweep.get("supportCapacities"),
+                    [inputs["support_capacity"]],
+                )
+            ],
+        }
+        points = []
+        for failure_rate in normalized["failureRates"]:
+            for spare_multiplier in normalized["spareMultipliers"]:
+                for support_capacity in normalized["supportCapacities"]:
+                    points.append(
+                        {
+                            "failure_rate": failure_rate,
+                            "spare_multiplier": spare_multiplier,
+                            "support_capacity": max(1, int(support_capacity)),
+                        }
+                    )
+        count = max(1, min(1000, int(sample_count or len(points) or 1)))
+        sample_points = [copy.deepcopy(points[index % len(points)]) for index in range(count)]
+        for index, point in enumerate(sample_points):
+            point["seed"] = int(inputs["seed"]) + index
+        return {
+            "sample_count": count,
+            "sweep": normalized,
+            "sample_points": sample_points,
+        }
+
+    def _run_monte_carlo_sample(
+        self,
+        inputs: dict[str, Any],
+        point: dict[str, Any],
+        *,
+        steps: int,
+        sample_index: int,
+    ) -> dict[str, Any]:
+        model = SmokeSpareMvpModel(
+            projectData=copy.deepcopy(inputs["project_snapshot"]),
+            activeModule=inputs["active_module"],
+            spareMultiplier=point["spare_multiplier"],
+            failureRate=point["failure_rate"],
+            supportCapacity=point["support_capacity"],
+            minRequiredSorties=inputs["min_required_sorties"],
+            seed=point["seed"],
+        )
+        for _ in range(steps):
+            model.step()
+        return {
+            "sample_index": sample_index,
+            "seed": point["seed"],
+            "sweep": {
+                "failure_rate": point["failure_rate"],
+                "spare_multiplier": point["spare_multiplier"],
+                "support_capacity": point["support_capacity"],
+            },
+            "metrics": model.snapshot(),
+        }
+
+    def _aggregate_sample_metrics(self, samples: list[dict[str, Any]]) -> dict[str, Any]:
+        keys = sorted({key for sample in samples for key in sample["metrics"] if self._is_number(sample["metrics"][key])})
+        aggregate = {
+            key: sum(float(sample["metrics"].get(key, 0)) for sample in samples) / max(1, len(samples))
+            for key in keys
+        }
+        aggregate["sample_count"] = len(samples)
+        aggregate["mission_success_probability"] = aggregate.get("mission_success_rate", 0)
+        aggregate["spare_shortage_probability"] = (
+            sum(1 for sample in samples if float(sample["metrics"].get("shortage_events", 0)) > 0) / max(1, len(samples))
+        )
+        return aggregate
+
+    def _analysis_projections(
+        self,
+        aggregate: dict[str, Any],
+        samples: list[dict[str, Any]],
+        base_artifact_id: str,
+    ) -> dict[str, dict[str, Any]]:
+        shortage_probability = aggregate.get("spare_shortage_probability", 0)
+        spare_fill_rate = aggregate.get("spare_fill_rate", 0)
+        downtime_total = (
+            aggregate.get("downtime_failure_events", 0)
+            + aggregate.get("downtime_spare_shortage_events", 0)
+            + aggregate.get("downtime_resource_delay_events", 0)
+        ) or 1
+        return {
+            "large_sample_summary": {
+                "projection_type": "large_sample_summary",
+                "base_artifact_id": base_artifact_id,
+                "data": {
+                    "sample_count": len(samples),
+                    "mission_success_probability": aggregate.get("mission_success_probability", 0),
+                    "spare_fill_rate": spare_fill_rate,
+                    "mean_repair_backlog": aggregate.get("repair_backlog", 0),
+                },
+            },
+            "spare_shortfall": {
+                "projection_type": "spare_shortfall",
+                "base_artifact_id": base_artifact_id,
+                "data": [
+                    {
+                        "spare_type": "generic_spares",
+                        "fill_rate": spare_fill_rate,
+                        "shortage_probability": shortage_probability,
+                        "risk_level": "high" if shortage_probability >= 0.2 else "medium" if shortage_probability > 0 else "low",
+                    }
+                ],
+            },
+            "carry_list": {
+                "projection_type": "carry_list",
+                "base_artifact_id": base_artifact_id,
+                "data": [
+                    {
+                        "spare_type": "generic_spares",
+                        "recommended_multiplier": max(1.0, 1.0 + shortage_probability),
+                        "risk_level": "high" if spare_fill_rate < 0.75 else "medium" if spare_fill_rate < 0.95 else "low",
+                    }
+                ],
+            },
+            "mission_reliability": {
+                "projection_type": "mission_reliability",
+                "base_artifact_id": base_artifact_id,
+                "data": {
+                    "mission_success_probability": aggregate.get("mission_success_probability", 0),
+                    "sortie_rate": aggregate.get("sortie_rate", 0),
+                    "target_met": aggregate.get("mission_success_probability", 0) >= 0.9,
+                },
+            },
+            "downtime_factors": {
+                "projection_type": "downtime_factors",
+                "base_artifact_id": base_artifact_id,
+                "data": [
+                    {
+                        "factor": "failure",
+                        "contribution": aggregate.get("downtime_failure_events", 0) / downtime_total,
+                    },
+                    {
+                        "factor": "spare_shortage",
+                        "contribution": aggregate.get("downtime_spare_shortage_events", 0) / downtime_total,
+                    },
+                    {
+                        "factor": "resource_delay",
+                        "contribution": aggregate.get("downtime_resource_delay_events", 0) / downtime_total,
+                    },
+                ],
+            },
+        }
+
+    def _normalize_sweep_values(self, values: Any, fallback: list[float]) -> list[float]:
+        raw_values = values if isinstance(values, list) else [values]
+        normalized = [float(value) for value in raw_values if self._is_number(value)]
+        return normalized or [float(value) for value in fallback]
 
     def _project_id(self, project: dict[str, Any]) -> str:
         return str(project.get("project_id") or project.get("scenarioId") or "project-unknown")
