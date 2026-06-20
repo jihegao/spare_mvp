@@ -1,0 +1,144 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import { buildExperimentPlanConfig, buildBackendProjectJson } from "../front/api-client.mjs";
+import { buildRunIntent, bindExperimentPlanId } from "../front/run-intent.mjs";
+import { cloneScenario, defaultScenario } from "../front/sim-engine.mjs";
+
+test("buildRunIntent creates single run intent from explicit inputs without page globals", () => {
+  globalThis.currentProject = { project_id: "project-global" };
+  globalThis.scenario = { project_id: "project-global-scenario" };
+  const projectJson = {
+    project_id: "project-explicit",
+    experiment: { name: "single explicit", steps: 3, seed: 42 }
+  };
+  const planProjectJson = {
+    ...projectJson,
+    experiment: { ...projectJson.experiment, steps: 5 }
+  };
+
+  const intent = buildRunIntent({
+    runType: "single",
+    projectJson,
+    planProjectJson,
+    experimentId: "experiment-single-explicit"
+  });
+  const bound = bindExperimentPlanId(intent, "plan-explicit");
+
+  assert.equal(intent.runType, "single");
+  assert.equal(intent.runRequest.project_id, "project-explicit");
+  assert.equal(intent.runRequest.experiment_id, "experiment-single-explicit");
+  assert.equal(bound.runRequest.experiment_plan_id, "plan-explicit");
+  assert.equal(bound.runRequest.run_type, "single");
+  assert.equal("mc_experiment_id" in bound.runRequest, false);
+  assert.deepEqual(intent.experimentPlanConfig, buildExperimentPlanConfig(planProjectJson));
+});
+
+test("buildRunIntent creates canonical monte carlo request shape", async () => {
+  const project = { id: "sample-project", name: "导入示例项目" };
+  const projectJson = buildBackendProjectJson(cloneScenario(defaultScenario), project);
+  const planProjectJson = {
+    ...projectJson,
+    experiment: { ...projectJson.experiment, steps: 8 },
+    analysisRequests: {
+      largeSample: {
+        enabled: true,
+        samples: 5,
+        sweep: {
+          failureRates: [0.06],
+          spareMultipliers: [1.0],
+          supportCapacities: [2]
+        }
+      }
+    }
+  };
+
+  const intent = buildRunIntent({
+    runType: "monte_carlo",
+    projectJson,
+    planProjectJson,
+    mcExperimentId: "mc-front-intent"
+  });
+  const submittedRequests = [];
+  const fakeClient = {
+    submitRun: async (request) => {
+      submittedRequests.push(request);
+      return { run_id: "run-front-intent", ...request };
+    }
+  };
+  const bound = bindExperimentPlanId(intent, "plan-front-intent");
+
+  await fakeClient.submitRun(bound.runRequest);
+
+  assert.equal(intent.runRequest.run_type, "monte_carlo");
+  assert.equal(intent.runRequest.mc_experiment_id, "mc-front-intent");
+  assert.equal("sample_count" in intent.runRequest, false);
+  assert.equal("samples" in intent.runRequest, false);
+  assert.equal("sweep" in intent.runRequest, false);
+  assert.equal("monte_carlo" in intent.runRequest, false);
+  assert.equal(intent.experimentPlanConfig.analysisRequests.largeSample.samples, 5);
+  assert.deepEqual(intent.experimentPlanConfig.analysisRequests.largeSample.sweep.supportCapacities, [2]);
+  assert.deepEqual(submittedRequests, [bound.runRequest]);
+});
+
+test("submitRunIntent sends user-edited Monte Carlo samples and seed in experiment plan config", async () => {
+  const calls = [];
+  const apiClient = {
+    saveProject: async (projectJson) => {
+      calls.push({ method: "saveProject", projectJson });
+      return { project_id: "project-edited", status: "saved" };
+    },
+    createModelingSnapshot: async (projectId) => {
+      calls.push({ method: "createModelingSnapshot", projectId });
+      return { snapshot_id: "snapshot-edited" };
+    },
+    createExperimentPlan: async (projectId, config) => {
+      calls.push({ method: "createExperimentPlan", projectId, config });
+      return { experiment_plan_id: "plan-edited" };
+    },
+    submitRun: async (request) => {
+      calls.push({ method: "submitRun", request });
+      return { run_id: "run-edited", status: "queued", ...request };
+    }
+  };
+  const { submitRunIntent } = await import("../front/run-intent.mjs");
+  const projectJson = {
+    project_id: "project-edited",
+    experiment: { name: "runtime MC edit", steps: 4, samples: 3, seed: 101 },
+    monteCarlo: {
+      failureRates: [0.06],
+      spareMultipliers: [1.0],
+      supportCapacities: [2]
+    }
+  };
+  const planProjectJson = JSON.parse(JSON.stringify(projectJson));
+  const applyDraftChange = (path, value) => {
+    const parts = path.split(".");
+    let current = planProjectJson;
+    for (const part of parts.slice(0, -1)) current = current[part];
+    current[parts.at(-1)] = value;
+  };
+  applyDraftChange("experiment.samples", 17);
+  applyDraftChange("experiment.seed", 909);
+
+  await submitRunIntent(apiClient, {
+    runType: "monte_carlo",
+    projectJson,
+    planProjectJson,
+    mcExperimentId: "mc-edited"
+  });
+
+  const planCall = calls.find((call) => call.method === "createExperimentPlan");
+  const runCall = calls.find((call) => call.method === "submitRun");
+  assert.notEqual(projectJson.experiment.samples, planProjectJson.experiment.samples);
+  assert.notEqual(projectJson.experiment.seed, planProjectJson.experiment.seed);
+  assert.equal(planCall.config.analysisRequests.largeSample.samples, 17);
+  assert.equal(planCall.config.seed, 909);
+  assert.equal(planCall.config.projectJson.experiment.samples, 17);
+  assert.equal(planCall.config.projectJson.experiment.seed, 909);
+  assert.equal(runCall.request.run_type, "monte_carlo");
+  assert.equal(runCall.request.mc_experiment_id, "mc-edited");
+  assert.equal("sample_count" in runCall.request, false);
+  assert.equal("samples" in runCall.request, false);
+  assert.equal("sweep" in runCall.request, false);
+});

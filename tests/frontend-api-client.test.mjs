@@ -162,6 +162,33 @@ test("frontend API client preserves formal M6.2 monte carlo SimulationExperiment
   assert.deepEqual(calls[0].body, runRequest);
 });
 
+test("frontend API client submitRun posts canonical run request without Monte Carlo numeric config", async () => {
+  const calls = [];
+  const client = createBackendApiClient({
+    transport: async (request) => {
+      calls.push(request);
+      if (request.path === "/runs") return { ...request.body, run_id: "run-canonical-mc", status: "queued" };
+      throw new Error(`unexpected request ${request.method} ${request.path}`);
+    }
+  });
+  const runRequest = {
+    project_id: "project-ui",
+    experiment_plan_id: "plan-ui",
+    model_family: "smoke",
+    run_type: "monte_carlo",
+    mc_experiment_id: "mc-ui"
+  };
+
+  await client.submitRun(runRequest);
+
+  assert.deepEqual(calls.map((call) => `${call.method} ${call.path}`), ["POST /runs"]);
+  assert.deepEqual(calls[0].body, runRequest);
+  assert.equal("sample_count" in calls[0].body, false);
+  assert.equal("samples" in calls[0].body, false);
+  assert.equal("sweep" in calls[0].body, false);
+  assert.equal("monte_carlo" in calls[0].body, false);
+});
+
 test("frontend API client exposes explicit M5 modeling import methods", async () => {
   const calls = [];
   const client = createBackendApiClient({
@@ -191,6 +218,14 @@ test("frontend API client exposes explicit M5 modeling import methods", async ()
           scenario: { scenario_id: "import-ui-demo" }
         };
       }
+      if (request.path === "/modeling-imports/import%2Fui%20demo/create-project") {
+        return {
+          sourceImport: { import_id: "import/ui demo", project_id: "project-ui-demo" },
+          savedProject: { project_id: "project-ui-demo", status: "saved" },
+          project: { project_id: "project-ui-demo" },
+          modelingSnapshot: { snapshot_id: "snapshot-ui-demo", project: { project_id: "project-ui-demo" } }
+        };
+      }
       throw new Error(`unexpected request ${request.method} ${request.path}`);
     }
   });
@@ -201,6 +236,7 @@ test("frontend API client exposes explicit M5 modeling import methods", async ()
   const stored = await client.getModelingImport(importPackage.importId);
   const published = await client.publishModelingImport(importPackage.importId);
   const compiled = await client.compileModelingImportScenario(importPackage.importId);
+  const createdProject = await client.createProjectFromModelingImport(importPackage.importId);
 
   assert.equal(validation.status, "valid");
   assert.equal(saved.import_id, "import/ui demo");
@@ -210,16 +246,48 @@ test("frontend API client exposes explicit M5 modeling import methods", async ()
   assert.equal(published.lifecycle.state, "published");
   assert.equal(published.publishedPackage.lifecycle.state, "published");
   assert.equal(compiled.compiled_from_import.model_family, "smoke");
+  assert.equal(createdProject.sourceImport.import_id, "import/ui demo");
+  assert.equal(createdProject.modelingSnapshot.project.project_id, "project-ui-demo");
   assert.deepEqual(calls.map((call) => `${call.method} ${call.path}`), [
     "POST /modeling-imports/validate",
     "POST /modeling-imports",
     "GET /modeling-imports/import%2Fui%20demo",
     "POST /modeling-imports/import%2Fui%20demo/publish",
-    "POST /modeling-imports/import%2Fui%20demo/compile-scenario"
+    "POST /modeling-imports/import%2Fui%20demo/compile-scenario",
+    "POST /modeling-imports/import%2Fui%20demo/create-project"
   ]);
   assert.equal(calls[0].body, importPackage);
   assert.equal(calls[1].body, importPackage);
   assert.deepEqual(calls[4].body, { model_family: "smoke" });
+  assert.equal(calls[5].body, undefined);
+});
+
+test("frontend API client createProjectFromModelingImport uses protected modeling import route", async () => {
+  const calls = [];
+  const client = createBackendApiClient({
+    getAuthToken: () => "session-data",
+    transport: async (request) => {
+      calls.push(request);
+      if (request.path === "/modeling-imports/import%2Fsample/create-project") {
+        return {
+          sourceImport: { import_id: "import/sample" },
+          project: { project_id: "project-sample" },
+          savedProject: { project_id: "project-sample" },
+          modelingSnapshot: { snapshot_id: "snapshot-sample" }
+        };
+      }
+      throw new Error(`unexpected request ${request.method} ${request.path}`);
+    }
+  });
+
+  const created = await client.createProjectFromModelingImport("import/sample");
+
+  assert.equal(created.project.project_id, "project-sample");
+  assert.deepEqual(calls.map((call) => `${call.method} ${call.path}`), [
+    "POST /modeling-imports/import%2Fsample/create-project"
+  ]);
+  assert.equal(calls[0].headers.authorization, "Bearer session-data");
+  assert.equal(calls[0].body, undefined);
 });
 
 test("experiment plan config preserves Monte Carlo branch sweep settings", () => {
@@ -250,8 +318,30 @@ test("experiment plan config preserves Monte Carlo branch sweep settings", () =>
       spareMultipliers: [0.75, 1, 1.25],
       supportCapacities: [2, 3],
       minRequiredSorties: [4, 5]
-    }
+    },
+    analysisRequests: {}
   });
+});
+
+test("experiment plan config preserves analysisRequests for formal Monte Carlo runs", () => {
+  const config = buildExperimentPlanConfig({
+    experiment: { name: "MC config", steps: 8, samples: 5, seed: 20260620 },
+    analysisRequests: {
+      largeSample: {
+        enabled: true,
+        samples: 5,
+        sweep: {
+          failureRates: [0.06],
+          spareMultipliers: [1.0],
+          supportCapacities: [2]
+        }
+      }
+    },
+    monteCarlo: { spareMultipliers: [1] }
+  });
+
+  assert.equal(config.analysisRequests.largeSample.samples, 5);
+  assert.deepEqual(config.analysisRequests.largeSample.sweep.supportCapacities, [2]);
 });
 
 test("frontend API client sends experiment plan branch project JSON to backend", async () => {
@@ -484,8 +574,10 @@ test("frontend API client preserves compile gate error payload for submitRun", a
 
 test("frontend app routes project save run and result reads through API client", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const runIntentSource = await readFile(new URL("../front/run-intent.mjs", import.meta.url), "utf8");
 
   assert.match(appSource, /from "\.\/api-client\.mjs"/);
+  assert.match(appSource, /from "\.\/run-intent\.mjs"/);
   assert.match(appSource, /const AUTH_SESSION_STORAGE_KEY = "spare-mvp:m4Session"/);
   assert.match(appSource, /const backendApi = createBackendApiClient\(\{ baseUrl: "\/api", getAuthToken: \(\) => backendAuthToken \}\)/);
   assert.match(appSource, /async function handleLogin/);
@@ -496,9 +588,10 @@ test("frontend app routes project save run and result reads through API client",
   assert.match(appSource, /async function refreshRunResultThroughApi/);
   assert.match(appSource, /backendApi\.saveProject/);
   assert.match(appSource, /backendApi\.getProject/);
-  assert.match(appSource, /backendApi\.createModelingSnapshot/);
-  assert.match(appSource, /backendApi\.createExperimentPlan/);
-  assert.match(appSource, /backendApi\.submitRun/);
+  assert.match(appSource, /submitRunIntent\(backendApi/);
+  assert.match(runIntentSource, /apiClient\.createModelingSnapshot/);
+  assert.match(runIntentSource, /apiClient\.createExperimentPlan/);
+  assert.match(runIntentSource, /apiClient\.submitRun/);
   assert.match(appSource, /backendApi\.getRunStatus/);
   assert.doesNotMatch(appSource, /backendApi\.startSimulationRun/);
   assert.doesNotMatch(appSource, /backendApi\.getRun\(/);
@@ -537,10 +630,10 @@ test("frontend generic editing remains local until explicit save or run", async 
   );
 
   assert.match(changeHandlerSource, /setPath\(scenario, input\.dataset\.path, parseInput\(input\)\)/);
-  assert.match(changeHandlerSource, /updateDemoResultsThroughApiClient\(\)/);
+  assert.match(changeHandlerSource, /updatePreviewResultsThroughApiClient\(\)/);
   assert.doesNotMatch(changeHandlerSource, /saveCurrentProjectThroughApi\(\)/);
   assert.match(changeHandlerSource, /markProjectDraftChanged\(\)/);
-  assert.match(monteCarloArraySource, /updateDemoResultsThroughApiClient\(experimentPlanDraft\)/);
+  assert.match(monteCarloArraySource, /updatePreviewResultsThroughApiClient\(experimentPlanDraft\)/);
   assert.doesNotMatch(monteCarloArraySource, /saveCurrentProjectThroughApi\(\)/);
   assert.match(appSource, /data-save-plan/);
   assert.match(saveButtonSource, /saveCurrentExperimentPlanThroughApi\(\)/);

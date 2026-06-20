@@ -131,6 +131,7 @@ export function renderModelingImportWorkbench(state = {}, helpers = {}) {
           <button type="button" data-modeling-import-action="save-draft">保存草稿</button>
           <button type="button" data-modeling-import-action="publish"${disabledAttr(!canPublish)}>发布</button>
           <button type="button" data-modeling-import-action="compile-scenario"${disabledAttr(!canCompile)} class="btn-primary">生成 Scenario</button>
+          <button type="button" data-modeling-import-action="create-project" data-modeling-import-id="${htmlEscape(publishedPackage?.importId || publishedPackage?.import_id || "")}"${disabledAttr(!canCompile)} class="btn-secondary">生成示例 Project</button>
         </div>
       </section>
       ${state.actionStatus ? `<p class="modeling-import-action-status">${htmlEscape(state.actionStatus)}</p>` : ""}

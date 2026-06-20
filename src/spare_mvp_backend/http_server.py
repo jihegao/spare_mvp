@@ -140,6 +140,9 @@ def create_backend_server(
             if self.command == "POST" and len(parts) == 3 and parts[0] == "modeling-imports" and parts[2] == "publish":
                 actor = self._require_user()
                 return api.publish_modeling_import(parts[1], actor_user_id=actor["user_id"])
+            if self.command == "POST" and len(parts) == 3 and parts[0] == "modeling-imports" and parts[2] == "create-project":
+                actor = self._require_user()
+                return api.create_project_from_modeling_import(parts[1], actor_user_id=actor["user_id"])
             if self.command == "POST" and len(parts) == 3 and parts[0] == "modeling-imports" and parts[2] == "compile-scenario":
                 self._require_user()
                 return api.compile_modeling_import_scenario(parts[1], body.get("model_family", "smoke"))

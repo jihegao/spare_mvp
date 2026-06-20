@@ -257,34 +257,109 @@ class SimulationAdapterTest(unittest.TestCase):
                 target = (output_root / artifact_path).resolve()
                 self.assertTrue(target.is_relative_to(output_root))
 
-    def test_run_monte_carlo_scenario_rejects_invalid_inputs_before_writing_artifacts(self) -> None:
+    def test_monte_carlo_scenario_consumes_normalized_config_without_project_snapshot_fallback(self) -> None:
         project = self._load_fixture("smoke_project.json")
         scenario = self.adapter.compile_scenario(project)
-        invalid_cases = [
-            ("samples zero", {"sample_count": 0}, "samples"),
-            ("samples negative", {"sample_count": -1}, "samples"),
-            ("samples non numeric", {"sample_count": "bad"}, "samples"),
-            ("samples above limit", {"sample_count": 2000}, "samples"),
-            ("support capacity zero", {"sweep": {"supportCapacities": [0]}}, "monteCarlo.supportCapacities"),
-            ("support capacity negative", {"sweep": {"supportCapacities": [-2]}}, "monteCarlo.supportCapacities"),
-            ("failure rate non numeric", {"sweep": {"failureRates": [0.05, "bad"]}}, "monteCarlo.failureRates"),
-            ("spare multiplier non numeric", {"sweep": {"spareMultipliers": [1.0, "bad"]}}, "monteCarlo.spareMultipliers"),
+        scenario["simulation_inputs"]["project_snapshot"]["monteCarlo"] = {
+            "failureRates": [0.99],
+            "spareMultipliers": [9.9],
+            "supportCapacities": [99],
+        }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            bundle = self.adapter.run_monte_carlo_scenario(
+                scenario,
+                output_dir=Path(tmp),
+                steps=3,
+                run_id="run-normalized-mc-config",
+                monte_carlo_config={
+                    "sample_count": 4,
+                    "sweep": {
+                        "failureRates": [0.05],
+                        "spareMultipliers": [1.0, 1.25],
+                        "supportCapacities": [2],
+                    },
+                    "mc_experiment_id": "mc-normalized-config",
+                },
+            )
+            base = next(
+                artifact
+                for artifact in bundle["artifact_manifest"]["artifacts"]
+                if artifact["kind"] == "monte_carlo_base"
+            )
+            payload = json.loads((Path(tmp) / base["path"]).read_text(encoding="utf-8"))
+
+        self.assertEqual(payload["sample_count"], 4)
+        self.assertEqual(payload["mc_experiment_id"], "mc-normalized-config")
+        self.assertEqual(payload["sweep"]["failureRates"], [0.05])
+        self.assertEqual(payload["sweep"]["spareMultipliers"], [1.0, 1.25])
+        self.assertEqual(payload["sweep"]["supportCapacities"], [2])
+        self.assertNotEqual(payload["sweep"]["failureRates"], [0.99])
+
+    def test_monte_carlo_scenario_rejects_missing_normalized_config_without_fallback(self) -> None:
+        project = self._load_fixture("smoke_project.json")
+        scenario = self.adapter.compile_scenario(project)
+        scenario["simulation_inputs"]["project_snapshot"]["monteCarlo"] = {
+            "failureRates": [0.99],
+            "spareMultipliers": [9.9],
+            "supportCapacities": [99],
+        }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(AdapterError) as ctx:
+                self.adapter.run_monte_carlo_scenario(
+                    scenario,
+                    output_dir=Path(tmp),
+                    steps=1,
+                    run_id="run-missing-normalized-config",
+                )
+
+            self.assertEqual(ctx.exception.code, "bad_analysis_request")
+            self.assertIn("monte_carlo_config", ctx.exception.details.get("field_path", ""))
+            self.assertEqual(list(Path(tmp).glob("**/*")), [])
+
+    def test_monte_carlo_scenario_rejects_legacy_sample_count_and_sweep_paths(self) -> None:
+        project = self._load_fixture("smoke_project.json")
+        scenario = self.adapter.compile_scenario(project)
+        legacy_cases = [
+            ("sample_count", {"sample_count": 4}),
+            (
+                "sweep",
+                {
+                    "sweep": {
+                        "failureRates": [0.05],
+                        "spareMultipliers": [1.0],
+                        "supportCapacities": [2],
+                    }
+                },
+            ),
+            (
+                "sample_count_and_sweep",
+                {
+                    "sample_count": 4,
+                    "sweep": {
+                        "failureRates": [0.05],
+                        "spareMultipliers": [1.0],
+                        "supportCapacities": [2],
+                    },
+                },
+            ),
         ]
 
-        for label, kwargs, field_path in invalid_cases:
+        for label, kwargs in legacy_cases:
             with self.subTest(label), tempfile.TemporaryDirectory() as tmp:
                 with self.assertRaises(AdapterError) as ctx:
                     self.adapter.run_monte_carlo_scenario(
                         scenario,
                         output_dir=Path(tmp),
                         steps=1,
-                        run_id=f"run-invalid-{label.replace(' ', '-')}",
+                        run_id=f"run-legacy-{label}",
                         **kwargs,
                     )
 
                 self.assertEqual(ctx.exception.code, "bad_analysis_request")
-                self.assertEqual(ctx.exception.details["field_path"], field_path)
-                self.assertEqual(list(Path(tmp).glob("**/artifact-manifest.json")), [])
+                self.assertIn("monte_carlo_config", str(ctx.exception))
+                self.assertEqual(list(Path(tmp).glob("**/*")), [])
 
 
 if __name__ == "__main__":

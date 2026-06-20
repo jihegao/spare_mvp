@@ -10,6 +10,11 @@ from pathlib import Path
 import threading
 from typing import Any
 
+from src.spare_mvp_backend.errors import RunServiceError
+from src.spare_mvp_backend.monte_carlo_config import (
+    normalize_monte_carlo_run_config,
+    reject_request_level_monte_carlo_config,
+)
 from src.spare_mvp_backend.repository import ContractRepository
 from src.spare_mvp_contract.adapter import (
     ARTIFACT_MANIFEST_SCHEMA_VERSION,
@@ -17,15 +22,6 @@ from src.spare_mvp_contract.adapter import (
     RUN_SCHEMA_VERSION,
     SimulationAdapter,
 )
-
-
-class RunServiceError(ValueError):
-    """Structured error raised by the M6.0 run service."""
-
-    def __init__(self, code: str, message: str, **details: Any) -> None:
-        super().__init__(message)
-        self.code = code
-        self.details = details
 
 
 class RunService:
@@ -60,6 +56,8 @@ class RunService:
                 "run_type must be single or monte_carlo",
                 run_type=run_type,
             )
+        if run_type == "monte_carlo":
+            reject_request_level_monte_carlo_config(request)
 
         project = self.repository.get_project(project_id)
         plan = self.repository.get_experiment_plan(experiment_plan_id)
@@ -69,6 +67,12 @@ class RunService:
                 "experiment plan does not belong to project",
                 project_id=project_id,
                 experiment_plan_id=experiment_plan_id,
+            )
+        mc_config = None
+        if run_type == "monte_carlo":
+            mc_config = normalize_monte_carlo_run_config(
+                plan.get("config") or {},
+                mc_experiment_id=_monte_carlo_experiment_id(request, plan, ""),
             )
 
         snapshot = (
@@ -116,14 +120,18 @@ class RunService:
         self.repository.upsert_scenario(scenario)
         try:
             if run_type == "monte_carlo":
+                config_payload = mc_config.to_adapter_payload()
+                config_payload["mc_experiment_id"] = config_payload.get("mc_experiment_id") or _monte_carlo_experiment_id(
+                    request,
+                    plan,
+                    run_id,
+                )
                 bundle = self.adapter.run_monte_carlo_scenario(
                     scenario,
                     output_dir=self.output_dir,
                     steps=_steps_from_plan(plan),
                     run_id=run_id,
-                    sample_count=_monte_carlo_sample_count(request, plan),
-                    sweep=_monte_carlo_sweep(request, plan),
-                    mc_experiment_id=_monte_carlo_experiment_id(request, plan, run_id),
+                    monte_carlo_config=config_payload,
                 )
             else:
                 bundle = self.adapter.run_scenario(
@@ -329,50 +337,6 @@ def _steps_from_plan(plan: dict[str, Any]) -> int:
         return 3
 
 
-def _monte_carlo_sample_count(request: dict[str, Any], plan: dict[str, Any]) -> Any:
-    config = plan.get("config") or {}
-    candidates = [
-        request.get("sample_count"),
-        request.get("samples"),
-        (request.get("monte_carlo") or {}).get("sample_count") if isinstance(request.get("monte_carlo"), dict) else None,
-        (request.get("monte_carlo") or {}).get("samples") if isinstance(request.get("monte_carlo"), dict) else None,
-        config.get("sample_count"),
-        config.get("samples"),
-        (config.get("monteCarloExperiment") or {}).get("sample_count")
-        if isinstance(config.get("monteCarloExperiment"), dict)
-        else None,
-        (config.get("monteCarloExperiment") or {}).get("samples")
-        if isinstance(config.get("monteCarloExperiment"), dict)
-        else None,
-        (config.get("analysisRequests") or {}).get("largeSample", {}).get("samples")
-        if isinstance(config.get("analysisRequests"), dict)
-        and isinstance((config.get("analysisRequests") or {}).get("largeSample"), dict)
-        else None,
-    ]
-    for value in candidates:
-        if value is not None:
-            return value
-    return 12
-
-
-def _monte_carlo_sweep(request: dict[str, Any], plan: dict[str, Any]) -> dict[str, Any] | None:
-    config = plan.get("config") or {}
-    for value in [
-        request.get("sweep"),
-        (request.get("monte_carlo") or {}).get("sweep") if isinstance(request.get("monte_carlo"), dict) else None,
-        (config.get("monteCarloExperiment") or {}).get("sweep")
-        if isinstance(config.get("monteCarloExperiment"), dict)
-        else None,
-        (config.get("analysisRequests") or {}).get("largeSample", {}).get("sweep")
-        if isinstance(config.get("analysisRequests"), dict)
-        and isinstance((config.get("analysisRequests") or {}).get("largeSample"), dict)
-        else None,
-    ]:
-        if isinstance(value, dict):
-            return copy.deepcopy(value)
-    return None
-
-
 def _monte_carlo_experiment_id(request: dict[str, Any], plan: dict[str, Any], run_id: str) -> str:
     config = plan.get("config") or {}
     candidates = [
@@ -386,6 +350,8 @@ def _monte_carlo_experiment_id(request: dict[str, Any], plan: dict[str, Any], ru
     for value in candidates:
         if value:
             return str(value)
+    if not run_id:
+        return ""
     return f"mc-{run_id.removeprefix('run-')}"
 
 

@@ -274,11 +274,14 @@ class SimulationAdapter:
         output_dir: Path | str,
         steps: int = 3,
         run_id: str | None = None,
-        sample_count: int = 12,
-        sweep: dict[str, Any] | None = None,
-        mc_experiment_id: str | None = None,
+        monte_carlo_config: dict[str, Any] | None = None,
+        **legacy_config: Any,
     ) -> dict[str, dict[str, Any]]:
         """Run a synchronous M6.2 Monte Carlo batch from a compiled smoke Scenario."""
+        config = self._require_monte_carlo_config(
+            monte_carlo_config=monte_carlo_config,
+            legacy_config=legacy_config,
+        )
         self._assert_smoke_scenario(scenario)
         if steps < 0:
             raise AdapterError("bad_steps", "steps must be non-negative", steps=steps)
@@ -287,10 +290,10 @@ class SimulationAdapter:
         run_id = run_id or f"run-{scenario['scenario_id']}-mc"
         result_id = f"result-{run_id}"
         manifest_id = f"artifact-manifest-{run_id}"
-        mc_experiment_id = mc_experiment_id or f"mc-{run_id.removeprefix('run-')}"
+        mc_experiment_id = config.get("mc_experiment_id") or f"mc-{run_id.removeprefix('run-')}"
         now = _utc_now()
 
-        profile = self._monte_carlo_profile(scenario, sample_count=sample_count, sweep=sweep)
+        profile = self._monte_carlo_profile(scenario, monte_carlo_config=config)
         samples = [
             self._run_monte_carlo_sample(inputs, profile["sample_points"][index], steps=steps, sample_index=index)
             for index in range(profile["sample_count"])
@@ -519,46 +522,25 @@ class SimulationAdapter:
         self,
         scenario: dict[str, Any],
         *,
-        sample_count: int,
-        sweep: dict[str, Any] | None,
+        monte_carlo_config: dict[str, Any],
     ) -> dict[str, Any]:
         inputs = scenario["simulation_inputs"]
-        project = inputs["project_snapshot"]
-        project_sweep = project.get("monteCarlo", {})
-        requested_sweep = sweep or {}
-        failure_rates = self._first_present(
-            requested_sweep,
-            ["failureRates", "failure_rates"],
-            project_sweep,
-            ["failureRates"],
-        )
-        spare_multipliers = self._first_present(
-            requested_sweep,
-            ["spareMultipliers", "spare_multipliers"],
-            project_sweep,
-            ["spareMultipliers"],
-        )
-        support_capacities = self._first_present(
-            requested_sweep,
-            ["supportCapacities", "support_capacities"],
-            project_sweep,
-            ["supportCapacities"],
-        )
+        sweep = monte_carlo_config.get("sweep") if isinstance(monte_carlo_config.get("sweep"), dict) else {}
         normalized = {
             "failureRates": self._normalize_numeric_sweep_values(
-                failure_rates,
-                [inputs["failure_rate"]],
-                field_path="monteCarlo.failureRates",
+                self._first_present(sweep, ["failureRates", "failure_rates"]),
+                [],
+                field_path="monte_carlo_config.sweep.failureRates",
             ),
             "spareMultipliers": self._normalize_numeric_sweep_values(
-                spare_multipliers,
-                [inputs["spare_multiplier"]],
-                field_path="monteCarlo.spareMultipliers",
+                self._first_present(sweep, ["spareMultipliers", "spare_multipliers"]),
+                [],
+                field_path="monte_carlo_config.sweep.spareMultipliers",
             ),
             "supportCapacities": self._normalize_support_capacities(
-                support_capacities,
-                [inputs["support_capacity"]],
-                field_path="monteCarlo.supportCapacities",
+                self._first_present(sweep, ["supportCapacities", "support_capacities"]),
+                [],
+                field_path="monte_carlo_config.sweep.supportCapacities",
             ),
         }
         points = []
@@ -572,7 +554,7 @@ class SimulationAdapter:
                             "support_capacity": support_capacity,
                         }
                     )
-        count = self._validate_monte_carlo_sample_count(sample_count)
+        count = self._validate_monte_carlo_sample_count(monte_carlo_config.get("sample_count"))
         sample_points = [copy.deepcopy(points[index % len(points)]) for index in range(count)]
         for index, point in enumerate(sample_points):
             point["seed"] = int(inputs["seed"]) + index
@@ -701,19 +683,30 @@ class SimulationAdapter:
             },
         }
 
-    def _first_present(
+    def _require_monte_carlo_config(
         self,
-        primary: dict[str, Any],
-        primary_keys: list[str],
-        secondary: dict[str, Any],
-        secondary_keys: list[str],
-    ) -> Any:
-        for key in primary_keys:
-            if isinstance(primary, dict) and key in primary:
-                return primary[key]
-        for key in secondary_keys:
-            if isinstance(secondary, dict) and key in secondary:
-                return secondary[key]
+        *,
+        monte_carlo_config: dict[str, Any] | None,
+        legacy_config: dict[str, Any],
+    ) -> dict[str, Any]:
+        if legacy_config:
+            raise AdapterError(
+                "bad_analysis_request",
+                "run_monte_carlo_scenario requires monte_carlo_config; legacy Monte Carlo parameters are not supported",
+                fields=sorted(legacy_config),
+            )
+        if not isinstance(monte_carlo_config, dict):
+            raise AdapterError(
+                "bad_analysis_request",
+                "run_monte_carlo_scenario requires monte_carlo_config",
+                field_path="monte_carlo_config",
+            )
+        return copy.deepcopy(monte_carlo_config)
+
+    def _first_present(self, source: dict[str, Any], keys: list[str]) -> Any:
+        for key in keys:
+            if isinstance(source, dict) and key in source:
+                return source[key]
         return None
 
     def _validate_monte_carlo_sample_count(self, value: Any) -> int:
@@ -738,6 +731,13 @@ class SimulationAdapter:
 
     def _normalize_numeric_sweep_values(self, values: Any, fallback: list[float], *, field_path: str) -> list[float]:
         if values is None:
+            if not fallback:
+                raise AdapterError(
+                    "bad_analysis_request",
+                    f"{field_path} must include at least one numeric value",
+                    field_path=field_path,
+                    value=values,
+                )
             return [float(value) for value in fallback]
         raw_values = values if isinstance(values, list) else [values]
         if len(raw_values) == 0:
@@ -759,6 +759,13 @@ class SimulationAdapter:
 
     def _normalize_support_capacities(self, values: Any, fallback: list[int], *, field_path: str) -> list[int]:
         if values is None:
+            if not fallback:
+                raise AdapterError(
+                    "bad_analysis_request",
+                    f"{field_path} must include at least one positive integer",
+                    field_path=field_path,
+                    value=values,
+                )
             return [int(value) for value in fallback]
         raw_values = values if isinstance(values, list) else [values]
         if len(raw_values) == 0:

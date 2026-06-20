@@ -163,9 +163,17 @@ class BackendHttpApiTest(unittest.TestCase):
                         "config": {
                             "name": "http formal monte carlo",
                             "steps": 2,
-                            "samples": 8,
                             "projectJson": project,
                             "analysisRequests": {
+                                "largeSample": {
+                                    "enabled": True,
+                                    "samples": 8,
+                                    "sweep": {
+                                        "failureRates": [0.06, 0.08],
+                                        "spareMultipliers": [0.75, 1.0],
+                                        "supportCapacities": [2, 3],
+                                    },
+                                },
                                 "spareShortfall": {"enabled": True},
                                 "carryList": {"enabled": True},
                                 "missionReliability": {"enabled": True},
@@ -188,18 +196,22 @@ class BackendHttpApiTest(unittest.TestCase):
                 )
                 artifacts = self._json(base_url, "GET", f"/runs/{submitted['run_id']}/artifacts")
                 kinds = {artifact["kind"] for artifact in artifacts["artifacts"]}
+                base_artifact = next(artifact for artifact in artifacts["artifacts"] if artifact["kind"] == "monte_carlo_base")
+                payload = json.loads((Path(tmp) / "artifacts" / base_artifact["path"]).read_text(encoding="utf-8"))
 
                 self.assertEqual(submitted["status"], "succeeded")
                 self.assertEqual(submitted["run_type"], "monte_carlo")
                 self.assertEqual(submitted["modeling_snapshot_id"], snapshot["snapshot_id"])
                 self.assertIn("monte_carlo_base", kinds)
                 self.assertEqual(len([kind for kind in kinds if kind.startswith("analysis_projection_")]), 4)
+                self.assertEqual(payload["sample_count"], 8)
+                self.assertEqual(payload["sweep"]["supportCapacities"], [2, 3])
             finally:
                 server.shutdown()
                 server.server_close()
                 thread.join(timeout=5)
 
-    def test_http_canonical_runs_reject_invalid_monte_carlo_inputs_without_artifacts(self) -> None:
+    def test_http_canonical_runs_reject_request_level_monte_carlo_config(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             server = create_backend_server(
                 ("127.0.0.1", 0),
@@ -220,15 +232,25 @@ class BackendHttpApiTest(unittest.TestCase):
                     f"/projects/{saved['project_id']}/experiment-plans",
                     {
                         "config": {
-                            "name": "http invalid monte carlo",
+                            "name": "http reject request monte carlo config",
                             "steps": 1,
-                            "samples": 8,
                             "projectJson": project,
+                            "analysisRequests": {
+                                "largeSample": {
+                                    "enabled": True,
+                                    "samples": 4,
+                                    "sweep": {
+                                        "failureRates": [0.07],
+                                        "spareMultipliers": [1.0],
+                                        "supportCapacities": [3],
+                                    },
+                                }
+                            },
                         }
                     },
                 )
 
-                submitted = self._json(
+                error = self._json_error(
                     base_url,
                     "POST",
                     "/runs",
@@ -237,17 +259,15 @@ class BackendHttpApiTest(unittest.TestCase):
                         "experiment_plan_id": plan["experiment_plan_id"],
                         "model_family": "smoke",
                         "run_type": "monte_carlo",
-                        "sweep": {"supportCapacities": [0]},
+                        "sample_count": 99,
+                        "sweep": {"supportCapacities": [9]},
                     },
                 )
-                artifacts = self._json(base_url, "GET", f"/runs/{submitted['run_id']}/artifacts")
 
-                self.assertEqual(submitted["status"], "failed")
-                self.assertEqual(submitted["run_type"], "monte_carlo")
-                self.assertIsNone(submitted["result_summary_id"])
-                self.assertEqual(submitted["error"]["code"], "bad_analysis_request")
-                self.assertEqual(submitted["error"]["details"]["field_path"], "monteCarlo.supportCapacities")
-                self.assertEqual(artifacts["artifacts"], [])
+                self.assertEqual(error["code"], "bad_run_request")
+                self.assertIn("ExperimentPlan.config.analysisRequests.largeSample", error["message"])
+                self.assertIn("sample_count", error["details"]["fields"])
+                self.assertIn("sweep", error["details"]["fields"])
             finally:
                 server.shutdown()
                 server.server_close()
@@ -804,6 +824,58 @@ class BackendHttpApiTest(unittest.TestCase):
                 self.assertEqual(compiled["compiled_from_import"]["import_id"], import_package["importId"])
                 self.assertEqual(compiled["scenario"]["project_id"], import_package["projectId"])
                 self.assertEqual(compiled["scenario"]["compiled_by"], "Simulation Adapter Agent")
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
+    def test_http_modeling_import_create_project_requires_session_and_data_role(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            server = create_backend_server(
+                ("127.0.0.1", 0),
+                repo_root=REPO_ROOT,
+                database_path=":memory:",
+                output_dir=Path(tmp) / "artifacts",
+            )
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                base_url = f"http://127.0.0.1:{server.server_address[1]}/api"
+                import_package = self._fixture("modeling_import_project.json")
+                encoded_import_id = quote(import_package["importId"], safe="")
+                data_token = self._login_token(base_url, "data", "data")
+                user_token = self._login_token(base_url, "user", "user")
+
+                self._json(base_url, "POST", "/modeling-imports", import_package, auth_token=data_token)
+                self._json(base_url, "POST", f"/modeling-imports/{encoded_import_id}/publish", auth_token=data_token)
+
+                unauthenticated = self._json_error(
+                    base_url,
+                    "POST",
+                    f"/modeling-imports/{encoded_import_id}/create-project",
+                )
+                forbidden = self._json_error(
+                    base_url,
+                    "POST",
+                    f"/modeling-imports/{encoded_import_id}/create-project",
+                    auth_token=user_token,
+                )
+                created = self._json(
+                    base_url,
+                    "POST",
+                    f"/modeling-imports/{encoded_import_id}/create-project",
+                    auth_token=data_token,
+                )
+                stored_project = self._json(base_url, "GET", f"/projects/{quote(import_package['projectId'], safe='')}")
+
+                self.assertEqual(unauthenticated["code"], "unauthorized")
+                self.assertEqual(forbidden["code"], "forbidden")
+                self.assertEqual(created["sourceImport"]["import_id"], import_package["importId"])
+                self.assertEqual(created["project"]["project_id"], import_package["projectId"])
+                self.assertEqual(created["savedProject"]["project_id"], import_package["projectId"])
+                self.assertEqual(created["modelingSnapshot"]["project"]["project_id"], import_package["projectId"])
+                self.assertTrue(created["modelingSnapshot"]["snapshot_id"])
+                self.assertEqual(stored_project["project_id"], import_package["projectId"])
             finally:
                 server.shutdown()
                 server.server_close()

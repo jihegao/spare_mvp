@@ -28,6 +28,7 @@ class RecordingAdapter(SimulationAdapter):
         super().__init__(REPO_ROOT)
         self.compile_calls: list[tuple[dict, str]] = []
         self.run_calls: list[tuple[dict, int]] = []
+        self.monte_carlo_run_calls: list[dict] = []
 
     def compile_scenario(self, project: dict, model_family: str = "smoke") -> dict:
         self.compile_calls.append((copy.deepcopy(project), model_family))
@@ -46,6 +47,30 @@ class RecordingAdapter(SimulationAdapter):
     ) -> dict[str, dict]:
         self.run_calls.append((copy.deepcopy(scenario), steps, run_id))
         return super().run_scenario(scenario, output_dir=output_dir, steps=steps, run_id=run_id)
+
+    def run_monte_carlo_scenario(
+        self,
+        scenario: dict,
+        output_dir: Path | str,
+        steps: int = 3,
+        run_id: str | None = None,
+        **kwargs,
+    ) -> dict[str, dict]:
+        self.monte_carlo_run_calls.append(
+            {
+                "scenario": copy.deepcopy(scenario),
+                "steps": steps,
+                "run_id": run_id,
+                "kwargs": copy.deepcopy(kwargs),
+            }
+        )
+        return super().run_monte_carlo_scenario(
+            scenario,
+            output_dir=output_dir,
+            steps=steps,
+            run_id=run_id,
+            **kwargs,
+        )
 
 
 class FailingRunAdapter(RecordingAdapter):
@@ -75,6 +100,14 @@ class BackendApiContractTest(unittest.TestCase):
 
     def _fixture(self, name: str) -> dict:
         return json.loads((REPO_ROOT / "tests" / "fixtures" / name).read_text(encoding="utf-8"))
+
+    def _run_side_effect_counts(self) -> dict[str, int]:
+        return {
+            table: self.connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+            for table in ("scenarios", "simulation_runs", "result_summaries", "artifact_manifests")
+        } | {
+            "artifact_files": len([path for path in Path(self.tempdir.name).glob("**/*") if path.is_file()])
+        }
 
     def test_smoke_backend_flow_persists_complete_run_chain(self) -> None:
         project = self._fixture("smoke_project.json")
@@ -157,12 +190,6 @@ class BackendApiContractTest(unittest.TestCase):
     def test_run_service_submits_formal_monte_carlo_run_and_persists_projection_artifacts(self) -> None:
         project = self._fixture("smoke_project.json")
         branch_project = copy.deepcopy(project)
-        branch_project["experiment"]["samples"] = 8
-        branch_project["monteCarlo"] = {
-            "failureRates": [0.06, 0.08],
-            "spareMultipliers": [0.75, 1.0],
-            "supportCapacities": [2, 3],
-        }
         saved = self.api.save_project(project)
         snapshot = self.api.create_modeling_snapshot(saved["project_id"])
         plan = self.api.create_experiment_plan(
@@ -170,10 +197,18 @@ class BackendApiContractTest(unittest.TestCase):
             {
                 "name": "formal mc status",
                 "steps": 2,
-                "samples": 8,
                 "seed": branch_project["experiment"]["seed"],
                 "projectJson": branch_project,
                 "analysisRequests": {
+                    "largeSample": {
+                        "enabled": True,
+                        "samples": 8,
+                        "sweep": {
+                            "failureRates": [0.06, 0.08],
+                            "spareMultipliers": [0.75, 1.0],
+                            "supportCapacities": [2, 3],
+                        },
+                    },
                     "spareShortfall": {"enabled": True},
                     "carryList": {"enabled": True},
                     "missionReliability": {"enabled": True},
@@ -212,50 +247,242 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertTrue(all(artifact["source_artifact_id"] == base_artifact["artifact_id"] for artifact in projection_artifacts))
         self.assertTrue(all(artifact["schema_version"] == "analysis-projection-v0" for artifact in projection_artifacts))
 
-    def test_run_service_rejects_invalid_monte_carlo_inputs_without_formal_artifacts(self) -> None:
+    def test_monte_carlo_run_uses_plan_large_sample_config(self) -> None:
+        project = self._fixture("smoke_project.json")
+        branch_project = copy.deepcopy(project)
+        saved = self.api.save_project(project)
+        self.api.create_modeling_snapshot(saved["project_id"])
+        plan = self.api.create_experiment_plan(
+            saved["project_id"],
+            {
+                "name": "canonical MC config",
+                "steps": 4,
+                "projectJson": branch_project,
+                "analysisRequests": {
+                    "largeSample": {
+                        "enabled": True,
+                        "samples": 5,
+                        "sweep": {
+                            "failureRates": [0.06, 0.08],
+                            "spareMultipliers": [1.0],
+                            "supportCapacities": [2, 3],
+                        },
+                    }
+                },
+            },
+        )
+
+        status = self.api.submit_run(
+            {
+                "project_id": saved["project_id"],
+                "experiment_plan_id": plan["experiment_plan_id"],
+                "model_family": "smoke",
+                "run_type": "monte_carlo",
+                "mc_experiment_id": "mc-canonical-config",
+            }
+        )
+        manifest = self.api.get_run_artifacts(status["run_id"])
+        base_artifact = next(artifact for artifact in manifest["artifacts"] if artifact["kind"] == "monte_carlo_base")
+        payload = json.loads((Path(self.tempdir.name) / base_artifact["path"]).read_text(encoding="utf-8"))
+
+        self.assertEqual(payload["sample_count"], 5)
+        self.assertEqual(payload["mc_experiment_id"], "mc-canonical-config")
+        self.assertEqual(payload["sweep"]["failureRates"], [0.06, 0.08])
+        self.assertEqual(payload["sweep"]["supportCapacities"], [2, 3])
+
+    def test_run_service_hands_normalized_monte_carlo_config_to_adapter(self) -> None:
         project = self._fixture("smoke_project.json")
         saved = self.api.save_project(project)
         self.api.create_modeling_snapshot(saved["project_id"])
         plan = self.api.create_experiment_plan(
             saved["project_id"],
             {
-                "name": "invalid mc inputs",
-                "steps": 1,
-                "samples": 8,
-                "projectJson": project,
+                "name": "adapter normalized mc config",
+                "steps": 3,
+                "projectJson": copy.deepcopy(project),
+                "analysisRequests": {
+                    "largeSample": {
+                        "enabled": True,
+                        "samples": 6,
+                        "sweep": {
+                            "failureRates": [0.05],
+                            "spareMultipliers": [1.0, 1.2],
+                            "supportCapacities": [2],
+                        },
+                    }
+                },
             },
         )
-        service = RunService(self.repository, self.adapter, self.api.output_dir)
-        invalid_cases = [
-            ("samples zero", {"samples": 0}, "samples"),
-            ("samples negative", {"samples": -1}, "samples"),
-            ("samples non numeric", {"samples": "bad"}, "samples"),
-            ("samples above limit", {"samples": 2000}, "samples"),
-            ("support capacity zero", {"sweep": {"supportCapacities": [0]}}, "monteCarlo.supportCapacities"),
-            ("support capacity negative", {"sweep": {"supportCapacities": [-2]}}, "monteCarlo.supportCapacities"),
-            ("failure rate non numeric", {"sweep": {"failureRates": [0.05, "bad"]}}, "monteCarlo.failureRates"),
-            ("spare multiplier non numeric", {"sweep": {"spareMultipliers": [1.0, "bad"]}}, "monteCarlo.spareMultipliers"),
-        ]
 
-        for label, overrides, field_path in invalid_cases:
-            with self.subTest(label):
-                submitted = service.submit_run(
-                    {
-                        "project_id": saved["project_id"],
-                        "experiment_plan_id": plan["experiment_plan_id"],
-                        "model_family": "smoke",
-                        "run_type": "monte_carlo",
-                        **overrides,
+        self.api.submit_run(
+            {
+                "project_id": saved["project_id"],
+                "experiment_plan_id": plan["experiment_plan_id"],
+                "model_family": "smoke",
+                "run_type": "monte_carlo",
+                "mc_experiment_id": "mc-adapter-normalized",
+            }
+        )
+
+        adapter_config = self.adapter.monte_carlo_run_calls[-1]["kwargs"].get("monte_carlo_config")
+        self.assertIsNotNone(adapter_config)
+        self.assertEqual(adapter_config["sample_count"], 6)
+        self.assertEqual(adapter_config["mc_experiment_id"], "mc-adapter-normalized")
+        self.assertEqual(adapter_config["sweep"]["failureRates"], [0.05])
+        self.assertEqual(adapter_config["sweep"]["spareMultipliers"], [1.0, 1.2])
+        self.assertEqual(adapter_config["sweep"]["supportCapacities"], [2])
+
+    def test_monte_carlo_run_rejects_request_level_samples_and_sweep(self) -> None:
+        project = self._fixture("smoke_project.json")
+        branch_project = copy.deepcopy(project)
+        saved = self.api.save_project(project)
+        self.api.create_modeling_snapshot(saved["project_id"])
+        plan = self.api.create_experiment_plan(
+            saved["project_id"],
+            {
+                "name": "reject request MC config",
+                "steps": 4,
+                "projectJson": branch_project,
+                "analysisRequests": {
+                    "largeSample": {
+                        "enabled": True,
+                        "samples": 4,
+                        "sweep": {
+                            "failureRates": [0.07],
+                            "spareMultipliers": [1.0],
+                            "supportCapacities": [3],
+                        },
                     }
-                )
-                manifest = self.api.get_run_artifacts(submitted["run_id"])
+                },
+            },
+        )
+        before_counts = self._run_side_effect_counts()
+        before_compile_calls = len(self.adapter.compile_calls)
 
-                self.assertEqual(submitted["status"], "failed")
-                self.assertEqual(submitted["run_type"], "monte_carlo")
-                self.assertIsNone(submitted["result_summary_id"])
-                self.assertEqual(submitted["error"]["code"], "bad_analysis_request")
-                self.assertEqual(submitted["error"]["details"]["field_path"], field_path)
-                self.assertEqual(manifest["artifacts"], [])
+        with self.assertRaises(BackendApiError) as ctx:
+            self.api.submit_run(
+                {
+                    "project_id": saved["project_id"],
+                    "experiment_plan_id": plan["experiment_plan_id"],
+                    "model_family": "smoke",
+                    "run_type": "monte_carlo",
+                    "sample_count": 99,
+                    "samples": 99,
+                    "sweep": {"supportCapacities": [9]},
+                    "monte_carlo": {"samples": 99},
+                }
+            )
+
+        self.assertEqual(ctx.exception.code, "bad_run_request")
+        self.assertIn("ExperimentPlan.config.analysisRequests.largeSample", str(ctx.exception))
+        self.assertIn("sample_count", ctx.exception.details.get("fields", []))
+        self.assertIn("sweep", ctx.exception.details.get("fields", []))
+        self.assertEqual(self._run_side_effect_counts(), before_counts)
+        self.assertEqual(len(self.adapter.compile_calls), before_compile_calls)
+        self.assertEqual(self.adapter.monte_carlo_run_calls, [])
+
+    def test_monte_carlo_bad_request_wins_before_compile_gate_model_family(self) -> None:
+        project = self._fixture("aviation_support_project.json")
+        saved = self.api.save_project(project)
+        self.api.create_modeling_snapshot(saved["project_id"])
+        plan = self.api.create_experiment_plan(
+            saved["project_id"],
+            {
+                "name": "bad request before aviation compile gate",
+                "steps": 1,
+                "projectJson": copy.deepcopy(project),
+                "analysisRequests": {
+                    "largeSample": {
+                        "enabled": True,
+                        "samples": 4,
+                        "sweep": {
+                            "failureRates": [0.07],
+                            "spareMultipliers": [1.0],
+                            "supportCapacities": [3],
+                        },
+                    }
+                },
+            },
+        )
+        before_counts = self._run_side_effect_counts()
+        before_compile_calls = len(self.adapter.compile_calls)
+
+        with self.assertRaises(BackendApiError) as ctx:
+            self.api.submit_run(
+                {
+                    "project_id": saved["project_id"],
+                    "experiment_plan_id": plan["experiment_plan_id"],
+                    "model_family": "aviation_support",
+                    "run_type": "monte_carlo",
+                    "sample_count": 99,
+                }
+            )
+
+        self.assertEqual(ctx.exception.code, "bad_run_request")
+        self.assertIn("ExperimentPlan.config.analysisRequests.largeSample", str(ctx.exception))
+        self.assertNotEqual(ctx.exception.code, "unsupported_model_family")
+        self.assertEqual(self._run_side_effect_counts(), before_counts)
+        self.assertEqual(len(self.adapter.compile_calls), before_compile_calls)
+        self.assertEqual(self.adapter.monte_carlo_run_calls, [])
+
+    def test_monte_carlo_config_rejects_fractional_integer_fields(self) -> None:
+        cases = [
+            ("fractional samples", {"samples": 2.5}, "analysisRequests.largeSample.samples"),
+            (
+                "fractional support capacity",
+                {"sweep": {"failureRates": [0.07], "spareMultipliers": [1.0], "supportCapacities": [2.5]}},
+                "analysisRequests.largeSample.sweep.supportCapacities",
+            ),
+        ]
+        for label, override, expected_field in cases:
+            with self.subTest(label):
+                project = self._fixture("smoke_project.json")
+                branch_project = copy.deepcopy(project)
+                large_sample = {
+                    "enabled": True,
+                    "samples": 4,
+                    "sweep": {
+                        "failureRates": [0.07],
+                        "spareMultipliers": [1.0],
+                        "supportCapacities": [3],
+                    },
+                }
+                if "samples" in override:
+                    large_sample["samples"] = override["samples"]
+                if "sweep" in override:
+                    large_sample["sweep"] = override["sweep"]
+                saved = self.api.save_project(project)
+                self.api.create_modeling_snapshot(saved["project_id"])
+                plan = self.api.create_experiment_plan(
+                    saved["project_id"],
+                    {
+                        "name": f"reject {label}",
+                        "steps": 4,
+                        "projectJson": branch_project,
+                        "analysisRequests": {"largeSample": large_sample},
+                    },
+                )
+                before_counts = self._run_side_effect_counts()
+                before_compile_calls = len(self.adapter.compile_calls)
+
+                with self.assertRaises(BackendApiError) as ctx:
+                    self.api.submit_run(
+                        {
+                            "project_id": saved["project_id"],
+                            "experiment_plan_id": plan["experiment_plan_id"],
+                            "model_family": "smoke",
+                            "run_type": "monte_carlo",
+                        }
+                    )
+
+                self.assertEqual(ctx.exception.code, "bad_run_request")
+                self.assertEqual(
+                    ctx.exception.details.get("field") or ctx.exception.details.get("field_path"),
+                    expected_field,
+                )
+                self.assertEqual(self._run_side_effect_counts(), before_counts)
+                self.assertEqual(len(self.adapter.compile_calls), before_compile_calls)
+                self.assertEqual(self.adapter.monte_carlo_run_calls, [])
 
     def test_run_service_rejects_missing_model_family_on_canonical_submit(self) -> None:
         project = self._fixture("smoke_project.json")
@@ -631,6 +858,28 @@ class BackendApiContractTest(unittest.TestCase):
         login_event = next(event for event in login_events if event["action"] == "auth.login")
         self.assertNotEqual(login_event["resource_id"], session["session"]["token"])
         self.assertRegex(login_event["resource_id"], r"^session-[0-9a-f]{16}$")
+
+    def test_create_project_from_modeling_import_saves_project_and_snapshot(self) -> None:
+        import_package = self._fixture("modeling_import_project.json")
+        self.api.save_modeling_import_as_system(import_package)
+        self.api.publish_modeling_import_as_system(import_package["importId"])
+
+        created = self.api.create_project_from_modeling_import_as_system(import_package["importId"])
+
+        self.assertEqual(created["sourceImport"]["import_id"], import_package["importId"])
+        self.assertEqual(created["project"]["project_id"], import_package["projectId"])
+        self.assertEqual(created["project"]["missionProfile"]["sourceImportId"], import_package["importId"])
+        self.assertEqual(created["savedProject"]["project_id"], import_package["projectId"])
+        self.assertEqual(created["modelingSnapshot"]["project"]["project_id"], import_package["projectId"])
+        self.assertEqual(self.api.get_project(import_package["projectId"])["project_id"], import_package["projectId"])
+        events = self.repository.list_audit_events(resource_id=import_package["importId"])
+        create_events = [event for event in events if event["action"] == "modeling_import.create_project"]
+        self.assertEqual(len(create_events), 1)
+        self.assertEqual(create_events[0]["outcome"], "allowed")
+        self.assertEqual(create_events[0]["resource_id"], import_package["importId"])
+        self.assertEqual(create_events[0]["details"]["project_id"], import_package["projectId"])
+        self.assertEqual(create_events[0]["details"]["import_version"], 1)
+        self.assertEqual(create_events[0]["details"]["actor"], "system")
 
     def test_m4_regular_user_cannot_publish_modeling_import_and_denial_is_audited(self) -> None:
         import_package = self._fixture("modeling_import_project.json")
