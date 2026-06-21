@@ -84,34 +84,38 @@ test("frontend API client exposes stable PR-F save run and result methods", asyn
   assert.equal(calls[5].body.run_type, "single");
 });
 
-test("frontend API client keeps legacy run aliases on canonical run routes", async () => {
+test("frontend API client exposes only canonical run read routes", async () => {
   const calls = [];
   const client = createBackendApiClient({
     transport: async (request) => {
       calls.push(request);
-      if (request.path === "/runs") return { run_id: "run-alias", status: "succeeded", phase: "completed" };
-      if (request.path === "/simulation-runs/run-alias") {
-        return { run_id: "run-alias", schema_version: "run-v0", model_id: "SmokeSpareMvpModel" };
-      }
+      if (request.path === "/runs") return { run_id: "run-canonical", status: "succeeded", phase: "completed" };
+      if (request.path === "/runs/run-canonical") return { run_id: "run-canonical", phase: "completed" };
+      if (request.path === "/runs/run-canonical/result") return { run_id: "run-canonical", summary: {} };
+      if (request.path === "/runs/run-canonical/artifacts") return { run_id: "run-canonical", artifacts: [] };
+      if (request.path === "/runs/run-canonical/chain") return { run_id: "run-canonical", project_id: "project-ui" };
       throw new Error(`unexpected request ${request.method} ${request.path}`);
     }
   });
 
   const submitted = await client.startSimulationRun("project-ui", "plan-ui");
-  const rawRun = await client.getRun(submitted.run_id);
+  const status = await client.getRunStatus(submitted.run_id);
+  const result = await client.getRunResult(submitted.run_id);
+  const artifacts = await client.getRunArtifacts(submitted.run_id);
+  const chain = await client.getRunChain(submitted.run_id);
 
-  assert.equal(rawRun.schema_version, "run-v0");
-  assert.equal(rawRun.model_id, "SmokeSpareMvpModel");
+  assert.equal(status.phase, "completed");
+  assert.equal(result.run_id, "run-canonical");
+  assert.deepEqual(artifacts.artifacts, []);
+  assert.equal(chain.project_id, "project-ui");
+  assert.equal(typeof client.getRun, "undefined");
   assert.deepEqual(calls.map((call) => `${call.method} ${call.path}`), [
     "POST /runs",
-    "GET /simulation-runs/run-alias"
+    "GET /runs/run-canonical",
+    "GET /runs/run-canonical/result",
+    "GET /runs/run-canonical/artifacts",
+    "GET /runs/run-canonical/chain"
   ]);
-  assert.deepEqual(calls[0].body, {
-    project_id: "project-ui",
-    experiment_plan_id: "plan-ui",
-    model_family: "smoke",
-    run_type: "single"
-  });
 });
 
 test("frontend API client preserves formal M6.2 monte carlo SimulationExperimentBase fields", async () => {

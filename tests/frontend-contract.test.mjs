@@ -1542,6 +1542,19 @@ test("monte carlo launch creates a run from the current experiment plan branch",
   assert.doesNotMatch(launchSource, /backendApi\.startMonteCarloRun/);
 });
 
+test("frontend code no longer references legacy simulation run routes", async () => {
+  const files = [
+    "../front/api-client.mjs",
+    "../front/app.js",
+    "../front/run-intent.mjs"
+  ];
+
+  for (const file of files) {
+    const source = await readFile(new URL(file, import.meta.url), "utf8");
+    assert.doesNotMatch(source, /\/simulation-runs/);
+  }
+});
+
 test("formal runs do not consume local preview outputs", async () => {
   const apiClientSource = await readFile(new URL("../front/api-client.mjs", import.meta.url), "utf8");
   const runIntentSource = await readFile(new URL("../front/run-intent.mjs", import.meta.url), "utf8");

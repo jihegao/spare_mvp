@@ -140,6 +140,38 @@ class BackendHttpApiTest(unittest.TestCase):
                 server.server_close()
                 thread.join(timeout=5)
 
+    def test_http_legacy_simulation_run_routes_are_retired(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            server = create_backend_server(
+                ("127.0.0.1", 0),
+                repo_root=REPO_ROOT,
+                database_path=":memory:",
+                output_dir=Path(tmp) / "artifacts",
+            )
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                base_url = f"http://127.0.0.1:{server.server_address[1]}/api"
+                cases = [
+                    ("POST", "/simulation-runs", {"project_id": "project", "experiment_plan_id": "plan"}),
+                    ("GET", "/simulation-runs/run-retired", None),
+                    ("GET", "/simulation-runs/run-retired/result", None),
+                    ("GET", "/simulation-runs/run-retired/artifacts", None),
+                    ("GET", "/simulation-runs/run-retired/chain", None),
+                ]
+
+                for method, path, payload in cases:
+                    with self.subTest(method=method, path=path):
+                        status, body = self._json_error_with_status(base_url, method, path, payload)
+                        self.assertEqual(status, 410)
+                        self.assertEqual(body["code"], "legacy_run_api_retired")
+                        self.assertIn("/api/runs", body["message"])
+                        self.assertEqual(body["details"]["replacement"], "/api/runs")
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
     def test_http_canonical_runs_reject_non_imported_sample_project(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             server = create_backend_server(
@@ -1164,6 +1196,35 @@ class BackendHttpApiTest(unittest.TestCase):
             if not hasattr(response, "read"):
                 raise
             return json.loads(response.read().decode("utf-8"))
+        self.fail("request unexpectedly succeeded")
+
+    def _json_error_with_status(
+        self,
+        base_url: str,
+        method: str,
+        path: str,
+        payload: dict | None = None,
+        *,
+        auth_token: str | None = None,
+    ) -> tuple[int, dict]:
+        data = None if payload is None else json.dumps(payload).encode("utf-8")
+        headers = {"content-type": "application/json"} if payload is not None else {}
+        if auth_token is not None:
+            headers["authorization"] = f"Bearer {auth_token}"
+        req = request.Request(
+            f"{base_url}{path}",
+            data=data,
+            method=method,
+            headers=headers,
+        )
+        opener = request.build_opener(request.ProxyHandler({}))
+        try:
+            opener.open(req, timeout=10)
+        except Exception as exc:
+            response = exc
+            if not hasattr(response, "read") or not hasattr(response, "code"):
+                raise
+            return response.code, json.loads(response.read().decode("utf-8"))
         self.fail("request unexpectedly succeeded")
 
 
