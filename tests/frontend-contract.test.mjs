@@ -1607,6 +1607,41 @@ test("M7 run refresh is allowed before any selected run guard", async () => {
   }
 });
 
+test("M7 browser smoke helper verifies archive and tombstone evidence", async () => {
+  const smokeSource = await readFile(
+    new URL("../reports/m3-1-browser-backend-smoke/browser-backend-smoke.mjs", import.meta.url),
+    "utf8"
+  );
+  const loginSource = smokeSource.slice(
+    smokeSource.indexOf("async function loginAndEnterProject"),
+    smokeSource.indexOf("async function clickFeature")
+  );
+  const m7Source = smokeSource.slice(
+    smokeSource.indexOf("async function verifyM7RunArtifactManagement"),
+    smokeSource.indexOf("function assertHasIdentityChain")
+  );
+
+  assert.match(loginSource, /button\[data-enter-workbench\]\[data-project-id\]/);
+  assert.doesNotMatch(loginSource, /进入当前项目/);
+  for (const token of [
+    "runListVisibleIncludesRunId",
+    "detailVisible",
+    "artifactColumnsVisible",
+    "artifactSha25664",
+    "downloadObserved",
+    "filenameIncludesArtifactId",
+    "archiveStateVisible",
+    "tombstoneVisible",
+    "softDeleteBoundaryVisible",
+    "physicalDeletionImplied"
+  ]) {
+    assert.match(m7Source, new RegExp(token));
+  }
+  assert.match(m7Source, /data-action="m7-archive-run"/);
+  assert.match(m7Source, /data-action="m7-delete-run"/);
+  assert.match(m7Source, /不会被物理删除|不表示本地 artifact 文件被物理删除/);
+});
+
 test("M7 cold refresh lists runs while missing-run actions stay guarded", async () => {
   const calls = [];
   const listeners = {};

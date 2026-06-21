@@ -164,7 +164,17 @@ async function loginAndEnterProject(page) {
   await page.getByLabel("密码").fill("data");
   await page.getByRole("button", { name: "登录" }).click();
   await expectHeading(page, "项目列表");
-  await page.getByRole("button", { name: "进入当前项目" }).click();
+  const entered = await page.evaluate(() => {
+    const buttons = Array.from(document.querySelectorAll("button[data-enter-workbench][data-project-id]"));
+    const activeButton = document.querySelector(".project-card.active button[data-enter-workbench][data-project-id]");
+    const button = activeButton || buttons.find((candidate) => !candidate.disabled);
+    if (!button) return false;
+    button.click();
+    return true;
+  });
+  if (!entered) {
+    throw new Error("Cannot find current/default project entry button: button[data-enter-workbench][data-project-id]");
+  }
   await clickFeature(page, "spare-planning-experiment-plan-list");
   await expectHeading(page, "仿真实验方案管理");
 }
@@ -295,6 +305,13 @@ async function verifyM7RunArtifactManagement(page, runId) {
       && text.includes("size_bytes")
       && /[0-9a-f]{64}/.test(text);
   }, null, { timeout: 5000 });
+  const detailEvidence = await readM7RunArtifactPanelEvidence(page, runId);
+  if (!detailEvidence.runListVisibleIncludesRunId || !detailEvidence.detailVisible) {
+    throw new Error(`M7 run list/detail evidence is incomplete: ${JSON.stringify(detailEvidence)}`);
+  }
+  if (!detailEvidence.artifactColumnsVisible || !detailEvidence.artifactSha25664) {
+    throw new Error(`M7 artifact metadata evidence is incomplete: ${JSON.stringify(detailEvidence)}`);
+  }
   const artifactButton = page.locator('.m7-run-artifact-management button[data-action="m7-download-artifact"][data-artifact-id]').first();
   const artifactId = await artifactButton.getAttribute("data-artifact-id");
   if (!artifactId) {
@@ -306,12 +323,84 @@ async function verifyM7RunArtifactManagement(page, runId) {
   if (!download.suggestedFilename().includes(artifactId)) {
     throw new Error(`M7 artifact download filename did not include ${artifactId}: ${download.suggestedFilename()}`);
   }
+  const archiveButton = page.locator(`.m7-run-artifact-management button[data-action="m7-archive-run"][data-run-id="${runId}"]`).first();
+  await archiveButton.click();
+  await page.waitForFunction(() => {
+    const text = document.querySelector(".m7-run-artifact-management")?.innerText || "";
+    return text.includes("已归档") || text.includes("archived");
+  }, null, { timeout: 5000 });
+  const archiveEvidence = await readM7RunArtifactPanelEvidence(page, runId);
+  if (!archiveEvidence.archiveStateVisible) {
+    throw new Error(`M7 archive state is not visible after archive action: ${JSON.stringify(archiveEvidence)}`);
+  }
+
+  const deleteButton = page.locator(`.m7-run-artifact-management button[data-action="m7-delete-run"][data-run-id="${runId}"]`).first();
+  await deleteButton.click();
+  await page.waitForFunction(() => {
+    const text = document.querySelector(".m7-run-artifact-management")?.innerText || "";
+    return text.includes("tombstone") || text.includes("软删除") || text.includes("deleted");
+  }, null, { timeout: 5000 });
+  const deleteEvidence = await readM7RunArtifactPanelEvidence(page, runId);
+  if (!deleteEvidence.tombstoneVisible || !deleteEvidence.softDeleteBoundaryVisible || deleteEvidence.physicalDeletionImplied) {
+    throw new Error(`M7 soft-delete tombstone boundary evidence is incomplete: ${JSON.stringify(deleteEvidence)}`);
+  }
+
   return {
     runId,
     artifactId,
+    runListVisibleIncludesRunId: detailEvidence.runListVisibleIncludesRunId,
+    detailVisible: detailEvidence.detailVisible,
+    artifactColumnsVisible: detailEvidence.artifactColumnsVisible,
+    artifactSha25664: detailEvidence.artifactSha25664,
+    artifactMetadata: detailEvidence.artifactMetadata,
+    downloadObserved: true,
     suggestedFilename: download.suggestedFilename(),
-    panelText: await page.locator(".m7-run-artifact-management").innerText()
+    filenameIncludesArtifactId: download.suggestedFilename().includes(artifactId),
+    archiveStateVisible: archiveEvidence.archiveStateVisible,
+    archiveStatusText: archiveEvidence.statusText,
+    tombstoneVisible: deleteEvidence.tombstoneVisible,
+    softDeleteBoundaryVisible: deleteEvidence.softDeleteBoundaryVisible,
+    physicalDeletionImplied: deleteEvidence.physicalDeletionImplied,
+    deleteStatusText: deleteEvidence.statusText,
+    panelText: deleteEvidence.panelText
   };
+}
+
+async function readM7RunArtifactPanelEvidence(page, runId) {
+  return page.evaluate((expectedRunId) => {
+    const panel = document.querySelector(".m7-run-artifact-management");
+    const panelText = panel?.innerText || "";
+    const tables = Array.from(panel?.querySelectorAll("table") || []);
+    const artifactTable = tables.find((table) => {
+      const headers = Array.from(table.querySelectorAll("th")).map((cell) => cell.textContent?.trim() || "");
+      return headers.includes("artifact_id") && headers.includes("sha256") && headers.includes("size_bytes");
+    });
+    const artifactRows = Array.from(artifactTable?.querySelectorAll("tbody tr") || []).map((row) => {
+      const cells = Array.from(row.querySelectorAll("td")).map((cell) => cell.textContent?.trim() || "");
+      return {
+        artifact_id: cells[0] || "",
+        kind: cells[1] || "",
+        path: cells[2] || "",
+        sha256: cells[3] || "",
+        size_bytes: cells[4] || ""
+      };
+    });
+    const artifactMetadata = artifactRows.find((row) => row.artifact_id && row.sha256 && row.size_bytes) || null;
+    const physicalDeletionPhrases = ["已物理删除", "文件已删除", "artifact 文件已删除", "本地 artifact 文件已删除"];
+    return {
+      statusText: panel?.querySelector("span")?.textContent?.trim() || "",
+      panelText,
+      runListVisibleIncludesRunId: panelText.includes(expectedRunId),
+      detailVisible: panelText.includes("artifact_manifest_id") && panelText.includes(expectedRunId),
+      artifactColumnsVisible: Boolean(artifactTable),
+      artifactSha25664: artifactRows.some((row) => /^[0-9a-f]{64}$/i.test(row.sha256)),
+      artifactMetadata,
+      archiveStateVisible: panelText.includes("已归档") || panelText.includes("archived"),
+      tombstoneVisible: panelText.includes("tombstone") || panelText.includes("软删除") || panelText.includes("deleted"),
+      softDeleteBoundaryVisible: panelText.includes("不会被物理删除") || panelText.includes("不表示本地 artifact 文件被物理删除"),
+      physicalDeletionImplied: physicalDeletionPhrases.some((phrase) => panelText.includes(phrase))
+    };
+  }, runId);
 }
 
 function assertHasIdentityChain(chain, label) {
