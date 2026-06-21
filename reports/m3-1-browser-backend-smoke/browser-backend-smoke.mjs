@@ -51,7 +51,9 @@ try {
 
   await clickFeature(page, "spare-planning-monte-carlo-config");
   await expectHeading(page, "蒙特卡洛实验");
+  await openMonteCarloExperimentForRun(page);
   await page.locator('input[data-mc-array-path="monteCarlo.failureRates"]').fill("0.06,0.08,0.1");
+  await openMonteCarloExperimentDetailForRun(page);
   let runResponse = await clickMonteCarloStart(page);
   if (!runResponse) runResponse = await clickMonteCarloStartWithDomFallback(page);
   if (!runResponse) {
@@ -119,6 +121,8 @@ try {
   await loginAndEnterProject(offlinePage);
   await clickFeature(offlinePage, "spare-planning-monte-carlo-config");
   await expectHeading(offlinePage, "蒙特卡洛实验");
+  await openMonteCarloExperimentForRun(offlinePage);
+  await openMonteCarloExperimentDetailForRun(offlinePage);
   await offlinePage.locator('button[data-mc-action="start"]').click();
   await offlinePage.waitForTimeout(250);
   await clickFeature(offlinePage, "spare-planning-monte-carlo-results");
@@ -193,6 +197,41 @@ async function clickFeature(page, featureId) {
     return true;
   }, featureId);
   if (!clicked) throw new Error(`Cannot find feature button ${featureId}`);
+}
+
+async function openMonteCarloExperimentForRun(page) {
+  const sweepInput = page.locator('input[data-mc-array-path="monteCarlo.failureRates"]').first();
+  if (await sweepInput.isVisible().catch(() => false)) return;
+
+  const editButton = page.locator('button[data-mc-experiment-action="edit"]').first();
+  const addButton = page.locator('button[data-mc-experiment-action="add"]').first();
+  if (await editButton.isVisible().catch(() => false)) {
+    await editButton.click();
+  } else if (await addButton.isVisible().catch(() => false)) {
+    await addButton.click();
+  } else {
+    throw new Error("Cannot find Monte Carlo experiment add/edit action before filling sweep inputs");
+  }
+
+  await sweepInput.waitFor({ state: "visible", timeout: 5000 });
+}
+
+async function openMonteCarloExperimentDetailForRun(page) {
+  const startButton = page.locator('button[data-mc-action="start"]').first();
+  if (await startButton.isVisible().catch(() => false)) return;
+
+  const detailButton = page.locator('button[data-feature-id="spare-planning-monte-carlo-experiment-detail"]').first();
+  if (await detailButton.isVisible().catch(() => false)) {
+    await detailButton.click();
+  } else {
+    const listDetailButton = page.locator('button[data-mc-experiment-action="detail"]').first();
+    if (!await listDetailButton.isVisible().catch(() => false)) {
+      throw new Error("Cannot find Monte Carlo experiment detail action before starting run");
+    }
+    await listDetailButton.click();
+  }
+
+  await startButton.waitFor({ state: "visible", timeout: 5000 });
 }
 
 async function clickMonteCarloStart(page) {

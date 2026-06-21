@@ -1460,6 +1460,38 @@ test("monte carlo experiment management has list, editor, and detail pages", asy
   assert.match(styleSource, /\.mc-config-panel/);
 });
 
+test("browser smoke enters monte carlo editor or detail before using sweep inputs", async () => {
+  const smokeSource = await readFile(new URL("../reports/m3-1-browser-backend-smoke/browser-backend-smoke.mjs", import.meta.url), "utf8");
+  const smokeStart = smokeSource.indexOf('await clickFeature(page, "spare-planning-monte-carlo-config")');
+  const smokeEnd = smokeSource.indexOf('await clickFeature(page, "spare-planning-monte-carlo-results")');
+  const smokeMonteCarloSource = smokeSource.slice(
+    smokeStart,
+    smokeEnd
+  );
+  const helperStart = smokeSource.indexOf("async function openMonteCarloExperimentForRun");
+  const helperEnd = smokeSource.indexOf("async function openMonteCarloExperimentDetailForRun");
+  const openExperimentSource = smokeSource.slice(
+    helperStart,
+    helperEnd
+  );
+
+  assert.notEqual(smokeStart, -1, "smoke Monte Carlo flow start marker exists");
+  assert.notEqual(smokeEnd, -1, "smoke Monte Carlo flow end marker exists");
+  assert.ok(smokeEnd > smokeStart, "smoke Monte Carlo result navigation follows config flow");
+  assert.notEqual(helperStart, -1, "smoke open experiment helper exists");
+  assert.notEqual(helperEnd, -1, "smoke detail helper follows open experiment helper");
+  assert.ok(helperEnd > helperStart, "smoke helper source slice is ordered");
+  assert.match(openExperimentSource, /data-mc-experiment-action="edit"/);
+  assert.match(openExperimentSource, /data-mc-experiment-action="add"/);
+  assert.ok(
+    smokeMonteCarloSource.indexOf("openMonteCarloExperimentForRun") <
+      smokeMonteCarloSource.indexOf('data-mc-array-path="monteCarlo.failureRates"'),
+    "smoke must leave the Monte Carlo experiment list before filling sweep inputs"
+  );
+  assert.match(smokeSource, /data-mc-action="start"/);
+  assert.match(smokeSource, /function openMonteCarloExperimentForRun/);
+});
+
 test("analysis pages manage analysis tasks and can auto-create a bound monte carlo experiment", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const analysisSource = appSource.slice(
