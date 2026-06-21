@@ -403,6 +403,12 @@ class BackendApi:
     def get_run_status(self, run_id: str) -> dict[str, Any]:
         return self.run_service.get_run_status(run_id)
 
+    def subscribe_run_state_stream(self, run_id: str) -> dict[str, Any]:
+        try:
+            return self.run_service.subscribe_run_state_stream(run_id)
+        except RunServiceError as exc:
+            raise self._run_service_error_to_backend_error(exc) from exc
+
     def get_run_result(self, run_id: str) -> dict[str, Any]:
         return self.repository.get_result_summary_for_run(run_id)
 

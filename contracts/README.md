@@ -9,6 +9,7 @@ The files here are draft JSON Schema contracts for the application-facing bounda
 - `run.schema.json`: persisted run lifecycle record.
 - `result.schema.json`: metrics and summary returned from a Mesa-backed run.
 - `artifact_manifest.schema.json`: versioned index of run artifacts.
+- `visualization_state_series.schema.json`: M9.1 offline visualization replay frames, event references, and run/result/artifact traceability; M9.2 online `state_frame` SSE events reuse the same frame fields.
 - `scenario_adapter_mapping.json`: evaluator-visible mapping from compiled Scenario JSON input fields to Mesa constructor inputs.
 - `rms_allocation_plan.schema.json`: local RMS allocation plan boundary for top-level R/M/S targets, method selection, and algorithm versioning.
 - `rms_allocation_result.schema.json`: RMS allocation result boundary for node-level targets, bottom-up verification, warnings, and assumptions.
@@ -30,3 +31,7 @@ The first implemented Simulation Adapter lives at `src/spare_mvp_contract/adapte
 `result.schema.json` distinguishes `smoke` and `aviation_support` through `model_family`. It does not normalize aviation metrics into smoke metrics, because that would change metric semantics and must go through the Mesa governance process.
 
 Result fixture metrics are treated as Simulation Adapter normalized summaries derived from `src/spare_mvp_abm/smoke_model.py snapshot()` and `src/spare_mvp_abm/aviation_support/model.py snapshot()`. `visualization_state().metrics` remains a visualization surface and is not the Result schema source.
+
+M9.1 state-series replay is a separate visualization contract. `visualization_state_series.schema.json` requires each frame to carry run identity, typed aggregate state, event summaries, trace fields back to run config/input project/compiled Scenario/result/manifest artifacts, and event entries with `event_id`, `run_id`, `step`, `event_type`, and metric references.
+
+M9.2 online state stream is the run subscription envelope over that same frame contract. `GET /api/runs/{run_id}/state-stream` emits SSE events named `run_status`, `state_frame`, and `artifact_ready`; each `state_frame` carries the same frame shape as `visualization_state_series.frames[]` plus stream metadata such as `stream_id`, `artifact_id`, `frame_index`, and `frame_count`. `artifact_ready` hands the frontend back to canonical `/api/runs/{run_id}/artifacts/{artifact_id}` download and the normal `visualization_state_series` replay parser. Backend run controls remain outside this contract and are reserved for M9.3.

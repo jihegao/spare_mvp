@@ -241,6 +241,206 @@ class RunService:
     def get_run_status(self, run_id: str) -> dict[str, Any]:
         return self._status_from_run(self.repository.get_run(run_id))
 
+    def subscribe_run_state_stream(self, run_id: str) -> dict[str, Any]:
+        run = self.repository.get_run(run_id)
+        if run.get("lifecycle_status") == "deleted":
+            raise RunServiceError("run_deleted", "run is soft-deleted", run_id=run_id)
+        status = self._status_from_run(run)
+        manifest = self.repository.get_artifact_manifest_for_run(run_id)
+        artifact = next(
+            (item for item in manifest.get("artifacts", []) if item.get("kind") == "visualization_state_series"),
+            None,
+        )
+        if artifact is None:
+            raise RunServiceError(
+                "visualization_state_series_missing",
+                "visualization_state_series artifact is missing",
+                run_id=run_id,
+            )
+
+        payload = self._read_state_series_payload(run_id, artifact)
+        self._validate_state_series_payload_for_stream(run_id, artifact, payload)
+        frames = payload.get("frames")
+        if not isinstance(frames, list):
+            raise RunServiceError(
+                "visualization_state_series_invalid",
+                "visualization_state_series payload frames must be a list",
+                run_id=run_id,
+                artifact_id=artifact.get("artifact_id"),
+            )
+
+        events = [{"event_type": "run_status", "payload": status}]
+        frame_count = len(frames)
+        for frame_index, frame in enumerate(frames):
+            if not isinstance(frame, dict):
+                raise RunServiceError(
+                    "visualization_state_series_invalid",
+                    "visualization_state_series frame must be an object",
+                    run_id=run_id,
+                    artifact_id=artifact.get("artifact_id"),
+                    frame_index=frame_index,
+                )
+            events.append(
+                {
+                    "event_type": "state_frame",
+                    "payload": {
+                        "schema_version": "visualization-state-frame-v0",
+                        "stream_id": f"state-stream-{run_id}",
+                        "run_id": run_id,
+                        "artifact_id": artifact.get("artifact_id"),
+                        "scenario_id": payload.get("scenario_id"),
+                        "scenario_version": payload.get("scenario_version"),
+                        "model_family": payload.get("model_family"),
+                        "artifact_manifest_id": payload.get("artifact_manifest_id"),
+                        "result_summary_id": payload.get("result_summary_id"),
+                        "run_config_artifact_id": payload.get("run_config_artifact_id"),
+                        "input_project_artifact_id": payload.get("input_project_artifact_id"),
+                        "compiled_scenario_artifact_id": payload.get("compiled_scenario_artifact_id"),
+                        "step": frame.get("step"),
+                        "frame_index": frame_index,
+                        "frame_count": frame_count,
+                        "frame": copy.deepcopy(frame),
+                    },
+                }
+            )
+        events.append(
+            {
+                "event_type": "artifact_ready",
+                "payload": {
+                    "run_id": run_id,
+                    "artifact_id": artifact.get("artifact_id"),
+                    "kind": artifact.get("kind"),
+                    "schema_version": artifact.get("schema_version"),
+                },
+            }
+        )
+        return {
+            "stream_id": f"state-stream-{run_id}",
+            "run_id": run_id,
+            "status": status,
+            "artifact_id": artifact.get("artifact_id"),
+            "events": events,
+        }
+
+    def _read_state_series_payload(self, run_id: str, artifact: dict[str, Any]) -> dict[str, Any]:
+        relative_path = Path(str(artifact.get("path") or ""))
+        if relative_path.is_absolute() or ".." in relative_path.parts:
+            raise RunServiceError(
+                "artifact_path_escape",
+                "visualization_state_series artifact path escapes output directory",
+                run_id=run_id,
+                artifact_id=artifact.get("artifact_id"),
+            )
+        output_root = self.output_dir.resolve()
+        target = (output_root / relative_path).resolve()
+        if output_root not in target.parents and target != output_root:
+            raise RunServiceError(
+                "artifact_path_escape",
+                "visualization_state_series artifact path escapes output directory",
+                run_id=run_id,
+                artifact_id=artifact.get("artifact_id"),
+            )
+        if not target.is_file():
+            raise RunServiceError(
+                "artifact_missing",
+                "visualization_state_series artifact file is missing",
+                run_id=run_id,
+                artifact_id=artifact.get("artifact_id"),
+            )
+        try:
+            payload = json.loads(target.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            raise RunServiceError(
+                "visualization_state_series_invalid",
+                "visualization_state_series payload must be valid JSON",
+                run_id=run_id,
+                artifact_id=artifact.get("artifact_id"),
+            ) from exc
+        if not isinstance(payload, dict):
+            raise RunServiceError(
+                "visualization_state_series_invalid",
+                "visualization_state_series payload must be an object",
+                run_id=run_id,
+                artifact_id=artifact.get("artifact_id"),
+            )
+        if payload.get("run_id") != run_id:
+            raise RunServiceError(
+                "visualization_state_series_run_mismatch",
+                "visualization_state_series payload run_id does not match requested run",
+                run_id=run_id,
+                artifact_id=artifact.get("artifact_id"),
+                payload_run_id=payload.get("run_id"),
+            )
+        return payload
+
+    def _validate_state_series_payload_for_stream(
+        self,
+        run_id: str,
+        artifact: dict[str, Any],
+        payload: dict[str, Any],
+    ) -> None:
+        if payload.get("schema_version") != "visualization-state-series-v0":
+            raise _state_series_invalid(run_id, artifact, "visualization_state_series schema_version is invalid")
+        for field in (
+            "scenario_id",
+            "scenario_version",
+            "model_family",
+            "artifact_manifest_id",
+            "result_summary_id",
+            "run_config_artifact_id",
+            "input_project_artifact_id",
+            "compiled_scenario_artifact_id",
+        ):
+            if not isinstance(payload.get(field), str) or not payload.get(field):
+                raise _state_series_invalid(run_id, artifact, f"visualization_state_series {field} is required")
+        frames = payload.get("frames")
+        if not isinstance(frames, list) or not frames:
+            raise _state_series_invalid(run_id, artifact, "visualization_state_series frames must be a non-empty list")
+        previous_step = -1
+        for frame_index, frame in enumerate(frames):
+            if not isinstance(frame, dict):
+                raise _state_series_invalid(run_id, artifact, "visualization_state_series frame must be an object", frame_index)
+            if frame.get("run_id") != run_id:
+                raise _state_series_invalid(run_id, artifact, "visualization_state_series frame run_id mismatch", frame_index)
+            step = frame.get("step")
+            if not isinstance(step, int) or step < 0 or step < previous_step:
+                raise _state_series_invalid(run_id, artifact, "visualization_state_series frame step is invalid", frame_index)
+            previous_step = step
+            if not isinstance(frame.get("simulation_time"), (int, float)) or frame.get("simulation_time") < 0:
+                raise _state_series_invalid(run_id, artifact, "visualization_state_series frame simulation_time is invalid", frame_index)
+            for field in ("trace", "aircraft_state", "mission_state", "resource_state", "event_summary"):
+                if not isinstance(frame.get(field), dict):
+                    raise _state_series_invalid(run_id, artifact, f"visualization_state_series frame {field} is required", frame_index)
+            for field in ("aircraft", "missions", "resources", "spares", "jobs", "events"):
+                if not isinstance(frame.get(field), list):
+                    raise _state_series_invalid(run_id, artifact, f"visualization_state_series frame {field} must be a list", frame_index)
+            trace = frame["trace"]
+            expected_trace = {
+                "run_id": run_id,
+                "scenario_id": payload["scenario_id"],
+                "scenario_version": payload["scenario_version"],
+                "result_summary_id": payload["result_summary_id"],
+                "artifact_manifest_id": payload["artifact_manifest_id"],
+                "run_config_artifact_id": payload["run_config_artifact_id"],
+                "input_project_artifact_id": payload["input_project_artifact_id"],
+                "compiled_scenario_artifact_id": payload["compiled_scenario_artifact_id"],
+            }
+            for field, expected in expected_trace.items():
+                if trace.get(field) != expected:
+                    raise _state_series_invalid(run_id, artifact, f"visualization_state_series frame trace {field} mismatch", frame_index)
+            for event_index, event in enumerate(frame["events"]):
+                if not isinstance(event, dict):
+                    raise _state_series_invalid(run_id, artifact, "visualization_state_series event must be an object", frame_index)
+                for field in ("event_id", "event", "event_type", "message"):
+                    if not isinstance(event.get(field), str) or not event.get(field):
+                        raise _state_series_invalid(run_id, artifact, f"visualization_state_series event {field} is required", frame_index)
+                if event.get("run_id") != run_id or event.get("step") != step:
+                    raise _state_series_invalid(run_id, artifact, f"visualization_state_series event {event_index} identity mismatch", frame_index)
+                if not isinstance(event.get("time"), (int, float)) or event.get("time") < 0:
+                    raise _state_series_invalid(run_id, artifact, f"visualization_state_series event {event_index} time is invalid", frame_index)
+                if not isinstance(event.get("metric_refs"), list):
+                    raise _state_series_invalid(run_id, artifact, f"visualization_state_series event {event_index} metric_refs must be a list", frame_index)
+
     def _persist_failed_run(
         self,
         *,
@@ -480,6 +680,18 @@ class RunService:
         run_dir.mkdir(parents=True, exist_ok=True)
         target = run_dir / "artifact-manifest.json"
         target.write_text(json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def _state_series_invalid(
+    run_id: str,
+    artifact: dict[str, Any],
+    message: str,
+    frame_index: int | None = None,
+) -> RunServiceError:
+    details: dict[str, Any] = {"run_id": run_id, "artifact_id": artifact.get("artifact_id")}
+    if frame_index is not None:
+        details["frame_index"] = frame_index
+    return RunServiceError("visualization_state_series_invalid", message, **details)
 
 
 def _phase_from_status(status: str) -> str:

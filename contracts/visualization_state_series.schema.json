@@ -1,0 +1,167 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spare-mvp.local/contracts/visualization_state_series.schema.json",
+  "title": "Spare MVP Visualization State Series",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "run_id",
+    "scenario_id",
+    "scenario_version",
+    "model_family",
+    "artifact_manifest_id",
+    "result_summary_id",
+    "run_config_artifact_id",
+    "input_project_artifact_id",
+    "compiled_scenario_artifact_id",
+    "frames"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "const": "visualization-state-series-v0" },
+    "run_id": { "type": "string" },
+    "scenario_id": { "type": "string" },
+    "scenario_version": { "type": "string" },
+    "model_family": { "type": "string" },
+    "artifact_manifest_id": { "type": "string" },
+    "result_summary_id": { "type": "string" },
+    "run_config_artifact_id": { "type": "string" },
+    "input_project_artifact_id": { "type": "string" },
+    "compiled_scenario_artifact_id": { "type": "string" },
+    "frames": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/frame" }
+    }
+  },
+  "$defs": {
+    "frame": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "run_id",
+        "step",
+        "simulation_time",
+        "trace",
+        "aircraft_state",
+        "mission_state",
+        "resource_state",
+        "event_summary",
+        "aircraft",
+        "missions",
+        "resources",
+        "spares",
+        "jobs",
+        "events"
+      ],
+      "properties": {
+        "run_id": { "type": "string" },
+        "step": { "type": "integer", "minimum": 0 },
+        "simulation_time": { "type": "number", "minimum": 0 },
+        "sample_index": { "type": "integer", "minimum": 0 },
+        "sample_step": { "type": "integer", "minimum": 0 },
+        "seed": { "type": "integer" },
+        "sweep": { "type": "object" },
+        "trace": { "$ref": "#/$defs/frame_trace" },
+        "aircraft_state": { "$ref": "#/$defs/aircraft_state" },
+        "mission_state": { "$ref": "#/$defs/mission_state" },
+        "resource_state": { "$ref": "#/$defs/resource_state" },
+        "event_summary": { "$ref": "#/$defs/event_summary" },
+        "aircraft": { "type": "array", "items": { "type": "object" } },
+        "missions": { "type": "array", "items": { "type": "object" } },
+        "resources": { "type": "array", "items": { "type": "object" } },
+        "spares": { "type": "array", "items": { "type": "object" } },
+        "jobs": { "type": "array", "items": { "type": "object" } },
+        "events": { "type": "array", "items": { "$ref": "#/$defs/event" } }
+      }
+    },
+    "frame_trace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "run_id",
+        "scenario_id",
+        "scenario_version",
+        "result_summary_id",
+        "artifact_manifest_id",
+        "run_config_artifact_id",
+        "input_project_artifact_id",
+        "compiled_scenario_artifact_id"
+      ],
+      "properties": {
+        "run_id": { "type": "string" },
+        "scenario_id": { "type": "string" },
+        "scenario_version": { "type": "string" },
+        "result_summary_id": { "type": "string" },
+        "artifact_manifest_id": { "type": "string" },
+        "run_config_artifact_id": { "type": "string" },
+        "input_project_artifact_id": { "type": "string" },
+        "compiled_scenario_artifact_id": { "type": "string" }
+      }
+    },
+    "aircraft_state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ready_rate", "failed_count", "repairing_count", "sortie_count"],
+      "properties": {
+        "ready_rate": { "type": "number" },
+        "failed_count": { "type": "number" },
+        "repairing_count": { "type": "number" },
+        "sortie_count": { "type": "number" }
+      }
+    },
+    "mission_state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mission_success_rate", "sortie_rate", "mean_launch_time", "mean_recovery_time", "mean_turnaround_time"],
+      "properties": {
+        "mission_success_rate": { "type": "number" },
+        "sortie_rate": { "type": "number" },
+        "mean_launch_time": { "type": "number" },
+        "mean_recovery_time": { "type": "number" },
+        "mean_turnaround_time": { "type": "number" }
+      }
+    },
+    "resource_state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["spare_fill_rate", "spare_utilization", "repair_backlog"],
+      "properties": {
+        "spare_fill_rate": { "type": "number" },
+        "spare_utilization": { "type": "number" },
+        "repair_backlog": { "type": "number" }
+      }
+    },
+    "event_summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "shortage_events",
+        "downtime_failure_events",
+        "downtime_spare_shortage_events",
+        "downtime_resource_delay_events"
+      ],
+      "properties": {
+        "shortage_events": { "type": "number" },
+        "downtime_failure_events": { "type": "number" },
+        "downtime_spare_shortage_events": { "type": "number" },
+        "downtime_resource_delay_events": { "type": "number" }
+      }
+    },
+    "event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["event_id", "run_id", "step", "time", "event", "event_type", "message", "metric_refs"],
+      "properties": {
+        "event_id": { "type": "string" },
+        "run_id": { "type": "string" },
+        "step": { "type": "integer", "minimum": 0 },
+        "time": { "type": "number", "minimum": 0 },
+        "event": { "type": "string" },
+        "event_type": { "type": "string" },
+        "message": { "type": "string" },
+        "metric_refs": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  }
+}

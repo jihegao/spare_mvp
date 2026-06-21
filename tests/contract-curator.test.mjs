@@ -10,6 +10,7 @@ const contractFiles = [
   "run.schema.json",
   "result.schema.json",
   "artifact_manifest.schema.json",
+  "visualization_state_series.schema.json",
 ];
 
 const M6_2_SIMULATION_EXPERIMENT_BASE_FIELDS = [
@@ -204,6 +205,55 @@ test("M6.2 artifact manifest schema accepts monte carlo base and four analysis p
   assert.ok(artifactSchema.properties.artifacts.items.allOf?.length >= 4, "projection artifacts must conditionally require provenance fields");
 });
 
+test("M9.1 visualization state-series schema validates traceable frame events", async () => {
+  const schema = await readJson("contracts/visualization_state_series.schema.json");
+  const fixture = await readJson("tests/fixtures/smoke_visualization_state_series.json");
+
+  assert.deepEqual(validateSchema(schema, fixture), []);
+  assert.equal(fixture.schema_version, "visualization-state-series-v0");
+  assert.equal(fixture.frames[0].run_id, fixture.run_id);
+  assert.ok(fixture.frames.every((frame, index) => frame.step === index), "fixture steps must be monotonic and contiguous");
+
+  for (const frame of fixture.frames) {
+    assert.equal(frame.trace.run_id, fixture.run_id);
+    assert.equal(frame.trace.scenario_id, fixture.scenario_id);
+    assert.equal(frame.trace.result_summary_id, fixture.result_summary_id);
+    assert.equal(frame.trace.artifact_manifest_id, fixture.artifact_manifest_id);
+    assert.ok(frame.events.every((event) => event.event_id && event.run_id === fixture.run_id && event.step === frame.step));
+  }
+});
+
+test("M9.1 artifact manifest schema requires state-series artifact provenance", async () => {
+  const artifactSchema = await readJson("contracts/artifact_manifest.schema.json");
+  const manifest = {
+    schema_version: "artifact-manifest-v0",
+    artifact_manifest_id: "artifact-manifest-run-state-series-contract",
+    run_id: "run-state-series-contract",
+    scenario_id: "scenario-state-series-contract",
+    scenario_version: "scenario-v0.1",
+    artifacts: [
+      {
+        artifact_id: "visualization_state_series-run-state-series-contract",
+        kind: "visualization_state_series",
+        path: "run-state-series-contract/visualization-state-series.json",
+        media_type: "application/json",
+        sha256: "3".repeat(64),
+        size_bytes: 4096,
+        schema_version: "visualization-state-series-v0",
+        source_run_id: "run-state-series-contract",
+        source_result_summary_id: "result-run-state-series-contract",
+        source_scenario_id: "scenario-state-series-contract"
+      }
+    ]
+  };
+
+  assert.deepEqual(validateSchema(artifactSchema, manifest), []);
+
+  delete manifest.artifacts[0].source_run_id;
+  const errors = validateSchema(artifactSchema, manifest);
+  assert.ok(errors.some((error) => error.includes("source_run_id is required")));
+});
+
 test("M6.2 formal monte carlo manifest fixture shape validates against artifact schema", async () => {
   const artifactSchema = await readJson("contracts/artifact_manifest.schema.json");
   const manifest = {
@@ -296,6 +346,7 @@ test("minimal contract fixtures validate against their schemas", async () => {
     ["contracts/run.schema.json", "tests/fixtures/smoke_run.json"],
     ["contracts/result.schema.json", "tests/fixtures/smoke_result.json"],
     ["contracts/artifact_manifest.schema.json", "tests/fixtures/smoke_artifact_manifest.json"],
+    ["contracts/visualization_state_series.schema.json", "tests/fixtures/smoke_visualization_state_series.json"],
     ["contracts/project.schema.json", "tests/fixtures/aviation_support_project.json"],
     ["contracts/scenario.schema.json", "tests/fixtures/aviation_support_scenario.json"],
     ["contracts/run.schema.json", "tests/fixtures/aviation_support_run.json"],

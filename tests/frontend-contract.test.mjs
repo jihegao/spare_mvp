@@ -2299,10 +2299,102 @@ test("visual simulation consumes the Mesa contract provider with demo fallback",
   // 数据源指向契约服务 8521，服务不可用时回退演示快照
   assert.match(appSource, /const CONTRACT_BASE = "http:\/\/127\.0\.0\.1:8521"/);
   assert.match(appSource, /fetch\(`\$\{CONTRACT_BASE\}\/visualization/);
-  assert.match(appSource, /liveAviationState \|\| AVIATION_SUPPORT_DEMO_STATE/);
+  assert.match(appSource, /visualizationStateSeriesFrame \|\| liveAviationState \|\| AVIATION_SUPPORT_DEMO_STATE/);
   assert.match(appSource, /aviationSource = "live"/);
   assert.match(appSource, /aviationSource = "demo"/);
-  // 运行 / 单步 / 重置 驱动契约请求
+  // 无正式 state-series 时，运行 / 单步 / 重置 仍可驱动契约演示请求。
   assert.match(appSource, /data-mesa-control/);
   assert.match(appSource, /loadAviationSupportState\(\)/);
+});
+
+test("M9 visual simulation replays canonical state-series artifacts without backend control", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const replaySource = await readFile(new URL("../front/state-series-replay.mjs", import.meta.url), "utf8");
+  const refreshSource = appSource.slice(
+    appSource.indexOf("async function refreshRunResultThroughApi"),
+    appSource.indexOf("async function hydrateLastBackendRunFromApi")
+  );
+  const visualSource = appSource.slice(
+    appSource.indexOf("function renderVisualSimulation"),
+    appSource.indexOf("function mesaTab")
+  );
+  const controlSource = appSource.slice(
+    appSource.indexOf('const mesaControlButton = event.target.closest("[data-mesa-control]")'),
+    appSource.indexOf('const modelingImportActionButton = event.target.closest("[data-modeling-import-action]")')
+  );
+  const controlHandlerSource = appSource.slice(
+    appSource.indexOf("async function handleMesaControl"),
+    appSource.indexOf("async function loadAviationSupportState")
+  );
+  const eventHandlerSource = appSource.slice(
+    appSource.indexOf('const mesaEventJumpButton = event.target.closest("[data-mesa-event-jump]")'),
+    appSource.indexOf('const modelingImportActionButton = event.target.closest("[data-modeling-import-action]")')
+  );
+
+  assert.match(appSource, /findVisualizationStateSeriesArtifact/);
+  assert.match(appSource, /normalizeVisualizationStateSeriesPayload/);
+  assert.match(appSource, /frameAt\(visualizationStateSeries/);
+  assert.match(refreshSource, /await refreshVisualizationStateSeries\(runId\)/);
+  assert.match(replaySource, /visualization_state_series/);
+  assert.match(replaySource, /schema_version: String\(payload\.schema_version \|\| STATE_SERIES_SCHEMA_VERSION\)/);
+  assert.match(visualSource, /run_id/);
+  assert.match(visualSource, /artifact_id/);
+  assert.match(visualSource, /data-mesa-timeline/);
+  assert.match(visualSource, /data-mesa-event-stream/);
+  assert.match(visualSource, /data-mesa-event-jump/);
+  assert.match(controlHandlerSource, /nextReplayIndex\(visualizationStateSeries/);
+  assert.match(controlHandlerSource, /visualizationReplayPlaying = !visualizationReplayPlaying/);
+  assert.match(eventHandlerSource, /stopVisualizationReplay\(\)/);
+  assert.match(eventHandlerSource, /visualizationReplayIndex = Number\(mesaEventJumpButton\.dataset\.mesaEventJump\)/);
+  assert.doesNotMatch(controlSource, /loadAviationSupportState\(\)/);
+});
+
+test("M9.2 visual simulation subscribes to run state stream and keeps unsupported controls explicit", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const replaySource = await readFile(new URL("../front/state-series-replay.mjs", import.meta.url), "utf8");
+  const visualSource = appSource.slice(
+    appSource.indexOf("function renderVisualSimulation"),
+    appSource.indexOf("function mesaTab")
+  );
+  const controlHandlerSource = appSource.slice(
+    appSource.indexOf("async function handleMesaControl"),
+    appSource.indexOf("async function loadAviationSupportState")
+  );
+
+  assert.match(replaySource, /mergeVisualizationStateStreamFrame/);
+  assert.match(appSource, /new EventSource/);
+  assert.match(appSource, /\/api\/runs\/\$\{encodeURIComponent\(runId\)\}\/state-stream/);
+  assert.match(appSource, /state_frame/);
+  assert.match(appSource, /artifact_ready/);
+  assert.match(visualSource, /data-mesa-control="subscribe-run"/);
+  assert.match(visualSource, /data-mesa-control="stop-subscription"/);
+  assert.match(visualSource, /data-mesa-stream-status/);
+  assert.match(visualSource, /在线状态流/);
+  assert.match(appSource, /订阅已连接/);
+  assert.match(appSource, /订阅断开，浏览器将尝试重连/);
+  assert.match(appSource, /订阅未授权/);
+  assert.match(appSource, /订阅失败/);
+  assert.match(appSource, /最终 artifact 已生成，正在切换到离线回放/);
+  assert.match(controlHandlerSource, /isVisualizationStateSeriesFromStream\(\)/);
+  assert.match(controlHandlerSource, /后端暂停、单步和重置属于 M9\.3/);
+  assert.doesNotMatch(controlHandlerSource, /readyState === EventSource\.CLOSED && !visualizationStreamState\.eventCount/);
+});
+
+test("M9.2 docs describe online state stream as current scope while preserving later non-goals", async () => {
+  const docs = {
+    readme: await readFile(new URL("../README.md", import.meta.url), "utf8"),
+    docsReadme: await readFile(new URL("../docs/README.md", import.meta.url), "utf8"),
+    roadmap: await readFile(new URL("../docs/product-roadmap.md", import.meta.url), "utf8"),
+    agent: await readFile(new URL("../agent.md", import.meta.url), "utf8"),
+    contracts: await readFile(new URL("../contracts/README.md", import.meta.url), "utf8")
+  };
+  const combined = Object.values(docs).join("\n");
+
+  assert.match(combined, /\/api\/runs\/\{run_id\}\/state-stream/);
+  assert.match(combined, /M9\.2[^。]*在线状态流[^。]*已/);
+  assert.match(combined, /M9\.3[^。]*(后端运行控制|运行控制)/);
+  assert.match(combined, /production worker queue|生产 worker queue|生产级 worker/);
+  assert.doesNotMatch(combined, /M9\.2\+ 在线状态流[^。]*(仍|留给|后续|未实现)/);
+  assert.doesNotMatch(combined, /M9\.2 在线状态流[^。]*(仍未实现|未实现|后续范围)/);
+  assert.doesNotMatch(combined, /不实现 M9\.2\+ 在线状态流/);
 });
