@@ -304,6 +304,8 @@ M6.2 当前收束：统一 Monte Carlo / analysis profile 已落地为同步本�
 
 M6.2 后续收敛切片已完成：`docs/superpowers/plans/2026-06-20-runintent-mc-config-imported-sample-project.md` 记录了 RunIntent、MonteCarloRunConfig 和 imported sample Project 的实施边界。正式运行入口已收敛为 `RunIntent -> /api/runs -> RunService -> artifacts`；正式 Monte Carlo 数值配置只允许从 `ExperimentPlan.config.analysisRequests.largeSample` 生成 `MonteCarloRunConfig`，request-level MC numeric config 会被拒绝；Adapter 不再从 Project draft 或 legacy request params 猜测 MC sweep，缺少 normalized config 或收到 legacy params 时 fail closed；页面可从 modeling import 生成示例 Project draft，默认入口会在没有已发布包时先保存并发布示例导入包。`/api/runs` formal gate 基于持久 Project JSON 的 `missionProfile.sourceImportId`、已发布 import/projectId 匹配和 `modeling_import.create_project` allowed 审计记录 fail-closed，手工伪造来源不能进入正式 run；旧 `/api/simulation-runs` 仍保留为 preview/legacy 兼容路径。`defaultScenario`、`runSimulation` 和 `runMonteCarlo` 仍可作为离线 fixture、本地预览和测试 fallback，但不能作为正式结果来源。该收束仍不是生产 worker queue、object storage、取消/重试、长期 artifact storage、`aviation_support` 正式执行；分析 KPI 完全由 projection payload 驱动留给 M8，可视化状态帧完全由 M9 state stream 或 run state series 驱动留给 M9。
 
+M6.2.x 当前推进：`docs/superpowers/plans/2026-06-21-imported-json-single-source-static-data-exit.md` 记录前台静态业务数据退场计划。在进入 M7 运行/产物管理前，先把前台建模和正式 run 功能测试的业务样例源收敛到 `tests/fixtures/modeling_import_project.json`。页面缺少 imported JSON 数据时必须显示空态或创建入口，不能由前端静态常量偷偷补出任务、装备、保障组织、保障活动或 Monte Carlo 配置；完整 JSON 导入后页面应显示 JSON 中的数据并可创建 imported sample Project。该切片只治理建模/运行输入源，不实现 M8 projection payload 驱动 KPI，也不实现 M9 state stream。
+
 核心能力：
 
 1. 单次仿真。
