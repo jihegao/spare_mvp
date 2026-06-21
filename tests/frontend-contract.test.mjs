@@ -762,6 +762,7 @@ test("equipment tree selection drives the selected component edit path", async (
 
 test("equipment tree add node follows ship front selected aircraft and subsystem behavior", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const equipmentModelSource = await readFile(new URL("../front/equipment-tree-model.mjs", import.meta.url), "utf8");
   const equipmentSource = appSource.slice(
     appSource.indexOf("function renderEquipmentModeling"),
     appSource.indexOf("function renderEquipmentFailureRmsFields")
@@ -769,37 +770,40 @@ test("equipment tree add node follows ship front selected aircraft and subsystem
   assert.match(equipmentSource, /data-equipment-add-node/);
   assert.match(equipmentSource, /function buildEquipmentTreeNodes\(\)/);
   assert.match(equipmentSource, /function buildEquipmentComponentTreeNodes\(aircraftModel, parentId\)/);
-  assert.match(equipmentSource, /const visitedIds = new Set\(visited\)/);
-  assert.match(equipmentSource, /componentId !== String\(parentId\)/);
-  assert.match(equipmentSource, /!visitedIds\.has\(componentId\)/);
+  assert.match(equipmentSource, /buildEquipmentComponentTreeModel\(\{ scenario, aircraftModel, parentId \}\)/);
+  assert.match(equipmentModelSource, /const visitedIds = new Set\(visited\)/);
+  assert.match(equipmentModelSource, /componentId !== String\(currentParentId\)/);
+  assert.match(equipmentModelSource, /!visitedIds\.has\(componentId\)/);
   assert.match(appSource, /function addEquipmentNodeForSelection\(\)/);
-  assert.match(appSource, /parentId: selectedState\.kind === "aircraft" \? "aircraft-root" : selectedState\.component\.id/);
-  assert.match(appSource, /productType: selectedState\.kind === "aircraft" \? "非LRU" : "LRU"/);
-  assert.match(appSource, /selectedEquipmentNodeKey = `component:\$\{newComponent\.id\}`/);
+  assert.match(appSource, /addEquipmentNodeForSelectionModel\(\{ scenario, selection: selectedState \}\)/);
+  assert.match(equipmentModelSource, /parentId = selectedState\.kind === "aircraft" \? "aircraft-root" : selectedState\.component\.id/);
+  assert.match(equipmentModelSource, /productType: selectedState\.kind === "aircraft" \? "非LRU" : "LRU"/);
+  assert.match(equipmentModelSource, /selectedEquipmentNodeKey: `component:\$\{newComponent\.id\}`/);
 });
 
 test("equipment tree root aircraft list can add aircraft before subsystem nodes", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const equipmentModelSource = await readFile(new URL("../front/equipment-tree-model.mjs", import.meta.url), "utf8");
   const equipmentSource = appSource.slice(
     appSource.indexOf("function renderEquipmentModeling"),
     appSource.indexOf("function renderEquipmentFailureRmsFields")
   );
-  const resolveSource = appSource.slice(
-    appSource.indexOf("function resolveSelectedEquipmentNode"),
-    appSource.indexOf("function clampEquipmentComponentIndex")
+  const resolveSource = equipmentModelSource.slice(
+    equipmentModelSource.indexOf("export function resolveEquipmentSelectionModel"),
+    equipmentModelSource.indexOf("export function addEquipmentNodeForSelectionModel")
   );
   const zeroAircraftIndex = resolveSource.indexOf("if (!models.length) return { kind: \"aircraft-list\" };");
-  const componentFallbackIndex = resolveSource.indexOf("const componentIndex = clampEquipmentComponentIndex");
+  const componentFallbackIndex = resolveSource.indexOf("const componentIndex = clampIndex");
 
   assert.match(equipmentSource, /label: "飞机列表"/);
   assert.match(equipmentSource, /data-select-equipment-root/);
   assert.match(appSource, /selectedEquipmentNodeKey = "aircraft-list"/);
-  assert.match(appSource, /kind: "aircraft-list"/);
+  assert.match(equipmentModelSource, /kind: "aircraft-list"/);
   assert.ok(zeroAircraftIndex >= 0, "zero-aircraft imported samples must resolve to the aircraft-list target");
   assert.ok(zeroAircraftIndex < componentFallbackIndex, "zero-aircraft guard must run before component fallback");
-  assert.match(appSource, /function addEquipmentAircraftForSelection\(\)/);
-  assert.match(appSource, /scenario\.equipment\.wholeMachineModels\.push\(aircraftModel\)/);
-  assert.match(appSource, /selectedEquipmentNodeKey = `aircraft:\$\{aircraftModel\}`/);
+  assert.match(equipmentModelSource, /function addEquipmentAircraftForSelectionModel\(scenario\)/);
+  assert.match(equipmentModelSource, /scenario\.equipment\.wholeMachineModels\.push\(aircraftModel\)/);
+  assert.match(equipmentModelSource, /selectedEquipmentNodeKey: `aircraft:\$\{aircraftModel\}`/);
   assert.match(appSource, /选中飞机列表新增飞机，选中飞机新增分系统，选中分系统新增子系统/);
   assert.match(appSource, /<label>数量<input readonly value=/);
   assert.doesNotMatch(appSource, /整机数量<input readonly value=/);
@@ -1548,9 +1552,10 @@ test("project creation from modeling import uses the current or passed import id
     appSource.indexOf("async function enterProject")
   );
 
-  assert.match(clickSource, /createSampleProjectFromPublishedImport\(currentPublishedModelingImportId\(\) \|\| MODELING_IMPORT_DEMO_FIXTURE\.importId\)/);
+  assert.match(clickSource, /createSampleProjectFromPublishedImport\(currentPublishedModelingImportId\(\)\)/);
   assert.match(createSource, /async function createSampleProjectFromPublishedImport\(importId/);
-  assert.match(createSource, /backendApi\.createProjectFromModelingImport\(importId\)/);
+  assert.match(createSource, /ensurePublishedModelingImportForSampleProject/);
+  assert.match(createSource, /backendApi\.createProjectFromModelingImport\(resolvedImportId\)/);
   assert.doesNotMatch(createSource, /createProjectFromModelingImport\(MODELING_IMPORT_DEMO_FIXTURE\.importId\)/);
 });
 
@@ -1591,7 +1596,7 @@ test("project list separates imported sample projects from preview fixtures", as
   assert.match(projectListSource, /projectSourceBadge\(project\)/);
   assert.match(projectListSource, /projectSourceHelpText\(project\)/);
   assert.match(createSource, /sourceKind: PROJECT_SOURCE\.imported_sample/);
-  assert.match(createSource, /sourceImportId: created\.sourceImport\?\.import_id \|\| importId/);
+  assert.match(createSource, /sourceImportId: created\.sourceImport\?\.import_id \|\| resolvedImportId/);
   assert.match(createSource, /name: projectJson\.experiment\?\.name \|\| "导入示例项目"/);
   assert.doesNotMatch(createSource, /name: projectJson\.missionProfile\?\.sourceImportId \|\| projectJson\.experiment\?\.name/);
   assert.match(createSource, /projectListStatus = `已从导入数据生成示例项目：\$\{project\.name\}；可用于正式后端测试`;/);

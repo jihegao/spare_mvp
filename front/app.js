@@ -31,6 +31,14 @@ import {
   renderModelingImportWorkbench
 } from "./modeling-import-workbench.mjs";
 import { MODELING_IMPORT_DEMO_FIXTURE } from "./modeling-import-demo-fixture.mjs";
+import { ensurePublishedModelingImportForSampleProject } from "./modeling-import-project-flow.mjs";
+import {
+  addEquipmentNodeForSelectionModel,
+  buildEquipmentComponentTreeModel,
+  componentBelongsToAircraftModel,
+  resolveEquipmentSelectionModel,
+  wholeMachineModelsForScenario
+} from "./equipment-tree-model.mjs";
 
 const app = document.querySelector("#app");
 const groups = groupFeaturePages(FEATURE_PAGES);
@@ -600,7 +608,7 @@ function bindEvents() {
 
     const createFromImportButton = event.target.closest("[data-project-create-from-import]");
     if (createFromImportButton) {
-      createSampleProjectFromPublishedImport(currentPublishedModelingImportId() || MODELING_IMPORT_DEMO_FIXTURE.importId).finally(() => render());
+      createSampleProjectFromPublishedImport(currentPublishedModelingImportId()).finally(() => render());
       return;
     }
 
@@ -2769,43 +2777,23 @@ function buildEquipmentTreeNodes() {
 }
 
 function buildEquipmentComponentTreeNodes(aircraftModel, parentId) {
-  const buildChildren = (parentId, visited = new Set()) => {
-    const visitedIds = new Set(visited);
-    return (scenario.components || [])
-      .filter((component) => {
-        const componentId = String(component.id || "");
-        return componentId
-          && componentId !== String(parentId)
-          && !visitedIds.has(componentId)
-          && componentBelongsToAircraft(component, aircraftModel)
-          && String(component.parentId || "aircraft-root") === parentId;
-      })
-      .map((component) => {
-        const componentId = String(component.id || "");
-        const nextVisited = new Set(visitedIds);
-        nextVisited.add(componentId);
-        return {
-          id: `equipment-component:${aircraftModel}:${component.id || component.name}`,
-          label: component.name,
-          meta: `${component.quantity} 件 / ${component.connectionType}`,
-          selected: selectedEquipmentNodeKey === `component:${component.id}`,
-          actionAttrs: `data-select-equipment-component="${htmlEscape(component.id)}"`,
-          children: buildChildren(component.id, nextVisited)
-        };
-      });
-  };
-  return buildChildren(parentId);
+  const toTreeNode = ({ component, children }) => ({
+    id: `equipment-component:${aircraftModel}:${component.id || component.name}`,
+    label: component.name,
+    meta: `${component.quantity} 件 / ${component.connectionType}`,
+    selected: selectedEquipmentNodeKey === `component:${component.id}`,
+    actionAttrs: `data-select-equipment-component="${htmlEscape(component.id)}"`,
+    children: children.map(toTreeNode)
+  });
+  return buildEquipmentComponentTreeModel({ scenario, aircraftModel, parentId }).map(toTreeNode);
 }
 
 function wholeMachineModels() {
-  const models = Array.isArray(scenario.equipment.wholeMachineModels) && scenario.equipment.wholeMachineModels.length
-    ? scenario.equipment.wholeMachineModels
-    : [scenario.equipment.model];
-  return Array.from(new Set(models.filter(Boolean)));
+  return wholeMachineModelsForScenario(scenario);
 }
 
 function componentBelongsToAircraft(component, aircraftModel) {
-  return !component.aircraftModel || String(component.aircraftModel) === String(aircraftModel);
+  return componentBelongsToAircraftModel(component, aircraftModel);
 }
 
 function findEquipmentComponentIndexById(componentId) {
@@ -2813,28 +2801,15 @@ function findEquipmentComponentIndexById(componentId) {
 }
 
 function resolveSelectedEquipmentNode() {
-  const models = wholeMachineModels();
-  if (!models.length) return { kind: "aircraft-list" };
-  if (selectedEquipmentNodeKey === "aircraft-list") {
-    return { kind: "aircraft-list" };
+  const selection = resolveEquipmentSelectionModel({
+    scenario,
+    selectedEquipmentNodeKey,
+    selectedEquipmentComponentIndex
+  });
+  if (selection.selectedEquipmentNodeKey) {
+    selectedEquipmentNodeKey = selection.selectedEquipmentNodeKey;
   }
-  if (selectedEquipmentNodeKey.startsWith("aircraft:")) {
-    const aircraftModel = selectedEquipmentNodeKey.slice("aircraft:".length);
-    if (models.includes(aircraftModel)) return { kind: "aircraft", aircraftModel };
-  }
-  if (selectedEquipmentNodeKey.startsWith("component:")) {
-    const componentId = selectedEquipmentNodeKey.slice("component:".length);
-    const componentIndex = findEquipmentComponentIndexById(componentId);
-    const component = scenario.components[componentIndex];
-    if (component) return { kind: "component", component, componentIndex, aircraftModel: component.aircraftModel || models[0] || "" };
-  }
-  const componentIndex = clampEquipmentComponentIndex(selectedEquipmentComponentIndex);
-  const component = scenario.components[componentIndex];
-  if (component) {
-    selectedEquipmentNodeKey = `component:${component.id}`;
-    return { kind: "component", component, componentIndex, aircraftModel: component.aircraftModel || models[0] || "" };
-  }
-  return { kind: "aircraft", aircraftModel: models[0] || "" };
+  return selection;
 }
 
 function clampEquipmentComponentIndex(index) {
@@ -2843,63 +2818,12 @@ function clampEquipmentComponentIndex(index) {
 
 function addEquipmentNodeForSelection() {
   const selectedState = resolveSelectedEquipmentNode();
-  if (selectedState.kind === "aircraft-list") {
-    addEquipmentAircraftForSelection();
-    return;
+  const mutation = addEquipmentNodeForSelectionModel({ scenario, selection: selectedState });
+  if (Number.isFinite(mutation.selectedEquipmentComponentIndex)) {
+    selectedEquipmentComponentIndex = mutation.selectedEquipmentComponentIndex;
   }
-  const aircraftModel = selectedState.aircraftModel || wholeMachineModels()[0] || scenario.equipment.model || "装备";
-  const parentId = selectedState.kind === "aircraft" ? "aircraft-root" : selectedState.component.id;
-  const siblingCount = (scenario.components || []).filter((component) => componentBelongsToAircraft(component, aircraftModel) && String(component.parentId || "aircraft-root") === String(parentId)).length;
-  const newComponent = {
-    id: nextEquipmentComponentId(aircraftModel, parentId),
-    aircraftModel,
-    parentId: selectedState.kind === "aircraft" ? "aircraft-root" : selectedState.component.id,
-    name: selectedState.kind === "aircraft" ? `新增分系统${siblingCount + 1}` : `新增子系统${siblingCount + 1}`,
-    productType: selectedState.kind === "aircraft" ? "非LRU" : "LRU",
-    spareType: selectedState.kind === "aircraft" ? "通用备件" : (selectedState.component.spareType || "通用备件"),
-    failureModel: "随机",
-    failureDistribution: { distributionType: "指数分布", parameters: "lambda=0.03" },
-    failureRate: 0.03,
-    mtbfHours: 120,
-    lifeLimitHours: 240,
-    connectionType: selectedState.kind === "aircraft" ? "串联" : "并联",
-    quantity: 1,
-    kOutOfN: { enabled: false, n: 1, k: 1 },
-    specialRepairProfile: { repairTimeMinutes: 120, repairRatio: 0.5, replacementRatio: 0.5 },
-    rms: { reliability: 0.95, maintainability: 0.9, supportability: 0.9, mttrHours: 2.5, mldtHours: 1.2, availability: 0.97 }
-  };
-  scenario.components.push(newComponent);
-  selectedEquipmentComponentIndex = scenario.components.length - 1;
-  selectedEquipmentNodeKey = `component:${newComponent.id}`;
+  selectedEquipmentNodeKey = mutation.selectedEquipmentNodeKey || selectedEquipmentNodeKey;
   updatePreviewResultsThroughApiClient();
-}
-
-function addEquipmentAircraftForSelection() {
-  if (!Array.isArray(scenario.equipment.wholeMachineModels)) {
-    scenario.equipment.wholeMachineModels = wholeMachineModels();
-  }
-  const aircraftModel = nextEquipmentAircraftModel();
-  scenario.equipment.wholeMachineModels.push(aircraftModel);
-  if (!scenario.equipment.model) {
-    scenario.equipment.model = aircraftModel;
-  }
-  selectedEquipmentNodeKey = `aircraft:${aircraftModel}`;
-  updatePreviewResultsThroughApiClient();
-}
-
-function nextEquipmentAircraftModel() {
-  const existingModels = new Set(wholeMachineModels());
-  let index = existingModels.size + 1;
-  while (existingModels.has(`新增飞机${index}`)) index += 1;
-  return `新增飞机${index}`;
-}
-
-function nextEquipmentComponentId(aircraftModel, parentId) {
-  const prefix = `${String(aircraftModel || "equipment").toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${String(parentId || "node").toLowerCase().replace(/[^a-z0-9]+/g, "-")}-node`;
-  const existingIds = new Set((scenario.components || []).map((component) => String(component.id || "")));
-  let index = existingIds.size + 1;
-  while (existingIds.has(`${prefix}-${index}`)) index += 1;
-  return `${prefix}-${index}`;
 }
 
 function renderEquipmentCompositionFields(selectedIndex) {
@@ -3936,14 +3860,22 @@ function addDemoProject() {
   projectListStatus = `已添加项目：${project.name}`;
 }
 
-async function createSampleProjectFromPublishedImport(importId = currentPublishedModelingImportId() || MODELING_IMPORT_DEMO_FIXTURE.importId) {
+async function createSampleProjectFromPublishedImport(importId = currentPublishedModelingImportId()) {
   try {
-    if (!importId) {
-      projectListStatus = "请先选择或发布建模导入包，再生成示例项目";
-      return;
+    projectListStatus = importId
+      ? "正在从已发布导入数据生成示例项目"
+      : "正在保存并发布示例导入包";
+    const published = await ensurePublishedModelingImportForSampleProject({
+      backendApi,
+      fixture: MODELING_IMPORT_DEMO_FIXTURE,
+      publishedImportId: importId
+    });
+    const resolvedImportId = published.importId;
+    if (published.publishedPackage) {
+      modelingImportPublishedPackage = published.publishedPackage;
     }
     projectListStatus = "正在从已发布导入数据生成示例项目";
-    const created = await backendApi.createProjectFromModelingImport(importId);
+    const created = await backendApi.createProjectFromModelingImport(resolvedImportId);
     const projectJson = created.project || {};
     const projectId = projectJson.project_id || created.savedProject?.project_id || MODELING_IMPORT_DEMO_FIXTURE.projectId;
     const project = {
@@ -3951,9 +3883,9 @@ async function createSampleProjectFromPublishedImport(importId = currentPublishe
       name: projectJson.experiment?.name || "导入示例项目",
       baseCode: projectId || "imported-sample",
       updatedAt: new Date().toISOString().slice(0, 10),
-      summary: `由导入包 ${created.sourceImport?.import_id || importId} 生成`,
+      summary: `由导入包 ${created.sourceImport?.import_id || resolvedImportId} 生成`,
       sourceKind: PROJECT_SOURCE.imported_sample,
-      sourceImportId: created.sourceImport?.import_id || importId
+      sourceImportId: created.sourceImport?.import_id || resolvedImportId
     };
     demoProjects = [project, ...demoProjects.filter((item) => item.id !== project.id)];
     currentProject = project;

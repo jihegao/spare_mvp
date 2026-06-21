@@ -41,3 +41,27 @@ Only confirmed issues should be added here. A reported symptom is not recorded a
 - **Fix:** Expanded `tests/fixtures/modeling_import_project.json` to include J-15/J-35 whole-machine models, a complete equipment component tree, composite and periodic mission data, mission phases, combat unit members, three support nodes with inventory and transport policies, four support activity types with jobs, logistics transport strategies, RBD nodes/edges, and Monte Carlo sweep inputs. `modeling_import_to_project()` now preserves these imported business fields when projecting the published package into Project JSON. The frontend demo fixture is generated from the same complete package in `front/modeling-import-demo-fixture.mjs`.
 - **Verification:** `node --test` passed with 176 tests. `.abm-mesa-test-env/bin/python -m unittest tests.test_backend_api_contract tests.test_backend_http_api -v` passed with 59 tests. Focused HTTP create-project verification confirms `equipment.wholeMachineModels=["J-15","J-35"]`, 8+ components, composite mission tasks, support inventories, and repair activity jobs are present in the create-project response.
 - **Limitations:** `PYTHONPATH=. PYTHONDONTWRITEBYTECODE=1 uv run pytest -q -p no:cacheprovider` could not run full pytest collection in the `uv` environment because `jsonschema` is not installed there. The repository `.abm-mesa-test-env` has `jsonschema` but not `pytest`, so backend verification used `unittest` in that environment.
+
+## Review Follow-up
+
+### 3. Project-list imported-sample entry could call create-project with an unsaved fixture id
+
+- **Status:** Fixed locally.
+- **Review finding confirmed:** `front/app.js` initialized `MODELING_IMPORT_DEMO_FIXTURE` only in frontend state. The project-list button used `currentPublishedModelingImportId() || MODELING_IMPORT_DEMO_FIXTURE.importId` and then called `backendApi.createProjectFromModelingImport(importId)`. Because `/modeling-imports/{id}/create-project` requires a persisted and published backend modeling import, a fresh user could hit a failing default path.
+- **Fix:** Added `front/modeling-import-project-flow.mjs`. `createSampleProjectFromPublishedImport()` now calls `ensurePublishedModelingImportForSampleProject()`: if a published import id exists it reuses it; otherwise it explicitly saves the demo fixture, publishes it, then calls create-project with the resolved published import id.
+- **Regression tests:** `tests/frontend-modeling-import-flow.test.mjs` covers both the no-published-package save/publish/create prerequisite and the existing-published-package reuse path. `tests/frontend-contract.test.mjs` now asserts the project-list button no longer falls back directly to the fixture id.
+
+### 4. Canonical formal runs were gated only in frontend memory
+
+- **Status:** Fixed locally.
+- **Review finding confirmed:** The frontend checked `currentProject.sourceKind === imported_sample`, but `/api/runs` accepted direct HTTP submissions without checking a persisted imported-sample source.
+- **Fix:** `/api/runs` now marks requests as `formal_run` server-side. `RunService` fail-closes formal runs unless the Project JSON used for the run has `missionProfile.sourceImportId`, that import exists as a published modeling import whose `projectId` matches the run project, and the backend audit log has an allowed `modeling_import.create_project` event for the same import/project pair. Legacy `/simulation-runs` remains on the existing compatibility path.
+- **Regression tests:** `tests/test_backend_http_api.py::test_http_canonical_runs_reject_non_imported_sample_project` verifies direct `/api/runs` rejects a normal static project with `formal_run_requires_imported_sample`. `tests/test_backend_http_api.py::test_http_canonical_runs_reject_forged_import_source_project` verifies a manually saved Project cannot pass the gate by spoofing `missionProfile.sourceImportId`. `tests/test_backend_http_api.py::test_http_legacy_simulation_runs_accept_preview_project` verifies the legacy preview run path remains available. Canonical success and Monte Carlo tests now generate their projects from a published modeling import first.
+
+### 5. Key regression coverage moved from source-only checks to behavior tests
+
+- **Status:** Fixed locally.
+- **Review finding confirmed:** Earlier tests primarily inspected source snippets for the equipment tree and imported project path.
+- **Fix:** Added `front/equipment-tree-model.mjs` with pure tree/selection mutation helpers and kept `front/app.js` as the rendering layer. The same helpers drive app behavior and behavior-level tests.
+- **Regression tests:** `tests/equipment-tree-model.test.mjs` verifies a zero-aircraft imported sample adds `新增飞机1`, and a self/cyclic component parent chain does not recurse indefinitely. `tests/frontend-modeling-import-flow.test.mjs` verifies the default project-list action completes the save/publish prerequisite instead of silently calling create-project with an unsaved fixture id.
+- **Verification:** `node --test tests/frontend-contract.test.mjs tests/frontend-api-client.test.mjs tests/frontend-modeling-import-flow.test.mjs tests/equipment-tree-model.test.mjs` passed with 99 tests. `.abm-mesa-test-env/bin/python -m unittest tests.test_backend_api_contract tests.test_backend_http_api -v` passed with 60 tests.

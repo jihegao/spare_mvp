@@ -81,6 +81,8 @@ class RunService:
             else None
         )
         project_for_run = _project_for_experiment_plan(project, plan, snapshot)
+        if request.get("formal_run"):
+            self._assert_formal_run_uses_imported_sample(project_for_run)
 
         compile_gate = getattr(self.adapter, "compile_scenario_with_gate", None)
         if callable(compile_gate):
@@ -173,6 +175,59 @@ class RunService:
         self.repository.upsert_result_summary(bundle["result"])
         self.repository.upsert_artifact_manifest(bundle["artifact_manifest"])
         return self._status_from_run(run)
+
+    def _assert_formal_run_uses_imported_sample(self, project_for_run: dict[str, Any]) -> None:
+        project_id = str(project_for_run.get("project_id") or "")
+        mission_profile = project_for_run.get("missionProfile") if isinstance(project_for_run.get("missionProfile"), dict) else {}
+        source_import_id = str((mission_profile or {}).get("sourceImportId") or "")
+        if not source_import_id:
+            raise RunServiceError(
+                "formal_run_requires_imported_sample",
+                "formal runs require a project generated from a published modeling import",
+                project_id=project_id,
+                source_import_id=None,
+            )
+        try:
+            stored_import = self.repository.get_modeling_import(source_import_id)
+        except KeyError as exc:
+            raise RunServiceError(
+                "formal_run_requires_imported_sample",
+                "formal runs require a project generated from a published modeling import",
+                project_id=project_id,
+                source_import_id=source_import_id,
+            ) from exc
+        published_package = stored_import.get("publishedPackage")
+        if not published_package:
+            raise RunServiceError(
+                "formal_run_requires_imported_sample",
+                "formal runs require a published modeling import",
+                project_id=project_id,
+                source_import_id=source_import_id,
+            )
+        published_project_id = str(published_package.get("projectId") or stored_import.get("projectId") or "")
+        if published_project_id and project_id and published_project_id != project_id:
+            raise RunServiceError(
+                "formal_run_requires_imported_sample",
+                "formal run project does not match the published modeling import",
+                project_id=project_id,
+                source_import_id=source_import_id,
+                published_project_id=published_project_id,
+            )
+        create_events = [
+            event
+            for event in self.repository.list_audit_events(resource_id=source_import_id)
+            if event.get("action") == "modeling_import.create_project"
+            and event.get("outcome") == "allowed"
+            and (event.get("details") or {}).get("project_id") == project_id
+        ]
+        if not create_events:
+            raise RunServiceError(
+                "formal_run_requires_imported_sample",
+                "formal runs require a backend-created imported sample Project",
+                project_id=project_id,
+                source_import_id=source_import_id,
+                reason="missing_create_project_audit",
+            )
 
     def get_run_status(self, run_id: str) -> dict[str, Any]:
         return self._status_from_run(self.repository.get_run(run_id))
