@@ -306,6 +306,8 @@ M6.2 后续收敛切片已完成：`docs/superpowers/plans/2026-06-20-runintent-
 
 M6.2.x 当前收束：`docs/superpowers/plans/2026-06-21-imported-json-single-source-static-data-exit.md` 记录前台静态业务数据退场实施。前台建模和正式 run 功能测试的业务样例源已收敛到 `tests/fixtures/modeling_import_project.json`：页面缺少 imported JSON 数据时显示空态或创建入口，不再由前端静态常量偷偷补出任务、装备、保障组织、保障活动或 Monte Carlo 配置；完整 JSON 导入后可通过 published modeling import 生成 imported sample Project。后端 `modeling_import_to_project()` 已保留 `projectInfo`、`supportOrganization`、`analysisRequests` 和显式空集合，后续按页面逐批补齐 JSON 字段和转换映射。该切片只治理建模/运行输入源，不实现 M8 projection payload 驱动 KPI，也不实现 M9 state stream。
 
+M6.2.y 计划：`docs/superpowers/plans/2026-06-21-legacy-run-api-retirement.md` 记录 legacy `/api/simulation-runs` 退场方案。该计划应在当前输入源治理之后单独执行：前端、HTTP contract tests 和浏览器 smoke 迁移为 canonical `/api/runs` 唯一路径，旧 `/api/simulation-runs*` 请求改为明确的 `410 legacy_run_api_retired` 负向契约。该切片只清理 run API 兼容层，不实现生产 worker queue、object storage、取消/重试、M8 projection payload 或 M9 state stream。
+
 核心能力：
 
 1. 单次仿真。
