@@ -83,6 +83,7 @@ def modeling_import_to_project(import_package: dict[str, Any]) -> dict[str, Any]
         "project_version": f"import-v{version}",
         "scenarioId": str(import_package["importId"]).replace("_", "-"),
         "activeModule": "sparePlanning",
+        "projectInfo": _project_object(objects, mission, "projectInfo", {}),
         "airports": _project_object_list(objects, mission, "airports"),
         "missionAreas": _project_object_list(objects, mission, "missionAreas"),
         "experiment": _project_object(objects, mission, "experiment", {"seed": 20260619, "steps": max(1, int(duration_hours))}),
@@ -94,8 +95,10 @@ def modeling_import_to_project(import_package: dict[str, Any]) -> dict[str, Any]
         "components": [_equipment_asset_to_component(row) for row in equipment_assets],
         "supportNodes": [_support_resource_to_node(row) for row in resources],
         "supportActivities": [_support_activity_to_project(row) for row in activities],
+        "supportOrganization": _project_object(objects, mission, "supportOrganization", {}),
         "reliabilityBlockDiagram": _project_object(objects, mission, "reliabilityBlockDiagram", {}),
         "monteCarlo": _project_object(objects, mission, "monteCarlo", {"spareMultipliers": [1]}),
+        "analysisRequests": _project_object(objects, mission, "analysisRequests", {}),
     }
 
 

@@ -8,6 +8,7 @@ from pathlib import Path
 import unittest
 
 from src.spare_mvp_backend.api import BackendApi, BackendApiError
+from src.spare_mvp_backend.modeling_import import modeling_import_to_project
 from src.spare_mvp_backend.repository import ContractRepository, initialize_database
 from src.spare_mvp_backend.run_service import RunService, RunServiceError
 from src.spare_mvp_contract.adapter import AdapterError, SimulationAdapter
@@ -900,6 +901,59 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(create_events[0]["details"]["project_id"], import_package["projectId"])
         self.assertEqual(create_events[0]["details"]["import_version"], 1)
         self.assertEqual(create_events[0]["details"]["actor"], "system")
+
+    def test_modeling_import_to_project_preserves_full_authoring_surfaces(self) -> None:
+        import_package = self._fixture("modeling_import_project.json")
+        objects = import_package["objects"]
+
+        project = modeling_import_to_project(import_package)
+
+        self.assertEqual(project["projectInfo"], objects["projectInfo"])
+        self.assertIsNot(project["projectInfo"], objects["projectInfo"])
+        self.assertEqual(project["supportOrganization"]["tree"], objects["supportOrganization"]["tree"])
+        self.assertIsNot(project["supportOrganization"], objects["supportOrganization"])
+        self.assertEqual(
+            project["analysisRequests"]["largeSample"]["samples"],
+            objects["analysisRequests"]["largeSample"]["samples"],
+        )
+        self.assertEqual(
+            project["analysisRequests"]["largeSample"]["sweep"],
+            objects["analysisRequests"]["largeSample"]["sweep"],
+        )
+        self.assertIsNot(
+            project["analysisRequests"]["largeSample"]["sweep"]["failureRates"],
+            objects["analysisRequests"]["largeSample"]["sweep"]["failureRates"],
+        )
+        self.assertGreaterEqual(len(project["reliabilityBlockDiagram"]["nodes"]), 4)
+        self.assertEqual(project["monteCarlo"], objects["missionProfiles"][0]["monteCarlo"])
+        objects["analysisRequests"]["largeSample"]["sweep"]["failureRates"].append(0.99)
+        self.assertNotIn(0.99, project["analysisRequests"]["largeSample"]["sweep"]["failureRates"])
+
+    def test_modeling_import_to_project_preserves_explicit_empty_collections(self) -> None:
+        import_package = self._fixture("modeling_import_project.json")
+        mission = import_package["objects"]["missionProfiles"][0]
+        mission["combatUnit"] = {"members": []}
+        import_package["objects"]["reliabilityBlockDiagram"] = {"nodes": [], "edges": []}
+        import_package["objects"]["monteCarlo"] = {
+            "failureRates": [],
+            "spareMultipliers": [],
+            "supportCapacities": [],
+            "minRequiredSorties": [],
+        }
+
+        project = modeling_import_to_project(import_package)
+
+        self.assertEqual(project["combatUnit"], {"members": []})
+        self.assertEqual(project["reliabilityBlockDiagram"], {"nodes": [], "edges": []})
+        self.assertEqual(
+            project["monteCarlo"],
+            {
+                "failureRates": [],
+                "spareMultipliers": [],
+                "supportCapacities": [],
+                "minRequiredSorties": [],
+            },
+        )
 
     def test_m4_regular_user_cannot_publish_modeling_import_and_denial_is_audited(self) -> None:
         import_package = self._fixture("modeling_import_project.json")
