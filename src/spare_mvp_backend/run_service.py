@@ -170,6 +170,15 @@ class RunService:
             artifact_manifest=bundle["artifact_manifest"],
             request=request,
         )
+        self._augment_run_config_artifact(
+            bundle["artifact_manifest"],
+            run_id=run_id,
+            experiment_plan_id=experiment_plan_id,
+            modeling_snapshot_id=plan.get("modeling_snapshot_id"),
+            plan=plan,
+            request=request,
+        )
+        self._write_disk_artifact_manifest(bundle["artifact_manifest"])
 
         self.repository.upsert_run(run)
         self.repository.upsert_result_summary(bundle["result"])
@@ -280,6 +289,27 @@ class RunService:
             "created_at": now,
             "artifacts": [],
         }
+        log_payload = {
+            "schema_version": "run-log-v0",
+            "run_id": run_id,
+            "status": "failed",
+            "project_id": run["project_id"],
+            "experiment_plan_id": experiment_plan_id,
+            "modeling_snapshot_id": modeling_snapshot_id,
+            "scenario_id": scenario.get("scenario_id"),
+            "scenario_version": scenario.get("scenario_version"),
+            "model_family": run["model_family"],
+            "run_type": run_type,
+            "events": [
+                {
+                    "event": "run_failed",
+                    "at": now,
+                    "error": run["error"],
+                }
+            ],
+        }
+        manifest["artifacts"] = [self._write_run_log_artifact(run_id, manifest_id, log_payload)]
+        self._write_disk_artifact_manifest(manifest)
         self.repository.upsert_run(run)
         self.repository.upsert_artifact_manifest(manifest)
         return self._status_from_run(run)
@@ -342,6 +372,29 @@ class RunService:
             "created_at": now,
             "artifacts": [],
         }
+        log_payload = {
+            "schema_version": "run-log-v0",
+            "run_id": run_id,
+            "status": "failed",
+            "project_id": project_id,
+            "experiment_plan_id": experiment_plan_id,
+            "modeling_snapshot_id": modeling_snapshot_id,
+            "scenario_id": None,
+            "scenario_version": None,
+            "model_family": model_family,
+            "run_type": run_type,
+            "events": [
+                {
+                    "event": "compile_gate_failed",
+                    "at": now,
+                    "error": run["error"],
+                    "issues": issues,
+                    "provenance": provenance,
+                }
+            ],
+        }
+        manifest["artifacts"] = [self._write_run_log_artifact(run_id, manifest_id, log_payload)]
+        self._write_disk_artifact_manifest(manifest)
         self.repository.upsert_run(run)
         self.repository.upsert_artifact_manifest(manifest)
         return self._status_from_run(run)
@@ -370,6 +423,63 @@ class RunService:
             "mc_experiment_id": run.get("mc_experiment_id"),
             "simulation_experiment_base": run.get("simulation_experiment_base"),
         }
+
+    def _augment_run_config_artifact(
+        self,
+        manifest: dict[str, Any],
+        *,
+        run_id: str,
+        experiment_plan_id: str,
+        modeling_snapshot_id: str | None,
+        plan: dict[str, Any],
+        request: dict[str, Any],
+    ) -> None:
+        run_config = next(
+            (artifact for artifact in manifest.get("artifacts", []) if artifact.get("kind") == "run_config"),
+            None,
+        )
+        if run_config is None:
+            return
+        target = (self.output_dir / run_config["path"]).resolve()
+        output_root = self.output_dir.resolve()
+        if output_root not in target.parents and target != output_root:
+            raise RunServiceError("artifact_path_escape", "run_config artifact path escapes output directory", run_id=run_id)
+        payload = json.loads(target.read_text(encoding="utf-8"))
+        payload["experiment_plan_id"] = experiment_plan_id
+        payload["modeling_snapshot_id"] = modeling_snapshot_id
+        payload["plan_config"] = copy.deepcopy(plan.get("config") or {})
+        payload["request"] = {
+            "run_type": request.get("run_type"),
+            "model_family": request.get("model_family"),
+            "mc_experiment_id": request.get("mc_experiment_id"),
+        }
+        target.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        data = target.read_bytes()
+        run_config["sha256"] = hashlib.sha256(data).hexdigest()
+        run_config["size_bytes"] = len(data)
+
+    def _write_run_log_artifact(self, run_id: str, manifest_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        run_dir = self.output_dir / run_id
+        run_dir.mkdir(parents=True, exist_ok=True)
+        target = run_dir / "events-log.json"
+        target.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        data = target.read_bytes()
+        return {
+            "artifact_id": f"log-{run_id}",
+            "kind": "log",
+            "path": target.relative_to(self.output_dir).as_posix(),
+            "media_type": "application/json",
+            "sha256": hashlib.sha256(data).hexdigest(),
+            "size_bytes": len(data),
+            "schema_version": "run-log-v0",
+        }
+
+    def _write_disk_artifact_manifest(self, manifest: dict[str, Any]) -> None:
+        run_id = str(manifest["run_id"])
+        run_dir = self.output_dir / run_id
+        run_dir.mkdir(parents=True, exist_ok=True)
+        target = run_dir / "artifact-manifest.json"
+        target.write_text(json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
 def _phase_from_status(status: str) -> str:

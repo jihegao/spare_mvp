@@ -1,6 +1,6 @@
 # 产品里程碑路线图
 
-日期：2026-06-20
+日期：2026-06-21
 
 ## 定位
 
@@ -308,6 +308,8 @@ M6.2.x 当前收束：`docs/superpowers/plans/2026-06-21-imported-json-single-so
 
 M6.2.y 运行 API 退场收束：legacy `/api/simulation-runs` 已从正式和预览测试路径退役；前端 API client、HTTP contract tests 和浏览器 smoke 只使用 canonical `/api/runs` 及其 status/result/artifacts/chain 路径。旧路径返回 `410 legacy_run_api_retired`，用于让外部调用者明确迁移到 `/api/runs`。该切片只清理 run API 兼容层，不实现生产 worker queue、object storage、取消/重试、M8 projection payload 或 M9 state stream。
 
+M7.0 当前收束：运行与产物管理已在 canonical `/api/runs` 上形成本地管理闭环，覆盖 run list/detail、artifact id 下载、归档、软删除、生命周期状态和最小审计事件。前端在 Monte Carlo 详情中展示运行账本、artifact identity、`sha256`、`size_bytes`、下载入口、归档状态和软删除 tombstone。该切片只管理本地 SQLite 运行账本、artifact manifest 和 repo-local artifact 文件，不恢复 legacy `/api/simulation-runs`，不实现生产 worker queue、object storage、取消/重试完整体系、M8 projection payload KPI 展示、M9 state stream 或 `aviation_support` 正式执行。
+
 核心能力：
 
 1. 单次仿真。
@@ -328,12 +330,14 @@ M6.2.y 运行 API 退场收束：legacy `/api/simulation-runs` 已从正式和�
 3. worker 或本地执行器只消费编译后的 Scenario input，不读取前端当前 draft。
 4. 前端轮询或订阅运行状态。
 5. 最终结果来自真实 run artifacts，且能追溯 mapping version、输入版本、运行配置和 seed。
-6. M6.2 当前只提供同步本地 Monte Carlo artifact/projection 与 RunIntent/MonteCarloRunConfig 收敛切片；生产级 worker、取消/重试、对象存储和 projection payload 驱动的正式 KPI 展示仍留给后续 M7/M8。
+6. M6.2 当前只提供同步本地 Monte Carlo artifact/projection 与 RunIntent/MonteCarloRunConfig 收敛切片；M7.0 已补入本地运行与产物管理，生产级 worker、完整取消/重试、对象存储和 projection payload 驱动的正式 KPI 展示仍留给后续阶段。
 7. 正式 Monte Carlo 输入现在只有一个 canonical `MonteCarloRunConfig` 解释层，页面默认示例项目可以由已发布建模导入包生成；继续扩大 worker、state stream 或 KPI payload 消费前，不应重新引入 request-level MC numeric config。
 
 ## M7：运行管理和产物管理
 
 目标：系统能回答每次运行的来源、参数、结果和产物。
+
+M7.0 当前收束：`docs/superpowers/specs/2026-06-21-m7-0-run-artifact-management-design.md` 和 `docs/superpowers/plans/2026-06-21-m7-0-run-artifact-management.md` 已把本阶段限定在 canonical `/api/runs` 运行账本和 artifact 账本管理。当前能力包括运行列表、运行详情、artifact id 下载、归档、软删除、下载/归档/删除审计，以及前端展示 artifact id/hash/size/lifecycle 状态；旧 `legacy /api/simulation-runs` 仍保持退役。M7.0 不包含生产 worker queue、object storage、取消/重试完整体系、M8 projection payload KPI 展示、M9 state stream 或 `aviation_support` 正式执行。
 
 必须可追溯的问题：
 
@@ -361,6 +365,7 @@ report.json 或 report.html
 1. 每次运行都有唯一 `run_id`。
 2. 结果能下载、复现、归档和删除。
 3. 失败运行能看到失败原因和错误日志。
+4. 本地 run/artifact 管理通过 canonical `/api/runs` 完成，legacy `/api/simulation-runs` 只保留 `410 legacy_run_api_retired` 负向契约。
 
 ## M8：结果分析从演示图表升级为产物驱动
 
@@ -528,5 +533,5 @@ M3/M6 的第一步不是直接建设完整生产平台，而是把保存、编�
 2. M4 backfill 当前只覆盖本地用户、会话、建模导入授权和审计；后续若进入试点，需要继续补项目级访问控制、权限矩阵、密码/SSO 和部署安全。
 3. M5.1 已将建模数据导入/校验 contract 接入本地后端 API、SQLite 持久化和前端显式 API client。
 4. M5.2 当前聚焦系统管理下「建模数据导入」工作台、映射/错误/版本预览和经 `SimulationAdapter` 编译的后端 Scenario 预览；完整 Excel UI 或生产 worker 仍不在本阶段。
-5. RunIntent / MonteCarloRunConfig / imported sample Project 收敛已作为 M6.2 后续切片完成；近期推进应转向 M7 运行/产物管理和 M8 projection payload 消费，同时继续保留生产 worker queue、object storage、取消/重试、M9 state stream 和 `aviation_support` 正式执行的阶段边界。
+5. RunIntent / MonteCarloRunConfig / imported sample Project 收敛已作为 M6.2 后续切片完成；M7.0 已补入本地运行/产物管理，近期推进应转向 M8 projection payload 消费，同时继续保留生产 worker queue、object storage、取消/重试完整体系、M9 state stream 和 `aviation_support` 正式执行的阶段边界。
 6. 每次 PR 更新页面流转、数据对象或结果口径时，同步更新本文档或相关验收清单。

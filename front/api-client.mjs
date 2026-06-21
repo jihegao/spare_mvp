@@ -115,6 +115,30 @@ export function createBackendApiClient({ baseUrl = DEFAULT_API_BASE, transport, 
     },
     getRunChain(runId) {
       return request({ method: "GET", path: `/runs/${encodeURIComponent(runId)}/chain` });
+    },
+    listRuns(filters = {}) {
+      const query = new URLSearchParams();
+      for (const [key, value] of Object.entries(filters)) {
+        if (value !== undefined && value !== null && value !== "") query.set(key, String(value));
+      }
+      const suffix = query.toString() ? `?${query.toString()}` : "";
+      return request({ method: "GET", path: `/runs${suffix}` });
+    },
+    getRunDetail(runId) {
+      return request({ method: "GET", path: `/runs/${encodeURIComponent(runId)}/detail` });
+    },
+    downloadRunArtifact(runId, artifactId) {
+      return request({
+        method: "GET",
+        path: `/runs/${encodeURIComponent(runId)}/artifacts/${encodeURIComponent(artifactId)}`,
+        responseType: "blob"
+      });
+    },
+    archiveRun(runId) {
+      return request({ method: "POST", path: `/runs/${encodeURIComponent(runId)}/archive` });
+    },
+    deleteRun(runId) {
+      return request({ method: "DELETE", path: `/runs/${encodeURIComponent(runId)}` });
     }
   };
 }
@@ -185,16 +209,17 @@ function wrapAuthTransport(transport, getAuthToken) {
 }
 
 function createFetchTransport(baseUrl, { timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
-  return async ({ method, path, body, headers = {} }) => {
+  return async ({ method, path, body, headers = {}, responseType = "json" }) => {
     if (typeof fetch !== "function") {
       throw new Error("Backend API fetch transport is unavailable");
     }
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-    const requestHeaders = {
-      ...headers,
-      ...(body === undefined ? {} : { "content-type": "application/json" })
-    };
+    const requestHeaders = Object.assign(
+      {},
+      headers,
+      body === undefined ? {} : { "content-type": "application/json" }
+    );
     let response;
     try {
       response = await fetch(`${baseUrl}${path}`, {
@@ -217,6 +242,11 @@ function createFetchTransport(baseUrl, { timeoutMs = DEFAULT_TIMEOUT_MS } = {}) 
     } finally {
       clearTimeout(timeoutId);
     }
+
+    if (responseType === "blob" && response.ok) {
+      return response.blob();
+    }
+
     const payload = await response.json().catch(() => null);
     if (!response.ok) {
       const error = new Error(payload?.message || `Backend API HTTP ${response.status}`);

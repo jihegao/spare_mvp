@@ -10,7 +10,7 @@ from pathlib import Path
 import sqlite3
 import traceback
 from typing import Any
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 from uuid import uuid4
 
 from src.spare_mvp_backend.api import BackendApi, BackendApiError
@@ -74,6 +74,9 @@ def create_backend_server(
         def do_POST(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler API
             self._handle()
 
+        def do_DELETE(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler API
+            self._handle()
+
         def log_message(self, format: str, *args: Any) -> None:
             return
 
@@ -91,7 +94,10 @@ def create_backend_server(
                     output_dir=artifact_dir,
                 )
                 payload = self._dispatch()
-                self._send_json(200, payload)
+                if isinstance(payload, dict) and "__file_download__" in payload:
+                    self._send_file_download(200, payload["__file_download__"])
+                else:
+                    self._send_json(200, payload)
             except KeyError as exc:
                 self._send_json(404, {"code": "not_found", "message": str(exc)})
             except BackendApiError as exc:
@@ -100,6 +106,8 @@ def create_backend_server(
                     status = 401
                 elif exc.code == "forbidden":
                     status = 403
+                elif exc.code == "run_deleted":
+                    status = 410
                 elif exc.code == "request_too_large":
                     status = 413
                 self._send_json(status, {"code": exc.code, "message": str(exc), "details": exc.details})
@@ -191,14 +199,35 @@ def create_backend_server(
                 formal_body = dict(body)
                 formal_body["formal_run"] = True
                 return api.submit_run(formal_body)
+            if self.command == "GET" and route == "/runs":
+                query = parse_qs(urlparse(self.path).query)
+                filters = {key: values[-1] for key, values in query.items() if values}
+                return api.list_runs(filters)
             if self.command == "GET" and len(parts) == 2 and parts[0] == "runs":
                 return api.get_run_status(parts[1])
+            if self.command == "GET" and len(parts) == 3 and parts[0] == "runs" and parts[2] == "detail":
+                return api.get_run_detail(parts[1])
             if self.command == "GET" and len(parts) == 3 and parts[0] == "runs" and parts[2] == "result":
                 return api.get_run_result(parts[1])
             if self.command == "GET" and len(parts) == 3 and parts[0] == "runs" and parts[2] == "artifacts":
                 return api.get_run_artifacts(parts[1])
+            if self.command == "GET" and len(parts) == 4 and parts[0] == "runs" and parts[2] == "artifacts":
+                actor = self._require_user()
+                return {
+                    "__file_download__": api.get_run_artifact_download(
+                        parts[1],
+                        parts[3],
+                        actor_user_id=actor["user_id"],
+                    )
+                }
             if self.command == "GET" and len(parts) == 3 and parts[0] == "runs" and parts[2] == "chain":
                 return api.get_run_chain(parts[1])
+            if self.command == "POST" and len(parts) == 3 and parts[0] == "runs" and parts[2] == "archive":
+                actor = self._require_user({"系统管理员", "数据管理员"})
+                return api.archive_run(parts[1], actor_user_id=actor["user_id"])
+            if self.command == "DELETE" and len(parts) == 2 and parts[0] == "runs":
+                actor = self._require_user({"系统管理员", "数据管理员"})
+                return api.soft_delete_run(parts[1], actor_user_id=actor["user_id"])
 
             raise KeyError(route)
 
@@ -240,6 +269,16 @@ def create_backend_server(
             self.end_headers()
             self.wfile.write(data)
 
+        def _send_file_download(self, status: int, download: dict[str, Any]) -> None:
+            data = bytes(download["body"])
+            self.send_response(status)
+            self.send_header("content-type", str(download["content_type"]))
+            self.send_header("content-length", str(len(data)))
+            self.send_header("content-disposition", f'attachment; filename="{_safe_download_filename(download["filename"])}"')
+            self.send_header("access-control-allow-origin", "*")
+            self.end_headers()
+            self.wfile.write(data)
+
         def _send_static(self, path: str) -> None:
             if path not in ("", "/") and not path.startswith("/front/"):
                 self._send_json(404, {"code": "not_found", "message": path})
@@ -273,6 +312,17 @@ def create_backend_server(
 
     server = BackendHTTPServer(address, BackendRequestHandler)
     return server
+
+
+def _safe_download_filename(filename: str) -> str:
+    safe_chars = []
+    for char in str(filename):
+        if char in {'"', "\\"} or ord(char) < 32 or ord(char) == 127:
+            safe_chars.append("_")
+        else:
+            safe_chars.append(char)
+    safe = "".join(safe_chars).strip()
+    return safe or "download"
 
 
 def main() -> None:

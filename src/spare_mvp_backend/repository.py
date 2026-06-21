@@ -6,6 +6,7 @@ import json
 import hashlib
 import secrets
 import sqlite3
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -18,6 +19,17 @@ def initialize_database(connection: sqlite3.Connection) -> None:
     """Create the PR-D persistence schema in an existing SQLite connection."""
     connection.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
     _relax_simulation_run_scenario_constraints(connection)
+    _ensure_column(connection, "simulation_runs", "created_by", "TEXT")
+    _ensure_column(connection, "simulation_runs", "lifecycle_status", "TEXT NOT NULL DEFAULT 'active'")
+    _ensure_column(connection, "simulation_runs", "archived_at", "TEXT")
+    _ensure_column(connection, "simulation_runs", "deleted_at", "TEXT")
+    connection.execute(
+        """
+        UPDATE simulation_runs
+        SET lifecycle_status = 'active'
+        WHERE lifecycle_status IS NULL OR lifecycle_status = ''
+        """
+    )
     _ensure_column(connection, "users", "password_hash", "TEXT")
     _ensure_column(connection, "users", "display_name", "TEXT")
     _ensure_column(connection, "users", "status", "TEXT NOT NULL DEFAULT 'active'")
@@ -189,6 +201,27 @@ class ContractRepository:
         outcome: str,
         details: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        event = self._insert_audit_event_no_commit(
+            actor_user_id=actor_user_id,
+            action=action,
+            resource_type=resource_type,
+            resource_id=resource_id,
+            outcome=outcome,
+            details=details,
+        )
+        self.connection.commit()
+        return event
+
+    def _insert_audit_event_no_commit(
+        self,
+        *,
+        actor_user_id: str | None,
+        action: str,
+        resource_type: str,
+        resource_id: str,
+        outcome: str,
+        details: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         event = {
             "audit_event_id": f"audit-{uuid4()}",
             "actor_user_id": actor_user_id,
@@ -216,7 +249,6 @@ class ContractRepository:
                 _to_json(event["details"]),
             ),
         )
-        self.connection.commit()
         return event
 
     def list_audit_events(self, resource_id: str | None = None) -> list[dict[str, Any]]:
@@ -457,14 +489,18 @@ class ContractRepository:
         self.connection.commit()
 
     def upsert_run(self, run: dict[str, Any]) -> None:
+        stored_run = dict(run)
+        stored_run["created_by"] = stored_run.get("created_by") or "system"
+        stored_run["lifecycle_status"] = stored_run.get("lifecycle_status") or "active"
         self.connection.execute(
             """
             INSERT INTO simulation_runs (
               run_id, project_id, experiment_plan_id, scenario_id, scenario_version,
               schema_version, model_family, model_id, status, run_type, seed,
-              result_summary_id, artifact_manifest_id, payload_json, updated_at
+              result_summary_id, artifact_manifest_id, created_by, lifecycle_status,
+              archived_at, deleted_at, payload_json, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             ON CONFLICT(run_id) DO UPDATE SET
               project_id = excluded.project_id,
               experiment_plan_id = excluded.experiment_plan_id,
@@ -478,24 +514,32 @@ class ContractRepository:
               seed = excluded.seed,
               result_summary_id = excluded.result_summary_id,
               artifact_manifest_id = excluded.artifact_manifest_id,
+              created_by = excluded.created_by,
+              lifecycle_status = excluded.lifecycle_status,
+              archived_at = excluded.archived_at,
+              deleted_at = excluded.deleted_at,
               payload_json = excluded.payload_json,
               updated_at = CURRENT_TIMESTAMP
             """,
             (
-                _required(run, "run_id"),
-                _required(run, "project_id"),
-                run.get("experiment_plan_id"),
-                run.get("scenario_id"),
-                run.get("scenario_version"),
-                _required(run, "schema_version"),
-                _required(run, "model_family"),
-                _required(run, "model_id"),
-                _required(run, "status"),
-                run.get("run_type"),
-                run.get("seed"),
-                run.get("result_summary_id"),
-                _required(run, "artifact_manifest_id"),
-                _to_json(run),
+                _required(stored_run, "run_id"),
+                _required(stored_run, "project_id"),
+                stored_run.get("experiment_plan_id"),
+                stored_run.get("scenario_id"),
+                stored_run.get("scenario_version"),
+                _required(stored_run, "schema_version"),
+                _required(stored_run, "model_family"),
+                _required(stored_run, "model_id"),
+                _required(stored_run, "status"),
+                stored_run.get("run_type"),
+                stored_run.get("seed"),
+                stored_run.get("result_summary_id"),
+                _required(stored_run, "artifact_manifest_id"),
+                stored_run["created_by"],
+                stored_run["lifecycle_status"],
+                stored_run.get("archived_at"),
+                stored_run.get("deleted_at"),
+                _to_json(stored_run),
             ),
         )
         self.connection.commit()
@@ -615,6 +659,186 @@ class ContractRepository:
     def get_run(self, run_id: str) -> dict[str, Any]:
         return self._get_payload("simulation_runs", "run_id", run_id)
 
+    def _utc_now(self) -> str:
+        return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+    def list_runs(
+        self,
+        *,
+        include_deleted: bool = False,
+        project_id: str | None = None,
+        experiment_plan_id: str | None = None,
+        run_type: str | None = None,
+        status: str | None = None,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        safe_limit = max(1, min(int(limit), 200))
+        clauses: list[str] = []
+        params: list[Any] = []
+        if not include_deleted:
+            clauses.append("COALESCE(lifecycle_status, 'active') != ?")
+            params.append("deleted")
+        if project_id:
+            clauses.append("project_id = ?")
+            params.append(project_id)
+        if experiment_plan_id:
+            clauses.append("experiment_plan_id = ?")
+            params.append(experiment_plan_id)
+        if run_type:
+            clauses.append("run_type = ?")
+            params.append(run_type)
+        if status:
+            clauses.append("status = ?")
+            params.append(status)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        cursor = self.connection.execute(
+            f"""
+            SELECT payload_json
+            FROM simulation_runs
+            {where}
+            ORDER BY COALESCE(updated_at, created_at) DESC, run_id DESC
+            LIMIT ?
+            """,
+            (*params, safe_limit),
+        )
+        runs: list[dict[str, Any]] = []
+        for (payload_json,) in cursor.fetchall():
+            run = json.loads(payload_json)
+            artifact_count = 0
+            artifact_manifest_id = run.get("artifact_manifest_id")
+            if artifact_manifest_id:
+                artifact_cursor = self.connection.execute(
+                    """
+                    SELECT payload_json
+                    FROM artifact_manifests
+                    WHERE artifact_manifest_id = ?
+                      AND run_id = ?
+                    """,
+                    (artifact_manifest_id, run["run_id"]),
+                )
+                artifact_row = artifact_cursor.fetchone()
+                if artifact_row is not None:
+                    artifact_count = len(json.loads(artifact_row[0]).get("artifacts") or [])
+            runs.append(
+                {
+                    "run_id": run["run_id"],
+                    "project_id": run["project_id"],
+                    "experiment_plan_id": run.get("experiment_plan_id"),
+                    "run_type": run.get("run_type") or "single",
+                    "model_family": run["model_family"],
+                    "status": run["status"],
+                    "phase": run.get("phase"),
+                    "seed": run.get("seed"),
+                    "created_by": run.get("created_by") or "system",
+                    "queued_at": run.get("queued_at"),
+                    "started_at": run.get("started_at"),
+                    "completed_at": run.get("completed_at"),
+                    "lifecycle_status": run.get("lifecycle_status") or "active",
+                    "artifact_count": artifact_count,
+                    "artifact_manifest_id": artifact_manifest_id,
+                }
+            )
+        return runs
+
+    def get_run_detail(self, run_id: str) -> dict[str, Any]:
+        run = self.get_run(run_id)
+        chain = self.get_run_chain(run_id)
+        result_summary = None
+        if run.get("result_summary_id"):
+            result_summary = self.get_result_summary_for_run(run_id)
+        artifact_manifest = self.get_artifact_manifest_for_run(run_id)
+        return {
+            "run": run,
+            "chain": chain,
+            "result_summary": result_summary,
+            "artifact_manifest": artifact_manifest,
+        }
+
+    def archive_run(self, run_id: str, *, archived_by: str = "system") -> dict[str, Any]:
+        run = self.get_run(run_id)
+        run["lifecycle_status"] = "archived"
+        run["archived_at"] = run.get("archived_at") or self._utc_now()
+        run["archived_by"] = archived_by
+        self.upsert_run(run)
+        return self.get_run(run_id)
+
+    def archive_run_with_audit(self, run_id: str, *, actor_user_id: str) -> dict[str, Any]:
+        return self._set_run_lifecycle_with_audit(
+            run_id,
+            lifecycle_status="archived",
+            actor_field="archived_by",
+            timestamp_field="archived_at",
+            actor_user_id=actor_user_id,
+            action="runs.archive",
+        )
+
+    def soft_delete_run(self, run_id: str, *, deleted_by: str = "system") -> dict[str, Any]:
+        run = self.get_run(run_id)
+        run["lifecycle_status"] = "deleted"
+        run["deleted_at"] = run.get("deleted_at") or self._utc_now()
+        run["deleted_by"] = deleted_by
+        self.upsert_run(run)
+        return self.get_run(run_id)
+
+    def soft_delete_run_with_audit(self, run_id: str, *, actor_user_id: str) -> dict[str, Any]:
+        return self._set_run_lifecycle_with_audit(
+            run_id,
+            lifecycle_status="deleted",
+            actor_field="deleted_by",
+            timestamp_field="deleted_at",
+            actor_user_id=actor_user_id,
+            action="runs.delete",
+        )
+
+    def _set_run_lifecycle_with_audit(
+        self,
+        run_id: str,
+        *,
+        lifecycle_status: str,
+        actor_field: str,
+        timestamp_field: str,
+        actor_user_id: str,
+        action: str,
+    ) -> dict[str, Any]:
+        self.connection.execute("BEGIN")
+        try:
+            run = self.get_run(run_id)
+            run["lifecycle_status"] = lifecycle_status
+            run[timestamp_field] = run.get(timestamp_field) or self._utc_now()
+            run[actor_field] = actor_user_id
+            self.connection.execute(
+                """
+                UPDATE simulation_runs
+                SET lifecycle_status = ?,
+                    archived_at = ?,
+                    deleted_at = ?,
+                    payload_json = ?,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE run_id = ?
+                """,
+                (
+                    run["lifecycle_status"],
+                    run.get("archived_at"),
+                    run.get("deleted_at"),
+                    _to_json(run),
+                    run_id,
+                ),
+            )
+            self._insert_audit_event_no_commit(
+                actor_user_id=actor_user_id,
+                action=action,
+                resource_type="run",
+                resource_id=run_id,
+                outcome="allowed",
+                details={"lifecycle_status": lifecycle_status},
+            )
+        except Exception:
+            self.connection.rollback()
+            raise
+        else:
+            self.connection.commit()
+        return self.get_run(run_id)
+
     def get_result_summary_for_run(self, run_id: str) -> dict[str, Any]:
         return self._get_joined_payload(
             """
@@ -640,6 +864,13 @@ class ContractRepository:
             """,
             run_id,
         )
+
+    def find_artifact_for_run(self, run_id: str, artifact_id: str) -> dict[str, Any]:
+        manifest = self.get_artifact_manifest_for_run(run_id)
+        for artifact in manifest.get("artifacts") or []:
+            if artifact.get("artifact_id") == artifact_id:
+                return artifact
+        raise KeyError(artifact_id)
 
     def get_run_chain(self, run_id: str) -> dict[str, Any]:
         cursor = self.connection.execute(
@@ -838,6 +1069,7 @@ def _relax_simulation_run_scenario_constraints(connection: sqlite3.Connection) -
 
 def _seed_m4_users(connection: sqlite3.Connection) -> None:
     users = [
+        ("system", "system", _password_hash("system"), "系统用户", "系统用户"),
         ("user-admin", "admin", _password_hash("admin"), "系统管理员", "系统管理员"),
         ("user-data", "data", _password_hash("data"), "数据管理员", "数据管理员"),
         ("user-basic", "user", _password_hash("user"), "普通用户", "普通评估用户"),

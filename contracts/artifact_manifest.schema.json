@@ -21,7 +21,7 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["artifact_id", "kind", "path", "media_type", "sha256"],
+        "required": ["artifact_id", "kind", "path", "media_type", "sha256", "size_bytes"],
         "properties": {
           "artifact_id": { "type": "string" },
           "kind": {
@@ -29,9 +29,13 @@
             "enum": [
               "input_project",
               "compiled_scenario",
+              "run_config",
               "snapshot",
               "time_series",
+              "sample_results",
+              "aggregate_result",
               "result_summary",
+              "metrics",
               "report",
               "log",
               "monte_carlo_base",

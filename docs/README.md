@@ -41,7 +41,8 @@
 32. `docs/superpowers/plans/2026-06-20-runintent-mc-config-imported-sample-project.md` 记录当前小切片的实施和边界：`defaultScenario`、`runSimulation` 和 `runMonteCarlo` 只保留为本地预览、离线 fixture 或测试 fallback，不作为正式结果来源；页面内置 preview fixture 项目不得进入正式 single/Monte Carlo run，应 fail closed。静态分析卡和静态 Mesa 可视化帧仍按 M8/M9 计划后续移除，当前文档不得声称已经全部删除。
 33. M6.2.x 输入源治理已收束：前台建模和正式 run 功能测试的业务示例源已收敛到 `tests/fixtures/modeling_import_project.json`；缺少 imported JSON 数据时页面显示空态或创建入口，不再从 `defaultScenario`、`SUPPORT_*`、`MISSION_*` 或 preview fixture 静默补业务样例。该切片只关闭输入源治理，不实现 M8 projection payload 驱动 KPI 或 M9 state stream。
 34. M6.2.y 运行 API 退场已收束：legacy `/api/simulation-runs` 已从正式和预览测试路径退役；前端 API client、HTTP contract tests 和浏览器 smoke 只使用 canonical `/api/runs` 及其 status/result/artifacts/chain 路径。旧路径返回 `410 legacy_run_api_retired`，用于让外部调用者明确迁移到 `/api/runs`。该切片只清理 run API 兼容层，不实现生产 worker queue、object storage、取消/重试、M8 projection payload 或 M9 state stream。
-35. 页面建议收口执行 `reports/2026-06-19-page-revision-suggestions/README.md`：已取消删除「建模数据导入」页，M5.2 工作台继续保留；其余页面建议优先修复死按钮、字段口径、选择/批量操作和建模输入可用性，作为 M6.1.1 前的页面输入稳定工作，不扩大为 M6.1.1/M6.2 实现。
+35. M7.0 运行与产物管理已落地为 canonical `/api/runs` 的管理切片：支持 run list/detail、artifact id 下载、归档、软删除和生命周期状态展示；前端只展示运行账本和 artifact metadata，不解析 M8 projection payload，也不恢复 legacy `/api/simulation-runs`。该切片不实现生产 worker queue、object storage、取消/重试完整体系、M9 state stream 或 `aviation_support` 正式执行。
+36. 页面建议收口执行 `reports/2026-06-19-page-revision-suggestions/README.md`：已取消删除「建模数据导入」页，M5.2 工作台继续保留；其余页面建议优先修复死按钮、字段口径、选择/批量操作和建模输入可用性，作为 M6.1.1 前的页面输入稳定工作，不扩大为 M6.1.1/M6.2 实现。
 
 ## 文档地图
 
@@ -77,6 +78,8 @@
 | [`superpowers/plans/2026-06-20-runintent-mc-config-imported-sample-project.md`](superpowers/plans/2026-06-20-runintent-mc-config-imported-sample-project.md) | RunIntent、canonical MonteCarloRunConfig、预览/正式结果分界、“由建模导入生成示例项目”和静态数据退出边界的 M6.2 后续收敛切片记录。 |
 | [`superpowers/plans/2026-06-21-imported-json-single-source-static-data-exit.md`](superpowers/plans/2026-06-21-imported-json-single-source-static-data-exit.md) | M6.2.x 前台静态业务数据退场、可导入 Project JSON 单一示例源和空态契约实施记录。 |
 | [`superpowers/plans/2026-06-21-legacy-run-api-retirement.md`](superpowers/plans/2026-06-21-legacy-run-api-retirement.md) | legacy `/api/simulation-runs` 退场、canonical `/api/runs` 唯一路径和 smoke 测试迁移计划。 |
+| [`superpowers/specs/2026-06-21-m7-0-run-artifact-management-design.md`](superpowers/specs/2026-06-21-m7-0-run-artifact-management-design.md) | M7.0 运行与产物管理设计，限定 run list/detail、artifact 下载、归档、软删除和审计边界。 |
+| [`superpowers/plans/2026-06-21-m7-0-run-artifact-management.md`](superpowers/plans/2026-06-21-m7-0-run-artifact-management.md) | M7.0 运行与产物管理实施计划和 Task 4 文档同步边界。 |
 | [`../reports/2026-06-19-page-revision-suggestions/README.md`](../reports/2026-06-19-page-revision-suggestions/README.md) | 2026-06-19 页面走查建议；已取消删除「建模数据导入」页，其余建议作为页面收口输入。 |
 | [`superpowers/plans/2026-06-20-page-suggestion-alignment.md`](superpowers/plans/2026-06-20-page-suggestion-alignment.md) | 页面建议收口实施计划，限定保留 M5.2 建模数据导入工作台并先处理 M6.1.1 前置输入可用性。 |
 | [`superpowers/plans/2026-06-20-m6-1-1-single-simulation-input-alignment.md`](superpowers/plans/2026-06-20-m6-1-1-single-simulation-input-alignment.md) | M6.1.1 单次仿真输入对齐执行计划，要求可视化推演和单次运行先通过 `ExperimentPlan + ModelingSnapshot -> Scenario compiler -> compiled Scenario`。 |

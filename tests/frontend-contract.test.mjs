@@ -1460,6 +1460,46 @@ test("monte carlo experiment management has list, editor, and detail pages", asy
   assert.match(styleSource, /\.mc-config-panel/);
 });
 
+test("browser smoke enters monte carlo editor or detail before using sweep inputs", async () => {
+  const smokeSource = await readFile(new URL("../reports/m3-1-browser-backend-smoke/browser-backend-smoke.mjs", import.meta.url), "utf8");
+  const smokeStart = smokeSource.indexOf('await clickFeature(page, "spare-planning-monte-carlo-experiment-list")');
+  const smokeEnd = smokeSource.indexOf('await clickFeature(page, "spare-planning-monte-carlo-results")');
+  const smokeMonteCarloSource = smokeSource.slice(
+    smokeStart,
+    smokeEnd
+  );
+  const helperStart = smokeSource.indexOf("async function openMonteCarloExperimentForRun");
+  const helperEnd = smokeSource.indexOf("async function openMonteCarloExperimentDetailForRun");
+  const openExperimentSource = smokeSource.slice(
+    helperStart,
+    helperEnd
+  );
+
+  assert.notEqual(smokeStart, -1, "smoke Monte Carlo flow start marker exists");
+  assert.doesNotMatch(smokeMonteCarloSource, /spare-planning-monte-carlo-config/);
+  assert.notEqual(smokeEnd, -1, "smoke Monte Carlo flow end marker exists");
+  assert.ok(smokeEnd > smokeStart, "smoke Monte Carlo result navigation follows config flow");
+  assert.notEqual(helperStart, -1, "smoke open experiment helper exists");
+  assert.notEqual(helperEnd, -1, "smoke detail helper follows open experiment helper");
+  assert.ok(helperEnd > helperStart, "smoke helper source slice is ordered");
+  assert.match(openExperimentSource, /data-mc-experiment-action="edit"/);
+  assert.match(openExperimentSource, /data-mc-experiment-action="add"/);
+  assert.ok(
+    smokeMonteCarloSource.indexOf("openMonteCarloExperimentForRun") <
+      smokeMonteCarloSource.indexOf('data-mc-array-path="monteCarlo.failureRates"'),
+    "smoke must leave the Monte Carlo experiment list before filling sweep inputs"
+  );
+  assert.ok(
+    smokeMonteCarloSource.indexOf("document.activeElement?.blur()") >
+      smokeMonteCarloSource.indexOf('data-mc-array-path="monteCarlo.failureRates"') &&
+      smokeMonteCarloSource.indexOf("document.activeElement?.blur()") <
+        smokeMonteCarloSource.indexOf("openMonteCarloExperimentDetailForRun"),
+    "smoke must apply the sweep input change before clicking through to detail"
+  );
+  assert.match(smokeSource, /data-mc-action="start"/);
+  assert.match(smokeSource, /function openMonteCarloExperimentForRun/);
+});
+
 test("analysis pages manage analysis tasks and can auto-create a bound monte carlo experiment", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const analysisSource = appSource.slice(
@@ -1554,6 +1594,203 @@ test("frontend code no longer references legacy simulation run routes", async ()
   for (const file of files) {
     const source = await readFile(new URL(file, import.meta.url), "utf8");
     assert.doesNotMatch(source, /\/simulation-runs/);
+  }
+});
+
+test("M7 run artifact panel renders artifact identity and lifecycle controls", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  assert.match(appSource, /listRuns\(/);
+  assert.match(appSource, /getRunDetail\(/);
+  assert.match(appSource, /downloadRunArtifact\(/);
+  assert.match(appSource, /archiveRun\(/);
+  assert.match(appSource, /deleteRun\(/);
+  assert.match(appSource, /artifact_id/);
+  assert.match(appSource, /sha256/);
+  assert.match(appSource, /size_bytes/);
+  assert.match(appSource, /data-action="m7-archive-run"/);
+  assert.match(appSource, /data-action="m7-delete-run"/);
+  assert.match(appSource, /lifecycle_status/);
+  assert.match(appSource, /URL\.createObjectURL/);
+  assert.match(appSource, /anchor\.download/);
+  assert.doesNotMatch(appSource, /\/api\/simulation-runs/);
+});
+
+test("M7 run refresh is allowed before any selected run guard", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const refreshPanelSource = appSource.slice(
+    appSource.indexOf("async function refreshM7RunArtifactPanel"),
+    appSource.indexOf("async function handleM7RunArtifactAction")
+  );
+  const actionSource = appSource.slice(
+    appSource.indexOf("async function handleM7RunArtifactAction"),
+    appSource.indexOf("function artifactDownloadName")
+  );
+  const refreshBranchIndex = actionSource.indexOf('action === "m7-refresh-runs"');
+  const missingRunGuardIndex = actionSource.indexOf("if (!runId)");
+  const detailBranchIndex = actionSource.indexOf('action === "m7-detail-run"');
+  const downloadBranchIndex = actionSource.indexOf('action === "m7-download-artifact"');
+  const archiveBranchIndex = actionSource.indexOf('action === "m7-archive-run"');
+  const deleteBranchIndex = actionSource.indexOf('action === "m7-delete-run"');
+
+  assert.notEqual(refreshBranchIndex, -1, "refresh action branch exists");
+  assert.notEqual(missingRunGuardIndex, -1, "missing run guard exists");
+  assert.ok(refreshBranchIndex < missingRunGuardIndex, "refresh must run before the missing run_id guard");
+  assert.match(refreshPanelSource, /backendApi\.listRuns\(\{\s*run_type: "monte_carlo",\s*include_deleted: 1\s*\}\)/);
+  assert.ok(refreshPanelSource.indexOf("backendApi.listRuns") < refreshPanelSource.indexOf("if (!selectedRunId) return"));
+  for (const [label, branchIndex] of [
+    ["detail", detailBranchIndex],
+    ["download", downloadBranchIndex],
+    ["archive", archiveBranchIndex],
+    ["delete", deleteBranchIndex]
+  ]) {
+    assert.ok(branchIndex > missingRunGuardIndex, `${label} remains guarded by run_id`);
+  }
+});
+
+test("M7 browser smoke helper verifies archive and tombstone evidence", async () => {
+  const smokeSource = await readFile(
+    new URL("../reports/m3-1-browser-backend-smoke/browser-backend-smoke.mjs", import.meta.url),
+    "utf8"
+  );
+  const loginSource = smokeSource.slice(
+    smokeSource.indexOf("async function loginAndEnterProject"),
+    smokeSource.indexOf("async function clickFeature")
+  );
+  const m7Source = smokeSource.slice(
+    smokeSource.indexOf("async function verifyM7RunArtifactManagement"),
+    smokeSource.indexOf("function assertHasIdentityChain")
+  );
+  const readEvidenceSource = smokeSource.slice(
+    smokeSource.indexOf("async function readBackendEvidence"),
+    smokeSource.indexOf("async function verifyM7RunArtifactManagement")
+  );
+  const offlineSource = smokeSource.slice(
+    smokeSource.indexOf("const offlineContext = await browser.newContext"),
+    smokeSource.indexOf("const result = {")
+  );
+
+  assert.match(loginSource, /button\[data-enter-workbench\]\[data-project-id\]/);
+  assert.doesNotMatch(loginSource, /进入当前项目/);
+  assert.match(readEvidenceSource, /function waitForBackendIdentityChain/);
+  assert.match(readEvidenceSource, /requiredKeys = \["Project", "Snapshot", "ExperimentPlan", "Scenario", "Run", "Result", "ArtifactManifest"\]/);
+  assert.match(readEvidenceSource, /requiredKeys\.every\(\(key\) => labels\.includes\(key\)\)/);
+  assert.match(offlineSource, /const offlineContext = await browser\.newContext/);
+  assert.match(offlineSource, /offlineContext\.addInitScript/);
+  assert.match(offlineSource, /localStorage\.clear\(\)/);
+  assert.match(offlineSource, /sessionStorage\.clear\(\)/);
+  assert.match(offlineSource, /loginRouteUrl\(baseUrl\)/);
+  assert.ok(
+    offlineSource.indexOf("await loginAndEnterProject(offlinePage)") < offlineSource.indexOf('offlinePage.route("**/api/**"'),
+    "offline smoke should block /api after login and project entry"
+  );
+  assert.ok(
+    offlineSource.indexOf("offlineContext.addInitScript") < offlineSource.indexOf("await offlinePage.goto"),
+    "offline smoke should clear storage before app boot"
+  );
+  for (const token of [
+    "runListVisibleIncludesRunId",
+    "detailVisible",
+    "artifactColumnsVisible",
+    "artifactSha25664",
+    "downloadObserved",
+    "filenameIncludesArtifactId",
+    "archiveStateVisible",
+    "tombstoneVisible",
+    "softDeleteBoundaryVisible",
+    "physicalDeletionImplied"
+  ]) {
+    assert.match(m7Source, new RegExp(token));
+  }
+  assert.match(m7Source, /data-action="m7-archive-run"/);
+  assert.match(m7Source, /data-action="m7-delete-run"/);
+  assert.match(m7Source, /不会被物理删除|不表示本地 artifact 文件被物理删除/);
+});
+
+test("M7 cold refresh lists runs while missing-run actions stay guarded", async () => {
+  const calls = [];
+  const listeners = {};
+  const appNode = {
+    innerHTML: "",
+    addEventListener(type, listener) {
+      listeners[type] = listener;
+    },
+    querySelector() {
+      return null;
+    }
+  };
+  const previousDocument = globalThis.document;
+  const previousWindow = globalThis.window;
+  const previousLocation = globalThis.location;
+  const previousLocalStorage = globalThis.localStorage;
+  const previousFetch = globalThis.fetch;
+
+  globalThis.document = {
+    querySelector(selector) {
+      return selector === "#app" ? appNode : null;
+    },
+    createElement() {
+      throw new Error("download anchor should not be created without a run_id");
+    },
+    body: {
+      appendChild() {
+        throw new Error("download anchor should not be appended without a run_id");
+      }
+    }
+  };
+  globalThis.location = { hash: "" };
+  globalThis.window = {
+    addEventListener(type, listener) {
+      listeners[`window:${type}`] = listener;
+    },
+    location: globalThis.location
+  };
+  globalThis.localStorage = {
+    getItem() {
+      return null;
+    },
+    setItem() {},
+    removeItem() {}
+  };
+  globalThis.fetch = async (url, init = {}) => {
+    calls.push({ url: String(url), method: init.method || "GET" });
+    return {
+      ok: true,
+      json: async () => ({ runs: [] })
+    };
+  };
+
+  const clickM7Action = async (dataset) => {
+    const button = {
+      dataset,
+      closest(selector) {
+        return selector === "[data-action^='m7-']" ? button : null;
+      }
+    };
+    listeners.click({ target: button });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  };
+
+  try {
+    await import(`../front/app.js?m7-cold-refresh=${Date.now()}`);
+    assert.equal(typeof listeners.click, "function", "app click handler is bound");
+
+    await clickM7Action({ action: "m7-refresh-runs", runId: "" });
+    assert.deepEqual(calls, [
+      { url: "/api/runs?run_type=monte_carlo&include_deleted=1", method: "GET" }
+    ]);
+
+    calls.length = 0;
+    await clickM7Action({ action: "m7-open-run-detail", runId: "" });
+    await clickM7Action({ action: "m7-download-artifact", runId: "", artifactId: "artifact-cold" });
+    await clickM7Action({ action: "m7-archive-run", runId: "" });
+    await clickM7Action({ action: "m7-delete-run", runId: "" });
+    assert.deepEqual(calls, [], "detail, download, archive, and delete stay behind the missing run_id guard");
+  } finally {
+    globalThis.document = previousDocument;
+    globalThis.window = previousWindow;
+    globalThis.location = previousLocation;
+    globalThis.localStorage = previousLocalStorage;
+    globalThis.fetch = previousFetch;
   }
 });
 

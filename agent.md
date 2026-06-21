@@ -50,6 +50,7 @@ http://127.0.0.1:4173/front/
 20. RunIntent / MonteCarloRunConfig / imported sample Project 收敛已作为 M6.2 后续切片完成：正式 run 必须走 `RunIntent -> /api/runs -> RunService -> artifacts`；正式 MC 数值配置只能从 `ExperimentPlan.config.analysisRequests.largeSample` 生成 canonical `MonteCarloRunConfig`；request-level MC numeric config 必须被拒绝；Adapter 缺 normalized config 或收到 legacy params 时必须 fail closed，不得继续让 request、Project draft、Adapter 和前端本地 sweep 多处猜值。项目列表可从 modeling import 生成示例 Project draft；没有已发布包时入口会先保存并发布示例导入包，再 create-project。`/api/runs` formal gate 必须验证 `missionProfile.sourceImportId`、已发布 import/projectId 匹配和 `modeling_import.create_project` allowed 审计记录，手工伪造来源不能通过；正式和预览测试运行提交、查询、结果、产物和身份链都只走 canonical `/api/runs` 路径。`defaultScenario`、`runSimulation` 和 `runMonteCarlo` 只能保留为离线 fixture、本地预览或测试 fallback，不能作为正式结果来源。
 21. M6.2.x 输入源治理已收束：`tests/fixtures/modeling_import_project.json` 是唯一完整业务示例源。前端页面缺少 imported JSON 数据时必须显示空态或创建入口，不得从 `defaultScenario`、`SUPPORT_*`、`MISSION_*` 或 preview fixture 静默补业务样例；preview fixture 只能用于显式本地预览和测试 fallback。该规则不表示 M8 projection payload 驱动 KPI 或 M9 state stream 已完成。
 22. Legacy `/api/simulation-runs` 已退役：新实现、测试、浏览器 smoke 和文档不得把它作为可用入口；运行提交和查询必须走 canonical `/api/runs`、`/api/runs/{run_id}`、`/api/runs/{run_id}/result`、`/api/runs/{run_id}/artifacts` 和 `/api/runs/{run_id}/chain`。旧路径只允许返回 `410 legacy_run_api_retired` 的负向契约。
+23. M7.0 之后所有新的运行管理工作必须继续使用 canonical `/api/runs` 和 artifact ids：run list/detail、下载、归档、软删除、审计和前端展示都必须按 `run_id` + `artifact_id` 定位，不能接受裸 artifact path，也不得恢复或重新引入 legacy `/api/simulation-runs`。
 
 ## Mesa 后台契约服务（Contract Provider）
 

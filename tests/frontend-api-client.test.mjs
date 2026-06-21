@@ -122,6 +122,39 @@ test("frontend API client exposes only canonical run read routes", async () => {
   ]);
 });
 
+test("frontend API client exposes M7 run artifact management routes", async () => {
+  const calls = [];
+  const requests = [];
+  const client = createBackendApiClient({
+    transport: async (request) => {
+      requests.push(request);
+      calls.push(`${request.method} ${request.path}`);
+      if (request.path === "/runs") return { runs: [{ run_id: "run-ui" }] };
+      if (request.path === "/runs/run-ui/detail") return { run: { run_id: "run-ui" }, artifact_manifest: { artifacts: [] } };
+      if (request.path === "/runs/run-ui/artifacts/artifact-ui") return { ok: true, artifact_id: "artifact-ui" };
+      if (request.path === "/runs/run-ui/archive") return { run_id: "run-ui", lifecycle_status: "archived" };
+      if (request.path === "/runs/run-ui") return { run_id: "run-ui", lifecycle_status: "deleted" };
+      throw new Error(`unexpected ${request.method} ${request.path}`);
+    }
+  });
+
+  await client.listRuns();
+  await client.getRunDetail("run-ui");
+  await client.downloadRunArtifact("run-ui", "artifact-ui");
+  await client.archiveRun("run-ui");
+  await client.deleteRun("run-ui");
+
+  assert.deepEqual(calls, [
+    "GET /runs",
+    "GET /runs/run-ui/detail",
+    "GET /runs/run-ui/artifacts/artifact-ui",
+    "POST /runs/run-ui/archive",
+    "DELETE /runs/run-ui"
+  ]);
+  const downloadRequest = requests.find((request) => request.path === "/runs/run-ui/artifacts/artifact-ui");
+  assert.equal(downloadRequest.responseType, "blob");
+});
+
 test("frontend API client preserves formal M6.2 monte carlo SimulationExperimentBase fields", async () => {
   const calls = [];
   const client = createBackendApiClient({

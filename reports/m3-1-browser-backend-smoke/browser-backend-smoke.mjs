@@ -49,9 +49,12 @@ try {
     page.locator("[data-save-plan]").click()
   ]);
 
-  await clickFeature(page, "spare-planning-monte-carlo-config");
+  await clickFeature(page, "spare-planning-monte-carlo-experiment-list");
   await expectHeading(page, "蒙特卡洛实验");
+  await openMonteCarloExperimentForRun(page);
   await page.locator('input[data-mc-array-path="monteCarlo.failureRates"]').fill("0.06,0.08,0.1");
+  await page.evaluate(() => document.activeElement?.blur());
+  await openMonteCarloExperimentDetailForRun(page);
   let runResponse = await clickMonteCarloStart(page);
   if (!runResponse) runResponse = await clickMonteCarloStartWithDomFallback(page);
   if (!runResponse) {
@@ -61,7 +64,7 @@ try {
 
   await clickFeature(page, "spare-planning-monte-carlo-results");
   await expectHeading(page, "蒙特卡洛实验结果");
-  await page.waitForFunction(() => document.body.innerText.includes("ArtifactManifest"));
+  await waitForBackendIdentityChain(page);
   const beforeRefresh = await readBackendEvidence(page);
   assertHasIdentityChain(beforeRefresh.chain, "before refresh");
   if (beforeRefresh.statusText.includes("离线演示") || beforeRefresh.bodyText.includes("offline-demo-run")) {
@@ -71,9 +74,10 @@ try {
 
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => document.body.innerText.includes("已从后端恢复"));
-  await page.waitForFunction(() => document.body.innerText.includes("ArtifactManifest"));
+  await waitForBackendIdentityChain(page);
   const afterRefresh = await readBackendEvidence(page);
   assertHasIdentityChain(afterRefresh.chain, "after refresh");
+  const m7RunArtifactEvidence = await verifyM7RunArtifactManagement(page, afterRefresh.chain.Run);
   if (afterRefresh.chain.Run !== beforeRefresh.chain.Run) {
     throw new Error(`Refresh loaded a different run: ${afterRefresh.chain.Run} != ${beforeRefresh.chain.Run}`);
   }
@@ -82,7 +86,7 @@ try {
   const restartInfo = await restartBackendServer();
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => document.body.innerText.includes("已从后端恢复"));
-  await page.waitForFunction(() => document.body.innerText.includes("ArtifactManifest"));
+  await waitForBackendIdentityChain(page);
   const afterRestartRun = await readBackendEvidence(page);
   assertHasIdentityChain(afterRestartRun.chain, "after restart");
   if (afterRestartRun.chain.Run !== beforeRefresh.chain.Run) {
@@ -104,8 +108,15 @@ try {
   }
   await page.screenshot({ path: `${screenshotDir}/02b-restart-restored-import.png`, fullPage: true });
 
-  const offlinePage = await context.newPage();
+  const offlineContext = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+  await offlineContext.addInitScript(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+  });
+  const offlinePage = await offlineContext.newPage();
   trackApiEvents(offlinePage, apiEvents);
+  await offlinePage.goto(loginRouteUrl(baseUrl), { waitUntil: "domcontentloaded", timeout: 10000 });
+  await loginAndEnterProject(offlinePage);
   await offlinePage.route("**/api/**", (route) =>
     route.fulfill({
       status: 503,
@@ -113,11 +124,10 @@ try {
       body: JSON.stringify({ code: "backend_unavailable", message: "blocked by M3-1 smoke" })
     })
   );
-  await offlinePage.goto(baseUrl, { waitUntil: "domcontentloaded", timeout: 10000 });
-  await offlinePage.evaluate(() => localStorage.clear());
-  await loginAndEnterProject(offlinePage);
-  await clickFeature(offlinePage, "spare-planning-monte-carlo-config");
+  await clickFeature(offlinePage, "spare-planning-monte-carlo-experiment-list");
   await expectHeading(offlinePage, "蒙特卡洛实验");
+  await openMonteCarloExperimentForRun(offlinePage);
+  await openMonteCarloExperimentDetailForRun(offlinePage);
   await offlinePage.locator('button[data-mc-action="start"]').click();
   await offlinePage.waitForTimeout(250);
   await clickFeature(offlinePage, "spare-planning-monte-carlo-results");
@@ -127,6 +137,7 @@ try {
     throw new Error("/api unavailable path created a fake offline-demo-run");
   }
   await offlinePage.screenshot({ path: `${screenshotDir}/03-api-unavailable-blocked.png`, fullPage: true });
+  await offlineContext.close();
 
   const result = {
     ok: true,
@@ -144,6 +155,7 @@ try {
     afterRefresh,
     afterRestartRun,
     afterRestartImport,
+    m7RunArtifactEvidence,
     projectDraftEvidence,
     restartInfo,
     offlineBlocked: {
@@ -162,7 +174,17 @@ async function loginAndEnterProject(page) {
   await page.getByLabel("密码").fill("data");
   await page.getByRole("button", { name: "登录" }).click();
   await expectHeading(page, "项目列表");
-  await page.getByRole("button", { name: "进入当前项目" }).click();
+  const entered = await page.evaluate(() => {
+    const buttons = Array.from(document.querySelectorAll("button[data-enter-workbench][data-project-id]"));
+    const activeButton = document.querySelector(".project-card.active button[data-enter-workbench][data-project-id]");
+    const button = activeButton || buttons.find((candidate) => !candidate.disabled);
+    if (!button) return false;
+    button.click();
+    return true;
+  });
+  if (!entered) {
+    throw new Error("Cannot find current/default project entry button: button[data-enter-workbench][data-project-id]");
+  }
   await clickFeature(page, "spare-planning-experiment-plan-list");
   await expectHeading(page, "仿真实验方案管理");
 }
@@ -181,6 +203,41 @@ async function clickFeature(page, featureId) {
     return true;
   }, featureId);
   if (!clicked) throw new Error(`Cannot find feature button ${featureId}`);
+}
+
+async function openMonteCarloExperimentForRun(page) {
+  const sweepInput = page.locator('input[data-mc-array-path="monteCarlo.failureRates"]').first();
+  if (await sweepInput.isVisible().catch(() => false)) return;
+
+  const editButton = page.locator('button[data-mc-experiment-action="edit"]').first();
+  const addButton = page.locator('button[data-mc-experiment-action="add"]').first();
+  if (await editButton.isVisible().catch(() => false)) {
+    await editButton.click();
+  } else if (await addButton.isVisible().catch(() => false)) {
+    await addButton.click();
+  } else {
+    throw new Error("Cannot find Monte Carlo experiment add/edit action before filling sweep inputs");
+  }
+
+  await sweepInput.waitFor({ state: "visible", timeout: 5000 });
+}
+
+async function openMonteCarloExperimentDetailForRun(page) {
+  const startButton = page.locator('button[data-mc-action="start"]').first();
+  if (await startButton.isVisible().catch(() => false)) return;
+
+  const detailButton = page.locator('button[data-feature-id="spare-planning-monte-carlo-experiment-detail"]').first();
+  if (await detailButton.isVisible().catch(() => false)) {
+    await detailButton.click();
+  } else {
+    const listDetailButton = page.locator('button[data-mc-experiment-action="detail"]').first();
+    if (!await listDetailButton.isVisible().catch(() => false)) {
+      throw new Error("Cannot find Monte Carlo experiment detail action before starting run");
+    }
+    await listDetailButton.click();
+  }
+
+  await startButton.waitFor({ state: "visible", timeout: 5000 });
 }
 
 async function clickMonteCarloStart(page) {
@@ -256,22 +313,154 @@ async function expectSectionTitle(page, expected) {
 
 async function readBackendEvidence(page) {
   return page.evaluate(() => {
-    const rows = Array.from(document.querySelectorAll(".backend-run-chain table:first-of-type tr"));
+    const requiredKeys = ["Project", "Snapshot", "ExperimentPlan", "Scenario", "Run", "Result", "ArtifactManifest"];
+    const chainSection = Array.from(document.querySelectorAll(".backend-run-chain")).find((section) => {
+      const labels = Array.from(section.querySelectorAll("table:first-of-type tr th")).map((cell) => cell.textContent?.trim() || "");
+      return requiredKeys.every((key) => labels.includes(key));
+    });
+    const rows = Array.from(chainSection?.querySelectorAll("table:first-of-type tr") || []);
     const chain = Object.fromEntries(rows.map((row) => {
       const cells = row.querySelectorAll("th, td");
       return [cells[0]?.textContent?.trim() || "", cells[1]?.textContent?.trim() || ""];
     }));
-    const artifacts = Array.from(document.querySelectorAll(".backend-run-chain table:nth-of-type(2) tr")).map((row) => {
+    const artifacts = Array.from(chainSection?.querySelectorAll("table:nth-of-type(2) tr") || []).map((row) => {
       const cells = row.querySelectorAll("th, td");
       return { kind: cells[0]?.textContent?.trim() || "", path: cells[1]?.textContent?.trim() || "" };
     });
     return {
-      statusText: document.querySelector(".backend-run-chain span")?.textContent?.trim() || "",
+      statusText: chainSection?.querySelector("span")?.textContent?.trim() || "",
       chain,
       artifacts,
       bodyText: document.body.innerText
     };
   });
+}
+
+async function waitForBackendIdentityChain(page) {
+  await page.waitForFunction(() => {
+    const requiredKeys = ["Project", "Snapshot", "ExperimentPlan", "Scenario", "Run", "Result", "ArtifactManifest"];
+    return Array.from(document.querySelectorAll(".backend-run-chain")).some((section) => {
+      const labels = Array.from(section.querySelectorAll("table:first-of-type tr th")).map((cell) => cell.textContent?.trim() || "");
+      return requiredKeys.every((key) => labels.includes(key));
+    });
+  }, null, { timeout: 10000 });
+}
+
+async function verifyM7RunArtifactManagement(page, runId) {
+  const refreshRunsButton = page.locator('[data-action="m7-refresh-runs"]');
+  await refreshRunsButton.click();
+  await page.waitForFunction(
+    (expectedRunId) => document.querySelector(".m7-run-artifact-management")?.innerText.includes(expectedRunId),
+    runId,
+    { timeout: 5000 }
+  );
+  const openRunDetailButton = page.locator(`button[data-action="m7-open-run-detail"][data-run-id="${runId}"]`).first();
+  await openRunDetailButton.click();
+  await page.waitForFunction(() => {
+    const section = document.querySelector(".m7-run-artifact-management");
+    if (!section) return false;
+    const text = section.innerText;
+    return text.includes("artifact_id")
+      && text.includes("sha256")
+      && text.includes("size_bytes")
+      && /[0-9a-f]{64}/.test(text);
+  }, null, { timeout: 5000 });
+  const detailEvidence = await readM7RunArtifactPanelEvidence(page, runId);
+  if (!detailEvidence.runListVisibleIncludesRunId || !detailEvidence.detailVisible) {
+    throw new Error(`M7 run list/detail evidence is incomplete: ${JSON.stringify(detailEvidence)}`);
+  }
+  if (!detailEvidence.artifactColumnsVisible || !detailEvidence.artifactSha25664) {
+    throw new Error(`M7 artifact metadata evidence is incomplete: ${JSON.stringify(detailEvidence)}`);
+  }
+  const artifactButton = page.locator('.m7-run-artifact-management button[data-action="m7-download-artifact"][data-artifact-id]').first();
+  const artifactId = await artifactButton.getAttribute("data-artifact-id");
+  if (!artifactId) {
+    throw new Error("M7 smoke could not find a downloadable artifact_id");
+  }
+  const downloadEventPromise = page.waitForEvent("download");
+  await artifactButton.click();
+  const download = await downloadEventPromise;
+  if (!download.suggestedFilename().includes(artifactId)) {
+    throw new Error(`M7 artifact download filename did not include ${artifactId}: ${download.suggestedFilename()}`);
+  }
+  const archiveButton = page.locator(`.m7-run-artifact-management button[data-action="m7-archive-run"][data-run-id="${runId}"]`).first();
+  await archiveButton.click();
+  await page.waitForFunction(() => {
+    const text = document.querySelector(".m7-run-artifact-management")?.innerText || "";
+    return text.includes("已归档") || text.includes("archived");
+  }, null, { timeout: 5000 });
+  const archiveEvidence = await readM7RunArtifactPanelEvidence(page, runId);
+  if (!archiveEvidence.archiveStateVisible) {
+    throw new Error(`M7 archive state is not visible after archive action: ${JSON.stringify(archiveEvidence)}`);
+  }
+
+  const deleteButton = page.locator(`.m7-run-artifact-management button[data-action="m7-delete-run"][data-run-id="${runId}"]`).first();
+  await deleteButton.click();
+  await page.waitForFunction(() => {
+    const text = document.querySelector(".m7-run-artifact-management")?.innerText || "";
+    return text.includes("tombstone") || text.includes("软删除") || text.includes("deleted");
+  }, null, { timeout: 5000 });
+  const deleteEvidence = await readM7RunArtifactPanelEvidence(page, runId);
+  if (!deleteEvidence.tombstoneVisible || !deleteEvidence.softDeleteBoundaryVisible || deleteEvidence.physicalDeletionImplied) {
+    throw new Error(`M7 soft-delete tombstone boundary evidence is incomplete: ${JSON.stringify(deleteEvidence)}`);
+  }
+
+  return {
+    runId,
+    artifactId,
+    runListVisibleIncludesRunId: detailEvidence.runListVisibleIncludesRunId,
+    detailVisible: detailEvidence.detailVisible,
+    artifactColumnsVisible: detailEvidence.artifactColumnsVisible,
+    artifactSha25664: detailEvidence.artifactSha25664,
+    artifactMetadata: detailEvidence.artifactMetadata,
+    downloadObserved: true,
+    suggestedFilename: download.suggestedFilename(),
+    filenameIncludesArtifactId: download.suggestedFilename().includes(artifactId),
+    archiveStateVisible: archiveEvidence.archiveStateVisible,
+    archiveStatusText: archiveEvidence.statusText,
+    tombstoneVisible: deleteEvidence.tombstoneVisible,
+    softDeleteBoundaryVisible: deleteEvidence.softDeleteBoundaryVisible,
+    physicalDeletionImplied: deleteEvidence.physicalDeletionImplied,
+    deleteStatusText: deleteEvidence.statusText,
+    panelText: deleteEvidence.panelText
+  };
+}
+
+async function readM7RunArtifactPanelEvidence(page, runId) {
+  return page.evaluate((expectedRunId) => {
+    const panel = document.querySelector(".m7-run-artifact-management");
+    const panelText = panel?.innerText || "";
+    const tables = Array.from(panel?.querySelectorAll("table") || []);
+    const artifactTable = tables.find((table) => {
+      const headers = Array.from(table.querySelectorAll("th")).map((cell) => cell.textContent?.trim() || "");
+      return headers.includes("artifact_id") && headers.includes("sha256") && headers.includes("size_bytes");
+    });
+    const artifactRows = Array.from(artifactTable?.querySelectorAll("tbody tr") || []).map((row) => {
+      const cells = Array.from(row.querySelectorAll("td")).map((cell) => cell.textContent?.trim() || "");
+      return {
+        artifact_id: cells[0] || "",
+        kind: cells[1] || "",
+        path: cells[2] || "",
+        sha256: cells[3] || "",
+        size_bytes: cells[4] || ""
+      };
+    });
+    const artifactMetadata = artifactRows.find((row) => row.artifact_id && row.sha256 && row.size_bytes) || null;
+    const physicalDeletionPhrases = ["已物理删除", "文件已删除", "artifact 文件已删除", "本地 artifact 文件已删除"];
+    return {
+      statusText: panel?.querySelector("span")?.textContent?.trim() || "",
+      panelText,
+      runListVisibleIncludesRunId: panelText.includes(expectedRunId),
+      detailVisible: panelText.includes("artifact_manifest_id") && panelText.includes(expectedRunId),
+      artifactColumnsVisible: Boolean(artifactTable),
+      artifactSha25664: artifactRows.some((row) => /^[0-9a-f]{64}$/i.test(row.sha256)),
+      artifactMetadata,
+      archiveStateVisible: panelText.includes("已归档") || panelText.includes("archived"),
+      tombstoneVisible: panelText.includes("tombstone") || panelText.includes("软删除") || panelText.includes("deleted"),
+      softDeleteBoundaryVisible: panelText.includes("不会被物理删除") || panelText.includes("不表示本地 artifact 文件被物理删除"),
+      physicalDeletionImplied: physicalDeletionPhrases.some((phrase) => panelText.includes(phrase))
+    };
+  }, runId);
 }
 
 function assertHasIdentityChain(chain, label) {
@@ -282,6 +471,12 @@ function assertHasIdentityChain(chain, label) {
 
 function firstMatchingLine(text, needle) {
   return text.split("\n").find((line) => line.includes(needle)) || "";
+}
+
+function loginRouteUrl(url) {
+  const parsed = new URL(url);
+  parsed.hash = "route=login";
+  return parsed.toString();
 }
 
 function trackApiEvents(page, events) {

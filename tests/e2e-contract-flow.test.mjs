@@ -37,8 +37,16 @@ test("contract-first smoke flow saves modeling state and fetches run outputs", a
   assert.ok(flow.result.metrics.mission_success_rate <= 1);
 
   const artifactKinds = new Set(flow.artifactManifest.artifacts.map((artifact) => artifact.kind));
-  assert.equal(flow.artifactManifest.artifacts.length, 4);
-  assert.deepEqual(artifactKinds, new Set(["input_project", "compiled_scenario", "snapshot", "result_summary"]));
+  assertSetIncludes(artifactKinds, [
+    "input_project",
+    "compiled_scenario",
+    "snapshot",
+    "result_summary",
+    "run_config",
+    "metrics",
+    "report",
+    "log"
+  ]);
   for (const artifact of flow.artifactManifest.artifacts) {
     assert.equal(typeof artifact.path, "string");
     assert.equal(path.isAbsolute(artifact.path), false);
@@ -172,4 +180,9 @@ function processFailureMessage(result) {
     `stdout=${result.stdout}`,
     `stderr=${result.stderr}`
   ].join("\n");
+}
+
+function assertSetIncludes(actual, expectedValues) {
+  const missing = expectedValues.filter((value) => !actual.has(value));
+  assert.deepEqual(missing, []);
 }

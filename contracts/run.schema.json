@@ -41,6 +41,13 @@
     "completed_at": { "type": "string" },
     "result_summary_id": { "type": ["string", "null"] },
     "artifact_manifest_id": { "type": "string" },
+    "created_by": { "type": "string" },
+    "lifecycle_status": { "type": "string", "enum": ["active", "archived", "deleted"] },
+    "archived_at": { "type": ["string", "null"] },
+    "archived_by": { "type": ["string", "null"] },
+    "deleted_at": { "type": ["string", "null"] },
+    "deleted_by": { "type": ["string", "null"] },
+    "run_config": { "type": "object", "additionalProperties": true },
     "simulation_experiment_base": { "$ref": "#/$defs/SimulationExperimentBase" },
     "error": { "type": ["object", "null"] }
   },

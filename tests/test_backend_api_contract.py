@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import sqlite3
 import tempfile
 from pathlib import Path
+from typing import Any
 import unittest
 
 from src.spare_mvp_backend.api import BackendApi, BackendApiError
@@ -15,7 +17,16 @@ from src.spare_mvp_contract.adapter import AdapterError, SimulationAdapter
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-M6_2_MONTE_CARLO_ARTIFACT_KINDS = {
+M7_MONTE_CARLO_ARTIFACT_KINDS = {
+    "run_config",
+    "input_project",
+    "compiled_scenario",
+    "sample_results",
+    "aggregate_result",
+    "result_summary",
+    "metrics",
+    "report",
+    "log",
     "monte_carlo_base",
     "analysis_projection_spare_shortfall",
     "analysis_projection_carry_list",
@@ -110,6 +121,23 @@ class BackendApiContractTest(unittest.TestCase):
             "artifact_files": len([path for path in Path(self.tempdir.name).glob("**/*") if path.is_file()])
         }
 
+    def _artifact_by_kind(self, manifest: dict, kind: str) -> dict:
+        return next(artifact for artifact in manifest["artifacts"] if artifact["kind"] == kind)
+
+    def _submit_successful_smoke_run(self) -> dict[str, Any]:
+        project = self._fixture("smoke_project.json")
+        saved = self.api.save_project(project)
+        self.api.create_modeling_snapshot(saved["project_id"])
+        plan = self.api.create_experiment_plan(saved["project_id"], {"name": "m7 artifact download", "steps": 2})
+        return self.api.submit_run(
+            {
+                "project_id": saved["project_id"],
+                "experiment_plan_id": plan["experiment_plan_id"],
+                "model_family": "smoke",
+                "run_type": "single",
+            }
+        )
+
     def test_smoke_backend_flow_persists_complete_run_chain(self) -> None:
         project = self._fixture("smoke_project.json")
 
@@ -188,6 +216,211 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(status["artifact_manifest_id"], submitted["artifact_manifest_id"])
         self.assertEqual(self.adapter.run_calls[0][1], 2)
 
+    def test_run_service_augments_run_config_artifact_with_plan_and_snapshot_identity(self) -> None:
+        project = self._fixture("smoke_project.json")
+        saved = self.api.save_project(project)
+        snapshot = self.api.create_modeling_snapshot(saved["project_id"])
+        plan = self.api.create_experiment_plan(saved["project_id"], {"name": "m7 run config", "steps": 2})
+
+        submitted = self.api.submit_run(
+            {
+                "project_id": saved["project_id"],
+                "experiment_plan_id": plan["experiment_plan_id"],
+                "model_family": "smoke",
+                "run_type": "single",
+            }
+        )
+        manifest = self.api.get_run_artifacts(submitted["run_id"])
+        run_config_artifact = next(artifact for artifact in manifest["artifacts"] if artifact["kind"] == "run_config")
+        payload = json.loads((Path(self.api.output_dir) / run_config_artifact["path"]).read_text(encoding="utf-8"))
+
+        self.assertEqual(payload["experiment_plan_id"], plan["experiment_plan_id"])
+        self.assertEqual(payload["modeling_snapshot_id"], snapshot["snapshot_id"])
+        self.assertEqual(payload["project_id"], saved["project_id"])
+        self.assertEqual(payload["run_id"], submitted["run_id"])
+
+    def test_run_service_keeps_disk_artifact_manifest_in_sync_after_run_config_augmentation(self) -> None:
+        project = self._fixture("smoke_project.json")
+        saved = self.api.save_project(project)
+        self.api.create_modeling_snapshot(saved["project_id"])
+        plan = self.api.create_experiment_plan(saved["project_id"], {"name": "m7 manifest sync", "steps": 2})
+
+        submitted = self.api.submit_run(
+            {
+                "project_id": saved["project_id"],
+                "experiment_plan_id": plan["experiment_plan_id"],
+                "model_family": "smoke",
+                "run_type": "single",
+            }
+        )
+        repository_manifest = self.api.get_run_artifacts(submitted["run_id"])
+        disk_manifest_path = Path(self.api.output_dir) / submitted["run_id"] / "artifact-manifest.json"
+        disk_manifest = json.loads(disk_manifest_path.read_text(encoding="utf-8"))
+        repository_run_config = self._artifact_by_kind(repository_manifest, "run_config")
+        disk_run_config = self._artifact_by_kind(disk_manifest, "run_config")
+
+        for key in ("sha256", "size_bytes", "path", "artifact_id"):
+            self.assertEqual(disk_run_config[key], repository_run_config[key])
+        for artifact in repository_manifest["artifacts"]:
+            artifact_path = Path(self.api.output_dir) / artifact["path"]
+            data = artifact_path.read_bytes()
+            self.assertEqual(hashlib.sha256(data).hexdigest(), artifact["sha256"], artifact)
+            self.assertEqual(len(data), artifact["size_bytes"], artifact)
+
+    def test_backend_api_lists_runs_with_strict_include_deleted_flag_and_limit_clamp(self) -> None:
+        runs = [self._submit_successful_smoke_run() for _ in range(3)]
+        self.api.soft_delete_run(runs[0]["run_id"], actor_user_id="user-admin")
+
+        hidden = self.api.list_runs({"include_deleted": "0", "limit": "500"})
+        visible = self.api.list_runs({"include_deleted": "1", "limit": "500"})
+        truthy_true = self.api.list_runs({"include_deleted": "True"})
+        truthy_lower = self.api.list_runs({"include_deleted": "true"})
+        truthy_bool = self.api.list_runs({"include_deleted": True})
+        false_string = self.api.list_runs({"include_deleted": "yes"})
+        limited = self.api.list_runs({"include_deleted": "1", "limit": "2"})
+
+        self.assertNotIn(runs[0]["run_id"], [item["run_id"] for item in hidden["runs"]])
+        self.assertNotIn(runs[0]["run_id"], [item["run_id"] for item in false_string["runs"]])
+        self.assertIn(runs[0]["run_id"], [item["run_id"] for item in visible["runs"]])
+        self.assertIn(runs[0]["run_id"], [item["run_id"] for item in truthy_true["runs"]])
+        self.assertIn(runs[0]["run_id"], [item["run_id"] for item in truthy_lower["runs"]])
+        self.assertIn(runs[0]["run_id"], [item["run_id"] for item in truthy_bool["runs"]])
+        self.assertEqual(len(limited["runs"]), 2)
+
+    def test_backend_api_resolves_artifact_download_with_hash_verification(self) -> None:
+        run = self._submit_successful_smoke_run()
+        manifest = self.api.get_run_artifacts(run["run_id"])
+        artifact = manifest["artifacts"][0]
+
+        download = self.api.get_run_artifact_download(
+            run["run_id"],
+            artifact["artifact_id"],
+            actor_user_id="user-admin",
+        )
+
+        self.assertEqual(download["artifact"]["artifact_id"], artifact["artifact_id"])
+        self.assertTrue(download["path"].is_file())
+        self.assertEqual(download["content_type"], artifact["media_type"])
+        self.assertEqual(hashlib.sha256(download["body"]).hexdigest(), artifact["sha256"])
+        audit = self.repository.list_audit_events(resource_id=run["run_id"])
+        self.assertEqual([event["action"] for event in audit], ["runs.artifact.download"])
+        self.assertEqual(audit[0]["actor_user_id"], "user-admin")
+
+    def test_backend_api_requires_explicit_actor_for_m7_lifecycle_and_download(self) -> None:
+        run = self._submit_successful_smoke_run()
+        manifest = self.api.get_run_artifacts(run["run_id"])
+        artifact = manifest["artifacts"][0]
+        cases = [
+            ("archive", lambda: self.api.archive_run(run["run_id"])),
+            ("delete", lambda: self.api.soft_delete_run(run["run_id"])),
+            ("download", lambda: self.api.get_run_artifact_download(run["run_id"], artifact["artifact_id"])),
+        ]
+
+        for label, call in cases:
+            with self.subTest(label):
+                with self.assertRaises(BackendApiError) as ctx:
+                    call()
+
+                self.assertEqual(ctx.exception.code, "missing_actor")
+
+        stored = self.api.get_run(run["run_id"])
+        self.assertEqual(stored["lifecycle_status"], "active")
+        self.assertEqual(self.repository.list_audit_events(resource_id=run["run_id"]), [])
+
+    def test_backend_api_lifecycle_requires_admin_or_data_manager_actor(self) -> None:
+        forbidden_run = self._submit_successful_smoke_run()
+
+        for label, mutate in (
+            ("archive", lambda: self.api.archive_run(forbidden_run["run_id"], actor_user_id="user-basic")),
+            ("delete", lambda: self.api.soft_delete_run(forbidden_run["run_id"], actor_user_id="user-basic")),
+        ):
+            with self.subTest(label):
+                with self.assertRaises(BackendApiError) as ctx:
+                    mutate()
+
+                self.assertEqual(ctx.exception.code, "forbidden")
+                stored = self.api.get_run(forbidden_run["run_id"])
+                self.assertEqual(stored["lifecycle_status"], "active")
+                audit = self.repository.list_audit_events(resource_id=forbidden_run["run_id"])
+                self.assertFalse(any(event["outcome"] == "allowed" for event in audit))
+
+        admin_run = self._submit_successful_smoke_run()
+        archived = self.api.archive_run(admin_run["run_id"], actor_user_id="user-admin")
+        self.assertEqual(archived["lifecycle_status"], "archived")
+
+        data_run = self._submit_successful_smoke_run()
+        deleted = self.api.soft_delete_run(data_run["run_id"], actor_user_id="user-data")
+        self.assertEqual(deleted["lifecycle_status"], "deleted")
+
+    def test_backend_api_lifecycle_audit_failure_rolls_back_state(self) -> None:
+        cases = [
+            ("archive", lambda run_id: self.api.archive_run(run_id, actor_user_id="missing-user")),
+            ("delete", lambda run_id: self.api.soft_delete_run(run_id, actor_user_id="missing-user")),
+        ]
+        for label, mutate in cases:
+            with self.subTest(label):
+                run = self._submit_successful_smoke_run()
+
+                with self.assertRaises(sqlite3.IntegrityError):
+                    mutate(run["run_id"])
+
+                stored = self.api.get_run(run["run_id"])
+                self.assertEqual(stored["lifecycle_status"], "active")
+                self.assertEqual(self.repository.list_audit_events(resource_id=run["run_id"]), [])
+
+    def test_backend_api_rejects_artifact_path_escape(self) -> None:
+        run = self._submit_successful_smoke_run()
+        manifest = self.api.get_run_artifacts(run["run_id"])
+        manifest["artifacts"][0]["path"] = "../escape.json"
+        self.repository.upsert_artifact_manifest(manifest)
+
+        with self.assertRaises(BackendApiError) as ctx:
+            self.api.get_run_artifact_download(
+                run["run_id"],
+                manifest["artifacts"][0]["artifact_id"],
+                actor_user_id="system",
+            )
+
+        self.assertEqual(ctx.exception.code, "artifact_path_escape")
+        self.assertEqual(self.repository.list_audit_events(resource_id=run["run_id"]), [])
+
+    def test_backend_api_rejects_artifact_hash_mismatch(self) -> None:
+        run = self._submit_successful_smoke_run()
+        manifest = self.api.get_run_artifacts(run["run_id"])
+        artifact = manifest["artifacts"][0]
+        target = Path(self.api.output_dir) / artifact["path"]
+        target.write_text('{"tampered": true}\n', encoding="utf-8")
+
+        with self.assertRaises(BackendApiError) as ctx:
+            self.api.get_run_artifact_download(run["run_id"], artifact["artifact_id"], actor_user_id="system")
+
+        self.assertEqual(ctx.exception.code, "artifact_hash_mismatch")
+        self.assertEqual(self.repository.list_audit_events(resource_id=run["run_id"]), [])
+
+    def test_backend_api_rejects_missing_artifact_file(self) -> None:
+        run = self._submit_successful_smoke_run()
+        manifest = self.api.get_run_artifacts(run["run_id"])
+        artifact = manifest["artifacts"][0]
+        target = Path(self.api.output_dir) / artifact["path"]
+        target.unlink()
+
+        with self.assertRaises(BackendApiError) as ctx:
+            self.api.get_run_artifact_download(run["run_id"], artifact["artifact_id"], actor_user_id="system")
+
+        self.assertEqual(ctx.exception.code, "artifact_missing")
+        self.assertEqual(self.repository.list_audit_events(resource_id=run["run_id"]), [])
+
+    def test_backend_api_rejects_deleted_run_artifact_download(self) -> None:
+        run = self._submit_successful_smoke_run()
+        manifest = self.api.get_run_artifacts(run["run_id"])
+        artifact = manifest["artifacts"][0]
+        self.api.soft_delete_run(run["run_id"], actor_user_id="user-admin")
+
+        with self.assertRaises(BackendApiError) as ctx:
+            self.api.get_run_artifact_download(run["run_id"], artifact["artifact_id"], actor_user_id="system")
+
+        self.assertEqual(ctx.exception.code, "run_deleted")
+
     def test_run_service_submits_formal_monte_carlo_run_and_persists_projection_artifacts(self) -> None:
         project = self._fixture("smoke_project.json")
         branch_project = copy.deepcopy(project)
@@ -243,7 +476,7 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(status["run_type"], "monte_carlo")
         self.assertEqual(stored_run["run_type"], "monte_carlo")
         self.assertEqual(status["modeling_snapshot_id"], snapshot["snapshot_id"])
-        self.assertEqual(kinds, M6_2_MONTE_CARLO_ARTIFACT_KINDS)
+        self.assertEqual(kinds, M7_MONTE_CARLO_ARTIFACT_KINDS)
         self.assertEqual(len(projection_artifacts), 4)
         self.assertTrue(all(artifact["source_artifact_id"] == base_artifact["artifact_id"] for artifact in projection_artifacts))
         self.assertTrue(all(artifact["schema_version"] == "analysis-projection-v0" for artifact in projection_artifacts))
@@ -533,13 +766,46 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertIn("provenance", submitted["error"]["details"])
         self.assertEqual(submitted["result_summary_id"], None)
         self.assertIsNone(artifacts["scenario_id"])
-        self.assertEqual(artifacts["artifacts"], [])
+        self.assertEqual([artifact["kind"] for artifact in artifacts["artifacts"]], ["log"])
         self.assertIsNone(chain.get("scenario_id"))
         self.assertIsNone(chain.get("scenario_version"))
         self.assertIsNone(chain.get("scenario_schema_version"))
         self.assertEqual(chain["artifact_manifest_id"], submitted["artifact_manifest_id"])
         self.assertEqual(scenario_rows, [])
         self.assertEqual(self.adapter.run_calls, [])
+
+    def test_run_service_failed_compile_run_has_downloadable_log_artifact(self) -> None:
+        project = self._fixture("smoke_project.json")
+        saved = self.api.save_project(project)
+        self.api.create_modeling_snapshot(saved["project_id"])
+        plan = self.api.create_experiment_plan(saved["project_id"], {"name": "blocked aviation"})
+
+        submitted = self.api.submit_run(
+            {
+                "project_id": saved["project_id"],
+                "experiment_plan_id": plan["experiment_plan_id"],
+                "model_family": "aviation_support",
+                "run_type": "single",
+            }
+        )
+        manifest = self.api.get_run_artifacts(submitted["run_id"])
+        log_artifacts = [artifact for artifact in manifest["artifacts"] if artifact["kind"] == "log"]
+
+        self.assertEqual(submitted["status"], "failed")
+        self.assertEqual(len(log_artifacts), 1)
+        self.assertRegex(log_artifacts[0]["sha256"], r"^[0-9a-f]{64}$")
+        self.assertGreater(log_artifacts[0]["size_bytes"], 0)
+        log_path = Path(self.api.output_dir) / log_artifacts[0]["path"]
+        log_data = log_path.read_bytes()
+        log_payload = json.loads(log_data.decode("utf-8"))
+        self.assertEqual(hashlib.sha256(log_data).hexdigest(), log_artifacts[0]["sha256"])
+        self.assertEqual(len(log_data), log_artifacts[0]["size_bytes"])
+        self.assertEqual(log_payload["run_id"], submitted["run_id"])
+        self.assertEqual(log_payload["status"], "failed")
+        self.assertEqual(log_payload["events"][0]["event"], "compile_gate_failed")
+        self.assertEqual(log_payload["events"][0]["error"]["code"], "unsupported_model_family")
+        self.assertTrue(log_payload["events"][0]["issues"])
+        self.assertEqual(log_payload["events"][0]["provenance"]["model_family"], "aviation_support")
 
     def test_backend_api_submit_run_uses_m6_status_envelope(self) -> None:
         project = self._fixture("smoke_project.json")
@@ -644,7 +910,7 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(submitted["error"]["code"], "executor_failed")
         self.assertEqual(stored["status"], "failed")
         self.assertEqual(artifacts["run_id"], submitted["run_id"])
-        self.assertEqual(artifacts["artifacts"], [])
+        self.assertEqual([artifact["kind"] for artifact in artifacts["artifacts"]], ["log"])
 
     def test_run_chain_preserves_snapshot_and_plan_after_project_resave(self) -> None:
         project = self._fixture("smoke_project.json")

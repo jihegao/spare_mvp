@@ -412,6 +412,99 @@ class BackendApi:
     def get_run_chain(self, run_id: str) -> dict[str, Any]:
         return self.repository.get_run_chain(run_id)
 
+    def list_runs(self, filters: dict[str, Any] | None = None) -> dict[str, Any]:
+        filters = filters or {}
+        return {
+            "runs": self.repository.list_runs(
+                include_deleted=_truthy_query_flag(filters.get("include_deleted")),
+                project_id=filters.get("project_id"),
+                experiment_plan_id=filters.get("experiment_plan_id"),
+                run_type=filters.get("run_type"),
+                status=filters.get("status"),
+                limit=_clamped_run_limit(filters.get("limit")),
+            )
+        }
+
+    def get_run_detail(self, run_id: str) -> dict[str, Any]:
+        detail = self.repository.get_run_detail(run_id)
+        detail["download_base"] = f"/api/runs/{run_id}/artifacts"
+        return detail
+
+    def archive_run(self, run_id: str, actor_user_id: str | None = None) -> dict[str, Any]:
+        actor_user_id = _require_m7_actor(actor_user_id)
+        self._require_role(
+            actor_user_id,
+            {"系统管理员", "数据管理员"},
+            action="runs.archive",
+            resource_type="run",
+            resource_id=run_id,
+        )
+        return self.repository.archive_run_with_audit(run_id, actor_user_id=actor_user_id)
+
+    def soft_delete_run(self, run_id: str, actor_user_id: str | None = None) -> dict[str, Any]:
+        actor_user_id = _require_m7_actor(actor_user_id)
+        self._require_role(
+            actor_user_id,
+            {"系统管理员", "数据管理员"},
+            action="runs.delete",
+            resource_type="run",
+            resource_id=run_id,
+        )
+        return self.repository.soft_delete_run_with_audit(run_id, actor_user_id=actor_user_id)
+
+    def get_run_artifact_download(
+        self,
+        run_id: str,
+        artifact_id: str,
+        *,
+        actor_user_id: str | None = None,
+    ) -> dict[str, Any]:
+        actor_user_id = _require_m7_actor(actor_user_id)
+        run = self.repository.get_run(run_id)
+        if run.get("lifecycle_status") == "deleted":
+            raise BackendApiError("run_deleted", "run is soft-deleted", run_id=run_id)
+        artifact = self.repository.find_artifact_for_run(run_id, artifact_id)
+        relative_path = Path(str(artifact["path"]))
+        if relative_path.is_absolute() or ".." in relative_path.parts:
+            raise BackendApiError(
+                "artifact_path_escape",
+                "artifact path escapes output directory",
+                artifact_id=artifact_id,
+            )
+        output_root = Path(self.output_dir).resolve()
+        target = (output_root / relative_path).resolve()
+        if output_root not in target.parents and target != output_root:
+            raise BackendApiError(
+                "artifact_path_escape",
+                "artifact path escapes output directory",
+                artifact_id=artifact_id,
+            )
+        if not target.is_file():
+            raise BackendApiError("artifact_missing", "artifact file is missing", artifact_id=artifact_id)
+        body = target.read_bytes()
+        digest = hashlib.sha256(body).hexdigest()
+        if digest != artifact.get("sha256"):
+            raise BackendApiError(
+                "artifact_hash_mismatch",
+                "artifact file hash does not match manifest",
+                artifact_id=artifact_id,
+            )
+        self.repository.insert_audit_event(
+            actor_user_id=actor_user_id,
+            action="runs.artifact.download",
+            resource_type="run",
+            resource_id=run_id,
+            outcome="allowed",
+            details={"artifact_id": artifact_id, "sha256": digest, "size_bytes": artifact.get("size_bytes")},
+        )
+        return {
+            "path": target,
+            "artifact": artifact,
+            "body": body,
+            "content_type": artifact.get("media_type") or "application/octet-stream",
+            "filename": target.name,
+        }
+
     def _to_backend_error(self, exc: AdapterError, model_family: str) -> BackendApiError:
         if exc.code == "unsupported_model_family" and model_family == "aviation_support":
             return BackendApiError(
@@ -500,6 +593,24 @@ class BackendApi:
 def _stable_hash(payload: dict[str, Any]) -> str:
     encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()[:12]
+
+
+def _truthy_query_flag(value: Any) -> bool:
+    return value is True or value in {"1", "true", "True"}
+
+
+def _clamped_run_limit(value: Any) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return 50
+    return max(1, min(parsed, 200))
+
+
+def _require_m7_actor(actor_user_id: str | None) -> str:
+    if actor_user_id is None or str(actor_user_id).strip() == "":
+        raise BackendApiError("missing_actor", "M7 run management action requires an actor")
+    return str(actor_user_id)
 
 
 def _steps_from_plan(plan: dict[str, Any]) -> int:
