@@ -64,7 +64,7 @@ As of the 2026-06-21 documentation sync, this plan is the active record for a sm
 
 - Formal single and Monte Carlo runs should start from a real Project created by the project-list action `从导入数据生成示例项目`, backed by a published modeling import package. If no package has been published in the current session, that action saves and publishes the demo import package before creating the Project.
 - Canonical `/api/runs` requests are marked `formal_run` server-side. RunService requires `missionProfile.sourceImportId`, a published import whose `projectId` matches the run Project, and a `modeling_import.create_project` allowed audit event for the same import/project pair. A manually saved Project that spoofs `sourceImportId` must be rejected.
-- Legacy `/api/simulation-runs` remains a preview/compatibility path and is not the formal run entrypoint.
+- Superseded by the 2026-06-21 legacy run API retirement: the retired legacy run API now returns `410 legacy_run_api_retired`; canonical `/api/runs` is the only supported run entrypoint.
 - The page-bundled static Project/default scenario remains only for local preview, offline fixture use, and UI smoke tests.
 - A formal run request against that bundled preview fixture must fail closed. It must not silently promote `defaultScenario` into official `Project -> Snapshot -> ExperimentPlan -> Scenario` input.
 - Static analysis cards that still do not read projection payloads remain scheduled for M8 artifact payload consumption.

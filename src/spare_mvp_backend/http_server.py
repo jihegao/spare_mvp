@@ -19,6 +19,23 @@ from src.spare_mvp_contract.adapter import SimulationAdapter
 
 
 MAX_JSON_BODY_BYTES = 1024 * 1024
+LEGACY_RUN_API_MIGRATION = {
+    "docs": "docs/superpowers/plans/2026-06-21-legacy-run-api-retirement.md",
+    "mapping": {
+        "/api/simulation-runs": "/api/runs",
+        "/api/simulation-runs/{run_id}": "/api/runs/{run_id}",
+        "/api/simulation-runs/{run_id}/result": "/api/runs/{run_id}/result",
+        "/api/simulation-runs/{run_id}/artifacts": "/api/runs/{run_id}/artifacts",
+        "/api/simulation-runs/{run_id}/chain": "/api/runs/{run_id}/chain",
+    },
+}
+
+
+class RetiredRouteError(Exception):
+    def __init__(self, route: str, replacement: str) -> None:
+        super().__init__(f"{route} is retired; use {replacement}")
+        self.route = route
+        self.replacement = replacement
 
 
 def create_backend_server(
@@ -86,6 +103,19 @@ def create_backend_server(
                 elif exc.code == "request_too_large":
                     status = 413
                 self._send_json(status, {"code": exc.code, "message": str(exc), "details": exc.details})
+            except RetiredRouteError as exc:
+                self._send_json(
+                    410,
+                    {
+                        "code": "legacy_run_api_retired",
+                        "message": str(exc),
+                        "details": {
+                            "route": exc.route,
+                            "replacement": exc.replacement,
+                            "migration": LEGACY_RUN_API_MIGRATION,
+                        },
+                    },
+                )
             except ValueError as exc:
                 self._send_json(400, {"code": "bad_request", "message": str(exc)})
             except Exception as exc:  # pragma: no cover - defensive HTTP boundary
@@ -102,6 +132,10 @@ def create_backend_server(
             if not path.startswith("/api"):
                 raise KeyError(path)
             route = path[4:] or "/"
+            decoded_route = unquote(route)
+            parts = [unquote(part) for part in route.split("/") if part]
+            if decoded_route == "/simulation-runs" or decoded_route.startswith("/simulation-runs/"):
+                raise RetiredRouteError("/api/simulation-runs", "/api/runs")
             body = self._read_json()
 
             if self.command == "POST" and route == "/auth/login":
@@ -131,7 +165,6 @@ def create_backend_server(
                 actor = self._require_user()
                 return api.save_modeling_import(body, actor_user_id=actor["user_id"])
 
-            parts = [unquote(part) for part in route.split("/") if part]
             if self.command == "GET" and len(parts) == 2 and parts[0] == "modeling-imports":
                 return api.get_modeling_import(parts[1])
             if self.command == "POST" and len(parts) == 2 and parts[0] == "users":
@@ -163,22 +196,6 @@ def create_backend_server(
             if self.command == "GET" and len(parts) == 3 and parts[0] == "runs" and parts[2] == "artifacts":
                 return api.get_run_artifacts(parts[1])
             if self.command == "GET" and len(parts) == 3 and parts[0] == "runs" and parts[2] == "chain":
-                return api.get_run_chain(parts[1])
-            if self.command == "POST" and route == "/simulation-runs":
-                if "project_id" not in body or "experiment_plan_id" not in body:
-                    raise ValueError("project_id and experiment_plan_id are required")
-                return api.start_simulation_run(
-                    body["project_id"],
-                    body["experiment_plan_id"],
-                    body.get("model_family", "smoke"),
-                )
-            if self.command == "GET" and len(parts) == 2 and parts[0] == "simulation-runs":
-                return api.get_run(parts[1])
-            if self.command == "GET" and len(parts) == 3 and parts[0] == "simulation-runs" and parts[2] == "result":
-                return api.get_run_result(parts[1])
-            if self.command == "GET" and len(parts) == 3 and parts[0] == "simulation-runs" and parts[2] == "artifacts":
-                return api.get_run_artifacts(parts[1])
-            if self.command == "GET" and len(parts) == 3 and parts[0] == "simulation-runs" and parts[2] == "chain":
                 return api.get_run_chain(parts[1])
 
             raise KeyError(route)

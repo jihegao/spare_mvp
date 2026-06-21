@@ -1,3 +1,5 @@
+// Keep this object byte-for-byte aligned with tests/fixtures/modeling_import_project.json.
+// The contract test in tests/frontend-contract.test.mjs fails if this wrapper drifts.
 export const MODELING_IMPORT_DEMO_FIXTURE = {
   "schemaVersion": "modeling-import-v1",
   "importId": "import-carrier-day-night-001",
@@ -1030,7 +1032,38 @@ export const MODELING_IMPORT_DEMO_FIXTURE = {
           }
         ]
       }
-    ]
+    ],
+    "projectInfo": {
+      "name": "导入示例项目",
+      "baseCode": "IMPORTED-001",
+      "summary": "由建模导入 JSON 生成的完整页面测试项目"
+    },
+    "supportOrganization": {
+      "tree": []
+    },
+    "analysisRequests": {
+      "largeSample": {
+        "enabled": true,
+        "samples": 24,
+        "sweep": {
+          "failureRates": [
+            0.035,
+            0.055,
+            0.075
+          ],
+          "spareMultipliers": [
+            0.75,
+            1,
+            1.25
+          ],
+          "supportCapacities": [
+            2,
+            3,
+            4
+          ]
+        }
+      }
+    }
   },
   "changes": [],
   "validation": {

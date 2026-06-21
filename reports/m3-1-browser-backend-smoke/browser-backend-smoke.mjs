@@ -55,7 +55,7 @@ try {
   let runResponse = await clickMonteCarloStart(page);
   if (!runResponse) runResponse = await clickMonteCarloStartWithDomFallback(page);
   if (!runResponse) {
-    throw new Error(`No successful run submit response on /api/runs or /api/simulation-runs. Recent API events: ${JSON.stringify(apiEvents.slice(-20))}. Page text: ${await page.locator("body").innerText()}`);
+    throw new Error(`No successful run submit response on /api/runs. Recent API events: ${JSON.stringify(apiEvents.slice(-20))}. Page text: ${await page.locator("body").innerText()}`);
   }
   await page.waitForFunction(() => Boolean(JSON.parse(localStorage.getItem("spare-mvp:lastBackendRun") || "null")?.run_id));
 
@@ -197,7 +197,7 @@ async function clickMonteCarloStartWithDomFallback(page) {
 
 function isRunSubmitResponse(response) {
   return (
-    (response.url().endsWith("/api/runs") || response.url().endsWith("/api/simulation-runs")) &&
+    response.url().endsWith("/api/runs") &&
     response.request().method() === "POST" &&
     response.status() === 200
   );

@@ -104,9 +104,6 @@ export function createBackendApiClient({ baseUrl = DEFAULT_API_BASE, transport, 
     getRunStatus(runId) {
       return request({ method: "GET", path: `/runs/${encodeURIComponent(runId)}` });
     },
-    getRun(runId) {
-      return request({ method: "GET", path: `/simulation-runs/${encodeURIComponent(runId)}` });
-    },
     getRunResult(runId) {
       return request({ method: "GET", path: `/runs/${encodeURIComponent(runId)}/result` });
     },

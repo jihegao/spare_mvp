@@ -65,107 +65,12 @@ let demoProjects = [
   { id: "high-tempo-support", name: "陆基高强度出动保障压力测试", baseCode: "LB-03", updatedAt: "2026-04-28", summary: "评估多波次出动下备件、人员和保障设备的瓶颈。", sourceKind: PROJECT_SOURCE.preview_fixture },
   { id: "maintenance-rebalance", name: "陆基维修资源动态重配评估", baseCode: "LB-02", updatedAt: "2026-05-02", summary: "分析维修资源重配对任务可靠度和停机贡献的影响。", sourceKind: PROJECT_SOURCE.preview_fixture }
 ];
-const CARRY_OBJECTIVES = [
-  { id: "availability", label: "使用可用度", metricLabel: "预计使用可用度", metricValue: "0.91" },
-  { id: "sortie-rate", label: "出动架次率", metricLabel: "预计出动架次率", metricValue: "86%" },
-  { id: "turnaround-time", label: "再次出动准备时间", metricLabel: "预计准备时间", metricValue: "42 min" }
-];
 const ANALYSIS_PROJECTION_TYPES = [
   { analysisType: "spare_shortfall", artifactKind: "analysis_projection_spare_shortfall", source_artifact_id: "monte_carlo_base_artifact" },
   { analysisType: "carry_list", artifactKind: "analysis_projection_carry_list", source_artifact_id: "monte_carlo_base_artifact" },
   { analysisType: "mission_reliability", artifactKind: "analysis_projection_mission_reliability", source_artifact_id: "monte_carlo_base_artifact" },
   { analysisType: "downtime_factors", artifactKind: "analysis_projection_downtime_factors", source_artifact_id: "monte_carlo_base_artifact" }
 ];
-const SUPPORT_ORG_TREE = [
-  { id: "base-level", name: "基地级", description: "基地级保障组织", children: [
-    { id: "frontline-level-1", name: "基层级1", description: "基层保障节点1", children: [{ id: "maintenance-squadron-1", name: "机务保障中队1", description: "机务保障中队1" }] },
-    { id: "frontline-level-2", name: "基层级2", description: "基层保障节点2", children: [{ id: "maintenance-squadron-2", name: "机务保障中队2", description: "机务保障中队2" }] }
-  ] }
-];
-const SUPPORT_ACTIVITY_PLANS = [
-  {
-    type: "基本保障活动建模",
-    name: "基本保障活动分类",
-    treeTitle: "基本保障活动分类树",
-    path: ["保障活动", "基本保障活动", "机务保障"],
-    jobs: ["机务检查", "燃油加注", "挂弹作业", "通电检查"],
-    tree: {
-      id: "basic-root",
-      name: "基本保障活动",
-      children: [
-        { id: "basic-flightline", name: "飞行线保障", children: [{ id: "basic-inspection", name: "机务检查" }, { id: "basic-fuel", name: "燃油加注" }, { id: "basic-power", name: "通电检查" }] },
-        { id: "basic-ordnance", name: "军械保障", children: [{ id: "basic-load", name: "挂弹作业" }, { id: "basic-safety", name: "安全检查" }] },
-        { id: "basic-repair", name: "维修保障", children: [{ id: "basic-fault", name: "故障定位" }, { id: "basic-replace", name: "换件维修" }, { id: "basic-test", name: "功能复测" }] }
-      ]
-    }
-  },
-  {
-    type: "使用保障活动建模",
-    name: "F35近海巡逻飞行前准备方案",
-    treeTitle: "使用保障活动树",
-    path: ["F35", "近海巡逻任务", "飞行前准备"],
-    jobs: ["机务检查", "燃油加注", "挂弹作业", "通电检查"],
-    tree: {
-      id: "ops-root",
-      name: "全部机型",
-      children: [
-        { id: "ops-f35", name: "F35", children: [
-          { id: "ops-f35-patrol", name: "近海巡逻任务", children: [{ id: "ops-f35-patrol-pre", name: "飞行前准备" }, { id: "ops-f35-patrol-turn", name: "再次出动准备" }, { id: "ops-f35-patrol-post", name: "飞行后检查" }] },
-          { id: "ops-f35-alert", name: "远海警戒任务", children: [{ id: "ops-f35-alert-pre", name: "飞行前准备" }, { id: "ops-f35-alert-turn", name: "再次出动准备" }, { id: "ops-f35-alert-post", name: "飞行后检查" }] }
-        ] },
-        { id: "ops-f15", name: "F15", children: [
-          { id: "ops-f15-strike", name: "对海突击任务", children: [{ id: "ops-f15-strike-pre", name: "飞行前准备" }, { id: "ops-f15-strike-turn", name: "再次出动准备" }, { id: "ops-f15-strike-post", name: "飞行后检查" }] }
-        ] }
-      ]
-    }
-  },
-  {
-    type: "预防性维修活动建模",
-    name: "F35日检预防性维修方案",
-    treeTitle: "预防性维修活动树",
-    path: ["F35", "日检"],
-    jobs: ["定检准备", "航电检查", "液压系统检查", "记录归档"],
-    tree: {
-      id: "preventive-root",
-      name: "全部机型",
-      children: [
-        { id: "preventive-f35", name: "F35", children: [{ id: "preventive-f35-daily", name: "日检" }, { id: "preventive-f35-weekly", name: "周检" }, { id: "preventive-f35-phase", name: "阶段检" }] },
-        { id: "preventive-f15", name: "F15", children: [{ id: "preventive-f15-daily", name: "日检" }, { id: "preventive-f15-weekly", name: "周检" }] }
-      ]
-    }
-  },
-  {
-    type: "修复性维修活动建模",
-    name: "F35航电模块故障修复方案",
-    treeTitle: "修复性维修活动树",
-    path: ["F35", "航电模块故障"],
-    jobs: ["故障定位", "备件领用", "换件维修", "功能复测"],
-    tree: {
-      id: "corrective-root",
-      name: "修复性维修活动",
-      children: [
-        { id: "corrective-f35", name: "F35", children: [{ id: "corrective-f35-engine", name: "发动机备件故障" }, { id: "corrective-f35-avionics", name: "航电模块故障" }, { id: "corrective-f35-hydraulic", name: "液压备件故障" }] },
-        { id: "corrective-f15", name: "F15", children: [{ id: "corrective-f15-engine", name: "发动机备件故障" }, { id: "corrective-f15-parachute", name: "制动伞检查" }] }
-      ]
-    }
-  },
-  {
-    type: "后勤保障活动建模",
-    name: "多级保障组织后勤保障方案",
-    treeTitle: "后勤保障活动树",
-    path: ["后勤保障", "组织策略与运输策略"],
-    jobs: ["后勤需求汇总", "横向/纵向运输调度"],
-    tree: {
-      id: "logistics-root",
-      name: "后勤保障",
-      children: [
-        { id: "logistics-org-strategy", name: "保障组织策略", children: [{ id: "logistics-level", name: "分级保障策略" }, { id: "logistics-lateral-org", name: "横向保障组织" }] },
-        { id: "logistics-transport", name: "运输策略", children: [{ id: "logistics-horizontal", name: "横向运输" }, { id: "logistics-vertical", name: "纵向运输" }] }
-      ]
-    }
-  }
-];
-
 const SYSTEM_PROJECT_DATA_ROWS = [
   { key: "projectId", label: "项目标识", value: "landbase-day-night", owner: "项目主数据" },
   { key: "baseProfile", label: "机场保障资源", value: "主基地 / 前进保障点 / 后方保障点", owner: "项目独有数据" },
@@ -276,7 +181,7 @@ let aviationSource = "demo"; // "live"（契约服务）或 "demo"（静态快�
 let aviationSteps = 12; // 向契约服务请求的仿真步数
 let aviationLoadInFlight = false; // 防止重复并发拉取
 let collapsedTreeNodes = new Set();
-let carryObjective = CARRY_OBJECTIVES[0].id;
+let carryObjective = "availability";
 let experimentRunStatus = "当前";
 let isProjectMenuOpen = false;
 let selectedPeriodicTaskId = "";
@@ -284,10 +189,10 @@ let selectedEquipmentComponentIndex = 0;
 let selectedEquipmentNodeKey = "";
 let selectedBasicMissionKey = "primary";
 let selectedBasicMissionTreeLevel = "mission";
-let selectedBasicMissionEquipmentType = scenario.basicMission.equipmentType || scenario.equipment.model || "F35";
+let selectedBasicMissionEquipmentType = scenario.basicMission.equipmentType || scenario.equipment.model || "";
 let selectedCompositeTaskId = "";
 let selectedCombatUnitMemberIndex = 0;
-let selectedSupportOrgNodeId = "base-level";
+let selectedSupportOrgNodeId = "";
 let selectedSupportActivityJobKeys = new Set();
 let selectedSupportResourceKeys = new Set();
 let deletedSupportResourceKeys = new Set();
@@ -307,6 +212,49 @@ const PERIODIC_DAY_FIELDS = Array.from({ length: 30 }, (_, index) => ({
   value: String(index + 1),
   label: `第${index + 1}天`
 }));
+
+function importedDataEmptyState(label) {
+  return `
+    <div class="empty-state">
+      <strong>暂无${htmlEscape(label)}数据</strong>
+      <p>请先导入并发布建模 JSON，或在当前页面创建数据。</p>
+    </div>
+  `;
+}
+
+function supportOrganizationTree() {
+  const tree = scenario.supportOrganization?.tree;
+  return Array.isArray(tree) ? tree : [];
+}
+
+function supportActivityPlanForPage(page, activity) {
+  const type = page.name;
+  const jobs = supportActivityJobs(activity || {});
+  const treeChildren = jobs.map((job, index) => ({
+    id: `${activity?.id || "activity"}:job:${index}`,
+    name: job.workName || job.activityCode || `工作项目${index + 1}`
+  }));
+  return {
+    type,
+    treeTitle: page.name.includes("基本") ? "基本保障活动清单" : `${type}树`,
+    path: [type, activity?.activityName || type],
+    tree: {
+      id: activity?.id || `support-activity:${type}`,
+      name: activity?.activityName || type,
+      children: treeChildren
+    }
+  };
+}
+
+function carryObjectiveOption(id) {
+  const final = singleResult?.final || {};
+  const options = {
+    availability: { label: "使用可用度", metricLabel: "当前使用可用度", metricValue: fixed(final.ready_rate || 0, 2) },
+    "sortie-rate": { label: "出动架次率", metricLabel: "当前出动架次率", metricValue: fixed(final.sortie_rate || 0, 2) },
+    "turnaround-time": { label: "再次出动准备时间", metricLabel: "当前准备时间", metricValue: `${fixed(final.mean_turnaround_time || 0, 1)} h` }
+  };
+  return options[id] || options.availability;
+}
 render();
 bindEvents();
 hydrateLastBackendRunFromApi();
@@ -494,6 +442,11 @@ function bindEvents() {
     const logisticsAddButton = event.target.closest("[data-logistics-transport-add]");
     if (logisticsAddButton) {
       const activity = findLogisticsSupportActivity();
+      if (!activity) {
+        backendApiStatus = "暂无后勤保障活动数据，请先导入并发布建模 JSON，或在当前页面创建数据。";
+        render();
+        return;
+      }
       activity.transportStrategies = [
         ...(Array.isArray(activity.transportStrategies) ? activity.transportStrategies : []),
         { direction: "\u6a2a\u5411\u8fd0\u8f93", spareType: spareModelingNames()[0] || "", triggerMode: "\u4e34\u754c\u5e93\u5b58", criticalInventory: 1, from: scenario.supportNodes[0]?.id || "", to: scenario.supportNodes[1]?.id || "", transportTimeHours: 1 }
@@ -506,6 +459,7 @@ function bindEvents() {
     const logisticsDeleteButton = event.target.closest("[data-logistics-transport-delete]");
     if (logisticsDeleteButton) {
       const activity = findLogisticsSupportActivity();
+      if (!activity) return;
       const index = Number(logisticsDeleteButton.dataset.logisticsTransportDelete);
       activity.transportStrategies = (Array.isArray(activity.transportStrategies) ? activity.transportStrategies : []).filter((_, rowIndex) => rowIndex !== index);
       markProjectDraftChanged();
@@ -862,6 +816,11 @@ function bindEvents() {
       }
       const page = getFeaturePageById(selectedFeatureId);
       const experiment = currentMonteCarloExperiment(page.module);
+      if (!experiment) {
+        backendApiStatus = "暂无蒙特卡洛实验数据，请先导入并发布建模 JSON，或在当前页面创建数据。";
+        render();
+        return;
+      }
       selectedMonteCarloExperimentId = experiment.id;
       monteCarloExperiments = monteCarloExperiments.map((item) => item.id === experiment.id
         ? { ...item, status: "运行中", progress: 35, runType: "monte_carlo", runId: backendRun?.run_id || item.runId }
@@ -1045,6 +1004,7 @@ function bindEvents() {
     if (monteCarloExperimentInput) {
       const page = getFeaturePageById(selectedFeatureId);
       const experiment = currentMonteCarloExperiment(page.module);
+      if (!experiment) return;
       const parsedValue = parseInput(monteCarloExperimentInput);
       selectedMonteCarloExperimentId = experiment.id;
       monteCarloExperiments = monteCarloExperiments.map((item) => item.id === experiment.id
@@ -1590,7 +1550,7 @@ function addBasicMission() {
   const extras = basicMissionExtras();
   const index = editableBasicMissionRecords().length + 1;
   const selected = resolveSelectedBasicMission();
-  const equipmentType = selectedBasicMissionEquipmentType || selected.task.equipmentType || scenario.basicMission.equipmentType || scenario.equipment.model || "F35";
+  const equipmentType = selectedBasicMissionEquipmentType || selected.task.equipmentType || scenario.basicMission.equipmentType || scenario.equipment.model || "";
   const task = {
     ...JSON.parse(JSON.stringify(scenario.basicMission)),
     id: `basic-mission-${index}`,
@@ -1631,7 +1591,7 @@ function createEmptyBasicMission() {
     id: "basic-mission-empty",
     name: "未命名基本任务",
     taskNo: "BM-01",
-    equipmentType: scenario.equipment.model || "F35",
+    equipmentType: scenario.equipment.model || "",
     equipmentQuantity: 1,
     successPoint: 0.9,
     returnRatio: 0.3,
@@ -1705,7 +1665,7 @@ function deleteCompositeTaskItem(index) {
 
 function createCompositeTaskItem(index) {
   const basic = resolveSelectedBasicMission()?.task || scenario.basicMission || {};
-  const equipmentType = basic.equipmentType || scenario.equipment.model || "F35";
+  const equipmentType = basic.equipmentType || scenario.equipment.model || "";
   const taskName = basic.name || basic.basicTaskName || basic.missionId || `基本任务${index + 1}`;
   return {
     id: `composite-task-item-${Date.now()}-${index + 1}`,
@@ -2168,8 +2128,8 @@ function addCombatUnitMember() {
   if (!Array.isArray(scenario.combatUnit.members)) scenario.combatUnit.members = [];
   const members = scenario.combatUnit.members;
   const index = members.length + 1;
-  const model = scenario.equipment.wholeMachineModels?.[0] || scenario.equipment.model || "F35";
-  const aircraftNo = `${model}-${String(index).padStart(2, "0")}`;
+  const model = scenario.equipment.wholeMachineModels?.[0] || scenario.equipment.model || "";
+  const aircraftNo = `${model || "AIRCRAFT"}-${String(index).padStart(2, "0")}`;
   members.push({
     aircraftNo,
     model,
@@ -2978,13 +2938,16 @@ function renderReliabilityBlockDiagram() {
 }
 
 function renderResourceTable(page) {
-  const rows = scenario.supportNodes.flatMap((node) => Object.entries(node.inventory || {}).map(([spareType, quantity]) => ({
+  const rows = (scenario.supportNodes || []).flatMap((node) => Object.entries(node.inventory || {}).map(([spareType, quantity]) => ({
     node: node.name,
     spareType,
     quantity,
     personnel: node.personnelCapacity,
     equipment: node.equipmentCapacity
   })));
+  if (!rows.length) {
+    return importedDataEmptyState(page.name || "保障资源");
+  }
   return `
     <div class="section-head section-context">
       <span>组织 / 人员 / 设备 / 备件</span>
@@ -2999,12 +2962,16 @@ function renderResourceTable(page) {
 }
 
 function renderActivityGantt(page) {
+  const activities = scenario.supportActivities || [];
+  if (!activities.length) {
+    return importedDataEmptyState("保障活动");
+  }
   return `
     <div class="section-head section-context">
       <span>保障活动流程</span>
     </div>
     <div class="gantt-chart">
-      ${scenario.supportActivities.map((activity, index) => `
+      ${activities.map((activity, index) => `
         <div class="gantt-row">
           <strong>${activity.activityType}</strong>
           <div class="gantt-lane">
@@ -3016,7 +2983,7 @@ function renderActivityGantt(page) {
     <div class="table-wrap compact-table">
       <table>
         <thead><tr><th>活动</th><th>人员</th><th>设备</th><th>备件</th><th>优先级</th></tr></thead>
-        <tbody>${scenario.supportActivities.map((activity) => `<tr><td>${activity.activityType}</td><td>${activity.requiredPersonnel}</td><td>${activity.requiredDevices}</td><td>${activity.spareType || "-"}</td><td>${activity.priority}</td></tr>`).join("")}</tbody>
+        <tbody>${activities.map((activity) => `<tr><td>${activity.activityType}</td><td>${activity.requiredPersonnel}</td><td>${activity.requiredDevices}</td><td>${activity.spareType || "-"}</td><td>${activity.priority}</td></tr>`).join("")}</tbody>
       </table>
     </div>
   `;
@@ -3025,11 +2992,15 @@ function renderActivityGantt(page) {
 function renderSupportOrganizationWorkbench(page) {
   const activeTab = page.name.includes("人员") ? "保障人员建模" : page.name.includes("设备") ? "保障设备建模" : page.name.includes("备件") ? "备件建模" : "保障组织结构建模";
   const activeResourceType = page.name.includes("人员") ? "保障人员" : page.name.includes("设备") ? "保障设备" : page.name.includes("备件") ? "备件" : "";
-  const selectedSupportOrgNode = findSupportOrgTreeNode(selectedSupportOrgNodeId) || SUPPORT_ORG_TREE[0];
+  const orgTree = supportOrganizationTree();
+  if (!orgTree.length) {
+    return importedDataEmptyState("保障组织");
+  }
+  const selectedSupportOrgNode = findSupportOrgTreeNode(selectedSupportOrgNodeId, orgTree) || orgTree[0];
   const selectedIsLeaf = !(selectedSupportOrgNode?.children || []).length;
   const visibleResourceRows = buildSupportResourceRows(activeResourceType, selectedSupportOrgNode).filter((row) => !supportResourceDeletedKeySet().has(row.key));
   const allResourceRowsSelected = visibleResourceRows.length > 0 && visibleResourceRows.every((row) => selectedSupportResourceKeys.has(row.key));
-  const selectedSupportOrgParentName = findSupportOrgParentName(selectedSupportOrgNode?.id) || "无";
+  const selectedSupportOrgParentName = findSupportOrgParentName(selectedSupportOrgNode?.id, orgTree) || "无";
   return `
     <div class="ship-front-workbench">
       <div class="organization-layout">
@@ -3038,7 +3009,7 @@ function renderSupportOrganizationWorkbench(page) {
             <h4>保障组织结构树</h4>
             ${activeTab === "保障组织结构建模" ? `<button type="button" class="btn-primary" data-support-org-add-node disabled>新增节点</button>` : `<span class="muted">只读组织树</span>`}
           </div>
-          ${SUPPORT_ORG_TREE.map((node) => renderOrgTreeNode(node, 0)).join("")}
+          ${orgTree.map((node) => renderOrgTreeNode(node, 0)).join("")}
         </aside>
         <section class="detail-panel">
           <div class="detail-card">
@@ -3090,24 +3061,34 @@ function orgTreeNode(node, depth = 0) {
 }
 
 function buildSupportResourceRows(activeResourceType, selectedOrgNode) {
-  const leafNodes = flattenSupportOrgTreeNodes(selectedOrgNode ? [selectedOrgNode] : SUPPORT_ORG_TREE).filter((node) => !(node.children || []).length);
+  const orgTree = supportOrganizationTree();
+  const leafNodes = flattenSupportOrgTreeNodes(selectedOrgNode ? [selectedOrgNode] : orgTree).filter((node) => !(node.children || []).length);
   const orgNodes = (selectedOrgNode?.children || []).length ? leafNodes : [selectedOrgNode].filter(Boolean);
-  const inventoryEntries = scenario.supportNodes.flatMap((node) => Object.entries(node.inventory || {}));
+  const supportNodes = scenario.supportNodes || [];
   const overrides = supportResourceOverrides();
   return orgNodes.flatMap((orgNode, orgIndex) => {
-    const rows = [
-      { key: `${orgNode.id}:personnel`, scope: orgNode.name, type: "保障人员", model: "机务专业", quantity: Math.max(1, 5 - orgIndex), aircraft: wholeMachineModels() },
-      { key: `${orgNode.id}:equipment`, scope: orgNode.name, type: "保障设备", name: "检测仪", model: "DT-01", quantity: Math.max(1, 3 - Math.floor(orgIndex / 2)), aircraft: wholeMachineModels() },
-      ...inventoryEntries.map(([spareType, quantity], index) => ({
-        key: `${orgNode.id}:spare:${index}:${spareType}`,
-        scope: orgNode.name,
-        type: "备件",
-        name: spareType,
-        model: spareType,
-        quantity,
-        aircraft: wholeMachineModels()
-      }))
-    ];
+    const matchingNodes = supportNodes.filter((node) => node.organizationNodeId === orgNode.id || node.id === orgNode.id || node.name === orgNode.name);
+    const scopedSupportNodes = matchingNodes.length ? matchingNodes : supportNodes;
+    const rows = scopedSupportNodes.flatMap((node, nodeIndex) => {
+      const baseKey = `${orgNode.id || orgIndex}:${node.id || nodeIndex}`;
+      return [
+        Number.isFinite(Number(node.personnelCapacity))
+          ? { key: `${baseKey}:personnel`, scope: orgNode.name, type: "保障人员", model: "人员容量", quantity: Number(node.personnelCapacity || 0), aircraft: wholeMachineModels() }
+          : null,
+        Number.isFinite(Number(node.equipmentCapacity))
+          ? { key: `${baseKey}:equipment`, scope: orgNode.name, type: "保障设备", name: node.name || "保障设备", model: node.nodeType || "保障设备", quantity: Number(node.equipmentCapacity || 0), aircraft: wholeMachineModels() }
+          : null,
+        ...Object.entries(node.inventory || {}).map(([spareType, quantity], index) => ({
+          key: `${baseKey}:spare:${index}:${spareType}`,
+          scope: orgNode.name,
+          type: "备件",
+          name: spareType,
+          model: spareType,
+          quantity,
+          aircraft: wholeMachineModels()
+        }))
+      ].filter(Boolean);
+    });
     const mergedRows = rows.map((row) => ({ ...row, ...(overrides[row.key] || {}) }));
     return activeResourceType ? mergedRows.filter((row) => row.type === activeResourceType) : mergedRows;
   });
@@ -3156,7 +3137,8 @@ function activateSupportResourceEdit(key) {
 }
 
 function toggleAllSupportResourceSelection(activeResourceType, checked) {
-  const selectedOrgNode = findSupportOrgTreeNode(selectedSupportOrgNodeId) || SUPPORT_ORG_TREE[0];
+  const orgTree = supportOrganizationTree();
+  const selectedOrgNode = findSupportOrgTreeNode(selectedSupportOrgNodeId, orgTree) || orgTree[0];
   const keys = buildSupportResourceRows(activeResourceType, selectedOrgNode)
     .filter((row) => !supportResourceDeletedKeySet().has(row.key))
     .map((row) => row.key);
@@ -3177,7 +3159,7 @@ function deleteSelectedSupportResources() {
   updatePreviewResultsThroughApiClient();
 }
 
-function findSupportOrgTreeNode(id, nodes = SUPPORT_ORG_TREE) {
+function findSupportOrgTreeNode(id, nodes = supportOrganizationTree()) {
   for (const node of nodes) {
     if (node.id === id) return node;
     const child = findSupportOrgTreeNode(id, node.children || []);
@@ -3186,14 +3168,14 @@ function findSupportOrgTreeNode(id, nodes = SUPPORT_ORG_TREE) {
   return null;
 }
 
-function flattenSupportOrgTreeNodes(nodes = SUPPORT_ORG_TREE) {
+function flattenSupportOrgTreeNodes(nodes = supportOrganizationTree()) {
   return nodes.flatMap((node) => [
     node,
     ...flattenSupportOrgTreeNodes(node.children || [])
   ]);
 }
 
-function findSupportOrgParentName(id, nodes = SUPPORT_ORG_TREE, parent = null) {
+function findSupportOrgParentName(id, nodes = supportOrganizationTree(), parent = null) {
   for (const node of nodes) {
     if (node.id === id) return parent?.name || "";
     const childParent = findSupportOrgParentName(id, node.children || [], node);
@@ -3206,18 +3188,17 @@ function findSupportActivityForPage(page) {
   const activities = scenario.supportActivities || [];
   if (page.name.includes("后勤")) return findLogisticsSupportActivity();
   if (page.name.includes("预防性")) {
-    return activities.find((activity) => activity.activityType === "预防性维修") || activities[0] || {};
+    return activities.find((activity) => activity.activityType === "预防性维修") || null;
   }
   if (page.name.includes("修复性")) {
-    return activities.find((activity) => activity.activityType === "修复性维修") || activities[0] || {};
+    return activities.find((activity) => activity.activityType === "修复性维修") || null;
   }
   if (page.name.includes("使用")) {
     return activities.find((activity) => activity.planType === "直接准备方案")
       || activities.find((activity) => activity.activityType === "飞行前保障")
-      || activities[0]
-      || {};
+      || null;
   }
-  return activities[0] || {};
+  return activities[0] || null;
 }
 
 function supportActivityJobKey(tabKey, index) {
@@ -3636,13 +3617,8 @@ function renderLogisticsSupportActivity(activePlan, activity) {
 
 function findLogisticsSupportActivity() {
   const activities = scenario.supportActivities || [];
-  let activity = activities.find((item) => item.activityType === "后勤保障")
+  return activities.find((item) => item.activityType === "后勤保障")
     || activities.find((item) => item.planType === "后勤保障活动方案");
-  if (!activity) {
-    activity = { id: "logistics-support", activityType: "后勤保障", activityName: "后勤保障运输策略", transportStrategies: [] };
-    scenario.supportActivities = [...activities, activity];
-  }
-  return activity;
 }
 
 function supportNodeName(id) {
@@ -3656,9 +3632,15 @@ function spareModelingNames() {
 }
 
 function renderSupportActivityWorkbench(page) {
-  const activePlan = SUPPORT_ACTIVITY_PLANS.find((plan) => plan.type === page.name) || SUPPORT_ACTIVITY_PLANS[0];
   const activity = findSupportActivityForPage(page);
+  if (!activity && !page.name.includes("基本保障活动")) {
+    return importedDataEmptyState("保障活动");
+  }
+  const activePlan = supportActivityPlanForPage(page, activity);
   if (page.name.includes("基本保障活动")) {
+    if (!(scenario.supportActivities || []).length) {
+      return importedDataEmptyState("保障活动");
+    }
     return `<div class="ship-front-workbench">${renderBasicActivityLibrary()}</div>`;
   }
   if (page.name.includes("修复性")) {
@@ -3715,32 +3697,14 @@ function renderExperimentPlanList(page) {
     : "spare-planning-experiment-plan-edit";
   const visualFeatureId = getVisualSimulationFeatureId(page.module);
   const monteCarloFeatureId = getMonteCarloExperimentEditFeatureId(page.module);
-  const plans = [
-    {
-      name: scenario.experiment.name,
-      module: page.module,
-      scenarioId: scenario.scenarioId,
-      steps: scenario.experiment.steps,
-      samples: scenario.experiment.samples,
-      status: experimentRunStatus
-    },
-    {
-      name: "高强度出动保障验证",
-      module: page.module,
-      scenarioId: "high-tempo-support",
-      steps: 96,
-      samples: 64,
-      status: "草稿"
-    },
-    {
-      name: "低库存敏感性实验",
-      module: page.module,
-      scenarioId: "low-stock-sensitivity",
-      steps: 72,
-      samples: 48,
-      status: "待校验"
-    }
-  ];
+  const plans = scenario.experiment?.name ? [{
+    name: scenario.experiment.name,
+    module: page.module,
+    scenarioId: scenario.scenarioId,
+    steps: scenario.experiment.steps,
+    samples: scenario.experiment.samples,
+    status: experimentRunStatus
+  }] : [];
   return `
     <div class="section-head">
       <h3>方案列表</h3>
@@ -3754,7 +3718,7 @@ function renderExperimentPlanList(page) {
       <table>
         <thead><tr><th>方案名称</th><th>所属模块</th><th>场景</th><th>步数</th><th>样本</th><th>状态</th><th>操作</th></tr></thead>
         <tbody>
-          ${plans.map((plan) => `
+          ${plans.length ? plans.map((plan) => `
             <tr>
               <td>${htmlEscape(plan.name)}</td>
               <td>${htmlEscape(plan.module)}</td>
@@ -3769,7 +3733,7 @@ function renderExperimentPlanList(page) {
                 <button type="button" class="btn-danger" data-experiment-plan-delete disabled>删除</button>
               </td>
             </tr>
-          `).join("")}
+          `).join("") : `<tr><td colspan="7">${importedDataEmptyState("仿真实验方案")}</td></tr>`}
         </tbody>
       </table>
     </div>
@@ -4830,24 +4794,7 @@ function missionProgressWidth(mission) {
 }
 
 function createDefaultMonteCarloExperiments() {
-  return [
-    createMonteCarloExperiment("备件规划评估模块", {
-      id: "mc-exp-spare-planning-baseline",
-      name: "陆基昼夜保障大样本实验",
-      status: "当前",
-      progress: 100,
-      runId: "run-local-preview",
-      artifactId: "artifact-local-preview"
-    }),
-    createMonteCarloExperiment("任务可靠度评估模块", {
-      id: "mc-exp-mission-reliability-baseline",
-      name: "任务可靠度波次稳定性实验",
-      status: "待运行",
-      progress: 0,
-      runId: "",
-      artifactId: ""
-    })
-  ];
+  return [];
 }
 
 function createMonteCarloExperiment(moduleName, overrides = {}) {
@@ -4902,16 +4849,12 @@ function normalizeProgress(progress) {
 }
 
 function monteCarloExperimentListForModule(moduleName) {
-  const items = monteCarloExperiments.filter((experiment) => experiment.module === moduleName);
-  if (items.length) return items;
-  const experiment = createMonteCarloExperiment(moduleName);
-  monteCarloExperiments = [...monteCarloExperiments, experiment];
-  return [experiment];
+  return monteCarloExperiments.filter((experiment) => experiment.module === moduleName);
 }
 
 function currentMonteCarloExperiment(moduleName) {
   const items = monteCarloExperimentListForModule(moduleName);
-  return items.find((experiment) => experiment.id === selectedMonteCarloExperimentId) || items[0];
+  return items.find((experiment) => experiment.id === selectedMonteCarloExperimentId) || items[0] || null;
 }
 
 function monteCarloExperimentByBusinessId(mcExperimentId) {
@@ -4929,11 +4872,7 @@ function monteCarloExperimentSourceRows(experiment) {
 }
 
 function experimentPlanOptionsForModule(moduleName) {
-  return [
-    scenario.experiment.name,
-    moduleName === "任务可靠度评估模块" ? "任务可靠度高波次验证" : "高强度出动保障验证",
-    "低库存敏感性实验"
-  ];
+  return [scenario.experiment?.name].filter(Boolean);
 }
 
 function renderMonteCarloExperimentList(page) {
@@ -4952,7 +4891,7 @@ function renderMonteCarloExperimentList(page) {
         <div class="table-wrap mc-history-grid">
           <table>
             <thead><tr><th>experiment_id</th><th>mc_experiment_id</th><th>实验名称</th><th>关联方案</th><th>样本量</th><th>随机种子</th><th>状态</th><th>进度</th><th>操作</th></tr></thead>
-            <tbody>${experiments.map((experiment) => `
+            <tbody>${experiments.length ? experiments.map((experiment) => `
               <tr>
                 <td>${htmlEscape(experiment.experiment_id)}</td>
                 <td>${htmlEscape(experiment.mc_experiment_id)}</td>
@@ -4968,7 +4907,7 @@ function renderMonteCarloExperimentList(page) {
                   <button type="button" class="btn-danger" disabled>删除</button>
                 </td>
               </tr>
-            `).join("")}</tbody>
+            `).join("") : `<tr><td colspan="9">${importedDataEmptyState("蒙特卡洛实验")}</td></tr>`}</tbody>
           </table>
         </div>
       </section>
@@ -4978,6 +4917,9 @@ function renderMonteCarloExperimentList(page) {
 
 function renderMonteCarloExperimentEditor(page) {
   const experiment = currentMonteCarloExperiment(page.module);
+  if (!experiment) {
+    return importedDataEmptyState("蒙特卡洛实验");
+  }
   const detailFeatureId = getMonteCarloExperimentDetailFeatureId(page.module);
   return `
     <div class="mc-workbench">
@@ -5014,6 +4956,9 @@ function renderMonteCarloExperimentEditor(page) {
 
 function renderMonteCarloExperimentDetail(page) {
   const experiment = currentMonteCarloExperiment(page.module);
+  if (!experiment) {
+    return importedDataEmptyState("蒙特卡洛实验");
+  }
   const sourceRows = monteCarloExperimentSourceRows(experiment);
   return `
     <div class="mc-workbench">
@@ -5193,7 +5138,34 @@ function renderAnalysis(page) {
   `;
 }
 
+function hasPreviewAnalysisData() {
+  return Boolean(
+    (singleResult?.timeline || []).length
+    || (singleResult?.spareShortfalls || []).length
+    || (singleResult?.carryList || []).length
+    || (singleResult?.downtimeFactors || []).length
+    || (monteCarloResult?.runs || []).length
+  );
+}
+
+function renderAnalysisEmptyState(title, mode, subtitle, message = "暂无分析数据，请先导入并发布建模 JSON，或创建并运行 Monte Carlo 分析任务。") {
+  return renderAnalysisDashboard({
+    title,
+    mode,
+    subtitle,
+    metrics: [
+      ["分析数据", "暂无"],
+      ["配置状态", "待导入或运行"],
+      ["正式结果", "等待 analysis artifact"]
+    ],
+    body: `<div class="empty-state"><strong>${message}</strong><p>本地空白预览不会生成短板、携行、可靠度或停机因素结论。</p></div>`
+  });
+}
+
 function renderSpareShortfallAnalysis() {
+  if (!hasPreviewAnalysisData()) {
+    return renderAnalysisEmptyState("备件短板分析", "启动分析", "备件需求量降序", "暂无分析数据，请先导入并发布建模 JSON，或创建并运行 Monte Carlo 分析任务。");
+  }
   const rows = singleResult.spareShortfalls.map((row) => ({
     name: row.spareType,
     satisfy: row.fillRate,
@@ -5203,14 +5175,17 @@ function renderSpareShortfallAnalysis() {
     shortage: row.shortage,
     level: row.shortage >= 2 ? "严重" : row.shortage === 1 ? "短缺" : "关注"
   }));
+  const minSatisfy = rows.reduce((min, row) => Math.min(min, row.satisfy), 1);
+  const maxDelay = rows.reduce((max, row) => Math.max(max, row.delay), 0);
+  const maxShortage = rows.reduce((max, row) => Math.max(max, row.shortage), 1);
   return renderAnalysisDashboard({
     title: "备件短板分析",
     mode: "启动分析",
     subtitle: "备件需求量降序",
     metrics: [
       ["短板备件", `${rows.filter((row) => row.shortage > 0).length} 项`],
-      ["最低备件满足率", fixed(Math.min(...rows.map((row) => row.satisfy)), 2)],
-      ["最大平均延误", `${Math.max(...rows.map((row) => row.delay))} h`],
+      ["最低备件满足率", fixed(minSatisfy, 2)],
+      ["最大平均延误", `${maxDelay} h`],
       ["建议优先补充", rows.filter((row) => row.shortage > 0).map((row) => row.name).slice(0, 2).join(" / ") || "-"]
     ],
     body: `
@@ -5221,18 +5196,20 @@ function renderSpareShortfallAnalysis() {
             <tr>
               <td>${row.name}</td><td>${fixed(row.satisfy, 2)}</td><td>${row.delay}</td><td>${row.baseCount}</td><td>${row.stock}</td><td>${row.shortage}</td>
               <td><span class="status-badge ${row.level === "严重" ? "danger" : row.level === "短缺" ? "warn" : ""}">${row.level}</span></td>
-              <td class="bar-cell">${renderBar(row.shortage, Math.max(...rows.map((item) => item.shortage), 1), "red")}</td>
+              <td class="bar-cell">${renderBar(row.shortage, maxShortage, "red")}</td>
             </tr>
           `).join("")}</tbody>
         </table>
       </div>
-      <div class="decision-support-card"><strong>短板分析结论</strong><span>P2/P3 类备件的满足率与延误指标最敏感，建议优先补齐基层库存并复核补给提前量。</span></div>
     `
   });
 }
 
 function renderCarryListAnalysis() {
-  const objective = CARRY_OBJECTIVES.find((item) => item.id === carryObjective) || CARRY_OBJECTIVES[0];
+  if (!hasPreviewAnalysisData()) {
+    return renderAnalysisEmptyState("飞机转场携行清单分析", "参数配置", "携行清单迭代建议", "暂无分析数据，请先导入并发布建模 JSON，或创建并运行 Monte Carlo 分析任务。");
+  }
+  const objective = carryObjectiveOption(carryObjective);
   const rows = singleResult.carryList.map((row, index) => ({
     name: row.spareType,
     satisfy: Math.max(0, 1 - row.shortage / Math.max(row.recommended, 1)),
@@ -5240,6 +5217,7 @@ function renderCarryListAnalysis() {
     qty: row.recommended,
     priority: carryPriority(row.riskLevel)
   }));
+  const maxCarryQuantity = rows.reduce((max, row) => Math.max(max, row.qty), 1);
   return renderAnalysisDashboard({
     title: "飞机转场携行清单分析",
     mode: "参数配置",
@@ -5263,7 +5241,7 @@ function renderCarryListAnalysis() {
             <tr>
               <td>${row.name}</td><td>${fixed(row.satisfy, 2)}</td><td>${row.delay}</td><td>${row.qty}</td>
               <td><span class="status-badge ${row.priority === "高" ? "danger" : row.priority === "中" ? "warn" : "success"}">${row.priority}</span></td>
-              <td class="bar-cell">${renderBar(row.qty, Math.max(...rows.map((item) => item.qty), 1), "blue")}</td>
+              <td class="bar-cell">${renderBar(row.qty, maxCarryQuantity, "blue")}</td>
             </tr>
           `).join("")}</tbody>
         </table>
@@ -5290,13 +5268,28 @@ function carryPriority(riskLevel) {
 }
 
 function renderTaskReliabilityAnalysis() {
-  const waves = [1, 2, 3, 4, 5, 6, 7, 8, 9].map((wave, index) => ({
-    wave,
-    probability: Math.max(0.86, singleResult.final.mission_success_rate - index * 0.015),
-    sorties: wave * 12,
-    available: Math.max(6, scenario.equipment.quantity - Math.floor(index / 2)),
-    state: index >= 6 ? "风险" : index >= 3 ? "关注" : "满足"
-  }));
+  if (!hasPreviewAnalysisData()) {
+    return renderAnalysisEmptyState("任务可靠度评估", "启动分析", "任务可靠度指标分解", "暂无分析数据，请先导入并发布建模 JSON，或创建并运行 Monte Carlo 分析任务。");
+  }
+  const timeline = singleResult.timeline || [];
+  const sampleEvery = Math.max(1, Math.ceil(timeline.length / 9));
+  const waves = timeline
+    .filter((_, index) => index % sampleEvery === 0)
+    .slice(0, 9)
+    .map((point, index) => {
+      const probability = Number(point.mission_success_rate || 0);
+      return {
+        wave: point.wave || index + 1,
+        probability,
+        sorties: Number(point.sortie_count || 0),
+        available: Number(point.ready_count || 0),
+        state: probability < 0.7 ? "风险" : probability < 0.9 ? "关注" : "满足"
+      };
+    });
+  if (!waves.length) {
+    return renderAnalysisEmptyState("任务可靠度评估", "启动分析", "任务可靠度指标分解", "暂无分析数据，请先导入并发布建模 JSON，或创建并运行 Monte Carlo 分析任务。");
+  }
+  const riskWave = waves.find((row) => row.state === "风险");
   return renderAnalysisDashboard({
     title: "任务可靠度评估",
     mode: "启动分析",
@@ -5304,7 +5297,7 @@ function renderTaskReliabilityAnalysis() {
     metrics: [
       ["首波任务成功概率", fixed(waves[0].probability, 2)],
       ["末波任务成功概率", fixed(waves.at(-1).probability, 2)],
-      ["风险拐点", "第 7 波"],
+      ["风险拐点", riskWave ? `第 ${riskWave.wave} 波` : "未触发"],
       ["累计出动架次", `${waves.at(-1).sorties}`]
     ],
     body: `
@@ -5320,27 +5313,36 @@ function renderTaskReliabilityAnalysis() {
 }
 
 function renderDowntimeFactorAnalysis() {
+  if (!hasPreviewAnalysisData()) {
+    return renderAnalysisEmptyState("停机因素分析", "启动分析", "停机贡献因素排序", "暂无分析数据，请先导入并发布建模 JSON，或创建并运行 Monte Carlo 分析任务。");
+  }
   const factors = singleResult.downtimeFactors;
+  if (!factors.length) {
+    return renderAnalysisEmptyState("停机因素分析", "启动分析", "停机贡献因素排序", "暂无分析数据，请先导入并发布建模 JSON，或创建并运行 Monte Carlo 分析任务。");
+  }
+  const total = factors.reduce((sum, row) => sum + row.count, 0);
+  const maxFactorCount = factors.reduce((max, row) => Math.max(max, row.count), 1);
+  const primaryFactors = factors.slice(0, 2);
   return renderAnalysisDashboard({
     title: "停机因素分析",
     mode: "启动分析",
     subtitle: "停机贡献因素排序",
     metrics: [
-      ["停机因素总次数", `${factors.reduce((sum, row) => sum + row.count, 0)}`],
-      ["无可用飞机", "4"],
-      ["飞机故障", "5"],
+      ["停机因素总次数", `${total}`],
+      ["首要因素", primaryFactors[0]?.label || "-"],
+      ["次要因素", primaryFactors[1]?.label || "-"],
       ["备件满足率", fixed(singleResult.final.spare_fill_rate, 2)]
     ],
     body: `
       <div class="factor-grid">
-        <div class="factor-column"><h4>停机因素</h4><div class="factor-list"><div class="factor-item"><span>无可用飞机</span><span>4</span></div><div class="factor-item"><span>飞机故障</span><span>5</span></div></div></div>
+        <div class="factor-column"><h4>停机因素</h4><div class="factor-list">${primaryFactors.map((row) => `<div class="factor-item"><span>${row.label}</span><span>${row.count}</span></div>`).join("")}</div></div>
         <div class="factor-column"><h4>二级因素</h4><div class="factor-list">${factors.map((row) => `<div class="factor-item"><span>${row.label}</span><span>${row.count}</span></div>`).join("")}</div></div>
-        <div class="factor-column"><h4>观察指标</h4><div class="factor-list"><div class="factor-item"><span>保障设备满足率</span><span>0.90</span></div><div class="factor-item"><span>备件满足率</span><span>${fixed(singleResult.final.spare_fill_rate, 2)}</span></div><div class="factor-item"><span>平均故障维修时间</span><span>1.5</span></div></div></div>
+        <div class="factor-column"><h4>观察指标</h4><div class="factor-list"><div class="factor-item"><span>备件满足率</span><span>${fixed(singleResult.final.spare_fill_rate, 2)}</span></div><div class="factor-item"><span>维修积压</span><span>${singleResult.final.repair_backlog || 0}</span></div></div></div>
       </div>
       <div class="table-wrap">
         <table>
           <thead><tr><th>二级因素</th><th>贡献次数</th><th>贡献度</th><th>图示</th></tr></thead>
-          <tbody>${factors.map((row) => `<tr><td>${row.label}</td><td>${row.count}</td><td>${pct(row.contribution)}</td><td class="bar-cell">${renderBar(row.count, Math.max(...factors.map((item) => item.count), 1), row.count >= 2 ? "red" : "blue")}</td></tr>`).join("")}</tbody>
+          <tbody>${factors.map((row) => `<tr><td>${row.label}</td><td>${row.count}</td><td>${pct(row.contribution)}</td><td class="bar-cell">${renderBar(row.count, maxFactorCount, row.count >= 2 ? "red" : "blue")}</td></tr>`).join("")}</tbody>
         </table>
       </div>
     `
