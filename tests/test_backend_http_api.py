@@ -33,11 +33,12 @@ class BackendHttpApiTest(unittest.TestCase):
             thread.start()
             try:
                 base_url = f"http://127.0.0.1:{server.server_address[1]}/api"
-                project = self._fixture("smoke_project.json")
+                created = self._create_imported_sample_project(base_url)
+                project = created["project"]
+                saved = created["savedProject"]
+                snapshot = created["modelingSnapshot"]
 
                 validation = self._json(base_url, "POST", "/projects/validate", project)
-                saved = self._json(base_url, "POST", "/projects", project)
-                snapshot = self._json(base_url, "POST", f"/projects/{saved['project_id']}/modeling-snapshots")
                 plan = self._json(
                     base_url,
                     "POST",
@@ -47,21 +48,22 @@ class BackendHttpApiTest(unittest.TestCase):
                 run = self._json(
                     base_url,
                     "POST",
-                    "/simulation-runs",
+                    "/runs",
                     {
                         "project_id": saved["project_id"],
                         "experiment_plan_id": plan["experiment_plan_id"],
                         "model_family": "smoke",
+                        "run_type": "single",
                     },
                 )
-                stored_run = self._json(base_url, "GET", f"/simulation-runs/{run['run_id']}")
-                result = self._json(base_url, "GET", f"/simulation-runs/{run['run_id']}/result")
-                artifacts = self._json(base_url, "GET", f"/simulation-runs/{run['run_id']}/artifacts")
-                chain = self._json(base_url, "GET", f"/simulation-runs/{run['run_id']}/chain")
+                status = self._json(base_url, "GET", f"/runs/{run['run_id']}")
+                result = self._json(base_url, "GET", f"/runs/{run['run_id']}/result")
+                artifacts = self._json(base_url, "GET", f"/runs/{run['run_id']}/artifacts")
+                chain = self._json(base_url, "GET", f"/runs/{run['run_id']}/chain")
 
                 self.assertTrue(validation["ok"])
                 self.assertEqual(snapshot["project_id"], saved["project_id"])
-                self.assertEqual(stored_run["run_id"], run["run_id"])
+                self.assertEqual(status["run_id"], run["run_id"])
                 self.assertEqual(result["run_id"], run["run_id"])
                 self.assertEqual(artifacts["run_id"], run["run_id"])
                 self.assertEqual(chain["run_id"], run["run_id"])
@@ -74,7 +76,7 @@ class BackendHttpApiTest(unittest.TestCase):
                 server.server_close()
                 thread.join(timeout=5)
 
-    def test_http_api_exposes_canonical_run_status_routes_and_keeps_legacy_raw_run(self) -> None:
+    def test_http_api_exposes_canonical_run_status_routes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             server = create_backend_server(
                 ("127.0.0.1", 0),
@@ -121,7 +123,6 @@ class BackendHttpApiTest(unittest.TestCase):
                 result = self._json(base_url, "GET", f"/runs/{submitted['run_id']}/result")
                 artifacts = self._json(base_url, "GET", f"/runs/{submitted['run_id']}/artifacts")
                 chain = self._json(base_url, "GET", f"/runs/{submitted['run_id']}/chain")
-                legacy_run = self._json(base_url, "GET", f"/simulation-runs/{submitted['run_id']}")
 
                 self.assertEqual(missing_family["code"], "bad_run_request")
                 self.assertEqual(submitted["phase"], "completed")
@@ -132,9 +133,6 @@ class BackendHttpApiTest(unittest.TestCase):
                 self.assertEqual(result["run_id"], submitted["run_id"])
                 self.assertEqual(artifacts["run_id"], submitted["run_id"])
                 self.assertEqual(chain["run_id"], submitted["run_id"])
-                self.assertEqual(legacy_run["run_id"], submitted["run_id"])
-                self.assertEqual(legacy_run["schema_version"], "run-v0")
-                self.assertIn("model_id", legacy_run)
             finally:
                 server.shutdown()
                 server.server_close()
@@ -167,6 +165,59 @@ class BackendHttpApiTest(unittest.TestCase):
                         self.assertEqual(body["code"], "legacy_run_api_retired")
                         self.assertIn("/api/runs", body["message"])
                         self.assertEqual(body["details"]["replacement"], "/api/runs")
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
+    def test_http_legacy_simulation_run_post_malformed_json_is_retired(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            server = create_backend_server(
+                ("127.0.0.1", 0),
+                repo_root=REPO_ROOT,
+                database_path=":memory:",
+                output_dir=Path(tmp) / "artifacts",
+            )
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                status, body = self._raw_json_error_with_status(
+                    server.server_address[1],
+                    "POST",
+                    "/api/simulation-runs",
+                    b"{",
+                )
+
+                self.assertEqual(status, 410)
+                self.assertEqual(body["code"], "legacy_run_api_retired")
+                self.assertEqual(body["details"]["replacement"], "/api/runs")
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
+    def test_http_legacy_simulation_run_post_oversized_json_is_retired(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            server = create_backend_server(
+                ("127.0.0.1", 0),
+                repo_root=REPO_ROOT,
+                database_path=":memory:",
+                output_dir=Path(tmp) / "artifacts",
+            )
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                status, body = self._raw_json_error_with_status(
+                    server.server_address[1],
+                    "POST",
+                    "/api/simulation-runs",
+                    b"",
+                    content_length=1024 * 1024 + 1,
+                )
+
+                self.assertEqual(status, 410)
+                self.assertEqual(body["code"], "legacy_run_api_retired")
+                self.assertEqual(body["details"]["replacement"], "/api/runs")
             finally:
                 server.shutdown()
                 server.server_close()
@@ -263,46 +314,6 @@ class BackendHttpApiTest(unittest.TestCase):
                 self.assertEqual(error["details"]["project_id"], saved["project_id"])
                 self.assertEqual(error["details"]["source_import_id"], import_package["importId"])
                 self.assertEqual(error["details"]["reason"], "missing_create_project_audit")
-            finally:
-                server.shutdown()
-                server.server_close()
-                thread.join(timeout=5)
-
-    def test_http_legacy_simulation_runs_accept_preview_project(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            server = create_backend_server(
-                ("127.0.0.1", 0),
-                repo_root=REPO_ROOT,
-                database_path=":memory:",
-                output_dir=Path(tmp) / "artifacts",
-            )
-            thread = Thread(target=server.serve_forever, daemon=True)
-            thread.start()
-            try:
-                base_url = f"http://127.0.0.1:{server.server_address[1]}/api"
-                project = self._fixture("smoke_project.json")
-                saved = self._json(base_url, "POST", "/projects", project)
-                self._json(base_url, "POST", f"/projects/{saved['project_id']}/modeling-snapshots")
-                plan = self._json(
-                    base_url,
-                    "POST",
-                    f"/projects/{saved['project_id']}/experiment-plans",
-                    {"config": {"name": "legacy preview run", "steps": 1}},
-                )
-
-                run = self._json(
-                    base_url,
-                    "POST",
-                    "/simulation-runs",
-                    {
-                        "project_id": saved["project_id"],
-                        "experiment_plan_id": plan["experiment_plan_id"],
-                        "model_family": "smoke",
-                    },
-                )
-
-                self.assertEqual(run["status"], "succeeded")
-                self.assertEqual(run["project_id"], saved["project_id"])
             finally:
                 server.shutdown()
                 server.server_close()
@@ -593,9 +604,8 @@ class BackendHttpApiTest(unittest.TestCase):
             first_thread.start()
             try:
                 base_url = f"http://127.0.0.1:{first_server.server_address[1]}/api"
-                project = self._fixture("smoke_project.json")
-                saved = self._json(base_url, "POST", "/projects", project)
-                self._json(base_url, "POST", f"/projects/{saved['project_id']}/modeling-snapshots")
+                created = self._create_imported_sample_project(base_url)
+                saved = created["savedProject"]
                 plan = self._json(
                     base_url,
                     "POST",
@@ -605,11 +615,12 @@ class BackendHttpApiTest(unittest.TestCase):
                 run = self._json(
                     base_url,
                     "POST",
-                    "/simulation-runs",
+                    "/runs",
                     {
                         "project_id": saved["project_id"],
                         "experiment_plan_id": plan["experiment_plan_id"],
                         "model_family": "smoke",
+                        "run_type": "single",
                     },
                 )
             finally:
@@ -628,13 +639,13 @@ class BackendHttpApiTest(unittest.TestCase):
             try:
                 base_url = f"http://127.0.0.1:{second_server.server_address[1]}/api"
                 stored_project = self._json(base_url, "GET", f"/projects/{saved['project_id']}")
-                stored_run = self._json(base_url, "GET", f"/simulation-runs/{run['run_id']}")
-                result = self._json(base_url, "GET", f"/simulation-runs/{run['run_id']}/result")
-                artifacts = self._json(base_url, "GET", f"/simulation-runs/{run['run_id']}/artifacts")
-                chain = self._json(base_url, "GET", f"/simulation-runs/{run['run_id']}/chain")
+                status = self._json(base_url, "GET", f"/runs/{run['run_id']}")
+                result = self._json(base_url, "GET", f"/runs/{run['run_id']}/result")
+                artifacts = self._json(base_url, "GET", f"/runs/{run['run_id']}/artifacts")
+                chain = self._json(base_url, "GET", f"/runs/{run['run_id']}/chain")
 
                 self.assertEqual(stored_project["project_id"], saved["project_id"])
-                self.assertEqual(stored_run["run_id"], run["run_id"])
+                self.assertEqual(status["run_id"], run["run_id"])
                 self.assertEqual(result["run_id"], run["run_id"])
                 self.assertEqual(artifacts["run_id"], run["run_id"])
                 self.assertEqual(chain["project_id"], saved["project_id"])
@@ -1226,6 +1237,27 @@ class BackendHttpApiTest(unittest.TestCase):
                 raise
             return response.code, json.loads(response.read().decode("utf-8"))
         self.fail("request unexpectedly succeeded")
+
+    def _raw_json_error_with_status(
+        self,
+        port: int,
+        method: str,
+        path: str,
+        body: bytes,
+        *,
+        content_length: int | None = None,
+    ) -> tuple[int, dict]:
+        connection = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+        connection.putrequest(method, path)
+        connection.putheader("content-type", "application/json")
+        connection.putheader("content-length", str(len(body) if content_length is None else content_length))
+        connection.endheaders()
+        if body:
+            connection.send(body)
+        response = connection.getresponse()
+        payload = json.loads(response.read().decode("utf-8"))
+        connection.close()
+        return response.status, payload
 
 
 if __name__ == "__main__":
