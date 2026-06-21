@@ -644,6 +644,12 @@ input {
   gap: 4px;
 }
 
+.tree-node-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .tree-node-label {
   width: 100%;
   display: flex;
@@ -658,6 +664,18 @@ input {
   font: inherit;
   text-align: left;
   cursor: default;
+}
+
+.tree-node-actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 4px;
+}
+
+.tree-node-actions .inline-action,
+.tree-node-actions .btn-danger {
+  padding: 4px 8px;
+  white-space: nowrap;
 }
 
 .tree-node-label[data-tree-toggle] {
