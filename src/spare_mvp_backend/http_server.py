@@ -159,6 +159,8 @@ def create_backend_server(
                 return api.validate_project(body)
             if self.command == "POST" and route == "/projects":
                 return api.save_project(body)
+            if self.command == "GET" and route == "/projects":
+                return api.list_projects()
             if self.command == "POST" and route == "/modeling-imports/validate":
                 return api.validate_modeling_import(body)
             if self.command == "POST" and route == "/modeling-imports":

@@ -52,6 +52,9 @@ export function createBackendApiClient({ baseUrl = DEFAULT_API_BASE, transport, 
         body: { model_family: modelFamily }
       });
     },
+    listProjects() {
+      return request({ method: "GET", path: "/projects" });
+    },
     async saveProject(projectJson) {
       await request({ method: "POST", path: "/projects/validate", body: projectJson });
       return request({ method: "POST", path: "/projects", body: projectJson });

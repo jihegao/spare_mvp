@@ -117,6 +117,12 @@ class BackendApi:
     def get_project(self, project_id: str) -> dict[str, Any]:
         return self.repository.get_project(project_id)
 
+    def list_projects(self) -> dict[str, Any]:
+        projects = self.repository.list_projects()
+        return {
+            "projects": [_project_list_entry(project) for project in projects],
+        }
+
     def save_project(self, project_json: dict[str, Any]) -> dict[str, Any]:
         validation = self.validate_project(project_json)
         if not validation["ok"]:
@@ -522,3 +528,35 @@ def _password_hash(password: str) -> str:
 
 def _session_audit_id(token: str) -> str:
     return f"session-{hashlib.sha256(token.encode('utf-8')).hexdigest()[:16]}"
+
+
+def _project_list_entry(project: dict[str, Any]) -> dict[str, Any]:
+    payload = project.get("payload_json")
+    if not isinstance(payload, dict):
+        payload = project if isinstance(project, dict) else {}
+    if not isinstance(payload, dict):
+        payload = {}
+    project_name = payload.get("experiment", {}).get("name")
+    if not isinstance(project_name, str) or not project_name.strip():
+        project_name = payload.get("projectInfo", {}).get("name")
+    if not isinstance(project_name, str) or not project_name.strip():
+        project_name = str(project.get("project_id") or payload.get("project_id") or "未命名项目")
+
+    base_code = payload.get("projectInfo", {}).get("baseCode")
+    if not isinstance(base_code, str) or not base_code.strip():
+        base_code = (payload.get("airports") or [{}])[0].get("airportCode") if isinstance(payload.get("airports"), list) and payload.get("airports") else ""
+    if not isinstance(base_code, str) or not base_code.strip():
+        base_code = str(payload.get("scenarioId") or payload.get("project_id") or project.get("project_id") or "NB")
+
+    summary = payload.get("projectInfo", {}).get("summary")
+    if not isinstance(summary, str) or not summary.strip():
+        summary = "后端持久化项目"
+
+    return {
+        "project_id": project.get("project_id"),
+        "experiment_name": str(project_name).strip(),
+        "base_code": str(base_code).strip(),
+        "summary": str(summary).strip(),
+        "updated_at": project.get("updated_at"),
+        "scenario_id": payload.get("scenarioId"),
+    }

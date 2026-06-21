@@ -58,6 +58,26 @@ class ContractRepository:
         )
         return [_row_to_dict(cursor, row) for row in cursor.fetchall()]
 
+    def list_projects(self) -> list[dict[str, Any]]:
+        cursor = self.connection.execute(
+            """
+            SELECT project_id, payload_json, updated_at
+            FROM projects
+            ORDER BY datetime(updated_at) DESC
+            """
+        )
+        projects = []
+        for row in cursor.fetchall():
+            project_payload = json.loads(row[1]) if row[1] else {}
+            if not isinstance(project_payload, dict):
+                project_payload = {}
+            projects.append({
+                "project_id": row[0],
+                **project_payload,
+                "updated_at": row[2],
+            })
+        return projects
+
     def get_user(self, user_id: str) -> dict[str, Any]:
         cursor = self.connection.execute(
             """

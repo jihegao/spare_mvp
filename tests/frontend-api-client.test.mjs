@@ -10,7 +10,8 @@ test("frontend API client exposes stable PR-F save run and result methods", asyn
     transport: async (request) => {
       calls.push(request);
       if (request.path === "/projects/validate") return { ok: true, project_id: "project-ui" };
-      if (request.path === "/projects") return { project_id: "project-ui", status: "saved" };
+      if (request.path === "/projects" && request.method === "GET") return { projects: [{ project_id: "project-ui" }] };
+      if (request.path === "/projects" && request.method === "POST") return { project_id: "project-ui", status: "saved" };
       if (request.path === "/projects/project-ui") return { project_id: "project-ui", project_version: "project-v0.1" };
       if (request.path === "/projects/project-ui/modeling-snapshots") return { snapshot_id: "snapshot-ui" };
       if (request.path === "/projects/project-ui/experiment-plans") return { experiment_plan_id: "plan-ui" };
@@ -46,6 +47,7 @@ test("frontend API client exposes stable PR-F save run and result methods", asyn
 
   const project = { project_id: "project-ui", experiment: { steps: 2 } };
   const saved = await client.saveProject(project);
+  const projectCatalog = await client.listProjects();
   const storedProject = await client.getProject(saved.project_id);
   const snapshot = await client.createModelingSnapshot(saved.project_id);
   const plan = await client.createExperimentPlan(saved.project_id, { steps: 2 });
@@ -61,6 +63,7 @@ test("frontend API client exposes stable PR-F save run and result methods", asyn
   const chain = await client.getRunChain(run.run_id);
 
   assert.equal(storedProject.project_id, "project-ui");
+  assert.equal(projectCatalog.projects[0].project_id, "project-ui");
   assert.equal(snapshot.snapshot_id, "snapshot-ui");
   assert.equal(run.status, "succeeded");
   assert.equal(run.phase, "completed");
@@ -71,6 +74,7 @@ test("frontend API client exposes stable PR-F save run and result methods", asyn
   assert.deepEqual(calls.map((call) => `${call.method} ${call.path}`), [
     "POST /projects/validate",
     "POST /projects",
+    "GET /projects",
     "GET /projects/project-ui",
     "POST /projects/project-ui/modeling-snapshots",
     "POST /projects/project-ui/experiment-plans",
@@ -80,8 +84,8 @@ test("frontend API client exposes stable PR-F save run and result methods", asyn
     "GET /runs/run-ui/artifacts",
     "GET /runs/run-ui/chain"
   ]);
-  assert.equal(calls[5].body.model_family, "smoke");
-  assert.equal(calls[5].body.run_type, "single");
+  assert.equal(calls[6].body.model_family, "smoke");
+  assert.equal(calls[6].body.run_type, "single");
 });
 
 test("frontend API client exposes only canonical run read routes", async () => {
