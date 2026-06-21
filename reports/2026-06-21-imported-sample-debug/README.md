@@ -65,3 +65,20 @@ Only confirmed issues should be added here. A reported symptom is not recorded a
 - **Fix:** Added `front/equipment-tree-model.mjs` with pure tree/selection mutation helpers and kept `front/app.js` as the rendering layer. The same helpers drive app behavior and behavior-level tests.
 - **Regression tests:** `tests/equipment-tree-model.test.mjs` verifies a zero-aircraft imported sample adds `新增飞机1`, and a self/cyclic component parent chain does not recurse indefinitely. `tests/frontend-modeling-import-flow.test.mjs` verifies the default project-list action completes the save/publish prerequisite instead of silently calling create-project with an unsaved fixture id.
 - **Verification:** `node --test tests/frontend-contract.test.mjs tests/frontend-api-client.test.mjs tests/frontend-modeling-import-flow.test.mjs tests/equipment-tree-model.test.mjs` passed with 99 tests. `.abm-mesa-test-env/bin/python -m unittest tests.test_backend_api_contract tests.test_backend_http_api -v` passed with 60 tests.
+
+### 6. Aircraft model cannot be edited after selecting an aircraft node in composition tree
+
+- **Status:** Confirmed / open.
+- **Scope:** 导入示例项目 `260621`，功能路径 `备件规划评估模块 / 仿真建模 / 装备系统建模`。
+- **Page:** `127.0.0.1:4173/front/#feature=spare-planning-equipment-composition`
+- **User symptom:** 选择飞机列表中的整机节点（如 `J-15 整机级` 或 `J-35 整机级`）后，右侧“飞机属性”中的“飞机型号”无法修改。输入新值后，字段值会恢复/停留为原始型号（例如 `J-15`、`J-35`），不进行持久化。
+- **Expected behavior:** 在“飞机属性”里编辑“飞机型号”后，值应更新为新型号并反映到当前节点属性与后续保存的数据中。
+- **Observed behavior:** 编辑框显示可见且可聚焦，但输入动作无法生效，重新查看时仍为旧值。
+- **Reproduction steps confirmed in-browser:**
+  1. 在当前会话中打开 `127.0.0.1:4173/front/#feature=spare-planning-equipment-composition` 并确认已导入 `示例项目260621`。
+  2. 在“装备组成树”中展开 `飞机列表`，点击 `J-15 整机级`。
+  3. 在“飞机属性”中尝试修改 `飞机型号`（直接输入新字符串）。
+  4. 切换离开字段或重新触发焦点后，查看模型名仍为原值。
+- **Potential impact:** 影响整机级节点属性编辑与项目建模完整性，后续仿真输入与结果一致性都可能受损。
+- **Priority:** 高（表单编辑面影响基础建模能力）。
+- **Open question:** 当前前端对该字段的输入是否经过只读控制（编辑锁）或未绑定更新 action，需要在 `front` 中追踪 `飞机型号` 的变更事件链路。

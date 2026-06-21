@@ -45,6 +45,7 @@ const groups = groupFeaturePages(FEATURE_PAGES);
 const CONTRACT_BASE = "http://127.0.0.1:8521"; // Mesa 契约服务（见 agent.md「Mesa 后台契约服务」）
 const LAST_BACKEND_RUN_STORAGE_KEY = "spare-mvp:lastBackendRun";
 const AUTH_SESSION_STORAGE_KEY = "spare-mvp:m4Session";
+const MANUAL_PROJECT_DRAFTS_STORAGE_KEY = "spare-mvp:manualProjects:v1";
 const PROJECT_DRAFT_AUTOSAVE_DELAY_MS = 800;
 let backendAuthToken = readStoredBackendAuthToken();
 const backendApi = createBackendApiClient({ baseUrl: "/api", getAuthToken: () => backendAuthToken });
@@ -56,15 +57,10 @@ const DEMO_USERS = [
   { username: "user", role: "普通用户" }
 ];
 const PROJECT_SOURCE = Object.freeze({
-  preview_fixture: "preview_fixture",
   manual_draft: "manual_draft",
   imported_sample: "imported_sample"
 });
-let demoProjects = [
-  { id: "landbase-day-night", name: "陆基机群昼夜保障验证", baseCode: "LB-01", updatedAt: "2026-04-26", summary: "验证昼夜连续出动下的机场保障流程与资源配置。", sourceKind: PROJECT_SOURCE.preview_fixture },
-  { id: "high-tempo-support", name: "陆基高强度出动保障压力测试", baseCode: "LB-03", updatedAt: "2026-04-28", summary: "评估多波次出动下备件、人员和保障设备的瓶颈。", sourceKind: PROJECT_SOURCE.preview_fixture },
-  { id: "maintenance-rebalance", name: "陆基维修资源动态重配评估", baseCode: "LB-02", updatedAt: "2026-05-02", summary: "分析维修资源重配对任务可靠度和停机贡献的影响。", sourceKind: PROJECT_SOURCE.preview_fixture }
-];
+let demoProjects = mergeProjectsById(readManualDraftProjectsFromStorage());
 const ANALYSIS_PROJECTION_TYPES = [
   { analysisType: "spare_shortfall", artifactKind: "analysis_projection_spare_shortfall", source_artifact_id: "monte_carlo_base_artifact" },
   { analysisType: "carry_list", artifactKind: "analysis_projection_carry_list", source_artifact_id: "monte_carlo_base_artifact" },
@@ -131,6 +127,84 @@ const SYSTEM_PERMISSION_ROWS = [
   { feature: "结果分析", admin: "查看", data: "查看", user: "查看" }
 ];
 
+function mergeProjectsById(projects) {
+  const byId = new Map();
+  for (const project of projects) {
+    if (!project || !project.id) continue;
+    const normalized = {
+      id: String(project.id),
+      name: project.name || "未命名项目",
+      baseCode: project.baseCode || "NB",
+      updatedAt: normalizeProjectUpdatedAt(project.updatedAt),
+      summary: project.summary || "未设置项目说明。",
+      sourceKind: Object.values(PROJECT_SOURCE).includes(project.sourceKind) ? project.sourceKind : PROJECT_SOURCE.manual_draft,
+      sourceImportId: project.sourceImportId || "",
+    };
+    if (!byId.has(normalized.id)) {
+      byId.set(normalized.id, normalized);
+    }
+  }
+  return Array.from(byId.values());
+}
+
+function toProjectFromBackendApiEntry(entry) {
+  if (!entry || typeof entry !== "object") {
+    return null;
+  }
+  const projectId = String(entry.project_id || "").trim();
+  if (!projectId) return null;
+  return {
+    id: projectId.replace(/^project-/, ""),
+    name: entry.experiment_name || "未命名项目",
+    baseCode: entry.base_code || "NB",
+    summary: entry.summary || "后端持久化项目",
+    updatedAt: normalizeProjectUpdatedAt(entry.updated_at),
+    sourceKind: PROJECT_SOURCE.imported_sample,
+    scenarioId: entry.scenario_id || "",
+    projectBackendId: projectId
+  };
+}
+
+function normalizeProjectUpdatedAt(updatedAt) {
+  if (typeof updatedAt === "string" && updatedAt.trim()) {
+    return updatedAt.slice(0, 10);
+  }
+  return new Date().toISOString().slice(0, 10);
+}
+
+function readManualDraftProjectsFromStorage() {
+  try {
+    const raw = localStorage.getItem(MANUAL_PROJECT_DRAFTS_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return mergeProjectsById(
+      parsed
+        .map((project) => ({
+          ...project,
+          sourceKind: PROJECT_SOURCE.manual_draft
+        }))
+        .filter((project) => project.id)
+    );
+  } catch {
+    return [];
+  }
+}
+
+function persistManualDraftProjects() {
+  const manualDrafts = demoProjects
+    .filter((project) => project.sourceKind === PROJECT_SOURCE.manual_draft)
+    .map((project) => ({
+      id: project.id,
+      name: project.name,
+      baseCode: project.baseCode,
+      summary: project.summary,
+      updatedAt: project.updatedAt,
+      sourceKind: PROJECT_SOURCE.manual_draft
+    }));
+  localStorage.setItem(MANUAL_PROJECT_DRAFTS_STORAGE_KEY, JSON.stringify(manualDrafts));
+}
+
 
 let scenario = cloneScenario(defaultScenario);
 let experimentPlanDraft = cloneScenario(scenario);
@@ -170,7 +244,7 @@ let systemUsersLoadStatus = "未加载";
 let systemUsersLoaded = false;
 let isLoggedIn = false;
 let currentUser = DEMO_USERS[2];
-let currentProject = demoProjects[0];
+let currentProject = demoProjects[0] || null;
 let projectListStatus = "可添加本地草稿，也可从已发布导入包生成示例项目。";
 let projectEditorDraft = null;
 let selectedRoute = readRouteFromHash() || DEFAULT_ROUTE;
@@ -1145,7 +1219,7 @@ function render() {
         <div class="brand-mark">BJGH</div>
         <div>
           <h1>备件规划及任务可靠度验证评估平台</h1>
-          <p>${htmlEscape(currentProject.name)} / ${renderTopbarContext(page)}</p>
+          <p>${htmlEscape(currentProject?.name || "未选择项目")} / ${renderTopbarContext(page)}</p>
         </div>
       </div>
       <div class="right">
@@ -1189,7 +1263,7 @@ function renderProjectMenu() {
   return `
     <div class="project-menu">
       <button type="button" class="project-menu-toggle" data-project-menu-toggle aria-expanded="${isProjectMenuOpen}">
-        <span>${htmlEscape(currentProject.name)}</span>
+        <span>${htmlEscape(currentProject?.name || "未选择项目")}</span>
         <span aria-hidden="true">▾</span>
       </button>
       ${isProjectMenuOpen ? `
@@ -1221,7 +1295,7 @@ function renderProjectListPage() {
         <div>
           <h2>项目列表</h2>
           <p>${htmlEscape(projectListStatus)}</p>
-          <p class="inline-status">实际功能测试请先从已发布建模导入包生成示例项目；内置项目仅用于本地预览、离线 fixture 和页面 smoke。</p>
+          <p class="inline-status">可从已发布建模导入包生成示例项目，或添加本地 Project draft。</p>
         </div>
         <div class="toolbar-row compact-actions">
           <button type="button" class="btn-secondary" data-project-create-from-import>从导入数据生成示例项目</button>
@@ -1229,8 +1303,8 @@ function renderProjectListPage() {
         </div>
       </section>
       <section class="project-grid">
-        ${demoProjects.map((project) => `
-          <article class="project-card ${project.id === currentProject.id ? "active" : ""}">
+        ${demoProjects.length ? demoProjects.map((project) => `
+          <article class="project-card ${project.id === currentProject?.id ? "active" : ""}">
             <div>
               <span>基地 ${project.baseCode}</span>
               ${projectSourceBadge(project)}
@@ -1258,7 +1332,12 @@ function renderProjectListPage() {
               </span>
             </div>
           </article>
-        `).join("")}
+        `).join("") : `
+          <div class="empty-state">
+            <strong>暂无项目</strong>
+            <p>请添加本地草稿，或从已发布建模导入包生成示例项目。</p>
+          </div>
+        `}
       </section>
     </main>
   `;
@@ -1267,10 +1346,9 @@ function renderProjectListPage() {
 function projectSourceBadge(project) {
   const labels = {
     [PROJECT_SOURCE.imported_sample]: "导入示例",
-    [PROJECT_SOURCE.manual_draft]: "本地草稿",
-    [PROJECT_SOURCE.preview_fixture]: "本地预览"
+    [PROJECT_SOURCE.manual_draft]: "本地草稿"
   };
-  return `<span class="status-badge ${project.sourceKind === PROJECT_SOURCE.imported_sample ? "success" : ""}">${htmlEscape(labels[project.sourceKind] || labels[PROJECT_SOURCE.preview_fixture])}</span>`;
+  return `<span class="status-badge ${project.sourceKind === PROJECT_SOURCE.imported_sample ? "success" : ""}">${htmlEscape(labels[project.sourceKind] || labels[PROJECT_SOURCE.manual_draft])}</span>`;
 }
 
 function projectSourceHelpText(project) {
@@ -1280,7 +1358,7 @@ function projectSourceHelpText(project) {
   if (project.sourceKind === PROJECT_SOURCE.manual_draft) {
     return "本地新增 Project draft；保存或运行前不会替代已发布导入示例。";
   }
-  return "内置静态项目只保留为本地预览，不进入正式后端 run。";
+  return "项目来源待确认。";
 }
 
 function renderNavigation(activePage) {
@@ -1735,6 +1813,7 @@ function renderProjectDataTable() {
   const activeTab = SYSTEM_DATA_MANAGEMENT_TABS.find((tab) => tab.key === activeSystemDataTab) || SYSTEM_DATA_MANAGEMENT_TABS[0];
   const rows = activeTab.rows;
   const allSelected = rows.length > 0 && rows.every((row) => selectedSystemDataKeys.has(row.key));
+  const project = currentProject || { id: "", name: "", baseCode: "" };
   return `
     <div class="section-head">
       <h3>项目数据列表</h3>
@@ -1746,9 +1825,9 @@ function renderProjectDataTable() {
       `).join("")}
     </div>
     <div class="form-table-grid">
-      <label>项目标识<input value="${htmlEscape(currentProject.id)}"></label>
-      <label>项目名称<input value="${htmlEscape(currentProject.name)}"></label>
-      <label>基地编码<input value="${htmlEscape(currentProject.baseCode)}"></label>
+      <label>项目标识<input value="${htmlEscape(project.id)}"></label>
+      <label>项目名称<input value="${htmlEscape(project.name)}"></label>
+      <label>基地编码<input value="${htmlEscape(project.baseCode)}"></label>
       <label>数据隔离策略<input value="项目标识 + 数据对象命名空间"></label>
     </div>
     <div class="toolbar-row"><button type="button" class="btn-primary" data-system-data-add>新增</button><button type="button" class="btn-danger" data-system-data-delete-selected>批量删除</button><button type="button" data-system-data-export>导出</button></div>
@@ -1847,13 +1926,14 @@ function systemDataExportFilename(tab) {
 }
 
 function buildSystemDataExportPayload(tab, rows) {
+  const project = currentProject || { id: "", name: "", baseCode: "" };
   return {
     schemaVersion: "spare-mvp-system-data-export-v1",
     exportedAt: new Date().toISOString(),
     project: {
-      id: currentProject.id,
-      name: currentProject.name,
-      baseCode: currentProject.baseCode
+      id: project.id,
+      name: project.name,
+      baseCode: project.baseCode
     },
     dataGroup: {
       key: tab.key,
@@ -2210,14 +2290,13 @@ function renderBasicMissionModeling(page) {
           <div class="inline-status ${phaseRatioValid ? "success" : "warn"}">阶段占比合计 ${fixed(phaseRatioTotal, 2)}；${phaseRatioValid ? "满足合计为 1" : "必须调整为 1 后才能作为正式编译输入"}</div>
           <div class="table-wrap">
             <table>
-              <thead><tr><th>序号</th><th>阶段名称</th><th>阶段占比</th><th>任务时间系数</th><th>操作</th></tr></thead>
+              <thead><tr><th>序号</th><th>阶段名称</th><th>阶段占比</th><th>操作</th></tr></thead>
               <tbody>
                 ${phases.map((phase, index) => `
                   <tr>
                     <td>${index + 1}</td>
                     <td>${valueInput(`missionPhases.${index}.name`)}</td>
                     <td>${valueInput(`missionPhases.${index}.phaseRatio`, "number", { min: "0", max: "1", step: "0.01" })}</td>
-                    <td>${renderMissionPhaseSystemCoefficients(index, selectedMission.task.equipmentType || scenario.equipment.model)}</td>
                     <td><button type="button" class="btn-danger" data-basic-mission-phase-delete="${index}">删除</button></td>
                   </tr>
                 `).join("")}
@@ -2226,20 +2305,6 @@ function renderBasicMissionModeling(page) {
           </div>
         </div>
       </div>
-    </div>
-  `;
-}
-
-function renderMissionPhaseSystemCoefficients(phaseIndex, equipmentType) {
-  const components = (scenario.components || []).filter((component) => componentBelongsToAircraft(component, equipmentType || component.aircraftModel || scenario.equipment.model));
-  const rows = components.length ? components : scenario.components.slice(0, 3);
-  return `
-    <div class="inline-dictionary">
-      ${rows.map((component) => `
-        <label>${htmlEscape(component.name || component.id)}
-          ${valueInput(`missionPhases.${phaseIndex}.systemTimeCoefficients.${component.id}`, "number", { min: "0", step: "0.1" })}
-        </label>
-      `).join("")}
     </div>
   `;
 }
@@ -2253,7 +2318,7 @@ function addMissionPhase() {
   const remainingRatio = Math.max(0, 1 - missionPhaseRatioTotal(phases));
   scenario.missionPhases = [
     ...phases,
-    { name: `阶段${phases.length + 1}`, phaseRatio: Number(remainingRatio.toFixed(2)), systemTimeCoefficients: {} }
+    { name: `阶段${phases.length + 1}`, phaseRatio: Number(remainingRatio.toFixed(2)) }
   ];
 }
 
@@ -2740,7 +2805,7 @@ function buildEquipmentComponentTreeNodes(aircraftModel, parentId) {
   const toTreeNode = ({ component, children }) => ({
     id: `equipment-component:${aircraftModel}:${component.id || component.name}`,
     label: component.name,
-    meta: `${component.quantity} 件 / ${component.connectionType}`,
+    meta: `${component.quantity} 件`,
     selected: selectedEquipmentNodeKey === `component:${component.id}`,
     actionAttrs: `data-select-equipment-component="${htmlEscape(component.id)}"`,
     children: children.map(toTreeNode)
@@ -3529,7 +3594,7 @@ function buildReadonlyEquipmentConfigComponentTreeNodes(aircraftModel, parentId)
         return {
           id: `equipment-config-component:${aircraftModel}:${component.id || component.name}`,
           label: component.name,
-          meta: `${component.quantity} 件 / ${component.connectionType}`,
+          meta: `${component.quantity} 件`,
           children: buildChildren(component.id, nextVisited)
         };
       });
@@ -3778,6 +3843,7 @@ async function handleLogin() {
       role: session.user.role
     };
     backendApiStatus = "M4 会话已建立";
+    await hydrateProjectCatalogFromBackend();
   } catch (err) {
     if (err?.code === "invalid_credentials" || err?.code === "forbidden") {
       backendApiStatus = `登录失败：${err.message}`;
@@ -3800,6 +3866,12 @@ async function saveCurrentProjectThroughApi() {
 async function handleEnterWorkbench(projectId) {
   await flushPendingProjectDraftAutosave();
   currentProject = demoProjects.find((project) => project.id === projectId) || demoProjects[0];
+  if (!currentProject) {
+    projectListStatus = "请先创建项目";
+    selectedRoute = "projects";
+    location.hash = "route=projects";
+    return;
+  }
   isLoggedIn = true;
   selectedRoute = "workbench";
   selectedFeatureId = DEFAULT_FEATURE_ID;
@@ -3819,9 +3891,10 @@ function addDemoProject() {
     summary: "新建项目草稿，进入后可维护建模数据。",
     sourceKind: PROJECT_SOURCE.manual_draft
   };
-  demoProjects = [...demoProjects, project];
+  demoProjects = mergeProjectsById([project, ...demoProjects]);
   currentProject = project;
   projectListStatus = `已添加项目：${project.name}`;
+  persistManualDraftProjects();
 }
 
 async function createSampleProjectFromPublishedImport(importId = currentPublishedModelingImportId()) {
@@ -3851,7 +3924,7 @@ async function createSampleProjectFromPublishedImport(importId = currentPublishe
       sourceKind: PROJECT_SOURCE.imported_sample,
       sourceImportId: created.sourceImport?.import_id || resolvedImportId
     };
-    demoProjects = [project, ...demoProjects.filter((item) => item.id !== project.id)];
+    demoProjects = mergeProjectsById([project, ...demoProjects]);
     currentProject = project;
     scenario = cloneScenario(projectJson);
     experimentPlanDraft = cloneScenario(scenario);
@@ -3859,11 +3932,39 @@ async function createSampleProjectFromPublishedImport(importId = currentPublishe
     savedProject = created.savedProject || null;
     modelingSnapshot = created.modelingSnapshot || null;
     projectListStatus = `已从导入数据生成示例项目：${project.name}；可用于正式后端测试`;
+    await hydrateProjectCatalogFromBackend({ forceProjectId: project.id });
+    currentProject = demoProjects.find((entry) => entry.id === project.id) || project;
     projectDraftSaveStatus = "已保存";
     projectDraftHydrateStatus = "示例项目来自已发布建模导入包";
     updatePreviewResultsThroughApiClient();
   } catch (err) {
     projectListStatus = `导入示例项目生成失败：${err && err.message ? err.message : "Backend API 不可用"}`;
+  }
+}
+
+async function hydrateProjectCatalogFromBackend({ forceProjectId = "" } = {}) {
+  const focusProjectId = forceProjectId || (currentProject?.id ? String(currentProject.id) : "");
+  const localManualProjects = readManualDraftProjectsFromStorage();
+  const fallbackProjects = mergeProjectsById(localManualProjects);
+  projectListStatus = "正在从后端读取项目列表";
+  try {
+    const result = await backendApi.listProjects();
+    const backendProjects = Array.isArray(result?.projects)
+      ? result.projects
+        .map((entry) => toProjectFromBackendApiEntry(entry))
+        .filter(Boolean)
+      : [];
+    demoProjects = mergeProjectsById([...backendProjects, ...fallbackProjects]);
+    currentProject = demoProjects.find((project) => project.id === focusProjectId) || demoProjects[0];
+    if (backendProjects.length) {
+      projectListStatus = `已加载 ${backendProjects.length} 个后端项目`;
+    } else {
+      projectListStatus = "后端未返回项目，使用本地项目清单";
+    }
+  } catch (err) {
+    demoProjects = fallbackProjects;
+    currentProject = demoProjects.find((project) => project.id === focusProjectId) || demoProjects[0];
+    projectListStatus = `后端项目列表加载失败：${err && err.message ? err.message : "Backend API 不可用"}`;
   }
 }
 
@@ -3901,19 +4002,17 @@ function saveProjectEditorDraft() {
     updatedAt: new Date().toISOString().slice(0, 10)
   };
   demoProjects = demoProjects.map((project) => (project.id === saved.id ? saved : project));
-  if (currentProject.id === saved.id) currentProject = saved;
+  if (currentProject?.id === saved.id) currentProject = saved;
+  persistManualDraftProjects();
   projectEditorDraft = null;
   projectListStatus = `已保存项目：${saved.name}`;
 }
 
 function deleteDemoProject(projectId) {
-  if (demoProjects.length <= 1) {
-    projectListStatus = "至少保留一个项目";
-    return;
-  }
   const removed = demoProjects.find((project) => project.id === projectId);
   demoProjects = demoProjects.filter((project) => project.id !== projectId);
-  if (currentProject.id === projectId) currentProject = demoProjects[0];
+  if (currentProject?.id === projectId) currentProject = demoProjects[0] || null;
+  persistManualDraftProjects();
   projectListStatus = removed ? `已删除项目：${removed.name}` : "项目不存在";
 }
 
@@ -3927,7 +4026,7 @@ async function flushPendingProjectDraftAutosave() {
 }
 
 function currentBackendProjectId() {
-  return currentProject.id ? `project-${currentProject.id}` : `project-${scenario.scenarioId}`;
+  return currentProject?.id ? `project-${currentProject.id}` : `project-${scenario.scenarioId}`;
 }
 
 function isCurrentModelingPage() {
@@ -4005,12 +4104,18 @@ async function saveCurrentExperimentPlanThroughApi() {
 }
 
 function currentProjectCanStartFormalRun() {
+  if (!currentProject) {
+    return {
+      allowed: false,
+      message: "请先创建或选择项目，再启动正式后端运行。"
+    };
+  }
   if (currentProject.sourceKind === PROJECT_SOURCE.imported_sample) {
     return { allowed: true, message: "" };
   }
   return {
     allowed: false,
-    message: "请先从已发布建模导入包生成示例项目，再启动正式后端运行；内置静态项目只保留为本地预览，本地草稿需要先通过建模导入发布链路生成示例项目。"
+    message: "请先从已发布建模导入包生成示例项目，再启动正式后端运行；本地草稿需要先通过建模导入发布链路生成示例项目。"
   };
 }
 

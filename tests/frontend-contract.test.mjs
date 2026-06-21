@@ -183,7 +183,7 @@ test("frontend business authoring pages do not hydrate missing imported data fro
   const staticSeedSource = sourceSlice("const PROJECT_SOURCE", "let scenario =");
   const renderSlices = [
     sourceSlice("function renderEquipmentModeling", "function renderEquipmentFailureRmsFields"),
-    sourceSlice("function renderBasicMissionModeling", "function renderMissionPhaseSystemCoefficients"),
+    sourceSlice("function renderBasicMissionModeling", "function missionPhaseRatioTotal"),
     sourceSlice("function renderSupportOrganizationWorkbench", "function renderOrgTreeNode"),
     sourceSlice("function renderSupportActivityWorkbench", "function renderSupportActivityTreeNode"),
     sourceSlice("function renderExperimentPlanList", "function renderExperimentPlanEditor"),
@@ -248,7 +248,7 @@ test("equipment composition modeling is the post-project landing page and plan n
   assert.match(appSource, /function renderExperimentPlanList/);
   assert.match(appSource, /function renderExperimentPlanEditor/);
   assert.match(appSource, /data-project-menu-toggle/);
-  assert.match(appSource, /htmlEscape\(currentProject\.name\)/);
+  assert.match(appSource, /htmlEscape\(currentProject\?\.name \|\| "未选择项目"\)/);
   assert.match(appSource, /返回项目列表/);
   assert.match(appSource, /data-project-list/);
   assert.doesNotMatch(appSource, /<button type="button" data-project-list>项目列表<\/button>/);
@@ -1042,11 +1042,9 @@ test("basic mission page follows ship front basic task modeling structure", asyn
   assert.match(appSource, /使用保障活动/);
   assert.match(appSource, /任务区域描述/);
   assert.match(appSource, /阶段占比/);
-  assert.match(appSource, /任务时间系数/);
   assert.match(appSource, /阶段占比合计/);
   assert.match(appSource, /missionPhaseRatioTotal/);
   assert.match(appSource, /必须调整为 1 后才能作为正式编译输入/);
-  assert.match(appSource, /function renderMissionPhaseSystemCoefficients/);
   assert.doesNotMatch(appSource, /<tr><th>更新时间<\/th>/);
   assert.doesNotMatch(appSource, /基本任务建模字段[\s\S]*任务类型/);
 });
@@ -1221,7 +1219,6 @@ test("page revision equipment and mission input constraints are guarded", async 
   assert.match(basicMissionSource, /data-basic-mission-phase-delete/);
   assert.match(basicMissionSource, /missionPhaseRatioTotal/);
   assert.match(basicMissionSource, /Math\.abs\(phaseRatioTotal - 1\) < 0\.001/);
-  assert.match(basicMissionSource, /renderMissionPhaseSystemCoefficients/);
   assert.doesNotMatch(basicMissionSource, /<th>状态<\/th>/);
   assert.doesNotMatch(basicMissionSource, /转移条件/);
 
@@ -1654,7 +1651,7 @@ test("frontend modeling import demo fixture is synchronized with canonical JSON 
   assert.deepEqual(MODELING_IMPORT_DEMO_FIXTURE, canonical);
 });
 
-test("project list separates imported sample projects from preview fixtures", async () => {
+test("project list separates imported sample projects from local manual drafts", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const projectSeedSource = appSource.slice(
     appSource.indexOf("const PROJECT_SOURCE"),
@@ -1669,10 +1666,12 @@ test("project list separates imported sample projects from preview fixtures", as
     appSource.indexOf("function currentPublishedModelingImportId")
   );
 
-  assert.match(projectSeedSource, /preview_fixture: "preview_fixture"/);
+  assert.match(projectSeedSource, /manual_draft: "manual_draft"/);
   assert.match(projectSeedSource, /imported_sample: "imported_sample"/);
-  assert.match(projectSeedSource, /sourceKind: PROJECT_SOURCE\.preview_fixture/);
-  assert.match(projectListSource, /实际功能测试请先从已发布建模导入包生成示例项目/);
+  assert.doesNotMatch(projectSeedSource, /preview_fixture/);
+  assert.match(projectSeedSource, /readManualDraftProjectsFromStorage\(\)/);
+  assert.match(projectListSource, /可从已发布建模导入包生成示例项目，或添加本地 Project draft/);
+  assert.match(projectListSource, /暂无项目/);
   assert.match(projectListSource, /projectSourceBadge\(project\)/);
   assert.match(projectListSource, /projectSourceHelpText\(project\)/);
   assert.match(createSource, /sourceKind: PROJECT_SOURCE\.imported_sample/);
@@ -1697,9 +1696,10 @@ test("formal run starts only allow imported sample projects", async () => {
     appSource.indexOf("async function refreshRunResultThroughApi")
   );
 
+  assert.match(guardSource, /if \(!currentProject\) \{/);
   assert.match(guardSource, /currentProject\.sourceKind === PROJECT_SOURCE\.imported_sample/);
   assert.doesNotMatch(guardSource, /currentProject\.sourceKind !== PROJECT_SOURCE\.preview_fixture/);
-  assert.match(guardSource, /内置静态项目只保留为本地预览/);
+  assert.match(guardSource, /请先创建或选择项目/);
   assert.match(guardSource, /本地草稿需要先通过建模导入发布链路生成示例项目/);
   assert.match(singleRunSource, /const formalRunGate = currentProjectCanStartFormalRun\(\);/);
   assert.match(singleRunSource, /if \(!formalRunGate\.allowed\) \{/);
@@ -1811,7 +1811,7 @@ test("system management exposes an independent equipment RMS allocation workbenc
   assert.match(appSource, /calculateRmsAllocation\(rmsAllocationPlan, rmsAllocationProject\)/);
   assert.match(appSource, /publishRmsAllocation\(rmsAllocationProject, rmsAllocationResult\)/);
   assert.match(appSource, /function renderTopbarContext\(page\)/);
-  assert.match(appSource, /htmlEscape\(currentProject\.name\)} \/ \$\{renderTopbarContext\(page\)\}/);
+  assert.match(appSource, /htmlEscape\(currentProject\?\.name \|\| "未选择项目"\)} \/ \$\{renderTopbarContext\(page\)\}/);
   assert.match(appSource, /系统管理 \/ \$\{htmlEscape\(page\.secondary\)\} \/ \$\{htmlEscape\(page\.tertiary\)\}/);
   assert.match(styleSource, /\.rms-allocation-workbench/);
   assert.match(styleSource, /\.rms-equipment-tree/);
@@ -1948,7 +1948,7 @@ test("frontend removes the standalone ontology visualization route", async () =>
 
 test("editable and project text values are escaped before template insertion", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
-  assert.match(appSource, /htmlEscape\(currentProject\.name\)/);
+  assert.match(appSource, /htmlEscape\(currentProject\?\.name \|\| "未选择项目"\)/);
   assert.match(appSource, /htmlEscape\(project\.name\)/);
   assert.match(appSource, /htmlEscape\(project\.summary\)/);
   assert.match(appSource, /htmlEscape\(scenario\.experiment\.name\)/);

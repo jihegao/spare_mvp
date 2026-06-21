@@ -138,6 +138,37 @@ class BackendHttpApiTest(unittest.TestCase):
                 server.server_close()
                 thread.join(timeout=5)
 
+    def test_http_api_lists_saved_projects_for_project_catalog(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            server = create_backend_server(
+                ("127.0.0.1", 0),
+                repo_root=REPO_ROOT,
+                database_path=":memory:",
+                output_dir=Path(tmp) / "artifacts",
+            )
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                base_url = f"http://127.0.0.1:{server.server_address[1]}/api"
+                created = self._create_imported_sample_project(base_url)
+                saved_project = created["savedProject"]
+                project_json = created["project"]
+
+                catalog = self._json(base_url, "GET", "/projects")
+
+                self.assertEqual(len(catalog["projects"]), 1)
+                entry = catalog["projects"][0]
+                self.assertEqual(entry["project_id"], saved_project["project_id"])
+                self.assertEqual(entry["experiment_name"], project_json["experiment"]["name"])
+                self.assertEqual(entry["base_code"], project_json["projectInfo"]["baseCode"])
+                self.assertEqual(entry["summary"], project_json["projectInfo"]["summary"])
+                self.assertEqual(entry["scenario_id"], project_json["scenarioId"])
+                self.assertIn("updated_at", entry)
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
     def test_http_legacy_simulation_run_routes_are_retired(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             server = create_backend_server(
