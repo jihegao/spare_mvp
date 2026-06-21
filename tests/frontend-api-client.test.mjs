@@ -155,6 +155,30 @@ test("frontend API client exposes M7 run artifact management routes", async () =
   assert.equal(downloadRequest.responseType, "blob");
 });
 
+test("frontend API client reads run artifact JSON payloads for M8 analysis projections", async () => {
+  const calls = [];
+  const client = createBackendApiClient({
+    transport: async (request) => {
+      calls.push(request);
+      if (request.path === "/runs/run-ui/artifacts/artifact-spare") {
+        return {
+          projection_type: "spare_shortfall",
+          data: [{ spare_type: "engine", fill_rate: 0.82, shortage_probability: 0.24 }]
+        };
+      }
+      throw new Error(`unexpected ${request.method} ${request.path}`);
+    }
+  });
+
+  const payload = await client.getRunArtifactPayload("run-ui", "artifact-spare");
+
+  assert.equal(payload.projection_type, "spare_shortfall");
+  assert.deepEqual(calls.map((call) => `${call.method} ${call.path}`), [
+    "GET /runs/run-ui/artifacts/artifact-spare"
+  ]);
+  assert.equal(calls[0].responseType, "json");
+});
+
 test("frontend API client preserves formal M6.2 monte carlo SimulationExperimentBase fields", async () => {
   const calls = [];
   const client = createBackendApiClient({

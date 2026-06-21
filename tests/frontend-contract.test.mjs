@@ -487,6 +487,19 @@ test("empty-shell result analysis renders configuration guidance instead of synt
 
 test("M6.2 formal result boundary unlocks only compiler-provenanced analysis artifacts", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const formalBoundarySource = appSource.slice(
+    appSource.indexOf("function formalAnalysisBoundary"),
+    appSource.indexOf("function renderAnalysisDashboard")
+  );
+  const runTypeSource = formalBoundarySource.slice(
+    formalBoundarySource.indexOf("const runTypeIsMonteCarlo"),
+    formalBoundarySource.indexOf("const projectionArtifacts")
+  );
+  const baseArtifactSource = appSource.slice(
+    appSource.indexOf("function monteCarloBaseArtifacts"),
+    appSource.indexOf("function analysisProjectionArtifacts")
+  );
+
   assert.match(appSource, /输入未通过 Scenario compiler/);
   assert.match(appSource, /本地预览，不是正式后端仿真结果/);
   assert.match(appSource, /缺少 compiler provenance/);
@@ -496,6 +509,11 @@ test("M6.2 formal result boundary unlocks only compiler-provenanced analysis art
   assert.match(appSource, /analysisArtifacts,/);
   assert.match(appSource, /function analysisProjectionArtifacts/);
   assert.match(appSource, /monteCarloBaseArtifacts\(\)\.length > 0/);
+  assert.match(runTypeSource, /backendRun\?\.run_type === "monte_carlo"/);
+  assert.doesNotMatch(runTypeSource, /linkedExperiment\?\.runType/);
+  assert.doesNotMatch(runTypeSource, /monteCarloBaseArtifacts\(\)/);
+  assert.match(baseArtifactSource, /artifactHasKind\(artifact,\s*"monte_carlo_base"\)/);
+  assert.doesNotMatch(baseArtifactSource, /artifactText|artifactMatchesAny|includes\(/);
   assert.match(appSource, /spare_shortfall/);
   assert.match(appSource, /carry_list/);
   assert.match(appSource, /mission_reliability/);
@@ -1615,6 +1633,8 @@ test("M7 run artifact panel renders artifact identity and lifecycle controls", a
   assert.match(appSource, /deleted run 禁止下载 artifact/);
   assert.match(appSource, /URL\.createObjectURL/);
   assert.match(appSource, /anchor\.download/);
+  assert.doesNotMatch(appSource, /不解析 projection artifact payload，也不把下载内容用于 KPI 卡片/);
+  assert.match(appSource, /M8 分析页会另行读取 projection payload/);
   assert.doesNotMatch(appSource, /\/api\/simulation-runs/);
 });
 
@@ -1857,6 +1877,34 @@ test("formal runs do not consume local preview outputs", async () => {
   assert.doesNotMatch(refreshSource, /buildDemoResultState|runSimulation|runMonteCarlo|defaultScenario/);
   assert.doesNotMatch(formalUnlockSource, /\bsingleResult\b|\bmonteCarloResult\b|previewSingleResult|previewMonteCarloResult/);
   assert.match(appSource, /本地预览，不是正式后端仿真结果/);
+});
+
+test("M8 formal analysis pages load and render matching projection payloads", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const apiClientSource = await readFile(new URL("../front/api-client.mjs", import.meta.url), "utf8");
+  const refreshSource = appSource.slice(
+    appSource.indexOf("async function refreshRunResultThroughApi"),
+    appSource.indexOf("async function hydrateLastBackendRunFromApi")
+  );
+  const payloadSource = appSource.slice(
+    appSource.indexOf("async function refreshAnalysisProjectionPayloads"),
+    appSource.indexOf("function renderAnalysis")
+  );
+  const renderDashboardSource = appSource.slice(
+    appSource.indexOf("function renderAnalysisDashboard"),
+    appSource.indexOf("function renderBar")
+  );
+
+  assert.match(apiClientSource, /getRunArtifactPayload\(runId, artifactId\)/);
+  assert.match(refreshSource, /await refreshAnalysisProjectionPayloads\(runId\)/);
+  assert.match(payloadSource, /backendApi\.getRunArtifactPayload\(runId,\s*artifactId\)/);
+  assert.match(payloadSource, /normalizeAnalysisProjectionPayload\(analysisType,\s*payload\)/);
+  assert.match(payloadSource, /projectionArtifactKindForAnalysisType\(analysisType\)/);
+  assert.match(payloadSource, /analysisProjectionPayloads = \{\s*\.\.\.analysisProjectionPayloads/);
+  assert.match(renderDashboardSource, /const formalProjection = analysisProjectionForBoundary\(boundary\)/);
+  assert.match(renderDashboardSource, /formalProjection\?\.metrics \|\| metrics/);
+  assert.doesNotMatch(renderDashboardSource, /boundary\.formalUnlocked \? "" : "<em>本地预览<\/em>"/);
+  assert.match(renderDashboardSource, /projection payload/);
 });
 
 test("formal run launch preserves queued or running backend status without treating it as unavailable", async () => {
