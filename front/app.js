@@ -320,6 +320,10 @@ let selectedCombatUnitMemberIndex = 0;
 let selectedSupportOrgNodeId = "";
 let selectedSupportActivityJobKeys = new Set();
 let selectedOperationsSupportActivityKey = "";
+let selectedOperationsSupportAircraftModel = "";
+let selectedOperationsSupportPlanType = "直接准备方案";
+let selectedPreventiveMaintenanceActivityKey = "";
+let selectedPreventiveMaintenanceAircraftModel = "";
 let selectedSupportResourceKeys = new Set();
 let deletedSupportResourceKeys = new Set();
 let selectedBasicActivityKeys = new Set();
@@ -383,7 +387,6 @@ function supportActivityPlanForPage(page, activity) {
   const activityName = activity?.activityName || type;
   const activityModel = supportActivityAircraftModel(activity) || scenario.equipment.model || "";
   if (type.includes("使用")) {
-    const phaseNames = ["飞行前准备", "再次出动准备", "飞行后检查"];
     const planNodesByModel = new Map();
     for (const model of aircraftModels.length ? aircraftModels : [activityModel].filter(Boolean)) {
       planNodesByModel.set(model, []);
@@ -395,10 +398,7 @@ function supportActivityPlanForPage(page, activity) {
         id: `operations-plan:${model}:${option.value}`,
         name: option.label,
         editablePlanKey: option.key,
-        children: phaseNames.map((phaseName) => ({
-          id: `operations-plan:${model}:${option.value}:${phaseName}`,
-          name: phaseName
-        }))
+        children: []
       });
     }
     if (!Array.from(planNodesByModel.values()).some((nodes) => nodes.length)) {
@@ -406,11 +406,40 @@ function supportActivityPlanForPage(page, activity) {
       planNodesByModel.set(model, [{
         id: `operations-plan:${model}:${activityName}`,
         name: activityName,
-        children: phaseNames.map((phaseName) => ({
-          id: `operations-plan:${model}:${activityName}:${phaseName}`,
-          name: phaseName
-        }))
+        editablePlanKey: selectedOperationsSupportActivityKey,
+        children: []
       }]);
+    }
+    return {
+      type,
+      treeTitle: `${type}树`,
+      path: [type, activityName],
+      tree: {
+        id: "support-activity-aircraft-list",
+        name: "飞机列表",
+        children: Array.from(planNodesByModel.entries()).map(([model, plans]) => ({
+        id: `support-activity-aircraft:${model}`,
+        name: model,
+        selectableAircraftModel: model,
+        children: plans
+      }))
+      }
+    };
+  }
+  if (type.includes("预防性")) {
+    const planNodesByModel = new Map();
+    for (const model of aircraftModels.length ? aircraftModels : [activityModel].filter(Boolean)) {
+      planNodesByModel.set(model, []);
+    }
+    for (const option of preventiveMaintenanceActivityEntries()) {
+      const model = option.aircraftModel || activityModel || aircraftModels[0] || "未指定机型";
+      if (!planNodesByModel.has(model)) planNodesByModel.set(model, []);
+      planNodesByModel.get(model).push({
+        id: `preventive-plan:${model}:${option.value}`,
+        name: option.label,
+        editablePreventivePlanKey: option.key,
+        children: []
+      });
     }
     return {
       type,
@@ -422,6 +451,7 @@ function supportActivityPlanForPage(page, activity) {
         children: Array.from(planNodesByModel.entries()).map(([model, plans]) => ({
           id: `support-activity-aircraft:${model}`,
           name: model,
+          selectablePreventiveAircraftModel: model,
           children: plans
         }))
       }
@@ -430,7 +460,7 @@ function supportActivityPlanForPage(page, activity) {
   const activityNode = (model = "") => ({
     id: activity?.id || `support-activity:${type}${model ? `:${model}` : ""}`,
     name: activityName,
-    children: type.includes("预防性") ? [] : supportActivityJobs(activity || {}).map((job, index) => ({
+    children: supportActivityJobs(activity || {}).map((job, index) => ({
       id: `${activity?.id || "activity"}:job:${index}`,
       name: job.workName || job.activityCode || `工作项目${index + 1}`
     }))
@@ -477,6 +507,14 @@ function bindEvents() {
     const equipmentAddNodeButton = event.target.closest("[data-equipment-add-node]");
     if (equipmentAddNodeButton) {
       addEquipmentNodeForSelection();
+      markProjectDraftChanged();
+      render();
+      return;
+    }
+
+    const equipmentDeleteNodeButton = event.target.closest("[data-equipment-delete-node]");
+    if (equipmentDeleteNodeButton) {
+      deleteSelectedEquipmentAircraft();
       markProjectDraftChanged();
       render();
       return;
@@ -656,6 +694,7 @@ function bindEvents() {
     const correctiveComponentNode = event.target.closest("[data-select-corrective-component]");
     if (correctiveComponentNode && !clickedTreeToggleIcon) {
       selectedCorrectiveComponentId = correctiveComponentNode.dataset.selectCorrectiveComponent;
+      selectedSupportActivityJobKeys = new Set();
       render();
       return;
     }
@@ -703,9 +742,62 @@ function bindEvents() {
       return;
     }
 
-    const supportActivityPlanEditButton = event.target.closest("[data-support-activity-plan-edit]");
-    if (supportActivityPlanEditButton) {
-      selectOperationsSupportActivityPlan(supportActivityPlanEditButton.dataset.supportActivityPlanEdit);
+    const preventiveActivityPlanDeleteButton = event.target.closest("[data-preventive-activity-plan-delete]");
+    if (preventiveActivityPlanDeleteButton) {
+      deletePreventiveMaintenanceActivityPlan(preventiveActivityPlanDeleteButton.dataset.preventiveActivityPlanDelete);
+      markProjectDraftChanged();
+      render();
+      return;
+    }
+
+    const supportActivityPlanAddButton = event.target.closest("[data-support-activity-plan-add]");
+    if (supportActivityPlanAddButton) {
+      addOperationsSupportActivityPlan();
+      markProjectDraftChanged();
+      render();
+      return;
+    }
+
+    const preventiveActivityPlanAddButton = event.target.closest("[data-preventive-activity-plan-add]");
+    if (preventiveActivityPlanAddButton) {
+      addPreventiveMaintenanceActivityPlan();
+      markProjectDraftChanged();
+      render();
+      return;
+    }
+
+    const supportActivityPlanSelectButton = event.target.closest("[data-select-support-activity-plan]");
+    if (supportActivityPlanSelectButton) {
+      selectOperationsSupportActivityPlan(supportActivityPlanSelectButton.dataset.selectSupportActivityPlan);
+      render();
+      return;
+    }
+
+    const preventiveActivityPlanSelectButton = event.target.closest("[data-select-preventive-activity-plan]");
+    if (preventiveActivityPlanSelectButton) {
+      selectPreventiveMaintenanceActivityPlan(preventiveActivityPlanSelectButton.dataset.selectPreventiveActivityPlan);
+      render();
+      return;
+    }
+
+    const operationsSupportAircraftSelectButton = event.target.closest("[data-select-operations-support-aircraft-model]");
+    if (operationsSupportAircraftSelectButton) {
+      selectOperationsSupportAircraftModel(operationsSupportAircraftSelectButton.dataset.selectOperationsSupportAircraftModel);
+      render();
+      return;
+    }
+
+    const preventiveAircraftSelectButton = event.target.closest("[data-select-preventive-aircraft-model]");
+    if (preventiveAircraftSelectButton) {
+      selectPreventiveMaintenanceAircraftModel(preventiveAircraftSelectButton.dataset.selectPreventiveAircraftModel);
+      render();
+      return;
+    }
+
+    const supportActivityPhaseTabButton = event.target.closest("[data-ops-support-plan-type]");
+    if (supportActivityPhaseTabButton) {
+      selectedOperationsSupportPlanType = supportActivityPhaseTabButton.dataset.opsSupportPlanType || "直接准备方案";
+      selectedSupportActivityJobKeys = new Set();
       render();
       return;
     }
@@ -3039,7 +3131,7 @@ function renderEquipmentModeling(page) {
           <h4>装备组成树</h4>
           <div class="equipment-toolbar">
             <button type="button" class="btn-primary" data-equipment-add-node>新增节点</button>
-            <button type="button" class="btn-danger" data-equipment-delete-node disabled>删除</button>
+            <button type="button" class="btn-danger" data-equipment-delete-node ${selectedState.kind === "aircraft" ? "" : "disabled"}>删除</button>
           </div>
         </div>
         ${renderCollapsibleTree(buildEquipmentTreeNodes())}
@@ -3123,10 +3215,30 @@ function clampEquipmentComponentIndex(index) {
 function addEquipmentNodeForSelection() {
   const selectedState = resolveSelectedEquipmentNode();
   const mutation = addEquipmentNodeForSelectionModel({ scenario, selection: selectedState });
+  if (mutation.kind === "aircraft") {
+    ensureOperationsSupportActivityForAircraftModel(mutation.aircraftModel);
+  }
   if (Number.isFinite(mutation.selectedEquipmentComponentIndex)) {
     selectedEquipmentComponentIndex = mutation.selectedEquipmentComponentIndex;
   }
   selectedEquipmentNodeKey = mutation.selectedEquipmentNodeKey || selectedEquipmentNodeKey;
+  updatePreviewResultsThroughApiClient();
+}
+
+function deleteSelectedEquipmentAircraft() {
+  const selectedState = resolveSelectedEquipmentNode();
+  if (selectedState.kind !== "aircraft") return;
+  const aircraftModel = selectedState.aircraftModel;
+  if (!aircraftModel || !Array.isArray(scenario.equipment.wholeMachineModels)) return;
+  removeOperationsSupportActivitiesForAircraftModel(aircraftModel);
+  removePreventiveMaintenanceActivitiesForAircraftModel(aircraftModel);
+  scenario.equipment.wholeMachineModels = scenario.equipment.wholeMachineModels.filter((model) => String(model) !== String(aircraftModel));
+  scenario.components = (scenario.components || []).filter((component) => String(component.aircraftModel || "") !== String(aircraftModel));
+  if (String(scenario.equipment.model || "") === String(aircraftModel)) {
+    scenario.equipment.model = wholeMachineModels()[0] || "";
+  }
+  selectedEquipmentNodeKey = "aircraft-list";
+  selectedEquipmentComponentIndex = 0;
   updatePreviewResultsThroughApiClient();
 }
 
@@ -3147,6 +3259,8 @@ function updateEquipmentAircraftModel(previousModel, nextModelRaw) {
   for (const component of scenario.components || []) {
     if (String(component.aircraftModel || "") === oldModel) component.aircraftModel = nextModel;
   }
+  updateOperationsSupportActivityAircraftModel(oldModel, nextModel);
+  updatePreventiveMaintenanceActivityAircraftModel(oldModel, nextModel);
   for (const record of editableBasicMissionRecords()) {
     if (String(record.task?.equipmentType || "") === oldModel) record.task.equipmentType = nextModel;
   }
@@ -3165,6 +3279,230 @@ function updateEquipmentAircraftModel(previousModel, nextModelRaw) {
     selectedBasicMissionEquipmentType = nextModel;
   }
   updatePreviewResultsThroughApiClient();
+}
+
+function ensureOperationsSupportActivityForAircraftModel(aircraftModel) {
+  const model = String(aircraftModel || "").trim();
+  if (!model) return null;
+  if (!Array.isArray(scenario.supportActivities)) scenario.supportActivities = [];
+  const existingDirect = operationsSupportPhaseActivity({ aircraftModel: model }, "直接准备方案");
+  const planGroupId = existingDirect
+    ? ensureOperationsSupportPlanGroupId(existingDirect, model)
+    : nextOperationsSupportPlanGroupId(model);
+  const activities = operationsSupportPlanTypeConfigs().map((config) => {
+    const existing = operationsSupportPhaseActivity({ aircraftModel: model, planGroupId }, config.planType);
+    if (existing) return existing;
+    const activity = createOperationsSupportActivityForAircraftModel(model, { ...config, planGroupId });
+    scenario.supportActivities.push(activity);
+    return activity;
+  });
+  const directIndex = scenario.supportActivities.indexOf(activities[0]);
+  selectedOperationsSupportActivityKey = directIndex >= 0 ? `supportActivity:${directIndex}` : selectedOperationsSupportActivityKey;
+  selectedOperationsSupportAircraftModel = model;
+  return activities[0] || null;
+}
+
+function createOperationsSupportActivityForAircraftModel(aircraftModel, config = operationsSupportPlanTypeConfigs()[0]) {
+  const model = String(aircraftModel || "").trim() || "未指定机型";
+  const planGroupId = config.planGroupId || nextOperationsSupportPlanGroupId(model);
+  const existingCount = (scenario.supportActivities || []).filter((activity) => (
+    isOperationsSupportActivity(activity) && String(supportActivityAircraftModel(activity) || "") === model
+  )).length;
+  const suffix = existingCount + 1;
+  return {
+    id: nextOperationsSupportActivityId(model, config.planType),
+    activityType: "使用保障",
+    planType: config.planType,
+    planGroupId,
+    activityName: `${model}${config.activitySuffix || `保障活动${suffix}`}`,
+    aircraftModel: model,
+    maxWorkTimeRefMinutes: config.maxWorkTimeRefMinutes ?? 30,
+    jobs: [{
+      activityCode: "BA-001",
+      workName: `${config.label || "新增"}基本保障活动1`,
+      predecessors: [],
+      durationMinutes: config.maxWorkTimeRefMinutes ?? 30,
+      personnel: "机务人员,1",
+      equipment: "检测仪,1",
+      spare: ""
+    }]
+  };
+}
+
+function nextOperationsSupportActivityId(aircraftModel, planType = "") {
+  const prefix = `ops-support-${String(aircraftModel || "aircraft").toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${String(planType || "plan").toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+  const usedIds = new Set((scenario.supportActivities || []).map((activity) => String(activity.id || "")));
+  let index = usedIds.size + 1;
+  while (usedIds.has(`${prefix}-${index}`)) index += 1;
+  return `${prefix}-${index}`;
+}
+
+function nextOperationsSupportPlanGroupId(aircraftModel) {
+  const prefix = `ops-plan-${String(aircraftModel || "aircraft").toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+  const usedIds = new Set((scenario.supportActivities || []).map((activity) => operationsSupportPlanGroupId(activity)).filter(Boolean));
+  let index = usedIds.size + 1;
+  while (usedIds.has(`${prefix}-${index}`)) index += 1;
+  return `${prefix}-${index}`;
+}
+
+function removeOperationsSupportActivitiesForAircraftModel(aircraftModel) {
+  const model = String(aircraftModel || "").trim();
+  if (!model) return;
+  scenario.supportActivities = (scenario.supportActivities || []).filter((activity) => {
+    if (!isOperationsSupportActivity(activity)) return true;
+    return String(supportActivityAircraftModel(activity) || "") !== model;
+  });
+  selectedOperationsSupportActivityKey = "";
+  if (selectedOperationsSupportAircraftModel === model) selectedOperationsSupportAircraftModel = wholeMachineModels()[0] || "";
+  selectedSupportActivityJobKeys = new Set();
+}
+
+function updateOperationsSupportActivityAircraftModel(oldModel, nextModel) {
+  for (const activity of scenario.supportActivities || []) {
+    if (!isOperationsSupportActivity(activity)) continue;
+    if (String(supportActivityAircraftModel(activity) || "") !== String(oldModel || "")) continue;
+    activity.aircraftModel = nextModel;
+    if (activity.equipmentType) activity.equipmentType = nextModel;
+  }
+  if (selectedOperationsSupportAircraftModel === oldModel) selectedOperationsSupportAircraftModel = nextModel;
+}
+
+function isOperationsSupportActivity(activity) {
+  const planType = String(activity?.planType || "").trim();
+  return operationsSupportPlanTypeConfigs().some((config) => config.planType === planType)
+    || activity?.activityType === "飞行前保障"
+    || activity?.activityType === "使用保障";
+}
+
+function isPreventiveMaintenanceActivity(activity) {
+  return activity?.activityType === "预防性维修" || activity?.planType === "预防性维修方案";
+}
+
+function preventiveMaintenanceActivityEntries(aircraftModel = "") {
+  const targetModel = String(aircraftModel || "").trim();
+  return (scenario.supportActivities || [])
+    .map((activity, index) => ({ activity, index, key: `supportActivity:${index}` }))
+    .filter(({ activity }) => isPreventiveMaintenanceActivity(activity))
+    .filter(({ activity }) => !targetModel || supportActivityAircraftModel(activity) === targetModel)
+    .map(({ activity, index, key }) => ({
+      activity,
+      index,
+      key,
+      value: activity.activityName || activity.name || activity.id || "未命名预防性维修方案",
+      label: activity.activityName || activity.name || activity.id || "未命名预防性维修方案",
+      aircraftModel: supportActivityAircraftModel(activity)
+    }));
+}
+
+function selectedPreventiveMaintenanceActivity() {
+  return preventiveMaintenanceActivityEntries().find((entry) => entry.key === selectedPreventiveMaintenanceActivityKey)?.activity || null;
+}
+
+function selectPreventiveMaintenanceActivityPlan(key) {
+  const entry = preventiveMaintenanceActivityEntries().find((item) => item.key === key);
+  if (!entry) return;
+  selectedPreventiveMaintenanceActivityKey = key;
+  selectedPreventiveMaintenanceAircraftModel = supportActivityAircraftModel(entry.activity) || entry.aircraftModel || selectedPreventiveMaintenanceAircraftModel;
+  selectedSupportActivityJobKeys = new Set();
+}
+
+function selectPreventiveMaintenanceAircraftModel(aircraftModel) {
+  const model = String(aircraftModel || "").trim();
+  if (!model) return;
+  selectedPreventiveMaintenanceAircraftModel = model;
+  selectedPreventiveMaintenanceActivityKey = "";
+  selectedSupportActivityJobKeys = new Set();
+}
+
+function addPreventiveMaintenanceActivityPlan() {
+  const entries = preventiveMaintenanceActivityEntries();
+  const selected = selectedPreventiveMaintenanceActivity() || entries[0]?.activity || {};
+  const model = selectedPreventiveMaintenanceAircraftModel || supportActivityAircraftModel(selected) || wholeMachineModels()[0] || scenario.equipment.model || "";
+  if (!Array.isArray(scenario.supportActivities)) scenario.supportActivities = [];
+  const activity = createPreventiveMaintenanceActivityForAircraftModel(model, entries.length + 1);
+  scenario.supportActivities.push(activity);
+  selectedPreventiveMaintenanceActivityKey = `supportActivity:${scenario.supportActivities.indexOf(activity)}`;
+  selectedPreventiveMaintenanceAircraftModel = model;
+  selectedSupportActivityJobKeys = new Set();
+  updatePreviewResultsThroughApiClient();
+}
+
+function deletePreventiveMaintenanceActivityPlan(key = "") {
+  const entries = preventiveMaintenanceActivityEntries();
+  const targetKey = key || selectedPreventiveMaintenanceActivityKey || "";
+  const entry = entries.find((item) => item.key === targetKey);
+  if (!entry) return;
+  const targetModel = entry.aircraftModel || supportActivityAircraftModel(entry.activity) || selectedPreventiveMaintenanceAircraftModel;
+  scenario.supportActivities = (scenario.supportActivities || []).filter((_, index) => index !== entry.index);
+  const nextEntries = preventiveMaintenanceActivityEntries();
+  const sameAircraftEntries = nextEntries.filter((item) => item.aircraftModel === targetModel);
+  const sameAircraftIndex = sameAircraftEntries.findIndex((item) => item.index > entry.index);
+  const nextEntry = sameAircraftEntries[sameAircraftIndex >= 0 ? sameAircraftIndex : Math.max(0, sameAircraftEntries.length - 1)] || null;
+  selectedPreventiveMaintenanceActivityKey = nextEntry?.key || "";
+  selectedPreventiveMaintenanceAircraftModel = nextEntry?.aircraftModel || targetModel || selectedPreventiveMaintenanceAircraftModel;
+  selectedSupportActivityJobKeys = new Set();
+  updatePreviewResultsThroughApiClient();
+}
+
+function createPreventiveMaintenanceActivityForAircraftModel(aircraftModel, sequence = 1) {
+  const model = String(aircraftModel || "").trim() || "未指定机型";
+  return {
+    id: nextPreventiveMaintenanceActivityId(model),
+    activityType: "预防性维修",
+    planType: "预防性维修方案",
+    activityName: `${model}新增预防性维修活动${sequence}`,
+    aircraftModel: model,
+    durationHours: 2,
+    plannedDowntimeHours: 2,
+    useCalendarRule: true,
+    calendarDayInterval: 1,
+    calendarDayFloatRatio: 0.1,
+    useFlightHourRule: true,
+    runHourInterval: 8,
+    runHourFloatRatio: 0.15,
+    useTakeoffLandingRule: true,
+    takeoffLandingInterval: 6,
+    takeoffLandingFloatRatio: 0.1,
+    jobs: [{
+      activityCode: "PM-001",
+      workName: "新增预防性维修工作项目1",
+      predecessors: [],
+      durationMinutes: 30,
+      personnel: "维修人员,1",
+      equipment: "通用工具箱,1",
+      spare: ""
+    }]
+  };
+}
+
+function nextPreventiveMaintenanceActivityId(aircraftModel) {
+  const prefix = `preventive-${String(aircraftModel || "aircraft").toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+  const usedIds = new Set((scenario.supportActivities || []).map((activity) => String(activity.id || "")));
+  let index = usedIds.size + 1;
+  while (usedIds.has(`${prefix}-${index}`)) index += 1;
+  return `${prefix}-${index}`;
+}
+
+function removePreventiveMaintenanceActivitiesForAircraftModel(aircraftModel) {
+  const model = String(aircraftModel || "").trim();
+  if (!model) return;
+  scenario.supportActivities = (scenario.supportActivities || []).filter((activity) => {
+    if (!isPreventiveMaintenanceActivity(activity)) return true;
+    return String(supportActivityAircraftModel(activity) || "") !== model;
+  });
+  selectedPreventiveMaintenanceActivityKey = "";
+  if (selectedPreventiveMaintenanceAircraftModel === model) selectedPreventiveMaintenanceAircraftModel = wholeMachineModels()[0] || "";
+  selectedSupportActivityJobKeys = new Set();
+}
+
+function updatePreventiveMaintenanceActivityAircraftModel(oldModel, nextModel) {
+  for (const activity of scenario.supportActivities || []) {
+    if (!isPreventiveMaintenanceActivity(activity)) continue;
+    if (String(supportActivityAircraftModel(activity) || "") !== String(oldModel || "")) continue;
+    activity.aircraftModel = nextModel;
+    if (activity.equipmentType) activity.equipmentType = nextModel;
+  }
+  if (selectedPreventiveMaintenanceAircraftModel === oldModel) selectedPreventiveMaintenanceAircraftModel = nextModel;
 }
 
 function renderEquipmentCompositionFields(selectedIndex) {
@@ -3692,7 +4030,9 @@ function findSupportActivityForPage(page) {
   const activities = scenario.supportActivities || [];
   if (page.name.includes("后勤")) return findLogisticsSupportActivity();
   if (page.name.includes("预防性")) {
-    return activities.find((activity) => activity.activityType === "预防性维修") || null;
+    return selectedPreventiveMaintenanceActivity()
+      || preventiveMaintenanceActivityEntries()[0]?.activity
+      || null;
   }
   if (page.name.includes("修复性")) {
     return activities.find((activity) => activity.activityType === "修复性维修") || null;
@@ -3713,11 +4053,49 @@ function supportActivityAircraftModel(activity) {
   return component?.aircraftModel || scenario.equipment.model || "";
 }
 
+function operationsSupportPlanTypeConfigs() {
+  return [
+    { planType: "直接准备方案", label: "飞行前准备", tabKey: "ops_preflight", activitySuffix: "飞行前准备活动", maxWorkTimeRefMinutes: 30 },
+    { planType: "再次出动准备方案", label: "再次出动准备", tabKey: "ops_relaunch", activitySuffix: "再次出动准备活动", maxWorkTimeRefMinutes: 45 },
+    { planType: "飞行后检查方案", label: "飞行后检查", tabKey: "ops_postflight", activitySuffix: "飞行后检查活动", maxWorkTimeRefMinutes: 60 }
+  ];
+}
+
+function operationsSupportPlanTypeTabKey(planType) {
+  return operationsSupportPlanTypeConfigs().find((item) => item.planType === planType)?.tabKey || "ops_preflight";
+}
+
+function operationsSupportPlanTypeFromTabKey(tabKey) {
+  return operationsSupportPlanTypeConfigs().find((item) => item.tabKey === tabKey)?.planType || "";
+}
+
+function normalizeOperationsSupportPlanType(planType) {
+  const normalized = String(planType || "").trim();
+  return operationsSupportPlanTypeConfigs().some((item) => item.planType === normalized) ? normalized : "直接准备方案";
+}
+
+function operationsSupportPlanGroupId(activity) {
+  return String(activity?.planGroupId || activity?.supportPlanId || "").trim();
+}
+
+function ensureOperationsSupportPlanGroupId(activity, aircraftModel = "") {
+  if (!activity) return nextOperationsSupportPlanGroupId(aircraftModel);
+  const existing = operationsSupportPlanGroupId(activity);
+  if (existing) return existing;
+  const planGroupId = String(activity.id || activity.activityName || activity.name || "").trim()
+    || nextOperationsSupportPlanGroupId(aircraftModel || supportActivityAircraftModel(activity));
+  activity.planGroupId = planGroupId;
+  return planGroupId;
+}
+
 function operationsSupportActivityEntries(aircraftModel = "") {
   const targetModel = String(aircraftModel || "").trim();
   return (scenario.supportActivities || [])
     .map((activity, index) => ({ activity, index, key: `supportActivity:${index}` }))
-    .filter(({ activity }) => activity.planType === "直接准备方案" || activity.activityType === "飞行前保障" || activity.activityType === "使用保障")
+    .filter(({ activity }) => (
+      activity.planType === "直接准备方案"
+      || (!activity.planType && (activity.activityType === "飞行前保障" || activity.activityType === "使用保障"))
+    ))
     .filter(({ activity }) => !targetModel || supportActivityAircraftModel(activity) === targetModel)
     .map(({ activity, index, key }) => ({
       activity,
@@ -3737,17 +4115,95 @@ function selectedOperationsSupportActivity() {
   return operationsSupportActivityEntries().find((entry) => entry.key === selectedOperationsSupportActivityKey)?.activity || null;
 }
 
+function operationsSupportPhaseActivity(baseActivity, planType = selectedOperationsSupportPlanType) {
+  const normalizedPlanType = normalizeOperationsSupportPlanType(planType);
+  const model = supportActivityAircraftModel(baseActivity) || wholeMachineModels()[0] || scenario.equipment.model || "";
+  const planGroupId = operationsSupportPlanGroupId(baseActivity);
+  const matchedByGroup = planGroupId ? (scenario.supportActivities || []).find((activity) => (
+    isOperationsSupportActivity(activity)
+    && operationsSupportPlanGroupId(activity) === planGroupId
+    && String(activity.planType || "直接准备方案") === normalizedPlanType
+  )) : null;
+  if (matchedByGroup) return matchedByGroup;
+  const legacyMatch = (scenario.supportActivities || []).find((activity) => (
+    isOperationsSupportActivity(activity)
+    && String(supportActivityAircraftModel(activity) || "") === String(model || "")
+    && !operationsSupportPlanGroupId(activity)
+    && String(activity.planType || "直接准备方案") === normalizedPlanType
+  ));
+  if (legacyMatch && planGroupId) legacyMatch.planGroupId = planGroupId;
+  return legacyMatch || null;
+}
+
+function ensureOperationsSupportPhaseActivities(baseActivity) {
+  const model = supportActivityAircraftModel(baseActivity) || wholeMachineModels()[0] || scenario.equipment.model || "";
+  if (!model) return [];
+  if (!Array.isArray(scenario.supportActivities)) scenario.supportActivities = [];
+  const planGroupId = ensureOperationsSupportPlanGroupId(baseActivity, model);
+  return operationsSupportPlanTypeConfigs().map((config) => {
+    const existing = operationsSupportPhaseActivity({ ...(baseActivity || {}), aircraftModel: model, planGroupId }, config.planType);
+    if (existing) return existing;
+    const activity = createOperationsSupportActivityForAircraftModel(model, { ...config, planGroupId });
+    scenario.supportActivities.push(activity);
+    return activity;
+  });
+}
+
 function selectOperationsSupportActivityPlan(key) {
-  if (!operationsSupportActivityEntries().some((entry) => entry.key === key)) return;
+  const entry = operationsSupportActivityEntries().find((item) => item.key === key);
+  if (!entry) return;
   selectedOperationsSupportActivityKey = key;
+  selectedOperationsSupportAircraftModel = supportActivityAircraftModel(entry.activity) || entry.aircraftModel || selectedOperationsSupportAircraftModel;
+  selectedOperationsSupportPlanType = "直接准备方案";
   selectedSupportActivityJobKeys = new Set();
 }
 
-function deleteOperationsSupportActivityPlan(key) {
-  const entry = operationsSupportActivityEntries().find((item) => item.key === key);
-  if (!entry) return;
-  scenario.supportActivities = (scenario.supportActivities || []).filter((_, index) => index !== entry.index);
+function selectOperationsSupportAircraftModel(aircraftModel) {
+  const model = String(aircraftModel || "").trim();
+  if (!model) return;
+  selectedOperationsSupportAircraftModel = model;
   selectedOperationsSupportActivityKey = "";
+  selectedOperationsSupportPlanType = "直接准备方案";
+  selectedSupportActivityJobKeys = new Set();
+}
+
+function addOperationsSupportActivityPlan() {
+  const entries = operationsSupportActivityEntries();
+  const selected = selectedOperationsSupportActivity() || entries[0]?.activity || {};
+  const model = selectedOperationsSupportAircraftModel || supportActivityAircraftModel(selected) || wholeMachineModels()[0] || scenario.equipment.model || "";
+  const nextIndex = entries.length + 1;
+  const planGroupId = nextOperationsSupportPlanGroupId(model);
+  if (!Array.isArray(scenario.supportActivities)) scenario.supportActivities = [];
+  const created = operationsSupportPlanTypeConfigs().map((config) => {
+    const activity = createOperationsSupportActivityForAircraftModel(model, {
+      ...config,
+      planGroupId,
+      activitySuffix: `新增保障活动${nextIndex}-${config.label}`
+    });
+    scenario.supportActivities.push(activity);
+    return activity;
+  });
+  selectedOperationsSupportActivityKey = `supportActivity:${scenario.supportActivities.indexOf(created[0])}`;
+  selectedOperationsSupportAircraftModel = model;
+  selectedOperationsSupportPlanType = "直接准备方案";
+  selectedSupportActivityJobKeys = new Set();
+  updatePreviewResultsThroughApiClient();
+}
+
+function deleteOperationsSupportActivityPlan(key = "") {
+  const entries = operationsSupportActivityEntries();
+  const targetKey = key || selectedOperationsSupportActivityKey || entries[0]?.key || "";
+  const entry = entries.find((item) => item.key === targetKey);
+  if (!entry) return;
+  ensureOperationsSupportPhaseActivities(entry.activity);
+  const planGroupId = ensureOperationsSupportPlanGroupId(entry.activity, entry.aircraftModel);
+  scenario.supportActivities = (scenario.supportActivities || []).filter((activity, index) => {
+    if (index === entry.index) return false;
+    if (!isOperationsSupportActivity(activity)) return true;
+    return operationsSupportPlanGroupId(activity) !== planGroupId;
+  });
+  const nextEntries = operationsSupportActivityEntries();
+  selectedOperationsSupportActivityKey = nextEntries[Math.min(entry.index, Math.max(0, nextEntries.length - 1))]?.key || "";
   selectedSupportActivityJobKeys = new Set();
   updatePreviewResultsThroughApiClient();
 }
@@ -3757,16 +4213,27 @@ function supportActivityJobKey(tabKey, index) {
 }
 
 function findSupportActivityByJobTabKey(tabKey) {
-  if (tabKey === "ops_plan") {
-    return selectedOperationsSupportActivity()
+  const operationsPlanType = operationsSupportPlanTypeFromTabKey(tabKey);
+  if (operationsPlanType) {
+    const baseActivity = selectedOperationsSupportActivity()
       || operationsSupportActivityEntries()[0]?.activity
+      || null;
+    const phaseActivities = ensureOperationsSupportPhaseActivities(baseActivity);
+    return operationsSupportPhaseActivity(baseActivity, operationsPlanType)
+      || phaseActivities.find((activity) => String(activity.planType || "") === operationsPlanType)
       || null;
   }
   if (tabKey === "prev_repair") {
-    return (scenario.supportActivities || []).find((activity) => activity.activityType === "预防性维修") || scenario.supportActivities?.[0] || null;
+    return selectedPreventiveMaintenanceActivity()
+      || preventiveMaintenanceActivityEntries()[0]?.activity
+      || scenario.supportActivities?.[0]
+      || null;
   }
   if (tabKey === "corr_repair") {
-    return (scenario.supportActivities || []).find((activity) => activity.activityType === "修复性维修") || scenario.supportActivities?.[0] || null;
+    return selectedCorrectiveMaintenanceActivity()
+      || (scenario.supportActivities || []).find((activity) => activity.activityType === "修复性维修")
+      || scenario.supportActivities?.[0]
+      || null;
   }
   return null;
 }
@@ -3934,6 +4401,94 @@ function renderSupportActivityJobTable(activity, tabKey) {
       </table>
     </div>
     ${selectedJob ? renderSupportActivityJobEditor(selectedJob) : ""}
+    ${renderSupportActivityGanttChart(activity, tabKey)}
+  `;
+}
+
+function buildSupportActivityGanttRows(activity) {
+  const jobs = supportActivityJobs(activity);
+  const codeToIndex = new Map();
+  jobs.forEach((job, index) => {
+    const keys = [
+      job.activityCode,
+      job.workName,
+      `BA-${String(index + 1).padStart(3, "0")}`
+    ].map((value) => String(value || "").trim()).filter(Boolean);
+    for (const key of keys) {
+      if (!codeToIndex.has(key)) codeToIndex.set(key, index);
+    }
+  });
+  const cache = new Map();
+  const visiting = new Set();
+  const durationAt = (index) => Math.max(0, Number(jobs[index]?.durationMinutes || 0));
+  const ganttPredecessorIndexes = (job, index) => (Array.isArray(job.predecessors) ? job.predecessors : [])
+    .map((value) => codeToIndex.get(String(value || "").trim()))
+    .filter((candidateIndex) => Number.isInteger(candidateIndex) && candidateIndex !== index);
+  const startAt = (index) => {
+    if (cache.has(index)) return cache.get(index);
+    if (visiting.has(index)) return 0;
+    visiting.add(index);
+    const predecessors = ganttPredecessorIndexes(jobs[index], index);
+    const start = predecessors.length
+      ? Math.max(...predecessors.map((predecessorIndex) => startAt(predecessorIndex) + durationAt(predecessorIndex)))
+      : 0;
+    visiting.delete(index);
+    cache.set(index, start);
+    return start;
+  };
+  return jobs.map((job, index) => {
+    const start = startAt(index);
+    const duration = durationAt(index);
+    return {
+      index,
+      code: job.activityCode || `BA-${String(index + 1).padStart(3, "0")}`,
+      name: job.workName || job.activityCode || `工作项目${index + 1}`,
+      predecessors: ganttPredecessorIndexes(job, index).map((predecessorIndex) => jobs[predecessorIndex]?.activityCode || jobs[predecessorIndex]?.workName || `BA-${predecessorIndex + 1}`),
+      start,
+      duration,
+      end: start + duration
+    };
+  });
+}
+
+function renderSupportActivityGanttChart(activity, tabKey) {
+  const rows = buildSupportActivityGanttRows(activity);
+  if (!rows.length) {
+    return `
+      <div class="support-activity-gantt" data-support-activity-gantt="${htmlEscape(tabKey)}">
+        <h4>保障活动图</h4>
+        <div class="muted">暂无工作项目</div>
+      </div>
+    `;
+  }
+  const totalMinutes = Math.max(1, ...rows.map((row) => row.end));
+  const axisTicks = [0, 0.25, 0.5, 0.75, 1].map((ratio) => Math.round(totalMinutes * ratio));
+  return `
+    <div class="support-activity-gantt" data-support-activity-gantt="${htmlEscape(tabKey)}">
+      <h4>保障活动图</h4>
+      <div class="support-gantt-axis">${axisTicks.map((tick) => `<span>${tick}min</span>`).join("")}</div>
+      <div class="support-gantt-chart">
+        ${rows.map((row) => {
+          const left = Math.max(0, Math.min(100, (row.start / totalMinutes) * 100));
+          const width = Math.max(3, Math.min(100 - left, (Math.max(1, row.duration) / totalMinutes) * 100));
+          const predecessorText = row.predecessors.length ? `紧前：${row.predecessors.join(", ")}` : "无紧前";
+          return `
+            <div class="support-gantt-row">
+              <div class="support-gantt-label">
+                <strong>${htmlEscape(row.code)}</strong>
+                <span>${htmlEscape(row.name)}</span>
+              </div>
+              <div class="support-gantt-lane" title="${htmlEscape(`${row.name} / ${predecessorText}`)}">
+                <span class="support-gantt-bar" style="left:${left.toFixed(2)}%;width:${width.toFixed(2)}%">
+                  ${htmlEscape(`${row.duration}min`)}
+                </span>
+              </div>
+              <div class="support-gantt-meta">${htmlEscape(predecessorText)}</div>
+            </div>
+          `;
+        }).join("")}
+      </div>
+    </div>
   `;
 }
 
@@ -4097,18 +4652,25 @@ function toggleAllBasicActivitySelection(checked) {
 }
 
 function renderOperationsSupportActivity(activePlan, activity) {
-  const activityIndex = Math.max(0, (scenario.supportActivities || []).indexOf(activity));
+  const phaseActivities = ensureOperationsSupportPhaseActivities(activity);
+  const activePlanType = normalizeOperationsSupportPlanType(selectedOperationsSupportPlanType);
+  const activePhaseActivity = phaseActivities.find((item) => String(item.planType || "") === activePlanType) || phaseActivities[0] || activity;
+  const activityIndex = Math.max(0, (scenario.supportActivities || []).indexOf(activePhaseActivity));
+  const tabs = operationsSupportPlanTypeConfigs().map((config) => `
+    <button type="button" class="tab-btn ${activePlanType === config.planType ? "active" : ""}" data-ops-support-plan-type="${htmlEscape(config.planType)}">${htmlEscape(config.label)}</button>
+  `).join("");
   return `
     <div class="detail-card activity-editor-card">
       <div class="section-head">
         <h3>使用保障活动编辑</h3>
-        <span>${activePlan.path.map((item) => htmlEscape(item)).join(" / ")}</span>
+        <span>${activePlan.path.map((item) => htmlEscape(item)).join(" / ")} / ${htmlEscape(operationsSupportPlanTypeConfigs().find((item) => item.planType === activePlanType)?.label || activePlanType)}</span>
       </div>
+      <div class="ops-plan-type-tabs">${tabs}</div>
       <div class="form-table-grid">
         ${field("方案名称", `supportActivities.${activityIndex}.activityName`)}
-        <label>最大工作时间参考(min)<input type="number" value="${Number(activity.maxWorkTimeRefMinutes || activity.durationHours * 60 || 0)}" readonly></label>
+        ${field("最大工作时间参考(min)", `supportActivities.${activityIndex}.maxWorkTimeRefMinutes`, "number", { min: "0", step: "1" })}
       </div>
-      ${renderSupportActivityJobTable(activity, "ops_plan")}
+      ${renderSupportActivityJobTable(activePhaseActivity, operationsSupportPlanTypeTabKey(activePlanType))}
     </div>
   `;
 }
@@ -4196,10 +4758,57 @@ function selectedCorrectiveComponent() {
   return (scenario.components || []).find((component) => String(component.id || "") === String(selectedCorrectiveComponentId || "")) || correctiveReferenceComponent();
 }
 
+function correctiveComponentActivityEquipmentId(component) {
+  return String(component?.id || "").trim();
+}
+
+function correctiveMaintenanceActivityForComponent(component) {
+  const equipmentId = correctiveComponentActivityEquipmentId(component);
+  if (!equipmentId) return null;
+  return (scenario.supportActivities || []).find((activity) => (
+    activity.activityType === "修复性维修"
+    && String(activity.equipmentId || "") === equipmentId
+  )) || null;
+}
+
+function selectedCorrectiveMaintenanceActivity() {
+  return correctiveMaintenanceActivityForComponent(selectedCorrectiveComponent())
+    || ensureCorrectiveMaintenanceActivityForComponent(selectedCorrectiveComponent());
+}
+
+function ensureCorrectiveMaintenanceActivityForComponent(component) {
+  const existing = correctiveMaintenanceActivityForComponent(component);
+  if (existing) return existing;
+  const equipmentId = correctiveComponentActivityEquipmentId(component);
+  if (!equipmentId) return null;
+  if (!Array.isArray(scenario.supportActivities)) scenario.supportActivities = [];
+  const template = (scenario.supportActivities || []).find((activity) => activity.activityType === "修复性维修") || {};
+  const activity = JSON.parse(JSON.stringify(template));
+  const componentName = component?.name || equipmentId;
+  activity.id = nextCorrectiveMaintenanceActivityId(equipmentId);
+  activity.name = `${componentName}故障修复`;
+  activity.activityType = "修复性维修";
+  activity.activityName = `${componentName}修复性维修方案`;
+  activity.planType = "修复性维修方案";
+  activity.equipmentId = equipmentId;
+  if (!Array.isArray(activity.jobs)) activity.jobs = supportActivityJobs(template).map((job) => ({ ...job }));
+  scenario.supportActivities.push(activity);
+  return activity;
+}
+
+function nextCorrectiveMaintenanceActivityId(equipmentId) {
+  const prefix = `corrective-${String(equipmentId || "equipment").toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+  const usedIds = new Set((scenario.supportActivities || []).map((activity) => String(activity.id || "")));
+  let index = usedIds.size + 1;
+  while (usedIds.has(`${prefix}-${index}`)) index += 1;
+  return `${prefix}-${index}`;
+}
+
 function renderCorrectiveMaintenanceActivity(activity) {
-  const activityIndex = Math.max(0, (scenario.supportActivities || []).indexOf(activity));
-  const repairType = activity.repairType || "原位维修";
   const component = selectedCorrectiveComponent();
+  const componentActivity = correctiveMaintenanceActivityForComponent(selectedCorrectiveComponent()) || ensureCorrectiveMaintenanceActivityForComponent(component) || activity;
+  const activityIndex = Math.max(0, (scenario.supportActivities || []).indexOf(componentActivity));
+  const repairType = componentActivity.repairType || "原位维修";
   return `
     <div class="organization-layout">
       ${renderEquipmentConfigTree()}
@@ -4207,7 +4816,7 @@ function renderCorrectiveMaintenanceActivity(activity) {
         <div class="detail-card activity-editor-card">
           <div class="section-head">
             <h3>修复性维修活动编辑</h3>
-            <span>${htmlEscape(activity.activityName || "修复性维修方案")} / ${htmlEscape(component?.name || component?.id || "未选择组件")}</span>
+            <span>${htmlEscape(componentActivity.activityName || "修复性维修方案")} / ${htmlEscape(component?.name || component?.id || "未选择组件")}</span>
           </div>
           <div class="form-table-grid">
             <label>维修对象<input readonly value="${htmlEscape(component?.name || component?.id || "")}"></label>
@@ -4219,7 +4828,7 @@ function renderCorrectiveMaintenanceActivity(activity) {
               </span>
             </label>
           </div>
-          ${renderSupportActivityJobTable(activity, "corr_repair")}
+          ${renderSupportActivityJobTable(componentActivity, "corr_repair")}
             </div>
       </section>
     </div>
@@ -4315,6 +4924,10 @@ function renderSupportActivityWorkbench(page) {
   const editor = page.name.includes("预防性")
     ? renderPreventiveMaintenanceActivity(activePlan, activity)
     : renderOperationsSupportActivity(activePlan, activity);
+  const operationsEntries = operationsSupportActivityEntries();
+  const selectedOperationsKey = selectedOperationsSupportActivityKey || "";
+  const preventiveEntries = preventiveMaintenanceActivityEntries();
+  const selectedPreventiveKey = selectedPreventiveMaintenanceActivityKey || "";
   return `
     <div class="ship-front-workbench">
       <div class="organization-layout">
@@ -4322,7 +4935,8 @@ function renderSupportActivityWorkbench(page) {
           <div class="tree-toolbar">
             <h4>${htmlEscape(activePlan.treeTitle)}</h4>
             <div class="equipment-toolbar">
-              ${page.name.includes("预防性") ? `<button type="button" class="btn-primary">新增</button>` : ""}
+              ${page.name.includes("使用") ? `<button type="button" class="btn-primary" data-support-activity-plan-add>新增节点</button><button type="button" class="btn-danger" data-support-activity-plan-delete="${htmlEscape(selectedOperationsKey)}" ${selectedOperationsKey && operationsEntries.length ? "" : "disabled"}>删除</button>` : ""}
+              ${page.name.includes("预防性") ? `<button type="button" class="btn-primary" data-preventive-activity-plan-add>新增节点</button><button type="button" class="btn-danger" data-preventive-activity-plan-delete="${htmlEscape(selectedPreventiveKey)}" ${selectedPreventiveKey && preventiveEntries.length ? "" : "disabled"}>删除</button>` : ""}
             </div>
           </div>
           ${renderSupportActivityTreeNode(activePlan.tree, activePlan.path.at(-1))}
@@ -4340,22 +4954,33 @@ function renderSupportActivityTreeNode(node, selectedName) {
 }
 
 function supportActivityTreeNode(node, selectedName) {
+  const isEditablePlan = Boolean(node.editablePlanKey);
+  const isSelectableAircraft = Boolean(node.selectableAircraftModel);
+  const isEditablePreventivePlan = Boolean(node.editablePreventivePlanKey);
+  const isSelectablePreventiveAircraft = Boolean(node.selectablePreventiveAircraftModel);
   return {
     id: `support-activity:${node.id || node.name}`,
     label: node.name,
-    selected: node.name === selectedName,
-    actions: operationSupportActivityTreeActions(node),
+    selected: isEditablePlan
+      ? (node.editablePlanKey === selectedOperationsSupportActivityKey || (!selectedOperationsSupportActivityKey && node.name === selectedName))
+      : isEditablePreventivePlan
+        ? (node.editablePreventivePlanKey === selectedPreventiveMaintenanceActivityKey || (!selectedPreventiveMaintenanceActivityKey && node.name === selectedName))
+      : isSelectableAircraft
+        ? selectedOperationsSupportAircraftModel === node.selectableAircraftModel
+        : isSelectablePreventiveAircraft
+          ? selectedPreventiveMaintenanceAircraftModel === node.selectablePreventiveAircraftModel
+        : node.name === selectedName,
+    actionAttrs: isEditablePlan
+      ? `data-select-support-activity-plan="${htmlEscape(node.editablePlanKey)}"`
+      : isEditablePreventivePlan
+        ? `data-select-preventive-activity-plan="${htmlEscape(node.editablePreventivePlanKey)}"`
+      : isSelectableAircraft
+        ? `data-select-operations-support-aircraft-model="${htmlEscape(node.selectableAircraftModel)}"`
+        : isSelectablePreventiveAircraft
+          ? `data-select-preventive-aircraft-model="${htmlEscape(node.selectablePreventiveAircraftModel)}"`
+        : "",
     children: (node.children || []).map((child) => supportActivityTreeNode(child, selectedName))
   };
-}
-
-function operationSupportActivityTreeActions(node) {
-  if (!node?.editablePlanKey) return [];
-  const key = htmlEscape(node.editablePlanKey);
-  return [
-    { label: "编辑", attrs: `data-support-activity-plan-edit="${key}"` },
-    { label: "删除", className: "btn-danger", attrs: `data-support-activity-plan-delete="${key}"` }
-  ];
 }
 
 function renderExperimentPlanList(page) {

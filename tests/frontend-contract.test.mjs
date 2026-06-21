@@ -782,9 +782,13 @@ test("support activity pages align to page suggestion activity fields", async ()
   assert.match(supportActivitySource, /function selectSupportActivityJobForEdit/);
   assert.match(supportActivitySource, /function deleteSelectedSupportActivityJobs/);
   assert.match(supportActivitySource, /function deleteSupportActivityJob/);
-  assert.match(supportActivitySource, /operationSupportActivityTreeActions/);
-  assert.match(supportActivitySource, /data-support-activity-plan-edit/);
+  assert.match(supportActivitySource, /data-support-activity-plan-add/);
   assert.match(supportActivitySource, /data-support-activity-plan-delete/);
+  assert.match(supportActivitySource, /data-select-support-activity-plan/);
+  assert.match(supportActivitySource, /新增节点/);
+  assert.doesNotMatch(supportActivitySource, /operationSupportActivityTreeActions/);
+  assert.doesNotMatch(supportActivitySource, /data-support-activity-plan-edit/);
+  assert.doesNotMatch(supportActivitySource, /const phaseNames = \["飞行前准备", "再次出动准备", "飞行后检查"\]/);
   const basicActivityLibrarySource = supportActivitySource.slice(
     supportActivitySource.indexOf("function renderBasicActivityLibrary"),
     supportActivitySource.indexOf("function renderOperationsSupportActivity")
@@ -885,9 +889,36 @@ test("equipment tree root aircraft list can add aircraft before subsystem nodes"
   assert.match(equipmentModelSource, /function addEquipmentAircraftForSelectionModel\(scenario\)/);
   assert.match(equipmentModelSource, /scenario\.equipment\.wholeMachineModels\.push\(aircraftModel\)/);
   assert.match(equipmentModelSource, /selectedEquipmentNodeKey: `aircraft:\$\{aircraftModel\}`/);
+  assert.match(appSource, /ensureOperationsSupportActivityForAircraftModel\(mutation\.aircraftModel\)/);
   assert.match(appSource, /选中飞机列表新增飞机，选中飞机新增分系统，选中分系统新增子系统/);
   assert.match(appSource, /<label>数量<input readonly value=/);
   assert.doesNotMatch(appSource, /整机数量<input readonly value=/);
+});
+
+test("equipment aircraft list mutations synchronize operations support activity aircraft groups", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const supportActivityPlanSource = appSource.slice(
+    appSource.indexOf("function supportActivityPlanForPage"),
+    appSource.indexOf("function carryObjectiveOption")
+  );
+  const equipmentMutationSource = appSource.slice(
+    appSource.indexOf("function addEquipmentNodeForSelection"),
+    appSource.indexOf("function renderEquipmentCompositionFields")
+  );
+
+  assert.match(supportActivityPlanSource, /const aircraftModels = wholeMachineModels\(\)/);
+  assert.match(supportActivityPlanSource, /Array\.from\(planNodesByModel\.entries\(\)\)\s*\.map/);
+  assert.doesNotMatch(supportActivityPlanSource, /\.filter\(\(\[, plans\]\) => plans\.length\)/);
+  assert.match(appSource, /data-select-operations-support-aircraft-model/);
+  assert.match(appSource, /const operationsSupportAircraftSelectButton = event\.target\.closest\("\[data-select-operations-support-aircraft-model\]"\)/);
+  assert.match(appSource, /function selectOperationsSupportAircraftModel\(aircraftModel\)/);
+  assert.match(appSource, /selectedOperationsSupportAircraftModel/);
+  assert.match(equipmentMutationSource, /function ensureOperationsSupportActivityForAircraftModel\(aircraftModel\)/);
+  assert.match(equipmentMutationSource, /function removeOperationsSupportActivitiesForAircraftModel\(aircraftModel\)/);
+  assert.match(equipmentMutationSource, /function deleteSelectedEquipmentAircraft\(\)/);
+  assert.match(equipmentMutationSource, /removeOperationsSupportActivitiesForAircraftModel\(aircraftModel\)/);
+  assert.match(equipmentMutationSource, /function updateOperationsSupportActivityAircraftModel\(oldModel, nextModel\)/);
+  assert.match(equipmentMutationSource, /updateOperationsSupportActivityAircraftModel\(oldModel, nextModel\)/);
 });
 
 test("equipment composition page only renders tree and basic composition fields", async () => {
@@ -1263,7 +1294,7 @@ test("editable modeling lists expose page suggestion action entries", async () =
     appSource.indexOf("function buildEquipmentTreeNodes")
   );
   assert.match(equipmentSource, /data-equipment-add-node/);
-  assert.match(equipmentSource, /data-equipment-delete-node disabled/);
+  assert.match(equipmentSource, /data-equipment-delete-node \$\{selectedState\.kind === "aircraft" \? "" : "disabled"\}/);
 
   const basicMissionSource = appSource.slice(
     appSource.indexOf("function renderBasicMissionModeling"),
@@ -1348,22 +1379,61 @@ test("support activity controls are wired through local draft fields", async () 
   );
   assert.match(jobTableSource, /data-support-activity-job-add="\$\{htmlEscape\(tabKey\)\}"/);
   assert.match(jobTableSource, /data-support-activity-job-batch-delete="\$\{htmlEscape\(tabKey\)\}"/);
+  assert.match(jobTableSource, /function buildSupportActivityGanttRows/);
+  assert.match(jobTableSource, /function renderSupportActivityGanttChart/);
+  assert.match(jobTableSource, /保障活动图/);
+  assert.match(jobTableSource, /data-support-activity-gantt/);
+  assert.match(jobTableSource, /ganttPredecessorIndexes/);
   assert.match(appSource, /data-support-activity-predecessors/);
-  assert.match(appSource, /const supportActivityPlanEditButton = event\.target\.closest\("\[data-support-activity-plan-edit\]"\)/);
+  assert.match(appSource, /const supportActivityPlanAddButton = event\.target\.closest\("\[data-support-activity-plan-add\]"\)/);
+  assert.match(appSource, /const supportActivityPlanSelectButton = event\.target\.closest\("\[data-select-support-activity-plan\]"\)/);
   assert.match(appSource, /const supportActivityPlanDeleteButton = event\.target\.closest\("\[data-support-activity-plan-delete\]"\)/);
+  assert.match(appSource, /const preventiveActivityPlanAddButton = event\.target\.closest\("\[data-preventive-activity-plan-add\]"\)/);
+  assert.match(appSource, /const preventiveActivityPlanDeleteButton = event\.target\.closest\("\[data-preventive-activity-plan-delete\]"\)/);
+  assert.match(appSource, /const preventiveActivityPlanSelectButton = event\.target\.closest\("\[data-select-preventive-activity-plan\]"\)/);
+  assert.match(appSource, /const preventiveAircraftSelectButton = event\.target\.closest\("\[data-select-preventive-aircraft-model\]"\)/);
   assert.match(appSource, /function selectOperationsSupportActivityPlan/);
+  assert.match(appSource, /function addOperationsSupportActivityPlan/);
   assert.match(appSource, /function deleteOperationsSupportActivityPlan/);
+  assert.match(appSource, /function selectPreventiveMaintenanceAircraftModel/);
+  assert.match(appSource, /function selectPreventiveMaintenanceActivityPlan/);
+  assert.match(appSource, /function addPreventiveMaintenanceActivityPlan/);
+  assert.match(appSource, /function deletePreventiveMaintenanceActivityPlan/);
 
   const operationsSource = appSource.slice(
     appSource.indexOf("function renderOperationsSupportActivity"),
     appSource.indexOf("function renderPreventiveMaintenanceActivity")
   );
+  const operationsPlanTypeSource = appSource.slice(
+    appSource.indexOf("function operationsSupportPlanTypeConfigs"),
+    appSource.indexOf("function operationsSupportPlanTypeTabKey")
+  );
+  assert.match(appSource, /const supportActivityPhaseTabButton = event\.target\.closest\("\[data-ops-support-plan-type\]"\)/);
+  assert.match(appSource, /function operationsSupportPlanTypeConfigs\(\)/);
+  assert.match(appSource, /function ensureOperationsSupportPhaseActivities/);
+  assert.match(appSource, /function operationsSupportPlanGroupId/);
+  assert.match(appSource, /function nextOperationsSupportPlanGroupId/);
+  assert.match(operationsPlanTypeSource, /飞行前准备/);
+  assert.match(operationsPlanTypeSource, /再次出动准备/);
+  assert.match(operationsPlanTypeSource, /飞行后检查/);
+  assert.match(appSource, /planGroupId/);
+  assert.match(appSource, /ensureOperationsSupportPlanGroupId\(entry\.activity, entry\.aircraftModel\)/);
+  assert.match(operationsSource, /data-ops-support-plan-type/);
+  assert.match(operationsSource, /operationsSupportPlanTypeTabKey\(activePlanType\)/);
+  assert.match(operationsSource, /activePhaseActivity/);
+  assert.match(operationsSource, /maxWorkTimeRefMinutes/);
   assert.doesNotMatch(operationsSource, /<input(?![^>]*(data-path|readonly|disabled))/);
 
   const preventiveSource = appSource.slice(
     appSource.indexOf("function renderPreventiveMaintenanceActivity"),
     appSource.indexOf("function renderEquipmentConfigTree")
   );
+  assert.match(appSource, /function preventiveMaintenanceActivityEntries/);
+  assert.match(appSource, /selectedPreventiveMaintenanceAircraftModel/);
+  assert.match(appSource, /data-select-preventive-aircraft-model/);
+  assert.match(appSource, /data-select-preventive-activity-plan/);
+  assert.match(appSource, /data-preventive-activity-plan-add/);
+  assert.match(appSource, /data-preventive-activity-plan-delete/);
   assert.doesNotMatch(preventiveSource, /<input(?![^>]*(data-path|readonly|disabled))/);
 
   const correctiveSource = appSource.slice(
@@ -1376,6 +1446,12 @@ test("support activity controls are wired through local draft fields", async () 
   );
   assert.doesNotMatch(correctiveSource, /<input(?![^>]*(data-path|readonly|disabled))/);
   assert.doesNotMatch(correctiveSource, /scenario\.components\[0\]/);
+  assert.doesNotMatch(correctiveSource, /renderSupportActivityJobTable\(activity, "corr_repair"\)/);
+  assert.match(appSource, /function correctiveMaintenanceActivityForComponent/);
+  assert.match(appSource, /function ensureCorrectiveMaintenanceActivityForComponent/);
+  assert.match(appSource, /function selectedCorrectiveMaintenanceActivity/);
+  assert.match(appSource, /correctiveMaintenanceActivityForComponent\(selectedCorrectiveComponent\(\)\)/);
+  assert.match(appSource, /ensureCorrectiveMaintenanceActivityForComponent\(component\)/);
   assert.match(correctiveSource, /data-path="supportActivities\.\$\{activityIndex\}\.repairType"/);
   assert.match(readonlyEquipmentConfigSource, /const visitedIds = new Set\(visited\)/);
   assert.match(readonlyEquipmentConfigSource, /componentId !== String\(parentId\)/);
@@ -2043,6 +2119,7 @@ test("click-based modeling mutations mark project draft dirty before rendering",
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const requiredActions = [
     ["equipment add node", 'const equipmentAddNodeButton = event.target.closest("[data-equipment-add-node]"'],
+    ["equipment delete node", 'const equipmentDeleteNodeButton = event.target.closest("[data-equipment-delete-node]"'],
     ["basic mission add", 'const basicMissionAddButton = event.target.closest("[data-basic-mission-add]"'],
     ["basic mission delete", 'const basicMissionDeleteButton = event.target.closest("[data-basic-mission-delete]"'],
     ["composite task add", 'const compositeTaskAddButton = event.target.closest("[data-composite-task-add]"'],
@@ -2053,6 +2130,7 @@ test("click-based modeling mutations mark project draft dirty before rendering",
     ["combat unit delete", 'const combatUnitDeleteButton = event.target.closest("[data-combat-unit-delete]"'],
     ["logistics transport add", 'const logisticsAddButton = event.target.closest("[data-logistics-transport-add]"'],
     ["logistics transport delete", 'const logisticsDeleteButton = event.target.closest("[data-logistics-transport-delete]"'],
+    ["support activity plan add", 'const supportActivityPlanAddButton = event.target.closest("[data-support-activity-plan-add]"'],
     ["support activity plan delete", 'const supportActivityPlanDeleteButton = event.target.closest("[data-support-activity-plan-delete]"'],
     ["support activity job delete", 'const supportActivityJobDeleteButton = event.target.closest("[data-support-activity-job-delete]"'],
     ["support activity job batch delete", 'const supportActivityBatchDeleteButton = event.target.closest("[data-support-activity-job-batch-delete]"'],

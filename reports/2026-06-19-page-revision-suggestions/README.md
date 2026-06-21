@@ -20,9 +20,9 @@
 | 12 | 保障人员建模 | Partial / open defect | 选择、批量删除和资源面板结构已有测试；新增/编辑仍 open，见今天报告 #16。 |
 | 13 | 保障设备建模 | Partial / open defect | 选择、批量删除和资源面板结构已有测试；新增/编辑仍 open，见今天报告 #16。 |
 | 14 | 基本保障活动建模 | Fixed locally | 新增、批量删除、复选、删除和编辑面板已有代码；需从源码断言补齐行为测试。 |
-| 15 | 使用保障活动建模 | Fixed locally | 树已补为“飞机列表 -> 机型 -> 方案名 -> 飞行前准备/再次出动准备/飞行后检查”；工作项目编辑按钮会打开编辑面板。测试：`tests/page-revision-status.test.mjs`。 |
-| 16 | 预防性维修活动建模 | Fixed locally | 树叶子停留在维修活动本身，不再下挂工作项目；工作项目编辑按钮会打开编辑面板。测试：`tests/page-revision-status.test.mjs`。 |
-| 17 | 修复性维修活动建模 | Fixed locally | 装备构型树支持点选整机/组件并在右侧显示维修对象；工作项目编辑按钮会打开编辑面板。测试：`tests/page-revision-status.test.mjs`。 |
+| 15 | 使用保障活动建模 | Fixed locally | 树已按“飞机列表 -> 机型 -> 方案名”收口，飞行前准备、再次出动准备、飞行后检查移入右侧标签页；飞机节点可点击后新增对应机型方案，工作项目清单下方新增按紧前关系绘制的保障活动图 / Gantt chart。测试：`tests/frontend-contract.test.mjs`、`tests/page-revision-status.test.mjs`。 |
+| 16 | 预防性维修活动建模 | Fixed locally | 树叶子停留在维修活动本身，不再下挂工作项目；飞机节点可点击，可新增叶子节点，树顶部提供新增节点和删除按钮；工作项目编辑按钮会打开编辑面板。测试：`tests/frontend-contract.test.mjs`、`tests/page-revision-status.test.mjs`。 |
+| 17 | 修复性维修活动建模 | Fixed locally | 装备构型树支持点选整机/组件并在右侧显示维修对象；工作项目清单按装备构型叶子节点隔离，切换叶子不会共享或串改其他节点的工作项目；工作项目编辑按钮会打开编辑面板。测试：`tests/frontend-contract.test.mjs`、`tests/page-revision-status.test.mjs`。 |
 | 18 | 后勤保障活动建模 | Fixed locally | `tests/frontend-contract.test.mjs` 覆盖运输策略字段、起终点选择、触发参数和删除无关工作项目清单。 |
 
 1. 项目列表页

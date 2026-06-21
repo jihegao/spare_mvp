@@ -17,6 +17,9 @@ test("6/19 page revision report marks each item with repair status and test evid
   assert.match(report, /\| 1 \| 项目列表页 \| Fixed locally \|/);
   assert.match(report, /\| 6 \| 建模表单管理 \| Closed by decision \|/);
   assert.match(report, /\| 9 \| 复合任务建模 \| Fixed locally \|/);
+  assert.match(report, /保障活动图 \/ Gantt chart/);
+  assert.match(report, /飞机节点可点击，可新增叶子节点/);
+  assert.match(report, /工作项目清单按装备构型叶子节点隔离/);
   assert.match(report, /\| 18 \| 后勤保障活动建模 \| Fixed locally \|/);
   assert.match(report, /tests\/frontend-contract\.test\.mjs/);
   assert.match(report, /tests\/equipment-tree-model\.test\.mjs/);
@@ -63,15 +66,25 @@ test("page revision #8 basic mission support activity is a same-aircraft single 
   assert.match(source, /supportActivityAircraftModel\(activity\) === targetModel/);
 });
 
-test("page revision #15 operations support activity tree includes plan-name and three default phase nodes", async () => {
+test("page revision #15 operations support activity tree stops at activity-plan leaf", async () => {
   const source = await readFile(FRONT_APP_URL, "utf8");
-  assert.match(source, /const phaseNames = \["飞行前准备", "再次出动准备", "飞行后检查"\];/);
+  assert.match(source, /data-select-support-activity-plan/);
+  assert.match(source, /data-support-activity-plan-add/);
+  assert.match(source, /data-support-activity-gantt/);
+  assert.match(source, /function buildSupportActivityGanttRows/);
+  assert.doesNotMatch(source, /const phaseNames = \["飞行前准备", "再次出动准备", "飞行后检查"\];/);
   assert.match(source, /id: `operations-plan:\$\{model\}:\$\{option\.value\}`/);
 });
 
 test("page revision #16 preventive maintenance tree stops at activity leaf", async () => {
   const source = await readFile(FRONT_APP_URL, "utf8");
-  assert.match(source, /children: type\.includes\("预防性"\) \? \[\] : supportActivityJobs/);
+  assert.match(source, /data-select-preventive-aircraft-model/);
+  assert.match(source, /data-select-preventive-activity-plan/);
+  assert.match(source, /data-preventive-activity-plan-add/);
+  assert.match(source, /data-preventive-activity-plan-delete/);
+  assert.match(source, /function addPreventiveMaintenanceActivityPlan\(\)/);
+  assert.match(source, /function deletePreventiveMaintenanceActivityPlan/);
+  assert.doesNotMatch(source, /children: type\.includes\("预防性"\) \? \[\] : supportActivityJobs/);
 });
 
 test("page revision #17 corrective maintenance equipment config tree selects components", async () => {
@@ -79,6 +92,10 @@ test("page revision #17 corrective maintenance equipment config tree selects com
   assert.match(source, /data-select-corrective-component/);
   assert.match(source, /selectedCorrectiveComponentId === componentId/);
   assert.match(source, /function selectedCorrectiveComponent\(\)/);
+  assert.match(source, /function correctiveMaintenanceActivityForComponent/);
+  assert.match(source, /function ensureCorrectiveMaintenanceActivityForComponent/);
+  assert.match(source, /renderSupportActivityJobTable\(componentActivity, "corr_repair"\)/);
+  assert.doesNotMatch(source, /renderSupportActivityJobTable\(activity, "corr_repair"\)/);
 });
 
 test("page revision #11-13 support resource lists add/edit and derive spares from LRU components", async () => {
