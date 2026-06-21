@@ -267,6 +267,28 @@ test("M6.2 artifact manifest schema rejects untraceable analysis projections", a
   assert.ok(errors.some((error) => error.includes("analysis_type is required")));
 });
 
+test("artifact manifest schema rejects an artifact entry without size_bytes", async () => {
+  const artifactSchema = await readJson("contracts/artifact_manifest.schema.json");
+  const manifest = {
+    schema_version: "artifact-manifest-v0",
+    artifact_manifest_id: "artifact-manifest-missing-size",
+    run_id: "run-missing-size",
+    artifacts: [
+      {
+        artifact_id: "artifact-missing-size",
+        kind: "run_config",
+        path: "run-missing-size/run-config.json",
+        media_type: "application/json",
+        sha256: "0".repeat(64),
+        schema_version: "run-config-v0"
+      }
+    ]
+  };
+
+  const errors = validateSchema(artifactSchema, manifest);
+  assert.ok(errors.some((error) => error.includes("size_bytes")));
+});
+
 test("minimal contract fixtures validate against their schemas", async () => {
   const fixturePairs = [
     ["contracts/project.schema.json", "tests/fixtures/smoke_project.json"],

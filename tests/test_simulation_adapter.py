@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import tempfile
 from pathlib import Path
@@ -21,6 +22,9 @@ class SimulationAdapterTest(unittest.TestCase):
     def _load_fixture(self, name: str) -> dict:
         path = REPO_ROOT / "tests" / "fixtures" / name
         return json.loads(path.read_text(encoding="utf-8"))
+
+    def _smoke_scenario(self) -> dict:
+        return self.adapter.compile_scenario(self._load_fixture("smoke_project.json"))
 
     def test_validate_project_accepts_contract_fixture(self) -> None:
         project = self._load_fixture("smoke_project.json")
@@ -232,13 +236,29 @@ class SimulationAdapterTest(unittest.TestCase):
             artifact_kinds = {artifact["kind"] for artifact in manifest["artifacts"]}
             self.assertEqual(
                 artifact_kinds,
-                {"input_project", "compiled_scenario", "snapshot", "result_summary"},
+                {"run_config", "input_project", "compiled_scenario", "snapshot", "result_summary", "metrics", "report", "log"},
             )
             for artifact in manifest["artifacts"]:
                 target = Path(tmp) / artifact["path"]
                 self.assertTrue(target.exists(), artifact)
                 self.assertGreater(artifact["size_bytes"], 0)
                 self.assertRegex(artifact["sha256"], r"^[0-9a-f]{64}$")
+
+    def test_run_smoke_scenario_writes_m7_management_artifacts(self) -> None:
+        scenario = self._smoke_scenario()
+        with tempfile.TemporaryDirectory() as tmp:
+            bundle = self.adapter.run_scenario(scenario, output_dir=tmp, steps=2, run_id="run-m7-single")
+            manifest = bundle["artifact_manifest"]
+            kinds = {artifact["kind"] for artifact in manifest["artifacts"]}
+            self.assertGreaterEqual(
+                kinds,
+                {"run_config", "input_project", "compiled_scenario", "snapshot", "result_summary", "metrics", "report", "log"},
+            )
+            for artifact in manifest["artifacts"]:
+                target = Path(tmp) / artifact["path"]
+                self.assertTrue(target.is_file(), artifact)
+                self.assertEqual(hashlib.sha256(target.read_bytes()).hexdigest(), artifact["sha256"])
+                self.assertEqual(target.stat().st_size, artifact["size_bytes"])
 
     def test_run_smoke_scenario_sanitizes_scenario_id_for_artifact_paths(self) -> None:
         project = self._load_fixture("smoke_project.json")
@@ -295,6 +315,41 @@ class SimulationAdapterTest(unittest.TestCase):
         self.assertEqual(payload["sweep"]["spareMultipliers"], [1.0, 1.25])
         self.assertEqual(payload["sweep"]["supportCapacities"], [2])
         self.assertNotEqual(payload["sweep"]["failureRates"], [0.99])
+
+    def test_run_monte_carlo_scenario_registers_support_and_m7_artifacts(self) -> None:
+        scenario = self._smoke_scenario()
+        with tempfile.TemporaryDirectory() as tmp:
+            bundle = self.adapter.run_monte_carlo_scenario(
+                scenario,
+                output_dir=tmp,
+                steps=2,
+                run_id="run-m7-mc",
+                monte_carlo_config={
+                    "sample_count": 2,
+                    "sweep": {"failureRates": [0.05], "spareMultipliers": [1.0], "supportCapacities": [1]},
+                    "mc_experiment_id": "mc-m7",
+                },
+            )
+            kinds = {artifact["kind"] for artifact in bundle["artifact_manifest"]["artifacts"]}
+            self.assertGreaterEqual(
+                kinds,
+                {
+                    "run_config",
+                    "input_project",
+                    "compiled_scenario",
+                    "sample_results",
+                    "aggregate_result",
+                    "result_summary",
+                    "metrics",
+                    "report",
+                    "log",
+                    "monte_carlo_base",
+                    "analysis_projection_spare_shortfall",
+                    "analysis_projection_carry_list",
+                    "analysis_projection_mission_reliability",
+                    "analysis_projection_downtime_factors",
+                },
+            )
 
     def test_monte_carlo_scenario_rejects_missing_normalized_config_without_fallback(self) -> None:
         project = self._load_fixture("smoke_project.json")

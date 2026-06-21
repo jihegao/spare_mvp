@@ -223,6 +223,42 @@ class SimulationAdapter:
             "scenario_version": scenario["scenario_version"],
             "metrics": snapshot,
         }
+        run_config = {
+            "schema_version": "run-config-v0",
+            "run_id": run_id,
+            "run_type": "single",
+            "model_family": "smoke",
+            "project_id": scenario["project_id"],
+            "experiment_plan_id": None,
+            "modeling_snapshot_id": None,
+            "scenario_id": scenario["scenario_id"],
+            "scenario_version": scenario["scenario_version"],
+            "seed": inputs["seed"],
+            "steps": steps,
+        }
+        metrics = {
+            "schema_version": "metrics-v0",
+            "run_id": run_id,
+            "metrics": snapshot,
+        }
+        report = {
+            "schema_version": "run-report-v0",
+            "run_id": run_id,
+            "title": "Smoke single run report",
+            "summary": {
+                "status": "succeeded",
+                "steps": steps,
+                "seed": inputs["seed"],
+            },
+        }
+        event_log = {
+            "schema_version": "run-log-v0",
+            "run_id": run_id,
+            "events": [
+                {"event": "run_started", "at": now},
+                {"event": "run_completed", "at": now, "status": "succeeded"},
+            ],
+        }
         run = {
             "schema_version": RUN_SCHEMA_VERSION,
             "run_id": run_id,
@@ -246,10 +282,14 @@ class SimulationAdapter:
         run_dir = output_root / run_id
         run_dir.mkdir(parents=True, exist_ok=True)
         artifact_specs = [
+            ("run_config", "run-config.json", run_config, "run-config-v0"),
             ("input_project", "input-project.json", inputs["project_snapshot"], PROJECT_SCHEMA_VERSION),
             ("compiled_scenario", "compiled-scenario.json", scenario, SCENARIO_SCHEMA_VERSION),
             ("snapshot", "snapshot.json", snapshot, None),
             ("result_summary", "result-summary.json", result, RESULT_SCHEMA_VERSION),
+            ("metrics", "metrics.json", metrics, "metrics-v0"),
+            ("report", "report.json", report, "run-report-v0"),
+            ("log", "events-log.json", event_log, "run-log-v0"),
         ]
         artifacts = [
             self._write_artifact(run_dir, output_root, kind, filename, payload, schema_version)
@@ -321,6 +361,58 @@ class SimulationAdapter:
                 "executor": "local_sync_smoke",
             },
         }
+        run_config = {
+            "schema_version": "run-config-v0",
+            "run_id": run_id,
+            "run_type": "monte_carlo",
+            "model_family": "smoke",
+            "project_id": scenario["project_id"],
+            "experiment_plan_id": None,
+            "modeling_snapshot_id": None,
+            "scenario_id": scenario["scenario_id"],
+            "scenario_version": scenario["scenario_version"],
+            "seed": inputs["seed"],
+            "steps": steps,
+            "mc_experiment_id": mc_experiment_id,
+            "monte_carlo_config": copy.deepcopy(config),
+        }
+        sample_results = {
+            "schema_version": "sample-results-v0",
+            "run_id": run_id,
+            "mc_experiment_id": mc_experiment_id,
+            "samples": samples,
+        }
+        aggregate_result = {
+            "schema_version": "aggregate-result-v0",
+            "run_id": run_id,
+            "mc_experiment_id": mc_experiment_id,
+            "aggregate_metrics": aggregate,
+        }
+        metrics = {
+            "schema_version": "metrics-v0",
+            "run_id": run_id,
+            "metrics": aggregate,
+        }
+        report = {
+            "schema_version": "run-report-v0",
+            "run_id": run_id,
+            "title": "Monte Carlo run report",
+            "summary": {
+                "status": "succeeded",
+                "sample_count": profile["sample_count"],
+                "seed": inputs["seed"],
+                "mc_experiment_id": mc_experiment_id,
+            },
+        }
+        event_log = {
+            "schema_version": "run-log-v0",
+            "run_id": run_id,
+            "events": [
+                {"event": "run_started", "at": now},
+                {"event": "samples_completed", "at": now, "completed_samples": profile["sample_count"]},
+                {"event": "run_completed", "at": now, "status": "succeeded"},
+            ],
+        }
 
         result = {
             "schema_version": RESULT_SCHEMA_VERSION,
@@ -363,15 +455,16 @@ class SimulationAdapter:
         output_root = Path(output_dir)
         run_dir = output_root / run_id
         run_dir.mkdir(parents=True, exist_ok=True)
-        support_artifact_specs = [
+        artifact_specs = [
+            ("run_config", "run-config.json", run_config, "run-config-v0"),
             ("input_project", "input-project.json", inputs["project_snapshot"], PROJECT_SCHEMA_VERSION),
             ("compiled_scenario", "compiled-scenario.json", scenario, SCENARIO_SCHEMA_VERSION),
+            ("sample_results", "sample-results.json", sample_results, "sample-results-v0"),
+            ("aggregate_result", "aggregate-result.json", aggregate_result, "aggregate-result-v0"),
             ("result_summary", "result-summary.json", result, RESULT_SCHEMA_VERSION),
-        ]
-        for kind, filename, payload, schema_version in support_artifact_specs:
-            self._write_artifact(run_dir, output_root, kind, filename, payload, schema_version)
-
-        artifact_specs = [
+            ("metrics", "metrics.json", metrics, "metrics-v0"),
+            ("report", "report.json", report, "run-report-v0"),
+            ("log", "events-log.json", event_log, "run-log-v0"),
             ("monte_carlo_base", "monte-carlo-base.json", base_artifact, None),
             ("analysis_projection_spare_shortfall", "spare-shortfall.json", projections["spare_shortfall"], "analysis-projection-v0"),
             ("analysis_projection_carry_list", "carry-list.json", projections["carry_list"], "analysis-projection-v0"),

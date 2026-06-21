@@ -15,7 +15,16 @@ from src.spare_mvp_contract.adapter import AdapterError, SimulationAdapter
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-M6_2_MONTE_CARLO_ARTIFACT_KINDS = {
+M7_MONTE_CARLO_ARTIFACT_KINDS = {
+    "run_config",
+    "input_project",
+    "compiled_scenario",
+    "sample_results",
+    "aggregate_result",
+    "result_summary",
+    "metrics",
+    "report",
+    "log",
     "monte_carlo_base",
     "analysis_projection_spare_shortfall",
     "analysis_projection_carry_list",
@@ -188,6 +197,29 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(status["artifact_manifest_id"], submitted["artifact_manifest_id"])
         self.assertEqual(self.adapter.run_calls[0][1], 2)
 
+    def test_run_service_augments_run_config_artifact_with_plan_and_snapshot_identity(self) -> None:
+        project = self._fixture("smoke_project.json")
+        saved = self.api.save_project(project)
+        snapshot = self.api.create_modeling_snapshot(saved["project_id"])
+        plan = self.api.create_experiment_plan(saved["project_id"], {"name": "m7 run config", "steps": 2})
+
+        submitted = self.api.submit_run(
+            {
+                "project_id": saved["project_id"],
+                "experiment_plan_id": plan["experiment_plan_id"],
+                "model_family": "smoke",
+                "run_type": "single",
+            }
+        )
+        manifest = self.api.get_run_artifacts(submitted["run_id"])
+        run_config_artifact = next(artifact for artifact in manifest["artifacts"] if artifact["kind"] == "run_config")
+        payload = json.loads((Path(self.api.output_dir) / run_config_artifact["path"]).read_text(encoding="utf-8"))
+
+        self.assertEqual(payload["experiment_plan_id"], plan["experiment_plan_id"])
+        self.assertEqual(payload["modeling_snapshot_id"], snapshot["snapshot_id"])
+        self.assertEqual(payload["project_id"], saved["project_id"])
+        self.assertEqual(payload["run_id"], submitted["run_id"])
+
     def test_run_service_submits_formal_monte_carlo_run_and_persists_projection_artifacts(self) -> None:
         project = self._fixture("smoke_project.json")
         branch_project = copy.deepcopy(project)
@@ -243,7 +275,7 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(status["run_type"], "monte_carlo")
         self.assertEqual(stored_run["run_type"], "monte_carlo")
         self.assertEqual(status["modeling_snapshot_id"], snapshot["snapshot_id"])
-        self.assertEqual(kinds, M6_2_MONTE_CARLO_ARTIFACT_KINDS)
+        self.assertEqual(kinds, M7_MONTE_CARLO_ARTIFACT_KINDS)
         self.assertEqual(len(projection_artifacts), 4)
         self.assertTrue(all(artifact["source_artifact_id"] == base_artifact["artifact_id"] for artifact in projection_artifacts))
         self.assertTrue(all(artifact["schema_version"] == "analysis-projection-v0" for artifact in projection_artifacts))
@@ -533,13 +565,35 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertIn("provenance", submitted["error"]["details"])
         self.assertEqual(submitted["result_summary_id"], None)
         self.assertIsNone(artifacts["scenario_id"])
-        self.assertEqual(artifacts["artifacts"], [])
+        self.assertEqual([artifact["kind"] for artifact in artifacts["artifacts"]], ["log"])
         self.assertIsNone(chain.get("scenario_id"))
         self.assertIsNone(chain.get("scenario_version"))
         self.assertIsNone(chain.get("scenario_schema_version"))
         self.assertEqual(chain["artifact_manifest_id"], submitted["artifact_manifest_id"])
         self.assertEqual(scenario_rows, [])
         self.assertEqual(self.adapter.run_calls, [])
+
+    def test_run_service_failed_compile_run_has_downloadable_log_artifact(self) -> None:
+        project = self._fixture("smoke_project.json")
+        saved = self.api.save_project(project)
+        self.api.create_modeling_snapshot(saved["project_id"])
+        plan = self.api.create_experiment_plan(saved["project_id"], {"name": "blocked aviation"})
+
+        submitted = self.api.submit_run(
+            {
+                "project_id": saved["project_id"],
+                "experiment_plan_id": plan["experiment_plan_id"],
+                "model_family": "aviation_support",
+                "run_type": "single",
+            }
+        )
+        manifest = self.api.get_run_artifacts(submitted["run_id"])
+        log_artifacts = [artifact for artifact in manifest["artifacts"] if artifact["kind"] == "log"]
+
+        self.assertEqual(submitted["status"], "failed")
+        self.assertEqual(len(log_artifacts), 1)
+        self.assertRegex(log_artifacts[0]["sha256"], r"^[0-9a-f]{64}$")
+        self.assertGreater(log_artifacts[0]["size_bytes"], 0)
 
     def test_backend_api_submit_run_uses_m6_status_envelope(self) -> None:
         project = self._fixture("smoke_project.json")
@@ -644,7 +698,7 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(submitted["error"]["code"], "executor_failed")
         self.assertEqual(stored["status"], "failed")
         self.assertEqual(artifacts["run_id"], submitted["run_id"])
-        self.assertEqual(artifacts["artifacts"], [])
+        self.assertEqual([artifact["kind"] for artifact in artifacts["artifacts"]], ["log"])
 
     def test_run_chain_preserves_snapshot_and_plan_after_project_resave(self) -> None:
         project = self._fixture("smoke_project.json")
