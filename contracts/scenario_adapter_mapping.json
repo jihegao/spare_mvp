@@ -49,7 +49,7 @@
           "constructor_param": "aircraft_count"
         },
         "mission_count": {
-          "source": "project.basicMission / project.missionProfile",
+          "source": "project.missionProfile.missionCount, defaulted to 3 when absent",
           "constructor_param": "mission_count"
         },
         "mission_aircraft_required": {
@@ -58,23 +58,21 @@
         },
         "mechanic_teams": {
           "source": "project.supportNodes[].personnelCapacity",
-          "status": "unsupported",
-          "reason": "requires Claude-approved compilation rule"
+          "constructor_param": "mechanic_teams"
         },
         "fuel_trucks": {
-          "source": "project.supportActivities / support resource configuration",
-          "status": "unsupported",
-          "reason": "requires Claude-approved compilation rule"
+          "source": "project.supportNodes[].equipmentCapacity",
+          "constructor_param": "fuel_trucks",
+          "derived_by": "Simulation Adapter Agent"
         },
         "maintenance_bays": {
           "source": "project.supportNodes[].equipmentCapacity",
-          "status": "unsupported",
-          "reason": "requires Claude-approved compilation rule"
+          "constructor_param": "maintenance_bays",
+          "derived_by": "Simulation Adapter Agent"
         },
         "lru_failure_multiplier": {
-          "source": "project.components[].failureRate normalized by Simulation Adapter",
-          "status": "unsupported",
-          "reason": "requires Claude-approved compilation rule"
+          "source": "project.monteCarlo.lruFailureMultipliers[], defaulted to 1.0 when absent",
+          "constructor_param": "lru_failure_multiplier"
         },
         "seed": {
           "source": "project.experiment.seed",

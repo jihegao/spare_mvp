@@ -859,7 +859,7 @@ class BackendHttpApiTest(unittest.TestCase):
                 server.server_close()
                 thread.join(timeout=5)
 
-    def test_http_canonical_runs_return_compile_gate_diagnostics(self) -> None:
+    def test_http_canonical_runs_execute_formal_aviation_support_single_run(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             server = create_backend_server(
                 ("127.0.0.1", 0),
@@ -873,11 +873,12 @@ class BackendHttpApiTest(unittest.TestCase):
                 base_url = f"http://127.0.0.1:{server.server_address[1]}/api"
                 created = self._create_imported_sample_project(base_url)
                 saved = created["savedProject"]
+                snapshot = created["modelingSnapshot"]
                 plan = self._json(
                     base_url,
                     "POST",
                     f"/projects/{saved['project_id']}/experiment-plans",
-                    {"config": {"name": "http compiler gate", "steps": 1, "projectJson": created["project"]}},
+                    {"config": {"name": "http formal aviation", "steps": 2, "projectJson": created["project"]}},
                 )
 
                 submitted = self._json(
@@ -891,27 +892,57 @@ class BackendHttpApiTest(unittest.TestCase):
                         "run_type": "single",
                     },
                 )
+
+                self.assertEqual(submitted["status"], "succeeded")
+                self.assertEqual(submitted["phase"], "completed")
+                self.assertEqual(submitted["progress"], 1)
+                self.assertEqual(submitted["model_family"], "aviation_support")
+                self.assertEqual(submitted["run_type"], "single")
+                self.assertEqual(submitted["modeling_snapshot_id"], snapshot["snapshot_id"])
+                status = self._json(base_url, "GET", f"/runs/{submitted['run_id']}")
+                result = self._json(base_url, "GET", f"/runs/{submitted['run_id']}/result")
                 artifacts = self._json(base_url, "GET", f"/runs/{submitted['run_id']}/artifacts")
                 chain = self._json(base_url, "GET", f"/runs/{submitted['run_id']}/chain")
-
-                self.assertEqual(submitted["status"], "failed")
-                self.assertEqual(submitted["phase"], "failed")
-                self.assertIsNone(submitted["scenario_id"])
-                self.assertEqual(submitted["error"]["code"], "unsupported_model_family")
-                self.assertEqual(
-                    submitted["error"]["details"]["issues"][0]["field_path"],
-                    "missionProfile.durationHours",
+                kinds = {artifact["kind"] for artifact in artifacts["artifacts"]}
+                state_series = next(
+                    artifact for artifact in artifacts["artifacts"] if artifact["kind"] == "visualization_state_series"
                 )
-                self.assertEqual(submitted["error"]["details"]["provenance"]["model_family"], "aviation_support")
-                self.assertEqual(submitted["result_summary_id"], None)
-                self.assertIsNone(artifacts["scenario_id"])
-                self.assertEqual([artifact["kind"] for artifact in artifacts["artifacts"]], ["log"])
-                self.assertRegex(artifacts["artifacts"][0]["sha256"], r"^[0-9a-f]{64}$")
-                self.assertGreater(artifacts["artifacts"][0]["size_bytes"], 0)
-                self.assertIsNone(chain.get("scenario_id"))
-                self.assertIsNone(chain.get("scenario_version"))
-                self.assertIsNone(chain.get("scenario_schema_version"))
+                state_payload = json.loads((Path(tmp) / "artifacts" / state_series["path"]).read_text(encoding="utf-8"))
+                serialized = json.dumps(
+                    {
+                        "submitted": submitted,
+                        "status": status,
+                        "result": result,
+                        "artifacts": artifacts,
+                        "chain": chain,
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                )
+                self.assertEqual(status["model_family"], "aviation_support")
+                self.assertEqual(status["result_summary_id"], submitted["result_summary_id"])
+                self.assertEqual(status["artifact_manifest_id"], submitted["artifact_manifest_id"])
+                self.assertEqual(result["result_id"], submitted["result_summary_id"])
+                self.assertEqual(result["run_id"], submitted["run_id"])
+                self.assertEqual(result["model_family"], "aviation_support")
+                self.assertEqual(artifacts["artifact_manifest_id"], submitted["artifact_manifest_id"])
+                self.assertEqual(artifacts["run_id"], submitted["run_id"])
+                self.assertEqual(artifacts["scenario_id"], submitted["scenario_id"])
+                self.assertIn("result_summary", kinds)
+                self.assertIn("visualization_state_series", kinds)
+                self.assertTrue(any(kind.startswith("analysis_projection_") for kind in kinds))
+                self.assertEqual(chain["project_id"], saved["project_id"])
+                self.assertEqual(chain["modeling_snapshot_id"], snapshot["snapshot_id"])
+                self.assertEqual(chain["experiment_plan_id"], plan["experiment_plan_id"])
+                self.assertEqual(chain["scenario_id"], submitted["scenario_id"])
+                self.assertEqual(chain["run_id"], submitted["run_id"])
+                self.assertEqual(chain["result_summary_id"], submitted["result_summary_id"])
                 self.assertEqual(chain["artifact_manifest_id"], submitted["artifact_manifest_id"])
+                self.assertEqual(state_payload["run_id"], submitted["run_id"])
+                self.assertEqual(state_payload["scenario_id"], submitted["scenario_id"])
+                self.assertEqual(state_payload["model_family"], "aviation_support")
+                self.assertNotIn("unsupported_model_family", serialized)
+                self.assertNotIn("offline-demo-run", serialized)
             finally:
                 server.shutdown()
                 server.server_close()

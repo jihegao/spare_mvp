@@ -24,7 +24,7 @@ The current frontend Project JSON is the raw `defaultScenario` shape from `front
 
 `scenario.schema.json` requires an explicit `simulation_model` with `family`, `model_id`, and `contract_version`. Its `simulation_inputs` field is split with `oneOf` branches for `smoke` and `aviation_support`, so the Simulation Adapter must compile model-specific inputs instead of coercing a mixed parameter bag.
 
-The first implemented Simulation Adapter lives at `src/spare_mvp_contract/adapter.py`. It validates current Project JSON contract roots, compiles the approved `smoke` Scenario path, runs `SmokeSpareMvpModel`, and writes traceable run artifacts. It does not compile `aviation_support` Scenario JSON yet because that path still needs a Claude-approved field derivation rule under Mesa governance.
+The Simulation Adapter lives at `src/spare_mvp_contract/adapter.py`. It validates current Project JSON contract roots, compiles approved `smoke` and `aviation_support` Scenario paths, runs `SmokeSpareMvpModel` / `AviationSupportModel` for single runs, and writes traceable run artifacts. `aviation_support` Monte Carlo remains unsupported until a governed aviation sampling contract exists.
 
 `run.schema.json` repeats `model_family` and `model_id` for query, audit, and Result validation.
 
@@ -37,3 +37,5 @@ M9.1 state-series replay is a separate visualization contract. `visualization_st
 M9.2 online state stream is the run subscription envelope over that same frame contract. `GET /api/runs/{run_id}/state-stream` emits SSE events named `run_status`, `state_frame`, and `artifact_ready`; each `state_frame` carries the same frame shape as `visualization_state_series.frames[]` plus stream metadata such as `stream_id`, `artifact_id`, `frame_index`, and `frame_count`. `artifact_ready` hands the frontend back to canonical `/api/runs/{run_id}/artifacts/{artifact_id}` download and the normal `visualization_state_series` replay parser.
 
 M9.3 run lifecycle/control uses canonical `POST /api/runs/{run_id}/control` rather than changing the state-frame contract. The minimal supported actions are backend-confirmed `cancel` and `retry`; unsupported `pause`, `resume`, `step`, and `reset` fail closed with audit records. Retry-pending runs must not expose stale result or artifact payloads as current official outputs.
+
+M9.4 aviation_support formal execution uses the same `/api/runs` result, projection, artifact manifest, run chain, and `visualization_state_series` contracts as smoke single runs while preserving the aviation-specific metric family. Projection artifacts for aviation single runs are derived from the `aviation_support` result summary artifact and must not be replaced by frontend demo calculations.

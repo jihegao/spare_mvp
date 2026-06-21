@@ -537,21 +537,9 @@ class BackendApi:
         }
 
     def _to_backend_error(self, exc: AdapterError, model_family: str) -> BackendApiError:
-        if exc.code == "unsupported_model_family" and model_family == "aviation_support":
-            return BackendApiError(
-                "unsupported_model_family",
-                "aviation_support scenario compilation is blocked until governed field derivation rules are approved",
-                **exc.details,
-            )
         return BackendApiError(exc.code, str(exc), **exc.details)
 
     def _run_service_error_to_backend_error(self, exc: RunServiceError) -> BackendApiError:
-        if exc.code == "unsupported_model_family" and exc.details.get("model_family") == "aviation_support":
-            return BackendApiError(
-                "unsupported_model_family",
-                "aviation_support scenario compilation is blocked until governed field derivation rules are approved",
-                **exc.details,
-            )
         return BackendApiError(exc.code, str(exc), **exc.details)
 
     def _require_role(

@@ -613,20 +613,20 @@ test("frontend API fetch transport defines an AbortController timeout path", asy
 });
 
 test("frontend API client preserves compile gate error payload for submitRun", async () => {
-  const compileGateError = new Error("aviation_support input is not supported by the Scenario compiler");
+  const compileGateError = new Error("unknown model family is not supported by the Scenario compiler");
   compileGateError.code = "unsupported_model_family";
   compileGateError.details = {
     issues: [
       {
         severity: "error",
-        page: "保障活动建模",
-        field_path: "objects.supportActivities[0].durationMinutes",
-        message: "缺少可编译的保障活动工期。"
+        page: "Simulation run",
+        field_path: "model_family",
+        message: "缺少可编译的模型族。"
       }
     ],
     provenance: {
-      model_family: "aviation_support",
-      mapping_version: "aviation-support-input-v0"
+      model_family: "unknown_family",
+      mapping_version: "unknown-family-input-v0"
     }
   };
   compileGateError.payload = {
@@ -646,13 +646,13 @@ test("frontend API client preserves compile gate error payload for submitRun", a
     () => client.submitRun({
       project_id: "project-aviation",
       experiment_plan_id: "plan-aviation",
-      model_family: "aviation_support",
+      model_family: "unknown_family",
       run_type: "single"
     }),
     (err) => {
       assert.equal(err.code, "unsupported_model_family");
-      assert.equal(err.details.issues[0].field_path, "objects.supportActivities[0].durationMinutes");
-      assert.equal(err.payload.details.provenance.model_family, "aviation_support");
+      assert.equal(err.details.issues[0].field_path, "model_family");
+      assert.equal(err.payload.details.provenance.model_family, "unknown_family");
       return true;
     }
   );
