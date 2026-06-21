@@ -2827,16 +2827,32 @@ function buildEquipmentTreeNodes() {
 }
 
 function buildEquipmentComponentTreeNodes(aircraftModel, parentId) {
-  return (scenario.components || [])
-    .filter((component) => componentBelongsToAircraft(component, aircraftModel) && String(component.parentId || "aircraft-root") === parentId)
-    .map((component) => ({
-      id: `equipment-component:${aircraftModel}:${component.id || component.name}`,
-      label: component.name,
-      meta: `${component.quantity} 件 / ${component.connectionType}`,
-      selected: selectedEquipmentNodeKey === `component:${component.id}`,
-      actionAttrs: `data-select-equipment-component="${htmlEscape(component.id)}"`,
-      children: buildEquipmentComponentTreeNodes(aircraftModel, component.id)
-    }));
+  const buildChildren = (parentId, visited = new Set()) => {
+    const visitedIds = new Set(visited);
+    return (scenario.components || [])
+      .filter((component) => {
+        const componentId = String(component.id || "");
+        return componentId
+          && componentId !== String(parentId)
+          && !visitedIds.has(componentId)
+          && componentBelongsToAircraft(component, aircraftModel)
+          && String(component.parentId || "aircraft-root") === parentId;
+      })
+      .map((component) => {
+        const componentId = String(component.id || "");
+        const nextVisited = new Set(visitedIds);
+        nextVisited.add(componentId);
+        return {
+          id: `equipment-component:${aircraftModel}:${component.id || component.name}`,
+          label: component.name,
+          meta: `${component.quantity} 件 / ${component.connectionType}`,
+          selected: selectedEquipmentNodeKey === `component:${component.id}`,
+          actionAttrs: `data-select-equipment-component="${htmlEscape(component.id)}"`,
+          children: buildChildren(component.id, nextVisited)
+        };
+      });
+  };
+  return buildChildren(parentId);
 }
 
 function wholeMachineModels() {
@@ -2856,6 +2872,7 @@ function findEquipmentComponentIndexById(componentId) {
 
 function resolveSelectedEquipmentNode() {
   const models = wholeMachineModels();
+  if (!models.length) return { kind: "aircraft-list" };
   if (selectedEquipmentNodeKey === "aircraft-list") {
     return { kind: "aircraft-list" };
   }
@@ -3647,14 +3664,30 @@ function renderEquipmentConfigTree() {
 }
 
 function buildReadonlyEquipmentConfigComponentTreeNodes(aircraftModel, parentId) {
-  return (scenario.components || [])
-    .filter((component) => componentBelongsToAircraft(component, aircraftModel) && String(component.parentId || "aircraft-root") === parentId)
-    .map((component) => ({
-      id: `equipment-config-component:${aircraftModel}:${component.id || component.name}`,
-      label: component.name,
-      meta: `${component.quantity} 件 / ${component.connectionType}`,
-      children: buildReadonlyEquipmentConfigComponentTreeNodes(aircraftModel, component.id)
-    }));
+  const buildChildren = (parentId, visited = new Set()) => {
+    const visitedIds = new Set(visited);
+    return (scenario.components || [])
+      .filter((component) => {
+        const componentId = String(component.id || "");
+        return componentId
+          && componentId !== String(parentId)
+          && !visitedIds.has(componentId)
+          && componentBelongsToAircraft(component, aircraftModel)
+          && String(component.parentId || "aircraft-root") === parentId;
+      })
+      .map((component) => {
+        const componentId = String(component.id || "");
+        const nextVisited = new Set(visitedIds);
+        nextVisited.add(componentId);
+        return {
+          id: `equipment-config-component:${aircraftModel}:${component.id || component.name}`,
+          label: component.name,
+          meta: `${component.quantity} 件 / ${component.connectionType}`,
+          children: buildChildren(component.id, nextVisited)
+        };
+      });
+  };
+  return buildChildren(parentId);
 }
 
 function correctiveReferenceComponent() {

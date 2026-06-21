@@ -768,6 +768,9 @@ test("equipment tree add node follows ship front selected aircraft and subsystem
   assert.match(equipmentSource, /data-equipment-add-node/);
   assert.match(equipmentSource, /function buildEquipmentTreeNodes\(\)/);
   assert.match(equipmentSource, /function buildEquipmentComponentTreeNodes\(aircraftModel, parentId\)/);
+  assert.match(equipmentSource, /const visitedIds = new Set\(visited\)/);
+  assert.match(equipmentSource, /componentId !== String\(parentId\)/);
+  assert.match(equipmentSource, /!visitedIds\.has\(componentId\)/);
   assert.match(appSource, /function addEquipmentNodeForSelection\(\)/);
   assert.match(appSource, /parentId: selectedState\.kind === "aircraft" \? "aircraft-root" : selectedState\.component\.id/);
   assert.match(appSource, /productType: selectedState\.kind === "aircraft" \? "非LRU" : "LRU"/);
@@ -780,10 +783,19 @@ test("equipment tree root aircraft list can add aircraft before subsystem nodes"
     appSource.indexOf("function renderEquipmentModeling"),
     appSource.indexOf("function renderEquipmentFailureRmsFields")
   );
+  const resolveSource = appSource.slice(
+    appSource.indexOf("function resolveSelectedEquipmentNode"),
+    appSource.indexOf("function clampEquipmentComponentIndex")
+  );
+  const zeroAircraftIndex = resolveSource.indexOf("if (!models.length) return { kind: \"aircraft-list\" };");
+  const componentFallbackIndex = resolveSource.indexOf("const componentIndex = clampEquipmentComponentIndex");
+
   assert.match(equipmentSource, /label: "飞机列表"/);
   assert.match(equipmentSource, /data-select-equipment-root/);
   assert.match(appSource, /selectedEquipmentNodeKey = "aircraft-list"/);
   assert.match(appSource, /kind: "aircraft-list"/);
+  assert.ok(zeroAircraftIndex >= 0, "zero-aircraft imported samples must resolve to the aircraft-list target");
+  assert.ok(zeroAircraftIndex < componentFallbackIndex, "zero-aircraft guard must run before component fallback");
   assert.match(appSource, /function addEquipmentAircraftForSelection\(\)/);
   assert.match(appSource, /scenario\.equipment\.wholeMachineModels\.push\(aircraftModel\)/);
   assert.match(appSource, /selectedEquipmentNodeKey = `aircraft:\$\{aircraftModel\}`/);
@@ -1268,9 +1280,16 @@ test("support activity controls are wired through local draft fields", async () 
     appSource.indexOf("function renderCorrectiveMaintenanceActivity"),
     appSource.indexOf("function renderLogisticsSupportActivity")
   );
+  const readonlyEquipmentConfigSource = appSource.slice(
+    appSource.indexOf("function buildReadonlyEquipmentConfigComponentTreeNodes"),
+    appSource.indexOf("function correctiveReferenceComponent")
+  );
   assert.doesNotMatch(correctiveSource, /<input(?![^>]*(data-path|readonly|disabled))/);
   assert.doesNotMatch(correctiveSource, /scenario\.components\[0\]/);
   assert.match(correctiveSource, /data-path="supportActivities\.\$\{activityIndex\}\.repairType"/);
+  assert.match(readonlyEquipmentConfigSource, /const visitedIds = new Set\(visited\)/);
+  assert.match(readonlyEquipmentConfigSource, /componentId !== String\(parentId\)/);
+  assert.match(readonlyEquipmentConfigSource, /!visitedIds\.has\(componentId\)/);
 });
 
 test("reliability block diagram prototype exposes node edge and k-out-of-n fields", async () => {
