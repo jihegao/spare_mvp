@@ -1462,7 +1462,7 @@ test("monte carlo experiment management has list, editor, and detail pages", asy
 
 test("browser smoke enters monte carlo editor or detail before using sweep inputs", async () => {
   const smokeSource = await readFile(new URL("../reports/m3-1-browser-backend-smoke/browser-backend-smoke.mjs", import.meta.url), "utf8");
-  const smokeStart = smokeSource.indexOf('await clickFeature(page, "spare-planning-monte-carlo-config")');
+  const smokeStart = smokeSource.indexOf('await clickFeature(page, "spare-planning-monte-carlo-experiment-list")');
   const smokeEnd = smokeSource.indexOf('await clickFeature(page, "spare-planning-monte-carlo-results")');
   const smokeMonteCarloSource = smokeSource.slice(
     smokeStart,
@@ -1476,6 +1476,7 @@ test("browser smoke enters monte carlo editor or detail before using sweep input
   );
 
   assert.notEqual(smokeStart, -1, "smoke Monte Carlo flow start marker exists");
+  assert.doesNotMatch(smokeMonteCarloSource, /spare-planning-monte-carlo-config/);
   assert.notEqual(smokeEnd, -1, "smoke Monte Carlo flow end marker exists");
   assert.ok(smokeEnd > smokeStart, "smoke Monte Carlo result navigation follows config flow");
   assert.notEqual(helperStart, -1, "smoke open experiment helper exists");
@@ -1487,6 +1488,13 @@ test("browser smoke enters monte carlo editor or detail before using sweep input
     smokeMonteCarloSource.indexOf("openMonteCarloExperimentForRun") <
       smokeMonteCarloSource.indexOf('data-mc-array-path="monteCarlo.failureRates"'),
     "smoke must leave the Monte Carlo experiment list before filling sweep inputs"
+  );
+  assert.ok(
+    smokeMonteCarloSource.indexOf("document.activeElement?.blur()") >
+      smokeMonteCarloSource.indexOf('data-mc-array-path="monteCarlo.failureRates"') &&
+      smokeMonteCarloSource.indexOf("document.activeElement?.blur()") <
+        smokeMonteCarloSource.indexOf("openMonteCarloExperimentDetailForRun"),
+    "smoke must apply the sweep input change before clicking through to detail"
   );
   assert.match(smokeSource, /data-mc-action="start"/);
   assert.match(smokeSource, /function openMonteCarloExperimentForRun/);
@@ -1652,9 +1660,24 @@ test("M7 browser smoke helper verifies archive and tombstone evidence", async ()
     smokeSource.indexOf("async function verifyM7RunArtifactManagement"),
     smokeSource.indexOf("function assertHasIdentityChain")
   );
+  const readEvidenceSource = smokeSource.slice(
+    smokeSource.indexOf("async function readBackendEvidence"),
+    smokeSource.indexOf("async function verifyM7RunArtifactManagement")
+  );
+  const offlineSource = smokeSource.slice(
+    smokeSource.indexOf("const offlinePage = await context.newPage()"),
+    smokeSource.indexOf("const result = {")
+  );
 
   assert.match(loginSource, /button\[data-enter-workbench\]\[data-project-id\]/);
   assert.doesNotMatch(loginSource, /进入当前项目/);
+  assert.match(readEvidenceSource, /function waitForBackendIdentityChain/);
+  assert.match(readEvidenceSource, /requiredKeys = \["Project", "Snapshot", "ExperimentPlan", "Scenario", "Run", "Result", "ArtifactManifest"\]/);
+  assert.match(readEvidenceSource, /requiredKeys\.every\(\(key\) => labels\.includes\(key\)\)/);
+  assert.ok(
+    offlineSource.indexOf("await loginAndEnterProject(offlinePage)") < offlineSource.indexOf('offlinePage.route("**/api/**"'),
+    "offline smoke should block /api after login and project entry"
+  );
   for (const token of [
     "runListVisibleIncludesRunId",
     "detailVisible",

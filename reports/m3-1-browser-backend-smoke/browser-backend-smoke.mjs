@@ -49,10 +49,11 @@ try {
     page.locator("[data-save-plan]").click()
   ]);
 
-  await clickFeature(page, "spare-planning-monte-carlo-config");
+  await clickFeature(page, "spare-planning-monte-carlo-experiment-list");
   await expectHeading(page, "蒙特卡洛实验");
   await openMonteCarloExperimentForRun(page);
   await page.locator('input[data-mc-array-path="monteCarlo.failureRates"]').fill("0.06,0.08,0.1");
+  await page.evaluate(() => document.activeElement?.blur());
   await openMonteCarloExperimentDetailForRun(page);
   let runResponse = await clickMonteCarloStart(page);
   if (!runResponse) runResponse = await clickMonteCarloStartWithDomFallback(page);
@@ -63,7 +64,7 @@ try {
 
   await clickFeature(page, "spare-planning-monte-carlo-results");
   await expectHeading(page, "蒙特卡洛实验结果");
-  await page.waitForFunction(() => document.body.innerText.includes("ArtifactManifest"));
+  await waitForBackendIdentityChain(page);
   const beforeRefresh = await readBackendEvidence(page);
   assertHasIdentityChain(beforeRefresh.chain, "before refresh");
   if (beforeRefresh.statusText.includes("离线演示") || beforeRefresh.bodyText.includes("offline-demo-run")) {
@@ -73,7 +74,7 @@ try {
 
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => document.body.innerText.includes("已从后端恢复"));
-  await page.waitForFunction(() => document.body.innerText.includes("ArtifactManifest"));
+  await waitForBackendIdentityChain(page);
   const afterRefresh = await readBackendEvidence(page);
   assertHasIdentityChain(afterRefresh.chain, "after refresh");
   const m7RunArtifactEvidence = await verifyM7RunArtifactManagement(page, afterRefresh.chain.Run);
@@ -85,7 +86,7 @@ try {
   const restartInfo = await restartBackendServer();
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => document.body.innerText.includes("已从后端恢复"));
-  await page.waitForFunction(() => document.body.innerText.includes("ArtifactManifest"));
+  await waitForBackendIdentityChain(page);
   const afterRestartRun = await readBackendEvidence(page);
   assertHasIdentityChain(afterRestartRun.chain, "after restart");
   if (afterRestartRun.chain.Run !== beforeRefresh.chain.Run) {
@@ -109,6 +110,9 @@ try {
 
   const offlinePage = await context.newPage();
   trackApiEvents(offlinePage, apiEvents);
+  await offlinePage.goto(baseUrl, { waitUntil: "domcontentloaded", timeout: 10000 });
+  await offlinePage.evaluate(() => localStorage.clear());
+  await loginAndEnterProject(offlinePage);
   await offlinePage.route("**/api/**", (route) =>
     route.fulfill({
       status: 503,
@@ -116,10 +120,7 @@ try {
       body: JSON.stringify({ code: "backend_unavailable", message: "blocked by M3-1 smoke" })
     })
   );
-  await offlinePage.goto(baseUrl, { waitUntil: "domcontentloaded", timeout: 10000 });
-  await offlinePage.evaluate(() => localStorage.clear());
-  await loginAndEnterProject(offlinePage);
-  await clickFeature(offlinePage, "spare-planning-monte-carlo-config");
+  await clickFeature(offlinePage, "spare-planning-monte-carlo-experiment-list");
   await expectHeading(offlinePage, "蒙特卡洛实验");
   await openMonteCarloExperimentForRun(offlinePage);
   await openMonteCarloExperimentDetailForRun(offlinePage);
@@ -307,22 +308,37 @@ async function expectSectionTitle(page, expected) {
 
 async function readBackendEvidence(page) {
   return page.evaluate(() => {
-    const rows = Array.from(document.querySelectorAll(".backend-run-chain table:first-of-type tr"));
+    const requiredKeys = ["Project", "Snapshot", "ExperimentPlan", "Scenario", "Run", "Result", "ArtifactManifest"];
+    const chainSection = Array.from(document.querySelectorAll(".backend-run-chain")).find((section) => {
+      const labels = Array.from(section.querySelectorAll("table:first-of-type tr th")).map((cell) => cell.textContent?.trim() || "");
+      return requiredKeys.every((key) => labels.includes(key));
+    });
+    const rows = Array.from(chainSection?.querySelectorAll("table:first-of-type tr") || []);
     const chain = Object.fromEntries(rows.map((row) => {
       const cells = row.querySelectorAll("th, td");
       return [cells[0]?.textContent?.trim() || "", cells[1]?.textContent?.trim() || ""];
     }));
-    const artifacts = Array.from(document.querySelectorAll(".backend-run-chain table:nth-of-type(2) tr")).map((row) => {
+    const artifacts = Array.from(chainSection?.querySelectorAll("table:nth-of-type(2) tr") || []).map((row) => {
       const cells = row.querySelectorAll("th, td");
       return { kind: cells[0]?.textContent?.trim() || "", path: cells[1]?.textContent?.trim() || "" };
     });
     return {
-      statusText: document.querySelector(".backend-run-chain span")?.textContent?.trim() || "",
+      statusText: chainSection?.querySelector("span")?.textContent?.trim() || "",
       chain,
       artifacts,
       bodyText: document.body.innerText
     };
   });
+}
+
+async function waitForBackendIdentityChain(page) {
+  await page.waitForFunction(() => {
+    const requiredKeys = ["Project", "Snapshot", "ExperimentPlan", "Scenario", "Run", "Result", "ArtifactManifest"];
+    return Array.from(document.querySelectorAll(".backend-run-chain")).some((section) => {
+      const labels = Array.from(section.querySelectorAll("table:first-of-type tr th")).map((cell) => cell.textContent?.trim() || "");
+      return requiredKeys.every((key) => labels.includes(key));
+    });
+  }, null, { timeout: 10000 });
 }
 
 async function verifyM7RunArtifactManagement(page, runId) {
