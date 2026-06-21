@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import sqlite3
 import tempfile
@@ -119,6 +120,9 @@ class BackendApiContractTest(unittest.TestCase):
             "artifact_files": len([path for path in Path(self.tempdir.name).glob("**/*") if path.is_file()])
         }
 
+    def _artifact_by_kind(self, manifest: dict, kind: str) -> dict:
+        return next(artifact for artifact in manifest["artifacts"] if artifact["kind"] == kind)
+
     def test_smoke_backend_flow_persists_complete_run_chain(self) -> None:
         project = self._fixture("smoke_project.json")
 
@@ -219,6 +223,34 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(payload["modeling_snapshot_id"], snapshot["snapshot_id"])
         self.assertEqual(payload["project_id"], saved["project_id"])
         self.assertEqual(payload["run_id"], submitted["run_id"])
+
+    def test_run_service_keeps_disk_artifact_manifest_in_sync_after_run_config_augmentation(self) -> None:
+        project = self._fixture("smoke_project.json")
+        saved = self.api.save_project(project)
+        self.api.create_modeling_snapshot(saved["project_id"])
+        plan = self.api.create_experiment_plan(saved["project_id"], {"name": "m7 manifest sync", "steps": 2})
+
+        submitted = self.api.submit_run(
+            {
+                "project_id": saved["project_id"],
+                "experiment_plan_id": plan["experiment_plan_id"],
+                "model_family": "smoke",
+                "run_type": "single",
+            }
+        )
+        repository_manifest = self.api.get_run_artifacts(submitted["run_id"])
+        disk_manifest_path = Path(self.api.output_dir) / submitted["run_id"] / "artifact-manifest.json"
+        disk_manifest = json.loads(disk_manifest_path.read_text(encoding="utf-8"))
+        repository_run_config = self._artifact_by_kind(repository_manifest, "run_config")
+        disk_run_config = self._artifact_by_kind(disk_manifest, "run_config")
+
+        for key in ("sha256", "size_bytes", "path", "artifact_id"):
+            self.assertEqual(disk_run_config[key], repository_run_config[key])
+        for artifact in repository_manifest["artifacts"]:
+            artifact_path = Path(self.api.output_dir) / artifact["path"]
+            data = artifact_path.read_bytes()
+            self.assertEqual(hashlib.sha256(data).hexdigest(), artifact["sha256"], artifact)
+            self.assertEqual(len(data), artifact["size_bytes"], artifact)
 
     def test_run_service_submits_formal_monte_carlo_run_and_persists_projection_artifacts(self) -> None:
         project = self._fixture("smoke_project.json")
@@ -594,6 +626,17 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(len(log_artifacts), 1)
         self.assertRegex(log_artifacts[0]["sha256"], r"^[0-9a-f]{64}$")
         self.assertGreater(log_artifacts[0]["size_bytes"], 0)
+        log_path = Path(self.api.output_dir) / log_artifacts[0]["path"]
+        log_data = log_path.read_bytes()
+        log_payload = json.loads(log_data.decode("utf-8"))
+        self.assertEqual(hashlib.sha256(log_data).hexdigest(), log_artifacts[0]["sha256"])
+        self.assertEqual(len(log_data), log_artifacts[0]["size_bytes"])
+        self.assertEqual(log_payload["run_id"], submitted["run_id"])
+        self.assertEqual(log_payload["status"], "failed")
+        self.assertEqual(log_payload["events"][0]["event"], "compile_gate_failed")
+        self.assertEqual(log_payload["events"][0]["error"]["code"], "unsupported_model_family")
+        self.assertTrue(log_payload["events"][0]["issues"])
+        self.assertEqual(log_payload["events"][0]["provenance"]["model_family"], "aviation_support")
 
     def test_backend_api_submit_run_uses_m6_status_envelope(self) -> None:
         project = self._fixture("smoke_project.json")

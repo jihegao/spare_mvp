@@ -178,6 +178,7 @@ class RunService:
             plan=plan,
             request=request,
         )
+        self._write_disk_artifact_manifest(bundle["artifact_manifest"])
 
         self.repository.upsert_run(run)
         self.repository.upsert_result_summary(bundle["result"])
@@ -308,6 +309,7 @@ class RunService:
             ],
         }
         manifest["artifacts"] = [self._write_run_log_artifact(run_id, manifest_id, log_payload)]
+        self._write_disk_artifact_manifest(manifest)
         self.repository.upsert_run(run)
         self.repository.upsert_artifact_manifest(manifest)
         return self._status_from_run(run)
@@ -392,6 +394,7 @@ class RunService:
             ],
         }
         manifest["artifacts"] = [self._write_run_log_artifact(run_id, manifest_id, log_payload)]
+        self._write_disk_artifact_manifest(manifest)
         self.repository.upsert_run(run)
         self.repository.upsert_artifact_manifest(manifest)
         return self._status_from_run(run)
@@ -470,6 +473,13 @@ class RunService:
             "size_bytes": len(data),
             "schema_version": "run-log-v0",
         }
+
+    def _write_disk_artifact_manifest(self, manifest: dict[str, Any]) -> None:
+        run_id = str(manifest["run_id"])
+        run_dir = self.output_dir / run_id
+        run_dir.mkdir(parents=True, exist_ok=True)
+        target = run_dir / "artifact-manifest.json"
+        target.write_text(json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
 def _phase_from_status(status: str) -> str:
