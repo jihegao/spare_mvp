@@ -618,7 +618,9 @@ test("support organization and activity pages follow ship_front tree table edito
   assert.match(supportOrgSource, /activeResourceType === "保障人员" \? "专业" : "型号"/);
   assert.doesNotMatch(supportOrgSource, /<th>资源类型<\/th>/);
   assert.doesNotMatch(supportOrgSource, /<td>\$\{row\.type\}<\/td>/);
-  assert.match(supportOrgSource, /组织名称<input value="\$\{htmlEscape\(selectedSupportOrgNode\?\.name \|\| ""\)\}" readonly>/);
+  assert.match(supportOrgSource, /data-support-org-field="name"/);
+  assert.match(supportOrgSource, /data-support-org-field="description"/);
+  assert.match(supportOrgSource, /function supportOrgNodeDepth/);
   assert.match(supportOrgSource, /上级组织<input value="\$\{htmlEscape\(selectedSupportOrgParentName\)\}" readonly>/);
   const operationsSource = appSource.slice(
     appSource.indexOf("function renderOperationsSupportActivity"),
@@ -1224,9 +1226,10 @@ test("page revision equipment and mission input constraints are guarded", async 
 
   assert.match(compositeItemSource, /basicMissionSelect/);
   assert.match(compositeItemSource, /findBasicMissionByName/);
-  assert.match(compositeItemSource, /<td><input readonly value="\$\{htmlEscape\(basicTask\?\.equipmentType/);
-  assert.match(compositeItemSource, /<td><input readonly value="\$\{htmlEscape\(basicTask\?\.taskDurationMinutes/);
+  assert.match(compositeItemSource, /taskItems\.\$\{index\}\.equipmentType/);
+  assert.match(compositeItemSource, /taskItems\.\$\{index\}\.taskDurationMinutes/);
   assert.match(compositeItemSource, /requiredEquipmentQuantity/);
+  assert.match(compositeItemSource, /minRequiredSystems/);
   assert.doesNotMatch(compositeItemSource, /任务下达时间/);
   assert.doesNotMatch(compositeItemSource, /回收时刻/);
 });
@@ -1271,8 +1274,10 @@ test("editable modeling lists expose page suggestion action entries", async () =
     appSource.indexOf("function renderSupportOrganizationWorkbench"),
     appSource.indexOf("function renderOrgTreeNode")
   );
-  assert.match(supportOrgSource, /data-support-org-add-node disabled/);
-  assert.match(supportOrgSource, /组织名称<input value="\$\{htmlEscape\(selectedSupportOrgNode\?\.name \|\| ""\)\}" readonly>/);
+  assert.match(supportOrgSource, /data-support-org-add-node/);
+  assert.match(supportOrgSource, /selectedOrgDepth >= 3 \? "disabled" : ""/);
+  assert.match(supportOrgSource, /data-support-org-delete-node/);
+  assert.match(supportOrgSource, /data-support-org-field="name"/);
   assert.match(supportOrgSource, /data-support-resource-batch-delete/);
   assert.match(supportOrgSource, /data-support-resource-select-all/);
   assert.match(appSource, /data-support-resource-field/);
