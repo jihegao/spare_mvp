@@ -1607,6 +1607,94 @@ test("M7 run refresh is allowed before any selected run guard", async () => {
   }
 });
 
+test("M7 cold refresh lists runs while missing-run actions stay guarded", async () => {
+  const calls = [];
+  const listeners = {};
+  const appNode = {
+    innerHTML: "",
+    addEventListener(type, listener) {
+      listeners[type] = listener;
+    },
+    querySelector() {
+      return null;
+    }
+  };
+  const previousDocument = globalThis.document;
+  const previousWindow = globalThis.window;
+  const previousLocation = globalThis.location;
+  const previousLocalStorage = globalThis.localStorage;
+  const previousFetch = globalThis.fetch;
+
+  globalThis.document = {
+    querySelector(selector) {
+      return selector === "#app" ? appNode : null;
+    },
+    createElement() {
+      throw new Error("download anchor should not be created without a run_id");
+    },
+    body: {
+      appendChild() {
+        throw new Error("download anchor should not be appended without a run_id");
+      }
+    }
+  };
+  globalThis.location = { hash: "" };
+  globalThis.window = {
+    addEventListener(type, listener) {
+      listeners[`window:${type}`] = listener;
+    },
+    location: globalThis.location
+  };
+  globalThis.localStorage = {
+    getItem() {
+      return null;
+    },
+    setItem() {},
+    removeItem() {}
+  };
+  globalThis.fetch = async (url, init = {}) => {
+    calls.push({ url: String(url), method: init.method || "GET" });
+    return {
+      ok: true,
+      json: async () => ({ runs: [] })
+    };
+  };
+
+  const clickM7Action = async (dataset) => {
+    const button = {
+      dataset,
+      closest(selector) {
+        return selector === "[data-action^='m7-']" ? button : null;
+      }
+    };
+    listeners.click({ target: button });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  };
+
+  try {
+    await import(`../front/app.js?m7-cold-refresh=${Date.now()}`);
+    assert.equal(typeof listeners.click, "function", "app click handler is bound");
+
+    await clickM7Action({ action: "m7-refresh-runs", runId: "" });
+    assert.deepEqual(calls, [
+      { url: "/api/runs?run_type=monte_carlo&include_deleted=1", method: "GET" }
+    ]);
+
+    calls.length = 0;
+    await clickM7Action({ action: "m7-open-run-detail", runId: "" });
+    await clickM7Action({ action: "m7-download-artifact", runId: "", artifactId: "artifact-cold" });
+    await clickM7Action({ action: "m7-archive-run", runId: "" });
+    await clickM7Action({ action: "m7-delete-run", runId: "" });
+    assert.deepEqual(calls, [], "detail, download, archive, and delete stay behind the missing run_id guard");
+  } finally {
+    globalThis.document = previousDocument;
+    globalThis.window = previousWindow;
+    globalThis.location = previousLocation;
+    globalThis.localStorage = previousLocalStorage;
+    globalThis.fetch = previousFetch;
+  }
+});
+
 test("formal runs do not consume local preview outputs", async () => {
   const apiClientSource = await readFile(new URL("../front/api-client.mjs", import.meta.url), "utf8");
   const runIntentSource = await readFile(new URL("../front/run-intent.mjs", import.meta.url), "utf8");
