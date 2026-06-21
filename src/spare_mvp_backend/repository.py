@@ -488,8 +488,18 @@ class ContractRepository:
         )
         self.connection.commit()
 
-    def upsert_run(self, run: dict[str, Any]) -> None:
+    def upsert_run(self, run: dict[str, Any], *, update_lifecycle: bool = False) -> None:
         stored_run = dict(run)
+        cursor = self.connection.execute(
+            "SELECT payload_json FROM simulation_runs WHERE run_id = ?",
+            (stored_run.get("run_id"),),
+        )
+        row = cursor.fetchone()
+        if row is not None and not update_lifecycle:
+            existing = json.loads(row[0])
+            for key in ("lifecycle_status", "archived_at", "archived_by", "deleted_at", "deleted_by"):
+                if key in existing:
+                    stored_run[key] = existing[key]
         stored_run["created_by"] = stored_run.get("created_by") or "system"
         stored_run["lifecycle_status"] = stored_run.get("lifecycle_status") or "active"
         self.connection.execute(
@@ -759,7 +769,7 @@ class ContractRepository:
         run["lifecycle_status"] = "archived"
         run["archived_at"] = run.get("archived_at") or self._utc_now()
         run["archived_by"] = archived_by
-        self.upsert_run(run)
+        self.upsert_run(run, update_lifecycle=True)
         return self.get_run(run_id)
 
     def archive_run_with_audit(self, run_id: str, *, actor_user_id: str) -> dict[str, Any]:
@@ -777,7 +787,7 @@ class ContractRepository:
         run["lifecycle_status"] = "deleted"
         run["deleted_at"] = run.get("deleted_at") or self._utc_now()
         run["deleted_by"] = deleted_by
-        self.upsert_run(run)
+        self.upsert_run(run, update_lifecycle=True)
         return self.get_run(run_id)
 
     def soft_delete_run_with_audit(self, run_id: str, *, actor_user_id: str) -> dict[str, Any]:

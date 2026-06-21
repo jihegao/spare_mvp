@@ -220,6 +220,33 @@ class DatabaseContractTest(unittest.TestCase):
         self.assertEqual(self.repository.list_runs(), [])
         self.assertEqual([item["run_id"] for item in self.repository.list_runs(include_deleted=True)], [run["run_id"]])
 
+    def test_upsert_run_preserves_existing_lifecycle_when_stale_status_refresh_replays_active(self) -> None:
+        project = self._fixture("smoke_project.json")
+        scenario = self._fixture("smoke_scenario.json")
+        run = self._fixture("smoke_run.json")
+        self.repository.upsert_project(project)
+        self.repository.upsert_scenario(scenario)
+        self.repository.upsert_run({**run, "lifecycle_status": "active", "created_by": "system"})
+
+        deleted = self.repository.soft_delete_run(run["run_id"], deleted_by="system")
+        self.assertEqual(deleted["lifecycle_status"], "deleted")
+
+        stale_status_refresh = {
+            **run,
+            "status": "running",
+            "lifecycle_status": "active",
+            "deleted_at": None,
+            "deleted_by": None,
+        }
+        self.repository.upsert_run(stale_status_refresh)
+
+        stored = self.repository.get_run(run["run_id"])
+        self.assertEqual(stored["status"], "running")
+        self.assertEqual(stored["lifecycle_status"], "deleted")
+        self.assertEqual(stored["deleted_by"], "system")
+        self.assertTrue(stored["deleted_at"])
+        self.assertEqual(self.repository.list_runs(), [])
+
     def test_repository_get_run_detail_combines_chain_result_and_artifacts(self) -> None:
         self._persist_complete_smoke_chain()
         detail = self.repository.get_run_detail("run-smoke-contract-001")
