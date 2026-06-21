@@ -2380,6 +2380,56 @@ test("M9.2 visual simulation subscribes to run state stream and keeps unsupporte
   assert.doesNotMatch(controlHandlerSource, /readyState === EventSource\.CLOSED && !visualizationStreamState\.eventCount/);
 });
 
+test("M9.3 visual simulation exposes backend-confirmed run control buttons", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const visualSource = appSource.slice(
+    appSource.indexOf("function renderVisualSimulation"),
+    appSource.indexOf("function mesaTab")
+  );
+
+  for (const [action, label] of [
+    ["backend-cancel", "取消运行"],
+    ["backend-retry", "重试运行"],
+    ["backend-pause", "后端暂停"],
+    ["backend-resume", "后端恢复"],
+    ["backend-step", "后端单步"],
+    ["backend-reset", "后端重置"]
+  ]) {
+    assert.match(visualSource, new RegExp(`data-mesa-control="${action}"`));
+    assert.match(visualSource, new RegExp(label));
+  }
+  assert.match(visualSource, /data-mesa-backend-control-status/);
+});
+
+test("M9.3 backend Mesa controls call controlRun without local replay confirmation", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const controlHandlerSource = appSource.slice(
+    appSource.indexOf("async function handleMesaControl"),
+    appSource.indexOf("async function loadAviationSupportState")
+  );
+  const backendControlSource = controlHandlerSource.slice(
+    controlHandlerSource.indexOf("backendControlActions"),
+    controlHandlerSource.indexOf("if (visualizationStateSeries && !isVisualizationStateSeriesFromStream())")
+  );
+  const localReplaySource = controlHandlerSource.slice(
+    controlHandlerSource.indexOf("if (visualizationStateSeries && !isVisualizationStateSeriesFromStream())"),
+    controlHandlerSource.indexOf("if ([\"play\", \"step\", \"reset\"].includes(action))")
+  );
+
+  assert.match(controlHandlerSource, /backendControlActions/);
+  assert.match(backendControlSource, /backendApi\.controlRun\(runId,\s*controlAction\)/);
+  assert.match(backendControlSource, /await refreshRunResultThroughApi\((confirmedRunId|runId)\)/);
+  assert.match(backendControlSource, /await refreshVisualizationRunList\((confirmedRunId|runId)\)/);
+  assert.match(backendControlSource, /stopVisualizationRunStream/);
+  assert.match(backendControlSource, /formatBackendError\(err\)/);
+  assert.doesNotMatch(backendControlSource, /nextReplayIndex\(visualizationStateSeries/);
+  assert.doesNotMatch(backendControlSource, /visualizationReplayIndex\s*=/);
+  assert.doesNotMatch(backendControlSource, /visualizationReplayPlaying\s*=/);
+  assert.match(localReplaySource, /nextReplayIndex\(visualizationStateSeries/);
+  assert.match(localReplaySource, /visualizationReplayPlaying = !visualizationReplayPlaying/);
+  assert.match(localReplaySource, /visualizationReplayIndex = 0/);
+});
+
 test("M9.2 docs describe online state stream as current scope while preserving later non-goals", async () => {
   const docs = {
     readme: await readFile(new URL("../README.md", import.meta.url), "utf8"),

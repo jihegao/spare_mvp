@@ -5,11 +5,14 @@ import hashlib
 import http.client
 import json
 import sqlite3
+import sys
 import tempfile
 import threading
 from pathlib import Path
 from typing import Any
 import unittest
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.spare_mvp_backend.api import BackendApi, BackendApiError
 from src.spare_mvp_backend.http_server import create_backend_server
@@ -470,6 +473,134 @@ class BackendApiContractTest(unittest.TestCase):
 
         with self.assertRaises(KeyError):
             self.api.subscribe_run_state_stream("run-missing")
+
+    def test_m9_3_run_control_cancel_is_backend_confirmed_and_audited(self) -> None:
+        submitted = self._submit_successful_smoke_run()
+        run_id = submitted["run_id"]
+
+        controlled = self.api.control_run(run_id, "cancel", actor_user_id="user-admin")
+
+        self.assertEqual(controlled["run_id"], run_id)
+        self.assertEqual(controlled["status"], "cancelled")
+        self.assertEqual(controlled["phase"], "cancelled")
+        self.assertEqual(controlled["progress"], 1)
+        self.assertTrue(controlled["cancelled_at"])
+        self.assertEqual(controlled["cancelled_by"], "user-admin")
+        self.assertEqual(controlled["control"]["action"], "cancel")
+        self.assertEqual(controlled["control"]["outcome"], "allowed")
+        self.assertEqual(controlled["control"]["actor_user_id"], "user-admin")
+        self.assertTrue(controlled["control"]["controlled_at"])
+
+        stored = self.api.get_run(run_id)
+        self.assertEqual(stored["status"], "cancelled")
+        self.assertEqual(stored["cancelled_by"], "user-admin")
+        events = self.repository.list_audit_events(resource_id=run_id)
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["action"], "runs.control.cancel")
+        self.assertEqual(events[0]["outcome"], "allowed")
+        self.assertEqual(events[0]["actor_user_id"], "user-admin")
+        self.assertEqual(events[0]["details"]["status"], "cancelled")
+
+    def test_m9_3_unsupported_run_control_fails_closed_and_audits_denial(self) -> None:
+        submitted = self._submit_successful_smoke_run()
+        run_id = submitted["run_id"]
+        before = self.api.get_run(run_id)
+
+        with self.assertRaises(BackendApiError) as ctx:
+            self.api.control_run(run_id, "pause", actor_user_id="user-admin")
+
+        self.assertEqual(ctx.exception.code, "unsupported_run_control")
+        self.assertEqual(self.api.get_run(run_id), before)
+        events = self.repository.list_audit_events(resource_id=run_id)
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["action"], "runs.control.pause")
+        self.assertEqual(events[0]["outcome"], "denied")
+        self.assertEqual(events[0]["actor_user_id"], "user-admin")
+        self.assertEqual(events[0]["details"]["reason"], "unsupported_run_control")
+
+        deleted = self.api.soft_delete_run(run_id, actor_user_id="user-admin")
+        self.assertEqual(deleted["lifecycle_status"], "deleted")
+        with self.assertRaises(BackendApiError) as deleted_ctx:
+            self.api.control_run(run_id, "cancel", actor_user_id="user-admin")
+        self.assertEqual(deleted_ctx.exception.code, "run_deleted")
+        deleted_events = self.repository.list_audit_events(resource_id=run_id)
+        self.assertEqual(deleted_events[-1]["action"], "runs.control.cancel")
+        self.assertEqual(deleted_events[-1]["outcome"], "denied")
+        self.assertEqual(deleted_events[-1]["details"]["reason"], "run_deleted")
+
+    def test_m9_3_retry_blocks_stale_official_result_and_artifact_reads(self) -> None:
+        submitted = self._submit_successful_smoke_run()
+        run_id = submitted["run_id"]
+        self.assertEqual(self.api.get_run_result(run_id)["run_id"], run_id)
+        self.assertEqual(self.api.get_run_artifacts(run_id)["run_id"], run_id)
+
+        self.api.control_run(run_id, "cancel", actor_user_id="user-admin")
+        retried = self.api.control_run(run_id, "retry", actor_user_id="user-admin")
+
+        self.assertEqual(retried["status"], "queued")
+        self.assertEqual(retried["phase"], "queued")
+        self.assertEqual(retried["progress"], 0)
+        self.assertIsNone(retried["result_summary_id"])
+        self.assertIsNone(retried["artifact_manifest_id"])
+        with self.assertRaises(KeyError):
+            self.api.get_run_result(run_id)
+        with self.assertRaises(KeyError):
+            self.api.get_run_artifacts(run_id)
+
+    def test_m9_3_retry_keeps_run_detail_refreshable_with_pending_manifest(self) -> None:
+        submitted = self._submit_successful_smoke_run()
+        run_id = submitted["run_id"]
+
+        self.api.control_run(run_id, "cancel", actor_user_id="user-admin")
+        self.api.control_run(run_id, "retry", actor_user_id="user-admin")
+        detail = self.api.get_run_detail(run_id)
+
+        self.assertEqual(detail["run"]["status"], "queued")
+        self.assertEqual(detail["run"]["phase"], "queued")
+        self.assertIsNone(detail["result_summary"])
+        self.assertEqual(detail["artifact_manifest"]["run_id"], run_id)
+        self.assertEqual(
+            detail["artifact_manifest"]["artifact_manifest_id"],
+            f"artifact-manifest-{run_id}-retry-pending",
+        )
+        self.assertEqual(detail["artifact_manifest"]["status"], "pending")
+        self.assertEqual(detail["artifact_manifest"]["artifacts"], [])
+        self.assertEqual(detail["chain"]["artifact_manifest_id"], detail["artifact_manifest"]["artifact_manifest_id"])
+        self.assertEqual(detail["download_base"], f"/api/runs/{run_id}/artifacts")
+
+    def test_m9_3_cancel_after_retry_keeps_detail_refreshable_without_stale_outputs(self) -> None:
+        submitted = self._submit_successful_smoke_run()
+        run_id = submitted["run_id"]
+
+        first_cancel = self.api.control_run(run_id, "cancel", actor_user_id="user-data")
+        retried = self.api.control_run(run_id, "retry", actor_user_id="user-admin")
+        self.assertIsNone(retried.get("cancelled_at"))
+        self.assertIsNone(retried.get("cancelled_by"))
+        second_cancel = self.api.control_run(run_id, "cancel", actor_user_id="user-admin")
+        detail = self.api.get_run_detail(run_id)
+
+        self.assertEqual(detail["run"]["status"], "cancelled")
+        self.assertEqual(detail["run"]["phase"], "cancelled")
+        self.assertTrue(first_cancel["cancelled_at"])
+        self.assertTrue(second_cancel["cancelled_at"])
+        self.assertEqual(second_cancel["cancelled_by"], "user-admin")
+        self.assertEqual(detail["run"]["cancelled_at"], second_cancel["cancelled_at"])
+        self.assertEqual(detail["run"]["cancelled_by"], "user-admin")
+        self.assertIsNone(detail["run"]["result_summary_id"])
+        self.assertIsNone(detail["run"]["artifact_manifest_id"])
+        self.assertIsNone(detail["result_summary"])
+        self.assertEqual(detail["artifact_manifest"]["run_id"], run_id)
+        self.assertEqual(
+            detail["artifact_manifest"]["artifact_manifest_id"],
+            f"artifact-manifest-{run_id}-retry-pending",
+        )
+        self.assertEqual(detail["artifact_manifest"]["status"], "pending")
+        self.assertEqual(detail["artifact_manifest"]["artifacts"], [])
+        self.assertEqual(detail["chain"]["artifact_manifest_id"], detail["artifact_manifest"]["artifact_manifest_id"])
+        with self.assertRaises(KeyError):
+            self.api.get_run_result(run_id)
+        with self.assertRaises(KeyError):
+            self.api.get_run_artifacts(run_id)
 
     def test_m9_2_subscribe_run_state_stream_fails_closed_for_invalid_state_series(self) -> None:
         cases = (

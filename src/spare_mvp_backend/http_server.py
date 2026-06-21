@@ -227,6 +227,9 @@ def create_backend_server(
                 }
             if self.command == "GET" and len(parts) == 3 and parts[0] == "runs" and parts[2] == "chain":
                 return api.get_run_chain(parts[1])
+            if self.command == "POST" and len(parts) == 3 and parts[0] == "runs" and parts[2] == "control":
+                actor = self._require_user()
+                return api.control_run(parts[1], str(body.get("action") or ""), actor_user_id=actor["user_id"])
             if self.command == "POST" and len(parts) == 3 and parts[0] == "runs" and parts[2] == "archive":
                 actor = self._require_user({"系统管理员", "数据管理员"})
                 return api.archive_run(parts[1], actor_user_id=actor["user_id"])

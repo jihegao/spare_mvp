@@ -79,6 +79,22 @@ const ANALYSIS_PROJECTION_TYPES = [
   { analysisType: "mission_reliability", artifactKind: "analysis_projection_mission_reliability", source_artifact_id: "monte_carlo_base_artifact" },
   { analysisType: "downtime_factors", artifactKind: "analysis_projection_downtime_factors", source_artifact_id: "monte_carlo_base_artifact" }
 ];
+const backendControlActions = {
+  "backend-cancel": "cancel",
+  "backend-retry": "retry",
+  "backend-pause": "pause",
+  "backend-resume": "resume",
+  "backend-step": "step",
+  "backend-reset": "reset"
+};
+const backendControlLabels = {
+  cancel: "取消运行",
+  retry: "重试运行",
+  pause: "后端暂停",
+  resume: "后端恢复",
+  step: "后端单步",
+  reset: "后端重置"
+};
 const SYSTEM_PROJECT_DATA_ROWS = [
   { key: "projectId", label: "项目标识", value: "landbase-day-night", owner: "项目主数据" },
   { key: "baseProfile", label: "机场保障资源", value: "主基地 / 前进保障点 / 后方保障点", owner: "项目独有数据" },
@@ -271,6 +287,7 @@ let visualizationStreamState = {
   lastEventAt: "",
   artifactId: ""
 };
+let visualizationBackendControlStatus = "M9.3 后端运行控制尚未触发";
 let backendApiStatus = "离线演示";
 let formalRunSubmitInFlight = false;
 let systemUserEditor = null;
@@ -5665,6 +5682,32 @@ async function handleMesaControl(action) {
     await loadVisualizationReplayForRun();
     return;
   }
+  const controlAction = backendControlActions[action];
+  if (controlAction) {
+    const runId = visualizationSelectedRunId || backendRun?.run_id;
+    const label = backendControlLabels[controlAction] || controlAction;
+    if (!runId) {
+      visualizationBackendControlStatus = `${label}失败：尚未选择 run_id`;
+      return;
+    }
+    visualizationBackendControlStatus = `正在请求后端${label}：run ${runId}`;
+    try {
+      const confirmed = await backendApi.controlRun(runId, controlAction);
+      const confirmedRunId = confirmed?.run_id || runId;
+      backendRun = { ...(backendRun || {}), ...confirmed, run_id: confirmedRunId };
+      visualizationSelectedRunId = confirmedRunId;
+      visualizationBackendControlStatus = `后端已确认${label}：run ${confirmedRunId} / ${runStatusLabel(backendRun)}`;
+      if (controlAction === "cancel") {
+        stopVisualizationRunStream(`run ${confirmedRunId} 已取消，M9.2 在线订阅已停止`);
+      }
+      await refreshVisualizationRunList(confirmedRunId);
+      await refreshRunResultThroughApi(confirmedRunId);
+      visualizationBackendControlStatus = `后端已确认${label}：run ${confirmedRunId} / ${runStatusLabel(backendRun)}`;
+    } catch (err) {
+      visualizationBackendControlStatus = `${label}失败：${formatBackendError(err)}`;
+    }
+    return;
+  }
   if (visualizationStateSeries && !isVisualizationStateSeriesFromStream()) {
     if (action === "step") {
       visualizationReplayIndex = nextReplayIndex(visualizationStateSeries, visualizationReplayIndex, 1);
@@ -5790,6 +5833,12 @@ function renderVisualSimulation(page) {
           <button type="button" class="btn-primary" data-mesa-control="play">${visualizationReplayPlaying ? "暂停" : "运行"}</button>
           <button type="button" data-mesa-control="step">单步</button>
           <button type="button" data-mesa-control="reset">重置</button>
+          <button type="button" data-mesa-control="backend-cancel">取消运行</button>
+          <button type="button" data-mesa-control="backend-retry">重试运行</button>
+          <button type="button" data-mesa-control="backend-pause">后端暂停</button>
+          <button type="button" data-mesa-control="backend-resume">后端恢复</button>
+          <button type="button" data-mesa-control="backend-step">后端单步</button>
+          <button type="button" data-mesa-control="backend-reset">后端重置</button>
         </div>
       </div>
       <div class="event ${visualizationStateSeriesFrame ? "success" : "warning"}">
@@ -5799,6 +5848,9 @@ function renderVisualSimulation(page) {
       <div class="event ${visualizationStreamEventClass()}" data-mesa-stream-status>
         <strong>M9.2 在线状态流</strong> ${htmlEscape(visualizationStreamState.message)}
         <br>run_id ${htmlEscape(visualizationStreamState.runId || "-")} / status ${htmlEscape(visualizationStreamState.status)} / events ${htmlEscape(visualizationStreamState.eventCount || 0)} / artifact ${htmlEscape(visualizationStreamState.artifactId || "-")}
+      </div>
+      <div class="event info" data-mesa-backend-control-status>
+        <strong>M9.3 后端运行控制</strong> ${htmlEscape(visualizationBackendControlStatus)}
       </div>
       <div class="mesa-toolbar">
         <input type="range" min="0" max="${timelineMax}" value="${Math.min(visualizationReplayIndex, timelineMax)}" data-mesa-timeline ${visualizationStateSeriesFrame && !isOnlineStreamFrame ? "" : "disabled"} aria-label="M9 state_series 时间轴">

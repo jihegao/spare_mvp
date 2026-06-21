@@ -5,12 +5,15 @@ import json
 import http.client
 from pathlib import Path
 import sqlite3
+import sys
 import tempfile
 from threading import Thread
 import unittest
 from unittest import mock
 from urllib import request
 from urllib.parse import quote
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.spare_mvp_backend.http_server import create_backend_server
 
@@ -338,6 +341,92 @@ class BackendHttpApiTest(unittest.TestCase):
                 )
                 self.assertEqual(status, 410)
                 self.assertEqual(payload["code"], "run_deleted")
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
+    def test_http_m9_3_run_control_requires_admin_and_records_audit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            server = create_backend_server(
+                ("127.0.0.1", 0),
+                repo_root=REPO_ROOT,
+                database_path=":memory:",
+                output_dir=Path(tmp) / "artifacts",
+            )
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                base_url = f"http://127.0.0.1:{server.server_address[1]}/api"
+                submitted = self._submit_m7_http_run(base_url)
+                run_id = submitted["run"]["run_id"]
+                encoded_run_id = quote(run_id, safe="")
+                admin_token = self._login_token(base_url, "admin", "admin")
+                data_token = self._login_token(base_url, "data", "data")
+                user_token = self._login_token(base_url, "user", "user")
+
+                unauthenticated = self._json_error(
+                    base_url,
+                    "POST",
+                    f"/runs/{encoded_run_id}/control",
+                    {"action": "cancel"},
+                )
+                forbidden_status, forbidden = self._json_error_with_status(
+                    base_url,
+                    "POST",
+                    f"/runs/{encoded_run_id}/control",
+                    {"action": "cancel"},
+                    auth_token=user_token,
+                )
+                still_running_detail = self._json(base_url, "GET", f"/runs/{encoded_run_id}/detail")
+                audit_after_denial = self._json(
+                    base_url,
+                    "GET",
+                    f"/audit-events?resource_id={encoded_run_id}",
+                    auth_token=admin_token,
+                )
+
+                self.assertEqual(unauthenticated["code"], "unauthorized")
+                self.assertEqual(forbidden_status, 403)
+                self.assertEqual(forbidden["code"], "forbidden")
+                self.assertEqual(still_running_detail["run"]["status"], "succeeded")
+                self.assertEqual(audit_after_denial["events"][-1]["action"], "runs.control.cancel")
+                self.assertEqual(audit_after_denial["events"][-1]["outcome"], "denied")
+                self.assertEqual(audit_after_denial["events"][-1]["actor_user_id"], "user-basic")
+
+                cancelled = self._json(
+                    base_url,
+                    "POST",
+                    f"/runs/{encoded_run_id}/control",
+                    {"action": "cancel"},
+                    auth_token=admin_token,
+                )
+                retried = self._json(
+                    base_url,
+                    "POST",
+                    f"/runs/{encoded_run_id}/control",
+                    {"action": "retry"},
+                    auth_token=data_token,
+                )
+                audit = self._json(
+                    base_url,
+                    "GET",
+                    f"/audit-events?resource_id={encoded_run_id}",
+                    auth_token=admin_token,
+                )
+
+                self.assertEqual(cancelled["status"], "cancelled")
+                self.assertEqual(cancelled["phase"], "cancelled")
+                self.assertEqual(cancelled["cancelled_by"], "user-admin")
+                self.assertEqual(retried["status"], "queued")
+                self.assertEqual(retried["phase"], "queued")
+                self.assertEqual(retried["progress"], 0)
+                self.assertEqual(retried["retried_by"], "user-data")
+                actions = [event["action"] for event in audit["events"]]
+                self.assertIn("runs.control.cancel", actions)
+                self.assertIn("runs.control.retry", actions)
+                allowed = [event for event in audit["events"] if event["outcome"] == "allowed"]
+                self.assertEqual([event["actor_user_id"] for event in allowed[-2:]], ["user-admin", "user-data"])
             finally:
                 server.shutdown()
                 server.server_close()
