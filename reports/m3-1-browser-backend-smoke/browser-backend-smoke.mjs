@@ -108,10 +108,14 @@ try {
   }
   await page.screenshot({ path: `${screenshotDir}/02b-restart-restored-import.png`, fullPage: true });
 
-  const offlinePage = await context.newPage();
+  const offlineContext = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+  await offlineContext.addInitScript(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+  });
+  const offlinePage = await offlineContext.newPage();
   trackApiEvents(offlinePage, apiEvents);
-  await offlinePage.goto(baseUrl, { waitUntil: "domcontentloaded", timeout: 10000 });
-  await offlinePage.evaluate(() => localStorage.clear());
+  await offlinePage.goto(loginRouteUrl(baseUrl), { waitUntil: "domcontentloaded", timeout: 10000 });
   await loginAndEnterProject(offlinePage);
   await offlinePage.route("**/api/**", (route) =>
     route.fulfill({
@@ -133,6 +137,7 @@ try {
     throw new Error("/api unavailable path created a fake offline-demo-run");
   }
   await offlinePage.screenshot({ path: `${screenshotDir}/03-api-unavailable-blocked.png`, fullPage: true });
+  await offlineContext.close();
 
   const result = {
     ok: true,
@@ -466,6 +471,12 @@ function assertHasIdentityChain(chain, label) {
 
 function firstMatchingLine(text, needle) {
   return text.split("\n").find((line) => line.includes(needle)) || "";
+}
+
+function loginRouteUrl(url) {
+  const parsed = new URL(url);
+  parsed.hash = "route=login";
+  return parsed.toString();
 }
 
 function trackApiEvents(page, events) {

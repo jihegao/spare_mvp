@@ -1665,7 +1665,7 @@ test("M7 browser smoke helper verifies archive and tombstone evidence", async ()
     smokeSource.indexOf("async function verifyM7RunArtifactManagement")
   );
   const offlineSource = smokeSource.slice(
-    smokeSource.indexOf("const offlinePage = await context.newPage()"),
+    smokeSource.indexOf("const offlineContext = await browser.newContext"),
     smokeSource.indexOf("const result = {")
   );
 
@@ -1674,9 +1674,18 @@ test("M7 browser smoke helper verifies archive and tombstone evidence", async ()
   assert.match(readEvidenceSource, /function waitForBackendIdentityChain/);
   assert.match(readEvidenceSource, /requiredKeys = \["Project", "Snapshot", "ExperimentPlan", "Scenario", "Run", "Result", "ArtifactManifest"\]/);
   assert.match(readEvidenceSource, /requiredKeys\.every\(\(key\) => labels\.includes\(key\)\)/);
+  assert.match(offlineSource, /const offlineContext = await browser\.newContext/);
+  assert.match(offlineSource, /offlineContext\.addInitScript/);
+  assert.match(offlineSource, /localStorage\.clear\(\)/);
+  assert.match(offlineSource, /sessionStorage\.clear\(\)/);
+  assert.match(offlineSource, /loginRouteUrl\(baseUrl\)/);
   assert.ok(
     offlineSource.indexOf("await loginAndEnterProject(offlinePage)") < offlineSource.indexOf('offlinePage.route("**/api/**"'),
     "offline smoke should block /api after login and project entry"
+  );
+  assert.ok(
+    offlineSource.indexOf("offlineContext.addInitScript") < offlineSource.indexOf("await offlinePage.goto"),
+    "offline smoke should clear storage before app boot"
   );
   for (const token of [
     "runListVisibleIncludesRunId",
