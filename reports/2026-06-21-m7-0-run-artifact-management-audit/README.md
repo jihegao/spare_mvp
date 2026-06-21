@@ -2,12 +2,12 @@
 
 ## Status
 
-M7.0 Task 4 文档同步与边界审计完成。当前实现口径来自：
+M7.0 Task 5 最终验证完成。当前实现口径来自：
 
 - `docs/superpowers/specs/2026-06-21-m7-0-run-artifact-management-design.md`
 - `docs/superpowers/plans/2026-06-21-m7-0-run-artifact-management.md`
 
-M7.0 当前只把本地同步 run 的运行账本和产物账本补成可管理、可下载、可归档、可软删除、可审计的最小闭环；后续 Task 5 仍需要完成最终浏览器 smoke 证据。
+M7.0 当前只把本地同步 run 的运行账本和产物账本补成可管理、可下载、可归档、可软删除、可审计的最小闭环；最终浏览器 smoke 已通过并记录 run/artifact 管理证据。
 
 ## Scope
 
@@ -39,29 +39,35 @@ M7.0 运行与产物管理只管理 canonical /api/runs 的运行账本、产物
 已知当前分支验证证据：
 
 1. Backend focused command: `.abm-mesa-test-env/bin/python -m unittest tests.test_simulation_adapter tests.test_backend_api_contract tests.test_backend_http_api tests.test_database_contract` PASS, 116 tests.
-2. Frontend command: `npm test` PASS, 193 tests after M7 cold refresh test.
-3. Diff hygiene: `git diff --check` PASS.
-4. Browser smoke: pending final Task 5 verification. 本报告不声明浏览器 smoke PASS。
+2. Frontend command: `npm test` PASS, 196 tests.
+3. Frontend contract command: `npm test -- tests/frontend-contract.test.mjs` PASS, 83 tests.
+4. Browser smoke command: `SMOKE_BASE_URL=http://127.0.0.1:4173/front/ node reports/m3-1-browser-backend-smoke/browser-backend-smoke.mjs` PASS.
+5. Diff hygiene: `git diff --check` PASS in previous stages; final controller will rerun after this commit.
 
-Task 4 文档同步后需再次运行：
+本报告更新时运行：
 
 ```bash
 test -f reports/2026-06-21-m7-0-run-artifact-management-audit/README.md
-rg -n "M7\.0|运行与产物管理|legacy /api/simulation-runs|worker queue|object storage|M8 projection|M9 state stream|aviation_support" README.md docs/README.md docs/product-roadmap.md agent.md reports/2026-06-21-m7-0-run-artifact-management-audit/README.md
+rg -n "Browser smoke|PASS|196|runListVisibleIncludesRunId|downloadObserved|archiveStateVisible|tombstoneVisible|physicalDeletionImplied|M7\.0|运行与产物管理" reports/2026-06-21-m7-0-run-artifact-management-audit/README.md
 git diff --check
 ```
 
 ## Evidence
 
-Expected final browser evidence for Task 5:
+Final browser evidence for Task 5 from `output/playwright/m3-1-browser-backend-smoke/browser-backend-smoke-result.json`:
 
-1. Run list visible.
-2. Run detail visible.
-3. Artifact row includes `artifact_id`, `sha256`, and `size_bytes`.
-4. One artifact download request observed.
-5. Archive state visible.
-6. Soft-delete tombstone visible.
-7. Legacy `/api/simulation-runs` remains retired and returns the retired-route contract.
+1. Smoke result `ok: true`.
+2. `m7RunArtifactEvidence.runListVisibleIncludesRunId: true`.
+3. `m7RunArtifactEvidence.detailVisible: true`.
+4. `m7RunArtifactEvidence.artifactColumnsVisible: true`.
+5. `m7RunArtifactEvidence.artifactSha25664: true`.
+6. `m7RunArtifactEvidence.downloadObserved: true`.
+7. `m7RunArtifactEvidence.filenameIncludesArtifactId: true`.
+8. `m7RunArtifactEvidence.archiveStateVisible: true`.
+9. `m7RunArtifactEvidence.tombstoneVisible: true`.
+10. `m7RunArtifactEvidence.softDeleteBoundaryVisible: true`.
+11. `m7RunArtifactEvidence.physicalDeletionImplied: false`.
+12. `offlineBlocked.hasNoFakeRun: true`.
 
 Documentation evidence added in Task 4:
 
