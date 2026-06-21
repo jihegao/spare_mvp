@@ -155,6 +155,27 @@ test("frontend API client exposes M7 run artifact management routes", async () =
   assert.equal(downloadRequest.responseType, "blob");
 });
 
+test("frontend API client posts M9.3 run control actions to canonical route", async () => {
+  const calls = [];
+  const client = createBackendApiClient({
+    transport: async (request) => {
+      calls.push(request);
+      if (request.path === "/runs/run-ui/control") {
+        return { run_id: "run-ui", status: "cancelled", phase: "cancelled", control: { action: "cancel" } };
+      }
+      throw new Error(`unexpected ${request.method} ${request.path}`);
+    }
+  });
+
+  const controlled = await client.controlRun("run-ui", "cancel");
+
+  assert.equal(controlled.status, "cancelled");
+  assert.deepEqual(calls.map((call) => `${call.method} ${call.path}`), [
+    "POST /runs/run-ui/control"
+  ]);
+  assert.deepEqual(calls[0].body, { action: "cancel" });
+});
+
 test("frontend API client reads run artifact JSON payloads for M8 analysis projections", async () => {
   const calls = [];
   const client = createBackendApiClient({

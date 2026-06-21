@@ -2,14 +2,20 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import http.client
 import json
 import sqlite3
+import sys
 import tempfile
+import threading
 from pathlib import Path
 from typing import Any
 import unittest
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 from src.spare_mvp_backend.api import BackendApi, BackendApiError
+from src.spare_mvp_backend.http_server import create_backend_server
 from src.spare_mvp_backend.modeling_import import modeling_import_to_project
 from src.spare_mvp_backend.repository import ContractRepository, initialize_database
 from src.spare_mvp_backend.run_service import RunService, RunServiceError
@@ -32,6 +38,7 @@ M7_MONTE_CARLO_ARTIFACT_KINDS = {
     "analysis_projection_carry_list",
     "analysis_projection_mission_reliability",
     "analysis_projection_downtime_factors",
+    "visualization_state_series",
 }
 
 
@@ -123,6 +130,9 @@ class BackendApiContractTest(unittest.TestCase):
 
     def _artifact_by_kind(self, manifest: dict, kind: str) -> dict:
         return next(artifact for artifact in manifest["artifacts"] if artifact["kind"] == kind)
+
+    def _state_series_artifact(self, run_id: str) -> dict:
+        return self._artifact_by_kind(self.api.get_run_artifacts(run_id), "visualization_state_series")
 
     def _submit_successful_smoke_run(self) -> dict[str, Any]:
         project = self._fixture("smoke_project.json")
@@ -305,6 +315,478 @@ class BackendApiContractTest(unittest.TestCase):
         audit = self.repository.list_audit_events(resource_id=run["run_id"])
         self.assertEqual([event["action"] for event in audit], ["runs.artifact.download"])
         self.assertEqual(audit[0]["actor_user_id"], "user-admin")
+
+    def test_successful_smoke_runs_publish_downloadable_visualization_state_series(self) -> None:
+        project = self._fixture("smoke_project.json")
+        branch_project = copy.deepcopy(project)
+        saved = self.api.save_project(project)
+        self.api.create_modeling_snapshot(saved["project_id"])
+        single_plan = self.api.create_experiment_plan(
+            saved["project_id"],
+            {"name": "m9 single state series", "steps": 2},
+        )
+        monte_carlo_plan = self.api.create_experiment_plan(
+            saved["project_id"],
+            {
+                "name": "m9 mc state series",
+                "steps": 2,
+                "projectJson": branch_project,
+                "analysisRequests": {
+                    "largeSample": {
+                        "enabled": True,
+                        "samples": 3,
+                        "sweep": {
+                            "failureRates": [0.05],
+                            "spareMultipliers": [1.0],
+                            "supportCapacities": [2],
+                        },
+                    }
+                },
+            },
+        )
+        submitted_runs = [
+            self.api.submit_run(
+                {
+                    "project_id": saved["project_id"],
+                    "experiment_plan_id": single_plan["experiment_plan_id"],
+                    "model_family": "smoke",
+                    "run_type": "single",
+                }
+            ),
+            self.api.submit_run(
+                {
+                    "project_id": saved["project_id"],
+                    "experiment_plan_id": monte_carlo_plan["experiment_plan_id"],
+                    "model_family": "smoke",
+                    "run_type": "monte_carlo",
+                }
+            ),
+        ]
+
+        for submitted in submitted_runs:
+            with self.subTest(run_type=submitted["run_type"]):
+                manifest = self.api.get_run_artifacts(submitted["run_id"])
+                state_series_artifact = self._artifact_by_kind(manifest, "visualization_state_series")
+                payload_path = Path(self.api.output_dir) / state_series_artifact["path"]
+                payload_data = payload_path.read_bytes()
+                payload = json.loads(payload_data.decode("utf-8"))
+                download = self.api.get_run_artifact_download(
+                    submitted["run_id"],
+                    state_series_artifact["artifact_id"],
+                    actor_user_id="user-admin",
+                )
+
+                self.assertEqual(state_series_artifact["schema_version"], "visualization-state-series-v0")
+                self.assertEqual(state_series_artifact["media_type"], "application/json")
+                self.assertEqual(state_series_artifact["source_run_id"], submitted["run_id"])
+                self.assertEqual(state_series_artifact["source_result_summary_id"], submitted["result_summary_id"])
+                self.assertEqual(state_series_artifact["source_scenario_id"], submitted["scenario_id"])
+                self.assertEqual(hashlib.sha256(payload_data).hexdigest(), state_series_artifact["sha256"])
+                self.assertEqual(len(payload_data), state_series_artifact["size_bytes"])
+                self.assertEqual(download["body"], payload_data)
+                self.assertEqual(payload["schema_version"], "visualization-state-series-v0")
+                self.assertEqual(payload["run_id"], submitted["run_id"])
+                self.assertEqual(payload["scenario_id"], submitted["scenario_id"])
+                self.assertEqual(payload["scenario_version"], manifest["scenario_version"])
+                self.assertEqual(payload["model_family"], "smoke")
+                self.assertEqual(payload["artifact_manifest_id"], submitted["artifact_manifest_id"])
+                self.assertEqual(payload["result_summary_id"], submitted["result_summary_id"])
+                self.assertEqual(payload["run_config_artifact_id"], f"run_config-{submitted['run_id']}")
+                self.assertEqual(payload["input_project_artifact_id"], f"input_project-{submitted['run_id']}")
+                self.assertEqual(payload["compiled_scenario_artifact_id"], f"compiled_scenario-{submitted['run_id']}")
+                self.assertGreater(len(payload["frames"]), 0)
+                frame_steps = [frame["step"] for frame in payload["frames"]]
+                self.assertEqual(frame_steps, sorted(frame_steps))
+                self.assertEqual(len(frame_steps), len(set(frame_steps)))
+                for frame in payload["frames"]:
+                    self.assertEqual(frame["run_id"], submitted["run_id"])
+                    self.assertEqual(frame["trace"]["run_id"], submitted["run_id"])
+                    self.assertEqual(frame["trace"]["scenario_id"], submitted["scenario_id"])
+                    self.assertEqual(frame["trace"]["result_summary_id"], submitted["result_summary_id"])
+                    self.assertEqual(frame["trace"]["artifact_manifest_id"], submitted["artifact_manifest_id"])
+                    self.assertIsInstance(frame["step"], int)
+                    self.assertIsInstance(frame["aircraft_state"], dict)
+                    self.assertIsInstance(frame["mission_state"], dict)
+                    self.assertIsInstance(frame["resource_state"], dict)
+                    self.assertIsInstance(frame["event_summary"], dict)
+                    self.assertIsInstance(frame["aircraft"], list)
+                    self.assertIsInstance(frame["missions"], list)
+                    self.assertIsInstance(frame["resources"], list)
+                    self.assertIsInstance(frame["events"], list)
+                    self.assertGreater(len(frame["aircraft"]), 0)
+                    self.assertGreater(len(frame["missions"]), 0)
+                    self.assertGreater(len(frame["resources"]), 0)
+                    self.assertGreater(len(frame["events"]), 0)
+                    for event in frame["events"]:
+                        self.assertTrue(event["event_id"])
+                        self.assertEqual(event["run_id"], submitted["run_id"])
+                        self.assertEqual(event["step"], frame["step"])
+                        self.assertIsInstance(event["metric_refs"], list)
+                    if submitted["run_type"] == "monte_carlo":
+                        self.assertIsInstance(frame["sample_index"], int)
+                        self.assertIsInstance(frame["sample_step"], int)
+
+    def test_m9_2_subscribe_run_state_stream_reuses_visualization_state_series(self) -> None:
+        submitted = self._submit_successful_smoke_run()
+        run_id = submitted["run_id"]
+        artifact = self._state_series_artifact(run_id)
+        payload = json.loads((Path(self.api.output_dir) / artifact["path"]).read_text(encoding="utf-8"))
+
+        envelope = self.api.subscribe_run_state_stream(run_id)
+
+        self.assertEqual(envelope["stream_id"], f"state-stream-{run_id}")
+        self.assertEqual(envelope["run_id"], run_id)
+        self.assertEqual(envelope["status"]["run_id"], run_id)
+        self.assertEqual(envelope["status"]["status"], "succeeded")
+        self.assertEqual(envelope["artifact_id"], artifact["artifact_id"])
+        event_types = [event["event_type"] for event in envelope["events"]]
+        self.assertEqual(event_types, ["run_status", *["state_frame"] * len(payload["frames"]), "artifact_ready"])
+        self.assertEqual(envelope["events"][0]["payload"], envelope["status"])
+        for index, event in enumerate(envelope["events"][1:-1]):
+            source_frame = payload["frames"][index]
+            self.assertEqual(event["event_type"], "state_frame")
+            self.assertEqual(
+                event["payload"],
+                {
+                    "schema_version": "visualization-state-frame-v0",
+                    "stream_id": f"state-stream-{run_id}",
+                    "run_id": run_id,
+                    "artifact_id": artifact["artifact_id"],
+                    "scenario_id": payload["scenario_id"],
+                    "scenario_version": payload["scenario_version"],
+                    "model_family": payload["model_family"],
+                    "artifact_manifest_id": payload["artifact_manifest_id"],
+                    "result_summary_id": payload["result_summary_id"],
+                    "run_config_artifact_id": payload["run_config_artifact_id"],
+                    "input_project_artifact_id": payload["input_project_artifact_id"],
+                    "compiled_scenario_artifact_id": payload["compiled_scenario_artifact_id"],
+                    "step": source_frame["step"],
+                    "frame_index": index,
+                    "frame_count": len(payload["frames"]),
+                    "frame": source_frame,
+                },
+            )
+        self.assertEqual(envelope["events"][-1]["event_type"], "artifact_ready")
+        self.assertEqual(envelope["events"][-1]["payload"]["run_id"], run_id)
+        self.assertEqual(envelope["events"][-1]["payload"]["artifact_id"], artifact["artifact_id"])
+        self.assertEqual(envelope["events"][-1]["payload"]["kind"], "visualization_state_series")
+
+        with self.assertRaises(KeyError):
+            self.api.subscribe_run_state_stream("run-missing")
+
+    def test_m9_3_run_control_cancel_is_backend_confirmed_and_audited(self) -> None:
+        submitted = self._submit_successful_smoke_run()
+        run_id = submitted["run_id"]
+
+        controlled = self.api.control_run(run_id, "cancel", actor_user_id="user-admin")
+
+        self.assertEqual(controlled["run_id"], run_id)
+        self.assertEqual(controlled["status"], "cancelled")
+        self.assertEqual(controlled["phase"], "cancelled")
+        self.assertEqual(controlled["progress"], 1)
+        self.assertTrue(controlled["cancelled_at"])
+        self.assertEqual(controlled["cancelled_by"], "user-admin")
+        self.assertEqual(controlled["control"]["action"], "cancel")
+        self.assertEqual(controlled["control"]["outcome"], "allowed")
+        self.assertEqual(controlled["control"]["actor_user_id"], "user-admin")
+        self.assertTrue(controlled["control"]["controlled_at"])
+
+        stored = self.api.get_run(run_id)
+        self.assertEqual(stored["status"], "cancelled")
+        self.assertEqual(stored["cancelled_by"], "user-admin")
+        events = self.repository.list_audit_events(resource_id=run_id)
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["action"], "runs.control.cancel")
+        self.assertEqual(events[0]["outcome"], "allowed")
+        self.assertEqual(events[0]["actor_user_id"], "user-admin")
+        self.assertEqual(events[0]["details"]["status"], "cancelled")
+
+    def test_m9_3_unsupported_run_control_fails_closed_and_audits_denial(self) -> None:
+        submitted = self._submit_successful_smoke_run()
+        run_id = submitted["run_id"]
+        before = self.api.get_run(run_id)
+
+        with self.assertRaises(BackendApiError) as ctx:
+            self.api.control_run(run_id, "pause", actor_user_id="user-admin")
+
+        self.assertEqual(ctx.exception.code, "unsupported_run_control")
+        self.assertEqual(self.api.get_run(run_id), before)
+        events = self.repository.list_audit_events(resource_id=run_id)
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["action"], "runs.control.pause")
+        self.assertEqual(events[0]["outcome"], "denied")
+        self.assertEqual(events[0]["actor_user_id"], "user-admin")
+        self.assertEqual(events[0]["details"]["reason"], "unsupported_run_control")
+
+        deleted = self.api.soft_delete_run(run_id, actor_user_id="user-admin")
+        self.assertEqual(deleted["lifecycle_status"], "deleted")
+        with self.assertRaises(BackendApiError) as deleted_ctx:
+            self.api.control_run(run_id, "cancel", actor_user_id="user-admin")
+        self.assertEqual(deleted_ctx.exception.code, "run_deleted")
+        deleted_events = self.repository.list_audit_events(resource_id=run_id)
+        self.assertEqual(deleted_events[-1]["action"], "runs.control.cancel")
+        self.assertEqual(deleted_events[-1]["outcome"], "denied")
+        self.assertEqual(deleted_events[-1]["details"]["reason"], "run_deleted")
+
+    def test_m9_3_retry_blocks_stale_official_result_and_artifact_reads(self) -> None:
+        submitted = self._submit_successful_smoke_run()
+        run_id = submitted["run_id"]
+        self.assertEqual(self.api.get_run_result(run_id)["run_id"], run_id)
+        self.assertEqual(self.api.get_run_artifacts(run_id)["run_id"], run_id)
+
+        self.api.control_run(run_id, "cancel", actor_user_id="user-admin")
+        retried = self.api.control_run(run_id, "retry", actor_user_id="user-admin")
+
+        self.assertEqual(retried["status"], "queued")
+        self.assertEqual(retried["phase"], "queued")
+        self.assertEqual(retried["progress"], 0)
+        self.assertIsNone(retried["result_summary_id"])
+        self.assertIsNone(retried["artifact_manifest_id"])
+        with self.assertRaises(KeyError):
+            self.api.get_run_result(run_id)
+        with self.assertRaises(KeyError):
+            self.api.get_run_artifacts(run_id)
+
+    def test_m9_3_retry_keeps_run_detail_refreshable_with_pending_manifest(self) -> None:
+        submitted = self._submit_successful_smoke_run()
+        run_id = submitted["run_id"]
+
+        self.api.control_run(run_id, "cancel", actor_user_id="user-admin")
+        self.api.control_run(run_id, "retry", actor_user_id="user-admin")
+        detail = self.api.get_run_detail(run_id)
+
+        self.assertEqual(detail["run"]["status"], "queued")
+        self.assertEqual(detail["run"]["phase"], "queued")
+        self.assertIsNone(detail["result_summary"])
+        self.assertEqual(detail["artifact_manifest"]["run_id"], run_id)
+        self.assertEqual(
+            detail["artifact_manifest"]["artifact_manifest_id"],
+            f"artifact-manifest-{run_id}-retry-pending",
+        )
+        self.assertEqual(detail["artifact_manifest"]["status"], "pending")
+        self.assertEqual(detail["artifact_manifest"]["artifacts"], [])
+        self.assertEqual(detail["chain"]["artifact_manifest_id"], detail["artifact_manifest"]["artifact_manifest_id"])
+        self.assertEqual(detail["download_base"], f"/api/runs/{run_id}/artifacts")
+
+    def test_m9_3_cancel_after_retry_keeps_detail_refreshable_without_stale_outputs(self) -> None:
+        submitted = self._submit_successful_smoke_run()
+        run_id = submitted["run_id"]
+
+        first_cancel = self.api.control_run(run_id, "cancel", actor_user_id="user-data")
+        retried = self.api.control_run(run_id, "retry", actor_user_id="user-admin")
+        self.assertIsNone(retried.get("cancelled_at"))
+        self.assertIsNone(retried.get("cancelled_by"))
+        second_cancel = self.api.control_run(run_id, "cancel", actor_user_id="user-admin")
+        detail = self.api.get_run_detail(run_id)
+
+        self.assertEqual(detail["run"]["status"], "cancelled")
+        self.assertEqual(detail["run"]["phase"], "cancelled")
+        self.assertTrue(first_cancel["cancelled_at"])
+        self.assertTrue(second_cancel["cancelled_at"])
+        self.assertEqual(second_cancel["cancelled_by"], "user-admin")
+        self.assertEqual(detail["run"]["cancelled_at"], second_cancel["cancelled_at"])
+        self.assertEqual(detail["run"]["cancelled_by"], "user-admin")
+        self.assertIsNone(detail["run"]["result_summary_id"])
+        self.assertIsNone(detail["run"]["artifact_manifest_id"])
+        self.assertIsNone(detail["result_summary"])
+        self.assertEqual(detail["artifact_manifest"]["run_id"], run_id)
+        self.assertEqual(
+            detail["artifact_manifest"]["artifact_manifest_id"],
+            f"artifact-manifest-{run_id}-retry-pending",
+        )
+        self.assertEqual(detail["artifact_manifest"]["status"], "pending")
+        self.assertEqual(detail["artifact_manifest"]["artifacts"], [])
+        self.assertEqual(detail["chain"]["artifact_manifest_id"], detail["artifact_manifest"]["artifact_manifest_id"])
+        with self.assertRaises(KeyError):
+            self.api.get_run_result(run_id)
+        with self.assertRaises(KeyError):
+            self.api.get_run_artifacts(run_id)
+
+    def test_m9_2_subscribe_run_state_stream_fails_closed_for_invalid_state_series(self) -> None:
+        cases = (
+            (
+                "deleted",
+                lambda run_id, manifest, artifact: self.api.soft_delete_run(run_id, actor_user_id="user-admin"),
+                "run_deleted",
+            ),
+            (
+                "missing",
+                lambda run_id, manifest, artifact: (
+                    manifest["artifacts"].remove(artifact),
+                    self.repository.upsert_artifact_manifest(manifest),
+                ),
+                "visualization_state_series_missing",
+            ),
+            (
+                "path_escape",
+                lambda run_id, manifest, artifact: (
+                    artifact.update({"path": "../escape.json"}),
+                    self.repository.upsert_artifact_manifest(manifest),
+                ),
+                "artifact_path_escape",
+            ),
+            (
+                "run_mismatch",
+                self._write_mismatched_state_series_payload,
+                "visualization_state_series_run_mismatch",
+            ),
+            (
+                "malformed_json",
+                lambda run_id, manifest, artifact: (
+                    (Path(self.api.output_dir) / artifact["path"]).write_text("{", encoding="utf-8")
+                ),
+                "visualization_state_series_invalid",
+            ),
+            (
+                "missing_frame_trace",
+                self._remove_state_series_frame_trace,
+                "visualization_state_series_invalid",
+            ),
+        )
+        for label, mutate, expected_code in cases:
+            with self.subTest(label):
+                submitted = self._submit_successful_smoke_run()
+                run_id = submitted["run_id"]
+                manifest = self.api.get_run_artifacts(run_id)
+                artifact = self._artifact_by_kind(manifest, "visualization_state_series")
+                mutate(run_id, manifest, artifact)
+
+                with self.assertRaises(BackendApiError) as ctx:
+                    self.api.subscribe_run_state_stream(run_id)
+
+                self.assertEqual(ctx.exception.code, expected_code)
+
+    def _write_mismatched_state_series_payload(self, run_id: str, manifest: dict, artifact: dict) -> None:
+        target = Path(self.api.output_dir) / artifact["path"]
+        payload = json.loads(target.read_text(encoding="utf-8"))
+        payload["run_id"] = f"{run_id}-other"
+        target.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    def _remove_state_series_frame_trace(self, run_id: str, manifest: dict, artifact: dict) -> None:
+        target = Path(self.api.output_dir) / artifact["path"]
+        payload = json.loads(target.read_text(encoding="utf-8"))
+        del payload["frames"][0]["trace"]
+        target.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    def test_m9_2_http_state_stream_returns_sse_for_bearer_and_access_token_auth(self) -> None:
+        server, thread, run_id, token = self._start_state_stream_server()
+        try:
+            for label, path, headers in (
+                (
+                    "bearer",
+                    f"/api/runs/{run_id}/state-stream",
+                    {"Authorization": f"Bearer {token}"},
+                ),
+                (
+                    "access_token",
+                    f"/api/runs/{run_id}/state-stream?access_token={token}",
+                    {},
+                ),
+            ):
+                with self.subTest(label):
+                    response, body = self._http_request(server, "GET", path, headers=headers)
+
+                    self.assertEqual(response.status, 200)
+                    self.assertEqual(response.getheader("content-type"), "text/event-stream; charset=utf-8")
+                    self.assertEqual(response.getheader("cache-control"), "no-cache")
+                    self.assertIsNone(response.getheader("access-control-allow-origin"))
+                    events = self._parse_sse_events(body.decode("utf-8"))
+                    self.assertEqual(events[0][0], "run_status")
+                    self.assertIn("state_frame", [event_type for event_type, _payload in events])
+                    self.assertEqual(events[-1][0], "artifact_ready")
+                    state_frame = next(payload for event_type, payload in events if event_type == "state_frame")
+                    self.assertEqual(state_frame["schema_version"], "visualization-state-frame-v0")
+                    self.assertEqual(state_frame["run_id"], run_id)
+                    self.assertTrue(state_frame["artifact_id"].startswith("visualization_state_series-"))
+                    self.assertEqual(state_frame["artifact_manifest_id"], f"artifact-manifest-{run_id}")
+        finally:
+            self._stop_http_server(server, thread)
+
+    def test_m9_2_http_state_stream_requires_auth_and_maps_unknown_run_to_404(self) -> None:
+        server, thread, run_id, token = self._start_state_stream_server()
+        try:
+            missing_auth, missing_body = self._http_request(server, "GET", f"/api/runs/{run_id}/state-stream")
+            unknown, unknown_body = self._http_request(
+                server,
+                "GET",
+                "/api/runs/run-missing/state-stream",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            json_api_with_query_token, _ = self._http_request(
+                server,
+                "GET",
+                f"/api/auth/session?access_token={token}",
+            )
+
+            self.assertEqual(missing_auth.status, 401)
+            self.assertEqual(json.loads(missing_body.decode("utf-8"))["code"], "unauthorized")
+            self.assertEqual(unknown.status, 404)
+            self.assertEqual(json.loads(unknown_body.decode("utf-8"))["code"], "not_found")
+            self.assertEqual(json_api_with_query_token.status, 401)
+        finally:
+            self._stop_http_server(server, thread)
+
+    def _start_state_stream_server(self) -> tuple[Any, threading.Thread, str, str]:
+        database_path = Path(self.tempdir.name) / "state-stream.sqlite3"
+        connection = sqlite3.connect(database_path)
+        try:
+            initialize_database(connection)
+            repository = ContractRepository(connection)
+            api = BackendApi(repository, RecordingAdapter(), output_dir=Path(self.tempdir.name))
+            token = api.login("admin", "admin")["session"]["token"]
+            project = self._fixture("smoke_project.json")
+            saved = api.save_project(project)
+            api.create_modeling_snapshot(saved["project_id"])
+            plan = api.create_experiment_plan(saved["project_id"], {"name": "http state stream", "steps": 2})
+            submitted = api.submit_run(
+                {
+                    "project_id": saved["project_id"],
+                    "experiment_plan_id": plan["experiment_plan_id"],
+                    "model_family": "smoke",
+                    "run_type": "single",
+                }
+            )
+        finally:
+            connection.close()
+        server = create_backend_server(
+            ("127.0.0.1", 0),
+            repo_root=REPO_ROOT,
+            database_path=database_path,
+            output_dir=Path(self.tempdir.name),
+        )
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        return server, thread, submitted["run_id"], token
+
+    def _http_request(
+        self,
+        server: Any,
+        method: str,
+        path: str,
+        *,
+        headers: dict[str, str] | None = None,
+    ) -> tuple[http.client.HTTPResponse, bytes]:
+        connection = http.client.HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+        try:
+            connection.request(method, path, headers=headers or {})
+            response = connection.getresponse()
+            return response, response.read()
+        finally:
+            connection.close()
+
+    def _parse_sse_events(self, body: str) -> list[tuple[str, dict[str, Any]]]:
+        events = []
+        for block in body.strip().split("\n\n"):
+            lines = block.splitlines()
+            event_type = next(line.removeprefix("event: ").strip() for line in lines if line.startswith("event: "))
+            data = next(line.removeprefix("data: ").strip() for line in lines if line.startswith("data: "))
+            events.append((event_type, json.loads(data)))
+        return events
+
+    def _stop_http_server(self, server: Any, thread: threading.Thread) -> None:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
 
     def test_backend_api_requires_explicit_actor_for_m7_lifecycle_and_download(self) -> None:
         run = self._submit_successful_smoke_run()

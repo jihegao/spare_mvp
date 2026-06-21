@@ -24,6 +24,7 @@ SCENARIO_SCHEMA_VERSION = "scenario-v0"
 RUN_SCHEMA_VERSION = "run-v0"
 RESULT_SCHEMA_VERSION = "result-v0"
 ARTIFACT_MANIFEST_SCHEMA_VERSION = "artifact-manifest-v0"
+VISUALIZATION_STATE_SERIES_SCHEMA_VERSION = "visualization-state-series-v0"
 MESA_CONTRACT_VERSION = "1.0.0"
 ADAPTER_NAME = "Simulation Adapter Agent"
 
@@ -205,11 +206,27 @@ class SimulationAdapter:
             minRequiredSorties=inputs["min_required_sorties"],
             seed=inputs["seed"],
         )
+        state_series_frames: list[dict[str, Any]] = []
         for _ in range(steps):
             model.step()
+            state_series_frames.append(
+                self._visualization_state_frame(
+                    run_id=run_id or f"run-{scenario['scenario_id']}",
+                    step=model.step_count,
+                    metrics=model.snapshot(),
+                )
+            )
         snapshot = model.snapshot()
 
         run_id = run_id or f"run-{scenario['scenario_id']}"
+        if not state_series_frames:
+            state_series_frames.append(
+                self._visualization_state_frame(
+                    run_id=run_id,
+                    step=0,
+                    metrics=snapshot,
+                )
+            )
         result_id = f"result-{run_id}"
         manifest_id = f"artifact-manifest-{run_id}"
         now = _utc_now()
@@ -259,6 +276,14 @@ class SimulationAdapter:
                 {"event": "run_completed", "at": now, "status": "succeeded"},
             ],
         }
+        visualization_state_series = self._visualization_state_series_payload(
+            run_id=run_id,
+            scenario=scenario,
+            model_family="smoke",
+            result_summary_id=result_id,
+            artifact_manifest_id=manifest_id,
+            frames=state_series_frames,
+        )
         run = {
             "schema_version": RUN_SCHEMA_VERSION,
             "run_id": run_id,
@@ -290,11 +315,18 @@ class SimulationAdapter:
             ("metrics", "metrics.json", metrics, "metrics-v0"),
             ("report", "report.json", report, "run-report-v0"),
             ("log", "events-log.json", event_log, "run-log-v0"),
+            (
+                "visualization_state_series",
+                "visualization-state-series.json",
+                visualization_state_series,
+                VISUALIZATION_STATE_SERIES_SCHEMA_VERSION,
+            ),
         ]
         artifacts = [
             self._write_artifact(run_dir, output_root, kind, filename, payload, schema_version)
             for kind, filename, payload, schema_version in artifact_specs
         ]
+        self._annotate_state_series_artifact(artifacts, run_id, result_id, scenario["scenario_id"])
         manifest = {
             "schema_version": ARTIFACT_MANIFEST_SCHEMA_VERSION,
             "artifact_manifest_id": manifest_id,
@@ -413,6 +445,14 @@ class SimulationAdapter:
                 {"event": "run_completed", "at": now, "status": "succeeded"},
             ],
         }
+        visualization_state_series = self._visualization_state_series_payload(
+            run_id=run_id,
+            scenario=scenario,
+            model_family="smoke",
+            result_summary_id=result_id,
+            artifact_manifest_id=manifest_id,
+            frames=self._monte_carlo_visualization_frames(run_id, samples),
+        )
 
         result = {
             "schema_version": RESULT_SCHEMA_VERSION,
@@ -466,6 +506,12 @@ class SimulationAdapter:
             ("report", "report.json", report, "run-report-v0"),
             ("log", "events-log.json", event_log, "run-log-v0"),
             ("monte_carlo_base", "monte-carlo-base.json", base_artifact, None),
+            (
+                "visualization_state_series",
+                "visualization-state-series.json",
+                visualization_state_series,
+                VISUALIZATION_STATE_SERIES_SCHEMA_VERSION,
+            ),
             ("analysis_projection_spare_shortfall", "spare-shortfall.json", projections["spare_shortfall"], "analysis-projection-v0"),
             ("analysis_projection_carry_list", "carry-list.json", projections["carry_list"], "analysis-projection-v0"),
             ("analysis_projection_mission_reliability", "mission-reliability.json", projections["mission_reliability"], "analysis-projection-v0"),
@@ -480,6 +526,7 @@ class SimulationAdapter:
             if str(kind).startswith("analysis_projection_"):
                 artifact["source_artifact_id"] = base_artifact_id
                 artifact["analysis_type"] = str(kind).removeprefix("analysis_projection_")
+        self._annotate_state_series_artifact(artifacts, run_id, result_id, scenario["scenario_id"])
         manifest = {
             "schema_version": ARTIFACT_MANIFEST_SCHEMA_VERSION,
             "artifact_manifest_id": manifest_id,
@@ -674,8 +721,12 @@ class SimulationAdapter:
             minRequiredSorties=inputs["min_required_sorties"],
             seed=point["seed"],
         )
+        frames: list[dict[str, Any]] = []
         for _ in range(steps):
             model.step()
+            frames.append({"sample_step": model.step_count, "metrics": model.snapshot()})
+        if not frames:
+            frames.append({"sample_step": 0, "metrics": model.snapshot()})
         return {
             "sample_index": sample_index,
             "seed": point["seed"],
@@ -685,6 +736,7 @@ class SimulationAdapter:
                 "support_capacity": point["support_capacity"],
             },
             "metrics": model.snapshot(),
+            "frames": frames,
         }
 
     def _aggregate_sample_metrics(self, samples: list[dict[str, Any]]) -> dict[str, Any]:
@@ -775,6 +827,287 @@ class SimulationAdapter:
                 ],
             },
         }
+
+    def _visualization_state_series_payload(
+        self,
+        *,
+        run_id: str,
+        scenario: dict[str, Any],
+        model_family: str,
+        result_summary_id: str,
+        artifact_manifest_id: str,
+        frames: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        trace = {
+            "run_id": run_id,
+            "scenario_id": scenario["scenario_id"],
+            "scenario_version": scenario["scenario_version"],
+            "result_summary_id": result_summary_id,
+            "artifact_manifest_id": artifact_manifest_id,
+            "run_config_artifact_id": f"run_config-{run_id}",
+            "input_project_artifact_id": f"input_project-{run_id}",
+            "compiled_scenario_artifact_id": f"compiled_scenario-{run_id}",
+        }
+        return {
+            "schema_version": VISUALIZATION_STATE_SERIES_SCHEMA_VERSION,
+            "run_id": run_id,
+            "scenario_id": scenario["scenario_id"],
+            "scenario_version": scenario["scenario_version"],
+            "model_family": model_family,
+            "artifact_manifest_id": artifact_manifest_id,
+            "result_summary_id": result_summary_id,
+            "run_config_artifact_id": trace["run_config_artifact_id"],
+            "input_project_artifact_id": trace["input_project_artifact_id"],
+            "compiled_scenario_artifact_id": trace["compiled_scenario_artifact_id"],
+            "frames": [self._trace_visualization_frame(frame, trace) for frame in frames],
+        }
+
+    def _trace_visualization_frame(self, frame: dict[str, Any], trace: dict[str, Any]) -> dict[str, Any]:
+        traced = copy.deepcopy(frame)
+        traced["trace"] = copy.deepcopy(trace)
+        step = int(traced["step"])
+        traced["events"] = [
+            {
+                **event,
+                "event_id": event.get("event_id") or f"{trace['run_id']}-step-{step}-{index}-{event.get('event', 'event')}",
+                "run_id": trace["run_id"],
+                "step": step,
+                "event_type": event.get("event_type") or event.get("event") or "event",
+                "metric_refs": list(event.get("metric_refs") or self._event_metric_refs(str(event.get("event") or ""))),
+            }
+            for index, event in enumerate(traced.get("events") or [])
+        ]
+        return traced
+
+    def _visualization_state_frame(
+        self,
+        *,
+        run_id: str,
+        step: int,
+        metrics: dict[str, Any],
+        sample_index: int | None = None,
+        sample_step: int | None = None,
+        seed: int | None = None,
+        sweep: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        frame: dict[str, Any] = {
+            "run_id": run_id,
+            "step": step,
+            "simulation_time": step,
+            "aircraft_state": {
+                "ready_rate": metrics.get("ready_rate", 0),
+                "failed_count": metrics.get("failed_count", 0),
+                "repairing_count": metrics.get("repairing_count", 0),
+                "sortie_count": metrics.get("sortie_count", 0),
+            },
+            "mission_state": {
+                "mission_success_rate": metrics.get("mission_success_rate", 0),
+                "sortie_rate": metrics.get("sortie_rate", 0),
+                "mean_launch_time": metrics.get("mean_launch_time", 0),
+                "mean_recovery_time": metrics.get("mean_recovery_time", 0),
+                "mean_turnaround_time": metrics.get("mean_turnaround_time", 0),
+            },
+            "resource_state": {
+                "spare_fill_rate": metrics.get("spare_fill_rate", 0),
+                "spare_utilization": metrics.get("spare_utilization", 0),
+                "repair_backlog": metrics.get("repair_backlog", 0),
+            },
+            "event_summary": {
+                "shortage_events": metrics.get("shortage_events", 0),
+                "downtime_failure_events": metrics.get("downtime_failure_events", 0),
+                "downtime_spare_shortage_events": metrics.get("downtime_spare_shortage_events", 0),
+                "downtime_resource_delay_events": metrics.get("downtime_resource_delay_events", 0),
+            },
+            "aircraft": self._visualization_aircraft(metrics),
+            "missions": self._visualization_missions(step, metrics),
+            "resources": self._visualization_resources(metrics),
+            "spares": self._visualization_spares(metrics),
+            "jobs": self._visualization_jobs(metrics),
+            "events": self._visualization_events(step, metrics),
+        }
+        if sample_index is not None:
+            frame["sample_index"] = sample_index
+        if sample_step is not None:
+            frame["sample_step"] = sample_step
+        if seed is not None:
+            frame["seed"] = seed
+        if sweep is not None:
+            frame["sweep"] = copy.deepcopy(sweep)
+        return frame
+
+    def _monte_carlo_visualization_frames(self, run_id: str, samples: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        frames: list[dict[str, Any]] = []
+        next_step = 0
+        for sample in samples:
+            sample_frames = sample.get("frames") or [{"sample_step": 0, "metrics": sample["metrics"]}]
+            for sample_frame in sample_frames:
+                frames.append(
+                    self._visualization_state_frame(
+                        run_id=run_id,
+                        step=next_step,
+                        metrics=sample_frame["metrics"],
+                        sample_index=int(sample["sample_index"]),
+                        sample_step=int(sample_frame["sample_step"]),
+                        seed=int(sample["seed"]),
+                        sweep=sample["sweep"],
+                    )
+                )
+                next_step += 1
+        return frames
+
+    def _visualization_aircraft(self, metrics: dict[str, Any]) -> list[dict[str, Any]]:
+        return [
+            {
+                "tail_number": "SMOKE-READY",
+                "type": "SmokeAggregate",
+                "state": "available",
+                "x": 0,
+                "y": 0,
+                "count": self._round_metric(metrics.get("ready_rate", 0)),
+            },
+            {
+                "tail_number": "SMOKE-SORTIE",
+                "type": "SmokeAggregate",
+                "state": "flying" if float(metrics.get("sortie_count", 0) or 0) > 0 else "mission_ready",
+                "x": 1,
+                "y": 0,
+                "count": self._round_metric(metrics.get("sortie_count", 0)),
+            },
+            {
+                "tail_number": "SMOKE-MAINT",
+                "type": "SmokeAggregate",
+                "state": "maintenance" if float(metrics.get("repairing_count", 0) or 0) > 0 else "available",
+                "x": 2,
+                "y": 0,
+                "count": self._round_metric(metrics.get("repairing_count", 0)),
+                "failed_lru": "aggregate_failure" if float(metrics.get("failed_count", 0) or 0) > 0 else "",
+            },
+        ]
+
+    def _visualization_missions(self, step: int, metrics: dict[str, Any]) -> list[dict[str, Any]]:
+        success_rate = float(metrics.get("mission_success_rate", 0) or 0)
+        status = "completed" if success_rate >= 1 else ("launched" if float(metrics.get("sortie_count", 0) or 0) > 0 else "planned")
+        return [
+            {
+                "mission_id": 1,
+                "planned_start": 0,
+                "actual_start": step if status in {"launched", "completed"} else None,
+                "return_time": step if status == "completed" else None,
+                "required_aircraft": max(1, int(round(float(metrics.get("sortie_count", 0) or 0))) or 1),
+                "status": status,
+                "assigned_tail_numbers": ["SMOKE-SORTIE"] if status in {"launched", "completed"} else [],
+            }
+        ]
+
+    def _visualization_resources(self, metrics: dict[str, Any]) -> list[dict[str, Any]]:
+        repair_backlog = self._round_metric(metrics.get("repair_backlog", 0))
+        spare_utilization = float(metrics.get("spare_utilization", 0) or 0)
+        return [
+            {
+                "name": "repair_capacity",
+                "display_name": "维修能力",
+                "category": "resource",
+                "capacity": max(1, repair_backlog + self._round_metric(metrics.get("repairing_count", 0))),
+                "in_use": self._round_metric(metrics.get("repairing_count", 0)),
+                "utilization": min(1, max(0, spare_utilization)),
+                "work_count": repair_backlog,
+            },
+            {
+                "name": "spare_pool",
+                "display_name": "备件池",
+                "category": "spare",
+                "capacity": 100,
+                "in_use": self._round_metric(spare_utilization * 100),
+                "utilization": min(1, max(0, spare_utilization)),
+                "work_count": self._round_metric(metrics.get("shortage_events", 0)),
+            },
+        ]
+
+    def _visualization_spares(self, metrics: dict[str, Any]) -> list[dict[str, Any]]:
+        consumed = self._round_metric(float(metrics.get("spare_utilization", 0) or 0) * 100)
+        return [
+            {
+                "part_id": "smoke_spare_pool",
+                "name": "Smoke 备件池",
+                "quantity": max(0, 100 - consumed),
+                "consumed": consumed,
+                "pending_quantity": self._round_metric(metrics.get("repair_backlog", 0)),
+                "reorder_point": 20,
+            }
+        ]
+
+    def _visualization_jobs(self, metrics: dict[str, Any]) -> list[dict[str, Any]]:
+        backlog = self._round_metric(metrics.get("repair_backlog", 0))
+        if backlog <= 0:
+            return []
+        return [
+            {
+                "job_id": "smoke-repair-backlog",
+                "tail_number": "SMOKE-MAINT",
+                "kind": "repair",
+                "state": "waiting",
+                "task": "聚合维修队列",
+                "remaining": backlog,
+            }
+        ]
+
+    def _visualization_events(self, step: int, metrics: dict[str, Any]) -> list[dict[str, Any]]:
+        events = [
+            {
+                "time": step,
+                "event": "state_frame",
+                "event_type": "state_frame",
+                "message": f"状态帧 step {step} 已生成",
+                "metric_refs": ["ready_rate", "mission_success_rate", "spare_fill_rate"],
+            },
+        ]
+        if float(metrics.get("shortage_events", 0) or 0) > 0:
+            events.append(
+                {
+                    "time": step,
+                    "event": "spare_shortage",
+                    "event_type": "spare_shortage",
+                    "message": "检测到备件短缺事件",
+                    "metric_refs": ["shortage_events", "downtime_spare_shortage_events"],
+                }
+            )
+        if float(metrics.get("downtime_resource_delay_events", 0) or 0) > 0:
+            events.append(
+                {
+                    "time": step,
+                    "event": "resource_delay",
+                    "event_type": "resource_delay",
+                    "message": "检测到资源延迟事件",
+                    "metric_refs": ["downtime_resource_delay_events"],
+                }
+            )
+        return events
+
+    def _event_metric_refs(self, event_type: str) -> list[str]:
+        if event_type == "spare_shortage":
+            return ["shortage_events", "downtime_spare_shortage_events"]
+        if event_type == "resource_delay":
+            return ["downtime_resource_delay_events"]
+        return ["ready_rate", "mission_success_rate", "spare_fill_rate"]
+
+    def _annotate_state_series_artifact(
+        self,
+        artifacts: list[dict[str, Any]],
+        run_id: str,
+        result_summary_id: str,
+        scenario_id: str,
+    ) -> None:
+        for artifact in artifacts:
+            if artifact.get("kind") == "visualization_state_series":
+                artifact["source_run_id"] = run_id
+                artifact["source_result_summary_id"] = result_summary_id
+                artifact["source_scenario_id"] = scenario_id
+
+    def _round_metric(self, value: Any) -> int:
+        try:
+            return int(round(float(value)))
+        except (TypeError, ValueError):
+            return 0
 
     def _require_monte_carlo_config(
         self,

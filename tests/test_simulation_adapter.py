@@ -236,13 +236,47 @@ class SimulationAdapterTest(unittest.TestCase):
             artifact_kinds = {artifact["kind"] for artifact in manifest["artifacts"]}
             self.assertEqual(
                 artifact_kinds,
-                {"run_config", "input_project", "compiled_scenario", "snapshot", "result_summary", "metrics", "report", "log"},
+                {
+                    "run_config",
+                    "input_project",
+                    "compiled_scenario",
+                    "snapshot",
+                    "result_summary",
+                    "metrics",
+                    "report",
+                    "log",
+                    "visualization_state_series",
+                },
             )
             for artifact in manifest["artifacts"]:
                 target = Path(tmp) / artifact["path"]
                 self.assertTrue(target.exists(), artifact)
                 self.assertGreater(artifact["size_bytes"], 0)
                 self.assertRegex(artifact["sha256"], r"^[0-9a-f]{64}$")
+                if artifact["kind"] == "visualization_state_series":
+                    self.assertEqual(artifact["source_run_id"], run["run_id"])
+                    self.assertEqual(artifact["source_result_summary_id"], run["result_summary_id"])
+                    self.assertEqual(artifact["source_scenario_id"], scenario["scenario_id"])
+                    payload = json.loads(target.read_text(encoding="utf-8"))
+                    self.assertEqual(payload["schema_version"], "visualization-state-series-v0")
+                    self.assertEqual(payload["run_id"], run["run_id"])
+                    self.assertEqual(payload["scenario_id"], scenario["scenario_id"])
+                    self.assertEqual(payload["artifact_manifest_id"], run["artifact_manifest_id"])
+                    self.assertEqual(payload["result_summary_id"], run["result_summary_id"])
+                    self.assertGreater(len(payload["frames"]), 0)
+                    for frame in payload["frames"]:
+                        self.assertEqual(frame["run_id"], run["run_id"])
+                        self.assertEqual(frame["trace"]["run_id"], run["run_id"])
+                        self.assertEqual(frame["trace"]["scenario_id"], scenario["scenario_id"])
+                        self.assertEqual(frame["trace"]["result_summary_id"], run["result_summary_id"])
+                        self.assertIn("aircraft", frame)
+                        self.assertIn("missions", frame)
+                        self.assertIn("resources", frame)
+                        self.assertIn("events", frame)
+                        for event in frame["events"]:
+                            self.assertEqual(event["run_id"], run["run_id"])
+                            self.assertEqual(event["step"], frame["step"])
+                            self.assertTrue(event["event_id"])
 
     def test_run_smoke_scenario_writes_m7_management_artifacts(self) -> None:
         scenario = self._smoke_scenario()

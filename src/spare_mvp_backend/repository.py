@@ -756,7 +756,15 @@ class ContractRepository:
         result_summary = None
         if run.get("result_summary_id"):
             result_summary = self.get_result_summary_for_run(run_id)
-        artifact_manifest = self.get_artifact_manifest_for_run(run_id)
+        try:
+            artifact_manifest = self.get_artifact_manifest_for_run(run_id)
+        except KeyError:
+            if not _run_outputs_pending(run, artifact_manifest_id=chain.get("artifact_manifest_id")):
+                raise
+            artifact_manifest = _pending_artifact_manifest_for_run(
+                run,
+                artifact_manifest_id=chain.get("artifact_manifest_id"),
+            )
         return {
             "run": run,
             "chain": chain,
@@ -798,6 +806,114 @@ class ContractRepository:
             timestamp_field="deleted_at",
             actor_user_id=actor_user_id,
             action="runs.delete",
+        )
+
+    def control_run_with_audit(self, run_id: str, action: str, *, actor_user_id: str) -> dict[str, Any]:
+        normalized_action = str(action or "").strip().lower()
+        audit_action = f"runs.control.{normalized_action or 'unknown'}"
+        now = self._utc_now()
+        self.connection.execute("BEGIN")
+        try:
+            run = self.get_run(run_id)
+            if run.get("lifecycle_status") == "deleted":
+                self._insert_audit_event_no_commit(
+                    actor_user_id=actor_user_id,
+                    action=audit_action,
+                    resource_type="run",
+                    resource_id=run_id,
+                    outcome="denied",
+                    details={"reason": "run_deleted", "action": normalized_action},
+                )
+                self.connection.commit()
+                raise ValueError("run_deleted")
+            if normalized_action == "cancel":
+                if run.get("status") not in {"queued", "running", "succeeded", "failed"}:
+                    self._insert_denied_run_control_event(run_id, normalized_action, actor_user_id, "invalid_transition")
+                    self.connection.commit()
+                    raise ValueError("unsupported_run_control")
+                run["status"] = "cancelled"
+                run["phase"] = "cancelled"
+                run["progress"] = 1
+                run["cancelled_at"] = run.get("cancelled_at") or now
+                run["cancelled_by"] = actor_user_id
+            elif normalized_action == "retry":
+                if run.get("status") not in {"failed", "cancelled"}:
+                    self._insert_denied_run_control_event(run_id, normalized_action, actor_user_id, "invalid_transition")
+                    self.connection.commit()
+                    raise ValueError("unsupported_run_control")
+                run["status"] = "queued"
+                run["phase"] = "queued"
+                run["progress"] = 0
+                run["completed_at"] = None
+                run["result_summary_id"] = None
+                run["artifact_manifest_id"] = None
+                run["cancelled_at"] = None
+                run["cancelled_by"] = None
+                run["retried_at"] = now
+                run["retried_by"] = actor_user_id
+            else:
+                self._insert_denied_run_control_event(run_id, normalized_action, actor_user_id, "unsupported_run_control")
+                self.connection.commit()
+                raise ValueError("unsupported_run_control")
+
+            run["control"] = {
+                "action": normalized_action,
+                "outcome": "allowed",
+                "actor_user_id": actor_user_id,
+                "controlled_at": now,
+            }
+            self.connection.execute(
+                """
+                UPDATE simulation_runs
+                SET status = ?,
+                    result_summary_id = ?,
+                    artifact_manifest_id = ?,
+                    payload_json = ?,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE run_id = ?
+                """,
+                (
+                    run["status"],
+                    run.get("result_summary_id"),
+                    run.get("artifact_manifest_id") or f"artifact-manifest-{run_id}-retry-pending",
+                    _to_json(run),
+                    run_id,
+                ),
+            )
+            self._insert_audit_event_no_commit(
+                actor_user_id=actor_user_id,
+                action=audit_action,
+                resource_type="run",
+                resource_id=run_id,
+                outcome="allowed",
+                details={
+                    "action": normalized_action,
+                    "status": run["status"],
+                    "phase": run.get("phase"),
+                },
+            )
+        except Exception:
+            if self.connection.in_transaction:
+                self.connection.rollback()
+            raise
+        else:
+            self.connection.commit()
+        return self.get_run(run_id)
+
+    def _insert_denied_run_control_event(
+        self,
+        run_id: str,
+        action: str,
+        actor_user_id: str,
+        reason: str,
+    ) -> None:
+        self._insert_audit_event_no_commit(
+            actor_user_id=actor_user_id,
+            action=f"runs.control.{action or 'unknown'}",
+            resource_type="run",
+            resource_id=run_id,
+            outcome="denied",
+            details={"reason": reason, "action": action},
         )
 
     def _set_run_lifecycle_with_audit(
@@ -942,7 +1058,10 @@ class ContractRepository:
         if chain["referenced_result_summary_id"] and chain["result_summary_id"] is None:
             raise ValueError(f"identity chain mismatch for result summary on run {run_id}")
         if chain["referenced_artifact_manifest_id"] and chain["artifact_manifest_id"] is None:
-            raise ValueError(f"identity chain mismatch for artifact manifest on run {run_id}")
+            if _run_outputs_pending(run_payload, artifact_manifest_id=chain["referenced_artifact_manifest_id"]):
+                chain["artifact_manifest_id"] = chain["referenced_artifact_manifest_id"]
+            else:
+                raise ValueError(f"identity chain mismatch for artifact manifest on run {run_id}")
         del chain["referenced_result_summary_id"]
         del chain["referenced_artifact_manifest_id"]
         return chain
@@ -1014,6 +1133,34 @@ def _modeling_import_payload(import_package: dict[str, Any], validation: dict[st
 
 def _row_to_dict(cursor: sqlite3.Cursor, row: sqlite3.Row | tuple[Any, ...]) -> dict[str, Any]:
     return {description[0]: row[index] for index, description in enumerate(cursor.description or [])}
+
+
+def _run_outputs_pending(run: dict[str, Any], *, artifact_manifest_id: str | None = None) -> bool:
+    control = run.get("control") if isinstance(run.get("control"), dict) else {}
+    has_retry_pending_manifest = str(artifact_manifest_id or "").endswith("-retry-pending")
+    return (
+        run.get("status") in {"queued", "cancelled"}
+        and run.get("result_summary_id") is None
+        and run.get("artifact_manifest_id") is None
+        and (control.get("action") == "retry" or has_retry_pending_manifest)
+    )
+
+
+def _pending_artifact_manifest_for_run(
+    run: dict[str, Any],
+    *,
+    artifact_manifest_id: str | None,
+) -> dict[str, Any]:
+    run_id = str(run["run_id"])
+    return {
+        "artifact_manifest_id": artifact_manifest_id or f"artifact-manifest-{run_id}-retry-pending",
+        "run_id": run_id,
+        "scenario_id": run.get("scenario_id"),
+        "scenario_version": run.get("scenario_version"),
+        "schema_version": "artifact-manifest-v0",
+        "status": "pending",
+        "artifacts": [],
+    }
 
 
 def _ensure_column(connection: sqlite3.Connection, table: str, column: str, definition: str) -> None:

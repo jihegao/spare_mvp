@@ -32,6 +32,7 @@
               "run_config",
               "snapshot",
               "time_series",
+              "visualization_state_series",
               "sample_results",
               "aggregate_result",
               "result_summary",
@@ -50,6 +51,9 @@
             "enum": ["spare_shortfall", "carry_list", "mission_reliability", "downtime_factors"]
           },
           "source_artifact_id": { "type": "string" },
+          "source_run_id": { "type": "string" },
+          "source_result_summary_id": { "type": "string" },
+          "source_scenario_id": { "type": "string" },
           "path": { "type": "string" },
           "media_type": { "type": "string" },
           "sha256": { "type": "string" },
@@ -84,6 +88,13 @@
             "then": {
               "required": ["analysis_type", "source_artifact_id"],
               "properties": { "analysis_type": { "const": "downtime_factors" } }
+            }
+          },
+          {
+            "if": { "properties": { "kind": { "const": "visualization_state_series" } }, "required": ["kind"] },
+            "then": {
+              "required": ["schema_version", "source_run_id", "source_result_summary_id", "source_scenario_id"],
+              "properties": { "schema_version": { "const": "visualization-state-series-v0" } }
             }
           }
         ]

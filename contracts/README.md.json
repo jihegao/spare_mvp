@@ -11,7 +11,8 @@
     "scenario.schema.json",
     "run.schema.json",
     "result.schema.json",
-    "artifact_manifest.schema.json"
+    "artifact_manifest.schema.json",
+    "visualization_state_series.schema.json"
   ],
   "mapping_files": [
     "scenario_adapter_mapping.json"
@@ -25,6 +26,7 @@
     "tests/fixtures/smoke_run.json",
     "tests/fixtures/smoke_result.json",
     "tests/fixtures/smoke_artifact_manifest.json",
+    "tests/fixtures/smoke_visualization_state_series.json",
     "tests/fixtures/aviation_support_project.json",
     "tests/fixtures/aviation_support_scenario.json",
     "tests/fixtures/aviation_support_run.json",

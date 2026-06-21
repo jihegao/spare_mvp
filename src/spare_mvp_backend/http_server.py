@@ -94,7 +94,9 @@ def create_backend_server(
                     output_dir=artifact_dir,
                 )
                 payload = self._dispatch()
-                if isinstance(payload, dict) and "__file_download__" in payload:
+                if isinstance(payload, dict) and "__sse_stream__" in payload:
+                    self._send_sse(200, payload["__sse_stream__"])
+                elif isinstance(payload, dict) and "__file_download__" in payload:
                     self._send_file_download(200, payload["__file_download__"])
                 else:
                     self._send_json(200, payload)
@@ -203,6 +205,9 @@ def create_backend_server(
                 query = parse_qs(urlparse(self.path).query)
                 filters = {key: values[-1] for key, values in query.items() if values}
                 return api.list_runs(filters)
+            if self.command == "GET" and len(parts) == 3 and parts[0] == "runs" and parts[2] == "state-stream":
+                self._require_user(allow_access_token=True)
+                return {"__sse_stream__": api.subscribe_run_state_stream(parts[1])}
             if self.command == "GET" and len(parts) == 2 and parts[0] == "runs":
                 return api.get_run_status(parts[1])
             if self.command == "GET" and len(parts) == 3 and parts[0] == "runs" and parts[2] == "detail":
@@ -222,6 +227,9 @@ def create_backend_server(
                 }
             if self.command == "GET" and len(parts) == 3 and parts[0] == "runs" and parts[2] == "chain":
                 return api.get_run_chain(parts[1])
+            if self.command == "POST" and len(parts) == 3 and parts[0] == "runs" and parts[2] == "control":
+                actor = self._require_user()
+                return api.control_run(parts[1], str(body.get("action") or ""), actor_user_id=actor["user_id"])
             if self.command == "POST" and len(parts) == 3 and parts[0] == "runs" and parts[2] == "archive":
                 actor = self._require_user({"系统管理员", "数据管理员"})
                 return api.archive_run(parts[1], actor_user_id=actor["user_id"])
@@ -231,13 +239,24 @@ def create_backend_server(
 
             raise KeyError(route)
 
-        def _require_user(self, allowed_roles: set[str] | None = None) -> dict[str, Any]:
+        def _require_user(
+            self,
+            allowed_roles: set[str] | None = None,
+            *,
+            allow_access_token: bool = False,
+        ) -> dict[str, Any]:
             api = self._request_api
             auth_header = self.headers.get("authorization") or ""
             prefix = "Bearer "
-            if not auth_header.startswith(prefix):
+            if auth_header.startswith(prefix):
+                token = auth_header.removeprefix(prefix).strip()
+            elif allow_access_token:
+                query = parse_qs(urlparse(self.path).query)
+                token = str((query.get("access_token") or [""])[-1]).strip()
+            else:
+                token = ""
+            if not token:
                 raise BackendApiError("unauthorized", "M4 session is required")
-            token = auth_header.removeprefix(prefix).strip()
             try:
                 user = api.get_session_user(token)
             except KeyError as exc:
@@ -268,6 +287,19 @@ def create_backend_server(
             self.send_header("access-control-allow-origin", "*")
             self.end_headers()
             self.wfile.write(data)
+
+        def _send_sse(self, status: int, envelope: dict[str, Any]) -> None:
+            chunks = []
+            for event in envelope.get("events") or []:
+                event_type = str(event.get("event_type") or "message")
+                data = json.dumps(event.get("payload") or {}, ensure_ascii=False, sort_keys=True)
+                chunks.append(f"event: {event_type}\ndata: {data}\n\n")
+            body = "".join(chunks).encode("utf-8")
+            self.send_response(status)
+            self.send_header("content-type", "text/event-stream; charset=utf-8")
+            self.send_header("cache-control", "no-cache")
+            self.end_headers()
+            self.wfile.write(body)
 
         def _send_file_download(self, status: int, download: dict[str, Any]) -> None:
             data = bytes(download["body"])

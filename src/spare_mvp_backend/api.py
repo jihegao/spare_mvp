@@ -403,6 +403,12 @@ class BackendApi:
     def get_run_status(self, run_id: str) -> dict[str, Any]:
         return self.run_service.get_run_status(run_id)
 
+    def subscribe_run_state_stream(self, run_id: str) -> dict[str, Any]:
+        try:
+            return self.run_service.subscribe_run_state_stream(run_id)
+        except RunServiceError as exc:
+            raise self._run_service_error_to_backend_error(exc) from exc
+
     def get_run_result(self, run_id: str) -> dict[str, Any]:
         return self.repository.get_result_summary_for_run(run_id)
 
@@ -451,6 +457,31 @@ class BackendApi:
             resource_id=run_id,
         )
         return self.repository.soft_delete_run_with_audit(run_id, actor_user_id=actor_user_id)
+
+    def control_run(self, run_id: str, action: str, *, actor_user_id: str | None = None) -> dict[str, Any]:
+        actor_user_id = _require_m7_actor(actor_user_id)
+        action_name = str(action or "").strip().lower()
+        self._require_role(
+            actor_user_id,
+            {"系统管理员", "数据管理员"},
+            action=f"runs.control.{action_name or 'unknown'}",
+            resource_type="run",
+            resource_id=run_id,
+        )
+        try:
+            return self.repository.control_run_with_audit(run_id, action_name, actor_user_id=actor_user_id)
+        except ValueError as exc:
+            reason = str(exc)
+            if reason == "run_deleted":
+                raise BackendApiError("run_deleted", "run is soft-deleted", run_id=run_id) from exc
+            if reason == "unsupported_run_control":
+                raise BackendApiError(
+                    "unsupported_run_control",
+                    f"run control action is not supported: {action_name or 'unknown'}",
+                    run_id=run_id,
+                    action=action_name,
+                ) from exc
+            raise
 
     def get_run_artifact_download(
         self,

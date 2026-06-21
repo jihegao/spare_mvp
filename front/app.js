@@ -10,6 +10,14 @@ import {
   normalizeAnalysisProjectionPayload,
   projectionArtifactKindForAnalysisType
 } from "./analysis-projection-adapters.mjs";
+import {
+  findVisualizationStateSeriesArtifact,
+  frameAt,
+  buildVisualizationEventStream,
+  mergeVisualizationStateStreamFrame,
+  nextReplayIndex,
+  normalizeVisualizationStateSeriesPayload
+} from "./state-series-replay.mjs";
 import { buildRunIntent, submitRunIntent } from "./run-intent.mjs";
 import {
   cloneScenario,
@@ -71,6 +79,22 @@ const ANALYSIS_PROJECTION_TYPES = [
   { analysisType: "mission_reliability", artifactKind: "analysis_projection_mission_reliability", source_artifact_id: "monte_carlo_base_artifact" },
   { analysisType: "downtime_factors", artifactKind: "analysis_projection_downtime_factors", source_artifact_id: "monte_carlo_base_artifact" }
 ];
+const backendControlActions = {
+  "backend-cancel": "cancel",
+  "backend-retry": "retry",
+  "backend-pause": "pause",
+  "backend-resume": "resume",
+  "backend-step": "step",
+  "backend-reset": "reset"
+};
+const backendControlLabels = {
+  cancel: "取消运行",
+  retry: "重试运行",
+  pause: "后端暂停",
+  resume: "后端恢复",
+  step: "后端单步",
+  reset: "后端重置"
+};
 const SYSTEM_PROJECT_DATA_ROWS = [
   { key: "projectId", label: "项目标识", value: "landbase-day-night", owner: "项目主数据" },
   { key: "baseProfile", label: "机场保障资源", value: "主基地 / 前进保障点 / 后方保障点", owner: "项目独有数据" },
@@ -247,6 +271,23 @@ let m7RunList = [];
 let m7RunDetail = null;
 let m7SelectedRunId = "";
 let m7RunArtifactStatus = "M7 运行产物账本尚未加载";
+let visualizationRunList = [];
+let visualizationSelectedRunId = "";
+let visualizationStateSeries = null;
+let visualizationReplayIndex = 0;
+let visualizationReplayPlaying = false;
+let visualizationReplayTimer = null;
+let visualizationReplayStatus = "M9 离线状态序列尚未加载";
+let visualizationStreamSource = null;
+let visualizationStreamState = {
+  runId: "",
+  status: "idle",
+  message: "M9.2 在线状态流尚未订阅",
+  eventCount: 0,
+  lastEventAt: "",
+  artifactId: ""
+};
+let visualizationBackendControlStatus = "M9.3 后端运行控制尚未触发";
 let backendApiStatus = "离线演示";
 let formalRunSubmitInFlight = false;
 let systemUserEditor = null;
@@ -838,11 +879,16 @@ function bindEvents() {
 
     const mesaControlButton = event.target.closest("[data-mesa-control]");
     if (mesaControlButton) {
-      const action = mesaControlButton.dataset.mesaControl;
-      if (action === "step") aviationSteps += 1;
-      else if (action === "play") aviationSteps += 12;
-      else if (action === "reset") aviationSteps = 0;
-      loadAviationSupportState();
+      handleMesaControl(mesaControlButton.dataset.mesaControl).finally(() => render());
+      return;
+    }
+
+    const mesaEventJumpButton = event.target.closest("[data-mesa-event-jump]");
+    if (mesaEventJumpButton) {
+      visualizationReplayIndex = Number(mesaEventJumpButton.dataset.mesaEventJump);
+      visualizationReplayIndex = nextReplayIndex(visualizationStateSeries, visualizationReplayIndex, 0);
+      stopVisualizationReplay();
+      render();
       return;
     }
 
@@ -1075,6 +1121,28 @@ function bindEvents() {
   });
 
   app.addEventListener("change", (event) => {
+    const mesaRunSelect = event.target.closest("[data-mesa-run-select]");
+    if (mesaRunSelect) {
+      stopVisualizationRunStream("已切换 run，M9.2 在线订阅已停止");
+      visualizationSelectedRunId = mesaRunSelect.value;
+      if (visualizationStateSeries && visualizationStateSeries.run_id !== visualizationSelectedRunId) {
+        clearVisualizationStateSeries("", "已切换 run，需重新加载对应 M9 state_series artifact");
+      }
+      visualizationReplayStatus = visualizationSelectedRunId
+        ? `已选择 M9 回放 run_id：${visualizationSelectedRunId}`
+        : "请选择已完成 run 加载 M9 回放";
+      render();
+      return;
+    }
+
+    const mesaTimeline = event.target.closest("[data-mesa-timeline]");
+    if (mesaTimeline) {
+      visualizationReplayIndex = nextReplayIndex(visualizationStateSeries, Number(mesaTimeline.value), 0);
+      stopVisualizationReplay();
+      render();
+      return;
+    }
+
     const basicActivitySelectAll = event.target.closest("[data-basic-activity-select-all]");
     if (basicActivitySelectAll) {
       toggleAllBasicActivitySelection(basicActivitySelectAll.checked);
@@ -4782,6 +4850,7 @@ async function refreshRunResultThroughApi(runId = backendRun?.run_id) {
     backendArtifactManifest = { artifacts: [] };
     backendRunChain = null;
     clearAnalysisProjectionPayloads(runId);
+    clearVisualizationStateSeries(runId, "运行尚未完成，M9 离线状态序列未解锁");
     if (backendRun.project_id) {
       try {
         savedProject = await backendApi.getProject(backendRun.project_id);
@@ -4795,6 +4864,7 @@ async function refreshRunResultThroughApi(runId = backendRun?.run_id) {
   backendArtifactManifest = await backendApi.getRunArtifacts(runId);
   backendRunChain = await backendApi.getRunChain(runId);
   await refreshAnalysisProjectionPayloads(runId);
+  await refreshVisualizationStateSeries(runId);
   if (backendRun.project_id) {
     savedProject = await backendApi.getProject(backendRun.project_id);
   }
@@ -4833,6 +4903,223 @@ async function refreshAnalysisProjectionPayloads(runId) {
     ...analysisProjectionPayloadErrors,
     [runId]: nextErrors
   };
+}
+
+async function refreshVisualizationStateSeries(runId) {
+  if (!runId) return;
+  const artifact = findVisualizationStateSeriesArtifact(backendArtifactManifest);
+  if (!artifact?.artifact_id) {
+    clearVisualizationStateSeries(runId, `run ${runId} 缺少 visualization_state_series artifact，M9 正式回放保持阻断`);
+    return;
+  }
+  try {
+    const payload = await backendApi.getRunArtifactPayload(runId, artifact.artifact_id);
+    visualizationStateSeries = normalizeVisualizationStateSeriesPayload(payload, {
+      runId,
+      artifactId: artifact.artifact_id
+    });
+    visualizationSelectedRunId = runId;
+    visualizationReplayIndex = 0;
+    visualizationReplayPlaying = false;
+    stopVisualizationReplay();
+    visualizationReplayStatus = `M9 state_series 已加载：run_id ${runId} / artifact_id ${artifact.artifact_id} / ${visualizationStateSeries.frame_count} 帧 / ${visualizationStateSeries.event_count} 事件`;
+  } catch (err) {
+    clearVisualizationStateSeries(runId, `M9 state_series 解析失败：${formatBackendError(err)}`);
+  }
+}
+
+function clearVisualizationStateSeries(runId = "", message = "M9 离线状态序列尚未加载") {
+  stopVisualizationReplay();
+  visualizationStateSeries = null;
+  visualizationReplayIndex = 0;
+  visualizationReplayStatus = message;
+}
+
+function subscribeVisualizationRunStream(runId = visualizationSelectedRunId || backendRun?.run_id) {
+  if (!runId) {
+    setVisualizationStreamState({
+      runId: "",
+      status: "failed",
+      message: "订阅失败：尚未选择 run_id"
+    });
+    return;
+  }
+  if (!backendAuthToken) {
+    setVisualizationStreamState({
+      runId,
+      status: "unauthorized",
+      message: "订阅未授权：请先登录后端会话"
+    });
+    return;
+  }
+  if (typeof EventSource !== "function") {
+    setVisualizationStreamState({
+      runId,
+      status: "failed",
+      message: "订阅失败：当前浏览器不支持 EventSource"
+    });
+    return;
+  }
+  stopVisualizationRunStream("");
+  visualizationSelectedRunId = runId;
+  setVisualizationStreamState({
+    runId,
+    status: "connecting",
+    message: `正在订阅 run ${runId} 的 M9.2 在线状态流`,
+    eventCount: 0,
+    artifactId: ""
+  });
+  const source = new EventSource(runStateStreamUrl(runId));
+  visualizationStreamSource = source;
+  source.addEventListener("open", () => {
+    setVisualizationStreamState({
+      runId,
+      status: "connected",
+      message: `订阅已连接：run ${runId}`,
+      lastEventAt: new Date().toISOString()
+    });
+    render();
+  });
+  source.addEventListener("run_status", (event) => {
+    const payload = parseStreamEventData(event);
+    backendRun = payload.status || payload;
+    setVisualizationStreamState({
+      runId,
+      status: "connected",
+      message: `订阅已连接：${runStatusLabel(backendRun)} / progress ${backendRun.progress ?? "-"}`,
+      eventCount: visualizationStreamState.eventCount + 1,
+      lastEventAt: new Date().toISOString()
+    });
+    render();
+  });
+  source.addEventListener("state_frame", (event) => {
+    try {
+      const payload = parseStreamEventData(event);
+      visualizationStateSeries = mergeVisualizationStateStreamFrame(visualizationStateSeries, payload);
+      visualizationReplayIndex = visualizationStateSeries.frames.length - 1;
+      visualizationReplayPlaying = false;
+      visualizationReplayStatus = `M9.2 在线状态流已更新：run_id ${runId} / ${visualizationStateSeries.frame_count}-${visualizationStateSeries.expected_frame_count} 帧 / 事件 ${visualizationStateSeries.event_count}`;
+      setVisualizationStreamState({
+        runId,
+        status: "connected",
+        message: `订阅已连接：已接收 state_frame ${payload.frame_index + 1}/${payload.frame_count}`,
+        eventCount: visualizationStreamState.eventCount + 1,
+        lastEventAt: new Date().toISOString(),
+        artifactId: payload.artifact_id || visualizationStreamState.artifactId
+      });
+    } catch (err) {
+      setVisualizationStreamState({
+        runId,
+        status: "failed",
+        message: `订阅失败：${formatBackendError(err)}`
+      });
+    }
+    render();
+  });
+  source.addEventListener("artifact_ready", (event) => {
+    const payload = parseStreamEventData(event);
+    setVisualizationStreamState({
+      runId,
+      status: "artifact-ready",
+      message: "最终 artifact 已生成，正在切换到离线回放",
+      eventCount: visualizationStreamState.eventCount + 1,
+      lastEventAt: new Date().toISOString(),
+      artifactId: payload.artifact_id || payload.visualization_state_series_artifact_id || ""
+    });
+    stopVisualizationRunStream(visualizationStreamState.message, { keepState: true });
+    loadVisualizationReplayForRun(runId).finally(() => render());
+  });
+  source.addEventListener("error", () => {
+    setVisualizationStreamState({
+      runId,
+      status: "disconnected",
+      message: "订阅断开，浏览器将尝试重连；若会话失效请重新登录",
+      lastEventAt: new Date().toISOString()
+    });
+    render();
+  });
+}
+
+function stopVisualizationRunStream(message = "M9.2 在线状态流订阅已停止", { keepState = false } = {}) {
+  if (visualizationStreamSource) {
+    visualizationStreamSource.close();
+    visualizationStreamSource = null;
+  }
+  if (!keepState && message) {
+    setVisualizationStreamState({
+      status: "idle",
+      message
+    });
+  }
+}
+
+function setVisualizationStreamState(next) {
+  visualizationStreamState = {
+    ...visualizationStreamState,
+    ...next
+  };
+}
+
+function parseStreamEventData(event) {
+  return JSON.parse(event?.data || "{}");
+}
+
+function runStateStreamUrl(runId) {
+  const token = backendAuthToken ? `?access_token=${encodeURIComponent(backendAuthToken)}` : "";
+  return `/api/runs/${encodeURIComponent(runId)}/state-stream${token}`;
+}
+
+async function refreshVisualizationRunList(selectedRunId = backendRun?.run_id || visualizationSelectedRunId) {
+  try {
+    const response = await backendApi.listRuns({ include_deleted: 0 });
+    visualizationRunList = Array.isArray(response?.runs)
+      ? response.runs.filter((run) => run && run.lifecycle_status !== "deleted")
+      : [];
+    if (selectedRunId) {
+      visualizationSelectedRunId = selectedRunId;
+    } else if (!visualizationSelectedRunId && visualizationRunList[0]?.run_id) {
+      visualizationSelectedRunId = visualizationRunList[0].run_id;
+    }
+    visualizationReplayStatus = `M9 可回放 run 列表已刷新：${visualizationRunList.length} 条`;
+  } catch (err) {
+    visualizationRunList = [];
+    visualizationReplayStatus = `M9 run 列表读取失败：${formatBackendError(err)}`;
+  }
+}
+
+async function loadVisualizationReplayForRun(runId = visualizationSelectedRunId || backendRun?.run_id) {
+  if (!runId) {
+    clearVisualizationStateSeries("", "尚未选择 run_id，无法加载 M9 离线状态序列");
+    return;
+  }
+  if (visualizationStateSeries && visualizationStateSeries.run_id !== runId) {
+    clearVisualizationStateSeries("", `正在加载 run ${runId} 的 M9 state_series artifact`);
+  }
+  try {
+    const detail = await backendApi.getRunDetail(runId);
+    const run = detail?.run || {};
+    if (!isRunComplete(run)) {
+      clearVisualizationStateSeries("", `run ${runId} 尚未完成，M9 离线状态序列未解锁`);
+      return;
+    }
+    const artifact = findVisualizationStateSeriesArtifact(detail?.artifact_manifest);
+    if (!artifact?.artifact_id) {
+      clearVisualizationStateSeries("", `run ${runId} 缺少 visualization_state_series artifact，M9 正式回放保持阻断`);
+      return;
+    }
+    const payload = await backendApi.getRunArtifactPayload(runId, artifact.artifact_id);
+    visualizationStateSeries = normalizeVisualizationStateSeriesPayload(payload, {
+      runId,
+      artifactId: artifact.artifact_id
+    });
+    visualizationSelectedRunId = runId;
+    visualizationReplayIndex = 0;
+    visualizationReplayPlaying = false;
+    stopVisualizationReplay();
+    visualizationReplayStatus = `M9 state_series 已加载：run_id ${runId} / artifact_id ${artifact.artifact_id} / ${visualizationStateSeries.frame_count} 帧 / ${visualizationStateSeries.event_count} 事件`;
+  } catch (err) {
+    clearVisualizationStateSeries("", `M9 回放加载失败：${formatBackendError(err)}`);
+  }
 }
 
 function clearAnalysisProjectionPayloads(runId = backendRun?.run_id) {
@@ -5377,6 +5664,97 @@ function setModelingImportActionError(label, fieldPath, err) {
   };
 }
 
+async function handleMesaControl(action) {
+  if (action === "refresh-runs") {
+    await refreshVisualizationRunList();
+    return;
+  }
+  if (action === "subscribe-run") {
+    subscribeVisualizationRunStream();
+    return;
+  }
+  if (action === "stop-subscription") {
+    stopVisualizationRunStream("M9.2 在线状态流订阅已停止");
+    return;
+  }
+  if (action === "load-replay") {
+    stopVisualizationRunStream("正在加载离线 artifact，M9.2 在线订阅已停止");
+    await loadVisualizationReplayForRun();
+    return;
+  }
+  const controlAction = backendControlActions[action];
+  if (controlAction) {
+    const runId = visualizationSelectedRunId || backendRun?.run_id;
+    const label = backendControlLabels[controlAction] || controlAction;
+    if (!runId) {
+      visualizationBackendControlStatus = `${label}失败：尚未选择 run_id`;
+      return;
+    }
+    visualizationBackendControlStatus = `正在请求后端${label}：run ${runId}`;
+    try {
+      const confirmed = await backendApi.controlRun(runId, controlAction);
+      const confirmedRunId = confirmed?.run_id || runId;
+      backendRun = { ...(backendRun || {}), ...confirmed, run_id: confirmedRunId };
+      visualizationSelectedRunId = confirmedRunId;
+      visualizationBackendControlStatus = `后端已确认${label}：run ${confirmedRunId} / ${runStatusLabel(backendRun)}`;
+      if (controlAction === "cancel") {
+        stopVisualizationRunStream(`run ${confirmedRunId} 已取消，M9.2 在线订阅已停止`);
+      }
+      await refreshVisualizationRunList(confirmedRunId);
+      await refreshRunResultThroughApi(confirmedRunId);
+      visualizationBackendControlStatus = `后端已确认${label}：run ${confirmedRunId} / ${runStatusLabel(backendRun)}`;
+    } catch (err) {
+      visualizationBackendControlStatus = `${label}失败：${formatBackendError(err)}`;
+    }
+    return;
+  }
+  if (visualizationStateSeries && !isVisualizationStateSeriesFromStream()) {
+    if (action === "step") {
+      visualizationReplayIndex = nextReplayIndex(visualizationStateSeries, visualizationReplayIndex, 1);
+      stopVisualizationReplay();
+      return;
+    }
+    if (action === "play") {
+      visualizationReplayPlaying = !visualizationReplayPlaying;
+      if (visualizationReplayPlaying) startVisualizationReplay();
+      else stopVisualizationReplay();
+      return;
+    }
+    if (action === "reset") {
+      visualizationReplayIndex = 0;
+      stopVisualizationReplay();
+      return;
+    }
+  }
+  if (["play", "step", "reset"].includes(action)) {
+    stopVisualizationReplay();
+    visualizationReplayStatus = "后端暂停、单步和重置属于 M9.3；尚未加载正式 state_series artifact 时不会在前端伪造运行控制";
+  }
+}
+
+function startVisualizationReplay() {
+  if (visualizationReplayTimer || !visualizationStateSeries || isVisualizationStateSeriesFromStream()) return;
+  visualizationReplayTimer = setInterval(() => {
+    const nextIndex = nextReplayIndex(visualizationStateSeries, visualizationReplayIndex, 1);
+    visualizationReplayIndex = nextIndex;
+    if (nextIndex >= visualizationStateSeries.frames.length - 1) {
+      stopVisualizationReplay();
+    }
+    render();
+  }, 900);
+}
+
+function isVisualizationStateSeriesFromStream(series = visualizationStateSeries) {
+  return Boolean(series && series.stream_id && series.expected_frame_count);
+}
+
+function stopVisualizationReplay() {
+  visualizationReplayPlaying = false;
+  if (!visualizationReplayTimer) return;
+  clearInterval(visualizationReplayTimer);
+  visualizationReplayTimer = null;
+}
+
 async function loadAviationSupportState(steps = aviationSteps) {
   if (typeof fetch === "undefined") {
     liveAviationState = null;
@@ -5403,12 +5781,33 @@ async function loadAviationSupportState(steps = aviationSteps) {
 }
 
 function renderVisualSimulation(page) {
-  const source = liveAviationState || AVIATION_SUPPORT_DEMO_STATE;
+  const loadedReplayMatchesSelection =
+    visualizationStateSeries && (!visualizationSelectedRunId || visualizationStateSeries.run_id === visualizationSelectedRunId);
+  const visualizationStateSeriesFrame = loadedReplayMatchesSelection ? frameAt(visualizationStateSeries, visualizationReplayIndex) : null;
+  const isOnlineStreamFrame =
+    visualizationStateSeriesFrame
+    && visualizationStreamState.runId === visualizationStateSeries.run_id
+    && ["connected", "disconnected", "artifact-ready"].includes(visualizationStreamState.status)
+    && visualizationStateSeries.expected_frame_count;
+  const source = visualizationStateSeriesFrame || liveAviationState || AVIATION_SUPPORT_DEMO_STATE;
   const state = normalizeAviationSupportState(source);
   const activeView = ["aircraft", "mission", "support"].includes(selectedMesaView) ? selectedMesaView : "aircraft";
-  if (!liveAviationState && !aviationLoadInFlight) {
+  if (!visualizationStateSeriesFrame && !liveAviationState && !aviationLoadInFlight) {
     loadAviationSupportState();
   }
+  const sourceLabel = visualizationStateSeriesFrame
+    ? (isOnlineStreamFrame ? "在线状态流" : "state_series artifact")
+    : (aviationSource === "live" ? "契约服务" : "演示快照");
+  const sourceClass = visualizationStateSeriesFrame ? (isOnlineStreamFrame ? "state-stream" : "state-series") : aviationSource;
+  const sourceTitle = visualizationStateSeriesFrame
+    ? `数据来源：run_id ${visualizationStateSeries.run_id} / artifact_id ${visualizationStateSeries.artifact_id}${isOnlineStreamFrame ? " / M9.2 online state stream" : ""}`
+    : `数据来源：${aviationSource === "live" ? "契约服务 127.0.0.1:8521" : "演示快照（契约服务未启动）"}`;
+  const timelineMax = Math.max(0, (visualizationStateSeries?.frame_count || 1) - 1);
+  const currentFrame = visualizationStateSeriesFrame ? visualizationReplayIndex + 1 : 0;
+  const runOptions = renderVisualizationRunOptions();
+  const eventStream = visualizationStateSeriesFrame
+    ? (visualizationStateSeries.event_stream || buildVisualizationEventStream(visualizationStateSeries))
+    : [];
   return `
     <div class="mesa-visual-shell">
       <div class="mesa-visual-header">
@@ -5417,7 +5816,7 @@ function renderVisualSimulation(page) {
           <h3>航空保障 Mesa ABM</h3>
           <p>从 mesa-abm-skill 的可视化仿真迁移而来，基于本地状态帧展示飞机、任务和保障资源。</p>
         </div>
-        <div class="mesa-clock">T+${Number((source.snapshot && source.snapshot.elapsed_hours) || 0).toFixed(1)}h <span class="mesa-source mesa-source-${aviationSource}" title="数据来源：${aviationSource === "live" ? "契约服务 127.0.0.1:8521" : "演示快照（契约服务未启动）"}">${aviationSource === "live" ? "契约服务" : "演示快照"}</span></div>
+        <div class="mesa-clock">T+${Number((source.snapshot && source.snapshot.elapsed_hours) || 0).toFixed(1)}h <span class="mesa-source mesa-source-${sourceClass}" title="${htmlEscape(sourceTitle)}">${htmlEscape(sourceLabel)}</span></div>
       </div>
       <div class="mesa-toolbar">
         <div class="mesa-tabs" role="tablist" aria-label="Mesa 可视化视图">
@@ -5426,11 +5825,37 @@ function renderVisualSimulation(page) {
           ${mesaTab("support", "保障视图", activeView)}
         </div>
         <div class="mesa-actions" aria-label="运行控制">
-          <button type="button" class="btn-primary" data-mesa-control="play">运行</button>
+          <button type="button" data-mesa-control="refresh-runs">刷新 run</button>
+          <select data-mesa-run-select aria-label="选择 M9 回放 run">${runOptions}</select>
+          <button type="button" data-mesa-control="subscribe-run">订阅运行</button>
+          <button type="button" data-mesa-control="stop-subscription">停止订阅</button>
+          <button type="button" data-mesa-control="load-replay">加载回放</button>
+          <button type="button" class="btn-primary" data-mesa-control="play">${visualizationReplayPlaying ? "暂停" : "运行"}</button>
           <button type="button" data-mesa-control="step">单步</button>
           <button type="button" data-mesa-control="reset">重置</button>
+          <button type="button" data-mesa-control="backend-cancel">取消运行</button>
+          <button type="button" data-mesa-control="backend-retry">重试运行</button>
+          <button type="button" data-mesa-control="backend-pause">后端暂停</button>
+          <button type="button" data-mesa-control="backend-resume">后端恢复</button>
+          <button type="button" data-mesa-control="backend-step">后端单步</button>
+          <button type="button" data-mesa-control="backend-reset">后端重置</button>
         </div>
       </div>
+      <div class="event ${visualizationStateSeriesFrame ? "success" : "warning"}">
+        <strong>M9 离线回放</strong> ${htmlEscape(visualizationReplayStatus)}
+        ${visualizationStateSeriesFrame ? `<br>run_id ${htmlEscape(visualizationStateSeries.run_id)} / artifact_id ${htmlEscape(visualizationStateSeries.artifact_id)} / step ${htmlEscape(visualizationStateSeriesFrame.step)} / ${currentFrame}-${htmlEscape(visualizationStateSeries.frame_count)} 帧 / 事件 ${htmlEscape(visualizationStateSeries.event_count)}` : "<br>演示快照只用于本地预览，不作为正式完成口径。"}
+      </div>
+      <div class="event ${visualizationStreamEventClass()}" data-mesa-stream-status>
+        <strong>M9.2 在线状态流</strong> ${htmlEscape(visualizationStreamState.message)}
+        <br>run_id ${htmlEscape(visualizationStreamState.runId || "-")} / status ${htmlEscape(visualizationStreamState.status)} / events ${htmlEscape(visualizationStreamState.eventCount || 0)} / artifact ${htmlEscape(visualizationStreamState.artifactId || "-")}
+      </div>
+      <div class="event info" data-mesa-backend-control-status>
+        <strong>M9.3 后端运行控制</strong> ${htmlEscape(visualizationBackendControlStatus)}
+      </div>
+      <div class="mesa-toolbar">
+        <input type="range" min="0" max="${timelineMax}" value="${Math.min(visualizationReplayIndex, timelineMax)}" data-mesa-timeline ${visualizationStateSeriesFrame && !isOnlineStreamFrame ? "" : "disabled"} aria-label="M9 state_series 时间轴">
+      </div>
+      ${renderVisualizationEventStream(eventStream, visualizationReplayIndex)}
       <div class="kpi-strip">
         ${state.kpis.map((item) => `<div class="kpi-card"><span>${item.label}</span><strong>${item.value}</strong></div>`).join("")}
       </div>
@@ -5442,6 +5867,48 @@ function renderVisualSimulation(page) {
           ${renderMesaSidePanel(activeView, state)}
         </aside>
       </div>
+    </div>
+  `;
+}
+
+function renderVisualizationRunOptions() {
+  const ids = new Set([
+    visualizationSelectedRunId,
+    backendRun?.run_id,
+    ...visualizationRunList.map((run) => run.run_id)
+  ].filter(Boolean));
+  if (ids.size === 0) return `<option value="">无已选择 run</option>`;
+  return Array.from(ids).map((runId) => {
+    const selected = runId === (visualizationSelectedRunId || backendRun?.run_id) ? "selected" : "";
+    return `<option value="${htmlEscape(runId)}" ${selected}>${htmlEscape(runId)}</option>`;
+  }).join("");
+}
+
+function visualizationStreamEventClass() {
+  if (["connected", "artifact-ready"].includes(visualizationStreamState.status)) return "success";
+  if (["unauthorized", "failed"].includes(visualizationStreamState.status)) return "warning";
+  if (visualizationStreamState.status === "disconnected") return "warning";
+  return "info";
+}
+
+function renderVisualizationEventStream(events, activeFrameIndex) {
+  return `
+    <div class="backend-run-chain" data-mesa-event-stream>
+      <div class="section-head">
+        <h3>事件追溯</h3>
+        <span>${events.length ? `${events.length} 个事件` : "等待正式 state_series"}</span>
+      </div>
+      ${events.length ? `
+        <div class="stack-list">
+          ${events.map((event) => `
+            <button type="button" class="event ${event.frame_index === activeFrameIndex ? "success" : "info"}" data-mesa-event-jump="${htmlEscape(event.frame_index)}">
+              <strong>T+${htmlEscape(event.simulation_time)} / step ${htmlEscape(event.step)}</strong>
+              ${htmlEscape(event.event_type || event.event)} - ${htmlEscape(event.message)}
+              <br><small>run ${htmlEscape(event.run_id)} / event ${htmlEscape(event.event_id)} / metrics ${(event.metric_refs || []).map((item) => htmlEscape(item)).join(", ") || "-"}</small>
+            </button>
+          `).join("")}
+        </div>
+      ` : `<div class="event warning">未加载正式 state_series artifact，事件流不使用演示快照。</div>`}
     </div>
   `;
 }

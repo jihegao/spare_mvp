@@ -127,6 +127,13 @@ export function createBackendApiClient({ baseUrl = DEFAULT_API_BASE, transport, 
     getRunDetail(runId) {
       return request({ method: "GET", path: `/runs/${encodeURIComponent(runId)}/detail` });
     },
+    controlRun(runId, action) {
+      return request({
+        method: "POST",
+        path: `/runs/${encodeURIComponent(runId)}/control`,
+        body: { action }
+      });
+    },
     downloadRunArtifact(runId, artifactId) {
       return request({
         method: "GET",
