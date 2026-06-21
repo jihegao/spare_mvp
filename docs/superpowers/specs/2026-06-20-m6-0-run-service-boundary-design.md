@@ -9,7 +9,7 @@ M6 的目标是把前端 JS 重算和本地 Mesa 状态帧升级为后端服务�
 ## 目标
 
 1. 新增后端 `RunService` 边界，集中处理 run request、Scenario 编译、同步本地执行、状态读取和输出读取。
-2. 新增 canonical HTTP 路径 `POST /api/runs`、`GET /api/runs/{run_id}`、`GET /api/runs/{run_id}/result`、`GET /api/runs/{run_id}/artifacts` 和 `GET /api/runs/{run_id}/chain`；保留 `/api/simulation-runs/*` 路径兼容入口，其中旧 `GET /api/simulation-runs/{run_id}` 继续返回原始 stored run payload。
+2. 新增 canonical HTTP 路径 `POST /api/runs`、`GET /api/runs/{run_id}`、`GET /api/runs/{run_id}/result`、`GET /api/runs/{run_id}/artifacts` 和 `GET /api/runs/{run_id}/chain`。2026-06-21 退役切片完成后，旧 run API 只返回 `410 legacy_run_api_retired`。
 3. 前端 `api-client` 使用 run submission/status 语义，Monte Carlo “启动”后先拿到 run id，再通过 status/result/artifact/chain 接口刷新页面状态。
 4. 当前执行器仍是同步本地 smoke runner：请求返回时 run 通常已完成，但接口表现为可轮询的服务化运行。这样后续替换为异步 worker 时不用重写前端与 API contract。
 5. 文档明确 M6.0 不是完整 worker、不是真实批量 Monte Carlo、不是 `aviation_support` 编译解锁，也不扩大 M4 权限审计范围。
@@ -82,7 +82,7 @@ Canonical `POST /api/runs` 接收：
 }
 ```
 
-M6.0 只执行 `model_family=smoke` 和 `run_type=single`。Canonical `/api/runs` 缺少 `model_family` 时返回 `bad_run_request`；旧 `startSimulationRun()` / `/api/simulation-runs` 兼容入口可以继续默认 `smoke`。`aviation_support` 继续返回 `unsupported_model_family`。M6.1 负责为 `aviation_support` 或正式业务模型族补 Scenario compiler skeleton、字段 mapping、默认值和阻断策略；真实批量 Monte Carlo fan-out、取消、重试、超时、资源隔离和运行日志是 M6.2/M7 范围。
+M6.0 只执行 `model_family=smoke` 和 `run_type=single`。Canonical `/api/runs` 缺少 `model_family` 时返回 `bad_run_request`；2026-06-21 退役切片完成后，旧 run API 不再作为默认 `smoke` 入口。`aviation_support` 继续返回 `unsupported_model_family`。M6.1 负责为 `aviation_support` 或正式业务模型族补 Scenario compiler skeleton、字段 mapping、默认值和阻断策略；真实批量 Monte Carlo fan-out、取消、重试、超时、资源隔离和运行日志是 M6.2/M7 范围。
 
 ### 前端行为
 
@@ -125,7 +125,7 @@ M6.1 的优先目标是输入一致性：定义哪些 Project / ExperimentPlan �
 
 ### 权限与审计边界
 
-M6.0 不扩大 M4 的用户、会话、授权和审计范围。当前 `/api/runs` 与旧 `/api/simulation-runs` 保持现有运行 API 的访问语义。后续若要求普通评估用户提交运行、系统管理员管理资源，需要单独做 M4/M7 权限切片。
+M6.0 不扩大 M4 的用户、会话、授权和审计范围。当前运行 API 的可用入口是 canonical `/api/runs`；后续若要求普通评估用户提交运行、系统管理员管理资源，需要单独做 M4/M7 权限切片。
 
 ### Artifact 边界
 
@@ -134,16 +134,16 @@ M6.0 继续使用当前 `SimulationAdapter.run_scenario()` 写出的本地 artif
 ## 测试策略
 
 1. 后端 API tests 覆盖 `RunService.submit_run()`、status envelope、Plan/Project 不匹配阻断、unsupported model family 阻断和旧 `BackendApi.start_simulation_run()` 兼容。
-2. HTTP tests 覆盖 `POST /api/runs`、`GET /api/runs/{run_id}` status envelope，以及旧 `/api/simulation-runs` 路径兼容。
+2. HTTP tests 覆盖 `POST /api/runs`、`GET /api/runs/{run_id}` status envelope，以及旧 run API 的 `410 legacy_run_api_retired` 负向契约。
 3. Frontend API client tests 覆盖 `submitRun()`、`getRunStatus()`、旧 `startSimulationRun()` alias 和 status/result/artifact/chain 读取顺序。
 4. Frontend contract tests 覆盖 Monte Carlo 启动通过 run status 刷新，不绕过 ExperimentPlan branch，不创建 `offline-demo-run`。
-5. Browser smoke 更新为等待 `/api/runs` 或兼容路径，验证 run status、result、artifact manifest 和 identity chain 刷新后仍可恢复。
+5. Browser smoke 更新为等待 `/api/runs`，验证 run status、result、artifact manifest 和 identity chain 刷新后仍可恢复。
 6. 文档同步后运行 stale wording 搜索，确认 M6.0 没有宣称完整 worker、真实批量 Monte Carlo 或 `aviation_support` 解锁。
 
 ## 验收标准
 
 1. `POST /api/runs` 可从已保存 Project 和 ExperimentPlan 创建 smoke run，并返回 run id 与完成态 status envelope。
 2. `GET /api/runs/{run_id}`、`result`、`artifacts` 和 `chain` 在服务重启后仍能查询同一 run。
-3. `/api/simulation-runs/*` 路径兼容仍通过现有测试，旧 `GET /api/simulation-runs/{run_id}` 不改成 status envelope。
+3. 旧 run API 返回 `410 legacy_run_api_retired`，不再作为 status envelope 或 raw stored run 查询入口。
 4. 前端启动运行后以 run status/result/artifact/chain 更新状态；API 不可用时阻断，不生成离线 run。
 5. `npm test`、选定后端 `unittest`、浏览器 smoke 和 `git diff --check` 通过。

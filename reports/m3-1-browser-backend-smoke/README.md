@@ -60,7 +60,7 @@ SMOKE_BASE_URL=http://127.0.0.1:4173/front/ node reports/m3-1-browser-backend-sm
 
 | 命令 | 当前结果 |
 | --- | --- |
-| `.abm-mesa-test-env/bin/python -m unittest tests.test_backend_http_api` | 15 个 HTTP API 测试通过，包含 canonical `/api/runs`、旧 `/api/simulation-runs` 返回 `410 legacy_run_api_retired` 和持久 SQLite 重启后 Project/Run/Result/Artifact 查询 |
+| `.abm-mesa-test-env/bin/python -m unittest tests.test_backend_http_api` | 26 个 HTTP API 测试通过，包含 canonical `/api/runs`、旧 `/api/simulation-runs` 返回 `410 legacy_run_api_retired` 和持久 SQLite 重启后 Project/Run/Result/Artifact 查询 |
 | `node --test tests/frontend-api-client.test.mjs` | 前端 API client/save-boundary 测试通过，包含 canonical `submitRun()`、`getRunStatus()`、result/artifacts/chain 刷新恢复入口和无 fake offline run 检查 |
 | `node --test tests/e2e-contract-flow.test.mjs` | 覆盖 M3-1 README 文档契约 |
 | `SMOKE_BASE_URL=http://127.0.0.1:4173/front/ node reports/m3-1-browser-backend-smoke/browser-backend-smoke.mjs` | 真实浏览器验收脚本，输出 JSON 与截图证据 |

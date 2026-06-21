@@ -490,7 +490,7 @@ M6.2.y 运行 API 退场收束：legacy `/api/simulation-runs` 已从正式和�
 In `agent.md`, replace the legacy compatibility rule with:
 
 ```md
-22. Legacy `/api/simulation-runs` 已退役：新实现、测试、浏览器 smoke 和文档不得把它作为可用兼容路径；运行提交和查询必须走 canonical `/api/runs`、`/api/runs/{run_id}`、`/api/runs/{run_id}/result`、`/api/runs/{run_id}/artifacts` 和 `/api/runs/{run_id}/chain`。旧路径只允许返回 `410 legacy_run_api_retired` 的负向契约。
+22. Legacy `/api/simulation-runs` 已退役：新实现、测试、浏览器 smoke 和文档不得把它作为可用入口；运行提交和查询必须走 canonical `/api/runs`、`/api/runs/{run_id}`、`/api/runs/{run_id}/result`、`/api/runs/{run_id}/artifacts` 和 `/api/runs/{run_id}/chain`。旧路径只允许返回 `410 legacy_run_api_retired` 的负向契约。
 ```
 
 - [x] **Step 4: Run stale-document scans**
@@ -527,7 +527,7 @@ Run these commands fresh before claiming completion:
 npm test
 .abm-mesa-test-env/bin/python -m unittest tests.test_backend_http_api -v
 rg -n "/simulation-runs|getRun\\(" front tests reports README.md docs agent.md src
-rg -n "兼容路径|继续兼容|legacy.*accepted|/api/simulation-runs.*保留" README.md docs agent.md reports
+rg -n '兼容路''径|继续兼''容|lega''cy.*acce''pted|/api/simulation-runs.*保''留' README.md docs agent.md reports
 git diff --check
 git status --short
 ```
@@ -538,5 +538,5 @@ Completion evidence must show:
 2. Backend returns `410 legacy_run_api_retired` for all `/api/simulation-runs*` requests.
 3. Canonical `/api/runs` status/result/artifacts/chain tests pass.
 4. Browser smoke waits only for `/api/runs`.
-5. Active docs do not say the legacy path is still compatible or accepted.
+5. Active docs do not say the legacy path remains a usable API.
 6. M7 worker/artifact management, M8 projection payload, M9 state stream, and `aviation_support` formal execution remain out of scope.

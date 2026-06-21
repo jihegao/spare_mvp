@@ -4,7 +4,7 @@
 
 **Goal:** Add the M6.0 run service boundary so frontend run launch goes through canonical run submission/status APIs while the current smoke runner remains the synchronous local executor.
 
-**Architecture:** Create a focused `RunService` that owns run request validation, ExperimentPlan snapshot resolution, Scenario compilation, local synchronous execution, persistence, and status envelope formatting. `BackendApi` delegates run orchestration to the service, HTTP exposes `/api/runs` as the canonical status-envelope path while preserving `/api/simulation-runs` path compatibility, and the frontend polls run status before loading result/artifacts/chain. M6.0 compiles from the ExperimentPlan-bound ModelingSnapshot plus supported plan config fields (`steps` only); it deliberately stops before full ExperimentPlan payload compilation, worker queues, cancellation, retries, true Monte Carlo fan-out, long-term artifact storage, or `aviation_support` compilation.
+**Architecture:** Create a focused `RunService` that owns run request validation, ExperimentPlan snapshot resolution, Scenario compilation, local synchronous execution, persistence, and status envelope formatting. `BackendApi` delegates run orchestration to the service, HTTP exposes `/api/runs` as the canonical status-envelope path, and the frontend polls run status before loading result/artifacts/chain. This original M6.0 record predated the 2026-06-21 legacy run API retirement; current code retires the old run API with `410 legacy_run_api_retired`. M6.0 compiles from the ExperimentPlan-bound ModelingSnapshot plus supported plan config fields (`steps` only); it deliberately stops before full ExperimentPlan payload compilation, worker queues, cancellation, retries, true Monte Carlo fan-out, long-term artifact storage, or `aviation_support` compilation.
 
 **Tech Stack:** Python `unittest`, standard-library HTTP server, SQLite repository, `SimulationAdapter`, browser-native ES modules, Node `node:test`, Playwright browser smoke.
 
@@ -12,7 +12,7 @@
 
 ## 当前实现状态
 
-截至 2026-06-20，本计划的 M6.0 首片已实现到代码路径：`RunService` 承接同步 smoke run 的提交和 status envelope，`BackendApi` 委托 `submit_run()` / `get_run_status()`，HTTP 暴露 canonical `/api/runs` 并保留 `/api/simulation-runs` 兼容路径，前端通过 `submitRun()` / `getRunStatus()` 再读取 result/artifacts/chain，浏览器 smoke 等待 canonical `/api/runs` 或旧兼容入口。RunService 在当前进程内串行化 run id 生成，并在执行器失败后持久化 failed run 和空 ArtifactManifest，供 status 查询。计划正文保留 TDD 实施步骤和验收口径，供后续审计和回归使用。
+截至 2026-06-20，本计划的 M6.0 首片已实现到代码路径：`RunService` 承接同步 smoke run 的提交和 status envelope，`BackendApi` 委托 `submit_run()` / `get_run_status()`，HTTP 暴露 canonical `/api/runs`，前端通过 `submitRun()` / `getRunStatus()` 再读取 result/artifacts/chain。2026-06-21 的 legacy run API retirement 已覆盖本计划中旧 run API 的过渡设计，当前旧入口只返回 `410 legacy_run_api_retired`。RunService 在当前进程内串行化 run id 生成，并在执行器失败后持久化 failed run 和空 ArtifactManifest，供 status 查询。计划正文保留 TDD 实施步骤和验收口径，供后续审计和回归使用。
 
 ## File Structure
 
@@ -21,7 +21,7 @@
 - Modify: `src/spare_mvp_backend/api.py`
   - Instantiates `RunService`, delegates `start_simulation_run()`, and exposes `submit_run()` / `get_run_status()` helpers.
 - Modify: `src/spare_mvp_backend/http_server.py`
-  - Adds canonical `/api/runs` routes and keeps `/api/simulation-runs` aliases.
+  - Adds canonical `/api/runs` routes. The 2026-06-21 retirement slice later changed the old run API to return `410 legacy_run_api_retired`.
 - Modify: `front/api-client.mjs`
   - Adds `submitRun()` and `getRunStatus()`, keeps `startSimulationRun()` as a compatibility alias.
 - Modify: `front/app.js`
@@ -438,7 +438,7 @@ Expected: FAIL because `/api/runs` is not routed.
 
 - [ ] **Step 2: Add `/api/runs` routes**
 
-In `src/spare_mvp_backend/http_server.py`, before the existing `/simulation-runs` branch, add:
+In `src/spare_mvp_backend/http_server.py`, add the canonical run branch:
 
 ```python
 if self.command == "POST" and route == "/runs":
@@ -453,25 +453,7 @@ if self.command == "GET" and len(parts) == 3 and parts[0] == "runs" and parts[2]
     return api.get_run_chain(parts[1])
 ```
 
-Keep the existing `GET /simulation-runs/{run_id}` route returning the raw stored run payload for compatibility:
-
-```python
-if self.command == "GET" and len(parts) == 2 and parts[0] == "simulation-runs":
-    return api.get_run(parts[1])
-```
-
-Keep `POST /simulation-runs` as a compatibility alias:
-
-```python
-if self.command == "POST" and route == "/simulation-runs":
-    if "project_id" not in body or "experiment_plan_id" not in body:
-        raise ValueError("project_id and experiment_plan_id are required")
-    return api.start_simulation_run(
-        body["project_id"],
-        body["experiment_plan_id"],
-        body.get("model_family", "smoke"),
-    )
-```
+This original plan also included a temporary old-run API transition branch. That transition was removed by the 2026-06-21 retirement slice; current callers must use canonical `/api/runs`, and old run API calls receive `410 legacy_run_api_retired`.
 
 - [ ] **Step 3: Verify HTTP tests**
 
@@ -498,7 +480,7 @@ git commit -m "feat: expose canonical run routes"
 
 - [ ] **Step 1: Add failing API client tests**
 
-In `tests/frontend-api-client.test.mjs`, update the test transport near the existing `/simulation-runs` handling to also support:
+In `tests/frontend-api-client.test.mjs`, update the test transport near the run submission handling to also support:
 
 ```javascript
 if (request.path === "/runs") {
@@ -835,13 +817,13 @@ git commit -m "feat: poll backend run status from frontend"
 
 - [ ] **Step 1: Update smoke to wait for canonical run route**
 
-In `reports/m3-1-browser-backend-smoke/browser-backend-smoke.mjs`, replace response waits that only match `/api/simulation-runs` with a helper:
+In `reports/m3-1-browser-backend-smoke/browser-backend-smoke.mjs`, use a helper for run-submit responses:
 
 ```javascript
 function isRunSubmissionResponse(response) {
   return (
     response.status() === 200 &&
-    (response.url().endsWith("/api/runs") || response.url().endsWith("/api/simulation-runs"))
+    response.url().endsWith("/api/runs")
   );
 }
 ```
@@ -865,7 +847,7 @@ if (!/完成|succeeded|运行中|running/.test(summary.statusText)) {
 In `reports/m3-1-browser-backend-smoke/README.md`, add a M6.0 note:
 
 ```markdown
-M6.0 更新：浏览器 smoke 现在接受 canonical `/api/runs` 作为运行提交入口，并继续兼容旧 `/api/simulation-runs`。验收重点是前端拿到 `run_id` 后通过 run status/result/artifact/chain 刷新页面；当前执行器仍是同步本地 smoke runner，不代表完整 worker 队列、取消、重试或真实批量 Monte Carlo 已完成。
+M6.0 更新：浏览器 smoke 现在接受 canonical `/api/runs` 作为运行提交入口。2026-06-21 退役切片完成后，旧 run API 只返回 `410 legacy_run_api_retired`。验收重点是前端拿到 `run_id` 后通过 run status/result/artifact/chain 刷新页面；当前执行器仍是同步本地 smoke runner，不代表完整 worker 队列、取消、重试或真实批量 Monte Carlo 已完成。
 ```
 
 - [ ] **Step 3: Run browser smoke**
@@ -931,7 +913,7 @@ M6.0 首片：新增 `RunService` 与 canonical `/api/runs`，把当前同步 sm
 In `agent.md`, add a validation rule:
 
 ```markdown
-14. M6.0 运行服务首片必须通过 canonical `/api/runs` 创建和查询 run status，同时保留 `/api/simulation-runs` 兼容路径；运行 identity 必须来自 ExperimentPlan，后端输入使用该计划绑定的 ModelingSnapshot 和当前支持的 `steps` 配置，不能绕过 M5.3 的 Project/Plan 分界。
+14. M6.0 运行服务首片必须通过 canonical `/api/runs` 创建和查询 run status；运行 identity 必须来自 ExperimentPlan，后端输入使用该计划绑定的 ModelingSnapshot 和当前支持的 `steps` 配置，不能绕过 M5.3 的 Project/Plan 分界。2026-06-21 后旧 run API 只允许返回 `410 legacy_run_api_retired`。
 ```
 
 - [ ] **Step 5: Run stale wording scan**
@@ -939,7 +921,7 @@ In `agent.md`, add a validation rule:
 Run:
 
 ```bash
-rg -n "完整 worker|真实批量 Monte Carlo|aviation_support.*解锁|/api/simulation-runs.*唯一|offline-demo-run" README.md docs agent.md front tests reports
+rg -n "完整 worker|真实批量 Monte Carlo|aviation_support.*解锁|offline-demo-run" README.md docs agent.md front tests reports
 ```
 
 Expected: matches either document explicit non-goals/compatibility or existing tests that block `offline-demo-run`; no current docs claim M6.0 already completed full worker or true batch Monte Carlo.
