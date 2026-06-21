@@ -1,5 +1,30 @@
 > 2026-06-20 决策：已取消“系统管理 / 项目管理 / 建模数据导入：删除此页面”。M5.2 建模数据导入工作台继续保留；本文件其余建议按页面修复范围执行。
 
+## 2026-06-21 状态审计
+
+本节用于标注 6/19 页面修改建议的当前处理状态。原始条目保留在下方，未完成项已迁移或补充到 `reports/2026-06-21-imported-sample-debug/README.md` 作为缺陷清单继续跟踪。状态表和 open 缺陷迁移由 `tests/page-revision-status.test.mjs` 覆盖。
+
+| # | 范围 | 状态 | 测试/记录 |
+|---|---|---|---|
+| 1 | 项目列表页 | Fixed locally | `tests/frontend-contract.test.mjs` 覆盖项目列表编辑、系统管理入口和项目来源区分。 |
+| 2 | 系统管理 / 数据管理 | Fixed locally | `tests/frontend-contract.test.mjs` 覆盖三类 tab、选择、删除和导出预览。 |
+| 3 | 建模颗粒度管理 | Fixed locally | `tests/frontend-contract.test.mjs` 覆盖建模颗粒度页面只保留层级/对象/关系表。 |
+| 4 | 用户管理 | Fixed locally | `tests/frontend-contract.test.mjs` 覆盖新增/编辑表单、批量删除选择和保存失败提示。 |
+| 5 | 系统功能权限管理 | Fixed locally | `tests/frontend-contract.test.mjs` 覆盖配置权限入口、角色字段和权限表单。 |
+| 6 | 建模表单管理 | Closed by decision | 页面已删除；建模数据导入页面按 2026-06-20 决策保留。 |
+| 7 | 装备系统建模 | Fixed locally | `tests/frontend-contract.test.mjs` 和 `tests/equipment-tree-model.test.mjs` 覆盖数量显示、LRU/SRU、N中取K、故障字段和装备树行为。 |
+| 8 | 基本任务建模 | Partial / follow-up changed scope | 树选择、字段删改和阶段占比已覆盖；“任务时间系数”需求已被后续 2026-06-21 用户反馈取消。 |
+| 9 | 复合任务建模 | Fixed locally | 时间轴已按“基本任务 + 编队”拆分；复合任务项装备类型、任务时长、要求装备数量和最小装备数量均为任务项级可编辑字段。测试：`tests/page-revision-status.test.mjs`。 |
+| 10 | 保障组织结构建模 | Partial / open defect | 初始树已修；组织详情可编辑、树新增/删除/三级约束仍 open，见今天报告 #18。 |
+| 11 | 备件建模 | Partial / open defect | 选择、批量删除和资源面板结构已有测试；新增/编辑与 LRU 自动读取仍 open，见今天报告 #16。 |
+| 12 | 保障人员建模 | Partial / open defect | 选择、批量删除和资源面板结构已有测试；新增/编辑仍 open，见今天报告 #16。 |
+| 13 | 保障设备建模 | Partial / open defect | 选择、批量删除和资源面板结构已有测试；新增/编辑仍 open，见今天报告 #16。 |
+| 14 | 基本保障活动建模 | Fixed locally | 新增、批量删除、复选、删除和编辑面板已有代码；需从源码断言补齐行为测试。 |
+| 15 | 使用保障活动建模 | Fixed locally | 树已补为“飞机列表 -> 机型 -> 方案名 -> 飞行前准备/再次出动准备/飞行后检查”；工作项目编辑按钮会打开编辑面板。测试：`tests/page-revision-status.test.mjs`。 |
+| 16 | 预防性维修活动建模 | Fixed locally | 树叶子停留在维修活动本身，不再下挂工作项目；工作项目编辑按钮会打开编辑面板。测试：`tests/page-revision-status.test.mjs`。 |
+| 17 | 修复性维修活动建模 | Fixed locally | 装备构型树支持点选整机/组件并在右侧显示维修对象；工作项目编辑按钮会打开编辑面板。测试：`tests/page-revision-status.test.mjs`。 |
+| 18 | 后勤保障活动建模 | Fixed locally | `tests/frontend-contract.test.mjs` 覆盖运输策略字段、起终点选择、触发参数和删除无关工作项目清单。 |
+
 1. 项目列表页
 
 ![1781929442367](image/页面修改建议260619/1781929442367.png)
