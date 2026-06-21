@@ -1,6 +1,6 @@
 # Imported JSON Single Source And Static Business Data Exit Implementation Record
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** 前台静态业务数据退场，建立 `tests/fixtures/modeling_import_project.json` -> published modeling import -> Project draft ->页面/RunIntent 的单一示例数据源。
 
@@ -80,7 +80,7 @@ Execution status as of 2026-06-21:
 - Modify: `tests/frontend-contract.test.mjs`
 - Modify: `tests/sim-engine.test.mjs`
 
-- [ ] **Step 1: Add fixture-shape contract for the canonical JSON**
+- [x] **Step 1: Add fixture-shape contract for the canonical JSON**
 
 Add this helper to `tests/modeling-import-contract.test.mjs`:
 
@@ -123,7 +123,7 @@ test("canonical modeling import fixture covers all project authoring surfaces", 
 });
 ```
 
-- [ ] **Step 2: Add source-boundary tests for frontend static fallback**
+- [x] **Step 2: Add source-boundary tests for frontend static fallback**
 
 Add this test to `tests/frontend-contract.test.mjs`:
 
@@ -148,7 +148,7 @@ test("frontend business authoring pages do not hydrate missing imported data fro
 });
 ```
 
-- [ ] **Step 3: Replace default scenario data assertions with empty-shell assertions**
+- [x] **Step 3: Replace default scenario data assertions with empty-shell assertions**
 
 In `tests/sim-engine.test.mjs`, replace assertions that require aircraft names, tasks, support nodes or activities in `defaultScenario` with:
 
@@ -183,7 +183,7 @@ function previewScenarioFixture() {
 }
 ```
 
-- [ ] **Step 4: Run failing tests**
+- [x] **Step 4: Run failing tests**
 
 Run:
 
@@ -193,7 +193,7 @@ npm test -- tests/modeling-import-contract.test.mjs tests/frontend-contract.test
 
 Expected before implementation: FAIL because `front/app.js` still has static business constants and `defaultScenario` still carries sample business data.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 After implementation tasks make these tests pass, commit this task's test changes with:
 
@@ -212,7 +212,7 @@ git commit -m "test: lock imported json data-source boundary"
 - Modify: `tests/frontend-modeling-import-flow.test.mjs`
 - Modify: `tests/fixtures/modeling_import_project.json`
 
-- [ ] **Step 1: Extend canonical fixture with missing top-level authoring fields**
+- [x] **Step 1: Extend canonical fixture with missing top-level authoring fields**
 
 If missing, add these fields to `tests/fixtures/modeling_import_project.json`:
 
@@ -244,7 +244,7 @@ If missing, add these fields to `tests/fixtures/modeling_import_project.json`:
 
 Do not remove existing mission-level fields; keep compatibility while backend conversion learns the new roots.
 
-- [ ] **Step 2: Replace hand-maintained JS object with generated JSON module**
+- [x] **Step 2: Replace hand-maintained JS object with generated JSON module**
 
 `front/modeling-import-demo-fixture.mjs` cannot import JSON directly in this repo without changing runtime assumptions. Replace its body with a single exported JS object whose value is exactly the parsed content of `tests/fixtures/modeling_import_project.json`, and add this header above the export:
 
@@ -255,7 +255,7 @@ Do not remove existing mission-level fields; keep compatibility while backend co
 
 The worker must verify exact synchronization with the drift test in Step 3 before committing. Do not keep extra fields, comments inside the object, or front-end-only business values in this module.
 
-- [ ] **Step 3: Add drift test**
+- [x] **Step 3: Add drift test**
 
 Add this test to `tests/frontend-contract.test.mjs`:
 
@@ -266,7 +266,7 @@ test("frontend modeling import demo fixture is synchronized with canonical JSON 
 });
 ```
 
-- [ ] **Step 4: Run fixture tests**
+- [x] **Step 4: Run fixture tests**
 
 Run:
 
@@ -276,7 +276,7 @@ npm test -- tests/frontend-contract.test.mjs tests/frontend-modeling-import-flow
 
 Expected after implementation: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add front/modeling-import-demo-fixture.mjs tests/fixtures/modeling_import_project.json tests/frontend-contract.test.mjs tests/frontend-modeling-import-flow.test.mjs tests/modeling-import-contract.test.mjs
@@ -294,7 +294,7 @@ git commit -m "refactor: derive demo import fixture from canonical json"
 - Modify: `tests/sim-engine.test.mjs`
 - Modify: `tests/support-activity-jobs.test.mjs`
 
-- [ ] **Step 1: Reduce `defaultScenario` to a schema-valid empty shell**
+- [x] **Step 1: Reduce `defaultScenario` to a schema-valid empty shell**
 
 In `front/sim-engine.mjs`, keep object keys expected by the UI but empty business arrays:
 
@@ -332,7 +332,7 @@ export const defaultScenario = {
 
 If `validateScenario()` rejects empty arrays or zero values that are now intentional for preview shell, update validation to distinguish required runtime Scenario from authoring shell. Do not add sample rows to make validation pass.
 
-- [ ] **Step 2: Remove static business constants from page hydration**
+- [x] **Step 2: Remove static business constants from page hydration**
 
 In `front/app.js`, remove static business constants used as page data:
 
@@ -357,7 +357,7 @@ function importedDataEmptyState(label) {
 
 Use this helper in equipment, mission, support organization, support resource, support activity, experiment and Monte Carlo pages when their corresponding arrays/objects are empty.
 
-- [ ] **Step 3: Keep formal run gate unchanged**
+- [x] **Step 3: Keep formal run gate unchanged**
 
 Do not loosen `currentProjectCanStartFormalRun()`. It must still require:
 
@@ -371,7 +371,7 @@ Preview fixture or manual draft projects must still show the existing message:
 请先从已发布建模导入包生成示例项目，再启动正式后端运行
 ```
 
-- [ ] **Step 4: Run frontend tests**
+- [x] **Step 4: Run frontend tests**
 
 Run:
 
@@ -381,7 +381,7 @@ npm test -- tests/frontend-contract.test.mjs tests/sim-engine.test.mjs tests/sup
 
 Expected after implementation: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add front/sim-engine.mjs front/app.js tests/frontend-contract.test.mjs tests/sim-engine.test.mjs tests/support-activity-jobs.test.mjs
@@ -397,7 +397,7 @@ git commit -m "feat: demote static frontend business data to empty states"
 - Modify: `tests/test_backend_api_contract.py`
 - Modify: `contracts/modeling_import.schema.json` if schema blocks canonical fields
 
-- [ ] **Step 1: Add backend conversion test for full canonical fixture**
+- [x] **Step 1: Add backend conversion test for full canonical fixture**
 
 Add this test to `tests/test_backend_api_contract.py`:
 
@@ -427,7 +427,7 @@ def test_modeling_import_to_project_preserves_full_authoring_surfaces(self) -> N
     self.assertIn("largeSample", project["analysisRequests"])
 ```
 
-- [ ] **Step 2: Add backend conversion test for explicit empty collections**
+- [x] **Step 2: Add backend conversion test for explicit empty collections**
 
 Add:
 
@@ -456,7 +456,7 @@ def test_modeling_import_to_project_preserves_explicit_empty_collections(self) -
     self.assertEqual(project["combatUnit"]["members"], [])
 ```
 
-- [ ] **Step 3: Update conversion to preserve fields**
+- [x] **Step 3: Update conversion to preserve fields**
 
 In `src/spare_mvp_backend/modeling_import.py`, extend `modeling_import_to_project()`:
 
@@ -480,7 +480,7 @@ Ensure returned Project contains:
 
 Preserve explicit empty arrays. Do not use `or default` for arrays because `[]` is meaningful.
 
-- [ ] **Step 4: Run backend tests**
+- [x] **Step 4: Run backend tests**
 
 Run:
 
@@ -490,7 +490,7 @@ Run:
 
 Expected after implementation: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/spare_mvp_backend/modeling_import.py tests/test_backend_api_contract.py contracts/modeling_import.schema.json
