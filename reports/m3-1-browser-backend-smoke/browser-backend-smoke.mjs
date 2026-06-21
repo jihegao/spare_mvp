@@ -74,6 +74,7 @@ try {
   await page.waitForFunction(() => document.body.innerText.includes("ArtifactManifest"));
   const afterRefresh = await readBackendEvidence(page);
   assertHasIdentityChain(afterRefresh.chain, "after refresh");
+  const m7RunArtifactEvidence = await verifyM7RunArtifactManagement(page, afterRefresh.chain.Run);
   if (afterRefresh.chain.Run !== beforeRefresh.chain.Run) {
     throw new Error(`Refresh loaded a different run: ${afterRefresh.chain.Run} != ${beforeRefresh.chain.Run}`);
   }
@@ -144,6 +145,7 @@ try {
     afterRefresh,
     afterRestartRun,
     afterRestartImport,
+    m7RunArtifactEvidence,
     projectDraftEvidence,
     restartInfo,
     offlineBlocked: {
@@ -272,6 +274,44 @@ async function readBackendEvidence(page) {
       bodyText: document.body.innerText
     };
   });
+}
+
+async function verifyM7RunArtifactManagement(page, runId) {
+  const refreshRunsButton = page.locator('[data-action="m7-refresh-runs"]');
+  await refreshRunsButton.click();
+  await page.waitForFunction(
+    (expectedRunId) => document.querySelector(".m7-run-artifact-management")?.innerText.includes(expectedRunId),
+    runId,
+    { timeout: 5000 }
+  );
+  const openRunDetailButton = page.locator(`button[data-action="m7-open-run-detail"][data-run-id="${runId}"]`).first();
+  await openRunDetailButton.click();
+  await page.waitForFunction(() => {
+    const section = document.querySelector(".m7-run-artifact-management");
+    if (!section) return false;
+    const text = section.innerText;
+    return text.includes("artifact_id")
+      && text.includes("sha256")
+      && text.includes("size_bytes")
+      && /[0-9a-f]{64}/.test(text);
+  }, null, { timeout: 5000 });
+  const artifactButton = page.locator('.m7-run-artifact-management button[data-action="m7-download-artifact"][data-artifact-id]').first();
+  const artifactId = await artifactButton.getAttribute("data-artifact-id");
+  if (!artifactId) {
+    throw new Error("M7 smoke could not find a downloadable artifact_id");
+  }
+  const downloadEventPromise = page.waitForEvent("download");
+  await artifactButton.click();
+  const download = await downloadEventPromise;
+  if (!download.suggestedFilename().includes(artifactId)) {
+    throw new Error(`M7 artifact download filename did not include ${artifactId}: ${download.suggestedFilename()}`);
+  }
+  return {
+    runId,
+    artifactId,
+    suggestedFilename: download.suggestedFilename(),
+    panelText: await page.locator(".m7-run-artifact-management").innerText()
+  };
 }
 
 function assertHasIdentityChain(chain, label) {

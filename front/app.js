@@ -237,6 +237,10 @@ let backendRun = null;
 let backendRunResult = null;
 let backendArtifactManifest = null;
 let backendRunChain = null;
+let m7RunList = [];
+let m7RunDetail = null;
+let m7SelectedRunId = "";
+let m7RunArtifactStatus = "M7 运行产物账本尚未加载";
 let backendApiStatus = "离线演示";
 let formalRunSubmitInFlight = false;
 let systemUserEditor = null;
@@ -917,6 +921,12 @@ function bindEvents() {
     const savePlanButton = event.target.closest("[data-save-plan]");
     if (savePlanButton) {
       saveCurrentExperimentPlanThroughApi().finally(() => render());
+      return;
+    }
+
+    const m7RunArtifactButton = event.target.closest("[data-action^='m7-']");
+    if (m7RunArtifactButton) {
+      handleM7RunArtifactAction(m7RunArtifactButton).finally(() => render());
       return;
     }
 
@@ -4743,6 +4753,7 @@ async function startMonteCarloRunThroughApi({ monteCarloExperimentId = selectedM
 async function refreshRunResultThroughApi(runId = backendRun?.run_id) {
   if (!runId) return;
   backendRun = await backendApi.getRunStatus(runId);
+  await refreshM7RunArtifactPanel(runId);
   if (!isRunComplete(backendRun)) {
     backendRunResult = null;
     backendArtifactManifest = { artifacts: [] };
@@ -4770,6 +4781,83 @@ async function refreshRunResultThroughApi(runId = backendRun?.run_id) {
   singleResult = state.singleResult;
   monteCarloResult = state.monteCarloResult;
   return backendRun;
+}
+
+async function refreshM7RunArtifactPanel(runId = backendRun?.run_id || m7SelectedRunId) {
+  const selectedRunId = runId || m7SelectedRunId;
+  try {
+    const listResponse = await backendApi.listRuns({ run_type: "monte_carlo", include_deleted: 1 });
+    m7RunList = Array.isArray(listResponse?.runs) ? listResponse.runs : [];
+  } catch (err) {
+    m7RunList = [];
+    m7RunArtifactStatus = `M7 run list 读取失败：${err && err.message ? err.message : "Backend API 不可用"}`;
+  }
+  if (!selectedRunId) return;
+  try {
+    m7RunDetail = await backendApi.getRunDetail(selectedRunId);
+    m7SelectedRunId = selectedRunId;
+    const run = m7RunDetail?.run || {};
+    const artifacts = m7RunArtifactRows();
+    m7RunArtifactStatus = `M7 运行产物账本已加载：${run.run_id || selectedRunId} / ${run.lifecycle_status || "active"} / ${artifacts.length} artifacts`;
+  } catch (err) {
+    m7RunDetail = null;
+    m7RunArtifactStatus = `M7 run detail 读取失败：${err && err.message ? err.message : "Backend API 不可用"}`;
+  }
+}
+
+async function handleM7RunArtifactAction(button) {
+  const action = button.dataset.action;
+  const runId = button.dataset.runId || backendRun?.run_id || m7SelectedRunId;
+  const artifactId = button.dataset.artifactId || "";
+  if (!runId) {
+    m7RunArtifactStatus = "尚未创建 run_id，无法执行 M7 run artifact 操作";
+    return;
+  }
+  if (action === "m7-refresh-runs") {
+    await refreshM7RunArtifactPanel(runId);
+    return;
+  }
+  if (action === "m7-detail-run" || action === "m7-open-run-detail") {
+    await refreshM7RunArtifactPanel(runId);
+    return;
+  }
+  if (action === "m7-download-artifact") {
+    if (!artifactId) {
+      m7RunArtifactStatus = "缺少 artifact_id，无法下载";
+      return;
+    }
+    const blob = await backendApi.downloadRunArtifact(runId, artifactId);
+    const objectUrl = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = objectUrl;
+    anchor.download = artifactDownloadName(artifactId);
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(objectUrl);
+    m7RunArtifactStatus = `artifact 已触发下载：${artifactId}`;
+    await refreshM7RunArtifactPanel(runId);
+    return;
+  }
+  if (action === "m7-archive-run") {
+    const archived = await backendApi.archiveRun(runId);
+    backendRun = { ...(backendRun || {}), ...archived };
+    m7RunArtifactStatus = `run 已归档：${runId}`;
+    await refreshM7RunArtifactPanel(runId);
+    return;
+  }
+  if (action === "m7-delete-run") {
+    const deleted = await backendApi.deleteRun(runId);
+    backendRun = { ...(backendRun || {}), ...deleted };
+    m7RunArtifactStatus = `run 已软删除为 tombstone：${runId}；本地 artifact 文件不会被物理删除。`;
+    await refreshM7RunArtifactPanel(runId);
+  }
+}
+
+function artifactDownloadName(artifactId) {
+  return String(artifactId || "run-artifact")
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "run-artifact";
 }
 
 function isRunComplete(run) {
@@ -5652,6 +5740,7 @@ function renderMonteCarloResults() {
           ? `<table><tbody>${artifactRows.map((artifact) => `<tr><th>${htmlEscape(artifact.kind)}</th><td>${htmlEscape(artifact.path)}</td></tr>`).join("")}</tbody></table>`
           : ""}
       </div>
+      ${renderM7RunArtifactPanel()}
       <div class="mc-result-cards">
         ${resultRows.map((row) => `
           <div class="metric-card">
@@ -5675,6 +5764,76 @@ function renderMonteCarloResults() {
       </div>
     </div>
   `;
+}
+
+function renderM7RunArtifactPanel() {
+  const run = m7RunDetail?.run || backendRun || {};
+  const artifactManifestId = m7RunDetail?.artifact_manifest?.artifact_manifest_id
+    || backendArtifactManifest?.artifact_manifest_id
+    || run.artifact_manifest_id
+    || "";
+  const selectedRunId = run.run_id || m7SelectedRunId || backendRun?.run_id || "";
+  const rows = m7RunArtifactRows();
+  const runRows = [
+    ["run_id", selectedRunId || "尚未创建"],
+    ["status", run.status || run.phase || "unknown"],
+    ["lifecycle_status", run.lifecycle_status || "active"],
+    ["run_type", run.run_type || "monte_carlo"],
+    ["artifact_manifest_id", artifactManifestId || "等待生成"]
+  ];
+  return `
+    <div class="backend-run-chain m7-run-artifact-panel m7-run-artifact-management" data-m7-run-artifact-panel>
+      <span>M7 运行与产物管理：${htmlEscape(m7RunArtifactStatus)}</span>
+      <div class="result-source-note">
+        <strong>metadata / download / lifecycle only</strong>
+        <span>通过 canonical /api/runs 读取 run 与 artifact 元数据；不解析 projection artifact payload，也不把下载内容用于 KPI 卡片。</span>
+        <strong>软删除边界</strong>
+        <span>软删除只把 run 标记为 tombstone，保留审计和账本语义，不表示本地 artifact 文件被物理删除。</span>
+      </div>
+      <div class="mc-action-row">
+        <button type="button" data-action="m7-refresh-runs" data-run-id="${htmlEscape(selectedRunId)}">刷新</button>
+        <button type="button" data-action="m7-open-run-detail" data-run-id="${htmlEscape(selectedRunId)}" ${selectedRunId ? "" : "disabled"}>详情</button>
+        <button type="button" data-action="m7-archive-run" data-run-id="${htmlEscape(selectedRunId)}" ${selectedRunId ? "" : "disabled"}>归档</button>
+        <button type="button" class="btn-danger" data-action="m7-delete-run" data-run-id="${htmlEscape(selectedRunId)}" ${selectedRunId ? "" : "disabled"}>软删除 tombstone</button>
+      </div>
+      <table>
+        <tbody>${runRows.map(([label, value]) => `<tr><th>${htmlEscape(label)}</th><td>${htmlEscape(value)}</td></tr>`).join("")}</tbody>
+      </table>
+      ${m7RunList.length
+        ? `<div class="table-wrap"><table>
+            <thead><tr><th>run_id</th><th>status</th><th>lifecycle_status</th><th>run_type</th><th>artifact_manifest_id</th><th>操作</th></tr></thead>
+            <tbody>${m7RunList.map((item) => `<tr>
+              <td>${htmlEscape(item.run_id)}</td>
+              <td>${htmlEscape(item.status || item.phase || "")}</td>
+              <td>${htmlEscape(item.lifecycle_status || "active")}</td>
+              <td>${htmlEscape(item.run_type || "")}</td>
+              <td>${htmlEscape(item.artifact_manifest_id || "")}</td>
+              <td><button type="button" data-action="m7-open-run-detail" data-run-id="${htmlEscape(item.run_id)}">详情</button></td>
+            </tr>`).join("")}</tbody>
+          </table></div>`
+        : ""}
+      ${rows.length
+        ? `<div class="table-wrap"><table>
+            <thead><tr><th>artifact_id</th><th>kind</th><th>path</th><th>sha256</th><th>size_bytes</th><th>操作</th></tr></thead>
+            <tbody>${rows.map((artifact) => `<tr>
+              <td>${htmlEscape(artifact.artifact_id || artifact.id || "")}</td>
+              <td>${htmlEscape(artifact.kind || "")}</td>
+              <td>${htmlEscape(artifact.path || "")}</td>
+              <td>${htmlEscape(artifact.sha256 || "")}</td>
+              <td>${htmlEscape(artifact.size_bytes ?? "")}</td>
+              <td><button type="button" data-action="m7-download-artifact" data-run-id="${htmlEscape(selectedRunId)}" data-artifact-id="${htmlEscape(artifact.artifact_id || artifact.id || "")}" ${selectedRunId && (artifact.artifact_id || artifact.id) ? "" : "disabled"}>下载</button></td>
+            </tr>`).join("")}</tbody>
+          </table></div>`
+        : `<p>暂无 artifact 元数据；运行完成后通过详情刷新。</p>`}
+    </div>
+  `;
+}
+
+function m7RunArtifactRows() {
+  const detailArtifacts = m7RunDetail?.artifact_manifest?.artifacts;
+  if (Array.isArray(detailArtifacts)) return detailArtifacts;
+  if (Array.isArray(backendArtifactManifest?.artifacts)) return backendArtifactManifest.artifacts;
+  return [];
 }
 
 function renderAnalysis(page) {

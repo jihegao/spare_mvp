@@ -1557,6 +1557,24 @@ test("frontend code no longer references legacy simulation run routes", async ()
   }
 });
 
+test("M7 run artifact panel renders artifact identity and lifecycle controls", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  assert.match(appSource, /listRuns\(/);
+  assert.match(appSource, /getRunDetail\(/);
+  assert.match(appSource, /downloadRunArtifact\(/);
+  assert.match(appSource, /archiveRun\(/);
+  assert.match(appSource, /deleteRun\(/);
+  assert.match(appSource, /artifact_id/);
+  assert.match(appSource, /sha256/);
+  assert.match(appSource, /size_bytes/);
+  assert.match(appSource, /data-action="m7-archive-run"/);
+  assert.match(appSource, /data-action="m7-delete-run"/);
+  assert.match(appSource, /lifecycle_status/);
+  assert.match(appSource, /URL\.createObjectURL/);
+  assert.match(appSource, /anchor\.download/);
+  assert.doesNotMatch(appSource, /\/api\/simulation-runs/);
+});
+
 test("formal runs do not consume local preview outputs", async () => {
   const apiClientSource = await readFile(new URL("../front/api-client.mjs", import.meta.url), "utf8");
   const runIntentSource = await readFile(new URL("../front/run-intent.mjs", import.meta.url), "utf8");
