@@ -44,7 +44,7 @@ Do not edit archived deprecated docs under `docs/archive/deprecated/` unless a t
 - Modify: `tests/frontend-api-client.test.mjs`
 - Modify: `tests/frontend-contract.test.mjs`
 
-- [ ] **Step 1: Add an HTTP helper that returns error status and payload**
+- [x] **Step 1: Add an HTTP helper that returns error status and payload**
 
 In `tests/test_backend_http_api.py`, add this helper directly after `_json_error()` or replace `_json_error()` call sites only where status matters:
 
@@ -79,7 +79,7 @@ In `tests/test_backend_http_api.py`, add this helper directly after `_json_error
         self.fail("request unexpectedly succeeded")
 ```
 
-- [ ] **Step 2: Add failing HTTP retirement tests**
+- [x] **Step 2: Add failing HTTP retirement tests**
 
 Add this test near the run API tests in `tests/test_backend_http_api.py`:
 
@@ -117,7 +117,7 @@ Add this test near the run API tests in `tests/test_backend_http_api.py`:
                 thread.join(timeout=5)
 ```
 
-- [ ] **Step 3: Replace the frontend legacy alias test with canonical-only coverage**
+- [x] **Step 3: Replace the frontend legacy alias test with canonical-only coverage**
 
 In `tests/frontend-api-client.test.mjs`, replace `frontend API client keeps legacy run aliases on canonical run routes` with:
 
@@ -157,7 +157,7 @@ test("frontend API client exposes only canonical run read routes", async () => {
 });
 ```
 
-- [ ] **Step 4: Add a frontend source-contract guard**
+- [x] **Step 4: Add a frontend source-contract guard**
 
 Add this test to `tests/frontend-contract.test.mjs` near the formal run boundary tests:
 
@@ -176,7 +176,7 @@ test("frontend code no longer references legacy simulation run routes", async ()
 });
 ```
 
-- [ ] **Step 5: Run tests and verify they fail for the intended reasons**
+- [x] **Step 5: Run tests and verify they fail for the intended reasons**
 
 Run:
 
@@ -189,7 +189,7 @@ Expected before implementation:
 - Node tests fail because `front/api-client.mjs` still exposes `getRun()` and references `/simulation-runs`.
 - Python test fails because `/simulation-runs` still succeeds or returns `404 not_found`, not `410 legacy_run_api_retired`.
 
-- [ ] **Step 6: Commit the failing tests**
+- [x] **Step 6: Commit the failing tests**
 
 ```bash
 git add tests/test_backend_http_api.py tests/frontend-api-client.test.mjs tests/frontend-contract.test.mjs
@@ -205,7 +205,7 @@ git commit -m "test: lock legacy run api retirement contract"
 - Modify: `tests/frontend-api-client.test.mjs`
 - Modify: `tests/frontend-contract.test.mjs`
 
-- [ ] **Step 1: Remove `getRun()` from the frontend API client**
+- [x] **Step 1: Remove `getRun()` from the frontend API client**
 
 In `front/api-client.mjs`, delete this method:
 
@@ -232,7 +232,7 @@ Keep these canonical read methods unchanged:
     }
 ```
 
-- [ ] **Step 2: Verify no frontend source references the retired path**
+- [x] **Step 2: Verify no frontend source references the retired path**
 
 Run:
 
@@ -244,7 +244,7 @@ Expected after Step 1:
 - No matches under `front/`.
 - The only `tests/` matches are in tests that assert the retired route is absent or backend-retired.
 
-- [ ] **Step 3: Run frontend route tests**
+- [x] **Step 3: Run frontend route tests**
 
 Run:
 
@@ -254,7 +254,7 @@ npm test -- tests/frontend-api-client.test.mjs tests/frontend-contract.test.mjs
 
 Expected after implementation: PASS.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add front/api-client.mjs tests/frontend-api-client.test.mjs tests/frontend-contract.test.mjs
@@ -269,7 +269,7 @@ git commit -m "refactor: remove frontend legacy run api alias"
 - Modify: `src/spare_mvp_backend/http_server.py`
 - Modify: `tests/test_backend_http_api.py`
 
-- [ ] **Step 1: Add an explicit retired-route exception**
+- [x] **Step 1: Add an explicit retired-route exception**
 
 In `src/spare_mvp_backend/http_server.py`, add this small exception class near `MAX_JSON_BODY_BYTES`:
 
@@ -281,7 +281,7 @@ class RetiredRouteError(Exception):
         self.replacement = replacement
 ```
 
-- [ ] **Step 2: Return 410 for retired routes**
+- [x] **Step 2: Return 410 for retired routes**
 
 In `_handle()`, add this exception branch after `except BackendApiError as exc:` or before `except ValueError as exc:`:
 
@@ -300,7 +300,7 @@ In `_handle()`, add this exception branch after `except BackendApiError as exc:`
                 )
 ```
 
-- [ ] **Step 3: Replace successful `/simulation-runs` dispatch branches with retirement**
+- [x] **Step 3: Replace successful `/simulation-runs` dispatch branches with retirement**
 
 In `_dispatch()`, place this branch immediately after the existing line `parts = [unquote(part) for part in route.split("/") if part]` and before canonical `/runs` handling:
 
@@ -330,7 +330,7 @@ Delete the old successful branches:
                 return api.get_run_chain(parts[1])
 ```
 
-- [ ] **Step 4: Migrate HTTP smoke tests to canonical `/runs`**
+- [x] **Step 4: Migrate HTTP smoke tests to canonical `/runs`**
 
 In `tests/test_backend_http_api.py`, update `test_http_api_serves_frontend_contract_flow` so run submission and reads use canonical routes:
 
@@ -374,7 +374,7 @@ Delete:
                 self.assertIn("model_id", legacy_run)
 ```
 
-- [ ] **Step 5: Run backend HTTP tests**
+- [x] **Step 5: Run backend HTTP tests**
 
 Run:
 
@@ -384,7 +384,7 @@ Run:
 
 Expected after implementation: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/spare_mvp_backend/http_server.py tests/test_backend_http_api.py
@@ -399,7 +399,7 @@ git commit -m "refactor: retire legacy simulation run routes"
 - Modify: `reports/m3-1-browser-backend-smoke/browser-backend-smoke.mjs`
 - Modify: `reports/m3-1-browser-backend-smoke/README.md`
 
-- [ ] **Step 1: Make browser smoke wait only for `/api/runs`**
+- [x] **Step 1: Make browser smoke wait only for `/api/runs`**
 
 In `reports/m3-1-browser-backend-smoke/browser-backend-smoke.mjs`, replace the compatibility wait:
 
@@ -425,7 +425,7 @@ to:
 No successful run submit response on /api/runs.
 ```
 
-- [ ] **Step 2: Update smoke report wording**
+- [x] **Step 2: Update smoke report wording**
 
 In `reports/m3-1-browser-backend-smoke/README.md`, replace the compatibility wording with this current-state statement:
 
@@ -433,7 +433,7 @@ In `reports/m3-1-browser-backend-smoke/README.md`, replace the compatibility wor
 M6.0/M6.2 retirement update：浏览器 smoke 只接受 canonical `/api/runs` 作为运行提交入口。旧 `/api/simulation-runs` 已退役，调用者会收到 `410 legacy_run_api_retired`，并应迁移到 `/api/runs` status/result/artifact/chain。
 ```
 
-- [ ] **Step 3: Run report source checks**
+- [x] **Step 3: Run report source checks**
 
 Run:
 
@@ -445,7 +445,7 @@ Expected after implementation:
 - No matches in the browser smoke script.
 - Any README match must describe the retired `410 legacy_run_api_retired` state, not compatibility acceptance.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add reports/m3-1-browser-backend-smoke/browser-backend-smoke.mjs reports/m3-1-browser-backend-smoke/README.md
@@ -463,7 +463,7 @@ git commit -m "test: require canonical run route in browser smoke"
 - Modify: `agent.md`
 - Modify: `docs/superpowers/plans/2026-06-21-legacy-run-api-retirement.md`
 
-- [ ] **Step 1: Link this plan from README and docs index**
+- [x] **Step 1: Link this plan from README and docs index**
 
 In `README.md`, add this line next to the M6.2.x input-source record:
 
@@ -477,7 +477,7 @@ In `docs/README.md`, add:
 | [`superpowers/plans/2026-06-21-legacy-run-api-retirement.md`](superpowers/plans/2026-06-21-legacy-run-api-retirement.md) | legacy `/api/simulation-runs` 退场、canonical `/api/runs` 唯一路径和 smoke 测试迁移计划。 |
 ```
 
-- [ ] **Step 2: Update roadmap after implementation**
+- [x] **Step 2: Update roadmap after implementation**
 
 After the M6.2.x paragraph in `docs/product-roadmap.md`, add:
 
@@ -485,7 +485,7 @@ After the M6.2.x paragraph in `docs/product-roadmap.md`, add:
 M6.2.y 运行 API 退场收束：legacy `/api/simulation-runs` 已从正式和预览测试路径退役；前端 API client、HTTP contract tests 和浏览器 smoke 只使用 canonical `/api/runs` 及其 status/result/artifacts/chain 路径。旧路径返回 `410 legacy_run_api_retired`，用于让外部调用者明确迁移到 `/api/runs`。该切片只清理 run API 兼容层，不实现生产 worker queue、object storage、取消/重试、M8 projection payload 或 M9 state stream。
 ```
 
-- [ ] **Step 3: Update agent operating rules**
+- [x] **Step 3: Update agent operating rules**
 
 In `agent.md`, replace the legacy compatibility rule with:
 
@@ -493,7 +493,7 @@ In `agent.md`, replace the legacy compatibility rule with:
 22. Legacy `/api/simulation-runs` 已退役：新实现、测试、浏览器 smoke 和文档不得把它作为可用兼容路径；运行提交和查询必须走 canonical `/api/runs`、`/api/runs/{run_id}`、`/api/runs/{run_id}/result`、`/api/runs/{run_id}/artifacts` 和 `/api/runs/{run_id}/chain`。旧路径只允许返回 `410 legacy_run_api_retired` 的负向契约。
 ```
 
-- [ ] **Step 4: Run stale-document scans**
+- [x] **Step 4: Run stale-document scans**
 
 Run:
 
@@ -506,7 +506,7 @@ Expected after implementation:
 - No active-doc claims that `/api/simulation-runs` is compatible or accepted.
 - Matches are allowed only for retired-route tests, retired-route implementation, historical archived docs, or this implementation record.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add README.md docs/README.md docs/product-roadmap.md agent.md docs/superpowers/plans/2026-06-21-legacy-run-api-retirement.md
@@ -514,6 +514,10 @@ git commit -m "docs: document legacy run api retirement"
 ```
 
 ---
+
+## Implementation Note
+
+Completed on 2026-06-21 across commits `3da219ea`, `5b65fca9`, `6134c109`, `53be6942`, and the Task 5 documentation commit. Final behavior: frontend code, HTTP contract tests, and browser smoke use canonical `/api/runs` only; any `/api/simulation-runs*` request returns `410 legacy_run_api_retired` with `/api/runs` as the replacement. This retirement slice did not add worker queue, object storage, cancellation/retry, M8 projection payload rendering, M9 state stream, or `aviation_support` formal execution.
 
 ## Final Verification
 
