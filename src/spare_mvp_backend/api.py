@@ -432,10 +432,24 @@ class BackendApi:
 
     def archive_run(self, run_id: str, actor_user_id: str | None = None) -> dict[str, Any]:
         actor_user_id = _require_m7_actor(actor_user_id)
+        self._require_role(
+            actor_user_id,
+            {"系统管理员", "数据管理员"},
+            action="runs.archive",
+            resource_type="run",
+            resource_id=run_id,
+        )
         return self.repository.archive_run_with_audit(run_id, actor_user_id=actor_user_id)
 
     def soft_delete_run(self, run_id: str, actor_user_id: str | None = None) -> dict[str, Any]:
         actor_user_id = _require_m7_actor(actor_user_id)
+        self._require_role(
+            actor_user_id,
+            {"系统管理员", "数据管理员"},
+            action="runs.delete",
+            resource_type="run",
+            resource_id=run_id,
+        )
         return self.repository.soft_delete_run_with_audit(run_id, actor_user_id=actor_user_id)
 
     def get_run_artifact_download(

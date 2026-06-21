@@ -269,7 +269,7 @@ class BackendApiContractTest(unittest.TestCase):
 
     def test_backend_api_lists_runs_with_strict_include_deleted_flag_and_limit_clamp(self) -> None:
         runs = [self._submit_successful_smoke_run() for _ in range(3)]
-        self.api.soft_delete_run(runs[0]["run_id"], actor_user_id="system")
+        self.api.soft_delete_run(runs[0]["run_id"], actor_user_id="user-admin")
 
         hidden = self.api.list_runs({"include_deleted": "0", "limit": "500"})
         visible = self.api.list_runs({"include_deleted": "1", "limit": "500"})
@@ -326,6 +326,31 @@ class BackendApiContractTest(unittest.TestCase):
         stored = self.api.get_run(run["run_id"])
         self.assertEqual(stored["lifecycle_status"], "active")
         self.assertEqual(self.repository.list_audit_events(resource_id=run["run_id"]), [])
+
+    def test_backend_api_lifecycle_requires_admin_or_data_manager_actor(self) -> None:
+        forbidden_run = self._submit_successful_smoke_run()
+
+        for label, mutate in (
+            ("archive", lambda: self.api.archive_run(forbidden_run["run_id"], actor_user_id="user-basic")),
+            ("delete", lambda: self.api.soft_delete_run(forbidden_run["run_id"], actor_user_id="user-basic")),
+        ):
+            with self.subTest(label):
+                with self.assertRaises(BackendApiError) as ctx:
+                    mutate()
+
+                self.assertEqual(ctx.exception.code, "forbidden")
+                stored = self.api.get_run(forbidden_run["run_id"])
+                self.assertEqual(stored["lifecycle_status"], "active")
+                audit = self.repository.list_audit_events(resource_id=forbidden_run["run_id"])
+                self.assertFalse(any(event["outcome"] == "allowed" for event in audit))
+
+        admin_run = self._submit_successful_smoke_run()
+        archived = self.api.archive_run(admin_run["run_id"], actor_user_id="user-admin")
+        self.assertEqual(archived["lifecycle_status"], "archived")
+
+        data_run = self._submit_successful_smoke_run()
+        deleted = self.api.soft_delete_run(data_run["run_id"], actor_user_id="user-data")
+        self.assertEqual(deleted["lifecycle_status"], "deleted")
 
     def test_backend_api_lifecycle_audit_failure_rolls_back_state(self) -> None:
         cases = [
@@ -389,7 +414,7 @@ class BackendApiContractTest(unittest.TestCase):
         run = self._submit_successful_smoke_run()
         manifest = self.api.get_run_artifacts(run["run_id"])
         artifact = manifest["artifacts"][0]
-        self.api.soft_delete_run(run["run_id"], actor_user_id="system")
+        self.api.soft_delete_run(run["run_id"], actor_user_id="user-admin")
 
         with self.assertRaises(BackendApiError) as ctx:
             self.api.get_run_artifact_download(run["run_id"], artifact["artifact_id"], actor_user_id="system")
