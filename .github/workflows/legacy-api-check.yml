@@ -1,0 +1,33 @@
+name: Legacy API Check
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  legacy-api-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run frontend contract tests
+        run: npm test
+
+      - name: Run explicit legacy API source guard
+        run: npm run test:legacy-api-check
+
+      - name: Run backend HTTP API contract tests
+        run: python3 -m unittest tests.test_backend_http_api -v
