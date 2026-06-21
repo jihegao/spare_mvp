@@ -292,13 +292,35 @@ class BackendApiContractTest(unittest.TestCase):
         manifest = self.api.get_run_artifacts(run["run_id"])
         artifact = manifest["artifacts"][0]
 
-        download = self.api.get_run_artifact_download(run["run_id"], artifact["artifact_id"])
+        download = self.api.get_run_artifact_download(
+            run["run_id"],
+            artifact["artifact_id"],
+            actor_user_id="user-admin",
+        )
 
         self.assertEqual(download["artifact"]["artifact_id"], artifact["artifact_id"])
         self.assertTrue(download["path"].is_file())
         self.assertEqual(download["content_type"], artifact["media_type"])
+        self.assertEqual(hashlib.sha256(download["body"]).hexdigest(), artifact["sha256"])
         audit = self.repository.list_audit_events(resource_id=run["run_id"])
         self.assertEqual([event["action"] for event in audit], ["runs.artifact.download"])
+        self.assertEqual(audit[0]["actor_user_id"], "user-admin")
+
+    def test_backend_api_lifecycle_audit_failure_rolls_back_state(self) -> None:
+        cases = [
+            ("archive", lambda run_id: self.api.archive_run(run_id, actor_user_id="missing-user")),
+            ("delete", lambda run_id: self.api.soft_delete_run(run_id, actor_user_id="missing-user")),
+        ]
+        for label, mutate in cases:
+            with self.subTest(label):
+                run = self._submit_successful_smoke_run()
+
+                with self.assertRaises(sqlite3.IntegrityError):
+                    mutate(run["run_id"])
+
+                stored = self.api.get_run(run["run_id"])
+                self.assertEqual(stored["lifecycle_status"], "active")
+                self.assertEqual(self.repository.list_audit_events(resource_id=run["run_id"]), [])
 
     def test_backend_api_rejects_artifact_path_escape(self) -> None:
         run = self._submit_successful_smoke_run()

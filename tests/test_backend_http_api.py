@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import http.client
 from pathlib import Path
@@ -192,11 +193,26 @@ class BackendHttpApiTest(unittest.TestCase):
                 )
                 self.assertEqual(audit_before_lifecycle["events"], [])
 
-                archive = self._json(base_url, "POST", f"/runs/{quote(run_id, safe='')}/archive")
+                unauth_archive = self._json_error(base_url, "POST", f"/runs/{quote(run_id, safe='')}/archive")
+                unauth_delete = self._json_error(base_url, "DELETE", f"/runs/{quote(run_id, safe='')}")
+                self.assertEqual(unauth_archive["code"], "unauthorized")
+                self.assertEqual(unauth_delete["code"], "unauthorized")
+
+                archive = self._json(
+                    base_url,
+                    "POST",
+                    f"/runs/{quote(run_id, safe='')}/archive",
+                    auth_token=admin_token,
+                )
                 self.assertEqual(archive["run_id"], run_id)
                 self.assertEqual(archive["lifecycle_status"], "archived")
 
-                deleted = self._json(base_url, "DELETE", f"/runs/{quote(run_id, safe='')}")
+                deleted = self._json(
+                    base_url,
+                    "DELETE",
+                    f"/runs/{quote(run_id, safe='')}",
+                    auth_token=admin_token,
+                )
                 self.assertEqual(deleted["run_id"], run_id)
                 self.assertEqual(deleted["lifecycle_status"], "deleted")
 
@@ -220,7 +236,7 @@ class BackendHttpApiTest(unittest.TestCase):
                 self.assertIn("runs.archive", actions)
                 self.assertIn("runs.delete", actions)
                 self.assertTrue(all(event["outcome"] == "allowed" for event in audit_after_lifecycle["events"]))
-                self.assertTrue(all(event["actor_user_id"] == "system" for event in audit_after_lifecycle["events"]))
+                self.assertTrue(all(event["actor_user_id"] == "user-admin" for event in audit_after_lifecycle["events"]))
                 self.assertTrue(all(event["created_at"] for event in audit_after_lifecycle["events"]))
 
                 legacy_status, legacy_body = self._json_error_with_status(base_url, "POST", "/simulation-runs", {})
@@ -251,6 +267,19 @@ class BackendHttpApiTest(unittest.TestCase):
                 connection = http.client.HTTPConnection("127.0.0.1", server.server_address[1], timeout=10)
                 connection.request("GET", f"/api/runs/{quote(run_id, safe='')}/artifacts/{quote(artifact['artifact_id'], safe='')}")
                 response = connection.getresponse()
+                unauth_body = json.loads(response.read().decode("utf-8"))
+                self.assertEqual(response.status, 401)
+                self.assertEqual(unauth_body["code"], "unauthorized")
+                connection.close()
+
+                admin_token = self._login_token(base_url, "admin", "admin")
+                connection = http.client.HTTPConnection("127.0.0.1", server.server_address[1], timeout=10)
+                connection.request(
+                    "GET",
+                    f"/api/runs/{quote(run_id, safe='')}/artifacts/{quote(artifact['artifact_id'], safe='')}",
+                    headers={"authorization": f"Bearer {admin_token}"},
+                )
+                response = connection.getresponse()
                 body = response.read()
                 self.assertEqual(response.status, 200)
                 self.assertIn(artifact["media_type"], response.headers["content-type"])
@@ -258,7 +287,6 @@ class BackendHttpApiTest(unittest.TestCase):
                 self.assertGreater(len(body), 0)
                 connection.close()
 
-                admin_token = self._login_token(base_url, "admin", "admin")
                 audit_after_download = self._json(
                     base_url,
                     "GET",
@@ -269,18 +297,81 @@ class BackendHttpApiTest(unittest.TestCase):
                     event for event in audit_after_download["events"] if event["action"] == "runs.artifact.download"
                 ]
                 self.assertEqual(len(download_events), 1)
-                self.assertEqual(download_events[0]["actor_user_id"], "system")
+                self.assertEqual(download_events[0]["actor_user_id"], "user-admin")
                 self.assertEqual(download_events[0]["outcome"], "allowed")
                 self.assertTrue(download_events[0]["created_at"])
 
-                self._json(base_url, "DELETE", f"/runs/{quote(run_id, safe='')}")
+                self._json(base_url, "DELETE", f"/runs/{quote(run_id, safe='')}", auth_token=admin_token)
                 status, payload = self._json_error_with_status(
                     base_url,
                     "GET",
                     f"/runs/{quote(run_id, safe='')}/artifacts/{quote(artifact['artifact_id'], safe='')}",
+                    auth_token=admin_token,
                 )
                 self.assertEqual(status, 410)
                 self.assertEqual(payload["code"], "run_deleted")
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
+    def test_http_m7_artifact_download_sanitizes_content_disposition_filename(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            database_path = Path(tmp) / "m7-download.sqlite3"
+            artifact_dir = Path(tmp) / "artifacts"
+            server = create_backend_server(
+                ("127.0.0.1", 0),
+                repo_root=REPO_ROOT,
+                database_path=database_path,
+                output_dir=artifact_dir,
+            )
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                base_url = f"http://127.0.0.1:{server.server_address[1]}/api"
+                submitted = self._submit_m7_http_run(base_url)
+                run_id = submitted["run"]["run_id"]
+                admin_token = self._login_token(base_url, "admin", "admin")
+                manifest = self._json(base_url, "GET", f"/runs/{quote(run_id, safe='')}/artifacts")
+                artifact = dict(manifest["artifacts"][0])
+                malicious_name = "evil\"\r\nX-Injected: yes.json"
+                malicious_path = f"{run_id}/{malicious_name}"
+                body = b'{"safe": true}\n'
+                target = artifact_dir / malicious_path
+                target.write_bytes(body)
+                artifact["path"] = malicious_path
+                artifact["sha256"] = hashlib.sha256(body).hexdigest()
+                artifact["size_bytes"] = len(body)
+                manifest["artifacts"][0] = artifact
+                with sqlite3.connect(database_path) as connection:
+                    connection.execute(
+                        """
+                        UPDATE artifact_manifests
+                        SET payload_json = ?
+                        WHERE artifact_manifest_id = ?
+                        """,
+                        (
+                            json.dumps(manifest, ensure_ascii=False, sort_keys=True),
+                            manifest["artifact_manifest_id"],
+                        ),
+                    )
+
+                connection = http.client.HTTPConnection("127.0.0.1", server.server_address[1], timeout=10)
+                connection.request(
+                    "GET",
+                    f"/api/runs/{quote(run_id, safe='')}/artifacts/{quote(artifact['artifact_id'], safe='')}",
+                    headers={"authorization": f"Bearer {admin_token}"},
+                )
+                response = connection.getresponse()
+                downloaded = response.read()
+                disposition = response.headers["content-disposition"]
+                connection.close()
+
+                self.assertEqual(response.status, 200)
+                self.assertEqual(downloaded, body)
+                self.assertIn('filename="evil___X-Injected: yes.json"', disposition)
+                self.assertNotIn("\r", disposition)
+                self.assertNotIn("\n", disposition)
             finally:
                 server.shutdown()
                 server.server_close()

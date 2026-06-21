@@ -201,6 +201,27 @@ class ContractRepository:
         outcome: str,
         details: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        event = self._insert_audit_event_no_commit(
+            actor_user_id=actor_user_id,
+            action=action,
+            resource_type=resource_type,
+            resource_id=resource_id,
+            outcome=outcome,
+            details=details,
+        )
+        self.connection.commit()
+        return event
+
+    def _insert_audit_event_no_commit(
+        self,
+        *,
+        actor_user_id: str | None,
+        action: str,
+        resource_type: str,
+        resource_id: str,
+        outcome: str,
+        details: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         event = {
             "audit_event_id": f"audit-{uuid4()}",
             "actor_user_id": actor_user_id,
@@ -228,7 +249,6 @@ class ContractRepository:
                 _to_json(event["details"]),
             ),
         )
-        self.connection.commit()
         return event
 
     def list_audit_events(self, resource_id: str | None = None) -> list[dict[str, Any]]:
@@ -742,12 +762,81 @@ class ContractRepository:
         self.upsert_run(run)
         return self.get_run(run_id)
 
+    def archive_run_with_audit(self, run_id: str, *, actor_user_id: str) -> dict[str, Any]:
+        return self._set_run_lifecycle_with_audit(
+            run_id,
+            lifecycle_status="archived",
+            actor_field="archived_by",
+            timestamp_field="archived_at",
+            actor_user_id=actor_user_id,
+            action="runs.archive",
+        )
+
     def soft_delete_run(self, run_id: str, *, deleted_by: str = "system") -> dict[str, Any]:
         run = self.get_run(run_id)
         run["lifecycle_status"] = "deleted"
         run["deleted_at"] = run.get("deleted_at") or self._utc_now()
         run["deleted_by"] = deleted_by
         self.upsert_run(run)
+        return self.get_run(run_id)
+
+    def soft_delete_run_with_audit(self, run_id: str, *, actor_user_id: str) -> dict[str, Any]:
+        return self._set_run_lifecycle_with_audit(
+            run_id,
+            lifecycle_status="deleted",
+            actor_field="deleted_by",
+            timestamp_field="deleted_at",
+            actor_user_id=actor_user_id,
+            action="runs.delete",
+        )
+
+    def _set_run_lifecycle_with_audit(
+        self,
+        run_id: str,
+        *,
+        lifecycle_status: str,
+        actor_field: str,
+        timestamp_field: str,
+        actor_user_id: str,
+        action: str,
+    ) -> dict[str, Any]:
+        self.connection.execute("BEGIN")
+        try:
+            run = self.get_run(run_id)
+            run["lifecycle_status"] = lifecycle_status
+            run[timestamp_field] = run.get(timestamp_field) or self._utc_now()
+            run[actor_field] = actor_user_id
+            self.connection.execute(
+                """
+                UPDATE simulation_runs
+                SET lifecycle_status = ?,
+                    archived_at = ?,
+                    deleted_at = ?,
+                    payload_json = ?,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE run_id = ?
+                """,
+                (
+                    run["lifecycle_status"],
+                    run.get("archived_at"),
+                    run.get("deleted_at"),
+                    _to_json(run),
+                    run_id,
+                ),
+            )
+            self._insert_audit_event_no_commit(
+                actor_user_id=actor_user_id,
+                action=action,
+                resource_type="run",
+                resource_id=run_id,
+                outcome="allowed",
+                details={"lifecycle_status": lifecycle_status},
+            )
+        except Exception:
+            self.connection.rollback()
+            raise
+        else:
+            self.connection.commit()
         return self.get_run(run_id)
 
     def get_result_summary_for_run(self, run_id: str) -> dict[str, Any]:

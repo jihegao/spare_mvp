@@ -212,13 +212,22 @@ def create_backend_server(
             if self.command == "GET" and len(parts) == 3 and parts[0] == "runs" and parts[2] == "artifacts":
                 return api.get_run_artifacts(parts[1])
             if self.command == "GET" and len(parts) == 4 and parts[0] == "runs" and parts[2] == "artifacts":
-                return {"__file_download__": api.get_run_artifact_download(parts[1], parts[3])}
+                actor = self._require_user()
+                return {
+                    "__file_download__": api.get_run_artifact_download(
+                        parts[1],
+                        parts[3],
+                        actor_user_id=actor["user_id"],
+                    )
+                }
             if self.command == "GET" and len(parts) == 3 and parts[0] == "runs" and parts[2] == "chain":
                 return api.get_run_chain(parts[1])
             if self.command == "POST" and len(parts) == 3 and parts[0] == "runs" and parts[2] == "archive":
-                return api.archive_run(parts[1], actor_user_id="system")
+                actor = self._require_user()
+                return api.archive_run(parts[1], actor_user_id=actor["user_id"])
             if self.command == "DELETE" and len(parts) == 2 and parts[0] == "runs":
-                return api.soft_delete_run(parts[1], actor_user_id="system")
+                actor = self._require_user()
+                return api.soft_delete_run(parts[1], actor_user_id=actor["user_id"])
 
             raise KeyError(route)
 
@@ -261,11 +270,11 @@ def create_backend_server(
             self.wfile.write(data)
 
         def _send_file_download(self, status: int, download: dict[str, Any]) -> None:
-            data = Path(download["path"]).read_bytes()
+            data = bytes(download["body"])
             self.send_response(status)
             self.send_header("content-type", str(download["content_type"]))
             self.send_header("content-length", str(len(data)))
-            self.send_header("content-disposition", f'attachment; filename="{download["filename"]}"')
+            self.send_header("content-disposition", f'attachment; filename="{_safe_download_filename(download["filename"])}"')
             self.send_header("access-control-allow-origin", "*")
             self.end_headers()
             self.wfile.write(data)
@@ -303,6 +312,17 @@ def create_backend_server(
 
     server = BackendHTTPServer(address, BackendRequestHandler)
     return server
+
+
+def _safe_download_filename(filename: str) -> str:
+    safe_chars = []
+    for char in str(filename):
+        if char in {'"', "\\"} or ord(char) < 32 or ord(char) == 127:
+            safe_chars.append("_")
+        else:
+            safe_chars.append(char)
+    safe = "".join(safe_chars).strip()
+    return safe or "download"
 
 
 def main() -> None:

@@ -431,30 +431,18 @@ class BackendApi:
         return detail
 
     def archive_run(self, run_id: str, actor_user_id: str = "system") -> dict[str, Any]:
-        archived = self.repository.archive_run(run_id, archived_by=actor_user_id)
-        self.repository.insert_audit_event(
-            actor_user_id=actor_user_id,
-            action="runs.archive",
-            resource_type="run",
-            resource_id=run_id,
-            outcome="allowed",
-            details={"lifecycle_status": archived.get("lifecycle_status")},
-        )
-        return archived
+        return self.repository.archive_run_with_audit(run_id, actor_user_id=actor_user_id)
 
     def soft_delete_run(self, run_id: str, actor_user_id: str = "system") -> dict[str, Any]:
-        deleted = self.repository.soft_delete_run(run_id, deleted_by=actor_user_id)
-        self.repository.insert_audit_event(
-            actor_user_id=actor_user_id,
-            action="runs.delete",
-            resource_type="run",
-            resource_id=run_id,
-            outcome="allowed",
-            details={"lifecycle_status": deleted.get("lifecycle_status")},
-        )
-        return deleted
+        return self.repository.soft_delete_run_with_audit(run_id, actor_user_id=actor_user_id)
 
-    def get_run_artifact_download(self, run_id: str, artifact_id: str) -> dict[str, Any]:
+    def get_run_artifact_download(
+        self,
+        run_id: str,
+        artifact_id: str,
+        *,
+        actor_user_id: str = "system",
+    ) -> dict[str, Any]:
         run = self.repository.get_run(run_id)
         if run.get("lifecycle_status") == "deleted":
             raise BackendApiError("run_deleted", "run is soft-deleted", run_id=run_id)
@@ -476,7 +464,8 @@ class BackendApi:
             )
         if not target.is_file():
             raise BackendApiError("artifact_missing", "artifact file is missing", artifact_id=artifact_id)
-        digest = hashlib.sha256(target.read_bytes()).hexdigest()
+        body = target.read_bytes()
+        digest = hashlib.sha256(body).hexdigest()
         if digest != artifact.get("sha256"):
             raise BackendApiError(
                 "artifact_hash_mismatch",
@@ -484,7 +473,7 @@ class BackendApi:
                 artifact_id=artifact_id,
             )
         self.repository.insert_audit_event(
-            actor_user_id="system",
+            actor_user_id=actor_user_id,
             action="runs.artifact.download",
             resource_type="run",
             resource_id=run_id,
@@ -494,6 +483,7 @@ class BackendApi:
         return {
             "path": target,
             "artifact": artifact,
+            "body": body,
             "content_type": artifact.get("media_type") or "application/octet-stream",
             "filename": target.name,
         }
