@@ -1610,9 +1610,38 @@ test("M7 run artifact panel renders artifact identity and lifecycle controls", a
   assert.match(appSource, /data-action="m7-archive-run"/);
   assert.match(appSource, /data-action="m7-delete-run"/);
   assert.match(appSource, /lifecycle_status/);
+  assert.match(appSource, /canManageM7Lifecycle\(\)/);
+  assert.match(appSource, /currentUser\.role/);
+  assert.match(appSource, /deleted run 禁止下载 artifact/);
   assert.match(appSource, /URL\.createObjectURL/);
   assert.match(appSource, /anchor\.download/);
   assert.doesNotMatch(appSource, /\/api\/simulation-runs/);
+});
+
+test("M7 run artifact actions surface backend errors and preserve failed-run log artifacts", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const actionSource = appSource.slice(
+    appSource.indexOf("async function handleM7RunArtifactAction"),
+    appSource.indexOf("function artifactDownloadName")
+  );
+  const failedRunSource = appSource.slice(
+    appSource.indexOf("async function startMonteCarloRunThroughApi"),
+    appSource.indexOf("async function refreshRunResultThroughApi")
+  );
+
+  assert.match(actionSource, /try \{/);
+  assert.match(actionSource, /catch \(err\)/);
+  assert.match(actionSource, /formatBackendError\(err\)/);
+  assert.match(actionSource, /m7ActionLabel\(action\)/);
+  assert.match(actionSource, /canManageM7Lifecycle\(\)/);
+  assert.match(actionSource, /无权归档运行|无权软删除运行/);
+  assert.match(appSource, /function formatBackendError\(err\)/);
+  assert.match(appSource, /err\.status/);
+  assert.match(appSource, /err\.code/);
+  assert.match(failedRunSource, /await refreshRunFailureArtifacts\(backendRun\.run_id\)/);
+  assert.doesNotMatch(failedRunSource, /backendArtifactManifest = \{ artifacts: \[\] \};\s*backendRunChain = null;\s*lastRunExperimentPlanProjectJson = null;/);
+  assert.match(appSource, /async function refreshRunFailureArtifacts/);
+  assert.match(appSource, /m7RunDetail\?\.artifact_manifest/);
 });
 
 test("M7 run refresh is allowed before any selected run guard", async () => {
