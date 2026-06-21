@@ -1599,6 +1599,11 @@ test("frontend modeling import demo fixture stays aligned with complete imported
   assert.ok(objects.supportActivities.some((activity) => activity.activityType === "后勤保障" && activity.transportStrategies.length >= 2));
 });
 
+test("frontend modeling import demo fixture is synchronized with canonical JSON fixture", async () => {
+  const canonical = JSON.parse(await readFile(new URL("./fixtures/modeling_import_project.json", import.meta.url), "utf8"));
+  assert.deepEqual(MODELING_IMPORT_DEMO_FIXTURE, canonical);
+});
+
 test("project list separates imported sample projects from preview fixtures", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const projectSeedSource = appSource.slice(

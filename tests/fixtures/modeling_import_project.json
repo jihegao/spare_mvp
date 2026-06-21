@@ -208,7 +208,26 @@
       { "id": "corrective", "name": "航电模块故障修复", "activityType": "修复性维修", "activityName": "航电模块故障修复方案", "planType": "修复性维修方案", "equipmentId": "j15-avionics", "resourceId": "carrier-deck", "durationHours": 3, "requiredPersonnel": 3, "requiredDevices": 1, "spareType": "航电模块", "spareQuantity": 1, "priority": 1, "meanRepairTimeMinutes": 180, "maxRepairTimeMinutes": 240, "repairDistribution": { "distributionType": "对数正态分布", "params": "mu=5.1, sigma=0.35" }, "repairTypes": ["换件修复", "功能复测"], "jobs": [{ "activityCode": "REP-001", "workName": "故障定位", "predecessors": [], "durationMinutes": 40, "durationProfile": { "distributionType": "三角分布", "min": 30, "mode": 40, "max": 55 }, "personnel": "维修/航电,2", "servicePersonnel": "勤务二组,1", "facility": "维修工位", "equipment": "检测仪,DT-01,1", "ammunition": "无", "spare": "无" }, { "activityCode": "REP-002", "workName": "换件维修", "predecessors": ["REP-001"], "durationMinutes": 90, "durationProfile": { "distributionType": "正态分布", "mean": 90, "stdDev": 15 }, "personnel": "维修/航电,2", "servicePersonnel": "勤务二组,1", "facility": "维修工位", "equipment": "通用工具箱,TK-01,1", "ammunition": "无", "spare": "航电模块,LRU,1" }] },
       { "id": "preventive", "name": "8小时定检", "activityType": "预防性维修", "activityName": "8小时舰载机定检", "planType": "预防性维修方案", "equipmentId": "j35-hydraulic", "resourceId": "carrier-deck", "durationHours": 2, "requiredPersonnel": 2, "requiredDevices": 1, "spareType": "液压备件", "spareQuantity": 1, "priority": 2, "plannedDowntimeHours": 2, "useCalendarRule": true, "calendarDayInterval": 1, "calendarDayFloatRatio": 0.1, "useFlightHourRule": true, "runHourInterval": 8, "runHourFloatRatio": 0.15, "useTakeoffLandingRule": true, "takeoffLandingInterval": 6, "takeoffLandingFloatRatio": 0.1, "jobs": [{ "activityCode": "PM-001", "workName": "定检准备", "predecessors": [], "durationMinutes": 30, "durationProfile": { "distributionType": "固定值", "value": 30 }, "personnel": "维修/机体,1", "servicePersonnel": "勤务一组,1", "facility": "定检工位", "equipment": "检查灯,LT-01,1", "ammunition": "无", "spare": "无" }, { "activityCode": "PM-002", "workName": "液压系统检查", "predecessors": ["PM-001"], "durationMinutes": 70, "durationProfile": { "distributionType": "三角分布", "min": 55, "mode": 70, "max": 90 }, "personnel": "维修/液压,2", "servicePersonnel": "勤务一组,1", "facility": "定检工位", "equipment": "液压测试台,HY-01,1", "ammunition": "无", "spare": "液压密封件,SRU,1" }] },
       { "id": "logistics-support", "name": "后勤保障运输", "activityType": "后勤保障", "activityName": "航母多级保障组织后勤保障方案", "planType": "后勤保障活动方案", "equipmentId": "j15-engine", "resourceId": "carrier-stock", "durationHours": 2, "requiredPersonnel": 2, "requiredDevices": 2, "spareType": "发动机备件", "spareQuantity": 1, "priority": 1, "organizationStrategies": [{ "supportNodeId": "carrier-deck", "supportLevel": "一线保障", "organizationStrategy": "任务优先 + 备件安全库存", "lateralSupportNodes": ["forward-sea-base"] }, { "supportNodeId": "carrier-stock", "supportLevel": "后方保障", "organizationStrategy": "集中库存 + 垂直补给", "lateralSupportNodes": ["carrier-deck"] }], "transportStrategies": [{ "direction": "纵向运输", "spareType": "发动机备件", "triggerMode": "临界库存", "criticalInventory": 2, "from": "carrier-stock", "to": "carrier-deck", "transportTimeHours": 1 }, { "direction": "横向运输", "spareType": "航电模块", "triggerMode": "周期性调运", "transferCycleHours": 24, "from": "carrier-deck", "to": "forward-sea-base", "transportTimeHours": 2 }] }
-    ]
+    ],
+    "projectInfo": {
+      "name": "导入示例项目",
+      "baseCode": "IMPORTED-001",
+      "summary": "由建模导入 JSON 生成的完整页面测试项目"
+    },
+    "supportOrganization": {
+      "tree": []
+    },
+    "analysisRequests": {
+      "largeSample": {
+        "enabled": true,
+        "samples": 24,
+        "sweep": {
+          "failureRates": [0.035, 0.055, 0.075],
+          "spareMultipliers": [0.75, 1, 1.25],
+          "supportCapacities": [2, 3, 4]
+        }
+      }
+    }
   },
   "changes": [],
   "validation": {
