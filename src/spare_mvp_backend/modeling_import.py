@@ -68,12 +68,14 @@ def validate_modeling_import_package(import_package: dict[str, Any]) -> dict[str
 def modeling_import_to_project(import_package: dict[str, Any]) -> dict[str, Any]:
     objects = import_package.get("objects", {})
     mission = _first_dict(objects.get("missionProfiles")) or {}
+    equipment_profile = objects.get("equipment") if isinstance(objects.get("equipment"), dict) else {}
     equipment_assets = [row for row in objects.get("equipmentAssets", []) if isinstance(row, dict)]
     resources = [row for row in objects.get("supportResources", []) if isinstance(row, dict)]
     activities = [row for row in objects.get("supportActivities", []) if isinstance(row, dict)]
     lifecycle = import_package.get("lifecycle") if isinstance(import_package.get("lifecycle"), dict) else {}
     version = _safe_positive_int(lifecycle.get("version"), 1)
     duration_hours = _safe_positive_float(mission.get("durationHours"), 1)
+    equipment = _equipment_profile_to_project(equipment_profile, equipment_assets, activities)
 
     return {
         "schema_version": "project-v0",
@@ -81,22 +83,19 @@ def modeling_import_to_project(import_package: dict[str, Any]) -> dict[str, Any]
         "project_version": f"import-v{version}",
         "scenarioId": str(import_package["importId"]).replace("_", "-"),
         "activeModule": "sparePlanning",
-        "airports": [],
-        "missionAreas": [],
-        "experiment": {"seed": 20260619, "steps": max(1, int(duration_hours))},
-        "missionProfile": {
-            "sourceImportId": import_package["importId"],
-            "durationHours": mission.get("durationHours"),
-        },
-        "basicMission": {"minRequiredSorties": max(1, len(activities))},
-        "missionPhases": [],
-        "combatUnit": {},
-        "equipment": {"minRequiredSorties": max(1, len(equipment_assets))},
+        "airports": _project_object_list(objects, mission, "airports"),
+        "missionAreas": _project_object_list(objects, mission, "missionAreas"),
+        "experiment": _project_object(objects, mission, "experiment", {"seed": 20260619, "steps": max(1, int(duration_hours))}),
+        "missionProfile": _mission_profile_to_project(mission, import_package["importId"]),
+        "basicMission": _project_object(objects, mission, "basicMission", {"minRequiredSorties": max(1, len(activities))}),
+        "missionPhases": _project_object_list(objects, mission, "missionPhases"),
+        "combatUnit": _project_object(objects, mission, "combatUnit", {}),
+        "equipment": equipment,
         "components": [_equipment_asset_to_component(row) for row in equipment_assets],
         "supportNodes": [_support_resource_to_node(row) for row in resources],
-        "supportActivities": deepcopy(activities),
-        "reliabilityBlockDiagram": {},
-        "monteCarlo": {"spareMultipliers": [1]},
+        "supportActivities": [_support_activity_to_project(row) for row in activities],
+        "reliabilityBlockDiagram": _project_object(objects, mission, "reliabilityBlockDiagram", {}),
+        "monteCarlo": _project_object(objects, mission, "monteCarlo", {"spareMultipliers": [1]}),
     }
 
 
@@ -229,29 +228,98 @@ def _first_dict(rows: Any) -> dict[str, Any] | None:
     return None
 
 
-def _equipment_asset_to_component(row: dict[str, Any]) -> dict[str, Any]:
-    component = {
-        "id": str(row.get("id") or "equipment"),
-        "name": str(row.get("name") or row.get("id") or "equipment"),
-        "quantity": _safe_positive_int(row.get("quantity"), 1),
+def _project_object(objects: dict[str, Any], mission: dict[str, Any], key: str, fallback: dict[str, Any]) -> dict[str, Any]:
+    value = objects.get(key)
+    if isinstance(value, dict):
+        return deepcopy(value)
+    value = mission.get(key)
+    if isinstance(value, dict):
+        return deepcopy(value)
+    return deepcopy(fallback)
+
+
+def _project_object_list(objects: dict[str, Any], mission: dict[str, Any], key: str) -> list[dict[str, Any]]:
+    value = objects.get(key)
+    if isinstance(value, list):
+        return deepcopy([row for row in value if isinstance(row, dict)])
+    value = mission.get(key)
+    if isinstance(value, list):
+        return deepcopy([row for row in value if isinstance(row, dict)])
+    return []
+
+
+def _mission_profile_to_project(mission: dict[str, Any], import_id: str) -> dict[str, Any]:
+    project_only_fields = {
+        "airports",
+        "missionAreas",
+        "experiment",
+        "basicMission",
+        "missionPhases",
+        "combatUnit",
+        "equipment",
+        "reliabilityBlockDiagram",
+        "monteCarlo",
     }
+    profile = {key: deepcopy(value) for key, value in mission.items() if key not in project_only_fields}
+    profile["sourceImportId"] = import_id
+    return profile
+
+
+def _equipment_profile_to_project(
+    equipment_profile: dict[str, Any],
+    equipment_assets: list[dict[str, Any]],
+    activities: list[dict[str, Any]],
+) -> dict[str, Any]:
+    equipment = deepcopy(equipment_profile)
+    aircraft_models = [
+        str(row.get("aircraftModel"))
+        for row in equipment_assets
+        if row.get("aircraftModel") not in (None, "")
+    ]
+    unique_models = list(dict.fromkeys(aircraft_models))
+    if unique_models:
+        equipment.setdefault("wholeMachineModels", unique_models)
+        equipment.setdefault("model", unique_models[0])
+    equipment.setdefault("quantity", sum(_safe_positive_int(row.get("quantity"), 1) for row in equipment_assets if not row.get("parentId")))
+    equipment.setdefault("minRequiredSorties", max(1, len(activities)))
+    return equipment
+
+
+def _equipment_asset_to_component(row: dict[str, Any]) -> dict[str, Any]:
+    component = deepcopy(row)
+    component["id"] = str(row.get("id") or "equipment")
+    component["name"] = str(row.get("name") or row.get("id") or "equipment")
+    component["quantity"] = _safe_positive_int(row.get("quantity"), 1)
     if row.get("parentId") not in (None, ""):
         component["parentId"] = str(row["parentId"])
     mtbf_hours = _safe_positive_float(row.get("mtbfHours"), 0)
     if mtbf_hours > 0:
         component["mtbfHours"] = mtbf_hours
-        component["failureRate"] = 1 / mtbf_hours
+        component.setdefault("failureRate", 1 / mtbf_hours)
     return component
 
 
 def _support_resource_to_node(row: dict[str, Any]) -> dict[str, Any]:
     capacity = _safe_positive_int(row.get("capacity"), 1)
-    return {
-        "id": str(row.get("id") or "support-resource"),
-        "name": str(row.get("name") or row.get("id") or "support-resource"),
-        "capacity": capacity,
-        "equipmentCapacity": capacity,
-    }
+    node = deepcopy(row)
+    node["id"] = str(row.get("id") or "support-resource")
+    node["name"] = str(row.get("name") or row.get("id") or "support-resource")
+    node["capacity"] = capacity
+    node.setdefault("personnelCapacity", capacity)
+    node.setdefault("equipmentCapacity", capacity)
+    node.setdefault("inventory", {})
+    return node
+
+
+def _support_activity_to_project(row: dict[str, Any]) -> dict[str, Any]:
+    activity = deepcopy(row)
+    activity.setdefault("activityName", row.get("name") or row.get("id") or "保障活动")
+    activity.setdefault("activityType", row.get("type") or row.get("name") or "保障活动")
+    activity.setdefault("requiredPersonnel", 1)
+    activity.setdefault("requiredDevices", 1)
+    activity.setdefault("priority", 1)
+    activity.setdefault("jobs", [])
+    return activity
 
 
 def _safe_positive_int(value: Any, fallback: int) -> int:

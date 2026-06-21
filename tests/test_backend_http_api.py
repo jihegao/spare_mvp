@@ -86,9 +86,9 @@ class BackendHttpApiTest(unittest.TestCase):
             thread.start()
             try:
                 base_url = f"http://127.0.0.1:{server.server_address[1]}/api"
-                project = self._fixture("smoke_project.json")
-                saved = self._json(base_url, "POST", "/projects", project)
-                snapshot = self._json(base_url, "POST", f"/projects/{saved['project_id']}/modeling-snapshots")
+                created = self._create_imported_sample_project(base_url)
+                saved = created["savedProject"]
+                snapshot = created["modelingSnapshot"]
                 plan = self._json(
                     base_url,
                     "POST",
@@ -140,7 +140,7 @@ class BackendHttpApiTest(unittest.TestCase):
                 server.server_close()
                 thread.join(timeout=5)
 
-    def test_http_canonical_runs_accept_formal_monte_carlo_run_type(self) -> None:
+    def test_http_canonical_runs_reject_non_imported_sample_project(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             server = create_backend_server(
                 ("127.0.0.1", 0),
@@ -154,7 +154,143 @@ class BackendHttpApiTest(unittest.TestCase):
                 base_url = f"http://127.0.0.1:{server.server_address[1]}/api"
                 project = self._fixture("smoke_project.json")
                 saved = self._json(base_url, "POST", "/projects", project)
-                snapshot = self._json(base_url, "POST", f"/projects/{saved['project_id']}/modeling-snapshots")
+                self._json(base_url, "POST", f"/projects/{saved['project_id']}/modeling-snapshots")
+                plan = self._json(
+                    base_url,
+                    "POST",
+                    f"/projects/{saved['project_id']}/experiment-plans",
+                    {"config": {"name": "canonical formal run gate", "steps": 1}},
+                )
+
+                error = self._json_error(
+                    base_url,
+                    "POST",
+                    "/runs",
+                    {
+                        "project_id": saved["project_id"],
+                        "experiment_plan_id": plan["experiment_plan_id"],
+                        "model_family": "smoke",
+                        "run_type": "single",
+                    },
+                )
+
+                self.assertEqual(error["code"], "formal_run_requires_imported_sample")
+                self.assertEqual(error["details"]["project_id"], saved["project_id"])
+                self.assertIsNone(error["details"]["source_import_id"])
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
+    def test_http_canonical_runs_reject_forged_import_source_project(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            server = create_backend_server(
+                ("127.0.0.1", 0),
+                repo_root=REPO_ROOT,
+                database_path=":memory:",
+                output_dir=Path(tmp) / "artifacts",
+            )
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                base_url = f"http://127.0.0.1:{server.server_address[1]}/api"
+                auth_token = self._login_token(base_url, "data", "data")
+                import_package = self._fixture("modeling_import_project.json")
+                self._json(base_url, "POST", "/modeling-imports", import_package, auth_token=auth_token)
+                self._json(
+                    base_url,
+                    "POST",
+                    f"/modeling-imports/{quote(import_package['importId'], safe='')}/publish",
+                    auth_token=auth_token,
+                )
+                forged_project = self._fixture("smoke_project.json")
+                forged_project["project_id"] = import_package["projectId"]
+                forged_project["missionProfile"] = {"sourceImportId": import_package["importId"]}
+                saved = self._json(base_url, "POST", "/projects", forged_project)
+                self._json(base_url, "POST", f"/projects/{saved['project_id']}/modeling-snapshots")
+                plan = self._json(
+                    base_url,
+                    "POST",
+                    f"/projects/{saved['project_id']}/experiment-plans",
+                    {"config": {"name": "forged canonical formal run", "steps": 1}},
+                )
+
+                error = self._json_error(
+                    base_url,
+                    "POST",
+                    "/runs",
+                    {
+                        "project_id": saved["project_id"],
+                        "experiment_plan_id": plan["experiment_plan_id"],
+                        "model_family": "smoke",
+                        "run_type": "single",
+                    },
+                )
+
+                self.assertEqual(error["code"], "formal_run_requires_imported_sample")
+                self.assertEqual(error["details"]["project_id"], saved["project_id"])
+                self.assertEqual(error["details"]["source_import_id"], import_package["importId"])
+                self.assertEqual(error["details"]["reason"], "missing_create_project_audit")
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
+    def test_http_legacy_simulation_runs_accept_preview_project(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            server = create_backend_server(
+                ("127.0.0.1", 0),
+                repo_root=REPO_ROOT,
+                database_path=":memory:",
+                output_dir=Path(tmp) / "artifacts",
+            )
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                base_url = f"http://127.0.0.1:{server.server_address[1]}/api"
+                project = self._fixture("smoke_project.json")
+                saved = self._json(base_url, "POST", "/projects", project)
+                self._json(base_url, "POST", f"/projects/{saved['project_id']}/modeling-snapshots")
+                plan = self._json(
+                    base_url,
+                    "POST",
+                    f"/projects/{saved['project_id']}/experiment-plans",
+                    {"config": {"name": "legacy preview run", "steps": 1}},
+                )
+
+                run = self._json(
+                    base_url,
+                    "POST",
+                    "/simulation-runs",
+                    {
+                        "project_id": saved["project_id"],
+                        "experiment_plan_id": plan["experiment_plan_id"],
+                        "model_family": "smoke",
+                    },
+                )
+
+                self.assertEqual(run["status"], "succeeded")
+                self.assertEqual(run["project_id"], saved["project_id"])
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
+    def test_http_canonical_runs_accept_formal_monte_carlo_run_type(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            server = create_backend_server(
+                ("127.0.0.1", 0),
+                repo_root=REPO_ROOT,
+                database_path=":memory:",
+                output_dir=Path(tmp) / "artifacts",
+            )
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                base_url = f"http://127.0.0.1:{server.server_address[1]}/api"
+                created = self._create_imported_sample_project(base_url)
+                saved = created["savedProject"]
+                snapshot = created["modelingSnapshot"]
                 plan = self._json(
                     base_url,
                     "POST",
@@ -163,7 +299,7 @@ class BackendHttpApiTest(unittest.TestCase):
                         "config": {
                             "name": "http formal monte carlo",
                             "steps": 2,
-                            "projectJson": project,
+                            "projectJson": created["project"],
                             "analysisRequests": {
                                 "largeSample": {
                                     "enabled": True,
@@ -223,8 +359,8 @@ class BackendHttpApiTest(unittest.TestCase):
             thread.start()
             try:
                 base_url = f"http://127.0.0.1:{server.server_address[1]}/api"
-                project = self._fixture("smoke_project.json")
-                saved = self._json(base_url, "POST", "/projects", project)
+                created = self._create_imported_sample_project(base_url)
+                saved = created["savedProject"]
                 self._json(base_url, "POST", f"/projects/{saved['project_id']}/modeling-snapshots")
                 plan = self._json(
                     base_url,
@@ -234,7 +370,7 @@ class BackendHttpApiTest(unittest.TestCase):
                         "config": {
                             "name": "http reject request monte carlo config",
                             "steps": 1,
-                            "projectJson": project,
+                            "projectJson": created["project"],
                             "analysisRequests": {
                                 "largeSample": {
                                     "enabled": True,
@@ -285,14 +421,13 @@ class BackendHttpApiTest(unittest.TestCase):
             thread.start()
             try:
                 base_url = f"http://127.0.0.1:{server.server_address[1]}/api"
-                project = self._fixture("aviation_support_project.json")
-                saved = self._json(base_url, "POST", "/projects", project)
-                self._json(base_url, "POST", f"/projects/{saved['project_id']}/modeling-snapshots")
+                created = self._create_imported_sample_project(base_url)
+                saved = created["savedProject"]
                 plan = self._json(
                     base_url,
                     "POST",
                     f"/projects/{saved['project_id']}/experiment-plans",
-                    {"config": {"name": "http compiler gate", "steps": 1}},
+                    {"config": {"name": "http compiler gate", "steps": 1, "projectJson": created["project"]}},
                 )
 
                 submitted = self._json(
@@ -766,7 +901,11 @@ class BackendHttpApiTest(unittest.TestCase):
 
                 changed_package = self._fixture("modeling_import_project.json")
                 changed_package["lifecycle"] = {"state": "draft", "version": 2, "referencedRunIds": []}
-                changed_package["objects"]["equipmentAssets"][1]["quantity"] = 2
+                target_index = next(
+                    index for index, component in enumerate(changed_package["objects"]["equipmentAssets"])
+                    if component["id"] == "j15-engine"
+                )
+                changed_package["objects"]["equipmentAssets"][target_index]["quantity"] = 3
                 self._json(base_url, "POST", "/modeling-imports", changed_package, auth_token=auth_token)
             finally:
                 first_server.shutdown()
@@ -787,10 +926,10 @@ class BackendHttpApiTest(unittest.TestCase):
 
                 self.assertEqual(stored["draftPackage"]["lifecycle"]["state"], "draft")
                 self.assertEqual(stored["draftPackage"]["lifecycle"]["version"], 2)
-                self.assertEqual(stored["draftPackage"]["objects"]["equipmentAssets"][1]["quantity"], 2)
+                self.assertEqual(stored["draftPackage"]["objects"]["equipmentAssets"][target_index]["quantity"], 3)
                 self.assertEqual(stored["publishedPackage"]["lifecycle"]["state"], "published")
                 self.assertEqual(stored["publishedPackage"]["lifecycle"]["version"], 1)
-                self.assertEqual(stored["publishedPackage"]["objects"]["equipmentAssets"][1]["quantity"], 1)
+                self.assertEqual(stored["publishedPackage"]["objects"]["equipmentAssets"][target_index]["quantity"], 2)
             finally:
                 second_server.shutdown()
                 second_server.server_close()
@@ -872,6 +1011,15 @@ class BackendHttpApiTest(unittest.TestCase):
                 self.assertEqual(forbidden["code"], "forbidden")
                 self.assertEqual(created["sourceImport"]["import_id"], import_package["importId"])
                 self.assertEqual(created["project"]["project_id"], import_package["projectId"])
+                self.assertEqual(created["project"]["equipment"]["wholeMachineModels"], ["J-15", "J-35"])
+                self.assertGreaterEqual(len(created["project"]["components"]), 8)
+                self.assertGreaterEqual(len(created["project"]["missionProfile"]["compositeTasks"]), 2)
+                self.assertGreaterEqual(len(created["project"]["supportNodes"]), 3)
+                self.assertIn("航电模块", created["project"]["supportNodes"][0]["inventory"])
+                self.assertTrue(any(
+                    activity["activityType"] == "修复性维修" and len(activity["jobs"]) >= 2
+                    for activity in created["project"]["supportActivities"]
+                ))
                 self.assertEqual(created["savedProject"]["project_id"], import_package["projectId"])
                 self.assertEqual(created["modelingSnapshot"]["project"]["project_id"], import_package["projectId"])
                 self.assertTrue(created["modelingSnapshot"]["snapshot_id"])
@@ -947,6 +1095,23 @@ class BackendHttpApiTest(unittest.TestCase):
     def _login_token(self, base_url: str, username: str, password: str) -> str:
         session = self._json(base_url, "POST", "/auth/login", {"username": username, "password": password})
         return session["session"]["token"]
+
+    def _create_imported_sample_project(self, base_url: str) -> dict:
+        auth_token = self._login_token(base_url, "data", "data")
+        import_package = self._fixture("modeling_import_project.json")
+        self._json(base_url, "POST", "/modeling-imports", import_package, auth_token=auth_token)
+        self._json(
+            base_url,
+            "POST",
+            f"/modeling-imports/{quote(import_package['importId'], safe='')}/publish",
+            auth_token=auth_token,
+        )
+        return self._json(
+            base_url,
+            "POST",
+            f"/modeling-imports/{quote(import_package['importId'], safe='')}/create-project",
+            auth_token=auth_token,
+        )
 
     def _json(
         self,

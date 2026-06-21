@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { FEATURE_PAGES, getFeaturePageById, groupFeaturePages } from "../front/feature-catalog.mjs";
+import { MODELING_IMPORT_DEMO_FIXTURE } from "../front/modeling-import-demo-fixture.mjs";
 
 const PAGE_REVISION_REPORT_URL = new URL("../reports/2026-06-19-page-revision-suggestions/README.md", import.meta.url);
 
@@ -240,6 +241,10 @@ test("page revision project and system management controls stay wired", async ()
     appSource.indexOf("function renderSystemProjectManagement"),
     appSource.indexOf("function renderSystemBasicConfig")
   );
+  const projectDataSource = appSource.slice(
+    appSource.indexOf("function renderProjectDataTable"),
+    appSource.indexOf("function renderModelingGranularityTable")
+  );
   const userSource = appSource.slice(
     appSource.indexOf("function renderUserManagementConfig"),
     appSource.indexOf("function renderPermissionManagementConfig")
@@ -247,6 +252,10 @@ test("page revision project and system management controls stay wired", async ()
   const permissionSource = appSource.slice(
     appSource.indexOf("function renderPermissionManagementConfig"),
     appSource.indexOf("function renderTaskModel")
+  );
+  const granularitySource = appSource.slice(
+    appSource.indexOf("function renderModelingGranularityTable"),
+    appSource.indexOf("function activeSystemDataDefinition")
   );
   const eventSource = appSource.slice(
     appSource.indexOf("function bindEvents"),
@@ -263,8 +272,36 @@ test("page revision project and system management controls stay wired", async ()
   assert.match(systemProjectSource, /建模数据/);
   assert.match(systemProjectSource, /实验配置/);
   assert.match(systemProjectSource, /实验结果/);
+  assert.doesNotMatch(systemProjectSource, /项目独有数据/);
+  assert.doesNotMatch(systemProjectSource, /新增项目数据/);
+  assert.doesNotMatch(projectDataSource, /<aside class="tree-container">/);
   assert.match(systemProjectSource, /data-system-data-export/);
+  assert.match(systemProjectSource, /data-system-data-add/);
+  assert.match(systemProjectSource, /data-system-data-delete-selected/);
+  assert.match(systemProjectSource, /data-system-data-select-all/);
+  assert.match(systemProjectSource, /data-system-data-select/);
+  assert.match(systemProjectSource, /data-system-data-status/);
+  assert.match(systemProjectSource, /data-system-data-export-preview/);
   assert.match(systemProjectSource, /SYSTEM_MODELING_GRANULARITY_ROWS/);
+  assert.match(granularitySource, /function renderModelingGranularityTable/);
+  assert.doesNotMatch(granularitySource, /tree-container/);
+  assert.doesNotMatch(granularitySource, /class=\"tree-container\"/);
+  assert.doesNotMatch(granularitySource, /<button type=\"button\" class=\"btn-primary\">新增<\/button>/);
+  assert.doesNotMatch(granularitySource, /<button type=\"button\" class=\"btn-danger\">批量删除<\/button>/);
+  assert.match(granularitySource, /inline-action/);
+  assert.match(granularitySource, /data-modeling-granularity-detail/);
+  assert.match(granularitySource, /查看详情/);
+  assert.match(granularitySource, /<th>建模层级<\/th>/);
+  assert.match(granularitySource, /<th>建模对象<\/th>/);
+  assert.match(granularitySource, /<th>对象关系<\/th>/);
+  assert.match(granularitySource, /<th>操作<\/th>/);
+  assert.doesNotMatch(projectDataSource, /<th>操作<\/th>/);
+  assert.doesNotMatch(projectDataSource, /配置<\/button>/);
+  assert.match(eventSource, /const systemDataAddButton = event\.target\.closest\("\[data-system-data-add\]"\)/);
+  assert.match(eventSource, /const systemDataDeleteButton = event\.target\.closest\("\[data-system-data-delete-selected\]"\)/);
+  assert.match(eventSource, /const systemDataSelectAll = event\.target\.closest\("\[data-system-data-select-all\]"\)/);
+  assert.match(eventSource, /const systemDataSelect = event\.target\.closest\("\[data-system-data-select\]"\)/);
+  assert.match(eventSource, /const modelingGranularityDetailButton = event\.target\.closest\("\[data-modeling-granularity-detail\]"\)/);
 
   assert.match(userSource, /data-system-user-select-all/);
   assert.match(userSource, /data-system-user-select/);
@@ -276,6 +313,96 @@ test("page revision project and system management controls stay wired", async ()
   assert.match(permissionSource, /data-permission-role/);
   assert.match(eventSource, /const systemManagementButton = event\.target\.closest\("\[data-system-management-entry\]"\)/);
   assert.match(eventSource, /const permissionConfigureButton = event\.target\.closest\("\[data-permission-configure\]"\)/);
+});
+
+test("project data management tabs expose local add delete selection and export preview", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const systemProjectSource = appSource.slice(
+    appSource.indexOf("function renderSystemProjectManagement"),
+    appSource.indexOf("function renderSystemBasicConfig")
+  );
+  const projectDataSource = appSource.slice(
+    appSource.indexOf("function renderProjectDataTable"),
+    appSource.indexOf("function renderModelingGranularityTable")
+  );
+  const eventSource = appSource.slice(
+    appSource.indexOf("function bindEvents"),
+    appSource.indexOf("async function handleLogin")
+  );
+  const dataActionSource = appSource.slice(
+    appSource.indexOf("function addSystemDataRow"),
+    appSource.indexOf("function renderSystemBasicConfig")
+  );
+
+  for (const label of ["建模数据", "实验配置", "实验结果"]) {
+    assert.match(systemProjectSource, new RegExp(label));
+  }
+
+  assert.doesNotMatch(systemProjectSource, /项目独有数据/);
+  assert.doesNotMatch(systemProjectSource, /新增项目数据/);
+  assert.match(projectDataSource, /data-system-data-add/);
+  assert.match(projectDataSource, /data-system-data-delete-selected/);
+  assert.match(projectDataSource, /data-system-data-export/);
+  assert.match(projectDataSource, /data-system-data-select-all/);
+  assert.match(projectDataSource, /data-system-data-select="\$\{htmlEscape\(row\.key\)\}"/);
+  assert.match(projectDataSource, /data-system-data-status/);
+  assert.match(projectDataSource, /data-system-data-export-preview/);
+  assert.doesNotMatch(projectDataSource, /<th>操作<\/th>/);
+  assert.doesNotMatch(projectDataSource, /配置<\/button>/);
+
+  assert.match(eventSource, /const systemDataAddButton = event\.target\.closest\("\[data-system-data-add\]"\)/);
+  assert.match(eventSource, /const systemDataDeleteButton = event\.target\.closest\("\[data-system-data-delete-selected\]"\)/);
+  assert.match(eventSource, /const systemDataExportButton = event\.target\.closest\("\[data-system-data-export\]"\)/);
+  assert.match(eventSource, /const systemDataSelectAll = event\.target\.closest\("\[data-system-data-select-all\]"\)/);
+  assert.match(eventSource, /const systemDataSelect = event\.target\.closest\("\[data-system-data-select\]"\)/);
+  assert.match(dataActionSource, /systemDataStatus = `已新增\$\{tab\.label\}/);
+  assert.match(dataActionSource, /systemDataStatus = "请先选择要删除的数据项"/);
+  assert.match(dataActionSource, /systemDataExportPreview = \{/);
+  assert.match(dataActionSource, /rowCount: rows\.length/);
+  assert.match(dataActionSource, /filename: systemDataExportFilename\(tab\)/);
+  assert.match(dataActionSource, /downloadSystemDataExport\(systemDataExportPreview\.filename,/);
+  assert.match(dataActionSource, /function systemDataExportFilename\(tab\)/);
+  assert.match(dataActionSource, /function buildSystemDataExportPayload\(tab, rows\)/);
+  assert.match(dataActionSource, /function downloadSystemDataExport\(filename, payload\)/);
+  assert.match(dataActionSource, /new Blob\(\[JSON\.stringify\(payload, null, 2\)\]/);
+  assert.match(dataActionSource, /URL\.createObjectURL\(blob\)/);
+  assert.match(dataActionSource, /anchor\.download = filename/);
+  assert.match(dataActionSource, /anchor\.click\(\)/);
+  assert.match(dataActionSource, /URL\.revokeObjectURL\(url\)/);
+  assert.match(projectDataSource, /data-system-data-export-filename/);
+});
+
+test("project list edit action opens a usable inline editor", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const projectListSource = appSource.slice(
+    appSource.indexOf("function renderProjectListPage"),
+    appSource.indexOf("function renderNavigation")
+  );
+  const clickSource = appSource.slice(
+    appSource.indexOf("function bindEvents"),
+    appSource.indexOf("app.addEventListener(\"change\"")
+  );
+  const inputSource = appSource.slice(
+    appSource.indexOf("app.addEventListener(\"input\""),
+    appSource.indexOf("async function saveCurrentProjectThroughApi")
+  );
+  const editSource = appSource.slice(
+    appSource.indexOf("function editDemoProject"),
+    appSource.indexOf("function deleteDemoProject")
+  );
+
+  assert.match(projectListSource, /projectEditorDraft/);
+  assert.match(projectListSource, /data-project-edit-form/);
+  assert.match(projectListSource, /data-project-edit-field="name"/);
+  assert.match(projectListSource, /data-project-edit-field="baseCode"/);
+  assert.match(projectListSource, /data-project-edit-field="summary"/);
+  assert.match(projectListSource, /data-project-edit-save/);
+  assert.match(projectListSource, /data-project-edit-cancel/);
+  assert.match(clickSource, /const saveProjectEditButton = event\.target\.closest\("\[data-project-edit-save\]"\)/);
+  assert.match(clickSource, /const cancelProjectEditButton = event\.target\.closest\("\[data-project-edit-cancel\]"\)/);
+  assert.match(inputSource, /const projectEditInput = event\.target\.closest\("\[data-project-edit-field\]"\)/);
+  assert.match(editSource, /projectEditorDraft\s*=/);
+  assert.doesNotMatch(editSource, /name: project\.name\.endsWith\("（编辑）"\)/);
 });
 
 test("results analysis pages are rendered as four dedicated ship-front aligned dashboards", async () => {
@@ -556,6 +683,9 @@ test("support activity pages align to page suggestion activity fields", async ()
   assert.match(supportActivitySource, /renderPreventiveMaintenanceActivity/);
   assert.match(supportActivitySource, /renderCorrectiveMaintenanceActivity/);
   assert.match(supportActivitySource, /renderLogisticsSupportActivity/);
+  assert.match(supportActivitySource, /const supportNodeOptions = \(scenario\.supportNodes \|\| \[\]\)\.map/);
+  assert.match(supportActivitySource, /valueSelect\(`\$\{basePath\}\.from`, supportNodeOptions\)/);
+  assert.match(supportActivitySource, /valueSelect\(`\$\{basePath\}\.to`, supportNodeOptions\)/);
   const supportActivityJobSource = supportActivitySource.slice(
     supportActivitySource.indexOf("function renderSupportActivityJobRows"),
     supportActivitySource.indexOf("function renderBasicActivityLibrary")
@@ -632,6 +762,7 @@ test("equipment tree selection drives the selected component edit path", async (
 
 test("equipment tree add node follows ship front selected aircraft and subsystem behavior", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const equipmentModelSource = await readFile(new URL("../front/equipment-tree-model.mjs", import.meta.url), "utf8");
   const equipmentSource = appSource.slice(
     appSource.indexOf("function renderEquipmentModeling"),
     appSource.indexOf("function renderEquipmentFailureRmsFields")
@@ -639,25 +770,40 @@ test("equipment tree add node follows ship front selected aircraft and subsystem
   assert.match(equipmentSource, /data-equipment-add-node/);
   assert.match(equipmentSource, /function buildEquipmentTreeNodes\(\)/);
   assert.match(equipmentSource, /function buildEquipmentComponentTreeNodes\(aircraftModel, parentId\)/);
+  assert.match(equipmentSource, /buildEquipmentComponentTreeModel\(\{ scenario, aircraftModel, parentId \}\)/);
+  assert.match(equipmentModelSource, /const visitedIds = new Set\(visited\)/);
+  assert.match(equipmentModelSource, /componentId !== String\(currentParentId\)/);
+  assert.match(equipmentModelSource, /!visitedIds\.has\(componentId\)/);
   assert.match(appSource, /function addEquipmentNodeForSelection\(\)/);
-  assert.match(appSource, /parentId: selectedState\.kind === "aircraft" \? "aircraft-root" : selectedState\.component\.id/);
-  assert.match(appSource, /productType: selectedState\.kind === "aircraft" \? "非LRU" : "LRU"/);
-  assert.match(appSource, /selectedEquipmentNodeKey = `component:\$\{newComponent\.id\}`/);
+  assert.match(appSource, /addEquipmentNodeForSelectionModel\(\{ scenario, selection: selectedState \}\)/);
+  assert.match(equipmentModelSource, /parentId = selectedState\.kind === "aircraft" \? "aircraft-root" : selectedState\.component\.id/);
+  assert.match(equipmentModelSource, /productType: selectedState\.kind === "aircraft" \? "非LRU" : "LRU"/);
+  assert.match(equipmentModelSource, /selectedEquipmentNodeKey: `component:\$\{newComponent\.id\}`/);
 });
 
 test("equipment tree root aircraft list can add aircraft before subsystem nodes", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const equipmentModelSource = await readFile(new URL("../front/equipment-tree-model.mjs", import.meta.url), "utf8");
   const equipmentSource = appSource.slice(
     appSource.indexOf("function renderEquipmentModeling"),
     appSource.indexOf("function renderEquipmentFailureRmsFields")
   );
+  const resolveSource = equipmentModelSource.slice(
+    equipmentModelSource.indexOf("export function resolveEquipmentSelectionModel"),
+    equipmentModelSource.indexOf("export function addEquipmentNodeForSelectionModel")
+  );
+  const zeroAircraftIndex = resolveSource.indexOf("if (!models.length) return { kind: \"aircraft-list\" };");
+  const componentFallbackIndex = resolveSource.indexOf("const componentIndex = clampIndex");
+
   assert.match(equipmentSource, /label: "飞机列表"/);
   assert.match(equipmentSource, /data-select-equipment-root/);
   assert.match(appSource, /selectedEquipmentNodeKey = "aircraft-list"/);
-  assert.match(appSource, /kind: "aircraft-list"/);
-  assert.match(appSource, /function addEquipmentAircraftForSelection\(\)/);
-  assert.match(appSource, /scenario\.equipment\.wholeMachineModels\.push\(aircraftModel\)/);
-  assert.match(appSource, /selectedEquipmentNodeKey = `aircraft:\$\{aircraftModel\}`/);
+  assert.match(equipmentModelSource, /kind: "aircraft-list"/);
+  assert.ok(zeroAircraftIndex >= 0, "zero-aircraft imported samples must resolve to the aircraft-list target");
+  assert.ok(zeroAircraftIndex < componentFallbackIndex, "zero-aircraft guard must run before component fallback");
+  assert.match(equipmentModelSource, /function addEquipmentAircraftForSelectionModel\(scenario\)/);
+  assert.match(equipmentModelSource, /scenario\.equipment\.wholeMachineModels\.push\(aircraftModel\)/);
+  assert.match(equipmentModelSource, /selectedEquipmentNodeKey: `aircraft:\$\{aircraftModel\}`/);
   assert.match(appSource, /选中飞机列表新增飞机，选中飞机新增分系统，选中分系统新增子系统/);
   assert.match(appSource, /<label>数量<input readonly value=/);
   assert.doesNotMatch(appSource, /整机数量<input readonly value=/);
@@ -847,6 +993,47 @@ test("basic mission page follows ship front basic task modeling structure", asyn
   assert.doesNotMatch(appSource, /基本任务建模字段[\s\S]*任务类型/);
 });
 
+test("basic mission tree should support selecting editable mission nodes", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const bindSource = appSource.slice(
+    appSource.indexOf("const basicMissionNode = event.target.closest(\"[data-select-basic-mission]\")"),
+    appSource.indexOf("const basicMissionEquipmentNode = event.target.closest(\"[data-select-basic-mission-equipment]\")")
+  );
+
+  assert.match(bindSource, /if \(basicMissionNode && !clickedTreeToggleIcon\) \{/);
+  assert.match(bindSource, /const candidateBasicMissionKey = basicMissionNode\.dataset\.selectBasicMission;/);
+  assert.match(bindSource, /const selectedMission = editableBasicMissionRecords\(\)\.find\(\(record\) => record\.key === candidateBasicMissionKey\);/);
+  assert.match(bindSource, /selectedBasicMissionKey = candidateBasicMissionKey;/);
+  assert.match(bindSource, /selectedBasicMissionTreeLevel = "mission";/);
+  assert.match(bindSource, /if \(selectedMission\) \{/);
+});
+
+test("basic mission aircraft tree nodes should select editable equipment tasks", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const equipmentBindSource = appSource.slice(
+    appSource.indexOf("const basicMissionEquipmentNode = event.target.closest(\"[data-select-basic-mission-equipment]\")"),
+    appSource.indexOf("const compositeTaskAddButton = event.target.closest(\"[data-composite-task-add]\")")
+  );
+  const treeSource = appSource.slice(
+    appSource.indexOf("function basicMissionTreeNodes()"),
+    appSource.indexOf("function editableBasicMissionRecords()")
+  );
+
+  assert.match(appSource, /let selectedBasicMissionTreeLevel = "mission"/);
+  assert.match(equipmentBindSource, /if \(basicMissionEquipmentNode\) \{/);
+  assert.match(equipmentBindSource, /const selectedEquipmentMission = editableBasicMissionRecords\(\)\.find\(\(record\) => record\.task\.equipmentType === selectedBasicMissionEquipmentType\);/);
+  assert.match(equipmentBindSource, /selectedBasicMissionKey = selectedEquipmentMission\?\.key \|\| "primary";/);
+  assert.match(equipmentBindSource, /selectedBasicMissionTreeLevel = "equipment";/);
+  assert.match(equipmentBindSource, /toggleTreeNodeFromElement\(clickedTreeToggleIcon\);/);
+  assert.match(appSource, /function toggleTreeNodeFromElement\(treeToggleElement\)/);
+  assert.match(treeSource, /const tasks = editableBasicMissionRecords\(\);/);
+  assert.doesNotMatch(treeSource, /readonlyCompositeBasicMissionRecords/);
+  assert.match(treeSource, /selected: selectedBasicMissionTreeLevel === "mission" && record\.key === selectedBasicMissionKey/);
+  assert.match(treeSource, /selected: selectedBasicMissionTreeLevel === "equipment" && equipmentType === selectedBasicMissionEquipmentType/);
+  assert.doesNotMatch(appSource, /function readonlyCompositeBasicMissionRecords/);
+  assert.doesNotMatch(appSource, /function ensureEditableBasicMissionForEquipment/);
+});
+
 test("structure trees expose shared expand and collapse controls", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const stylesSource = await readFile(new URL("../front/styles.css", import.meta.url), "utf8");
@@ -888,7 +1075,7 @@ test("mission task profile pages split composite and periodic task modeling", as
   assert.match(compositeSource, /任务优先级/);
   assert.match(compositeSource, /要求装备数量/);
   assert.match(compositeSource, /最小装备数量/);
-  assert.match(compositeSource, /回收时刻/);
+  assert.doesNotMatch(compositeSource, /回收时刻/);
   assert.match(appSource, /任务时长过长，应新建复合任务，在周期性任务中组合/);
   assert.match(appSource, /function formatTimelineHour/);
   assert.doesNotMatch(compositeSource, /任务派遣时长/);
@@ -917,6 +1104,23 @@ test("mission task profile pages split composite and periodic task modeling", as
   assert.doesNotMatch(periodicSource, /星期/);
   assert.doesNotMatch(periodicSource, /当前复合任务包含的基本任务/);
   assert.doesNotMatch(periodicSource, /典型组合任务时序表/);
+});
+
+test("composite timeline table and rows should drop recovery time output", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const compositeSource = appSource.slice(
+    appSource.indexOf("function renderCompositeTaskModeling"),
+    appSource.indexOf("function renderPeriodicTaskModeling")
+  );
+  const timelineSource = appSource.slice(
+    appSource.indexOf("function buildCompositeTimelineRows(composite)"),
+    appSource.indexOf("function renderCompositeTimelineChart")
+  );
+
+  assert.doesNotMatch(compositeSource, /<th>回收时刻<\/th>/);
+  assert.doesNotMatch(compositeSource, /\brow\.recoveryTime\b/);
+  assert.doesNotMatch(timelineSource, /recoveryTime:/);
+  assert.doesNotMatch(timelineSource, /addMinutesToTime\(departureTime, durationMinutes\)/);
 });
 
 test("page revision equipment and mission input constraints are guarded", async () => {
@@ -1081,9 +1285,16 @@ test("support activity controls are wired through local draft fields", async () 
     appSource.indexOf("function renderCorrectiveMaintenanceActivity"),
     appSource.indexOf("function renderLogisticsSupportActivity")
   );
+  const readonlyEquipmentConfigSource = appSource.slice(
+    appSource.indexOf("function buildReadonlyEquipmentConfigComponentTreeNodes"),
+    appSource.indexOf("function correctiveReferenceComponent")
+  );
   assert.doesNotMatch(correctiveSource, /<input(?![^>]*(data-path|readonly|disabled))/);
   assert.doesNotMatch(correctiveSource, /scenario\.components\[0\]/);
   assert.match(correctiveSource, /data-path="supportActivities\.\$\{activityIndex\}\.repairType"/);
+  assert.match(readonlyEquipmentConfigSource, /const visitedIds = new Set\(visited\)/);
+  assert.match(readonlyEquipmentConfigSource, /componentId !== String\(parentId\)/);
+  assert.match(readonlyEquipmentConfigSource, /!visitedIds\.has\(componentId\)/);
 });
 
 test("reliability block diagram prototype exposes node edge and k-out-of-n fields", async () => {
@@ -1341,10 +1552,85 @@ test("project creation from modeling import uses the current or passed import id
     appSource.indexOf("async function enterProject")
   );
 
-  assert.match(clickSource, /createSampleProjectFromPublishedImport\(currentPublishedModelingImportId\(\) \|\| MODELING_IMPORT_DEMO_FIXTURE\.importId\)/);
+  assert.match(clickSource, /createSampleProjectFromPublishedImport\(currentPublishedModelingImportId\(\)\)/);
   assert.match(createSource, /async function createSampleProjectFromPublishedImport\(importId/);
-  assert.match(createSource, /backendApi\.createProjectFromModelingImport\(importId\)/);
+  assert.match(createSource, /ensurePublishedModelingImportForSampleProject/);
+  assert.match(createSource, /backendApi\.createProjectFromModelingImport\(resolvedImportId\)/);
   assert.doesNotMatch(createSource, /createProjectFromModelingImport\(MODELING_IMPORT_DEMO_FIXTURE\.importId\)/);
+});
+
+test("frontend modeling import demo fixture stays aligned with complete imported sample data", () => {
+  const objects = MODELING_IMPORT_DEMO_FIXTURE.objects;
+
+  assert.deepEqual(objects.equipment.wholeMachineModels, ["J-15", "J-35"]);
+  assert.ok(objects.equipmentAssets.length >= 10);
+  assert.ok(objects.equipmentAssets.some((component) => component.id === "j15-avionics" && component.aircraftModel === "J-15" && component.rms));
+  assert.ok(objects.missionProfiles[0].compositeTasks.length >= 2);
+  assert.ok(objects.missionProfiles[0].periodicTasks.length >= 1);
+  assert.ok(objects.missionProfiles[0].combatUnit.members.length >= 4);
+  assert.ok(objects.supportResources.length >= 3);
+  assert.ok(objects.supportResources[0].inventory["航电模块"] > 0);
+  assert.ok(objects.supportActivities.some((activity) => activity.activityType === "修复性维修" && activity.jobs.length >= 2));
+  assert.ok(objects.supportActivities.some((activity) => activity.activityType === "后勤保障" && activity.transportStrategies.length >= 2));
+});
+
+test("project list separates imported sample projects from preview fixtures", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const projectSeedSource = appSource.slice(
+    appSource.indexOf("const PROJECT_SOURCE"),
+    appSource.indexOf("const CARRY_OBJECTIVES")
+  );
+  const projectListSource = appSource.slice(
+    appSource.indexOf("function renderProjectListPage"),
+    appSource.indexOf("function renderNavigation")
+  );
+  const createSource = appSource.slice(
+    appSource.indexOf("async function createSampleProjectFromPublishedImport"),
+    appSource.indexOf("function currentPublishedModelingImportId")
+  );
+
+  assert.match(projectSeedSource, /preview_fixture: "preview_fixture"/);
+  assert.match(projectSeedSource, /imported_sample: "imported_sample"/);
+  assert.match(projectSeedSource, /sourceKind: PROJECT_SOURCE\.preview_fixture/);
+  assert.match(projectListSource, /实际功能测试请先从已发布建模导入包生成示例项目/);
+  assert.match(projectListSource, /projectSourceBadge\(project\)/);
+  assert.match(projectListSource, /projectSourceHelpText\(project\)/);
+  assert.match(createSource, /sourceKind: PROJECT_SOURCE\.imported_sample/);
+  assert.match(createSource, /sourceImportId: created\.sourceImport\?\.import_id \|\| resolvedImportId/);
+  assert.match(createSource, /name: projectJson\.experiment\?\.name \|\| "导入示例项目"/);
+  assert.doesNotMatch(createSource, /name: projectJson\.missionProfile\?\.sourceImportId \|\| projectJson\.experiment\?\.name/);
+  assert.match(createSource, /projectListStatus = `已从导入数据生成示例项目：\$\{project\.name\}；可用于正式后端测试`;/);
+});
+
+test("formal run starts only allow imported sample projects", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const guardSource = appSource.slice(
+    appSource.indexOf("function currentProjectCanStartFormalRun"),
+    appSource.indexOf("async function startSingleRunThroughApi")
+  );
+  const singleRunSource = appSource.slice(
+    appSource.indexOf("async function startSingleRunThroughApi"),
+    appSource.indexOf("async function startMonteCarloRunThroughApi")
+  );
+  const mcRunSource = appSource.slice(
+    appSource.indexOf("async function startMonteCarloRunThroughApi"),
+    appSource.indexOf("async function refreshRunResultThroughApi")
+  );
+
+  assert.match(guardSource, /currentProject\.sourceKind === PROJECT_SOURCE\.imported_sample/);
+  assert.doesNotMatch(guardSource, /currentProject\.sourceKind !== PROJECT_SOURCE\.preview_fixture/);
+  assert.match(guardSource, /内置静态项目只保留为本地预览/);
+  assert.match(guardSource, /本地草稿需要先通过建模导入发布链路生成示例项目/);
+  assert.match(singleRunSource, /const formalRunGate = currentProjectCanStartFormalRun\(\);/);
+  assert.match(singleRunSource, /if \(!formalRunGate\.allowed\) \{/);
+  assert.match(singleRunSource, /backendApiStatus = formalRunGate\.message;/);
+  assert.match(singleRunSource, /experimentRunStatus = "未配置";/);
+  assert.match(mcRunSource, /const formalRunGate = currentProjectCanStartFormalRun\(\);/);
+  assert.match(mcRunSource, /if \(!formalRunGate\.allowed\) \{/);
+  assert.match(mcRunSource, /backendApiStatus = formalRunGate\.message;/);
+  assert.match(mcRunSource, /experimentRunStatus = "未配置";/);
+  assert.ok(singleRunSource.indexOf("currentProjectCanStartFormalRun()") < singleRunSource.indexOf("formalRunSubmitInFlight = true"));
+  assert.ok(mcRunSource.indexOf("currentProjectCanStartFormalRun()") < mcRunSource.indexOf("formalRunSubmitInFlight = true"));
 });
 
 test("click-based modeling mutations mark project draft dirty before rendering", async () => {
@@ -1517,6 +1803,58 @@ test("user management add and edit actions open an editable user form", async ()
   assert.match(appSource, /data-system-user-field="username"/);
   assert.match(appSource, /data-system-user-field="role"/);
   assert.match(appSource, /data-system-user-status/);
+});
+
+test("system user batch delete should require checked rows first", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const userSource = appSource.slice(
+    appSource.indexOf("function renderUserManagementConfig"),
+    appSource.indexOf("function renderPermissionManagementConfig")
+  );
+  const eventSource = appSource.slice(
+    appSource.indexOf("function bindEvents"),
+    appSource.indexOf("async function handleLogin")
+  );
+  const systemUserSource = appSource.slice(
+    appSource.indexOf("async function handleSystemUserAction"),
+    appSource.indexOf("function openSystemUserEditor")
+  );
+  const deleteSource = appSource.slice(
+    appSource.indexOf("function deleteSystemUsers"),
+    appSource.indexOf("function updatePermissionRole")
+  );
+
+  assert.match(userSource, /data-system-user-select-all/);
+  assert.match(userSource, /data-system-user-select="\$\{htmlEscape\(user\.username\)\}"/);
+  assert.match(deleteSource, /const targets = new Set\(usernames\.filter\(Boolean\)\);/);
+  assert.match(deleteSource, /if \(!targets\.size\) \{/);
+  assert.match(deleteSource, /systemUsersLoadStatus = "请先选择要删除的用户";/);
+  assert.match(systemUserSource, /async function handleSystemUserAction\(action\)/);
+  assert.match(systemUserSource, /if \(action === "delete-selected"\) \{/);
+  assert.match(systemUserSource, /deleteSystemUsers\(Array\.from\(selectedSystemUsernames\)\);/);
+  assert.match(eventSource, /const systemUserActionButton = event\.target\.closest\("\[data-system-user-action\]"\);/);
+  assert.match(eventSource, /handleSystemUserAction\(systemUserActionButton\.dataset\.systemUserAction\)\.finally\(\(\) => render\(\)\);/);
+  assert.match(userSource, /data-system-user-delete="\$\{htmlEscape\(user\.username\)\}"/);
+  assert.match(eventSource, /const systemUserDeleteButton = event\.target\.closest\("\[data-system-user-delete\]"\)/);
+  assert.match(eventSource, /deleteSystemUsers\(\[systemUserDeleteButton\.dataset\.systemUserDelete\]\);/);
+});
+
+test("system user editor save failure should preserve backend error message", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const editSource = appSource.slice(
+    appSource.indexOf("async function saveSystemUserEditor"),
+    appSource.indexOf("function normalizeSystemUser")
+  );
+  const actionSource = appSource.slice(
+    appSource.indexOf("async function handleSystemUserAction"),
+    appSource.indexOf("function openSystemUserEditor")
+  );
+
+  assert.match(editSource, /const user = normalizeSystemUser\(systemUserEditor\.user\);/);
+  assert.match(editSource, /if \(!user\.username\) \{/);
+  assert.match(editSource, /systemUsersLoadStatus = `用户保存失败：\$\{err && err\.message \? err\.message : "Backend API 不可用"\}`;/);
+  assert.match(editSource, /systemUserEditor = null;/);
+  assert.match(actionSource, /if \(action === "save"\) \{\s*await saveSystemUserEditor\(\);\s*return;\s*\}/);
 });
 
 test("frontend removes the standalone ontology visualization route", async () => {

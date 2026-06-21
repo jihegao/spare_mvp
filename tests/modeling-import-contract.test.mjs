@@ -89,7 +89,7 @@ test("modeling import validation reports duplicate IDs, references, numeric fiel
       equipmentAssets: [
         ...fixture.objects.equipmentAssets,
         {
-          id: "radar-lru",
+          id: "j15-radar",
           name: "重复雷达 LRU",
           parentId: "missing-system",
           quantity: 0,
@@ -100,7 +100,7 @@ test("modeling import validation reports duplicate IDs, references, numeric fiel
         {
           id: "replace-radar",
           name: "更换雷达 LRU",
-          equipmentId: "radar-lru",
+          equipmentId: "j15-radar",
           resourceId: "missing-resource",
           durationHours: 0
         }
