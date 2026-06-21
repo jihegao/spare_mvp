@@ -73,6 +73,7 @@ test("default scenario is a schema-valid empty preview shell", () => {
   assert.deepEqual(defaultScenario.equipment.wholeMachineModels, []);
   assert.deepEqual(defaultScenario.missionProfile.compositeTasks, []);
   assert.deepEqual(defaultScenario.missionProfile.periodicTasks, []);
+  assert.equal("analysisRequests" in defaultScenario, false);
 });
 
 test("single simulation is reproducible for the same seed", () => {

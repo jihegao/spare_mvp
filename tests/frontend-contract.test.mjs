@@ -446,6 +446,45 @@ test("results analysis pages are rendered as four dedicated ship-front aligned d
   assert.match(appSource, /停机贡献因素排序/);
 });
 
+test("empty-shell result analysis renders configuration guidance instead of synthetic preview rows", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const spareSource = appSource.slice(
+    appSource.indexOf("function renderSpareShortfallAnalysis"),
+    appSource.indexOf("function renderCarryListAnalysis")
+  );
+  const carrySource = appSource.slice(
+    appSource.indexOf("function renderCarryListAnalysis"),
+    appSource.indexOf("function carryPriority")
+  );
+  const reliabilitySource = appSource.slice(
+    appSource.indexOf("function renderTaskReliabilityAnalysis"),
+    appSource.indexOf("function renderDowntimeFactorAnalysis")
+  );
+  const downtimeSource = appSource.slice(
+    appSource.indexOf("function renderDowntimeFactorAnalysis"),
+    appSource.indexOf("function analysisTypeForPage")
+  );
+
+  for (const source of [spareSource, carrySource, reliabilitySource, downtimeSource]) {
+    assert.match(source, /hasPreviewAnalysisData\(\)/);
+    assert.match(source, /renderAnalysisEmptyState/);
+    assert.match(source, /暂无分析数据，请先导入并发布建模 JSON，或创建并运行 Monte Carlo 分析任务。/);
+    assert.doesNotMatch(source, /Math\.min\(\.\.\.rows|Math\.max\(\.\.\.rows|Math\.max\(\.\.\.factors/);
+    assert.doesNotMatch(source, /Infinity|-Infinity/);
+  }
+
+  const carryEmptyBranch = carrySource.slice(
+    carrySource.indexOf("if (!hasPreviewAnalysisData())"),
+    carrySource.indexOf("const objective")
+  );
+  assert.ok(carryEmptyBranch.length > 0, "carry list analysis should guard empty preview data before building preview rows");
+  assert.match(carryEmptyBranch, /renderAnalysisEmptyState\("飞机转场携行清单分析", "参数配置", "携行清单迭代建议"/);
+  assert.doesNotMatch(carryEmptyBranch, /<table|<thead|携行清单说明|carryObjectiveOption|singleResult\.carryList/);
+  assert.doesNotMatch(spareSource, /P2\/P3 类备件/);
+  assert.doesNotMatch(reliabilitySource, /第 7 波|wave \* 12/);
+  assert.doesNotMatch(downtimeSource, /无可用飞机", "4"|飞机故障", "5"|平均故障维修时间/);
+});
+
 test("M6.2 formal result boundary unlocks only compiler-provenanced analysis artifacts", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   assert.match(appSource, /输入未通过 Scenario compiler/);
@@ -540,28 +579,17 @@ test("support organization and activity pages follow ship_front tree table edito
   assert.match(appSource, /selectedSupportOrgNodeId/);
   assert.match(appSource, /function findSupportOrgTreeNode/);
   assert.match(appSource, /function flattenSupportOrgTreeNodes/);
-  assert.match(appSource, /基地级/);
-  assert.match(appSource, /基层级1/);
-  assert.match(appSource, /机务保障中队1/);
-  assert.match(appSource, /基层级2/);
-  assert.match(appSource, /机务保障中队2/);
+  assert.match(appSource, /function supportOrganizationTree/);
+  assert.match(appSource, /scenario\.supportOrganization\?\.tree/);
+  assert.match(appSource, /importedDataEmptyState\("保障组织"\)/);
+  assert.doesNotMatch(appSource, /基地级|基层级1|机务保障中队1|基层级2|机务保障中队2/);
   assert.match(appSource, /备件建模/);
   assert.match(appSource, /保障人员建模/);
   assert.match(appSource, /保障设备建模/);
-  assert.match(appSource, /基本保障活动建模/);
-  assert.match(appSource, /使用保障活动建模/);
-  assert.match(appSource, /预防性维修活动建模/);
-  assert.match(appSource, /修复性维修活动建模/);
-  assert.match(appSource, /后勤保障活动建模/);
+  assert.doesNotMatch(appSource, /const SUPPORT_ACTIVITY_PLANS/);
   assert.doesNotMatch(appSource, /修复型维修活动建模/);
-  assert.match(appSource, /飞行前准备/);
-  assert.match(appSource, /再次出动准备/);
-  assert.match(appSource, /飞行后检查/);
-  assert.match(appSource, /制动伞检查/);
-  assert.match(appSource, /日检/);
-  assert.match(appSource, /周检/);
-  assert.match(appSource, /发动机备件故障/);
-  assert.match(appSource, /航电模块故障/);
+  assert.match(appSource, /function supportActivityPlanForPage/);
+  assert.match(appSource, /importedDataEmptyState\("保障活动"\)/);
   assert.match(appSource, /renderSupportActivityTreeNode/);
   assert.doesNotMatch(appSource, /\u4fdd\u969c\u6d3b\u52a8\u8282\u70b9\u7f51\u7edc\u56fe/);
 
@@ -596,6 +624,11 @@ test("support organization and activity pages follow ship_front tree table edito
     appSource.indexOf("function renderOperationsSupportActivity"),
     appSource.indexOf("function renderPreventiveMaintenanceActivity")
   );
+  const supportActivitySource = appSource.slice(
+    appSource.indexOf("function renderSupportActivityWorkbench"),
+    appSource.indexOf("function renderSupportActivityTreeNode")
+  );
+  assert.doesNotMatch(supportActivitySource, /飞行前准备|再次出动准备|飞行后检查|制动伞检查|日检|周检|发动机备件故障|航电模块故障/);
   assert.doesNotMatch(operationsSource, /\u4eff\u771f\u8fd0\u884c\u89c4\u5219/);
   assert.doesNotMatch(operationsSource, /\u52a0\u6cb9\u65b9\u6848/);
   assert.doesNotMatch(operationsSource, /\u6302\u8f7d\u65b9\u6848/);
@@ -1350,10 +1383,14 @@ test("simulation modeling omits result import allocation-management page", async
 
 test("topbar omits run and export actions", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
-  assert.doesNotMatch(appSource, /运行单次仿真/);
-  assert.doesNotMatch(appSource, /运行 Monte Carlo/);
-  assert.doesNotMatch(appSource, /导出方案 JSON/);
-  assert.doesNotMatch(appSource, /downloadJson/);
+  const topbarSource = appSource.slice(
+    appSource.indexOf("<header class=\"topbar\">"),
+    appSource.indexOf("function renderTopbarContext")
+  );
+  assert.doesNotMatch(topbarSource, /运行单次仿真/);
+  assert.doesNotMatch(topbarSource, /运行 Monte Carlo/);
+  assert.doesNotMatch(topbarSource, /导出方案 JSON/);
+  assert.doesNotMatch(topbarSource, /downloadJson/);
 });
 
 test("monte carlo configuration drives the displayed result sample count", async () => {
@@ -1608,7 +1645,7 @@ test("project list separates imported sample projects from preview fixtures", as
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const projectSeedSource = appSource.slice(
     appSource.indexOf("const PROJECT_SOURCE"),
-    appSource.indexOf("const CARRY_OBJECTIVES")
+    appSource.indexOf("const ANALYSIS_PROJECTION_TYPES")
   );
   const projectListSource = appSource.slice(
     appSource.indexOf("function renderProjectListPage"),
@@ -1686,10 +1723,12 @@ test("click-based modeling mutations mark project draft dirty before rendering",
   for (const [label, marker] of requiredActions) {
     const start = appSource.indexOf(marker);
     assert.notEqual(start, -1, label);
-    const returnIndex = appSource.indexOf("return;", start);
+    const returnIndex = label.startsWith("logistics transport")
+      ? appSource.indexOf("const supportActivityJobDeleteButton", start)
+      : appSource.indexOf("return;", start);
     const actionSource = appSource.slice(start, returnIndex);
     assert.match(actionSource, /markProjectDraftChanged\(\)/, label);
-    assert.ok(actionSource.indexOf("markProjectDraftChanged()") < actionSource.indexOf("render()"), label);
+    assert.ok(actionSource.lastIndexOf("markProjectDraftChanged()") < actionSource.lastIndexOf("render()"), label);
   }
 });
 
