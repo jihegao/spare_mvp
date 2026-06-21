@@ -4809,12 +4809,12 @@ async function handleM7RunArtifactAction(button) {
   const action = button.dataset.action;
   const runId = button.dataset.runId || backendRun?.run_id || m7SelectedRunId;
   const artifactId = button.dataset.artifactId || "";
-  if (!runId) {
-    m7RunArtifactStatus = "尚未创建 run_id，无法执行 M7 run artifact 操作";
-    return;
-  }
   if (action === "m7-refresh-runs") {
     await refreshM7RunArtifactPanel(runId);
+    return;
+  }
+  if (!runId) {
+    m7RunArtifactStatus = "尚未创建 run_id，无法执行 M7 run artifact 操作";
     return;
   }
   if (action === "m7-detail-run" || action === "m7-open-run-detail") {

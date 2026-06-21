@@ -1575,6 +1575,38 @@ test("M7 run artifact panel renders artifact identity and lifecycle controls", a
   assert.doesNotMatch(appSource, /\/api\/simulation-runs/);
 });
 
+test("M7 run refresh is allowed before any selected run guard", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const refreshPanelSource = appSource.slice(
+    appSource.indexOf("async function refreshM7RunArtifactPanel"),
+    appSource.indexOf("async function handleM7RunArtifactAction")
+  );
+  const actionSource = appSource.slice(
+    appSource.indexOf("async function handleM7RunArtifactAction"),
+    appSource.indexOf("function artifactDownloadName")
+  );
+  const refreshBranchIndex = actionSource.indexOf('action === "m7-refresh-runs"');
+  const missingRunGuardIndex = actionSource.indexOf("if (!runId)");
+  const detailBranchIndex = actionSource.indexOf('action === "m7-detail-run"');
+  const downloadBranchIndex = actionSource.indexOf('action === "m7-download-artifact"');
+  const archiveBranchIndex = actionSource.indexOf('action === "m7-archive-run"');
+  const deleteBranchIndex = actionSource.indexOf('action === "m7-delete-run"');
+
+  assert.notEqual(refreshBranchIndex, -1, "refresh action branch exists");
+  assert.notEqual(missingRunGuardIndex, -1, "missing run guard exists");
+  assert.ok(refreshBranchIndex < missingRunGuardIndex, "refresh must run before the missing run_id guard");
+  assert.match(refreshPanelSource, /backendApi\.listRuns\(\{\s*run_type: "monte_carlo",\s*include_deleted: 1\s*\}\)/);
+  assert.ok(refreshPanelSource.indexOf("backendApi.listRuns") < refreshPanelSource.indexOf("if (!selectedRunId) return"));
+  for (const [label, branchIndex] of [
+    ["detail", detailBranchIndex],
+    ["download", downloadBranchIndex],
+    ["archive", archiveBranchIndex],
+    ["delete", deleteBranchIndex]
+  ]) {
+    assert.ok(branchIndex > missingRunGuardIndex, `${label} remains guarded by run_id`);
+  }
+});
+
 test("formal runs do not consume local preview outputs", async () => {
   const apiClientSource = await readFile(new URL("../front/api-client.mjs", import.meta.url), "utf8");
   const runIntentSource = await readFile(new URL("../front/run-intent.mjs", import.meta.url), "utf8");
