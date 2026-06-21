@@ -30,6 +30,7 @@ import {
   normalizeModelingImportRecord,
   renderModelingImportWorkbench
 } from "./modeling-import-workbench.mjs";
+import { MODELING_IMPORT_DEMO_FIXTURE } from "./modeling-import-demo-fixture.mjs";
 
 const app = document.querySelector("#app");
 const groups = groupFeaturePages(FEATURE_PAGES);
@@ -217,65 +218,6 @@ const SYSTEM_PERMISSION_ROWS = [
   { feature: "结果分析", admin: "查看", data: "查看", user: "查看" }
 ];
 
-const MODELING_IMPORT_DEMO_FIXTURE = {
-  schemaVersion: "modeling-import-v1",
-  importId: "import-carrier-day-night-001",
-  projectId: "project-carrier-day-night",
-  source: {
-    type: "json_fixture",
-    name: "modeling_import_project.json"
-  },
-  lifecycle: {
-    state: "draft",
-    version: 1,
-    referencedRunIds: []
-  },
-  objects: {
-    missionProfiles: [
-      {
-        id: "mission-profile-day-night",
-        name: "昼夜混合出动任务剖面",
-        durationHours: 3
-      }
-    ],
-    equipmentAssets: [
-      {
-        id: "aircraft-root",
-        name: "舰载机",
-        quantity: 4,
-        mtbfHours: 600
-      },
-      {
-        id: "radar-lru",
-        name: "雷达 LRU",
-        parentId: "aircraft-root",
-        quantity: 1,
-        mtbfHours: 900
-      }
-    ],
-    supportResources: [
-      {
-        id: "avionics-team",
-        name: "航电维修组",
-        capacity: 2
-      }
-    ],
-    supportActivities: [
-      {
-        id: "inspect-radar",
-        name: "雷达通电检查",
-        equipmentId: "radar-lru",
-        resourceId: "avionics-team",
-        durationHours: 0.5
-      }
-    ]
-  },
-  changes: [],
-  validation: {
-    status: "valid",
-    issues: []
-  }
-};
 
 let scenario = cloneScenario(defaultScenario);
 let experimentPlanDraft = cloneScenario(scenario);

@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { FEATURE_PAGES, getFeaturePageById, groupFeaturePages } from "../front/feature-catalog.mjs";
+import { MODELING_IMPORT_DEMO_FIXTURE } from "../front/modeling-import-demo-fixture.mjs";
 
 const PAGE_REVISION_REPORT_URL = new URL("../reports/2026-06-19-page-revision-suggestions/README.md", import.meta.url);
 
@@ -1551,6 +1552,21 @@ test("project creation from modeling import uses the current or passed import id
   assert.match(createSource, /async function createSampleProjectFromPublishedImport\(importId/);
   assert.match(createSource, /backendApi\.createProjectFromModelingImport\(importId\)/);
   assert.doesNotMatch(createSource, /createProjectFromModelingImport\(MODELING_IMPORT_DEMO_FIXTURE\.importId\)/);
+});
+
+test("frontend modeling import demo fixture stays aligned with complete imported sample data", () => {
+  const objects = MODELING_IMPORT_DEMO_FIXTURE.objects;
+
+  assert.deepEqual(objects.equipment.wholeMachineModels, ["J-15", "J-35"]);
+  assert.ok(objects.equipmentAssets.length >= 10);
+  assert.ok(objects.equipmentAssets.some((component) => component.id === "j15-avionics" && component.aircraftModel === "J-15" && component.rms));
+  assert.ok(objects.missionProfiles[0].compositeTasks.length >= 2);
+  assert.ok(objects.missionProfiles[0].periodicTasks.length >= 1);
+  assert.ok(objects.missionProfiles[0].combatUnit.members.length >= 4);
+  assert.ok(objects.supportResources.length >= 3);
+  assert.ok(objects.supportResources[0].inventory["航电模块"] > 0);
+  assert.ok(objects.supportActivities.some((activity) => activity.activityType === "修复性维修" && activity.jobs.length >= 2));
+  assert.ok(objects.supportActivities.some((activity) => activity.activityType === "后勤保障" && activity.transportStrategies.length >= 2));
 });
 
 test("project list separates imported sample projects from preview fixtures", async () => {

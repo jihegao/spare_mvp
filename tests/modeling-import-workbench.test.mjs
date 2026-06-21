@@ -17,11 +17,12 @@ async function readFixture() {
 test("cloneModelingImportPackage returns an isolated deep copy", async () => {
   const fixture = await readFixture();
   const cloned = cloneModelingImportPackage(fixture);
+  const radarIndex = fixture.objects.equipmentAssets.findIndex((row) => row.id === "j15-radar");
 
-  cloned.objects.equipmentAssets[1].name = "Changed Radar";
+  cloned.objects.equipmentAssets[radarIndex].name = "Changed Radar";
 
-  assert.equal(fixture.objects.equipmentAssets[1].name, "雷达 LRU");
-  assert.equal(cloned.objects.equipmentAssets[1].name, "Changed Radar");
+  assert.equal(fixture.objects.equipmentAssets[radarIndex].name, "雷达 LRU");
+  assert.equal(cloned.objects.equipmentAssets[radarIndex].name, "Changed Radar");
 });
 
 test("buildModelingImportPreview maps four collections to page labels and field paths", async () => {
@@ -34,28 +35,32 @@ test("buildModelingImportPreview maps four collections to page labels and field 
     ["missionProfiles", "equipmentAssets", "supportResources", "supportActivities"]
   );
   assert.ok(preview.rows.some((row) => row.page === "任务剖面参数" && row.field_path === "objects.missionProfiles[0].durationHours"));
-  assert.ok(preview.rows.some((row) => row.page === "装备组成建模" && row.field_path === "objects.equipmentAssets[1].mtbfHours"));
+  assert.ok(preview.rows.some((row) => row.page === "装备组成建模" && row.object_id === "j15-radar" && row.field === "mtbfHours"));
+  assert.ok(preview.rows.some((row) => row.page === "装备组成建模" && row.object_id === "j15-avionics" && row.field === "aircraftModel" && row.target_path === "components[3].aircraftModel"));
   assert.ok(preview.rows.some((row) => row.page === "保障资源建模" && row.field_path === "objects.supportResources[0].capacity"));
+  assert.ok(preview.rows.some((row) => row.page === "保障资源建模" && row.object_id === "carrier-deck" && row.field === "inventory"));
   assert.ok(preview.rows.some((row) => row.page === "保障活动建模" && row.field_path === "objects.supportActivities[0].resourceId"));
+  assert.ok(preview.rows.some((row) => row.page === "保障活动建模" && row.object_id === "preflight" && row.field === "jobs"));
 });
 
 test("diffModelingImports reports added removed and changed field paths", async () => {
   const published = await readFixture();
   const draft = cloneModelingImportPackage(published);
-  draft.objects.equipmentAssets[1].quantity = 2;
+  const radarIndex = draft.objects.equipmentAssets.findIndex((row) => row.id === "j15-radar");
+  draft.objects.equipmentAssets[radarIndex].quantity = 2;
   delete draft.objects.supportResources[0].capacity;
   draft.objects.supportActivities.push({
     id: "refuel-aircraft",
     name: "燃油补给",
     equipmentId: "aircraft-root",
-    resourceId: "avionics-team",
+    resourceId: "carrier-deck",
     durationHours: 1
   });
 
   const diff = diffModelingImports(published, draft);
 
-  assert.ok(diff.rows.some((row) => row.change === "changed" && row.field_path === "objects.equipmentAssets[id=radar-lru].quantity" && row.before === 1 && row.after === 2));
-  assert.ok(diff.rows.some((row) => row.change === "removed" && row.field_path === "objects.supportResources[id=avionics-team].capacity" && row.before === 2));
+  assert.ok(diff.rows.some((row) => row.change === "changed" && row.field_path === "objects.equipmentAssets[id=j15-radar].quantity" && row.before === 1 && row.after === 2));
+  assert.ok(diff.rows.some((row) => row.change === "removed" && row.field_path === "objects.supportResources[id=carrier-deck].capacity" && row.before === 4));
   assert.ok(diff.rows.some((row) => row.change === "added" && row.field_path === "objects.supportActivities[id=refuel-aircraft].id" && row.after === "refuel-aircraft"));
 });
 
@@ -71,12 +76,13 @@ test("diffModelingImports keys imported object rows by stable IDs instead of arr
     },
     ...draft.objects.equipmentAssets
   ];
-  draft.objects.equipmentAssets[2].quantity = 2;
+  const radarIndex = draft.objects.equipmentAssets.findIndex((row) => row.id === "j15-radar");
+  draft.objects.equipmentAssets[radarIndex].quantity = 2;
 
   const diff = diffModelingImports(published, draft);
 
   assert.ok(diff.rows.some((row) => row.change === "added" && row.field_path === "objects.equipmentAssets[id=new-pod].id"));
-  assert.ok(diff.rows.some((row) => row.change === "changed" && row.object_id === "radar-lru" && row.field_path === "objects.equipmentAssets[id=radar-lru].quantity"));
+  assert.ok(diff.rows.some((row) => row.change === "changed" && row.object_id === "j15-radar" && row.field_path === "objects.equipmentAssets[id=j15-radar].quantity"));
   assert.ok(!diff.rows.some((row) => row.object_id === "aircraft-root" && row.change === "changed"));
 });
 
@@ -85,15 +91,16 @@ test("renderModelingImportWorkbench includes action controls lifecycle version i
   const published = cloneModelingImportPackage(draft);
   published.lifecycle = { state: "published", version: 1, referencedRunIds: ["run-smoke-001"] };
   draft.lifecycle = { state: "draft", version: 2, referencedRunIds: ["run-smoke-001"] };
-  draft.objects.equipmentAssets[1].quantity = 2;
+  const radarIndex = draft.objects.equipmentAssets.findIndex((row) => row.id === "j15-radar");
+  draft.objects.equipmentAssets[radarIndex].quantity = 2;
   const validation = {
     status: "invalid",
     issues: [
       {
         severity: "error",
         page: "装备组成建模",
-        object_id: "radar-lru",
-        field_path: "objects.equipmentAssets[1].mtbfHours",
+        object_id: "j15-radar",
+        field_path: `objects.equipmentAssets[${radarIndex}].mtbfHours`,
         message: "mtbfHours 必须大于 0。"
       }
     ]
@@ -112,8 +119,8 @@ test("renderModelingImportWorkbench includes action controls lifecycle version i
   assert.match(html, /import-carrier-day-night-001/);
   assert.match(html, /draft/);
   assert.match(html, /v2/);
-  assert.match(html, /objects\.equipmentAssets\[1\]\.mtbfHours/);
-  assert.match(html, /objects\.equipmentAssets\[id=radar-lru\]\.quantity/);
+  assert.match(html, new RegExp(`objects\\.equipmentAssets\\[${radarIndex}\\]\\.mtbfHours`));
+  assert.match(html, /objects\.equipmentAssets\[id=j15-radar\]\.quantity/);
   assert.match(html, /任务剖面参数/);
   assert.match(html, /建模数据导入/);
 });
@@ -136,7 +143,8 @@ test("normalizeModelingImportRecord unwraps publish envelope before preview and 
   published.lifecycle = { state: "published", version: 1, referencedRunIds: [] };
   const draft = cloneModelingImportPackage(published);
   draft.lifecycle = { state: "draft", version: 2, referencedRunIds: [] };
-  draft.objects.equipmentAssets[1].quantity = 2;
+  const radarIndex = draft.objects.equipmentAssets.findIndex((row) => row.id === "j15-radar");
+  draft.objects.equipmentAssets[radarIndex].quantity = 2;
   const envelope = {
     importId: draft.importId,
     lifecycle: draft.lifecycle,
@@ -152,7 +160,7 @@ test("normalizeModelingImportRecord unwraps publish envelope before preview and 
   assert.ok(Array.isArray(state.importPackage.objects.equipmentAssets));
   assert.ok(Array.isArray(state.publishedPackage.objects.equipmentAssets));
   assert.ok(preview.rows.length > 0);
-  assert.ok(diff.rows.some((row) => row.field_path === "objects.equipmentAssets[id=radar-lru].quantity"));
-  assert.equal(state.importPackage.objects.equipmentAssets[1].quantity, 2);
-  assert.equal(state.publishedPackage.objects.equipmentAssets[1].quantity, 1);
+  assert.ok(diff.rows.some((row) => row.field_path === "objects.equipmentAssets[id=j15-radar].quantity"));
+  assert.equal(state.importPackage.objects.equipmentAssets[radarIndex].quantity, 2);
+  assert.equal(state.publishedPackage.objects.equipmentAssets[radarIndex].quantity, 1);
 });

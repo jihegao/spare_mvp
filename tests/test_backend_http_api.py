@@ -766,7 +766,11 @@ class BackendHttpApiTest(unittest.TestCase):
 
                 changed_package = self._fixture("modeling_import_project.json")
                 changed_package["lifecycle"] = {"state": "draft", "version": 2, "referencedRunIds": []}
-                changed_package["objects"]["equipmentAssets"][1]["quantity"] = 2
+                target_index = next(
+                    index for index, component in enumerate(changed_package["objects"]["equipmentAssets"])
+                    if component["id"] == "j15-engine"
+                )
+                changed_package["objects"]["equipmentAssets"][target_index]["quantity"] = 3
                 self._json(base_url, "POST", "/modeling-imports", changed_package, auth_token=auth_token)
             finally:
                 first_server.shutdown()
@@ -787,10 +791,10 @@ class BackendHttpApiTest(unittest.TestCase):
 
                 self.assertEqual(stored["draftPackage"]["lifecycle"]["state"], "draft")
                 self.assertEqual(stored["draftPackage"]["lifecycle"]["version"], 2)
-                self.assertEqual(stored["draftPackage"]["objects"]["equipmentAssets"][1]["quantity"], 2)
+                self.assertEqual(stored["draftPackage"]["objects"]["equipmentAssets"][target_index]["quantity"], 3)
                 self.assertEqual(stored["publishedPackage"]["lifecycle"]["state"], "published")
                 self.assertEqual(stored["publishedPackage"]["lifecycle"]["version"], 1)
-                self.assertEqual(stored["publishedPackage"]["objects"]["equipmentAssets"][1]["quantity"], 1)
+                self.assertEqual(stored["publishedPackage"]["objects"]["equipmentAssets"][target_index]["quantity"], 2)
             finally:
                 second_server.shutdown()
                 second_server.server_close()
@@ -872,6 +876,15 @@ class BackendHttpApiTest(unittest.TestCase):
                 self.assertEqual(forbidden["code"], "forbidden")
                 self.assertEqual(created["sourceImport"]["import_id"], import_package["importId"])
                 self.assertEqual(created["project"]["project_id"], import_package["projectId"])
+                self.assertEqual(created["project"]["equipment"]["wholeMachineModels"], ["J-15", "J-35"])
+                self.assertGreaterEqual(len(created["project"]["components"]), 8)
+                self.assertGreaterEqual(len(created["project"]["missionProfile"]["compositeTasks"]), 2)
+                self.assertGreaterEqual(len(created["project"]["supportNodes"]), 3)
+                self.assertIn("航电模块", created["project"]["supportNodes"][0]["inventory"])
+                self.assertTrue(any(
+                    activity["activityType"] == "修复性维修" and len(activity["jobs"]) >= 2
+                    for activity in created["project"]["supportActivities"]
+                ))
                 self.assertEqual(created["savedProject"]["project_id"], import_package["projectId"])
                 self.assertEqual(created["modelingSnapshot"]["project"]["project_id"], import_package["projectId"])
                 self.assertTrue(created["modelingSnapshot"]["snapshot_id"])

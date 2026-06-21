@@ -869,6 +869,26 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(created["sourceImport"]["import_id"], import_package["importId"])
         self.assertEqual(created["project"]["project_id"], import_package["projectId"])
         self.assertEqual(created["project"]["missionProfile"]["sourceImportId"], import_package["importId"])
+        self.assertEqual(created["project"]["equipment"]["wholeMachineModels"], ["J-15", "J-35"])
+        self.assertGreaterEqual(created["project"]["equipment"]["quantity"], 6)
+        self.assertGreaterEqual(len(created["project"]["components"]), 8)
+        self.assertTrue(any(
+            component.get("id") == "j15-avionics"
+            and component.get("aircraftModel") == "J-15"
+            and component.get("parentId") == "aircraft-root"
+            and component.get("spareType") == "航电模块"
+            for component in created["project"]["components"]
+        ))
+        self.assertGreaterEqual(len(created["project"]["missionProfile"]["compositeTasks"]), 2)
+        self.assertGreaterEqual(len(created["project"]["missionProfile"]["periodicTasks"]), 1)
+        self.assertGreaterEqual(len(created["project"]["missionPhases"]), 4)
+        self.assertGreaterEqual(len(created["project"]["combatUnit"]["members"]), 4)
+        self.assertGreaterEqual(len(created["project"]["supportNodes"]), 3)
+        self.assertIn("航电模块", created["project"]["supportNodes"][0]["inventory"])
+        activity_types = {activity["activityType"] for activity in created["project"]["supportActivities"]}
+        self.assertTrue({"飞行前保障", "修复性维修", "预防性维修", "后勤保障"}.issubset(activity_types))
+        self.assertGreaterEqual(len(created["project"]["supportActivities"][0]["jobs"]), 2)
+        self.assertGreaterEqual(len(created["project"]["reliabilityBlockDiagram"]["nodes"]), 4)
         self.assertEqual(created["savedProject"]["project_id"], import_package["projectId"])
         self.assertEqual(created["modelingSnapshot"]["project"]["project_id"], import_package["projectId"])
         self.assertEqual(self.api.get_project(import_package["projectId"])["project_id"], import_package["projectId"])
@@ -1056,7 +1076,7 @@ class BackendApiContractTest(unittest.TestCase):
         import_package["objects"].pop("supportResources")
         import_package["objects"]["equipmentAssets"].append(
             {
-                "id": "radar-lru",
+                "id": "j15-radar",
                 "name": "重复雷达 LRU",
                 "parentId": "aircraft-root",
                 "quantity": 1,
@@ -1072,8 +1092,8 @@ class BackendApiContractTest(unittest.TestCase):
             {
                 "operation": "update",
                 "objectType": "equipmentAssets",
-                "objectId": "radar-lru",
-                "fieldPath": "objects.equipmentAssets[1].name",
+                "objectId": "j15-radar",
+                "fieldPath": "objects.equipmentAssets[id=j15-radar].name",
             }
         ]
 
@@ -1087,7 +1107,7 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertIn("published_reference_protection", issues_by_code)
         self.assertEqual(
             issues_by_code["published_reference_protection"]["field_path"],
-            "objects.equipmentAssets[1].name",
+            "objects.equipmentAssets[id=j15-radar].name",
         )
         self.assertEqual(
             issues_by_code["published_reference_protection"]["page"],
@@ -1126,13 +1146,17 @@ class BackendApiContractTest(unittest.TestCase):
 
         changed_package = copy.deepcopy(import_package)
         changed_package["lifecycle"] = {"state": "draft", "version": 2, "referencedRunIds": []}
-        changed_package["objects"]["equipmentAssets"][1]["quantity"] = 2
+        target_index = next(
+            index for index, component in enumerate(changed_package["objects"]["equipmentAssets"])
+            if component["id"] == "j15-engine"
+        )
+        changed_package["objects"]["equipmentAssets"][target_index]["quantity"] = 3
         saved = self.api.save_modeling_import_as_system(changed_package)
         stored = self.api.get_modeling_import(import_package["importId"])
 
         self.assertEqual(saved["status"], "draft")
-        self.assertEqual(stored["draftPackage"]["objects"]["equipmentAssets"][1]["quantity"], 2)
-        self.assertEqual(stored["publishedPackage"]["objects"]["equipmentAssets"][1]["quantity"], 1)
+        self.assertEqual(stored["draftPackage"]["objects"]["equipmentAssets"][target_index]["quantity"], 3)
+        self.assertEqual(stored["publishedPackage"]["objects"]["equipmentAssets"][target_index]["quantity"], 2)
 
         with self.assertRaises(BackendApiError) as republish_ctx:
             self.api.publish_modeling_import_as_system(import_package["importId"])
@@ -1146,7 +1170,11 @@ class BackendApiContractTest(unittest.TestCase):
 
         changed_package = copy.deepcopy(import_package)
         changed_package["lifecycle"] = {"state": "draft", "version": 2, "referencedRunIds": []}
-        changed_package["objects"]["equipmentAssets"][1]["quantity"] = 2
+        target_index = next(
+            index for index, component in enumerate(changed_package["objects"]["equipmentAssets"])
+            if component["id"] == "j15-engine"
+        )
+        changed_package["objects"]["equipmentAssets"][target_index]["quantity"] = 3
         self.api.save_modeling_import_as_system(changed_package)
 
         compiled = self.api.compile_modeling_import_scenario(import_package["importId"])
@@ -1154,8 +1182,8 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(compiled["compiled_from_import"]["import_version"], 1)
         self.assertEqual(compiled["project"]["project_version"], "import-v1")
         self.assertEqual(
-            next(component for component in compiled["project"]["components"] if component["id"] == "radar-lru")["quantity"],
-            1,
+            next(component for component in compiled["project"]["components"] if component["id"] == "j15-engine")["quantity"],
+            2,
         )
 
     def test_modeling_import_api_rejects_invalid_lifecycle_before_compile(self) -> None:
