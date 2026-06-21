@@ -302,13 +302,13 @@ M6.1.1 当前收束：单次仿真输入已经从“ExperimentPlan 绑定 snapsh
 
 M6.2 当前收束：统一 Monte Carlo / analysis profile 已落地为同步本地执行切片，并补齐单次仿真实验与 Monte Carlo 实验的对象一致性。基于 M6.1/M6.1.1 已对齐的 Scenario 跑样本，产出统一 MC artifacts；`monte_carlo_base` 是基础 artifact，“备件短板”“携行清单”“任务可靠度”“停机因素”是同一 artifact 的 `analysis_projection_*`。单次仿真实验与 Monte Carlo 实验共享 `SimulationExperimentBase` 的 `experiment_id`、`experiment_type`、关联方案、Scenario identity、随机种子、状态、进度、`run_id` 和 artifact 引用；Monte Carlo 实验保存 `mc_experiment_id`、样本量、sweep、聚合结果和 projection artifact，正式 MC 调度不再伪装成 `run_type: "single"`。结果分析页管理 AnalysisTask，可选择方案和参数后自动创建新的 Monte Carlo 实验并绑定 `linkedMonteCarloExperimentId`；未勾选、未运行、运行中、运行失败、缺少 compiler provenance 或缺少 projection artifact 时不渲染正式结果图表。
 
-M6.2 后续收敛切片已完成：`docs/superpowers/plans/2026-06-20-runintent-mc-config-imported-sample-project.md` 记录了 RunIntent、MonteCarloRunConfig 和 imported sample Project 的实施边界。正式运行入口已收敛为 `RunIntent -> /api/runs -> RunService -> artifacts`；正式 Monte Carlo 数值配置只允许从 `ExperimentPlan.config.analysisRequests.largeSample` 生成 `MonteCarloRunConfig`，request-level MC numeric config 会被拒绝；Adapter 不再从 Project draft 或 legacy request params 猜测 MC sweep，缺少 normalized config 或收到 legacy params 时 fail closed；页面可从 modeling import 生成示例 Project draft，默认入口会在没有已发布包时先保存并发布示例导入包。`/api/runs` formal gate 基于持久 Project JSON 的 `missionProfile.sourceImportId`、已发布 import/projectId 匹配和 `modeling_import.create_project` allowed 审计记录 fail-closed，手工伪造来源不能进入正式 run；正式和预览测试运行提交、查询、结果、产物和身份链都只走 canonical `/api/runs` 路径。`defaultScenario`、`runSimulation` 和 `runMonteCarlo` 仍可作为离线 fixture、本地预览和测试 fallback，但不能作为正式结果来源。该收束仍不是生产 worker queue、object storage、取消/重试、长期 artifact storage、`aviation_support` 正式执行；分析 KPI 完全由 projection payload 驱动留给 M8，可视化状态帧完全由 M9 state stream 或 run state series 驱动留给 M9。
+M6.2 后续收敛切片已完成：`docs/superpowers/plans/2026-06-20-runintent-mc-config-imported-sample-project.md` 记录了 RunIntent、MonteCarloRunConfig 和 imported sample Project 的实施边界。正式运行入口已收敛为 `RunIntent -> /api/runs -> RunService -> artifacts`；正式 Monte Carlo 数值配置只允许从 `ExperimentPlan.config.analysisRequests.largeSample` 生成 `MonteCarloRunConfig`，request-level MC numeric config 会被拒绝；Adapter 不再从 Project draft 或 legacy request params 猜测 MC sweep，缺少 normalized config 或收到 legacy params 时 fail closed；页面可从 modeling import 生成示例 Project draft，默认入口会在没有已发布包时先保存并发布示例导入包。`/api/runs` formal gate 基于持久 Project JSON 的 `missionProfile.sourceImportId`、已发布 import/projectId 匹配和 `modeling_import.create_project` allowed 审计记录 fail-closed，手工伪造来源不能进入正式 run；正式和预览测试运行提交、查询、结果、产物和身份链都只走 canonical `/api/runs` 路径。`defaultScenario`、`runSimulation` 和 `runMonteCarlo` 仍可作为离线 fixture、本地预览和测试 fallback，但不能作为正式结果来源。该收束仍不是生产 worker queue、object storage、取消/重试、长期 artifact storage 或 `aviation_support` 正式执行；M8.0 已完成 projection payload 驱动四个分析页正式 KPI，可视化状态帧完全由 M9 state stream 或 run state series 驱动仍留给 M9。
 
-M6.2.x 当前收束：`docs/superpowers/plans/2026-06-21-imported-json-single-source-static-data-exit.md` 记录前台静态业务数据退场实施。前台建模和正式 run 功能测试的业务样例源已收敛到 `tests/fixtures/modeling_import_project.json`：页面缺少 imported JSON 数据时显示空态或创建入口，不再由前端静态常量偷偷补出任务、装备、保障组织、保障活动或 Monte Carlo 配置；完整 JSON 导入后可通过 published modeling import 生成 imported sample Project。后端 `modeling_import_to_project()` 已保留 `projectInfo`、`supportOrganization`、`analysisRequests` 和显式空集合，后续按页面逐批补齐 JSON 字段和转换映射。该切片只治理建模/运行输入源，不实现 M8 projection payload 驱动 KPI，也不实现 M9 state stream。
+M6.2.x 当前收束：`docs/superpowers/plans/2026-06-21-imported-json-single-source-static-data-exit.md` 记录前台静态业务数据退场实施。前台建模和正式 run 功能测试的业务样例源已收敛到 `tests/fixtures/modeling_import_project.json`：页面缺少 imported JSON 数据时显示空态或创建入口，不再由前端静态常量偷偷补出任务、装备、保障组织、保障活动或 Monte Carlo 配置；完整 JSON 导入后可通过 published modeling import 生成 imported sample Project。后端 `modeling_import_to_project()` 已保留 `projectInfo`、`supportOrganization`、`analysisRequests` 和显式空集合，后续按页面逐批补齐 JSON 字段和转换映射。该切片只治理建模/运行输入源，不实现 M9 state stream。
 
-M6.2.y 运行 API 退场收束：legacy `/api/simulation-runs` 已从正式和预览测试路径退役；前端 API client、HTTP contract tests 和浏览器 smoke 只使用 canonical `/api/runs` 及其 status/result/artifacts/chain 路径。旧路径返回 `410 legacy_run_api_retired`，用于让外部调用者明确迁移到 `/api/runs`。该切片只清理 run API 兼容层，不实现生产 worker queue、object storage、取消/重试、M8 projection payload 或 M9 state stream。
+M6.2.y 运行 API 退场收束：legacy `/api/simulation-runs` 已从正式和预览测试路径退役；前端 API client、HTTP contract tests 和浏览器 smoke 只使用 canonical `/api/runs` 及其 status/result/artifacts/chain 路径。旧路径返回 `410 legacy_run_api_retired`，用于让外部调用者明确迁移到 `/api/runs`。该切片只清理 run API 兼容层，不实现生产 worker queue、object storage、取消/重试或 M9 state stream。
 
-M7.0 当前收束：运行与产物管理已在 canonical `/api/runs` 上形成本地管理闭环，覆盖 run list/detail、artifact id 下载、归档、软删除、生命周期状态和最小审计事件。前端在 Monte Carlo 详情中展示运行账本、artifact identity、`sha256`、`size_bytes`、下载入口、归档状态和软删除 tombstone。该切片只管理本地 SQLite 运行账本、artifact manifest 和 repo-local artifact 文件，不恢复 legacy `/api/simulation-runs`，不实现生产 worker queue、object storage、取消/重试完整体系、M8 projection payload KPI 展示、M9 state stream 或 `aviation_support` 正式执行。
+M7.0 当前收束：运行与产物管理已在 canonical `/api/runs` 上形成本地管理闭环，覆盖 run list/detail、artifact id 下载、归档、软删除、生命周期状态和最小审计事件。前端在 Monte Carlo 详情中展示运行账本、artifact identity、`sha256`、`size_bytes`、下载入口、归档状态和软删除 tombstone。该切片只管理本地 SQLite 运行账本、artifact manifest 和 repo-local artifact 文件，不恢复 legacy `/api/simulation-runs`，不实现生产 worker queue、object storage、取消/重试完整体系、M9 state stream 或 `aviation_support` 正式执行。
 
 核心能力：
 
@@ -330,14 +330,14 @@ M7.0 当前收束：运行与产物管理已在 canonical `/api/runs` 上形成�
 3. worker 或本地执行器只消费编译后的 Scenario input，不读取前端当前 draft。
 4. 前端轮询或订阅运行状态。
 5. 最终结果来自真实 run artifacts，且能追溯 mapping version、输入版本、运行配置和 seed。
-6. M6.2 当前只提供同步本地 Monte Carlo artifact/projection 与 RunIntent/MonteCarloRunConfig 收敛切片；M7.0 已补入本地运行与产物管理，生产级 worker、完整取消/重试、对象存储和 projection payload 驱动的正式 KPI 展示仍留给后续阶段。
+6. M6.2 提供同步本地 Monte Carlo artifact/projection 与 RunIntent/MonteCarloRunConfig 收敛切片；M7.0 已补入本地运行与产物管理，M8.0 已补入 projection payload 驱动的正式分析 KPI 展示。生产级 worker、完整取消/重试、对象存储和 M9 state stream 仍留给后续阶段。
 7. 正式 Monte Carlo 输入现在只有一个 canonical `MonteCarloRunConfig` 解释层，页面默认示例项目可以由已发布建模导入包生成；继续扩大 worker、state stream 或 KPI payload 消费前，不应重新引入 request-level MC numeric config。
 
 ## M7：运行管理和产物管理
 
 目标：系统能回答每次运行的来源、参数、结果和产物。
 
-M7.0 当前收束：`docs/superpowers/specs/2026-06-21-m7-0-run-artifact-management-design.md` 和 `docs/superpowers/plans/2026-06-21-m7-0-run-artifact-management.md` 已把本阶段限定在 canonical `/api/runs` 运行账本和 artifact 账本管理。当前能力包括运行列表、运行详情、artifact id 下载、归档、软删除、下载/归档/删除审计，以及前端展示 artifact id/hash/size/lifecycle 状态；旧 `legacy /api/simulation-runs` 仍保持退役。M7.0 不包含生产 worker queue、object storage、取消/重试完整体系、M8 projection payload KPI 展示、M9 state stream 或 `aviation_support` 正式执行。
+M7.0 当前收束：`docs/superpowers/specs/2026-06-21-m7-0-run-artifact-management-design.md` 和 `docs/superpowers/plans/2026-06-21-m7-0-run-artifact-management.md` 已把本阶段限定在 canonical `/api/runs` 运行账本和 artifact 账本管理。当前能力包括运行列表、运行详情、artifact id 下载、归档、软删除、下载/归档/删除审计，以及前端展示 artifact id/hash/size/lifecycle 状态；旧 `legacy /api/simulation-runs` 仍保持退役。M7.0 不包含生产 worker queue、object storage、取消/重试完整体系、M9 state stream 或 `aviation_support` 正式执行。
 
 必须可追溯的问题：
 
@@ -371,7 +371,7 @@ report.json 或 report.html
 
 目标：所有分析页都随真实运行产物变化，并能追溯计算来源。
 
-M8.0 建议切片：结果分析按 AnalysisTask、绑定的 MonteCarloExperiment 和 M6.2 run artifacts 解锁。已绑定且运行完成的分析页显示对应 projection；已绑定且运行中显示进度和日志摘要；已绑定且运行失败显示失败原因、日志入口和重试入口；未创建任务、未绑定 MC 实验或缺少 M6.1 compiler provenance 的分析页统一显示“未配置”或“输入未通过编译”，不能用静态演示图表冒充正式结果。
+M8.0 当前收束：`docs/superpowers/specs/2026-06-21-m8-projection-payload-analysis-design.md` 已把结果分析推进到 projection payload 驱动。结果分析按 AnalysisTask、绑定的 MonteCarloExperiment 和 M6.2 run artifacts 解锁；已绑定且运行完成的分析页必须下载并解析当前分析类型对应的 `analysis_projection_*` JSON payload，正式 KPI、表格和图形来自 payload adapter。已绑定且运行中显示进度，已绑定且运行失败显示失败原因；未创建任务、未绑定 MC 实验、缺少 M6.1 compiler provenance、缺少 projection artifact、payload 类型不匹配或解析失败时统一 fail closed，不能用静态演示图表冒充正式结果。
 
 核心工作：
 
@@ -533,5 +533,5 @@ M3/M6 的第一步不是直接建设完整生产平台，而是把保存、编�
 2. M4 backfill 当前只覆盖本地用户、会话、建模导入授权和审计；后续若进入试点，需要继续补项目级访问控制、权限矩阵、密码/SSO 和部署安全。
 3. M5.1 已将建模数据导入/校验 contract 接入本地后端 API、SQLite 持久化和前端显式 API client。
 4. M5.2 当前聚焦系统管理下「建模数据导入」工作台、映射/错误/版本预览和经 `SimulationAdapter` 编译的后端 Scenario 预览；完整 Excel UI 或生产 worker 仍不在本阶段。
-5. RunIntent / MonteCarloRunConfig / imported sample Project 收敛已作为 M6.2 后续切片完成；M7.0 已补入本地运行/产物管理，近期推进应转向 M8 projection payload 消费，同时继续保留生产 worker queue、object storage、取消/重试完整体系、M9 state stream 和 `aviation_support` 正式执行的阶段边界。
+5. RunIntent / MonteCarloRunConfig / imported sample Project 收敛已作为 M6.2 后续切片完成；M7.0 已补入本地运行/产物管理，M8.0 已补入 projection payload 消费。近期推进应转向 M9 state stream 或生产 worker/object storage/cancel-retry 等运行能力，同时继续保留 `aviation_support` 正式执行的阶段边界。
 6. 每次 PR 更新页面流转、数据对象或结果口径时，同步更新本文档或相关验收清单。

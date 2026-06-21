@@ -134,6 +134,13 @@ export function createBackendApiClient({ baseUrl = DEFAULT_API_BASE, transport, 
         responseType: "blob"
       });
     },
+    getRunArtifactPayload(runId, artifactId) {
+      return request({
+        method: "GET",
+        path: `/runs/${encodeURIComponent(runId)}/artifacts/${encodeURIComponent(artifactId)}`,
+        responseType: "json"
+      });
+    },
     archiveRun(runId) {
       return request({ method: "POST", path: `/runs/${encodeURIComponent(runId)}/archive` });
     },
