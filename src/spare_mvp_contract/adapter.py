@@ -44,6 +44,7 @@ class SimulationAdapter:
     def __init__(self, repo_root: Path | str | None = None) -> None:
         self.repo_root = Path(repo_root).resolve() if repo_root else Path(__file__).resolve().parents[2]
         self.contracts_dir = self.repo_root / "contracts"
+        self._compiled_project_snapshots: dict[str, dict[str, Any]] = {}
 
     def validate_project(self, project: dict[str, Any]) -> dict[str, Any]:
         """Validate the roots required by the current Project JSON contract."""
@@ -91,7 +92,7 @@ class SimulationAdapter:
             )
         raise AdapterError(
             "unsupported_model_family",
-            "aviation_support requires a Claude-approved compilation rule before Scenario JSON can be emitted",
+            f"{model_family} does not have an approved Project to Scenario compiler",
             model_family=model_family,
             issues=result["issues"],
             provenance=result["provenance"],
@@ -131,12 +132,12 @@ class SimulationAdapter:
                 "issues": [],
             }
         if model_family == "aviation_support":
-            provenance = self._compile_gate_provenance(project, model_family)
+            scenario = self._compile_aviation_support_scenario(project, validation)
             return {
-                "status": "unsupported",
-                "scenario": None,
-                "provenance": provenance,
-                "issues": self._aviation_support_compile_issues(),
+                "status": "compiled",
+                "scenario": scenario,
+                "provenance": scenario["compiled_from"]["mapping_provenance"],
+                "issues": [],
             }
         provenance = self._compile_gate_provenance(project, model_family)
         return {
@@ -162,7 +163,7 @@ class SimulationAdapter:
         inputs = self._compile_smoke_inputs(project, project_version)
         now = _utc_now()
 
-        return {
+        scenario = {
             "schema_version": SCENARIO_SCHEMA_VERSION,
             "scenario_id": f"scenario-{scenario_key}",
             "project_id": project_id,
@@ -183,6 +184,41 @@ class SimulationAdapter:
             },
             "simulation_inputs": inputs,
         }
+        self._compiled_project_snapshots[scenario["scenario_id"]] = copy.deepcopy(project)
+        self._compiled_project_snapshots[scenario["project_id"]] = copy.deepcopy(project)
+        return scenario
+
+    def _compile_aviation_support_scenario(self, project: dict[str, Any], validation: dict[str, Any]) -> dict[str, Any]:
+        project_id = validation["project_id"]
+        project_version = validation["project_version"]
+        scenario_key = _safe_identifier(str(project.get("scenarioId") or project_id))
+        inputs = self._compile_aviation_support_inputs(project)
+        now = _utc_now()
+
+        scenario = {
+            "schema_version": SCENARIO_SCHEMA_VERSION,
+            "scenario_id": f"scenario-{scenario_key}",
+            "project_id": project_id,
+            "scenario_version": "scenario-v0.1",
+            "simulation_model": {
+                "family": "aviation_support",
+                "model_id": "AviationSupportModel",
+                "contract_version": MESA_CONTRACT_VERSION,
+            },
+            "compiled_at": now,
+            "compiled_by": ADAPTER_NAME,
+            "compiled_from": {
+                "project_id": project_id,
+                "project_version": project_version,
+                "project_schema_version": validation["project_schema_version"],
+                "mesa_contract_version": MESA_CONTRACT_VERSION,
+                "mapping_provenance": self._aviation_support_mapping_provenance(project_id, project),
+            },
+            "simulation_inputs": inputs,
+        }
+        self._compiled_project_snapshots[scenario["scenario_id"]] = copy.deepcopy(project)
+        self._compiled_project_snapshots[scenario["project_id"]] = copy.deepcopy(project)
+        return scenario
 
     def run_scenario(
         self,
@@ -191,7 +227,15 @@ class SimulationAdapter:
         steps: int = 3,
         run_id: str | None = None,
     ) -> dict[str, dict[str, Any]]:
-        """Run a compiled smoke Scenario and write traceable contract artifacts."""
+        """Run a compiled single-run Scenario and write traceable contract artifacts."""
+        model_family = scenario.get("simulation_model", {}).get("family")
+        if model_family == "aviation_support":
+            return self._run_aviation_support_scenario(
+                scenario,
+                output_dir=output_dir,
+                steps=steps,
+                run_id=run_id,
+            )
         self._assert_smoke_scenario(scenario)
         if steps < 0:
             raise AdapterError("bad_steps", "steps must be non-negative", steps=steps)
@@ -560,6 +604,21 @@ class SimulationAdapter:
             "seed": self._positive_int(project.get("experiment", {}).get("seed"), 0),
         }
 
+    def _compile_aviation_support_inputs(self, project: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "aircraft_count": self._positive_int(project.get("equipment", {}).get("quantity"), 8),
+            "mission_count": self._positive_int(project.get("missionProfile", {}).get("missionCount"), 3),
+            "mission_aircraft_required": self._positive_int(
+                project.get("basicMission", {}).get("equipmentQuantity"),
+                1,
+            ),
+            "mechanic_teams": self._first_positive_int(project.get("supportNodes", []), "personnelCapacity", 1),
+            "fuel_trucks": self._first_positive_int(project.get("supportNodes", []), "equipmentCapacity", 1),
+            "maintenance_bays": self._first_positive_int(project.get("supportNodes", []), "equipmentCapacity", 1),
+            "lru_failure_multiplier": self._first_number(project.get("monteCarlo", {}).get("lruFailureMultipliers"), 1.0),
+            "seed": self._positive_int(project.get("experiment", {}).get("seed"), 0),
+        }
+
     def _smoke_mapping_provenance(self, project_id: str, project: dict[str, Any]) -> dict[str, Any]:
         return {
             "project_id": project_id,
@@ -579,6 +638,34 @@ class SimulationAdapter:
             "defaults_applied": self._smoke_defaults_applied(project),
             "derived_fields": ["simulation_inputs.failure_rate"],
             "ignored_fields": ["monteCarlo.failureRates", "monteCarlo.supportCapacities"],
+            "unsupported_fields": [],
+        }
+
+    def _aviation_support_mapping_provenance(self, project_id: str, project: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "project_id": project_id,
+            "modeling_snapshot_id": None,
+            "experiment_plan_id": None,
+            "model_family": "aviation_support",
+            "mapping_version": "aviation-support-input-v0",
+            "consumed_fields": [
+                "equipment.quantity",
+                "missionProfile.missionCount",
+                "basicMission.equipmentQuantity",
+                "supportNodes[].personnelCapacity",
+                "supportNodes[].equipmentCapacity",
+                "monteCarlo.lruFailureMultipliers",
+                "experiment.seed",
+            ],
+            "defaults_applied": self._aviation_support_defaults_applied(project),
+            "derived_fields": [
+                "simulation_inputs.fuel_trucks",
+                "simulation_inputs.maintenance_bays",
+            ],
+            "ignored_fields": [
+                "components[].failureRate",
+                "supportActivities[]",
+            ],
             "unsupported_fields": [],
         }
 
@@ -603,7 +690,33 @@ class SimulationAdapter:
             defaults.append("experiment.seed=0")
         return defaults
 
+    def _aviation_support_defaults_applied(self, project: dict[str, Any]) -> list[str]:
+        defaults: list[str] = []
+        if not self._is_positive_number(project.get("equipment", {}).get("quantity")):
+            defaults.append("equipment.quantity=8")
+        if not self._is_positive_number(project.get("missionProfile", {}).get("missionCount")):
+            defaults.append("missionProfile.missionCount=3")
+        if not self._is_positive_number(project.get("basicMission", {}).get("equipmentQuantity")):
+            defaults.append("basicMission.equipmentQuantity=1")
+        if not any(
+            isinstance(node, dict) and self._is_positive_number(node.get("personnelCapacity"))
+            for node in project.get("supportNodes", [])
+        ):
+            defaults.append("supportNodes[].personnelCapacity=1")
+        if not any(
+            isinstance(node, dict) and self._is_positive_number(node.get("equipmentCapacity"))
+            for node in project.get("supportNodes", [])
+        ):
+            defaults.append("supportNodes[].equipmentCapacity=1")
+        if not self._has_any_number(project.get("monteCarlo", {}).get("lruFailureMultipliers")):
+            defaults.append("monteCarlo.lruFailureMultipliers=1.0")
+        if not self._is_number(project.get("experiment", {}).get("seed")):
+            defaults.append("experiment.seed=0")
+        return defaults
+
     def _compile_gate_provenance(self, project: dict[str, Any], model_family: str) -> dict[str, Any]:
+        if model_family == "aviation_support":
+            return self._aviation_support_mapping_provenance(self._project_id(project), project)
         return {
             "project_id": self._project_id(project),
             "modeling_snapshot_id": None,
@@ -614,42 +727,8 @@ class SimulationAdapter:
             "defaults_applied": [],
             "derived_fields": [],
             "ignored_fields": [],
-            "unsupported_fields": [
-                "missionProfile.durationHours",
-                "components[].mtbfHours",
-                "supportActivities[].durationHours",
-            ]
-            if model_family == "aviation_support"
-            else ["model_family"],
+            "unsupported_fields": ["model_family"],
         }
-
-    def _aviation_support_compile_issues(self) -> list[dict[str, str]]:
-        return [
-            {
-                "code": "missing_compilation_rule",
-                "message": "Mission duration cannot be compiled into aviation_support runtime inputs yet.",
-                "field_path": "missionProfile.durationHours",
-                "page": "任务剖面建模",
-                "severity": "error",
-                "suggestion": "Approve a field derivation rule for mission duration before enabling aviation_support runs.",
-            },
-            {
-                "code": "missing_compilation_rule",
-                "message": "Component MTBF cannot be compiled into aviation_support failure parameters yet.",
-                "field_path": "components[].mtbfHours",
-                "page": "装备组成建模",
-                "severity": "error",
-                "suggestion": "Approve an MTBF to failure-parameter mapping before enabling aviation_support runs.",
-            },
-            {
-                "code": "missing_compilation_rule",
-                "message": "Support activity duration cannot be compiled into aviation_support service-time inputs yet.",
-                "field_path": "supportActivities[].durationHours",
-                "page": "保障活动建模",
-                "severity": "error",
-                "suggestion": "Approve a support activity duration mapping before enabling aviation_support runs.",
-            },
-        ]
 
     def _assert_smoke_scenario(self, scenario: dict[str, Any]) -> None:
         model = scenario.get("simulation_model", {})
@@ -657,6 +736,314 @@ class SimulationAdapter:
             raise AdapterError("invalid_scenario", "unsupported scenario schema version")
         if model.get("family") != "smoke" or model.get("model_id") != "SmokeSpareMvpModel":
             raise AdapterError("unsupported_model_family", "run_scenario currently supports only smoke scenarios")
+
+    def _assert_aviation_support_scenario(self, scenario: dict[str, Any]) -> None:
+        model = scenario.get("simulation_model", {})
+        if scenario.get("schema_version") != SCENARIO_SCHEMA_VERSION:
+            raise AdapterError("invalid_scenario", "unsupported scenario schema version")
+        if model.get("family") != "aviation_support" or model.get("model_id") != "AviationSupportModel":
+            raise AdapterError("unsupported_model_family", "run_scenario received a non aviation_support scenario")
+
+    def _run_aviation_support_scenario(
+        self,
+        scenario: dict[str, Any],
+        output_dir: Path | str,
+        steps: int = 3,
+        run_id: str | None = None,
+    ) -> dict[str, dict[str, Any]]:
+        self._assert_aviation_support_scenario(scenario)
+        if steps < 0:
+            raise AdapterError("bad_steps", "steps must be non-negative", steps=steps)
+
+        from src.spare_mvp_abm.aviation_support.model import AviationSupportModel
+
+        inputs = scenario["simulation_inputs"]
+        model = AviationSupportModel(**copy.deepcopy(inputs))
+        run_id = run_id or f"run-{scenario['scenario_id']}"
+        state_series_frames: list[dict[str, Any]] = []
+        for frame_index in range(steps):
+            model.step()
+            state_series_frames.append(
+                self._aviation_visualization_state_frame(run_id, model.visualization_state(), frame_index + 1)
+            )
+        snapshot = model.snapshot()
+        if not state_series_frames:
+            state_series_frames.append(self._aviation_visualization_state_frame(run_id, model.visualization_state(), 0))
+
+        result_id = f"result-{run_id}"
+        manifest_id = f"artifact-manifest-{run_id}"
+        now = _utc_now()
+        result = {
+            "schema_version": RESULT_SCHEMA_VERSION,
+            "model_family": "aviation_support",
+            "result_id": result_id,
+            "run_id": run_id,
+            "scenario_id": scenario["scenario_id"],
+            "scenario_version": scenario["scenario_version"],
+            "metrics": snapshot,
+        }
+        result_summary_artifact_id = f"result_summary-{run_id}"
+        projections = self._aviation_analysis_projections(snapshot, result_summary_artifact_id)
+        result["analysis_outputs"] = {
+            "spare_shortage": projections["spare_shortfall"]["data"],
+            "carry_list": projections["carry_list"]["data"],
+            "mission_reliability": projections["mission_reliability"]["data"],
+            "downtime_factors": projections["downtime_factors"]["data"],
+        }
+        run_config = {
+            "schema_version": "run-config-v0",
+            "run_id": run_id,
+            "run_type": "single",
+            "model_family": "aviation_support",
+            "project_id": scenario["project_id"],
+            "experiment_plan_id": None,
+            "modeling_snapshot_id": None,
+            "scenario_id": scenario["scenario_id"],
+            "scenario_version": scenario["scenario_version"],
+            "seed": inputs["seed"],
+            "steps": steps,
+        }
+        input_project = copy.deepcopy(
+            self._compiled_project_snapshots.get(scenario["scenario_id"])
+            or self._compiled_project_snapshots.get(scenario["project_id"])
+        )
+        if input_project is None:
+            input_project = {
+                "schema_version": PROJECT_SCHEMA_VERSION,
+                "project_id": scenario["project_id"],
+                "project_version": scenario["compiled_from"]["project_version"],
+                "project_schema_version": scenario["compiled_from"]["project_schema_version"],
+                "mapping_provenance": copy.deepcopy(scenario["compiled_from"]["mapping_provenance"]),
+            }
+        metrics = {
+            "schema_version": "metrics-v0",
+            "run_id": run_id,
+            "metrics": snapshot,
+        }
+        report = {
+            "schema_version": "run-report-v0",
+            "run_id": run_id,
+            "title": "Aviation support single run report",
+            "summary": {
+                "status": "succeeded",
+                "steps": steps,
+                "seed": inputs["seed"],
+                "sortie_completion_rate": snapshot.get("sortie_completion_rate", 0),
+                "available_aircraft": snapshot.get("available_aircraft", 0),
+            },
+        }
+        event_log = {
+            "schema_version": "run-log-v0",
+            "run_id": run_id,
+            "events": [
+                {"event": "run_started", "at": now},
+                *[
+                    {"event": event.get("event", "aviation_event"), "at": now, "time": event.get("time"), "message": event.get("message", "")}
+                    for event in model.event_log[-20:]
+                ],
+                {"event": "run_completed", "at": now, "status": "succeeded"},
+            ],
+        }
+        visualization_state_series = self._visualization_state_series_payload(
+            run_id=run_id,
+            scenario=scenario,
+            model_family="aviation_support",
+            result_summary_id=result_id,
+            artifact_manifest_id=manifest_id,
+            frames=state_series_frames,
+        )
+        run = {
+            "schema_version": RUN_SCHEMA_VERSION,
+            "run_id": run_id,
+            "project_id": scenario["project_id"],
+            "scenario_id": scenario["scenario_id"],
+            "scenario_version": scenario["scenario_version"],
+            "model_family": "aviation_support",
+            "model_id": "AviationSupportModel",
+            "status": "succeeded",
+            "run_type": "single",
+            "seed": inputs["seed"],
+            "progress": 1,
+            "started_at": now,
+            "completed_at": now,
+            "result_summary_id": result_id,
+            "artifact_manifest_id": manifest_id,
+            "error": None,
+        }
+
+        output_root = Path(output_dir)
+        run_dir = output_root / run_id
+        run_dir.mkdir(parents=True, exist_ok=True)
+        artifact_specs = [
+            ("run_config", "run-config.json", run_config, "run-config-v0"),
+            ("input_project", "input-project.json", input_project, PROJECT_SCHEMA_VERSION),
+            ("compiled_scenario", "compiled-scenario.json", scenario, SCENARIO_SCHEMA_VERSION),
+            ("snapshot", "snapshot.json", snapshot, None),
+            ("result_summary", "result-summary.json", result, RESULT_SCHEMA_VERSION),
+            ("metrics", "metrics.json", metrics, "metrics-v0"),
+            ("report", "report.json", report, "run-report-v0"),
+            ("log", "events-log.json", event_log, "run-log-v0"),
+            (
+                "visualization_state_series",
+                "visualization-state-series.json",
+                visualization_state_series,
+                VISUALIZATION_STATE_SERIES_SCHEMA_VERSION,
+            ),
+            ("analysis_projection_spare_shortfall", "spare-shortfall.json", projections["spare_shortfall"], "analysis-projection-v0"),
+            ("analysis_projection_carry_list", "carry-list.json", projections["carry_list"], "analysis-projection-v0"),
+            ("analysis_projection_mission_reliability", "mission-reliability.json", projections["mission_reliability"], "analysis-projection-v0"),
+            ("analysis_projection_downtime_factors", "downtime-factors.json", projections["downtime_factors"], "analysis-projection-v0"),
+        ]
+        artifacts = [
+            self._write_artifact(run_dir, output_root, kind, filename, payload, schema_version)
+            for kind, filename, payload, schema_version in artifact_specs
+        ]
+        for artifact in artifacts:
+            kind = artifact.get("kind", "")
+            if str(kind).startswith("analysis_projection_"):
+                artifact["source_artifact_id"] = result_summary_artifact_id
+                artifact["analysis_type"] = str(kind).removeprefix("analysis_projection_")
+        self._annotate_state_series_artifact(artifacts, run_id, result_id, scenario["scenario_id"])
+        manifest = {
+            "schema_version": ARTIFACT_MANIFEST_SCHEMA_VERSION,
+            "artifact_manifest_id": manifest_id,
+            "run_id": run_id,
+            "scenario_id": scenario["scenario_id"],
+            "scenario_version": scenario["scenario_version"],
+            "created_at": now,
+            "artifacts": artifacts,
+        }
+        self._write_json(run_dir / "artifact-manifest.json", manifest)
+        return {"run": run, "result": result, "artifact_manifest": manifest}
+
+    def _aviation_visualization_state_frame(self, run_id: str, state: dict[str, Any], step: int) -> dict[str, Any]:
+        metrics = state["snapshot"]
+        aircraft_count = max(1, int(metrics.get("aircraft_count", 1) or 1))
+        planned_sorties = max(1, int(metrics.get("planned_sorties", 1) or 1))
+        spare_total = float(metrics.get("spare_stock_total", 0) or 0) + float(metrics.get("spare_consumed_total", 0) or 0)
+        spare_fill_rate = 1.0 if spare_total <= 0 else float(metrics.get("spare_stock_total", 0) or 0) / spare_total
+        event_items = state.get("events") or [
+            {
+                "time": metrics.get("time", 0),
+                "event": "state_frame",
+                "message": "aviation_support state frame generated",
+            }
+        ]
+        return {
+            "run_id": run_id,
+            "step": step,
+            "simulation_time": float(metrics.get("time", 0) or 0),
+            "aircraft_state": {
+                "ready_rate": float(metrics.get("available_aircraft", 0) or 0) / aircraft_count,
+                "failed_count": float(metrics.get("maintenance_aircraft", 0) or 0),
+                "repairing_count": float(metrics.get("maintenance_aircraft", 0) or 0),
+                "sortie_count": float(metrics.get("launched_sorties", 0) or 0),
+            },
+            "mission_state": {
+                "mission_success_rate": float(metrics.get("sortie_completion_rate", 0) or 0),
+                "sortie_rate": float(metrics.get("launched_sorties", 0) or 0) / planned_sorties,
+                "mean_launch_time": float(metrics.get("avg_departure_delay", 0) or 0),
+                "mean_recovery_time": float(metrics.get("avg_departure_delay", 0) or 0),
+                "mean_turnaround_time": float(metrics.get("avg_departure_delay", 0) or 0),
+            },
+            "resource_state": {
+                "spare_fill_rate": spare_fill_rate,
+                "spare_utilization": 1.0 - spare_fill_rate,
+                "repair_backlog": float(metrics.get("maintenance_backlog", 0) or 0),
+            },
+            "event_summary": {
+                "shortage_events": 0,
+                "downtime_failure_events": float(metrics.get("lru_failures", 0) or 0),
+                "downtime_spare_shortage_events": 0,
+                "downtime_resource_delay_events": float(metrics.get("delayed_sorties", 0) or 0),
+            },
+            "aircraft": copy.deepcopy(state.get("aircraft") or []),
+            "missions": copy.deepcopy(state.get("missions") or []),
+            "resources": copy.deepcopy(state.get("resources") or []),
+            "spares": copy.deepcopy(state.get("spares") or []),
+            "jobs": copy.deepcopy(state.get("jobs") or []),
+            "events": [
+                {
+                    "time": float(event.get("time", 0) or 0),
+                    "event": str(event.get("event") or "aviation_event"),
+                    "event_type": str(event.get("event") or "aviation_event"),
+                    "message": str(event.get("message") or "aviation support event"),
+                    "metric_refs": self._aviation_event_metric_refs(str(event.get("event") or "")),
+                }
+                for event in event_items
+            ],
+        }
+
+    def _aviation_event_metric_refs(self, event_type: str) -> list[str]:
+        if event_type.startswith("mission"):
+            return ["sortie_completion_rate", "avg_departure_delay"]
+        if event_type.startswith("spare"):
+            return ["spare_stock_total", "spare_consumed_total"]
+        if event_type.startswith("job") or event_type.startswith("task"):
+            return ["active_jobs", "maintenance_backlog"]
+        return ["sortie_completion_rate", "available_aircraft", "active_jobs"]
+
+    def _aviation_analysis_projections(
+        self,
+        metrics: dict[str, Any],
+        source_artifact_id: str,
+    ) -> dict[str, dict[str, Any]]:
+        spare_stock_total = max(0.0, float(metrics.get("spare_stock_total", 0) or 0))
+        spare_consumed_total = max(0.0, float(metrics.get("spare_consumed_total", 0) or 0))
+        spare_denominator = max(1.0, spare_stock_total + spare_consumed_total)
+        spare_fill_rate = min(1.0, spare_stock_total / spare_denominator)
+        shortage_probability = min(1.0, spare_consumed_total / spare_denominator)
+        sortie_completion_rate = min(1.0, max(0.0, float(metrics.get("sortie_completion_rate", 0) or 0)))
+        planned_sorties = max(1.0, float(metrics.get("planned_sorties", 1) or 1))
+        sortie_rate = min(1.0, max(0.0, float(metrics.get("launched_sorties", 0) or 0) / planned_sorties))
+        failure_events = max(0.0, float(metrics.get("lru_failures", 0) or 0))
+        spare_delay_events = max(0.0, float(metrics.get("spare_consumed_total", 0) or 0))
+        resource_delay_events = max(0.0, float(metrics.get("delayed_sorties", 0) or 0))
+        downtime_total = failure_events + spare_delay_events + resource_delay_events or 1.0
+        risk_level = "high" if shortage_probability >= 0.2 else "medium" if shortage_probability > 0 else "low"
+        return {
+            "spare_shortfall": {
+                "projection_type": "spare_shortfall",
+                "base_artifact_id": source_artifact_id,
+                "data": [
+                    {
+                        "spare_type": "aviation_support_spares",
+                        "fill_rate": spare_fill_rate,
+                        "shortage_probability": shortage_probability,
+                        "risk_level": risk_level,
+                    }
+                ],
+            },
+            "carry_list": {
+                "projection_type": "carry_list",
+                "base_artifact_id": source_artifact_id,
+                "data": [
+                    {
+                        "spare_type": "aviation_support_spares",
+                        "recommended_multiplier": max(1.0, 1.0 + shortage_probability),
+                        "risk_level": risk_level,
+                    }
+                ],
+            },
+            "mission_reliability": {
+                "projection_type": "mission_reliability",
+                "base_artifact_id": source_artifact_id,
+                "data": {
+                    "mission_success_probability": sortie_completion_rate,
+                    "sortie_rate": sortie_rate,
+                    "target_met": sortie_completion_rate >= 0.9,
+                },
+            },
+            "downtime_factors": {
+                "projection_type": "downtime_factors",
+                "base_artifact_id": source_artifact_id,
+                "data": [
+                    {"factor": "failure", "contribution": failure_events / downtime_total},
+                    {"factor": "spare_shortage", "contribution": spare_delay_events / downtime_total},
+                    {"factor": "resource_delay", "contribution": resource_delay_events / downtime_total},
+                ],
+            },
+        }
 
     def _monte_carlo_profile(
         self,

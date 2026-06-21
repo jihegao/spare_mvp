@@ -188,28 +188,184 @@ class SimulationAdapterTest(unittest.TestCase):
             self.adapter.compile_scenario(changed_seed)["simulation_inputs"]["seed"],
         )
 
-    def test_aviation_support_compilation_requires_approved_rules(self) -> None:
+    def test_compile_aviation_support_scenario_from_project_contract(self) -> None:
         project = self._load_fixture("aviation_support_project.json")
+        schema = json.loads((REPO_ROOT / "contracts" / "scenario.schema.json").read_text(encoding="utf-8"))
 
-        with self.assertRaises(AdapterError) as ctx:
-            self.adapter.compile_scenario(project, model_family="aviation_support")
+        scenario = self.adapter.compile_scenario(project, model_family="aviation_support")
 
-        self.assertEqual(ctx.exception.code, "unsupported_model_family")
-        self.assertIn("Claude-approved compilation rule", str(ctx.exception))
+        jsonschema.validate(instance=scenario, schema=schema)
+        self.assertEqual(scenario["schema_version"], "scenario-v0")
+        self.assertEqual(scenario["scenario_id"], "scenario-aviation-support-contract-demo")
+        self.assertEqual(scenario["project_id"], "project-aviation-support-contract-001")
+        self.assertEqual(
+            scenario["simulation_model"],
+            {
+                "family": "aviation_support",
+                "model_id": "AviationSupportModel",
+                "contract_version": "1.0.0",
+            },
+        )
+        self.assertEqual(
+            scenario["simulation_inputs"],
+            {
+                "aircraft_count": 8,
+                "mission_count": 3,
+                "mission_aircraft_required": 5,
+                "mechanic_teams": 3,
+                "fuel_trucks": 2,
+                "maintenance_bays": 2,
+                "lru_failure_multiplier": 1,
+                "seed": 20260618,
+            },
+        )
+        provenance = scenario["compiled_from"]["mapping_provenance"]
+        self.assertEqual(provenance["model_family"], "aviation_support")
+        self.assertEqual(provenance["mapping_version"], "aviation-support-input-v0")
+        self.assertIn("equipment.quantity", provenance["consumed_fields"])
+        self.assertIn("basicMission.equipmentQuantity", provenance["consumed_fields"])
+        self.assertIn("supportNodes[].personnelCapacity", provenance["consumed_fields"])
+        self.assertEqual(provenance["unsupported_fields"], [])
 
-    def test_aviation_support_compile_gate_returns_field_level_diagnostics(self) -> None:
+    def test_aviation_support_compile_gate_returns_compiled_scenario(self) -> None:
         project = self._load_fixture("aviation_support_project.json")
 
         result = self.adapter.compile_scenario_with_gate(project, model_family="aviation_support")
 
-        self.assertEqual(result["status"], "unsupported")
+        self.assertEqual(result["status"], "compiled")
+        self.assertEqual(result["scenario"]["simulation_model"]["family"], "aviation_support")
+        self.assertEqual(result["provenance"]["model_family"], "aviation_support")
+        self.assertEqual(result["issues"], [])
+
+    def test_invalid_aviation_support_project_keeps_current_mapping_provenance(self) -> None:
+        project = self._load_fixture("aviation_support_project.json")
+        del project["components"]
+
+        result = self.adapter.compile_scenario_with_gate(project, model_family="aviation_support")
+
+        self.assertEqual(result["status"], "blocked")
         self.assertIsNone(result["scenario"])
         self.assertEqual(result["provenance"]["model_family"], "aviation_support")
-        self.assertTrue(result["issues"])
-        self.assertEqual(
-            {"code", "message", "field_path", "page", "severity", "suggestion"},
-            set(result["issues"][0]),
+        self.assertEqual(result["provenance"]["mapping_version"], "aviation-support-input-v0")
+        self.assertEqual(result["provenance"]["unsupported_fields"], [])
+        self.assertEqual(result["issues"][0]["field_path"], "components")
+
+    def test_run_aviation_support_scenario_writes_backend_aligned_artifacts(self) -> None:
+        project = self._load_fixture("aviation_support_project.json")
+        scenario = self.adapter.compile_scenario(project, model_family="aviation_support")
+        result_schema = json.loads((REPO_ROOT / "contracts" / "result.schema.json").read_text(encoding="utf-8"))
+        manifest_schema = json.loads((REPO_ROOT / "contracts" / "artifact_manifest.schema.json").read_text(encoding="utf-8"))
+        state_series_schema = json.loads(
+            (REPO_ROOT / "contracts" / "visualization_state_series.schema.json").read_text(encoding="utf-8")
         )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            bundle = self.adapter.run_scenario(
+                scenario,
+                output_dir=Path(tmp),
+                steps=3,
+                run_id="run-aviation-support-contract",
+            )
+
+            run = bundle["run"]
+            result = bundle["result"]
+            manifest = bundle["artifact_manifest"]
+
+            jsonschema.validate(instance=result, schema=result_schema)
+            jsonschema.validate(instance=manifest, schema=manifest_schema)
+            self.assertEqual(run["status"], "succeeded")
+            self.assertEqual(run["run_id"], "run-aviation-support-contract")
+            self.assertEqual(run["model_family"], "aviation_support")
+            self.assertEqual(run["model_id"], "AviationSupportModel")
+            self.assertEqual(result["model_family"], "aviation_support")
+            self.assertEqual(result["run_id"], run["run_id"])
+            self.assertEqual(result["scenario_id"], scenario["scenario_id"])
+            for metric in [
+                "sortie_completion_rate",
+                "available_aircraft",
+                "active_jobs",
+                "spare_stock_total",
+                "avg_departure_delay",
+                "spare_consumed_total",
+                "maintenance_backlog",
+            ]:
+                self.assertIn(metric, result["metrics"])
+
+            artifact_kinds = {artifact["kind"] for artifact in manifest["artifacts"]}
+            self.assertEqual(
+                artifact_kinds,
+                {
+                    "run_config",
+                    "input_project",
+                    "compiled_scenario",
+                    "snapshot",
+                    "result_summary",
+                    "metrics",
+                    "report",
+                    "log",
+                    "visualization_state_series",
+                    "analysis_projection_spare_shortfall",
+                    "analysis_projection_carry_list",
+                    "analysis_projection_mission_reliability",
+                    "analysis_projection_downtime_factors",
+                },
+            )
+            for artifact in manifest["artifacts"]:
+                target = Path(tmp) / artifact["path"]
+                self.assertTrue(target.exists(), artifact)
+                self.assertGreater(artifact["size_bytes"], 0)
+                self.assertRegex(artifact["sha256"], r"^[0-9a-f]{64}$")
+                if artifact["kind"] == "input_project":
+                    payload = json.loads(target.read_text(encoding="utf-8"))
+                    self.assertEqual(payload, project)
+                if artifact["kind"] == "compiled_scenario":
+                    payload = json.loads(target.read_text(encoding="utf-8"))
+                    self.assertEqual(payload, scenario)
+                if artifact["kind"].startswith("analysis_projection_"):
+                    payload = json.loads(target.read_text(encoding="utf-8"))
+                    self.assertEqual(artifact["source_artifact_id"], f"result_summary-{run['run_id']}")
+                    self.assertEqual(payload["projection_type"], artifact["analysis_type"])
+                if artifact["kind"] == "visualization_state_series":
+                    self.assertEqual(artifact["source_run_id"], run["run_id"])
+                    self.assertEqual(artifact["source_result_summary_id"], run["result_summary_id"])
+                    self.assertEqual(artifact["source_scenario_id"], scenario["scenario_id"])
+                    payload = json.loads(target.read_text(encoding="utf-8"))
+                    jsonschema.validate(instance=payload, schema=state_series_schema)
+                    self.assertEqual(payload["model_family"], "aviation_support")
+                    self.assertEqual(payload["run_id"], run["run_id"])
+                    self.assertEqual(payload["scenario_id"], scenario["scenario_id"])
+                    self.assertGreater(len(payload["frames"]), 0)
+                    for frame in payload["frames"]:
+                        self.assertEqual(frame["run_id"], run["run_id"])
+                        self.assertEqual(frame["trace"]["run_id"], run["run_id"])
+                        self.assertEqual(frame["trace"]["scenario_id"], scenario["scenario_id"])
+                        self.assertIn("aircraft", frame)
+                        self.assertIn("missions", frame)
+                        self.assertIn("resources", frame)
+                        self.assertIn("events", frame)
+
+    def test_aviation_support_monte_carlo_remains_unsupported(self) -> None:
+        project = self._load_fixture("aviation_support_project.json")
+        scenario = self.adapter.compile_scenario(project, model_family="aviation_support")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(AdapterError) as ctx:
+                self.adapter.run_monte_carlo_scenario(
+                    scenario,
+                    output_dir=Path(tmp),
+                    steps=1,
+                    monte_carlo_config={
+                        "sample_count": 1,
+                        "sweep": {
+                            "failureRates": [0.05],
+                            "spareMultipliers": [1.0],
+                            "supportCapacities": [1],
+                        },
+                    },
+                )
+
+            self.assertEqual(ctx.exception.code, "unsupported_model_family")
+            self.assertEqual(list(Path(tmp).glob("**/*")), [])
 
     def test_run_smoke_scenario_writes_result_and_artifact_manifest(self) -> None:
         project = self._load_fixture("smoke_project.json")

@@ -126,7 +126,7 @@ test("scenario adapter mapping covers every compiled simulation input for each m
       assert.equal(typeof entry.source, "string", `${family}.${field} is missing source`);
       if (entry.status === "unsupported") {
         assert.equal(entry.constructor_param, undefined, `${family}.${field} must not expose an executable constructor_param before alignment`);
-        assert.match(entry.reason, /requires Claude-approved compilation rule/);
+        assert.equal(typeof entry.reason, "string", `${family}.${field} is missing unsupported reason`);
       } else if (entry.status === "metadata_only") {
         assert.equal(entry.constructor_param, undefined, `${family}.${field} must not expose an executable constructor_param`);
         assert.equal(typeof entry.reason, "string", `${family}.${field} is missing metadata reason`);
@@ -145,8 +145,11 @@ test("scenario adapter mapping covers every compiled simulation input for each m
   assert.equal(mapping.model_families.smoke.simulation_inputs.spare_multiplier.constructor_param, "spareMultiplier");
   assert.equal(mapping.model_families.smoke.simulation_inputs.support_capacity.constructor_param, "supportCapacity");
   assert.equal(mapping.model_families.aviation_support.simulation_inputs.aircraft_count.constructor_param, "aircraft_count");
-  assert.equal(mapping.model_families.aviation_support.simulation_inputs.lru_failure_multiplier.status, "unsupported");
-  assert.equal(mapping.model_families.aviation_support.simulation_inputs.maintenance_bays.status, "unsupported");
+  assert.equal(
+    mapping.model_families.aviation_support.simulation_inputs.lru_failure_multiplier.constructor_param,
+    "lru_failure_multiplier"
+  );
+  assert.equal(mapping.model_families.aviation_support.simulation_inputs.maintenance_bays.constructor_param, "maintenance_bays");
   assert.equal(mapping.model_families.aviation_support.simulation_inputs.mission_count.constructor_param, "mission_count");
 });
 
@@ -159,14 +162,14 @@ test("smoke project_version is adapter bookkeeping, not a model constructor path
   assert.match(projectVersion.reason, /Project version is audit metadata/);
 });
 
-test("aviation mapping marks semantic compilation rules unsupported until Claude approval", async () => {
+test("aviation mapping exposes approved formal execution constructor rules", async () => {
   const mapping = await readJson("contracts/scenario_adapter_mapping.json");
   const aviationInputs = mapping.model_families.aviation_support.simulation_inputs;
 
   for (const field of ["mechanic_teams", "fuel_trucks", "maintenance_bays", "lru_failure_multiplier"]) {
-    assert.equal(aviationInputs[field].status, "unsupported", `${field} should not be executable before Claude alignment`);
-    assert.equal(aviationInputs[field].constructor_param, undefined, `${field} should not publish a constructor mapping`);
-    assert.match(aviationInputs[field].reason, /requires Claude-approved compilation rule/);
+    assert.equal(aviationInputs[field].status, undefined, `${field} should be executable after M9.4 alignment`);
+    assert.equal(aviationInputs[field].constructor_param, field, `${field} should publish its constructor mapping`);
+    assert.equal(typeof aviationInputs[field].source, "string");
   }
 });
 

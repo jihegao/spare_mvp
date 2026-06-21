@@ -148,6 +148,12 @@ class BackendApiContractTest(unittest.TestCase):
             }
         )
 
+    def _create_imported_sample_project(self) -> dict[str, Any]:
+        import_package = self._fixture("modeling_import_project.json")
+        self.api.save_modeling_import_as_system(import_package)
+        self.api.publish_modeling_import_as_system(import_package["importId"])
+        return self.api.create_project_from_modeling_import_as_system(import_package["importId"])
+
     def test_smoke_backend_flow_persists_complete_run_chain(self) -> None:
         project = self._fixture("smoke_project.json")
 
@@ -1218,11 +1224,15 @@ class BackendApiContractTest(unittest.TestCase):
 
         self.assertEqual(ctx.exception.code, "bad_run_request")
 
-    def test_run_service_fail_closed_when_compiler_gate_blocks_model_family(self) -> None:
-        project = self._fixture("aviation_support_project.json")
-        saved = self.api.save_project(project)
-        self.api.create_modeling_snapshot(saved["project_id"])
-        plan = self.api.create_experiment_plan(saved["project_id"], {"name": "aviation blocked", "steps": 1})
+    def test_run_service_submits_formal_aviation_support_single_run_and_exposes_chain(self) -> None:
+        created = self._create_imported_sample_project()
+        project = created["project"]
+        saved = created["savedProject"]
+        snapshot = created["modelingSnapshot"]
+        plan = self.api.create_experiment_plan(
+            saved["project_id"],
+            {"name": "formal aviation single", "steps": 2, "projectJson": copy.deepcopy(project)},
+        )
         service = RunService(self.repository, self.adapter, self.api.output_dir)
 
         submitted = service.submit_run(
@@ -1231,42 +1241,120 @@ class BackendApiContractTest(unittest.TestCase):
                 "experiment_plan_id": plan["experiment_plan_id"],
                 "model_family": "aviation_support",
                 "run_type": "single",
+                "formal_run": True,
             }
         )
+        status = service.get_run_status(submitted["run_id"])
+
+        self.assertEqual(submitted["status"], "succeeded")
+        self.assertEqual(submitted["phase"], "completed")
+        self.assertEqual(submitted["progress"], 1)
+        self.assertEqual(submitted["model_family"], "aviation_support")
+        self.assertEqual(submitted["run_type"], "single")
+        self.assertEqual(submitted["modeling_snapshot_id"], snapshot["snapshot_id"])
         artifacts = self.api.get_run_artifacts(submitted["run_id"])
+        result = self.api.get_run_result(submitted["run_id"])
         chain = self.api.get_run_chain(submitted["run_id"])
-        scenario_rows = self.connection.execute(
-            "SELECT scenario_id FROM scenarios WHERE scenario_id LIKE 'uncompiled-%'"
-        ).fetchall()
+        kinds = {artifact["kind"] for artifact in artifacts["artifacts"]}
+        input_project_artifact = self._artifact_by_kind(artifacts, "input_project")
+        input_project_payload = json.loads(
+            (Path(self.api.output_dir) / input_project_artifact["path"]).read_text(encoding="utf-8")
+        )
+        state_series = self._artifact_by_kind(artifacts, "visualization_state_series")
+        state_payload = json.loads((Path(self.api.output_dir) / state_series["path"]).read_text(encoding="utf-8"))
+        serialized = json.dumps(
+            {"submitted": submitted, "status": status, "result": result, "artifacts": artifacts, "chain": chain},
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+        self.assertEqual(status["run_id"], submitted["run_id"])
+        self.assertEqual(status["model_family"], "aviation_support")
+        self.assertEqual(status["result_summary_id"], submitted["result_summary_id"])
+        self.assertEqual(status["artifact_manifest_id"], submitted["artifact_manifest_id"])
+        self.assertEqual(result["result_id"], submitted["result_summary_id"])
+        self.assertEqual(result["run_id"], submitted["run_id"])
+        self.assertEqual(result["model_family"], "aviation_support")
+        self.assertEqual(artifacts["artifact_manifest_id"], submitted["artifact_manifest_id"])
+        self.assertEqual(artifacts["run_id"], submitted["run_id"])
+        self.assertEqual(artifacts["scenario_id"], submitted["scenario_id"])
+        self.assertIn("result_summary", kinds)
+        self.assertIn("visualization_state_series", kinds)
+        self.assertTrue(any(kind.startswith("analysis_projection_") for kind in kinds))
+        self.assertEqual(input_project_payload, project)
+        self.assertEqual(chain["project_id"], saved["project_id"])
+        self.assertEqual(chain["modeling_snapshot_id"], snapshot["snapshot_id"])
+        self.assertEqual(chain["experiment_plan_id"], plan["experiment_plan_id"])
+        self.assertEqual(chain["scenario_id"], submitted["scenario_id"])
+        self.assertEqual(chain["run_id"], submitted["run_id"])
+        self.assertEqual(chain["result_summary_id"], submitted["result_summary_id"])
+        self.assertEqual(chain["artifact_manifest_id"], submitted["artifact_manifest_id"])
+        self.assertEqual(state_payload["run_id"], submitted["run_id"])
+        self.assertEqual(state_payload["scenario_id"], submitted["scenario_id"])
+        self.assertEqual(state_payload["model_family"], "aviation_support")
+        self.assertNotIn("unsupported_model_family", serialized)
+        self.assertNotIn("offline-demo-run", serialized)
+        self.assertEqual(len(self.adapter.compile_calls), 1)
+        self.assertEqual(self.adapter.compile_calls[0][1], "aviation_support")
+        self.assertEqual(len(self.adapter.run_calls), 1)
+        self.assertEqual(self.adapter.run_calls[0][0]["scenario_id"], submitted["scenario_id"])
+        self.assertEqual(self.adapter.run_calls[0][2], submitted["run_id"])
+
+    def test_run_service_keeps_aviation_support_monte_carlo_unsupported(self) -> None:
+        created = self._create_imported_sample_project()
+        project = created["project"]
+        saved = created["savedProject"]
+        plan = self.api.create_experiment_plan(
+            saved["project_id"],
+            {
+                "name": "aviation monte carlo remains unsupported",
+                "steps": 1,
+                "projectJson": copy.deepcopy(project),
+                "analysisRequests": {
+                    "largeSample": {
+                        "enabled": True,
+                        "samples": 2,
+                        "sweep": {
+                            "failureRates": [0.05],
+                            "spareMultipliers": [1.0],
+                            "supportCapacities": [2],
+                        },
+                    }
+                },
+            },
+        )
+        service = RunService(self.repository, self.adapter, self.api.output_dir)
+
+        submitted = service.submit_run(
+            {
+                "project_id": saved["project_id"],
+                "experiment_plan_id": plan["experiment_plan_id"],
+                "model_family": "aviation_support",
+                "run_type": "monte_carlo",
+                "formal_run": True,
+            }
+        )
 
         self.assertEqual(submitted["status"], "failed")
         self.assertEqual(submitted["phase"], "failed")
-        self.assertEqual(submitted["progress"], 0)
-        self.assertIsNone(submitted["scenario_id"])
+        self.assertEqual(submitted["model_family"], "aviation_support")
+        self.assertEqual(submitted["run_type"], "monte_carlo")
         self.assertEqual(submitted["error"]["code"], "unsupported_model_family")
-        self.assertIn("issues", submitted["error"]["details"])
-        self.assertIn("provenance", submitted["error"]["details"])
-        self.assertEqual(submitted["result_summary_id"], None)
-        self.assertIsNone(artifacts["scenario_id"])
-        self.assertEqual([artifact["kind"] for artifact in artifacts["artifacts"]], ["log"])
-        self.assertIsNone(chain.get("scenario_id"))
-        self.assertIsNone(chain.get("scenario_version"))
-        self.assertIsNone(chain.get("scenario_schema_version"))
-        self.assertEqual(chain["artifact_manifest_id"], submitted["artifact_manifest_id"])
-        self.assertEqual(scenario_rows, [])
-        self.assertEqual(self.adapter.run_calls, [])
+        self.assertEqual(len(self.adapter.compile_calls), 1)
+        self.assertEqual(self.adapter.compile_calls[0][1], "aviation_support")
+        self.assertEqual(len(self.adapter.monte_carlo_run_calls), 1)
+        self.assertEqual(self.adapter.monte_carlo_run_calls[0]["scenario"]["simulation_model"]["family"], "aviation_support")
 
     def test_run_service_failed_compile_run_has_downloadable_log_artifact(self) -> None:
         project = self._fixture("smoke_project.json")
         saved = self.api.save_project(project)
         self.api.create_modeling_snapshot(saved["project_id"])
-        plan = self.api.create_experiment_plan(saved["project_id"], {"name": "blocked aviation"})
+        plan = self.api.create_experiment_plan(saved["project_id"], {"name": "blocked unsupported family"})
 
         submitted = self.api.submit_run(
             {
                 "project_id": saved["project_id"],
                 "experiment_plan_id": plan["experiment_plan_id"],
-                "model_family": "aviation_support",
+                "model_family": "unsupported_family",
                 "run_type": "single",
             }
         )
@@ -1287,7 +1375,7 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(log_payload["events"][0]["event"], "compile_gate_failed")
         self.assertEqual(log_payload["events"][0]["error"]["code"], "unsupported_model_family")
         self.assertTrue(log_payload["events"][0]["issues"])
-        self.assertEqual(log_payload["events"][0]["provenance"]["model_family"], "aviation_support")
+        self.assertEqual(log_payload["events"][0]["provenance"]["model_family"], "unsupported_family")
 
     def test_backend_api_submit_run_uses_m6_status_envelope(self) -> None:
         project = self._fixture("smoke_project.json")
@@ -1332,11 +1420,15 @@ class BackendApiContractTest(unittest.TestCase):
 
         self.assertEqual(ctx.exception.code, "project_plan_mismatch")
 
-    def test_backend_api_submit_run_keeps_aviation_support_blocked(self) -> None:
-        project = self._fixture("aviation_support_project.json")
-        saved = self.api.save_project(project)
-        self.api.create_modeling_snapshot(saved["project_id"])
-        plan = self.api.create_experiment_plan(saved["project_id"], {"name": "aviation blocked", "steps": 1})
+    def test_backend_api_submit_run_executes_formal_aviation_support_single_run(self) -> None:
+        created = self._create_imported_sample_project()
+        project = created["project"]
+        saved = created["savedProject"]
+        snapshot = created["modelingSnapshot"]
+        plan = self.api.create_experiment_plan(
+            saved["project_id"],
+            {"name": "backend aviation formal", "steps": 2, "projectJson": copy.deepcopy(project)},
+        )
 
         submitted = self.api.submit_run(
             {
@@ -1344,13 +1436,51 @@ class BackendApiContractTest(unittest.TestCase):
                 "experiment_plan_id": plan["experiment_plan_id"],
                 "model_family": "aviation_support",
                 "run_type": "single",
+                "formal_run": True,
             }
         )
+        status = self.api.get_run_status(submitted["run_id"])
 
-        self.assertEqual(submitted["status"], "failed")
-        self.assertEqual(submitted["phase"], "failed")
-        self.assertEqual(submitted["error"]["code"], "unsupported_model_family")
-        self.assertEqual(submitted["error"]["details"]["provenance"]["model_family"], "aviation_support")
+        self.assertEqual(submitted["status"], "succeeded")
+        self.assertEqual(submitted["phase"], "completed")
+        self.assertEqual(submitted["model_family"], "aviation_support")
+        result = self.api.get_run_result(submitted["run_id"])
+        artifacts = self.api.get_run_artifacts(submitted["run_id"])
+        chain = self.api.get_run_chain(submitted["run_id"])
+        kinds = {artifact["kind"] for artifact in artifacts["artifacts"]}
+        self.assertEqual(status["model_family"], "aviation_support")
+        self.assertEqual(status["modeling_snapshot_id"], snapshot["snapshot_id"])
+        self.assertEqual(result["result_id"], submitted["result_summary_id"])
+        self.assertEqual(result["model_family"], "aviation_support")
+        self.assertEqual(artifacts["scenario_id"], submitted["scenario_id"])
+        self.assertIn("result_summary", kinds)
+        self.assertIn("visualization_state_series", kinds)
+        self.assertTrue(any(kind.startswith("analysis_projection_") for kind in kinds))
+        self.assertEqual(chain["scenario_id"], submitted["scenario_id"])
+        self.assertEqual(chain["result_summary_id"], submitted["result_summary_id"])
+        self.assertEqual(chain["artifact_manifest_id"], submitted["artifact_manifest_id"])
+
+    def test_backend_api_formal_run_still_rejects_non_imported_sample_project(self) -> None:
+        project = self._fixture("aviation_support_project.json")
+        saved = self.api.save_project(project)
+        self.api.create_modeling_snapshot(saved["project_id"])
+        plan = self.api.create_experiment_plan(saved["project_id"], {"name": "aviation formal gate", "steps": 1})
+
+        with self.assertRaises(BackendApiError) as ctx:
+            self.api.submit_run(
+                {
+                    "project_id": saved["project_id"],
+                    "experiment_plan_id": plan["experiment_plan_id"],
+                    "model_family": "aviation_support",
+                    "run_type": "single",
+                    "formal_run": True,
+                }
+            )
+
+        self.assertEqual(ctx.exception.code, "formal_run_requires_imported_sample")
+        self.assertEqual(ctx.exception.details["project_id"], saved["project_id"])
+        self.assertIsNone(ctx.exception.details["source_import_id"])
+        self.assertEqual(self.adapter.compile_calls, [])
         self.assertEqual(self.adapter.run_calls, [])
 
     def test_backend_api_start_simulation_run_delegates_to_m6_run_service(self) -> None:
@@ -1505,28 +1635,28 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(self.api.get_run_chain(first["run_id"])["run_id"], first["run_id"])
         self.assertEqual(self.api.get_run_chain(second["run_id"])["run_id"], second["run_id"])
 
-    def test_unsupported_aviation_support_path_is_explicit(self) -> None:
-        project = self._fixture("aviation_support_project.json")
-        self.api.save_project(project)
-        plan = self.api.create_experiment_plan(project["project_id"], {"steps": 1})
+    def test_aviation_support_start_simulation_run_delegates_to_formal_executor(self) -> None:
+        created = self._create_imported_sample_project()
+        project = created["project"]
+        saved = created["savedProject"]
+        plan = self.api.create_experiment_plan(
+            saved["project_id"],
+            {"name": "aviation start compat", "steps": 1, "projectJson": copy.deepcopy(project)},
+        )
 
         submitted = self.api.start_simulation_run(
-            project["project_id"],
+            saved["project_id"],
             plan["experiment_plan_id"],
             model_family="aviation_support",
         )
 
-        self.assertEqual(submitted["status"], "failed")
-        self.assertEqual(submitted["phase"], "failed")
-        self.assertEqual(submitted["error"]["code"], "unsupported_model_family")
-        self.assertIn("issues", submitted["error"]["details"])
-        self.assertEqual(
-            submitted["error"]["message"],
-            "aviation_support scenario compilation is blocked until governed field derivation rules are approved",
-        )
+        self.assertEqual(submitted["status"], "succeeded")
+        self.assertEqual(submitted["phase"], "completed")
+        self.assertEqual(submitted["model_family"], "aviation_support")
+        self.assertEqual(self.api.get_run_result(submitted["run_id"])["model_family"], "aviation_support")
         self.assertEqual(len(self.adapter.compile_calls), 1)
         self.assertEqual(self.adapter.compile_calls[0][1], "aviation_support")
-        self.assertEqual(self.adapter.run_calls, [])
+        self.assertEqual(len(self.adapter.run_calls), 1)
 
     def test_modeling_import_api_validates_saves_and_publishes_package_as_system(self) -> None:
         import_package = self._fixture("modeling_import_project.json")
@@ -1827,27 +1957,24 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(len(self.adapter.compile_calls), 1)
         self.assertEqual(self.adapter.compile_calls[0][1], "smoke")
 
-    def test_compile_modeling_import_scenario_preserves_aviation_support_error_mapping(self) -> None:
+    def test_compile_modeling_import_scenario_supports_aviation_support_mapping(self) -> None:
         import_package = self._fixture("modeling_import_project.json")
         self.api.save_modeling_import_as_system(import_package)
         self.api.publish_modeling_import_as_system(import_package["importId"])
 
-        with self.assertRaises(BackendApiError) as ctx:
-            self.api.compile_modeling_import_scenario(
+        try:
+            compiled = self.api.compile_modeling_import_scenario(
                 import_package["importId"],
                 model_family="aviation_support",
             )
+        except BackendApiError as exc:
+            self.fail(f"aviation_support modeling import compilation should succeed, got {exc.code}: {exc}")
 
-        self.assertEqual(ctx.exception.code, "unsupported_model_family")
-        self.assertEqual(
-            str(ctx.exception),
-            "aviation_support scenario compilation is blocked until governed field derivation rules are approved",
-        )
-        self.assertEqual(ctx.exception.details["provenance"]["model_family"], "aviation_support")
-        self.assertEqual(
-            ctx.exception.details["issues"][0]["field_path"],
-            "missionProfile.durationHours",
-        )
+        self.assertEqual(compiled["compiled_from_import"]["import_id"], import_package["importId"])
+        self.assertEqual(compiled["project"]["project_id"], import_package["projectId"])
+        self.assertEqual(compiled["scenario"]["project_id"], import_package["projectId"])
+        self.assertEqual(compiled["scenario"]["simulation_model"]["family"], "aviation_support")
+        self.assertEqual(compiled["scenario"]["compiled_by"], "Simulation Adapter Agent")
         self.assertEqual(len(self.adapter.compile_calls), 1)
         self.assertEqual(self.adapter.compile_calls[0][1], "aviation_support")
 
