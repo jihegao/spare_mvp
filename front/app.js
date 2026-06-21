@@ -319,6 +319,7 @@ let selectedCompositeTaskId = "";
 let selectedCombatUnitMemberIndex = 0;
 let selectedSupportOrgNodeId = "";
 let selectedSupportActivityJobKeys = new Set();
+let selectedOperationsSupportActivityKey = "";
 let selectedSupportResourceKeys = new Set();
 let deletedSupportResourceKeys = new Set();
 let selectedBasicActivityKeys = new Set();
@@ -393,6 +394,7 @@ function supportActivityPlanForPage(page, activity) {
       planNodesByModel.get(model).push({
         id: `operations-plan:${model}:${option.value}`,
         name: option.label,
+        editablePlanKey: option.key,
         children: phaseNames.map((phaseName) => ({
           id: `operations-plan:${model}:${option.value}:${phaseName}`,
           name: phaseName
@@ -689,6 +691,21 @@ function bindEvents() {
       const index = Number(logisticsDeleteButton.dataset.logisticsTransportDelete);
       activity.transportStrategies = (Array.isArray(activity.transportStrategies) ? activity.transportStrategies : []).filter((_, rowIndex) => rowIndex !== index);
       markProjectDraftChanged();
+      render();
+      return;
+    }
+
+    const supportActivityPlanDeleteButton = event.target.closest("[data-support-activity-plan-delete]");
+    if (supportActivityPlanDeleteButton) {
+      deleteOperationsSupportActivityPlan(supportActivityPlanDeleteButton.dataset.supportActivityPlanDelete);
+      markProjectDraftChanged();
+      render();
+      return;
+    }
+
+    const supportActivityPlanEditButton = event.target.closest("[data-support-activity-plan-edit]");
+    if (supportActivityPlanEditButton) {
+      selectOperationsSupportActivityPlan(supportActivityPlanEditButton.dataset.supportActivityPlanEdit);
       render();
       return;
     }
@@ -1796,13 +1813,19 @@ function renderCollapsibleTreeNode(node, options = {}) {
   const actionAttrs = node.actionAttrs ? ` ${node.actionAttrs}` : "";
   const buttonToggleAttrs = hasChildren && !node.actionAttrs ? `data-tree-toggle="${htmlEscape(nodeId)}"` : "";
   const iconToggleAttrs = hasChildren && node.actionAttrs ? ` data-tree-toggle="${htmlEscape(nodeId)}"` : "";
+  const actions = Array.isArray(node.actions) ? node.actions : [];
   return `
     <div class="tree-node-item ${isCollapsed ? "collapsed" : ""}" data-tree-node="${htmlEscape(nodeId)}">
-      <button type="button" class="${labelClass}" ${buttonToggleAttrs}${actionAttrs} aria-expanded="${hasChildren ? String(!isCollapsed) : "false"}">
-        <span class="tree-node-toggle"${iconToggleAttrs}>${hasChildren ? (isCollapsed ? "▶" : "▼") : "•"}</span>
-        <span class="tree-node-text">${htmlEscape(node.label)}</span>
-        ${node.meta ? `<span class="tree-node-meta">${htmlEscape(node.meta)}</span>` : ""}
-      </button>
+      <div class="tree-node-row">
+        <button type="button" class="${labelClass}" ${buttonToggleAttrs}${actionAttrs} aria-expanded="${hasChildren ? String(!isCollapsed) : "false"}">
+          <span class="tree-node-toggle"${iconToggleAttrs}>${hasChildren ? (isCollapsed ? "▶" : "▼") : "•"}</span>
+          <span class="tree-node-text">${htmlEscape(node.label)}</span>
+          ${node.meta ? `<span class="tree-node-meta">${htmlEscape(node.meta)}</span>` : ""}
+        </button>
+        ${actions.length ? `<span class="tree-node-actions">${actions.map((action) => `
+          <button type="button" class="${htmlEscape(action.className || "inline-action")}" ${action.attrs || ""}>${htmlEscape(action.label)}</button>
+        `).join("")}</span>` : ""}
+      </div>
       ${hasChildren ? `<div class="tree-node-children">${children.map((child) => renderCollapsibleTreeNode(child, options)).join("")}</div>` : ""}
     </div>
   `;
@@ -3675,8 +3698,8 @@ function findSupportActivityForPage(page) {
     return activities.find((activity) => activity.activityType === "修复性维修") || null;
   }
   if (page.name.includes("使用")) {
-    return activities.find((activity) => activity.planType === "直接准备方案")
-      || activities.find((activity) => activity.activityType === "飞行前保障")
+    return selectedOperationsSupportActivity()
+      || operationsSupportActivityEntries()[0]?.activity
       || null;
   }
   return activities[0] || null;
@@ -3690,16 +3713,43 @@ function supportActivityAircraftModel(activity) {
   return component?.aircraftModel || scenario.equipment.model || "";
 }
 
-function operationsSupportActivityOptions(aircraftModel = "") {
+function operationsSupportActivityEntries(aircraftModel = "") {
   const targetModel = String(aircraftModel || "").trim();
   return (scenario.supportActivities || [])
-    .filter((activity) => activity.planType === "直接准备方案" || activity.activityType === "飞行前保障" || activity.activityType === "使用保障")
-    .filter((activity) => !targetModel || supportActivityAircraftModel(activity) === targetModel)
-    .map((activity) => ({
+    .map((activity, index) => ({ activity, index, key: `supportActivity:${index}` }))
+    .filter(({ activity }) => activity.planType === "直接准备方案" || activity.activityType === "飞行前保障" || activity.activityType === "使用保障")
+    .filter(({ activity }) => !targetModel || supportActivityAircraftModel(activity) === targetModel)
+    .map(({ activity, index, key }) => ({
+      activity,
+      index,
+      key,
       value: activity.activityName || activity.name || activity.id || "未命名使用保障方案",
       label: activity.activityName || activity.name || activity.id || "未命名使用保障方案",
       aircraftModel: supportActivityAircraftModel(activity)
     }));
+}
+
+function operationsSupportActivityOptions(aircraftModel = "") {
+  return operationsSupportActivityEntries(aircraftModel);
+}
+
+function selectedOperationsSupportActivity() {
+  return operationsSupportActivityEntries().find((entry) => entry.key === selectedOperationsSupportActivityKey)?.activity || null;
+}
+
+function selectOperationsSupportActivityPlan(key) {
+  if (!operationsSupportActivityEntries().some((entry) => entry.key === key)) return;
+  selectedOperationsSupportActivityKey = key;
+  selectedSupportActivityJobKeys = new Set();
+}
+
+function deleteOperationsSupportActivityPlan(key) {
+  const entry = operationsSupportActivityEntries().find((item) => item.key === key);
+  if (!entry) return;
+  scenario.supportActivities = (scenario.supportActivities || []).filter((_, index) => index !== entry.index);
+  selectedOperationsSupportActivityKey = "";
+  selectedSupportActivityJobKeys = new Set();
+  updatePreviewResultsThroughApiClient();
 }
 
 function supportActivityJobKey(tabKey, index) {
@@ -3708,9 +3758,8 @@ function supportActivityJobKey(tabKey, index) {
 
 function findSupportActivityByJobTabKey(tabKey) {
   if (tabKey === "ops_plan") {
-    return (scenario.supportActivities || []).find((activity) => activity.planType === "直接准备方案")
-      || (scenario.supportActivities || []).find((activity) => activity.activityType === "飞行前保障")
-      || scenario.supportActivities?.[0]
+    return selectedOperationsSupportActivity()
+      || operationsSupportActivityEntries()[0]?.activity
       || null;
   }
   if (tabKey === "prev_repair") {
@@ -4048,6 +4097,7 @@ function toggleAllBasicActivitySelection(checked) {
 }
 
 function renderOperationsSupportActivity(activePlan, activity) {
+  const activityIndex = Math.max(0, (scenario.supportActivities || []).indexOf(activity));
   return `
     <div class="detail-card activity-editor-card">
       <div class="section-head">
@@ -4055,6 +4105,7 @@ function renderOperationsSupportActivity(activePlan, activity) {
         <span>${activePlan.path.map((item) => htmlEscape(item)).join(" / ")}</span>
       </div>
       <div class="form-table-grid">
+        ${field("方案名称", `supportActivities.${activityIndex}.activityName`)}
         <label>最大工作时间参考(min)<input type="number" value="${Number(activity.maxWorkTimeRefMinutes || activity.durationHours * 60 || 0)}" readonly></label>
       </div>
       ${renderSupportActivityJobTable(activity, "ops_plan")}
@@ -4293,8 +4344,18 @@ function supportActivityTreeNode(node, selectedName) {
     id: `support-activity:${node.id || node.name}`,
     label: node.name,
     selected: node.name === selectedName,
+    actions: operationSupportActivityTreeActions(node),
     children: (node.children || []).map((child) => supportActivityTreeNode(child, selectedName))
   };
+}
+
+function operationSupportActivityTreeActions(node) {
+  if (!node?.editablePlanKey) return [];
+  const key = htmlEscape(node.editablePlanKey);
+  return [
+    { label: "编辑", attrs: `data-support-activity-plan-edit="${key}"` },
+    { label: "删除", className: "btn-danger", attrs: `data-support-activity-plan-delete="${key}"` }
+  ];
 }
 
 function renderExperimentPlanList(page) {
@@ -5855,7 +5916,6 @@ function renderVisualSimulation(page) {
       <div class="mesa-toolbar">
         <input type="range" min="0" max="${timelineMax}" value="${Math.min(visualizationReplayIndex, timelineMax)}" data-mesa-timeline ${visualizationStateSeriesFrame && !isOnlineStreamFrame ? "" : "disabled"} aria-label="M9 state_series 时间轴">
       </div>
-      ${renderVisualizationEventStream(eventStream, visualizationReplayIndex)}
       <div class="kpi-strip">
         ${state.kpis.map((item) => `<div class="kpi-card"><span>${item.label}</span><strong>${item.value}</strong></div>`).join("")}
       </div>
@@ -5867,6 +5927,7 @@ function renderVisualSimulation(page) {
           ${renderMesaSidePanel(activeView, state)}
         </aside>
       </div>
+      ${renderVisualizationEventStream(eventStream, visualizationReplayIndex)}
     </div>
   `;
 }

@@ -782,6 +782,9 @@ test("support activity pages align to page suggestion activity fields", async ()
   assert.match(supportActivitySource, /function selectSupportActivityJobForEdit/);
   assert.match(supportActivitySource, /function deleteSelectedSupportActivityJobs/);
   assert.match(supportActivitySource, /function deleteSupportActivityJob/);
+  assert.match(supportActivitySource, /operationSupportActivityTreeActions/);
+  assert.match(supportActivitySource, /data-support-activity-plan-edit/);
+  assert.match(supportActivitySource, /data-support-activity-plan-delete/);
   const basicActivityLibrarySource = supportActivitySource.slice(
     supportActivitySource.indexOf("function renderBasicActivityLibrary"),
     supportActivitySource.indexOf("function renderOperationsSupportActivity")
@@ -1346,6 +1349,10 @@ test("support activity controls are wired through local draft fields", async () 
   assert.match(jobTableSource, /data-support-activity-job-add="\$\{htmlEscape\(tabKey\)\}"/);
   assert.match(jobTableSource, /data-support-activity-job-batch-delete="\$\{htmlEscape\(tabKey\)\}"/);
   assert.match(appSource, /data-support-activity-predecessors/);
+  assert.match(appSource, /const supportActivityPlanEditButton = event\.target\.closest\("\[data-support-activity-plan-edit\]"\)/);
+  assert.match(appSource, /const supportActivityPlanDeleteButton = event\.target\.closest\("\[data-support-activity-plan-delete\]"\)/);
+  assert.match(appSource, /function selectOperationsSupportActivityPlan/);
+  assert.match(appSource, /function deleteOperationsSupportActivityPlan/);
 
   const operationsSource = appSource.slice(
     appSource.indexOf("function renderOperationsSupportActivity"),
@@ -2046,6 +2053,7 @@ test("click-based modeling mutations mark project draft dirty before rendering",
     ["combat unit delete", 'const combatUnitDeleteButton = event.target.closest("[data-combat-unit-delete]"'],
     ["logistics transport add", 'const logisticsAddButton = event.target.closest("[data-logistics-transport-add]"'],
     ["logistics transport delete", 'const logisticsDeleteButton = event.target.closest("[data-logistics-transport-delete]"'],
+    ["support activity plan delete", 'const supportActivityPlanDeleteButton = event.target.closest("[data-support-activity-plan-delete]"'],
     ["support activity job delete", 'const supportActivityJobDeleteButton = event.target.closest("[data-support-activity-job-delete]"'],
     ["support activity job batch delete", 'const supportActivityBatchDeleteButton = event.target.closest("[data-support-activity-job-batch-delete]"'],
     ["periodic task add", 'const periodicAddButton = event.target.closest("[data-periodic-add]"'],
@@ -2347,6 +2355,20 @@ test("M9 visual simulation replays canonical state-series artifacts without back
   assert.match(eventHandlerSource, /stopVisualizationReplay\(\)/);
   assert.match(eventHandlerSource, /visualizationReplayIndex = Number\(mesaEventJumpButton\.dataset\.mesaEventJump\)/);
   assert.doesNotMatch(controlSource, /loadAviationSupportState\(\)/);
+});
+
+test("visual simulation places event trace at the bottom of the page", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const visualSource = appSource.slice(
+    appSource.indexOf("function renderVisualSimulation"),
+    appSource.indexOf("function renderVisualizationRunOptions")
+  );
+
+  const gridIndex = visualSource.indexOf('class="mesa-visual-grid"');
+  const eventTraceIndex = visualSource.indexOf("renderVisualizationEventStream(eventStream, visualizationReplayIndex)");
+  assert.ok(gridIndex > -1, "visual simulation grid should render");
+  assert.ok(eventTraceIndex > -1, "event trace should render");
+  assert.ok(eventTraceIndex > gridIndex, "event trace should render after the main visualization content");
 });
 
 test("M9.2 visual simulation subscribes to run state stream and keeps unsupported controls explicit", async () => {
