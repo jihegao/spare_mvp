@@ -121,8 +121,9 @@ def create_backend_server(
             if not path.startswith("/api"):
                 raise KeyError(path)
             route = path[4:] or "/"
+            decoded_route = unquote(route)
             parts = [unquote(part) for part in route.split("/") if part]
-            if parts and parts[0] == "simulation-runs":
+            if decoded_route == "/simulation-runs" or decoded_route.startswith("/simulation-runs/"):
                 raise RetiredRouteError("/api/simulation-runs", "/api/runs")
             body = self._read_json()
 

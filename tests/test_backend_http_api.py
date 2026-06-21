@@ -156,6 +156,7 @@ class BackendHttpApiTest(unittest.TestCase):
                     ("GET", "/simulation-runs/run-retired/result", None),
                     ("GET", "/simulation-runs/run-retired/artifacts", None),
                     ("GET", "/simulation-runs/run-retired/chain", None),
+                    ("GET", "/simulation-runs%2Frun-retired", None),
                 ]
 
                 for method, path, payload in cases:
