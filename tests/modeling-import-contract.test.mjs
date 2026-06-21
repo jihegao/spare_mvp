@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
@@ -11,6 +12,37 @@ import { validateSchema } from "./schema-test-utils.mjs";
 async function readJson(relativePath) {
   return JSON.parse(await readFile(new URL(`../${relativePath}`, import.meta.url), "utf8"));
 }
+
+function canonicalImportFixture() {
+  return JSON.parse(readFileSync(new URL("./fixtures/modeling_import_project.json", import.meta.url), "utf8"));
+}
+
+test("canonical modeling import fixture covers all project authoring surfaces", () => {
+  const fixture = canonicalImportFixture();
+  const objects = fixture.objects;
+  const mission = objects.missionProfiles[0];
+
+  assert.equal(fixture.schemaVersion, "modeling-import-v1");
+  assert.ok(fixture.importId);
+  assert.ok(fixture.projectId);
+  assert.ok(objects.projectInfo || mission.experiment);
+  assert.ok(Array.isArray(objects.equipmentAssets) && objects.equipmentAssets.length >= 1);
+  assert.ok(objects.equipmentAssets.some((asset) => asset.rms && asset.failureDistribution && asset.specialRepairProfile));
+  assert.ok(mission.basicMission);
+  assert.ok(Array.isArray(mission.compositeTasks));
+  assert.ok(Array.isArray(mission.periodicTasks));
+  assert.ok(mission.combatUnit);
+  assert.ok(Array.isArray(objects.supportResources));
+  assert.ok(objects.supportResources.some((resource) => resource.inventory && resource.transportPolicies));
+  assert.ok(Array.isArray(objects.supportActivities));
+  assert.ok(objects.supportActivities.some((activity) => activity.activityType === "修复性维修"));
+  assert.ok(objects.supportActivities.some((activity) => activity.activityType === "预防性维修"));
+  assert.ok(objects.supportActivities.some((activity) => activity.activityType === "后勤保障"));
+  assert.ok(mission.reliabilityBlockDiagram?.nodes?.length >= 1);
+  assert.ok(mission.reliabilityBlockDiagram?.edges?.length >= 1);
+  assert.ok(mission.monteCarlo?.failureRates?.length >= 1);
+  assert.ok(mission.analysisRequests?.largeSample || objects.analysisRequests?.largeSample);
+});
 
 test("modeling import schema and fixture define the M5 first-slice package", async () => {
   const manifest = await readJson("contracts/README.md.json");

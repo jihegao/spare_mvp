@@ -170,6 +170,31 @@ test("modeling pages expose project draft persistence without replacing experime
   assert.match(appSource, /data-save-plan/);
 });
 
+test("frontend business authoring pages do not hydrate missing imported data from static constants", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const sourceSlice = (startMarker, endMarker) => {
+    const start = appSource.indexOf(startMarker);
+    const end = appSource.indexOf(endMarker);
+    assert.notEqual(start, -1, `${startMarker} marker exists`);
+    assert.notEqual(end, -1, `${endMarker} marker exists`);
+    assert.ok(end > start, `${startMarker} appears before ${endMarker}`);
+    return appSource.slice(start, end);
+  };
+  const staticSeedSource = sourceSlice("const PROJECT_SOURCE", "let scenario =");
+  const renderSlices = [
+    sourceSlice("function renderEquipmentModeling", "function renderEquipmentFailureRmsFields"),
+    sourceSlice("function renderBasicMissionModeling", "function renderMissionPhaseSystemCoefficients"),
+    sourceSlice("function renderSupportOrganizationWorkbench", "function renderOrgTreeNode"),
+    sourceSlice("function renderSupportActivityWorkbench", "function renderSupportActivityTreeNode"),
+    sourceSlice("function renderExperimentPlanList", "function renderExperimentPlanEditor"),
+    sourceSlice("function renderMonteCarloExperimentList", "function renderMonteCarloExperimentEditor")
+  ].join("\n");
+
+  assert.doesNotMatch(staticSeedSource, /const SUPPORT_ORG_TREE|const SUPPORT_ACTIVITY_PLANS|const MISSION_|const SUPPORT_/);
+  assert.match(renderSlices, /导入|创建|暂无|空/);
+  assert.doesNotMatch(renderSlices, /SUPPORT_ORG_TREE|SUPPORT_ACTIVITY_PLANS|CARRY_OBJECTIVES/);
+});
+
 test("equipment task modeling omits built-in scenario and task profile parameter pages", async () => {
   assert.equal(FEATURE_PAGES.some((page) => page.secondary === "仿真建模" && page.name === "内置场景"), false);
   assert.equal(FEATURE_PAGES.some((page) => page.secondary === "仿真建模" && page.name === "任务剖面参数"), false);
