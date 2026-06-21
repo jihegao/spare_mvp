@@ -1,4 +1,4 @@
-# Imported JSON Single Source And Static Business Data Exit Implementation Plan
+# Imported JSON Single Source And Static Business Data Exit Implementation Record
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -27,10 +27,20 @@ Subagent 分阶段安排：
 | 1 | `tests/`, fixture loading contracts | 缺数据空态和完整 JSON 显示契约是否覆盖真实风险 | `test: lock imported json data-source boundary` |
 | 2 | `front/modeling-import-demo-fixture.mjs`, `tests/fixtures/modeling_import_project.json`, import fixture tests | 是否消除双业务样例源，不引入运行时文件读取 | `refactor: derive demo import fixture from canonical json` |
 | 3 | `front/app.js`, focused frontend helpers/tests | 页面是否停止静态业务 fallback，正式 run gate 是否保持不变 | `feat: demote static frontend business data to empty states` |
-| 4 | `src/spare_mvp_backend/modeling_import.py`, backend tests | JSON 字段是否完整进入 Project draft，缺字段是否显式为空 | `feat: map imported json into complete project draft` |
-| 5 | `README.md`, `docs/README.md`, `docs/product-roadmap.md`, `agent.md` | 文档是否说清 M6.2.x 边界，未声称 M8/M9 已完成 | `docs: document imported json single-source boundary` |
+| 4 | `src/spare_mvp_backend/modeling_import.py`, backend tests | JSON 字段是否完整进入 Project draft，缺字段是否显式为空 | `feat: preserve imported json authoring roots` |
+| 5 | `README.md`, `docs/README.md`, `docs/product-roadmap.md`, `agent.md` | 文档是否说清 M6.2.x 边界，未声称 M8/M9 已完成 | `docs: document imported json single-source completion` |
 
 Do not implement worker queues, cancellation/retry, object storage, M8 projection payload rendering, M9 state replay/streaming, full Excel parser, new auth scope, or `aviation_support` formal execution in this plan.
+
+Execution status as of 2026-06-21:
+
+| Task | Status | Evidence |
+| --- | --- | --- |
+| 1 | Done | `7135e833` added failing source-boundary tests for canonical import data and empty frontend shells. |
+| 2 | Done | `a3130e2b` aligned `front/modeling-import-demo-fixture.mjs` with `tests/fixtures/modeling_import_project.json` and added drift coverage. |
+| 3 | Done | `4cdc6028` removed/demoted frontend static business fallback and made `defaultScenario` a schema-valid empty preview shell. |
+| 4 | Done | `fe449ff4` preserves `projectInfo`, `supportOrganization`, `analysisRequests`, and explicit empty authoring roots in backend-created Project JSON. |
+| 5 | Done | Task 5 documentation completion commit: `docs: document imported json single-source completion`. |
 
 ---
 
@@ -491,37 +501,39 @@ git commit -m "feat: map imported json into complete project draft"
 
 ## Task 5: Align Roadmap And Active Docs
 
+Status: Completed by `docs: document imported json single-source completion`. The checklist below is the original work order; active docs now describe this slice as closed for input-source governance while preserving M8 projection payload and M9 state stream as future scope.
+
 **Files:**
 - Modify: `README.md`
 - Modify: `docs/README.md`
 - Modify: `docs/product-roadmap.md`
 - Modify: `agent.md`
 
-- [ ] **Step 1: Add the new plan to doc indexes**
+- [x] **Step 1: Add the new plan to doc indexes**
 
 Add a link to this file in `README.md` and `docs/README.md` next to the M6.2 RunIntent/MC convergence plan:
 
 ```md
-- [`docs/superpowers/plans/2026-06-21-imported-json-single-source-static-data-exit.md`](docs/superpowers/plans/2026-06-21-imported-json-single-source-static-data-exit.md)：M6.2.x 前台静态业务数据退场、可导入 Project JSON 单一示例源和空态契约实施计划。
+- [`docs/superpowers/plans/2026-06-21-imported-json-single-source-static-data-exit.md`](docs/superpowers/plans/2026-06-21-imported-json-single-source-static-data-exit.md)：M6.2.x 前台静态业务数据退场、可导入 Project JSON 单一示例源和空态契约实施记录。
 ```
 
-- [ ] **Step 2: Update roadmap with M6.2.x boundary**
+- [x] **Step 2: Update roadmap with M6.2.x boundary**
 
 In `docs/product-roadmap.md`, add after the M6.2 follow-on paragraph:
 
 ```md
-M6.2.x 当前推进：在进入 M7 运行/产物管理前，先把前台建模和正式 run 功能测试的业务样例源收敛到 `tests/fixtures/modeling_import_project.json`。页面缺少 imported JSON 数据时必须显示空态或创建入口，不能由前端静态常量偷偷补出任务、装备、保障组织、保障活动或 Monte Carlo 配置；完整 JSON 导入后页面应显示 JSON 中的数据并可创建 imported sample Project。该切片只治理建模/运行输入源，不实现 M8 projection payload 驱动 KPI，也不实现 M9 state stream。
+M6.2.x 当前收束：`docs/superpowers/plans/2026-06-21-imported-json-single-source-static-data-exit.md` 记录前台静态业务数据退场实施。前台建模和正式 run 功能测试的业务样例源已收敛到 `tests/fixtures/modeling_import_project.json`：页面缺少 imported JSON 数据时显示空态或创建入口，不再由前端静态常量偷偷补出任务、装备、保障组织、保障活动或 Monte Carlo 配置；完整 JSON 导入后可通过 published modeling import 生成 imported sample Project。后端 `modeling_import_to_project()` 已保留 `projectInfo`、`supportOrganization`、`analysisRequests` 和显式空集合，后续按页面逐批补齐 JSON 字段和转换映射。该切片只治理建模/运行输入源，不实现 M8 projection payload 驱动 KPI，也不实现 M9 state stream。
 ```
 
-- [ ] **Step 3: Update `agent.md` operating rules**
+- [x] **Step 3: Update `agent.md` operating rules**
 
 Add:
 
 ```md
-14. M6.2.x 输入源治理期间，`tests/fixtures/modeling_import_project.json` 是唯一完整业务示例源。前端页面缺少 imported JSON 数据时必须显示空态或创建入口，不得从 `defaultScenario`、`SUPPORT_*`、`MISSION_*` 或 preview fixture 静默补业务样例；preview fixture 只能用于显式本地预览和测试 fallback。
+21. M6.2.x 输入源治理已收束：`tests/fixtures/modeling_import_project.json` 是唯一完整业务示例源。前端页面缺少 imported JSON 数据时必须显示空态或创建入口，不得从 `defaultScenario`、`SUPPORT_*`、`MISSION_*` 或 preview fixture 静默补业务样例；preview fixture 只能用于显式本地预览和测试 fallback。该规则不表示 M8 projection payload 驱动 KPI 或 M9 state stream 已完成。
 ```
 
-- [ ] **Step 4: Run stale-language scan**
+- [x] **Step 4: Run stale-language scan**
 
 Run:
 
@@ -531,11 +543,11 @@ rg -n "静态数据已经全部删除|defaultScenario.*正式|runSimulation.*正
 
 Expected: no matches that claim static analysis cards, M8, or M9 are already fully removed or complete.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add README.md docs/README.md docs/product-roadmap.md agent.md docs/superpowers/plans/2026-06-21-imported-json-single-source-static-data-exit.md
-git commit -m "docs: document imported json single-source boundary"
+git commit -m "docs: document imported json single-source completion"
 ```
 
 ---
