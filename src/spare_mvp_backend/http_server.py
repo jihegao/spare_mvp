@@ -223,10 +223,10 @@ def create_backend_server(
             if self.command == "GET" and len(parts) == 3 and parts[0] == "runs" and parts[2] == "chain":
                 return api.get_run_chain(parts[1])
             if self.command == "POST" and len(parts) == 3 and parts[0] == "runs" and parts[2] == "archive":
-                actor = self._require_user()
+                actor = self._require_user({"系统管理员", "数据管理员"})
                 return api.archive_run(parts[1], actor_user_id=actor["user_id"])
             if self.command == "DELETE" and len(parts) == 2 and parts[0] == "runs":
-                actor = self._require_user()
+                actor = self._require_user({"系统管理员", "数据管理员"})
                 return api.soft_delete_run(parts[1], actor_user_id=actor["user_id"])
 
             raise KeyError(route)

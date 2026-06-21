@@ -269,7 +269,7 @@ class BackendApiContractTest(unittest.TestCase):
 
     def test_backend_api_lists_runs_with_strict_include_deleted_flag_and_limit_clamp(self) -> None:
         runs = [self._submit_successful_smoke_run() for _ in range(3)]
-        self.api.soft_delete_run(runs[0]["run_id"])
+        self.api.soft_delete_run(runs[0]["run_id"], actor_user_id="system")
 
         hidden = self.api.list_runs({"include_deleted": "0", "limit": "500"})
         visible = self.api.list_runs({"include_deleted": "1", "limit": "500"})
@@ -306,6 +306,27 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual([event["action"] for event in audit], ["runs.artifact.download"])
         self.assertEqual(audit[0]["actor_user_id"], "user-admin")
 
+    def test_backend_api_requires_explicit_actor_for_m7_lifecycle_and_download(self) -> None:
+        run = self._submit_successful_smoke_run()
+        manifest = self.api.get_run_artifacts(run["run_id"])
+        artifact = manifest["artifacts"][0]
+        cases = [
+            ("archive", lambda: self.api.archive_run(run["run_id"])),
+            ("delete", lambda: self.api.soft_delete_run(run["run_id"])),
+            ("download", lambda: self.api.get_run_artifact_download(run["run_id"], artifact["artifact_id"])),
+        ]
+
+        for label, call in cases:
+            with self.subTest(label):
+                with self.assertRaises(BackendApiError) as ctx:
+                    call()
+
+                self.assertEqual(ctx.exception.code, "missing_actor")
+
+        stored = self.api.get_run(run["run_id"])
+        self.assertEqual(stored["lifecycle_status"], "active")
+        self.assertEqual(self.repository.list_audit_events(resource_id=run["run_id"]), [])
+
     def test_backend_api_lifecycle_audit_failure_rolls_back_state(self) -> None:
         cases = [
             ("archive", lambda run_id: self.api.archive_run(run_id, actor_user_id="missing-user")),
@@ -329,7 +350,11 @@ class BackendApiContractTest(unittest.TestCase):
         self.repository.upsert_artifact_manifest(manifest)
 
         with self.assertRaises(BackendApiError) as ctx:
-            self.api.get_run_artifact_download(run["run_id"], manifest["artifacts"][0]["artifact_id"])
+            self.api.get_run_artifact_download(
+                run["run_id"],
+                manifest["artifacts"][0]["artifact_id"],
+                actor_user_id="system",
+            )
 
         self.assertEqual(ctx.exception.code, "artifact_path_escape")
         self.assertEqual(self.repository.list_audit_events(resource_id=run["run_id"]), [])
@@ -342,7 +367,7 @@ class BackendApiContractTest(unittest.TestCase):
         target.write_text('{"tampered": true}\n', encoding="utf-8")
 
         with self.assertRaises(BackendApiError) as ctx:
-            self.api.get_run_artifact_download(run["run_id"], artifact["artifact_id"])
+            self.api.get_run_artifact_download(run["run_id"], artifact["artifact_id"], actor_user_id="system")
 
         self.assertEqual(ctx.exception.code, "artifact_hash_mismatch")
         self.assertEqual(self.repository.list_audit_events(resource_id=run["run_id"]), [])
@@ -355,7 +380,7 @@ class BackendApiContractTest(unittest.TestCase):
         target.unlink()
 
         with self.assertRaises(BackendApiError) as ctx:
-            self.api.get_run_artifact_download(run["run_id"], artifact["artifact_id"])
+            self.api.get_run_artifact_download(run["run_id"], artifact["artifact_id"], actor_user_id="system")
 
         self.assertEqual(ctx.exception.code, "artifact_missing")
         self.assertEqual(self.repository.list_audit_events(resource_id=run["run_id"]), [])
@@ -364,10 +389,10 @@ class BackendApiContractTest(unittest.TestCase):
         run = self._submit_successful_smoke_run()
         manifest = self.api.get_run_artifacts(run["run_id"])
         artifact = manifest["artifacts"][0]
-        self.api.soft_delete_run(run["run_id"])
+        self.api.soft_delete_run(run["run_id"], actor_user_id="system")
 
         with self.assertRaises(BackendApiError) as ctx:
-            self.api.get_run_artifact_download(run["run_id"], artifact["artifact_id"])
+            self.api.get_run_artifact_download(run["run_id"], artifact["artifact_id"], actor_user_id="system")
 
         self.assertEqual(ctx.exception.code, "run_deleted")
 

@@ -176,6 +176,7 @@ class BackendHttpApiTest(unittest.TestCase):
                 submitted = self._submit_m7_http_run(base_url)
                 run_id = submitted["run"]["run_id"]
                 admin_token = self._login_token(base_url, "admin", "admin")
+                user_token = self._login_token(base_url, "user", "user")
 
                 listed = self._json(base_url, "GET", "/runs")
                 self.assertIn(run_id, [item["run_id"] for item in listed["runs"]])
@@ -197,6 +198,32 @@ class BackendHttpApiTest(unittest.TestCase):
                 unauth_delete = self._json_error(base_url, "DELETE", f"/runs/{quote(run_id, safe='')}")
                 self.assertEqual(unauth_archive["code"], "unauthorized")
                 self.assertEqual(unauth_delete["code"], "unauthorized")
+
+                forbidden_archive_status, forbidden_archive = self._json_error_with_status(
+                    base_url,
+                    "POST",
+                    f"/runs/{quote(run_id, safe='')}/archive",
+                    auth_token=user_token,
+                )
+                forbidden_delete_status, forbidden_delete = self._json_error_with_status(
+                    base_url,
+                    "DELETE",
+                    f"/runs/{quote(run_id, safe='')}",
+                    auth_token=user_token,
+                )
+                still_active = self._json(base_url, "GET", f"/runs/{quote(run_id, safe='')}/detail")
+                audit_after_forbidden = self._json(
+                    base_url,
+                    "GET",
+                    f"/audit-events?resource_id={quote(run_id, safe='')}",
+                    auth_token=admin_token,
+                )
+                self.assertEqual(forbidden_archive_status, 403)
+                self.assertEqual(forbidden_archive["code"], "forbidden")
+                self.assertEqual(forbidden_delete_status, 403)
+                self.assertEqual(forbidden_delete["code"], "forbidden")
+                self.assertEqual(still_active["run"]["lifecycle_status"], "active")
+                self.assertFalse(any(event["outcome"] == "allowed" for event in audit_after_forbidden["events"]))
 
                 archive = self._json(
                     base_url,
@@ -263,6 +290,7 @@ class BackendHttpApiTest(unittest.TestCase):
                 run_id = submitted["run"]["run_id"]
                 manifest = self._json(base_url, "GET", f"/runs/{quote(run_id, safe='')}/artifacts")
                 artifact = manifest["artifacts"][0]
+                user_token = self._login_token(base_url, "user", "user")
 
                 connection = http.client.HTTPConnection("127.0.0.1", server.server_address[1], timeout=10)
                 connection.request("GET", f"/api/runs/{quote(run_id, safe='')}/artifacts/{quote(artifact['artifact_id'], safe='')}")
@@ -277,7 +305,7 @@ class BackendHttpApiTest(unittest.TestCase):
                 connection.request(
                     "GET",
                     f"/api/runs/{quote(run_id, safe='')}/artifacts/{quote(artifact['artifact_id'], safe='')}",
-                    headers={"authorization": f"Bearer {admin_token}"},
+                    headers={"authorization": f"Bearer {user_token}"},
                 )
                 response = connection.getresponse()
                 body = response.read()
@@ -297,7 +325,7 @@ class BackendHttpApiTest(unittest.TestCase):
                     event for event in audit_after_download["events"] if event["action"] == "runs.artifact.download"
                 ]
                 self.assertEqual(len(download_events), 1)
-                self.assertEqual(download_events[0]["actor_user_id"], "user-admin")
+                self.assertEqual(download_events[0]["actor_user_id"], "user-basic")
                 self.assertEqual(download_events[0]["outcome"], "allowed")
                 self.assertTrue(download_events[0]["created_at"])
 

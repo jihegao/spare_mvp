@@ -430,10 +430,12 @@ class BackendApi:
         detail["download_base"] = f"/api/runs/{run_id}/artifacts"
         return detail
 
-    def archive_run(self, run_id: str, actor_user_id: str = "system") -> dict[str, Any]:
+    def archive_run(self, run_id: str, actor_user_id: str | None = None) -> dict[str, Any]:
+        actor_user_id = _require_m7_actor(actor_user_id)
         return self.repository.archive_run_with_audit(run_id, actor_user_id=actor_user_id)
 
-    def soft_delete_run(self, run_id: str, actor_user_id: str = "system") -> dict[str, Any]:
+    def soft_delete_run(self, run_id: str, actor_user_id: str | None = None) -> dict[str, Any]:
+        actor_user_id = _require_m7_actor(actor_user_id)
         return self.repository.soft_delete_run_with_audit(run_id, actor_user_id=actor_user_id)
 
     def get_run_artifact_download(
@@ -441,8 +443,9 @@ class BackendApi:
         run_id: str,
         artifact_id: str,
         *,
-        actor_user_id: str = "system",
+        actor_user_id: str | None = None,
     ) -> dict[str, Any]:
+        actor_user_id = _require_m7_actor(actor_user_id)
         run = self.repository.get_run(run_id)
         if run.get("lifecycle_status") == "deleted":
             raise BackendApiError("run_deleted", "run is soft-deleted", run_id=run_id)
@@ -588,6 +591,12 @@ def _clamped_run_limit(value: Any) -> int:
     except (TypeError, ValueError):
         return 50
     return max(1, min(parsed, 200))
+
+
+def _require_m7_actor(actor_user_id: str | None) -> str:
+    if actor_user_id is None or str(actor_user_id).strip() == "":
+        raise BackendApiError("missing_actor", "M7 run management action requires an actor")
+    return str(actor_user_id)
 
 
 def _steps_from_plan(plan: dict[str, Any]) -> int:
