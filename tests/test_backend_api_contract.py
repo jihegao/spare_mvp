@@ -6,6 +6,7 @@ import json
 import sqlite3
 import tempfile
 from pathlib import Path
+from typing import Any
 import unittest
 
 from src.spare_mvp_backend.api import BackendApi, BackendApiError
@@ -122,6 +123,20 @@ class BackendApiContractTest(unittest.TestCase):
 
     def _artifact_by_kind(self, manifest: dict, kind: str) -> dict:
         return next(artifact for artifact in manifest["artifacts"] if artifact["kind"] == kind)
+
+    def _submit_successful_smoke_run(self) -> dict[str, Any]:
+        project = self._fixture("smoke_project.json")
+        saved = self.api.save_project(project)
+        self.api.create_modeling_snapshot(saved["project_id"])
+        plan = self.api.create_experiment_plan(saved["project_id"], {"name": "m7 artifact download", "steps": 2})
+        return self.api.submit_run(
+            {
+                "project_id": saved["project_id"],
+                "experiment_plan_id": plan["experiment_plan_id"],
+                "model_family": "smoke",
+                "run_type": "single",
+            }
+        )
 
     def test_smoke_backend_flow_persists_complete_run_chain(self) -> None:
         project = self._fixture("smoke_project.json")
@@ -251,6 +266,88 @@ class BackendApiContractTest(unittest.TestCase):
             data = artifact_path.read_bytes()
             self.assertEqual(hashlib.sha256(data).hexdigest(), artifact["sha256"], artifact)
             self.assertEqual(len(data), artifact["size_bytes"], artifact)
+
+    def test_backend_api_lists_runs_with_strict_include_deleted_flag_and_limit_clamp(self) -> None:
+        runs = [self._submit_successful_smoke_run() for _ in range(3)]
+        self.api.soft_delete_run(runs[0]["run_id"])
+
+        hidden = self.api.list_runs({"include_deleted": "0", "limit": "500"})
+        visible = self.api.list_runs({"include_deleted": "1", "limit": "500"})
+        truthy_true = self.api.list_runs({"include_deleted": "True"})
+        truthy_lower = self.api.list_runs({"include_deleted": "true"})
+        truthy_bool = self.api.list_runs({"include_deleted": True})
+        false_string = self.api.list_runs({"include_deleted": "yes"})
+        limited = self.api.list_runs({"include_deleted": "1", "limit": "2"})
+
+        self.assertNotIn(runs[0]["run_id"], [item["run_id"] for item in hidden["runs"]])
+        self.assertNotIn(runs[0]["run_id"], [item["run_id"] for item in false_string["runs"]])
+        self.assertIn(runs[0]["run_id"], [item["run_id"] for item in visible["runs"]])
+        self.assertIn(runs[0]["run_id"], [item["run_id"] for item in truthy_true["runs"]])
+        self.assertIn(runs[0]["run_id"], [item["run_id"] for item in truthy_lower["runs"]])
+        self.assertIn(runs[0]["run_id"], [item["run_id"] for item in truthy_bool["runs"]])
+        self.assertEqual(len(limited["runs"]), 2)
+
+    def test_backend_api_resolves_artifact_download_with_hash_verification(self) -> None:
+        run = self._submit_successful_smoke_run()
+        manifest = self.api.get_run_artifacts(run["run_id"])
+        artifact = manifest["artifacts"][0]
+
+        download = self.api.get_run_artifact_download(run["run_id"], artifact["artifact_id"])
+
+        self.assertEqual(download["artifact"]["artifact_id"], artifact["artifact_id"])
+        self.assertTrue(download["path"].is_file())
+        self.assertEqual(download["content_type"], artifact["media_type"])
+        audit = self.repository.list_audit_events(resource_id=run["run_id"])
+        self.assertEqual([event["action"] for event in audit], ["runs.artifact.download"])
+
+    def test_backend_api_rejects_artifact_path_escape(self) -> None:
+        run = self._submit_successful_smoke_run()
+        manifest = self.api.get_run_artifacts(run["run_id"])
+        manifest["artifacts"][0]["path"] = "../escape.json"
+        self.repository.upsert_artifact_manifest(manifest)
+
+        with self.assertRaises(BackendApiError) as ctx:
+            self.api.get_run_artifact_download(run["run_id"], manifest["artifacts"][0]["artifact_id"])
+
+        self.assertEqual(ctx.exception.code, "artifact_path_escape")
+        self.assertEqual(self.repository.list_audit_events(resource_id=run["run_id"]), [])
+
+    def test_backend_api_rejects_artifact_hash_mismatch(self) -> None:
+        run = self._submit_successful_smoke_run()
+        manifest = self.api.get_run_artifacts(run["run_id"])
+        artifact = manifest["artifacts"][0]
+        target = Path(self.api.output_dir) / artifact["path"]
+        target.write_text('{"tampered": true}\n', encoding="utf-8")
+
+        with self.assertRaises(BackendApiError) as ctx:
+            self.api.get_run_artifact_download(run["run_id"], artifact["artifact_id"])
+
+        self.assertEqual(ctx.exception.code, "artifact_hash_mismatch")
+        self.assertEqual(self.repository.list_audit_events(resource_id=run["run_id"]), [])
+
+    def test_backend_api_rejects_missing_artifact_file(self) -> None:
+        run = self._submit_successful_smoke_run()
+        manifest = self.api.get_run_artifacts(run["run_id"])
+        artifact = manifest["artifacts"][0]
+        target = Path(self.api.output_dir) / artifact["path"]
+        target.unlink()
+
+        with self.assertRaises(BackendApiError) as ctx:
+            self.api.get_run_artifact_download(run["run_id"], artifact["artifact_id"])
+
+        self.assertEqual(ctx.exception.code, "artifact_missing")
+        self.assertEqual(self.repository.list_audit_events(resource_id=run["run_id"]), [])
+
+    def test_backend_api_rejects_deleted_run_artifact_download(self) -> None:
+        run = self._submit_successful_smoke_run()
+        manifest = self.api.get_run_artifacts(run["run_id"])
+        artifact = manifest["artifacts"][0]
+        self.api.soft_delete_run(run["run_id"])
+
+        with self.assertRaises(BackendApiError) as ctx:
+            self.api.get_run_artifact_download(run["run_id"], artifact["artifact_id"])
+
+        self.assertEqual(ctx.exception.code, "run_deleted")
 
     def test_run_service_submits_formal_monte_carlo_run_and_persists_projection_artifacts(self) -> None:
         project = self._fixture("smoke_project.json")

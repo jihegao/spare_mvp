@@ -24,6 +24,43 @@ class DatabaseContractTest(unittest.TestCase):
     def _fixture(self, name: str) -> dict:
         return json.loads((REPO_ROOT / "tests" / "fixtures" / name).read_text(encoding="utf-8"))
 
+    def _persist_complete_smoke_chain(self) -> None:
+        project = self._fixture("smoke_project.json")
+        run = self._fixture("smoke_run.json")
+        result = self._fixture("smoke_result.json")
+        manifest = self._fixture("smoke_artifact_manifest.json")
+        scenario = self._fixture("smoke_scenario.json")
+        snapshot = {
+            "snapshot_id": "modeling-snapshot-project-smoke-contract-001",
+            "project_id": project["project_id"],
+            "schema_version": "modeling-snapshot-v0",
+            "project_version": project["project_version"],
+            "project": project,
+        }
+        plan = {
+            "experiment_plan_id": "experiment-plan-project-smoke-contract-001",
+            "project_id": project["project_id"],
+            "modeling_snapshot_id": snapshot["snapshot_id"],
+            "schema_version": "experiment-plan-v0",
+            "project_version": project["project_version"],
+            "status": "draft",
+            "config": {"name": "contract smoke", "steps": 3},
+        }
+        run = {
+            **run,
+            "experiment_plan_id": plan["experiment_plan_id"],
+            "modeling_snapshot_id": snapshot["snapshot_id"],
+            "lifecycle_status": "active",
+            "created_by": "system",
+        }
+        self.repository.upsert_project(project)
+        self.repository.upsert_modeling_snapshot(snapshot)
+        self.repository.upsert_experiment_plan(plan)
+        self.repository.upsert_scenario(scenario)
+        self.repository.upsert_run(run)
+        self.repository.upsert_result_summary(result)
+        self.repository.upsert_artifact_manifest(manifest)
+
     def test_schema_declares_required_persistence_tables(self) -> None:
         self.assertTrue(SCHEMA_PATH.exists())
         tables = {
@@ -93,6 +130,10 @@ class DatabaseContractTest(unittest.TestCase):
                 "result_summary_id",
                 "artifact_manifest_id",
                 "payload_json",
+                "created_by",
+                "lifecycle_status",
+                "archived_at",
+                "deleted_at",
             },
             "artifact_manifests": {
                 "artifact_manifest_id",
@@ -154,6 +195,39 @@ class DatabaseContractTest(unittest.TestCase):
                 "artifact_manifest_schema_version": "artifact-manifest-v0",
             },
         )
+
+    def test_repository_lists_runs_and_hides_soft_deleted_by_default(self) -> None:
+        project = self._fixture("smoke_project.json")
+        scenario = self._fixture("smoke_scenario.json")
+        run = self._fixture("smoke_run.json")
+        manifest = self._fixture("smoke_artifact_manifest.json")
+        self.repository.upsert_project(project)
+        self.repository.upsert_scenario(scenario)
+        self.repository.upsert_run({**run, "lifecycle_status": "active", "created_by": "system"})
+        self.repository.upsert_artifact_manifest(manifest)
+
+        listed = self.repository.list_runs()
+        self.assertEqual([item["run_id"] for item in listed], [run["run_id"]])
+        self.assertEqual(listed[0]["created_by"], "system")
+        self.assertEqual(listed[0]["lifecycle_status"], "active")
+        self.assertEqual(listed[0]["artifact_count"], len(manifest["artifacts"]))
+
+        deleted = self.repository.soft_delete_run(run["run_id"], deleted_by="system")
+
+        self.assertEqual(deleted["lifecycle_status"], "deleted")
+        self.assertTrue(deleted["deleted_at"])
+        self.assertEqual(deleted["deleted_by"], "system")
+        self.assertEqual(self.repository.list_runs(), [])
+        self.assertEqual([item["run_id"] for item in self.repository.list_runs(include_deleted=True)], [run["run_id"]])
+
+    def test_repository_get_run_detail_combines_chain_result_and_artifacts(self) -> None:
+        self._persist_complete_smoke_chain()
+        detail = self.repository.get_run_detail("run-smoke-contract-001")
+
+        self.assertEqual(detail["run"]["run_id"], "run-smoke-contract-001")
+        self.assertEqual(detail["chain"]["run_id"], "run-smoke-contract-001")
+        self.assertEqual(detail["result_summary"]["run_id"], "run-smoke-contract-001")
+        self.assertEqual(detail["artifact_manifest"]["run_id"], "run-smoke-contract-001")
 
     def test_initialize_database_migrates_existing_experiment_plan_table(self) -> None:
         connection = sqlite3.connect(":memory:")
@@ -331,6 +405,8 @@ class DatabaseContractTest(unittest.TestCase):
     def test_repository_keeps_published_snapshot_after_new_draft_and_reopen(self) -> None:
         import_package = self._fixture("modeling_import_project.json")
         validation = {"ok": True, "status": "valid", "issues": []}
+        original_quantity = import_package["objects"]["equipmentAssets"][1]["quantity"]
+        changed_quantity = original_quantity + 1
 
         with self.subTest("red path: publish then save a changed draft"):
             self.repository.upsert_modeling_import(import_package, validation)
@@ -342,16 +418,16 @@ class DatabaseContractTest(unittest.TestCase):
                 "version": 2,
                 "referencedRunIds": [],
             }
-            changed_package["objects"]["equipmentAssets"][1]["quantity"] = 2
+            changed_package["objects"]["equipmentAssets"][1]["quantity"] = changed_quantity
             self.repository.upsert_modeling_import(changed_package, validation)
 
             stored = self.repository.get_modeling_import(import_package["importId"])
             self.assertEqual(stored["draftPackage"]["lifecycle"]["state"], "draft")
             self.assertEqual(stored["draftPackage"]["lifecycle"]["version"], 2)
-            self.assertEqual(stored["draftPackage"]["objects"]["equipmentAssets"][1]["quantity"], 2)
+            self.assertEqual(stored["draftPackage"]["objects"]["equipmentAssets"][1]["quantity"], changed_quantity)
             self.assertEqual(stored["publishedPackage"]["lifecycle"]["state"], "published")
             self.assertEqual(stored["publishedPackage"]["lifecycle"]["version"], 1)
-            self.assertEqual(stored["publishedPackage"]["objects"]["equipmentAssets"][1]["quantity"], 1)
+            self.assertEqual(stored["publishedPackage"]["objects"]["equipmentAssets"][1]["quantity"], original_quantity)
 
     def test_repository_reopens_modeling_import_draft_and_published_payloads(self) -> None:
         import tempfile
@@ -364,11 +440,13 @@ class DatabaseContractTest(unittest.TestCase):
                 initialize_database(connection)
                 repository = ContractRepository(connection)
                 import_package = self._fixture("modeling_import_project.json")
+                original_quantity = import_package["objects"]["equipmentAssets"][1]["quantity"]
+                changed_quantity = original_quantity + 1
                 repository.upsert_modeling_import(import_package, validation)
                 repository.publish_modeling_import(import_package["importId"])
                 changed_package = self._fixture("modeling_import_project.json")
                 changed_package["lifecycle"] = {"state": "draft", "version": 2, "referencedRunIds": []}
-                changed_package["objects"]["equipmentAssets"][1]["quantity"] = 2
+                changed_package["objects"]["equipmentAssets"][1]["quantity"] = changed_quantity
                 repository.upsert_modeling_import(changed_package, validation)
             finally:
                 connection.close()
@@ -380,8 +458,8 @@ class DatabaseContractTest(unittest.TestCase):
             finally:
                 reopened.close()
 
-        self.assertEqual(stored["draftPackage"]["objects"]["equipmentAssets"][1]["quantity"], 2)
-        self.assertEqual(stored["publishedPackage"]["objects"]["equipmentAssets"][1]["quantity"], 1)
+        self.assertEqual(stored["draftPackage"]["objects"]["equipmentAssets"][1]["quantity"], changed_quantity)
+        self.assertEqual(stored["publishedPackage"]["objects"]["equipmentAssets"][1]["quantity"], original_quantity)
 
     def test_repository_blocks_publishing_referenced_modeling_import_without_new_version(self) -> None:
         import_package = self._fixture("modeling_import_project.json")

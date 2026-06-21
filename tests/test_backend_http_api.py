@@ -21,6 +21,28 @@ class BackendHttpApiTest(unittest.TestCase):
     def _fixture(self, name: str) -> dict:
         return json.loads((REPO_ROOT / "tests" / "fixtures" / name).read_text(encoding="utf-8"))
 
+    def _submit_m7_http_run(self, base_url: str) -> dict:
+        created = self._create_imported_sample_project(base_url)
+        saved = created["savedProject"]
+        plan = self._json(
+            base_url,
+            "POST",
+            f"/projects/{saved['project_id']}/experiment-plans",
+            {"config": {"name": "m7 http management", "steps": 2, "projectJson": created["project"]}},
+        )
+        submitted = self._json(
+            base_url,
+            "POST",
+            "/runs",
+            {
+                "project_id": saved["project_id"],
+                "experiment_plan_id": plan["experiment_plan_id"],
+                "model_family": "smoke",
+                "run_type": "single",
+            },
+        )
+        return {"created": created, "plan": plan, "run": submitted}
+
     def test_http_api_serves_frontend_contract_flow(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             server = create_backend_server(
@@ -133,6 +155,132 @@ class BackendHttpApiTest(unittest.TestCase):
                 self.assertEqual(result["run_id"], submitted["run_id"])
                 self.assertEqual(artifacts["run_id"], submitted["run_id"])
                 self.assertEqual(chain["run_id"], submitted["run_id"])
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
+    def test_http_m7_run_list_detail_archive_delete_and_legacy_retirement(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            server = create_backend_server(
+                ("127.0.0.1", 0),
+                repo_root=REPO_ROOT,
+                database_path=":memory:",
+                output_dir=Path(tmp) / "artifacts",
+            )
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                base_url = f"http://127.0.0.1:{server.server_address[1]}/api"
+                submitted = self._submit_m7_http_run(base_url)
+                run_id = submitted["run"]["run_id"]
+                admin_token = self._login_token(base_url, "admin", "admin")
+
+                listed = self._json(base_url, "GET", "/runs")
+                self.assertIn(run_id, [item["run_id"] for item in listed["runs"]])
+
+                detail = self._json(base_url, "GET", f"/runs/{quote(run_id, safe='')}/detail")
+                self.assertEqual(detail["run"]["run_id"], run_id)
+                self.assertEqual(detail["chain"]["run_id"], run_id)
+                self.assertEqual(detail["artifact_manifest"]["run_id"], run_id)
+                self.assertEqual(detail["download_base"], f"/api/runs/{run_id}/artifacts")
+                audit_before_lifecycle = self._json(
+                    base_url,
+                    "GET",
+                    f"/audit-events?resource_id={quote(run_id, safe='')}",
+                    auth_token=admin_token,
+                )
+                self.assertEqual(audit_before_lifecycle["events"], [])
+
+                archive = self._json(base_url, "POST", f"/runs/{quote(run_id, safe='')}/archive")
+                self.assertEqual(archive["run_id"], run_id)
+                self.assertEqual(archive["lifecycle_status"], "archived")
+
+                deleted = self._json(base_url, "DELETE", f"/runs/{quote(run_id, safe='')}")
+                self.assertEqual(deleted["run_id"], run_id)
+                self.assertEqual(deleted["lifecycle_status"], "deleted")
+
+                hidden = self._json(base_url, "GET", "/runs")
+                self.assertNotIn(run_id, [item["run_id"] for item in hidden["runs"]])
+                hidden_zero = self._json(base_url, "GET", "/runs?include_deleted=0")
+                self.assertNotIn(run_id, [item["run_id"] for item in hidden_zero["runs"]])
+
+                visible = self._json(base_url, "GET", "/runs?include_deleted=1")
+                self.assertIn(run_id, [item["run_id"] for item in visible["runs"]])
+                tombstone = self._json(base_url, "GET", f"/runs/{quote(run_id, safe='')}/detail")
+                self.assertEqual(tombstone["run"]["lifecycle_status"], "deleted")
+
+                audit_after_lifecycle = self._json(
+                    base_url,
+                    "GET",
+                    f"/audit-events?resource_id={quote(run_id, safe='')}",
+                    auth_token=admin_token,
+                )
+                actions = [event["action"] for event in audit_after_lifecycle["events"]]
+                self.assertIn("runs.archive", actions)
+                self.assertIn("runs.delete", actions)
+                self.assertTrue(all(event["outcome"] == "allowed" for event in audit_after_lifecycle["events"]))
+                self.assertTrue(all(event["actor_user_id"] == "system" for event in audit_after_lifecycle["events"]))
+                self.assertTrue(all(event["created_at"] for event in audit_after_lifecycle["events"]))
+
+                legacy_status, legacy_body = self._json_error_with_status(base_url, "POST", "/simulation-runs", {})
+                self.assertEqual(legacy_status, 410)
+                self.assertEqual(legacy_body["code"], "legacy_run_api_retired")
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
+    def test_http_m7_artifact_download_and_deleted_run_rejection(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            server = create_backend_server(
+                ("127.0.0.1", 0),
+                repo_root=REPO_ROOT,
+                database_path=":memory:",
+                output_dir=Path(tmp) / "artifacts",
+            )
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                base_url = f"http://127.0.0.1:{server.server_address[1]}/api"
+                submitted = self._submit_m7_http_run(base_url)
+                run_id = submitted["run"]["run_id"]
+                manifest = self._json(base_url, "GET", f"/runs/{quote(run_id, safe='')}/artifacts")
+                artifact = manifest["artifacts"][0]
+
+                connection = http.client.HTTPConnection("127.0.0.1", server.server_address[1], timeout=10)
+                connection.request("GET", f"/api/runs/{quote(run_id, safe='')}/artifacts/{quote(artifact['artifact_id'], safe='')}")
+                response = connection.getresponse()
+                body = response.read()
+                self.assertEqual(response.status, 200)
+                self.assertIn(artifact["media_type"], response.headers["content-type"])
+                self.assertIn("attachment", response.headers["content-disposition"])
+                self.assertGreater(len(body), 0)
+                connection.close()
+
+                admin_token = self._login_token(base_url, "admin", "admin")
+                audit_after_download = self._json(
+                    base_url,
+                    "GET",
+                    f"/audit-events?resource_id={quote(run_id, safe='')}",
+                    auth_token=admin_token,
+                )
+                download_events = [
+                    event for event in audit_after_download["events"] if event["action"] == "runs.artifact.download"
+                ]
+                self.assertEqual(len(download_events), 1)
+                self.assertEqual(download_events[0]["actor_user_id"], "system")
+                self.assertEqual(download_events[0]["outcome"], "allowed")
+                self.assertTrue(download_events[0]["created_at"])
+
+                self._json(base_url, "DELETE", f"/runs/{quote(run_id, safe='')}")
+                status, payload = self._json_error_with_status(
+                    base_url,
+                    "GET",
+                    f"/runs/{quote(run_id, safe='')}/artifacts/{quote(artifact['artifact_id'], safe='')}",
+                )
+                self.assertEqual(status, 410)
+                self.assertEqual(payload["code"], "run_deleted")
             finally:
                 server.shutdown()
                 server.server_close()
@@ -549,7 +697,9 @@ class BackendHttpApiTest(unittest.TestCase):
                 self.assertEqual(submitted["error"]["details"]["provenance"]["model_family"], "aviation_support")
                 self.assertEqual(submitted["result_summary_id"], None)
                 self.assertIsNone(artifacts["scenario_id"])
-                self.assertEqual(artifacts["artifacts"], [])
+                self.assertEqual([artifact["kind"] for artifact in artifacts["artifacts"]], ["log"])
+                self.assertRegex(artifacts["artifacts"][0]["sha256"], r"^[0-9a-f]{64}$")
+                self.assertGreater(artifacts["artifacts"][0]["size_bytes"], 0)
                 self.assertIsNone(chain.get("scenario_id"))
                 self.assertIsNone(chain.get("scenario_version"))
                 self.assertIsNone(chain.get("scenario_schema_version"))
