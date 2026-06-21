@@ -517,7 +517,7 @@ git commit -m "docs: document legacy run api retirement"
 
 ## Implementation Note
 
-Completed on 2026-06-21 across commits `3da219ea`, `5b65fca9`, `6134c109`, `53be6942`, and the Task 5 documentation commit. Final behavior: frontend code, HTTP contract tests, and browser smoke use canonical `/api/runs` only; any `/api/simulation-runs*` request returns `410 legacy_run_api_retired` with `/api/runs` as the replacement. This retirement slice did not add worker queue, object storage, cancellation/retry, M8 projection payload rendering, M9 state stream, or `aviation_support` formal execution.
+Completed on 2026-06-21 across commits `3da219ea`, `5b65fca9`, `6134c109`, `53be6942`, and the Task 5 documentation commit. Final behavior: frontend code, HTTP contract tests, and browser smoke use canonical `/api/runs` only; any `/api/simulation-runs*` request returns `410 legacy_run_api_retired` with `/api/runs` as the replacement plus machine-readable migration metadata for the retired status/result/artifacts/chain route mapping. This retirement slice did not add worker queue, object storage, cancellation/retry, M8 projection payload rendering, M9 state stream, or `aviation_support` formal execution.
 
 ## Final Verification
 
@@ -535,7 +535,7 @@ git status --short
 Completion evidence must show:
 
 1. Frontend code has no `/simulation-runs` route references and no `getRun()` legacy alias.
-2. Backend returns `410 legacy_run_api_retired` for all `/api/simulation-runs*` requests.
+2. Backend returns `410 legacy_run_api_retired` for all `/api/simulation-runs*` requests, with `/api/runs` replacement and migration mapping metadata.
 3. Canonical `/api/runs` status/result/artifacts/chain tests pass.
 4. Browser smoke waits only for `/api/runs`.
 5. Active docs do not say the legacy path remains a usable API.

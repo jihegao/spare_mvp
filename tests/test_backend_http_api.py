@@ -157,6 +157,7 @@ class BackendHttpApiTest(unittest.TestCase):
                     ("GET", "/simulation-runs/run-retired/artifacts", None),
                     ("GET", "/simulation-runs/run-retired/chain", None),
                     ("GET", "/simulation-runs%2Frun-retired", None),
+                    ("GET", "/simulation%2Druns/run-retired", None),
                 ]
 
                 for method, path, payload in cases:
@@ -166,6 +167,16 @@ class BackendHttpApiTest(unittest.TestCase):
                         self.assertEqual(body["code"], "legacy_run_api_retired")
                         self.assertIn("/api/runs", body["message"])
                         self.assertEqual(body["details"]["replacement"], "/api/runs")
+                        migration = body["details"]["migration"]
+                        self.assertEqual(
+                            migration["docs"],
+                            "docs/superpowers/plans/2026-06-21-legacy-run-api-retirement.md",
+                        )
+                        self.assertEqual(migration["mapping"]["/api/simulation-runs"], "/api/runs")
+                        self.assertEqual(
+                            migration["mapping"]["/api/simulation-runs/{run_id}/chain"],
+                            "/api/runs/{run_id}/chain",
+                        )
             finally:
                 server.shutdown()
                 server.server_close()
@@ -192,6 +203,10 @@ class BackendHttpApiTest(unittest.TestCase):
                 self.assertEqual(status, 410)
                 self.assertEqual(body["code"], "legacy_run_api_retired")
                 self.assertEqual(body["details"]["replacement"], "/api/runs")
+                self.assertEqual(
+                    body["details"]["migration"]["mapping"]["/api/simulation-runs/{run_id}"],
+                    "/api/runs/{run_id}",
+                )
             finally:
                 server.shutdown()
                 server.server_close()
@@ -219,6 +234,10 @@ class BackendHttpApiTest(unittest.TestCase):
                 self.assertEqual(status, 410)
                 self.assertEqual(body["code"], "legacy_run_api_retired")
                 self.assertEqual(body["details"]["replacement"], "/api/runs")
+                self.assertEqual(
+                    body["details"]["migration"]["mapping"]["/api/simulation-runs/{run_id}/result"],
+                    "/api/runs/{run_id}/result",
+                )
             finally:
                 server.shutdown()
                 server.server_close()
