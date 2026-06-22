@@ -152,5 +152,77 @@ class TestEquipmentTree(unittest.TestCase):
         self.assertFalse(check_k_out_of_n(node))
 
 
+from independent_mesa.equipment import (
+    age_and_sample_failures,
+    decide_repair_or_replace,
+    is_life_limit_exceeded,
+)
+
+
+class TestAgingAndFailure(unittest.TestCase):
+    def test_age_and_sample_failures_marks_lru_failed(self) -> None:
+        nodes = build_equipment_tree([
+            {"id": "root", "name": "root", "quantity": 1, "mtbfHours": 600},
+            {
+                "id": "lru1", "name": "lru1", "parentId": "root",
+                "failureModel": "随机", "failureRate": 1.0,
+                "mtbfHours": 1, "failureDistribution": {"distributionType": "指数分布", "parameters": "lambda=1.0"},
+                "lifeLimitHours": 0, "quantity": 1,
+            },
+        ])
+        rng = np.random.default_rng(0)
+        failures = age_and_sample_failures(nodes, dt_hours=1.0, rng=rng, threat_multiplier=1.0)
+        self.assertIsInstance(failures, list)
+        if failures:
+            self.assertEqual(nodes[failures[0]].health, "failed")
+
+    def test_age_accumulates_hours(self) -> None:
+        nodes = build_equipment_tree([
+            {"id": "root", "name": "root", "quantity": 1, "mtbfHours": 600},
+        ])
+        rng = np.random.default_rng(0)
+        age_and_sample_failures(nodes, dt_hours=5.0, rng=rng, threat_multiplier=1.0)
+        self.assertGreater(nodes["root"].accumulated_hours, 0)
+
+    def test_life_limit_exceeded(self) -> None:
+        node = EquipmentNode(id="x", name="x", quantity=1, life_limit_hours=100.0)
+        node.accumulated_hours = 120.0
+        self.assertTrue(is_life_limit_exceeded(node))
+
+    def test_life_limit_not_exceeded(self) -> None:
+        node = EquipmentNode(id="x", name="x", quantity=1, life_limit_hours=100.0)
+        node.accumulated_hours = 50.0
+        self.assertFalse(is_life_limit_exceeded(node))
+
+    def test_life_limit_zero_not_exceeded(self) -> None:
+        node = EquipmentNode(id="x", name="x", quantity=1, life_limit_hours=0.0)
+        node.accumulated_hours = 9999.0
+        self.assertFalse(is_life_limit_exceeded(node))
+
+    def test_decide_repair_uses_ratio(self) -> None:
+        profile = {"repairTimeMinutes": 220, "repairRatio": 0.4, "replacementRatio": 0.6}
+        rng = np.random.default_rng(0)
+        decisions = [decide_repair_or_replace(profile, rng) for _ in range(1000)]
+        repair_count = sum(1 for d in decisions if d == "repair")
+        self.assertGreater(repair_count, 200)
+        self.assertLess(repair_count, 600)
+
+    def test_threat_multiplier_increases_failures(self) -> None:
+        asset = [
+            {"id": "root", "name": "root", "quantity": 1, "mtbfHours": 600},
+            {
+                "id": "lru1", "name": "lru1", "parentId": "root",
+                "failureModel": "随机", "failureRate": 0.01,
+                "mtbfHours": 100, "failureDistribution": {"distributionType": "指数分布", "parameters": "lambda=0.01"},
+                "lifeLimitHours": 0, "quantity": 1,
+            },
+        ]
+        rng_low = np.random.default_rng(100)
+        rng_high = np.random.default_rng(100)
+        low = sum(len(age_and_sample_failures(build_equipment_tree(asset), 10.0, rng_low, 1.0)) for _ in range(500))
+        high = sum(len(age_and_sample_failures(build_equipment_tree(asset), 10.0, rng_high, 3.0)) for _ in range(500))
+        self.assertGreater(high, low)
+
+
 if __name__ == "__main__":
     unittest.main()

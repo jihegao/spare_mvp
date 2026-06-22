@@ -157,3 +157,66 @@ def check_k_out_of_n(node: EquipmentNode) -> bool:
         return False
     k = int(k_config.get("k", 1))
     return node.failed_children_count >= k
+
+
+def age_and_sample_failures(
+    nodes: dict[str, EquipmentNode],
+    dt_hours: float,
+    rng: np.random.Generator,
+    threat_multiplier: float = 1.0,
+) -> list[str]:
+    """Age all nodes by dt_hours and sample failures. Returns list of failed node IDs."""
+    failed_ids: list[str] = []
+    for node in nodes.values():
+        node.accumulated_hours += dt_hours
+        if node.health == "failed":
+            continue
+        if is_life_limit_exceeded(node):
+            node.health = "failed"
+            node.failure_count += 1
+            failed_ids.append(node.id)
+            continue
+        dist = node.failure_distribution
+        failed = False
+        if dist["type"] == "exponential":
+            rate = dist["rate"] * threat_multiplier
+            failed = sample_exponential_failure(rate, dt_hours, rng)
+        elif dist["type"] == "weibull":
+            failed = sample_weibull_failure(dist["beta"], dist["eta"], dt_hours, rng)
+        elif dist["type"] == "normal":
+            remaining = sample_normal_lifetime(dist["mean"], dist["sigma"], node.accumulated_hours, rng)
+            if remaining <= 0:
+                failed = True
+        if failed:
+            node.health = "failed"
+            node.failure_count += 1
+            failed_ids.append(node.id)
+            if node.parent:
+                node.parent.failed_children_count += 1
+    return failed_ids
+
+
+def is_life_limit_exceeded(node: EquipmentNode) -> bool:
+    """Return True if accumulated hours exceed life limit (and limit > 0)."""
+    if node.life_limit_hours <= 0:
+        return False
+    return node.accumulated_hours >= node.life_limit_hours
+
+
+def decide_repair_or_replace(
+    profile: dict[str, Any],
+    rng: np.random.Generator,
+) -> str:
+    """Decide whether to repair or replace based on repairRatio/replacementRatio."""
+    repair_ratio = float(profile.get("repairRatio", 0.5))
+    if rng.random() < repair_ratio:
+        return "repair"
+    return "replace"
+
+
+def get_repair_duration(profile: dict[str, Any], decision: str) -> float:
+    """Return repair duration in minutes for the given decision."""
+    base = float(profile.get("repairTimeMinutes", 60))
+    if decision == "repair":
+        return base
+    return base * float(profile.get("replacementRatio", 0.5))
