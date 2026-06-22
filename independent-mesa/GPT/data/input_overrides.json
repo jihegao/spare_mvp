@@ -1,0 +1,41 @@
+{
+  "reason": "Make the imported scenario executable as a complete visual Mesa task flow while preserving the original modeling-import-v1 structure.",
+  "overrides": [
+    {
+      "path": "objects.missionProfiles[0].basicMission.minRequiredSorties",
+      "from": 5,
+      "to": 3,
+      "why": "The imported combatUnit has only three J-15 aircraft. A daytime J-15 wave requiring four aircraft cannot launch."
+    },
+    {
+      "path": "objects.equipment.minRequiredSorties",
+      "from": 5,
+      "to": 3,
+      "why": "Align whole-equipment mission threshold with the available J-15 aircraft count for visual execution."
+    },
+    {
+      "path": "objects.missionProfiles[0].compositeTasks[0].taskItems[0].equipmentQuantity",
+      "from": 4,
+      "to": 3,
+      "why": "The daytime air-superiority task is J-15-only, and the import contains three J-15 aircraft."
+    },
+    {
+      "path": "objects.missionProfiles[0].compositeTasks[0].taskItems[0].minRequiredSystems",
+      "from": 4,
+      "to": 3,
+      "why": "Let the daytime wave be executable without inventing an extra J-15 aircraft."
+    },
+    {
+      "path": "objects.missionProfiles[0].compositeTasks[0].taskItems[0].taskDispatchTime",
+      "from": "07:15",
+      "to": "06:45",
+      "why": "Start preflight preparation early enough for the 08:00 launch in 15-minute visual ticks."
+    },
+    {
+      "path": "objects.missionProfiles[0].compositeTasks[1].taskItems[0].taskDispatchTime",
+      "from": "19:30",
+      "to": "19:00",
+      "why": "Start J-35 night-alert preparation early enough for the 20:15 launch."
+    }
+  ]
+}

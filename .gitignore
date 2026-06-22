@@ -8,3 +8,5 @@ output/
 runs/*
 !runs/.gitkeep
 .superpowers/
+.playwright-cli/
+.agent-screenshots/

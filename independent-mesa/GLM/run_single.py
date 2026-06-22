@@ -25,7 +25,8 @@ def main() -> None:
     package = json.loads(DATA_PATH.read_text(encoding="utf-8"))
     model = IndependentMesaModel(package, steps=args.steps, seed=args.seed)
     save_frames_and_metrics(model, args.steps, args.sample_every, OUTPUT_DIR)
-    print(f"Frames and metrics saved to {OUTPUT_DIR}")
+    print(f"Frames, metrics and visualization saved to {OUTPUT_DIR}")
+    print(f"open {OUTPUT_DIR / 'visualization.html'}")
 
 
 if __name__ == "__main__":

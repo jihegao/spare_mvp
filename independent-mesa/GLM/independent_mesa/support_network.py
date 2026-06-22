@@ -73,10 +73,13 @@ class SupportNetwork:
         self.nodes: dict[str, SupportNode] = {}
         self._order_counter = 0
         self.pending_orders: list[TransportOrder] = []
+        self.arrived_order_delays: list[float] = []
         for res in resources:
             node_id = str(res["id"])
             personnel_cap = int(res.get("personnelCapacity", res.get("capacity", 1)))
             equip_cap = int(res.get("equipmentCapacity", res.get("capacity", 1)))
+            inventory = dict(res.get("inventory", {}))
+            critical = {k: max(1, v // 3) for k, v in inventory.items() if v > 0}
             self.nodes[node_id] = SupportNode(
                 id=node_id,
                 name=str(res.get("name", node_id)),
@@ -85,7 +88,8 @@ class SupportNetwork:
                 capacity=int(res.get("capacity", 1)),
                 personnel_pool=ResourcePool(capacity=personnel_cap),
                 equipment_pool=ResourcePool(capacity=equip_cap),
-                inventory=dict(res.get("inventory", {})),
+                inventory=inventory,
+                critical_inventory=critical,
                 lateral_support_nodes=list(res.get("lateralSupportNodes", [])),
                 transport_policies=list(res.get("transportPolicies", [])),
                 policy=str(res.get("policy", "")),
@@ -137,6 +141,7 @@ class SupportNetwork:
         self.pending_orders = [o for o in self.pending_orders if o.due_time > sim_time]
         for order in arrived:
             order.status = "arrived"
+            self.arrived_order_delays.append(order.due_time - order.created_time)
             self.add_spare(order.to_node, order.spare_type, order.quantity)
 
     def check_and_trigger_replenishment(self, sim_time: float) -> None:

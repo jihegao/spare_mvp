@@ -48,14 +48,14 @@ class MonteCarloRunner:
             })
         return grid
 
-    def run_single(
+    def _build_sample_model(
         self,
         failure_rate: float,
         spare_multiplier: float,
         support_capacity: int,
         seed: int,
-    ) -> dict[str, Any]:
-        """Run a single sample and return metrics."""
+    ) -> IndependentMesaModel:
+        """Build a model with the sweep overrides applied to the import package."""
         package = copy.deepcopy(self.import_package)
         objects = package.get("objects", {})
         for asset in objects.get("equipmentAssets", []):
@@ -73,10 +73,37 @@ class MonteCarloRunner:
             if isinstance(res.get("inventory"), dict):
                 for key in res["inventory"]:
                     res["inventory"][key] = max(1, int(res["inventory"][key] * spare_multiplier))
-        model = IndependentMesaModel(package, steps=self.steps, seed=seed)
+        return IndependentMesaModel(package, steps=self.steps, seed=seed)
+
+    def run_single(
+        self,
+        failure_rate: float,
+        spare_multiplier: float,
+        support_capacity: int,
+        seed: int,
+    ) -> dict[str, Any]:
+        """Run a single sample and return metrics."""
+        model = self._build_sample_model(
+            failure_rate, spare_multiplier, support_capacity, seed,
+        )
         for _ in range(self.steps):
             model.step()
         return model.compute_final_metrics()
+
+    def run_single_with_frames(
+        self,
+        failure_rate: float,
+        spare_multiplier: float,
+        support_capacity: int,
+        seed: int,
+    ) -> dict[str, Any]:
+        """Run a single sample and return metrics plus the full frame series."""
+        from .visualization import export_frames
+        model = self._build_sample_model(
+            failure_rate, spare_multiplier, support_capacity, seed,
+        )
+        frames = export_frames(model, self.steps, sample_every=max(1, self.steps // 24))
+        return {"metrics": model.compute_final_metrics(), "frames": frames}
 
     def run_group(
         self,
@@ -84,19 +111,28 @@ class MonteCarloRunner:
         spare_multiplier: float,
         support_capacity: int,
     ) -> dict[str, Any]:
-        """Run `samples` samples for one parameter combination and aggregate."""
+        """Run `samples` samples for one parameter combination and aggregate.
+
+        The first successful sample's full frame series is captured as the
+        representative replay for this parameter combination.
+        """
         results: list[dict[str, Any]] = []
         failed: int = 0
+        representative_frames: list[dict[str, Any]] = []
         for sample_idx in range(self.samples):
             seed = self.seed + sample_idx
             try:
-                metrics = self.run_single(
+                sample = self.run_single_with_frames(
                     failure_rate, spare_multiplier, support_capacity, seed,
                 )
-                results.append(metrics)
+                results.append(sample["metrics"])
+                if not representative_frames:
+                    representative_frames = sample["frames"]
             except Exception:
                 failed += 1
-        return self._aggregate(results, failed)
+        aggregated = self._aggregate(results, failed)
+        aggregated["representative_frames"] = representative_frames
+        return aggregated
 
     def run_sweep(self) -> list[dict[str, Any]]:
         """Run the full sweep over all parameter combinations."""
@@ -137,5 +173,30 @@ class MonteCarloRunner:
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(
             json.dumps({"sweep_results": results}, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
+    def save_visualization(
+        self,
+        results: list[dict[str, Any]],
+        output_path: Path,
+        *,
+        steps: int,
+        samples: int,
+        seed: int,
+    ) -> None:
+        """Write the standalone Monte Carlo sweep HTML to ``output_path``."""
+        from .monte_carlo_visualization import build_monte_carlo_html
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(
+            build_monte_carlo_html(
+                results,
+                steps=steps,
+                samples=samples,
+                seed=seed,
+                failure_rates=self.failure_rates,
+                spare_multipliers=self.spare_multipliers,
+                support_capacities=self.support_capacities,
+            ),
             encoding="utf-8",
         )

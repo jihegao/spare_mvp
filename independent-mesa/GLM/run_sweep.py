@@ -26,7 +26,15 @@ def main() -> None:
     runner = MonteCarloRunner(package, steps=args.steps, samples=args.samples, seed=args.seed)
     results = runner.run_sweep()
     runner.save_results(results, OUTPUT_DIR / "results.json")
+    runner.save_visualization(
+        results,
+        OUTPUT_DIR / "monte_carlo.html",
+        steps=args.steps,
+        samples=args.samples,
+        seed=args.seed,
+    )
     print(f"Sweep results saved to {OUTPUT_DIR / 'results.json'} ({len(results)} combinations)")
+    print(f"open {OUTPUT_DIR / 'monte_carlo.html'}")
 
 
 if __name__ == "__main__":

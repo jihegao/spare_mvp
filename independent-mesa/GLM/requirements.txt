@@ -1,0 +1,4 @@
+mesa>=3.5
+numpy>=2.0
+scipy>=1.17
+networkx>=3.6

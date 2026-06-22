@@ -37,7 +37,7 @@ class AircraftAgent(Agent):
         self.scheduled_return_time: float | None = None
         self.failed_lru_id: str | None = None
         self.flight_hours_since_last_pm = 0.0
-        self.days_since_last_pm = 0.0
+        self.days_since_last_pm = index * 0.15
         self.landings_since_last_pm = 0
         self.total_flight_hours = float(member_data.get("remainingLifeHours", 0))
         self.lru_failures = 0
@@ -47,6 +47,8 @@ class AircraftAgent(Agent):
         if self.phase != "ready":
             return False
         if self.failed_lru_id:
+            return False
+        if self.current_job_id is not None:
             return False
         for node in self.equipment_tree.values():
             if node.health == "failed":

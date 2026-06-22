@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 
 from .model import IndependentMesaModel
+from .visualization import write_outputs as write_visualization
 
 
 def export_frames(
@@ -29,15 +29,5 @@ def save_frames_and_metrics(
     sample_every: int,
     output_dir: Path,
 ) -> None:
-    """Run model, save frames.json and metrics.json to output_dir."""
-    frames = export_frames(model, steps, sample_every)
-    metrics = model.compute_final_metrics()
-    output_dir.mkdir(parents=True, exist_ok=True)
-    (output_dir / "frames.json").write_text(
-        json.dumps({"frames": frames}, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
-    (output_dir / "metrics.json").write_text(
-        json.dumps(metrics, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    """Run model, save frames.json, metrics.json and visualization.html to output_dir."""
+    write_visualization(model, output_dir, steps=steps, sample_every=sample_every)

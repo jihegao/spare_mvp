@@ -30,6 +30,7 @@ class ActivityJob:
     started_time: float | None = None
     completed_time: float | None = None
     created_time: float = 0.0
+    is_turnaround: bool = False
 
 
 def sample_duration(

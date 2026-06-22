@@ -47,7 +47,7 @@ class IndependentMesaModel(Model):
         mission_profile = objects.get("missionProfiles", [{}])[0]
         self.mission_profile = mission_profile
         self.duration_hours = float(mission_profile.get("durationHours", 24))
-        self.tick_minutes = max(1.0, self.duration_hours * 60 / max(steps, 1))
+        self.tick_minutes = 30.0
 
         self.mission_scheduler = MissionScheduler(mission_profile)
         self.activity_planner = ActivityPlanner(objects.get("supportActivities", []))
@@ -101,6 +101,10 @@ class IndependentMesaModel(Model):
         self._job_counter = 0
         self._day_index = 0
         self._waves_generated_for_days: set[int] = set()
+        self.ready_aircraft_minutes = 0.0
+        self.turnaround_times: list[float] = []
+        self.spare_requests = 0
+        self.spare_fulfilled = 0
 
     def step(self) -> None:
         self._generate_waves_for_current_day()
@@ -113,6 +117,8 @@ class IndependentMesaModel(Model):
         self.support_network.process_arrivals(self.sim_time)
         self.support_network.check_and_trigger_replenishment(self.sim_time)
         self.support_network.charge_busy_time(self.tick_minutes)
+        ready_count = sum(1 for a in self.aircraft if a.is_mission_ready)
+        self.ready_aircraft_minutes += ready_count * self.tick_minutes
         self.sim_time += self.tick_minutes
         self.steps_run += 1
         for aircraft in self.aircraft:
@@ -226,11 +232,19 @@ class IndependentMesaModel(Model):
         for aircraft in self.aircraft:
             if aircraft.phase == "flying":
                 continue
+            if aircraft.failed_lru_id:
+                continue
+            if aircraft.current_job_id is not None:
+                continue
+            if aircraft.phase in ("ready", "idle", "preparing", "post_support"):
+                ground_multiplier = 0.1
+            else:
+                ground_multiplier = 1.0
             failed = age_and_sample_failures(
                 aircraft.equipment_tree,
                 dt_hours,
                 self.rng,
-                self.threat_multiplier_override or 1.0,
+                (self.threat_multiplier_override or 1.0) * ground_multiplier,
             )
             if failed:
                 aircraft.failed_lru_id = failed[0]
@@ -239,13 +253,16 @@ class IndependentMesaModel(Model):
 
     def _dispatch_support_jobs(self) -> None:
         for aircraft in self.aircraft:
-            if aircraft.phase == "post_support":
-                activity_id = "corrective" if aircraft.failed_lru_id else "preflight"
-                if self.activity_planner.get_activity(activity_id):
-                    self._create_job(aircraft, activity_id)
-            elif aircraft.phase == "idle" and aircraft.failed_lru_id:
+            if aircraft.current_job_id is not None:
+                continue
+            if aircraft.phase in ("flying", "ready"):
+                continue
+            if aircraft.failed_lru_id:
                 if self.activity_planner.get_activity("corrective"):
                     self._create_job(aircraft, "corrective")
+            elif aircraft.phase in ("idle", "post_support"):
+                if self.activity_planner.get_activity("preflight"):
+                    self._create_job(aircraft, "preflight")
 
     def _create_job(self, aircraft: AircraftAgent, activity_id: str) -> None:
         self._job_counter += 1
@@ -253,10 +270,14 @@ class IndependentMesaModel(Model):
             activity_id, aircraft.tail_number, self.sim_time,
         )
         aircraft.current_job_id = self._job_counter
+        if activity_id == "preflight" and aircraft.phase == "post_support":
+            job.is_turnaround = True
         if activity_id == "corrective":
             aircraft.phase = "maintenance"
         elif activity_id == "preflight":
             aircraft.phase = "preparing"
+        elif activity_id == "preventive":
+            aircraft.phase = "maintenance"
         self.activity_jobs.append(job)
         self._log("job_created", f"{activity_id} job for {aircraft.tail_number}")
 
@@ -275,9 +296,12 @@ class IndependentMesaModel(Model):
                 continue
             self._allocate_resources(node, job)
             if job.spare_type and job.spare_quantity > 0:
+                self.spare_requests += 1
                 if not self.support_network.consume_spare(job.resource_id, job.spare_type, job.spare_quantity):
                     self._release_resources(node, job)
+                    self._log("spare_shortage", f"{job.activity_id} for {job.aircraft_tail} blocked: {job.spare_type} insufficient")
                     continue
+                self.spare_fulfilled += 1
             job.active_task = task
             job.remaining = sample_duration(task.get("durationProfile", {}), self.rng, float(task.get("durationMinutes", 30)))
             job.state = "active"
@@ -325,6 +349,10 @@ class IndependentMesaModel(Model):
                     else:
                         self.replace_count += 1
                     aircraft.restore_failed_lru(aircraft.failed_lru_id)
+                for node in aircraft.equipment_tree.values():
+                    node.health = "healthy"
+                    node.failed_children_count = 0
+                aircraft.failed_lru_id = None
                 aircraft.phase = "ready"
             elif job.activity_id == "preflight":
                 aircraft.phase = "ready"
@@ -333,11 +361,15 @@ class IndependentMesaModel(Model):
                 aircraft.days_since_last_pm = 0
                 aircraft.landings_since_last_pm = 0
                 aircraft.phase = "ready"
+        if job.is_turnaround:
+            self.turnaround_times.append(job.completed_time - job.created_time)
         self.completed_jobs.append(job)
         self._log("job_completed", f"{job.activity_id} job for {job.aircraft_tail}")
 
     def _check_preventive_maintenance(self) -> None:
         for aircraft in self.aircraft:
+            if aircraft.current_job_id is not None:
+                continue
             if aircraft.phase not in ("idle", "ready"):
                 continue
             due = self.activity_planner.check_preventive_due(
@@ -362,6 +394,17 @@ class IndependentMesaModel(Model):
         )
         ready_count = sum(1 for a in self.aircraft if a.is_mission_ready)
         reliability = evaluate_system_reliability(self.reliability_blocks, self.tick_minutes / 60)
+        total_aircraft_minutes = len(self.aircraft) * max(self.sim_time, self.tick_minutes)
+        availability = self.ready_aircraft_minutes / max(total_aircraft_minutes, 1)
+        sim_days = max(self.sim_time / 1440.0, 1.0 / 1440.0)
+        sortie_rate = self.launched_sorties / max(len(self.aircraft) * sim_days, 1)
+        turnaround_time = (
+            sum(self.turnaround_times) / len(self.turnaround_times)
+            if self.turnaround_times else 0.0
+        )
+        spare_fill_rate = self.spare_fulfilled / max(self.spare_requests, 1)
+        spare_delays = self.support_network.arrived_order_delays
+        avg_spare_delay = sum(spare_delays) / len(spare_delays) if spare_delays else 0.0
         return {
             "time": self.sim_time,
             "elapsed_hours": self.sim_time / 60.0,
@@ -383,6 +426,11 @@ class IndependentMesaModel(Model):
             "system_reliability": reliability,
             "waiting_jobs": sum(1 for j in self.activity_jobs if j.state == "waiting"),
             "active_jobs": sum(1 for j in self.activity_jobs if j.state == "active"),
+            "availability": availability,
+            "sortie_rate": sortie_rate,
+            "turnaround_time": turnaround_time,
+            "spare_fill_rate": spare_fill_rate,
+            "avg_spare_delay": avg_spare_delay,
         }
 
     def visualization_state(self) -> dict[str, Any]:
@@ -451,18 +499,30 @@ class IndependentMesaModel(Model):
 
     def compute_final_metrics(self) -> dict[str, Any]:
         planned_total = sum(w.required_aircraft for w in self.all_waves)
-        spare_consumed = sum(
-            sum(inv.values()) for inv in (node.inventory for node in self.support_network.nodes.values())
-        )
         initial_spare = sum(
             sum(node.inventory.values()) for node in self.support_network.nodes.values()
         )
+        total_aircraft_minutes = len(self.aircraft) * max(self.sim_time, self.tick_minutes)
+        availability = self.ready_aircraft_minutes / max(total_aircraft_minutes, 1)
+        sim_days = max(self.sim_time / 1440.0, 1.0 / 1440.0)
+        sortie_rate = self.launched_sorties / max(len(self.aircraft) * sim_days, 1)
+        turnaround_time = (
+            sum(self.turnaround_times) / len(self.turnaround_times)
+            if self.turnaround_times else 0.0
+        )
+        spare_fill_rate = self.spare_fulfilled / max(self.spare_requests, 1)
+        spare_delays = self.support_network.arrived_order_delays
+        avg_spare_delay = sum(spare_delays) / len(spare_delays) if spare_delays else 0.0
         return {
+            "availability": availability,
+            "sortie_rate": sortie_rate,
+            "turnaround_time": turnaround_time,
+            "spare_fill_rate": spare_fill_rate,
+            "avg_spare_delay": avg_spare_delay,
             "sortie_completion_rate": self.completed_sorties / max(planned_total, 1),
             "launch_rate": self.launched_sorties / max(planned_total, 1),
             "cancelled_rate": self.cancelled_sorties / max(planned_total, 1),
             "delayed_rate": self.delayed_sorties / max(self.launched_sorties, 1),
-            "spare_fill_rate": 1.0 - (self.replace_count / max(self.lru_failures, 1)) if self.lru_failures > 0 else 1.0,
             "lru_failures": self.lru_failures,
             "repair_count": self.repair_count,
             "replace_count": self.replace_count,

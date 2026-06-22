@@ -38,6 +38,14 @@ class TestModelIntegration(unittest.TestCase):
         self.assertIn("spare_stock_total", snap)
         self.assertIn("sortie_completion_rate", snap)
 
+    def test_snapshot_has_five_key_metrics(self) -> None:
+        model = IndependentMesaModel(self.package, steps=48, seed=20260621)
+        model.step()
+        snap = model.snapshot()
+        for key in ["availability", "sortie_rate", "turnaround_time", "spare_fill_rate", "avg_spare_delay"]:
+            self.assertIn(key, snap)
+            self.assertIsInstance(snap[key], (int, float))
+
     def test_visualization_state_has_full_structure(self) -> None:
         model = IndependentMesaModel(self.package, steps=48, seed=20260621)
         for _ in range(5):
@@ -55,6 +63,18 @@ class TestModelIntegration(unittest.TestCase):
         self.assertIn("spare_fill_rate", metrics)
         self.assertGreaterEqual(metrics["sortie_completion_rate"], 0.0)
         self.assertLessEqual(metrics["sortie_completion_rate"], 1.0)
+
+    def test_final_metrics_has_five_key_metrics(self) -> None:
+        model = IndependentMesaModel(self.package, steps=48, seed=20260621)
+        for _ in range(48):
+            model.step()
+        metrics = model.compute_final_metrics()
+        for key in ["availability", "sortie_rate", "turnaround_time", "spare_fill_rate", "avg_spare_delay"]:
+            self.assertIn(key, metrics)
+        self.assertGreaterEqual(metrics["availability"], 0.0)
+        self.assertLessEqual(metrics["availability"], 1.0)
+        self.assertGreaterEqual(metrics["spare_fill_rate"], 0.0)
+        self.assertLessEqual(metrics["spare_fill_rate"], 1.0)
 
     def test_reproducible_with_same_seed(self) -> None:
         m1 = IndependentMesaModel(self.package, steps=10, seed=42)
