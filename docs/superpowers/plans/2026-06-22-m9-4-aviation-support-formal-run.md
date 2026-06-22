@@ -1,6 +1,8 @@
 # M9.4 Aviation Support Formal Run Completion
 
 > Completed on 2026-06-22. This file records the implementation boundary and verification evidence for the M9.4 slice.
+>
+> Supersession note: M9.4 intentionally stopped before `aviation_support` Monte Carlo. M9.5, recorded in `2026-06-22-m9-5-aviation-support-formal-monte-carlo.md`, later defined the governed aviation sampling contract and unlocked `aviation_support` formal Monte Carlo through the same canonical run/artifact path.
 
 ## Goal
 

@@ -393,11 +393,20 @@ class SimulationAdapter:
         monte_carlo_config: dict[str, Any] | None = None,
         **legacy_config: Any,
     ) -> dict[str, dict[str, Any]]:
-        """Run a synchronous M6.2 Monte Carlo batch from a compiled smoke Scenario."""
+        """Run a synchronous formal Monte Carlo batch from a compiled Scenario."""
         config = self._require_monte_carlo_config(
             monte_carlo_config=monte_carlo_config,
             legacy_config=legacy_config,
         )
+        model_family = scenario.get("simulation_model", {}).get("family")
+        if model_family == "aviation_support":
+            return self._run_aviation_support_monte_carlo_scenario(
+                scenario,
+                output_dir=output_dir,
+                steps=steps,
+                run_id=run_id,
+                monte_carlo_config=config,
+            )
         self._assert_smoke_scenario(scenario)
         if steps < 0:
             raise AdapterError("bad_steps", "steps must be non-negative", steps=steps)
@@ -916,6 +925,210 @@ class SimulationAdapter:
         self._write_json(run_dir / "artifact-manifest.json", manifest)
         return {"run": run, "result": result, "artifact_manifest": manifest}
 
+    def _run_aviation_support_monte_carlo_scenario(
+        self,
+        scenario: dict[str, Any],
+        output_dir: Path | str,
+        steps: int = 3,
+        run_id: str | None = None,
+        monte_carlo_config: dict[str, Any] | None = None,
+    ) -> dict[str, dict[str, Any]]:
+        self._assert_aviation_support_scenario(scenario)
+        if steps < 0:
+            raise AdapterError("bad_steps", "steps must be non-negative", steps=steps)
+
+        inputs = scenario["simulation_inputs"]
+        config = self._require_monte_carlo_config(monte_carlo_config=monte_carlo_config, legacy_config={})
+        run_id = run_id or f"run-{scenario['scenario_id']}-mc"
+        result_id = f"result-{run_id}"
+        manifest_id = f"artifact-manifest-{run_id}"
+        mc_experiment_id = config.get("mc_experiment_id") or f"mc-{run_id.removeprefix('run-')}"
+        now = _utc_now()
+
+        profile = self._monte_carlo_profile(scenario, monte_carlo_config=config)
+        sampling_contract = self._aviation_monte_carlo_sampling_contract(profile)
+        samples = [
+            self._run_aviation_monte_carlo_sample(inputs, profile["sample_points"][index], steps=steps, sample_index=index)
+            for index in range(profile["sample_count"])
+        ]
+        aggregate = self._aggregate_sample_metrics(samples)
+        aggregate["mission_success_probability"] = aggregate.get("sortie_completion_rate", 0)
+        aggregate["spare_shortage_probability"] = self._aviation_spare_shortage_probability(samples)
+        base_artifact_id = f"monte_carlo_base-{run_id}"
+        projections = self._aviation_monte_carlo_analysis_projections(aggregate, samples, base_artifact_id)
+        input_project = self._input_project_for_scenario(scenario)
+        base_artifact = {
+            "artifact_type": "monte_carlo_base",
+            "model_family": "aviation_support",
+            "run_id": run_id,
+            "mc_experiment_id": mc_experiment_id,
+            "scenario_id": scenario["scenario_id"],
+            "scenario_version": scenario["scenario_version"],
+            "mapping_provenance": copy.deepcopy(scenario["compiled_from"]["mapping_provenance"]),
+            "mapping_version": scenario["compiled_from"]["mapping_provenance"].get("mapping_version"),
+            "sampling_contract": sampling_contract,
+            "sample_count": profile["sample_count"],
+            "seed": inputs["seed"],
+            "sweep": profile["sweep"],
+            "sample_points": profile["sample_points"],
+            "samples": samples,
+            "aggregate_metrics": aggregate,
+            "logs_summary": {
+                "completed_samples": profile["sample_count"],
+                "failed_samples": 0,
+                "executor": "local_sync_aviation_support",
+            },
+        }
+        run_config = {
+            "schema_version": "run-config-v0",
+            "run_id": run_id,
+            "run_type": "monte_carlo",
+            "model_family": "aviation_support",
+            "project_id": scenario["project_id"],
+            "experiment_plan_id": None,
+            "modeling_snapshot_id": None,
+            "scenario_id": scenario["scenario_id"],
+            "scenario_version": scenario["scenario_version"],
+            "seed": inputs["seed"],
+            "steps": steps,
+            "mc_experiment_id": mc_experiment_id,
+            "monte_carlo_config": copy.deepcopy(config),
+            "sampling_contract": copy.deepcopy(sampling_contract),
+        }
+        sample_results = {
+            "schema_version": "sample-results-v0",
+            "run_id": run_id,
+            "mc_experiment_id": mc_experiment_id,
+            "model_family": "aviation_support",
+            "samples": samples,
+        }
+        aggregate_result = {
+            "schema_version": "aggregate-result-v0",
+            "run_id": run_id,
+            "mc_experiment_id": mc_experiment_id,
+            "model_family": "aviation_support",
+            "aggregate_metrics": aggregate,
+        }
+        metrics = {
+            "schema_version": "metrics-v0",
+            "run_id": run_id,
+            "metrics": aggregate,
+        }
+        report = {
+            "schema_version": "run-report-v0",
+            "run_id": run_id,
+            "title": "Aviation support Monte Carlo run report",
+            "summary": {
+                "status": "succeeded",
+                "sample_count": profile["sample_count"],
+                "seed": inputs["seed"],
+                "mc_experiment_id": mc_experiment_id,
+                "sortie_completion_rate": aggregate.get("sortie_completion_rate", 0),
+                "available_aircraft": aggregate.get("available_aircraft", 0),
+            },
+        }
+        event_log = {
+            "schema_version": "run-log-v0",
+            "run_id": run_id,
+            "events": [
+                {"event": "run_started", "at": now},
+                {"event": "samples_completed", "at": now, "completed_samples": profile["sample_count"]},
+                {"event": "run_completed", "at": now, "status": "succeeded"},
+            ],
+        }
+        visualization_state_series = self._visualization_state_series_payload(
+            run_id=run_id,
+            scenario=scenario,
+            model_family="aviation_support",
+            result_summary_id=result_id,
+            artifact_manifest_id=manifest_id,
+            frames=self._aviation_monte_carlo_visualization_frames(run_id, samples),
+        )
+        result = {
+            "schema_version": RESULT_SCHEMA_VERSION,
+            "model_family": "aviation_support",
+            "result_id": result_id,
+            "run_id": run_id,
+            "scenario_id": scenario["scenario_id"],
+            "scenario_version": scenario["scenario_version"],
+            "metrics": aggregate,
+            "analysis_outputs": {
+                "large_sample_summary": projections["large_sample_summary"]["data"],
+                "spare_shortage": projections["spare_shortfall"]["data"],
+                "carry_list": projections["carry_list"]["data"],
+                "mission_reliability": projections["mission_reliability"]["data"],
+                "downtime_factors": projections["downtime_factors"]["data"],
+            },
+        }
+        run = {
+            "schema_version": RUN_SCHEMA_VERSION,
+            "run_id": run_id,
+            "project_id": scenario["project_id"],
+            "scenario_id": scenario["scenario_id"],
+            "scenario_version": scenario["scenario_version"],
+            "model_family": "aviation_support",
+            "model_id": "AviationSupportModel",
+            "status": "succeeded",
+            "run_type": "monte_carlo",
+            "seed": inputs["seed"],
+            "progress": 1,
+            "started_at": now,
+            "completed_at": now,
+            "result_summary_id": result_id,
+            "artifact_manifest_id": manifest_id,
+            "error": None,
+            "experiment_id": f"experiment-{run_id}",
+            "experiment_type": "monte_carlo",
+            "mc_experiment_id": mc_experiment_id,
+        }
+
+        output_root = Path(output_dir)
+        run_dir = output_root / run_id
+        run_dir.mkdir(parents=True, exist_ok=True)
+        artifact_specs = [
+            ("run_config", "run-config.json", run_config, "run-config-v0"),
+            ("input_project", "input-project.json", input_project, PROJECT_SCHEMA_VERSION),
+            ("compiled_scenario", "compiled-scenario.json", scenario, SCENARIO_SCHEMA_VERSION),
+            ("sample_results", "sample-results.json", sample_results, "sample-results-v0"),
+            ("aggregate_result", "aggregate-result.json", aggregate_result, "aggregate-result-v0"),
+            ("result_summary", "result-summary.json", result, RESULT_SCHEMA_VERSION),
+            ("metrics", "metrics.json", metrics, "metrics-v0"),
+            ("report", "report.json", report, "run-report-v0"),
+            ("log", "events-log.json", event_log, "run-log-v0"),
+            ("monte_carlo_base", "monte-carlo-base.json", base_artifact, None),
+            (
+                "visualization_state_series",
+                "visualization-state-series.json",
+                visualization_state_series,
+                VISUALIZATION_STATE_SERIES_SCHEMA_VERSION,
+            ),
+            ("analysis_projection_spare_shortfall", "spare-shortfall.json", projections["spare_shortfall"], "analysis-projection-v0"),
+            ("analysis_projection_carry_list", "carry-list.json", projections["carry_list"], "analysis-projection-v0"),
+            ("analysis_projection_mission_reliability", "mission-reliability.json", projections["mission_reliability"], "analysis-projection-v0"),
+            ("analysis_projection_downtime_factors", "downtime-factors.json", projections["downtime_factors"], "analysis-projection-v0"),
+        ]
+        artifacts = [
+            self._write_artifact(run_dir, output_root, kind, filename, payload, schema_version)
+            for kind, filename, payload, schema_version in artifact_specs
+        ]
+        for artifact in artifacts:
+            kind = artifact.get("kind", "")
+            if str(kind).startswith("analysis_projection_"):
+                artifact["source_artifact_id"] = base_artifact_id
+                artifact["analysis_type"] = str(kind).removeprefix("analysis_projection_")
+        self._annotate_state_series_artifact(artifacts, run_id, result_id, scenario["scenario_id"])
+        manifest = {
+            "schema_version": ARTIFACT_MANIFEST_SCHEMA_VERSION,
+            "artifact_manifest_id": manifest_id,
+            "run_id": run_id,
+            "scenario_id": scenario["scenario_id"],
+            "scenario_version": scenario["scenario_version"],
+            "created_at": now,
+            "artifacts": artifacts,
+        }
+        self._write_json(run_dir / "artifact-manifest.json", manifest)
+        return {"run": run, "result": result, "artifact_manifest": manifest}
+
     def _aviation_visualization_state_frame(self, run_id: str, state: dict[str, Any], step: int) -> dict[str, Any]:
         metrics = state["snapshot"]
         aircraft_count = max(1, int(metrics.get("aircraft_count", 1) or 1))
@@ -992,12 +1205,14 @@ class SimulationAdapter:
         spare_consumed_total = max(0.0, float(metrics.get("spare_consumed_total", 0) or 0))
         spare_denominator = max(1.0, spare_stock_total + spare_consumed_total)
         spare_fill_rate = min(1.0, spare_stock_total / spare_denominator)
-        shortage_probability = min(1.0, spare_consumed_total / spare_denominator)
+        shortage_probability = min(1.0, metrics.get("spare_shortage_probability", 0)) if "spare_shortage_probability" in metrics else (
+            1.0 if spare_stock_total <= 0 and spare_consumed_total > 0 else 0.0
+        )
         sortie_completion_rate = min(1.0, max(0.0, float(metrics.get("sortie_completion_rate", 0) or 0)))
         planned_sorties = max(1.0, float(metrics.get("planned_sorties", 1) or 1))
         sortie_rate = min(1.0, max(0.0, float(metrics.get("launched_sorties", 0) or 0) / planned_sorties))
         failure_events = max(0.0, float(metrics.get("lru_failures", 0) or 0))
-        spare_delay_events = max(0.0, float(metrics.get("spare_consumed_total", 0) or 0))
+        spare_delay_events = max(0.0, float(shortage_probability))
         resource_delay_events = max(0.0, float(metrics.get("delayed_sorties", 0) or 0))
         downtime_total = failure_events + spare_delay_events + resource_delay_events or 1.0
         risk_level = "high" if shortage_probability >= 0.2 else "medium" if shortage_probability > 0 else "low"
@@ -1045,6 +1260,170 @@ class SimulationAdapter:
             },
         }
 
+    def _input_project_for_scenario(self, scenario: dict[str, Any]) -> dict[str, Any]:
+        input_project = copy.deepcopy(
+            self._compiled_project_snapshots.get(scenario["scenario_id"])
+            or self._compiled_project_snapshots.get(scenario["project_id"])
+        )
+        if input_project is not None:
+            return input_project
+        return {
+            "schema_version": PROJECT_SCHEMA_VERSION,
+            "project_id": scenario["project_id"],
+            "project_version": scenario["compiled_from"]["project_version"],
+            "project_schema_version": scenario["compiled_from"]["project_schema_version"],
+            "mapping_provenance": copy.deepcopy(scenario["compiled_from"]["mapping_provenance"]),
+        }
+
+    def _aviation_monte_carlo_sampling_contract(self, profile: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "schema_version": "aviation-support-monte-carlo-sampling-v0",
+            "model_family": "aviation_support",
+            "sample_count": profile["sample_count"],
+            "dimensions": [
+                {
+                    "source": "analysisRequests.largeSample.sweep.failureRates",
+                    "target": "AviationSupportModel.lru_failure_multiplier",
+                    "interpretation": "multiplier applied to the compiled aviation LRU hazard baseline",
+                    "values": profile["sweep"]["failureRates"],
+                },
+                {
+                    "source": "analysisRequests.largeSample.sweep.spareMultipliers",
+                    "target": "AviationSupportModel.spares.initial_quantity_multiplier",
+                    "values": profile["sweep"]["spareMultipliers"],
+                },
+                {
+                    "source": "analysisRequests.largeSample.sweep.supportCapacities",
+                    "target": "AviationSupportModel mechanic_teams/fuel_trucks/maintenance_bays",
+                    "values": profile["sweep"]["supportCapacities"],
+                },
+            ],
+            "seed_policy": "sample_seed = compiled Scenario seed + sample_index",
+            "sample_point_policy": "sample_count must cover every cartesian sweep point; extra samples repeat points in deterministic order",
+            "unsupported_fields": [],
+        }
+
+    def _run_aviation_monte_carlo_sample(
+        self,
+        inputs: dict[str, Any],
+        point: dict[str, Any],
+        *,
+        steps: int,
+        sample_index: int,
+    ) -> dict[str, Any]:
+        from src.spare_mvp_abm.aviation_support.model import AviationSupportModel
+
+        sample_inputs = copy.deepcopy(inputs)
+        sample_inputs["lru_failure_multiplier"] = point["failure_rate"]
+        sample_inputs["mechanic_teams"] = point["support_capacity"]
+        sample_inputs["fuel_trucks"] = point["support_capacity"]
+        sample_inputs["maintenance_bays"] = point["support_capacity"]
+        sample_inputs["seed"] = point["seed"]
+        model = AviationSupportModel(**sample_inputs)
+        self._apply_aviation_spare_multiplier(model, point["spare_multiplier"])
+        sweep = {
+            "failure_rate": point["failure_rate"],
+            "spare_multiplier": point["spare_multiplier"],
+            "support_capacity": point["support_capacity"],
+        }
+        frames: list[dict[str, Any]] = []
+        for sample_step in range(steps):
+            model.step()
+            frame = self._aviation_visualization_state_frame(
+                "",
+                model.visualization_state(),
+                sample_step + 1,
+            )
+            frame["sample_index"] = sample_index
+            frame["sample_step"] = sample_step + 1
+            frame["seed"] = point["seed"]
+            frame["sweep"] = copy.deepcopy(sweep)
+            frames.append(frame)
+        if not frames:
+            frame = self._aviation_visualization_state_frame("", model.visualization_state(), 0)
+            frame["sample_index"] = sample_index
+            frame["sample_step"] = 0
+            frame["seed"] = point["seed"]
+            frame["sweep"] = copy.deepcopy(sweep)
+            frames.append(frame)
+        return {
+            "sample_index": sample_index,
+            "seed": point["seed"],
+            "sweep": sweep,
+            "metrics": model.snapshot(),
+            "frames": frames,
+        }
+
+    def _apply_aviation_spare_multiplier(self, model: Any, multiplier: float) -> None:
+        for spare in model.spares.values():
+            spare.quantity = max(0, int(round(spare.quantity * multiplier)))
+            spare.reorder_point = max(0, int(round(spare.reorder_point * multiplier)))
+            spare.reorder_quantity = max(0, int(round(spare.reorder_quantity * multiplier)))
+
+    def _aviation_spare_shortage_probability(self, samples: list[dict[str, Any]]) -> float:
+        return (
+            sum(
+                1
+                for sample in samples
+                if self._aviation_sample_has_spare_shortage(sample)
+            )
+            / max(1, len(samples))
+        )
+
+    def _aviation_sample_has_spare_shortage(self, sample: dict[str, Any]) -> bool:
+        frames = sample.get("frames") or []
+        spares = frames[-1].get("spares") if frames else []
+        if isinstance(spares, list):
+            return any(
+                float(spare.get("quantity", 0) or 0) <= 0
+                and float(spare.get("consumed", 0) or 0) > 0
+                for spare in spares
+                if isinstance(spare, dict)
+            )
+        return (
+            float(sample["metrics"].get("spare_stock_total", 0) or 0) <= 0
+            and float(sample["metrics"].get("spare_consumed_total", 0) or 0) > 0
+        )
+
+    def _aviation_monte_carlo_analysis_projections(
+        self,
+        aggregate: dict[str, Any],
+        samples: list[dict[str, Any]],
+        base_artifact_id: str,
+    ) -> dict[str, dict[str, Any]]:
+        projections = self._aviation_analysis_projections(aggregate, base_artifact_id)
+        projections["large_sample_summary"] = {
+            "projection_type": "large_sample_summary",
+            "base_artifact_id": base_artifact_id,
+            "data": {
+                "sample_count": len(samples),
+                "mission_success_probability": aggregate.get("mission_success_probability", 0),
+                "spare_fill_rate": self._aviation_spare_fill_rate(aggregate),
+                "mean_repair_backlog": aggregate.get("maintenance_backlog", 0),
+            },
+        }
+        return projections
+
+    def _aviation_spare_fill_rate(self, metrics: dict[str, Any]) -> float:
+        stock = max(0.0, float(metrics.get("spare_stock_total", 0) or 0))
+        consumed = max(0.0, float(metrics.get("spare_consumed_total", 0) or 0))
+        total = stock + consumed
+        return 1.0 if total <= 0 else min(1.0, stock / total)
+
+    def _aviation_monte_carlo_visualization_frames(self, run_id: str, samples: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        frames: list[dict[str, Any]] = []
+        next_step = 0
+        for sample in samples:
+            sample_frames = sample.get("frames") or []
+            for sample_frame in sample_frames:
+                frame = copy.deepcopy(sample_frame)
+                frame["run_id"] = run_id
+                frame["step"] = next_step
+                frame["simulation_time"] = next_step
+                frames.append(frame)
+                next_step += 1
+        return frames
+
     def _monte_carlo_profile(
         self,
         scenario: dict[str, Any],
@@ -1082,6 +1461,14 @@ class SimulationAdapter:
                         }
                     )
         count = self._validate_monte_carlo_sample_count(monte_carlo_config.get("sample_count"))
+        if count < len(points):
+            raise AdapterError(
+                "bad_analysis_request",
+                "monte carlo samples must cover every configured sweep point",
+                field_path="monte_carlo_config.sample_count",
+                sample_count=count,
+                sweep_point_count=len(points),
+            )
         sample_points = [copy.deepcopy(points[index % len(points)]) for index in range(count)]
         for index, point in enumerate(sample_points):
             point["seed"] = int(inputs["seed"]) + index

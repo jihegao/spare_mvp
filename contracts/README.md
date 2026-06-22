@@ -24,7 +24,7 @@ The current frontend Project JSON is the raw `defaultScenario` shape from `front
 
 `scenario.schema.json` requires an explicit `simulation_model` with `family`, `model_id`, and `contract_version`. Its `simulation_inputs` field is split with `oneOf` branches for `smoke` and `aviation_support`, so the Simulation Adapter must compile model-specific inputs instead of coercing a mixed parameter bag.
 
-The Simulation Adapter lives at `src/spare_mvp_contract/adapter.py`. It validates current Project JSON contract roots, compiles approved `smoke` and `aviation_support` Scenario paths, runs `SmokeSpareMvpModel` / `AviationSupportModel` for single runs, and writes traceable run artifacts. `aviation_support` Monte Carlo remains unsupported until a governed aviation sampling contract exists.
+The Simulation Adapter lives at `src/spare_mvp_contract/adapter.py`. It validates current Project JSON contract roots, compiles approved `smoke` and `aviation_support` Scenario paths, runs `SmokeSpareMvpModel` / `AviationSupportModel` for single runs, and writes traceable run artifacts. M9.5 defines the governed aviation sampling contract for `aviation_support` formal Monte Carlo through the existing `/api/runs -> RunService -> artifacts` path.
 
 `run.schema.json` repeats `model_family` and `model_id` for query, audit, and Result validation.
 
@@ -39,3 +39,5 @@ M9.2 online state stream is the run subscription envelope over that same frame c
 M9.3 run lifecycle/control uses canonical `POST /api/runs/{run_id}/control` rather than changing the state-frame contract. The minimal supported actions are backend-confirmed `cancel` and `retry`; unsupported `pause`, `resume`, `step`, and `reset` fail closed with audit records. Retry-pending runs must not expose stale result or artifact payloads as current official outputs.
 
 M9.4 aviation_support formal execution uses the same `/api/runs` result, projection, artifact manifest, run chain, and `visualization_state_series` contracts as smoke single runs while preserving the aviation-specific metric family. Projection artifacts for aviation single runs are derived from the `aviation_support` result summary artifact and must not be replaced by frontend demo calculations.
+
+M9.5 aviation_support formal Monte Carlo uses the same canonical run, artifact manifest, projection, run chain, and `visualization_state_series` contracts as smoke Monte Carlo runs. The `monte_carlo_base` payload carries the aviation sampling contract version, and the four `analysis_projection_*` artifacts derive from that base artifact rather than frontend demo calculations.

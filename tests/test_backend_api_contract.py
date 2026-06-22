@@ -1299,14 +1299,14 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(self.adapter.run_calls[0][0]["scenario_id"], submitted["scenario_id"])
         self.assertEqual(self.adapter.run_calls[0][2], submitted["run_id"])
 
-    def test_run_service_keeps_aviation_support_monte_carlo_unsupported(self) -> None:
+    def test_run_service_submits_aviation_support_formal_monte_carlo_run(self) -> None:
         created = self._create_imported_sample_project()
         project = created["project"]
         saved = created["savedProject"]
         plan = self.api.create_experiment_plan(
             saved["project_id"],
             {
-                "name": "aviation monte carlo remains unsupported",
+                "name": "aviation monte carlo formal execution",
                 "steps": 1,
                 "projectJson": copy.deepcopy(project),
                 "analysisRequests": {
@@ -1333,12 +1333,31 @@ class BackendApiContractTest(unittest.TestCase):
                 "formal_run": True,
             }
         )
+        status = service.get_run_status(submitted["run_id"])
+        result = self.api.get_run_result(submitted["run_id"])
+        manifest = self.api.get_run_artifacts(submitted["run_id"])
+        base_artifact = self._artifact_by_kind(manifest, "monte_carlo_base")
+        base_payload = json.loads((Path(self.api.output_dir) / base_artifact["path"]).read_text(encoding="utf-8"))
+        projection_artifacts = [
+            artifact
+            for artifact in manifest["artifacts"]
+            if artifact["kind"].startswith("analysis_projection_")
+        ]
 
-        self.assertEqual(submitted["status"], "failed")
-        self.assertEqual(submitted["phase"], "failed")
+        self.assertEqual(submitted["status"], "succeeded")
+        self.assertEqual(submitted["phase"], "completed")
         self.assertEqual(submitted["model_family"], "aviation_support")
         self.assertEqual(submitted["run_type"], "monte_carlo")
-        self.assertEqual(submitted["error"]["code"], "unsupported_model_family")
+        self.assertEqual(status["status"], "succeeded")
+        self.assertEqual(status["run_type"], "monte_carlo")
+        self.assertEqual(result["model_family"], "aviation_support")
+        self.assertEqual(result["run_id"], submitted["run_id"])
+        self.assertEqual(base_payload["model_family"], "aviation_support")
+        self.assertEqual(base_payload["sample_count"], 2)
+        self.assertEqual(base_payload["sampling_contract"]["schema_version"], "aviation-support-monte-carlo-sampling-v0")
+        self.assertEqual(len(base_payload["samples"]), 2)
+        self.assertEqual(len(projection_artifacts), 4)
+        self.assertTrue(all(artifact["source_artifact_id"] == base_artifact["artifact_id"] for artifact in projection_artifacts))
         self.assertEqual(len(self.adapter.compile_calls), 1)
         self.assertEqual(self.adapter.compile_calls[0][1], "aviation_support")
         self.assertEqual(len(self.adapter.monte_carlo_run_calls), 1)
