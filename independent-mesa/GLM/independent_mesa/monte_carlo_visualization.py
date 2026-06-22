@@ -211,7 +211,7 @@ def build_monte_carlo_html(
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>GLM 蒙特卡洛扫描可视化</title>
+  <title>方案一 蒙特卡洛扫描可视化</title>
   <style>
     * {{ box-sizing: border-box; }}
     body {{ margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #1f2933; background: #f6f8fa; }}
@@ -254,7 +254,7 @@ def build_monte_carlo_html(
 </head>
 <body>
   <header>
-    <h1>GLM 蒙特卡洛扫描可视化</h1>
+    <h1>方案一 蒙特卡洛扫描可视化</h1>
     <span class="meta">故障率 ×{len(failure_rates)} · 备件倍数 ×{len(spare_multipliers)} · 保障容量 ×{len(support_capacities)} · 样本 {samples} · 步数 {steps}</span>
   </header>
   <main>

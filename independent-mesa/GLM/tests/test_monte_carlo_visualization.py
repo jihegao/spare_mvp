@@ -43,7 +43,7 @@ class TestMonteCarloVisualization(unittest.TestCase):
             "setFrame(0)",
         ]:
             self.assertIn(marker, doc)
-        self.assertIn("GLM 蒙特卡洛扫描可视化", doc)
+        self.assertIn("方案一 蒙特卡洛扫描可视化", doc)
 
     def test_build_html_has_five_key_metric_columns(self) -> None:
         results = self._run_small_sweep()
@@ -103,7 +103,7 @@ class TestMonteCarloVisualization(unittest.TestCase):
             runner.save_visualization(results, out, steps=4, samples=1, seed=20260621)
             self.assertTrue(out.exists())
             doc = out.read_text(encoding="utf-8")
-            self.assertIn("GLM 蒙特卡洛扫描可视化", doc)
+            self.assertIn("方案一 蒙特卡洛扫描可视化", doc)
 
 
 if __name__ == "__main__":

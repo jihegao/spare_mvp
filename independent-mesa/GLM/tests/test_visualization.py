@@ -42,7 +42,7 @@ class TestVisualization(unittest.TestCase):
             "setFrame(0)",
         ]:
             self.assertIn(marker, html_doc)
-        self.assertIn("GLM Independent Mesa", html_doc)
+        self.assertIn("方案一 Independent Mesa", html_doc)
 
     def test_build_visualization_html_embeds_frames_without_leaks(self) -> None:
         model = IndependentMesaModel(self.package, steps=2, seed=20260621)
@@ -63,7 +63,7 @@ class TestVisualization(unittest.TestCase):
             frames_data = json.loads((out_dir / "frames.json").read_text(encoding="utf-8"))
             self.assertIn("frames", frames_data)
             html_doc = (out_dir / "visualization.html").read_text(encoding="utf-8")
-            self.assertIn("GLM Independent Mesa", html_doc)
+            self.assertIn("方案一 Independent Mesa", html_doc)
 
 
 if __name__ == "__main__":

@@ -72,9 +72,7 @@ def build_visualization_html(
     frames_json = json.dumps(frames, ensure_ascii=False)
     changes_rows = "\n".join(
         f"<tr><td class='field-path'>{html.escape(change['path'])}</td>"
-        f"<td class='value-cell'>{html.escape(str(change['from']))}</td>"
         f"<td class='value-cell'>{html.escape(str(change['to']))}</td></tr>"
-        f"<tr class='reason-row'><td colspan='3'>原因：{html.escape(change.get('why', ''))}</td></tr>"
         for change in input_changes
     )
     timeline_rows = []
@@ -92,7 +90,7 @@ def build_visualization_html(
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>GPT Independent Mesa 可视化回放</title>
+  <title>方案二 Independent Mesa 可视化回放</title>
   <style>
     * {{ box-sizing: border-box; }}
     body {{ margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #1f2933; background: #f6f8fa; }}
@@ -116,9 +114,8 @@ def build_visualization_html(
     .waves-table th:nth-child(3), .waves-table td:nth-child(3) {{ width: 72px; }}
     .field-path {{ font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: #334e68; line-height: 1.35; }}
     .value-cell {{ width: 54px; white-space: nowrap; color: #102a43; font-weight: 700; }}
-    .reason-row td {{ padding-top: 0; color: #52606d; font-size: 11px; line-height: 1.45; border-bottom: 1px solid #bcccdc; }}
     .change-table col:nth-child(1) {{ width: auto; }}
-    .change-table col:nth-child(2), .change-table col:nth-child(3) {{ width: 58px; }}
+    .change-table col:nth-child(2) {{ width: 112px; }}
     .timeline-table th {{ width: 64px; }}
     .pill {{ display: inline-block; border-radius: 999px; padding: 3px 7px; margin: 2px; color: white; background: #627d98; }}
     .log {{ max-height: 240px; overflow: auto; font-size: 12px; }}
@@ -134,7 +131,7 @@ def build_visualization_html(
 </head>
 <body>
   <header>
-    <h1>GPT Independent Mesa 可视化回放</h1>
+    <h1>方案二 Independent Mesa 可视化回放</h1>
   </header>
   <main>
     <section>
@@ -160,10 +157,10 @@ def build_visualization_html(
         <div class="log" id="events"></div>
       </section>
       <section>
-        <h2>输入数据修订</h2>
+        <h2>输入数据表</h2>
         <table class="data-table change-table">
-          <colgroup><col /><col /><col /></colgroup>
-          <thead><tr><th>字段</th><th>原值</th><th>新值</th></tr></thead>
+          <colgroup><col /><col /></colgroup>
+          <thead><tr><th>输入参数名</th><th>修订后的值</th></tr></thead>
           <tbody>{changes_rows}</tbody>
         </table>
       </section>

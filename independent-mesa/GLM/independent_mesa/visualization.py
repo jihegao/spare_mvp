@@ -117,7 +117,7 @@ def build_visualization_html(
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>GLM Independent Mesa 可视化回放</title>
+  <title>方案一 Independent Mesa 可视化回放</title>
   <style>
     * {{ box-sizing: border-box; }}
     body {{ margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #1f2933; background: #f6f8fa; }}
@@ -168,7 +168,7 @@ def build_visualization_html(
 </head>
 <body>
   <header>
-    <h1>GLM Independent Mesa 可视化回放</h1>
+    <h1>方案一 Independent Mesa 可视化回放</h1>
     <span id="clock">D1 00:00</span>
   </header>
   <main>
