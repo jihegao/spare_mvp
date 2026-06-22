@@ -344,10 +344,112 @@ class SimulationAdapterTest(unittest.TestCase):
                         self.assertIn("resources", frame)
                         self.assertIn("events", frame)
 
-    def test_aviation_support_monte_carlo_remains_unsupported(self) -> None:
+    def test_aviation_support_monte_carlo_writes_formal_projection_artifacts(self) -> None:
         project = self._load_fixture("aviation_support_project.json")
         scenario = self.adapter.compile_scenario(project, model_family="aviation_support")
+        result_schema = json.loads((REPO_ROOT / "contracts" / "result.schema.json").read_text(encoding="utf-8"))
+        manifest_schema = json.loads((REPO_ROOT / "contracts" / "artifact_manifest.schema.json").read_text(encoding="utf-8"))
+        state_series_schema = json.loads(
+            (REPO_ROOT / "contracts" / "visualization_state_series.schema.json").read_text(encoding="utf-8")
+        )
 
+        with tempfile.TemporaryDirectory() as tmp:
+            bundle = self.adapter.run_monte_carlo_scenario(
+                scenario,
+                output_dir=Path(tmp),
+                steps=2,
+                run_id="run-aviation-mc-contract",
+                monte_carlo_config={
+                    "sample_count": 8,
+                    "sweep": {
+                        "failureRates": [0.05, 0.08],
+                        "spareMultipliers": [1.0, 1.25],
+                        "supportCapacities": [2, 3],
+                    },
+                    "mc_experiment_id": "mc-aviation-contract",
+                },
+            )
+            run = bundle["run"]
+            result = bundle["result"]
+            manifest = bundle["artifact_manifest"]
+            kinds = {artifact["kind"] for artifact in manifest["artifacts"]}
+            base_artifact = next(artifact for artifact in manifest["artifacts"] if artifact["kind"] == "monte_carlo_base")
+            base_payload = json.loads((Path(tmp) / base_artifact["path"]).read_text(encoding="utf-8"))
+            projection_artifacts = [
+                artifact for artifact in manifest["artifacts"] if artifact["kind"].startswith("analysis_projection_")
+            ]
+            state_series_artifact = next(
+                artifact for artifact in manifest["artifacts"] if artifact["kind"] == "visualization_state_series"
+            )
+            state_payload = json.loads((Path(tmp) / state_series_artifact["path"]).read_text(encoding="utf-8"))
+
+        jsonschema.validate(instance=result, schema=result_schema)
+        jsonschema.validate(instance=manifest, schema=manifest_schema)
+        jsonschema.validate(instance=state_payload, schema=state_series_schema)
+        self.assertEqual(run["status"], "succeeded")
+        self.assertEqual(run["model_family"], "aviation_support")
+        self.assertEqual(run["run_type"], "monte_carlo")
+        self.assertEqual(run["mc_experiment_id"], "mc-aviation-contract")
+        self.assertEqual(result["model_family"], "aviation_support")
+        self.assertEqual(result["run_id"], run["run_id"])
+        self.assertEqual(kinds & {
+            "sample_results",
+            "aggregate_result",
+            "monte_carlo_base",
+            "visualization_state_series",
+        }, {
+            "sample_results",
+            "aggregate_result",
+            "monte_carlo_base",
+            "visualization_state_series",
+        })
+        self.assertEqual(len(projection_artifacts), 4)
+        self.assertTrue(all(artifact["source_artifact_id"] == base_artifact["artifact_id"] for artifact in projection_artifacts))
+        self.assertEqual(base_payload["model_family"], "aviation_support")
+        self.assertEqual(base_payload["sample_count"], 8)
+        self.assertEqual(base_payload["sampling_contract"]["schema_version"], "aviation-support-monte-carlo-sampling-v0")
+        self.assertEqual(
+            base_payload["sampling_contract"]["dimensions"][0]["interpretation"],
+            "multiplier applied to the compiled aviation LRU hazard baseline",
+        )
+        self.assertEqual(base_payload["sweep"]["failureRates"], [0.05, 0.08])
+        self.assertEqual(base_payload["sweep"]["spareMultipliers"], [1.0, 1.25])
+        self.assertEqual(base_payload["sweep"]["supportCapacities"], [2, 3])
+        self.assertEqual(len(base_payload["samples"]), 8)
+        self.assertEqual(
+            {
+                (
+                    sample["sweep"]["failure_rate"],
+                    sample["sweep"]["spare_multiplier"],
+                    sample["sweep"]["support_capacity"],
+                )
+                for sample in base_payload["samples"]
+            },
+            {
+                (0.05, 1.0, 2),
+                (0.05, 1.0, 3),
+                (0.05, 1.25, 2),
+                (0.05, 1.25, 3),
+                (0.08, 1.0, 2),
+                (0.08, 1.0, 3),
+                (0.08, 1.25, 2),
+                (0.08, 1.25, 3),
+            },
+        )
+        self.assertEqual(state_payload["model_family"], "aviation_support")
+        self.assertEqual(state_payload["run_id"], run["run_id"])
+        self.assertGreater(len(state_payload["frames"]), 0)
+        self.assertEqual(
+            [frame["simulation_time"] for frame in state_payload["frames"]],
+            sorted(frame["simulation_time"] for frame in state_payload["frames"]),
+        )
+        self.assertTrue(all("sample_index" in frame and "sample_step" in frame for frame in state_payload["frames"]))
+
+    def test_monte_carlo_scenario_rejects_sample_count_below_sweep_point_count(self) -> None:
+        scenario = self.adapter.compile_scenario(
+            self._load_fixture("aviation_support_project.json"),
+            model_family="aviation_support",
+        )
         with tempfile.TemporaryDirectory() as tmp:
             with self.assertRaises(AdapterError) as ctx:
                 self.adapter.run_monte_carlo_scenario(
@@ -355,17 +457,18 @@ class SimulationAdapterTest(unittest.TestCase):
                     output_dir=Path(tmp),
                     steps=1,
                     monte_carlo_config={
-                        "sample_count": 1,
+                        "sample_count": 4,
                         "sweep": {
-                            "failureRates": [0.05],
-                            "spareMultipliers": [1.0],
-                            "supportCapacities": [1],
+                            "failureRates": [0.05, 0.08],
+                            "spareMultipliers": [1.0, 1.25],
+                            "supportCapacities": [2, 3],
                         },
                     },
                 )
 
-            self.assertEqual(ctx.exception.code, "unsupported_model_family")
-            self.assertEqual(list(Path(tmp).glob("**/*")), [])
+        self.assertEqual(ctx.exception.code, "bad_analysis_request")
+        self.assertEqual(ctx.exception.details["sweep_point_count"], 8)
+        self.assertEqual(list(Path(tmp).glob("**/*")), [])
 
     def test_run_smoke_scenario_writes_result_and_artifact_manifest(self) -> None:
         project = self._load_fixture("smoke_project.json")
