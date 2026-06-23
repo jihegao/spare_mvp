@@ -89,6 +89,7 @@
 | [`superpowers/plans/2026-06-22-m9-4-aviation-support-formal-run.md`](superpowers/plans/2026-06-22-m9-4-aviation-support-formal-run.md) | M9.4 `aviation_support` 单次正式执行、后端输出对齐和历史非目标记录。 |
 | [`superpowers/plans/2026-06-22-m9-5-aviation-support-formal-monte-carlo.md`](superpowers/plans/2026-06-22-m9-5-aviation-support-formal-monte-carlo.md) | M9.5 受治理航空保障采样契约和 `aviation_support` formal Monte Carlo 完成记录。 |
 | [`superpowers/plans/2026-06-23-m9-6-platform-case-fixtures.md`](superpowers/plans/2026-06-23-m9-6-platform-case-fixtures.md) | M9.6 平台案例数据包、字段覆盖表、导出链路和 golden fixtures 冻结记录。 |
+| [`superpowers/specs/2026-06-24-m9-7-aircraft-support-v1-design.md`](superpowers/specs/2026-06-24-m9-7-aircraft-support-v1-design.md) | M9.7 `aircraft_support_v1` 正式飞机保障仿真模型族设计规格。 |
 | [`../reports/2026-06-19-page-revision-suggestions/README.md`](../reports/2026-06-19-page-revision-suggestions/README.md) | 2026-06-19 页面走查建议；已取消删除「建模数据导入」页，其余建议作为页面收口输入。 |
 | [`superpowers/plans/2026-06-20-page-suggestion-alignment.md`](superpowers/plans/2026-06-20-page-suggestion-alignment.md) | 页面建议收口实施计划，限定保留 M5.2 建模数据导入工作台并先处理 M6.1.1 前置输入可用性。 |
 | [`superpowers/plans/2026-06-20-m6-1-1-single-simulation-input-alignment.md`](superpowers/plans/2026-06-20-m6-1-1-single-simulation-input-alignment.md) | M6.1.1 单次仿真输入对齐执行计划，要求可视化推演和单次运行先通过 `ExperimentPlan + ModelingSnapshot -> Scenario compiler -> compiled Scenario`。 |

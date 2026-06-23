@@ -29,6 +29,7 @@
 - [`docs/superpowers/specs/2026-06-21-m8-projection-payload-analysis-design.md`](docs/superpowers/specs/2026-06-21-m8-projection-payload-analysis-design.md)：M8.0 projection payload 驱动四个结果分析页正式 KPI/表格/图形的设计和边界。
 - [`docs/superpowers/plans/2026-06-22-m9-5-aviation-support-formal-monte-carlo.md`](docs/superpowers/plans/2026-06-22-m9-5-aviation-support-formal-monte-carlo.md)：M9.5 受治理航空保障采样契约和 `aviation_support` formal Monte Carlo 完成记录。
 - [`docs/superpowers/plans/2026-06-23-m9-6-platform-case-fixtures.md`](docs/superpowers/plans/2026-06-23-m9-6-platform-case-fixtures.md)：M9.6 平台案例数据包、字段覆盖表和 golden fixtures 冻结记录。
+- [`docs/superpowers/specs/2026-06-24-m9-7-aircraft-support-v1-design.md`](docs/superpowers/specs/2026-06-24-m9-7-aircraft-support-v1-design.md)：M9.7 `aircraft_support_v1` 正式飞机保障仿真模型族设计规格。
 - [`docs/superpowers/specs/2026-06-17-four-level-function-page-design.md`](docs/superpowers/specs/2026-06-17-four-level-function-page-design.md)：四级功能页面化设计规格。
 - [`docs/superpowers/plans/2026-06-17-local-aviation-ship-front-integration.md`](docs/superpowers/plans/2026-06-17-local-aviation-ship-front-integration.md)：本轮前端集成实现记录。
 - [`agent.md`](agent.md)：后续 agent 协作规则和 subagent 使用约定。
