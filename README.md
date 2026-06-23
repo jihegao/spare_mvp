@@ -28,6 +28,8 @@
 - [`docs/superpowers/plans/2026-06-21-m7-0-run-artifact-management.md`](docs/superpowers/plans/2026-06-21-m7-0-run-artifact-management.md)：M7.0 运行与产物管理实施计划。
 - [`docs/superpowers/specs/2026-06-21-m8-projection-payload-analysis-design.md`](docs/superpowers/specs/2026-06-21-m8-projection-payload-analysis-design.md)：M8.0 projection payload 驱动四个结果分析页正式 KPI/表格/图形的设计和边界。
 - [`docs/superpowers/plans/2026-06-22-m9-5-aviation-support-formal-monte-carlo.md`](docs/superpowers/plans/2026-06-22-m9-5-aviation-support-formal-monte-carlo.md)：M9.5 受治理航空保障采样契约和 `aviation_support` formal Monte Carlo 完成记录。
+- [`docs/superpowers/plans/2026-06-23-m9-6-platform-case-fixtures.md`](docs/superpowers/plans/2026-06-23-m9-6-platform-case-fixtures.md)：M9.6 平台案例数据包、字段覆盖表和 golden fixtures 冻结记录。
+- [`docs/superpowers/specs/2026-06-24-m9-7-aircraft-support-v1-design.md`](docs/superpowers/specs/2026-06-24-m9-7-aircraft-support-v1-design.md)：M9.7 `aircraft_support_v1` 正式飞机保障仿真模型族设计规格。
 - [`docs/superpowers/specs/2026-06-17-four-level-function-page-design.md`](docs/superpowers/specs/2026-06-17-four-level-function-page-design.md)：四级功能页面化设计规格。
 - [`docs/superpowers/plans/2026-06-17-local-aviation-ship-front-integration.md`](docs/superpowers/plans/2026-06-17-local-aviation-ship-front-integration.md)：本轮前端集成实现记录。
 - [`agent.md`](agent.md)：后续 agent 协作规则和 subagent 使用约定。
@@ -62,6 +64,7 @@
 - M9.0/M9.1/M9.5 状态序列回放与追溯：成功的 smoke single/Monte Carlo run、`aviation_support` single run 和 `aviation_support` formal Monte Carlo run 会写出 `visualization_state_series` artifact，payload 以 `run_id + artifact_id` 定位并包含逐帧时间步、飞机/任务/资源状态、事件摘要、事件 id、指标引用和 run/result/manifest/compiled Scenario 追溯字段。Mesa 可视化页可按 canonical `/api/runs/{run_id}/artifacts/{artifact_id}` 下载、校验、本地播放/暂停/单步/重置/拖动时间轴，并展示可点击定位的事件流；缺少 artifact、payload 类型不匹配或解析失败时保持 fail closed，演示快照只作为本地预览。
 - M9.2 在线状态流和运行订阅已形成最小闭环：HTTP 暴露 run-scoped SSE `GET /api/runs/{run_id}/state-stream`，当前同步执行器从已持久化 `visualization_state_series` payload 输出 `run_status`、`state_frame` 和 `artifact_ready`；在线 `state_frame` 复用离线帧 schema，最终 `artifact_ready` 事件切回 canonical `/api/runs/{run_id}/artifacts/{artifact_id}` 离线回放解析路径。前端 Mesa 可视化页支持订阅运行、断线/重连提示、未授权和失败状态提示；在线帧只用于展示当前流状态，不解锁播放/单步/重置控制。
 - M9.3 Run lifecycle / control plane 已形成最小闭环：HTTP 暴露 `POST /api/runs/{run_id}/control`，后端确认 `cancel` 和 `retry` 后才更新正式 run 状态并写入 `runs.control.*` 审计；`retry` 会阻断旧 result/artifact 正式读取，并在 run detail 中展示 pending 空 artifact manifest。`pause`、`resume`、`step`、`reset` 仍 fail closed，前端 Mesa 控制区只展示后端确认状态或不可用原因，不用本地回放索引、demo frame 或计时器伪造后端控制。M9.4 已专门解锁 `aviation_support` 单次正式执行和后端输出对齐，M9.5 已解锁 `aviation_support` formal Monte Carlo；生产 worker queue、真实运行中增量推送、object storage、完整 cancel/retry 基础设施和 checkpoint restart 只在后续阶段最小需要时纳入。
+- M9.6 已冻结平台案例数据包、字段覆盖表和 golden fixtures：`tests/fixtures/modeling_import_project.json` 仍是唯一完整业务案例源，`tests/fixtures/m9_6_platform_case_export.json` 固化 published modeling import -> Project -> ModelingSnapshot -> ExperimentPlan -> RunIntent -> MonteCarloRunConfig -> compiled `aviation_support` Scenario 链路，`tests/fixtures/m9_6_field_coverage.json` 逐字段标注 consumed/derived/defaulted/ignored/unsupported，`tests/fixtures/m9_6_expected_artifact_kinds.json` 固定 single 与 Monte Carlo artifact kind 口径。M9.6 不实现新的正式飞机保障仿真模型族，不把 `independent-mesa`、`8765` 或静态 HTML 输出作为正式产品入口；M9.7 才进入正式飞机保障仿真模型族，M9.8 才做平台嵌入和 `independent-mesa` 退役。
 
 ## 本地运行
 
