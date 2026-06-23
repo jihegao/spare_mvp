@@ -44,9 +44,9 @@
     },
     {
       "field_path": "objects.equipment.initialReady",
-      "rationale": "The M9.5 compiler has a stable default for this input until M9.7 consumes it explicitly.",
-      "status": "defaulted",
-      "target": "Current aviation_support compiler default rule"
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "status": "ignored",
+      "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.equipment.minRequiredSorties",
@@ -1429,9 +1429,9 @@
   "source_import_id": "import-carrier-day-night-001",
   "summary": {
     "consumed": 14,
-    "defaulted": 1,
+    "defaulted": 0,
     "derived": 7,
-    "ignored": 166,
+    "ignored": 167,
     "total_fields": 237,
     "unsupported": 49
   }

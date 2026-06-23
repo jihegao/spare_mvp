@@ -135,10 +135,11 @@ def m9_6_expected_artifact_kinds() -> dict[str, Any]:
             "compiled_scenario",
             "sample_results",
             "aggregate_result",
-            "monte_carlo_base",
+            "result_summary",
             "metrics",
             "report",
             "log",
+            "monte_carlo_base",
             "visualization_state_series",
             "analysis_projection_spare_shortfall",
             "analysis_projection_carry_list",
@@ -246,7 +247,6 @@ def _coverage_classification(field_path: str) -> tuple[str, str, str]:
     )
     defaulted_prefixes = (
         "objects.missionProfiles[].missionCount",
-        "objects.equipment.initialReady",
     )
     if _matches_any(field_path, consumed_prefixes):
         return (

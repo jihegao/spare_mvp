@@ -10,6 +10,7 @@ import unittest
 import jsonschema
 
 from src.spare_mvp_contract.adapter import AdapterError, SimulationAdapter
+from src.spare_mvp_backend.m9_6_case_package import build_m9_6_platform_case_export
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -644,6 +645,33 @@ class SimulationAdapterTest(unittest.TestCase):
                 },
             )
 
+    def test_m9_6_expected_artifact_kinds_match_runtime_aviation_support_manifest(self) -> None:
+        export = build_m9_6_platform_case_export(
+            self._load_fixture("modeling_import_project.json"),
+            repo_root=REPO_ROOT,
+        )
+        expected = self._load_fixture("m9_6_expected_artifact_kinds.json")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            single_bundle = self.adapter.run_scenario(
+                export["compiled_scenario"],
+                output_dir=tmp,
+                steps=1,
+                run_id="run-m9-6-runtime-single",
+            )
+            monte_carlo_config = copy.deepcopy(export["monte_carlo_config"])
+            monte_carlo_config["sample_count"] = _sweep_point_count(monte_carlo_config["sweep"])
+            monte_carlo_bundle = self.adapter.run_monte_carlo_scenario(
+                export["compiled_scenario"],
+                output_dir=tmp,
+                steps=1,
+                run_id="run-m9-6-runtime-mc",
+                monte_carlo_config=monte_carlo_config,
+            )
+
+        self.assertEqual(_artifact_kinds(single_bundle), expected["single"])
+        self.assertEqual(_artifact_kinds(monte_carlo_bundle), expected["monte_carlo"])
+
     def test_monte_carlo_scenario_rejects_missing_normalized_config_without_fallback(self) -> None:
         project = self._load_fixture("smoke_project.json")
         scenario = self.adapter.compile_scenario(project)
@@ -708,6 +736,17 @@ class SimulationAdapterTest(unittest.TestCase):
                 self.assertEqual(ctx.exception.code, "bad_analysis_request")
                 self.assertIn("monte_carlo_config", str(ctx.exception))
                 self.assertEqual(list(Path(tmp).glob("**/*")), [])
+
+
+def _artifact_kinds(bundle: dict) -> list[str]:
+    return [artifact["kind"] for artifact in bundle["artifact_manifest"]["artifacts"]]
+
+
+def _sweep_point_count(sweep: dict) -> int:
+    total = 1
+    for values in sweep.values():
+        total *= len(values)
+    return total
 
 
 if __name__ == "__main__":

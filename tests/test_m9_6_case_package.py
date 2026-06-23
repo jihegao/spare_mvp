@@ -84,6 +84,7 @@ class M96CasePackageTest(unittest.TestCase):
         entry_by_path = {entry["field_path"]: entry for entry in coverage["entries"]}
         self.assertEqual(entry_by_path["objects.equipmentAssets[].failureRate"]["status"], "ignored")
         self.assertEqual(entry_by_path["objects.supportResources[].capacity"]["status"], "ignored")
+        self.assertEqual(entry_by_path["objects.equipment.initialReady"]["status"], "ignored")
         self.assertEqual(entry_by_path["objects.missionProfiles[].basicMission.minRequiredSorties"]["status"], "ignored")
         self.assertEqual(entry_by_path["objects.equipment.quantity"]["status"], "consumed")
         self.assertEqual(entry_by_path["objects.supportResources[].personnelCapacity"]["status"], "consumed")
@@ -119,10 +120,11 @@ class M96CasePackageTest(unittest.TestCase):
                 "compiled_scenario",
                 "sample_results",
                 "aggregate_result",
-                "monte_carlo_base",
+                "result_summary",
                 "metrics",
                 "report",
                 "log",
+                "monte_carlo_base",
                 "visualization_state_series",
                 "analysis_projection_spare_shortfall",
                 "analysis_projection_carry_list",
@@ -146,7 +148,6 @@ class M96CasePackageTest(unittest.TestCase):
             m9_6_expected_artifact_kinds(),
             self._load_json("tests/fixtures/m9_6_expected_artifact_kinds.json"),
         )
-
 
 def _business_leaf_paths(value: object, prefix: str = "") -> list[str]:
     if isinstance(value, dict):
