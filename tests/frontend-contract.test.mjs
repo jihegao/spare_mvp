@@ -2548,3 +2548,24 @@ test("M9.2 docs describe online state stream as current scope while preserving l
   assert.doesNotMatch(combined, /M9\.2 在线状态流[^。]*(仍未实现|未实现|后续范围)/);
   assert.doesNotMatch(combined, /不实现 M9\.2\+ 在线状态流/);
 });
+
+test("M9.6 docs freeze platform case fixtures before M9.7 model-family work", async () => {
+  const docs = {
+    readme: await readFile(new URL("../README.md", import.meta.url), "utf8"),
+    docsReadme: await readFile(new URL("../docs/README.md", import.meta.url), "utf8"),
+    roadmap: await readFile(new URL("../docs/product-roadmap.md", import.meta.url), "utf8"),
+    agent: await readFile(new URL("../agent.md", import.meta.url), "utf8"),
+    contracts: await readFile(new URL("../contracts/README.md", import.meta.url), "utf8")
+  };
+  const combined = Object.values(docs).join("\n");
+
+  assert.match(combined, /M9\.6[^。]*(平台案例数据包|案例数据包)[^。]*(字段覆盖表|golden fixtures)/);
+  assert.match(combined, /m9_6_platform_case_export\.json/);
+  assert.match(combined, /m9_6_field_coverage\.json/);
+  assert.match(combined, /m9_6_expected_artifact_kinds\.json/);
+  assert.match(combined, /M9\.7[^。]*正式飞机保障仿真模型族/);
+  assert.match(combined, /M9\.8[^。]*independent-mesa/);
+  assert.match(combined, /不得先把 `independent-mesa` 旁路页面嵌入产品入口/);
+  assert.doesNotMatch(combined, /M9\.6[^。]*(正式飞机保障仿真模型族已完成|嵌入平台已完成|退役 independent-mesa 已完成)/);
+  assert.doesNotMatch(combined, /M9\.6[^。]*(8765|independent-mesa\/server\.py)[^。]*(已作为|已成为|是)正式产品入口/);
+});
