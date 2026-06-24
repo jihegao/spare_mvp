@@ -22,13 +22,11 @@ BEHAVIOR_DRIVING_FIELDS = [
     "missionProfile.compositeTasks",
     "basicMission",
     "components[].failureRate",
-    "components[].failureDistribution",
     "components[].lifeLimitHours",
     "components[].specialRepairProfile",
     "supportNodes[].personnelCapacity",
     "supportNodes[].equipmentCapacity",
     "supportNodes[].inventory",
-    "supportNodes[].transportPolicies",
     "supportActivities[].jobs[]",
     "supportActivities[].jobs[].predecessors",
     "experiment.seed",
@@ -41,9 +39,11 @@ M9_7_4_COVERAGE_HARDENING_FIELDS = [
     "missionPhases",
     "airports",
     "missionAreas",
+    "components[].failureDistribution",
     "components[].kOutOfN",
     "components[].rms",
     "reliabilityBlockDiagram",
+    "supportNodes[].transportPolicies",
     "supportActivities[].transportStrategies",
     "supportActivities[].organizationStrategies",
     "monteCarlo.failureRates",
@@ -194,7 +194,7 @@ class AircraftSupportV1Model:
             "maintenance_backlog": backlog,
             "repair_backlog": backlog,
             "lru_failures": self.lru_failures,
-            "failed_count": sum(1 for aircraft in self.aircraft if aircraft.state == "failed"),
+            "failed_count": sum(1 for aircraft in self.aircraft if aircraft.failed_component_id is not None),
             "repairing_count": sum(1 for aircraft in self.aircraft if aircraft.state == "maintenance"),
             "sortie_count": sum(1 for aircraft in self.aircraft if aircraft.state == "flying"),
             "planned_sorties": planned_sorties,
@@ -494,16 +494,30 @@ class AircraftSupportV1Model:
 
     def _create_due_preflight_jobs(self) -> None:
         for mission in self.missions:
-            if mission.preflight_created or mission.status != "scheduled":
+            if mission.status not in {"scheduled", "delayed"}:
                 continue
             if self.minute < mission.preparation_start:
                 continue
-            available = [aircraft for aircraft in self.aircraft if aircraft.state == "available"]
-            for aircraft in available[: mission.required_aircraft]:
+            if self._mission_preflight_commissioned_count(mission) >= mission.required_aircraft:
+                mission.preflight_created = True
+                continue
+            active_preflight_tails = self._active_preflight_tail_numbers(mission.mission_id)
+            available = [
+                aircraft
+                for aircraft in self.aircraft
+                if aircraft.state == "available"
+                and mission.mission_id not in aircraft.prepared_mission_ids
+                and aircraft.tail_number not in active_preflight_tails
+            ]
+            needed = mission.required_aircraft - self._mission_preflight_commissioned_count(mission)
+            created = 0
+            for aircraft in available[: max(0, needed)]:
                 aircraft.state = "maintenance"
                 self._create_job(aircraft, self.preflight_activity, kind="preflight", mission_id=mission.mission_id)
-            mission.preflight_created = True
-            self._event("preflight_created", f"{mission.mission_id} created {min(len(available), mission.required_aircraft)} jobs")
+                created += 1
+            mission.preflight_created = self._mission_preflight_commissioned_count(mission) >= mission.required_aircraft
+            if created:
+                self._event("preflight_created", f"{mission.mission_id} created {created} jobs")
 
     def _dispatch_due_missions(self) -> None:
         for mission in self.missions:
@@ -516,8 +530,6 @@ class AircraftSupportV1Model:
                 for aircraft in self.aircraft
                 if aircraft.state == "available" and mission.mission_id in aircraft.prepared_mission_ids
             ]
-            if len(candidates) < mission.required_aircraft:
-                candidates = [aircraft for aircraft in self.aircraft if aircraft.state == "available"]
             if len(candidates) >= mission.required_aircraft:
                 assigned = candidates[: mission.required_aircraft]
                 for aircraft in assigned:
@@ -543,6 +555,22 @@ class AircraftSupportV1Model:
             else:
                 mission.status = "delayed"
                 self.delayed_sorties += 1
+
+    def _active_preflight_tail_numbers(self, mission_id: str) -> set[str]:
+        return {
+            job.tail_number
+            for job in self.jobs
+            if job.kind == "preflight" and job.mission_id == mission_id and job.state != "completed"
+        }
+
+    def _mission_preflight_commissioned_count(self, mission: MissionState) -> int:
+        active_preflight_tails = self._active_preflight_tail_numbers(mission.mission_id)
+        prepared_available_tails = {
+            aircraft.tail_number
+            for aircraft in self.aircraft
+            if aircraft.state == "available" and mission.mission_id in aircraft.prepared_mission_ids
+        }
+        return len(active_preflight_tails | prepared_available_tails)
 
     def _create_job(
         self,
@@ -628,10 +656,14 @@ class AircraftSupportV1Model:
             self._event("repair_completed", f"{aircraft.tail_number} repair completed")
 
     def _mean_recovery_time(self) -> float:
-        completed = [mission for mission in self.missions if mission.return_time is not None]
+        completed = [
+            mission
+            for mission in self.missions
+            if mission.actual_start is not None and mission.return_time is not None
+        ]
         if not completed:
             return 0.0
-        return sum(float(mission.return_time or 0) for mission in completed) / len(completed)
+        return sum(float((mission.return_time or 0) - (mission.actual_start or 0)) for mission in completed) / len(completed)
 
     def _aircraft_payload(self, item: AircraftState) -> dict[str, Any]:
         return {
