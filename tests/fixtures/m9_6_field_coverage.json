@@ -2,39 +2,39 @@
   "entries": [
     {
       "field_path": "importId",
-      "rationale": "The current platform chain reads this field directly when building the frozen case or adapter inputs.",
+      "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
       "status": "consumed",
-      "target": "M9.6 Project/ExperimentPlan/MonteCarloRunConfig/aviation_support Scenario"
+      "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
     },
     {
       "field_path": "objects.analysisRequests.largeSample.enabled",
-      "rationale": "The current platform chain reads this field directly when building the frozen case or adapter inputs.",
+      "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
       "status": "consumed",
-      "target": "M9.6 Project/ExperimentPlan/MonteCarloRunConfig/aviation_support Scenario"
+      "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
     },
     {
       "field_path": "objects.analysisRequests.largeSample.samples",
-      "rationale": "The current platform chain reads this field directly when building the frozen case or adapter inputs.",
+      "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
       "status": "consumed",
-      "target": "M9.6 Project/ExperimentPlan/MonteCarloRunConfig/aviation_support Scenario"
+      "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
     },
     {
       "field_path": "objects.analysisRequests.largeSample.sweep.failureRates[]",
-      "rationale": "The current platform chain reads this field directly when building the frozen case or adapter inputs.",
+      "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
       "status": "consumed",
-      "target": "M9.6 Project/ExperimentPlan/MonteCarloRunConfig/aviation_support Scenario"
+      "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
     },
     {
       "field_path": "objects.analysisRequests.largeSample.sweep.spareMultipliers[]",
-      "rationale": "The current platform chain reads this field directly when building the frozen case or adapter inputs.",
+      "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
       "status": "consumed",
-      "target": "M9.6 Project/ExperimentPlan/MonteCarloRunConfig/aviation_support Scenario"
+      "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
     },
     {
       "field_path": "objects.analysisRequests.largeSample.sweep.supportCapacities[]",
-      "rationale": "The current platform chain reads this field directly when building the frozen case or adapter inputs.",
+      "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
       "status": "consumed",
-      "target": "M9.6 Project/ExperimentPlan/MonteCarloRunConfig/aviation_support Scenario"
+      "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
     },
     {
       "field_path": "objects.equipment.deploymentLocation",
@@ -68,9 +68,9 @@
     },
     {
       "field_path": "objects.equipment.quantity",
-      "rationale": "The current platform chain reads this field directly when building the frozen case or adapter inputs.",
+      "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
       "status": "consumed",
-      "target": "M9.6 Project/ExperimentPlan/MonteCarloRunConfig/aviation_support Scenario"
+      "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
     },
     {
       "field_path": "objects.equipment.wholeMachineModels[]",
@@ -116,15 +116,15 @@
     },
     {
       "field_path": "objects.equipmentAssets[].failureDistribution.distributionType",
-      "rationale": "The field is intentionally frozen as a future formal-model requirement and must not be silently dropped.",
-      "status": "unsupported",
-      "target": "M9.7 aircraft-support model-family backlog"
+      "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
+      "status": "consumed",
+      "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
     },
     {
       "field_path": "objects.equipmentAssets[].failureDistribution.parameters",
-      "rationale": "The field is intentionally frozen as a future formal-model requirement and must not be silently dropped.",
-      "status": "unsupported",
-      "target": "M9.7 aircraft-support model-family backlog"
+      "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
+      "status": "consumed",
+      "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
     },
     {
       "field_path": "objects.equipmentAssets[].failureModel",
@@ -140,21 +140,21 @@
     },
     {
       "field_path": "objects.equipmentAssets[].kOutOfN.enabled",
-      "rationale": "The field is intentionally frozen as a future formal-model requirement and must not be silently dropped.",
-      "status": "unsupported",
-      "target": "M9.7 aircraft-support model-family backlog"
+      "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
+      "status": "consumed",
+      "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
     },
     {
       "field_path": "objects.equipmentAssets[].kOutOfN.k",
-      "rationale": "The field is intentionally frozen as a future formal-model requirement and must not be silently dropped.",
-      "status": "unsupported",
-      "target": "M9.7 aircraft-support model-family backlog"
+      "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
+      "status": "consumed",
+      "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
     },
     {
       "field_path": "objects.equipmentAssets[].kOutOfN.n",
-      "rationale": "The field is intentionally frozen as a future formal-model requirement and must not be silently dropped.",
-      "status": "unsupported",
-      "target": "M9.7 aircraft-support model-family backlog"
+      "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
+      "status": "consumed",
+      "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
     },
     {
       "field_path": "objects.equipmentAssets[].lifeLimitHours",
@@ -218,21 +218,21 @@
     },
     {
       "field_path": "objects.equipmentAssets[].specialRepairProfile.repairRatio",
-      "rationale": "The field is intentionally frozen as a future formal-model requirement and must not be silently dropped.",
-      "status": "unsupported",
-      "target": "M9.7 aircraft-support model-family backlog"
+      "rationale": "The field is preserved in the formal payload and provenance for audit/governance, but it is approved as non-behavior-driving in M9.7.4.",
+      "status": "governance_only",
+      "target": "M9.7.4 aircraft_support_v1 governance metadata"
     },
     {
       "field_path": "objects.equipmentAssets[].specialRepairProfile.repairTimeMinutes",
-      "rationale": "The field is intentionally frozen as a future formal-model requirement and must not be silently dropped.",
-      "status": "unsupported",
-      "target": "M9.7 aircraft-support model-family backlog"
+      "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
+      "status": "consumed",
+      "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
     },
     {
       "field_path": "objects.equipmentAssets[].specialRepairProfile.replacementRatio",
-      "rationale": "The field is intentionally frozen as a future formal-model requirement and must not be silently dropped.",
-      "status": "unsupported",
-      "target": "M9.7 aircraft-support model-family backlog"
+      "rationale": "The field is preserved in the formal payload and provenance for audit/governance, but it is approved as non-behavior-driving in M9.7.4.",
+      "status": "governance_only",
+      "target": "M9.7.4 aircraft_support_v1 governance metadata"
     },
     {
       "field_path": "objects.missionProfiles[].airports[].distanceToMissionKm",
@@ -278,9 +278,9 @@
     },
     {
       "field_path": "objects.missionProfiles[].basicMission.equipmentQuantity",
-      "rationale": "The current platform chain reads this field directly when building the frozen case or adapter inputs.",
+      "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
       "status": "consumed",
-      "target": "M9.6 Project/ExperimentPlan/MonteCarloRunConfig/aviation_support Scenario"
+      "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
     },
     {
       "field_path": "objects.missionProfiles[].basicMission.equipmentType",
@@ -296,9 +296,9 @@
     },
     {
       "field_path": "objects.missionProfiles[].basicMission.missionId",
-      "rationale": "The value contributes to stable IDs, names, provenance, or display metadata rather than a direct simulation input.",
+      "rationale": "The value contributes to stable IDs, names, provenance, output sampling, or display metadata rather than direct simulation dynamics.",
       "status": "derived",
-      "target": "M9.6 identity and display metadata"
+      "target": "M9.7.4 aircraft_support_v1 identity, output, and display metadata"
     },
     {
       "field_path": "objects.missionProfiles[].basicMission.name",
@@ -554,9 +554,9 @@
     },
     {
       "field_path": "objects.missionProfiles[].durationHours",
-      "rationale": "The current platform chain reads this field directly when building the frozen case or adapter inputs.",
+      "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
       "status": "consumed",
-      "target": "M9.6 Project/ExperimentPlan/MonteCarloRunConfig/aviation_support Scenario"
+      "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
     },
     {
       "field_path": "objects.missionProfiles[].endCondition",
@@ -584,15 +584,15 @@
     },
     {
       "field_path": "objects.missionProfiles[].experiment.seed",
-      "rationale": "The current platform chain reads this field directly when building the frozen case or adapter inputs.",
+      "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
       "status": "consumed",
-      "target": "M9.6 Project/ExperimentPlan/MonteCarloRunConfig/aviation_support Scenario"
+      "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
     },
     {
       "field_path": "objects.missionProfiles[].experiment.steps",
-      "rationale": "The current platform chain reads this field directly when building the frozen case or adapter inputs.",
-      "status": "consumed",
-      "target": "M9.6 Project/ExperimentPlan/MonteCarloRunConfig/aviation_support Scenario"
+      "rationale": "The value contributes to stable IDs, names, provenance, output sampling, or display metadata rather than direct simulation dynamics.",
+      "status": "derived",
+      "target": "M9.7.4 aircraft_support_v1 identity, output, and display metadata"
     },
     {
       "field_path": "objects.missionProfiles[].experiment.stopCondition",
@@ -602,9 +602,9 @@
     },
     {
       "field_path": "objects.missionProfiles[].id",
-      "rationale": "The value contributes to stable IDs, names, provenance, or display metadata rather than a direct simulation input.",
+      "rationale": "The value contributes to stable IDs, names, provenance, output sampling, or display metadata rather than direct simulation dynamics.",
       "status": "derived",
-      "target": "M9.6 identity and display metadata"
+      "target": "M9.7.4 aircraft_support_v1 identity, output, and display metadata"
     },
     {
       "field_path": "objects.missionProfiles[].missionAreas[].areaType",
@@ -698,9 +698,9 @@
     },
     {
       "field_path": "objects.missionProfiles[].name",
-      "rationale": "The value contributes to stable IDs, names, provenance, or display metadata rather than a direct simulation input.",
+      "rationale": "The value contributes to stable IDs, names, provenance, output sampling, or display metadata rather than direct simulation dynamics.",
       "status": "derived",
-      "target": "M9.6 identity and display metadata"
+      "target": "M9.7.4 aircraft_support_v1 identity, output, and display metadata"
     },
     {
       "field_path": "objects.missionProfiles[].periodicTasks[].compositeTaskIds[]",
@@ -842,9 +842,9 @@
     },
     {
       "field_path": "objects.missionProfiles[].profileId",
-      "rationale": "The value contributes to stable IDs, names, provenance, or display metadata rather than a direct simulation input.",
+      "rationale": "The value contributes to stable IDs, names, provenance, output sampling, or display metadata rather than direct simulation dynamics.",
       "status": "derived",
-      "target": "M9.6 identity and display metadata"
+      "target": "M9.7.4 aircraft_support_v1 identity, output, and display metadata"
     },
     {
       "field_path": "objects.missionProfiles[].profileType",
@@ -854,69 +854,69 @@
     },
     {
       "field_path": "objects.missionProfiles[].reliabilityBlockDiagram.edges[].from",
-      "rationale": "The field is intentionally frozen as a future formal-model requirement and must not be silently dropped.",
-      "status": "unsupported",
-      "target": "M9.7 aircraft-support model-family backlog"
+      "rationale": "The field is preserved in the formal payload and provenance for audit/governance, but it is approved as non-behavior-driving in M9.7.4.",
+      "status": "governance_only",
+      "target": "M9.7.4 aircraft_support_v1 governance metadata"
     },
     {
       "field_path": "objects.missionProfiles[].reliabilityBlockDiagram.edges[].to",
-      "rationale": "The field is intentionally frozen as a future formal-model requirement and must not be silently dropped.",
-      "status": "unsupported",
-      "target": "M9.7 aircraft-support model-family backlog"
+      "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
+      "status": "consumed",
+      "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
     },
     {
       "field_path": "objects.missionProfiles[].reliabilityBlockDiagram.edges[].type",
-      "rationale": "The field is intentionally frozen as a future formal-model requirement and must not be silently dropped.",
-      "status": "unsupported",
-      "target": "M9.7 aircraft-support model-family backlog"
+      "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
+      "status": "consumed",
+      "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
     },
     {
       "field_path": "objects.missionProfiles[].reliabilityBlockDiagram.edges[].weight",
-      "rationale": "The field is intentionally frozen as a future formal-model requirement and must not be silently dropped.",
-      "status": "unsupported",
-      "target": "M9.7 aircraft-support model-family backlog"
+      "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
+      "status": "consumed",
+      "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
     },
     {
       "field_path": "objects.missionProfiles[].reliabilityBlockDiagram.nodes[].connectionType",
-      "rationale": "The field is intentionally frozen as a future formal-model requirement and must not be silently dropped.",
-      "status": "unsupported",
-      "target": "M9.7 aircraft-support model-family backlog"
+      "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
+      "status": "consumed",
+      "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
     },
     {
       "field_path": "objects.missionProfiles[].reliabilityBlockDiagram.nodes[].failureRate",
-      "rationale": "The field is intentionally frozen as a future formal-model requirement and must not be silently dropped.",
-      "status": "unsupported",
-      "target": "M9.7 aircraft-support model-family backlog"
+      "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
+      "status": "consumed",
+      "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
     },
     {
       "field_path": "objects.missionProfiles[].reliabilityBlockDiagram.nodes[].id",
-      "rationale": "The field is intentionally frozen as a future formal-model requirement and must not be silently dropped.",
-      "status": "unsupported",
-      "target": "M9.7 aircraft-support model-family backlog"
+      "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
+      "status": "consumed",
+      "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
     },
     {
       "field_path": "objects.missionProfiles[].reliabilityBlockDiagram.nodes[].mtbfHours",
-      "rationale": "The field is intentionally frozen as a future formal-model requirement and must not be silently dropped.",
-      "status": "unsupported",
-      "target": "M9.7 aircraft-support model-family backlog"
+      "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
+      "status": "consumed",
+      "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
     },
     {
       "field_path": "objects.missionProfiles[].reliabilityBlockDiagram.nodes[].name",
-      "rationale": "The field is intentionally frozen as a future formal-model requirement and must not be silently dropped.",
-      "status": "unsupported",
-      "target": "M9.7 aircraft-support model-family backlog"
+      "rationale": "The value contributes to stable IDs, names, provenance, output sampling, or display metadata rather than direct simulation dynamics.",
+      "status": "derived",
+      "target": "M9.7.4 aircraft_support_v1 identity, output, and display metadata"
     },
     {
       "field_path": "objects.missionProfiles[].reliabilityBlockDiagram.nodes[].parentId",
-      "rationale": "The field is intentionally frozen as a future formal-model requirement and must not be silently dropped.",
-      "status": "unsupported",
-      "target": "M9.7 aircraft-support model-family backlog"
+      "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
+      "status": "consumed",
+      "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
     },
     {
       "field_path": "objects.missionProfiles[].reliabilityBlockDiagram.nodes[].type",
-      "rationale": "The field is intentionally frozen as a future formal-model requirement and must not be silently dropped.",
-      "status": "unsupported",
-      "target": "M9.7 aircraft-support model-family backlog"
+      "rationale": "The field is preserved in the formal payload and provenance for audit/governance, but it is approved as non-behavior-driving in M9.7.4.",
+      "status": "governance_only",
+      "target": "M9.7.4 aircraft_support_v1 governance metadata"
     },
     {
       "field_path": "objects.missionProfiles[].repeatCycleHours",
@@ -926,21 +926,21 @@
     },
     {
       "field_path": "objects.projectInfo.baseCode",
-      "rationale": "The value contributes to stable IDs, names, provenance, or display metadata rather than a direct simulation input.",
+      "rationale": "The value contributes to stable IDs, names, provenance, output sampling, or display metadata rather than direct simulation dynamics.",
       "status": "derived",
-      "target": "M9.6 identity and display metadata"
+      "target": "M9.7.4 aircraft_support_v1 identity, output, and display metadata"
     },
     {
       "field_path": "objects.projectInfo.name",
-      "rationale": "The value contributes to stable IDs, names, provenance, or display metadata rather than a direct simulation input.",
+      "rationale": "The value contributes to stable IDs, names, provenance, output sampling, or display metadata rather than direct simulation dynamics.",
       "status": "derived",
-      "target": "M9.6 identity and display metadata"
+      "target": "M9.7.4 aircraft_support_v1 identity, output, and display metadata"
     },
     {
       "field_path": "objects.projectInfo.summary",
-      "rationale": "The value contributes to stable IDs, names, provenance, or display metadata rather than a direct simulation input.",
+      "rationale": "The value contributes to stable IDs, names, provenance, output sampling, or display metadata rather than direct simulation dynamics.",
       "status": "derived",
-      "target": "M9.6 identity and display metadata"
+      "target": "M9.7.4 aircraft_support_v1 identity, output, and display metadata"
     },
     {
       "field_path": "objects.supportActivities[].activityName",
@@ -974,93 +974,93 @@
     },
     {
       "field_path": "objects.supportActivities[].jobs[].activityCode",
-      "rationale": "The field is intentionally frozen as a future formal-model requirement and must not be silently dropped.",
-      "status": "unsupported",
-      "target": "M9.7 aircraft-support model-family backlog"
+      "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
+      "status": "consumed",
+      "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
     },
     {
       "field_path": "objects.supportActivities[].jobs[].ammunition",
-      "rationale": "The field is intentionally frozen as a future formal-model requirement and must not be silently dropped.",
-      "status": "unsupported",
-      "target": "M9.7 aircraft-support model-family backlog"
+      "rationale": "The field is preserved in the formal payload and provenance for audit/governance, but it is approved as non-behavior-driving in M9.7.4.",
+      "status": "governance_only",
+      "target": "M9.7.4 aircraft_support_v1 governance metadata"
     },
     {
       "field_path": "objects.supportActivities[].jobs[].durationMinutes",
-      "rationale": "The field is intentionally frozen as a future formal-model requirement and must not be silently dropped.",
-      "status": "unsupported",
-      "target": "M9.7 aircraft-support model-family backlog"
+      "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
+      "status": "consumed",
+      "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
     },
     {
       "field_path": "objects.supportActivities[].jobs[].durationProfile.distributionType",
-      "rationale": "The field is intentionally frozen as a future formal-model requirement and must not be silently dropped.",
-      "status": "unsupported",
-      "target": "M9.7 aircraft-support model-family backlog"
+      "rationale": "The field is preserved in the formal payload and provenance for audit/governance, but it is approved as non-behavior-driving in M9.7.4.",
+      "status": "governance_only",
+      "target": "M9.7.4 aircraft_support_v1 governance metadata"
     },
     {
       "field_path": "objects.supportActivities[].jobs[].durationProfile.max",
-      "rationale": "The field is intentionally frozen as a future formal-model requirement and must not be silently dropped.",
-      "status": "unsupported",
-      "target": "M9.7 aircraft-support model-family backlog"
+      "rationale": "The field is preserved in the formal payload and provenance for audit/governance, but it is approved as non-behavior-driving in M9.7.4.",
+      "status": "governance_only",
+      "target": "M9.7.4 aircraft_support_v1 governance metadata"
     },
     {
       "field_path": "objects.supportActivities[].jobs[].durationProfile.min",
-      "rationale": "The field is intentionally frozen as a future formal-model requirement and must not be silently dropped.",
-      "status": "unsupported",
-      "target": "M9.7 aircraft-support model-family backlog"
+      "rationale": "The field is preserved in the formal payload and provenance for audit/governance, but it is approved as non-behavior-driving in M9.7.4.",
+      "status": "governance_only",
+      "target": "M9.7.4 aircraft_support_v1 governance metadata"
     },
     {
       "field_path": "objects.supportActivities[].jobs[].durationProfile.mode",
-      "rationale": "The field is intentionally frozen as a future formal-model requirement and must not be silently dropped.",
-      "status": "unsupported",
-      "target": "M9.7 aircraft-support model-family backlog"
+      "rationale": "The field is preserved in the formal payload and provenance for audit/governance, but it is approved as non-behavior-driving in M9.7.4.",
+      "status": "governance_only",
+      "target": "M9.7.4 aircraft_support_v1 governance metadata"
     },
     {
       "field_path": "objects.supportActivities[].jobs[].equipment",
-      "rationale": "The field is intentionally frozen as a future formal-model requirement and must not be silently dropped.",
-      "status": "unsupported",
-      "target": "M9.7 aircraft-support model-family backlog"
+      "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
+      "status": "consumed",
+      "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
     },
     {
       "field_path": "objects.supportActivities[].jobs[].facility",
-      "rationale": "The field is intentionally frozen as a future formal-model requirement and must not be silently dropped.",
-      "status": "unsupported",
-      "target": "M9.7 aircraft-support model-family backlog"
+      "rationale": "The field is preserved in the formal payload and provenance for audit/governance, but it is approved as non-behavior-driving in M9.7.4.",
+      "status": "governance_only",
+      "target": "M9.7.4 aircraft_support_v1 governance metadata"
     },
     {
       "field_path": "objects.supportActivities[].jobs[].personnel",
-      "rationale": "The field is intentionally frozen as a future formal-model requirement and must not be silently dropped.",
-      "status": "unsupported",
-      "target": "M9.7 aircraft-support model-family backlog"
+      "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
+      "status": "consumed",
+      "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
     },
     {
       "field_path": "objects.supportActivities[].jobs[].predecessors",
-      "rationale": "The field is intentionally frozen as a future formal-model requirement and must not be silently dropped.",
-      "status": "unsupported",
-      "target": "M9.7 aircraft-support model-family backlog"
+      "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
+      "status": "consumed",
+      "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
     },
     {
       "field_path": "objects.supportActivities[].jobs[].servicePersonnel",
-      "rationale": "The field is intentionally frozen as a future formal-model requirement and must not be silently dropped.",
-      "status": "unsupported",
-      "target": "M9.7 aircraft-support model-family backlog"
+      "rationale": "The field is preserved in the formal payload and provenance for audit/governance, but it is approved as non-behavior-driving in M9.7.4.",
+      "status": "governance_only",
+      "target": "M9.7.4 aircraft_support_v1 governance metadata"
     },
     {
       "field_path": "objects.supportActivities[].jobs[].spare",
-      "rationale": "The field is intentionally frozen as a future formal-model requirement and must not be silently dropped.",
-      "status": "unsupported",
-      "target": "M9.7 aircraft-support model-family backlog"
+      "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
+      "status": "consumed",
+      "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
     },
     {
       "field_path": "objects.supportActivities[].jobs[].workName",
-      "rationale": "The field is intentionally frozen as a future formal-model requirement and must not be silently dropped.",
-      "status": "unsupported",
-      "target": "M9.7 aircraft-support model-family backlog"
+      "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
+      "status": "consumed",
+      "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
     },
     {
       "field_path": "objects.supportActivities[].jobs[].predecessors[]",
-      "rationale": "The field is intentionally frozen as a future formal-model requirement and must not be silently dropped.",
-      "status": "unsupported",
-      "target": "M9.7 aircraft-support model-family backlog"
+      "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
+      "status": "consumed",
+      "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
     },
     {
       "field_path": "objects.supportActivities[].maxWorkTimeRefMinutes",
@@ -1118,15 +1118,15 @@
     },
     {
       "field_path": "objects.supportActivities[].jobs[].durationProfile.mean",
-      "rationale": "The field is intentionally frozen as a future formal-model requirement and must not be silently dropped.",
-      "status": "unsupported",
-      "target": "M9.7 aircraft-support model-family backlog"
+      "rationale": "The field is preserved in the formal payload and provenance for audit/governance, but it is approved as non-behavior-driving in M9.7.4.",
+      "status": "governance_only",
+      "target": "M9.7.4 aircraft_support_v1 governance metadata"
     },
     {
       "field_path": "objects.supportActivities[].jobs[].durationProfile.stdDev",
-      "rationale": "The field is intentionally frozen as a future formal-model requirement and must not be silently dropped.",
-      "status": "unsupported",
-      "target": "M9.7 aircraft-support model-family backlog"
+      "rationale": "The field is preserved in the formal payload and provenance for audit/governance, but it is approved as non-behavior-driving in M9.7.4.",
+      "status": "governance_only",
+      "target": "M9.7.4 aircraft_support_v1 governance metadata"
     },
     {
       "field_path": "objects.supportActivities[].maxRepairTimeMinutes",
@@ -1172,9 +1172,9 @@
     },
     {
       "field_path": "objects.supportActivities[].jobs[].durationProfile.value",
-      "rationale": "The field is intentionally frozen as a future formal-model requirement and must not be silently dropped.",
-      "status": "unsupported",
-      "target": "M9.7 aircraft-support model-family backlog"
+      "rationale": "The field is preserved in the formal payload and provenance for audit/governance, but it is approved as non-behavior-driving in M9.7.4.",
+      "status": "governance_only",
+      "target": "M9.7.4 aircraft_support_v1 governance metadata"
     },
     {
       "field_path": "objects.supportActivities[].plannedDowntimeHours",
@@ -1226,81 +1226,81 @@
     },
     {
       "field_path": "objects.supportActivities[].organizationStrategies[].lateralSupportNodes[]",
-      "rationale": "The field is intentionally frozen as a future formal-model requirement and must not be silently dropped.",
-      "status": "unsupported",
-      "target": "M9.7 aircraft-support model-family backlog"
+      "rationale": "The field is preserved in the formal payload and provenance for audit/governance, but it is approved as non-behavior-driving in M9.7.4.",
+      "status": "governance_only",
+      "target": "M9.7.4 aircraft_support_v1 governance metadata"
     },
     {
       "field_path": "objects.supportActivities[].organizationStrategies[].organizationStrategy",
-      "rationale": "The field is intentionally frozen as a future formal-model requirement and must not be silently dropped.",
-      "status": "unsupported",
-      "target": "M9.7 aircraft-support model-family backlog"
+      "rationale": "The field is preserved in the formal payload and provenance for audit/governance, but it is approved as non-behavior-driving in M9.7.4.",
+      "status": "governance_only",
+      "target": "M9.7.4 aircraft_support_v1 governance metadata"
     },
     {
       "field_path": "objects.supportActivities[].organizationStrategies[].supportLevel",
-      "rationale": "The field is intentionally frozen as a future formal-model requirement and must not be silently dropped.",
-      "status": "unsupported",
-      "target": "M9.7 aircraft-support model-family backlog"
+      "rationale": "The field is preserved in the formal payload and provenance for audit/governance, but it is approved as non-behavior-driving in M9.7.4.",
+      "status": "governance_only",
+      "target": "M9.7.4 aircraft_support_v1 governance metadata"
     },
     {
       "field_path": "objects.supportActivities[].organizationStrategies[].supportNodeId",
-      "rationale": "The field is intentionally frozen as a future formal-model requirement and must not be silently dropped.",
-      "status": "unsupported",
-      "target": "M9.7 aircraft-support model-family backlog"
+      "rationale": "The field is preserved in the formal payload and provenance for audit/governance, but it is approved as non-behavior-driving in M9.7.4.",
+      "status": "governance_only",
+      "target": "M9.7.4 aircraft_support_v1 governance metadata"
     },
     {
       "field_path": "objects.supportActivities[].transportStrategies[].criticalInventory",
-      "rationale": "The field is intentionally frozen as a future formal-model requirement and must not be silently dropped.",
-      "status": "unsupported",
-      "target": "M9.7 aircraft-support model-family backlog"
+      "rationale": "The field is preserved in the formal payload and provenance for audit/governance, but it is approved as non-behavior-driving in M9.7.4.",
+      "status": "governance_only",
+      "target": "M9.7.4 aircraft_support_v1 governance metadata"
     },
     {
       "field_path": "objects.supportActivities[].transportStrategies[].direction",
-      "rationale": "The field is intentionally frozen as a future formal-model requirement and must not be silently dropped.",
-      "status": "unsupported",
-      "target": "M9.7 aircraft-support model-family backlog"
+      "rationale": "The field is preserved in the formal payload and provenance for audit/governance, but it is approved as non-behavior-driving in M9.7.4.",
+      "status": "governance_only",
+      "target": "M9.7.4 aircraft_support_v1 governance metadata"
     },
     {
       "field_path": "objects.supportActivities[].transportStrategies[].from",
-      "rationale": "The field is intentionally frozen as a future formal-model requirement and must not be silently dropped.",
-      "status": "unsupported",
-      "target": "M9.7 aircraft-support model-family backlog"
+      "rationale": "The field is preserved in the formal payload and provenance for audit/governance, but it is approved as non-behavior-driving in M9.7.4.",
+      "status": "governance_only",
+      "target": "M9.7.4 aircraft_support_v1 governance metadata"
     },
     {
       "field_path": "objects.supportActivities[].transportStrategies[].spareType",
-      "rationale": "The field is intentionally frozen as a future formal-model requirement and must not be silently dropped.",
-      "status": "unsupported",
-      "target": "M9.7 aircraft-support model-family backlog"
+      "rationale": "The field is preserved in the formal payload and provenance for audit/governance, but it is approved as non-behavior-driving in M9.7.4.",
+      "status": "governance_only",
+      "target": "M9.7.4 aircraft_support_v1 governance metadata"
     },
     {
       "field_path": "objects.supportActivities[].transportStrategies[].to",
-      "rationale": "The field is intentionally frozen as a future formal-model requirement and must not be silently dropped.",
-      "status": "unsupported",
-      "target": "M9.7 aircraft-support model-family backlog"
+      "rationale": "The field is preserved in the formal payload and provenance for audit/governance, but it is approved as non-behavior-driving in M9.7.4.",
+      "status": "governance_only",
+      "target": "M9.7.4 aircraft_support_v1 governance metadata"
     },
     {
       "field_path": "objects.supportActivities[].transportStrategies[].transportTimeHours",
-      "rationale": "The field is intentionally frozen as a future formal-model requirement and must not be silently dropped.",
-      "status": "unsupported",
-      "target": "M9.7 aircraft-support model-family backlog"
+      "rationale": "The field is preserved in the formal payload and provenance for audit/governance, but it is approved as non-behavior-driving in M9.7.4.",
+      "status": "governance_only",
+      "target": "M9.7.4 aircraft_support_v1 governance metadata"
     },
     {
       "field_path": "objects.supportActivities[].transportStrategies[].triggerMode",
-      "rationale": "The field is intentionally frozen as a future formal-model requirement and must not be silently dropped.",
-      "status": "unsupported",
-      "target": "M9.7 aircraft-support model-family backlog"
+      "rationale": "The field is preserved in the formal payload and provenance for audit/governance, but it is approved as non-behavior-driving in M9.7.4.",
+      "status": "governance_only",
+      "target": "M9.7.4 aircraft_support_v1 governance metadata"
     },
     {
       "field_path": "objects.supportActivities[].transportStrategies[].transferCycleHours",
-      "rationale": "The field is intentionally frozen as a future formal-model requirement and must not be silently dropped.",
-      "status": "unsupported",
-      "target": "M9.7 aircraft-support model-family backlog"
+      "rationale": "The field is preserved in the formal payload and provenance for audit/governance, but it is approved as non-behavior-driving in M9.7.4.",
+      "status": "governance_only",
+      "target": "M9.7.4 aircraft_support_v1 governance metadata"
     },
     {
       "field_path": "objects.supportOrganization.tree",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
-      "status": "ignored",
-      "target": "M9.6 platform case package"
+      "rationale": "The field is preserved in the formal payload and provenance for audit/governance, but it is approved as non-behavior-driving in M9.7.4.",
+      "status": "governance_only",
+      "target": "M9.7.4 aircraft_support_v1 governance metadata"
     },
     {
       "field_path": "objects.supportResources[].capacity",
@@ -1310,9 +1310,9 @@
     },
     {
       "field_path": "objects.supportResources[].equipmentCapacity",
-      "rationale": "The current platform chain reads this field directly when building the frozen case or adapter inputs.",
+      "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
       "status": "consumed",
-      "target": "M9.6 Project/ExperimentPlan/MonteCarloRunConfig/aviation_support Scenario"
+      "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
     },
     {
       "field_path": "objects.supportResources[].id",
@@ -1364,9 +1364,9 @@
     },
     {
       "field_path": "objects.supportResources[].personnelCapacity",
-      "rationale": "The current platform chain reads this field directly when building the frozen case or adapter inputs.",
+      "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
       "status": "consumed",
-      "target": "M9.6 Project/ExperimentPlan/MonteCarloRunConfig/aviation_support Scenario"
+      "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
     },
     {
       "field_path": "objects.supportResources[].policy",
@@ -1418,21 +1418,22 @@
     },
     {
       "field_path": "projectId",
-      "rationale": "The current platform chain reads this field directly when building the frozen case or adapter inputs.",
+      "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
       "status": "consumed",
-      "target": "M9.6 Project/ExperimentPlan/MonteCarloRunConfig/aviation_support Scenario"
+      "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
     }
   ],
-  "model_family": "aviation_support",
+  "model_family": "aircraft_support_v1",
   "schema_version": "m9-6-field-coverage-v0",
   "source_fixture": "tests/fixtures/modeling_import_project.json",
   "source_import_id": "import-carrier-day-night-001",
   "summary": {
-    "consumed": 14,
+    "consumed": 35,
     "defaulted": 0,
-    "derived": 7,
-    "ignored": 167,
+    "derived": 9,
+    "governance_only": 27,
+    "ignored": 166,
     "total_fields": 237,
-    "unsupported": 49
+    "unsupported": 0
   }
 }

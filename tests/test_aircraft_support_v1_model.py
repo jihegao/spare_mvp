@@ -89,13 +89,81 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
         self.assertTrue(mission.preflight_created)
         self.assertEqual(len([job for job in model.jobs if job.kind == "preflight"]), 2)
 
-    def test_behavior_scope_excludes_fields_that_are_only_compiled_into_payload(self) -> None:
+    def test_behavior_scope_promotes_m9_7_4_fields(self) -> None:
         scope = AircraftSupportV1Model.behavior_scope()
 
-        self.assertNotIn("components[].failureDistribution", scope["behavior_driving_fields"])
-        self.assertNotIn("supportNodes[].transportPolicies", scope["behavior_driving_fields"])
-        self.assertIn("components[].failureDistribution", scope["m9_7_4_coverage_hardening_fields"])
-        self.assertIn("supportNodes[].transportPolicies", scope["m9_7_4_coverage_hardening_fields"])
+        self.assertIn("components[].failureDistribution", scope["behavior_driving_fields"])
+        self.assertIn("supportNodes[].transportPolicies", scope["behavior_driving_fields"])
+        self.assertIn("missionProfile.periodicTasks", scope["behavior_driving_fields"])
+        self.assertIn("reliabilityBlockDiagram", scope["behavior_driving_fields"])
+        self.assertNotIn("experiment.steps", scope["behavior_driving_fields"])
+        self.assertEqual(scope["fail_closed_fields"], [])
+        self.assertEqual(scope["m9_7_4_coverage_hardening_fields"], [])
+
+    def test_failure_distribution_types_drive_effective_rates(self) -> None:
+        inputs = _minimal_inputs()
+        inputs["equipment_tree"]["components"] = [
+            {
+                "id": "weibull",
+                "parent_id": "aircraft",
+                "failure_rate": 0,
+                "failure_distribution": {"distributionType": "威布尔分布", "parameters": "beta=2, eta=100"},
+            },
+            {
+                "id": "normal",
+                "parent_id": "aircraft",
+                "failure_rate": 0,
+                "failure_distribution": {"distributionType": "正态分布", "parameters": "mean=50, sigma=5"},
+            },
+        ]
+
+        model = AircraftSupportV1Model(inputs)
+
+        rates = {component["id"]: component["failure_rate"] for component in model.components}
+        self.assertGreater(rates["weibull"], 0)
+        self.assertAlmostEqual(rates["normal"], 0.02)
+
+    def test_rbd_edges_parent_topology_and_weights_drive_rates(self) -> None:
+        inputs = _minimal_inputs()
+        inputs["reliability_block_diagram"] = {
+            "nodes": [
+                {"id": "root", "failureRate": 0.1, "parentId": None, "connectionType": "串联"},
+                {"id": "parallel", "failureRate": 0.1, "parentId": "root", "connectionType": "串联"},
+                {"id": "series", "failureRate": 0.1, "parentId": "root", "connectionType": "串联"},
+            ],
+            "edges": [
+                {"from": "root", "to": "parallel", "type": "并联", "weight": 0.5},
+                {"from": "root", "to": "series", "type": "串联", "weight": 1.0},
+            ],
+        }
+
+        model = AircraftSupportV1Model(inputs)
+
+        rates = {component["id"]: component["failure_rate"] for component in model.components}
+        self.assertLess(rates["rbd:parallel"], rates["rbd:series"])
+
+    def test_transport_policy_capacity_limits_single_replenishment(self) -> None:
+        inputs = _minimal_inputs()
+        model = AircraftSupportV1Model(inputs)
+        model.nodes["stock"] = {
+            "id": "stock",
+            "name": "Stock",
+            "personnel_capacity": 1,
+            "equipment_capacity": 1,
+            "personnel_in_use": 0,
+            "equipment_in_use": 0,
+            "inventory": {"module": 10},
+            "transport_policies": [],
+            "work_count": 0,
+        }
+        deck = model.nodes["deck"]
+        deck["inventory"]["module"] = 0
+        deck["transport_policies"] = [{"from": "stock", "to": "deck", "spare_type": "module", "capacity": 2}]
+
+        model._try_transport_replenishment(deck, "module", 5)
+
+        self.assertEqual(deck["inventory"]["module"], 2)
+        self.assertEqual(model.nodes["stock"]["inventory"]["module"], 8)
 
     def test_mean_recovery_time_uses_elapsed_duration_not_absolute_return_time(self) -> None:
         model = AircraftSupportV1Model(_minimal_inputs())

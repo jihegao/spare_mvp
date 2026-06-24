@@ -913,15 +913,12 @@ class SimulationAdapter:
                 "supportNodes[].transportPolicies",
                 "supportActivities[].jobs[]",
                 "supportActivities[].jobs[].predecessors",
-                "supportActivities[].transportStrategies",
-                "supportActivities[].organizationStrategies",
                 "reliabilityBlockDiagram",
                 "monteCarlo.failureRates",
                 "monteCarlo.spareMultipliers",
                 "monteCarlo.supportCapacities",
                 "experiment.seed",
                 "experiment.samples",
-                "experiment.steps",
             ],
             "defaults_applied": self._aircraft_support_v1_defaults_applied(project),
             "derived_fields": [
@@ -929,6 +926,7 @@ class SimulationAdapter:
                 "simulation_inputs.aircraft.initial_ready",
                 "simulation_inputs.time.duration_minutes",
                 "simulation_inputs.time.requested_steps",
+                "experiment.steps",
             ],
             "ignored_fields": [],
             "governance_only_fields": [
@@ -937,6 +935,9 @@ class SimulationAdapter:
                 "scenarioId",
                 "project_id",
                 "project_version",
+                "supportOrganization.tree",
+                "supportActivities[].transportStrategies",
+                "supportActivities[].organizationStrategies",
             ],
             "unsupported_fields": self._aircraft_support_v1_unsupported_fields(project),
         }
@@ -991,11 +992,7 @@ class SimulationAdapter:
         return defaults
 
     def _aircraft_support_v1_unsupported_fields(self, project: dict[str, Any]) -> list[str]:
-        unsupported: list[str] = []
-        support_organization = project.get("supportOrganization")
-        if not self._is_empty_support_organization(support_organization):
-            unsupported.append("supportOrganization")
-        return unsupported
+        return []
 
     def _is_empty_support_organization(self, value: Any) -> bool:
         if value in (None, {}, []):
@@ -1476,7 +1473,7 @@ class SimulationAdapter:
             "tick_minutes": inputs.get("time", {}).get("tick_minutes"),
             "sample_every_minutes": inputs.get("time", {}).get("sample_every_minutes"),
             "duration_minutes": inputs.get("time", {}).get("duration_minutes"),
-            "m9_7_2_behavior_scope": copy.deepcopy(behavior_scope),
+            "m9_7_4_behavior_scope": copy.deepcopy(behavior_scope),
         }
         input_project = self._input_project_for_scenario(scenario)
         metrics = {
@@ -1498,7 +1495,7 @@ class SimulationAdapter:
                 "available_aircraft": snapshot.get("available_aircraft", 0),
                 "maintenance_backlog": snapshot.get("maintenance_backlog", 0),
             },
-            "m9_7_2_behavior_scope": copy.deepcopy(behavior_scope),
+            "m9_7_4_behavior_scope": copy.deepcopy(behavior_scope),
         }
         event_log = {
             "schema_version": "run-log-v0",
@@ -1506,7 +1503,7 @@ class SimulationAdapter:
             "events": [
                 {"event": "run_started", "at": now},
                 {
-                    "event": "m9_7_2_behavior_scope_declared",
+                    "event": "m9_7_4_behavior_scope_declared",
                     "at": now,
                     "behavior_driving_fields": behavior_scope["behavior_driving_fields"],
                     "fail_closed_fields": behavior_scope["fail_closed_fields"],
@@ -1892,7 +1889,7 @@ class SimulationAdapter:
             "mc_experiment_id": mc_experiment_id,
             "monte_carlo_config": copy.deepcopy(config),
             "sampling_contract": copy.deepcopy(sampling_contract),
-            "m9_7_3_behavior_scope": copy.deepcopy(behavior_scope),
+            "m9_7_4_behavior_scope": copy.deepcopy(behavior_scope),
         }
         sample_results = {
             "schema_version": "sample-results-v0",
@@ -1929,7 +1926,7 @@ class SimulationAdapter:
                 "sortie_completion_rate": aggregate.get("sortie_completion_rate", 0),
                 "available_aircraft": aggregate.get("available_aircraft", 0),
             },
-            "m9_7_3_behavior_scope": copy.deepcopy(behavior_scope),
+            "m9_7_4_behavior_scope": copy.deepcopy(behavior_scope),
         }
         event_log = {
             "schema_version": "run-log-v0",
@@ -1937,7 +1934,7 @@ class SimulationAdapter:
             "events": [
                 {"event": "run_started", "at": now},
                 {
-                    "event": "m9_7_3_monte_carlo_scope_declared",
+                    "event": "m9_7_4_monte_carlo_scope_declared",
                     "at": now,
                     "behavior_driving_fields": behavior_scope["behavior_driving_fields"],
                     "fail_closed_fields": behavior_scope["fail_closed_fields"],
@@ -2074,17 +2071,10 @@ class SimulationAdapter:
             "seed_policy": "sample_seed = compiled Scenario seed + sample_index",
             "sample_point_policy": "sample_count must cover every cartesian sweep point; extra samples repeat points in deterministic order",
             "failed_sample_policy": "sample errors are recorded in failed_samples; aggregate metrics use successful samples only",
-            "m9_7_4_pending_fields": [
-                "components[].failureDistribution",
-                "supportNodes[].transportPolicies",
-                "reliabilityBlockDiagram",
-                "components[].kOutOfN",
-                "components[].rms",
-                "missionProfile.periodicTasks",
-                "missionPhases",
-                "airports",
-                "missionAreas",
-            ],
+            "m9_7_4_closed_field_policy": (
+                "M9.6 frozen aircraft_support_v1 fields are behavior-driving, derived/defaulted, or governance-only; "
+                "no M9.7.4 pending field list remains."
+            ),
         }
 
     def _run_aircraft_support_v1_monte_carlo_sample(
@@ -2138,6 +2128,9 @@ class SimulationAdapter:
             if not isinstance(component, dict):
                 continue
             component["failure_rate"] = max(0.0, float(component.get("failure_rate", 0) or 0) * float(multiplier))
+            distribution = component.get("failure_distribution")
+            if isinstance(distribution, dict):
+                distribution["_rate_multiplier"] = max(0.0, float(multiplier))
 
     def _apply_aircraft_support_v1_spare_multiplier(self, inputs: dict[str, Any], multiplier: float) -> None:
         for node in inputs.get("support_network", {}).get("nodes", []):

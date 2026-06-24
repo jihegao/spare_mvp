@@ -1370,7 +1370,7 @@ class BackendApiContractTest(unittest.TestCase):
         snapshot = self.api.create_modeling_snapshot(saved["project_id"])
         plan = self.api.create_experiment_plan(
             saved["project_id"],
-            {"name": "m9.7.2 aircraft support single", "projectJson": copy.deepcopy(project)},
+            {"name": "m9.7.4 aircraft support single", "projectJson": copy.deepcopy(project)},
         )
         service = RunService(self.repository, self.adapter, self.api.output_dir)
 
@@ -1402,11 +1402,15 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(state_payload["run_id"], submitted["run_id"])
         self.assertEqual(state_payload["scenario_id"], submitted["scenario_id"])
         self.assertIn("sortie_completion_rate", result["metrics"])
-        self.assertIn("supportNodes[].inventory", report_payload["m9_7_2_behavior_scope"]["behavior_driving_fields"])
-        self.assertIn(
-            "reliabilityBlockDiagram",
-            report_payload["m9_7_2_behavior_scope"]["m9_7_4_coverage_hardening_fields"],
-        )
+        scope = report_payload["m9_7_4_behavior_scope"]
+        self.assertIn("supportNodes[].inventory", scope["behavior_driving_fields"])
+        self.assertIn("components[].failureDistribution", scope["behavior_driving_fields"])
+        self.assertIn("supportNodes[].transportPolicies", scope["behavior_driving_fields"])
+        self.assertIn("missionProfile.periodicTasks", scope["behavior_driving_fields"])
+        self.assertIn("reliabilityBlockDiagram", scope["behavior_driving_fields"])
+        self.assertNotIn("experiment.steps", scope["behavior_driving_fields"])
+        self.assertEqual(scope["fail_closed_fields"], [])
+        self.assertEqual(scope["m9_7_4_coverage_hardening_fields"], [])
         self.assertEqual(len(self.adapter.compile_calls), 1)
         self.assertEqual(self.adapter.compile_calls[0][1], "aircraft_support_v1")
         self.assertEqual(len(self.adapter.run_calls), 1)
@@ -1420,7 +1424,7 @@ class BackendApiContractTest(unittest.TestCase):
         plan = self.api.create_experiment_plan(
             saved["project_id"],
             {
-                "name": "m9.7.3 aircraft support monte carlo",
+                "name": "m9.7.4 aircraft support monte carlo",
                 "steps": 2,
                 "projectJson": copy.deepcopy(project),
                 "analysisRequests": {
@@ -1469,6 +1473,8 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(result["run_id"], submitted["run_id"])
         self.assertEqual(base_payload["model_family"], "aircraft_support_v1")
         self.assertEqual(base_payload["sample_count"], 2)
+        self.assertNotIn("m9_7_4_pending_fields", base_payload["sampling_contract"])
+        self.assertIn("m9_7_4_closed_field_policy", base_payload["sampling_contract"])
         self.assertEqual(base_payload["logs_summary"]["completed_samples"], 2)
         self.assertEqual(base_payload["logs_summary"]["failed_samples"], 0)
         self.assertEqual(len(projection_artifacts), 4)
@@ -1483,7 +1489,7 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(len(self.adapter.monte_carlo_run_calls), 1)
         self.assertEqual(self.adapter.monte_carlo_run_calls[0]["scenario"]["simulation_model"]["family"], "aircraft_support_v1")
 
-    def test_run_service_aircraft_support_v1_fails_closed_for_unsupported_m9_6_fields(self) -> None:
+    def test_run_service_aircraft_support_v1_accepts_support_organization_as_governance_only(self) -> None:
         created = self._create_imported_sample_project()
         project = copy.deepcopy(created["project"])
         project["supportOrganization"] = {"tree": [{"id": "carrier-wing-support"}]}
@@ -1491,7 +1497,7 @@ class BackendApiContractTest(unittest.TestCase):
         self.api.create_modeling_snapshot(saved["project_id"])
         plan = self.api.create_experiment_plan(
             saved["project_id"],
-            {"name": "m9.7.2 aircraft support unsupported", "projectJson": copy.deepcopy(project)},
+            {"name": "m9.7.4 aircraft support governance", "projectJson": copy.deepcopy(project)},
         )
         service = RunService(self.repository, self.adapter, self.api.output_dir)
 
@@ -1505,20 +1511,18 @@ class BackendApiContractTest(unittest.TestCase):
             }
         )
         manifest = self.api.get_run_artifacts(submitted["run_id"])
-        log_artifact = self._artifact_by_kind(manifest, "log")
-        log_payload = json.loads((Path(self.api.output_dir) / log_artifact["path"]).read_text(encoding="utf-8"))
+        compiled_artifact = self._artifact_by_kind(manifest, "compiled_scenario")
+        report_artifact = self._artifact_by_kind(manifest, "report")
+        compiled_payload = json.loads((Path(self.api.output_dir) / compiled_artifact["path"]).read_text(encoding="utf-8"))
+        report_payload = json.loads((Path(self.api.output_dir) / report_artifact["path"]).read_text(encoding="utf-8"))
+        provenance = compiled_payload["compiled_from"]["mapping_provenance"]
 
-        self.assertEqual(submitted["status"], "failed")
-        self.assertEqual(submitted["phase"], "failed")
+        self.assertEqual(submitted["status"], "succeeded")
+        self.assertEqual(submitted["phase"], "completed")
         self.assertEqual(submitted["model_family"], "aircraft_support_v1")
-        self.assertEqual(submitted["error"]["code"], "unsupported_aircraft_support_v1_fields")
-        self.assertIn("supportOrganization", submitted["error"]["details"]["unsupported_fields"])
-        self.assertTrue(
-            any(
-                (event.get("error") or {}).get("code") == "unsupported_aircraft_support_v1_fields"
-                for event in log_payload["events"]
-            )
-        )
+        self.assertEqual(provenance["unsupported_fields"], [])
+        self.assertIn("supportOrganization.tree", provenance["governance_only_fields"])
+        self.assertEqual(report_payload["m9_7_4_behavior_scope"]["fail_closed_fields"], [])
 
     def test_run_service_failed_compile_run_has_downloadable_log_artifact(self) -> None:
         project = self._fixture("smoke_project.json")

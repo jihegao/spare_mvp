@@ -541,17 +541,17 @@ M8.0 当前收束：`docs/superpowers/specs/2026-06-21-m8-projection-payload-ana
 1. 新模型族必须是平台正式 `model_family`，由 `SimulationAdapter.compile_scenario()` 和 `SimulationAdapter.run_scenario()` 调用；不得作为第三套旁路 HTTP 页面长期存在。
 2. 机制设计吸收 `independent-mesa/GLM` 的全字段消费、领域模块拆分、Monte Carlo sweep 和四类分析思路，也评估 `independent-mesa/GPT` 中更好的状态表达、调度或可视化方案；吸收的是机制和验收要素，不直接保留旁路入口。
 3. 模型结构采用 Mesa 外壳加领域模块：任务调度、飞机 agent、装备树与故障、保障活动 DAG、保障资源/库存/运输、可靠性框图、RMS/维修性/保障性指标、Monte Carlo 采样和状态帧导出。
-4. 每个输入字段必须按 M9.6 覆盖表进入模型行为、派生规则、默认规则、明确忽略或明确 unsupported；新增字段必须同步更新覆盖表、Scenario schema 和测试 fixture。
+4. 每个输入字段必须按 M9.6 覆盖表进入模型行为、派生规则、默认规则、governance_only、明确忽略或明确 unsupported；M9.7.4 后 M9.6 已冻结业务字段不得仍为 unsupported，新增字段必须同步更新覆盖表、Scenario schema 和测试 fixture。
 5. 单次正式 run 必须产出 `result_summary`、`artifact_manifest`、`visualization_state_series`、metrics/report/log 和 run chain；Monte Carlo 必须产出 `monte_carlo_base`、四类 `analysis_projection_*` 和 state-series。
 6. 固定 seed 必须可复现；随机 sweep 必须记录样本数、参数组合、seed、失败样本和聚合口径；模型结果只能解释当前规则和参数下的行为，不声称工程校准结论。
 
-当前收束：M9.7.3 已在 M9.7.1 `aircraft_support_v1` schema/compiler gate 和 M9.7.2 single-run core 后落地 formal Monte Carlo/projection。`src/spare_mvp_abm/aircraft_support_v1/` 提供 `AircraftSupportV1Model`，内部使用 `tick_minutes=1`、`sample_every_minutes=30` 和固定阶段顺序推进；`SimulationAdapter.run_scenario()` 和 `SimulationAdapter.run_monte_carlo_scenario()` 可通过 canonical `/api/runs` 执行 unsupported 字段为空的 `aircraft_support_v1` Scenario，产出 result summary、artifact manifest、run chain、metrics、report、log、四类 projection、`monte_carlo_base`、样本失败账本和 `visualization_state_series`。本阶段明确行为驱动字段为机队数量/初始可用、任务波次、组件故障率和寿命、保障资源容量、库存、保障活动 job DAG、Monte Carlo sweep 与 seed。`components[].failureDistribution` 和 `supportNodes[].transportPolicies` 当前只编译进入 payload，真正行为消费留给 M9.7.4 coverage hardening；非空或未批准的 `supportOrganization` 仍 fail closed，`reliabilityBlockDiagram`、RMS/k-out-of-n、周期任务细化和任务阶段/机场/任务区细化也留给 M9.7.4 coverage hardening。M9.7.3 不声明 M9.6 字段全覆盖；M9.7.4 继续处理字段覆盖关闭。
+当前收束：M9.7.4 已在 M9.7.1 `aircraft_support_v1` schema/compiler gate、M9.7.2 single-run core 和 M9.7.3 formal Monte Carlo/projection 后完成 coverage hardening。`src/spare_mvp_abm/aircraft_support_v1/` 提供 `AircraftSupportV1Model`，内部使用 `tick_minutes=1`、`sample_every_minutes=30` 和固定阶段顺序推进；`SimulationAdapter.run_scenario()` 和 `SimulationAdapter.run_monte_carlo_scenario()` 可通过 canonical `/api/runs` 执行 `aircraft_support_v1` Scenario，产出 result summary、artifact manifest、run chain、metrics、report、log、四类 projection、`monte_carlo_base`、样本失败账本和 `visualization_state_series`。行为驱动字段包含机队数量/初始可用、任务波次、`components[].failureDistribution`、组件寿命/RMS/k-out-of-n、`reliabilityBlockDiagram`、保障资源容量、库存、`supportNodes[].transportPolicies`、保障活动 job DAG、周期任务、任务阶段/机场/任务区、Monte Carlo sweep 与 seed；`supportOrganization` 已批准为 governance-only / 不驱动仿真字段并写入 provenance。M9.7.4 将 M9.6 frozen 字段 coverage 中的 unsupported 汇总关闭为 0；M9.8 才进入平台嵌入和 `independent-mesa` 退役。
 
 完成标准：
 
 1. `model_family=<new_aircraft_support_family>` 的 single 和 Monte Carlo run 均通过 canonical `/api/runs` 成功执行，并能下载全部正式 artifacts。
 2. 同一个 run 的 result、projection、state-series、artifact manifest 和 chain 能用 `run_id`、Scenario identity、schema version 和 seed 相互校验。
-3. 缺字段、非法引用、unsupported 字段族、缺 compiler provenance、缺 projection 或缺 state-series 时 fail closed，不回退到前端 demo 或 `independent-mesa` 静态输出。
+3. 缺字段、非法引用、未来新增 unsupported 字段族、缺 compiler provenance、缺 projection 或缺 state-series 时 fail closed，不回退到前端 demo 或 `independent-mesa` 静态输出。
 4. `aviation_support` 和 smoke 路径回归保持通过，新模型族不改变既有正式 artifact 口径。
 
 ### M9.8：嵌入平台并退役 independent-mesa

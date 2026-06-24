@@ -1,8 +1,7 @@
-"""Aircraft support v1 single-run core for M9.7.2.
+"""Aircraft support v1 runtime core.
 
-This is intentionally a narrow, deterministic core: it drives behavior from the
-fields named in ``behavior_scope()`` and keeps the remaining M9.6 coverage debt
-explicit for M9.7.4.
+The model uses deterministic minute ticks and declares the M9.7.4 field
+coverage boundary through ``behavior_scope()``.
 """
 
 from __future__ import annotations
@@ -20,38 +19,34 @@ BEHAVIOR_DRIVING_FIELDS = [
     "equipment.wholeMachineModels",
     "missionProfile.durationHours",
     "missionProfile.compositeTasks",
+    "missionProfile.periodicTasks",
     "basicMission",
+    "missionPhases",
+    "airports",
+    "missionAreas",
     "components[].failureRate",
+    "components[].failureDistribution",
+    "components[].kOutOfN",
     "components[].lifeLimitHours",
+    "components[].rms",
+    "reliabilityBlockDiagram",
     "components[].specialRepairProfile",
     "supportNodes[].personnelCapacity",
     "supportNodes[].equipmentCapacity",
     "supportNodes[].inventory",
+    "supportNodes[].transportPolicies",
     "supportActivities[].jobs[]",
     "supportActivities[].jobs[].predecessors",
     "experiment.seed",
-]
-
-FAIL_CLOSED_FIELDS = ["supportOrganization"]
-
-M9_7_4_COVERAGE_HARDENING_FIELDS = [
-    "missionProfile.periodicTasks",
-    "missionPhases",
-    "airports",
-    "missionAreas",
-    "components[].failureDistribution",
-    "components[].kOutOfN",
-    "components[].rms",
-    "reliabilityBlockDiagram",
-    "supportNodes[].transportPolicies",
-    "supportActivities[].transportStrategies",
-    "supportActivities[].organizationStrategies",
+    "experiment.samples",
     "monteCarlo.failureRates",
     "monteCarlo.spareMultipliers",
     "monteCarlo.supportCapacities",
-    "experiment.samples",
-    "experiment.steps",
 ]
+
+FAIL_CLOSED_FIELDS: list[str] = []
+
+M9_7_4_COVERAGE_HARDENING_FIELDS: list[str] = []
 
 
 @dataclass
@@ -129,6 +124,7 @@ class AircraftSupportV1Model:
         self.components = self._behavior_components()
         self.nodes = self._build_support_nodes()
         self.activities = self._build_activities()
+        self.mission_context = self._mission_context()
         self.preflight_activity = self._select_activity("preflight")
         self.repair_activity = self._select_activity("repair")
         self.missions = self._build_missions()
@@ -142,6 +138,7 @@ class AircraftSupportV1Model:
         self.lru_failures = 0
         self.spare_consumed_total = 0
         self.shortage_events = 0
+        self.transport_replenishment_events = 0
         self.resource_delay_events = 0
         self.failure_delay_events = 0
 
@@ -208,6 +205,7 @@ class AircraftSupportV1Model:
             "downtime_failure_events": self.failure_delay_events,
             "downtime_spare_shortage_events": self.shortage_events,
             "downtime_resource_delay_events": self.resource_delay_events,
+            "transport_replenishment_events": self.transport_replenishment_events,
             "mean_launch_time": avg_delay,
             "mean_recovery_time": self._mean_recovery_time(),
             "mean_turnaround_time": avg_delay + self._mean_recovery_time(),
@@ -271,11 +269,91 @@ class AircraftSupportV1Model:
         components = []
         for item in self.inputs.get("equipment_tree", {}).get("components", []):
             rate = _non_negative_float(item.get("failure_rate"), 0.0)
-            if rate <= 0 or item.get("parent_id") in (None, ""):
+            if item.get("parent_id") in (None, ""):
                 continue
             component = copy.deepcopy(item)
-            component["failure_rate"] = rate
+            effective_rate = self._effective_component_failure_rate(component, rate)
+            if effective_rate <= 0:
+                continue
+            component["failure_rate"] = effective_rate
+            component["repair_duration_minutes"] = self._component_repair_duration_minutes(component)
             components.append(component)
+        components.extend(self._rbd_components())
+        return components
+
+    def _effective_component_failure_rate(self, component: dict[str, Any], fallback_rate: float) -> float:
+        distribution = component.get("failure_distribution")
+        rate = fallback_rate
+        if isinstance(distribution, dict):
+            parsed_rate = _failure_distribution_rate(distribution)
+            if parsed_rate is not None:
+                rate = parsed_rate
+        k_out = component.get("k_out_of_n") if isinstance(component.get("k_out_of_n"), dict) else {}
+        if k_out.get("enabled"):
+            k = max(1, int(k_out.get("k") or 1))
+            n = max(k, int(k_out.get("n") or k))
+            tolerated_failures = max(0, n - k)
+            rate = rate / max(1, tolerated_failures + 1)
+        rms = component.get("rms") if isinstance(component.get("rms"), dict) else {}
+        reliability = _bounded_float(rms.get("reliability"))
+        if reliability is not None:
+            rate *= max(0.05, 1.0 - reliability)
+        return max(0.0, rate)
+
+    def _component_repair_duration_minutes(self, component: dict[str, Any]) -> int | None:
+        profile = component.get("special_repair_profile") if isinstance(component.get("special_repair_profile"), dict) else {}
+        if profile.get("repairTimeMinutes"):
+            return max(1, int(profile["repairTimeMinutes"]))
+        rms = component.get("rms") if isinstance(component.get("rms"), dict) else {}
+        mttr = _non_negative_float(rms.get("mttrHours"), 0.0)
+        mldt = _non_negative_float(rms.get("mldtHours"), 0.0)
+        if mttr or mldt:
+            return max(1, int(round((mttr + mldt) * 60)))
+        return None
+
+    def _rbd_components(self) -> list[dict[str, Any]]:
+        diagram = self.inputs.get("reliability_block_diagram") if isinstance(self.inputs.get("reliability_block_diagram"), dict) else {}
+        incoming_edges = {
+            str(edge.get("to")): edge
+            for edge in diagram.get("edges") or []
+            if isinstance(edge, dict) and edge.get("to") not in (None, "")
+        }
+        children_by_parent: dict[str, list[dict[str, Any]]] = {}
+        for node in diagram.get("nodes") or []:
+            if isinstance(node, dict) and node.get("parentId") not in (None, ""):
+                children_by_parent.setdefault(str(node["parentId"]), []).append(node)
+        components = []
+        for node in diagram.get("nodes") or []:
+            if not isinstance(node, dict):
+                continue
+            node_id = str(node.get("id") or len(components) + 1)
+            rate = _non_negative_float(node.get("failureRate"), 0.0)
+            mtbf = _non_negative_float(node.get("mtbfHours"), 0.0)
+            if rate <= 0 and mtbf > 0:
+                rate = 1.0 / mtbf
+            if rate <= 0:
+                continue
+            edge = incoming_edges.get(node_id) if node_id else None
+            edge_type = str(edge.get("type") if isinstance(edge, dict) else "").lower()
+            edge_weight = _non_negative_float(edge.get("weight") if isinstance(edge, dict) else None, 1.0)
+            parent_id = str(node.get("parentId") or "")
+            sibling_count = len(children_by_parent.get(parent_id, [])) if parent_id else 1
+            connection = f"{node.get('connectionType') or ''} {edge_type}".lower()
+            if "并" in connection or "parallel" in connection or "备用" in connection:
+                rate *= 0.5
+            if parent_id and sibling_count > 1:
+                rate /= math.sqrt(float(sibling_count))
+            rate *= edge_weight if edge_weight > 0 else 1.0
+            components.append(
+                {
+                    "id": f"rbd:{node_id}",
+                    "name": str(node.get("name") or node_id or "rbd node"),
+                    "failure_rate": rate,
+                    "spare_type": "",
+                    "special_repair_profile": {},
+                    "repair_duration_minutes": None,
+                }
+            )
         return components
 
     def _build_support_nodes(self) -> dict[str, dict[str, Any]]:
@@ -294,7 +372,7 @@ class AircraftSupportV1Model:
                     for key, value in (item.get("inventory") or {}).items()
                     if isinstance(value, (int, float))
                 },
-                "transport_policies": copy.deepcopy(item.get("transport_policies") or []),
+                "transport_policies": self._normalized_transport_policies(item.get("transport_policies") or []),
                 "work_count": 0,
             }
         if not nodes:
@@ -310,6 +388,23 @@ class AircraftSupportV1Model:
                 "work_count": 0,
             }
         return nodes
+
+    def _normalized_transport_policies(self, policies: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        normalized = []
+        for item in policies:
+            if not isinstance(item, dict):
+                continue
+            normalized.append(
+                {
+                    "from": str(item.get("from") or ""),
+                    "to": str(item.get("to") or ""),
+                    "spare_type": str(item.get("spareType") or item.get("spare_type") or ""),
+                    "capacity": max(1, int(item.get("capacity") or 1)),
+                    "priority": max(1, int(item.get("priority") or 1)),
+                    "transport_minutes": max(0, int(round(_non_negative_float(item.get("transportTimeHours"), 0.0) * 60))),
+                }
+            )
+        return sorted(normalized, key=lambda item: (item["priority"], item["transport_minutes"]))
 
     def _build_activities(self) -> list[dict[str, Any]]:
         activities = []
@@ -364,18 +459,21 @@ class AircraftSupportV1Model:
         profile = self.inputs.get("mission_profile", {})
         basic = profile.get("basic_mission") or {}
         missions: list[MissionState] = []
+        periodic_repeats = self._periodic_repeat_counts(profile)
+        mission_duration_adjustment = self.mission_context["duration_adjustment_minutes"]
         for composite in profile.get("composite_tasks") or []:
+            composite_id = str(composite.get("id") or "")
             for item in composite.get("taskItems") or []:
                 if not isinstance(item, dict):
                     continue
-                repeat_count = max(1, int(item.get("dailyRepeatCount") or 1))
+                repeat_count = max(1, int(item.get("dailyRepeatCount") or 1)) * max(1, periodic_repeats.get(composite_id, 1))
                 interval = max(1, int(round(_non_negative_float(item.get("intervalHours"), 24) * 60)))
                 first_start = _time_to_minute(item.get("firstWaveTime"), int(basic.get("startHour") or 1) * 60)
                 prep = max(0, int(item.get("preparationMinutes") or basic.get("preparationMinutes") or 0))
-                duration = int(item.get("taskDurationMinutes") or basic.get("taskDurationMinutes") or 120)
+                duration = int(item.get("taskDurationMinutes") or basic.get("taskDurationMinutes") or 120) + mission_duration_adjustment
                 recovery = _time_to_minute(item.get("recoveryTime"), -1)
                 if recovery >= 0 and recovery > first_start:
-                    duration = max(1, recovery - first_start)
+                    duration = max(1, recovery - first_start + mission_duration_adjustment)
                 for repeat in range(repeat_count):
                     planned_start = first_start + repeat * interval
                     if planned_start > self.duration_minutes:
@@ -408,6 +506,35 @@ class AircraftSupportV1Model:
                 )
             )
         return sorted(missions, key=lambda item: (item.planned_start, item.priority))
+
+    def _periodic_repeat_counts(self, profile: dict[str, Any]) -> dict[str, int]:
+        repeats: dict[str, int] = {}
+        for periodic in profile.get("periodic_tasks") or []:
+            if not isinstance(periodic, dict):
+                continue
+            multiplier = max(1, int(periodic.get("dailyRepeatCount") or 1)) * max(1, int(periodic.get("repeatCount") or 1))
+            composite_ids = [str(item) for item in periodic.get("compositeTaskIds") or []]
+            for item in periodic.get("compositeTasks") or []:
+                if isinstance(item, dict) and item.get("compositeTaskId"):
+                    composite_ids.append(str(item["compositeTaskId"]))
+            for composite_id in composite_ids:
+                repeats[composite_id] = max(repeats.get(composite_id, 1), multiplier)
+        return repeats
+
+    def _mission_context(self) -> dict[str, int]:
+        profile = self.inputs.get("mission_profile", {})
+        airports = [item for item in profile.get("airports") or [] if isinstance(item, dict)]
+        areas = [item for item in profile.get("mission_areas") or [] if isinstance(item, dict)]
+        phases = [item for item in profile.get("mission_phases") or [] if isinstance(item, dict)]
+        distance_km = 0.0
+        if airports:
+            distance_km += max(_non_negative_float(item.get("distanceToMissionKm"), 0.0) for item in airports)
+        if areas:
+            distance_km += max(_non_negative_float(item.get("distanceFromDepartureKm"), 0.0) for item in areas)
+            distance_km += max(_non_negative_float(item.get("patrolRadiusKm"), 0.0) for item in areas) * 0.25
+        phase_minutes = sum(int(round(_non_negative_float(item.get("limitHours"), 0.0) * 10)) for item in phases)
+        travel_minutes = int(round((distance_km / 900.0) * 60)) if distance_km else 0
+        return {"duration_adjustment_minutes": max(0, travel_minutes + phase_minutes)}
 
     def _process_arrivals_and_completions(self) -> None:
         for aircraft in self.aircraft:
@@ -457,6 +584,8 @@ class AircraftSupportV1Model:
                 job.shortage_reason = "equipment_capacity"
                 continue
             spare_type, spare_qty = self._task_spare_requirement(job, task)
+            if spare_type and node["inventory"].get(spare_type, 0) < spare_qty:
+                self._try_transport_replenishment(node, spare_type, spare_qty)
             if spare_type and node["inventory"].get(spare_type, 0) < spare_qty:
                 self.shortage_events += 1
                 job.shortage_reason = f"spare:{spare_type}"
@@ -585,8 +714,8 @@ class AircraftSupportV1Model:
         tasks = copy.deepcopy(activity.get("jobs") or [{"activityCode": kind, "durationMinutes": 30}])
         if kind == "repair" and component is not None:
             profile = component.get("special_repair_profile") if isinstance(component.get("special_repair_profile"), dict) else {}
-            if profile.get("repairTimeMinutes"):
-                tasks[-1]["durationMinutes"] = max(1, int(profile["repairTimeMinutes"]))
+            if component.get("repair_duration_minutes"):
+                tasks[-1]["durationMinutes"] = max(1, int(component["repair_duration_minutes"]))
             if component.get("spare_type"):
                 tasks[-1]["spare"] = f"{component['spare_type']},1"
         self.jobs.append(
@@ -641,6 +770,28 @@ class AircraftSupportV1Model:
             node["inventory"][spare_type] = current - spare_quantity
             self.spare_consumed_total += spare_quantity
             self._event("spare_consumed", f"{job.job_id} consumed {spare_quantity} {spare_type}")
+
+    def _try_transport_replenishment(self, node: dict[str, Any], spare_type: str, needed: int) -> None:
+        shortage = max(0, needed - int(node["inventory"].get(spare_type, 0)))
+        if shortage <= 0:
+            return
+        for policy in node.get("transport_policies") or []:
+            if policy.get("to") and policy["to"] != node["id"]:
+                continue
+            if policy.get("spare_type") and policy["spare_type"] != spare_type:
+                continue
+            source = self.nodes.get(str(policy.get("from") or ""))
+            if source is None:
+                continue
+            available = int(source["inventory"].get(spare_type, 0))
+            moved = min(available, shortage, max(1, int(policy.get("capacity") or 1)))
+            if moved <= 0:
+                continue
+            source["inventory"][spare_type] = available - moved
+            node["inventory"][spare_type] = int(node["inventory"].get(spare_type, 0)) + moved
+            self.transport_replenishment_events += 1
+            self._event("transport_replenished", f"{moved} {spare_type} moved from {source['id']} to {node['id']}")
+            return
 
     def _complete_job_effect(self, job: JobState) -> None:
         aircraft = next((item for item in self.aircraft if item.tail_number == job.tail_number), None)
@@ -785,3 +936,52 @@ def _non_negative_float(value: Any, fallback: float) -> float:
         return max(0.0, float(value))
     except (TypeError, ValueError):
         return fallback
+
+
+def _bounded_float(value: Any) -> float | None:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    return min(1.0, max(0.0, parsed))
+
+
+def _failure_distribution_rate(distribution: dict[str, Any]) -> float | None:
+    parameters = distribution.get("parameters") or distribution.get("params")
+    multiplier = _non_negative_float(distribution.get("_rate_multiplier"), 1.0)
+    if isinstance(parameters, (int, float)):
+        return max(0.0, float(parameters)) * multiplier
+    if not isinstance(parameters, str):
+        return None
+    values = _distribution_parameters(parameters)
+    distribution_type = str(distribution.get("distributionType") or distribution.get("distribution_type") or "").lower()
+    if "lambda" in values or "λ" in values or "rate" in values or "failure_rate" in values:
+        return (
+            values.get("lambda")
+            or values.get("λ")
+            or values.get("rate")
+            or values.get("failure_rate")
+            or 0.0
+        ) * multiplier
+    if "weibull" in distribution_type or "威布尔" in distribution_type:
+        beta = values.get("beta") or values.get("shape") or 1.0
+        eta = values.get("eta") or values.get("scale") or values.get("mean")
+        if eta and eta > 0:
+            mean_time = eta * math.gamma(1.0 + 1.0 / max(beta, 0.001))
+            return (1.0 / mean_time) * multiplier
+    if "normal" in distribution_type or "正态" in distribution_type:
+        mean = values.get("mean") or values.get("mu")
+        if mean and mean > 0:
+            return (1.0 / mean) * multiplier
+    return None
+
+
+def _distribution_parameters(parameters: str) -> dict[str, float]:
+    text = parameters.replace("，", ",").replace("；", ",").replace(";", ",")
+    values: dict[str, float] = {}
+    for item in text.split(","):
+        if "=" not in item:
+            continue
+        key, value = [part.strip().lower() for part in item.split("=", 1)]
+        values[key] = _non_negative_float(value, 0.0)
+    return values

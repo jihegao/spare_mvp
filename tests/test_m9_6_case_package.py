@@ -68,14 +68,16 @@ class M96CasePackageTest(unittest.TestCase):
 
         coverage = build_m9_6_field_coverage(fixture)
 
-        allowed_statuses = {"consumed", "derived", "defaulted", "ignored", "unsupported"}
+        allowed_statuses = {"consumed", "derived", "defaulted", "governance_only", "ignored", "unsupported"}
         leaf_paths = _business_leaf_paths(fixture)
         coverage_paths = [entry["field_path"] for entry in coverage["entries"]]
         self.assertEqual(coverage["schema_version"], "m9-6-field-coverage-v0")
         self.assertEqual(coverage["source_import_id"], fixture["importId"])
+        self.assertEqual(coverage["model_family"], "aircraft_support_v1")
         self.assertEqual(sorted(coverage_paths), sorted(leaf_paths))
         self.assertEqual(len(coverage_paths), len(set(coverage_paths)))
         self.assertTrue({entry["status"] for entry in coverage["entries"]} <= allowed_statuses)
+        self.assertEqual(coverage["summary"]["unsupported"], 0)
         self.assertTrue(all(entry["target"] for entry in coverage["entries"]))
         self.assertTrue(all(entry["rationale"] for entry in coverage["entries"]))
         self.assertIn("objects.supportActivities[].jobs[].durationProfile.distributionType", coverage_paths)
@@ -89,6 +91,14 @@ class M96CasePackageTest(unittest.TestCase):
         self.assertEqual(entry_by_path["objects.equipment.quantity"]["status"], "consumed")
         self.assertEqual(entry_by_path["objects.supportResources[].personnelCapacity"]["status"], "consumed")
         self.assertEqual(entry_by_path["objects.supportResources[].equipmentCapacity"]["status"], "consumed")
+        self.assertEqual(entry_by_path["objects.equipmentAssets[].failureDistribution.parameters"]["status"], "consumed")
+        self.assertEqual(entry_by_path["objects.missionProfiles[].experiment.steps"]["status"], "derived")
+        self.assertEqual(entry_by_path["objects.missionProfiles[].reliabilityBlockDiagram.edges[].to"]["status"], "consumed")
+        self.assertEqual(entry_by_path["objects.missionProfiles[].reliabilityBlockDiagram.edges[].from"]["status"], "governance_only")
+        self.assertEqual(entry_by_path["objects.missionProfiles[].reliabilityBlockDiagram.nodes[].parentId"]["status"], "consumed")
+        self.assertEqual(entry_by_path["objects.supportActivities[].jobs[].predecessors[]"]["status"], "consumed")
+        self.assertEqual(entry_by_path["objects.supportActivities[].transportStrategies[].from"]["status"], "governance_only")
+        self.assertEqual(entry_by_path["objects.supportOrganization.tree"]["status"], "governance_only")
 
     def test_expected_artifact_kind_golden_lists_single_and_monte_carlo_outputs(self) -> None:
         artifact_kinds = m9_6_expected_artifact_kinds()
