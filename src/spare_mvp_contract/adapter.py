@@ -471,6 +471,14 @@ class SimulationAdapter:
                 run_id=run_id,
                 monte_carlo_config=config,
             )
+        if model_family == "aircraft_support_v1":
+            return self._run_aircraft_support_v1_monte_carlo_scenario(
+                scenario,
+                output_dir=output_dir,
+                steps=steps,
+                run_id=run_id,
+                monte_carlo_config=config,
+            )
         self._assert_smoke_scenario(scenario)
         if steps < 0:
             raise AdapterError("bad_steps", "steps must be non-negative", steps=steps)
@@ -1791,6 +1799,435 @@ class SimulationAdapter:
         }
         self._write_json(run_dir / "artifact-manifest.json", manifest)
         return {"run": run, "result": result, "artifact_manifest": manifest}
+
+    def _run_aircraft_support_v1_monte_carlo_scenario(
+        self,
+        scenario: dict[str, Any],
+        output_dir: Path | str,
+        steps: int = 3,
+        run_id: str | None = None,
+        monte_carlo_config: dict[str, Any] | None = None,
+    ) -> dict[str, dict[str, Any]]:
+        self._assert_aircraft_support_v1_scenario(scenario)
+        if steps < 0:
+            raise AdapterError("bad_steps", "steps must be non-negative", steps=steps)
+
+        from src.spare_mvp_abm.aircraft_support_v1 import AircraftSupportV1Model
+
+        inputs = scenario["simulation_inputs"]
+        config = self._require_monte_carlo_config(monte_carlo_config=monte_carlo_config, legacy_config={})
+        run_id = run_id or f"run-{scenario['scenario_id']}-mc"
+        result_id = f"result-{run_id}"
+        manifest_id = f"artifact-manifest-{run_id}"
+        mc_experiment_id = config.get("mc_experiment_id") or f"mc-{run_id.removeprefix('run-')}"
+        now = _utc_now()
+
+        profile = self._monte_carlo_profile(scenario, monte_carlo_config=config)
+        sampling_contract = self._aircraft_support_v1_monte_carlo_sampling_contract(profile)
+        samples: list[dict[str, Any]] = []
+        failed_samples: list[dict[str, Any]] = []
+        for index, point in enumerate(profile["sample_points"]):
+            try:
+                samples.append(
+                    self._run_aircraft_support_v1_monte_carlo_sample(
+                        inputs,
+                        point,
+                        steps=steps,
+                        sample_index=index,
+                    )
+                )
+            except AdapterError as exc:
+                failed_samples.append(self._failed_monte_carlo_sample(index, point, exc.code, str(exc), exc.details))
+            except Exception as exc:
+                failed_samples.append(self._failed_monte_carlo_sample(index, point, "sample_failed", str(exc), {}))
+        if not samples:
+            raise AdapterError(
+                "monte_carlo_all_samples_failed",
+                "aircraft_support_v1 Monte Carlo run has no successful samples to aggregate",
+                failed_samples=failed_samples,
+            )
+
+        aggregate = self._aggregate_sample_metrics(samples)
+        self._coerce_result_integer_metrics(aggregate)
+        aggregate["mission_success_probability"] = aggregate.get("sortie_completion_rate", 0)
+        base_artifact_id = f"monte_carlo_base-{run_id}"
+        projections = self._analysis_projections(aggregate, samples, base_artifact_id)
+        behavior_scope = AircraftSupportV1Model.behavior_scope()
+        input_project = self._input_project_for_scenario(scenario)
+        base_artifact = {
+            "artifact_type": "monte_carlo_base",
+            "model_family": "aircraft_support_v1",
+            "run_id": run_id,
+            "mc_experiment_id": mc_experiment_id,
+            "scenario_id": scenario["scenario_id"],
+            "scenario_version": scenario["scenario_version"],
+            "mapping_provenance": copy.deepcopy(scenario["compiled_from"]["mapping_provenance"]),
+            "mapping_version": scenario["compiled_from"]["mapping_provenance"].get("mapping_version"),
+            "sampling_contract": sampling_contract,
+            "sample_count": profile["sample_count"],
+            "seed": inputs["seed"],
+            "sweep": profile["sweep"],
+            "sample_points": profile["sample_points"],
+            "samples": samples,
+            "failed_samples": failed_samples,
+            "aggregate_metrics": aggregate,
+            "logs_summary": {
+                "completed_samples": len(samples),
+                "failed_samples": len(failed_samples),
+                "executor": "local_sync_aircraft_support_v1",
+            },
+        }
+        run_config = {
+            "schema_version": "run-config-v0",
+            "run_id": run_id,
+            "run_type": "monte_carlo",
+            "model_family": "aircraft_support_v1",
+            "project_id": scenario["project_id"],
+            "experiment_plan_id": None,
+            "modeling_snapshot_id": None,
+            "scenario_id": scenario["scenario_id"],
+            "scenario_version": scenario["scenario_version"],
+            "seed": inputs["seed"],
+            "steps": steps,
+            "mc_experiment_id": mc_experiment_id,
+            "monte_carlo_config": copy.deepcopy(config),
+            "sampling_contract": copy.deepcopy(sampling_contract),
+            "m9_7_3_behavior_scope": copy.deepcopy(behavior_scope),
+        }
+        sample_results = {
+            "schema_version": "sample-results-v0",
+            "run_id": run_id,
+            "mc_experiment_id": mc_experiment_id,
+            "model_family": "aircraft_support_v1",
+            "samples": samples,
+            "failed_samples": failed_samples,
+        }
+        aggregate_result = {
+            "schema_version": "aggregate-result-v0",
+            "run_id": run_id,
+            "mc_experiment_id": mc_experiment_id,
+            "model_family": "aircraft_support_v1",
+            "aggregate_metrics": aggregate,
+            "failed_sample_count": len(failed_samples),
+        }
+        metrics = {
+            "schema_version": "metrics-v0",
+            "run_id": run_id,
+            "metrics": aggregate,
+        }
+        report = {
+            "schema_version": "run-report-v0",
+            "run_id": run_id,
+            "title": "Aircraft support v1 Monte Carlo run report",
+            "summary": {
+                "status": "succeeded",
+                "sample_count": profile["sample_count"],
+                "completed_samples": len(samples),
+                "failed_samples": len(failed_samples),
+                "seed": inputs["seed"],
+                "mc_experiment_id": mc_experiment_id,
+                "sortie_completion_rate": aggregate.get("sortie_completion_rate", 0),
+                "available_aircraft": aggregate.get("available_aircraft", 0),
+            },
+            "m9_7_3_behavior_scope": copy.deepcopy(behavior_scope),
+        }
+        event_log = {
+            "schema_version": "run-log-v0",
+            "run_id": run_id,
+            "events": [
+                {"event": "run_started", "at": now},
+                {
+                    "event": "m9_7_3_monte_carlo_scope_declared",
+                    "at": now,
+                    "behavior_driving_fields": behavior_scope["behavior_driving_fields"],
+                    "fail_closed_fields": behavior_scope["fail_closed_fields"],
+                    "m9_7_4_coverage_hardening_fields": behavior_scope["m9_7_4_coverage_hardening_fields"],
+                },
+                {
+                    "event": "samples_completed",
+                    "at": now,
+                    "completed_samples": len(samples),
+                    "failed_samples": len(failed_samples),
+                },
+                {"event": "run_completed", "at": now, "status": "succeeded"},
+            ],
+        }
+        visualization_state_series = self._visualization_state_series_payload(
+            run_id=run_id,
+            scenario=scenario,
+            model_family="aircraft_support_v1",
+            result_summary_id=result_id,
+            artifact_manifest_id=manifest_id,
+            frames=self._aircraft_support_v1_monte_carlo_visualization_frames(run_id, samples),
+        )
+        result = {
+            "schema_version": RESULT_SCHEMA_VERSION,
+            "model_family": "aircraft_support_v1",
+            "result_id": result_id,
+            "run_id": run_id,
+            "scenario_id": scenario["scenario_id"],
+            "scenario_version": scenario["scenario_version"],
+            "metrics": aggregate,
+            "analysis_outputs": {
+                "large_sample_summary": projections["large_sample_summary"]["data"],
+                "spare_shortage": projections["spare_shortfall"]["data"],
+                "carry_list": projections["carry_list"]["data"],
+                "mission_reliability": projections["mission_reliability"]["data"],
+                "downtime_factors": projections["downtime_factors"]["data"],
+            },
+        }
+        run = {
+            "schema_version": RUN_SCHEMA_VERSION,
+            "run_id": run_id,
+            "project_id": scenario["project_id"],
+            "scenario_id": scenario["scenario_id"],
+            "scenario_version": scenario["scenario_version"],
+            "model_family": "aircraft_support_v1",
+            "model_id": "AircraftSupportV1Model",
+            "status": "succeeded",
+            "run_type": "monte_carlo",
+            "seed": inputs["seed"],
+            "progress": 1,
+            "started_at": now,
+            "completed_at": now,
+            "result_summary_id": result_id,
+            "artifact_manifest_id": manifest_id,
+            "error": None,
+            "experiment_id": f"experiment-{run_id}",
+            "experiment_type": "monte_carlo",
+            "mc_experiment_id": mc_experiment_id,
+        }
+
+        output_root = Path(output_dir)
+        run_dir = output_root / run_id
+        run_dir.mkdir(parents=True, exist_ok=True)
+        artifact_specs = [
+            ("run_config", "run-config.json", run_config, "run-config-v0"),
+            ("input_project", "input-project.json", input_project, PROJECT_SCHEMA_VERSION),
+            ("compiled_scenario", "compiled-scenario.json", scenario, SCENARIO_SCHEMA_VERSION),
+            ("sample_results", "sample-results.json", sample_results, "sample-results-v0"),
+            ("aggregate_result", "aggregate-result.json", aggregate_result, "aggregate-result-v0"),
+            ("result_summary", "result-summary.json", result, RESULT_SCHEMA_VERSION),
+            ("metrics", "metrics.json", metrics, "metrics-v0"),
+            ("report", "report.json", report, "run-report-v0"),
+            ("log", "events-log.json", event_log, "run-log-v0"),
+            ("monte_carlo_base", "monte-carlo-base.json", base_artifact, None),
+            (
+                "visualization_state_series",
+                "visualization-state-series.json",
+                visualization_state_series,
+                VISUALIZATION_STATE_SERIES_SCHEMA_VERSION,
+            ),
+            ("analysis_projection_spare_shortfall", "spare-shortfall.json", projections["spare_shortfall"], "analysis-projection-v0"),
+            ("analysis_projection_carry_list", "carry-list.json", projections["carry_list"], "analysis-projection-v0"),
+            ("analysis_projection_mission_reliability", "mission-reliability.json", projections["mission_reliability"], "analysis-projection-v0"),
+            ("analysis_projection_downtime_factors", "downtime-factors.json", projections["downtime_factors"], "analysis-projection-v0"),
+        ]
+        artifacts = [
+            self._write_artifact(run_dir, output_root, kind, filename, payload, schema_version)
+            for kind, filename, payload, schema_version in artifact_specs
+        ]
+        for artifact in artifacts:
+            kind = artifact.get("kind", "")
+            if str(kind).startswith("analysis_projection_"):
+                artifact["source_artifact_id"] = base_artifact_id
+                artifact["analysis_type"] = str(kind).removeprefix("analysis_projection_")
+        self._annotate_state_series_artifact(artifacts, run_id, result_id, scenario["scenario_id"])
+        self._annotate_representative_sample_artifact(artifacts, samples)
+        manifest = {
+            "schema_version": ARTIFACT_MANIFEST_SCHEMA_VERSION,
+            "artifact_manifest_id": manifest_id,
+            "run_id": run_id,
+            "scenario_id": scenario["scenario_id"],
+            "scenario_version": scenario["scenario_version"],
+            "created_at": now,
+            "artifacts": artifacts,
+        }
+        self._write_json(run_dir / "artifact-manifest.json", manifest)
+        return {"run": run, "result": result, "artifact_manifest": manifest}
+
+    def _aircraft_support_v1_monte_carlo_sampling_contract(self, profile: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "schema_version": "aircraft-support-v1-monte-carlo-sampling-v0",
+            "model_family": "aircraft_support_v1",
+            "sample_count": profile["sample_count"],
+            "dimensions": [
+                {
+                    "source": "analysisRequests.largeSample.sweep.failureRates",
+                    "target": "AircraftSupportV1Model.components[].failure_rate",
+                    "interpretation": "multiplier applied to compiled component failure_rate values",
+                    "values": profile["sweep"]["failureRates"],
+                },
+                {
+                    "source": "analysisRequests.largeSample.sweep.spareMultipliers",
+                    "target": "AircraftSupportV1Model.supportNodes[].inventory",
+                    "interpretation": "multiplier applied to compiled support-node inventory quantities",
+                    "values": profile["sweep"]["spareMultipliers"],
+                },
+                {
+                    "source": "analysisRequests.largeSample.sweep.supportCapacities",
+                    "target": "AircraftSupportV1Model supportNodes[].personnel_capacity/equipment_capacity",
+                    "interpretation": "sample-level override for each support node capacity",
+                    "values": profile["sweep"]["supportCapacities"],
+                },
+            ],
+            "seed_policy": "sample_seed = compiled Scenario seed + sample_index",
+            "sample_point_policy": "sample_count must cover every cartesian sweep point; extra samples repeat points in deterministic order",
+            "failed_sample_policy": "sample errors are recorded in failed_samples; aggregate metrics use successful samples only",
+            "m9_7_4_pending_fields": [
+                "components[].failureDistribution",
+                "supportNodes[].transportPolicies",
+                "reliabilityBlockDiagram",
+                "components[].kOutOfN",
+                "components[].rms",
+                "missionProfile.periodicTasks",
+                "missionPhases",
+                "airports",
+                "missionAreas",
+            ],
+        }
+
+    def _run_aircraft_support_v1_monte_carlo_sample(
+        self,
+        inputs: dict[str, Any],
+        point: dict[str, Any],
+        *,
+        steps: int,
+        sample_index: int,
+    ) -> dict[str, Any]:
+        from src.spare_mvp_abm.aircraft_support_v1 import AircraftSupportV1Model
+
+        sample_inputs = copy.deepcopy(inputs)
+        sample_inputs["seed"] = point["seed"]
+        self._apply_aircraft_support_v1_failure_multiplier(sample_inputs, point["failure_rate"])
+        self._apply_aircraft_support_v1_spare_multiplier(sample_inputs, point["spare_multiplier"])
+        self._apply_aircraft_support_v1_capacity(sample_inputs, point["support_capacity"])
+        model = AircraftSupportV1Model(sample_inputs)
+        execution = model.run()
+        sweep = {
+            "failure_rate": point["failure_rate"],
+            "spare_multiplier": point["spare_multiplier"],
+            "support_capacity": point["support_capacity"],
+        }
+        frames = []
+        max_frames = max(1, int(steps)) if steps > 0 else 1
+        for sample_step, frame in enumerate(execution["frames"][:max_frames]):
+            item = copy.deepcopy(frame)
+            item["sample_index"] = sample_index
+            item["sample_step"] = sample_step
+            item["seed"] = point["seed"]
+            item["sweep"] = copy.deepcopy(sweep)
+            frames.append(item)
+        if not frames:
+            item = model.visualization_frame(run_id="", step=0)
+            item["sample_index"] = sample_index
+            item["sample_step"] = 0
+            item["seed"] = point["seed"]
+            item["sweep"] = copy.deepcopy(sweep)
+            frames.append(item)
+        return {
+            "sample_index": sample_index,
+            "seed": point["seed"],
+            "sweep": sweep,
+            "metrics": execution["metrics"],
+            "frames": frames,
+        }
+
+    def _apply_aircraft_support_v1_failure_multiplier(self, inputs: dict[str, Any], multiplier: float) -> None:
+        for component in inputs.get("equipment_tree", {}).get("components", []):
+            if not isinstance(component, dict):
+                continue
+            component["failure_rate"] = max(0.0, float(component.get("failure_rate", 0) or 0) * float(multiplier))
+
+    def _apply_aircraft_support_v1_spare_multiplier(self, inputs: dict[str, Any], multiplier: float) -> None:
+        for node in inputs.get("support_network", {}).get("nodes", []):
+            if not isinstance(node, dict):
+                continue
+            inventory = node.get("inventory")
+            if not isinstance(inventory, dict):
+                continue
+            node["inventory"] = {
+                str(key): max(0, int(round(float(value or 0) * float(multiplier))))
+                for key, value in inventory.items()
+                if isinstance(value, (int, float))
+            }
+
+    def _apply_aircraft_support_v1_capacity(self, inputs: dict[str, Any], capacity: int) -> None:
+        capacity_value = max(1, int(capacity))
+        for node in inputs.get("support_network", {}).get("nodes", []):
+            if not isinstance(node, dict):
+                continue
+            node["personnel_capacity"] = capacity_value
+            node["equipment_capacity"] = capacity_value
+
+    def _failed_monte_carlo_sample(
+        self,
+        sample_index: int,
+        point: dict[str, Any],
+        code: str,
+        message: str,
+        details: dict[str, Any],
+    ) -> dict[str, Any]:
+        return {
+            "sample_index": sample_index,
+            "seed": point.get("seed"),
+            "sweep": {
+                "failure_rate": point.get("failure_rate"),
+                "spare_multiplier": point.get("spare_multiplier"),
+                "support_capacity": point.get("support_capacity"),
+            },
+            "error": {
+                "code": code,
+                "message": message,
+                "details": copy.deepcopy(details),
+            },
+        }
+
+    def _coerce_result_integer_metrics(self, metrics: dict[str, Any]) -> None:
+        for key in [
+            "available_aircraft",
+            "active_jobs",
+            "spare_stock_total",
+            "spare_consumed_total",
+            "maintenance_backlog",
+            "lru_failures",
+        ]:
+            if key in metrics and self._is_number(metrics[key]):
+                metrics[key] = max(0, int(round(float(metrics[key]))))
+
+    def _annotate_representative_sample_artifact(
+        self,
+        artifacts: list[dict[str, Any]],
+        samples: list[dict[str, Any]],
+    ) -> None:
+        if not samples:
+            return
+        sample = samples[0]
+        for artifact in artifacts:
+            if artifact.get("kind") != "visualization_state_series":
+                continue
+            artifact["representative_sample_id"] = int(sample.get("sample_index", 0))
+            artifact["representative_sample_seed"] = int(sample.get("seed", 0))
+            artifact["representative_sample_sweep"] = copy.deepcopy(sample.get("sweep") or {})
+            artifact["representative_sample_reason"] = "first successful deterministic sample"
+            artifact["representative_sample_frame_count"] = len(sample.get("frames") or [])
+
+    def _aircraft_support_v1_monte_carlo_visualization_frames(
+        self,
+        run_id: str,
+        samples: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        frames: list[dict[str, Any]] = []
+        next_step = 0
+        representative_sample = samples[0] if samples else {}
+        for sample_frame in representative_sample.get("frames") or []:
+            frame = copy.deepcopy(sample_frame)
+            frame["run_id"] = run_id
+            frame["step"] = next_step
+            frame["simulation_time"] = next_step
+            frames.append(frame)
+            next_step += 1
+        return frames
 
     def _aviation_visualization_state_frame(self, run_id: str, state: dict[str, Any], step: int) -> dict[str, Any]:
         metrics = state["snapshot"]

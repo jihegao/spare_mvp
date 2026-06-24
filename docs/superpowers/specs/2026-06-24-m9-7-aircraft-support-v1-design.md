@@ -6,7 +6,7 @@
 
 ## 目标
 
-M9.7 新增正式飞机保障仿真模型族 `aircraft_support_v1`。该模型族必须通过 `SimulationAdapter.compile_scenario()` 和 `SimulationAdapter.run_scenario()` 进入平台正式运行链路，并使用 canonical `/api/runs` 产出 result、artifact manifest、run chain、`visualization_state_series` 和四类 `analysis_projection_*` artifact。
+M9.7 新增正式飞机保障仿真模型族 `aircraft_support_v1`。该模型族必须通过 `SimulationAdapter.compile_scenario()`、`SimulationAdapter.run_scenario()` 和 `SimulationAdapter.run_monte_carlo_scenario()` 进入平台正式运行链路，并使用 canonical `/api/runs` 产出 result、artifact manifest、run chain、`visualization_state_series`、`monte_carlo_base` 和四类 `analysis_projection_*` artifact。
 
 M9.7 不把 `independent-mesa`、`8765` 或静态 HTML 输出作为正式产品入口。`independent-mesa/GLM` 和 `independent-mesa/GPT` 只作为机制、模块划分和验收要素参考。M9.8 才处理平台嵌入和 `independent-mesa` 退役。
 
@@ -150,10 +150,10 @@ MC run 仍输出一个 `visualization_state_series` artifact，但该 artifact �
 
 代表样本选择规则：
 
-1. 首选中位数附近样本：任务完成率、备件满足率、停机时间三个指标归一化后，选择到全体中位数距离最小的成功样本。
-2. 若并列，选择 seed 最小的样本。
-3. 若代表样本所在组合没有成功样本，选择全体成功样本中距离全体中位数最近者。
-4. 若所有样本失败，输出 failed state-series envelope 和失败摘要，不伪造可回放状态。
+1. M9.7.3 使用第一个成功的确定性样本作为代表样本，选择理由记录为 `first successful deterministic sample`。
+2. 该规则保证固定 seed 和固定 sweep 下 state-series 可复现，并避免把所有样本帧误暴露为单条正式回放。
+3. 若所有样本失败，run 必须 fail closed 并输出失败摘要，不伪造可回放状态。
+4. 中位数附近代表样本选择可作为后续优化，但不属于 M9.7.3 收口范围。
 
 `visualization_state_series` artifact metadata 必须标明 `representative_sample_id`、代表样本参数组合、seed、选择理由和覆盖范围。所有样本级证据以 `monte_carlo_base` 为准，不能把代表样本回放解释成整个 Monte Carlo 分布。
 
@@ -195,7 +195,7 @@ M9.7 拆成四个 PR 验收，最后一个 PR 才标记 M9.7 完成。
 - M9.6 case package 能通过 canonical `/api/runs` single run 成功执行。
 - 缺 projection、缺 state-series、缺 compiler provenance 或 unsupported 字段族时 fail closed。
 
-当前完成口径：M9.7.2 已落地可合并 single-run core，但不声明一次性覆盖所有业务字段。当前行为驱动字段为机队数量/初始可用、任务波次、组件故障率和寿命、保障资源容量、库存、保障活动 job DAG 与 seed；这些字段进入状态推进、故障判定、任务出动、维修/保障作业、资源约束、备件消耗、指标和状态帧。`components[].failureDistribution` 和 `supportNodes[].transportPolicies` 当前只编译进入 payload，真正行为消费留给 M9.7.4 coverage hardening。非空或未批准的 `supportOrganization` 仍作为 unsupported 字段 fail closed；M9.6 空组织树不阻断 single run。`reliabilityBlockDiagram`、RMS/k-out-of-n、周期任务细化、任务阶段/机场/任务区细化、Monte Carlo sweep 字段和最终 M9.6 field coverage 关闭也留给 M9.7.4 coverage hardening；formal Monte Carlo/projection 留给 M9.7.3。
+当前完成口径：M9.7.2 已落地可合并 single-run core，但不声明一次性覆盖所有业务字段。当前行为驱动字段为机队数量/初始可用、任务波次、组件故障率和寿命、保障资源容量、库存、保障活动 job DAG 与 seed；这些字段进入状态推进、故障判定、任务出动、维修/保障作业、资源约束、备件消耗、指标和状态帧。`components[].failureDistribution` 和 `supportNodes[].transportPolicies` 当前只编译进入 payload，真正行为消费留给 M9.7.4 coverage hardening。非空或未批准的 `supportOrganization` 仍作为 unsupported 字段 fail closed；M9.6 空组织树不阻断 single run。`reliabilityBlockDiagram`、RMS/k-out-of-n、周期任务细化、任务阶段/机场/任务区细化和最终 M9.6 field coverage 关闭也留给 M9.7.4 coverage hardening；formal Monte Carlo/projection 已由 M9.7.3 完成。
 
 #### M9.7.3 Monte Carlo/projection
 
@@ -213,6 +213,8 @@ M9.7 拆成四个 PR 验收，最后一个 PR 才标记 M9.7 完成。
 - 所有样本证据进入 `monte_carlo_base`，projection 来源指向 base artifact。
 - 代表样本 metadata 可解释 sample id、参数组合、seed 和选择理由。
 
+当前完成口径：M9.7.3 已落地 `aircraft_support_v1` formal Monte Carlo/projection。`SimulationAdapter.run_monte_carlo_scenario()` 识别 `model_family = "aircraft_support_v1"`，使用 `analysisRequests.largeSample -> MonteCarloRunConfig` 的样本数和 sweep 生成确定性样本点，按 `sample_seed = compiled Scenario seed + sample_index` 固定 seed。`monte_carlo_base` 记录 sampling contract、全部成功样本、失败样本账本、聚合指标和日志摘要；四类 `analysis_projection_*` artifact 的 `source_artifact_id` 指向 base artifact；`visualization_state_series` 由代表样本帧组成并保留 `sample_index`、`sample_step`、seed、sweep 和 run traceability。样本失败会隔离到 `failed_samples`，聚合只使用成功样本；全部样本失败时 fail closed，不写伪聚合结果。
+
 #### M9.7.4 coverage hardening
 
 目标：关闭 M9.7 完成口径，确保 M9.6 已冻结业务字段不再保留 unsupported。
@@ -228,6 +230,14 @@ M9.7 拆成四个 PR 验收，最后一个 PR 才标记 M9.7 完成。
 - coverage 中 M9.6 已冻结业务字段无 unsupported。
 - `smoke`、`aviation_support`、`aircraft_support_v1` 编译和运行回归通过。
 - README、docs README、roadmap、contracts README、agent 约束同步。
+
+当前决策边界：M9.7.4 不能把“编译进入 payload”误写成行为消费。剩余字段必须按以下口径关闭：
+
+- `components[].failureDistribution`、`components[].kOutOfN`、RBD 拓扑和故障参数应进入 behavior-driven；RMS 中 `mttrHours`/`mldtHours` 只有在缺少更细 repair/logistics 输入时作为 default source，否则作为 derived/governance target。
+- `supportNodes[].transportPolicies` 应进入 behavior-driven，用于在途补给、转运延迟、容量和优先级；`supportActivities[].transportStrategies`/`organizationStrategies` 在语义批准前不得伪消费。
+- `missionProfile.periodicTasks` 的周期、重复规则、weekday assignments 和 composite task references 应进入 behavior-driven；`id`/`name` 等展示字段进入 derived 或 governance_only。
+- `missionPhases`、`airports`、`missionAreas` 中影响状态转换、任务区距离、机场/保障点可达性和转场/回收约束的字段应进入 behavior-driven；纯展示、标识和标签字段进入 derived/governance_only。
+- 非空 `supportOrganization` 继续 fail closed，除非 M9.7.4 明确批准为 governance_only 或定义真实调度/权限/组织约束行为。
 
 ## 初始架构方向
 

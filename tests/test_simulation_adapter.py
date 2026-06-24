@@ -422,6 +422,146 @@ class SimulationAdapterTest(unittest.TestCase):
             self.assertEqual(ctx.exception.details["unsupported_fields"], ["supportOrganization"])
             self.assertEqual(list(Path(tmp).glob("**/*")), [])
 
+    def test_aircraft_support_v1_monte_carlo_writes_formal_projection_artifacts(self) -> None:
+        project = self._load_fixture("m9_6_platform_case_export.json")["project"]
+        scenario = self.adapter.compile_scenario(project, model_family="aircraft_support_v1")
+        result_schema = json.loads((REPO_ROOT / "contracts" / "result.schema.json").read_text(encoding="utf-8"))
+        manifest_schema = json.loads((REPO_ROOT / "contracts" / "artifact_manifest.schema.json").read_text(encoding="utf-8"))
+        state_series_schema = json.loads(
+            (REPO_ROOT / "contracts" / "visualization_state_series.schema.json").read_text(encoding="utf-8")
+        )
+        config = {
+            "sample_count": 4,
+            "sweep": {
+                "failureRates": [0.01, 0.02],
+                "spareMultipliers": [1.0],
+                "supportCapacities": [1, 2],
+            },
+            "mc_experiment_id": "mc-aircraft-v1-contract",
+        }
+
+        with tempfile.TemporaryDirectory() as first_tmp, tempfile.TemporaryDirectory() as second_tmp:
+            first = self.adapter.run_monte_carlo_scenario(
+                scenario,
+                output_dir=Path(first_tmp),
+                run_id="run-aircraft-v1-mc",
+                monte_carlo_config=copy.deepcopy(config),
+            )
+            second = self.adapter.run_monte_carlo_scenario(
+                copy.deepcopy(scenario),
+                output_dir=Path(second_tmp),
+                run_id="run-aircraft-v1-mc",
+                monte_carlo_config=copy.deepcopy(config),
+            )
+            run = first["run"]
+            result = first["result"]
+            manifest = first["artifact_manifest"]
+            kinds = {artifact["kind"] for artifact in manifest["artifacts"]}
+            base_artifact = next(artifact for artifact in manifest["artifacts"] if artifact["kind"] == "monte_carlo_base")
+            projection_artifacts = [
+                artifact for artifact in manifest["artifacts"] if artifact["kind"].startswith("analysis_projection_")
+            ]
+            state_artifact = next(
+                artifact for artifact in manifest["artifacts"] if artifact["kind"] == "visualization_state_series"
+            )
+            base_payload = json.loads((Path(first_tmp) / base_artifact["path"]).read_text(encoding="utf-8"))
+            second_base_payload = json.loads(
+                (Path(second_tmp) / base_artifact["path"]).read_text(encoding="utf-8")
+            )
+            state_payload = json.loads((Path(first_tmp) / state_artifact["path"]).read_text(encoding="utf-8"))
+
+        jsonschema.validate(instance=result, schema=result_schema)
+        jsonschema.validate(instance=manifest, schema=manifest_schema)
+        jsonschema.validate(instance=state_payload, schema=state_series_schema)
+        self.assertEqual(run["status"], "succeeded")
+        self.assertEqual(run["model_family"], "aircraft_support_v1")
+        self.assertEqual(run["model_id"], "AircraftSupportV1Model")
+        self.assertEqual(run["run_type"], "monte_carlo")
+        self.assertEqual(run["mc_experiment_id"], "mc-aircraft-v1-contract")
+        self.assertEqual(result["model_family"], "aircraft_support_v1")
+        self.assertEqual(result["metrics"], second["result"]["metrics"])
+        self.assertEqual(base_payload["aggregate_metrics"], second_base_payload["aggregate_metrics"])
+        self.assertEqual(
+            kinds & {"sample_results", "aggregate_result", "monte_carlo_base", "visualization_state_series"},
+            {"sample_results", "aggregate_result", "monte_carlo_base", "visualization_state_series"},
+        )
+        self.assertEqual(len(projection_artifacts), 4)
+        self.assertTrue(all(artifact["source_artifact_id"] == base_artifact["artifact_id"] for artifact in projection_artifacts))
+        self.assertEqual(base_payload["artifact_type"], "monte_carlo_base")
+        self.assertEqual(base_payload["model_family"], "aircraft_support_v1")
+        self.assertEqual(base_payload["sample_count"], 4)
+        self.assertEqual(base_payload["logs_summary"]["completed_samples"], 4)
+        self.assertEqual(base_payload["logs_summary"]["failed_samples"], 0)
+        self.assertEqual(len(base_payload["samples"]), 4)
+        self.assertEqual(
+            {
+                (
+                    sample["sweep"]["failure_rate"],
+                    sample["sweep"]["spare_multiplier"],
+                    sample["sweep"]["support_capacity"],
+                )
+                for sample in base_payload["samples"]
+            },
+            {(0.01, 1.0, 1), (0.01, 1.0, 2), (0.02, 1.0, 1), (0.02, 1.0, 2)},
+        )
+        self.assertEqual(state_payload["model_family"], "aircraft_support_v1")
+        self.assertEqual(state_payload["run_id"], run["run_id"])
+        self.assertEqual(state_artifact["representative_sample_id"], 0)
+        self.assertEqual(state_artifact["representative_sample_seed"], base_payload["samples"][0]["seed"])
+        self.assertEqual(state_artifact["representative_sample_sweep"], base_payload["samples"][0]["sweep"])
+        self.assertEqual(state_artifact["representative_sample_frame_count"], len(base_payload["samples"][0]["frames"]))
+        self.assertEqual(state_artifact["representative_sample_reason"], "first successful deterministic sample")
+        self.assertTrue(all("sample_index" in frame and "sample_step" in frame for frame in state_payload["frames"]))
+        self.assertEqual(
+            {frame["sample_index"] for frame in state_payload["frames"]},
+            {state_artifact["representative_sample_id"]},
+        )
+        self.assertEqual(len(state_payload["frames"]), state_artifact["representative_sample_frame_count"])
+
+    def test_aircraft_support_v1_monte_carlo_isolates_failed_samples(self) -> None:
+        class FailingSampleAdapter(SimulationAdapter):
+            def _run_aircraft_support_v1_monte_carlo_sample(self, *args, sample_index: int, **kwargs):
+                if sample_index == 1:
+                    raise AdapterError("sample_failed", "synthetic sample failure", sample_index=sample_index)
+                return super()._run_aircraft_support_v1_monte_carlo_sample(*args, sample_index=sample_index, **kwargs)
+
+        adapter = FailingSampleAdapter(REPO_ROOT)
+        project = self._load_fixture("m9_6_platform_case_export.json")["project"]
+        scenario = adapter.compile_scenario(project, model_family="aircraft_support_v1")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            bundle = adapter.run_monte_carlo_scenario(
+                scenario,
+                output_dir=Path(tmp),
+                run_id="run-aircraft-v1-mc-partial",
+                monte_carlo_config={
+                    "sample_count": 2,
+                    "sweep": {
+                        "failureRates": [0.01],
+                        "spareMultipliers": [1.0],
+                        "supportCapacities": [1],
+                    },
+                    "mc_experiment_id": "mc-aircraft-v1-partial",
+                },
+            )
+            base_artifact = next(
+                artifact for artifact in bundle["artifact_manifest"]["artifacts"] if artifact["kind"] == "monte_carlo_base"
+            )
+            sample_artifact = next(
+                artifact for artifact in bundle["artifact_manifest"]["artifacts"] if artifact["kind"] == "sample_results"
+            )
+            base_payload = json.loads((Path(tmp) / base_artifact["path"]).read_text(encoding="utf-8"))
+            sample_payload = json.loads((Path(tmp) / sample_artifact["path"]).read_text(encoding="utf-8"))
+
+        self.assertEqual(bundle["run"]["status"], "succeeded")
+        self.assertEqual(base_payload["logs_summary"]["completed_samples"], 1)
+        self.assertEqual(base_payload["logs_summary"]["failed_samples"], 1)
+        self.assertEqual(len(base_payload["samples"]), 1)
+        self.assertEqual(len(base_payload["failed_samples"]), 1)
+        self.assertEqual(base_payload["failed_samples"][0]["sample_index"], 1)
+        self.assertEqual(base_payload["aggregate_metrics"]["sample_count"], 1)
+        self.assertEqual(sample_payload["failed_samples"][0]["error"]["code"], "sample_failed")
+
     def test_aircraft_support_v1_single_run_metrics_change_when_behavior_fields_change(self) -> None:
         project = self._load_fixture("m9_6_platform_case_export.json")["project"]
         project["supportOrganization"] = {}
