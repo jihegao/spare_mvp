@@ -195,7 +195,7 @@ M9.7 拆成四个 PR 验收，最后一个 PR 才标记 M9.7 完成。
 - M9.6 case package 能通过 canonical `/api/runs` single run 成功执行。
 - 缺 projection、缺 state-series、缺 compiler provenance 或 unsupported 字段族时 fail closed。
 
-当前完成口径：M9.7.2 已落地可合并 single-run core，但不声明一次性覆盖所有业务字段。当前行为驱动字段为机队数量/初始可用、任务波次、组件故障率和寿命、保障资源容量、库存、保障活动 job DAG 与 seed；这些字段进入状态推进、故障判定、任务出动、维修/保障作业、资源约束、备件消耗、指标和状态帧。`components[].failureDistribution` 和 `supportNodes[].transportPolicies` 当前只编译进入 payload，真正行为消费留给 M9.7.4 coverage hardening。非空或未批准的 `supportOrganization` 仍作为 unsupported 字段 fail closed；M9.6 空组织树不阻断 single run。`reliabilityBlockDiagram`、RMS/k-out-of-n、周期任务细化、任务阶段/机场/任务区细化和最终 M9.6 field coverage 关闭也留给 M9.7.4 coverage hardening；formal Monte Carlo/projection 已由 M9.7.3 完成。
+当前完成口径：M9.7.2 已落地可合并 single-run core；M9.7.3 已补齐 formal Monte Carlo/projection；M9.7.4 已关闭 coverage hardening。最终行为驱动字段为机队数量/初始可用、任务波次、`components[].failureDistribution`、组件故障率/寿命/RMS/k-out-of-n、`reliabilityBlockDiagram`、保障资源容量、库存、`supportNodes[].transportPolicies`、保障活动 job DAG、周期任务、任务阶段/机场/任务区、Monte Carlo sweep 与 seed；这些字段进入状态推进、故障判定、任务出动、维修/保障作业、资源约束、备件消耗、指标和状态帧。`supportOrganization` 当前批准为 governance_only / 不驱动仿真字段，进入 provenance 而不阻断 M9.6 frozen 案例。
 
 #### M9.7.3 Monte Carlo/projection
 
@@ -231,13 +231,13 @@ M9.7 拆成四个 PR 验收，最后一个 PR 才标记 M9.7 完成。
 - `smoke`、`aviation_support`、`aircraft_support_v1` 编译和运行回归通过。
 - README、docs README、roadmap、contracts README、agent 约束同步。
 
-当前决策边界：M9.7.4 不能把“编译进入 payload”误写成行为消费。剩余字段必须按以下口径关闭：
+当前完成口径：M9.7.4 不能把“编译进入 payload”误写成行为消费；已按以下口径关闭：
 
-- `components[].failureDistribution`、`components[].kOutOfN`、RBD 拓扑和故障参数应进入 behavior-driven；RMS 中 `mttrHours`/`mldtHours` 只有在缺少更细 repair/logistics 输入时作为 default source，否则作为 derived/governance target。
-- `supportNodes[].transportPolicies` 应进入 behavior-driven，用于在途补给、转运延迟、容量和优先级；`supportActivities[].transportStrategies`/`organizationStrategies` 在语义批准前不得伪消费。
-- `missionProfile.periodicTasks` 的周期、重复规则、weekday assignments 和 composite task references 应进入 behavior-driven；`id`/`name` 等展示字段进入 derived 或 governance_only。
-- `missionPhases`、`airports`、`missionAreas` 中影响状态转换、任务区距离、机场/保障点可达性和转场/回收约束的字段应进入 behavior-driven；纯展示、标识和标签字段进入 derived/governance_only。
-- 非空 `supportOrganization` 继续 fail closed，除非 M9.7.4 明确批准为 governance_only 或定义真实调度/权限/组织约束行为。
+- `components[].failureDistribution`、`components[].kOutOfN`、RBD 拓扑和故障参数进入 behavior-driven；RMS 中 `mttrHours`/`mldtHours` 在缺少更细 repair/logistics 输入时作为 repair duration default source，其他 RMS 显示/目标字段按 derived/governance 处理。
+- `supportNodes[].transportPolicies` 进入 behavior-driving，用于短缺时补给转运、容量和优先级；`supportActivities[].transportStrategies`/`organizationStrategies` 当前批准为 governance_only，不伪消费。
+- `missionProfile.periodicTasks` 的重复规则和 composite task references 进入 behavior-driving；`id`/`name` 等展示字段进入 derived 或 governance_only。
+- `missionPhases`、`airports`、`missionAreas` 中影响任务时长/任务区距离/阶段限制的字段进入 behavior-driving；纯展示、标识和标签字段进入 derived/governance_only。
+- 非空 `supportOrganization` 在 M9.7.4 明确批准为 governance_only / 不驱动仿真字段，写入 provenance，不再阻断正式 run。
 
 ## 初始架构方向
 

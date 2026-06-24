@@ -2570,7 +2570,7 @@ test("M9.6 docs freeze platform case fixtures before M9.7 model-family work", as
   assert.doesNotMatch(combined, /M9\.6[^。]*(8765|independent-mesa\/server\.py)[^。]*(已作为|已成为|是)正式产品入口/);
 });
 
-test("M9.7.2 docs describe real single-run core without claiming coverage or MC completion", async () => {
+test("M9.7 docs describe single-run, Monte Carlo, and coverage closure without claiming M9.8", async () => {
   const docs = {
     readme: await readFile(new URL("../README.md", import.meta.url), "utf8"),
     docsReadme: await readFile(new URL("../docs/README.md", import.meta.url), "utf8"),
@@ -2584,13 +2584,14 @@ test("M9.7.2 docs describe real single-run core without claiming coverage or MC 
   assert.match(combined, /M9\.7\.2[^。]*(真实 single-run core|single-run core)/);
   assert.match(combined, /AircraftSupportV1Model/);
   assert.match(combined, /behavior-driving|行为驱动字段/);
-  assert.match(combined, /supportOrganization[^。]*fail closed/);
-  assert.match(combined, /M9\.7\.4[^。]*coverage hardening/);
+  assert.match(combined, /supportOrganization[^。]*(governance-only|治理型|不驱动仿真)/);
   assert.match(combined, /M9\.7\.3[^。]*(formal Monte Carlo|MC\/projection|Monte Carlo\/projection)/);
+  assert.match(combined, /M9\.7\.4[^。]*(coverage hardening|覆盖)[^。]*(完成|关闭|收口)/);
   assert.doesNotMatch(combined, /M9\.7\.2[^。]*(字段全覆盖已完成|coverage hardening 已完成|formal Monte Carlo 已完成|Monte Carlo\/projection 已完成)/);
+  assert.doesNotMatch(combined, /M9\.7\.4[^。]*(M9\.8 平台嵌入已完成|independent-mesa[^。]*退役已完成)/);
 });
 
-test("M9.7.2 docs do not overstate payload-only fields as behavior-driving", async () => {
+test("M9.7.4 docs promote formerly payload-only fields and avoid pending coverage wording", async () => {
   const docs = {
     readme: await readFile(new URL("../README.md", import.meta.url), "utf8"),
     docsReadme: await readFile(new URL("../docs/README.md", import.meta.url), "utf8"),
@@ -2600,8 +2601,9 @@ test("M9.7.2 docs do not overstate payload-only fields as behavior-driving", asy
   };
   const combined = Object.values(docs).join("\n");
 
-  assert.match(combined, /components\[\]\.failureDistribution[^。]*M9\.7\.4 coverage hardening/);
-  assert.match(combined, /supportNodes\[\]\.transportPolicies[^。]*M9\.7\.4 coverage hardening/);
-  assert.doesNotMatch(combined, /行为驱动字段[^。]*(故障率\/分布|failureDistribution|运输策略|transportPolicies)/);
-  assert.doesNotMatch(combined, /behavior-driving[^。]*(failureDistribution|transportPolicies)/);
+  assert.match(combined, /components\[\]\.failureDistribution[^。]*(behavior-driving|行为驱动)/);
+  assert.match(combined, /supportNodes\[\]\.transportPolicies[^。]*(behavior-driving|行为驱动)/);
+  assert.doesNotMatch(combined, /components\[\]\.failureDistribution[^。]*(当前只编译进入 payload|只编译进入 payload|留给 M9\.7\.4)/);
+  assert.doesNotMatch(combined, /supportNodes\[\]\.transportPolicies[^。]*(当前只编译进入 payload|只编译进入 payload|留给 M9\.7\.4)/);
+  assert.doesNotMatch(combined, /supportOrganization[^。]*fail closed/);
 });

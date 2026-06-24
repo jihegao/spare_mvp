@@ -13,6 +13,7 @@ from src.spare_mvp_contract.adapter import SimulationAdapter
 
 
 M9_6_MODEL_FAMILY = "aviation_support"
+M9_7_COVERAGE_MODEL_FAMILY = "aircraft_support_v1"
 M9_6_FROZEN_AT = "2026-06-23T00:00:00Z"
 M9_6_MODELING_SNAPSHOT_ID = "snapshot-m9-6-platform-case"
 M9_6_EXPERIMENT_PLAN_ID = "experiment-plan-m9-6-platform-case"
@@ -96,13 +97,14 @@ def build_m9_6_field_coverage(import_package: dict[str, Any]) -> dict[str, Any]:
         "schema_version": "m9-6-field-coverage-v0",
         "source_fixture": "tests/fixtures/modeling_import_project.json",
         "source_import_id": str(import_package.get("importId") or ""),
-        "model_family": M9_6_MODEL_FAMILY,
+        "model_family": M9_7_COVERAGE_MODEL_FAMILY,
         "entries": entries,
         "summary": {
             "total_fields": len(entries),
             "consumed": sum(1 for entry in entries if entry["status"] == "consumed"),
             "derived": sum(1 for entry in entries if entry["status"] == "derived"),
             "defaulted": sum(1 for entry in entries if entry["status"] == "defaulted"),
+            "governance_only": sum(1 for entry in entries if entry["status"] == "governance_only"),
             "ignored": sum(1 for entry in entries if entry["status"] == "ignored"),
             "unsupported": sum(1 for entry in entries if entry["status"] == "unsupported"),
         },
@@ -218,7 +220,6 @@ def _coverage_classification(field_path: str) -> tuple[str, str, str]:
         "objects.missionProfiles[].durationHours",
         "objects.missionProfiles[].basicMission.equipmentQuantity",
         "objects.missionProfiles[].experiment.seed",
-        "objects.missionProfiles[].experiment.steps",
         "objects.equipment.quantity",
         "objects.supportResources[].personnelCapacity",
         "objects.supportResources[].equipmentCapacity",
@@ -227,23 +228,47 @@ def _coverage_classification(field_path: str) -> tuple[str, str, str]:
         "objects.analysisRequests.largeSample.sweep.failureRates[]",
         "objects.analysisRequests.largeSample.sweep.spareMultipliers[]",
         "objects.analysisRequests.largeSample.sweep.supportCapacities[]",
+        "objects.equipmentAssets[].failureDistribution.",
+        "objects.equipmentAssets[].kOutOfN.",
+        "objects.equipmentAssets[].specialRepairProfile.repairTimeMinutes",
+        "objects.missionProfiles[].reliabilityBlockDiagram.nodes[].connectionType",
+        "objects.missionProfiles[].reliabilityBlockDiagram.nodes[].failureRate",
+        "objects.missionProfiles[].reliabilityBlockDiagram.nodes[].id",
+        "objects.missionProfiles[].reliabilityBlockDiagram.nodes[].mtbfHours",
+        "objects.missionProfiles[].reliabilityBlockDiagram.nodes[].parentId",
+        "objects.missionProfiles[].reliabilityBlockDiagram.edges[].to",
+        "objects.missionProfiles[].reliabilityBlockDiagram.edges[].type",
+        "objects.missionProfiles[].reliabilityBlockDiagram.edges[].weight",
+        "objects.supportActivities[].jobs[].activityCode",
+        "objects.supportActivities[].jobs[].durationMinutes",
+        "objects.supportActivities[].jobs[].equipment",
+        "objects.supportActivities[].jobs[].personnel",
+        "objects.supportActivities[].jobs[].predecessors",
+        "objects.supportActivities[].jobs[].predecessors[]",
+        "objects.supportActivities[].jobs[].spare",
+        "objects.supportActivities[].jobs[].workName",
     )
     derived_prefixes = (
         "objects.missionProfiles[].id",
         "objects.missionProfiles[].name",
         "objects.missionProfiles[].profileId",
+        "objects.missionProfiles[].experiment.steps",
         "objects.missionProfiles[].basicMission.missionId",
+        "objects.missionProfiles[].reliabilityBlockDiagram.nodes[].name",
         "objects.projectInfo.",
     )
-    unsupported_prefixes = (
-        "objects.supportActivities[].jobs[]",
+    governance_only_prefixes = (
+        "objects.equipmentAssets[].specialRepairProfile.repairRatio",
+        "objects.equipmentAssets[].specialRepairProfile.replacementRatio",
+        "objects.missionProfiles[].reliabilityBlockDiagram.edges[].from",
+        "objects.missionProfiles[].reliabilityBlockDiagram.nodes[].type",
+        "objects.supportActivities[].jobs[].ammunition",
+        "objects.supportActivities[].jobs[].durationProfile.",
+        "objects.supportActivities[].jobs[].facility",
+        "objects.supportActivities[].jobs[].servicePersonnel",
         "objects.supportActivities[].transportStrategies[]",
         "objects.supportActivities[].organizationStrategies[]",
-        "objects.equipmentAssets[].kOutOfN.",
-        "objects.equipmentAssets[].specialRepairProfile.",
-        "objects.equipmentAssets[].failureDistribution.",
-        "objects.reliabilityBlockDiagram.",
-        "objects.missionProfiles[].reliabilityBlockDiagram.",
+        "objects.supportOrganization.",
     )
     defaulted_prefixes = (
         "objects.missionProfiles[].missionCount",
@@ -251,14 +276,14 @@ def _coverage_classification(field_path: str) -> tuple[str, str, str]:
     if _matches_any(field_path, consumed_prefixes):
         return (
             "consumed",
-            "M9.6 Project/ExperimentPlan/MonteCarloRunConfig/aviation_support Scenario",
-            "The current platform chain reads this field directly when building the frozen case or adapter inputs.",
+            "M9.7.4 aircraft_support_v1 Scenario/runtime",
+            "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
         )
     if _matches_any(field_path, derived_prefixes):
         return (
             "derived",
-            "M9.6 identity and display metadata",
-            "The value contributes to stable IDs, names, provenance, or display metadata rather than a direct simulation input.",
+            "M9.7.4 aircraft_support_v1 identity, output, and display metadata",
+            "The value contributes to stable IDs, names, provenance, output sampling, or display metadata rather than direct simulation dynamics.",
         )
     if _matches_any(field_path, defaulted_prefixes):
         return (
@@ -266,11 +291,11 @@ def _coverage_classification(field_path: str) -> tuple[str, str, str]:
             "Current aviation_support compiler default rule",
             "The M9.5 compiler has a stable default for this input until M9.7 consumes it explicitly.",
         )
-    if _matches_any(field_path, unsupported_prefixes):
+    if _matches_any(field_path, governance_only_prefixes):
         return (
-            "unsupported",
-            "M9.7 aircraft-support model-family backlog",
-            "The field is intentionally frozen as a future formal-model requirement and must not be silently dropped.",
+            "governance_only",
+            "M9.7.4 aircraft_support_v1 governance metadata",
+            "The field is preserved in the formal payload and provenance for audit/governance, but it is approved as non-behavior-driving in M9.7.4.",
         )
     return (
         "ignored",

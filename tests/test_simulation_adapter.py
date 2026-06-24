@@ -288,6 +288,7 @@ class SimulationAdapterTest(unittest.TestCase):
         self.assertEqual(provenance["model_family"], "aircraft_support_v1")
         self.assertEqual(provenance["mapping_version"], "aircraft-support-v1-input-v0")
         self.assertIn("components[].failureDistribution", provenance["consumed_fields"])
+        self.assertIn("supportOrganization.tree", provenance["governance_only_fields"])
         self.assertIn("supportActivities[].jobs[].predecessors", provenance["consumed_fields"])
         self.assertIn("projectInfo", provenance["governance_only_fields"])
         self.assertEqual(provenance["unsupported_fields"], [])
@@ -394,33 +395,37 @@ class SimulationAdapterTest(unittest.TestCase):
             self.assertIn("jobs", frame)
             self.assertIn("events", frame)
 
-        scope = report_payload["m9_7_2_behavior_scope"]
+        scope = report_payload["m9_7_4_behavior_scope"]
         self.assertIn("equipment.quantity", scope["behavior_driving_fields"])
         self.assertIn("missionProfile.compositeTasks", scope["behavior_driving_fields"])
+        self.assertIn("missionProfile.periodicTasks", scope["behavior_driving_fields"])
+        self.assertIn("components[].failureDistribution", scope["behavior_driving_fields"])
+        self.assertIn("supportNodes[].transportPolicies", scope["behavior_driving_fields"])
         self.assertIn("supportNodes[].inventory", scope["behavior_driving_fields"])
         self.assertIn("supportActivities[].jobs[].predecessors", scope["behavior_driving_fields"])
-        self.assertIn("supportOrganization", scope["fail_closed_fields"])
-        self.assertIn("reliabilityBlockDiagram", scope["m9_7_4_coverage_hardening_fields"])
+        self.assertNotIn("experiment.steps", scope["behavior_driving_fields"])
+        self.assertEqual(scope["fail_closed_fields"], [])
+        self.assertEqual(scope["m9_7_4_coverage_hardening_fields"], [])
         self.assertTrue(
-            any(event.get("event") == "m9_7_2_behavior_scope_declared" for event in log_payload["events"])
+            any(event.get("event") == "m9_7_4_behavior_scope_declared" for event in log_payload["events"])
         )
 
-    def test_aircraft_support_v1_single_run_fails_closed_for_unsupported_provenance_fields(self) -> None:
+    def test_aircraft_support_v1_treats_support_organization_as_governance_only(self) -> None:
         project = self._load_fixture("m9_6_platform_case_export.json")["project"]
         project["supportOrganization"] = {"tree": [{"id": "carrier-wing-support"}]}
         scenario = self.adapter.compile_scenario(project, model_family="aircraft_support_v1")
+        provenance = scenario["compiled_from"]["mapping_provenance"]
 
         with tempfile.TemporaryDirectory() as tmp:
-            with self.assertRaises(AdapterError) as ctx:
-                self.adapter.run_scenario(
-                    scenario,
-                    output_dir=Path(tmp),
-                    run_id="run-aircraft-v1-unsupported",
-                )
+            bundle = self.adapter.run_scenario(
+                scenario,
+                output_dir=Path(tmp),
+                run_id="run-aircraft-v1-governance-only",
+            )
 
-            self.assertEqual(ctx.exception.code, "unsupported_aircraft_support_v1_fields")
-            self.assertEqual(ctx.exception.details["unsupported_fields"], ["supportOrganization"])
-            self.assertEqual(list(Path(tmp).glob("**/*")), [])
+        self.assertEqual(provenance["unsupported_fields"], [])
+        self.assertIn("supportOrganization.tree", provenance["governance_only_fields"])
+        self.assertEqual(bundle["run"]["status"], "succeeded")
 
     def test_aircraft_support_v1_monte_carlo_writes_formal_projection_artifacts(self) -> None:
         project = self._load_fixture("m9_6_platform_case_export.json")["project"]
@@ -587,6 +592,89 @@ class SimulationAdapterTest(unittest.TestCase):
         self.assertLessEqual(constrained["spare_stock_total"], baseline["spare_stock_total"])
         self.assertGreaterEqual(constrained["maintenance_backlog"], baseline["maintenance_backlog"])
         self.assertNotEqual(constrained, baseline)
+
+    def test_aircraft_support_v1_m9_7_4_fields_drive_behavior(self) -> None:
+        low_risk_project = self._load_fixture("m9_6_platform_case_export.json")["project"]
+        low_risk_project["supportOrganization"] = {"tree": [{"id": "governance-only"}]}
+        for component in low_risk_project["components"]:
+            if component.get("parentId"):
+                component["failureRate"] = 0
+                component["failureDistribution"] = {"distributionType": "指数分布", "parameters": "lambda=0"}
+                component["kOutOfN"] = {"enabled": True, "k": 1, "n": 2}
+        for node in low_risk_project["reliabilityBlockDiagram"]["nodes"]:
+            node["failureRate"] = 0
+            node["mtbfHours"] = 100000
+        low_risk_project["missionProfile"]["periodicTasks"][0]["dailyRepeatCount"] = 1
+        low_risk_project["missionProfile"]["periodicTasks"][0]["repeatCount"] = 1
+
+        high_risk_project = copy.deepcopy(low_risk_project)
+        for component in high_risk_project["components"]:
+            if component.get("parentId"):
+                component["failureDistribution"] = {"distributionType": "指数分布", "parameters": "lambda=0.8"}
+                component["kOutOfN"] = {"enabled": False, "k": 1, "n": 1}
+        for node in high_risk_project["reliabilityBlockDiagram"]["nodes"]:
+            node["failureRate"] = 0.5
+            node["mtbfHours"] = 2
+        high_risk_project["missionProfile"]["periodicTasks"][0]["dailyRepeatCount"] = 3
+        high_risk_project["missionProfile"]["periodicTasks"][0]["repeatCount"] = 3
+
+        low_scenario = self.adapter.compile_scenario(low_risk_project, model_family="aircraft_support_v1")
+        high_scenario = self.adapter.compile_scenario(high_risk_project, model_family="aircraft_support_v1")
+
+        with tempfile.TemporaryDirectory() as low_tmp, tempfile.TemporaryDirectory() as high_tmp:
+            low_metrics = self.adapter.run_scenario(
+                low_scenario,
+                output_dir=Path(low_tmp),
+                run_id="run-aircraft-v1-low-risk",
+            )["result"]["metrics"]
+            high_metrics = self.adapter.run_scenario(
+                high_scenario,
+                output_dir=Path(high_tmp),
+                run_id="run-aircraft-v1-high-risk",
+            )["result"]["metrics"]
+
+        self.assertGreater(high_metrics["planned_sorties"], low_metrics["planned_sorties"])
+        self.assertGreater(high_metrics["lru_failures"], low_metrics["lru_failures"])
+        self.assertGreaterEqual(high_metrics["maintenance_backlog"], low_metrics["maintenance_backlog"])
+
+    def test_aircraft_support_v1_transport_policies_replenish_spare_shortages(self) -> None:
+        project = self._load_fixture("m9_6_platform_case_export.json")["project"]
+        project["supportOrganization"] = {}
+        for node in project["supportNodes"]:
+            if node["id"] == "carrier-deck":
+                node["inventory"] = {"发动机备件": 0, "液压备件": 0, "航电模块": 0}
+                node["transportPolicies"] = [
+                    {
+                        "from": "carrier-stock",
+                        "to": "carrier-deck",
+                        "spareType": "航电模块",
+                        "capacity": 4,
+                        "priority": 1,
+                        "transportTimeHours": 0,
+                    }
+                ]
+            if node["id"] == "carrier-stock":
+                node["inventory"] = {"发动机备件": 0, "液压备件": 0, "航电模块": 6}
+        without_transport = copy.deepcopy(project)
+        without_transport["supportNodes"][0]["transportPolicies"] = []
+
+        with_transport_scenario = self.adapter.compile_scenario(project, model_family="aircraft_support_v1")
+        without_transport_scenario = self.adapter.compile_scenario(without_transport, model_family="aircraft_support_v1")
+
+        with tempfile.TemporaryDirectory() as with_tmp, tempfile.TemporaryDirectory() as without_tmp:
+            with_metrics = self.adapter.run_scenario(
+                with_transport_scenario,
+                output_dir=Path(with_tmp),
+                run_id="run-aircraft-v1-with-transport",
+            )["result"]["metrics"]
+            without_metrics = self.adapter.run_scenario(
+                without_transport_scenario,
+                output_dir=Path(without_tmp),
+                run_id="run-aircraft-v1-without-transport",
+            )["result"]["metrics"]
+
+        self.assertLess(with_metrics["shortage_events"], without_metrics["shortage_events"])
+        self.assertGreater(with_metrics["spare_consumed_total"], without_metrics["spare_consumed_total"])
 
     def test_run_aviation_support_scenario_writes_backend_aligned_artifacts(self) -> None:
         project = self._load_fixture("aviation_support_project.json")
