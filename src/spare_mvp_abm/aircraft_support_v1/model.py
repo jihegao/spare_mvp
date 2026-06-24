@@ -470,7 +470,6 @@ class AircraftSupportV1Model:
         profile = self.inputs.get("mission_profile", {})
         basic = profile.get("basic_mission") or {}
         missions: list[MissionState] = []
-        periodic_repeats = self._periodic_repeat_counts(profile)
         periodic_contexts = self._periodic_contexts_by_composite(profile)
         mission_duration_adjustment = self.mission_context["duration_adjustment_minutes"]
         for composite in profile.get("composite_tasks") or []:
@@ -479,7 +478,6 @@ class AircraftSupportV1Model:
             for item in composite.get("taskItems") or []:
                 if not isinstance(item, dict):
                     continue
-                repeat_count = max(1, int(item.get("dailyRepeatCount") or 1)) * max(1, periodic_repeats.get(composite_id, 1))
                 interval = max(1, int(round(_non_negative_float(item.get("intervalHours"), 24) * 60)))
                 first_start = _time_to_minute(item.get("firstWaveTime"), int(basic.get("startHour") or 1) * 60)
                 prep = max(0, int(item.get("preparationMinutes") or basic.get("preparationMinutes") or 0))
@@ -487,37 +485,39 @@ class AircraftSupportV1Model:
                 recovery = _time_to_minute(item.get("recoveryTime"), -1)
                 if recovery >= 0 and recovery > first_start:
                     duration = max(1, recovery - first_start + mission_duration_adjustment)
-                for repeat in range(repeat_count):
-                    planned_start = first_start + repeat * interval
-                    if planned_start > self.duration_minutes:
-                        continue
-                    day_index = planned_start // 1440 + 1
-                    day_start = planned_start % 1440
-                    wave_index = max(1, int((day_start - first_start) // interval) + 1) if day_start >= first_start else repeat + 1
-                    mission_id = str(item.get("id") or composite.get("id") or f"mission-{len(missions) + 1}")
-                    missions.append(
-                        MissionState(
-                            mission_id=f"{mission_id}-{repeat + 1}",
-                            name=str(item.get("basicTaskName") or composite.get("name") or basic.get("name") or mission_id),
-                            planned_start=planned_start,
-                            preparation_start=max(0, planned_start - prep),
-                            duration_minutes=max(1, duration),
-                            required_aircraft=max(1, int(item.get("equipmentQuantity") or basic.get("equipmentQuantity") or 1)),
-                            priority=max(1, int(item.get("priority") or basic.get("priority") or 1)),
-                            cancel_minutes=max(0, int(basic.get("cancelMinutes") or 20)),
-                            task_category="periodic" if periodic_context else "composite",
-                            periodic_task_id=str(periodic_context.get("id") or ""),
-                            periodic_task_name=str(periodic_context.get("name") or ""),
-                            composite_task_id=composite_id,
-                            composite_task_name=str(composite.get("name") or composite_id),
-                            basic_task_id=str(item.get("id") or basic.get("id") or ""),
-                            basic_task_name=str(item.get("basicTaskName") or basic.get("name") or ""),
-                            required_aircraft_type=str(item.get("equipmentType") or basic.get("equipmentType") or ""),
-                            group_name=str(item.get("groupName") or ""),
-                            wave_index=wave_index,
-                            day_index=day_index,
+                mission_days = self._mission_days_for_item(item, periodic_context)
+                daily_repeat_count = self._daily_repeat_count(item, periodic_context)
+                for day_offset in mission_days:
+                    for repeat in range(daily_repeat_count):
+                        planned_start = day_offset * 1440 + first_start + repeat * interval
+                        if planned_start > self.duration_minutes:
+                            continue
+                        day_index = planned_start // 1440 + 1
+                        wave_index = repeat + 1
+                        mission_id = str(item.get("id") or composite.get("id") or f"mission-{len(missions) + 1}")
+                        missions.append(
+                            MissionState(
+                                mission_id=f"{mission_id}-d{day_index}-w{wave_index}",
+                                name=str(item.get("basicTaskName") or composite.get("name") or basic.get("name") or mission_id),
+                                planned_start=planned_start,
+                                preparation_start=max(0, planned_start - prep),
+                                duration_minutes=max(1, duration),
+                                required_aircraft=max(1, int(item.get("equipmentQuantity") or basic.get("equipmentQuantity") or 1)),
+                                priority=max(1, int(item.get("priority") or basic.get("priority") or 1)),
+                                cancel_minutes=max(0, int(basic.get("cancelMinutes") or 20)),
+                                task_category="periodic" if periodic_context else "composite",
+                                periodic_task_id=str(periodic_context.get("id") or ""),
+                                periodic_task_name=str(periodic_context.get("name") or ""),
+                                composite_task_id=composite_id,
+                                composite_task_name=str(composite.get("name") or composite_id),
+                                basic_task_id=str(item.get("id") or basic.get("id") or ""),
+                                basic_task_name=str(item.get("basicTaskName") or basic.get("name") or ""),
+                                required_aircraft_type=str(item.get("equipmentType") or basic.get("equipmentType") or ""),
+                                group_name=str(item.get("groupName") or ""),
+                                wave_index=wave_index,
+                                day_index=day_index,
+                            )
                         )
-                    )
         if not missions:
             planned_start = max(0, int(basic.get("startHour") or 1) * 60)
             missions.append(
@@ -539,20 +539,6 @@ class AircraftSupportV1Model:
             )
         return sorted(missions, key=lambda item: (item.planned_start, item.priority))
 
-    def _periodic_repeat_counts(self, profile: dict[str, Any]) -> dict[str, int]:
-        repeats: dict[str, int] = {}
-        for periodic in profile.get("periodic_tasks") or []:
-            if not isinstance(periodic, dict):
-                continue
-            multiplier = max(1, int(periodic.get("dailyRepeatCount") or 1)) * max(1, int(periodic.get("repeatCount") or 1))
-            composite_ids = [str(item) for item in periodic.get("compositeTaskIds") or []]
-            for item in periodic.get("compositeTasks") or []:
-                if isinstance(item, dict) and item.get("compositeTaskId"):
-                    composite_ids.append(str(item["compositeTaskId"]))
-            for composite_id in composite_ids:
-                repeats[composite_id] = max(repeats.get(composite_id, 1), multiplier)
-        return repeats
-
     def _periodic_contexts_by_composite(self, profile: dict[str, Any]) -> dict[str, dict[str, Any]]:
         contexts: dict[str, dict[str, Any]] = {}
         for periodic in profile.get("periodic_tasks") or []:
@@ -568,14 +554,46 @@ class AircraftSupportV1Model:
             context = {
                 "id": str(periodic.get("id") or ""),
                 "name": name,
+                "daily_repeat_count": _positive_int(periodic.get("dailyRepeatCount"), 1),
+                "period_days": _periodic_period_days(periodic),
+                "total_days": _periodic_total_days(periodic),
             }
-            composite_ids = [str(item) for item in periodic.get("compositeTaskIds") or [] if item]
+            total_days = int(context["total_days"])
+            period_days = int(context["period_days"])
+            composite_days: dict[str, set[int]] = {
+                str(item): set(range(total_days))
+                for item in periodic.get("compositeTaskIds") or []
+                if item
+            }
             for item in periodic.get("compositeTasks") or []:
                 if isinstance(item, dict) and item.get("compositeTaskId"):
-                    composite_ids.append(str(item["compositeTaskId"]))
-            for composite_id in composite_ids:
-                contexts.setdefault(composite_id, context)
+                    composite_id = str(item["compositeTaskId"])
+                    start_day = max(0, _positive_int(item.get("week"), 1) - 1) * period_days
+                    active_days = set(range(start_day, min(total_days, start_day + period_days)))
+                    if active_days:
+                        composite_days.setdefault(composite_id, set()).update(active_days)
+            for composite_id, active_days in composite_days.items():
+                composite_context = dict(context)
+                composite_context["active_days"] = sorted(active_days)
+                contexts.setdefault(composite_id, composite_context)
         return contexts
+
+    def _mission_days_for_item(self, item: dict[str, Any], periodic_context: dict[str, Any]) -> list[int]:
+        if periodic_context:
+            days = [
+                int(day)
+                for day in periodic_context.get("active_days", [])
+                if isinstance(day, int) and day >= 0 and day * 1440 <= self.duration_minutes
+            ]
+            return days or [0]
+        return [0]
+
+    def _daily_repeat_count(self, item: dict[str, Any], periodic_context: dict[str, Any]) -> int:
+        if item.get("dailyRepeatCount") not in (None, ""):
+            return _positive_int(item.get("dailyRepeatCount"), 1)
+        if periodic_context:
+            return _positive_int(periodic_context.get("daily_repeat_count"), 1)
+        return 1
 
     def _mission_context(self) -> dict[str, int]:
         profile = self.inputs.get("mission_profile", {})
@@ -1005,6 +1023,41 @@ def _non_negative_float(value: Any, fallback: float) -> float:
         return max(0.0, float(value))
     except (TypeError, ValueError):
         return fallback
+
+
+def _positive_int(value: Any, fallback: int) -> int:
+    try:
+        parsed = int(float(value))
+    except (TypeError, ValueError):
+        return fallback
+    return parsed if parsed > 0 else fallback
+
+
+def _periodic_period_days(periodic: dict[str, Any]) -> int:
+    for key in ("taskPeriodDays", "periodDays", "cycleDays", "repeatCycleDays"):
+        parsed = _positive_int(periodic.get(key), 0)
+        if parsed > 0:
+            return parsed
+    repeat_cycle_value = _positive_int(periodic.get("repeatCycleValue"), 0)
+    if repeat_cycle_value > 0:
+        unit = str(periodic.get("repeatCycleUnit") or "day").lower()
+        if unit in {"week", "weeks", "周", "星期"}:
+            return repeat_cycle_value * 7
+        if unit in {"hour", "hours", "小时"}:
+            return max(1, math.ceil(repeat_cycle_value / 24))
+        return repeat_cycle_value
+    return 1
+
+
+def _periodic_total_days(periodic: dict[str, Any]) -> int:
+    period_days = _periodic_period_days(periodic)
+    repeat_count = 1
+    for key in ("repeatCount", "repeatRounds", "repeatWeeks"):
+        parsed = _positive_int(periodic.get(key), 0)
+        if parsed > 0:
+            repeat_count = parsed
+            break
+    return max(1, period_days * repeat_count)
 
 
 def _bounded_float(value: Any) -> float | None:

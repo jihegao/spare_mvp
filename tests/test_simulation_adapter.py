@@ -310,6 +310,7 @@ class SimulationAdapterTest(unittest.TestCase):
     def test_run_aircraft_support_v1_single_run_writes_real_artifacts_and_behavior_scope(self) -> None:
         project = self._load_fixture("m9_6_platform_case_export.json")["project"]
         scenario = self.adapter.compile_scenario(project, model_family="aircraft_support_v1")
+        self.assertEqual(scenario["simulation_inputs"]["time"]["duration_minutes"], 14 * 24 * 60)
         result_schema = json.loads((REPO_ROOT / "contracts" / "result.schema.json").read_text(encoding="utf-8"))
         manifest_schema = json.loads((REPO_ROOT / "contracts" / "artifact_manifest.schema.json").read_text(encoding="utf-8"))
         state_series_schema = json.loads(
@@ -396,6 +397,7 @@ class SimulationAdapterTest(unittest.TestCase):
             self.assertIn("events", frame)
         first_mission = state_payload["frames"][0]["missions"][0]
         first_frame_missions = state_payload["frames"][0]["missions"]
+        self.assertEqual(max(mission["day_index"] for mission in first_frame_missions), 14)
         self.assertGreater(max(mission["wave_index"] for mission in first_frame_missions), 1)
         self.assertTrue(all(mission["day_index"] >= 1 for mission in first_frame_missions))
         self.assertTrue(all(mission["duration_minutes"] > 0 for mission in first_frame_missions))

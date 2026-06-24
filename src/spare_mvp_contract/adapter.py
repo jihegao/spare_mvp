@@ -709,7 +709,7 @@ class SimulationAdapter:
         equipment = project.get("equipment") if isinstance(project.get("equipment"), dict) else {}
         experiment = project.get("experiment") if isinstance(project.get("experiment"), dict) else {}
         monte_carlo = project.get("monteCarlo") if isinstance(project.get("monteCarlo"), dict) else {}
-        duration_minutes = self._duration_minutes(mission_profile.get("durationHours"))
+        duration_minutes = self._aircraft_support_v1_duration_minutes(mission_profile)
         fleet_count = self._positive_int(equipment.get("quantity"), 1)
         initial_ready = min(self._positive_int(equipment.get("initialReady"), fleet_count), fleet_count)
 
@@ -3113,6 +3113,46 @@ class SimulationAdapter:
         if not self._is_positive_number(duration_hours):
             return 24 * 60
         return max(1, int(round(float(duration_hours) * 60)))
+
+    def _aircraft_support_v1_duration_minutes(self, mission_profile: dict[str, Any]) -> int:
+        periodic_days = [
+            days
+            for days in (
+                self._periodic_task_total_days(periodic)
+                for periodic in self._dict_list(mission_profile.get("periodicTasks"))
+            )
+            if days is not None
+        ]
+        if periodic_days:
+            return max(1, int(round(max(periodic_days) * 24 * 60)))
+        return self._duration_minutes(mission_profile.get("durationHours"))
+
+    def _periodic_task_total_days(self, periodic: dict[str, Any]) -> float | None:
+        period_days = self._periodic_task_period_days(periodic)
+        repeat_count = self._periodic_task_repeat_count(periodic)
+        if period_days is None:
+            return None
+        return max(1.0, period_days * repeat_count)
+
+    def _periodic_task_period_days(self, periodic: dict[str, Any]) -> float | None:
+        for key in ("taskPeriodDays", "periodDays", "cycleDays", "repeatCycleDays"):
+            if self._is_positive_number(periodic.get(key)):
+                return float(periodic[key])
+        if self._is_positive_number(periodic.get("repeatCycleValue")):
+            value = float(periodic["repeatCycleValue"])
+            unit = str(periodic.get("repeatCycleUnit") or "day").lower()
+            if unit in {"week", "weeks", "周", "星期"}:
+                return value * 7
+            if unit in {"hour", "hours", "小时"}:
+                return value / 24
+            return value
+        return None
+
+    def _periodic_task_repeat_count(self, periodic: dict[str, Any]) -> float:
+        for key in ("repeatCount", "repeatRounds", "repeatWeeks"):
+            if self._is_positive_number(periodic.get(key)):
+                return max(1.0, float(periodic[key]))
+        return 1.0
 
     def _non_negative_number(self, value: Any, fallback: float) -> float:
         if self._is_number(value):
