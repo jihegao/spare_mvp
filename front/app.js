@@ -6506,7 +6506,11 @@ function renderVisualSimulation(page) {
     : "等待正式回放";
   const streamStatusDetail = `run_id ${htmlEscape(visualizationStreamState.runId || "-")} / status ${htmlEscape(visualizationStreamState.status)} / events ${htmlEscape(visualizationStreamState.eventCount || 0)} / artifact ${htmlEscape(visualizationStreamState.artifactId || "-")}`;
   const visualKpis = visualSimulationKpis(state);
-  const availabilityTrend = buildAvailabilityTrend(state, visualizationStateSeries);
+  const availabilityTrend = buildAvailabilityTrend(
+    state,
+    visualizationStateSeries,
+    visualizationStateSeriesFrame ? visualizationReplayIndex : null
+  );
   return `
     <div class="mesa-visual-shell">
       <div class="mesa-visual-header">
@@ -6647,9 +6651,13 @@ function visualSimulationKpis(state) {
   ];
 }
 
-function buildAvailabilityTrend(state, series) {
+function buildAvailabilityTrend(state, series, currentFrameIndex = null) {
   const frames = Array.isArray(series?.frames) ? series.frames : [];
-  const trend = frames.map((frame, index) => {
+  const currentIndex = Number.isFinite(Number(currentFrameIndex))
+    ? Math.max(0, Math.min(frames.length - 1, Number(currentFrameIndex)))
+    : frames.length - 1;
+  const replayedFrames = frames.slice(0, currentIndex + 1);
+  const trend = replayedFrames.map((frame, index) => {
     const aircraft = Array.isArray(frame.aircraft) ? frame.aircraft : [];
     const available = Number(frame.snapshot?.available_aircraft ?? aircraft.filter((item) => ["available", "mission_ready"].includes(String(item.state))).length);
     const total = Number(frame.snapshot?.aircraft_count ?? aircraft.length ?? state.aircraft.length);
@@ -6662,11 +6670,11 @@ function buildAvailabilityTrend(state, series) {
   if (trend.length > 0) return trend;
   const total = state.aircraft.length || 1;
   const current = state.aircraft.filter((aircraft) => ["available", "mission_ready"].includes(aircraft.state)).length;
-  return [0, 1, 2, 3, 4].map((index) => ({
-    label: `T-${4 - index}`,
-    available: Math.max(0, Math.min(total, current - 2 + index)),
+  return [{
+    label: "当前",
+    available: current,
     total
-  }));
+  }];
 }
 
 function renderAvailabilityCurve(trend) {
@@ -6688,7 +6696,7 @@ function renderAvailabilityCurve(trend) {
       </div>
       <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="可用飞机数量随时间变化曲线">
         <polyline points="${polyline}"></polyline>
-        ${chartPoints.map((point) => `<circle cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="3"><title>${htmlEscape(point.label)} / ${htmlEscape(point.available)} 架</title></circle>`).join("")}
+        ${chartPoints.map((point, index) => `<circle class="${index === chartPoints.length - 1 ? "current-point" : ""}" cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="${index === chartPoints.length - 1 ? "4" : "3"}"><title>${htmlEscape(point.label)} / ${htmlEscape(point.available)} 架</title></circle>`).join("")}
       </svg>
       <div class="availability-axis"><span>${htmlEscape(points[0]?.label || "-")}</span><strong>${htmlEscape(points.at(-1)?.available ?? 0)} / ${maxTotal} 架</strong><span>${htmlEscape(points.at(-1)?.label || "-")}</span></div>
     </div>

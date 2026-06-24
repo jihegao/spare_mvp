@@ -1870,6 +1870,12 @@ tr.selected-table-row {
   stroke-width: 2;
 }
 
+.availability-chart circle.current-point {
+  fill: var(--primary);
+  stroke: #fff;
+  stroke-width: 2;
+}
+
 .availability-axis {
   display: flex;
   justify-content: space-between;

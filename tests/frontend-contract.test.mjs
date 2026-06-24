@@ -2449,6 +2449,10 @@ test("visual simulation layout matches operational dashboard requirements", asyn
   assert.doesNotMatch(visualSource, /mesa-status-grid/);
   assert.match(styleSource, /\.mesa-control-status\[open\][\s\S]*overflow: auto/);
   assert.match(appSource, /可用飞机数量趋势/);
+  assert.match(appSource, /buildAvailabilityTrend\(\s*state,\s*visualizationStateSeries,\s*visualizationStateSeriesFrame \? visualizationReplayIndex : null\s*\)/);
+  assert.match(appSource, /frames\.slice\(0, currentIndex \+ 1\)/);
+  assert.doesNotMatch(appSource, /T-\$\{4 - index\}/);
+  assert.match(styleSource, /\.availability-chart circle\.current-point/);
   assert.match(stageSource, /停放/);
   assert.match(stageSource, /使用保障/);
   assert.match(stageSource, /任务甘特图/);
