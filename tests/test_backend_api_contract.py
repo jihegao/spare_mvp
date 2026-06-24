@@ -1363,6 +1363,92 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(len(self.adapter.monte_carlo_run_calls), 1)
         self.assertEqual(self.adapter.monte_carlo_run_calls[0]["scenario"]["simulation_model"]["family"], "aviation_support")
 
+    def test_run_service_submits_aircraft_support_v1_formal_single_run_and_exposes_behavior_scope(self) -> None:
+        created = self._create_imported_sample_project()
+        project = copy.deepcopy(created["project"])
+        saved = self.api.save_project(project)
+        snapshot = self.api.create_modeling_snapshot(saved["project_id"])
+        plan = self.api.create_experiment_plan(
+            saved["project_id"],
+            {"name": "m9.7.2 aircraft support single", "projectJson": copy.deepcopy(project)},
+        )
+        service = RunService(self.repository, self.adapter, self.api.output_dir)
+
+        submitted = service.submit_run(
+            {
+                "project_id": saved["project_id"],
+                "experiment_plan_id": plan["experiment_plan_id"],
+                "model_family": "aircraft_support_v1",
+                "run_type": "single",
+                "formal_run": True,
+            }
+        )
+        status = service.get_run_status(submitted["run_id"])
+        result = self.api.get_run_result(submitted["run_id"])
+        manifest = self.api.get_run_artifacts(submitted["run_id"])
+        state_artifact = self._artifact_by_kind(manifest, "visualization_state_series")
+        report_artifact = self._artifact_by_kind(manifest, "report")
+        state_payload = json.loads((Path(self.api.output_dir) / state_artifact["path"]).read_text(encoding="utf-8"))
+        report_payload = json.loads((Path(self.api.output_dir) / report_artifact["path"]).read_text(encoding="utf-8"))
+
+        self.assertEqual(submitted["status"], "succeeded")
+        self.assertEqual(submitted["phase"], "completed")
+        self.assertEqual(submitted["model_family"], "aircraft_support_v1")
+        self.assertEqual(status["model_family"], "aircraft_support_v1")
+        self.assertEqual(result["model_family"], "aircraft_support_v1")
+        self.assertEqual(result["run_id"], submitted["run_id"])
+        self.assertEqual(submitted["modeling_snapshot_id"], snapshot["snapshot_id"])
+        self.assertEqual(state_payload["model_family"], "aircraft_support_v1")
+        self.assertEqual(state_payload["run_id"], submitted["run_id"])
+        self.assertEqual(state_payload["scenario_id"], submitted["scenario_id"])
+        self.assertIn("sortie_completion_rate", result["metrics"])
+        self.assertIn("supportNodes[].inventory", report_payload["m9_7_2_behavior_scope"]["behavior_driving_fields"])
+        self.assertIn(
+            "reliabilityBlockDiagram",
+            report_payload["m9_7_2_behavior_scope"]["m9_7_4_coverage_hardening_fields"],
+        )
+        self.assertEqual(len(self.adapter.compile_calls), 1)
+        self.assertEqual(self.adapter.compile_calls[0][1], "aircraft_support_v1")
+        self.assertEqual(len(self.adapter.run_calls), 1)
+        self.assertEqual(self.adapter.run_calls[0][0]["simulation_model"]["family"], "aircraft_support_v1")
+
+    def test_run_service_aircraft_support_v1_fails_closed_for_unsupported_m9_6_fields(self) -> None:
+        created = self._create_imported_sample_project()
+        project = copy.deepcopy(created["project"])
+        project["supportOrganization"] = {"tree": [{"id": "carrier-wing-support"}]}
+        saved = self.api.save_project(project)
+        self.api.create_modeling_snapshot(saved["project_id"])
+        plan = self.api.create_experiment_plan(
+            saved["project_id"],
+            {"name": "m9.7.2 aircraft support unsupported", "projectJson": copy.deepcopy(project)},
+        )
+        service = RunService(self.repository, self.adapter, self.api.output_dir)
+
+        submitted = service.submit_run(
+            {
+                "project_id": saved["project_id"],
+                "experiment_plan_id": plan["experiment_plan_id"],
+                "model_family": "aircraft_support_v1",
+                "run_type": "single",
+                "formal_run": True,
+            }
+        )
+        manifest = self.api.get_run_artifacts(submitted["run_id"])
+        log_artifact = self._artifact_by_kind(manifest, "log")
+        log_payload = json.loads((Path(self.api.output_dir) / log_artifact["path"]).read_text(encoding="utf-8"))
+
+        self.assertEqual(submitted["status"], "failed")
+        self.assertEqual(submitted["phase"], "failed")
+        self.assertEqual(submitted["model_family"], "aircraft_support_v1")
+        self.assertEqual(submitted["error"]["code"], "unsupported_aircraft_support_v1_fields")
+        self.assertIn("supportOrganization", submitted["error"]["details"]["unsupported_fields"])
+        self.assertTrue(
+            any(
+                (event.get("error") or {}).get("code") == "unsupported_aircraft_support_v1_fields"
+                for event in log_payload["events"]
+            )
+        )
+
     def test_run_service_failed_compile_run_has_downloadable_log_artifact(self) -> None:
         project = self._fixture("smoke_project.json")
         saved = self.api.save_project(project)

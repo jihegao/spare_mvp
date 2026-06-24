@@ -14,7 +14,7 @@
   ],
   "properties": {
     "schema_version": { "type": "string", "const": "result-v0" },
-    "model_family": { "type": "string", "enum": ["smoke", "aviation_support"] },
+    "model_family": { "type": "string", "enum": ["smoke", "aviation_support", "aircraft_support_v1"] },
     "result_id": { "type": "string" },
     "run_id": { "type": "string" },
     "scenario_id": { "type": "string" },
@@ -91,6 +91,36 @@
             "active_jobs": { "type": "integer", "minimum": 0 },
             "spare_stock_total": { "type": "integer", "minimum": 0 },
             "avg_departure_delay": { "type": "number", "minimum": 0 }
+          },
+          "additionalProperties": true
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": ["model_family", "metrics"],
+      "additionalProperties": true,
+      "properties": {
+        "model_family": { "const": "aircraft_support_v1" },
+        "metrics": {
+          "type": "object",
+          "required": [
+            "sortie_completion_rate",
+            "available_aircraft",
+            "active_jobs",
+            "spare_stock_total",
+            "avg_departure_delay",
+            "maintenance_backlog",
+            "lru_failures"
+          ],
+          "properties": {
+            "sortie_completion_rate": { "type": "number", "minimum": 0, "maximum": 1 },
+            "available_aircraft": { "type": "integer", "minimum": 0 },
+            "active_jobs": { "type": "integer", "minimum": 0 },
+            "spare_stock_total": { "type": "integer", "minimum": 0 },
+            "avg_departure_delay": { "type": "number", "minimum": 0 },
+            "maintenance_backlog": { "type": "integer", "minimum": 0 },
+            "lru_failures": { "type": "integer", "minimum": 0 }
           },
           "additionalProperties": true
         }

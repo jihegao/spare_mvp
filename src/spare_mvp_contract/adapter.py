@@ -293,6 +293,13 @@ class SimulationAdapter:
                 steps=steps,
                 run_id=run_id,
             )
+        if model_family == "aircraft_support_v1":
+            return self._run_aircraft_support_v1_scenario(
+                scenario,
+                output_dir=output_dir,
+                steps=steps,
+                run_id=run_id,
+            )
         self._assert_smoke_scenario(scenario)
         if steps < 0:
             raise AdapterError("bad_steps", "steps must be non-negative", steps=steps)
@@ -977,9 +984,21 @@ class SimulationAdapter:
 
     def _aircraft_support_v1_unsupported_fields(self, project: dict[str, Any]) -> list[str]:
         unsupported: list[str] = []
-        if project.get("supportOrganization") not in (None, {}, []):
+        support_organization = project.get("supportOrganization")
+        if not self._is_empty_support_organization(support_organization):
             unsupported.append("supportOrganization")
         return unsupported
+
+    def _is_empty_support_organization(self, value: Any) -> bool:
+        if value in (None, {}, []):
+            return True
+        if not isinstance(value, dict):
+            return False
+        tree = value.get("tree")
+        non_empty_other_values = [
+            item for key, item in value.items() if key != "tree" and item not in (None, "", [], {})
+        ]
+        return tree in (None, []) and not non_empty_other_values
 
     def _aviation_support_defaults_applied(self, project: dict[str, Any]) -> list[str]:
         defaults: list[str] = []
@@ -1193,6 +1212,22 @@ class SimulationAdapter:
         if model.get("family") != "aviation_support" or model.get("model_id") != "AviationSupportModel":
             raise AdapterError("unsupported_model_family", "run_scenario received a non aviation_support scenario")
 
+    def _assert_aircraft_support_v1_scenario(self, scenario: dict[str, Any]) -> None:
+        model = scenario.get("simulation_model", {})
+        if scenario.get("schema_version") != SCENARIO_SCHEMA_VERSION:
+            raise AdapterError("invalid_scenario", "unsupported scenario schema version")
+        if model.get("family") != "aircraft_support_v1" or model.get("model_id") != "AircraftSupportV1Model":
+            raise AdapterError("unsupported_model_family", "run_scenario received a non aircraft_support_v1 scenario")
+        provenance = scenario.get("compiled_from", {}).get("mapping_provenance", {})
+        unsupported_fields = list(provenance.get("unsupported_fields") or [])
+        if unsupported_fields:
+            raise AdapterError(
+                "unsupported_aircraft_support_v1_fields",
+                "aircraft_support_v1 single run refuses Scenario inputs with unsupported M9.6 fields",
+                unsupported_fields=unsupported_fields,
+                m9_7_4_coverage_hardening=True,
+            )
+
     def _run_aviation_support_scenario(
         self,
         scenario: dict[str, Any],
@@ -1309,6 +1344,194 @@ class SimulationAdapter:
             "scenario_version": scenario["scenario_version"],
             "model_family": "aviation_support",
             "model_id": "AviationSupportModel",
+            "status": "succeeded",
+            "run_type": "single",
+            "seed": inputs["seed"],
+            "progress": 1,
+            "started_at": now,
+            "completed_at": now,
+            "result_summary_id": result_id,
+            "artifact_manifest_id": manifest_id,
+            "error": None,
+        }
+
+        output_root = Path(output_dir)
+        run_dir = output_root / run_id
+        run_dir.mkdir(parents=True, exist_ok=True)
+        artifact_specs = [
+            ("run_config", "run-config.json", run_config, "run-config-v0"),
+            ("input_project", "input-project.json", input_project, PROJECT_SCHEMA_VERSION),
+            ("compiled_scenario", "compiled-scenario.json", scenario, SCENARIO_SCHEMA_VERSION),
+            ("snapshot", "snapshot.json", snapshot, None),
+            ("result_summary", "result-summary.json", result, RESULT_SCHEMA_VERSION),
+            ("metrics", "metrics.json", metrics, "metrics-v0"),
+            ("report", "report.json", report, "run-report-v0"),
+            ("log", "events-log.json", event_log, "run-log-v0"),
+            (
+                "visualization_state_series",
+                "visualization-state-series.json",
+                visualization_state_series,
+                VISUALIZATION_STATE_SERIES_SCHEMA_VERSION,
+            ),
+            ("analysis_projection_spare_shortfall", "spare-shortfall.json", projections["spare_shortfall"], "analysis-projection-v0"),
+            ("analysis_projection_carry_list", "carry-list.json", projections["carry_list"], "analysis-projection-v0"),
+            ("analysis_projection_mission_reliability", "mission-reliability.json", projections["mission_reliability"], "analysis-projection-v0"),
+            ("analysis_projection_downtime_factors", "downtime-factors.json", projections["downtime_factors"], "analysis-projection-v0"),
+        ]
+        artifacts = [
+            self._write_artifact(run_dir, output_root, kind, filename, payload, schema_version)
+            for kind, filename, payload, schema_version in artifact_specs
+        ]
+        for artifact in artifacts:
+            kind = artifact.get("kind", "")
+            if str(kind).startswith("analysis_projection_"):
+                artifact["source_artifact_id"] = result_summary_artifact_id
+                artifact["analysis_type"] = str(kind).removeprefix("analysis_projection_")
+        self._annotate_state_series_artifact(artifacts, run_id, result_id, scenario["scenario_id"])
+        manifest = {
+            "schema_version": ARTIFACT_MANIFEST_SCHEMA_VERSION,
+            "artifact_manifest_id": manifest_id,
+            "run_id": run_id,
+            "scenario_id": scenario["scenario_id"],
+            "scenario_version": scenario["scenario_version"],
+            "created_at": now,
+            "artifacts": artifacts,
+        }
+        self._write_json(run_dir / "artifact-manifest.json", manifest)
+        return {"run": run, "result": result, "artifact_manifest": manifest}
+
+    def _run_aircraft_support_v1_scenario(
+        self,
+        scenario: dict[str, Any],
+        output_dir: Path | str,
+        steps: int = 3,
+        run_id: str | None = None,
+    ) -> dict[str, dict[str, Any]]:
+        self._assert_aircraft_support_v1_scenario(scenario)
+        if steps < 0:
+            raise AdapterError("bad_steps", "steps must be non-negative", steps=steps)
+
+        from src.spare_mvp_abm.aircraft_support_v1 import AircraftSupportV1Model
+
+        inputs = scenario["simulation_inputs"]
+        model = AircraftSupportV1Model(copy.deepcopy(inputs))
+        run_id = run_id or f"run-{scenario['scenario_id']}"
+        try:
+            execution = model.run()
+        except ValueError as exc:
+            raise AdapterError(
+                "state_series_frame_limit_exceeded",
+                str(exc),
+                max_state_frames_single=inputs.get("time", {}).get("max_state_frames_single"),
+                sample_every_minutes=inputs.get("time", {}).get("sample_every_minutes"),
+            ) from exc
+        snapshot = execution["metrics"]
+        state_series_frames = []
+        for frame in execution["frames"]:
+            traced = copy.deepcopy(frame)
+            traced["run_id"] = run_id
+            state_series_frames.append(traced)
+
+        result_id = f"result-{run_id}"
+        manifest_id = f"artifact-manifest-{run_id}"
+        now = _utc_now()
+        result = {
+            "schema_version": RESULT_SCHEMA_VERSION,
+            "model_family": "aircraft_support_v1",
+            "result_id": result_id,
+            "run_id": run_id,
+            "scenario_id": scenario["scenario_id"],
+            "scenario_version": scenario["scenario_version"],
+            "metrics": snapshot,
+        }
+        result_summary_artifact_id = f"result_summary-{run_id}"
+        projections = self._aviation_analysis_projections(snapshot, result_summary_artifact_id)
+        result["analysis_outputs"] = {
+            "spare_shortage": projections["spare_shortfall"]["data"],
+            "carry_list": projections["carry_list"]["data"],
+            "mission_reliability": projections["mission_reliability"]["data"],
+            "downtime_factors": projections["downtime_factors"]["data"],
+        }
+        behavior_scope = AircraftSupportV1Model.behavior_scope()
+        run_config = {
+            "schema_version": "run-config-v0",
+            "run_id": run_id,
+            "run_type": "single",
+            "model_family": "aircraft_support_v1",
+            "project_id": scenario["project_id"],
+            "experiment_plan_id": None,
+            "modeling_snapshot_id": None,
+            "scenario_id": scenario["scenario_id"],
+            "scenario_version": scenario["scenario_version"],
+            "seed": inputs["seed"],
+            "steps": steps,
+            "tick_minutes": inputs.get("time", {}).get("tick_minutes"),
+            "sample_every_minutes": inputs.get("time", {}).get("sample_every_minutes"),
+            "duration_minutes": inputs.get("time", {}).get("duration_minutes"),
+            "m9_7_2_behavior_scope": copy.deepcopy(behavior_scope),
+        }
+        input_project = self._input_project_for_scenario(scenario)
+        metrics = {
+            "schema_version": "metrics-v0",
+            "run_id": run_id,
+            "metrics": snapshot,
+        }
+        report = {
+            "schema_version": "run-report-v0",
+            "run_id": run_id,
+            "title": "Aircraft support v1 single run report",
+            "summary": {
+                "status": "succeeded",
+                "seed": inputs["seed"],
+                "duration_minutes": inputs.get("time", {}).get("duration_minutes"),
+                "tick_minutes": inputs.get("time", {}).get("tick_minutes"),
+                "sample_every_minutes": inputs.get("time", {}).get("sample_every_minutes"),
+                "sortie_completion_rate": snapshot.get("sortie_completion_rate", 0),
+                "available_aircraft": snapshot.get("available_aircraft", 0),
+                "maintenance_backlog": snapshot.get("maintenance_backlog", 0),
+            },
+            "m9_7_2_behavior_scope": copy.deepcopy(behavior_scope),
+        }
+        event_log = {
+            "schema_version": "run-log-v0",
+            "run_id": run_id,
+            "events": [
+                {"event": "run_started", "at": now},
+                {
+                    "event": "m9_7_2_behavior_scope_declared",
+                    "at": now,
+                    "behavior_driving_fields": behavior_scope["behavior_driving_fields"],
+                    "fail_closed_fields": behavior_scope["fail_closed_fields"],
+                    "m9_7_4_coverage_hardening_fields": behavior_scope["m9_7_4_coverage_hardening_fields"],
+                },
+                *[
+                    {
+                        "event": event.get("event", "aircraft_support_v1_event"),
+                        "at": now,
+                        "time": event.get("time"),
+                        "message": event.get("message", ""),
+                    }
+                    for event in execution["events"][-40:]
+                ],
+                {"event": "run_completed", "at": now, "status": "succeeded"},
+            ],
+        }
+        visualization_state_series = self._visualization_state_series_payload(
+            run_id=run_id,
+            scenario=scenario,
+            model_family="aircraft_support_v1",
+            result_summary_id=result_id,
+            artifact_manifest_id=manifest_id,
+            frames=state_series_frames,
+        )
+        run = {
+            "schema_version": RUN_SCHEMA_VERSION,
+            "run_id": run_id,
+            "project_id": scenario["project_id"],
+            "scenario_id": scenario["scenario_id"],
+            "scenario_version": scenario["scenario_version"],
+            "model_family": "aircraft_support_v1",
+            "model_id": "AircraftSupportV1Model",
             "status": "succeeded",
             "run_type": "single",
             "seed": inputs["seed"],
