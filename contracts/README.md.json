@@ -9,6 +9,7 @@
   "schema_files": [
     "project.schema.json",
     "scenario.schema.json",
+    "aircraft_support_v1_input.schema.json",
     "run.schema.json",
     "result.schema.json",
     "artifact_manifest.schema.json",

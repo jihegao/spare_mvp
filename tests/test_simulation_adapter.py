@@ -6,6 +6,7 @@ import json
 import tempfile
 from pathlib import Path
 import unittest
+import warnings
 
 import jsonschema
 
@@ -250,6 +251,60 @@ class SimulationAdapterTest(unittest.TestCase):
         self.assertEqual(result["provenance"]["mapping_version"], "aviation-support-input-v0")
         self.assertEqual(result["provenance"]["unsupported_fields"], [])
         self.assertEqual(result["issues"][0]["field_path"], "components")
+
+    def test_compile_aircraft_support_v1_scenario_from_m9_6_platform_case(self) -> None:
+        project = self._load_fixture("m9_6_platform_case_export.json")["project"]
+        scenario_schema = json.loads((REPO_ROOT / "contracts" / "scenario.schema.json").read_text(encoding="utf-8"))
+        input_schema = json.loads(
+            (REPO_ROOT / "contracts" / "aircraft_support_v1_input.schema.json").read_text(encoding="utf-8")
+        )
+        scenario_schema["oneOf"][2]["allOf"][1]["then"]["properties"]["simulation_inputs"] = input_schema
+
+        scenario = self.adapter.compile_scenario(project, model_family="aircraft_support_v1")
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            jsonschema.validate(instance=scenario, schema=scenario_schema)
+            jsonschema.validate(instance=scenario["simulation_inputs"], schema=input_schema)
+        self.assertEqual(
+            scenario["simulation_model"],
+            {
+                "family": "aircraft_support_v1",
+                "model_id": "AircraftSupportV1Model",
+                "contract_version": "1.0.0",
+            },
+        )
+        inputs = scenario["simulation_inputs"]
+        self.assertEqual(inputs["time"]["tick_minutes"], 1)
+        self.assertEqual(inputs["time"]["sample_every_minutes"], 30)
+        self.assertEqual(inputs["time"]["max_state_frames_single"], 2000)
+        self.assertEqual(inputs["aircraft"]["fleet_count"], 6)
+        self.assertEqual(inputs["aircraft"]["initial_ready"], 6)
+        self.assertEqual(len(inputs["equipment_tree"]["components"]), len(project["components"]))
+        self.assertEqual(len(inputs["support_network"]["nodes"]), len(project["supportNodes"]))
+        self.assertEqual(len(inputs["support_activities"]["activities"]), len(project["supportActivities"]))
+        self.assertEqual(inputs["monte_carlo"]["sample_count"], 24)
+        provenance = scenario["compiled_from"]["mapping_provenance"]
+        self.assertEqual(provenance["model_family"], "aircraft_support_v1")
+        self.assertEqual(provenance["mapping_version"], "aircraft-support-v1-input-v0")
+        self.assertIn("components[].failureDistribution", provenance["consumed_fields"])
+        self.assertIn("supportActivities[].jobs[].predecessors", provenance["consumed_fields"])
+        self.assertIn("projectInfo", provenance["governance_only_fields"])
+        self.assertIn("supportOrganization", provenance["unsupported_fields"])
+
+    def test_aircraft_support_v1_compile_gate_blocks_invalid_references(self) -> None:
+        project = self._load_fixture("m9_6_platform_case_export.json")["project"]
+        project["supportActivities"][0]["resourceId"] = "missing-support-node"
+        project["supportActivities"][0]["jobs"][1]["predecessors"] = ["missing-job-code"]
+
+        result = self.adapter.compile_scenario_with_gate(project, model_family="aircraft_support_v1")
+
+        self.assertEqual(result["status"], "blocked")
+        self.assertIsNone(result["scenario"])
+        self.assertEqual(result["provenance"]["model_family"], "aircraft_support_v1")
+        issue_codes = {issue["code"] for issue in result["issues"]}
+        self.assertIn("missing_support_resource_reference", issue_codes)
+        self.assertIn("missing_support_activity_predecessor", issue_codes)
 
     def test_run_aviation_support_scenario_writes_backend_aligned_artifacts(self) -> None:
         project = self._load_fixture("aviation_support_project.json")

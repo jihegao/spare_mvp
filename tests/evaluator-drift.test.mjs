@@ -28,6 +28,29 @@ function requiredMetricSet(resultSchema, modelFamily) {
   return new Set(oneOfBranch(resultSchema, modelFamily).properties.metrics.required);
 }
 
+function resolveLocalRef(schema, ref) {
+  assert.ok(ref.startsWith("#/"), `unexpected non-local ref ${ref}`);
+  return ref
+    .slice(2)
+    .split("/")
+    .reduce((current, segment) => current?.[segment], schema);
+}
+
+async function scenarioInputProperties(scenarioSchema, family) {
+  if (family === "aircraft_support_v1") {
+    const inputSchema = await readJson("contracts/aircraft_support_v1_input.schema.json");
+    return inputSchema.properties;
+  }
+  const selectorConst = family === "smoke" ? "SmokeModelSelector" : "AviationSupportModelSelector";
+  const branch = scenarioSchema.oneOf.find((candidate) => {
+    const ref = candidate.properties?.simulation_model?.$ref;
+    return ref && ref.endsWith(`/${selectorConst}`);
+  });
+  const inputRef = branch?.properties?.simulation_inputs?.$ref;
+  assert.ok(inputRef, `missing scenario input branch for ${family}`);
+  return resolveLocalRef(scenarioSchema, inputRef).properties;
+}
+
 test("project schema required roots stay aligned with frontend Project JSON contract", async () => {
   const schema = await readJson("contracts/project.schema.json");
   const frontendRoots = frontendRequiredProjectRoots();
@@ -115,10 +138,7 @@ test("scenario adapter mapping covers every compiled simulation input for each m
   const mapping = await readJson("contracts/scenario_adapter_mapping.json");
 
   for (const [family, familyMapping] of Object.entries(mapping.model_families)) {
-    const scenarioBranch = scenarioSchema.properties.simulation_inputs.oneOf.find(
-      (branch) => branch.title === family
-    );
-    const scenarioInputs = Object.keys(scenarioBranch.properties).sort();
+    const scenarioInputs = Object.keys(await scenarioInputProperties(scenarioSchema, family)).sort();
     const mappedInputs = Object.keys(familyMapping.simulation_inputs).sort();
     assert.deepEqual(mappedInputs, scenarioInputs, `${family} mapping does not cover every Scenario simulation input`);
 
@@ -127,9 +147,9 @@ test("scenario adapter mapping covers every compiled simulation input for each m
       if (entry.status === "unsupported") {
         assert.equal(entry.constructor_param, undefined, `${family}.${field} must not expose an executable constructor_param before alignment`);
         assert.equal(typeof entry.reason, "string", `${family}.${field} is missing unsupported reason`);
-      } else if (entry.status === "metadata_only") {
+      } else if (entry.status === "metadata_only" || entry.status === "governance_only") {
         assert.equal(entry.constructor_param, undefined, `${family}.${field} must not expose an executable constructor_param`);
-        assert.equal(typeof entry.reason, "string", `${family}.${field} is missing metadata reason`);
+        assert.equal(typeof entry.reason, "string", `${family}.${field} is missing non-executable reason`);
       } else {
         assert.equal(typeof entry.constructor_param, "string", `${family}.${field} is missing constructor_param`);
       }
@@ -175,9 +195,7 @@ test("aviation mapping exposes approved formal execution constructor rules", asy
 
 test("scenario schema rejects values the smoke model would silently coerce", async () => {
   const schema = await readJson("contracts/scenario.schema.json");
-  const inputs = schema.properties.simulation_inputs.oneOf.find(
-    (branch) => branch.title === "smoke"
-  ).properties;
+  const inputs = await scenarioInputProperties(schema, "smoke");
 
   assert.equal(inputs.project_snapshot.type, "object");
   assert.equal(inputs.support_capacity.minimum, 1);

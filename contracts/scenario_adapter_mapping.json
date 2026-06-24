@@ -79,6 +79,57 @@
           "constructor_param": "seed"
         }
       }
+    },
+    "aircraft_support_v1": {
+      "model_class": "AircraftSupportV1Model",
+      "simulation_inputs": {
+        "schema_version": {
+          "source": "aircraft_support_v1 input schema contract",
+          "status": "metadata_only",
+          "reason": "The schema version selects the governed input contract and is not a model constructor parameter."
+        },
+        "project_identity": {
+          "source": "Project JSON identity envelope and Scenario compiler provenance",
+          "status": "governance_only",
+          "reason": "Identity fields trace the compiled platform chain and do not change simulation dynamics."
+        },
+        "mission_profile": {
+          "source": "project.missionProfile, project.basicMission, project.missionPhases, project.airports, project.missionAreas",
+          "constructor_param": "mission_profile"
+        },
+        "aircraft": {
+          "source": "project.equipment.quantity, project.equipment.initialReady, project.equipment.wholeMachineModels",
+          "constructor_param": "aircraft"
+        },
+        "equipment_tree": {
+          "source": "project.components[] including failureDistribution, kOutOfN, lifeLimitHours, RMS, spareType, and specialRepairProfile",
+          "constructor_param": "equipment_tree"
+        },
+        "support_network": {
+          "source": "project.supportNodes[] including capacities, inventory, lateral support nodes, and transport policies",
+          "constructor_param": "support_network"
+        },
+        "support_activities": {
+          "source": "project.supportActivities[] including jobs, duration profiles, resources, spares, and predecessor DAG",
+          "constructor_param": "support_activities"
+        },
+        "reliability_block_diagram": {
+          "source": "project.reliabilityBlockDiagram",
+          "constructor_param": "reliability_block_diagram"
+        },
+        "time": {
+          "source": "project.missionProfile.durationHours and M9.7 default tick/sample policy",
+          "constructor_param": "time_config"
+        },
+        "monte_carlo": {
+          "source": "project.experiment.samples and project.monteCarlo sweep arrays",
+          "constructor_param": "monte_carlo_config"
+        },
+        "seed": {
+          "source": "project.experiment.seed",
+          "constructor_param": "seed"
+        }
+      }
     }
   }
 }
