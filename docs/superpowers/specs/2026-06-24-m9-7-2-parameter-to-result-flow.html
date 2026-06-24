@@ -1,0 +1,1470 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>M9.7.2 参数到仿真结果路径</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #1f2933;
+      --muted: #5f6b7a;
+      --line: #c9d2df;
+      --paper: #f7f9fb;
+      --panel: #ffffff;
+      --input: #215f9a;
+      --compile: #6b4ea0;
+      --run: #1f7a63;
+      --model: #a15f18;
+      --output: #2f6f44;
+      --block: #a63737;
+      --shadow: 0 10px 30px rgba(31, 41, 51, 0.08);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--paper);
+      color: var(--ink);
+      line-height: 1.55;
+    }
+
+    header {
+      padding: 32px 32px 18px;
+      background: var(--panel);
+      border-bottom: 1px solid var(--line);
+    }
+
+    main {
+      padding: 24px 32px 40px;
+      max-width: 1280px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      margin: 0 0 10px;
+      font-size: 28px;
+      letter-spacing: 0;
+    }
+
+    h2 {
+      margin: 0 0 14px;
+      font-size: 20px;
+      letter-spacing: 0;
+    }
+
+    h3 {
+      margin: 0 0 8px;
+      font-size: 15px;
+      letter-spacing: 0;
+    }
+
+    p {
+      margin: 0;
+    }
+
+    code {
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      font-size: 0.92em;
+      background: #eef2f6;
+      border: 1px solid #d8e0ea;
+      padding: 1px 5px;
+      border-radius: 4px;
+    }
+
+    .subtitle {
+      color: var(--muted);
+      max-width: 980px;
+      font-size: 15px;
+    }
+
+    .status-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 16px;
+    }
+
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-height: 28px;
+      padding: 4px 10px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #f9fbfd;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .status strong {
+      color: var(--ink);
+      font-weight: 650;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+      margin-bottom: 22px;
+    }
+
+    .panel-body {
+      padding: 18px;
+    }
+
+    .diagram-wrap {
+      overflow-x: auto;
+      padding: 12px;
+    }
+
+    .diagram {
+      display: block;
+      width: 1180px;
+      max-width: none;
+      height: auto;
+    }
+
+    .legend {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(120px, 1fr));
+      gap: 8px;
+      padding: 0 18px 18px;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .swatch {
+      width: 14px;
+      height: 14px;
+      border-radius: 3px;
+      border: 1px solid rgba(0, 0, 0, 0.14);
+      flex: 0 0 auto;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcfe;
+      padding: 14px;
+      min-height: 184px;
+    }
+
+    .card.input { border-top: 4px solid var(--input); }
+    .card.compile { border-top: 4px solid var(--compile); }
+    .card.run { border-top: 4px solid var(--run); }
+    .card.model { border-top: 4px solid var(--model); }
+    .card.output { border-top: 4px solid var(--output); }
+    .card.block { border-top: 4px solid var(--block); }
+
+    ul {
+      margin: 8px 0 0;
+      padding-left: 18px;
+    }
+
+    li {
+      margin: 5px 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .two-col {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 14px;
+    }
+
+    .note {
+      border-left: 4px solid var(--block);
+      background: #fff7f6;
+      padding: 12px 14px;
+      color: #6f3434;
+      font-size: 14px;
+    }
+
+    .small {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .mapping-shell {
+      display: grid;
+      grid-template-columns: 230px minmax(0, 1fr) 270px;
+      gap: 14px;
+      align-items: start;
+    }
+
+    .object-list,
+    .mapping-panel,
+    .metric-panel {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcfe;
+      min-height: 520px;
+    }
+
+    .object-list {
+      padding: 10px;
+    }
+
+    .object-button {
+      width: 100%;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      align-items: center;
+      min-height: 52px;
+      margin: 0 0 8px;
+      padding: 10px;
+      border: 1px solid #d8e0ea;
+      border-radius: 7px;
+      background: #ffffff;
+      color: var(--ink);
+      font: inherit;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .object-button:hover,
+    .object-button:focus-visible {
+      border-color: var(--input);
+      outline: none;
+      box-shadow: 0 0 0 3px rgba(33, 95, 154, 0.12);
+    }
+
+    .object-button[aria-pressed="true"] {
+      border-color: var(--input);
+      background: #eef6fd;
+    }
+
+    .object-name {
+      font-weight: 700;
+      font-size: 13px;
+    }
+
+    .object-kind {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 2px;
+    }
+
+    .object-count {
+      min-width: 28px;
+      text-align: center;
+      border-radius: 999px;
+      background: #e8eef6;
+      color: #334155;
+      font-size: 12px;
+      padding: 2px 6px;
+    }
+
+    .mapping-panel,
+    .metric-panel {
+      padding: 14px;
+    }
+
+    .mapping-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 12px;
+      margin-bottom: 12px;
+    }
+
+    .mapping-header h3 {
+      margin: 0;
+    }
+
+    .view-toggle {
+      display: inline-flex;
+      gap: 4px;
+      padding: 4px;
+      border: 1px solid #d8e0ea;
+      border-radius: 7px;
+      background: #f6f8fb;
+      margin-top: 10px;
+    }
+
+    .view-toggle button {
+      min-height: 30px;
+      padding: 4px 10px;
+      border: 1px solid transparent;
+      border-radius: 5px;
+      background: transparent;
+      color: var(--muted);
+      font: inherit;
+      font-size: 13px;
+      cursor: pointer;
+    }
+
+    .view-toggle button[aria-pressed="true"] {
+      background: #ffffff;
+      border-color: #c9d2df;
+      color: var(--ink);
+      box-shadow: 0 1px 2px rgba(31, 41, 51, 0.08);
+    }
+
+    .view-toggle button:focus-visible {
+      outline: 3px solid rgba(33, 95, 154, 0.16);
+      outline-offset: 2px;
+    }
+
+    .mapping-stage {
+      align-self: start;
+      border: 1px solid #d8e0ea;
+      border-radius: 999px;
+      padding: 3px 8px;
+      color: var(--muted);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .field-table {
+      display: grid;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .field-row {
+      display: grid;
+      grid-template-columns: minmax(120px, 0.9fr) minmax(160px, 1.1fr) minmax(160px, 1fr);
+      gap: 8px;
+      padding: 10px;
+      border: 1px solid #d8e0ea;
+      border-radius: 7px;
+      background: #ffffff;
+    }
+
+    .field-row strong {
+      font-size: 13px;
+    }
+
+    .field-row span {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .relation-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 10px;
+    }
+
+    .relation-card,
+    .function-step,
+    .metric-card {
+      border: 1px solid #d8e0ea;
+      border-radius: 7px;
+      background: #ffffff;
+      padding: 10px;
+    }
+
+    .relation-card strong,
+    .function-step strong,
+    .metric-card strong {
+      display: block;
+      font-size: 13px;
+      margin-bottom: 4px;
+    }
+
+    .relation-card span,
+    .function-step span,
+    .metric-card span {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .function-chain {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .function-step {
+      border-top: 4px solid var(--model);
+      min-height: 104px;
+    }
+
+    .metric-grid {
+      display: grid;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .metric-card {
+      border-left: 4px solid #d8e0ea;
+    }
+
+    .metric-card.active {
+      border-left-color: var(--output);
+      background: #f1faf2;
+    }
+
+    .metric-artifact {
+      display: inline-block;
+      margin-top: 6px;
+      border-radius: 5px;
+      background: #eef2f6;
+      border: 1px solid #d8e0ea;
+      padding: 2px 6px;
+      color: #425466;
+      font-size: 11px;
+    }
+
+    .mapping-empty {
+      border: 1px dashed var(--line);
+      border-radius: 8px;
+      padding: 18px;
+      color: var(--muted);
+      background: #ffffff;
+    }
+
+    .network-wrap {
+      margin-top: 12px;
+      border: 1px solid #d8e0ea;
+      border-radius: 8px;
+      background: #ffffff;
+      overflow-x: auto;
+    }
+
+    .network-svg {
+      display: block;
+      width: 900px;
+      max-width: none;
+      height: auto;
+    }
+
+    .network-legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .network-legend span {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .network-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 3px;
+      border: 1px solid rgba(0, 0, 0, 0.12);
+      display: inline-block;
+    }
+
+    @media (max-width: 900px) {
+      header {
+        padding: 24px 18px 16px;
+      }
+
+      main {
+        padding: 18px;
+      }
+
+      h1 {
+        font-size: 23px;
+      }
+
+      .grid,
+      .two-col,
+      .legend,
+      .mapping-shell,
+      .relation-grid,
+      .function-chain,
+      .field-row {
+        grid-template-columns: 1fr;
+      }
+
+      .card {
+        min-height: auto;
+      }
+
+      .object-list,
+      .mapping-panel,
+      .metric-panel {
+        min-height: auto;
+      }
+
+      .network-svg {
+        width: 860px;
+      }
+    }
+
+    @media print {
+      body {
+        background: #fff;
+      }
+
+      header,
+      main {
+        padding: 16px;
+      }
+
+      .panel {
+        box-shadow: none;
+        break-inside: avoid;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>M9.7.2 参数到仿真结果路径</h1>
+    <p class="subtitle">
+      这张图把平台参数如何进入 <code>aircraft_support_v1</code> single run、如何通过 canonical
+      <code>/api/runs</code> 执行、以及正式结果如何落到 run/result/artifact 链路画成一个可审阅路径。
+      它描述 M9.7.2 目标路径，不把 M9.7.3 Monte Carlo/projection 或 M9.7.4 coverage hardening 提前并入本阶段。
+    </p>
+    <div class="status-row" aria-label="阶段边界">
+      <span class="status"><strong>M9.7.1</strong> 已合并: schema/compiler gate</span>
+      <span class="status"><strong>M9.7.2</strong> 本图目标: single run core</span>
+      <span class="status"><strong>M9.7.3</strong> 后续: Monte Carlo/projection</span>
+      <span class="status"><strong>M9.7.4</strong> 后续: coverage hardening</span>
+    </div>
+  </header>
+
+  <main>
+    <section class="panel" aria-labelledby="flow-title">
+      <div class="panel-body">
+        <h2 id="flow-title">主路径图</h2>
+        <p class="small">横向阅读：参数输入经过编译 gate，进入 RunService 和 adapter runtime，最终写入可追溯 artifacts。</p>
+      </div>
+      <div class="diagram-wrap" role="img" aria-label="参数到结果输出的主流程图">
+        <svg class="diagram" viewBox="0 0 1180 620" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="#576574"/>
+            </marker>
+            <style>
+              .lane-title { font: 700 15px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #1f2933; }
+              .box-title { font: 700 14px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #1f2933; }
+              .box-text { font: 12px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #425466; }
+              .badge { font: 700 11px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #fff; }
+              .arrow { stroke: #576574; stroke-width: 2; fill: none; marker-end: url(#arrow); }
+              .soft-arrow { stroke: #8a96a8; stroke-width: 1.8; fill: none; stroke-dasharray: 5 5; marker-end: url(#arrow); }
+            </style>
+          </defs>
+
+          <rect x="0" y="0" width="1180" height="620" fill="#ffffff"/>
+
+          <rect x="24" y="32" width="210" height="540" rx="8" fill="#eef6fd" stroke="#b7cde3"/>
+          <rect x="255" y="32" width="210" height="540" rx="8" fill="#f2eff9" stroke="#cabee4"/>
+          <rect x="486" y="32" width="210" height="540" rx="8" fill="#edf8f4" stroke="#b7d9cd"/>
+          <rect x="717" y="32" width="210" height="540" rx="8" fill="#fff4e8" stroke="#e4c69e"/>
+          <rect x="948" y="32" width="210" height="540" rx="8" fill="#eff8f0" stroke="#bddbbf"/>
+
+          <text x="44" y="62" class="lane-title">1. 参数输入</text>
+          <text x="275" y="62" class="lane-title">2. 编译与治理</text>
+          <text x="506" y="62" class="lane-title">3. 正式运行入口</text>
+          <text x="737" y="62" class="lane-title">4. 仿真内核</text>
+          <text x="968" y="62" class="lane-title">5. 结果输出</text>
+
+          <rect x="44" y="92" width="170" height="92" rx="6" fill="#fff" stroke="#79a8d4"/>
+          <text x="58" y="118" class="box-title">Project JSON</text>
+          <text x="58" y="142" class="box-text">建模导入示例项目</text>
+          <text x="58" y="162" class="box-text">M9.6 case package</text>
+
+          <rect x="44" y="214" width="170" height="116" rx="6" fill="#fff" stroke="#79a8d4"/>
+          <text x="58" y="240" class="box-title">ExperimentPlan</text>
+          <text x="58" y="264" class="box-text">方案分支 projectJson</text>
+          <text x="58" y="284" class="box-text">modeling_snapshot_id</text>
+          <text x="58" y="304" class="box-text">steps / run config</text>
+
+          <rect x="44" y="360" width="170" height="112" rx="6" fill="#fff" stroke="#79a8d4"/>
+          <text x="58" y="386" class="box-title">RunIntent</text>
+          <text x="58" y="410" class="box-text">run_type = single</text>
+          <text x="58" y="430" class="box-text">model_family</text>
+          <text x="58" y="450" class="box-text">aircraft_support_v1</text>
+
+          <rect x="275" y="92" width="170" height="116" rx="6" fill="#fff" stroke="#a28bd0"/>
+          <text x="289" y="118" class="box-title">compile_scenario</text>
+          <text x="289" y="142" class="box-text">compile_scenario_with_gate()</text>
+          <text x="289" y="162" class="box-text">Project -> Scenario</text>
+          <text x="289" y="182" class="box-text">fail closed on issues</text>
+
+          <rect x="275" y="238" width="170" height="128" rx="6" fill="#fff" stroke="#a28bd0"/>
+          <text x="289" y="264" class="box-title">Scenario envelope</text>
+          <text x="289" y="288" class="box-text">family = aircraft_support_v1</text>
+          <text x="289" y="308" class="box-text">model_id = AircraftSupportV1Model</text>
+          <text x="289" y="328" class="box-text">simulation_inputs</text>
+          <text x="289" y="348" class="box-text">mapping_provenance</text>
+
+          <rect x="275" y="396" width="170" height="118" rx="6" fill="#fff" stroke="#a28bd0"/>
+          <text x="289" y="422" class="box-title">input payload</text>
+          <text x="289" y="446" class="box-text">mission / aircraft</text>
+          <text x="289" y="466" class="box-text">equipment / support</text>
+          <text x="289" y="486" class="box-text">RBD / time / seed</text>
+
+          <rect x="506" y="92" width="170" height="112" rx="6" fill="#fff" stroke="#77b8a4"/>
+          <text x="520" y="118" class="box-title">POST /api/runs</text>
+          <text x="520" y="142" class="box-text">canonical entry only</text>
+          <text x="520" y="162" class="box-text">formal_run gate</text>
+          <text x="520" y="182" class="box-text">project + plan identity</text>
+
+          <rect x="506" y="234" width="170" height="128" rx="6" fill="#fff" stroke="#77b8a4"/>
+          <text x="520" y="260" class="box-title">RunService</text>
+          <text x="520" y="284" class="box-text">submit_run()</text>
+          <text x="520" y="304" class="box-text">next_run_id()</text>
+          <text x="520" y="324" class="box-text">upsert_scenario()</text>
+          <text x="520" y="344" class="box-text">persist failed compile</text>
+
+          <rect x="506" y="392" width="170" height="116" rx="6" fill="#fff" stroke="#77b8a4"/>
+          <text x="520" y="418" class="box-title">SimulationAdapter</text>
+          <text x="520" y="442" class="box-text">run_scenario()</text>
+          <text x="520" y="462" class="box-text">M9.7.2 新增 v1 runtime</text>
+          <text x="520" y="482" class="box-text">no legacy run API</text>
+
+          <rect x="737" y="92" width="170" height="116" rx="6" fill="#fff" stroke="#d5a66f"/>
+          <text x="751" y="118" class="box-title">AircraftSupportV1Model</text>
+          <text x="751" y="142" class="box-text">Mesa shell</text>
+          <text x="751" y="162" class="box-text">clock + event order</text>
+          <text x="751" y="182" class="box-text">fixed seed</text>
+
+          <rect x="737" y="238" width="170" height="132" rx="6" fill="#fff" stroke="#d5a66f"/>
+          <text x="751" y="264" class="box-title">domain mechanics</text>
+          <text x="751" y="288" class="box-text">aircraft agents</text>
+          <text x="751" y="308" class="box-text">mission scheduling</text>
+          <text x="751" y="328" class="box-text">equipment failures</text>
+          <text x="751" y="348" class="box-text">support activity DAG</text>
+
+          <rect x="737" y="400" width="170" height="112" rx="6" fill="#fff" stroke="#d5a66f"/>
+          <text x="751" y="426" class="box-title">state sampling</text>
+          <text x="751" y="450" class="box-text">tick_minutes = 1</text>
+          <text x="751" y="470" class="box-text">sample_every = 30</text>
+          <text x="751" y="490" class="box-text">frames + events</text>
+
+          <rect x="968" y="82" width="170" height="92" rx="6" fill="#fff" stroke="#82bd85"/>
+          <text x="982" y="108" class="box-title">result summary</text>
+          <text x="982" y="132" class="box-text">status / metrics</text>
+          <text x="982" y="152" class="box-text">run/result identity</text>
+
+          <rect x="968" y="200" width="170" height="116" rx="6" fill="#fff" stroke="#82bd85"/>
+          <text x="982" y="226" class="box-title">artifact manifest</text>
+          <text x="982" y="250" class="box-text">run_config</text>
+          <text x="982" y="270" class="box-text">input_project</text>
+          <text x="982" y="290" class="box-text">compiled_scenario</text>
+
+          <rect x="968" y="342" width="170" height="116" rx="6" fill="#fff" stroke="#82bd85"/>
+          <text x="982" y="368" class="box-title">runtime artifacts</text>
+          <text x="982" y="392" class="box-text">metrics / report / log</text>
+          <text x="982" y="412" class="box-text">visualization_state_series</text>
+          <text x="982" y="432" class="box-text">run chain</text>
+
+          <rect x="968" y="486" width="170" height="54" rx="6" fill="#fff7f6" stroke="#c16666"/>
+          <text x="982" y="512" class="box-title">M9.7.3 later</text>
+          <text x="982" y="532" class="box-text">monte_carlo_base + projections</text>
+
+          <path class="arrow" d="M 214 138 C 238 138, 248 138, 275 138"/>
+          <path class="arrow" d="M 214 272 C 238 272, 248 272, 275 292"/>
+          <path class="arrow" d="M 214 416 C 238 416, 248 416, 275 456"/>
+          <path class="arrow" d="M 445 302 C 470 302, 482 150, 506 150"/>
+          <path class="arrow" d="M 676 298 C 700 298, 712 150, 737 150"/>
+          <path class="arrow" d="M 907 150 C 932 150, 944 128, 968 128"/>
+          <path class="arrow" d="M 907 304 C 932 304, 944 258, 968 258"/>
+          <path class="arrow" d="M 907 456 C 932 456, 944 400, 968 400"/>
+          <path class="soft-arrow" d="M 1053 458 C 1053 470, 1053 476, 1053 486"/>
+
+          <rect x="44" y="520" width="632" height="32" rx="6" fill="#b74747"/>
+          <text x="58" y="541" class="badge">Fail closed: invalid references, missing compiler provenance, unsupported field family, missing state-series, non-canonical run path</text>
+          <path class="soft-arrow" d="M 360 514 C 360 560, 620 580, 1053 540"/>
+        </svg>
+      </div>
+      <div class="legend" aria-label="图例">
+        <div class="legend-item"><span class="swatch" style="background:#eef6fd"></span>参数输入</div>
+        <div class="legend-item"><span class="swatch" style="background:#f2eff9"></span>编译与治理</div>
+        <div class="legend-item"><span class="swatch" style="background:#edf8f4"></span>正式运行入口</div>
+        <div class="legend-item"><span class="swatch" style="background:#fff4e8"></span>仿真内核</div>
+        <div class="legend-item"><span class="swatch" style="background:#eff8f0"></span>正式输出</div>
+        <div class="legend-item"><span class="swatch" style="background:#fff7f6"></span>阻断或后续阶段</div>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="field-function-title">
+      <div class="panel-body">
+        <h2 id="field-function-title">字段-函数-指标交互映射</h2>
+        <p class="small">
+          点击左侧数据对象，查看它的字段如何进入模型对象、与哪些对象字段联动、经过哪些运行函数阶段，
+          最后影响哪些输出指标和 artifact。该映射是 M9.7.2 single run core 的实现对齐清单。
+        </p>
+        <div class="view-toggle" role="group" aria-label="映射视图切换">
+          <button type="button" data-view="network" aria-pressed="true">网络图</button>
+          <button type="button" data-view="table" aria-pressed="false">表格</button>
+        </div>
+        <div class="mapping-shell" id="field-function-map" aria-live="polite">
+          <nav class="object-list" aria-label="数据对象列表" id="object-list"></nav>
+          <div class="mapping-panel" id="mapping-detail">
+            <div class="mapping-empty">选择一个数据对象查看字段、函数和运行关系。</div>
+          </div>
+          <aside class="metric-panel" aria-label="输出指标" id="metric-detail">
+            <div class="mapping-empty">受影响输出指标会显示在这里。</div>
+          </aside>
+        </div>
+        <noscript>
+          <p class="note">该映射需要浏览器启用 JavaScript 才能展开对象字段。</p>
+        </noscript>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="kernel-title">
+      <div class="panel-body">
+        <h2 id="kernel-title">AircraftSupportV1Model 内核展开图</h2>
+        <p class="small">
+          这张图把编译后的 <code>simulation_inputs</code> 展开到模型对象和对象字段，再连接到 single run 输出对象。
+          对象名是 M9.7.2 运行核心的实现边界建议；字段名来自 M9.7.1 已合并的 <code>aircraft_support_v1_input.schema.json</code>。
+        </p>
+      </div>
+      <div class="diagram-wrap" role="img" aria-label="AircraftSupportV1Model 对象字段和输出对象连接图">
+        <svg class="diagram" viewBox="0 0 1180 760" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <marker id="object-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="#576574"/>
+            </marker>
+            <style>
+              .kernel-title { font: 700 15px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #1f2933; }
+              .kernel-box-title { font: 700 13px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #1f2933; }
+              .kernel-text { font: 11.5px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #425466; }
+              .kernel-note { font: 700 11px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #7b4b15; }
+              .kernel-arrow { stroke: #576574; stroke-width: 1.8; fill: none; marker-end: url(#object-arrow); }
+              .kernel-soft { stroke: #8a96a8; stroke-width: 1.5; fill: none; stroke-dasharray: 5 5; marker-end: url(#object-arrow); }
+            </style>
+          </defs>
+
+          <rect x="0" y="0" width="1180" height="760" fill="#ffffff"/>
+          <rect x="24" y="34" width="180" height="678" rx="8" fill="#eef6fd" stroke="#b7cde3"/>
+          <rect x="230" y="34" width="250" height="678" rx="8" fill="#fff4e8" stroke="#e4c69e"/>
+          <rect x="506" y="34" width="240" height="678" rx="8" fill="#fff8ef" stroke="#e0bf93"/>
+          <rect x="772" y="34" width="176" height="678" rx="8" fill="#edf8f4" stroke="#b7d9cd"/>
+          <rect x="974" y="34" width="182" height="678" rx="8" fill="#eff8f0" stroke="#bddbbf"/>
+
+          <text x="44" y="64" class="kernel-title">字段组</text>
+          <text x="250" y="64" class="kernel-title">模型对象 + 字段</text>
+          <text x="526" y="64" class="kernel-title">对象连接 / tick 更新</text>
+          <text x="792" y="64" class="kernel-title">采样与聚合</text>
+          <text x="994" y="64" class="kernel-title">输出对象</text>
+
+          <rect x="44" y="92" width="140" height="78" rx="6" fill="#fff" stroke="#79a8d4"/>
+          <text x="56" y="116" class="kernel-box-title">mission_profile</text>
+          <text x="56" y="138" class="kernel-text">duration_minutes</text>
+          <text x="56" y="156" class="kernel-text">tasks / phases / airports</text>
+
+          <rect x="44" y="190" width="140" height="78" rx="6" fill="#fff" stroke="#79a8d4"/>
+          <text x="56" y="214" class="kernel-box-title">aircraft</text>
+          <text x="56" y="236" class="kernel-text">fleet_count</text>
+          <text x="56" y="254" class="kernel-text">initial_ready / models</text>
+
+          <rect x="44" y="288" width="140" height="86" rx="6" fill="#fff" stroke="#79a8d4"/>
+          <text x="56" y="312" class="kernel-box-title">equipment_tree</text>
+          <text x="56" y="334" class="kernel-text">component.id</text>
+          <text x="56" y="352" class="kernel-text">quantity / failure_rate</text>
+
+          <rect x="44" y="394" width="140" height="94" rx="6" fill="#fff" stroke="#79a8d4"/>
+          <text x="56" y="418" class="kernel-box-title">support_network</text>
+          <text x="56" y="440" class="kernel-text">node.capacity</text>
+          <text x="56" y="458" class="kernel-text">inventory</text>
+          <text x="56" y="476" class="kernel-text">transport_policies</text>
+
+          <rect x="44" y="508" width="140" height="86" rx="6" fill="#fff" stroke="#79a8d4"/>
+          <text x="56" y="532" class="kernel-box-title">support_activities</text>
+          <text x="56" y="554" class="kernel-text">activity_type</text>
+          <text x="56" y="572" class="kernel-text">equipment/resource/jobs</text>
+
+          <rect x="44" y="614" width="140" height="58" rx="6" fill="#fff" stroke="#79a8d4"/>
+          <text x="56" y="638" class="kernel-box-title">time + seed</text>
+          <text x="56" y="660" class="kernel-text">tick/sample/random</text>
+
+          <rect x="250" y="88" width="210" height="88" rx="6" fill="#fff" stroke="#d5a66f"/>
+          <text x="264" y="112" class="kernel-box-title">MissionSchedule</text>
+          <text x="264" y="134" class="kernel-text">duration_minutes, task windows</text>
+          <text x="264" y="152" class="kernel-text">airport/area/phase references</text>
+
+          <rect x="250" y="196" width="210" height="82" rx="6" fill="#fff" stroke="#d5a66f"/>
+          <text x="264" y="220" class="kernel-box-title">AircraftAgent[]</text>
+          <text x="264" y="242" class="kernel-text">aircraft_id, model, readiness</text>
+          <text x="264" y="260" class="kernel-text">assigned_task, current_location</text>
+
+          <rect x="250" y="298" width="210" height="94" rx="6" fill="#fff" stroke="#d5a66f"/>
+          <text x="264" y="322" class="kernel-box-title">ComponentState[] / FailureProcess</text>
+          <text x="264" y="344" class="kernel-text">component_id, quantity, failed_count</text>
+          <text x="264" y="362" class="kernel-text">failure_rate, parent/children</text>
+          <text x="264" y="380" class="kernel-text">sampled failure events</text>
+
+          <rect x="250" y="412" width="210" height="94" rx="6" fill="#fff" stroke="#d5a66f"/>
+          <text x="264" y="436" class="kernel-box-title">SupportNode[] / InventoryStore</text>
+          <text x="264" y="458" class="kernel-text">personnel_capacity, equipment_capacity</text>
+          <text x="264" y="476" class="kernel-text">spares_on_hand, reserved, in_transit</text>
+          <text x="264" y="494" class="kernel-text">transport_policy</text>
+
+          <rect x="250" y="526" width="210" height="94" rx="6" fill="#fff" stroke="#d5a66f"/>
+          <text x="264" y="550" class="kernel-box-title">SupportActivityDAG</text>
+          <text x="264" y="572" class="kernel-text">activity_id, resource_id, jobs</text>
+          <text x="264" y="590" class="kernel-text">predecessors, remaining_minutes</text>
+          <text x="264" y="608" class="kernel-text">blocked/running/done state</text>
+
+          <rect x="250" y="640" width="210" height="58" rx="6" fill="#fff" stroke="#d5a66f"/>
+          <text x="264" y="664" class="kernel-box-title">SimulationClock / RandomSource</text>
+          <text x="264" y="686" class="kernel-text">minute, tick_minutes, seed</text>
+
+          <rect x="526" y="98" width="200" height="82" rx="6" fill="#fff" stroke="#d5a66f"/>
+          <text x="540" y="122" class="kernel-box-title">dispatch phase</text>
+          <text x="540" y="144" class="kernel-text">MissionSchedule 选择任务</text>
+          <text x="540" y="162" class="kernel-text">AircraftAgent 可用性放行出动</text>
+
+          <rect x="526" y="214" width="200" height="86" rx="6" fill="#fff" stroke="#d5a66f"/>
+          <text x="540" y="238" class="kernel-box-title">failure phase</text>
+          <text x="540" y="260" class="kernel-text">FailureProcess 更新 ComponentState</text>
+          <text x="540" y="278" class="kernel-text">RBD 改变飞机可用性</text>
+
+          <rect x="526" y="334" width="200" height="100" rx="6" fill="#fff" stroke="#d5a66f"/>
+          <text x="540" y="358" class="kernel-box-title">support phase</text>
+          <text x="540" y="380" class="kernel-text">SupportActivityDAG 占用能力</text>
+          <text x="540" y="398" class="kernel-text">InventoryStore 预留备件</text>
+          <text x="540" y="416" class="kernel-text">TransportPolicy 调拨库存</text>
+
+          <rect x="526" y="468" width="200" height="92" rx="6" fill="#fff" stroke="#d5a66f"/>
+          <text x="540" y="492" class="kernel-box-title">metrics phase</text>
+          <text x="540" y="514" class="kernel-text">sortie success / delays</text>
+          <text x="540" y="532" class="kernel-text">spare shortfall / downtime</text>
+          <text x="540" y="550" class="kernel-text">resource utilization</text>
+
+          <rect x="526" y="594" width="200" height="76" rx="6" fill="#fff" stroke="#d5a66f"/>
+          <text x="540" y="618" class="kernel-box-title">event ordering</text>
+          <text x="540" y="640" class="kernel-text">dispatch -> failure -> support</text>
+          <text x="540" y="658" class="kernel-text">metrics -> frame sampling</text>
+
+          <rect x="792" y="118" width="136" height="108" rx="6" fill="#fff" stroke="#77b8a4"/>
+          <text x="804" y="142" class="kernel-box-title">FrameBuilder</text>
+          <text x="804" y="164" class="kernel-text">aircraft_state</text>
+          <text x="804" y="182" class="kernel-text">mission_state</text>
+          <text x="804" y="200" class="kernel-text">support_state</text>
+
+          <rect x="792" y="266" width="136" height="108" rx="6" fill="#fff" stroke="#77b8a4"/>
+          <text x="804" y="290" class="kernel-box-title">MetricsAccumulator</text>
+          <text x="804" y="312" class="kernel-text">mission_success_rate</text>
+          <text x="804" y="330" class="kernel-text">availability</text>
+          <text x="804" y="348" class="kernel-text">downtime_minutes</text>
+
+          <rect x="792" y="414" width="136" height="94" rx="6" fill="#fff" stroke="#77b8a4"/>
+          <text x="804" y="438" class="kernel-box-title">EventLog</text>
+          <text x="804" y="460" class="kernel-text">event_id, minute</text>
+          <text x="804" y="478" class="kernel-text">event_type</text>
+          <text x="804" y="496" class="kernel-text">metric_refs</text>
+
+          <rect x="792" y="548" width="136" height="72" rx="6" fill="#fff" stroke="#77b8a4"/>
+          <text x="804" y="572" class="kernel-box-title">SnapshotBuilder</text>
+          <text x="804" y="594" class="kernel-text">final state</text>
+          <text x="804" y="612" class="kernel-text">trace refs</text>
+
+          <rect x="994" y="98" width="142" height="82" rx="6" fill="#fff" stroke="#82bd85"/>
+          <text x="1006" y="122" class="kernel-box-title">result</text>
+          <text x="1006" y="144" class="kernel-text">result_summary</text>
+          <text x="1006" y="162" class="kernel-text">model metrics</text>
+
+          <rect x="994" y="214" width="142" height="100" rx="6" fill="#fff" stroke="#82bd85"/>
+          <text x="1006" y="238" class="kernel-box-title">artifact_manifest</text>
+          <text x="1006" y="260" class="kernel-text">metrics.json</text>
+          <text x="1006" y="278" class="kernel-text">report.json</text>
+          <text x="1006" y="296" class="kernel-text">log.json</text>
+
+          <rect x="994" y="350" width="142" height="94" rx="6" fill="#fff" stroke="#82bd85"/>
+          <text x="1006" y="374" class="kernel-box-title">state-series</text>
+          <text x="1006" y="396" class="kernel-text">frames[]</text>
+          <text x="1006" y="414" class="kernel-text">events[]</text>
+          <text x="1006" y="432" class="kernel-text">traceability</text>
+
+          <rect x="994" y="480" width="142" height="78" rx="6" fill="#fff" stroke="#82bd85"/>
+          <text x="1006" y="504" class="kernel-box-title">run chain</text>
+          <text x="1006" y="526" class="kernel-text">run_id / result_id</text>
+          <text x="1006" y="544" class="kernel-text">artifact ids</text>
+
+          <rect x="994" y="594" width="142" height="54" rx="6" fill="#fff7f6" stroke="#c16666"/>
+          <text x="1006" y="618" class="kernel-box-title">非 M9.7.2</text>
+          <text x="1006" y="636" class="kernel-text">MC base / projections</text>
+
+          <path class="kernel-arrow" d="M184 131 C210 131, 222 131, 250 131"/>
+          <path class="kernel-arrow" d="M184 229 C210 229, 222 229, 250 237"/>
+          <path class="kernel-arrow" d="M184 331 C210 331, 222 331, 250 344"/>
+          <path class="kernel-arrow" d="M184 441 C210 441, 222 441, 250 459"/>
+          <path class="kernel-arrow" d="M184 551 C210 551, 222 551, 250 573"/>
+          <path class="kernel-arrow" d="M184 643 C210 643, 222 643, 250 669"/>
+
+          <path class="kernel-arrow" d="M460 132 C490 132, 500 132, 526 139"/>
+          <path class="kernel-arrow" d="M460 237 C492 237, 502 247, 526 257"/>
+          <path class="kernel-arrow" d="M460 345 C492 345, 502 370, 526 384"/>
+          <path class="kernel-arrow" d="M460 459 C492 459, 502 388, 526 384"/>
+          <path class="kernel-arrow" d="M460 573 C492 573, 502 388, 526 384"/>
+          <path class="kernel-arrow" d="M460 669 C492 669, 502 636, 526 632"/>
+
+          <path class="kernel-arrow" d="M726 139 C756 139, 766 156, 792 172"/>
+          <path class="kernel-arrow" d="M726 257 C756 257, 766 304, 792 320"/>
+          <path class="kernel-arrow" d="M726 384 C756 384, 766 448, 792 461"/>
+          <path class="kernel-arrow" d="M726 514 C756 514, 766 320, 792 320"/>
+          <path class="kernel-arrow" d="M726 632 C756 632, 766 596, 792 584"/>
+
+          <path class="kernel-arrow" d="M928 172 C958 172, 966 140, 994 139"/>
+          <path class="kernel-arrow" d="M928 320 C958 320, 966 264, 994 264"/>
+          <path class="kernel-arrow" d="M928 461 C958 461, 966 397, 994 397"/>
+          <path class="kernel-arrow" d="M928 584 C958 584, 966 518, 994 519"/>
+
+          <path class="kernel-soft" d="M1065 558 C1065 574, 1065 582, 1065 594"/>
+          <text x="536" y="704" class="kernel-note">M9.7.2 验收关注 single run: 固定 seed 可复现、对象字段可追溯、state-series 不缺失、输出只走 canonical run/artifact 链路。</text>
+        </svg>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="layers-title">
+      <div class="panel-body">
+        <h2 id="layers-title">分层职责</h2>
+        <div class="grid">
+          <article class="card input">
+            <h3>输入参数层</h3>
+            <p class="small">正式 single run 的业务输入来自已发布导入包生成的 Project、实验方案分支和 RunIntent。</p>
+            <ul>
+              <li><code>tests/fixtures/modeling_import_project.json</code> 是完整业务示例源。</li>
+              <li><code>ExperimentPlan.config.projectJson</code> 优先于旧 snapshot 回退。</li>
+              <li><code>run_type</code> 在 M9.7.2 固定关注 <code>single</code>。</li>
+            </ul>
+          </article>
+
+          <article class="card compile">
+            <h3>编译与治理层</h3>
+            <p class="small"><code>SimulationAdapter.compile_scenario_with_gate()</code> 是 Project 到 Scenario 的正式入口。</p>
+            <ul>
+              <li>输出 <code>AircraftSupportV1Model</code> Scenario envelope。</li>
+              <li><code>simulation_inputs</code> 必须符合独立 input schema。</li>
+              <li><code>mapping_provenance</code> 记录 consumed、derived、defaulted、governance_only、unsupported。</li>
+            </ul>
+          </article>
+
+          <article class="card run">
+            <h3>正式运行层</h3>
+            <p class="small"><code>RunService.submit_run()</code> 负责身份链、run id、Scenario 持久化和失败编译落库。</p>
+            <ul>
+              <li>入口必须是 canonical <code>POST /api/runs</code>。</li>
+              <li>正式 run 需要 imported sample 来源审计通过。</li>
+              <li>失败编译返回 failed status envelope，不伪造 result。</li>
+            </ul>
+          </article>
+
+          <article class="card model">
+            <h3>仿真内核层</h3>
+            <p class="small">M9.7.2 新增 <code>src/spare_mvp_abm/aircraft_support_v1/</code> runtime。</p>
+            <ul>
+              <li>固定 seed 下可复现。</li>
+              <li>分钟级 tick，固定事件阶段顺序。</li>
+              <li>每 30 分钟输出可视化状态帧。</li>
+            </ul>
+          </article>
+
+          <article class="card output">
+            <h3>结果输出层</h3>
+            <p class="small">single run 输出必须足够支撑结果审计、状态回放和后续分析接入。</p>
+            <ul>
+              <li><code>result_summary</code>、<code>metrics</code>、<code>report</code>、<code>log</code>。</li>
+              <li><code>artifact_manifest</code> 记录每个 artifact 的 kind/schema/path/hash。</li>
+              <li><code>visualization_state_series</code> 包含 run/result/manifest/Scenario traceability。</li>
+            </ul>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="payload-title">
+      <div class="panel-body">
+        <h2 id="payload-title">关键 payload 映射</h2>
+        <div class="two-col">
+          <article class="card compile">
+            <h3>编译后 input payload</h3>
+            <ul>
+              <li><code>project_identity</code>: project id、version、scenario id、source import id。</li>
+              <li><code>mission_profile</code>: 任务、阶段、机场、任务区和 duration。</li>
+              <li><code>aircraft</code>: 机队规模、初始可用数和机型。</li>
+              <li><code>equipment_tree</code>: LRU/组件、数量和故障率。</li>
+              <li><code>support_network</code>: 保障节点、人员/设备能力、库存、运输策略。</li>
+              <li><code>support_activities</code>: 活动 DAG、资源引用、工序。</li>
+              <li><code>time</code>: <code>tick_minutes=1</code>、<code>sample_every_minutes=30</code>。</li>
+              <li><code>seed</code>: single run 可复现随机源。</li>
+            </ul>
+          </article>
+
+          <article class="card output">
+            <h3>single run 输出包</h3>
+            <ul>
+              <li><code>run</code>: run id、scenario id、model family、status、result id、artifact manifest id。</li>
+              <li><code>result</code>: 指标摘要和模型族专属 metrics。</li>
+              <li><code>artifact_manifest</code>: run config、input project、compiled Scenario、metrics、report、log、state-series。</li>
+              <li><code>visualization_state_series</code>: 帧、事件摘要、metric refs、run/result/manifest/Scenario 追溯字段。</li>
+              <li><code>run chain</code>: 通过 repository 和 artifact id 支撑前端状态、回放和审计。</li>
+            </ul>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="fail-title">
+      <div class="panel-body">
+        <h2 id="fail-title">阻断边界</h2>
+        <div class="note">
+          M9.7.2 的目标不是让页面在任何输入下都有看似成功的输出，而是在正式输入链路不成立时明确 fail closed。
+          缺少 compiler provenance、非法引用、缺少 <code>visualization_state_series</code>、unsupported 字段族仍影响正式运行、
+          或绕过 canonical <code>/api/runs</code> 的路径，都不能显示为正式后端仿真结果。
+        </div>
+      </div>
+    </section>
+  </main>
+  <script>
+    const mappingData = [
+      {
+        id: "mission_profile",
+        label: "mission_profile",
+        kind: "任务剖面",
+        stage: "MissionSchedule",
+        fields: [
+          ["duration_minutes", "simulation_inputs.mission_profile.duration_minutes", "MissionSchedule.durationMinutes", "sets run horizon and stop condition"],
+          ["composite_tasks[]", "mission_profile.composite_tasks", "MissionTask.window / requiredAircraft", "feeds dispatch phase"],
+          ["mission_phases[]", "mission_profile.mission_phases", "MissionPhase.startMinute / endMinute", "gates mission availability"],
+          ["airports[]", "mission_profile.airports", "AirportNode.id / capacity", "constrains aircraft location and sortie turn"],
+          ["mission_areas[]", "mission_profile.mission_areas", "MissionArea.id / transitMinutes", "drives transit delay"]
+        ],
+        relations: [
+          ["aircraft.initial_ready", "limits how many tasks can be dispatched at the same minute"],
+          ["support_network.nodes[].capacity", "turnaround support at airports changes sortie recovery time"],
+          ["time.sample_every_minutes", "controls which mission states are materialized into frames"]
+        ],
+        functions: [
+          ["buildMissionSchedule()", "normalizes task windows, phases, airports, and areas"],
+          ["dispatch_phase()", "selects ready aircraft for due tasks"],
+          ["metrics_phase()", "updates mission completion, delay, and cancellation counters"],
+          ["FrameBuilder.mission_state()", "emits current task, airport, phase, and sortie state"]
+        ],
+        metrics: ["mission_success_rate", "sortie_completion_rate", "average_delay_minutes", "cancelled_sorties", "visualization_state_series"]
+      },
+      {
+        id: "aircraft",
+        label: "aircraft",
+        kind: "机队对象",
+        stage: "AircraftAgent[]",
+        fields: [
+          ["fleet_count", "simulation_inputs.aircraft.fleet_count", "AircraftAgent collection size", "creates one aircraft state per unit"],
+          ["initial_ready", "simulation_inputs.aircraft.initial_ready", "AircraftAgent.readiness", "sets starting available fleet"],
+          ["models[]", "simulation_inputs.aircraft.models", "AircraftAgent.model", "labels model-specific state and output grouping"]
+        ],
+        relations: [
+          ["mission_profile.composite_tasks[]", "tasks consume ready aircraft"],
+          ["equipment_tree.components[].failure_rate", "component failures reduce aircraft readiness"],
+          ["support_activities.activities[]", "repair actions can restore readiness"]
+        ],
+        functions: [
+          ["buildAircraftAgents()", "instantiates aircraft ids, model labels, and starting readiness"],
+          ["dispatch_phase()", "assigns tasks to ready aircraft"],
+          ["failure_phase()", "marks aircraft degraded when critical components fail"],
+          ["support_phase()", "returns aircraft to ready after completed support activities"]
+        ],
+        metrics: ["aircraft_availability", "mission_success_rate", "downtime_minutes", "ready_aircraft_count", "visualization_state_series"]
+      },
+      {
+        id: "equipment_tree",
+        label: "equipment_tree",
+        kind: "装备组成",
+        stage: "ComponentState[] / FailureProcess",
+        fields: [
+          ["components[].id", "equipment_tree.components[].id", "ComponentState.componentId", "stable reference for failures and support jobs"],
+          ["components[].quantity", "equipment_tree.components[].quantity", "ComponentState.quantity", "sets available redundant component count"],
+          ["components[].failure_rate", "equipment_tree.components[].failure_rate", "FailureProcess.rate", "samples minute-level failure risk"],
+          ["root_component_id", "equipment_tree.root_component_id", "ReliabilityBlockDiagram.root", "anchors aircraft readiness calculation"]
+        ],
+        relations: [
+          ["support_activities.activities[].equipment_id", "maps a failed component to repair/replacement DAG nodes"],
+          ["support_network.nodes[].inventory", "spare availability controls replacement path"],
+          ["reliability_block_diagram", "component state rolls up into aircraft mission-capable state"]
+        ],
+        functions: [
+          ["buildComponentStates()", "creates component counters and tree references"],
+          ["sampleFailures()", "uses seed and failure_rate to produce failure events"],
+          ["evaluateRbd()", "rolls component failures into aircraft readiness"],
+          ["EventLog.recordFailure()", "records failure event ids and metric refs"]
+        ],
+        metrics: ["lru_failure_count", "aircraft_availability", "downtime_minutes", "spare_shortfall_count", "visualization_state_series"]
+      },
+      {
+        id: "support_network",
+        label: "support_network",
+        kind: "保障网络",
+        stage: "SupportNode[] / InventoryStore",
+        fields: [
+          ["nodes[].id", "support_network.nodes[].id", "SupportNode.nodeId", "stable node for resources, inventory, and transport"],
+          ["personnel_capacity", "nodes[].personnel_capacity", "SupportNode.personnelAvailable", "limits concurrent labor-bound jobs"],
+          ["equipment_capacity", "nodes[].equipment_capacity", "SupportNode.equipmentAvailable", "limits equipment-bound jobs"],
+          ["inventory", "nodes[].inventory", "InventoryStore.onHand", "feeds replacement and shortage decisions"],
+          ["transport_policies", "nodes[].transport_policies", "TransportPolicy.transferMinutes", "models delay for cross-node spare movement"]
+        ],
+        relations: [
+          ["support_activities.activities[].resource_id", "jobs claim capacity from a support node"],
+          ["equipment_tree.components[].id", "inventory is keyed to component demand"],
+          ["mission_profile.airports[]", "node location affects aircraft recovery and turn time"]
+        ],
+        functions: [
+          ["buildSupportNetwork()", "creates resource pools, inventory stores, and transport policies"],
+          ["reserveCapacity()", "allocates personnel/equipment to runnable jobs"],
+          ["reserveSpare()", "reserves local spare or emits shortfall"],
+          ["moveInventory()", "applies transport policy and in-transit delay"]
+        ],
+        metrics: ["resource_utilization", "spare_fill_rate", "spare_shortfall_count", "transport_delay_minutes", "downtime_minutes"]
+      },
+      {
+        id: "support_activities",
+        label: "support_activities",
+        kind: "保障活动 DAG",
+        stage: "SupportActivityDAG",
+        fields: [
+          ["activities[].id", "support_activities.activities[].id", "SupportActivity.activityId", "stable DAG node id"],
+          ["activity_type", "activities[].activity_type", "SupportActivity.kind", "repair, replace, inspect, or transport semantics"],
+          ["equipment_id", "activities[].equipment_id", "SupportActivity.componentId", "binds activity to failed component"],
+          ["resource_id", "activities[].resource_id", "SupportActivity.supportNodeId", "binds activity to capacity and inventory"],
+          ["jobs[]", "activities[].jobs", "SupportJob.duration / predecessors", "drives blocking and completion order"]
+        ],
+        relations: [
+          ["equipment_tree.components[].id", "failure events instantiate activity demand"],
+          ["support_network.nodes[].capacity", "jobs cannot run without available capacity"],
+          ["aircraft.readiness", "activity completion can restore mission-capable state"]
+        ],
+        functions: [
+          ["buildSupportDag()", "normalizes job dependencies and resource references"],
+          ["startRunnableJobs()", "starts jobs whose predecessors and resources are available"],
+          ["advanceJobs()", "decrements remaining minutes on running jobs"],
+          ["completeActivity()", "updates component and aircraft state"]
+        ],
+        metrics: ["repair_completion_count", "mean_repair_minutes", "downtime_minutes", "resource_utilization", "event_log"]
+      },
+      {
+        id: "reliability_block_diagram",
+        label: "reliability_block_diagram",
+        kind: "可靠性结构",
+        stage: "RBD evaluator",
+        fields: [
+          ["nodes", "reliability_block_diagram.nodes", "RbdNode.componentRef", "defines dependency graph over components"],
+          ["edges", "reliability_block_diagram.edges", "RbdEdge.parentChild", "defines roll-up structure"],
+          ["logic", "reliability_block_diagram.logic", "RbdGate.type", "series/parallel style readiness rule"]
+        ],
+        relations: [
+          ["equipment_tree.components[].id", "RBD nodes must resolve to component state"],
+          ["aircraft.initial_ready", "RBD degradation changes ready vs grounded aircraft"],
+          ["support_activities", "completed repair changes RBD evaluation"]
+        ],
+        functions: [
+          ["buildRbdEvaluator()", "validates component references and gate rules"],
+          ["evaluateRbd()", "computes mission-capable state from component failures"],
+          ["metrics_phase()", "updates availability and downtime metrics"],
+          ["FrameBuilder.aircraft_state()", "includes readiness cause references"]
+        ],
+        metrics: ["aircraft_availability", "mission_reliability_indicator", "downtime_minutes", "grounding_causes", "visualization_state_series"]
+      },
+      {
+        id: "time_seed",
+        label: "time + seed",
+        kind: "时钟与随机源",
+        stage: "SimulationClock / RandomSource",
+        fields: [
+          ["tick_minutes", "time.tick_minutes", "SimulationClock.tickMinutes", "M9.7.2 single run uses minute ticks"],
+          ["sample_every_minutes", "time.sample_every_minutes", "FrameBuilder.sampleEveryMinutes", "controls frame materialization cadence"],
+          ["max_state_frames_single", "time.max_state_frames_single", "FrameBuilder.maxFrames", "prevents runaway state-series output"],
+          ["requested_steps", "time.requested_steps", "RunService steps", "bounds local synchronous execution"],
+          ["seed", "simulation_inputs.seed", "RandomSource.seed", "makes fixed-seed runs reproducible"]
+        ],
+        relations: [
+          ["equipment_tree.components[].failure_rate", "seed drives reproducible failure sampling"],
+          ["support_activities.jobs[].duration", "tick advances job remaining time"],
+          ["mission_profile.duration_minutes", "clock stop condition uses mission horizon"]
+        ],
+        functions: [
+          ["SimulationClock.advance()", "increments current minute by tick_minutes"],
+          ["RandomSource.failureDraw()", "produces deterministic random draws"],
+          ["shouldSampleFrame()", "checks sample_every_minutes and max frame cap"],
+          ["SnapshotBuilder.finalize()", "closes final state and trace references"]
+        ],
+        metrics: ["run_duration_minutes", "frame_count", "event_count", "deterministic_replay_hash", "visualization_state_series"]
+      }
+    ];
+
+    const metricCatalog = {
+      mission_success_rate: ["任务成功率", "result.metrics", "完成任务数 / 计划任务数"],
+      sortie_completion_rate: ["出动完成率", "result.metrics", "成功出动架次占比"],
+      average_delay_minutes: ["平均延误", "metrics.json", "任务、转场、维修共同导致的分钟级延误"],
+      cancelled_sorties: ["取消架次", "metrics.json", "因飞机不可用、资源不足或备件短缺取消的任务"],
+      visualization_state_series: ["状态序列回放", "visualization_state_series", "帧、事件、metric_refs 和 traceability"],
+      aircraft_availability: ["飞机可用度", "result.metrics", "ready aircraft / fleet count 的时间聚合"],
+      downtime_minutes: ["停机时间", "metrics.json", "故障、维修、备件和运输导致的不可用分钟"],
+      ready_aircraft_count: ["可用飞机数", "visualization_state_series", "每个采样帧的 ready aircraft 数量"],
+      lru_failure_count: ["LRU 故障数", "log.json", "按 component_id 聚合的故障事件数量"],
+      spare_shortfall_count: ["备件短缺次数", "metrics.json", "库存无法满足替换需求的次数"],
+      resource_utilization: ["保障资源利用率", "metrics.json", "人员/设备能力占用时间占比"],
+      spare_fill_rate: ["备件满足率", "metrics.json", "本地或运输后满足的备件需求占比"],
+      transport_delay_minutes: ["运输延误", "metrics.json", "跨节点调拨造成的累计等待分钟"],
+      repair_completion_count: ["维修完成数", "log.json", "SupportActivity 完成事件数量"],
+      mean_repair_minutes: ["平均维修时间", "metrics.json", "已完成维修活动的平均持续时间"],
+      event_log: ["事件流", "log.json", "故障、调度、维修、库存和指标事件"],
+      mission_reliability_indicator: ["任务可靠性标记", "result.metrics", "基于 RBD 与任务完成结果的成功/失败标记"],
+      grounding_causes: ["停场原因", "report.json", "导致飞机不可用的组件、资源和库存原因"],
+      run_duration_minutes: ["运行时长", "run", "仿真时钟覆盖的分钟数"],
+      frame_count: ["帧数量", "visualization_state_series", "实际输出的状态帧数量"],
+      event_count: ["事件数量", "log.json", "本次 single run 记录的事件总数"],
+      deterministic_replay_hash: ["复现哈希", "report.json", "seed、input payload 和状态输出的可复现摘要"]
+    };
+
+    function escapeHtml(value) {
+      return String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;");
+    }
+
+    function metricCard(metricId, active) {
+      const item = metricCatalog[metricId] || [metricId, "artifact", "未登记说明"];
+      return `
+        <article class="metric-card ${active ? "active" : ""}">
+          <strong>${escapeHtml(item[0])}</strong>
+          <span>${escapeHtml(item[2])}</span>
+          <span class="metric-artifact">${escapeHtml(item[1])}</span>
+        </article>
+      `;
+    }
+
+    let selectedObjectId = "mission_profile";
+    let selectedView = "network";
+
+    function renderObjectList(selectedId) {
+      const list = document.getElementById("object-list");
+      list.innerHTML = mappingData.map((item) => `
+        <button class="object-button" type="button" data-object-id="${escapeHtml(item.id)}" aria-pressed="${item.id === selectedId ? "true" : "false"}">
+          <span>
+            <span class="object-name">${escapeHtml(item.label)}</span>
+            <span class="object-kind">${escapeHtml(item.kind)} -> ${escapeHtml(item.stage)}</span>
+          </span>
+          <span class="object-count">${item.fields.length}</span>
+        </button>
+      `).join("");
+      for (const button of list.querySelectorAll("button[data-object-id]")) {
+        button.addEventListener("click", () => renderMapping(button.dataset.objectId));
+      }
+    }
+
+    function textBlock(lines, x, y, className, maxLength = 26) {
+      return `<text x="${x}" y="${y}" class="${className}">${
+        lines.flatMap((line) => {
+          const value = String(line);
+          const chunks = [];
+          for (let index = 0; index < value.length; index += maxLength) {
+            chunks.push(value.slice(index, index + maxLength));
+          }
+          return chunks.length ? chunks : [""];
+        }).map((chunk, index) => `<tspan x="${x}" dy="${index === 0 ? 0 : 15}">${escapeHtml(chunk)}</tspan>`).join("")
+      }</text>`;
+    }
+
+    function networkNode(node) {
+      return `
+        <rect x="${node.x}" y="${node.y}" width="${node.w}" height="${node.h}" rx="7" fill="${node.fill}" stroke="${node.stroke}"/>
+        ${textBlock([node.title, node.detail], node.x + 10, node.y + 20, node.titleClass || "kernel-box-title", node.maxLength || 24)}
+      `;
+    }
+
+    function networkEdge(from, to, dashed = false) {
+      const startX = from.x + from.w;
+      const startY = from.y + from.h / 2;
+      const endX = to.x;
+      const endY = to.y + to.h / 2;
+      const dash = dashed ? ' stroke-dasharray="5 5"' : "";
+      return `<path d="M ${startX} ${startY} C ${startX + 32} ${startY}, ${endX - 32} ${endY}, ${endX} ${endY}" stroke="#667085" stroke-width="1.6" fill="none"${dash} marker-end="url(#map-arrow)"/>`;
+    }
+
+    function renderNetworkDetail(item) {
+      const rows = Math.max(item.fields.length, item.metrics.length, item.functions.length);
+      const relationRows = Math.ceil(item.relations.length / 3);
+      const height = 120 + rows * 78 + relationRows * 66;
+      const fields = item.fields.map((field, index) => ({
+        x: 24, y: 70 + index * 78, w: 176, h: 58,
+        title: field[0], detail: field[1],
+        fill: "#eef6fd", stroke: "#79a8d4", maxLength: 22
+      }));
+      const modelFields = item.fields.map((field, index) => ({
+        x: 238, y: 70 + index * 78, w: 184, h: 58,
+        title: field[2], detail: field[3],
+        fill: "#fff4e8", stroke: "#d5a66f", maxLength: 24
+      }));
+      const functions = item.functions.map((fn, index) => ({
+        x: 474, y: 80 + index * 86, w: 160, h: 64,
+        title: fn[0], detail: fn[1],
+        fill: "#fff8ef", stroke: "#d5a66f", maxLength: 22
+      }));
+      const metrics = item.metrics.map((metricId, index) => {
+        const metric = metricCatalog[metricId] || [metricId, "artifact", "未登记说明"];
+        return {
+          x: 690, y: 70 + index * 78, w: 176, h: 58,
+          title: metric[0], detail: metric[1],
+          fill: "#eff8f0", stroke: "#82bd85", maxLength: 20
+        };
+      });
+      const relationY = 88 + rows * 78;
+      const relations = item.relations.map((relation, index) => ({
+        x: 24 + (index % 3) * 286, y: relationY + Math.floor(index / 3) * 66, w: 250, h: 48,
+        title: relation[0], detail: relation[1],
+        fill: "#fbfcfe", stroke: "#c9d2df", maxLength: 34
+      }));
+      const edges = [
+        ...fields.map((field, index) => networkEdge(field, modelFields[index])),
+        ...modelFields.map((field, index) => networkEdge(field, functions[index % functions.length])),
+        ...functions.slice(0, -1).map((fn, index) => networkEdge(fn, functions[index + 1])),
+        ...metrics.map((metric, index) => networkEdge(functions[Math.min(functions.length - 1, index % functions.length)], metric)),
+        ...relations.map((relation, index) => networkEdge(relation, functions[Math.min(functions.length - 1, index % functions.length)], true))
+      ].join("");
+
+      return `
+        <div class="mapping-header">
+          <div>
+            <h3>${escapeHtml(item.label)}</h3>
+            <p class="small">网络图把原始字段、模型对象字段、运行函数、相关字段和输出指标放在同一张依赖图里。</p>
+          </div>
+          <span class="mapping-stage">${escapeHtml(item.stage)}</span>
+        </div>
+        <div class="network-wrap" role="img" aria-label="${escapeHtml(item.label)} 字段函数指标网络图">
+          <svg class="network-svg" viewBox="0 0 900 ${height}" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <marker id="map-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="#667085"/>
+              </marker>
+            </defs>
+            <rect x="0" y="0" width="900" height="${height}" fill="#ffffff"/>
+            <text x="24" y="34" class="kernel-title">原始字段</text>
+            <text x="238" y="34" class="kernel-title">模型对象字段</text>
+            <text x="474" y="34" class="kernel-title">运行函数</text>
+            <text x="690" y="34" class="kernel-title">输出指标</text>
+            <text x="24" y="${relationY - 12}" class="kernel-title">相关对象字段</text>
+            ${edges}
+            ${fields.map(networkNode).join("")}
+            ${modelFields.map(networkNode).join("")}
+            ${functions.map(networkNode).join("")}
+            ${metrics.map(networkNode).join("")}
+            ${relations.map(networkNode).join("")}
+          </svg>
+        </div>
+        <div class="network-legend" aria-label="网络图图例">
+          <span><i class="network-dot" style="background:#eef6fd"></i>原始字段</span>
+          <span><i class="network-dot" style="background:#fff4e8"></i>模型对象字段</span>
+          <span><i class="network-dot" style="background:#fff8ef"></i>运行函数</span>
+          <span><i class="network-dot" style="background:#eff8f0"></i>输出指标</span>
+          <span><i class="network-dot" style="background:#fbfcfe"></i>相关字段</span>
+        </div>
+      `;
+    }
+
+    function renderTableDetail(item) {
+      return `
+        <div class="mapping-header">
+          <div>
+            <h3>${escapeHtml(item.label)}</h3>
+            <p class="small">${escapeHtml(item.kind)} 字段进入 ${escapeHtml(item.stage)}，再参与 single run 的函数链。</p>
+          </div>
+          <span class="mapping-stage">${escapeHtml(item.stage)}</span>
+        </div>
+
+        <h3>字段到模型对象字段</h3>
+        <div class="field-table">
+          ${item.fields.map((field) => `
+            <div class="field-row">
+              <div><strong>${escapeHtml(field[0])}</strong><br><span>${escapeHtml(field[1])}</span></div>
+              <div><strong>${escapeHtml(field[2])}</strong><br><span>模型对象字段</span></div>
+              <div><strong>${escapeHtml(field[3])}</strong><br><span>运行用途</span></div>
+            </div>
+          `).join("")}
+        </div>
+
+        <h3 style="margin-top: 16px;">相关对象字段</h3>
+        <div class="relation-grid">
+          ${item.relations.map((relation) => `
+            <article class="relation-card">
+              <strong>${escapeHtml(relation[0])}</strong>
+              <span>${escapeHtml(relation[1])}</span>
+            </article>
+          `).join("")}
+        </div>
+
+        <h3 style="margin-top: 16px;">进入模型后的函数关系</h3>
+        <div class="function-chain">
+          ${item.functions.map((fn, index) => `
+            <article class="function-step">
+              <strong>${index + 1}. ${escapeHtml(fn[0])}</strong>
+              <span>${escapeHtml(fn[1])}</span>
+            </article>
+          `).join("")}
+        </div>
+      `;
+    }
+
+    function syncViewToggle() {
+      for (const button of document.querySelectorAll("[data-view]")) {
+        button.setAttribute("aria-pressed", button.dataset.view === selectedView ? "true" : "false");
+      }
+    }
+
+    function renderMapping(selectedId) {
+      selectedObjectId = selectedId;
+      const item = mappingData.find((entry) => entry.id === selectedId) || mappingData[0];
+      renderObjectList(item.id);
+      syncViewToggle();
+      document.getElementById("mapping-detail").innerHTML =
+        selectedView === "network" ? renderNetworkDetail(item) : renderTableDetail(item);
+
+      const activeMetrics = new Set(item.metrics);
+      const orderedMetrics = [...item.metrics, ...Object.keys(metricCatalog).filter((metric) => !activeMetrics.has(metric)).slice(0, 5)];
+      document.getElementById("metric-detail").innerHTML = `
+        <div class="mapping-header">
+          <div>
+            <h3>输出指标</h3>
+            <p class="small">高亮项是当前对象直接影响的输出。</p>
+          </div>
+          <span class="mapping-stage">${item.metrics.length} direct</span>
+        </div>
+        <div class="metric-grid">
+          ${orderedMetrics.map((metric) => metricCard(metric, activeMetrics.has(metric))).join("")}
+        </div>
+      `;
+    }
+
+    for (const button of document.querySelectorAll("[data-view]")) {
+      button.addEventListener("click", () => {
+        selectedView = button.dataset.view || "network";
+        renderMapping(selectedObjectId);
+      });
+    }
+
+    renderMapping(selectedObjectId);
+  </script>
+</body>
+</html>
