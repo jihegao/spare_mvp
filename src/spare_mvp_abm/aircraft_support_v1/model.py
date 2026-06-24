@@ -88,6 +88,7 @@ class MissionState:
     required_aircraft_type: str = ""
     group_name: str = ""
     wave_index: int = 1
+    day_index: int = 1
 
 
 @dataclass
@@ -490,6 +491,9 @@ class AircraftSupportV1Model:
                     planned_start = first_start + repeat * interval
                     if planned_start > self.duration_minutes:
                         continue
+                    day_index = planned_start // 1440 + 1
+                    day_start = planned_start % 1440
+                    wave_index = max(1, int((day_start - first_start) // interval) + 1) if day_start >= first_start else repeat + 1
                     mission_id = str(item.get("id") or composite.get("id") or f"mission-{len(missions) + 1}")
                     missions.append(
                         MissionState(
@@ -510,7 +514,8 @@ class AircraftSupportV1Model:
                             basic_task_name=str(item.get("basicTaskName") or basic.get("name") or ""),
                             required_aircraft_type=str(item.get("equipmentType") or basic.get("equipmentType") or ""),
                             group_name=str(item.get("groupName") or ""),
-                            wave_index=repeat + 1,
+                            wave_index=wave_index,
+                            day_index=day_index,
                         )
                     )
         if not missions:
@@ -529,6 +534,7 @@ class AircraftSupportV1Model:
                     basic_task_id=str(basic.get("id") or basic.get("missionId") or ""),
                     basic_task_name=str(basic.get("name") or "mission"),
                     required_aircraft_type=str(basic.get("equipmentType") or ""),
+                    day_index=planned_start // 1440 + 1,
                 )
             )
         return sorted(missions, key=lambda item: (item.planned_start, item.priority))
@@ -895,6 +901,7 @@ class AircraftSupportV1Model:
             "basic_task_name": item.basic_task_name or item.name,
             "group_name": item.group_name,
             "wave_index": item.wave_index,
+            "day_index": item.day_index,
             "duration_minutes": item.duration_minutes,
             "preparation_start": item.preparation_start,
             "status": item.status,

@@ -544,10 +544,10 @@ test("mesa visualization escapes contract-provider fields before innerHTML inser
   );
   const aircraftSource = appSource.slice(
     appSource.indexOf("function renderMesaAircraftPanel"),
-    appSource.indexOf("function renderMesaMissionPanel")
+    appSource.indexOf("function renderMesaSupportPanel")
   );
   const missionSource = appSource.slice(
-    appSource.indexOf("function renderMesaMissionPanel"),
+    appSource.indexOf("function renderMissionScheduleRow"),
     appSource.indexOf("function renderMesaSupportPanel")
   );
   const supportSource = appSource.slice(
@@ -572,8 +572,9 @@ test("mesa visualization escapes contract-provider fields before innerHTML inser
   assert.match(aircraftSource, /htmlEscape\(selectedAircraft\.failedLru/);
   assert.doesNotMatch(aircraftSource, /\$\{selectedAircraft\.label\}/);
 
-  assert.match(missionSource, /htmlEscape\(mission\.basicTaskName \|\| mission\.name \|\| mission\.id\)/);
-  assert.match(missionSource, /htmlEscape\(row\.label\)/);
+  assert.match(missionSource, /htmlEscape\(row\.basicTaskName\)/);
+  assert.match(missionSource, /htmlEscape\(row\.id\)/);
+  assert.match(missionSource, /htmlEscape\(row\.dayIndex\)/);
   assert.match(missionSource, /assignedTailNumbers\.map/);
   assert.match(missionSource, /htmlEscape\(tailNumber\)/);
   assert.doesNotMatch(missionSource, /assignedTailNumbers\.join\(" \/ "\)/);
@@ -2462,11 +2463,23 @@ test("visual simulation layout matches operational dashboard requirements", asyn
   assert.match(stageSource, /要求型号 \/ 数量/);
   assert.match(stageSource, /实际执行飞机/);
   assert.match(stageSource, /每日甘特图/);
-  assert.match(stageSource, /buildMissionScheduleRows\(state\.missions, state\.aircraft\)/);
-  assert.match(stageSource, /inferMissionAircraftType\(mission, aircraft\)/);
+  assert.match(stageSource, /buildMissionScheduleRows\(state\.missions\)/);
+  assert.match(stageSource, /hasFormalMissionScheduleFields/);
+  assert.match(stageSource, /day_index、wave_index、duration_minutes/);
+  assert.match(stageSource, /mission\.periodicTaskName/);
+  assert.match(stageSource, /type !== "periodic"/);
+  assert.match(stageSource, /type === "basic"/);
+  assert.match(stageSource, /numbers\.durationMinutes > 0/);
   assert.doesNotMatch(stageSource, /mesa-mission-cards/);
-  assert.match(appSource, /任务成员飞机/);
+  assert.doesNotMatch(appSource, /任务状态<\/h3>/);
+  assert.doesNotMatch(appSource, /任务成员飞机/);
+  assert.doesNotMatch(appSource, /function renderMesaMissionPanel/);
+  assert.doesNotMatch(appSource, /inferMissionAircraftType/);
+  assert.doesNotMatch(appSource, /requiredAircraftType: item\.required_aircraft_type \|\| item\.aircraft_type/);
+  assert.doesNotMatch(stageSource, /row\.requiredAircraftType \|\|/);
+  assert.match(appSource, /mission-expanded/);
   assert.match(styleSource, /\.mission-schedule-row[\s\S]*grid-template-columns/);
+  assert.match(styleSource, /\.mesa-visual-grid\.mission-expanded[\s\S]*grid-template-columns: minmax\(0, 1fr\)/);
   assert.match(stageSource, /保障人员/);
   assert.match(stageSource, /按保障组织 \/ 人员专业/);
   assert.match(stageSource, /保障设备详情清单/);
@@ -2537,7 +2550,7 @@ test("visual simulation places event trace at the bottom of the page", async () 
     appSource.indexOf("function renderVisualizationRunOptions")
   );
 
-  const gridIndex = visualSource.indexOf('class="mesa-visual-grid"');
+  const gridIndex = visualSource.indexOf('class="mesa-visual-grid ${activeView === "mission" ? "mission-expanded" : ""}"');
   const eventTraceIndex = visualSource.indexOf("renderVisualizationEventStream(eventStream, visualizationReplayIndex)");
   assert.ok(gridIndex > -1, "visual simulation grid should render");
   assert.ok(eventTraceIndex > -1, "event trace should render");

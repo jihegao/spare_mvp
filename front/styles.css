@@ -1821,6 +1821,10 @@ tr.selected-table-row {
   align-items: stretch;
 }
 
+.mesa-visual-grid.mission-expanded {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .mesa-stage-panel,
 .mesa-side-panel {
   min-width: 0;
@@ -1996,7 +2000,6 @@ tr.selected-table-row {
   white-space: nowrap;
 }
 
-.mission-status-summary,
 .mesa-support-dashboard {
   display: grid;
   gap: 10px;

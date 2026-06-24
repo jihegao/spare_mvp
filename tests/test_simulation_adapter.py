@@ -395,11 +395,19 @@ class SimulationAdapterTest(unittest.TestCase):
             self.assertIn("jobs", frame)
             self.assertIn("events", frame)
         first_mission = state_payload["frames"][0]["missions"][0]
+        first_frame_missions = state_payload["frames"][0]["missions"]
+        self.assertGreater(max(mission["wave_index"] for mission in first_frame_missions), 1)
+        self.assertTrue(all(mission["day_index"] >= 1 for mission in first_frame_missions))
+        self.assertTrue(all(mission["duration_minutes"] > 0 for mission in first_frame_missions))
+        self.assertTrue(all(mission["required_aircraft"] > 0 for mission in first_frame_missions))
+        self.assertTrue(all(mission["required_aircraft_type"] for mission in first_frame_missions))
         self.assertEqual(first_mission["task_category"], "periodic")
         self.assertEqual(first_mission["periodic_task_name"], "航母昼夜保障周期任务")
         self.assertEqual(first_mission["composite_task_name"], "昼间制空复合任务")
         self.assertEqual(first_mission["basic_task_name"], "近海制空巡逻任务")
         self.assertEqual(first_mission["required_aircraft_type"], "J-15")
+        self.assertEqual(first_mission["day_index"], 1)
+        self.assertEqual(first_mission["wave_index"], 1)
         self.assertIn("duration_minutes", first_mission)
 
         scope = report_payload["m9_7_4_behavior_scope"]

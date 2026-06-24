@@ -6574,13 +6574,11 @@ function renderVisualSimulation(page) {
         </div>
         <input type="range" min="0" max="${timelineMax}" value="${Math.min(visualizationReplayIndex, timelineMax)}" data-mesa-timeline ${visualizationStateSeriesFrame && !isOnlineStreamFrame ? "" : "disabled"} aria-label="M9 state_series 时间轴">
       </div>
-      <div class="mesa-visual-grid">
+      <div class="mesa-visual-grid ${activeView === "mission" ? "mission-expanded" : ""}">
         <section class="mesa-stage-panel">
           ${renderMesaStage(activeView, state, availabilityTrend)}
         </section>
-        <aside class="mesa-side-panel">
-          ${renderMesaSidePanel(activeView, state)}
-        </aside>
+        ${activeView === "mission" ? "" : `<aside class="mesa-side-panel">${renderMesaSidePanel(activeView, state)}</aside>`}
       </div>
       ${renderVisualizationEventStream(eventStream, visualizationReplayIndex)}
     </div>
@@ -6735,7 +6733,18 @@ function renderMesaAircraftStage(state, availabilityTrend) {
 }
 
 function renderMesaMissionStage(state) {
-  const rows = buildMissionScheduleRows(state.missions, state.aircraft);
+  const rows = buildMissionScheduleRows(state.missions);
+  if (state.missions.length && rows.length !== state.missions.length) {
+    return `
+      <div class="mesa-stage mission-schedule-stage">
+        <div class="section-head">
+          <h3>任务计划甘特图</h3>
+          <span>缺少正式任务计划字段</span>
+        </div>
+        <div class="event warning">当前 state_series 未携带 day_index、wave_index、duration_minutes、周期任务、复合任务、基本任务、要求型号或要求数量字段。请重新运行 aircraft_support_v1 正式仿真生成新的任务计划状态序列；前端不再根据旧 artifact 的 id/name/aircraft_type 兜底推断。</div>
+      </div>
+    `;
+  }
   const groups = groupMissionScheduleRows(rows);
   return `
     <div class="mesa-stage mission-schedule-stage">
@@ -6763,29 +6772,25 @@ function renderMesaMissionStage(state) {
   `;
 }
 
-function buildMissionScheduleRows(missions, aircraft = []) {
-  return missions.map((mission) => {
+function buildMissionScheduleRows(missions) {
+  return missions.filter(hasFormalMissionScheduleFields).map((mission) => {
     const plannedStart = Number(mission.plannedStart || 0);
     const duration = Number(mission.durationMinutes || 0);
-    const fallbackEnd = plannedStart + Math.max(30, duration || 60);
-    const endMinute = Number(mission.returnTime ?? mission.actualStart ?? fallbackEnd);
-    const dayIndex = Math.floor(plannedStart / 1440) + 1;
+    const endMinute = Number(mission.returnTime ?? (plannedStart + duration));
+    const dayIndex = Number(mission.dayIndex);
     const dayStart = ((plannedStart % 1440) + 1440) % 1440;
     const dayEnd = Math.max(dayStart + 15, Math.min(1440, endMinute - (dayIndex - 1) * 1440));
     const startPct = boundedPercent(dayStart / 1440);
     const widthPct = Math.max(2, boundedPercent((dayEnd - dayStart) / 1440));
-    const type = mission.taskCategory || inferMissionTaskCategory(mission);
-    const periodicName = mission.periodicTaskName || (type === "periodic" ? "周期性任务" : "");
-    const compositeName = mission.compositeTaskName || inferCompositeTaskName(mission);
     return {
       id: mission.id,
-      type,
-      periodicName,
-      compositeName,
-      basicTaskName: mission.basicTaskName || mission.name || `任务 ${mission.id}`,
+      type: mission.taskCategory,
+      periodicName: mission.periodicTaskName,
+      compositeName: mission.compositeTaskName,
+      basicTaskName: mission.basicTaskName,
       groupName: mission.groupName || "",
-      waveIndex: mission.waveIndex || "",
-      requiredAircraftType: mission.requiredAircraftType || inferMissionAircraftType(mission, aircraft),
+      waveIndex: mission.waveIndex,
+      requiredAircraftType: mission.requiredAircraftType,
       requiredAircraft: Number(mission.requiredAircraft || 0),
       assignedTailNumbers: mission.assignedTailNumbers || [],
       status: mission.status,
@@ -6802,6 +6807,37 @@ function buildMissionScheduleRows(missions, aircraft = []) {
   }).sort((a, b) => a.plannedStart - b.plannedStart || String(a.id).localeCompare(String(b.id)));
 }
 
+function hasFormalMissionScheduleFields(mission) {
+  const textFieldsPresent = [
+    mission.taskCategory,
+    mission.basicTaskName,
+    mission.requiredAircraftType,
+  ].every((value) => value !== null && value !== undefined && String(value).trim() !== "");
+  const type = String(mission.taskCategory || "").trim();
+  const periodicFieldsPresent = type !== "periodic" || String(mission.periodicTaskName || "").trim() !== "";
+  const compositeFieldsPresent = type === "basic" || String(mission.compositeTaskName || "").trim() !== "";
+  const numbers = {
+    requiredAircraft: Number(mission.requiredAircraft),
+    dayIndex: Number(mission.dayIndex),
+    waveIndex: Number(mission.waveIndex),
+    plannedStart: Number(mission.plannedStart),
+    durationMinutes: Number(mission.durationMinutes),
+  };
+  return textFieldsPresent
+    && periodicFieldsPresent
+    && compositeFieldsPresent
+    && Number.isFinite(numbers.plannedStart)
+    && numbers.plannedStart >= 0
+    && Number.isFinite(numbers.requiredAircraft)
+    && numbers.requiredAircraft > 0
+    && Number.isFinite(numbers.dayIndex)
+    && numbers.dayIndex > 0
+    && Number.isFinite(numbers.waveIndex)
+    && numbers.waveIndex > 0
+    && Number.isFinite(numbers.durationMinutes)
+    && numbers.durationMinutes > 0;
+}
+
 function groupMissionScheduleRows(rows) {
   const groups = [];
   const byKey = new Map();
@@ -6809,8 +6845,9 @@ function groupMissionScheduleRows(rows) {
     const key = `${row.type}:${row.periodicName}:${row.compositeName}`;
     if (!byKey.has(key)) {
       const typeLabel = row.type === "periodic" ? "周期性任务" : row.type === "basic" ? "基本任务" : "复合任务";
-      const parts = [`${typeLabel}：${row.periodicName || row.compositeName || row.basicTaskName}`];
-      if (row.compositeName && row.periodicName) parts.push(`复合任务：${row.compositeName}`);
+      const parts = row.type === "periodic" && row.periodicName
+        ? [`周期性任务：${row.periodicName}`, `复合任务：${row.compositeName}`]
+        : [`${typeLabel}：${row.compositeName || row.basicTaskName}`];
       const group = { key, title: parts.join(" / "), rows: [] };
       byKey.set(key, group);
       groups.push(group);
@@ -6824,7 +6861,7 @@ function renderMissionScheduleRow(row) {
   const assigned = row.assignedTailNumbers.length
     ? row.assignedTailNumbers.map((tailNumber) => htmlEscape(tailNumber)).join(" / ")
     : "未编组";
-  const requirement = `${row.requiredAircraftType || "未指定型号"} / ${row.requiredAircraft || 0} 架`;
+  const requirement = `${row.requiredAircraftType} / ${row.requiredAircraft} 架`;
   const attrs = [
     `第 ${row.dayIndex} 天`,
     row.groupName ? `编队 ${row.groupName}` : "",
@@ -6940,7 +6977,6 @@ function spareMetricRows(spares) {
 }
 
 function renderMesaSidePanel(activeView, state) {
-  if (activeView === "mission") return renderMesaMissionPanel(state);
   if (activeView === "support") return renderMesaSupportPanel(state);
   return renderMesaAircraftPanel(state);
 }
@@ -6958,38 +6994,6 @@ function renderMesaAircraftPanel(state) {
     <h4>飞机内部装备</h4>
     <div class="event info"><strong>${htmlEscape(selectedAircraft.label)}</strong> 系统数量 ${htmlEscape(selectedAircraft.systemCount)} / 失效 LRU ${htmlEscape(selectedAircraft.failedLru || "-")}</div>
   `;
-}
-
-function renderMesaMissionPanel(state) {
-  const statusRows = missionStatusSummaryRows(state.missions);
-  return `
-    <div class="section-head">
-      <h3>任务状态</h3>
-      <span>${state.missions.length} 个基本任务</span>
-    </div>
-    <div class="mission-status-summary">
-      ${statusRows.map((row) => `<div class="metric-line"><strong>${htmlEscape(row.label)}</strong><div class="bar"><span style="width:${htmlEscape(row.width)}%"></span></div><span>${htmlEscape(row.count)}</span></div>`).join("")}
-    </div>
-    <h4>任务成员飞机</h4>
-    <div class="stack-list">
-      ${state.missions.map((mission) => `<div class="job"><span>${htmlEscape(mission.basicTaskName || mission.name || mission.id)}</span><strong>${mission.assignedTailNumbers.length ? mission.assignedTailNumbers.map((tailNumber) => htmlEscape(tailNumber)).join(" / ") : "未编组"}</strong></div>`).join("")}
-    </div>
-  `;
-}
-
-function missionStatusSummaryRows(missions) {
-  const total = Math.max(1, missions.length);
-  const statuses = [
-    ["执行中", (mission) => ["launched", "flying"].includes(String(mission.status))],
-    ["计划中", (mission) => ["scheduled", "planned"].includes(String(mission.status))],
-    ["延误", (mission) => String(mission.status) === "delayed"],
-    ["完成/成功", (mission) => ["completed", "succeeded"].includes(String(mission.status))],
-    ["取消/失败", (mission) => ["cancelled", "failed"].includes(String(mission.status))],
-  ];
-  return statuses.map(([label, predicate]) => {
-    const count = missions.filter(predicate).length;
-    return { label, count, width: Math.round((count / total) * 100) };
-  }).filter((row) => row.count > 0 || row.label === "计划中");
 }
 
 function renderMesaSupportPanel(state) {
@@ -7016,34 +7020,6 @@ function missionProgressWidth(mission) {
   if (mission.status === "launched" || mission.status === "flying") return 72;
   if (mission.status === "delayed") return 36;
   return 18;
-}
-
-function inferMissionTaskCategory(mission) {
-  const id = String(mission.id || "").toLowerCase();
-  if (mission.periodicTaskName || id.includes("periodic")) return "periodic";
-  if (mission.compositeTaskName || id.includes("composite") || id.includes("day-cap")) return "composite";
-  return "basic";
-}
-
-function inferCompositeTaskName(mission) {
-  const id = String(mission.id || "");
-  if (mission.compositeTaskName) return mission.compositeTaskName;
-  if (id.includes("day-cap")) return "典型日剖面";
-  if (id.includes("composite")) return "复合任务";
-  return "";
-}
-
-function inferMissionAircraftType(mission, aircraft = []) {
-  if (mission.requiredAircraftType) return mission.requiredAircraftType;
-  const assigned = Array.isArray(mission.assignedTailNumbers) ? mission.assignedTailNumbers : [];
-  const matchedTypes = assigned
-    .map((tailNumber) => aircraft.find((item) => item.label === tailNumber || item.id === tailNumber)?.type)
-    .filter(Boolean);
-  if (matchedTypes.length > 0) return Array.from(new Set(matchedTypes)).join(" / ");
-  const fleetTypes = Array.from(new Set((aircraft || []).map((item) => item.type).filter(Boolean)));
-  if (fleetTypes.length === 1) return fleetTypes[0];
-  if (fleetTypes.length > 1) return `${fleetTypes[0]}等`;
-  return "未指定型号";
 }
 
 function minuteOfDayLabel(minutes) {
