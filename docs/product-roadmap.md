@@ -562,17 +562,19 @@ M8.0 当前收束：`docs/superpowers/specs/2026-06-21-m8-projection-payload-ana
 
 1. 前端可视化仿真页通过平台 Project/ExperimentPlan 选择正式模型族并提交 canonical `/api/runs`，不跳转到 `independent-mesa/server.py` 或 `8765` 旁路入口。
 2. 状态回放只通过 `/api/runs/{run_id}/artifacts/{artifact_id}` 下载 `visualization_state_series`；在线展示继续使用 `/api/runs/{run_id}/state-stream`；四类分析页只消费 run projection payload。
-3. `independent-mesa/GLM` 和 `independent-mesa/GPT` 作为历史参考或开发对照归档，必要时保留离线复现实验命令，但不再由 `scripts/start-system.sh` 作为平台运行必需服务启动。
-4. 删除或标记过期所有把 `independent-mesa`、`8765`、静态 HTML 输出当作正式产品入口的 README、roadmap、agent 约束、测试和启动脚本引用。
-5. 浏览器 smoke 覆盖完整平台流：导入案例数据、创建方案、启动正式 single run、回放状态序列、启动 Monte Carlo、查看四类正式分析结果。
+3. 可视化仿真任务视图直接消费 `visualization_state_series.missions[]` 的任务属性，将任务计划表与每日甘特图合并，按周期性任务 / 复合任务 / 基本任务展示要求型号、数量、实际执行飞机和状态。
+4. `independent-mesa/GLM` 和 `independent-mesa/GPT` 作为历史参考或开发对照归档，必要时保留离线复现实验命令，但不再由 `scripts/start-system.sh` 作为平台运行必需服务启动。
+5. 删除或标记过期所有把 `independent-mesa`、`8765`、静态 HTML 输出当作正式产品入口的 README、roadmap、agent 约束、测试和启动脚本引用。
+6. 浏览器 smoke 覆盖完整平台流：导入案例数据、创建方案、启动正式 single run、回放状态序列、启动 Monte Carlo、查看四类正式分析结果。
 
 完成标准：
 
 1. 正式平台流程中搜索不到对 `independent-mesa` 服务地址或静态输出目录的运行依赖；如有引用，只能是归档说明、迁移记录或离线开发参考。
 2. `scripts/start-system.sh` 启动平台所需服务时不再强制启动 `independent-mesa/server.py`。
-3. 从平台入口完成 M9.6 案例的 single、Monte Carlo、状态回放和四类分析，且所有结果来源都是 canonical run artifacts。
+3. 任务视图不再拆成独立任务计划表和任务卡片，主工作区以一张合并甘特表展示周期/复合/基本任务属性、每日时间条、要求型号/数量、实际执行飞机和状态。
+4. 从平台入口完成 M9.6 案例的 single、Monte Carlo、状态回放和四类分析，且所有结果来源都是 canonical run artifacts。
 
-当前收束：M9.8 已完成平台嵌入和 `independent-mesa` 退役。前端 RunIntent 默认使用 `aircraft_support_v1`，可视化仿真页、单次正式 run、Monte Carlo run 和四类分析页均通过 canonical `/api/runs`、`/api/runs/{run_id}/artifacts/{artifact_id}` 与 `/api/runs/{run_id}/state-stream` 读取正式数据；缺 projection、缺 state-series 或 payload 校验失败时仍 fail closed。`scripts/start-system.sh` 只启动平台同源 app 和 Mesa contract provider，不再启动 `independent-mesa/server.py` 或监听 `8765`。`independent-mesa/GLM` 与 `independent-mesa/GPT` 保留为历史参考、开发对照和离线复现实验，不再是正式产品入口。
+当前收束：M9.8 已完成平台嵌入和 `independent-mesa` 退役。前端 RunIntent 默认使用 `aircraft_support_v1`，可视化仿真页、单次正式 run、Monte Carlo run 和四类分析页均通过 canonical `/api/runs`、`/api/runs/{run_id}/artifacts/{artifact_id}` 与 `/api/runs/{run_id}/state-stream` 读取正式数据；缺 projection、缺 state-series 或 payload 校验失败时仍 fail closed。任务视图已合并任务计划表和每日甘特图，按周期性任务 / 复合任务 / 基本任务属性展示要求型号、数量、实际执行飞机和状态。`scripts/start-system.sh` 只启动平台同源 app 和 Mesa contract provider，不再启动 `independent-mesa/server.py` 或监听 `8765`。`independent-mesa/GLM` 与 `independent-mesa/GPT` 保留为历史参考、开发对照和离线复现实验，不再是正式产品入口。
 
 ## M10：工程质量和自动化测试
 

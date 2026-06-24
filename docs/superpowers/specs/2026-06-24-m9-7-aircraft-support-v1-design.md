@@ -188,6 +188,7 @@ M9.7 拆成四个 PR 验收，最后一个 PR 才标记 M9.7 完成。
 - 实现 Mesa 外壳、飞机 agent、任务调度、装备故障、保障活动 DAG、保障资源/库存/运输、可靠性/RMS 和状态帧构造。
 - single run 使用 `tick_minutes=1`、`sample_every_minutes=30`、固定事件阶段顺序。
 - single run 产出 result summary、artifact manifest、run chain、metrics、report、log 和 `visualization_state_series`。
+- `visualization_state_series.frames[].missions[]` 携带任务计划属性：周期任务、复合任务、基本任务、要求机型/数量、波次、任务时长、计划/实际时间和实际执行飞机，供平台任务视图合并显示任务计划表与每日甘特图。
 
 完成标准：
 
@@ -195,7 +196,7 @@ M9.7 拆成四个 PR 验收，最后一个 PR 才标记 M9.7 完成。
 - M9.6 case package 能通过 canonical `/api/runs` single run 成功执行。
 - 缺 projection、缺 state-series、缺 compiler provenance 或 unsupported 字段族时 fail closed。
 
-当前完成口径：M9.7.2 已落地可合并 single-run core；M9.7.3 已补齐 formal Monte Carlo/projection；M9.7.4 已关闭 coverage hardening。最终行为驱动字段为机队数量/初始可用、任务波次、`components[].failureDistribution`、组件故障率/寿命/RMS/k-out-of-n、`reliabilityBlockDiagram`、保障资源容量、库存、`supportNodes[].transportPolicies`、保障活动 job DAG、周期任务、任务阶段/机场/任务区、Monte Carlo sweep 与 seed；这些字段进入状态推进、故障判定、任务出动、维修/保障作业、资源约束、备件消耗、指标和状态帧。`supportOrganization` 当前批准为 governance_only / 不驱动仿真字段，进入 provenance 而不阻断 M9.6 frozen 案例。
+当前完成口径：M9.7.2 已落地可合并 single-run core；M9.7.3 已补齐 formal Monte Carlo/projection；M9.7.4 已关闭 coverage hardening。最终行为驱动字段为机队数量/初始可用、任务波次、`components[].failureDistribution`、组件故障率/寿命/RMS/k-out-of-n、`reliabilityBlockDiagram`、保障资源容量、库存、`supportNodes[].transportPolicies`、保障活动 job DAG、周期任务、任务阶段/机场/任务区、Monte Carlo sweep 与 seed；这些字段进入状态推进、故障判定、任务出动、维修/保障作业、资源约束、备件消耗、指标和状态帧。任务状态帧已保留周期/复合/基本任务属性、要求机型/数量、波次和实际执行飞机，供 M9.8 平台任务视图按每日甘特表消费。`supportOrganization` 当前批准为 governance_only / 不驱动仿真字段，进入 provenance 而不阻断 M9.6 frozen 案例。
 
 #### M9.7.3 Monte Carlo/projection
 

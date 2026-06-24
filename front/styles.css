@@ -1889,65 +1889,117 @@ tr.selected-table-row {
   color: var(--ink);
 }
 
-.mesa-gantt {
-  display: grid;
-  gap: 10px;
+.mission-schedule-stage {
+  min-width: 0;
 }
 
-.mesa-gantt-row {
-  display: grid;
-  grid-template-columns: 72px minmax(0, 1fr) 72px;
-  gap: 10px;
-  align-items: center;
-  padding: 10px;
+.mission-schedule-table {
+  min-width: 760px;
+  overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fff;
 }
 
-.mesa-gantt-row span,
-.mesa-gantt-row strong {
+.mission-schedule-header,
+.mission-schedule-row {
+  display: grid;
+  grid-template-columns: 1.1fr 1.25fr 0.9fr 1fr 0.62fr minmax(220px, 1.6fr);
+  gap: 10px;
+  align-items: center;
+}
+
+.mission-schedule-header {
+  padding: 10px 12px;
+  background: #f8fafc;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.mission-plan-group + .mission-plan-group {
+  border-top: 1px solid var(--line);
+}
+
+.mission-plan-group-title {
+  padding: 9px 12px;
+  background: #eef6ff;
+  color: #174a87;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.mission-schedule-row {
+  padding: 10px 12px;
+  border-top: 1px solid #eef2f7;
   font-size: 12px;
 }
 
-.mesa-gantt-track {
-  position: relative;
-  height: 18px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: #e2e8f0;
+.mission-schedule-row > div {
+  min-width: 0;
 }
 
-.mesa-gantt-track i {
+.mission-schedule-row strong,
+.mission-schedule-row small {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mission-schedule-row small {
+  margin-top: 2px;
+  color: var(--muted);
+}
+
+.mission-day-gantt {
+  display: grid;
+  gap: 4px;
+}
+
+.mission-day-axis {
+  display: flex;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.mission-day-track {
+  position: relative;
+  height: 22px;
+  overflow: hidden;
+  border-radius: 999px;
+  background:
+    linear-gradient(90deg, transparent calc(25% - 1px), #dbe4ef calc(25% - 1px), #dbe4ef 25%, transparent 25%),
+    linear-gradient(90deg, transparent calc(50% - 1px), #dbe4ef calc(50% - 1px), #dbe4ef 50%, transparent 50%),
+    linear-gradient(90deg, transparent calc(75% - 1px), #dbe4ef calc(75% - 1px), #dbe4ef 75%, transparent 75%),
+    #e8eef5;
+}
+
+.mission-day-track i {
   position: absolute;
-  top: 3px;
-  bottom: 3px;
+  top: 4px;
+  bottom: 4px;
+  min-width: 12px;
   border-radius: 999px;
   background: linear-gradient(90deg, var(--primary), var(--teal));
 }
 
-.mesa-mission-cards,
+.mission-day-track b {
+  position: absolute;
+  top: -18px;
+  left: 0;
+  color: var(--muted);
+  font-size: 10px;
+  font-style: normal;
+  white-space: nowrap;
+}
+
+.mission-status-summary,
 .mesa-support-dashboard {
   display: grid;
   gap: 10px;
-}
-
-.mesa-mission-cards {
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-}
-
-.mission-card {
-  display: grid;
-  gap: 5px;
-  padding: 10px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #fff;
-}
-
-.mission-card span,
-.mission-card small {
-  color: var(--muted);
 }
 
 .support-metric-list {
@@ -2357,9 +2409,12 @@ tr.selected-table-row {
   }
 
   .mesa-kpi-strip,
-  .mesa-gantt-row,
   .support-metric-row {
     grid-template-columns: 1fr;
+  }
+
+  .mission-schedule-stage {
+    overflow-x: auto;
   }
 
   .mesa-visual-header,

@@ -394,6 +394,13 @@ class SimulationAdapterTest(unittest.TestCase):
             self.assertIn("spares", frame)
             self.assertIn("jobs", frame)
             self.assertIn("events", frame)
+        first_mission = state_payload["frames"][0]["missions"][0]
+        self.assertEqual(first_mission["task_category"], "periodic")
+        self.assertEqual(first_mission["periodic_task_name"], "航母昼夜保障周期任务")
+        self.assertEqual(first_mission["composite_task_name"], "昼间制空复合任务")
+        self.assertEqual(first_mission["basic_task_name"], "近海制空巡逻任务")
+        self.assertEqual(first_mission["required_aircraft_type"], "J-15")
+        self.assertIn("duration_minutes", first_mission)
 
         scope = report_payload["m9_7_4_behavior_scope"]
         self.assertIn("equipment.quantity", scope["behavior_driving_fields"])

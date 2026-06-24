@@ -78,6 +78,16 @@ class MissionState:
     assigned_tail_numbers: list[str] = field(default_factory=list)
     preflight_created: bool = False
     delay_minutes: int = 0
+    task_category: str = "basic"
+    periodic_task_id: str = ""
+    periodic_task_name: str = ""
+    composite_task_id: str = ""
+    composite_task_name: str = ""
+    basic_task_id: str = ""
+    basic_task_name: str = ""
+    required_aircraft_type: str = ""
+    group_name: str = ""
+    wave_index: int = 1
 
 
 @dataclass
@@ -460,9 +470,11 @@ class AircraftSupportV1Model:
         basic = profile.get("basic_mission") or {}
         missions: list[MissionState] = []
         periodic_repeats = self._periodic_repeat_counts(profile)
+        periodic_contexts = self._periodic_contexts_by_composite(profile)
         mission_duration_adjustment = self.mission_context["duration_adjustment_minutes"]
         for composite in profile.get("composite_tasks") or []:
             composite_id = str(composite.get("id") or "")
+            periodic_context = periodic_contexts.get(composite_id, {})
             for item in composite.get("taskItems") or []:
                 if not isinstance(item, dict):
                     continue
@@ -489,6 +501,16 @@ class AircraftSupportV1Model:
                             required_aircraft=max(1, int(item.get("equipmentQuantity") or basic.get("equipmentQuantity") or 1)),
                             priority=max(1, int(item.get("priority") or basic.get("priority") or 1)),
                             cancel_minutes=max(0, int(basic.get("cancelMinutes") or 20)),
+                            task_category="periodic" if periodic_context else "composite",
+                            periodic_task_id=str(periodic_context.get("id") or ""),
+                            periodic_task_name=str(periodic_context.get("name") or ""),
+                            composite_task_id=composite_id,
+                            composite_task_name=str(composite.get("name") or composite_id),
+                            basic_task_id=str(item.get("id") or basic.get("id") or ""),
+                            basic_task_name=str(item.get("basicTaskName") or basic.get("name") or ""),
+                            required_aircraft_type=str(item.get("equipmentType") or basic.get("equipmentType") or ""),
+                            group_name=str(item.get("groupName") or ""),
+                            wave_index=repeat + 1,
                         )
                     )
         if not missions:
@@ -503,6 +525,10 @@ class AircraftSupportV1Model:
                     required_aircraft=max(1, int(basic.get("equipmentQuantity") or 1)),
                     priority=max(1, int(basic.get("priority") or 1)),
                     cancel_minutes=max(0, int(basic.get("cancelMinutes") or 20)),
+                    task_category="basic",
+                    basic_task_id=str(basic.get("id") or basic.get("missionId") or ""),
+                    basic_task_name=str(basic.get("name") or "mission"),
+                    required_aircraft_type=str(basic.get("equipmentType") or ""),
                 )
             )
         return sorted(missions, key=lambda item: (item.planned_start, item.priority))
@@ -520,6 +546,30 @@ class AircraftSupportV1Model:
             for composite_id in composite_ids:
                 repeats[composite_id] = max(repeats.get(composite_id, 1), multiplier)
         return repeats
+
+    def _periodic_contexts_by_composite(self, profile: dict[str, Any]) -> dict[str, dict[str, Any]]:
+        contexts: dict[str, dict[str, Any]] = {}
+        for periodic in profile.get("periodic_tasks") or []:
+            if not isinstance(periodic, dict):
+                continue
+            name = str(
+                periodic.get("periodicTaskName")
+                or periodic.get("taskName")
+                or periodic.get("name")
+                or periodic.get("id")
+                or ""
+            )
+            context = {
+                "id": str(periodic.get("id") or ""),
+                "name": name,
+            }
+            composite_ids = [str(item) for item in periodic.get("compositeTaskIds") or [] if item]
+            for item in periodic.get("compositeTasks") or []:
+                if isinstance(item, dict) and item.get("compositeTaskId"):
+                    composite_ids.append(str(item["compositeTaskId"]))
+            for composite_id in composite_ids:
+                contexts.setdefault(composite_id, context)
+        return contexts
 
     def _mission_context(self) -> dict[str, int]:
         profile = self.inputs.get("mission_profile", {})
@@ -835,6 +885,18 @@ class AircraftSupportV1Model:
             "actual_start": item.actual_start,
             "return_time": item.return_time,
             "required_aircraft": item.required_aircraft,
+            "required_aircraft_type": item.required_aircraft_type,
+            "task_category": item.task_category,
+            "periodic_task_id": item.periodic_task_id,
+            "periodic_task_name": item.periodic_task_name,
+            "composite_task_id": item.composite_task_id,
+            "composite_task_name": item.composite_task_name,
+            "basic_task_id": item.basic_task_id,
+            "basic_task_name": item.basic_task_name or item.name,
+            "group_name": item.group_name,
+            "wave_index": item.wave_index,
+            "duration_minutes": item.duration_minutes,
+            "preparation_start": item.preparation_start,
             "status": item.status,
             "assigned_tail_numbers": list(item.assigned_tail_numbers),
             "delay_minutes": item.delay_minutes,

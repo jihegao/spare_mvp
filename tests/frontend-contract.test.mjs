@@ -559,8 +559,9 @@ test("mesa visualization escapes contract-provider fields before innerHTML inser
   assert.match(stageSource, /htmlEscape\(aircraft\.label\)/);
   assert.match(stageSource, /htmlEscape\(aircraft\.type\)/);
   assert.match(stageSource, /htmlEscape\(visualAircraftStateLabel\(aircraft\.state\)\)/);
-  assert.match(stageSource, /htmlEscape\(mission\.id\)/);
-  assert.match(stageSource, /htmlEscape\(missionStatusLabel\(mission\.status\)\)/);
+  assert.match(stageSource, /htmlEscape\(row\.id\)/);
+  assert.match(stageSource, /htmlEscape\(row\.statusLabel\)/);
+  assert.match(stageSource, /assignedTailNumbers\.map\(\(tailNumber\) => htmlEscape\(tailNumber\)\)/);
   assert.doesNotMatch(stageSource, /\$\{aircraft\.state\}/);
   assert.doesNotMatch(stageSource, /\$\{aircraft\.label\}/);
   assert.doesNotMatch(stageSource, /\$\{mission\.status\}/);
@@ -571,8 +572,8 @@ test("mesa visualization escapes contract-provider fields before innerHTML inser
   assert.match(aircraftSource, /htmlEscape\(selectedAircraft\.failedLru/);
   assert.doesNotMatch(aircraftSource, /\$\{selectedAircraft\.label\}/);
 
-  assert.match(missionSource, /htmlEscape\(mission\.id\)/);
-  assert.match(missionSource, /htmlEscape\(mission\.status\)/);
+  assert.match(missionSource, /htmlEscape\(mission\.basicTaskName \|\| mission\.name \|\| mission\.id\)/);
+  assert.match(missionSource, /htmlEscape\(row\.label\)/);
   assert.match(missionSource, /assignedTailNumbers\.map/);
   assert.match(missionSource, /htmlEscape\(tailNumber\)/);
   assert.doesNotMatch(missionSource, /assignedTailNumbers\.join\(" \/ "\)/);
@@ -2455,8 +2456,17 @@ test("visual simulation layout matches operational dashboard requirements", asyn
   assert.match(styleSource, /\.availability-chart circle\.current-point/);
   assert.match(stageSource, /停放/);
   assert.match(stageSource, /使用保障/);
-  assert.match(stageSource, /任务甘特图/);
-  assert.match(stageSource, /成员飞机/);
+  assert.match(stageSource, /任务计划甘特图/);
+  assert.match(stageSource, /mission-schedule-table/);
+  assert.match(stageSource, /按周期性任务 \/ 复合任务 \/ 每天基本任务/);
+  assert.match(stageSource, /要求型号 \/ 数量/);
+  assert.match(stageSource, /实际执行飞机/);
+  assert.match(stageSource, /每日甘特图/);
+  assert.match(stageSource, /buildMissionScheduleRows\(state\.missions, state\.aircraft\)/);
+  assert.match(stageSource, /inferMissionAircraftType\(mission, aircraft\)/);
+  assert.doesNotMatch(stageSource, /mesa-mission-cards/);
+  assert.match(appSource, /任务成员飞机/);
+  assert.match(styleSource, /\.mission-schedule-row[\s\S]*grid-template-columns/);
   assert.match(stageSource, /保障人员/);
   assert.match(stageSource, /按保障组织 \/ 人员专业/);
   assert.match(stageSource, /保障设备详情清单/);
