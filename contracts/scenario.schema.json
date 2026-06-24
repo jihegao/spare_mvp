@@ -18,29 +18,8 @@
       "type": "object",
       "required": ["simulation_model", "simulation_inputs"],
       "properties": {
-        "simulation_model": {
-          "type": "object",
-          "required": ["family", "model_id", "contract_version"],
-          "properties": {
-            "family": { "const": "smoke" },
-            "model_id": { "const": "SmokeSpareMvpModel" },
-            "contract_version": { "const": "1.0.0" }
-          },
-          "additionalProperties": false
-        },
-        "simulation_inputs": {
-          "type": "object",
-          "required": [
-            "project_snapshot",
-            "project_version",
-            "active_module",
-            "spare_multiplier",
-            "failure_rate",
-            "support_capacity",
-            "min_required_sorties",
-            "seed"
-          ]
-        }
+        "simulation_model": { "$ref": "#/$defs/SmokeModelSelector" },
+        "simulation_inputs": { "$ref": "#/$defs/SmokeInputs" }
       },
       "additionalProperties": true
     },
@@ -48,30 +27,42 @@
       "type": "object",
       "required": ["simulation_model", "simulation_inputs"],
       "properties": {
-        "simulation_model": {
-          "type": "object",
-          "required": ["family", "model_id", "contract_version"],
-          "properties": {
-            "family": { "const": "aviation_support" },
-            "model_id": { "const": "AviationSupportModel" },
-            "contract_version": { "const": "1.0.0" }
-          },
-          "additionalProperties": false
-        },
-        "simulation_inputs": {
-          "type": "object",
-          "required": [
-            "aircraft_count",
-            "mission_count",
-            "mission_aircraft_required",
-            "mechanic_teams",
-            "fuel_trucks",
-            "maintenance_bays",
-            "lru_failure_multiplier",
-            "seed"
-          ]
-        }
+        "simulation_model": { "$ref": "#/$defs/AviationSupportModelSelector" },
+        "simulation_inputs": { "$ref": "#/$defs/AviationSupportInputs" }
       },
+      "additionalProperties": true
+    },
+    {
+      "type": "object",
+      "required": ["simulation_model", "simulation_inputs"],
+      "allOf": [
+        {
+          "properties": {
+            "simulation_model": { "$ref": "#/$defs/AircraftSupportV1ModelSelector" }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "simulation_model": {
+                "type": "object",
+                "properties": {
+                  "family": { "const": "aircraft_support_v1" }
+                },
+                "required": ["family"]
+              }
+            },
+            "required": ["simulation_model"]
+          },
+          "then": {
+            "properties": {
+              "simulation_inputs": {
+                "$ref": "https://spare-mvp.local/contracts/aircraft_support_v1_input.schema.json"
+              }
+            }
+          }
+        }
+      ],
       "additionalProperties": true
     }
   ],
@@ -84,8 +75,8 @@
       "type": "object",
       "required": ["family", "model_id", "contract_version"],
       "properties": {
-        "family": { "type": "string", "enum": ["smoke", "aviation_support"] },
-        "model_id": { "type": "string", "enum": ["SmokeSpareMvpModel", "AviationSupportModel"] },
+        "family": { "type": "string", "enum": ["smoke", "aviation_support", "aircraft_support_v1"] },
+        "model_id": { "type": "string", "enum": ["SmokeSpareMvpModel", "AviationSupportModel", "AircraftSupportV1Model"] },
         "contract_version": { "type": "string", "const": "1.0.0" }
       },
       "additionalProperties": false
@@ -122,6 +113,7 @@
             "defaults_applied": { "type": "array", "items": { "type": "string" } },
             "derived_fields": { "type": "array", "items": { "type": "string" } },
             "ignored_fields": { "type": "array", "items": { "type": "string" } },
+            "governance_only_fields": { "type": "array", "items": { "type": "string" } },
             "unsupported_fields": { "type": "array", "items": { "type": "string" } }
           },
           "additionalProperties": false
@@ -129,59 +121,86 @@
       },
       "additionalProperties": false
     },
-    "simulation_inputs": {
-      "oneOf": [
-        {
-          "title": "smoke",
-          "type": "object",
-          "required": [
-            "project_snapshot",
-            "project_version",
-            "active_module",
-            "spare_multiplier",
-            "failure_rate",
-            "support_capacity",
-            "min_required_sorties",
-            "seed"
-          ],
-          "properties": {
-            "project_snapshot": { "type": "object" },
-            "project_version": { "type": "string" },
-            "active_module": { "type": "string", "enum": ["sparePlanning", "missionReliability"] },
-            "spare_multiplier": { "type": "number", "minimum": 0 },
-            "failure_rate": { "type": "number", "minimum": 0 },
-            "support_capacity": { "type": "integer", "minimum": 1 },
-            "min_required_sorties": { "type": "integer", "minimum": 1 },
-            "seed": { "type": "integer" }
-          },
-          "additionalProperties": false
-        },
-        {
-          "title": "aviation_support",
-          "type": "object",
-          "required": [
-            "aircraft_count",
-            "mission_count",
-            "mission_aircraft_required",
-            "mechanic_teams",
-            "fuel_trucks",
-            "maintenance_bays",
-            "lru_failure_multiplier",
-            "seed"
-          ],
-          "properties": {
-            "aircraft_count": { "type": "integer", "minimum": 1 },
-            "mission_count": { "type": "integer", "minimum": 1 },
-            "mission_aircraft_required": { "type": "integer", "minimum": 1 },
-            "mechanic_teams": { "type": "integer", "minimum": 1 },
-            "fuel_trucks": { "type": "integer", "minimum": 1 },
-            "maintenance_bays": { "type": "integer", "minimum": 1 },
-            "lru_failure_multiplier": { "type": "number", "minimum": 0 },
-            "seed": { "type": "integer" }
-          },
-          "additionalProperties": false
-        }
-      ]
+    "simulation_inputs": { "type": "object" }
+  },
+  "$defs": {
+    "SmokeModelSelector": {
+      "type": "object",
+      "required": ["family", "model_id", "contract_version"],
+      "properties": {
+        "family": { "const": "smoke" },
+        "model_id": { "const": "SmokeSpareMvpModel" },
+        "contract_version": { "const": "1.0.0" }
+      },
+      "additionalProperties": false
+    },
+    "AviationSupportModelSelector": {
+      "type": "object",
+      "required": ["family", "model_id", "contract_version"],
+      "properties": {
+        "family": { "const": "aviation_support" },
+        "model_id": { "const": "AviationSupportModel" },
+        "contract_version": { "const": "1.0.0" }
+      },
+      "additionalProperties": false
+    },
+    "AircraftSupportV1ModelSelector": {
+      "type": "object",
+      "required": ["family", "model_id", "contract_version"],
+      "properties": {
+        "family": { "const": "aircraft_support_v1" },
+        "model_id": { "const": "AircraftSupportV1Model" },
+        "contract_version": { "const": "1.0.0" }
+      },
+      "additionalProperties": false
+    },
+    "SmokeInputs": {
+      "type": "object",
+      "required": [
+        "project_snapshot",
+        "project_version",
+        "active_module",
+        "spare_multiplier",
+        "failure_rate",
+        "support_capacity",
+        "min_required_sorties",
+        "seed"
+      ],
+      "properties": {
+        "project_snapshot": { "type": "object" },
+        "project_version": { "type": "string" },
+        "active_module": { "type": "string", "enum": ["sparePlanning", "missionReliability"] },
+        "spare_multiplier": { "type": "number", "minimum": 0 },
+        "failure_rate": { "type": "number", "minimum": 0 },
+        "support_capacity": { "type": "integer", "minimum": 1 },
+        "min_required_sorties": { "type": "integer", "minimum": 1 },
+        "seed": { "type": "integer" }
+      },
+      "additionalProperties": false
+    },
+    "AviationSupportInputs": {
+      "type": "object",
+      "required": [
+        "aircraft_count",
+        "mission_count",
+        "mission_aircraft_required",
+        "mechanic_teams",
+        "fuel_trucks",
+        "maintenance_bays",
+        "lru_failure_multiplier",
+        "seed"
+      ],
+      "properties": {
+        "aircraft_count": { "type": "integer", "minimum": 1 },
+        "mission_count": { "type": "integer", "minimum": 1 },
+        "mission_aircraft_required": { "type": "integer", "minimum": 1 },
+        "mechanic_teams": { "type": "integer", "minimum": 1 },
+        "fuel_trucks": { "type": "integer", "minimum": 1 },
+        "maintenance_bays": { "type": "integer", "minimum": 1 },
+        "lru_failure_multiplier": { "type": "number", "minimum": 0 },
+        "seed": { "type": "integer" }
+      },
+      "additionalProperties": false
     }
   }
 }

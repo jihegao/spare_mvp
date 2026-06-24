@@ -139,6 +139,31 @@ class SimulationAdapter:
                 "provenance": scenario["compiled_from"]["mapping_provenance"],
                 "issues": [],
             }
+        if model_family == "aircraft_support_v1":
+            provenance = self._aircraft_support_v1_mapping_provenance(self._project_id(project), project)
+            issues = self._aircraft_support_v1_compile_issues(project)
+            if issues:
+                return {
+                    "status": "blocked",
+                    "scenario": None,
+                    "provenance": provenance,
+                    "issues": issues,
+                    "errors": [
+                        {
+                            "code": issue["code"],
+                            "path": issue["field_path"],
+                            "message": issue["message"],
+                        }
+                        for issue in issues
+                    ],
+                }
+            scenario = self._compile_aircraft_support_v1_scenario(project, validation)
+            return {
+                "status": "compiled",
+                "scenario": scenario,
+                "provenance": scenario["compiled_from"]["mapping_provenance"],
+                "issues": [],
+            }
         provenance = self._compile_gate_provenance(project, model_family)
         return {
             "status": "unsupported",
@@ -213,6 +238,38 @@ class SimulationAdapter:
                 "project_schema_version": validation["project_schema_version"],
                 "mesa_contract_version": MESA_CONTRACT_VERSION,
                 "mapping_provenance": self._aviation_support_mapping_provenance(project_id, project),
+            },
+            "simulation_inputs": inputs,
+        }
+        self._compiled_project_snapshots[scenario["scenario_id"]] = copy.deepcopy(project)
+        self._compiled_project_snapshots[scenario["project_id"]] = copy.deepcopy(project)
+        return scenario
+
+    def _compile_aircraft_support_v1_scenario(self, project: dict[str, Any], validation: dict[str, Any]) -> dict[str, Any]:
+        project_id = validation["project_id"]
+        project_version = validation["project_version"]
+        scenario_key = _safe_identifier(str(project.get("scenarioId") or project_id))
+        inputs = self._compile_aircraft_support_v1_inputs(project, validation)
+        now = _utc_now()
+
+        scenario = {
+            "schema_version": SCENARIO_SCHEMA_VERSION,
+            "scenario_id": f"scenario-{scenario_key}",
+            "project_id": project_id,
+            "scenario_version": "scenario-v0.1",
+            "simulation_model": {
+                "family": "aircraft_support_v1",
+                "model_id": "AircraftSupportV1Model",
+                "contract_version": MESA_CONTRACT_VERSION,
+            },
+            "compiled_at": now,
+            "compiled_by": ADAPTER_NAME,
+            "compiled_from": {
+                "project_id": project_id,
+                "project_version": project_version,
+                "project_schema_version": validation["project_schema_version"],
+                "mesa_contract_version": MESA_CONTRACT_VERSION,
+                "mapping_provenance": self._aircraft_support_v1_mapping_provenance(project_id, project),
             },
             "simulation_inputs": inputs,
         }
@@ -628,6 +685,139 @@ class SimulationAdapter:
             "seed": self._positive_int(project.get("experiment", {}).get("seed"), 0),
         }
 
+    def _compile_aircraft_support_v1_inputs(
+        self,
+        project: dict[str, Any],
+        validation: dict[str, Any],
+    ) -> dict[str, Any]:
+        mission_profile = project.get("missionProfile") if isinstance(project.get("missionProfile"), dict) else {}
+        equipment = project.get("equipment") if isinstance(project.get("equipment"), dict) else {}
+        experiment = project.get("experiment") if isinstance(project.get("experiment"), dict) else {}
+        monte_carlo = project.get("monteCarlo") if isinstance(project.get("monteCarlo"), dict) else {}
+        duration_minutes = self._duration_minutes(mission_profile.get("durationHours"))
+        fleet_count = self._positive_int(equipment.get("quantity"), 1)
+        initial_ready = min(self._positive_int(equipment.get("initialReady"), fleet_count), fleet_count)
+
+        return {
+            "schema_version": "aircraft-support-v1-input-v0",
+            "project_identity": {
+                "project_id": validation["project_id"],
+                "project_version": validation["project_version"],
+                "scenario_id": str(project.get("scenarioId") or validation["project_id"]),
+                "source_import_id": self._optional_string(mission_profile.get("sourceImportId")),
+            },
+            "mission_profile": {
+                "profile_id": str(mission_profile.get("profileId") or mission_profile.get("id") or "mission-profile"),
+                "name": str(mission_profile.get("name") or "mission profile"),
+                "duration_minutes": duration_minutes,
+                "basic_mission": copy.deepcopy(project.get("basicMission") if isinstance(project.get("basicMission"), dict) else {}),
+                "composite_tasks": copy.deepcopy(self._dict_list(mission_profile.get("compositeTasks"))),
+                "periodic_tasks": copy.deepcopy(self._dict_list(mission_profile.get("periodicTasks"))),
+                "mission_phases": copy.deepcopy(self._dict_list(project.get("missionPhases"))),
+                "airports": copy.deepcopy(self._dict_list(project.get("airports"))),
+                "mission_areas": copy.deepcopy(self._dict_list(project.get("missionAreas"))),
+            },
+            "aircraft": {
+                "fleet_count": fleet_count,
+                "initial_ready": initial_ready,
+                "models": self._string_list(equipment.get("wholeMachineModels") or [equipment.get("model")]),
+            },
+            "equipment_tree": {
+                "root_component_id": self._root_component_id(project.get("components")),
+                "components": [self._aircraft_support_v1_component(component) for component in self._dict_list(project.get("components"))],
+            },
+            "support_network": {
+                "nodes": [self._aircraft_support_v1_support_node(node) for node in self._dict_list(project.get("supportNodes"))],
+            },
+            "support_activities": {
+                "activities": [
+                    self._aircraft_support_v1_support_activity(activity)
+                    for activity in self._dict_list(project.get("supportActivities"))
+                ],
+            },
+            "reliability_block_diagram": self._aircraft_support_v1_reliability_block_diagram(
+                project.get("reliabilityBlockDiagram")
+            ),
+            "time": {
+                "duration_minutes": duration_minutes,
+                "tick_minutes": 1,
+                "sample_every_minutes": 30,
+                "max_state_frames_single": 2000,
+                "requested_steps": self._positive_int(experiment.get("steps"), max(1, duration_minutes // 30)),
+            },
+            "monte_carlo": {
+                "sample_count": self._positive_int(experiment.get("samples"), 1),
+                "sweep": {
+                    "failureRates": self._non_negative_numbers(monte_carlo.get("failureRates"), [1.0]),
+                    "spareMultipliers": self._non_negative_numbers(monte_carlo.get("spareMultipliers"), [1.0]),
+                    "supportCapacities": self._positive_int_list(monte_carlo.get("supportCapacities"), [1]),
+                },
+            },
+            "seed": self._positive_int(experiment.get("seed"), 0),
+        }
+
+    def _aircraft_support_v1_component(self, component: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "id": str(component.get("id") or "component"),
+            "name": str(component.get("name") or component.get("id") or "component"),
+            "parent_id": self._optional_string(component.get("parentId")),
+            "aircraft_model": self._optional_string(component.get("aircraftModel")),
+            "product_type": self._optional_string(component.get("productType")),
+            "quantity": self._positive_int(component.get("quantity"), 1),
+            "failure_rate": self._non_negative_number(component.get("failureRate"), 0),
+            "failure_distribution": copy.deepcopy(component.get("failureDistribution") if isinstance(component.get("failureDistribution"), dict) else {}),
+            "k_out_of_n": copy.deepcopy(component.get("kOutOfN") if isinstance(component.get("kOutOfN"), dict) else {}),
+            "life_limit_hours": self._optional_positive_number(component.get("lifeLimitHours")),
+            "mtbf_hours": self._optional_positive_number(component.get("mtbfHours")),
+            "rms": copy.deepcopy(component.get("rms") if isinstance(component.get("rms"), dict) else {}),
+            "spare_type": self._optional_string(component.get("spareType")),
+            "special_repair_profile": copy.deepcopy(
+                component.get("specialRepairProfile") if isinstance(component.get("specialRepairProfile"), dict) else {}
+            ),
+        }
+
+    def _aircraft_support_v1_support_node(self, node: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "id": str(node.get("id") or "support-node"),
+            "name": str(node.get("name") or node.get("id") or "support node"),
+            "node_type": self._optional_string(node.get("nodeType")),
+            "support_level": self._optional_string(node.get("supportLevel")),
+            "personnel_capacity": self._positive_int(node.get("personnelCapacity"), self._positive_int(node.get("capacity"), 1)),
+            "equipment_capacity": self._positive_int(node.get("equipmentCapacity"), self._positive_int(node.get("capacity"), 1)),
+            "inventory": copy.deepcopy(node.get("inventory") if isinstance(node.get("inventory"), dict) else {}),
+            "lateral_support_nodes": self._string_list(node.get("lateralSupportNodes")),
+            "transport_policies": copy.deepcopy(self._dict_list(node.get("transportPolicies"))),
+            "policy": self._optional_string(node.get("policy")),
+            "organization_strategy": self._optional_string(node.get("organizationStrategy")),
+        }
+
+    def _aircraft_support_v1_support_activity(self, activity: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "id": str(activity.get("id") or "support-activity"),
+            "name": str(activity.get("name") or activity.get("activityName") or activity.get("id") or "support activity"),
+            "activity_type": str(activity.get("activityType") or activity.get("planType") or "support activity"),
+            "equipment_id": str(activity.get("equipmentId") or ""),
+            "resource_id": str(activity.get("resourceId") or ""),
+            "priority": self._positive_int(activity.get("priority"), 1),
+            "duration_minutes": self._positive_int(
+                activity.get("durationMinutes"),
+                self._positive_int(activity.get("durationHours"), 1) * 60,
+            ),
+            "required_personnel": self._positive_int(activity.get("requiredPersonnel"), 1),
+            "required_devices": self._positive_int(activity.get("requiredDevices"), 1),
+            "spare_type": self._optional_string(activity.get("spareType")),
+            "spare_quantity": self._positive_int(activity.get("spareQuantity"), 0),
+            "jobs": copy.deepcopy(self._dict_list(activity.get("jobs"))),
+            "transport_strategies": copy.deepcopy(self._dict_list(activity.get("transportStrategies"))),
+            "organization_strategies": copy.deepcopy(self._dict_list(activity.get("organizationStrategies"))),
+        }
+
+    def _aircraft_support_v1_reliability_block_diagram(self, value: Any) -> dict[str, Any]:
+        diagram = copy.deepcopy(value) if isinstance(value, dict) else {}
+        nodes = self._dict_list(diagram.get("nodes"))
+        edges = self._dict_list(diagram.get("edges"))
+        return {"nodes": copy.deepcopy(nodes), "edges": copy.deepcopy(edges)}
+
     def _smoke_mapping_provenance(self, project_id: str, project: dict[str, Any]) -> dict[str, Any]:
         return {
             "project_id": project_id,
@@ -678,6 +868,64 @@ class SimulationAdapter:
             "unsupported_fields": [],
         }
 
+    def _aircraft_support_v1_mapping_provenance(self, project_id: str, project: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "project_id": project_id,
+            "modeling_snapshot_id": None,
+            "experiment_plan_id": None,
+            "model_family": "aircraft_support_v1",
+            "mapping_version": "aircraft-support-v1-input-v0",
+            "consumed_fields": [
+                "equipment.quantity",
+                "equipment.initialReady",
+                "equipment.wholeMachineModels",
+                "missionProfile.durationHours",
+                "missionProfile.compositeTasks",
+                "missionProfile.periodicTasks",
+                "basicMission",
+                "missionPhases",
+                "airports",
+                "missionAreas",
+                "components[].failureRate",
+                "components[].failureDistribution",
+                "components[].kOutOfN",
+                "components[].lifeLimitHours",
+                "components[].rms",
+                "components[].specialRepairProfile",
+                "supportNodes[].personnelCapacity",
+                "supportNodes[].equipmentCapacity",
+                "supportNodes[].inventory",
+                "supportNodes[].transportPolicies",
+                "supportActivities[].jobs[]",
+                "supportActivities[].jobs[].predecessors",
+                "supportActivities[].transportStrategies",
+                "supportActivities[].organizationStrategies",
+                "reliabilityBlockDiagram",
+                "monteCarlo.failureRates",
+                "monteCarlo.spareMultipliers",
+                "monteCarlo.supportCapacities",
+                "experiment.seed",
+                "experiment.samples",
+                "experiment.steps",
+            ],
+            "defaults_applied": self._aircraft_support_v1_defaults_applied(project),
+            "derived_fields": [
+                "simulation_inputs.project_identity",
+                "simulation_inputs.aircraft.initial_ready",
+                "simulation_inputs.time.duration_minutes",
+                "simulation_inputs.time.requested_steps",
+            ],
+            "ignored_fields": [],
+            "governance_only_fields": [
+                "projectInfo",
+                "combatUnit",
+                "scenarioId",
+                "project_id",
+                "project_version",
+            ],
+            "unsupported_fields": self._aircraft_support_v1_unsupported_fields(project),
+        }
+
     def _smoke_defaults_applied(self, project: dict[str, Any]) -> list[str]:
         defaults: list[str] = []
         if not self._has_any_number(project.get("monteCarlo", {}).get("spareMultipliers")):
@@ -698,6 +946,40 @@ class SimulationAdapter:
         if not self._is_number(project.get("experiment", {}).get("seed")):
             defaults.append("experiment.seed=0")
         return defaults
+
+    def _aircraft_support_v1_defaults_applied(self, project: dict[str, Any]) -> list[str]:
+        defaults = [
+            "time.tick_minutes=1",
+            "time.sample_every_minutes=30",
+            "time.max_state_frames_single=2000",
+        ]
+        equipment = project.get("equipment") if isinstance(project.get("equipment"), dict) else {}
+        mission_profile = project.get("missionProfile") if isinstance(project.get("missionProfile"), dict) else {}
+        experiment = project.get("experiment") if isinstance(project.get("experiment"), dict) else {}
+        monte_carlo = project.get("monteCarlo") if isinstance(project.get("monteCarlo"), dict) else {}
+        if not self._is_positive_number(equipment.get("initialReady")):
+            defaults.append("equipment.initialReady=equipment.quantity")
+        if not self._is_positive_number(mission_profile.get("durationHours")):
+            defaults.append("missionProfile.durationHours=24")
+        if not self._is_positive_number(experiment.get("steps")):
+            defaults.append("experiment.steps=durationMinutes/sampleEveryMinutes")
+        if not self._is_positive_number(experiment.get("samples")):
+            defaults.append("experiment.samples=1")
+        if not self._has_any_number(monte_carlo.get("failureRates")):
+            defaults.append("monteCarlo.failureRates=[1.0]")
+        if not self._has_any_number(monte_carlo.get("spareMultipliers")):
+            defaults.append("monteCarlo.spareMultipliers=[1.0]")
+        if not self._has_any_number(monte_carlo.get("supportCapacities")):
+            defaults.append("monteCarlo.supportCapacities=[1]")
+        if not self._is_number(experiment.get("seed")):
+            defaults.append("experiment.seed=0")
+        return defaults
+
+    def _aircraft_support_v1_unsupported_fields(self, project: dict[str, Any]) -> list[str]:
+        unsupported: list[str] = []
+        if project.get("supportOrganization") not in (None, {}, []):
+            unsupported.append("supportOrganization")
+        return unsupported
 
     def _aviation_support_defaults_applied(self, project: dict[str, Any]) -> list[str]:
         defaults: list[str] = []
@@ -726,6 +1008,8 @@ class SimulationAdapter:
     def _compile_gate_provenance(self, project: dict[str, Any], model_family: str) -> dict[str, Any]:
         if model_family == "aviation_support":
             return self._aviation_support_mapping_provenance(self._project_id(project), project)
+        if model_family == "aircraft_support_v1":
+            return self._aircraft_support_v1_mapping_provenance(self._project_id(project), project)
         return {
             "project_id": self._project_id(project),
             "modeling_snapshot_id": None,
@@ -737,6 +1021,162 @@ class SimulationAdapter:
             "derived_fields": [],
             "ignored_fields": [],
             "unsupported_fields": ["model_family"],
+        }
+
+    def _aircraft_support_v1_compile_issues(self, project: dict[str, Any]) -> list[dict[str, str]]:
+        issues: list[dict[str, str]] = []
+        components = self._dict_list(project.get("components"))
+        support_nodes = self._dict_list(project.get("supportNodes"))
+        support_activities = self._dict_list(project.get("supportActivities"))
+        mission_profile = project.get("missionProfile") if isinstance(project.get("missionProfile"), dict) else {}
+
+        if not components:
+            issues.append(
+                self._compile_issue(
+                    "missing_equipment_tree",
+                    "components",
+                    "装备树不能为空，aircraft_support_v1 需要可审计的装备组成。",
+                    "装备组成建模",
+                )
+            )
+        if not support_nodes:
+            issues.append(
+                self._compile_issue(
+                    "missing_support_network",
+                    "supportNodes",
+                    "保障资源节点不能为空，aircraft_support_v1 需要保障网络输入。",
+                    "保障资源建模",
+                )
+            )
+        if not support_activities:
+            issues.append(
+                self._compile_issue(
+                    "missing_support_activities",
+                    "supportActivities",
+                    "保障活动不能为空，aircraft_support_v1 需要保障活动 DAG 输入。",
+                    "保障活动建模",
+                )
+            )
+        if not self._is_positive_number(mission_profile.get("durationHours")):
+            issues.append(
+                self._compile_issue(
+                    "missing_mission_duration",
+                    "missionProfile.durationHours",
+                    "任务剖面 durationHours 必须大于 0。",
+                    "任务剖面参数",
+                )
+            )
+
+        component_ids = {str(component.get("id")) for component in components if component.get("id") not in (None, "")}
+        support_node_ids = {str(node.get("id")) for node in support_nodes if node.get("id") not in (None, "")}
+        for index, component in enumerate(components):
+            parent_id = component.get("parentId")
+            if parent_id in (None, ""):
+                continue
+            if str(parent_id) not in component_ids:
+                issues.append(
+                    self._compile_issue(
+                        "missing_component_parent",
+                        f"components[{index}].parentId",
+                        f"组件 parentId 引用了不存在的组件 {parent_id}。",
+                        "装备组成建模",
+                    )
+                )
+
+        for node_index, node in enumerate(support_nodes):
+            for policy_index, policy in enumerate(self._dict_list(node.get("transportPolicies"))):
+                for endpoint in ("from", "to"):
+                    value = policy.get(endpoint)
+                    if value in (None, ""):
+                        continue
+                    if str(value) not in support_node_ids:
+                        issues.append(
+                            self._compile_issue(
+                                "missing_transport_node_reference",
+                                f"supportNodes[{node_index}].transportPolicies[{policy_index}].{endpoint}",
+                                f"运输策略 {endpoint} 引用了不存在的保障节点 {value}。",
+                                "保障资源建模",
+                            )
+                        )
+
+        for activity_index, activity in enumerate(support_activities):
+            equipment_id = activity.get("equipmentId")
+            if equipment_id not in (None, "") and str(equipment_id) not in component_ids:
+                issues.append(
+                    self._compile_issue(
+                        "missing_equipment_reference",
+                        f"supportActivities[{activity_index}].equipmentId",
+                        f"保障活动 equipmentId 引用了不存在的装备组件 {equipment_id}。",
+                        "保障活动建模",
+                    )
+                )
+            resource_id = activity.get("resourceId")
+            if resource_id not in (None, "") and str(resource_id) not in support_node_ids:
+                issues.append(
+                    self._compile_issue(
+                        "missing_support_resource_reference",
+                        f"supportActivities[{activity_index}].resourceId",
+                        f"保障活动 resourceId 引用了不存在的保障资源 {resource_id}。",
+                        "保障活动建模",
+                    )
+                )
+            jobs = self._dict_list(activity.get("jobs"))
+            job_codes = {str(job.get("activityCode")) for job in jobs if job.get("activityCode") not in (None, "")}
+            for job_index, job in enumerate(jobs):
+                predecessors = job.get("predecessors")
+                if predecessors is None:
+                    continue
+                if not isinstance(predecessors, list):
+                    issues.append(
+                        self._compile_issue(
+                            "invalid_support_activity_predecessors",
+                            f"supportActivities[{activity_index}].jobs[{job_index}].predecessors",
+                            "保障活动 job predecessors 必须是数组。",
+                            "保障活动建模",
+                        )
+                    )
+                    continue
+                for predecessor in predecessors:
+                    if str(predecessor) not in job_codes:
+                        issues.append(
+                            self._compile_issue(
+                                "missing_support_activity_predecessor",
+                                f"supportActivities[{activity_index}].jobs[{job_index}].predecessors",
+                                f"保障活动 job 前序引用了不存在的 activityCode {predecessor}。",
+                                "保障活动建模",
+                            )
+                        )
+
+        diagram = project.get("reliabilityBlockDiagram") if isinstance(project.get("reliabilityBlockDiagram"), dict) else {}
+        rbd_nodes = {
+            str(node.get("id"))
+            for node in self._dict_list(diagram.get("nodes"))
+            if node.get("id") not in (None, "")
+        }
+        for edge_index, edge in enumerate(self._dict_list(diagram.get("edges"))):
+            for endpoint in ("from", "to"):
+                value = edge.get(endpoint)
+                if value in (None, ""):
+                    continue
+                if str(value) not in rbd_nodes:
+                    issues.append(
+                        self._compile_issue(
+                            "missing_rbd_node_reference",
+                            f"reliabilityBlockDiagram.edges[{edge_index}].{endpoint}",
+                            f"可靠性框图 edge {endpoint} 引用了不存在的节点 {value}。",
+                            "任务可靠性分析",
+                        )
+                    )
+        return issues
+
+    def _compile_issue(self, code: str, field_path: str, message: str, page: str) -> dict[str, str]:
+        return {
+            "code": code,
+            "message": message,
+            "field_path": field_path,
+            "page": page,
+            "severity": "error",
+            "suggestion": "修正输入引用后重新编译 aircraft_support_v1 Scenario。",
         }
 
     def _assert_smoke_scenario(self, scenario: dict[str, Any]) -> None:
@@ -1994,6 +2434,52 @@ class SimulationAdapter:
 
     def _project_version(self, project: dict[str, Any]) -> str:
         return str(project.get("project_version") or "project-v0.1")
+
+    def _dict_list(self, value: Any) -> list[dict[str, Any]]:
+        if not isinstance(value, list):
+            return []
+        return [item for item in value if isinstance(item, dict)]
+
+    def _string_list(self, value: Any) -> list[str]:
+        if not isinstance(value, list):
+            value = [value]
+        return [str(item) for item in value if item not in (None, "")]
+
+    def _optional_string(self, value: Any) -> str | None:
+        if value in (None, ""):
+            return None
+        return str(value)
+
+    def _root_component_id(self, components: Any) -> str | None:
+        for component in self._dict_list(components):
+            if component.get("parentId") in (None, "") and component.get("id") not in (None, ""):
+                return str(component["id"])
+        return None
+
+    def _duration_minutes(self, duration_hours: Any) -> int:
+        if not self._is_positive_number(duration_hours):
+            return 24 * 60
+        return max(1, int(round(float(duration_hours) * 60)))
+
+    def _non_negative_number(self, value: Any, fallback: float) -> float:
+        if self._is_number(value):
+            return max(0.0, float(value))
+        return float(fallback)
+
+    def _optional_positive_number(self, value: Any) -> float | None:
+        if not self._is_positive_number(value):
+            return None
+        return float(value)
+
+    def _non_negative_numbers(self, value: Any, fallback: list[float]) -> list[float]:
+        values = value if isinstance(value, list) else [value]
+        numbers = [max(0.0, float(item)) for item in values if self._is_number(item)]
+        return numbers or list(fallback)
+
+    def _positive_int_list(self, value: Any, fallback: list[int]) -> list[int]:
+        values = value if isinstance(value, list) else [value]
+        numbers = [self._positive_int(item, 1) for item in values if self._is_number(item)]
+        return numbers or list(fallback)
 
     def _mean_component_failure_rate(self, project: dict[str, Any]) -> float:
         rates = [

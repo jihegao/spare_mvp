@@ -7,6 +7,7 @@ import { validateSchema } from "./schema-test-utils.mjs";
 const contractFiles = [
   "project.schema.json",
   "scenario.schema.json",
+  "aircraft_support_v1_input.schema.json",
   "run.schema.json",
   "result.schema.json",
   "artifact_manifest.schema.json",
@@ -72,6 +73,10 @@ test("contract curator publishes the versioned schema bundle", async () => {
   const mapping = await readJson("contracts/scenario_adapter_mapping.json");
   assert.deepEqual(manifest.mapping_files, ["scenario_adapter_mapping.json"]);
   assert.equal(mapping.schema_version, "scenario-adapter-mapping-v0");
+  assert.ok(mapping.model_families.aircraft_support_v1);
+  assert.equal(mapping.model_families.aircraft_support_v1.model_class, "AircraftSupportV1Model");
+  assert.ok(mapping.model_families.aircraft_support_v1.simulation_inputs.equipment_tree);
+  assert.ok(mapping.model_families.aircraft_support_v1.simulation_inputs.support_activities);
 });
 
 test("project schema covers required frontend project JSON contract objects", async () => {
@@ -102,11 +107,20 @@ test("scenario and result schemas preserve simulation contract boundaries", asyn
     "simulation_inputs",
   ]);
   assert.ok(scenarioSchema.properties.simulation_model.properties.family);
-  assert.equal(scenarioSchema.properties.simulation_inputs.oneOf.length, 2);
+  assert.equal(scenarioSchema.oneOf.length, 3);
+  assert.match(JSON.stringify(scenarioSchema), /aircraft_support_v1_input\.schema\.json/);
+  assert.ok(scenarioSchema.properties.simulation_model.properties.family.enum.includes("aircraft_support_v1"));
+  assert.ok(scenarioSchema.properties.simulation_model.properties.model_id.enum.includes("AircraftSupportV1Model"));
   assert.ok(runSchema.required.includes("model_family"));
   assert.ok(runSchema.required.includes("model_id"));
   assert.ok(runSchema.properties.model_family);
   assert.ok(runSchema.properties.model_id);
+  assert.ok(runSchema.properties.model_family.enum.includes("aircraft_support_v1"));
+  assert.ok(runSchema.properties.model_id.enum.includes("AircraftSupportV1Model"));
+  const inputSchema = await readJson("contracts/aircraft_support_v1_input.schema.json");
+  assert.ok(inputSchema.properties.support_activities);
+  assert.ok(inputSchema.properties.time);
+  assert.ok(inputSchema.properties.monte_carlo);
   assert.ok(scenarioSchema.properties.compiled_from.properties.project_schema_version);
   assert.ok(resultSchema.properties.model_family);
   assert.ok(resultSchema.properties.metrics.properties.mission_success_rate);

@@ -545,6 +545,8 @@ M8.0 当前收束：`docs/superpowers/specs/2026-06-21-m8-projection-payload-ana
 5. 单次正式 run 必须产出 `result_summary`、`artifact_manifest`、`visualization_state_series`、metrics/report/log 和 run chain；Monte Carlo 必须产出 `monte_carlo_base`、四类 `analysis_projection_*` 和 state-series。
 6. 固定 seed 必须可复现；随机 sweep 必须记录样本数、参数组合、seed、失败样本和聚合口径；模型结果只能解释当前规则和参数下的行为，不声称工程校准结论。
 
+当前收束：M9.7.1 已建立 `aircraft_support_v1` schema/compiler gate。`contracts/aircraft_support_v1_input.schema.json` 定义独立 input schema，`scenario.schema.json` 通过 `aircraft_support_v1` selector 引用该 input schema，`run.schema.json` 允许 `AircraftSupportV1Model`，`scenario_adapter_mapping.json` 覆盖所有 compiled input 字段。`SimulationAdapter.compile_scenario_with_gate()` 可把 M9.6 平台案例 Project 编译成 `aircraft_support_v1` Scenario，并在 provenance 中记录 consumed、derived、defaulted、governance_only 和临时 unsupported 字段；缺字段或非法引用 fail closed。M9.7.1 不实现真实 single run core、formal Monte Carlo/projection，也不关闭最终 coverage。
+
 完成标准：
 
 1. `model_family=<new_aircraft_support_family>` 的 single 和 Monte Carlo run 均通过 canonical `/api/runs` 成功执行，并能下载全部正式 artifacts。
