@@ -2569,3 +2569,23 @@ test("M9.6 docs freeze platform case fixtures before M9.7 model-family work", as
   assert.doesNotMatch(combined, /M9\.6[^。]*(正式飞机保障仿真模型族已完成|嵌入平台已完成|退役 independent-mesa 已完成)/);
   assert.doesNotMatch(combined, /M9\.6[^。]*(8765|independent-mesa\/server\.py)[^。]*(已作为|已成为|是)正式产品入口/);
 });
+
+test("M9.7.2 docs describe real single-run core without claiming coverage or MC completion", async () => {
+  const docs = {
+    readme: await readFile(new URL("../README.md", import.meta.url), "utf8"),
+    docsReadme: await readFile(new URL("../docs/README.md", import.meta.url), "utf8"),
+    roadmap: await readFile(new URL("../docs/product-roadmap.md", import.meta.url), "utf8"),
+    agent: await readFile(new URL("../agent.md", import.meta.url), "utf8"),
+    contracts: await readFile(new URL("../contracts/README.md", import.meta.url), "utf8"),
+    spec: await readFile(new URL("../docs/superpowers/specs/2026-06-24-m9-7-aircraft-support-v1-design.md", import.meta.url), "utf8")
+  };
+  const combined = Object.values(docs).join("\n");
+
+  assert.match(combined, /M9\.7\.2[^。]*(真实 single-run core|single-run core)/);
+  assert.match(combined, /AircraftSupportV1Model/);
+  assert.match(combined, /behavior-driving|行为驱动字段/);
+  assert.match(combined, /supportOrganization[^。]*fail closed/);
+  assert.match(combined, /M9\.7\.4[^。]*coverage hardening/);
+  assert.match(combined, /M9\.7\.3[^。]*(formal Monte Carlo|MC\/projection|Monte Carlo\/projection)/);
+  assert.doesNotMatch(combined, /M9\.7\.2[^。]*(字段全覆盖已完成|coverage hardening 已完成|formal Monte Carlo 已完成|Monte Carlo\/projection 已完成)/);
+});

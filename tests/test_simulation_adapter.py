@@ -290,7 +290,7 @@ class SimulationAdapterTest(unittest.TestCase):
         self.assertIn("components[].failureDistribution", provenance["consumed_fields"])
         self.assertIn("supportActivities[].jobs[].predecessors", provenance["consumed_fields"])
         self.assertIn("projectInfo", provenance["governance_only_fields"])
-        self.assertIn("supportOrganization", provenance["unsupported_fields"])
+        self.assertEqual(provenance["unsupported_fields"], [])
 
     def test_aircraft_support_v1_compile_gate_blocks_invalid_references(self) -> None:
         project = self._load_fixture("m9_6_platform_case_export.json")["project"]
@@ -305,6 +305,148 @@ class SimulationAdapterTest(unittest.TestCase):
         issue_codes = {issue["code"] for issue in result["issues"]}
         self.assertIn("missing_support_resource_reference", issue_codes)
         self.assertIn("missing_support_activity_predecessor", issue_codes)
+
+    def test_run_aircraft_support_v1_single_run_writes_real_artifacts_and_behavior_scope(self) -> None:
+        project = self._load_fixture("m9_6_platform_case_export.json")["project"]
+        scenario = self.adapter.compile_scenario(project, model_family="aircraft_support_v1")
+        result_schema = json.loads((REPO_ROOT / "contracts" / "result.schema.json").read_text(encoding="utf-8"))
+        manifest_schema = json.loads((REPO_ROOT / "contracts" / "artifact_manifest.schema.json").read_text(encoding="utf-8"))
+        state_series_schema = json.loads(
+            (REPO_ROOT / "contracts" / "visualization_state_series.schema.json").read_text(encoding="utf-8")
+        )
+
+        with tempfile.TemporaryDirectory() as first_tmp, tempfile.TemporaryDirectory() as second_tmp:
+            first = self.adapter.run_scenario(
+                scenario,
+                output_dir=Path(first_tmp),
+                run_id="run-aircraft-v1-single",
+            )
+            second = self.adapter.run_scenario(
+                copy.deepcopy(scenario),
+                output_dir=Path(second_tmp),
+                run_id="run-aircraft-v1-single",
+            )
+
+            run = first["run"]
+            result = first["result"]
+            manifest = first["artifact_manifest"]
+            kinds = {artifact["kind"] for artifact in manifest["artifacts"]}
+            state_artifact = next(
+                artifact for artifact in manifest["artifacts"] if artifact["kind"] == "visualization_state_series"
+            )
+            report_artifact = next(artifact for artifact in manifest["artifacts"] if artifact["kind"] == "report")
+            log_artifact = next(artifact for artifact in manifest["artifacts"] if artifact["kind"] == "log")
+            state_payload = json.loads((Path(first_tmp) / state_artifact["path"]).read_text(encoding="utf-8"))
+            report_payload = json.loads((Path(first_tmp) / report_artifact["path"]).read_text(encoding="utf-8"))
+            log_payload = json.loads((Path(first_tmp) / log_artifact["path"]).read_text(encoding="utf-8"))
+
+        jsonschema.validate(instance=result, schema=result_schema)
+        jsonschema.validate(instance=manifest, schema=manifest_schema)
+        jsonschema.validate(instance=state_payload, schema=state_series_schema)
+        self.assertEqual(run["status"], "succeeded")
+        self.assertEqual(run["model_family"], "aircraft_support_v1")
+        self.assertEqual(run["model_id"], "AircraftSupportV1Model")
+        self.assertEqual(result["model_family"], "aircraft_support_v1")
+        self.assertEqual(result["metrics"], second["result"]["metrics"])
+        self.assertEqual(
+            kinds,
+            {
+                "run_config",
+                "input_project",
+                "compiled_scenario",
+                "snapshot",
+                "result_summary",
+                "metrics",
+                "report",
+                "log",
+                "visualization_state_series",
+                "analysis_projection_spare_shortfall",
+                "analysis_projection_carry_list",
+                "analysis_projection_mission_reliability",
+                "analysis_projection_downtime_factors",
+            },
+        )
+        self.assertEqual(state_payload["model_family"], "aircraft_support_v1")
+        self.assertEqual(state_payload["run_id"], run["run_id"])
+        self.assertEqual(state_payload["scenario_id"], scenario["scenario_id"])
+        self.assertEqual(state_payload["frames"][0]["simulation_time"], 0)
+        self.assertEqual(state_payload["frames"][1]["simulation_time"], 30)
+        self.assertLessEqual(len(state_payload["frames"]), scenario["simulation_inputs"]["time"]["max_state_frames_single"])
+        for metric in [
+            "sortie_completion_rate",
+            "available_aircraft",
+            "active_jobs",
+            "spare_stock_total",
+            "avg_departure_delay",
+            "spare_consumed_total",
+            "maintenance_backlog",
+            "lru_failures",
+        ]:
+            self.assertIn(metric, result["metrics"])
+        for frame in state_payload["frames"]:
+            self.assertEqual(frame["run_id"], run["run_id"])
+            self.assertEqual(frame["trace"]["run_id"], run["run_id"])
+            self.assertEqual(frame["trace"]["scenario_id"], scenario["scenario_id"])
+            self.assertIn("aircraft", frame)
+            self.assertIn("missions", frame)
+            self.assertIn("resources", frame)
+            self.assertIn("spares", frame)
+            self.assertIn("jobs", frame)
+            self.assertIn("events", frame)
+
+        scope = report_payload["m9_7_2_behavior_scope"]
+        self.assertIn("equipment.quantity", scope["behavior_driving_fields"])
+        self.assertIn("missionProfile.compositeTasks", scope["behavior_driving_fields"])
+        self.assertIn("supportNodes[].inventory", scope["behavior_driving_fields"])
+        self.assertIn("supportActivities[].jobs[].predecessors", scope["behavior_driving_fields"])
+        self.assertIn("supportOrganization", scope["fail_closed_fields"])
+        self.assertIn("reliabilityBlockDiagram", scope["m9_7_4_coverage_hardening_fields"])
+        self.assertTrue(
+            any(event.get("event") == "m9_7_2_behavior_scope_declared" for event in log_payload["events"])
+        )
+
+    def test_aircraft_support_v1_single_run_fails_closed_for_unsupported_provenance_fields(self) -> None:
+        project = self._load_fixture("m9_6_platform_case_export.json")["project"]
+        project["supportOrganization"] = {"tree": [{"id": "carrier-wing-support"}]}
+        scenario = self.adapter.compile_scenario(project, model_family="aircraft_support_v1")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(AdapterError) as ctx:
+                self.adapter.run_scenario(
+                    scenario,
+                    output_dir=Path(tmp),
+                    run_id="run-aircraft-v1-unsupported",
+                )
+
+            self.assertEqual(ctx.exception.code, "unsupported_aircraft_support_v1_fields")
+            self.assertEqual(ctx.exception.details["unsupported_fields"], ["supportOrganization"])
+            self.assertEqual(list(Path(tmp).glob("**/*")), [])
+
+    def test_aircraft_support_v1_single_run_metrics_change_when_behavior_fields_change(self) -> None:
+        project = self._load_fixture("m9_6_platform_case_export.json")["project"]
+        project["supportOrganization"] = {}
+        baseline_scenario = self.adapter.compile_scenario(project, model_family="aircraft_support_v1")
+        constrained_project = copy.deepcopy(project)
+        constrained_project["supportNodes"][0]["personnelCapacity"] = 1
+        constrained_project["supportNodes"][0]["equipmentCapacity"] = 1
+        constrained_project["supportNodes"][0]["inventory"] = {"发动机备件": 0, "液压备件": 0, "航电模块": 0}
+        constrained_scenario = self.adapter.compile_scenario(constrained_project, model_family="aircraft_support_v1")
+
+        with tempfile.TemporaryDirectory() as baseline_tmp, tempfile.TemporaryDirectory() as constrained_tmp:
+            baseline = self.adapter.run_scenario(
+                baseline_scenario,
+                output_dir=Path(baseline_tmp),
+                run_id="run-aircraft-v1-baseline",
+            )["result"]["metrics"]
+            constrained = self.adapter.run_scenario(
+                constrained_scenario,
+                output_dir=Path(constrained_tmp),
+                run_id="run-aircraft-v1-constrained",
+            )["result"]["metrics"]
+
+        self.assertLessEqual(constrained["spare_stock_total"], baseline["spare_stock_total"])
+        self.assertGreaterEqual(constrained["maintenance_backlog"], baseline["maintenance_backlog"])
+        self.assertNotEqual(constrained, baseline)
 
     def test_run_aviation_support_scenario_writes_backend_aligned_artifacts(self) -> None:
         project = self._load_fixture("aviation_support_project.json")
