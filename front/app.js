@@ -55,6 +55,7 @@ import {
 const app = document.querySelector("#app");
 const groups = groupFeaturePages(FEATURE_PAGES);
 const CONTRACT_BASE = "http://127.0.0.1:8521"; // Mesa 契约服务（见 agent.md「Mesa 后台契约服务」）
+const FORMAL_AIRCRAFT_SUPPORT_MODEL_FAMILY = "aircraft_support_v1";
 const LAST_BACKEND_RUN_STORAGE_KEY = "spare-mvp:lastBackendRun";
 const AUTH_SESSION_STORAGE_KEY = "spare-mvp:m4Session";
 const MANUAL_PROJECT_DRAFTS_STORAGE_KEY = "spare-mvp:manualProjects:v1";
@@ -5318,7 +5319,8 @@ async function saveCurrentExperimentPlanThroughApi() {
     const runIntent = buildRunIntent({
       runType: "single",
       projectJson: savedProject,
-      planProjectJson
+      planProjectJson,
+      modelFamily: FORMAL_AIRCRAFT_SUPPORT_MODEL_FAMILY
     });
     experimentPlan = await backendApi.createExperimentPlan(savedProject.project_id, runIntent.experimentPlanConfig);
     backendApiStatus = "实验方案分支已保存";
@@ -5365,7 +5367,8 @@ async function startSingleRunThroughApi() {
     const submitted = await submitRunIntent(backendApi, {
       runType,
       projectJson,
-      planProjectJson
+      planProjectJson,
+      modelFamily: FORMAL_AIRCRAFT_SUPPORT_MODEL_FAMILY
     });
     savedProject = submitted.savedProject;
     modelingSnapshot = submitted.modelingSnapshot;
@@ -5425,6 +5428,7 @@ async function startMonteCarloRunThroughApi({ monteCarloExperimentId = selectedM
       runType,
       projectJson,
       planProjectJson,
+      modelFamily: FORMAL_AIRCRAFT_SUPPORT_MODEL_FAMILY,
       mcExperimentId: monteCarloExperimentId
     });
     savedProject = submitted.savedProject;
@@ -6494,59 +6498,81 @@ function renderVisualSimulation(page) {
   const eventStream = visualizationStateSeriesFrame
     ? (visualizationStateSeries.event_stream || buildVisualizationEventStream(visualizationStateSeries))
     : [];
+  const replayStatusDetail = visualizationStateSeriesFrame
+    ? `run_id ${htmlEscape(visualizationStateSeries.run_id)} / artifact_id ${htmlEscape(visualizationStateSeries.artifact_id)} / step ${htmlEscape(visualizationStateSeriesFrame.step)} / ${currentFrame}-${htmlEscape(visualizationStateSeries.frame_count)} 帧 / 事件 ${htmlEscape(visualizationStateSeries.event_count)}`
+    : "演示快照只用于本地预览，不作为正式完成口径。";
+  const timelineFrameLabel = visualizationStateSeriesFrame
+    ? `${currentFrame} / ${htmlEscape(visualizationStateSeries.frame_count)} 帧`
+    : "等待正式回放";
+  const streamStatusDetail = `run_id ${htmlEscape(visualizationStreamState.runId || "-")} / status ${htmlEscape(visualizationStreamState.status)} / events ${htmlEscape(visualizationStreamState.eventCount || 0)} / artifact ${htmlEscape(visualizationStreamState.artifactId || "-")}`;
+  const visualKpis = visualSimulationKpis(state);
+  const availabilityTrend = buildAvailabilityTrend(state, visualizationStateSeries);
   return `
     <div class="mesa-visual-shell">
       <div class="mesa-visual-header">
         <div>
-          <div class="breadcrumb">Mesa ABM / aviation_support</div>
-          <h3>航空保障 Mesa ABM</h3>
-          <p>从 mesa-abm-skill 的可视化仿真迁移而来，基于本地状态帧展示飞机、任务和保障资源。</p>
+          <div class="breadcrumb">formal run / aircraft_support_v1</div>
+          <h3>飞机保障正式仿真</h3>
+          <p>通过平台 Project / ExperimentPlan 提交 canonical /api/runs，并使用正式 state-series artifact 展示飞机、任务和保障资源。</p>
         </div>
         <div class="mesa-clock">T+${Number((source.snapshot && source.snapshot.elapsed_hours) || 0).toFixed(1)}h <span class="mesa-source mesa-source-${sourceClass}" title="${htmlEscape(sourceTitle)}">${htmlEscape(sourceLabel)}</span></div>
       </div>
-      <div class="mesa-toolbar">
-        <div class="mesa-tabs" role="tablist" aria-label="Mesa 可视化视图">
-          ${mesaTab("aircraft", "飞机视图", activeView)}
-          ${mesaTab("mission", "任务视图", activeView)}
-          ${mesaTab("support", "保障视图", activeView)}
+      <div class="mesa-control-deck">
+        <div class="mesa-control-groups" aria-label="运行控制">
+          <div class="mesa-control-group">
+            <span>Run</span>
+            <button type="button" data-mesa-control="refresh-runs">刷新</button>
+            <select data-mesa-run-select aria-label="选择 M9 回放 run">${runOptions}</select>
+            <button type="button" data-mesa-control="subscribe-run">订阅</button>
+            <button type="button" data-mesa-control="stop-subscription">停止</button>
+            <details class="mesa-control-status ${visualizationStreamEventClass()}" data-mesa-stream-status>
+              <summary><span>在线状态流</span><strong>${htmlEscape(visualizationStreamState.message)}</strong></summary>
+              <small>${streamStatusDetail}</small>
+            </details>
+          </div>
+          <div class="mesa-control-group">
+            <span>回放</span>
+            <button type="button" data-mesa-control="load-replay">加载</button>
+            <button type="button" class="btn-primary" data-mesa-control="play">${visualizationReplayPlaying ? "暂停" : "运行"}</button>
+            <button type="button" data-mesa-control="step">单步</button>
+            <button type="button" data-mesa-control="reset">重置</button>
+            <details class="mesa-control-status ${visualizationStateSeriesFrame ? "success" : "warning"}">
+              <summary><span>离线回放</span><strong>${htmlEscape(visualizationReplayStatus)}</strong></summary>
+              <small>${replayStatusDetail}</small>
+            </details>
+          </div>
+          <div class="mesa-control-group">
+            <span>后端</span>
+            <button type="button" data-mesa-control="backend-cancel">取消运行</button>
+            <button type="button" data-mesa-control="backend-retry">重试运行</button>
+            <button type="button" data-mesa-control="backend-pause">后端暂停</button>
+            <button type="button" data-mesa-control="backend-resume">后端恢复</button>
+            <button type="button" data-mesa-control="backend-step">后端单步</button>
+            <button type="button" data-mesa-control="backend-reset">后端重置</button>
+            <details class="mesa-control-status info" data-mesa-backend-control-status>
+              <summary><span>后端运行控制</span><strong>${htmlEscape(visualizationBackendControlStatus)}</strong></summary>
+            </details>
+          </div>
         </div>
-        <div class="mesa-actions" aria-label="运行控制">
-          <button type="button" data-mesa-control="refresh-runs">刷新 run</button>
-          <select data-mesa-run-select aria-label="选择 M9 回放 run">${runOptions}</select>
-          <button type="button" data-mesa-control="subscribe-run">订阅运行</button>
-          <button type="button" data-mesa-control="stop-subscription">停止订阅</button>
-          <button type="button" data-mesa-control="load-replay">加载回放</button>
-          <button type="button" class="btn-primary" data-mesa-control="play">${visualizationReplayPlaying ? "暂停" : "运行"}</button>
-          <button type="button" data-mesa-control="step">单步</button>
-          <button type="button" data-mesa-control="reset">重置</button>
-          <button type="button" data-mesa-control="backend-cancel">取消运行</button>
-          <button type="button" data-mesa-control="backend-retry">重试运行</button>
-          <button type="button" data-mesa-control="backend-pause">后端暂停</button>
-          <button type="button" data-mesa-control="backend-resume">后端恢复</button>
-          <button type="button" data-mesa-control="backend-step">后端单步</button>
-          <button type="button" data-mesa-control="backend-reset">后端重置</button>
+      </div>
+      <div class="kpi-strip mesa-kpi-strip">
+        ${visualKpis.map((item) => `<div class="kpi-card"><span>${htmlEscape(item.label)}</span><strong>${htmlEscape(item.value)}</strong></div>`).join("")}
+      </div>
+      <div class="mesa-tabs mesa-view-tabs" role="tablist" aria-label="Mesa 可视化视图">
+        ${mesaTab("aircraft", "飞机视图", activeView)}
+        ${mesaTab("mission", "任务视图", activeView)}
+        ${mesaTab("support", "保障视图", activeView)}
+      </div>
+      <div class="mesa-timeline-card">
+        <div>
+          <span>state_series 时间轴</span>
+          <strong>${timelineFrameLabel}</strong>
         </div>
-      </div>
-      <div class="event ${visualizationStateSeriesFrame ? "success" : "warning"}">
-        <strong>M9 离线回放</strong> ${htmlEscape(visualizationReplayStatus)}
-        ${visualizationStateSeriesFrame ? `<br>run_id ${htmlEscape(visualizationStateSeries.run_id)} / artifact_id ${htmlEscape(visualizationStateSeries.artifact_id)} / step ${htmlEscape(visualizationStateSeriesFrame.step)} / ${currentFrame}-${htmlEscape(visualizationStateSeries.frame_count)} 帧 / 事件 ${htmlEscape(visualizationStateSeries.event_count)}` : "<br>演示快照只用于本地预览，不作为正式完成口径。"}
-      </div>
-      <div class="event ${visualizationStreamEventClass()}" data-mesa-stream-status>
-        <strong>M9.2 在线状态流</strong> ${htmlEscape(visualizationStreamState.message)}
-        <br>run_id ${htmlEscape(visualizationStreamState.runId || "-")} / status ${htmlEscape(visualizationStreamState.status)} / events ${htmlEscape(visualizationStreamState.eventCount || 0)} / artifact ${htmlEscape(visualizationStreamState.artifactId || "-")}
-      </div>
-      <div class="event info" data-mesa-backend-control-status>
-        <strong>M9.3 后端运行控制</strong> ${htmlEscape(visualizationBackendControlStatus)}
-      </div>
-      <div class="mesa-toolbar">
         <input type="range" min="0" max="${timelineMax}" value="${Math.min(visualizationReplayIndex, timelineMax)}" data-mesa-timeline ${visualizationStateSeriesFrame && !isOnlineStreamFrame ? "" : "disabled"} aria-label="M9 state_series 时间轴">
-      </div>
-      <div class="kpi-strip">
-        ${state.kpis.map((item) => `<div class="kpi-card"><span>${item.label}</span><strong>${item.value}</strong></div>`).join("")}
       </div>
       <div class="mesa-visual-grid">
         <section class="mesa-stage-panel">
-          ${renderMesaStage(state)}
+          ${renderMesaStage(activeView, state, availabilityTrend)}
         </section>
         <aside class="mesa-side-panel">
           ${renderMesaSidePanel(activeView, state)}
@@ -6579,7 +6605,7 @@ function visualizationStreamEventClass() {
 
 function renderVisualizationEventStream(events, activeFrameIndex) {
   return `
-    <div class="backend-run-chain" data-mesa-event-stream>
+    <div class="backend-run-chain mesa-event-window" data-mesa-event-stream>
       <div class="section-head">
         <h3>事件追溯</h3>
         <span>${events.length ? `${events.length} 个事件` : "等待正式 state_series"}</span>
@@ -6603,7 +6629,79 @@ function mesaTab(id, label, activeView) {
   return `<button type="button" class="mesa-tab ${activeView === id ? "active" : ""}" data-mesa-view="${id}">${label}</button>`;
 }
 
-function renderMesaStage(state) {
+function visualSimulationKpis(state) {
+  const aircraftCount = state.aircraft.length || 1;
+  const usableAircraft = state.aircraft.filter((aircraft) => ["available", "mission_ready"].includes(aircraft.state)).length;
+  const requiredSorties = state.missions.reduce((sum, mission) => sum + Number(mission.requiredAircraft || 0), 0);
+  const assignedSorties = state.missions.reduce((sum, mission) => sum + Number(mission.assignedCount || 0), 0);
+  const completedMissions = state.missions.filter((mission) => ["completed", "succeeded"].includes(String(mission.status))).length;
+  const stockedSpares = state.spares.filter((spare) => Number(spare.quantity || 0) > 0).length;
+  const consumedSpares = state.spares.reduce((sum, spare) => sum + Number(spare.consumed || 0), 0);
+  const totalSpareEvents = state.spares.reduce((sum, spare) => sum + Number(spare.quantity || 0) + Number(spare.consumed || 0) + Number(spare.pending || 0), 0);
+  return [
+    { label: "使用可用度", value: pct(usableAircraft / aircraftCount) },
+    { label: "出动架次率", value: pct(assignedSorties / Math.max(1, requiredSorties)) },
+    { label: "任务成功率", value: pct(completedMissions / Math.max(1, state.missions.length)) },
+    { label: "备件满足率", value: pct(stockedSpares / Math.max(1, state.spares.length)) },
+    { label: "备件利用率", value: pct(consumedSpares / Math.max(1, totalSpareEvents)) }
+  ];
+}
+
+function buildAvailabilityTrend(state, series) {
+  const frames = Array.isArray(series?.frames) ? series.frames : [];
+  const trend = frames.map((frame, index) => {
+    const aircraft = Array.isArray(frame.aircraft) ? frame.aircraft : [];
+    const available = Number(frame.snapshot?.available_aircraft ?? aircraft.filter((item) => ["available", "mission_ready"].includes(String(item.state))).length);
+    const total = Number(frame.snapshot?.aircraft_count ?? aircraft.length ?? state.aircraft.length);
+    return {
+      label: `T+${Number(frame.simulation_time ?? frame.step ?? index).toFixed(0)}`,
+      available,
+      total
+    };
+  });
+  if (trend.length > 0) return trend;
+  const total = state.aircraft.length || 1;
+  const current = state.aircraft.filter((aircraft) => ["available", "mission_ready"].includes(aircraft.state)).length;
+  return [0, 1, 2, 3, 4].map((index) => ({
+    label: `T-${4 - index}`,
+    available: Math.max(0, Math.min(total, current - 2 + index)),
+    total
+  }));
+}
+
+function renderAvailabilityCurve(trend) {
+  const points = trend.slice(-12);
+  const maxTotal = Math.max(1, ...points.map((point) => Number(point.total || 0)), ...points.map((point) => Number(point.available || 0)));
+  const width = 320;
+  const height = 92;
+  const chartPoints = points.map((point, index) => {
+    const x = points.length === 1 ? width / 2 : (index / (points.length - 1)) * width;
+    const y = height - (Number(point.available || 0) / maxTotal) * (height - 16) - 8;
+    return { ...point, x, y };
+  });
+  const polyline = chartPoints.map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(" ");
+  return `
+    <div class="availability-chart">
+      <div class="section-head">
+        <h3>可用飞机数量趋势</h3>
+        <span>${points.length} 个采样点</span>
+      </div>
+      <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="可用飞机数量随时间变化曲线">
+        <polyline points="${polyline}"></polyline>
+        ${chartPoints.map((point) => `<circle cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="3"><title>${htmlEscape(point.label)} / ${htmlEscape(point.available)} 架</title></circle>`).join("")}
+      </svg>
+      <div class="availability-axis"><span>${htmlEscape(points[0]?.label || "-")}</span><strong>${htmlEscape(points.at(-1)?.available ?? 0)} / ${maxTotal} 架</strong><span>${htmlEscape(points.at(-1)?.label || "-")}</span></div>
+    </div>
+  `;
+}
+
+function renderMesaStage(activeView, state, availabilityTrend) {
+  if (activeView === "mission") return renderMesaMissionStage(state);
+  if (activeView === "support") return renderMesaSupportStage(state);
+  return renderMesaAircraftStage(state, availabilityTrend);
+}
+
+function renderMesaAircraftStage(state, availabilityTrend) {
   return `
     <div class="mesa-stage">
       <div class="mesa-flight-deck">
@@ -6612,22 +6710,145 @@ function renderMesaStage(state) {
           return `<div class="mesa-aircraft-node ${mesaStateClass(aircraft.state)}" style="left:${12 + x * 21}%;top:${16 + y * 34}%">
             <strong>${htmlEscape(aircraft.label)}</strong>
             <span>${htmlEscape(aircraft.type)}</span>
-            <em>${htmlEscape(stateLabel(aircraft.state))}</em>
+            <em>${htmlEscape(visualAircraftStateLabel(aircraft.state))}</em>
           </div>`;
         }).join("")}
       </div>
       <div class="legend">
-        <span class="legend-item"><i class="dot available"></i>可用</span>
-        <span class="legend-item"><i class="dot support"></i>保障</span>
-        <span class="legend-item"><i class="dot ready"></i>待出动</span>
-        <span class="legend-item"><i class="dot flying"></i>任务中</span>
-        <span class="legend-item"><i class="dot maintenance"></i>维修</span>
+        <span class="legend-item"><i class="dot available"></i>停放</span>
+        <span class="legend-item"><i class="dot support"></i>使用保障</span>
+        <span class="legend-item"><i class="dot ready"></i>停放</span>
+        <span class="legend-item"><i class="dot flying"></i>任务</span>
+        <span class="legend-item"><i class="dot maintenance"></i>维修保障</span>
       </div>
-      <div class="mesa-mission-strip">
-        ${state.missions.map((mission) => `<div class="mission"><span>任务 ${htmlEscape(mission.id)} / 需求 ${htmlEscape(mission.requiredAircraft)} 架</span><strong>${htmlEscape(mission.status)}</strong><div class="bar"><i style="width:${missionProgressWidth(mission)}%"></i></div></div>`).join("")}
+      ${renderAvailabilityCurve(availabilityTrend)}
+    </div>
+  `;
+}
+
+function renderMesaMissionStage(state) {
+  return `
+    <div class="mesa-stage">
+      <div class="section-head">
+        <h3>任务甘特图</h3>
+        <span>${state.missions.length} 个任务</span>
+      </div>
+      <div class="mesa-gantt">
+        ${state.missions.map((mission) => {
+          const start = boundedPercent(Number(mission.plannedStart || 0) / 360);
+          const end = boundedPercent(Number(mission.returnTime || mission.actualStart || mission.plannedStart || 0) / 360);
+          const width = Math.max(12, end - start || 18);
+          return `<div class="mesa-gantt-row">
+            <span>任务 ${htmlEscape(mission.id)}</span>
+            <div class="mesa-gantt-track">
+              <i style="left:${start}%;width:${width}%"></i>
+            </div>
+            <strong>${htmlEscape(missionStatusLabel(mission.status))}</strong>
+          </div>`;
+        }).join("")}
+      </div>
+      <div class="mesa-mission-cards">
+        ${state.missions.map((mission) => `<div class="mission-card">
+          <span>任务 ${htmlEscape(mission.id)}</span>
+          <strong>${htmlEscape(missionStatusLabel(mission.status))}</strong>
+          <small>计划 T+${htmlEscape(mission.plannedStart)} / 实际 ${mission.actualStart ? `T+${htmlEscape(mission.actualStart)}` : "-"}</small>
+          <small>成员飞机：${mission.assignedTailNumbers.length ? mission.assignedTailNumbers.map((tailNumber) => htmlEscape(tailNumber)).join(" / ") : "未编组"}</small>
+        </div>`).join("")}
       </div>
     </div>
   `;
+}
+
+function renderMesaSupportStage(state) {
+  const personnelRows = supportMetricRows(state.resources.filter((item) => item.category === "personnel"), "保障组织 A", "机务专业");
+  const equipmentRows = supportMetricRows(state.resources.filter((item) => ["equipment", "facility"].includes(item.category)), "保障组织 A", "设备类型");
+  const spareRows = spareMetricRows(state.spares);
+  return `
+    <div class="mesa-support-dashboard">
+      ${renderSupportMetricSection("保障人员", "按保障组织 / 人员专业", personnelRows)}
+      ${renderSupportMetricSection("保障设备", "按保障组织 / 设备类型", equipmentRows)}
+      ${renderSupportMetricSection("备件", "按保障组织 / 备件类型", spareRows)}
+      <section class="support-metric-panel support-detail-panel">
+        <div class="section-head">
+          <h3>保障设备详情清单</h3>
+          <span>按类型</span>
+        </div>
+        <div class="table-wrap compact-table">
+          <table>
+            <thead><tr><th>类型</th><th>容量</th><th>占用</th><th>利用率</th><th>满足率</th></tr></thead>
+            <tbody>${equipmentRows.map((row) => `<tr><td>${htmlEscape(row.name)}</td><td>${htmlEscape(row.capacity)}</td><td>${htmlEscape(row.inUse)}</td><td>${htmlEscape(row.utilization)}</td><td>${htmlEscape(row.satisfaction)}</td></tr>`).join("")}</tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  `;
+}
+
+function renderSupportMetricSection(title, subtitle, rows) {
+  return `
+    <section class="support-metric-panel">
+      <div class="section-head">
+        <h3>${htmlEscape(title)}</h3>
+        <span>${htmlEscape(subtitle)}</span>
+      </div>
+      <div class="support-metric-list">
+        ${rows.map((row) => `<div class="support-metric-row">
+          <div>
+            <strong>${htmlEscape(row.name)}</strong>
+            <span>${htmlEscape(row.organization)} / ${htmlEscape(row.type)}</span>
+          </div>
+          <div class="support-meter"><small>利用率 ${htmlEscape(row.utilization)}</small><i><b style="width:${htmlEscape(row.utilizationWidth)}%"></b></i></div>
+          <div class="support-meter"><small>满足率 ${htmlEscape(row.satisfaction)}</small><i><b style="width:${htmlEscape(row.satisfactionWidth)}%"></b></i></div>
+        </div>`).join("")}
+      </div>
+    </section>
+  `;
+}
+
+function supportMetricRows(resources, organization, typeLabel) {
+  return (resources.length ? resources : [{ label: "暂无资源", capacity: 0, inUse: 0, utilization: 0, workCount: 0 }]).map((resource) => {
+    const utilization = Math.max(0, Math.min(1, Number(resource.utilization || 0)));
+    const satisfaction = Number(resource.capacity || 0) > 0 ? Math.max(0, Math.min(1, 1 - Number(resource.inUse || 0) / Math.max(1, Number(resource.capacity || 0)))) : 0;
+    return {
+      organization,
+      type: resource.category === "personnel" ? typeLabel : resourceCategoryLabel(resource.category || typeLabel),
+      name: resource.label || resource.id || "资源",
+      capacity: Number(resource.capacity || 0),
+      inUse: Number(resource.inUse || 0),
+      utilization: pct(utilization),
+      utilizationWidth: Math.round(utilization * 100),
+      satisfaction: pct(satisfaction),
+      satisfactionWidth: Math.round(satisfaction * 100)
+    };
+  });
+}
+
+function resourceCategoryLabel(category) {
+  const labels = {
+    equipment: "保障设备",
+    facility: "保障设施",
+    personnel: "人员专业"
+  };
+  return labels[category] || category || "资源类型";
+}
+
+function spareMetricRows(spares) {
+  return (spares.length ? spares : [{ label: "暂无备件", quantity: 0, consumed: 0, pending: 0 }]).map((spare) => {
+    const total = Number(spare.quantity || 0) + Number(spare.consumed || 0) + Number(spare.pending || 0);
+    const satisfaction = total > 0 ? Number(spare.quantity || 0) / total : 0;
+    const utilization = total > 0 ? Number(spare.consumed || 0) / total : 0;
+    return {
+      organization: "保障组织 A",
+      type: "备件类型",
+      name: spare.label || spare.id || "备件",
+      capacity: Number(spare.quantity || 0),
+      inUse: Number(spare.consumed || 0),
+      utilization: pct(utilization),
+      utilizationWidth: Math.round(utilization * 100),
+      satisfaction: pct(satisfaction),
+      satisfactionWidth: Math.round(satisfaction * 100)
+    };
+  });
 }
 
 function renderMesaSidePanel(activeView, state) {
@@ -6644,7 +6865,7 @@ function renderMesaAircraftPanel(state) {
       <span>${state.aircraft.length} 架</span>
     </div>
     <div class="mesa-aircraft-list">
-      ${state.aircraft.map((aircraft) => `<div class="list-row"><strong>${htmlEscape(aircraft.label)}</strong><span>${htmlEscape(aircraft.type)}</span><span>${htmlEscape(stateLabel(aircraft.state))}</span></div>`).join("")}
+      ${state.aircraft.map((aircraft) => `<div class="list-row"><strong>${htmlEscape(aircraft.label)}</strong><span>${htmlEscape(aircraft.type)}</span><span>${htmlEscape(visualAircraftStateLabel(aircraft.state))}</span></div>`).join("")}
     </div>
     <h4>飞机内部装备</h4>
     <div class="event info"><strong>${htmlEscape(selectedAircraft.label)}</strong> 系统数量 ${htmlEscape(selectedAircraft.systemCount)} / 失效 LRU ${htmlEscape(selectedAircraft.failedLru || "-")}</div>
@@ -6694,6 +6915,35 @@ function missionProgressWidth(mission) {
   if (mission.status === "launched" || mission.status === "flying") return 72;
   if (mission.status === "delayed") return 36;
   return 18;
+}
+
+function missionStatusLabel(status) {
+  const labels = {
+    completed: "已完成",
+    succeeded: "成功",
+    launched: "执行中",
+    flying: "执行中",
+    scheduled: "计划中",
+    delayed: "延误",
+    failed: "失败"
+  };
+  return labels[status] || status || "-";
+}
+
+function visualAircraftStateLabel(state) {
+  const labels = {
+    available: "停放",
+    mission_ready: "停放",
+    pre_support: "使用保障",
+    post_support: "使用保障",
+    flying: "任务",
+    maintenance: "维修保障"
+  };
+  return labels[state] || state || "-";
+}
+
+function boundedPercent(value) {
+  return Math.max(0, Math.min(100, Math.round(Number(value || 0) * 100)));
 }
 
 function createDefaultMonteCarloExperiments() {

@@ -1653,6 +1653,152 @@ tr.selected-table-row {
   gap: 8px;
 }
 
+.mesa-control-deck {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+  align-items: start;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.mesa-kpi-strip {
+  grid-template-columns: repeat(5, minmax(118px, 1fr));
+  margin-bottom: 0;
+}
+
+.mesa-view-tabs {
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.mesa-control-groups {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.2fr);
+  gap: 8px;
+}
+
+.mesa-control-group {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.mesa-control-group > span {
+  flex: 0 0 100%;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.mesa-control-group button,
+.mesa-control-group select {
+  min-height: 30px;
+}
+
+.mesa-control-group button {
+  padding: 5px 9px;
+  border-radius: 6px;
+}
+
+.mesa-control-group select {
+  min-width: 128px;
+  max-width: 100%;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+}
+
+.mesa-control-status {
+  flex: 0 0 100%;
+  min-width: 0;
+  max-height: 34px;
+  overflow: hidden;
+  padding: 6px 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  background: #f8fafc;
+  color: var(--muted);
+}
+
+.mesa-control-status[open] {
+  max-height: 96px;
+  overflow: auto;
+}
+
+.mesa-control-status summary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  cursor: pointer;
+  list-style: none;
+}
+
+.mesa-control-status summary::-webkit-details-marker {
+  display: none;
+}
+
+.mesa-control-status summary::after {
+  content: "展开";
+  justify-self: end;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.mesa-control-status[open] summary::after {
+  content: "收起";
+}
+
+.mesa-control-status summary span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.mesa-control-status summary strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mesa-control-status small {
+  display: block;
+  margin-top: 6px;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.mesa-control-status.success {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+.mesa-control-status.warning {
+  border-color: #fde68a;
+  background: #fffbeb;
+}
+
+.mesa-control-status.info {
+  border-color: #d8e4ff;
+  background: var(--primary-soft);
+}
+
 .mesa-tab {
   min-height: 34px;
   padding: 7px 12px;
@@ -1687,6 +1833,191 @@ tr.selected-table-row {
 .mesa-stage {
   display: grid;
   gap: 12px;
+}
+
+.availability-chart,
+.support-metric-panel {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.availability-chart svg {
+  width: 100%;
+  height: 118px;
+  display: block;
+  margin-top: 6px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background:
+    linear-gradient(0deg, rgba(15, 92, 191, 0.07) 1px, transparent 1px),
+    #f8fafc;
+  background-size: 100% 24px;
+}
+
+.availability-chart polyline {
+  fill: none;
+  stroke: var(--primary);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.availability-chart circle {
+  fill: #fff;
+  stroke: var(--primary);
+  stroke-width: 2;
+}
+
+.availability-axis {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.availability-axis strong {
+  color: var(--ink);
+}
+
+.mesa-gantt {
+  display: grid;
+  gap: 10px;
+}
+
+.mesa-gantt-row {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr) 72px;
+  gap: 10px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.mesa-gantt-row span,
+.mesa-gantt-row strong {
+  font-size: 12px;
+}
+
+.mesa-gantt-track {
+  position: relative;
+  height: 18px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e2e8f0;
+}
+
+.mesa-gantt-track i {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--primary), var(--teal));
+}
+
+.mesa-mission-cards,
+.mesa-support-dashboard {
+  display: grid;
+  gap: 10px;
+}
+
+.mesa-mission-cards {
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+}
+
+.mission-card {
+  display: grid;
+  gap: 5px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.mission-card span,
+.mission-card small {
+  color: var(--muted);
+}
+
+.support-metric-list {
+  display: grid;
+  gap: 8px;
+}
+
+.support-metric-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) minmax(110px, 0.8fr) minmax(110px, 0.8fr);
+  gap: 10px;
+  align-items: center;
+  padding: 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.support-metric-row span,
+.support-meter small {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.support-meter i {
+  display: block;
+  height: 7px;
+  margin-top: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e2e8f0;
+}
+
+.support-meter b {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--teal);
+}
+
+.support-detail-panel {
+  overflow: auto;
+}
+
+.mesa-status-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.mesa-timeline-card {
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfd;
+}
+
+.mesa-timeline-card span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.mesa-timeline-card strong {
+  display: block;
+  margin-top: 2px;
+  font-size: 13px;
+}
+
+.mesa-timeline-card input[type="range"] {
+  width: 100%;
 }
 
 .mesa-flight-deck {
@@ -1819,6 +2150,11 @@ tr.selected-table-row {
   overflow: auto;
 }
 
+.mesa-event-window {
+  max-height: 260px;
+  overflow: auto;
+}
+
 .aircraft-board {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(82px, 1fr));
@@ -1903,6 +2239,37 @@ tr.selected-table-row {
   background: var(--primary-soft);
 }
 
+.event.mesa-status-card {
+  min-height: 94px;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 5px;
+  align-content: start;
+  padding: 10px 12px;
+}
+
+.event.mesa-status-card span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.event.mesa-status-card strong {
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.event.mesa-status-card small {
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.event.mesa-status-card.warning {
+  border-color: #fde68a;
+  background: #fffbeb;
+}
+
 .issue {
   border-color: #fecaca;
   background: #fff1f2;
@@ -1969,6 +2336,10 @@ tr.selected-table-row {
   .page-grid,
   .simulation-layout,
   .mesa-visual-grid,
+  .mesa-control-deck,
+  .mesa-control-groups,
+  .mesa-status-grid,
+  .mesa-timeline-card,
   .system-config-layout,
   .rms-layout,
   .rms-bottom-grid,
@@ -1976,6 +2347,12 @@ tr.selected-table-row {
   .modeling-import-summary,
   .modeling-import-status-grid,
   .modeling-import-compile-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .mesa-kpi-strip,
+  .mesa-gantt-row,
+  .support-metric-row {
     grid-template-columns: 1fr;
   }
 

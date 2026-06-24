@@ -558,9 +558,9 @@ test("mesa visualization escapes contract-provider fields before innerHTML inser
   assert.match(stageSource, /mesaStateClass\(aircraft\.state\)/);
   assert.match(stageSource, /htmlEscape\(aircraft\.label\)/);
   assert.match(stageSource, /htmlEscape\(aircraft\.type\)/);
-  assert.match(stageSource, /htmlEscape\(stateLabel\(aircraft\.state\)\)/);
+  assert.match(stageSource, /htmlEscape\(visualAircraftStateLabel\(aircraft\.state\)\)/);
   assert.match(stageSource, /htmlEscape\(mission\.id\)/);
-  assert.match(stageSource, /htmlEscape\(mission\.status\)/);
+  assert.match(stageSource, /htmlEscape\(missionStatusLabel\(mission\.status\)\)/);
   assert.doesNotMatch(stageSource, /\$\{aircraft\.state\}/);
   assert.doesNotMatch(stageSource, /\$\{aircraft\.label\}/);
   assert.doesNotMatch(stageSource, /\$\{mission\.status\}/);
@@ -1675,6 +1675,7 @@ test("monte carlo launch creates a run from the current experiment plan branch",
   assert.match(launchSource, /submitRunIntent\(backendApi,\s*\{/);
   assert.match(launchSource, /const runType = "monte_carlo"/);
   assert.match(launchSource, /runType,/);
+  assert.match(launchSource, /modelFamily: FORMAL_AIRCRAFT_SUPPORT_MODEL_FAMILY/);
   assert.match(launchSource, /mcExperimentId: monteCarloExperimentId/);
   assert.match(appSource, /startMonteCarloRunThroughApi\(\{ monteCarloExperimentId: experiment\.mc_experiment_id/);
   assert.doesNotMatch(launchSource, /sample_count\s*:/);
@@ -1683,6 +1684,49 @@ test("monte carlo launch creates a run from the current experiment plan branch",
   assert.doesNotMatch(launchSource, /run_type: "single"/);
   assert.doesNotMatch(launchSource, /backendApi\.startSimulationRun/);
   assert.doesNotMatch(launchSource, /backendApi\.startMonteCarloRun/);
+});
+
+test("M9.8 visual and formal run launches use aircraft_support_v1 through canonical runs", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const runIntentSource = await readFile(new URL("../front/run-intent.mjs", import.meta.url), "utf8");
+  const singleLaunchSource = appSource.slice(
+    appSource.indexOf("async function startSingleRunThroughApi"),
+    appSource.indexOf("async function startMonteCarloRunThroughApi")
+  );
+  const monteCarloLaunchSource = appSource.slice(
+    appSource.indexOf("async function startMonteCarloRunThroughApi"),
+    appSource.indexOf("async function refreshRunResultThroughApi")
+  );
+  const visualSource = appSource.slice(
+    appSource.indexOf("function renderVisualSimulation"),
+    appSource.indexOf("function mesaTab")
+  );
+
+  assert.match(appSource, /const FORMAL_AIRCRAFT_SUPPORT_MODEL_FAMILY = "aircraft_support_v1"/);
+  assert.match(runIntentSource, /modelFamily = "aircraft_support_v1"/);
+  assert.match(singleLaunchSource, /submitRunIntent\(backendApi,\s*\{/);
+  assert.match(singleLaunchSource, /modelFamily: FORMAL_AIRCRAFT_SUPPORT_MODEL_FAMILY/);
+  assert.match(monteCarloLaunchSource, /submitRunIntent\(backendApi,\s*\{/);
+  assert.match(monteCarloLaunchSource, /modelFamily: FORMAL_AIRCRAFT_SUPPORT_MODEL_FAMILY/);
+  assert.match(visualSource, /aircraft_support_v1/);
+  assert.match(visualSource, /canonical \/api\/runs/);
+  assert.doesNotMatch(visualSource, /mesa-abm-skill/);
+  assert.doesNotMatch(visualSource, /Mesa ABM \/ aviation_support/);
+});
+
+test("M9.8 docs mark platform embedding complete without making independent-mesa a runtime entry", async () => {
+  const docs = {
+    readme: await readFile(new URL("../README.md", import.meta.url), "utf8"),
+    docsReadme: await readFile(new URL("../docs/README.md", import.meta.url), "utf8"),
+    roadmap: await readFile(new URL("../docs/product-roadmap.md", import.meta.url), "utf8"),
+    agent: await readFile(new URL("../agent.md", import.meta.url), "utf8")
+  };
+  const combined = Object.values(docs).join("\n");
+
+  assert.match(combined, /M9\.8[^。]*(平台嵌入|嵌入平台)[^。]*(完成|收束|已)/);
+  assert.match(combined, /aircraft_support_v1[^。]*canonical `?\/api\/runs`?/);
+  assert.match(combined, /independent-mesa[^。]*(历史参考|开发对照|离线复现)/);
+  assert.doesNotMatch(combined, /M9\.8[^。]*(8765|independent-mesa\/server\.py)[^。]*(正式产品入口|平台运行必需|启动平台所需)/);
 });
 
 test("frontend code no longer references legacy simulation run routes", async () => {
@@ -2366,7 +2410,8 @@ test("visual simulation page embeds aircraft mission and support Mesa views", as
   assert.match(appSource, /mesaTab\("aircraft"/);
   assert.match(appSource, /mesaTab\("mission"/);
   assert.match(appSource, /mesaTab\("support"/);
-  assert.match(appSource, /Mesa ABM/);
+  assert.match(appSource, /飞机保障正式仿真/);
+  assert.match(appSource, /formal run \/ aircraft_support_v1/);
   assert.match(appSource, /isVisualSimulationPage/);
   assert.match(appSource, /<h2>\$\{htmlEscape\(page\.tertiary\)\}<\/h2>/);
   assert.doesNotMatch(appSource, /return `<div>\$\{breadcrumb\}<\/div>`;/);
@@ -2378,6 +2423,42 @@ test("visual simulation page embeds aircraft mission and support Mesa views", as
   assert.doesNotMatch(appSource, /buildMesaOntologyFocusSet/);
   assert.doesNotMatch(appSource, /data-ontology-/);
   assert.doesNotMatch(appSource, /ontology-context/);
+});
+
+test("visual simulation layout matches operational dashboard requirements", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const styleSource = await readFile(new URL("../front/styles.css", import.meta.url), "utf8");
+  const visualSource = appSource.slice(
+    appSource.indexOf("function renderVisualSimulation"),
+    appSource.indexOf("function renderVisualizationRunOptions")
+  );
+  const stageSource = appSource.slice(
+    appSource.indexOf("function renderMesaStage"),
+    appSource.indexOf("function renderMesaSidePanel")
+  );
+
+  for (const label of ["使用可用度", "出动架次率", "任务成功率", "备件满足率", "备件利用率"]) {
+    assert.match(appSource, new RegExp(label));
+  }
+  const controlIndex = visualSource.indexOf("mesa-control-deck");
+  const kpiIndex = visualSource.indexOf("mesa-kpi-strip");
+  const tabsIndex = visualSource.indexOf("mesa-view-tabs");
+  assert.ok(controlIndex > -1 && kpiIndex > -1 && controlIndex < kpiIndex, "run control panel should render above KPI row");
+  assert.ok(kpiIndex > -1 && tabsIndex > -1 && tabsIndex > kpiIndex, "view tabs should render below KPI row");
+  assert.match(visualSource, /mesa-control-status/);
+  assert.doesNotMatch(visualSource, /mesa-status-grid/);
+  assert.match(styleSource, /\.mesa-control-status\[open\][\s\S]*overflow: auto/);
+  assert.match(appSource, /可用飞机数量趋势/);
+  assert.match(stageSource, /停放/);
+  assert.match(stageSource, /使用保障/);
+  assert.match(stageSource, /任务甘特图/);
+  assert.match(stageSource, /成员飞机/);
+  assert.match(stageSource, /保障人员/);
+  assert.match(stageSource, /按保障组织 \/ 人员专业/);
+  assert.match(stageSource, /保障设备详情清单/);
+  assert.match(stageSource, /按保障组织 \/ 备件类型/);
+  assert.match(appSource, /mesa-event-window/);
+  assert.match(styleSource, /\.mesa-event-window[\s\S]*overflow: auto/);
 });
 
 test("visual simulation consumes the Mesa contract provider with demo fallback", async () => {
@@ -2564,8 +2645,8 @@ test("M9.6 docs freeze platform case fixtures before M9.7 model-family work", as
   assert.match(combined, /m9_6_field_coverage\.json/);
   assert.match(combined, /m9_6_expected_artifact_kinds\.json/);
   assert.match(combined, /M9\.7[^。]*正式飞机保障仿真模型族/);
-  assert.match(combined, /M9\.8[^。]*independent-mesa/);
-  assert.match(combined, /不得先把 `independent-mesa` 旁路页面嵌入产品入口/);
+  assert.match(combined, /M9\.8[^。]*(平台嵌入|嵌入平台)[^。]*(完成|收束|已)/);
+  assert.match(combined, /independent-mesa[^。]*(历史参考|开发对照|离线复现)/);
   assert.doesNotMatch(combined, /M9\.6[^。]*(正式飞机保障仿真模型族已完成|嵌入平台已完成|退役 independent-mesa 已完成)/);
   assert.doesNotMatch(combined, /M9\.6[^。]*(8765|independent-mesa\/server\.py)[^。]*(已作为|已成为|是)正式产品入口/);
 });
@@ -2588,7 +2669,7 @@ test("M9.7 docs describe single-run, Monte Carlo, and coverage closure without c
   assert.match(combined, /M9\.7\.3[^。]*(formal Monte Carlo|MC\/projection|Monte Carlo\/projection)/);
   assert.match(combined, /M9\.7\.4[^。]*(coverage hardening|覆盖)[^。]*(完成|关闭|收口)/);
   assert.doesNotMatch(combined, /M9\.7\.2[^。]*(字段全覆盖已完成|coverage hardening 已完成|formal Monte Carlo 已完成|Monte Carlo\/projection 已完成)/);
-  assert.doesNotMatch(combined, /M9\.7\.4[^。]*(M9\.8 平台嵌入已完成|independent-mesa[^。]*退役已完成)/);
+  assert.doesNotMatch(combined, /M9\.7\.4[^。]*仍[^。]*(等待|后续).*M9\.8/);
 });
 
 test("M9.7.4 docs promote formerly payload-only fields and avoid pending coverage wording", async () => {

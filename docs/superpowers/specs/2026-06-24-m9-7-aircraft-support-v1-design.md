@@ -8,7 +8,7 @@
 
 M9.7 新增正式飞机保障仿真模型族 `aircraft_support_v1`。该模型族必须通过 `SimulationAdapter.compile_scenario()`、`SimulationAdapter.run_scenario()` 和 `SimulationAdapter.run_monte_carlo_scenario()` 进入平台正式运行链路，并使用 canonical `/api/runs` 产出 result、artifact manifest、run chain、`visualization_state_series`、`monte_carlo_base` 和四类 `analysis_projection_*` artifact。
 
-M9.7 不把 `independent-mesa`、`8765` 或静态 HTML 输出作为正式产品入口。`independent-mesa/GLM` 和 `independent-mesa/GPT` 只作为机制、模块划分和验收要素参考。M9.8 才处理平台嵌入和 `independent-mesa` 退役。
+M9.7 不把 `independent-mesa`、`8765` 或静态 HTML 输出作为正式产品入口。`independent-mesa/GLM` 和 `independent-mesa/GPT` 只作为机制、模块划分和验收要素参考。M9.8 已将平台入口切到 `aircraft_support_v1` 并完成 `independent-mesa` 退役；这些旁路目录只保留为历史参考、开发对照和离线复现实验。
 
 ## 已确认设计决策
 
@@ -223,7 +223,7 @@ M9.7 拆成四个 PR 验收，最后一个 PR 才标记 M9.7 完成。
 
 - 更新 M9.6/M9.7 coverage 和 golden fixtures。
 - 所有 M9.6 业务字段进入 consumed、derived、defaulted 或 governance_only。
-- 文档同步标记 M9.7 完成，并保留 M9.8 平台嵌入和 `independent-mesa` 退役边界。
+- 文档同步标记 M9.7 完成，并保留 M9.8 已完成的平台嵌入和 `independent-mesa` 退役边界。
 
 完成标准：
 

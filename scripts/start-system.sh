@@ -6,13 +6,11 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 HOST="${HOST:-127.0.0.1}"
 APP_PORT="${APP_PORT:-4173}"
 CONTRACT_PORT="${CONTRACT_PORT:-8521}"
-INDEPENDENT_MESA_PORT="${INDEPENDENT_MESA_PORT:-8765}"
 RUN_DIR="$ROOT_DIR/runs/system-start"
 DATABASE_PATH="${DATABASE_PATH:-$RUN_DIR/spare_mvp.sqlite3}"
 
 APP_PY="$ROOT_DIR/.abm-mesa-test-env/bin/python"
 CONTRACT_PY="$ROOT_DIR/.abm-mesa-test-env/bin/python"
-INDEPENDENT_MESA_PY="$ROOT_DIR/.abm-mesa-test-env/bin/python"
 
 stop_port() {
   local port="$1"
@@ -77,14 +75,12 @@ PY
 stop_system() {
   stop_port "$APP_PORT"
   stop_port "$CONTRACT_PORT"
-  stop_port "$INDEPENDENT_MESA_PORT"
-  rm -f "$RUN_DIR/app.pid" "$RUN_DIR/contract.pid" "$RUN_DIR/independent-mesa.pid"
+  rm -f "$RUN_DIR/app.pid" "$RUN_DIR/contract.pid"
 }
 
 start_system() {
   require_executable "$APP_PY"
   require_executable "$CONTRACT_PY"
-  require_executable "$INDEPENDENT_MESA_PY"
   mkdir -p "$RUN_DIR"
 
   stop_system
@@ -97,21 +93,14 @@ start_system() {
   CONTRACT_PID="$(start_detached "$CONTRACT_PY" "$RUN_DIR/contract.log" "$CONTRACT_PY" src/spare_mvp_abm/contract_server.py --host "$HOST" --port "$CONTRACT_PORT")"
   echo "$CONTRACT_PID" >"$RUN_DIR/contract.pid"
 
-  echo "Starting independent Mesa scheme launcher on http://$HOST:$INDEPENDENT_MESA_PORT"
-  INDEPENDENT_MESA_PID="$(start_detached "$INDEPENDENT_MESA_PY" "$RUN_DIR/independent-mesa.log" "$INDEPENDENT_MESA_PY" independent-mesa/server.py --host "$HOST" --port "$INDEPENDENT_MESA_PORT")"
-  echo "$INDEPENDENT_MESA_PID" >"$RUN_DIR/independent-mesa.pid"
-
   wait_for_port "$APP_PORT" "spare_mvp app"
   wait_for_port "$CONTRACT_PORT" "Mesa contract provider"
-  wait_for_port "$INDEPENDENT_MESA_PORT" "independent Mesa scheme launcher"
 
   echo "App PID: $APP_PID"
   echo "Contract PID: $CONTRACT_PID"
-  echo "Independent Mesa PID: $INDEPENDENT_MESA_PID"
   echo "Database: $DATABASE_PATH"
   echo "Open: http://$HOST:$APP_PORT/front/"
   echo "Health: http://$HOST:$CONTRACT_PORT/health"
-  echo "Schemes: http://$HOST:$INDEPENDENT_MESA_PORT/"
 }
 
 case "$MODE" in

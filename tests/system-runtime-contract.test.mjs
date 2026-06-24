@@ -32,16 +32,22 @@ test("start-system defaults app backend to file SQLite and supports stop mode th
 
   assert.match(script, /MODE="\$\{1:-start\}"/);
   assert.match(script, /DATABASE_PATH="\$\{DATABASE_PATH:-\$RUN_DIR\/spare_mvp\.sqlite3\}"/);
-  assert.match(script, /INDEPENDENT_MESA_PORT="\$\{INDEPENDENT_MESA_PORT:-8765\}"/);
   assert.match(script, /--database "\$DATABASE_PATH"/);
-  assert.match(script, /independent-mesa\/server\.py --host "\$HOST" --port "\$INDEPENDENT_MESA_PORT"/);
-  assert.match(script, /independent-mesa\.pid/);
-  assert.match(script, /Schemes: http:\/\/\$HOST:\$INDEPENDENT_MESA_PORT\//);
   assert.match(script, /case "\$MODE" in/);
   assert.match(script, /stop\)/);
   assert.match(script, /stop_system/);
   assert.match(script, /start\)/);
   assert.match(stopScript, /start-system\.sh" stop/);
+});
+
+test("M9.8 start-system does not launch independent-mesa as a platform dependency", async () => {
+  const script = await readFile(new URL("../scripts/start-system.sh", import.meta.url), "utf8");
+
+  assert.doesNotMatch(script, /INDEPENDENT_MESA_PORT/);
+  assert.doesNotMatch(script, /independent-mesa\/server\.py/);
+  assert.doesNotMatch(script, /independent-mesa\.pid/);
+  assert.doesNotMatch(script, /wait_for_port "\$INDEPENDENT_MESA_PORT"/);
+  assert.doesNotMatch(script, /Schemes: http:\/\/\$HOST:\$INDEPENDENT_MESA_PORT\//);
 });
 
 test("browser smoke covers M5 import and run restoration after backend restart", async () => {
