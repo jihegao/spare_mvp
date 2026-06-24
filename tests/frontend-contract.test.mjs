@@ -2589,3 +2589,19 @@ test("M9.7.2 docs describe real single-run core without claiming coverage or MC 
   assert.match(combined, /M9\.7\.3[^。]*(formal Monte Carlo|MC\/projection|Monte Carlo\/projection)/);
   assert.doesNotMatch(combined, /M9\.7\.2[^。]*(字段全覆盖已完成|coverage hardening 已完成|formal Monte Carlo 已完成|Monte Carlo\/projection 已完成)/);
 });
+
+test("M9.7.2 docs do not overstate payload-only fields as behavior-driving", async () => {
+  const docs = {
+    readme: await readFile(new URL("../README.md", import.meta.url), "utf8"),
+    docsReadme: await readFile(new URL("../docs/README.md", import.meta.url), "utf8"),
+    roadmap: await readFile(new URL("../docs/product-roadmap.md", import.meta.url), "utf8"),
+    agent: await readFile(new URL("../agent.md", import.meta.url), "utf8"),
+    spec: await readFile(new URL("../docs/superpowers/specs/2026-06-24-m9-7-aircraft-support-v1-design.md", import.meta.url), "utf8")
+  };
+  const combined = Object.values(docs).join("\n");
+
+  assert.match(combined, /components\[\]\.failureDistribution[^。]*M9\.7\.4 coverage hardening/);
+  assert.match(combined, /supportNodes\[\]\.transportPolicies[^。]*M9\.7\.4 coverage hardening/);
+  assert.doesNotMatch(combined, /行为驱动字段[^。]*(故障率\/分布|failureDistribution|运输策略|transportPolicies)/);
+  assert.doesNotMatch(combined, /behavior-driving[^。]*(failureDistribution|transportPolicies)/);
+});

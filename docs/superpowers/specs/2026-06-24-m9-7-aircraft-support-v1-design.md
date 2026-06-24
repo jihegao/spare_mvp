@@ -195,7 +195,7 @@ M9.7 拆成四个 PR 验收，最后一个 PR 才标记 M9.7 完成。
 - M9.6 case package 能通过 canonical `/api/runs` single run 成功执行。
 - 缺 projection、缺 state-series、缺 compiler provenance 或 unsupported 字段族时 fail closed。
 
-当前完成口径：M9.7.2 已落地可合并 single-run core，但不声明一次性覆盖所有业务字段。当前行为驱动字段为机队数量/初始可用、任务波次、组件故障率/分布/寿命、保障资源容量、库存、运输策略、保障活动 job DAG 与 seed；这些字段进入状态推进、故障判定、任务出动、维修/保障作业、资源约束、备件消耗、指标和状态帧。非空或未批准的 `supportOrganization` 仍作为 unsupported 字段 fail closed；M9.6 空组织树不阻断 single run。`reliabilityBlockDiagram`、RMS/k-out-of-n、周期任务细化、任务阶段/机场/任务区细化、Monte Carlo sweep 字段和最终 M9.6 field coverage 关闭留给 M9.7.4 coverage hardening；formal Monte Carlo/projection 留给 M9.7.3。
+当前完成口径：M9.7.2 已落地可合并 single-run core，但不声明一次性覆盖所有业务字段。当前行为驱动字段为机队数量/初始可用、任务波次、组件故障率和寿命、保障资源容量、库存、保障活动 job DAG 与 seed；这些字段进入状态推进、故障判定、任务出动、维修/保障作业、资源约束、备件消耗、指标和状态帧。`components[].failureDistribution` 和 `supportNodes[].transportPolicies` 当前只编译进入 payload，真正行为消费留给 M9.7.4 coverage hardening。非空或未批准的 `supportOrganization` 仍作为 unsupported 字段 fail closed；M9.6 空组织树不阻断 single run。`reliabilityBlockDiagram`、RMS/k-out-of-n、周期任务细化、任务阶段/机场/任务区细化、Monte Carlo sweep 字段和最终 M9.6 field coverage 关闭也留给 M9.7.4 coverage hardening；formal Monte Carlo/projection 留给 M9.7.3。
 
 #### M9.7.3 Monte Carlo/projection
 
