@@ -309,10 +309,14 @@ class AircraftSupportV1Model:
 
     def _build_aircraft(self) -> list[AircraftState]:
         aircraft_inputs = self.inputs.get("aircraft", {})
+        configured_fleet_count = _positive_int(aircraft_inputs.get("fleet_count"), 0)
         assets = [item for item in aircraft_inputs.get("assets") or [] if isinstance(item, dict)]
+        fleet_count = max(1, configured_fleet_count, len(assets))
+        initial_ready = min(fleet_count, max(0, int(aircraft_inputs.get("initial_ready", fleet_count))))
+        models = list(aircraft_inputs.get("models") or ["Aircraft"])
         if assets:
             aircraft = []
-            for index, item in enumerate(assets):
+            for index, item in enumerate(assets[:fleet_count]):
                 tail_number = str(item.get("tailNumber") or item.get("tail_number") or f"AC-{index + 1:03d}")
                 aircraft_type = str(item.get("aircraftType") or item.get("aircraft_type") or item.get("type") or item.get("model") or "Aircraft")
                 state = str(item.get("initialState") or item.get("initial_state") or item.get("state") or "available")
@@ -328,10 +332,25 @@ class AircraftSupportV1Model:
                         y=index // 6,
                     )
                 )
+            used_tail_numbers = {item.tail_number for item in aircraft}
+            for index in range(len(aircraft), fleet_count):
+                tail_number = f"AC-{index + 1:03d}"
+                while tail_number in used_tail_numbers:
+                    index += 1
+                    tail_number = f"AC-{index + 1:03d}"
+                aircraft_type = str(models[index % len(models)])
+                aircraft.append(
+                    AircraftState(
+                        tail_number=tail_number,
+                        aircraft_type=aircraft_type,
+                        model=aircraft_type,
+                        state="available" if index < initial_ready else "maintenance",
+                        x=index % 6,
+                        y=index // 6,
+                    )
+                )
+                used_tail_numbers.add(tail_number)
             return aircraft
-        fleet_count = max(1, int(aircraft_inputs.get("fleet_count", 1)))
-        initial_ready = min(fleet_count, max(0, int(aircraft_inputs.get("initial_ready", fleet_count))))
-        models = list(aircraft_inputs.get("models") or ["Aircraft"])
         return [
             AircraftState(
                 tail_number=f"AC-{index + 1:03d}",
@@ -541,6 +560,8 @@ class AircraftSupportV1Model:
                 candidates.append(activity)
         if candidates:
             return candidates[0]
+        if kind in {"postflight", "preventive"}:
+            return self._default_activity(kind)
         return self.activities[0] if self.activities else self._default_activity(kind)
 
     def _default_activity(self, kind: str) -> dict[str, Any]:
@@ -830,7 +851,7 @@ class AircraftSupportV1Model:
                 if self.rng.random() < min(0.95, probability):
                     aircraft.failed_component_id = str(component.get("id") or "component")
                     self.lru_failures += 1
-                    if component.get("rbd_root") or str(component.get("id", "")).startswith("rbd:"):
+                    if component.get("rbd_root"):
                         self.rbd_root_failures += 1
                     self.failure_delay_events += 1
                     if aircraft.state == "flying":
@@ -892,6 +913,7 @@ class AircraftSupportV1Model:
                 aircraft
                 for aircraft in self.aircraft
                 if aircraft.state == "available"
+                and self._aircraft_matches_mission_type(aircraft, mission)
                 and mission.mission_id not in aircraft.prepared_mission_ids
                 and aircraft.tail_number not in active_preflight_tails
             ]
@@ -914,7 +936,9 @@ class AircraftSupportV1Model:
             candidates = [
                 aircraft
                 for aircraft in self.aircraft
-                if aircraft.state == "available" and mission.mission_id in aircraft.prepared_mission_ids
+                if aircraft.state == "available"
+                and mission.mission_id in aircraft.prepared_mission_ids
+                and self._aircraft_matches_mission_type(aircraft, mission)
             ]
             if len(candidates) >= mission.required_aircraft:
                 assigned = candidates[: mission.required_aircraft]
@@ -961,9 +985,33 @@ class AircraftSupportV1Model:
         prepared_available_tails = {
             aircraft.tail_number
             for aircraft in self.aircraft
-            if aircraft.state == "available" and mission.mission_id in aircraft.prepared_mission_ids
+            if aircraft.state == "available"
+            and mission.mission_id in aircraft.prepared_mission_ids
+            and self._aircraft_matches_mission_type(aircraft, mission)
         }
-        return len(active_preflight_tails | prepared_available_tails)
+        matching_active_tails = {
+            tail_number
+            for tail_number in active_preflight_tails
+            if (aircraft := self._aircraft_by_tail(tail_number)) is not None
+            and self._aircraft_matches_mission_type(aircraft, mission)
+        }
+        return len(matching_active_tails | prepared_available_tails)
+
+    def _aircraft_matches_mission_type(self, aircraft: AircraftState, mission: MissionState) -> bool:
+        required_tokens = _aircraft_type_tokens(mission.required_aircraft_type)
+        if not required_tokens:
+            return True
+        candidate_tokens = _aircraft_type_tokens(aircraft.aircraft_type) | _aircraft_type_tokens(aircraft.model)
+        if not candidate_tokens:
+            return False
+        for candidate in candidate_tokens:
+            for required in required_tokens:
+                if candidate == required or candidate.startswith(required) or required.startswith(candidate):
+                    return True
+        return False
+
+    def _aircraft_by_tail(self, tail_number: str) -> AircraftState | None:
+        return next((aircraft for aircraft in self.aircraft if aircraft.tail_number == tail_number), None)
 
     def _create_job(
         self,
@@ -1289,6 +1337,22 @@ def _positive_int(value: Any, fallback: int) -> int:
     except (TypeError, ValueError):
         return fallback
     return parsed if parsed > 0 else fallback
+
+
+def _aircraft_type_tokens(value: Any) -> set[str]:
+    if value in (None, ""):
+        return set()
+    text = str(value).upper()
+    for separator in ("、", "，", ",", "/", "\\", "|", ";", "；", "&"):
+        text = text.replace(separator, " ")
+    for word_separator in (" OR ", " 或 ", " 和 "):
+        text = text.replace(word_separator, " ")
+    tokens = set()
+    for part in text.split():
+        canonical = "".join(character for character in part if character.isalnum())
+        if canonical:
+            tokens.add(canonical)
+    return tokens
 
 
 def _periodic_period_days(periodic: dict[str, Any]) -> int:
