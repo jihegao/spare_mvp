@@ -2234,12 +2234,15 @@ tr.selected-table-row {
   min-width: 0;
   display: grid;
   gap: 3px;
+  width: 100%;
+  text-align: left;
   padding: 8px;
   border: 1px solid #cbd5e1;
   border-left-width: 4px;
   border-radius: 8px;
   background: #fff;
   box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
+  cursor: pointer;
 }
 
 .aircraft-state-node strong {
@@ -2273,6 +2276,11 @@ tr.selected-table-row {
 
 .aircraft-state-node.maintenance {
   border-left-color: #d9480f;
+}
+
+.aircraft-state-node.active {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
 }
 
 .aircraft-mission-timeline {
@@ -2390,6 +2398,123 @@ tr.selected-table-row {
 .mesa-aircraft-list {
   display: grid;
   gap: 8px;
+}
+
+.visual-aircraft-selector {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
+  gap: 8px;
+}
+
+.visual-aircraft-selector button {
+  display: grid;
+  gap: 2px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.visual-aircraft-selector button.active {
+  border-color: #2563eb;
+  background: #eff6ff;
+}
+
+.visual-aircraft-selector span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.aircraft-failure-summary {
+  display: grid;
+  gap: 3px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.aircraft-failure-summary.has-failure {
+  border-color: #fecaca;
+  background: #fff1f2;
+}
+
+.aircraft-failure-summary span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.aircraft-failure-tree {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.aircraft-failure-branch {
+  display: grid;
+  gap: 6px;
+}
+
+.aircraft-failure-children {
+  display: grid;
+  gap: 6px;
+  margin-left: 12px;
+  padding-left: 12px;
+  border-left: 2px solid #cbd5e1;
+}
+
+.aircraft-failure-node {
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid #cbd5e1;
+  border-left-width: 4px;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.aircraft-failure-node.edge-active,
+.aircraft-failure-node.failed {
+  border-left-color: #dc2626;
+}
+
+.aircraft-failure-node.propagated {
+  background: #fff7ed;
+}
+
+.aircraft-failure-node.healthy {
+  border-left-color: #16a34a;
+}
+
+.aircraft-failure-node strong {
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.aircraft-failure-node span,
+.aircraft-failure-node-meta {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.aircraft-failure-node-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.aircraft-failure-node-meta span {
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: #f1f5f9;
+}
+
+.aircraft-failure-node.failed .aircraft-failure-node-meta span {
+  background: #fee2e2;
+  color: #991b1b;
 }
 
 .mesa-side-panel {

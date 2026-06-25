@@ -70,6 +70,10 @@ def _minimal_inputs() -> dict:
     }
 
 
+def aircraft_payload_nodes(model: AircraftSupportV1Model, aircraft) -> list[dict]:
+    return model._aircraft_failure_tree_payload(aircraft)["nodes"]
+
+
 class AircraftSupportV1ModelTest(unittest.TestCase):
     def test_real_aircraft_assets_are_loaded_before_generated_tail_numbers(self) -> None:
         inputs = _minimal_inputs()
@@ -279,9 +283,89 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
         model.minute = 2
         model._evaluate_failures()
 
-        self.assertEqual(aircraft.state, "flying")
+        self.assertEqual(aircraft.state, "maintenance")
         self.assertEqual(aircraft.failed_component_id, "engine")
         self.assertTrue(aircraft.in_flight_failure)
+        self.assertIsNone(aircraft.current_mission_id)
+        self.assertEqual(mission.status, "failed")
+        self.assertTrue(any(job.kind == "repair" and job.tail_number == aircraft.tail_number for job in model.jobs))
+
+    def test_k_out_of_n_component_failure_waits_until_threshold_and_repairs_after_return(self) -> None:
+        inputs = _minimal_inputs()
+        inputs["aircraft"]["fleet_count"] = 1
+        inputs["aircraft"]["initial_ready"] = 1
+        inputs["equipment_tree"]["components"] = [
+            {"id": "avionics", "parent_id": "aircraft-root", "name": "Avionics", "failure_rate": 0, "k_out_of_n": {"enabled": True, "n": 2, "k": 2}},
+            {"id": "radar", "parent_id": "avionics", "name": "Radar LRU", "failure_rate": 1000},
+            {"id": "computer", "parent_id": "avionics", "name": "Mission Computer LRU", "failure_rate": 1000},
+        ]
+        model = AircraftSupportV1Model(inputs)
+        mission = model.missions[0]
+        mission.planned_start = 0
+        mission.preparation_start = 0
+        mission.duration_minutes = 5
+        mission.required_aircraft = 1
+        aircraft = model.aircraft[0]
+        aircraft.prepared_mission_ids.add(mission.mission_id)
+        aircraft.lru_failure_remaining_minutes = {"radar": 1.0, "computer": 999.0}
+
+        model._dispatch_due_missions()
+        model.minute = 1
+        model._evaluate_failures()
+
+        tree = aircraft.component_failure_minutes
+        self.assertIn("radar", tree)
+        self.assertIsNone(aircraft.failed_component_id)
+        self.assertFalse(aircraft.in_flight_failure)
+        self.assertEqual(aircraft.state, "flying")
+        avionics_node = next(node for node in aircraft_payload_nodes(model, aircraft) if node["id"] == "avionics")
+        self.assertFalse(avionics_node["failed"])
+
+        model.minute = 5
+        model._process_mission_returns()
+
+        self.assertEqual(aircraft.state, "maintenance")
+        self.assertEqual(mission.status, "completed")
+        self.assertEqual(model.snapshot()["failed_sorties"], 0)
+        self.assertTrue(any(job.kind == "repair" and job.tail_number == aircraft.tail_number for job in model.jobs))
+
+    def test_k_out_of_n_threshold_failure_propagates_to_whole_aircraft_and_can_fail_mission(self) -> None:
+        inputs = _minimal_inputs()
+        inputs["aircraft"]["fleet_count"] = 1
+        inputs["aircraft"]["initial_ready"] = 1
+        inputs["equipment_tree"]["components"] = [
+            {"id": "avionics", "parent_id": "aircraft-root", "name": "Avionics", "failure_rate": 0, "k_out_of_n": {"enabled": True, "n": 2, "k": 2}},
+            {"id": "radar", "parent_id": "avionics", "name": "Radar LRU", "failure_rate": 1000},
+            {"id": "computer", "parent_id": "avionics", "name": "Mission Computer LRU", "failure_rate": 1000},
+        ]
+        model = AircraftSupportV1Model(inputs)
+        mission = model.missions[0]
+        mission.planned_start = 0
+        mission.preparation_start = 0
+        mission.duration_minutes = 5
+        mission.required_aircraft = 1
+        aircraft = model.aircraft[0]
+        aircraft.prepared_mission_ids.add(mission.mission_id)
+        aircraft.lru_failure_remaining_minutes = {"radar": 1.0, "computer": 1.0}
+
+        model._dispatch_due_missions()
+        model.minute = 1
+        model._evaluate_failures()
+
+        payload = model._aircraft_failure_tree_payload(aircraft)
+        payload_nodes = payload["nodes"]
+        self.assertEqual(payload["root_id"], "whole-aircraft-root")
+        self.assertEqual(payload["equipment_root_id"], "aircraft-root")
+        root_node = next(node for node in payload_nodes if node["id"] == payload["root_id"])
+        avionics_node = next(node for node in payload_nodes if node["id"] == "avionics")
+        self.assertNotIn(payload["equipment_root_id"], {node["id"] for node in payload_nodes})
+        self.assertTrue(root_node["failed"])
+        self.assertTrue(avionics_node["propagated_failed"])
+        self.assertEqual(aircraft.state, "maintenance")
+        self.assertTrue(aircraft.in_flight_failure)
+        self.assertEqual(mission.status, "failed")
+        self.assertEqual(model.snapshot()["failed_sorties"], 1)
+        self.assertTrue(any(job.kind == "repair" and job.tail_number == aircraft.tail_number for job in model.jobs))
 
     def test_non_root_rbd_failure_does_not_increment_root_failure_metric(self) -> None:
         inputs = _minimal_inputs()

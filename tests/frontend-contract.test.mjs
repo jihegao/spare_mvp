@@ -2529,6 +2529,28 @@ test("visual simulation layout matches operational dashboard requirements", asyn
   assert.match(styleSource, /\.mesa-event-window[\s\S]*overflow: auto/);
 });
 
+test("visual aircraft panel renders backend equipment failure propagation tree", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const stateSource = await readFile(new URL("../front/aviation-support-state.mjs", import.meta.url), "utf8");
+  const styleSource = await readFile(new URL("../front/styles.css", import.meta.url), "utf8");
+  const aircraftPanelSource = appSource.slice(
+    appSource.indexOf("function renderMesaAircraftPanel"),
+    appSource.indexOf("function renderMesaSupportPanel")
+  );
+
+  assert.match(stateSource, /failureTree: normalizeFailureTree\(resolveFailureTree\(item, failureTreeTemplates\)\)/);
+  assert.match(stateSource, /failure_tree_templates/);
+  assert.match(appSource, /let selectedVisualAircraftId = ""/);
+  assert.match(appSource, /data-select-visual-aircraft/);
+  assert.match(aircraftPanelSource, /renderAircraftFailureTree\(selectedAircraft\.failureTree, selectedAircraft\)/);
+  assert.match(aircraftPanelSource, /飞机内部组成与故障传递/);
+  assert.match(aircraftPanelSource, /中取/);
+  assert.match(aircraftPanelSource, /T\+\$\{htmlEscape\(node\.failureTime\)\}min/);
+  assert.match(aircraftPanelSource, /向上传递/);
+  assert.match(styleSource, /\.aircraft-failure-tree/);
+  assert.match(styleSource, /\.aircraft-failure-node\.propagated/);
+});
+
 test("visual simulation consumes the Mesa contract provider with demo fallback", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   // 数据源指向契约服务 8521，服务不可用时回退演示快照

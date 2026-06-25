@@ -305,6 +305,7 @@ let projectEditorDraft = null;
 let selectedRoute = readRouteFromHash() || DEFAULT_ROUTE;
 let selectedFeatureId = readFeatureIdFromHash() || DEFAULT_FEATURE_ID;
 let selectedMesaView = "aircraft";
+let selectedVisualAircraftId = "";
 let liveAviationState = null; // 来自契约服务的活仿真状态；为 null 时回退演示快照
 let aviationSource = "demo"; // "live"（契约服务）或 "demo"（静态快照）
 let aviationSteps = 12; // 向契约服务请求的仿真步数
@@ -986,6 +987,13 @@ function bindEvents() {
     const mesaViewButton = event.target.closest("[data-mesa-view]");
     if (mesaViewButton) {
       selectedMesaView = mesaViewButton.dataset.mesaView;
+      render();
+      return;
+    }
+
+    const visualAircraftButton = event.target.closest("[data-select-visual-aircraft]");
+    if (visualAircraftButton) {
+      selectedVisualAircraftId = visualAircraftButton.dataset.selectVisualAircraft;
       render();
       return;
     }
@@ -6772,6 +6780,7 @@ function renderMesaStage(activeView, state, availabilityTrend) {
 function renderMesaAircraftStage(state, availabilityTrend) {
   const lanes = aircraftStateLanes(state.aircraft);
   const timelineRows = buildAircraftMissionTimelineRows(state);
+  const selectedAircraft = selectedVisualAircraftForState(state);
   return `
     <div class="mesa-stage">
       <div class="aircraft-state-board" aria-label="飞机状态块">
@@ -6782,7 +6791,7 @@ function renderMesaAircraftStage(state, availabilityTrend) {
               <span>${htmlEscape(lane.aircraft.length)} 架</span>
             </div>
             <div class="aircraft-state-lane-body">
-              ${lane.aircraft.length ? lane.aircraft.map((aircraft) => renderAircraftStateNode(aircraft)).join("") : `<span class="empty-state">暂无飞机</span>`}
+              ${lane.aircraft.length ? lane.aircraft.map((aircraft) => renderAircraftStateNode(aircraft, selectedAircraft?.id)).join("") : `<span class="empty-state">暂无飞机</span>`}
             </div>
           </section>
         `).join("")}
@@ -6837,18 +6846,18 @@ function aircraftStateLaneKey(aircraft) {
   return "deck";
 }
 
-function renderAircraftStateNode(aircraft) {
+function renderAircraftStateNode(aircraft, selectedAircraftId = "") {
   const meta = [
     aircraft.currentMissionId ? `任务 ${aircraft.currentMissionId}` : "",
     aircraft.failedLru ? `故障 ${aircraft.failedLru}` : "",
     aircraft.postflightRequired ? "需航后检查" : "",
   ].filter(Boolean).join(" / ");
   return `
-    <div class="aircraft-state-node ${mesaStateClass(aircraft.state)}">
+    <button type="button" class="aircraft-state-node ${mesaStateClass(aircraft.state)} ${aircraft.id === selectedAircraftId ? "active" : ""}" data-select-visual-aircraft="${htmlEscape(aircraft.id)}">
       <strong>${htmlEscape(aircraft.label)}</strong>
       <span>${htmlEscape(aircraft.type)} / ${htmlEscape(visualAircraftStateLabel(aircraft.state))}</span>
       <small>${htmlEscape(meta || `飞行 ${fixed(aircraft.flightHours, 1)}h / 起降 ${aircraft.takeoffCount}/${aircraft.landingCount}`)}</small>
-    </div>
+    </button>
   `;
 }
 
@@ -7127,17 +7136,91 @@ function renderMesaSidePanel(activeView, state) {
 }
 
 function renderMesaAircraftPanel(state) {
-  const selectedAircraft = state.aircraft[0];
+  const selectedAircraft = selectedVisualAircraftForState(state);
+  if (!selectedAircraft) {
+    return `
+      <div class="section-head">
+        <h3>单机状态</h3>
+        <span>0 架</span>
+      </div>
+      <div class="event warning">当前状态帧没有飞机对象。</div>
+    `;
+  }
   return `
     <div class="section-head">
       <h3>单机状态</h3>
-      <span>${state.aircraft.length} 架</span>
+      <span>${htmlEscape(selectedAircraft.label)} / ${state.aircraft.length} 架</span>
     </div>
-    <div class="mesa-aircraft-list">
-      ${state.aircraft.map((aircraft) => `<div class="list-row"><strong>${htmlEscape(aircraft.label)}</strong><span>${htmlEscape(aircraft.type)}</span><span>${htmlEscape(visualAircraftStateLabel(aircraft.state))}</span></div>`).join("")}
+    <div class="visual-aircraft-selector" aria-label="单机状态点选飞机">
+      ${state.aircraft.map((aircraft) => `
+        <button type="button" class="${aircraft.id === selectedAircraft.id ? "active" : ""}" data-select-visual-aircraft="${htmlEscape(aircraft.id)}">
+          <strong>${htmlEscape(aircraft.label)}</strong>
+          <span>${htmlEscape(aircraft.type)}</span>
+          <span>${htmlEscape(visualAircraftStateLabel(aircraft.state))}</span>
+        </button>
+      `).join("")}
     </div>
-    <h4>飞机内部装备</h4>
-    <div class="event info"><strong>${htmlEscape(selectedAircraft.label)}</strong> 系统数量 ${htmlEscape(selectedAircraft.systemCount)} / 失效 LRU ${htmlEscape(selectedAircraft.failedLru || "-")}</div>
+    <h4>飞机内部组成与故障传递</h4>
+    <div class="event info"><strong>${htmlEscape(selectedAircraft.label)}</strong> 失效 LRU ${htmlEscape(selectedAircraft.failedLru || "-")}</div>
+    ${renderAircraftFailureTree(selectedAircraft.failureTree, selectedAircraft)}
+  `;
+}
+
+function selectedVisualAircraftForState(state) {
+  if (!state.aircraft.length) return null;
+  return state.aircraft.find((aircraft) => aircraft.id === selectedVisualAircraftId) || state.aircraft[0];
+}
+
+function renderAircraftFailureTree(failureTree, aircraft) {
+  const nodes = Array.isArray(failureTree?.nodes) ? failureTree.nodes : [];
+  if (!nodes.length) {
+    return `<div class="event warning"><strong>${htmlEscape(aircraft.label)}</strong> 当前 state_series 未携带后端装备故障传播树。</div>`;
+  }
+  const rootId = failureTree.rootId || nodes[0]?.id || "";
+  const failedCount = nodes.filter((node) => node.failed).length;
+  return `
+    <div class="aircraft-failure-summary ${failedCount ? "has-failure" : ""}">
+      <strong>${htmlEscape(aircraft.label)}</strong>
+      <span>组件 ${htmlEscape(nodes.length)} / 故障 ${htmlEscape(failedCount)} / 失效 LRU ${htmlEscape(aircraft.failedLru || "-")}</span>
+    </div>
+    <div class="aircraft-failure-tree" role="tree" aria-label="${htmlEscape(aircraft.label)} 装备故障传播树">
+      ${renderAircraftFailureTreeNodes(failureTree, rootId, 0)}
+    </div>
+  `;
+}
+
+function renderAircraftFailureTreeNodes(tree, parentId, depth) {
+  const nodes = tree.nodes || [];
+  const children = nodes
+    .filter((node) => String(node.parentId || "") === String(parentId || ""))
+    .sort((a, b) => String(a.name).localeCompare(String(b.name), "zh-Hans-CN"));
+  const current = nodes.find((node) => String(node.id) === String(parentId));
+  const currentMarkup = current ? renderAircraftFailureTreeNode(current, tree, depth) : "";
+  const childMarkup = children.length
+    ? `<div class="aircraft-failure-children">${children.map((child) => renderAircraftFailureTreeNodes(tree, child.id, depth + 1)).join("")}</div>`
+    : "";
+  return `<div class="aircraft-failure-branch depth-${htmlEscape(depth)}">${currentMarkup}${childMarkup}</div>`;
+}
+
+function renderAircraftFailureTreeNode(node, tree, depth) {
+  const kOut = node.kOutOfN || {};
+  const thresholdLabel = kOut.enabled ? `${kOut.n || node.quantity}中取${kOut.k || node.failureThreshold}` : "串联/单点";
+  const failureLabel = node.failed
+    ? (node.directFailed ? "直接故障" : "向上传递")
+    : "正常";
+  const edgeActive = (tree.edges || []).some((edge) => edge.to === node.id && edge.active);
+  return `
+    <div class="aircraft-failure-node ${node.failed ? "failed" : "healthy"} ${node.propagatedFailed ? "propagated" : ""} ${edgeActive ? "edge-active" : ""}" role="treeitem" aria-level="${htmlEscape(depth + 1)}">
+      <div>
+        <strong>${htmlEscape(node.name)}</strong>
+        <span>${htmlEscape(node.productType || "组件")} / 数量 ${htmlEscape(node.quantity)} / ${htmlEscape(thresholdLabel)}</span>
+      </div>
+      <div class="aircraft-failure-node-meta">
+        <span>${htmlEscape(failureLabel)}</span>
+        <span>${htmlEscape(node.failedChildren)}/${htmlEscape(node.failureThreshold)} 下级故障</span>
+        <span>${node.failureTime == null ? "故障时间 -" : `T+${htmlEscape(node.failureTime)}min`}</span>
+      </div>
+    </div>
   `;
 }
 

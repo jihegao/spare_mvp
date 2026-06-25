@@ -2843,7 +2843,10 @@ class SimulationAdapter:
             "input_project_artifact_id": f"input_project-{run_id}",
             "compiled_scenario_artifact_id": f"compiled_scenario-{run_id}",
         }
-        return {
+        traced_frames = [self._trace_visualization_frame(frame, trace) for frame in frames]
+        mission_templates = self._compact_mission_frames(traced_frames)
+        failure_tree_templates = self._compact_failure_tree_frames(traced_frames)
+        payload = {
             "schema_version": VISUALIZATION_STATE_SERIES_SCHEMA_VERSION,
             "run_id": run_id,
             "scenario_id": scenario["scenario_id"],
@@ -2854,7 +2857,121 @@ class SimulationAdapter:
             "run_config_artifact_id": trace["run_config_artifact_id"],
             "input_project_artifact_id": trace["input_project_artifact_id"],
             "compiled_scenario_artifact_id": trace["compiled_scenario_artifact_id"],
-            "frames": [self._trace_visualization_frame(frame, trace) for frame in frames],
+            "frames": traced_frames,
+        }
+        if mission_templates:
+            payload["mission_templates"] = mission_templates
+        if failure_tree_templates:
+            payload["failure_tree_templates"] = failure_tree_templates
+        return payload
+
+    def _compact_mission_frames(self, frames: list[dict[str, Any]]) -> dict[str, Any]:
+        templates: dict[str, Any] = {}
+        for frame in frames:
+            compact_missions = []
+            for mission in frame.get("missions") or []:
+                if not isinstance(mission, dict):
+                    continue
+                mission_id = str(mission.get("mission_id") or "")
+                if not mission_id:
+                    continue
+                if mission_id not in templates:
+                    templates[mission_id] = {
+                        key: copy.deepcopy(value)
+                        for key, value in mission.items()
+                        if key
+                        not in {
+                            "actual_start",
+                            "return_time",
+                            "status",
+                            "assigned_tail_numbers",
+                            "delay_minutes",
+                        }
+                    }
+                compact_missions.append(
+                    {
+                        "mission_id": mission_id,
+                        "actual_start": mission.get("actual_start"),
+                        "return_time": mission.get("return_time"),
+                        "status": str(mission.get("status") or ""),
+                        "assigned_tail_numbers": list(mission.get("assigned_tail_numbers") or []),
+                        "delay_minutes": mission.get("delay_minutes") or 0,
+                    }
+                )
+            frame["missions"] = compact_missions
+        return templates
+
+    def _compact_failure_tree_frames(self, frames: list[dict[str, Any]]) -> dict[str, Any]:
+        templates: dict[str, Any] = {}
+        template_keys: dict[str, str] = {}
+        for frame in frames:
+            for aircraft in frame.get("aircraft") or []:
+                tree = aircraft.pop("failure_tree", None)
+                if not isinstance(tree, dict) or not isinstance(tree.get("nodes"), list):
+                    continue
+                template = self._failure_tree_template(tree)
+                key = json.dumps(template, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+                ref = template_keys.get(key)
+                if ref is None:
+                    ref = f"failure-tree-template-{len(templates) + 1:03d}"
+                    template_keys[key] = ref
+                    templates[ref] = template
+                aircraft["failure_tree_ref"] = ref
+                aircraft["failure_tree_state"] = self._failure_tree_state(tree)
+        return templates
+
+    def _failure_tree_template(self, tree: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "tail_number": str(tree.get("tail_number") or ""),
+            "aircraft_type": str(tree.get("aircraft_type") or ""),
+            "root_id": str(tree.get("root_id") or ""),
+            "equipment_root_id": str(tree.get("equipment_root_id") or ""),
+            "nodes": [
+                {
+                    "id": str(node.get("id") or ""),
+                    "name": str(node.get("name") or node.get("id") or ""),
+                    "parent_id": str(node.get("parent_id") or ""),
+                    "product_type": str(node.get("product_type") or ""),
+                    "quantity": int(node.get("quantity") or 1),
+                    "k_out_of_n": copy.deepcopy(node.get("k_out_of_n") if isinstance(node.get("k_out_of_n"), dict) else {}),
+                    "failure_threshold": int(node.get("failure_threshold") or 1),
+                }
+                for node in tree.get("nodes") or []
+                if isinstance(node, dict)
+            ],
+            "edges": [
+                {"from": str(edge.get("from") or ""), "to": str(edge.get("to") or "")}
+                for edge in tree.get("edges") or []
+                if isinstance(edge, dict)
+            ],
+        }
+
+    def _failure_tree_state(self, tree: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "nodes": [
+                {
+                    "id": str(node.get("id") or ""),
+                    "failed_children": int(node.get("failed_children") or 0),
+                    "failed": bool(node.get("failed")),
+                    "direct_failed": bool(node.get("direct_failed")),
+                    "propagated_failed": bool(node.get("propagated_failed")),
+                    "failure_time": node.get("failure_time"),
+                }
+                for node in tree.get("nodes") or []
+                if isinstance(node, dict)
+                and (
+                    node.get("failed")
+                    or node.get("direct_failed")
+                    or node.get("propagated_failed")
+                    or node.get("failure_time") is not None
+                    or int(node.get("failed_children") or 0) > 0
+                )
+            ],
+            "active_edges": [
+                str(edge.get("to") or "")
+                for edge in tree.get("edges") or []
+                if isinstance(edge, dict) and edge.get("active")
+            ],
         }
 
     def _trace_visualization_frame(self, frame: dict[str, Any], trace: dict[str, Any]) -> dict[str, Any]:
@@ -3369,7 +3486,7 @@ class SimulationAdapter:
         schema_version: str | None,
     ) -> dict[str, Any]:
         target = run_dir / filename
-        self._write_json(target, payload)
+        self._write_json(target, payload, compact=kind == "visualization_state_series")
         data = target.read_bytes()
         artifact = {
             "artifact_id": f"{kind}-{run_dir.name}",
@@ -3383,7 +3500,10 @@ class SimulationAdapter:
             artifact["schema_version"] = schema_version
         return artifact
 
-    def _write_json(self, target: Path, payload: Any) -> None:
+    def _write_json(self, target: Path, payload: Any, *, compact: bool = False) -> None:
+        if compact:
+            target.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+            return
         target.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
