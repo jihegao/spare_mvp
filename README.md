@@ -68,6 +68,16 @@
 
 ## 本地运行
 
+首次克隆仓库后，先创建仓库本地 Python 环境 `.abm-mesa-test-env`。该目录只用于本机运行和测试，不提交到 Git。
+
+```bash
+python3.12 -m venv .abm-mesa-test-env
+.abm-mesa-test-env/bin/python -m pip install -U pip
+.abm-mesa-test-env/bin/python -m pip install -e .
+```
+
+如果本机没有 Python 3.12，也可使用 Python 3.10+，但团队验证默认以 Python 3.12 为准。
+
 ```bash
 npm test
 python3 -m http.server 4173
@@ -79,7 +89,7 @@ python3 -m http.server 4173
 http://127.0.0.1:4173/front/index.html
 ```
 
-需要验证 M3-1 浏览器后端闭环时，使用 Mesa-capable Python 环境启动同源前端和 `/api`：
+需要验证 M3-1 浏览器后端闭环时，使用 `.abm-mesa-test-env` 启动同源前端和 `/api`：
 
 ```bash
 .abm-mesa-test-env/bin/python -m src.spare_mvp_backend.http_server --port 4173
@@ -93,12 +103,20 @@ http://127.0.0.1:4173/front/
 
 ## Mesa 烟测
 
-需要 Python 3.10+。本机验证使用 Python 3.12 和 `mesa-abm-skill` runner：
+需要先按“本地运行”创建 `.abm-mesa-test-env`。本机验证使用 Python 3.12；仓库依赖由 `pyproject.toml` 管理，当前包含 `mesa==3.5.1` 和 `jsonschema==4.26.0`。创建环境不依赖 `mesa-abm-skill`，该 runner 只作为可选的实验执行工具。
 
 `SmokeSpareMvpModel` 的场景输入来自前端数据模型快照
 `scenarios/frontend-project-smoke/project.json`。两个 smoke experiment 只传
 `projectJsonPath` 和前端 Monte Carlo 风格的 sweep 参数，不再使用
 `equipment_count`、`initial_spare_stock` 等旧标量输入。
+
+先运行仓库内 Python 测试确认环境可用：
+
+```bash
+.abm-mesa-test-env/bin/python -m unittest tests.test_simulation_adapter tests.test_aviation_support_local tests.test_contract_server -v
+```
+
+如果本机安装了 `mesa-abm-skill` runner，可继续运行完整 smoke experiment：
 
 ```bash
 /opt/homebrew/bin/python3.12 /Users/gaojihe/.codex/skills/mesa-abm-skill/scripts/run_mesa_experiment.py \
