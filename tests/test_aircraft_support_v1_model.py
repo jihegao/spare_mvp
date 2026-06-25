@@ -180,6 +180,31 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
 
         self.assertEqual(model.snapshot()["failed_count"], 1)
 
+    def test_duplicate_periodic_composite_reference_fails_closed(self) -> None:
+        inputs = _minimal_inputs()
+        inputs["mission_profile"]["composite_tasks"] = [
+            {
+                "id": "composite-a",
+                "name": "Composite A",
+                "taskItems": [
+                    {
+                        "id": "task-a",
+                        "basicTaskName": "Basic A",
+                        "firstWaveTime": "00:00",
+                        "equipmentQuantity": 1,
+                        "equipmentType": "J-15",
+                    }
+                ],
+            }
+        ]
+        inputs["mission_profile"]["periodic_tasks"] = [
+            {"id": "periodic-1", "name": "Periodic 1", "repeatCount": 1, "compositeTaskIds": ["composite-a"]},
+            {"id": "periodic-2", "name": "Periodic 2", "repeatCount": 1, "compositeTaskIds": ["composite-a"]},
+        ]
+
+        with self.assertRaisesRegex(ValueError, "composite-a"):
+            AircraftSupportV1Model(inputs)
+
 
 if __name__ == "__main__":
     unittest.main()

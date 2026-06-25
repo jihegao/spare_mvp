@@ -345,6 +345,14 @@ class SimulationAdapterTest(unittest.TestCase):
         jsonschema.validate(instance=result, schema=result_schema)
         jsonschema.validate(instance=manifest, schema=manifest_schema)
         jsonschema.validate(instance=state_payload, schema=state_series_schema)
+        missing_day_index_payload = copy.deepcopy(state_payload)
+        del missing_day_index_payload["frames"][0]["missions"][0]["day_index"]
+        with self.assertRaises(jsonschema.ValidationError):
+            jsonschema.validate(instance=missing_day_index_payload, schema=state_series_schema)
+        missing_required_aircraft_type_payload = copy.deepcopy(state_payload)
+        del missing_required_aircraft_type_payload["frames"][0]["missions"][0]["required_aircraft_type"]
+        with self.assertRaises(jsonschema.ValidationError):
+            jsonschema.validate(instance=missing_required_aircraft_type_payload, schema=state_series_schema)
         self.assertEqual(run["status"], "succeeded")
         self.assertEqual(run["model_family"], "aircraft_support_v1")
         self.assertEqual(run["model_id"], "AircraftSupportV1Model")
@@ -426,6 +434,41 @@ class SimulationAdapterTest(unittest.TestCase):
         self.assertTrue(
             any(event.get("event") == "m9_7_4_behavior_scope_declared" for event in log_payload["events"])
         )
+
+    def test_aircraft_support_v1_repeat_count_without_period_defaults_to_daily_duration(self) -> None:
+        project = self._load_fixture("m9_6_platform_case_export.json")["project"]
+        periodic = project["missionProfile"]["periodicTasks"][0]
+        for key in (
+            "taskPeriodDays",
+            "periodDays",
+            "cycleDays",
+            "repeatCycleDays",
+            "repeatCycleValue",
+            "repeatRounds",
+            "repeatWeeks",
+        ):
+            periodic.pop(key, None)
+        periodic["repeatCount"] = 3
+
+        scenario = self.adapter.compile_scenario(project, model_family="aircraft_support_v1")
+
+        self.assertEqual(scenario["simulation_inputs"]["time"]["duration_minutes"], 3 * 24 * 60)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            bundle = self.adapter.run_scenario(
+                scenario,
+                output_dir=Path(tmp),
+                run_id="run-aircraft-v1-repeat-count-only",
+            )
+            state_artifact = next(
+                artifact
+                for artifact in bundle["artifact_manifest"]["artifacts"]
+                if artifact["kind"] == "visualization_state_series"
+            )
+            state_payload = json.loads((Path(tmp) / state_artifact["path"]).read_text(encoding="utf-8"))
+
+        first_frame_missions = state_payload["frames"][0]["missions"]
+        self.assertEqual(max(mission["day_index"] for mission in first_frame_missions), 3)
 
     def test_aircraft_support_v1_treats_support_organization_as_governance_only(self) -> None:
         project = self._load_fixture("m9_6_platform_case_export.json")["project"]
@@ -606,7 +649,10 @@ class SimulationAdapterTest(unittest.TestCase):
                 run_id="run-aircraft-v1-constrained",
             )["result"]["metrics"]
 
-        self.assertLessEqual(constrained["spare_stock_total"], baseline["spare_stock_total"])
+        self.assertGreater(
+            constrained["downtime_resource_delay_events"],
+            baseline["downtime_resource_delay_events"],
+        )
         self.assertGreaterEqual(constrained["maintenance_backlog"], baseline["maintenance_backlog"])
         self.assertNotEqual(constrained, baseline)
 

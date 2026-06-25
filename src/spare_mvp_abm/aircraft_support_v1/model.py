@@ -575,7 +575,14 @@ class AircraftSupportV1Model:
             for composite_id, active_days in composite_days.items():
                 composite_context = dict(context)
                 composite_context["active_days"] = sorted(active_days)
-                contexts.setdefault(composite_id, composite_context)
+                if composite_id in contexts:
+                    existing = contexts[composite_id]
+                    raise ValueError(
+                        "Duplicate periodic task reference for composite task "
+                        f"{composite_id}: {existing.get('id') or existing.get('name')} and "
+                        f"{composite_context.get('id') or composite_context.get('name')}"
+                    )
+                contexts[composite_id] = composite_context
         return contexts
 
     def _mission_days_for_item(self, item: dict[str, Any], periodic_context: dict[str, Any]) -> list[int]:

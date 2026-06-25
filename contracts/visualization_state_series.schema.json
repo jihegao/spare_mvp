@@ -34,6 +34,29 @@
       "items": { "$ref": "#/$defs/frame" }
     }
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "model_family": { "const": "aircraft_support_v1" }
+        },
+        "required": ["model_family"]
+      },
+      "then": {
+        "properties": {
+          "frames": {
+            "items": {
+              "properties": {
+                "missions": {
+                  "items": { "$ref": "#/$defs/aircraft_support_v1_mission" }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
   "$defs": {
     "frame": {
       "type": "object",
@@ -73,6 +96,37 @@
         "spares": { "type": "array", "items": { "type": "object" } },
         "jobs": { "type": "array", "items": { "type": "object" } },
         "events": { "type": "array", "items": { "$ref": "#/$defs/event" } }
+      }
+    },
+    "aircraft_support_v1_mission": {
+      "type": "object",
+      "required": [
+        "mission_id",
+        "name",
+        "planned_start",
+        "required_aircraft",
+        "required_aircraft_type",
+        "task_category",
+        "basic_task_name",
+        "wave_index",
+        "day_index",
+        "duration_minutes",
+        "status",
+        "assigned_tail_numbers"
+      ],
+      "properties": {
+        "mission_id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "planned_start": { "type": "integer", "minimum": 0 },
+        "required_aircraft": { "type": "integer", "minimum": 1 },
+        "required_aircraft_type": { "type": "string", "minLength": 1 },
+        "task_category": { "type": "string", "minLength": 1 },
+        "basic_task_name": { "type": "string", "minLength": 1 },
+        "wave_index": { "type": "integer", "minimum": 1 },
+        "day_index": { "type": "integer", "minimum": 1 },
+        "duration_minutes": { "type": "integer", "minimum": 1 },
+        "status": { "type": "string", "minLength": 1 },
+        "assigned_tail_numbers": { "type": "array", "items": { "type": "string" } }
       }
     },
     "frame_trace": {

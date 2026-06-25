@@ -3146,7 +3146,7 @@ class SimulationAdapter:
             if unit in {"hour", "hours", "小时"}:
                 return value / 24
             return value
-        return None
+        return 1.0
 
     def _periodic_task_repeat_count(self, periodic: dict[str, Any]) -> float:
         for key in ("repeatCount", "repeatRounds", "repeatWeeks"):
