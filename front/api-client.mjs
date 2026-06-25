@@ -62,6 +62,9 @@ export function createBackendApiClient({ baseUrl = DEFAULT_API_BASE, transport, 
     getProject(projectId) {
       return request({ method: "GET", path: `/projects/${encodeURIComponent(projectId)}` });
     },
+    deleteProject(projectId) {
+      return request({ method: "DELETE", path: `/projects/${encodeURIComponent(projectId)}` });
+    },
     createModelingSnapshot(projectId) {
       return request({ method: "POST", path: `/projects/${encodeURIComponent(projectId)}/modeling-snapshots` });
     },

@@ -526,6 +526,32 @@ class BackendHttpApiTest(unittest.TestCase):
                 server.server_close()
                 thread.join(timeout=5)
 
+    def test_http_api_deletes_project_from_backend_catalog(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            server = create_backend_server(
+                ("127.0.0.1", 0),
+                repo_root=REPO_ROOT,
+                database_path=":memory:",
+                output_dir=Path(tmp) / "artifacts",
+            )
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                base_url = f"http://127.0.0.1:{server.server_address[1]}/api"
+                created = self._create_imported_sample_project(base_url)
+                project_id = created["savedProject"]["project_id"]
+
+                deleted = self._json(base_url, "DELETE", f"/projects/{quote(project_id, safe='')}")
+                catalog = self._json(base_url, "GET", "/projects")
+
+                self.assertEqual(deleted["project_id"], project_id)
+                self.assertTrue(deleted["deleted"])
+                self.assertNotIn(project_id, [entry["project_id"] for entry in catalog["projects"]])
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
     def test_http_legacy_simulation_run_routes_are_retired(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             server = create_backend_server(

@@ -113,7 +113,7 @@ test("renderModelingImportWorkbench includes action controls lifecycle version i
     compileResult: { scenario: { scenario_id: "import-carrier-day-night-001" } }
   });
 
-  for (const action of ["load-fixture", "load-invalid-fixture", "validate", "save-draft", "publish", "compile-scenario"]) {
+  for (const action of ["load-fixture", "backfill-current-project", "load-invalid-fixture", "validate", "save-draft", "publish", "compile-scenario"]) {
     assert.match(html, new RegExp(`data-modeling-import-action="${action}"`));
   }
   assert.match(html, /import-carrier-day-night-001/);

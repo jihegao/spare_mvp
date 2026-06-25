@@ -301,6 +301,53 @@ class ContractRepository:
         )
         self.connection.commit()
 
+    def delete_project(self, project_id: str) -> dict[str, Any]:
+        project_id = str(project_id or "").strip()
+        if not project_id:
+            raise KeyError(project_id)
+        self.get_project(project_id)
+        run_count = self.connection.execute(
+            "SELECT count(*) FROM simulation_runs WHERE project_id = ?",
+            (project_id,),
+        ).fetchone()[0]
+        if run_count:
+            raise ValueError(f"project has simulation runs and cannot be deleted: {project_id}")
+        scenario_count = self.connection.execute(
+            "SELECT count(*) FROM scenarios WHERE project_id = ?",
+            (project_id,),
+        ).fetchone()[0]
+        with self.connection:
+            deleted_plans = self.connection.execute(
+                "DELETE FROM experiment_plans WHERE project_id = ?",
+                (project_id,),
+            ).rowcount
+            deleted_snapshots = self.connection.execute(
+                "DELETE FROM modeling_snapshots WHERE project_id = ?",
+                (project_id,),
+            ).rowcount
+            deleted_access = self.connection.execute(
+                "DELETE FROM project_access WHERE project_id = ?",
+                (project_id,),
+            ).rowcount
+            deleted_scenarios = self.connection.execute(
+                "DELETE FROM scenarios WHERE project_id = ?",
+                (project_id,),
+            ).rowcount
+            deleted_projects = self.connection.execute(
+                "DELETE FROM projects WHERE project_id = ?",
+                (project_id,),
+            ).rowcount
+        return {
+            "project_id": project_id,
+            "deleted": deleted_projects == 1,
+            "deleted_experiment_plans": deleted_plans,
+            "deleted_modeling_snapshots": deleted_snapshots,
+            "deleted_project_access": deleted_access,
+            "deleted_scenarios": deleted_scenarios,
+            "blocked_simulation_runs": run_count,
+            "existing_scenarios": scenario_count,
+        }
+
     def upsert_modeling_import(self, import_package: dict[str, Any], validation: dict[str, Any]) -> None:
         payload = _modeling_import_payload(import_package, validation)
         existing = self._get_modeling_import_row(payload["importId"])

@@ -2489,8 +2489,13 @@ test("visual simulation layout matches operational dashboard requirements", asyn
   assert.match(appSource, /frames\.slice\(0, currentIndex \+ 1\)/);
   assert.doesNotMatch(appSource, /T-\$\{4 - index\}/);
   assert.match(styleSource, /\.availability-chart circle\.current-point/);
-  assert.match(stageSource, /停放/);
-  assert.match(stageSource, /使用保障/);
+  assert.match(appSource, /available: "available \/ 可用"/);
+  assert.match(appSource, /maintenance: "maintenance \/ 维修"/);
+  assert.match(appSource, /flying: "flying \/ 飞行"/);
+  assert.doesNotMatch(appSource, /function aircraftStateLaneKey/);
+  assert.doesNotMatch(stageSource, /航母甲板 \/ 任务就绪/);
+  assert.doesNotMatch(stageSource, /任务空域/);
+  assert.doesNotMatch(stageSource, /修复性维修/);
   assert.match(stageSource, /任务计划甘特图/);
   assert.match(stageSource, /mission-schedule-table/);
   assert.match(stageSource, /按周期性任务 \/ 复合任务 \/ 每天基本任务/);

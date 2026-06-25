@@ -126,6 +126,7 @@ export function renderModelingImportWorkbench(state = {}, helpers = {}) {
         </div>
         <div class="modeling-import-actions">
           <button type="button" data-modeling-import-action="load-fixture">加载样例</button>
+          <button type="button" data-modeling-import-action="backfill-current-project">按当前项目回灌</button>
           <button type="button" data-modeling-import-action="load-invalid-fixture">加载错误样例</button>
           <button type="button" data-modeling-import-action="validate">校验</button>
           <button type="button" data-modeling-import-action="save-draft">保存草稿</button>

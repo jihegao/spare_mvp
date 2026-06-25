@@ -568,6 +568,42 @@ class DatabaseContractTest(unittest.TestCase):
         row = self.repository._get_modeling_import_row(import_package["importId"])
         self.assertEqual(json.loads(row["referenced_run_ids_json"]), ["run-smoke-contract-001"])
 
+    def test_repository_delete_project_removes_catalog_data_and_project_branches(self) -> None:
+        project = self._fixture("smoke_project.json")
+        snapshot = {
+            "snapshot_id": "snapshot-delete-project",
+            "project_id": project["project_id"],
+            "schema_version": "modeling-snapshot-v0",
+            "project_version": project["project_version"],
+            "project": project,
+        }
+        plan = {
+            "experiment_plan_id": "plan-delete-project",
+            "project_id": project["project_id"],
+            "modeling_snapshot_id": snapshot["snapshot_id"],
+            "schema_version": "experiment-plan-v0",
+            "project_version": project["project_version"],
+            "status": "draft",
+            "config": {"name": "delete project"},
+        }
+        self.repository.upsert_project(project)
+        self.repository.upsert_modeling_snapshot(snapshot)
+        self.repository.upsert_experiment_plan(plan)
+        self.connection.execute(
+            "INSERT INTO project_access (user_id, project_id, access_role) VALUES (?, ?, ?)",
+            ("user-admin", project["project_id"], "owner"),
+        )
+        self.connection.commit()
+
+        deleted = self.repository.delete_project(project["project_id"])
+
+        self.assertEqual(deleted["project_id"], project["project_id"])
+        self.assertEqual(deleted["deleted"], True)
+        self.assertEqual(self.connection.execute("SELECT count(*) FROM projects WHERE project_id = ?", (project["project_id"],)).fetchone()[0], 0)
+        self.assertEqual(self.connection.execute("SELECT count(*) FROM experiment_plans WHERE project_id = ?", (project["project_id"],)).fetchone()[0], 0)
+        self.assertEqual(self.connection.execute("SELECT count(*) FROM modeling_snapshots WHERE project_id = ?", (project["project_id"],)).fetchone()[0], 0)
+        self.assertEqual(self.connection.execute("SELECT count(*) FROM project_access WHERE project_id = ?", (project["project_id"],)).fetchone()[0], 0)
+
     def test_repository_does_not_silently_return_mismatched_run_artifacts(self) -> None:
         project = self._fixture("smoke_project.json")
         scenario = self._fixture("smoke_scenario.json")

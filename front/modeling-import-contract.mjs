@@ -50,6 +50,130 @@ export function validateModelingImportPackage(importPackage) {
   return issues;
 }
 
+export function projectToModelingImportPackage(projectJson, basePackage = {}) {
+  const project = cloneJson(projectJson || {});
+  const base = cloneJson(basePackage || {});
+  const sourceImportId = String(project.missionProfile?.sourceImportId || "").trim();
+  const importId = sourceImportId || String(base.importId || "").trim() || importIdForProject(project);
+  const projectId = String(project.project_id || base.projectId || project.scenarioId || "project-current");
+  const missionProfile = projectMissionProfile(project, projectId);
+  const objects = {
+    ...preservedObjectSurfaces(base.objects),
+    missionProfiles: [missionProfile],
+    equipmentAssets: normalizeObjectRows(project.components),
+    supportResources: normalizeObjectRows(project.supportNodes),
+    supportActivities: normalizeObjectRows(project.supportActivities),
+    equipment: cloneJson(project.equipment || base.objects?.equipment || {}),
+    projectInfo: cloneJson(project.projectInfo || base.objects?.projectInfo || {}),
+    airports: normalizeObjectRows(project.airports),
+    missionAreas: normalizeObjectRows(project.missionAreas),
+    supportOrganization: cloneJson(project.supportOrganization || base.objects?.supportOrganization || {}),
+    reliabilityBlockDiagram: cloneJson(project.reliabilityBlockDiagram || missionProfile.reliabilityBlockDiagram || {}),
+    monteCarlo: cloneJson(project.monteCarlo || missionProfile.monteCarlo || {}),
+    analysisRequests: cloneJson(project.analysisRequests || missionProfile.analysisRequests || {})
+  };
+  const lifecycle = {
+    state: "draft",
+    version: positiveInteger(base.lifecycle?.version, 1),
+    referencedRunIds: Array.isArray(base.lifecycle?.referencedRunIds) ? [...base.lifecycle.referencedRunIds] : []
+  };
+  const nextPackage = {
+    schemaVersion: "modeling-import-v1",
+    importId,
+    projectId,
+    source: {
+      ...(base.source && typeof base.source === "object" && !Array.isArray(base.source) ? cloneJson(base.source) : {}),
+      type: "current_project_backfill",
+      projectId: project.project_id || projectId,
+      scenarioId: project.scenarioId || ""
+    },
+    lifecycle,
+    objects,
+    changes: []
+  };
+  const issues = validateModelingImportPackage(nextPackage);
+  nextPackage.validation = {
+    ok: issues.length === 0,
+    status: issues.length === 0 ? "valid" : "invalid",
+    issues
+  };
+  return nextPackage;
+}
+
+function projectMissionProfile(project, projectId) {
+  const mission = cloneJson(project.missionProfile || {});
+  delete mission.sourceImportId;
+  mission.id ||= mission.profileId || `${projectId}-mission-profile`;
+  mission.name ||= project.projectInfo?.name || project.experiment?.name || "当前项目任务剖面";
+  mission.durationHours = positiveNumber(mission.durationHours, durationHoursForProject(project));
+  for (const key of [
+    "basicMission",
+    "missionPhases",
+    "combatUnit",
+    "airports",
+    "missionAreas",
+    "experiment",
+    "equipment",
+    "reliabilityBlockDiagram",
+    "monteCarlo",
+    "analysisRequests"
+  ]) {
+    if (mission[key] !== undefined) continue;
+    if (project[key] !== undefined) mission[key] = cloneJson(project[key]);
+  }
+  return mission;
+}
+
+function preservedObjectSurfaces(objects = {}) {
+  const preserved = {};
+  for (const [key, value] of Object.entries(objects || {})) {
+    if (COLLECTION_RULES[key]) continue;
+    if ([
+      "equipment",
+      "projectInfo",
+      "airports",
+      "missionAreas",
+      "supportOrganization",
+      "reliabilityBlockDiagram",
+      "monteCarlo",
+      "analysisRequests"
+    ].includes(key)) continue;
+    preserved[key] = cloneJson(value);
+  }
+  return preserved;
+}
+
+function normalizeObjectRows(rows) {
+  if (!Array.isArray(rows)) return [];
+  return rows.filter((row) => row && typeof row === "object" && !Array.isArray(row)).map((row) => cloneJson(row));
+}
+
+function durationHoursForProject(project) {
+  const missionMinutes = Number(project.basicMission?.taskDurationMinutes || 0);
+  if (Number.isFinite(missionMinutes) && missionMinutes > 0) return missionMinutes / 60;
+  return positiveNumber(project.experiment?.steps, 1);
+}
+
+function importIdForProject(project) {
+  const rawId = String(project.project_id || project.scenarioId || "current-project");
+  return `import-${rawId.replace(/^project-/, "").replace(/[^A-Za-z0-9_-]+/g, "-")}`;
+}
+
+function positiveInteger(value, fallback) {
+  const number = Number(value);
+  return Number.isInteger(number) && number > 0 ? number : fallback;
+}
+
+function positiveNumber(value, fallback) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : fallback;
+}
+
+function cloneJson(value) {
+  if (value === undefined || value === null) return value;
+  return JSON.parse(JSON.stringify(value));
+}
+
 function validatePackageRoots(importPackage, issues) {
   if (importPackage?.schemaVersion !== "modeling-import-v1") {
     issues.push(createIssue({

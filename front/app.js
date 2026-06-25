@@ -35,7 +35,10 @@ import {
   publishRmsAllocation
 } from "./rms-allocation-engine.mjs";
 import { renderRmsAllocationWorkbench } from "./rms-allocation-workbench.mjs";
-import { validateModelingImportPackage } from "./modeling-import-contract.mjs";
+import {
+  projectToModelingImportPackage,
+  validateModelingImportPackage
+} from "./modeling-import-contract.mjs";
 import {
   cloneModelingImportPackage,
   diffModelingImports,
@@ -938,8 +941,7 @@ function bindEvents() {
 
     const deleteProjectButton = event.target.closest("[data-project-delete]");
     if (deleteProjectButton) {
-      deleteDemoProject(deleteProjectButton.dataset.projectDelete);
-      render();
+      deleteDemoProject(deleteProjectButton.dataset.projectDelete).finally(() => render());
       return;
     }
 
@@ -1524,6 +1526,22 @@ function bindEvents() {
     const analysisTaskInput = event.target.closest("[data-analysis-task-field]");
     if (analysisTaskInput) {
       updateAnalysisTaskFormField(getFeaturePageById(selectedFeatureId), analysisTaskInput);
+      return;
+    }
+
+    const livePeriodicInput = event.target.closest("[data-periodic-field]");
+    if (livePeriodicInput) {
+      markProjectDraftChanged();
+      updateSelectedPeriodicTask(livePeriodicInput.dataset.periodicField, parseInput(livePeriodicInput), { renderAfter: false });
+      return;
+    }
+
+    const livePathInput = event.target.closest("[data-path]");
+    if (livePathInput && isLiveProjectDraftInput(livePathInput)) {
+      setPath(scenario, livePathInput.dataset.path, parseInput(livePathInput));
+      normalizeEquipmentKOutOfNForPath(livePathInput.dataset.path);
+      updatePreviewResultsThroughApiClient();
+      if (isCurrentModelingPage()) markProjectDraftChanged();
       return;
     }
 
@@ -2999,7 +3017,7 @@ function normalizePeriodicTask(source = {}) {
   };
 }
 
-function updateSelectedPeriodicTask(field, value) {
+function updateSelectedPeriodicTask(field, value, options = {}) {
   const tasks = periodicTaskList();
   const selectedTask = selectedPeriodicTask(tasks);
   if (!selectedTask) return;
@@ -3030,7 +3048,7 @@ function updateSelectedPeriodicTask(field, value) {
   const nextTask = normalizePeriodicTask(draft);
   scenario.missionProfile.periodicTasks = tasks.map((task) => (String(task.id) === String(nextTask.id) ? nextTask : task));
   updatePreviewResultsThroughApiClient();
-  render();
+  if (options.renderAfter !== false) render();
 }
 
 function periodicValueSelect(field, selectedValue, options) {
@@ -5251,12 +5269,29 @@ function saveProjectEditorDraft() {
   projectListStatus = `已保存项目：${saved.name}`;
 }
 
-function deleteDemoProject(projectId) {
+async function deleteDemoProject(projectId) {
   const removed = demoProjects.find((project) => project.id === projectId);
-  demoProjects = demoProjects.filter((project) => project.id !== projectId);
-  if (currentProject?.id === projectId) currentProject = demoProjects[0] || null;
-  persistManualDraftProjects();
-  projectListStatus = removed ? `已删除项目：${removed.name}` : "项目不存在";
+  if (!removed) {
+    projectListStatus = "项目不存在";
+    return;
+  }
+  if (removed.sourceKind === PROJECT_SOURCE.manual_draft && !removed.projectBackendId) {
+    demoProjects = demoProjects.filter((project) => project.id !== projectId);
+    if (currentProject?.id === projectId) currentProject = demoProjects[0] || null;
+    persistManualDraftProjects();
+    projectListStatus = `已删除本地草稿：${removed.name}`;
+    return;
+  }
+  const backendProjectId = removed.projectBackendId || `project-${removed.id}`;
+  try {
+    await backendApi.deleteProject(backendProjectId);
+    demoProjects = demoProjects.filter((project) => project.id !== projectId);
+    if (currentProject?.id === projectId) currentProject = demoProjects[0] || null;
+    persistManualDraftProjects();
+    projectListStatus = `已从后端删除项目：${removed.name}`;
+  } catch (err) {
+    projectListStatus = `后端删除项目失败：${err && err.message ? err.message : "Backend API 不可用"}`;
+  }
 }
 
 async function flushPendingProjectDraftAutosave() {
@@ -6288,6 +6323,24 @@ async function handleModelingImportAction(action, options = {}) {
     return;
   }
 
+  if (action === "backfill-current-project") {
+    try {
+      await flushPendingProjectDraftAutosave();
+      const projectJson = buildBackendProjectJson(scenario, currentProject || {});
+      modelingImportPackage = projectToModelingImportPackage(projectJson, modelingImportPackage);
+      modelingImportValidation = cloneModelingImportPackage(modelingImportPackage.validation);
+      modelingImportCompileResult = null;
+      modelingImportSaved = false;
+      const issueCount = modelingImportValidation.issues?.length || 0;
+      modelingImportStatus = issueCount
+        ? `已按当前项目回灌导入 JSON 草稿，发现 ${issueCount} 个字段问题`
+        : `已按当前项目回灌导入 JSON 草稿：${modelingImportPackage.importId}`;
+    } catch (err) {
+      setModelingImportActionError("当前项目回灌失败", "projectToModelingImportPackage", err);
+    }
+    return;
+  }
+
   if (action === "validate") {
     try {
       modelingImportValidation = await backendApi.validateModelingImport(modelingImportPackage);
@@ -6797,11 +6850,9 @@ function renderMesaAircraftStage(state, availabilityTrend) {
         `).join("")}
       </div>
       <div class="legend">
-        <span class="legend-item"><i class="dot available"></i>停放</span>
-        <span class="legend-item"><i class="dot support"></i>使用保障</span>
-        <span class="legend-item"><i class="dot ready"></i>停放</span>
-        <span class="legend-item"><i class="dot flying"></i>任务</span>
-        <span class="legend-item"><i class="dot maintenance"></i>维修保障</span>
+        <span class="legend-item"><i class="dot available"></i>available / 可用</span>
+        <span class="legend-item"><i class="dot maintenance"></i>maintenance / 维修</span>
+        <span class="legend-item"><i class="dot flying"></i>flying / 飞行</span>
       </div>
       ${renderAvailabilityCurve(availabilityTrend)}
       <section class="aircraft-mission-timeline">
@@ -6825,25 +6876,25 @@ function renderMesaAircraftStage(state, availabilityTrend) {
 }
 
 function aircraftStateLanes(aircraftList) {
-  const lanes = [
-    { key: "deck", title: "航母甲板 / 任务就绪", aircraft: [] },
-    { key: "support", title: "飞行前准备 / 回收检查", aircraft: [] },
-    { key: "mission", title: "任务空域", aircraft: [] },
-    { key: "maintenance", title: "修复性维修", aircraft: [] },
-  ];
+  const actualStates = ["available", "maintenance", "flying"];
+  const extraStates = [...new Set(aircraftList.map((aircraft) => aircraft.state || "unknown"))]
+    .filter((state) => !actualStates.includes(state));
+  const lanes = [...actualStates, ...extraStates].map((state) => ({
+    key: state,
+    title: visualAircraftStateLabel(state),
+    aircraft: []
+  }));
   const laneByKey = new Map(lanes.map((lane) => [lane.key, lane]));
   for (const aircraft of aircraftList) {
-    laneByKey.get(aircraftStateLaneKey(aircraft)).aircraft.push(aircraft);
+    const state = aircraft.state || "unknown";
+    if (!laneByKey.has(state)) {
+      const lane = { key: state, title: visualAircraftStateLabel(state), aircraft: [] };
+      laneByKey.set(state, lane);
+      lanes.push(lane);
+    }
+    laneByKey.get(state).aircraft.push(aircraft);
   }
   return lanes;
-}
-
-function aircraftStateLaneKey(aircraft) {
-  if (aircraft.state === "flying") return "mission";
-  if (["pre_support", "post_support"].includes(aircraft.state)) return "support";
-  if (aircraft.state === "maintenance" && !aircraft.failedLru && !aircraft.preventiveDue) return "support";
-  if (aircraft.state === "maintenance") return "maintenance";
-  return "deck";
 }
 
 function renderAircraftStateNode(aircraft, selectedAircraftId = "") {
@@ -7287,12 +7338,12 @@ function missionStatusLabel(status) {
 
 function visualAircraftStateLabel(state) {
   const labels = {
-    available: "停放",
-    mission_ready: "停放",
-    pre_support: "使用保障",
-    post_support: "使用保障",
-    flying: "任务",
-    maintenance: "维修保障"
+    available: "available / 可用",
+    maintenance: "maintenance / 维修",
+    flying: "flying / 飞行",
+    mission_ready: "mission_ready / 任务就绪",
+    pre_support: "pre_support / 飞行前保障",
+    post_support: "post_support / 航后保障"
   };
   return labels[state] || state || "-";
 }
@@ -8511,6 +8562,12 @@ function setPath(obj, path, value) {
 function parseInput(input) {
   if (input.type === "checkbox") return input.checked;
   return input.type === "number" ? Number(input.value) : input.value;
+}
+
+function isLiveProjectDraftInput(input) {
+  const tagName = String(input.tagName || "").toUpperCase();
+  const type = String(input.type || "").toLowerCase();
+  return tagName === "TEXTAREA" || (tagName === "INPUT" && !["checkbox", "radio", "file", "button", "submit"].includes(type));
 }
 
 function updateEquipmentKOutOfNInput(input) {
