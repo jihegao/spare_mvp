@@ -27,11 +27,38 @@ test("buildRunIntent creates single run intent from explicit inputs without page
 
   assert.equal(intent.runType, "single");
   assert.equal(intent.runRequest.project_id, "project-explicit");
+  assert.equal(intent.runRequest.model_family, "aircraft_support_v1");
   assert.equal(intent.runRequest.experiment_id, "experiment-single-explicit");
   assert.equal(bound.runRequest.experiment_plan_id, "plan-explicit");
   assert.equal(bound.runRequest.run_type, "single");
   assert.equal("mc_experiment_id" in bound.runRequest, false);
   assert.deepEqual(intent.experimentPlanConfig, buildExperimentPlanConfig(planProjectJson));
+});
+
+test("buildRunIntent defaults platform formal runs to aircraft_support_v1", () => {
+  const projectJson = {
+    project_id: "project-m9-8-default",
+    experiment: { name: "m9.8 default model family", steps: 3, seed: 42 }
+  };
+  const planProjectJson = {
+    ...projectJson,
+    experiment: { ...projectJson.experiment, steps: 5 }
+  };
+
+  const singleIntent = buildRunIntent({
+    runType: "single",
+    projectJson,
+    planProjectJson
+  });
+  const monteCarloIntent = buildRunIntent({
+    runType: "monte_carlo",
+    projectJson,
+    planProjectJson,
+    mcExperimentId: "mc-m9-8-default"
+  });
+
+  assert.equal(singleIntent.runRequest.model_family, "aircraft_support_v1");
+  assert.equal(monteCarloIntent.runRequest.model_family, "aircraft_support_v1");
 });
 
 test("buildRunIntent creates canonical monte carlo request shape", async () => {

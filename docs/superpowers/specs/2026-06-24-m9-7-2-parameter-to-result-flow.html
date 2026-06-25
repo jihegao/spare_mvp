@@ -479,6 +479,96 @@
       display: inline-block;
     }
 
+    .audit-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 14px;
+    }
+
+    .audit-card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcfe;
+      padding: 14px;
+    }
+
+    .audit-card strong {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 14px;
+    }
+
+    .sequence-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+      gap: 14px;
+    }
+
+    .sequence {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcfe;
+      padding: 14px;
+    }
+
+    .sequence h3 {
+      margin-bottom: 10px;
+    }
+
+    .sequence-steps {
+      display: grid;
+      gap: 8px;
+      counter-reset: sequence;
+    }
+
+    .sequence-step {
+      position: relative;
+      display: grid;
+      grid-template-columns: 32px minmax(0, 1fr);
+      gap: 10px;
+      align-items: start;
+      min-height: 42px;
+      padding: 9px 10px;
+      border: 1px solid #d8e0ea;
+      border-radius: 7px;
+      background: #ffffff;
+    }
+
+    .sequence-step::before {
+      counter-increment: sequence;
+      content: counter(sequence);
+      width: 24px;
+      height: 24px;
+      border-radius: 999px;
+      background: var(--run);
+      color: #ffffff;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .sequence-step strong {
+      display: block;
+      font-size: 13px;
+    }
+
+    .sequence-step span {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .sequence-step.deferred {
+      border-style: dashed;
+      background: #fff7f6;
+    }
+
+    .sequence-step.deferred::before {
+      background: var(--block);
+    }
+
     @media (max-width: 900px) {
       header {
         padding: 24px 18px 16px;
@@ -495,6 +585,8 @@
       .grid,
       .two-col,
       .legend,
+      .audit-grid,
+      .sequence-grid,
       .mapping-shell,
       .relation-grid,
       .function-chain,
@@ -649,10 +741,10 @@
 
           <rect x="737" y="238" width="170" height="132" rx="6" fill="#fff" stroke="#d5a66f"/>
           <text x="751" y="264" class="box-title">domain mechanics</text>
-          <text x="751" y="288" class="box-text">aircraft agents</text>
-          <text x="751" y="308" class="box-text">mission scheduling</text>
-          <text x="751" y="328" class="box-text">equipment failures</text>
-          <text x="751" y="348" class="box-text">support activity DAG</text>
+          <text x="751" y="288" class="box-text">AircraftState</text>
+          <text x="751" y="308" class="box-text">MissionState</text>
+          <text x="751" y="328" class="box-text">failure sampling</text>
+          <text x="751" y="348" class="box-text">JobState execution</text>
 
           <rect x="737" y="400" width="170" height="112" rx="6" fill="#fff" stroke="#d5a66f"/>
           <text x="751" y="426" class="box-title">state sampling</text>
@@ -678,8 +770,8 @@
           <text x="982" y="432" class="box-text">run chain</text>
 
           <rect x="968" y="486" width="170" height="54" rx="6" fill="#fff7f6" stroke="#c16666"/>
-          <text x="982" y="512" class="box-title">M9.7.3 later</text>
-          <text x="982" y="532" class="box-text">monte_carlo_base + projections</text>
+          <text x="982" y="512" class="box-title">M9.7.3+ additions</text>
+          <text x="982" y="532" class="box-text">MC base + projections</text>
 
           <path class="arrow" d="M 214 138 C 238 138, 248 138, 275 138"/>
           <path class="arrow" d="M 214 272 C 238 272, 248 272, 275 292"/>
@@ -737,7 +829,8 @@
         <h2 id="kernel-title">AircraftSupportV1Model 内核展开图</h2>
         <p class="small">
           这张图把编译后的 <code>simulation_inputs</code> 展开到模型对象和对象字段，再连接到 single run 输出对象。
-          对象名是 M9.7.2 运行核心的实现边界建议；字段名来自 M9.7.1 已合并的 <code>aircraft_support_v1_input.schema.json</code>。
+          对象名和方法名以当前 <code>src/spare_mvp_abm/aircraft_support_v1/model.py</code> 实现为准；
+          下方另列仍出现在早期图中的过期概念方法名。
         </p>
       </div>
       <div class="diagram-wrap" role="img" aria-label="AircraftSupportV1Model 对象字段和输出对象连接图">
@@ -764,8 +857,8 @@
           <rect x="974" y="34" width="182" height="678" rx="8" fill="#eff8f0" stroke="#bddbbf"/>
 
           <text x="44" y="64" class="kernel-title">字段组</text>
-          <text x="250" y="64" class="kernel-title">模型对象 + 字段</text>
-          <text x="526" y="64" class="kernel-title">对象连接 / tick 更新</text>
+          <text x="250" y="64" class="kernel-title">实际对象 + 字段</text>
+          <text x="526" y="64" class="kernel-title">实际方法 / tick 更新</text>
           <text x="792" y="64" class="kernel-title">采样与聚合</text>
           <text x="994" y="64" class="kernel-title">输出对象</text>
 
@@ -800,75 +893,75 @@
           <text x="56" y="660" class="kernel-text">tick/sample/random</text>
 
           <rect x="250" y="88" width="210" height="88" rx="6" fill="#fff" stroke="#d5a66f"/>
-          <text x="264" y="112" class="kernel-box-title">MissionSchedule</text>
-          <text x="264" y="134" class="kernel-text">duration_minutes, task windows</text>
-          <text x="264" y="152" class="kernel-text">airport/area/phase references</text>
+          <text x="264" y="112" class="kernel-box-title">MissionState[]</text>
+          <text x="264" y="134" class="kernel-text">planned_start, prep_start</text>
+          <text x="264" y="152" class="kernel-text">required_aircraft, task refs</text>
 
           <rect x="250" y="196" width="210" height="82" rx="6" fill="#fff" stroke="#d5a66f"/>
-          <text x="264" y="220" class="kernel-box-title">AircraftAgent[]</text>
-          <text x="264" y="242" class="kernel-text">aircraft_id, model, readiness</text>
-          <text x="264" y="260" class="kernel-text">assigned_task, current_location</text>
+          <text x="264" y="220" class="kernel-box-title">AircraftState[]</text>
+          <text x="264" y="242" class="kernel-text">tail_number, type, state</text>
+          <text x="264" y="260" class="kernel-text">mission, return, failed part</text>
 
           <rect x="250" y="298" width="210" height="94" rx="6" fill="#fff" stroke="#d5a66f"/>
-          <text x="264" y="322" class="kernel-box-title">ComponentState[] / FailureProcess</text>
-          <text x="264" y="344" class="kernel-text">component_id, quantity, failed_count</text>
-          <text x="264" y="362" class="kernel-text">failure_rate, parent/children</text>
-          <text x="264" y="380" class="kernel-text">sampled failure events</text>
+          <text x="264" y="322" class="kernel-box-title">components[] / RBD components</text>
+          <text x="264" y="344" class="kernel-text">id, failure_rate, spare_type</text>
+          <text x="264" y="362" class="kernel-text">life_limit, rms, repair duration</text>
+          <text x="264" y="380" class="kernel-text">derived failure-rate events</text>
 
           <rect x="250" y="412" width="210" height="94" rx="6" fill="#fff" stroke="#d5a66f"/>
-          <text x="264" y="436" class="kernel-box-title">SupportNode[] / InventoryStore</text>
-          <text x="264" y="458" class="kernel-text">personnel_capacity, equipment_capacity</text>
-          <text x="264" y="476" class="kernel-text">spares_on_hand, reserved, in_transit</text>
-          <text x="264" y="494" class="kernel-text">transport_policy</text>
+          <text x="264" y="436" class="kernel-box-title">support node dict</text>
+          <text x="264" y="458" class="kernel-text">personnel/equipment capacity</text>
+          <text x="264" y="476" class="kernel-text">inventory, in_use counters</text>
+          <text x="264" y="494" class="kernel-text">transport_policies, work_count</text>
 
           <rect x="250" y="526" width="210" height="94" rx="6" fill="#fff" stroke="#d5a66f"/>
-          <text x="264" y="550" class="kernel-box-title">SupportActivityDAG</text>
-          <text x="264" y="572" class="kernel-text">activity_id, resource_id, jobs</text>
-          <text x="264" y="590" class="kernel-text">predecessors, remaining_minutes</text>
-          <text x="264" y="608" class="kernel-text">blocked/running/done state</text>
+          <text x="264" y="550" class="kernel-box-title">activities[] + JobState[]</text>
+          <text x="264" y="572" class="kernel-text">activity id/name/type/resource</text>
+          <text x="264" y="590" class="kernel-text">ordered jobs, task_index</text>
+          <text x="264" y="608" class="kernel-text">waiting/running/completed</text>
 
           <rect x="250" y="640" width="210" height="58" rx="6" fill="#fff" stroke="#d5a66f"/>
-          <text x="264" y="664" class="kernel-box-title">SimulationClock / RandomSource</text>
-          <text x="264" y="686" class="kernel-text">minute, tick_minutes, seed</text>
+          <text x="264" y="664" class="kernel-box-title">minute / random.Random</text>
+          <text x="264" y="686" class="kernel-text">minute, tick, sample, seed</text>
 
           <rect x="526" y="98" width="200" height="82" rx="6" fill="#fff" stroke="#d5a66f"/>
-          <text x="540" y="122" class="kernel-box-title">dispatch phase</text>
-          <text x="540" y="144" class="kernel-text">MissionSchedule 选择任务</text>
-          <text x="540" y="162" class="kernel-text">AircraftAgent 可用性放行出动</text>
+          <text x="540" y="122" class="kernel-box-title">preflight + dispatch</text>
+          <text x="540" y="144" class="kernel-text">_create_due_preflight_jobs()</text>
+          <text x="540" y="162" class="kernel-text">_dispatch_due_missions()</text>
 
           <rect x="526" y="214" width="200" height="86" rx="6" fill="#fff" stroke="#d5a66f"/>
           <text x="540" y="238" class="kernel-box-title">failure phase</text>
-          <text x="540" y="260" class="kernel-text">FailureProcess 更新 ComponentState</text>
-          <text x="540" y="278" class="kernel-text">RBD 改变飞机可用性</text>
+          <text x="540" y="260" class="kernel-text">_evaluate_failures()</text>
+          <text x="540" y="278" class="kernel-text">creates repair JobState</text>
 
           <rect x="526" y="334" width="200" height="100" rx="6" fill="#fff" stroke="#d5a66f"/>
-          <text x="540" y="358" class="kernel-box-title">support phase</text>
-          <text x="540" y="380" class="kernel-text">SupportActivityDAG 占用能力</text>
-          <text x="540" y="398" class="kernel-text">InventoryStore 预留备件</text>
-          <text x="540" y="416" class="kernel-text">TransportPolicy 调拨库存</text>
+          <text x="540" y="358" class="kernel-box-title">job execution phase</text>
+          <text x="540" y="380" class="kernel-text">_start_waiting_jobs()</text>
+          <text x="540" y="398" class="kernel-text">_process_arrivals_and_completions()</text>
+          <text x="540" y="416" class="kernel-text">spare consume / transport</text>
 
           <rect x="526" y="468" width="200" height="92" rx="6" fill="#fff" stroke="#d5a66f"/>
-          <text x="540" y="492" class="kernel-box-title">metrics phase</text>
-          <text x="540" y="514" class="kernel-text">sortie success / delays</text>
-          <text x="540" y="532" class="kernel-text">spare shortfall / downtime</text>
-          <text x="540" y="550" class="kernel-text">resource utilization</text>
+          <text x="540" y="492" class="kernel-box-title">snapshot phase</text>
+          <text x="540" y="514" class="kernel-text">snapshot()</text>
+          <text x="540" y="532" class="kernel-text">visualization_frame()</text>
+          <text x="540" y="550" class="kernel-text">_events_for_frame()</text>
 
           <rect x="526" y="594" width="200" height="76" rx="6" fill="#fff" stroke="#d5a66f"/>
           <text x="540" y="618" class="kernel-box-title">event ordering</text>
-          <text x="540" y="640" class="kernel-text">dispatch -> failure -> support</text>
-          <text x="540" y="658" class="kernel-text">metrics -> frame sampling</text>
+          <text x="540" y="640" class="kernel-text">arrivals -> start jobs -> failures</text>
+          <text x="540" y="658" class="kernel-text">preflight -> dispatch -> sample</text>
 
           <rect x="792" y="118" width="136" height="108" rx="6" fill="#fff" stroke="#77b8a4"/>
-          <text x="804" y="142" class="kernel-box-title">FrameBuilder</text>
+          <text x="804" y="142" class="kernel-box-title">visualization_frame()</text>
           <text x="804" y="164" class="kernel-text">aircraft_state</text>
           <text x="804" y="182" class="kernel-text">mission_state</text>
-          <text x="804" y="200" class="kernel-text">support_state</text>
+          <text x="804" y="200" class="kernel-text">resource_state</text>
 
           <rect x="792" y="266" width="136" height="108" rx="6" fill="#fff" stroke="#77b8a4"/>
-          <text x="804" y="290" class="kernel-box-title">MetricsAccumulator</text>
+          <text x="804" y="290" class="kernel-box-title">snapshot()</text>
           <text x="804" y="312" class="kernel-text">mission_success_rate</text>
-          <text x="804" y="330" class="kernel-text">availability</text>
-          <text x="804" y="348" class="kernel-text">downtime_minutes</text>
+          <text x="804" y="330" class="kernel-text">ready_rate</text>
+          <text x="804" y="348" class="kernel-text">delay/backlog/failures</text>
 
           <rect x="792" y="414" width="136" height="94" rx="6" fill="#fff" stroke="#77b8a4"/>
           <text x="804" y="438" class="kernel-box-title">EventLog</text>
@@ -877,9 +970,9 @@
           <text x="804" y="496" class="kernel-text">metric_refs</text>
 
           <rect x="792" y="548" width="136" height="72" rx="6" fill="#fff" stroke="#77b8a4"/>
-          <text x="804" y="572" class="kernel-box-title">SnapshotBuilder</text>
-          <text x="804" y="594" class="kernel-text">final state</text>
-          <text x="804" y="612" class="kernel-text">trace refs</text>
+          <text x="804" y="572" class="kernel-box-title">run() return payload</text>
+          <text x="804" y="594" class="kernel-text">metrics / frames / events</text>
+          <text x="804" y="612" class="kernel-text">adapter adds trace refs</text>
 
           <rect x="994" y="98" width="142" height="82" rx="6" fill="#fff" stroke="#82bd85"/>
           <text x="1006" y="122" class="kernel-box-title">result</text>
@@ -904,7 +997,7 @@
           <text x="1006" y="544" class="kernel-text">artifact ids</text>
 
           <rect x="994" y="594" width="142" height="54" rx="6" fill="#fff7f6" stroke="#c16666"/>
-          <text x="1006" y="618" class="kernel-box-title">非 M9.7.2</text>
+          <text x="1006" y="618" class="kernel-box-title">后续追加</text>
           <text x="1006" y="636" class="kernel-text">MC base / projections</text>
 
           <path class="kernel-arrow" d="M184 131 C210 131, 222 131, 250 131"/>
@@ -935,6 +1028,90 @@
           <path class="kernel-soft" d="M1065 558 C1065 574, 1065 582, 1065 594"/>
           <text x="536" y="704" class="kernel-note">M9.7.2 验收关注 single run: 固定 seed 可复现、对象字段可追溯、state-series 不缺失、输出只走 canonical run/artifact 链路。</text>
         </svg>
+      </div>
+      <div class="panel-body">
+        <div class="audit-grid" aria-label="AircraftSupportV1Model 实际字段方法和过期方法">
+          <article class="audit-card">
+            <strong>实际行为驱动字段</strong>
+            <ul>
+              <li><code>aircraft.fleet_count</code>、<code>initial_ready</code>、<code>models</code> 生成 <code>AircraftState[]</code>。</li>
+              <li><code>mission_profile.basic_mission</code>、<code>composite_tasks[]</code>、<code>periodic_tasks[]</code> 生成 <code>MissionState[]</code>。</li>
+              <li><code>mission_phases[]</code>、<code>airports[]</code>、<code>mission_areas[]</code> 通过 <code>_mission_context()</code> 调整任务时长。</li>
+              <li><code>equipment_tree.components[]</code>、<code>reliability_block_diagram</code> 生成故障率、寿命压力、维修时长和备件需求。</li>
+              <li><code>support_network.nodes[]</code> 的人员/设备能力、库存和运输策略约束作业启动。</li>
+              <li><code>support_activities.activities[].jobs[]</code> 和 <code>predecessors</code> 决定保障作业顺序。</li>
+              <li><code>time.duration_minutes</code>、<code>tick_minutes</code>、<code>sample_every_minutes</code>、<code>max_state_frames_single</code> 控制循环和采样。</li>
+              <li><code>seed</code> 驱动 <code>random.Random</code>，保证故障抽样可复现。</li>
+            </ul>
+          </article>
+
+          <article class="audit-card">
+            <strong>实际运行方法</strong>
+            <ul>
+              <li>加载: <code>__init__()</code>、<code>_build_aircraft()</code>、<code>_behavior_components()</code>、<code>_build_support_nodes()</code>、<code>_build_activities()</code>、<code>_build_missions()</code>。</li>
+              <li>任务: <code>_create_due_preflight_jobs()</code>、<code>_dispatch_due_missions()</code>、<code>_mission_preflight_commissioned_count()</code>。</li>
+              <li>保障: <code>_create_job()</code>、<code>_start_waiting_jobs()</code>、<code>_process_arrivals_and_completions()</code>、<code>_complete_job_effect()</code>。</li>
+              <li>资源: <code>_task_spare_requirement()</code>、<code>_try_transport_replenishment()</code>、<code>_consume_task_spare()</code>、<code>_release_job_resources()</code>。</li>
+              <li>故障: <code>_evaluate_failures()</code>、<code>_effective_component_failure_rate()</code>、<code>_component_repair_duration_minutes()</code>、<code>_rbd_components()</code>。</li>
+              <li>输出: <code>snapshot()</code>、<code>visualization_frame()</code>、<code>_events_for_frame()</code>、<code>behavior_scope()</code>。</li>
+            </ul>
+          </article>
+
+          <article class="audit-card">
+            <strong>过期或仅历史参考的方法名</strong>
+            <ul>
+              <li><code>buildMissionSchedule()</code>、<code>buildAircraftAgents()</code>、<code>buildComponentStates()</code>、<code>buildSupportDag()</code> 是早期图中概念名，不是当前 Python 方法。</li>
+              <li><code>dispatch_phase()</code>、<code>failure_phase()</code>、<code>support_phase()</code>、<code>metrics_phase()</code> 已替换为 <code>run()</code> 内固定方法序列。</li>
+              <li><code>FrameBuilder</code>、<code>MetricsAccumulator</code>、<code>SnapshotBuilder</code> 是旧图层命名；当前实现使用 <code>visualization_frame()</code> 和 <code>snapshot()</code>。</li>
+              <li><code>evaluateRbd()</code> 当前不是独立方法；RBD 节点通过 <code>_rbd_components()</code> 转成附加故障组件。</li>
+              <li><code>supportOrganization.tree</code> 是 governance-only / 不驱动仿真字段，不再作为 fail closed 条件。</li>
+              <li>独立 <code>postflight</code> 或 <code>preventive</code> 作业触发方法当前不存在；相关输入保留在保障活动数据和后续覆盖语义中。</li>
+            </ul>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="sequence-title">
+      <div class="panel-body">
+        <h2 id="sequence-title">执行时序图</h2>
+        <p class="small">
+          两个时序图都按当前 <code>AircraftSupportV1Model</code> 代码路径展开。虚线/红色步骤表示业务期望或历史模型中出现过，
+          但当前 <code>aircraft_support_v1</code> 内核尚未作为独立状态或方法实现。
+        </p>
+        <div class="sequence-grid">
+          <article class="sequence" aria-labelledby="load-sequence-title">
+            <h3 id="load-sequence-title">1. 仿真对象加载顺序</h3>
+            <div class="sequence-steps">
+              <div class="sequence-step"><div><strong>复制输入并建立随机源</strong><span><code>self.inputs</code>、<code>seed</code>、<code>random.Random(seed)</code>。</span></div></div>
+              <div class="sequence-step"><div><strong>读取时钟配置</strong><span><code>duration_minutes</code>、<code>tick_minutes=1</code>、<code>sample_every_minutes</code>、<code>max_state_frames_single</code>。</span></div></div>
+              <div class="sequence-step"><div><strong>初始化事件和飞机</strong><span><code>event_log</code> 后调用 <code>_build_aircraft()</code> 生成 <code>AircraftState[]</code>。</span></div></div>
+              <div class="sequence-step"><div><strong>生成故障组件</strong><span><code>_behavior_components()</code> 读取装备树，并合并 <code>_rbd_components()</code>。</span></div></div>
+              <div class="sequence-step"><div><strong>加载保障资源</strong><span><code>_build_support_nodes()</code> 生成容量、库存、运输策略和占用计数。</span></div></div>
+              <div class="sequence-step"><div><strong>加载保障活动</strong><span><code>_build_activities()</code> 和 <code>_ordered_activity_jobs()</code> 排序 job DAG。</span></div></div>
+              <div class="sequence-step"><div><strong>生成任务上下文</strong><span><code>_mission_context()</code> 用机场、任务区和阶段推导时长修正。</span></div></div>
+              <div class="sequence-step"><div><strong>选择飞前和维修活动</strong><span><code>_select_activity("preflight")</code>、<code>_select_activity("repair")</code>，缺省时回退 <code>_default_activity()</code>。</span></div></div>
+              <div class="sequence-step"><div><strong>生成任务实例和计数器</strong><span><code>_build_missions()</code> 创建 <code>MissionState[]</code>，再初始化 <code>jobs</code> 和指标计数。</span></div></div>
+            </div>
+          </article>
+
+          <article class="sequence" aria-labelledby="run-sequence-title">
+            <h3 id="run-sequence-title">2. 仿真推演过程</h3>
+            <div class="sequence-steps">
+              <div class="sequence-step"><div><strong>任务准备窗口到时</strong><span><code>_create_due_preflight_jobs()</code> 检查 <code>preparation_start</code> 和任务所需飞机数。</span></div></div>
+              <div class="sequence-step"><div><strong>寻找任务成员飞机</strong><span>从 <code>AircraftState.state == "available"</code> 且未为该任务准备的飞机中挑选。</span></div></div>
+              <div class="sequence-step"><div><strong>飞机进入准备</strong><span>飞机临时置为 <code>maintenance</code>，通过 <code>_create_job(kind="preflight")</code> 生成飞前保障作业。</span></div></div>
+              <div class="sequence-step"><div><strong>生成保障作业执行计划和资源</strong><span><code>JobState.tasks</code> 复制活动 jobs，绑定 <code>resource_node_id</code>、优先级、任务 id 和飞机号。</span></div></div>
+              <div class="sequence-step"><div><strong>保障执行</strong><span><code>_start_waiting_jobs()</code> 校验人员/设备/备件；必要时 <code>_try_transport_replenishment()</code> 调拨库存。</span></div></div>
+              <div class="sequence-step"><div><strong>完成保障</strong><span><code>_process_arrivals_and_completions()</code> 扣减剩余时间、释放资源、消耗备件并调用 <code>_complete_job_effect()</code>。</span></div></div>
+              <div class="sequence-step"><div><strong>任务通知飞机起飞</strong><span><code>_dispatch_due_missions()</code> 查找已准备飞机，置为 <code>flying</code> 并记录 <code>return_time</code>。</span></div></div>
+              <div class="sequence-step"><div><strong>任务结束返航</strong><span>当前时间达到 <code>return_time</code> 时，<code>_process_arrivals_and_completions()</code> 将飞机转回 <code>available</code>。</span></div></div>
+              <div class="sequence-step"><div><strong>故障转维修</strong><span><code>_evaluate_failures()</code> 对可用飞机抽样；命中后置为 <code>maintenance</code> 并生成 <code>repair</code> 作业。</span></div></div>
+              <div class="sequence-step deferred"><div><strong>飞行后保障 / 预防性维修</strong><span>当前 <code>aircraft_support_v1</code> 没有独立 <code>postflight</code> 或 <code>preventive</code> 触发方法；不要把旧业务流程图解读为已执行逻辑。</span></div></div>
+              <div class="sequence-step"><div><strong>回到待命状态并采样</strong><span>飞前或维修作业完成后转 <code>available</code>；到采样点时输出 <code>visualization_frame()</code>。</span></div></div>
+            </div>
+          </article>
+        </div>
       </div>
     </section>
 
@@ -1044,13 +1221,13 @@
         id: "mission_profile",
         label: "mission_profile",
         kind: "任务剖面",
-        stage: "MissionSchedule",
+        stage: "MissionState[]",
         fields: [
-          ["duration_minutes", "simulation_inputs.mission_profile.duration_minutes", "MissionSchedule.durationMinutes", "sets run horizon and stop condition"],
-          ["composite_tasks[]", "mission_profile.composite_tasks", "MissionTask.window / requiredAircraft", "feeds dispatch phase"],
-          ["mission_phases[]", "mission_profile.mission_phases", "MissionPhase.startMinute / endMinute", "gates mission availability"],
-          ["airports[]", "mission_profile.airports", "AirportNode.id / capacity", "constrains aircraft location and sortie turn"],
-          ["mission_areas[]", "mission_profile.mission_areas", "MissionArea.id / transitMinutes", "drives transit delay"]
+          ["duration_minutes", "simulation_inputs.mission_profile.duration_minutes", "AircraftSupportV1Model.duration_minutes", "sets run horizon and stop condition"],
+          ["composite_tasks[]", "mission_profile.composite_tasks", "MissionState planned_start / required_aircraft", "feeds preflight and dispatch"],
+          ["periodic_tasks[]", "mission_profile.periodic_tasks", "MissionState day_index / wave_index", "expands repeated task instances"],
+          ["mission_phases[]", "mission_profile.mission_phases", "_mission_context().duration_adjustment_minutes", "adjusts task duration"],
+          ["airports[] / mission_areas[]", "mission_profile.airports / mission_areas", "_mission_context() distance inputs", "adds travel duration adjustment"]
         ],
         relations: [
           ["aircraft.initial_ready", "limits how many tasks can be dispatched at the same minute"],
@@ -1058,22 +1235,22 @@
           ["time.sample_every_minutes", "controls which mission states are materialized into frames"]
         ],
         functions: [
-          ["buildMissionSchedule()", "normalizes task windows, phases, airports, and areas"],
-          ["dispatch_phase()", "selects ready aircraft for due tasks"],
-          ["metrics_phase()", "updates mission completion, delay, and cancellation counters"],
-          ["FrameBuilder.mission_state()", "emits current task, airport, phase, and sortie state"]
+          ["_build_missions()", "normalizes basic, composite, and periodic tasks into MissionState rows"],
+          ["_create_due_preflight_jobs()", "creates preparation jobs before planned_start"],
+          ["_dispatch_due_missions()", "launches prepared aircraft or cancels after cancel_minutes"],
+          ["visualization_frame()", "emits mission_state and mission rows into state-series frames"]
         ],
-        metrics: ["mission_success_rate", "sortie_completion_rate", "average_delay_minutes", "cancelled_sorties", "visualization_state_series"]
+        metrics: ["mission_success_rate", "sortie_completion_rate", "avg_departure_delay", "cancelled_sorties", "visualization_state_series"]
       },
       {
         id: "aircraft",
         label: "aircraft",
         kind: "机队对象",
-        stage: "AircraftAgent[]",
+        stage: "AircraftState[]",
         fields: [
-          ["fleet_count", "simulation_inputs.aircraft.fleet_count", "AircraftAgent collection size", "creates one aircraft state per unit"],
-          ["initial_ready", "simulation_inputs.aircraft.initial_ready", "AircraftAgent.readiness", "sets starting available fleet"],
-          ["models[]", "simulation_inputs.aircraft.models", "AircraftAgent.model", "labels model-specific state and output grouping"]
+          ["fleet_count", "simulation_inputs.aircraft.fleet_count", "len(AircraftState[])", "creates one aircraft state per unit"],
+          ["initial_ready", "simulation_inputs.aircraft.initial_ready", "AircraftState.state", "sets starting available vs maintenance fleet"],
+          ["models[]", "simulation_inputs.aircraft.models", "AircraftState.aircraft_type", "labels model-specific state and output grouping"]
         ],
         relations: [
           ["mission_profile.composite_tasks[]", "tasks consume ready aircraft"],
@@ -1081,23 +1258,24 @@
           ["support_activities.activities[]", "repair actions can restore readiness"]
         ],
         functions: [
-          ["buildAircraftAgents()", "instantiates aircraft ids, model labels, and starting readiness"],
-          ["dispatch_phase()", "assigns tasks to ready aircraft"],
-          ["failure_phase()", "marks aircraft degraded when critical components fail"],
-          ["support_phase()", "returns aircraft to ready after completed support activities"]
+          ["_build_aircraft()", "instantiates tail numbers, type labels, and starting state"],
+          ["_create_due_preflight_jobs()", "moves selected available aircraft into preparation jobs"],
+          ["_dispatch_due_missions()", "assigns prepared aircraft to launched missions"],
+          ["_complete_job_effect()", "returns aircraft to available after preflight or repair completion"]
         ],
-        metrics: ["aircraft_availability", "mission_success_rate", "downtime_minutes", "ready_aircraft_count", "visualization_state_series"]
+        metrics: ["ready_rate", "mission_success_rate", "repairing_count", "available_aircraft", "visualization_state_series"]
       },
       {
         id: "equipment_tree",
         label: "equipment_tree",
         kind: "装备组成",
-        stage: "ComponentState[] / FailureProcess",
+        stage: "components[] / _evaluate_failures()",
         fields: [
-          ["components[].id", "equipment_tree.components[].id", "ComponentState.componentId", "stable reference for failures and support jobs"],
-          ["components[].quantity", "equipment_tree.components[].quantity", "ComponentState.quantity", "sets available redundant component count"],
-          ["components[].failure_rate", "equipment_tree.components[].failure_rate", "FailureProcess.rate", "samples minute-level failure risk"],
-          ["root_component_id", "equipment_tree.root_component_id", "ReliabilityBlockDiagram.root", "anchors aircraft readiness calculation"]
+          ["components[].id", "equipment_tree.components[].id", "component.id / failed_component_id", "stable reference for failures and repair jobs"],
+          ["components[].failure_rate", "equipment_tree.components[].failure_rate", "component.failure_rate", "samples minute-level failure risk"],
+          ["failure_distribution", "components[].failure_distribution", "_failure_distribution_rate()", "overrides fallback failure rate when parseable"],
+          ["life_limit_hours", "components[].life_limit_hours", "life_pressure", "adds small life-limit failure pressure"],
+          ["rms / special_repair_profile", "components[].rms / special_repair_profile", "repair_duration_minutes", "derives repair job duration"]
         ],
         relations: [
           ["support_activities.activities[].equipment_id", "maps a failed component to repair/replacement DAG nodes"],
@@ -1105,24 +1283,24 @@
           ["reliability_block_diagram", "component state rolls up into aircraft mission-capable state"]
         ],
         functions: [
-          ["buildComponentStates()", "creates component counters and tree references"],
-          ["sampleFailures()", "uses seed and failure_rate to produce failure events"],
-          ["evaluateRbd()", "rolls component failures into aircraft readiness"],
-          ["EventLog.recordFailure()", "records failure event ids and metric refs"]
+          ["_behavior_components()", "creates behavior-driving component list"],
+          ["_effective_component_failure_rate()", "applies distribution, k-out-of-n, and rms reliability"],
+          ["_evaluate_failures()", "uses seed and failure_rate to produce failure events"],
+          ["_event()", "records component_failed events for frame and log output"]
         ],
-        metrics: ["lru_failure_count", "aircraft_availability", "downtime_minutes", "spare_shortfall_count", "visualization_state_series"]
+        metrics: ["lru_failures", "ready_rate", "downtime_failure_events", "shortage_events", "visualization_state_series"]
       },
       {
         id: "support_network",
         label: "support_network",
         kind: "保障网络",
-        stage: "SupportNode[] / InventoryStore",
+        stage: "support node dict",
         fields: [
-          ["nodes[].id", "support_network.nodes[].id", "SupportNode.nodeId", "stable node for resources, inventory, and transport"],
-          ["personnel_capacity", "nodes[].personnel_capacity", "SupportNode.personnelAvailable", "limits concurrent labor-bound jobs"],
-          ["equipment_capacity", "nodes[].equipment_capacity", "SupportNode.equipmentAvailable", "limits equipment-bound jobs"],
-          ["inventory", "nodes[].inventory", "InventoryStore.onHand", "feeds replacement and shortage decisions"],
-          ["transport_policies", "nodes[].transport_policies", "TransportPolicy.transferMinutes", "models delay for cross-node spare movement"]
+          ["nodes[].id", "support_network.nodes[].id", "node['id']", "stable node for resources, inventory, and transport"],
+          ["personnel_capacity", "nodes[].personnel_capacity", "node['personnel_capacity']", "limits concurrent labor-bound jobs"],
+          ["equipment_capacity", "nodes[].equipment_capacity", "node['equipment_capacity']", "limits equipment-bound jobs"],
+          ["inventory", "nodes[].inventory", "node['inventory']", "feeds replacement and shortage decisions"],
+          ["transport_policies", "nodes[].transport_policies", "_normalized_transport_policies()", "models cross-node spare movement"]
         ],
         relations: [
           ["support_activities.activities[].resource_id", "jobs claim capacity from a support node"],
@@ -1130,24 +1308,24 @@
           ["mission_profile.airports[]", "node location affects aircraft recovery and turn time"]
         ],
         functions: [
-          ["buildSupportNetwork()", "creates resource pools, inventory stores, and transport policies"],
-          ["reserveCapacity()", "allocates personnel/equipment to runnable jobs"],
-          ["reserveSpare()", "reserves local spare or emits shortfall"],
-          ["moveInventory()", "applies transport policy and in-transit delay"]
+          ["_build_support_nodes()", "creates resource pools, inventory, and transport policies"],
+          ["_start_waiting_jobs()", "allocates personnel/equipment to runnable jobs"],
+          ["_task_spare_requirement()", "parses local spare demand from job task fields"],
+          ["_try_transport_replenishment()", "moves inventory according to transport policies"]
         ],
-        metrics: ["resource_utilization", "spare_fill_rate", "spare_shortfall_count", "transport_delay_minutes", "downtime_minutes"]
+        metrics: ["active_jobs", "spare_fill_rate", "shortage_events", "transport_replenishment_events", "downtime_resource_delay_events"]
       },
       {
         id: "support_activities",
         label: "support_activities",
         kind: "保障活动 DAG",
-        stage: "SupportActivityDAG",
+        stage: "activities[] + JobState[]",
         fields: [
-          ["activities[].id", "support_activities.activities[].id", "SupportActivity.activityId", "stable DAG node id"],
-          ["activity_type", "activities[].activity_type", "SupportActivity.kind", "repair, replace, inspect, or transport semantics"],
-          ["equipment_id", "activities[].equipment_id", "SupportActivity.componentId", "binds activity to failed component"],
-          ["resource_id", "activities[].resource_id", "SupportActivity.supportNodeId", "binds activity to capacity and inventory"],
-          ["jobs[]", "activities[].jobs", "SupportJob.duration / predecessors", "drives blocking and completion order"]
+          ["activities[].id", "support_activities.activities[].id", "activity['id']", "stable activity id"],
+          ["activity_type", "activities[].activity_type", "_select_activity() text", "selects preflight or repair activity by text"],
+          ["resource_id", "activities[].resource_id", "JobState.resource_node_id", "binds activity to capacity and inventory"],
+          ["jobs[]", "activities[].jobs", "JobState.tasks", "drives task duration and spare/resource demand"],
+          ["jobs[].predecessors", "activities[].jobs[].predecessors", "_ordered_activity_jobs()", "orders work items before runtime"]
         ],
         relations: [
           ["equipment_tree.components[].id", "failure events instantiate activity demand"],
@@ -1155,22 +1333,22 @@
           ["aircraft.readiness", "activity completion can restore mission-capable state"]
         ],
         functions: [
-          ["buildSupportDag()", "normalizes job dependencies and resource references"],
-          ["startRunnableJobs()", "starts jobs whose predecessors and resources are available"],
-          ["advanceJobs()", "decrements remaining minutes on running jobs"],
-          ["completeActivity()", "updates component and aircraft state"]
+          ["_build_activities()", "normalizes activities and ordered jobs"],
+          ["_create_job()", "instantiates JobState for preflight or repair"],
+          ["_start_waiting_jobs()", "starts jobs when resources and spares are available"],
+          ["_process_arrivals_and_completions()", "decrements remaining minutes and completes tasks"]
         ],
-        metrics: ["repair_completion_count", "mean_repair_minutes", "downtime_minutes", "resource_utilization", "event_log"]
+        metrics: ["maintenance_backlog", "mean_recovery_time", "downtime_resource_delay_events", "active_jobs", "event_log"]
       },
       {
         id: "reliability_block_diagram",
         label: "reliability_block_diagram",
         kind: "可靠性结构",
-        stage: "RBD evaluator",
+        stage: "_rbd_components()",
         fields: [
-          ["nodes", "reliability_block_diagram.nodes", "RbdNode.componentRef", "defines dependency graph over components"],
-          ["edges", "reliability_block_diagram.edges", "RbdEdge.parentChild", "defines roll-up structure"],
-          ["logic", "reliability_block_diagram.logic", "RbdGate.type", "series/parallel style readiness rule"]
+          ["nodes[].id", "reliability_block_diagram.nodes[].id", "rbd component id", "creates synthetic rbd component ids"],
+          ["nodes[].failureRate / mtbfHours", "reliability_block_diagram.nodes[]", "component.failure_rate", "contributes extra failure components"],
+          ["edges[].type / weight", "reliability_block_diagram.edges[]", "rate multiplier", "adjusts derived RBD component failure rate"]
         ],
         relations: [
           ["equipment_tree.components[].id", "RBD nodes must resolve to component state"],
@@ -1178,24 +1356,24 @@
           ["support_activities", "completed repair changes RBD evaluation"]
         ],
         functions: [
-          ["buildRbdEvaluator()", "validates component references and gate rules"],
-          ["evaluateRbd()", "computes mission-capable state from component failures"],
-          ["metrics_phase()", "updates availability and downtime metrics"],
-          ["FrameBuilder.aircraft_state()", "includes readiness cause references"]
+          ["_rbd_components()", "converts RBD nodes and edges into additional failure components"],
+          ["_behavior_components()", "merges equipment tree components and RBD-derived components"],
+          ["_evaluate_failures()", "samples failures from the merged component list"],
+          ["visualization_frame()", "emits aircraft failed_lru and state counts"]
         ],
-        metrics: ["aircraft_availability", "mission_reliability_indicator", "downtime_minutes", "grounding_causes", "visualization_state_series"]
+        metrics: ["ready_rate", "mission_success_rate", "downtime_failure_events", "failed_count", "visualization_state_series"]
       },
       {
         id: "time_seed",
         label: "time + seed",
         kind: "时钟与随机源",
-        stage: "SimulationClock / RandomSource",
+        stage: "run() loop / random.Random",
         fields: [
-          ["tick_minutes", "time.tick_minutes", "SimulationClock.tickMinutes", "M9.7.2 single run uses minute ticks"],
-          ["sample_every_minutes", "time.sample_every_minutes", "FrameBuilder.sampleEveryMinutes", "controls frame materialization cadence"],
-          ["max_state_frames_single", "time.max_state_frames_single", "FrameBuilder.maxFrames", "prevents runaway state-series output"],
+          ["tick_minutes", "time.tick_minutes", "AircraftSupportV1Model.tick_minutes", "M9.7.2 single run uses minute ticks"],
+          ["sample_every_minutes", "time.sample_every_minutes", "AircraftSupportV1Model.sample_every_minutes", "controls frame materialization cadence"],
+          ["max_state_frames_single", "time.max_state_frames_single", "AircraftSupportV1Model.max_state_frames_single", "prevents runaway state-series output"],
           ["requested_steps", "time.requested_steps", "RunService steps", "bounds local synchronous execution"],
-          ["seed", "simulation_inputs.seed", "RandomSource.seed", "makes fixed-seed runs reproducible"]
+          ["seed", "simulation_inputs.seed", "self.rng", "makes fixed-seed runs reproducible"]
         ],
         relations: [
           ["equipment_tree.components[].failure_rate", "seed drives reproducible failure sampling"],
@@ -1203,10 +1381,10 @@
           ["mission_profile.duration_minutes", "clock stop condition uses mission horizon"]
         ],
         functions: [
-          ["SimulationClock.advance()", "increments current minute by tick_minutes"],
-          ["RandomSource.failureDraw()", "produces deterministic random draws"],
-          ["shouldSampleFrame()", "checks sample_every_minutes and max frame cap"],
-          ["SnapshotBuilder.finalize()", "closes final state and trace references"]
+          ["run()", "increments current minute by tick_minutes"],
+          ["self.rng.random()", "produces deterministic failure draws"],
+          ["visualization_frame()", "samples every sample_every_minutes and at final minute"],
+          ["snapshot()", "closes final metrics for result_summary and metrics artifact"]
         ],
         metrics: ["run_duration_minutes", "frame_count", "event_count", "deterministic_replay_hash", "visualization_state_series"]
       }
@@ -1215,22 +1393,23 @@
     const metricCatalog = {
       mission_success_rate: ["任务成功率", "result.metrics", "完成任务数 / 计划任务数"],
       sortie_completion_rate: ["出动完成率", "result.metrics", "成功出动架次占比"],
-      average_delay_minutes: ["平均延误", "metrics.json", "任务、转场、维修共同导致的分钟级延误"],
+      avg_departure_delay: ["平均出发延误", "metrics.json", "任务延迟和取消折算的平均分钟数"],
       cancelled_sorties: ["取消架次", "metrics.json", "因飞机不可用、资源不足或备件短缺取消的任务"],
       visualization_state_series: ["状态序列回放", "visualization_state_series", "帧、事件、metric_refs 和 traceability"],
-      aircraft_availability: ["飞机可用度", "result.metrics", "ready aircraft / fleet count 的时间聚合"],
-      downtime_minutes: ["停机时间", "metrics.json", "故障、维修、备件和运输导致的不可用分钟"],
-      ready_aircraft_count: ["可用飞机数", "visualization_state_series", "每个采样帧的 ready aircraft 数量"],
-      lru_failure_count: ["LRU 故障数", "log.json", "按 component_id 聚合的故障事件数量"],
-      spare_shortfall_count: ["备件短缺次数", "metrics.json", "库存无法满足替换需求的次数"],
-      resource_utilization: ["保障资源利用率", "metrics.json", "人员/设备能力占用时间占比"],
+      ready_rate: ["飞机可用率", "result.metrics", "available aircraft / fleet count"],
+      repairing_count: ["维修中飞机数", "result.metrics", "当前 state=maintenance 的飞机数量"],
+      available_aircraft: ["可用飞机数", "result.metrics", "当前 state=available 的飞机数量"],
+      lru_failures: ["LRU 故障数", "metrics.json", "本次运行累计组件故障次数"],
+      downtime_failure_events: ["故障停机事件", "metrics.json", "故障导致不可用的事件数"],
+      shortage_events: ["备件短缺次数", "metrics.json", "库存无法满足替换需求的次数"],
+      active_jobs: ["活动作业数", "metrics.json", "当前 running 保障作业数量"],
       spare_fill_rate: ["备件满足率", "metrics.json", "本地或运输后满足的备件需求占比"],
-      transport_delay_minutes: ["运输延误", "metrics.json", "跨节点调拨造成的累计等待分钟"],
-      repair_completion_count: ["维修完成数", "log.json", "SupportActivity 完成事件数量"],
-      mean_repair_minutes: ["平均维修时间", "metrics.json", "已完成维修活动的平均持续时间"],
+      transport_replenishment_events: ["运输补给次数", "metrics.json", "跨节点调拨库存的事件数"],
+      downtime_resource_delay_events: ["资源延迟事件", "metrics.json", "人员或设备能力不足导致的等待事件数"],
+      maintenance_backlog: ["保障积压", "metrics.json", "waiting 保障作业数量"],
+      mean_recovery_time: ["平均任务持续时间", "metrics.json", "已发射任务的平均起飞至返航分钟数"],
       event_log: ["事件流", "log.json", "故障、调度、维修、库存和指标事件"],
-      mission_reliability_indicator: ["任务可靠性标记", "result.metrics", "基于 RBD 与任务完成结果的成功/失败标记"],
-      grounding_causes: ["停场原因", "report.json", "导致飞机不可用的组件、资源和库存原因"],
+      failed_count: ["故障飞机数", "result.metrics", "当前存在 failed_component_id 的飞机数量"],
       run_duration_minutes: ["运行时长", "run", "仿真时钟覆盖的分钟数"],
       frame_count: ["帧数量", "visualization_state_series", "实际输出的状态帧数量"],
       event_count: ["事件数量", "log.json", "本次 single run 记录的事件总数"],

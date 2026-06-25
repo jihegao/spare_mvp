@@ -8,7 +8,7 @@ export function buildRunIntent({
   planProjectJson,
   mcExperimentId = "",
   experimentId = "",
-  modelFamily = "smoke"
+  modelFamily = "aircraft_support_v1"
 }) {
   if (!SUPPORTED_RUN_TYPES.has(runType)) {
     throw new Error(`Unsupported runType: ${runType}`);

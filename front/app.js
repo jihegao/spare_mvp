@@ -55,6 +55,7 @@ import {
 const app = document.querySelector("#app");
 const groups = groupFeaturePages(FEATURE_PAGES);
 const CONTRACT_BASE = "http://127.0.0.1:8521"; // Mesa 契约服务（见 agent.md「Mesa 后台契约服务」）
+const FORMAL_AIRCRAFT_SUPPORT_MODEL_FAMILY = "aircraft_support_v1";
 const LAST_BACKEND_RUN_STORAGE_KEY = "spare-mvp:lastBackendRun";
 const AUTH_SESSION_STORAGE_KEY = "spare-mvp:m4Session";
 const MANUAL_PROJECT_DRAFTS_STORAGE_KEY = "spare-mvp:manualProjects:v1";
@@ -5318,7 +5319,8 @@ async function saveCurrentExperimentPlanThroughApi() {
     const runIntent = buildRunIntent({
       runType: "single",
       projectJson: savedProject,
-      planProjectJson
+      planProjectJson,
+      modelFamily: FORMAL_AIRCRAFT_SUPPORT_MODEL_FAMILY
     });
     experimentPlan = await backendApi.createExperimentPlan(savedProject.project_id, runIntent.experimentPlanConfig);
     backendApiStatus = "实验方案分支已保存";
@@ -5365,7 +5367,8 @@ async function startSingleRunThroughApi() {
     const submitted = await submitRunIntent(backendApi, {
       runType,
       projectJson,
-      planProjectJson
+      planProjectJson,
+      modelFamily: FORMAL_AIRCRAFT_SUPPORT_MODEL_FAMILY
     });
     savedProject = submitted.savedProject;
     modelingSnapshot = submitted.modelingSnapshot;
@@ -5425,6 +5428,7 @@ async function startMonteCarloRunThroughApi({ monteCarloExperimentId = selectedM
       runType,
       projectJson,
       planProjectJson,
+      modelFamily: FORMAL_AIRCRAFT_SUPPORT_MODEL_FAMILY,
       mcExperimentId: monteCarloExperimentId
     });
     savedProject = submitted.savedProject;
@@ -6494,63 +6498,87 @@ function renderVisualSimulation(page) {
   const eventStream = visualizationStateSeriesFrame
     ? (visualizationStateSeries.event_stream || buildVisualizationEventStream(visualizationStateSeries))
     : [];
+  const replayStatusDetail = visualizationStateSeriesFrame
+    ? `run_id ${htmlEscape(visualizationStateSeries.run_id)} / artifact_id ${htmlEscape(visualizationStateSeries.artifact_id)} / step ${htmlEscape(visualizationStateSeriesFrame.step)} / ${currentFrame}-${htmlEscape(visualizationStateSeries.frame_count)} 帧 / 事件 ${htmlEscape(visualizationStateSeries.event_count)}`
+    : "演示快照只用于本地预览，不作为正式完成口径。";
+  const timelineFrameLabel = visualizationStateSeriesFrame
+    ? `${currentFrame} / ${htmlEscape(visualizationStateSeries.frame_count)} 帧`
+    : "等待正式回放";
+  const streamStatusDetail = `run_id ${htmlEscape(visualizationStreamState.runId || "-")} / status ${htmlEscape(visualizationStreamState.status)} / events ${htmlEscape(visualizationStreamState.eventCount || 0)} / artifact ${htmlEscape(visualizationStreamState.artifactId || "-")}`;
+  const visualKpis = visualSimulationKpis(state);
+  const availabilityTrend = buildAvailabilityTrend(
+    state,
+    visualizationStateSeries,
+    visualizationStateSeriesFrame ? visualizationReplayIndex : null
+  );
   return `
     <div class="mesa-visual-shell">
       <div class="mesa-visual-header">
         <div>
-          <div class="breadcrumb">Mesa ABM / aviation_support</div>
-          <h3>航空保障 Mesa ABM</h3>
-          <p>从 mesa-abm-skill 的可视化仿真迁移而来，基于本地状态帧展示飞机、任务和保障资源。</p>
+          <div class="breadcrumb">formal run / aircraft_support_v1</div>
+          <h3>飞机保障正式仿真</h3>
+          <p>通过平台 Project / ExperimentPlan 提交 canonical /api/runs，并使用正式 state-series artifact 展示飞机、任务和保障资源。</p>
         </div>
         <div class="mesa-clock">T+${Number((source.snapshot && source.snapshot.elapsed_hours) || 0).toFixed(1)}h <span class="mesa-source mesa-source-${sourceClass}" title="${htmlEscape(sourceTitle)}">${htmlEscape(sourceLabel)}</span></div>
       </div>
-      <div class="mesa-toolbar">
-        <div class="mesa-tabs" role="tablist" aria-label="Mesa 可视化视图">
-          ${mesaTab("aircraft", "飞机视图", activeView)}
-          ${mesaTab("mission", "任务视图", activeView)}
-          ${mesaTab("support", "保障视图", activeView)}
+      <div class="mesa-control-deck">
+        <div class="mesa-control-groups" aria-label="运行控制">
+          <div class="mesa-control-group">
+            <span>Run</span>
+            <button type="button" data-mesa-control="refresh-runs">刷新</button>
+            <select data-mesa-run-select aria-label="选择 M9 回放 run">${runOptions}</select>
+            <button type="button" data-mesa-control="subscribe-run">订阅</button>
+            <button type="button" data-mesa-control="stop-subscription">停止</button>
+            <details class="mesa-control-status ${visualizationStreamEventClass()}" data-mesa-stream-status>
+              <summary><span>在线状态流</span><strong>${htmlEscape(visualizationStreamState.message)}</strong></summary>
+              <small>${streamStatusDetail}</small>
+            </details>
+          </div>
+          <div class="mesa-control-group">
+            <span>回放</span>
+            <button type="button" data-mesa-control="load-replay">加载</button>
+            <button type="button" class="btn-primary" data-mesa-control="play">${visualizationReplayPlaying ? "暂停" : "运行"}</button>
+            <button type="button" data-mesa-control="step">单步</button>
+            <button type="button" data-mesa-control="reset">重置</button>
+            <details class="mesa-control-status ${visualizationStateSeriesFrame ? "success" : "warning"}">
+              <summary><span>离线回放</span><strong>${htmlEscape(visualizationReplayStatus)}</strong></summary>
+              <small>${replayStatusDetail}</small>
+            </details>
+          </div>
+          <div class="mesa-control-group">
+            <span>后端</span>
+            <button type="button" data-mesa-control="backend-cancel">取消运行</button>
+            <button type="button" data-mesa-control="backend-retry">重试运行</button>
+            <button type="button" data-mesa-control="backend-pause">后端暂停</button>
+            <button type="button" data-mesa-control="backend-resume">后端恢复</button>
+            <button type="button" data-mesa-control="backend-step">后端单步</button>
+            <button type="button" data-mesa-control="backend-reset">后端重置</button>
+            <details class="mesa-control-status info" data-mesa-backend-control-status>
+              <summary><span>后端运行控制</span><strong>${htmlEscape(visualizationBackendControlStatus)}</strong></summary>
+            </details>
+          </div>
         </div>
-        <div class="mesa-actions" aria-label="运行控制">
-          <button type="button" data-mesa-control="refresh-runs">刷新 run</button>
-          <select data-mesa-run-select aria-label="选择 M9 回放 run">${runOptions}</select>
-          <button type="button" data-mesa-control="subscribe-run">订阅运行</button>
-          <button type="button" data-mesa-control="stop-subscription">停止订阅</button>
-          <button type="button" data-mesa-control="load-replay">加载回放</button>
-          <button type="button" class="btn-primary" data-mesa-control="play">${visualizationReplayPlaying ? "暂停" : "运行"}</button>
-          <button type="button" data-mesa-control="step">单步</button>
-          <button type="button" data-mesa-control="reset">重置</button>
-          <button type="button" data-mesa-control="backend-cancel">取消运行</button>
-          <button type="button" data-mesa-control="backend-retry">重试运行</button>
-          <button type="button" data-mesa-control="backend-pause">后端暂停</button>
-          <button type="button" data-mesa-control="backend-resume">后端恢复</button>
-          <button type="button" data-mesa-control="backend-step">后端单步</button>
-          <button type="button" data-mesa-control="backend-reset">后端重置</button>
+      </div>
+      <div class="kpi-strip mesa-kpi-strip">
+        ${visualKpis.map((item) => `<div class="kpi-card"><span>${htmlEscape(item.label)}</span><strong>${htmlEscape(item.value)}</strong></div>`).join("")}
+      </div>
+      <div class="mesa-tabs mesa-view-tabs" role="tablist" aria-label="Mesa 可视化视图">
+        ${mesaTab("aircraft", "飞机视图", activeView)}
+        ${mesaTab("mission", "任务视图", activeView)}
+        ${mesaTab("support", "保障视图", activeView)}
+      </div>
+      <div class="mesa-timeline-card">
+        <div>
+          <span>state_series 时间轴</span>
+          <strong>${timelineFrameLabel}</strong>
         </div>
-      </div>
-      <div class="event ${visualizationStateSeriesFrame ? "success" : "warning"}">
-        <strong>M9 离线回放</strong> ${htmlEscape(visualizationReplayStatus)}
-        ${visualizationStateSeriesFrame ? `<br>run_id ${htmlEscape(visualizationStateSeries.run_id)} / artifact_id ${htmlEscape(visualizationStateSeries.artifact_id)} / step ${htmlEscape(visualizationStateSeriesFrame.step)} / ${currentFrame}-${htmlEscape(visualizationStateSeries.frame_count)} 帧 / 事件 ${htmlEscape(visualizationStateSeries.event_count)}` : "<br>演示快照只用于本地预览，不作为正式完成口径。"}
-      </div>
-      <div class="event ${visualizationStreamEventClass()}" data-mesa-stream-status>
-        <strong>M9.2 在线状态流</strong> ${htmlEscape(visualizationStreamState.message)}
-        <br>run_id ${htmlEscape(visualizationStreamState.runId || "-")} / status ${htmlEscape(visualizationStreamState.status)} / events ${htmlEscape(visualizationStreamState.eventCount || 0)} / artifact ${htmlEscape(visualizationStreamState.artifactId || "-")}
-      </div>
-      <div class="event info" data-mesa-backend-control-status>
-        <strong>M9.3 后端运行控制</strong> ${htmlEscape(visualizationBackendControlStatus)}
-      </div>
-      <div class="mesa-toolbar">
         <input type="range" min="0" max="${timelineMax}" value="${Math.min(visualizationReplayIndex, timelineMax)}" data-mesa-timeline ${visualizationStateSeriesFrame && !isOnlineStreamFrame ? "" : "disabled"} aria-label="M9 state_series 时间轴">
       </div>
-      <div class="kpi-strip">
-        ${state.kpis.map((item) => `<div class="kpi-card"><span>${item.label}</span><strong>${item.value}</strong></div>`).join("")}
-      </div>
-      <div class="mesa-visual-grid">
+      <div class="mesa-visual-grid ${activeView === "mission" ? "mission-expanded" : ""}">
         <section class="mesa-stage-panel">
-          ${renderMesaStage(state)}
+          ${renderMesaStage(activeView, state, availabilityTrend)}
         </section>
-        <aside class="mesa-side-panel">
-          ${renderMesaSidePanel(activeView, state)}
-        </aside>
+        ${activeView === "mission" ? "" : `<aside class="mesa-side-panel">${renderMesaSidePanel(activeView, state)}</aside>`}
       </div>
       ${renderVisualizationEventStream(eventStream, visualizationReplayIndex)}
     </div>
@@ -6579,7 +6607,7 @@ function visualizationStreamEventClass() {
 
 function renderVisualizationEventStream(events, activeFrameIndex) {
   return `
-    <div class="backend-run-chain" data-mesa-event-stream>
+    <div class="backend-run-chain mesa-event-window" data-mesa-event-stream>
       <div class="section-head">
         <h3>事件追溯</h3>
         <span>${events.length ? `${events.length} 个事件` : "等待正式 state_series"}</span>
@@ -6603,7 +6631,83 @@ function mesaTab(id, label, activeView) {
   return `<button type="button" class="mesa-tab ${activeView === id ? "active" : ""}" data-mesa-view="${id}">${label}</button>`;
 }
 
-function renderMesaStage(state) {
+function visualSimulationKpis(state) {
+  const aircraftCount = state.aircraft.length || 1;
+  const usableAircraft = state.aircraft.filter((aircraft) => ["available", "mission_ready"].includes(aircraft.state)).length;
+  const requiredSorties = state.missions.reduce((sum, mission) => sum + Number(mission.requiredAircraft || 0), 0);
+  const assignedSorties = state.missions.reduce((sum, mission) => sum + Number(mission.assignedCount || 0), 0);
+  const completedMissions = state.missions.filter((mission) => ["completed", "succeeded"].includes(String(mission.status))).length;
+  const stockedSpares = state.spares.filter((spare) => Number(spare.quantity || 0) > 0).length;
+  const consumedSpares = state.spares.reduce((sum, spare) => sum + Number(spare.consumed || 0), 0);
+  const totalSpareEvents = state.spares.reduce((sum, spare) => sum + Number(spare.quantity || 0) + Number(spare.consumed || 0) + Number(spare.pending || 0), 0);
+  return [
+    { label: "使用可用度", value: pct(usableAircraft / aircraftCount) },
+    { label: "出动架次率", value: pct(assignedSorties / Math.max(1, requiredSorties)) },
+    { label: "任务成功率", value: pct(completedMissions / Math.max(1, state.missions.length)) },
+    { label: "备件满足率", value: pct(stockedSpares / Math.max(1, state.spares.length)) },
+    { label: "备件利用率", value: pct(consumedSpares / Math.max(1, totalSpareEvents)) }
+  ];
+}
+
+function buildAvailabilityTrend(state, series, currentFrameIndex = null) {
+  const frames = Array.isArray(series?.frames) ? series.frames : [];
+  const currentIndex = Number.isFinite(Number(currentFrameIndex))
+    ? Math.max(0, Math.min(frames.length - 1, Number(currentFrameIndex)))
+    : frames.length - 1;
+  const replayedFrames = frames.slice(0, currentIndex + 1);
+  const trend = replayedFrames.map((frame, index) => {
+    const aircraft = Array.isArray(frame.aircraft) ? frame.aircraft : [];
+    const available = Number(frame.snapshot?.available_aircraft ?? aircraft.filter((item) => ["available", "mission_ready"].includes(String(item.state))).length);
+    const total = Number(frame.snapshot?.aircraft_count ?? aircraft.length ?? state.aircraft.length);
+    return {
+      label: `T+${Number(frame.simulation_time ?? frame.step ?? index).toFixed(0)}`,
+      available,
+      total
+    };
+  });
+  if (trend.length > 0) return trend;
+  const total = state.aircraft.length || 1;
+  const current = state.aircraft.filter((aircraft) => ["available", "mission_ready"].includes(aircraft.state)).length;
+  return [{
+    label: "当前",
+    available: current,
+    total
+  }];
+}
+
+function renderAvailabilityCurve(trend) {
+  const points = trend.slice(-12);
+  const maxTotal = Math.max(1, ...points.map((point) => Number(point.total || 0)), ...points.map((point) => Number(point.available || 0)));
+  const width = 320;
+  const height = 92;
+  const chartPoints = points.map((point, index) => {
+    const x = points.length === 1 ? width / 2 : (index / (points.length - 1)) * width;
+    const y = height - (Number(point.available || 0) / maxTotal) * (height - 16) - 8;
+    return { ...point, x, y };
+  });
+  const polyline = chartPoints.map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(" ");
+  return `
+    <div class="availability-chart">
+      <div class="section-head">
+        <h3>可用飞机数量趋势</h3>
+        <span>${points.length} 个采样点</span>
+      </div>
+      <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="可用飞机数量随时间变化曲线">
+        <polyline points="${polyline}"></polyline>
+        ${chartPoints.map((point, index) => `<circle class="${index === chartPoints.length - 1 ? "current-point" : ""}" cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="${index === chartPoints.length - 1 ? "4" : "3"}"><title>${htmlEscape(point.label)} / ${htmlEscape(point.available)} 架</title></circle>`).join("")}
+      </svg>
+      <div class="availability-axis"><span>${htmlEscape(points[0]?.label || "-")}</span><strong>${htmlEscape(points.at(-1)?.available ?? 0)} / ${maxTotal} 架</strong><span>${htmlEscape(points.at(-1)?.label || "-")}</span></div>
+    </div>
+  `;
+}
+
+function renderMesaStage(activeView, state, availabilityTrend) {
+  if (activeView === "mission") return renderMesaMissionStage(state);
+  if (activeView === "support") return renderMesaSupportStage(state);
+  return renderMesaAircraftStage(state, availabilityTrend);
+}
+
+function renderMesaAircraftStage(state, availabilityTrend) {
   return `
     <div class="mesa-stage">
       <div class="mesa-flight-deck">
@@ -6612,26 +6716,267 @@ function renderMesaStage(state) {
           return `<div class="mesa-aircraft-node ${mesaStateClass(aircraft.state)}" style="left:${12 + x * 21}%;top:${16 + y * 34}%">
             <strong>${htmlEscape(aircraft.label)}</strong>
             <span>${htmlEscape(aircraft.type)}</span>
-            <em>${htmlEscape(stateLabel(aircraft.state))}</em>
+            <em>${htmlEscape(visualAircraftStateLabel(aircraft.state))}</em>
           </div>`;
         }).join("")}
       </div>
       <div class="legend">
-        <span class="legend-item"><i class="dot available"></i>可用</span>
-        <span class="legend-item"><i class="dot support"></i>保障</span>
-        <span class="legend-item"><i class="dot ready"></i>待出动</span>
-        <span class="legend-item"><i class="dot flying"></i>任务中</span>
-        <span class="legend-item"><i class="dot maintenance"></i>维修</span>
+        <span class="legend-item"><i class="dot available"></i>停放</span>
+        <span class="legend-item"><i class="dot support"></i>使用保障</span>
+        <span class="legend-item"><i class="dot ready"></i>停放</span>
+        <span class="legend-item"><i class="dot flying"></i>任务</span>
+        <span class="legend-item"><i class="dot maintenance"></i>维修保障</span>
       </div>
-      <div class="mesa-mission-strip">
-        ${state.missions.map((mission) => `<div class="mission"><span>任务 ${htmlEscape(mission.id)} / 需求 ${htmlEscape(mission.requiredAircraft)} 架</span><strong>${htmlEscape(mission.status)}</strong><div class="bar"><i style="width:${missionProgressWidth(mission)}%"></i></div></div>`).join("")}
+      ${renderAvailabilityCurve(availabilityTrend)}
+    </div>
+  `;
+}
+
+function renderMesaMissionStage(state) {
+  const rows = buildMissionScheduleRows(state.missions);
+  if (state.missions.length && rows.length !== state.missions.length) {
+    return `
+      <div class="mesa-stage mission-schedule-stage">
+        <div class="section-head">
+          <h3>任务计划甘特图</h3>
+          <span>缺少正式任务计划字段</span>
+        </div>
+        <div class="event warning">当前 state_series 未携带 day_index、wave_index、duration_minutes、周期任务、复合任务、基本任务、要求型号或要求数量字段。请重新运行 aircraft_support_v1 正式仿真生成新的任务计划状态序列；前端不再根据旧 artifact 的 id/name/aircraft_type 兜底推断。</div>
+      </div>
+    `;
+  }
+  const groups = groupMissionScheduleRows(rows);
+  return `
+    <div class="mesa-stage mission-schedule-stage">
+      <div class="section-head">
+        <h3>任务计划甘特图</h3>
+        <span>按周期性任务 / 复合任务 / 每天基本任务</span>
+      </div>
+      <div class="mission-schedule-table" role="table" aria-label="每天基本任务计划甘特图">
+        <div class="mission-schedule-header" role="row">
+          <span>计划属性</span>
+          <span>基本任务</span>
+          <span>要求型号 / 数量</span>
+          <span>实际执行飞机</span>
+          <span>状态</span>
+          <span>每日甘特图</span>
+        </div>
+        ${groups.map((group) => `
+          <div class="mission-plan-group" role="rowgroup">
+            <div class="mission-plan-group-title">${htmlEscape(group.title)}</div>
+            ${group.rows.map((row) => renderMissionScheduleRow(row)).join("")}
+          </div>
+        `).join("")}
       </div>
     </div>
   `;
 }
 
+function buildMissionScheduleRows(missions) {
+  return missions.filter(hasFormalMissionScheduleFields).map((mission) => {
+    const plannedStart = Number(mission.plannedStart || 0);
+    const duration = Number(mission.durationMinutes || 0);
+    const endMinute = Number(mission.returnTime ?? (plannedStart + duration));
+    const dayIndex = Number(mission.dayIndex);
+    const dayStart = ((plannedStart % 1440) + 1440) % 1440;
+    const dayEnd = Math.max(dayStart + 15, Math.min(1440, endMinute - (dayIndex - 1) * 1440));
+    const startPct = boundedPercent(dayStart / 1440);
+    const widthPct = Math.max(2, boundedPercent((dayEnd - dayStart) / 1440));
+    return {
+      id: mission.id,
+      type: mission.taskCategory,
+      periodicName: mission.periodicTaskName,
+      compositeName: mission.compositeTaskName,
+      basicTaskName: mission.basicTaskName,
+      groupName: mission.groupName || "",
+      waveIndex: mission.waveIndex,
+      requiredAircraftType: mission.requiredAircraftType,
+      requiredAircraft: Number(mission.requiredAircraft || 0),
+      assignedTailNumbers: mission.assignedTailNumbers || [],
+      status: mission.status,
+      statusLabel: missionStatusLabel(mission.status),
+      dayIndex,
+      plannedStart,
+      actualStart: mission.actualStart,
+      returnTime: mission.returnTime,
+      startPct,
+      widthPct,
+      startLabel: minuteOfDayLabel(dayStart),
+      endLabel: minuteOfDayLabel(dayEnd),
+    };
+  }).sort((a, b) => a.plannedStart - b.plannedStart || String(a.id).localeCompare(String(b.id)));
+}
+
+function hasFormalMissionScheduleFields(mission) {
+  const textFieldsPresent = [
+    mission.taskCategory,
+    mission.basicTaskName,
+    mission.requiredAircraftType,
+  ].every((value) => value !== null && value !== undefined && String(value).trim() !== "");
+  const type = String(mission.taskCategory || "").trim();
+  const periodicFieldsPresent = type !== "periodic" || String(mission.periodicTaskName || "").trim() !== "";
+  const compositeFieldsPresent = type === "basic" || String(mission.compositeTaskName || "").trim() !== "";
+  const numbers = {
+    requiredAircraft: Number(mission.requiredAircraft),
+    dayIndex: Number(mission.dayIndex),
+    waveIndex: Number(mission.waveIndex),
+    plannedStart: Number(mission.plannedStart),
+    durationMinutes: Number(mission.durationMinutes),
+  };
+  return textFieldsPresent
+    && periodicFieldsPresent
+    && compositeFieldsPresent
+    && Number.isFinite(numbers.plannedStart)
+    && numbers.plannedStart >= 0
+    && Number.isFinite(numbers.requiredAircraft)
+    && numbers.requiredAircraft > 0
+    && Number.isFinite(numbers.dayIndex)
+    && numbers.dayIndex > 0
+    && Number.isFinite(numbers.waveIndex)
+    && numbers.waveIndex > 0
+    && Number.isFinite(numbers.durationMinutes)
+    && numbers.durationMinutes > 0;
+}
+
+function groupMissionScheduleRows(rows) {
+  const groups = [];
+  const byKey = new Map();
+  for (const row of rows) {
+    const key = `${row.type}:${row.periodicName}:${row.compositeName}`;
+    if (!byKey.has(key)) {
+      const typeLabel = row.type === "periodic" ? "周期性任务" : row.type === "basic" ? "基本任务" : "复合任务";
+      const parts = row.type === "periodic" && row.periodicName
+        ? [`周期性任务：${row.periodicName}`, `复合任务：${row.compositeName}`]
+        : [`${typeLabel}：${row.compositeName || row.basicTaskName}`];
+      const group = { key, title: parts.join(" / "), rows: [] };
+      byKey.set(key, group);
+      groups.push(group);
+    }
+    byKey.get(key).rows.push(row);
+  }
+  return groups;
+}
+
+function renderMissionScheduleRow(row) {
+  const assigned = row.assignedTailNumbers.length
+    ? row.assignedTailNumbers.map((tailNumber) => htmlEscape(tailNumber)).join(" / ")
+    : "未编组";
+  const requirement = `${row.requiredAircraftType} / ${row.requiredAircraft} 架`;
+  const attrs = [
+    `第 ${row.dayIndex} 天`,
+    row.groupName ? `编队 ${row.groupName}` : "",
+    row.waveIndex ? `波次 ${row.waveIndex}` : "",
+  ].filter(Boolean).join(" / ");
+  return `
+    <div class="mission-schedule-row" role="row">
+      <div><strong>${htmlEscape(attrs)}</strong><small>${htmlEscape(row.id)}</small></div>
+      <div><strong>${htmlEscape(row.basicTaskName)}</strong><small>${htmlEscape(row.compositeName || "基本任务")}</small></div>
+      <div>${htmlEscape(requirement)}</div>
+      <div>${assigned}</div>
+      <div><span class="status-badge ${missionStatusClass(row.status)}">${htmlEscape(row.statusLabel)}</span></div>
+      <div class="mission-day-gantt" aria-label="第 ${htmlEscape(row.dayIndex)} 天 ${htmlEscape(row.basicTaskName)} 甘特图">
+        <div class="mission-day-axis"><span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>24:00</span></div>
+        <div class="mission-day-track">
+          <i style="left:${htmlEscape(row.startPct)}%;width:${htmlEscape(row.widthPct)}%"><b>${htmlEscape(row.startLabel)}-${htmlEscape(row.endLabel)}</b></i>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderMesaSupportStage(state) {
+  const personnelRows = supportMetricRows(state.resources.filter((item) => item.category === "personnel"), "保障组织 A", "机务专业");
+  const equipmentRows = supportMetricRows(state.resources.filter((item) => ["equipment", "facility"].includes(item.category)), "保障组织 A", "设备类型");
+  const spareRows = spareMetricRows(state.spares);
+  return `
+    <div class="mesa-support-dashboard">
+      ${renderSupportMetricSection("保障人员", "按保障组织 / 人员专业", personnelRows)}
+      ${renderSupportMetricSection("保障设备", "按保障组织 / 设备类型", equipmentRows)}
+      ${renderSupportMetricSection("备件", "按保障组织 / 备件类型", spareRows)}
+      <section class="support-metric-panel support-detail-panel">
+        <div class="section-head">
+          <h3>保障设备详情清单</h3>
+          <span>按类型</span>
+        </div>
+        <div class="table-wrap compact-table">
+          <table>
+            <thead><tr><th>类型</th><th>容量</th><th>占用</th><th>利用率</th><th>满足率</th></tr></thead>
+            <tbody>${equipmentRows.map((row) => `<tr><td>${htmlEscape(row.name)}</td><td>${htmlEscape(row.capacity)}</td><td>${htmlEscape(row.inUse)}</td><td>${htmlEscape(row.utilization)}</td><td>${htmlEscape(row.satisfaction)}</td></tr>`).join("")}</tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  `;
+}
+
+function renderSupportMetricSection(title, subtitle, rows) {
+  return `
+    <section class="support-metric-panel">
+      <div class="section-head">
+        <h3>${htmlEscape(title)}</h3>
+        <span>${htmlEscape(subtitle)}</span>
+      </div>
+      <div class="support-metric-list">
+        ${rows.map((row) => `<div class="support-metric-row">
+          <div>
+            <strong>${htmlEscape(row.name)}</strong>
+            <span>${htmlEscape(row.organization)} / ${htmlEscape(row.type)}</span>
+          </div>
+          <div class="support-meter"><small>利用率 ${htmlEscape(row.utilization)}</small><i><b style="width:${htmlEscape(row.utilizationWidth)}%"></b></i></div>
+          <div class="support-meter"><small>满足率 ${htmlEscape(row.satisfaction)}</small><i><b style="width:${htmlEscape(row.satisfactionWidth)}%"></b></i></div>
+        </div>`).join("")}
+      </div>
+    </section>
+  `;
+}
+
+function supportMetricRows(resources, organization, typeLabel) {
+  return (resources.length ? resources : [{ label: "暂无资源", capacity: 0, inUse: 0, utilization: 0, workCount: 0 }]).map((resource) => {
+    const utilization = Math.max(0, Math.min(1, Number(resource.utilization || 0)));
+    const satisfaction = Number(resource.capacity || 0) > 0 ? Math.max(0, Math.min(1, 1 - Number(resource.inUse || 0) / Math.max(1, Number(resource.capacity || 0)))) : 0;
+    return {
+      organization,
+      type: resource.category === "personnel" ? typeLabel : resourceCategoryLabel(resource.category || typeLabel),
+      name: resource.label || resource.id || "资源",
+      capacity: Number(resource.capacity || 0),
+      inUse: Number(resource.inUse || 0),
+      utilization: pct(utilization),
+      utilizationWidth: Math.round(utilization * 100),
+      satisfaction: pct(satisfaction),
+      satisfactionWidth: Math.round(satisfaction * 100)
+    };
+  });
+}
+
+function resourceCategoryLabel(category) {
+  const labels = {
+    equipment: "保障设备",
+    facility: "保障设施",
+    personnel: "人员专业"
+  };
+  return labels[category] || category || "资源类型";
+}
+
+function spareMetricRows(spares) {
+  return (spares.length ? spares : [{ label: "暂无备件", quantity: 0, consumed: 0, pending: 0 }]).map((spare) => {
+    const total = Number(spare.quantity || 0) + Number(spare.consumed || 0) + Number(spare.pending || 0);
+    const satisfaction = total > 0 ? Number(spare.quantity || 0) / total : 0;
+    const utilization = total > 0 ? Number(spare.consumed || 0) / total : 0;
+    return {
+      organization: "保障组织 A",
+      type: "备件类型",
+      name: spare.label || spare.id || "备件",
+      capacity: Number(spare.quantity || 0),
+      inUse: Number(spare.consumed || 0),
+      utilization: pct(utilization),
+      utilizationWidth: Math.round(utilization * 100),
+      satisfaction: pct(satisfaction),
+      satisfactionWidth: Math.round(satisfaction * 100)
+    };
+  });
+}
+
 function renderMesaSidePanel(activeView, state) {
-  if (activeView === "mission") return renderMesaMissionPanel(state);
   if (activeView === "support") return renderMesaSupportPanel(state);
   return renderMesaAircraftPanel(state);
 }
@@ -6644,29 +6989,10 @@ function renderMesaAircraftPanel(state) {
       <span>${state.aircraft.length} 架</span>
     </div>
     <div class="mesa-aircraft-list">
-      ${state.aircraft.map((aircraft) => `<div class="list-row"><strong>${htmlEscape(aircraft.label)}</strong><span>${htmlEscape(aircraft.type)}</span><span>${htmlEscape(stateLabel(aircraft.state))}</span></div>`).join("")}
+      ${state.aircraft.map((aircraft) => `<div class="list-row"><strong>${htmlEscape(aircraft.label)}</strong><span>${htmlEscape(aircraft.type)}</span><span>${htmlEscape(visualAircraftStateLabel(aircraft.state))}</span></div>`).join("")}
     </div>
     <h4>飞机内部装备</h4>
     <div class="event info"><strong>${htmlEscape(selectedAircraft.label)}</strong> 系统数量 ${htmlEscape(selectedAircraft.systemCount)} / 失效 LRU ${htmlEscape(selectedAircraft.failedLru || "-")}</div>
-  `;
-}
-
-function renderMesaMissionPanel(state) {
-  return `
-    <div class="section-head">
-      <h3>任务计划表</h3>
-      <span>${state.missions.length} 个任务</span>
-    </div>
-    <div class="table-wrap compact-table">
-      <table>
-        <thead><tr><th>任务</th><th>计划</th><th>实际</th><th>状态</th><th>编组</th></tr></thead>
-        <tbody>${state.missions.map((mission) => `<tr><td>M-${htmlEscape(mission.id)}</td><td>T+${htmlEscape(mission.plannedStart)}</td><td>${mission.actualStart ? `T+${htmlEscape(mission.actualStart)}` : "-"}</td><td>${htmlEscape(mission.status)}</td><td>${htmlEscape(mission.assignedCount)}/${htmlEscape(mission.requiredAircraft)}</td></tr>`).join("")}</tbody>
-      </table>
-    </div>
-    <h4>执飞飞机编组</h4>
-    <div class="stack-list">
-      ${state.missions.map((mission) => `<div class="job"><span>任务 ${htmlEscape(mission.id)}</span><strong>${mission.assignedTailNumbers.length ? mission.assignedTailNumbers.map((tailNumber) => htmlEscape(tailNumber)).join(" / ") : "未编组"}</strong></div>`).join("")}
-    </div>
   `;
 }
 
@@ -6694,6 +7020,51 @@ function missionProgressWidth(mission) {
   if (mission.status === "launched" || mission.status === "flying") return 72;
   if (mission.status === "delayed") return 36;
   return 18;
+}
+
+function minuteOfDayLabel(minutes) {
+  const value = Math.max(0, Math.min(1440, Math.round(Number(minutes || 0))));
+  if (value >= 1440) return "24:00";
+  const hour = Math.floor(value / 60);
+  const minute = value % 60;
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
+
+function missionStatusClass(status) {
+  if (["completed", "succeeded"].includes(String(status))) return "success";
+  if (["cancelled", "failed"].includes(String(status))) return "danger";
+  if (["delayed"].includes(String(status))) return "warn";
+  return "info";
+}
+
+function missionStatusLabel(status) {
+  const labels = {
+    completed: "已完成",
+    succeeded: "成功",
+    launched: "执行中",
+    flying: "执行中",
+    scheduled: "计划中",
+    delayed: "延误",
+    cancelled: "已取消",
+    failed: "失败"
+  };
+  return labels[status] || status || "-";
+}
+
+function visualAircraftStateLabel(state) {
+  const labels = {
+    available: "停放",
+    mission_ready: "停放",
+    pre_support: "使用保障",
+    post_support: "使用保障",
+    flying: "任务",
+    maintenance: "维修保障"
+  };
+  return labels[state] || state || "-";
+}
+
+function boundedPercent(value) {
+  return Math.max(0, Math.min(100, Math.round(Number(value || 0) * 100)));
 }
 
 function createDefaultMonteCarloExperiments() {

@@ -545,7 +545,7 @@ M8.0 当前收束：`docs/superpowers/specs/2026-06-21-m8-projection-payload-ana
 5. 单次正式 run 必须产出 `result_summary`、`artifact_manifest`、`visualization_state_series`、metrics/report/log 和 run chain；Monte Carlo 必须产出 `monte_carlo_base`、四类 `analysis_projection_*` 和 state-series。
 6. 固定 seed 必须可复现；随机 sweep 必须记录样本数、参数组合、seed、失败样本和聚合口径；模型结果只能解释当前规则和参数下的行为，不声称工程校准结论。
 
-当前收束：M9.7.4 已在 M9.7.1 `aircraft_support_v1` schema/compiler gate、M9.7.2 single-run core 和 M9.7.3 formal Monte Carlo/projection 后完成 coverage hardening。`src/spare_mvp_abm/aircraft_support_v1/` 提供 `AircraftSupportV1Model`，内部使用 `tick_minutes=1`、`sample_every_minutes=30` 和固定阶段顺序推进；`SimulationAdapter.run_scenario()` 和 `SimulationAdapter.run_monte_carlo_scenario()` 可通过 canonical `/api/runs` 执行 `aircraft_support_v1` Scenario，产出 result summary、artifact manifest、run chain、metrics、report、log、四类 projection、`monte_carlo_base`、样本失败账本和 `visualization_state_series`。行为驱动字段包含机队数量/初始可用、任务波次、`components[].failureDistribution`、组件寿命/RMS/k-out-of-n、`reliabilityBlockDiagram`、保障资源容量、库存、`supportNodes[].transportPolicies`、保障活动 job DAG、周期任务、任务阶段/机场/任务区、Monte Carlo sweep 与 seed；`supportOrganization` 已批准为 governance-only / 不驱动仿真字段并写入 provenance。M9.7.4 将 M9.6 frozen 字段 coverage 中的 unsupported 汇总关闭为 0；M9.8 才进入平台嵌入和 `independent-mesa` 退役。
+当前收束：M9.7.4 已在 M9.7.1 `aircraft_support_v1` schema/compiler gate、M9.7.2 single-run core 和 M9.7.3 formal Monte Carlo/projection 后完成 coverage hardening。`src/spare_mvp_abm/aircraft_support_v1/` 提供 `AircraftSupportV1Model`，内部使用 `tick_minutes=1`、`sample_every_minutes=30` 和固定阶段顺序推进；`SimulationAdapter.run_scenario()` 和 `SimulationAdapter.run_monte_carlo_scenario()` 可通过 canonical `/api/runs` 执行 `aircraft_support_v1` Scenario，产出 result summary、artifact manifest、run chain、metrics、report、log、四类 projection、`monte_carlo_base`、样本失败账本和 `visualization_state_series`。行为驱动字段包含机队数量/初始可用、任务波次、`components[].failureDistribution`、组件寿命/RMS/k-out-of-n、`reliabilityBlockDiagram`、保障资源容量、库存、`supportNodes[].transportPolicies`、保障活动 job DAG、周期任务、任务阶段/机场/任务区、Monte Carlo sweep 与 seed；仿真时长优先按周期任务配置天数 × 重复次数推导，`durationHours` 只作为缺少周期任务时的回退；`supportOrganization` 已批准为 governance-only / 不驱动仿真字段并写入 provenance。M9.7.4 将 M9.6 frozen 字段 coverage 中的 unsupported 汇总关闭为 0。
 
 完成标准：
 
@@ -562,15 +562,19 @@ M8.0 当前收束：`docs/superpowers/specs/2026-06-21-m8-projection-payload-ana
 
 1. 前端可视化仿真页通过平台 Project/ExperimentPlan 选择正式模型族并提交 canonical `/api/runs`，不跳转到 `independent-mesa/server.py` 或 `8765` 旁路入口。
 2. 状态回放只通过 `/api/runs/{run_id}/artifacts/{artifact_id}` 下载 `visualization_state_series`；在线展示继续使用 `/api/runs/{run_id}/state-stream`；四类分析页只消费 run projection payload。
-3. `independent-mesa/GLM` 和 `independent-mesa/GPT` 作为历史参考或开发对照归档，必要时保留离线复现实验命令，但不再由 `scripts/start-system.sh` 作为平台运行必需服务启动。
-4. 删除或标记过期所有把 `independent-mesa`、`8765`、静态 HTML 输出当作正式产品入口的 README、roadmap、agent 约束、测试和启动脚本引用。
-5. 浏览器 smoke 覆盖完整平台流：导入案例数据、创建方案、启动正式 single run、回放状态序列、启动 Monte Carlo、查看四类正式分析结果。
+3. 可视化仿真任务视图直接消费 `visualization_state_series.missions[]` 的任务属性，将任务计划表与每日甘特图合并，按周期性任务 / 复合任务 / 基本任务展示实际天、波次、要求型号、数量、实际执行飞机和状态；缺少正式任务计划字段时 fail closed，不从旧 artifact 兜底推断。
+4. `independent-mesa/GLM` 和 `independent-mesa/GPT` 作为历史参考或开发对照归档，必要时保留离线复现实验命令，但不再由 `scripts/start-system.sh` 作为平台运行必需服务启动。
+5. 删除或标记过期所有把 `independent-mesa`、`8765`、静态 HTML 输出当作正式产品入口的 README、roadmap、agent 约束、测试和启动脚本引用。
+6. 浏览器 smoke 覆盖完整平台流：导入案例数据、创建方案、启动正式 single run、回放状态序列、启动 Monte Carlo、查看四类正式分析结果。
 
 完成标准：
 
 1. 正式平台流程中搜索不到对 `independent-mesa` 服务地址或静态输出目录的运行依赖；如有引用，只能是归档说明、迁移记录或离线开发参考。
 2. `scripts/start-system.sh` 启动平台所需服务时不再强制启动 `independent-mesa/server.py`。
-3. 从平台入口完成 M9.6 案例的 single、Monte Carlo、状态回放和四类分析，且所有结果来源都是 canonical run artifacts。
+3. 任务视图不再拆成独立任务计划表和任务卡片，主工作区以一张合并甘特表展示周期/复合/基本任务属性、实际天/波次、每日时间条、要求型号/数量、实际执行飞机和状态。
+4. 从平台入口完成 M9.6 案例的 single、Monte Carlo、状态回放和四类分析，且所有结果来源都是 canonical run artifacts。
+
+当前收束：M9.8 已完成平台嵌入和 `independent-mesa` 退役。前端 RunIntent 默认使用 `aircraft_support_v1`，可视化仿真页、单次正式 run、Monte Carlo run 和四类分析页均通过 canonical `/api/runs`、`/api/runs/{run_id}/artifacts/{artifact_id}` 与 `/api/runs/{run_id}/state-stream` 读取正式数据；缺 projection、缺 state-series 或 payload 校验失败时仍 fail closed。任务视图已合并任务计划表和每日甘特图，按周期性任务 / 复合任务 / 基本任务属性展示实际天、波次、要求型号、数量、实际执行飞机和状态；旧 artifact 缺这些字段时不再从 id/name/aircraft_type 兜底推断。`scripts/start-system.sh` 只启动平台同源 app 和 Mesa contract provider，不再启动 `independent-mesa/server.py` 或监听 `8765`。`independent-mesa/GLM` 与 `independent-mesa/GPT` 保留为历史参考、开发对照和离线复现实验，不再是正式产品入口。
 
 ## M10：工程质量和自动化测试
 
@@ -694,6 +698,6 @@ M3/M6 的第一步不是直接建设完整生产平台，而是把保存、编�
 3. M5.1 已将建模数据导入/校验 contract 接入本地后端 API、SQLite 持久化和前端显式 API client。
 4. M5.2 当前聚焦系统管理下「建模数据导入」工作台、映射/错误/版本预览和经 `SimulationAdapter` 编译的后端 Scenario 预览；完整 Excel UI 或生产 worker 仍不在本阶段。
 5. RunIntent / MonteCarloRunConfig / imported sample Project 收敛已作为 M6.2 后续切片完成；M7.0 已补入本地运行/产物管理，M8.0 已补入 projection payload 消费，M9.0/M9.1 已补入离线状态序列回放、状态契约和事件追溯，M9.2 已补入在线状态流和运行订阅，M9.3 已补入最小 run lifecycle、后端控制、控制审计和 UI 状态确认，M9.4 已解锁 `aviation_support` 正式执行并对齐 result、projection、state-series、artifact manifest 和 run chain，M9.5 已定义受治理航空保障采样契约并解锁 `aviation_support` formal Monte Carlo。生产 worker、object storage、完整 cancel/retry、checkpoint restart 和真实运行中暂停/单步只在对应阶段最小需要时纳入。
-6. M9.6 已完成平台案例数据包、字段覆盖表、导出链路和 golden fixtures 冻结；下一步进入 M9.7 正式飞机保障仿真模型族前，仍不得先把 `independent-mesa` 旁路页面嵌入产品入口。
-7. M9.7 完成正式模型族后，再进入 M9.8 平台嵌入和 `independent-mesa` 退役；退役前必须确认平台可通过 canonical `/api/runs` 完成 single、Monte Carlo、状态回放和四类分析。
+6. M9.6 已完成平台案例数据包、字段覆盖表、导出链路和 golden fixtures 冻结；M9.7 已完成 `aircraft_support_v1` 正式飞机保障仿真模型族、single run、Monte Carlo 和 coverage hardening。
+7. M9.8 已完成平台嵌入和 `independent-mesa` 退役；平台通过 canonical `/api/runs` 完成 single、Monte Carlo、状态回放和四类分析，`independent-mesa` 旁路只保留为历史参考、开发对照和离线复现实验。
 8. 每次 PR 更新页面流转、数据对象或结果口径时，同步更新本文档或相关验收清单。
