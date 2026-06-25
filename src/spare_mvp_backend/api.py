@@ -689,4 +689,5 @@ def _project_list_entry(project: dict[str, Any]) -> dict[str, Any]:
         "summary": str(summary).strip(),
         "updated_at": project.get("updated_at"),
         "scenario_id": payload.get("scenarioId"),
+        "source_import_id": payload.get("missionProfile", {}).get("sourceImportId"),
     }

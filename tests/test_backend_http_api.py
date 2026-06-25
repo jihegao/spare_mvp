@@ -519,6 +519,7 @@ class BackendHttpApiTest(unittest.TestCase):
                 self.assertEqual(entry["base_code"], project_json["projectInfo"]["baseCode"])
                 self.assertEqual(entry["summary"], project_json["projectInfo"]["summary"])
                 self.assertEqual(entry["scenario_id"], project_json["scenarioId"])
+                self.assertEqual(entry["source_import_id"], project_json["missionProfile"]["sourceImportId"])
                 self.assertIn("updated_at", entry)
             finally:
                 server.shutdown()

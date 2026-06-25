@@ -189,6 +189,7 @@ function toProjectFromBackendApiEntry(entry) {
     summary: entry.summary || "后端持久化项目",
     updatedAt: normalizeProjectUpdatedAt(entry.updated_at),
     sourceKind: PROJECT_SOURCE.imported_sample,
+    sourceImportId: entry.source_import_id || entry.sourceImportId || "",
     scenarioId: entry.scenario_id || "",
     projectBackendId: projectId
   };
@@ -273,6 +274,8 @@ let m7RunDetail = null;
 let m7SelectedRunId = "";
 let m7RunArtifactStatus = "M7 运行产物账本尚未加载";
 let visualizationRunList = [];
+let visualizationRunListLoaded = false;
+let visualizationRunListLoadInFlight = false;
 let visualizationSelectedRunId = "";
 let visualizationStateSeries = null;
 let visualizationReplayIndex = 0;
@@ -1230,7 +1233,7 @@ function bindEvents() {
     }
   });
 
-  app.addEventListener("change", (event) => {
+  app.addEventListener("change", async (event) => {
     const mesaRunSelect = event.target.closest("[data-mesa-run-select]");
     if (mesaRunSelect) {
       stopVisualizationRunStream("已切换 run，M9.2 在线订阅已停止");
@@ -1238,9 +1241,11 @@ function bindEvents() {
       if (visualizationStateSeries && visualizationStateSeries.run_id !== visualizationSelectedRunId) {
         clearVisualizationStateSeries("", "已切换 run，需重新加载对应 M9 state_series artifact");
       }
-      visualizationReplayStatus = visualizationSelectedRunId
-        ? `已选择 M9 回放 run_id：${visualizationSelectedRunId}`
-        : "请选择已完成 run 加载 M9 回放";
+      if (visualizationSelectedRunId) {
+        await loadVisualizationReplayForRun(visualizationSelectedRunId);
+      } else {
+        visualizationReplayStatus = "请选择已完成 run 加载 M9 回放";
+      }
       render();
       return;
     }
@@ -5165,8 +5170,10 @@ async function createSampleProjectFromPublishedImport(importId = currentPublishe
     projectDraftSaveStatus = "已保存";
     projectDraftHydrateStatus = "示例项目来自已发布建模导入包";
     updatePreviewResultsThroughApiClient();
+    return project;
   } catch (err) {
     projectListStatus = `导入示例项目生成失败：${err && err.message ? err.message : "Backend API 不可用"}`;
+    return null;
   }
 }
 
@@ -5281,6 +5288,15 @@ async function hydrateCurrentProjectDraftFromApi() {
     const projectJson = await backendApi.getProject(currentBackendProjectId());
     scenario = cloneScenario(projectJson);
     experimentPlanDraft = cloneScenario(projectJson);
+    const sourceImportId = projectJson.missionProfile?.sourceImportId || "";
+    if (sourceImportId && currentProject) {
+      currentProject = {
+        ...currentProject,
+        sourceKind: PROJECT_SOURCE.imported_sample,
+        sourceImportId
+      };
+      demoProjects = mergeProjectsById([currentProject, ...demoProjects]);
+    }
     updatePreviewResultsThroughApiClient();
     savedProject = {
       project_id: projectJson.project_id || currentBackendProjectId(),
@@ -5348,16 +5364,35 @@ function currentProjectCanStartFormalRun() {
   };
 }
 
+async function ensureFormalRunImportedSampleProject() {
+  if (currentProject) {
+    visualizationReplayStatus = "正在对齐后端示例项目";
+    await hydrateCurrentProjectDraftFromApi();
+    if (scenario?.missionProfile?.sourceImportId && currentProject?.sourceKind === PROJECT_SOURCE.imported_sample) {
+      return currentProjectCanStartFormalRun();
+    }
+  }
+  visualizationReplayStatus = "正在从已发布建模导入包生成后端示例项目";
+  const project = await createSampleProjectFromPublishedImport(currentProject?.sourceImportId);
+  if (!project) {
+    return {
+      allowed: false,
+      message: projectListStatus || "后端示例项目生成失败"
+    };
+  }
+  return currentProjectCanStartFormalRun();
+}
+
 async function startSingleRunThroughApi() {
   const formalRunGate = currentProjectCanStartFormalRun();
   if (!formalRunGate.allowed) {
     backendApiStatus = formalRunGate.message;
     experimentRunStatus = "未配置";
-    return;
+    return null;
   }
   if (formalRunSubmitInFlight) {
     backendApiStatus = "已有正式运行正在提交，请等待当前请求返回";
-    return;
+    return null;
   }
   formalRunSubmitInFlight = true;
   const runType = "single";
@@ -5382,7 +5417,7 @@ async function startSingleRunThroughApi() {
       forgetLastBackendRun();
       experimentRunStatus = "运行失败";
       backendApiStatus = compileGateStatusText(backendRun);
-      return;
+      return null;
     }
     lastRunExperimentPlanProjectJson = {
       run_id: backendRun.run_id,
@@ -5394,6 +5429,7 @@ async function startSingleRunThroughApi() {
     backendApiStatus = isRunComplete(backendRun)
       ? "单次正式运行完成"
       : `单次正式运行已提交：${backendRun.run_id || "等待 run_id"} / ${runStatusLabel(backendRun)}`;
+    return backendRun;
   } catch (err) {
     savedProject = null;
     backendRun = null;
@@ -5403,6 +5439,7 @@ async function startSingleRunThroughApi() {
     forgetLastBackendRun();
     experimentRunStatus = "后端不可用";
     backendApiStatus = `后端不可用，未创建 run_id：${err && err.message ? err.message : "Backend API 不可用"}`;
+    return null;
   } finally {
     formalRunSubmitInFlight = false;
   }
@@ -5775,6 +5812,17 @@ async function refreshVisualizationRunList(selectedRunId = backendRun?.run_id ||
     visualizationRunList = [];
     visualizationReplayStatus = `M9 run 列表读取失败：${formatBackendError(err)}`;
   }
+}
+
+function ensureVisualizationRunListLoaded() {
+  if (visualizationRunListLoaded || visualizationRunListLoadInFlight) return;
+  visualizationRunListLoadInFlight = true;
+  refreshVisualizationRunList()
+    .finally(() => {
+      visualizationRunListLoaded = true;
+      visualizationRunListLoadInFlight = false;
+      render();
+    });
 }
 
 async function loadVisualizationReplayForRun(runId = visualizationSelectedRunId || backendRun?.run_id) {
@@ -6372,6 +6420,48 @@ async function handleMesaControl(action) {
     await loadVisualizationReplayForRun();
     return;
   }
+  if (action === "play") {
+    stopVisualizationRunStream("正在启动离线回放，M9.2 在线订阅已停止");
+    if (
+      !visualizationStateSeries
+      || isVisualizationStateSeriesFromStream()
+      || (visualizationSelectedRunId && visualizationStateSeries.run_id !== visualizationSelectedRunId)
+    ) {
+      await loadVisualizationReplayForRun();
+    }
+    if (visualizationStateSeries && !isVisualizationStateSeriesFromStream()) {
+      visualizationReplayPlaying = !visualizationReplayPlaying;
+      if (visualizationReplayPlaying) startVisualizationReplay();
+      else stopVisualizationReplay();
+    } else {
+      stopVisualizationReplay();
+    }
+    return;
+  }
+  if (action === "start-new-run") {
+    stopVisualizationRunStream("正在启动新仿真，M9.2 在线订阅已停止");
+    stopVisualizationReplay();
+    visualizationReplayStatus = "正在启动新仿真并准备正式回放";
+    const formalRunGate = await ensureFormalRunImportedSampleProject();
+    if (!formalRunGate.allowed) {
+      visualizationReplayStatus = `启动新仿真失败：${formalRunGate.message}`;
+      return;
+    }
+    const submittedRun = await startSingleRunThroughApi();
+    const newRunId = submittedRun?.run_id || backendRun?.run_id || "";
+    if (!newRunId) {
+      visualizationReplayStatus = `启动新仿真失败：${backendApiStatus || "未返回 run_id"}`;
+      return;
+    }
+    await refreshVisualizationRunList(newRunId);
+    await loadVisualizationReplayForRun(newRunId);
+    if (visualizationStateSeries && visualizationStateSeries.run_id === newRunId && !isVisualizationStateSeriesFromStream()) {
+      visualizationReplayPlaying = true;
+      startVisualizationReplay();
+      visualizationReplayStatus = `已启动新仿真并开始回放：run_id ${newRunId}`;
+    }
+    return;
+  }
   const controlAction = backendControlActions[action];
   if (controlAction) {
     const runId = visualizationSelectedRunId || backendRun?.run_id;
@@ -6404,19 +6494,13 @@ async function handleMesaControl(action) {
       stopVisualizationReplay();
       return;
     }
-    if (action === "play") {
-      visualizationReplayPlaying = !visualizationReplayPlaying;
-      if (visualizationReplayPlaying) startVisualizationReplay();
-      else stopVisualizationReplay();
-      return;
-    }
     if (action === "reset") {
       visualizationReplayIndex = 0;
       stopVisualizationReplay();
       return;
     }
   }
-  if (["play", "step", "reset"].includes(action)) {
+  if (["step", "reset"].includes(action)) {
     stopVisualizationReplay();
     visualizationReplayStatus = "后端暂停、单步和重置属于 M9.3；尚未加载正式 state_series artifact 时不会在前端伪造运行控制";
   }
@@ -6485,6 +6569,7 @@ function renderVisualSimulation(page) {
   if (!visualizationStateSeriesFrame && !liveAviationState && !aviationLoadInFlight) {
     loadAviationSupportState();
   }
+  ensureVisualizationRunListLoaded();
   const sourceLabel = visualizationStateSeriesFrame
     ? (isOnlineStreamFrame ? "在线状态流" : "state_series artifact")
     : (aviationSource === "live" ? "契约服务" : "演示快照");
@@ -6504,7 +6589,6 @@ function renderVisualSimulation(page) {
   const timelineFrameLabel = visualizationStateSeriesFrame
     ? `${currentFrame} / ${htmlEscape(visualizationStateSeries.frame_count)} 帧`
     : "等待正式回放";
-  const streamStatusDetail = `run_id ${htmlEscape(visualizationStreamState.runId || "-")} / status ${htmlEscape(visualizationStreamState.status)} / events ${htmlEscape(visualizationStreamState.eventCount || 0)} / artifact ${htmlEscape(visualizationStreamState.artifactId || "-")}`;
   const visualKpis = visualSimulationKpis(state);
   const availabilityTrend = buildAvailabilityTrend(
     state,
@@ -6523,38 +6607,16 @@ function renderVisualSimulation(page) {
       </div>
       <div class="mesa-control-deck">
         <div class="mesa-control-groups" aria-label="运行控制">
-          <div class="mesa-control-group">
-            <span>Run</span>
-            <button type="button" data-mesa-control="refresh-runs">刷新</button>
-            <select data-mesa-run-select aria-label="选择 M9 回放 run">${runOptions}</select>
-            <button type="button" data-mesa-control="subscribe-run">订阅</button>
-            <button type="button" data-mesa-control="stop-subscription">停止</button>
-            <details class="mesa-control-status ${visualizationStreamEventClass()}" data-mesa-stream-status>
-              <summary><span>在线状态流</span><strong>${htmlEscape(visualizationStreamState.message)}</strong></summary>
-              <small>${streamStatusDetail}</small>
-            </details>
-          </div>
-          <div class="mesa-control-group">
-            <span>回放</span>
-            <button type="button" data-mesa-control="load-replay">加载</button>
-            <button type="button" class="btn-primary" data-mesa-control="play">${visualizationReplayPlaying ? "暂停" : "运行"}</button>
-            <button type="button" data-mesa-control="step">单步</button>
-            <button type="button" data-mesa-control="reset">重置</button>
+          <div class="mesa-control-group mesa-control-group-primary">
+            <label class="mesa-run-picker">
+              <span>选择回放</span>
+              <select data-mesa-run-select aria-label="选择回放">${runOptions}</select>
+            </label>
+            <button type="button" class="btn-primary" data-mesa-control="play">${visualizationReplayPlaying ? "暂停回放" : "启动回放"}</button>
+            <button type="button" data-mesa-control="start-new-run" ${formalRunSubmitInFlight ? "disabled" : ""}>启动新仿真</button>
             <details class="mesa-control-status ${visualizationStateSeriesFrame ? "success" : "warning"}">
-              <summary><span>离线回放</span><strong>${htmlEscape(visualizationReplayStatus)}</strong></summary>
+              <summary><span>回放状态</span><strong>${htmlEscape(visualizationReplayStatus)}</strong></summary>
               <small>${replayStatusDetail}</small>
-            </details>
-          </div>
-          <div class="mesa-control-group">
-            <span>后端</span>
-            <button type="button" data-mesa-control="backend-cancel">取消运行</button>
-            <button type="button" data-mesa-control="backend-retry">重试运行</button>
-            <button type="button" data-mesa-control="backend-pause">后端暂停</button>
-            <button type="button" data-mesa-control="backend-resume">后端恢复</button>
-            <button type="button" data-mesa-control="backend-step">后端单步</button>
-            <button type="button" data-mesa-control="backend-reset">后端重置</button>
-            <details class="mesa-control-status info" data-mesa-backend-control-status>
-              <summary><span>后端运行控制</span><strong>${htmlEscape(visualizationBackendControlStatus)}</strong></summary>
             </details>
           </div>
         </div>
@@ -6708,17 +6770,22 @@ function renderMesaStage(activeView, state, availabilityTrend) {
 }
 
 function renderMesaAircraftStage(state, availabilityTrend) {
+  const lanes = aircraftStateLanes(state.aircraft);
+  const timelineRows = buildAircraftMissionTimelineRows(state);
   return `
     <div class="mesa-stage">
-      <div class="mesa-flight-deck">
-        ${state.aircraft.map((aircraft) => {
-          const [x, y] = aircraft.position;
-          return `<div class="mesa-aircraft-node ${mesaStateClass(aircraft.state)}" style="left:${12 + x * 21}%;top:${16 + y * 34}%">
-            <strong>${htmlEscape(aircraft.label)}</strong>
-            <span>${htmlEscape(aircraft.type)}</span>
-            <em>${htmlEscape(visualAircraftStateLabel(aircraft.state))}</em>
-          </div>`;
-        }).join("")}
+      <div class="aircraft-state-board" aria-label="飞机状态块">
+        ${lanes.map((lane) => `
+          <section class="aircraft-state-lane ${htmlEscape(lane.key)}">
+            <div class="aircraft-state-lane-title">
+              <strong>${htmlEscape(lane.title)}</strong>
+              <span>${htmlEscape(lane.aircraft.length)} 架</span>
+            </div>
+            <div class="aircraft-state-lane-body">
+              ${lane.aircraft.length ? lane.aircraft.map((aircraft) => renderAircraftStateNode(aircraft)).join("") : `<span class="empty-state">暂无飞机</span>`}
+            </div>
+          </section>
+        `).join("")}
       </div>
       <div class="legend">
         <span class="legend-item"><i class="dot available"></i>停放</span>
@@ -6728,8 +6795,86 @@ function renderMesaAircraftStage(state, availabilityTrend) {
         <span class="legend-item"><i class="dot maintenance"></i>维修保障</span>
       </div>
       ${renderAvailabilityCurve(availabilityTrend)}
+      <section class="aircraft-mission-timeline">
+        <div class="section-head">
+          <h3>飞机任务执行时间线</h3>
+          <span>按尾号聚合</span>
+        </div>
+        <div class="aircraft-timeline-table">
+          ${timelineRows.map((row) => `
+            <div class="aircraft-timeline-row">
+              <strong>${htmlEscape(row.tailNumber)}<small>${htmlEscape(row.type)}</small></strong>
+              <div>
+                ${row.events.length ? row.events.map((event) => `<span class="aircraft-timeline-pill ${htmlEscape(event.phase)}">${htmlEscape(event.label)}</span>`).join("") : `<span class="aircraft-timeline-pill idle">等待任务</span>`}
+              </div>
+            </div>
+          `).join("")}
+        </div>
+      </section>
     </div>
   `;
+}
+
+function aircraftStateLanes(aircraftList) {
+  const lanes = [
+    { key: "deck", title: "航母甲板 / 任务就绪", aircraft: [] },
+    { key: "support", title: "飞行前准备 / 回收检查", aircraft: [] },
+    { key: "mission", title: "任务空域", aircraft: [] },
+    { key: "maintenance", title: "修复性维修", aircraft: [] },
+  ];
+  const laneByKey = new Map(lanes.map((lane) => [lane.key, lane]));
+  for (const aircraft of aircraftList) {
+    laneByKey.get(aircraftStateLaneKey(aircraft)).aircraft.push(aircraft);
+  }
+  return lanes;
+}
+
+function aircraftStateLaneKey(aircraft) {
+  if (aircraft.state === "flying") return "mission";
+  if (["pre_support", "post_support"].includes(aircraft.state)) return "support";
+  if (aircraft.state === "maintenance" && !aircraft.failedLru && !aircraft.preventiveDue) return "support";
+  if (aircraft.state === "maintenance") return "maintenance";
+  return "deck";
+}
+
+function renderAircraftStateNode(aircraft) {
+  const meta = [
+    aircraft.currentMissionId ? `任务 ${aircraft.currentMissionId}` : "",
+    aircraft.failedLru ? `故障 ${aircraft.failedLru}` : "",
+    aircraft.postflightRequired ? "需航后检查" : "",
+  ].filter(Boolean).join(" / ");
+  return `
+    <div class="aircraft-state-node ${mesaStateClass(aircraft.state)}">
+      <strong>${htmlEscape(aircraft.label)}</strong>
+      <span>${htmlEscape(aircraft.type)} / ${htmlEscape(visualAircraftStateLabel(aircraft.state))}</span>
+      <small>${htmlEscape(meta || `飞行 ${fixed(aircraft.flightHours, 1)}h / 起降 ${aircraft.takeoffCount}/${aircraft.landingCount}`)}</small>
+    </div>
+  `;
+}
+
+function buildAircraftMissionTimelineRows(state) {
+  return state.aircraft.map((aircraft) => {
+    const events = [];
+    for (const mission of state.missions || []) {
+      if (!(mission.assignedTailNumbers || []).includes(aircraft.id)) continue;
+      const plannedStart = Number(mission.plannedStart || 0);
+      const actualStart = mission.actualStart == null ? plannedStart : Number(mission.actualStart);
+      const returnTime = mission.returnTime == null
+        ? plannedStart + Number(mission.durationMinutes || 0)
+        : Number(mission.returnTime);
+      const prepStart = mission.preparationStart == null ? plannedStart : Number(mission.preparationStart);
+      events.push({ phase: "preparing", time: prepStart, label: `${simulationMinuteLabel(prepStart)} 飞行前准备` });
+      events.push({ phase: "ready", time: actualStart, label: `${simulationMinuteLabel(actualStart)} 任务就绪` });
+      events.push({ phase: "flying", time: actualStart, label: `${simulationMinuteLabel(actualStart)} 出动执行` });
+      events.push({ phase: "recovery", time: returnTime, label: `${simulationMinuteLabel(returnTime)} 回收检查` });
+      events.push({ phase: "ready", time: returnTime + 60, label: `${simulationMinuteLabel(returnTime + 60)} 任务后就绪` });
+    }
+    return {
+      tailNumber: aircraft.label,
+      type: aircraft.type,
+      events: events.sort((a, b) => a.time - b.time),
+    };
+  });
 }
 
 function renderMesaMissionStage(state) {
@@ -7028,6 +7173,12 @@ function minuteOfDayLabel(minutes) {
   const hour = Math.floor(value / 60);
   const minute = value % 60;
   return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
+
+function simulationMinuteLabel(minutes) {
+  const value = Math.max(0, Math.round(Number(minutes || 0)));
+  const day = Math.floor(value / 1440) + 1;
+  return `D${day} ${minuteOfDayLabel(value % 1440)}`;
 }
 
 function missionStatusClass(status) {

@@ -116,7 +116,13 @@ export function normalizeAviationSupportState(state = AVIATION_SUPPORT_DEMO_STAT
       type: item.type,
       state: item.state,
       position: [Number(item.x || 0), Number(item.y || 0)],
+      currentMissionId: item.current_mission_id || item.mission_id || "",
       failedLru: item.failed_lru || "",
+      flightHours: number(item.flight_hours || 0),
+      takeoffCount: number(item.takeoff_count || 0),
+      landingCount: number(item.landing_count || 0),
+      postflightRequired: Boolean(item.postflight_required),
+      preventiveDue: Boolean(item.preventive_due),
       systemCount: Array.isArray(item.systems) ? item.systems.length : 0
     })),
     resources: (state.resources || []).map((item) => ({
