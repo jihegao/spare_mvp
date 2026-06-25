@@ -60,6 +60,8 @@ class AircraftState:
     current_mission_id: str | None = None
     return_time: int | None = None
     failed_component_id: str | None = None
+    failed_component_minute: int | None = None
+    component_failure_minutes: dict[str, int] = field(default_factory=dict)
     flight_hours: float = 0.0
     takeoff_count: int = 0
     landing_count: int = 0
@@ -68,6 +70,7 @@ class AircraftState:
     in_flight_failure: bool = False
     last_preventive_minute: int = 0
     prepared_mission_ids: set[str] = field(default_factory=set)
+    lru_failure_remaining_minutes: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass
@@ -151,7 +154,9 @@ class AircraftSupportV1Model:
         self.minute = 0
         self.event_log: list[dict[str, Any]] = []
         self.aircraft = self._build_aircraft()
+        self.equipment_tree_components = self._equipment_tree_components()
         self.components = self._behavior_components()
+        self._initialize_aircraft_lru_failure_timers()
         self.nodes = self._build_support_nodes()
         self.activities = self._build_activities()
         self.mission_context = self._mission_context()
@@ -365,7 +370,7 @@ class AircraftSupportV1Model:
 
     def _behavior_components(self) -> list[dict[str, Any]]:
         components = []
-        for item in self.inputs.get("equipment_tree", {}).get("components", []):
+        for item in self.equipment_tree_components:
             rate = _non_negative_float(item.get("failure_rate"), 0.0)
             if item.get("parent_id") in (None, ""):
                 continue
@@ -380,6 +385,23 @@ class AircraftSupportV1Model:
             component["repair_duration_minutes"] = self._component_repair_duration_minutes(component)
             components.append(component)
         components.extend(self._rbd_components())
+        return components
+
+    def _equipment_tree_components(self) -> list[dict[str, Any]]:
+        components = []
+        for item in self.inputs.get("equipment_tree", {}).get("components", []):
+            if not isinstance(item, dict) or item.get("id") in (None, ""):
+                continue
+            component = copy.deepcopy(item)
+            component["id"] = str(component.get("id"))
+            component["name"] = str(component.get("name") or component["id"])
+            parent_id = component.get("parent_id")
+            component["parent_id"] = "" if parent_id in (None, "") else str(parent_id)
+            component["aircraft_model"] = str(component.get("aircraft_model") or "")
+            component["product_type"] = str(component.get("product_type") or "")
+            component["quantity"] = max(1, int(component.get("quantity") or 1))
+            component["k_out_of_n"] = component.get("k_out_of_n") if isinstance(component.get("k_out_of_n"), dict) else {}
+            components.append(component)
         return components
 
     def _effective_component_failure_rate(self, component: dict[str, Any], fallback_rate: float) -> float:
@@ -450,6 +472,7 @@ class AircraftSupportV1Model:
                     "id": f"rbd:{node_id}",
                     "name": str(node.get("name") or node_id or "rbd node"),
                     "failure_rate": rate,
+                    "parent_id": f"rbd:{parent_id}" if parent_id else "",
                     "spare_type": "",
                     "special_repair_profile": {},
                     "repair_duration_minutes": None,
@@ -459,6 +482,27 @@ class AircraftSupportV1Model:
                 }
             )
         return components
+
+    def _initialize_aircraft_lru_failure_timers(self) -> None:
+        for aircraft in self.aircraft:
+            aircraft.lru_failure_remaining_minutes = {
+                str(component.get("id") or "component"): self._sample_lru_failure_minutes(component)
+                for component in self.components
+            }
+
+    def _sample_lru_failure_minutes(self, component: dict[str, Any]) -> float:
+        hourly_rate = _non_negative_float(component.get("failure_rate"), 0.0)
+        life_limit = component.get("life_limit_hours")
+        life_limit_minutes = math.inf
+        if isinstance(life_limit, (int, float)) and life_limit > 0:
+            life_limit_minutes = float(life_limit) * 60.0
+        samples: list[float] = []
+        quantity = max(1, int(component.get("quantity") or 1))
+        if hourly_rate > 0:
+            samples.extend(self.rng.expovariate(hourly_rate) * 60.0 for _ in range(quantity))
+        if math.isfinite(life_limit_minutes):
+            samples.append(life_limit_minutes)
+        return min(samples) if samples else math.inf
 
     def _build_support_nodes(self) -> dict[str, dict[str, Any]]:
         nodes: dict[str, dict[str, Any]] = {}
@@ -748,23 +792,56 @@ class AircraftSupportV1Model:
     def _process_mission_returns(self) -> None:
         for aircraft in self.aircraft:
             if aircraft.state == "flying" and aircraft.return_time is not None and aircraft.return_time <= self.minute:
-                mission = self._mission_by_id(aircraft.current_mission_id)
-                if mission is not None and aircraft.tail_number not in mission.failed_tail_numbers and aircraft.in_flight_failure:
-                    mission.failed_tail_numbers.append(aircraft.tail_number)
-                aircraft.flight_hours += max(0.0, float((aircraft.return_time - (mission.actual_start if mission else 0)) / 60.0))
-                aircraft.landing_count += 1
-                aircraft.state = "maintenance"
-                if aircraft.in_flight_failure:
-                    self.failed_sorties += 1
-                    component = self._component_by_id(aircraft.failed_component_id)
-                    self._create_job(aircraft, self.repair_activity, kind="repair", component=component)
-                    self._event("mission_failed_returned", f"{aircraft.tail_number} returned with failure")
-                else:
-                    aircraft.postflight_required = True
-                    self._create_job(aircraft, self.postflight_activity, kind="postflight")
-                    self._event("mission_returned", f"{aircraft.tail_number} returned from mission and needs postflight")
-                aircraft.current_mission_id = None
-                aircraft.return_time = None
+                self._return_aircraft_from_mission(aircraft, early_return=False)
+
+    def _return_aircraft_from_mission(self, aircraft: AircraftState, *, early_return: bool) -> None:
+        mission = self._mission_by_id(aircraft.current_mission_id)
+        if mission is not None and aircraft.tail_number not in mission.failed_tail_numbers and aircraft.in_flight_failure:
+            mission.failed_tail_numbers.append(aircraft.tail_number)
+        return_minute = self.minute if early_return else aircraft.return_time
+        aircraft.flight_hours += max(0.0, float(((return_minute or self.minute) - (mission.actual_start if mission else 0)) / 60.0))
+        aircraft.landing_count += 1
+        aircraft.state = "maintenance"
+        if aircraft.in_flight_failure:
+            self.failed_sorties += 1
+            component = self._component_by_id(aircraft.failed_component_id)
+            self._create_job(aircraft, self.repair_activity, kind="repair", component=component)
+            self._event(
+                "mission_failed_returned" if early_return else "mission_failed_after_return",
+                f"{aircraft.tail_number} {'early returned' if early_return else 'returned'} with propagated aircraft failure",
+            )
+            if mission is not None:
+                self._update_mission_failure_status(mission)
+        elif aircraft.component_failure_minutes:
+            component = self._component_by_id(self._first_failed_component_id(aircraft))
+            self._create_job(aircraft, self.repair_activity, kind="repair", component=component)
+            self._event("mission_returned_with_component_failure", f"{aircraft.tail_number} returned with component failure and needs repair")
+        else:
+            aircraft.postflight_required = True
+            self._create_job(aircraft, self.postflight_activity, kind="postflight")
+            self._event("mission_returned", f"{aircraft.tail_number} returned from mission and needs postflight")
+        aircraft.current_mission_id = None
+        aircraft.return_time = None
+        if mission is not None and not aircraft.in_flight_failure:
+            self._update_mission_completion_status(mission)
+
+    def _update_mission_failure_status(self, mission: MissionState) -> None:
+        effective_aircraft = len(set(mission.assigned_tail_numbers) - set(mission.failed_tail_numbers))
+        if effective_aircraft < mission.required_aircraft and mission.status not in {"failed", "cancelled"}:
+            mission.status = "failed"
+            mission.return_time = self.minute
+            self._event("mission_failed_minimum_aircraft", f"{mission.mission_id} failed below required aircraft count")
+
+    def _update_mission_completion_status(self, mission: MissionState) -> None:
+        if mission.status != "launched":
+            return
+        active_tails = {
+            aircraft.tail_number
+            for aircraft in self.aircraft
+            if aircraft.current_mission_id == mission.mission_id and aircraft.state == "flying"
+        }
+        if not active_tails:
+            mission.status = "completed"
 
     def _process_job_progress_and_completions(self) -> None:
         for job in self.jobs:
@@ -837,31 +914,34 @@ class AircraftSupportV1Model:
         if not self.components:
             return
         for aircraft in self.aircraft:
-            if aircraft.state not in {"available", "flying"}:
+            if aircraft.state != "flying":
                 continue
-            if aircraft.failed_component_id:
+            if aircraft.in_flight_failure:
                 continue
             for component in self.components:
-                hourly_rate = _non_negative_float(component.get("failure_rate"), 0.0)
-                life_limit = component.get("life_limit_hours")
-                life_pressure = 0.0
-                if isinstance(life_limit, (int, float)) and life_limit > 0:
-                    life_pressure = min(0.002, (self.minute / 60) / float(life_limit) * 0.001)
-                probability = 1.0 - math.exp(-(hourly_rate / 60.0) * self.tick_minutes) + life_pressure
-                if self.rng.random() < min(0.95, probability):
-                    aircraft.failed_component_id = str(component.get("id") or "component")
+                component_id = str(component.get("id") or "component")
+                if component_id in aircraft.component_failure_minutes:
+                    continue
+                remaining = aircraft.lru_failure_remaining_minutes.get(component_id)
+                if remaining is None:
+                    remaining = self._sample_lru_failure_minutes(component)
+                remaining -= self.tick_minutes
+                aircraft.lru_failure_remaining_minutes[component_id] = remaining
+                if remaining <= 0:
+                    aircraft.component_failure_minutes[component_id] = self.minute
                     self.lru_failures += 1
-                    if component.get("rbd_root"):
-                        self.rbd_root_failures += 1
-                    self.failure_delay_events += 1
-                    if aircraft.state == "flying":
+                    self._event("component_failed", f"{aircraft.tail_number} failed {component.get('name') or component.get('id')}")
+                    if self._aircraft_failure_tree_root_failed(aircraft):
+                        aircraft.failed_component_id = component_id
+                        aircraft.failed_component_minute = self.minute
+                        if component.get("rbd_root"):
+                            self.rbd_root_failures += 1
+                        self.failure_delay_events += 1
                         aircraft.in_flight_failure = True
                         self.in_flight_failures += 1
-                    else:
-                        aircraft.state = "maintenance"
-                        self._create_job(aircraft, self.repair_activity, kind="repair", component=component)
-                    self._event("component_failed", f"{aircraft.tail_number} failed {component.get('name') or component.get('id')}")
-                    break
+                        self._event("aircraft_failed", f"{aircraft.tail_number} failure propagated to whole aircraft")
+                        self._return_aircraft_from_mission(aircraft, early_return=True)
+                        break
 
     def _generate_preventive_jobs(self) -> None:
         interval_days = self._preventive_interval_days()
@@ -1146,7 +1226,12 @@ class AircraftSupportV1Model:
             self._event("preflight_completed", f"{aircraft.tail_number} prepared for {job.mission_id}")
         elif job.kind == "repair":
             aircraft.state = "available"
+            component = self._component_by_id(job.component_id)
+            if component is not None:
+                aircraft.lru_failure_remaining_minutes[str(component.get("id") or "component")] = self._sample_lru_failure_minutes(component)
             aircraft.failed_component_id = None
+            aircraft.failed_component_minute = None
+            aircraft.component_failure_minutes = {}
             aircraft.in_flight_failure = False
             self._event("repair_completed", f"{aircraft.tail_number} repair completed")
         elif job.kind == "postflight":
@@ -1194,14 +1279,189 @@ class AircraftSupportV1Model:
             "x": item.x,
             "y": item.y,
             "current_mission_id": item.current_mission_id,
-            "failed_lru": item.failed_component_id or "",
+            "failed_lru": item.failed_component_id or self._first_failed_component_id(item) or "",
             "flight_hours": item.flight_hours,
             "takeoff_count": item.takeoff_count,
             "landing_count": item.landing_count,
             "postflight_required": item.postflight_required,
             "preventive_due": item.preventive_due,
             "in_flight_failure": item.in_flight_failure,
+            "failure_tree": self._aircraft_failure_tree_payload(item),
         }
+
+    def _aircraft_failure_tree_payload(self, item: AircraftState) -> dict[str, Any]:
+        component_nodes = [
+            copy.deepcopy(component)
+            for component in self.equipment_tree_components
+            if self._component_applies_to_aircraft(component, item)
+        ]
+        if not component_nodes:
+            component_nodes = [copy.deepcopy(component) for component in self.equipment_tree_components]
+        equipment_root_id = self._equipment_tree_root_id(component_nodes)
+        node_ids = {str(component.get("id")) for component in component_nodes}
+        direct_failed = {str(component_id) for component_id in item.component_failure_minutes}
+        for failed_id in sorted(direct_failed - node_ids):
+            failed_component = self._component_by_id(failed_id)
+            if failed_component is None:
+                continue
+            component_nodes.append(
+                {
+                    "id": failed_id,
+                    "name": str(failed_component.get("name") or failed_id),
+                    "parent_id": equipment_root_id if failed_component.get("rbd_root") else str(failed_component.get("parent_id") or equipment_root_id),
+                    "aircraft_model": item.aircraft_type,
+                    "product_type": str(failed_component.get("product_type") or "LRU"),
+                    "quantity": max(1, int(failed_component.get("quantity") or 1)),
+                    "k_out_of_n": failed_component.get("k_out_of_n") if isinstance(failed_component.get("k_out_of_n"), dict) else {},
+                }
+            )
+            node_ids.add(failed_id)
+        whole_aircraft_root_id = self._whole_aircraft_root_id(node_ids | {equipment_root_id})
+        if equipment_root_id not in node_ids:
+            component_nodes.append(
+                {
+                    "id": equipment_root_id,
+                    "name": f"{item.aircraft_type} 装备构型",
+                    "parent_id": whole_aircraft_root_id,
+                    "aircraft_model": item.aircraft_type,
+                    "product_type": "装备构型",
+                    "quantity": 1,
+                    "k_out_of_n": {},
+                }
+            )
+            node_ids.add(equipment_root_id)
+        for component in component_nodes:
+            if str(component.get("id")) == equipment_root_id:
+                component["parent_id"] = whole_aircraft_root_id
+        root_node = {
+            "id": whole_aircraft_root_id,
+            "name": f"{item.tail_number} 整机",
+            "parent_id": "",
+            "aircraft_model": item.aircraft_type,
+            "product_type": "整机",
+            "quantity": 1,
+            "k_out_of_n": {},
+        }
+        nodes = [root_node, *component_nodes]
+        node_map = {str(node.get("id")): node for node in nodes}
+        children_by_parent: dict[str, list[str]] = {str(node.get("id")): [] for node in nodes}
+        for node in nodes:
+            node_id = str(node.get("id"))
+            parent_id = str(node.get("parent_id") or "")
+            if parent_id and parent_id in node_map and node_id != whole_aircraft_root_id:
+                children_by_parent.setdefault(parent_id, []).append(node_id)
+        failure_time_by_id: dict[str, int] = {}
+        for failed_id, failure_minute in item.component_failure_minutes.items():
+            failure_time_by_id[str(failed_id)] = int(failure_minute)
+        failed_ids = set(direct_failed)
+        propagated_ids: set[str] = set()
+        changed = True
+        while changed:
+            changed = False
+            for node_id in sorted(node_map.keys(), key=lambda value: self._failure_tree_depth(value, node_map), reverse=True):
+                if node_id in failed_ids:
+                    continue
+                failed_children = [child_id for child_id in children_by_parent.get(node_id, []) if child_id in failed_ids]
+                threshold = self._failure_threshold(node_map[node_id])
+                if failed_children and len(failed_children) >= threshold:
+                    failed_ids.add(node_id)
+                    propagated_ids.add(node_id)
+                    failure_time_by_id[node_id] = min(failure_time_by_id.get(child_id, self.minute) for child_id in failed_children)
+                    changed = True
+        payload_nodes = []
+        for node in nodes:
+            node_id = str(node.get("id"))
+            if node_id == equipment_root_id:
+                continue
+            failed_children = [child_id for child_id in children_by_parent.get(node_id, []) if child_id in failed_ids]
+            threshold = self._failure_threshold(node)
+            parent_id = str(node.get("parent_id") or "")
+            if parent_id == equipment_root_id:
+                parent_id = whole_aircraft_root_id
+            payload_nodes.append(
+                {
+                    "id": node_id,
+                    "name": str(node.get("name") or node_id),
+                    "parent_id": parent_id,
+                    "product_type": str(node.get("product_type") or ""),
+                    "quantity": max(1, int(node.get("quantity") or 1)),
+                    "k_out_of_n": copy.deepcopy(node.get("k_out_of_n") if isinstance(node.get("k_out_of_n"), dict) else {}),
+                    "failure_threshold": threshold,
+                    "failed_children": len(failed_children),
+                    "failed": node_id in failed_ids,
+                    "direct_failed": node_id in direct_failed,
+                    "propagated_failed": node_id in propagated_ids,
+                    "failure_time": failure_time_by_id.get(node_id),
+                }
+            )
+        return {
+            "tail_number": item.tail_number,
+            "aircraft_type": item.aircraft_type,
+            "root_id": whole_aircraft_root_id,
+            "equipment_root_id": equipment_root_id,
+            "nodes": payload_nodes,
+            "edges": [
+                {
+                    "from": str(node.get("parent_id") or ""),
+                    "to": str(node.get("id")),
+                    "active": str(node.get("id")) in failed_ids and str(node.get("parent_id") or "") in failed_ids,
+                }
+                for node in payload_nodes
+                if node.get("parent_id")
+            ],
+        }
+
+    def _aircraft_failure_tree_root_failed(self, item: AircraftState) -> bool:
+        tree = self._aircraft_failure_tree_payload(item)
+        root_id = str(tree.get("root_id") or "")
+        return any(str(node.get("id")) == root_id and node.get("failed") for node in tree.get("nodes", []))
+
+    def _first_failed_component_id(self, item: AircraftState) -> str | None:
+        if not item.component_failure_minutes:
+            return None
+        return min(item.component_failure_minutes.items(), key=lambda pair: pair[1])[0]
+
+    def _equipment_tree_root_id(self, component_nodes: list[dict[str, Any]]) -> str:
+        configured_root = self.inputs.get("equipment_tree", {}).get("root_component_id")
+        if configured_root:
+            return str(configured_root)
+        parent_ids = {str(node.get("parent_id")) for node in component_nodes if node.get("parent_id") not in (None, "")}
+        for candidate in ("aircraft-root", "aircraft"):
+            if candidate in parent_ids:
+                return candidate
+        return sorted(parent_ids)[0] if parent_ids else "aircraft-root"
+
+    def _whole_aircraft_root_id(self, component_node_ids: set[str]) -> str:
+        root_id = "whole-aircraft-root"
+        if root_id not in component_node_ids:
+            return root_id
+        index = 1
+        while f"{root_id}-{index}" in component_node_ids:
+            index += 1
+        return f"{root_id}-{index}"
+
+    def _component_applies_to_aircraft(self, component: dict[str, Any], item: AircraftState) -> bool:
+        model = str(component.get("aircraft_model") or "")
+        return not model or model in {item.aircraft_type, item.model}
+
+    def _failure_threshold(self, component: dict[str, Any]) -> int:
+        k_out = component.get("k_out_of_n") if isinstance(component.get("k_out_of_n"), dict) else {}
+        if k_out.get("enabled"):
+            return max(1, int(k_out.get("k") or 1))
+        return 1
+
+    def _failure_tree_depth(self, node_id: str, node_map: dict[str, dict[str, Any]]) -> int:
+        depth = 0
+        current = node_map.get(node_id)
+        seen = {node_id}
+        while current and current.get("parent_id") not in (None, ""):
+            parent_id = str(current.get("parent_id"))
+            if parent_id in seen:
+                break
+            seen.add(parent_id)
+            depth += 1
+            current = node_map.get(parent_id)
+        return depth
 
     def _mission_payload(self, item: MissionState) -> dict[str, Any]:
         return {

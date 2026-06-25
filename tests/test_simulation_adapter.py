@@ -353,14 +353,10 @@ class SimulationAdapterTest(unittest.TestCase):
         jsonschema.validate(instance=result, schema=result_schema)
         jsonschema.validate(instance=manifest, schema=manifest_schema)
         jsonschema.validate(instance=state_payload, schema=state_series_schema)
-        missing_day_index_payload = copy.deepcopy(state_payload)
-        del missing_day_index_payload["frames"][0]["missions"][0]["day_index"]
+        missing_compact_status_payload = copy.deepcopy(state_payload)
+        del missing_compact_status_payload["frames"][0]["missions"][0]["status"]
         with self.assertRaises(jsonschema.ValidationError):
-            jsonschema.validate(instance=missing_day_index_payload, schema=state_series_schema)
-        missing_required_aircraft_type_payload = copy.deepcopy(state_payload)
-        del missing_required_aircraft_type_payload["frames"][0]["missions"][0]["required_aircraft_type"]
-        with self.assertRaises(jsonschema.ValidationError):
-            jsonschema.validate(instance=missing_required_aircraft_type_payload, schema=state_series_schema)
+            jsonschema.validate(instance=missing_compact_status_payload, schema=state_series_schema)
         self.assertEqual(run["status"], "succeeded")
         self.assertEqual(run["model_family"], "aircraft_support_v1")
         self.assertEqual(run["model_id"], "AircraftSupportV1Model")
@@ -390,6 +386,16 @@ class SimulationAdapterTest(unittest.TestCase):
         self.assertEqual(state_payload["frames"][0]["simulation_time"], 0)
         self.assertEqual(state_payload["frames"][1]["simulation_time"], 30)
         self.assertLessEqual(len(state_payload["frames"]), scenario["simulation_inputs"]["time"]["max_state_frames_single"])
+        self.assertIn("mission_templates", state_payload)
+        self.assertTrue(state_payload["mission_templates"])
+        self.assertIn("mission_id", state_payload["frames"][0]["missions"][0])
+        self.assertIn("status", state_payload["frames"][0]["missions"][0])
+        self.assertNotIn("day_index", state_payload["frames"][0]["missions"][0])
+        self.assertIn("failure_tree_templates", state_payload)
+        self.assertTrue(state_payload["failure_tree_templates"])
+        self.assertIn("failure_tree_ref", state_payload["frames"][0]["aircraft"][0])
+        self.assertIn("failure_tree_state", state_payload["frames"][0]["aircraft"][0])
+        self.assertNotIn("failure_tree", state_payload["frames"][0]["aircraft"][0])
         for metric in [
             "sortie_completion_rate",
             "available_aircraft",
@@ -416,8 +422,11 @@ class SimulationAdapterTest(unittest.TestCase):
             self.assertIn("spares", frame)
             self.assertIn("jobs", frame)
             self.assertIn("events", frame)
-        first_mission = state_payload["frames"][0]["missions"][0]
-        first_frame_missions = state_payload["frames"][0]["missions"]
+        first_frame_missions = [
+            {**state_payload["mission_templates"][mission["mission_id"]], **mission}
+            for mission in state_payload["frames"][0]["missions"]
+        ]
+        first_mission = first_frame_missions[0]
         self.assertEqual(max(mission["day_index"] for mission in first_frame_missions), 14)
         self.assertGreater(max(mission["wave_index"] for mission in first_frame_missions), 1)
         self.assertTrue(all(mission["day_index"] >= 1 for mission in first_frame_missions))
@@ -486,7 +495,10 @@ class SimulationAdapterTest(unittest.TestCase):
             )
             state_payload = json.loads((Path(tmp) / state_artifact["path"]).read_text(encoding="utf-8"))
 
-        first_frame_missions = state_payload["frames"][0]["missions"]
+        first_frame_missions = [
+            {**state_payload["mission_templates"][mission["mission_id"]], **mission}
+            for mission in state_payload["frames"][0]["missions"]
+        ]
         self.assertEqual(max(mission["day_index"] for mission in first_frame_missions), 3)
 
     def test_aircraft_support_v1_treats_support_organization_as_governance_only(self) -> None:
@@ -677,7 +689,30 @@ class SimulationAdapterTest(unittest.TestCase):
 
     def test_aircraft_support_v1_m9_7_4_fields_drive_behavior(self) -> None:
         low_risk_project = self._load_fixture("m9_6_platform_case_export.json")["project"]
-        low_risk_project["supportOrganization"] = {"tree": [{"id": "governance-only"}]}
+        low_risk_project["supportOrganization"] = {}
+        for node in low_risk_project["supportNodes"]:
+            node["personnelCapacity"] = 50
+            node["equipmentCapacity"] = 50
+            inventory = node.get("inventory")
+            if isinstance(inventory, list):
+                for item in inventory:
+                    if isinstance(item, dict):
+                        item["quantity"] = 1000
+            elif isinstance(inventory, dict):
+                for spare_type in list(inventory):
+                    inventory[spare_type] = 1000
+            node["transportPolicies"] = []
+        for activity in low_risk_project["supportActivities"]:
+            activity.pop("calendarDayInterval", None)
+            activity.pop("runHourInterval", None)
+            activity.pop("takeoffLandingInterval", None)
+            activity["requiredPersonnel"] = 1
+            activity["requiredDevices"] = 1
+            for job in activity.get("jobs", []):
+                job["durationMinutes"] = 1
+                job["requiredPersonnel"] = 1
+                job["requiredDevices"] = 1
+                job["spare"] = "无"
         for component in low_risk_project["components"]:
             if component.get("parentId"):
                 component["failureRate"] = 0
@@ -722,7 +757,33 @@ class SimulationAdapterTest(unittest.TestCase):
     def test_aircraft_support_v1_transport_policies_replenish_spare_shortages(self) -> None:
         project = self._load_fixture("m9_6_platform_case_export.json")["project"]
         project["supportOrganization"] = {}
+        project["equipment"]["initialReady"] = 6
+        for component in project["components"]:
+            if component.get("parentId"):
+                component["failureRate"] = 0
+                component["failureDistribution"] = {"distributionType": "指数分布", "parameters": "lambda=0.8"}
+                component["kOutOfN"] = {"enabled": False, "k": 1, "n": 1}
+                component["spareType"] = "航电模块"
+        for rbd_node in project["reliabilityBlockDiagram"]["nodes"]:
+            rbd_node["failureRate"] = 0
+            rbd_node["mtbfHours"] = 100000
+        for activity in project["supportActivities"]:
+            activity.pop("calendarDayInterval", None)
+            activity.pop("runHourInterval", None)
+            activity.pop("takeoffLandingInterval", None)
+            activity["requiredPersonnel"] = 1
+            activity["requiredDevices"] = 1
+            for job in activity.get("jobs", []):
+                job["durationMinutes"] = 1
+                job["requiredPersonnel"] = 1
+                job["requiredDevices"] = 1
+                job["spare"] = "无"
+        for periodic_task in project["missionProfile"].get("periodicTasks", []):
+            periodic_task["dailyRepeatCount"] = 1
+            periodic_task["repeatCount"] = 1
         for node in project["supportNodes"]:
+            node["personnelCapacity"] = 50
+            node["equipmentCapacity"] = 50
             if node["id"] == "carrier-deck":
                 node["inventory"] = {"发动机备件": 0, "液压备件": 0, "航电模块": 0}
                 node["transportPolicies"] = [

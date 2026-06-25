@@ -18,7 +18,12 @@ export function normalizeVisualizationStateSeriesPayload(payload, { runId = "", 
     throw new Error(`state series run_id mismatch: expected ${runId}, got ${payloadRunId}`);
   }
   const traceability = normalizePayloadTraceability(payload, payloadRunId);
-  const frames = normalizeFrames(payload.frames, payloadRunId);
+  const missionTemplates = objectOrDefault(payload.mission_templates);
+  const failureTreeTemplates = objectOrDefault(payload.failure_tree_templates);
+  const frames = normalizeFrames(payload.frames, payloadRunId)
+    .map((frame) => (Object.keys(failureTreeTemplates).length || Object.keys(missionTemplates).length)
+      ? { ...frame, mission_templates: missionTemplates, failure_tree_templates: failureTreeTemplates }
+      : frame);
   const eventStream = buildVisualizationEventStream({ frames });
   return {
     schema_version: String(payload.schema_version || STATE_SERIES_SCHEMA_VERSION),
@@ -28,6 +33,8 @@ export function normalizeVisualizationStateSeriesPayload(payload, { runId = "", 
     scenario_version: requiredString(payload.scenario_version, "scenario_version"),
     model_family: requiredString(payload.model_family, "model_family"),
     ...traceability,
+    mission_templates: missionTemplates,
+    failure_tree_templates: failureTreeTemplates,
     frames,
     frame_count: frames.length,
     event_stream: eventStream,
@@ -251,6 +258,13 @@ function arrayField(value, field) {
 function objectField(value, field) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new Error(`state series ${field} must be an object`);
+  }
+  return value;
+}
+
+function objectOrDefault(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
   }
   return value;
 }

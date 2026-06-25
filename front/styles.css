@@ -1678,7 +1678,7 @@ tr.selected-table-row {
 
 .mesa-control-groups {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.2fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
 }
 
@@ -1696,6 +1696,23 @@ tr.selected-table-row {
 
 .mesa-control-group > span {
   flex: 0 0 100%;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.mesa-control-group-primary {
+  align-items: flex-end;
+}
+
+.mesa-run-picker {
+  min-width: min(280px, 100%);
+  display: grid;
+  flex: 1 1 280px;
+  gap: 4px;
+}
+
+.mesa-run-picker span {
   color: var(--muted);
   font-size: 12px;
   font-weight: 700;
@@ -2159,6 +2176,183 @@ tr.selected-table-row {
   background: #fff1f2;
 }
 
+.aircraft-state-board {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.aircraft-state-lane {
+  min-width: 0;
+  min-height: 178px;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.aircraft-state-lane.deck {
+  background: #eef4f8;
+}
+
+.aircraft-state-lane.support {
+  background: #fff7e6;
+}
+
+.aircraft-state-lane.mission {
+  background: #eaf3ff;
+}
+
+.aircraft-state-lane.maintenance {
+  background: #fff1ec;
+}
+
+.aircraft-state-lane-title {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.aircraft-state-lane-title span {
+  color: var(--muted);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.aircraft-state-lane-body {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+}
+
+.aircraft-state-node {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  text-align: left;
+  padding: 8px;
+  border: 1px solid #cbd5e1;
+  border-left-width: 4px;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
+  cursor: pointer;
+}
+
+.aircraft-state-node strong {
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.aircraft-state-node span,
+.aircraft-state-node small {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.aircraft-state-node.available,
+.aircraft-state-node.mission_ready {
+  border-left-color: #2f9e44;
+}
+
+.aircraft-state-node.pre_support,
+.aircraft-state-node.post_support {
+  border-left-color: #f59f00;
+}
+
+.aircraft-state-node.flying {
+  border-left-color: #1c7ed6;
+}
+
+.aircraft-state-node.maintenance {
+  border-left-color: #d9480f;
+}
+
+.aircraft-state-node.active {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
+.aircraft-mission-timeline {
+  min-width: 0;
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.aircraft-timeline-table {
+  min-width: 720px;
+  display: grid;
+  gap: 8px;
+}
+
+.aircraft-timeline-row {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  padding: 8px 0;
+  border-top: 1px solid #e2e8f0;
+}
+
+.aircraft-timeline-row:first-child {
+  border-top: 0;
+}
+
+.aircraft-timeline-row strong {
+  display: grid;
+  gap: 2px;
+  color: var(--ink);
+}
+
+.aircraft-timeline-row small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.aircraft-timeline-pill {
+  display: inline-block;
+  margin: 2px;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: #64748b;
+  color: #fff;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.aircraft-timeline-pill.idle {
+  background: #8fa3ad;
+}
+
+.aircraft-timeline-pill.ready {
+  background: #2f9e44;
+}
+
+.aircraft-timeline-pill.preparing {
+  background: #f59f00;
+}
+
+.aircraft-timeline-pill.flying {
+  background: #1c7ed6;
+}
+
+.aircraft-timeline-pill.recovery {
+  background: #7950f2;
+}
+
 .legend {
   display: flex;
   flex-wrap: wrap;
@@ -2204,6 +2398,123 @@ tr.selected-table-row {
 .mesa-aircraft-list {
   display: grid;
   gap: 8px;
+}
+
+.visual-aircraft-selector {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
+  gap: 8px;
+}
+
+.visual-aircraft-selector button {
+  display: grid;
+  gap: 2px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.visual-aircraft-selector button.active {
+  border-color: #2563eb;
+  background: #eff6ff;
+}
+
+.visual-aircraft-selector span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.aircraft-failure-summary {
+  display: grid;
+  gap: 3px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.aircraft-failure-summary.has-failure {
+  border-color: #fecaca;
+  background: #fff1f2;
+}
+
+.aircraft-failure-summary span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.aircraft-failure-tree {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.aircraft-failure-branch {
+  display: grid;
+  gap: 6px;
+}
+
+.aircraft-failure-children {
+  display: grid;
+  gap: 6px;
+  margin-left: 12px;
+  padding-left: 12px;
+  border-left: 2px solid #cbd5e1;
+}
+
+.aircraft-failure-node {
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid #cbd5e1;
+  border-left-width: 4px;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.aircraft-failure-node.edge-active,
+.aircraft-failure-node.failed {
+  border-left-color: #dc2626;
+}
+
+.aircraft-failure-node.propagated {
+  background: #fff7ed;
+}
+
+.aircraft-failure-node.healthy {
+  border-left-color: #16a34a;
+}
+
+.aircraft-failure-node strong {
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.aircraft-failure-node span,
+.aircraft-failure-node-meta {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.aircraft-failure-node-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.aircraft-failure-node-meta span {
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: #f1f5f9;
+}
+
+.aircraft-failure-node.failed .aircraft-failure-node-meta span {
+  background: #fee2e2;
+  color: #991b1b;
 }
 
 .mesa-side-panel {

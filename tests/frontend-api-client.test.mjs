@@ -12,6 +12,7 @@ test("frontend API client exposes stable PR-F save run and result methods", asyn
       if (request.path === "/projects/validate") return { ok: true, project_id: "project-ui" };
       if (request.path === "/projects" && request.method === "GET") return { projects: [{ project_id: "project-ui" }] };
       if (request.path === "/projects" && request.method === "POST") return { project_id: "project-ui", status: "saved" };
+      if (request.path === "/projects/project-ui" && request.method === "DELETE") return { project_id: "project-ui", deleted: true };
       if (request.path === "/projects/project-ui") return { project_id: "project-ui", project_version: "project-v0.1" };
       if (request.path === "/projects/project-ui/modeling-snapshots") return { snapshot_id: "snapshot-ui" };
       if (request.path === "/projects/project-ui/experiment-plans") return { experiment_plan_id: "plan-ui" };
@@ -49,6 +50,7 @@ test("frontend API client exposes stable PR-F save run and result methods", asyn
   const saved = await client.saveProject(project);
   const projectCatalog = await client.listProjects();
   const storedProject = await client.getProject(saved.project_id);
+  const deletedProject = await client.deleteProject(saved.project_id);
   const snapshot = await client.createModelingSnapshot(saved.project_id);
   const plan = await client.createExperimentPlan(saved.project_id, { steps: 2 });
   const run = await client.submitRun({
@@ -63,6 +65,7 @@ test("frontend API client exposes stable PR-F save run and result methods", asyn
   const chain = await client.getRunChain(run.run_id);
 
   assert.equal(storedProject.project_id, "project-ui");
+  assert.equal(deletedProject.deleted, true);
   assert.equal(projectCatalog.projects[0].project_id, "project-ui");
   assert.equal(snapshot.snapshot_id, "snapshot-ui");
   assert.equal(run.status, "succeeded");
@@ -76,6 +79,7 @@ test("frontend API client exposes stable PR-F save run and result methods", asyn
     "POST /projects",
     "GET /projects",
     "GET /projects/project-ui",
+    "DELETE /projects/project-ui",
     "POST /projects/project-ui/modeling-snapshots",
     "POST /projects/project-ui/experiment-plans",
     "POST /runs",
@@ -84,8 +88,8 @@ test("frontend API client exposes stable PR-F save run and result methods", asyn
     "GET /runs/run-ui/artifacts",
     "GET /runs/run-ui/chain"
   ]);
-  assert.equal(calls[6].body.model_family, "smoke");
-  assert.equal(calls[6].body.run_type, "single");
+  assert.equal(calls[7].body.model_family, "smoke");
+  assert.equal(calls[7].body.run_type, "single");
 });
 
 test("frontend API client exposes only canonical run read routes", async () => {
@@ -787,4 +791,24 @@ test("frontend app wires modeling import workbench through explicit backend acti
   assert.match(appSource, /applyModelingImportRecord/);
   assert.match(appSource, /normalizeModelingImportRecord/);
   assert.doesNotMatch(changeHandlerSource, /validateModelingImport|saveModelingImport|publishModelingImport|compileModelingImportScenario/);
+});
+
+test("modeling import backfill projects the live project draft instead of rehydrating stale backend data", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const backfillSource = appSource.slice(
+    appSource.indexOf('if (action === "backfill-current-project")'),
+    appSource.indexOf('if (action === "validate")')
+  );
+  const inputHandlerSource = appSource.slice(
+    appSource.indexOf('app.addEventListener("input"'),
+    appSource.indexOf("function clamp")
+  );
+
+  assert.match(backfillSource, /await flushPendingProjectDraftAutosave\(\)/);
+  assert.match(backfillSource, /buildBackendProjectJson\(scenario, currentProject \|\| \{\}\)/);
+  assert.match(backfillSource, /projectToModelingImportPackage\(projectJson, modelingImportPackage\)/);
+  assert.doesNotMatch(backfillSource, /hydrateCurrentProjectDraftFromApi/);
+  assert.match(inputHandlerSource, /updateSelectedPeriodicTask\(livePeriodicInput\.dataset\.periodicField, parseInput\(livePeriodicInput\), \{ renderAfter: false \}\)/);
+  assert.match(inputHandlerSource, /isLiveProjectDraftInput\(livePathInput\)/);
+  assert.match(inputHandlerSource, /setPath\(scenario, livePathInput\.dataset\.path, parseInput\(livePathInput\)\)/);
 });

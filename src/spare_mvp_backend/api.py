@@ -123,6 +123,12 @@ class BackendApi:
             "projects": [_project_list_entry(project) for project in projects],
         }
 
+    def delete_project(self, project_id: str) -> dict[str, Any]:
+        try:
+            return self.repository.delete_project(project_id)
+        except ValueError as exc:
+            raise BackendApiError("project_has_runs", str(exc)) from exc
+
     def save_project(self, project_json: dict[str, Any]) -> dict[str, Any]:
         validation = self.validate_project(project_json)
         if not validation["ok"]:
@@ -689,4 +695,5 @@ def _project_list_entry(project: dict[str, Any]) -> dict[str, Any]:
         "summary": str(summary).strip(),
         "updated_at": project.get("updated_at"),
         "scenario_id": payload.get("scenarioId"),
+        "source_import_id": payload.get("missionProfile", {}).get("sourceImportId"),
     }

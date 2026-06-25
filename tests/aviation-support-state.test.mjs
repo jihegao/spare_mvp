@@ -78,6 +78,88 @@ test("ships a non-empty demo state frame for static inspection", () => {
   assert.ok(normalized.missions.length >= 1);
 });
 
+test("hydrates compact failure tree templates into aircraft failure trees", () => {
+  const normalized = normalizeAviationSupportState({
+    ...rawState,
+    failure_tree_templates: {
+      "failure-tree-template-001": {
+        tail_number: "AC-02",
+        aircraft_type: "J-15",
+        root_id: "whole-aircraft-root",
+        nodes: [
+          { id: "whole-aircraft-root", name: "AC-02 整机", parent_id: "", product_type: "整机", quantity: 1, k_out_of_n: {}, failure_threshold: 1 },
+          { id: "engine", name: "发动机", parent_id: "whole-aircraft-root", product_type: "SRU", quantity: 2, k_out_of_n: { enabled: true, n: 2, k: 1 }, failure_threshold: 1 }
+        ],
+        edges: [{ from: "whole-aircraft-root", to: "engine" }]
+      }
+    },
+    aircraft: [
+      {
+        tail_number: "AC-02",
+        type: "J-15",
+        state: "flying",
+        failure_tree_ref: "failure-tree-template-001",
+        failure_tree_state: {
+          nodes: [{ id: "engine", failed: true, direct_failed: true, failed_children: 0, failure_time: 90 }],
+          active_edges: ["engine"]
+        }
+      }
+    ]
+  });
+
+  const tree = normalized.aircraft[0].failureTree;
+  assert.equal(tree.rootId, "whole-aircraft-root");
+  assert.equal(tree.nodes.length, 2);
+  assert.equal(tree.nodes[1].name, "发动机");
+  assert.equal(tree.nodes[1].failed, true);
+  assert.equal(tree.nodes[1].directFailed, true);
+  assert.equal(tree.nodes[1].failureTime, 90);
+  assert.equal(tree.edges[0].active, true);
+});
+
+test("hydrates compact mission templates into frontend mission rows", () => {
+  const normalized = normalizeAviationSupportState({
+    ...rawState,
+    mission_templates: {
+      "mission-a": {
+        mission_id: "mission-a",
+        name: "昼间巡逻",
+        planned_start: 60,
+        required_aircraft: 2,
+        required_aircraft_type: "J-15",
+        task_category: "periodic",
+        periodic_task_name: "昼夜周期",
+        composite_task_name: "昼间复合",
+        basic_task_name: "近海制空",
+        group_name: "一中队",
+        wave_index: 2,
+        day_index: 3,
+        duration_minutes: 120,
+        preparation_start: 40
+      }
+    },
+    missions: [
+      {
+        mission_id: "mission-a",
+        actual_start: 66,
+        return_time: 190,
+        status: "completed",
+        assigned_tail_numbers: ["AC-01", "AC-02"],
+        delay_minutes: 6
+      }
+    ]
+  });
+
+  const mission = normalized.missions[0];
+  assert.equal(mission.id, "mission-a");
+  assert.equal(mission.dayIndex, 3);
+  assert.equal(mission.waveIndex, 2);
+  assert.equal(mission.basicTaskName, "近海制空");
+  assert.equal(mission.requiredAircraftType, "J-15");
+  assert.equal(mission.assignedCount, 2);
+  assert.equal(mission.actualStart, 66);
+});
+
 test("builds model-instance object graph from aviation support visualization_state", () => {
   const graph = buildAviationSupportObjectGraph(rawState);
   const nodeIds = new Set(graph.nodes.map((node) => node.id));

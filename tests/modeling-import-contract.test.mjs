@@ -5,6 +5,7 @@ import test from "node:test";
 
 import {
   MODELING_IMPORT_PAGE_MAP,
+  projectToModelingImportPackage,
   validateModelingImportPackage
 } from "../front/modeling-import-contract.mjs";
 import { validateSchema } from "./schema-test-utils.mjs";
@@ -55,6 +56,71 @@ test("modeling import schema and fixture define the M5 first-slice package", asy
   assert.equal(schema.properties.schemaVersion.const, "modeling-import-v1");
   assert.deepEqual(validateSchema(schema, fixture), []);
   assert.deepEqual(validateModelingImportPackage(fixture), []);
+});
+
+test("projectToModelingImportPackage backfills import draft from current Project surfaces", () => {
+  const basePackage = {
+    schemaVersion: "modeling-import-v1",
+    importId: "import-old",
+    projectId: "project-old",
+    source: { type: "json_fixture", name: "old.json" },
+    lifecycle: { state: "published", version: 3, referencedRunIds: ["run-001"] },
+    objects: {
+      missionProfiles: [],
+      equipmentAssets: [],
+      supportResources: [],
+      supportActivities: [],
+      customGovernance: { owner: "data-admin" }
+    }
+  };
+  const projectJson = {
+    schema_version: "project-v0",
+    project_id: "project-current",
+    project_version: "project-v0.9",
+    scenarioId: "scenario-current",
+    projectInfo: { name: "当前项目", baseCode: "CUR-001" },
+    missionProfile: {
+      sourceImportId: "import-current",
+      profileId: "MP-CURRENT",
+      name: "当前项目任务",
+      durationHours: 8,
+      compositeTasks: [{ id: "wave-1", name: "第一波次" }],
+      periodicTasks: [{ id: "periodic-1", name: "周期任务" }]
+    },
+    basicMission: { missionId: "BM-CURRENT", minRequiredSorties: 2 },
+    missionPhases: [{ id: "phase-1", name: "执行" }],
+    combatUnit: { quantity: 3, requiredCount: 2 },
+    equipment: { model: "J-15", quantity: 3 },
+    reliabilityBlockDiagram: { nodes: [{ id: "aircraft-root" }], edges: [] },
+    monteCarlo: { spareMultipliers: [1] },
+    analysisRequests: { largeSample: { enabled: true, samples: 5 } },
+    components: [
+      { id: "aircraft-root", name: "整机", quantity: 3 },
+      { id: "radar", name: "雷达", parentId: "aircraft-root", quantity: 1, mtbfHours: 120 }
+    ],
+    supportNodes: [{ id: "deck", name: "甲板", capacity: 2 }],
+    supportActivities: [{ id: "repair-radar", name: "雷达维修", equipmentId: "radar", resourceId: "deck", durationHours: 2 }]
+  };
+
+  const draft = projectToModelingImportPackage(projectJson, basePackage);
+
+  assert.equal(draft.schemaVersion, "modeling-import-v1");
+  assert.equal(draft.importId, "import-current");
+  assert.equal(draft.projectId, "project-current");
+  assert.equal(draft.lifecycle.state, "draft");
+  assert.equal(draft.lifecycle.version, 3);
+  assert.deepEqual(draft.lifecycle.referencedRunIds, ["run-001"]);
+  assert.equal(draft.source.type, "current_project_backfill");
+  assert.equal(draft.objects.missionProfiles[0].sourceImportId, undefined);
+  assert.equal(draft.objects.missionProfiles[0].profileId, "MP-CURRENT");
+  assert.deepEqual(draft.objects.missionProfiles[0].basicMission, projectJson.basicMission);
+  assert.deepEqual(draft.objects.equipmentAssets, projectJson.components);
+  assert.deepEqual(draft.objects.supportResources, projectJson.supportNodes);
+  assert.deepEqual(draft.objects.supportActivities, projectJson.supportActivities);
+  assert.deepEqual(draft.objects.customGovernance, basePackage.objects.customGovernance);
+  assert.equal("schema_version" in draft, false);
+  assert.equal("project_version" in draft, false);
+  assert.deepEqual(validateModelingImportPackage(draft), []);
 });
 
 test("modeling import schema validation resolves nested local refs", async () => {

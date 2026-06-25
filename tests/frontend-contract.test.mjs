@@ -2161,6 +2161,40 @@ test("formal run starts only allow imported sample projects", async () => {
   assert.ok(mcRunSource.indexOf("currentProjectCanStartFormalRun()") < mcRunSource.indexOf("formalRunSubmitInFlight = true"));
 });
 
+test("visual simulation new run ensures a backend-created imported sample before formal submit", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const ensureSource = appSource.slice(
+    appSource.indexOf("async function ensureFormalRunImportedSampleProject"),
+    appSource.indexOf("async function startSingleRunThroughApi")
+  );
+  const hydrateSource = appSource.slice(
+    appSource.indexOf("async function hydrateCurrentProjectDraftFromApi"),
+    appSource.indexOf("async function saveCurrentProjectDraftThroughApi")
+  );
+  const startNewRunSource = appSource.slice(
+    appSource.indexOf('if (action === "start-new-run")'),
+    appSource.indexOf("const controlAction = backendControlActions")
+  );
+
+  assert.match(ensureSource, /await hydrateCurrentProjectDraftFromApi\(\)/);
+  assert.match(ensureSource, /scenario\?\.missionProfile\?\.sourceImportId/);
+  assert.match(hydrateSource, /sourceKind: PROJECT_SOURCE\.imported_sample/);
+  assert.match(hydrateSource, /sourceImportId/);
+  assert.match(ensureSource, /createSampleProjectFromPublishedImport\(currentProject\?\.sourceImportId\)/);
+  assert.match(ensureSource, /currentProjectCanStartFormalRun\(\)/);
+  assert.match(ensureSource, /return currentProjectCanStartFormalRun\(\)/);
+  assert.ok(
+    ensureSource.indexOf("await hydrateCurrentProjectDraftFromApi()") <
+      ensureSource.indexOf("createSampleProjectFromPublishedImport(currentProject?.sourceImportId)"),
+    "visual launch should reuse a hydrated backend imported sample before asking the backend to create one"
+  );
+  assert.ok(
+    startNewRunSource.indexOf("await ensureFormalRunImportedSampleProject()") <
+      startNewRunSource.indexOf("await startSingleRunThroughApi()"),
+    "visual launch should repair the frontend/backend imported-sample boundary before formal submit"
+  );
+});
+
 test("click-based modeling mutations mark project draft dirty before rendering", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const requiredActions = [
@@ -2455,8 +2489,13 @@ test("visual simulation layout matches operational dashboard requirements", asyn
   assert.match(appSource, /frames\.slice\(0, currentIndex \+ 1\)/);
   assert.doesNotMatch(appSource, /T-\$\{4 - index\}/);
   assert.match(styleSource, /\.availability-chart circle\.current-point/);
-  assert.match(stageSource, /停放/);
-  assert.match(stageSource, /使用保障/);
+  assert.match(appSource, /available: "available \/ 可用"/);
+  assert.match(appSource, /maintenance: "maintenance \/ 维修"/);
+  assert.match(appSource, /flying: "flying \/ 飞行"/);
+  assert.doesNotMatch(appSource, /function aircraftStateLaneKey/);
+  assert.doesNotMatch(stageSource, /航母甲板 \/ 任务就绪/);
+  assert.doesNotMatch(stageSource, /任务空域/);
+  assert.doesNotMatch(stageSource, /修复性维修/);
   assert.match(stageSource, /任务计划甘特图/);
   assert.match(stageSource, /mission-schedule-table/);
   assert.match(stageSource, /按周期性任务 \/ 复合任务 \/ 每天基本任务/);
@@ -2479,6 +2518,13 @@ test("visual simulation layout matches operational dashboard requirements", asyn
   assert.doesNotMatch(stageSource, /row\.requiredAircraftType \|\|/);
   assert.match(appSource, /mission-expanded/);
   assert.match(styleSource, /\.mission-schedule-row[\s\S]*grid-template-columns/);
+  assert.match(stageSource, /aircraft-state-board/);
+  assert.match(stageSource, /aircraft-state-lane/);
+  assert.match(stageSource, /aircraft-state-node/);
+  assert.match(stageSource, /aircraft-mission-timeline/);
+  assert.match(stageSource, /buildAircraftMissionTimelineRows\(state\)/);
+  assert.match(styleSource, /\.aircraft-state-board[\s\S]*grid-template-columns/);
+  assert.match(styleSource, /\.aircraft-mission-timeline[\s\S]*overflow: auto/);
   assert.match(styleSource, /\.mesa-visual-grid\.mission-expanded[\s\S]*grid-template-columns: minmax\(0, 1fr\)/);
   assert.match(stageSource, /保障人员/);
   assert.match(stageSource, /按保障组织 \/ 人员专业/);
@@ -2486,6 +2532,28 @@ test("visual simulation layout matches operational dashboard requirements", asyn
   assert.match(stageSource, /按保障组织 \/ 备件类型/);
   assert.match(appSource, /mesa-event-window/);
   assert.match(styleSource, /\.mesa-event-window[\s\S]*overflow: auto/);
+});
+
+test("visual aircraft panel renders backend equipment failure propagation tree", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const stateSource = await readFile(new URL("../front/aviation-support-state.mjs", import.meta.url), "utf8");
+  const styleSource = await readFile(new URL("../front/styles.css", import.meta.url), "utf8");
+  const aircraftPanelSource = appSource.slice(
+    appSource.indexOf("function renderMesaAircraftPanel"),
+    appSource.indexOf("function renderMesaSupportPanel")
+  );
+
+  assert.match(stateSource, /failureTree: normalizeFailureTree\(resolveFailureTree\(item, failureTreeTemplates\)\)/);
+  assert.match(stateSource, /failure_tree_templates/);
+  assert.match(appSource, /let selectedVisualAircraftId = ""/);
+  assert.match(appSource, /data-select-visual-aircraft/);
+  assert.match(aircraftPanelSource, /renderAircraftFailureTree\(selectedAircraft\.failureTree, selectedAircraft\)/);
+  assert.match(aircraftPanelSource, /飞机内部组成与故障传递/);
+  assert.match(aircraftPanelSource, /中取/);
+  assert.match(aircraftPanelSource, /T\+\$\{htmlEscape\(node\.failureTime\)\}min/);
+  assert.match(aircraftPanelSource, /向上传递/);
+  assert.match(styleSource, /\.aircraft-failure-tree/);
+  assert.match(styleSource, /\.aircraft-failure-node\.propagated/);
 });
 
 test("visual simulation consumes the Mesa contract provider with demo fallback", async () => {
@@ -2557,7 +2625,7 @@ test("visual simulation places event trace at the bottom of the page", async () 
   assert.ok(eventTraceIndex > gridIndex, "event trace should render after the main visualization content");
 });
 
-test("M9.2 visual simulation subscribes to run state stream and keeps unsupported controls explicit", async () => {
+test("M9.2 visual simulation keeps state stream support behind the simplified replay flow", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const replaySource = await readFile(new URL("../front/state-series-replay.mjs", import.meta.url), "utf8");
   const visualSource = appSource.slice(
@@ -2574,27 +2642,34 @@ test("M9.2 visual simulation subscribes to run state stream and keeps unsupporte
   assert.match(appSource, /\/api\/runs\/\$\{encodeURIComponent\(runId\)\}\/state-stream/);
   assert.match(appSource, /state_frame/);
   assert.match(appSource, /artifact_ready/);
-  assert.match(visualSource, /data-mesa-control="subscribe-run"/);
-  assert.match(visualSource, /data-mesa-control="stop-subscription"/);
-  assert.match(visualSource, /data-mesa-stream-status/);
-  assert.match(visualSource, /在线状态流/);
+  assert.doesNotMatch(visualSource, /data-mesa-control="subscribe-run"/);
+  assert.doesNotMatch(visualSource, /data-mesa-control="stop-subscription"/);
+  assert.doesNotMatch(visualSource, /data-mesa-stream-status/);
   assert.match(appSource, /订阅已连接/);
   assert.match(appSource, /订阅断开，浏览器将尝试重连/);
   assert.match(appSource, /订阅未授权/);
   assert.match(appSource, /订阅失败/);
   assert.match(appSource, /最终 artifact 已生成，正在切换到离线回放/);
   assert.match(controlHandlerSource, /isVisualizationStateSeriesFromStream\(\)/);
-  assert.match(controlHandlerSource, /后端暂停、单步和重置属于 M9\.3/);
   assert.doesNotMatch(controlHandlerSource, /readyState === EventSource\.CLOSED && !visualizationStreamState\.eventCount/);
 });
 
-test("M9.3 visual simulation exposes backend-confirmed run control buttons", async () => {
+test("visual simulation exposes only replay picker replay start and new simulation controls", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const visualSource = appSource.slice(
     appSource.indexOf("function renderVisualSimulation"),
     appSource.indexOf("function mesaTab")
   );
 
+  assert.match(visualSource, /aria-label="选择回放"/);
+  assert.match(visualSource, /data-mesa-control="play"/);
+  assert.match(visualSource, /启动回放/);
+  assert.match(visualSource, /暂停回放/);
+  assert.match(visualSource, /data-mesa-control="start-new-run"/);
+  assert.match(visualSource, /启动新仿真/);
+  for (const action of ["refresh-runs", "load-replay", "subscribe-run", "stop-subscription", "step", "reset"]) {
+    assert.doesNotMatch(visualSource, new RegExp(`data-mesa-control="${action}"`));
+  }
   for (const [action, label] of [
     ["backend-cancel", "取消运行"],
     ["backend-retry", "重试运行"],
@@ -2603,10 +2678,39 @@ test("M9.3 visual simulation exposes backend-confirmed run control buttons", asy
     ["backend-step", "后端单步"],
     ["backend-reset", "后端重置"]
   ]) {
-    assert.match(visualSource, new RegExp(`data-mesa-control="${action}"`));
-    assert.match(visualSource, new RegExp(label));
+    assert.doesNotMatch(visualSource, new RegExp(`data-mesa-control="${action}"`));
+    assert.doesNotMatch(visualSource, new RegExp(label));
   }
-  assert.match(visualSource, /data-mesa-backend-control-status/);
+  assert.doesNotMatch(visualSource, /data-mesa-backend-control-status/);
+});
+
+test("visual simulation selection and start controls load official replays automatically", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const changeSource = appSource.slice(
+    appSource.indexOf('const mesaRunSelect = event.target.closest("[data-mesa-run-select]")'),
+    appSource.indexOf('const mesaTimeline = event.target.closest("[data-mesa-timeline]")')
+  );
+  const controlHandlerSource = appSource.slice(
+    appSource.indexOf("async function handleMesaControl"),
+    appSource.indexOf("async function loadAviationSupportState")
+  );
+  const newRunSource = controlHandlerSource.slice(
+    controlHandlerSource.indexOf('if (action === "start-new-run")'),
+    controlHandlerSource.indexOf("const controlAction = backendControlActions")
+  );
+  const playSource = controlHandlerSource.slice(
+    controlHandlerSource.indexOf('if (action === "play")'),
+    controlHandlerSource.indexOf('if (["play"')
+  );
+
+  assert.match(changeSource, /await loadVisualizationReplayForRun\(visualizationSelectedRunId\)/);
+  assert.match(newRunSource, /await startSingleRunThroughApi\(\)/);
+  assert.match(newRunSource, /await refreshVisualizationRunList\(newRunId\)/);
+  assert.match(newRunSource, /await loadVisualizationReplayForRun\(newRunId\)/);
+  assert.match(newRunSource, /visualizationReplayPlaying = true/);
+  assert.match(newRunSource, /startVisualizationReplay\(\)/);
+  assert.match(playSource, /await loadVisualizationReplayForRun\(\)/);
+  assert.match(playSource, /visualizationReplayPlaying = !visualizationReplayPlaying/);
 });
 
 test("M9.3 backend Mesa controls call controlRun without local replay confirmation", async () => {
@@ -2615,13 +2719,18 @@ test("M9.3 backend Mesa controls call controlRun without local replay confirmati
     appSource.indexOf("async function handleMesaControl"),
     appSource.indexOf("async function loadAviationSupportState")
   );
+  const backendStart = controlHandlerSource.indexOf("const controlAction = backendControlActions[action]");
   const backendControlSource = controlHandlerSource.slice(
-    controlHandlerSource.indexOf("backendControlActions"),
-    controlHandlerSource.indexOf("if (visualizationStateSeries && !isVisualizationStateSeriesFromStream())")
+    backendStart,
+    controlHandlerSource.indexOf("if (visualizationStateSeries && !isVisualizationStateSeriesFromStream())", backendStart)
   );
   const localReplaySource = controlHandlerSource.slice(
     controlHandlerSource.indexOf("if (visualizationStateSeries && !isVisualizationStateSeriesFromStream())"),
-    controlHandlerSource.indexOf("if ([\"play\", \"step\", \"reset\"].includes(action))")
+    controlHandlerSource.indexOf("if ([\"step\", \"reset\"].includes(action))")
+  );
+  const playSource = controlHandlerSource.slice(
+    controlHandlerSource.indexOf('if (action === "play")'),
+    backendStart
   );
 
   assert.match(controlHandlerSource, /backendControlActions/);
@@ -2633,8 +2742,9 @@ test("M9.3 backend Mesa controls call controlRun without local replay confirmati
   assert.doesNotMatch(backendControlSource, /nextReplayIndex\(visualizationStateSeries/);
   assert.doesNotMatch(backendControlSource, /visualizationReplayIndex\s*=/);
   assert.doesNotMatch(backendControlSource, /visualizationReplayPlaying\s*=/);
+  assert.match(playSource, /await loadVisualizationReplayForRun\(\)/);
+  assert.match(playSource, /visualizationReplayPlaying = !visualizationReplayPlaying/);
   assert.match(localReplaySource, /nextReplayIndex\(visualizationStateSeries/);
-  assert.match(localReplaySource, /visualizationReplayPlaying = !visualizationReplayPlaying/);
   assert.match(localReplaySource, /visualizationReplayIndex = 0/);
 });
 
