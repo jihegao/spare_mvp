@@ -677,7 +677,30 @@ class SimulationAdapterTest(unittest.TestCase):
 
     def test_aircraft_support_v1_m9_7_4_fields_drive_behavior(self) -> None:
         low_risk_project = self._load_fixture("m9_6_platform_case_export.json")["project"]
-        low_risk_project["supportOrganization"] = {"tree": [{"id": "governance-only"}]}
+        low_risk_project["supportOrganization"] = {}
+        for node in low_risk_project["supportNodes"]:
+            node["personnelCapacity"] = 50
+            node["equipmentCapacity"] = 50
+            inventory = node.get("inventory")
+            if isinstance(inventory, list):
+                for item in inventory:
+                    if isinstance(item, dict):
+                        item["quantity"] = 1000
+            elif isinstance(inventory, dict):
+                for spare_type in list(inventory):
+                    inventory[spare_type] = 1000
+            node["transportPolicies"] = []
+        for activity in low_risk_project["supportActivities"]:
+            activity.pop("calendarDayInterval", None)
+            activity.pop("runHourInterval", None)
+            activity.pop("takeoffLandingInterval", None)
+            activity["requiredPersonnel"] = 1
+            activity["requiredDevices"] = 1
+            for job in activity.get("jobs", []):
+                job["durationMinutes"] = 1
+                job["requiredPersonnel"] = 1
+                job["requiredDevices"] = 1
+                job["spare"] = "无"
         for component in low_risk_project["components"]:
             if component.get("parentId"):
                 component["failureRate"] = 0
@@ -722,7 +745,33 @@ class SimulationAdapterTest(unittest.TestCase):
     def test_aircraft_support_v1_transport_policies_replenish_spare_shortages(self) -> None:
         project = self._load_fixture("m9_6_platform_case_export.json")["project"]
         project["supportOrganization"] = {}
+        project["equipment"]["initialReady"] = 6
+        for component in project["components"]:
+            if component.get("parentId"):
+                component["failureRate"] = 0
+                component["failureDistribution"] = {"distributionType": "指数分布", "parameters": "lambda=0.8"}
+                component["kOutOfN"] = {"enabled": False, "k": 1, "n": 1}
+                component["spareType"] = "航电模块"
+        for rbd_node in project["reliabilityBlockDiagram"]["nodes"]:
+            rbd_node["failureRate"] = 0
+            rbd_node["mtbfHours"] = 100000
+        for activity in project["supportActivities"]:
+            activity.pop("calendarDayInterval", None)
+            activity.pop("runHourInterval", None)
+            activity.pop("takeoffLandingInterval", None)
+            activity["requiredPersonnel"] = 1
+            activity["requiredDevices"] = 1
+            for job in activity.get("jobs", []):
+                job["durationMinutes"] = 1
+                job["requiredPersonnel"] = 1
+                job["requiredDevices"] = 1
+                job["spare"] = "无"
+        for periodic_task in project["missionProfile"].get("periodicTasks", []):
+            periodic_task["dailyRepeatCount"] = 1
+            periodic_task["repeatCount"] = 1
         for node in project["supportNodes"]:
+            node["personnelCapacity"] = 50
+            node["equipmentCapacity"] = 50
             if node["id"] == "carrier-deck":
                 node["inventory"] = {"发动机备件": 0, "液压备件": 0, "航电模块": 0}
                 node["transportPolicies"] = [

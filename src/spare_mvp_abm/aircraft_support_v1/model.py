@@ -68,6 +68,7 @@ class AircraftState:
     in_flight_failure: bool = False
     last_preventive_minute: int = 0
     prepared_mission_ids: set[str] = field(default_factory=set)
+    lru_failure_remaining_minutes: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass
@@ -152,6 +153,7 @@ class AircraftSupportV1Model:
         self.event_log: list[dict[str, Any]] = []
         self.aircraft = self._build_aircraft()
         self.components = self._behavior_components()
+        self._initialize_aircraft_lru_failure_timers()
         self.nodes = self._build_support_nodes()
         self.activities = self._build_activities()
         self.mission_context = self._mission_context()
@@ -459,6 +461,27 @@ class AircraftSupportV1Model:
                 }
             )
         return components
+
+    def _initialize_aircraft_lru_failure_timers(self) -> None:
+        for aircraft in self.aircraft:
+            aircraft.lru_failure_remaining_minutes = {
+                str(component.get("id") or "component"): self._sample_lru_failure_minutes(component)
+                for component in self.components
+            }
+
+    def _sample_lru_failure_minutes(self, component: dict[str, Any]) -> float:
+        hourly_rate = _non_negative_float(component.get("failure_rate"), 0.0)
+        life_limit = component.get("life_limit_hours")
+        life_limit_minutes = math.inf
+        if isinstance(life_limit, (int, float)) and life_limit > 0:
+            life_limit_minutes = float(life_limit) * 60.0
+        samples: list[float] = []
+        quantity = max(1, int(component.get("quantity") or 1))
+        if hourly_rate > 0:
+            samples.extend(self.rng.expovariate(hourly_rate) * 60.0 for _ in range(quantity))
+        if math.isfinite(life_limit_minutes):
+            samples.append(life_limit_minutes)
+        return min(samples) if samples else math.inf
 
     def _build_support_nodes(self) -> dict[str, dict[str, Any]]:
         nodes: dict[str, dict[str, Any]] = {}
@@ -837,29 +860,25 @@ class AircraftSupportV1Model:
         if not self.components:
             return
         for aircraft in self.aircraft:
-            if aircraft.state not in {"available", "flying"}:
+            if aircraft.state != "flying":
                 continue
             if aircraft.failed_component_id:
                 continue
             for component in self.components:
-                hourly_rate = _non_negative_float(component.get("failure_rate"), 0.0)
-                life_limit = component.get("life_limit_hours")
-                life_pressure = 0.0
-                if isinstance(life_limit, (int, float)) and life_limit > 0:
-                    life_pressure = min(0.002, (self.minute / 60) / float(life_limit) * 0.001)
-                probability = 1.0 - math.exp(-(hourly_rate / 60.0) * self.tick_minutes) + life_pressure
-                if self.rng.random() < min(0.95, probability):
-                    aircraft.failed_component_id = str(component.get("id") or "component")
+                component_id = str(component.get("id") or "component")
+                remaining = aircraft.lru_failure_remaining_minutes.get(component_id)
+                if remaining is None:
+                    remaining = self._sample_lru_failure_minutes(component)
+                remaining -= self.tick_minutes
+                aircraft.lru_failure_remaining_minutes[component_id] = remaining
+                if remaining <= 0:
+                    aircraft.failed_component_id = component_id
                     self.lru_failures += 1
                     if component.get("rbd_root"):
                         self.rbd_root_failures += 1
                     self.failure_delay_events += 1
-                    if aircraft.state == "flying":
-                        aircraft.in_flight_failure = True
-                        self.in_flight_failures += 1
-                    else:
-                        aircraft.state = "maintenance"
-                        self._create_job(aircraft, self.repair_activity, kind="repair", component=component)
+                    aircraft.in_flight_failure = True
+                    self.in_flight_failures += 1
                     self._event("component_failed", f"{aircraft.tail_number} failed {component.get('name') or component.get('id')}")
                     break
 
@@ -1146,6 +1165,9 @@ class AircraftSupportV1Model:
             self._event("preflight_completed", f"{aircraft.tail_number} prepared for {job.mission_id}")
         elif job.kind == "repair":
             aircraft.state = "available"
+            component = self._component_by_id(job.component_id)
+            if component is not None:
+                aircraft.lru_failure_remaining_minutes[str(component.get("id") or "component")] = self._sample_lru_failure_minutes(component)
             aircraft.failed_component_id = None
             aircraft.in_flight_failure = False
             self._event("repair_completed", f"{aircraft.tail_number} repair completed")

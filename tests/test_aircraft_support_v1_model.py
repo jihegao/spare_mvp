@@ -235,6 +235,54 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
         self.assertEqual(aircraft.state, "maintenance")
         self.assertTrue(any(job.kind == "repair" for job in model.jobs))
 
+    def test_available_aircraft_does_not_fail_before_mission_execution(self) -> None:
+        inputs = _minimal_inputs()
+        inputs["aircraft"]["fleet_count"] = 1
+        inputs["aircraft"]["initial_ready"] = 1
+        inputs["equipment_tree"]["components"] = [
+            {"id": "engine", "parent_id": "aircraft", "name": "Engine", "failure_rate": 1000, "spare_type": "engine"}
+        ]
+        model = AircraftSupportV1Model(inputs)
+        aircraft = model.aircraft[0]
+
+        model.minute = 1
+        model._evaluate_failures()
+
+        self.assertEqual(aircraft.state, "available")
+        self.assertIsNone(aircraft.failed_component_id)
+        self.assertEqual(model.snapshot()["lru_failures"], 0)
+
+    def test_lru_failure_time_is_consumed_during_mission_execution(self) -> None:
+        inputs = _minimal_inputs()
+        inputs["aircraft"]["fleet_count"] = 1
+        inputs["aircraft"]["initial_ready"] = 1
+        inputs["equipment_tree"]["components"] = [
+            {"id": "engine", "parent_id": "aircraft", "name": "Engine", "failure_rate": 1000, "spare_type": "engine"}
+        ]
+        model = AircraftSupportV1Model(inputs)
+        mission = model.missions[0]
+        mission.planned_start = 0
+        mission.preparation_start = 0
+        mission.duration_minutes = 5
+        mission.required_aircraft = 1
+        aircraft = model.aircraft[0]
+        aircraft.prepared_mission_ids.add(mission.mission_id)
+        aircraft.lru_failure_remaining_minutes = {"engine": 2.0}
+
+        model._dispatch_due_missions()
+        model.minute = 1
+        model._evaluate_failures()
+
+        self.assertEqual(aircraft.state, "flying")
+        self.assertIsNone(aircraft.failed_component_id)
+
+        model.minute = 2
+        model._evaluate_failures()
+
+        self.assertEqual(aircraft.state, "flying")
+        self.assertEqual(aircraft.failed_component_id, "engine")
+        self.assertTrue(aircraft.in_flight_failure)
+
     def test_non_root_rbd_failure_does_not_increment_root_failure_metric(self) -> None:
         inputs = _minimal_inputs()
         inputs["aircraft"]["fleet_count"] = 1
@@ -247,6 +295,15 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
             "edges": [{"from": "system", "to": "sensor", "type": "series", "weight": 1}],
         }
         model = AircraftSupportV1Model(inputs)
+        mission = model.missions[0]
+        mission.planned_start = 0
+        mission.preparation_start = 0
+        mission.duration_minutes = 5
+        mission.required_aircraft = 1
+        aircraft = model.aircraft[0]
+        aircraft.prepared_mission_ids.add(mission.mission_id)
+        aircraft.lru_failure_remaining_minutes["rbd:sensor"] = 1.0
+        model._dispatch_due_missions()
 
         model.minute = 1
         model._evaluate_failures()
