@@ -736,6 +736,7 @@ class SimulationAdapter:
                 "fleet_count": fleet_count,
                 "initial_ready": initial_ready,
                 "models": self._string_list(equipment.get("wholeMachineModels") or [equipment.get("model")]),
+                "assets": self._aircraft_support_v1_aircraft_assets(project, mission_profile, equipment, fleet_count, initial_ready),
             },
             "equipment_tree": {
                 "root_component_id": self._root_component_id(project.get("components")),
@@ -791,6 +792,43 @@ class SimulationAdapter:
             ),
         }
 
+    def _aircraft_support_v1_aircraft_assets(
+        self,
+        project: dict[str, Any],
+        mission_profile: dict[str, Any],
+        equipment: dict[str, Any],
+        fleet_count: int,
+        initial_ready: int,
+    ) -> list[dict[str, str]]:
+        combat_unit = project.get("combatUnit") if isinstance(project.get("combatUnit"), dict) else {}
+        if not combat_unit:
+            combat_unit = mission_profile.get("combatUnit") if isinstance(mission_profile.get("combatUnit"), dict) else {}
+        members = self._dict_list(combat_unit.get("members"))
+        if not members:
+            return []
+        default_model = str(equipment.get("model") or "Aircraft")
+        assets = []
+        for index, member in enumerate(members[:fleet_count]):
+            model = str(member.get("model") or default_model)
+            status = str(member.get("status") or "").lower()
+            initial_state = "available" if index < initial_ready else "maintenance"
+            if "维修" in status or "停" in status or "maintenance" in status:
+                initial_state = "maintenance"
+            assets.append(
+                {
+                    "tail_number": str(
+                        member.get("aircraftNo")
+                        or member.get("tailNumber")
+                        or member.get("tail_number")
+                        or f"AC-{index + 1:03d}"
+                    ),
+                    "aircraft_type": model,
+                    "model": model,
+                    "initial_state": initial_state,
+                }
+            )
+        return assets
+
     def _aircraft_support_v1_support_node(self, node: dict[str, Any]) -> dict[str, Any]:
         return {
             "id": str(node.get("id") or "support-node"),
@@ -822,6 +860,10 @@ class SimulationAdapter:
             "required_devices": self._positive_int(activity.get("requiredDevices"), 1),
             "spare_type": self._optional_string(activity.get("spareType")),
             "spare_quantity": self._positive_int(activity.get("spareQuantity"), 0),
+            "calendarDayInterval": activity.get("calendarDayInterval"),
+            "runHourInterval": activity.get("runHourInterval"),
+            "takeoffLandingInterval": activity.get("takeoffLandingInterval"),
+            "floatRatio": activity.get("floatRatio"),
             "jobs": copy.deepcopy(self._dict_list(activity.get("jobs"))),
             "transport_strategies": copy.deepcopy(self._dict_list(activity.get("transportStrategies"))),
             "organization_strategies": copy.deepcopy(self._dict_list(activity.get("organizationStrategies"))),
@@ -894,6 +936,7 @@ class SimulationAdapter:
                 "equipment.quantity",
                 "equipment.initialReady",
                 "equipment.wholeMachineModels",
+                "missionProfile.combatUnit.members",
                 "missionProfile.durationHours",
                 "missionProfile.compositeTasks",
                 "missionProfile.periodicTasks",
@@ -931,7 +974,7 @@ class SimulationAdapter:
             "ignored_fields": [],
             "governance_only_fields": [
                 "projectInfo",
-                "combatUnit",
+                "missionProfile.combatUnit",
                 "scenarioId",
                 "project_id",
                 "project_version",
@@ -1450,7 +1493,7 @@ class SimulationAdapter:
             "metrics": snapshot,
         }
         result_summary_artifact_id = f"result_summary-{run_id}"
-        projections = self._aviation_analysis_projections(snapshot, result_summary_artifact_id)
+        projections = self._aircraft_support_v1_analysis_projections(snapshot, result_summary_artifact_id)
         result["analysis_outputs"] = {
             "spare_shortage": projections["spare_shortfall"]["data"],
             "carry_list": projections["carry_list"]["data"],
@@ -1848,7 +1891,7 @@ class SimulationAdapter:
         self._coerce_result_integer_metrics(aggregate)
         aggregate["mission_success_probability"] = aggregate.get("sortie_completion_rate", 0)
         base_artifact_id = f"monte_carlo_base-{run_id}"
-        projections = self._analysis_projections(aggregate, samples, base_artifact_id)
+        projections = self._aircraft_support_v1_analysis_projections(aggregate, base_artifact_id, samples=samples)
         behavior_scope = AircraftSupportV1Model.behavior_scope()
         input_project = self._input_project_for_scenario(scenario)
         base_artifact = {
@@ -2349,6 +2392,91 @@ class SimulationAdapter:
                     {"factor": "failure", "contribution": failure_events / downtime_total},
                     {"factor": "spare_shortage", "contribution": spare_delay_events / downtime_total},
                     {"factor": "resource_delay", "contribution": resource_delay_events / downtime_total},
+                ],
+            },
+        }
+
+    def _aircraft_support_v1_analysis_projections(
+        self,
+        metrics: dict[str, Any],
+        source_artifact_id: str,
+        samples: list[dict[str, Any]] | None = None,
+    ) -> dict[str, dict[str, Any]]:
+        planned_sorties = max(1.0, float(metrics.get("planned_sorties", 1) or 1))
+        shortage_events = max(0.0, float(metrics.get("shortage_events", 0) or 0))
+        shortage_probability = min(1.0, shortage_events / planned_sorties)
+        spare_fill_rate = min(1.0, max(0.0, float(metrics.get("spare_fill_rate", 0) or 0)))
+        mission_success = min(1.0, max(0.0, float(metrics.get("mission_success_rate", metrics.get("sortie_completion_rate", 0)) or 0)))
+        sortie_rate = min(1.0, max(0.0, float(metrics.get("sortie_rate", 0) or 0)))
+        downtime_values = {
+            "failure": max(0.0, float(metrics.get("downtime_failure_events", 0) or 0)),
+            "spare_shortage": max(0.0, float(metrics.get("downtime_spare_shortage_events", 0) or 0)),
+            "resource_delay": max(0.0, float(metrics.get("downtime_resource_delay_events", 0) or 0)),
+            "postflight": max(0.0, float(metrics.get("postflight_backlog", 0) or 0)),
+            "preventive": max(0.0, float(metrics.get("preventive_backlog", 0) or 0)),
+            "transport_delay": max(0.0, float(metrics.get("transport_in_transit_count", 0) or 0)),
+        }
+        downtime_total = sum(downtime_values.values()) or 1.0
+        risk_level = "high" if shortage_probability >= 0.2 else "medium" if shortage_probability > 0 else "low"
+        return {
+            "large_sample_summary": {
+                "projection_type": "large_sample_summary",
+                "model_family": "aircraft_support_v1",
+                "base_artifact_id": source_artifact_id,
+                "data": {
+                    "sample_count": len(samples or []),
+                    "mission_success_probability": mission_success,
+                    "spare_fill_rate": spare_fill_rate,
+                    "mean_repair_backlog": metrics.get("repair_backlog", 0),
+                    "mean_postflight_backlog": metrics.get("postflight_backlog", 0),
+                    "mean_preventive_backlog": metrics.get("preventive_backlog", 0),
+                },
+            },
+            "spare_shortfall": {
+                "projection_type": "spare_shortfall",
+                "model_family": "aircraft_support_v1",
+                "base_artifact_id": source_artifact_id,
+                "data": [
+                    {
+                        "spare_type": "aircraft_support_v1_spares",
+                        "fill_rate": spare_fill_rate,
+                        "shortage_probability": shortage_probability,
+                        "in_transit_count": metrics.get("transport_in_transit_count", 0),
+                        "risk_level": risk_level,
+                    }
+                ],
+            },
+            "carry_list": {
+                "projection_type": "carry_list",
+                "model_family": "aircraft_support_v1",
+                "base_artifact_id": source_artifact_id,
+                "data": [
+                    {
+                        "spare_type": "aircraft_support_v1_spares",
+                        "recommended_multiplier": max(1.0, 1.0 + shortage_probability),
+                        "risk_level": risk_level,
+                    }
+                ],
+            },
+            "mission_reliability": {
+                "projection_type": "mission_reliability",
+                "model_family": "aircraft_support_v1",
+                "base_artifact_id": source_artifact_id,
+                "data": {
+                    "mission_success_probability": mission_success,
+                    "sortie_rate": sortie_rate,
+                    "failed_sorties": metrics.get("failed_sorties", 0),
+                    "in_flight_failures": metrics.get("in_flight_failures", 0),
+                    "target_met": mission_success >= 0.9,
+                },
+            },
+            "downtime_factors": {
+                "projection_type": "downtime_factors",
+                "model_family": "aircraft_support_v1",
+                "base_artifact_id": source_artifact_id,
+                "data": [
+                    {"factor": factor, "contribution": value / downtime_total}
+                    for factor, value in downtime_values.items()
                 ],
             },
         }

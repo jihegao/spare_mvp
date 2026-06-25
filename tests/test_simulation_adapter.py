@@ -311,6 +311,10 @@ class SimulationAdapterTest(unittest.TestCase):
         project = self._load_fixture("m9_6_platform_case_export.json")["project"]
         scenario = self.adapter.compile_scenario(project, model_family="aircraft_support_v1")
         self.assertEqual(scenario["simulation_inputs"]["time"]["duration_minutes"], 14 * 24 * 60)
+        self.assertEqual(
+            [asset["tail_number"] for asset in scenario["simulation_inputs"]["aircraft"]["assets"][:3]],
+            ["J15-101", "J15-102", "J35-201"],
+        )
         result_schema = json.loads((REPO_ROOT / "contracts" / "result.schema.json").read_text(encoding="utf-8"))
         manifest_schema = json.loads((REPO_ROOT / "contracts" / "artifact_manifest.schema.json").read_text(encoding="utf-8"))
         state_series_schema = json.loads(
@@ -338,9 +342,13 @@ class SimulationAdapterTest(unittest.TestCase):
             )
             report_artifact = next(artifact for artifact in manifest["artifacts"] if artifact["kind"] == "report")
             log_artifact = next(artifact for artifact in manifest["artifacts"] if artifact["kind"] == "log")
+            projection_artifact = next(
+                artifact for artifact in manifest["artifacts"] if artifact["kind"] == "analysis_projection_downtime_factors"
+            )
             state_payload = json.loads((Path(first_tmp) / state_artifact["path"]).read_text(encoding="utf-8"))
             report_payload = json.loads((Path(first_tmp) / report_artifact["path"]).read_text(encoding="utf-8"))
             log_payload = json.loads((Path(first_tmp) / log_artifact["path"]).read_text(encoding="utf-8"))
+            projection_payload = json.loads((Path(first_tmp) / projection_artifact["path"]).read_text(encoding="utf-8"))
 
         jsonschema.validate(instance=result, schema=result_schema)
         jsonschema.validate(instance=manifest, schema=manifest_schema)
@@ -391,6 +399,11 @@ class SimulationAdapterTest(unittest.TestCase):
             "spare_consumed_total",
             "maintenance_backlog",
             "lru_failures",
+            "failed_sorties",
+            "postflight_backlog",
+            "preventive_backlog",
+            "transport_in_transit_count",
+            "rbd_root_failures",
         ]:
             self.assertIn(metric, result["metrics"])
         for frame in state_payload["frames"]:
@@ -419,6 +432,12 @@ class SimulationAdapterTest(unittest.TestCase):
         self.assertEqual(first_mission["day_index"], 1)
         self.assertEqual(first_mission["wave_index"], 1)
         self.assertIn("duration_minutes", first_mission)
+
+        self.assertEqual(projection_payload["model_family"], "aircraft_support_v1")
+        self.assertEqual(
+            {row["factor"] for row in projection_payload["data"]},
+            {"failure", "spare_shortage", "resource_delay", "postflight", "preventive", "transport_delay"},
+        )
 
         scope = report_payload["m9_7_4_behavior_scope"]
         self.assertIn("equipment.quantity", scope["behavior_driving_fields"])

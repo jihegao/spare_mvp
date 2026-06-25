@@ -1065,7 +1065,7 @@
               <li><code>FrameBuilder</code>、<code>MetricsAccumulator</code>、<code>SnapshotBuilder</code> 是旧图层命名；当前实现使用 <code>visualization_frame()</code> 和 <code>snapshot()</code>。</li>
               <li><code>evaluateRbd()</code> 当前不是独立方法；RBD 节点通过 <code>_rbd_components()</code> 转成附加故障组件。</li>
               <li><code>supportOrganization.tree</code> 是 governance-only / 不驱动仿真字段，不再作为 fail closed 条件。</li>
-              <li>独立 <code>postflight</code> 或 <code>preventive</code> 作业触发方法当前不存在；相关输入保留在保障活动数据和后续覆盖语义中。</li>
+              <li><code>postflight</code>、<code>preventive</code> 已是当前 Python 方法序列的一部分；早期图中把它们标为后续语义的说明已过期。</li>
             </ul>
           </article>
         </div>
@@ -1076,8 +1076,8 @@
       <div class="panel-body">
         <h2 id="sequence-title">执行时序图</h2>
         <p class="small">
-          两个时序图都按当前 <code>AircraftSupportV1Model</code> 代码路径展开。虚线/红色步骤表示业务期望或历史模型中出现过，
-          但当前 <code>aircraft_support_v1</code> 内核尚未作为独立状态或方法实现。
+          两个时序图都按当前 <code>AircraftSupportV1Model</code> 代码路径展开。当前内核已按业务期望补齐返航后保障、
+          预防性维修、在途补给、飞行中故障和真实机号映射；虚线/红色步骤仅保留为历史审计标记。
         </p>
         <div class="sequence-grid">
           <article class="sequence" aria-labelledby="load-sequence-title">
@@ -1090,25 +1090,23 @@
               <div class="sequence-step"><div><strong>加载保障资源</strong><span><code>_build_support_nodes()</code> 生成容量、库存、运输策略和占用计数。</span></div></div>
               <div class="sequence-step"><div><strong>加载保障活动</strong><span><code>_build_activities()</code> 和 <code>_ordered_activity_jobs()</code> 排序 job DAG。</span></div></div>
               <div class="sequence-step"><div><strong>生成任务上下文</strong><span><code>_mission_context()</code> 用机场、任务区和阶段推导时长修正。</span></div></div>
-              <div class="sequence-step"><div><strong>选择飞前和维修活动</strong><span><code>_select_activity("preflight")</code>、<code>_select_activity("repair")</code>，缺省时回退 <code>_default_activity()</code>。</span></div></div>
-              <div class="sequence-step"><div><strong>生成任务实例和计数器</strong><span><code>_build_missions()</code> 创建 <code>MissionState[]</code>，再初始化 <code>jobs</code> 和指标计数。</span></div></div>
+              <div class="sequence-step"><div><strong>选择保障活动模板</strong><span><code>_select_activity("preflight")</code>、<code>_select_activity("repair")</code>、<code>_select_activity("postflight")</code>、<code>_select_activity("preventive")</code>，缺省时回退 <code>_default_activity()</code>。</span></div></div>
+              <div class="sequence-step"><div><strong>生成任务实例和计数器</strong><span><code>_build_missions()</code> 创建 <code>MissionState[]</code>，再初始化 <code>jobs</code>、<code>transport_shipments</code> 和指标计数。</span></div></div>
             </div>
           </article>
 
           <article class="sequence" aria-labelledby="run-sequence-title">
             <h3 id="run-sequence-title">2. 仿真推演过程</h3>
             <div class="sequence-steps">
-              <div class="sequence-step"><div><strong>任务准备窗口到时</strong><span><code>_create_due_preflight_jobs()</code> 检查 <code>preparation_start</code> 和任务所需飞机数。</span></div></div>
-              <div class="sequence-step"><div><strong>寻找任务成员飞机</strong><span>从 <code>AircraftState.state == "available"</code> 且未为该任务准备的飞机中挑选。</span></div></div>
-              <div class="sequence-step"><div><strong>飞机进入准备</strong><span>飞机临时置为 <code>maintenance</code>，通过 <code>_create_job(kind="preflight")</code> 生成飞前保障作业。</span></div></div>
-              <div class="sequence-step"><div><strong>生成保障作业执行计划和资源</strong><span><code>JobState.tasks</code> 复制活动 jobs，绑定 <code>resource_node_id</code>、优先级、任务 id 和飞机号。</span></div></div>
-              <div class="sequence-step"><div><strong>保障执行</strong><span><code>_start_waiting_jobs()</code> 校验人员/设备/备件；必要时 <code>_try_transport_replenishment()</code> 调拨库存。</span></div></div>
-              <div class="sequence-step"><div><strong>完成保障</strong><span><code>_process_arrivals_and_completions()</code> 扣减剩余时间、释放资源、消耗备件并调用 <code>_complete_job_effect()</code>。</span></div></div>
-              <div class="sequence-step"><div><strong>任务通知飞机起飞</strong><span><code>_dispatch_due_missions()</code> 查找已准备飞机，置为 <code>flying</code> 并记录 <code>return_time</code>。</span></div></div>
-              <div class="sequence-step"><div><strong>任务结束返航</strong><span>当前时间达到 <code>return_time</code> 时，<code>_process_arrivals_and_completions()</code> 将飞机转回 <code>available</code>。</span></div></div>
-              <div class="sequence-step"><div><strong>故障转维修</strong><span><code>_evaluate_failures()</code> 对可用飞机抽样；命中后置为 <code>maintenance</code> 并生成 <code>repair</code> 作业。</span></div></div>
-              <div class="sequence-step deferred"><div><strong>飞行后保障 / 预防性维修</strong><span>当前 <code>aircraft_support_v1</code> 没有独立 <code>postflight</code> 或 <code>preventive</code> 触发方法；不要把旧业务流程图解读为已执行逻辑。</span></div></div>
-              <div class="sequence-step"><div><strong>回到待命状态并采样</strong><span>飞前或维修作业完成后转 <code>available</code>；到采样点时输出 <code>visualization_frame()</code>。</span></div></div>
+              <div class="sequence-step"><div><strong>运输到达</strong><span><code>_process_transport_arrivals()</code> 将到达的 <code>TransportShipment</code> 入库并记录运输延迟。</span></div></div>
+              <div class="sequence-step"><div><strong>任务返航</strong><span><code>_process_mission_returns()</code> 处理 <code>return_time</code>；正常返航生成 <code>postflight</code> 作业，飞行中故障返航生成 <code>repair</code> 作业。</span></div></div>
+              <div class="sequence-step"><div><strong>作业完成</strong><span><code>_process_job_progress_and_completions()</code> 扣减剩余时间、释放资源、消耗备件并调用 <code>_complete_job_effect()</code>。</span></div></div>
+              <div class="sequence-step"><div><strong>故障评估</strong><span><code>_evaluate_failures()</code> 覆盖 <code>available</code> 与 <code>flying</code> 飞机；飞行中故障先标记，返航时转维修并计入失败 sortie。</span></div></div>
+              <div class="sequence-step"><div><strong>预防性维修</strong><span><code>_generate_preventive_jobs()</code> 按日历、飞行小时或起落次数生成 <code>preventive</code> 作业。</span></div></div>
+              <div class="sequence-step"><div><strong>飞前保障生成</strong><span><code>_create_due_preflight_jobs()</code> 检查 <code>preparation_start</code> 和任务所需飞机数，创建 <code>preflight</code> 作业。</span></div></div>
+              <div class="sequence-step"><div><strong>保障执行</strong><span><code>_start_waiting_jobs()</code> 校验人员/设备/备件；必要时 <code>_try_transport_replenishment()</code> 生成在途补给。</span></div></div>
+              <div class="sequence-step"><div><strong>任务通知飞机起飞</strong><span><code>_dispatch_due_missions()</code> 查找已准备飞机，置为 <code>flying</code>、累计起飞次数并记录 <code>return_time</code>。</span></div></div>
+              <div class="sequence-step"><div><strong>采样</strong><span>到采样点时输出 <code>visualization_frame()</code>，其中包含 postflight/preventive backlog、在途运输和真实机号状态。</span></div></div>
             </div>
           </article>
         </div>
@@ -1117,10 +1115,10 @@
 
     <section class="panel" aria-labelledby="next-model-work-title">
       <div class="panel-body">
-        <h2 id="next-model-work-title">下一轮模型修改依据</h2>
+        <h2 id="next-model-work-title">模型语义补齐结果</h2>
         <p class="small">
-          本节记录当前报告与 <code>src/spare_mvp_abm/aircraft_support_v1/model.py</code> 的差异审计结果。
-          下一轮模型修改应优先补齐这些未消费输入和推演时序差异；若产品决定不补齐，也需要反向修订本报告的流程图和字段说明。
+          本节记录原“下一轮模型修改依据”的落地状态。当前 <code>src/spare_mvp_abm/aircraft_support_v1/model.py</code>
+          已按业务时序补齐关键状态机和指标口径；以下只保留仍需后续深化的输入语义。
         </p>
         <div class="audit-grid" aria-label="下一轮模型修改依据">
           <article class="audit-card">
@@ -1136,48 +1134,46 @@
           </article>
 
           <article class="audit-card">
-            <strong>业务字段部分消费但语义不足</strong>
+            <strong>已补齐的业务语义</strong>
             <ul>
-              <li><code>supportNodes[].transportPolicies</code> 只用于即时搬运库存；<code>transport_minutes</code> 没有形成在途延迟或排队占用。</li>
-              <li><code>supportActivities[].jobs[].durationProfile</code>、维修分布、飞行后检查规则没有采样；当前作业时长直接用 <code>durationMinutes</code>。</li>
-              <li>预防性维修的 <code>calendarDayInterval</code>、<code>runHourInterval</code>、<code>takeoffLandingInterval</code> 等条件未检查，也不会生成 <code>preventive</code> 作业。</li>
-              <li><code>reliabilityBlockDiagram</code> 被转为额外故障组件，但没有独立 RBD gate 评估，也没有按 <code>root_component_id</code> 汇总整机失效。</li>
-              <li>任务成员不是按导入数据里的真实机号、编队成员或 <code>combatUnit.members</code> 分配；当前使用生成的 <code>AC-001...</code> 队列。</li>
+              <li><code>supportNodes[].transportPolicies</code> 的 <code>transport_minutes</code> 已形成 <code>TransportShipment</code> 在途库存和延迟事件。</li>
+              <li><code>supportActivities</code> 活动级资源、时长和备件字段已作为 job 缺省值，job 字段可覆盖活动缺省。</li>
+              <li>预防性维修的 <code>calendarDayInterval</code>、<code>runHourInterval</code>、<code>takeoffLandingInterval</code> 已触发 <code>preventive</code> 作业。</li>
+              <li><code>reliabilityBlockDiagram</code> 和组件 <code>quantity</code> 已影响故障率，并输出 <code>rbd_root_failures</code>。</li>
+              <li>任务成员已优先从 <code>combatUnit.members</code> 映射真实 <code>tail_number</code>，缺失时才回退 <code>AC-001...</code> 队列。</li>
             </ul>
           </article>
 
           <article class="audit-card">
-            <strong>与“2. 仿真推演过程”的执行顺序差异</strong>
+            <strong>当前每 tick 执行顺序</strong>
             <ul>
-              <li>当前每个 tick 的真实顺序是 <code>_process_arrivals_and_completions()</code> -> <code>_start_waiting_jobs()</code> -> <code>_evaluate_failures()</code> -> <code>_create_due_preflight_jobs()</code> -> <code>_dispatch_due_missions()</code> -> 采样。</li>
-              <li>图中把“任务准备窗口到时”放在首位；实际返航和上轮作业完成先处理，故障抽样也早于新飞前保障作业创建。</li>
-              <li>图中“保障执行 -> 完成保障”像同一连续阶段；实际完成发生在后续 tick 开头，启动等待作业发生在完成处理之后。</li>
-              <li>图中“任务结束返航”跟随起飞之后；实际返航检查在每个 tick 最前面统一处理。</li>
-              <li>图中“故障转维修”像任务后分支；实际只对 <code>state == "available"</code> 的飞机抽样，飞行中飞机不会发生飞行中故障。</li>
-              <li>图中“飞行后保障 / 预防性维修”是目标业务流程；当前内核没有独立 <code>postflight</code> 或 <code>preventive</code> 触发方法。</li>
+              <li><code>_process_transport_arrivals()</code> -> <code>_process_mission_returns()</code> -> <code>_process_job_progress_and_completions()</code> -> <code>_evaluate_failures()</code> -> <code>_generate_preventive_jobs()</code> -> <code>_create_due_preflight_jobs()</code> -> <code>_start_waiting_jobs()</code> -> <code>_dispatch_due_missions()</code> -> 采样。</li>
+              <li>返航后不直接转 <code>available</code>；正常返航先进入 <code>postflight</code>，飞行中故障返航进入 <code>repair</code>。</li>
+              <li>飞前、航后、维修、预防性维修都通过统一 <code>JobState</code> 和保障资源约束执行。</li>
+              <li>输出指标新增 <code>failed_sorties</code>、<code>in_flight_failures</code>、<code>postflight_backlog</code>、<code>preventive_backlog</code>、<code>transport_in_transit_count</code> 和 <code>rbd_root_failures</code>。</li>
             </ul>
           </article>
         </div>
 
         <div class="two-col" style="margin-top: 14px;">
           <article class="card model">
-            <h3>建议优先补齐的模型能力</h3>
+            <h3>已落地能力</h3>
             <ul>
-              <li>增加返航后状态：<code>flying</code> -> <code>postflight</code> 作业 -> 可用 / 维修 / 预防性维修。</li>
-              <li>增加预防性维修触发器：按日历、飞行小时、起落次数和浮动比例生成 <code>preventive</code> 作业。</li>
-              <li>将 <code>supportActivities</code> 活动级资源、时长和维修分布作为 job 缺省值或采样来源。</li>
-              <li>将运输策略改为带 <code>transport_minutes</code> 的在途库存和延迟事件，而不是同 tick 即时补给。</li>
-              <li>引入真实飞机成员和 tail number 映射，避免只按生成序号分配任务成员。</li>
-              <li>补齐 RBD/root/quantity 语义，用组件数量和结构关系影响整机可用性。</li>
+              <li>返航后状态：<code>flying</code> -> <code>postflight</code> / <code>repair</code> -> <code>available</code>。</li>
+              <li>预防性维修触发器：按日历、飞行小时和起落次数生成 <code>preventive</code> 作业。</li>
+              <li><code>supportActivities</code> 活动级资源、时长和备件作为 job 缺省值。</li>
+              <li>运输策略支持带 <code>transport_minutes</code> 的在途库存和延迟事件。</li>
+              <li>真实飞机成员和 <code>tail_number</code> 映射进入 <code>AircraftState[]</code>。</li>
+              <li>RBD/root/quantity 语义进入故障率和 <code>rbd_root_failures</code> 指标。</li>
             </ul>
           </article>
 
           <article class="card block">
-            <h3>修改前需要先定稿的选择</h3>
+            <h3>后续深化点</h3>
             <ul>
-              <li>如果目标是让模型匹配“2. 仿真推演过程”，需要调整 <code>run()</code> 的 tick 顺序和状态机。</li>
-              <li>如果保留当前 tick 顺序，则应把“2. 仿真推演过程”改写为当前真实顺序，避免把业务期望误读成实现。</li>
-              <li><code>supportOrganization.tree</code> 是否继续 governance-only 需要保持明确；除非有新语义，不应重新设为 fail closed。</li>
+              <li><code>durationProfile</code> 和维修分布仍可继续深化为随机作业时长采样。</li>
+              <li>RBD 仍未拆成独立 gate evaluator；当前是按 RBD 节点转换故障组件并输出 root failure 计数。</li>
+              <li><code>supportOrganization.tree</code> 继续 governance-only；除非有新语义，不应重新设为 fail closed。</li>
               <li>Monte Carlo 配置和 single run 行为边界需要分开处理，避免把 <code>monte_carlo</code> 字段误算为 single run 未完成项。</li>
             </ul>
           </article>

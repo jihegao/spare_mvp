@@ -63,7 +63,21 @@
       "properties": {
         "fleet_count": { "type": "integer", "minimum": 1 },
         "initial_ready": { "type": "integer", "minimum": 0 },
-        "models": { "type": "array", "items": { "type": "string" } }
+        "models": { "type": "array", "items": { "type": "string" } },
+        "assets": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["tail_number", "aircraft_type", "model", "initial_state"],
+            "properties": {
+              "tail_number": { "type": "string" },
+              "aircraft_type": { "type": "string" },
+              "model": { "type": "string" },
+              "initial_state": { "type": "string", "enum": ["available", "maintenance", "flying"] }
+            }
+          }
+        }
       }
     },
     "equipment_tree": {

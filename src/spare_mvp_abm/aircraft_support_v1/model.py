@@ -56,9 +56,17 @@ class AircraftState:
     state: str
     x: int
     y: int
+    model: str = ""
     current_mission_id: str | None = None
     return_time: int | None = None
     failed_component_id: str | None = None
+    flight_hours: float = 0.0
+    takeoff_count: int = 0
+    landing_count: int = 0
+    postflight_required: bool = False
+    preventive_due: bool = False
+    in_flight_failure: bool = False
+    last_preventive_minute: int = 0
     prepared_mission_ids: set[str] = field(default_factory=set)
 
 
@@ -89,6 +97,7 @@ class MissionState:
     group_name: str = ""
     wave_index: int = 1
     day_index: int = 1
+    failed_tail_numbers: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -117,6 +126,16 @@ class JobState:
         return self.tasks[self.task_index]
 
 
+@dataclass
+class TransportShipment:
+    source_node_id: str
+    destination_node_id: str
+    spare_type: str
+    quantity: int
+    requested_minute: int
+    arrival_minute: int
+
+
 class AircraftSupportV1Model:
     """Deterministic minute-tick aircraft support simulation."""
 
@@ -138,15 +157,22 @@ class AircraftSupportV1Model:
         self.mission_context = self._mission_context()
         self.preflight_activity = self._select_activity("preflight")
         self.repair_activity = self._select_activity("repair")
+        self.postflight_activity = self._select_activity("postflight")
+        self.preventive_activity = self._select_activity("preventive")
         self.missions = self._build_missions()
         self.jobs: list[JobState] = []
+        self.transport_shipments: list[TransportShipment] = []
         self._job_sequence = 0
         self.completed_sorties = 0
+        self.failed_sorties = 0
         self.launched_sorties = 0
         self.cancelled_sorties = 0
         self.delayed_sorties = 0
         self.total_departure_delay = 0
+        self.total_transport_delay = 0
         self.lru_failures = 0
+        self.in_flight_failures = 0
+        self.rbd_root_failures = 0
         self.spare_consumed_total = 0
         self.shortage_events = 0
         self.transport_replenishment_events = 0
@@ -165,10 +191,13 @@ class AircraftSupportV1Model:
         frames = [self.visualization_frame(run_id="", step=0)]
         for minute in range(1, self.duration_minutes + 1, self.tick_minutes):
             self.minute = minute
-            self._process_arrivals_and_completions()
-            self._start_waiting_jobs()
+            self._process_transport_arrivals()
+            self._process_mission_returns()
+            self._process_job_progress_and_completions()
             self._evaluate_failures()
+            self._generate_preventive_jobs()
             self._create_due_preflight_jobs()
+            self._start_waiting_jobs()
             self._dispatch_due_missions()
             if minute % self.sample_every_minutes == 0 or minute == self.duration_minutes:
                 frames.append(self.visualization_frame(run_id="", step=len(frames)))
@@ -183,12 +212,16 @@ class AircraftSupportV1Model:
         available = sum(1 for aircraft in self.aircraft if aircraft.state == "available")
         active_jobs = sum(1 for job in self.jobs if job.state == "running")
         backlog = sum(1 for job in self.jobs if job.state == "waiting")
+        repair_backlog = sum(1 for job in self.jobs if job.kind == "repair" and job.state in {"waiting", "running"})
+        postflight_backlog = sum(1 for job in self.jobs if job.kind == "postflight" and job.state in {"waiting", "running"})
+        preventive_backlog = sum(1 for job in self.jobs if job.kind == "preventive" and job.state in {"waiting", "running"})
         stock_total = sum(sum(max(0, int(qty)) for qty in node["inventory"].values()) for node in self.nodes.values())
         total_inventory = max(1, stock_total + self.spare_consumed_total)
         sortie_completion_rate = min(1.0, self.completed_sorties / planned_sorties)
         sortie_rate = min(1.0, self.launched_sorties / planned_sorties)
         ready_rate = available / max(1, len(self.aircraft))
         avg_delay = self.total_departure_delay / max(1, self.launched_sorties + self.cancelled_sorties)
+        mean_transport_delay = self.total_transport_delay / max(1, self.transport_replenishment_events)
         return {
             "sortie_completion_rate": sortie_completion_rate,
             "mission_success_rate": sortie_completion_rate,
@@ -200,23 +233,33 @@ class AircraftSupportV1Model:
             "avg_departure_delay": avg_delay,
             "spare_consumed_total": self.spare_consumed_total,
             "maintenance_backlog": backlog,
-            "repair_backlog": backlog,
+            "repair_backlog": repair_backlog,
+            "postflight_backlog": postflight_backlog,
+            "preventive_backlog": preventive_backlog,
             "lru_failures": self.lru_failures,
             "failed_count": sum(1 for aircraft in self.aircraft if aircraft.failed_component_id is not None),
             "repairing_count": sum(1 for aircraft in self.aircraft if aircraft.state == "maintenance"),
+            "flying_count": sum(1 for aircraft in self.aircraft if aircraft.state == "flying"),
             "sortie_count": sum(1 for aircraft in self.aircraft if aircraft.state == "flying"),
+            "postflight_count": sum(1 for aircraft in self.aircraft if aircraft.postflight_required),
+            "preventive_count": sum(1 for aircraft in self.aircraft if aircraft.preventive_due),
             "planned_sorties": planned_sorties,
             "launched_sorties": self.launched_sorties,
             "completed_sorties": self.completed_sorties,
+            "failed_sorties": self.failed_sorties,
             "cancelled_sorties": self.cancelled_sorties,
             "delayed_sorties": self.delayed_sorties,
             "spare_fill_rate": min(1.0, stock_total / total_inventory),
             "spare_utilization": min(1.0, self.spare_consumed_total / total_inventory),
             "shortage_events": self.shortage_events,
+            "transport_in_transit_count": len(self.transport_shipments),
             "downtime_failure_events": self.failure_delay_events,
             "downtime_spare_shortage_events": self.shortage_events,
             "downtime_resource_delay_events": self.resource_delay_events,
             "transport_replenishment_events": self.transport_replenishment_events,
+            "mean_transport_delay": mean_transport_delay,
+            "in_flight_failures": self.in_flight_failures,
+            "rbd_root_failures": self.rbd_root_failures,
             "mean_launch_time": avg_delay,
             "mean_recovery_time": self._mean_recovery_time(),
             "mean_turnaround_time": avg_delay + self._mean_recovery_time(),
@@ -233,6 +276,8 @@ class AircraftSupportV1Model:
                 "failed_count": metrics["failed_count"],
                 "repairing_count": metrics["repairing_count"],
                 "sortie_count": metrics["sortie_count"],
+                "postflight_count": metrics["postflight_count"],
+                "preventive_count": metrics["preventive_count"],
             },
             "mission_state": {
                 "mission_success_rate": metrics["mission_success_rate"],
@@ -245,6 +290,8 @@ class AircraftSupportV1Model:
                 "spare_fill_rate": metrics["spare_fill_rate"],
                 "spare_utilization": metrics["spare_utilization"],
                 "repair_backlog": metrics["repair_backlog"],
+                "postflight_backlog": metrics["postflight_backlog"],
+                "preventive_backlog": metrics["preventive_backlog"],
             },
             "event_summary": {
                 "shortage_events": metrics["shortage_events"],
@@ -262,6 +309,26 @@ class AircraftSupportV1Model:
 
     def _build_aircraft(self) -> list[AircraftState]:
         aircraft_inputs = self.inputs.get("aircraft", {})
+        assets = [item for item in aircraft_inputs.get("assets") or [] if isinstance(item, dict)]
+        if assets:
+            aircraft = []
+            for index, item in enumerate(assets):
+                tail_number = str(item.get("tailNumber") or item.get("tail_number") or f"AC-{index + 1:03d}")
+                aircraft_type = str(item.get("aircraftType") or item.get("aircraft_type") or item.get("type") or item.get("model") or "Aircraft")
+                state = str(item.get("initialState") or item.get("initial_state") or item.get("state") or "available")
+                if state not in {"available", "maintenance", "flying"}:
+                    state = "available"
+                aircraft.append(
+                    AircraftState(
+                        tail_number=tail_number,
+                        aircraft_type=aircraft_type,
+                        model=str(item.get("model") or aircraft_type),
+                        state=state,
+                        x=index % 6,
+                        y=index // 6,
+                    )
+                )
+            return aircraft
         fleet_count = max(1, int(aircraft_inputs.get("fleet_count", 1)))
         initial_ready = min(fleet_count, max(0, int(aircraft_inputs.get("initial_ready", fleet_count))))
         models = list(aircraft_inputs.get("models") or ["Aircraft"])
@@ -269,6 +336,7 @@ class AircraftSupportV1Model:
             AircraftState(
                 tail_number=f"AC-{index + 1:03d}",
                 aircraft_type=str(models[index % len(models)]),
+                model=str(models[index % len(models)]),
                 state="available" if index < initial_ready else "maintenance",
                 x=index % 6,
                 y=index // 6,
@@ -283,7 +351,10 @@ class AircraftSupportV1Model:
             if item.get("parent_id") in (None, ""):
                 continue
             component = copy.deepcopy(item)
+            component["quantity"] = max(1, int(component.get("quantity") or 1))
+            component["root_component_id"] = self.inputs.get("equipment_tree", {}).get("root_component_id")
             effective_rate = self._effective_component_failure_rate(component, rate)
+            effective_rate *= max(1.0, math.sqrt(float(component["quantity"])))
             if effective_rate <= 0:
                 continue
             component["failure_rate"] = effective_rate
@@ -363,6 +434,9 @@ class AircraftSupportV1Model:
                     "spare_type": "",
                     "special_repair_profile": {},
                     "repair_duration_minutes": None,
+                    "quantity": 1,
+                    "root_component_id": parent_id or node_id,
+                    "rbd_root": parent_id == "",
                 }
             )
         return components
@@ -412,10 +486,18 @@ class AircraftSupportV1Model:
                     "spare_type": str(item.get("spareType") or item.get("spare_type") or ""),
                     "capacity": max(1, int(item.get("capacity") or 1)),
                     "priority": max(1, int(item.get("priority") or 1)),
-                    "transport_minutes": max(0, int(round(_non_negative_float(item.get("transportTimeHours"), 0.0) * 60))),
+                    "transport_minutes": self._transport_policy_minutes(item),
                 }
             )
         return sorted(normalized, key=lambda item: (item["priority"], item["transport_minutes"]))
+
+    def _transport_policy_minutes(self, item: dict[str, Any]) -> int:
+        if item.get("transport_minutes") not in (None, ""):
+            return max(0, int(round(_non_negative_float(item.get("transport_minutes"), 0.0))))
+        if item.get("transportMinutes") not in (None, ""):
+            return max(0, int(round(_non_negative_float(item.get("transportMinutes"), 0.0))))
+        hours = item.get("transportTimeHours", item.get("transport_time_hours"))
+        return max(0, int(round(_non_negative_float(hours, 0.0) * 60)))
 
     def _build_activities(self) -> list[dict[str, Any]]:
         activities = []
@@ -452,6 +534,10 @@ class AircraftSupportV1Model:
             if kind == "preflight" and ("preflight" in text or "飞行前" in text or "直接准备" in text):
                 candidates.append(activity)
             if kind == "repair" and ("repair" in text or "维修" in text or "修复" in text):
+                candidates.append(activity)
+            if kind == "postflight" and ("postflight" in text or "飞行后" in text or "航后" in text):
+                candidates.append(activity)
+            if kind == "preventive" and ("preventive" in text or "预防" in text or "定检" in text):
                 candidates.append(activity)
         if candidates:
             return candidates[0]
@@ -618,13 +704,48 @@ class AircraftSupportV1Model:
         return {"duration_adjustment_minutes": max(0, travel_minutes + phase_minutes)}
 
     def _process_arrivals_and_completions(self) -> None:
+        self._process_transport_arrivals()
+        self._process_mission_returns()
+        self._process_job_progress_and_completions()
+
+    def _process_transport_arrivals(self) -> None:
+        arrived = [shipment for shipment in self.transport_shipments if shipment.arrival_minute <= self.minute]
+        self.transport_shipments = [
+            shipment for shipment in self.transport_shipments if shipment.arrival_minute > self.minute
+        ]
+        for shipment in arrived:
+            node = self.nodes.get(shipment.destination_node_id)
+            if node is None:
+                continue
+            node["inventory"][shipment.spare_type] = int(node["inventory"].get(shipment.spare_type, 0)) + shipment.quantity
+            self.total_transport_delay += max(0, shipment.arrival_minute - shipment.requested_minute)
+            self._event(
+                "transport_arrived",
+                f"{shipment.quantity} {shipment.spare_type} arrived at {shipment.destination_node_id}",
+            )
+
+    def _process_mission_returns(self) -> None:
         for aircraft in self.aircraft:
             if aircraft.state == "flying" and aircraft.return_time is not None and aircraft.return_time <= self.minute:
-                aircraft.state = "available"
+                mission = self._mission_by_id(aircraft.current_mission_id)
+                if mission is not None and aircraft.tail_number not in mission.failed_tail_numbers and aircraft.in_flight_failure:
+                    mission.failed_tail_numbers.append(aircraft.tail_number)
+                aircraft.flight_hours += max(0.0, float((aircraft.return_time - (mission.actual_start if mission else 0)) / 60.0))
+                aircraft.landing_count += 1
+                aircraft.state = "maintenance"
+                if aircraft.in_flight_failure:
+                    self.failed_sorties += 1
+                    component = self._component_by_id(aircraft.failed_component_id)
+                    self._create_job(aircraft, self.repair_activity, kind="repair", component=component)
+                    self._event("mission_failed_returned", f"{aircraft.tail_number} returned with failure")
+                else:
+                    aircraft.postflight_required = True
+                    self._create_job(aircraft, self.postflight_activity, kind="postflight")
+                    self._event("mission_returned", f"{aircraft.tail_number} returned from mission and needs postflight")
                 aircraft.current_mission_id = None
                 aircraft.return_time = None
-                self.completed_sorties += 1
-                self._event("mission_returned", f"{aircraft.tail_number} returned from mission")
+
+    def _process_job_progress_and_completions(self) -> None:
         for job in self.jobs:
             if job.state != "running":
                 continue
@@ -654,8 +775,17 @@ class AircraftSupportV1Model:
                 job.state = "completed"
                 continue
             node = self.nodes.get(job.resource_node_id) or next(iter(self.nodes.values()))
-            personnel = _resource_quantity(task.get("personnel"), task.get("requiredPersonnel"), default=1)
-            equipment = _resource_quantity(task.get("equipment"), task.get("requiredDevices"), default=1)
+            activity = self._activity_by_id(job.activity_id)
+            personnel = _resource_quantity(
+                task.get("personnel"),
+                task.get("requiredPersonnel", task.get("required_personnel", activity.get("required_personnel"))),
+                default=1,
+            )
+            equipment = _resource_quantity(
+                task.get("equipment"),
+                task.get("requiredDevices", task.get("required_devices", activity.get("required_devices"))),
+                default=1,
+            )
             if node["personnel_in_use"] + personnel > node["personnel_capacity"]:
                 self.resource_delay_events += 1
                 job.shortage_reason = "personnel_capacity"
@@ -666,16 +796,18 @@ class AircraftSupportV1Model:
                 continue
             spare_type, spare_qty = self._task_spare_requirement(job, task)
             if spare_type and node["inventory"].get(spare_type, 0) < spare_qty:
-                self._try_transport_replenishment(node, spare_type, spare_qty)
+                if not self._has_in_transit_spare(node["id"], spare_type):
+                    self._try_transport_replenishment(node, spare_type, spare_qty)
             if spare_type and node["inventory"].get(spare_type, 0) < spare_qty:
                 self.shortage_events += 1
-                job.shortage_reason = f"spare:{spare_type}"
+                reason = "in_transit" if self._has_in_transit_spare(node["id"], spare_type) else f"spare:{spare_type}"
+                job.shortage_reason = reason
                 continue
             node["personnel_in_use"] += personnel
             node["equipment_in_use"] += equipment
             node["work_count"] += 1
             job.state = "running"
-            job.remaining = max(1, int(task.get("durationMinutes") or task.get("duration_minutes") or 30))
+            job.remaining = max(1, int(task.get("durationMinutes") or task.get("duration_minutes") or activity.get("duration_minutes") or 30))
             job.started_time = job.started_time if job.started_time is not None else self.minute
             job.shortage_reason = None
             self._event("job_started", f"{job.job_id} started {task.get('workName') or task.get('activityCode') or 'task'}")
@@ -684,7 +816,9 @@ class AircraftSupportV1Model:
         if not self.components:
             return
         for aircraft in self.aircraft:
-            if aircraft.state != "available":
+            if aircraft.state not in {"available", "flying"}:
+                continue
+            if aircraft.failed_component_id:
                 continue
             for component in self.components:
                 hourly_rate = _non_negative_float(component.get("failure_rate"), 0.0)
@@ -694,13 +828,55 @@ class AircraftSupportV1Model:
                     life_pressure = min(0.002, (self.minute / 60) / float(life_limit) * 0.001)
                 probability = 1.0 - math.exp(-(hourly_rate / 60.0) * self.tick_minutes) + life_pressure
                 if self.rng.random() < min(0.95, probability):
-                    aircraft.state = "maintenance"
                     aircraft.failed_component_id = str(component.get("id") or "component")
                     self.lru_failures += 1
+                    if component.get("rbd_root") or str(component.get("id", "")).startswith("rbd:"):
+                        self.rbd_root_failures += 1
                     self.failure_delay_events += 1
-                    self._create_job(aircraft, self.repair_activity, kind="repair", component=component)
+                    if aircraft.state == "flying":
+                        aircraft.in_flight_failure = True
+                        self.in_flight_failures += 1
+                    else:
+                        aircraft.state = "maintenance"
+                        self._create_job(aircraft, self.repair_activity, kind="repair", component=component)
                     self._event("component_failed", f"{aircraft.tail_number} failed {component.get('name') or component.get('id')}")
                     break
+
+    def _generate_preventive_jobs(self) -> None:
+        interval_days = self._preventive_interval_days()
+        interval_hours = self._preventive_interval_hours()
+        interval_landings = self._preventive_interval_landings()
+        if interval_days <= 0 and interval_hours <= 0 and interval_landings <= 0:
+            return
+        for aircraft in self.aircraft:
+            if aircraft.state != "available" or aircraft.preventive_due:
+                continue
+            if any(job.kind == "preventive" and job.tail_number == aircraft.tail_number and job.state != "completed" for job in self.jobs):
+                continue
+            due_by_day = interval_days > 0 and self.minute - aircraft.last_preventive_minute >= interval_days * 1440
+            due_by_hours = interval_hours > 0 and aircraft.flight_hours >= interval_hours
+            due_by_landings = interval_landings > 0 and aircraft.landing_count >= interval_landings
+            if due_by_day or due_by_hours or due_by_landings:
+                aircraft.state = "maintenance"
+                aircraft.preventive_due = True
+                self._create_job(aircraft, self.preventive_activity, kind="preventive")
+                self._event("preventive_created", f"{aircraft.tail_number} preventive maintenance created")
+
+    def _preventive_interval_days(self) -> int:
+        value = (
+            self.preventive_activity.get("calendarDayInterval")
+            or self.preventive_activity.get("calendar_day_interval")
+            or self.preventive_activity.get("intervalDays")
+        )
+        return _positive_int(value, 0)
+
+    def _preventive_interval_hours(self) -> int:
+        value = self.preventive_activity.get("runHourInterval") or self.preventive_activity.get("run_hour_interval")
+        return _positive_int(value, 0)
+
+    def _preventive_interval_landings(self) -> int:
+        value = self.preventive_activity.get("takeoffLandingInterval") or self.preventive_activity.get("takeoff_landing_interval")
+        return _positive_int(value, 0)
 
     def _create_due_preflight_jobs(self) -> None:
         for mission in self.missions:
@@ -746,6 +922,7 @@ class AircraftSupportV1Model:
                     aircraft.state = "flying"
                     aircraft.current_mission_id = mission.mission_id
                     aircraft.return_time = self.minute + mission.duration_minutes
+                    aircraft.takeoff_count += 1
                 mission.status = "launched"
                 mission.actual_start = self.minute
                 mission.return_time = self.minute + mission.duration_minutes
@@ -765,6 +942,12 @@ class AircraftSupportV1Model:
             else:
                 mission.status = "delayed"
                 self.delayed_sorties += 1
+
+    def _has_in_transit_spare(self, node_id: str, spare_type: str) -> bool:
+        return any(
+            shipment.destination_node_id == node_id and shipment.spare_type == spare_type
+            for shipment in self.transport_shipments
+        )
 
     def _active_preflight_tail_numbers(self, mission_id: str) -> set[str]:
         return {
@@ -793,8 +976,13 @@ class AircraftSupportV1Model:
     ) -> None:
         self._job_sequence += 1
         tasks = copy.deepcopy(activity.get("jobs") or [{"activityCode": kind, "durationMinutes": 30}])
+        for task in tasks:
+            task.setdefault("durationMinutes", activity.get("duration_minutes") or 30)
+            task.setdefault("requiredPersonnel", activity.get("required_personnel") or 1)
+            task.setdefault("requiredDevices", activity.get("required_devices") or 1)
+            if activity.get("spare_type") and activity.get("spare_quantity") and not task.get("spare"):
+                task["spare"] = f"{activity['spare_type']},{activity['spare_quantity']}"
         if kind == "repair" and component is not None:
-            profile = component.get("special_repair_profile") if isinstance(component.get("special_repair_profile"), dict) else {}
             if component.get("repair_duration_minutes"):
                 tasks[-1]["durationMinutes"] = max(1, int(component["repair_duration_minutes"]))
             if component.get("spare_type"):
@@ -817,8 +1005,17 @@ class AircraftSupportV1Model:
     def _release_job_resources(self, job: JobState) -> None:
         task = job.current_task or {}
         node = self.nodes.get(job.resource_node_id) or next(iter(self.nodes.values()))
-        personnel = _resource_quantity(task.get("personnel"), task.get("requiredPersonnel"), default=1)
-        equipment = _resource_quantity(task.get("equipment"), task.get("requiredDevices"), default=1)
+        activity = self._activity_by_id(job.activity_id)
+        personnel = _resource_quantity(
+            task.get("personnel"),
+            task.get("requiredPersonnel", task.get("required_personnel", activity.get("required_personnel"))),
+            default=1,
+        )
+        equipment = _resource_quantity(
+            task.get("equipment"),
+            task.get("requiredDevices", task.get("required_devices", activity.get("required_devices"))),
+            default=1,
+        )
         node["personnel_in_use"] = max(0, node["personnel_in_use"] - personnel)
         node["equipment_in_use"] = max(0, node["equipment_in_use"] - equipment)
 
@@ -869,8 +1066,25 @@ class AircraftSupportV1Model:
             if moved <= 0:
                 continue
             source["inventory"][spare_type] = available - moved
-            node["inventory"][spare_type] = int(node["inventory"].get(spare_type, 0)) + moved
             self.transport_replenishment_events += 1
+            transport_minutes = max(0, int(policy.get("transport_minutes") or 0))
+            if transport_minutes:
+                self.transport_shipments.append(
+                    TransportShipment(
+                        source_node_id=str(source["id"]),
+                        destination_node_id=str(node["id"]),
+                        spare_type=spare_type,
+                        quantity=moved,
+                        requested_minute=self.minute,
+                        arrival_minute=self.minute + transport_minutes,
+                    )
+                )
+                self._event(
+                    "transport_dispatched",
+                    f"{moved} {spare_type} dispatched from {source['id']} to {node['id']}",
+                )
+                return
+            node["inventory"][spare_type] = int(node["inventory"].get(spare_type, 0)) + moved
             self._event("transport_replenished", f"{moved} {spare_type} moved from {source['id']} to {node['id']}")
             return
 
@@ -885,7 +1099,34 @@ class AircraftSupportV1Model:
         elif job.kind == "repair":
             aircraft.state = "available"
             aircraft.failed_component_id = None
+            aircraft.in_flight_failure = False
             self._event("repair_completed", f"{aircraft.tail_number} repair completed")
+        elif job.kind == "postflight":
+            aircraft.state = "available"
+            aircraft.postflight_required = False
+            self.completed_sorties += 1
+            self._event("postflight_completed", f"{aircraft.tail_number} postflight completed")
+        elif job.kind == "preventive":
+            aircraft.state = "available"
+            aircraft.preventive_due = False
+            aircraft.last_preventive_minute = self.minute
+            aircraft.flight_hours = 0.0
+            aircraft.takeoff_count = 0
+            aircraft.landing_count = 0
+            self._event("preventive_completed", f"{aircraft.tail_number} preventive maintenance completed")
+
+    def _activity_by_id(self, activity_id: str) -> dict[str, Any]:
+        return next((item for item in self.activities if str(item.get("id")) == str(activity_id)), {})
+
+    def _mission_by_id(self, mission_id: str | None) -> MissionState | None:
+        if mission_id is None:
+            return None
+        return next((item for item in self.missions if item.mission_id == mission_id), None)
+
+    def _component_by_id(self, component_id: str | None) -> dict[str, Any] | None:
+        if component_id is None:
+            return None
+        return next((item for item in self.components if str(item.get("id")) == str(component_id)), None)
 
     def _mean_recovery_time(self) -> float:
         completed = [
@@ -906,6 +1147,12 @@ class AircraftSupportV1Model:
             "y": item.y,
             "current_mission_id": item.current_mission_id,
             "failed_lru": item.failed_component_id or "",
+            "flight_hours": item.flight_hours,
+            "takeoff_count": item.takeoff_count,
+            "landing_count": item.landing_count,
+            "postflight_required": item.postflight_required,
+            "preventive_due": item.preventive_due,
+            "in_flight_failure": item.in_flight_failure,
         }
 
     def _mission_payload(self, item: MissionState) -> dict[str, Any]:
@@ -957,7 +1204,11 @@ class AircraftSupportV1Model:
                         "name": spare_type,
                         "quantity": quantity,
                         "consumed": self.spare_consumed_total,
-                        "pending_quantity": 0,
+                        "pending_quantity": sum(
+                            shipment.quantity
+                            for shipment in self.transport_shipments
+                            if shipment.destination_node_id == node["id"] and shipment.spare_type == spare_type
+                        ),
                         "reorder_point": 1,
                     }
                 )

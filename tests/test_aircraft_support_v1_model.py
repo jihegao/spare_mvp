@@ -37,6 +37,21 @@ def _minimal_inputs() -> dict:
                     "resource_id": "deck",
                     "jobs": [{"activityCode": "rp-1", "durationMinutes": 20, "workName": "repair"}],
                 },
+                {
+                    "id": "postflight",
+                    "name": "postflight",
+                    "activity_type": "postflight",
+                    "resource_id": "deck",
+                    "jobs": [{"activityCode": "po-1", "durationMinutes": 5, "workName": "postflight"}],
+                },
+                {
+                    "id": "preventive",
+                    "name": "preventive",
+                    "activity_type": "preventive",
+                    "resource_id": "deck",
+                    "calendarDayInterval": 1,
+                    "jobs": [{"activityCode": "pm-1", "durationMinutes": 5, "workName": "preventive"}],
+                },
             ]
         },
         "mission_profile": {
@@ -56,6 +71,106 @@ def _minimal_inputs() -> dict:
 
 
 class AircraftSupportV1ModelTest(unittest.TestCase):
+    def test_real_aircraft_assets_are_loaded_before_generated_tail_numbers(self) -> None:
+        inputs = _minimal_inputs()
+        inputs["aircraft"]["assets"] = [
+            {"tailNumber": "J15-101", "aircraftType": "J-15", "model": "J-15A", "initialState": "available"},
+            {"tail_number": "J15-102", "aircraft_type": "J-15", "model": "J-15B", "initial_state": "maintenance"},
+        ]
+
+        model = AircraftSupportV1Model(inputs)
+
+        self.assertEqual([aircraft.tail_number for aircraft in model.aircraft], ["J15-101", "J15-102"])
+        self.assertEqual(model.aircraft[0].aircraft_type, "J-15")
+        self.assertEqual(model.aircraft[1].state, "maintenance")
+
+    def test_mission_return_creates_postflight_before_aircraft_becomes_available(self) -> None:
+        model = AircraftSupportV1Model(_minimal_inputs())
+        mission = model.missions[0]
+        mission.planned_start = 0
+        mission.preparation_start = 0
+        mission.duration_minutes = 10
+        mission.required_aircraft = 1
+        aircraft = model.aircraft[0]
+        aircraft.prepared_mission_ids.add(mission.mission_id)
+
+        model._dispatch_due_missions()
+        model.minute = 10
+        model._process_mission_returns()
+
+        self.assertEqual(aircraft.state, "maintenance")
+        self.assertTrue(aircraft.postflight_required)
+        self.assertEqual(model.completed_sorties, 0)
+        self.assertEqual(model.snapshot()["postflight_backlog"], 1)
+        self.assertTrue(any(job.kind == "postflight" and job.tail_number == aircraft.tail_number for job in model.jobs))
+
+    def test_transport_minutes_create_in_transit_inventory_before_arrival(self) -> None:
+        inputs = _minimal_inputs()
+        model = AircraftSupportV1Model(inputs)
+        model.nodes["stock"] = {
+            "id": "stock",
+            "name": "Stock",
+            "personnel_capacity": 1,
+            "equipment_capacity": 1,
+            "personnel_in_use": 0,
+            "equipment_in_use": 0,
+            "inventory": {"module": 10},
+            "transport_policies": [],
+            "work_count": 0,
+        }
+        deck = model.nodes["deck"]
+        deck["inventory"]["module"] = 0
+        deck["transport_policies"] = [{"from": "stock", "to": "deck", "spare_type": "module", "capacity": 2, "transport_minutes": 10}]
+
+        model._try_transport_replenishment(deck, "module", 1)
+
+        self.assertEqual(deck["inventory"]["module"], 0)
+        self.assertEqual(model.nodes["stock"]["inventory"]["module"], 9)
+        self.assertEqual(model.snapshot()["transport_in_transit_count"], 1)
+        model.minute = 9
+        model._process_transport_arrivals()
+        self.assertEqual(deck["inventory"]["module"], 0)
+        model.minute = 10
+        model._process_transport_arrivals()
+        self.assertEqual(deck["inventory"]["module"], 1)
+
+    def test_preventive_jobs_are_generated_from_calendar_trigger(self) -> None:
+        model = AircraftSupportV1Model(_minimal_inputs())
+        model.minute = 1440
+
+        model._generate_preventive_jobs()
+
+        self.assertEqual(model.aircraft[0].state, "maintenance")
+        self.assertTrue(model.aircraft[0].preventive_due)
+        self.assertEqual(model.snapshot()["preventive_backlog"], 2)
+        self.assertEqual(len([job for job in model.jobs if job.kind == "preventive"]), 2)
+
+    def test_in_flight_failure_counts_failed_sortie_and_requires_repair_after_return(self) -> None:
+        inputs = _minimal_inputs()
+        inputs["equipment_tree"]["components"] = [
+            {"id": "engine", "parent_id": "aircraft", "name": "Engine", "failure_rate": 1000, "spare_type": "engine"}
+        ]
+        model = AircraftSupportV1Model(inputs)
+        mission = model.missions[0]
+        mission.planned_start = 0
+        mission.preparation_start = 0
+        mission.duration_minutes = 5
+        mission.required_aircraft = 1
+        aircraft = model.aircraft[0]
+        aircraft.prepared_mission_ids.add(mission.mission_id)
+        model._dispatch_due_missions()
+
+        model.minute = 1
+        model._evaluate_failures()
+        model.minute = 5
+        model._process_mission_returns()
+
+        metrics = model.snapshot()
+        self.assertEqual(metrics["failed_sorties"], 1)
+        self.assertEqual(metrics["in_flight_failures"], 1)
+        self.assertEqual(aircraft.state, "maintenance")
+        self.assertTrue(any(job.kind == "repair" for job in model.jobs))
+
     def test_dispatch_requires_every_aircraft_to_complete_preflight(self) -> None:
         model = AircraftSupportV1Model(_minimal_inputs())
         mission = model.missions[0]

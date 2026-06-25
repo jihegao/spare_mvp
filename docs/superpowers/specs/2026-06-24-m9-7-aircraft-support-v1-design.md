@@ -196,7 +196,7 @@ M9.7 拆成四个 PR 验收，最后一个 PR 才标记 M9.7 完成。
 - M9.6 case package 能通过 canonical `/api/runs` single run 成功执行。
 - 缺 projection、缺 state-series、缺 compiler provenance 或 unsupported 字段族时 fail closed。
 
-当前完成口径：M9.7.2 已落地可合并 single-run core；M9.7.3 已补齐 formal Monte Carlo/projection；M9.7.4 已关闭 coverage hardening。最终行为驱动字段为机队数量/初始可用、任务波次、`components[].failureDistribution`、组件故障率/寿命/RMS/k-out-of-n、`reliabilityBlockDiagram`、保障资源容量、库存、`supportNodes[].transportPolicies`、保障活动 job DAG、周期任务、任务阶段/机场/任务区、Monte Carlo sweep 与 seed；仿真时长优先按周期任务配置天数 × 重复次数推导，`durationHours` 只作为无周期任务时的回退；这些字段进入状态推进、故障判定、任务出动、维修/保障作业、资源约束、备件消耗、指标和状态帧。任务状态帧已保留周期/复合/基本任务属性、实际天、波次、要求机型/数量和实际执行飞机，供 M9.8 平台任务视图按每日甘特表消费；缺字段时不得前端兜底推断。`supportOrganization` 当前批准为 governance_only / 不驱动仿真字段，进入 provenance 而不阻断 M9.6 frozen 案例。
+当前完成口径：M9.7.2 已落地 single-run core；M9.7.3 已补齐 formal Monte Carlo/projection；M9.7.4 已关闭 coverage hardening；后续语义补齐已把业务期望时序落入当前内核。最终行为驱动字段为机队数量/初始可用、`combatUnit.members` 真实机号、任务波次、`components[].failureDistribution`、组件数量/寿命/RMS/k-out-of-n、`reliabilityBlockDiagram`、保障资源容量、库存、`supportNodes[].transportPolicies`、保障活动 job DAG 和活动级资源/时长/备件默认值、周期任务、任务阶段/机场/任务区、Monte Carlo sweep 与 seed；仿真时长优先按周期任务配置天数 × 重复次数推导，`durationHours` 只作为无周期任务时的回退。当前 tick 顺序为运输到达、任务返航、作业进度与完成、故障评估、预防性维修、飞前作业生成、保障作业启动、任务起飞、采样；正常返航后进入 `postflight` 作业，飞行中故障返航后进入 `repair` 作业，预防性维修按日历/飞行小时/起落次数生成 `preventive` 作业。指标和 projection 已使用 `aircraft_support_v1` 专属口径，包含 `failed_sorties`、`in_flight_failures`、`postflight_backlog`、`preventive_backlog`、`transport_in_transit_count`、`mean_transport_delay` 和 `rbd_root_failures`。`supportOrganization` 当前批准为 governance_only / 不驱动仿真字段，进入 provenance 而不阻断 M9.6 frozen 案例。
 
 #### M9.7.3 Monte Carlo/projection
 
@@ -214,7 +214,7 @@ M9.7 拆成四个 PR 验收，最后一个 PR 才标记 M9.7 完成。
 - 所有样本证据进入 `monte_carlo_base`，projection 来源指向 base artifact。
 - 代表样本 metadata 可解释 sample id、参数组合、seed 和选择理由。
 
-当前完成口径：M9.7.3 已落地 `aircraft_support_v1` formal Monte Carlo/projection。`SimulationAdapter.run_monte_carlo_scenario()` 识别 `model_family = "aircraft_support_v1"`，使用 `analysisRequests.largeSample -> MonteCarloRunConfig` 的样本数和 sweep 生成确定性样本点，按 `sample_seed = compiled Scenario seed + sample_index` 固定 seed。`monte_carlo_base` 记录 sampling contract、全部成功样本、失败样本账本、聚合指标和日志摘要；四类 `analysis_projection_*` artifact 的 `source_artifact_id` 指向 base artifact；`visualization_state_series` 由代表样本帧组成并保留 `sample_index`、`sample_step`、seed、sweep 和 run traceability。样本失败会隔离到 `failed_samples`，聚合只使用成功样本；全部样本失败时 fail closed，不写伪聚合结果。
+当前完成口径：M9.7.3 已落地 `aircraft_support_v1` formal Monte Carlo/projection。`SimulationAdapter.run_monte_carlo_scenario()` 识别 `model_family = "aircraft_support_v1"`，使用 `analysisRequests.largeSample -> MonteCarloRunConfig` 的样本数和 sweep 生成确定性样本点，按 `sample_seed = compiled Scenario seed + sample_index` 固定 seed。`monte_carlo_base` 记录 sampling contract、全部成功样本、失败样本账本、聚合指标和日志摘要；四类 `analysis_projection_*` artifact 的 `source_artifact_id` 指向 base artifact；`visualization_state_series` 由代表样本帧组成并保留 `sample_index`、`sample_step`、seed、sweep 和 run traceability。样本失败会隔离到 `failed_samples`，聚合只使用成功样本；全部样本失败时 fail closed，不写伪聚合结果。single run 与 Monte Carlo projection 均使用 `aircraft_support_v1` 专属指标口径，不复用 `aviation_support` 的隐含 downtime 因子。
 
 #### M9.7.4 coverage hardening
 
