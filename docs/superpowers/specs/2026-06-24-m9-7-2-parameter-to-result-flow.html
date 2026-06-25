@@ -1115,6 +1115,76 @@
       </div>
     </section>
 
+    <section class="panel" aria-labelledby="next-model-work-title">
+      <div class="panel-body">
+        <h2 id="next-model-work-title">下一轮模型修改依据</h2>
+        <p class="small">
+          本节记录当前报告与 <code>src/spare_mvp_abm/aircraft_support_v1/model.py</code> 的差异审计结果。
+          下一轮模型修改应优先补齐这些未消费输入和推演时序差异；若产品决定不补齐，也需要反向修订本报告的流程图和字段说明。
+        </p>
+        <div class="audit-grid" aria-label="下一轮模型修改依据">
+          <article class="audit-card">
+            <strong>已进入 payload 但未驱动模型的输入</strong>
+            <ul>
+              <li><code>project_identity</code>、<code>schema_version</code>、<code>mission_profile.profile_id/name/duration_minutes</code> 只用于追溯或展示；模型时长实际读 <code>time.duration_minutes</code>。</li>
+              <li><code>equipment_tree.root_component_id</code>、<code>components[].quantity</code>、<code>aircraft_model</code>、<code>product_type</code>、<code>mtbf_hours</code> 当前不参与整机可用性、冗余数量或故障抽样。</li>
+              <li><code>support_network.nodes[].node_type</code>、<code>support_level</code>、<code>lateral_support_nodes</code>、<code>policy</code>、<code>organization_strategy</code> 未进入资源分配逻辑。</li>
+              <li><code>support_activities[].equipment_id</code>、活动级 <code>duration_minutes</code>、<code>required_personnel</code>、<code>required_devices</code> 不是作业执行依据；当前主要读取 <code>jobs[]</code> 内字段。</li>
+              <li><code>transport_strategies</code>、<code>organization_strategies</code>、<code>supportOrganization.tree</code> 是治理/方案信息，不驱动仿真。</li>
+              <li><code>monte_carlo.sample_count/sweep</code>、<code>time.requested_steps</code> 不被 single run 内核读取，只能作为 Monte Carlo 或运行层配置依据。</li>
+            </ul>
+          </article>
+
+          <article class="audit-card">
+            <strong>业务字段部分消费但语义不足</strong>
+            <ul>
+              <li><code>supportNodes[].transportPolicies</code> 只用于即时搬运库存；<code>transport_minutes</code> 没有形成在途延迟或排队占用。</li>
+              <li><code>supportActivities[].jobs[].durationProfile</code>、维修分布、飞行后检查规则没有采样；当前作业时长直接用 <code>durationMinutes</code>。</li>
+              <li>预防性维修的 <code>calendarDayInterval</code>、<code>runHourInterval</code>、<code>takeoffLandingInterval</code> 等条件未检查，也不会生成 <code>preventive</code> 作业。</li>
+              <li><code>reliabilityBlockDiagram</code> 被转为额外故障组件，但没有独立 RBD gate 评估，也没有按 <code>root_component_id</code> 汇总整机失效。</li>
+              <li>任务成员不是按导入数据里的真实机号、编队成员或 <code>combatUnit.members</code> 分配；当前使用生成的 <code>AC-001...</code> 队列。</li>
+            </ul>
+          </article>
+
+          <article class="audit-card">
+            <strong>与“2. 仿真推演过程”的执行顺序差异</strong>
+            <ul>
+              <li>当前每个 tick 的真实顺序是 <code>_process_arrivals_and_completions()</code> -> <code>_start_waiting_jobs()</code> -> <code>_evaluate_failures()</code> -> <code>_create_due_preflight_jobs()</code> -> <code>_dispatch_due_missions()</code> -> 采样。</li>
+              <li>图中把“任务准备窗口到时”放在首位；实际返航和上轮作业完成先处理，故障抽样也早于新飞前保障作业创建。</li>
+              <li>图中“保障执行 -> 完成保障”像同一连续阶段；实际完成发生在后续 tick 开头，启动等待作业发生在完成处理之后。</li>
+              <li>图中“任务结束返航”跟随起飞之后；实际返航检查在每个 tick 最前面统一处理。</li>
+              <li>图中“故障转维修”像任务后分支；实际只对 <code>state == "available"</code> 的飞机抽样，飞行中飞机不会发生飞行中故障。</li>
+              <li>图中“飞行后保障 / 预防性维修”是目标业务流程；当前内核没有独立 <code>postflight</code> 或 <code>preventive</code> 触发方法。</li>
+            </ul>
+          </article>
+        </div>
+
+        <div class="two-col" style="margin-top: 14px;">
+          <article class="card model">
+            <h3>建议优先补齐的模型能力</h3>
+            <ul>
+              <li>增加返航后状态：<code>flying</code> -> <code>postflight</code> 作业 -> 可用 / 维修 / 预防性维修。</li>
+              <li>增加预防性维修触发器：按日历、飞行小时、起落次数和浮动比例生成 <code>preventive</code> 作业。</li>
+              <li>将 <code>supportActivities</code> 活动级资源、时长和维修分布作为 job 缺省值或采样来源。</li>
+              <li>将运输策略改为带 <code>transport_minutes</code> 的在途库存和延迟事件，而不是同 tick 即时补给。</li>
+              <li>引入真实飞机成员和 tail number 映射，避免只按生成序号分配任务成员。</li>
+              <li>补齐 RBD/root/quantity 语义，用组件数量和结构关系影响整机可用性。</li>
+            </ul>
+          </article>
+
+          <article class="card block">
+            <h3>修改前需要先定稿的选择</h3>
+            <ul>
+              <li>如果目标是让模型匹配“2. 仿真推演过程”，需要调整 <code>run()</code> 的 tick 顺序和状态机。</li>
+              <li>如果保留当前 tick 顺序，则应把“2. 仿真推演过程”改写为当前真实顺序，避免把业务期望误读成实现。</li>
+              <li><code>supportOrganization.tree</code> 是否继续 governance-only 需要保持明确；除非有新语义，不应重新设为 fail closed。</li>
+              <li>Monte Carlo 配置和 single run 行为边界需要分开处理，避免把 <code>monte_carlo</code> 字段误算为 single run 未完成项。</li>
+            </ul>
+          </article>
+        </div>
+      </div>
+    </section>
+
     <section class="panel" aria-labelledby="layers-title">
       <div class="panel-body">
         <h2 id="layers-title">分层职责</h2>
