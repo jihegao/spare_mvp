@@ -161,7 +161,9 @@
         "ready_rate": { "type": "number" },
         "failed_count": { "type": "number" },
         "repairing_count": { "type": "number" },
-        "sortie_count": { "type": "number" }
+        "sortie_count": { "type": "number" },
+        "postflight_count": { "type": "number" },
+        "preventive_count": { "type": "number" }
       }
     },
     "mission_state": {
@@ -183,7 +185,9 @@
       "properties": {
         "spare_fill_rate": { "type": "number" },
         "spare_utilization": { "type": "number" },
-        "repair_backlog": { "type": "number" }
+        "repair_backlog": { "type": "number" },
+        "postflight_backlog": { "type": "number" },
+        "preventive_backlog": { "type": "number" }
       }
     },
     "event_summary": {
