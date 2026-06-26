@@ -161,6 +161,32 @@ test("frontend API client exposes M7 run artifact management routes", async () =
   assert.equal(downloadRequest.responseType, "blob");
 });
 
+test("frontend API client lists and deletes experiment plans through project routes", async () => {
+  const calls = [];
+  const client = createBackendApiClient({
+    transport: async (request) => {
+      calls.push(request);
+      if (request.path === "/projects/project-ui/experiment-plans" && request.method === "GET") {
+        return { experiment_plans: [{ experiment_plan_id: "plan-ui", run_count: 1 }] };
+      }
+      if (request.path === "/projects/project-ui/experiment-plans/plan-ui" && request.method === "DELETE") {
+        return { experiment_plan_id: "plan-ui", deleted: true, soft_deleted_run_ids: ["run-ui"] };
+      }
+      throw new Error(`unexpected request ${request.method} ${request.path}`);
+    }
+  });
+
+  const plans = await client.listExperimentPlans("project-ui");
+  const deleted = await client.deleteExperimentPlan("project-ui", "plan-ui");
+
+  assert.equal(plans.experiment_plans[0].experiment_plan_id, "plan-ui");
+  assert.deepEqual(deleted.soft_deleted_run_ids, ["run-ui"]);
+  assert.deepEqual(calls.map((call) => `${call.method} ${call.path}`), [
+    "GET /projects/project-ui/experiment-plans",
+    "DELETE /projects/project-ui/experiment-plans/plan-ui"
+  ]);
+});
+
 test("frontend API client posts M9.3 run control actions to canonical route", async () => {
   const calls = [];
   const client = createBackendApiClient({

@@ -661,6 +661,132 @@ class ContractRepository:
     def get_experiment_plan(self, experiment_plan_id: str) -> dict[str, Any]:
         return self._get_payload("experiment_plans", "experiment_plan_id", experiment_plan_id)
 
+    def list_experiment_plans(self, project_id: str) -> list[dict[str, Any]]:
+        cursor = self.connection.execute(
+            """
+            SELECT payload_json, created_at, updated_at
+            FROM experiment_plans
+            WHERE project_id = ?
+            ORDER BY COALESCE(updated_at, created_at) DESC, experiment_plan_id DESC
+            """,
+            (project_id,),
+        )
+        plans: list[dict[str, Any]] = []
+        for payload_json, created_at, updated_at in cursor.fetchall():
+            plan = json.loads(payload_json)
+            runs = self.list_runs(
+                include_deleted=True,
+                project_id=project_id,
+                experiment_plan_id=plan["experiment_plan_id"],
+                limit=200,
+            )
+            plan["created_at"] = created_at
+            plan["updated_at"] = updated_at
+            plan["runs"] = runs
+            plan["run_count"] = self._count_runs_for_experiment_plan(project_id, plan["experiment_plan_id"])
+            plans.append(plan)
+        return plans
+
+    def delete_experiment_plan_with_runs(
+        self,
+        project_id: str,
+        experiment_plan_id: str,
+        *,
+        actor_user_id: str,
+    ) -> dict[str, Any]:
+        self.connection.execute("BEGIN")
+        try:
+            cursor = self.connection.execute(
+                """
+                SELECT payload_json
+                FROM experiment_plans
+                WHERE project_id = ?
+                  AND experiment_plan_id = ?
+                """,
+                (project_id, experiment_plan_id),
+            )
+            row = cursor.fetchone()
+            if row is None:
+                raise KeyError(experiment_plan_id)
+            plan = json.loads(row[0])
+            run_cursor = self.connection.execute(
+                """
+                SELECT run_id, payload_json
+                FROM simulation_runs
+                WHERE project_id = ?
+                  AND experiment_plan_id = ?
+                ORDER BY run_id ASC
+                """,
+                (project_id, experiment_plan_id),
+            )
+            soft_deleted_run_ids: list[str] = []
+            for run_id, run_payload_json in run_cursor.fetchall():
+                run = json.loads(run_payload_json)
+                run["lifecycle_status"] = "deleted"
+                run["deleted_at"] = run.get("deleted_at") or self._utc_now()
+                run["deleted_by"] = actor_user_id
+                self.connection.execute(
+                    """
+                    UPDATE simulation_runs
+                    SET lifecycle_status = ?,
+                        deleted_at = ?,
+                        payload_json = ?,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE run_id = ?
+                    """,
+                    (
+                        run["lifecycle_status"],
+                        run.get("deleted_at"),
+                        _to_json(run),
+                        run_id,
+                    ),
+                )
+                self._insert_audit_event_no_commit(
+                    actor_user_id=actor_user_id,
+                    action="runs.delete",
+                    resource_type="run",
+                    resource_id=run_id,
+                    outcome="allowed",
+                    details={
+                        "lifecycle_status": "deleted",
+                        "source": "experiment_plan_delete",
+                        "experiment_plan_id": experiment_plan_id,
+                    },
+                )
+                soft_deleted_run_ids.append(run_id)
+            self.connection.execute(
+                """
+                DELETE FROM experiment_plans
+                WHERE project_id = ?
+                  AND experiment_plan_id = ?
+                """,
+                (project_id, experiment_plan_id),
+            )
+            self._insert_audit_event_no_commit(
+                actor_user_id=actor_user_id,
+                action="experiment_plans.delete",
+                resource_type="experiment_plan",
+                resource_id=experiment_plan_id,
+                outcome="allowed",
+                details={
+                    "project_id": project_id,
+                    "soft_deleted_run_ids": soft_deleted_run_ids,
+                },
+            )
+        except Exception:
+            if self.connection.in_transaction:
+                self.connection.rollback()
+            raise
+        else:
+            self.connection.commit()
+        return {
+            "project_id": project_id,
+            "experiment_plan_id": experiment_plan_id,
+            "deleted": True,
+            "soft_deleted_run_ids": soft_deleted_run_ids,
+            "config": plan.get("config", {}),
+        }
+
     def get_modeling_snapshot(self, snapshot_id: str) -> dict[str, Any]:
         return self._get_payload("modeling_snapshots", "snapshot_id", snapshot_id)
 
@@ -677,6 +803,18 @@ class ContractRepository:
         )
         row = cursor.fetchone()
         return None if row is None else json.loads(row[0])
+
+    def _count_runs_for_experiment_plan(self, project_id: str, experiment_plan_id: str) -> int:
+        cursor = self.connection.execute(
+            """
+            SELECT COUNT(*)
+            FROM simulation_runs
+            WHERE project_id = ?
+              AND experiment_plan_id = ?
+            """,
+            (project_id, experiment_plan_id),
+        )
+        return int(cursor.fetchone()[0])
 
     def next_modeling_snapshot_id(self, project_id: str) -> str:
         prefix = f"modeling-snapshot-{project_id}-"

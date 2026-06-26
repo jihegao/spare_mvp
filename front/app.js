@@ -99,6 +99,12 @@ const backendControlLabels = {
   step: "后端单步",
   reset: "后端重置"
 };
+const AIRCRAFT_TREND_SERIES = [
+  { key: "available", label: "可用飞机", description: "不处于维修状态", stateClass: "available" },
+  { key: "mission", label: "任务中", description: "正在执行任务", stateClass: "flying" },
+  { key: "maintenance", label: "维修中", description: "修复或预防性维修", stateClass: "maintenance" },
+  { key: "support", label: "使用保障中", description: "飞行前或航后保障", stateClass: "support" }
+];
 const SYSTEM_PROJECT_DATA_ROWS = [
   { key: "projectId", label: "项目标识", value: "landbase-day-night", owner: "项目主数据" },
   { key: "baseProfile", label: "机场保障资源", value: "主基地 / 前进保障点 / 后方保障点", owner: "项目独有数据" },
@@ -264,6 +270,11 @@ let modelingImportSaved = false;
 let savedProject = null;
 let modelingSnapshot = null;
 let experimentPlan = null;
+let backendExperimentPlans = [];
+let backendExperimentPlansProjectId = "";
+let backendExperimentPlansLoaded = false;
+let backendExperimentPlansLoadInFlight = false;
+let experimentPlanListStatus = "仿真实验方案列表尚未加载";
 let projectDraftSaveStatus = "未保存";
 let projectDraftHydrateStatus = "";
 let projectDraftAutosaveTimer = null;
@@ -1230,6 +1241,18 @@ function bindEvents() {
         if (selectedAnalysisTaskId === taskId) selectedAnalysisTaskId = "";
       }
       render();
+      return;
+    }
+
+    const experimentPlanRefreshButton = event.target.closest("[data-experiment-plan-refresh]");
+    if (experimentPlanRefreshButton) {
+      refreshExperimentPlanList(currentBackendProjectId(), { force: true }).finally(() => render());
+      return;
+    }
+
+    const experimentPlanDeleteButton = event.target.closest("[data-experiment-plan-delete]");
+    if (experimentPlanDeleteButton) {
+      deleteExperimentPlanFromList(experimentPlanDeleteButton.dataset.experimentPlanDelete || "").finally(() => render());
       return;
     }
 
@@ -5016,52 +5039,76 @@ function supportActivityTreeNode(node, selectedName) {
 }
 
 function renderExperimentPlanList(page) {
+  ensureExperimentPlanListLoaded();
   const editFeatureId = page.module === "任务可靠度评估模块"
     ? "mission-reliability-experiment-plan-edit"
     : "spare-planning-experiment-plan-edit";
   const visualFeatureId = getVisualSimulationFeatureId(page.module);
   const monteCarloFeatureId = getMonteCarloExperimentEditFeatureId(page.module);
-  const plans = scenario.experiment?.name ? [{
+  const backendRows = backendExperimentPlans.map((plan) => experimentPlanRowFromBackend(plan, page));
+  const fallbackRows = scenario.experiment?.name ? [{
+    experiment_plan_id: "",
     name: scenario.experiment.name,
     module: page.module,
     scenarioId: scenario.scenarioId,
     steps: scenario.experiment.steps,
     samples: scenario.experiment.samples,
-    status: experimentRunStatus
+    status: experimentRunStatus,
+    run_count: 0
   }] : [];
+  const plans = backendRows.length ? backendRows : fallbackRows;
   return `
     <div class="section-head">
       <h3>方案列表</h3>
-      <span>仿真实验方案管理</span>
+      <span>${htmlEscape(experimentPlanListStatus)}</span>
     </div>
     <div class="toolbar-row">
       <button type="button" class="btn-primary" data-experiment-plan-add disabled>新增</button>
-      <button type="button" class="btn-danger" data-experiment-plan-delete disabled>批量删除</button>
+      <button type="button" data-experiment-plan-refresh>刷新</button>
     </div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>方案名称</th><th>所属模块</th><th>场景</th><th>步数</th><th>样本</th><th>状态</th><th>操作</th></tr></thead>
+        <thead><tr><th>方案名称</th><th>所属模块</th><th>场景</th><th>步数</th><th>样本</th><th>关联运行</th><th>状态</th><th>操作</th></tr></thead>
         <tbody>
           ${plans.length ? plans.map((plan) => `
             <tr>
               <td>${htmlEscape(plan.name)}</td>
               <td>${htmlEscape(plan.module)}</td>
               <td>${htmlEscape(plan.scenarioId)}</td>
-              <td>${plan.steps}</td>
-              <td>${plan.samples}</td>
+              <td>${htmlEscape(plan.steps)}</td>
+              <td>${htmlEscape(plan.samples)}</td>
+              <td>${htmlEscape(plan.run_count ?? 0)}</td>
               <td><span class="badge">${htmlEscape(plan.status)}</span></td>
               <td class="table-action-cell">
                 <button type="button" class="inline-action" data-feature-id="${editFeatureId}" data-experiment-plan-edit>编辑</button>
                 <button type="button" class="inline-action" data-feature-id="${visualFeatureId}">启动可视化推演</button>
                 <button type="button" class="inline-action" data-feature-id="${monteCarloFeatureId}">创建蒙特卡洛实验</button>
-                <button type="button" class="btn-danger" data-experiment-plan-delete disabled>删除</button>
+                <button type="button" class="btn-danger" data-experiment-plan-delete="${htmlEscape(plan.experiment_plan_id)}">删除</button>
               </td>
             </tr>
-          `).join("") : `<tr><td colspan="7">${importedDataEmptyState("仿真实验方案")}</td></tr>`}
+          `).join("") : `<tr><td colspan="8">${importedDataEmptyState("仿真实验方案")}</td></tr>`}
         </tbody>
       </table>
     </div>
   `;
+}
+
+function experimentPlanRowFromBackend(plan, page) {
+  const config = plan?.config || {};
+  const projectJson = config.projectJson || {};
+  const latestRun = Array.isArray(plan.runs) && plan.runs.length ? plan.runs[0] : null;
+  return {
+    experiment_plan_id: plan.experiment_plan_id || "",
+    name: config.name || projectJson.experiment?.name || plan.experiment_plan_id || "未命名方案",
+    module: page.module,
+    scenarioId: projectJson.scenarioId || projectJson.scenario_id || scenario.scenarioId,
+    steps: config.steps ?? projectJson.experiment?.steps ?? "-",
+    samples: config.samples ?? projectJson.experiment?.samples ?? "-",
+    run_count: plan.run_count ?? (Array.isArray(plan.runs) ? plan.runs.length : 0),
+    status: latestRun?.lifecycle_status === "deleted"
+      ? "已清理"
+      : (latestRun?.status || plan.status || "draft")
+  };
 }
 
 function renderExperimentPlanEditor(page) {
@@ -5159,6 +5206,11 @@ async function handleEnterWorkbench(projectId) {
   selectedRoute = "workbench";
   selectedFeatureId = DEFAULT_FEATURE_ID;
   isProjectMenuOpen = false;
+  backendExperimentPlans = [];
+  backendExperimentPlansProjectId = "";
+  backendExperimentPlansLoaded = false;
+  backendExperimentPlansLoadInFlight = false;
+  experimentPlanListStatus = "仿真实验方案列表尚未加载";
   location.hash = `feature=${DEFAULT_FEATURE_ID}`;
   projectDraftHydrateStatus = "正在读取 Project draft";
   await hydrateCurrentProjectDraftFromApi();
@@ -5328,7 +5380,80 @@ async function flushPendingProjectDraftAutosave() {
 }
 
 function currentBackendProjectId() {
+  if (currentProject?.projectBackendId) return currentProject.projectBackendId;
   return currentProject?.id ? `project-${currentProject.id}` : `project-${scenario.scenarioId}`;
+}
+
+function ensureExperimentPlanListLoaded(projectId = currentBackendProjectId()) {
+  if (backendExperimentPlansProjectId !== projectId) {
+    backendExperimentPlans = [];
+    backendExperimentPlansLoaded = false;
+    backendExperimentPlansLoadInFlight = false;
+    backendExperimentPlansProjectId = projectId;
+    experimentPlanListStatus = "仿真实验方案列表尚未加载";
+  }
+  if (backendExperimentPlansLoaded || backendExperimentPlansLoadInFlight) return;
+  backendExperimentPlansLoadInFlight = true;
+  refreshExperimentPlanList(projectId)
+    .finally(() => {
+      render();
+    });
+}
+
+async function refreshExperimentPlanList(projectId = currentBackendProjectId(), { force = false } = {}) {
+  if (!projectId) {
+    backendExperimentPlans = [];
+    backendExperimentPlansLoaded = true;
+    backendExperimentPlansLoadInFlight = false;
+    experimentPlanListStatus = "尚未选择项目，无法读取后端方案列表";
+    return;
+  }
+  if (force) {
+    backendExperimentPlansLoaded = false;
+  }
+  backendExperimentPlansProjectId = projectId;
+  backendExperimentPlansLoadInFlight = true;
+  try {
+    const response = await backendApi.listExperimentPlans(projectId);
+    backendExperimentPlans = Array.isArray(response?.experiment_plans) ? response.experiment_plans : [];
+    backendExperimentPlansLoaded = true;
+    experimentPlanListStatus = `已加载后端方案 ${backendExperimentPlans.length} 条`;
+  } catch (err) {
+    backendExperimentPlans = [];
+    backendExperimentPlansLoaded = true;
+    experimentPlanListStatus = `后端方案列表读取失败：${formatBackendError(err)}`;
+  } finally {
+    backendExperimentPlansLoadInFlight = false;
+  }
+}
+
+async function deleteExperimentPlanFromList(experimentPlanId) {
+  if (!experimentPlanId) {
+    experimentPlanListStatus = "本地草稿方案尚未保存为后端 ExperimentPlan，无法清理关联回放";
+    return;
+  }
+  if (!canManageM7Lifecycle()) {
+    experimentPlanListStatus = `当前角色 ${currentUser.role || "未知"} 无权删除仿真实验方案`;
+    return;
+  }
+  const projectId = currentBackendProjectId();
+  try {
+    const deleted = await backendApi.deleteExperimentPlan(projectId, experimentPlanId);
+    const deletedRunIds = new Set(deleted?.soft_deleted_run_ids || []);
+    if (deletedRunIds.has(visualizationSelectedRunId)) {
+      visualizationSelectedRunId = "";
+      clearVisualizationStateSeries("", "关联方案已删除，已清空当前回放选择");
+    }
+    if (deletedRunIds.has(backendRun?.run_id)) {
+      backendRun = { ...(backendRun || {}), lifecycle_status: "deleted" };
+    }
+    experimentPlanListStatus = `已删除方案 ${experimentPlanId}，软删除关联 run ${deletedRunIds.size} 条`;
+    await refreshExperimentPlanList(projectId, { force: true });
+    await refreshVisualizationRunList("");
+    await refreshM7RunArtifactPanel();
+  } catch (err) {
+    experimentPlanListStatus = `删除方案失败：${formatBackendError(err)}`;
+  }
 }
 
 function isCurrentModelingPage() {
@@ -5406,6 +5531,7 @@ async function saveCurrentExperimentPlanThroughApi() {
       modelFamily: FORMAL_AIRCRAFT_SUPPORT_MODEL_FAMILY
     });
     experimentPlan = await backendApi.createExperimentPlan(savedProject.project_id, runIntent.experimentPlanConfig);
+    await refreshExperimentPlanList(savedProject.project_id, { force: true });
     backendApiStatus = "实验方案分支已保存";
   } catch (err) {
     savedProject = null;
@@ -5491,6 +5617,7 @@ async function startSingleRunThroughApi() {
       project_json: submitted.intent.planProjectJson
     };
     rememberLastBackendRun(backendRun.run_id, savedProject.project_id, submitted.intent.planProjectJson);
+    await refreshExperimentPlanList(savedProject.project_id, { force: true });
     await refreshRunResultThroughApi(backendRun.run_id);
     experimentRunStatus = backendRun.status === "succeeded" ? "完成" : backendRun.status;
     backendApiStatus = isRunComplete(backendRun)
@@ -5563,6 +5690,7 @@ async function startMonteCarloRunThroughApi({ monteCarloExperimentId = selectedM
       project_json: submitted.intent.planProjectJson
     };
     rememberLastBackendRun(backendRun.run_id, savedProject.project_id, submitted.intent.planProjectJson);
+    await refreshExperimentPlanList(savedProject.project_id, { force: true });
     if (backendRun.status === "queued" || backendRun.status === "running") {
       backendRunResult = null;
       backendArtifactManifest = { artifacts: [] };
@@ -6804,47 +6932,113 @@ function buildAvailabilityTrend(state, series, currentFrameIndex = null) {
   const replayedFrames = frames.slice(0, currentIndex + 1);
   const trend = replayedFrames.map((frame, index) => {
     const aircraft = Array.isArray(frame.aircraft) ? frame.aircraft : [];
-    const available = Number(frame.snapshot?.available_aircraft ?? aircraft.filter((item) => ["available", "mission_ready"].includes(String(item.state))).length);
+    const counts = aircraft.length
+      ? countAircraftTrendStates(aircraft)
+      : countAircraftTrendSnapshot(frame);
     const total = Number(frame.snapshot?.aircraft_count ?? aircraft.length ?? state.aircraft.length);
     return {
       label: `T+${Number(frame.simulation_time ?? frame.step ?? index).toFixed(0)}`,
-      available,
-      total
+      total,
+      ...counts
     };
   });
   if (trend.length > 0) return trend;
   const total = state.aircraft.length || 1;
-  const current = state.aircraft.filter((aircraft) => ["available", "mission_ready"].includes(aircraft.state)).length;
+  const counts = countAircraftTrendStates(state.aircraft);
   return [{
     label: "当前",
-    available: current,
-    total
+    total,
+    ...counts
   }];
+}
+
+function countAircraftTrendStates(aircraftList = []) {
+  return aircraftList.reduce((counts, aircraft) => {
+    const state = String(aircraft?.state || "available").toLowerCase();
+    if (!isMaintenanceAircraftState(state)) counts.available += 1;
+    if (isMissionAircraftState(state)) counts.mission += 1;
+    if (isMaintenanceAircraftState(state)) counts.maintenance += 1;
+    if (isSupportAircraftState(state)) counts.support += 1;
+    return counts;
+  }, { available: 0, mission: 0, maintenance: 0, support: 0 });
+}
+
+function countAircraftTrendSnapshot(frame = {}) {
+  const aircraftState = frame.aircraft_state && typeof frame.aircraft_state === "object" ? frame.aircraft_state : {};
+  const resourceState = frame.resource_state && typeof frame.resource_state === "object" ? frame.resource_state : {};
+  const snapshot = frame.snapshot && typeof frame.snapshot === "object" ? frame.snapshot : {};
+  return {
+    available: Number(snapshot.available_aircraft ?? aircraftState.available_aircraft ?? 0),
+    mission: Number(aircraftState.flying_count ?? aircraftState.sortie_count ?? aircraftState.flying_aircraft ?? 0),
+    maintenance: Number(aircraftState.repairing_count ?? aircraftState.maintenance_aircraft ?? 0),
+    support: Number(aircraftState.postflight_count ?? aircraftState.pre_support_aircraft ?? 0)
+      + Number(resourceState.postflight_backlog ?? 0)
+  };
+}
+
+function isMaintenanceAircraftState(state) {
+  return ["maintenance", "repair", "repairing", "preventive_maintenance", "corrective_maintenance"].includes(state)
+    || state.includes("maintenance")
+    || state.includes("repair");
+}
+
+function isMissionAircraftState(state) {
+  return ["flying", "mission", "mission_active", "launched", "executing"].includes(state);
+}
+
+function isSupportAircraftState(state) {
+  return ["pre_support", "post_support", "support", "operations_support", "using_support", "flightline_support"].includes(state)
+    || (state.includes("support") && !isMaintenanceAircraftState(state));
 }
 
 function renderAvailabilityCurve(trend) {
   const points = trend.slice(-12);
-  const maxTotal = Math.max(1, ...points.map((point) => Number(point.total || 0)), ...points.map((point) => Number(point.available || 0)));
+  const maxTotal = Math.max(
+    1,
+    ...points.map((point) => Number(point.total || 0)),
+    ...points.flatMap((point) => AIRCRAFT_TREND_SERIES.map((series) => Number(point[series.key] || 0)))
+  );
   const width = 320;
   const height = 92;
   const chartPoints = points.map((point, index) => {
     const x = points.length === 1 ? width / 2 : (index / (points.length - 1)) * width;
-    const y = height - (Number(point.available || 0) / maxTotal) * (height - 16) - 8;
-    return { ...point, x, y };
+    return {
+      ...point,
+      x,
+      seriesY: Object.fromEntries(AIRCRAFT_TREND_SERIES.map((series) => [
+        series.key,
+        height - (Number(point[series.key] || 0) / maxTotal) * (height - 16) - 8
+      ]))
+    };
   });
-  const polyline = chartPoints.map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(" ");
   return `
     <div class="availability-chart">
       <div class="section-head">
-        <h3>可用飞机数量趋势</h3>
+        <h3>飞机数量趋势</h3>
         <span>${points.length} 个采样点</span>
       </div>
-      <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="可用飞机数量随时间变化曲线">
-        <polyline points="${polyline}"></polyline>
-        ${chartPoints.map((point, index) => `<circle class="${index === chartPoints.length - 1 ? "current-point" : ""}" cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="${index === chartPoints.length - 1 ? "4" : "3"}"><title>${htmlEscape(point.label)} / ${htmlEscape(point.available)} 架</title></circle>`).join("")}
+      <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="可用飞机数量趋势、任务中、维修中、使用保障中飞机数量随时间变化曲线">
+        ${AIRCRAFT_TREND_SERIES.map((series) => renderAvailabilityTrendLine(chartPoints, series)).join("")}
       </svg>
-      <div class="availability-axis"><span>${htmlEscape(points[0]?.label || "-")}</span><strong>${htmlEscape(points.at(-1)?.available ?? 0)} / ${maxTotal} 架</strong><span>${htmlEscape(points.at(-1)?.label || "-")}</span></div>
+      <div class="availability-trend-legend">
+        ${AIRCRAFT_TREND_SERIES.map((series) => `<span><i class="${htmlEscape(series.stateClass)}"></i>${htmlEscape(series.label)}<small>${htmlEscape(series.description)}</small></span>`).join("")}
+      </div>
+      <div class="availability-axis"><span>${htmlEscape(points[0]?.label || "-")}</span><strong>${AIRCRAFT_TREND_SERIES.map((series) => `${series.label} ${points.at(-1)?.[series.key] ?? 0}`).join(" / ")} / 峰值 ${maxTotal} 架</strong><span>${htmlEscape(points.at(-1)?.label || "-")}</span></div>
     </div>
+  `;
+}
+
+function renderAvailabilityTrendLine(chartPoints, series) {
+  const polyline = chartPoints
+    .map((point) => `${point.x.toFixed(1)},${Number(point.seriesY?.[series.key] || 0).toFixed(1)}`)
+    .join(" ");
+  return `
+    <polyline class="trend-line ${htmlEscape(series.key)}" points="${polyline}"></polyline>
+    ${chartPoints.map((point, index) => `
+      <circle class="${htmlEscape(series.key)} ${index === chartPoints.length - 1 ? "current-point" : ""}" cx="${point.x.toFixed(1)}" cy="${Number(point.seriesY?.[series.key] || 0).toFixed(1)}" r="${index === chartPoints.length - 1 ? "4" : "3"}">
+        <title>${htmlEscape(point.label)} / ${htmlEscape(series.label)} ${htmlEscape(point[series.key] ?? 0)} 架</title>
+      </circle>
+    `).join("")}
   `;
 }
 

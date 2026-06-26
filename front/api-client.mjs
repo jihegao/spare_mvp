@@ -76,6 +76,18 @@ export function createBackendApiClient({ baseUrl = DEFAULT_API_BASE, transport, 
         body: { config }
       });
     },
+    listExperimentPlans(projectId) {
+      return request({
+        method: "GET",
+        path: `/projects/${encodeURIComponent(projectId)}/experiment-plans`
+      });
+    },
+    deleteExperimentPlan(projectId, experimentPlanId) {
+      return request({
+        method: "DELETE",
+        path: `/projects/${encodeURIComponent(projectId)}/experiment-plans/${encodeURIComponent(experimentPlanId)}`
+      });
+    },
     submitRun(runRequest) {
       return request({
         method: "POST",

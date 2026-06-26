@@ -1877,12 +1877,28 @@ tr.selected-table-row {
   background-size: 100% 24px;
 }
 
-.availability-chart polyline {
+.availability-chart .trend-line {
   fill: none;
   stroke: var(--primary);
   stroke-width: 3;
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+
+.availability-chart .trend-line.available {
+  stroke: #0f766e;
+}
+
+.availability-chart .trend-line.mission {
+  stroke: #2563eb;
+}
+
+.availability-chart .trend-line.maintenance {
+  stroke: #dc2626;
+}
+
+.availability-chart .trend-line.support {
+  stroke: #a16207;
 }
 
 .availability-chart circle {
@@ -1891,10 +1907,85 @@ tr.selected-table-row {
   stroke-width: 2;
 }
 
+.availability-chart circle.available {
+  stroke: #0f766e;
+}
+
+.availability-chart circle.mission {
+  stroke: #2563eb;
+}
+
+.availability-chart circle.maintenance {
+  stroke: #dc2626;
+}
+
+.availability-chart circle.support {
+  stroke: #a16207;
+}
+
 .availability-chart circle.current-point {
-  fill: var(--primary);
+  fill: currentColor;
   stroke: #fff;
   stroke-width: 2;
+}
+
+.availability-chart circle.available.current-point {
+  color: #0f766e;
+}
+
+.availability-chart circle.mission.current-point {
+  color: #2563eb;
+}
+
+.availability-chart circle.maintenance.current-point {
+  color: #dc2626;
+}
+
+.availability-chart circle.support.current-point {
+  color: #a16207;
+}
+
+.availability-trend-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.availability-trend-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 132px;
+}
+
+.availability-trend-legend small {
+  color: #64748b;
+}
+
+.availability-trend-legend i {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--primary);
+}
+
+.availability-trend-legend i.available {
+  background: #0f766e;
+}
+
+.availability-trend-legend i.flying {
+  background: #2563eb;
+}
+
+.availability-trend-legend i.maintenance {
+  background: #dc2626;
+}
+
+.availability-trend-legend i.support {
+  background: #a16207;
 }
 
 .availability-axis {
