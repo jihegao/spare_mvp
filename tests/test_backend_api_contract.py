@@ -2188,7 +2188,7 @@ class BackendApiContractTest(unittest.TestCase):
         )
         self.assertEqual(
             issues_by_code["published_reference_protection"]["page"],
-            "装备组成建模",
+            "装备系统建模",
         )
 
     def test_modeling_import_api_rejects_invalid_save_and_referenced_publish(self) -> None:

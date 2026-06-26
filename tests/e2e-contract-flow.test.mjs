@@ -4,8 +4,10 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 const repoRoot = new URL("..", import.meta.url);
+const repoRootPath = fileURLToPath(repoRoot);
 
 test("contract-first smoke flow saves modeling state and fetches run outputs", async () => {
   const flow = runPythonContractFlow();
@@ -164,8 +166,8 @@ finally:
     connection.close()
 `;
 
-  const result = spawnSync("python3", ["-c", script], {
-    cwd: repoRoot,
+  const result = spawnSync(resolvePythonExecutable(), ["-c", script], {
+    cwd: repoRootPath,
     encoding: "utf8"
   });
   assert.equal(result.error, undefined, result.error?.message);
@@ -176,6 +178,26 @@ finally:
   } catch (error) {
     assert.fail(`Python flow did not emit parseable JSON: ${error.message}\n${processFailureMessage(result)}`);
   }
+}
+
+function resolvePythonExecutable() {
+  if (process.env.PYTHON) {
+    return process.env.PYTHON;
+  }
+  const candidates = process.platform === "win32"
+    ? [
+        path.join(repoRootPath, ".abm-mesa-test-env", "Scripts", "python.exe"),
+        path.join(repoRootPath, ".abm-mesa-test-env", "bin", "python.exe")
+      ]
+    : [
+        path.join(repoRootPath, ".abm-mesa-test-env", "bin", "python")
+      ];
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  return process.platform === "win32" ? "python" : "python3";
 }
 
 function processFailureMessage(result) {

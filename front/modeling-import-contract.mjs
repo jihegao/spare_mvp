@@ -1,6 +1,6 @@
 export const MODELING_IMPORT_PAGE_MAP = {
   missionProfiles: "任务剖面参数",
-  equipmentAssets: "装备组成建模",
+  equipmentAssets: "装备系统建模",
   supportResources: "保障资源建模",
   supportActivities: "保障活动建模"
 };

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-import { buildExperimentPlanConfig, createBackendApiClient } from "../front/api-client.mjs";
+import { buildBackendProjectJson, buildExperimentPlanConfig, createBackendApiClient } from "../front/api-client.mjs";
 
 test("frontend API client exposes stable PR-F save run and result methods", async () => {
   const calls = [];
@@ -408,6 +408,47 @@ test("frontend API client createProjectFromModelingImport uses protected modelin
   assert.equal(calls[0].body, undefined);
 });
 
+test("buildBackendProjectJson syncs composite task inherited basic mission fields", () => {
+  const scenario = {
+    scenarioId: "sync-basic-fields",
+    basicMission: {
+      name: "Basic Alpha",
+      equipmentType: "J-35",
+      taskDurationMinutes: 95,
+      equipmentQuantity: 4,
+      minRequiredSorties: 3,
+      preparationMinutes: 25
+    },
+    missionProfile: {
+      compositeTasks: [{
+        id: "composite-alpha",
+        taskItems: [{
+          basicTaskName: "Basic Alpha",
+          equipmentType: "stale",
+          taskDurationMinutes: 10,
+          equipmentQuantity: 1,
+          minRequiredSystems: 1,
+          preparationMinutes: 5,
+          groupName: "Editable group",
+          firstWaveTime: "08:30"
+        }]
+      }]
+    }
+  };
+
+  const projectJson = buildBackendProjectJson(scenario, { id: "sync" });
+  const syncedItem = projectJson.missionProfile.compositeTasks[0].taskItems[0];
+
+  assert.equal(syncedItem.equipmentType, "J-35");
+  assert.equal(syncedItem.taskDurationMinutes, 95);
+  assert.equal(syncedItem.equipmentQuantity, 4);
+  assert.equal(syncedItem.minRequiredSystems, 3);
+  assert.equal(syncedItem.preparationMinutes, 25);
+  assert.equal(syncedItem.groupName, "Editable group");
+  assert.equal(syncedItem.firstWaveTime, "08:30");
+  assert.equal(scenario.missionProfile.compositeTasks[0].taskItems[0].equipmentType, "stale");
+});
+
 test("experiment plan config preserves Monte Carlo branch sweep settings", () => {
   const projectJson = {
     experiment: {
@@ -797,7 +838,7 @@ test("project switch flushes pending project draft autosave before changing proj
   assert.match(flushSource, /await saveCurrentProjectDraftThroughApi\(\)/);
 });
 
-test("frontend app wires modeling import workbench through explicit backend actions", async () => {
+test("frontend app wires local modeling import actions through explicit backend actions", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const featureCatalogSource = await readFile(new URL("../front/feature-catalog.mjs", import.meta.url), "utf8");
   const changeHandlerSource = appSource.slice(
@@ -805,10 +846,10 @@ test("frontend app wires modeling import workbench through explicit backend acti
     appSource.indexOf('app.addEventListener("input"')
   );
 
-  assert.match(featureCatalogSource, /建模数据导入/);
-  assert.match(featureCatalogSource, /modeling-import-workbench/);
+  assert.doesNotMatch(featureCatalogSource, /建模数据导入/);
+  assert.doesNotMatch(featureCatalogSource, /modeling-import-workbench/);
   assert.match(appSource, /from "\.\/modeling-import-workbench\.mjs"/);
-  assert.match(appSource, /renderModelingImportWorkbench/);
+  assert.match(appSource, /renderLocalModelingImportActions/);
   assert.match(appSource, /data-modeling-import-action/);
   assert.match(appSource, /load-invalid-fixture/);
   assert.match(appSource, /backendApi\.validateModelingImport/);
