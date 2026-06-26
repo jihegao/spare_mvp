@@ -290,6 +290,8 @@ test("page revision project and system management controls stay wired", async ()
   assert.match(projectListSource, /data-project-add/);
   assert.match(projectListSource, /data-project-edit/);
   assert.match(projectListSource, /data-project-delete/);
+  assert.match(projectListSource, /data-project-import/);
+  assert.match(projectListSource, /data-project-export/);
   assert.match(projectListSource, /data-system-management-entry/);
   assert.doesNotMatch(projectListSource, /进入当前项目/);
 
@@ -327,6 +329,8 @@ test("page revision project and system management controls stay wired", async ()
   assert.match(eventSource, /const systemDataSelectAll = event\.target\.closest\("\[data-system-data-select-all\]"\)/);
   assert.match(eventSource, /const systemDataSelect = event\.target\.closest\("\[data-system-data-select\]"\)/);
   assert.match(eventSource, /const modelingGranularityDetailButton = event\.target\.closest\("\[data-modeling-granularity-detail\]"\)/);
+  assert.match(eventSource, /const importProjectButton = event\.target\.closest\("\[data-project-import\]"\)/);
+  assert.match(eventSource, /const exportProjectButton = event\.target\.closest\("\[data-project-export\]"\)/);
 
   assert.match(userSource, /data-system-user-select-all/);
   assert.match(userSource, /data-system-user-select/);
@@ -428,6 +432,50 @@ test("project list edit action opens a usable inline editor", async () => {
   assert.match(inputSource, /const projectEditInput = event\.target\.closest\("\[data-project-edit-field\]"\)/);
   assert.match(editSource, /projectEditorDraft\s*=/);
   assert.doesNotMatch(editSource, /name: project\.name\.endsWith\("（编辑）"\)/);
+});
+
+test("project list imports and exports project JSON while keeping existing card actions", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const styleSource = await readFile(new URL("../front/styles.css", import.meta.url), "utf8");
+  const projectListSource = appSource.slice(
+    appSource.indexOf("function renderProjectListPage"),
+    appSource.indexOf("function renderNavigation")
+  );
+  const clickSource = appSource.slice(
+    appSource.indexOf("function bindEvents"),
+    appSource.indexOf("app.addEventListener(\"change\"")
+  );
+  const ioSource = appSource.slice(
+    appSource.indexOf("function openProjectJsonImportPicker"),
+    appSource.indexOf("async function flushPendingProjectDraftAutosave")
+  );
+  const hydrateSource = appSource.slice(
+    appSource.indexOf("async function hydrateCurrentProjectDraftFromApi"),
+    appSource.indexOf("async function saveCurrentProjectDraftThroughApi")
+  );
+
+  for (const selector of [
+    "data-enter-workbench",
+    "data-project-edit",
+    "data-project-delete",
+    "data-project-import",
+    "data-project-export"
+  ]) {
+    assert.match(projectListSource, new RegExp(selector));
+  }
+  assert.match(clickSource, /openProjectJsonImportPicker\(importProjectButton\.dataset\.projectImport\)/);
+  assert.match(clickSource, /exportProjectJson\(exportProjectButton\.dataset\.projectExport\)/);
+  assert.match(ioSource, /input\.accept = "application\/json,\.json"/);
+  assert.match(ioSource, /input\.dataset\.projectImportFile/);
+  assert.match(ioSource, /JSON\.parse\(await file\.text\(\)\)/);
+  assert.match(ioSource, /validateImportedProjectJson\(projectJson\)/);
+  assert.match(ioSource, /persistManualProjectJsonDraft\(project\.id, normalizedProjectJson\)/);
+  assert.match(ioSource, /resolveProjectJsonForExport\(project\)/);
+  assert.match(ioSource, /downloadProjectJsonExport\(filename, projectJson\)/);
+  assert.match(ioSource, /new Blob\(\[JSON\.stringify\(projectJson, null, 2\)\]/);
+  assert.match(ioSource, /buildBackendProjectJson\(projectJson, project\)/);
+  assert.match(hydrateSource, /readManualProjectJsonDraft\(currentProject\?\.id\)/);
+  assert.match(styleSource, /\.project-card-foot \.compact-actions[\s\S]*flex-wrap: wrap/);
 });
 
 test("results analysis pages are rendered as four dedicated ship-front aligned dashboards", async () => {

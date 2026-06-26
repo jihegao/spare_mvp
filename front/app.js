@@ -62,6 +62,7 @@ const FORMAL_AIRCRAFT_SUPPORT_MODEL_FAMILY = "aircraft_support_v1";
 const LAST_BACKEND_RUN_STORAGE_KEY = "spare-mvp:lastBackendRun";
 const AUTH_SESSION_STORAGE_KEY = "spare-mvp:m4Session";
 const MANUAL_PROJECT_DRAFTS_STORAGE_KEY = "spare-mvp:manualProjects:v1";
+const MANUAL_PROJECT_JSON_STORAGE_KEY = "spare-mvp:manualProjectJson:v1";
 const PROJECT_DRAFT_AUTOSAVE_DELAY_MS = 800;
 let backendAuthToken = readStoredBackendAuthToken();
 const backendApi = createBackendApiClient({ baseUrl: "/api", getAuthToken: () => backendAuthToken });
@@ -236,6 +237,41 @@ function persistManualDraftProjects() {
       sourceKind: PROJECT_SOURCE.manual_draft
     }));
   localStorage.setItem(MANUAL_PROJECT_DRAFTS_STORAGE_KEY, JSON.stringify(manualDrafts));
+}
+
+function readManualProjectJsonDraftsFromStorage() {
+  try {
+    const raw = localStorage.getItem(MANUAL_PROJECT_JSON_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return Object.fromEntries(
+      Object.entries(parsed)
+        .filter(([projectId, projectJson]) => projectId && projectJson && typeof projectJson === "object" && !Array.isArray(projectJson))
+        .map(([projectId, projectJson]) => [projectId, cloneScenario(projectJson)])
+    );
+  } catch {
+    return {};
+  }
+}
+
+function readManualProjectJsonDraft(projectId) {
+  const drafts = readManualProjectJsonDraftsFromStorage();
+  return drafts[projectId] ? cloneScenario(drafts[projectId]) : null;
+}
+
+function persistManualProjectJsonDraft(projectId, projectJson) {
+  if (!projectId || !projectJson || typeof projectJson !== "object") return;
+  const drafts = readManualProjectJsonDraftsFromStorage();
+  drafts[projectId] = cloneScenario(projectJson);
+  localStorage.setItem(MANUAL_PROJECT_JSON_STORAGE_KEY, JSON.stringify(drafts));
+}
+
+function deleteManualProjectJsonDraft(projectId) {
+  const drafts = readManualProjectJsonDraftsFromStorage();
+  if (!(projectId in drafts)) return;
+  delete drafts[projectId];
+  localStorage.setItem(MANUAL_PROJECT_JSON_STORAGE_KEY, JSON.stringify(drafts));
 }
 
 
@@ -914,6 +950,18 @@ function bindEvents() {
     const createFromImportButton = event.target.closest("[data-project-create-from-import]");
     if (createFromImportButton) {
       createSampleProjectFromPublishedImport(currentPublishedModelingImportId()).finally(() => render());
+      return;
+    }
+
+    const importProjectButton = event.target.closest("[data-project-import]");
+    if (importProjectButton) {
+      openProjectJsonImportPicker(importProjectButton.dataset.projectImport);
+      return;
+    }
+
+    const exportProjectButton = event.target.closest("[data-project-export]");
+    if (exportProjectButton) {
+      exportProjectJson(exportProjectButton.dataset.projectExport).finally(() => render());
       return;
     }
 
@@ -1710,6 +1758,8 @@ function renderProjectListPage() {
                 <button type="button" data-enter-workbench data-project-id="${project.id}">进入</button>
                 <button type="button" data-project-edit="${project.id}">编辑</button>
                 <button type="button" class="btn-danger" data-project-delete="${project.id}">删除</button>
+                <button type="button" data-project-import="${htmlEscape(project.id)}">导入</button>
+                <button type="button" data-project-export="${htmlEscape(project.id)}">导出</button>
               </span>
             </div>
           </article>
@@ -5278,6 +5328,7 @@ async function deleteDemoProject(projectId) {
   if (removed.sourceKind === PROJECT_SOURCE.manual_draft && !removed.projectBackendId) {
     demoProjects = demoProjects.filter((project) => project.id !== projectId);
     if (currentProject?.id === projectId) currentProject = demoProjects[0] || null;
+    deleteManualProjectJsonDraft(projectId);
     persistManualDraftProjects();
     projectListStatus = `已删除本地草稿：${removed.name}`;
     return;
@@ -5287,11 +5338,179 @@ async function deleteDemoProject(projectId) {
     await backendApi.deleteProject(backendProjectId);
     demoProjects = demoProjects.filter((project) => project.id !== projectId);
     if (currentProject?.id === projectId) currentProject = demoProjects[0] || null;
+    deleteManualProjectJsonDraft(projectId);
     persistManualDraftProjects();
     projectListStatus = `已从后端删除项目：${removed.name}`;
   } catch (err) {
     projectListStatus = `后端删除项目失败：${err && err.message ? err.message : "Backend API 不可用"}`;
   }
+}
+
+function openProjectJsonImportPicker(projectId) {
+  if (typeof document === "undefined" || !document.createElement || !document.body) {
+    projectListStatus = "当前环境不支持选择项目 JSON 文件";
+    return;
+  }
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = "application/json,.json";
+  input.dataset.projectImportFile = projectId || "";
+  input.style.display = "none";
+  input.addEventListener("change", () => {
+    importProjectJsonFile(projectId, input.files?.[0])
+      .finally(() => {
+        input.remove();
+        render();
+      });
+  });
+  document.body.append(input);
+  input.click();
+}
+
+async function importProjectJsonFile(projectId, file) {
+  if (!file) {
+    projectListStatus = "未选择项目 JSON 文件";
+    return;
+  }
+  let projectJson;
+  try {
+    projectJson = JSON.parse(await file.text());
+  } catch (err) {
+    projectListStatus = `项目 JSON 导入失败：${err && err.message ? err.message : "文件不是合法 JSON"}`;
+    return;
+  }
+  const missingFields = validateImportedProjectJson(projectJson);
+  if (missingFields.length) {
+    projectListStatus = `项目 JSON 导入失败：缺少 ${missingFields.join(", ")}`;
+    return;
+  }
+  const fallbackProject = demoProjects.find((project) => project.id === projectId) || null;
+  const project = projectCardFromProjectJson(projectJson, fallbackProject);
+  const normalizedProjectJson = buildBackendProjectJson(projectJson, project);
+  demoProjects = mergeProjectsById([project, ...demoProjects.filter((item) => item.id !== project.id)]);
+  currentProject = project;
+  scenario = cloneScenario(normalizedProjectJson);
+  experimentPlanDraft = cloneScenario(normalizedProjectJson);
+  experimentPlanBranchActive = false;
+  persistManualDraftProjects();
+  persistManualProjectJsonDraft(project.id, normalizedProjectJson);
+  updatePreviewResultsThroughApiClient();
+  projectDraftSaveStatus = "本地项目 JSON 已导入";
+  projectDraftHydrateStatus = "项目来自本地 JSON 文件";
+  projectListStatus = `已导入项目 JSON：${project.name}`;
+}
+
+function validateImportedProjectJson(projectJson) {
+  if (!projectJson || typeof projectJson !== "object" || Array.isArray(projectJson)) {
+    return ["Project JSON root object"];
+  }
+  return [
+    "scenarioId",
+    "activeModule",
+    "airports",
+    "missionAreas",
+    "experiment",
+    "missionProfile",
+    "basicMission",
+    "missionPhases",
+    "combatUnit",
+    "equipment",
+    "components",
+    "supportNodes",
+    "supportActivities",
+    "reliabilityBlockDiagram",
+    "monteCarlo"
+  ].filter((field) => !(field in projectJson));
+}
+
+function projectCardFromProjectJson(projectJson, fallbackProject = null) {
+  const rawId = firstNonEmptyString(projectJson.project_id, projectJson.scenarioId, fallbackProject?.id, `imported-project-${Date.now()}`);
+  const id = normalizeProjectCardId(rawId);
+  return {
+    id,
+    name: firstNonEmptyString(projectJson.experiment?.name, projectJson.projectInfo?.name, projectJson.missionProfile?.name, fallbackProject?.name, "导入项目"),
+    baseCode: firstNonEmptyString(projectJson.projectInfo?.baseCode, projectJson.project_id, projectJson.scenarioId, fallbackProject?.baseCode, "JSON"),
+    updatedAt: new Date().toISOString().slice(0, 10),
+    summary: firstNonEmptyString(projectJson.projectInfo?.summary, projectJson.summary, fallbackProject?.summary, `由项目 JSON 导入：${projectJson.scenarioId || projectJson.project_id || "未命名"}`),
+    sourceKind: PROJECT_SOURCE.manual_draft,
+    sourceImportId: ""
+  };
+}
+
+async function exportProjectJson(projectId) {
+  const project = demoProjects.find((item) => item.id === projectId);
+  if (!project) {
+    projectListStatus = "项目不存在";
+    return;
+  }
+  const projectJson = await resolveProjectJsonForExport(project);
+  if (!projectJson) return;
+  const filename = projectJsonExportFilename(project);
+  downloadProjectJsonExport(filename, projectJson);
+  projectListStatus = `已导出项目 JSON：${filename}`;
+}
+
+async function resolveProjectJsonForExport(project) {
+  if (currentProject?.id === project.id) {
+    return buildBackendProjectJson(scenario, project);
+  }
+  const localProjectJson = readManualProjectJsonDraft(project.id);
+  if (localProjectJson) {
+    return buildBackendProjectJson(localProjectJson, project);
+  }
+  const backendProjectId = project.projectBackendId || (project.sourceKind === PROJECT_SOURCE.imported_sample ? `project-${project.id}` : "");
+  if (backendProjectId) {
+    try {
+      return await backendApi.getProject(backendProjectId);
+    } catch (err) {
+      projectListStatus = `项目 JSON 导出失败：${err && err.message ? err.message : "Backend API 不可用"}`;
+      return null;
+    }
+  }
+  return buildBackendProjectJson(defaultScenario, project);
+}
+
+function projectJsonExportFilename(project) {
+  const now = new Date();
+  const date = [
+    now.getFullYear(),
+    String(now.getMonth() + 1).padStart(2, "0"),
+    String(now.getDate()).padStart(2, "0")
+  ].join("-");
+  return `spare-mvp-project-${normalizeProjectFileSegment(project.id)}-${date}.json`;
+}
+
+function downloadProjectJsonExport(filename, projectJson) {
+  if (typeof document === "undefined" || typeof Blob === "undefined" || typeof URL === "undefined" || !URL.createObjectURL) return;
+  const blob = new Blob([JSON.stringify(projectJson, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.style.display = "none";
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
+function firstNonEmptyString(...values) {
+  for (const value of values) {
+    const text = String(value ?? "").trim();
+    if (text) return text;
+  }
+  return "";
+}
+
+function normalizeProjectCardId(value) {
+  return normalizeProjectFileSegment(String(value || "imported-project").replace(/^project-/, "")) || `imported-project-${Date.now()}`;
+}
+
+function normalizeProjectFileSegment(value) {
+  return String(value || "project")
+    .replace(/[^a-zA-Z0-9_-]/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "") || "project";
 }
 
 async function flushPendingProjectDraftAutosave() {
@@ -5350,6 +5569,16 @@ async function hydrateCurrentProjectDraftFromApi() {
     projectDraftHydrateStatus = "已从 Project draft 恢复";
     backendApiStatus = "Project draft 已恢复";
   } catch (err) {
+    const localProjectJson = readManualProjectJsonDraft(currentProject?.id);
+    if (localProjectJson) {
+      scenario = cloneScenario(localProjectJson);
+      experimentPlanDraft = cloneScenario(localProjectJson);
+      updatePreviewResultsThroughApiClient();
+      projectDraftSaveStatus = "本地项目 JSON 已加载";
+      projectDraftHydrateStatus = "已从本地 Project JSON 草稿恢复";
+      backendApiStatus = "Project draft 使用本地 JSON";
+      return;
+    }
     projectDraftHydrateStatus = `未读取到 Project draft：${err && err.message ? err.message : "Backend API 不可用"}`;
   }
 }

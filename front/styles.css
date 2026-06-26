@@ -189,7 +189,13 @@ h4 {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 12px;
+}
+
+.project-card-foot .compact-actions {
+  justify-content: flex-end;
+  flex-wrap: wrap;
 }
 
 .topbar {
