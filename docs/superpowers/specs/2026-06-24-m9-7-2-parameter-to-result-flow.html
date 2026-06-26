@@ -633,16 +633,56 @@
       这张图把平台参数如何进入 <code>aircraft_support_v1</code> single run、如何通过 canonical
       <code>/api/runs</code> 执行、以及正式结果如何落到 run/result/artifact 链路画成一个可审阅路径。
       它描述 M9.7.2 目标路径；M9.7.3 Monte Carlo/projection 和 M9.7.4 coverage hardening 已分别独立收口。
+      2026-06-26 已同步当前入口合同：正式和测试入口只保留 <code>aircraft_support_v1</code>。
     </p>
     <div class="status-row" aria-label="阶段边界">
       <span class="status"><strong>M9.7.1</strong> 已合并: schema/compiler gate</span>
       <span class="status"><strong>M9.7.2</strong> 本图目标: single run core</span>
       <span class="status"><strong>M9.7.3</strong> 已收口: Monte Carlo/projection</span>
       <span class="status"><strong>M9.7.4</strong> 已收口: coverage hardening</span>
+      <span class="status"><strong>2026-06-26</strong> 已同步: legacy formal entrypoints retired</span>
     </div>
   </header>
 
   <main>
+    <section class="panel" aria-labelledby="entry-contract-title">
+      <div class="panel-body">
+        <h2 id="entry-contract-title">当前入口合同同步</h2>
+        <p class="small">
+          本节同步 2026-06-26 的正式入口收束结果。该页面仍保留 M9.7.2 参数到结果路径的细节，
+          但当前可面向用户和测试的正式入口已经统一到 <code>aircraft_support_v1</code>。
+        </p>
+        <div class="audit-grid" aria-label="当前入口合同">
+          <article class="audit-card">
+            <strong>保留的正式入口</strong>
+            <ul>
+              <li><code>POST /api/runs</code> 未传 <code>model_family</code> 时默认补 <code>aircraft_support_v1</code>，并写入 <code>formal_run=true</code>。</li>
+              <li><code>BackendApi.start_simulation_run()</code>、前端 <code>startSimulationRun()</code> / <code>startMonteCarloRun()</code> 默认只指向 <code>aircraft_support_v1</code>。</li>
+              <li>建模导入 <code>compile-scenario</code> 和 <code>BackendApi.compile_modeling_import_scenario()</code> 默认只编译 <code>aircraft_support_v1</code> Scenario。</li>
+            </ul>
+          </article>
+
+          <article class="audit-card">
+            <strong>已退役的正式模型族</strong>
+            <ul>
+              <li><code>smoke</code> 和 <code>aviation_support</code> 不再是正式 run shortcut、HTTP canonical run 或建模导入 compile 入口。</li>
+              <li>正式入口显式传入旧模型族时返回 <code>retired_model_family</code>。</li>
+              <li>错误详情必须包含 <code>model_family</code>、<code>replacement_model_family="aircraft_support_v1"</code> 和 <code>retired_model_families</code>。</li>
+            </ul>
+          </article>
+
+          <article class="audit-card">
+            <strong>仍允许的历史证据路径</strong>
+            <ul>
+              <li><code>src/spare_mvp_contract/adapter.py</code> 可以继续保留 <code>smoke</code> / <code>aviation_support</code> 的低层回归能力。</li>
+              <li>旧模型族可存在于 fixture、adapter 单元测试、历史计划文档和 retired-family 负向测试中。</li>
+              <li>这些低层路径不得重新暴露为前端按钮、正式 API shortcut 或默认 modeling import compile 目标。</li>
+            </ul>
+          </article>
+        </div>
+      </div>
+    </section>
+
     <section class="panel" aria-labelledby="flow-title">
       <div class="panel-body">
         <h2 id="flow-title">主路径图</h2>
@@ -716,15 +756,15 @@
 
           <rect x="506" y="92" width="170" height="112" rx="6" fill="#fff" stroke="#77b8a4"/>
           <text x="520" y="118" class="box-title">POST /api/runs</text>
-          <text x="520" y="142" class="box-text">canonical entry only</text>
-          <text x="520" y="162" class="box-text">formal_run gate</text>
-          <text x="520" y="182" class="box-text">project + plan identity</text>
+          <text x="520" y="142" class="box-text">canonical formal entry</text>
+          <text x="520" y="162" class="box-text">defaults to aircraft v1</text>
+          <text x="520" y="182" class="box-text">formal_run gate</text>
 
           <rect x="506" y="234" width="170" height="128" rx="6" fill="#fff" stroke="#77b8a4"/>
           <text x="520" y="260" class="box-title">RunService</text>
           <text x="520" y="284" class="box-text">submit_run()</text>
-          <text x="520" y="304" class="box-text">next_run_id()</text>
-          <text x="520" y="324" class="box-text">upsert_scenario()</text>
+          <text x="520" y="304" class="box-text">retired_model_family</text>
+          <text x="520" y="324" class="box-text">next_run_id()</text>
           <text x="520" y="344" class="box-text">persist failed compile</text>
 
           <rect x="506" y="392" width="170" height="116" rx="6" fill="#fff" stroke="#77b8a4"/>
@@ -770,7 +810,7 @@
           <text x="982" y="432" class="box-text">run chain</text>
 
           <rect x="968" y="486" width="170" height="54" rx="6" fill="#fff7f6" stroke="#c16666"/>
-          <text x="982" y="512" class="box-title">M9.7.3+ additions</text>
+          <text x="982" y="512" class="box-title">M9.7.3+ outputs</text>
           <text x="982" y="532" class="box-text">MC base + projections</text>
 
           <path class="arrow" d="M 214 138 C 238 138, 248 138, 275 138"/>
@@ -784,7 +824,7 @@
           <path class="soft-arrow" d="M 1053 458 C 1053 470, 1053 476, 1053 486"/>
 
           <rect x="44" y="520" width="632" height="32" rx="6" fill="#b74747"/>
-          <text x="58" y="541" class="badge">Fail closed: invalid references, missing compiler provenance, unsupported field family, missing state-series, non-canonical run path</text>
+          <text x="58" y="541" class="badge">Fail closed: invalid references, missing compiler provenance, retired model family, missing state-series, non-canonical run path</text>
           <path class="soft-arrow" d="M 360 514 C 360 560, 620 580, 1053 540"/>
         </svg>
       </div>
@@ -794,7 +834,7 @@
         <div class="legend-item"><span class="swatch" style="background:#edf8f4"></span>正式运行入口</div>
         <div class="legend-item"><span class="swatch" style="background:#fff4e8"></span>仿真内核</div>
         <div class="legend-item"><span class="swatch" style="background:#eff8f0"></span>正式输出</div>
-        <div class="legend-item"><span class="swatch" style="background:#fff7f6"></span>阻断或后续阶段</div>
+        <div class="legend-item"><span class="swatch" style="background:#fff7f6"></span>阻断或扩展输出</div>
       </div>
     </section>
 
@@ -997,7 +1037,7 @@
           <text x="1006" y="544" class="kernel-text">artifact ids</text>
 
           <rect x="994" y="594" width="142" height="54" rx="6" fill="#fff7f6" stroke="#c16666"/>
-          <text x="1006" y="618" class="kernel-box-title">后续追加</text>
+          <text x="1006" y="618" class="kernel-box-title">扩展输出</text>
           <text x="1006" y="636" class="kernel-text">MC base / projections</text>
 
           <path class="kernel-arrow" d="M184 131 C210 131, 222 131, 250 131"/>
@@ -1058,7 +1098,7 @@
           </article>
 
           <article class="audit-card">
-            <strong>过期或仅历史参考的方法名</strong>
+            <strong>过期或仅历史参考的方法/入口</strong>
             <ul>
               <li><code>buildMissionSchedule()</code>、<code>buildAircraftAgents()</code>、<code>buildComponentStates()</code>、<code>buildSupportDag()</code> 是早期图中概念名，不是当前 Python 方法。</li>
               <li><code>dispatch_phase()</code>、<code>failure_phase()</code>、<code>support_phase()</code>、<code>metrics_phase()</code> 已替换为 <code>run()</code> 内固定方法序列。</li>
@@ -1066,6 +1106,7 @@
               <li><code>evaluateRbd()</code> 当前不是独立方法；RBD 节点通过 <code>_rbd_components()</code> 转成附加故障组件。</li>
               <li><code>supportOrganization.tree</code> 是 governance-only / 不驱动仿真字段，不再作为 fail closed 条件。</li>
               <li><code>postflight</code>、<code>preventive</code> 已是当前 Python 方法序列的一部分；早期图中把它们标为后续语义的说明已过期。</li>
+              <li><code>model_family="smoke"</code> 或 <code>model_family="aviation_support"</code> 的正式 <code>/api/runs</code>、<code>start_simulation_run()</code> 和建模导入 <code>compile-scenario</code> 入口已退役；当前应返回 <code>retired_model_family</code>。</li>
             </ul>
           </article>
         </div>
@@ -1107,6 +1148,17 @@
               <div class="sequence-step"><div><strong>保障执行</strong><span><code>_start_waiting_jobs()</code> 校验人员/设备/备件；必要时 <code>_try_transport_replenishment()</code> 生成在途补给。</span></div></div>
               <div class="sequence-step"><div><strong>任务通知飞机起飞</strong><span><code>_dispatch_due_missions()</code> 查找已准备飞机，置为 <code>flying</code>、累计起飞次数并记录 <code>return_time</code>。</span></div></div>
               <div class="sequence-step"><div><strong>采样</strong><span>到采样点时输出 <code>visualization_frame()</code>，其中包含 postflight/preventive backlog、在途运输和真实机号状态。</span></div></div>
+            </div>
+          </article>
+
+          <article class="sequence" aria-labelledby="entry-sequence-title">
+            <h3 id="entry-sequence-title">3. 正式入口选择与拒绝顺序</h3>
+            <div class="sequence-steps">
+              <div class="sequence-step"><div><strong>HTTP canonical run</strong><span><code>POST /api/runs</code> 复制请求体，缺省 <code>model_family</code> 时补 <code>ACTIVE_FORMAL_MODEL_FAMILY</code>。</span></div></div>
+              <div class="sequence-step"><div><strong>标记正式运行</strong><span>HTTP 层写入 <code>formal_run=true</code>，进入 <code>BackendApi.submit_run()</code> 与 <code>RunService.submit_run()</code>。</span></div></div>
+              <div class="sequence-step"><div><strong>旧模型族先拒绝</strong><span><code>RunService</code> 在编译前检查正式模型族；<code>smoke</code> / <code>aviation_support</code> 返回 <code>retired_model_family</code>，不生成 run/result/artifact。</span></div></div>
+              <div class="sequence-step"><div><strong>建模导入 compile</strong><span><code>compile_modeling_import_scenario()</code> 同样只接受 <code>aircraft_support_v1</code>；旧模型族在读取导入包前即被拒绝。</span></div></div>
+              <div class="sequence-step"><div><strong>低层回归保留</strong><span>未带 <code>formal_run</code> 的低层 <code>submit_run()</code> / adapter 测试可继续覆盖历史基线，但不得作为正式用户入口。</span></div></div>
             </div>
           </article>
         </div>
@@ -1200,6 +1252,7 @@
             <p class="small"><code>SimulationAdapter.compile_scenario_with_gate()</code> 是 Project 到 Scenario 的正式入口。</p>
             <ul>
               <li>输出 <code>AircraftSupportV1Model</code> Scenario envelope。</li>
+              <li>建模导入 <code>compile-scenario</code> 只接受 <code>aircraft_support_v1</code>，旧模型族先返回 <code>retired_model_family</code>。</li>
               <li><code>simulation_inputs</code> 必须符合独立 input schema。</li>
               <li><code>mapping_provenance</code> 记录 consumed、derived、defaulted、governance_only、unsupported。</li>
             </ul>
@@ -1209,7 +1262,8 @@
             <h3>正式运行层</h3>
             <p class="small"><code>RunService.submit_run()</code> 负责身份链、run id、Scenario 持久化和失败编译落库。</p>
             <ul>
-              <li>入口必须是 canonical <code>POST /api/runs</code>。</li>
+              <li>入口必须是 canonical <code>POST /api/runs</code>；HTTP 层缺省补 <code>aircraft_support_v1</code> 并标记 <code>formal_run</code>。</li>
+              <li>正式入口中的 <code>smoke</code> / <code>aviation_support</code> 必须返回 <code>retired_model_family</code>。</li>
               <li>正式 run 需要 imported sample 来源审计通过。</li>
               <li>失败编译返回 failed status envelope，不伪造 result。</li>
             </ul>
@@ -1276,7 +1330,7 @@
         <div class="note">
           M9.7.2 的目标不是让页面在任何输入下都有看似成功的输出，而是在正式输入链路不成立时明确 fail closed。
           缺少 compiler provenance、非法引用、缺少 <code>visualization_state_series</code>、unsupported 字段族仍影响正式运行、
-          或绕过 canonical <code>/api/runs</code> 的路径，都不能显示为正式后端仿真结果。
+          显式传入已退役正式模型族，或绕过 canonical <code>/api/runs</code> 的路径，都不能显示为正式后端仿真结果。
         </div>
       </div>
     </section>
