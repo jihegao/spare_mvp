@@ -12,7 +12,7 @@ from typing import Any
 from src.spare_mvp_backend.errors import BackendApiError
 from src.spare_mvp_backend.modeling_import import modeling_import_to_project, validate_modeling_import_package
 from src.spare_mvp_backend.repository import ContractRepository
-from src.spare_mvp_backend.run_service import RunService, RunServiceError
+from src.spare_mvp_backend.run_service import ACTIVE_FORMAL_MODEL_FAMILY, RETIRED_FORMAL_MODEL_FAMILIES, RunService, RunServiceError
 from src.spare_mvp_contract.adapter import AdapterError, SimulationAdapter
 
 
@@ -241,7 +241,15 @@ class BackendApi:
         )
         return published
 
-    def compile_modeling_import_scenario(self, import_id: str, model_family: str = "smoke") -> dict[str, Any]:
+    def compile_modeling_import_scenario(self, import_id: str, model_family: str = ACTIVE_FORMAL_MODEL_FAMILY) -> dict[str, Any]:
+        if model_family != ACTIVE_FORMAL_MODEL_FAMILY:
+            raise BackendApiError(
+                "retired_model_family",
+                f"{model_family} is retired for modeling import Scenario compilation; use {ACTIVE_FORMAL_MODEL_FAMILY}",
+                model_family=model_family,
+                replacement_model_family=ACTIVE_FORMAL_MODEL_FAMILY,
+                retired_model_families=list(RETIRED_FORMAL_MODEL_FAMILIES),
+            )
         stored = self.repository.get_modeling_import(import_id)
         import_package = stored.get("publishedPackage")
         if import_package is None:
@@ -385,7 +393,7 @@ class BackendApi:
         self,
         project_id: str,
         experiment_plan_id: str,
-        model_family: str = "smoke",
+        model_family: str = ACTIVE_FORMAL_MODEL_FAMILY,
     ) -> dict[str, Any]:
         return self.submit_run(
             {
@@ -393,6 +401,7 @@ class BackendApi:
                 "experiment_plan_id": experiment_plan_id,
                 "model_family": model_family,
                 "run_type": "single",
+                "formal_run": True,
             }
         )
 

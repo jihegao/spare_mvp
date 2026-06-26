@@ -41,7 +41,7 @@ class BackendHttpApiTest(unittest.TestCase):
             {
                 "project_id": saved["project_id"],
                 "experiment_plan_id": plan["experiment_plan_id"],
-                "model_family": "smoke",
+                "model_family": "aircraft_support_v1",
                 "run_type": "single",
             },
         )
@@ -78,7 +78,7 @@ class BackendHttpApiTest(unittest.TestCase):
                     {
                         "project_id": saved["project_id"],
                         "experiment_plan_id": plan["experiment_plan_id"],
-                        "model_family": "smoke",
+                        "model_family": "aircraft_support_v1",
                         "run_type": "single",
                     },
                 )
@@ -124,7 +124,7 @@ class BackendHttpApiTest(unittest.TestCase):
                     {"config": {"name": "canonical runs", "steps": 2}},
                 )
 
-                missing_family = self._json_error(
+                defaulted = self._json(
                     base_url,
                     "POST",
                     "/runs",
@@ -141,7 +141,7 @@ class BackendHttpApiTest(unittest.TestCase):
                     {
                         "project_id": saved["project_id"],
                         "experiment_plan_id": plan["experiment_plan_id"],
-                        "model_family": "smoke",
+                        "model_family": "aircraft_support_v1",
                         "run_type": "single",
                     },
                 )
@@ -150,7 +150,8 @@ class BackendHttpApiTest(unittest.TestCase):
                 artifacts = self._json(base_url, "GET", f"/runs/{submitted['run_id']}/artifacts")
                 chain = self._json(base_url, "GET", f"/runs/{submitted['run_id']}/chain")
 
-                self.assertEqual(missing_family["code"], "bad_run_request")
+                self.assertEqual(defaulted["phase"], "completed")
+                self.assertEqual(defaulted["model_family"], "aircraft_support_v1")
                 self.assertEqual(submitted["phase"], "completed")
                 self.assertEqual(submitted["progress"], 1)
                 self.assertEqual(submitted["experiment_plan_id"], plan["experiment_plan_id"])
@@ -686,7 +687,7 @@ class BackendHttpApiTest(unittest.TestCase):
                     {
                         "project_id": saved["project_id"],
                         "experiment_plan_id": plan["experiment_plan_id"],
-                        "model_family": "smoke",
+                        "model_family": "aircraft_support_v1",
                         "run_type": "single",
                     },
                 )
@@ -739,7 +740,7 @@ class BackendHttpApiTest(unittest.TestCase):
                     {
                         "project_id": saved["project_id"],
                         "experiment_plan_id": plan["experiment_plan_id"],
-                        "model_family": "smoke",
+                        "model_family": "aircraft_support_v1",
                         "run_type": "single",
                     },
                 )
@@ -803,7 +804,7 @@ class BackendHttpApiTest(unittest.TestCase):
                     {
                         "project_id": saved["project_id"],
                         "experiment_plan_id": plan["experiment_plan_id"],
-                        "model_family": "smoke",
+                        "model_family": "aircraft_support_v1",
                         "run_type": "monte_carlo",
                     },
                 )
@@ -870,7 +871,7 @@ class BackendHttpApiTest(unittest.TestCase):
                     {
                         "project_id": saved["project_id"],
                         "experiment_plan_id": plan["experiment_plan_id"],
-                        "model_family": "smoke",
+                        "model_family": "aircraft_support_v1",
                         "run_type": "monte_carlo",
                         "sample_count": 99,
                         "sweep": {"supportCapacities": [9]},
@@ -886,7 +887,7 @@ class BackendHttpApiTest(unittest.TestCase):
                 server.server_close()
                 thread.join(timeout=5)
 
-    def test_http_canonical_runs_execute_formal_aviation_support_monte_carlo_run(self) -> None:
+    def test_http_canonical_runs_reject_retired_formal_model_families(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             server = create_backend_server(
                 ("127.0.0.1", 0),
@@ -900,7 +901,6 @@ class BackendHttpApiTest(unittest.TestCase):
                 base_url = f"http://127.0.0.1:{server.server_address[1]}/api"
                 created = self._create_imported_sample_project(base_url)
                 saved = created["savedProject"]
-                snapshot = created["modelingSnapshot"]
                 plan = self._json(
                     base_url,
                     "POST",
@@ -929,192 +929,25 @@ class BackendHttpApiTest(unittest.TestCase):
                     },
                 )
 
-                submitted = self._json(
-                    base_url,
-                    "POST",
-                    "/runs",
-                    {
-                        "project_id": saved["project_id"],
-                        "experiment_plan_id": plan["experiment_plan_id"],
-                        "model_family": "aviation_support",
-                        "run_type": "monte_carlo",
-                    },
-                )
-                status = self._json(base_url, "GET", f"/runs/{submitted['run_id']}")
-                result = self._json(base_url, "GET", f"/runs/{submitted['run_id']}/result")
-                artifacts = self._json(base_url, "GET", f"/runs/{submitted['run_id']}/artifacts")
-                chain = self._json(base_url, "GET", f"/runs/{submitted['run_id']}/chain")
-                kinds = {artifact["kind"] for artifact in artifacts["artifacts"]}
-                base_artifact = next(artifact for artifact in artifacts["artifacts"] if artifact["kind"] == "monte_carlo_base")
-                state_series = next(
-                    artifact for artifact in artifacts["artifacts"] if artifact["kind"] == "visualization_state_series"
-                )
-                projection_artifacts = [
-                    artifact
-                    for artifact in artifacts["artifacts"]
-                    if artifact["kind"].startswith("analysis_projection_")
-                ]
-                base_payload = json.loads((Path(tmp) / "artifacts" / base_artifact["path"]).read_text(encoding="utf-8"))
-                state_payload = json.loads((Path(tmp) / "artifacts" / state_series["path"]).read_text(encoding="utf-8"))
-                serialized = json.dumps(
-                    {
-                        "submitted": submitted,
-                        "status": status,
-                        "result": result,
-                        "artifacts": artifacts,
-                        "chain": chain,
-                    },
-                    ensure_ascii=False,
-                    sort_keys=True,
-                )
-
-                self.assertEqual(submitted["status"], "succeeded")
-                self.assertEqual(submitted["phase"], "completed")
-                self.assertEqual(submitted["progress"], 1)
-                self.assertEqual(submitted["model_family"], "aviation_support")
-                self.assertEqual(submitted["run_type"], "monte_carlo")
-                self.assertEqual(submitted["modeling_snapshot_id"], snapshot["snapshot_id"])
-                self.assertEqual(status["model_family"], "aviation_support")
-                self.assertEqual(status["run_type"], "monte_carlo")
-                self.assertEqual(status["result_summary_id"], submitted["result_summary_id"])
-                self.assertEqual(status["artifact_manifest_id"], submitted["artifact_manifest_id"])
-                self.assertEqual(result["run_id"], submitted["run_id"])
-                self.assertEqual(result["model_family"], "aviation_support")
-                self.assertEqual(artifacts["artifact_manifest_id"], submitted["artifact_manifest_id"])
-                self.assertEqual(artifacts["run_id"], submitted["run_id"])
-                self.assertEqual(artifacts["scenario_id"], submitted["scenario_id"])
-                self.assertIn("monte_carlo_base", kinds)
-                self.assertIn("visualization_state_series", kinds)
-                self.assertEqual(len(projection_artifacts), 4)
-                self.assertTrue(all(artifact["source_artifact_id"] == base_artifact["artifact_id"] for artifact in projection_artifacts))
-                self.assertEqual(base_payload["model_family"], "aviation_support")
-                self.assertEqual(base_payload["run_id"], submitted["run_id"])
-                self.assertEqual(base_payload["sample_count"], 8)
-                self.assertEqual(base_payload["sampling_contract"]["schema_version"], "aviation-support-monte-carlo-sampling-v0")
-                self.assertEqual(base_payload["sweep"]["failureRates"], [0.05, 0.08])
-                self.assertEqual(base_payload["sweep"]["spareMultipliers"], [1.0, 1.25])
-                self.assertEqual(base_payload["sweep"]["supportCapacities"], [2, 3])
-                self.assertEqual(
-                    {
-                        (
-                            sample["sweep"]["failure_rate"],
-                            sample["sweep"]["spare_multiplier"],
-                            sample["sweep"]["support_capacity"],
+                for model_family, run_type in (("aviation_support", "single"), ("aviation_support", "monte_carlo"), ("smoke", "single")):
+                    with self.subTest(model_family=model_family, run_type=run_type):
+                        error = self._json_error(
+                            base_url,
+                            "POST",
+                            "/runs",
+                            {
+                                "project_id": saved["project_id"],
+                                "experiment_plan_id": plan["experiment_plan_id"],
+                                "model_family": model_family,
+                                "run_type": run_type,
+                                "formal_run": True,
+                            },
                         )
-                        for sample in base_payload["samples"]
-                    },
-                    {
-                        (0.05, 1.0, 2),
-                        (0.05, 1.0, 3),
-                        (0.05, 1.25, 2),
-                        (0.05, 1.25, 3),
-                        (0.08, 1.0, 2),
-                        (0.08, 1.0, 3),
-                        (0.08, 1.25, 2),
-                        (0.08, 1.25, 3),
-                    },
-                )
-                self.assertEqual(state_payload["run_id"], submitted["run_id"])
-                self.assertEqual(state_payload["scenario_id"], submitted["scenario_id"])
-                self.assertEqual(state_payload["model_family"], "aviation_support")
-                self.assertEqual(chain["project_id"], saved["project_id"])
-                self.assertEqual(chain["modeling_snapshot_id"], snapshot["snapshot_id"])
-                self.assertEqual(chain["experiment_plan_id"], plan["experiment_plan_id"])
-                self.assertEqual(chain["scenario_id"], submitted["scenario_id"])
-                self.assertEqual(chain["run_id"], submitted["run_id"])
-                self.assertEqual(chain["result_summary_id"], submitted["result_summary_id"])
-                self.assertEqual(chain["artifact_manifest_id"], submitted["artifact_manifest_id"])
-                self.assertNotIn("unsupported_model_family", serialized)
-                self.assertNotIn("offline-demo-run", serialized)
-            finally:
-                server.shutdown()
-                server.server_close()
-                thread.join(timeout=5)
-
-    def test_http_canonical_runs_execute_formal_aviation_support_single_run(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            server = create_backend_server(
-                ("127.0.0.1", 0),
-                repo_root=REPO_ROOT,
-                database_path=":memory:",
-                output_dir=Path(tmp) / "artifacts",
-            )
-            thread = Thread(target=server.serve_forever, daemon=True)
-            thread.start()
-            try:
-                base_url = f"http://127.0.0.1:{server.server_address[1]}/api"
-                created = self._create_imported_sample_project(base_url)
-                saved = created["savedProject"]
-                snapshot = created["modelingSnapshot"]
-                plan = self._json(
-                    base_url,
-                    "POST",
-                    f"/projects/{saved['project_id']}/experiment-plans",
-                    {"config": {"name": "http formal aviation", "steps": 2, "projectJson": created["project"]}},
-                )
-
-                submitted = self._json(
-                    base_url,
-                    "POST",
-                    "/runs",
-                    {
-                        "project_id": saved["project_id"],
-                        "experiment_plan_id": plan["experiment_plan_id"],
-                        "model_family": "aviation_support",
-                        "run_type": "single",
-                    },
-                )
-
-                self.assertEqual(submitted["status"], "succeeded")
-                self.assertEqual(submitted["phase"], "completed")
-                self.assertEqual(submitted["progress"], 1)
-                self.assertEqual(submitted["model_family"], "aviation_support")
-                self.assertEqual(submitted["run_type"], "single")
-                self.assertEqual(submitted["modeling_snapshot_id"], snapshot["snapshot_id"])
-                status = self._json(base_url, "GET", f"/runs/{submitted['run_id']}")
-                result = self._json(base_url, "GET", f"/runs/{submitted['run_id']}/result")
-                artifacts = self._json(base_url, "GET", f"/runs/{submitted['run_id']}/artifacts")
-                chain = self._json(base_url, "GET", f"/runs/{submitted['run_id']}/chain")
-                kinds = {artifact["kind"] for artifact in artifacts["artifacts"]}
-                state_series = next(
-                    artifact for artifact in artifacts["artifacts"] if artifact["kind"] == "visualization_state_series"
-                )
-                state_payload = json.loads((Path(tmp) / "artifacts" / state_series["path"]).read_text(encoding="utf-8"))
-                serialized = json.dumps(
-                    {
-                        "submitted": submitted,
-                        "status": status,
-                        "result": result,
-                        "artifacts": artifacts,
-                        "chain": chain,
-                    },
-                    ensure_ascii=False,
-                    sort_keys=True,
-                )
-                self.assertEqual(status["model_family"], "aviation_support")
-                self.assertEqual(status["result_summary_id"], submitted["result_summary_id"])
-                self.assertEqual(status["artifact_manifest_id"], submitted["artifact_manifest_id"])
-                self.assertEqual(result["result_id"], submitted["result_summary_id"])
-                self.assertEqual(result["run_id"], submitted["run_id"])
-                self.assertEqual(result["model_family"], "aviation_support")
-                self.assertEqual(artifacts["artifact_manifest_id"], submitted["artifact_manifest_id"])
-                self.assertEqual(artifacts["run_id"], submitted["run_id"])
-                self.assertEqual(artifacts["scenario_id"], submitted["scenario_id"])
-                self.assertIn("result_summary", kinds)
-                self.assertIn("visualization_state_series", kinds)
-                self.assertTrue(any(kind.startswith("analysis_projection_") for kind in kinds))
-                self.assertEqual(chain["project_id"], saved["project_id"])
-                self.assertEqual(chain["modeling_snapshot_id"], snapshot["snapshot_id"])
-                self.assertEqual(chain["experiment_plan_id"], plan["experiment_plan_id"])
-                self.assertEqual(chain["scenario_id"], submitted["scenario_id"])
-                self.assertEqual(chain["run_id"], submitted["run_id"])
-                self.assertEqual(chain["result_summary_id"], submitted["result_summary_id"])
-                self.assertEqual(chain["artifact_manifest_id"], submitted["artifact_manifest_id"])
-                self.assertEqual(state_payload["run_id"], submitted["run_id"])
-                self.assertEqual(state_payload["scenario_id"], submitted["scenario_id"])
-                self.assertEqual(state_payload["model_family"], "aviation_support")
-                self.assertNotIn("unsupported_model_family", serialized)
-                self.assertNotIn("offline-demo-run", serialized)
+                        self.assertEqual(error["code"], "retired_model_family")
+                        self.assertEqual(error["details"]["model_family"], model_family)
+                        self.assertEqual(error["details"]["replacement_model_family"], "aircraft_support_v1")
+                        self.assertIn(model_family, error["details"]["retired_model_families"])
+                        self.assertNotIn("run_id", error)
             finally:
                 server.shutdown()
                 server.server_close()
@@ -1231,7 +1064,7 @@ class BackendHttpApiTest(unittest.TestCase):
                     {
                         "project_id": saved["project_id"],
                         "experiment_plan_id": plan["experiment_plan_id"],
-                        "model_family": "smoke",
+                        "model_family": "aircraft_support_v1",
                         "run_type": "single",
                     },
                 )
@@ -1379,7 +1212,7 @@ class BackendHttpApiTest(unittest.TestCase):
                     base_url,
                     "POST",
                     "/modeling-imports/import-carrier-day-night-001/compile-scenario",
-                    {"model_family": "smoke"},
+                    {"model_family": "aircraft_support_v1"},
                 )
 
                 self.assertEqual(unauthenticated["code"], "unauthorized")
@@ -1611,7 +1444,7 @@ class BackendHttpApiTest(unittest.TestCase):
                     base_url,
                     "POST",
                     f"/modeling-imports/{import_package['importId']}/compile-scenario",
-                    {"model_family": "smoke"},
+                    {"model_family": "aircraft_support_v1"},
                     auth_token=auth_token,
                 )
 

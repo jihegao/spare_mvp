@@ -23,6 +23,9 @@ from src.spare_mvp_contract.adapter import (
     SimulationAdapter,
 )
 
+ACTIVE_FORMAL_MODEL_FAMILY = "aircraft_support_v1"
+RETIRED_FORMAL_MODEL_FAMILIES = ("smoke", "aviation_support")
+
 
 class RunService:
     """Submit and query simulation runs without exposing executor details."""
@@ -55,6 +58,14 @@ class RunService:
                 "unsupported_run_type",
                 "run_type must be single or monte_carlo",
                 run_type=run_type,
+            )
+        if request.get("formal_run") and model_family != ACTIVE_FORMAL_MODEL_FAMILY:
+            raise RunServiceError(
+                "retired_model_family",
+                f"{model_family} is retired for formal runs; use {ACTIVE_FORMAL_MODEL_FAMILY}",
+                model_family=model_family,
+                replacement_model_family=ACTIVE_FORMAL_MODEL_FAMILY,
+                retired_model_families=list(RETIRED_FORMAL_MODEL_FAMILIES),
             )
         if run_type == "monte_carlo":
             reject_request_level_monte_carlo_config(request)

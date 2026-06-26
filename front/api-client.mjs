@@ -5,6 +5,7 @@ import {
 
 const DEFAULT_API_BASE = "/api";
 const DEFAULT_TIMEOUT_MS = 10000;
+const DEFAULT_FORMAL_MODEL_FAMILY = "aircraft_support_v1";
 
 export function createBackendApiClient({ baseUrl = DEFAULT_API_BASE, transport, getAuthToken, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
   const request = wrapAuthTransport(transport || createFetchTransport(baseUrl, { timeoutMs }), getAuthToken);
@@ -45,7 +46,7 @@ export function createBackendApiClient({ baseUrl = DEFAULT_API_BASE, transport, 
         path: `/modeling-imports/${encodeURIComponent(importId)}/create-project`
       });
     },
-    compileModelingImportScenario(importId, modelFamily = "smoke") {
+    compileModelingImportScenario(importId, modelFamily = DEFAULT_FORMAL_MODEL_FAMILY) {
       return request({
         method: "POST",
         path: `/modeling-imports/${encodeURIComponent(importId)}/compile-scenario`,
@@ -82,7 +83,7 @@ export function createBackendApiClient({ baseUrl = DEFAULT_API_BASE, transport, 
         body: runRequest
       });
     },
-    startSimulationRun(projectId, experimentPlanId, modelFamily = "smoke") {
+    startSimulationRun(projectId, experimentPlanId, modelFamily = DEFAULT_FORMAL_MODEL_FAMILY) {
       return request({
         method: "POST",
         path: "/runs",
@@ -94,7 +95,7 @@ export function createBackendApiClient({ baseUrl = DEFAULT_API_BASE, transport, 
         }
       });
     },
-    startMonteCarloRun(projectId, experimentPlanId, modelFamily = "smoke", monteCarloExperimentId = "") {
+    startMonteCarloRun(projectId, experimentPlanId, modelFamily = DEFAULT_FORMAL_MODEL_FAMILY, monteCarloExperimentId = "") {
       return request({
         method: "POST",
         path: "/runs",

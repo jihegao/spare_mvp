@@ -14,6 +14,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 from uuid import uuid4
 
 from src.spare_mvp_backend.api import BackendApi, BackendApiError
+from src.spare_mvp_backend.run_service import ACTIVE_FORMAL_MODEL_FAMILY
 from src.spare_mvp_backend.repository import ContractRepository, initialize_database
 from src.spare_mvp_contract.adapter import SimulationAdapter
 
@@ -190,7 +191,7 @@ def create_backend_server(
                 return api.create_project_from_modeling_import(parts[1], actor_user_id=actor["user_id"])
             if self.command == "POST" and len(parts) == 3 and parts[0] == "modeling-imports" and parts[2] == "compile-scenario":
                 self._require_user()
-                return api.compile_modeling_import_scenario(parts[1], body.get("model_family", "smoke"))
+                return api.compile_modeling_import_scenario(parts[1], body.get("model_family", ACTIVE_FORMAL_MODEL_FAMILY))
             if self.command == "GET" and len(parts) == 2 and parts[0] == "projects":
                 return api.get_project(parts[1])
             if self.command == "DELETE" and len(parts) == 2 and parts[0] == "projects":
@@ -201,6 +202,7 @@ def create_backend_server(
                 return api.create_experiment_plan(parts[1], body.get("config", {}))
             if self.command == "POST" and route == "/runs":
                 formal_body = dict(body)
+                formal_body.setdefault("model_family", ACTIVE_FORMAL_MODEL_FAMILY)
                 formal_body["formal_run"] = True
                 return api.submit_run(formal_body)
             if self.command == "GET" and route == "/runs":

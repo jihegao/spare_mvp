@@ -142,7 +142,12 @@ try:
         saved = api.save_project(project)
         snapshot = api.create_modeling_snapshot(saved["project_id"])
         plan = api.create_experiment_plan(saved["project_id"], {"name": "contract-first e2e smoke", "steps": 4})
-        run = api.start_simulation_run(saved["project_id"], plan["experiment_plan_id"], model_family="smoke")
+        run = api.submit_run({
+            "project_id": saved["project_id"],
+            "experiment_plan_id": plan["experiment_plan_id"],
+            "model_family": "smoke",
+            "run_type": "single",
+        })
         payload = {
             "validation": validation,
             "saved": saved,

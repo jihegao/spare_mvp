@@ -56,7 +56,7 @@ test("frontend API client exposes stable PR-F save run and result methods", asyn
   const run = await client.submitRun({
     project_id: saved.project_id,
     experiment_plan_id: plan.experiment_plan_id,
-    model_family: "smoke",
+    model_family: "aircraft_support_v1",
     run_type: "single"
   });
   const storedRun = await client.getRunStatus(run.run_id);
@@ -88,7 +88,7 @@ test("frontend API client exposes stable PR-F save run and result methods", asyn
     "GET /runs/run-ui/artifacts",
     "GET /runs/run-ui/chain"
   ]);
-  assert.equal(calls[7].body.model_family, "smoke");
+  assert.equal(calls[7].body.model_family, "aircraft_support_v1");
   assert.equal(calls[7].body.run_type, "single");
 });
 
@@ -124,6 +124,8 @@ test("frontend API client exposes only canonical run read routes", async () => {
     "GET /runs/run-canonical/artifacts",
     "GET /runs/run-canonical/chain"
   ]);
+  assert.equal(calls[0].body.model_family, "aircraft_support_v1");
+  assert.equal(calls[0].body.run_type, "single");
 });
 
 test("frontend API client exposes M7 run artifact management routes", async () => {
@@ -231,7 +233,7 @@ test("frontend API client preserves formal M6.2 monte carlo SimulationExperiment
     experiment_plan_id: "plan-ui",
     scenario_id: "scenario-ui",
     scenario_version: "scenario-v0.1",
-    model_family: "smoke",
+    model_family: "aircraft_support_v1",
     run_type: "monte_carlo",
     seed: 20260620,
     mc_experiment_id: "mc-exp-ui-001",
@@ -264,7 +266,7 @@ test("frontend API client submitRun posts canonical run request without Monte Ca
   const runRequest = {
     project_id: "project-ui",
     experiment_plan_id: "plan-ui",
-    model_family: "smoke",
+    model_family: "aircraft_support_v1",
     run_type: "monte_carlo",
     mc_experiment_id: "mc-ui"
   };
@@ -335,7 +337,7 @@ test("frontend API client exposes explicit M5 modeling import methods", async ()
   assert.equal(stored.publishedPackage.lifecycle.version, 1);
   assert.equal(published.lifecycle.state, "published");
   assert.equal(published.publishedPackage.lifecycle.state, "published");
-  assert.equal(compiled.compiled_from_import.model_family, "smoke");
+  assert.equal(compiled.compiled_from_import.model_family, "aircraft_support_v1");
   assert.equal(createdProject.sourceImport.import_id, "import/ui demo");
   assert.equal(createdProject.modelingSnapshot.project.project_id, "project-ui-demo");
   assert.deepEqual(calls.map((call) => `${call.method} ${call.path}`), [
@@ -348,7 +350,7 @@ test("frontend API client exposes explicit M5 modeling import methods", async ()
   ]);
   assert.equal(calls[0].body, importPackage);
   assert.equal(calls[1].body, importPackage);
-  assert.deepEqual(calls[4].body, { model_family: "smoke" });
+  assert.deepEqual(calls[4].body, { model_family: "aircraft_support_v1" });
   assert.equal(calls[5].body, undefined);
 });
 

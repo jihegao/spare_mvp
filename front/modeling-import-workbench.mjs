@@ -293,14 +293,14 @@ function emptyRow(message, colspan) {
 
 function renderCompileResult(compileResult, htmlEscape) {
   if (!compileResult) {
-    return `<p class="modeling-import-empty">发布后可调用后端 Simulation Adapter 生成 smoke Scenario 预览。</p>`;
+    return `<p class="modeling-import-empty">发布后可调用后端 Simulation Adapter 生成 aircraft_support_v1 Scenario 预览。</p>`;
   }
   const metadata = compileResult.compiled_from_import || {};
   const scenario = compileResult.scenario || {};
   return `
     <div class="modeling-import-compile-grid">
       ${metric("来源导入", metadata.import_id || "-", htmlEscape)}
-      ${metric("模型族", metadata.model_family || "smoke", htmlEscape)}
+      ${metric("模型族", metadata.model_family || "aircraft_support_v1", htmlEscape)}
       ${metric("Scenario", scenario.scenario_id || scenario.scenarioId || "-", htmlEscape)}
       ${metric("编译器", scenario.compiled_by || "-", htmlEscape)}
     </div>

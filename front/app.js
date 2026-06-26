@@ -6404,7 +6404,7 @@ async function handleModelingImportAction(action, options = {}) {
       return;
     }
     try {
-      modelingImportCompileResult = await backendApi.compileModelingImportScenario(modelingImportPackage.importId, "smoke");
+      modelingImportCompileResult = await backendApi.compileModelingImportScenario(modelingImportPackage.importId, FORMAL_AIRCRAFT_SUPPORT_MODEL_FAMILY);
       const scenarioId = modelingImportCompileResult?.scenario?.scenario_id || modelingImportCompileResult?.scenario?.scenarioId || "Scenario";
       modelingImportStatus = `已生成 ${scenarioId}`;
     } catch (err) {
