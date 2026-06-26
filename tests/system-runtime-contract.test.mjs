@@ -40,6 +40,14 @@ test("start-system defaults app backend to file SQLite and supports stop mode th
   assert.match(stopScript, /start-system\.sh" stop/);
 });
 
+test("direct backend CLI defaults to the same persistent system-start SQLite path", async () => {
+  const source = await readFile(new URL("../src/spare_mvp_backend/http_server.py", import.meta.url), "utf8");
+
+  assert.doesNotMatch(source, /parser\.add_argument\("--database", default=":memory:"\)/);
+  assert.match(source, /default_database_path = Path\(args\.repo_root\) \/ "runs" \/ "system-start" \/ "spare_mvp\.sqlite3"/);
+  assert.match(source, /database_path=args\.database or default_database_path/);
+});
+
 test("M9.8 start-system does not launch independent-mesa as a platform dependency", async () => {
   const script = await readFile(new URL("../scripts/start-system.sh", import.meta.url), "utf8");
 
