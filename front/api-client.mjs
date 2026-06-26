@@ -163,10 +163,56 @@ export function createBackendApiClient({ baseUrl = DEFAULT_API_BASE, transport, 
 
 export function buildBackendProjectJson(scenario, project = {}) {
   const projectJson = cloneJson(scenario);
+  syncCompositeTaskInheritedBasicFields(projectJson);
   projectJson.schema_version ||= "project-v0";
   projectJson.project_id ||= project.id ? `project-${project.id}` : `project-${projectJson.scenarioId}`;
   projectJson.project_version ||= "project-v0.1";
   return projectJson;
+}
+
+function syncCompositeTaskInheritedBasicFields(projectJson) {
+  const basicMissions = basicMissionRecordsForProject(projectJson);
+  const composites = Array.isArray(projectJson.missionProfile?.compositeTasks)
+    ? projectJson.missionProfile.compositeTasks
+    : [];
+  if (!basicMissions.length || !composites.length) return;
+
+  for (const composite of composites) {
+    const items = Array.isArray(composite?.taskItems) ? composite.taskItems : [];
+    for (const item of items) {
+      if (!item || typeof item !== "object") continue;
+      const basicMission = findBasicMissionForTaskItem(item, basicMissions);
+      if (!basicMission) continue;
+      copyPresentValue(item, "equipmentType", basicMission.equipmentType);
+      copyPresentValue(item, "taskDurationMinutes", basicMission.taskDurationMinutes);
+      copyPresentValue(item, "equipmentQuantity", basicMission.equipmentQuantity);
+      copyPresentValue(item, "minRequiredSystems", basicMission.minRequiredSorties);
+      copyPresentValue(item, "preparationMinutes", basicMission.preparationMinutes);
+    }
+  }
+}
+
+function basicMissionRecordsForProject(projectJson) {
+  return [
+    projectJson.basicMission,
+    ...(Array.isArray(projectJson.basicMissions) ? projectJson.basicMissions : []),
+    projectJson.missionProfile?.basicMission
+  ].filter((task) => task && typeof task === "object" && !Array.isArray(task));
+}
+
+function findBasicMissionForTaskItem(item, basicMissions) {
+  const itemName = String(item.basicTaskName || "").trim();
+  if (!itemName) return null;
+  return basicMissions.find((task) => basicMissionDisplayName(task) === itemName) || null;
+}
+
+function basicMissionDisplayName(task) {
+  return String(task?.name || task?.basicTaskName || task?.missionId || "").trim();
+}
+
+function copyPresentValue(target, key, value) {
+  if (value === undefined || value === null || value === "") return;
+  target[key] = value;
 }
 
 export function buildExperimentPlanConfig(projectJson) {

@@ -670,7 +670,7 @@ test("support organization and activity pages follow ship_front tree table edito
   assert.match(appSource, /function flattenSupportOrgTreeNodes/);
   assert.match(appSource, /function supportOrganizationTree/);
   assert.match(appSource, /scenario\.supportOrganization\?\.tree/);
-  assert.match(appSource, /importedDataEmptyState\("保障组织"\)/);
+  assert.match(appSource, /function buildEmptySupportOrganizationTree/);
   assert.doesNotMatch(appSource, /基地级|基层级1|机务保障中队1|基层级2|机务保障中队2/);
   assert.match(appSource, /备件建模/);
   assert.match(appSource, /保障人员建模/);
@@ -693,6 +693,7 @@ test("support organization and activity pages follow ship_front tree table edito
   assert.doesNotMatch(supportOrgSource, /保障策略/);
   assert.doesNotMatch(supportOrgSource, /横向保障组织/);
   assert.match(supportOrgSource, /const visibleResourceRows = buildSupportResourceRows\(activeResourceType, selectedSupportOrgNode\)/);
+  assert.doesNotMatch(supportOrgSource, /if \(!orgTree\.length\)/);
   assert.match(supportOrgSource, /function buildSupportResourceRows/);
   assert.match(supportOrgSource, /scope: orgNode\.name/);
   assert.doesNotMatch(supportOrgSource, /scope: node\.name/);
@@ -719,6 +720,10 @@ test("support organization and activity pages follow ship_front tree table edito
     appSource.indexOf("function renderSupportActivityWorkbench"),
     appSource.indexOf("function renderSupportActivityTreeNode")
   );
+  assert.match(appSource, /function ensureSupportActivityForPage\(page\)/);
+  assert.match(supportActivitySource, /const activity = ensureSupportActivityForPage\(page\)/);
+  assert.doesNotMatch(supportActivitySource, /if \(!activity && !page\.name\.includes\("基本保障活动"\)\)/);
+  assert.doesNotMatch(supportActivitySource, /if \(!\(scenario\.supportActivities \|\| \[\]\)\.length\)/);
   assert.doesNotMatch(supportActivitySource, /飞行前准备|再次出动准备|飞行后检查|制动伞检查|日检|周检|发动机备件故障|航电模块故障/);
   assert.doesNotMatch(operationsSource, /\u4eff\u771f\u8fd0\u884c\u89c4\u5219/);
   assert.doesNotMatch(operationsSource, /\u52a0\u6cb9\u65b9\u6848/);
@@ -1124,15 +1129,25 @@ test("combat unit page follows ship front basic unit modeling structure", async 
   assert.match(combatUnitSource, /data-combat-unit-add/);
   assert.match(combatUnitSource, /data-combat-unit-delete/);
   assert.match(combatUnitSource, /data-select-combat-unit-member/);
-  assert.match(combatUnitSource, /<thead><tr><th>飞机编号<\/th><th>飞机类型<\/th><th>前置寿命<\/th><th>起降次数<\/th><\/tr><\/thead>/);
+  assert.match(combatUnitSource, /combat-unit-table/);
+  assert.match(combatUnitSource, /type="checkbox" data-select-combat-unit-member/);
+  assert.match(combatUnitSource, /<th rowspan="2" class="combat-unit-select-col"><\/th>/);
+  assert.match(combatUnitSource, /class="combat-unit-prelife-heading">前置寿命<\/th>/);
+  assert.match(combatUnitSource, /class="combat-unit-prelife-column">日历时间<\/th>/);
+  assert.match(combatUnitSource, /class="combat-unit-prelife-column">飞行小时<\/th>/);
+  assert.match(combatUnitSource, /class="combat-unit-prelife-column">起落次数<\/th>/);
   assert.match(appSource, /飞机编号/);
-  assert.match(combatUnitSource, /member\.aircraftNo/);
-  assert.match(combatUnitSource, /member\.model/);
-  assert.match(combatUnitSource, /member\.preLifeRequirementHours/);
-  assert.match(combatUnitSource, /member\.takeoffLandingCount/);
+  assert.match(combatUnitSource, /combatUnitMemberInput\(index, "aircraftNo", member\.aircraftNo\)/);
+  assert.match(combatUnitSource, /combatUnitMemberInput\(index, "model", member\.model\)/);
+  assert.match(combatUnitSource, /data-combat-unit-field/);
+  assert.match(combatUnitSource, /combatUnitMemberCalendarTime\(member\)/);
+  assert.match(combatUnitSource, /combatUnitMemberFlightHours\(member\)/);
+  assert.match(combatUnitSource, /combatUnitMemberTakeoffLandingCount\(member\)/);
+  assert.match(appSource, /function updateCombatUnitMemberField\(index, fieldName, value\)/);
   assert.match(appSource, /function addCombatUnitMember\(\)/);
   assert.match(appSource, /function deleteSelectedCombatUnitMember\(\)/);
   assert.match(appSource, /let selectedCombatUnitMemberIndex = 0/);
+  assert.doesNotMatch(combatUnitSource, /data-combat-unit-edit/);
   assert.doesNotMatch(combatUnitSource, /section-head section-context/);
   assert.doesNotMatch(combatUnitSource, /page\.dataObjects/);
   assert.doesNotMatch(combatUnitSource, /detail-card/);
@@ -1249,6 +1264,11 @@ test("mission task profile pages split composite and periodic task modeling", as
   assert.match(compositeSource, /data-composite-task-add/);
   assert.match(compositeSource, /data-composite-task-delete/);
   assert.match(compositeSource, /data-select-composite-task/);
+  assert.match(compositeSource, /clickable-table-row \$\{index === selected\.index \? "selected-table-row" : ""\}/);
+  assert.match(compositeSource, /tabindex="0"/);
+  assert.match(compositeSource, /aria-selected="\$\{index === selected\.index \? "true" : "false"\}"/);
+  assert.match(appSource, /function selectCompositeTaskRow\(compositeTaskRow\)/);
+  assert.match(appSource, /app\.addEventListener\("keydown"/);
   assert.match(compositeSource, /<thead><tr><th>复合任务名称<\/th><\/tr><\/thead>/);
   assert.doesNotMatch(compositeSource, /<th>基本任务<\/th>/);
   assert.match(compositeSource, /当前复合任务包含的基本任务/);
@@ -1256,6 +1276,8 @@ test("mission task profile pages split composite and periodic task modeling", as
   assert.match(compositeSource, /data-composite-task-item-delete/);
   assert.match(compositeSource, /basicMissionSelect/);
   assert.match(compositeSource, /findBasicMissionByName/);
+  assert.match(compositeSource, /compositeTaskInheritedBasicFields/);
+  assert.match(compositeSource, /readOnlyTableValue/);
   assert.match(compositeSource, /典型组合任务时序表/);
   assert.match(compositeSource, /典型组合任务时序图/);
   assert.match(compositeSource, /renderCompositeTimelineChart/);
@@ -1349,19 +1371,35 @@ test("page revision equipment and mission input constraints are guarded", async 
   assert.match(basicMissionSource, /data-basic-mission-add/);
   assert.match(basicMissionSource, /data-basic-mission-delete/);
   assert.match(basicMissionSource, /data-basic-mission-phase-add/);
+  assert.match(basicMissionSource, /data-basic-mission-phase-add>新增/);
+  assert.match(basicMissionSource, /data-basic-mission-phase-add>添加/);
+  assert.match(basicMissionSource, /data-basic-mission-phase-select-all/);
+  assert.match(basicMissionSource, /data-basic-mission-phase-select="\$\{index\}"/);
   assert.match(basicMissionSource, /data-basic-mission-phase-delete/);
   assert.match(basicMissionSource, /missionPhaseRatioTotal/);
   assert.match(basicMissionSource, /Math\.abs\(phaseRatioTotal - 1\) < 0\.001/);
+  assert.doesNotMatch(basicMissionSource, /<button[^>]*>编辑<\/button>/);
   assert.doesNotMatch(basicMissionSource, /<th>状态<\/th>/);
   assert.doesNotMatch(basicMissionSource, /转移条件/);
 
   assert.match(compositeItemSource, /basicMissionSelect/);
   assert.match(compositeItemSource, /findBasicMissionByName/);
-  assert.match(compositeItemSource, /taskItems\.\$\{index\}\.equipmentType/);
-  assert.match(compositeItemSource, /taskItems\.\$\{index\}\.taskDurationMinutes/);
-  assert.match(compositeItemSource, /taskItems\.\$\{index\}\.equipmentQuantity/);
+  assert.match(compositeItemSource, /const inherited = compositeTaskInheritedBasicFields\(item, basicTask\)/);
+  assert.match(compositeItemSource, /readOnlyTableValue\(inherited\.equipmentType\)/);
+  assert.match(compositeItemSource, /readOnlyTableValue\(inherited\.taskDurationMinutes\)/);
+  assert.match(compositeItemSource, /readOnlyTableValue\(inherited\.equipmentQuantity\)/);
+  assert.match(compositeItemSource, /readOnlyTableValue\(inherited\.minRequiredSystems\)/);
+  assert.doesNotMatch(compositeItemSource, /valueInput\(`\$\{compositePath\}\.taskItems\.\$\{index\}\.equipmentType/);
+  assert.doesNotMatch(compositeItemSource, /valueInput\(`\$\{compositePath\}\.taskItems\.\$\{index\}\.taskDurationMinutes/);
+  assert.doesNotMatch(compositeItemSource, /valueInput\(`\$\{compositePath\}\.taskItems\.\$\{index\}\.equipmentQuantity/);
+  assert.doesNotMatch(compositeItemSource, /valueInput\(`\$\{compositePath\}\.taskItems\.\$\{index\}\.minRequiredSystems/);
   assert.doesNotMatch(compositeItemSource, /requiredEquipmentQuantity/);
   assert.match(compositeItemSource, /minRequiredSystems/);
+  assert.match(compositeItemSource, /taskItems\.\$\{index\}\.groupName/);
+  assert.match(compositeItemSource, /taskItems\.\$\{index\}\.firstWaveTime/);
+  assert.match(compositeItemSource, /taskItems\.\$\{index\}\.priority/);
+  assert.match(compositeItemSource, /taskItems\.\$\{index\}\.dailyRepeatCount/);
+  assert.match(compositeItemSource, /taskItems\.\$\{index\}\.intervalHours/);
   assert.doesNotMatch(compositeItemSource, /任务下达时间/);
   assert.doesNotMatch(compositeItemSource, /回收时刻/);
 });
@@ -1383,6 +1421,8 @@ test("editable modeling lists expose page suggestion action entries", async () =
   assert.match(basicMissionSource, /data-basic-mission-add/);
   assert.match(basicMissionSource, /data-basic-mission-delete/);
   assert.match(basicMissionSource, /data-basic-mission-phase-add/);
+  assert.match(basicMissionSource, /data-basic-mission-phase-select-all/);
+  assert.match(basicMissionSource, /data-basic-mission-phase-select="\$\{index\}"/);
   assert.match(basicMissionSource, /data-basic-mission-phase-delete/);
 
   const compositeSource = appSource.slice(
@@ -1399,8 +1439,9 @@ test("editable modeling lists expose page suggestion action entries", async () =
     appSource.indexOf("function addCombatUnitMember")
   );
   assert.match(combatUnitSource, /data-combat-unit-add/);
-  assert.match(combatUnitSource, /data-combat-unit-edit disabled/);
   assert.match(combatUnitSource, /data-combat-unit-delete/);
+  assert.match(combatUnitSource, /data-combat-unit-field/);
+  assert.doesNotMatch(combatUnitSource, /data-combat-unit-edit/);
 
   const supportOrgSource = appSource.slice(
     appSource.indexOf("function renderSupportOrganizationWorkbench"),

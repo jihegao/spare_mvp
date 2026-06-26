@@ -539,6 +539,7 @@ let selectedEquipmentNodeKey = "";
 let selectedBasicMissionKey = "primary";
 let selectedBasicMissionTreeLevel = "mission";
 let selectedBasicMissionEquipmentType = scenario.basicMission.equipmentType || scenario.equipment.model || "";
+let selectedBasicMissionPhaseIndexes = new Set();
 let selectedCompositeTaskId = "";
 let selectedCombatUnitMemberIndex = 0;
 let selectedSupportOrgNodeId = "";
@@ -585,7 +586,7 @@ function supportOrganizationTree() {
 
 function buildSupportOrganizationTreeFromNodes() {
   const supportNodes = Array.isArray(scenario.supportNodes) ? scenario.supportNodes : [];
-  if (!supportNodes.length) return [];
+  if (!supportNodes.length) return buildEmptySupportOrganizationTree();
   const root = {
     id: "support-org-root",
     name: "保障组织",
@@ -597,6 +598,20 @@ function buildSupportOrganizationTreeFromNodes() {
       supportNodeId: node.id,
       children: []
     }))
+  };
+  if (!scenario.supportOrganization || typeof scenario.supportOrganization !== "object") {
+    scenario.supportOrganization = {};
+  }
+  scenario.supportOrganization.tree = [root];
+  return scenario.supportOrganization.tree;
+}
+
+function buildEmptySupportOrganizationTree() {
+  const root = {
+    id: "support-org-root",
+    name: "保障组织",
+    description: "空白项目默认保障组织，可在此维护组织、人员、设备和备件资源。",
+    children: []
   };
   if (!scenario.supportOrganization || typeof scenario.supportOrganization !== "object") {
     scenario.supportOrganization = {};
@@ -834,8 +849,7 @@ function bindEvents() {
 
     const compositeTaskRow = event.target.closest("[data-select-composite-task]");
     if (compositeTaskRow) {
-      selectedCompositeTaskId = compositeTaskRow.dataset.selectCompositeTask;
-      render();
+      selectCompositeTaskRow(compositeTaskRow);
       return;
     }
 
@@ -886,9 +900,9 @@ function bindEvents() {
       return;
     }
 
-    const combatUnitRow = event.target.closest("[data-select-combat-unit-member]");
-    if (combatUnitRow) {
-      selectedCombatUnitMemberIndex = Number(combatUnitRow.dataset.selectCombatUnitMember);
+    const combatUnitMemberSelect = event.target.closest("[data-select-combat-unit-member]");
+    if (combatUnitMemberSelect) {
+      selectedCombatUnitMemberIndex = Number(combatUnitMemberSelect.dataset.selectCombatUnitMember);
       render();
       return;
     }
@@ -932,12 +946,7 @@ function bindEvents() {
 
     const logisticsAddButton = event.target.closest("[data-logistics-transport-add]");
     if (logisticsAddButton) {
-      const activity = findLogisticsSupportActivity();
-      if (!activity) {
-        backendApiStatus = "暂无后勤保障活动数据，请先导入并发布建模 JSON，或在当前页面创建数据。";
-        render();
-        return;
-      }
+      const activity = ensureLogisticsSupportActivityDraft();
       activity.transportStrategies = [
         ...(Array.isArray(activity.transportStrategies) ? activity.transportStrategies : []),
         { direction: "\u6a2a\u5411\u8fd0\u8f93", spareType: spareModelingNames()[0] || "", triggerMode: "\u4e34\u754c\u5e93\u5b58", criticalInventory: 1, from: scenario.supportNodes[0]?.id || "", to: scenario.supportNodes[1]?.id || "", transportTimeHours: 1 }
@@ -1438,6 +1447,15 @@ function bindEvents() {
     }
   });
 
+  app.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    const compositeTaskRow = event.target.closest("[data-select-composite-task]");
+    if (compositeTaskRow) {
+      event.preventDefault();
+      selectCompositeTaskRow(compositeTaskRow);
+    }
+  });
+
   app.addEventListener("change", async (event) => {
     const rmsEquipmentRootSelect = event.target.closest("[data-rms-equipment-root]");
     if (rmsEquipmentRootSelect) {
@@ -1474,6 +1492,27 @@ function bindEvents() {
     if (mesaTimeline) {
       visualizationReplayIndex = nextReplayIndex(visualizationStateSeries, Number(mesaTimeline.value), 0);
       stopVisualizationReplay();
+      render();
+      return;
+    }
+
+    const basicMissionPhaseSelectAll = event.target.closest("[data-basic-mission-phase-select-all]");
+    if (basicMissionPhaseSelectAll) {
+      const phases = Array.isArray(scenario.missionPhases) ? scenario.missionPhases : [];
+      selectedBasicMissionPhaseIndexes = basicMissionPhaseSelectAll.checked
+        ? new Set(phases.map((_, index) => String(index)))
+        : new Set();
+      render();
+      return;
+    }
+
+    const basicMissionPhaseSelect = event.target.closest("[data-basic-mission-phase-select]");
+    if (basicMissionPhaseSelect) {
+      const key = basicMissionPhaseSelect.dataset.basicMissionPhaseSelect;
+      const next = new Set(selectedBasicMissionPhaseIndexes);
+      if (basicMissionPhaseSelect.checked) next.add(key);
+      else next.delete(key);
+      selectedBasicMissionPhaseIndexes = next;
       render();
       return;
     }
@@ -1789,6 +1828,17 @@ function bindEvents() {
       return;
     }
 
+    const combatUnitFieldInput = event.target.closest("[data-combat-unit-field]");
+    if (combatUnitFieldInput) {
+      updateCombatUnitMemberField(
+        Number(combatUnitFieldInput.dataset.combatUnitIndex),
+        combatUnitFieldInput.dataset.combatUnitField,
+        parseInput(combatUnitFieldInput)
+      );
+      markProjectDraftChanged();
+      return;
+    }
+
     const livePathInput = event.target.closest("[data-path]");
     if (livePathInput && isLiveProjectDraftInput(livePathInput)) {
       setPath(scenario, livePathInput.dataset.path, parseInput(livePathInput));
@@ -1834,6 +1884,11 @@ function toggleTreeNodeFromElement(treeToggleElement) {
   } else {
     collapsedTreeNodes.add(nodeId);
   }
+}
+
+function selectCompositeTaskRow(compositeTaskRow) {
+  selectedCompositeTaskId = compositeTaskRow.dataset.selectCompositeTask;
+  render();
 }
 
 function render() {
@@ -2397,6 +2452,20 @@ function findBasicMissionByName(name) {
   });
 }
 
+function compositeTaskInheritedBasicFields(item = {}, basicTask = null) {
+  return {
+    equipmentType: firstPresentValue(basicTask?.equipmentType, item.equipmentType),
+    taskDurationMinutes: firstPresentValue(basicTask?.taskDurationMinutes, item.taskDurationMinutes),
+    equipmentQuantity: firstPresentValue(basicTask?.equipmentQuantity, item.equipmentQuantity),
+    minRequiredSystems: firstPresentValue(basicTask?.minRequiredSorties, item.minRequiredSystems)
+  };
+}
+
+function firstPresentValue(...values) {
+  const value = values.find((candidate) => candidate !== undefined && candidate !== null && candidate !== "");
+  return value === undefined ? "" : value;
+}
+
 function basicMissionSelect(path, selectedValue) {
   return valueSelect(path, basicMissionOptions());
 }
@@ -2910,27 +2979,77 @@ function renderCombatUnitModeling(page) {
           <h4>飞机列表</h4>
         <div class="toolbar-row" style="margin-bottom:0;">
           <button type="button" class="btn-primary" data-combat-unit-add>新增</button>
-          <button type="button" data-combat-unit-edit disabled>编辑</button>
           <button type="button" class="btn-danger" data-combat-unit-delete>删除</button>
         </div>
       </div>
       <div class="table-wrap unframed-table">
-        <table>
-          <thead><tr><th>飞机编号</th><th>飞机类型</th><th>前置寿命</th><th>起降次数</th></tr></thead>
+        <table class="combat-unit-table">
+          <thead>
+            <tr><th rowspan="2" class="combat-unit-select-col"></th><th rowspan="2">飞机编号</th><th rowspan="2">飞机类型</th><th colspan="3" class="combat-unit-prelife-heading">前置寿命</th></tr>
+            <tr><th class="combat-unit-prelife-column">日历时间</th><th class="combat-unit-prelife-column">飞行小时</th><th class="combat-unit-prelife-column">起落次数</th></tr>
+          </thead>
           <tbody>
             ${members.map((member, index) => `
-              <tr class="${index === boundedSelectedIndex ? "selected-table-row" : ""}" data-select-combat-unit-member="${index}">
-                <td>${htmlEscape(member.aircraftNo)}</td>
-                <td>${htmlEscape(member.model)}</td>
-                <td>${htmlEscape(member.preLifeRequirementHours ?? scenario.equipment.preLifeRequirementHours ?? member.remainingLifeHours ?? "")}</td>
-                <td>${htmlEscape(member.takeoffLandingCount ?? member.landings ?? 0)}</td>
+              <tr class="${index === boundedSelectedIndex ? "selected-table-row" : ""}">
+                <td class="combat-unit-select-col"><input type="checkbox" data-select-combat-unit-member="${index}" ${index === boundedSelectedIndex ? "checked" : ""} aria-label="选择${htmlEscape(member.aircraftNo || `第${index + 1}架飞机`)}"></td>
+                <td>${combatUnitMemberInput(index, "aircraftNo", member.aircraftNo)}</td>
+                <td>${combatUnitMemberInput(index, "model", member.model)}</td>
+                <td class="combat-unit-prelife-cell">${combatUnitMemberInput(index, "preLifeCalendarDays", combatUnitMemberCalendarTime(member), "number", { min: "0", step: "1" })}</td>
+                <td class="combat-unit-prelife-cell">${combatUnitMemberInput(index, "preLifeFlightHours", combatUnitMemberFlightHours(member), "number", { min: "0", step: "1" })}</td>
+                <td class="combat-unit-prelife-cell">${combatUnitMemberInput(index, "preLifeTakeoffLandingCount", combatUnitMemberTakeoffLandingCount(member), "number", { min: "0", step: "1" })}</td>
               </tr>
-            `).join("") || "<tr><td colspan='4'>暂无飞机</td></tr>"}
+            `).join("") || "<tr><td colspan='6'>暂无飞机</td></tr>"}
           </tbody>
         </table>
       </div>
     </div>
   `;
+}
+
+function combatUnitMemberInput(index, fieldName, value, type = "text", attrs = {}) {
+  const attrText = Object.entries(attrs)
+    .map(([key, attrValue]) => ` ${key}="${htmlEscape(attrValue)}"`)
+    .join("");
+  return `<input data-combat-unit-index="${index}" data-combat-unit-field="${htmlEscape(fieldName)}" type="${type}" value="${htmlEscape(value ?? "")}"${attrText}>`;
+}
+
+function combatUnitMemberCalendarTime(member) {
+  return member.preLifeCalendarDays
+    ?? member.calendarDays
+    ?? member.overhaulCalendarDays
+    ?? member.overhaulDays
+    ?? member.overhaul_days
+    ?? "";
+}
+
+function combatUnitMemberFlightHours(member) {
+  return member.preLifeFlightHours
+    ?? member.flightHours
+    ?? member.flight_hours
+    ?? member.preLifeRequirementHours
+    ?? scenario.equipment.preLifeRequirementHours
+    ?? member.remainingLifeHours
+    ?? "";
+}
+
+function combatUnitMemberTakeoffLandingCount(member) {
+  return member.preLifeTakeoffLandingCount
+    ?? member.takeoffLandingCount
+    ?? member.landings
+    ?? member.landingCount
+    ?? 0;
+}
+
+function updateCombatUnitMemberField(index, fieldName, value) {
+  const member = scenario.combatUnit?.members?.[index];
+  if (!member) return;
+  member[fieldName] = value;
+  if (fieldName === "preLifeFlightHours") {
+    member.preLifeRequirementHours = value;
+  } else if (fieldName === "preLifeTakeoffLandingCount") {
+    member.takeoffLandingCount = value;
+  }
+  updatePreviewResultsThroughApiClient();
 }
 
 function addCombatUnitMember() {
@@ -2944,6 +3063,7 @@ function addCombatUnitMember() {
     model,
     role: "新增",
     status: "执行",
+    preLifeCalendarDays: 0,
     remainingLifeHours: Number(scenario.equipment.preLifeRequirementHours || 120),
     preLifeRequirementHours: Number(scenario.equipment.preLifeRequirementHours || 120),
     takeoffLandingCount: 0,
@@ -2968,6 +3088,8 @@ function renderBasicMissionModeling(page) {
   const selectedMission = resolveSelectedBasicMission();
   const missionPath = selectedMission.path || "basicMission";
   const phases = scenario.missionPhases || [];
+  selectedBasicMissionPhaseIndexes = validMissionPhaseSelection(phases);
+  const allPhasesSelected = phases.length > 0 && phases.every((_, index) => selectedBasicMissionPhaseIndexes.has(String(index)));
   const phaseRatioTotal = missionPhaseRatioTotal(phases);
   const phaseRatioValid = phases.length === 0 || Math.abs(phaseRatioTotal - 1) < 0.001;
   return `
@@ -3012,17 +3134,18 @@ function renderBasicMissionModeling(page) {
           <div class="tree-toolbar">
             <h4>任务阶段</h4>
             <div class="toolbar-row" style="margin-bottom:0;">
-              <button type="button" class="btn-primary" data-basic-mission-phase-add>添加</button>
-              <button type="button" disabled>编辑</button>
+              <button type="button" class="btn-primary" data-basic-mission-phase-add>新增</button>
+              <button type="button" data-basic-mission-phase-add>添加</button>
             </div>
           </div>
           <div class="inline-status ${phaseRatioValid ? "success" : "warn"}">阶段占比合计 ${fixed(phaseRatioTotal, 2)}；${phaseRatioValid ? "满足合计为 1" : "必须调整为 1 后才能作为正式编译输入"}</div>
           <div class="table-wrap">
             <table>
-              <thead><tr><th>序号</th><th>阶段名称</th><th>阶段占比</th><th>删除</th></tr></thead>
+              <thead><tr><th><input type="checkbox" data-basic-mission-phase-select-all aria-label="全选任务阶段" ${allPhasesSelected ? "checked" : ""}></th><th>序号</th><th>阶段名称</th><th>阶段占比</th><th>删除</th></tr></thead>
               <tbody>
                 ${phases.map((phase, index) => `
-                  <tr>
+                  <tr class="${selectedBasicMissionPhaseIndexes.has(String(index)) ? "selected-table-row" : ""}">
+                    <td><input type="checkbox" data-basic-mission-phase-select="${index}" aria-label="选择任务阶段${index + 1}" ${selectedBasicMissionPhaseIndexes.has(String(index)) ? "checked" : ""}></td>
                     <td>${index + 1}</td>
                     <td>${valueInput(`missionPhases.${index}.name`)}</td>
                     <td>${valueInput(`missionPhases.${index}.phaseRatio`, "number", { min: "0", max: "1", step: "0.01" })}</td>
@@ -3042,6 +3165,16 @@ function missionPhaseRatioTotal(phases = scenario.missionPhases || []) {
   return phases.reduce((sum, phase) => sum + Number(phase.phaseRatio || 0), 0);
 }
 
+function validMissionPhaseSelection(phases = scenario.missionPhases || []) {
+  const phaseCount = Array.isArray(phases) ? phases.length : 0;
+  return new Set(
+    Array.from(selectedBasicMissionPhaseIndexes)
+      .map((key) => Number(key))
+      .filter((index) => Number.isInteger(index) && index >= 0 && index < phaseCount)
+      .map((index) => String(index))
+  );
+}
+
 function supportActivityPlanSelect(path, aircraftModel) {
   const options = operationsSupportActivityOptions(aircraftModel);
   return valueSelect(path, options.length ? options : [{ value: "", label: "暂无同机型使用保障方案" }]);
@@ -3058,6 +3191,13 @@ function addMissionPhase() {
 
 function deleteMissionPhase(index) {
   scenario.missionPhases = (Array.isArray(scenario.missionPhases) ? scenario.missionPhases : []).filter((_, rowIndex) => rowIndex !== index);
+  selectedBasicMissionPhaseIndexes = new Set(
+    Array.from(selectedBasicMissionPhaseIndexes)
+      .map((key) => Number(key))
+      .filter((selectedIndex) => Number.isInteger(selectedIndex) && selectedIndex !== index)
+      .map((selectedIndex) => String(selectedIndex > index ? selectedIndex - 1 : selectedIndex))
+  );
+  selectedBasicMissionPhaseIndexes = validMissionPhaseSelection(scenario.missionPhases);
 }
 
 function renderCompositeTaskModeling(page) {
@@ -3084,7 +3224,7 @@ function renderCompositeTaskModeling(page) {
             <thead><tr><th>复合任务名称</th></tr></thead>
             <tbody>
               ${compositeTasks.map((task, index) => `
-                <tr class="${index === selected.index ? "active" : ""}" data-select-composite-task="${htmlEscape(task.id || index)}">
+                <tr class="clickable-table-row ${index === selected.index ? "selected-table-row" : ""}" data-select-composite-task="${htmlEscape(task.id || index)}" tabindex="0" aria-selected="${index === selected.index ? "true" : "false"}">
                   <td>${htmlEscape(task.name)}</td>
                 </tr>
               `).join("") || `<tr><td>暂无复合任务</td></tr>`}
@@ -3110,16 +3250,17 @@ function renderCompositeTaskModeling(page) {
                 <tbody>
                   ${(composite.taskItems || []).map((item, index) => {
                     const basicTask = findBasicMissionByName(item.basicTaskName);
+                    const inherited = compositeTaskInheritedBasicFields(item, basicTask);
                     return `
                     <tr>
                       <td>${basicMissionSelect(`${compositePath}.taskItems.${index}.basicTaskName`, item.basicTaskName)}</td>
-                      <td>${valueInput(`${compositePath}.taskItems.${index}.equipmentType`)}</td>
-                      <td>${valueInput(`${compositePath}.taskItems.${index}.taskDurationMinutes`, "number", { min: "0", step: "1" })}</td>
-                      <td>${valueInput(`${compositePath}.taskItems.${index}.equipmentQuantity`, "number", { min: "1", step: "1" })}</td>
+                      <td>${readOnlyTableValue(inherited.equipmentType)}</td>
+                      <td>${readOnlyTableValue(inherited.taskDurationMinutes)}</td>
+                      <td>${readOnlyTableValue(inherited.equipmentQuantity)}</td>
                       <td>${valueInput(`${compositePath}.taskItems.${index}.groupName`)}</td>
                       <td>${valueInput(`${compositePath}.taskItems.${index}.firstWaveTime`, "time")}</td>
                       <td>${valueInput(`${compositePath}.taskItems.${index}.priority`, "number")}</td>
-                      <td>${valueInput(`${compositePath}.taskItems.${index}.minRequiredSystems`, "number")}</td>
+                      <td>${readOnlyTableValue(inherited.minRequiredSystems)}</td>
                       <td>${valueInput(`${compositePath}.taskItems.${index}.dailyRepeatCount`, "number")}</td>
                       <td>${valueInput(`${compositePath}.taskItems.${index}.intervalHours`, "number")}</td>
                       <td class="table-actions"><button type="button" class="btn-danger" data-composite-task-item-delete="${index}">删除</button></td>
@@ -4096,9 +4237,6 @@ function renderSupportOrganizationWorkbench(page) {
   const activeTab = page.name.includes("人员") ? "保障人员建模" : page.name.includes("设备") ? "保障设备建模" : page.name.includes("备件") ? "备件建模" : "保障组织结构建模";
   const activeResourceType = page.name.includes("人员") ? "保障人员" : page.name.includes("设备") ? "保障设备" : page.name.includes("备件") ? "备件" : "";
   const orgTree = supportOrganizationTree();
-  if (!orgTree.length) {
-    return importedDataEmptyState("保障组织");
-  }
   const selectedSupportOrgNode = findSupportOrgTreeNode(selectedSupportOrgNodeId, orgTree) || orgTree[0];
   const selectedIsLeaf = !(selectedSupportOrgNode?.children || []).length;
   const selectedOrgDepth = supportOrgNodeDepth(selectedSupportOrgNode?.id, orgTree);
@@ -4427,6 +4565,120 @@ function findSupportActivityForPage(page) {
       || null;
   }
   return activities[0] || null;
+}
+
+function ensureSupportActivityForPage(page) {
+  if (page.name.includes("基本保障活动")) {
+    return basicSupportActivityHostActivity()
+      || ensureOperationsSupportActivityForAircraftModel(defaultSupportActivityAircraftModel());
+  }
+  const activity = findSupportActivityForPage(page);
+  if (activity) return activity;
+  if (page.name.includes("使用")) {
+    return ensureOperationsSupportActivityForAircraftModel(defaultSupportActivityAircraftModel());
+  }
+  if (page.name.includes("预防性")) {
+    return ensurePreventiveMaintenanceActivityForAircraftModel(defaultSupportActivityAircraftModel());
+  }
+  if (page.name.includes("修复性")) {
+    return ensureCorrectiveMaintenanceActivityDraft();
+  }
+  if (page.name.includes("后勤")) {
+    return ensureLogisticsSupportActivityDraft();
+  }
+  return null;
+}
+
+function basicSupportActivityHostActivity() {
+  const activities = scenario.supportActivities || [];
+  return activities.find((activity) => isOperationsSupportActivity(activity))
+    || activities.find((activity) => isPreventiveMaintenanceActivity(activity))
+    || activities.find((activity) => isCorrectiveMaintenanceActivity(activity))
+    || null;
+}
+
+function ensureSupportActivities() {
+  if (!Array.isArray(scenario.supportActivities)) scenario.supportActivities = [];
+  return scenario.supportActivities;
+}
+
+function defaultSupportActivityAircraftModel() {
+  return selectedOperationsSupportAircraftModel
+    || selectedPreventiveMaintenanceAircraftModel
+    || wholeMachineModels()[0]
+    || scenario.equipment?.model
+    || "未指定机型";
+}
+
+function ensurePreventiveMaintenanceActivityForAircraftModel(aircraftModel) {
+  const model = String(aircraftModel || "").trim() || "未指定机型";
+  const existing = preventiveMaintenanceActivityEntries(model)[0]?.activity;
+  if (existing) return existing;
+  const activities = ensureSupportActivities();
+  const activity = createPreventiveMaintenanceActivityForAircraftModel(model, preventiveMaintenanceActivityEntries().length + 1);
+  activities.push(activity);
+  selectedPreventiveMaintenanceActivityKey = `supportActivity:${activities.indexOf(activity)}`;
+  selectedPreventiveMaintenanceAircraftModel = model;
+  return activity;
+}
+
+function ensureCorrectiveMaintenanceActivityDraft() {
+  const componentActivity = ensureCorrectiveMaintenanceActivityForComponent(selectedCorrectiveComponent());
+  if (componentActivity) return componentActivity;
+  const activities = ensureSupportActivities();
+  const existing = activities.find((activity) => isCorrectiveMaintenanceActivity(activity));
+  if (existing) return existing;
+  const activity = createDefaultCorrectiveMaintenanceActivity();
+  activities.push(activity);
+  return activity;
+}
+
+function isCorrectiveMaintenanceActivity(activity) {
+  return activity?.activityType === "修复性维修" || activity?.planType === "修复性维修方案";
+}
+
+function createDefaultCorrectiveMaintenanceActivity() {
+  return {
+    id: nextSupportActivityId("corrective-unassigned"),
+    activityType: "修复性维修",
+    planType: "修复性维修方案",
+    activityName: "默认修复性维修方案",
+    equipmentId: "",
+    maxRepairTimeMinutes: 60,
+    repairType: "原位维修",
+    jobs: [{
+      activityCode: "CM-001",
+      workName: "新增修复性维修工作项目1",
+      predecessors: [],
+      durationMinutes: 60,
+      personnel: "维修人员,1",
+      equipment: "通用工具箱,1",
+      spare: ""
+    }]
+  };
+}
+
+function ensureLogisticsSupportActivityDraft() {
+  const existing = findLogisticsSupportActivity();
+  if (existing) return existing;
+  const activities = ensureSupportActivities();
+  const activity = {
+    id: nextSupportActivityId("logistics"),
+    activityType: "后勤保障",
+    planType: "后勤保障活动方案",
+    activityName: "后勤保障活动方案",
+    transportStrategies: []
+  };
+  activities.push(activity);
+  return activity;
+}
+
+function nextSupportActivityId(prefix) {
+  const normalizedPrefix = String(prefix || "support-activity").toLowerCase().replace(/[^a-z0-9]+/g, "-");
+  const usedIds = new Set((scenario.supportActivities || []).map((activity) => String(activity.id || "")));
+  let index = usedIds.size + 1;
+  while (usedIds.has(`${normalizedPrefix}-${index}`)) index += 1;
+  return `${normalizedPrefix}-${index}`;
 }
 
 function supportActivityAircraftModel(activity) {
@@ -4990,7 +5242,7 @@ function basicActivityLibraryRows() {
 }
 
 function addBasicActivityLibraryJob() {
-  const activity = (scenario.supportActivities || [])[0];
+  const activity = ensureSupportActivityForPage({ name: "基本保障活动建模" });
   if (!activity) return;
   const jobs = supportActivityJobs(activity).slice();
   jobs.push({ activityCode: `BA-${String(jobs.length + 1).padStart(3, "0")}`, workName: `新增保障活动${jobs.length + 1}`, predecessors: [], durationMinutes: 30, personnel: "机务人员,1", equipment: "检测仪,1" });
@@ -5282,15 +5534,9 @@ function spareModelingNames() {
 }
 
 function renderSupportActivityWorkbench(page) {
-  const activity = findSupportActivityForPage(page);
-  if (!activity && !page.name.includes("基本保障活动")) {
-    return importedDataEmptyState("保障活动");
-  }
+  const activity = ensureSupportActivityForPage(page);
   const activePlan = supportActivityPlanForPage(page, activity);
   if (page.name.includes("基本保障活动")) {
-    if (!(scenario.supportActivities || []).length) {
-      return importedDataEmptyState("保障活动");
-    }
     return `<div class="ship-front-workbench">${renderBasicActivityLibrary()}</div>`;
   }
   if (page.name.includes("修复性")) {
@@ -9124,6 +9370,10 @@ function valueSelect(path, options) {
       }).join("")}
     </select>
   `;
+}
+
+function readOnlyTableValue(value) {
+  return `<span class="readonly-table-value" aria-readonly="true">${htmlEscape(value ?? "")}</span>`;
 }
 
 function isActiveTertiary(activePage, pages) {

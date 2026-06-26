@@ -1402,6 +1402,21 @@ select {
   font-size: 14px;
 }
 
+.readonly-table-value {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  min-width: 96px;
+  max-width: 220px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #f8fafc;
+  color: var(--muted);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 .mc-inline-fields {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1588,12 +1603,42 @@ tr:last-child td {
   border-bottom: none;
 }
 
-tr[data-select-combat-unit-member] {
+tr.selected-table-row {
+  background: #e8f1ff;
+}
+
+tr.clickable-table-row {
   cursor: pointer;
 }
 
-tr.selected-table-row {
-  background: #e8f1ff;
+tr.clickable-table-row:hover {
+  background: #f0f6ff;
+}
+
+tr.clickable-table-row.selected-table-row td {
+  color: #12356f;
+  font-weight: 600;
+}
+
+.combat-unit-table input[type="text"],
+.combat-unit-table input[type="number"] {
+  width: 100%;
+  min-width: 96px;
+}
+
+.combat-unit-select-col {
+  width: 40px;
+  text-align: center;
+}
+
+.combat-unit-prelife-heading,
+.combat-unit-prelife-column,
+.combat-unit-prelife-cell {
+  text-align: center;
+}
+
+.combat-unit-prelife-cell input {
+  text-align: center;
 }
 
 .compact-table {
