@@ -5,7 +5,11 @@ import {
   calculateRmsAllocation,
   createDefaultRmsAllocationPlan,
   createDemoRmsAllocationProject,
-  publishRmsAllocation
+  createRmsEquipmentImportFixture,
+  normalizeRmsEquipmentImportRows,
+  publishRmsAllocation,
+  rmsEquipmentRoots,
+  selectRmsAllocationEquipmentRoot
 } from "../front/rms-allocation-engine.mjs";
 
 test("equal allocation back-solves to the equipment reliability target", () => {
@@ -49,16 +53,64 @@ test("proportional allocation gives more risk budget to weaker predicted nodes",
   assert.ok(propulsion.reliability < avionics.reliability);
 });
 
-test("AGREE rejects redundant or non-series structures with an explicit diagnostic", () => {
+test("similar product allocation supports baselining a 16 model from 15 model data", () => {
   const project = createDemoRmsAllocationProject();
-  project.reliabilityGroups[0].type = "k_of_n";
   const plan = createDefaultRmsAllocationPlan(project);
-  plan.methods.reliability = "agree";
+  plan.methods.reliability = "similar";
+  plan.methods.similarProduct = {
+    sourceModel: "15 机型",
+    targetModel: "16 机型",
+    adjustmentFactor: 0.92
+  };
 
-  assert.throws(
-    () => calculateRmsAllocation(plan, project),
-    /AGREE_REDUNDANCY_NOT_SUPPORTED/
-  );
+  const result = calculateRmsAllocation(plan, project);
+  const propulsion = result.nodeResults.find((row) => row.nodeId === "propulsion-system");
+  const missionComputer = result.nodeResults.find((row) => row.nodeId === "mission-computer");
+
+  assert.equal(result.method, "similar");
+  assert.equal(result.similarProduct.sourceModel, "15 机型");
+  assert.equal(result.similarProduct.targetModel, "16 机型");
+  assert.ok(propulsion.riskBudget > missionComputer.riskBudget);
+  assert.ok(propulsion.reliability < missionComputer.reliability);
+});
+
+test("RMS equipment table import creates an independent allocation project", () => {
+  const sourceProject = createDemoRmsAllocationProject();
+  const imported = normalizeRmsEquipmentImportRows(createRmsEquipmentImportFixture(), {
+    baseProject: sourceProject
+  });
+
+  assert.notEqual(imported, sourceProject);
+  assert.equal(sourceProject.rootId, "aircraft-root");
+  assert.equal(sourceProject.equipmentNodes.some((node) => node.id === "j16-propulsion"), false);
+  assert.equal(imported.rootId, "j16-root");
+  assert.ok(imported.equipmentNodes.some((node) => node.id === "j16-propulsion"));
+  assert.deepEqual(imported.reliabilityGroups[0].children, [
+    "j16-propulsion",
+    "j16-avionics",
+    "j16-hydraulic",
+    "j16-mission-computer"
+  ]);
+});
+
+test("RMS allocation can select one equipment root from an imported equipment list", () => {
+  const sourceProject = createDemoRmsAllocationProject();
+  const imported = normalizeRmsEquipmentImportRows([
+    { id: "j15-root", name: "15 机型", parentId: "", level: "装备", quantity: 1 },
+    { id: "j15-engine", name: "15 发动机", parentId: "j15-root", level: "系统", mtbfHours: 760 },
+    { id: "j16-root", name: "16 机型", parentId: "", level: "装备", quantity: 1 },
+    { id: "j16-engine", name: "16 发动机", parentId: "j16-root", level: "系统", mtbfHours: 700 }
+  ], {
+    baseProject: sourceProject
+  });
+  const selected = selectRmsAllocationEquipmentRoot(imported, "j16-root");
+  const plan = createDefaultRmsAllocationPlan(selected);
+
+  const result = calculateRmsAllocation(plan, selected);
+
+  assert.deepEqual(rmsEquipmentRoots(selected).map((node) => node.name), ["15 机型", "16 机型"]);
+  assert.equal(selected.rootId, "j16-root");
+  assert.deepEqual(result.nodeResults.map((row) => row.nodeId), ["j16-engine"]);
 });
 
 test("publishing allocation writes only target RMS values", () => {

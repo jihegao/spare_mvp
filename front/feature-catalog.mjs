@@ -1,19 +1,17 @@
 const MODULE_PREFIX = {
   "备件规划评估模块": "spare-planning",
   "任务可靠度评估模块": "mission-reliability",
-  "系统管理": "system-management"
+  "系统运行支持模块": "system-management"
 };
 
 const FEATURE_SLUGS = {
   内置场景: "built-in-scenario",
-  建模数据导入: "modeling-import-workbench",
   基本作战单元建模: "combat-unit",
   基本任务建模: "basic-mission",
   任务剖面参数: "mission-profile-parameters",
   复合任务建模: "composite-task",
   周期性任务建模: "periodic-task",
-  装备组成建模: "equipment-composition",
-  装备故障建模: "equipment-failure",
+  装备系统建模: "equipment-system",
   装备可靠性框图建模: "reliability-block-diagram",
   保障组织结构建模: "support-organization",
   备件建模: "spare-part",
@@ -25,11 +23,12 @@ const FEATURE_SLUGS = {
   修复性维修活动建模: "corrective-maintenance-activity",
   后勤保障活动建模: "logistics-support-activity",
   RMS分配方案编辑: "rms-allocation",
-  数据管理: "project-data-management",
+  项目数据管理: "project-data-management",
   建模颗粒度管理: "modeling-granularity-management",
   装备RMS指标分配: "equipment-rms-allocation",
   用户管理: "user-management",
   系统功能权限管理: "function-permission-management",
+  建模表单管理: "modeling-form-management",
   仿真实验方案管理: "experiment-plan-management",
   方案列表: "experiment-plan-list",
   方案编辑: "experiment-plan-edit",
@@ -49,14 +48,13 @@ const FEATURE_SLUGS = {
 };
 
 const SOURCE_ROWS = [
-  ["系统管理", "项目管理", "数据管理", "数据管理"],
-  ["系统管理", "项目管理", "建模数据导入", "建模数据导入"],
-  ["系统管理", "项目管理", "建模颗粒度管理", "建模颗粒度管理"],
-  ["系统管理", "装备RMS指标分配", "装备RMS指标分配", "装备RMS指标分配"],
-  ["系统管理", "系统基础配置", "用户管理", "用户管理"],
-  ["系统管理", "系统基础配置", "系统功能权限管理", "系统功能权限管理"],
-  ["备件规划评估模块", "仿真建模", "装备系统建模", "装备组成建模"],
-  ["备件规划评估模块", "仿真建模", "装备系统建模", "装备故障建模"],
+  ["系统运行支持模块", "项目管理", "项目数据管理", "项目数据管理"],
+  ["系统运行支持模块", "项目管理", "建模颗粒度管理", "建模颗粒度管理"],
+  ["系统运行支持模块", "装备RMS指标分配", "装备RMS指标分配", "装备RMS指标分配"],
+  ["系统运行支持模块", "系统基础配置", "用户管理", "用户管理"],
+  ["系统运行支持模块", "系统基础配置", "系统功能权限管理", "系统功能权限管理"],
+  ["系统运行支持模块", "系统基础配置", "建模表单管理", "建模表单管理"],
+  ["备件规划评估模块", "仿真建模", "装备系统建模", "装备系统建模"],
   ["备件规划评估模块", "仿真建模", "装备任务建模", "基本任务建模"],
   ["备件规划评估模块", "仿真建模", "装备任务建模", "复合任务建模"],
   ["备件规划评估模块", "仿真建模", "装备任务建模", "周期性任务建模"],
@@ -79,8 +77,7 @@ const SOURCE_ROWS = [
   ["备件规划评估模块", "结果分析", "蒙特卡洛实验结果", "蒙特卡洛实验结果"],
   ["备件规划评估模块", "结果分析", "备件短板分析", "备件短板分析"],
   ["备件规划评估模块", "结果分析", "飞机转场携行清单分析", "飞机转场携行清单分析"],
-  ["任务可靠度评估模块", "仿真建模", "装备系统建模", "装备组成建模"],
-  ["任务可靠度评估模块", "仿真建模", "装备系统建模", "装备故障建模"],
+  ["任务可靠度评估模块", "仿真建模", "装备系统建模", "装备系统建模"],
   ["任务可靠度评估模块", "仿真建模", "装备系统建模", "装备可靠性框图建模"],
   ["任务可靠度评估模块", "仿真建模", "装备任务建模", "基本任务建模"],
   ["任务可靠度评估模块", "仿真建模", "装备任务建模", "复合任务建模"],
@@ -165,13 +162,16 @@ const FEATURE_ID_ALIASES = {
   "mission-reliability-visual-results": "mission-reliability-visual-start-stop",
   "system-management-project-management": "system-management-project-data-management",
   "system-management-system-basic-config": "system-management-user-management",
+  "spare-planning-equipment-composition": "spare-planning-equipment-system",
+  "spare-planning-equipment-failure": "spare-planning-equipment-system",
+  "mission-reliability-equipment-composition": "mission-reliability-equipment-system",
+  "mission-reliability-equipment-failure": "mission-reliability-equipment-system",
   "mission-reliability-rms-allocation": "system-management-equipment-rms-allocation"
 };
 
 function resolveComponent(name, secondary, tertiary) {
   if (name === "方案列表") return "experiment-plan-list";
   if (name === "方案编辑") return "experiment-plan-editor";
-  if (name === "建模数据导入") return "modeling-import-workbench";
   if (name.includes("可靠性框图")) return "reliability-block-diagram";
   if (name.includes("RMS分配") || name.includes("RMS指标分配")) return "rms-allocation";
   if (secondary === "项目管理") return "system-project-management";
@@ -199,15 +199,14 @@ function resolveDataObjects(name, secondary, tertiary) {
   if (name.includes("任务剖面参数")) return ["missionProfile"];
   if (name.includes("复合任务")) return ["missionProfile", "basicMission"];
   if (name.includes("周期性任务")) return ["missionProfile", "missionPhases"];
-  if (name.includes("装备组成")) return ["equipment", "components"];
-  if (name.includes("装备故障")) return ["components", "failureModel"];
+  if (name.includes("装备系统")) return ["equipment", "components", "failureModel"];
   if (name.includes("可靠性框图")) return ["reliabilityBlockDiagram", "components"];
   if (name.includes("RMS分配") || name.includes("RMS指标分配")) return ["rmsAllocationPlan", "equipmentNodes", "missionExposure", "allocationResults"];
-  if (name.includes("数据管理")) return ["projects", "projectDataSets", "dataOwnership"];
-  if (name.includes("建模数据导入")) return ["modelingImportPackage", "validationIssues", "scenarioPreview"];
-  if (name.includes("建模颗粒度")) return ["modelingLevels", "modelingObjects", "objectRelations"];
+  if (name.includes("项目数据管理")) return ["modelingModules", "sheetSelections", "localImportActions"];
+  if (name.includes("建模颗粒度")) return ["modelingModules", "sheets", "fieldSelections"];
   if (name.includes("用户管理")) return ["users", "roles", "organizations"];
   if (name.includes("功能权限")) return ["features", "roles", "permissionRules"];
+  if (name.includes("建模表单管理")) return ["modelingForms", "formFields", "validationRules"];
   if (name.includes("保障组织结构")) return ["supportNodes", "organizationTree"];
   if (name.includes("备件")) return ["supportNodes.inventory", "spares"];
   if (name.includes("保障人员")) return ["supportNodes.personnelCapacity", "resources"];

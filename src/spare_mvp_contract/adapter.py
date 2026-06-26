@@ -1103,7 +1103,7 @@ class SimulationAdapter:
                     "missing_equipment_tree",
                     "components",
                     "装备树不能为空，aircraft_support_v1 需要可审计的装备组成。",
-                    "装备组成建模",
+                    "装备系统建模",
                 )
             )
         if not support_nodes:
@@ -1146,7 +1146,7 @@ class SimulationAdapter:
                         "missing_component_parent",
                         f"components[{index}].parentId",
                         f"组件 parentId 引用了不存在的组件 {parent_id}。",
-                        "装备组成建模",
+                        "装备系统建模",
                     )
                 )
 
