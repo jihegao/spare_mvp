@@ -111,9 +111,10 @@ test("page revision #11-13 support resource lists add/edit and derive spares fro
   assert.match(source, /component\.productType === "LRU" \|\| component\.spareType === "LRU"/);
 });
 
-test("page revision #15-17 support activity job-list edit buttons open editors", async () => {
+test("page revision #15-17 support activity job-list edit buttons open dialog editors", async () => {
   const source = await readFile(FRONT_APP_URL, "utf8");
-  assert.match(source, /function renderSupportActivityJobEditor\(selectedJob\)/);
+  assert.match(source, /function renderSupportActivityJobDialog\(selectedJob\)/);
+  assert.match(source, /data-support-activity-job-dialog-close/);
   assert.match(source, /data-support-activity-job-field/);
   assert.match(source, /function updateSupportActivityJobField\(key, fieldName, value\)/);
 });

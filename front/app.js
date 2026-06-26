@@ -29,6 +29,9 @@ import {
   supportActivityJobs
 } from "./support-activity-jobs.mjs";
 import {
+  buildReliabilityBlockDiagramLayout
+} from "./rbd-evaluator.mjs";
+import {
   calculateRmsAllocation,
   createDefaultRmsAllocationPlan,
   createDemoRmsAllocationProject,
@@ -228,6 +231,7 @@ const MODELING_DATA_MODULES = [
         sourcePage: "保障人员建模",
         fields: [
           fieldDef("personnelType", "人员类型", "supportNodes[].personnelCapacity[].type"),
+          fieldDef("ownerModel", "所属型号", "supportNodes[].personnelCapacity[].ownerModel"),
           fieldDef("nodeId", "所属节点", "supportNodes[].personnelCapacity[].nodeId"),
           fieldDef("shift", "班次", "supportNodes[].personnelCapacity[].shift"),
           fieldDef("capacity", "能力人数", "supportNodes[].personnelCapacity[].capacity"),
@@ -544,6 +548,8 @@ let selectedCompositeTaskId = "";
 let selectedCombatUnitMemberIndex = 0;
 let selectedSupportOrgNodeId = "";
 let selectedSupportActivityJobKeys = new Set();
+let selectedLogisticsTransportStrategyIndexes = new Set();
+let supportActivityJobDialogKey = "";
 let selectedOperationsSupportActivityKey = "";
 let selectedOperationsSupportAircraftModel = "";
 let selectedOperationsSupportPlanType = "直接准备方案";
@@ -551,6 +557,7 @@ let selectedPreventiveMaintenanceActivityKey = "";
 let selectedPreventiveMaintenanceAircraftModel = "";
 let selectedSupportResourceKeys = new Set();
 let deletedSupportResourceKeys = new Set();
+let supportResourceImportStatus = "可在当前资源清单导入 CSV / TSV / JSON 表格。";
 let selectedBasicActivityKeys = new Set();
 let selectedCorrectiveComponentId = "";
 
@@ -783,6 +790,14 @@ function bindEvents() {
       return;
     }
 
+    const basicMissionPhaseBatchDeleteButton = event.target.closest("[data-basic-mission-phase-batch-delete]");
+    if (basicMissionPhaseBatchDeleteButton) {
+      deleteSelectedMissionPhases();
+      markProjectDraftChanged();
+      render();
+      return;
+    }
+
     const basicMissionPhaseDeleteButton = event.target.closest("[data-basic-mission-phase-delete]");
     if (basicMissionPhaseDeleteButton) {
       deleteMissionPhase(Number(basicMissionPhaseDeleteButton.dataset.basicMissionPhaseDelete));
@@ -947,10 +962,12 @@ function bindEvents() {
     const logisticsAddButton = event.target.closest("[data-logistics-transport-add]");
     if (logisticsAddButton) {
       const activity = ensureLogisticsSupportActivityDraft();
+      const transportIndex = Array.isArray(activity.transportStrategies) ? activity.transportStrategies.length : 0;
       activity.transportStrategies = [
         ...(Array.isArray(activity.transportStrategies) ? activity.transportStrategies : []),
-        { direction: "\u6a2a\u5411\u8fd0\u8f93", spareType: spareModelingNames()[0] || "", triggerMode: "\u4e34\u754c\u5e93\u5b58", criticalInventory: 1, from: scenario.supportNodes[0]?.id || "", to: scenario.supportNodes[1]?.id || "", transportTimeHours: 1 }
+        { name: `\u65b0\u589e\u8fd0\u8f93\u7b56\u7565${transportIndex + 1}`, direction: "\u6a2a\u5411\u8fd0\u8f93", spareType: spareModelingNames()[0] || "", triggerMode: "\u4e34\u754c\u5e93\u5b58", criticalInventory: 1, from: scenario.supportNodes[0]?.id || "", to: scenario.supportNodes[1]?.id || "", transportTimeHours: 1 }
       ];
+      selectedLogisticsTransportStrategyIndexes = new Set([transportIndex]);
       markProjectDraftChanged();
       render();
       return;
@@ -960,8 +977,9 @@ function bindEvents() {
     if (logisticsDeleteButton) {
       const activity = findLogisticsSupportActivity();
       if (!activity) return;
-      const index = Number(logisticsDeleteButton.dataset.logisticsTransportDelete);
-      activity.transportStrategies = (Array.isArray(activity.transportStrategies) ? activity.transportStrategies : []).filter((_, rowIndex) => rowIndex !== index);
+      activity.transportStrategies = (Array.isArray(activity.transportStrategies) ? activity.transportStrategies : [])
+        .filter((_, rowIndex) => !selectedLogisticsTransportStrategyIndexes.has(rowIndex));
+      selectedLogisticsTransportStrategyIndexes = new Set();
       markProjectDraftChanged();
       render();
       return;
@@ -1002,6 +1020,7 @@ function bindEvents() {
     const supportActivityPlanSelectButton = event.target.closest("[data-select-support-activity-plan]");
     if (supportActivityPlanSelectButton) {
       selectOperationsSupportActivityPlan(supportActivityPlanSelectButton.dataset.selectSupportActivityPlan);
+      supportActivityJobDialogKey = "";
       render();
       return;
     }
@@ -1009,6 +1028,7 @@ function bindEvents() {
     const preventiveActivityPlanSelectButton = event.target.closest("[data-select-preventive-activity-plan]");
     if (preventiveActivityPlanSelectButton) {
       selectPreventiveMaintenanceActivityPlan(preventiveActivityPlanSelectButton.dataset.selectPreventiveActivityPlan);
+      supportActivityJobDialogKey = "";
       render();
       return;
     }
@@ -1016,6 +1036,7 @@ function bindEvents() {
     const operationsSupportAircraftSelectButton = event.target.closest("[data-select-operations-support-aircraft-model]");
     if (operationsSupportAircraftSelectButton) {
       selectOperationsSupportAircraftModel(operationsSupportAircraftSelectButton.dataset.selectOperationsSupportAircraftModel);
+      supportActivityJobDialogKey = "";
       render();
       return;
     }
@@ -1023,6 +1044,7 @@ function bindEvents() {
     const preventiveAircraftSelectButton = event.target.closest("[data-select-preventive-aircraft-model]");
     if (preventiveAircraftSelectButton) {
       selectPreventiveMaintenanceAircraftModel(preventiveAircraftSelectButton.dataset.selectPreventiveAircraftModel);
+      supportActivityJobDialogKey = "";
       render();
       return;
     }
@@ -1031,12 +1053,23 @@ function bindEvents() {
     if (supportActivityPhaseTabButton) {
       selectedOperationsSupportPlanType = supportActivityPhaseTabButton.dataset.opsSupportPlanType || "直接准备方案";
       selectedSupportActivityJobKeys = new Set();
+      supportActivityJobDialogKey = "";
+      render();
+      return;
+    }
+
+    const supportActivityJobDialogCloseButton = event.target.closest("[data-support-activity-job-dialog-close]");
+    if (supportActivityJobDialogCloseButton) {
+      supportActivityJobDialogKey = "";
       render();
       return;
     }
 
     const supportActivityJobDeleteButton = event.target.closest("[data-support-activity-job-delete]");
     if (supportActivityJobDeleteButton) {
+      if (supportActivityJobDialogKey === supportActivityJobDeleteButton.dataset.supportActivityJobDelete) {
+        supportActivityJobDialogKey = "";
+      }
       deleteSupportActivityJob(supportActivityJobDeleteButton.dataset.supportActivityJobDelete);
       markProjectDraftChanged();
       render();
@@ -1045,7 +1078,7 @@ function bindEvents() {
 
     const supportActivityJobAddButton = event.target.closest("[data-support-activity-job-add]");
     if (supportActivityJobAddButton) {
-      addSupportActivityJob(supportActivityJobAddButton.dataset.supportActivityJobAdd);
+      supportActivityJobDialogKey = addSupportActivityJob(supportActivityJobAddButton.dataset.supportActivityJobAdd) || "";
       markProjectDraftChanged();
       render();
       return;
@@ -1061,7 +1094,7 @@ function bindEvents() {
 
     const supportActivityJobEditButton = event.target.closest("[data-support-activity-job]");
     if (supportActivityJobEditButton) {
-      selectSupportActivityJobForEdit(supportActivityJobEditButton.dataset.supportActivityJob);
+      supportActivityJobDialogKey = selectSupportActivityJobForEdit(supportActivityJobEditButton.dataset.supportActivityJob) || "";
       render();
       return;
     }
@@ -1448,6 +1481,11 @@ function bindEvents() {
   });
 
   app.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && supportActivityJobDialogKey) {
+      supportActivityJobDialogKey = "";
+      render();
+      return;
+    }
     if (event.key !== "Enter" && event.key !== " ") return;
     const compositeTaskRow = event.target.closest("[data-select-composite-task]");
     if (compositeTaskRow) {
@@ -1468,6 +1506,18 @@ function bindEvents() {
     if (rmsEquipmentImportFile) {
       await importRmsEquipmentTableFile(rmsEquipmentImportFile.files?.[0]);
       rmsEquipmentImportFile.value = "";
+      render();
+      return;
+    }
+
+    const supportResourceImportFile = event.target.closest("[data-support-resource-import-file]");
+    if (supportResourceImportFile) {
+      const imported = await importSupportResourceTableFile(
+        supportResourceImportFile.files?.[0],
+        supportResourceImportFile.dataset.supportResourceImportFile
+      );
+      supportResourceImportFile.value = "";
+      if (imported) markProjectDraftChanged();
       render();
       return;
     }
@@ -1569,12 +1619,12 @@ function bindEvents() {
       return;
     }
 
-    const supportResourceAircraft = event.target.closest("[data-support-resource-aircraft]");
-    if (supportResourceAircraft) {
-      updateSupportResourceOverride(
-        supportResourceAircraft.dataset.supportResourceAircraft,
-        "aircraft",
-        Array.from(supportResourceAircraft.selectedOptions).map((option) => option.value)
+    const combatUnitFieldSelect = event.target.closest("[data-combat-unit-field]");
+    if (combatUnitFieldSelect) {
+      updateCombatUnitMemberField(
+        Number(combatUnitFieldSelect.dataset.combatUnitIndex),
+        combatUnitFieldSelect.dataset.combatUnitField,
+        parseInput(combatUnitFieldSelect)
       );
       markProjectDraftChanged();
       render();
@@ -1674,6 +1724,13 @@ function bindEvents() {
     const supportActivityJobSelect = event.target.closest("[data-support-activity-job-select]");
     if (supportActivityJobSelect) {
       toggleSupportActivityJobSelection(supportActivityJobSelect.dataset.supportActivityJobSelect, supportActivityJobSelect.checked);
+      render();
+      return;
+    }
+
+    const logisticsTransportSelect = event.target.closest("[data-logistics-transport-select]");
+    if (logisticsTransportSelect) {
+      toggleLogisticsTransportStrategySelection(Number(logisticsTransportSelect.dataset.logisticsTransportSelect), logisticsTransportSelect.checked);
       render();
       return;
     }
@@ -2993,7 +3050,7 @@ function renderCombatUnitModeling(page) {
               <tr class="${index === boundedSelectedIndex ? "selected-table-row" : ""}">
                 <td class="combat-unit-select-col"><input type="checkbox" data-select-combat-unit-member="${index}" ${index === boundedSelectedIndex ? "checked" : ""} aria-label="选择${htmlEscape(member.aircraftNo || `第${index + 1}架飞机`)}"></td>
                 <td>${combatUnitMemberInput(index, "aircraftNo", member.aircraftNo)}</td>
-                <td>${combatUnitMemberInput(index, "model", member.model)}</td>
+                <td>${combatUnitMemberModelSelect(index, member.model)}</td>
                 <td class="combat-unit-prelife-cell">${combatUnitMemberInput(index, "preLifeCalendarDays", combatUnitMemberCalendarTime(member), "number", { min: "0", step: "1" })}</td>
                 <td class="combat-unit-prelife-cell">${combatUnitMemberInput(index, "preLifeFlightHours", combatUnitMemberFlightHours(member), "number", { min: "0", step: "1" })}</td>
                 <td class="combat-unit-prelife-cell">${combatUnitMemberInput(index, "preLifeTakeoffLandingCount", combatUnitMemberTakeoffLandingCount(member), "number", { min: "0", step: "1" })}</td>
@@ -3011,6 +3068,19 @@ function combatUnitMemberInput(index, fieldName, value, type = "text", attrs = {
     .map(([key, attrValue]) => ` ${key}="${htmlEscape(attrValue)}"`)
     .join("");
   return `<input data-combat-unit-index="${index}" data-combat-unit-field="${htmlEscape(fieldName)}" type="${type}" value="${htmlEscape(value ?? "")}"${attrText}>`;
+}
+
+function combatUnitMemberModelSelect(index, value) {
+  const currentValue = String(value || "");
+  const aircraftModels = wholeMachineModels();
+  const options = aircraftModels.includes(currentValue) || !currentValue
+    ? aircraftModels
+    : [currentValue, ...aircraftModels];
+  return `
+    <select data-combat-unit-index="${index}" data-combat-unit-field="model" ${options.length ? "" : "disabled"}>
+      ${options.map((model) => `<option value="${htmlEscape(model)}" ${String(model) === currentValue ? "selected" : ""}>${htmlEscape(model)}</option>`).join("") || "<option value=\"\">暂无装备构型飞机级别</option>"}
+    </select>
+  `;
 }
 
 function combatUnitMemberCalendarTime(member) {
@@ -3135,7 +3205,7 @@ function renderBasicMissionModeling(page) {
             <h4>任务阶段</h4>
             <div class="toolbar-row" style="margin-bottom:0;">
               <button type="button" class="btn-primary" data-basic-mission-phase-add>新增</button>
-              <button type="button" data-basic-mission-phase-add>添加</button>
+              <button type="button" class="btn-danger" data-basic-mission-phase-batch-delete ${selectedBasicMissionPhaseIndexes.size ? "" : "disabled"}>删除</button>
             </div>
           </div>
           <div class="inline-status ${phaseRatioValid ? "success" : "warn"}">阶段占比合计 ${fixed(phaseRatioTotal, 2)}；${phaseRatioValid ? "满足合计为 1" : "必须调整为 1 后才能作为正式编译输入"}</div>
@@ -3198,6 +3268,18 @@ function deleteMissionPhase(index) {
       .map((selectedIndex) => String(selectedIndex > index ? selectedIndex - 1 : selectedIndex))
   );
   selectedBasicMissionPhaseIndexes = validMissionPhaseSelection(scenario.missionPhases);
+}
+
+function deleteSelectedMissionPhases() {
+  const selectedIndexes = new Set(
+    Array.from(selectedBasicMissionPhaseIndexes)
+      .map((key) => Number(key))
+      .filter(Number.isInteger)
+  );
+  if (!selectedIndexes.size) return;
+  scenario.missionPhases = (Array.isArray(scenario.missionPhases) ? scenario.missionPhases : [])
+    .filter((_, index) => !selectedIndexes.has(index));
+  selectedBasicMissionPhaseIndexes = new Set();
 }
 
 function renderCompositeTaskModeling(page) {
@@ -3320,7 +3402,7 @@ function renderPeriodicTaskModeling(page) {
             <thead><tr><th>序号</th><th>周期性任务名称</th><th>选择/删除</th></tr></thead>
             <tbody>
               ${periodicTasks.map((task, index) => `
-                <tr class="${String(task.id) === String(selectedTask?.id) ? "active" : ""}" data-periodic-select="${htmlEscape(task.id)}">
+                <tr class="clickable-table-row ${String(task.id) === String(selectedTask?.id) ? "selected-table-row" : ""}" data-periodic-select="${htmlEscape(task.id)}" aria-selected="${String(task.id) === String(selectedTask?.id) ? "true" : "false"}">
                   <td>${index + 1}</td>
                   <td>${htmlEscape(task.name)}</td>
                   <td class="table-actions">
@@ -3872,7 +3954,8 @@ function isOperationsSupportActivity(activity) {
   const planType = String(activity?.planType || "").trim();
   return operationsSupportPlanTypeConfigs().some((config) => config.planType === planType)
     || activity?.activityType === "飞行前保障"
-    || activity?.activityType === "使用保障";
+    || activity?.activityType === "使用保障"
+    || activity?.activityType === "使用保障活动";
 }
 
 function isPreventiveMaintenanceActivity(activity) {
@@ -4148,37 +4231,65 @@ function renderEquipmentDistributionParameters(index, metric, distributionType) 
 }
 
 function renderReliabilityBlockDiagram() {
-  const nodes = scenario.reliabilityBlockDiagram.nodes;
+  const layout = buildReliabilityBlockDiagramLayout({
+    reliabilityBlockDiagram: scenario.reliabilityBlockDiagram,
+    components: scenario.components,
+    equipment: scenario.equipment
+  });
+  const nodes = layout.nodes;
+  const diagramEdges = Array.isArray(scenario.reliabilityBlockDiagram?.edges) ? scenario.reliabilityBlockDiagram.edges : [];
+  if (!nodes.length) {
+    return importedDataEmptyState("装备可靠性框图");
+  }
   return `
     <div class="section-head">
       <h3>装备可靠性框图</h3>
-      <span>串联 / 并联 / 备用 / k-out-of-n</span>
+      <span>串联/并联/备用/k-out-of-n，按 n中取k 绘制</span>
     </div>
-    <div class="rbd-canvas">
-      ${nodes.map((node, index) => `
-        <div class="rbd-node ${node.type}" style="grid-column:${index === 0 ? "1 / -1" : "auto"}">
-          <strong>${node.name}</strong>
-          <span>${node.connectionType}</span>
-          <small>失效率 ${node.failureRate} / MTBF ${node.mtbfHours}h</small>
-        </div>
-      `).join("")}
-    </div>
+    ${renderReliabilityBlockDiagramSvg(layout)}
     <div class="table-wrap compact-table">
       <table>
-        <thead><tr><th>节点</th><th>节点类型</th><th>连接关系</th><th>节点可靠度</th><th>失效率</th><th>MTBF</th><th>k-out-of-n</th></tr></thead>
-        <tbody>${nodes.map((node) => {
-          const component = scenario.components.find((item) => item.id === node.id);
-          return `<tr><td>${node.name}</td><td>${node.type}</td><td>${node.connectionType}</td><td>${component?.rms?.reliability ?? "-"}</td><td>${node.failureRate}</td><td>${node.mtbfHours}h</td><td>${component?.kOutOfN?.enabled ? `${component.kOutOfN.k}/${component.kOutOfN.n}` : "-"}</td></tr>`;
-        }).join("")}</tbody>
+        <thead><tr><th>节点</th><th>节点类型</th><th>连接关系</th><th>节点可靠度</th><th>失效率</th><th>MTBF</th><th>n中取k / k-out-of-n</th></tr></thead>
+        <tbody>${nodes.map((node) => `<tr><td>${htmlEscape(node.name)}</td><td>${htmlEscape(node.type)}</td><td>${htmlEscape(node.connectionLabel)}</td><td>${htmlEscape(node.reliability || "-")}</td><td>${htmlEscape(node.failureRate || "-")}</td><td>${htmlEscape(node.mtbfHours || "-")}h</td><td>${htmlEscape(node.kOutOfNLabel || "-")}</td></tr>`).join("")}</tbody>
       </table>
     </div>
     <div class="table-wrap compact-table">
       <table>
         <thead><tr><th>起点</th><th>终点</th><th>串联/并联/备用/k-out-of-n</th><th>权重</th></tr></thead>
-        <tbody>${scenario.reliabilityBlockDiagram.edges.map((edge) => `<tr><td>${edge.from}</td><td>${edge.to}</td><td>${edge.type}</td><td>${edge.weight}</td></tr>`).join("")}</tbody>
+        <tbody>${diagramEdges.map((edge) => `<tr><td>${htmlEscape(edge.from)}</td><td>${htmlEscape(edge.to)}</td><td>${htmlEscape(edge.type)}</td><td>${htmlEscape(edge.weight ?? "-")}</td></tr>`).join("") || `<tr><td colspan="4" class="muted">已按装备组成关系生成框图主线</td></tr>`}</tbody>
       </table>
     </div>
   `;
+}
+
+function renderReliabilityBlockDiagramSvg(layout) {
+  return `
+    <div class="rbd-canvas">
+      <svg class="rbd-diagram" viewBox="0 0 ${layout.width} ${layout.height}" role="img" aria-label="装备可靠性框图">
+        ${layout.groups.map((group) => `
+          <rect class="rbd-group ${htmlEscape(group.relation)}" x="${group.x}" y="${group.y}" width="${group.width}" height="${group.height}" rx="8"></rect>
+          <text class="rbd-group-label" x="${group.x + 8}" y="${group.y + 14}">${htmlEscape(group.label)}</text>
+        `).join("")}
+        ${layout.connectors.map((connector) => `<path class="rbd-connector ${htmlEscape(connector.relation)}" d="${connector.path}"></path>`).join("")}
+        <circle class="rbd-terminal" cx="${layout.terminalStart.x}" cy="${layout.terminalStart.y}" r="5"></circle>
+        <circle class="rbd-terminal" cx="${layout.terminalEnd.x}" cy="${layout.terminalEnd.y}" r="5"></circle>
+        ${layout.nodes.map((node) => `
+          <g class="rbd-node ${htmlEscape(node.type)} ${htmlEscape(node.logic)}" transform="translate(${node.x} ${node.y})">
+            <title>${htmlEscape(node.name)} / ${htmlEscape(node.connectionLabel)}${node.kOutOfNLabel ? ` / ${htmlEscape(node.kOutOfNLabel)}` : ""}</title>
+            <rect width="${node.width}" height="${node.height}" rx="8"></rect>
+            <text class="rbd-node-title" x="12" y="21">${htmlEscape(truncateRbdText(node.name, 12))}</text>
+            <text class="rbd-node-meta" x="12" y="40">${htmlEscape(node.connectionLabel)}${node.kOutOfNLabel ? ` / ${htmlEscape(node.kOutOfNLabel)}` : ""}</text>
+            <text class="rbd-node-meta" x="12" y="56">失效率 ${htmlEscape(node.failureRate || "-")} / MTBF ${htmlEscape(node.mtbfHours || "-")}h</text>
+          </g>
+        `).join("")}
+      </svg>
+    </div>
+  `;
+}
+
+function truncateRbdText(value, maxLength) {
+  const text = String(value ?? "");
+  return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
 }
 
 function renderResourceTable(page) {
@@ -4243,6 +4354,7 @@ function renderSupportOrganizationWorkbench(page) {
   const visibleResourceRows = buildSupportResourceRows(activeResourceType, selectedSupportOrgNode).filter((row) => !supportResourceDeletedKeySet().has(row.key));
   const allResourceRowsSelected = visibleResourceRows.length > 0 && visibleResourceRows.every((row) => selectedSupportResourceKeys.has(row.key));
   const selectedSupportOrgParentName = findSupportOrgParentName(selectedSupportOrgNode?.id, orgTree) || "无";
+  const resourceColumns = supportResourceDataColumns(activeResourceType);
   return `
     <div class="ship-front-workbench">
       <div class="organization-layout">
@@ -4262,22 +4374,24 @@ function renderSupportOrganizationWorkbench(page) {
             ${activeTab === "保障组织结构建模" ? `
               <div class="form-table-grid">
                 <label>组织名称<input data-support-org-node="${htmlEscape(selectedSupportOrgNode?.id || "")}" data-support-org-field="name" value="${htmlEscape(selectedSupportOrgNode?.name || "")}"></label>
-                <label>上级组织<input value="${htmlEscape(selectedSupportOrgParentName)}" readonly></label>
+                <div class="readonly-meta-row" data-support-org-parent-display><span>上级组织</span><strong>${htmlEscape(selectedSupportOrgParentName)}</strong></div>
                 <label>组织描述<input data-support-org-node="${htmlEscape(selectedSupportOrgNode?.id || "")}" data-support-org-field="description" value="${htmlEscape(selectedSupportOrgNode?.description || "承担机务、维修、备件和设备保障资源调配")}"></label>
               </div>
             ` : `
               <div class="toolbar-row">
                 <button type="button" class="btn-primary" data-support-resource-add="${htmlEscape(activeResourceType)}" ${selectedIsLeaf ? "" : "disabled"}>新增</button>
+                <label class="rms-file-button">导入表格<input data-support-resource-import-file="${htmlEscape(activeResourceType)}" type="file" accept=".csv,.tsv,.json,application/json,text/csv,text/tab-separated-values"></label>
                 <button type="button" class="btn-danger" data-support-resource-batch-delete>批量删除</button>
                 <input value="" placeholder="请输入关键词进行搜索">
                 <span class="badge">${selectedIsLeaf ? "叶子节点可编辑" : "根节点汇总显示"}</span>
               </div>
+              <p class="rms-import-status">${htmlEscape(supportResourceImportStatus)}</p>
               <div class="table-wrap">
                 <table>
-                  <thead><tr><th><input type="checkbox" data-support-resource-select-all="${htmlEscape(activeResourceType)}" ${allResourceRowsSelected ? "checked" : ""}></th><th>序号</th><th>组织节点</th>${activeResourceType === "保障人员" ? "" : "<th>名称</th>"}<th>${activeResourceType === "保障人员" ? "专业" : "型号"}</th><th>数量</th><th>适用机型</th><th>编辑</th></tr></thead>
+                  <thead><tr><th><input type="checkbox" data-support-resource-select-all="${htmlEscape(activeResourceType)}" ${allResourceRowsSelected ? "checked" : ""}></th><th>序号</th><th>组织节点</th>${resourceColumns.map((column) => `<th>${htmlEscape(column.label)}</th>`).join("")}<th>编辑</th></tr></thead>
                   <tbody>${visibleResourceRows.map((row, index) => `
-                    <tr class="${selectedSupportResourceKeys.has(row.key) ? "selected-table-row" : ""}"><td><input type="checkbox" data-support-resource-select="${htmlEscape(row.key)}" ${selectedSupportResourceKeys.has(row.key) ? "checked" : ""}></td><td>${index + 1}</td><td>${row.scope}</td>${activeResourceType === "保障人员" ? "" : `<td>${supportResourceInput(row, "name", "text", !selectedIsLeaf || row.lockIdentity)}</td>`}<td>${supportResourceInput(row, "model", "text", !selectedIsLeaf || row.lockIdentity)}</td><td>${supportResourceInput(row, "quantity", "number", !selectedIsLeaf)}</td><td>${aircraftMultiSelect(row.key, row.aircraft, !selectedIsLeaf)}</td><td><button type="button" class="inline-action" data-support-resource-edit="${htmlEscape(row.key)}" ${selectedIsLeaf ? "" : "disabled"}>编辑</button></td></tr>
-                  `).join("") || `<tr><td colspan="${activeResourceType === "保障人员" ? "7" : "8"}">暂无资源</td></tr>`}</tbody>
+                    <tr class="${selectedSupportResourceKeys.has(row.key) ? "selected-table-row" : ""}"><td><input type="checkbox" data-support-resource-select="${htmlEscape(row.key)}" ${selectedSupportResourceKeys.has(row.key) ? "checked" : ""}></td><td>${index + 1}</td><td>${supportOrganizationSelect(row.key, row.organizationNodeId, true)}</td>${resourceColumns.map((column) => `<td>${supportResourceDataCell(row, column, !selectedIsLeaf)}</td>`).join("")}<td><button type="button" class="inline-action" data-support-resource-edit="${htmlEscape(row.key)}" ${selectedIsLeaf ? "" : "disabled"}>编辑</button></td></tr>
+                  `).join("") || `<tr><td colspan="${resourceColumns.length + 4}">暂无资源</td></tr>`}</tbody>
                 </table>
               </div>
             `}
@@ -4298,7 +4412,7 @@ function orgTreeNode(node, depth = 0) {
     label: node.name,
     selected: selectedSupportOrgNodeId === node.id,
     actionAttrs: `data-select-support-org-node="${htmlEscape(node.id || node.name)}"`,
-    children: depth >= 1 ? [] : (node.children || []).map((child) => orgTreeNode(child, depth + 1))
+    children: (node.children || []).map((child) => orgTreeNode(child, depth + 1))
   };
 }
 
@@ -4310,12 +4424,14 @@ function buildSupportResourceRows(activeResourceType, selectedOrgNode) {
   const overrides = supportResourceOverrides();
   return orgNodes.flatMap((orgNode, orgIndex) => {
     const matchingNodes = supportNodes.filter((node) => node.organizationNodeId === orgNode.id || node.id === orgNode.id || node.name === orgNode.name);
-    const scopedSupportNodes = matchingNodes.length ? matchingNodes : supportNodes;
+    const scopedSupportNodes = (matchingNodes.length ? matchingNodes : supportNodes)
+      .filter((node) => !activeResourceType || !node.importedResourceType || node.importedResourceType === activeResourceType);
     const rows = scopedSupportNodes.flatMap((node, nodeIndex) => {
       const baseKey = `${orgNode.id || orgIndex}:${node.id || nodeIndex}`;
+      const rowScope = { scope: orgNode.name, organizationNodeId: orgNode.id };
       const lruRows = lruSpareRows().map((spare, index) => ({
         key: `${baseKey}:spare:${index}:${spare.name}`,
-        scope: orgNode.name,
+        ...rowScope,
         type: "备件",
         name: spare.name,
         model: spare.model,
@@ -4327,25 +4443,45 @@ function buildSupportResourceRows(activeResourceType, selectedOrgNode) {
         .filter(([spareType]) => !lruSpareRows().some((spare) => spare.name === spareType))
         .map(([spareType, quantity], index) => ({
           key: `${baseKey}:spare:custom:${index}:${spareType}`,
-          scope: orgNode.name,
+          ...rowScope,
           type: "备件",
           name: spareType,
-          model: spareType,
+          model: node.spareModels?.[spareType] || spareType,
           quantity,
           aircraft: wholeMachineModels()
         }));
       return [
         Number.isFinite(Number(node.personnelCapacity))
-          ? { key: `${baseKey}:personnel`, scope: orgNode.name, type: "保障人员", model: "人员容量", quantity: Number(node.personnelCapacity || 0), aircraft: wholeMachineModels() }
+          ? {
+            key: `${baseKey}:personnel`,
+            ...rowScope,
+            type: "保障人员",
+            ownerModel: node.personnelOwnerModel || node.ownerModel || wholeMachineModels()[0] || scenario.equipment?.model || "",
+            model: node.personnelModel || node.personnelType || "人员容量",
+            quantity: Number(node.personnelCapacity || 0),
+            aircraft: wholeMachineModels()
+          }
           : null,
         Number.isFinite(Number(node.equipmentCapacity))
-          ? { key: `${baseKey}:equipment`, scope: orgNode.name, type: "保障设备", name: node.name || "保障设备", model: node.nodeType || "保障设备", quantity: Number(node.equipmentCapacity || 0), aircraft: wholeMachineModels() }
+          ? {
+            key: `${baseKey}:equipment`,
+            ...rowScope,
+            type: "保障设备",
+            name: node.supportEquipmentName || node.equipmentName || node.name || "保障设备",
+            model: node.supportEquipmentModel || node.nodeType || "保障设备",
+            quantity: Number(node.equipmentCapacity || 0),
+            aircraft: wholeMachineModels()
+          }
           : null,
         ...lruRows,
         ...inventoryRows
       ].filter(Boolean);
     });
-    const mergedRows = rows.map((row) => ({ ...row, ...(overrides[row.key] || {}) }));
+    const mergedRows = rows.map((row) => {
+      const merged = { ...row, ...(overrides[row.key] || {}) };
+      const selectedOrgNode = findSupportOrgTreeNode(merged.organizationNodeId, orgTree);
+      return { ...merged, scope: selectedOrgNode?.name || merged.scope };
+    });
     return activeResourceType ? mergedRows.filter((row) => row.type === activeResourceType) : mergedRows;
   });
 }
@@ -4421,11 +4557,40 @@ function supportResourceInput(row, fieldName, type = "text", disabled = false) {
   return `<input data-support-resource-key="${htmlEscape(row.key)}" data-support-resource-field="${htmlEscape(fieldName)}" type="${type}" value="${htmlEscape(row[fieldName] ?? "")}" ${disabled ? "disabled" : ""}>`;
 }
 
-function aircraftMultiSelect(key, values, disabled = false) {
-  const selected = new Set(Array.isArray(values) ? values : [values].filter(Boolean));
+function supportResourceDataColumns(activeResourceType) {
+  if (activeResourceType === "保障人员") {
+    return [
+      { label: "所属型号", field: "ownerModel", type: "text" },
+      { label: "专业", field: "model", type: "text", lockIdentity: true },
+      { label: "数量", field: "quantity", type: "number" }
+    ];
+  }
+  return [
+    { label: "名称", field: "name", type: "text", lockIdentity: true },
+    { label: "型号", field: "model", type: "text", lockIdentity: true },
+    { label: "数量", field: "quantity", type: "number" }
+  ];
+}
+
+function supportResourceDataCell(row, column, disabled = false) {
+  return supportResourceInput(
+    row,
+    column.field,
+    column.type || "text",
+    disabled || (column.lockIdentity && row.lockIdentity)
+  );
+}
+
+function supportOrganizationSelect(key, selectedNodeId, disabled = false) {
+  const leafNodes = flattenSupportOrgTreeNodes().filter((node) => !(node.children || []).length);
+  const selectableNodes = leafNodes.length ? leafNodes : flattenSupportOrgTreeNodes();
+  const selectedNode = findSupportOrgTreeNode(selectedNodeId);
+  const options = selectedNode && !selectableNodes.some((node) => node.id === selectedNode.id)
+    ? [selectedNode, ...selectableNodes]
+    : selectableNodes;
   return `
-    <select multiple data-support-resource-aircraft="${htmlEscape(key)}" ${disabled ? "disabled" : ""}>
-      ${wholeMachineModels().map((model) => `<option value="${htmlEscape(model)}" ${selected.has(model) ? "selected" : ""}>${htmlEscape(model)}</option>`).join("")}
+    <select data-support-resource-key="${htmlEscape(key)}" data-support-resource-field="organizationNodeId" ${disabled ? "disabled" : ""}>
+      ${options.map((node) => `<option value="${htmlEscape(node.id || node.name)}" ${(node.id || node.name) === selectedNodeId ? "selected" : ""}>${htmlEscape(node.name)}</option>`).join("")}
     </select>
   `;
 }
@@ -4434,7 +4599,12 @@ function updateSupportResourceOverride(key, fieldName, value) {
   if (!key || !fieldName) return;
   const overrides = supportResourceOverrides();
   const nextValue = fieldName === "quantity" ? Math.max(0, Number(value || 0)) : value;
-  overrides[key] = { ...(overrides[key] || {}), [fieldName]: nextValue };
+  const nextOverride = { ...(overrides[key] || {}), [fieldName]: nextValue };
+  if (fieldName === "organizationNodeId") {
+    const orgNode = findSupportOrgTreeNode(nextValue);
+    if (orgNode) nextOverride.scope = orgNode.name;
+  }
+  overrides[key] = nextOverride;
   deletedSupportResourceKeys = supportResourceDeletedKeySet();
   updatePreviewResultsThroughApiClient();
 }
@@ -4730,7 +4900,7 @@ function operationsSupportActivityEntries(aircraftModel = "") {
     .map((activity, index) => ({ activity, index, key: `supportActivity:${index}` }))
     .filter(({ activity }) => (
       activity.planType === "直接准备方案"
-      || (!activity.planType && (activity.activityType === "飞行前保障" || activity.activityType === "使用保障"))
+      || (!activity.planType && (activity.activityType === "飞行前保障" || activity.activityType === "使用保障" || activity.activityType === "使用保障活动"))
     ))
     .filter(({ activity }) => !targetModel || supportActivityAircraftModel(activity) === targetModel)
     .map(({ activity, index, key }) => ({
@@ -4912,17 +5082,21 @@ function deleteSelectedSupportActivityJobs(tabKey) {
     })
     .filter(Number.isInteger);
   if (!deleteSupportActivityJobsAtIndexes(activity, selectedIndexes)) return;
+  if (supportActivityJobDialogKey && selectedIndexes.some((index) => supportActivityJobDialogKey === supportActivityJobKey(tabKey, index))) {
+    supportActivityJobDialogKey = "";
+  }
   selectedSupportActivityJobKeys = new Set(Array.from(selectedSupportActivityJobKeys).filter((key) => !String(key).startsWith(`${tabKey}:`)));
   updatePreviewResultsThroughApiClient();
 }
 
 function addSupportActivityJob(tabKey) {
   const activity = findSupportActivityByJobTabKey(tabKey);
-  if (!activity) return;
+  if (!activity) return "";
   const jobs = supportActivityJobs(activity).slice();
+  const nextIndex = jobs.length;
   jobs.push({
-    activityCode: `BA-${String(jobs.length + 1).padStart(3, "0")}`,
-    workName: `新增基本保障活动${jobs.length + 1}`,
+    activityCode: `${supportActivityJobCodePrefix(tabKey)}-${String(nextIndex + 1).padStart(3, "0")}`,
+    workName: supportActivityJobDefaultName(tabKey, nextIndex),
     predecessors: [],
     durationMinutes: 30,
     personnel: "机务人员,1",
@@ -4930,14 +5104,31 @@ function addSupportActivityJob(tabKey) {
     spare: ""
   });
   activity.jobs = jobs;
+  const key = supportActivityJobKey(tabKey, nextIndex);
+  selectedSupportActivityJobKeys = new Set([key]);
   updatePreviewResultsThroughApiClient();
+  return key;
+}
+
+function supportActivityJobCodePrefix(tabKey) {
+  if (tabKey === "prev_repair") return "PM";
+  if (tabKey === "corr_repair") return "CM";
+  return "BA";
+}
+
+function supportActivityJobDefaultName(tabKey, index) {
+  if (tabKey === "prev_repair") return `新增预防性维修工作项目${index + 1}`;
+  if (tabKey === "corr_repair") return `新增修复性维修工作项目${index + 1}`;
+  return `新增使用保障工作项目${index + 1}`;
 }
 
 function selectSupportActivityJobForEdit(encodedJob) {
   const [tabKey, rawIndex] = String(encodedJob || "").split("-");
   const index = Number(rawIndex);
-  if (!tabKey || !Number.isInteger(index)) return;
-  selectedSupportActivityJobKeys = new Set([supportActivityJobKey(tabKey, index)]);
+  if (!tabKey || !Number.isInteger(index)) return "";
+  const key = supportActivityJobKey(tabKey, index);
+  selectedSupportActivityJobKeys = new Set([key]);
+  return key;
 }
 
 function selectedSupportActivityJob(tabKey) {
@@ -4992,17 +5183,23 @@ function describeDurationProfile(profile, fallbackMinutes) {
 
 function renderSupportActivityJobRows(activity, tabKey) {
   const jobs = supportActivityJobs(activity);
-  return supportActivityJobs(activity).map((job, index) => `
-    <tr class="${selectedSupportActivityJobKeys.has(supportActivityJobKey(tabKey, index)) ? "selected-table-row" : ""}">
-      <td><input type="checkbox" data-support-activity-job-select="${htmlEscape(supportActivityJobKey(tabKey, index))}" ${selectedSupportActivityJobKeys.has(supportActivityJobKey(tabKey, index)) ? "checked" : ""}></td>
-      <td>${index + 1}</td>
-      <td>${htmlEscape(job.activityCode || `BA-${String(index + 1).padStart(3, "0")}`)}</td>
-      <td>${htmlEscape(job.workName || "-")}</td>
-      <td>${predecessorMultiSelect(jobs, job, index, tabKey)}</td>
-      <td>${Number(job.durationMinutes || 0)}</td>
-      <td><button type="button" class="inline-action" data-support-activity-job="${htmlEscape(tabKey)}-${index}">编辑</button><button type="button" class="btn-danger" data-support-activity-job-delete="${htmlEscape(supportActivityJobKey(tabKey, index))}">删除</button></td>
-    </tr>
-  `).join("");
+  return jobs.map((job, index) => {
+    const key = supportActivityJobKey(tabKey, index);
+    return `
+      <tr class="${selectedSupportActivityJobKeys.has(key) ? "selected-table-row" : ""}">
+        <td><input type="checkbox" data-support-activity-job-select="${htmlEscape(key)}" ${selectedSupportActivityJobKeys.has(key) ? "checked" : ""} aria-label="选择${htmlEscape(job.workName || `工作项目${index + 1}`)}"></td>
+        <td>${index + 1}</td>
+        <td>${supportActivityJobInput(key, job, "activityCode", "text", { "aria-label": "基本保障活动编号" })}</td>
+        <td>${supportActivityJobInput(key, job, "workName", "text", { "aria-label": "作业项" })}</td>
+        <td>${predecessorMultiSelect(jobs, job, index, tabKey)}</td>
+        <td>${supportActivityJobInput(key, job, "durationMinutes", "number", { min: "0", step: "1", "aria-label": "工期分钟" })}</td>
+        <td>${supportActivityJobSelect(key, job, "personnel", supportPersonnelOptions(job.personnel), "保障人员")}</td>
+        <td>${supportActivityJobSelect(key, job, "equipment", supportEquipmentOptions(job.equipment), "保障设备")}</td>
+        <td>${supportActivityJobSelect(key, job, "spare", supportSpareOptions(job.spare), "备件")}</td>
+        <td class="table-actions"><button type="button" class="inline-action" data-support-activity-job="${htmlEscape(tabKey)}-${index}">编辑</button></td>
+      </tr>
+    `;
+  }).join("");
 }
 
 function predecessorMultiSelect(jobs, job, index, tabKey) {
@@ -5023,22 +5220,115 @@ function renderSupportActivityJobTable(activity, tabKey) {
   const jobs = supportActivityJobs(activity);
   const selectedCount = jobs.filter((_, index) => selectedSupportActivityJobKeys.has(supportActivityJobKey(tabKey, index))).length;
   const allSelected = jobs.length > 0 && selectedCount === jobs.length;
-  const selectedJob = selectedSupportActivityJob(tabKey);
+  const dialogJob = supportActivityJobByKey(supportActivityJobDialogKey);
   const body = jobs.length
     ? renderSupportActivityJobRows(activity, tabKey)
-    : `<tr><td colspan="7" class="muted">暂无工作项目</td></tr>`;
+    : `<tr><td colspan="10" class="muted">暂无工作项目</td></tr>`;
   return `
     <h4>工作项目清单</h4>
-    <div class="toolbar-row"><button type="button" class="btn-primary" data-support-activity-job-add="${htmlEscape(tabKey)}">新增基本保障活动</button><button type="button" class="btn-danger" data-support-activity-job-batch-delete="${htmlEscape(tabKey)}">批量删除</button></div>
+    <div class="toolbar-row"><button type="button" class="btn-primary" data-support-activity-job-add="${htmlEscape(tabKey)}">新增工作项目</button><button type="button" class="btn-danger" data-support-activity-job-batch-delete="${htmlEscape(tabKey)}">批量删除</button></div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th><input type="checkbox" data-support-activity-job-select-all="${htmlEscape(tabKey)}" ${allSelected ? "checked" : ""}></th><th>序号</th><th>基本保障活动编号</th><th>作业项</th><th>紧前作业</th><th>工期(min)</th><th>编辑/删除</th></tr></thead>
+        <thead><tr><th><input type="checkbox" data-support-activity-job-select-all="${htmlEscape(tabKey)}" ${allSelected ? "checked" : ""} aria-label="全选工作项目"></th><th>序号</th><th>基本保障活动编号</th><th>作业项</th><th>紧前作业</th><th>工期(min)</th><th>保障人员</th><th>保障设备</th><th>备件</th><th>编辑</th></tr></thead>
         <tbody>${body}</tbody>
       </table>
     </div>
-    ${selectedJob ? renderSupportActivityJobEditor(selectedJob) : ""}
+    ${dialogJob?.tabKey === tabKey ? renderSupportActivityJobDialog(dialogJob) : ""}
     ${renderSupportActivityGanttChart(activity, tabKey)}
   `;
+}
+
+function supportActivityJobByKey(key) {
+  const [tabKey, rawIndex] = String(key || "").split(":");
+  const index = Number(rawIndex);
+  if (!tabKey || !Number.isInteger(index)) return null;
+  const activity = findSupportActivityByJobTabKey(tabKey);
+  const job = supportActivityJobs(activity || {})[index];
+  if (!activity || !job) return null;
+  return { activity, tabKey, index, key: supportActivityJobKey(tabKey, index), job };
+}
+
+function supportActivityJobInput(key, row, fieldName, type = "text", attrs = {}) {
+  const attrText = Object.entries(attrs)
+    .map(([attrName, attrValue]) => ` ${attrName}="${htmlEscape(attrValue)}"`)
+    .join("");
+  return `<input class="table-edit-input" data-support-activity-job-key="${htmlEscape(key)}" data-support-activity-job-field="${htmlEscape(fieldName)}" type="${type}" value="${htmlEscape(row[fieldName] ?? "")}"${attrText}>`;
+}
+
+function supportActivityJobSelect(key, row, fieldName, options, label) {
+  const selectedValue = String(row[fieldName] ?? "");
+  return `
+    <select class="table-edit-select" data-support-activity-job-key="${htmlEscape(key)}" data-support-activity-job-field="${htmlEscape(fieldName)}" aria-label="${htmlEscape(label)}">
+      ${selectOptionsWithCurrent(options, selectedValue)}
+    </select>
+  `;
+}
+
+function supportPersonnelOptions(currentValue = "") {
+  return supportActivityResourceOptions("保障人员", currentValue, (row) => ({
+    value: row.model ? `${row.model},${Math.max(1, Number(row.quantity) || 1)}` : "",
+    label: `${row.model || "保障人员"} / ${row.scope || "保障组织"}`
+  }), "未指定保障人员");
+}
+
+function supportEquipmentOptions(currentValue = "") {
+  return supportActivityResourceOptions("保障设备", currentValue, (row) => ({
+    value: [row.name || row.model || "保障设备", row.model, Math.max(1, Number(row.quantity) || 1)].filter(Boolean).join(","),
+    label: `${row.name || row.model || "保障设备"} / ${row.scope || "保障组织"}`
+  }), "未指定保障设备");
+}
+
+function supportSpareOptions(currentValue = "") {
+  const componentSpares = lruSpareRows().map((row) => ({
+    value: [row.name, row.model, 1].filter(Boolean).join(","),
+    label: `${row.name}${row.model && row.model !== row.name ? ` / ${row.model}` : ""}`
+  }));
+  const inventorySpares = supportActivityResourceOptions("备件", currentValue, (row) => ({
+    value: [row.name || row.model || "备件", row.model, Math.max(1, Number(row.quantity) || 1)].filter(Boolean).join(","),
+    label: `${row.name || row.model || "备件"} / ${row.scope || "保障组织"}`
+  }), "无备件", { includeEmpty: false });
+  return uniqueSelectOptions([
+    { value: "", label: "无" },
+    ...componentSpares,
+    ...inventorySpares
+  ]);
+}
+
+function supportActivityResourceOptions(resourceType, currentValue, mapRow, emptyLabel, { includeEmpty = true } = {}) {
+  const root = supportOrganizationTree()[0] || null;
+  const rows = buildSupportResourceRows(resourceType, root)
+    .filter((row) => !supportResourceDeletedKeySet().has(row.key));
+  const options = rows.map(mapRow).filter((option) => option.value || option.label);
+  return uniqueSelectOptions([
+    ...(includeEmpty ? [{ value: "", label: emptyLabel }] : []),
+    ...options,
+    ...(currentValue ? [{ value: currentValue, label: currentValue }] : [])
+  ]);
+}
+
+function uniqueSelectOptions(options) {
+  const seen = new Set();
+  return options.filter((option) => {
+    const value = String(option.value ?? "");
+    const key = `${value}::${option.label ?? ""}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function selectOptionsWithCurrent(options, currentValue) {
+  const normalizedCurrent = String(currentValue ?? "");
+  const normalizedOptions = uniqueSelectOptions([
+    ...options,
+    ...(normalizedCurrent && !options.some((option) => String(option.value ?? "") === normalizedCurrent)
+      ? [{ value: normalizedCurrent, label: normalizedCurrent }]
+      : [])
+  ]);
+  return normalizedOptions.map((option) => {
+    const value = String(option.value ?? "");
+    return `<option value="${htmlEscape(value)}" ${value === normalizedCurrent ? "selected" : ""}>${htmlEscape(option.label ?? value)}</option>`;
+  }).join("");
 }
 
 function buildSupportActivityGanttRows(activity) {
@@ -5128,29 +5418,45 @@ function renderSupportActivityGanttChart(activity, tabKey) {
   `;
 }
 
-function renderSupportActivityJobEditor(selectedJob) {
+function renderSupportActivityJobDialog(selectedJob) {
   const row = selectedJob.job;
+  const jobs = supportActivityJobs(selectedJob.activity);
   return `
-    <div class="detail-card">
-      <div class="section-head">
-        <h3>工作项目编辑</h3>
-        <span>${htmlEscape(row.activityCode || row.workName || "未命名工作项目")}</span>
-      </div>
-      <div class="form-table-grid">
-        ${supportActivityJobEditorInput(selectedJob.key, row, "workName", "作业项")}
-        ${supportActivityJobEditorInput(selectedJob.key, row, "activityCode", "基本保障活动编号")}
-        ${supportActivityJobEditorInput(selectedJob.key, row, "durationMinutes", "工期(min)", "number")}
-        ${supportActivityJobEditorInput(selectedJob.key, row, "personnel", "保障人员要求")}
-        ${supportActivityJobEditorInput(selectedJob.key, row, "equipment", "保障设备要求")}
-        ${supportActivityJobEditorInput(selectedJob.key, row, "ammunition", "弹药需求")}
-        ${supportActivityJobEditorInput(selectedJob.key, row, "spare", "备件需求")}
-      </div>
+    <div class="activity-job-dialog-backdrop">
+      <section class="activity-job-dialog" role="dialog" aria-modal="true" aria-labelledby="activity-job-dialog-title">
+        <div class="section-head">
+          <div>
+            <h3 id="activity-job-dialog-title">工作项目编辑</h3>
+            <span>${htmlEscape(row.activityCode || row.workName || "未命名工作项目")}</span>
+          </div>
+          <button type="button" class="inline-action" data-support-activity-job-dialog-close aria-label="关闭工作项目编辑">关闭</button>
+        </div>
+        <div class="form-table-grid">
+          <label>作业项${supportActivityJobInput(selectedJob.key, row, "workName", "text")}</label>
+          <label>基本保障活动编号${supportActivityJobInput(selectedJob.key, row, "activityCode", "text")}</label>
+          <label>工期(min)${supportActivityJobInput(selectedJob.key, row, "durationMinutes", "number", { min: "0", step: "1" })}</label>
+          <label>紧前作业${predecessorMultiSelect(jobs, row, selectedJob.index, selectedJob.tabKey)}</label>
+          <label>保障人员${supportActivityJobSelect(selectedJob.key, row, "personnel", supportPersonnelOptions(row.personnel), "保障人员")}</label>
+          <label>保障设备${supportActivityJobSelect(selectedJob.key, row, "equipment", supportEquipmentOptions(row.equipment), "保障设备")}</label>
+          <label>备件${supportActivityJobSelect(selectedJob.key, row, "spare", supportSpareOptions(row.spare), "备件")}</label>
+        </div>
+        <div class="plan-editor-actions">
+          <button type="button" class="btn-primary" data-support-activity-job-dialog-close>完成</button>
+        </div>
+      </section>
     </div>
   `;
 }
 
 function supportActivityJobEditorInput(key, row, fieldName, label, type = "text") {
-  return `<label>${label}<input data-support-activity-job-key="${htmlEscape(key)}" data-support-activity-job-field="${htmlEscape(fieldName)}" type="${type}" value="${htmlEscape(row[fieldName] ?? "")}"></label>`;
+  const control = fieldName === "personnel"
+    ? supportActivityJobSelect(key, row, fieldName, supportPersonnelOptions(row[fieldName]), label)
+    : fieldName === "equipment"
+      ? supportActivityJobSelect(key, row, fieldName, supportEquipmentOptions(row[fieldName]), label)
+      : fieldName === "spare"
+        ? supportActivityJobSelect(key, row, fieldName, supportSpareOptions(row[fieldName]), label)
+        : supportActivityJobInput(key, row, fieldName, type);
+  return `<label>${label}${control}</label>`;
 }
 
 function renderBasicActivityLibrary() {
@@ -5174,23 +5480,22 @@ function renderBasicActivityLibrary() {
             <tr>
               <th><input type="checkbox" data-basic-activity-select-all ${allSelected ? "checked" : ""}></th>
               <th>序号</th><th>类型</th><th>基本保障活动名称</th><th>基本保障活动编号</th><th>适用对象</th><th>工期(min)</th>
-              <th>保障人员要求</th><th>保障设备要求</th><th>弹药需求</th><th>备件需求</th><th>编辑/删除</th>
+              <th>保障人员</th><th>保障设备</th><th>备件</th><th>编辑</th>
             </tr>
           </thead>
           <tbody>${rows.map((row, index) => `
             <tr>
-              <td><input type="checkbox" data-basic-activity-select="${htmlEscape(row.key)}" ${selectedBasicActivityKeys.has(row.key) ? "checked" : ""}></td>
+              <td><input type="checkbox" data-basic-activity-select="${htmlEscape(row.key)}" ${selectedBasicActivityKeys.has(row.key) ? "checked" : ""} aria-label="选择${htmlEscape(row.workName || `基本保障活动${index + 1}`)}"></td>
               <td>${index + 1}</td>
-              <td>${htmlEscape(row.type || "-")}</td>
-              <td>${htmlEscape(row.workName || "-")}</td>
-              <td>${htmlEscape(row.activityCode || "-")}</td>
-              <td>${htmlEscape(row.scope || "-")}</td>
-              <td>${Number(row.durationMinutes || 0)}</td>
-              <td>${htmlEscape(row.personnel || "-")}</td>
-              <td>${htmlEscape(row.equipment || "-")}</td>
-              <td>${htmlEscape(row.ammunition || "-")}</td>
-              <td>${htmlEscape(row.spare || "-")}</td>
-              <td><button type="button" class="inline-action" data-basic-activity-edit="${htmlEscape(row.key)}">编辑</button><button type="button" class="btn-danger" data-basic-activity-delete="${htmlEscape(row.key)}">删除</button></td>
+              <td>${basicActivityTypeSelect(row)}</td>
+              <td>${basicActivityInput(row, "workName", "text", { "aria-label": "基本保障活动名称" })}</td>
+              <td>${basicActivityInput(row, "activityCode", "text", { "aria-label": "基本保障活动编号" })}</td>
+              <td>${basicActivityScopeSelect(row)}</td>
+              <td>${basicActivityInput(row, "durationMinutes", "number", { min: "0", step: "1", "aria-label": "工期分钟" })}</td>
+              <td>${basicActivitySelect(row, "personnel", supportPersonnelOptions(row.personnel), "保障人员")}</td>
+              <td>${basicActivitySelect(row, "equipment", supportEquipmentOptions(row.equipment), "保障设备")}</td>
+              <td>${basicActivitySelect(row, "spare", supportSpareOptions(row.spare), "备件")}</td>
+              <td class="table-actions"><button type="button" class="inline-action" data-basic-activity-edit="${htmlEscape(row.key)}">编辑</button></td>
             </tr>
           `).join("")}</tbody>
         </table>
@@ -5208,45 +5513,133 @@ function renderBasicActivityEditor(row) {
         <span>${htmlEscape(row.activityCode || row.workName || "未命名活动")}</span>
       </div>
       <div class="form-table-grid">
+        ${basicActivityEditorInput(row, "type", "类型")}
         ${basicActivityEditorInput(row, "workName", "基本保障活动名称")}
         ${basicActivityEditorInput(row, "activityCode", "基本保障活动编号")}
+        ${basicActivityEditorInput(row, "scope", "适用对象")}
         ${basicActivityEditorInput(row, "durationMinutes", "工期(min)", "number")}
-        ${basicActivityEditorInput(row, "personnel", "保障人员要求")}
-        ${basicActivityEditorInput(row, "equipment", "保障设备要求")}
-        ${basicActivityEditorInput(row, "ammunition", "弹药需求")}
-        ${basicActivityEditorInput(row, "spare", "备件需求")}
+        ${basicActivityEditorInput(row, "personnel", "保障人员")}
+        ${basicActivityEditorInput(row, "equipment", "保障设备")}
+        ${basicActivityEditorInput(row, "spare", "备件")}
       </div>
     </div>
   `;
 }
 
 function basicActivityEditorInput(row, fieldName, label, type = "text") {
-  return `<label>${label}<input data-basic-activity-key="${htmlEscape(row.key)}" data-basic-activity-field="${htmlEscape(fieldName)}" type="${type}" value="${htmlEscape(row[fieldName] ?? "")}"></label>`;
+  const control = fieldName === "type"
+    ? basicActivityTypeSelect(row)
+    : fieldName === "scope"
+    ? basicActivityScopeSelect(row)
+    : fieldName === "personnel"
+      ? basicActivitySelect(row, fieldName, supportPersonnelOptions(row[fieldName]), label)
+      : fieldName === "equipment"
+        ? basicActivitySelect(row, fieldName, supportEquipmentOptions(row[fieldName]), label)
+        : fieldName === "spare"
+          ? basicActivitySelect(row, fieldName, supportSpareOptions(row[fieldName]), label)
+          : basicActivityInput(row, fieldName, type);
+  return `<label>${label}${control}</label>`;
+}
+
+function basicActivityInput(row, fieldName, type = "text", attrs = {}) {
+  const attrText = Object.entries(attrs)
+    .map(([attrName, attrValue]) => ` ${attrName}="${htmlEscape(attrValue)}"`)
+    .join("");
+  return `<input class="table-edit-input" data-basic-activity-key="${htmlEscape(row.key)}" data-basic-activity-field="${htmlEscape(fieldName)}" type="${type}" value="${htmlEscape(row[fieldName] ?? "")}"${attrText}>`;
+}
+
+function basicActivitySelect(row, fieldName, options, label) {
+  const selectedValue = String(row[fieldName] ?? "");
+  return `
+    <select class="table-edit-select" data-basic-activity-key="${htmlEscape(row.key)}" data-basic-activity-field="${htmlEscape(fieldName)}" aria-label="${htmlEscape(label)}">
+      ${selectOptionsWithCurrent(options, selectedValue)}
+    </select>
+  `;
+}
+
+function basicActivityTypeSelect(row) {
+  return basicActivitySelect(row, "type", basicActivityTypeOptions(), "类型");
+}
+
+function basicActivityTypeOptions() {
+  return [
+    { value: "使用保障活动", label: "使用保障活动" },
+    { value: "预防性维修", label: "预防性维修" },
+    { value: "修复性维修", label: "修复性维修" }
+  ];
+}
+
+function basicActivityScopeSelect(row) {
+  const selectedValue = basicActivityScopeValue(row);
+  return `
+    <select class="table-edit-select" data-basic-activity-key="${htmlEscape(row.key)}" data-basic-activity-field="scope" aria-label="适用对象">
+      ${selectOptionsWithCurrent(basicActivityScopeOptions(row), selectedValue)}
+    </select>
+  `;
+}
+
+function basicActivityScopeValue(row) {
+  if (row.activity?.equipmentId) return `component:${row.activity.equipmentId}`;
+  const model = supportActivityAircraftModel(row.activity) || row.scope || "";
+  return model ? `aircraft:${model}` : "";
+}
+
+function basicActivityScopeOptions(row) {
+  const aircraftOptions = wholeMachineModels().map((model) => ({ value: `aircraft:${model}`, label: model }));
+  const componentOptions = (scenario.components || []).map((component) => ({
+    value: `component:${component.id || component.name}`,
+    label: `${component.name || component.id}${component.aircraftModel ? ` / ${component.aircraftModel}` : ""}`
+  }));
+  return uniqueSelectOptions([
+    { value: "", label: "未指定适用对象" },
+    ...aircraftOptions,
+    ...componentOptions,
+    ...(basicActivityScopeValue(row) ? [{ value: basicActivityScopeValue(row), label: row.scope || basicActivityScopeValue(row) }] : [])
+  ]);
 }
 
 function basicActivityLibraryRows() {
   return (scenario.supportActivities || []).flatMap((activity, activityIndex) =>
     supportActivityJobs(activity).map((job, jobIndex) => ({
       key: `${activityIndex}:${jobIndex}`,
-      type: activity.activityType === "修复性维修" || activity.activityType === "预防性维修" ? "维修保障" : "使用保障",
+      activity,
+      activityIndex,
+      jobIndex,
+      type: basicActivityTypeValue(activity),
       activityCode: job.activityCode,
       workName: job.workName,
-      scope: activity.activityType === "修复性维修" ? "航电系统" : scenario.equipment.model,
+      scope: basicActivityScopeLabel(activity),
       durationMinutes: job.durationMinutes,
       personnel: job.personnel,
       equipment: job.equipment,
-      ammunition: job.ammunition,
       spare: job.spare
     }))
   );
+}
+
+function basicActivityTypeValue(activity) {
+  if (isCorrectiveMaintenanceActivity(activity)) return "修复性维修";
+  if (isPreventiveMaintenanceActivity(activity)) return "预防性维修";
+  return "使用保障活动";
+}
+
+function basicActivityScopeLabel(activity) {
+  if (activity?.equipmentId) {
+    const component = (scenario.components || []).find((item) => String(item.id || "") === String(activity.equipmentId || ""));
+    return component?.name || activity.equipmentId;
+  }
+  return supportActivityAircraftModel(activity) || scenario.equipment.model || "未指定";
 }
 
 function addBasicActivityLibraryJob() {
   const activity = ensureSupportActivityForPage({ name: "基本保障活动建模" });
   if (!activity) return;
   const jobs = supportActivityJobs(activity).slice();
-  jobs.push({ activityCode: `BA-${String(jobs.length + 1).padStart(3, "0")}`, workName: `新增保障活动${jobs.length + 1}`, predecessors: [], durationMinutes: 30, personnel: "机务人员,1", equipment: "检测仪,1" });
+  const index = jobs.length;
+  jobs.push({ activityCode: `BA-${String(index + 1).padStart(3, "0")}`, workName: `新增保障活动${index + 1}`, predecessors: [], durationMinutes: 30, personnel: "机务人员,1", equipment: "检测仪,1", spare: "" });
   activity.jobs = jobs;
+  const activityIndex = (scenario.supportActivities || []).indexOf(activity);
+  selectedBasicActivityKeys = activityIndex >= 0 ? new Set([`${activityIndex}:${index}`]) : selectedBasicActivityKeys;
 }
 
 function updateBasicActivityJobField(key, fieldName, value) {
@@ -5254,12 +5647,57 @@ function updateBasicActivityJobField(key, fieldName, value) {
   const activity = (scenario.supportActivities || [])[activityIndex];
   const jobs = supportActivityJobs(activity).slice();
   if (!activity || !jobs[jobIndex] || !fieldName) return;
+  if (fieldName === "scope") {
+    updateBasicActivityScope(activity, value);
+    updatePreviewResultsThroughApiClient();
+    return;
+  }
+  if (fieldName === "type") {
+    updateBasicActivityType(activity, value);
+    updatePreviewResultsThroughApiClient();
+    return;
+  }
   jobs[jobIndex] = {
     ...jobs[jobIndex],
     [fieldName]: fieldName === "durationMinutes" ? Math.max(0, Number(value || 0)) : value
   };
   activity.jobs = jobs;
   updatePreviewResultsThroughApiClient();
+}
+
+function updateBasicActivityType(activity, value) {
+  const nextType = String(value || "");
+  if (nextType === "预防性维修") {
+    activity.activityType = "预防性维修";
+    activity.planType = "预防性维修方案";
+    return;
+  }
+  if (nextType === "修复性维修") {
+    activity.activityType = "修复性维修";
+    activity.planType = "修复性维修方案";
+    return;
+  }
+  activity.activityType = "使用保障活动";
+  activity.planType = normalizeOperationsSupportPlanType(activity.planType);
+  if (!supportActivityAircraftModel(activity)) {
+    activity.aircraftModel = wholeMachineModels()[0] || scenario.equipment.model || "";
+  }
+}
+
+function updateBasicActivityScope(activity, value) {
+  const text = String(value || "");
+  if (text.startsWith("component:")) {
+    const componentId = text.replace(/^component:/, "");
+    const component = (scenario.components || []).find((item) => String(item.id || item.name || "") === componentId);
+    activity.equipmentId = componentId;
+    if (component?.aircraftModel) activity.aircraftModel = component.aircraftModel;
+    return;
+  }
+  if (text.startsWith("aircraft:")) {
+    const aircraftModel = text.replace(/^aircraft:/, "");
+    activity.aircraftModel = aircraftModel;
+    if (activity.equipmentId) delete activity.equipmentId;
+  }
 }
 
 function deleteBasicActivityJob(key) {
@@ -5503,9 +5941,20 @@ function renderCorrectiveMaintenanceActivity(activity) {
   `;
 }
 
+function toggleLogisticsTransportStrategySelection(index, checked) {
+  if (!Number.isInteger(index) || index < 0) return;
+  const next = new Set(selectedLogisticsTransportStrategyIndexes);
+  if (checked) next.add(index);
+  else next.delete(index);
+  selectedLogisticsTransportStrategyIndexes = next;
+}
+
 function renderLogisticsSupportActivity(activePlan, activity) {
   const activityIndex = Math.max(0, (scenario.supportActivities || []).indexOf(activity));
   const transportStrategies = Array.isArray(activity.transportStrategies) ? activity.transportStrategies : [];
+  selectedLogisticsTransportStrategyIndexes = new Set(
+    Array.from(selectedLogisticsTransportStrategyIndexes).filter((index) => index >= 0 && index < transportStrategies.length)
+  );
   const supportNodeOptions = (scenario.supportNodes || []).map((node) => ({ value: node.id, label: node.name }));
   const spareTypeOptions = spareModelingNames().map((name) => ({ value: name, label: name }));
   const directionOptions = [
@@ -5520,18 +5969,23 @@ function renderLogisticsSupportActivity(activePlan, activity) {
     <div class="detail-card activity-editor-card">
       <div class="section-head">
         <h3>\u540e\u52e4\u4fdd\u969c\u8fd0\u8f93\u7b56\u7565\u914d\u7f6e</h3>
-        <button type="button" class="btn-primary" data-logistics-transport-add>\u65b0\u589e\u8fd0\u8f93\u7b56\u7565</button>
+        <div class="toolbar-row">
+          <button type="button" class="btn-primary" data-logistics-transport-add>\u65b0\u589e</button>
+          <button type="button" class="btn-danger" data-logistics-transport-delete ${selectedLogisticsTransportStrategyIndexes.size ? "" : "disabled"}>\u5220\u9664</button>
+        </div>
       </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>\u7b56\u7565\u65b9\u5411</th><th>\u5907\u4ef6\u79cd\u7c7b</th><th>\u89e6\u53d1\u65b9\u5f0f</th><th>\u89e6\u53d1\u53c2\u6570</th><th>\u8fd0\u8f93\u8d77\u70b9</th><th>\u8fd0\u8f93\u7ec8\u70b9</th><th>\u8fd0\u8f93\u65f6\u95f4(h)</th><th>\u64cd\u4f5c</th></tr></thead>
+          <thead><tr><th>\u9009\u62e9</th><th>\u7b56\u7565\u540d\u79f0</th><th>\u7b56\u7565\u65b9\u5411</th><th>\u5907\u4ef6\u79cd\u7c7b</th><th>\u89e6\u53d1\u65b9\u5f0f</th><th>\u89e6\u53d1\u53c2\u6570</th><th>\u8fd0\u8f93\u8d77\u70b9</th><th>\u8fd0\u8f93\u7ec8\u70b9</th><th>\u8fd0\u8f93\u65f6\u95f4(h)</th></tr></thead>
           <tbody>${transportStrategies.map((row, index) => {
             const basePath = `supportActivities.${activityIndex}.transportStrategies.${index}`;
             const triggerControl = row.triggerMode === "\u5468\u671f\u6027\u8c03\u8fd0"
               ? `<label class="inline-field">\u8c03\u8fd0\u5468\u671f(h)${valueInput(`${basePath}.transferCycleHours`, "number", { min: "1", step: "1" })}</label>`
               : `<label class="inline-field">\u4e34\u754c\u5e93\u5b58\u6570${valueInput(`${basePath}.criticalInventory`, "number", { min: "0", step: "1" })}</label>`;
             return `
-              <tr>
+              <tr class="${selectedLogisticsTransportStrategyIndexes.has(index) ? "selected-table-row" : ""}">
+                <td><input type="checkbox" data-logistics-transport-select="${index}" ${selectedLogisticsTransportStrategyIndexes.has(index) ? "checked" : ""} aria-label="\u9009\u62e9\u8fd0\u8f93\u7b56\u7565${index + 1}"></td>
+                <td>${valueInput(`${basePath}.name`, "text")}</td>
                 <td>${valueSelect(`${basePath}.direction`, directionOptions)}</td>
                 <td>${valueSelect(`${basePath}.spareType`, spareTypeOptions)}</td>
                 <td>${valueSelect(`${basePath}.triggerMode`, triggerModeOptions)}</td>
@@ -5539,10 +5993,9 @@ function renderLogisticsSupportActivity(activePlan, activity) {
                 <td>${valueSelect(`${basePath}.from`, supportNodeOptions)}</td>
                 <td>${valueSelect(`${basePath}.to`, supportNodeOptions)}</td>
                 <td>${valueInput(`${basePath}.transportTimeHours`, "number", { min: "0", step: "0.1" })}</td>
-                <td><button type="button" class="inline-action" data-logistics-transport-edit="${index}" disabled>\u7f16\u8f91</button><button type="button" class="inline-action" data-logistics-transport-delete="${index}">\u5220\u9664</button></td>
               </tr>
             `;
-          }).join("") || `<tr><td colspan="8" class="muted">\u6682\u65e0\u8fd0\u8f93\u7b56\u7565</td></tr>`}</tbody>
+          }).join("") || `<tr><td colspan="9" class="muted">\u6682\u65e0\u8fd0\u8f93\u7b56\u7565</td></tr>`}</tbody>
         </table>
       </div>
     </div>
@@ -5646,15 +6099,9 @@ function supportActivityTreeNode(node, selectedName) {
 }
 
 function renderExperimentPlanList(page) {
-  const editFeatureId = page.module === "任务可靠度评估模块"
-    ? "mission-reliability-experiment-plan-edit"
-    : "spare-planning-experiment-plan-edit";
-  const visualFeatureId = getVisualSimulationFeatureId(page.module);
-  const monteCarloFeatureId = getMonteCarloExperimentEditFeatureId(page.module);
   const plans = scenario.experiment?.name ? [{
     name: scenario.experiment.name,
     module: page.module,
-    scenarioId: scenario.scenarioId,
     steps: scenario.experiment.steps,
     samples: scenario.experiment.samples,
     status: experimentRunStatus
@@ -5670,24 +6117,18 @@ function renderExperimentPlanList(page) {
     </div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>方案名称</th><th>所属模块</th><th>场景</th><th>步数</th><th>样本</th><th>状态</th><th>运行与管理</th></tr></thead>
+        <thead><tr><th>选择</th><th>方案名称</th><th>所属模块</th><th>步数</th><th>样本</th><th>状态</th></tr></thead>
         <tbody>
           ${plans.length ? plans.map((plan) => `
             <tr>
+              <td><input type="checkbox" data-experiment-plan-select aria-label="选择方案 ${htmlEscape(plan.name)}"></td>
               <td>${htmlEscape(plan.name)}</td>
               <td>${htmlEscape(plan.module)}</td>
-              <td>${htmlEscape(plan.scenarioId)}</td>
               <td>${plan.steps}</td>
               <td>${plan.samples}</td>
               <td><span class="badge">${htmlEscape(plan.status)}</span></td>
-              <td class="table-action-cell">
-                <button type="button" class="inline-action" data-feature-id="${editFeatureId}" data-experiment-plan-edit>编辑</button>
-                <button type="button" class="inline-action" data-feature-id="${visualFeatureId}">启动可视化推演</button>
-                <button type="button" class="inline-action" data-feature-id="${monteCarloFeatureId}">创建蒙特卡洛实验</button>
-                <button type="button" class="btn-danger" data-experiment-plan-delete disabled>删除</button>
-              </td>
             </tr>
-          `).join("") : `<tr><td colspan="7">${importedDataEmptyState("仿真实验方案")}</td></tr>`}
+          `).join("") : `<tr><td colspan="6">${importedDataEmptyState("仿真实验方案")}</td></tr>`}
         </tbody>
       </table>
     </div>
@@ -7036,6 +7477,288 @@ async function importRmsEquipmentTableFile(file) {
   } catch (err) {
     rmsEquipmentImportStatus = `RMS 装备树导入失败：${err && err.message ? err.message : "文件无法解析"}`;
   }
+}
+
+async function importSupportResourceTableFile(file, activeResourceType) {
+  const resourceType = normalizeSupportResourceImportType(activeResourceType);
+  if (!resourceType) {
+    supportResourceImportStatus = "请在备件、保障人员或保障设备页面导入资源表格。";
+    return false;
+  }
+  if (!file) {
+    supportResourceImportStatus = `未选择${resourceType}导入文件。`;
+    return false;
+  }
+  try {
+    const parsed = parseRmsEquipmentImportText(await file.text(), file.name);
+    const rows = extractSupportResourceImportRows(parsed, resourceType);
+    const importedCount = applySupportResourceImportRows(resourceType, rows);
+    supportResourceImportStatus = `已导入 ${file.name}：${resourceType} ${importedCount} 行。`;
+    updatePreviewResultsThroughApiClient();
+    return true;
+  } catch (err) {
+    supportResourceImportStatus = `${resourceType}导入失败：${err && err.message ? err.message : "文件无法解析"}`;
+    return false;
+  }
+}
+
+function normalizeSupportResourceImportType(value) {
+  const text = String(value || "").trim();
+  if (["备件", "保障人员", "保障设备"].includes(text)) return text;
+  return "";
+}
+
+function extractSupportResourceImportRows(input, resourceType) {
+  if (Array.isArray(input)) {
+    const supportNodeRows = supportResourceRowsFromSupportNodes(input, resourceType);
+    return supportNodeRows.length ? supportNodeRows : input;
+  }
+  const directRows = supportResourceDirectRows(input, resourceType);
+  if (directRows) return directRows;
+  const supportNodes = supportNodesFromImportPayload(input);
+  if (supportNodes.length) {
+    const rows = supportResourceRowsFromSupportNodes(supportNodes, resourceType);
+    if (rows.length) return rows;
+  }
+  if (input && typeof input === "object") return [input];
+  throw new Error("导入表格未包含资源行");
+}
+
+function supportResourceDirectRows(input, resourceType) {
+  if (!input || typeof input !== "object") return null;
+  const keysByType = {
+    "备件": ["rows", "data", "items", "resources", "spares", "spareRows", "备件"],
+    "保障人员": ["rows", "data", "items", "resources", "personnel", "personnelRows", "保障人员"],
+    "保障设备": ["rows", "data", "items", "resources", "equipment", "equipmentRows", "supportEquipment", "保障设备"]
+  };
+  return firstImportArray(input, keysByType[resourceType])
+    || firstImportArray(input.objects, keysByType[resourceType]);
+}
+
+function supportNodesFromImportPayload(input) {
+  const candidates = [
+    input?.supportNodes,
+    input?.scenario?.supportNodes,
+    input?.projectJson?.supportNodes,
+    input?.project_json?.supportNodes,
+    input?.objects?.supportNodes,
+    input?.objects?.support_nodes
+  ];
+  return candidates.find(Array.isArray) || [];
+}
+
+function firstImportArray(input, keys = []) {
+  if (!input || typeof input !== "object") return null;
+  for (const key of keys) {
+    if (Array.isArray(input[key])) return input[key];
+  }
+  return null;
+}
+
+function supportResourceRowsFromSupportNodes(nodes, resourceType) {
+  return (Array.isArray(nodes) ? nodes : []).flatMap((node) => {
+    const organizationNode = node.organizationNodeId || node.id || node.name || "";
+    if (resourceType === "备件") {
+      return Object.entries(node.inventory || {}).map(([spareName, quantity]) => ({
+        organizationNode,
+        name: spareName,
+        model: node.spareModels?.[spareName] || spareName,
+        quantity
+      }));
+    }
+    if (resourceType === "保障人员" && Number.isFinite(Number(node.personnelCapacity))) {
+      return [{
+        organizationNode,
+        ownerModel: node.personnelOwnerModel || node.ownerModel || "",
+        model: node.personnelModel || node.personnelType || "人员容量",
+        quantity: node.personnelCapacity
+      }];
+    }
+    if (resourceType === "保障设备" && Number.isFinite(Number(node.equipmentCapacity))) {
+      return [{
+        organizationNode,
+        name: node.supportEquipmentName || node.equipmentName || node.name || "保障设备",
+        model: node.supportEquipmentModel || node.nodeType || "保障设备",
+        quantity: node.equipmentCapacity
+      }];
+    }
+    return [];
+  });
+}
+
+function applySupportResourceImportRows(resourceType, rawRows) {
+  const targetOrgNodes = selectedSupportImportOrgNodes();
+  if (!targetOrgNodes.length) throw new Error("未找到可导入的保障组织节点");
+  const rows = (Array.isArray(rawRows) ? rawRows : [])
+    .map((row, index) => normalizeSupportResourceImportRow(resourceType, row, targetOrgNodes, index))
+    .filter(Boolean);
+  if (!rows.length) throw new Error("导入表格未包含有效资源行");
+
+  const importedOrgIds = new Set(rows.map((row) => row.organizationNode.id || row.organizationNode.name).filter(Boolean));
+  clearSupportResourcesForImport(resourceType, importedOrgIds);
+  clearDeletedSupportResourceKeysForOrgs(importedOrgIds);
+
+  const rowCountsByOrg = new Map();
+  rows.forEach((row, index) => {
+    const orgId = row.organizationNode.id || row.organizationNode.name;
+    const rowIndex = rowCountsByOrg.get(orgId) || 0;
+    rowCountsByOrg.set(orgId, rowIndex + 1);
+    if (resourceType === "备件") {
+      const node = supportNodeForOrgNode(row.organizationNode, true);
+      if (!node.inventory || typeof node.inventory !== "object") node.inventory = {};
+      node.inventory[row.name] = Number(node.inventory[row.name] || 0) + row.quantity;
+      node.spareModels = { ...(node.spareModels || {}), [row.name]: row.model || row.name };
+      return;
+    }
+    const node = rowIndex === 0
+      ? supportNodeForOrgNode(row.organizationNode, true)
+      : createSupportResourceImportNode(row.organizationNode, resourceType, index);
+    if (resourceType === "保障人员") {
+      node.personnelCapacity = row.quantity;
+      node.personnelModel = row.model || "人员容量";
+      node.personnelOwnerModel = row.ownerModel || "";
+    } else if (resourceType === "保障设备") {
+      node.equipmentCapacity = row.quantity;
+      node.supportEquipmentName = row.name || "保障设备";
+      node.supportEquipmentModel = row.model || "保障设备";
+      node.nodeType = row.model || node.nodeType || "保障设备";
+    }
+  });
+  selectedSupportResourceKeys = new Set();
+  return rows.length;
+}
+
+function normalizeSupportResourceImportRow(resourceType, row, targetOrgNodes, index) {
+  if (!row || typeof row !== "object") return null;
+  const organizationNode = resolveSupportResourceImportOrgNode(row, targetOrgNodes, index);
+  if (!organizationNode) return null;
+  if (resourceType === "备件") {
+    const name = pickImportText(row, ["备件名称", "备件", "spareName", "spareType", "name", "名称", "spareId"], `导入备件${index + 1}`);
+    return {
+      organizationNode,
+      name,
+      model: pickImportText(row, ["型号", "备件型号", "model", "partNo", "规格型号"], name),
+      quantity: pickImportNumber(row, ["数量", "库存量", "stockQty", "quantity", "spareQuantity", "capacity"], 0)
+    };
+  }
+  if (resourceType === "保障人员") {
+    return {
+      organizationNode,
+      ownerModel: pickImportText(row, ["所属型号", "装备型号", "ownerModel", "equipmentType", "aircraftModel", "modelOwner"], ""),
+      model: pickImportText(row, ["专业", "人员类型", "personnelType", "skills", "技能标签", "model", "type"], "人员容量"),
+      quantity: pickImportNumber(row, ["数量", "能力人数", "capacity", "personnelCapacity", "人员容量"], 0)
+    };
+  }
+  return {
+    organizationNode,
+    name: pickImportText(row, ["设备名称", "保障设备", "resourceName", "name", "名称", "resourceId"], `导入保障设备${index + 1}`),
+    model: pickImportText(row, ["型号", "设备型号", "resourceModel", "model", "nodeType", "规格型号"], "保障设备"),
+    quantity: pickImportNumber(row, ["数量", "设备数量", "quantity", "equipmentCapacity", "capacity"], 0)
+  };
+}
+
+function selectedSupportImportOrgNodes() {
+  const selected = selectedSupportOrgTreeNode();
+  const scopeNodes = selected ? [selected] : supportOrganizationTree();
+  const leafNodes = flattenSupportOrgTreeNodes(scopeNodes).filter((node) => !(node.children || []).length);
+  return leafNodes.length ? leafNodes : [selected].filter(Boolean);
+}
+
+function resolveSupportResourceImportOrgNode(row, targetOrgNodes, index) {
+  const orgValue = pickImportText(row, [
+    "organizationNodeId",
+    "组织节点ID",
+    "组织节点",
+    "所属节点",
+    "所属保障节点",
+    "保障节点",
+    "nodeId",
+    "节点ID",
+    "节点名称",
+    "organizationNode"
+  ], "");
+  const allOrgNodes = flattenSupportOrgTreeNodes();
+  if (orgValue) {
+    const matched = allOrgNodes.find((node) => [node.id, node.name, node.supportNodeId].includes(orgValue));
+    if (matched) return matched;
+  }
+  return targetOrgNodes[Math.min(index, targetOrgNodes.length - 1)] || targetOrgNodes[0] || null;
+}
+
+function clearSupportResourcesForImport(resourceType, orgIds) {
+  if (!Array.isArray(scenario.supportNodes)) scenario.supportNodes = [];
+  const orgNames = new Set(Array.from(orgIds).map((id) => findSupportOrgTreeNode(id)?.name).filter(Boolean));
+  scenario.supportNodes = scenario.supportNodes.filter((node) => {
+    return !(node.importedResourceType === resourceType && supportNodeMatchesOrgSet(node, orgIds, orgNames));
+  });
+  for (const node of scenario.supportNodes) {
+    if (!supportNodeMatchesOrgSet(node, orgIds, orgNames)) continue;
+    if (resourceType === "备件") {
+      node.inventory = {};
+      node.spareModels = {};
+    } else if (resourceType === "保障人员") {
+      delete node.personnelCapacity;
+      delete node.personnelModel;
+      delete node.personnelOwnerModel;
+    } else if (resourceType === "保障设备") {
+      delete node.equipmentCapacity;
+      delete node.supportEquipmentName;
+      delete node.supportEquipmentModel;
+    }
+  }
+}
+
+function supportNodeMatchesOrgSet(node, orgIds, orgNames) {
+  return orgIds.has(node.organizationNodeId || "")
+    || orgIds.has(node.id || "")
+    || orgIds.has(node.name || "")
+    || orgNames.has(node.name || "");
+}
+
+function clearDeletedSupportResourceKeysForOrgs(orgIds) {
+  const prefixes = Array.from(orgIds).map((orgId) => `${orgId}:`);
+  const nextDeleted = new Set(
+    Array.from(supportResourceDeletedKeySet()).filter((key) => !prefixes.some((prefix) => String(key).startsWith(prefix)))
+  );
+  scenario.deletedSupportResourceKeys = Array.from(nextDeleted);
+  deletedSupportResourceKeys = nextDeleted;
+}
+
+function createSupportResourceImportNode(orgNode, resourceType, index) {
+  const typeKey = { "保障人员": "personnel", "保障设备": "equipment" }[resourceType] || "resource";
+  const node = {
+    id: `${orgNode.id || "support-org"}-${typeKey}-${Date.now()}-${index}`,
+    name: orgNode.name || resourceType,
+    organizationNodeId: orgNode.id || orgNode.name,
+    nodeType: resourceType,
+    inventory: {},
+    importedResourceType: resourceType
+  };
+  scenario.supportNodes.push(node);
+  return node;
+}
+
+function pickImportText(row, keys, fallback = "") {
+  const source = row || {};
+  const entries = Object.entries(source);
+  const lowerValueByKey = new Map(entries.map(([key, value]) => [String(key).trim().toLowerCase(), value]));
+  for (const key of keys) {
+    const value = Object.prototype.hasOwnProperty.call(source, key)
+      ? source[key]
+      : lowerValueByKey.get(String(key).trim().toLowerCase());
+    if (value == null) continue;
+    const text = Array.isArray(value) ? value.filter(Boolean).join("、") : String(value).trim();
+    if (text) return text;
+  }
+  return fallback;
+}
+
+function pickImportNumber(row, keys, fallback = 0) {
+  const text = pickImportText(row, keys, "");
+  if (!text) return fallback;
+  const matched = String(text).replace(/,/g, "").match(/-?\d+(?:\.\d+)?/);
+  const value = matched ? Number(matched[0]) : Number(text);
+  return Number.isFinite(value) ? Math.max(0, value) : fallback;
 }
 
 function parseRmsEquipmentImportText(text, filename = "") {

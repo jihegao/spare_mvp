@@ -479,6 +479,29 @@ h4 {
   color: var(--muted);
 }
 
+.readonly-meta-row {
+  min-height: 62px;
+  display: grid;
+  align-content: center;
+  gap: 5px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #f8fafc;
+}
+
+.readonly-meta-row span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.readonly-meta-row strong {
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 700;
+}
+
 label {
   display: grid;
   gap: 5px;
@@ -495,6 +518,16 @@ select {
   border-radius: 6px;
   color: var(--ink);
   background: #fff;
+}
+
+.table-edit-input,
+.table-edit-select {
+  min-width: 120px;
+}
+
+select[multiple].table-edit-select,
+select[multiple][data-support-activity-predecessors] {
+  min-height: 42px;
 }
 
 .inline-action {
@@ -695,6 +728,27 @@ select {
   border-color: var(--primary);
   background: var(--primary);
   color: #fff;
+}
+
+.activity-job-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.48);
+}
+
+.activity-job-dialog {
+  width: min(760px, calc(100vw - 32px));
+  max-height: calc(100dvh - 48px);
+  overflow: auto;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 20px 48px rgba(15, 23, 42, 0.24);
 }
 
 .organization-layout,
@@ -1646,7 +1700,8 @@ tr.clickable-table-row.selected-table-row td {
 }
 
 .combat-unit-table input[type="text"],
-.combat-unit-table input[type="number"] {
+.combat-unit-table input[type="number"],
+.combat-unit-table select {
   width: 100%;
   min-width: 96px;
 }
@@ -1681,23 +1736,86 @@ tr.clickable-table-row.selected-table-row td {
 }
 
 .rbd-canvas {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
+  overflow-x: auto;
+  padding: 4px 0 8px;
 }
 
-.rbd-node {
-  display: grid;
-  gap: 4px;
-  padding: 12px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #fbfcfd;
+.rbd-diagram {
+  min-width: 720px;
+  width: 100%;
+  height: auto;
 }
 
-.rbd-node.system {
-  border-color: #d8e4ff;
-  background: var(--primary-soft);
+.rbd-group {
+  fill: #f8fafc;
+  stroke: #dbe4ee;
+  stroke-dasharray: 5 4;
+}
+
+.rbd-group.parallel {
+  fill: #f0fdfa;
+  stroke: #99f6e4;
+}
+
+.rbd-group.standby {
+  fill: #fffbeb;
+  stroke: #fde68a;
+}
+
+.rbd-group-label {
+  fill: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.rbd-connector {
+  fill: none;
+  stroke: #94a3b8;
+  stroke-width: 2;
+}
+
+.rbd-connector.parallel {
+  stroke: var(--teal);
+}
+
+.rbd-connector.standby {
+  stroke: #d97706;
+}
+
+.rbd-terminal {
+  fill: var(--primary);
+}
+
+.rbd-node rect {
+  fill: #fbfcfd;
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+.rbd-node.system rect {
+  fill: var(--primary-soft);
+  stroke: #d8e4ff;
+}
+
+.rbd-node.parallel rect {
+  fill: #f0fdfa;
+  stroke: #99f6e4;
+}
+
+.rbd-node.standby rect {
+  fill: #fffbeb;
+  stroke: #fde68a;
+}
+
+.rbd-node-title {
+  fill: var(--text);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.rbd-node-meta {
+  fill: var(--muted);
+  font-size: 10px;
 }
 
 .gantt-chart {
