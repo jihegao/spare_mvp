@@ -32,8 +32,8 @@ try {
   await loginAndEnterProject(page);
   const projectDraftEvidence = await verifyProjectDraftPersistence(page);
 
-  await clickFeature(page, "system-management-modeling-import-workbench");
-  await expectHeading(page, "建模数据导入");
+  await clickFeature(page, "system-management-project-data-management");
+  await expectHeading(page, "项目数据管理");
   await page.locator('button[data-modeling-import-action="save-draft"]').click();
   await page.waitForFunction(() => document.body.innerText.includes("草稿已保存"));
   await page.locator('button[data-modeling-import-action="publish"]').click();
@@ -93,8 +93,8 @@ try {
     throw new Error(`Restart loaded a different run: ${afterRestartRun.chain.Run} != ${beforeRefresh.chain.Run}`);
   }
 
-  await clickFeature(page, "system-management-modeling-import-workbench");
-  await expectHeading(page, "建模数据导入");
+  await clickFeature(page, "system-management-project-data-management");
+  await expectHeading(page, "项目数据管理");
   await page.locator('button[data-modeling-import-action="load-fixture"]').click();
   await page.waitForFunction(() => document.body.innerText.includes("已从后端恢复导入草稿和发布快照"));
   const afterRestartImport = await page.evaluate(() => ({

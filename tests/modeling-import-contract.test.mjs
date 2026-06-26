@@ -285,7 +285,7 @@ test("modeling import validation rejects malformed lifecycle state and version",
 
 test("modeling import page map routes validation issues to four-level modeling pages", () => {
   assert.equal(MODELING_IMPORT_PAGE_MAP.missionProfiles, "任务剖面参数");
-  assert.equal(MODELING_IMPORT_PAGE_MAP.equipmentAssets, "装备组成建模");
+  assert.equal(MODELING_IMPORT_PAGE_MAP.equipmentAssets, "装备系统建模");
   assert.equal(MODELING_IMPORT_PAGE_MAP.supportResources, "保障资源建模");
   assert.equal(MODELING_IMPORT_PAGE_MAP.supportActivities, "保障活动建模");
 });

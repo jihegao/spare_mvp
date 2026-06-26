@@ -4,18 +4,26 @@ import test from "node:test";
 
 import { FEATURE_PAGES, getFeaturePageById, groupFeaturePages } from "../front/feature-catalog.mjs";
 import { MODELING_IMPORT_DEMO_FIXTURE } from "../front/modeling-import-demo-fixture.mjs";
+import {
+  calculateRmsAllocation,
+  createDefaultRmsAllocationPlan,
+  createDemoRmsAllocationProject
+} from "../front/rms-allocation-engine.mjs";
+import { renderRmsAllocationWorkbench } from "../front/rms-allocation-workbench.mjs";
 
 const PAGE_REVISION_REPORT_URL = new URL("../reports/2026-06-19-page-revision-suggestions/README.md", import.meta.url);
 
 test("feature catalog exposes all table-2 four-level pages", () => {
-  assert.equal(FEATURE_PAGES.length, 56);
-  assert.equal(new Set(FEATURE_PAGES.map((page) => page.id)).size, 56);
-  assert.equal(FEATURE_PAGES.filter((page) => page.module === "备件规划评估模块").length, 24);
-  assert.equal(FEATURE_PAGES.filter((page) => page.module === "任务可靠度评估模块").length, 26);
-  assert.equal(FEATURE_PAGES.filter((page) => page.module === "系统管理").length, 6);
-  for (const label of ["装备可靠性框图建模", "蒙特卡洛实验结果", "飞机转场携行清单分析", "任务可靠度评估", "停机因素分析"]) {
+  assert.equal(FEATURE_PAGES.length, 53);
+  assert.equal(new Set(FEATURE_PAGES.map((page) => page.id)).size, 53);
+  assert.equal(FEATURE_PAGES.filter((page) => page.module === "备件规划评估模块").length, 23);
+  assert.equal(FEATURE_PAGES.filter((page) => page.module === "任务可靠度评估模块").length, 25);
+  assert.equal(FEATURE_PAGES.filter((page) => page.module === "系统运行支持模块").length, 5);
+  for (const label of ["装备系统建模", "装备可靠性框图建模", "蒙特卡洛实验结果", "飞机转场携行清单分析", "任务可靠度评估", "停机因素分析"]) {
     assert.ok(FEATURE_PAGES.some((page) => page.name === label), label);
   }
+  assert.equal(FEATURE_PAGES.some((page) => page.name === "装备组成建模"), false);
+  assert.equal(FEATURE_PAGES.some((page) => page.name === "装备故障建模"), false);
 });
 
 test("each feature page has page template metadata for grouped entry pages", () => {
@@ -34,16 +42,18 @@ test("each feature page has page template metadata for grouped entry pages", () 
 
 test("feature grouping preserves three-level navigation and internal fourth-level entries", () => {
   const grouped = groupFeaturePages(FEATURE_PAGES);
-  assert.deepEqual(Object.keys(grouped), ["系统管理", "备件规划评估模块", "任务可靠度评估模块"]);
-  assert.deepEqual(Object.keys(grouped["系统管理"]), ["项目管理", "装备RMS指标分配", "系统基础配置"]);
-  assert.deepEqual(grouped["系统管理"]["项目管理"]["数据管理"].map((page) => page.name), ["数据管理"]);
-  assert.deepEqual(grouped["系统管理"]["项目管理"]["建模数据导入"].map((page) => page.name), ["建模数据导入"]);
-  assert.deepEqual(grouped["系统管理"]["项目管理"]["建模颗粒度管理"].map((page) => page.name), ["建模颗粒度管理"]);
-  assert.deepEqual(grouped["系统管理"]["系统基础配置"]["用户管理"].map((page) => page.name), ["用户管理"]);
-  assert.deepEqual(grouped["系统管理"]["系统基础配置"]["系统功能权限管理"].map((page) => page.name), ["系统功能权限管理"]);
-  assert.equal("建模表单管理" in grouped["系统管理"]["系统基础配置"], false);
+  assert.deepEqual(Object.keys(grouped), ["系统运行支持模块", "备件规划评估模块", "任务可靠度评估模块"]);
+  assert.deepEqual(Object.keys(grouped["系统运行支持模块"]), ["项目管理", "装备RMS指标分配", "系统基础配置"]);
+  assert.deepEqual(grouped["系统运行支持模块"]["项目管理"]["项目数据管理"].map((page) => page.name), ["项目数据管理"]);
+  assert.deepEqual(grouped["系统运行支持模块"]["项目管理"]["建模颗粒度管理"].map((page) => page.name), ["建模颗粒度管理"]);
+  assert.equal("建模数据导入" in grouped["系统运行支持模块"]["项目管理"], false);
+  assert.deepEqual(grouped["系统运行支持模块"]["系统基础配置"]["用户管理"].map((page) => page.name), ["用户管理"]);
+  assert.deepEqual(grouped["系统运行支持模块"]["系统基础配置"]["系统功能权限管理"].map((page) => page.name), ["系统功能权限管理"]);
+  assert.equal("建模表单管理" in grouped["系统运行支持模块"]["系统基础配置"], false);
   assert.deepEqual(Object.keys(grouped["备件规划评估模块"]["仿真建模"]).slice(0, 2), ["装备系统建模", "装备任务建模"]);
   assert.deepEqual(Object.keys(grouped["任务可靠度评估模块"]["仿真建模"]).slice(0, 2), ["装备系统建模", "装备任务建模"]);
+  assert.deepEqual(grouped["备件规划评估模块"]["仿真建模"]["装备系统建模"].map((page) => page.name), ["装备系统建模"]);
+  assert.deepEqual(grouped["任务可靠度评估模块"]["仿真建模"]["装备系统建模"].map((page) => page.name), ["装备系统建模", "装备可靠性框图建模"]);
   assert.deepEqual(grouped["备件规划评估模块"]["仿真建模"]["装备任务建模"].map((page) => page.name), [
     "基本任务建模",
     "复合任务建模",
@@ -74,7 +84,7 @@ test("feature grouping preserves three-level navigation and internal fourth-leve
   assert.equal(FEATURE_PAGES.some((page) => page.secondary === "仿真建模" && page.tertiary === "指标分配方案管理"), false);
   assert.equal(FEATURE_PAGES.some((page) => page.id === "spare-planning-result-import"), false);
   assert.ok(grouped["任务可靠度评估模块"]["仿真建模"]["装备系统建模"].some((page) => page.name === "装备可靠性框图建模"));
-  assert.deepEqual(grouped["系统管理"]["装备RMS指标分配"]["装备RMS指标分配"].map((page) => page.name), ["装备RMS指标分配"]);
+  assert.deepEqual(grouped["系统运行支持模块"]["装备RMS指标分配"]["装备RMS指标分配"].map((page) => page.name), ["装备RMS指标分配"]);
   assert.deepEqual(grouped["备件规划评估模块"]["仿真实验"]["仿真实验方案管理"].map((page) => page.name), ["方案列表", "方案编辑"]);
   assert.deepEqual(grouped["任务可靠度评估模块"]["仿真实验"]["仿真实验方案管理"].map((page) => page.name), ["方案列表", "方案编辑"]);
   assert.deepEqual(grouped["备件规划评估模块"]["仿真实验"]["可视化推演"].map((page) => page.name), ["可视化实验启动与停止"]);
@@ -106,20 +116,26 @@ test("feature grouping preserves three-level navigation and internal fourth-leve
   assert.equal(getFeaturePageById("system-management-user-management").component, "system-basic-config");
   assert.equal(getFeaturePageById("system-management-function-permission-management").component, "system-basic-config");
   assert.equal(getFeaturePageById("system-management-equipment-rms-allocation").component, "rms-allocation");
+  assert.equal(getFeaturePageById("spare-planning-equipment-composition").id, "spare-planning-equipment-system");
+  assert.equal(getFeaturePageById("spare-planning-equipment-failure").id, "spare-planning-equipment-system");
+  assert.equal(getFeaturePageById("mission-reliability-equipment-composition").id, "mission-reliability-equipment-system");
+  assert.equal(getFeaturePageById("mission-reliability-equipment-failure").id, "mission-reliability-equipment-system");
   assert.equal(getFeaturePageById("mission-reliability-rms-allocation").id, "system-management-equipment-rms-allocation");
 });
 
-test("page suggestion alignment keeps modeling import but removes modeling form management", async () => {
+test("system support project management removes standalone modeling import route but keeps local import actions", async () => {
   const catalogSource = await readFile(new URL("../front/feature-catalog.mjs", import.meta.url), "utf8");
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
-  const reviewSource = await readFile(PAGE_REVISION_REPORT_URL, "utf8");
 
-  assert.match(reviewSource, /取消.*建模数据导入.*删除/);
-  assert.match(catalogSource, /建模数据导入/);
-  assert.match(catalogSource, /modeling-import-workbench/);
+  assert.doesNotMatch(catalogSource, /建模数据导入/);
+  assert.doesNotMatch(catalogSource, /modeling-import-workbench/);
   assert.match(appSource, /function renderMainComponent/);
-  assert.match(appSource, /renderModelingImportWorkbench/);
-  assert.equal(FEATURE_PAGES.some((page) => page.id === "system-management-modeling-import-workbench"), true);
+  assert.match(appSource, /function renderLocalModelingImportActions/);
+  assert.match(appSource, /data-modeling-import-action="load-fixture"/);
+  assert.match(appSource, /data-modeling-import-action="validate"/);
+  assert.match(appSource, /data-modeling-import-action="save-draft"/);
+  assert.doesNotMatch(appSource, /renderModelingImportWorkbench/);
+  assert.equal(FEATURE_PAGES.some((page) => page.id === "system-management-modeling-import-workbench"), false);
   assert.equal(FEATURE_PAGES.some((page) => page.id === "system-management-modeling-form-management"), false);
   assert.equal(FEATURE_PAGES.some((page) => page.name === "建模表单管理"), false);
 });
@@ -182,7 +198,7 @@ test("frontend business authoring pages do not hydrate missing imported data fro
   };
   const staticSeedSource = sourceSlice("const PROJECT_SOURCE", "let scenario =");
   const renderSlices = [
-    sourceSlice("function renderEquipmentModeling", "function renderEquipmentFailureRmsFields"),
+    sourceSlice("function renderEquipmentModeling", "function renderReliabilityBlockDiagram"),
     sourceSlice("function renderBasicMissionModeling", "function missionPhaseRatioTotal"),
     sourceSlice("function renderSupportOrganizationWorkbench", "function renderOrgTreeNode"),
     sourceSlice("function renderSupportActivityWorkbench", "function renderSupportActivityTreeNode"),
@@ -228,14 +244,14 @@ test("support organization fourth-level tab ids resolve to distinct resource pag
   }
 });
 
-test("equipment composition modeling is the post-project landing page and plan name links back to plan list", async () => {
+test("equipment system modeling is the post-project landing page and plan name links back to plan list", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const styleSource = await readFile(new URL("../front/styles.css", import.meta.url), "utf8");
-  assert.match(appSource, /const DEFAULT_FEATURE_ID = "spare-planning-equipment-composition"/);
-  assert.equal(getFeaturePageById("spare-planning-equipment-composition").module, "备件规划评估模块");
-  assert.equal(getFeaturePageById("spare-planning-equipment-composition").secondary, "仿真建模");
-  assert.equal(getFeaturePageById("spare-planning-equipment-composition").tertiary, "装备系统建模");
-  assert.equal(getFeaturePageById("spare-planning-equipment-composition").name, "装备组成建模");
+  assert.match(appSource, /const DEFAULT_FEATURE_ID = "spare-planning-equipment-system"/);
+  assert.equal(getFeaturePageById("spare-planning-equipment-system").module, "备件规划评估模块");
+  assert.equal(getFeaturePageById("spare-planning-equipment-system").secondary, "仿真建模");
+  assert.equal(getFeaturePageById("spare-planning-equipment-system").tertiary, "装备系统建模");
+  assert.equal(getFeaturePageById("spare-planning-equipment-system").name, "装备系统建模");
   assert.match(appSource, /const DEFAULT_ROUTE = "login"/);
   assert.match(appSource, /function renderLoginPage/);
   assert.match(appSource, /function renderProjectListPage/);
@@ -295,40 +311,42 @@ test("page revision project and system management controls stay wired", async ()
   assert.match(projectListSource, /data-system-management-entry/);
   assert.doesNotMatch(projectListSource, /进入当前项目/);
 
-  assert.match(systemProjectSource, /activeSystemDataTab/);
-  assert.match(systemProjectSource, /建模数据/);
-  assert.match(systemProjectSource, /实验配置/);
-  assert.match(systemProjectSource, /实验结果/);
+  assert.match(systemProjectSource, /MODELING_DATA_MODULES/);
+  assert.match(appSource, /装备系统/);
+  assert.match(appSource, /装备任务/);
+  assert.match(appSource, /保障组织/);
+  assert.match(appSource, /保障活动/);
+  assert.match(systemProjectSource, /renderLocalModelingImportActions/);
   assert.doesNotMatch(systemProjectSource, /项目独有数据/);
   assert.doesNotMatch(systemProjectSource, /新增项目数据/);
   assert.doesNotMatch(projectDataSource, /<aside class="tree-container">/);
   assert.match(systemProjectSource, /data-system-data-export/);
-  assert.match(systemProjectSource, /data-system-data-add/);
-  assert.match(systemProjectSource, /data-system-data-delete-selected/);
   assert.match(systemProjectSource, /data-system-data-select-all/);
+  assert.match(systemProjectSource, /data-system-data-module-select/);
   assert.match(systemProjectSource, /data-system-data-select/);
   assert.match(systemProjectSource, /data-system-data-status/);
   assert.match(systemProjectSource, /data-system-data-export-preview/);
-  assert.match(systemProjectSource, /SYSTEM_MODELING_GRANULARITY_ROWS/);
+  assert.match(systemProjectSource, /data-modeling-import-action="load-fixture"/);
+  assert.match(systemProjectSource, /data-modeling-import-action="validate"/);
   assert.match(granularitySource, /function renderModelingGranularityTable/);
   assert.doesNotMatch(granularitySource, /tree-container/);
   assert.doesNotMatch(granularitySource, /class=\"tree-container\"/);
   assert.doesNotMatch(granularitySource, /<button type=\"button\" class=\"btn-primary\">新增<\/button>/);
   assert.doesNotMatch(granularitySource, /<button type=\"button\" class=\"btn-danger\">批量删除<\/button>/);
-  assert.match(granularitySource, /inline-action/);
-  assert.match(granularitySource, /data-modeling-granularity-detail/);
-  assert.match(granularitySource, /查看详情/);
-  assert.match(granularitySource, /<th>建模层级<\/th>/);
-  assert.match(granularitySource, /<th>建模对象<\/th>/);
-  assert.match(granularitySource, /<th>对象关系<\/th>/);
-  assert.match(granularitySource, /<th>操作<\/th>/);
+  assert.match(granularitySource, /data-modeling-field-sheet-select/);
+  assert.match(granularitySource, /data-modeling-field-select/);
+  assert.match(granularitySource, /field-checkbox-grid/);
+  assert.doesNotMatch(granularitySource, /<th>建模层级<\/th>/);
+  assert.doesNotMatch(granularitySource, /<th>建模对象<\/th>/);
+  assert.doesNotMatch(granularitySource, /<th>对象关系<\/th>/);
+  assert.doesNotMatch(granularitySource, /<th>操作<\/th>/);
   assert.doesNotMatch(projectDataSource, /<th>操作<\/th>/);
-  assert.doesNotMatch(projectDataSource, /配置<\/button>/);
-  assert.match(eventSource, /const systemDataAddButton = event\.target\.closest\("\[data-system-data-add\]"\)/);
-  assert.match(eventSource, /const systemDataDeleteButton = event\.target\.closest\("\[data-system-data-delete-selected\]"\)/);
+  assert.doesNotMatch(projectDataSource, />配置<\/button>/);
   assert.match(eventSource, /const systemDataSelectAll = event\.target\.closest\("\[data-system-data-select-all\]"\)/);
+  assert.match(eventSource, /const systemDataModuleSelect = event\.target\.closest\("\[data-system-data-module-select\]"\)/);
   assert.match(eventSource, /const systemDataSelect = event\.target\.closest\("\[data-system-data-select\]"\)/);
-  assert.match(eventSource, /const modelingGranularityDetailButton = event\.target\.closest\("\[data-modeling-granularity-detail\]"\)/);
+  assert.match(eventSource, /const modelingFieldSheetSelect = event\.target\.closest\("\[data-modeling-field-sheet-select\]"\)/);
+  assert.match(eventSource, /const modelingFieldSelect = event\.target\.closest\("\[data-modeling-field-select\]"\)/);
   assert.match(eventSource, /const importProjectButton = event\.target\.closest\("\[data-project-import\]"\)/);
   assert.match(eventSource, /const exportProjectButton = event\.target\.closest\("\[data-project-export\]"\)/);
 
@@ -344,7 +362,7 @@ test("page revision project and system management controls stay wired", async ()
   assert.match(eventSource, /const permissionConfigureButton = event\.target\.closest\("\[data-permission-configure\]"\)/);
 });
 
-test("project data management tabs expose local add delete selection and export preview", async () => {
+test("project data management exposes modeling sheet selection and local import actions", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const systemProjectSource = appSource.slice(
     appSource.indexOf("function renderSystemProjectManagement"),
@@ -359,37 +377,40 @@ test("project data management tabs expose local add delete selection and export 
     appSource.indexOf("async function handleLogin")
   );
   const dataActionSource = appSource.slice(
-    appSource.indexOf("function addSystemDataRow"),
+    appSource.indexOf("function activeSystemDataDefinition"),
     appSource.indexOf("function renderSystemBasicConfig")
   );
 
-  for (const label of ["建模数据", "实验配置", "实验结果"]) {
-    assert.match(systemProjectSource, new RegExp(label));
+  for (const label of ["装备系统", "装备任务", "保障组织", "保障活动"]) {
+    assert.match(appSource, new RegExp(label));
   }
 
   assert.doesNotMatch(systemProjectSource, /项目独有数据/);
   assert.doesNotMatch(systemProjectSource, /新增项目数据/);
-  assert.match(projectDataSource, /data-system-data-add/);
-  assert.match(projectDataSource, /data-system-data-delete-selected/);
+  assert.match(systemProjectSource, /仿真建模数据表 sheet 选择器/);
+  assert.equal(systemProjectSource.match(/仿真建模数据表 sheet 选择器/g)?.length, 1);
+  assert.match(systemProjectSource, /data-modeling-import-action="load-fixture"/);
+  assert.match(systemProjectSource, /data-modeling-import-action="backfill-current-project"/);
+  assert.match(systemProjectSource, /data-modeling-import-action="validate"/);
+  assert.match(systemProjectSource, /data-modeling-import-action="save-draft"/);
   assert.match(projectDataSource, /data-system-data-export/);
   assert.match(projectDataSource, /data-system-data-select-all/);
-  assert.match(projectDataSource, /data-system-data-select="\$\{htmlEscape\(row\.key\)\}"/);
+  assert.match(systemProjectSource, /data-system-data-module-select/);
+  assert.match(systemProjectSource, /data-system-data-select="\$\{htmlEscape\(sheet\.key\)\}"/);
   assert.match(projectDataSource, /data-system-data-status/);
   assert.match(projectDataSource, /data-system-data-export-preview/);
   assert.doesNotMatch(projectDataSource, /<th>操作<\/th>/);
-  assert.doesNotMatch(projectDataSource, /配置<\/button>/);
+  assert.doesNotMatch(projectDataSource, />配置<\/button>/);
 
-  assert.match(eventSource, /const systemDataAddButton = event\.target\.closest\("\[data-system-data-add\]"\)/);
-  assert.match(eventSource, /const systemDataDeleteButton = event\.target\.closest\("\[data-system-data-delete-selected\]"\)/);
   assert.match(eventSource, /const systemDataExportButton = event\.target\.closest\("\[data-system-data-export\]"\)/);
   assert.match(eventSource, /const systemDataSelectAll = event\.target\.closest\("\[data-system-data-select-all\]"\)/);
+  assert.match(eventSource, /const systemDataModuleSelect = event\.target\.closest\("\[data-system-data-module-select\]"\)/);
   assert.match(eventSource, /const systemDataSelect = event\.target\.closest\("\[data-system-data-select\]"\)/);
-  assert.match(dataActionSource, /systemDataStatus = `已新增\$\{tab\.label\}/);
-  assert.match(dataActionSource, /systemDataStatus = "请先选择要删除的数据项"/);
   assert.match(dataActionSource, /systemDataExportPreview = \{/);
   assert.match(dataActionSource, /rowCount: rows\.length/);
   assert.match(dataActionSource, /filename: systemDataExportFilename\(tab\)/);
   assert.match(dataActionSource, /downloadSystemDataExport\(systemDataExportPreview\.filename,/);
+  assert.match(dataActionSource, /selectedSystemDataKeys\.has\(row\.key\)/);
   assert.match(dataActionSource, /function systemDataExportFilename\(tab\)/);
   assert.match(dataActionSource, /function buildSystemDataExportPayload\(tab, rows\)/);
   assert.match(dataActionSource, /function downloadSystemDataExport\(filename, payload\)/);
@@ -862,25 +883,33 @@ test("support activity pages align to page suggestion activity fields", async ()
   assert.doesNotMatch(supportActivitySource, /\u4fdd\u969c\u6d3b\u52a8\u8282\u70b9\u7f51\u7edc\u56fe/);
 });
 
-test("equipment modeling pages use page suggestion tree attributes with quantity and k-out-of-n", async () => {
+test("equipment system modeling renders one tree plus flattened editable table", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   assert.match(appSource, /function renderEquipmentModeling\(page\)/);
   assert.match(appSource, /装备组成树/);
   assert.match(appSource, /function wholeMachineModels\(\)/);
   assert.match(appSource, /scenario\.equipment\.wholeMachineModels/);
-  assert.match(appSource, /组成属性/);
+  assert.match(appSource, /装备系统建模表/);
+  assert.match(appSource, /function renderEquipmentSystemTable\(selectedState\)/);
+  assert.match(appSource, /class="equipment-system-table"/);
+  assert.match(appSource, /<th>组件名称<\/th>/);
+  assert.match(appSource, /<th>父节点<\/th>/);
+  assert.match(appSource, /<th>数量n<\/th>/);
   assert.match(appSource, /组件属性/);
-  assert.match(appSource, /数量/);
-  assert.match(appSource, /N中取K/);
+  assert.match(appSource, /k值（n中取k）/);
   assert.match(appSource, /MTBF/);
-  assert.match(appSource, /修复时间分布/);
-  assert.match(appSource, /故障属性/);
-  assert.match(appSource, /field\("数量", `components\.\$\{selectedIndex\}\.quantity`, "number"/);
+  assert.match(appSource, /MTBF-分布类型/);
+  assert.match(appSource, /MTTR（min）/);
+  assert.match(appSource, /MTTR-分布类型/);
+  assert.match(appSource, /equipmentTableInput\("数量n", `components\.\$\{index\}\.quantity`, "number"/);
   assert.match(appSource, /data-equipment-k-out-of-n-index="\$\{selectedIndex\}"/);
+  assert.doesNotMatch(appSource, /isFailurePage/);
+  assert.doesNotMatch(appSource, /装备组成建模/);
+  assert.doesNotMatch(appSource, /装备故障建模/);
   assert.doesNotMatch(appSource, /<thead><tr><th>组件<\/th><th>备件类型<\/th><th>故障模型<\/th><th>失效率<\/th><th>MTBF<\/th><th>连接类型<\/th><\/tr><\/thead>/);
 });
 
-test("equipment tree selection drives the selected component edit path", async () => {
+test("equipment tree selection highlights the selected component row", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   assert.match(appSource, /let selectedEquipmentNodeKey = ""/);
   assert.match(appSource, /data-select-equipment-aircraft="\$\{htmlEscape\(model\)\}"/);
@@ -889,10 +918,10 @@ test("equipment tree selection drives the selected component edit path", async (
   assert.match(appSource, /selectedEquipmentNodeKey = `component:\$\{equipmentComponentNode\.dataset\.selectEquipmentComponent\}`/);
   assert.match(appSource, /function clampEquipmentComponentIndex\(index\)/);
   assert.match(appSource, /const selectedState = resolveSelectedEquipmentNode\(\)/);
-  assert.match(appSource, /renderEquipmentCompositionFields\(selectedIndex\)/);
-  assert.match(appSource, /renderEquipmentFailureFields\(selectedIndex\)/);
-  assert.match(appSource, /renderEquipmentFailureRmsFields\(selected, selectedIndex\)/);
-  assert.match(appSource, /field\("组件名称", `components\.\$\{selectedIndex\}\.name`\)/);
+  assert.match(appSource, /renderEquipmentSystemTable\(selectedState\)/);
+  assert.match(appSource, /selectedState\.kind === "component"/);
+  assert.match(appSource, /selected \? "selected-table-row" : ""/);
+  assert.match(appSource, /equipmentTableInput\("组件名称", `components\.\$\{index\}\.name`\)/);
 });
 
 test("equipment tree add node follows ship front selected aircraft and subsystem behavior", async () => {
@@ -900,7 +929,7 @@ test("equipment tree add node follows ship front selected aircraft and subsystem
   const equipmentModelSource = await readFile(new URL("../front/equipment-tree-model.mjs", import.meta.url), "utf8");
   const equipmentSource = appSource.slice(
     appSource.indexOf("function renderEquipmentModeling"),
-    appSource.indexOf("function renderEquipmentFailureRmsFields")
+    appSource.indexOf("function renderReliabilityBlockDiagram")
   );
   assert.match(equipmentSource, /data-equipment-add-node/);
   assert.match(equipmentSource, /function buildEquipmentTreeNodes\(\)/);
@@ -921,7 +950,7 @@ test("equipment tree root aircraft list can add aircraft before subsystem nodes"
   const equipmentModelSource = await readFile(new URL("../front/equipment-tree-model.mjs", import.meta.url), "utf8");
   const equipmentSource = appSource.slice(
     appSource.indexOf("function renderEquipmentModeling"),
-    appSource.indexOf("function renderEquipmentFailureRmsFields")
+    appSource.indexOf("function renderReliabilityBlockDiagram")
   );
   const resolveSource = equipmentModelSource.slice(
     equipmentModelSource.indexOf("export function resolveEquipmentSelectionModel"),
@@ -940,8 +969,7 @@ test("equipment tree root aircraft list can add aircraft before subsystem nodes"
   assert.match(equipmentModelSource, /scenario\.equipment\.wholeMachineModels\.push\(aircraftModel\)/);
   assert.match(equipmentModelSource, /selectedEquipmentNodeKey: `aircraft:\$\{aircraftModel\}`/);
   assert.match(appSource, /ensureOperationsSupportActivityForAircraftModel\(mutation\.aircraftModel\)/);
-  assert.match(appSource, /选中飞机列表新增飞机，选中飞机新增分系统，选中分系统新增子系统/);
-  assert.match(appSource, /<label>数量<input readonly value=/);
+  assert.match(appSource, /equipmentSelectionSummary\(selectedState, components\.length\)/);
   assert.doesNotMatch(appSource, /整机数量<input readonly value=/);
 });
 
@@ -953,7 +981,7 @@ test("equipment aircraft list mutations synchronize operations support activity 
   );
   const equipmentMutationSource = appSource.slice(
     appSource.indexOf("function addEquipmentNodeForSelection"),
-    appSource.indexOf("function renderEquipmentCompositionFields")
+    appSource.indexOf("function equipmentSelectionSummary")
   );
 
   assert.match(supportActivityPlanSource, /const aircraftModels = wholeMachineModels\(\)/);
@@ -971,24 +999,27 @@ test("equipment aircraft list mutations synchronize operations support activity 
   assert.match(equipmentMutationSource, /updateOperationsSupportActivityAircraftModel\(oldModel, nextModel\)/);
 });
 
-test("equipment composition page only renders tree and basic composition fields", async () => {
+test("equipment system table exposes composition, MTBF and MTTR distribution fields together", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const equipmentSource = appSource.slice(
     appSource.indexOf("function renderEquipmentModeling"),
-    appSource.indexOf("function renderEquipmentFailureRmsFields")
+    appSource.indexOf("function renderReliabilityBlockDiagram")
   );
-  assert.match(equipmentSource, /function renderEquipmentCompositionFields/);
-  assert.match(equipmentSource, /isFailurePage \? renderEquipmentFailureFields\(selectedIndex\) : renderEquipmentCompositionFields\(selectedIndex\)/);
-  assert.match(equipmentSource, /field\("组件名称", `components\.\$\{selectedIndex\}\.name`\)/);
-  assert.match(equipmentSource, /field\("父节点", `components\.\$\{selectedIndex\}\.parentId`\)/);
-  assert.match(equipmentSource, /equipmentLruRadioGroup\(selectedIndex\)/);
+  assert.match(equipmentSource, /function renderEquipmentSystemTable/);
+  assert.match(equipmentSource, /equipmentTableInput\("组件名称", `components\.\$\{index\}\.name`\)/);
+  assert.match(equipmentSource, /equipmentTableInput\("父节点", `components\.\$\{index\}\.parentId`\)/);
+  assert.match(equipmentSource, /function equipmentComponentAttributeSelect/);
   assert.match(equipmentSource, /组件属性/);
-  assert.match(equipmentSource, /value="LRU"/);
-  assert.match(equipmentSource, /value="SRU"/);
+  assert.match(equipmentSource, /\{ value: "LRU", label: "LRU" \}/);
+  assert.match(equipmentSource, /\{ value: "SRU", label: "SRU" \}/);
   assert.doesNotMatch(equipmentSource, /是否为LRU/);
   assert.doesNotMatch(equipmentSource, /field\("备件类型", `components\.\$\{selectedIndex\}\.spareType`\)/);
   assert.match(equipmentSource, /equipmentKOutOfNInput\(selectedIndex\)/);
-  assert.match(equipmentSource, /N中取K/);
+  assert.match(equipmentSource, /k值（n中取k）/);
+  assert.match(equipmentSource, /components\.\$\{index\}\.mtbfHours/);
+  assert.match(equipmentSource, /components\.\$\{index\}\.failureDistribution\.distributionType/);
+  assert.match(equipmentSource, /components\.\$\{index\}\.meanRepairTimeMinutes/);
+  assert.match(equipmentSource, /components\.\$\{index\}\.repairDistribution\.distributionType/);
   assert.doesNotMatch(equipmentSource, /field\("连接类型", `components\.\$\{selectedIndex\}\.connectionType`\)/);
   assert.doesNotMatch(equipmentSource, /PRODUCT_TYPE_OPTIONS/);
   assert.doesNotMatch(equipmentSource, /isFailurePage \? renderEquipmentComponentTable\(\) : ""/);
@@ -1009,31 +1040,25 @@ test("equipment composition constrains k-out-of-n to an integer within quantity"
   assert.match(appSource, /\$\{quantity > 1 \? "" : "disabled"\}/);
 });
 
-test("equipment failure page exposes RMS attributes separately from composition fields", async () => {
+test("equipment system table exposes MTBF and MTTR distribution parameter rules", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const equipmentSource = appSource.slice(
     appSource.indexOf("function renderEquipmentModeling"),
     appSource.indexOf("function renderReliabilityBlockDiagram")
   );
-  assert.match(equipmentSource, /renderEquipmentFailureRmsFields\(selected, selectedIndex\)/);
-  assert.match(equipmentSource, /function renderEquipmentFailureRmsFields/);
-  assert.match(equipmentSource, /RMS指标/);
-  assert.match(equipmentSource, /可靠度 R\(t\)/);
-  assert.match(equipmentSource, /维修度 M\(t\)/);
-  assert.match(equipmentSource, /保障性 S\(t\)/);
-  assert.match(equipmentSource, /平均修复时间 MTTR\(h\)/);
-  assert.match(equipmentSource, /固有可用度 Ai/);
-  assert.match(equipmentSource, /分布类型/);
-  assert.match(equipmentSource, /修复时间分布/);
-  assert.match(equipmentSource, /平均修复时间（min）/);
+  for (const label of ["固定值", "指数分布", "正态分布", "均匀分布", "三角分布", "威布尔分布"]) {
+    assert.match(equipmentSource, new RegExp(label));
+  }
+  for (const label of ["速率参数", "均值", "方差", "最小值", "最大值", "模数", "形状参数\\(k\\)", "尺度参数\\(λ\\)"]) {
+    assert.match(equipmentSource, new RegExp(label));
+  }
+  assert.match(equipmentSource, /固定值使用 \$\{fixedLabel\}/);
+  assert.match(equipmentSource, /components\.\$\{index\}\.failureDistribution/);
+  assert.match(equipmentSource, /components\.\$\{index\}\.repairDistribution/);
+  assert.match(equipmentSource, /type="number" min="0" step="\$\{fieldDef\.step\}"/);
   assert.doesNotMatch(equipmentSource, /组件属性表/);
   assert.doesNotMatch(equipmentSource, /飞机状态数据表/);
   assert.doesNotMatch(equipmentSource, /可出动标识/);
-  assert.match(equipmentSource, /field\("可靠度 R\(t\)", `components\.\$\{selectedIndex\}\.rms\.reliability`, "number"\)/);
-  assert.match(equipmentSource, /field\("维修度 M\(t\)", `components\.\$\{selectedIndex\}\.rms\.maintainability`, "number"\)/);
-  assert.match(equipmentSource, /field\("保障性 S\(t\)", `components\.\$\{selectedIndex\}\.rms\.supportability`, "number"\)/);
-  assert.match(equipmentSource, /field\("平均修复时间 MTTR\(h\)", `components\.\$\{selectedIndex\}\.rms\.mttrHours`, "number"\)/);
-  assert.match(equipmentSource, /field\("固有可用度 Ai", `components\.\$\{selectedIndex\}\.rms\.availability`, "number"\)/);
 });
 
 test("frontend shell mounts a feature workbench rather than six static summary views", async () => {
@@ -1061,7 +1086,9 @@ test("frontend source omits removed page-side context panels", async () => {
 
 test("modeling and experiment pages use compact Chinese fourth-level tabs when needed", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
-  assert.match(appSource, /<h2>\$\{htmlEscape\(page\.tertiary\)\}<\/h2>/);
+  assert.doesNotMatch(appSource, /<h2>\$\{htmlEscape\(page\.tertiary\)\}<\/h2>/);
+  assert.doesNotMatch(appSource, /function renderPageHeading/);
+  assert.doesNotMatch(appSource, /class="breadcrumb"/);
   assert.doesNotMatch(appSource, /<h2>\$\{page\.name\}<\/h2>/);
   assert.match(appSource, /function shouldShowCurrentContext\(page\)/);
   assert.match(appSource, /page\.secondary !== "仿真建模"/);
@@ -1305,15 +1332,17 @@ test("page revision equipment and mission input constraints are guarded", async 
   const equipmentQuantityIndex = basicMissionSource.indexOf("装备数量", missionInfoStart);
   const minimumEquipmentIndex = basicMissionSource.indexOf("最小装备数量", missionInfoStart);
 
-  assert.match(equipmentSource, /function equipmentLruRadioGroup/);
-  assert.match(equipmentSource, /value="LRU"/);
-  assert.match(equipmentSource, /value="SRU"/);
-  assert.match(equipmentSource, /value=""[^>]*>空值/);
+  assert.match(equipmentSource, /function equipmentComponentAttributeSelect/);
+  assert.match(equipmentSource, /\{ value: "LRU", label: "LRU" \}/);
+  assert.match(equipmentSource, /\{ value: "SRU", label: "SRU" \}/);
+  assert.match(equipmentSource, /\{ value: "", label: "空值" \}/);
   assert.match(equipmentSource, /function equipmentKOutOfNInput/);
   assert.match(equipmentSource, /const quantity = Math\.max\(0, Math\.trunc\(Number\(component\.quantity\) \|\| 0\)\)/);
   assert.match(equipmentSource, /clamp\(Math\.trunc\(Number\(component\.kOutOfN\?\.k\) \|\| 1\), 1, quantity\)/);
   assert.match(equipmentSource, /quantity > 1 \? "" : "disabled"/);
   assert.match(equipmentSource, /min="1" max="\$\{htmlEscape\(quantity\)\}" step="1"/);
+  assert.match(equipmentSource, /function equipmentDistributionOptions/);
+  assert.match(equipmentSource, /function renderEquipmentDistributionParameters/);
 
   assert.ok(equipmentQuantityIndex > -1, "basic mission equipment quantity field missing");
   assert.ok(minimumEquipmentIndex > equipmentQuantityIndex, "minimum equipment quantity must follow equipment quantity");
@@ -1539,12 +1568,20 @@ test("topbar omits run and export actions", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const topbarSource = appSource.slice(
     appSource.indexOf("<header class=\"topbar\">"),
-    appSource.indexOf("function renderTopbarContext")
+    appSource.indexOf("function renderLoginPage")
   );
   assert.doesNotMatch(topbarSource, /运行单次仿真/);
   assert.doesNotMatch(topbarSource, /运行 Monte Carlo/);
   assert.doesNotMatch(topbarSource, /导出方案 JSON/);
   assert.doesNotMatch(topbarSource, /downloadJson/);
+  assert.match(topbarSource, /<p>\$\{htmlEscape\(currentProject\?\.name \|\| "未选择项目"\)\}<\/p>/);
+  assert.doesNotMatch(appSource, /function renderTopbarContext/);
+  assert.doesNotMatch(appSource, /renderTopbarContext\(page\)/);
+});
+
+test("frontend tables do not use generic operation column headers", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  assert.doesNotMatch(appSource, /<th(?:\s[^>]*)?>\s*操作\s*<\/th>/);
 });
 
 test("monte carlo configuration drives the displayed result sample count", async () => {
@@ -1752,6 +1789,10 @@ test("M9.8 visual and formal run launches use aircraft_support_v1 through canoni
     appSource.indexOf("function renderVisualSimulation"),
     appSource.indexOf("function mesaTab")
   );
+  const visualNewRunSource = appSource.slice(
+    appSource.indexOf('if (action === "start-new-run")'),
+    appSource.indexOf("function startVisualizationReplay")
+  );
 
   assert.match(appSource, /const FORMAL_AIRCRAFT_SUPPORT_MODEL_FAMILY = "aircraft_support_v1"/);
   assert.match(runIntentSource, /modelFamily = "aircraft_support_v1"/);
@@ -1759,7 +1800,8 @@ test("M9.8 visual and formal run launches use aircraft_support_v1 through canoni
   assert.match(singleLaunchSource, /modelFamily: FORMAL_AIRCRAFT_SUPPORT_MODEL_FAMILY/);
   assert.match(monteCarloLaunchSource, /submitRunIntent\(backendApi,\s*\{/);
   assert.match(monteCarloLaunchSource, /modelFamily: FORMAL_AIRCRAFT_SUPPORT_MODEL_FAMILY/);
-  assert.match(visualSource, /aircraft_support_v1/);
+  assert.match(visualNewRunSource, /await startSingleRunThroughApi\(\)/);
+  assert.doesNotMatch(visualSource, /formal run \/ aircraft_support_v1/);
   assert.match(visualSource, /canonical \/api\/runs/);
   assert.doesNotMatch(visualSource, /mesa-abm-skill/);
   assert.doesNotMatch(visualSource, /Mesa ABM \/ aviation_support/);
@@ -2332,7 +2374,7 @@ test("monte carlo evaluation result is rendered in result analysis page", async 
 
 test("system management exposes an independent equipment RMS allocation workbench", async () => {
   const page = getFeaturePageById("system-management-equipment-rms-allocation");
-  assert.equal(page.module, "系统管理");
+  assert.equal(page.module, "系统运行支持模块");
   assert.equal(page.secondary, "装备RMS指标分配");
   assert.equal(page.tertiary, "装备RMS指标分配");
   assert.equal(page.name, "装备RMS指标分配");
@@ -2342,45 +2384,95 @@ test("system management exposes an independent equipment RMS allocation workbenc
   const styleSource = await readFile(new URL("../front/styles.css", import.meta.url), "utf8");
   assert.match(appSource, /renderRmsAllocationWorkbench/);
   assert.match(appSource, /data-rms-path/);
+  assert.match(appSource, /data-rms-equipment-import-file/);
+  assert.match(appSource, /data-rms-equipment-root/);
+  assert.match(appSource, /normalizeRmsEquipmentImportRows/);
+  assert.match(appSource, /selectRmsAllocationEquipmentRoot/);
   assert.match(appSource, /calculateRmsAllocation\(rmsAllocationPlan, rmsAllocationProject\)/);
-  assert.match(appSource, /publishRmsAllocation\(rmsAllocationProject, rmsAllocationResult\)/);
-  assert.match(appSource, /function renderTopbarContext\(page\)/);
-  assert.match(appSource, /htmlEscape\(currentProject\?\.name \|\| "未选择项目"\)} \/ \$\{renderTopbarContext\(page\)\}/);
-  assert.match(appSource, /系统管理 \/ \$\{htmlEscape\(page\.secondary\)\} \/ \$\{htmlEscape\(page\.tertiary\)\}/);
+  assert.doesNotMatch(appSource, /publishRmsAllocation\(rmsAllocationProject, rmsAllocationResult\)/);
+  assert.doesNotMatch(appSource, /function renderTopbarContext\(page\)/);
+  assert.match(appSource, /<p>\$\{htmlEscape\(currentProject\?\.name \|\| "未选择项目"\)\}<\/p>/);
+  assert.doesNotMatch(appSource, /SYSTEM_SUPPORT_MODULE_NAME} \/ \$\{htmlEscape\(page\.secondary\)\} \/ \$\{htmlEscape\(page\.tertiary\)\}/);
   assert.match(styleSource, /\.rms-allocation-workbench/);
+  assert.match(styleSource, /\.rms-parameter-panel/);
   assert.match(styleSource, /\.rms-equipment-tree/);
-  assert.match(styleSource, /\.rms-verification-panel/);
+  assert.match(styleSource, /\.rms-method-panel/);
 
   const workbenchSource = await readFile(new URL("../front/rms-allocation-workbench.mjs", import.meta.url), "utf8");
-  assert.match(workbenchSource, /可靠性分配 \/ RMS 分配/);
-  assert.match(workbenchSource, /data-rms-action="publish"/);
-  assert.match(workbenchSource, /装备级任务可靠度 R\(T\)/);
+  assert.match(workbenchSource, /装备 RMS 指标分配/);
+  assert.doesNotMatch(workbenchSource, /plan\.name/);
+  assert.match(workbenchSource, /导入表格/);
+  assert.doesNotMatch(workbenchSource, /import-sample/);
+  assert.doesNotMatch(workbenchSource, /导入 15/);
+  assert.match(workbenchSource, /任务可靠度/);
+  assert.match(workbenchSource, /MTTR\(h\)/);
+  assert.match(workbenchSource, /MTBF\(h\)/);
+  assert.match(workbenchSource, /data-rms-equipment-root/);
   assert.match(workbenchSource, /可靠性分配方法/);
   assert.match(workbenchSource, /等分配法/);
   assert.match(workbenchSource, /比例分配法/);
-  assert.match(workbenchSource, /AGREE 分配法/);
-  assert.match(workbenchSource, /评分分配法/);
-  assert.match(workbenchSource, /任务暴露矩阵/);
-  assert.match(workbenchSource, /自底向上校核/);
+  assert.match(workbenchSource, /相似产品分配法/);
+  assert.match(workbenchSource, /比例修正系数/);
+  assert.match(workbenchSource, /plan\.methods\.reliability === "similar"/);
+  assert.match(workbenchSource, /基准机型/);
+  assert.match(workbenchSource, /data-rms-action="calculate">计算/);
+  assert.doesNotMatch(workbenchSource, /data-rms-action="save-draft"/);
+  assert.doesNotMatch(workbenchSource, /data-rms-action="publish"/);
+  assert.doesNotMatch(workbenchSource, /AGREE 分配法/);
+  assert.doesNotMatch(workbenchSource, /评分分配法/);
+  assert.doesNotMatch(workbenchSource, /任务暴露矩阵/);
+});
+
+test("RMS allocation workbench renders parameters for only the selected method", () => {
+  const project = createDemoRmsAllocationProject();
+  const plan = createDefaultRmsAllocationPlan(project);
+  const renderWithMethod = (method) => {
+    plan.methods.reliability = method;
+    return renderRmsAllocationWorkbench({
+      project,
+      plan,
+      result: calculateRmsAllocation(plan, project),
+      importStatus: "",
+      htmlEscape: (value) => String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;"),
+      fixed: (value, digits = 2) => Number(value || 0).toFixed(digits),
+      pct: (value) => `${Math.round(Number(value || 0) * 100)}%`
+    });
+  };
+
+  const equalHtml = renderWithMethod("equal");
+  assert.doesNotMatch(equalHtml, /基准机型/);
+  assert.doesNotMatch(equalHtml, /比例修正系数/);
+
+  const proportionalHtml = renderWithMethod("proportional");
+  assert.match(proportionalHtml, /比例修正系数/);
+  assert.doesNotMatch(proportionalHtml, /基准机型/);
+
+  const similarHtml = renderWithMethod("similar");
+  assert.match(similarHtml, /基准机型/);
+  assert.match(similarHtml, /相似修正系数/);
 });
 
 test("system management exposes project management and base configuration pages", async () => {
   const expectedPages = [
-    ["system-management-project-data-management", "项目管理", "数据管理", ["projects", "projectDataSets", "dataOwnership"]],
-    ["system-management-modeling-import-workbench", "项目管理", "建模数据导入", ["modelingImportPackage", "validationIssues", "scenarioPreview"]],
-    ["system-management-modeling-granularity-management", "项目管理", "建模颗粒度管理", ["modelingLevels", "modelingObjects", "objectRelations"]],
+    ["system-management-project-data-management", "项目管理", "项目数据管理", ["modelingModules", "sheetSelections", "localImportActions"]],
+    ["system-management-modeling-granularity-management", "项目管理", "建模颗粒度管理", ["modelingModules", "sheets", "fieldSelections"]],
     ["system-management-user-management", "系统基础配置", "用户管理", ["users", "roles", "organizations"]],
     ["system-management-function-permission-management", "系统基础配置", "系统功能权限管理", ["features", "roles", "permissionRules"]]
   ];
 
   for (const [id, secondary, name, dataObjects] of expectedPages) {
     const page = getFeaturePageById(id);
-    assert.equal(page.module, "系统管理");
+    assert.equal(page.module, "系统运行支持模块");
     assert.equal(page.secondary, secondary);
     assert.equal(page.tertiary, name);
     assert.equal(page.name, name);
     assert.deepEqual(page.dataObjects, dataObjects);
   }
+  assert.equal(FEATURE_PAGES.some((page) => page.id === "system-management-modeling-import-workbench"), false);
 
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const styleSource = await readFile(new URL("../front/styles.css", import.meta.url), "utf8");
@@ -2390,15 +2482,21 @@ test("system management exposes project management and base configuration pages"
   assert.match(appSource, /function renderModelingGranularityTable/);
   assert.match(appSource, /function renderUserManagementConfig/);
   assert.match(appSource, /function renderPermissionManagementConfig/);
-  assert.match(appSource, /项目数据列表/);
-  assert.match(appSource, /SYSTEM_DATA_MANAGEMENT_TABS/);
-  assert.match(appSource, /建模数据/);
-  assert.match(appSource, /实验配置/);
-  assert.match(appSource, /实验结果/);
-  assert.match(appSource, /层级、对象及关系/);
+  assert.match(appSource, /仿真建模数据表 sheet 选择器/);
+  assert.match(appSource, /MODELING_DATA_MODULES/);
+  assert.match(appSource, /装备系统/);
+  assert.match(appSource, /装备任务/);
+  assert.match(appSource, /保障组织/);
+  assert.match(appSource, /保障活动/);
+  assert.match(appSource, /仿真建模数据表字段级配置/);
+  assert.equal(appSource.match(/仿真建模数据表字段级配置/g)?.length, 1);
+  assert.match(appSource, /data-modeling-field-select/);
+  assert.doesNotMatch(appSource, /层级、对象及关系/);
+  assert.doesNotMatch(appSource, /<th>建模层级<\/th>/);
   assert.doesNotMatch(appSource, /page\.name === "建模表单管理"/);
   assert.match(styleSource, /\.system-config-workbench/);
-  assert.match(styleSource, /\.system-config-layout/);
+  assert.match(styleSource, /\.modeling-config-grid/);
+  assert.match(styleSource, /\.field-checkbox-grid/);
 });
 
 test("user management add and edit actions open an editable user form", async () => {
@@ -2496,9 +2594,9 @@ test("visual simulation page embeds aircraft mission and support Mesa views", as
   assert.match(appSource, /mesaTab\("mission"/);
   assert.match(appSource, /mesaTab\("support"/);
   assert.match(appSource, /飞机保障正式仿真/);
-  assert.match(appSource, /formal run \/ aircraft_support_v1/);
+  assert.doesNotMatch(appSource, /formal run \/ aircraft_support_v1/);
   assert.match(appSource, /isVisualSimulationPage/);
-  assert.match(appSource, /<h2>\$\{htmlEscape\(page\.tertiary\)\}<\/h2>/);
+  assert.doesNotMatch(appSource, /<h2>\$\{htmlEscape\(page\.tertiary\)\}<\/h2>/);
   assert.doesNotMatch(appSource, /return `<div>\$\{breadcrumb\}<\/div>`;/);
   assert.doesNotMatch(appSource, /可视化实验启动与停止<\/h2>/);
   assert.doesNotMatch(appSource, /mesaTab\("ontology"/);

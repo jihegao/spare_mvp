@@ -35,8 +35,8 @@ test("buildModelingImportPreview maps four collections to page labels and field 
     ["missionProfiles", "equipmentAssets", "supportResources", "supportActivities"]
   );
   assert.ok(preview.rows.some((row) => row.page === "任务剖面参数" && row.field_path === "objects.missionProfiles[0].durationHours"));
-  assert.ok(preview.rows.some((row) => row.page === "装备组成建模" && row.object_id === "j15-radar" && row.field === "mtbfHours"));
-  assert.ok(preview.rows.some((row) => row.page === "装备组成建模" && row.object_id === "j15-avionics" && row.field === "aircraftModel" && row.target_path === "components[3].aircraftModel"));
+  assert.ok(preview.rows.some((row) => row.page === "装备系统建模" && row.object_id === "j15-radar" && row.field === "mtbfHours"));
+  assert.ok(preview.rows.some((row) => row.page === "装备系统建模" && row.object_id === "j15-avionics" && row.field === "aircraftModel" && row.target_path === "components[3].aircraftModel"));
   assert.ok(preview.rows.some((row) => row.page === "保障资源建模" && row.field_path === "objects.supportResources[0].capacity"));
   assert.ok(preview.rows.some((row) => row.page === "保障资源建模" && row.object_id === "carrier-deck" && row.field === "inventory"));
   assert.ok(preview.rows.some((row) => row.page === "保障活动建模" && row.field_path === "objects.supportActivities[0].resourceId"));
@@ -98,7 +98,7 @@ test("renderModelingImportWorkbench includes action controls lifecycle version i
     issues: [
       {
         severity: "error",
-        page: "装备组成建模",
+        page: "装备系统建模",
         object_id: "j15-radar",
         field_path: `objects.equipmentAssets[${radarIndex}].mtbfHours`,
         message: "mtbfHours 必须大于 0。"

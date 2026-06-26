@@ -1,7 +1,7 @@
 import { compileMissionExposure } from "./mission-exposure-compiler.mjs";
 import { evaluateBottomUpReliability, seriesReliability } from "./rbd-evaluator.mjs";
 
-export const RMS_ALLOCATION_ALGORITHM_VERSION = "rms-engine-1.0.0";
+export const RMS_ALLOCATION_ALGORITHM_VERSION = "rms-engine-1.1.0";
 
 export function createDemoRmsAllocationProject() {
   return {
@@ -52,7 +52,12 @@ export function createDemoRmsAllocationProject() {
         supportDifficulty: 1.25,
         criticality: 1.2,
         missionUse: { dutyCycle: 1, environmentFactor: 1.2, loadFactor: 1.15 },
-        rms: { target: {}, prediction: { mtbfHours: 780, mttrHours: 2.2 }, actual: { mtbfHours: 720, source: "field-data" } }
+        rms: {
+          target: {},
+          prediction: { mtbfHours: 780, mttrHours: 2.2 },
+          similar: { sourceModel: "15 机型", targetModel: "16 机型", mtbfHours: 760, adjustmentFactor: 0.92 },
+          actual: { mtbfHours: 720, source: "field-data" }
+        }
       },
       {
         id: "avionics-system",
@@ -69,7 +74,12 @@ export function createDemoRmsAllocationProject() {
         supportDifficulty: 1.1,
         criticality: 1.3,
         missionUse: { dutyCycle: 1, environmentFactor: 1.05, loadFactor: 1 },
-        rms: { target: {}, prediction: { mtbfHours: 1100, mttrHours: 1.8 }, actual: { mtbfHours: 980, source: "bench-test" } }
+        rms: {
+          target: {},
+          prediction: { mtbfHours: 1100, mttrHours: 1.8 },
+          similar: { sourceModel: "15 机型", targetModel: "16 机型", mtbfHours: 1080, adjustmentFactor: 0.95 },
+          actual: { mtbfHours: 980, source: "bench-test" }
+        }
       },
       {
         id: "hydraulic-system",
@@ -86,7 +96,12 @@ export function createDemoRmsAllocationProject() {
         supportDifficulty: 1.2,
         criticality: 1,
         missionUse: { dutyCycle: 0.85, environmentFactor: 1.1, loadFactor: 1 },
-        rms: { target: {}, prediction: { mtbfHours: 940, mttrHours: 2 }, actual: { mtbfHours: 900, source: "field-data" } }
+        rms: {
+          target: {},
+          prediction: { mtbfHours: 940, mttrHours: 2 },
+          similar: { sourceModel: "15 机型", targetModel: "16 机型", mtbfHours: 900, adjustmentFactor: 0.9 },
+          actual: { mtbfHours: 900, source: "field-data" }
+        }
       },
       {
         id: "mission-computer",
@@ -103,10 +118,157 @@ export function createDemoRmsAllocationProject() {
         supportDifficulty: 0.7,
         criticality: 1.4,
         missionUse: { dutyCycle: 0.65, environmentFactor: 1, loadFactor: 0.9 },
-        rms: { target: {}, prediction: { mtbfHours: 1450, mttrHours: 1.2 }, actual: { mtbfHours: 1300, source: "supplier" } }
+        rms: {
+          target: {},
+          prediction: { mtbfHours: 1450, mttrHours: 1.2 },
+          similar: { sourceModel: "15 机型", targetModel: "16 机型", mtbfHours: 1320, adjustmentFactor: 0.96 },
+          actual: { mtbfHours: 1300, source: "supplier" }
+        }
       }
     ]
   };
+}
+
+export function createRmsEquipmentImportFixture() {
+  return [
+    { id: "j16-root", name: "16 机型整机", parentId: "", level: "装备", quantity: 1, structure: "series" },
+    {
+      id: "j16-propulsion",
+      name: "16 机型动力系统",
+      parentId: "j16-root",
+      level: "系统",
+      quantity: 2,
+      structure: "series",
+      mtbfHours: 700,
+      mttrHours: 2.4,
+      similarProductModel: "15 机型",
+      targetProductModel: "16 机型",
+      similarMtbfHours: 760,
+      adjustmentFactor: 0.92,
+      dutyCycle: 1,
+      environmentFactor: 1.18,
+      loadFactor: 1.12,
+      repairDifficulty: 1.35,
+      supportDifficulty: 1.25,
+      criticality: 1.25
+    },
+    {
+      id: "j16-avionics",
+      name: "16 机型航电系统",
+      parentId: "j16-root",
+      level: "系统",
+      quantity: 1,
+      structure: "series",
+      mtbfHours: 1020,
+      mttrHours: 1.9,
+      similarProductModel: "15 机型",
+      targetProductModel: "16 机型",
+      similarMtbfHours: 1080,
+      adjustmentFactor: 0.95,
+      dutyCycle: 1,
+      environmentFactor: 1.05,
+      loadFactor: 1,
+      repairDifficulty: 1.05,
+      supportDifficulty: 1.1,
+      criticality: 1.3
+    },
+    {
+      id: "j16-hydraulic",
+      name: "16 机型液压系统",
+      parentId: "j16-root",
+      level: "分系统",
+      quantity: 1,
+      structure: "series",
+      mtbfHours: 820,
+      mttrHours: 2.1,
+      similarProductModel: "15 机型",
+      targetProductModel: "16 机型",
+      similarMtbfHours: 900,
+      adjustmentFactor: 0.9,
+      dutyCycle: 0.86,
+      environmentFactor: 1.1,
+      loadFactor: 1,
+      repairDifficulty: 1.15,
+      supportDifficulty: 1.2,
+      criticality: 1
+    },
+    {
+      id: "j16-mission-computer",
+      name: "16 机型任务计算机 LRU",
+      parentId: "j16-root",
+      level: "LRU",
+      quantity: 1,
+      structure: "series",
+      mtbfHours: 1260,
+      mttrHours: 1.4,
+      similarProductModel: "15 机型",
+      targetProductModel: "16 机型",
+      similarMtbfHours: 1320,
+      adjustmentFactor: 0.96,
+      dutyCycle: 0.65,
+      environmentFactor: 1,
+      loadFactor: 0.9,
+      repairDifficulty: 0.8,
+      supportDifficulty: 0.7,
+      criticality: 1.4
+    }
+  ];
+}
+
+export function normalizeRmsEquipmentImportRows(input, { baseProject = createDemoRmsAllocationProject() } = {}) {
+  if (input?.equipmentNodes) {
+    return normalizeRmsImportedProject(structuredClone(input), baseProject);
+  }
+  const rows = Array.isArray(input)
+    ? input
+    : input?.rows || input?.equipmentRows || input?.objects?.equipmentAssets || [];
+  if (!Array.isArray(rows) || rows.length === 0) {
+    throw new Error("RMS_EQUIPMENT_IMPORT_EMPTY: 导入表格未包含装备节点");
+  }
+
+  const indexedRows = rows.map((row, index) => ({
+    row,
+    index,
+    id: stableNodeId(pickText(row, ["id", "equipmentId", "nodeId", "节点ID", "装备ID"], `rms-node-${index + 1}`)),
+    parentId: pickText(row, ["parentId", "parent_id", "父节点", "上级节点"], ""),
+    level: pickText(row, ["level", "层级", "节点层级"], "")
+  }));
+  const explicitRoot = indexedRows.find((item) => !item.parentId && /装备|整机|root/i.test(item.level))
+    || indexedRows.find((item) => !item.parentId);
+  const rootId = explicitRoot?.id || "rms-import-root";
+  const rootNode = explicitRoot
+    ? importedNodeFromRow(explicitRoot.row, { id: rootId, parentId: null, fallbackLevel: "装备", index: explicitRoot.index })
+    : {
+        id: rootId,
+        name: pickText(rows[0], ["targetProductModel", "目标机型"], "导入装备整机"),
+        level: "装备",
+        parentId: null,
+        quantity: 1,
+        structure: "series",
+        rms: { target: {}, prediction: {} }
+      };
+  rootNode.parentId = null;
+
+  const nodes = [rootNode];
+  for (const item of indexedRows) {
+    if (explicitRoot && item.index === explicitRoot.index) continue;
+    const parentId = item.parentId ? stableNodeId(item.parentId) : null;
+    nodes.push(importedNodeFromRow(item.row, {
+      id: item.id,
+      parentId,
+      fallbackLevel: "系统",
+      index: item.index
+    }));
+  }
+
+  return normalizeRmsImportedProject({
+    projectId: "rms-imported-equipment-tree",
+    rootId,
+    name: `${rootNode.name} RMS 指标分配`,
+    missionProfile: structuredClone(baseProject.missionProfile),
+    missionPhases: structuredClone(baseProject.missionPhases),
+    equipmentNodes: nodes
+  }, baseProject);
 }
 
 export function createDefaultRmsAllocationPlan(project = createDemoRmsAllocationProject()) {
@@ -130,6 +292,14 @@ export function createDefaultRmsAllocationPlan(project = createDemoRmsAllocation
     },
     methods: {
       reliability: "equal",
+      proportional: {
+        adjustmentFactor: 1
+      },
+      similarProduct: {
+        sourceModel: project.equipmentNodes.find((node) => node.id === project.rootId)?.name || "15 机型",
+        targetModel: "16 机型",
+        adjustmentFactor: 0.92
+      },
       maintainability: "repair_difficulty_weighted",
       supportability: "demand_weighted"
     },
@@ -188,6 +358,8 @@ export function calculateRmsAllocation(plan, project) {
     planStatus: "calculated",
     status,
     algorithmVersion: RMS_ALLOCATION_ALGORITHM_VERSION,
+    method: plan.methods.reliability,
+    similarProduct: plan.methods.similarProduct || null,
     exposure,
     nodeResults,
     verification: {
@@ -234,8 +406,34 @@ export function publishRmsAllocation(project, allocationResult) {
   return nextProject;
 }
 
+export function rmsEquipmentRoots(project) {
+  return (project.equipmentNodes || []).filter((node) => !node.parentId);
+}
+
+export function selectRmsAllocationEquipmentRoot(project, rootId) {
+  const nextProject = structuredClone(project);
+  const roots = rmsEquipmentRoots(nextProject);
+  const selectedRootId = roots.some((node) => node.id === rootId)
+    ? rootId
+    : (roots[0]?.id || nextProject.rootId);
+  nextProject.rootId = selectedRootId;
+  const children = nextProject.equipmentNodes
+    .filter((node) => node.parentId === selectedRootId)
+    .map((node) => node.id);
+  const group = {
+    id: `${selectedRootId}-series-group`,
+    parentNodeId: selectedRootId,
+    type: "series",
+    children
+  };
+  nextProject.reliabilityGroups = [
+    group,
+    ...(nextProject.reliabilityGroups || []).filter((item) => item.parentNodeId !== selectedRootId)
+  ];
+  return nextProject;
+}
+
 function reliabilityWeights(plan, project, childNodes, exposure) {
-  if (plan.methods.reliability === "agree") return agreeWeights(project, childNodes);
   const raw = Object.fromEntries(childNodes.map((node) => [node.id, rawRiskFactor(plan, node, exposure)]));
   const sum = Object.values(raw).reduce((acc, value) => acc + value, 0) || 1;
   return Object.fromEntries(Object.entries(raw).map(([id, value]) => [id, value / sum]));
@@ -245,32 +443,22 @@ function rawRiskFactor(plan, node, exposure) {
   const equivalentHours = exposure.totalsByNode[node.id]?.equivalentHours || Number(plan.targets.reliability.atHours);
   if (plan.methods.reliability === "proportional") {
     const predictedMtbf = Number(node.rms?.prediction?.mtbfHours || node.failureModel?.baselineMtbfHours || 1000);
-    return equivalentHours / predictedMtbf;
+    const adjustmentFactor = Number(plan.methods?.proportional?.adjustmentFactor || 1);
+    return equivalentHours / Math.max(predictedMtbf * adjustmentFactor, 1e-9);
   }
-  if (plan.methods.reliability === "scoring") {
-    return Math.exp(
-      0.35 * Number(node.complexity || 1)
-      + 0.25 * Number(node.maturityRisk || 1)
-      + 0.2 * Number(node.missionUse?.environmentFactor || 1)
-      - 0.25 * Number(node.importance || 1)
+  if (plan.methods.reliability === "similar") {
+    const planFactor = Number(plan.methods?.similarProduct?.adjustmentFactor || 1);
+    const similarFactor = Number(node.rms?.similar?.adjustmentFactor || node.similarProduct?.adjustmentFactor || planFactor || 1);
+    const similarMtbf = Number(
+      node.rms?.similar?.mtbfHours
+      || node.similarProduct?.mtbfHours
+      || node.rms?.prediction?.mtbfHours
+      || node.failureModel?.baselineMtbfHours
+      || 1000
     );
+    return equivalentHours / Math.max(similarMtbf * similarFactor, 1e-9);
   }
   return 1;
-}
-
-function agreeWeights(project, childNodes) {
-  const rootGroup = project.reliabilityGroups?.find((group) => group.parentNodeId === project.rootId);
-  if (!rootGroup || rootGroup.type !== "series" || childNodes.some((node) => node.structure !== "series")) {
-    throw new Error("AGREE_REDUNDANCY_NOT_SUPPORTED: 当前节点包含非串联或冗余结构，请改用比例分配法、评分分配法或数值分配法");
-  }
-  const totalModules = childNodes.reduce((sum, node) => sum + Number(node.moduleCount || node.quantity || 1), 0) || 1;
-  const raw = Object.fromEntries(childNodes.map((node) => {
-    const moduleShare = Number(node.moduleCount || node.quantity || 1) / totalModules;
-    const importance = Math.max(Number(node.importance || 1), 0.1);
-    return [node.id, moduleShare / importance];
-  }));
-  const sum = Object.values(raw).reduce((acc, value) => acc + value, 0) || 1;
-  return Object.fromEntries(Object.entries(raw).map(([id, value]) => [id, value / sum]));
 }
 
 function attachMaintainabilityAndSupportability(rows, plan) {
@@ -335,4 +523,99 @@ function methodWarnings(plan, project) {
 
 export function aggregateSeriesReliability(nodeResults) {
   return seriesReliability(nodeResults.map((row) => row.reliability));
+}
+
+function normalizeRmsImportedProject(project, baseProject) {
+  const rootId = project.rootId || project.equipmentNodes?.find((node) => !node.parentId)?.id || "rms-import-root";
+  const equipmentNodes = (project.equipmentNodes || []).map((node, index) => ({
+    ...node,
+    id: stableNodeId(node.id || `rms-node-${index + 1}`),
+    parentId: node.parentId == null ? null : stableNodeId(node.parentId),
+    name: node.name || `导入节点${index + 1}`,
+    level: node.level || (node.parentId ? "系统" : "装备"),
+    quantity: Number(node.quantity || 1),
+    structure: normalizeStructure(node.structure || node.connectionType || "series"),
+    rms: {
+      target: {},
+      ...(node.rms || {}),
+      prediction: {
+        ...(node.rms?.prediction || {}),
+        mtbfHours: Number(node.rms?.prediction?.mtbfHours || node.mtbfHours || node.failureModel?.baselineMtbfHours || 1000),
+        mttrHours: Number(node.rms?.prediction?.mttrHours || node.mttrHours || 1.5)
+      }
+    }
+  }));
+  const rootNode = equipmentNodes.find((node) => node.id === rootId) || equipmentNodes.find((node) => !node.parentId);
+  if (rootNode) rootNode.parentId = null;
+  const resolvedRootId = rootNode?.id || rootId;
+  return selectRmsAllocationEquipmentRoot({
+    ...structuredClone(baseProject),
+    ...project,
+    rootId: resolvedRootId,
+    missionProfile: project.missionProfile || structuredClone(baseProject.missionProfile),
+    missionPhases: project.missionPhases || structuredClone(baseProject.missionPhases),
+    equipmentNodes
+  }, resolvedRootId);
+}
+
+function importedNodeFromRow(row, { id, parentId, fallbackLevel, index }) {
+  const predictionMtbf = pickNumber(row, ["mtbfHours", "MTBF", "预测MTBF"], 0);
+  const similarMtbf = pickNumber(row, ["similarMtbfHours", "相似产品MTBF", "15机型MTBF", "基准MTBF"], predictionMtbf || 1000);
+  const mttrHours = pickNumber(row, ["mttrHours", "MTTR", "平均修复时间"], 1.5);
+  const adjustmentFactor = pickNumber(row, ["adjustmentFactor", "similarityFactor", "修正系数", "相似修正系数"], 1);
+  return {
+    id,
+    name: pickText(row, ["name", "componentName", "nodeName", "节点名称", "组件名称"], `导入节点${index + 1}`),
+    level: pickText(row, ["level", "层级", "节点层级"], fallbackLevel),
+    parentId,
+    quantity: pickNumber(row, ["quantity", "数量", "数量n"], 1),
+    structure: normalizeStructure(pickText(row, ["structure", "connectionType", "结构", "逻辑关系"], "series")),
+    moduleCount: pickNumber(row, ["moduleCount", "模块数"], 1),
+    importance: pickNumber(row, ["importance", "重要度"], 1),
+    repairDifficulty: pickNumber(row, ["repairDifficulty", "维修难度"], 1),
+    supportDifficulty: pickNumber(row, ["supportDifficulty", "保障难度"], 1),
+    criticality: pickNumber(row, ["criticality", "关键度"], 1),
+    missionUse: {
+      dutyCycle: pickNumber(row, ["dutyCycle", "占空比"], 1),
+      environmentFactor: pickNumber(row, ["environmentFactor", "环境系数"], 1),
+      loadFactor: pickNumber(row, ["loadFactor", "载荷系数"], 1)
+    },
+    rms: {
+      target: {},
+      prediction: { mtbfHours: predictionMtbf || similarMtbf, mttrHours },
+      similar: {
+        sourceModel: pickText(row, ["similarProductModel", "sourceModel", "基准机型", "相似机型"], "15 机型"),
+        targetModel: pickText(row, ["targetProductModel", "targetModel", "目标机型"], "16 机型"),
+        mtbfHours: similarMtbf,
+        adjustmentFactor
+      }
+    }
+  };
+}
+
+function pickText(row, keys, fallback = "") {
+  for (const key of keys) {
+    const value = row?.[key];
+    if (value != null && String(value).trim() !== "") return String(value).trim();
+  }
+  return fallback;
+}
+
+function pickNumber(row, keys, fallback) {
+  const value = pickText(row, keys, "");
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
+function stableNodeId(value) {
+  return String(value || "")
+    .trim()
+    .replace(/\s+/g, "-");
+}
+
+function normalizeStructure(value) {
+  const text = String(value || "").toLowerCase();
+  if (text.includes("parallel") || text.includes("并联")) return "parallel";
+  if (text.includes("k_of_n") || text.includes("中取")) return "k_of_n";
+  return "series";
 }

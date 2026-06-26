@@ -53,7 +53,7 @@ test("M9.8 start-system does not launch independent-mesa as a platform dependenc
 test("browser smoke covers M5 import and run restoration after backend restart", async () => {
   const smoke = await readFile(new URL("../reports/m3-1-browser-backend-smoke/browser-backend-smoke.mjs", import.meta.url), "utf8");
 
-  assert.match(smoke, /system-management-modeling-import-workbench/);
+  assert.match(smoke, /system-management-project-data-management/);
   assert.match(smoke, /data-modeling-import-action="save-draft"/);
   assert.match(smoke, /data-modeling-import-action="publish"/);
   assert.match(smoke, /restartBackendServer/);

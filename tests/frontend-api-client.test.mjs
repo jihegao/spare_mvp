@@ -771,7 +771,7 @@ test("project switch flushes pending project draft autosave before changing proj
   assert.match(flushSource, /await saveCurrentProjectDraftThroughApi\(\)/);
 });
 
-test("frontend app wires modeling import workbench through explicit backend actions", async () => {
+test("frontend app wires local modeling import actions through explicit backend actions", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const featureCatalogSource = await readFile(new URL("../front/feature-catalog.mjs", import.meta.url), "utf8");
   const changeHandlerSource = appSource.slice(
@@ -779,10 +779,10 @@ test("frontend app wires modeling import workbench through explicit backend acti
     appSource.indexOf('app.addEventListener("input"')
   );
 
-  assert.match(featureCatalogSource, /建模数据导入/);
-  assert.match(featureCatalogSource, /modeling-import-workbench/);
+  assert.doesNotMatch(featureCatalogSource, /建模数据导入/);
+  assert.doesNotMatch(featureCatalogSource, /modeling-import-workbench/);
   assert.match(appSource, /from "\.\/modeling-import-workbench\.mjs"/);
-  assert.match(appSource, /renderModelingImportWorkbench/);
+  assert.match(appSource, /renderLocalModelingImportActions/);
   assert.match(appSource, /data-modeling-import-action/);
   assert.match(appSource, /load-invalid-fixture/);
   assert.match(appSource, /backendApi\.validateModelingImport/);

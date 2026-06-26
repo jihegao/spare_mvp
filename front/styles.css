@@ -386,13 +386,6 @@ h4 {
   color: var(--muted);
 }
 
-.breadcrumb {
-  margin-bottom: 5px;
-  color: var(--primary);
-  font-size: 12px;
-  font-weight: 700;
-}
-
 .page-head-current-context {
   min-width: 180px;
   display: grid;
@@ -469,7 +462,8 @@ label {
   font-weight: 700;
 }
 
-input {
+input,
+select {
   width: 100%;
   padding: 8px 10px;
   border: 1px solid var(--line);
@@ -514,6 +508,122 @@ input {
   grid-template-columns: 300px minmax(0, 1fr);
   gap: 12px;
   align-items: start;
+}
+
+.system-config-section {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.local-import-panel {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfd;
+}
+
+.local-import-panel .section-head,
+.modeling-config-card .section-head,
+.modeling-sheet-card .section-head {
+  align-items: flex-start;
+}
+
+.local-import-panel h4,
+.modeling-config-card h4,
+.modeling-sheet-card h4 {
+  margin-top: 0;
+}
+
+.local-import-panel p,
+.modeling-config-card p,
+.modeling-sheet-card p {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.modeling-import-summary.local {
+  margin: 0;
+}
+
+.modeling-config-grid,
+.modeling-field-config {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.modeling-config-card,
+.modeling-sheet-card {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfd;
+}
+
+.sheet-selector-list,
+.modeling-sheet-stack,
+.field-checkbox-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.check-inline {
+  display: inline-flex;
+  grid-template-columns: none;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.check-inline input,
+.check-row input,
+.field-check input {
+  width: auto;
+  margin: 0;
+}
+
+.check-row,
+.field-check {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ink);
+}
+
+.check-row span,
+.field-check span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.check-row small,
+.field-check small {
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.modeling-sheet-card.disabled {
+  background: #f8fafc;
+  opacity: 0.72;
+}
+
+.field-checkbox-grid {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
 }
 
 .ship-front-tabs {
@@ -744,6 +854,46 @@ input {
   min-width: 0;
 }
 
+.equipment-system-table-wrap {
+  max-width: 100%;
+}
+
+.equipment-system-table {
+  min-width: 1460px;
+}
+
+.equipment-system-table th,
+.equipment-system-table td {
+  vertical-align: top;
+}
+
+.equipment-system-table input,
+.equipment-system-table select {
+  min-width: 112px;
+  padding: 6px 8px;
+  font-size: 12px;
+}
+
+.equipment-param-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(92px, 1fr));
+  gap: 6px;
+  min-width: 220px;
+}
+
+.equipment-param-fields label {
+  gap: 3px;
+  font-size: 11px;
+}
+
+.equipment-fixed-param {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .plan-list-item {
   width: 100%;
   display: grid;
@@ -943,44 +1093,104 @@ input {
   gap: 14px;
 }
 
-.rms-plan-bar,
+.rms-parameter-panel,
 .rms-equipment-tree,
-.rms-input-panel,
-.rms-verification-panel {
+.rms-method-panel {
   padding: 14px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fbfcfd;
 }
 
-.rms-plan-bar {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-}
-
-.rms-plan-bar h3 {
+.rms-parameter-panel h3 {
   margin: 3px 0;
 }
 
-.rms-plan-bar p,
 .rms-equipment-tree span,
+.rms-import-status,
 .rms-warning-list {
   color: var(--muted);
   font-size: 12px;
 }
 
-.rms-actions {
+.rms-parameter-grid,
+.rms-method-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.rms-method-grid {
+  grid-template-columns: repeat(2, minmax(150px, 1fr));
+}
+
+.rms-parameter-grid label,
+.rms-method-grid label {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.rms-parameter-grid input,
+.rms-method-grid input,
+.rms-method-grid select {
+  min-width: 0;
+}
+
+.rms-import-actions,
+.rms-method-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  align-items: center;
+  margin: 10px 0;
+}
+
+.rms-method-actions {
   justify-content: flex-end;
+}
+
+.rms-file-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.rms-file-button input {
+  display: none;
+}
+
+.rms-import-status {
+  margin: 0 0 10px;
+}
+
+.rms-equipment-tree label {
+  display: grid;
+  gap: 5px;
+  margin-bottom: 10px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.rms-equipment-tree select {
+  min-width: 0;
 }
 
 .rms-layout {
   display: grid;
-  grid-template-columns: minmax(210px, 0.85fr) minmax(360px, 1.5fr) minmax(260px, 1fr);
+  grid-template-columns: minmax(260px, 0.95fr) minmax(360px, 1.4fr);
   gap: 12px;
   align-items: stretch;
 }
@@ -997,28 +1207,10 @@ input {
   display: grid;
   gap: 2px;
   padding: 9px 10px;
+  margin-left: calc(var(--tree-depth, 0) * 14px);
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fff;
-}
-
-.rms-input-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(160px, 1fr));
-  gap: 10px;
-}
-
-.rms-input-grid label {
-  display: grid;
-  gap: 5px;
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.rms-input-grid input,
-.rms-input-grid select {
-  min-width: 0;
 }
 
 .rms-verification-metrics {
@@ -1041,10 +1233,8 @@ input {
   background: #fff;
 }
 
-.rms-bottom-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
-  gap: 12px;
+.rms-result-panel {
+  overflow: hidden;
 }
 
 .modeling-import-workbench {
@@ -2720,7 +2910,6 @@ tr.selected-table-row {
   .mesa-timeline-card,
   .system-config-layout,
   .rms-layout,
-  .rms-bottom-grid,
   .modeling-import-layout,
   .modeling-import-summary,
   .modeling-import-status-grid,
@@ -2739,13 +2928,13 @@ tr.selected-table-row {
 
   .mesa-visual-header,
   .mesa-toolbar,
-  .rms-plan-bar,
   .modeling-import-bar {
     align-items: stretch;
     flex-direction: column;
   }
 
-  .rms-actions,
+  .rms-method-actions,
+  .rms-import-actions,
   .modeling-import-actions {
     justify-content: flex-start;
   }
@@ -2761,7 +2950,8 @@ tr.selected-table-row {
   .form-table-grid,
   .kpi-strip,
   .scenario-grid,
-  .rms-input-grid,
+  .rms-parameter-grid,
+  .rms-method-grid,
   .rms-verification-metrics {
     grid-template-columns: 1fr;
   }
