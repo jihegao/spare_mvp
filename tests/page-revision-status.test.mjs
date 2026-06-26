@@ -53,7 +53,8 @@ test("page revision #9 composite timeline splits same basic task by formation", 
 
 test("page revision #9 composite task item quantities are editable per task item", async () => {
   const source = await readFile(FRONT_APP_URL, "utf8");
-  assert.match(source, /taskItems\.\$\{index\}\.requiredEquipmentQuantity/);
+  assert.match(source, /taskItems\.\$\{index\}\.equipmentQuantity/);
+  assert.doesNotMatch(source, /taskItems\.\$\{index\}\.requiredEquipmentQuantity/);
   assert.match(source, /taskItems\.\$\{index\}\.minRequiredSystems/);
   assert.match(source, /taskItems\.\$\{index\}\.equipmentType/);
   assert.doesNotMatch(source, /<td><input readonly value="\$\{htmlEscape\(basicTask\?\.equipmentType/);

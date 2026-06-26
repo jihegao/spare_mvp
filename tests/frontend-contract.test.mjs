@@ -1282,7 +1282,8 @@ test("page revision equipment and mission input constraints are guarded", async 
   assert.match(compositeItemSource, /findBasicMissionByName/);
   assert.match(compositeItemSource, /taskItems\.\$\{index\}\.equipmentType/);
   assert.match(compositeItemSource, /taskItems\.\$\{index\}\.taskDurationMinutes/);
-  assert.match(compositeItemSource, /requiredEquipmentQuantity/);
+  assert.match(compositeItemSource, /taskItems\.\$\{index\}\.equipmentQuantity/);
+  assert.doesNotMatch(compositeItemSource, /requiredEquipmentQuantity/);
   assert.match(compositeItemSource, /minRequiredSystems/);
   assert.doesNotMatch(compositeItemSource, /任务下达时间/);
   assert.doesNotMatch(compositeItemSource, /回收时刻/);

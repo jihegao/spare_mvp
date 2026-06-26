@@ -169,3 +169,60 @@ test("submitRunIntent sends user-edited Monte Carlo samples and seed in experime
   assert.equal("samples" in runCall.request, false);
   assert.equal("sweep" in runCall.request, false);
 });
+
+test("submitRunIntent preserves edited composite task equipment quantity through save and plan config", async () => {
+  const calls = [];
+  const apiClient = {
+    saveProject: async (projectJson) => {
+      calls.push({ method: "saveProject", projectJson });
+      return { project_id: projectJson.project_id, status: "saved" };
+    },
+    createModelingSnapshot: async (projectId) => {
+      calls.push({ method: "createModelingSnapshot", projectId });
+      return { snapshot_id: "snapshot-edited-quantity" };
+    },
+    createExperimentPlan: async (projectId, config) => {
+      calls.push({ method: "createExperimentPlan", projectId, config });
+      return { experiment_plan_id: "plan-edited-quantity" };
+    },
+    submitRun: async (request) => {
+      calls.push({ method: "submitRun", request });
+      return { run_id: "run-edited-quantity", status: "queued", ...request };
+    }
+  };
+  const { submitRunIntent } = await import("../front/run-intent.mjs");
+  const projectJson = {
+    project_id: "project-edited-quantity",
+    experiment: { name: "quantity edit", steps: 4, seed: 101 },
+    missionProfile: {
+      compositeTasks: [
+        {
+          id: "composite-edited",
+          taskItems: [
+            {
+              id: "task-edited",
+              equipmentType: "J-15",
+              equipmentQuantity: 1
+            }
+          ]
+        }
+      ]
+    }
+  };
+  const planProjectJson = JSON.parse(JSON.stringify(projectJson));
+
+  await submitRunIntent(apiClient, {
+    runType: "single",
+    projectJson,
+    planProjectJson
+  });
+
+  const saveCall = calls.find((call) => call.method === "saveProject");
+  const planCall = calls.find((call) => call.method === "createExperimentPlan");
+  assert.equal(saveCall.projectJson.missionProfile.compositeTasks[0].taskItems[0].equipmentQuantity, 1);
+  assert.equal(planCall.config.projectJson.missionProfile.compositeTasks[0].taskItems[0].equipmentQuantity, 1);
+  assert.equal(
+    "requiredEquipmentQuantity" in planCall.config.projectJson.missionProfile.compositeTasks[0].taskItems[0],
+    false
+  );
+});

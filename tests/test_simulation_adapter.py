@@ -293,6 +293,18 @@ class SimulationAdapterTest(unittest.TestCase):
         self.assertIn("projectInfo", provenance["governance_only_fields"])
         self.assertEqual(provenance["unsupported_fields"], [])
 
+    def test_aircraft_support_v1_composite_task_equipment_quantity_reaches_model_inputs(self) -> None:
+        project = self._load_fixture("m9_6_platform_case_export.json")["project"]
+        task_item = project["missionProfile"]["compositeTasks"][0]["taskItems"][0]
+        task_item["equipmentQuantity"] = 1
+        task_item["requiredEquipmentQuantity"] = 4
+
+        scenario = self.adapter.compile_scenario(project, model_family="aircraft_support_v1")
+
+        compiled_item = scenario["simulation_inputs"]["mission_profile"]["composite_tasks"][0]["taskItems"][0]
+        self.assertEqual(compiled_item["equipmentQuantity"], 1)
+        self.assertEqual(compiled_item["requiredEquipmentQuantity"], 4)
+
     def test_aircraft_support_v1_compile_gate_blocks_invalid_references(self) -> None:
         project = self._load_fixture("m9_6_platform_case_export.json")["project"]
         project["supportActivities"][0]["resourceId"] = "missing-support-node"

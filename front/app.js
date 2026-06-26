@@ -2146,7 +2146,7 @@ function createCompositeTaskItem(index) {
     basicTaskName: taskName,
     equipmentType,
     taskDurationMinutes: Number(basic.taskDurationMinutes || 180),
-    requiredEquipmentQuantity: Number(basic.equipmentQuantity || basic.minRequiredSorties || 1),
+    equipmentQuantity: Number(basic.equipmentQuantity || basic.minRequiredSorties || 1),
     groupName: `新增编队${index + 1}`,
     firstWaveTime: "08:45",
     recoveryTime: "11:45",
@@ -2782,7 +2782,7 @@ function renderCompositeTaskModeling(page) {
                       <td>${basicMissionSelect(`${compositePath}.taskItems.${index}.basicTaskName`, item.basicTaskName)}</td>
                       <td>${valueInput(`${compositePath}.taskItems.${index}.equipmentType`)}</td>
                       <td>${valueInput(`${compositePath}.taskItems.${index}.taskDurationMinutes`, "number", { min: "0", step: "1" })}</td>
-                      <td>${valueInput(`${compositePath}.taskItems.${index}.requiredEquipmentQuantity`, "number", { min: "1", step: "1" })}</td>
+                      <td>${valueInput(`${compositePath}.taskItems.${index}.equipmentQuantity`, "number", { min: "1", step: "1" })}</td>
                       <td>${valueInput(`${compositePath}.taskItems.${index}.groupName`)}</td>
                       <td>${valueInput(`${compositePath}.taskItems.${index}.firstWaveTime`, "time")}</td>
                       <td>${valueInput(`${compositePath}.taskItems.${index}.priority`, "number")}</td>
