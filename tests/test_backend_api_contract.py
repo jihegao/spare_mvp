@@ -847,6 +847,58 @@ class BackendApiContractTest(unittest.TestCase):
         deleted = self.api.soft_delete_run(data_run["run_id"], actor_user_id="user-data")
         self.assertEqual(deleted["lifecycle_status"], "deleted")
 
+    def test_experiment_plan_list_and_delete_soft_deletes_runs(self) -> None:
+        project = self._fixture("smoke_project.json")
+        saved = self.api.save_project(project)
+        self.api.create_modeling_snapshot(saved["project_id"])
+        plan = self.api.create_experiment_plan(
+            saved["project_id"],
+            {"name": "visual replay cleanup", "steps": 2},
+        )
+        first_run = self.api.submit_run(
+            {
+                "project_id": saved["project_id"],
+                "experiment_plan_id": plan["experiment_plan_id"],
+                "model_family": "smoke",
+                "run_type": "single",
+            }
+        )
+        second_run = self.api.submit_run(
+            {
+                "project_id": saved["project_id"],
+                "experiment_plan_id": plan["experiment_plan_id"],
+                "model_family": "smoke",
+                "run_type": "single",
+            }
+        )
+
+        plans = self.api.list_experiment_plans(saved["project_id"])
+
+        self.assertEqual([item["experiment_plan_id"] for item in plans["experiment_plans"]], [plan["experiment_plan_id"]])
+        self.assertEqual(plans["experiment_plans"][0]["config"]["name"], "visual replay cleanup")
+        self.assertEqual(plans["experiment_plans"][0]["run_count"], 2)
+        self.assertEqual(
+            [item["run_id"] for item in plans["experiment_plans"][0]["runs"]],
+            [second_run["run_id"], first_run["run_id"]],
+        )
+
+        with self.assertRaises(BackendApiError) as forbidden_ctx:
+            self.api.delete_experiment_plan(saved["project_id"], plan["experiment_plan_id"], actor_user_id="user-basic")
+        self.assertEqual(forbidden_ctx.exception.code, "forbidden")
+
+        deleted = self.api.delete_experiment_plan(
+            saved["project_id"],
+            plan["experiment_plan_id"],
+            actor_user_id="user-data",
+        )
+
+        self.assertEqual(deleted["experiment_plan_id"], plan["experiment_plan_id"])
+        self.assertEqual(deleted["deleted"], True)
+        self.assertEqual(deleted["soft_deleted_run_ids"], [first_run["run_id"], second_run["run_id"]])
+        self.assertEqual(self.api.get_run(first_run["run_id"])["lifecycle_status"], "deleted")
+        self.assertEqual(self.api.get_run(second_run["run_id"])["lifecycle_status"], "deleted")
+        self.assertEqual(self.api.list_experiment_plans(saved["project_id"])["experiment_plans"], [])
+
     def test_backend_api_lifecycle_audit_failure_rolls_back_state(self) -> None:
         cases = [
             ("archive", lambda run_id: self.api.archive_run(run_id, actor_user_id="missing-user")),

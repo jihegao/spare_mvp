@@ -24,11 +24,12 @@ class BackendApi:
         repository: ContractRepository,
         adapter: SimulationAdapter,
         output_dir: Path | str,
+        run_lifecycle_lock: threading.Lock | None = None,
     ) -> None:
         self.repository = repository
         self.adapter = adapter
         self.output_dir = Path(output_dir)
-        self._run_lock = threading.Lock()
+        self._run_lock = run_lifecycle_lock or threading.Lock()
         self.run_service = RunService(repository, adapter, self.output_dir)
 
     def validate_project(self, project_json: dict[str, Any]) -> dict[str, Any]:
@@ -388,6 +389,41 @@ class BackendApi:
         }
         self.repository.upsert_experiment_plan(plan)
         return plan
+
+    def list_experiment_plans(self, project_id: str) -> dict[str, Any]:
+        return {
+            "project_id": project_id,
+            "experiment_plans": self.repository.list_experiment_plans(project_id),
+        }
+
+    def delete_experiment_plan(
+        self,
+        project_id: str,
+        experiment_plan_id: str,
+        actor_user_id: str | None = None,
+    ) -> dict[str, Any]:
+        actor_user_id = _require_m7_actor(actor_user_id)
+        self._require_role(
+            actor_user_id,
+            {"系统管理员", "数据管理员"},
+            action="experiment_plans.delete",
+            resource_type="experiment_plan",
+            resource_id=experiment_plan_id,
+        )
+        try:
+            with self._run_lock:
+                return self.repository.delete_experiment_plan_with_runs(
+                    project_id,
+                    experiment_plan_id,
+                    actor_user_id=actor_user_id,
+                )
+        except KeyError as exc:
+            raise BackendApiError(
+                "experiment_plan_not_found",
+                "ExperimentPlan not found",
+                project_id=project_id,
+                experiment_plan_id=experiment_plan_id,
+            ) from exc
 
     def start_simulation_run(
         self,

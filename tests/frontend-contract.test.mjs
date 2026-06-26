@@ -1359,9 +1359,16 @@ test("editable modeling lists expose page suggestion action entries", async () =
     appSource.indexOf("function renderExperimentPlanList"),
     appSource.indexOf("function renderExperimentPlanEditor")
   );
-  assert.match(experimentPlanSource, /data-experiment-plan-add disabled/);
+  assert.match(appSource, /async function refreshExperimentPlanList/);
+  assert.match(appSource, /backendApi\.listExperimentPlans/);
+  assert.match(appSource, /backendApi\.deleteExperimentPlan/);
+  assert.match(experimentPlanSource, /backendExperimentPlans/);
+  assert.match(experimentPlanSource, /data-experiment-plan-add/);
   assert.match(experimentPlanSource, /data-experiment-plan-edit/);
-  assert.match(experimentPlanSource, /data-experiment-plan-delete disabled/);
+  assert.match(experimentPlanSource, /data-experiment-plan-delete="\$\{htmlEscape\(plan\.experiment_plan_id\)\}"/);
+  assert.match(experimentPlanSource, /<td>\$\{htmlEscape\(plan\.steps\)\}<\/td>/);
+  assert.match(experimentPlanSource, /<td>\$\{htmlEscape\(plan\.samples\)\}<\/td>/);
+  assert.doesNotMatch(experimentPlanSource, /data-experiment-plan-delete disabled/);
   assert.match(appSource, /return "spare-planning-experiment-plan-list"/);
 });
 
@@ -2486,9 +2493,17 @@ test("visual simulation layout matches operational dashboard requirements", asyn
   assert.doesNotMatch(visualSource, /mesa-status-grid/);
   assert.match(styleSource, /\.mesa-control-status\[open\][\s\S]*overflow: auto/);
   assert.match(appSource, /可用飞机数量趋势/);
+  assert.match(appSource, /AIRCRAFT_TREND_SERIES/);
+  for (const label of ["可用飞机", "任务中", "维修中", "使用保障中"]) {
+    assert.match(appSource, new RegExp(label));
+  }
+  assert.match(appSource, /countAircraftTrendStates\(aircraft\)/);
+  assert.match(appSource, /renderAvailabilityTrendLine\(chartPoints, series\)/);
+  assert.match(appSource, /availability-trend-legend/);
   assert.match(appSource, /buildAvailabilityTrend\(\s*state,\s*visualizationStateSeries,\s*visualizationStateSeriesFrame \? visualizationReplayIndex : null\s*\)/);
   assert.match(appSource, /frames\.slice\(0, currentIndex \+ 1\)/);
   assert.doesNotMatch(appSource, /T-\$\{4 - index\}/);
+  assert.match(styleSource, /\.availability-chart \.trend-line/);
   assert.match(styleSource, /\.availability-chart circle\.current-point/);
   assert.match(appSource, /available: "available \/ 可用"/);
   assert.match(appSource, /maintenance: "maintenance \/ 维修"/);

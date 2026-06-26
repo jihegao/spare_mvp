@@ -7,7 +7,7 @@ from pathlib import Path
 import sqlite3
 import sys
 import tempfile
-from threading import Thread
+from threading import Event, Thread
 import unittest
 from unittest import mock
 from urllib import request
@@ -16,6 +16,7 @@ from urllib.parse import quote
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.spare_mvp_backend.http_server import create_backend_server
+from src.spare_mvp_contract.adapter import SimulationAdapter
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -98,6 +99,139 @@ class BackendHttpApiTest(unittest.TestCase):
                 self.assertEqual(chain["result_summary_id"], run["result_summary_id"])
                 self.assertEqual(chain["artifact_manifest_id"], run["artifact_manifest_id"])
             finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
+    def test_http_experiment_plan_delete_soft_deletes_associated_runs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            server = create_backend_server(
+                ("127.0.0.1", 0),
+                repo_root=REPO_ROOT,
+                database_path=":memory:",
+                output_dir=Path(tmp) / "artifacts",
+            )
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                base_url = f"http://127.0.0.1:{server.server_address[1]}/api"
+                admin_token = self._login_token(base_url, "admin", "admin")
+                created = self._create_imported_sample_project(base_url)
+                saved = created["savedProject"]
+                plan = self._json(
+                    base_url,
+                    "POST",
+                    f"/projects/{saved['project_id']}/experiment-plans",
+                    {"config": {"name": "http visual cleanup", "steps": 2, "projectJson": created["project"]}},
+                )
+                run = self._json(
+                    base_url,
+                    "POST",
+                    "/runs",
+                    {
+                        "project_id": saved["project_id"],
+                        "experiment_plan_id": plan["experiment_plan_id"],
+                        "model_family": "aircraft_support_v1",
+                        "run_type": "single",
+                    },
+                )
+
+                plans = self._json(base_url, "GET", f"/projects/{saved['project_id']}/experiment-plans")
+                deleted = self._json(
+                    base_url,
+                    "DELETE",
+                    f"/projects/{quote(saved['project_id'], safe='')}/experiment-plans/{quote(plan['experiment_plan_id'], safe='')}",
+                    auth_token=admin_token,
+                )
+                after = self._json(base_url, "GET", f"/projects/{saved['project_id']}/experiment-plans")
+                run_list = self._json(base_url, "GET", "/runs?include_deleted=1")
+
+                self.assertEqual(plans["experiment_plans"][0]["experiment_plan_id"], plan["experiment_plan_id"])
+                self.assertEqual(plans["experiment_plans"][0]["run_count"], 1)
+                self.assertEqual(deleted["soft_deleted_run_ids"], [run["run_id"]])
+                self.assertEqual(after["experiment_plans"], [])
+                deleted_run = next(item for item in run_list["runs"] if item["run_id"] == run["run_id"])
+                self.assertEqual(deleted_run["lifecycle_status"], "deleted")
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
+    def test_http_experiment_plan_delete_waits_for_inflight_run_before_tombstone(self) -> None:
+        class BlockingAdapter(SimulationAdapter):
+            started = Event()
+            release = Event()
+
+            def run_scenario(self, *args, **kwargs):
+                self.started.set()
+                self.release.wait(timeout=10)
+                return super().run_scenario(*args, **kwargs)
+
+        with tempfile.TemporaryDirectory() as tmp, mock.patch(
+            "src.spare_mvp_backend.http_server.SimulationAdapter",
+            BlockingAdapter,
+        ):
+            server = create_backend_server(
+                ("127.0.0.1", 0),
+                repo_root=REPO_ROOT,
+                database_path=Path(tmp) / "spare_mvp.sqlite3",
+                output_dir=Path(tmp) / "artifacts",
+            )
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                base_url = f"http://127.0.0.1:{server.server_address[1]}/api"
+                admin_token = self._login_token(base_url, "admin", "admin")
+                created = self._create_imported_sample_project(base_url)
+                saved = created["savedProject"]
+                plan = self._json(
+                    base_url,
+                    "POST",
+                    f"/projects/{saved['project_id']}/experiment-plans",
+                    {"config": {"name": "http visual inflight cleanup", "steps": 2, "projectJson": created["project"]}},
+                )
+                results: dict[str, dict] = {}
+
+                def submit_run() -> None:
+                    results["run"] = self._json(
+                        base_url,
+                        "POST",
+                        "/runs",
+                        {
+                            "project_id": saved["project_id"],
+                            "experiment_plan_id": plan["experiment_plan_id"],
+                            "model_family": "aircraft_support_v1",
+                            "run_type": "single",
+                        },
+                    )
+
+                def delete_plan() -> None:
+                    results["delete"] = self._json(
+                        base_url,
+                        "DELETE",
+                        f"/projects/{quote(saved['project_id'], safe='')}/experiment-plans/{quote(plan['experiment_plan_id'], safe='')}",
+                        auth_token=admin_token,
+                    )
+
+                run_thread = Thread(target=submit_run)
+                run_thread.start()
+                self.assertTrue(BlockingAdapter.started.wait(timeout=10))
+                delete_thread = Thread(target=delete_plan)
+                delete_thread.start()
+                BlockingAdapter.release.set()
+                run_thread.join(timeout=10)
+                delete_thread.join(timeout=10)
+
+                self.assertFalse(run_thread.is_alive())
+                self.assertFalse(delete_thread.is_alive())
+                self.assertIn(results["run"]["run_id"], results["delete"]["soft_deleted_run_ids"])
+                run_list = self._json(base_url, "GET", "/runs?include_deleted=1")
+                deleted_run = next(item for item in run_list["runs"] if item["run_id"] == results["run"]["run_id"])
+                self.assertEqual(deleted_run["lifecycle_status"], "deleted")
+                after = self._json(base_url, "GET", f"/projects/{saved['project_id']}/experiment-plans")
+                self.assertEqual(after["experiment_plans"], [])
+            finally:
+                BlockingAdapter.release.set()
                 server.shutdown()
                 server.server_close()
                 thread.join(timeout=5)

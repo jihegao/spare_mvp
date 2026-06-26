@@ -8,6 +8,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import mimetypes
 from pathlib import Path
 import sqlite3
+import threading
 import traceback
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
@@ -65,6 +66,7 @@ def create_backend_server(
     anchor_connection = open_connection()
     initialize_database(anchor_connection)
     adapter = SimulationAdapter(root)
+    run_lifecycle_lock = threading.Lock()
 
     class BackendRequestHandler(BaseHTTPRequestHandler):
         server_version = "SpareMvpBackend/0.1"
@@ -93,6 +95,7 @@ def create_backend_server(
                     ContractRepository(request_connection),
                     adapter,
                     output_dir=artifact_dir,
+                    run_lifecycle_lock=run_lifecycle_lock,
                 )
                 payload = self._dispatch()
                 if isinstance(payload, dict) and "__sse_stream__" in payload:
@@ -198,8 +201,13 @@ def create_backend_server(
                 return api.delete_project(parts[1])
             if self.command == "POST" and len(parts) == 3 and parts[0] == "projects" and parts[2] == "modeling-snapshots":
                 return api.create_modeling_snapshot(parts[1])
+            if self.command == "GET" and len(parts) == 3 and parts[0] == "projects" and parts[2] == "experiment-plans":
+                return api.list_experiment_plans(parts[1])
             if self.command == "POST" and len(parts) == 3 and parts[0] == "projects" and parts[2] == "experiment-plans":
                 return api.create_experiment_plan(parts[1], body.get("config", {}))
+            if self.command == "DELETE" and len(parts) == 4 and parts[0] == "projects" and parts[2] == "experiment-plans":
+                actor = self._require_user({"系统管理员", "数据管理员"})
+                return api.delete_experiment_plan(parts[1], parts[3], actor_user_id=actor["user_id"])
             if self.command == "POST" and route == "/runs":
                 formal_body = dict(body)
                 formal_body.setdefault("model_family", ACTIVE_FORMAL_MODEL_FAMILY)
