@@ -5313,6 +5313,14 @@ function renderOperationsSupportActivity(activePlan, activity) {
 
 function renderPreventiveMaintenanceActivity(activePlan, activity) {
   const activityIndex = Math.max(0, (scenario.supportActivities || []).indexOf(activity));
+  const ruleNumberAttrs = (enabled, attrs) => (enabled ? attrs : { ...attrs, disabled: "disabled" });
+  const renderRuleRow = ({ toggleLabel, togglePath, enabled, intervalLabel, intervalPath, intervalAttrs, floatLabel, floatPath, floatAttrs }) => `
+    <div class="preventive-rule-row">
+      <label class="preventive-rule-toggle">${toggleLabel}<input type="checkbox" data-path="${togglePath}" ${enabled ? "checked" : ""}></label>
+      ${field(intervalLabel, intervalPath, "number", ruleNumberAttrs(enabled, intervalAttrs))}
+      ${field(floatLabel, floatPath, "number", ruleNumberAttrs(enabled, floatAttrs))}
+    </div>
+  `;
   return `
     <div class="detail-card activity-editor-card">
       <div class="section-head">
@@ -5322,15 +5330,39 @@ function renderPreventiveMaintenanceActivity(activePlan, activity) {
       <div class="form-table-grid">
         ${field("方案名称", `supportActivities.${activityIndex}.activityName`)}
         ${field("计划停机小时", `supportActivities.${activityIndex}.plannedDowntimeHours`, "number", { min: "0", step: "0.1" })}
-        <label>启动日历时间<input type="checkbox" data-path="supportActivities.${activityIndex}.useCalendarRule" ${activity.useCalendarRule ? "checked" : ""}></label>
-        ${field("使用日历日间隔规则", `supportActivities.${activityIndex}.calendarDayInterval`, "number", { min: "0", step: "1" })}
-        ${field("日历日间隔上下浮动比例", `supportActivities.${activityIndex}.calendarDayFloatRatio`, "number", { min: "0", max: "1", step: "0.01" })}
-        <label>使用飞行小时规则<input type="checkbox" data-path="supportActivities.${activityIndex}.useFlightHourRule" ${activity.useFlightHourRule ? "checked" : ""}></label>
-        ${field("飞行小时间隔", `supportActivities.${activityIndex}.runHourInterval`, "number", { min: "0", step: "1" })}
-        ${field("飞行小时上下浮动比例", `supportActivities.${activityIndex}.runHourFloatRatio`, "number", { min: "0", max: "1", step: "0.01" })}
-        <label>启动起落次数<input type="checkbox" data-path="supportActivities.${activityIndex}.useTakeoffLandingRule" ${activity.useTakeoffLandingRule ? "checked" : ""}></label>
-        ${field("起落次数间隔", `supportActivities.${activityIndex}.takeoffLandingInterval`, "number", { min: "0", step: "1" })}
-        ${field("起落次数间隔上下浮动比例", `supportActivities.${activityIndex}.takeoffLandingFloatRatio`, "number", { min: "0", max: "1", step: "0.01" })}
+        ${renderRuleRow({
+          toggleLabel: "启动日历时间",
+          togglePath: `supportActivities.${activityIndex}.useCalendarRule`,
+          enabled: activity.useCalendarRule,
+          intervalLabel: "日历日间隔规则",
+          intervalPath: `supportActivities.${activityIndex}.calendarDayInterval`,
+          intervalAttrs: { min: "0", step: "1" },
+          floatLabel: "日历日间隔上下浮动比例",
+          floatPath: `supportActivities.${activityIndex}.calendarDayFloatRatio`,
+          floatAttrs: { min: "0", max: "1", step: "0.01" }
+        })}
+        ${renderRuleRow({
+          toggleLabel: "飞行小时",
+          togglePath: `supportActivities.${activityIndex}.useFlightHourRule`,
+          enabled: activity.useFlightHourRule,
+          intervalLabel: "飞行小时间隔",
+          intervalPath: `supportActivities.${activityIndex}.runHourInterval`,
+          intervalAttrs: { min: "0", step: "1" },
+          floatLabel: "飞行小时上下浮动比例",
+          floatPath: `supportActivities.${activityIndex}.runHourFloatRatio`,
+          floatAttrs: { min: "0", max: "1", step: "0.01" }
+        })}
+        ${renderRuleRow({
+          toggleLabel: "起落次数",
+          togglePath: `supportActivities.${activityIndex}.useTakeoffLandingRule`,
+          enabled: activity.useTakeoffLandingRule,
+          intervalLabel: "起落次数间隔",
+          intervalPath: `supportActivities.${activityIndex}.takeoffLandingInterval`,
+          intervalAttrs: { min: "0", step: "1" },
+          floatLabel: "起落次数间隔上下浮动比例",
+          floatPath: `supportActivities.${activityIndex}.takeoffLandingFloatRatio`,
+          floatAttrs: { min: "0", max: "1", step: "0.01" }
+        })}
       </div>
       ${renderSupportActivityJobTable(activity, "prev_repair")}
     </div>

@@ -454,6 +454,31 @@ h4 {
   gap: 12px;
 }
 
+.preventive-rule-row {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(180px, 0.8fr) repeat(2, minmax(180px, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+
+.preventive-rule-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.preventive-rule-toggle input[type="checkbox"] {
+  width: auto;
+  margin: 0;
+}
+
+.preventive-rule-row input:disabled {
+  cursor: not-allowed;
+  background: #eef2f7;
+  color: var(--muted);
+}
+
 label {
   display: grid;
   gap: 5px;
@@ -2993,6 +3018,7 @@ tr.clickable-table-row.selected-table-row td {
   }
 
   .form-table-grid,
+  .preventive-rule-row,
   .kpi-strip,
   .scenario-grid,
   .rms-parameter-grid,
