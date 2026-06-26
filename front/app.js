@@ -536,6 +536,7 @@ let aviationLoadInFlight = false; // 防止重复并发拉取
 let collapsedTreeNodes = new Set();
 let carryObjective = "availability";
 let experimentRunStatus = "当前";
+let selectedExperimentPlanNames = new Set();
 let isProjectMenuOpen = false;
 let selectedPeriodicTaskId = "";
 let selectedEquipmentComponentIndex = 0;
@@ -1714,6 +1715,13 @@ function bindEvents() {
       return;
     }
 
+    const experimentPlanSelect = event.target.closest("[data-experiment-plan-select]");
+    if (experimentPlanSelect) {
+      toggleExperimentPlanSelection(experimentPlanSelect.dataset.experimentPlanSelect, experimentPlanSelect.checked);
+      render();
+      return;
+    }
+
     const supportActivitySelectAll = event.target.closest("[data-support-activity-job-select-all]");
     if (supportActivitySelectAll) {
       toggleAllSupportActivityJobSelection(supportActivitySelectAll.dataset.supportActivityJobSelectAll, supportActivitySelectAll.checked);
@@ -2822,6 +2830,7 @@ function renderSystemBasicConfig(page) {
       </div>
       ${page.name === "用户管理" ? renderUserManagementConfig() : ""}
       ${page.name === "系统功能权限管理" ? renderPermissionManagementConfig() : ""}
+      ${page.name === "建模表单管理" ? renderModelingFormManagementConfig() : ""}
     </div>
   `;
 }
@@ -2903,6 +2912,43 @@ function renderPermissionConfigEditor() {
           </label>
         `).join("")}
       </div>
+    </div>
+  `;
+}
+
+function renderModelingFormManagementConfig() {
+  const rows = modelingSheetRows();
+  return `
+    <p class="inline-status">${rows.length} 个建模表单已从仿真建模 sheet 配置同步</p>
+    <div class="modeling-field-config" data-modeling-form-management>
+      ${MODELING_DATA_MODULES.map((module) => `
+        <section class="modeling-config-card">
+          <div class="section-head">
+            <div>
+              <h4>${htmlEscape(module.label)}</h4>
+              <p>${htmlEscape(module.description)}</p>
+            </div>
+          </div>
+          <div class="modeling-sheet-stack">
+            ${module.sheets.map((sheet) => `
+              <article class="modeling-sheet-card">
+                <div class="section-head">
+                  <div>
+                    <h4>${htmlEscape(sheet.sourcePage)}</h4>
+                    <p>${htmlEscape(sheet.label)} / ${sheet.fields.length} 个字段</p>
+                  </div>
+                  <span class="status-badge ${selectedSystemDataKeys.has(sheet.key) ? "success" : "warning"}">${selectedSystemDataKeys.has(sheet.key) ? "启用" : "停用"}</span>
+                </div>
+                <div class="field-checkbox-grid">
+                  ${sheet.fields.map((field) => `
+                    <span class="readonly-table-value">${htmlEscape(field.label)} · ${htmlEscape(field.path)}</span>
+                  `).join("")}
+                </div>
+              </article>
+            `).join("")}
+          </div>
+        </section>
+      `).join("")}
     </div>
   `;
 }
@@ -6120,8 +6166,8 @@ function renderExperimentPlanList(page) {
         <thead><tr><th>选择</th><th>方案名称</th><th>所属模块</th><th>步数</th><th>样本</th><th>状态</th></tr></thead>
         <tbody>
           ${plans.length ? plans.map((plan) => `
-            <tr>
-              <td><input type="checkbox" data-experiment-plan-select aria-label="选择方案 ${htmlEscape(plan.name)}"></td>
+            <tr class="${selectedExperimentPlanNames.has(plan.name) ? "selected-table-row" : ""}">
+              <td><input type="checkbox" data-experiment-plan-select="${htmlEscape(plan.name)}" ${selectedExperimentPlanNames.has(plan.name) ? "checked" : ""} aria-label="选择方案 ${htmlEscape(plan.name)}"></td>
               <td>${htmlEscape(plan.name)}</td>
               <td>${htmlEscape(plan.module)}</td>
               <td>${plan.steps}</td>
@@ -6133,6 +6179,14 @@ function renderExperimentPlanList(page) {
       </table>
     </div>
   `;
+}
+
+function toggleExperimentPlanSelection(planName, checked) {
+  if (!planName) return;
+  const next = new Set(selectedExperimentPlanNames);
+  if (checked) next.add(planName);
+  else next.delete(planName);
+  selectedExperimentPlanNames = next;
 }
 
 function renderExperimentPlanEditor(page) {

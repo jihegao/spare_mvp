@@ -28,6 +28,7 @@ const FEATURE_SLUGS = {
   装备RMS指标分配: "equipment-rms-allocation",
   用户管理: "user-management",
   系统功能权限管理: "function-permission-management",
+  建模表单管理: "modeling-form-management",
   仿真实验方案管理: "experiment-plan-management",
   方案列表: "experiment-plan-list",
   方案编辑: "experiment-plan-edit",
@@ -52,6 +53,7 @@ const SOURCE_ROWS = [
   ["系统运行支持模块", "装备RMS指标分配", "装备RMS指标分配", "装备RMS指标分配"],
   ["系统运行支持模块", "系统基础配置", "用户管理", "用户管理"],
   ["系统运行支持模块", "系统基础配置", "系统功能权限管理", "系统功能权限管理"],
+  ["系统运行支持模块", "系统基础配置", "建模表单管理", "建模表单管理"],
   ["备件规划评估模块", "仿真建模", "装备系统建模", "装备系统建模"],
   ["备件规划评估模块", "仿真建模", "装备任务建模", "基本任务建模"],
   ["备件规划评估模块", "仿真建模", "装备任务建模", "复合任务建模"],
@@ -204,6 +206,7 @@ function resolveDataObjects(name, secondary, tertiary) {
   if (name.includes("建模颗粒度")) return ["modelingModules", "sheets", "fieldSelections"];
   if (name.includes("用户管理")) return ["users", "roles", "organizations"];
   if (name.includes("功能权限")) return ["features", "roles", "permissionRules"];
+  if (name.includes("建模表单管理")) return ["modelingForms", "formFields", "validationRules"];
   if (name.includes("保障组织结构")) return ["supportNodes", "organizationTree"];
   if (name.includes("备件")) return ["supportNodes.inventory", "spares"];
   if (name.includes("保障人员")) return ["supportNodes.personnelCapacity", "resources"];

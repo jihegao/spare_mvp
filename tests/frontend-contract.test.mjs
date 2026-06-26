@@ -14,16 +14,17 @@ import { renderRmsAllocationWorkbench } from "../front/rms-allocation-workbench.
 const PAGE_REVISION_REPORT_URL = new URL("../reports/2026-06-19-page-revision-suggestions/README.md", import.meta.url);
 
 test("feature catalog exposes all table-2 four-level pages", () => {
-  assert.equal(FEATURE_PAGES.length, 53);
-  assert.equal(new Set(FEATURE_PAGES.map((page) => page.id)).size, 53);
+  assert.equal(FEATURE_PAGES.length, 54);
+  assert.equal(new Set(FEATURE_PAGES.map((page) => page.id)).size, 54);
   assert.equal(FEATURE_PAGES.filter((page) => page.module === "备件规划评估模块").length, 23);
   assert.equal(FEATURE_PAGES.filter((page) => page.module === "任务可靠度评估模块").length, 25);
-  assert.equal(FEATURE_PAGES.filter((page) => page.module === "系统运行支持模块").length, 5);
-  for (const label of ["装备系统建模", "装备可靠性框图建模", "蒙特卡洛实验结果", "飞机转场携行清单分析", "任务可靠度评估", "停机因素分析"]) {
+  assert.equal(FEATURE_PAGES.filter((page) => page.module === "系统运行支持模块").length, 6);
+  for (const label of ["装备系统建模", "装备可靠性框图建模", "蒙特卡洛实验结果", "飞机转场携行清单分析", "任务可靠度评估", "停机因素分析", "建模表单管理"]) {
     assert.ok(FEATURE_PAGES.some((page) => page.name === label), label);
   }
   assert.equal(FEATURE_PAGES.some((page) => page.name === "装备组成建模"), false);
   assert.equal(FEATURE_PAGES.some((page) => page.name === "装备故障建模"), false);
+  assert.equal(FEATURE_PAGES.some((page) => page.module === "系统管理"), false);
 });
 
 test("each feature page has page template metadata for grouped entry pages", () => {
@@ -49,7 +50,7 @@ test("feature grouping preserves three-level navigation and internal fourth-leve
   assert.equal("建模数据导入" in grouped["系统运行支持模块"]["项目管理"], false);
   assert.deepEqual(grouped["系统运行支持模块"]["系统基础配置"]["用户管理"].map((page) => page.name), ["用户管理"]);
   assert.deepEqual(grouped["系统运行支持模块"]["系统基础配置"]["系统功能权限管理"].map((page) => page.name), ["系统功能权限管理"]);
-  assert.equal("建模表单管理" in grouped["系统运行支持模块"]["系统基础配置"], false);
+  assert.deepEqual(grouped["系统运行支持模块"]["系统基础配置"]["建模表单管理"].map((page) => page.name), ["建模表单管理"]);
   assert.deepEqual(Object.keys(grouped["备件规划评估模块"]["仿真建模"]).slice(0, 2), ["装备系统建模", "装备任务建模"]);
   assert.deepEqual(Object.keys(grouped["任务可靠度评估模块"]["仿真建模"]).slice(0, 2), ["装备系统建模", "装备任务建模"]);
   assert.deepEqual(grouped["备件规划评估模块"]["仿真建模"]["装备系统建模"].map((page) => page.name), ["装备系统建模"]);
@@ -115,6 +116,7 @@ test("feature grouping preserves three-level navigation and internal fourth-leve
   assert.equal(getFeaturePageById("system-management-modeling-granularity-management").component, "system-project-management");
   assert.equal(getFeaturePageById("system-management-user-management").component, "system-basic-config");
   assert.equal(getFeaturePageById("system-management-function-permission-management").component, "system-basic-config");
+  assert.equal(getFeaturePageById("system-management-modeling-form-management").component, "system-basic-config");
   assert.equal(getFeaturePageById("system-management-equipment-rms-allocation").component, "rms-allocation");
   assert.equal(getFeaturePageById("spare-planning-equipment-composition").id, "spare-planning-equipment-system");
   assert.equal(getFeaturePageById("spare-planning-equipment-failure").id, "spare-planning-equipment-system");
@@ -136,8 +138,10 @@ test("system support project management removes standalone modeling import route
   assert.match(appSource, /data-modeling-import-action="save-draft"/);
   assert.doesNotMatch(appSource, /renderModelingImportWorkbench/);
   assert.equal(FEATURE_PAGES.some((page) => page.id === "system-management-modeling-import-workbench"), false);
-  assert.equal(FEATURE_PAGES.some((page) => page.id === "system-management-modeling-form-management"), false);
-  assert.equal(FEATURE_PAGES.some((page) => page.name === "建模表单管理"), false);
+  assert.equal(FEATURE_PAGES.some((page) => page.id === "system-management-modeling-form-management"), true);
+  assert.equal(FEATURE_PAGES.some((page) => page.name === "建模表单管理"), true);
+  assert.match(appSource, /function renderModelingFormManagementConfig/);
+  assert.match(appSource, /data-modeling-form-management/);
 });
 
 test("page revision report is archived under reports with its screenshot evidence", async () => {
@@ -2579,7 +2583,8 @@ test("system management exposes project management and base configuration pages"
     ["system-management-project-data-management", "项目管理", "项目数据管理", ["modelingModules", "sheetSelections", "localImportActions"]],
     ["system-management-modeling-granularity-management", "项目管理", "建模颗粒度管理", ["modelingModules", "sheets", "fieldSelections"]],
     ["system-management-user-management", "系统基础配置", "用户管理", ["users", "roles", "organizations"]],
-    ["system-management-function-permission-management", "系统基础配置", "系统功能权限管理", ["features", "roles", "permissionRules"]]
+    ["system-management-function-permission-management", "系统基础配置", "系统功能权限管理", ["features", "roles", "permissionRules"]],
+    ["system-management-modeling-form-management", "系统基础配置", "建模表单管理", ["modelingForms", "formFields", "validationRules"]]
   ];
 
   for (const [id, secondary, name, dataObjects] of expectedPages) {
@@ -2600,6 +2605,7 @@ test("system management exposes project management and base configuration pages"
   assert.match(appSource, /function renderModelingGranularityTable/);
   assert.match(appSource, /function renderUserManagementConfig/);
   assert.match(appSource, /function renderPermissionManagementConfig/);
+  assert.match(appSource, /function renderModelingFormManagementConfig/);
   assert.match(appSource, /仿真建模数据表 sheet 选择器/);
   assert.match(appSource, /MODELING_DATA_MODULES/);
   assert.match(appSource, /装备系统/);
@@ -2611,7 +2617,8 @@ test("system management exposes project management and base configuration pages"
   assert.match(appSource, /data-modeling-field-select/);
   assert.doesNotMatch(appSource, /层级、对象及关系/);
   assert.doesNotMatch(appSource, /<th>建模层级<\/th>/);
-  assert.doesNotMatch(appSource, /page\.name === "建模表单管理"/);
+  assert.match(appSource, /page\.name === "建模表单管理"/);
+  assert.match(appSource, /data-modeling-form-management/);
   assert.match(styleSource, /\.system-config-workbench/);
   assert.match(styleSource, /\.modeling-config-grid/);
   assert.match(styleSource, /\.field-checkbox-grid/);
