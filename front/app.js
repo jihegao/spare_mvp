@@ -500,7 +500,7 @@ function carryObjectiveOption(id) {
 }
 render();
 bindEvents();
-hydrateLastBackendRunFromApi();
+restoreStoredBackendSessionOnBoot().finally(() => hydrateLastBackendRunFromApi());
 
 function bindEvents() {
   window.addEventListener("hashchange", () => {
@@ -5116,6 +5116,30 @@ async function handleLogin() {
   isLoggedIn = true;
   selectedRoute = "projects";
   location.hash = "route=projects";
+}
+
+async function restoreStoredBackendSessionOnBoot() {
+  if (!backendAuthToken) return;
+  try {
+    const session = await backendApi.getSession();
+    const user = session?.user || {};
+    currentUser = {
+      username: user.username || currentUser.username,
+      role: user.role || currentUser.role
+    };
+    isLoggedIn = true;
+    if (selectedRoute === DEFAULT_ROUTE) {
+      selectedRoute = "projects";
+      location.hash = "route=projects";
+    }
+    backendApiStatus = "M4 会话已恢复";
+    await hydrateProjectCatalogFromBackend();
+  } catch (err) {
+    backendAuthToken = "";
+    localStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
+    backendApiStatus = `会话恢复失败：${err && err.message ? err.message : "Backend API 不可用"}`;
+  }
+  render();
 }
 
 async function saveCurrentProjectThroughApi() {

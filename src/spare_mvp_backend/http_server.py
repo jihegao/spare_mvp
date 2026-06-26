@@ -54,6 +54,8 @@ def create_backend_server(
     if database_target == ":memory:":
         database_target = f"file:spare_mvp_{uuid4().hex}?mode=memory&cache=shared"
         connect_kwargs["uri"] = True
+    elif not database_target.startswith("file:"):
+        Path(database_target).expanduser().parent.mkdir(parents=True, exist_ok=True)
 
     def open_connection() -> sqlite3.Connection:
         connection = sqlite3.connect(database_target, **connect_kwargs)
@@ -366,14 +368,15 @@ def main() -> None:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=4173)
     parser.add_argument("--repo-root", default=str(Path(__file__).resolve().parents[2]))
-    parser.add_argument("--database", default=":memory:")
+    parser.add_argument("--database", default="")
     parser.add_argument("--output-dir", default="runs/m3-0-http")
     args = parser.parse_args()
+    default_database_path = Path(args.repo_root) / "runs" / "system-start" / "spare_mvp.sqlite3"
 
     server = create_backend_server(
         (args.host, args.port),
         repo_root=args.repo_root,
-        database_path=args.database,
+        database_path=args.database or default_database_path,
         output_dir=Path(args.repo_root) / args.output_dir,
     )
     print(f"Serving spare_mvp frontend and /api on http://{args.host}:{args.port}/front/")
