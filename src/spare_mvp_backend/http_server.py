@@ -174,6 +174,7 @@ def create_backend_server(
             if self.command == "POST" and route == "/projects/validate":
                 return api.validate_project(body)
             if self.command == "POST" and route == "/projects":
+                self._require_user()
                 return api.save_project(body)
             if self.command == "GET" and route == "/projects":
                 return api.list_projects()
@@ -200,17 +201,21 @@ def create_backend_server(
             if self.command == "GET" and len(parts) == 2 and parts[0] == "projects":
                 return api.get_project(parts[1])
             if self.command == "DELETE" and len(parts) == 2 and parts[0] == "projects":
+                self._require_user()
                 return api.delete_project(parts[1])
             if self.command == "POST" and len(parts) == 3 and parts[0] == "projects" and parts[2] == "modeling-snapshots":
+                self._require_user()
                 return api.create_modeling_snapshot(parts[1])
             if self.command == "GET" and len(parts) == 3 and parts[0] == "projects" and parts[2] == "experiment-plans":
                 return api.list_experiment_plans(parts[1])
             if self.command == "POST" and len(parts) == 3 and parts[0] == "projects" and parts[2] == "experiment-plans":
+                self._require_user()
                 return api.create_experiment_plan(parts[1], body.get("config", {}))
             if self.command == "DELETE" and len(parts) == 4 and parts[0] == "projects" and parts[2] == "experiment-plans":
                 actor = self._require_user({"系统管理员", "数据管理员"})
                 return api.delete_experiment_plan(parts[1], parts[3], actor_user_id=actor["user_id"])
             if self.command == "POST" and route == "/runs":
+                self._require_user()
                 formal_body = dict(body)
                 formal_body.setdefault("model_family", ACTIVE_FORMAL_MODEL_FAMILY)
                 formal_body["formal_run"] = True

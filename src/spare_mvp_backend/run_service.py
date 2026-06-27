@@ -194,6 +194,8 @@ class RunService:
         self.repository.upsert_run(run)
         self.repository.upsert_result_summary(bundle["result"])
         self.repository.upsert_artifact_manifest(bundle["artifact_manifest"])
+        if request.get("formal_run"):
+            self._record_formal_run_modeling_import_reference(project_for_run, run)
         return self._status_from_run(run)
 
     def _assert_formal_run_uses_imported_sample(self, project_for_run: dict[str, Any]) -> None:
@@ -248,6 +250,12 @@ class RunService:
                 source_import_id=source_import_id,
                 reason="missing_create_project_audit",
             )
+
+    def _record_formal_run_modeling_import_reference(self, project_for_run: dict[str, Any], run: dict[str, Any]) -> None:
+        mission_profile = project_for_run.get("missionProfile") if isinstance(project_for_run.get("missionProfile"), dict) else {}
+        source_import_id = str((mission_profile or {}).get("sourceImportId") or "")
+        if source_import_id and run.get("status") == "succeeded":
+            self.repository.record_modeling_import_run_reference(source_import_id, str(run["run_id"]))
 
     def get_run_status(self, run_id: str) -> dict[str, Any]:
         return self._status_from_run(self.repository.get_run(run_id))

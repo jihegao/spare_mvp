@@ -427,6 +427,41 @@ class ContractRepository:
         if referenced_run_ids:
             raise ValueError(f"published modeling import is referenced by runs: {', '.join(referenced_run_ids)}")
 
+    def record_modeling_import_run_reference(self, import_id: str, run_id: str) -> None:
+        row = self._get_modeling_import_row(import_id)
+        if row is None:
+            raise KeyError(import_id)
+        referenced_run_ids = _referenced_run_ids_from_row(row)
+        if run_id not in referenced_run_ids:
+            referenced_run_ids.append(run_id)
+        published_payload = _json_or_none(row.get("published_payload_json"))
+        if published_payload is not None:
+            published_lifecycle = dict(published_payload.get("lifecycle") or {})
+            published_lifecycle["referencedRunIds"] = list(referenced_run_ids)
+            published_payload["lifecycle"] = published_lifecycle
+        draft_payload = _json_or_none(row.get("draft_payload_json"))
+        if draft_payload is not None:
+            draft_lifecycle = dict(draft_payload.get("lifecycle") or {})
+            draft_lifecycle["referencedRunIds"] = list(referenced_run_ids)
+            draft_payload["lifecycle"] = draft_lifecycle
+        self.connection.execute(
+            """
+            UPDATE modeling_imports
+            SET referenced_run_ids_json = ?,
+                draft_payload_json = COALESCE(?, draft_payload_json),
+                published_payload_json = COALESCE(?, published_payload_json),
+                updated_at = CURRENT_TIMESTAMP
+            WHERE import_id = ?
+            """,
+            (
+                json.dumps(referenced_run_ids, ensure_ascii=False, sort_keys=True),
+                _to_json(draft_payload) if draft_payload is not None else None,
+                _to_json(published_payload) if published_payload is not None else None,
+                import_id,
+            ),
+        )
+        self.connection.commit()
+
     def publish_modeling_import(self, import_id: str) -> dict[str, Any]:
         self.assert_modeling_import_can_publish(import_id)
         stored = self.get_modeling_import(import_id)
@@ -1314,6 +1349,19 @@ def _modeling_import_payload(import_package: dict[str, Any], validation: dict[st
     payload = json.loads(_to_json(import_package))
     payload["validation"] = json.loads(_to_json(validation))
     return payload
+
+
+def _referenced_run_ids_from_row(row: dict[str, Any]) -> list[str]:
+    referenced: list[str] = []
+    published_payload = _json_or_none(row.get("published_payload_json"))
+    lifecycle = published_payload.get("lifecycle") if isinstance(published_payload, dict) else {}
+    if isinstance(lifecycle, dict) and isinstance(lifecycle.get("referencedRunIds"), list):
+        referenced.extend(str(item) for item in lifecycle["referencedRunIds"] if item not in (None, ""))
+    try:
+        referenced.extend(str(item) for item in json.loads(row.get("referenced_run_ids_json") or "[]") if item not in (None, ""))
+    except (TypeError, json.JSONDecodeError):
+        pass
+    return list(dict.fromkeys(referenced))
 
 
 def _row_to_dict(cursor: sqlite3.Cursor, row: sqlite3.Row | tuple[Any, ...]) -> dict[str, Any]:

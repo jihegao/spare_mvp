@@ -1533,6 +1533,64 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(status["run_id"], submitted["run_id"])
         self.assertEqual(status["experiment_plan_id"], plan["experiment_plan_id"])
 
+    def test_formal_run_records_modeling_import_reference_and_blocks_republish(self) -> None:
+        import_package = self._fixture("modeling_import_project.json")
+        self.api.save_modeling_import_as_system(import_package)
+        self.api.publish_modeling_import_as_system(import_package["importId"])
+        created = self.api.create_project_from_modeling_import_as_system(import_package["importId"])
+        plan = self.api.create_experiment_plan(
+            created["savedProject"]["project_id"],
+            {"name": "lineage reference", "steps": 1, "projectJson": created["project"]},
+        )
+
+        submitted = self.api.submit_run(
+            {
+                "project_id": created["savedProject"]["project_id"],
+                "experiment_plan_id": plan["experiment_plan_id"],
+                "model_family": "aircraft_support_v1",
+                "run_type": "single",
+                "formal_run": True,
+            }
+        )
+
+        stored = self.api.get_modeling_import(import_package["importId"])
+        self.assertEqual(stored["publishedPackage"]["lifecycle"]["referencedRunIds"], [submitted["run_id"]])
+        self.repository.record_modeling_import_run_reference(import_package["importId"], submitted["run_id"])
+        stored_again = self.api.get_modeling_import(import_package["importId"])
+        self.assertEqual(stored_again["publishedPackage"]["lifecycle"]["referencedRunIds"], [submitted["run_id"]])
+
+        with self.assertRaises(BackendApiError) as ctx:
+            self.api.publish_modeling_import_as_system(import_package["importId"])
+        self.assertEqual(ctx.exception.code, "published_import_referenced")
+        self.assertEqual(ctx.exception.details["import_id"], import_package["importId"])
+
+    def test_failed_formal_run_does_not_record_modeling_import_reference(self) -> None:
+        failing_api = BackendApi(self.repository, FailingRunAdapter(), output_dir=Path(self.tempdir.name) / "failing")
+        import_package = self._fixture("modeling_import_project.json")
+        failing_api.save_modeling_import_as_system(import_package)
+        failing_api.publish_modeling_import_as_system(import_package["importId"])
+        created = failing_api.create_project_from_modeling_import_as_system(import_package["importId"])
+        plan = failing_api.create_experiment_plan(
+            created["savedProject"]["project_id"],
+            {"name": "failed formal lineage", "steps": 1, "projectJson": created["project"]},
+        )
+
+        submitted = failing_api.submit_run(
+            {
+                "project_id": created["savedProject"]["project_id"],
+                "experiment_plan_id": plan["experiment_plan_id"],
+                "model_family": "aircraft_support_v1",
+                "run_type": "single",
+                "formal_run": True,
+            }
+        )
+        stored = failing_api.get_modeling_import(import_package["importId"])
+
+        self.assertEqual(submitted["status"], "failed")
+        self.assertEqual(stored["publishedPackage"]["lifecycle"].get("referencedRunIds"), [])
+        republished = failing_api.publish_modeling_import_as_system(import_package["importId"])
+        self.assertEqual(republished["lifecycle"]["state"], "published")
+
     def test_backend_api_submit_run_rejects_project_plan_mismatch(self) -> None:
         project = self._fixture("smoke_project.json")
         saved = self.api.save_project(project)
