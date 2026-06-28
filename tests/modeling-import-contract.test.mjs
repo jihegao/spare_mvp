@@ -123,6 +123,45 @@ test("projectToModelingImportPackage backfills import draft from current Project
   assert.deepEqual(validateModelingImportPackage(draft), []);
 });
 
+test("current project backfill normalizes support activity plan rows into importable activities", async () => {
+  const fixture = await readJson("tests/fixtures/modeling_import_project.json");
+  const draft = projectToModelingImportPackage({
+    project_id: "project-current",
+    scenarioId: "scenario-current",
+    missionProfile: {
+      sourceImportId: fixture.importId,
+      name: "当前项目任务",
+      durationHours: 8
+    },
+    components: [
+      { id: "aircraft-root", name: "整机", quantity: 1 },
+      { id: "j15-engine", name: "发动机", parentId: "aircraft-root", aircraftModel: "J-15", quantity: 2 }
+    ],
+    supportNodes: [{ id: "carrier-deck", name: "基地", capacity: 4 }],
+    supportActivities: [{
+      id: "ops-support-j-15-after-flight",
+      activityName: "J-15飞行后检查活动",
+      activityType: "使用保障",
+      aircraftModel: "J-15",
+      jobs: [{ workName: "飞行后检查", durationMinutes: 30 }]
+    }]
+  }, fixture);
+
+  assert.equal(draft.validation.ok, true);
+  assert.deepEqual(validateModelingImportPackage(draft), []);
+  assert.deepEqual(draft.objects.supportActivities[0], {
+    id: "ops-support-j-15-after-flight",
+    activityName: "J-15飞行后检查活动",
+    activityType: "使用保障",
+    aircraftModel: "J-15",
+    jobs: [{ workName: "飞行后检查", durationMinutes: 30 }],
+    name: "J-15飞行后检查活动",
+    equipmentId: "j15-engine",
+    resourceId: "carrier-deck",
+    durationHours: 0.5
+  });
+});
+
 test("modeling import schema validation resolves nested local refs", async () => {
   const schema = await readJson("contracts/modeling_import.schema.json");
   const fixture = await readJson("tests/fixtures/modeling_import_project.json");

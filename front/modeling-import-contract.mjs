@@ -73,7 +73,7 @@ export function projectToModelingImportPackage(projectJson, basePackage = {}) {
     missionProfiles: [missionProfile],
     equipmentAssets: normalizeObjectRows(project.components),
     supportResources: normalizeObjectRows(project.supportNodes),
-    supportActivities: normalizeObjectRows(project.supportActivities),
+    supportActivities: normalizeSupportActivities(project.supportActivities, project),
     equipment: cloneJson(project.equipment || base.objects?.equipment || {}),
     projectInfo: cloneJson(project.projectInfo || base.objects?.projectInfo || {}),
     airports: normalizeObjectRows(project.airports),
@@ -157,6 +157,38 @@ function preservedObjectSurfaces(objects = {}) {
 function normalizeObjectRows(rows) {
   if (!Array.isArray(rows)) return [];
   return rows.filter((row) => row && typeof row === "object" && !Array.isArray(row)).map((row) => cloneJson(row));
+}
+
+function normalizeSupportActivities(rows, project = {}) {
+  if (!Array.isArray(rows)) return [];
+  const equipmentAssets = Array.isArray(project.components) ? project.components : [];
+  const supportResources = Array.isArray(project.supportNodes) ? project.supportNodes : [];
+  return rows
+    .filter((row) => row && typeof row === "object" && !Array.isArray(row))
+    .map((row) => {
+      const next = cloneJson(row);
+      next.name ||= next.activityName || next.planType || next.id;
+      next.equipmentId ||= defaultEquipmentIdForActivity(next, equipmentAssets);
+      next.resourceId ||= supportResources.find((resource) => resource?.id)?.id;
+      next.durationHours = positiveNumber(next.durationHours, durationHoursForActivity(next));
+      return next;
+    });
+}
+
+function defaultEquipmentIdForActivity(activity, equipmentAssets) {
+  const aircraftModel = String(activity.aircraftModel || "").trim();
+  const byAircraftModel = aircraftModel
+    ? equipmentAssets.find((asset) => asset?.id && String(asset.aircraftModel || "") === aircraftModel && asset.parentId)
+    : null;
+  return byAircraftModel?.id || equipmentAssets.find((asset) => asset?.id && asset.parentId)?.id || equipmentAssets.find((asset) => asset?.id)?.id || "";
+}
+
+function durationHoursForActivity(activity) {
+  const jobMinutes = Array.isArray(activity.jobs)
+    ? activity.jobs.reduce((sum, job) => sum + positiveNumber(job?.durationMinutes, 0), 0)
+    : 0;
+  if (jobMinutes > 0) return jobMinutes / 60;
+  return positiveNumber(activity.maxWorkTimeRefMinutes, 0) / 60;
 }
 
 function durationHoursForProject(project) {
