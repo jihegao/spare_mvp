@@ -3966,12 +3966,41 @@ function deleteSelectedEquipmentAircraft() {
   removePreventiveMaintenanceActivitiesForAircraftModel(aircraftModel);
   scenario.equipment.wholeMachineModels = scenario.equipment.wholeMachineModels.filter((model) => String(model) !== String(aircraftModel));
   scenario.components = (scenario.components || []).filter((component) => String(component.aircraftModel || "") !== String(aircraftModel));
+  const fallbackModel = wholeMachineModels()[0] || "";
   if (String(scenario.equipment.model || "") === String(aircraftModel)) {
-    scenario.equipment.model = wholeMachineModels()[0] || "";
+    scenario.equipment.model = fallbackModel;
   }
+  cleanupDeletedEquipmentAircraftReferences(aircraftModel, fallbackModel);
   selectedEquipmentNodeKey = "aircraft-list";
   selectedEquipmentComponentIndex = 0;
   updatePreviewResultsThroughApiClient();
+}
+
+function cleanupDeletedEquipmentAircraftReferences(deletedModel, fallbackModel = "") {
+  const oldModel = String(deletedModel || "");
+  const nextModel = String(fallbackModel || "");
+  if (!oldModel) return;
+  for (const record of editableBasicMissionRecords()) {
+    if (String(record.task?.equipmentType || "") === oldModel) record.task.equipmentType = nextModel;
+  }
+  for (const member of scenario.combatUnit?.members || []) {
+    if (String(member.model || "") === oldModel) member.model = nextModel;
+  }
+  for (const override of Object.values(scenario.supportResourceOverrides || {})) {
+    if (Array.isArray(override.aircraft)) {
+      override.aircraft = override.aircraft.filter((model) => String(model) !== oldModel);
+      if (nextModel && !override.aircraft.length) override.aircraft = [nextModel];
+    }
+  }
+  if (selectedBasicMissionEquipmentType === oldModel) {
+    selectedBasicMissionEquipmentType = nextModel;
+  }
+  if (selectedOperationsSupportAircraftModel === oldModel) {
+    selectedOperationsSupportAircraftModel = nextModel;
+  }
+  if (selectedPreventiveMaintenanceAircraftModel === oldModel) {
+    selectedPreventiveMaintenanceAircraftModel = nextModel;
+  }
 }
 
 function updateEquipmentAircraftModel(previousModel, nextModelRaw) {
@@ -5198,7 +5227,7 @@ function selectedOperationsSupportActivity() {
   return operationsSupportActivityEntries().find((entry) => entry.key === selectedOperationsSupportActivityKey)?.activity || null;
 }
 
-function operationsSupportPhaseActivity(baseActivity, planType = selectedOperationsSupportPlanType) {
+function operationsSupportPhaseActivity(baseActivity, planType = selectedOperationsSupportPlanType, options = {}) {
   const normalizedPlanType = normalizeOperationsSupportPlanType(planType);
   const model = supportActivityAircraftModel(baseActivity) || wholeMachineModels()[0] || scenario.equipment.model || "";
   const planGroupId = operationsSupportPlanGroupId(baseActivity);
@@ -5214,7 +5243,7 @@ function operationsSupportPhaseActivity(baseActivity, planType = selectedOperati
     && !operationsSupportPlanGroupId(activity)
     && String(activity.planType || "直接准备方案") === normalizedPlanType
   ));
-  if (legacyMatch && planGroupId) legacyMatch.planGroupId = planGroupId;
+  if (legacyMatch && planGroupId && options.assignLegacyPlanGroup) legacyMatch.planGroupId = planGroupId;
   return legacyMatch || null;
 }
 
@@ -5224,12 +5253,25 @@ function ensureOperationsSupportPhaseActivities(baseActivity) {
   if (!Array.isArray(scenario.supportActivities)) scenario.supportActivities = [];
   const planGroupId = ensureOperationsSupportPlanGroupId(baseActivity, model);
   return operationsSupportPlanTypeConfigs().map((config) => {
-    const existing = operationsSupportPhaseActivity({ ...(baseActivity || {}), aircraftModel: model, planGroupId }, config.planType);
+    const existing = operationsSupportPhaseActivity(
+      { ...(baseActivity || {}), aircraftModel: model, planGroupId },
+      config.planType,
+      { assignLegacyPlanGroup: true }
+    );
     if (existing) return existing;
     const activity = createOperationsSupportActivityForAircraftModel(model, { ...config, planGroupId });
     scenario.supportActivities.push(activity);
     return activity;
   });
+}
+
+function findOperationsSupportPhaseActivities(baseActivity) {
+  const model = supportActivityAircraftModel(baseActivity) || wholeMachineModels()[0] || scenario.equipment.model || "";
+  if (!model) return [];
+  const planGroupId = operationsSupportPlanGroupId(baseActivity);
+  return operationsSupportPlanTypeConfigs()
+    .map((config) => operationsSupportPhaseActivity({ ...(baseActivity || {}), aircraftModel: model, planGroupId }, config.planType))
+    .filter(Boolean);
 }
 
 function operationsSupportPlanNameActivity(baseActivity, phaseActivities = []) {
@@ -5309,7 +5351,7 @@ function findSupportActivityByJobTabKey(tabKey) {
     const baseActivity = selectedOperationsSupportActivity()
       || operationsSupportActivityEntries()[0]?.activity
       || null;
-    const phaseActivities = ensureOperationsSupportPhaseActivities(baseActivity);
+    const phaseActivities = findOperationsSupportPhaseActivities(baseActivity);
     return operationsSupportPhaseActivity(baseActivity, operationsPlanType)
       || phaseActivities.find((activity) => String(activity.planType || "") === operationsPlanType)
       || null;
@@ -6203,7 +6245,7 @@ function selectedSupportActivityJobIndexForTab(tabKey, jobs) {
 }
 
 function renderOperationsSupportActivity(activePlan, activity) {
-  const phaseActivities = ensureOperationsSupportPhaseActivities(activity);
+  const phaseActivities = findOperationsSupportPhaseActivities(activity);
   const activePlanType = normalizeOperationsSupportPlanType(selectedOperationsSupportPlanType);
   const activePhaseActivity = phaseActivities.find((item) => String(item.planType || "") === activePlanType) || phaseActivities[0] || activity;
   const planNameActivity = operationsSupportPlanNameActivity(activity, phaseActivities);
@@ -6356,7 +6398,8 @@ function correctiveMaintenanceActivityForComponent(component) {
 
 function selectedCorrectiveMaintenanceActivity() {
   return correctiveMaintenanceActivityForComponent(selectedCorrectiveComponent())
-    || ensureCorrectiveMaintenanceActivityForComponent(selectedCorrectiveComponent());
+    || (scenario.supportActivities || []).find((activity) => isCorrectiveMaintenanceActivity(activity))
+    || null;
 }
 
 function ensureCorrectiveMaintenanceActivityForComponent(component) {
@@ -6389,7 +6432,23 @@ function nextCorrectiveMaintenanceActivityId(equipmentId) {
 
 function renderCorrectiveMaintenanceActivity(activity) {
   const component = selectedCorrectiveComponent();
-  const componentActivity = correctiveMaintenanceActivityForComponent(selectedCorrectiveComponent()) || ensureCorrectiveMaintenanceActivityForComponent(component) || activity;
+  const componentActivity = correctiveMaintenanceActivityForComponent(selectedCorrectiveComponent()) || (isCorrectiveMaintenanceActivity(activity) ? activity : null);
+  if (!componentActivity) {
+    return `
+    <div class="organization-layout">
+      ${renderEquipmentConfigTree()}
+      <section class="detail-panel">
+        <div class="detail-card activity-editor-card">
+          <div class="section-head">
+            <h3>修复性维修活动编辑</h3>
+            <span>${htmlEscape(component?.name || component?.id || "未选择组件")}</span>
+          </div>
+          ${importedDataEmptyState("修复性维修活动")}
+        </div>
+      </section>
+    </div>
+  `;
+  }
   const activityIndex = Math.max(0, (scenario.supportActivities || []).indexOf(componentActivity));
   const repairType = componentActivity.repairType || "原位维修";
   const mttrText = correctiveComponentMttrText(component);

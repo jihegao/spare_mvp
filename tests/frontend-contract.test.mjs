@@ -1090,6 +1090,29 @@ test("equipment aircraft list mutations synchronize operations support activity 
   assert.match(equipmentMutationSource, /updateOperationsSupportActivityAircraftModel\(oldModel, nextModel\)/);
 });
 
+test("equipment aircraft deletion cleans downstream aircraft-model references", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const equipmentMutationSource = appSource.slice(
+    appSource.indexOf("function deleteSelectedEquipmentAircraft"),
+    appSource.indexOf("function ensureOperationsSupportActivityForAircraftModel")
+  );
+  const cleanupSource = appSource.slice(
+    appSource.indexOf("function cleanupDeletedEquipmentAircraftReferences"),
+    appSource.indexOf("function updateEquipmentAircraftModel")
+  );
+
+  assert.match(equipmentMutationSource, /const fallbackModel = wholeMachineModels\(\)\[0\] \|\| ""/);
+  assert.match(equipmentMutationSource, /cleanupDeletedEquipmentAircraftReferences\(aircraftModel, fallbackModel\)/);
+  assert.match(cleanupSource, /function cleanupDeletedEquipmentAircraftReferences\(deletedModel, fallbackModel = ""\)/);
+  assert.match(cleanupSource, /for \(const record of editableBasicMissionRecords\(\)\)/);
+  assert.match(cleanupSource, /record\.task\.equipmentType = nextModel/);
+  assert.match(cleanupSource, /for \(const member of scenario\.combatUnit\?\.members \|\| \[\]\)/);
+  assert.match(cleanupSource, /member\.model = nextModel/);
+  assert.match(cleanupSource, /for \(const override of Object\.values\(scenario\.supportResourceOverrides \|\| \{\}\)\)/);
+  assert.match(cleanupSource, /override\.aircraft\.filter\(\(model\) => String\(model\) !== oldModel\)/);
+  assert.match(cleanupSource, /selectedBasicMissionEquipmentType = nextModel/);
+});
+
 test("equipment system table exposes composition, MTBF and MTTR distribution fields together", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const equipmentSource = appSource.slice(
@@ -1755,6 +1778,7 @@ test("support activity controls are wired through local draft fields", async () 
   assert.match(appSource, /const supportActivityPhaseTabButton = event\.target\.closest\("\[data-ops-support-plan-type\]"\)/);
   assert.match(appSource, /function operationsSupportPlanTypeConfigs\(\)/);
   assert.match(appSource, /function ensureOperationsSupportPhaseActivities/);
+  assert.match(appSource, /function findOperationsSupportPhaseActivities/);
   assert.match(appSource, /function operationsSupportPlanGroupId/);
   assert.match(appSource, /function nextOperationsSupportPlanGroupId/);
   assert.match(operationsPlanTypeSource, /飞行前准备/);
@@ -1803,7 +1827,6 @@ test("support activity controls are wired through local draft fields", async () 
   assert.match(appSource, /function ensureCorrectiveMaintenanceActivityForComponent/);
   assert.match(appSource, /function selectedCorrectiveMaintenanceActivity/);
   assert.match(appSource, /correctiveMaintenanceActivityForComponent\(selectedCorrectiveComponent\(\)\)/);
-  assert.match(appSource, /ensureCorrectiveMaintenanceActivityForComponent\(component\)/);
   assert.doesNotMatch(correctiveSource, /维修对象/);
   assert.doesNotMatch(correctiveSource, /maxRepairTimeMinutes/);
   assert.match(correctiveSource, /MTTR/);
@@ -1816,6 +1839,36 @@ test("support activity controls are wired through local draft fields", async () 
   assert.match(readonlyEquipmentConfigSource, /const visitedIds = new Set\(visited\)/);
   assert.match(readonlyEquipmentConfigSource, /componentId !== String\(parentId\)/);
   assert.match(readonlyEquipmentConfigSource, /!visitedIds\.has\(componentId\)/);
+});
+
+test("support activity render paths do not mutate supportActivities implicitly", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const operationsSource = appSource.slice(
+    appSource.indexOf("function renderOperationsSupportActivity"),
+    appSource.indexOf("function renderPreventiveMaintenanceActivity")
+  );
+  const jobLookupSource = appSource.slice(
+    appSource.indexOf("function findSupportActivityByJobTabKey"),
+    appSource.indexOf("function selectedSupportActivityJobIndexForTab")
+  );
+  const selectedCorrectiveSource = appSource.slice(
+    appSource.indexOf("function selectedCorrectiveMaintenanceActivity"),
+    appSource.indexOf("function ensureCorrectiveMaintenanceActivityForComponent")
+  );
+  const correctiveSource = appSource.slice(
+    appSource.indexOf("function renderCorrectiveMaintenanceActivity"),
+    appSource.indexOf("function renderLogisticsSupportActivity")
+  );
+
+  assert.match(operationsSource, /findOperationsSupportPhaseActivities\(activity\)/);
+  assert.doesNotMatch(operationsSource, /ensureOperationsSupportPhaseActivities/);
+  assert.match(jobLookupSource, /findOperationsSupportPhaseActivities\(baseActivity\)/);
+  assert.doesNotMatch(jobLookupSource, /ensureOperationsSupportPhaseActivities/);
+  assert.match(selectedCorrectiveSource, /correctiveMaintenanceActivityForComponent\(selectedCorrectiveComponent\(\)\)/);
+  assert.doesNotMatch(selectedCorrectiveSource, /ensureCorrectiveMaintenanceActivityForComponent/);
+  assert.match(correctiveSource, /correctiveMaintenanceActivityForComponent\(selectedCorrectiveComponent\(\)\)/);
+  assert.doesNotMatch(correctiveSource, /ensureCorrectiveMaintenanceActivityForComponent/);
+  assert.doesNotMatch(correctiveSource, /scenario\.supportActivities\.push/);
 });
 
 test("modeling data-path inputs commit on change instead of rerendering on each keystroke", async () => {
