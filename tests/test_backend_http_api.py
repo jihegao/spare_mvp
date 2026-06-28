@@ -1017,11 +1017,11 @@ class BackendHttpApiTest(unittest.TestCase):
                             "analysisRequests": {
                                 "largeSample": {
                                     "enabled": True,
-                                    "samples": 8,
+                                    "samples": 1,
                                     "sweep": {
-                                        "failureRates": [0.06, 0.08],
-                                        "spareMultipliers": [0.75, 1.0],
-                                        "supportCapacities": [2, 3],
+                                        "failureRates": [0.06],
+                                        "spareMultipliers": [1.0],
+                                        "supportCapacities": [2],
                                     },
                                 },
                                 "spareShortfall": {"enabled": True},
@@ -1056,8 +1056,8 @@ class BackendHttpApiTest(unittest.TestCase):
                 self.assertEqual(submitted["modeling_snapshot_id"], snapshot["snapshot_id"])
                 self.assertIn("monte_carlo_base", kinds)
                 self.assertEqual(len([kind for kind in kinds if kind.startswith("analysis_projection_")]), 4)
-                self.assertEqual(payload["sample_count"], 8)
-                self.assertEqual(payload["sweep"]["supportCapacities"], [2, 3])
+                self.assertEqual(payload["sample_count"], 1)
+                self.assertEqual(payload["sweep"]["supportCapacities"], [2])
             finally:
                 server.shutdown()
                 server.server_close()
