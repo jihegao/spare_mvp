@@ -46,7 +46,7 @@
 - [x] 运行 `PYTHONDONTWRITEBYTECODE=1 .abm-mesa-test-env/bin/python -m unittest tests.test_simulation_adapter tests.test_aircraft_support_v1_model -v`。
 - [x] 运行 `npm test`。
 
-阶段 0 验证记录：当前 worktree 未包含相对路径 `.abm-mesa-test-env`，本次使用主 checkout 的等价解释器 `/Users/gaojihe/Models/spare_mvp/.abm-mesa-test-env/bin/python` 执行上述 Python 验证命令。
+阶段 0 验证记录：如果当前 worktree 未包含相对路径 `.abm-mesa-test-env`，可使用同一仓库主 checkout 中的本地等价解释器执行上述 Python 验证命令；不要把具体机器上的绝对路径视为计划要求。
 
 **退出标准：** 正式 run 写路径已鉴权，导入包 lineage 在 run 使用后不可被覆盖，主流程阻断需求被明确标注为阻断项而不是被静默实现；RMS 相关未确认项已明确移入阶段 4，不作为阶段 0 合并门槛。
 
