@@ -1853,12 +1853,7 @@ function bindEvents() {
 
     const equipmentAircraftModelInput = event.target.closest("[data-equipment-aircraft-model]");
     if (equipmentAircraftModelInput) {
-      updateEquipmentAircraftModel(
-        equipmentAircraftModelInput.dataset.equipmentAircraftModel,
-        equipmentAircraftModelInput.value
-      );
-      markProjectDraftChanged();
-      render();
+      commitEquipmentAircraftModelInput(equipmentAircraftModelInput);
       return;
     }
 
@@ -1934,6 +1929,13 @@ function bindEvents() {
     updatePreviewResultsThroughApiClient();
     if (isCurrentModelingPage()) markProjectDraftChanged();
     render();
+  });
+
+  app.addEventListener("focusout", (event) => {
+    const equipmentAircraftModelInput = event.target.closest("[data-equipment-aircraft-model]");
+    if (equipmentAircraftModelInput) {
+      commitEquipmentAircraftModelInput(equipmentAircraftModelInput);
+    }
   });
 
   app.addEventListener("input", (event) => {
@@ -3853,6 +3855,7 @@ function diffTimeMinutes(start, end) {
 function renderEquipmentModeling(page) {
   const selectedState = resolveSelectedEquipmentNode();
   const components = equipmentComponentsForSelectionModel({ scenario, selection: selectedState });
+  const showEquipmentSystemTable = components.length || selectedState.kind === "aircraft";
   return `
     <div class="section-head section-context">
       <span>装备组成树 / 装备系统建模表</span>
@@ -3874,7 +3877,7 @@ function renderEquipmentModeling(page) {
             <h3>装备系统建模</h3>
             <span>${htmlEscape(equipmentSelectionSummary(selectedState, components.length))}</span>
           </div>
-          ${components.length ? renderEquipmentSystemTable(selectedState) : importedDataEmptyState(page.name || "装备系统建模")}
+          ${showEquipmentSystemTable ? renderEquipmentSystemTable(selectedState) : importedDataEmptyState(page.name || "装备系统建模")}
         </div>
       </section>
     </div>
@@ -3974,7 +3977,7 @@ function deleteSelectedEquipmentAircraft() {
 function updateEquipmentAircraftModel(previousModel, nextModelRaw) {
   const nextModel = String(nextModelRaw || "").trim();
   const oldModel = String(previousModel || "").trim();
-  if (!oldModel || !nextModel || nextModel === oldModel) return;
+  if (!oldModel || !nextModel || nextModel === oldModel) return false;
   if (!Array.isArray(scenario.equipment.wholeMachineModels)) {
     scenario.equipment.wholeMachineModels = wholeMachineModels();
   }
@@ -4008,6 +4011,19 @@ function updateEquipmentAircraftModel(previousModel, nextModelRaw) {
     selectedBasicMissionEquipmentType = nextModel;
   }
   updatePreviewResultsThroughApiClient();
+  return true;
+}
+
+function commitEquipmentAircraftModelInput(input) {
+  if (!input) return false;
+  const changed = updateEquipmentAircraftModel(
+    input.dataset.equipmentAircraftModel,
+    input.value
+  );
+  if (!changed) return false;
+  markProjectDraftChanged();
+  render();
+  return true;
 }
 
 function ensureOperationsSupportActivityForAircraftModel(aircraftModel) {
@@ -4248,6 +4264,7 @@ function renderEquipmentSystemTable(selectedState) {
       <table class="equipment-system-table">
         <thead>
           <tr>
+            <th>飞机名称</th>
             <th>组件名称</th>
             <th>父节点</th>
             <th>数量n</th>
@@ -4260,10 +4277,27 @@ function renderEquipmentSystemTable(selectedState) {
           </tr>
         </thead>
         <tbody>
+          ${renderEquipmentAircraftNameRow(selectedState)}
           ${rows.map((component) => renderEquipmentSystemTableRow(component, (scenario.components || []).indexOf(component), selectedState)).join("")}
         </tbody>
       </table>
     </div>
+  `;
+}
+
+function renderEquipmentAircraftNameRow(selectedState) {
+  if (selectedState.kind !== "aircraft") return "";
+  return `
+    <tr class="selected-table-row">
+      <td>
+        <input
+          aria-label="飞机名称"
+          data-equipment-aircraft-model="${htmlEscape(selectedState.aircraftModel)}"
+          value="${htmlEscape(selectedState.aircraftModel)}"
+        >
+      </td>
+      <td colspan="9"></td>
+    </tr>
   `;
 }
 
@@ -4273,6 +4307,7 @@ function renderEquipmentSystemTableRow(component, index, selectedState) {
   const mttrDistributionType = equipmentDistributionType(component.repairDistribution?.distributionType, "mttr");
   return `
     <tr class="${selected ? "selected-table-row" : ""}">
+      <td class="muted">-</td>
       <td>${equipmentTableInput("组件名称", `components.${index}.name`)}</td>
       <td>${equipmentTableInput("父节点", `components.${index}.parentId`)}</td>
       <td>${equipmentTableInput("数量n", `components.${index}.quantity`, "number", { min: "1", step: "1" })}</td>

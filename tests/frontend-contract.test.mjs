@@ -1035,6 +1035,35 @@ test("equipment tree root aircraft list can add aircraft before subsystem nodes"
   assert.doesNotMatch(appSource, /整机数量<input readonly value=/);
 });
 
+test("equipment aircraft selection keeps an editable aircraft name row", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const equipmentSource = appSource.slice(
+    appSource.indexOf("function renderEquipmentModeling"),
+    appSource.indexOf("function renderReliabilityBlockDiagram")
+  );
+  const tableSource = equipmentSource.slice(
+    equipmentSource.indexOf("function renderEquipmentSystemTable"),
+    equipmentSource.indexOf("function renderEquipmentSystemTableRow")
+  );
+  const mutationSource = equipmentSource.slice(
+    equipmentSource.indexOf("function updateEquipmentAircraftModel"),
+    equipmentSource.indexOf("function ensureOperationsSupportActivityForAircraftModel")
+  );
+
+  assert.match(tableSource, /<th>飞机名称<\/th>/);
+  assert.match(tableSource, /renderEquipmentAircraftNameRow\(selectedState\)/);
+  assert.match(equipmentSource, /components\.length \|\| selectedState\.kind === "aircraft"/);
+  assert.match(equipmentSource, /function renderEquipmentAircraftNameRow\(selectedState\)/);
+  assert.match(equipmentSource, /data-equipment-aircraft-model="\$\{htmlEscape\(selectedState\.aircraftModel\)\}"/);
+  assert.match(equipmentSource, /aria-label="飞机名称"/);
+  assert.match(mutationSource, /function updateEquipmentAircraftModel\(previousModel, nextModelRaw\)/);
+  assert.match(appSource, /function commitEquipmentAircraftModelInput\(input\)/);
+  assert.match(appSource, /app\.addEventListener\("focusout"/);
+  assert.match(mutationSource, /selectedEquipmentNodeKey = `aircraft:\$\{nextModel\}`/);
+  assert.doesNotMatch(equipmentSource, /整机级节点仅维护飞机名称/);
+  assert.doesNotMatch(equipmentSource, /可靠性框图从下级系统开始绘制/);
+});
+
 test("equipment aircraft list mutations synchronize operations support activity aircraft groups", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const supportActivityPlanSource = appSource.slice(
