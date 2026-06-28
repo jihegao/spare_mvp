@@ -1993,10 +1993,6 @@ function bindEvents() {
 
     const livePathInput = event.target.closest("[data-path]");
     if (livePathInput && isLiveProjectDraftInput(livePathInput)) {
-      setPath(scenario, livePathInput.dataset.path, parseInput(livePathInput));
-      normalizeEquipmentKOutOfNForPath(livePathInput.dataset.path);
-      updatePreviewResultsThroughApiClient();
-      if (isCurrentModelingPage()) markProjectDraftChanged();
       return;
     }
 
@@ -5201,6 +5197,14 @@ function ensureOperationsSupportPhaseActivities(baseActivity) {
   });
 }
 
+function operationsSupportPlanNameActivity(baseActivity, phaseActivities = []) {
+  if (baseActivity && (scenario.supportActivities || []).includes(baseActivity)) return baseActivity;
+  return phaseActivities.find((activity) => String(activity.planType || "") === "直接准备方案")
+    || phaseActivities[0]
+    || baseActivity
+    || null;
+}
+
 function selectOperationsSupportActivityPlan(key) {
   const entry = operationsSupportActivityEntries().find((item) => item.key === key);
   if (!entry) return;
@@ -6167,20 +6171,21 @@ function renderOperationsSupportActivity(activePlan, activity) {
   const phaseActivities = ensureOperationsSupportPhaseActivities(activity);
   const activePlanType = normalizeOperationsSupportPlanType(selectedOperationsSupportPlanType);
   const activePhaseActivity = phaseActivities.find((item) => String(item.planType || "") === activePlanType) || phaseActivities[0] || activity;
-  const activityIndex = Math.max(0, (scenario.supportActivities || []).indexOf(activePhaseActivity));
+  const planNameActivity = operationsSupportPlanNameActivity(activity, phaseActivities);
+  const planNameActivityIndex = Math.max(0, (scenario.supportActivities || []).indexOf(planNameActivity));
   const tabs = operationsSupportPlanTypeConfigs().map((config) => `
     <button type="button" class="tab-btn ${activePlanType === config.planType ? "active" : ""}" data-ops-support-plan-type="${htmlEscape(config.planType)}">${htmlEscape(config.label)}</button>
   `).join("");
   return `
     <div class="detail-card activity-editor-card">
+      <div class="form-table-grid">
+        ${field("方案名称", `supportActivities.${planNameActivityIndex}.activityName`)}
+      </div>
       <div class="section-head">
         <h3>使用保障活动编辑</h3>
         <span>${activePlan.path.map((item) => htmlEscape(item)).join(" / ")} / ${htmlEscape(operationsSupportPlanTypeConfigs().find((item) => item.planType === activePlanType)?.label || activePlanType)}</span>
       </div>
       <div class="ops-plan-type-tabs">${tabs}</div>
-      <div class="form-table-grid">
-        ${field("方案名称", `supportActivities.${activityIndex}.activityName`)}
-      </div>
       ${renderSupportActivityJobTable(activePhaseActivity, operationsSupportPlanTypeTabKey(activePlanType))}
     </div>
   `;

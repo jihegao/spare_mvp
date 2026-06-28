@@ -1736,6 +1736,14 @@ test("support activity controls are wired through local draft fields", async () 
   assert.match(operationsSource, /data-ops-support-plan-type/);
   assert.match(operationsSource, /operationsSupportPlanTypeTabKey\(activePlanType\)/);
   assert.match(operationsSource, /activePhaseActivity/);
+  assert.match(operationsSource, /const planNameActivity = operationsSupportPlanNameActivity\(activity, phaseActivities\)/);
+  assert.match(operationsSource, /field\("方案名称", `supportActivities\.\$\{planNameActivityIndex\}\.activityName`\)/);
+  assert.doesNotMatch(operationsSource, /field\("方案名称", `supportActivities\.\$\{activityIndex\}\.activityName`\)/);
+  assert.ok(
+    operationsSource.indexOf('field("方案名称", `supportActivities.${planNameActivityIndex}.activityName`)')
+      < operationsSource.indexOf("<h3>使用保障活动编辑</h3>"),
+    "方案名称应渲染在使用保障活动编辑标题上方"
+  );
   assert.doesNotMatch(operationsSource, /maxWorkTimeRefMinutes/);
   assert.doesNotMatch(operationsSource, /<input(?![^>]*(data-path|readonly|disabled))/);
 
@@ -1779,6 +1787,30 @@ test("support activity controls are wired through local draft fields", async () 
   assert.match(readonlyEquipmentConfigSource, /const visitedIds = new Set\(visited\)/);
   assert.match(readonlyEquipmentConfigSource, /componentId !== String\(parentId\)/);
   assert.match(readonlyEquipmentConfigSource, /!visitedIds\.has\(componentId\)/);
+});
+
+test("modeling data-path inputs commit on change instead of rerendering on each keystroke", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const inputListenerSource = appSource.slice(
+    appSource.indexOf('app.addEventListener("input"'),
+    appSource.indexOf("const systemUserInput")
+  );
+  const changeListenerSource = appSource.slice(
+    appSource.indexOf('app.addEventListener("change"'),
+    appSource.indexOf('app.addEventListener("input"')
+  );
+
+  const livePathInputSource = inputListenerSource.slice(
+    inputListenerSource.indexOf("const livePathInput"),
+    inputListenerSource.indexOf("const systemUserInput")
+  );
+  assert.match(livePathInputSource, /const livePathInput = event\.target\.closest\("\[data-path\]"\)/);
+  assert.match(livePathInputSource, /return;/);
+  assert.doesNotMatch(livePathInputSource, /setPath\(scenario, livePathInput\.dataset\.path/);
+  assert.doesNotMatch(livePathInputSource, /markProjectDraftChanged\(\)/);
+  assert.match(changeListenerSource, /setPath\(scenario, input\.dataset\.path, parseInput\(input\)\)/);
+  assert.match(changeListenerSource, /markProjectDraftChanged\(\)/);
+  assert.match(changeListenerSource, /render\(\)/);
 });
 
 test("reliability block diagram prototype exposes node edge and k-out-of-n fields", async () => {

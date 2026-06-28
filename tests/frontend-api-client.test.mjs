@@ -872,12 +872,21 @@ test("modeling import backfill projects the live project draft instead of rehydr
     appSource.indexOf('app.addEventListener("input"'),
     appSource.indexOf("function clamp")
   );
+  const changeHandlerSource = appSource.slice(
+    appSource.indexOf('app.addEventListener("change"'),
+    appSource.indexOf('app.addEventListener("input"')
+  );
+  const livePathInputSource = inputHandlerSource.slice(
+    inputHandlerSource.indexOf("const livePathInput"),
+    inputHandlerSource.indexOf("const systemUserInput")
+  );
 
   assert.match(backfillSource, /await flushPendingProjectDraftAutosave\(\)/);
   assert.match(backfillSource, /buildBackendProjectJson\(scenario, currentProject \|\| \{\}\)/);
   assert.match(backfillSource, /projectToModelingImportPackage\(projectJson, modelingImportPackage\)/);
   assert.doesNotMatch(backfillSource, /hydrateCurrentProjectDraftFromApi/);
   assert.match(inputHandlerSource, /updateSelectedPeriodicTask\(livePeriodicInput\.dataset\.periodicField, parseInput\(livePeriodicInput\), \{ renderAfter: false \}\)/);
-  assert.match(inputHandlerSource, /isLiveProjectDraftInput\(livePathInput\)/);
-  assert.match(inputHandlerSource, /setPath\(scenario, livePathInput\.dataset\.path, parseInput\(livePathInput\)\)/);
+  assert.match(livePathInputSource, /isLiveProjectDraftInput\(livePathInput\)/);
+  assert.doesNotMatch(livePathInputSource, /setPath\(scenario, livePathInput\.dataset\.path, parseInput\(livePathInput\)\)/);
+  assert.match(changeHandlerSource, /setPath\(scenario, input\.dataset\.path, parseInput\(input\)\)/);
 });
