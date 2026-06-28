@@ -1399,9 +1399,9 @@ function bindEvents() {
       return;
     }
 
-    const periodicDeleteButton = event.target.closest("[data-periodic-delete]");
+    const periodicDeleteButton = event.target.closest("[data-periodic-delete-selected]");
     if (periodicDeleteButton) {
-      const taskId = periodicDeleteButton.dataset.periodicDelete;
+      const taskId = selectedPeriodicTaskId;
       scenario.missionProfile.periodicTasks = periodicTaskList().filter((task) => String(task.id) !== taskId);
       selectedPeriodicTaskId = String(periodicTaskList()[0]?.id || "");
       updatePreviewResultsThroughApiClient();
@@ -3135,8 +3135,8 @@ function renderCombatUnitModeling(page) {
       <div class="table-wrap unframed-table">
         <table class="combat-unit-table">
           <thead>
-            <tr><th rowspan="2" class="combat-unit-select-col"></th><th rowspan="2">飞机编号</th><th rowspan="2">飞机类型</th><th colspan="3" class="combat-unit-prelife-heading">前置寿命</th></tr>
-            <tr><th class="combat-unit-prelife-column">日历时间</th><th class="combat-unit-prelife-column">飞行小时</th><th class="combat-unit-prelife-column">起落次数</th></tr>
+            <tr><th rowspan="2" class="combat-unit-select-col"></th><th rowspan="2">飞机编号</th><th rowspan="2">飞机类型</th><th colspan="3" class="combat-unit-prelife-heading">大修周期</th></tr>
+            <tr><th class="combat-unit-prelife-column">大修周期（日历日）</th><th class="combat-unit-prelife-column">飞行小时</th><th class="combat-unit-prelife-column">起落次数</th></tr>
           </thead>
           <tbody>
             ${members.map((member, index) => `
@@ -3283,19 +3283,13 @@ function renderBasicMissionModeling(page) {
                 <tr><th>装备数量</th><td>${valueInput(`${missionPath}.equipmentQuantity`, "number")}</td></tr>
                 <tr><th>最小装备数量</th><td>${valueInput(`${missionPath}.minRequiredSorties`, "number")}</td></tr>
                 <tr><th>任务成功点</th><td>${valueInput(`${missionPath}.successPoint`, "number", { min: "0", max: "1", step: "0.01" })}</td></tr>
-                <tr><th>返回时间比</th><td>${valueInput(`${missionPath}.returnRatio`, "number")}</td></tr>
                 <tr><th>任务优先级</th><td>${valueInput(`${missionPath}.priority`, "number")}</td></tr>
                 <tr><th>任务时长（分钟）</th><td>${valueInput(`${missionPath}.taskDurationMinutes`, "number")}</td></tr>
-                <tr><th>取消时间（min）</th><td>${valueInput(`${missionPath}.cancelMinutes`, "number")}</td></tr>
-                <tr><th>使用保障活动</th><td>${supportActivityPlanSelect(`${missionPath}.supportActivityName`, selectedMission.task?.equipmentType)}</td></tr>
-                <tr><th>任务区域描述</th><td>${valueInput(`${missionPath}.taskArea`)}</td></tr>
               </tbody>
             </table>
           </div>
-        </div>
-        <div class="detail-card network-card">
           <div class="tree-toolbar">
-            <h4>任务阶段</h4>
+            <h5>任务阶段</h5>
             <div class="toolbar-row" style="margin-bottom:0;">
               <button type="button" class="btn-primary" data-basic-mission-phase-add>新增</button>
               <button type="button" class="btn-danger" data-basic-mission-phase-batch-delete ${selectedBasicMissionPhaseIndexes.size ? "" : "disabled"}>删除</button>
@@ -3315,6 +3309,16 @@ function renderBasicMissionModeling(page) {
                     <td><button type="button" class="btn-danger" data-basic-mission-phase-delete="${index}">删除</button></td>
                   </tr>
                 `).join("")}
+              </tbody>
+            </table>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <tbody>
+                <tr><th>提前通知时间（min）</th><td>${valueInput(`${missionPath}.advanceNoticeMinutes`, "number", { min: "0", step: "1" })}</td></tr>
+                <tr><th>取消时间（min）</th><td>${valueInput(`${missionPath}.cancelMinutes`, "number")}</td></tr>
+                <tr><th>使用保障活动</th><td>${supportActivityPlanSelect(`${missionPath}.supportActivityName`, selectedMission.task?.equipmentType)}</td></tr>
+                <tr><th>任务区域描述</th><td>${valueInput(`${missionPath}.taskArea`)}</td></tr>
               </tbody>
             </table>
           </div>
@@ -3488,22 +3492,21 @@ function renderPeriodicTaskModeling(page) {
       <div class="tree-container">
         <div class="tree-toolbar">
           <h4>周期性任务列表</h4>
-          <button type="button" class="btn-primary" data-periodic-add>新增</button>
+          <div class="toolbar-row" style="margin-bottom:0;">
+            <button type="button" class="btn-primary" data-periodic-add>新增</button>
+            <button type="button" class="btn-danger" data-periodic-delete-selected ${selectedTask ? "" : "disabled"}>删除</button>
+          </div>
         </div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>序号</th><th>周期性任务名称</th><th>选择/删除</th></tr></thead>
+            <thead><tr><th>序号</th><th>周期性任务名称</th></tr></thead>
             <tbody>
               ${periodicTasks.map((task, index) => `
                 <tr class="clickable-table-row ${String(task.id) === String(selectedTask?.id) ? "selected-table-row" : ""}" data-periodic-select="${htmlEscape(task.id)}" aria-selected="${String(task.id) === String(selectedTask?.id) ? "true" : "false"}">
                   <td>${index + 1}</td>
                   <td>${htmlEscape(task.name)}</td>
-                  <td class="table-actions">
-                    <button type="button" data-periodic-select="${htmlEscape(task.id)}">选择</button>
-                    <button type="button" class="btn-danger" data-periodic-delete="${htmlEscape(task.id)}">删除</button>
-                  </td>
                 </tr>
-              `).join("") || `<tr><td colspan="3" class="muted">暂无周期性任务数据</td></tr>`}
+              `).join("") || `<tr><td colspan="2" class="muted">暂无周期性任务数据</td></tr>`}
             </tbody>
           </table>
         </div>
@@ -3520,18 +3523,20 @@ function renderPeriodicTaskModeling(page) {
           ${selectedDraft ? `
             ${compositeTasks.length === 0 ? `<div class="alert warn">请先在复合任务建模中维护复合任务。</div>` : ""}
             <div class="form-table-grid">
+              <label>上级任务名称 *<input data-periodic-field="parentTaskName" value="${htmlEscape(selectedDraft.parentTaskName)}" placeholder="例如：舰载机昼夜任务"></label>
               <label>周期性任务名称 *<input data-periodic-field="name" value="${htmlEscape(selectedDraft.name)}" placeholder="例如：一周飞行训练计划A"></label>
               <label>任务周期天数 *<input data-periodic-field="cycleDays" type="number" min="1" max="30" step="1" value="${htmlEscape(selectedDraft.cycleDays)}"></label>
               <label>重复轮次 *<input data-periodic-field="repeatWeeks" type="number" min="1" step="1" value="${htmlEscape(selectedDraft.repeatWeeks)}"></label>
             </div>
             <div class="table-wrap" style="margin-top:12px;">
               <table>
-                <thead><tr><th style="width:120px;">任务周期</th><th>复合任务名称</th></tr></thead>
+                <thead><tr><th style="width:96px;">周次</th><th style="width:96px;">周内日</th><th>复合任务名称</th></tr></thead>
                 <tbody>
                   ${selectedDraft.compositeTasks.map((row, index) => `
                     <tr>
-                      <td>${htmlEscape(periodicDayLabel(row.week))}</td>
-                      <td>${periodicValueSelect(`dayComposite:${index}`, row.compositeTaskId, compositeOptions)}</td>
+                      <td>${htmlEscape(`第${row.weekIndex}周`)}</td>
+                      <td>${htmlEscape(periodicWeekdayLabel(row.weekday))}</td>
+                      <td>${periodicValueSelect(`weekComposite:${index}`, row.compositeTaskId, compositeOptions)}</td>
                     </tr>
                   `).join("")}
                 </tbody>
@@ -3566,6 +3571,7 @@ function createPeriodicTaskDraft(source = {}) {
   const order = periodicTaskList().length + 1;
   return normalizePeriodicTask({
     id: source.id || `periodic-${Date.now()}`,
+    parentTaskName: source.parentTaskName || source.parentTask || "默认任务",
     name: source.name || `周期性任务${order}`,
     cycleDays: source.cycleDays || source.taskPeriodDays || 7,
     repeatWeeks: source.repeatWeeks || source.repeatRounds || 1
@@ -3588,27 +3594,29 @@ function clampPeriodicCycleDays(value) {
   return Math.min(30, Math.max(1, Math.floor(Number(value || 1))));
 }
 
-function parsePeriodicCompositeTasks(source, cycleDays, weekdayAssignments, validCompositeIds) {
+function parsePeriodicCompositeTasks(source, repeatWeeks, weekdayAssignments, validCompositeIds) {
   const rawRows = Array.isArray(source.compositeTasks)
     ? source.compositeTasks
     : typeof source.compositeTasks === "string"
       ? safeJsonParse(source.compositeTasks, [])
       : [];
-  const byWeek = new Map();
+  const byWeekday = new Map();
   rawRows.forEach((row, index) => {
     if (!row || typeof row !== "object") return;
-    const week = String(row.week || index + 1);
+    const weekIndex = Math.max(1, Math.floor(Number(row.weekIndex || row.week || Math.floor(index / 7) + 1)));
+    const weekday = String(row.weekday || PERIODIC_WEEKDAY_FIELDS[index % 7]?.key || "mondayCompositeTaskId");
     const compositeTaskId = String(row.compositeTaskId || row.compositeTask || row.taskId || "");
-    byWeek.set(week, validCompositeIds.has(compositeTaskId) ? compositeTaskId : "");
+    byWeekday.set(`${weekIndex}:${weekday}`, validCompositeIds.has(compositeTaskId) ? compositeTaskId : "");
   });
-  return PERIODIC_DAY_FIELDS.slice(0, cycleDays).map((field, index) => {
-    const legacyField = PERIODIC_WEEKDAY_FIELDS[index];
-    const legacyCompositeId = legacyField ? String(weekdayAssignments[legacyField.key] || "") : "";
+  return Array.from({ length: repeatWeeks }).flatMap((_, weekIndex) => PERIODIC_WEEKDAY_FIELDS.map((field) => {
+    const key = `${weekIndex + 1}:${field.key}`;
+    const legacyCompositeId = String(weekdayAssignments[field.key] || "");
     return {
-      week: field.value,
-      compositeTaskId: byWeek.has(field.value) ? byWeek.get(field.value) : legacyCompositeId
+      weekIndex: weekIndex + 1,
+      weekday: field.key,
+      compositeTaskId: byWeekday.has(key) ? byWeekday.get(key) : legacyCompositeId
     };
-  });
+  }));
 }
 
 function safeJsonParse(value, fallback) {
@@ -3619,8 +3627,8 @@ function safeJsonParse(value, fallback) {
   }
 }
 
-function periodicDayLabel(value) {
-  return PERIODIC_DAY_FIELDS.find((field) => field.value === String(value))?.label || `第${value}天`;
+function periodicWeekdayLabel(value) {
+  return PERIODIC_WEEKDAY_FIELDS.find((field) => field.key === String(value) || field.legacyKey === String(value))?.label || String(value || "");
 }
 
 function normalizePeriodicTask(source = {}) {
@@ -3634,7 +3642,7 @@ function normalizePeriodicTask(source = {}) {
   });
   const cycleDays = normalizePeriodicTaskCycleDays(source);
   const repeatWeeks = Math.max(1, Math.floor(Number(source.repeatWeeks ?? source.repeatRounds ?? source.rounds ?? source.repeatCount ?? source.dailyRepeatCount ?? 1)));
-  const compositeTasks = parsePeriodicCompositeTasks(source, cycleDays, weekdayAssignments, validCompositeIds);
+  const compositeTasks = parsePeriodicCompositeTasks(source, repeatWeeks, weekdayAssignments, validCompositeIds);
   const legacyLinkedCompositeIds = PERIODIC_WEEKDAY_FIELDS
     .map((field) => weekdayAssignments[field.key])
     .filter(Boolean);
@@ -3644,6 +3652,9 @@ function normalizePeriodicTask(source = {}) {
   return {
     ...source,
     id: String(source.id || `periodic-${Date.now()}`),
+    parentTaskName: String(source.parentTaskName || source.parentTask || source.taskGroupName || "默认任务"),
+    parentTask: String(source.parentTask || source.parentTaskName || source.taskGroupName || "默认任务"),
+    taskGroupName: String(source.taskGroupName || source.parentTaskName || source.parentTask || "默认任务"),
     name: String(source.name || source.periodicTaskName || source.experimentName || "未命名周期性任务"),
     taskName: String(source.taskName || source.name || source.periodicTaskName || source.experimentName || "未命名周期性任务"),
     periodicTaskName: String(source.periodicTaskName || source.name || source.experimentName || "未命名周期性任务"),
@@ -3676,6 +3687,10 @@ function updateSelectedPeriodicTask(field, value, options = {}) {
     draft.taskName = draft.name;
     draft.periodicTaskName = draft.name;
     draft.experimentName = draft.name;
+  } else if (field === "parentTaskName") {
+    draft.parentTaskName = String(value || "").trim() || "默认任务";
+    draft.parentTask = draft.parentTaskName;
+    draft.taskGroupName = draft.parentTaskName;
   } else if (field === "cycleDays") {
     draft.cycleDays = clampPeriodicCycleDays(value);
     draft.taskPeriodDays = draft.cycleDays;
@@ -3688,7 +3703,7 @@ function updateSelectedPeriodicTask(field, value, options = {}) {
     draft.repeatRounds = draft.repeatWeeks;
     draft.repeatCount = draft.repeatWeeks;
     draft.dailyRepeatCount = draft.repeatWeeks;
-  } else if (field.startsWith("dayComposite:")) {
+  } else if (field.startsWith("dayComposite:") || field.startsWith("weekComposite:")) {
     const index = Number(field.split(":")[1]);
     if (Number.isInteger(index) && draft.compositeTasks[index]) {
       draft.compositeTasks[index] = { ...draft.compositeTasks[index], compositeTaskId: String(value || "") };
@@ -3730,7 +3745,9 @@ function buildCompositeTimelineRows(composite) {
         totalEndMinutes
       };
     });
-  });
+  })
+    .sort((left, right) => left.totalStartMinutes - right.totalStartMinutes)
+    .map((row, index) => ({ ...row, sequence: index + 1 }));
 }
 
 function renderCompositeTimelineChart(rows) {
@@ -4200,10 +4217,8 @@ function renderEquipmentSystemTable(selectedState) {
             <th>数量n</th>
             <th>组件属性</th>
             <th>k值（n中取k）</th>
-            <th>MTBF</th>
             <th>MTBF-分布类型</th>
             <th>MTBF参数</th>
-            <th>MTTR（min）</th>
             <th>MTTR-分布类型</th>
             <th>MTTR参数</th>
           </tr>
@@ -4218,8 +4233,8 @@ function renderEquipmentSystemTable(selectedState) {
 
 function renderEquipmentSystemTableRow(component, index, selectedState) {
   const selected = selectedState.kind === "component" && String(selectedState.component?.id || "") === String(component.id || "");
-  const mtbfDistributionType = equipmentDistributionType(component.failureDistribution?.distributionType);
-  const mttrDistributionType = equipmentDistributionType(component.repairDistribution?.distributionType);
+  const mtbfDistributionType = equipmentDistributionType(component.failureDistribution?.distributionType, "mtbf");
+  const mttrDistributionType = equipmentDistributionType(component.repairDistribution?.distributionType, "mttr");
   return `
     <tr class="${selected ? "selected-table-row" : ""}">
       <td>${equipmentTableInput("组件名称", `components.${index}.name`)}</td>
@@ -4227,10 +4242,8 @@ function renderEquipmentSystemTableRow(component, index, selectedState) {
       <td>${equipmentTableInput("数量n", `components.${index}.quantity`, "number", { min: "1", step: "1" })}</td>
       <td>${equipmentComponentAttributeSelect(index)}</td>
       <td>${equipmentKOutOfNInput(index)}</td>
-      <td>${equipmentTableInput("MTBF", `components.${index}.mtbfHours`, "number", { min: "0", step: "0.1" })}</td>
       <td>${equipmentDistributionSelect(`components.${index}.failureDistribution.distributionType`, mtbfDistributionType, "MTBF-分布类型")}</td>
       <td>${renderEquipmentDistributionParameters(index, "mtbf", mtbfDistributionType)}</td>
-      <td>${equipmentTableInput("MTTR（min）", `components.${index}.meanRepairTimeMinutes`, "number", { min: "0", step: "0.1" })}</td>
       <td>${equipmentDistributionSelect(`components.${index}.repairDistribution.distributionType`, mttrDistributionType, "MTTR-分布类型")}</td>
       <td>${renderEquipmentDistributionParameters(index, "mttr", mttrDistributionType)}</td>
     </tr>
@@ -4281,14 +4294,16 @@ function equipmentDistributionOptions() {
   ];
 }
 
-function equipmentDistributionType(value) {
+function equipmentDistributionType(value, metric = "mtbf") {
   const normalized = String(value || "");
-  return equipmentDistributionOptions().some((option) => option.value === normalized) ? normalized : "固定值";
+  if (equipmentDistributionOptions().some((option) => option.value === normalized)) return normalized;
+  return metric === "mtbf" ? "指数分布" : "固定值";
 }
 
 function renderEquipmentDistributionParameters(index, metric, distributionType) {
   const basePath = metric === "mtbf" ? `components.${index}.failureDistribution` : `components.${index}.repairDistribution`;
   const fixedLabel = metric === "mtbf" ? "MTBF" : "MTTR（min）";
+  const fixedPath = metric === "mtbf" ? `components.${index}.mtbfHours` : `components.${index}.meanRepairTimeMinutes`;
   const fieldsByDistribution = {
     指数分布: [{ key: "rate", label: "速率参数", step: "0.0001" }],
     正态分布: [
@@ -4301,7 +4316,15 @@ function renderEquipmentDistributionParameters(index, metric, distributionType) 
     ]
   };
   const fields = fieldsByDistribution[distributionType] || [];
-  if (!fields.length) return `<span class="equipment-fixed-param">固定值使用 ${fixedLabel}</span>`;
+  if (!fields.length) {
+    return `
+      <div class="equipment-param-fields">
+        <label>${fixedLabel}
+          <input data-path="${fixedPath}" type="number" min="0" step="0.1" value="${htmlEscape(getPath(scenario, fixedPath))}" aria-label="${htmlEscape(fixedLabel)}">
+        </label>
+      </div>
+    `;
+  }
   return `
     <div class="equipment-param-fields">
       ${fields.map((fieldDef) => `

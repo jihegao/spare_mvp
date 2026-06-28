@@ -935,6 +935,10 @@ test("support activity pages align to page suggestion activity fields", async ()
 
 test("equipment system modeling renders one tree plus flattened editable table", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const equipmentSource = appSource.slice(
+    appSource.indexOf("function renderEquipmentModeling"),
+    appSource.indexOf("function renderReliabilityBlockDiagram")
+  );
   assert.match(appSource, /function renderEquipmentModeling\(page\)/);
   assert.match(appSource, /装备组成树/);
   assert.match(appSource, /function wholeMachineModels\(\)/);
@@ -947,10 +951,11 @@ test("equipment system modeling renders one tree plus flattened editable table",
   assert.match(appSource, /<th>数量n<\/th>/);
   assert.match(appSource, /组件属性/);
   assert.match(appSource, /k值（n中取k）/);
-  assert.match(appSource, /MTBF/);
   assert.match(appSource, /MTBF-分布类型/);
-  assert.match(appSource, /MTTR（min）/);
   assert.match(appSource, /MTTR-分布类型/);
+  assert.match(equipmentSource, /<th>MTBF-分布类型<\/th>\s*<th>MTBF参数<\/th>\s*<th>MTTR-分布类型<\/th>\s*<th>MTTR参数<\/th>/);
+  assert.doesNotMatch(equipmentSource, /<th>MTBF<\/th>/);
+  assert.doesNotMatch(equipmentSource, /<th>MTTR（min）<\/th>/);
   assert.match(appSource, /equipmentTableInput\("数量n", `components\.\$\{index\}\.quantity`, "number"/);
   assert.match(appSource, /data-equipment-k-out-of-n-index="\$\{selectedIndex\}"/);
   assert.doesNotMatch(appSource, /isFailurePage/);
@@ -1071,6 +1076,8 @@ test("equipment system table exposes composition, MTBF and MTTR distribution fie
   assert.match(equipmentSource, /components\.\$\{index\}\.failureDistribution\.distributionType/);
   assert.match(equipmentSource, /components\.\$\{index\}\.meanRepairTimeMinutes/);
   assert.match(equipmentSource, /components\.\$\{index\}\.repairDistribution\.distributionType/);
+  assert.doesNotMatch(equipmentSource, /equipmentTableInput\("MTBF", `components\.\$\{index\}\.mtbfHours`/);
+  assert.doesNotMatch(equipmentSource, /equipmentTableInput\("MTTR（min）", `components\.\$\{index\}\.meanRepairTimeMinutes`/);
   assert.doesNotMatch(equipmentSource, /field\("连接类型", `components\.\$\{selectedIndex\}\.connectionType`\)/);
   assert.doesNotMatch(equipmentSource, /PRODUCT_TYPE_OPTIONS/);
   assert.doesNotMatch(equipmentSource, /isFailurePage \? renderEquipmentComponentTable\(\) : ""/);
@@ -1108,7 +1115,12 @@ test("equipment system table exposes MTBF and MTTR distribution parameter rules"
   assert.doesNotMatch(equipmentSource, /模数/);
   assert.doesNotMatch(equipmentSource, /形状参数/);
   assert.doesNotMatch(equipmentSource, /尺度参数/);
-  assert.match(equipmentSource, /固定值使用 \$\{fixedLabel\}/);
+  assert.match(equipmentSource, /equipmentDistributionType\(component\.failureDistribution\?\.distributionType, "mtbf"\)/);
+  assert.match(equipmentSource, /equipmentDistributionType\(component\.repairDistribution\?\.distributionType, "mttr"\)/);
+  assert.match(equipmentSource, /metric === "mtbf" \? "指数分布" : "固定值"/);
+  assert.match(equipmentSource, /fixedPath = metric === "mtbf" \? `components\.\$\{index\}\.mtbfHours` : `components\.\$\{index\}\.meanRepairTimeMinutes`/);
+  assert.match(equipmentSource, /aria-label="\$\{htmlEscape\(fixedLabel\)\}"/);
+  assert.doesNotMatch(equipmentSource, /固定值使用 \$\{fixedLabel\}/);
   assert.match(equipmentSource, /components\.\$\{index\}\.failureDistribution/);
   assert.match(equipmentSource, /components\.\$\{index\}\.repairDistribution/);
   assert.match(equipmentSource, /type="number" min="0" step="\$\{fieldDef\.step\}"/);
@@ -1183,8 +1195,8 @@ test("combat unit page follows ship front basic unit modeling structure", async 
   assert.match(combatUnitSource, /combat-unit-table/);
   assert.match(combatUnitSource, /type="checkbox" data-select-combat-unit-member/);
   assert.match(combatUnitSource, /<th rowspan="2" class="combat-unit-select-col"><\/th>/);
-  assert.match(combatUnitSource, /class="combat-unit-prelife-heading">前置寿命<\/th>/);
-  assert.match(combatUnitSource, /class="combat-unit-prelife-column">日历时间<\/th>/);
+  assert.match(combatUnitSource, /class="combat-unit-prelife-heading">大修周期<\/th>/);
+  assert.match(combatUnitSource, /class="combat-unit-prelife-column">大修周期（日历日）<\/th>/);
   assert.match(combatUnitSource, /class="combat-unit-prelife-column">飞行小时<\/th>/);
   assert.match(combatUnitSource, /class="combat-unit-prelife-column">起落次数<\/th>/);
   assert.match(appSource, /飞机编号/);
@@ -1216,6 +1228,10 @@ test("combat unit page follows ship front basic unit modeling structure", async 
 test("basic mission page follows ship front basic task modeling structure", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const stylesSource = await readFile(new URL("../front/styles.css", import.meta.url), "utf8");
+  const basicMissionSource = appSource.slice(
+    appSource.indexOf("function renderBasicMissionModeling"),
+    appSource.indexOf("function missionPhaseRatioTotal")
+  );
   assert.match(appSource, /if \(page\.name === "基本任务建模"\) return renderBasicMissionModeling\(page\)/);
   assert.match(appSource, /function renderBasicMissionModeling\(page\)/);
   assert.match(appSource, /基本任务结构树/);
@@ -1237,7 +1253,9 @@ test("basic mission page follows ship front basic task modeling structure", asyn
   assert.match(appSource, /任务成功点/);
   assert.match(appSource, /min: "0", max: "1", step: "0\.01"/);
   assert.doesNotMatch(appSource, /出发时间\(h\)/);
-  assert.match(appSource, /返回时间比/);
+  assert.doesNotMatch(basicMissionSource, /返回时间比/);
+  assert.match(appSource, /提前通知时间/);
+  assert.match(appSource, /advanceNoticeMinutes/);
   assert.match(appSource, /任务优先级/);
   assert.match(appSource, /最小装备数量/);
   assert.match(appSource, /任务时长（分钟）/);
@@ -1249,6 +1267,58 @@ test("basic mission page follows ship front basic task modeling structure", asyn
   assert.match(appSource, /必须调整为 1 后才能作为正式编译输入/);
   assert.doesNotMatch(appSource, /<tr><th>更新时间<\/th>/);
   assert.doesNotMatch(appSource, /基本任务建模字段[\s\S]*任务类型/);
+});
+
+test("phase 1B mission modeling convergence contract is documented in source", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const combatUnitSource = appSource.slice(
+    appSource.indexOf("function renderCombatUnitModeling"),
+    appSource.indexOf("function renderBasicMissionModeling")
+  );
+  const basicMissionSource = appSource.slice(
+    appSource.indexOf("function renderBasicMissionModeling"),
+    appSource.indexOf("function missionPhaseRatioTotal")
+  );
+  const compositeSource = appSource.slice(
+    appSource.indexOf("function buildCompositeTimelineRows(composite)"),
+    appSource.indexOf("function renderCompositeTimelineChart")
+  );
+  const periodicSource = appSource.slice(
+    appSource.indexOf("function renderPeriodicTaskModeling"),
+    appSource.indexOf("function periodicTaskList")
+  );
+  const periodicModelSource = appSource.slice(
+    appSource.indexOf("function parsePeriodicCompositeTasks"),
+    appSource.indexOf("function periodicValueSelect")
+  );
+
+  assert.match(combatUnitSource, /大修周期/);
+  assert.doesNotMatch(combatUnitSource, /class="combat-unit-prelife-column">日历时间<\/th>/);
+
+  assert.match(basicMissionSource, /提前通知时间/);
+  assert.match(basicMissionSource, /advanceNoticeMinutes/);
+  assert.doesNotMatch(basicMissionSource, /返回时间比/);
+  assert.match(basicMissionSource, /<h5>任务阶段<\/h5>/);
+  assert.ok(
+    basicMissionSource.indexOf("任务时长（分钟）") < basicMissionSource.indexOf("<h5>任务阶段</h5>")
+      && basicMissionSource.indexOf("<h5>任务阶段</h5>") < basicMissionSource.indexOf("提前通知时间"),
+    "任务阶段子表单应紧跟在任务时长下方，位于提前通知时间之前"
+  );
+  assert.doesNotMatch(basicMissionSource, /<div class="detail-card network-card">\s*<div class="tree-toolbar">\s*<h4>任务阶段<\/h4>/);
+
+  assert.match(compositeSource, /\.sort\(\(left, right\) => left\.totalStartMinutes - right\.totalStartMinutes\)/);
+  assert.match(compositeSource, /\.map\(\(row, index\) => \(\{ \.\.\.row, sequence: index \+ 1 \}\)\)/);
+
+  assert.match(periodicSource, /上级任务名称/);
+  assert.match(periodicSource, /parentTaskName/);
+  assert.match(periodicSource, /data-periodic-delete-selected/);
+  assert.doesNotMatch(periodicSource, /<th>选择\/删除<\/th>/);
+  assert.doesNotMatch(periodicSource, /data-periodic-delete="\$\{htmlEscape\(task\.id\)\}"/);
+  assert.doesNotMatch(periodicSource, /data-periodic-select="\$\{htmlEscape\(task\.id\)\}">选择<\/button>/);
+  assert.match(periodicSource, /周次/);
+  assert.match(periodicSource, /周内日/);
+  assert.match(periodicModelSource, /weekIndex/);
+  assert.match(periodicModelSource, /weekday/);
 });
 
 test("basic mission tree should support selecting editable mission nodes", async () => {
@@ -1354,21 +1424,23 @@ test("mission task profile pages split composite and periodic task modeling", as
   );
   assert.match(periodicSource, /周期性任务列表/);
   assert.match(periodicSource, /周期性任务建模/);
+  assert.match(periodicSource, /data-periodic-delete-selected/);
   assert.match(periodicSource, /clickable-table-row \$\{String\(task\.id\) === String\(selectedTask\?\.id\) \? "selected-table-row" : ""\}/);
   assert.match(periodicSource, /aria-selected="\$\{String\(task\.id\) === String\(selectedTask\?\.id\) \? "true" : "false"\}"/);
+  assert.match(periodicSource, /上级任务名称/);
   assert.match(periodicSource, /任务周期天数/);
   assert.match(periodicSource, /max="30"/);
   assert.match(periodicSource, /重复轮次/);
-  assert.match(periodicSource, /任务周期/);
+  assert.match(periodicSource, /周次/);
+  assert.match(periodicSource, /周内日/);
   assert.match(periodicSource, /复合任务名称/);
-  assert.match(periodicSource, /periodicDayLabel/);
-  assert.match(appSource, /label: `第\$\{index \+ 1\}天`/);
+  assert.match(periodicSource, /periodicWeekdayLabel/);
   assert.match(appSource, /let selectedCompositeTaskId = ""/);
   assert.match(appSource, /function addCompositeTask\(\)/);
   assert.match(appSource, /function deleteSelectedCompositeTask\(\)/);
   assert.match(appSource, /function addCompositeTaskItem\(\)/);
   assert.match(appSource, /function deleteCompositeTaskItem\(index\)/);
-  assert.doesNotMatch(periodicSource, /星期/);
+  assert.doesNotMatch(periodicSource, /<th>选择\/删除<\/th>/);
   assert.doesNotMatch(periodicSource, /当前复合任务包含的基本任务/);
   assert.doesNotMatch(periodicSource, /典型组合任务时序表/);
 });
@@ -2482,7 +2554,7 @@ test("click-based modeling mutations mark project draft dirty before rendering",
     ["support activity job delete", 'const supportActivityJobDeleteButton = event.target.closest("[data-support-activity-job-delete]"'],
     ["support activity job batch delete", 'const supportActivityBatchDeleteButton = event.target.closest("[data-support-activity-job-batch-delete]"'],
     ["periodic task add", 'const periodicAddButton = event.target.closest("[data-periodic-add]"'],
-    ["periodic task delete", 'const periodicDeleteButton = event.target.closest("[data-periodic-delete]"']
+    ["periodic task delete", 'const periodicDeleteButton = event.target.closest("[data-periodic-delete-selected]"']
   ];
 
   for (const [label, marker] of requiredActions) {

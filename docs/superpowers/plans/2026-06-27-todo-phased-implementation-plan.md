@@ -73,7 +73,8 @@
 
 - [x] 装备系统建模：
   - MTBF / MTTR 分布类型仅保留 `固定值`、`指数分布`、`正态分布`、`均匀分布`。
-  - 按分布类型渲染精确的参数字段。
+  - MTBF / MTTR 先选择分布类型再显示关联参数输入；MTBF 默认 `指数分布`，MTTR 默认 `固定值`。
+  - 按分布类型渲染精确的参数字段，`固定值`、`指数分布`、`正态分布`、`均匀分布` 都有对应输入形态。
   - 删除示例 `舰载机` 节点。
   - 校验 SRU 的上级必须是 LRU。
   - 组件属性为空时显示为空白。
@@ -87,24 +88,29 @@
   - `n中取k` 以外层并联框和 N 个同名分支节点展示，逻辑表格只保留一行。
   - 门逻辑节点单独处理。
   - 绘图契约已固化在 `docs/reliability-block-diagram-contract.md`，并由 `tests/rbd-evaluator.test.mjs` 与 `tests/frontend-contract.test.mjs` 覆盖。
-- [ ] 基本任务建模：
+- [x] 基本任务建模：
   - 删除 `返回时间比`。
   - 将 `任务阶段` 移入 `基本任务信息编辑`。
   - 新增 `提前通知时间`。
-- [ ] 复合任务建模：
+- [x] 复合任务建模：
   - 时序表按出动时刻排序。
   - 排序后重新连续编号波次序号。
-- [ ] 周期性任务建模：
+- [x] 周期性任务建模：
   - 移除行级 `选择/删除`。
   - 在新增按钮旁增加统一删除动作。
   - 在周期性任务上方增加一层任务。
   - 支持每周周内配置不同复合任务。
-- [ ] 基本作战单元建模：
+- [x] 基本作战单元建模：
   - 将 `日历日时间` 重命名或解释为大修周期语义。
 
 **验证：**
-- [ ] 运行 `node --test tests/frontend-contract.test.mjs tests/frontend-app-runtime.test.mjs tests/equipment-tree-model.test.mjs tests/mission-exposure-compiler.test.mjs tests/modeling-import-contract.test.mjs`。
-- [ ] 运行 `npm test`。
+- [x] 运行 `node --test tests/frontend-contract.test.mjs tests/frontend-app-runtime.test.mjs tests/equipment-tree-model.test.mjs tests/mission-exposure-compiler.test.mjs tests/modeling-import-contract.test.mjs`。
+- [x] 运行 `npm test`。
+
+阶段 1B 验证记录：
+- [x] 运行 `node --test tests/frontend-contract.test.mjs`。
+- [x] 运行 `node --test tests/frontend-contract.test.mjs tests/frontend-app-runtime.test.mjs tests/equipment-tree-model.test.mjs tests/mission-exposure-compiler.test.mjs tests/modeling-import-contract.test.mjs`。
+- [x] 运行 `npm test`。
 
 阶段 1A 验证记录：
 - [x] 运行 `node --test tests/equipment-tree-model.test.mjs tests/rbd-evaluator.test.mjs tests/modeling-import-contract.test.mjs tests/frontend-contract.test.mjs`。
