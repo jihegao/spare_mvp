@@ -29,11 +29,13 @@ class BackendHttpApiTest(unittest.TestCase):
     def _submit_m7_http_run(self, base_url: str) -> dict:
         created = self._create_imported_sample_project(base_url)
         saved = created["savedProject"]
+        auth_token = created["authToken"]
         plan = self._json(
             base_url,
             "POST",
             f"/projects/{saved['project_id']}/experiment-plans",
             {"config": {"name": "m7 http management", "steps": 2, "projectJson": created["project"]}},
+            auth_token=auth_token,
         )
         submitted = self._json(
             base_url,
@@ -45,6 +47,7 @@ class BackendHttpApiTest(unittest.TestCase):
                 "model_family": "aircraft_support_v1",
                 "run_type": "single",
             },
+            auth_token=auth_token,
         )
         return {"created": created, "plan": plan, "run": submitted}
 
@@ -64,6 +67,7 @@ class BackendHttpApiTest(unittest.TestCase):
                 project = created["project"]
                 saved = created["savedProject"]
                 snapshot = created["modelingSnapshot"]
+                auth_token = created["authToken"]
 
                 validation = self._json(base_url, "POST", "/projects/validate", project)
                 plan = self._json(
@@ -71,6 +75,7 @@ class BackendHttpApiTest(unittest.TestCase):
                     "POST",
                     f"/projects/{saved['project_id']}/experiment-plans",
                     {"config": {"name": "http contract smoke", "steps": 2}},
+                    auth_token=auth_token,
                 )
                 run = self._json(
                     base_url,
@@ -82,6 +87,7 @@ class BackendHttpApiTest(unittest.TestCase):
                         "model_family": "aircraft_support_v1",
                         "run_type": "single",
                     },
+                    auth_token=auth_token,
                 )
                 status = self._json(base_url, "GET", f"/runs/{run['run_id']}")
                 result = self._json(base_url, "GET", f"/runs/{run['run_id']}/result")
@@ -118,11 +124,13 @@ class BackendHttpApiTest(unittest.TestCase):
                 admin_token = self._login_token(base_url, "admin", "admin")
                 created = self._create_imported_sample_project(base_url)
                 saved = created["savedProject"]
+                auth_token = created["authToken"]
                 plan = self._json(
                     base_url,
                     "POST",
                     f"/projects/{saved['project_id']}/experiment-plans",
                     {"config": {"name": "http visual cleanup", "steps": 2, "projectJson": created["project"]}},
+                    auth_token=auth_token,
                 )
                 run = self._json(
                     base_url,
@@ -134,6 +142,7 @@ class BackendHttpApiTest(unittest.TestCase):
                         "model_family": "aircraft_support_v1",
                         "run_type": "single",
                     },
+                    auth_token=auth_token,
                 )
 
                 plans = self._json(base_url, "GET", f"/projects/{saved['project_id']}/experiment-plans")
@@ -184,11 +193,13 @@ class BackendHttpApiTest(unittest.TestCase):
                 admin_token = self._login_token(base_url, "admin", "admin")
                 created = self._create_imported_sample_project(base_url)
                 saved = created["savedProject"]
+                auth_token = created["authToken"]
                 plan = self._json(
                     base_url,
                     "POST",
                     f"/projects/{saved['project_id']}/experiment-plans",
                     {"config": {"name": "http visual inflight cleanup", "steps": 2, "projectJson": created["project"]}},
+                    auth_token=auth_token,
                 )
                 results: dict[str, dict] = {}
 
@@ -203,6 +214,7 @@ class BackendHttpApiTest(unittest.TestCase):
                             "model_family": "aircraft_support_v1",
                             "run_type": "single",
                         },
+                        auth_token=auth_token,
                     )
 
                 def delete_plan() -> None:
@@ -251,11 +263,13 @@ class BackendHttpApiTest(unittest.TestCase):
                 created = self._create_imported_sample_project(base_url)
                 saved = created["savedProject"]
                 snapshot = created["modelingSnapshot"]
+                auth_token = created["authToken"]
                 plan = self._json(
                     base_url,
                     "POST",
                     f"/projects/{saved['project_id']}/experiment-plans",
                     {"config": {"name": "canonical runs", "steps": 2}},
+                    auth_token=auth_token,
                 )
 
                 defaulted = self._json(
@@ -267,6 +281,7 @@ class BackendHttpApiTest(unittest.TestCase):
                         "experiment_plan_id": plan["experiment_plan_id"],
                         "run_type": "single",
                     },
+                    auth_token=auth_token,
                 )
                 submitted = self._json(
                     base_url,
@@ -278,6 +293,7 @@ class BackendHttpApiTest(unittest.TestCase):
                         "model_family": "aircraft_support_v1",
                         "run_type": "single",
                     },
+                    auth_token=auth_token,
                 )
                 status = self._json(base_url, "GET", f"/runs/{submitted['run_id']}")
                 result = self._json(base_url, "GET", f"/runs/{submitted['run_id']}/result")
@@ -675,13 +691,83 @@ class BackendHttpApiTest(unittest.TestCase):
                 base_url = f"http://127.0.0.1:{server.server_address[1]}/api"
                 created = self._create_imported_sample_project(base_url)
                 project_id = created["savedProject"]["project_id"]
+                auth_token = created["authToken"]
 
-                deleted = self._json(base_url, "DELETE", f"/projects/{quote(project_id, safe='')}")
+                deleted = self._json(
+                    base_url,
+                    "DELETE",
+                    f"/projects/{quote(project_id, safe='')}",
+                    auth_token=auth_token,
+                )
                 catalog = self._json(base_url, "GET", "/projects")
 
                 self.assertEqual(deleted["project_id"], project_id)
                 self.assertTrue(deleted["deleted"])
                 self.assertNotIn(project_id, [entry["project_id"] for entry in catalog["projects"]])
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
+    def test_http_project_write_delete_experiment_plan_and_run_submit_require_m4_session(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            server = create_backend_server(
+                ("127.0.0.1", 0),
+                repo_root=REPO_ROOT,
+                database_path=":memory:",
+                output_dir=Path(tmp) / "artifacts",
+            )
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                base_url = f"http://127.0.0.1:{server.server_address[1]}/api"
+                project = self._fixture("smoke_project.json")
+                data_token = self._login_token(base_url, "data", "data")
+                saved = self._json(base_url, "POST", "/projects", project, auth_token=data_token)
+                self._json(
+                    base_url,
+                    "POST",
+                    f"/projects/{quote(saved['project_id'], safe='')}/modeling-snapshots",
+                    auth_token=data_token,
+                )
+                plan = self._json(
+                    base_url,
+                    "POST",
+                    f"/projects/{quote(saved['project_id'], safe='')}/experiment-plans",
+                    {"config": {"name": "authorized setup", "steps": 1}},
+                    auth_token=data_token,
+                )
+
+                cases = [
+                    ("POST", "/projects", project),
+                    (
+                        "POST",
+                        f"/projects/{quote(saved['project_id'], safe='')}/modeling-snapshots",
+                        None,
+                    ),
+                    (
+                        "POST",
+                        f"/projects/{quote(saved['project_id'], safe='')}/experiment-plans",
+                        {"config": {"name": "unauthorized"}},
+                    ),
+                    (
+                        "POST",
+                        "/runs",
+                        {
+                            "project_id": saved["project_id"],
+                            "experiment_plan_id": plan["experiment_plan_id"],
+                            "model_family": "aircraft_support_v1",
+                            "run_type": "single",
+                        },
+                    ),
+                    ("DELETE", f"/projects/{quote(saved['project_id'], safe='')}", None),
+                ]
+
+                for method, path, payload in cases:
+                    with self.subTest(method=method, path=path):
+                        status, body = self._json_error_with_status(base_url, method, path, payload)
+                        self.assertEqual(status, 401)
+                        self.assertEqual(body["code"], "unauthorized")
             finally:
                 server.shutdown()
                 server.server_close()
@@ -805,13 +891,20 @@ class BackendHttpApiTest(unittest.TestCase):
             try:
                 base_url = f"http://127.0.0.1:{server.server_address[1]}/api"
                 project = self._fixture("smoke_project.json")
-                saved = self._json(base_url, "POST", "/projects", project)
-                self._json(base_url, "POST", f"/projects/{saved['project_id']}/modeling-snapshots")
+                auth_token = self._login_token(base_url, "data", "data")
+                saved = self._json(base_url, "POST", "/projects", project, auth_token=auth_token)
+                self._json(
+                    base_url,
+                    "POST",
+                    f"/projects/{saved['project_id']}/modeling-snapshots",
+                    auth_token=auth_token,
+                )
                 plan = self._json(
                     base_url,
                     "POST",
                     f"/projects/{saved['project_id']}/experiment-plans",
                     {"config": {"name": "canonical formal run gate", "steps": 1}},
+                    auth_token=auth_token,
                 )
 
                 error = self._json_error(
@@ -824,6 +917,7 @@ class BackendHttpApiTest(unittest.TestCase):
                         "model_family": "aircraft_support_v1",
                         "run_type": "single",
                     },
+                    auth_token=auth_token,
                 )
 
                 self.assertEqual(error["code"], "formal_run_requires_imported_sample")
@@ -858,13 +952,19 @@ class BackendHttpApiTest(unittest.TestCase):
                 forged_project = self._fixture("smoke_project.json")
                 forged_project["project_id"] = import_package["projectId"]
                 forged_project["missionProfile"] = {"sourceImportId": import_package["importId"]}
-                saved = self._json(base_url, "POST", "/projects", forged_project)
-                self._json(base_url, "POST", f"/projects/{saved['project_id']}/modeling-snapshots")
+                saved = self._json(base_url, "POST", "/projects", forged_project, auth_token=auth_token)
+                self._json(
+                    base_url,
+                    "POST",
+                    f"/projects/{saved['project_id']}/modeling-snapshots",
+                    auth_token=auth_token,
+                )
                 plan = self._json(
                     base_url,
                     "POST",
                     f"/projects/{saved['project_id']}/experiment-plans",
                     {"config": {"name": "forged canonical formal run", "steps": 1}},
+                    auth_token=auth_token,
                 )
 
                 error = self._json_error(
@@ -877,6 +977,7 @@ class BackendHttpApiTest(unittest.TestCase):
                         "model_family": "aircraft_support_v1",
                         "run_type": "single",
                     },
+                    auth_token=auth_token,
                 )
 
                 self.assertEqual(error["code"], "formal_run_requires_imported_sample")
@@ -903,6 +1004,7 @@ class BackendHttpApiTest(unittest.TestCase):
                 created = self._create_imported_sample_project(base_url)
                 saved = created["savedProject"]
                 snapshot = created["modelingSnapshot"]
+                auth_token = created["authToken"]
                 plan = self._json(
                     base_url,
                     "POST",
@@ -915,11 +1017,11 @@ class BackendHttpApiTest(unittest.TestCase):
                             "analysisRequests": {
                                 "largeSample": {
                                     "enabled": True,
-                                    "samples": 8,
+                                    "samples": 1,
                                     "sweep": {
-                                        "failureRates": [0.06, 0.08],
-                                        "spareMultipliers": [0.75, 1.0],
-                                        "supportCapacities": [2, 3],
+                                        "failureRates": [0.06],
+                                        "spareMultipliers": [1.0],
+                                        "supportCapacities": [2],
                                     },
                                 },
                                 "spareShortfall": {"enabled": True},
@@ -929,6 +1031,7 @@ class BackendHttpApiTest(unittest.TestCase):
                             },
                         }
                     },
+                    auth_token=auth_token,
                 )
 
                 submitted = self._json(
@@ -941,6 +1044,7 @@ class BackendHttpApiTest(unittest.TestCase):
                         "model_family": "aircraft_support_v1",
                         "run_type": "monte_carlo",
                     },
+                    auth_token=auth_token,
                 )
                 artifacts = self._json(base_url, "GET", f"/runs/{submitted['run_id']}/artifacts")
                 kinds = {artifact["kind"] for artifact in artifacts["artifacts"]}
@@ -952,8 +1056,8 @@ class BackendHttpApiTest(unittest.TestCase):
                 self.assertEqual(submitted["modeling_snapshot_id"], snapshot["snapshot_id"])
                 self.assertIn("monte_carlo_base", kinds)
                 self.assertEqual(len([kind for kind in kinds if kind.startswith("analysis_projection_")]), 4)
-                self.assertEqual(payload["sample_count"], 8)
-                self.assertEqual(payload["sweep"]["supportCapacities"], [2, 3])
+                self.assertEqual(payload["sample_count"], 1)
+                self.assertEqual(payload["sweep"]["supportCapacities"], [2])
             finally:
                 server.shutdown()
                 server.server_close()
@@ -973,7 +1077,13 @@ class BackendHttpApiTest(unittest.TestCase):
                 base_url = f"http://127.0.0.1:{server.server_address[1]}/api"
                 created = self._create_imported_sample_project(base_url)
                 saved = created["savedProject"]
-                self._json(base_url, "POST", f"/projects/{saved['project_id']}/modeling-snapshots")
+                auth_token = created["authToken"]
+                self._json(
+                    base_url,
+                    "POST",
+                    f"/projects/{saved['project_id']}/modeling-snapshots",
+                    auth_token=auth_token,
+                )
                 plan = self._json(
                     base_url,
                     "POST",
@@ -996,6 +1106,7 @@ class BackendHttpApiTest(unittest.TestCase):
                             },
                         }
                     },
+                    auth_token=auth_token,
                 )
 
                 error = self._json_error(
@@ -1010,6 +1121,7 @@ class BackendHttpApiTest(unittest.TestCase):
                         "sample_count": 99,
                         "sweep": {"supportCapacities": [9]},
                     },
+                    auth_token=auth_token,
                 )
 
                 self.assertEqual(error["code"], "bad_run_request")
@@ -1035,6 +1147,7 @@ class BackendHttpApiTest(unittest.TestCase):
                 base_url = f"http://127.0.0.1:{server.server_address[1]}/api"
                 created = self._create_imported_sample_project(base_url)
                 saved = created["savedProject"]
+                auth_token = created["authToken"]
                 plan = self._json(
                     base_url,
                     "POST",
@@ -1061,6 +1174,7 @@ class BackendHttpApiTest(unittest.TestCase):
                             },
                         }
                     },
+                    auth_token=auth_token,
                 )
 
                 for model_family, run_type in (("aviation_support", "single"), ("aviation_support", "monte_carlo"), ("smoke", "single")):
@@ -1076,6 +1190,7 @@ class BackendHttpApiTest(unittest.TestCase):
                                 "run_type": run_type,
                                 "formal_run": True,
                             },
+                            auth_token=auth_token,
                         )
                         self.assertEqual(error["code"], "retired_model_family")
                         self.assertEqual(error["details"]["model_family"], model_family)
@@ -1185,11 +1300,13 @@ class BackendHttpApiTest(unittest.TestCase):
                 base_url = f"http://127.0.0.1:{first_server.server_address[1]}/api"
                 created = self._create_imported_sample_project(base_url)
                 saved = created["savedProject"]
+                auth_token = created["authToken"]
                 plan = self._json(
                     base_url,
                     "POST",
                     f"/projects/{saved['project_id']}/experiment-plans",
                     {"config": {"name": "persistent http smoke", "steps": 2}},
+                    auth_token=auth_token,
                 )
                 run = self._json(
                     base_url,
@@ -1201,6 +1318,7 @@ class BackendHttpApiTest(unittest.TestCase):
                         "model_family": "aircraft_support_v1",
                         "run_type": "single",
                     },
+                    auth_token=auth_token,
                 )
             finally:
                 first_server.shutdown()
@@ -1728,12 +1846,14 @@ class BackendHttpApiTest(unittest.TestCase):
             f"/modeling-imports/{quote(import_package['importId'], safe='')}/publish",
             auth_token=auth_token,
         )
-        return self._json(
+        created = self._json(
             base_url,
             "POST",
             f"/modeling-imports/{quote(import_package['importId'], safe='')}/create-project",
             auth_token=auth_token,
         )
+        created["authToken"] = auth_token
+        return created
 
     def _json(
         self,

@@ -319,6 +319,66 @@ class SimulationAdapterTest(unittest.TestCase):
         self.assertIn("missing_support_resource_reference", issue_codes)
         self.assertIn("missing_support_activity_predecessor", issue_codes)
 
+    def test_aircraft_support_v1_compile_gate_infers_duration_from_periodic_tasks_without_duration_hours(self) -> None:
+        project = self._load_fixture("m9_6_platform_case_export.json")["project"]
+        project["missionProfile"].pop("durationHours", None)
+        project["missionProfile"]["periodicTasks"] = [
+            {"id": "periodic-1", "name": "weekly", "repeatCycleValue": 2, "repeatCycleUnit": "week", "repeatCount": 2}
+        ]
+
+        result = self.adapter.compile_scenario_with_gate(project, model_family="aircraft_support_v1")
+
+        self.assertEqual(result["status"], "compiled")
+        self.assertEqual(result["scenario"]["simulation_inputs"]["time"]["duration_minutes"], 28 * 24 * 60)
+
+    def test_aircraft_support_v1_compile_gate_blocks_uninferrable_periodic_duration_without_duration_hours(self) -> None:
+        project = self._load_fixture("m9_6_platform_case_export.json")["project"]
+        project["missionProfile"].pop("durationHours", None)
+        project["missionProfile"]["periodicTasks"] = [
+            {"id": "periodic-1", "name": "bad periodic", "repeatCycleValue": "", "repeatCount": ""}
+        ]
+
+        result = self.adapter.compile_scenario_with_gate(project, model_family="aircraft_support_v1")
+
+        self.assertEqual(result["status"], "blocked")
+        self.assertIn("missing_mission_duration", {issue["code"] for issue in result["issues"]})
+
+    def test_aircraft_support_v1_compile_gate_blocks_daily_repeat_only_duration_without_duration_hours(self) -> None:
+        project = self._load_fixture("m9_6_platform_case_export.json")["project"]
+        project["missionProfile"].pop("durationHours", None)
+        project["missionProfile"]["periodicTasks"] = [
+            {"id": "periodic-1", "name": "daily repeat only", "dailyRepeatCount": 3}
+        ]
+
+        result = self.adapter.compile_scenario_with_gate(project, model_family="aircraft_support_v1")
+
+        self.assertEqual(result["status"], "blocked")
+        self.assertIn("missing_mission_duration", {issue["code"] for issue in result["issues"]})
+
+    def test_aircraft_support_v1_compile_gate_blocks_circular_support_activity_predecessors(self) -> None:
+        project = self._load_fixture("m9_6_platform_case_export.json")["project"]
+        jobs = project["supportActivities"][0]["jobs"]
+        jobs[0]["activityCode"] = "job-a"
+        jobs[0]["predecessors"] = ["job-b"]
+        jobs[1]["activityCode"] = "job-b"
+        jobs[1]["predecessors"] = ["job-a"]
+
+        result = self.adapter.compile_scenario_with_gate(project, model_family="aircraft_support_v1")
+
+        self.assertEqual(result["status"], "blocked")
+        self.assertIn("circular_support_activity_predecessor", {issue["code"] for issue in result["issues"]})
+
+    def test_aircraft_support_v1_compile_gate_blocks_normalized_duplicate_aircraft_tail_numbers(self) -> None:
+        project = self._load_fixture("m9_6_platform_case_export.json")["project"]
+        members = project["combatUnit"]["members"]
+        members[0]["aircraftNo"] = " J15-101 "
+        members[1]["aircraftNo"] = "J15-101"
+
+        result = self.adapter.compile_scenario_with_gate(project, model_family="aircraft_support_v1")
+
+        self.assertEqual(result["status"], "blocked")
+        self.assertIn("duplicate_aircraft_tail_number", {issue["code"] for issue in result["issues"]})
+
     def test_run_aircraft_support_v1_single_run_writes_real_artifacts_and_behavior_scope(self) -> None:
         project = self._load_fixture("m9_6_platform_case_export.json")["project"]
         scenario = self.adapter.compile_scenario(project, model_family="aircraft_support_v1")

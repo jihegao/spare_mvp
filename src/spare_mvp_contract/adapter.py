@@ -1018,7 +1018,7 @@ class SimulationAdapter:
         monte_carlo = project.get("monteCarlo") if isinstance(project.get("monteCarlo"), dict) else {}
         if not self._is_positive_number(equipment.get("initialReady")):
             defaults.append("equipment.initialReady=equipment.quantity")
-        if not self._is_positive_number(mission_profile.get("durationHours")):
+        if not self._is_positive_number(mission_profile.get("durationHours")) and not self._mission_profile_has_periodic_duration(mission_profile):
             defaults.append("missionProfile.durationHours=24")
         if not self._is_positive_number(experiment.get("steps")):
             defaults.append("experiment.steps=durationMinutes/sampleEveryMinutes")
@@ -1124,18 +1124,38 @@ class SimulationAdapter:
                     "保障活动建模",
                 )
             )
-        if not self._is_positive_number(mission_profile.get("durationHours")):
+        if not self._is_positive_number(mission_profile.get("durationHours")) and not self._mission_profile_has_periodic_duration(mission_profile):
             issues.append(
                 self._compile_issue(
                     "missing_mission_duration",
                     "missionProfile.durationHours",
-                    "任务剖面 durationHours 必须大于 0。",
+                    "任务剖面 durationHours 必须大于 0，或周期任务必须提供可推导总时长的周期/重复配置。",
                     "任务剖面参数",
                 )
             )
 
         component_ids = {str(component.get("id")) for component in components if component.get("id") not in (None, "")}
         support_node_ids = {str(node.get("id")) for node in support_nodes if node.get("id") not in (None, "")}
+        tail_seen: dict[str, str] = {}
+        combat_unit = project.get("combatUnit") if isinstance(project.get("combatUnit"), dict) else {}
+        if not combat_unit:
+            combat_unit = mission_profile.get("combatUnit") if isinstance(mission_profile.get("combatUnit"), dict) else {}
+        for member_index, member in enumerate(self._dict_list(combat_unit.get("members"))):
+            raw_tail = member.get("aircraftNo") or member.get("tailNumber") or member.get("tail_number")
+            normalized_tail = _normalized_aircraft_tail_number(raw_tail)
+            if not normalized_tail:
+                continue
+            if normalized_tail in tail_seen:
+                issues.append(
+                    self._compile_issue(
+                        "duplicate_aircraft_tail_number",
+                        f"combatUnit.members[{member_index}].aircraftNo",
+                        f"飞机尾号 {raw_tail} 与 {tail_seen[normalized_tail]} 归一化后重复。",
+                        "基本作战单元建模",
+                    )
+                )
+            else:
+                tail_seen[normalized_tail] = str(raw_tail).strip()
         for index, component in enumerate(components):
             parent_id = component.get("parentId")
             if parent_id in (None, ""):
@@ -1189,9 +1209,13 @@ class SimulationAdapter:
                 )
             jobs = self._dict_list(activity.get("jobs"))
             job_codes = {str(job.get("activityCode")) for job in jobs if job.get("activityCode") not in (None, "")}
+            predecessor_graph: dict[str, list[str]] = {}
             for job_index, job in enumerate(jobs):
+                job_code = str(job.get("activityCode") or "")
                 predecessors = job.get("predecessors")
                 if predecessors is None:
+                    if job_code:
+                        predecessor_graph[job_code] = []
                     continue
                 if not isinstance(predecessors, list):
                     issues.append(
@@ -1203,6 +1227,8 @@ class SimulationAdapter:
                         )
                     )
                     continue
+                if job_code:
+                    predecessor_graph[job_code] = [str(predecessor) for predecessor in predecessors if str(predecessor) in job_codes]
                 for predecessor in predecessors:
                     if str(predecessor) not in job_codes:
                         issues.append(
@@ -1213,6 +1239,15 @@ class SimulationAdapter:
                                 "保障活动建模",
                             )
                         )
+            if _has_cycle(predecessor_graph):
+                issues.append(
+                    self._compile_issue(
+                        "circular_support_activity_predecessor",
+                        f"supportActivities[{activity_index}].jobs[].predecessors",
+                        "保障活动工作项目存在环形紧前关系。",
+                        "保障活动建模",
+                    )
+                )
 
         diagram = project.get("reliabilityBlockDiagram") if isinstance(project.get("reliabilityBlockDiagram"), dict) else {}
         rbd_nodes = {
@@ -3376,8 +3411,14 @@ class SimulationAdapter:
         period_days = self._periodic_task_period_days(periodic)
         repeat_count = self._periodic_task_repeat_count(periodic)
         if period_days is None:
-            return None
+            if not self._periodic_task_has_repeat_count(periodic):
+                return None
+            period_days = 1.0
         return max(1.0, period_days * repeat_count)
+
+    def _mission_profile_has_periodic_duration(self, mission_profile: dict[str, Any]) -> bool:
+        periodic_tasks = self._dict_list(mission_profile.get("periodicTasks"))
+        return any(self._periodic_task_total_days(periodic) is not None for periodic in periodic_tasks)
 
     def _periodic_task_period_days(self, periodic: dict[str, Any]) -> float | None:
         for key in ("taskPeriodDays", "periodDays", "cycleDays", "repeatCycleDays"):
@@ -3391,13 +3432,16 @@ class SimulationAdapter:
             if unit in {"hour", "hours", "小时"}:
                 return value / 24
             return value
-        return 1.0
+        return None
 
     def _periodic_task_repeat_count(self, periodic: dict[str, Any]) -> float:
         for key in ("repeatCount", "repeatRounds", "repeatWeeks"):
             if self._is_positive_number(periodic.get(key)):
                 return max(1.0, float(periodic[key]))
         return 1.0
+
+    def _periodic_task_has_repeat_count(self, periodic: dict[str, Any]) -> bool:
+        return any(self._is_positive_number(periodic.get(key)) for key in ("repeatCount", "repeatRounds", "repeatWeeks"))
 
     def _non_negative_number(self, value: Any, fallback: float) -> float:
         if self._is_number(value):
@@ -3515,3 +3559,29 @@ def _safe_identifier(value: str) -> str:
     safe = re.sub(r"[^A-Za-z0-9_.-]+", "-", value).strip(".-")
     safe = safe.replace("..", ".")
     return safe or "scenario"
+
+
+def _normalized_aircraft_tail_number(value: Any) -> str:
+    if value in (None, ""):
+        return ""
+    return re.sub(r"\s+", "", str(value)).casefold()
+
+
+def _has_cycle(graph: dict[str, list[str]]) -> bool:
+    visiting: set[str] = set()
+    visited: set[str] = set()
+
+    def visit(node: str) -> bool:
+        if node in visiting:
+            return True
+        if node in visited:
+            return False
+        visiting.add(node)
+        for predecessor in graph.get(node, []):
+            if visit(predecessor):
+                return True
+        visiting.remove(node)
+        visited.add(node)
+        return False
+
+    return any(visit(node) for node in graph)
