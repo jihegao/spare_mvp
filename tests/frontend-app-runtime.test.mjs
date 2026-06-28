@@ -183,7 +183,8 @@ test("support resource page imports a local personnel table", async () => {
 
     assert.equal(typeof changeHandler, "function");
     assert.match(appNode.innerHTML, /data-support-resource-import-file="保障人员"/);
-    assert.match(appNode.innerHTML, /所属型号/);
+    assert.doesNotMatch(appNode.innerHTML, /所属型号/);
+    assert.match(appNode.innerHTML, /专业/);
     assert.doesNotMatch(appNode.innerHTML, /适用机型/);
 
     const fileInput = {
@@ -191,7 +192,7 @@ test("support resource page imports a local personnel table", async () => {
       files: [{
         name: "personnel.csv",
         async text() {
-          return "组织节点,所属型号,专业,数量\n航母飞行甲板,J-15,机务,7";
+          return "组织节点,专业,数量\n航母飞行甲板,机务,7";
         }
       }],
       value: "personnel.csv",
@@ -205,8 +206,8 @@ test("support resource page imports a local personnel table", async () => {
     assert.equal(fileInput.value, "");
     assert.match(appNode.innerHTML, /已导入 personnel\.csv：保障人员 1 行/);
     assert.match(appNode.innerHTML, /data-support-resource-field="organizationNodeId" disabled/);
-    assert.match(appNode.innerHTML, /value="J-15"/);
-    assert.match(appNode.innerHTML, /value="机务"/);
+    assert.match(appNode.innerHTML, /data-support-resource-field="model"/);
+    assert.match(appNode.innerHTML, /<option value="机务" selected>机务<\/option>/);
     assert.match(appNode.innerHTML, /value="7"/);
   } finally {
     globalThis.document = previousDocument;

@@ -39,12 +39,23 @@ export function validateModelingImportPackage(importPackage) {
   for (const [collection, rules] of Object.entries(COLLECTION_RULES)) {
     const rows = Array.isArray(objects[collection]) ? objects[collection] : [];
     rows.forEach((row, index) => {
+      if (!row || typeof row !== "object" || Array.isArray(row)) {
+        issues.push(createIssue({
+          code: "invalid_object",
+          collection,
+          objectId: `${collection}[${index}]`,
+          fieldPath: `objects.${collection}[${index}]`,
+          message: "对象必须是 JSON object。"
+        }));
+        return;
+      }
       validateRequiredFields(collection, row, index, rules.requiredFields || [], issues);
       validateNumericFields(collection, row, index, rules.numericFields || [], issues);
       validateReferences(collection, row, index, rules.references || [], objectIds, issues);
     });
   }
 
+  validateEquipmentAssetHierarchy(objects.equipmentAssets, issues);
   validatePublishedReferenceProtection(importPackage, issues);
 
   return issues;
@@ -62,7 +73,7 @@ export function projectToModelingImportPackage(projectJson, basePackage = {}) {
     missionProfiles: [missionProfile],
     equipmentAssets: normalizeObjectRows(project.components),
     supportResources: normalizeObjectRows(project.supportNodes),
-    supportActivities: normalizeObjectRows(project.supportActivities),
+    supportActivities: normalizeSupportActivities(project.supportActivities, project),
     equipment: cloneJson(project.equipment || base.objects?.equipment || {}),
     projectInfo: cloneJson(project.projectInfo || base.objects?.projectInfo || {}),
     airports: normalizeObjectRows(project.airports),
@@ -146,6 +157,38 @@ function preservedObjectSurfaces(objects = {}) {
 function normalizeObjectRows(rows) {
   if (!Array.isArray(rows)) return [];
   return rows.filter((row) => row && typeof row === "object" && !Array.isArray(row)).map((row) => cloneJson(row));
+}
+
+function normalizeSupportActivities(rows, project = {}) {
+  if (!Array.isArray(rows)) return [];
+  const equipmentAssets = Array.isArray(project.components) ? project.components : [];
+  const supportResources = Array.isArray(project.supportNodes) ? project.supportNodes : [];
+  return rows
+    .filter((row) => row && typeof row === "object" && !Array.isArray(row))
+    .map((row) => {
+      const next = cloneJson(row);
+      next.name ||= next.activityName || next.planType || next.id;
+      next.equipmentId ||= defaultEquipmentIdForActivity(next, equipmentAssets);
+      next.resourceId ||= supportResources.find((resource) => resource?.id)?.id;
+      next.durationHours = positiveNumber(next.durationHours, durationHoursForActivity(next));
+      return next;
+    });
+}
+
+function defaultEquipmentIdForActivity(activity, equipmentAssets) {
+  const aircraftModel = String(activity.aircraftModel || "").trim();
+  const byAircraftModel = aircraftModel
+    ? equipmentAssets.find((asset) => asset?.id && String(asset.aircraftModel || "") === aircraftModel && asset.parentId)
+    : null;
+  return byAircraftModel?.id || equipmentAssets.find((asset) => asset?.id && asset.parentId)?.id || equipmentAssets.find((asset) => asset?.id)?.id || "";
+}
+
+function durationHoursForActivity(activity) {
+  const jobMinutes = Array.isArray(activity.jobs)
+    ? activity.jobs.reduce((sum, job) => sum + positiveNumber(job?.durationMinutes, 0), 0)
+    : 0;
+  if (jobMinutes > 0) return jobMinutes / 60;
+  return positiveNumber(activity.maxWorkTimeRefMinutes, 0) / 60;
 }
 
 function durationHoursForProject(project) {
@@ -318,6 +361,23 @@ function validateReferences(collection, row, index, references, objectIds, issue
       }));
     }
   }
+}
+
+function validateEquipmentAssetHierarchy(rows, issues) {
+  const assets = Array.isArray(rows) ? rows : [];
+  const byId = new Map(assets.filter((row) => row?.id).map((row) => [String(row.id), row]));
+  assets.forEach((row, index) => {
+    if (String(row?.productType || "").trim() !== "SRU") return;
+    const parent = byId.get(String(row.parentId || ""));
+    if (String(parent?.productType || "").trim() === "LRU") return;
+    issues.push(createIssue({
+      code: "invalid_sru_parent",
+      collection: "equipmentAssets",
+      objectId: row.id || `equipmentAssets[${index}]`,
+      fieldPath: `objects.equipmentAssets[${index}].parentId`,
+      message: "SRU 的上级必须是 LRU。"
+    }));
+  });
 }
 
 function validatePublishedReferenceProtection(importPackage, issues) {

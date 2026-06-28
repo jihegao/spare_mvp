@@ -55,6 +55,7 @@ def validate_modeling_import_package(import_package: dict[str, Any]) -> dict[str
             _validate_numeric_fields(collection, row, index, rules.get("numeric_fields", []), issues)
             _validate_references(collection, row, index, rules.get("references", []), object_ids, issues)
 
+    _validate_equipment_asset_hierarchy(objects.get("equipmentAssets"), issues)
     _validate_published_reference_protection(import_package, issues)
 
     return {
@@ -193,6 +194,20 @@ def _validate_references(
             continue
         if str(value) not in object_ids.get(reference["target"], set()):
             issues.append(_issue("missing_reference", collection, str(row.get("id") or f"{collection}[{index}]"), f"objects.{collection}[{index}].{reference['field']}", f"{reference['field']} 引用了不存在的 {reference['target']} 对象 {value}。"))
+
+
+def _validate_equipment_asset_hierarchy(rows: Any, issues: list[dict[str, Any]]) -> None:
+    assets = rows if isinstance(rows, list) else []
+    by_id = {str(row["id"]): row for row in assets if isinstance(row, dict) and row.get("id") not in (None, "")}
+    for index, row in enumerate(assets):
+        if not isinstance(row, dict):
+            continue
+        if str(row.get("productType") or "").strip() != "SRU":
+            continue
+        parent = by_id.get(str(row.get("parentId") or ""))
+        if str((parent or {}).get("productType") or "").strip() == "LRU":
+            continue
+        issues.append(_issue("invalid_sru_parent", "equipmentAssets", str(row.get("id") or f"equipmentAssets[{index}]"), f"objects.equipmentAssets[{index}].parentId", "SRU 的上级必须是 LRU。"))
 
 
 def _validate_published_reference_protection(import_package: dict[str, Any], issues: list[dict[str, Any]]) -> None:

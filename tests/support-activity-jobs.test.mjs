@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  allowedSupportActivityDurationDistributions,
   deleteSupportActivityJobAt,
   deleteSupportActivityJobsAtIndexes,
+  supportActivityJobFromBasicActivity,
   supportActivityJobs
 } from "../front/support-activity-jobs.mjs";
 
@@ -47,4 +49,39 @@ test("support activity batch deletion removes all selected jobs and preserves em
 
   assert.deepEqual(activity.jobs, []);
   assert.deepEqual(supportActivityJobs(activity), []);
+});
+
+test("support activity duration distributions are limited to the four shared equipment distributions", () => {
+  assert.deepEqual(allowedSupportActivityDurationDistributions(), [
+    "固定值",
+    "指数分布",
+    "正态分布",
+    "均匀分布"
+  ]);
+});
+
+test("support activity jobs can be populated from a basic activity library row", () => {
+  const basicActivity = {
+    activityCode: "BA-220",
+    workName: "航电通电检查",
+    applicableAircraft: "J-15",
+    durationProfile: { distributionType: "正态分布", mean: 25, stdDev: 5 },
+    durationMinutes: 25,
+    personnel: "航电,2",
+    equipment: "检测仪,1",
+    spare: "航电模块,1",
+    predecessors: ["BA-100"]
+  };
+
+  assert.deepEqual(supportActivityJobFromBasicActivity(basicActivity), {
+    activityCode: "BA-220",
+    workName: "航电通电检查",
+    applicableAircraft: "J-15",
+    durationProfile: { distributionType: "正态分布", mean: 25, stdDev: 5 },
+    durationMinutes: 25,
+    personnel: "航电,2",
+    equipment: "检测仪,1",
+    spare: "航电模块,1",
+    predecessors: ["BA-100"]
+  });
 });

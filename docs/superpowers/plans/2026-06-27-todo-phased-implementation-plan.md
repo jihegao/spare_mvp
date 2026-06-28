@@ -71,37 +71,52 @@
 - 测试：`tests/mission-exposure-compiler.test.mjs`
 - 测试：`tests/modeling-import-contract.test.mjs`
 
-- [ ] 装备系统建模：
+- [x] 装备系统建模：
   - MTBF / MTTR 分布类型仅保留 `固定值`、`指数分布`、`正态分布`、`均匀分布`。
-  - 按分布类型渲染精确的参数字段。
+  - MTBF / MTTR 先选择分布类型再显示关联参数输入；MTBF 默认 `指数分布`，MTTR 默认 `固定值`。
+  - 按分布类型渲染精确的参数字段，`固定值`、`指数分布`、`正态分布`、`均匀分布` 都有对应输入形态。
   - 删除示例 `舰载机` 节点。
   - 校验 SRU 的上级必须是 LRU。
   - 组件属性为空时显示为空白。
   - 点击飞机级节点时，右侧行按节点从高到低排序。
   - 点击系统级节点时，右侧显示该系统节点及其子孙节点。
-- [ ] 装备可靠性框图建模：
+- [x] 装备可靠性框图建模：
   - 该页面只保留在 `任务可靠度评估模块` 下。
   - 左侧展示装备树。
-  - 点击整机时，右侧展示下一级节点。
+  - 点击飞机列表根节点时，右侧不显示框图。
+  - 点击整机或组件时，右侧只展示直接下一级节点，不显示当前选中节点自身。
+  - `n中取k` 以外层并联框和 N 个同名分支节点展示，逻辑表格只保留一行。
   - 门逻辑节点单独处理。
-- [ ] 基本任务建模：
+  - 绘图契约已固化在 `docs/reliability-block-diagram-contract.md`，并由 `tests/rbd-evaluator.test.mjs` 与 `tests/frontend-contract.test.mjs` 覆盖。
+- [x] 基本任务建模：
   - 删除 `返回时间比`。
   - 将 `任务阶段` 移入 `基本任务信息编辑`。
   - 新增 `提前通知时间`。
-- [ ] 复合任务建模：
+- [x] 复合任务建模：
   - 时序表按出动时刻排序。
   - 排序后重新连续编号波次序号。
-- [ ] 周期性任务建模：
+- [x] 周期性任务建模：
   - 移除行级 `选择/删除`。
   - 在新增按钮旁增加统一删除动作。
   - 在周期性任务上方增加一层任务。
   - 支持每周周内配置不同复合任务。
-- [ ] 基本作战单元建模：
+- [x] 基本作战单元建模：
   - 将 `日历日时间` 重命名或解释为大修周期语义。
 
 **验证：**
-- [ ] 运行 `node --test tests/frontend-contract.test.mjs tests/frontend-app-runtime.test.mjs tests/equipment-tree-model.test.mjs tests/mission-exposure-compiler.test.mjs tests/modeling-import-contract.test.mjs`。
-- [ ] 运行 `npm test`。
+- [x] 运行 `node --test tests/frontend-contract.test.mjs tests/frontend-app-runtime.test.mjs tests/equipment-tree-model.test.mjs tests/mission-exposure-compiler.test.mjs tests/modeling-import-contract.test.mjs`。
+- [x] 运行 `npm test`。
+
+阶段 1B 验证记录：
+- [x] 运行 `node --test tests/frontend-contract.test.mjs`。
+- [x] 运行 `node --test tests/frontend-contract.test.mjs tests/frontend-app-runtime.test.mjs tests/equipment-tree-model.test.mjs tests/mission-exposure-compiler.test.mjs tests/modeling-import-contract.test.mjs`。
+- [x] 运行 `npm test`。
+
+阶段 1A 验证记录：
+- [x] 运行 `node --test tests/equipment-tree-model.test.mjs tests/rbd-evaluator.test.mjs tests/modeling-import-contract.test.mjs tests/frontend-contract.test.mjs`。
+- [x] 运行 `PYTHONDONTWRITEBYTECODE=1 .abm-mesa-test-env/bin/python -m unittest tests.test_backend_api_contract.BackendApiContractTest.test_modeling_import_api_reports_field_level_issues tests.test_backend_api_contract.BackendApiContractTest.test_modeling_import_api_rejects_sru_parent_that_is_not_lru tests.test_backend_api_contract.BackendApiContractTest.test_modeling_import_api_covers_contract_parity_issues tests.test_backend_api_contract.BackendApiContractTest.test_create_project_from_modeling_import_saves_project_and_snapshot -v`。
+- [x] 运行 `npm test`。
+- [x] 运行 `PYTHONDONTWRITEBYTECODE=1 .abm-mesa-test-env/bin/python -m unittest tests.test_backend_api_contract -v`。
 
 **退出标准：** 两个业务模块暴露一致的建模行为，每个修改页面都有运行时测试或契约测试覆盖。
 
@@ -123,25 +138,25 @@
 - 测试：`tests/support-activity-jobs.test.mjs`
 - 测试：`tests/modeling-import-contract.test.mjs`
 
-- [ ] 保障组织：
+- [x] 保障组织：
   - 移除 3 级硬限制。
   - 持久化递归树节点。
-- [ ] 备件：
+- [x] 备件：
   - 增加 `所属装备`。
   - 移除行级编辑按钮。
-- [ ] 保障人员：
+- [x] 保障人员：
   - 将 `专业` 改为下拉选择。
   - 字典可用时从后续 `建模表单管理` 的专业字典读取；本阶段仅允许使用本地固定字典作为兼容回退。
   - 移除 `所属型号`。
   - 移除行级编辑按钮。
-- [ ] 保障设备：
+- [x] 保障设备：
   - 移除行级编辑按钮。
-- [ ] 基本保障活动建模：
+- [x] 基本保障活动建模：
   - 将即改即存改为编辑面板。
   - 支持查询、新增、编辑、删除和按活动类型导入。
   - 维护活动编号、工作名称、适用飞机、作业时长分布、保障人员、保障设备、备件需求。
   - 作业时长分布与四类允许分布保持一致。
-- [ ] 使用保障、预防性维修、修复性维修和后勤保障活动：
+- [x] 使用保障、预防性维修、修复性维修和后勤保障活动：
   - 工作项目从基本保障活动中选择/搜索。
   - 根据选中的基本保障活动自动回填字段。
   - 增加 `编辑紧前作业`。
@@ -150,8 +165,14 @@
   - 按要求移除 `最大时间参考` / `最大修复时间` 字段。
 
 **验证：**
-- [ ] 运行 `node --test tests/support-activity-jobs.test.mjs tests/frontend-contract.test.mjs tests/frontend-app-runtime.test.mjs tests/modeling-import-contract.test.mjs`。
-- [ ] 运行 `npm test`。
+- [x] 运行 `node --test tests/support-activity-jobs.test.mjs tests/frontend-contract.test.mjs tests/frontend-app-runtime.test.mjs tests/modeling-import-contract.test.mjs`。
+- [x] 运行 `npm test`。
+
+阶段 2 验证记录：
+- [x] 运行 `node --test tests/support-activity-jobs.test.mjs tests/frontend-contract.test.mjs tests/frontend-app-runtime.test.mjs tests/modeling-import-contract.test.mjs`。
+- [x] 运行 `npm test`。
+
+阶段 2 已完成保障组织递归树、资源表字段收敛、基本保障活动库编辑面板、工作项目基础库引用/搜索/自动回填和紧前作业显式编辑。阶段 3 的仿真实验、可视化和结果承载信息架构仍未开始，不作为阶段 2 完成口径。
 
 **退出标准：** 保障活动页面使用共享基本活动库，紧前作业编辑显式可见；TODO 要求编辑面板的页面不再依赖隐藏的即改即存行为。
 

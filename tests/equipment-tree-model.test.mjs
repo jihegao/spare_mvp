@@ -6,6 +6,7 @@ import {
   buildEquipmentComponentTreeModel,
   resolveEquipmentSelectionModel
 } from "../front/equipment-tree-model.mjs";
+import * as equipmentTreeModel from "../front/equipment-tree-model.mjs";
 
 test("zero-aircraft imported sample add node creates a whole-machine aircraft entry", () => {
   const scenario = {
@@ -51,4 +52,55 @@ test("component tree model skips self-references and cyclic parent chains withou
   assert.equal(nodes[0].children.length, 1);
   assert.equal(nodes[0].children[0].component.id, "cycle-b");
   assert.deepEqual(nodes[0].children[0].children, []);
+});
+
+test("equipment authoring rows hide the root example node and follow tree order for aircraft selection", () => {
+  const scenario = {
+    equipment: { model: "J-15", wholeMachineModels: ["J-15"] },
+    components: [
+      { id: "aircraft-root", name: "舰载机", aircraftModel: "J-15", quantity: 1 },
+      { id: "engine", name: "发动机", aircraftModel: "J-15", parentId: "aircraft-root", productType: "LRU", quantity: 2 },
+      { id: "engine-control", name: "发动机控制模块", aircraftModel: "J-15", parentId: "engine", productType: "SRU", quantity: 1 },
+      { id: "radar", name: "雷达", aircraftModel: "J-15", parentId: "aircraft-root", productType: "LRU", quantity: 1 }
+    ]
+  };
+
+  const tree = buildEquipmentComponentTreeModel({
+    scenario,
+    aircraftModel: "J-15",
+    parentId: "aircraft-root"
+  });
+  assert.equal(typeof equipmentTreeModel.equipmentComponentsForSelectionModel, "function");
+  const rows = equipmentTreeModel.equipmentComponentsForSelectionModel({
+    scenario,
+    selection: { kind: "aircraft", aircraftModel: "J-15" }
+  });
+
+  assert.deepEqual(tree.map((node) => node.component.id), ["engine", "radar"]);
+  assert.deepEqual(rows.map((component) => component.id), ["engine", "engine-control", "radar"]);
+  assert.equal(rows.some((component) => component.name === "舰载机"), false);
+});
+
+test("equipment authoring rows show a selected system node and its descendants", () => {
+  const scenario = {
+    equipment: { model: "J-15", wholeMachineModels: ["J-15"] },
+    components: [
+      { id: "engine", name: "发动机", aircraftModel: "J-15", parentId: "aircraft-root", productType: "LRU", quantity: 2 },
+      { id: "engine-control", name: "发动机控制模块", aircraftModel: "J-15", parentId: "engine", productType: "SRU", quantity: 1 },
+      { id: "radar", name: "雷达", aircraftModel: "J-15", parentId: "aircraft-root", productType: "LRU", quantity: 1 }
+    ]
+  };
+
+  assert.equal(typeof equipmentTreeModel.equipmentComponentsForSelectionModel, "function");
+  const rows = equipmentTreeModel.equipmentComponentsForSelectionModel({
+    scenario,
+    selection: {
+      kind: "component",
+      aircraftModel: "J-15",
+      component: scenario.components[0],
+      componentIndex: 0
+    }
+  });
+
+  assert.deepEqual(rows.map((component) => component.id), ["engine", "engine-control"]);
 });
