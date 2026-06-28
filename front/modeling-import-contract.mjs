@@ -39,12 +39,23 @@ export function validateModelingImportPackage(importPackage) {
   for (const [collection, rules] of Object.entries(COLLECTION_RULES)) {
     const rows = Array.isArray(objects[collection]) ? objects[collection] : [];
     rows.forEach((row, index) => {
+      if (!row || typeof row !== "object" || Array.isArray(row)) {
+        issues.push(createIssue({
+          code: "invalid_object",
+          collection,
+          objectId: `${collection}[${index}]`,
+          fieldPath: `objects.${collection}[${index}]`,
+          message: "对象必须是 JSON object。"
+        }));
+        return;
+      }
       validateRequiredFields(collection, row, index, rules.requiredFields || [], issues);
       validateNumericFields(collection, row, index, rules.numericFields || [], issues);
       validateReferences(collection, row, index, rules.references || [], objectIds, issues);
     });
   }
 
+  validateEquipmentAssetHierarchy(objects.equipmentAssets, issues);
   validatePublishedReferenceProtection(importPackage, issues);
 
   return issues;
@@ -318,6 +329,23 @@ function validateReferences(collection, row, index, references, objectIds, issue
       }));
     }
   }
+}
+
+function validateEquipmentAssetHierarchy(rows, issues) {
+  const assets = Array.isArray(rows) ? rows : [];
+  const byId = new Map(assets.filter((row) => row?.id).map((row) => [String(row.id), row]));
+  assets.forEach((row, index) => {
+    if (String(row?.productType || "").trim() !== "SRU") return;
+    const parent = byId.get(String(row.parentId || ""));
+    if (String(parent?.productType || "").trim() === "LRU") return;
+    issues.push(createIssue({
+      code: "invalid_sru_parent",
+      collection: "equipmentAssets",
+      objectId: row.id || `equipmentAssets[${index}]`,
+      fieldPath: `objects.equipmentAssets[${index}].parentId`,
+      message: "SRU 的上级必须是 LRU。"
+    }));
+  });
 }
 
 function validatePublishedReferenceProtection(importPackage, issues) {

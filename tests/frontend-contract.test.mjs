@@ -12,6 +12,7 @@ import {
 import { renderRmsAllocationWorkbench } from "../front/rms-allocation-workbench.mjs";
 
 const PAGE_REVISION_REPORT_URL = new URL("../reports/2026-06-19-page-revision-suggestions/README.md", import.meta.url);
+const RBD_RENDERING_CONTRACT_URL = new URL("../docs/reliability-block-diagram-contract.md", import.meta.url);
 
 test("feature catalog exposes all table-2 four-level pages", () => {
   assert.equal(FEATURE_PAGES.length, 54);
@@ -25,6 +26,10 @@ test("feature catalog exposes all table-2 four-level pages", () => {
   assert.equal(FEATURE_PAGES.some((page) => page.name === "装备组成建模"), false);
   assert.equal(FEATURE_PAGES.some((page) => page.name === "装备故障建模"), false);
   assert.equal(FEATURE_PAGES.some((page) => page.module === "系统管理"), false);
+  assert.deepEqual(
+    FEATURE_PAGES.filter((page) => page.name === "装备可靠性框图建模").map((page) => page.module),
+    ["任务可靠度评估模块"]
+  );
 });
 
 test("each feature page has page template metadata for grouped entry pages", () => {
@@ -965,6 +970,7 @@ test("equipment tree selection highlights the selected component row", async () 
   assert.match(appSource, /const selectedState = resolveSelectedEquipmentNode\(\)/);
   assert.match(appSource, /renderEquipmentSystemTable\(selectedState\)/);
   assert.match(appSource, /selectedState\.kind === "component"/);
+  assert.match(appSource, /equipmentComponentsForSelectionModel\(\{ scenario, selection: selectedState \}\)/);
   assert.match(appSource, /selected \? "selected-table-row" : ""/);
   assert.match(appSource, /equipmentTableInput\("组件名称", `components\.\$\{index\}\.name`\)/);
 });
@@ -1091,12 +1097,17 @@ test("equipment system table exposes MTBF and MTTR distribution parameter rules"
     appSource.indexOf("function renderEquipmentModeling"),
     appSource.indexOf("function renderReliabilityBlockDiagram")
   );
-  for (const label of ["固定值", "指数分布", "正态分布", "均匀分布", "三角分布", "威布尔分布"]) {
+  for (const label of ["固定值", "指数分布", "正态分布", "均匀分布"]) {
     assert.match(equipmentSource, new RegExp(label));
   }
-  for (const label of ["速率参数", "均值", "方差", "最小值", "最大值", "模数", "形状参数\\(k\\)", "尺度参数\\(λ\\)"]) {
+  for (const label of ["速率参数", "均值", "方差", "最小值", "最大值"]) {
     assert.match(equipmentSource, new RegExp(label));
   }
+  assert.doesNotMatch(equipmentSource, /三角分布/);
+  assert.doesNotMatch(equipmentSource, /威布尔分布/);
+  assert.doesNotMatch(equipmentSource, /模数/);
+  assert.doesNotMatch(equipmentSource, /形状参数/);
+  assert.doesNotMatch(equipmentSource, /尺度参数/);
   assert.match(equipmentSource, /固定值使用 \$\{fixedLabel\}/);
   assert.match(equipmentSource, /components\.\$\{index\}\.failureDistribution/);
   assert.match(equipmentSource, /components\.\$\{index\}\.repairDistribution/);
@@ -1671,8 +1682,18 @@ test("reliability block diagram prototype exposes node edge and k-out-of-n field
     appSource.indexOf("function renderResourceTable")
   );
   assert.match(rbdSource, /装备可靠性框图/);
+  assert.match(rbdSource, /organization-layout equipment-layout rbd-layout/);
+  assert.match(rbdSource, /装备组成树/);
+  assert.match(rbdSource, /buildRbdEquipmentTreeNodes/);
+  assert.match(rbdSource, /reliabilityDiagramProjectForSelection/);
   assert.match(rbdSource, /buildReliabilityBlockDiagramLayout/);
   assert.match(rbdSource, /renderReliabilityBlockDiagramSvg/);
+  assert.match(rbdSource, /const tableNodes = Array\.isArray\(layout\.logicalNodes\)/);
+  assert.match(rbdSource, /rbdNodeMetaText/);
+  assert.doesNotMatch(rbdSource, /if \(!nodes\.length\)\s*{\s*return importedDataEmptyState/);
+  assert.match(rbdSource, /data-select-rbd-equipment-root/);
+  assert.match(rbdSource, /data-select-rbd-equipment-aircraft/);
+  assert.match(rbdSource, /data-select-rbd-equipment-component/);
   assert.match(rbdSource, /n中取k/);
   assert.match(rbdSource, /节点类型/);
   assert.match(rbdSource, /连接关系/);
@@ -1681,6 +1702,32 @@ test("reliability block diagram prototype exposes node edge and k-out-of-n field
   assert.match(rbdSource, /MTBF/);
   assert.match(rbdSource, /k-out-of-n/);
   assert.match(rbdSource, /串联\/并联\/备用\/k-out-of-n/);
+  assert.match(rbdSource, /门逻辑/);
+});
+
+test("reliability block diagram rendering contract documents selection and k-out-of-n rules", async () => {
+  const contract = await readFile(RBD_RENDERING_CONTRACT_URL, "utf8");
+
+  for (const requiredText of [
+    "装备可靠性框图绘图契约",
+    "飞机列表",
+    "不显示任何框图内容",
+    "选中整机或组件时，只显示当前选中节点的直接下一级节点",
+    "不显示当前选中节点自身",
+    "显式 reliabilityBlockDiagram 只有顶层节点时",
+    "回退/融合 components",
+    "n中取k",
+    "外层并联框",
+    "展开 N 个同名分支节点",
+    "逻辑表格只保留一行",
+    "J-15 > 发动机",
+    "发动机控制模块",
+    "J-35 > 航电系统",
+    "任务计算机模块",
+    "并联 / 2中取1"
+  ]) {
+    assert.ok(contract.includes(requiredText), requiredText);
+  }
 });
 
 test("simulation modeling omits result import allocation-management page", async () => {

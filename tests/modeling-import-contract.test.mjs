@@ -233,6 +233,28 @@ test("modeling import validation reports duplicate IDs, references, numeric fiel
   assert.ok(issues.every((issue) => issue.message));
 });
 
+test("modeling import validation rejects SRU rows whose parent is not an LRU", async () => {
+  const fixture = await readJson("tests/fixtures/modeling_import_project.json");
+  const invalidPackage = {
+    ...fixture,
+    objects: {
+      ...fixture.objects,
+      equipmentAssets: [
+        { id: "aircraft-root", name: "整机", quantity: 1, productType: "" },
+        null,
+        { id: "hydraulic-system", name: "液压系统", parentId: "aircraft-root", quantity: 1, productType: "SRU" },
+        { id: "hydraulic-valve", name: "液压阀", parentId: "hydraulic-system", quantity: 1, productType: "LRU" }
+      ]
+    }
+  };
+
+  const issues = validateModelingImportPackage(invalidPackage);
+  const sruParentIssue = issues.find((issue) => issue.code === "invalid_sru_parent");
+
+  assert.equal(sruParentIssue?.field_path, "objects.equipmentAssets[2].parentId");
+  assert.equal(sruParentIssue?.page, "装备系统建模");
+});
+
 test("modeling import validation reports missing required fields with field paths", async () => {
   const fixture = await readJson("tests/fixtures/modeling_import_project.json");
   const invalidPackage = {

@@ -29,8 +29,9 @@ import {
   supportActivityJobs
 } from "./support-activity-jobs.mjs";
 import {
-  buildReliabilityBlockDiagramLayout
-} from "./rbd-evaluator.mjs";
+  buildReliabilityBlockDiagramLayout,
+  reliabilityDiagramProjectForSelection
+} from "./rbd-evaluator.mjs?v=20260628-rbd-child-selection-view";
 import {
   calculateRmsAllocation,
   createDefaultRmsAllocationPlan,
@@ -54,6 +55,7 @@ import {
   addEquipmentNodeForSelectionModel,
   buildEquipmentComponentTreeModel,
   componentBelongsToAircraftModel,
+  equipmentComponentsForSelectionModel,
   resolveEquipmentSelectionModel,
   wholeMachineModelsForScenario
 } from "./equipment-tree-model.mjs";
@@ -952,6 +954,28 @@ function bindEvents() {
     if (equipmentComponentNode && !clickedTreeToggleIcon) {
       selectedEquipmentNodeKey = `component:${equipmentComponentNode.dataset.selectEquipmentComponent}`;
       selectedEquipmentComponentIndex = clampEquipmentComponentIndex(findEquipmentComponentIndexById(equipmentComponentNode.dataset.selectEquipmentComponent));
+      render();
+      return;
+    }
+
+    const rbdEquipmentRootNode = event.target.closest("[data-select-rbd-equipment-root]");
+    if (rbdEquipmentRootNode && !clickedTreeToggleIcon) {
+      selectedEquipmentNodeKey = "aircraft-list";
+      render();
+      return;
+    }
+
+    const rbdEquipmentAircraftNode = event.target.closest("[data-select-rbd-equipment-aircraft]");
+    if (rbdEquipmentAircraftNode && !clickedTreeToggleIcon) {
+      selectedEquipmentNodeKey = `aircraft:${rbdEquipmentAircraftNode.dataset.selectRbdEquipmentAircraft}`;
+      render();
+      return;
+    }
+
+    const rbdEquipmentComponentNode = event.target.closest("[data-select-rbd-equipment-component]");
+    if (rbdEquipmentComponentNode && !clickedTreeToggleIcon) {
+      selectedEquipmentNodeKey = `component:${rbdEquipmentComponentNode.dataset.selectRbdEquipmentComponent}`;
+      selectedEquipmentComponentIndex = clampEquipmentComponentIndex(findEquipmentComponentIndexById(rbdEquipmentComponentNode.dataset.selectRbdEquipmentComponent));
       render();
       return;
     }
@@ -3775,7 +3799,7 @@ function diffTimeMinutes(start, end) {
 
 function renderEquipmentModeling(page) {
   const selectedState = resolveSelectedEquipmentNode();
-  const components = scenario.components || [];
+  const components = equipmentComponentsForSelectionModel({ scenario, selection: selectedState });
   return `
     <div class="section-head section-context">
       <span>装备组成树 / 装备系统建模表</span>
@@ -4165,6 +4189,7 @@ function equipmentSelectionSummary(selectedState, componentCount) {
 }
 
 function renderEquipmentSystemTable(selectedState) {
+  const rows = equipmentComponentsForSelectionModel({ scenario, selection: selectedState });
   return `
     <div class="table-wrap equipment-system-table-wrap">
       <table class="equipment-system-table">
@@ -4184,7 +4209,7 @@ function renderEquipmentSystemTable(selectedState) {
           </tr>
         </thead>
         <tbody>
-          ${(scenario.components || []).map((component, index) => renderEquipmentSystemTableRow(component, index, selectedState)).join("")}
+          ${rows.map((component) => renderEquipmentSystemTableRow(component, (scenario.components || []).indexOf(component), selectedState)).join("")}
         </tbody>
       </table>
     </div>
@@ -4252,9 +4277,7 @@ function equipmentDistributionOptions() {
     { value: "固定值", label: "固定值" },
     { value: "指数分布", label: "指数分布" },
     { value: "正态分布", label: "正态分布" },
-    { value: "均匀分布", label: "均匀分布" },
-    { value: "三角分布", label: "三角分布" },
-    { value: "威布尔分布", label: "威布尔分布" }
+    { value: "均匀分布", label: "均匀分布" }
   ];
 }
 
@@ -4275,15 +4298,6 @@ function renderEquipmentDistributionParameters(index, metric, distributionType) 
     均匀分布: [
       { key: "min", label: "最小值", step: "0.1" },
       { key: "max", label: "最大值", step: "0.1" }
-    ],
-    三角分布: [
-      { key: "min", label: "最小值", step: "0.1" },
-      { key: "max", label: "最大值", step: "0.1" },
-      { key: "mode", label: "模数", step: "0.1" }
-    ],
-    威布尔分布: [
-      { key: "shapeK", label: "形状参数(k)", step: "0.01" },
-      { key: "scaleLambda", label: "尺度参数(λ)", step: "0.01" }
     ]
   };
   const fields = fieldsByDistribution[distributionType] || [];
@@ -4300,35 +4314,86 @@ function renderEquipmentDistributionParameters(index, metric, distributionType) 
 }
 
 function renderReliabilityBlockDiagram() {
-  const layout = buildReliabilityBlockDiagramLayout({
+  const selectedState = resolveSelectedEquipmentNode();
+  const rbdProject = reliabilityDiagramProjectForSelection({
     reliabilityBlockDiagram: scenario.reliabilityBlockDiagram,
     components: scenario.components,
     equipment: scenario.equipment
-  });
+  }, selectedState);
+  const layout = buildReliabilityBlockDiagramLayout(rbdProject);
   const nodes = layout.nodes;
-  const diagramEdges = Array.isArray(scenario.reliabilityBlockDiagram?.edges) ? scenario.reliabilityBlockDiagram.edges : [];
-  if (!nodes.length) {
-    return importedDataEmptyState("装备可靠性框图");
-  }
+  const tableNodes = Array.isArray(layout.logicalNodes) ? layout.logicalNodes : nodes;
+  const diagramEdges = Array.isArray(rbdProject.reliabilityBlockDiagram?.edges) ? rbdProject.reliabilityBlockDiagram.edges : [];
+  const detailContent = nodes.length ? `
+          <div class="section-head">
+            <h3>装备可靠性框图</h3>
+            <span>串联/并联/备用/k-out-of-n，门逻辑节点单独展示</span>
+          </div>
+          ${renderReliabilityBlockDiagramSvg(layout)}
+          <div class="table-wrap compact-table">
+            <table>
+              <thead><tr><th>节点</th><th>节点类型</th><th>连接关系</th><th>节点可靠度</th><th>失效率</th><th>MTBF</th><th>n中取k / k-out-of-n</th></tr></thead>
+              <tbody>${tableNodes.map((node) => `<tr><td>${htmlEscape(node.name)}</td><td>${htmlEscape(reliabilityNodeTypeLabel(node))}</td><td>${htmlEscape(node.connectionLabel)}</td><td>${htmlEscape(node.reliability || "-")}</td><td>${htmlEscape(node.failureRate || "-")}</td><td>${htmlEscape(node.mtbfHours || "-")}h</td><td>${htmlEscape(node.kOutOfNLabel || "-")}</td></tr>`).join("")}</tbody>
+            </table>
+          </div>
+          <div class="table-wrap compact-table">
+            <table>
+              <thead><tr><th>起点</th><th>终点</th><th>串联/并联/备用/k-out-of-n</th><th>权重</th></tr></thead>
+              <tbody>${diagramEdges.map((edge) => `<tr><td>${htmlEscape(edge.from)}</td><td>${htmlEscape(edge.to)}</td><td>${htmlEscape(edge.type)}</td><td>${htmlEscape(edge.weight ?? "-")}</td></tr>`).join("") || `<tr><td colspan="4" class="muted">已按装备组成关系生成框图主线</td></tr>`}</tbody>
+            </table>
+          </div>
+  ` : importedDataEmptyState("装备可靠性框图");
   return `
-    <div class="section-head">
-      <h3>装备可靠性框图</h3>
-      <span>串联/并联/备用/k-out-of-n，按 n中取k 绘制</span>
-    </div>
-    ${renderReliabilityBlockDiagramSvg(layout)}
-    <div class="table-wrap compact-table">
-      <table>
-        <thead><tr><th>节点</th><th>节点类型</th><th>连接关系</th><th>节点可靠度</th><th>失效率</th><th>MTBF</th><th>n中取k / k-out-of-n</th></tr></thead>
-        <tbody>${nodes.map((node) => `<tr><td>${htmlEscape(node.name)}</td><td>${htmlEscape(node.type)}</td><td>${htmlEscape(node.connectionLabel)}</td><td>${htmlEscape(node.reliability || "-")}</td><td>${htmlEscape(node.failureRate || "-")}</td><td>${htmlEscape(node.mtbfHours || "-")}h</td><td>${htmlEscape(node.kOutOfNLabel || "-")}</td></tr>`).join("")}</tbody>
-      </table>
-    </div>
-    <div class="table-wrap compact-table">
-      <table>
-        <thead><tr><th>起点</th><th>终点</th><th>串联/并联/备用/k-out-of-n</th><th>权重</th></tr></thead>
-        <tbody>${diagramEdges.map((edge) => `<tr><td>${htmlEscape(edge.from)}</td><td>${htmlEscape(edge.to)}</td><td>${htmlEscape(edge.type)}</td><td>${htmlEscape(edge.weight ?? "-")}</td></tr>`).join("") || `<tr><td colspan="4" class="muted">已按装备组成关系生成框图主线</td></tr>`}</tbody>
-      </table>
+    <div class="organization-layout equipment-layout rbd-layout">
+      <aside class="tree-container">
+        <div class="tree-toolbar">
+          <h4>装备组成树</h4>
+        </div>
+        ${renderCollapsibleTree(buildRbdEquipmentTreeNodes())}
+      </aside>
+      <section class="detail-panel">
+        <div class="detail-card">
+          ${detailContent}
+        </div>
+      </section>
     </div>
   `;
+}
+
+function buildRbdEquipmentTreeNodes() {
+  const selectedState = resolveSelectedEquipmentNode();
+  return [{
+    id: "rbd-equipment-tree:aircraft-list",
+    label: "飞机列表",
+    meta: `${wholeMachineModels().length} 类飞机`,
+    root: true,
+    selected: selectedState.kind === "aircraft-list",
+    actionAttrs: "data-select-rbd-equipment-root",
+    children: wholeMachineModels().map((model) => ({
+      id: `rbd-equipment-tree:${model}`,
+      label: model,
+      meta: "整机级",
+      selected: selectedState.kind === "aircraft" && selectedState.aircraftModel === model,
+      actionAttrs: `data-select-rbd-equipment-aircraft="${htmlEscape(model)}"`,
+      children: buildRbdEquipmentComponentTreeNodes(model, "aircraft-root")
+    }))
+  }];
+}
+
+function buildRbdEquipmentComponentTreeNodes(aircraftModel, parentId) {
+  const toTreeNode = ({ component, children }) => ({
+    id: `rbd-equipment-component:${aircraftModel}:${component.id || component.name}`,
+    label: component.name,
+    meta: `${component.quantity} 件`,
+    selected: selectedEquipmentNodeKey === `component:${component.id}`,
+    actionAttrs: `data-select-rbd-equipment-component="${htmlEscape(component.id)}"`,
+    children: children.map(toTreeNode)
+  });
+  return buildEquipmentComponentTreeModel({ scenario, aircraftModel, parentId }).map(toTreeNode);
+}
+
+function reliabilityNodeTypeLabel(node) {
+  return String(node?.type || "").toLowerCase().includes("gate") ? "门逻辑" : (node?.type || "component");
 }
 
 function renderReliabilityBlockDiagramSvg(layout) {
@@ -4344,16 +4409,21 @@ function renderReliabilityBlockDiagramSvg(layout) {
         <circle class="rbd-terminal" cx="${layout.terminalEnd.x}" cy="${layout.terminalEnd.y}" r="5"></circle>
         ${layout.nodes.map((node) => `
           <g class="rbd-node ${htmlEscape(node.type)} ${htmlEscape(node.logic)}" transform="translate(${node.x} ${node.y})">
-            <title>${htmlEscape(node.name)} / ${htmlEscape(node.connectionLabel)}${node.kOutOfNLabel ? ` / ${htmlEscape(node.kOutOfNLabel)}` : ""}</title>
+            <title>${htmlEscape(node.name)} / ${htmlEscape(rbdNodeMetaText(node))}</title>
             <rect width="${node.width}" height="${node.height}" rx="8"></rect>
             <text class="rbd-node-title" x="12" y="21">${htmlEscape(truncateRbdText(node.name, 12))}</text>
-            <text class="rbd-node-meta" x="12" y="40">${htmlEscape(node.connectionLabel)}${node.kOutOfNLabel ? ` / ${htmlEscape(node.kOutOfNLabel)}` : ""}</text>
+            <text class="rbd-node-meta" x="12" y="40">${htmlEscape(rbdNodeMetaText(node))}</text>
             <text class="rbd-node-meta" x="12" y="56">失效率 ${htmlEscape(node.failureRate || "-")} / MTBF ${htmlEscape(node.mtbfHours || "-")}h</text>
           </g>
         `).join("")}
       </svg>
     </div>
   `;
+}
+
+function rbdNodeMetaText(node) {
+  if (node?.isReplica) return `分支 ${node.replicaIndex}/${node.replicaCount}`;
+  return `${node.connectionLabel}${node.kOutOfNLabel ? ` / ${node.kOutOfNLabel}` : ""}`;
 }
 
 function truncateRbdText(value, maxLength) {

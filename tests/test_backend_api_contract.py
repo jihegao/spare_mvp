@@ -2205,6 +2205,25 @@ class BackendApiContractTest(unittest.TestCase):
             },
         )
 
+    def test_modeling_import_api_rejects_sru_parent_that_is_not_lru(self) -> None:
+        import_package = self._fixture("modeling_import_project.json")
+        import_package["objects"]["equipmentAssets"] = [
+            {"id": "aircraft-root", "name": "整机", "quantity": 1, "productType": ""},
+            None,
+            {"id": "hydraulic-system", "name": "液压系统", "parentId": "aircraft-root", "quantity": 1, "productType": "SRU"},
+            {"id": "hydraulic-valve", "name": "液压阀", "parentId": "hydraulic-system", "quantity": 1, "productType": "LRU"},
+        ]
+
+        validation = self.api.validate_modeling_import(import_package)
+        issues_by_code = {issue["code"]: issue for issue in validation["issues"]}
+
+        self.assertFalse(validation["ok"])
+        self.assertEqual(
+            issues_by_code["invalid_sru_parent"]["field_path"],
+            "objects.equipmentAssets[2].parentId",
+        )
+        self.assertEqual(issues_by_code["invalid_sru_parent"]["page"], "装备系统建模")
+
     def test_modeling_import_api_covers_contract_parity_issues(self) -> None:
         import_package = self._fixture("modeling_import_project.json")
         import_package["schemaVersion"] = "modeling-import-v0"

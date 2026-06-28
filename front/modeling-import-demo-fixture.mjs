@@ -303,7 +303,7 @@ export const MODELING_IMPORT_DEMO_FIXTURE = {
               "id": "avionics",
               "name": "航电系统",
               "type": "component",
-              "connectionType": "并联",
+              "connectionType": "串联",
               "failureRate": 0.04,
               "mtbfHours": 120,
               "parentId": "aircraft"
@@ -312,7 +312,7 @@ export const MODELING_IMPORT_DEMO_FIXTURE = {
               "id": "hydraulic",
               "name": "液压系统",
               "type": "component",
-              "connectionType": "备用",
+              "connectionType": "串联",
               "failureRate": 0.05,
               "mtbfHours": 105,
               "parentId": "aircraft"
@@ -328,14 +328,14 @@ export const MODELING_IMPORT_DEMO_FIXTURE = {
             {
               "from": "aircraft",
               "to": "avionics",
-              "type": "并联",
-              "weight": 0.6
+              "type": "串联",
+              "weight": 1
             },
             {
               "from": "aircraft",
               "to": "hydraulic",
-              "type": "备用",
-              "weight": 0.8
+              "type": "串联",
+              "weight": 1
             }
           ]
         },
@@ -387,7 +387,7 @@ export const MODELING_IMPORT_DEMO_FIXTURE = {
         "aircraftModel": "J-15",
         "name": "发动机",
         "parentId": "aircraft-root",
-        "productType": "SRU",
+        "productType": "LRU",
         "spareType": "发动机备件",
         "failureModel": "随机",
         "failureDistribution": {
@@ -423,7 +423,7 @@ export const MODELING_IMPORT_DEMO_FIXTURE = {
         "aircraftModel": "J-15",
         "name": "发动机控制模块",
         "parentId": "j15-engine",
-        "productType": "LRU",
+        "productType": "SRU",
         "spareType": "发动机备件",
         "failureModel": "随机",
         "failureDistribution": {
@@ -459,12 +459,12 @@ export const MODELING_IMPORT_DEMO_FIXTURE = {
         "aircraftModel": "J-15",
         "name": "航电系统",
         "parentId": "aircraft-root",
-        "productType": "SRU",
+        "productType": "LRU",
         "spareType": "航电模块",
         "failureModel": "退化",
         "failureDistribution": {
-          "distributionType": "威布尔分布",
-          "parameters": "beta=1.8, eta=140"
+          "distributionType": "正态分布",
+          "parameters": "mean=125, sigma=14"
         },
         "failureRate": 0.04,
         "mtbfHours": 125,
@@ -495,12 +495,12 @@ export const MODELING_IMPORT_DEMO_FIXTURE = {
         "aircraftModel": "J-15",
         "name": "雷达 LRU",
         "parentId": "j15-avionics",
-        "productType": "LRU",
+        "productType": "SRU",
         "spareType": "航电模块",
         "failureModel": "退化",
         "failureDistribution": {
-          "distributionType": "威布尔分布",
-          "parameters": "beta=1.6, eta=150"
+          "distributionType": "正态分布",
+          "parameters": "mean=135, sigma=15"
         },
         "failureRate": 0.035,
         "mtbfHours": 135,
@@ -531,7 +531,7 @@ export const MODELING_IMPORT_DEMO_FIXTURE = {
         "aircraftModel": "J-15",
         "name": "液压系统",
         "parentId": "aircraft-root",
-        "productType": "SRU",
+        "productType": "LRU",
         "spareType": "液压备件",
         "failureModel": "寿命",
         "failureDistribution": {
@@ -567,7 +567,7 @@ export const MODELING_IMPORT_DEMO_FIXTURE = {
         "aircraftModel": "J-35",
         "name": "发动机",
         "parentId": "aircraft-root",
-        "productType": "SRU",
+        "productType": "LRU",
         "spareType": "发动机备件",
         "failureModel": "随机",
         "failureDistribution": {
@@ -603,12 +603,12 @@ export const MODELING_IMPORT_DEMO_FIXTURE = {
         "aircraftModel": "J-35",
         "name": "航电系统",
         "parentId": "aircraft-root",
-        "productType": "SRU",
+        "productType": "LRU",
         "spareType": "航电模块",
         "failureModel": "退化",
         "failureDistribution": {
-          "distributionType": "威布尔分布",
-          "parameters": "beta=1.7, eta=155"
+          "distributionType": "正态分布",
+          "parameters": "mean=140, sigma=16"
         },
         "failureRate": 0.035,
         "mtbfHours": 140,
@@ -639,12 +639,12 @@ export const MODELING_IMPORT_DEMO_FIXTURE = {
         "aircraftModel": "J-35",
         "name": "任务计算机模块",
         "parentId": "j35-avionics",
-        "productType": "LRU",
+        "productType": "SRU",
         "spareType": "航电模块",
         "failureModel": "退化",
         "failureDistribution": {
-          "distributionType": "威布尔分布",
-          "parameters": "beta=1.5, eta=165"
+          "distributionType": "正态分布",
+          "parameters": "mean=155, sigma=18"
         },
         "failureRate": 0.03,
         "mtbfHours": 155,
@@ -675,7 +675,7 @@ export const MODELING_IMPORT_DEMO_FIXTURE = {
         "aircraftModel": "J-35",
         "name": "液压系统",
         "parentId": "aircraft-root",
-        "productType": "SRU",
+        "productType": "LRU",
         "spareType": "液压备件",
         "failureModel": "寿命",
         "failureDistribution": {

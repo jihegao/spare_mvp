@@ -36,6 +36,48 @@ export function buildEquipmentComponentTreeModel({ scenario, aircraftModel, pare
   return buildChildren(parentId);
 }
 
+export function equipmentComponentsForSelectionModel({ scenario, selection }) {
+  const components = Array.isArray(scenario?.components) ? scenario.components : [];
+  const selectedState = selection || resolveEquipmentSelectionModel({ scenario });
+  if (selectedState.kind === "aircraft-list") {
+    return components.filter((component) => !isSyntheticAircraftRoot(component));
+  }
+  if (selectedState.kind === "aircraft") {
+    return flattenEquipmentComponentTree(
+      buildEquipmentComponentTreeModel({
+        scenario,
+        aircraftModel: selectedState.aircraftModel,
+        parentId: "aircraft-root"
+      })
+    );
+  }
+  if (selectedState.kind === "component" && selectedState.component) {
+    const rootComponent = selectedState.component;
+    return [
+      rootComponent,
+      ...flattenEquipmentComponentTree(
+        buildEquipmentComponentTreeModel({
+          scenario,
+          aircraftModel: selectedState.aircraftModel || rootComponent.aircraftModel || wholeMachineModelsForScenario(scenario)[0] || "",
+          parentId: rootComponent.id
+        })
+      )
+    ].filter((component) => !isSyntheticAircraftRoot(component));
+  }
+  return components.filter((component) => !isSyntheticAircraftRoot(component));
+}
+
+function flattenEquipmentComponentTree(nodes) {
+  return nodes.flatMap(({ component, children }) => [
+    component,
+    ...flattenEquipmentComponentTree(children || [])
+  ]);
+}
+
+function isSyntheticAircraftRoot(component) {
+  return String(component?.id || "") === "aircraft-root";
+}
+
 export function resolveEquipmentSelectionModel({
   scenario,
   selectedEquipmentNodeKey = "",
