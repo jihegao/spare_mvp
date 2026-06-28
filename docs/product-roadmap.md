@@ -700,4 +700,5 @@ M3/M6 的第一步不是直接建设完整生产平台，而是把保存、编�
 5. RunIntent / MonteCarloRunConfig / imported sample Project 收敛已作为 M6.2 后续切片完成；M7.0 已补入本地运行/产物管理，M8.0 已补入 projection payload 消费，M9.0/M9.1 已补入离线状态序列回放、状态契约和事件追溯，M9.2 已补入在线状态流和运行订阅，M9.3 已补入最小 run lifecycle、后端控制、控制审计和 UI 状态确认，M9.4/M9.5 的 `aviation_support` 正式执行与 formal Monte Carlo 已归档，当前正式路径只接受 `aircraft_support_v1`。生产 worker、object storage、完整 cancel/retry、checkpoint restart 和真实运行中暂停/单步只在对应阶段最小需要时纳入。
 6. M9.6 已完成平台案例数据包、字段覆盖表、导出链路和 golden fixtures 冻结；M9.7 已完成 `aircraft_support_v1` 正式飞机保障仿真模型族、single run、Monte Carlo 和 coverage hardening。
 7. M9.8 已完成平台嵌入和 `independent-mesa` 退役；平台通过 canonical `/api/runs` 完成 single、Monte Carlo、状态回放和四类分析，`independent-mesa` 旁路只保留为历史参考、开发对照和离线复现实验。
-8. 每次 PR 更新页面流转、数据对象或结果口径时，同步更新本文档或相关验收清单。
+8. 2026-06-27 TODO 阶段 2 已完成保障组织、资源表和基本保障活动库收敛；后续阶段 3 才迁移仿真实验、可视化与结果承载信息架构，不应把阶段 2 的页面编辑收敛扩大为结果页重构。
+9. 每次 PR 更新页面流转、数据对象或结果口径时，同步更新本文档或相关验收清单。

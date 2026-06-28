@@ -138,25 +138,25 @@
 - 测试：`tests/support-activity-jobs.test.mjs`
 - 测试：`tests/modeling-import-contract.test.mjs`
 
-- [ ] 保障组织：
+- [x] 保障组织：
   - 移除 3 级硬限制。
   - 持久化递归树节点。
-- [ ] 备件：
+- [x] 备件：
   - 增加 `所属装备`。
   - 移除行级编辑按钮。
-- [ ] 保障人员：
+- [x] 保障人员：
   - 将 `专业` 改为下拉选择。
   - 字典可用时从后续 `建模表单管理` 的专业字典读取；本阶段仅允许使用本地固定字典作为兼容回退。
   - 移除 `所属型号`。
   - 移除行级编辑按钮。
-- [ ] 保障设备：
+- [x] 保障设备：
   - 移除行级编辑按钮。
-- [ ] 基本保障活动建模：
+- [x] 基本保障活动建模：
   - 将即改即存改为编辑面板。
   - 支持查询、新增、编辑、删除和按活动类型导入。
   - 维护活动编号、工作名称、适用飞机、作业时长分布、保障人员、保障设备、备件需求。
   - 作业时长分布与四类允许分布保持一致。
-- [ ] 使用保障、预防性维修、修复性维修和后勤保障活动：
+- [x] 使用保障、预防性维修、修复性维修和后勤保障活动：
   - 工作项目从基本保障活动中选择/搜索。
   - 根据选中的基本保障活动自动回填字段。
   - 增加 `编辑紧前作业`。
@@ -165,8 +165,14 @@
   - 按要求移除 `最大时间参考` / `最大修复时间` 字段。
 
 **验证：**
-- [ ] 运行 `node --test tests/support-activity-jobs.test.mjs tests/frontend-contract.test.mjs tests/frontend-app-runtime.test.mjs tests/modeling-import-contract.test.mjs`。
-- [ ] 运行 `npm test`。
+- [x] 运行 `node --test tests/support-activity-jobs.test.mjs tests/frontend-contract.test.mjs tests/frontend-app-runtime.test.mjs tests/modeling-import-contract.test.mjs`。
+- [x] 运行 `npm test`。
+
+阶段 2 验证记录：
+- [x] 运行 `node --test tests/support-activity-jobs.test.mjs tests/frontend-contract.test.mjs tests/frontend-app-runtime.test.mjs tests/modeling-import-contract.test.mjs`。
+- [x] 运行 `npm test`。
+
+阶段 2 已完成保障组织递归树、资源表字段收敛、基本保障活动库编辑面板、工作项目基础库引用/搜索/自动回填和紧前作业显式编辑。阶段 3 的仿真实验、可视化和结果承载信息架构仍未开始，不作为阶段 2 完成口径。
 
 **退出标准：** 保障活动页面使用共享基本活动库，紧前作业编辑显式可见；TODO 要求编辑面板的页面不再依赖隐藏的即改即存行为。
 

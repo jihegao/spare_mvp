@@ -22,6 +22,8 @@ The current frontend Project JSON is the raw `defaultScenario` shape from `front
 
 `modeling_import.schema.json` is an application data-entry contract, not a Scenario contract. It can describe imported Project draft data, object IDs, references, validation issues, and publication lifecycle; final Scenario JSON must still be compiled by the Simulation Adapter.
 
+`modeling_import.schema.json` also preserves the Phase 2 support-organization/resource and support-activity-library boundaries: recursive support organization nodes, equipment-linked spare rows, personnel specialty values with local dictionary fallback, basic support activity jobs, activity-library references, duration distributions, and predecessor job links.
+
 `scenario.schema.json` requires an explicit `simulation_model` with `family`, `model_id`, and `contract_version`. Its `simulation_inputs` field is split with `oneOf` branches for `smoke` and `aviation_support`, so the Simulation Adapter must compile model-specific inputs instead of coercing a mixed parameter bag.
 
 The Simulation Adapter lives at `src/spare_mvp_contract/adapter.py`. It validates current Project JSON contract roots, compiles approved `smoke`, `aviation_support`, and `aircraft_support_v1` Scenario paths, runs `SmokeSpareMvpModel`, `AviationSupportModel`, and `AircraftSupportV1Model` for formal runs, and writes traceable run artifacts. M9.5 defines the governed aviation sampling contract for `aviation_support` formal Monte Carlo, and M9.7.3 defines the `aircraft_support_v1` formal Monte Carlo/projection path through the existing `/api/runs -> RunService -> artifacts` boundary.

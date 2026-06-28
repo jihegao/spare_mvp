@@ -722,10 +722,12 @@ test("support organization and activity pages follow ship_front tree table edito
   assert.match(appSource, /function updateSupportResourceOverride/);
   assert.match(appSource, /scenario\.supportResourceOverrides/);
   assert.match(appSource, /scenario\.deletedSupportResourceKeys/);
-  assert.match(supportOrgSource, /label: "所属型号"/);
-  assert.match(appSource, /fieldDef\("ownerModel", "所属型号"/);
-  assert.doesNotMatch(supportOrgSource, /适用机型/);
+  assert.doesNotMatch(supportOrgSource, /label: "所属型号"/);
+  assert.doesNotMatch(appSource, /fieldDef\("ownerModel", "所属型号"/);
+  assert.match(supportOrgSource, /所属装备/);
+  assert.match(supportOrgSource, /function supportPersonnelSpecialtyOptions/);
   assert.doesNotMatch(appSource, /data-support-resource-aircraft/);
+  assert.doesNotMatch(appSource, /data-support-resource-edit/);
   assert.doesNotMatch(supportOrgSource, /<th>资源类型<\/th>/);
   assert.doesNotMatch(supportOrgSource, /<td>\$\{row\.type\}<\/td>/);
   assert.match(supportOrgSource, /data-support-org-field="name"/);
@@ -782,8 +784,7 @@ test("support organization and activity pages follow ship_front tree table edito
   assert.doesNotMatch(logisticsSource, /data-logistics-transport-edit/);
   assert.doesNotMatch(logisticsSource, /\u4fdd\u969c\u7ec4\u7ec7\u7b56\u7565\u8868/);
   assert.doesNotMatch(logisticsSource, /\u65b9\u6848\u7c7b\u578b/);
-  assert.doesNotMatch(logisticsSource, /renderSupportActivityJobTable/);
-  assert.doesNotMatch(logisticsSource, /\u5de5\u4f5c\u9879\u76ee\u6e05\u5355/);
+  assert.match(logisticsSource, /renderSupportActivityJobTable\(activity, "logistics"\)/);
 });
 
 test("modeling page headers omit generic scenario helper summaries", async () => {
@@ -822,8 +823,7 @@ test("support organization fourth-level pages render matching resource panels", 
   assert.match(supportOrgSource, /page\.name\.includes\("备件"\) \? "备件"/);
   assert.match(supportOrgSource, /data-support-resource-batch-delete/);
   assert.match(supportOrgSource, /data-support-resource-select-all/);
-  assert.match(supportOrgSource, /data-support-resource-edit/);
-  assert.match(appSource, /function activateSupportResourceEdit/);
+  assert.doesNotMatch(supportOrgSource, /data-support-resource-edit/);
   assert.match(supportOrgSource, /<h3>\$\{activeTab === "保障组织结构建模" \? "组织详情" : "资源清单"\}<\/h3>/);
 });
 
@@ -844,12 +844,11 @@ test("support activity pages align to page suggestion activity fields", async ()
   );
   for (const pattern of [
     /\u57fa\u672c\u4fdd\u969c\u6d3b\u52a8\u57fa\u7840\u5e93/,
-    /\u6700\u5927\u5de5\u4f5c\u65f6\u95f4\u53c2\u8003\(min\)/,
     /\u65b9\u6848\u540d\u79f0/,
     /\u8ba1\u5212\u505c\u673a\u5c0f\u65f6/,
     /\u542f\u52a8\u65e5\u5386\u65f6\u95f4/,
     /\u88c5\u5907\u6784\u578b\u6811/,
-    /\u6700\u5927\u4fee\u590d\u65f6\u95f4\(min\)/,
+    /MTTR/,
     /\u7ef4\u4fee\u7c7b\u578b/,
     /\u539f\u4f4d\u7ef4\u4fee/,
     /\u6362\u4ef6\u7ef4\u4fee/,
@@ -860,11 +859,18 @@ test("support activity pages align to page suggestion activity fields", async ()
   ]) {
     assert.match(supportActivitySource, pattern);
   }
+  assert.doesNotMatch(supportActivitySource, /\u6700\u5927\u5de5\u4f5c\u65f6\u95f4\u53c2\u8003\(min\)/);
+  assert.doesNotMatch(supportActivitySource, /\u6700\u5927\u4fee\u590d\u65f6\u95f4\(min\)/);
+  assert.match(supportActivitySource, /renderBasicActivityTemplatePicker/);
+  assert.match(supportActivitySource, /applyBasicActivityToSupportActivityJob/);
+  assert.match(supportActivitySource, /data-support-activity-template-query/);
+  assert.doesNotMatch(supportActivitySource, /options\.slice\(0, 8\)/);
   assert.match(supportActivitySource, /renderBasicActivityLibrary/);
   assert.match(supportActivitySource, /renderOperationsSupportActivity/);
   assert.match(supportActivitySource, /renderPreventiveMaintenanceActivity/);
   assert.match(supportActivitySource, /renderCorrectiveMaintenanceActivity/);
   assert.match(supportActivitySource, /renderLogisticsSupportActivity/);
+  assert.match(supportActivitySource, /renderSupportActivityJobTable\(activity, "logistics"\)/);
   assert.match(supportActivitySource, /const supportNodeOptions = \(scenario\.supportNodes \|\| \[\]\)\.map/);
   assert.match(supportActivitySource, /valueSelect\(`\$\{basePath\}\.from`, supportNodeOptions\)/);
   assert.match(supportActivitySource, /valueSelect\(`\$\{basePath\}\.to`, supportNodeOptions\)/);
@@ -1581,7 +1587,8 @@ test("editable modeling lists expose page suggestion action entries", async () =
     appSource.indexOf("function renderOrgTreeNode")
   );
   assert.match(supportOrgSource, /data-support-org-add-node/);
-  assert.match(supportOrgSource, /selectedOrgDepth >= 3 \? "disabled" : ""/);
+  assert.doesNotMatch(supportOrgSource, /selectedOrgDepth >= 3 \? "disabled" : ""/);
+  assert.doesNotMatch(appSource, /supportOrgNodeDepth\(parent\.id, orgTree\) >= 3/);
   assert.match(supportOrgSource, /data-support-org-delete-node/);
   assert.match(supportOrgSource, /data-support-org-field="name"/);
   assert.match(supportOrgSource, /data-support-resource-batch-delete/);
@@ -1591,6 +1598,12 @@ test("editable modeling lists expose page suggestion action entries", async () =
   assert.match(supportOrgSource, /data-support-resource-import-file/);
   assert.match(appSource, /function importSupportResourceTableFile/);
   assert.doesNotMatch(appSource, /data-support-resource-aircraft/);
+  assert.doesNotMatch(supportOrgSource, /data-support-resource-edit/);
+  assert.doesNotMatch(supportOrgSource, /<th>编辑<\/th>/);
+  assert.match(appSource, /function supportPersonnelSpecialtyOptions/);
+  assert.match(appSource, /supportResourceSelect\(row, column/);
+  assert.match(appSource, /所属装备/);
+  assert.doesNotMatch(appSource, /label: "所属型号"/);
 
   const basicActivitySource = appSource.slice(
     appSource.indexOf("function renderBasicActivityLibrary"),
@@ -1598,12 +1611,22 @@ test("editable modeling lists expose page suggestion action entries", async () =
   );
   assert.match(basicActivitySource, /data-basic-activity-add/);
   assert.match(basicActivitySource, /data-basic-activity-batch-delete/);
+  assert.match(basicActivitySource, /data-basic-activity-query/);
+  assert.match(basicActivitySource, /data-basic-activity-import-type/);
+  assert.match(basicActivitySource, /durationProfile/);
+  assert.match(basicActivitySource, /作业时长分布/);
   assert.match(basicActivitySource, /data-basic-activity-edit="\$\{htmlEscape\(row\.key\)\}"/);
   assert.match(basicActivitySource, /basicActivityTypeSelect\(row\)/);
   assert.match(basicActivitySource, /使用保障活动/);
   assert.match(basicActivitySource, /预防性维修/);
   assert.match(basicActivitySource, /修复性维修/);
+  assert.match(basicActivitySource, /后勤保障/);
   assert.match(basicActivitySource, /activity\.activityType = "使用保障活动"/);
+  assert.match(basicActivitySource, /activity\.activityType = "后勤保障"/);
+  assert.match(basicActivitySource, /isLogisticsSupportActivity\(activity\)/);
+  assert.match(basicActivitySource, /type === "后勤保障"/);
+  assert.match(basicActivitySource, /ensureLogisticsSupportActivityDraft\(\)/);
+  assert.match(basicActivitySource, /activityType === "后勤保障" \? "LG"/);
   assert.doesNotMatch(basicActivitySource, /data-basic-activity-delete="\$\{htmlEscape\(row\.key\)\}"/);
   assert.doesNotMatch(basicActivitySource, /编辑\/删除/);
 
@@ -1660,6 +1683,9 @@ test("support activity controls are wired through local draft fields", async () 
   );
   assert.match(jobTableSource, /data-support-activity-job-add="\$\{htmlEscape\(tabKey\)\}"/);
   assert.match(jobTableSource, /data-support-activity-job-batch-delete="\$\{htmlEscape\(tabKey\)\}"/);
+  assert.match(jobTableSource, /data-support-activity-job-template/);
+  assert.match(jobTableSource, /basicActivityLibraryOptions/);
+  assert.match(appSource, /function applyBasicActivityToSupportActivityJob/);
   assert.match(jobTableSource, /data-support-activity-job-field/);
   assert.match(jobTableSource, /renderSupportActivityJobDialog/);
   assert.match(jobTableSource, /data-support-activity-job-dialog-close/);
@@ -1710,7 +1736,7 @@ test("support activity controls are wired through local draft fields", async () 
   assert.match(operationsSource, /data-ops-support-plan-type/);
   assert.match(operationsSource, /operationsSupportPlanTypeTabKey\(activePlanType\)/);
   assert.match(operationsSource, /activePhaseActivity/);
-  assert.match(operationsSource, /maxWorkTimeRefMinutes/);
+  assert.doesNotMatch(operationsSource, /maxWorkTimeRefMinutes/);
   assert.doesNotMatch(operationsSource, /<input(?![^>]*(data-path|readonly|disabled))/);
 
   const preventiveSource = appSource.slice(
@@ -1741,6 +1767,14 @@ test("support activity controls are wired through local draft fields", async () 
   assert.match(appSource, /function selectedCorrectiveMaintenanceActivity/);
   assert.match(appSource, /correctiveMaintenanceActivityForComponent\(selectedCorrectiveComponent\(\)\)/);
   assert.match(appSource, /ensureCorrectiveMaintenanceActivityForComponent\(component\)/);
+  assert.doesNotMatch(correctiveSource, /维修对象/);
+  assert.doesNotMatch(correctiveSource, /maxRepairTimeMinutes/);
+  assert.match(correctiveSource, /MTTR/);
+  assert.match(correctiveSource, /readonly/);
+  assert.match(correctiveSource, /distribution\.rate/);
+  assert.match(correctiveSource, /distribution\.min/);
+  assert.match(correctiveSource, /distribution\.max/);
+  assert.match(correctiveSource, /distribution\.variance/);
   assert.match(correctiveSource, /data-path="supportActivities\.\$\{activityIndex\}\.repairType"/);
   assert.match(readonlyEquipmentConfigSource, /const visitedIds = new Set\(visited\)/);
   assert.match(readonlyEquipmentConfigSource, /componentId !== String\(parentId\)/);

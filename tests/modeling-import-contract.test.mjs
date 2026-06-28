@@ -162,6 +162,79 @@ test("current project backfill normalizes support activity plan rows into import
   });
 });
 
+test("current project backfill preserves phase 2 support organization resources and activity library fields", async () => {
+  const fixture = await readJson("tests/fixtures/modeling_import_project.json");
+  const supportOrganization = {
+    tree: [{
+      id: "root",
+      name: "基地",
+      children: [{
+        id: "level-2",
+        name: "保障大队",
+        children: [{
+          id: "level-3",
+          name: "维修中队",
+          children: [{ id: "level-4", name: "航电班组", children: [] }]
+        }]
+      }]
+    }]
+  };
+  const draft = projectToModelingImportPackage({
+    project_id: "project-phase-2",
+    scenarioId: "scenario-phase-2",
+    missionProfile: {
+      sourceImportId: fixture.importId,
+      name: "阶段2保障活动库",
+      durationHours: 8
+    },
+    supportOrganization,
+    components: [
+      { id: "aircraft-root", name: "整机", quantity: 1 },
+      { id: "avionics", name: "航电系统", parentId: "aircraft-root", aircraftModel: "J-15", quantity: 1 }
+    ],
+    supportNodes: [{
+      id: "carrier-deck",
+      name: "航母飞行甲板",
+      capacity: 4,
+      organizationNodeId: "level-4",
+      personnelCapacity: 7,
+      personnelModel: "航电",
+      inventory: { "航电模块": 3 },
+      spareModels: { "航电模块": "AV-01" },
+      spareEquipment: { "航电模块": "J-15" }
+    }],
+    supportActivities: [{
+      id: "basic-avionics-check",
+      activityName: "航电通电检查",
+      activityType: "使用保障活动",
+      aircraftModel: "J-15",
+      jobs: [{
+        activityCode: "BA-220",
+        workName: "航电通电检查",
+        durationProfile: { distributionType: "正态分布", mean: 25, stdDev: 5 },
+        durationMinutes: 25,
+        personnel: "航电,2",
+        equipment: "检测仪,1",
+        spare: "航电模块,1",
+        predecessors: ["BA-100"]
+      }]
+    }]
+  }, fixture);
+
+  assert.equal(draft.validation.ok, true);
+  assert.deepEqual(draft.objects.supportOrganization, supportOrganization);
+  assert.equal(draft.objects.supportOrganization.tree[0].children[0].children[0].children[0].name, "航电班组");
+  assert.equal(draft.objects.supportResources[0].personnelModel, "航电");
+  assert.equal(draft.objects.supportResources[0].spareEquipment["航电模块"], "J-15");
+  assert.deepEqual(draft.objects.supportActivities[0].jobs[0].durationProfile, {
+    distributionType: "正态分布",
+    mean: 25,
+    stdDev: 5
+  });
+  assert.deepEqual(draft.objects.supportActivities[0].jobs[0].predecessors, ["BA-100"]);
+  assert.deepEqual(validateModelingImportPackage(draft), []);
+});
+
 test("modeling import schema validation resolves nested local refs", async () => {
   const schema = await readJson("contracts/modeling_import.schema.json");
   const fixture = await readJson("tests/fixtures/modeling_import_project.json");
