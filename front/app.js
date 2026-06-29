@@ -12128,10 +12128,10 @@ function renderFormalProjectionBody(formalProjection) {
     return `
       <div class="table-wrap">
         <table>
-          <thead><tr><th>备件</th><th>备件满足率</th><th>短缺概率</th><th>平均延误时间(h)</th><th>基层级数量</th><th>初始基层级库存</th><th>短板等级</th><th>图示</th></tr></thead>
+          <thead><tr><th>备件</th><th>备件满足率</th><th>备件利用率</th><th>满足率约束</th><th>利用率约束</th><th>短缺概率</th><th>平均延误时间(h)</th><th>基层级数量</th><th>初始基层级库存</th><th>短板等级</th><th>图示</th></tr></thead>
           <tbody>${rows.map((row) => `
             <tr>
-              <td>${htmlEscape(row.name)}</td><td>${fixed(row.satisfy, 2)}</td><td>${pct(row.shortageProbability)}</td><td>${row.delay}</td><td>${row.baseCount}</td><td>${row.stock}</td>
+              <td>${htmlEscape(row.name)}</td><td>${fixed(row.satisfy, 2)}</td><td>${fixed(row.utilization, 2)}</td><td>${htmlEscape(row.fillRateConstraint)}</td><td>${htmlEscape(row.utilizationConstraint)}</td><td>${pct(row.shortageProbability)}</td><td>${row.delay}</td><td>${row.baseCount}</td><td>${row.stock}</td>
               <td><span class="status-badge ${row.level === "严重" ? "danger" : row.level === "短缺" ? "warn" : ""}">${htmlEscape(row.level)}</span></td>
               <td class="bar-cell">${renderBar(row.shortage || row.shortageProbability, maxShortage, "red")}</td>
             </tr>

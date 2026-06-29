@@ -12,22 +12,37 @@ test("normalizes spare shortfall projection payload for formal KPI and table ren
     run_id: "run-ui",
     model_family: "aircraft_support_v1",
     base_artifact_id: "monte_carlo_base-run-ui",
+    constraints: {
+      fill_rate: [0.85, 0.9, 0.95],
+      utilization: [0.85, 0.9, 0.95]
+    },
+    truncation: {
+      mode: "clamp_0_1",
+      fields: ["fill_rate", "utilization", "shortage_probability"]
+    },
     data: [
-      { spare_type: "engine", fill_rate: 0.81, shortage_probability: 0.25, risk_level: "high" },
-      { spare_type: "radar", fill_rate: 0.96, shortage_probability: 0, risk_level: "low" }
+      { spare_type: "engine", fill_rate: 0.81, utilization: 0.72, shortage_probability: 0.25, risk_level: "high" },
+      { spare_type: "radar", fill_rate: 0.96, utilization: 0.88, shortage_probability: 0, risk_level: "low" }
     ]
   }, { runId: "run-ui", modelFamily: "aircraft_support_v1" });
 
   assert.equal(view.analysisType, "spare_shortfall");
   assert.equal(view.formal, true);
+  assert.deepEqual(view.constraints.fillRate, [0.85, 0.9, 0.95]);
+  assert.deepEqual(view.constraints.utilization, [0.85, 0.9, 0.95]);
+  assert.equal(view.truncation.mode, "clamp_0_1");
   assert.deepEqual(view.metrics, [
     ["短板备件", "1 项"],
     ["最低备件满足率", "0.81"],
-    ["最高短缺概率", "25%"],
-    ["建议优先补充", "engine"]
+    ["最低备件利用率", "0.72"],
+    ["约束档位", "0.85 / 0.90 / 0.95"]
   ]);
   assert.equal(view.rows[0].name, "engine");
   assert.equal(view.rows[0].level, "严重");
+  assert.equal(view.rows[0].fillRateConstraint, "未达 0.85");
+  assert.equal(view.rows[0].utilizationConstraint, "未达 0.85");
+  assert.equal(view.rows[1].fillRateConstraint, "达标 0.95");
+  assert.equal(view.rows[1].utilizationConstraint, "达标 0.85");
 });
 
 test("normalizes carry list projection payload for formal KPI and table rendering", () => {
@@ -95,15 +110,40 @@ test("rejects mismatched or malformed projection payloads fail closed", () => {
     /projection_type mismatch/
   );
   assert.throws(
-    () => normalizeAnalysisProjectionPayload("spare_shortfall", { projection_type: "spare_shortfall", data: {} }),
+    () => normalizeAnalysisProjectionPayload("spare_shortfall", {
+      projection_type: "spare_shortfall",
+      constraints: { fill_rate: [0.85, 0.9, 0.95], utilization: [0.85, 0.9, 0.95] },
+      truncation: { mode: "clamp_0_1", fields: ["fill_rate", "utilization", "shortage_probability"] },
+      data: {}
+    }),
     /data must be an array/
   );
   assert.throws(
     () => normalizeAnalysisProjectionPayload("spare_shortfall", {
       projection_type: "spare_shortfall",
-      data: [{ spare_type: "engine", fill_rate: "bad", shortage_probability: 0.2 }]
+      constraints: { fill_rate: [0.85, 0.9, 0.95], utilization: [0.85, 0.9, 0.95] },
+      truncation: { mode: "clamp_0_1", fields: ["fill_rate", "utilization", "shortage_probability"] },
+      data: [{ spare_type: "engine", fill_rate: "bad", utilization: 0.6, shortage_probability: 0.2 }]
     }),
     /fill_rate must be a finite number/
+  );
+  assert.throws(
+    () => normalizeAnalysisProjectionPayload("spare_shortfall", {
+      projection_type: "spare_shortfall",
+      constraints: { fill_rate: [0.85, 0.9, 0.95], utilization: [0.85, 0.9, 0.95] },
+      truncation: { mode: "clamp_0_1", fields: ["fill_rate", "utilization", "shortage_probability"] },
+      data: [{ spare_type: "engine", fill_rate: 0.8, utilization: "bad", shortage_probability: 0.2 }]
+    }),
+    /utilization must be a finite number/
+  );
+  assert.throws(
+    () => normalizeAnalysisProjectionPayload("spare_shortfall", {
+      projection_type: "spare_shortfall",
+      constraints: { fill_rate: [0.85, 0.9], utilization: [0.85, 0.9, 0.95] },
+      truncation: { mode: "clamp_0_1", fields: ["fill_rate", "utilization", "shortage_probability"] },
+      data: [{ spare_type: "engine", fill_rate: 0.8, utilization: 0.6, shortage_probability: 0.2 }]
+    }),
+    /fill_rate constraints must be exactly 0.85, 0.9, 0.95/
   );
   for (const malformed of [null, "", true, []]) {
     assert.throws(

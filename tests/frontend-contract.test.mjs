@@ -2618,6 +2618,25 @@ test("M8 formal analysis pages load and render matching projection payloads", as
   assert.match(renderDashboardSource, /projection payload/);
 });
 
+test("phase 6A spare shortfall formal table renders constraints and utilization", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const formalProjectionSource = appSource.slice(
+    appSource.indexOf("function renderFormalProjectionBody"),
+    appSource.indexOf("function renderAnalysisDashboard")
+  );
+  const spareProjectionSource = formalProjectionSource.slice(
+    formalProjectionSource.indexOf('formalProjection.analysisType === "spare_shortfall"'),
+    formalProjectionSource.indexOf('formalProjection.analysisType === "carry_list"')
+  );
+
+  assert.match(spareProjectionSource, /备件利用率/);
+  assert.match(spareProjectionSource, /满足率约束/);
+  assert.match(spareProjectionSource, /利用率约束/);
+  assert.match(spareProjectionSource, /row\.utilization/);
+  assert.match(spareProjectionSource, /row\.fillRateConstraint/);
+  assert.match(spareProjectionSource, /row\.utilizationConstraint/);
+});
+
 test("formal run launch preserves queued or running backend status without treating it as unavailable", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const launchSource = appSource.slice(

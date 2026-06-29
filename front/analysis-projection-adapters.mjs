@@ -12,6 +12,8 @@ const DOWNTIME_FACTOR_LABELS = Object.freeze({
   schedule_delay: "计划延误"
 });
 
+const SPARE_SHORTFALL_CONSTRAINTS = Object.freeze([0.85, 0.9, 0.95]);
+
 export function projectionArtifactKindForAnalysisType(analysisType) {
   return PROJECTION_KINDS[analysisType] || "";
 }
@@ -47,19 +49,25 @@ function validateProjectionTraceability(payload, { runId = "", modelFamily = "" 
 }
 
 function normalizeSpareShortfall(payload) {
+  const constraints = normalizeSpareShortfallConstraints(payload.constraints);
+  const truncation = normalizeSpareShortfallTruncation(payload.truncation);
   const rows = requireArray(payload.data, "spare_shortfall data must be an array")
     .map((row) => {
-      const fillRate = requireFiniteNumber(row.fill_rate, "fill_rate");
-      const shortageProbability = requireFiniteNumber(row.shortage_probability, "shortage_probability");
+      const fillRate = clamp01(requireFiniteNumber(row.fill_rate, "fill_rate"));
+      const utilization = clamp01(requireFiniteNumber(row.utilization, "utilization"));
+      const shortageProbability = clamp01(requireFiniteNumber(row.shortage_probability, "shortage_probability"));
       return {
         name: stringValue(row.spare_type, "unknown_spare"),
         satisfy: fillRate,
+        utilization,
         shortageProbability,
         delay: Math.round(shortageProbability * 100),
         baseCount: Math.max(0, Math.round(fillRate * 10)),
         stock: Math.max(1, Math.round((1 + shortageProbability) * 10)),
         shortage: Math.round(shortageProbability * 10),
-        level: riskLevelLabel(row.risk_level, shortageProbability)
+        level: riskLevelLabel(row.risk_level, shortageProbability),
+        fillRateConstraint: thresholdLabel(fillRate, constraints.fillRate),
+        utilizationConstraint: thresholdLabel(utilization, constraints.utilization)
       };
     })
     .sort((left, right) => right.shortageProbability - left.shortageProbability);
@@ -68,14 +76,48 @@ function normalizeSpareShortfall(payload) {
     analysisType: "spare_shortfall",
     formal: true,
     source: "projection payload",
+    constraints,
+    truncation,
     rows,
     metrics: [
       ["短板备件", `${shortageRows.length} 项`],
       ["最低备件满足率", fixed(min(rows.map((row) => row.satisfy), 1), 2)],
-      ["最高短缺概率", pct(max(rows.map((row) => row.shortageProbability), 0))],
-      ["建议优先补充", shortageRows.map((row) => row.name).slice(0, 2).join(" / ") || "-"]
+      ["最低备件利用率", fixed(min(rows.map((row) => row.utilization), 1), 2)],
+      ["约束档位", constraints.fillRate.map((value) => fixed(value, 2)).join(" / ")]
     ]
   };
+}
+
+function normalizeSpareShortfallConstraints(constraints) {
+  const fillRate = requireConstraintValues(constraints?.fill_rate, "fill_rate");
+  const utilization = requireConstraintValues(constraints?.utilization, "utilization");
+  return { fillRate, utilization };
+}
+
+function requireConstraintValues(values, label) {
+  if (!Array.isArray(values) || values.length !== SPARE_SHORTFALL_CONSTRAINTS.length) {
+    throw new Error(`${label} constraints must be exactly 0.85, 0.9, 0.95`);
+  }
+  const normalized = values.map((value) => requireFiniteNumber(value, `${label} constraint`));
+  const matches = normalized.every((value, index) => Math.abs(value - SPARE_SHORTFALL_CONSTRAINTS[index]) < 1e-9);
+  if (!matches) throw new Error(`${label} constraints must be exactly 0.85, 0.9, 0.95`);
+  return normalized;
+}
+
+function normalizeSpareShortfallTruncation(truncation) {
+  const mode = stringValue(truncation?.mode, "");
+  const fields = requireArray(truncation?.fields, "truncation fields must be an array").map((field) => stringValue(field, ""));
+  if (mode !== "clamp_0_1") throw new Error("truncation mode must be clamp_0_1");
+  for (const field of ["fill_rate", "utilization", "shortage_probability"]) {
+    if (!fields.includes(field)) throw new Error(`truncation fields must include ${field}`);
+  }
+  return { mode, fields };
+}
+
+function thresholdLabel(value, thresholds) {
+  const achieved = thresholds.filter((threshold) => value >= threshold);
+  if (!achieved.length) return `未达 ${fixed(thresholds[0], 2)}`;
+  return `达标 ${fixed(achieved[achieved.length - 1], 2)}`;
 }
 
 function normalizeCarryList(payload) {
@@ -191,6 +233,10 @@ function max(values, fallback) {
 
 function fixed(value, digits) {
   return Number(value || 0).toFixed(digits);
+}
+
+function clamp01(value) {
+  return Math.min(1, Math.max(0, value));
 }
 
 function pct(value) {

@@ -629,10 +629,16 @@ class SimulationAdapterTest(unittest.TestCase):
             projection_artifacts = [
                 artifact for artifact in manifest["artifacts"] if artifact["kind"].startswith("analysis_projection_")
             ]
+            spare_shortfall_artifact = next(
+                artifact for artifact in projection_artifacts if artifact["kind"] == "analysis_projection_spare_shortfall"
+            )
             state_artifact = next(
                 artifact for artifact in manifest["artifacts"] if artifact["kind"] == "visualization_state_series"
             )
             base_payload = json.loads((Path(first_tmp) / base_artifact["path"]).read_text(encoding="utf-8"))
+            spare_shortfall_payload = json.loads(
+                (Path(first_tmp) / spare_shortfall_artifact["path"]).read_text(encoding="utf-8")
+            )
             second_base_payload = json.loads(
                 (Path(second_tmp) / base_artifact["path"]).read_text(encoding="utf-8")
             )
@@ -655,6 +661,15 @@ class SimulationAdapterTest(unittest.TestCase):
         )
         self.assertEqual(len(projection_artifacts), 4)
         self.assertTrue(all(artifact["source_artifact_id"] == base_artifact["artifact_id"] for artifact in projection_artifacts))
+        self.assertEqual(spare_shortfall_payload["constraints"]["fill_rate"], [0.85, 0.9, 0.95])
+        self.assertEqual(spare_shortfall_payload["constraints"]["utilization"], [0.85, 0.9, 0.95])
+        self.assertEqual(spare_shortfall_payload["truncation"]["mode"], "clamp_0_1")
+        self.assertEqual(
+            spare_shortfall_payload["truncation"]["fields"],
+            ["fill_rate", "utilization", "shortage_probability"],
+        )
+        self.assertIn("utilization", spare_shortfall_payload["data"][0])
+        self.assertIn("constraint_results", spare_shortfall_payload["data"][0])
         self.assertEqual(base_payload["artifact_type"], "monte_carlo_base")
         self.assertEqual(base_payload["model_family"], "aircraft_support_v1")
         self.assertEqual(base_payload["sample_count"], 4)

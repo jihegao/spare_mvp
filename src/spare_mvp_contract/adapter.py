@@ -27,6 +27,11 @@ ARTIFACT_MANIFEST_SCHEMA_VERSION = "artifact-manifest-v0"
 VISUALIZATION_STATE_SERIES_SCHEMA_VERSION = "visualization-state-series-v0"
 MESA_CONTRACT_VERSION = "1.0.0"
 ADAPTER_NAME = "Simulation Adapter Agent"
+SPARE_SHORTFALL_CONSTRAINTS = [0.85, 0.9, 0.95]
+SPARE_SHORTFALL_TRUNCATION = {
+    "mode": "clamp_0_1",
+    "fields": ["fill_rate", "utilization", "shortage_probability"],
+}
 
 
 class AdapterError(ValueError):
@@ -2442,6 +2447,7 @@ class SimulationAdapter:
         shortage_events = max(0.0, float(metrics.get("shortage_events", 0) or 0))
         shortage_probability = min(1.0, shortage_events / planned_sorties)
         spare_fill_rate = min(1.0, max(0.0, float(metrics.get("spare_fill_rate", 0) or 0)))
+        spare_utilization = min(1.0, max(0.0, float(metrics.get("spare_utilization", 0) or 0)))
         mission_success = min(1.0, max(0.0, float(metrics.get("mission_success_rate", metrics.get("sortie_completion_rate", 0)) or 0)))
         sortie_rate = min(1.0, max(0.0, float(metrics.get("sortie_rate", 0) or 0)))
         downtime_values = {
@@ -2474,13 +2480,23 @@ class SimulationAdapter:
                 "run_id": run_id,
                 "model_family": "aircraft_support_v1",
                 "base_artifact_id": source_artifact_id,
+                "constraints": {
+                    "fill_rate": SPARE_SHORTFALL_CONSTRAINTS,
+                    "utilization": SPARE_SHORTFALL_CONSTRAINTS,
+                },
+                "truncation": SPARE_SHORTFALL_TRUNCATION,
                 "data": [
                     {
                         "spare_type": "aircraft_support_v1_spares",
                         "fill_rate": spare_fill_rate,
+                        "utilization": spare_utilization,
                         "shortage_probability": shortage_probability,
                         "in_transit_count": metrics.get("transport_in_transit_count", 0),
                         "risk_level": risk_level,
+                        "constraint_results": {
+                            "fill_rate": self._spare_shortfall_constraint_result(spare_fill_rate),
+                            "utilization": self._spare_shortfall_constraint_result(spare_utilization),
+                        },
                     }
                 ],
             },
@@ -3261,6 +3277,12 @@ class SimulationAdapter:
             return int(round(float(value)))
         except (TypeError, ValueError):
             return 0
+
+    def _spare_shortfall_constraint_result(self, value: float) -> dict[str, Any]:
+        achieved = [threshold for threshold in SPARE_SHORTFALL_CONSTRAINTS if value >= threshold]
+        if achieved:
+            return {"status": "met", "threshold": achieved[-1]}
+        return {"status": "below", "threshold": SPARE_SHORTFALL_CONSTRAINTS[0]}
 
     def _require_monte_carlo_config(
         self,

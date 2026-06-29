@@ -358,7 +358,7 @@
 - 测试：`tests/frontend-contract.test.mjs`
 - 测试：`tests/test_simulation_adapter.py`
 
-- [ ] 备件短板分析：
+- [x] 备件短板分析：
   - 增加备件满足率约束 `0.85`、`0.9`、`0.95`。
   - 增加备件利用率约束 `0.85`、`0.9`、`0.95`。
   - 定义并测试截断规则。
@@ -380,6 +380,13 @@
 - [ ] 运行 `node --test tests/analysis-projection-adapters.test.mjs tests/frontend-contract.test.mjs`。
 - [ ] 运行 `PYTHONDONTWRITEBYTECODE=1 .abm-mesa-test-env/bin/python -m unittest tests.test_simulation_adapter -v`。
 - [ ] 运行 `npm test`。
+
+阶段 6A 验证记录：
+- [x] 运行 `node --test tests/analysis-projection-adapters.test.mjs`。
+- [x] 运行 `PYTHONDONTWRITEBYTECODE=1 .abm-mesa-test-env/bin/python -m unittest tests.test_simulation_adapter.SimulationAdapterTest.test_aircraft_support_v1_monte_carlo_writes_formal_projection_artifacts -v`。
+- [x] 运行 `node --test tests/frontend-contract.test.mjs --test-name-pattern "phase 6A spare shortfall formal table"`。
+
+阶段 6A 已完成备件短板分析 projection payload 的三档满足率/利用率约束、`0..1` 截断规则、行级约束达标状态，以及正式结果表格中的利用率和约束状态展示。飞机转场携行清单、任务可靠度图表和停机因素分析仍未开始，不作为阶段 6A 完成口径。
 
 **退出标准：** 分析页面消费正式 artifact，或在缺少正式来源时明确阻断；任何结果页都不得把本地预览数据声明为正式输出。
 
