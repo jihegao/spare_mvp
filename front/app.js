@@ -58,6 +58,7 @@ import {
   addEquipmentNodeForSelectionModel,
   buildEquipmentComponentTreeModel,
   componentBelongsToAircraftModel,
+  deleteEquipmentNodeForSelectionModel,
   equipmentComponentsForSelectionModel,
   resolveEquipmentSelectionModel,
   wholeMachineModelsForScenario
@@ -790,7 +791,7 @@ function bindEvents() {
 
     const equipmentDeleteNodeButton = event.target.closest("[data-equipment-delete-node]");
     if (equipmentDeleteNodeButton) {
-      deleteSelectedEquipmentAircraft();
+      deleteSelectedEquipmentNode();
       markProjectDraftChanged();
       render();
       return;
@@ -4366,7 +4367,7 @@ function renderEquipmentModeling(page) {
           <div class="equipment-toolbar">
             <label class="rms-file-button">导入表格<input data-equipment-import-file type="file" accept=".csv,.tsv,.json,application/json,text/csv,text/tab-separated-values"></label>
             <button type="button" class="btn-primary" data-equipment-add-node>新增节点</button>
-            <button type="button" class="btn-danger" data-equipment-delete-node ${selectedState.kind === "aircraft" ? "" : "disabled"}>删除</button>
+            <button type="button" class="btn-danger" data-equipment-delete-node ${selectedState.kind === "aircraft-list" ? "disabled" : ""}>删除</button>
           </div>
           <p class="rms-import-status">${htmlEscape(equipmentImportStatus)}</p>
         </div>
@@ -4458,23 +4459,39 @@ function addEquipmentNodeForSelection() {
   updatePreviewResultsThroughApiClient();
 }
 
-function deleteSelectedEquipmentAircraft() {
+function deleteSelectedEquipmentNode() {
   const selectedState = resolveSelectedEquipmentNode();
-  if (selectedState.kind !== "aircraft") return;
-  const aircraftModel = selectedState.aircraftModel;
-  if (!aircraftModel || !Array.isArray(scenario.equipment.wholeMachineModels)) return;
-  removeOperationsSupportActivitiesForAircraftModel(aircraftModel);
-  removePreventiveMaintenanceActivitiesForAircraftModel(aircraftModel);
-  scenario.equipment.wholeMachineModels = scenario.equipment.wholeMachineModels.filter((model) => String(model) !== String(aircraftModel));
-  scenario.components = (scenario.components || []).filter((component) => String(component.aircraftModel || "") !== String(aircraftModel));
-  const fallbackModel = wholeMachineModels()[0] || "";
-  if (String(scenario.equipment.model || "") === String(aircraftModel)) {
-    scenario.equipment.model = fallbackModel;
+  const mutation = deleteEquipmentNodeForSelectionModel({ scenario, selection: selectedState });
+  if (mutation.kind === "none") return;
+  if (mutation.kind === "aircraft") {
+    const aircraftModel = mutation.aircraftModel;
+    removeOperationsSupportActivitiesForAircraftModel(aircraftModel);
+    removePreventiveMaintenanceActivitiesForAircraftModel(aircraftModel);
+    const fallbackModel = wholeMachineModels()[0] || "";
+    cleanupDeletedEquipmentAircraftReferences(aircraftModel, fallbackModel);
+  } else {
+    cleanupDeletedEquipmentComponentReferences(mutation.deletedComponentIds, mutation.selectedEquipmentNodeKey);
   }
-  cleanupDeletedEquipmentAircraftReferences(aircraftModel, fallbackModel);
-  selectedEquipmentNodeKey = "aircraft-list";
-  selectedEquipmentComponentIndex = 0;
+  selectedEquipmentNodeKey = mutation.selectedEquipmentNodeKey || selectedEquipmentNodeKey;
+  selectedEquipmentComponentIndex = Number.isFinite(mutation.selectedEquipmentComponentIndex)
+    ? mutation.selectedEquipmentComponentIndex
+    : 0;
   updatePreviewResultsThroughApiClient();
+}
+
+function cleanupDeletedEquipmentComponentReferences(deletedComponentIds, fallbackSelectionKey = "") {
+  const deletedIds = new Set((deletedComponentIds || []).map((componentId) => String(componentId || "")).filter(Boolean));
+  if (!deletedIds.size) return;
+  for (const activity of scenario.supportActivities || []) {
+    if (deletedIds.has(String(activity.equipmentId || ""))) {
+      delete activity.equipmentId;
+    }
+  }
+  if (selectedCorrectiveComponentId && deletedIds.has(String(selectedCorrectiveComponentId || ""))) {
+    selectedCorrectiveComponentId = fallbackSelectionKey?.startsWith("component:")
+      ? fallbackSelectionKey.slice("component:".length)
+      : "";
+  }
 }
 
 function cleanupDeletedEquipmentAircraftReferences(deletedModel, fallbackModel = "") {
