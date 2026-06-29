@@ -326,6 +326,28 @@
 
 **目的：** 在蒙特卡洛结果承载方式稳定后，完成各分析项的专项集成。
 
+### 阶段 6B 前置：仿真分析验收数据包
+
+**决策：** 仿真分析测试数据应从阶段 6 开始，作为剩余分析功能实现前的独立验收数据包切片推进，不并入阶段 4 RMS 算法，也不等阶段 6 全部完成后再补。
+
+**原因：**
+- 阶段 0-3 已稳定正式 `/api/runs`、artifact、state-series、Monte Carlo 和结果承载路径，测试数据现在可以验证真实 `aircraft_support_v1` 链路，而不是静态预览。
+- 阶段 5 已完成建模颗粒度管理，最小粒度与最大粒度样例可以绑定系统配置语义。
+- 阶段 6 的剩余分析项需要正式 projection 和 state-series 作为输入，先冻结验收数据可以避免页面继续依赖过薄 fixture。
+
+**数据包分层：**
+- `minimal_single_aircraft`：1 架飞机、最少任务、最小装备树、最少保障资源，用于验证最小闭环、缺 artifact、缺 provenance 和 fail-closed 边界。
+- `canonical_platform_case`：继续以 `tests/fixtures/modeling_import_project.json` 为唯一完整业务案例源，保持 M9.6/M9.7/M9.8 验收链路一致。
+- `max_granularity_multi_aircraft`：多飞机、多周期任务、多保障节点、多备件、多保障活动 DAG 和多 sweep 参数，用于验证 Monte Carlo、四类 projection、state-series、事件追溯和前端正式结果承载。
+
+**推荐落点：**
+- 新增或扩展 `tests/fixtures/simulation_analysis_cases/`，只放可复现、可校验的建模导入包或由 canonical case 派生的 fixture。
+- Python 测试覆盖 `SimulationAdapter`、canonical `/api/runs` 产物、`monte_carlo_base`、四类 `analysis_projection_*` 和 `visualization_state_series`。
+- 前端测试覆盖 projection adapter、state-series replay、蒙特卡洛实验详情和剩余分析页的正式来源阻断。
+- 浏览器冒烟覆盖最小单机案例、平台标准案例和最大粒度多机案例的提交、运行、结果读取与失败态展示。
+
+**退出标准：** 三类数据都能从建模导入或 canonical case 进入正式 run 链路；每个分析页要么消费对应正式 artifact，要么明确显示缺少正式来源，不允许回退到本地预览数据并声明为正式结果。
+
 **文件：**
 - 修改：`front/app.js`
 - 修改：`front/analysis-projection-adapters.mjs`
