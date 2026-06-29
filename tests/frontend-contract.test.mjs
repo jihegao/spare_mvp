@@ -570,7 +570,7 @@ test("empty-shell result analysis renders configuration guidance instead of synt
 
   const carryEmptyBranch = carrySource.slice(
     carrySource.indexOf("if (!hasPreviewAnalysisData())"),
-    carrySource.indexOf("const objective")
+    carrySource.indexOf("const rows")
   );
   assert.ok(carryEmptyBranch.length > 0, "carry list analysis should guard empty preview data before building preview rows");
   assert.match(carryEmptyBranch, /renderAnalysisEmptyState\("飞机转场携行清单分析", "参数配置", "携行清单迭代建议"/);
@@ -1119,7 +1119,7 @@ test("equipment aircraft list mutations synchronize operations support activity 
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const supportActivityPlanSource = appSource.slice(
     appSource.indexOf("function supportActivityPlanForPage"),
-    appSource.indexOf("function carryObjectiveOption")
+    appSource.indexOf("render();")
   );
   const equipmentMutationSource = appSource.slice(
     appSource.indexOf("function addEquipmentNodeForSelection"),
@@ -2868,6 +2868,29 @@ test("carry list analysis maps Chinese risk levels to visible priority badges", 
   assert.match(appSource, /case "高":/);
   assert.match(appSource, /case "中":/);
   assert.match(appSource, /case "低":/);
+});
+
+test("phase 6B carry list analysis fixes objective to minimum carried spares", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const carrySource = appSource.slice(
+    appSource.indexOf("function renderCarryListAnalysis"),
+    appSource.indexOf("function carryPriority")
+  );
+  const formalProjectionSource = appSource.slice(
+    appSource.indexOf("function renderFormalProjectionBody"),
+    appSource.indexOf("function renderAnalysisDashboard")
+  );
+  const formalCarrySource = formalProjectionSource.slice(
+    formalProjectionSource.indexOf('formalProjection.analysisType === "carry_list"'),
+    formalProjectionSource.indexOf('formalProjection.analysisType === "mission_reliability"')
+  );
+
+  assert.doesNotMatch(appSource, /function carryObjectiveOption/);
+  assert.doesNotMatch(appSource, /let carryObjective/);
+  assert.doesNotMatch(carrySource, /<select>|优化条件|出动架次率|再次出动准备时间|carryObjectiveOption/);
+  assert.match(carrySource, /携行备件越少越好/);
+  assert.match(formalCarrySource, /携行备件越少越好/);
+  assert.match(formalCarrySource, /projection payload/);
 });
 
 test("monte carlo formal results render inside the experiment detail flow", async () => {

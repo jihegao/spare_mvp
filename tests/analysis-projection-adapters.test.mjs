@@ -61,6 +61,8 @@ test("normalizes carry list projection payload for formal KPI and table renderin
     ["最高携行倍率", "1.40"],
     ["高优先级备件", "engine"]
   ]);
+  assert.equal(view.objective, "minimize_carry_spares");
+  assert.deepEqual(view.metrics[0], ["默认目标", "携行备件越少越好"]);
   assert.equal(view.rows[0].priority, "高");
   assert.equal(view.rows[0].qty, 2);
 });

@@ -555,7 +555,6 @@ let selectedFeatureId = readFeatureIdFromHash() || DEFAULT_FEATURE_ID;
 let selectedMesaView = "aircraft";
 let selectedVisualAircraftId = "";
 let collapsedTreeNodes = new Set();
-let carryObjective = "availability";
 let experimentRunStatus = "当前";
 let selectedExperimentPlanNames = new Set();
 let isProjectMenuOpen = false;
@@ -758,15 +757,6 @@ function supportActivityPlanForPage(page, activity) {
   };
 }
 
-function carryObjectiveOption(id) {
-  const final = singleResult?.final || {};
-  const options = {
-    availability: { label: "使用可用度", metricLabel: "当前使用可用度", metricValue: fixed(final.ready_rate || 0, 2) },
-    "sortie-rate": { label: "出动架次率", metricLabel: "当前出动架次率", metricValue: fixed(final.sortie_rate || 0, 2) },
-    "turnaround-time": { label: "再次出动准备时间", metricLabel: "当前准备时间", metricValue: `${fixed(final.mean_turnaround_time || 0, 1)} h` }
-  };
-  return options[id] || options.availability;
-}
 render();
 bindEvents();
 restoreStoredBackendSessionOnBoot().finally(() => hydrateLastBackendRunFromApi());
@@ -11618,7 +11608,6 @@ function renderCarryListAnalysis() {
   if (!hasPreviewAnalysisData()) {
     return renderAnalysisEmptyState("飞机转场携行清单分析", "参数配置", "携行清单迭代建议", "暂无分析数据，请先导入并发布建模 JSON，或创建并运行 Monte Carlo 分析任务。");
   }
-  const objective = carryObjectiveOption(carryObjective);
   const rows = singleResult.carryList.map((row, index) => ({
     name: row.spareType,
     satisfy: Math.max(0, 1 - row.shortage / Math.max(row.recommended, 1)),
@@ -11632,15 +11621,15 @@ function renderCarryListAnalysis() {
     mode: "参数配置",
     subtitle: "携行清单迭代建议",
     config: `
-      <label>优化条件<select><option>${objective.label}</option><option>出动架次率</option><option>再次出动准备时间</option></select></label>
+      <label>默认目标<input value="携行备件越少越好" readonly></label>
       <label>备件满足率不低于<input value="0.90"></label>
       <label>备件利用率不低于<input value="0.70"></label>
     `,
     metrics: [
-      ["优化条件", objective.label],
+      ["默认目标", "携行备件越少越好"],
       ["携行备件数量", `${rows.reduce((sum, row) => sum + row.qty, 0)} 件`],
       ["备件满足率不低于", "0.90"],
-      [objective.metricLabel, objective.metricValue]
+      ["目标口径", "不可由页面切换"]
     ],
     body: `
       <div class="table-wrap">
@@ -11655,7 +11644,7 @@ function renderCarryListAnalysis() {
           `).join("")}</tbody>
         </table>
       </div>
-      <div class="decision-support-card"><strong>携行清单说明</strong><span>以${objective.label}为优化目标，优先补足低满足率且短缺次数高的备件，形成转场前装箱评审清单。</span></div>
+      <div class="decision-support-card"><strong>携行清单说明</strong><span>以携行备件越少越好为默认目标，优先补足低满足率且短缺次数高的备件，形成转场前装箱评审清单。</span></div>
     `
   });
 }
@@ -12156,7 +12145,7 @@ function renderFormalProjectionBody(formalProjection) {
           `).join("")}</tbody>
         </table>
       </div>
-      <div class="decision-support-card"><strong>携行清单说明</strong><span>以 projection payload 为正式来源，按推荐携行倍率和风险等级形成转场前装箱评审清单。</span></div>
+      <div class="decision-support-card"><strong>携行清单说明</strong><span>正式来源为 projection payload，默认目标为携行备件越少越好，按推荐携行倍率和风险等级形成转场前装箱评审清单。</span></div>
     `;
   }
   if (formalProjection.analysisType === "mission_reliability") {

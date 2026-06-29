@@ -140,9 +140,10 @@ function normalizeCarryList(payload) {
     analysisType: "carry_list",
     formal: true,
     source: "projection payload",
+    objective: "minimize_carry_spares",
     rows,
     metrics: [
-      ["优化条件", "projection payload"],
+      ["默认目标", "携行备件越少越好"],
       ["携行备件数量", `${rows.reduce((sum, row) => sum + row.qty, 0)} 件`],
       ["最高携行倍率", fixed(max(rows.map((row) => row.multiplier), 0), 2)],
       ["高优先级备件", highPriority.map((row) => row.name).slice(0, 2).join(" / ") || "-"]
