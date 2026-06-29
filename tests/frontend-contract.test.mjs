@@ -560,7 +560,7 @@ test("empty-shell result analysis renders configuration guidance instead of synt
     appSource.indexOf("function analysisTypeForPage")
   );
 
-  for (const source of [spareSource, carrySource, downtimeSource]) {
+  for (const source of [spareSource, carrySource]) {
     assert.match(source, /hasPreviewAnalysisData\(\)/);
     assert.match(source, /renderAnalysisEmptyState/);
     assert.match(source, /暂无分析数据，请先导入并发布建模 JSON，或创建并运行 Monte Carlo 分析任务。/);
@@ -570,6 +570,9 @@ test("empty-shell result analysis renders configuration guidance instead of synt
   assert.match(reliabilitySource, /任务可靠度页只显示正式 projection/);
   assert.match(reliabilitySource, /analysis_projection_mission_reliability/);
   assert.doesNotMatch(reliabilitySource, /singleResult\.timeline|Math\.min\(\.\.\.rows|Math\.max\(\.\.\.rows|Infinity|-Infinity/);
+  assert.match(downtimeSource, /停机因素页只显示正式 projection/);
+  assert.match(downtimeSource, /analysis_projection_downtime_factors/);
+  assert.doesNotMatch(downtimeSource, /singleResult\.downtimeFactors|Math\.min\(\.\.\.rows|Math\.max\(\.\.\.rows|Math\.max\(\.\.\.factors|Infinity|-Infinity/);
 
   const carryEmptyBranch = carrySource.slice(
     carrySource.indexOf("if (!hasPreviewAnalysisData())"),
@@ -2926,6 +2929,35 @@ test("phase 6C mission reliability chart uses formal projection time sequence on
   assert.match(formalReliabilitySource, /仿真时间/);
   assert.doesNotMatch(formalReliabilitySource, /0\.7|0\.9|阈值|目标线|风险线/);
   assert.doesNotMatch(reliabilitySource + formalReliabilitySource, /具体需求待甲方确定/);
+});
+
+test("phase 6D downtime analysis renders formal anomaly snapshots with export and delete controls", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const downtimeSource = appSource.slice(
+    appSource.indexOf("function renderDowntimeFactorAnalysis"),
+    appSource.indexOf("function analysisTypeForPage")
+  );
+  const formalDowntimeSource = appSource.slice(
+    appSource.indexOf('if (formalProjection.analysisType === "downtime_factors")'),
+    appSource.indexOf("function visibleDowntimeAnomalySnapshots")
+  );
+  const handlerSource = appSource.slice(
+    appSource.indexOf("const analysisActionButton"),
+    appSource.indexOf("const experimentPlanRefreshButton")
+  );
+
+  assert.match(downtimeSource, /analysisProjectionForBoundary\(boundary\)/);
+  assert.match(downtimeSource, /停机因素页只显示正式 projection/);
+  assert.doesNotMatch(downtimeSource, /singleResult\.downtimeFactors/);
+  assert.match(formalDowntimeSource, /异常停机事件快照/);
+  assert.match(formalDowntimeSource, /support_activity_state/);
+  assert.match(formalDowntimeSource, /jobNodeId|jobNodeLabel/);
+  assert.match(formalDowntimeSource, /data-downtime-snapshot-export/);
+  assert.match(formalDowntimeSource, /data-downtime-snapshot-delete/);
+  assert.match(appSource, /function exportDowntimeAnomalySnapshots/);
+  assert.match(appSource, /function deleteDowntimeAnomalySnapshot/);
+  assert.match(handlerSource, /downtimeSnapshotExportButton/);
+  assert.match(handlerSource, /downtimeSnapshotDeleteButton/);
 });
 
 test("monte carlo formal results render inside the experiment detail flow", async () => {

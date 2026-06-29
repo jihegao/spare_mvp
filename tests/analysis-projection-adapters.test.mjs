@@ -115,6 +115,18 @@ test("normalizes downtime factor projection payload for formal KPI and table ren
       { factor: "failure", contribution: 0.4 },
       { factor: "spare_shortage", contribution: 0.35 },
       { factor: "resource_delay", contribution: 0.25 }
+    ],
+    anomaly_snapshots: [
+      {
+        snapshot_id: "downtime-run-ui-0001",
+        simulation_time: 60,
+        event_type: "spare_shortage",
+        event_label: "备件短缺",
+        result: "mission_delayed",
+        support_activity_state: { active_jobs: 2, repair_backlog: 1, spare_fill_rate: 0.72 },
+        job_node: { job_id: "job-7", task: "更换液压泵", state: "waiting" },
+        frame_ref: { sample_index: 0, sample_step: 2, step: 2 }
+      }
     ]
   }, { runId: "run-ui", modelFamily: "aircraft_support_v1" });
 
@@ -122,6 +134,21 @@ test("normalizes downtime factor projection payload for formal KPI and table ren
   assert.equal(view.metrics[1][1], "装备故障");
   assert.equal(view.rows[0].label, "装备故障");
   assert.equal(view.rows[0].contributionLabel, "40%");
+  assert.equal(view.snapshots.length, 1);
+  assert.deepEqual(view.snapshots[0], {
+    id: "downtime-run-ui-0001",
+    timeLabel: "60",
+    eventType: "spare_shortage",
+    eventLabel: "备件短缺",
+    result: "mission_delayed",
+    activeJobs: 2,
+    repairBacklog: 1,
+    spareFillRate: 0.72,
+    jobNodeId: "job-7",
+    jobNodeLabel: "更换液压泵",
+    jobState: "waiting",
+    frameRef: "sample=0; sample_step=2; step=2"
+  });
 });
 
 test("rejects mismatched or malformed projection payloads fail closed", () => {
@@ -194,6 +221,14 @@ test("rejects mismatched or malformed projection payloads fail closed", () => {
       data: [{ factor: "failure", contribution: "bad" }]
     }),
     /contribution must be a finite number/
+  );
+  assert.throws(
+    () => normalizeAnalysisProjectionPayload("downtime_factors", {
+      projection_type: "downtime_factors",
+      data: [{ factor: "failure", contribution: 1 }],
+      anomaly_snapshots: [{ snapshot_id: "bad", event_type: "failure", support_activity_state: {} }]
+    }),
+    /anomaly snapshot simulation_time must be a finite number/
   );
   assert.equal(projectionArtifactKindForAnalysisType("mission_reliability"), "analysis_projection_mission_reliability");
 });

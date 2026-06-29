@@ -364,6 +364,9 @@
 
 阶段 6P 已完成三类仿真分析验收数据包、fixture drift 检查和正式 `aircraft_support_v1` Monte Carlo artifact 验证。浏览器冒烟仍作为最终验证矩阵的一部分执行，不阻塞 6P 数据基线合并。
 
+阶段 6P 后续待办：
+- [ ] 将 `系统运行支持模块 / 项目管理 / 建模颗粒度管理` 的选中字段对齐到三类 6P 导入案例标准：`minimal_single_aircraft` 作为最小可运行颗粒度，`canonical_platform_case` 作为平台标准案例，`max_granularity_multi_aircraft` 作为最大建模颗粒度。实现时应新增从 `modeling_import` 字段路径到前端建模字段 key 的显式映射，并用覆盖率测试防止行为字段被静默遗漏；不要仅调整 UI 默认勾选状态。
+
 **文件：**
 - 修改：`front/app.js`
 - 修改：`front/analysis-projection-adapters.mjs`
@@ -390,7 +393,7 @@
   - 图上不显示风险阈值线，改为显示可靠度曲线下降最大的区间。
   - 任务可靠度页只允许正式 projection；缺少 `analysis_projection_mission_reliability` 时阻断，不回退到本地预览。
   - 不实现标记为 `具体需求待甲方确定` 的内容。
-- [ ] 阶段 6D：停机因素分析：
+- [x] 阶段 6D：停机因素分析：
   - 检测异常停机事件。
   - 记录时间、事件、结果和保障活动状态快照。
   - 展示快照详情。
@@ -398,28 +401,35 @@
   - 导出和删除异常快照记录。
 
 **验证：**
-- [ ] 运行 `node --test tests/analysis-projection-adapters.test.mjs tests/frontend-contract.test.mjs`。
-- [ ] 运行 `PYTHONDONTWRITEBYTECODE=1 .abm-mesa-test-env/bin/python -m unittest tests.test_simulation_adapter -v`。
-- [ ] 运行 `npm test`。
+- [x] 运行 `node --test tests/analysis-projection-adapters.test.mjs tests/frontend-contract.test.mjs`。
+- [x] 运行 `PYTHONDONTWRITEBYTECODE=1 .abm-mesa-test-env/bin/python -m unittest tests.test_simulation_adapter -v`。
+- [x] 运行 `npm test`。
 
 阶段 6A 验证记录：
 - [x] 运行 `node --test tests/analysis-projection-adapters.test.mjs`。
 - [x] 运行 `PYTHONDONTWRITEBYTECODE=1 .abm-mesa-test-env/bin/python -m unittest tests.test_simulation_adapter.SimulationAdapterTest.test_aircraft_support_v1_monte_carlo_writes_formal_projection_artifacts -v`。
 - [x] 运行 `node --test tests/frontend-contract.test.mjs --test-name-pattern "phase 6A spare shortfall formal table"`。
 
-阶段 6A 已完成备件短板分析 projection payload 的三档满足率/利用率约束、`0..1` 截断规则、行级约束达标状态，以及正式结果表格中的利用率和约束状态展示。飞机转场携行清单、任务可靠度图表和停机因素分析仍未开始，不作为阶段 6A 完成口径。
+阶段 6A 已完成备件短板分析 projection payload 的三档满足率/利用率约束、`0..1` 截断规则、行级约束达标状态，以及正式结果表格中的利用率和约束状态展示。飞机转场携行清单、任务可靠度图表和停机因素分析当时未纳入阶段 6A 完成口径。
 
 阶段 6B 验证记录：
 - [x] 运行 `node --test tests/analysis-projection-adapters.test.mjs tests/frontend-contract.test.mjs`。
 
-阶段 6B 已移除飞机转场携行清单的优化条件切换 UI，将本地预览和正式 projection 目标固定为“携行备件越少越好”，并增加测试防止目标被误改。任务可靠度图表和停机因素分析仍未开始，不作为阶段 6B 完成口径。
+阶段 6B 已移除飞机转场携行清单的优化条件切换 UI，将本地预览和正式 projection 目标固定为“携行备件越少越好”，并增加测试防止目标被误改。任务可靠度图表和停机因素分析当时未纳入阶段 6B 完成口径。
 
 阶段 6C 验证记录：
 - [x] 运行 `node --test tests/frontend-contract.test.mjs --test-name-pattern "phase 6C mission reliability chart"`。
 - [x] 运行 `node --test tests/analysis-projection-adapters.test.mjs --test-name-pattern "normalizes mission reliability"`。
 - [x] 运行 `PYTHONDONTWRITEBYTECODE=1 .abm-mesa-test-env/bin/python -m unittest tests.test_simulation_adapter.SimulationAdapterTest.test_aircraft_support_v1_monte_carlo_writes_formal_projection_artifacts -v`。
 
-阶段 6C 已将任务可靠度趋势图纵坐标下限从 `0.84` 调整为 `0`，横轴改为正式 projection 序列的等距序号，表格保留仿真时间，并显示可靠度曲线下降最大的相邻区间。任务可靠度页只消费正式 `analysis_projection_mission_reliability`，缺少正式 projection 时显示阻断说明，不回退到本地预览。该阶段不实现标记为 `具体需求待甲方确定` 的内容；停机因素分析仍未开始，不作为阶段 6C 完成口径。
+阶段 6C 已将任务可靠度趋势图纵坐标下限从 `0.84` 调整为 `0`，横轴改为正式 projection 序列的等距序号，表格保留仿真时间，并显示可靠度曲线下降最大的相邻区间。任务可靠度页只消费正式 `analysis_projection_mission_reliability`，缺少正式 projection 时显示阻断说明，不回退到本地预览。该阶段不实现标记为 `具体需求待甲方确定` 的内容；停机因素分析当时未纳入阶段 6C 完成口径。
+
+阶段 6D 验证记录：
+- [x] 运行 `node --test tests/analysis-projection-adapters.test.mjs --test-name-pattern "downtime factor|malformed"`。
+- [x] 运行 `node --test tests/frontend-contract.test.mjs --test-name-pattern "phase 6D|empty-shell|generic operation"`。
+- [x] 运行 `PYTHONDONTWRITEBYTECODE=1 .abm-mesa-test-env/bin/python -m unittest tests.test_simulation_adapter.SimulationAdapterTest.test_run_aircraft_support_v1_single_run_writes_real_artifacts_and_behavior_scope -v`。
+
+阶段 6D 已让 `analysis_projection_downtime_factors` 产出异常停机事件快照，记录仿真时间、事件、结果、保障活动状态和作业节点定位；停机因素页只消费正式 projection，缺少正式 projection 时阻断，不回退到本地预览。页面可导出当前异常快照，并可在本地视图中删除单条快照记录。
 
 **退出标准：** 分析页面消费正式 artifact，或在缺少正式来源时明确阻断；任何结果页都不得把本地预览数据声明为正式输出。
 

@@ -232,18 +232,45 @@ function normalizeDowntimeFactors(payload) {
       };
     })
     .sort((left, right) => right.contribution - left.contribution);
+  const snapshots = normalizeDowntimeAnomalySnapshots(payload.anomaly_snapshots || []);
   return {
     analysisType: "downtime_factors",
     formal: true,
     source: "projection payload",
     rows,
+    snapshots,
     metrics: [
       ["停机因素总次数", `${rows.length} 项`],
       ["首要因素", rows[0]?.label || "-"],
       ["次要因素", rows[1]?.label || "-"],
-      ["projection payload", "downtime_factors"]
+      ["异常停机快照", `${snapshots.length} 条`]
     ]
   };
+}
+
+function normalizeDowntimeAnomalySnapshots(value) {
+  return requireArray(value, "anomaly_snapshots must be an array")
+    .map((row) => {
+      const time = requireFiniteNumber(row.simulation_time, "anomaly snapshot simulation_time");
+      const state = requireObject(row.support_activity_state, "support_activity_state must be an object");
+      const job = requireObject(row.job_node, "job_node must be an object");
+      const frameRef = requireObject(row.frame_ref, "frame_ref must be an object");
+      return {
+        id: stringValue(row.snapshot_id, `downtime-${time}`),
+        timeLabel: stringValue(time, "0"),
+        eventType: stringValue(row.event_type, "downtime_event"),
+        eventLabel: stringValue(row.event_label, DOWNTIME_FACTOR_LABELS[row.event_type] || row.event_type || "停机事件"),
+        result: stringValue(row.result, "recorded"),
+        activeJobs: Math.max(0, Math.round(numberOrZero(state.active_jobs))),
+        repairBacklog: Math.max(0, Math.round(numberOrZero(state.repair_backlog))),
+        spareFillRate: clamp01(numberOrZero(state.spare_fill_rate)),
+        jobNodeId: stringValue(job.job_id || job.node_id, "unknown_job"),
+        jobNodeLabel: stringValue(job.task || job.label || job.kind, "未定位作业"),
+        jobState: stringValue(job.state, "unknown"),
+        frameRef: `sample=${stringValue(frameRef.sample_index, "0")}; sample_step=${stringValue(frameRef.sample_step, "0")}; step=${stringValue(frameRef.step, "0")}`
+      };
+    })
+    .sort((left, right) => Number(left.timeLabel) - Number(right.timeLabel));
 }
 
 function requireArray(value, message) {
@@ -259,6 +286,10 @@ function requireObject(value, message) {
 function requireFiniteNumber(value, fieldName) {
   if (typeof value !== "number" || !Number.isFinite(value)) throw new Error(`${fieldName} must be a finite number`);
   return value;
+}
+
+function numberOrZero(value) {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
 function stringValue(value, fallback) {

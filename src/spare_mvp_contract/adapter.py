@@ -1533,7 +1533,19 @@ class SimulationAdapter:
             "metrics": snapshot,
         }
         result_summary_artifact_id = f"result_summary-{run_id}"
-        projections = self._aircraft_support_v1_analysis_projections(snapshot, result_summary_artifact_id)
+        projections = self._aircraft_support_v1_analysis_projections(
+            snapshot,
+            result_summary_artifact_id,
+            samples=[
+                {
+                    "sample_index": 0,
+                    "seed": inputs["seed"],
+                    "sweep": {},
+                    "frames": state_series_frames,
+                }
+            ],
+            run_id=run_id,
+        )
         result["analysis_outputs"] = {
             "spare_shortage": projections["spare_shortfall"]["data"],
             "carry_list": projections["carry_list"]["data"],
@@ -2539,8 +2551,136 @@ class SimulationAdapter:
                     {"factor": factor, "contribution": value / downtime_total}
                     for factor, value in downtime_values.items()
                 ],
+                "anomaly_snapshots": self._aircraft_support_v1_downtime_anomaly_snapshots(samples or [], run_id),
             },
         }
+
+    def _aircraft_support_v1_downtime_anomaly_snapshots(
+        self,
+        samples: list[dict[str, Any]],
+        run_id: str,
+    ) -> list[dict[str, Any]]:
+        snapshots: list[dict[str, Any]] = []
+        for sample in samples:
+            sample_index = int(sample.get("sample_index", 0) or 0)
+            seed = sample.get("seed")
+            sweep = copy.deepcopy(sample.get("sweep") or {})
+            for frame in sample.get("frames") or []:
+                candidates = self._downtime_snapshot_events(frame)
+                for event_type, event in candidates:
+                    snapshots.append(
+                        self._downtime_anomaly_snapshot(
+                            run_id=run_id,
+                            ordinal=len(snapshots) + 1,
+                            sample_index=sample_index,
+                            seed=seed,
+                            sweep=sweep,
+                            frame=frame,
+                            event_type=event_type,
+                            event=event,
+                        )
+                    )
+                    if len(snapshots) >= 20:
+                        return snapshots
+        return snapshots
+
+    def _downtime_snapshot_events(self, frame: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
+        events: list[tuple[str, dict[str, Any]]] = []
+        for event in frame.get("events") or []:
+            event_type = str(event.get("event_type") or event.get("event") or "")
+            downtime_type = self._downtime_event_type(event_type)
+            if downtime_type:
+                events.append((downtime_type, copy.deepcopy(event)))
+        if events:
+            return events
+        summary = frame.get("event_summary") if isinstance(frame.get("event_summary"), dict) else {}
+        fallback_map = [
+            ("failure", "downtime_failure_events"),
+            ("spare_shortage", "downtime_spare_shortage_events"),
+            ("resource_delay", "downtime_resource_delay_events"),
+        ]
+        for event_type, metric in fallback_map:
+            if float(summary.get(metric, 0) or 0) > 0:
+                return [
+                    (
+                        event_type,
+                        {
+                            "time": frame.get("simulation_time", frame.get("step", 0)),
+                            "event": event_type,
+                            "event_type": event_type,
+                            "message": f"{event_type} downtime metric exceeded zero",
+                            "metric_refs": [metric],
+                        },
+                    )
+                ]
+        return []
+
+    def _downtime_event_type(self, event_type: str) -> str:
+        normalized = event_type.lower()
+        if "spare" in normalized or "shortage" in normalized:
+            return "spare_shortage"
+        if "resource" in normalized or "delay" in normalized:
+            return "resource_delay"
+        if "fail" in normalized:
+            return "failure"
+        return ""
+
+    def _downtime_anomaly_snapshot(
+        self,
+        *,
+        run_id: str,
+        ordinal: int,
+        sample_index: int,
+        seed: Any,
+        sweep: dict[str, Any],
+        frame: dict[str, Any],
+        event_type: str,
+        event: dict[str, Any],
+    ) -> dict[str, Any]:
+        resource_state = frame.get("resource_state") if isinstance(frame.get("resource_state"), dict) else {}
+        jobs = [job for job in frame.get("jobs") or [] if isinstance(job, dict)]
+        job = jobs[0] if jobs else {}
+        simulation_time = float(frame.get("simulation_time", event.get("time", frame.get("step", 0))) or 0)
+        return {
+            "snapshot_id": f"downtime-{run_id or 'run'}-{ordinal:04d}",
+            "run_id": run_id,
+            "sample_index": sample_index,
+            "seed": seed,
+            "sweep": sweep,
+            "simulation_time": simulation_time,
+            "event_type": event_type,
+            "event_label": event_type,
+            "event": copy.deepcopy(event),
+            "result": self._downtime_snapshot_result(event_type),
+            "support_activity_state": {
+                "active_jobs": len(jobs),
+                "repair_backlog": float(resource_state.get("repair_backlog", 0) or 0),
+                "postflight_backlog": float(resource_state.get("postflight_backlog", 0) or 0),
+                "preventive_backlog": float(resource_state.get("preventive_backlog", 0) or 0),
+                "spare_fill_rate": float(resource_state.get("spare_fill_rate", 0) or 0),
+            },
+            "job_node": {
+                "job_id": str(job.get("job_id") or f"{event_type}-node"),
+                "kind": str(job.get("kind") or event_type),
+                "state": str(job.get("state") or "observed"),
+                "task": str(job.get("task") or self._downtime_snapshot_result(event_type)),
+                "tail_number": str(job.get("tail_number") or ""),
+            },
+            "frame_ref": {
+                "sample_index": sample_index,
+                "sample_step": int(frame.get("sample_step", frame.get("step", 0)) or 0),
+                "step": int(frame.get("step", frame.get("sample_step", 0)) or 0),
+            },
+        }
+
+    def _downtime_snapshot_result(self, event_type: str) -> str:
+        if event_type == "spare_shortage":
+            return "mission_delayed_by_spare_shortage"
+        if event_type == "resource_delay":
+            return "mission_delayed_by_resource_constraint"
+        if event_type == "failure":
+            return "aircraft_unavailable_after_failure"
+        return "downtime_anomaly_recorded"
 
     def _aircraft_support_v1_mission_reliability_series(
         self,

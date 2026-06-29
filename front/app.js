@@ -92,6 +92,7 @@ const PROJECT_SOURCE = Object.freeze({
   imported_sample: "imported_sample"
 });
 let demoProjects = mergeProjectsById(readManualDraftProjectsFromStorage());
+let deletedDowntimeSnapshotIds = new Set();
 const ANALYSIS_PROJECTION_TYPES = [
   { analysisType: "spare_shortfall", artifactKind: "analysis_projection_spare_shortfall", source_artifact_id: "monte_carlo_base_artifact" },
   { analysisType: "carry_list", artifactKind: "analysis_projection_carry_list", source_artifact_id: "monte_carlo_base_artifact" },
@@ -1651,6 +1652,20 @@ function bindEvents() {
         analysisTasks = analysisTasks.filter((item) => item.id !== taskId);
         if (selectedAnalysisTaskId === taskId) selectedAnalysisTaskId = "";
       }
+      render();
+      return;
+    }
+
+    const downtimeSnapshotExportButton = event.target.closest("[data-downtime-snapshot-export]");
+    if (downtimeSnapshotExportButton) {
+      exportDowntimeAnomalySnapshots();
+      render();
+      return;
+    }
+
+    const downtimeSnapshotDeleteButton = event.target.closest("[data-downtime-snapshot-delete]");
+    if (downtimeSnapshotDeleteButton) {
+      deleteDowntimeAnomalySnapshot(downtimeSnapshotDeleteButton.dataset.downtimeSnapshotDelete || "");
       render();
       return;
     }
@@ -11756,39 +11771,21 @@ function renderTaskReliabilityAnalysis() {
 }
 
 function renderDowntimeFactorAnalysis() {
-  if (!hasPreviewAnalysisData()) {
-    return renderAnalysisEmptyState("停机因素分析", "启动分析", "停机贡献因素排序", "暂无分析数据，请先导入并发布建模 JSON，或创建并运行 Monte Carlo 分析任务。");
-  }
-  const factors = singleResult.downtimeFactors;
-  if (!factors.length) {
-    return renderAnalysisEmptyState("停机因素分析", "启动分析", "停机贡献因素排序", "暂无分析数据，请先导入并发布建模 JSON，或创建并运行 Monte Carlo 分析任务。");
-  }
-  const total = factors.reduce((sum, row) => sum + row.count, 0);
-  const maxFactorCount = factors.reduce((max, row) => Math.max(max, row.count), 1);
-  const primaryFactors = factors.slice(0, 2);
+  const page = getFeaturePageById(selectedFeatureId);
+  const boundary = formalAnalysisBoundary(page);
+  const formalProjection = analysisProjectionForBoundary(boundary);
   return renderAnalysisDashboard({
     title: "停机因素分析",
     mode: "启动分析",
     subtitle: "停机贡献因素排序",
-    metrics: [
-      ["停机因素总次数", `${total}`],
-      ["首要因素", primaryFactors[0]?.label || "-"],
-      ["次要因素", primaryFactors[1]?.label || "-"],
-      ["备件满足率", fixed(singleResult.final.spare_fill_rate, 2)]
+    metrics: formalProjection?.metrics || [
+      ["正式结果", "等待 projection"],
+      ["快照来源", "analysis projection"],
+      ["本地预览", "禁用"]
     ],
-    body: `
-      <div class="factor-grid">
-        <div class="factor-column"><h4>停机因素</h4><div class="factor-list">${primaryFactors.map((row) => `<div class="factor-item"><span>${row.label}</span><span>${row.count}</span></div>`).join("")}</div></div>
-        <div class="factor-column"><h4>二级因素</h4><div class="factor-list">${factors.map((row) => `<div class="factor-item"><span>${row.label}</span><span>${row.count}</span></div>`).join("")}</div></div>
-        <div class="factor-column"><h4>观察指标</h4><div class="factor-list"><div class="factor-item"><span>备件满足率</span><span>${fixed(singleResult.final.spare_fill_rate, 2)}</span></div><div class="factor-item"><span>维修积压</span><span>${singleResult.final.repair_backlog || 0}</span></div></div></div>
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>二级因素</th><th>贡献次数</th><th>贡献度</th><th>图示</th></tr></thead>
-          <tbody>${factors.map((row) => `<tr><td>${row.label}</td><td>${row.count}</td><td>${pct(row.contribution)}</td><td class="bar-cell">${renderBar(row.count, maxFactorCount, row.count >= 2 ? "red" : "blue")}</td></tr>`).join("")}</tbody>
-        </table>
-      </div>
-    `
+    body: formalProjection
+      ? renderFormalProjectionBody(formalProjection)
+      : `<div class="empty-state"><strong>停机因素页只显示正式 projection。</strong><p>请先绑定并完成 Monte Carlo 实验，等待 analysis_projection_downtime_factors payload 解析成功后再查看异常停机事件快照。</p></div>`
   });
 }
 
@@ -12211,6 +12208,7 @@ function renderFormalProjectionBody(formalProjection) {
     const rows = formalProjection.rows || [];
     const primaryFactors = rows.slice(0, 2);
     const maxFactorCount = rows.reduce((maxValue, row) => Math.max(maxValue, row.count || 0), 1);
+    const snapshots = visibleDowntimeAnomalySnapshots(formalProjection);
     return `
       <div class="factor-grid">
         <div class="factor-column"><h4>停机因素</h4><div class="factor-list">${primaryFactors.map((row) => `<div class="factor-item"><span>${htmlEscape(row.label)}</span><span>${row.contributionLabel}</span></div>`).join("")}</div></div>
@@ -12223,9 +12221,61 @@ function renderFormalProjectionBody(formalProjection) {
           <tbody>${rows.map((row) => `<tr><td>${htmlEscape(row.label)}</td><td>${row.count}</td><td>${row.contributionLabel}</td><td class="bar-cell">${renderBar(row.count, maxFactorCount, row.count >= 35 ? "red" : "blue")}</td></tr>`).join("")}</tbody>
         </table>
       </div>
+      <div class="toolbar-row">
+        <button type="button" data-downtime-snapshot-export ${snapshots.length ? "" : "disabled"}>导出异常快照</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>异常停机事件快照</th><th>时间</th><th>事件</th><th>结果</th><th>support_activity_state</th><th>作业节点</th><th>状态</th><th>定位</th><th>快照动作</th></tr></thead>
+          <tbody>${snapshots.map((snapshot) => `
+            <tr>
+              <td>${htmlEscape(snapshot.id)}</td>
+              <td>${htmlEscape(snapshot.timeLabel)}</td>
+              <td>${htmlEscape(snapshot.eventLabel)}</td>
+              <td>${htmlEscape(snapshot.result)}</td>
+              <td>${htmlEscape(`active=${snapshot.activeJobs}; repair=${snapshot.repairBacklog}; spare=${fixed(snapshot.spareFillRate, 2)}`)}</td>
+              <td>${htmlEscape(snapshot.jobNodeLabel)}</td>
+              <td>${htmlEscape(snapshot.jobState)}</td>
+              <td>${htmlEscape(`${snapshot.jobNodeId}; ${snapshot.frameRef}`)}</td>
+              <td><button type="button" class="btn-danger" data-downtime-snapshot-delete="${htmlEscape(snapshot.id)}">删除</button></td>
+            </tr>
+          `).join("")}</tbody>
+        </table>
+      </div>
     `;
   }
   return "";
+}
+
+function visibleDowntimeAnomalySnapshots(formalProjection) {
+  return (formalProjection.snapshots || []).filter((snapshot) => !deletedDowntimeSnapshotIds.has(snapshot.id));
+}
+
+function exportDowntimeAnomalySnapshots() {
+  const page = getFeaturePageById(selectedFeatureId);
+  const boundary = formalAnalysisBoundary(page);
+  const formalProjection = analysisProjectionForBoundary(boundary);
+  const snapshots = visibleDowntimeAnomalySnapshots(formalProjection || {});
+  const payload = {
+    schemaVersion: "downtime-anomaly-snapshots-v1",
+    exportedAt: new Date().toISOString(),
+    runId: boundary?.linkedExperiment?.runId || backendRun?.run_id || "",
+    snapshots
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `downtime-anomaly-snapshots-${payload.runId || "local"}.json`;
+  anchor.click();
+  URL.revokeObjectURL(url);
+  backendApiStatus = `已导出 ${snapshots.length} 条异常停机快照`;
+}
+
+function deleteDowntimeAnomalySnapshot(snapshotId) {
+  if (!snapshotId) return;
+  deletedDowntimeSnapshotIds = new Set([...deletedDowntimeSnapshotIds, snapshotId]);
+  backendApiStatus = `已删除异常停机快照 ${snapshotId}`;
 }
 
 function renderAnalysisDashboard({ title, mode, subtitle, config = "", metrics, body }) {

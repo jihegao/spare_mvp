@@ -434,6 +434,15 @@ class SimulationAdapterTest(unittest.TestCase):
         self.assertEqual(run["model_id"], "AircraftSupportV1Model")
         self.assertEqual(result["model_family"], "aircraft_support_v1")
         self.assertEqual(result["metrics"], second["result"]["metrics"])
+        self.assertIn("anomaly_snapshots", projection_payload)
+        self.assertTrue(projection_payload["anomaly_snapshots"])
+        downtime_snapshot = projection_payload["anomaly_snapshots"][0]
+        self.assertIn(downtime_snapshot["event_type"], {"failure", "spare_shortage", "resource_delay"})
+        self.assertIn("simulation_time", downtime_snapshot)
+        self.assertIn("result", downtime_snapshot)
+        self.assertIn("support_activity_state", downtime_snapshot)
+        self.assertIn("job_node", downtime_snapshot)
+        self.assertIn("frame_ref", downtime_snapshot)
         self.assertEqual(
             kinds,
             {
