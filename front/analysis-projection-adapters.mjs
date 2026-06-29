@@ -155,25 +155,67 @@ function normalizeMissionReliability(payload) {
   const data = requireObject(payload.data, "mission_reliability data must be an object");
   const probability = requireFiniteNumber(data.mission_success_probability, "mission_success_probability");
   const sortieRate = requireFiniteNumber(data.sortie_rate, "sortie_rate");
-  const state = data.target_met ? "满足" : probability < 0.7 ? "风险" : "关注";
+  const state = data.target_met ? "满足" : "未达标";
+  const seriesRows = normalizeMissionReliabilitySeries(data, { probability, sortieRate, state });
+  const steepestDrop = missionReliabilitySteepestDrop(seriesRows);
   return {
     analysisType: "mission_reliability",
     formal: true,
     source: "projection payload",
-    rows: [{
-      wave: "projection",
-      probability,
-      sorties: Math.round(sortieRate * 100),
-      available: Math.round(probability * 100),
-      state
-    }],
+    rows: seriesRows,
+    steepestDrop,
     metrics: [
       ["任务成功概率", fixed(probability, 2)],
       ["出动架次率", fixed(sortieRate, 2)],
       ["目标达成", state],
-      ["projection payload", "mission_reliability"]
+      ["最大下降区间", missionReliabilityDropLabel(steepestDrop)]
     ]
   };
+}
+
+function normalizeMissionReliabilitySeries(data, fallback) {
+  const rawRows = Array.isArray(data.series) && data.series.length ? data.series : [{
+    simulation_time: "projection",
+    mission_success_probability: fallback.probability,
+    sortie_rate: fallback.sortieRate
+  }];
+  return rawRows.map((row, index) => {
+    const probability = clamp01(requireFiniteNumber(row.mission_success_probability, "series mission_success_probability"));
+    const sortieRate = clamp01(requireFiniteNumber(row.sortie_rate ?? data.sortie_rate, "series sortie_rate"));
+    return {
+      sequence: index + 1,
+      timeLabel: stringValue(row.simulation_time, `${index + 1}`),
+      probability,
+      sorties: Math.round(sortieRate * 100),
+      available: Math.round(probability * 100),
+      state: fallback.state
+    };
+  });
+}
+
+function missionReliabilitySteepestDrop(rows) {
+  if (rows.length < 2) return null;
+  let best = null;
+  for (let index = 1; index < rows.length; index += 1) {
+    const from = rows[index - 1];
+    const to = rows[index];
+    const drop = from.probability - to.probability;
+    if (!best || drop > best.drop) {
+      best = {
+        fromIndex: from.sequence,
+        toIndex: to.sequence,
+        fromTime: Number(from.timeLabel),
+        toTime: Number(to.timeLabel),
+        drop
+      };
+    }
+  }
+  return best && best.drop > 0 ? best : null;
+}
+
+function missionReliabilityDropLabel(drop) {
+  if (!drop) return "无下降区间";
+  return `T${drop.fromIndex} → T${drop.toIndex} (-${fixed(drop.drop, 2)})`;
 }
 
 function normalizeDowntimeFactors(payload) {

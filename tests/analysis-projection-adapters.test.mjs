@@ -75,7 +75,13 @@ test("normalizes mission reliability projection payload for formal KPI and trend
     data: {
       mission_success_probability: 0.91,
       sortie_rate: 0.88,
-      target_met: true
+      target_met: true,
+      series: [
+        { simulation_time: 0, mission_success_probability: 0.96, sortie_rate: 0.92 },
+        { simulation_time: 30, mission_success_probability: 0.94, sortie_rate: 0.91 },
+        { simulation_time: 60, mission_success_probability: 0.86, sortie_rate: 0.84 },
+        { simulation_time: 90, mission_success_probability: 0.85, sortie_rate: 0.83 }
+      ]
     }
   }, { runId: "run-ui", modelFamily: "aircraft_support_v1" });
 
@@ -83,9 +89,21 @@ test("normalizes mission reliability projection payload for formal KPI and trend
     ["任务成功概率", "0.91"],
     ["出动架次率", "0.88"],
     ["目标达成", "满足"],
-    ["projection payload", "mission_reliability"]
+    ["最大下降区间", "T2 → T3 (-0.08)"]
   ]);
-  assert.equal(view.rows[0].state, "满足");
+  assert.deepEqual(view.steepestDrop, {
+    fromIndex: 2,
+    toIndex: 3,
+    fromTime: 30,
+    toTime: 60,
+    drop: 0.07999999999999996
+  });
+  assert.deepEqual(view.rows.map((row) => [row.sequence, row.timeLabel, row.probability, row.sorties, row.state]), [
+    [1, "0", 0.96, 92, "满足"],
+    [2, "30", 0.94, 91, "满足"],
+    [3, "60", 0.86, 84, "满足"],
+    [4, "90", 0.85, 83, "满足"]
+  ]);
 });
 
 test("normalizes downtime factor projection payload for formal KPI and table rendering", () => {

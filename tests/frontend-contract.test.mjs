@@ -560,13 +560,16 @@ test("empty-shell result analysis renders configuration guidance instead of synt
     appSource.indexOf("function analysisTypeForPage")
   );
 
-  for (const source of [spareSource, carrySource, reliabilitySource, downtimeSource]) {
+  for (const source of [spareSource, carrySource, downtimeSource]) {
     assert.match(source, /hasPreviewAnalysisData\(\)/);
     assert.match(source, /renderAnalysisEmptyState/);
     assert.match(source, /暂无分析数据，请先导入并发布建模 JSON，或创建并运行 Monte Carlo 分析任务。/);
     assert.doesNotMatch(source, /Math\.min\(\.\.\.rows|Math\.max\(\.\.\.rows|Math\.max\(\.\.\.factors/);
     assert.doesNotMatch(source, /Infinity|-Infinity/);
   }
+  assert.match(reliabilitySource, /任务可靠度页只显示正式 projection/);
+  assert.match(reliabilitySource, /analysis_projection_mission_reliability/);
+  assert.doesNotMatch(reliabilitySource, /singleResult\.timeline|Math\.min\(\.\.\.rows|Math\.max\(\.\.\.rows|Infinity|-Infinity/);
 
   const carryEmptyBranch = carrySource.slice(
     carrySource.indexOf("if (!hasPreviewAnalysisData())"),
@@ -2893,7 +2896,7 @@ test("phase 6B carry list analysis fixes objective to minimum carried spares", a
   assert.match(formalCarrySource, /projection payload/);
 });
 
-test("phase 6C mission reliability chart starts y-axis at zero only", async () => {
+test("phase 6C mission reliability chart uses formal projection time sequence only", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const lineChartSource = appSource.slice(
     appSource.indexOf("function renderLineChart"),
@@ -2914,8 +2917,14 @@ test("phase 6C mission reliability chart starts y-axis at zero only", async () =
 
   assert.match(lineChartSource, /const minY = 0;/);
   assert.doesNotMatch(lineChartSource, /0\.84/);
-  assert.match(reliabilitySource, /renderLineChart/);
-  assert.match(formalReliabilitySource, /renderLineChart/);
+  assert.match(lineChartSource, /points\.length - 1/);
+  assert.match(reliabilitySource, /analysisProjectionForBoundary\(boundary\)/);
+  assert.match(reliabilitySource, /renderFormalProjectionBody\(formalProjection\)/);
+  assert.doesNotMatch(reliabilitySource, /singleResult\.timeline|renderLineChart/);
+  assert.match(formalReliabilitySource, /renderLineChart\(rows\.map\(\(row\) => \(\{ x: row\.sequence, y: row\.probability \}\)\)\)/);
+  assert.match(formalReliabilitySource, /最大下降区间/);
+  assert.match(formalReliabilitySource, /仿真时间/);
+  assert.doesNotMatch(formalReliabilitySource, /0\.7|0\.9|阈值|目标线|风险线/);
   assert.doesNotMatch(reliabilitySource + formalReliabilitySource, /具体需求待甲方确定/);
 });
 

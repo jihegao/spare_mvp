@@ -368,6 +368,9 @@
   - 除非后续需求改变，否则该目标不可被误改。
 - [x] 任务可靠度图表：
   - 仅实现已确认的纵坐标从 0 开始。
+  - 横轴使用等距序号绘制，并在表格中保留仿真时间。
+  - 图上不显示风险阈值线，改为显示可靠度曲线下降最大的区间。
+  - 任务可靠度页只允许正式 projection；缺少 `analysis_projection_mission_reliability` 时阻断，不回退到本地预览。
   - 不实现标记为 `具体需求待甲方确定` 的内容。
 - [ ] 停机因素分析：
   - 检测异常停机事件。
@@ -395,8 +398,10 @@
 
 阶段 6C 验证记录：
 - [x] 运行 `node --test tests/frontend-contract.test.mjs --test-name-pattern "phase 6C mission reliability chart"`。
+- [x] 运行 `node --test tests/analysis-projection-adapters.test.mjs --test-name-pattern "normalizes mission reliability"`。
+- [x] 运行 `PYTHONDONTWRITEBYTECODE=1 .abm-mesa-test-env/bin/python -m unittest tests.test_simulation_adapter.SimulationAdapterTest.test_aircraft_support_v1_monte_carlo_writes_formal_projection_artifacts -v`。
 
-阶段 6C 已将任务可靠度趋势图纵坐标下限从 `0.84` 调整为 `0`，并增加契约测试防止回退。该阶段不实现标记为 `具体需求待甲方确定` 的内容；停机因素分析仍未开始，不作为阶段 6C 完成口径。
+阶段 6C 已将任务可靠度趋势图纵坐标下限从 `0.84` 调整为 `0`，横轴改为正式 projection 序列的等距序号，表格保留仿真时间，并显示可靠度曲线下降最大的相邻区间。任务可靠度页只消费正式 `analysis_projection_mission_reliability`，缺少正式 projection 时显示阻断说明，不回退到本地预览。该阶段不实现标记为 `具体需求待甲方确定` 的内容；停机因素分析仍未开始，不作为阶段 6C 完成口径。
 
 **退出标准：** 分析页面消费正式 artifact，或在缺少正式来源时明确阻断；任何结果页都不得把本地预览数据声明为正式输出。
 

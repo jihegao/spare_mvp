@@ -11666,47 +11666,21 @@ function carryPriority(riskLevel) {
 }
 
 function renderTaskReliabilityAnalysis() {
-  if (!hasPreviewAnalysisData()) {
-    return renderAnalysisEmptyState("任务可靠度评估", "启动分析", "任务可靠度指标分解", "暂无分析数据，请先导入并发布建模 JSON，或创建并运行 Monte Carlo 分析任务。");
-  }
-  const timeline = singleResult.timeline || [];
-  const sampleEvery = Math.max(1, Math.ceil(timeline.length / 9));
-  const waves = timeline
-    .filter((_, index) => index % sampleEvery === 0)
-    .slice(0, 9)
-    .map((point, index) => {
-      const probability = Number(point.mission_success_rate || 0);
-      return {
-        wave: point.wave || index + 1,
-        probability,
-        sorties: Number(point.sortie_count || 0),
-        available: Number(point.ready_count || 0),
-        state: probability < 0.7 ? "风险" : probability < 0.9 ? "关注" : "满足"
-      };
-    });
-  if (!waves.length) {
-    return renderAnalysisEmptyState("任务可靠度评估", "启动分析", "任务可靠度指标分解", "暂无分析数据，请先导入并发布建模 JSON，或创建并运行 Monte Carlo 分析任务。");
-  }
-  const riskWave = waves.find((row) => row.state === "风险");
+  const page = getFeaturePageById(selectedFeatureId);
+  const boundary = formalAnalysisBoundary(page);
+  const formalProjection = analysisProjectionForBoundary(boundary);
   return renderAnalysisDashboard({
     title: "任务可靠度评估",
     mode: "启动分析",
     subtitle: "任务可靠度指标分解",
-    metrics: [
-      ["首波任务成功概率", fixed(waves[0].probability, 2)],
-      ["末波任务成功概率", fixed(waves.at(-1).probability, 2)],
-      ["风险拐点", riskWave ? `第 ${riskWave.wave} 波` : "未触发"],
-      ["累计出动架次", `${waves.at(-1).sorties}`]
+    metrics: formalProjection?.metrics || [
+      ["正式结果", "等待 projection"],
+      ["图表来源", "analysis projection"],
+      ["本地预览", "禁用"]
     ],
-    body: `
-      <div class="analysis-chart-panel"><div class="chart-title">波次任务成功概率趋势</div>${renderLineChart(waves.map((row) => ({ x: row.wave, y: row.probability })))}</div>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>波次任务</th><th>波次任务成功概率</th><th>累计出动架次</th><th>可用飞机数</th><th>状态</th></tr></thead>
-          <tbody>${waves.map((row) => `<tr><td>${row.wave}</td><td>${fixed(row.probability, 3)}</td><td>${row.sorties}</td><td>${row.available}</td><td><span class="status-badge ${row.state === "风险" ? "danger" : row.state === "关注" ? "warn" : "success"}">${row.state}</span></td></tr>`).join("")}</tbody>
-        </table>
-      </div>
-    `
+    body: formalProjection
+      ? renderFormalProjectionBody(formalProjection)
+      : `<div class="empty-state"><strong>任务可靠度页只显示正式 projection。</strong><p>请先绑定并完成 Monte Carlo 实验，等待 analysis_projection_mission_reliability payload 解析成功后再查看曲线。</p></div>`
   });
 }
 
@@ -12150,12 +12124,14 @@ function renderFormalProjectionBody(formalProjection) {
   }
   if (formalProjection.analysisType === "mission_reliability") {
     const rows = formalProjection.rows || [];
+    const drop = formalProjection.steepestDrop;
     return `
-      <div class="analysis-chart-panel"><div class="chart-title">projection payload 任务可靠度</div>${renderLineChart(rows.map((row, index) => ({ x: index + 1, y: row.probability })))}</div>
+      <div class="analysis-chart-panel"><div class="chart-title">projection payload 任务可靠度</div>${renderLineChart(rows.map((row) => ({ x: row.sequence, y: row.probability })))}</div>
+      <div class="decision-support-card"><strong>最大下降区间</strong><span>${drop ? `T${drop.fromIndex} 到 T${drop.toIndex}，仿真时间 ${drop.fromTime} 到 ${drop.toTime}，下降 ${fixed(drop.drop, 3)}` : "未发现下降区间"}</span></div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>来源</th><th>任务成功概率</th><th>出动架次率</th><th>可用指数</th><th>状态</th></tr></thead>
-          <tbody>${rows.map((row) => `<tr><td>${htmlEscape(row.wave)}</td><td>${fixed(row.probability, 3)}</td><td>${row.sorties}</td><td>${row.available}</td><td><span class="status-badge ${row.state === "风险" ? "danger" : row.state === "关注" ? "warn" : "success"}">${htmlEscape(row.state)}</span></td></tr>`).join("")}</tbody>
+          <thead><tr><th>等距序号</th><th>仿真时间</th><th>任务成功概率</th><th>出动架次率</th><th>可用指数</th><th>状态</th></tr></thead>
+          <tbody>${rows.map((row) => `<tr><td>T${row.sequence}</td><td>${htmlEscape(row.timeLabel)}</td><td>${fixed(row.probability, 3)}</td><td>${row.sorties}</td><td>${row.available}</td><td><span class="status-badge ${row.state === "未达标" ? "warn" : "success"}">${htmlEscape(row.state)}</span></td></tr>`).join("")}</tbody>
         </table>
       </div>
     `;
@@ -12214,7 +12190,8 @@ function renderLineChart(points) {
   const height = 180;
   const minY = 0;
   const maxY = 1;
-  const xScale = (x) => 36 + ((x - 1) / 8) * 560;
+  const xMax = Math.max(1, points.length - 1);
+  const xScale = (x) => 36 + ((x - 1) / xMax) * 560;
   const yScale = (y) => 18 + (1 - (y - minY) / (maxY - minY)) * 128;
   const line = points.map((point) => `${xScale(point.x).toFixed(1)},${yScale(point.y).toFixed(1)}`).join(" ");
   return `

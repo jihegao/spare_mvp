@@ -2524,6 +2524,10 @@ class SimulationAdapter:
                     "failed_sorties": metrics.get("failed_sorties", 0),
                     "in_flight_failures": metrics.get("in_flight_failures", 0),
                     "target_met": mission_success >= 0.9,
+                    "series": self._aircraft_support_v1_mission_reliability_series(
+                        metrics=metrics,
+                        samples=samples or [],
+                    ),
                 },
             },
             "downtime_factors": {
@@ -2537,6 +2541,38 @@ class SimulationAdapter:
                 ],
             },
         }
+
+    def _aircraft_support_v1_mission_reliability_series(
+        self,
+        *,
+        metrics: dict[str, Any],
+        samples: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        frames = samples[0].get("frames") if samples else []
+        rows: list[dict[str, Any]] = []
+        for index, frame in enumerate(frames or []):
+            mission_state = frame.get("mission_state") if isinstance(frame.get("mission_state"), dict) else {}
+            probability = mission_state.get("mission_success_rate", metrics.get("mission_success_rate", metrics.get("sortie_completion_rate", 0)))
+            sortie_rate = mission_state.get("sortie_rate", metrics.get("sortie_rate", 0))
+            rows.append(
+                {
+                    "simulation_time": int(frame.get("simulation_time", frame.get("step", index)) or 0),
+                    "mission_success_probability": min(1.0, max(0.0, float(probability or 0))),
+                    "sortie_rate": min(1.0, max(0.0, float(sortie_rate or 0))),
+                }
+            )
+        if rows:
+            return rows
+        return [
+            {
+                "simulation_time": 0,
+                "mission_success_probability": min(
+                    1.0,
+                    max(0.0, float(metrics.get("mission_success_rate", metrics.get("sortie_completion_rate", 0)) or 0)),
+                ),
+                "sortie_rate": min(1.0, max(0.0, float(metrics.get("sortie_rate", 0) or 0))),
+            }
+        ]
 
     def _input_project_for_scenario(self, scenario: dict[str, Any]) -> dict[str, Any]:
         input_project = copy.deepcopy(

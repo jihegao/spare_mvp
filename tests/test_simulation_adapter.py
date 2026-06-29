@@ -632,12 +632,18 @@ class SimulationAdapterTest(unittest.TestCase):
             spare_shortfall_artifact = next(
                 artifact for artifact in projection_artifacts if artifact["kind"] == "analysis_projection_spare_shortfall"
             )
+            mission_reliability_artifact = next(
+                artifact for artifact in projection_artifacts if artifact["kind"] == "analysis_projection_mission_reliability"
+            )
             state_artifact = next(
                 artifact for artifact in manifest["artifacts"] if artifact["kind"] == "visualization_state_series"
             )
             base_payload = json.loads((Path(first_tmp) / base_artifact["path"]).read_text(encoding="utf-8"))
             spare_shortfall_payload = json.loads(
                 (Path(first_tmp) / spare_shortfall_artifact["path"]).read_text(encoding="utf-8")
+            )
+            mission_reliability_payload = json.loads(
+                (Path(first_tmp) / mission_reliability_artifact["path"]).read_text(encoding="utf-8")
             )
             second_base_payload = json.loads(
                 (Path(second_tmp) / base_artifact["path"]).read_text(encoding="utf-8")
@@ -670,6 +676,14 @@ class SimulationAdapterTest(unittest.TestCase):
         )
         self.assertIn("utilization", spare_shortfall_payload["data"][0])
         self.assertIn("constraint_results", spare_shortfall_payload["data"][0])
+        mission_series = mission_reliability_payload["data"]["series"]
+        self.assertGreaterEqual(len(mission_series), 1)
+        simulation_times = [row["simulation_time"] for row in mission_series]
+        self.assertEqual(simulation_times, sorted(simulation_times))
+        self.assertEqual(simulation_times[0], 0)
+        self.assertTrue(
+            all(0 <= row["mission_success_probability"] <= 1 and 0 <= row["sortie_rate"] <= 1 for row in mission_series)
+        )
         self.assertEqual(base_payload["artifact_type"], "monte_carlo_base")
         self.assertEqual(base_payload["model_family"], "aircraft_support_v1")
         self.assertEqual(base_payload["sample_count"], 4)
