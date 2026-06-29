@@ -12212,7 +12212,7 @@ function renderBar(value, max, color) {
 function renderLineChart(points) {
   const width = 640;
   const height = 180;
-  const minY = 0.84;
+  const minY = 0;
   const maxY = 1;
   const xScale = (x) => 36 + ((x - 1) / 8) * 560;
   const yScale = (y) => 18 + (1 - (y - minY) / (maxY - minY)) * 128;

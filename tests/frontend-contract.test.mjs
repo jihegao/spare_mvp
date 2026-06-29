@@ -2893,6 +2893,32 @@ test("phase 6B carry list analysis fixes objective to minimum carried spares", a
   assert.match(formalCarrySource, /projection payload/);
 });
 
+test("phase 6C mission reliability chart starts y-axis at zero only", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const lineChartSource = appSource.slice(
+    appSource.indexOf("function renderLineChart"),
+    appSource.indexOf("function renderScenarioSwitch")
+  );
+  const reliabilitySource = appSource.slice(
+    appSource.indexOf("function renderTaskReliabilityAnalysis"),
+    appSource.indexOf("function renderDowntimeFactorAnalysis")
+  );
+  const formalProjectionSource = appSource.slice(
+    appSource.indexOf("function renderFormalProjectionBody"),
+    appSource.indexOf("function renderAnalysisDashboard")
+  );
+  const formalReliabilitySource = formalProjectionSource.slice(
+    formalProjectionSource.indexOf('formalProjection.analysisType === "mission_reliability"'),
+    formalProjectionSource.indexOf('formalProjection.analysisType === "downtime_factors"')
+  );
+
+  assert.match(lineChartSource, /const minY = 0;/);
+  assert.doesNotMatch(lineChartSource, /0\.84/);
+  assert.match(reliabilitySource, /renderLineChart/);
+  assert.match(formalReliabilitySource, /renderLineChart/);
+  assert.doesNotMatch(reliabilitySource + formalReliabilitySource, /具体需求待甲方确定/);
+});
+
 test("monte carlo formal results render inside the experiment detail flow", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   assert.match(appSource, /function renderMonteCarloResults/);
