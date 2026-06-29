@@ -343,12 +343,26 @@
 - `max_granularity_multi_aircraft`：多飞机、多周期任务、多保障节点、多备件、多保障活动 DAG 和多 sweep 参数，用于验证 Monte Carlo、四类 projection、state-series、事件追溯和前端正式结果承载。
 
 **推荐落点：**
-- 新增或扩展 `tests/fixtures/simulation_analysis_cases/`，只放可复现、可校验的建模导入包或由 canonical case 派生的 fixture。
-- Python 测试覆盖 `SimulationAdapter`、canonical `/api/runs` 产物、`monte_carlo_base`、四类 `analysis_projection_*` 和 `visualization_state_series`。
-- 前端测试覆盖 projection adapter、state-series replay、蒙特卡洛实验详情和剩余分析页的正式来源阻断。
-- 浏览器冒烟覆盖最小单机案例、平台标准案例和最大粒度多机案例的提交、运行、结果读取与失败态展示。
+- [x] 新增 `src/spare_mvp_backend/simulation_analysis_cases.py` 生成 `minimal_single_aircraft`、`canonical_platform_case` 和 `max_granularity_multi_aircraft` 三类数据包。
+- [x] 新增 `tests/fixtures/simulation_analysis_cases/`，只放可复现、可校验的建模导入包或由 canonical case 派生的 fixture。
+- [x] 新增 `scripts/export-simulation-analysis-cases.py --write|--check`，用于写入和检查 6P fixture drift。
+- [x] Python 测试覆盖 `SimulationAdapter`、正式 Monte Carlo 产物、`monte_carlo_base`、四类 `analysis_projection_*` 和 `visualization_state_series`。
+- [x] 前端测试继续覆盖 projection adapter、state-series replay、蒙特卡洛实验详情和剩余分析页的正式来源阻断。
 
 **退出标准：** 三类数据都能从建模导入或 canonical case 进入正式 run 链路；每个分析页要么消费对应正式 artifact，要么明确显示缺少正式来源，不允许回退到本地预览数据并声明为正式结果。
+
+**6P 文件：**
+- 新增：`src/spare_mvp_backend/simulation_analysis_cases.py`
+- 新增：`scripts/export-simulation-analysis-cases.py`
+- 新增：`tests/fixtures/simulation_analysis_cases/minimal_single_aircraft.json`
+- 新增：`tests/fixtures/simulation_analysis_cases/canonical_platform_case.json`
+- 新增：`tests/fixtures/simulation_analysis_cases/max_granularity_multi_aircraft.json`
+- 新增：`tests/test_simulation_analysis_cases.py`
+
+阶段 6P 验证记录：
+- [x] 运行 `PYTHONDONTWRITEBYTECODE=1 .abm-mesa-test-env/bin/python -m unittest tests.test_simulation_analysis_cases -v`。
+
+阶段 6P 已完成三类仿真分析验收数据包、fixture drift 检查和正式 `aircraft_support_v1` Monte Carlo artifact 验证。浏览器冒烟仍作为最终验证矩阵的一部分执行，不阻塞 6P 数据基线合并。
 
 **文件：**
 - 修改：`front/app.js`

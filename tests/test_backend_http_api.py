@@ -1287,6 +1287,31 @@ class BackendHttpApiTest(unittest.TestCase):
                 server.server_close()
                 thread.join(timeout=5)
 
+    def test_http_server_serves_modeling_import_templates_on_same_origin(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            server = create_backend_server(
+                ("127.0.0.1", 0),
+                repo_root=REPO_ROOT,
+                database_path=":memory:",
+                output_dir=Path(tmp) / "artifacts",
+            )
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                url = f"http://127.0.0.1:{server.server_address[1]}/import-templates/canonical_platform_case.json"
+                req = request.Request(url, method="GET")
+                opener = request.build_opener(request.ProxyHandler({}))
+                with opener.open(req, timeout=10) as response:
+                    self.assertEqual(response.status, 200)
+                    self.assertIn("application/json", response.headers["content-type"])
+                    payload = json.loads(response.read().decode("utf-8"))
+                self.assertEqual(payload["schemaVersion"], "modeling-import-v1")
+                self.assertEqual(payload["importId"], "import-carrier-day-night-001")
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
     def test_http_server_does_not_reuse_sqlite_connection_across_request_threads(self) -> None:
         connection_calls = []
         original_connect = sqlite3.connect

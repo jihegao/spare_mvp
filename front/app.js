@@ -53,6 +53,10 @@ import {
   normalizeModelingImportRecord
 } from "./modeling-import-workbench.mjs";
 import { MODELING_IMPORT_DEMO_FIXTURE } from "./modeling-import-demo-fixture.mjs";
+import {
+  MODELING_IMPORT_TEMPLATES,
+  loadModelingImportTemplate
+} from "./modeling-import-templates.mjs";
 import { ensurePublishedModelingImportForSampleProject } from "./modeling-import-project-flow.mjs";
 import {
   addEquipmentNodeForSelectionModel,
@@ -500,6 +504,7 @@ let modelingImportValidation = cloneModelingImportPackage(MODELING_IMPORT_DEMO_F
 let modelingImportCompileResult = null;
 let modelingImportStatus = "样例导入包已加载";
 let modelingImportSaved = false;
+let selectedModelingImportTemplateId = MODELING_IMPORT_TEMPLATES[0]?.id || "";
 let savedProject = null;
 let modelingSnapshot = null;
 let experimentPlan = null;
@@ -1441,7 +1446,8 @@ function bindEvents() {
     const modelingImportActionButton = event.target.closest("[data-modeling-import-action]");
     if (modelingImportActionButton) {
       handleModelingImportAction(modelingImportActionButton.dataset.modelingImportAction, {
-        importId: modelingImportActionButton.dataset.modelingImportId
+        importId: modelingImportActionButton.dataset.modelingImportId,
+        templateId: modelingImportActionButton.dataset.modelingImportTemplate || selectedModelingImportTemplateId
       }).finally(() => render());
       return;
     }
@@ -1745,6 +1751,22 @@ function bindEvents() {
       );
       supportResourceImportFile.value = "";
       if (imported) markProjectDraftChanged();
+      render();
+      return;
+    }
+
+    const modelingImportTemplateSelect = event.target.closest("[data-modeling-import-template]");
+    if (modelingImportTemplateSelect) {
+      selectedModelingImportTemplateId = modelingImportTemplateSelect.value;
+      modelingImportStatus = `已选择导入模板：${modelingImportTemplateLabel(selectedModelingImportTemplateId)}`;
+      render();
+      return;
+    }
+
+    const modelingImportFile = event.target.closest("[data-modeling-import-file]");
+    if (modelingImportFile) {
+      await importModelingImportJsonFile(modelingImportFile.files?.[0]);
+      modelingImportFile.value = "";
       render();
       return;
     }
@@ -3055,7 +3077,16 @@ function renderLocalModelingImportActions(contextLabel) {
         <div><strong>Scenario</strong><span>${htmlEscape(scenarioLabel)}</span></div>
       </div>
       <div class="modeling-import-actions">
-        <button type="button" data-modeling-import-action="load-fixture">导入样例数据</button>
+        <label class="rms-file-button">
+          <span>选择导入包 JSON</span>
+          <input type="file" accept="application/json,.json" data-modeling-import-file>
+        </label>
+        <select data-modeling-import-template aria-label="选择内置导入模板">
+          ${MODELING_IMPORT_TEMPLATES.map((template) => `
+            <option value="${htmlEscape(template.id)}"${template.id === selectedModelingImportTemplateId ? " selected" : ""}>${htmlEscape(template.label)}</option>
+          `).join("")}
+        </select>
+        <button type="button" data-modeling-import-action="load-fixture" data-modeling-import-template="${htmlEscape(selectedModelingImportTemplateId)}">使用内置导入模板</button>
         <button type="button" data-modeling-import-action="backfill-current-project">从当前项目回灌</button>
         <button type="button" data-modeling-import-action="load-invalid-fixture">导入错误样例</button>
         <button type="button" data-modeling-import-action="validate">校验导入数据</button>
@@ -9862,19 +9893,59 @@ function backendUserStatus(status) {
   return status || "active";
 }
 
+function modelingImportTemplateLabel(templateId) {
+  return MODELING_IMPORT_TEMPLATES.find((template) => template.id === templateId)?.label || "内置导入模板";
+}
+
+async function importModelingImportJsonFile(file) {
+  if (!file) {
+    modelingImportStatus = "未选择导入包 JSON 文件";
+    return;
+  }
+  let importPackage;
+  try {
+    importPackage = JSON.parse(await file.text());
+  } catch (err) {
+    modelingImportStatus = `导入包 JSON 读取失败：${err && err.message ? err.message : "文件不是合法 JSON"}`;
+    return;
+  }
+  const issues = validateModelingImportPackage(importPackage);
+  modelingImportPackage = cloneModelingImportPackage(importPackage);
+  modelingImportValidation = {
+    ok: issues.length === 0,
+    status: issues.length ? "invalid" : "valid",
+    issues
+  };
+  modelingImportPackage.validation = cloneModelingImportPackage(modelingImportValidation);
+  modelingImportPublishedPackage = null;
+  modelingImportCompileResult = null;
+  modelingImportSaved = false;
+  modelingImportStatus = issues.length
+    ? `导入包 JSON 已加载，发现 ${issues.length} 个字段问题`
+    : `导入包 JSON 已加载：${importPackage.importId || file.name}`;
+}
+
 async function handleModelingImportAction(action, options = {}) {
   if (action === "load-fixture") {
     try {
-      const stored = await backendApi.getModelingImport(MODELING_IMPORT_DEMO_FIXTURE.importId);
+      const templatePackage = await loadModelingImportTemplate(options.templateId || selectedModelingImportTemplateId);
+      const stored = await backendApi.getModelingImport(templatePackage.importId);
       applyModelingImportRecord(stored);
       modelingImportCompileResult = null;
       modelingImportStatus = "已从后端恢复导入草稿和发布快照";
     } catch {
-      modelingImportPackage = cloneModelingImportPackage(MODELING_IMPORT_DEMO_FIXTURE);
+      try {
+        modelingImportPackage = await loadModelingImportTemplate(options.templateId || selectedModelingImportTemplateId);
+        modelingImportStatus = `内置导入模板已加载：${modelingImportTemplateLabel(options.templateId || selectedModelingImportTemplateId)}`;
+      } catch {
+        modelingImportPackage = cloneModelingImportPackage(MODELING_IMPORT_DEMO_FIXTURE);
+        modelingImportStatus = "内置模板文件不可用，已加载内嵌样例导入包";
+      }
       modelingImportPublishedPackage = null;
-      modelingImportValidation = cloneModelingImportPackage(MODELING_IMPORT_DEMO_FIXTURE.validation);
+      modelingImportValidation = cloneModelingImportPackage(
+        modelingImportPackage.validation || MODELING_IMPORT_DEMO_FIXTURE.validation
+      );
       modelingImportCompileResult = null;
-      modelingImportStatus = "样例导入包已加载";
       modelingImportSaved = false;
     }
     return;

@@ -373,6 +373,8 @@ report.json 或 report.html
 
 M8.0 当前收束：`docs/superpowers/specs/2026-06-21-m8-projection-payload-analysis-design.md` 已把结果分析推进到 projection payload 驱动。结果分析按 AnalysisTask、绑定的 MonteCarloExperiment 和 M6.2 run artifacts 解锁；已绑定且运行完成的分析页必须下载并解析当前分析类型对应的 `analysis_projection_*` JSON payload，正式 KPI、表格和图形来自 payload adapter。已绑定且运行中显示进度，已绑定且运行失败显示失败原因；未创建任务、未绑定 MC 实验、缺少 M6.1 compiler provenance、缺少 projection artifact、payload 类型不匹配或解析失败时统一 fail closed，不能用静态演示图表冒充正式结果。
 
+阶段 6P 当前收束：在四个分析功能继续细化前，已新增 `tests/fixtures/simulation_analysis_cases/` 作为仿真分析验收数据包，包含 `minimal_single_aircraft`、`canonical_platform_case` 和 `max_granularity_multi_aircraft` 三类 modeling-import-v1 案例。该数据包由 `src/spare_mvp_backend/simulation_analysis_cases.py` 和 `scripts/export-simulation-analysis-cases.py --write|--check` 生成与检查，`tests/test_simulation_analysis_cases.py` 验证三类数据均可编译为 `aircraft_support_v1` Scenario 并跑出 formal Monte Carlo 的 `monte_carlo_base`、`visualization_state_series` 和四类 `analysis_projection_*` artifact。6P 用于覆盖最小建模粒度、平台标准案例和最大建模粒度，不作为生产性能压测。
+
 核心工作：
 
 1. 备件短板、携行清单、任务可靠度、停机因素、Monte Carlo 聚合结果来自 run artifacts 或数据库聚合。

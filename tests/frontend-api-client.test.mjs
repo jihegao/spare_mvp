@@ -869,8 +869,13 @@ test("frontend app wires local modeling import actions through explicit backend 
   assert.doesNotMatch(featureCatalogSource, /建模数据导入/);
   assert.doesNotMatch(featureCatalogSource, /modeling-import-workbench/);
   assert.match(appSource, /from "\.\/modeling-import-workbench\.mjs"/);
+  assert.match(appSource, /from "\.\/modeling-import-templates\.mjs"/);
   assert.match(appSource, /renderLocalModelingImportActions/);
   assert.match(appSource, /data-modeling-import-action/);
+  assert.match(appSource, /data-modeling-import-template/);
+  assert.match(appSource, /data-modeling-import-file/);
+  assert.match(appSource, /importModelingImportJsonFile/);
+  assert.match(appSource, /loadModelingImportTemplate/);
   assert.match(appSource, /load-invalid-fixture/);
   assert.match(appSource, /backendApi\.validateModelingImport/);
   assert.match(appSource, /backendApi\.saveModelingImport/);

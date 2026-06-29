@@ -340,10 +340,15 @@ def create_backend_server(
             self.wfile.write(data)
 
         def _send_static(self, path: str) -> None:
-            if path not in ("", "/") and not path.startswith("/front/"):
+            if path in ("", "/"):
+                relative = "front/index.html"
+            elif path.startswith("/front/"):
+                relative = path.lstrip("/")
+            elif path.startswith("/import-templates/"):
+                relative = f"public/{path.lstrip('/')}"
+            else:
                 self._send_json(404, {"code": "not_found", "message": path})
                 return
-            relative = path.lstrip("/") or "front/index.html"
             target = (root / relative).resolve()
             if root not in target.parents and target != root:
                 self._send_json(404, {"code": "not_found", "message": path})

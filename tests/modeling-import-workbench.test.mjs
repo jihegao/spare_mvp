@@ -9,10 +9,69 @@ import {
   normalizeModelingImportRecord,
   renderModelingImportWorkbench
 } from "../front/modeling-import-workbench.mjs";
+import {
+  MODELING_IMPORT_TEMPLATES,
+  loadModelingImportTemplate
+} from "../front/modeling-import-templates.mjs";
 
 async function readFixture() {
   return JSON.parse(await readFile(new URL("./fixtures/modeling_import_project.json", import.meta.url), "utf8"));
 }
+
+async function readProductTemplate(filename) {
+  return JSON.parse(await readFile(new URL(`../public/import-templates/${filename}`, import.meta.url), "utf8"));
+}
+
+async function readSimulationAnalysisCase(caseId) {
+  return JSON.parse(await readFile(new URL(`./fixtures/simulation_analysis_cases/${caseId}.json`, import.meta.url), "utf8"));
+}
+
+test("product modeling import templates mirror the three simulation analysis cases and load by path", async () => {
+  const expected = [
+    {
+      id: "minimal-single-aircraft",
+      label: "最小单机建模粒度",
+      filename: "minimal_single_aircraft.json",
+      sourceCaseId: "minimal_single_aircraft"
+    },
+    {
+      id: "canonical-platform-case",
+      label: "平台标准案例",
+      filename: "canonical_platform_case.json",
+      sourceCaseId: "canonical_platform_case"
+    },
+    {
+      id: "max-granularity-multi-aircraft",
+      label: "最大多机建模粒度",
+      filename: "max_granularity_multi_aircraft.json",
+      sourceCaseId: "max_granularity_multi_aircraft"
+    }
+  ];
+  assert.deepEqual(
+    MODELING_IMPORT_TEMPLATES.map(({ id, label, path }) => ({ id, label, path })),
+    expected.map((item) => ({
+      id: item.id,
+      label: item.label,
+      path: `/import-templates/${item.filename}`
+    }))
+  );
+
+  for (const item of expected) {
+    const sourceCase = await readSimulationAnalysisCase(item.sourceCaseId);
+    const productTemplate = await readProductTemplate(item.filename);
+    const requests = [];
+    const fetchJson = async (path) => {
+      requests.push(path);
+      return productTemplate;
+    };
+
+    const loaded = await loadModelingImportTemplate(item.id, fetchJson);
+
+    assert.deepEqual(productTemplate, sourceCase.modeling_import);
+    assert.deepEqual(loaded, sourceCase.modeling_import);
+    assert.deepEqual(requests, [`/import-templates/${item.filename}`]);
+  }
+});
 
 test("cloneModelingImportPackage returns an isolated deep copy", async () => {
   const fixture = await readFixture();

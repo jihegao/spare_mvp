@@ -37,6 +37,8 @@ class M96CasePackageTest(unittest.TestCase):
         self.assertEqual(export["experiment_plan"]["project_id"], export["project"]["project_id"])
         self.assertEqual(export["experiment_plan"]["config"]["projectJson"], export["project"])
         self.assertEqual(export["experiment_plan"]["config"]["analysisRequests"], export["project"]["analysisRequests"])
+        self.assertEqual(export["project"]["supportOrganization"], {"tree": []})
+        self.assertEqual(export["published_modeling_import"]["objects"]["supportOrganization"], {"tree": []})
         self.assertEqual(export["run_intents"]["single"]["run_type"], "single")
         self.assertEqual(export["run_intents"]["single"]["model_family"], "aviation_support")
         self.assertEqual(export["run_intents"]["monte_carlo"]["run_type"], "monte_carlo")
@@ -69,7 +71,7 @@ class M96CasePackageTest(unittest.TestCase):
         coverage = build_m9_6_field_coverage(fixture)
 
         allowed_statuses = {"consumed", "derived", "defaulted", "governance_only", "ignored", "unsupported"}
-        leaf_paths = _business_leaf_paths(fixture)
+        leaf_paths = _business_leaf_paths(_m9_6_frozen_import_fixture(fixture))
         coverage_paths = [entry["field_path"] for entry in coverage["entries"]]
         self.assertEqual(coverage["schema_version"], "m9-6-field-coverage-v0")
         self.assertEqual(coverage["source_import_id"], fixture["importId"])
@@ -99,6 +101,7 @@ class M96CasePackageTest(unittest.TestCase):
         self.assertEqual(entry_by_path["objects.supportActivities[].jobs[].predecessors[]"]["status"], "consumed")
         self.assertEqual(entry_by_path["objects.supportActivities[].transportStrategies[].from"]["status"], "governance_only")
         self.assertEqual(entry_by_path["objects.supportOrganization.tree"]["status"], "governance_only")
+        self.assertNotIn("objects.supportOrganization.tree[].id", entry_by_path)
 
     def test_expected_artifact_kind_golden_lists_single_and_monte_carlo_outputs(self) -> None:
         artifact_kinds = m9_6_expected_artifact_kinds()
@@ -178,6 +181,12 @@ def _business_leaf_paths(value: object, prefix: str = "") -> list[str]:
                     paths.append(path)
         return paths
     return [prefix]
+
+
+def _m9_6_frozen_import_fixture(fixture: dict) -> dict:
+    payload = json.loads(json.dumps(fixture))
+    payload.setdefault("objects", {})["supportOrganization"] = {"tree": []}
+    return payload
 
 
 if __name__ == "__main__":

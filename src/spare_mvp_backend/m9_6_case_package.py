@@ -24,6 +24,7 @@ M9_6_MC_EXPERIMENT_ID = "mc-m9-6-platform-case"
 
 def build_m9_6_platform_case_export(import_package: dict[str, Any], repo_root: Path | str | None = None) -> dict[str, Any]:
     """Build the deterministic M9.6 platform object chain from the canonical import package."""
+    import_package = _m9_6_frozen_import_package(import_package)
     validation = validate_modeling_import_package(import_package)
     if not validation["ok"]:
         raise ValueError(f"M9.6 modeling import package is invalid: {validation['issues']}")
@@ -92,6 +93,7 @@ def build_m9_6_platform_case_export(import_package: dict[str, Any], repo_root: P
 
 def build_m9_6_field_coverage(import_package: dict[str, Any]) -> dict[str, Any]:
     """Return one coverage entry for every business leaf path in the M9.6 case package."""
+    import_package = _m9_6_frozen_import_package(import_package)
     entries = [_coverage_entry(path) for path in _business_leaf_paths(import_package)]
     return {
         "schema_version": "m9-6-field-coverage-v0",
@@ -149,6 +151,14 @@ def m9_6_expected_artifact_kinds() -> dict[str, Any]:
             "analysis_projection_downtime_factors",
         ],
     }
+
+
+def _m9_6_frozen_import_package(import_package: dict[str, Any]) -> dict[str, Any]:
+    payload = copy.deepcopy(import_package)
+    objects = payload.setdefault("objects", {})
+    if isinstance(objects, dict):
+        objects["supportOrganization"] = {"tree": []}
+    return payload
 
 
 def write_m9_6_golden_fixtures(repo_root: Path | str) -> None:
