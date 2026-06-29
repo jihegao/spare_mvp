@@ -165,6 +165,95 @@ export function addEquipmentNodeForSelectionModel({ scenario, selection }) {
   };
 }
 
+export function deleteEquipmentNodeForSelectionModel({ scenario, selection }) {
+  if (!scenario.equipment) scenario.equipment = {};
+  if (!Array.isArray(scenario.components)) scenario.components = [];
+  const selectedState = selection || resolveEquipmentSelectionModel({ scenario });
+  if (selectedState.kind === "aircraft-list") {
+    return { kind: "none", deletedComponentIds: [] };
+  }
+  if (selectedState.kind === "aircraft") {
+    return deleteEquipmentAircraftForSelectionModel(scenario, selectedState.aircraftModel);
+  }
+  if (selectedState.kind === "component" && selectedState.component) {
+    return deleteEquipmentComponentForSelectionModel(scenario, selectedState);
+  }
+  return { kind: "none", deletedComponentIds: [] };
+}
+
+function deleteEquipmentAircraftForSelectionModel(scenario, aircraftModel) {
+  const model = String(aircraftModel || "");
+  if (!model) return { kind: "none", deletedComponentIds: [] };
+  if (!Array.isArray(scenario.equipment.wholeMachineModels)) {
+    scenario.equipment.wholeMachineModels = wholeMachineModelsForScenario(scenario);
+  }
+  const deletedComponentIds = (scenario.components || [])
+    .filter((component) => componentBelongsToAircraftModel(component, model))
+    .map((component) => String(component.id || ""))
+    .filter(Boolean);
+  scenario.equipment.wholeMachineModels = scenario.equipment.wholeMachineModels.filter((item) => String(item) !== model);
+  scenario.components = scenario.components.filter((component) => !deletedComponentIds.includes(String(component.id || "")));
+  const fallbackModel = wholeMachineModelsForScenario(scenario)[0] || "";
+  if (String(scenario.equipment.model || "") === model) {
+    scenario.equipment.model = fallbackModel;
+  }
+  return {
+    kind: "aircraft",
+    aircraftModel: model,
+    fallbackModel,
+    deletedComponentIds,
+    selectedEquipmentNodeKey: "aircraft-list",
+    selectedEquipmentComponentIndex: 0
+  };
+}
+
+function deleteEquipmentComponentForSelectionModel(scenario, selectedState) {
+  const component = selectedState.component;
+  const componentId = String(component.id || "");
+  if (!componentId) return { kind: "none", deletedComponentIds: [] };
+  const aircraftModel = selectedState.aircraftModel || component.aircraftModel || wholeMachineModelsForScenario(scenario)[0] || "";
+  const deletedIds = collectEquipmentComponentSubtreeIds(scenario, {
+    aircraftModel,
+    rootComponentId: componentId
+  });
+  const deletedSet = new Set(deletedIds);
+  scenario.components = scenario.components.filter((item) => !deletedSet.has(String(item.id || "")));
+  const parentId = String(component.parentId || "aircraft-root");
+  const parentIndex = findEquipmentComponentIndexById(scenario.components, parentId);
+  const selectedEquipmentNodeKey = parentIndex >= 0
+    ? `component:${parentId}`
+    : (aircraftModel ? `aircraft:${aircraftModel}` : "aircraft-list");
+  return {
+    kind: "component",
+    aircraftModel,
+    deletedComponentIds: deletedIds,
+    selectedEquipmentNodeKey,
+    selectedEquipmentComponentIndex: parentIndex >= 0 ? parentIndex : 0
+  };
+}
+
+function collectEquipmentComponentSubtreeIds(scenario, { aircraftModel, rootComponentId }) {
+  const components = Array.isArray(scenario?.components) ? scenario.components : [];
+  const deletedIds = [];
+  const visited = new Set();
+  const queue = [String(rootComponentId || "")].filter(Boolean);
+  while (queue.length) {
+    const componentId = queue.shift();
+    if (!componentId || visited.has(componentId)) continue;
+    visited.add(componentId);
+    deletedIds.push(componentId);
+    for (const component of components) {
+      const childId = String(component.id || "");
+      if (!childId || visited.has(childId)) continue;
+      if (!componentBelongsToAircraftModel(component, aircraftModel)) continue;
+      if (String(component.parentId || "aircraft-root") === componentId) {
+        queue.push(childId);
+      }
+    }
+  }
+  return deletedIds;
+}
+
 function addEquipmentAircraftForSelectionModel(scenario) {
   if (!Array.isArray(scenario.equipment.wholeMachineModels)) {
     scenario.equipment.wholeMachineModels = wholeMachineModelsForScenario(scenario);

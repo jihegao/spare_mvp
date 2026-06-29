@@ -1135,7 +1135,7 @@ test("equipment aircraft list mutations synchronize operations support activity 
   assert.match(appSource, /selectedOperationsSupportAircraftModel/);
   assert.match(equipmentMutationSource, /function ensureOperationsSupportActivityForAircraftModel\(aircraftModel\)/);
   assert.match(equipmentMutationSource, /function removeOperationsSupportActivitiesForAircraftModel\(aircraftModel\)/);
-  assert.match(equipmentMutationSource, /function deleteSelectedEquipmentAircraft\(\)/);
+  assert.match(equipmentMutationSource, /function deleteSelectedEquipmentNode\(\)/);
   assert.match(equipmentMutationSource, /removeOperationsSupportActivitiesForAircraftModel\(aircraftModel\)/);
   assert.match(equipmentMutationSource, /function updateOperationsSupportActivityAircraftModel\(oldModel, nextModel\)/);
   assert.match(equipmentMutationSource, /updateOperationsSupportActivityAircraftModel\(oldModel, nextModel\)/);
@@ -1144,7 +1144,7 @@ test("equipment aircraft list mutations synchronize operations support activity 
 test("equipment aircraft deletion cleans downstream aircraft-model references", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const equipmentMutationSource = appSource.slice(
-    appSource.indexOf("function deleteSelectedEquipmentAircraft"),
+    appSource.indexOf("function deleteSelectedEquipmentNode"),
     appSource.indexOf("function ensureOperationsSupportActivityForAircraftModel")
   );
   const cleanupSource = appSource.slice(
@@ -1162,6 +1162,25 @@ test("equipment aircraft deletion cleans downstream aircraft-model references", 
   assert.match(cleanupSource, /for \(const override of Object\.values\(scenario\.supportResourceOverrides \|\| \{\}\)\)/);
   assert.match(cleanupSource, /override\.aircraft\.filter\(\(model\) => String\(model\) !== oldModel\)/);
   assert.match(cleanupSource, /selectedBasicMissionEquipmentType = nextModel/);
+});
+
+test("equipment component deletion cleans descendant component references", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const equipmentMutationSource = appSource.slice(
+    appSource.indexOf("function deleteSelectedEquipmentNode"),
+    appSource.indexOf("function ensureOperationsSupportActivityForAircraftModel")
+  );
+  const cleanupSource = appSource.slice(
+    appSource.indexOf("function cleanupDeletedEquipmentComponentReferences"),
+    appSource.indexOf("function cleanupDeletedEquipmentAircraftReferences")
+  );
+
+  assert.match(equipmentMutationSource, /deleteEquipmentNodeForSelectionModel\(\{ scenario, selection: selectedState \}\)/);
+  assert.match(equipmentMutationSource, /cleanupDeletedEquipmentComponentReferences\(mutation\.deletedComponentIds/);
+  assert.match(cleanupSource, /function cleanupDeletedEquipmentComponentReferences\(deletedComponentIds/);
+  assert.match(cleanupSource, /activity\.equipmentId/);
+  assert.match(cleanupSource, /delete activity\.equipmentId/);
+  assert.match(cleanupSource, /selectedCorrectiveComponentId/);
 });
 
 test("equipment system table exposes composition, MTBF and MTTR distribution fields together", async () => {
@@ -1662,7 +1681,7 @@ test("editable modeling lists expose page suggestion action entries", async () =
     appSource.indexOf("function buildEquipmentTreeNodes")
   );
   assert.match(equipmentSource, /data-equipment-add-node/);
-  assert.match(equipmentSource, /data-equipment-delete-node \$\{selectedState\.kind === "aircraft" \? "" : "disabled"\}/);
+  assert.match(equipmentSource, /data-equipment-delete-node \$\{selectedState\.kind === "aircraft-list" \? "disabled" : ""\}/);
 
   const basicMissionSource = appSource.slice(
     appSource.indexOf("function renderBasicMissionModeling"),

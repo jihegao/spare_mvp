@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   addEquipmentNodeForSelectionModel,
   buildEquipmentComponentTreeModel,
+  deleteEquipmentNodeForSelectionModel,
   resolveEquipmentSelectionModel
 } from "../front/equipment-tree-model.mjs";
 import * as equipmentTreeModel from "../front/equipment-tree-model.mjs";
@@ -103,4 +104,80 @@ test("equipment authoring rows show a selected system node and its descendants",
   });
 
   assert.deepEqual(rows.map((component) => component.id), ["engine", "engine-control"]);
+});
+
+test("equipment tree deletion removes a selected aircraft and all of its components", () => {
+  const scenario = {
+    equipment: { model: "J-15", wholeMachineModels: ["J-15", "J-35"] },
+    components: [
+      { id: "j15-engine", name: "发动机", aircraftModel: "J-15", parentId: "aircraft-root" },
+      { id: "j15-control", name: "发动机控制模块", aircraftModel: "J-15", parentId: "j15-engine" },
+      { id: "j35-radar", name: "雷达", aircraftModel: "J-35", parentId: "aircraft-root" }
+    ]
+  };
+
+  const result = deleteEquipmentNodeForSelectionModel({
+    scenario,
+    selection: { kind: "aircraft", aircraftModel: "J-15" }
+  });
+
+  assert.equal(result.kind, "aircraft");
+  assert.deepEqual(result.deletedComponentIds.sort(), ["j15-control", "j15-engine"]);
+  assert.deepEqual(scenario.equipment.wholeMachineModels, ["J-35"]);
+  assert.equal(scenario.equipment.model, "J-35");
+  assert.deepEqual(scenario.components.map((component) => component.id), ["j35-radar"]);
+  assert.equal(result.selectedEquipmentNodeKey, "aircraft-list");
+});
+
+test("equipment tree deletion removes a selected subsystem and its descendants", () => {
+  const scenario = {
+    equipment: { model: "J-15", wholeMachineModels: ["J-15"] },
+    components: [
+      { id: "engine", name: "发动机", aircraftModel: "J-15", parentId: "aircraft-root" },
+      { id: "engine-control", name: "发动机控制模块", aircraftModel: "J-15", parentId: "engine" },
+      { id: "radar", name: "雷达", aircraftModel: "J-15", parentId: "aircraft-root" }
+    ]
+  };
+
+  const result = deleteEquipmentNodeForSelectionModel({
+    scenario,
+    selection: {
+      kind: "component",
+      aircraftModel: "J-15",
+      component: scenario.components[0],
+      componentIndex: 0
+    }
+  });
+
+  assert.equal(result.kind, "component");
+  assert.deepEqual(result.deletedComponentIds.sort(), ["engine", "engine-control"]);
+  assert.deepEqual(scenario.components.map((component) => component.id), ["radar"]);
+  assert.equal(result.selectedEquipmentNodeKey, "aircraft:J-15");
+  assert.equal(result.selectedEquipmentComponentIndex, 0);
+});
+
+test("equipment tree deletion removes a selected leaf component only", () => {
+  const scenario = {
+    equipment: { model: "J-15", wholeMachineModels: ["J-15"] },
+    components: [
+      { id: "engine", name: "发动机", aircraftModel: "J-15", parentId: "aircraft-root" },
+      { id: "engine-control", name: "发动机控制模块", aircraftModel: "J-15", parentId: "engine" },
+      { id: "radar", name: "雷达", aircraftModel: "J-15", parentId: "aircraft-root" }
+    ]
+  };
+
+  const result = deleteEquipmentNodeForSelectionModel({
+    scenario,
+    selection: {
+      kind: "component",
+      aircraftModel: "J-15",
+      component: scenario.components[1],
+      componentIndex: 1
+    }
+  });
+
+  assert.equal(result.kind, "component");
+  assert.deepEqual(result.deletedComponentIds, ["engine-control"]);
+  assert.deepEqual(scenario.components.map((component) => component.id), ["engine", "radar"]);
+  assert.equal(result.selectedEquipmentNodeKey, "component:engine");
 });
