@@ -5281,20 +5281,30 @@ function supportNodeForOrgNode(orgNode, createIfMissing = false) {
 function addSupportResource(activeResourceType) {
   const orgNode = selectedSupportOrgTreeNode();
   if (!orgNode || (orgNode.children || []).length) return;
-  const node = supportNodeForOrgNode(orgNode, true);
-  if (!node) return;
+  const node = createSupportResourceImportNode(orgNode, activeResourceType, supportResourceRowsForOrg(activeResourceType, orgNode).length);
   if (activeResourceType === "保障人员") {
-    node.personnelCapacity = Number(node.personnelCapacity || 0) + 1;
+    node.personnelCapacity = 1;
+    node.personnelModel = "新增保障人员";
     selectedSupportResourceKeys = new Set([`${orgNode.id}:${node.id}:personnel`]);
   } else if (activeResourceType === "保障设备") {
-    node.equipmentCapacity = Number(node.equipmentCapacity || 0) + 1;
+    node.equipmentCapacity = 1;
+    node.supportEquipmentName = "新增保障设备";
+    node.supportEquipmentModel = "保障设备";
+    node.nodeType = "保障设备";
     selectedSupportResourceKeys = new Set([`${orgNode.id}:${node.id}:equipment`]);
   } else if (activeResourceType === "备件") {
-    const spare = lruSpareRows()[0] || { name: `新增备件${Object.keys(node.inventory || {}).length + 1}` };
-    node.inventory = { ...(node.inventory || {}), [spare.name]: Number(node.inventory?.[spare.name] || 0) + 1 };
-    selectedSupportResourceKeys = new Set([`${orgNode.id}:${node.id}:spare:0:${spare.name}`]);
+    const spare = { name: `新增备件${supportResourceRowsForOrg(activeResourceType, orgNode).length + 1}` };
+    node.inventory = { [spare.name]: 1 };
+    node.spareModels = { [spare.name]: spare.name };
+    node.spareEquipment = { [spare.name]: "" };
+    selectedSupportResourceKeys = new Set([`${orgNode.id}:${node.id}:spare:custom:0:${spare.name}`]);
   }
   updatePreviewResultsThroughApiClient();
+}
+
+function supportResourceRowsForOrg(activeResourceType, orgNode) {
+  return buildSupportResourceRows(activeResourceType, orgNode)
+    .filter((row) => !supportResourceDeletedKeySet().has(row.key));
 }
 
 function supportResourceOverrides() {
