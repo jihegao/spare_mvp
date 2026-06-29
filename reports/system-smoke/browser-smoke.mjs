@@ -58,6 +58,41 @@ async function clickFeature(featureId) {
   fallbacks.push({ action: "dom-click-feature", featureId });
 }
 
+async function openMonteCarloExperimentForRun() {
+  const sweepInput = page.locator('input[data-mc-array-path="monteCarlo.failureRates"]').first();
+  if (await sweepInput.isVisible().catch(() => false)) return;
+
+  const editButton = page.locator('button[data-mc-experiment-action="edit"]').first();
+  const addButton = page.locator('button[data-mc-experiment-action="add"]').first();
+  if (await editButton.isVisible().catch(() => false)) {
+    await editButton.click();
+  } else if (await addButton.isVisible().catch(() => false)) {
+    await addButton.click();
+  } else {
+    throw new Error("Cannot find Monte Carlo experiment add/edit action before filling sweep inputs");
+  }
+
+  await sweepInput.waitFor({ state: "visible", timeout: 5000 });
+}
+
+async function openMonteCarloExperimentDetailForRun() {
+  const startButton = page.locator('button[data-mc-action="start"]').first();
+  if (await startButton.isVisible().catch(() => false)) return;
+
+  const detailTab = page.locator('button[data-feature-id="spare-planning-monte-carlo-experiment-detail"]').first();
+  if (await detailTab.isVisible().catch(() => false)) {
+    await detailTab.click();
+  } else {
+    const listDetailButton = page.locator('button[data-mc-experiment-action="detail"]').first();
+    if (!await listDetailButton.isVisible().catch(() => false)) {
+      throw new Error("Cannot find Monte Carlo experiment detail action before checking results");
+    }
+    await listDetailButton.click();
+  }
+
+  await startButton.waitFor({ state: "visible", timeout: 5000 });
+}
+
 async function expectHeading(page, expected) {
   await page.waitForFunction((heading) => document.querySelector("h2")?.textContent === heading, expected, {
     timeout: 5000
@@ -86,26 +121,20 @@ await capture("04-modeling-after-edit", "装备任务建模");
 await verifyModelingButtonsReact();
 
 await openSecondary("仿真实验");
-await clickFeature("spare-planning-monte-carlo-config");
-await capture("05-monte-carlo-config", "蒙特卡洛实验");
+await clickFeature("spare-planning-monte-carlo-experiment-list");
+await capture("05-monte-carlo-list", "蒙特卡洛实验");
+await openMonteCarloExperimentForRun();
+await capture("05b-monte-carlo-editor", "蒙特卡洛实验");
 
 const failureRates = page.locator('input[data-mc-array-path="monteCarlo.failureRates"]');
 if ((await failureRates.count()) !== 1) throw new Error("Monte Carlo failure rate input is not unique");
 await failureRates.fill("0.06,0.08,0.1");
-await page.locator('button[data-mc-action="start"]').click();
-await page.waitForTimeout(100);
-if ((await page.locator("h2").innerText()) !== "仿真实验方案管理") {
-  await page.evaluate(() => document.querySelector('button[data-mc-action="start"]')?.click());
-  fallbacks.push({ action: "dom-click-monte-carlo-start" });
-}
-await page.waitForFunction(() => document.querySelector("h2")?.textContent === "仿真实验方案管理", null, {
+await page.evaluate(() => document.activeElement?.blur());
+await openMonteCarloExperimentDetailForRun();
+await page.waitForFunction(() => document.body.innerText.includes("蒙特卡洛实验结果"), null, {
   timeout: 5000
 });
-await capture("06-monte-carlo-started", "仿真实验方案管理");
-
-await openSecondary("结果分析");
-await clickFeature("spare-planning-monte-carlo-results");
-await capture("07-result-analysis", "蒙特卡洛实验结果");
+await capture("06-monte-carlo-detail-results", "蒙特卡洛实验");
 
 await openSecondary("仿真实验");
 await clickFeature("spare-planning-visual-start-stop");

@@ -23,7 +23,7 @@ function validPayload(overrides = {}) {
     run_id: runId,
     scenario_id: "scenario-m9",
     scenario_version: "scenario-v0",
-    model_family: "smoke",
+    model_family: "aircraft_support_v1",
     artifact_manifest_id: `artifact-manifest-${runId}`,
     result_summary_id: `result-${runId}`,
     run_config_artifact_id: `run_config-${runId}`,
@@ -133,6 +133,11 @@ test("normalizeVisualizationStateSeriesPayload fails closed for wrong run or mis
   assert.throws(
     () => normalizeVisualizationStateSeriesPayload(validPayload({ run_id: "other-run" }), { runId, artifactId: artifact.artifact_id }),
     /run_id mismatch/
+  );
+
+  assert.throws(
+    () => normalizeVisualizationStateSeriesPayload(validPayload({ model_family: "aviation_support" }), { runId, artifactId: artifact.artifact_id }),
+    /model_family must be aircraft_support_v1/
   );
 
   const missingResources = validPayload();

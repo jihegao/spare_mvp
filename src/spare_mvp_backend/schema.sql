@@ -39,6 +39,14 @@ CREATE TABLE IF NOT EXISTS audit_events (
   FOREIGN KEY (actor_user_id) REFERENCES users(user_id)
 );
 
+CREATE TABLE IF NOT EXISTS system_configs (
+  config_key TEXT PRIMARY KEY,
+  payload_json TEXT NOT NULL,
+  updated_by TEXT,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (updated_by) REFERENCES users(user_id)
+);
+
 CREATE TABLE IF NOT EXISTS projects (
   project_id TEXT PRIMARY KEY,
   schema_version TEXT NOT NULL,

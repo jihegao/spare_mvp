@@ -109,6 +109,62 @@ class BackendHttpApiTest(unittest.TestCase):
                 server.server_close()
                 thread.join(timeout=5)
 
+    def test_http_api_persists_stage5_system_config_and_user_delete(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            server = create_backend_server(
+                ("127.0.0.1", 0),
+                repo_root=REPO_ROOT,
+                database_path=":memory:",
+                output_dir=Path(tmp) / "artifacts",
+            )
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                base_url = f"http://127.0.0.1:{server.server_address[1]}/api"
+                admin_token = self._login_token(base_url, "admin", "admin")
+                data_token = self._login_token(base_url, "data", "data")
+                payload = {
+                    "projectDataModules": [{"key": "modeling-data-source", "sheetKeys": ["equipment-system"]}],
+                    "modelingForms": {"fieldUnits": {"equipment-system:mtbfHours": "小时"}, "personnelSpecialties": ["机务"]},
+                }
+
+                saved_config = self._json(
+                    base_url,
+                    "POST",
+                    "/system-configs/system-runtime-support",
+                    {"payload": payload},
+                    auth_token=data_token,
+                )
+                loaded_config = self._json(
+                    base_url,
+                    "GET",
+                    "/system-configs/system-runtime-support",
+                    auth_token=admin_token,
+                )
+                created_user = self._json(
+                    base_url,
+                    "POST",
+                    "/users",
+                    {"username": "stage5-planner", "password": "planner", "role": "普通用户"},
+                    auth_token=admin_token,
+                )
+                deleted_user = self._json(
+                    base_url,
+                    "DELETE",
+                    f"/users/{quote(created_user['user_id'], safe='')}",
+                    auth_token=admin_token,
+                )
+                users = self._json(base_url, "GET", "/users", auth_token=admin_token)
+
+                self.assertEqual(saved_config["payload"]["modelingForms"]["personnelSpecialties"], ["机务"])
+                self.assertEqual(loaded_config["payload"]["modelingForms"]["fieldUnits"]["equipment-system:mtbfHours"], "小时")
+                self.assertEqual(deleted_user["deleted"], True)
+                self.assertNotIn("stage5-planner", {user["username"] for user in users["users"]})
+            finally:
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
     def test_http_experiment_plan_delete_soft_deletes_associated_runs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             server = create_backend_server(
@@ -603,15 +659,17 @@ class BackendHttpApiTest(unittest.TestCase):
                 manifest = self._json(base_url, "GET", f"/runs/{quote(run_id, safe='')}/artifacts")
                 artifact = dict(manifest["artifacts"][0])
                 malicious_name = "evil\"\r\nX-Injected: yes.json"
-                malicious_path = f"{run_id}/{malicious_name}"
+                malicious_path = f"{run_id}/evil-safe.json"
                 body = b'{"safe": true}\n'
                 target = artifact_dir / malicious_path
                 target.write_bytes(body)
                 artifact["path"] = malicious_path
+                artifact["filename"] = malicious_name
                 artifact["sha256"] = hashlib.sha256(body).hexdigest()
                 artifact["size_bytes"] = len(body)
                 manifest["artifacts"][0] = artifact
-                with sqlite3.connect(database_path) as connection:
+                connection = sqlite3.connect(database_path)
+                try:
                     connection.execute(
                         """
                         UPDATE artifact_manifests
@@ -623,6 +681,9 @@ class BackendHttpApiTest(unittest.TestCase):
                             manifest["artifact_manifest_id"],
                         ),
                     )
+                    connection.commit()
+                finally:
+                    connection.close()
 
                 connection = http.client.HTTPConnection("127.0.0.1", server.server_address[1], timeout=10)
                 connection.request(
@@ -642,8 +703,8 @@ class BackendHttpApiTest(unittest.TestCase):
                 self.assertNotIn("\n", disposition)
             finally:
                 server.shutdown()
-                server.server_close()
                 thread.join(timeout=5)
+                server.server_close()
 
     def test_http_api_lists_saved_projects_for_project_catalog(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

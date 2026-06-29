@@ -1,5 +1,6 @@
 const STATE_SERIES_SCHEMA_VERSION = "visualization-state-series-v0";
 const STATE_STREAM_FRAME_SCHEMA_VERSION = "visualization-state-frame-v0";
+const MODEL_FAMILY = "aircraft_support_v1";
 
 export function findVisualizationStateSeriesArtifact(manifest = {}) {
   const artifacts = Array.isArray(manifest?.artifacts) ? manifest.artifacts : [];
@@ -31,7 +32,7 @@ export function normalizeVisualizationStateSeriesPayload(payload, { runId = "", 
     artifact_id: artifactId,
     scenario_id: requiredString(payload.scenario_id, "scenario_id"),
     scenario_version: requiredString(payload.scenario_version, "scenario_version"),
-    model_family: requiredString(payload.model_family, "model_family"),
+    model_family: requireModelFamily(payload.model_family),
     ...traceability,
     mission_templates: missionTemplates,
     failure_tree_templates: failureTreeTemplates,
@@ -67,7 +68,7 @@ export function mergeVisualizationStateStreamFrame(series, eventPayload) {
       run_id: runId,
       scenario_id: requiredString(eventPayload.scenario_id, "stream.scenario_id"),
       scenario_version: requiredString(eventPayload.scenario_version, "stream.scenario_version"),
-      model_family: requiredString(eventPayload.model_family, "stream.model_family"),
+      model_family: requireModelFamily(eventPayload.model_family),
       artifact_manifest_id: requiredString(eventPayload.artifact_manifest_id, "stream.artifact_manifest_id"),
       result_summary_id: requiredString(eventPayload.result_summary_id, "stream.result_summary_id"),
       run_config_artifact_id: requiredString(eventPayload.run_config_artifact_id, "stream.run_config_artifact_id"),
@@ -246,6 +247,14 @@ function requiredString(value, field) {
     throw new Error(`state series ${field} is required`);
   }
   return String(value);
+}
+
+function requireModelFamily(value) {
+  const modelFamily = requiredString(value, "model_family");
+  if (modelFamily !== MODEL_FAMILY) {
+    throw new Error(`state series model_family must be ${MODEL_FAMILY}`);
+  }
+  return modelFamily;
 }
 
 function arrayField(value, field) {

@@ -78,6 +78,7 @@ class DatabaseContractTest(unittest.TestCase):
                 "sessions",
                 "project_access",
                 "audit_events",
+                "system_configs",
                 "modeling_imports",
                 "experiment_plans",
                 "modeling_snapshots",
@@ -102,6 +103,7 @@ class DatabaseContractTest(unittest.TestCase):
                 "outcome",
                 "details_json",
             },
+            "system_configs": {"config_key", "payload_json", "updated_by", "updated_at"},
             "projects": {"project_id", "schema_version", "project_version", "payload_json"},
             "modeling_snapshots": {
                 "snapshot_id",
@@ -405,6 +407,23 @@ class DatabaseContractTest(unittest.TestCase):
             self.repository.list_audit_events(resource_id="import-carrier-day-night-001")[0]["details"],
             {"project_id": "project-carrier-day-night"},
         )
+
+    def test_repository_persists_system_config_payload(self) -> None:
+        saved = self.repository.upsert_system_config(
+            "system-runtime-support",
+            {
+                "projectDataModules": [{"key": "modeling-data-source", "sheetKeys": ["equipment-system"]}],
+                "modelingForms": {"fieldUnits": {"equipment-system:mttrMinutes": "分钟"}, "personnelSpecialties": ["机务"]},
+            },
+            updated_by="user-data",
+        )
+
+        stored = self.repository.get_system_config("system-runtime-support")
+
+        self.assertEqual(saved["config_key"], "system-runtime-support")
+        self.assertEqual(stored["updated_by"], "user-data")
+        self.assertEqual(stored["payload"]["modelingForms"]["fieldUnits"]["equipment-system:mttrMinutes"], "分钟")
+        self.assertEqual(stored["payload"]["modelingForms"]["personnelSpecialties"], ["机务"])
 
     def test_repository_persists_modeling_import_package_and_publish_state(self) -> None:
         import_package = self._fixture("modeling_import_project.json")

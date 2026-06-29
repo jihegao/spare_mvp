@@ -65,6 +65,7 @@ class ContractRepository:
             """
             SELECT user_id, username, password_hash, role, display_name, status, created_at
             FROM users
+            WHERE status != 'deleted'
             ORDER BY username ASC
             """
         )
@@ -89,6 +90,51 @@ class ContractRepository:
                 "updated_at": row[2],
             })
         return projects
+
+    def get_system_config(self, config_key: str) -> dict[str, Any]:
+        key = str(config_key or "").strip()
+        if not key:
+            raise ValueError("config_key is required")
+        cursor = self.connection.execute(
+            """
+            SELECT config_key, payload_json, updated_by, updated_at
+            FROM system_configs
+            WHERE config_key = ?
+            """,
+            (key,),
+        )
+        row = cursor.fetchone()
+        if row is None:
+            raise KeyError(key)
+        result = _row_to_dict(cursor, row)
+        payload = json.loads(result.pop("payload_json") or "{}")
+        return {**result, "payload": payload}
+
+    def upsert_system_config(
+        self,
+        config_key: str,
+        payload: dict[str, Any],
+        *,
+        updated_by: str | None = None,
+    ) -> dict[str, Any]:
+        key = str(config_key or "").strip()
+        if not key:
+            raise ValueError("config_key is required")
+        if not isinstance(payload, dict):
+            raise ValueError("system config payload must be an object")
+        self.connection.execute(
+            """
+            INSERT INTO system_configs (config_key, payload_json, updated_by, updated_at)
+            VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(config_key) DO UPDATE SET
+              payload_json = excluded.payload_json,
+              updated_by = excluded.updated_by,
+              updated_at = CURRENT_TIMESTAMP
+            """,
+            (key, _to_json(payload), updated_by),
+        )
+        self.connection.commit()
+        return self.get_system_config(key)
 
     def get_user(self, user_id: str) -> dict[str, Any]:
         cursor = self.connection.execute(
@@ -158,6 +204,22 @@ class ContractRepository:
         )
         self.connection.commit()
         return self.get_user(user_id)
+
+    def delete_user(self, user_id: str) -> dict[str, Any]:
+        current = self.get_user(user_id)
+        if current["username"] in {"admin", "system"}:
+            raise ValueError("protected_user")
+        self.connection.execute(
+            """
+            UPDATE users
+            SET status = 'deleted'
+            WHERE user_id = ?
+            """,
+            (user_id,),
+        )
+        self.connection.commit()
+        deleted = self.get_user(user_id)
+        return {**deleted, "deleted": True}
 
     def create_session(self, user_id: str) -> dict[str, Any]:
         user = self.get_user(user_id)

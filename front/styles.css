@@ -525,9 +525,21 @@ select {
   min-width: 120px;
 }
 
-select[multiple].table-edit-select,
-select[multiple][data-support-activity-predecessors] {
+select[multiple].table-edit-select {
   min-height: 42px;
+}
+
+.predecessor-cell {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.predecessor-cell span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--ink);
 }
 
 .inline-action {
@@ -751,6 +763,103 @@ select[multiple][data-support-activity-predecessors] {
   box-shadow: 0 20px 48px rgba(15, 23, 42, 0.24);
 }
 
+.basic-activity-dialog {
+  width: min(1120px, calc(100vw - 32px));
+}
+
+.predecessor-dialog {
+  width: min(920px, calc(100vw - 32px));
+}
+
+.predecessor-dialog-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 0.9fr);
+  gap: 14px;
+}
+
+.predecessor-dialog-grid h4 {
+  margin: 0 0 8px;
+}
+
+.predecessor-option-list,
+.predecessor-template-list {
+  display: grid;
+  gap: 8px;
+}
+
+.predecessor-template-list {
+  margin-top: 8px;
+  max-height: 320px;
+  overflow: auto;
+}
+
+.predecessor-template-list .inline-action {
+  justify-content: flex-start;
+  text-align: left;
+}
+
+@media (max-width: 760px) {
+  .predecessor-dialog-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .predecessor-cell {
+    grid-template-columns: 1fr;
+  }
+}
+
+.basic-activity-resource-editor {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.basic-activity-resource-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+.basic-activity-resource-section {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #f8fafc;
+}
+
+.basic-activity-resource-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.basic-activity-resource-section h5 {
+  margin: 0;
+}
+
+.basic-activity-resource-summary table,
+.basic-activity-resource-config-table {
+  width: 100%;
+}
+
+.basic-activity-resource-section select[multiple] {
+  min-height: 112px;
+}
+
+.basic-activity-quantity-list {
+  display: grid;
+  gap: 6px;
+}
+
+@media (max-width: 980px) {
+  .basic-activity-resource-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .organization-layout,
 .comprehensive-layout {
   display: grid;
@@ -832,6 +941,12 @@ select[multiple][data-support-activity-predecessors] {
 
 .toolbar-row input {
   max-width: 260px;
+}
+
+.tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .tree-node-item {
@@ -1544,6 +1659,12 @@ select[multiple][data-support-activity-predecessors] {
   margin: 14px 0;
 }
 
+.mc-formal-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
 .metric-card {
   display: grid;
   gap: 5px;
@@ -1573,6 +1694,54 @@ select[multiple][data-support-activity-predecessors] {
 .mc-group-table {
   max-height: 260px;
   overflow: auto;
+}
+
+.mc-formal-source {
+  margin-top: 14px;
+}
+
+.mc-formal-results {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.mc-formal-projection {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 12px;
+}
+
+.mc-formal-projection h4 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.mc-formal-projection .formal-result {
+  margin: 0;
+}
+
+.mc-formal-blocked {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  background: #fff7ed;
+  padding: 12px;
+}
+
+.mc-formal-blocked strong {
+  color: #9f1239;
+}
+
+.mc-formal-blocked p {
+  margin: 0;
 }
 
 .factor-grid {
@@ -2027,6 +2196,17 @@ tr.clickable-table-row.selected-table-row td {
 .mesa-source-demo {
   background: rgba(234, 179, 8, 0.18);
   color: #a16207;
+}
+
+.mesa-source-state-series,
+.mesa-source-state-stream {
+  background: rgba(34, 197, 94, 0.16);
+  color: #15803d;
+}
+
+.mesa-source-blocked {
+  background: rgba(220, 38, 38, 0.14);
+  color: #b91c1c;
 }
 
 .mesa-tabs,

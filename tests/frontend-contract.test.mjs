@@ -1,4 +1,4 @@
-import assert from "node:assert/strict";
+﻿import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
@@ -15,14 +15,15 @@ const PAGE_REVISION_REPORT_URL = new URL("../reports/2026-06-19-page-revision-su
 const RBD_RENDERING_CONTRACT_URL = new URL("../docs/reliability-block-diagram-contract.md", import.meta.url);
 
 test("feature catalog exposes all table-2 four-level pages", () => {
-  assert.equal(FEATURE_PAGES.length, 54);
-  assert.equal(new Set(FEATURE_PAGES.map((page) => page.id)).size, 54);
-  assert.equal(FEATURE_PAGES.filter((page) => page.module === "备件规划评估模块").length, 23);
-  assert.equal(FEATURE_PAGES.filter((page) => page.module === "任务可靠度评估模块").length, 25);
+  assert.equal(FEATURE_PAGES.length, 49);
+  assert.equal(new Set(FEATURE_PAGES.map((page) => page.id)).size, 49);
+  assert.equal(FEATURE_PAGES.filter((page) => page.module === "备件规划评估模块").length, 21);
+  assert.equal(FEATURE_PAGES.filter((page) => page.module === "任务可靠度评估模块").length, 22);
   assert.equal(FEATURE_PAGES.filter((page) => page.module === "系统运行支持模块").length, 6);
-  for (const label of ["装备系统建模", "装备可靠性框图建模", "蒙特卡洛实验结果", "飞机转场携行清单分析", "任务可靠度评估", "停机因素分析", "建模表单管理"]) {
+  for (const label of ["装备系统建模", "装备可靠性框图建模", "飞机转场携行清单分析", "任务可靠度评估", "停机因素分析", "建模表单管理"]) {
     assert.ok(FEATURE_PAGES.some((page) => page.name === label), label);
   }
+  assert.equal(FEATURE_PAGES.some((page) => page.name === "蒙特卡洛实验结果"), false);
   assert.equal(FEATURE_PAGES.some((page) => page.name === "装备组成建模"), false);
   assert.equal(FEATURE_PAGES.some((page) => page.name === "装备故障建模"), false);
   assert.equal(FEATURE_PAGES.some((page) => page.module === "系统管理"), false);
@@ -91,13 +92,13 @@ test("feature grouping preserves three-level navigation and internal fourth-leve
   assert.equal(FEATURE_PAGES.some((page) => page.id === "spare-planning-result-import"), false);
   assert.ok(grouped["任务可靠度评估模块"]["仿真建模"]["装备系统建模"].some((page) => page.name === "装备可靠性框图建模"));
   assert.deepEqual(grouped["系统运行支持模块"]["装备RMS指标分配"]["装备RMS指标分配"].map((page) => page.name), ["装备RMS指标分配"]);
-  assert.deepEqual(grouped["备件规划评估模块"]["仿真实验"]["仿真实验方案管理"].map((page) => page.name), ["方案列表", "方案编辑"]);
-  assert.deepEqual(grouped["任务可靠度评估模块"]["仿真实验"]["仿真实验方案管理"].map((page) => page.name), ["方案列表", "方案编辑"]);
+  assert.deepEqual(grouped["备件规划评估模块"]["仿真实验"]["仿真实验方案管理"].map((page) => page.name), ["仿真实验方案管理"]);
+  assert.deepEqual(grouped["任务可靠度评估模块"]["仿真实验"]["仿真实验方案管理"].map((page) => page.name), ["仿真实验方案管理"]);
   assert.deepEqual(grouped["备件规划评估模块"]["仿真实验"]["可视化推演"].map((page) => page.name), ["可视化实验启动与停止"]);
   assert.deepEqual(grouped["任务可靠度评估模块"]["仿真实验"]["可视化推演"].map((page) => page.name), ["可视化实验启动与停止"]);
   assert.deepEqual(grouped["备件规划评估模块"]["仿真实验"]["蒙特卡洛实验"].map((page) => page.name), ["实验列表", "添加/编辑实验", "实验详情"]);
   assert.deepEqual(grouped["任务可靠度评估模块"]["仿真实验"]["蒙特卡洛实验"].map((page) => page.name), ["实验列表", "添加/编辑实验", "实验详情"]);
-  assert.deepEqual(Object.keys(grouped["备件规划评估模块"]["结果分析"]), ["蒙特卡洛实验结果", "备件短板分析", "飞机转场携行清单分析"]);
+  assert.deepEqual(Object.keys(grouped["备件规划评估模块"]["结果分析"]), ["备件短板分析", "飞机转场携行清单分析"]);
   assert.deepEqual(grouped["备件规划评估模块"]["结果分析"]["备件短板分析"].map((page) => page.name), ["备件短板分析"]);
   assert.equal(FEATURE_PAGES.some((page) => page.name === "仿真实验方案创建"), false);
   assert.equal(FEATURE_PAGES.some((page) => page.name === "仿真实验方案编辑"), false);
@@ -108,12 +109,16 @@ test("feature grouping preserves three-level navigation and internal fourth-leve
   assert.equal(FEATURE_PAGES.some((page) => page.name === "装备使用保障方案"), false);
   assert.equal(FEATURE_PAGES.some((page) => page.name === "装备预防性维修方案"), false);
   assert.equal(FEATURE_PAGES.some((page) => page.name === "装备修复性维修方案"), false);
-  assert.equal(getFeaturePageById("spare-planning-experiment-create").name, "方案编辑");
-  assert.equal(getFeaturePageById("spare-planning-experiment-edit").name, "方案编辑");
-  assert.equal(getFeaturePageById("mission-reliability-experiment-create").name, "方案编辑");
-  assert.equal(getFeaturePageById("mission-reliability-experiment-edit").name, "方案编辑");
+  assert.equal(getFeaturePageById("spare-planning-experiment-create").name, "仿真实验方案管理");
+  assert.equal(getFeaturePageById("spare-planning-experiment-edit").name, "仿真实验方案管理");
+  assert.equal(getFeaturePageById("mission-reliability-experiment-create").name, "仿真实验方案管理");
+  assert.equal(getFeaturePageById("mission-reliability-experiment-edit").name, "仿真实验方案管理");
   assert.equal(getFeaturePageById("spare-planning-monte-carlo-config").name, "添加/编辑实验");
   assert.equal(getFeaturePageById("mission-reliability-monte-carlo-config").name, "添加/编辑实验");
+  assert.equal(getFeaturePageById("spare-planning-monte-carlo-results").id, "spare-planning-monte-carlo-experiment-list");
+  assert.equal(getFeaturePageById("spare-planning-monte-carlo-results-display").id, "spare-planning-monte-carlo-experiment-list");
+  assert.equal(getFeaturePageById("mission-reliability-monte-carlo-results").id, "mission-reliability-monte-carlo-experiment-list");
+  assert.equal(getFeaturePageById("mission-reliability-monte-carlo-results-display").id, "mission-reliability-monte-carlo-experiment-list");
   assert.equal(getFeaturePageById("spare-planning-scenario-switch").component, "visual-simulation");
   assert.equal(getFeaturePageById("spare-planning-visual-results").component, "visual-simulation");
   assert.equal(getFeaturePageById("mission-reliability-task-reliability").name, "任务可靠度评估");
@@ -164,10 +169,15 @@ test("page revision report is archived under reports with its screenshot evidenc
 test("experiment plan management remains visible because it is source design scope", async () => {
   const catalogSource = await readFile(new URL("../front/feature-catalog.mjs", import.meta.url), "utf8");
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const sourceRows = catalogSource.slice(
+    catalogSource.indexOf("const SOURCE_ROWS"),
+    catalogSource.indexOf("export const FEATURE_PAGES")
+  );
 
   assert.match(catalogSource, /仿真实验方案管理/);
-  assert.match(catalogSource, /experiment-plan-list/);
-  assert.match(catalogSource, /experiment-plan-editor/);
+  assert.match(catalogSource, /experiment-plan-management/);
+  assert.doesNotMatch(sourceRows, /experiment-plan-list/);
+  assert.doesNotMatch(sourceRows, /experiment-plan-editor/);
   assert.match(appSource, /function renderExperimentPlanList/);
   assert.match(appSource, /function renderExperimentPlanEditor/);
 });
@@ -182,12 +192,10 @@ test("experiment plan list keeps selection with backend row actions", async () =
   assert.match(listSource, /data-experiment-plan-select/);
   assert.match(listSource, /selected-table-row/);
   assert.match(listSource, /data-experiment-plan-edit/);
-  assert.match(listSource, /<th>场景<\/th>/);
-  assert.match(listSource, /scenarioId/);
-  assert.match(listSource, /启动可视化推演/);
-  assert.match(listSource, /创建蒙特卡洛实验/);
-  assert.match(listSource, /getVisualSimulationFeatureId\(page\.module\)/);
-  assert.match(listSource, /getMonteCarloExperimentEditFeatureId\(page\.module\)/);
+  assert.match(listSource, /<th>所属模块<\/th>/);
+  assert.match(listSource, /<th>关联运行<\/th>/);
+  assert.match(listSource, /experimentPlanRowFromBackend/);
+  assert.match(listSource, /run_count/);
   assert.match(listSource, /data-experiment-plan-delete="\$\{htmlEscape\(plan\.experiment_plan_id\)\}"/);
 });
 
@@ -402,8 +410,11 @@ test("project data management exposes modeling sheet selection and local import 
 
   assert.doesNotMatch(systemProjectSource, /项目独有数据/);
   assert.doesNotMatch(systemProjectSource, /新增项目数据/);
-  assert.match(systemProjectSource, /仿真建模数据表 sheet 选择器/);
-  assert.equal(systemProjectSource.match(/仿真建模数据表 sheet 选择器/g)?.length, 1);
+  assert.doesNotMatch(systemProjectSource, /仿真建模数据表 sheet 选择器/);
+  assert.match(systemProjectSource, /项目数据管理配置/);
+  assert.match(projectDataSource, /data-project-data-config-module="modeling-data-source"/);
+  assert.match(projectDataSource, /data-project-data-config-module="modeling-import-publish"/);
+  assert.match(systemProjectSource, /data-system-config-save/);
   assert.match(systemProjectSource, /data-modeling-import-action="load-fixture"/);
   assert.match(systemProjectSource, /data-modeling-import-action="backfill-current-project"/);
   assert.match(systemProjectSource, /data-modeling-import-action="validate"/);
@@ -838,6 +849,11 @@ test("support activity workbench does not render duplicate inner tabs", async ()
 
 test("support activity pages align to page suggestion activity fields", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const styleSource = await readFile(new URL("../front/styles.css", import.meta.url), "utf8");
+  const basicActivityResourceStyle = styleSource.slice(
+    styleSource.indexOf(".basic-activity-resource-grid"),
+    styleSource.indexOf(".basic-activity-resource-section")
+  );
   const supportActivitySource = appSource.slice(
     appSource.indexOf("function findSupportActivityForPage"),
     appSource.indexOf("function renderExperimentPlanList")
@@ -878,8 +894,13 @@ test("support activity pages align to page suggestion activity fields", async ()
     supportActivitySource.indexOf("function renderSupportActivityJobRows"),
     supportActivitySource.indexOf("function renderBasicActivityLibrary")
   );
-  assert.match(supportActivityJobSource, /predecessorMultiSelect/);
-  assert.match(supportActivityJobSource, /data-support-activity-predecessors/);
+  assert.match(supportActivityJobSource, /renderSupportActivityPredecessorCell/);
+  assert.match(supportActivityJobSource, /data-support-activity-predecessor-edit/);
+  assert.match(supportActivityJobSource, /data-support-activity-predecessor-dialog-close/);
+  assert.match(supportActivityJobSource, /data-support-activity-predecessor-add-template/);
+  assert.match(supportActivityJobSource, /data-support-activity-predecessor-toggle/);
+  assert.match(supportActivityJobSource, /编辑紧前作业/);
+  assert.doesNotMatch(supportActivityJobSource, /data-support-activity-predecessors/);
   assert.match(supportActivityJobSource, /data-support-activity-job-select/);
   assert.match(supportActivityJobSource, /data-support-activity-job-select-all/);
   assert.match(supportActivityJobSource, /data-support-activity-job-batch-delete/);
@@ -888,12 +909,17 @@ test("support activity pages align to page suggestion activity fields", async ()
   assert.doesNotMatch(supportActivityJobSource, /弹窗编辑|弹窗\/删除/);
   assert.match(supportActivityJobSource, /data-support-activity-job-field/);
   assert.match(supportActivityJobSource, /supportActivityJobDialogKey/);
+  assert.match(supportActivityJobSource, /supportActivityPredecessorDialogKey/);
   assert.match(supportActivityJobSource, /renderSupportActivityJobDialog/);
+  assert.match(supportActivityJobSource, /renderSupportActivityPredecessorDialog/);
   assert.match(supportActivityJobSource, /data-support-activity-job-dialog-close/);
-  assert.match(supportActivityJobSource, /supportPersonnelOptions/);
-  assert.match(supportActivityJobSource, /supportEquipmentOptions/);
-  assert.match(supportActivityJobSource, /supportSpareOptions/);
+  assert.match(supportActivityJobSource, /supportActivityJobBasicActivitySelect/);
+  assert.match(supportActivityJobSource, /data-support-activity-job-template-select/);
   assert.match(supportActivityJobSource, /新增工作项目/);
+  assert.doesNotMatch(supportActivityJobSource, /<th>保障人员<\/th><th>保障设备<\/th><th>备件<\/th>/);
+  assert.doesNotMatch(supportActivityJobSource, /<label>保障人员/);
+  assert.doesNotMatch(supportActivityJobSource, /<label>保障设备/);
+  assert.doesNotMatch(supportActivityJobSource, /<label>备件/);
   assert.doesNotMatch(supportActivityJobSource, /\u5de5\u671f\u5206\u5e03\u6458\u8981/);
   assert.doesNotMatch(supportActivityJobSource, /\u5b50\u4f5c\u4e1a/);
   assert.doesNotMatch(supportActivityJobSource, /弹药|ammunition/);
@@ -915,12 +941,33 @@ test("support activity pages align to page suggestion activity fields", async ()
     supportActivitySource.indexOf("function renderOperationsSupportActivity")
   );
   assert.match(basicActivityLibrarySource, /data-basic-activity-field/);
+  assert.match(basicActivityLibrarySource, /basicActivityDialogKey/);
+  assert.match(basicActivityLibrarySource, /data-basic-activity-dialog-close/);
+  assert.match(basicActivityLibrarySource, /basic-activity-dialog/);
+  assert.match(basicActivityLibrarySource, /renderBasicActivityResourceEditor/);
+  assert.match(basicActivityLibrarySource, /renderBasicActivityPersonnelEditor/);
+  assert.match(basicActivityLibrarySource, /renderBasicActivityEquipmentEditor/);
+  assert.match(basicActivityLibrarySource, /renderBasicActivitySpareEditor/);
+  assert.match(basicActivityLibrarySource, /renderBasicActivityResourceConfigDialog/);
+  assert.match(basicActivityLibrarySource, /data-basic-activity-resource-dialog-open="\$\{htmlEscape\(resourceKind\)\}"/);
+  assert.match(basicActivityLibrarySource, /data-basic-activity-resource-dialog-add/);
+  assert.match(basicActivityLibrarySource, /data-basic-activity-resource-dialog-field/);
+  assert.match(basicActivityLibrarySource, /updateBasicActivityResourceDialogField/);
+  assert.match(basicActivityLibrarySource, /basicActivityResourceDialogTextInput/);
+  assert.match(basicActivityLibrarySource, /\`\$\{resourceKind\}-models\`/);
+  assert.match(basicActivityLibrarySource, /\`\$\{resourceKind\}-names\`/);
+  assert.match(basicActivityLibrarySource, /buildSupportResourceRows\(resourceType, root\)/);
+  assert.match(basicActivityLibrarySource, /personnelRequirements/);
+  assert.match(basicActivityLibrarySource, /equipmentRequirements/);
+  assert.match(basicActivityLibrarySource, /spareRequirements/);
   assert.match(basicActivityLibrarySource, /basicActivityInput/);
   assert.match(basicActivityLibrarySource, /basicActivitySelect/);
   assert.match(basicActivityLibrarySource, /basicActivityScopeSelect/);
   assert.match(basicActivityLibrarySource, /保障人员/);
   assert.match(basicActivityLibrarySource, /保障设备/);
   assert.match(basicActivityLibrarySource, /备件/);
+  assert.match(basicActivityResourceStyle, /grid-template-columns: 1fr/);
+  assert.doesNotMatch(basicActivityResourceStyle, /repeat\(3/);
   assert.doesNotMatch(basicActivityLibrarySource, /弹药|ammunition/);
   assert.doesNotMatch(basicActivityLibrarySource, /机务\/维修人员/);
   assert.doesNotMatch(basicActivityLibrarySource, /勤务人员/);
@@ -1031,7 +1078,7 @@ test("equipment tree root aircraft list can add aircraft before subsystem nodes"
   assert.match(equipmentModelSource, /scenario\.equipment\.wholeMachineModels\.push\(aircraftModel\)/);
   assert.match(equipmentModelSource, /selectedEquipmentNodeKey: `aircraft:\$\{aircraftModel\}`/);
   assert.match(appSource, /ensureOperationsSupportActivityForAircraftModel\(mutation\.aircraftModel\)/);
-  assert.match(appSource, /equipmentSelectionSummary\(selectedState, components\.length\)/);
+  assert.match(appSource, /equipmentSelectionSummary\(selectedState, visibleRowCount\)/);
   assert.doesNotMatch(appSource, /整机数量<input readonly value=/);
 });
 
@@ -1050,12 +1097,16 @@ test("equipment aircraft selection keeps an editable aircraft name row", async (
     equipmentSource.indexOf("function ensureOperationsSupportActivityForAircraftModel")
   );
 
-  assert.match(tableSource, /<th>飞机名称<\/th>/);
-  assert.match(tableSource, /renderEquipmentAircraftNameRow\(selectedState\)/);
-  assert.match(equipmentSource, /components\.length \|\| selectedState\.kind === "aircraft"/);
-  assert.match(equipmentSource, /function renderEquipmentAircraftNameRow\(selectedState\)/);
-  assert.match(equipmentSource, /data-equipment-aircraft-model="\$\{htmlEscape\(selectedState\.aircraftModel\)\}"/);
-  assert.match(equipmentSource, /aria-label="飞机名称"/);
+  assert.match(tableSource, /<th>组件名称<\/th>/);
+  assert.match(tableSource, /<th>MTBF参数<\/th>/);
+  assert.match(equipmentSource, /data-equipment-import-file/);
+  assert.match(equipmentSource, /equipmentImportStatus/);
+  assert.match(tableSource, /renderEquipmentAircraftTableRow\(selectedState\.aircraftModel\)/);
+  assert.match(tableSource, /renderEquipmentSystemTableRow/);
+  assert.match(equipmentSource, /function renderEquipmentAircraftTableRow\(aircraftModel\)/);
+  assert.match(equipmentSource, /aria-label="整机名称"/);
+  assert.match(appSource, /function importEquipmentStructureTableFile\(file\)/);
+  assert.match(appSource, /function normalizeEquipmentStructureImport\(input\)/);
   assert.match(mutationSource, /function updateEquipmentAircraftModel\(previousModel, nextModelRaw\)/);
   assert.match(appSource, /function commitEquipmentAircraftModelInput\(input\)/);
   assert.match(appSource, /app\.addEventListener\("focusout"/);
@@ -1369,10 +1420,13 @@ test("phase 1B mission modeling convergence contract is documented in source", a
 
   assert.match(periodicSource, /上级任务名称/);
   assert.match(periodicSource, /parentTaskName/);
-  assert.match(periodicSource, /data-periodic-delete-selected/);
+  assert.match(periodicSource, /总周数/);
+  assert.match(periodicSource, /data-periodic-select-week/);
   assert.doesNotMatch(periodicSource, /<th>选择\/删除<\/th>/);
   assert.doesNotMatch(periodicSource, /data-periodic-delete="\$\{htmlEscape\(task\.id\)\}"/);
   assert.doesNotMatch(periodicSource, /data-periodic-select="\$\{htmlEscape\(task\.id\)\}">选择<\/button>/);
+  assert.doesNotMatch(periodicSource, /任务周期天数/);
+  assert.match(periodicSource, /每周天数/);
   assert.match(periodicSource, /周次/);
   assert.match(periodicSource, /周内日/);
   assert.match(periodicModelSource, /weekIndex/);
@@ -1480,19 +1534,25 @@ test("mission task profile pages split composite and periodic task modeling", as
     appSource.indexOf("function renderPeriodicTaskModeling"),
     appSource.indexOf("function buildCompositeTimelineRows")
   );
-  assert.match(periodicSource, /周期性任务列表/);
+  assert.match(periodicSource, /周期性任务周列表/);
   assert.match(periodicSource, /周期性任务建模/);
-  assert.match(periodicSource, /data-periodic-delete-selected/);
-  assert.match(periodicSource, /clickable-table-row \$\{String\(task\.id\) === String\(selectedTask\?\.id\) \? "selected-table-row" : ""\}/);
-  assert.match(periodicSource, /aria-selected="\$\{String\(task\.id\) === String\(selectedTask\?\.id\) \? "true" : "false"\}"/);
+  assert.match(periodicSource, /总周数/);
+  assert.match(periodicSource, /data-periodic-select-week/);
+  assert.match(periodicSource, /clickable-table-row \$\{weekIndex === selectedPeriodicWeekIndex \? "selected-table-row" : ""\}/);
+  assert.match(periodicSource, /aria-selected="\$\{weekIndex === selectedPeriodicWeekIndex \? "true" : "false"\}"/);
   assert.match(periodicSource, /上级任务名称/);
-  assert.match(periodicSource, /任务周期天数/);
-  assert.match(periodicSource, /max="30"/);
-  assert.match(periodicSource, /重复轮次/);
+  assert.doesNotMatch(periodicSource, /任务周期天数/);
+  assert.doesNotMatch(periodicSource, /max="30"/);
+  assert.doesNotMatch(periodicSource, /重复轮次/);
+  assert.match(periodicSource, /每周天数/);
+  assert.match(periodicSource, /value="7"/);
   assert.match(periodicSource, /周次/);
   assert.match(periodicSource, /周内日/);
   assert.match(periodicSource, /复合任务名称/);
   assert.match(periodicSource, /periodicWeekdayLabel/);
+  assert.match(appSource, /let selectedPeriodicWeekIndex = 1/);
+  assert.match(appSource, /const periodicWeekRow = event\.target\.closest\("\[data-periodic-select-week\]"\)/);
+  assert.match(appSource, /return 7;/);
   assert.match(appSource, /let selectedCompositeTaskId = ""/);
   assert.match(appSource, /function addCompositeTask\(\)/);
   assert.match(appSource, /function deleteSelectedCompositeTask\(\)/);
@@ -1672,13 +1732,18 @@ test("editable modeling lists expose page suggestion action entries", async () =
   assert.match(basicActivitySource, /使用保障活动/);
   assert.match(basicActivitySource, /预防性维修/);
   assert.match(basicActivitySource, /修复性维修/);
-  assert.match(basicActivitySource, /后勤保障/);
   assert.match(basicActivitySource, /activity\.activityType = "使用保障活动"/);
-  assert.match(basicActivitySource, /activity\.activityType = "后勤保障"/);
   assert.match(basicActivitySource, /isLogisticsSupportActivity\(activity\)/);
-  assert.match(basicActivitySource, /type === "后勤保障"/);
-  assert.match(basicActivitySource, /ensureLogisticsSupportActivityDraft\(\)/);
-  assert.match(basicActivitySource, /activityType === "后勤保障" \? "LG"/);
+  const basicActivityTypeOptionsSource = appSource.slice(
+    appSource.indexOf("function basicActivityTypeOptions"),
+    appSource.indexOf("function basicActivityScopeSelect")
+  );
+  assert.doesNotMatch(basicActivityTypeOptionsSource, /后勤保障/);
+  assert.doesNotMatch(basicActivitySource, /activity\.activityType = "后勤保障"/);
+  assert.doesNotMatch(basicActivitySource, /type === "后勤保障"/);
+  assert.doesNotMatch(basicActivitySource, /ensureLogisticsSupportActivityDraft\(\)/);
+  assert.doesNotMatch(basicActivitySource, /activityType === "后勤保障" \? "LG"/);
+  assert.doesNotMatch(basicActivitySource, /<th>保障人员<\/th><th>保障设备<\/th><th>备件<\/th>/);
   assert.doesNotMatch(basicActivitySource, /data-basic-activity-delete="\$\{htmlEscape\(row\.key\)\}"/);
   assert.doesNotMatch(basicActivitySource, /编辑\/删除/);
 
@@ -1709,7 +1774,7 @@ test("editable modeling lists expose page suggestion action entries", async () =
   assert.match(experimentPlanSource, /<td>\$\{htmlEscape\(plan\.steps\)\}<\/td>/);
   assert.match(experimentPlanSource, /<td>\$\{htmlEscape\(plan\.samples\)\}<\/td>/);
   assert.doesNotMatch(experimentPlanSource, /data-experiment-plan-delete disabled/);
-  assert.match(appSource, /return "spare-planning-experiment-plan-list"/);
+  assert.match(appSource, /return "spare-planning-experiment-plan-management"/);
 });
 
 test("support activity controls are wired through local draft fields", async () => {
@@ -1723,10 +1788,15 @@ test("support activity controls are wired through local draft fields", async () 
   assert.match(basicActivitySource, /data-basic-activity-add/);
   assert.match(basicActivitySource, /data-basic-activity-batch-delete/);
   assert.match(basicActivitySource, /data-basic-activity-field/);
+  assert.match(basicActivitySource, /data-basic-activity-resource-dialog-open/);
+  assert.match(basicActivitySource, /data-basic-activity-resource-dialog-field/);
+  assert.match(basicActivitySource, /updateBasicActivityResourceDialogField/);
+  assert.match(basicActivitySource, /syncBasicActivityResourceSummaries/);
+  assert.match(basicActivitySource, /basicActivitySupportResourceRows/);
+  assert.match(basicActivitySource, /data-basic-activity-dialog-close/);
   assert.match(basicActivitySource, /basicActivityScopeSelect/);
-  assert.match(basicActivitySource, /supportPersonnelOptions/);
-  assert.match(basicActivitySource, /supportEquipmentOptions/);
-  assert.match(basicActivitySource, /supportSpareOptions/);
+  assert.match(basicActivitySource, /basicActivityPersonnelProfessionalOptions/);
+  assert.match(basicActivitySource, /basicActivityResourceDialogTextInput/);
   assert.doesNotMatch(basicActivitySource, /弹药|ammunition/);
 
   const jobTableSource = appSource.slice(
@@ -1738,20 +1808,25 @@ test("support activity controls are wired through local draft fields", async () 
   assert.match(jobTableSource, /data-support-activity-job-template/);
   assert.match(jobTableSource, /basicActivityLibraryOptions/);
   assert.match(appSource, /function applyBasicActivityToSupportActivityJob/);
+  assert.match(appSource, /function addBasicActivityAsSupportActivityPredecessor/);
   assert.match(jobTableSource, /data-support-activity-job-field/);
   assert.match(jobTableSource, /renderSupportActivityJobDialog/);
+  assert.match(jobTableSource, /renderSupportActivityPredecessorDialog/);
   assert.match(jobTableSource, /data-support-activity-job-dialog-close/);
   assert.match(jobTableSource, /table-edit-select/);
-  assert.match(jobTableSource, /supportPersonnelOptions/);
-  assert.match(jobTableSource, /supportEquipmentOptions/);
-  assert.match(jobTableSource, /supportSpareOptions/);
+  assert.match(jobTableSource, /supportActivityJobBasicActivitySelect/);
+  assert.match(jobTableSource, /data-support-activity-job-template-select/);
+  assert.doesNotMatch(jobTableSource, /<th>保障人员<\/th><th>保障设备<\/th><th>备件<\/th>/);
+  assert.doesNotMatch(jobTableSource, /<label>保障人员/);
+  assert.doesNotMatch(jobTableSource, /<label>保障设备/);
+  assert.doesNotMatch(jobTableSource, /<label>备件/);
   assert.doesNotMatch(jobTableSource, /弹药|ammunition/);
   assert.match(jobTableSource, /function buildSupportActivityGanttRows/);
   assert.match(jobTableSource, /function renderSupportActivityGanttChart/);
   assert.match(jobTableSource, /保障活动图/);
   assert.match(jobTableSource, /data-support-activity-gantt/);
   assert.match(jobTableSource, /ganttPredecessorIndexes/);
-  assert.match(appSource, /data-support-activity-predecessors/);
+  assert.match(appSource, /data-support-activity-predecessor-toggle/);
   assert.match(appSource, /const supportActivityPlanAddButton = event\.target\.closest\("\[data-support-activity-plan-add\]"\)/);
   assert.match(appSource, /const supportActivityPlanSelectButton = event\.target\.closest\("\[data-select-support-activity-plan\]"\)/);
   assert.match(appSource, /const supportActivityPlanDeleteButton = event\.target\.closest\("\[data-support-activity-plan-delete\]"\)/);
@@ -2048,7 +2123,7 @@ test("monte carlo experiment management has list, editor, and detail pages", asy
 test("browser smoke enters monte carlo editor or detail before using sweep inputs", async () => {
   const smokeSource = await readFile(new URL("../reports/m3-1-browser-backend-smoke/browser-backend-smoke.mjs", import.meta.url), "utf8");
   const smokeStart = smokeSource.indexOf('await clickFeature(page, "spare-planning-monte-carlo-experiment-list")');
-  const smokeEnd = smokeSource.indexOf('await clickFeature(page, "spare-planning-monte-carlo-results")');
+  const smokeEnd = smokeSource.indexOf('await page.waitForFunction(() => Boolean(JSON.parse(localStorage.getItem("spare-mvp:lastBackendRun")');
   const smokeMonteCarloSource = smokeSource.slice(
     smokeStart,
     smokeEnd
@@ -2514,7 +2589,8 @@ test("M8 formal analysis pages load and render matching projection payloads", as
   assert.match(apiClientSource, /getRunArtifactPayload\(runId, artifactId\)/);
   assert.match(refreshSource, /await refreshAnalysisProjectionPayloads\(runId\)/);
   assert.match(payloadSource, /backendApi\.getRunArtifactPayload\(runId,\s*artifactId\)/);
-  assert.match(payloadSource, /normalizeAnalysisProjectionPayload\(analysisType,\s*payload\)/);
+  assert.match(payloadSource, /normalizeAnalysisProjectionPayload\(analysisType,\s*payload,\s*\{/);
+  assert.match(payloadSource, /modelFamily: FORMAL_AIRCRAFT_SUPPORT_MODEL_FAMILY/);
   assert.match(payloadSource, /projectionArtifactKindForAnalysisType\(analysisType\)/);
   assert.match(payloadSource, /analysisProjectionPayloads = \{\s*\.\.\.analysisProjectionPayloads/);
   assert.match(renderDashboardSource, /const formalProjection = analysisProjectionForBoundary\(boundary\)/);
@@ -2756,16 +2832,15 @@ test("carry list analysis maps Chinese risk levels to visible priority badges", 
   assert.match(appSource, /case "低":/);
 });
 
-test("monte carlo evaluation result is rendered in result analysis page", async () => {
+test("monte carlo formal results render inside the experiment detail flow", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   assert.match(appSource, /function renderMonteCarloResults/);
-  assert.match(appSource, /蒙特卡洛评估结果/);
-  assert.match(appSource, /蒙特卡洛评估值/);
-  assert.match(appSource, /后端产物来源/);
-  assert.match(appSource, /前端展示桥接/);
-  assert.match(appSource, /目标值/);
-  assert.match(appSource, /mc-result-cards/);
-  assert.match(appSource, /mc-evaluation-table/);
+  assert.match(appSource, /蒙特卡洛实验结果/);
+  assert.match(appSource, /mc-formal-results/);
+  assert.match(appSource, /mc-formal-blocked/);
+  assert.match(appSource, /renderFormalProjectionBody/);
+  assert.doesNotMatch(appSource, /mc-result-cards/);
+  assert.doesNotMatch(appSource, /mc-evaluation-table/);
 });
 
 test("system management exposes an independent equipment RMS allocation workbench", async () => {
@@ -2880,19 +2955,26 @@ test("system management exposes project management and base configuration pages"
   assert.match(appSource, /function renderUserManagementConfig/);
   assert.match(appSource, /function renderPermissionManagementConfig/);
   assert.match(appSource, /function renderModelingFormManagementConfig/);
-  assert.match(appSource, /仿真建模数据表 sheet 选择器/);
+  assert.doesNotMatch(appSource, /仿真建模数据表 sheet 选择器/);
+  assert.match(appSource, /项目数据管理配置/);
+  assert.match(appSource, /data-project-data-config-module="modeling-data-source"/);
+  assert.match(appSource, /data-project-data-config-module="modeling-import-publish"/);
+  assert.match(appSource, /data-system-config-save/);
   assert.match(appSource, /MODELING_DATA_MODULES/);
   assert.match(appSource, /装备系统/);
   assert.match(appSource, /装备任务/);
   assert.match(appSource, /保障组织/);
   assert.match(appSource, /保障活动/);
-  assert.match(appSource, /仿真建模数据表字段级配置/);
-  assert.equal(appSource.match(/仿真建模数据表字段级配置/g)?.length, 1);
+  assert.match(appSource, /建模颗粒度配置/);
+  assert.match(appSource, /颗粒度 A/);
+  assert.match(appSource, /颗粒度 B/);
   assert.match(appSource, /data-modeling-field-select/);
   assert.doesNotMatch(appSource, /层级、对象及关系/);
   assert.doesNotMatch(appSource, /<th>建模层级<\/th>/);
   assert.match(appSource, /page\.name === "建模表单管理"/);
   assert.match(appSource, /data-modeling-form-management/);
+  assert.match(appSource, /data-modeling-form-unit/);
+  assert.match(appSource, /data-personnel-specialty-dictionary/);
   assert.match(styleSource, /\.system-config-workbench/);
   assert.match(styleSource, /\.modeling-config-grid/);
   assert.match(styleSource, /\.field-checkbox-grid/);
@@ -2903,8 +2985,10 @@ test("user management add and edit actions open an editable user form", async ()
 
   assert.match(appSource, /let systemUserEditor/);
   assert.match(appSource, /let systemUsersLoadStatus/);
+  assert.match(appSource, /let systemUserSearchText/);
   assert.match(appSource, /data-system-user-action="add"/);
   assert.match(appSource, /data-system-user-edit="\$\{htmlEscape\(user\.username\)\}"/);
+  assert.match(appSource, /data-system-user-search/);
   assert.match(appSource, /const systemUserActionButton = event\.target\.closest\("\[data-system-user-action\]"\)/);
   assert.match(appSource, /const systemUserEditButton = event\.target\.closest\("\[data-system-user-edit\]"\)/);
   assert.match(appSource, /ensureSystemUsersLoaded\(\)/);
@@ -2942,14 +3026,15 @@ test("system user batch delete should require checked rows first", async () => {
   assert.match(deleteSource, /const targets = new Set\(usernames\.filter\(Boolean\)\);/);
   assert.match(deleteSource, /if \(!targets\.size\) \{/);
   assert.match(deleteSource, /systemUsersLoadStatus = "请先选择要删除的用户";/);
+  assert.match(deleteSource, /backendApi\.deleteUser\(user\.user_id\)/);
   assert.match(systemUserSource, /async function handleSystemUserAction\(action\)/);
   assert.match(systemUserSource, /if \(action === "delete-selected"\) \{/);
-  assert.match(systemUserSource, /deleteSystemUsers\(Array\.from\(selectedSystemUsernames\)\);/);
+  assert.match(systemUserSource, /await deleteSystemUsers\(Array\.from\(selectedSystemUsernames\)\);/);
   assert.match(eventSource, /const systemUserActionButton = event\.target\.closest\("\[data-system-user-action\]"\);/);
   assert.match(eventSource, /handleSystemUserAction\(systemUserActionButton\.dataset\.systemUserAction\)\.finally\(\(\) => render\(\)\);/);
   assert.match(userSource, /data-system-user-delete="\$\{htmlEscape\(user\.username\)\}"/);
   assert.match(eventSource, /const systemUserDeleteButton = event\.target\.closest\("\[data-system-user-delete\]"\)/);
-  assert.match(eventSource, /deleteSystemUsers\(\[systemUserDeleteButton\.dataset\.systemUserDelete\]\);/);
+  assert.match(eventSource, /deleteSystemUsers\(\[systemUserDeleteButton\.dataset\.systemUserDelete\]\)\.finally\(\(\) => render\(\)\);/);
 });
 
 test("system user editor save failure should preserve backend error message", async () => {
@@ -3019,7 +3104,7 @@ test("visual simulation layout matches operational dashboard requirements", asyn
     appSource.indexOf("function renderMesaSidePanel")
   );
 
-  for (const label of ["使用可用度", "出动架次率", "任务成功率", "备件满足率", "备件利用率"]) {
+  for (const label of ["使用可用度", "出动架次率", "维修中飞机", "保障中飞机", "备件满足率"]) {
     assert.match(appSource, new RegExp(label));
   }
   const controlIndex = visualSource.indexOf("mesa-control-deck");
@@ -3110,17 +3195,27 @@ test("visual aircraft panel renders backend equipment failure propagation tree",
   assert.match(styleSource, /\.aircraft-failure-node\.propagated/);
 });
 
-test("visual simulation consumes the Mesa contract provider with demo fallback", async () => {
+test("visual simulation consumes formal state-series without demo fallback", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
-  // 数据源指向契约服务 8521，服务不可用时回退演示快照
+  const replaySource = await readFile(new URL("../front/state-series-replay.mjs", import.meta.url), "utf8");
+  const visualSource = appSource.slice(
+    appSource.indexOf("function renderVisualSimulation"),
+    appSource.indexOf("function renderVisualizationEventStream")
+  );
+
   assert.match(appSource, /const CONTRACT_BASE = "http:\/\/127\.0\.0\.1:8521"/);
-  assert.match(appSource, /fetch\(`\$\{CONTRACT_BASE\}\/visualization/);
-  assert.match(appSource, /visualizationStateSeriesFrame \|\| liveAviationState \|\| AVIATION_SUPPORT_DEMO_STATE/);
-  assert.match(appSource, /aviationSource = "live"/);
-  assert.match(appSource, /aviationSource = "demo"/);
-  // 无正式 state-series 时，运行 / 单步 / 重置 仍可驱动契约演示请求。
+  assert.doesNotMatch(appSource, /fetch\(`\$\{CONTRACT_BASE\}\/visualization/);
+  assert.match(appSource, /createBackendApiClient\(\{ baseUrl: "\/api"/);
+  assert.match(appSource, /normalizeVisualizationStateSeriesPayload\(payload, \{\s*runId,\s*artifactId: artifact\.artifact_id/);
+  assert.match(replaySource, /const MODEL_FAMILY = "aircraft_support_v1"/);
+  assert.match(replaySource, /model_family: requireModelFamily\(payload\.model_family\)/);
+  assert.match(visualSource, /缺少 aircraft_support_v1 state_series artifact/);
+  assert.match(visualSource, /正式可视化不会回退到旧 aviation_support 或演示快照/);
+  assert.match(appSource, /clearVisualizationStateSeries\(runId, `run \$\{runId\} 缺少 visualization_state_series artifact，M9 正式回放保持阻断`\)/);
+  assert.doesNotMatch(appSource, /visualizationStateSeriesFrame \|\| liveAviationState \|\| AVIATION_SUPPORT_DEMO_STATE/);
+  assert.doesNotMatch(appSource, /aviationSource = "demo"/);
+  assert.doesNotMatch(appSource, /loadAviationSupportState\(\)/);
   assert.match(appSource, /data-mesa-control/);
-  assert.match(appSource, /loadAviationSupportState\(\)/);
 });
 
 test("M9 visual simulation replays canonical state-series artifacts without backend control", async () => {

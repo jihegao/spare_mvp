@@ -62,8 +62,7 @@ try {
   }
   await page.waitForFunction(() => Boolean(JSON.parse(localStorage.getItem("spare-mvp:lastBackendRun") || "null")?.run_id));
 
-  await clickFeature(page, "spare-planning-monte-carlo-results");
-  await expectHeading(page, "蒙特卡洛实验结果");
+  await expectSectionTitle(page, "蒙特卡洛实验结果");
   await waitForBackendIdentityChain(page);
   const beforeRefresh = await readBackendEvidence(page);
   assertHasIdentityChain(beforeRefresh.chain, "before refresh");
@@ -130,7 +129,6 @@ try {
   await openMonteCarloExperimentDetailForRun(offlinePage);
   await offlinePage.locator('button[data-mc-action="start"]').click();
   await offlinePage.waitForTimeout(250);
-  await clickFeature(offlinePage, "spare-planning-monte-carlo-results");
   await offlinePage.waitForFunction(() => document.body.innerText.includes("未创建 run_id"));
   const offlineText = await offlinePage.locator("body").innerText();
   if (offlineText.includes("offline-demo-run")) {

@@ -30,8 +30,6 @@ const FEATURE_SLUGS = {
   系统功能权限管理: "function-permission-management",
   建模表单管理: "modeling-form-management",
   仿真实验方案管理: "experiment-plan-management",
-  方案列表: "experiment-plan-list",
-  方案编辑: "experiment-plan-edit",
   可视化实验启动与停止: "visual-start-stop",
   场景切换: "scenario-switch",
   可视化结果展示: "visual-results",
@@ -39,10 +37,8 @@ const FEATURE_SLUGS = {
   "添加/编辑实验": "monte-carlo-experiment-edit",
   实验详情: "monte-carlo-experiment-detail",
   蒙特卡洛实验配置: "monte-carlo-config",
-  蒙特卡洛实验结果: "monte-carlo-results",
   备件短板分析: "spare-shortfall-analysis",
   飞机转场携行清单分析: "carry-list-analysis",
-  飞机任务可靠性分析: "aircraft-task-reliability",
   任务可靠度评估: "task-reliability",
   停机因素分析: "downtime-factor-analysis"
 };
@@ -68,13 +64,11 @@ const SOURCE_ROWS = [
   ["备件规划评估模块", "仿真建模", "保障活动建模", "预防性维修活动建模"],
   ["备件规划评估模块", "仿真建模", "保障活动建模", "修复性维修活动建模"],
   ["备件规划评估模块", "仿真建模", "保障活动建模", "后勤保障活动建模"],
-  ["备件规划评估模块", "仿真实验", "仿真实验方案管理", "方案列表"],
-  ["备件规划评估模块", "仿真实验", "仿真实验方案管理", "方案编辑"],
+  ["备件规划评估模块", "仿真实验", "仿真实验方案管理", "仿真实验方案管理"],
   ["备件规划评估模块", "仿真实验", "可视化推演", "可视化实验启动与停止"],
   ["备件规划评估模块", "仿真实验", "蒙特卡洛实验", "实验列表"],
   ["备件规划评估模块", "仿真实验", "蒙特卡洛实验", "添加/编辑实验"],
   ["备件规划评估模块", "仿真实验", "蒙特卡洛实验", "实验详情"],
-  ["备件规划评估模块", "结果分析", "蒙特卡洛实验结果", "蒙特卡洛实验结果"],
   ["备件规划评估模块", "结果分析", "备件短板分析", "备件短板分析"],
   ["备件规划评估模块", "结果分析", "飞机转场携行清单分析", "飞机转场携行清单分析"],
   ["任务可靠度评估模块", "仿真建模", "装备系统建模", "装备系统建模"],
@@ -92,14 +86,11 @@ const SOURCE_ROWS = [
   ["任务可靠度评估模块", "仿真建模", "保障活动建模", "预防性维修活动建模"],
   ["任务可靠度评估模块", "仿真建模", "保障活动建模", "修复性维修活动建模"],
   ["任务可靠度评估模块", "仿真建模", "保障活动建模", "后勤保障活动建模"],
-  ["任务可靠度评估模块", "仿真实验", "仿真实验方案管理", "方案列表"],
-  ["任务可靠度评估模块", "仿真实验", "仿真实验方案管理", "方案编辑"],
+  ["任务可靠度评估模块", "仿真实验", "仿真实验方案管理", "仿真实验方案管理"],
   ["任务可靠度评估模块", "仿真实验", "可视化推演", "可视化实验启动与停止"],
   ["任务可靠度评估模块", "仿真实验", "蒙特卡洛实验", "实验列表"],
   ["任务可靠度评估模块", "仿真实验", "蒙特卡洛实验", "添加/编辑实验"],
   ["任务可靠度评估模块", "仿真实验", "蒙特卡洛实验", "实验详情"],
-  ["任务可靠度评估模块", "结果分析", "蒙特卡洛实验结果", "蒙特卡洛实验结果"],
-  ["任务可靠度评估模块", "结果分析", "飞机任务可靠性分析", "飞机任务可靠性分析"],
   ["任务可靠度评估模块", "结果分析", "任务可靠度评估", "任务可靠度评估"],
   ["任务可靠度评估模块", "结果分析", "停机因素分析", "停机因素分析"]
 ];
@@ -136,16 +127,22 @@ export function getFeaturePageById(id) {
 }
 
 const FEATURE_ID_ALIASES = {
-  "spare-planning-experiment-plan-management": "spare-planning-experiment-plan-list",
-  "mission-reliability-experiment-plan-management": "mission-reliability-experiment-plan-list",
-  "spare-planning-experiment-create": "spare-planning-experiment-plan-edit",
-  "spare-planning-experiment-edit": "spare-planning-experiment-plan-edit",
-  "mission-reliability-experiment-create": "mission-reliability-experiment-plan-edit",
-  "mission-reliability-experiment-edit": "mission-reliability-experiment-plan-edit",
+  "spare-planning-experiment-plan-list": "spare-planning-experiment-plan-management",
+  "mission-reliability-experiment-plan-list": "mission-reliability-experiment-plan-management",
+  "spare-planning-experiment-plan-edit": "spare-planning-experiment-plan-management",
+  "mission-reliability-experiment-plan-edit": "mission-reliability-experiment-plan-management",
+  "spare-planning-experiment-create": "spare-planning-experiment-plan-management",
+  "spare-planning-experiment-edit": "spare-planning-experiment-plan-management",
+  "mission-reliability-experiment-create": "mission-reliability-experiment-plan-management",
+  "mission-reliability-experiment-edit": "mission-reliability-experiment-plan-management",
   "spare-planning-monte-carlo-config": "spare-planning-monte-carlo-experiment-edit",
   "mission-reliability-monte-carlo-config": "mission-reliability-monte-carlo-experiment-edit",
-  "spare-planning-monte-carlo-results-display": "spare-planning-monte-carlo-results",
-  "mission-reliability-monte-carlo-results-display": "mission-reliability-monte-carlo-results",
+  "spare-planning-monte-carlo-results": "spare-planning-monte-carlo-experiment-list",
+  "spare-planning-monte-carlo-results-display": "spare-planning-monte-carlo-experiment-list",
+  "mission-reliability-monte-carlo-results": "mission-reliability-monte-carlo-experiment-list",
+  "mission-reliability-monte-carlo-results-display": "mission-reliability-monte-carlo-experiment-list",
+  "mission-reliability-aircraft-task-reliability": "mission-reliability-task-reliability",
+  "mission-reliability-aircraft-mission-reliability": "mission-reliability-task-reliability",
   "spare-planning-mission-profile": "spare-planning-composite-task",
   "mission-reliability-mission-profile": "mission-reliability-composite-task",
   "spare-planning-support-resource-demand": "spare-planning-basic-support-activity",
@@ -170,8 +167,7 @@ const FEATURE_ID_ALIASES = {
 };
 
 function resolveComponent(name, secondary, tertiary) {
-  if (name === "方案列表") return "experiment-plan-list";
-  if (name === "方案编辑") return "experiment-plan-editor";
+  if (tertiary === "仿真实验方案管理") return "experiment-plan-management";
   if (name.includes("可靠性框图")) return "reliability-block-diagram";
   if (name.includes("RMS分配") || name.includes("RMS指标分配")) return "rms-allocation";
   if (secondary === "项目管理") return "system-project-management";
@@ -183,7 +179,6 @@ function resolveComponent(name, secondary, tertiary) {
   if (tertiary === "蒙特卡洛实验" && name === "添加/编辑实验") return "monte-carlo-experiment-editor";
   if (tertiary === "蒙特卡洛实验" && name === "实验详情") return "monte-carlo-experiment-detail";
   if (name.includes("蒙特卡洛实验配置")) return "monte-carlo-config";
-  if (name.includes("蒙特卡洛实验结果")) return "monte-carlo-results";
   if (secondary === "结果分析") return "analysis";
   if (name.includes("仿真实验方案")) return "experiment-form";
   if (tertiary === "保障活动建模") return "activity-gantt";
@@ -212,7 +207,8 @@ function resolveDataObjects(name, secondary, tertiary) {
   if (name.includes("保障人员")) return ["supportNodes.personnelCapacity", "resources"];
   if (name.includes("保障设备")) return ["supportNodes.equipmentCapacity", "resources"];
   if (tertiary === "保障活动建模") return ["supportActivities", "resources", "spares"];
-  if (name.includes("方案") || name.includes("仿真实验方案")) return ["experiment", "scenario"];
+  if (tertiary === "仿真实验方案管理") return ["experiment", "experimentPlans"];
+  if (name.includes("方案") || name.includes("仿真实验方案")) return ["experiment"];
   if (name.includes("可视化") || name.includes("场景切换")) return ["visualizationState", "experiment", "scenario"];
   if (tertiary === "蒙特卡洛实验") return ["monteCarloExperiments", "experimentPlans", "runs", "artifacts"];
   if (name.includes("蒙特卡洛")) return ["monteCarlo", "runs", "summary"];

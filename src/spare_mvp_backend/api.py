@@ -115,6 +115,57 @@ class BackendApi:
         )
         return _public_user(updated)
 
+    def delete_user(self, user_id: str, *, actor_user_id: str | None = None) -> dict[str, Any]:
+        self._require_role(
+            actor_user_id,
+            {"系统管理员"},
+            action="users.delete",
+            resource_type="user",
+            resource_id=user_id,
+        )
+        try:
+            deleted = self.repository.delete_user(user_id)
+        except ValueError as exc:
+            raise BackendApiError("protected_user", str(exc), user_id=user_id) from exc
+        self._audit_allowed(
+            actor_user_id,
+            action="users.delete",
+            resource_type="user",
+            resource_id=deleted["user_id"],
+            details={"username": deleted["username"], "status": deleted.get("status")},
+        )
+        return {"deleted": True, "user": _public_user(deleted)}
+
+    def get_system_config(self, config_key: str) -> dict[str, Any]:
+        try:
+            return self.repository.get_system_config(config_key)
+        except KeyError:
+            return {"config_key": config_key, "payload": {}, "updated_by": None, "updated_at": None}
+
+    def save_system_config(
+        self,
+        config_key: str,
+        payload: dict[str, Any],
+        *,
+        actor_user_id: str | None = None,
+    ) -> dict[str, Any]:
+        self._require_role(
+            actor_user_id,
+            {"系统管理员", "数据管理员"},
+            action="system_config.save",
+            resource_type="system_config",
+            resource_id=config_key,
+        )
+        saved = self.repository.upsert_system_config(config_key, payload, updated_by=actor_user_id)
+        self._audit_allowed(
+            actor_user_id,
+            action="system_config.save",
+            resource_type="system_config",
+            resource_id=config_key,
+            details={"config_key": config_key},
+        )
+        return saved
+
     def get_project(self, project_id: str) -> dict[str, Any]:
         return self.repository.get_project(project_id)
 
@@ -584,7 +635,7 @@ class BackendApi:
             "artifact": artifact,
             "body": body,
             "content_type": artifact.get("media_type") or "application/octet-stream",
-            "filename": target.name,
+            "filename": artifact.get("filename") or artifact.get("display_name") or target.name,
         }
 
     def _to_backend_error(self, exc: AdapterError, model_family: str) -> BackendApiError:

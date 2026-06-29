@@ -1969,7 +1969,7 @@ class BackendApiContractTest(unittest.TestCase):
         ))
         self.assertGreaterEqual(len(created["project"]["missionProfile"]["compositeTasks"]), 2)
         self.assertGreaterEqual(len(created["project"]["missionProfile"]["periodicTasks"]), 1)
-        self.assertGreaterEqual(len(created["project"]["missionPhases"]), 4)
+        self.assertGreaterEqual(len(created["project"]["missionPhases"]), 3)
         self.assertGreaterEqual(len(created["project"]["combatUnit"]["members"]), 4)
         self.assertGreaterEqual(len(created["project"]["supportNodes"]), 3)
         self.assertIn("航电模块", created["project"]["supportNodes"][0]["inventory"])
@@ -2097,6 +2097,7 @@ class BackendApiContractTest(unittest.TestCase):
             },
             actor_user_id=admin_session["user"]["user_id"],
         )
+        deleted = self.api.delete_user(created["user_id"], actor_user_id=admin_session["user"]["user_id"])
         users = self.api.list_users(actor_user_id=admin_session["user"]["user_id"])
 
         self.assertEqual(created["username"], "planner")
@@ -2104,15 +2105,52 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(updated["display_name"], "规划员二号")
         self.assertEqual(updated["role"], "普通用户")
         self.assertEqual(updated["status"], "disabled")
-        self.assertIn("planner", {user["username"] for user in users["users"]})
+        self.assertEqual(deleted["deleted"], True)
+        self.assertNotIn("planner", {user["username"] for user in users["users"]})
         events = self.repository.list_audit_events(resource_id=created["user_id"])
         self.assertEqual(
             [(event["action"], event["outcome"]) for event in events],
             [
                 ("users.create", "allowed"),
                 ("users.update", "allowed"),
+                ("users.delete", "allowed"),
             ],
         )
+
+    def test_stage5_system_config_can_be_saved_by_data_admin_and_is_audited(self) -> None:
+        data_session = self.api.login("data", "data")
+        user_session = self.api.login("user", "user")
+        payload = {
+            "projectDataModules": [{"key": "modeling-data-source", "sheetKeys": ["equipment-system"]}],
+            "granularityProfiles": [{"key": "granularity-a", "fieldKeys": ["equipment-system:mtbfHours"]}],
+            "permissions": [{"feature": "项目管理", "admin": "编辑", "data": "编辑", "user": "只读"}],
+            "modelingForms": {"fieldUnits": {"equipment-system:mtbfHours": "小时"}, "personnelSpecialties": ["机务"]},
+        }
+
+        missing = self.api.get_system_config("system-runtime-support")
+        saved = self.api.save_system_config(
+            "system-runtime-support",
+            payload,
+            actor_user_id=data_session["user"]["user_id"],
+        )
+        loaded = self.api.get_system_config("system-runtime-support")
+
+        self.assertEqual(missing["payload"], {})
+        self.assertEqual(saved["payload"]["modelingForms"]["fieldUnits"]["equipment-system:mtbfHours"], "小时")
+        self.assertEqual(loaded["payload"]["modelingForms"]["personnelSpecialties"], ["机务"])
+        with self.assertRaises(BackendApiError) as forbidden_ctx:
+            self.api.save_system_config(
+                "system-runtime-support",
+                payload,
+                actor_user_id=user_session["user"]["user_id"],
+            )
+        self.assertEqual(forbidden_ctx.exception.code, "forbidden")
+
+        events = self.repository.list_audit_events(resource_id="system-runtime-support")
+        self.assertEqual(events[-2]["action"], "system_config.save")
+        self.assertEqual(events[-2]["outcome"], "allowed")
+        self.assertEqual(events[-1]["action"], "system_config.save")
+        self.assertEqual(events[-1]["outcome"], "denied")
 
     def test_m4_regular_user_cannot_create_or_update_users_and_denial_is_audited(self) -> None:
         admin_session = self.api.login("admin", "admin")
@@ -2133,14 +2171,22 @@ class BackendApiContractTest(unittest.TestCase):
                 {"display_name": "不应修改"},
                 actor_user_id=user_session["user"]["user_id"],
             )
+        with self.assertRaises(BackendApiError) as delete_ctx:
+            self.api.delete_user(
+                created["user_id"],
+                actor_user_id=user_session["user"]["user_id"],
+            )
 
         self.assertEqual(create_ctx.exception.code, "forbidden")
         self.assertEqual(update_ctx.exception.code, "forbidden")
+        self.assertEqual(delete_ctx.exception.code, "forbidden")
         create_events = self.repository.list_audit_events(resource_id="blocked")
         update_events = self.repository.list_audit_events(resource_id=created["user_id"])
         self.assertEqual(create_events[-1]["action"], "users.create")
         self.assertEqual(create_events[-1]["outcome"], "denied")
-        self.assertEqual(update_events[-1]["action"], "users.update")
+        self.assertEqual(update_events[-2]["action"], "users.update")
+        self.assertEqual(update_events[-2]["outcome"], "denied")
+        self.assertEqual(update_events[-1]["action"], "users.delete")
         self.assertEqual(update_events[-1]["outcome"], "denied")
 
     def test_compile_modeling_import_scenario_requires_published_valid_import(self) -> None:

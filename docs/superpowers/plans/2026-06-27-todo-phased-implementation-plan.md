@@ -79,6 +79,8 @@
   - 校验 SRU 的上级必须是 LRU。
   - 组件属性为空时显示为空白。
   - 点击飞机级节点时，右侧行按节点从高到低排序。
+  - 左侧装备组成树增加 `导入表格` 入口，支持 CSV / TSV / JSON 装备结构表导入并覆盖当前装备结构树。
+  - 点击整机级节点时，右侧显示整机级信息行以及其子孙节点；整机名称与整机数量可在右侧维护。
   - 点击系统级节点时，右侧显示该系统节点及其子孙节点。
 - [x] 装备可靠性框图建模：
   - 该页面只保留在 `任务可靠度评估模块` 下。
@@ -96,10 +98,11 @@
   - 时序表按出动时刻排序。
   - 排序后重新连续编号波次序号。
 - [x] 周期性任务建模：
-  - 移除行级 `选择/删除`。
-  - 在新增按钮旁增加统一删除动作。
   - 在周期性任务上方增加一层任务。
-  - 支持每周周内配置不同复合任务。
+  - 左侧先配置总周数，并按总周数生成 `第1周` 到 `第n周` 的周次列表，每周对应一行。
+  - 选中某一周后，右侧表格只维护该周 7 天的周内复合任务配置。
+  - 去掉可编辑的 `任务周期天数` 字段，周期固定为一周 7 天。
+  - 右侧表格的 `周次` 字段始终显示当前选中的第几周。
 - [x] 基本作战单元建模：
   - 将 `日历日时间` 重命名或解释为大修周期语义。
 
@@ -152,14 +155,21 @@
 - [x] 保障设备：
   - 移除行级编辑按钮。
 - [x] 基本保障活动建模：
-  - 将即改即存改为编辑面板。
-  - 支持查询、新增、编辑、删除和按活动类型导入。
+  - 将即改即存改为编辑弹窗，点击 `编辑` 时弹出窗口，不在列表下方展开编辑面板。
+  - 支持查询、新增、编辑、删除和按活动类型导入；活动类型选择仅保留 `使用保障活动`、`预防性维修`、`修复性维修`，不再提供 `后勤保障`。
   - 维护活动编号、工作名称、适用飞机、作业时长分布、保障人员、保障设备、备件需求。
+  - 基本保障活动清单前端仅展示类型、名称、编号、适用对象和工期，不再展示 `保障人员`、`保障设备`、`备件` 字段；资源需求保留在编辑弹窗中维护。
+  - `保障人员`、`保障设备`、`备件` 三个模块不在同一行展示，改为各自一行；每个模块均提供独立 `新增` 按钮，点击后弹出对应资源需求配置窗口，可一次维护多条参数。
+  - 保障人员数据源来自 `保障组织建模 / 保障人员建模`，弹窗字段为 `专业`（从保障人员建模的专业字段下拉选择）和 `数量`。
+  - 保障设备数据源来自 `保障组织建模 / 保障设备建模`，弹窗字段为 `型号`（从保障设备建模的型号字段搜索）、`名称`（从保障设备建模的名称字段搜索）和 `数量`。
+  - 备件数据源来自 `保障组织建模 / 备件建模`，弹窗字段为 `型号`（从备件建模的型号字段搜索）、`名称`（从备件建模的名称字段搜索）和 `数量`。
   - 作业时长分布与四类允许分布保持一致。
 - [x] 使用保障、预防性维修、修复性维修和后勤保障活动：
-  - 工作项目从基本保障活动中选择/搜索。
+  - 工作项目从基本保障活动建模表中选择/搜索；点击 `新增工作项目` 后，`作业项` 可通过基础活动选择控件搜索并回填所需基本保障活动。
   - 根据选中的基本保障活动自动回填字段。
-  - 增加 `编辑紧前作业`。
+  - 保障活动所有工作项目清单不在前端展示 `保障人员`、`保障设备`、`备件` 字段；这些资源数据仍随所选基本保障活动写入工作项目数据，用于后续仿真/导出。
+  - `紧前作业` 字段仅展示摘要，不提供表格内多选或普通工作项目编辑弹窗内编辑；每条工作项目通过紧前作业字段右侧的 `编辑紧前作业` 按钮打开独立弹窗维护。
+  - `编辑紧前作业` 弹窗内可勾选当前工作项目清单中的已有作业；点击 `新增` 后，可搜索基本保障活动库并添加为新的工作项目，同时自动写入当前作业的紧前关系。
   - 修复性维修中，MTTR 从装备系统建模读取并只读展示，移除 `维修对象`。
   - 使用保障和后勤保障中，`方案名称` 移到三个阶段上方并由三个阶段共用。
   - 按要求移除 `最大时间参考` / `最大修复时间` 字段。
@@ -172,9 +182,9 @@
 - [x] 运行 `node --test tests/support-activity-jobs.test.mjs tests/frontend-contract.test.mjs tests/frontend-app-runtime.test.mjs tests/modeling-import-contract.test.mjs`。
 - [x] 运行 `npm test`。
 
-阶段 2 已完成保障组织递归树、资源表字段收敛、基本保障活动库编辑面板、工作项目基础库引用/搜索/自动回填和紧前作业显式编辑。阶段 3 的仿真实验、可视化和结果承载信息架构仍未开始，不作为阶段 2 完成口径。
+阶段 2 已完成保障组织递归树、资源表字段收敛、基本保障活动库编辑弹窗、工作项目基础库引用/搜索/自动回填，以及仅通过 `编辑紧前作业` 独立弹窗维护紧前关系。阶段 3 的仿真实验、可视化和结果承载信息架构仍未开始，不作为阶段 2 完成口径。
 
-**退出标准：** 保障活动页面使用共享基本活动库，紧前作业编辑显式可见；TODO 要求编辑面板的页面不再依赖隐藏的即改即存行为。
+**退出标准：** 保障活动页面使用共享基本活动库，紧前作业只能通过每行 `编辑紧前作业` 打开的独立弹窗编辑，且弹窗支持从基本保障活动库搜索新增紧前作业；TODO 要求弹窗编辑的页面不再依赖隐藏的即改即存行为。
 
 ---
 
@@ -195,32 +205,32 @@
 - 测试：`tests/analysis-projection-adapters.test.mjs`
 - 测试：`tests/frontend-app-runtime.test.mjs`
 
-- [ ] 仿真实验方案管理：
+- [x] 仿真实验方案管理：
   - 移除场景字典。
   - 移除 `方案列表` / `方案编辑` 标签页。
   - 从列表编辑按钮跳转到编辑页。
   - 从方案列表移除 `启动可视化推演` 和 `创建蒙特卡洛实验` 按钮。
-- [ ] 可视化推演：
+- [x] 可视化推演：
   - 将维修中的飞机和保障中的飞机拆分成两个统计指标。
   - 移除顶部飞机选择器。
   - 单机选择只保留在左侧列表。
   - 当缺少 `aircraft_support_v1` state-series 时，正式可视化不得静默回退到旧 `aviation_support` 或 demo state。
-- [ ] 蒙特卡洛实验页面：
+- [x] 蒙特卡洛实验页面：
   - 将原蒙特卡洛结果内容承载到蒙特卡洛实验详情/结果区域中。
   - 正式来源使用 canonical `/api/runs`、projection artifacts 和 `monte_carlo_base`。
   - 显式展示失败、缺 artifact、解析失败和 retry-pending 状态。
-- [ ] 移除独立结果页面：
+- [x] 移除独立结果页面：
   - 移除 `备件规划评估模块 / 结果分析 / 蒙特卡洛实验结果`。
   - 移除 `任务可靠度评估模块 / 结果分析 / 蒙特卡洛实验结果`。
   - 移除 `任务可靠度评估模块 / 结果分析 / 飞机任务可靠度分析`。
   - 旧路由别名只保留为重定向或 tombstone 提示，不再作为活跃页面。
-- [ ] Projection payload 校验：
+- [x] Projection payload 校验：
   - 校验 projection payload 的 traceability 与当前 run id、model family 一致。
   - 正式回放必须要求 `aircraft_support_v1` state-series。
 
 **验证：**
-- [ ] 运行 `node --test tests/frontend-contract.test.mjs tests/frontend-api-client.test.mjs tests/state-series-replay.test.mjs tests/analysis-projection-adapters.test.mjs tests/frontend-app-runtime.test.mjs`。
-- [ ] 运行 `npm test`。
+- [x] 运行 `node --test tests/frontend-contract.test.mjs tests/frontend-api-client.test.mjs tests/state-series-replay.test.mjs tests/analysis-projection-adapters.test.mjs tests/frontend-app-runtime.test.mjs`。
+- [x] 运行 `npm test`。
 - [ ] 对方案管理、可视化回放、蒙特卡洛详情和已移除结果页导航运行浏览器冒烟。
 
 **退出标准：** 正式结果可从蒙特卡洛实验页面访问，旧结果页不再活跃，正式可视化不会被误认为旧演示输出。
@@ -256,7 +266,7 @@
 
 **验证：**
 - [ ] 运行 `node --test tests/rms-allocation-engine.test.mjs tests/frontend-contract.test.mjs tests/frontend-app-runtime.test.mjs`。
-- [ ] 运行 `npm test`。
+- [x] 运行 `npm test`。
 
 **退出标准：** RMS 公式在代码和测试中明确表达，不保留占位算法。
 
@@ -280,27 +290,27 @@
 - 测试：`tests/test_backend_http_api.py`
 - 测试：`tests/test_database_contract.py`
 
-- [ ] 项目数据管理：
+- [x] 项目数据管理：
   - 拆分为两个配置模块。
   - 移除顶部 `仿真建模数据表 sheet 选择器`。
-- [ ] 建模颗粒度管理：
+- [x] 建模颗粒度管理：
   - 增加包含全部表单字段的 `颗粒度 A`。
   - 字段清单确认后增加 `颗粒度 B`。
-- [ ] 用户管理：
+- [x] 用户管理：
   - 保留新增、编辑、删除、查询和角色字段。
-- [ ] 系统功能权限管理：
+- [x] 系统功能权限管理：
   - 按模块/表格配置三类用户权限。
   - 仅暴露 `只读` 和 `编辑`，或文档化从现有角色/动作语义到该口径的兼容映射。
-- [ ] 建模表单管理：
+- [x] 建模表单管理：
   - 增加字段单位管理。
   - 支持时间单位 `小时` 和 `分钟`。
   - 增加保障人员专业字典。
   - 将该字典接入保障人员建模。
 
 **验证：**
-- [ ] 运行 `PYTHONDONTWRITEBYTECODE=1 .abm-mesa-test-env/bin/python -m unittest tests.test_backend_api_contract tests.test_backend_http_api tests.test_database_contract -v`。
-- [ ] 运行 `node --test tests/frontend-contract.test.mjs tests/frontend-app-runtime.test.mjs`。
-- [ ] 运行 `npm test`。
+- [x] 运行 `PYTHONDONTWRITEBYTECODE=1 .abm-mesa-test-env/bin/python -m unittest tests.test_backend_api_contract tests.test_backend_http_api tests.test_database_contract -v`。
+- [x] 运行 `node --test tests/frontend-contract.test.mjs tests/frontend-app-runtime.test.mjs`。
+- [x] 运行 `npm test`。
 
 **退出标准：** 配置页面可持久化数据，下游建模页面能读取已配置的字典和单位值。
 

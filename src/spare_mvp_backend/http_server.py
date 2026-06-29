@@ -171,6 +171,12 @@ def create_backend_server(
             if self.command == "POST" and route == "/users":
                 actor = self._require_user()
                 return api.create_user(body, actor_user_id=actor["user_id"])
+            if self.command == "GET" and len(parts) == 2 and parts[0] == "system-configs":
+                self._require_user()
+                return api.get_system_config(parts[1])
+            if self.command == "POST" and len(parts) == 2 and parts[0] == "system-configs":
+                actor = self._require_user({"系统管理员", "数据管理员"})
+                return api.save_system_config(parts[1], body.get("payload", body), actor_user_id=actor["user_id"])
             if self.command == "POST" and route == "/projects/validate":
                 return api.validate_project(body)
             if self.command == "POST" and route == "/projects":
@@ -189,6 +195,9 @@ def create_backend_server(
             if self.command == "POST" and len(parts) == 2 and parts[0] == "users":
                 actor = self._require_user()
                 return api.update_user(parts[1], body, actor_user_id=actor["user_id"])
+            if self.command == "DELETE" and len(parts) == 2 and parts[0] == "users":
+                actor = self._require_user({"系统管理员"})
+                return api.delete_user(parts[1], actor_user_id=actor["user_id"])
             if self.command == "POST" and len(parts) == 3 and parts[0] == "modeling-imports" and parts[2] == "publish":
                 actor = self._require_user()
                 return api.publish_modeling_import(parts[1], actor_user_id=actor["user_id"])

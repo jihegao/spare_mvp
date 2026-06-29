@@ -38,9 +38,9 @@ Output:
 | Enter project | `output/playwright/02-project-workbench.png` |
 | Modeling page before edit | `output/playwright/03-modeling-before-edit.png` |
 | Modeling page after edit | `output/playwright/04-modeling-after-edit.png` |
-| Monte Carlo config | `output/playwright/05-monte-carlo-config.png` |
-| Monte Carlo started | `output/playwright/06-monte-carlo-started.png` |
-| Result analysis | `output/playwright/07-result-analysis.png` |
+| Monte Carlo list | `output/playwright/05-monte-carlo-list.png` |
+| Monte Carlo editor | `output/playwright/05b-monte-carlo-editor.png` |
+| Monte Carlo detail results | `output/playwright/06-monte-carlo-detail-results.png` |
 | Visual simulation | `output/playwright/08-visual-simulation.png` |
 
 Observed final state:
@@ -59,8 +59,8 @@ Observed final state:
 
 ### Polish
 
-- Left-nav controls are automation-fragile around collapsed `details/summary` groups. The smoke runner had to use DOM-click fallback for `spare-planning-monte-carlo-config`.
-- Monte Carlo start was intermittently missed by browser automation in the full chain and required one DOM-click fallback. Standalone reproduction showed the product behavior is correct: start returns to `仿真实验方案管理` and marks the current plan `运行中`.
+- Left-nav controls are automation-fragile around collapsed `details/summary` groups. The smoke runner can use DOM-click fallback when opening nested feature pages.
+- Monte Carlo smoke now verifies the experiment list, editor, and detail results area instead of the removed standalone result page.
 - Visual simulation keeps the product-facing aircraft, mission, and support views; the old graph view is no longer part of the baseline.
 
 ### Future Backend

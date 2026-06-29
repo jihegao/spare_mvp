@@ -1,5 +1,5 @@
 import { FEATURE_PAGES, getFeaturePageById, groupFeaturePages } from "./feature-catalog.mjs";
-import { AVIATION_SUPPORT_DEMO_STATE, normalizeAviationSupportState } from "./aviation-support-state.mjs";
+import { normalizeAviationSupportState } from "./aviation-support-state.mjs";
 import {
   buildBackendProjectJson,
   buildPreviewResultState,
@@ -71,6 +71,7 @@ const LAST_BACKEND_RUN_STORAGE_KEY = "spare-mvp:lastBackendRun";
 const AUTH_SESSION_STORAGE_KEY = "spare-mvp:m4Session";
 const MANUAL_PROJECT_DRAFTS_STORAGE_KEY = "spare-mvp:manualProjects:v1";
 const MANUAL_PROJECT_JSON_STORAGE_KEY = "spare-mvp:manualProjectJson:v1";
+const SYSTEM_RUNTIME_CONFIG_KEY = "system-runtime-support";
 const PROJECT_DRAFT_AUTOSAVE_DELAY_MS = 800;
 let backendAuthToken = readStoredBackendAuthToken();
 const backendApi = createBackendApiClient({ baseUrl: "/api", getAuthToken: () => backendAuthToken });
@@ -347,13 +348,18 @@ let selectedModelingFieldKeys = new Set(modelingSheetRows().flatMap((row) => row
 let systemDataStatus = "已按仿真建模模块加载默认 sheet 勾选，可在局部表格触发导入和校验。";
 let modelingFieldStatus = "已加载默认字段级配置，可逐 sheet 调整字段粒度。";
 let systemDataExportPreview = null;
+let systemRuntimeConfigLoaded = false;
+let systemRuntimeConfigStatus = "系统配置尚未同步";
+let systemUserSearchText = "";
+let modelingFormFieldUnits = createDefaultModelingFormFieldUnits();
+let personnelSpecialtyDraft = "";
 
 const SYSTEM_PERMISSION_ROWS = [
-  { feature: "项目管理", admin: "管理", data: "编辑", user: "查看" },
-  { feature: "装备RMS指标分配", admin: "管理", data: "编辑", user: "查看" },
-  { feature: "系统基础配置", admin: "管理", data: "查看", user: "无权限" },
-  { feature: "仿真建模", admin: "管理", data: "编辑", user: "编辑" },
-  { feature: "结果分析", admin: "查看", data: "查看", user: "查看" }
+  { feature: "项目管理", admin: "编辑", data: "编辑", user: "只读" },
+  { feature: "装备RMS指标分配", admin: "编辑", data: "编辑", user: "只读" },
+  { feature: "系统基础配置", admin: "编辑", data: "只读", user: "只读" },
+  { feature: "仿真建模", admin: "编辑", data: "编辑", user: "编辑" },
+  { feature: "结果分析", admin: "只读", data: "只读", user: "只读" }
 ];
 
 function mergeProjectsById(projects) {
@@ -501,6 +507,7 @@ let backendExperimentPlansProjectId = "";
 let backendExperimentPlansLoaded = false;
 let backendExperimentPlansLoadInFlight = false;
 let experimentPlanListStatus = "仿真实验方案列表尚未加载";
+let experimentPlanManagementMode = "list";
 let projectDraftSaveStatus = "未保存";
 let projectDraftHydrateStatus = "";
 let projectDraftAutosaveTimer = null;
@@ -546,16 +553,13 @@ let selectedRoute = readRouteFromHash() || DEFAULT_ROUTE;
 let selectedFeatureId = readFeatureIdFromHash() || DEFAULT_FEATURE_ID;
 let selectedMesaView = "aircraft";
 let selectedVisualAircraftId = "";
-let liveAviationState = null; // 来自契约服务的活仿真状态；为 null 时回退演示快照
-let aviationSource = "demo"; // "live"（契约服务）或 "demo"（静态快照）
-let aviationSteps = 12; // 向契约服务请求的仿真步数
-let aviationLoadInFlight = false; // 防止重复并发拉取
 let collapsedTreeNodes = new Set();
 let carryObjective = "availability";
 let experimentRunStatus = "当前";
 let selectedExperimentPlanNames = new Set();
 let isProjectMenuOpen = false;
 let selectedPeriodicTaskId = "";
+let selectedPeriodicWeekIndex = 1;
 let selectedEquipmentComponentIndex = 0;
 let selectedEquipmentNodeKey = "";
 let selectedBasicMissionKey = "primary";
@@ -568,6 +572,7 @@ let selectedSupportOrgNodeId = "";
 let selectedSupportActivityJobKeys = new Set();
 let selectedLogisticsTransportStrategyIndexes = new Set();
 let supportActivityJobDialogKey = "";
+let supportActivityPredecessorDialogKey = "";
 let selectedOperationsSupportActivityKey = "";
 let selectedOperationsSupportAircraftModel = "";
 let selectedOperationsSupportPlanType = "直接准备方案";
@@ -576,9 +581,13 @@ let selectedPreventiveMaintenanceAircraftModel = "";
 let selectedSupportResourceKeys = new Set();
 let deletedSupportResourceKeys = new Set();
 let supportResourceImportStatus = "可在当前资源清单导入 CSV / TSV / JSON 表格。";
+let equipmentImportStatus = "可导入 CSV / TSV / JSON 装备结构表。";
 let selectedBasicActivityKeys = new Set();
+let basicActivityDialogKey = "";
+let basicActivityResourceDialog = null;
 let basicActivityQuery = "";
 let supportActivityTemplateQuery = "";
+let supportActivityPredecessorQuery = "";
 let selectedBasicActivityImportType = "使用保障活动";
 let selectedCorrectiveComponentId = "";
 
@@ -1064,6 +1073,7 @@ function bindEvents() {
     if (supportActivityPlanSelectButton) {
       selectOperationsSupportActivityPlan(supportActivityPlanSelectButton.dataset.selectSupportActivityPlan);
       supportActivityJobDialogKey = "";
+      supportActivityPredecessorDialogKey = "";
       render();
       return;
     }
@@ -1072,6 +1082,7 @@ function bindEvents() {
     if (preventiveActivityPlanSelectButton) {
       selectPreventiveMaintenanceActivityPlan(preventiveActivityPlanSelectButton.dataset.selectPreventiveActivityPlan);
       supportActivityJobDialogKey = "";
+      supportActivityPredecessorDialogKey = "";
       render();
       return;
     }
@@ -1080,6 +1091,7 @@ function bindEvents() {
     if (operationsSupportAircraftSelectButton) {
       selectOperationsSupportAircraftModel(operationsSupportAircraftSelectButton.dataset.selectOperationsSupportAircraftModel);
       supportActivityJobDialogKey = "";
+      supportActivityPredecessorDialogKey = "";
       render();
       return;
     }
@@ -1088,6 +1100,7 @@ function bindEvents() {
     if (preventiveAircraftSelectButton) {
       selectPreventiveMaintenanceAircraftModel(preventiveAircraftSelectButton.dataset.selectPreventiveAircraftModel);
       supportActivityJobDialogKey = "";
+      supportActivityPredecessorDialogKey = "";
       render();
       return;
     }
@@ -1097,6 +1110,7 @@ function bindEvents() {
       selectedOperationsSupportPlanType = supportActivityPhaseTabButton.dataset.opsSupportPlanType || "直接准备方案";
       selectedSupportActivityJobKeys = new Set();
       supportActivityJobDialogKey = "";
+      supportActivityPredecessorDialogKey = "";
       render();
       return;
     }
@@ -1108,10 +1122,20 @@ function bindEvents() {
       return;
     }
 
+    const supportActivityPredecessorDialogCloseButton = event.target.closest("[data-support-activity-predecessor-dialog-close]");
+    if (supportActivityPredecessorDialogCloseButton) {
+      supportActivityPredecessorDialogKey = "";
+      render();
+      return;
+    }
+
     const supportActivityJobDeleteButton = event.target.closest("[data-support-activity-job-delete]");
     if (supportActivityJobDeleteButton) {
       if (supportActivityJobDialogKey === supportActivityJobDeleteButton.dataset.supportActivityJobDelete) {
         supportActivityJobDialogKey = "";
+      }
+      if (supportActivityPredecessorDialogKey === supportActivityJobDeleteButton.dataset.supportActivityJobDelete) {
+        supportActivityPredecessorDialogKey = "";
       }
       deleteSupportActivityJob(supportActivityJobDeleteButton.dataset.supportActivityJobDelete);
       markProjectDraftChanged();
@@ -1122,6 +1146,7 @@ function bindEvents() {
     const supportActivityJobAddButton = event.target.closest("[data-support-activity-job-add]");
     if (supportActivityJobAddButton) {
       supportActivityJobDialogKey = addSupportActivityJob(supportActivityJobAddButton.dataset.supportActivityJobAdd) || "";
+      supportActivityPredecessorDialogKey = "";
       markProjectDraftChanged();
       render();
       return;
@@ -1146,9 +1171,41 @@ function bindEvents() {
       return;
     }
 
+    const supportActivityJobTemplateSelect = event.target.closest("[data-support-activity-job-template-select]");
+    if (supportActivityJobTemplateSelect) {
+      applyBasicActivityToSupportActivityJob(
+        supportActivityJobTemplateSelect.dataset.supportActivityJobTemplateSelect,
+        supportActivityJobTemplateSelect.value
+      );
+      markProjectDraftChanged();
+      render();
+      return;
+    }
+
     const supportActivityJobEditButton = event.target.closest("[data-support-activity-job]");
     if (supportActivityJobEditButton) {
       supportActivityJobDialogKey = selectSupportActivityJobForEdit(supportActivityJobEditButton.dataset.supportActivityJob) || "";
+      supportActivityPredecessorDialogKey = "";
+      render();
+      return;
+    }
+
+    const supportActivityPredecessorEditButton = event.target.closest("[data-support-activity-predecessor-edit]");
+    if (supportActivityPredecessorEditButton) {
+      supportActivityJobDialogKey = "";
+      supportActivityPredecessorDialogKey = selectSupportActivityJobForEdit(supportActivityPredecessorEditButton.dataset.supportActivityPredecessorEdit) || "";
+      render();
+      return;
+    }
+
+    const supportActivityPredecessorAddButton = event.target.closest("[data-support-activity-predecessor-add-template]");
+    if (supportActivityPredecessorAddButton) {
+      addBasicActivityAsSupportActivityPredecessor(
+        supportActivityPredecessorAddButton.dataset.supportActivityPredecessorAddTemplate,
+        supportActivityPredecessorAddButton.dataset.basicActivityKey,
+        supportActivityPredecessorDialogKey
+      );
+      markProjectDraftChanged();
       render();
       return;
     }
@@ -1172,6 +1229,55 @@ function bindEvents() {
     const basicActivityEditButton = event.target.closest("[data-basic-activity-edit]");
     if (basicActivityEditButton) {
       selectedBasicActivityKeys = new Set([basicActivityEditButton.dataset.basicActivityEdit]);
+      basicActivityDialogKey = basicActivityEditButton.dataset.basicActivityEdit || "";
+      render();
+      return;
+    }
+
+    const basicActivityDialogCloseButton = event.target.closest("[data-basic-activity-dialog-close]");
+    if (basicActivityDialogCloseButton) {
+      basicActivityDialogKey = "";
+      basicActivityResourceDialog = null;
+      render();
+      return;
+    }
+
+    const basicActivityResourceDialogOpenButton = event.target.closest("[data-basic-activity-resource-dialog-open]");
+    if (basicActivityResourceDialogOpenButton) {
+      basicActivityResourceDialog = {
+        key: basicActivityResourceDialogOpenButton.dataset.basicActivityKey || basicActivityDialogKey,
+        kind: basicActivityResourceDialogOpenButton.dataset.basicActivityResourceDialogOpen
+      };
+      render();
+      return;
+    }
+
+    const basicActivityResourceDialogCloseButton = event.target.closest("[data-basic-activity-resource-dialog-close]");
+    if (basicActivityResourceDialogCloseButton) {
+      basicActivityResourceDialog = null;
+      render();
+      return;
+    }
+
+    const basicActivityResourceDialogAddButton = event.target.closest("[data-basic-activity-resource-dialog-add]");
+    if (basicActivityResourceDialogAddButton) {
+      addBasicActivityResourceRequirement(
+        basicActivityResourceDialogAddButton.dataset.basicActivityKey,
+        basicActivityResourceDialogAddButton.dataset.basicActivityResourceDialogAdd
+      );
+      markProjectDraftChanged();
+      render();
+      return;
+    }
+
+    const basicActivityResourceDialogDeleteButton = event.target.closest("[data-basic-activity-resource-dialog-delete]");
+    if (basicActivityResourceDialogDeleteButton) {
+      deleteBasicActivityResourceRequirement(
+        basicActivityResourceDialogDeleteButton.dataset.basicActivityKey,
+        basicActivityResourceDialogDeleteButton.dataset.basicActivityResourceKind,
+        Number(basicActivityResourceDialogDeleteButton.dataset.basicActivityResourceIndex)
+      );
+      markProjectDraftChanged();
       render();
       return;
     }
@@ -1305,6 +1411,7 @@ function bindEvents() {
     if (planListLink) {
       const page = getFeaturePageById(selectedFeatureId);
       selectedRoute = "workbench";
+      experimentPlanManagementMode = "list";
       selectedFeatureId = getPlanListFeatureId(page.module);
       location.hash = `feature=${getPlanListFeatureId(page.module)}`;
       render();
@@ -1362,7 +1469,26 @@ function bindEvents() {
 
     const systemUserDeleteButton = event.target.closest("[data-system-user-delete]");
     if (systemUserDeleteButton) {
-      deleteSystemUsers([systemUserDeleteButton.dataset.systemUserDelete]);
+      deleteSystemUsers([systemUserDeleteButton.dataset.systemUserDelete]).finally(() => render());
+      return;
+    }
+
+    const systemConfigSaveButton = event.target.closest("[data-system-config-save]");
+    if (systemConfigSaveButton) {
+      saveSystemRuntimeConfig(systemConfigSaveButton.dataset.systemConfigSave).finally(() => render());
+      return;
+    }
+
+    const personnelSpecialtyAddButton = event.target.closest("[data-personnel-specialty-add]");
+    if (personnelSpecialtyAddButton) {
+      addPersonnelSpecialtyDraft();
+      render();
+      return;
+    }
+
+    const personnelSpecialtyDeleteButton = event.target.closest("[data-personnel-specialty-delete]");
+    if (personnelSpecialtyDeleteButton) {
+      deletePersonnelSpecialty(personnelSpecialtyDeleteButton.dataset.personnelSpecialtyDelete);
       render();
       return;
     }
@@ -1432,6 +1558,13 @@ function bindEvents() {
     const periodicSelectButton = event.target.closest("[data-periodic-select]");
     if (periodicSelectButton) {
       selectedPeriodicTaskId = periodicSelectButton.dataset.periodicSelect;
+      render();
+      return;
+    }
+
+    const periodicWeekRow = event.target.closest("[data-periodic-select-week]");
+    if (periodicWeekRow) {
+      selectedPeriodicWeekIndex = Math.max(1, Math.floor(Number(periodicWeekRow.dataset.periodicSelectWeek || 1)));
       render();
       return;
     }
@@ -1531,6 +1664,20 @@ function bindEvents() {
       return;
     }
 
+    const experimentPlanEditButton = event.target.closest("[data-experiment-plan-edit]");
+    if (experimentPlanEditButton) {
+      const page = getFeaturePageById(selectedFeatureId);
+      openExperimentPlanEditorFromList(
+        experimentPlanEditButton.dataset.experimentPlanEdit || "",
+        experimentPlanEditButton.dataset.experimentPlanName || ""
+      );
+      selectedRoute = "workbench";
+      selectedFeatureId = getPlanListFeatureId(page.module);
+      location.hash = `feature=${selectedFeatureId}`;
+      render();
+      return;
+    }
+
     const experimentPlanDeleteButton = event.target.closest("[data-experiment-plan-delete]");
     if (experimentPlanDeleteButton) {
       deleteExperimentPlanFromList(experimentPlanDeleteButton.dataset.experimentPlanDelete || "").finally(() => render());
@@ -1541,6 +1688,9 @@ function bindEvents() {
     if (featureButton) {
       selectedRoute = "workbench";
       selectedFeatureId = featureButton.dataset.featureId;
+      if (getFeaturePageById(selectedFeatureId).component === "experiment-plan-management") {
+        experimentPlanManagementMode = "list";
+      }
       createExperimentPlanBranchFromCurrentProject();
       location.hash = `feature=${selectedFeatureId}`;
       render();
@@ -1548,8 +1698,18 @@ function bindEvents() {
   });
 
   app.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && supportActivityPredecessorDialogKey) {
+      supportActivityPredecessorDialogKey = "";
+      render();
+      return;
+    }
     if (event.key === "Escape" && supportActivityJobDialogKey) {
       supportActivityJobDialogKey = "";
+      render();
+      return;
+    }
+    if (event.key === "Escape" && basicActivityDialogKey) {
+      basicActivityDialogKey = "";
       render();
       return;
     }
@@ -1573,6 +1733,15 @@ function bindEvents() {
     if (rmsEquipmentImportFile) {
       await importRmsEquipmentTableFile(rmsEquipmentImportFile.files?.[0]);
       rmsEquipmentImportFile.value = "";
+      render();
+      return;
+    }
+
+    const equipmentImportFile = event.target.closest("[data-equipment-import-file]");
+    if (equipmentImportFile) {
+      const imported = await importEquipmentStructureTableFile(equipmentImportFile.files?.[0]);
+      equipmentImportFile.value = "";
+      if (imported) markProjectDraftChanged();
       render();
       return;
     }
@@ -1648,6 +1817,35 @@ function bindEvents() {
       return;
     }
 
+    const basicActivityResourceField = event.target.closest("[data-basic-activity-resource-field]");
+    if (basicActivityResourceField) {
+      const value = basicActivityResourceField.multiple
+        ? Array.from(basicActivityResourceField.selectedOptions || []).map((option) => option.value)
+        : parseInput(basicActivityResourceField);
+      updateBasicActivityResourceField(
+        basicActivityResourceField.dataset.basicActivityKey,
+        basicActivityResourceField.dataset.basicActivityResourceField,
+        value
+      );
+      markProjectDraftChanged();
+      render();
+      return;
+    }
+
+    const basicActivityResourceDialogField = event.target.closest("[data-basic-activity-resource-dialog-field]");
+    if (basicActivityResourceDialogField) {
+      updateBasicActivityResourceDialogField(
+        basicActivityResourceDialogField.dataset.basicActivityKey,
+        basicActivityResourceDialogField.dataset.basicActivityResourceKind,
+        Number(basicActivityResourceDialogField.dataset.basicActivityResourceIndex),
+        basicActivityResourceDialogField.dataset.basicActivityResourceDialogField,
+        parseInput(basicActivityResourceDialogField)
+      );
+      markProjectDraftChanged();
+      render();
+      return;
+    }
+
     const basicActivityField = event.target.closest("[data-basic-activity-field]");
     if (basicActivityField) {
       updateBasicActivityJobField(
@@ -1707,8 +1905,9 @@ function bindEvents() {
 
     const systemUserSelectAll = event.target.closest("[data-system-user-select-all]");
     if (systemUserSelectAll) {
+      const visibleUsers = filteredSystemUsers();
       selectedSystemUsernames = systemUserSelectAll.checked
-        ? new Set(systemUsers.map((user) => user.username))
+        ? new Set(visibleUsers.map((user) => user.username))
         : new Set();
       render();
       return;
@@ -1788,6 +1987,17 @@ function bindEvents() {
       return;
     }
 
+    const modelingFormUnitSelect = event.target.closest("[data-modeling-form-unit]");
+    if (modelingFormUnitSelect) {
+      modelingFormFieldUnits = {
+        ...modelingFormFieldUnits,
+        [modelingFormUnitSelect.dataset.modelingFormUnit]: modelingFormUnitSelect.value
+      };
+      systemRuntimeConfigStatus = "字段单位配置已更新，待保存";
+      render();
+      return;
+    }
+
     const experimentPlanSelect = event.target.closest("[data-experiment-plan-select]");
     if (experimentPlanSelect) {
       toggleExperimentPlanSelection(experimentPlanSelect.dataset.experimentPlanSelect, experimentPlanSelect.checked);
@@ -1816,11 +2026,12 @@ function bindEvents() {
       return;
     }
 
-    const supportActivityPredecessors = event.target.closest("[data-support-activity-predecessors]");
-    if (supportActivityPredecessors) {
-      updateSupportActivityJobPredecessors(
-        supportActivityPredecessors.dataset.supportActivityPredecessors,
-        Array.from(supportActivityPredecessors.selectedOptions).map((option) => option.value)
+    const supportActivityPredecessorToggle = event.target.closest("[data-support-activity-predecessor-toggle]");
+    if (supportActivityPredecessorToggle) {
+      updateSupportActivityJobPredecessorSelection(
+        supportActivityPredecessorToggle.dataset.supportActivityPredecessorKey,
+        supportActivityPredecessorToggle.dataset.supportActivityPredecessorToggle,
+        supportActivityPredecessorToggle.checked
       );
       markProjectDraftChanged();
       render();
@@ -1979,6 +2190,26 @@ function bindEvents() {
     if (supportActivityTemplateQueryInput) {
       supportActivityTemplateQuery = supportActivityTemplateQueryInput.value;
       render();
+      return;
+    }
+
+    const supportActivityPredecessorQueryInput = event.target.closest("[data-support-activity-predecessor-query]");
+    if (supportActivityPredecessorQueryInput) {
+      supportActivityPredecessorQuery = supportActivityPredecessorQueryInput.value;
+      render();
+      return;
+    }
+
+    const systemUserSearchInput = event.target.closest("[data-system-user-search]");
+    if (systemUserSearchInput) {
+      systemUserSearchText = systemUserSearchInput.value;
+      render();
+      return;
+    }
+
+    const personnelSpecialtyDraftInput = event.target.closest("[data-personnel-specialty-draft]");
+    if (personnelSpecialtyDraftInput) {
+      personnelSpecialtyDraft = personnelSpecialtyDraftInput.value;
       return;
     }
 
@@ -2305,6 +2536,7 @@ function renderMainComponent(page) {
   if (page.component === "activity-gantt") return renderSupportActivityWorkbench(page);
   if (page.component === "resource-table") return renderSupportOrganizationWorkbench(page);
   if (page.component === "equipment-table") return renderEquipmentModeling(page);
+  if (page.component === "experiment-plan-management") return renderExperimentPlanManagement(page);
   if (page.component === "experiment-plan-list") return renderExperimentPlanList(page);
   if (page.component === "experiment-plan-editor") return renderExperimentPlanEditor(page);
   if (page.component === "experiment-form") return renderExperimentPlanEditor(page);
@@ -2323,7 +2555,6 @@ function renderMainComponent(page) {
   if (page.component === "monte-carlo-experiment-editor") return renderMonteCarloExperimentEditor(page);
   if (page.component === "monte-carlo-experiment-detail") return renderMonteCarloExperimentDetail(page);
   if (page.component === "monte-carlo-config") return renderMonteCarloConfig();
-  if (page.component === "monte-carlo-results") return renderMonteCarloResults();
   if (page.component === "analysis") return renderAnalysis(page);
   if (page.component === "scenario-switch") return renderScenarioSwitch();
   if (page.name === "内置场景") return renderBuiltInScenario(page);
@@ -2337,7 +2568,8 @@ function renderMainComponent(page) {
 
 function createExperimentPlanBranchFromCurrentProject() {
   const page = getFeaturePageById(selectedFeatureId);
-  if (!["experiment-plan-editor", "experiment-form", "monte-carlo-config", "monte-carlo-experiment-editor"].includes(page.component)) return;
+  const isExperimentPlanManagementEditor = page.component === "experiment-plan-management" && experimentPlanManagementMode === "editor";
+  if (!isExperimentPlanManagementEditor && !["experiment-plan-editor", "experiment-form", "monte-carlo-config", "monte-carlo-experiment-editor"].includes(page.component)) return;
   if (experimentPlanBranchActive) return;
   experimentPlanDraft = cloneScenario(scenario);
   experimentPlanBranchActive = true;
@@ -2621,6 +2853,7 @@ function basicMissionSelect(path, selectedValue) {
 }
 
 function renderSystemProjectManagement(page) {
+  ensureSystemRuntimeConfigLoaded();
   const isGranularityPage = page.name === "建模颗粒度管理";
   const body = isGranularityPage
     ? `
@@ -2636,8 +2869,12 @@ function renderSystemProjectManagement(page) {
   return `
     <div class="system-config-workbench">
       <div class="section-head">
-        <h3>${isGranularityPage ? "仿真建模数据表字段级配置" : "仿真建模数据表 sheet 选择器"}</h3>
+        <h3>${isGranularityPage ? "建模颗粒度配置" : "项目数据管理配置"}</h3>
         <span>${page.dataObjects.join(" / ")}</span>
+      </div>
+      <div class="toolbar-row">
+        <button type="button" class="btn-primary" data-system-config-save="${isGranularityPage ? "granularity" : "project-data"}">保存系统配置</button>
+        <span class="inline-status" data-system-config-status>${htmlEscape(systemRuntimeConfigStatus)}</span>
       </div>
       ${body}
     </div>
@@ -2651,26 +2888,39 @@ function renderProjectDataTable() {
   const project = currentProject || { id: "", name: "", baseCode: "" };
   return `
     <p class="inline-status">${selectedCount}/${rows.length} 个 sheet 已勾选</p>
-    <div class="form-table-grid">
-      <label>项目标识<input value="${htmlEscape(project.id)}"></label>
-      <label>项目名称<input value="${htmlEscape(project.name)}"></label>
-      <label>基地编码<input value="${htmlEscape(project.baseCode)}"></label>
-      <label>数据表来源<input value="仿真建模数据表 / Excel sheet"></label>
-    </div>
-    ${renderLocalModelingImportActions("sheet 选择器")}
-    <div class="toolbar-row">
-      <label class="check-inline"><input type="checkbox" data-system-data-select-all ${allSelected ? "checked" : ""}>全选 sheet</label>
-      <button type="button" data-system-data-export>导出 sheet 配置</button>
-    </div>
-    <p class="inline-status" data-system-data-status>${htmlEscape(systemDataStatus)}</p>
-    ${systemDataExportPreview ? `
-      <div class="inline-status" data-system-data-export-preview>
-        导出预览：${htmlEscape(systemDataExportPreview.label)} / ${systemDataExportPreview.rowCount} 个 sheet /
-        <span data-system-data-export-filename>${htmlEscape(systemDataExportPreview.filename)}</span>
-      </div>
-    ` : ""}
     <div class="modeling-config-grid">
-      ${MODELING_DATA_MODULES.map((module) => renderModelingSheetModule(module)).join("")}
+      <section class="system-config-section" data-project-data-config-module="modeling-data-source">
+        <div class="section-head">
+          <div>
+            <h4>建模数据源配置</h4>
+            <p>按模块维护项目可用的仿真建模数据表。</p>
+          </div>
+          <span class="status-badge">${selectedCount}/${rows.length}</span>
+        </div>
+        <div class="form-table-grid">
+          <label>项目标识<input value="${htmlEscape(project.id)}"></label>
+          <label>项目名称<input value="${htmlEscape(project.name)}"></label>
+          <label>基地编码<input value="${htmlEscape(project.baseCode)}"></label>
+          <label>数据表来源<input value="仿真建模数据表 / Excel sheet"></label>
+        </div>
+        <div class="toolbar-row">
+          <label class="check-inline"><input type="checkbox" data-system-data-select-all ${allSelected ? "checked" : ""}>全选 sheet</label>
+          <button type="button" data-system-data-export>导出 sheet 配置</button>
+        </div>
+        <p class="inline-status" data-system-data-status>${htmlEscape(systemDataStatus)}</p>
+        ${systemDataExportPreview ? `
+          <div class="inline-status" data-system-data-export-preview>
+            导出预览：${htmlEscape(systemDataExportPreview.label)} / ${systemDataExportPreview.rowCount} 个 sheet /
+            <span data-system-data-export-filename>${htmlEscape(systemDataExportPreview.filename)}</span>
+          </div>
+        ` : ""}
+        <div class="modeling-config-grid">
+          ${MODELING_DATA_MODULES.map((module) => renderModelingSheetModule(module)).join("")}
+        </div>
+      </section>
+      <section class="system-config-section" data-project-data-config-module="modeling-import-publish">
+        ${renderLocalModelingImportActions("导入发布配置")}
+      </section>
     </div>
   `;
 }
@@ -2684,10 +2934,33 @@ function renderModelingGranularityTable() {
   );
   return `
     <p class="inline-status">${selectedFieldCount}/${fieldCount} 个字段已启用，覆盖 ${sheetCount} 个 sheet</p>
+    ${renderGranularityProfiles(fieldCount, selectedFieldCount)}
     ${renderLocalModelingImportActions("字段级配置")}
     <p class="inline-status">${htmlEscape(modelingFieldStatus)}</p>
     <div class="modeling-field-config">
       ${MODELING_DATA_MODULES.map((module) => renderModelingFieldModule(module)).join("")}
+    </div>
+  `;
+}
+
+function renderGranularityProfiles(fieldCount, selectedFieldCount) {
+  const profiles = [
+    { key: "granularity-a", label: "颗粒度 A", count: fieldCount, description: "包含全部表单字段，作为完整建模颗粒度。" },
+    { key: "granularity-b", label: "颗粒度 B", count: selectedFieldCount, description: "字段清单确认后启用，跟随当前勾选字段。" }
+  ];
+  return `
+    <div class="modeling-config-grid">
+      ${profiles.map((profile) => `
+        <section class="modeling-config-card" data-granularity-profile="${profile.key}">
+          <div class="section-head">
+            <div>
+              <h4>${profile.label}</h4>
+              <p>${profile.description}</p>
+            </div>
+            <span class="status-badge">${profile.count} 字段</span>
+          </div>
+        </section>
+      `).join("")}
     </div>
   `;
 }
@@ -2828,6 +3101,189 @@ function moduleSheetKeys(moduleKey) {
   return MODELING_DATA_MODULES.find((module) => module.key === moduleKey)?.sheets.map((sheet) => sheet.key) || [];
 }
 
+function allModelingFieldKeys() {
+  return modelingSheetRows().flatMap((row) => row.fields.map((field) => modelingFieldKey(row.key, field.key)));
+}
+
+function createDefaultModelingFormFieldUnits() {
+  const units = {};
+  for (const row of modelingSheetRows()) {
+    for (const field of row.fields) {
+      const key = modelingFieldKey(row.key, field.key);
+      const hint = `${field.key} ${field.path} ${field.label}`.toLowerCase();
+      if (hint.includes("minutes") || hint.includes("minute")) units[key] = "分钟";
+      else if (hint.includes("hours") || hint.includes("hour")) units[key] = "小时";
+      else units[key] = "";
+    }
+  }
+  return units;
+}
+
+function createDefaultSystemRuntimeConfig() {
+  return {
+    projectDataModules: [
+      {
+        key: "modeling-data-source",
+        label: "建模数据源配置",
+        sheetKeys: modelingSheetRows().map((row) => row.key)
+      },
+      {
+        key: "modeling-import-publish",
+        label: "导入发布配置",
+        actions: ["load-fixture", "backfill-current-project", "validate", "save-draft", "publish", "compile-scenario"]
+      }
+    ],
+    granularityProfiles: [
+      {
+        key: "granularity-a",
+        label: "颗粒度 A",
+        description: "包含全部表单字段的完整建模颗粒度",
+        fieldKeys: allModelingFieldKeys()
+      },
+      {
+        key: "granularity-b",
+        label: "颗粒度 B",
+        description: "字段清单确认后启用的精简建模颗粒度",
+        fieldKeys: Array.from(selectedModelingFieldKeys)
+      }
+    ],
+    permissions: SYSTEM_PERMISSION_ROWS.map((row) => ({ ...row })),
+    modelingForms: {
+      fieldUnits: createDefaultModelingFormFieldUnits(),
+      personnelSpecialties: [...PERSONNEL_SPECIALTY_FALLBACK]
+    }
+  };
+}
+
+function currentSystemRuntimeConfigPayload() {
+  return {
+    ...createDefaultSystemRuntimeConfig(),
+    projectDataModules: [
+      {
+        key: "modeling-data-source",
+        label: "建模数据源配置",
+        sheetKeys: Array.from(selectedSystemDataKeys)
+      },
+      {
+        key: "modeling-import-publish",
+        label: "导入发布配置",
+        actions: ["load-fixture", "backfill-current-project", "validate", "save-draft", "publish", "compile-scenario"]
+      }
+    ],
+    granularityProfiles: [
+      {
+        key: "granularity-a",
+        label: "颗粒度 A",
+        description: "包含全部表单字段的完整建模颗粒度",
+        fieldKeys: allModelingFieldKeys()
+      },
+      {
+        key: "granularity-b",
+        label: "颗粒度 B",
+        description: "字段清单确认后启用的精简建模颗粒度",
+        fieldKeys: Array.from(selectedModelingFieldKeys)
+      }
+    ],
+    permissions: SYSTEM_PERMISSION_ROWS.map((row) => ({ ...row })),
+    modelingForms: {
+      fieldUnits: { ...modelingFormFieldUnits },
+      personnelSpecialties: configuredPersonnelSpecialties()
+    }
+  };
+}
+
+function applySystemRuntimeConfig(payload = {}) {
+  const projectDataModule = Array.isArray(payload.projectDataModules)
+    ? payload.projectDataModules.find((item) => item?.key === "modeling-data-source")
+    : null;
+  if (Array.isArray(projectDataModule?.sheetKeys)) {
+    selectedSystemDataKeys = new Set(projectDataModule.sheetKeys);
+  }
+
+  const granularityB = Array.isArray(payload.granularityProfiles)
+    ? payload.granularityProfiles.find((item) => item?.key === "granularity-b")
+    : null;
+  if (Array.isArray(granularityB?.fieldKeys)) {
+    selectedModelingFieldKeys = new Set(granularityB.fieldKeys);
+  }
+
+  if (Array.isArray(payload.permissions)) {
+    for (const saved of payload.permissions) {
+      const row = SYSTEM_PERMISSION_ROWS.find((item) => item.feature === saved?.feature);
+      if (!row) continue;
+      row.admin = normalizePermissionLevel(saved.admin);
+      row.data = normalizePermissionLevel(saved.data);
+      row.user = normalizePermissionLevel(saved.user);
+    }
+  }
+
+  if (payload.modelingForms && typeof payload.modelingForms === "object") {
+    if (payload.modelingForms.fieldUnits && typeof payload.modelingForms.fieldUnits === "object") {
+      modelingFormFieldUnits = {
+        ...createDefaultModelingFormFieldUnits(),
+        ...payload.modelingForms.fieldUnits
+      };
+    }
+    if (Array.isArray(payload.modelingForms.personnelSpecialties)) {
+      setConfiguredPersonnelSpecialties(payload.modelingForms.personnelSpecialties);
+    }
+  }
+}
+
+function ensureSystemRuntimeConfigLoaded() {
+  if (systemRuntimeConfigLoaded) return;
+  systemRuntimeConfigLoaded = true;
+  backendApi.getSystemConfig(SYSTEM_RUNTIME_CONFIG_KEY)
+    .then((saved) => {
+      if (saved?.payload && Object.keys(saved.payload).length) {
+        applySystemRuntimeConfig(saved.payload);
+        systemRuntimeConfigStatus = "已从后端加载系统配置";
+      } else {
+        systemRuntimeConfigStatus = "已使用默认系统配置";
+      }
+      render();
+    })
+    .catch((err) => {
+      systemRuntimeConfigStatus = `系统配置后端不可用：${err && err.message ? err.message : "Backend API 不可用"}`;
+      render();
+    });
+}
+
+async function saveSystemRuntimeConfig(contextLabel = "系统配置") {
+  const payload = currentSystemRuntimeConfigPayload();
+  try {
+    await backendApi.saveSystemConfig(SYSTEM_RUNTIME_CONFIG_KEY, payload);
+    systemRuntimeConfigStatus = `${contextLabel}已保存到后端`;
+  } catch (err) {
+    systemRuntimeConfigStatus = `${contextLabel}保存失败：${err && err.message ? err.message : "Backend API 不可用"}`;
+  }
+}
+
+function normalizePermissionLevel(value) {
+  return ["编辑", "管理"].includes(value) ? "编辑" : "只读";
+}
+
+function configuredPersonnelSpecialties() {
+  const rows = Array.isArray(scenario.modelingDictionaries?.personnelSpecialties)
+    ? scenario.modelingDictionaries.personnelSpecialties
+    : PERSONNEL_SPECIALTY_FALLBACK;
+  return normalizePersonnelSpecialties(rows);
+}
+
+function normalizePersonnelSpecialties(rows) {
+  return uniqueSelectOptions(rows.map((item) => {
+    const value = typeof item === "string" ? item : item?.name || item?.value || item?.label;
+    return { value, label: value };
+  }).filter((option) => option.value)).map((option) => option.value);
+}
+
+function setConfiguredPersonnelSpecialties(rows) {
+  scenario.modelingDictionaries = {
+    ...(scenario.modelingDictionaries || {}),
+    personnelSpecialties: normalizePersonnelSpecialties(rows)
+  };
+}
+
 function activeSystemDataDefinition() {
   return {
     key: "modeling-sheets",
@@ -2906,12 +3362,17 @@ function downloadSystemDataExport(filename, payload) {
 }
 
 function renderSystemBasicConfig(page) {
+  ensureSystemRuntimeConfigLoaded();
   const configTitle = page.name;
   return `
     <div class="system-config-workbench">
       <div class="section-head">
         <h3>${htmlEscape(configTitle)}</h3>
         <span>${page.dataObjects.join(" / ")}</span>
+      </div>
+      <div class="toolbar-row">
+        <button type="button" class="btn-primary" data-system-config-save="basic-config">保存系统配置</button>
+        <span class="inline-status" data-system-config-status>${htmlEscape(systemRuntimeConfigStatus)}</span>
       </div>
       ${page.name === "用户管理" ? renderUserManagementConfig() : ""}
       ${page.name === "系统功能权限管理" ? renderPermissionManagementConfig() : ""}
@@ -2922,19 +3383,20 @@ function renderSystemBasicConfig(page) {
 
 function renderUserManagementConfig() {
   ensureSystemUsersLoaded();
-  const allSelected = systemUsers.length > 0 && systemUsers.every((user) => selectedSystemUsernames.has(user.username));
+  const users = filteredSystemUsers();
+  const allSelected = users.length > 0 && users.every((user) => selectedSystemUsernames.has(user.username));
   return `
     <div class="toolbar-row">
       <button type="button" class="btn-primary" data-system-user-action="add">新增用户</button>
       <button type="button" class="btn-danger" data-system-user-action="delete-selected">删除用户</button>
-      <input value="" placeholder="按用户名、角色搜索">
+      <input value="${htmlEscape(systemUserSearchText)}" placeholder="按用户名、角色搜索" data-system-user-search>
     </div>
     <p class="inline-status" data-system-user-status>${htmlEscape(systemUsersLoadStatus)}</p>
     ${systemUserEditor ? renderSystemUserEditor() : ""}
     <div class="table-wrap">
       <table>
         <thead><tr><th><input type="checkbox" data-system-user-select-all ${allSelected ? "checked" : ""}></th><th>用户名</th><th>姓名</th><th>角色</th><th>状态</th><th>编辑/删除</th></tr></thead>
-        <tbody>${systemUsers.map((user) => `
+        <tbody>${users.map((user) => `
           <tr><td><input type="checkbox" data-system-user-select="${htmlEscape(user.username)}" ${selectedSystemUsernames.has(user.username) ? "checked" : ""}></td><td>${htmlEscape(user.username)}</td><td>${htmlEscape(user.name)}</td><td>${htmlEscape(user.role)}</td><td><span class="status-badge ${user.status === "停用" ? "warning" : "success"}">${htmlEscape(user.status)}</span></td><td><button type="button" class="inline-action" data-system-user-edit="${htmlEscape(user.username)}">编辑</button><button type="button" class="btn-danger" data-system-user-delete="${htmlEscape(user.username)}">删除</button></td></tr>
         `).join("")}</tbody>
       </table>
@@ -2984,10 +3446,10 @@ function renderPermissionManagementConfig() {
 
 function renderPermissionConfigEditor() {
   const row = SYSTEM_PERMISSION_ROWS.find((item) => item.feature === permissionConfigFeature) || SYSTEM_PERMISSION_ROWS[0];
-  const options = ["管理", "编辑", "查看", "无权限"];
+  const options = ["编辑", "只读"];
   return `
     <div class="detail-card">
-      <div class="section-head"><h4>配置权限：${htmlEscape(row.feature)}</h4><span>浏览器本地原型配置</span></div>
+      <div class="section-head"><h4>配置权限：${htmlEscape(row.feature)}</h4><span>三类用户权限仅配置只读 / 编辑</span></div>
       <div class="form-grid">
         ${["admin", "data", "user"].map((roleKey) => `
           <label>${permissionRoleLabel(roleKey)}
@@ -3003,8 +3465,30 @@ function renderPermissionConfigEditor() {
 
 function renderModelingFormManagementConfig() {
   const rows = modelingSheetRows();
+  const specialties = configuredPersonnelSpecialties();
   return `
     <p class="inline-status">${rows.length} 个建模表单已从仿真建模 sheet 配置同步</p>
+    <section class="system-config-section" data-personnel-specialty-dictionary>
+      <div class="section-head">
+        <div>
+          <h4>保障人员专业字典</h4>
+          <p>该字典会接入保障人员建模的专业下拉选项。</p>
+        </div>
+        <span class="status-badge">${specialties.length} 项</span>
+      </div>
+      <div class="toolbar-row">
+        <input value="${htmlEscape(personnelSpecialtyDraft)}" placeholder="新增专业" data-personnel-specialty-draft>
+        <button type="button" data-personnel-specialty-add>新增专业</button>
+      </div>
+      <div class="tag-list">
+        ${specialties.map((item) => `
+          <span class="status-badge" data-personnel-specialty-item="${htmlEscape(item)}">
+            ${htmlEscape(item)}
+            <button type="button" class="inline-action" data-personnel-specialty-delete="${htmlEscape(item)}">删除</button>
+          </span>
+        `).join("")}
+      </div>
+    </section>
     <div class="modeling-field-config" data-modeling-form-management>
       ${MODELING_DATA_MODULES.map((module) => `
         <section class="modeling-config-card">
@@ -3025,9 +3509,21 @@ function renderModelingFormManagementConfig() {
                   <span class="status-badge ${selectedSystemDataKeys.has(sheet.key) ? "success" : "warning"}">${selectedSystemDataKeys.has(sheet.key) ? "启用" : "停用"}</span>
                 </div>
                 <div class="field-checkbox-grid">
-                  ${sheet.fields.map((field) => `
-                    <span class="readonly-table-value">${htmlEscape(field.label)} · ${htmlEscape(field.path)}</span>
-                  `).join("")}
+                  ${sheet.fields.map((field) => {
+                    const key = modelingFieldKey(sheet.key, field.key);
+                    const unit = modelingFormFieldUnits[key] || "";
+                    return `
+                      <label class="field-check">
+                        <span>
+                          <strong>${htmlEscape(field.label)}</strong>
+                          <small>${htmlEscape(field.path)}</small>
+                        </span>
+                        <select data-modeling-form-unit="${htmlEscape(key)}">
+                          ${["", "小时", "分钟"].map((option) => `<option value="${htmlEscape(option)}" ${unit === option ? "selected" : ""}>${option || "无单位"}</option>`).join("")}
+                        </select>
+                      </label>
+                    `;
+                  }).join("")}
                 </div>
               </article>
             `).join("")}
@@ -3518,6 +4014,11 @@ function renderPeriodicTaskModeling(page) {
   const periodicTasks = periodicTaskList();
   const selectedTask = selectedPeriodicTask(periodicTasks);
   const selectedDraft = selectedTask ? normalizePeriodicTask(selectedTask) : null;
+  const totalWeeks = selectedDraft ? Math.max(1, Math.floor(Number(selectedDraft.repeatWeeks || 1))) : 1;
+  selectedPeriodicWeekIndex = clamp(Math.floor(Number(selectedPeriodicWeekIndex || 1)), 1, totalWeeks);
+  const selectedWeekRows = selectedDraft
+    ? selectedDraft.compositeTasks.filter((row) => Number(row.weekIndex) === selectedPeriodicWeekIndex)
+    : [];
   const compositeOptions = [
     { value: "", label: "请选择复合任务" },
     ...compositeTasks.map((task) => ({ value: task.id, label: task.name }))
@@ -3529,22 +4030,21 @@ function renderPeriodicTaskModeling(page) {
     <div class="organization-layout task-modeling-periodic-layout">
       <div class="tree-container">
         <div class="tree-toolbar">
-          <h4>周期性任务列表</h4>
-          <div class="toolbar-row" style="margin-bottom:0;">
-            <button type="button" class="btn-primary" data-periodic-add>新增</button>
-            <button type="button" class="btn-danger" data-periodic-delete-selected ${selectedTask ? "" : "disabled"}>删除</button>
-          </div>
+          <h4>周期性任务周列表</h4>
+          ${selectedDraft ? `
+            <label>总周数 *<input data-periodic-field="repeatWeeks" type="number" min="1" step="1" value="${htmlEscape(totalWeeks)}"></label>
+          ` : ""}
         </div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>序号</th><th>周期性任务名称</th></tr></thead>
+            <thead><tr><th>周次</th><th>周期性任务名称</th></tr></thead>
             <tbody>
-              ${periodicTasks.map((task, index) => `
-                <tr class="clickable-table-row ${String(task.id) === String(selectedTask?.id) ? "selected-table-row" : ""}" data-periodic-select="${htmlEscape(task.id)}" aria-selected="${String(task.id) === String(selectedTask?.id) ? "true" : "false"}">
-                  <td>${index + 1}</td>
-                  <td>${htmlEscape(task.name)}</td>
+              ${selectedDraft ? Array.from({ length: totalWeeks }, (_, index) => index + 1).map((weekIndex) => `
+                <tr class="clickable-table-row ${weekIndex === selectedPeriodicWeekIndex ? "selected-table-row" : ""}" data-periodic-select-week="${weekIndex}" aria-selected="${weekIndex === selectedPeriodicWeekIndex ? "true" : "false"}">
+                  <td>第${weekIndex}周</td>
+                  <td>${htmlEscape(selectedDraft.name)}</td>
                 </tr>
-              `).join("") || `<tr><td colspan="2" class="muted">暂无周期性任务数据</td></tr>`}
+              `).join("") : `<tr><td colspan="2" class="muted">暂无周期性任务数据</td></tr>`}
             </tbody>
           </table>
         </div>
@@ -3554,29 +4054,31 @@ function renderPeriodicTaskModeling(page) {
           <div class="periodic-panel-head">
             <div>
               <h4>周期性任务建模</h4>
-              <p class="muted">左侧选择周期性任务，右侧按周期天数维护每天对应的复合任务与重复轮次。</p>
+              <p class="muted">先配置总周数，左侧选择周次，右侧按固定 7 天维护周内复合任务。</p>
             </div>
-            ${selectedDraft ? `<span class="status-badge">当前：${htmlEscape(selectedDraft.name)}</span>` : ""}
+            ${selectedDraft ? `<span class="status-badge">当前：第${selectedPeriodicWeekIndex}周</span>` : ""}
           </div>
           ${selectedDraft ? `
             ${compositeTasks.length === 0 ? `<div class="alert warn">请先在复合任务建模中维护复合任务。</div>` : ""}
             <div class="form-table-grid">
               <label>上级任务名称 *<input data-periodic-field="parentTaskName" value="${htmlEscape(selectedDraft.parentTaskName)}" placeholder="例如：舰载机昼夜任务"></label>
               <label>周期性任务名称 *<input data-periodic-field="name" value="${htmlEscape(selectedDraft.name)}" placeholder="例如：一周飞行训练计划A"></label>
-              <label>任务周期天数 *<input data-periodic-field="cycleDays" type="number" min="1" max="30" step="1" value="${htmlEscape(selectedDraft.cycleDays)}"></label>
-              <label>重复轮次 *<input data-periodic-field="repeatWeeks" type="number" min="1" step="1" value="${htmlEscape(selectedDraft.repeatWeeks)}"></label>
+              <label>周次<input readonly value="第${htmlEscape(selectedPeriodicWeekIndex)}周"></label>
+              <label>每周天数<input readonly value="7"></label>
             </div>
             <div class="table-wrap" style="margin-top:12px;">
               <table>
                 <thead><tr><th style="width:96px;">周次</th><th style="width:96px;">周内日</th><th>复合任务名称</th></tr></thead>
                 <tbody>
-                  ${selectedDraft.compositeTasks.map((row, index) => `
+                  ${selectedWeekRows.map((row) => {
+                    const rowIndex = selectedDraft.compositeTasks.findIndex((candidate) => candidate.weekIndex === row.weekIndex && candidate.weekday === row.weekday);
+                    return `
                     <tr>
-                      <td>${htmlEscape(`第${row.weekIndex}周`)}</td>
+                      <td>${htmlEscape(`第${selectedPeriodicWeekIndex}周`)}</td>
                       <td>${htmlEscape(periodicWeekdayLabel(row.weekday))}</td>
-                      <td>${periodicValueSelect(`weekComposite:${index}`, row.compositeTaskId, compositeOptions)}</td>
+                      <td>${periodicValueSelect(`weekComposite:${rowIndex}`, row.compositeTaskId, compositeOptions)}</td>
                     </tr>
-                  `).join("")}
+                  `}).join("")}
                 </tbody>
               </table>
             </div>
@@ -3597,8 +4099,11 @@ function periodicTaskList() {
 
 function selectedPeriodicTask(periodicTasks = periodicTaskList()) {
   if (!periodicTasks.length) {
-    selectedPeriodicTaskId = "";
-    return null;
+    const task = createPeriodicTaskDraft();
+    scenario.missionProfile.periodicTasks = [task];
+    selectedPeriodicTaskId = String(task.id);
+    selectedPeriodicWeekIndex = 1;
+    return task;
   }
   const selected = periodicTasks.find((task) => String(task.id) === String(selectedPeriodicTaskId)) || periodicTasks[0];
   selectedPeriodicTaskId = String(selected.id);
@@ -3611,25 +4116,17 @@ function createPeriodicTaskDraft(source = {}) {
     id: source.id || `periodic-${Date.now()}`,
     parentTaskName: source.parentTaskName || source.parentTask || "默认任务",
     name: source.name || `周期性任务${order}`,
-    cycleDays: source.cycleDays || source.taskPeriodDays || 7,
+    cycleDays: 7,
     repeatWeeks: source.repeatWeeks || source.repeatRounds || 1
   });
 }
 
 function normalizePeriodicTaskCycleDays(source = {}) {
-  const explicitDays = source.cycleDays ?? source.taskPeriodDays ?? source.periodDays ?? source.repeatCycleDays;
-  if (explicitDays != null) {
-    return clampPeriodicCycleDays(explicitDays);
-  }
-  const cycleValue = Math.max(1, Math.floor(Number(source.repeatCycleValue ?? 1)));
-  const cycleUnit = String(source.repeatCycleUnit || "").trim();
-  if (cycleUnit === "week") return clampPeriodicCycleDays(cycleValue * 7);
-  if (cycleUnit === "month") return clampPeriodicCycleDays(cycleValue * 30);
-  return clampPeriodicCycleDays(cycleValue);
+  return 7;
 }
 
 function clampPeriodicCycleDays(value) {
-  return Math.min(30, Math.max(1, Math.floor(Number(value || 1))));
+  return 7;
 }
 
 function parsePeriodicCompositeTasks(source, repeatWeeks, weekdayAssignments, validCompositeIds) {
@@ -3730,7 +4227,7 @@ function updateSelectedPeriodicTask(field, value, options = {}) {
     draft.parentTask = draft.parentTaskName;
     draft.taskGroupName = draft.parentTaskName;
   } else if (field === "cycleDays") {
-    draft.cycleDays = clampPeriodicCycleDays(value);
+    draft.cycleDays = 7;
     draft.taskPeriodDays = draft.cycleDays;
     draft.periodDays = draft.cycleDays;
     draft.repeatCycleDays = draft.cycleDays;
@@ -3741,6 +4238,7 @@ function updateSelectedPeriodicTask(field, value, options = {}) {
     draft.repeatRounds = draft.repeatWeeks;
     draft.repeatCount = draft.repeatWeeks;
     draft.dailyRepeatCount = draft.repeatWeeks;
+    selectedPeriodicWeekIndex = clamp(selectedPeriodicWeekIndex, 1, draft.repeatWeeks);
   } else if (field.startsWith("dayComposite:") || field.startsWith("weekComposite:")) {
     const index = Number(field.split(":")[1]);
     if (Number.isInteger(index) && draft.compositeTasks[index]) {
@@ -3856,6 +4354,7 @@ function renderEquipmentModeling(page) {
   const selectedState = resolveSelectedEquipmentNode();
   const components = equipmentComponentsForSelectionModel({ scenario, selection: selectedState });
   const showEquipmentSystemTable = components.length || selectedState.kind === "aircraft";
+  const visibleRowCount = components.length + (selectedState.kind === "aircraft" ? 1 : 0);
   return `
     <div class="section-head section-context">
       <span>装备组成树 / 装备系统建模表</span>
@@ -3865,9 +4364,11 @@ function renderEquipmentModeling(page) {
         <div class="tree-toolbar">
           <h4>装备组成树</h4>
           <div class="equipment-toolbar">
+            <label class="rms-file-button">导入表格<input data-equipment-import-file type="file" accept=".csv,.tsv,.json,application/json,text/csv,text/tab-separated-values"></label>
             <button type="button" class="btn-primary" data-equipment-add-node>新增节点</button>
             <button type="button" class="btn-danger" data-equipment-delete-node ${selectedState.kind === "aircraft" ? "" : "disabled"}>删除</button>
           </div>
+          <p class="rms-import-status">${htmlEscape(equipmentImportStatus)}</p>
         </div>
         ${renderCollapsibleTree(buildEquipmentTreeNodes())}
       </aside>
@@ -3875,7 +4376,7 @@ function renderEquipmentModeling(page) {
         <div class="detail-card">
           <div class="section-head">
             <h3>装备系统建模</h3>
-            <span>${htmlEscape(equipmentSelectionSummary(selectedState, components.length))}</span>
+            <span>${htmlEscape(equipmentSelectionSummary(selectedState, visibleRowCount))}</span>
           </div>
           ${showEquipmentSystemTable ? renderEquipmentSystemTable(selectedState) : importedDataEmptyState(page.name || "装备系统建模")}
         </div>
@@ -4282,7 +4783,7 @@ function updatePreventiveMaintenanceActivityAircraftModel(oldModel, nextModel) {
 
 function equipmentSelectionSummary(selectedState, componentCount) {
   if (selectedState.kind === "aircraft-list") return `${wholeMachineModels().length} 类飞机 / ${componentCount} 个组件`;
-  if (selectedState.kind === "aircraft") return `${selectedState.aircraftModel} / ${componentCount} 个组件`;
+  if (selectedState.kind === "aircraft") return `${selectedState.aircraftModel} / 整机与 ${Math.max(componentCount - 1, 0)} 个组件`;
   return `${selectedState.component?.name || "组件"} / ${componentCount} 个组件`;
 }
 
@@ -4293,7 +4794,6 @@ function renderEquipmentSystemTable(selectedState) {
       <table class="equipment-system-table">
         <thead>
           <tr>
-            <th>飞机名称</th>
             <th>组件名称</th>
             <th>父节点</th>
             <th>数量n</th>
@@ -4306,7 +4806,7 @@ function renderEquipmentSystemTable(selectedState) {
           </tr>
         </thead>
         <tbody>
-          ${renderEquipmentAircraftNameRow(selectedState)}
+          ${selectedState.kind === "aircraft" ? renderEquipmentAircraftTableRow(selectedState.aircraftModel) : ""}
           ${rows.map((component) => renderEquipmentSystemTableRow(component, (scenario.components || []).indexOf(component), selectedState)).join("")}
         </tbody>
       </table>
@@ -4314,18 +4814,18 @@ function renderEquipmentSystemTable(selectedState) {
   `;
 }
 
-function renderEquipmentAircraftNameRow(selectedState) {
-  if (selectedState.kind !== "aircraft") return "";
+function renderEquipmentAircraftTableRow(aircraftModel) {
   return `
-    <tr class="selected-table-row">
-      <td>
-        <input
-          aria-label="飞机名称"
-          data-equipment-aircraft-model="${htmlEscape(selectedState.aircraftModel)}"
-          value="${htmlEscape(selectedState.aircraftModel)}"
-        >
-      </td>
-      <td colspan="9"></td>
+    <tr class="selected-table-row equipment-aircraft-row">
+      <td><input aria-label="整机名称" data-equipment-aircraft-model="${htmlEscape(aircraftModel)}" value="${htmlEscape(aircraftModel)}"></td>
+      <td><span class="muted">整机级</span></td>
+      <td>${valueInput("equipment.quantity", "number", { min: "1", step: "1", "aria-label": "整机数量" })}</td>
+      <td><span class="status-badge">整机</span></td>
+      <td><span class="muted">-</span></td>
+      <td><span class="muted">-</span></td>
+      <td><span class="muted">-</span></td>
+      <td><span class="muted">-</span></td>
+      <td><span class="muted">-</span></td>
     </tr>
   `;
 }
@@ -4336,7 +4836,6 @@ function renderEquipmentSystemTableRow(component, index, selectedState) {
   const mttrDistributionType = equipmentDistributionType(component.repairDistribution?.distributionType, "mttr");
   return `
     <tr class="${selected ? "selected-table-row" : ""}">
-      <td class="muted">-</td>
       <td>${equipmentTableInput("组件名称", `components.${index}.name`)}</td>
       <td>${equipmentTableInput("父节点", `components.${index}.parentId`)}</td>
       <td>${equipmentTableInput("数量n", `components.${index}.quantity`, "number", { min: "1", step: "1" })}</td>
@@ -4860,15 +5359,8 @@ function supportResourceSelect(row, column, disabled = false) {
 }
 
 function supportPersonnelSpecialtyOptions(currentValue = "") {
-  const specialtyRows = Array.isArray(scenario.modelingDictionaries?.personnelSpecialties)
-    ? scenario.modelingDictionaries.personnelSpecialties
-    : [];
-  const dictionaryOptions = specialtyRows.map((item) => {
-    const value = typeof item === "string" ? item : item?.name || item?.value || item?.label;
-    return { value, label: value };
-  }).filter((option) => option.value);
+  const dictionaryOptions = configuredPersonnelSpecialties().map((value) => ({ value, label: value }));
   return uniqueSelectOptions([
-    ...PERSONNEL_SPECIALTY_FALLBACK.map((value) => ({ value, label: value })),
     ...dictionaryOptions,
     ...(currentValue ? [{ value: currentValue, label: currentValue }] : [])
   ]);
@@ -5417,6 +5909,9 @@ function deleteSelectedSupportActivityJobs(tabKey) {
   if (supportActivityJobDialogKey && selectedIndexes.some((index) => supportActivityJobDialogKey === supportActivityJobKey(tabKey, index))) {
     supportActivityJobDialogKey = "";
   }
+  if (supportActivityPredecessorDialogKey && selectedIndexes.some((index) => supportActivityPredecessorDialogKey === supportActivityJobKey(tabKey, index))) {
+    supportActivityPredecessorDialogKey = "";
+  }
   selectedSupportActivityJobKeys = new Set(Array.from(selectedSupportActivityJobKeys).filter((key) => !String(key).startsWith(`${tabKey}:`)));
   updatePreviewResultsThroughApiClient();
 }
@@ -5502,6 +5997,26 @@ function updateSupportActivityJobPredecessors(encodedJob, predecessors) {
   updatePreviewResultsThroughApiClient();
 }
 
+function updateSupportActivityJobPredecessorSelection(encodedJob, predecessorValue, checked) {
+  const [tabKey, rawIndex] = String(encodedJob || "").split(":");
+  const index = Number(rawIndex);
+  const activity = findSupportActivityByJobTabKey(tabKey);
+  if (!activity || !Number.isInteger(index)) return;
+  const jobs = supportActivityJobs(activity).slice();
+  if (!jobs[index]) return;
+  const next = new Set(Array.isArray(jobs[index].predecessors) ? jobs[index].predecessors : []);
+  const value = String(predecessorValue || "").trim();
+  if (!value) return;
+  if (checked) {
+    next.add(value);
+  } else {
+    next.delete(value);
+  }
+  jobs[index] = { ...jobs[index], predecessors: Array.from(next) };
+  activity.jobs = jobs;
+  updatePreviewResultsThroughApiClient();
+}
+
 function renumberSupportActivityJobSelections(tabKey) {
   selectedSupportActivityJobKeys = new Set(Array.from(selectedSupportActivityJobKeys).filter((key) => !String(key).startsWith(`${tabKey}:`)));
 }
@@ -5524,29 +6039,38 @@ function renderSupportActivityJobRows(activity, tabKey) {
         <td>${index + 1}</td>
         <td>${supportActivityJobInput(key, job, "activityCode", "text", { "aria-label": "基本保障活动编号" })}</td>
         <td>${supportActivityJobInput(key, job, "workName", "text", { "aria-label": "作业项" })}</td>
-        <td>${predecessorMultiSelect(jobs, job, index, tabKey)}</td>
+        <td>${renderSupportActivityPredecessorCell(jobs, job, index, tabKey)}</td>
         <td>${supportActivityJobInput(key, job, "durationMinutes", "number", { min: "0", step: "1", "aria-label": "工期分钟" })}</td>
-        <td>${supportActivityJobSelect(key, job, "personnel", supportPersonnelOptions(job.personnel), "保障人员")}</td>
-        <td>${supportActivityJobSelect(key, job, "equipment", supportEquipmentOptions(job.equipment), "保障设备")}</td>
-        <td>${supportActivityJobSelect(key, job, "spare", supportSpareOptions(job.spare), "备件")}</td>
         <td class="table-actions"><button type="button" class="inline-action" data-support-activity-job="${htmlEscape(tabKey)}-${index}">编辑</button></td>
       </tr>
     `;
   }).join("");
 }
 
-function predecessorMultiSelect(jobs, job, index, tabKey) {
-  const selected = new Set(Array.isArray(job.predecessors) ? job.predecessors : []);
+function renderSupportActivityPredecessorCell(jobs, job, index, tabKey) {
+  const labels = supportActivityPredecessorLabels(jobs, job, index);
   return `
-    <select multiple data-support-activity-predecessors="${htmlEscape(supportActivityJobKey(tabKey, index))}">
-      ${jobs.map((candidate, candidateIndex) => {
-        if (candidateIndex === index) return "";
-        const value = candidate.activityCode || candidate.workName || `BA-${candidateIndex + 1}`;
-        const label = candidate.workName || value;
-        return `<option value="${htmlEscape(value)}" ${selected.has(value) ? "selected" : ""}>${htmlEscape(label)}</option>`;
-      }).join("")}
-    </select>
+    <div class="predecessor-cell">
+      <span>${labels.length ? htmlEscape(labels.join("、")) : "无"}</span>
+      <button type="button" class="inline-action" data-support-activity-predecessor-edit="${htmlEscape(tabKey)}-${index}">编辑紧前作业</button>
+    </div>
   `;
+}
+
+function supportActivityPredecessorLabels(jobs, job, index) {
+  const valueToLabel = new Map();
+  jobs.forEach((candidate, candidateIndex) => {
+    if (candidateIndex === index) return;
+    const value = supportActivityPredecessorValue(candidate, candidateIndex);
+    valueToLabel.set(value, candidate.workName || value);
+  });
+  return (Array.isArray(job.predecessors) ? job.predecessors : [])
+    .map((value) => valueToLabel.get(String(value || "").trim()) || String(value || "").trim())
+    .filter(Boolean);
+}
+
+function supportActivityPredecessorValue(job, index) {
+  return String(job.activityCode || job.workName || `BA-${index + 1}`).trim();
 }
 
 function renderSupportActivityJobTable(activity, tabKey) {
@@ -5554,20 +6078,22 @@ function renderSupportActivityJobTable(activity, tabKey) {
   const selectedCount = jobs.filter((_, index) => selectedSupportActivityJobKeys.has(supportActivityJobKey(tabKey, index))).length;
   const allSelected = jobs.length > 0 && selectedCount === jobs.length;
   const dialogJob = supportActivityJobByKey(supportActivityJobDialogKey);
+  const predecessorDialogJob = supportActivityJobByKey(supportActivityPredecessorDialogKey);
   const body = jobs.length
     ? renderSupportActivityJobRows(activity, tabKey)
-    : `<tr><td colspan="10" class="muted">暂无工作项目</td></tr>`;
+    : `<tr><td colspan="7" class="muted">暂无工作项目</td></tr>`;
   return `
     <h4>工作项目清单</h4>
     <div class="toolbar-row"><button type="button" class="btn-primary" data-support-activity-job-add="${htmlEscape(tabKey)}">新增工作项目</button><button type="button" class="btn-danger" data-support-activity-job-batch-delete="${htmlEscape(tabKey)}">批量删除</button></div>
     ${renderBasicActivityTemplatePicker(tabKey)}
     <div class="table-wrap">
       <table>
-        <thead><tr><th><input type="checkbox" data-support-activity-job-select-all="${htmlEscape(tabKey)}" ${allSelected ? "checked" : ""} aria-label="全选工作项目"></th><th>序号</th><th>基本保障活动编号</th><th>作业项</th><th>紧前作业</th><th>工期(min)</th><th>保障人员</th><th>保障设备</th><th>备件</th><th>编辑</th></tr></thead>
+        <thead><tr><th><input type="checkbox" data-support-activity-job-select-all="${htmlEscape(tabKey)}" ${allSelected ? "checked" : ""} aria-label="全选工作项目"></th><th>序号</th><th>基本保障活动编号</th><th>作业项</th><th>紧前作业</th><th>工期(min)</th><th>编辑</th></tr></thead>
         <tbody>${body}</tbody>
       </table>
     </div>
     ${dialogJob?.tabKey === tabKey ? renderSupportActivityJobDialog(dialogJob) : ""}
+    ${predecessorDialogJob?.tabKey === tabKey ? renderSupportActivityPredecessorDialog(predecessorDialogJob) : ""}
     ${renderSupportActivityGanttChart(activity, tabKey)}
   `;
 }
@@ -5775,7 +6301,6 @@ function renderSupportActivityGanttChart(activity, tabKey) {
 
 function renderSupportActivityJobDialog(selectedJob) {
   const row = selectedJob.job;
-  const jobs = supportActivityJobs(selectedJob.activity);
   return `
     <div class="activity-job-dialog-backdrop">
       <section class="activity-job-dialog" role="dialog" aria-modal="true" aria-labelledby="activity-job-dialog-title">
@@ -5787,19 +6312,86 @@ function renderSupportActivityJobDialog(selectedJob) {
           <button type="button" class="inline-action" data-support-activity-job-dialog-close aria-label="关闭工作项目编辑">关闭</button>
         </div>
         <div class="form-table-grid">
-          <label>作业项${supportActivityJobInput(selectedJob.key, row, "workName", "text")}</label>
+          <label>作业项${supportActivityJobBasicActivitySelect(selectedJob)}</label>
           <label>基本保障活动编号${supportActivityJobInput(selectedJob.key, row, "activityCode", "text")}</label>
           <label>工期(min)${supportActivityJobInput(selectedJob.key, row, "durationMinutes", "number", { min: "0", step: "1" })}</label>
-          <label>紧前作业${predecessorMultiSelect(jobs, row, selectedJob.index, selectedJob.tabKey)}</label>
-          <label>保障人员${supportActivityJobSelect(selectedJob.key, row, "personnel", supportPersonnelOptions(row.personnel), "保障人员")}</label>
-          <label>保障设备${supportActivityJobSelect(selectedJob.key, row, "equipment", supportEquipmentOptions(row.equipment), "保障设备")}</label>
-          <label>备件${supportActivityJobSelect(selectedJob.key, row, "spare", supportSpareOptions(row.spare), "备件")}</label>
         </div>
         <div class="plan-editor-actions">
           <button type="button" class="btn-primary" data-support-activity-job-dialog-close>完成</button>
         </div>
       </section>
     </div>
+  `;
+}
+
+function renderSupportActivityPredecessorDialog(selectedJob) {
+  const row = selectedJob.job;
+  const jobs = supportActivityJobs(selectedJob.activity);
+  const selected = new Set(Array.isArray(row.predecessors) ? row.predecessors : []);
+  const query = String(supportActivityPredecessorQuery || "").trim().toLowerCase();
+  const options = basicActivityLibraryOptions().filter((option) => {
+    if (!query) return true;
+    return [option.label, option.searchText].some((value) => String(value || "").toLowerCase().includes(query));
+  });
+  const existingOptions = jobs.map((candidate, candidateIndex) => {
+    if (candidateIndex === selectedJob.index) return "";
+    const value = supportActivityPredecessorValue(candidate, candidateIndex);
+    return `
+      <label class="check-row">
+        <input type="checkbox" data-support-activity-predecessor-key="${htmlEscape(selectedJob.key)}" data-support-activity-predecessor-toggle="${htmlEscape(value)}" ${selected.has(value) ? "checked" : ""}>
+        <span>
+          <strong>${htmlEscape(candidate.workName || value)}</strong>
+          <small>${htmlEscape(value)}</small>
+        </span>
+      </label>
+    `;
+  }).join("");
+  return `
+    <div class="activity-job-dialog-backdrop">
+      <section class="activity-job-dialog predecessor-dialog" role="dialog" aria-modal="true" aria-labelledby="activity-predecessor-dialog-title">
+        <div class="section-head">
+          <div>
+            <h3 id="activity-predecessor-dialog-title">编辑紧前作业</h3>
+            <span>${htmlEscape(row.activityCode || row.workName || "未命名工作项目")}</span>
+          </div>
+          <button type="button" class="inline-action" data-support-activity-predecessor-dialog-close aria-label="关闭编辑紧前作业">关闭</button>
+        </div>
+        <div class="predecessor-dialog-grid">
+          <section>
+            <h4>当前工作项目清单</h4>
+            <div class="predecessor-option-list">
+              ${existingOptions || `<span class="muted">暂无可选紧前作业</span>`}
+            </div>
+          </section>
+          <section>
+            <h4>新增</h4>
+            <input data-support-activity-predecessor-query value="${htmlEscape(supportActivityPredecessorQuery)}" placeholder="搜索基本保障活动库">
+            <div class="predecessor-template-list">
+              ${options.length ? options.map((option) => `
+                <button type="button" class="inline-action" data-support-activity-predecessor-add-template="${htmlEscape(selectedJob.tabKey)}" data-basic-activity-key="${htmlEscape(option.value)}">新增 ${htmlEscape(option.label)}</button>
+              `).join("") : `<span class="muted">基础库暂无匹配作业</span>`}
+            </div>
+          </section>
+        </div>
+        <div class="plan-editor-actions">
+          <button type="button" class="btn-primary" data-support-activity-predecessor-dialog-close>完成</button>
+        </div>
+      </section>
+    </div>
+  `;
+}
+
+function supportActivityJobBasicActivitySelect(selectedJob) {
+  const currentKey = basicActivityLibraryRows().find((row) => (
+    row.activityCode === selectedJob.job.activityCode
+    && row.workName === selectedJob.job.workName
+  ))?.key || "";
+  const options = basicActivityLibraryOptions();
+  return `
+    <select class="table-edit-select" data-support-activity-job-template-select="${htmlEscape(selectedJob.tabKey)}" aria-label="从基本保障活动建模表搜索作业项">
+      <option value="">搜索并选择基本保障活动</option>
+      ${selectOptionsWithCurrent(options, currentKey)}
+    </select>
   `;
 }
 
@@ -5817,8 +6409,7 @@ function supportActivityJobEditorInput(key, row, fieldName, label, type = "text"
 function renderBasicActivityLibrary() {
   const rows = filteredBasicActivityLibraryRows();
   const allSelected = rows.length > 0 && rows.every((row) => selectedBasicActivityKeys.has(row.key));
-  const selectedKey = selectedBasicActivityKeys.size === 1 ? Array.from(selectedBasicActivityKeys)[0] : "";
-  const selectedRow = basicActivityLibraryRows().find((row) => row.key === selectedKey);
+  const dialogRow = basicActivityLibraryRows().find((row) => row.key === basicActivityDialogKey);
   return `
     <div class="detail-card activity-editor-card">
       <div class="section-head">
@@ -5840,7 +6431,7 @@ function renderBasicActivityLibrary() {
             <tr>
               <th><input type="checkbox" data-basic-activity-select-all ${allSelected ? "checked" : ""}></th>
               <th>序号</th><th>类型</th><th>基本保障活动名称</th><th>基本保障活动编号</th><th>适用对象</th><th>工期(min)</th>
-              <th>保障人员</th><th>保障设备</th><th>备件</th><th>编辑</th>
+              <th>编辑</th>
             </tr>
           </thead>
           <tbody>${rows.map((row, index) => `
@@ -5852,20 +6443,44 @@ function renderBasicActivityLibrary() {
               <td>${htmlEscape(row.activityCode || "")}</td>
               <td>${htmlEscape(row.scope || "")}</td>
               <td>${htmlEscape(describeDurationProfile(row.durationProfile, row.durationMinutes))}</td>
-              <td>${htmlEscape(row.personnel || "")}</td>
-              <td>${htmlEscape(row.equipment || "")}</td>
-              <td>${htmlEscape(row.spare || "")}</td>
               <td class="table-actions"><button type="button" class="inline-action" data-basic-activity-edit="${htmlEscape(row.key)}">编辑</button></td>
             </tr>
           `).join("")}</tbody>
         </table>
       </div>
-      ${selectedRow ? renderBasicActivityEditor(selectedRow) : ""}
+      ${dialogRow ? renderBasicActivityEditor(dialogRow) : ""}
     </div>
   `;
 }
 
 function renderBasicActivityEditor(row) {
+  return `
+    <div class="activity-job-dialog-backdrop">
+      <section class="activity-job-dialog basic-activity-dialog" role="dialog" aria-modal="true" aria-labelledby="basic-activity-dialog-title">
+        <div class="section-head">
+          <div>
+            <h3 id="basic-activity-dialog-title">基本保障活动编辑</h3>
+            <span>${htmlEscape(row.activityCode || row.workName || "未命名活动")}</span>
+          </div>
+          <button type="button" class="inline-action" data-basic-activity-dialog-close aria-label="关闭基本保障活动编辑">关闭</button>
+        </div>
+        <div class="form-table-grid">
+          ${basicActivityEditorInput(row, "type", "类型")}
+          ${basicActivityEditorInput(row, "workName", "基本保障活动名称")}
+          ${basicActivityEditorInput(row, "activityCode", "基本保障活动编号")}
+          ${basicActivityEditorInput(row, "scope", "适用对象")}
+          ${basicActivityDurationProfileEditor(row)}
+        </div>
+        ${renderBasicActivityResourceEditor(row)}
+        <div class="plan-editor-actions">
+          <button type="button" class="btn-primary" data-basic-activity-dialog-close>完成</button>
+        </div>
+      </section>
+    </div>
+  `;
+}
+
+function renderBasicActivityEditorInlineLegacy(row) {
   return `
     <div class="detail-card">
       <div class="section-head">
@@ -5884,6 +6499,207 @@ function renderBasicActivityEditor(row) {
       </div>
     </div>
   `;
+}
+
+function renderBasicActivityResourceEditor(row) {
+  const dialogHtml = basicActivityResourceDialog?.key === row.key
+    ? renderBasicActivityResourceConfigDialog(row, basicActivityResourceDialog.kind)
+    : "";
+  return `
+    <div class="basic-activity-resource-editor">
+      <h4>资源配置</h4>
+      <div class="basic-activity-resource-grid">
+        ${renderBasicActivityPersonnelEditor(row)}
+        ${renderBasicActivityEquipmentEditor(row)}
+        ${renderBasicActivitySpareEditor(row)}
+      </div>
+    </div>
+    ${dialogHtml}
+  `;
+}
+
+function renderBasicActivityPersonnelEditor(row) {
+  const requirements = normalizeBasicActivityResourceRequirements(row, "personnel");
+  return `
+    <section class="basic-activity-resource-section">
+      ${renderBasicActivityResourceSectionHead(row, "personnel", "保障人员")}
+      ${renderBasicActivityResourceSummaryTable(requirements, "personnel")}
+    </section>
+  `;
+}
+
+function renderBasicActivityEquipmentEditor(row) {
+  const requirements = normalizeBasicActivityResourceRequirements(row, "equipment");
+  return `
+    <section class="basic-activity-resource-section">
+      ${renderBasicActivityResourceSectionHead(row, "equipment", "保障设备")}
+      ${renderBasicActivityResourceSummaryTable(requirements, "equipment")}
+    </section>
+  `;
+}
+
+function renderBasicActivitySpareEditor(row) {
+  const requirements = normalizeBasicActivityResourceRequirements(row, "spare");
+  return `
+    <section class="basic-activity-resource-section">
+      ${renderBasicActivityResourceSectionHead(row, "spare", "备件")}
+      ${renderBasicActivityResourceSummaryTable(requirements, "spare")}
+    </section>
+  `;
+}
+
+function renderBasicActivityResourceSectionHead(row, resourceKind, label) {
+  return `
+    <div class="basic-activity-resource-section-head">
+      <h5>${htmlEscape(label)}</h5>
+      <button type="button" class="inline-action" data-basic-activity-key="${htmlEscape(row.key)}" data-basic-activity-resource-dialog-open="${htmlEscape(resourceKind)}">新增</button>
+    </div>
+  `;
+}
+
+function renderBasicActivityResourceSummaryTable(requirements, resourceKind) {
+  if (!requirements.length) return `<div class="muted">暂无配置，点击新增配置多条${basicActivityResourceKindLabel(resourceKind)}需求</div>`;
+  const hasName = resourceKind !== "personnel";
+  return `
+    <div class="basic-activity-resource-summary">
+      <table>
+        <thead><tr><th>${resourceKind === "personnel" ? "专业" : "型号"}</th>${hasName ? "<th>名称</th>" : ""}<th>数量</th></tr></thead>
+        <tbody>${requirements.map((item) => `
+          <tr>
+            <td>${htmlEscape(resourceKind === "personnel" ? (item.professional || item.model || "") : (item.model || ""))}</td>
+            ${hasName ? `<td>${htmlEscape(item.name || "")}</td>` : ""}
+            <td>${htmlEscape(item.quantity ?? 1)}</td>
+          </tr>
+        `).join("")}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderBasicActivityResourceConfigDialog(row, resourceKind) {
+  const kind = ["personnel", "equipment", "spare"].includes(resourceKind) ? resourceKind : "personnel";
+  const label = basicActivityResourceKindLabel(kind);
+  const requirements = normalizeBasicActivityResourceRequirements(row, kind);
+  return `
+    <div class="activity-job-dialog-backdrop nested-dialog-backdrop">
+      <section class="activity-job-dialog basic-activity-resource-dialog" role="dialog" aria-modal="true" aria-labelledby="basic-activity-resource-dialog-title">
+        <div class="section-head">
+          <div>
+            <h3 id="basic-activity-resource-dialog-title">${htmlEscape(label)}需求配置</h3>
+            <span>${htmlEscape(row.activityCode || row.workName || "未命名活动")}</span>
+          </div>
+          <button type="button" class="inline-action" data-basic-activity-resource-dialog-close aria-label="关闭${htmlEscape(label)}需求配置">关闭</button>
+        </div>
+        <div class="toolbar-row">
+          <button type="button" class="btn-primary" data-basic-activity-key="${htmlEscape(row.key)}" data-basic-activity-resource-dialog-add="${htmlEscape(kind)}">新增</button>
+          <span class="muted">可一次配置多条${htmlEscape(label)}参数</span>
+        </div>
+        <div class="table-wrap">
+          <table class="basic-activity-resource-config-table">
+            <thead>${renderBasicActivityResourceDialogHeader(kind)}</thead>
+            <tbody>
+              ${requirements.map((item, index) => renderBasicActivityResourceDialogRow(row, kind, item, index)).join("") || `<tr><td colspan="${kind === "personnel" ? 3 : 4}">暂无配置</td></tr>`}
+            </tbody>
+          </table>
+        </div>
+        <div class="plan-editor-actions">
+          <button type="button" class="btn-primary" data-basic-activity-resource-dialog-close>完成</button>
+        </div>
+      </section>
+    </div>
+  `;
+}
+
+function renderBasicActivityResourceDialogHeader(resourceKind) {
+  if (resourceKind === "personnel") return "<tr><th>专业</th><th>数量</th><th>删除</th></tr>";
+  return "<tr><th>型号</th><th>名称</th><th>数量</th><th>删除</th></tr>";
+}
+
+function renderBasicActivityResourceDialogRow(row, resourceKind, item, index) {
+  const commonAttrs = `data-basic-activity-key="${htmlEscape(row.key)}" data-basic-activity-resource-kind="${htmlEscape(resourceKind)}" data-basic-activity-resource-index="${htmlEscape(index)}"`;
+  const quantityCell = `<td><input type="number" min="0" step="1" ${commonAttrs} data-basic-activity-resource-dialog-field="quantity" value="${htmlEscape(item.quantity ?? 1)}"></td>`;
+  const deleteCell = `<td><button type="button" class="inline-action" ${commonAttrs} data-basic-activity-resource-dialog-delete>删除</button></td>`;
+  if (resourceKind === "personnel") {
+    return `
+      <tr>
+        <td>${basicActivityResourceDialogSelect(row, resourceKind, index, "professional", basicActivityPersonnelProfessionalOptions(item.professional || item.model), item.professional || item.model || "", "专业")}</td>
+        ${quantityCell}
+        ${deleteCell}
+      </tr>
+    `;
+  }
+  const sourceType = resourceKind === "equipment" ? "保障设备" : "备件";
+  const rows = basicActivitySupportResourceRows(sourceType);
+  return `
+    <tr>
+      <td>${basicActivityResourceDialogTextInput(row, resourceKind, index, "model", item.model || "", `${resourceKind}-models`, rows.map((source) => source.model).filter(Boolean), `搜索${basicActivityResourceKindLabel(resourceKind)}型号`)}</td>
+      <td>${basicActivityResourceDialogTextInput(row, resourceKind, index, "name", item.name || "", `${resourceKind}-names`, rows.map((source) => source.name || source.model).filter(Boolean), `搜索${basicActivityResourceKindLabel(resourceKind)}名称`)}</td>
+      ${quantityCell}
+      ${deleteCell}
+    </tr>
+  `;
+}
+
+function basicActivityResourceDialogSelect(row, resourceKind, index, fieldName, options, selectedValue, label) {
+  return `
+    <select ${basicActivityResourceDialogFieldAttrs(row, resourceKind, index, fieldName)} aria-label="${htmlEscape(label)}">
+      ${selectOptionsWithCurrent(options, selectedValue)}
+    </select>
+  `;
+}
+
+function basicActivityResourceDialogTextInput(row, resourceKind, index, fieldName, value, listSuffix, values, placeholder) {
+  const listId = `basic-activity-${listSuffix}`;
+  const options = uniqueSelectOptions(values.map((item) => ({ value: item, label: item })));
+  return `
+    <input list="${htmlEscape(listId)}" ${basicActivityResourceDialogFieldAttrs(row, resourceKind, index, fieldName)} value="${htmlEscape(value)}" placeholder="${htmlEscape(placeholder)}">
+    <datalist id="${htmlEscape(listId)}">
+      ${options.map((item) => `<option value="${htmlEscape(item.value)}"></option>`).join("")}
+    </datalist>
+  `;
+}
+
+function basicActivityResourceDialogFieldAttrs(row, resourceKind, index, fieldName) {
+  return `data-basic-activity-key="${htmlEscape(row.key)}" data-basic-activity-resource-kind="${htmlEscape(resourceKind)}" data-basic-activity-resource-index="${htmlEscape(index)}" data-basic-activity-resource-dialog-field="${htmlEscape(fieldName)}"`;
+}
+
+function basicActivityResourceKindLabel(resourceKind) {
+  return resourceKind === "personnel" ? "保障人员" : resourceKind === "equipment" ? "保障设备" : "备件";
+}
+
+function basicActivityPersonnelProfessionalOptions(currentValue = "") {
+  const rowOptions = basicActivitySupportResourceRows("保障人员")
+    .map((item) => ({ value: item.model || "", label: item.model || "" }))
+    .filter((item) => item.value);
+  return uniqueSelectOptions([
+    { value: "", label: "请选择专业" },
+    ...rowOptions,
+    ...(currentValue ? [{ value: currentValue, label: currentValue }] : [])
+  ]);
+}
+
+function basicActivitySupportResourceRows(resourceType) {
+  const root = supportOrganizationTree()[0] || null;
+  return buildSupportResourceRows(resourceType, root)
+    .filter((row) => !supportResourceDeletedKeySet().has(row.key));
+}
+
+function normalizeBasicActivityResourceRequirements(row, resourceKind) {
+  const source = row[`${resourceKind}Requirements`];
+  if (Array.isArray(source)) return source.map((item) => ({ ...item }));
+  const legacy = String(row[resourceKind] || "").trim();
+  if (!legacy) return [];
+  const parts = legacy.split(/[;；]/).map((part) => part.trim()).filter(Boolean);
+  return parts.map((part, index) => {
+    const [name, modelOrQuantity, maybeQuantity] = part.split(",").map((value) => value.trim());
+    return {
+      key: `${resourceKind}:legacy:${index}:${name}`,
+      name,
+      model: resourceKind === "personnel" ? name : modelOrQuantity,
+      professional: resourceKind === "personnel" ? name : "",
+      quantity: Number(maybeQuantity ?? modelOrQuantity ?? 1) || 1
+    };
+  });
 }
 
 function basicActivityDurationProfileEditor(row) {
@@ -5947,8 +6763,7 @@ function basicActivityTypeOptions() {
   return [
     { value: "使用保障活动", label: "使用保障活动" },
     { value: "预防性维修", label: "预防性维修" },
-    { value: "修复性维修", label: "修复性维修" },
-    { value: "后勤保障", label: "后勤保障" }
+    { value: "修复性维修", label: "修复性维修" }
   ];
 }
 
@@ -5995,6 +6810,11 @@ function basicActivityLibraryRows() {
       applicableAircraft: supportActivityAircraftModel(activity),
       durationProfile: normalizeSupportActivityDurationProfile(job.durationProfile || job.durationDistribution, job.durationMinutes),
       durationMinutes: job.durationMinutes,
+      personnelProfessional: job.personnelProfessional || "",
+      personnelRequirements: Array.isArray(job.personnelRequirements) ? job.personnelRequirements.map((item) => ({ ...item })) : [],
+      equipmentModel: job.equipmentModel || "",
+      equipmentRequirements: Array.isArray(job.equipmentRequirements) ? job.equipmentRequirements.map((item) => ({ ...item })) : [],
+      spareRequirements: Array.isArray(job.spareRequirements) ? job.spareRequirements.map((item) => ({ ...item })) : [],
       personnel: job.personnel,
       equipment: job.equipment,
       spare: job.spare,
@@ -6011,10 +6831,7 @@ function filteredBasicActivityLibraryRows() {
     row.activityCode,
     row.workName,
     row.scope,
-    row.applicableAircraft,
-    row.personnel,
-    row.equipment,
-    row.spare
+    row.applicableAircraft
   ].some((value) => String(value || "").toLowerCase().includes(query)));
 }
 
@@ -6027,10 +6844,7 @@ function basicActivityLibraryOptions() {
       row.activityCode,
       row.workName,
       row.scope,
-      row.applicableAircraft,
-      row.personnel,
-      row.equipment,
-      row.spare
+      row.applicableAircraft
     ].filter(Boolean).join(" ")
   }));
 }
@@ -6110,6 +6924,199 @@ function updateBasicActivityJobField(key, fieldName, value) {
   updatePreviewResultsThroughApiClient();
 }
 
+function updateBasicActivityResourceField(key, fieldName, value) {
+  const target = basicActivityJobTarget(key);
+  if (!target || !fieldName) return;
+  const { activity, jobs, jobIndex } = target;
+  const job = { ...(jobs[jobIndex] || {}) };
+  if (fieldName === "personnelProfessional") {
+    job.personnelProfessional = String(value || "");
+    job.personnelRequirements = normalizeBasicActivityResourceRequirements(job, "personnel").map((item) => ({
+      ...item,
+      professional: job.personnelProfessional || item.professional || item.model || ""
+    }));
+  } else if (fieldName === "personnelKeys") {
+    job.personnelRequirements = basicActivityResourceRequirementsFromKeys("personnel", Array.isArray(value) ? value : []);
+  } else if (fieldName === "equipmentModel") {
+    job.equipmentModel = String(value || "");
+  } else if (fieldName === "equipmentKeys") {
+    job.equipmentRequirements = mergeBasicActivityResourceQuantities(
+      normalizeBasicActivityResourceRequirements(job, "equipment"),
+      basicActivityResourceRequirementsFromKeys("equipment", Array.isArray(value) ? value : [])
+    );
+  } else if (fieldName === "spareKeys") {
+    job.spareRequirements = mergeBasicActivityResourceQuantities(
+      normalizeBasicActivityResourceRequirements(job, "spare"),
+      basicActivityResourceRequirementsFromKeys("spare", Array.isArray(value) ? value : [])
+    );
+  } else if (fieldName.startsWith("equipmentQuantity:")) {
+    job.equipmentRequirements = updateBasicActivityRequirementQuantity(job, "equipment", fieldName.replace(/^equipmentQuantity:/, ""), value);
+  } else if (fieldName.startsWith("spareQuantity:")) {
+    job.spareRequirements = updateBasicActivityRequirementQuantity(job, "spare", fieldName.replace(/^spareQuantity:/, ""), value);
+  }
+  syncBasicActivityResourceSummaries(job);
+  jobs[jobIndex] = job;
+  activity.jobs = jobs;
+  updatePreviewResultsThroughApiClient();
+}
+
+function updateBasicActivityResourceDialogField(key, resourceKind, index, fieldName, value) {
+  const target = basicActivityJobTarget(key);
+  if (!target || !["personnel", "equipment", "spare"].includes(resourceKind) || !Number.isInteger(index) || !fieldName) return;
+  const { activity, jobs, jobIndex } = target;
+  const job = { ...(jobs[jobIndex] || {}) };
+  const requirements = normalizeBasicActivityResourceRequirements(job, resourceKind);
+  const current = requirements[index];
+  if (!current) return;
+  const nextValue = fieldName === "quantity" ? Math.max(0, Number(value || 0)) : String(value || "");
+  requirements[index] = normalizeBasicActivityResourceDialogRequirement(resourceKind, {
+    ...current,
+    [fieldName]: nextValue,
+    ...(resourceKind === "personnel" && fieldName === "professional" ? { model: nextValue } : {})
+  }, index);
+  setBasicActivityResourceRequirements(job, resourceKind, requirements);
+  syncBasicActivityResourceSummaries(job);
+  jobs[jobIndex] = job;
+  activity.jobs = jobs;
+  updatePreviewResultsThroughApiClient();
+}
+
+function addBasicActivityResourceRequirement(key, resourceKind) {
+  const target = basicActivityJobTarget(key);
+  if (!target || !["personnel", "equipment", "spare"].includes(resourceKind)) return;
+  const { activity, jobs, jobIndex } = target;
+  const job = { ...(jobs[jobIndex] || {}) };
+  const requirements = normalizeBasicActivityResourceRequirements(job, resourceKind);
+  requirements.push(createBasicActivityResourceRequirement(resourceKind, requirements.length));
+  setBasicActivityResourceRequirements(job, resourceKind, requirements);
+  syncBasicActivityResourceSummaries(job);
+  jobs[jobIndex] = job;
+  activity.jobs = jobs;
+  basicActivityResourceDialog = { key, kind: resourceKind };
+  updatePreviewResultsThroughApiClient();
+}
+
+function deleteBasicActivityResourceRequirement(key, resourceKind, index) {
+  const target = basicActivityJobTarget(key);
+  if (!target || !["personnel", "equipment", "spare"].includes(resourceKind) || !Number.isInteger(index)) return;
+  const { activity, jobs, jobIndex } = target;
+  const job = { ...(jobs[jobIndex] || {}) };
+  const requirements = normalizeBasicActivityResourceRequirements(job, resourceKind)
+    .filter((_, itemIndex) => itemIndex !== index);
+  setBasicActivityResourceRequirements(job, resourceKind, requirements);
+  syncBasicActivityResourceSummaries(job);
+  jobs[jobIndex] = job;
+  activity.jobs = jobs;
+  basicActivityResourceDialog = { key, kind: resourceKind };
+  updatePreviewResultsThroughApiClient();
+}
+
+function createBasicActivityResourceRequirement(resourceKind, index) {
+  if (resourceKind === "personnel") {
+    const professional = basicActivityPersonnelProfessionalOptions()[1]?.value || "";
+    return normalizeBasicActivityResourceDialogRequirement(resourceKind, {
+      key: `personnel:manual:${Date.now()}:${index}`,
+      professional,
+      model: professional,
+      quantity: 1
+    }, index);
+  }
+  const sourceType = resourceKind === "equipment" ? "保障设备" : "备件";
+  const source = basicActivitySupportResourceRows(sourceType)[0] || {};
+  return normalizeBasicActivityResourceDialogRequirement(resourceKind, {
+    key: `${resourceKind}:manual:${Date.now()}:${index}`,
+    name: source.name || source.model || "",
+    model: source.model || "",
+    scope: source.scope || "",
+    quantity: 1
+  }, index);
+}
+
+function normalizeBasicActivityResourceDialogRequirement(resourceKind, item, index) {
+  const key = item.key || `${resourceKind}:manual:${Date.now()}:${index}`;
+  if (resourceKind === "personnel") {
+    const professional = item.professional || item.model || "";
+    return {
+      key,
+      professional,
+      model: professional,
+      quantity: Math.max(0, Number(item.quantity ?? 1))
+    };
+  }
+  return {
+    key,
+    name: item.name || "",
+    model: item.model || "",
+    scope: item.scope || "",
+    quantity: Math.max(0, Number(item.quantity ?? 1))
+  };
+}
+
+function setBasicActivityResourceRequirements(job, resourceKind, requirements) {
+  job[`${resourceKind}Requirements`] = requirements.map((item, index) => normalizeBasicActivityResourceDialogRequirement(resourceKind, item, index));
+  if (resourceKind === "personnel") {
+    job.personnelProfessional = job.personnelRequirements[0]?.professional || "";
+  } else if (resourceKind === "equipment") {
+    job.equipmentModel = job.equipmentRequirements[0]?.model || "";
+  }
+}
+
+function basicActivityJobTarget(key) {
+  const [activityIndex, jobIndex] = String(key || "").split(":").map(Number);
+  const activity = (scenario.supportActivities || [])[activityIndex];
+  const jobs = supportActivityJobs(activity).slice();
+  if (!activity || !jobs[jobIndex]) return null;
+  return { activity, jobs, jobIndex };
+}
+
+function basicActivityResourceRequirementsFromKeys(resourceKind, keys) {
+  const resourceType = resourceKind === "personnel" ? "保障人员" : resourceKind === "equipment" ? "保障设备" : "备件";
+  const rowsByKey = new Map(basicActivitySupportResourceRows(resourceType).map((row) => [String(row.key), row]));
+  return keys.map((key) => {
+    const row = rowsByKey.get(String(key));
+    if (!row) return null;
+    return {
+      key: String(key),
+      name: row.name || row.model || resourceType,
+      model: row.model || "",
+      professional: resourceKind === "personnel" ? row.model || "" : "",
+      scope: row.scope || "",
+      quantity: resourceKind === "personnel" ? Number(row.quantity || 1) : 1
+    };
+  }).filter(Boolean);
+}
+
+function mergeBasicActivityResourceQuantities(previousRequirements, nextRequirements) {
+  const quantityByKey = new Map((previousRequirements || []).map((item) => [String(item.key || ""), item.quantity]));
+  return nextRequirements.map((item) => ({
+    ...item,
+    quantity: Math.max(0, Number(quantityByKey.get(String(item.key || "")) ?? item.quantity ?? 1))
+  }));
+}
+
+function updateBasicActivityRequirementQuantity(job, resourceKind, key, value) {
+  return normalizeBasicActivityResourceRequirements(job, resourceKind).map((item) => (
+    String(item.key || "") === String(key)
+      ? { ...item, quantity: Math.max(0, Number(value || 0)) }
+      : item
+  ));
+}
+
+function syncBasicActivityResourceSummaries(job) {
+  const personnelRequirements = normalizeBasicActivityResourceRequirements(job, "personnel");
+  const equipmentRequirements = normalizeBasicActivityResourceRequirements(job, "equipment");
+  const spareRequirements = normalizeBasicActivityResourceRequirements(job, "spare");
+  job.personnel = personnelRequirements
+    .map((item) => [item.professional || job.personnelProfessional || item.model, item.name || item.scope].filter(Boolean).join("/"))
+    .join("; ");
+  job.equipment = equipmentRequirements
+    .map((item) => [item.name || item.model, item.model, item.quantity ?? 1].filter(Boolean).join(","))
+    .join("; ");
+  job.spare = spareRequirements
+    .map((item) => [item.name || item.model, item.quantity ?? 1].filter(Boolean).join(","))
+    .join("; ");
+}
+
 function durationMinutesForSupportActivityProfile(profile, fallbackMinutes = 30) {
   if (profile?.distributionType === "指数分布") return Math.max(1, Number(profile.mean || fallbackMinutes));
   if (profile?.distributionType === "正态分布") return Math.max(1, Number(profile.mean || fallbackMinutes));
@@ -6127,13 +7134,6 @@ function updateBasicActivityType(activity, value) {
   if (nextType === "修复性维修") {
     activity.activityType = "修复性维修";
     activity.planType = "修复性维修方案";
-    return;
-  }
-  if (nextType === "后勤保障") {
-    activity.activityType = "后勤保障";
-    activity.planType = "后勤保障活动方案";
-    if (!Array.isArray(activity.transportStrategies)) activity.transportStrategies = [];
-    if (activity.equipmentId) delete activity.equipmentId;
     return;
   }
   activity.activityType = "使用保障活动";
@@ -6190,7 +7190,7 @@ function importBasicActivityByType(type) {
   if (!activity) return;
   const jobs = supportActivityJobs(activity).slice();
   const index = jobs.length;
-  const prefix = activityType === "预防性维修" ? "PM" : activityType === "修复性维修" ? "CM" : activityType === "后勤保障" ? "LG" : "BA";
+  const prefix = activityType === "预防性维修" ? "PM" : activityType === "修复性维修" ? "CM" : "BA";
   jobs.push({
     activityCode: `${prefix}-${String(index + 1).padStart(3, "0")}`,
     workName: `${activityType}导入作业${index + 1}`,
@@ -6209,7 +7209,6 @@ function importBasicActivityByType(type) {
 function ensureSupportActivityForBasicType(type) {
   if (type === "预防性维修") return ensurePreventiveMaintenanceActivityForAircraftModel(defaultSupportActivityAircraftModel());
   if (type === "修复性维修") return ensureCorrectiveMaintenanceActivityDraft();
-  if (type === "后勤保障") return ensureLogisticsSupportActivityDraft();
   return ensureOperationsSupportActivityForAircraftModel(defaultSupportActivityAircraftModel());
 }
 
@@ -6227,6 +7226,53 @@ function applyBasicActivityToSupportActivityJob(tabKey, basicActivityKey) {
   };
   activity.jobs = jobs;
   selectedSupportActivityJobKeys = new Set([supportActivityJobKey(tabKey, targetIndex)]);
+}
+
+function addBasicActivityAsSupportActivityPredecessor(tabKey, basicActivityKey, targetKey) {
+  const activity = findSupportActivityByJobTabKey(tabKey);
+  const template = basicActivityLibraryRows().find((row) => row.key === basicActivityKey);
+  const target = supportActivityJobByKey(targetKey);
+  if (!activity || !template || !target || target.tabKey !== tabKey) return;
+  const jobs = supportActivityJobs(activity).slice();
+  const templateJob = supportActivityJobFromBasicActivity(template);
+  let predecessorIndex = jobs.findIndex((job, index) => (
+    index !== target.index
+    && (
+      (templateJob.activityCode && job.activityCode === templateJob.activityCode)
+      || (templateJob.workName && job.workName === templateJob.workName)
+    )
+  ));
+  if (predecessorIndex < 0) {
+    predecessorIndex = jobs.length;
+    const existingCodes = new Set(jobs.map((job) => String(job.activityCode || "").trim()).filter(Boolean));
+    if (templateJob.activityCode && existingCodes.has(String(templateJob.activityCode).trim())) {
+      templateJob.activityCode = nextSupportActivityJobCode(tabKey, jobs);
+    }
+    jobs.push({
+      ...templateJob,
+      predecessors: Array.isArray(templateJob.predecessors) ? [...templateJob.predecessors] : []
+    });
+  }
+  const predecessorValue = supportActivityPredecessorValue(jobs[predecessorIndex], predecessorIndex);
+  const targetJob = { ...(jobs[target.index] || {}) };
+  const predecessors = new Set(Array.isArray(targetJob.predecessors) ? targetJob.predecessors : []);
+  predecessors.add(predecessorValue);
+  jobs[target.index] = { ...targetJob, predecessors: Array.from(predecessors) };
+  activity.jobs = jobs;
+  selectedSupportActivityJobKeys = new Set([supportActivityJobKey(tabKey, target.index)]);
+  updatePreviewResultsThroughApiClient();
+}
+
+function nextSupportActivityJobCode(tabKey, jobs) {
+  const prefix = supportActivityJobCodePrefix(tabKey);
+  const used = new Set(jobs.map((job) => String(job.activityCode || "").trim()).filter(Boolean));
+  let index = jobs.length + 1;
+  let code = `${prefix}-${String(index).padStart(3, "0")}`;
+  while (used.has(code)) {
+    index += 1;
+    code = `${prefix}-${String(index).padStart(3, "0")}`;
+  }
+  return code;
 }
 
 function selectedSupportActivityJobIndexForTab(tabKey, jobs) {
@@ -6689,19 +7735,19 @@ function supportActivityTreeNode(node, selectedName) {
   };
 }
 
+function renderExperimentPlanManagement(page) {
+  return experimentPlanManagementMode === "editor"
+    ? renderExperimentPlanEditor(page)
+    : renderExperimentPlanList(page);
+}
+
 function renderExperimentPlanList(page) {
   ensureExperimentPlanListLoaded();
-  const editFeatureId = page.module === "任务可靠度评估模块"
-    ? "mission-reliability-experiment-plan-edit"
-    : "spare-planning-experiment-plan-edit";
-  const visualFeatureId = getVisualSimulationFeatureId(page.module);
-  const monteCarloFeatureId = getMonteCarloExperimentEditFeatureId(page.module);
   const backendRows = backendExperimentPlans.map((plan) => experimentPlanRowFromBackend(plan, page));
   const fallbackRows = scenario.experiment?.name ? [{
     experiment_plan_id: "",
     name: scenario.experiment.name,
     module: page.module,
-    scenarioId: scenario.scenarioId,
     steps: scenario.experiment.steps,
     samples: scenario.experiment.samples,
     status: experimentRunStatus,
@@ -6719,26 +7765,23 @@ function renderExperimentPlanList(page) {
     </div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>选择</th><th>方案名称</th><th>所属模块</th><th>场景</th><th>步数</th><th>样本</th><th>关联运行</th><th>状态</th><th>方案动作</th></tr></thead>
+        <thead><tr><th>选择</th><th>方案名称</th><th>所属模块</th><th>步数</th><th>样本</th><th>关联运行</th><th>状态</th><th>方案动作</th></tr></thead>
         <tbody>
           ${plans.length ? plans.map((plan) => `
             <tr class="${selectedExperimentPlanNames.has(plan.name) ? "selected-table-row" : ""}">
               <td><input type="checkbox" data-experiment-plan-select="${htmlEscape(plan.name)}" ${selectedExperimentPlanNames.has(plan.name) ? "checked" : ""} aria-label="选择方案 ${htmlEscape(plan.name)}"></td>
               <td>${htmlEscape(plan.name)}</td>
               <td>${htmlEscape(plan.module)}</td>
-              <td>${htmlEscape(plan.scenarioId)}</td>
               <td>${htmlEscape(plan.steps)}</td>
               <td>${htmlEscape(plan.samples)}</td>
               <td>${htmlEscape(plan.run_count ?? 0)}</td>
               <td><span class="badge">${htmlEscape(plan.status)}</span></td>
               <td class="table-action-cell">
-                <button type="button" class="inline-action" data-feature-id="${editFeatureId}" data-experiment-plan-edit>编辑</button>
-                <button type="button" class="inline-action" data-feature-id="${visualFeatureId}">启动可视化推演</button>
-                <button type="button" class="inline-action" data-feature-id="${monteCarloFeatureId}">创建蒙特卡洛实验</button>
+                <button type="button" class="inline-action" data-experiment-plan-edit="${htmlEscape(plan.experiment_plan_id)}" data-experiment-plan-name="${htmlEscape(plan.name)}">编辑</button>
                 <button type="button" class="btn-danger" data-experiment-plan-delete="${htmlEscape(plan.experiment_plan_id)}">删除</button>
               </td>
             </tr>
-          `).join("") : `<tr><td colspan="9">${importedDataEmptyState("仿真实验方案")}</td></tr>`}
+          `).join("") : `<tr><td colspan="8">${importedDataEmptyState("仿真实验方案")}</td></tr>`}
         </tbody>
       </table>
     </div>
@@ -6753,7 +7796,6 @@ function experimentPlanRowFromBackend(plan, page) {
     experiment_plan_id: plan.experiment_plan_id || "",
     name: config.name || projectJson.experiment?.name || plan.experiment_plan_id || "未命名方案",
     module: page.module,
-    scenarioId: projectJson.scenarioId || projectJson.scenario_id || scenario.scenarioId,
     steps: config.steps ?? projectJson.experiment?.steps ?? "-",
     samples: config.samples ?? projectJson.experiment?.samples ?? "-",
     run_count: plan.run_count ?? (Array.isArray(plan.runs) ? plan.runs.length : 0),
@@ -6769,6 +7811,21 @@ function toggleExperimentPlanSelection(planName, checked) {
   if (checked) next.add(planName);
   else next.delete(planName);
   selectedExperimentPlanNames = next;
+}
+
+function openExperimentPlanEditorFromList(experimentPlanId, planName) {
+  experimentPlanManagementMode = "editor";
+  const backendPlan = backendExperimentPlans.find((plan) => plan.experiment_plan_id === experimentPlanId);
+  const projectJson = backendPlan?.config?.projectJson;
+  if (projectJson && typeof projectJson === "object") {
+    experimentPlanDraft = cloneScenario(projectJson);
+    experimentPlanBranchActive = true;
+    experimentPlan = backendPlan;
+  } else {
+    createExperimentPlanBranchFromCurrentProject();
+  }
+  if (planName) selectedExperimentPlanNames = new Set([planName]);
+  updatePreviewResultsThroughApiClient(experimentPlanDraft);
 }
 
 function renderExperimentPlanEditor(page) {
@@ -7651,7 +8708,10 @@ async function refreshAnalysisProjectionPayloads(runId) {
     if (!artifactId) continue;
     try {
       const payload = await backendApi.getRunArtifactPayload(runId, artifactId);
-      nextPayloads[analysisType] = normalizeAnalysisProjectionPayload(analysisType, payload);
+      nextPayloads[analysisType] = normalizeAnalysisProjectionPayload(analysisType, payload, {
+        runId,
+        modelFamily: FORMAL_AIRCRAFT_SUPPORT_MODEL_FAMILY
+      });
     } catch (err) {
       nextErrors[analysisType] = formatBackendError(err);
     }
@@ -8196,6 +9256,92 @@ async function importRmsEquipmentTableFile(file) {
   }
 }
 
+async function importEquipmentStructureTableFile(file) {
+  if (!file) {
+    equipmentImportStatus = "未选择装备结构树导入文件。";
+    return false;
+  }
+  try {
+    const parsed = parseRmsEquipmentImportText(await file.text(), file.name);
+    const imported = normalizeEquipmentStructureImport(parsed);
+    if (!imported.components.length && !imported.wholeMachineModels.length) {
+      throw new Error("导入表格未包含有效装备节点");
+    }
+    scenario.equipment = {
+      ...(scenario.equipment || {}),
+      model: imported.wholeMachineModels[0] || scenario.equipment?.model || "",
+      wholeMachineModels: imported.wholeMachineModels,
+      quantity: imported.quantity || scenario.equipment?.quantity || 1
+    };
+    scenario.components = imported.components;
+    selectedEquipmentNodeKey = imported.wholeMachineModels[0] ? `aircraft:${imported.wholeMachineModels[0]}` : "aircraft-list";
+    selectedEquipmentComponentIndex = 0;
+    equipmentImportStatus = `已导入 ${file.name}：${imported.wholeMachineModels.length} 个整机，${imported.components.length} 个组件。`;
+    updatePreviewResultsThroughApiClient();
+    return true;
+  } catch (err) {
+    equipmentImportStatus = `装备结构树导入失败：${err && err.message ? err.message : "文件无法解析"}`;
+    return false;
+  }
+}
+
+function normalizeEquipmentStructureImport(input) {
+  const projectJson = input?.projectJson || input?.project_json || input?.scenario || input;
+  if (projectJson && typeof projectJson === "object" && !Array.isArray(projectJson)) {
+    const components = firstImportArray(projectJson, ["components", "equipmentComponents", "equipmentAssets"])
+      || firstImportArray(projectJson.objects, ["components", "equipmentComponents", "equipmentAssets"]);
+    if (components) {
+      const equipment = projectJson.equipment || projectJson.objects?.equipment || {};
+      return normalizeEquipmentStructureRows(components, {
+        defaultModel: equipment.model || equipment.aircraftModel || "",
+        wholeMachineModels: equipment.wholeMachineModels || [],
+        quantity: equipment.quantity
+      });
+    }
+  }
+  return normalizeEquipmentStructureRows(Array.isArray(input) ? input : [input]);
+}
+
+function normalizeEquipmentStructureRows(rawRows, options = {}) {
+  const rows = (Array.isArray(rawRows) ? rawRows : []).filter((row) => row && typeof row === "object");
+  const wholeMachineModels = new Set((Array.isArray(options.wholeMachineModels) ? options.wholeMachineModels : []).map(String).filter(Boolean));
+  const components = [];
+  rows.forEach((row, index) => {
+    const explicitModel = pickImportText(row, ["aircraftModel", "aircraft_model", "整机", "整机名称", "飞机名称", "飞机型号", "装备型号", "targetProductModel"], "");
+    const productType = pickImportText(row, ["productType", "product_type", "组件属性", "产品类型", "节点类型", "type"], "");
+    const parentId = pickImportText(row, ["parentId", "parent_id", "父节点", "父节点ID", "上级节点", "parent"], "");
+    const name = pickImportText(row, ["name", "组件名称", "节点名称", "装备名称", "componentName"], "");
+    const id = pickImportText(row, ["id", "componentId", "组件ID", "节点ID", "object_id"], "");
+    const isWholeMachine = /整机|whole|aircraft/i.test(productType) || (!parentId && explicitModel && (!id || explicitModel === id || explicitModel === name));
+    const aircraftModel = explicitModel || options.defaultModel || pickImportText(row, ["model", "型号"], "");
+    if (isWholeMachine) {
+      wholeMachineModels.add(aircraftModel || name || id || `导入整机${wholeMachineModels.size + 1}`);
+      return;
+    }
+    const componentAircraftModel = aircraftModel || Array.from(wholeMachineModels)[0] || options.defaultModel || "导入整机";
+    wholeMachineModels.add(componentAircraftModel);
+    const componentId = id || `${componentAircraftModel.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-import-${index + 1}`;
+    components.push({
+      ...row,
+      id: componentId,
+      name: name || componentId,
+      aircraftModel: componentAircraftModel,
+      parentId: parentId || "aircraft-root",
+      productType: /^(LRU|SRU)$/i.test(productType) ? productType.toUpperCase() : (productType && !/整机|whole|aircraft/i.test(productType) ? productType : ""),
+      quantity: Math.max(1, Math.floor(pickImportNumber(row, ["quantity", "数量", "装机数量", "n"], row.quantity ?? 1))),
+      connectionType: pickImportText(row, ["connectionType", "连接方式", "结构类型"], row.connectionType || "串联"),
+      mtbfHours: pickImportNumber(row, ["mtbfHours", "MTBF", "mtbf", "平均故障间隔"], row.mtbfHours ?? 120),
+      meanRepairTimeMinutes: pickImportNumber(row, ["meanRepairTimeMinutes", "MTTR", "mttr", "平均修复时间"], row.meanRepairTimeMinutes ?? 120)
+    });
+  });
+  const models = Array.from(wholeMachineModels).filter(Boolean);
+  return {
+    wholeMachineModels: models,
+    components,
+    quantity: Math.max(1, Math.floor(Number(options.quantity || 1)))
+  };
+}
+
 async function importSupportResourceTableFile(file, activeResourceType) {
   const resourceType = normalizeSupportResourceImportType(activeResourceType);
   if (!resourceType) {
@@ -8533,8 +9679,19 @@ async function handleSystemUserAction(action) {
     systemUserEditor = null;
   }
   if (action === "delete-selected") {
-    deleteSystemUsers(Array.from(selectedSystemUsernames));
+    await deleteSystemUsers(Array.from(selectedSystemUsernames));
   }
+}
+
+function filteredSystemUsers() {
+  const query = systemUserSearchText.trim().toLowerCase();
+  if (!query) return systemUsers;
+  return systemUsers.filter((user) => [
+    user.username,
+    user.name,
+    user.role,
+    user.status
+  ].some((value) => String(value || "").toLowerCase().includes(query)));
 }
 
 function openSystemUserEditor(username = "") {
@@ -8549,7 +9706,7 @@ function openSystemUserEditor(username = "") {
   };
 }
 
-function deleteSystemUsers(usernames) {
+async function deleteSystemUsers(usernames) {
   const targets = new Set(usernames.filter(Boolean));
   if (!targets.size) {
     systemUsersLoadStatus = "请先选择要删除的用户";
@@ -8560,10 +9717,18 @@ function deleteSystemUsers(usernames) {
     selectedSystemUsernames = new Set(Array.from(selectedSystemUsernames).filter((username) => username !== "admin"));
     return;
   }
-  systemUsers = systemUsers.filter((user) => !targets.has(user.username));
-  selectedSystemUsernames = new Set(Array.from(selectedSystemUsernames).filter((username) => !targets.has(username)));
-  systemUsersLoaded = true;
-  systemUsersLoadStatus = `已删除 ${targets.size} 个用户`;
+  const usersToDelete = systemUsers.filter((user) => targets.has(user.username));
+  try {
+    for (const user of usersToDelete) {
+      if (user.user_id) await backendApi.deleteUser(user.user_id);
+    }
+    systemUsers = systemUsers.filter((user) => !targets.has(user.username));
+    selectedSystemUsernames = new Set(Array.from(selectedSystemUsernames).filter((username) => !targets.has(username)));
+    systemUsersLoaded = true;
+    systemUsersLoadStatus = `已删除 ${usersToDelete.length} 个用户`;
+  } catch (err) {
+    systemUsersLoadStatus = `用户删除失败：${err && err.message ? err.message : "Backend API 不可用"}`;
+  }
 }
 
 function updatePermissionRole(feature, encodedRole) {
@@ -8571,9 +9736,26 @@ function updatePermissionRole(feature, encodedRole) {
   if (!row) return;
   const [roleKey, value] = String(encodedRole || "").split(":");
   if (["admin", "data", "user"].includes(roleKey)) {
-    row[roleKey] = value || "查看";
+    row[roleKey] = normalizePermissionLevel(value);
     permissionConfigStatus = `已更新 ${feature} / ${permissionRoleLabel(roleKey)}：${row[roleKey]}`;
   }
+}
+
+function addPersonnelSpecialtyDraft() {
+  const value = personnelSpecialtyDraft.trim();
+  if (!value) {
+    systemRuntimeConfigStatus = "请输入保障人员专业";
+    return;
+  }
+  setConfiguredPersonnelSpecialties([...configuredPersonnelSpecialties(), value]);
+  personnelSpecialtyDraft = "";
+  systemRuntimeConfigStatus = "保障人员专业字典已更新，待保存";
+}
+
+function deletePersonnelSpecialty(value) {
+  const target = String(value || "").trim();
+  setConfiguredPersonnelSpecialties(configuredPersonnelSpecialties().filter((item) => item !== target));
+  systemRuntimeConfigStatus = "保障人员专业字典已更新，待保存";
 }
 
 function permissionRoleLabel(roleKey) {
@@ -8963,29 +10145,26 @@ function stopVisualizationReplay() {
   visualizationReplayTimer = null;
 }
 
-async function loadAviationSupportState(steps = aviationSteps) {
-  if (typeof fetch === "undefined") {
-    liveAviationState = null;
-    aviationSource = "demo";
-    return;
-  }
-  aviationLoadInFlight = true;
-  try {
-    const params = new URLSearchParams({ model: "aviation", steps: String(steps), seed: "17" });
-    const resp = await fetch(`${CONTRACT_BASE}/visualization?${params.toString()}`);
-    if (!resp.ok) throw new Error(`contract provider HTTP ${resp.status}`);
-    const envelope = await resp.json();
-    if (!envelope || envelope.ok !== true || !envelope.data) throw new Error("bad contract envelope");
-    liveAviationState = envelope.data;
-    aviationSource = "live";
-  } catch (err) {
-    liveAviationState = null;
-    aviationSource = "demo";
-    console.warn("[aviation] 契约服务不可用，回退演示快照：", err && err.message ? err.message : err);
-  } finally {
-    aviationLoadInFlight = false;
-    render();
-  }
+function visualizationBlockedState() {
+  return {
+    snapshot: {
+      elapsed_hours: 0,
+      aircraft_count: 0,
+      planned_sorties: 0,
+      completed_sorties: 0,
+      active_jobs: 0,
+      spare_stock_total: 0,
+      sortie_completion_rate: 0
+    },
+    aircraft: [],
+    missions: [],
+    resources: [],
+    spares: [],
+    jobs: [],
+    events: [],
+    mission_templates: {},
+    failure_tree_templates: {}
+  };
 }
 
 function renderVisualSimulation(page) {
@@ -8997,20 +10176,17 @@ function renderVisualSimulation(page) {
     && visualizationStreamState.runId === visualizationStateSeries.run_id
     && ["connected", "disconnected", "artifact-ready"].includes(visualizationStreamState.status)
     && visualizationStateSeries.expected_frame_count;
-  const source = visualizationStateSeriesFrame || liveAviationState || AVIATION_SUPPORT_DEMO_STATE;
+  const source = visualizationStateSeriesFrame || visualizationBlockedState();
   const state = normalizeAviationSupportState(source);
   const activeView = ["aircraft", "mission", "support"].includes(selectedMesaView) ? selectedMesaView : "aircraft";
-  if (!visualizationStateSeriesFrame && !liveAviationState && !aviationLoadInFlight) {
-    loadAviationSupportState();
-  }
   ensureVisualizationRunListLoaded();
   const sourceLabel = visualizationStateSeriesFrame
     ? (isOnlineStreamFrame ? "在线状态流" : "state_series artifact")
-    : (aviationSource === "live" ? "契约服务" : "演示快照");
-  const sourceClass = visualizationStateSeriesFrame ? (isOnlineStreamFrame ? "state-stream" : "state-series") : aviationSource;
+    : "正式回放阻断";
+  const sourceClass = visualizationStateSeriesFrame ? (isOnlineStreamFrame ? "state-stream" : "state-series") : "blocked";
   const sourceTitle = visualizationStateSeriesFrame
     ? `数据来源：run_id ${visualizationStateSeries.run_id} / artifact_id ${visualizationStateSeries.artifact_id}${isOnlineStreamFrame ? " / M9.2 online state stream" : ""}`
-    : `数据来源：${aviationSource === "live" ? "契约服务 127.0.0.1:8521" : "演示快照（契约服务未启动）"}`;
+    : "缺少 aircraft_support_v1 state_series artifact，正式可视化不会回退到旧 aviation_support 或演示快照";
   const timelineMax = Math.max(0, (visualizationStateSeries?.frame_count || 1) - 1);
   const currentFrame = visualizationStateSeriesFrame ? visualizationReplayIndex + 1 : 0;
   const runOptions = renderVisualizationRunOptions();
@@ -9019,7 +10195,7 @@ function renderVisualSimulation(page) {
     : [];
   const replayStatusDetail = visualizationStateSeriesFrame
     ? `run_id ${htmlEscape(visualizationStateSeries.run_id)} / artifact_id ${htmlEscape(visualizationStateSeries.artifact_id)} / step ${htmlEscape(visualizationStateSeriesFrame.step)} / ${currentFrame}-${htmlEscape(visualizationStateSeries.frame_count)} 帧 / 事件 ${htmlEscape(visualizationStateSeries.event_count)}`
-    : "演示快照只用于本地预览，不作为正式完成口径。";
+    : "缺少 aircraft_support_v1 state_series 时，正式可视化保持阻断；请启动新仿真或选择已完成且带 artifact 的 run。";
   const timelineFrameLabel = visualizationStateSeriesFrame
     ? `${currentFrame} / ${htmlEscape(visualizationStateSeries.frame_count)} 帧`
     : "等待正式回放";
@@ -9131,16 +10307,14 @@ function visualSimulationKpis(state) {
   const usableAircraft = state.aircraft.filter((aircraft) => ["available", "mission_ready"].includes(aircraft.state)).length;
   const requiredSorties = state.missions.reduce((sum, mission) => sum + Number(mission.requiredAircraft || 0), 0);
   const assignedSorties = state.missions.reduce((sum, mission) => sum + Number(mission.assignedCount || 0), 0);
-  const completedMissions = state.missions.filter((mission) => ["completed", "succeeded"].includes(String(mission.status))).length;
+  const aircraftTrendCounts = countAircraftTrendStates(state.aircraft);
   const stockedSpares = state.spares.filter((spare) => Number(spare.quantity || 0) > 0).length;
-  const consumedSpares = state.spares.reduce((sum, spare) => sum + Number(spare.consumed || 0), 0);
-  const totalSpareEvents = state.spares.reduce((sum, spare) => sum + Number(spare.quantity || 0) + Number(spare.consumed || 0) + Number(spare.pending || 0), 0);
   return [
     { label: "使用可用度", value: pct(usableAircraft / aircraftCount) },
     { label: "出动架次率", value: pct(assignedSorties / Math.max(1, requiredSorties)) },
-    { label: "任务成功率", value: pct(completedMissions / Math.max(1, state.missions.length)) },
-    { label: "备件满足率", value: pct(stockedSpares / Math.max(1, state.spares.length)) },
-    { label: "备件利用率", value: pct(consumedSpares / Math.max(1, totalSpareEvents)) }
+    { label: "维修中飞机", value: `${aircraftTrendCounts.maintenance} 架` },
+    { label: "保障中飞机", value: `${aircraftTrendCounts.support} 架` },
+    { label: "备件满足率", value: pct(stockedSpares / Math.max(1, state.spares.length)) }
   ];
 }
 
@@ -9635,19 +10809,11 @@ function renderMesaAircraftPanel(state) {
       <div class="event warning">当前状态帧没有飞机对象。</div>
     `;
   }
+  const aircraft = selectedAircraft;
   return `
     <div class="section-head">
       <h3>单机状态</h3>
-      <span>${htmlEscape(selectedAircraft.label)} / ${state.aircraft.length} 架</span>
-    </div>
-    <div class="visual-aircraft-selector" aria-label="单机状态点选飞机">
-      ${state.aircraft.map((aircraft) => `
-        <button type="button" class="${aircraft.id === selectedAircraft.id ? "active" : ""}" data-select-visual-aircraft="${htmlEscape(aircraft.id)}">
-          <strong>${htmlEscape(aircraft.label)}</strong>
-          <span>${htmlEscape(aircraft.type)}</span>
-          <span>${htmlEscape(visualAircraftStateLabel(aircraft.state))}</span>
-        </button>
-      `).join("")}
+      <span>${htmlEscape(selectedAircraft.label)} / ${htmlEscape(aircraft.type)} / ${state.aircraft.length} 架</span>
     </div>
     <h4>飞机内部组成与故障传递</h4>
     <div class="event info"><strong>${htmlEscape(selectedAircraft.label)}</strong> 失效 LRU ${htmlEscape(selectedAircraft.failedLru || "-")}</div>
@@ -9991,7 +11157,7 @@ function renderMonteCarloExperimentDetail(page) {
           <button type="button" data-mc-experiment-action="list">返回实验列表</button>
           <button type="button" class="btn-primary" data-mc-action="start" ${formalRunSubmitInFlight ? "disabled" : ""}>启动实验</button>
         </div>
-        ${renderMonteCarloResults()}
+        ${renderMonteCarloResults(experiment)}
       </section>
     </div>
   `;
@@ -10049,9 +11215,8 @@ function averageGroupMetric(metric) {
   return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 
-function renderMonteCarloResults() {
-  const groups = monteCarloResult.groups || [];
-  const resultRows = buildMonteCarloEvaluationRows();
+function renderMonteCarloResults(experiment = null) {
+  const boundary = monteCarloFormalResultBoundary(experiment);
   const backendChainRows = backendRunChain
     ? [
         ["Project", backendRunChain.project_id],
@@ -10069,16 +11234,16 @@ function renderMonteCarloResults() {
   return `
     <div class="mc-result-panel">
       <div class="section-head">
-        <h3>蒙特卡洛评估结果</h3>
-        <span>${monteCarloResult.runs.length} 个样本</span>
+        <h3>蒙特卡洛实验结果</h3>
+        <span>${htmlEscape(boundary.statusLabel)}</span>
       </div>
       <div class="backend-run-chain">
         <span>后端状态：${htmlEscape(backendApiStatus)}</span>
         <div class="result-source-note">
-          <strong>后端产物来源</strong>
-          <span>Run status、ResultSummary、ArtifactManifest 和 identity chain 来自后端 /api/runs。</span>
-          <strong>前端展示桥接</strong>
-          <span>下方蒙特卡洛分组表仍由当前 ExperimentPlan 分支快照在前端重算，用于展示过渡；不作为 M6.0 真实批量 Monte Carlo artifact。</span>
+          <strong>正式来源</strong>
+          <span>结果区只使用 canonical /api/runs、monte_carlo_base artifact、analysis projection artifacts 和已解析 projection payload。</span>
+          <strong>当前判定</strong>
+          <span>${htmlEscape(boundary.reason)}</span>
         </div>
         ${backendChainRows.length
           ? `<table><tbody>${backendChainRows.map(([label, value]) => `<tr><th>${htmlEscape(label)}</th><td>${htmlEscape(value)}</td></tr>`).join("")}</tbody></table>`
@@ -10088,27 +11253,172 @@ function renderMonteCarloResults() {
           : ""}
       </div>
       ${renderM7RunArtifactPanel()}
-      <div class="mc-result-cards">
-        ${resultRows.map((row) => `
-          <div class="metric-card">
-            <span>${row.name}</span>
-            <strong>${row.value}</strong>
-            <em>目标值 ${row.target}</em>
+      ${renderMonteCarloFormalSourceTable(boundary)}
+      ${boundary.formalUnlocked ? renderMonteCarloFormalProjectionResults(boundary) : renderMonteCarloFormalBlockedState(boundary)}
+    </div>
+  `;
+}
+
+function monteCarloFormalResultBoundary(experiment = null) {
+  const runId = experiment?.runId || backendRun?.run_id || "";
+  const runStatus = String(backendRun?.status || experiment?.status || "");
+  const runType = backendRun?.run_type || experiment?.runType || "";
+  const manifestId = backendArtifactManifest?.artifact_manifest_id || experiment?.artifactManifestId || experiment?.artifactId || "";
+  const manifestStatus = String(backendArtifactManifest?.status || "");
+  const retryPending = manifestStatus === "pending"
+    || manifestId.includes("retry-pending")
+    || backendRun?.control?.action === "retry";
+  const running = ["queued", "running", "pending", "in_progress", "运行中"].includes(runStatus.toLowerCase());
+  const failed = ["failed", "cancelled", "canceled", "运行失败"].includes(runStatus.toLowerCase());
+  const runTypeIsMonteCarlo = runType === "monte_carlo";
+  const baseArtifacts = monteCarloBaseArtifacts();
+  const projectionSpecs = [
+    { analysisType: "spare_shortfall", artifactKind: "analysis_projection_spare_shortfall", label: "备件短板" },
+    { analysisType: "carry_list", artifactKind: "analysis_projection_carry_list", label: "转场携行" },
+    { analysisType: "mission_reliability", artifactKind: "analysis_projection_mission_reliability", label: "任务可靠度" },
+    { analysisType: "downtime_factors", artifactKind: "analysis_projection_downtime_factors", label: "停机因素" }
+  ];
+  const payloads = analysisProjectionPayloads[runId] || {};
+  const payloadErrors = analysisProjectionPayloadErrors[runId] || {};
+  const projectionViews = projectionSpecs.map((spec) => {
+    const artifacts = analysisProjectionArtifacts(spec.analysisType);
+    return {
+      ...spec,
+      artifacts,
+      payload: payloads[spec.analysisType] || null,
+      error: payloadErrors[spec.analysisType] || ""
+    };
+  });
+  const missingProjectionArtifacts = projectionViews.filter((view) => view.artifacts.length === 0);
+  const payloadParseFailures = projectionViews.filter((view) => view.error);
+  const missingProjectionPayloads = projectionViews.filter((view) => view.artifacts.length > 0 && !view.payload && !view.error);
+  const formalUnlocked = Boolean(
+    runId
+    && isRunComplete(backendRun)
+    && runTypeIsMonteCarlo
+    && !retryPending
+    && baseArtifacts.length > 0
+    && missingProjectionArtifacts.length === 0
+    && payloadParseFailures.length === 0
+    && missingProjectionPayloads.length === 0
+  );
+  const state = !runId
+    ? "unconfigured"
+    : retryPending
+      ? "retry-pending"
+      : failed
+        ? "failed"
+        : running || !isRunComplete(backendRun)
+          ? "running"
+          : !runTypeIsMonteCarlo
+            ? "wrong-run-type"
+            : baseArtifacts.length === 0
+              ? "missing-monte-carlo-base"
+              : missingProjectionArtifacts.length
+                ? "missing-projection-artifact"
+                : payloadParseFailures.length
+                  ? "projection-parse-failed"
+                  : missingProjectionPayloads.length
+                    ? "missing-projection-payload"
+                    : formalUnlocked
+                      ? "formal"
+                      : "blocked";
+  return {
+    runId,
+    runType,
+    manifestId,
+    manifestStatus,
+    state,
+    statusLabel: monteCarloFormalStatusLabel(state),
+    reason: monteCarloFormalResultReason({
+      state,
+      experiment,
+      runStatus,
+      baseArtifacts,
+      missingProjectionArtifacts,
+      payloadParseFailures,
+      missingProjectionPayloads
+    }),
+    formalUnlocked,
+    baseArtifacts,
+    projectionViews
+  };
+}
+
+function monteCarloFormalStatusLabel(state) {
+  const labels = {
+    unconfigured: "待运行",
+    "retry-pending": "retry-pending",
+    failed: "运行失败",
+    running: "运行中",
+    "wrong-run-type": "run_type 不匹配",
+    "missing-monte-carlo-base": "缺 monte_carlo_base",
+    "missing-projection-artifact": "缺 projection artifact",
+    "projection-parse-failed": "projection payload 解析失败",
+    "missing-projection-payload": "缺 projection payload",
+    formal: "正式结果",
+    blocked: "正式结果阻断"
+  };
+  return labels[state] || state;
+}
+
+function monteCarloFormalResultReason({ state, experiment, runStatus, baseArtifacts, missingProjectionArtifacts, payloadParseFailures, missingProjectionPayloads }) {
+  if (state === "unconfigured") return "尚未创建 run_id，无法展示正式 Monte Carlo 结果。";
+  if (state === "retry-pending") return "retry-pending：后端重试已阻断旧 result/artifact，等待新的正式产物生成。";
+  if (state === "failed") return backendRun?.error?.message || "绑定的 Monte Carlo 实验运行失败。";
+  if (state === "running") return `绑定的 Monte Carlo 实验正在运行：${runStatusLabel(backendRun || experiment)}。`;
+  if (state === "wrong-run-type") return "当前 run 不是 run_type=monte_carlo。";
+  if (state === "missing-monte-carlo-base") return "缺少正式 Monte Carlo artifact：monte_carlo_base。";
+  if (state === "missing-projection-artifact") return `缺少 analysis projection artifact：${missingProjectionArtifacts.map((view) => view.artifactKind).join(" / ")}。`;
+  if (state === "projection-parse-failed") return `projection payload 解析失败：${payloadParseFailures.map((view) => `${view.analysisType}: ${view.error}`).join(" / ")}。`;
+  if (state === "missing-projection-payload") return `缺少已解析 projection payload：${missingProjectionPayloads.map((view) => view.analysisType).join(" / ")}。`;
+  if (state === "formal") return `已读取 ${baseArtifacts.length} 个 monte_carlo_base 和四类 projection payload。`;
+  return "正式 Monte Carlo 结果尚未解锁。";
+}
+
+function renderMonteCarloFormalSourceTable(boundary) {
+  const rows = [
+    ["run_id", boundary.runId || "未运行"],
+    ["run_type", boundary.runType || "未知"],
+    ["artifact_manifest_id", boundary.manifestId || "等待生成"],
+    ["manifest_status", boundary.manifestStatus || "unknown"],
+    ["monte_carlo_base", boundary.baseArtifacts.map((artifact) => artifact.artifact_id || artifact.id || artifact.path || artifact.kind).join(" / ") || "缺 artifact"],
+    ["projection artifacts", boundary.projectionViews.flatMap((view) => view.artifacts).map((artifact) => artifact.artifact_id || artifact.id || artifact.path || artifact.kind).filter(Boolean).join(" / ") || "缺 artifact"],
+    ["projection payload", boundary.projectionViews.map((view) => `${view.analysisType}:${view.payload ? "parsed" : view.error ? "error" : "missing"}`).join(" / ")]
+  ];
+  return `<div class="backend-run-chain mc-formal-source"><span>正式结果来源</span><table><tbody>${rows.map(([label, value]) => `<tr><th>${htmlEscape(label)}</th><td>${htmlEscape(value)}</td></tr>`).join("")}</tbody></table></div>`;
+}
+
+function renderMonteCarloFormalProjectionResults(boundary) {
+  return `
+    <div class="mc-formal-results">
+      ${boundary.projectionViews.map((view) => `
+        <section class="mc-formal-projection">
+          <div class="section-head">
+            <h3>${htmlEscape(view.label)}</h3>
+            <span>projection payload / ${htmlEscape(view.artifactKind)}</span>
           </div>
-        `).join("")}
-      </div>
-      <div class="table-wrap mc-evaluation-table">
-        <table>
-          <thead><tr><th>序号</th><th>指标名称</th><th>蒙特卡洛评估值</th><th>目标值</th></tr></thead>
-          <tbody>${resultRows.map((row, index) => `<tr><td>${index + 1}</td><td>${row.name}</td><td>${row.value}</td><td>${row.target}</td></tr>`).join("")}</tbody>
-        </table>
-      </div>
-      <div class="table-wrap mc-group-table">
-        <table>
-          <thead><tr><th>参数组</th><th>样本数</th><th>任务可靠度</th><th>战备完好率</th><th>短缺事件</th></tr></thead>
-          <tbody>${groups.map((group) => `<tr><td>${group.group}</td><td>${group.count}</td><td>${pct(group.mission_success_rate.mean)}</td><td>${pct(group.ready_rate.mean)}</td><td>${fixed(group.shortage_events.mean, 1)}</td></tr>`).join("")}</tbody>
-        </table>
-      </div>
+          <div class="mc-formal-metrics">
+            ${(view.payload?.metrics || []).map(([name, value]) => `
+              <div class="metric-card">
+                <span>${htmlEscape(name)}</span>
+                <strong>${htmlEscape(value)}</strong>
+                <em>projection payload</em>
+              </div>
+            `).join("")}
+          </div>
+          ${renderFormalProjectionBody(view.payload)}
+        </section>
+      `).join("")}
+    </div>
+  `;
+}
+
+function renderMonteCarloFormalBlockedState(boundary) {
+  return `
+    <div class="empty-state mc-formal-blocked">
+      <strong>${htmlEscape(boundary.statusLabel)}</strong>
+      <p>${htmlEscape(boundary.reason)}</p>
     </div>
   `;
 }
@@ -10963,8 +12273,8 @@ function readStoredBackendAuthToken() {
 }
 
 function getPlanListFeatureId(moduleName) {
-  if (moduleName === "任务可靠度评估模块") return "mission-reliability-experiment-plan-list";
-  return "spare-planning-experiment-plan-list";
+  if (moduleName === "任务可靠度评估模块") return "mission-reliability-experiment-plan-management";
+  return "spare-planning-experiment-plan-management";
 }
 
 function getVisualSimulationFeatureId(moduleName) {

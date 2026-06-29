@@ -25,6 +25,19 @@ export function createBackendApiClient({ baseUrl = DEFAULT_API_BASE, transport, 
     updateUser(userId, updates) {
       return request({ method: "POST", path: `/users/${encodeURIComponent(userId)}`, body: updates });
     },
+    deleteUser(userId) {
+      return request({ method: "DELETE", path: `/users/${encodeURIComponent(userId)}` });
+    },
+    getSystemConfig(configKey) {
+      return request({ method: "GET", path: `/system-configs/${encodeURIComponent(configKey)}` });
+    },
+    saveSystemConfig(configKey, payload) {
+      return request({
+        method: "POST",
+        path: `/system-configs/${encodeURIComponent(configKey)}`,
+        body: { payload }
+      });
+    },
     validateProject(projectJson) {
       return request({ method: "POST", path: "/projects/validate", body: projectJson });
     },

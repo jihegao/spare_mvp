@@ -85,3 +85,29 @@ test("support activity jobs can be populated from a basic activity library row",
     predecessors: ["BA-100"]
   });
 });
+
+test("support activity jobs preserve structured resource requirements from basic activity rows", () => {
+  const basicActivity = {
+    activityCode: "BA-330",
+    workName: "资源配置活动",
+    personnelProfessional: "航电",
+    personnelRequirements: [{ key: "personnel-a", professional: "航电", name: "保障组A" }],
+    equipmentModel: "TEST-1",
+    equipmentRequirements: [{ key: "equipment-a", name: "检测仪", model: "TEST-1", quantity: 2 }],
+    spareRequirements: [{ key: "spare-a", name: "航电模块", quantity: 3 }],
+    personnel: "航电/保障组A",
+    equipment: "检测仪,TEST-1,2",
+    spare: "航电模块,3"
+  };
+
+  const job = supportActivityJobFromBasicActivity(basicActivity);
+
+  assert.equal(job.personnelProfessional, "航电");
+  assert.deepEqual(job.personnelRequirements, [{ key: "personnel-a", professional: "航电", name: "保障组A" }]);
+  assert.equal(job.equipmentModel, "TEST-1");
+  assert.deepEqual(job.equipmentRequirements, [{ key: "equipment-a", name: "检测仪", model: "TEST-1", quantity: 2 }]);
+  assert.deepEqual(job.spareRequirements, [{ key: "spare-a", name: "航电模块", quantity: 3 }]);
+  assert.equal(job.personnel, "航电/保障组A");
+  assert.equal(job.equipment, "检测仪,TEST-1,2");
+  assert.equal(job.spare, "航电模块,3");
+});

@@ -19,7 +19,7 @@
 11. 保障组织建模、保障活动建模页面保留外层四级导航，删除内部重复页签；保障组织支持递归树节点，备件记录所属装备，保障人员专业使用下拉字典兼容回退且不再维护所属型号，备件、人员和设备资源表不再依赖行级编辑按钮；基本保障活动通过编辑面板维护活动编号、工作名称、适用飞机、作业时长分布、人员、设备和备件需求；使用保障、预防性维修、修复性维修和后勤保障的工作项目从基本保障活动库选择/搜索并自动回填，紧前作业通过显式编辑入口维护。
 12. 可视化推演页面恢复三级标题“可视化推演”，只保留一个可导航入口并直接嵌入 Mesa 航空保障可视化状态；当前产品口径保留飞机、任务、保障等状态视图，Mesa 内部 `Ontology视图`、Ontology Playground 导出和项目级本体校验已从当前产品、运行时代码和测试门删除。
 13. 蒙特卡洛实验已拆为实验列表、添加/编辑实验和实验详情；实验对象保存 `mc_experiment_id`、关联方案、样本量、随机种子、状态、进度、`run_id` 和 artifact 引用。
-14. 蒙特卡洛评估结果已经迁移到“结果分析 / 蒙特卡洛实验结果展示”；四个结果分析页先展示分析任务列表，并允许按方案和参数自动创建新的 MC 实验后绑定分析任务。
+14. 蒙特卡洛评估结果已经迁移到“蒙特卡洛实验 / 实验详情”的结果区；四个结果分析页先展示分析任务列表，并允许按方案和参数自动创建新的 MC 实验后绑定分析任务。
 15. M6.2 对象一致性已落地为同步本地切片：单次仿真实验和 Monte Carlo 实验共享 `SimulationExperimentBase` 字段；正式 run 走 `RunIntent -> /api/runs -> RunService -> artifacts`，Monte Carlo 通过 canonical `/api/runs` 提交 `run_type: "monte_carlo"`，并生成 `monte_carlo_base` 与四类 `analysis_projection_*` artifact。前端 MC 实验详情和 AnalysisTask 列表展示 `mc_experiment_id`、`linkedMonteCarloExperimentId`、run/artifact/projection 来源。
 16. 两个模块的结果分析页面已对齐 `vendor/ship_front/备件_front` 的页面形态。
 17. Monte Carlo 扫参输入会真实更新场景并重算结果。

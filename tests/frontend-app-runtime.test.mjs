@@ -282,13 +282,101 @@ test("support activity add work item opens the editing dialog at runtime", async
 
     assert.match(runtime.appNode.innerHTML, /工作项目编辑/);
     assert.match(runtime.appNode.innerHTML, /新增使用保障工作项目2/);
+    assert.match(runtime.appNode.innerHTML, /data-support-activity-job-template-select="ops_preflight"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /<th>保障人员<\/th><th>保障设备<\/th><th>备件<\/th>/);
 
     await runtime.change(
-      "[data-support-activity-job-field]",
-      { supportActivityJobKey: "ops_preflight:1", supportActivityJobField: "workName" },
-      { value: "运行时新增工作项目" }
+      "[data-support-activity-job-template-select]",
+      { supportActivityJobTemplateSelect: "ops_preflight" },
+      { value: "0:0" }
     );
-    assert.match(runtime.appNode.innerHTML, /value="运行时新增工作项目"/);
+    assert.match(runtime.appNode.innerHTML, /value="初始工作项目"/);
+    assert.match(runtime.appNode.innerHTML, /value="BA-001"/);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("support activity predecessors are edited from the predecessor dialog at runtime", async () => {
+  const runtime = await setupRuntimeApp({ projectJson: createRuntimeProjectJson() });
+
+  try {
+    await runtime.click("[data-enter-workbench]", { projectId: "runtime" });
+    await runtime.setHash("feature=spare-planning-operations-support-activity");
+
+    assert.match(runtime.appNode.innerHTML, /data-support-activity-predecessor-edit="ops_preflight-0"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-support-activity-predecessors/);
+
+    await runtime.click("[data-support-activity-predecessor-edit]", { supportActivityPredecessorEdit: "ops_preflight-0" });
+    assert.match(runtime.appNode.innerHTML, /编辑紧前作业/);
+    assert.match(runtime.appNode.innerHTML, /data-support-activity-predecessor-query/);
+    assert.match(runtime.appNode.innerHTML, /data-support-activity-predecessor-add-template="ops_preflight"/);
+
+    await runtime.click("[data-support-activity-predecessor-add-template]", {
+      supportActivityPredecessorAddTemplate: "ops_preflight",
+      basicActivityKey: "0:0"
+    });
+
+    assert.match(runtime.appNode.innerHTML, /BA-002/);
+    assert.match(runtime.appNode.innerHTML, /checked/);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("basic support activity edit opens a dialog at runtime", async () => {
+  const runtime = await setupRuntimeApp({ projectJson: createRuntimeProjectJson() });
+
+  try {
+    await runtime.click("[data-enter-workbench]", { projectId: "runtime" });
+    await runtime.setHash("feature=spare-planning-basic-support-activity");
+
+    assert.match(runtime.appNode.innerHTML, /data-basic-activity-edit=/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /<th>保障人员<\/th><th>保障设备<\/th><th>备件<\/th>/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /<option value="后勤保障"/);
+    await runtime.click("[data-basic-activity-edit]", { basicActivityEdit: "0:0" });
+
+    assert.match(runtime.appNode.innerHTML, /basic-activity-dialog/);
+    assert.match(runtime.appNode.innerHTML, /data-basic-activity-dialog-close/);
+    assert.match(runtime.appNode.innerHTML, /data-basic-activity-resource-dialog-open="personnel"/);
+    assert.match(runtime.appNode.innerHTML, /data-basic-activity-resource-dialog-open="equipment"/);
+    assert.match(runtime.appNode.innerHTML, /data-basic-activity-resource-dialog-open="spare"/);
+
+    await runtime.click(
+      "[data-basic-activity-resource-dialog-open]",
+      { basicActivityKey: "0:0", basicActivityResourceDialogOpen: "personnel" }
+    );
+    assert.match(runtime.appNode.innerHTML, /保障人员需求配置/);
+    assert.match(runtime.appNode.innerHTML, /data-basic-activity-resource-dialog-add="personnel"/);
+
+    await runtime.click(
+      "[data-basic-activity-resource-dialog-add]",
+      { basicActivityKey: "0:0", basicActivityResourceDialogAdd: "personnel" }
+    );
+    assert.match(runtime.appNode.innerHTML, /data-basic-activity-resource-index="1"/);
+
+    await runtime.change(
+      "[data-basic-activity-resource-dialog-field]",
+      {
+        basicActivityKey: "0:0",
+        basicActivityResourceKind: "personnel",
+        basicActivityResourceIndex: "1",
+        basicActivityResourceDialogField: "professional"
+      },
+      { value: "航电" }
+    );
+    await runtime.change(
+      "[data-basic-activity-resource-dialog-field]",
+      {
+        basicActivityKey: "0:0",
+        basicActivityResourceKind: "personnel",
+        basicActivityResourceIndex: "1",
+        basicActivityResourceDialogField: "quantity"
+      },
+      { value: "4", type: "number" }
+    );
+    assert.match(runtime.appNode.innerHTML, /<option value="航电" selected>航电<\/option>/);
+    assert.match(runtime.appNode.innerHTML, /value="4"/);
   } finally {
     runtime.restore();
   }
@@ -525,9 +613,13 @@ function createRuntimeProjectJson(overrides = {}) {
     supportNodes: [{
       id: "carrier-deck",
       name: "航母飞行甲板",
+      personnelModel: "机务",
       personnelCapacity: 10,
+      supportEquipmentName: "检测仪",
+      supportEquipmentModel: "JY-01",
       equipmentCapacity: 8,
-      inventory: { 航电模块: 3 }
+      inventory: { 航电模块: 3 },
+      spareModels: { 航电模块: "HD-01" }
     }],
     supportActivities: [{
       id: "ops-runtime-1",

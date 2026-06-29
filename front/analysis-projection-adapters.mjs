@@ -16,18 +16,34 @@ export function projectionArtifactKindForAnalysisType(analysisType) {
   return PROJECTION_KINDS[analysisType] || "";
 }
 
-export function normalizeAnalysisProjectionPayload(analysisType, payload) {
+export function normalizeAnalysisProjectionPayload(analysisType, payload, options = {}) {
   if (!payload || typeof payload !== "object") {
     throw new Error("analysis projection payload must be an object");
   }
   if (payload.projection_type !== analysisType) {
     throw new Error(`projection_type mismatch: expected ${analysisType}, got ${payload.projection_type || "missing"}`);
   }
+  validateProjectionTraceability(payload, options);
   if (analysisType === "spare_shortfall") return normalizeSpareShortfall(payload);
   if (analysisType === "carry_list") return normalizeCarryList(payload);
   if (analysisType === "mission_reliability") return normalizeMissionReliability(payload);
   if (analysisType === "downtime_factors") return normalizeDowntimeFactors(payload);
   throw new Error(`unsupported analysis projection type: ${analysisType}`);
+}
+
+function validateProjectionTraceability(payload, { runId = "", modelFamily = "" } = {}) {
+  if (runId) {
+    if (!payload.run_id) throw new Error("projection run_id is required");
+    if (String(payload.run_id) !== String(runId)) {
+      throw new Error(`projection run_id mismatch: expected ${runId}, got ${payload.run_id}`);
+    }
+  }
+  if (modelFamily) {
+    if (!payload.model_family) throw new Error("projection model_family is required");
+    if (String(payload.model_family) !== String(modelFamily)) {
+      throw new Error(`projection model_family mismatch: expected ${modelFamily}, got ${payload.model_family}`);
+    }
+  }
 }
 
 function normalizeSpareShortfall(payload) {

@@ -1926,7 +1926,7 @@ class SimulationAdapter:
         self._coerce_result_integer_metrics(aggregate)
         aggregate["mission_success_probability"] = aggregate.get("sortie_completion_rate", 0)
         base_artifact_id = f"monte_carlo_base-{run_id}"
-        projections = self._aircraft_support_v1_analysis_projections(aggregate, base_artifact_id, samples=samples)
+        projections = self._aircraft_support_v1_analysis_projections(aggregate, base_artifact_id, samples=samples, run_id=run_id)
         behavior_scope = AircraftSupportV1Model.behavior_scope()
         input_project = self._input_project_for_scenario(scenario)
         base_artifact = {
@@ -2436,6 +2436,7 @@ class SimulationAdapter:
         metrics: dict[str, Any],
         source_artifact_id: str,
         samples: list[dict[str, Any]] | None = None,
+        run_id: str = "",
     ) -> dict[str, dict[str, Any]]:
         planned_sorties = max(1.0, float(metrics.get("planned_sorties", 1) or 1))
         shortage_events = max(0.0, float(metrics.get("shortage_events", 0) or 0))
@@ -2456,6 +2457,7 @@ class SimulationAdapter:
         return {
             "large_sample_summary": {
                 "projection_type": "large_sample_summary",
+                "run_id": run_id,
                 "model_family": "aircraft_support_v1",
                 "base_artifact_id": source_artifact_id,
                 "data": {
@@ -2469,6 +2471,7 @@ class SimulationAdapter:
             },
             "spare_shortfall": {
                 "projection_type": "spare_shortfall",
+                "run_id": run_id,
                 "model_family": "aircraft_support_v1",
                 "base_artifact_id": source_artifact_id,
                 "data": [
@@ -2483,6 +2486,7 @@ class SimulationAdapter:
             },
             "carry_list": {
                 "projection_type": "carry_list",
+                "run_id": run_id,
                 "model_family": "aircraft_support_v1",
                 "base_artifact_id": source_artifact_id,
                 "data": [
@@ -2495,6 +2499,7 @@ class SimulationAdapter:
             },
             "mission_reliability": {
                 "projection_type": "mission_reliability",
+                "run_id": run_id,
                 "model_family": "aircraft_support_v1",
                 "base_artifact_id": source_artifact_id,
                 "data": {
@@ -2507,6 +2512,7 @@ class SimulationAdapter:
             },
             "downtime_factors": {
                 "projection_type": "downtime_factors",
+                "run_id": run_id,
                 "model_family": "aircraft_support_v1",
                 "base_artifact_id": source_artifact_id,
                 "data": [

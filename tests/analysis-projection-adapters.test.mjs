@@ -9,12 +9,14 @@ import {
 test("normalizes spare shortfall projection payload for formal KPI and table rendering", () => {
   const view = normalizeAnalysisProjectionPayload("spare_shortfall", {
     projection_type: "spare_shortfall",
+    run_id: "run-ui",
+    model_family: "aircraft_support_v1",
     base_artifact_id: "monte_carlo_base-run-ui",
     data: [
       { spare_type: "engine", fill_rate: 0.81, shortage_probability: 0.25, risk_level: "high" },
       { spare_type: "radar", fill_rate: 0.96, shortage_probability: 0, risk_level: "low" }
     ]
-  });
+  }, { runId: "run-ui", modelFamily: "aircraft_support_v1" });
 
   assert.equal(view.analysisType, "spare_shortfall");
   assert.equal(view.formal, true);
@@ -31,11 +33,13 @@ test("normalizes spare shortfall projection payload for formal KPI and table ren
 test("normalizes carry list projection payload for formal KPI and table rendering", () => {
   const view = normalizeAnalysisProjectionPayload("carry_list", {
     projection_type: "carry_list",
+    run_id: "run-ui",
+    model_family: "aircraft_support_v1",
     data: [
       { spare_type: "engine", recommended_multiplier: 1.4, risk_level: "high" },
       { spare_type: "hydraulic", recommended_multiplier: 1.1, risk_level: "medium" }
     ]
-  });
+  }, { runId: "run-ui", modelFamily: "aircraft_support_v1" });
 
   assert.deepEqual(view.metrics.slice(1), [
     ["携行备件数量", "3 件"],
@@ -49,12 +53,14 @@ test("normalizes carry list projection payload for formal KPI and table renderin
 test("normalizes mission reliability projection payload for formal KPI and trend rendering", () => {
   const view = normalizeAnalysisProjectionPayload("mission_reliability", {
     projection_type: "mission_reliability",
+    run_id: "run-ui",
+    model_family: "aircraft_support_v1",
     data: {
       mission_success_probability: 0.91,
       sortie_rate: 0.88,
       target_met: true
     }
-  });
+  }, { runId: "run-ui", modelFamily: "aircraft_support_v1" });
 
   assert.deepEqual(view.metrics, [
     ["任务成功概率", "0.91"],
@@ -68,12 +74,14 @@ test("normalizes mission reliability projection payload for formal KPI and trend
 test("normalizes downtime factor projection payload for formal KPI and table rendering", () => {
   const view = normalizeAnalysisProjectionPayload("downtime_factors", {
     projection_type: "downtime_factors",
+    run_id: "run-ui",
+    model_family: "aircraft_support_v1",
     data: [
       { factor: "failure", contribution: 0.4 },
       { factor: "spare_shortage", contribution: 0.35 },
       { factor: "resource_delay", contribution: 0.25 }
     ]
-  });
+  }, { runId: "run-ui", modelFamily: "aircraft_support_v1" });
 
   assert.equal(view.metrics[0][1], "3 项");
   assert.equal(view.metrics[1][1], "装备故障");
@@ -128,4 +136,33 @@ test("rejects mismatched or malformed projection payloads fail closed", () => {
     /contribution must be a finite number/
   );
   assert.equal(projectionArtifactKindForAnalysisType("mission_reliability"), "analysis_projection_mission_reliability");
+});
+
+test("rejects projection payloads whose traceability does not match the active run", () => {
+  assert.throws(
+    () => normalizeAnalysisProjectionPayload("spare_shortfall", {
+      projection_type: "spare_shortfall",
+      model_family: "aircraft_support_v1",
+      data: []
+    }, { runId: "run-active", modelFamily: "aircraft_support_v1" }),
+    /projection run_id is required/
+  );
+  assert.throws(
+    () => normalizeAnalysisProjectionPayload("spare_shortfall", {
+      projection_type: "spare_shortfall",
+      run_id: "run-other",
+      model_family: "aircraft_support_v1",
+      data: []
+    }, { runId: "run-active", modelFamily: "aircraft_support_v1" }),
+    /projection run_id mismatch/
+  );
+  assert.throws(
+    () => normalizeAnalysisProjectionPayload("spare_shortfall", {
+      projection_type: "spare_shortfall",
+      run_id: "run-active",
+      model_family: "aviation_support",
+      data: []
+    }, { runId: "run-active", modelFamily: "aircraft_support_v1" }),
+    /projection model_family mismatch/
+  );
 });

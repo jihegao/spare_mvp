@@ -571,7 +571,12 @@ test("frontend API client exposes user management methods with M4 bearer token",
         return { user_id: "user-planner", username: request.body.username, role: request.body.role };
       }
       if (request.path === "/users/user-planner") {
+        if (request.method === "DELETE") return { deleted: true };
         return { user_id: "user-planner", username: "planner", display_name: request.body.display_name };
+      }
+      if (request.path === "/system-configs/system-runtime-support") {
+        if (request.method === "GET") return { config_key: "system-runtime-support", payload: { modelingForms: {} } };
+        return { config_key: "system-runtime-support", payload: request.body.payload };
       }
       throw new Error(`unexpected request ${request.method} ${request.path}`);
     }
@@ -580,18 +585,31 @@ test("frontend API client exposes user management methods with M4 bearer token",
   const listed = await client.listUsers();
   const created = await client.createUser({ username: "planner", password: "planner", role: "数据管理员" });
   const updated = await client.updateUser("user-planner", { display_name: "规划员二号" });
+  const deleted = await client.deleteUser("user-planner");
+  const loadedConfig = await client.getSystemConfig("system-runtime-support");
+  const savedConfig = await client.saveSystemConfig("system-runtime-support", {
+    modelingForms: { personnelSpecialties: ["机务"] }
+  });
 
   assert.equal(listed.users[0].username, "admin");
   assert.equal(created.username, "planner");
   assert.equal(updated.display_name, "规划员二号");
+  assert.equal(deleted.deleted, true);
+  assert.deepEqual(loadedConfig.payload, { modelingForms: {} });
+  assert.deepEqual(savedConfig.payload.modelingForms.personnelSpecialties, ["机务"]);
   assert.deepEqual(calls.map((call) => `${call.method} ${call.path}`), [
     "GET /users",
     "POST /users",
-    "POST /users/user-planner"
+    "POST /users/user-planner",
+    "DELETE /users/user-planner",
+    "GET /system-configs/system-runtime-support",
+    "POST /system-configs/system-runtime-support"
   ]);
   assert.equal(calls[0].headers.authorization, "Bearer session-admin");
   assert.equal(calls[1].headers.authorization, "Bearer session-admin");
   assert.equal(calls[2].headers.authorization, "Bearer session-admin");
+  assert.equal(calls[3].headers.authorization, "Bearer session-admin");
+  assert.equal(calls[5].body.payload.modelingForms.personnelSpecialties[0], "机务");
 });
 
 test("frontend API fetch transport preserves structured backend details", async () => {
@@ -761,8 +779,10 @@ test("frontend app routes project save run and result reads through API client",
   assert.match(appSource, /backend-run-chain/);
   assert.match(appSource, /backendArtifactManifest\.artifacts/);
   assert.match(appSource, /ArtifactManifest/);
-  assert.match(appSource, /后端产物来源/);
-  assert.match(appSource, /前端展示桥接/);
+  assert.match(appSource, /正式来源/);
+  assert.match(appSource, /正式结果来源/);
+  assert.match(appSource, /monteCarloFormalResultBoundary/);
+  assert.match(appSource, /renderMonteCarloFormalProjectionResults/);
   assert.match(appSource, /hydrateLastBackendRunFromApi/);
   assert.match(appSource, /const LAST_BACKEND_RUN_STORAGE_KEY = "spare-mvp:lastBackendRun"/);
   assert.match(appSource, /localStorage\.setItem\(LAST_BACKEND_RUN_STORAGE_KEY/);
