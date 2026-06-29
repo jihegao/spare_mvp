@@ -218,6 +218,45 @@ test("support resource page imports a local personnel table", async () => {
   }
 });
 
+test("support resource add creates a new editable row for the selected leaf organization", async () => {
+  const runtime = await setupRuntimeApp({
+    projectJson: createRuntimeProjectJson({
+      supportOrganization: {
+        tree: [{
+          id: "support-org-root",
+          name: "保障组织",
+          children: [
+            { id: "base-1", name: "基层1", children: [] }
+          ]
+        }]
+      },
+      supportNodes: [{
+        id: "support-node-base-1",
+        name: "基层1",
+        organizationNodeId: "base-1",
+        personnelModel: "航电",
+        personnelCapacity: 1,
+        inventory: {}
+      }]
+    })
+  });
+  try {
+    await runtime.click("[data-enter-workbench]", { projectId: "project-runtime" });
+    await runtime.setHash("feature=spare-planning-support-personnel");
+    await runtime.click("[data-select-support-org-node]", { selectSupportOrgNode: "base-1" });
+    const before = (runtime.appNode.innerHTML.match(/data-support-resource-field="model"/g) || []).length;
+
+    await runtime.click("[data-support-resource-add]", { supportResourceAdd: "保障人员" });
+
+    const after = (runtime.appNode.innerHTML.match(/data-support-resource-field="model"/g) || []).length;
+    assert.equal(before, 1);
+    assert.equal(after, 2);
+    assert.match(runtime.appNode.innerHTML, /新增保障人员/);
+  } finally {
+    runtime.restore();
+  }
+});
+
 test("project list imports and exports project JSON at runtime", async () => {
   const importedProjectJson = createRuntimeProjectJson({
     project_id: "project-json-runtime",

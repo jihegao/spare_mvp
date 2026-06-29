@@ -27,10 +27,17 @@ Runner:
 node reports/system-smoke/browser-smoke.mjs
 ```
 
+Screenshot runner:
+
+```bash
+SMOKE_CAPTURE_SCREENSHOTS=1 node reports/system-smoke/browser-smoke.mjs
+```
+
 Output:
 
 - JSON: `output/playwright/system-smoke-result.json`
 - Screenshots: `output/playwright/*.png`
+- Text evidence when screenshots are disabled: `output/playwright/*.txt`
 
 | Step | Evidence |
 | --- | --- |
@@ -42,6 +49,23 @@ Output:
 | Monte Carlo editor | `output/playwright/05b-monte-carlo-editor.png` |
 | Monte Carlo detail results | `output/playwright/06-monte-carlo-detail-results.png` |
 | Visual simulation | `output/playwright/08-visual-simulation.png` |
+
+2026-06-30 phase-3 browser smoke evidence:
+
+| Step | Evidence |
+| --- | --- |
+| Login -> project list | `output/playwright/01-project-list.txt` |
+| Enter project | `output/playwright/02-project-workbench.txt` |
+| Basic mission modeling before edit | `output/playwright/03-modeling-before-edit.txt` |
+| Basic mission modeling after edit | `output/playwright/04-modeling-after-edit.txt` |
+| Support activity button feedback | `output/playwright/04b-modeling-buttons-react.txt` |
+| Monte Carlo list | `output/playwright/05-monte-carlo-list.txt` |
+| Monte Carlo editor | `output/playwright/05b-monte-carlo-editor.txt` |
+| Monte Carlo detail results | `output/playwright/06-monte-carlo-detail-results.txt` |
+| Visual simulation | `output/playwright/08-visual-simulation.txt` |
+| Legacy spare Monte Carlo result alias | `output/playwright/09-legacy-spare-monte-carlo-results.txt` |
+| Legacy mission Monte Carlo result alias | `output/playwright/10-legacy-mission-monte-carlo-results.txt` |
+| Legacy aircraft task reliability alias | `output/playwright/11-legacy-aircraft-task-reliability.txt` |
 
 Observed final state:
 
