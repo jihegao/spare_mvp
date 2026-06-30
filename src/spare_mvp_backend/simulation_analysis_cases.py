@@ -39,9 +39,12 @@ def write_simulation_analysis_case_fixtures(repo_root: Path | str) -> None:
     """Write one golden fixture per Phase 6P analysis case."""
     root = Path(repo_root)
     output_dir = root / "tests" / "fixtures" / "simulation_analysis_cases"
+    template_dir = root / "public" / "import-templates"
     output_dir.mkdir(parents=True, exist_ok=True)
+    template_dir.mkdir(parents=True, exist_ok=True)
     for case in build_simulation_analysis_case_pack(root)["cases"]:
         _write_json(output_dir / f"{case['case_id']}.json", case)
+        _write_json(template_dir / f"{case['case_id']}.json", case["modeling_import"])
 
 
 def simulation_analysis_case_fixture_drift(repo_root: Path | str) -> list[str]:
@@ -57,6 +60,14 @@ def simulation_analysis_case_fixture_drift(repo_root: Path | str) -> list[str]:
         existing = json.loads(path.read_text(encoding="utf-8"))
         if existing != case:
             drifted.append(relative_path)
+        template_relative_path = f"public/import-templates/{case['case_id']}.json"
+        template_path = root / template_relative_path
+        if not template_path.exists():
+            drifted.append(template_relative_path)
+            continue
+        existing_template = json.loads(template_path.read_text(encoding="utf-8"))
+        if existing_template != case["modeling_import"]:
+            drifted.append(template_relative_path)
     return drifted
 
 
@@ -116,6 +127,11 @@ def _minimal_single_aircraft_import(source: dict[str, Any]) -> dict[str, Any]:
     mission["name"] = "6P 最小单机任务剖面"
     mission["durationHours"] = 6
     mission["endCondition"] = "完成 1 个最小单机出动波次"
+    for phase in mission.get("missionPhases", []):
+        phase.pop("transitionCondition", None)
+    if isinstance(objects.get("missionPhases"), list):
+        for phase in objects["missionPhases"]:
+            phase.pop("transitionCondition", None)
     mission["compositeTasks"] = [
         {
             "id": "composite-6p-minimal",
@@ -164,40 +180,137 @@ def _minimal_single_aircraft_import(source: dict[str, Any]) -> dict[str, Any]:
     mission["basicMission"]["equipmentQuantity"] = 1
     mission["basicMission"]["minRequiredSorties"] = 1
     mission["basicMission"]["taskDurationMinutes"] = 60
+    mission["basicMission"]["supportActivityName"] = ""
+    mission["experiment"] = {
+        **copy.deepcopy(mission.get("experiment", {})),
+        "samples": 1,
+    }
+    objects["experiment"] = copy.deepcopy(mission["experiment"])
+    single_monte_carlo = {
+        "failureRates": [0.02],
+        "minRequiredSorties": [1],
+        "spareMultipliers": [1.0],
+        "supportCapacities": [1],
+    }
+    objects["monteCarlo"] = copy.deepcopy(single_monte_carlo)
+    mission["monteCarlo"] = copy.deepcopy(single_monte_carlo)
+    airport0 = {
+        "id": "airport0",
+        "name": "airport0",
+        "location": "最小案例起降点",
+        "runwayType": "单一起降点",
+        "distanceToMissionKm": 180,
+        "supportNodeId": None,
+    }
+    objects["airports"] = [copy.deepcopy(airport0)]
+    mission["airports"] = [copy.deepcopy(airport0)]
 
     objects["equipment"] = {
         **copy.deepcopy(objects.get("equipment", {})),
         "quantity": 1,
         "initialReady": 1,
         "minRequiredSorties": 1,
+        "model": "J-15",
+        "deploymentLocation": "null",
         "wholeMachineModels": ["J-15"],
     }
-    kept_asset_ids = {"aircraft-root", "j15-engine"}
-    objects["equipmentAssets"] = [
-        _asset_with_quantity(asset, 1)
-        for asset in objects["equipmentAssets"]
-        if asset.get("id") in kept_asset_ids
-    ]
-    objects["supportResources"] = [_resource_with_capacity(objects["supportResources"][0], 1)]
-    preflight = copy.deepcopy(objects["supportActivities"][0])
-    preflight["id"] = "preflight-6p-minimal"
-    preflight["name"] = "最小飞行前保障"
-    preflight["equipmentId"] = "j15-engine"
-    preflight["resourceId"] = objects["supportResources"][0]["id"]
-    preflight["durationHours"] = 0.5
-    preflight["jobs"] = [copy.deepcopy(preflight["jobs"][0])]
-    preflight["jobs"][0]["activityCode"] = "MIN-001"
-    preflight["jobs"][0]["predecessors"] = []
-    objects["supportActivities"] = [preflight]
-    objects["analysisRequests"]["largeSample"] = {
+    mission["equipment"] = copy.deepcopy(objects["equipment"])
+    whole_aircraft_asset = {
+        "id": "whole-aircraft",
+        "name": "全机",
+        "aircraftModel": "J-15",
+        "productType": "整机",
+        "quantity": 1,
+        "failureRate": 0.05,
+        "mtbfHours": 20,
+        "failureDistribution": {
+            "distributionType": "指数分布",
+            "parameters": "lambda=0.05",
+        },
+        "meanRepairTimeMinutes": 120,
+        "repairDistribution": {
+            "distributionType": "固定值",
+            "parameters": "value=120",
+        },
+    }
+    objects["equipmentAssets"] = [whole_aircraft_asset]
+    minimal_rbd = {
+        "nodes": [
+            {
+                "id": "whole-aircraft",
+                "name": "全机",
+                "type": "system",
+                "parentId": None,
+                "connectionType": "串联",
+                "failureRate": 0.05,
+                "mtbfHours": 20,
+                "failureDistribution": {
+                    "distributionType": "指数分布",
+                    "parameters": "lambda=0.05",
+                },
+                "meanRepairTimeMinutes": 120,
+                "repairDistribution": {
+                    "distributionType": "固定值",
+                    "parameters": "value=120",
+                },
+            }
+        ],
+        "edges": [],
+    }
+    objects["reliabilityBlockDiagram"] = copy.deepcopy(minimal_rbd)
+    mission["reliabilityBlockDiagram"] = copy.deepcopy(minimal_rbd)
+    support_resource = _resource_with_capacity(objects["supportResources"][0], 1)
+    support_resource["personnelCapacity"] = None
+    support_resource["equipmentCapacity"] = None
+    support_resource["inventory"] = {}
+    support_resource["lateralSupportNodes"] = []
+    support_resource["transportPolicies"] = []
+    support_resource["organizationStrategy"] = ""
+    support_resource["policy"] = ""
+    objects["supportResources"] = [support_resource]
+    objects["supportOrganization"] = {
+        "tree": [
+            {
+                "id": support_resource["id"],
+                "name": support_resource["name"],
+                "supportNodeId": support_resource["id"],
+                "description": "",
+                "children": [],
+            }
+        ]
+    }
+    empty_activity = {
+        "id": "empty-support-activity",
+        "name": "空保障活动",
+        "activityName": "空保障活动",
+        "activityType": "保障活动",
+        "planType": "",
+        "equipmentId": "whole-aircraft",
+        "resourceId": objects["supportResources"][0]["id"],
+        "durationHours": 0.5,
+        "requiredPersonnel": None,
+        "requiredDevices": None,
+        "spareType": "",
+        "spareQuantity": 0,
+        "jobs": [],
+        "preventive": {},
+        "corrective": {},
+        "logistics": {},
+        "transportStrategies": [],
+        "organizationStrategies": [],
+    }
+    objects["supportActivities"] = [empty_activity]
+    single_large_sample = {
         "enabled": True,
-        "samples": 2,
+        "samples": 1,
         "sweep": {
             "failureRates": [0.02],
             "spareMultipliers": [1.0],
             "supportCapacities": [1],
         },
     }
+    objects["analysisRequests"]["largeSample"] = copy.deepcopy(single_large_sample)
+    mission["analysisRequests"] = {"largeSample": copy.deepcopy(single_large_sample)}
     return case
 
 
