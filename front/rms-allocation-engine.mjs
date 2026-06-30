@@ -281,10 +281,11 @@ export function createDefaultRmsAllocationPlan(project = createDemoRmsAllocation
     projectId: project.projectId,
     algorithmVersion: RMS_ALLOCATION_ALGORITHM_VERSION,
     targets: {
-      reliability: { value: 0.95, atHours: 3 },
+      reliability: { value: 0.95, atHours: Number(project.missionProfile?.missionHours || 3) },
+      taskDurationHours: Number(project.missionProfile?.missionHours || 3),
+      criticalFailureRatio: 1,
       maintainability: { value: 0.9, withinHours: 2 },
       supportability: { value: 0.9, withinHours: 4 },
-      mtbfHours: 900,
       mttrHours: 1.5,
       mldtHours: 2,
       inherentAvailability: 0.98,
@@ -314,12 +315,16 @@ export function calculateRmsAllocation(plan, project) {
   const childNodes = project.equipmentNodes.filter((node) => node.parentId === project.rootId);
   const exposure = compileMissionExposure({ ...project, targets: plan.targets }, childNodes);
   const weights = reliabilityWeights(plan, project, childNodes, exposure);
-  const equipmentRiskBudget = -Math.log(Number(plan.targets.reliability.value));
+  const targetMetrics = deriveTargetMetrics(plan, project);
+  const equipmentRiskBudget = targetMetrics.riskBudget;
   const reliabilityRows = childNodes.map((node) => {
-    const equivalentHours = exposure.totalsByNode[node.id]?.equivalentHours || Number(plan.targets.reliability.atHours);
+    const runningRatio = runningRatioForNode(node);
+    const productIntensityHours = roundMetric(targetMetrics.taskDurationHours * runningRatio);
     const riskBudget = equipmentRiskBudget * weights[node.id];
-    const reliability = Math.exp(-riskBudget);
-    const failureRate = riskBudget / equivalentHours;
+    const reliabilityForVerification = Math.exp(-riskBudget);
+    const mtbcfHours = riskBudget > 0 ? productIntensityHours / riskBudget : Number.POSITIVE_INFINITY;
+    const mtbfHours = mtbcfHours * targetMetrics.criticalFailureRatio;
+    const failureRate = mtbfHours > 0 ? 1 / mtbfHours : 0;
     return {
       node,
       nodeId: node.id,
@@ -328,17 +333,22 @@ export function calculateRmsAllocation(plan, project) {
       parentId: node.parentId,
       structure: node.structure || "series",
       quantity: node.quantity || 1,
-      equivalentHours,
+      runningRatio,
+      productIntensityHours,
       riskWeight: weights[node.id],
       riskBudget,
-      reliability,
+      reliabilityForVerification,
       failureRate,
-      mtbfHours: failureRate > 0 ? 1 / failureRate : Number.POSITIVE_INFINITY
+      mtbcfHours,
+      mtbfHours
     };
   });
 
   const nodeResults = attachMaintainabilityAndSupportability(reliabilityRows, plan);
-  const calculatedReliability = evaluateBottomUpReliability(project, nodeResults);
+  const calculatedReliability = evaluateBottomUpReliability(project, reliabilityRows.map((row) => ({
+    nodeId: row.nodeId,
+    reliability: row.reliabilityForVerification
+  })));
   const calculatedMttr = weightedMean(nodeResults, "mttrHours", (row) => row.failureRate);
   const calculatedMldt = weightedMean(nodeResults, "mldtHours", (row) => row.supportDemand);
   const warnings = [
@@ -361,6 +371,7 @@ export function calculateRmsAllocation(plan, project) {
     method: plan.methods.reliability,
     similarProduct: plan.methods.similarProduct || null,
     exposure,
+    targetMetrics,
     nodeResults,
     verification: {
       equipmentTarget: {
@@ -392,8 +403,8 @@ export function publishRmsAllocation(project, allocationResult) {
     if (!node) continue;
     node.rms ||= {};
     node.rms.target = {
-      reliability: nodeResult.reliability,
       failureRate: nodeResult.failureRate,
+      mtbcfHours: nodeResult.mtbcfHours,
       mtbfHours: nodeResult.mtbfHours,
       mttrHours: nodeResult.mttrHours,
       mldtHours: nodeResult.mldtHours,
@@ -440,11 +451,12 @@ function reliabilityWeights(plan, project, childNodes, exposure) {
 }
 
 function rawRiskFactor(plan, node, exposure) {
-  const equivalentHours = exposure.totalsByNode[node.id]?.equivalentHours || Number(plan.targets.reliability.atHours);
+  const taskDurationHours = normalizedTaskDuration(plan, { missionProfile: { missionHours: plan.targets?.reliability?.atHours } });
+  const productIntensityHours = roundMetric(taskDurationHours * runningRatioForNode(node));
   if (plan.methods.reliability === "proportional") {
     const predictedMtbf = Number(node.rms?.prediction?.mtbfHours || node.failureModel?.baselineMtbfHours || 1000);
     const adjustmentFactor = Number(plan.methods?.proportional?.adjustmentFactor || 1);
-    return equivalentHours / Math.max(predictedMtbf * adjustmentFactor, 1e-9);
+    return productIntensityHours / Math.max(predictedMtbf * adjustmentFactor, 1e-9);
   }
   if (plan.methods.reliability === "similar") {
     const planFactor = Number(plan.methods?.similarProduct?.adjustmentFactor || 1);
@@ -456,7 +468,7 @@ function rawRiskFactor(plan, node, exposure) {
       || node.failureModel?.baselineMtbfHours
       || 1000
     );
-    return equivalentHours / Math.max(similarMtbf * similarFactor, 1e-9);
+    return productIntensityHours / Math.max(similarMtbf * similarFactor, 1e-9);
   }
   return 1;
 }
@@ -470,7 +482,7 @@ function attachMaintainabilityAndSupportability(rows, plan) {
 
   const demandRows = rows.map((row) => ({
     ...row,
-    supportDemand: row.failureRate * row.equivalentHours * Number(row.quantity || 1) * Number(row.node.criticality || 1)
+    supportDemand: row.failureRate * row.productIntensityHours * Number(row.quantity || 1) * Number(row.node.criticality || 1)
   }));
   const demandSum = demandRows.reduce((sum, row) => sum + row.supportDemand, 0) || 1;
   const mldtDenominator = demandRows.reduce((sum, row) => (
@@ -491,11 +503,12 @@ function attachMaintainabilityAndSupportability(rows, plan) {
       parentId: row.parentId,
       structure: row.structure,
       quantity: row.quantity,
-      equivalentHours: row.equivalentHours,
+      runningRatio: row.runningRatio,
+      productIntensityHours: row.productIntensityHours,
       riskWeight: row.riskWeight,
       riskBudget: row.riskBudget,
-      reliability: row.reliability,
       failureRate: row.failureRate,
+      mtbcfHours: row.mtbcfHours,
       mtbfHours: row.mtbfHours,
       mttrHours,
       mldtHours,
@@ -522,7 +535,52 @@ function methodWarnings(plan, project) {
 }
 
 export function aggregateSeriesReliability(nodeResults) {
-  return seriesReliability(nodeResults.map((row) => row.reliability));
+  return seriesReliability(nodeResults.map((row) => row.reliabilityForVerification ?? 1));
+}
+
+function deriveTargetMetrics(plan, project) {
+  const reliability = normalizedReliability(plan.targets?.reliability?.value);
+  const taskDurationHours = normalizedTaskDuration(plan, project);
+  const criticalFailureRatio = normalizedCriticalFailureRatio(plan.targets?.criticalFailureRatio);
+  const riskBudget = -Math.log(reliability);
+  const mtbcfHours = taskDurationHours / riskBudget;
+  return {
+    reliability,
+    taskDurationHours,
+    criticalFailureRatio,
+    riskBudget,
+    mtbcfHours,
+    mtbfHours: mtbcfHours * criticalFailureRatio
+  };
+}
+
+function normalizedReliability(value) {
+  const number = Number(value);
+  if (number > 0 && number < 1) return number;
+  return 0.95;
+}
+
+function normalizedTaskDuration(plan, project) {
+  const number = Number(plan.targets?.taskDurationHours ?? plan.targets?.reliability?.atHours ?? project.missionProfile?.missionHours);
+  return Number.isFinite(number) && number > 0 ? number : 3;
+}
+
+function normalizedCriticalFailureRatio(value) {
+  const number = Number(value);
+  if (Number.isFinite(number) && number > 0 && number <= 1) return number;
+  return 1;
+}
+
+function runningRatioForNode(node) {
+  const number = Number(node.missionUse?.runningRatio ?? node.missionUse?.dutyCycle ?? node.runningRatio ?? 1);
+  if (!Number.isFinite(number) || number < 0) return 1;
+  return Math.min(number, 1);
+}
+
+function roundMetric(value, digits = 12) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return number;
+  return Number(number.toFixed(digits));
 }
 
 function normalizeRmsImportedProject(project, baseProject) {
@@ -576,7 +634,8 @@ function importedNodeFromRow(row, { id, parentId, fallbackLevel, index }) {
     supportDifficulty: pickNumber(row, ["supportDifficulty", "保障难度"], 1),
     criticality: pickNumber(row, ["criticality", "关键度"], 1),
     missionUse: {
-      dutyCycle: pickNumber(row, ["dutyCycle", "占空比"], 1),
+      runningRatio: pickNumber(row, ["runningRatio", "运行比", "dutyCycle", "占空比"], 1),
+      dutyCycle: pickNumber(row, ["dutyCycle", "占空比", "runningRatio", "运行比"], 1),
       environmentFactor: pickNumber(row, ["environmentFactor", "环境系数"], 1),
       loadFactor: pickNumber(row, ["loadFactor", "载荷系数"], 1)
     },

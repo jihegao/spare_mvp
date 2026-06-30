@@ -3004,8 +3004,10 @@ test("system management exposes an independent equipment RMS allocation workbenc
   assert.doesNotMatch(workbenchSource, /import-sample/);
   assert.doesNotMatch(workbenchSource, /导入 15/);
   assert.match(workbenchSource, /任务可靠度/);
+  assert.match(workbenchSource, /任务时长\(h\)/);
+  assert.match(workbenchSource, /关键故障占比/);
   assert.match(workbenchSource, /MTTR\(h\)/);
-  assert.match(workbenchSource, /MTBF\(h\)/);
+  assert.doesNotMatch(workbenchSource, /MTBF\(h\)/);
   assert.match(workbenchSource, /data-rms-equipment-root/);
   assert.match(workbenchSource, /可靠性分配方法/);
   assert.match(workbenchSource, /等分配法/);
@@ -3020,6 +3022,13 @@ test("system management exposes an independent equipment RMS allocation workbenc
   assert.doesNotMatch(workbenchSource, /AGREE 分配法/);
   assert.doesNotMatch(workbenchSource, /评分分配法/);
   assert.doesNotMatch(workbenchSource, /任务暴露矩阵/);
+  assert.doesNotMatch(workbenchSource, /暴露时间/);
+  assert.doesNotMatch(workbenchSource, /R目标/);
+  assert.doesNotMatch(workbenchSource, /反算 R/);
+  assert.match(workbenchSource, /校核可靠度/);
+  assert.match(workbenchSource, /运行比/);
+  assert.match(workbenchSource, /产品强度/);
+  assert.match(workbenchSource, /MTBCF/);
 });
 
 test("RMS allocation workbench renders parameters for only the selected method", () => {
@@ -3045,6 +3054,15 @@ test("RMS allocation workbench renders parameters for only the selected method",
   const equalHtml = renderWithMethod("equal");
   assert.doesNotMatch(equalHtml, /基准机型/);
   assert.doesNotMatch(equalHtml, /比例修正系数/);
+  assert.doesNotMatch(equalHtml, /暴露时间/);
+  assert.doesNotMatch(equalHtml, /R目标/);
+  assert.doesNotMatch(equalHtml, /反算 R/);
+  assert.match(equalHtml, /校核可靠度/);
+  assert.match(equalHtml, /运行比<\/th>/);
+  assert.match(equalHtml, /产品强度/);
+  assert.match(equalHtml, /MTBCF/);
+  assert.match(equalHtml, /任务计算机LRU/);
+  assert.match(equalHtml, /运行比 0\.65/);
 
   const proportionalHtml = renderWithMethod("proportional");
   assert.match(proportionalHtml, /比例修正系数/);

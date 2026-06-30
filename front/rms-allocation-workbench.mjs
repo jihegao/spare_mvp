@@ -6,6 +6,7 @@ const RELIABILITY_METHODS = [
 
 export function renderRmsAllocationWorkbench({ project, plan, result, importStatus, htmlEscape, fixed, pct }) {
   const equipmentRoots = project.equipmentNodes.filter((node) => !node.parentId);
+  const targetMetrics = result.targetMetrics || {};
   return `
     <div class="rms-allocation-workbench">
       <section class="rms-parameter-panel">
@@ -17,8 +18,9 @@ export function renderRmsAllocationWorkbench({ project, plan, result, importStat
         </div>
         <div class="rms-parameter-grid">
           ${input("任务可靠度", "targets.reliability.value", plan.targets.reliability.value, "number", "0.001", htmlEscape)}
+          ${input("任务时长(h)", "targets.taskDurationHours", plan.targets.taskDurationHours ?? plan.targets.reliability.atHours, "number", "0.1", htmlEscape)}
+          ${input("关键故障占比", "targets.criticalFailureRatio", plan.targets.criticalFailureRatio ?? 1, "number", "0.01", htmlEscape)}
           ${input("MTTR(h)", "targets.mttrHours", plan.targets.mttrHours, "number", "0.1", htmlEscape)}
-          ${input("MTBF(h)", "targets.mtbfHours", plan.targets.mtbfHours, "number", "1", htmlEscape)}
         </div>
       </section>
 
@@ -47,9 +49,10 @@ export function renderRmsAllocationWorkbench({ project, plan, result, importStat
           </div>
           <div class="rms-verification-metrics">
             ${metric("目标 R", fixed(result.verification.equipmentTarget.reliability, 3))}
-            ${metric("反算 R", fixed(result.verification.calculated.reliability, 3))}
+            ${metric("校核可靠度", fixed(result.verification.calculated.reliability, 3))}
+            ${metric("MTBCF", `${fixed(targetMetrics.mtbcfHours, 1)} h`)}
+            ${metric("MTBF", `${fixed(targetMetrics.mtbfHours, 1)} h`)}
             ${metric("MTTR 裕度", `${fixed(result.verification.margin.mttrHours, 2)} h`)}
-            ${metric("MTBF 目标", `${fixed(plan.targets.mtbfHours, 0)} h`)}
           </div>
           <div class="rms-warning-list">
             ${result.warnings.length
@@ -63,15 +66,16 @@ export function renderRmsAllocationWorkbench({ project, plan, result, importStat
         <div class="section-head"><h3>节点分配结果</h3><span>系统级 / LRU 级 RMS target</span></div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>层级</th><th>节点</th><th>结构</th><th>暴露时间</th><th>R目标</th><th>失效率</th><th>MTBF</th><th>MTTR</th><th>Ai</th><th>Ao</th><th>状态</th></tr></thead>
+            <thead><tr><th>层级</th><th>节点</th><th>结构</th><th>运行比</th><th>产品强度</th><th>失效率</th><th>MTBCF</th><th>MTBF</th><th>MTTR</th><th>Ai</th><th>Ao</th><th>状态</th></tr></thead>
             <tbody>${result.nodeResults.map((row) => `
               <tr>
                 <td>${htmlEscape(row.level)}</td>
                 <td>${htmlEscape(row.nodeName)}</td>
                 <td>${htmlEscape(row.structure)}</td>
-                <td>${fixed(row.equivalentHours, 2)} h</td>
-                <td>${fixed(row.reliability, 4)}</td>
+                <td>${compactNumber(row.runningRatio)}</td>
+                <td>${fixed(row.productIntensityHours, 2)} h</td>
                 <td>${fixed(row.failureRate, 5)}</td>
+                <td>${fixed(row.mtbcfHours, 1)} h</td>
                 <td>${fixed(row.mtbfHours, 1)} h</td>
                 <td>${fixed(row.mttrHours, 2)} h</td>
                 <td>${pct(row.inherentAvailability)}</td>
@@ -100,7 +104,7 @@ function renderEquipmentTree(project, result, htmlEscape) {
     return `
       <li style="--tree-depth:${depth}">
         <strong>${htmlEscape(node.name)}</strong>
-        <span>${htmlEscape(node.level)} / ${fixedOrDash(row?.equivalentHours)}h</span>
+        <span>${htmlEscape(node.level)} / 运行比 ${compactNumber(row?.runningRatio)}</span>
       </li>
       ${renderChildren(node.id, depth + 1)}
     `;
@@ -161,6 +165,7 @@ function statusLabel(status) {
   return status === "validated" ? "已校核" : "已计算";
 }
 
-function fixedOrDash(value) {
-  return Number.isFinite(value) ? Number(value).toFixed(2) : "-";
+function compactNumber(value, digits = 2) {
+  if (!Number.isFinite(Number(value))) return "-";
+  return Number(value).toFixed(digits).replace(/\.?0+$/, "");
 }

@@ -12,31 +12,41 @@ import {
   selectRmsAllocationEquipmentRoot
 } from "../front/rms-allocation-engine.mjs";
 
-test("equal allocation back-solves to the equipment reliability target", () => {
+test("equal allocation derives MTBCF and MTBF from task reliability duration and critical failure ratio", () => {
   const project = createDemoRmsAllocationProject();
   const plan = createDefaultRmsAllocationPlan(project);
   plan.methods.reliability = "equal";
   plan.targets.reliability.value = 0.95;
-  plan.targets.reliability.atHours = 3;
+  plan.targets.taskDurationHours = 3;
+  plan.targets.criticalFailureRatio = 0.8;
 
   const result = calculateRmsAllocation(plan, project);
+  const expectedMtbcf = -3 / Math.log(0.95);
 
   assert.equal(result.status, "validated");
   assert.equal(result.nodeResults.length, project.equipmentNodes.filter((node) => node.parentId === "aircraft-root").length);
   assert.ok(Math.abs(result.verification.calculated.reliability - 0.95) < 1e-9);
-  assert.ok(result.nodeResults.every((row) => row.reliability > 0.98));
+  assert.ok(Math.abs(result.targetMetrics.mtbcfHours - expectedMtbcf) < 1e-9);
+  assert.ok(Math.abs(result.targetMetrics.mtbfHours - expectedMtbcf * 0.8) < 1e-9);
+  assert.equal("equivalentHours" in result.nodeResults[0], false);
+  assert.equal("reliability" in result.nodeResults[0], false);
+  assert.ok(result.nodeResults.every((row) => row.mtbcfHours > row.mtbfHours));
 });
 
-test("different mission exposure produces different MTBF requirements", () => {
+test("different running ratio produces different product intensity and MTBF requirements", () => {
   const project = createDemoRmsAllocationProject();
   const plan = createDefaultRmsAllocationPlan(project);
   plan.methods.reliability = "equal";
+  plan.targets.taskDurationHours = 3;
 
   const result = calculateRmsAllocation(plan, project);
   const longerExposure = result.nodeResults.find((row) => row.nodeId === "propulsion-system");
   const shorterExposure = result.nodeResults.find((row) => row.nodeId === "mission-computer");
 
-  assert.ok(longerExposure.equivalentHours > shorterExposure.equivalentHours);
+  assert.equal(longerExposure.runningRatio, 1);
+  assert.equal(shorterExposure.runningRatio, 0.65);
+  assert.equal(shorterExposure.productIntensityHours, 1.95);
+  assert.ok(longerExposure.productIntensityHours > shorterExposure.productIntensityHours);
   assert.ok(longerExposure.mtbfHours > shorterExposure.mtbfHours);
 });
 
@@ -50,7 +60,7 @@ test("proportional allocation gives more risk budget to weaker predicted nodes",
   const avionics = result.nodeResults.find((row) => row.nodeId === "avionics-system");
 
   assert.ok(propulsion.riskBudget > avionics.riskBudget);
-  assert.ok(propulsion.reliability < avionics.reliability);
+  assert.ok(propulsion.mtbfHours < avionics.mtbfHours);
 });
 
 test("similar product allocation supports baselining a 16 model from 15 model data", () => {
@@ -71,7 +81,7 @@ test("similar product allocation supports baselining a 16 model from 15 model da
   assert.equal(result.similarProduct.sourceModel, "15 机型");
   assert.equal(result.similarProduct.targetModel, "16 机型");
   assert.ok(propulsion.riskBudget > missionComputer.riskBudget);
-  assert.ok(propulsion.reliability < missionComputer.reliability);
+  assert.ok(propulsion.mtbfHours < missionComputer.mtbfHours);
 });
 
 test("RMS equipment table import creates an independent allocation project", () => {
@@ -123,6 +133,8 @@ test("publishing allocation writes only target RMS values", () => {
   const publishedNode = published.equipmentNodes.find((node) => node.id === "propulsion-system");
 
   assert.ok(publishedNode.rms.target.mtbfHours > 0);
+  assert.ok(publishedNode.rms.target.mtbcfHours > 0);
+  assert.equal("reliability" in publishedNode.rms.target, false);
   assert.equal(publishedNode.rms.target.allocationPlanId, plan.planId);
   assert.deepEqual(publishedNode.rms.prediction, sourceNode.rms.prediction);
   assert.deepEqual(publishedNode.rms.actual, sourceNode.rms.actual);

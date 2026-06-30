@@ -245,33 +245,34 @@
 
 ## 阶段 4：RMS 算法切片
 
-**目的：** 在不阻塞阶段 0 建模仿真主流程的前提下，等公式和字段名确认后再实现 RMS 变更。
+**目的：** 在不阻塞阶段 0 建模仿真主流程的前提下，按已确认公式和字段名实现 RMS 变更。
 
-**阻断确认项：**
-- 当前反算字段的新名称。
-- 任务可靠度和任务时长到 MTBCF 的公式。
-- MTBCF 结合关键故障占比或故障类型映射到 MTBF 的公式。
-- `运行比` 的定义和单位。
+**已确认口径：**
+- 当前反算字段命名为 `校核可靠度`，只作为整机校核指标显示。
+- 节点分配结果删除 `暴露时间` 和 `R目标`，不保留对应隐藏计算值。
+- `运行比` 是 `0..1` 的任务使用比例，界面按紧凑数字显示，例如 `0.65`。
+- 任务可靠度 `R` 和任务时长 `T` 到 MTBCF 的公式：`MTBCF = -T / ln(R)`。
+- 关键故障占比 `p` 到 MTBF 的默认公式：`MTBF = p * MTBCF`，默认 `p = 1`。
 
 **文件：**
 - 修改：`front/rms-allocation-engine.mjs`
 - 修改：`front/rms-allocation-workbench.mjs`
-- 修改：`front/app.js`
-- 修改：`front/styles.css`
+- 验证既有连接：`front/app.js`
+- 验证既有样式：`front/styles.css`
 - 测试：`tests/rms-allocation-engine.test.mjs`
 - 测试：`tests/frontend-contract.test.mjs`
 - 测试：`tests/frontend-app-runtime.test.mjs`
 
-- [ ] 产品口径确认后，重命名反算字段。
-- [ ] 从节点分配结果中移除 `暴露时间` 和 `R目标`。
-- [ ] 增加 `运行比` 输入，并在左侧结构树节点显示。
-- [ ] 增加 `任务时长`。
-- [ ] 根据运行比计算产品强度。
-- [ ] 根据任务可靠度和任务时长计算 MTBCF。
-- [ ] 使用关键故障占比或故障类型映射，将 MTBCF 折算为 MTBF。
+- [x] 产品口径确认后，重命名反算字段。
+- [x] 从节点分配结果中移除 `暴露时间` 和 `R目标`。
+- [x] 增加 `运行比` 输入，并在左侧结构树节点显示。
+- [x] 增加 `任务时长`。
+- [x] 根据运行比计算产品强度。
+- [x] 根据任务可靠度和任务时长计算 MTBCF。
+- [x] 使用关键故障占比或故障类型映射，将 MTBCF 折算为 MTBF。
 
 **验证：**
-- [ ] 运行 `node --test tests/rms-allocation-engine.test.mjs tests/frontend-contract.test.mjs tests/frontend-app-runtime.test.mjs`。
+- [x] 运行 `node --test tests/rms-allocation-engine.test.mjs tests/frontend-contract.test.mjs tests/frontend-app-runtime.test.mjs`。
 - [x] 运行 `npm test`。
 
 **退出标准：** RMS 公式在代码和测试中明确表达，不保留占位算法。
