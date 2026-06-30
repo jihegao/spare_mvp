@@ -189,6 +189,7 @@ export function createBackendApiClient({ baseUrl = DEFAULT_API_BASE, transport, 
 export function buildBackendProjectJson(scenario, project = {}) {
   const projectJson = cloneJson(scenario);
   syncCompositeTaskInheritedBasicFields(projectJson);
+  canonicalizeSupportActivityJobPredecessors(projectJson);
   projectJson.schema_version ||= "project-v0";
   projectJson.project_id ||= project.id ? `project-${project.id}` : `project-${projectJson.scenarioId}`;
   projectJson.project_version ||= "project-v0.1";
@@ -238,6 +239,70 @@ function basicMissionDisplayName(task) {
 function copyPresentValue(target, key, value) {
   if (value === undefined || value === null || value === "") return;
   target[key] = value;
+}
+
+function canonicalizeSupportActivityJobPredecessors(projectJson) {
+  const activities = Array.isArray(projectJson.supportActivities) ? projectJson.supportActivities : [];
+  for (const activity of activities) {
+    const jobs = Array.isArray(activity?.jobs) ? activity.jobs.filter((job) => job && typeof job === "object") : [];
+    if (!jobs.length) continue;
+    const usedCodes = new Set(jobs.map((job) => normalizedText(job.activityCode)).filter(Boolean));
+    jobs.forEach((job, index) => {
+      if (normalizedText(job.activityCode)) return;
+      const code = nextSupportActivityJobCode(usedCodes, index);
+      job.activityCode = code;
+      usedCodes.add(code);
+    });
+    const aliasCounts = new Map();
+    const codeByAlias = new Map();
+    jobs.forEach((job, index) => {
+      const code = normalizedText(job.activityCode);
+      if (!code) return;
+      for (const alias of supportActivityJobAliases(job, index)) {
+        aliasCounts.set(alias, (aliasCounts.get(alias) || 0) + 1);
+        codeByAlias.set(alias, code);
+      }
+    });
+    for (const job of jobs) {
+      const rawPredecessors = job.predecessors;
+      if (rawPredecessors === undefined || rawPredecessors === null) continue;
+      const predecessors = Array.isArray(rawPredecessors) ? rawPredecessors : [rawPredecessors];
+      const seen = new Set();
+      job.predecessors = predecessors
+        .map((predecessor) => {
+          const value = normalizedText(predecessor);
+          if (!value) return "";
+          return aliasCounts.get(value) === 1 ? codeByAlias.get(value) : value;
+        })
+        .filter((value) => {
+          if (!value || seen.has(value)) return false;
+          seen.add(value);
+          return true;
+        });
+    }
+  }
+}
+
+function supportActivityJobAliases(job, index) {
+  return [
+    job.activityCode,
+    job.workName,
+    `BA-${index + 1}`
+  ].map((value) => normalizedText(value)).filter(Boolean);
+}
+
+function nextSupportActivityJobCode(usedCodes, index) {
+  let candidateIndex = index + 1;
+  let candidate = "";
+  do {
+    candidate = `BA-${String(candidateIndex).padStart(3, "0")}`;
+    candidateIndex += 1;
+  } while (usedCodes.has(candidate));
+  return candidate;
+}
+
+function normalizedText(value) {
+  return String(value ?? "").trim();
 }
 
 export function buildExperimentPlanConfig(projectJson) {

@@ -108,6 +108,38 @@ test("buildRunIntent creates canonical monte carlo request shape", async () => {
   assert.deepEqual(submittedRequests, [bound.runRequest]);
 });
 
+test("buildRunIntent raises Monte Carlo samples to cover every sweep point", () => {
+  const projectJson = {
+    project_id: "project-sweep-coverage",
+    experiment: { name: "sweep coverage", steps: 4, samples: 24, seed: 101 },
+    analysisRequests: {
+      largeSample: {
+        enabled: true,
+        samples: 24,
+        sweep: {
+          failureRates: [0.035, 0.055, 0.075],
+          spareMultipliers: [0.75, 1, 1.25],
+          supportCapacities: [2, 3, 4]
+        }
+      }
+    }
+  };
+
+  const intent = buildRunIntent({
+    runType: "monte_carlo",
+    projectJson,
+    planProjectJson: projectJson,
+    mcExperimentId: "mc-sweep-coverage"
+  });
+
+  assert.equal(intent.experimentPlanConfig.samples, 27);
+  assert.equal(intent.experimentPlanConfig.analysisRequests.largeSample.samples, 27);
+  assert.equal(intent.experimentPlanConfig.projectJson.experiment.samples, 27);
+  assert.equal(intent.experimentPlanConfig.projectJson.analysisRequests.largeSample.samples, 27);
+  assert.equal(intent.planProjectJson.experiment.samples, 27);
+  assert.equal(intent.planProjectJson.analysisRequests.largeSample.samples, 27);
+});
+
 test("submitRunIntent sends user-edited Monte Carlo samples and seed in experiment plan config", async () => {
   const calls = [];
   const apiClient = {

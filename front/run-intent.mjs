@@ -76,15 +76,30 @@ export async function submitRunIntent(apiClient, options) {
 function withCanonicalMonteCarloAnalysisRequest(planProjectJson) {
   const nextProjectJson = cloneJson(planProjectJson);
   const existingLargeSample = nextProjectJson.analysisRequests?.largeSample;
+  const sweep = cloneJson(existingLargeSample?.sweep || nextProjectJson.monteCarlo || {});
+  const configuredSamples = Number(existingLargeSample?.samples ?? nextProjectJson.experiment?.samples ?? 1);
+  const samples = Math.max(configuredSamples, monteCarloSweepPointCount(sweep));
+  nextProjectJson.experiment = {
+    ...(nextProjectJson.experiment || {}),
+    samples
+  };
   nextProjectJson.analysisRequests = {
     ...(nextProjectJson.analysisRequests || {}),
     largeSample: {
       enabled: true,
-      samples: Number(existingLargeSample?.samples ?? nextProjectJson.experiment?.samples ?? 1),
-      sweep: cloneJson(existingLargeSample?.sweep || nextProjectJson.monteCarlo || {})
+      samples,
+      sweep
     }
   };
   return nextProjectJson;
+}
+
+function monteCarloSweepPointCount(sweep) {
+  if (!sweep || typeof sweep !== "object") return 1;
+  return ["failureRates", "spareMultipliers", "supportCapacities"].reduce((product, key) => {
+    const values = Array.isArray(sweep[key]) ? sweep[key].filter((value) => value !== undefined && value !== null && value !== "") : [];
+    return product * Math.max(1, values.length);
+  }, 1);
 }
 
 function cloneJson(value) {

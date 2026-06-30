@@ -449,6 +449,37 @@ test("buildBackendProjectJson syncs composite task inherited basic mission field
   assert.equal(scenario.missionProfile.compositeTasks[0].taskItems[0].equipmentType, "stale");
 });
 
+test("buildBackendProjectJson canonicalizes support activity job predecessor references", () => {
+  const scenario = {
+    scenarioId: "support-predecessor-canonical",
+    supportActivities: Array.from({ length: 6 }, (_, index) => ({ id: `activity-${index}`, jobs: [] }))
+  };
+  scenario.supportActivities[5] = {
+    id: "activity-with-legacy-predecessor",
+    jobs: [
+      {
+        activityCode: "BA-001",
+        workName: "目标保障作业",
+        durationMinutes: 30,
+        predecessors: ["电源车准备"]
+      },
+      {
+        workName: "电源车准备",
+        durationMinutes: 15,
+        predecessors: []
+      }
+    ]
+  };
+
+  const projectJson = buildBackendProjectJson(scenario, { id: "support-predecessor-canonical" });
+  const jobs = projectJson.supportActivities[5].jobs;
+
+  assert.equal(jobs[1].activityCode, "BA-002");
+  assert.deepEqual(jobs[0].predecessors, ["BA-002"]);
+  assert.deepEqual(scenario.supportActivities[5].jobs[0].predecessors, ["电源车准备"]);
+  assert.equal("activityCode" in scenario.supportActivities[5].jobs[1], false);
+});
+
 test("experiment plan config preserves Monte Carlo branch sweep settings", () => {
   const projectJson = {
     experiment: {
