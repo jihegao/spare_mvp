@@ -49,7 +49,7 @@ def create_backend_server(
 ) -> ThreadingHTTPServer:
     """Create a local HTTP server exposing the frontend `/api` contract."""
     root = Path(repo_root).resolve() if repo_root else Path(__file__).resolve().parents[2]
-    artifact_dir = Path(output_dir).resolve() if output_dir else root / "runs" / "m3-0-http"
+    artifact_dir = Path(output_dir).resolve() if output_dir else root / "runs" / "canonical-api"
     database_target = str(database_path)
     connect_kwargs: dict[str, Any] = {}
     if database_target == ":memory:":
@@ -391,12 +391,12 @@ def _safe_download_filename(filename: str) -> str:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Serve spare_mvp frontend and M3 backend API")
+    parser = argparse.ArgumentParser(description="Serve spare_mvp frontend and canonical /api backend")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=4173)
     parser.add_argument("--repo-root", default=str(Path(__file__).resolve().parents[2]))
     parser.add_argument("--database", default="")
-    parser.add_argument("--output-dir", default="runs/m3-0-http")
+    parser.add_argument("--output-dir", default="runs/canonical-api")
     args = parser.parse_args()
     default_database_path = Path(args.repo_root) / "runs" / "system-start" / "spare_mvp.sqlite3"
 

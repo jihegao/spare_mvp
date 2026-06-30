@@ -54,7 +54,7 @@ Expected: PASS before moving to the next worker. If a worker changes scope bound
 
 ## Current Boundary
 
-M6.2/M6.2.y already provides `RunIntent -> /api/runs -> RunService -> artifacts`, status/result/artifacts/chain routes, SQLite `simulation_runs` / `result_summaries` / `artifact_manifests`, and front-end Monte Carlo identity-chain rendering. M7.0 must add management and ledger completeness on top of those paths.
+M6.2/M6.2.y already provides `RunIntent -> /api/runs -> RunService -> SimulationAdapter -> aircraft_support_v1 -> SQLite + artifacts`, status/result/artifacts/chain routes, SQLite `simulation_runs` / `result_summaries` / `artifact_manifests`, and front-end Monte Carlo identity-chain rendering. M7.0 must add management and ledger completeness on top of those paths.
 
 Do not restore legacy `/api/simulation-runs`. Do not unlock `aviation_support` execution. Do not implement production worker queue, object storage, full cancel/retry lifecycle, M8 projection payload KPI rendering, or M9 state stream.
 

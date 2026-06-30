@@ -41,7 +41,7 @@
 - 保障组织与活动建模：保障组织支持递归树节点；备件记录所属装备，保障人员专业使用下拉字典兼容回退且不再维护所属型号，备件、人员和设备资源表不再依赖行级编辑按钮；基本保障活动通过编辑面板维护活动编号、工作名称、适用飞机、作业时长分布、人员、设备和备件需求；使用保障、预防性维修、修复性维修和后勤保障的工作项目从基本保障活动库选择/搜索并自动回填，紧前作业通过显式编辑入口维护。
 - 可视化仿真：单次仿真的飞机、任务、保障态势、指标和事件流；M9.8 后平台入口默认使用 `aircraft_support_v1` 通过 canonical `/api/runs` 提交正式 run，并从 `visualization_state_series` artifact 或 `/api/runs/{run_id}/state-stream` 展示状态。任务视图把任务计划表和每日甘特图合并为同一工作区，按周期性任务 / 复合任务 / 基本任务组织，直接展示实际天、波次、要求型号、数量、实际执行飞机和状态；缺少这些正式任务计划字段的旧 artifact 不再由前端从 id/name/aircraft_type 兜底推断。Mesa 内部 `Ontology视图`、Ontology Playground 导出和项目级本体校验已从当前产品范围删除。
 - 蒙特卡洛实验：已拆分为实验列表、添加/编辑实验和实验详情。实验对象保存 `SimulationExperimentBase` 共享字段、`mc_experiment_id`、关联方案、样本量、随机种子、状态、进度、`run_id`、artifact manifest 和 projection artifact 引用；旧 `monte-carlo-config` hash 兼容到添加/编辑页。
-- 仿真实验方案流程：M6.1 已补齐 smoke 输入 mapping provenance，M6.1.1 已让单次 run 优先从 ExperimentPlan 分支 Project JSON 编译 Scenario；M6.2 已让正式运行收敛到 `RunIntent -> /api/runs -> RunService -> artifacts`，正式 Monte Carlo 通过 `run_type: "monte_carlo"` 基于已编译 Scenario 生成 `monte_carlo_base` artifact 和四类 `analysis_projection_*` artifact。M9.4/M9.5 曾解锁 `aviation_support` 单次与 formal Monte Carlo，现作为历史回归/归档记录保留；2026-06-26 之后正式与测试入口只接受 `aircraft_support_v1`，`smoke` 和 `aviation_support` 会返回 `retired_model_family` 并指向 `aircraft_support_v1`。M9.7.1 已新增 `aircraft_support_v1` schema/compiler gate；M9.7.2 已新增可合并的真实 single-run core；M9.7.3 已解锁 `aircraft_support_v1` formal Monte Carlo；M9.7.4 已完成 coverage hardening 收口。M9.8 已完成平台嵌入：前端 RunIntent 默认使用 `aircraft_support_v1`，可视化仿真、Monte Carlo 和四类分析页只把 canonical `/api/runs` 产物作为正式结果来源。`AircraftSupportV1Model` 通过 canonical `/api/runs` 产出 result、metrics、report、log、run chain、四类 projection、`monte_carlo_base`、代表样本 `visualization_state_series` 和失败样本账本；行为驱动字段覆盖机队数量/初始可用、任务波次、`components[].failureDistribution`、组件寿命/RMS/k-out-of-n、`reliabilityBlockDiagram`、保障资源容量、库存、`supportNodes[].transportPolicies`、保障活动 job DAG、周期任务、任务阶段/机场/任务区、Monte Carlo sweep 与 seed。`aircraft_support_v1` 仿真时长优先由周期任务的配置天数乘重复次数推导，`durationHours` 只在缺少周期任务时作为回退输入。`components[].failureDistribution` 是 behavior-driving 故障分布输入，`supportNodes[].transportPolicies` 是 behavior-driving 补给转运输入。`supportOrganization` 当前批准为 governance-only / 不驱动仿真字段，进入 provenance 而不再阻断 M9.6 冻结案例。未配置、缺少 compiler provenance 或缺少正式 projection/state-series artifact 的分析页只能显示“本地预览，不是正式后端仿真结果”。
+- 仿真实验方案流程：M6.1 已补齐 smoke 输入 mapping provenance，M6.1.1 已让单次 run 优先从 ExperimentPlan 分支 Project JSON 编译 Scenario；M6.2 已让正式运行收敛到 `RunIntent -> /api/runs -> RunService -> SimulationAdapter -> aircraft_support_v1 -> SQLite + artifacts`，正式 Monte Carlo 通过 `run_type: "monte_carlo"` 基于已编译 Scenario 生成 `monte_carlo_base` artifact 和四类 `analysis_projection_*` artifact。M9.4/M9.5 曾解锁 `aviation_support` 单次与 formal Monte Carlo，现作为历史回归/归档记录保留；2026-06-26 之后正式与测试入口只接受 `aircraft_support_v1`，`smoke` 和 `aviation_support` 会返回 `retired_model_family` 并指向 `aircraft_support_v1`。M9.7.1 已新增 `aircraft_support_v1` schema/compiler gate；M9.7.2 已新增可合并的真实 single-run core；M9.7.3 已解锁 `aircraft_support_v1` formal Monte Carlo；M9.7.4 已完成 coverage hardening 收口。M9.8 已完成平台嵌入：前端 RunIntent 默认使用 `aircraft_support_v1`，可视化仿真、Monte Carlo 和四类分析页只把 canonical `/api/runs` 产物作为正式结果来源。`AircraftSupportV1Model` 通过 canonical `/api/runs` 产出 result、metrics、report、log、run chain、四类 projection、`monte_carlo_base`、代表样本 `visualization_state_series` 和失败样本账本；行为驱动字段覆盖机队数量/初始可用、任务波次、`components[].failureDistribution`、组件寿命/RMS/k-out-of-n、`reliabilityBlockDiagram`、保障资源容量、库存、`supportNodes[].transportPolicies`、保障活动 job DAG、周期任务、任务阶段/机场/任务区、Monte Carlo sweep 与 seed。`aircraft_support_v1` 仿真时长优先由周期任务的配置天数乘重复次数推导，`durationHours` 只在缺少周期任务时作为回退输入。`components[].failureDistribution` 是 behavior-driving 故障分布输入，`supportNodes[].transportPolicies` 是 behavior-driving 补给转运输入。`supportOrganization` 当前批准为 governance-only / 不驱动仿真字段，进入 provenance 而不再阻断 M9.6 冻结案例。未配置、缺少 compiler provenance 或缺少正式 projection/state-series artifact 的分析页只能显示“本地预览，不是正式后端仿真结果”。
 - RMS 指标分配：系统运行支持模块的“装备RMS指标分配”本地计算页已按当前阶段收敛为顶部参数输入、左侧独立装备树导入、右侧方法选择和底部节点分配结果；输入聚焦任务可靠度、MTTR、MTBF，装备树先选择装备再显示当前装备树；方法保留等分配、比例分配、相似产品分配，并按方法展示参数，相似产品分配法的基准机型来自装备列表下拉。当前页面只保留计算动作，暂不提供保存草稿或发布到装备模型入口，尚未后端持久化或真实仿真消费。
 - 结果分析：备件短板分析、飞机转场携行清单、任务可靠度评估、停机因素分析；每个分析页先进入分析任务列表，支持选择方案和参数后自动创建新的 Monte Carlo 实验并绑定分析任务。独立的 Monte Carlo 结果页已移除，正式 Monte Carlo 结果承载在“蒙特卡洛实验 / 实验详情”的结果区。M8.0 阶段只有绑定的 `mc_experiment_id`、`run_type: "monte_carlo"`、compiler provenance、`monte_carlo_base`、对应 `analysis_projection_*` 和已成功解析的 projection payload 同时存在时才解锁正式结果；正式态 KPI、表格和图形来自 downloaded projection payload，否则显示未配置、待运行、运行中、运行失败或本地预览边界。
 - M2a/M9.7.4 契约适配：`src/spare_mvp_contract/adapter.py` 仍保留 `smoke` 和 `aviation_support` 的低层 legacy 回归能力；正式 `/api/runs`、`BackendApi.start_simulation_run()`、前端 `startSimulationRun()` / `startMonteCarloRun()` 和 modeling import `compile-scenario` 入口只接受 `aircraft_support_v1`。M9.7.1 新增 `aircraft_support_v1` 编译 gate、`contracts/aircraft_support_v1_input.schema.json`、Scenario/run schema selector 和 mapping metadata。M9.7.2 新增 `src/spare_mvp_abm/aircraft_support_v1/` single-run core；M9.7.3 让 `SimulationAdapter.run_monte_carlo_scenario()` 支持 `aircraft_support_v1` formal Monte Carlo；M9.7.4 关闭 M9.6 frozen 字段的 unsupported 债务，report/log 统一声明 `m9_7_4_behavior_scope`，sampling contract 不再暴露 M9.7.4 pending 字段。`supportOrganization` 作为 governance-only 字段进入 mapping provenance，不驱动仿真且不再阻断正式 run。
@@ -69,6 +69,8 @@
 
 ## 本地运行
 
+当前正式运行主线是 `RunIntent -> /api/runs -> RunService -> SimulationAdapter -> aircraft_support_v1 -> SQLite + artifacts`。`src/spare_mvp_abm/contract_server.py :8521` 仅作为 legacy/dev sidecar，用于历史 contract-provider 调试和回归验证，不属于默认产品运行路径。
+
 首次克隆仓库后，先创建仓库本地 Python 环境 `.abm-mesa-test-env`。该目录只用于本机运行和测试，不提交到 Git。
 
 ```bash
@@ -90,16 +92,22 @@ python3 -m http.server 4173
 http://127.0.0.1:4173/front/index.html
 ```
 
-需要验证 M3-1 浏览器后端闭环时，使用 `.abm-mesa-test-env` 启动同源前端和 `/api`：
+需要验证同源前端和 canonical `/api/runs` 后端闭环时，使用 `.abm-mesa-test-env` 启动本地系统：
 
 ```bash
-.abm-mesa-test-env/bin/python -m src.spare_mvp_backend.http_server --port 4173
+npm run start:system
 ```
 
 打开：
 
 ```text
 http://127.0.0.1:4173/front/
+```
+
+只有在需要历史 contract provider 或旧 Mesa contract 调试面时，才显式启用 legacy/dev sidecar：
+
+```bash
+npm run start:system:with-contract-provider
 ```
 
 ## Mesa 烟测

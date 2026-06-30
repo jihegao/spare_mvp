@@ -20,7 +20,7 @@
 12. 可视化推演页面恢复三级标题“可视化推演”，只保留一个可导航入口并直接嵌入 Mesa 航空保障可视化状态；当前产品口径保留飞机、任务、保障等状态视图，Mesa 内部 `Ontology视图`、Ontology Playground 导出和项目级本体校验已从当前产品、运行时代码和测试门删除。
 13. 蒙特卡洛实验已拆为实验列表、添加/编辑实验和实验详情；实验对象保存 `mc_experiment_id`、关联方案、样本量、随机种子、状态、进度、`run_id` 和 artifact 引用。
 14. 蒙特卡洛评估结果已经迁移到“蒙特卡洛实验 / 实验详情”的结果区；四个结果分析页先展示分析任务列表，并允许按方案和参数自动创建新的 MC 实验后绑定分析任务。
-15. M6.2 对象一致性已落地为同步本地切片：单次仿真实验和 Monte Carlo 实验共享 `SimulationExperimentBase` 字段；正式 run 走 `RunIntent -> /api/runs -> RunService -> artifacts`，Monte Carlo 通过 canonical `/api/runs` 提交 `run_type: "monte_carlo"`，并生成 `monte_carlo_base` 与四类 `analysis_projection_*` artifact。前端 MC 实验详情和 AnalysisTask 列表展示 `mc_experiment_id`、`linkedMonteCarloExperimentId`、run/artifact/projection 来源。
+15. M6.2 对象一致性已落地为同步本地切片：单次仿真实验和 Monte Carlo 实验共享 `SimulationExperimentBase` 字段；正式产品运行主线走 `RunIntent -> /api/runs -> RunService -> SimulationAdapter -> aircraft_support_v1 -> SQLite + artifacts`，Monte Carlo 通过 canonical `/api/runs` 提交 `run_type: "monte_carlo"`，并生成 `monte_carlo_base` 与四类 `analysis_projection_*` artifact。前端 MC 实验详情和 AnalysisTask 列表展示 `mc_experiment_id`、`linkedMonteCarloExperimentId`、run/artifact/projection 来源。
 16. 两个模块的结果分析页面已对齐 `vendor/ship_front/备件_front` 的页面形态。
 17. Monte Carlo 扫参输入会真实更新场景并重算结果。
 18. 早期 Mesa `Ontology视图` 四层纵向画布约定已归档为历史设计；当前产品路线不再要求在 Mesa 仿真中展示 ontology 视图，也不再维护 repo 根目录 ontology 产物。
@@ -49,7 +49,7 @@
 41. M9.3 Run lifecycle / control plane 已落地为最小控制切片：`POST /api/runs/{run_id}/control` 接受 `cancel` 和 `retry`，后端确认后更新 run status/phase/progress 并写入 `runs.control.*` 审计；`retry` 阻断旧 result/artifact 正式读取，run detail 返回 pending 空 artifact manifest。`pause`、`resume`、`step`、`reset` 返回 fail-closed 控制错误，前端 Mesa 控制区展示后端确认状态或不可用原因，不用本地回放控制冒充后端执行控制。M9.4/M9.5 的 `aviation_support` 能力已归档；当前 formal lifecycle/control 新 run 入口只接受 `aircraft_support_v1`。生产 worker queue、真实运行中增量推送、object storage、完整 cancel/retry 基础设施和 checkpoint restart 仍非本阶段目标。
 42. M9.6 已冻结平台案例数据包、字段覆盖表和 golden fixtures：`tests/fixtures/modeling_import_project.json` 是唯一完整业务案例源；`tests/fixtures/m9_6_platform_case_export.json` 固化 published modeling import、Project、ModelingSnapshot、ExperimentPlan、RunIntent、MonteCarloRunConfig 和 compiled `aviation_support` Scenario；`tests/fixtures/m9_6_field_coverage.json` 覆盖业务字段并逐字段标注 consumed/derived/defaulted/governance_only/ignored/unsupported，M9.7.4 后 M9.6 frozen 字段 unsupported 汇总为 0；`tests/fixtures/m9_6_expected_artifact_kinds.json` 固定 single 与 Monte Carlo artifact kind 列表。M9.6 自身不实现 M9.7 正式飞机保障仿真模型族，也不把 `independent-mesa` 或 `8765` 旁路作为正式产品入口；M9.8 后这些旁路源码树已移除，历史参考只保留在 `docs/superpowers/` 的归档计划和规格中。
 43. M9.7.4 已在 M9.7.1 `aircraft_support_v1` schema/compiler gate、M9.7.2 single-run core 和 M9.7.3 formal Monte Carlo/projection 之后完成 coverage hardening 收口：`src/spare_mvp_abm/aircraft_support_v1/` 提供 `AircraftSupportV1Model`，`SimulationAdapter.run_scenario()` 和 `SimulationAdapter.run_monte_carlo_scenario()` 可通过 canonical `/api/runs` 执行 `aircraft_support_v1` Scenario，并产出 result、metrics、report、log、run chain、四类 projection、`monte_carlo_base`、样本失败账本和 `visualization_state_series`。M9.7.4 行为驱动字段包含机队数量/初始可用、任务波次、`components[].failureDistribution`、组件寿命/RMS/k-out-of-n、`reliabilityBlockDiagram`、保障资源容量、库存、`supportNodes[].transportPolicies`、保障活动 job DAG、周期任务、任务阶段/机场/任务区、Monte Carlo sweep 与 seed；仿真时长优先由周期任务配置天数 × 重复次数推导，`durationHours` 只作为无周期任务时的回退。`supportOrganization` 已批准为 governance-only / 不驱动仿真字段，进入 provenance 而不再阻断 M9.6 冻结案例。
-44. M9.8 平台嵌入已收束：前端 RunIntent 默认提交 `aircraft_support_v1`，可视化仿真、Monte Carlo 和四类分析页以 canonical `/api/runs`、`/api/runs/{run_id}/artifacts/{artifact_id}` 和 `/api/runs/{run_id}/state-stream` 作为正式数据来源。可视化仿真任务视图已将任务计划表和任务甘特图合并，按周期性任务 / 复合任务 / 每天基本任务分组展示实际天、波次、要求型号、数量、实际执行飞机和状态；缺少正式任务计划字段时不再前端兜底。`scripts/start-system.sh` 不再启动 `independent-mesa/server.py` 或监听 `8765`；`independent-mesa/GLM`、`independent-mesa/GPT` 以及服务/静态输出入口已从当前源码树移除。
+44. M9.8 平台嵌入已收束：前端 RunIntent 默认提交 `aircraft_support_v1`，可视化仿真、Monte Carlo 和四类分析页以 `RunIntent -> /api/runs -> RunService -> SimulationAdapter -> aircraft_support_v1 -> SQLite + artifacts`、`/api/runs/{run_id}/artifacts/{artifact_id}` 和 `/api/runs/{run_id}/state-stream` 作为正式数据来源。可视化仿真任务视图已将任务计划表和任务甘特图合并，按周期性任务 / 复合任务 / 每天基本任务分组展示实际天、波次、要求型号、数量、实际执行飞机和状态；缺少正式任务计划字段时不再前端兜底。`scripts/start-system.sh start` 默认只启动平台同源 app/backend 和 SQLite；只有显式传入 `--with-contract-provider` 时才启动 `src/spare_mvp_abm/contract_server.py :8521` legacy/dev sidecar。该 sidecar 不属于默认产品运行路径；`independent-mesa/GLM`、`independent-mesa/GPT` 以及服务/静态输出入口已从当前源码树移除。
 45. 阶段 6P 仿真分析验收数据包已落地：`tests/fixtures/simulation_analysis_cases/` 固定 `minimal_single_aircraft`、`canonical_platform_case` 和 `max_granularity_multi_aircraft` 三类 modeling-import-v1 案例；`src/spare_mvp_backend/simulation_analysis_cases.py` 与 `scripts/export-simulation-analysis-cases.py --write|--check` 负责生成和漂移检查；`tests/test_simulation_analysis_cases.py` 验证三类数据均可进入 `aircraft_support_v1` formal Monte Carlo，并产出 `monte_carlo_base`、`visualization_state_series` 和四类 `analysis_projection_*` artifact。该数据包是分析功能前置验收基线，不是生产性能压测。
 46. 2026-06-26 退役收束：`smoke` 与 `aviation_support` 从正式和测试入口退役；canonical `/api/runs`、`BackendApi.start_simulation_run()`、前端 run shortcut 和 modeling import `compile-scenario` 只接受 `aircraft_support_v1`，旧模型族返回 `retired_model_family` 并指向 `aircraft_support_v1`。低层 adapter/fixture 可继续作为历史回归证据。
 47. 页面建议收口执行 `reports/2026-06-19-page-revision-suggestions/README.md`：已取消删除「建模数据导入」页，M5.2 工作台继续保留；其余页面建议优先修复死按钮、字段口径、选择/批量操作和建模输入可用性，作为 M6.1.1 前的页面输入稳定工作，不扩大为 M6.1.1/M6.2 实现。
@@ -110,8 +110,8 @@
 
 ```bash
 npm test
-python3 -m http.server 4173
-.abm-mesa-test-env/bin/python -m src.spare_mvp_backend.http_server --port 4173
+npm run start:system
+npm run start:system:with-contract-provider  # 仅在需要 legacy/dev contract provider sidecar 时使用
 ```
 
 浏览器访问：
@@ -120,7 +120,7 @@ python3 -m http.server 4173
 http://127.0.0.1:4173/front/
 ```
 
-第一条静态服务命令用于原型浏览；第二条同源后端服务命令用于 M3-1 `/api` 真实浏览器闭环 smoke。
+`npm run start:system` 等价于 `bash scripts/start-system.sh start`，默认只启动同源 app/backend、使用 `runs/system-start/spare_mvp.sqlite3` 持久化，并通过正式主线 `RunIntent -> /api/runs -> RunService -> SimulationAdapter -> aircraft_support_v1 -> SQLite + artifacts` 运行。`npm run start:system:with-contract-provider` 等价于 `bash scripts/start-system.sh start --with-contract-provider`，只在需要历史 contract provider 或旧 Mesa contract 调试面时额外启动 `src/spare_mvp_abm/contract_server.py :8521` legacy/dev sidecar。
 
 ## 文档维护规则
 

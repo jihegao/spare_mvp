@@ -26,7 +26,7 @@ The current frontend Project JSON is the raw `defaultScenario` shape from `front
 
 `scenario.schema.json` requires an explicit `simulation_model` with `family`, `model_id`, and `contract_version`. Its `simulation_inputs` field is split with `oneOf` branches for `smoke` and `aviation_support`, so the Simulation Adapter must compile model-specific inputs instead of coercing a mixed parameter bag.
 
-The Simulation Adapter lives at `src/spare_mvp_contract/adapter.py`. It validates current Project JSON contract roots, compiles approved `smoke`, `aviation_support`, and `aircraft_support_v1` Scenario paths, runs `SmokeSpareMvpModel`, `AviationSupportModel`, and `AircraftSupportV1Model` for formal runs, and writes traceable run artifacts. M9.5 defines the governed aviation sampling contract for `aviation_support` formal Monte Carlo, and M9.7.3 defines the `aircraft_support_v1` formal Monte Carlo/projection path through the existing `/api/runs -> RunService -> artifacts` boundary.
+The Simulation Adapter lives at `src/spare_mvp_contract/adapter.py`. It validates current Project JSON contract roots, keeps `smoke` and `aviation_support` for legacy regression coverage, compiles `aircraft_support_v1` for product formal runs, and writes traceable run artifacts. M9.5 defines the archived aviation sampling contract for `aviation_support` formal Monte Carlo, and M9.7.3 defines the `aircraft_support_v1` formal Monte Carlo/projection path through the current `RunIntent -> /api/runs -> RunService -> SimulationAdapter -> aircraft_support_v1 -> SQLite + artifacts` boundary.
 
 `run.schema.json` repeats `model_family` and `model_id` for query, audit, and Result validation.
 
