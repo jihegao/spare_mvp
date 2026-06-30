@@ -18,6 +18,10 @@ function canonicalImportFixture() {
   return JSON.parse(readFileSync(new URL("./fixtures/modeling_import_project.json", import.meta.url), "utf8"));
 }
 
+function readRepoJsonSync(relativePath) {
+  return JSON.parse(readFileSync(new URL(`../${relativePath}`, import.meta.url), "utf8"));
+}
+
 test("canonical modeling import fixture covers all project authoring surfaces", () => {
   const fixture = canonicalImportFixture();
   const objects = fixture.objects;
@@ -54,11 +58,117 @@ test("modeling import schema and fixture define the M5 first-slice package", asy
   assert.deepEqual(manifest.m5_fixture_files, ["tests/fixtures/modeling_import_project.json"]);
   assert.equal(schema.$id, "https://spare-mvp.local/contracts/modeling_import.schema.json");
   assert.equal(schema.properties.schemaVersion.const, "modeling-import-v1");
+  assert.deepEqual(schema.properties.validationLevel.enum, ["level0", "level1"]);
+  assert.equal(schema.properties.usedTables.type, "object");
   assert.deepEqual(validateSchema(schema, fixture), []);
   assert.deepEqual(validateModelingImportPackage(fixture), []);
 });
 
+test("modeling import validation supports Level 0 packages without support-domain stubs", async () => {
+  const schema = await readJson("contracts/modeling_import.schema.json");
+  const fixture = await readJson("tests/fixtures/modeling_import_project.json");
+  const level0Package = {
+    ...fixture,
+    importId: "import-level0-no-support-domain",
+    projectId: "project-level0-no-support-domain",
+    validationLevel: "level0",
+    usedTables: {
+      missionProfiles: true,
+      equipmentAssets: true,
+      reliabilityBlockDiagram: true,
+      supportResources: false,
+      supportActivities: false,
+      supportOrganization: false,
+      transportPolicies: false
+    },
+    objects: { ...fixture.objects }
+  };
+  delete level0Package.objects.supportResources;
+  delete level0Package.objects.supportActivities;
+  delete level0Package.objects.supportOrganization;
+
+  assert.deepEqual(validateSchema(schema, level0Package), []);
+  assert.deepEqual(validateModelingImportPackage(level0Package), []);
+});
+
+test("modeling import validation rejects Level 1 packages with declared missing support domains", async () => {
+  const fixture = await readJson("tests/fixtures/modeling_import_project.json");
+  const level1Package = {
+    ...fixture,
+    validationLevel: "level1",
+    usedTables: {
+      missionProfiles: true,
+      equipmentAssets: true,
+      reliabilityBlockDiagram: true,
+      supportResources: true,
+      supportActivities: true,
+      supportOrganization: true,
+      transportPolicies: true
+    },
+    objects: { ...fixture.objects }
+  };
+  delete level1Package.objects.supportResources;
+  delete level1Package.objects.supportActivities;
+
+  const issues = validateModelingImportPackage(level1Package);
+  const issuesByPath = Object.fromEntries(issues.map((issue) => [issue.field_path, issue]));
+
+  assert.equal(issuesByPath["objects.supportResources"].code, "invalid_declared_table");
+  assert.equal(issuesByPath["objects.supportActivities"].code, "invalid_declared_table");
+});
+
+test("modeling import schema and frontend validator reject declared Level 0 support gaps", async () => {
+  const schema = await readJson("contracts/modeling_import.schema.json");
+  const fixture = await readJson("tests/fixtures/modeling_import_project.json");
+  const declaredSupportPackage = {
+    ...fixture,
+    validationLevel: "level0",
+    usedTables: {
+      missionProfiles: true,
+      equipmentAssets: true,
+      reliabilityBlockDiagram: true,
+      supportResources: true,
+      supportActivities: true,
+      supportOrganization: true,
+      transportPolicies: true
+    },
+    objects: { ...fixture.objects }
+  };
+  delete declaredSupportPackage.objects.supportResources;
+  delete declaredSupportPackage.objects.supportActivities;
+  delete declaredSupportPackage.objects.supportOrganization;
+
+  const schemaErrors = validateSchema(schema, declaredSupportPackage);
+  assert.ok(schemaErrors.some((error) => error.includes("$.objects.supportResources is required")));
+  assert.ok(schemaErrors.some((error) => error.includes("$.objects.supportActivities is required")));
+  assert.ok(schemaErrors.some((error) => error.includes("$.objects.supportOrganization is required")));
+
+  const issuesByPath = Object.fromEntries(validateModelingImportPackage(declaredSupportPackage).map((issue) => [issue.field_path, issue]));
+  assert.equal(issuesByPath["objects.supportResources"].code, "invalid_declared_table");
+  assert.equal(issuesByPath["objects.supportActivities"].code, "invalid_declared_table");
+  assert.equal(issuesByPath["objects.supportOrganization"].code, "invalid_declared_table");
+});
+
+test("modeling import validation rejects malformed usedTables flags", async () => {
+  const fixture = await readJson("tests/fixtures/modeling_import_project.json");
+  const malformed = {
+    ...fixture,
+    validationLevel: "level0",
+    usedTables: {
+      ...fixture.usedTables,
+      supportResources: "false"
+    },
+    objects: { ...fixture.objects }
+  };
+  delete malformed.objects.supportResources;
+
+  const issuesByPath = Object.fromEntries(validateModelingImportPackage(malformed).map((issue) => [issue.field_path, issue]));
+  assert.equal(issuesByPath["usedTables.supportResources"].code, "invalid_used_table_flag");
+  assert.equal(issuesByPath["objects.supportResources"].code, "invalid_declared_table");
+});
+
 test("projectToModelingImportPackage backfills import draft from current Project surfaces", () => {
+  const schema = readRepoJsonSync("contracts/modeling_import.schema.json");
   const basePackage = {
     schemaVersion: "modeling-import-v1",
     importId: "import-old",
@@ -111,6 +221,8 @@ test("projectToModelingImportPackage backfills import draft from current Project
   assert.equal(draft.lifecycle.version, 3);
   assert.deepEqual(draft.lifecycle.referencedRunIds, ["run-001"]);
   assert.equal(draft.source.type, "current_project_backfill");
+  assert.equal(draft.source.name, "current_project_backfill");
+  assert.equal(draft.usedTables.transportPolicies, false);
   assert.equal(draft.objects.missionProfiles[0].sourceImportId, undefined);
   assert.equal(draft.objects.missionProfiles[0].profileId, "MP-CURRENT");
   assert.deepEqual(draft.objects.missionProfiles[0].basicMission, projectJson.basicMission);
@@ -120,6 +232,7 @@ test("projectToModelingImportPackage backfills import draft from current Project
   assert.deepEqual(draft.objects.customGovernance, basePackage.objects.customGovernance);
   assert.equal("schema_version" in draft, false);
   assert.equal("project_version" in draft, false);
+  assert.deepEqual(validateSchema(schema, draft), []);
   assert.deepEqual(validateModelingImportPackage(draft), []);
 });
 
@@ -264,6 +377,17 @@ test("modeling import schema validation resolves nested local refs", async () =>
   assert.ok(errors.some((error) => error.includes("$.objects.missionProfiles[0].name is required")));
   assert.ok(errors.some((error) => error.includes("$.objects.missionProfiles[0].durationHours expected type")));
   assert.ok(errors.some((error) => error.includes("$.validation.issues[0].severity is required")));
+
+  const defaultLevel1MissingSupport = {
+    ...fixture,
+    objects: { ...fixture.objects }
+  };
+  delete defaultLevel1MissingSupport.objects.supportResources;
+  delete defaultLevel1MissingSupport.objects.supportActivities;
+
+  const defaultLevel1Errors = validateSchema(schema, defaultLevel1MissingSupport);
+  assert.ok(defaultLevel1Errors.some((error) => error.includes("$.objects.supportResources is required")));
+  assert.ok(defaultLevel1Errors.some((error) => error.includes("$.objects.supportActivities is required")));
 });
 
 test("modeling import validator rejects malformed package roots", () => {
@@ -277,12 +401,15 @@ test("modeling import validator rejects malformed package roots", () => {
     "missing_required_root",
     "missing_required_root",
     "missing_required_root",
-    "missing_required_root",
-    "missing_required_root",
-    "missing_required_root",
-    "missing_required_root"
+    "invalid_declared_table",
+    "invalid_declared_table",
+    "invalid_declared_table",
+    "invalid_declared_table",
+    "invalid_declared_table",
+    "invalid_declared_table",
+    "invalid_declared_table"
   ]);
-  assert.ok(issues.every((issue) => issue.page === "建模数据入口"));
+  assert.ok(issues.filter((issue) => issue.code === "missing_required_root").every((issue) => issue.page === "建模数据入口"));
 });
 
 test("modeling import validation reports duplicate IDs, references, numeric fields, and version protection", async () => {

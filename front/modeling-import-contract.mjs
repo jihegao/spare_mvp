@@ -1,8 +1,11 @@
 export const MODELING_IMPORT_PAGE_MAP = {
   missionProfiles: "任务剖面参数",
   equipmentAssets: "装备系统建模",
+  reliabilityBlockDiagram: "装备系统建模",
   supportResources: "保障资源建模",
-  supportActivities: "保障活动建模"
+  supportActivities: "保障活动建模",
+  supportOrganization: "保障组织建模",
+  transportPolicies: "保障资源建模"
 };
 
 const COLLECTION_RULES = {
@@ -29,14 +32,29 @@ const COLLECTION_RULES = {
   }
 };
 
+const CORE_TABLE_DOMAINS = new Set(["missionProfiles", "equipmentAssets"]);
+const DISABLEABLE_COLLECTIONS = new Set(["supportResources", "supportActivities"]);
+const OBJECT_TABLE_DOMAINS = new Set(["reliabilityBlockDiagram", "supportOrganization"]);
+const MODELING_IMPORT_TABLE_DOMAINS = [
+  "missionProfiles",
+  "equipmentAssets",
+  "reliabilityBlockDiagram",
+  "supportResources",
+  "supportActivities",
+  "supportOrganization",
+  "transportPolicies"
+];
+
 export function validateModelingImportPackage(importPackage) {
   const issues = [];
-  validatePackageRoots(importPackage, issues);
+  const scope = normalizeValidationScope(importPackage, issues);
+  validatePackageRoots(importPackage, issues, scope);
 
   const objects = importPackage?.objects || {};
   const objectIds = collectObjectIds(objects, issues);
 
   for (const [collection, rules] of Object.entries(COLLECTION_RULES)) {
+    if (isDisabledCollectionMissing(collection, objects, scope.usedTables)) continue;
     const rows = Array.isArray(objects[collection]) ? objects[collection] : [];
     rows.forEach((row, index) => {
       if (!row || typeof row !== "object" || Array.isArray(row)) {
@@ -88,13 +106,17 @@ export function projectToModelingImportPackage(projectJson, basePackage = {}) {
     version: positiveInteger(base.lifecycle?.version, 1),
     referencedRunIds: Array.isArray(base.lifecycle?.referencedRunIds) ? [...base.lifecycle.referencedRunIds] : []
   };
+  const usedTables = inferUsedTables(objects);
   const nextPackage = {
     schemaVersion: "modeling-import-v1",
     importId,
     projectId,
+    validationLevel: "level1",
+    usedTables,
     source: {
       ...(base.source && typeof base.source === "object" && !Array.isArray(base.source) ? cloneJson(base.source) : {}),
       type: "current_project_backfill",
+      name: "current_project_backfill",
       projectId: project.project_id || projectId,
       scenarioId: project.scenarioId || ""
     },
@@ -109,6 +131,27 @@ export function projectToModelingImportPackage(projectJson, basePackage = {}) {
     issues
   };
   return nextPackage;
+}
+
+function inferUsedTables(objects) {
+  const supportResources = normalizeObjectRows(objects.supportResources);
+  return {
+    missionProfiles: true,
+    equipmentAssets: true,
+    reliabilityBlockDiagram: hasPlainObjectContent(objects.reliabilityBlockDiagram),
+    supportResources: supportResources.length > 0,
+    supportActivities: normalizeObjectRows(objects.supportActivities).length > 0,
+    supportOrganization: hasSupportOrganizationTree(objects.supportOrganization),
+    transportPolicies: supportResources.some((resource) => Array.isArray(resource.transportPolicies) && resource.transportPolicies.length > 0)
+  };
+}
+
+function hasPlainObjectContent(value) {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).length > 0);
+}
+
+function hasSupportOrganizationTree(value) {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value) && Array.isArray(value.tree));
 }
 
 function projectMissionProfile(project, projectId) {
@@ -217,7 +260,76 @@ function cloneJson(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
-function validatePackageRoots(importPackage, issues) {
+function normalizeValidationScope(importPackage, issues) {
+  const validationLevel = importPackage?.validationLevel || "level1";
+  if (!["level0", "level1"].includes(validationLevel)) {
+    issues.push(createIssue({
+      code: "invalid_validation_level",
+      collection: undefined,
+      objectId: "modeling-import-package",
+      fieldPath: "validationLevel",
+      message: "validationLevel 必须是 level0 或 level1。"
+    }));
+  }
+
+  const rawUsedTables = importPackage?.usedTables;
+  const usedTables = {};
+  if (rawUsedTables !== undefined && (!rawUsedTables || typeof rawUsedTables !== "object" || Array.isArray(rawUsedTables))) {
+    issues.push(createIssue({
+      code: "invalid_used_tables",
+      collection: undefined,
+      objectId: "modeling-import-package",
+      fieldPath: "usedTables",
+      message: "usedTables 必须是对象，且每个字段必须是布尔值。"
+    }));
+  }
+  const tableFlags = rawUsedTables && typeof rawUsedTables === "object" && !Array.isArray(rawUsedTables) ? rawUsedTables : {};
+  for (const domain of MODELING_IMPORT_TABLE_DOMAINS) {
+    usedTables[domain] = normalizeUsedTableFlag(tableFlags, domain, issues);
+  }
+  for (const domain of Object.keys(tableFlags)) {
+    if (MODELING_IMPORT_TABLE_DOMAINS.includes(domain)) continue;
+    issues.push(createIssue({
+      code: "invalid_used_table_domain",
+      collection: undefined,
+      objectId: "modeling-import-package",
+      fieldPath: `usedTables.${domain}`,
+      message: `usedTables.${domain} 不是 modeling-import-v1 支持的表域。`
+    }));
+  }
+  return {
+    validationLevel: ["level0", "level1"].includes(validationLevel) ? validationLevel : "level1",
+    usedTables
+  };
+}
+
+function normalizeUsedTableFlag(rawUsedTables, domain, issues) {
+  if (!(domain in rawUsedTables)) return true;
+  const value = rawUsedTables[domain];
+  if (typeof value === "boolean") {
+    if (CORE_TABLE_DOMAINS.has(domain) && value === false) {
+      issues.push(createIssue({
+        code: "invalid_used_table_flag",
+        collection: undefined,
+        objectId: "modeling-import-package",
+        fieldPath: `usedTables.${domain}`,
+        message: `usedTables.${domain} 是核心表域，不能声明为 false。`
+      }));
+      return true;
+    }
+    return value;
+  }
+  issues.push(createIssue({
+    code: "invalid_used_table_flag",
+    collection: undefined,
+    objectId: "modeling-import-package",
+    fieldPath: `usedTables.${domain}`,
+    message: `usedTables.${domain} 必须是布尔值。`
+  }));
+  return true;
+}
+
+function validatePackageRoots(importPackage, issues, scope) {
   if (importPackage?.schemaVersion !== "modeling-import-v1") {
     issues.push(createIssue({
       code: "invalid_schema_version",
@@ -242,14 +354,80 @@ function validatePackageRoots(importPackage, issues) {
 
   for (const collection of Object.keys(COLLECTION_RULES)) {
     if (Array.isArray(importPackage?.objects?.[collection])) continue;
+    if (isDisabledDomain(collection, scope.usedTables) && DISABLEABLE_COLLECTIONS.has(collection)) {
+      continue;
+    }
     issues.push(createIssue({
-      code: "missing_required_root",
-      collection: undefined,
+      code: "invalid_declared_table",
+      collection,
       objectId: "modeling-import-package",
       fieldPath: `objects.${collection}`,
-      message: `objects.${collection} 是导入包必填对象集合。`
+      message: `声明使用 ${collection} 表，但缺少有效数据。`
     }));
   }
+
+  for (const domain of OBJECT_TABLE_DOMAINS) {
+    validateDeclaredObjectDomain(importPackage, issues, scope, domain);
+  }
+  validateDeclaredTransportPolicies(importPackage, issues, scope);
+}
+
+function validateDeclaredObjectDomain(importPackage, issues, scope, domain) {
+  const value = importPackage?.objects?.[domain];
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    if (domain === "supportOrganization" && "tree" in value && !Array.isArray(value.tree)) {
+      issues.push(createIssue({
+        code: "invalid_declared_table",
+        collection: domain,
+        objectId: "modeling-import-package",
+        fieldPath: `objects.${domain}.tree`,
+        message: `objects.${domain}.tree 必须是数组。`
+      }));
+    }
+    return;
+  }
+  if (isDisabledDomain(domain, scope.usedTables)) return;
+  issues.push(createIssue({
+    code: "invalid_declared_table",
+    collection: domain,
+    objectId: "modeling-import-package",
+    fieldPath: `objects.${domain}`,
+    message: `声明使用 ${domain} 表，但缺少有效数据。`
+  }));
+}
+
+function validateDeclaredTransportPolicies(importPackage, issues, scope) {
+  if (isDisabledDomain("transportPolicies", scope.usedTables)) return;
+  const resources = importPackage?.objects?.supportResources;
+  if (!Array.isArray(resources)) {
+    issues.push(createIssue({
+      code: "invalid_declared_table",
+      collection: "transportPolicies",
+      objectId: "modeling-import-package",
+      fieldPath: "objects.supportResources",
+      message: "声明使用 transportPolicies，但缺少 supportResources 表。"
+    }));
+    return;
+  }
+  resources.forEach((resource, index) => {
+    if (!resource || typeof resource !== "object" || Array.isArray(resource)) return;
+    if (Array.isArray(resource.transportPolicies) && resource.transportPolicies.length) return;
+    issues.push(createIssue({
+      code: "invalid_declared_table",
+      collection: "transportPolicies",
+      objectId: resource.id || `supportResources[${index}]`,
+      fieldPath: `objects.supportResources[${index}].transportPolicies`,
+      message: "声明使用 transportPolicies，但保障资源缺少有效运输策略数组。"
+    }));
+  });
+}
+
+function isDisabledCollectionMissing(collection, objects, usedTables) {
+  return DISABLEABLE_COLLECTIONS.has(collection) && isDisabledDomain(collection, usedTables) && !Array.isArray(objects[collection]);
+}
+
+function isDisabledDomain(domain, usedTables) {
+  return usedTables[domain] === false;
 }
 
 function validateLifecycle(importPackage, issues) {

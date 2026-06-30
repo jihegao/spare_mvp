@@ -5,15 +5,138 @@
   "type": "object",
   "additionalProperties": true,
   "required": ["schemaVersion", "importId", "projectId", "lifecycle", "objects"],
+  "allOf": [
+    {
+      "if": {
+        "required": ["usedTables"],
+        "properties": {
+          "usedTables": {
+            "required": ["supportResources"],
+            "properties": {
+              "supportResources": { "const": false }
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "objects": {
+            "required": ["supportResources"]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": ["usedTables"],
+        "properties": {
+          "usedTables": {
+            "required": ["supportActivities"],
+            "properties": {
+              "supportActivities": { "const": false }
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "objects": {
+            "required": ["supportActivities"]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": ["usedTables"],
+        "properties": {
+          "usedTables": {
+            "required": ["reliabilityBlockDiagram"],
+            "properties": {
+              "reliabilityBlockDiagram": { "const": false }
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "objects": {
+            "required": ["reliabilityBlockDiagram"]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": ["usedTables"],
+        "properties": {
+          "usedTables": {
+            "required": ["supportOrganization"],
+            "properties": {
+              "supportOrganization": { "const": false }
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "objects": {
+            "required": ["supportOrganization"]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": ["usedTables"],
+        "properties": {
+          "usedTables": {
+            "required": ["transportPolicies"],
+            "properties": {
+              "transportPolicies": { "const": false }
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "objects": {
+            "properties": {
+              "supportResources": {
+                "type": "array",
+                "items": {
+                  "required": ["transportPolicies"]
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
   "properties": {
     "schemaVersion": { "const": "modeling-import-v1" },
     "importId": { "type": "string" },
     "projectId": { "type": "string" },
+    "validationLevel": { "type": "string", "enum": ["level0", "level1"] },
+    "usedTables": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "missionProfiles": { "type": "boolean" },
+        "equipmentAssets": { "type": "boolean" },
+        "reliabilityBlockDiagram": { "type": "boolean" },
+        "supportResources": { "type": "boolean" },
+        "supportActivities": { "type": "boolean" },
+        "supportOrganization": { "type": "boolean" },
+        "transportPolicies": { "type": "boolean" }
+      }
+    },
     "source": {
       "type": "object",
       "required": ["type", "name"],
       "properties": {
-        "type": { "type": "string", "enum": ["json_fixture", "csv_stub"] },
+        "type": { "type": "string", "enum": ["json_fixture", "csv_stub", "current_project_backfill"] },
         "name": { "type": "string" }
       }
     },
@@ -28,7 +151,7 @@
     },
     "objects": {
       "type": "object",
-      "required": ["missionProfiles", "equipmentAssets", "supportResources", "supportActivities"],
+      "required": ["missionProfiles", "equipmentAssets"],
       "properties": {
         "missionProfiles": {
           "type": "array",
@@ -45,6 +168,15 @@
         "supportActivities": {
           "type": "array",
           "items": { "$ref": "#/$defs/supportActivity" }
+        },
+        "supportOrganization": {
+          "type": "object",
+          "properties": {
+            "tree": { "type": "array" }
+          }
+        },
+        "reliabilityBlockDiagram": {
+          "type": "object"
         }
       }
     },
@@ -91,7 +223,11 @@
       "properties": {
         "id": { "type": "string" },
         "name": { "type": "string" },
-        "capacity": { "type": "number", "exclusiveMinimum": 0 }
+        "capacity": { "type": "number", "exclusiveMinimum": 0 },
+        "transportPolicies": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/transportPolicy" }
+        }
       }
     },
     "supportActivity": {
@@ -126,6 +262,10 @@
         "field_path": { "type": "string" },
         "message": { "type": "string" }
       }
+    },
+    "transportPolicy": {
+      "type": "object",
+      "additionalProperties": true
     }
   }
 }

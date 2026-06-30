@@ -1550,11 +1550,21 @@
       "name": "simulation_analysis_cases/max_granularity_multi_aircraft.json",
       "type": "json_fixture"
     },
+    "usedTables": {
+      "equipmentAssets": true,
+      "missionProfiles": true,
+      "reliabilityBlockDiagram": true,
+      "supportActivities": true,
+      "supportOrganization": true,
+      "supportResources": true,
+      "transportPolicies": true
+    },
     "validation": {
       "issues": [],
       "ok": true,
       "status": "valid"
-    }
+    },
+    "validationLevel": "level1"
   },
   "monte_carlo_config": {
     "mc_experiment_id": "mc-6p-max_granularity_multi_aircraft",
@@ -2259,6 +2269,21 @@
       "profileType": "舰载机昼夜连续出动",
       "repeatCycleHours": 6,
       "sourceImportId": "import-6p-max-granularity-multi-aircraft"
+    },
+    "modelingImportValidation": {
+      "disabledDomains": [],
+      "importId": "import-6p-max-granularity-multi-aircraft",
+      "usedTables": {
+        "equipmentAssets": true,
+        "missionProfiles": true,
+        "reliabilityBlockDiagram": true,
+        "supportActivities": true,
+        "supportOrganization": true,
+        "supportResources": true,
+        "transportPolicies": true
+      },
+      "validationLevel": "level1",
+      "warnings": []
     },
     "monteCarlo": {
       "failureRates": [
@@ -2982,10 +3007,31 @@
   },
   "schema_version": "simulation-analysis-case-v0",
   "source_fixture": "tests/fixtures/modeling_import_project.json",
+  "used_tables": {
+    "equipmentAssets": true,
+    "missionProfiles": true,
+    "reliabilityBlockDiagram": true,
+    "supportActivities": true,
+    "supportOrganization": true,
+    "supportResources": true,
+    "transportPolicies": true
+  },
   "validation": {
     "issues": [],
     "ok": true,
     "schemaVersion": "modeling-import-v1",
-    "status": "valid"
-  }
+    "status": "valid",
+    "usedTables": {
+      "equipmentAssets": true,
+      "missionProfiles": true,
+      "reliabilityBlockDiagram": true,
+      "supportActivities": true,
+      "supportOrganization": true,
+      "supportResources": true,
+      "transportPolicies": true
+    },
+    "validationLevel": "level1",
+    "warnings": []
+  },
+  "validation_level": "level1"
 }

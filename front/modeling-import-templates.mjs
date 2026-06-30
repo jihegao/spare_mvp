@@ -1,17 +1,20 @@
 export const MODELING_IMPORT_TEMPLATES = [
   {
     id: "minimal-single-aircraft",
-    label: "最小单机建模粒度",
+    label: "Level 0 / 最小单机建模粒度",
+    validationLevel: "level0",
     path: "/import-templates/minimal_single_aircraft.json"
   },
   {
     id: "canonical-platform-case",
-    label: "平台标准案例",
+    label: "Level 1 / 平台标准案例",
+    validationLevel: "level1",
     path: "/import-templates/canonical_platform_case.json"
   },
   {
     id: "max-granularity-multi-aircraft",
-    label: "最大多机建模粒度",
+    label: "Level 1 / 最大多机建模粒度",
+    validationLevel: "level1",
     path: "/import-templates/max_granularity_multi_aircraft.json"
   }
 ];

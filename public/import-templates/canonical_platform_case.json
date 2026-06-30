@@ -1298,9 +1298,19 @@
     "name": "modeling_import_project.json",
     "type": "json_fixture"
   },
+  "usedTables": {
+    "equipmentAssets": true,
+    "missionProfiles": true,
+    "reliabilityBlockDiagram": true,
+    "supportActivities": true,
+    "supportOrganization": true,
+    "supportResources": true,
+    "transportPolicies": true
+  },
   "validation": {
     "issues": [],
     "ok": true,
     "status": "valid"
-  }
+  },
+  "validationLevel": "level1"
 }

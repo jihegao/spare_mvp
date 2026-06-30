@@ -31,6 +31,15 @@ class SimulationAnalysisCasePackTest(unittest.TestCase):
         self.assertEqual(pack["schema_version"], "simulation-analysis-case-pack-v0")
         self.assertEqual([case["case_id"] for case in pack["cases"]], SIMULATION_ANALYSIS_CASE_IDS)
         by_id = {case["case_id"]: case for case in pack["cases"]}
+        self.assertEqual(by_id["minimal_single_aircraft"]["validation_level"], "level0")
+        self.assertEqual(by_id["canonical_platform_case"]["validation_level"], "level1")
+        self.assertEqual(by_id["max_granularity_multi_aircraft"]["validation_level"], "level1")
+        self.assertFalse(by_id["minimal_single_aircraft"]["used_tables"]["supportResources"])
+        self.assertFalse(by_id["minimal_single_aircraft"]["used_tables"]["supportActivities"])
+        self.assertTrue(by_id["canonical_platform_case"]["used_tables"]["supportResources"])
+        self.assertTrue(by_id["max_granularity_multi_aircraft"]["used_tables"]["supportActivities"])
+        self.assertNotIn("supportResources", by_id["minimal_single_aircraft"]["modeling_import"]["objects"])
+        self.assertNotIn("supportActivities", by_id["minimal_single_aircraft"]["modeling_import"]["objects"])
         self.assertEqual(by_id["minimal_single_aircraft"]["modeling_import"]["objects"]["equipment"]["quantity"], 1)
         self.assertEqual(
             len(by_id["minimal_single_aircraft"]["modeling_import"]["objects"]["missionProfiles"][0]["combatUnit"]["members"]),
@@ -48,6 +57,7 @@ class SimulationAnalysisCasePackTest(unittest.TestCase):
 
     def test_phase_6p_fixture_files_match_generated_case_pack(self) -> None:
         self.assertEqual(simulation_analysis_case_fixture_drift(REPO_ROOT), [])
+        self.assertFalse((REPO_ROOT / "public" / "import-templates" / "case_new.json").exists())
 
     def test_phase_6p_cases_validate_compile_and_emit_formal_analysis_artifacts(self) -> None:
         required_kinds = {
@@ -65,6 +75,8 @@ class SimulationAnalysisCasePackTest(unittest.TestCase):
                 validation = validate_modeling_import_package(fixture["modeling_import"])
                 self.assertEqual(validation["issues"], [])
                 self.assertTrue(validation["ok"])
+                self.assertEqual(validation["validationLevel"], fixture["validation_level"])
+                self.assertEqual(validation["usedTables"], fixture["used_tables"])
                 project = fixture["project"]
                 scenario = self.adapter.compile_scenario(project, model_family="aircraft_support_v1")
                 config = fixture["monte_carlo_config"]

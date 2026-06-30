@@ -111,8 +111,10 @@ export function renderModelingImportWorkbench(state = {}, helpers = {}) {
   const diff = state.diff || diffModelingImports(publishedPackage, importPackage);
   const lifecycle = importPackage.lifecycle || {};
   const publishedLifecycle = publishedPackage?.lifecycle || {};
-  const issues = Array.isArray(validation.issues) ? validation.issues : [];
+  const validationIssues = Array.isArray(validation.issues) ? validation.issues : [];
+  const displayIssues = validationIssues;
   const validationStatus = validation.status || (validation.ok === false ? "invalid" : "not_validated");
+  const compileStatus = compileStatusForResult(state.compileResult);
   const canPublish = Boolean(state.canPublish);
   const canCompile = Boolean(state.canCompile);
 
@@ -141,7 +143,7 @@ export function renderModelingImportWorkbench(state = {}, helpers = {}) {
         ${metric("当前状态", `${lifecycle.state || "draft"} / v${lifecycle.version || 1}`, htmlEscape)}
         ${metric("发布快照", publishedPackage ? `${publishedLifecycle.state || "published"} / v${publishedLifecycle.version || 1}` : "未发布", htmlEscape)}
         ${metric("校验状态", validationStatus, htmlEscape)}
-        ${metric("字段问题", `${issues.length}`, htmlEscape)}
+        ${metric("字段问题", `${displayIssues.length}`, htmlEscape)}
       </section>
 
       <section class="modeling-import-layout">
@@ -169,19 +171,20 @@ export function renderModelingImportWorkbench(state = {}, helpers = {}) {
         </div>
 
         <div class="analysis-chart-panel">
-          <div class="section-head"><h3>字段级问题</h3><span>${issues.length ? "需修正" : "未发现问题"}</span></div>
+          <div class="section-head"><h3>字段级问题</h3><span>${displayIssues.length ? "需修正" : "未发现问题"}</span></div>
           <div class="table-wrap compact">
             <table>
-              <thead><tr><th>页面</th><th>对象</th><th>字段路径</th><th>级别</th><th>消息</th></tr></thead>
-              <tbody>${issues.length ? issues.map((issue) => `
+              <thead><tr><th>页面</th><th>对象</th><th>字段路径</th><th>代码</th><th>级别</th><th>消息</th></tr></thead>
+              <tbody>${displayIssues.length ? displayIssues.map((issue) => `
                 <tr>
                   <td>${htmlEscape(issue.page || "建模数据入口")}</td>
                   <td>${htmlEscape(issue.object_id || "-")}</td>
                   <td>${htmlEscape(issue.field_path || "-")}</td>
-                  <td><span class="status-badge danger">${htmlEscape(issue.severity || "error")}</span></td>
+                  <td>${htmlEscape(issue.code || "-")}</td>
+                  <td><span class="status-badge ${issue.severity === "warning" ? "warn" : "danger"}">${htmlEscape(issue.severity || "error")}</span></td>
                   <td>${htmlEscape(issue.message || "-")}</td>
                 </tr>
-              `).join("") : emptyRow("校验通过或尚未执行校验", 5)}</tbody>
+              `).join("") : emptyRow("校验通过或尚未执行校验", 6)}</tbody>
             </table>
           </div>
         </div>
@@ -209,7 +212,7 @@ export function renderModelingImportWorkbench(state = {}, helpers = {}) {
       </section>
 
       <section class="modeling-import-compile-panel">
-        <div class="section-head"><h3>Scenario 预览</h3><span>${state.compileResult ? "已生成" : "等待生成"}</span></div>
+        <div class="section-head"><h3>Scenario 预览</h3><span>${htmlEscape(compileStatus)}</span></div>
         ${renderCompileResult(state.compileResult, htmlEscape)}
       </section>
     </div>
@@ -297,14 +300,71 @@ function renderCompileResult(compileResult, htmlEscape) {
   }
   const metadata = compileResult.compiled_from_import || {};
   const scenario = compileResult.scenario || {};
+  const status = compileStatusForResult(compileResult);
+  const validationLevel = compileResult.validationLevel || metadata.validation_level || "-";
+  const usedTables = compileResult.usedTables || metadata.used_tables || {};
+  const rows = compileIssueRows(compileResult);
   return `
     <div class="modeling-import-compile-grid">
+      ${metric("编译状态", status, htmlEscape)}
       ${metric("来源导入", metadata.import_id || "-", htmlEscape)}
       ${metric("模型族", metadata.model_family || "aircraft_support_v1", htmlEscape)}
+      ${metric("校验级别", validationLevel, htmlEscape)}
+      ${metric("使用表", formatUsedTables(usedTables), htmlEscape)}
       ${metric("Scenario", scenario.scenario_id || scenario.scenarioId || "-", htmlEscape)}
       ${metric("编译器", scenario.compiled_by || "-", htmlEscape)}
     </div>
+    ${rows.length ? `
+      <div class="table-wrap compact">
+        <table>
+          <thead><tr><th>代码</th><th>级别</th><th>字段路径</th><th>消息</th></tr></thead>
+          <tbody>${rows.map((row) => `
+            <tr>
+              <td>${htmlEscape(row.code || "-")}</td>
+              <td><span class="status-badge ${row.severity === "warning" ? "warn" : "danger"}">${htmlEscape(row.severity || "error")}</span></td>
+              <td>${htmlEscape(row.field_path || "-")}</td>
+              <td>${htmlEscape(row.message || "-")}</td>
+            </tr>
+          `).join("")}</tbody>
+        </table>
+      </div>
+    ` : ""}
   `;
+}
+
+function compileStatusForResult(compileResult) {
+  if (!compileResult) return "等待生成";
+  if (compileResult.status) return String(compileResult.status);
+  const scenario = compileResult.scenario || {};
+  return scenario.scenario_id || scenario.scenarioId ? "compiled" : "unknown";
+}
+
+function compileIssueRows(compileResult) {
+  if (!compileResult) return [];
+  const issues = Array.isArray(compileResult.issues) ? compileResult.issues : [];
+  const warnings = Array.isArray(compileResult.warnings) ? compileResult.warnings : [];
+  return [
+    ...issues.map((issue) => normalizeIssueRow(issue, "error")),
+    ...warnings.map((warning) => normalizeIssueRow(warning, "warning"))
+  ];
+}
+
+function normalizeIssueRow(issue, fallbackSeverity) {
+  return {
+    code: issue?.code || "-",
+    severity: issue?.severity || fallbackSeverity,
+    page: issue?.page || "建模数据入口",
+    object_id: issue?.object_id || issue?.objectId || "modeling-import-package",
+    field_path: issue?.field_path || issue?.fieldPath || "-",
+    message: issue?.message || "-"
+  };
+}
+
+function formatUsedTables(usedTables) {
+  if (!usedTables || typeof usedTables !== "object" || Array.isArray(usedTables)) return "-";
+  const entries = Object.entries(usedTables);
+  if (!entries.length) return "-";
+  return entries.map(([key, value]) => `${key}=${Boolean(value)}`).join(", ");
 }
 
 function formatValue(value) {

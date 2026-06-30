@@ -320,9 +320,12 @@ class BackendApi:
 
         project = modeling_import_to_project(import_package)
         try:
-            scenario = self.adapter.compile_scenario(project, model_family=model_family)
+            gate = self.adapter.compile_scenario_with_gate(project, model_family=model_family)
         except AdapterError as exc:
             raise self._to_backend_error(exc, model_family) from exc
+
+        gate_issues = list(gate.get("issues") or [])
+        gate_errors = list(gate.get("errors") or [])
         return {
             "compiled_from_import": {
                 "import_id": import_id,
@@ -331,7 +334,14 @@ class BackendApi:
                 "model_family": model_family,
             },
             "project": project,
-            "scenario": scenario,
+            "status": gate.get("status", "blocked"),
+            "scenario": gate.get("scenario"),
+            "provenance": copy.deepcopy(gate.get("provenance") or {}),
+            "issues": gate_issues,
+            "errors": gate_errors,
+            "validationLevel": validation["validationLevel"],
+            "usedTables": copy.deepcopy(validation["usedTables"]),
+            "warnings": copy.deepcopy(validation.get("warnings") or []) + list(gate.get("warnings") or []),
         }
 
     def create_project_from_modeling_import(

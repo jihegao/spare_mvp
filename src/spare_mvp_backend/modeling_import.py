@@ -10,8 +10,11 @@ from typing import Any
 MODELING_IMPORT_PAGE_MAP = {
     "missionProfiles": "任务剖面参数",
     "equipmentAssets": "装备系统建模",
+    "reliabilityBlockDiagram": "装备系统建模",
     "supportResources": "保障资源建模",
     "supportActivities": "保障活动建模",
+    "supportOrganization": "保障组织建模",
+    "transportPolicies": "保障资源建模",
 }
 
 COLLECTION_RULES = {
@@ -38,14 +41,34 @@ COLLECTION_RULES = {
     },
 }
 
+VALIDATION_LEVELS = {"level0", "level1"}
+CORE_TABLE_DOMAINS = {"missionProfiles", "equipmentAssets"}
+DISABLEABLE_COLLECTIONS = {"supportResources", "supportActivities"}
+OBJECT_TABLE_DOMAINS = {"reliabilityBlockDiagram", "supportOrganization"}
+MODELING_IMPORT_TABLE_DOMAINS = [
+    "missionProfiles",
+    "equipmentAssets",
+    "reliabilityBlockDiagram",
+    "supportResources",
+    "supportActivities",
+    "supportOrganization",
+    "transportPolicies",
+]
+
 
 def validate_modeling_import_package(import_package: dict[str, Any]) -> dict[str, Any]:
     issues: list[dict[str, Any]] = []
-    _validate_package_roots(import_package, issues)
+    warnings: list[dict[str, Any]] = []
+    validation_level = _normalize_validation_level(import_package, issues)
+    used_tables = _normalize_used_tables(import_package, issues)
+
+    _validate_package_roots(import_package, issues, warnings, validation_level, used_tables)
     objects = import_package.get("objects") if isinstance(import_package.get("objects"), dict) else {}
     object_ids = _collect_object_ids(objects, issues)
 
     for collection, rules in COLLECTION_RULES.items():
+        if _is_disabled_collection_missing(collection, objects, used_tables):
+            continue
         rows = objects.get(collection) if isinstance(objects.get(collection), list) else []
         for index, row in enumerate(rows):
             if not isinstance(row, dict):
@@ -62,7 +85,10 @@ def validate_modeling_import_package(import_package: dict[str, Any]) -> dict[str
         "ok": not issues,
         "schemaVersion": "modeling-import-v1",
         "status": "valid" if not issues else "invalid",
+        "validationLevel": validation_level,
+        "usedTables": used_tables,
         "issues": issues,
+        "warnings": warnings,
     }
 
 
@@ -77,6 +103,8 @@ def modeling_import_to_project(import_package: dict[str, Any]) -> dict[str, Any]
     version = _safe_positive_int(lifecycle.get("version"), 1)
     duration_hours = _safe_positive_float(mission.get("durationHours"), 1)
     equipment = _equipment_profile_to_project(equipment_profile, equipment_assets, activities)
+
+    validation = validate_modeling_import_package(import_package)
 
     return {
         "schema_version": "project-v0",
@@ -100,10 +128,64 @@ def modeling_import_to_project(import_package: dict[str, Any]) -> dict[str, Any]
         "reliabilityBlockDiagram": _project_object(objects, mission, "reliabilityBlockDiagram", {}),
         "monteCarlo": _project_object(objects, mission, "monteCarlo", {"spareMultipliers": [1]}),
         "analysisRequests": _project_object(objects, mission, "analysisRequests", {}),
+        "modelingImportValidation": {
+            "importId": str(import_package["importId"]),
+            "validationLevel": validation["validationLevel"],
+            "usedTables": deepcopy(validation["usedTables"]),
+            "warnings": deepcopy(validation["warnings"]),
+            "disabledDomains": _disabled_domains(validation["usedTables"]),
+        },
     }
 
 
-def _validate_package_roots(import_package: dict[str, Any], issues: list[dict[str, Any]]) -> None:
+def _normalize_validation_level(import_package: dict[str, Any], issues: list[dict[str, Any]]) -> str:
+    validation_level = import_package.get("validationLevel") or "level1"
+    if validation_level in VALIDATION_LEVELS:
+        return str(validation_level)
+    issues.append(_issue("invalid_validation_level", None, "modeling-import-package", "validationLevel", "validationLevel 必须是 level0 或 level1。"))
+    return "level1"
+
+
+def _normalize_used_tables(import_package: dict[str, Any], issues: list[dict[str, Any]]) -> dict[str, bool]:
+    raw_used_tables = import_package.get("usedTables")
+    if raw_used_tables is None:
+        raw_used_tables = {}
+    elif not isinstance(raw_used_tables, dict):
+        issues.append(_issue("invalid_used_tables", None, "modeling-import-package", "usedTables", "usedTables 必须是对象，且每个字段必须是布尔值。"))
+        raw_used_tables = {}
+
+    normalized: dict[str, bool] = {}
+    for collection in COLLECTION_RULES:
+        normalized[collection] = _normalize_used_table_flag(raw_used_tables, collection, issues)
+    for domain in MODELING_IMPORT_TABLE_DOMAINS:
+        if domain in normalized:
+            continue
+        normalized[domain] = _normalize_used_table_flag(raw_used_tables, domain, issues)
+    for domain in sorted(str(key) for key in raw_used_tables if str(key) not in normalized):
+        issues.append(_issue("invalid_used_table_domain", None, "modeling-import-package", f"usedTables.{domain}", f"usedTables.{domain} 不是 modeling-import-v1 支持的表域。"))
+    return normalized
+
+
+def _normalize_used_table_flag(raw_used_tables: dict[str, Any], domain: str, issues: list[dict[str, Any]]) -> bool:
+    if domain not in raw_used_tables:
+        return True
+    value = raw_used_tables[domain]
+    if isinstance(value, bool):
+        if domain in CORE_TABLE_DOMAINS and not value:
+            issues.append(_issue("invalid_used_table_flag", None, "modeling-import-package", f"usedTables.{domain}", f"usedTables.{domain} 是核心表域，不能声明为 false。"))
+            return True
+        return value
+    issues.append(_issue("invalid_used_table_flag", None, "modeling-import-package", f"usedTables.{domain}", f"usedTables.{domain} 必须是布尔值。"))
+    return True
+
+
+def _validate_package_roots(
+    import_package: dict[str, Any],
+    issues: list[dict[str, Any]],
+    warnings: list[dict[str, Any]],
+    validation_level: str,
+    used_tables: dict[str, bool],
+) -> None:
     if import_package.get("schemaVersion") != "modeling-import-v1":
         issues.append(_issue("invalid_schema_version", None, "modeling-import-package", "schemaVersion", "schemaVersion 必须是 modeling-import-v1。"))
 
@@ -117,7 +199,85 @@ def _validate_package_roots(import_package: dict[str, Any], issues: list[dict[st
     for collection in COLLECTION_RULES:
         if isinstance(objects.get(collection), list):
             continue
-        issues.append(_issue("missing_required_root", None, "modeling-import-package", f"objects.{collection}", f"objects.{collection} 是导入包必填对象集合。"))
+        if _is_disabled_domain(collection, used_tables):
+            _append_scope_warning(warnings, collection, f"objects.{collection}")
+            continue
+        issues.append(_issue("invalid_declared_table", collection, "modeling-import-package", f"objects.{collection}", f"objects.{collection} 是导入包声明建模的必填对象集合。"))
+
+    for domain in OBJECT_TABLE_DOMAINS:
+        _validate_declared_object_domain(objects, domain, used_tables, issues, warnings)
+    _validate_declared_transport_policies(objects, used_tables, issues, warnings)
+
+    for domain in _disabled_domains(used_tables):
+        if domain in COLLECTION_RULES or domain in OBJECT_TABLE_DOMAINS or domain == "transportPolicies":
+            continue
+        _append_scope_warning(warnings, domain, f"objects.{domain}")
+
+
+def _validate_declared_object_domain(
+    objects: dict[str, Any],
+    domain: str,
+    used_tables: dict[str, bool],
+    issues: list[dict[str, Any]],
+    warnings: list[dict[str, Any]],
+) -> None:
+    value = objects.get(domain)
+    if isinstance(value, dict):
+        if domain == "supportOrganization" and "tree" in value and not isinstance(value.get("tree"), list):
+            issues.append(_issue("invalid_declared_table", domain, "modeling-import-package", f"objects.{domain}.tree", f"objects.{domain}.tree 必须是数组。"))
+        return
+    if _is_disabled_domain(domain, used_tables):
+        _append_scope_warning(warnings, domain, f"objects.{domain}")
+        return
+    issues.append(_issue("invalid_declared_table", domain, "modeling-import-package", f"objects.{domain}", f"objects.{domain} 是导入包声明建模的必填对象。"))
+
+
+def _validate_declared_transport_policies(
+    objects: dict[str, Any],
+    used_tables: dict[str, bool],
+    issues: list[dict[str, Any]],
+    warnings: list[dict[str, Any]],
+) -> None:
+    resources = objects.get("supportResources")
+    if _is_disabled_domain("transportPolicies", used_tables):
+        _append_scope_warning(warnings, "transportPolicies", "objects.supportResources[].transportPolicies")
+        return
+    if not isinstance(resources, list):
+        issues.append(_issue("invalid_declared_table", "transportPolicies", "modeling-import-package", "objects.supportResources", "声明使用 transportPolicies，但缺少 supportResources 表。"))
+        return
+    for index, resource in enumerate(resources):
+        if not isinstance(resource, dict):
+            continue
+        policies = resource.get("transportPolicies")
+        if isinstance(policies, list) and policies:
+            continue
+        issues.append(_issue("invalid_declared_table", "transportPolicies", str(resource.get("id") or f"supportResources[{index}]"), f"objects.supportResources[{index}].transportPolicies", "声明使用 transportPolicies，但保障资源缺少有效运输策略数组。"))
+
+
+def _is_disabled_collection_missing(collection: str, objects: dict[str, Any], used_tables: dict[str, bool]) -> bool:
+    return collection in DISABLEABLE_COLLECTIONS and _is_disabled_domain(collection, used_tables) and not isinstance(objects.get(collection), list)
+
+
+def _is_disabled_domain(domain: str, used_tables: dict[str, bool]) -> bool:
+    return used_tables.get(domain) is False
+
+
+def _disabled_domains(used_tables: dict[str, bool]) -> list[str]:
+    return [domain for domain, enabled in used_tables.items() if enabled is False]
+
+
+def _append_scope_warning(warnings: list[dict[str, Any]], domain: str, field_path: str) -> None:
+    if any(warning.get("code") == "scope_not_modeled" and warning.get("field_path") == field_path for warning in warnings):
+        return
+    warnings.append(
+        _warning(
+            "scope_not_modeled",
+            domain,
+            "modeling-import-package",
+            field_path,
+            f"导入声明未建模 {domain}，该域不会阻断校验或编译。",
+        )
+    )
 
 
 def _validate_lifecycle(import_package: dict[str, Any], issues: list[dict[str, Any]]) -> None:
@@ -230,6 +390,17 @@ def _issue(code: str, collection: str | None, object_id: str, field_path: str, m
     return {
         "code": code,
         "severity": "error",
+        "page": MODELING_IMPORT_PAGE_MAP.get(collection or "", "建模数据入口"),
+        "object_id": object_id,
+        "field_path": field_path,
+        "message": message,
+    }
+
+
+def _warning(code: str, collection: str | None, object_id: str, field_path: str, message: str) -> dict[str, str]:
+    return {
+        "code": code,
+        "severity": "warning",
         "page": MODELING_IMPORT_PAGE_MAP.get(collection or "", "建模数据入口"),
         "object_id": object_id,
         "field_path": field_path,

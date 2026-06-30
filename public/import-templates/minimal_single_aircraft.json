@@ -359,56 +359,7 @@
           "type": "system"
         }
       ]
-    },
-    "supportActivities": [
-      {
-        "activityName": "空保障活动",
-        "activityType": "保障活动",
-        "corrective": {},
-        "durationHours": 0.5,
-        "equipmentId": "whole-aircraft",
-        "id": "empty-support-activity",
-        "jobs": [],
-        "logistics": {},
-        "name": "空保障活动",
-        "organizationStrategies": [],
-        "planType": "",
-        "preventive": {},
-        "requiredDevices": null,
-        "requiredPersonnel": null,
-        "resourceId": "carrier-deck",
-        "spareQuantity": 0,
-        "spareType": "",
-        "transportStrategies": []
-      }
-    ],
-    "supportOrganization": {
-      "tree": [
-        {
-          "children": [],
-          "description": "",
-          "id": "carrier-deck",
-          "name": "基地",
-          "supportNodeId": "carrier-deck"
-        }
-      ]
-    },
-    "supportResources": [
-      {
-        "capacity": 1,
-        "equipmentCapacity": null,
-        "id": "carrier-deck",
-        "inventory": {},
-        "lateralSupportNodes": [],
-        "name": "基地",
-        "nodeType": "甲板保障点",
-        "organizationStrategy": "",
-        "personnelCapacity": null,
-        "policy": "",
-        "supportLevel": "一线保障",
-        "transportPolicies": []
-      }
-    ]
+    }
   },
   "projectId": "project-6p-minimal-single-aircraft",
   "schemaVersion": "modeling-import-v1",
@@ -417,9 +368,19 @@
     "name": "simulation_analysis_cases/minimal_single_aircraft.json",
     "type": "json_fixture"
   },
+  "usedTables": {
+    "equipmentAssets": true,
+    "missionProfiles": true,
+    "reliabilityBlockDiagram": true,
+    "supportActivities": false,
+    "supportOrganization": false,
+    "supportResources": false,
+    "transportPolicies": false
+  },
   "validation": {
     "issues": [],
     "ok": true,
     "status": "valid"
-  }
+  },
+  "validationLevel": "level0"
 }

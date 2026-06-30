@@ -124,7 +124,10 @@ class SimulationAdapter:
             return {
                 "status": "blocked",
                 "scenario": None,
-                "provenance": self._compile_gate_provenance(project, model_family),
+                "provenance": self._with_modeling_import_validation_provenance(
+                    self._compile_gate_provenance(project, model_family),
+                    project,
+                ),
                 "issues": issues,
                 "errors": validation["errors"],
             }
@@ -133,7 +136,10 @@ class SimulationAdapter:
             return {
                 "status": "compiled",
                 "scenario": scenario,
-                "provenance": scenario["compiled_from"]["mapping_provenance"],
+                "provenance": self._with_modeling_import_validation_provenance(
+                    scenario["compiled_from"]["mapping_provenance"],
+                    project,
+                ),
                 "issues": [],
             }
         if model_family == "aviation_support":
@@ -141,11 +147,17 @@ class SimulationAdapter:
             return {
                 "status": "compiled",
                 "scenario": scenario,
-                "provenance": scenario["compiled_from"]["mapping_provenance"],
+                "provenance": self._with_modeling_import_validation_provenance(
+                    scenario["compiled_from"]["mapping_provenance"],
+                    project,
+                ),
                 "issues": [],
             }
         if model_family == "aircraft_support_v1":
-            provenance = self._aircraft_support_v1_mapping_provenance(self._project_id(project), project)
+            provenance = self._with_modeling_import_validation_provenance(
+                self._aircraft_support_v1_mapping_provenance(self._project_id(project), project),
+                project,
+            )
             issues = self._aircraft_support_v1_compile_issues(project)
             if issues:
                 return {
@@ -166,10 +178,13 @@ class SimulationAdapter:
             return {
                 "status": "compiled",
                 "scenario": scenario,
-                "provenance": scenario["compiled_from"]["mapping_provenance"],
+                "provenance": provenance,
                 "issues": [],
             }
-        provenance = self._compile_gate_provenance(project, model_family)
+        provenance = self._with_modeling_import_validation_provenance(
+            self._compile_gate_provenance(project, model_family),
+            project,
+        )
         return {
             "status": "unsupported",
             "scenario": None,
@@ -1095,12 +1110,50 @@ class SimulationAdapter:
             "unsupported_fields": ["model_family"],
         }
 
+    def _with_modeling_import_validation_provenance(
+        self,
+        provenance: dict[str, Any],
+        project: dict[str, Any],
+    ) -> dict[str, Any]:
+        validation_scope = project.get("modelingImportValidation")
+        if not isinstance(validation_scope, dict):
+            return provenance
+
+        enriched = copy.deepcopy(provenance)
+        used_tables = validation_scope.get("usedTables") if isinstance(validation_scope.get("usedTables"), dict) else {}
+        normalized_used_tables = {
+            str(domain): enabled
+            for domain, enabled in used_tables.items()
+            if isinstance(enabled, bool)
+        }
+        disabled_domains = validation_scope.get("disabledDomains")
+        if not isinstance(disabled_domains, list):
+            disabled_domains = [domain for domain, enabled in normalized_used_tables.items() if enabled is False]
+
+        enriched["validation_level"] = str(validation_scope.get("validationLevel") or "level1")
+        enriched["used_tables"] = normalized_used_tables
+        enriched["disabled_domains"] = [str(domain) for domain in disabled_domains]
+        enriched["validation_warnings"] = copy.deepcopy(validation_scope.get("warnings") or [])
+        return enriched
+
+    def _modeling_import_domain_disabled(self, project: dict[str, Any], domain: str) -> bool:
+        validation_scope = project.get("modelingImportValidation")
+        if not isinstance(validation_scope, dict):
+            return False
+        if validation_scope.get("validationLevel") != "level0":
+            return False
+        used_tables = validation_scope.get("usedTables") if isinstance(validation_scope.get("usedTables"), dict) else {}
+        disabled_domains = validation_scope.get("disabledDomains") if isinstance(validation_scope.get("disabledDomains"), list) else []
+        return used_tables.get(domain) is False or domain in disabled_domains
+
     def _aircraft_support_v1_compile_issues(self, project: dict[str, Any]) -> list[dict[str, str]]:
         issues: list[dict[str, str]] = []
         components = self._dict_list(project.get("components"))
         support_nodes = self._dict_list(project.get("supportNodes"))
         support_activities = self._dict_list(project.get("supportActivities"))
         mission_profile = project.get("missionProfile") if isinstance(project.get("missionProfile"), dict) else {}
+        support_resources_disabled = self._modeling_import_domain_disabled(project, "supportResources")
+        support_activities_disabled = self._modeling_import_domain_disabled(project, "supportActivities")
 
         if not components:
             issues.append(
@@ -1111,7 +1164,7 @@ class SimulationAdapter:
                     "装备系统建模",
                 )
             )
-        if not support_nodes:
+        if not support_nodes and not support_resources_disabled:
             issues.append(
                 self._compile_issue(
                     "missing_support_network",
@@ -1120,7 +1173,7 @@ class SimulationAdapter:
                     "保障资源建模",
                 )
             )
-        if not support_activities:
+        if not support_activities and not support_activities_disabled:
             issues.append(
                 self._compile_issue(
                     "missing_support_activities",
