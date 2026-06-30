@@ -2,7 +2,7 @@
 
 ## 背景
 
-M6.2/M6.2.x/M6.2.y 已把正式运行入口收敛到 `RunIntent -> /api/runs -> RunService -> artifacts`，并退役 legacy `/api/simulation-runs`。当前系统已经能提交 single/Monte Carlo run、读取 status/result/artifacts/chain，并在 SQLite 中保存 `simulation_runs`、`result_summaries`、`artifact_manifests`。
+M6.2/M6.2.x/M6.2.y 已把正式运行入口收敛到 `RunIntent -> /api/runs -> RunService -> SimulationAdapter -> aircraft_support_v1 -> SQLite + artifacts`，并退役 legacy `/api/simulation-runs`。当前系统已经能提交 single/Monte Carlo run、读取 status/result/artifacts/chain，并在 SQLite 中保存 `simulation_runs`、`result_summaries`、`artifact_manifests`。
 
 M7.0 的目标不是扩大仿真能力，而是把运行账本和产物账本补成可运营、可审计、可下载、可复现的最小闭环：系统必须能回答谁在什么时候启动了 run、run 使用哪个 `Project` / `ExperimentPlan` / `Scenario` / seed / config、输出了哪些 artifacts、失败原因是什么，以及这些结果是否已归档或删除。
 

@@ -1,8 +1,8 @@
 """Simulation Adapter boundary for contract-first backend migration.
 
 The adapter owns application-facing Project -> Scenario -> Run/Result/Artifact
-translation. It consumes the governed Mesa smoke model, but it does not change
-Mesa behavior or the contract provider endpoint surface.
+translation. The aircraft_support_v1 product runtime is the formal run target;
+retired model families remain only for explicit legacy regression coverage.
 """
 
 from __future__ import annotations
@@ -181,7 +181,7 @@ class SimulationAdapter:
                     "field_path": "model_family",
                     "page": "Simulation run",
                     "severity": "error",
-                    "suggestion": "Choose smoke or add a governed compiler before submitting this run.",
+                    "suggestion": "Choose aircraft_support_v1 or add a governed compiler before submitting this run.",
                 }
             ],
         }

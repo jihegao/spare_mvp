@@ -1,4 +1,4 @@
-"""M6.0 run service boundary over the local synchronous smoke executor."""
+"""RunService boundary for the canonical /api/runs local synchronous executor."""
 
 from __future__ import annotations
 

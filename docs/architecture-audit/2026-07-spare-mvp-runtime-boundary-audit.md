@@ -146,7 +146,7 @@ Acceptance criteria:
 
 - `run_service.py` header describes the canonical `/api/runs` local sync executor.
 - `adapter.py` header no longer says smoke is the governed mainline model.
-- Default HTTP artifact output path is renamed away from `runs/m3-0-http`.
+- Default HTTP artifact output path is `runs/canonical-api`.
 
 ### P2/P3 - Separate current SQLite schema from compatibility migrations
 
