@@ -2314,7 +2314,7 @@ test("M9.8 docs mark platform embedding complete without making independent-mesa
 
   assert.match(combined, /M9\.8[^。]*(平台嵌入|嵌入平台)[^。]*(完成|收束|已)/);
   assert.match(combined, /aircraft_support_v1[^。]*canonical `?\/api\/runs`?/);
-  assert.match(combined, /independent-mesa[^。]*(历史参考|开发对照|离线复现)/);
+  assert.match(combined, /independent-mesa[^。]*(源码树已移除|源码树已从当前仓库移除|当前源码树移除)/);
   assert.doesNotMatch(combined, /M9\.8[^。]*(8765|independent-mesa\/server\.py)[^。]*(正式产品入口|平台运行必需|启动平台所需)/);
 });
 
@@ -3578,7 +3578,7 @@ test("M9.6 docs freeze platform case fixtures before M9.7 model-family work", as
   assert.match(combined, /m9_6_expected_artifact_kinds\.json/);
   assert.match(combined, /M9\.7[^。]*正式飞机保障仿真模型族/);
   assert.match(combined, /M9\.8[^。]*(平台嵌入|嵌入平台)[^。]*(完成|收束|已)/);
-  assert.match(combined, /independent-mesa[^。]*(历史参考|开发对照|离线复现)/);
+  assert.match(combined, /independent-mesa[^。]*(源码树已移除|源码树已从当前仓库移除|当前源码树移除)/);
   assert.doesNotMatch(combined, /M9\.6[^。]*(正式飞机保障仿真模型族已完成|嵌入平台已完成|退役 independent-mesa 已完成)/);
   assert.doesNotMatch(combined, /M9\.6[^。]*(8765|independent-mesa\/server\.py)[^。]*(已作为|已成为|是)正式产品入口/);
 });

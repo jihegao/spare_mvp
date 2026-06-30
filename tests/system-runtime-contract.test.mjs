@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import test from "node:test";
 
 test("active runtime entrypoints use the single Mesa test environment", async () => {
@@ -56,6 +56,13 @@ test("M9.8 start-system does not launch independent-mesa as a platform dependenc
   assert.doesNotMatch(script, /independent-mesa\.pid/);
   assert.doesNotMatch(script, /wait_for_port "\$INDEPENDENT_MESA_PORT"/);
   assert.doesNotMatch(script, /Schemes: http:\/\/\$HOST:\$INDEPENDENT_MESA_PORT\//);
+});
+
+test("retired independent-mesa source tree is removed from the active repository", async () => {
+  await assert.rejects(
+    stat(new URL("../independent-mesa/", import.meta.url)),
+    { code: "ENOENT" }
+  );
 });
 
 test("browser smoke covers M5 import and run restoration after backend restart", async () => {
