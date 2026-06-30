@@ -59,3 +59,42 @@ test("sample project flow reuses existing published package without saving fixtu
   assert.equal(published.importId, "import/already-published");
   assert.deepEqual(calls, []);
 });
+
+test("sample project flow reuses stored published demo import before saving fixture", async () => {
+  const calls = [];
+  const backendApi = {
+    async getModelingImport(importId) {
+      calls.push(["get", importId]);
+      assert.equal(importId, MODELING_IMPORT_DEMO_FIXTURE.importId);
+      return {
+        publishedPackage: {
+          ...MODELING_IMPORT_DEMO_FIXTURE,
+          importId,
+          lifecycle: {
+            state: "published",
+            version: 3,
+            referencedRunIds: ["run-scenario-import-carrier-day-night-001-0001"]
+          }
+        }
+      };
+    },
+    async saveModelingImport() {
+      calls.push(["save"]);
+      throw new Error("should not save");
+    },
+    async publishModelingImport() {
+      calls.push(["publish"]);
+      throw new Error("should not publish");
+    }
+  };
+
+  const published = await ensurePublishedModelingImportForSampleProject({
+    backendApi,
+    fixture: MODELING_IMPORT_DEMO_FIXTURE,
+    publishedImportId: ""
+  });
+
+  assert.equal(published.importId, MODELING_IMPORT_DEMO_FIXTURE.importId);
+  assert.equal(published.reused, true);
+  assert.deepEqual(calls, [["get", MODELING_IMPORT_DEMO_FIXTURE.importId]]);
+});
