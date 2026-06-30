@@ -1,7 +1,7 @@
 import { compileMissionExposure } from "./mission-exposure-compiler.mjs";
 import { evaluateBottomUpReliability, seriesReliability } from "./rbd-evaluator.mjs";
 
-export const RMS_ALLOCATION_ALGORITHM_VERSION = "rms-engine-1.1.0";
+export const RMS_ALLOCATION_ALGORITHM_VERSION = "rms-engine-1.2.0";
 
 export function createDemoRmsAllocationProject() {
   return {
@@ -30,7 +30,7 @@ export function createDemoRmsAllocationProject() {
     equipmentNodes: [
       {
         id: "aircraft-root",
-        name: "A-Prototype整机",
+        name: "F16",
         level: "装备",
         parentId: null,
         quantity: 1,
@@ -55,7 +55,7 @@ export function createDemoRmsAllocationProject() {
         rms: {
           target: {},
           prediction: { mtbfHours: 780, mttrHours: 2.2 },
-          similar: { sourceModel: "15 机型", targetModel: "16 机型", mtbfHours: 760, adjustmentFactor: 0.92 },
+          similar: { sourceModel: "F15", targetModel: "F16", mtbfHours: 760, adjustmentFactor: 0.92 },
           actual: { mtbfHours: 720, source: "field-data" }
         }
       },
@@ -77,7 +77,7 @@ export function createDemoRmsAllocationProject() {
         rms: {
           target: {},
           prediction: { mtbfHours: 1100, mttrHours: 1.8 },
-          similar: { sourceModel: "15 机型", targetModel: "16 机型", mtbfHours: 1080, adjustmentFactor: 0.95 },
+          similar: { sourceModel: "F15", targetModel: "F16", mtbfHours: 1080, adjustmentFactor: 0.95 },
           actual: { mtbfHours: 980, source: "bench-test" }
         }
       },
@@ -99,7 +99,7 @@ export function createDemoRmsAllocationProject() {
         rms: {
           target: {},
           prediction: { mtbfHours: 940, mttrHours: 2 },
-          similar: { sourceModel: "15 机型", targetModel: "16 机型", mtbfHours: 900, adjustmentFactor: 0.9 },
+          similar: { sourceModel: "F15", targetModel: "F16", mtbfHours: 900, adjustmentFactor: 0.9 },
           actual: { mtbfHours: 900, source: "field-data" }
         }
       },
@@ -121,8 +121,194 @@ export function createDemoRmsAllocationProject() {
         rms: {
           target: {},
           prediction: { mtbfHours: 1450, mttrHours: 1.2 },
-          similar: { sourceModel: "15 机型", targetModel: "16 机型", mtbfHours: 1320, adjustmentFactor: 0.96 },
+          similar: { sourceModel: "F15", targetModel: "F16", mtbfHours: 1320, adjustmentFactor: 0.96 },
           actual: { mtbfHours: 1300, source: "supplier" }
+        }
+      },
+      {
+        id: "f15-root",
+        name: "F15",
+        level: "装备",
+        parentId: null,
+        quantity: 1,
+        structure: "series",
+        rms: { target: {}, prediction: { mtbfHours: 980 }, actual: { mtbfHours: 930, source: "field-data" } }
+      },
+      {
+        id: "f15-propulsion-system",
+        name: "F15 动力系统",
+        level: "系统",
+        parentId: "f15-root",
+        quantity: 2,
+        structure: "series",
+        moduleCount: 8,
+        importance: 0.9,
+        complexity: 3,
+        maturityRisk: 2,
+        repairDifficulty: 1.25,
+        supportDifficulty: 1.15,
+        criticality: 1.15,
+        missionUse: { dutyCycle: 1, environmentFactor: 1.12, loadFactor: 1.08 },
+        rms: {
+          target: {},
+          prediction: { mtbfHours: 760, mttrHours: 2.1 },
+          actual: { mtbfHours: 740, source: "field-data" }
+        }
+      },
+      {
+        id: "f15-avionics-system",
+        name: "F15 航电系统",
+        level: "系统",
+        parentId: "f15-root",
+        quantity: 2,
+        structure: "series",
+        moduleCount: 6,
+        importance: 1.1,
+        complexity: 3,
+        maturityRisk: 2,
+        repairDifficulty: 1,
+        supportDifficulty: 1.05,
+        criticality: 1.2,
+        missionUse: { dutyCycle: 1, environmentFactor: 1.02, loadFactor: 1 },
+        rms: {
+          target: {},
+          prediction: { mtbfHours: 1080, mttrHours: 1.7 },
+          actual: { mtbfHours: 1010, source: "bench-test" }
+        }
+      },
+      {
+        id: "f15-hydraulic-system",
+        name: "F15 液压系统",
+        level: "分系统",
+        parentId: "f15-root",
+        quantity: 1,
+        structure: "series",
+        moduleCount: 4,
+        importance: 0.85,
+        complexity: 2,
+        maturityRisk: 2,
+        repairDifficulty: 1.1,
+        supportDifficulty: 1.15,
+        criticality: 0.95,
+        missionUse: { dutyCycle: 0.85, environmentFactor: 1.05, loadFactor: 1 },
+        rms: {
+          target: {},
+          prediction: { mtbfHours: 900, mttrHours: 1.9 },
+          actual: { mtbfHours: 880, source: "field-data" }
+        }
+      },
+      {
+        id: "f15-mission-computer",
+        name: "F15 任务计算机 LRU",
+        level: "LRU",
+        parentId: "f15-root",
+        quantity: 1,
+        structure: "series",
+        moduleCount: 3,
+        importance: 1.25,
+        complexity: 3,
+        maturityRisk: 1,
+        repairDifficulty: 0.75,
+        supportDifficulty: 0.65,
+        criticality: 1.3,
+        missionUse: { dutyCycle: 0.65, environmentFactor: 1, loadFactor: 0.9 },
+        rms: {
+          target: {},
+          prediction: { mtbfHours: 1320, mttrHours: 1.1 },
+          actual: { mtbfHours: 1280, source: "supplier" }
+        }
+      },
+      {
+        id: "f18-root",
+        name: "F18",
+        level: "装备",
+        parentId: null,
+        quantity: 1,
+        structure: "series",
+        rms: { target: {}, prediction: { mtbfHours: 1040 }, actual: { mtbfHours: 990, source: "field-data" } }
+      },
+      {
+        id: "f18-propulsion-system",
+        name: "F18 动力系统",
+        level: "系统",
+        parentId: "f18-root",
+        quantity: 2,
+        structure: "series",
+        moduleCount: 8,
+        importance: 0.92,
+        complexity: 4,
+        maturityRisk: 2,
+        repairDifficulty: 1.28,
+        supportDifficulty: 1.18,
+        criticality: 1.18,
+        missionUse: { dutyCycle: 1, environmentFactor: 1.16, loadFactor: 1.1 },
+        rms: {
+          target: {},
+          prediction: { mtbfHours: 820, mttrHours: 2.0 },
+          actual: { mtbfHours: 790, source: "field-data" }
+        }
+      },
+      {
+        id: "f18-avionics-system",
+        name: "F18 航电系统",
+        level: "系统",
+        parentId: "f18-root",
+        quantity: 2,
+        structure: "series",
+        moduleCount: 7,
+        importance: 1.15,
+        complexity: 3,
+        maturityRisk: 2,
+        repairDifficulty: 0.98,
+        supportDifficulty: 1.02,
+        criticality: 1.25,
+        missionUse: { dutyCycle: 1, environmentFactor: 1.04, loadFactor: 1 },
+        rms: {
+          target: {},
+          prediction: { mtbfHours: 1180, mttrHours: 1.6 },
+          actual: { mtbfHours: 1110, source: "bench-test" }
+        }
+      },
+      {
+        id: "f18-hydraulic-system",
+        name: "F18 液压系统",
+        level: "分系统",
+        parentId: "f18-root",
+        quantity: 1,
+        structure: "series",
+        moduleCount: 4,
+        importance: 0.88,
+        complexity: 2,
+        maturityRisk: 2,
+        repairDifficulty: 1.08,
+        supportDifficulty: 1.12,
+        criticality: 0.98,
+        missionUse: { dutyCycle: 0.88, environmentFactor: 1.06, loadFactor: 1 },
+        rms: {
+          target: {},
+          prediction: { mtbfHours: 960, mttrHours: 1.8 },
+          actual: { mtbfHours: 910, source: "field-data" }
+        }
+      },
+      {
+        id: "f18-mission-computer",
+        name: "F18 任务计算机 LRU",
+        level: "LRU",
+        parentId: "f18-root",
+        quantity: 1,
+        structure: "series",
+        moduleCount: 3,
+        importance: 1.3,
+        complexity: 3,
+        maturityRisk: 1,
+        repairDifficulty: 0.72,
+        supportDifficulty: 0.62,
+        criticality: 1.35,
+        missionUse: { dutyCycle: 0.7, environmentFactor: 1, loadFactor: 0.92 },
+        rms: {
+          target: {},
+          prediction: { mtbfHours: 1500, mttrHours: 1.0 },
+          actual: { mtbfHours: 1420, source: "supplier" }
         }
       }
     ]
@@ -131,18 +317,18 @@ export function createDemoRmsAllocationProject() {
 
 export function createRmsEquipmentImportFixture() {
   return [
-    { id: "j16-root", name: "16 机型整机", parentId: "", level: "装备", quantity: 1, structure: "series" },
+    { id: "f16-root", name: "F16", parentId: "", level: "装备", quantity: 1, structure: "series" },
     {
-      id: "j16-propulsion",
-      name: "16 机型动力系统",
-      parentId: "j16-root",
+      id: "f16-propulsion",
+      name: "F16 动力系统",
+      parentId: "f16-root",
       level: "系统",
       quantity: 2,
       structure: "series",
       mtbfHours: 700,
       mttrHours: 2.4,
-      similarProductModel: "15 机型",
-      targetProductModel: "16 机型",
+      similarProductModel: "F15",
+      targetProductModel: "F16",
       similarMtbfHours: 760,
       adjustmentFactor: 0.92,
       dutyCycle: 1,
@@ -153,16 +339,16 @@ export function createRmsEquipmentImportFixture() {
       criticality: 1.25
     },
     {
-      id: "j16-avionics",
-      name: "16 机型航电系统",
-      parentId: "j16-root",
+      id: "f16-avionics",
+      name: "F16 航电系统",
+      parentId: "f16-root",
       level: "系统",
       quantity: 1,
       structure: "series",
       mtbfHours: 1020,
       mttrHours: 1.9,
-      similarProductModel: "15 机型",
-      targetProductModel: "16 机型",
+      similarProductModel: "F15",
+      targetProductModel: "F16",
       similarMtbfHours: 1080,
       adjustmentFactor: 0.95,
       dutyCycle: 1,
@@ -173,16 +359,16 @@ export function createRmsEquipmentImportFixture() {
       criticality: 1.3
     },
     {
-      id: "j16-hydraulic",
-      name: "16 机型液压系统",
-      parentId: "j16-root",
+      id: "f16-hydraulic",
+      name: "F16 液压系统",
+      parentId: "f16-root",
       level: "分系统",
       quantity: 1,
       structure: "series",
       mtbfHours: 820,
       mttrHours: 2.1,
-      similarProductModel: "15 机型",
-      targetProductModel: "16 机型",
+      similarProductModel: "F15",
+      targetProductModel: "F16",
       similarMtbfHours: 900,
       adjustmentFactor: 0.9,
       dutyCycle: 0.86,
@@ -193,16 +379,16 @@ export function createRmsEquipmentImportFixture() {
       criticality: 1
     },
     {
-      id: "j16-mission-computer",
-      name: "16 机型任务计算机 LRU",
-      parentId: "j16-root",
+      id: "f16-mission-computer",
+      name: "F16 任务计算机 LRU",
+      parentId: "f16-root",
       level: "LRU",
       quantity: 1,
       structure: "series",
       mtbfHours: 1260,
       mttrHours: 1.4,
-      similarProductModel: "15 机型",
-      targetProductModel: "16 机型",
+      similarProductModel: "F15",
+      targetProductModel: "F16",
       similarMtbfHours: 1320,
       adjustmentFactor: 0.96,
       dutyCycle: 0.65,
@@ -211,6 +397,136 @@ export function createRmsEquipmentImportFixture() {
       repairDifficulty: 0.8,
       supportDifficulty: 0.7,
       criticality: 1.4
+    },
+    { id: "f15-root", name: "F15", parentId: "", level: "装备", quantity: 1, structure: "series" },
+    {
+      id: "f15-propulsion",
+      name: "F15 动力系统",
+      parentId: "f15-root",
+      level: "系统",
+      quantity: 2,
+      structure: "series",
+      mtbfHours: 760,
+      mttrHours: 2.1,
+      dutyCycle: 1,
+      environmentFactor: 1.12,
+      loadFactor: 1.08,
+      repairDifficulty: 1.25,
+      supportDifficulty: 1.15,
+      criticality: 1.15
+    },
+    {
+      id: "f15-avionics",
+      name: "F15 航电系统",
+      parentId: "f15-root",
+      level: "系统",
+      quantity: 1,
+      structure: "series",
+      mtbfHours: 1080,
+      mttrHours: 1.7,
+      dutyCycle: 1,
+      environmentFactor: 1.02,
+      loadFactor: 1,
+      repairDifficulty: 1,
+      supportDifficulty: 1.05,
+      criticality: 1.2
+    },
+    {
+      id: "f15-hydraulic",
+      name: "F15 液压系统",
+      parentId: "f15-root",
+      level: "分系统",
+      quantity: 1,
+      structure: "series",
+      mtbfHours: 900,
+      mttrHours: 1.9,
+      dutyCycle: 0.85,
+      environmentFactor: 1.05,
+      loadFactor: 1,
+      repairDifficulty: 1.1,
+      supportDifficulty: 1.15,
+      criticality: 0.95
+    },
+    {
+      id: "f15-mission-computer",
+      name: "F15 任务计算机 LRU",
+      parentId: "f15-root",
+      level: "LRU",
+      quantity: 1,
+      structure: "series",
+      mtbfHours: 1320,
+      mttrHours: 1.1,
+      dutyCycle: 0.65,
+      environmentFactor: 1,
+      loadFactor: 0.9,
+      repairDifficulty: 0.75,
+      supportDifficulty: 0.65,
+      criticality: 1.3
+    },
+    { id: "f18-root", name: "F18", parentId: "", level: "装备", quantity: 1, structure: "series" },
+    {
+      id: "f18-propulsion",
+      name: "F18 动力系统",
+      parentId: "f18-root",
+      level: "系统",
+      quantity: 2,
+      structure: "series",
+      mtbfHours: 820,
+      mttrHours: 2.0,
+      dutyCycle: 1,
+      environmentFactor: 1.16,
+      loadFactor: 1.1,
+      repairDifficulty: 1.28,
+      supportDifficulty: 1.18,
+      criticality: 1.18
+    },
+    {
+      id: "f18-avionics",
+      name: "F18 航电系统",
+      parentId: "f18-root",
+      level: "系统",
+      quantity: 1,
+      structure: "series",
+      mtbfHours: 1180,
+      mttrHours: 1.6,
+      dutyCycle: 1,
+      environmentFactor: 1.04,
+      loadFactor: 1,
+      repairDifficulty: 0.98,
+      supportDifficulty: 1.02,
+      criticality: 1.25
+    },
+    {
+      id: "f18-hydraulic",
+      name: "F18 液压系统",
+      parentId: "f18-root",
+      level: "分系统",
+      quantity: 1,
+      structure: "series",
+      mtbfHours: 960,
+      mttrHours: 1.8,
+      dutyCycle: 0.88,
+      environmentFactor: 1.06,
+      loadFactor: 1,
+      repairDifficulty: 1.08,
+      supportDifficulty: 1.12,
+      criticality: 0.98
+    },
+    {
+      id: "f18-mission-computer",
+      name: "F18 任务计算机 LRU",
+      parentId: "f18-root",
+      level: "LRU",
+      quantity: 1,
+      structure: "series",
+      mtbfHours: 1500,
+      mttrHours: 1.0,
+      dutyCycle: 0.7,
+      environmentFactor: 1,
+      loadFactor: 0.92,
+      repairDifficulty: 0.72,
+      supportDifficulty: 0.62,
+      criticality: 1.35
     }
   ];
 }
@@ -233,11 +549,11 @@ export function normalizeRmsEquipmentImportRows(input, { baseProject = createDem
     parentId: pickText(row, ["parentId", "parent_id", "父节点", "上级节点"], ""),
     level: pickText(row, ["level", "层级", "节点层级"], "")
   }));
-  const explicitRoot = indexedRows.find((item) => !item.parentId && /装备|整机|root/i.test(item.level))
-    || indexedRows.find((item) => !item.parentId);
-  const rootId = explicitRoot?.id || "rms-import-root";
-  const rootNode = explicitRoot
-    ? importedNodeFromRow(explicitRoot.row, { id: rootId, parentId: null, fallbackLevel: "装备", index: explicitRoot.index })
+  const explicitRoots = indexedRows.filter((item) => !item.parentId);
+  const primaryRoot = explicitRoots.find((item) => /装备|整机|root/i.test(item.level)) || explicitRoots[0];
+  const rootId = primaryRoot?.id || "rms-import-root";
+  const rootNode = primaryRoot
+    ? importedNodeFromRow(primaryRoot.row, { id: rootId, parentId: null, fallbackLevel: "装备", index: primaryRoot.index })
     : {
         id: rootId,
         name: pickText(rows[0], ["targetProductModel", "目标机型"], "导入装备整机"),
@@ -251,12 +567,12 @@ export function normalizeRmsEquipmentImportRows(input, { baseProject = createDem
 
   const nodes = [rootNode];
   for (const item of indexedRows) {
-    if (explicitRoot && item.index === explicitRoot.index) continue;
+    if (primaryRoot && item.index === primaryRoot.index) continue;
     const parentId = item.parentId ? stableNodeId(item.parentId) : null;
     nodes.push(importedNodeFromRow(item.row, {
       id: item.id,
       parentId,
-      fallbackLevel: "系统",
+      fallbackLevel: parentId ? "系统" : "装备",
       index: item.index
     }));
   }
@@ -297,8 +613,8 @@ export function createDefaultRmsAllocationPlan(project = createDemoRmsAllocation
         adjustmentFactor: 1
       },
       similarProduct: {
-        sourceModel: project.equipmentNodes.find((node) => node.id === project.rootId)?.name || "15 机型",
-        targetModel: "16 机型",
+        sourceModel: rmsEquipmentRoots(project).find((node) => node.id !== project.rootId)?.name || "F15",
+        targetModel: project.equipmentNodes.find((node) => node.id === project.rootId)?.name || "F16",
         adjustmentFactor: 0.92
       },
       maintainability: "repair_difficulty_weighted",
@@ -444,13 +760,32 @@ export function selectRmsAllocationEquipmentRoot(project, rootId) {
   return nextProject;
 }
 
+export function rmsEquipmentSubtree(project, rootId = project.rootId) {
+  const nodes = project.equipmentNodes || [];
+  const childIdsByParent = nodes.reduce((acc, node) => {
+    if (node.parentId) {
+      acc[node.parentId] ||= [];
+      acc[node.parentId].push(node.id);
+    }
+    return acc;
+  }, {});
+  const selectedIds = new Set();
+  const visit = (nodeId) => {
+    if (!nodeId || selectedIds.has(nodeId)) return;
+    selectedIds.add(nodeId);
+    for (const childId of childIdsByParent[nodeId] || []) visit(childId);
+  };
+  visit(rootId);
+  return nodes.filter((node) => selectedIds.has(node.id));
+}
+
 function reliabilityWeights(plan, project, childNodes, exposure) {
-  const raw = Object.fromEntries(childNodes.map((node) => [node.id, rawRiskFactor(plan, node, exposure)]));
+  const raw = Object.fromEntries(childNodes.map((node) => [node.id, rawRiskFactor(plan, project, node, exposure)]));
   const sum = Object.values(raw).reduce((acc, value) => acc + value, 0) || 1;
   return Object.fromEntries(Object.entries(raw).map(([id, value]) => [id, value / sum]));
 }
 
-function rawRiskFactor(plan, node, exposure) {
+function rawRiskFactor(plan, project, node, exposure) {
   const taskDurationHours = normalizedTaskDuration(plan, { missionProfile: { missionHours: plan.targets?.reliability?.atHours } });
   const productIntensityHours = roundMetric(taskDurationHours * runningRatioForNode(node));
   if (plan.methods.reliability === "proportional") {
@@ -460,9 +795,17 @@ function rawRiskFactor(plan, node, exposure) {
   }
   if (plan.methods.reliability === "similar") {
     const planFactor = Number(plan.methods?.similarProduct?.adjustmentFactor || 1);
-    const similarFactor = Number(node.rms?.similar?.adjustmentFactor || node.similarProduct?.adjustmentFactor || planFactor || 1);
+    const similarReference = findSimilarReferenceNode(project, node, plan.methods?.similarProduct?.sourceModel);
+    const similarFactor = Number(
+      node.rms?.similar?.adjustmentFactor
+      || node.similarProduct?.adjustmentFactor
+      || planFactor
+      || 1
+    );
     const similarMtbf = Number(
-      node.rms?.similar?.mtbfHours
+      similarReference?.rms?.prediction?.mtbfHours
+      || similarReference?.failureModel?.baselineMtbfHours
+      || node.rms?.similar?.mtbfHours
       || node.similarProduct?.mtbfHours
       || node.rms?.prediction?.mtbfHours
       || node.failureModel?.baselineMtbfHours
@@ -471,6 +814,17 @@ function rawRiskFactor(plan, node, exposure) {
     return productIntensityHours / Math.max(similarMtbf * similarFactor, 1e-9);
   }
   return 1;
+}
+
+function findSimilarReferenceNode(project, targetNode, sourceModelName) {
+  const sourceRoot = rmsEquipmentRoots(project).find((root) => root.name === sourceModelName);
+  if (!sourceRoot || sourceRoot.id === project.rootId) return null;
+  const targetRoot = (project.equipmentNodes || []).find((node) => node.id === project.rootId);
+  const targetName = stripModelPrefix(targetNode.name, targetRoot?.name);
+  return rmsEquipmentSubtree(project, sourceRoot.id)
+    .filter((node) => node.id !== sourceRoot.id)
+    .find((node) => stripModelPrefix(node.name, sourceRoot.name) === targetName)
+    || null;
 }
 
 function attachMaintainabilityAndSupportability(rows, plan) {
@@ -616,6 +970,17 @@ function normalizeRmsImportedProject(project, baseProject) {
   }, resolvedRootId);
 }
 
+function stripModelPrefix(nodeName, modelName = "") {
+  const normalizedNode = String(nodeName || "").replace(/\s+/g, "");
+  const normalizedModel = String(modelName || "")
+    .replace(/整机$/, "")
+    .replace(/\s+/g, "");
+  if (normalizedModel && normalizedNode.startsWith(normalizedModel)) {
+    return normalizedNode.slice(normalizedModel.length) || normalizedNode;
+  }
+  return normalizedNode;
+}
+
 function importedNodeFromRow(row, { id, parentId, fallbackLevel, index }) {
   const predictionMtbf = pickNumber(row, ["mtbfHours", "MTBF", "预测MTBF"], 0);
   const similarMtbf = pickNumber(row, ["similarMtbfHours", "相似产品MTBF", "15机型MTBF", "基准MTBF"], predictionMtbf || 1000);
@@ -643,8 +1008,8 @@ function importedNodeFromRow(row, { id, parentId, fallbackLevel, index }) {
       target: {},
       prediction: { mtbfHours: predictionMtbf || similarMtbf, mttrHours },
       similar: {
-        sourceModel: pickText(row, ["similarProductModel", "sourceModel", "基准机型", "相似机型"], "15 机型"),
-        targetModel: pickText(row, ["targetProductModel", "targetModel", "目标机型"], "16 机型"),
+        sourceModel: pickText(row, ["similarProductModel", "sourceModel", "基准机型", "相似机型"], "F15"),
+        targetModel: pickText(row, ["targetProductModel", "targetModel", "目标机型"], "F16"),
         mtbfHours: similarMtbf,
         adjustmentFactor
       }
@@ -662,6 +1027,7 @@ function pickText(row, keys, fallback = "") {
 
 function pickNumber(row, keys, fallback) {
   const value = pickText(row, keys, "");
+  if (value === "") return fallback;
   const number = Number(value);
   return Number.isFinite(number) ? number : fallback;
 }

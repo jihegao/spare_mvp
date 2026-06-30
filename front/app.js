@@ -9267,10 +9267,12 @@ function applyRmsEquipmentImport(rowsOrProject, statusText) {
   });
   rmsAllocationProject = selectRmsAllocationEquipmentRoot(rmsAllocationProject, rmsEquipmentRoots(rmsAllocationProject)[0]?.id || rmsAllocationProject.rootId);
   const rootNames = rmsEquipmentRoots(rmsAllocationProject).map((node) => node.name);
+  const selectedRoot = rmsEquipmentRoots(rmsAllocationProject).find((node) => node.id === rmsAllocationProject.rootId);
   const importedSimilarProduct = rmsAllocationProject.equipmentNodes.find((node) => node.rms?.similar)?.rms?.similar;
-  const sourceModel = rootNames.includes(importedSimilarProduct?.sourceModel)
+  const sourceModelCandidates = rootNames.filter((name) => name !== selectedRoot?.name);
+  const sourceModel = sourceModelCandidates.includes(importedSimilarProduct?.sourceModel)
     ? importedSimilarProduct.sourceModel
-    : (rootNames[0] || importedSimilarProduct?.sourceModel || "");
+    : (sourceModelCandidates[0] || rootNames[0] || importedSimilarProduct?.sourceModel || "");
   rmsAllocationPlan = {
     ...rmsAllocationPlan,
     projectId: rmsAllocationProject.projectId,
@@ -9280,7 +9282,7 @@ function applyRmsEquipmentImport(rowsOrProject, statusText) {
       similarProduct: {
         ...(rmsAllocationPlan.methods?.similarProduct || {}),
         sourceModel,
-        targetModel: importedSimilarProduct?.targetModel || rmsAllocationPlan.methods?.similarProduct?.targetModel || "",
+        targetModel: selectedRoot?.name || importedSimilarProduct?.targetModel || rmsAllocationPlan.methods?.similarProduct?.targetModel || "",
         adjustmentFactor: importedSimilarProduct?.adjustmentFactor ?? rmsAllocationPlan.methods?.similarProduct?.adjustmentFactor ?? 0.92
       }
     }
@@ -9291,7 +9293,12 @@ function applyRmsEquipmentImport(rowsOrProject, statusText) {
 
 function setRmsEquipmentRoot(rootId) {
   rmsAllocationProject = selectRmsAllocationEquipmentRoot(rmsAllocationProject, rootId);
-  const selectedRoot = rmsEquipmentRoots(rmsAllocationProject).find((node) => node.id === rmsAllocationProject.rootId);
+  const roots = rmsEquipmentRoots(rmsAllocationProject);
+  const selectedRoot = roots.find((node) => node.id === rmsAllocationProject.rootId);
+  const currentSource = rmsAllocationPlan.methods?.similarProduct?.sourceModel || "";
+  const sourceModel = currentSource && currentSource !== selectedRoot?.name
+    ? currentSource
+    : (roots.find((node) => node.id !== selectedRoot?.id)?.name || currentSource);
   rmsAllocationPlan = {
     ...rmsAllocationPlan,
     projectId: rmsAllocationProject.projectId,
@@ -9299,6 +9306,7 @@ function setRmsEquipmentRoot(rootId) {
       ...rmsAllocationPlan.methods,
       similarProduct: {
         ...(rmsAllocationPlan.methods?.similarProduct || {}),
+        sourceModel,
         targetModel: selectedRoot?.name || rmsAllocationPlan.methods?.similarProduct?.targetModel || ""
       }
     }

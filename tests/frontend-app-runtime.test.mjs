@@ -309,6 +309,44 @@ test("RMS method selection updates method-specific parameters at runtime", async
   }
 });
 
+test("RMS imported aircraft models filter the tree and remain available as similar references", async () => {
+  const runtime = await setupRuntimeApp({ hash: "feature=system-management-equipment-rms-allocation" });
+
+  try {
+    const file = {
+      name: "rms-models.csv",
+      async text() {
+        return [
+          "id,name,parentId,level,mtbfHours,similarProductModel",
+          "f15-root,F15,,装备,,",
+          "f15-engine,F15 发动机,f15-root,系统,2000,",
+          "f16-root,F16,,装备,,",
+          "f16-engine,F16 发动机,f16-root,系统,400,F15",
+          "f18-root,F18,,装备,,",
+          "f18-engine,F18 发动机,f18-root,系统,820,"
+        ].join("\n");
+      }
+    };
+
+    await runtime.change("[data-rms-equipment-import-file]", {}, { files: [file], value: "rms-models.csv" });
+    assert.match(runtime.appNode.innerHTML, /已导入 rms-models\.csv/);
+    assert.match(runtime.appNode.innerHTML, /F15 发动机/);
+
+    await runtime.change("[data-rms-equipment-root]", {}, { value: "f16-root" });
+    assert.match(runtime.appNode.innerHTML, /F16 发动机/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /F15 发动机/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /F18 发动机/);
+
+    await runtime.change("[data-rms-path]", { rmsPath: "methods.reliability" }, { value: "similar" });
+    assert.match(runtime.appNode.innerHTML, /基准机型/);
+    assert.match(runtime.appNode.innerHTML, /<option value="F15" selected>F15<\/option>/);
+    assert.match(runtime.appNode.innerHTML, /<option value="F16"\s*>F16<\/option>/);
+    assert.match(runtime.appNode.innerHTML, /<option value="F18"\s*>F18<\/option>/);
+  } finally {
+    runtime.restore();
+  }
+});
+
 test("support activity add work item opens the editing dialog at runtime", async () => {
   const runtime = await setupRuntimeApp({ projectJson: createRuntimeProjectJson() });
 
@@ -622,6 +660,7 @@ function createRuntimeAnchor(downloads, objectUrls) {
 function eventTarget(selector, dataset = {}, props = {}) {
   return {
     dataset,
+    files: props.files || [],
     value: props.value ?? "",
     checked: Boolean(props.checked),
     type: props.type || "",

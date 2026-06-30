@@ -138,6 +138,7 @@ function equipmentRootSelect(value, equipmentRoots, htmlEscape) {
       <select data-rms-equipment-root>
         ${equipmentRoots.map((node) => `<option value="${htmlEscape(node.id)}" ${String(value) === String(node.id) ? "selected" : ""}>${htmlEscape(node.name)}</option>`).join("")}
       </select>
+      <span>先选定机型后展示对应结构树</span>
     </label>
   `;
 }

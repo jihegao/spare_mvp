@@ -257,7 +257,7 @@
 **文件：**
 - 修改：`front/rms-allocation-engine.mjs`
 - 修改：`front/rms-allocation-workbench.mjs`
-- 验证既有连接：`front/app.js`
+- 修改：`front/app.js`
 - 验证既有样式：`front/styles.css`
 - 测试：`tests/rms-allocation-engine.test.mjs`
 - 测试：`tests/frontend-contract.test.mjs`
@@ -270,12 +270,19 @@
 - [x] 根据运行比计算产品强度。
 - [x] 根据任务可靠度和任务时长计算 MTBCF。
 - [x] 使用关键故障占比或故障类型映射，将 MTBCF 折算为 MTBF。
+- [x] RMS 装备结构树导入支持同一文件内的多种机型；每个无父节点装备保留为可选机型根。
+- [x] 选定机型后，左侧结构树和节点分配结果只展示/计算对应机型子树。
+- [x] 相似产品分配法的基准机型下拉保留其他已导入机型，并优先按同名结构节点引用基准机型 MTBF。
 
 **验证：**
 - [x] 运行 `node --test tests/rms-allocation-engine.test.mjs tests/frontend-contract.test.mjs tests/frontend-app-runtime.test.mjs`。
 - [x] 运行 `npm test`。
 
-**退出标准：** RMS 公式在代码和测试中明确表达，不保留占位算法。
+阶段 4 多机型 RMS 验证记录：
+- [x] 运行 `node --test tests/rms-allocation-engine.test.mjs`。
+- [x] 运行 `node --test tests/frontend-app-runtime.test.mjs --test-name-pattern "RMS"`。
+
+**退出标准：** RMS 公式在代码和测试中明确表达，不保留占位算法；多机型导入后必须先选定目标机型再展示结构树，相似产品分配法可引用其他已导入机型作为基准。
 
 ---
 
