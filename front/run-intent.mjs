@@ -56,7 +56,10 @@ export async function submitRunIntent(apiClient, options) {
   const intent = buildRunIntent(options);
   const savedProject = await apiClient.saveProject(intent.projectJson);
   const modelingSnapshot = await apiClient.createModelingSnapshot(savedProject.project_id);
-  const experimentPlan = await apiClient.createExperimentPlan(savedProject.project_id, intent.experimentPlanConfig);
+  const experimentPlan = await apiClient.createExperimentPlan(savedProject.project_id, {
+    ...intent.experimentPlanConfig,
+    modeling_snapshot_id: modelingSnapshot.snapshot_id
+  });
   const boundIntent = bindExperimentPlanId(intent, experimentPlan.experiment_plan_id);
   const run = await apiClient.submitRun({
     ...boundIntent.runRequest,

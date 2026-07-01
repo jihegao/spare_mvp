@@ -1803,6 +1803,41 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(first_chain["run_id"], first_run["run_id"])
         self.assertEqual(second_chain["run_id"], second_run["run_id"])
 
+    def test_experiment_plan_can_bind_explicit_current_snapshot_after_project_change(self) -> None:
+        project = self._fixture("smoke_project.json")
+        saved = self.api.save_project(project)
+        old_snapshot = self.api.create_modeling_snapshot(saved["project_id"])
+
+        changed_project = copy.deepcopy(project)
+        changed_project["experiment"]["name"] = "current run input after old snapshot"
+        self.api.save_project(changed_project)
+        current_snapshot = self.api.create_modeling_snapshot(saved["project_id"])
+
+        plan = self.api.create_experiment_plan(
+            saved["project_id"],
+            {
+                "name": "current run input",
+                "steps": 1,
+                "projectJson": changed_project,
+                "modeling_snapshot_id": current_snapshot["snapshot_id"],
+            },
+        )
+        run = self.api.submit_run(
+            {
+                "project_id": saved["project_id"],
+                "experiment_plan_id": plan["experiment_plan_id"],
+                "model_family": "smoke",
+                "run_type": "single",
+            }
+        )
+        chain = self.api.get_run_chain(run["run_id"])
+
+        self.assertNotEqual(old_snapshot["snapshot_id"], current_snapshot["snapshot_id"])
+        self.assertEqual(plan["modeling_snapshot_id"], current_snapshot["snapshot_id"])
+        self.assertEqual(chain["modeling_snapshot_id"], current_snapshot["snapshot_id"])
+        self.assertEqual(plan["config"]["projectJson"]["experiment"]["name"], "current run input after old snapshot")
+        self.assertNotIn("modeling_snapshot_id", plan["config"])
+
     def test_experiment_plan_config_branch_does_not_mutate_source_project(self) -> None:
         project = self._fixture("smoke_project.json")
         saved = self.api.save_project(project)

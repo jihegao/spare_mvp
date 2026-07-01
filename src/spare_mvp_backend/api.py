@@ -435,10 +435,20 @@ class BackendApi:
 
     def create_experiment_plan(self, project_id: str, config: dict[str, Any]) -> dict[str, Any]:
         project = self.repository.get_project(project_id)
-        snapshot = self.repository.get_latest_modeling_snapshot(project_id)
-        if snapshot is None:
-            snapshot = self.create_modeling_snapshot(project_id)
-        plan_key = {"config": config, "modeling_snapshot_id": snapshot["snapshot_id"]}
+        plan_config = copy.deepcopy(config)
+        requested_snapshot_id = plan_config.pop("modeling_snapshot_id", None)
+        if requested_snapshot_id:
+            snapshot = self.repository.get_modeling_snapshot(str(requested_snapshot_id))
+            if snapshot["project_id"] != project_id:
+                raise BackendApiError(
+                    "invalid_modeling_snapshot",
+                    f"Modeling snapshot {requested_snapshot_id} does not belong to project {project_id}",
+                )
+        else:
+            snapshot = self.repository.get_latest_modeling_snapshot(project_id)
+            if snapshot is None:
+                snapshot = self.create_modeling_snapshot(project_id)
+        plan_key = {"config": plan_config, "modeling_snapshot_id": snapshot["snapshot_id"]}
         plan = {
             "experiment_plan_id": f"experiment-plan-{project_id}-{_stable_hash(plan_key)}",
             "project_id": project_id,
@@ -446,7 +456,7 @@ class BackendApi:
             "schema_version": "experiment-plan-v0",
             "project_version": project["project_version"],
             "status": "draft",
-            "config": copy.deepcopy(config),
+            "config": plan_config,
         }
         self.repository.upsert_experiment_plan(plan)
         return plan
