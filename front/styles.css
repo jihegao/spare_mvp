@@ -1738,29 +1738,18 @@ select[multiple].table-edit-select {
   margin-top: 14px;
 }
 
-.mc-formal-results {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-  margin-top: 14px;
-}
-
-.mc-formal-projection {
+.analysis-projection-result-panel {
   display: grid;
   gap: 10px;
   min-width: 0;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #fff;
-  padding: 12px;
 }
 
-.mc-formal-projection h4 {
+.analysis-projection-result-panel h4 {
   margin: 0;
   font-size: 14px;
 }
 
-.mc-formal-projection .formal-result {
+.analysis-projection-result-panel .formal-result {
   margin: 0;
 }
 

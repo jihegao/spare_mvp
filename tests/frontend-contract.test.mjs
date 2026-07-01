@@ -2277,6 +2277,36 @@ test("analysis pages expose current result flow without user-visible task or art
   assert.doesNotMatch(appSource, /source: "analysis:auto-created"/);
 });
 
+test("formal Monte Carlo projection result panels live on their matching analysis pages", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const mcResultSource = appSource.slice(
+    appSource.indexOf("function renderMonteCarloResults"),
+    appSource.indexOf("function monteCarloFormalResultBoundary")
+  );
+  const locationSource = appSource.slice(
+    appSource.indexOf("function renderMonteCarloAnalysisResultLocations"),
+    appSource.indexOf("function renderMonteCarloFormalBlockedState")
+  );
+  const dashboardSource = appSource.slice(
+    appSource.indexOf("function renderAnalysisDashboard"),
+    appSource.indexOf("function renderBar")
+  );
+  const formalProjectionSource = appSource.slice(
+    appSource.indexOf("function renderFormalProjectionBody"),
+    appSource.indexOf("function visibleDowntimeAnomalySnapshots")
+  );
+
+  assert.match(mcResultSource, /renderMonteCarloFormalBlockedState\(boundary\)/);
+  assert.match(mcResultSource, /renderMonteCarloAnalysisResultLocations\(boundary\)/);
+  assert.doesNotMatch(mcResultSource, /renderMonteCarloFormalProjectionResults\(boundary\)/);
+  assert.match(locationSource, /analysisPageFeatureIdForType\(view\.analysisType\)/);
+  assert.doesNotMatch(appSource, /function renderMonteCarloFormalProjectionResults|mc-formal-results|mc-formal-projection/);
+  assert.match(dashboardSource, /renderAnalysisProjectionResultPanel\(formalProjection\)/);
+  for (const analysisType of ["spare_shortfall", "carry_list", "mission_reliability", "downtime_factors"]) {
+    assert.match(formalProjectionSource, new RegExp(`formalProjection\\.analysisType === "${analysisType}"`));
+  }
+});
+
 test("analysis current result state is hydrated, isolated, and recoverable", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const featurePageSource = appSource.slice(
@@ -2767,10 +2797,6 @@ test("M8 formal analysis pages load and render matching projection payloads", as
 
 test("Level 0 not-applicable analysis projections render as scoped not modeled instead of formal KPI rows", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
-  const monteCarloFormalSource = appSource.slice(
-    appSource.indexOf("function renderMonteCarloFormalProjectionResults"),
-    appSource.indexOf("function renderMonteCarloFormalBlockedState")
-  );
   const boundarySource = appSource.slice(
     appSource.indexOf("function formalAnalysisBoundary"),
     appSource.indexOf("function renderFormalAnalysisBoundaryNote")
@@ -2787,6 +2813,10 @@ test("Level 0 not-applicable analysis projections render as scoped not modeled i
     appSource.indexOf("function renderAnalysisDashboard"),
     appSource.indexOf("function renderBar")
   );
+  const analysisPanelSource = appSource.slice(
+    appSource.indexOf("function renderAnalysisProjectionResultPanel"),
+    appSource.indexOf("function renderBar")
+  );
 
   assert.match(boundarySource, /const projectionNotApplicable = .*projectionPayload/);
   assert.match(boundarySource, /projectionNotApplicable\s*\?\s*"not_applicable"/);
@@ -2797,7 +2827,7 @@ test("Level 0 not-applicable analysis projections render as scoped not modeled i
   assert.match(projectionBodySource, /validationLevel/);
   assert.match(projectionBodySource, /Level 0 未启用该分析所需保障域/);
   assert.match(dashboardSource, /formalProjection\?\.formal === false \? "<em>不适用<\/em>"/);
-  assert.match(monteCarloFormalSource, /view\.payload\?\.formal === false \? "<em>不适用<\/em>"/);
+  assert.match(analysisPanelSource, /formalProjection\.formal === false \? "<em>不适用<\/em>"/);
   assert.doesNotMatch(projectionBodySource, /misleading-zero/);
 });
 
@@ -3171,15 +3201,20 @@ test("phase 6D downtime analysis renders formal anomaly snapshots with export an
   assert.match(handlerSource, /downtimeSnapshotDeleteButton/);
 });
 
-test("monte carlo formal results render inside the experiment detail flow", async () => {
+test("monte carlo detail keeps formal source status and links to analysis pages", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const mcResultSource = appSource.slice(
+    appSource.indexOf("function renderMonteCarloResults"),
+    appSource.indexOf("function monteCarloFormalResultBoundary")
+  );
   assert.match(appSource, /function renderMonteCarloResults/);
-  assert.match(appSource, /蒙特卡洛实验结果/);
-  assert.match(appSource, /mc-formal-results/);
-  assert.match(appSource, /mc-formal-blocked/);
-  assert.match(appSource, /renderFormalProjectionBody/);
-  assert.doesNotMatch(appSource, /mc-result-cards/);
-  assert.doesNotMatch(appSource, /mc-evaluation-table/);
+  assert.match(mcResultSource, /蒙特卡洛实验结果/);
+  assert.match(mcResultSource, /renderMonteCarloFormalSourceTable\(boundary\)/);
+  assert.match(mcResultSource, /renderMonteCarloAnalysisResultLocations\(boundary\)/);
+  assert.match(mcResultSource, /renderMonteCarloFormalBlockedState\(boundary\)/);
+  assert.match(appSource, /function renderAnalysisProjectionResultPanel/);
+  assert.doesNotMatch(mcResultSource, /mc-formal-results|mc-formal-projection|renderFormalProjectionBody/);
+  assert.doesNotMatch(mcResultSource, /mc-result-cards|mc-evaluation-table/);
 });
 
 test("system management exposes an independent equipment RMS allocation workbench", async () => {

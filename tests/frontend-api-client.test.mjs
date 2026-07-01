@@ -863,7 +863,7 @@ test("frontend app routes project save run and result reads through API client",
   assert.match(appSource, /正式来源/);
   assert.match(appSource, /正式结果来源/);
   assert.match(appSource, /monteCarloFormalResultBoundary/);
-  assert.match(appSource, /renderMonteCarloFormalProjectionResults/);
+  assert.match(appSource, /renderAnalysisProjectionResultPanel/);
   assert.match(appSource, /hydrateLastBackendRunFromApi/);
   assert.match(appSource, /const LAST_BACKEND_RUN_STORAGE_KEY = "spare-mvp:lastBackendRun"/);
   assert.match(appSource, /localStorage\.setItem\(LAST_BACKEND_RUN_STORAGE_KEY/);

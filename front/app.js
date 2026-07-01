@@ -11931,7 +11931,7 @@ function renderMonteCarloResults(experiment = null) {
       </div>
       ${renderM7RunArtifactPanel()}
       ${renderMonteCarloFormalSourceTable(boundary)}
-      ${boundary.formalUnlocked ? renderMonteCarloFormalProjectionResults(boundary) : renderMonteCarloFormalBlockedState(boundary)}
+      ${boundary.formalUnlocked ? renderMonteCarloAnalysisResultLocations(boundary) : renderMonteCarloFormalBlockedState(boundary)}
     </div>
   `;
 }
@@ -12066,27 +12066,21 @@ function renderMonteCarloFormalSourceTable(boundary) {
   return `<div class="backend-run-chain mc-formal-source"><span>正式结果来源</span><table><tbody>${rows.map(([label, value]) => `<tr><th>${htmlEscape(label)}</th><td>${htmlEscape(value)}</td></tr>`).join("")}</tbody></table></div>`;
 }
 
-function renderMonteCarloFormalProjectionResults(boundary) {
+function renderMonteCarloAnalysisResultLocations(boundary) {
   return `
-    <div class="mc-formal-results">
-      ${boundary.projectionViews.map((view) => `
-        <section class="mc-formal-projection">
-          <div class="section-head">
-            <h3>${htmlEscape(view.label)}</h3>
-            <span>projection payload / ${htmlEscape(view.artifactKind)}</span>
-          </div>
-          <div class="mc-formal-metrics">
-            ${(view.payload?.metrics || []).map(([name, value]) => `
-              <div class="metric-card">
-                <span>${htmlEscape(name)}</span>
-                <strong>${htmlEscape(value)}</strong>
-                ${view.payload?.formal === false ? "<em>不适用</em>" : "<em>projection payload</em>"}
-              </div>
-            `).join("")}
-          </div>
-          ${renderFormalProjectionBody(view.payload)}
-        </section>
-      `).join("")}
+    <div class="backend-run-chain mc-analysis-result-locations">
+      <span>分析结果页面</span>
+      <div class="result-source-note">
+        <strong>已迁移</strong>
+        <span>四类 analysis projection 结果面板已移到对应分析页面；蒙特卡洛详情页只保留 run、artifact 与 projection 来源校验。</span>
+      </div>
+      <div class="toolbar-row">
+        ${boundary.projectionViews.map((view) => `
+          <button type="button" data-feature-id="${htmlEscape(analysisPageFeatureIdForType(view.analysisType))}">
+            ${htmlEscape(view.label)}
+          </button>
+        `).join("")}
+      </div>
     </div>
   `;
 }
@@ -12369,6 +12363,26 @@ function analysisTypeForPage(page) {
   if (page.name.includes("停机")) return "downtime_factors";
   if (page.name.includes("任务可靠度") || page.name.includes("飞机任务可靠性")) return "mission_reliability";
   return "large_sample_summary";
+}
+
+function analysisLabelForType(analysisType) {
+  const labels = {
+    spare_shortfall: "备件短板",
+    carry_list: "转场携行",
+    mission_reliability: "任务可靠度",
+    downtime_factors: "停机因素"
+  };
+  return labels[analysisType] || analysisType;
+}
+
+function analysisPageFeatureIdForType(analysisType) {
+  const featureIds = {
+    spare_shortfall: "spare-planning-spare-shortfall-analysis",
+    carry_list: "spare-planning-carry-list-analysis",
+    mission_reliability: "mission-reliability-task-reliability",
+    downtime_factors: "mission-reliability-downtime-factor-analysis"
+  };
+  return featureIds[analysisType] || selectedFeatureId;
 }
 
 function currentAnalysisResultForPage(page) {
@@ -12868,7 +12882,7 @@ function renderAnalysisDashboard({ title, mode, subtitle, config = "", metrics, 
   const boundary = formalAnalysisBoundary(page);
   const formalProjection = analysisProjectionForBoundary(boundary);
   const displayedMetrics = formalProjection?.metrics || metrics;
-  const displayedBody = formalProjection ? renderFormalProjectionBody(formalProjection) : body;
+  const displayedBody = formalProjection ? renderAnalysisProjectionResultPanel(formalProjection) : body;
   const metricSuffix = formalProjection?.formal === false ? "<em>不适用</em>" : formalProjection ? "<em>projection payload</em>" : "<em>本地预览</em>";
   return `
     <div class="analysis-dashboard">
@@ -12883,6 +12897,29 @@ function renderAnalysisDashboard({ title, mode, subtitle, config = "", metrics, 
       <section class="analysis-chart-panel">${displayedBody}</section>
       <div class="decision-support-card"><strong>${mode}</strong><span>${formalProjection ? "结果已按后端 analysis projection payload 展示，供当前项目评审。" : "本地预览，不是正式后端仿真结果；正式结果需等待 compiler provenance、analysis artifact 与 projection payload 同时存在。"}</span></div>
     </div>
+  `;
+}
+
+function renderAnalysisProjectionResultPanel(formalProjection) {
+  const label = analysisLabelForType(formalProjection.analysisType);
+  const artifactKind = projectionArtifactKindForAnalysisType(formalProjection.analysisType);
+  return `
+    <section class="analysis-projection-result-panel">
+      <div class="section-head">
+        <h3>${htmlEscape(label)}</h3>
+        <span>projection payload / ${htmlEscape(artifactKind)}</span>
+      </div>
+      <div class="mc-formal-metrics">
+        ${(formalProjection.metrics || []).map(([name, value]) => `
+          <div class="metric-card">
+            <span>${htmlEscape(name)}</span>
+            <strong>${htmlEscape(value)}</strong>
+            ${formalProjection.formal === false ? "<em>不适用</em>" : "<em>projection payload</em>"}
+          </div>
+        `).join("")}
+      </div>
+      ${renderFormalProjectionBody(formalProjection)}
+    </section>
   `;
 }
 
