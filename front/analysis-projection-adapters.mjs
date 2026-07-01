@@ -26,6 +26,9 @@ export function normalizeAnalysisProjectionPayload(analysisType, payload, option
     throw new Error(`projection_type mismatch: expected ${analysisType}, got ${payload.projection_type || "missing"}`);
   }
   validateProjectionTraceability(payload, options);
+  if (payload.applicability?.status === "not_applicable") {
+    return normalizeNotApplicableProjection(analysisType, payload.applicability);
+  }
   if (analysisType === "spare_shortfall") return normalizeSpareShortfall(payload);
   if (analysisType === "carry_list") return normalizeCarryList(payload);
   if (analysisType === "mission_reliability") return normalizeMissionReliability(payload);
@@ -46,6 +49,29 @@ function validateProjectionTraceability(payload, { runId = "", modelFamily = "" 
       throw new Error(`projection model_family mismatch: expected ${modelFamily}, got ${payload.model_family}`);
     }
   }
+}
+
+function normalizeNotApplicableProjection(analysisType, applicability) {
+  return {
+    analysisType,
+    formal: false,
+    source: "projection applicability",
+    applicability: normalizeProjectionApplicability(applicability),
+    rows: [],
+    snapshots: [],
+    metrics: [["适用性", "不适用"]]
+  };
+}
+
+function normalizeProjectionApplicability(applicability) {
+  const payload = requireObject(applicability, "projection applicability must be an object");
+  return {
+    status: "not_applicable",
+    reasonCode: stringValue(payload.reason_code, "scope_not_modeled"),
+    required_domains: Array.isArray(payload.required_domains) ? payload.required_domains.map((domain) => stringValue(domain, "")) : [],
+    disabled_domains: Array.isArray(payload.disabled_domains) ? payload.disabled_domains.map((domain) => stringValue(domain, "")) : [],
+    validationLevel: stringValue(payload.validation_level, "")
+  };
 }
 
 function normalizeSpareShortfall(payload) {
