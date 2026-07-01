@@ -7203,6 +7203,10 @@ function updateBasicActivityJobField(key, fieldName, value) {
   const jobs = supportActivityJobs(activity).slice();
   if (!activity || !jobs[jobIndex] || !fieldName) return;
   if (fieldName === "scope") {
+    if (moveCorrectiveBasicActivityJobToScope(activity, jobIndex, value)) {
+      updatePreviewResultsThroughApiClient();
+      return;
+    }
     updateBasicActivityScope(activity, value);
     updatePreviewResultsThroughApiClient();
     return;
@@ -7238,6 +7242,29 @@ function updateBasicActivityJobField(key, fieldName, value) {
   };
   activity.jobs = jobs;
   updatePreviewResultsThroughApiClient();
+}
+
+function moveCorrectiveBasicActivityJobToScope(activity, jobIndex, value) {
+  if (!isCorrectiveMaintenanceActivity(activity)) return false;
+  const component = correctiveComponentForBasicActivityScope(value);
+  if (!component) return false;
+  const equipmentId = correctiveComponentActivityEquipmentId(component);
+  if (!equipmentId) return false;
+  if (String(activity.equipmentId || "") === equipmentId) return false;
+  const targetActivity = ensureCorrectiveMaintenanceActivityForComponent(component, { copyTemplateJobs: false });
+  if (!targetActivity || targetActivity === activity) return false;
+  const sourceJobs = supportActivityJobs(activity).slice();
+  const [job] = sourceJobs.splice(jobIndex, 1);
+  if (!job) return false;
+  activity.jobs = sourceJobs;
+  const targetJobs = supportActivityJobs(targetActivity).slice();
+  targetJobs.push(job);
+  targetActivity.jobs = targetJobs;
+  const targetActivityIndex = (scenario.supportActivities || []).indexOf(targetActivity);
+  if (targetActivityIndex >= 0) {
+    selectedBasicActivityKeys = new Set([`${targetActivityIndex}:${targetJobs.length - 1}`]);
+  }
+  return true;
 }
 
 function updateBasicActivityDraftField(fieldName, value) {
@@ -7854,7 +7881,7 @@ function selectedCorrectiveMaintenanceActivity() {
     || null;
 }
 
-function ensureCorrectiveMaintenanceActivityForComponent(component) {
+function ensureCorrectiveMaintenanceActivityForComponent(component, { copyTemplateJobs = true } = {}) {
   const existing = correctiveMaintenanceActivityForComponent(component);
   if (existing) return existing;
   const equipmentId = correctiveComponentActivityEquipmentId(component);
@@ -7869,7 +7896,7 @@ function ensureCorrectiveMaintenanceActivityForComponent(component) {
   activity.activityName = `${componentName}修复性维修方案`;
   activity.planType = "修复性维修方案";
   activity.equipmentId = equipmentId;
-  if (!Array.isArray(activity.jobs)) activity.jobs = supportActivityJobs(template).map((job) => ({ ...job }));
+  activity.jobs = copyTemplateJobs ? supportActivityJobs(template).map((job) => ({ ...job })) : [];
   scenario.supportActivities.push(activity);
   return activity;
 }

@@ -1988,6 +1988,31 @@ test("support activity render paths do not mutate supportActivities implicitly",
   assert.doesNotMatch(correctiveSource, /scenario\.supportActivities\.push/);
 });
 
+test("basic corrective activity scope edits move only the edited job to the target component", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const updateSource = appSource.slice(
+    appSource.indexOf("function updateBasicActivityJobField"),
+    appSource.indexOf("function updateBasicActivityResourceField")
+  );
+  const moveSource = appSource.slice(
+    appSource.indexOf("function moveCorrectiveBasicActivityJobToScope"),
+    appSource.indexOf("function updateBasicActivityResourceField")
+  );
+  const ensureSource = appSource.slice(
+    appSource.indexOf("function ensureCorrectiveMaintenanceActivityForComponent"),
+    appSource.indexOf("function nextCorrectiveMaintenanceActivityId")
+  );
+
+  assert.match(updateSource, /moveCorrectiveBasicActivityJobToScope\(activity, jobIndex, value\)/);
+  assert.match(moveSource, /isCorrectiveMaintenanceActivity\(activity\)/);
+  assert.match(moveSource, /correctiveComponentForBasicActivityScope\(value\)/);
+  assert.match(moveSource, /ensureCorrectiveMaintenanceActivityForComponent\(component, \{ copyTemplateJobs: false \}\)/);
+  assert.match(moveSource, /sourceJobs\.splice\(jobIndex, 1\)/);
+  assert.match(moveSource, /targetJobs\.push\(job\)/);
+  assert.match(ensureSource, /copyTemplateJobs = true/);
+  assert.match(ensureSource, /activity\.jobs = copyTemplateJobs \? supportActivityJobs\(template\)\.map/);
+});
+
 test("modeling data-path inputs commit on change instead of rerendering on each keystroke", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const inputListenerSource = appSource.slice(

@@ -435,10 +435,11 @@ class BackendApi:
 
     def create_experiment_plan(self, project_id: str, config: dict[str, Any]) -> dict[str, Any]:
         project = self.repository.get_project(project_id)
-        explicit_snapshot_id = str(config.get("modeling_snapshot_id") or "").strip()
+        plan_config = copy.deepcopy(config)
+        requested_snapshot_id = str(plan_config.pop("modeling_snapshot_id", "") or "").strip()
         snapshot = (
-            self.repository.get_modeling_snapshot(explicit_snapshot_id)
-            if explicit_snapshot_id
+            self.repository.get_modeling_snapshot(requested_snapshot_id)
+            if requested_snapshot_id
             else self.repository.get_latest_modeling_snapshot(project_id)
         )
         if snapshot is not None and snapshot.get("project_id") != project_id:
@@ -450,7 +451,7 @@ class BackendApi:
             )
         if snapshot is None:
             snapshot = self.create_modeling_snapshot(project_id)
-        plan_key = {"config": config, "modeling_snapshot_id": snapshot["snapshot_id"]}
+        plan_key = {"config": plan_config, "modeling_snapshot_id": snapshot["snapshot_id"]}
         plan = {
             "experiment_plan_id": f"experiment-plan-{project_id}-{_stable_hash(plan_key)}",
             "project_id": project_id,
@@ -458,7 +459,7 @@ class BackendApi:
             "schema_version": "experiment-plan-v0",
             "project_version": project["project_version"],
             "status": "draft",
-            "config": copy.deepcopy(config),
+            "config": plan_config,
         }
         self.repository.upsert_experiment_plan(plan)
         return plan
