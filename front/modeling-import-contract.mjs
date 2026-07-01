@@ -163,6 +163,7 @@ function projectMissionProfile(project, projectId) {
   mission.durationHours = positiveNumber(mission.durationHours, durationHoursForProject(project));
   for (const key of [
     "basicMission",
+    "basicMissions",
     "missionPhases",
     "combatUnit",
     "airports",
@@ -176,7 +177,20 @@ function projectMissionProfile(project, projectId) {
     if (mission[key] !== undefined) continue;
     if (project[key] !== undefined) mission[key] = cloneJson(project[key]);
   }
+  stripCompositeTaskItemEquipmentQuantity(mission);
   return mission;
+}
+
+function stripCompositeTaskItemEquipmentQuantity(mission) {
+  const compositeTasks = Array.isArray(mission?.compositeTasks) ? mission.compositeTasks : [];
+  for (const compositeTask of compositeTasks) {
+    const taskItems = Array.isArray(compositeTask?.taskItems) ? compositeTask.taskItems : [];
+    for (const taskItem of taskItems) {
+      if (taskItem && typeof taskItem === "object" && !Array.isArray(taskItem)) {
+        delete taskItem.equipmentQuantity;
+      }
+    }
+  }
 }
 
 function preservedObjectSurfaces(objects = {}) {

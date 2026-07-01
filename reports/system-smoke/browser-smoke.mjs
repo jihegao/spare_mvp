@@ -128,8 +128,8 @@ async function clickFeature(featureId) {
 }
 
 async function openMonteCarloExperimentForRun() {
-  const sweepInput = page.locator('input[data-mc-array-path="monteCarlo.failureRates"]').first();
-  if (await sweepInput.isVisible().catch(() => false)) return;
+  const experimentNameInput = page.locator('input[data-mc-experiment-field="name"]').first();
+  if (await experimentNameInput.isVisible().catch(() => false)) return;
 
   const editButton = page.locator('button[data-mc-experiment-action="edit"]').first();
   const addButton = page.locator('button[data-mc-experiment-action="add"]').first();
@@ -138,10 +138,10 @@ async function openMonteCarloExperimentForRun() {
   } else if (await addButton.isVisible().catch(() => false)) {
     await addButton.click();
   } else {
-    throw new Error("Cannot find Monte Carlo experiment add/edit action before filling sweep inputs");
+    throw new Error("Cannot find Monte Carlo experiment add/edit action before opening editor");
   }
 
-  await sweepInput.waitFor({ state: "visible", timeout: 5000 });
+  await experimentNameInput.waitFor({ state: "visible", timeout: 5000 });
 }
 
 async function openMonteCarloExperimentDetailForRun() {
@@ -215,10 +215,6 @@ await capture("05-monte-carlo-list", "蒙特卡洛实验");
 await openMonteCarloExperimentForRun();
 await capture("05b-monte-carlo-editor", "蒙特卡洛实验");
 
-const failureRates = page.locator('input[data-mc-array-path="monteCarlo.failureRates"]');
-if ((await failureRates.count()) !== 1) throw new Error("Monte Carlo failure rate input is not unique");
-await failureRates.fill("0.06,0.08,0.1");
-await page.evaluate(() => document.activeElement?.blur());
 await openMonteCarloExperimentDetailForRun();
 await page.waitForFunction(() => document.body.innerText.includes("蒙特卡洛实验结果"), null, {
   timeout: 5000

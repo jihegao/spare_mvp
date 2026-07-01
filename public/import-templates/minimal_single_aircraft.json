@@ -122,12 +122,13 @@
         },
         "basicMission": {
           "advanceNoticeMinutes": 60,
+          "basicTaskName": "最小单机巡检任务",
           "cancelMinutes": 20,
           "equipmentQuantity": 1,
           "equipmentType": "J-15",
           "minRequiredSorties": 1,
           "missionId": "BM-CV-01",
-          "name": "巡逻任务",
+          "name": "最小单机巡检任务",
           "preparationMinutes": 50,
           "priority": 1,
           "returnRatio": 0.35,
@@ -169,7 +170,6 @@
               {
                 "basicTaskName": "最小单机巡检任务",
                 "dailyRepeatCount": 1,
-                "equipmentQuantity": 1,
                 "equipmentType": "J-15",
                 "firstWaveTime": "08:00",
                 "groupName": "单机编队",
@@ -179,7 +179,6 @@
                 "preparationMinutes": 20,
                 "priority": 1,
                 "recoveryTime": "09:30",
-                "requiredEquipmentQuantity": 1,
                 "taskDispatchTime": "07:40"
               }
             ]

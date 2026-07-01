@@ -2871,13 +2871,16 @@ tr.clickable-table-row.selected-table-row td {
 
 .aircraft-state-board {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(120px, 1fr));
   gap: 10px;
+  min-height: 320px;
+  max-height: 320px;
+  overflow-x: auto;
 }
 
 .aircraft-state-lane {
   min-width: 0;
-  min-height: 178px;
+  min-height: 0;
   display: grid;
   grid-template-rows: auto 1fr;
   gap: 8px;
@@ -2887,19 +2890,19 @@ tr.clickable-table-row.selected-table-row td {
   background: #f8fafc;
 }
 
-.aircraft-state-lane.deck {
-  background: #eef4f8;
-}
-
-.aircraft-state-lane.support {
-  background: #fff7e6;
-}
-
-.aircraft-state-lane.mission {
-  background: #eaf3ff;
+.aircraft-state-lane.available {
+  background: #f0fdf4;
 }
 
 .aircraft-state-lane.maintenance {
+  background: #fff7e6;
+}
+
+.aircraft-state-lane.flying {
+  background: #eaf3ff;
+}
+
+.aircraft-state-lane.repair_unavailable {
   background: #fff1ec;
 }
 
@@ -2921,6 +2924,9 @@ tr.clickable-table-row.selected-table-row td {
   display: grid;
   align-content: start;
   gap: 8px;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 2px;
 }
 
 .aircraft-state-node {
@@ -2936,6 +2942,7 @@ tr.clickable-table-row.selected-table-row td {
   background: #fff;
   box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
   cursor: pointer;
+  transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
 }
 
 .aircraft-state-node strong {
@@ -2968,7 +2975,18 @@ tr.clickable-table-row.selected-table-row td {
 }
 
 .aircraft-state-node.maintenance {
-  border-left-color: #d9480f;
+  border-left-color: #f59f00;
+}
+
+.aircraft-state-node.repair_unavailable,
+.aircraft-state-node.repair,
+.aircraft-state-node.repairing,
+.aircraft-state-node.preventive_maintenance,
+.aircraft-state-node.corrective_maintenance,
+.aircraft-state-node.unavailable,
+.aircraft-state-node.failed,
+.aircraft-state-node.grounded {
+  border-left-color: #be123c;
 }
 
 .aircraft-state-node.active {
@@ -3085,6 +3103,10 @@ tr.clickable-table-row.selected-table-row td {
 
 .dot.maintenance {
   background: #ff7d73;
+}
+
+.dot.repair_unavailable {
+  background: #be123c;
 }
 
 .mesa-mission-strip,

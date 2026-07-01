@@ -52,8 +52,6 @@ try {
   await clickFeature(page, "spare-planning-monte-carlo-experiment-list");
   await expectHeading(page, "蒙特卡洛实验");
   await openMonteCarloExperimentForRun(page);
-  await page.locator('input[data-mc-array-path="monteCarlo.failureRates"]').fill("0.06,0.08,0.1");
-  await page.evaluate(() => document.activeElement?.blur());
   await openMonteCarloExperimentDetailForRun(page);
   let runResponse = await clickMonteCarloStart(page);
   if (!runResponse) runResponse = await clickMonteCarloStartWithDomFallback(page);
@@ -204,8 +202,8 @@ async function clickFeature(page, featureId) {
 }
 
 async function openMonteCarloExperimentForRun(page) {
-  const sweepInput = page.locator('input[data-mc-array-path="monteCarlo.failureRates"]').first();
-  if (await sweepInput.isVisible().catch(() => false)) return;
+  const experimentNameInput = page.locator('input[data-mc-experiment-field="name"]').first();
+  if (await experimentNameInput.isVisible().catch(() => false)) return;
 
   const editButton = page.locator('button[data-mc-experiment-action="edit"]').first();
   const addButton = page.locator('button[data-mc-experiment-action="add"]').first();
@@ -214,10 +212,10 @@ async function openMonteCarloExperimentForRun(page) {
   } else if (await addButton.isVisible().catch(() => false)) {
     await addButton.click();
   } else {
-    throw new Error("Cannot find Monte Carlo experiment add/edit action before filling sweep inputs");
+    throw new Error("Cannot find Monte Carlo experiment add/edit action before opening editor");
   }
 
-  await sweepInput.waitFor({ state: "visible", timeout: 5000 });
+  await experimentNameInput.waitFor({ state: "visible", timeout: 5000 });
 }
 
 async function openMonteCarloExperimentDetailForRun(page) {

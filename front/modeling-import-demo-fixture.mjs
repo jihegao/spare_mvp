@@ -1,377 +1,41 @@
-// Keep this object byte-for-byte aligned with tests/fixtures/modeling_import_project.json.
-// The contract test in tests/frontend-contract.test.mjs fails if this wrapper drifts.
+// Keep this object byte-for-byte aligned with public/import-templates/canonical_platform_case.json.
+
 export const MODELING_IMPORT_DEMO_FIXTURE = {
-  "schemaVersion": "modeling-import-v1",
+  "changes": [],
   "importId": "import-carrier-day-night-001",
-  "projectId": "project-carrier-day-night",
-  "source": {
-    "type": "json_fixture",
-    "name": "modeling_import_project.json",
-    "backfilledFromProjectId": "project-carrier-day-night",
-    "backfilledFromScenarioId": "import-carrier-day-night-001"
-  },
   "lifecycle": {
+    "referencedRunIds": [],
     "state": "draft",
-    "version": 1,
-    "referencedRunIds": []
+    "version": 1
   },
   "objects": {
-    "missionProfiles": [
+    "airports": [
       {
-        "compositeTasks": [
-          {
-            "id": "composite-day-cap",
-            "name": "昼间制空复合任务",
-            "taskItems": [
-              {
-                "basicTaskName": "近海制空巡逻任务",
-                "dailyRepeatCount": 2,
-                "equipmentQuantity": 4,
-                "equipmentType": "J-15",
-                "firstWaveTime": "08:00",
-                "groupName": "昼间制空编队",
-                "id": "day-cap-main",
-                "intervalHours": 6,
-                "minRequiredSystems": 4,
-                "preparationMinutes": 50,
-                "priority": 1,
-                "recoveryTime": "11:00",
-                "taskDispatchTime": "07:15"
-              }
-            ]
-          },
-          {
-            "id": "composite-night-alert",
-            "name": "夜间警戒复合任务",
-            "taskItems": [
-              {
-                "basicTaskName": "远海警戒任务",
-                "dailyRepeatCount": 1,
-                "equipmentQuantity": 3,
-                "equipmentType": "J-35",
-                "firstWaveTime": "20:15",
-                "groupName": "夜间警戒编队",
-                "id": "night-alert-main",
-                "intervalHours": 8,
-                "minRequiredSystems": 3,
-                "preparationMinutes": 55,
-                "priority": 2,
-                "recoveryTime": "23:30",
-                "taskDispatchTime": "19:30"
-              }
-            ]
-          }
-        ],
-        "durationHours": 24,
-        "endCondition": "完成 4 个昼夜任务波次",
-        "id": "mission-profile-day-night",
-        "name": "舰载机昼夜混合出动任务剖面",
-        "periodicTasks": [
-          {
-            "compositeTaskIds": [
-              "composite-day-cap",
-              "composite-night-alert"
-            ],
-            "compositeTasks": [
-              {
-                "compositeTaskId": "composite-day-cap",
-                "week": "1"
-              },
-              {
-                "compositeTaskId": "composite-night-alert",
-                "week": "2"
-              },
-              {
-                "compositeTaskId": "composite-day-cap",
-                "week": "3"
-              },
-              {
-                "compositeTaskId": "composite-night-alert",
-                "week": "4"
-              }
-            ],
-            "cycleDays": 7,
-            "dailyRepeatCount": 2,
-            "id": "periodic-carrier-day-night",
-            "name": "航母昼夜保障周期任务",
-            "periodDays": 7,
-            "repeatCount": 2,
-            "repeatCycleDays": 7,
-            "repeatCycleUnit": "day",
-            "repeatCycleValue": 7,
-            "repeatRounds": 2,
-            "repeatWeeks": 2,
-            "taskName": "航母昼夜保障周期任务",
-            "taskPeriodDays": 7,
-            "weekdayAssignments": {
-              "friday": "composite-day-cap",
-              "monday": "composite-day-cap",
-              "saturday": "composite-night-alert",
-              "sunday": "composite-day-cap",
-              "thursday": "composite-day-cap",
-              "tuesday": "composite-day-cap",
-              "wednesday": "composite-night-alert"
-            }
-          }
-        ],
-        "profileId": "MP-CV-01",
-        "profileType": "舰载机昼夜连续出动",
-        "repeatCycleHours": 6,
-        "basicMission": {
-          "advanceNoticeMinutes": 60,
-          "cancelMinutes": 20,
-          "equipmentQuantity": 2,
-          "equipmentType": "J-15",
-          "minRequiredSorties": 2,
-          "missionId": "BM-CV-01",
-          "name": "巡逻任务",
-          "preparationMinutes": 50,
-          "priority": 1,
-          "returnRatio": 0.35,
-          "startHour": 1,
-          "successPoint": 0.95,
-          "supportActivityName": "飞行前保障",
-          "taskArea": "巡逻区",
-          "taskDurationMinutes": 180,
-          "taskNo": "BM-CV-01",
-          "updatedAt": "2026-06-21 08:00"
-        },
-        "missionPhases": [
-          {
-            "id": "phase-alert",
-            "limitHours": 1,
-            "name": "出航",
-            "phaseRatio": 0.3,
-            "state": "idle",
-            "transitionCondition": "任务波次触发"
-          },
-          {
-            "id": "phase-prep",
-            "limitHours": 2,
-            "name": "任务",
-            "phaseRatio": 0.4,
-            "state": "preparing",
-            "transitionCondition": "保障完成"
-          },
-          {
-            "id": "phase-sortie",
-            "limitHours": 4,
-            "name": "返航",
-            "phaseRatio": 0.3,
-            "state": "sortie",
-            "transitionCondition": "任务完成或故障"
-          }
-        ],
-        "combatUnit": {
-          "basicTaskName": "近海制空巡逻任务",
-          "deploymentLocation": "航母飞行甲板",
-          "equipmentType": "J-15 / J-35",
-          "groupName": "航母第一出动编队",
-          "members": [
-            {
-              "aircraftNo": "J15-101",
-              "deploymentLocation": "航母飞行甲板",
-              "model": "J-15",
-              "preLifeRequirementHours": 120,
-              "remainingLifeHours": 180,
-              "role": "长机",
-              "status": "执行",
-              "takeoffLandingCount": 36,
-              "airport": "A",
-              "preLifeCalendarDays": 0
-            },
-            {
-              "aircraftNo": "J15-102",
-              "deploymentLocation": "航母飞行甲板",
-              "model": "J-15",
-              "preLifeRequirementHours": 120,
-              "remainingLifeHours": 176,
-              "role": "僚机",
-              "status": "执行",
-              "takeoffLandingCount": 34,
-              "airport": "A",
-              "preLifeCalendarDays": 0
-            },
-            {
-              "aircraftNo": "J35-201",
-              "deploymentLocation": "航母飞行甲板",
-              "model": "J-35",
-              "preLifeRequirementHours": 120,
-              "remainingLifeHours": 169,
-              "role": "僚机",
-              "status": "执行",
-              "takeoffLandingCount": 32,
-              "airport": "A",
-              "preLifeCalendarDays": 0
-            },
-            {
-              "aircraftNo": "J35-202",
-              "deploymentLocation": "航母飞行甲板",
-              "model": "J-35",
-              "preLifeRequirementHours": 120,
-              "remainingLifeHours": 164,
-              "role": "僚机",
-              "status": "执行",
-              "takeoffLandingCount": 42,
-              "airport": "A",
-              "preLifeCalendarDays": 0
-            },
-            {
-              "aircraftNo": "J15-103",
-              "deploymentLocation": "机库甲板",
-              "model": "J-15",
-              "preLifeRequirementHours": 120,
-              "remainingLifeHours": 171,
-              "role": "备份",
-              "status": "备用",
-              "takeoffLandingCount": 39,
-              "airport": "A",
-              "preLifeCalendarDays": 0
-            },
-            {
-              "aircraftNo": "J35-203",
-              "deploymentLocation": "机库甲板",
-              "model": "J-35",
-              "preLifeRequirementHours": 120,
-              "remainingLifeHours": 152,
-              "role": "备份",
-              "status": "备用",
-              "takeoffLandingCount": 31,
-              "airport": "A",
-              "preLifeCalendarDays": 0
-            }
-          ],
-          "quantity": 6,
-          "requiredCount": 5,
-          "standbyCount": 1,
-          "unitId": "CU-CV-01"
-        },
-        "airports": [
-          {
-            "distanceToMissionKm": 180,
-            "id": "carrier-deck",
-            "location": "航母战斗群",
-            "name": "航母飞行甲板",
-            "runwayType": "滑跃/弹射甲板",
-            "supportNodeId": "carrier-deck"
-          },
-          {
-            "distanceToMissionKm": 260,
-            "id": "forward-sea-base",
-            "location": "近海前出补给点",
-            "name": "前出海上保障点",
-            "runwayType": "海上保障平台",
-            "supportNodeId": "forward-sea-base"
-          }
-        ],
-        "missionAreas": [
-          {
-            "areaType": "制空",
-            "distanceFromDepartureKm": 180,
-            "id": "near-sea-cap",
-            "name": "近海制空区",
-            "patrolRadiusKm": 100,
-            "threatLevel": "中"
-          },
-          {
-            "areaType": "警戒",
-            "distanceFromDepartureKm": 420,
-            "id": "far-sea-alert",
-            "name": "远海警戒区",
-            "patrolRadiusKm": 160,
-            "threatLevel": "高"
-          }
-        ],
-        "experiment": {
-          "name": "导入示例项目",
-          "parallelCores": 4,
-          "samples": 24,
-          "seed": 20260621,
-          "steps": 48,
-          "stopCondition": "达到样本数或备件满足率稳定"
-        },
-        "equipment": {
-          "deploymentLocation": "航母飞行甲板",
-          "initialReady": 6,
-          "minRequiredSorties": 5,
-          "model": "J-15",
-          "preLifeRequirementHours": 120,
-          "quantity": 6,
-          "wholeMachineModels": [
-            "J-15",
-            "J-35"
-          ]
-        },
-        "reliabilityBlockDiagram": {
-          "edges": [
-            {
-              "from": "aircraft",
-              "to": "engine",
-              "type": "串联",
-              "weight": 1
-            },
-            {
-              "from": "aircraft",
-              "to": "avionics",
-              "type": "串联",
-              "weight": 1
-            },
-            {
-              "from": "aircraft",
-              "to": "hydraulic",
-              "type": "串联",
-              "weight": 1
-            }
-          ],
-          "nodes": [
-            {
-              "connectionType": "串联",
-              "failureRate": 0.01,
-              "id": "aircraft",
-              "mtbfHours": 300,
-              "name": "整机",
-              "parentId": null,
-              "type": "system"
-            },
-            {
-              "connectionType": "串联",
-              "failureRate": 0.055,
-              "id": "engine",
-              "mtbfHours": 95,
-              "name": "发动机",
-              "parentId": "aircraft",
-              "type": "component"
-            },
-            {
-              "connectionType": "串联",
-              "failureRate": 0.04,
-              "id": "avionics",
-              "mtbfHours": 120,
-              "name": "航电系统",
-              "parentId": "aircraft",
-              "type": "component"
-            },
-            {
-              "connectionType": "串联",
-              "failureRate": 0.05,
-              "id": "hydraulic",
-              "mtbfHours": 105,
-              "name": "液压系统",
-              "parentId": "aircraft",
-              "type": "component"
-            }
-          ]
-        },
-        "monteCarlo": {
+        "distanceToMissionKm": 180,
+        "id": "carrier-deck",
+        "location": "航母战斗群",
+        "name": "航母飞行甲板",
+        "runwayType": "滑跃/弹射甲板",
+        "supportNodeId": "carrier-deck"
+      },
+      {
+        "distanceToMissionKm": 260,
+        "id": "forward-sea-base",
+        "location": "近海前出补给点",
+        "name": "前出海上保障点",
+        "runwayType": "海上保障平台",
+        "supportNodeId": "forward-sea-base"
+      }
+    ],
+    "analysisRequests": {
+      "largeSample": {
+        "enabled": true,
+        "samples": 27,
+        "sweep": {
           "failureRates": [
             0.035,
             0.055,
             0.075
-          ],
-          "minRequiredSorties": [
-            4,
-            5,
-            6
           ],
           "spareMultipliers": [
             0.75,
@@ -383,32 +47,21 @@ export const MODELING_IMPORT_DEMO_FIXTURE = {
             3,
             4
           ]
-        },
-        "analysisRequests": {
-          "largeSample": {
-            "enabled": true,
-            "samples": 24,
-            "sweep": {
-              "failureRates": [
-                0.035,
-                0.055,
-                0.075
-              ],
-              "spareMultipliers": [
-                0.75,
-                1,
-                1.25
-              ],
-              "supportCapacities": [
-                2,
-                3,
-                4
-              ]
-            }
-          }
         }
       }
-    ],
+    },
+    "equipment": {
+      "deploymentLocation": "航母飞行甲板",
+      "initialReady": 6,
+      "minRequiredSorties": 5,
+      "model": "J-15",
+      "preLifeRequirementHours": 120,
+      "quantity": 6,
+      "wholeMachineModels": [
+        "J-15",
+        "J-35"
+      ]
+    },
     "equipmentAssets": [
       {
         "failureRate": 0.0016666666666666668,
@@ -742,95 +395,525 @@ export const MODELING_IMPORT_DEMO_FIXTURE = {
         }
       }
     ],
-    "supportResources": [
+    "missionAreas": [
       {
-        "capacity": 4,
-        "equipmentCapacity": 3,
-        "id": "carrier-deck",
-        "inventory": {
-          "发动机备件": 4,
-          "液压备件": 5,
-          "航电模块": 6
-        },
-        "lateralSupportNodes": [
-          "forward-sea-base"
-        ],
-        "name": "基地",
-        "nodeType": "甲板保障点",
-        "organizationStrategy": "任务优先 + 备件安全库存",
-        "personnelCapacity": 5,
-        "policy": "优先保障高优先级任务",
-        "supportLevel": "一线保障",
-        "transportPolicies": [
-          {
-            "capacity": 4,
-            "from": "carrier-stock",
-            "priority": 1,
-            "to": "carrier-deck",
-            "transportMode": "升降机转运",
-            "transportTimeHours": 1
-          }
-        ]
+        "areaType": "制空",
+        "distanceFromDepartureKm": 180,
+        "id": "near-sea-cap",
+        "name": "近海制空区",
+        "patrolRadiusKm": 100,
+        "threatLevel": "中"
       },
       {
-        "capacity": 3,
-        "equipmentCapacity": 2,
-        "id": "forward-sea-base",
-        "inventory": {
-          "发动机备件": 2,
-          "液压备件": 2,
-          "航电模块": 3
-        },
-        "lateralSupportNodes": [
-          "carrier-deck"
-        ],
-        "name": "中继",
-        "nodeType": "海上保障点",
-        "organizationStrategy": "前置库存 + 横向支援",
-        "personnelCapacity": 4,
-        "policy": "承接主舰横向调拨",
-        "supportLevel": "前进保障",
-        "transportPolicies": [
-          {
-            "capacity": 2,
-            "from": "carrier-deck",
-            "priority": 1,
-            "to": "forward-sea-base",
-            "transportMode": "补给艇转运",
-            "transportTimeHours": 2
-          }
-        ]
-      },
-      {
-        "capacity": 5,
-        "equipmentCapacity": 2,
-        "id": "carrier-stock",
-        "inventory": {
-          "发动机备件": 6,
-          "液压备件": 6,
-          "航电模块": 8
-        },
-        "lateralSupportNodes": [
-          "carrier-deck"
-        ],
-        "name": "基层1",
-        "nodeType": "备件库",
-        "organizationStrategy": "集中库存 + 垂直补给",
-        "personnelCapacity": 3,
-        "policy": "短缺时 2 小时内补给",
-        "supportLevel": "后方保障",
-        "transportPolicies": [
-          {
-            "capacity": 3,
-            "from": "carrier-deck",
-            "priority": 2,
-            "to": "carrier-stock",
-            "transportMode": "返修转运",
-            "transportTimeHours": 3
-          }
-        ]
+        "areaType": "警戒",
+        "distanceFromDepartureKm": 420,
+        "id": "far-sea-alert",
+        "name": "远海警戒区",
+        "patrolRadiusKm": 160,
+        "threatLevel": "高"
       }
     ],
+    "missionProfiles": [
+      {
+        "airports": [
+          {
+            "distanceToMissionKm": 180,
+            "id": "carrier-deck",
+            "location": "航母战斗群",
+            "name": "航母飞行甲板",
+            "runwayType": "滑跃/弹射甲板",
+            "supportNodeId": "carrier-deck"
+          },
+          {
+            "distanceToMissionKm": 260,
+            "id": "forward-sea-base",
+            "location": "近海前出补给点",
+            "name": "前出海上保障点",
+            "runwayType": "海上保障平台",
+            "supportNodeId": "forward-sea-base"
+          }
+        ],
+        "analysisRequests": {
+          "largeSample": {
+            "enabled": true,
+            "samples": 27,
+            "sweep": {
+              "failureRates": [
+                0.035,
+                0.055,
+                0.075
+              ],
+              "spareMultipliers": [
+                0.75,
+                1,
+                1.25
+              ],
+              "supportCapacities": [
+                2,
+                3,
+                4
+              ]
+            }
+          }
+        },
+        "basicMission": {
+          "advanceNoticeMinutes": 60,
+          "basicTaskName": "近海制空巡逻任务",
+          "cancelMinutes": 20,
+          "equipmentQuantity": 2,
+          "equipmentType": "J-15",
+          "minRequiredSorties": 2,
+          "missionId": "BM-CV-01",
+          "name": "近海制空巡逻任务",
+          "preparationMinutes": 50,
+          "priority": 1,
+          "returnRatio": 0.35,
+          "startHour": 1,
+          "successPoint": 0.95,
+          "supportActivityName": "飞行前保障",
+          "taskArea": "巡逻区",
+          "taskDurationMinutes": 180,
+          "taskNo": "BM-CV-01",
+          "updatedAt": "2026-06-21 08:00"
+        },
+        "basicMissions": [
+          {
+            "advanceNoticeMinutes": 60,
+            "basicTaskName": "远海警戒任务",
+            "cancelMinutes": 20,
+            "equipmentQuantity": 3,
+            "equipmentType": "J-35",
+            "minRequiredSorties": 3,
+            "missionId": "night-alert-main",
+            "name": "远海警戒任务",
+            "preparationMinutes": 50,
+            "priority": 1,
+            "returnRatio": 0.35,
+            "startHour": 1,
+            "successPoint": 0.95,
+            "supportActivityName": "飞行前保障",
+            "taskArea": "巡逻区",
+            "taskDurationMinutes": 180,
+            "taskNo": "night-alert-main",
+            "updatedAt": "2026-06-21 08:00"
+          }
+        ],
+        "combatUnit": {
+          "basicTaskName": "近海制空巡逻任务",
+          "deploymentLocation": "航母飞行甲板",
+          "equipmentType": "J-15 / J-35",
+          "groupName": "航母第一出动编队",
+          "members": [
+            {
+              "aircraftNo": "J15-101",
+              "airport": "A",
+              "deploymentLocation": "航母飞行甲板",
+              "model": "J-15",
+              "preLifeCalendarDays": 0,
+              "preLifeRequirementHours": 120,
+              "remainingLifeHours": 180,
+              "role": "长机",
+              "status": "执行",
+              "takeoffLandingCount": 36
+            },
+            {
+              "aircraftNo": "J15-102",
+              "airport": "A",
+              "deploymentLocation": "航母飞行甲板",
+              "model": "J-15",
+              "preLifeCalendarDays": 0,
+              "preLifeRequirementHours": 120,
+              "remainingLifeHours": 176,
+              "role": "僚机",
+              "status": "执行",
+              "takeoffLandingCount": 34
+            },
+            {
+              "aircraftNo": "J35-201",
+              "airport": "A",
+              "deploymentLocation": "航母飞行甲板",
+              "model": "J-35",
+              "preLifeCalendarDays": 0,
+              "preLifeRequirementHours": 120,
+              "remainingLifeHours": 169,
+              "role": "僚机",
+              "status": "执行",
+              "takeoffLandingCount": 32
+            },
+            {
+              "aircraftNo": "J35-202",
+              "airport": "A",
+              "deploymentLocation": "航母飞行甲板",
+              "model": "J-35",
+              "preLifeCalendarDays": 0,
+              "preLifeRequirementHours": 120,
+              "remainingLifeHours": 164,
+              "role": "僚机",
+              "status": "执行",
+              "takeoffLandingCount": 42
+            },
+            {
+              "aircraftNo": "J15-103",
+              "airport": "A",
+              "deploymentLocation": "机库甲板",
+              "model": "J-15",
+              "preLifeCalendarDays": 0,
+              "preLifeRequirementHours": 120,
+              "remainingLifeHours": 171,
+              "role": "备份",
+              "status": "备用",
+              "takeoffLandingCount": 39
+            },
+            {
+              "aircraftNo": "J35-203",
+              "airport": "A",
+              "deploymentLocation": "机库甲板",
+              "model": "J-35",
+              "preLifeCalendarDays": 0,
+              "preLifeRequirementHours": 120,
+              "remainingLifeHours": 152,
+              "role": "备份",
+              "status": "备用",
+              "takeoffLandingCount": 31
+            }
+          ],
+          "quantity": 6,
+          "requiredCount": 5,
+          "standbyCount": 1,
+          "unitId": "CU-CV-01"
+        },
+        "compositeTasks": [
+          {
+            "id": "composite-day-cap",
+            "name": "昼间制空复合任务",
+            "taskItems": [
+              {
+                "basicTaskName": "近海制空巡逻任务",
+                "dailyRepeatCount": 2,
+                "equipmentType": "J-15",
+                "firstWaveTime": "08:00",
+                "groupName": "昼间制空编队",
+                "id": "day-cap-main",
+                "intervalHours": 6,
+                "minRequiredSystems": 4,
+                "preparationMinutes": 50,
+                "priority": 1,
+                "recoveryTime": "11:00",
+                "taskDispatchTime": "07:15"
+              }
+            ]
+          },
+          {
+            "id": "composite-night-alert",
+            "name": "夜间警戒复合任务",
+            "taskItems": [
+              {
+                "basicTaskName": "远海警戒任务",
+                "dailyRepeatCount": 1,
+                "equipmentType": "J-35",
+                "firstWaveTime": "20:15",
+                "groupName": "夜间警戒编队",
+                "id": "night-alert-main",
+                "intervalHours": 8,
+                "minRequiredSystems": 3,
+                "preparationMinutes": 55,
+                "priority": 2,
+                "recoveryTime": "23:30",
+                "taskDispatchTime": "19:30"
+              }
+            ]
+          }
+        ],
+        "durationHours": 24,
+        "endCondition": "完成 4 个昼夜任务波次",
+        "equipment": {
+          "deploymentLocation": "航母飞行甲板",
+          "initialReady": 6,
+          "minRequiredSorties": 5,
+          "model": "J-15",
+          "preLifeRequirementHours": 120,
+          "quantity": 6,
+          "wholeMachineModels": [
+            "J-15",
+            "J-35"
+          ]
+        },
+        "experiment": {
+          "name": "导入示例项目",
+          "parallelCores": 4,
+          "samples": 24,
+          "seed": 20260621,
+          "steps": 48,
+          "stopCondition": "达到样本数或备件满足率稳定"
+        },
+        "id": "mission-profile-day-night",
+        "missionAreas": [
+          {
+            "areaType": "制空",
+            "distanceFromDepartureKm": 180,
+            "id": "near-sea-cap",
+            "name": "近海制空区",
+            "patrolRadiusKm": 100,
+            "threatLevel": "中"
+          },
+          {
+            "areaType": "警戒",
+            "distanceFromDepartureKm": 420,
+            "id": "far-sea-alert",
+            "name": "远海警戒区",
+            "patrolRadiusKm": 160,
+            "threatLevel": "高"
+          }
+        ],
+        "missionPhases": [
+          {
+            "id": "phase-alert",
+            "limitHours": 1,
+            "name": "出航",
+            "phaseRatio": 0.3,
+            "state": "idle",
+            "transitionCondition": "任务波次触发"
+          },
+          {
+            "id": "phase-prep",
+            "limitHours": 2,
+            "name": "任务",
+            "phaseRatio": 0.4,
+            "state": "preparing",
+            "transitionCondition": "保障完成"
+          },
+          {
+            "id": "phase-sortie",
+            "limitHours": 4,
+            "name": "返航",
+            "phaseRatio": 0.3,
+            "state": "sortie",
+            "transitionCondition": "任务完成或故障"
+          }
+        ],
+        "monteCarlo": {
+          "failureRates": [
+            0.035,
+            0.055,
+            0.075
+          ],
+          "minRequiredSorties": [
+            4,
+            5,
+            6
+          ],
+          "spareMultipliers": [
+            0.75,
+            1,
+            1.25
+          ],
+          "supportCapacities": [
+            2,
+            3,
+            4
+          ]
+        },
+        "name": "舰载机昼夜混合出动任务剖面",
+        "periodicTasks": [
+          {
+            "compositeTaskIds": [
+              "composite-day-cap",
+              "composite-night-alert"
+            ],
+            "compositeTasks": [
+              {
+                "compositeTaskId": "composite-day-cap",
+                "week": "1"
+              },
+              {
+                "compositeTaskId": "composite-night-alert",
+                "week": "2"
+              },
+              {
+                "compositeTaskId": "composite-day-cap",
+                "week": "3"
+              },
+              {
+                "compositeTaskId": "composite-night-alert",
+                "week": "4"
+              }
+            ],
+            "cycleDays": 7,
+            "dailyRepeatCount": 2,
+            "id": "periodic-carrier-day-night",
+            "name": "航母昼夜保障周期任务",
+            "periodDays": 7,
+            "repeatCount": 2,
+            "repeatCycleDays": 7,
+            "repeatCycleUnit": "day",
+            "repeatCycleValue": 7,
+            "repeatRounds": 2,
+            "repeatWeeks": 2,
+            "taskName": "航母昼夜保障周期任务",
+            "taskPeriodDays": 7,
+            "weekdayAssignments": {
+              "friday": "composite-day-cap",
+              "monday": "composite-day-cap",
+              "saturday": "composite-night-alert",
+              "sunday": "composite-day-cap",
+              "thursday": "composite-day-cap",
+              "tuesday": "composite-day-cap",
+              "wednesday": "composite-night-alert"
+            }
+          }
+        ],
+        "profileId": "MP-CV-01",
+        "profileType": "舰载机昼夜连续出动",
+        "reliabilityBlockDiagram": {
+          "edges": [
+            {
+              "from": "aircraft",
+              "to": "engine",
+              "type": "串联",
+              "weight": 1
+            },
+            {
+              "from": "aircraft",
+              "to": "avionics",
+              "type": "串联",
+              "weight": 1
+            },
+            {
+              "from": "aircraft",
+              "to": "hydraulic",
+              "type": "串联",
+              "weight": 1
+            }
+          ],
+          "nodes": [
+            {
+              "connectionType": "串联",
+              "failureRate": 0.01,
+              "id": "aircraft",
+              "mtbfHours": 300,
+              "name": "整机",
+              "parentId": null,
+              "type": "system"
+            },
+            {
+              "connectionType": "串联",
+              "failureRate": 0.055,
+              "id": "engine",
+              "mtbfHours": 95,
+              "name": "发动机",
+              "parentId": "aircraft",
+              "type": "component"
+            },
+            {
+              "connectionType": "串联",
+              "failureRate": 0.04,
+              "id": "avionics",
+              "mtbfHours": 120,
+              "name": "航电系统",
+              "parentId": "aircraft",
+              "type": "component"
+            },
+            {
+              "connectionType": "串联",
+              "failureRate": 0.05,
+              "id": "hydraulic",
+              "mtbfHours": 105,
+              "name": "液压系统",
+              "parentId": "aircraft",
+              "type": "component"
+            }
+          ]
+        },
+        "repeatCycleHours": 6
+      }
+    ],
+    "monteCarlo": {
+      "failureRates": [
+        0.035,
+        0.055,
+        0.075
+      ],
+      "minRequiredSorties": [
+        4,
+        5,
+        6
+      ],
+      "spareMultipliers": [
+        0.75,
+        1,
+        1.25
+      ],
+      "supportCapacities": [
+        2,
+        3,
+        4
+      ]
+    },
+    "projectInfo": {
+      "baseCode": "IMPORTED-001",
+      "name": "导入示例项目",
+      "summary": "由建模导入 JSON 生成的完整页面测试项目"
+    },
+    "reliabilityBlockDiagram": {
+      "edges": [
+        {
+          "from": "aircraft",
+          "to": "engine",
+          "type": "串联",
+          "weight": 1
+        },
+        {
+          "from": "aircraft",
+          "to": "avionics",
+          "type": "串联",
+          "weight": 1
+        },
+        {
+          "from": "aircraft",
+          "to": "hydraulic",
+          "type": "串联",
+          "weight": 1
+        }
+      ],
+      "nodes": [
+        {
+          "connectionType": "串联",
+          "failureRate": 0.01,
+          "id": "aircraft",
+          "mtbfHours": 300,
+          "name": "整机",
+          "parentId": null,
+          "type": "system"
+        },
+        {
+          "connectionType": "串联",
+          "failureRate": 0.055,
+          "id": "engine",
+          "mtbfHours": 95,
+          "name": "发动机",
+          "parentId": "aircraft",
+          "type": "component"
+        },
+        {
+          "connectionType": "串联",
+          "failureRate": 0.04,
+          "id": "avionics",
+          "mtbfHours": 120,
+          "name": "航电系统",
+          "parentId": "aircraft",
+          "type": "component"
+        },
+        {
+          "connectionType": "串联",
+          "failureRate": 0.05,
+          "id": "hydraulic",
+          "mtbfHours": 105,
+          "name": "液压系统",
+          "parentId": "aircraft",
+          "type": "component"
+        }
+      ]
+    },
     "supportActivities": [
       {
         "activityName": "典型保障方案",
@@ -1075,6 +1158,8 @@ export const MODELING_IMPORT_DEMO_FIXTURE = {
         "activityName": "J-15再次出动准备活动",
         "activityType": "使用保障",
         "aircraftModel": "J-15",
+        "durationHours": 0.08333333333333333,
+        "equipmentId": "j15-engine",
         "id": "ops-support-j-15---5",
         "jobs": [
           {
@@ -1088,17 +1173,17 @@ export const MODELING_IMPORT_DEMO_FIXTURE = {
           }
         ],
         "maxWorkTimeRefMinutes": 45,
+        "name": "J-15再次出动准备活动",
         "planGroupId": "preflight",
         "planType": "再次出动准备方案",
-        "name": "J-15再次出动准备活动",
-        "equipmentId": "j15-engine",
-        "resourceId": "carrier-deck",
-        "durationHours": 0.08333333333333333
+        "resourceId": "carrier-deck"
       },
       {
         "activityName": "J-15飞行后检查活动",
         "activityType": "使用保障",
         "aircraftModel": "J-15",
+        "durationHours": 0.5,
+        "equipmentId": "j15-engine",
         "id": "ops-support-j-15---6",
         "jobs": [
           {
@@ -1112,65 +1197,10 @@ export const MODELING_IMPORT_DEMO_FIXTURE = {
           }
         ],
         "maxWorkTimeRefMinutes": 60,
+        "name": "J-15飞行后检查活动",
         "planGroupId": "preflight",
         "planType": "飞行后检查方案",
-        "name": "J-15飞行后检查活动",
-        "equipmentId": "j15-engine",
-        "resourceId": "carrier-deck",
-        "durationHours": 0.5
-      }
-    ],
-    "equipment": {
-      "deploymentLocation": "航母飞行甲板",
-      "initialReady": 6,
-      "minRequiredSorties": 5,
-      "model": "J-15",
-      "preLifeRequirementHours": 120,
-      "quantity": 6,
-      "wholeMachineModels": [
-        "J-15",
-        "J-35"
-      ]
-    },
-    "projectInfo": {
-      "baseCode": "IMPORTED-001",
-      "name": "导入示例项目",
-      "summary": "由建模导入 JSON 生成的完整页面测试项目"
-    },
-    "airports": [
-      {
-        "distanceToMissionKm": 180,
-        "id": "carrier-deck",
-        "location": "航母战斗群",
-        "name": "航母飞行甲板",
-        "runwayType": "滑跃/弹射甲板",
-        "supportNodeId": "carrier-deck"
-      },
-      {
-        "distanceToMissionKm": 260,
-        "id": "forward-sea-base",
-        "location": "近海前出补给点",
-        "name": "前出海上保障点",
-        "runwayType": "海上保障平台",
-        "supportNodeId": "forward-sea-base"
-      }
-    ],
-    "missionAreas": [
-      {
-        "areaType": "制空",
-        "distanceFromDepartureKm": 180,
-        "id": "near-sea-cap",
-        "name": "近海制空区",
-        "patrolRadiusKm": 100,
-        "threatLevel": "中"
-      },
-      {
-        "areaType": "警戒",
-        "distanceFromDepartureKm": 420,
-        "id": "far-sea-alert",
-        "name": "远海警戒区",
-        "patrolRadiusKm": 160,
-        "threatLevel": "高"
+        "resourceId": "carrier-deck"
       }
     ],
     "supportOrganization": {
@@ -1205,116 +1235,116 @@ export const MODELING_IMPORT_DEMO_FIXTURE = {
         }
       ]
     },
-    "reliabilityBlockDiagram": {
-      "edges": [
-        {
-          "from": "aircraft",
-          "to": "engine",
-          "type": "串联",
-          "weight": 1
+    "supportResources": [
+      {
+        "capacity": 4,
+        "equipmentCapacity": 3,
+        "id": "carrier-deck",
+        "inventory": {
+          "发动机备件": 4,
+          "液压备件": 5,
+          "航电模块": 6
         },
-        {
-          "from": "aircraft",
-          "to": "avionics",
-          "type": "串联",
-          "weight": 1
+        "lateralSupportNodes": [
+          "forward-sea-base"
+        ],
+        "name": "基地",
+        "nodeType": "甲板保障点",
+        "organizationStrategy": "任务优先 + 备件安全库存",
+        "personnelCapacity": 5,
+        "policy": "优先保障高优先级任务",
+        "supportLevel": "一线保障",
+        "transportPolicies": [
+          {
+            "capacity": 4,
+            "from": "carrier-stock",
+            "priority": 1,
+            "to": "carrier-deck",
+            "transportMode": "升降机转运",
+            "transportTimeHours": 1
+          }
+        ]
+      },
+      {
+        "capacity": 3,
+        "equipmentCapacity": 2,
+        "id": "forward-sea-base",
+        "inventory": {
+          "发动机备件": 2,
+          "液压备件": 2,
+          "航电模块": 3
         },
-        {
-          "from": "aircraft",
-          "to": "hydraulic",
-          "type": "串联",
-          "weight": 1
-        }
-      ],
-      "nodes": [
-        {
-          "connectionType": "串联",
-          "failureRate": 0.01,
-          "id": "aircraft",
-          "mtbfHours": 300,
-          "name": "整机",
-          "parentId": null,
-          "type": "system"
+        "lateralSupportNodes": [
+          "carrier-deck"
+        ],
+        "name": "中继",
+        "nodeType": "海上保障点",
+        "organizationStrategy": "前置库存 + 横向支援",
+        "personnelCapacity": 4,
+        "policy": "承接主舰横向调拨",
+        "supportLevel": "前进保障",
+        "transportPolicies": [
+          {
+            "capacity": 2,
+            "from": "carrier-deck",
+            "priority": 1,
+            "to": "forward-sea-base",
+            "transportMode": "补给艇转运",
+            "transportTimeHours": 2
+          }
+        ]
+      },
+      {
+        "capacity": 5,
+        "equipmentCapacity": 2,
+        "id": "carrier-stock",
+        "inventory": {
+          "发动机备件": 6,
+          "液压备件": 6,
+          "航电模块": 8
         },
-        {
-          "connectionType": "串联",
-          "failureRate": 0.055,
-          "id": "engine",
-          "mtbfHours": 95,
-          "name": "发动机",
-          "parentId": "aircraft",
-          "type": "component"
-        },
-        {
-          "connectionType": "串联",
-          "failureRate": 0.04,
-          "id": "avionics",
-          "mtbfHours": 120,
-          "name": "航电系统",
-          "parentId": "aircraft",
-          "type": "component"
-        },
-        {
-          "connectionType": "串联",
-          "failureRate": 0.05,
-          "id": "hydraulic",
-          "mtbfHours": 105,
-          "name": "液压系统",
-          "parentId": "aircraft",
-          "type": "component"
-        }
-      ]
-    },
-    "monteCarlo": {
-      "failureRates": [
-        0.035,
-        0.055,
-        0.075
-      ],
-      "minRequiredSorties": [
-        4,
-        5,
-        6
-      ],
-      "spareMultipliers": [
-        0.75,
-        1,
-        1.25
-      ],
-      "supportCapacities": [
-        2,
-        3,
-        4
-      ]
-    },
-    "analysisRequests": {
-      "largeSample": {
-        "enabled": true,
-        "samples": 24,
-        "sweep": {
-          "failureRates": [
-            0.035,
-            0.055,
-            0.075
-          ],
-          "spareMultipliers": [
-            0.75,
-            1,
-            1.25
-          ],
-          "supportCapacities": [
-            2,
-            3,
-            4
-          ]
-        }
+        "lateralSupportNodes": [
+          "carrier-deck"
+        ],
+        "name": "基层1",
+        "nodeType": "备件库",
+        "organizationStrategy": "集中库存 + 垂直补给",
+        "personnelCapacity": 3,
+        "policy": "短缺时 2 小时内补给",
+        "supportLevel": "后方保障",
+        "transportPolicies": [
+          {
+            "capacity": 3,
+            "from": "carrier-deck",
+            "priority": 2,
+            "to": "carrier-stock",
+            "transportMode": "返修转运",
+            "transportTimeHours": 3
+          }
+        ]
       }
-    }
+    ]
   },
-  "changes": [],
+  "projectId": "project-carrier-day-night",
+  "schemaVersion": "modeling-import-v1",
+  "source": {
+    "derivedFrom": "tests/fixtures/case_new.json",
+    "name": "simulation_analysis_cases/canonical_platform_case.json",
+    "type": "json_fixture"
+  },
+  "usedTables": {
+    "equipmentAssets": true,
+    "missionProfiles": true,
+    "reliabilityBlockDiagram": true,
+    "supportActivities": true,
+    "supportOrganization": true,
+    "supportResources": true,
+    "transportPolicies": true
+  },
   "validation": {
+    "issues": [],
     "ok": true,
-    "status": "valid",
-    "issues": []
-  }
+    "status": "valid"
+  },
+  "validationLevel": "level1"
 };

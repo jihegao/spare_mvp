@@ -59,6 +59,7 @@ import {
 } from "./modeling-import-templates.mjs";
 import {
   ensurePublishedModelingImportForSampleProject,
+  publishModelingImportWithReferencedVersionFallback,
   sampleImportPackageIsComplete
 } from "./modeling-import-project-flow.mjs";
 import {
@@ -80,6 +81,7 @@ const LAST_BACKEND_RUN_STORAGE_KEY = "spare-mvp:lastBackendRun";
 const AUTH_SESSION_STORAGE_KEY = "spare-mvp:m4Session";
 const MANUAL_PROJECT_DRAFTS_STORAGE_KEY = "spare-mvp:manualProjects:v1";
 const MANUAL_PROJECT_JSON_STORAGE_KEY = "spare-mvp:manualProjectJson:v1";
+const LAST_PUBLISHED_MODELING_IMPORT_STORAGE_KEY = "spare-mvp:lastPublishedModelingImportId";
 const SYSTEM_RUNTIME_CONFIG_KEY = "system-runtime-support";
 const PROJECT_DRAFT_AUTOSAVE_DELAY_MS = 800;
 let backendAuthToken = readStoredBackendAuthToken();
@@ -96,9 +98,9 @@ const PROJECT_SOURCE = Object.freeze({
   imported_sample: "imported_sample"
 });
 const DEFAULT_MONTE_CARLO_SWEEP = Object.freeze({
-  failureRates: [0.06, 0.08, 0.1],
-  spareMultipliers: [0.75, 1, 1.25],
-  supportCapacities: [1, 2, 3]
+  failureRates: [0.06],
+  spareMultipliers: [1],
+  supportCapacities: [1]
 });
 let demoProjects = mergeProjectsById(readManualDraftProjectsFromStorage());
 let deletedDowntimeSnapshotIds = new Set();
@@ -489,6 +491,20 @@ function deleteManualProjectJsonDraft(projectId) {
   if (!(projectId in drafts)) return;
   delete drafts[projectId];
   localStorage.setItem(MANUAL_PROJECT_JSON_STORAGE_KEY, JSON.stringify(drafts));
+}
+
+function readLastPublishedModelingImportId() {
+  try {
+    return String(localStorage.getItem(LAST_PUBLISHED_MODELING_IMPORT_STORAGE_KEY) || "").trim();
+  } catch {
+    return "";
+  }
+}
+
+function persistLastPublishedModelingImportId(importId) {
+  const normalized = String(importId || "").trim();
+  if (!normalized) return;
+  localStorage.setItem(LAST_PUBLISHED_MODELING_IMPORT_STORAGE_KEY, normalized);
 }
 
 
@@ -2346,6 +2362,10 @@ function renderProjectMenu() {
 }
 
 function renderProjectListPage() {
+  const latestImportId = currentPublishedModelingImportId();
+  const createFromImportLabel = latestImportId
+    ? "从当前发布快照生成示例项目"
+    : "从导入数据生成示例项目";
   return `
     <header class="topbar">
       <div class="left">
@@ -2365,10 +2385,10 @@ function renderProjectListPage() {
         <div>
           <h2>项目列表</h2>
           <p>${htmlEscape(projectListStatus)}</p>
-          <p class="inline-status">可从已发布建模导入包生成示例项目，或添加本地 Project draft。</p>
+          <p class="inline-status">可从已发布建模导入包生成示例项目，或添加本地 Project draft。${latestImportId ? `当前发布快照：${htmlEscape(latestImportId)}` : ""}</p>
         </div>
         <div class="toolbar-row compact-actions">
-          <button type="button" class="btn-secondary" data-project-create-from-import>从导入数据生成示例项目</button>
+          <button type="button" class="btn-secondary" data-project-create-from-import>${htmlEscape(createFromImportLabel)}</button>
           <button type="button" class="btn-primary" data-project-add>添加</button>
         </div>
       </section>
@@ -2814,7 +2834,6 @@ function createCompositeTaskItem(index) {
     basicTaskName: taskName,
     equipmentType,
     taskDurationMinutes: Number(basic.taskDurationMinutes || 180),
-    equipmentQuantity: Number(basic.equipmentQuantity || basic.minRequiredSorties || 1),
     groupName: `新增编队${index + 1}`,
     firstWaveTime: "08:45",
     recoveryTime: "11:45",
@@ -2845,7 +2864,7 @@ function compositeTaskInheritedBasicFields(item = {}, basicTask = null) {
   return {
     equipmentType: firstPresentValue(basicTask?.equipmentType, item.equipmentType),
     taskDurationMinutes: firstPresentValue(basicTask?.taskDurationMinutes, item.taskDurationMinutes),
-    equipmentQuantity: firstPresentValue(basicTask?.equipmentQuantity, item.equipmentQuantity),
+    equipmentQuantity: firstPresentValue(basicTask?.equipmentQuantity),
     minRequiredSystems: firstPresentValue(basicTask?.minRequiredSorties, item.minRequiredSystems)
   };
 }
@@ -8308,7 +8327,6 @@ function renderExperimentPlanEditor(page) {
     <div class="plan-editor-actions">
       <button type="button" data-plan-list-link>返回方案列表</button>
       <button type="button" class="btn-primary" data-save-plan>保存方案</button>
-      <button type="button" class="btn-secondary" data-run-intent-single ${formalRunSubmitInFlight ? "disabled" : ""}>启动单次正式运行</button>
     </div>
   `;
 }
@@ -8497,6 +8515,7 @@ async function hydrateProjectCatalogFromBackend({ forceProjectId = "" } = {}) {
 function currentPublishedModelingImportId() {
   return modelingImportPublishedPackage?.importId
     || modelingImportPublishedPackage?.import_id
+    || readLastPublishedModelingImportId()
     || "";
 }
 
@@ -9378,7 +9397,10 @@ async function refreshVisualizationRunList(selectedRunId = backendRun?.run_id ||
     } else if (!visualizationSelectedRunId && visualizationRunList[0]?.run_id) {
       visualizationSelectedRunId = visualizationRunList[0].run_id;
     }
-    visualizationReplayStatus = `M9 可回放 run 列表已刷新：${visualizationRunList.length} 条`;
+    const activeRunId = visualizationSelectedRunId || backendRun?.run_id || visualizationStateSeries?.run_id || "";
+    visualizationReplayStatus = activeRunId
+      ? `M9 当前回放已同步：run_id ${activeRunId}`
+      : "M9 暂无可回放 run";
   } catch (err) {
     visualizationRunList = [];
     visualizationReplayStatus = `M9 run 列表读取失败：${formatBackendError(err)}`;
@@ -10476,10 +10498,16 @@ async function handleModelingImportAction(action, options = {}) {
       return;
     }
     try {
-      const published = await backendApi.publishModelingImport(modelingImportPackage.importId);
-      applyModelingImportRecord(published);
+      const publishResult = await publishModelingImportWithReferencedVersionFallback({
+        backendApi,
+        importPackage: modelingImportPackage
+      });
+      applyModelingImportRecord(publishResult.published);
+      persistLastPublishedModelingImportId(modelingImportPackage.importId);
       modelingImportSaved = true;
-      modelingImportStatus = `已发布：${modelingImportPackage.importId}`;
+      modelingImportStatus = publishResult.versioned
+        ? `原发布快照已被运行引用，已发布新版本：${modelingImportPackage.importId}`
+        : `已发布：${modelingImportPackage.importId}`;
     } catch (err) {
       setModelingImportActionError("发布失败", "backendApi.publishModelingImport", err);
     }
@@ -10884,16 +10912,9 @@ function renderVisualSimulation(page) {
 }
 
 function renderVisualizationRunOptions() {
-  const ids = new Set([
-    visualizationSelectedRunId,
-    backendRun?.run_id,
-    ...visualizationRunList.map((run) => run.run_id)
-  ].filter(Boolean));
-  if (ids.size === 0) return `<option value="">无已选择 run</option>`;
-  return Array.from(ids).map((runId) => {
-    const selected = runId === (visualizationSelectedRunId || backendRun?.run_id) ? "selected" : "";
-    return `<option value="${htmlEscape(runId)}" ${selected}>${htmlEscape(runId)}</option>`;
-  }).join("");
+  const runId = visualizationSelectedRunId || backendRun?.run_id || visualizationStateSeries?.run_id || visualizationRunList[0]?.run_id || "";
+  if (!runId) return `<option value="">无已选择 run</option>`;
+  return `<option value="${htmlEscape(runId)}" selected>${htmlEscape(runId)}</option>`;
 }
 
 function visualizationStreamEventClass() {
@@ -11089,9 +11110,10 @@ function renderMesaAircraftStage(state, availabilityTrend) {
         `).join("")}
       </div>
       <div class="legend">
-        <span class="legend-item"><i class="dot available"></i>available / 可用</span>
-        <span class="legend-item"><i class="dot maintenance"></i>maintenance / 维修</span>
-        <span class="legend-item"><i class="dot flying"></i>flying / 飞行</span>
+        <span class="legend-item"><i class="dot available"></i>停放</span>
+        <span class="legend-item"><i class="dot support"></i>使用保障</span>
+        <span class="legend-item"><i class="dot flying"></i>任务</span>
+        <span class="legend-item"><i class="dot repair_unavailable"></i>维修/不可用</span>
       </div>
       ${renderAvailabilityCurve(availabilityTrend)}
       <section class="aircraft-mission-timeline">
@@ -11115,17 +11137,15 @@ function renderMesaAircraftStage(state, availabilityTrend) {
 }
 
 function aircraftStateLanes(aircraftList) {
-  const actualStates = ["available", "maintenance", "flying"];
-  const extraStates = [...new Set(aircraftList.map((aircraft) => aircraft.state || "unknown"))]
-    .filter((state) => !actualStates.includes(state));
-  const lanes = [...actualStates, ...extraStates].map((state) => ({
+  const actualStates = ["available", "maintenance", "flying", "repair_unavailable"];
+  const lanes = actualStates.map((state) => ({
     key: state,
     title: visualAircraftStateLabel(state),
     aircraft: []
   }));
   const laneByKey = new Map(lanes.map((lane) => [lane.key, lane]));
   for (const aircraft of aircraftList) {
-    const state = aircraft.state || "unknown";
+    const state = visualAircraftLaneKey(aircraft.state);
     if (!laneByKey.has(state)) {
       const lane = { key: state, title: visualAircraftStateLabel(state), aircraft: [] };
       laneByKey.set(state, lane);
@@ -11569,14 +11589,44 @@ function missionStatusLabel(status) {
 
 function visualAircraftStateLabel(state) {
   const labels = {
-    available: "available / 可用",
-    maintenance: "maintenance / 维修",
-    flying: "flying / 飞行",
-    mission_ready: "mission_ready / 任务就绪",
-    pre_support: "pre_support / 飞行前保障",
-    post_support: "post_support / 航后保障"
+    available: "停放",
+    maintenance: "使用保障",
+    flying: "任务",
+    repair_unavailable: "维修/不可用",
+    mission_ready: "停放",
+    pre_support: "使用保障",
+    post_support: "使用保障",
+    support: "使用保障",
+    operations_support: "使用保障",
+    using_support: "使用保障",
+    flightline_support: "使用保障",
+    repair: "维修/不可用",
+    repairing: "维修/不可用",
+    preventive_maintenance: "维修/不可用",
+    corrective_maintenance: "维修/不可用",
+    unavailable: "维修/不可用",
+    failed: "维修/不可用",
+    grounded: "维修/不可用"
   };
   return labels[state] || state || "-";
+}
+
+function visualAircraftLaneKey(state) {
+  const value = String(state || "available").toLowerCase();
+  if (["available", "mission_ready", "standby", "parked", "idle"].includes(value)) return "available";
+  if (["flying", "mission", "launched", "sortie", "task"].includes(value)) return "flying";
+  if (["maintenance", "pre_support", "post_support", "support", "operations_support", "using_support", "flightline_support"].includes(value)) {
+    return "maintenance";
+  }
+  if (
+    ["repair", "repairing", "preventive_maintenance", "corrective_maintenance", "unavailable", "failed", "grounded", "down", "not_available"].includes(value)
+    || value.includes("repair")
+    || (value.includes("maintenance") && value !== "maintenance")
+    || value.includes("unavailable")
+  ) {
+    return "repair_unavailable";
+  }
+  return "repair_unavailable";
 }
 
 function boundedPercent(value) {
@@ -11652,7 +11702,7 @@ function monteCarloExperimentByBusinessId(mcExperimentId) {
 }
 
 function monteCarloParameterSpaceForExperiment(monteCarloExperimentId) {
-  return "sweep";
+  return "baseline";
 }
 
 function monteCarloExperimentSourceRows(experiment) {
@@ -11736,9 +11786,6 @@ function renderMonteCarloExperimentEditor(page) {
             <label>仿真次数<input id="mc-samples" data-experiment-plan-path="experiment.samples" data-mc-experiment-field="samples" type="number" min="1" value="${experiment.samples}"></label>
             <label>随机种子<input data-experiment-plan-path="experiment.seed" data-mc-experiment-field="seed" type="number" value="${experiment.seed}"></label>
           </div>
-          <label>故障率扫描<input data-mc-array-path="monteCarlo.failureRates" value="${experimentPlanDraft.monteCarlo.failureRates.join(",")}"></label>
-          <label>备件倍数<input data-mc-array-path="monteCarlo.spareMultipliers" value="${experimentPlanDraft.monteCarlo.spareMultipliers.join(",")}"></label>
-          <label>保障容量<input data-mc-array-path="monteCarlo.supportCapacities" value="${experimentPlanDraft.monteCarlo.supportCapacities.join(",")}"></label>
           <div class="mc-action-row">
             <button type="button" data-mc-experiment-action="list">返回实验列表</button>
             <button type="button" class="btn-primary" data-feature-id="${detailFeatureId}">保存并查看详情</button>
@@ -11806,7 +11853,7 @@ function renderLegacyMonteCarloConfig() {
       <section class="mc-config-panel mc-config-panel-single">
         <div class="section-head">
           <h3>蒙特卡洛实验参数配置</h3>
-          <span>样本 / seed / 扫参</span>
+          <span>样本 / seed</span>
         </div>
         <div class="mc-form">
           <div class="readonly-field">
@@ -11817,9 +11864,6 @@ function renderLegacyMonteCarloConfig() {
             <label>仿真次数<input id="mc-samples" data-experiment-plan-path="experiment.samples" type="number" min="1" value="${experimentPlanDraft.experiment.samples}"></label>
             <label>随机种子<input data-experiment-plan-path="experiment.seed" type="number" value="${experimentPlanDraft.experiment.seed}"></label>
           </div>
-          <label>故障率扫描<input data-mc-array-path="monteCarlo.failureRates" value="${experimentPlanDraft.monteCarlo.failureRates.join(",")}"></label>
-          <label>备件倍数<input data-mc-array-path="monteCarlo.spareMultipliers" value="${experimentPlanDraft.monteCarlo.spareMultipliers.join(",")}"></label>
-          <label>保障容量<input data-mc-array-path="monteCarlo.supportCapacities" value="${experimentPlanDraft.monteCarlo.supportCapacities.join(",")}"></label>
           <div class="mc-action-row">
             <button type="button" class="btn-primary" data-mc-action="start" ${formalRunSubmitInFlight ? "disabled" : ""}>启动</button>
           </div>
@@ -13015,7 +13059,7 @@ function ensureMonteCarloSweepDefaults(projectJson) {
     const values = key === "supportCapacities"
       ? positiveIntegerList(projectJson.monteCarlo[key])
       : positiveNumberList(projectJson.monteCarlo[key]);
-    projectJson.monteCarlo[key] = values.length ? values : [...defaultSweep[key]];
+    projectJson.monteCarlo[key] = values.length ? [values[0]] : [...defaultSweep[key]];
   }
   const sweepPointCount = projectJson.monteCarlo.failureRates.length
     * projectJson.monteCarlo.spareMultipliers.length
@@ -13043,7 +13087,7 @@ function supportCapacitySweepForProject(projectJson) {
       node?.personnelCapacity,
       node?.capacity
     ]);
-    if (capacity !== null) return positiveIntegerList([capacity - 1, capacity, capacity + 1, capacity + 2]).slice(0, 3);
+    if (capacity !== null) return [capacity];
   }
   return [...DEFAULT_MONTE_CARLO_SWEEP.supportCapacities];
 }

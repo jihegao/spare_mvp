@@ -112,7 +112,7 @@ test("buildRunIntent creates canonical monte carlo request shape", async () => {
   assert.deepEqual(submittedRequests, [bound.runRequest]);
 });
 
-test("buildRunIntent defaults Monte Carlo to configured sweep parameter space", () => {
+test("buildRunIntent defaults Monte Carlo to a single configured value", () => {
   const projectJson = {
     project_id: "project-baseline-mc",
     experiment: { name: "baseline mc", steps: 4, samples: 9, seed: 101 },
@@ -145,20 +145,20 @@ test("buildRunIntent defaults Monte Carlo to configured sweep parameter space", 
     mcExperimentId: "mc-baseline"
   });
 
-  assert.equal(intent.experimentPlanConfig.analysisRequests.largeSample.samples, 27);
+  assert.equal(intent.experimentPlanConfig.analysisRequests.largeSample.samples, 24);
   assert.deepEqual(intent.experimentPlanConfig.analysisRequests.largeSample.sweep, {
-    failureRates: [0.035, 0.055, 0.075],
-    spareMultipliers: [0.75, 1, 1.25],
-    supportCapacities: [2, 3, 4]
+    failureRates: [0.035],
+    spareMultipliers: [0.75],
+    supportCapacities: [2]
   });
   assert.deepEqual(intent.planProjectJson.analysisRequests.largeSample.sweep, {
-    failureRates: [0.035, 0.055, 0.075],
-    spareMultipliers: [0.75, 1, 1.25],
-    supportCapacities: [2, 3, 4]
+    failureRates: [0.035],
+    spareMultipliers: [0.75],
+    supportCapacities: [2]
   });
 });
 
-test("buildRunIntent defaults Monte Carlo to variation ranges when no sweep is configured", () => {
+test("buildRunIntent defaults Monte Carlo to one baseline value when no sweep is configured", () => {
   const projectJson = {
     project_id: "project-default-mc-range",
     experiment: { name: "default mc range", steps: 4, samples: 3, seed: 101 },
@@ -179,16 +179,16 @@ test("buildRunIntent defaults Monte Carlo to variation ranges when no sweep is c
     mcExperimentId: "mc-default-range"
   });
 
-  assert.equal(intent.experimentPlanConfig.analysisRequests.largeSample.samples, 27);
+  assert.equal(intent.experimentPlanConfig.analysisRequests.largeSample.samples, 3);
   assert.deepEqual(intent.experimentPlanConfig.analysisRequests.largeSample.sweep, {
-    failureRates: [0.06, 0.08, 0.1],
-    spareMultipliers: [0.75, 1, 1.25],
-    supportCapacities: [1, 2, 3]
+    failureRates: [0.06],
+    spareMultipliers: [1.0],
+    supportCapacities: [2]
   });
   assert.deepEqual(intent.planProjectJson.monteCarlo, {
-    failureRates: [0.06, 0.08, 0.1],
-    spareMultipliers: [0.75, 1, 1.25],
-    supportCapacities: [1, 2, 3]
+    failureRates: [0.06],
+    spareMultipliers: [1.0],
+    supportCapacities: [2]
   });
 });
 

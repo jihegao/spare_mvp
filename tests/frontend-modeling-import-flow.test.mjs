@@ -2,9 +2,19 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { MODELING_IMPORT_DEMO_FIXTURE } from "../front/modeling-import-demo-fixture.mjs";
-import { ensurePublishedModelingImportForSampleProject } from "../front/modeling-import-project-flow.mjs";
+import {
+  createReferencedModelingImportVersion,
+  ensurePublishedModelingImportForSampleProject,
+  publishModelingImportWithReferencedVersionFallback
+} from "../front/modeling-import-project-flow.mjs";
 
 test("sample project flow publishes demo fixture before create when no published package exists", async () => {
+  assert.deepEqual(MODELING_IMPORT_DEMO_FIXTURE.source, {
+    type: "json_fixture",
+    name: "simulation_analysis_cases/canonical_platform_case.json",
+    derivedFrom: "tests/fixtures/case_new.json"
+  });
+
   const calls = [];
   const backendApi = {
     async saveModelingImport(payload) {
@@ -292,4 +302,68 @@ test("sample project flow does not reuse draft import just because it has run re
     ["save", "simulation_analysis_cases/canonical_platform_case.json"],
     ["publish", MODELING_IMPORT_DEMO_FIXTURE.importId]
   ]);
+});
+
+test("publish flow versions the import when the published snapshot is already referenced by runs", async () => {
+  const calls = [];
+  const backendApi = {
+    async publishModelingImport(importId) {
+      calls.push(["publish", importId]);
+      if (importId === MODELING_IMPORT_DEMO_FIXTURE.importId) {
+        const error = new Error("published modeling import is referenced by runs: run-001");
+        error.code = "published_import_referenced";
+        error.details = { import_id: importId };
+        throw error;
+      }
+      return {
+        importId,
+        draftPackage: {
+          ...MODELING_IMPORT_DEMO_FIXTURE,
+          importId,
+          lifecycle: { state: "published", version: 2, referencedRunIds: [] }
+        },
+        publishedPackage: {
+          ...MODELING_IMPORT_DEMO_FIXTURE,
+          importId,
+          lifecycle: { state: "published", version: 2, referencedRunIds: [] }
+        }
+      };
+    },
+    async saveModelingImport(payload) {
+      calls.push(["save", payload.importId, payload.lifecycle.state, payload.lifecycle.version, payload.lifecycle.referencedRunIds.length]);
+      return { import_id: payload.importId };
+    }
+  };
+
+  const result = await publishModelingImportWithReferencedVersionFallback({
+    backendApi,
+    importPackage: MODELING_IMPORT_DEMO_FIXTURE,
+    versionSuffix: "v2"
+  });
+
+  assert.equal(result.versioned, true);
+  assert.equal(result.originalImportId, MODELING_IMPORT_DEMO_FIXTURE.importId);
+  assert.equal(result.importPackage.importId, `${MODELING_IMPORT_DEMO_FIXTURE.importId}-v2`);
+  assert.equal(result.importPackage.lifecycle.state, "draft");
+  assert.equal(result.importPackage.lifecycle.version, 2);
+  assert.deepEqual(result.importPackage.lifecycle.referencedRunIds, []);
+  assert.deepEqual(calls, [
+    ["publish", MODELING_IMPORT_DEMO_FIXTURE.importId],
+    ["save", `${MODELING_IMPORT_DEMO_FIXTURE.importId}-v2`, "draft", 2, 0],
+    ["publish", `${MODELING_IMPORT_DEMO_FIXTURE.importId}-v2`]
+  ]);
+});
+
+test("referenced import version helper sanitizes suffixes and clears run references", () => {
+  const versioned = createReferencedModelingImportVersion({
+    ...MODELING_IMPORT_DEMO_FIXTURE,
+    lifecycle: { state: "published", version: 5, referencedRunIds: ["run-001"] }
+  }, "new version 6");
+
+  assert.equal(versioned.importId, `${MODELING_IMPORT_DEMO_FIXTURE.importId}-new-version-6`);
+  assert.deepEqual(versioned.lifecycle, {
+    state: "draft",
+    version: 6,
+    referencedRunIds: []
+  });
 });

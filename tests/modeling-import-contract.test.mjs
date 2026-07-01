@@ -104,6 +104,44 @@ test("simulation analysis public import templates validate against modeling impo
   });
 });
 
+test("canonical platform composite task items inherit equipment quantity from basic tasks", async () => {
+  const publicTemplate = await readJson("public/import-templates/canonical_platform_case.json");
+  const simulationCase = await readJson("tests/fixtures/simulation_analysis_cases/canonical_platform_case.json");
+  const canonicalImports = [
+    ["public canonical template", publicTemplate],
+    ["simulation case modeling import", simulationCase.modeling_import]
+  ];
+
+  for (const [label, importPackage] of canonicalImports) {
+    const mission = importPackage.objects.missionProfiles[0];
+    assert.ok(Number(mission.basicMission?.equipmentQuantity || 0) > 0, `${label} must define basic task equipmentQuantity`);
+    const basicTasks = [
+      mission.basicMission,
+      ...(Array.isArray(mission.basicMissions) ? mission.basicMissions : [])
+    ].filter(Boolean);
+    const basicTaskNames = new Set(basicTasks.flatMap((basicTask) => [
+      basicTask.name,
+      basicTask.basicTaskName,
+      basicTask.missionId,
+      basicTask.taskNo
+    ]).filter(Boolean).map(String));
+    for (const compositeTask of mission.compositeTasks || []) {
+      for (const taskItem of compositeTask.taskItems || []) {
+        assert.equal(
+          basicTaskNames.has(String(taskItem.basicTaskName || "")),
+          true,
+          `${label} ${compositeTask.id}/${taskItem.id} must reference a modeled basic task`
+        );
+        assert.equal(
+          Object.hasOwn(taskItem, "equipmentQuantity"),
+          false,
+          `${label} ${compositeTask.id}/${taskItem.id} must inherit equipmentQuantity from basicMission`
+        );
+      }
+    }
+  }
+});
+
 test("modeling import validation supports Level 0 packages without support-domain stubs", async () => {
   const schema = await readJson("contracts/modeling_import.schema.json");
   const fixture = await readJson("tests/fixtures/modeling_import_project.json");
@@ -296,10 +334,19 @@ test("projectToModelingImportPackage backfills import draft from current Project
       profileId: "MP-CURRENT",
       name: "当前项目任务",
       durationHours: 8,
-      compositeTasks: [{ id: "wave-1", name: "第一波次" }],
+      compositeTasks: [{
+        id: "wave-1",
+        name: "第一波次",
+        taskItems: [{
+          id: "task-item-1",
+          basicTaskName: "当前基本任务",
+          equipmentQuantity: 4,
+          groupName: "昼间编队"
+        }]
+      }],
       periodicTasks: [{ id: "periodic-1", name: "周期任务" }]
     },
-    basicMission: { missionId: "BM-CURRENT", minRequiredSorties: 2 },
+    basicMission: { missionId: "BM-CURRENT", name: "当前基本任务", equipmentQuantity: 2, minRequiredSorties: 2 },
     missionPhases: [{ id: "phase-1", name: "执行" }],
     combatUnit: { quantity: 3, requiredCount: 2 },
     equipment: { model: "J-15", quantity: 3 },
@@ -329,6 +376,10 @@ test("projectToModelingImportPackage backfills import draft from current Project
   assert.equal(draft.objects.missionProfiles[0].sourceImportId, undefined);
   assert.equal(draft.objects.missionProfiles[0].profileId, "MP-CURRENT");
   assert.deepEqual(draft.objects.missionProfiles[0].basicMission, projectJson.basicMission);
+  assert.equal(
+    Object.hasOwn(draft.objects.missionProfiles[0].compositeTasks[0].taskItems[0], "equipmentQuantity"),
+    false
+  );
   assert.deepEqual(draft.objects.equipmentAssets, projectJson.components);
   assert.deepEqual(draft.objects.supportResources, projectJson.supportNodes);
   assert.deepEqual(draft.objects.supportActivities, projectJson.supportActivities);

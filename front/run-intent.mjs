@@ -1,8 +1,8 @@
 import { buildExperimentPlanConfig } from "./api-client.mjs";
 
 const SUPPORTED_RUN_TYPES = new Set(["single", "monte_carlo"]);
-const DEFAULT_FAILURE_RATE_SWEEP = [0.06, 0.08, 0.1];
-const DEFAULT_SPARE_MULTIPLIER_SWEEP = [0.75, 1.0, 1.25];
+const DEFAULT_FAILURE_RATE_SWEEP = [0.06];
+const DEFAULT_SPARE_MULTIPLIER_SWEEP = [1.0];
 
 export function buildRunIntent({
   runType,
@@ -12,7 +12,7 @@ export function buildRunIntent({
   experimentId = "",
   analysisType = "",
   modelFamily = "aircraft_support_v1",
-  monteCarloParameterSpace = "sweep"
+  monteCarloParameterSpace = "baseline"
 }) {
   if (!SUPPORTED_RUN_TYPES.has(runType)) {
     throw new Error(`Unsupported runType: ${runType}`);
@@ -86,7 +86,7 @@ function withCanonicalMonteCarloAnalysisRequest(planProjectJson, { parameterSpac
   const existingLargeSample = nextProjectJson.analysisRequests?.largeSample;
   const sweep = parameterSpace === "sweep"
     ? configuredMonteCarloSweep(nextProjectJson, existingLargeSample)
-    : baselineMonteCarloSweep(nextProjectJson);
+    : baselineMonteCarloSweep(nextProjectJson, existingLargeSample);
   const configuredSamples = Number(existingLargeSample?.samples ?? nextProjectJson.experiment?.samples ?? 1);
   const samples = Math.max(configuredSamples, monteCarloSweepPointCount(sweep));
   nextProjectJson.experiment = {
@@ -117,11 +117,18 @@ function configuredMonteCarloSweep(projectJson, existingLargeSample = {}) {
   };
 }
 
-function baselineMonteCarloSweep(projectJson) {
+function baselineMonteCarloSweep(projectJson, existingLargeSample = {}) {
+  const sources = [
+    existingLargeSample?.sweep,
+    projectJson?.monteCarlo
+  ].filter((source) => source && typeof source === "object");
+  const failureRates = firstPositiveNumberList(sources, "failureRates");
+  const spareMultipliers = firstPositiveNumberList(sources, "spareMultipliers");
+  const supportCapacities = firstPositiveIntegerList(sources, "supportCapacities");
   return {
-    failureRates: [1.0],
-    spareMultipliers: [1.0],
-    supportCapacities: [baselineSupportCapacity(projectJson)]
+    failureRates: [failureRates?.[0] ?? 0.06],
+    spareMultipliers: [spareMultipliers?.[0] ?? 1.0],
+    supportCapacities: [supportCapacities?.[0] ?? baselineSupportCapacity(projectJson)]
   };
 }
 

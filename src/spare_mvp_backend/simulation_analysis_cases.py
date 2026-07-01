@@ -157,6 +157,7 @@ def _load_canonical_import(repo_root: Path) -> dict[str, Any]:
 def _canonical_platform_import(source: dict[str, Any]) -> dict[str, Any]:
     case = copy.deepcopy(source)
     _apply_combat_unit_aircraft_defaults(case, airport="A", pre_life_calendar_days=0)
+    _move_composite_equipment_quantities_to_basic_tasks(case)
     case["source"] = {
         "type": "json_fixture",
         "name": "simulation_analysis_cases/canonical_platform_case.json",
@@ -215,8 +216,6 @@ def _minimal_single_aircraft_import(source: dict[str, Any]) -> dict[str, Any]:
                     "id": "task-6p-minimal",
                     "basicTaskName": "最小单机巡检任务",
                     "dailyRepeatCount": 1,
-                    "equipmentQuantity": 1,
-                    "requiredEquipmentQuantity": 1,
                     "equipmentType": "J-15",
                     "firstWaveTime": "08:00",
                     "groupName": "单机编队",
@@ -251,6 +250,8 @@ def _minimal_single_aircraft_import(source: dict[str, Any]) -> dict[str, Any]:
     mission["combatUnit"]["members"] = [copy.deepcopy(mission["combatUnit"]["members"][0])]
     mission["combatUnit"]["members"][0]["aircraftNo"] = "J15-6P-001"
     mission["combatUnit"]["members"][0]["status"] = "备用"
+    mission["basicMission"]["name"] = "最小单机巡检任务"
+    mission["basicMission"]["basicTaskName"] = "最小单机巡检任务"
     mission["basicMission"]["equipmentQuantity"] = 1
     mission["basicMission"]["minRequiredSorties"] = 1
     mission["basicMission"]["taskDurationMinutes"] = 60
@@ -351,6 +352,67 @@ def _minimal_single_aircraft_import(source: dict[str, Any]) -> dict[str, Any]:
     return case
 
 
+def _move_composite_equipment_quantities_to_basic_tasks(import_package: dict[str, Any]) -> None:
+    objects = import_package.get("objects") if isinstance(import_package.get("objects"), dict) else {}
+    missions = objects.get("missionProfiles") if isinstance(objects.get("missionProfiles"), list) else []
+    for mission in missions:
+        if not isinstance(mission, dict):
+            continue
+        basic_mission = mission.get("basicMission") if isinstance(mission.get("basicMission"), dict) else {}
+        composite_tasks = mission.get("compositeTasks") if isinstance(mission.get("compositeTasks"), list) else []
+        task_items: list[dict[str, Any]] = []
+        for composite_task in composite_tasks:
+            if not isinstance(composite_task, dict):
+                continue
+            items = composite_task.get("taskItems") if isinstance(composite_task.get("taskItems"), list) else []
+            task_items.extend(item for item in items if isinstance(item, dict))
+
+        first_task_name = str(task_items[0].get("basicTaskName") or "").strip() if task_items else ""
+        if first_task_name and isinstance(basic_mission, dict):
+            basic_mission["name"] = first_task_name
+            basic_mission["basicTaskName"] = first_task_name
+
+        existing_basic_tasks = [basic_mission]
+        if isinstance(mission.get("basicMissions"), list):
+            existing_basic_tasks.extend(task for task in mission["basicMissions"] if isinstance(task, dict))
+        existing_names = {
+            str(value)
+            for task in existing_basic_tasks
+            if isinstance(task, dict)
+            for value in (task.get("name"), task.get("basicTaskName"), task.get("missionId"), task.get("taskNo"))
+            if value not in (None, "")
+        }
+        additional_basic_tasks = [
+            copy.deepcopy(task)
+            for task in mission.get("basicMissions", [])
+            if isinstance(task, dict)
+        ] if isinstance(mission.get("basicMissions"), list) else []
+
+        for item in task_items:
+            task_name = str(item.get("basicTaskName") or "").strip()
+            if task_name and task_name not in existing_names:
+                derived = copy.deepcopy(basic_mission) if isinstance(basic_mission, dict) else {}
+                derived["name"] = task_name
+                derived["basicTaskName"] = task_name
+                derived["missionId"] = str(item.get("id") or task_name)
+                derived["taskNo"] = str(item.get("id") or task_name)
+                if item.get("equipmentType") not in (None, ""):
+                    derived["equipmentType"] = item["equipmentType"]
+                equipment_quantity = _positive_int(item.get("equipmentQuantity"), 0)
+                if equipment_quantity > 0:
+                    derived["equipmentQuantity"] = equipment_quantity
+                min_required = _positive_int(item.get("minRequiredSystems"), 0)
+                if min_required > 0:
+                    derived["minRequiredSorties"] = min_required
+                additional_basic_tasks.append(derived)
+                existing_names.add(task_name)
+            item.pop("equipmentQuantity", None)
+            item.pop("requiredEquipmentQuantity", None)
+
+        if additional_basic_tasks:
+            mission["basicMissions"] = additional_basic_tasks
+
+
 def _apply_validation_scope(case_id: str, import_package: dict[str, Any]) -> tuple[str, dict[str, bool]]:
     scope = CASE_VALIDATION_SCOPES[case_id]
     validation_level = str(scope["validation_level"])
@@ -394,3 +456,11 @@ def _sweep_point_count(sweep: dict[str, Any]) -> int:
         values = sweep.get(key)
         total *= max(1, len(values) if isinstance(values, list) else 0)
     return total
+
+
+def _positive_int(value: Any, fallback: int = 0) -> int:
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return fallback
+    return number if number > 0 else fallback

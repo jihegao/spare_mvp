@@ -456,12 +456,13 @@
         },
         "basicMission": {
           "advanceNoticeMinutes": 60,
+          "basicTaskName": "近海制空巡逻任务",
           "cancelMinutes": 20,
           "equipmentQuantity": 2,
           "equipmentType": "J-15",
           "minRequiredSorties": 2,
           "missionId": "BM-CV-01",
-          "name": "巡逻任务",
+          "name": "近海制空巡逻任务",
           "preparationMinutes": 50,
           "priority": 1,
           "returnRatio": 0.35,
@@ -473,6 +474,28 @@
           "taskNo": "BM-CV-01",
           "updatedAt": "2026-06-21 08:00"
         },
+        "basicMissions": [
+          {
+            "advanceNoticeMinutes": 60,
+            "basicTaskName": "远海警戒任务",
+            "cancelMinutes": 20,
+            "equipmentQuantity": 3,
+            "equipmentType": "J-35",
+            "minRequiredSorties": 3,
+            "missionId": "night-alert-main",
+            "name": "远海警戒任务",
+            "preparationMinutes": 50,
+            "priority": 1,
+            "returnRatio": 0.35,
+            "startHour": 1,
+            "successPoint": 0.95,
+            "supportActivityName": "飞行前保障",
+            "taskArea": "巡逻区",
+            "taskDurationMinutes": 180,
+            "taskNo": "night-alert-main",
+            "updatedAt": "2026-06-21 08:00"
+          }
+        ],
         "combatUnit": {
           "basicTaskName": "近海制空巡逻任务",
           "deploymentLocation": "航母飞行甲板",
@@ -481,75 +504,75 @@
           "members": [
             {
               "aircraftNo": "J15-101",
+              "airport": "A",
               "deploymentLocation": "航母飞行甲板",
               "model": "J-15",
+              "preLifeCalendarDays": 0,
               "preLifeRequirementHours": 120,
               "remainingLifeHours": 180,
               "role": "长机",
               "status": "执行",
-              "takeoffLandingCount": 36,
-              "airport": "A",
-              "preLifeCalendarDays": 0
+              "takeoffLandingCount": 36
             },
             {
               "aircraftNo": "J15-102",
+              "airport": "A",
               "deploymentLocation": "航母飞行甲板",
               "model": "J-15",
+              "preLifeCalendarDays": 0,
               "preLifeRequirementHours": 120,
               "remainingLifeHours": 176,
               "role": "僚机",
               "status": "执行",
-              "takeoffLandingCount": 34,
-              "airport": "A",
-              "preLifeCalendarDays": 0
+              "takeoffLandingCount": 34
             },
             {
               "aircraftNo": "J35-201",
+              "airport": "A",
               "deploymentLocation": "航母飞行甲板",
               "model": "J-35",
+              "preLifeCalendarDays": 0,
               "preLifeRequirementHours": 120,
               "remainingLifeHours": 169,
               "role": "僚机",
               "status": "执行",
-              "takeoffLandingCount": 32,
-              "airport": "A",
-              "preLifeCalendarDays": 0
+              "takeoffLandingCount": 32
             },
             {
               "aircraftNo": "J35-202",
+              "airport": "A",
               "deploymentLocation": "航母飞行甲板",
               "model": "J-35",
+              "preLifeCalendarDays": 0,
               "preLifeRequirementHours": 120,
               "remainingLifeHours": 164,
               "role": "僚机",
               "status": "执行",
-              "takeoffLandingCount": 42,
-              "airport": "A",
-              "preLifeCalendarDays": 0
+              "takeoffLandingCount": 42
             },
             {
               "aircraftNo": "J15-103",
+              "airport": "A",
               "deploymentLocation": "机库甲板",
               "model": "J-15",
+              "preLifeCalendarDays": 0,
               "preLifeRequirementHours": 120,
               "remainingLifeHours": 171,
               "role": "备份",
               "status": "备用",
-              "takeoffLandingCount": 39,
-              "airport": "A",
-              "preLifeCalendarDays": 0
+              "takeoffLandingCount": 39
             },
             {
               "aircraftNo": "J35-203",
+              "airport": "A",
               "deploymentLocation": "机库甲板",
               "model": "J-35",
+              "preLifeCalendarDays": 0,
               "preLifeRequirementHours": 120,
               "remainingLifeHours": 152,
               "role": "备份",
               "status": "备用",
-              "takeoffLandingCount": 31,
-              "airport": "A",
-              "preLifeCalendarDays": 0
+              "takeoffLandingCount": 31
             }
           ],
           "quantity": 6,
@@ -565,7 +588,6 @@
               {
                 "basicTaskName": "近海制空巡逻任务",
                 "dailyRepeatCount": 2,
-                "equipmentQuantity": 4,
                 "equipmentType": "J-15",
                 "firstWaveTime": "08:00",
                 "groupName": "昼间制空编队",
@@ -586,7 +608,6 @@
               {
                 "basicTaskName": "远海警戒任务",
                 "dailyRepeatCount": 1,
-                "equipmentQuantity": 3,
                 "equipmentType": "J-35",
                 "firstWaveTime": "20:15",
                 "groupName": "夜间警戒编队",

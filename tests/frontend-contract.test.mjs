@@ -2147,16 +2147,36 @@ test("monte carlo configuration drives the displayed result sample count", async
   assert.match(appSource, /data-save-plan/);
 });
 
-test("monte carlo sweep inputs update scenario arrays and rerun grouped results", async () => {
+test("monte carlo editor hides sweep inputs and keeps Monte Carlo local until explicit save", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
-  assert.match(appSource, /data-mc-array-path="monteCarlo\.failureRates"/);
-  assert.match(appSource, /data-mc-array-path="monteCarlo\.spareMultipliers"/);
-  assert.match(appSource, /data-mc-array-path="monteCarlo\.supportCapacities"/);
-  assert.match(appSource, /const mcArrayInput = event\.target\.closest\("\[data-mc-array-path\]"\)/);
-  assert.match(appSource, /setPath\(experimentPlanDraft, mcArrayInput\.dataset\.mcArrayPath, parseNumberList\(mcArrayInput\.value\)\)/);
-  assert.match(appSource, /function parseNumberList/);
-  assert.match(appSource, /updatePreviewResultsThroughApiClient\(experimentPlanDraft\)/);
+  const editorSource = appSource.slice(
+    appSource.indexOf("function renderMonteCarloExperimentEditor"),
+    appSource.indexOf("function renderMonteCarloExperimentDetail")
+  );
+
+  assert.doesNotMatch(editorSource, /故障率扫描/);
+  assert.doesNotMatch(editorSource, /备件倍数/);
+  assert.doesNotMatch(editorSource, /保障容量/);
+  assert.doesNotMatch(editorSource, /data-mc-array-path/);
+  assert.doesNotMatch(editorSource, /monteCarlo\.failureRates\.join/);
   assert.match(appSource, /const savePlanButton = event\.target\.closest\("\[data-save-plan\]"\)/);
+});
+
+test("modeling import publish falls back to a new version when the current snapshot is referenced", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const flowSource = await readFile(new URL("../front/modeling-import-project-flow.mjs", import.meta.url), "utf8");
+  const publishSource = appSource.slice(
+    appSource.indexOf('if (action === "publish")'),
+    appSource.indexOf('if (action === "compile-scenario")')
+  );
+
+  assert.match(appSource, /publishModelingImportWithReferencedVersionFallback/);
+  assert.match(publishSource, /publishModelingImportWithReferencedVersionFallback\(\{\s*backendApi,\s*importPackage: modelingImportPackage\s*\}\)/s);
+  assert.match(publishSource, /persistLastPublishedModelingImportId\(modelingImportPackage\.importId\)/);
+  assert.match(publishSource, /原发布快照已被运行引用，已发布新版本/);
+  assert.match(flowSource, /export async function publishModelingImportWithReferencedVersionFallback/);
+  assert.match(flowSource, /err\?\.code === "published_import_referenced"/);
+  assert.match(flowSource, /createReferencedModelingImportVersion\(importPackage, versionSuffix\)/);
 });
 
 test("monte carlo experiment management has list, editor, and detail pages", async () => {
@@ -2227,17 +2247,11 @@ test("browser smoke enters monte carlo editor or detail before using sweep input
   assert.ok(helperEnd > helperStart, "smoke helper source slice is ordered");
   assert.match(openExperimentSource, /data-mc-experiment-action="edit"/);
   assert.match(openExperimentSource, /data-mc-experiment-action="add"/);
+  assert.doesNotMatch(smokeMonteCarloSource, /data-mc-array-path="monteCarlo\.failureRates"/);
   assert.ok(
     smokeMonteCarloSource.indexOf("openMonteCarloExperimentForRun") <
-      smokeMonteCarloSource.indexOf('data-mc-array-path="monteCarlo.failureRates"'),
-    "smoke must leave the Monte Carlo experiment list before filling sweep inputs"
-  );
-  assert.ok(
-    smokeMonteCarloSource.indexOf("document.activeElement?.blur()") >
-      smokeMonteCarloSource.indexOf('data-mc-array-path="monteCarlo.failureRates"') &&
-      smokeMonteCarloSource.indexOf("document.activeElement?.blur()") <
-        smokeMonteCarloSource.indexOf("openMonteCarloExperimentDetailForRun"),
-    "smoke must apply the sweep input change before clicking through to detail"
+      smokeMonteCarloSource.indexOf("openMonteCarloExperimentDetailForRun"),
+    "smoke must leave the Monte Carlo experiment list before opening detail"
   );
   assert.match(smokeSource, /data-mc-action="start"/);
   assert.match(smokeSource, /function openMonteCarloExperimentForRun/);
@@ -2333,6 +2347,8 @@ test("experiment plan editor edits an isolated branch rather than the project dr
   );
 
   assert.match(editorSource, /data-experiment-plan-path/);
+  assert.doesNotMatch(editorSource, /data-run-intent-single/);
+  assert.doesNotMatch(editorSource, /启动单次正式运行/);
   assert.match(appSource, /function createExperimentPlanBranchFromCurrentProject/);
   assert.match(appSource, /createExperimentPlanBranchFromCurrentProject\(\)/);
   assert.match(createBranchSource, /if \(experimentPlanBranchActive\) return/);
@@ -2359,7 +2375,7 @@ test("monte carlo launch creates a run from the current experiment plan branch",
   assert.match(launchSource, /analysisType,/);
   assert.match(launchSource, /monteCarloParameterSpace: monteCarloParameterSpaceForExperiment\(monteCarloExperimentId\)/);
   assert.match(appSource, /function monteCarloParameterSpaceForExperiment\(monteCarloExperimentId\)/);
-  assert.match(appSource, /function monteCarloParameterSpaceForExperiment\(monteCarloExperimentId\)\s*\{\s*return "sweep";\s*\}/);
+  assert.match(appSource, /function monteCarloParameterSpaceForExperiment\(monteCarloExperimentId\)\s*\{\s*return "baseline";\s*\}/);
   assert.match(appSource, /function hiddenCurrentAnalysisExperimentId\(analysisType\)/);
   assert.match(appSource, /startMonteCarloRunThroughApi\(\{\s*monteCarloExperimentId: hiddenExperimentId,\s*analysisType/s);
   assert.doesNotMatch(launchSource, /sample_count\s*:/);
@@ -2370,7 +2386,7 @@ test("monte carlo launch creates a run from the current experiment plan branch",
   assert.doesNotMatch(launchSource, /backendApi\.startMonteCarloRun/);
 });
 
-test("monte carlo config backfills empty draft sweep ranges before display and launch", async () => {
+test("monte carlo config backfills empty draft to a single baseline value before display and launch", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const branchSource = appSource.slice(
     appSource.indexOf("function createExperimentPlanBranchFromCurrentProject"),
@@ -2387,8 +2403,9 @@ test("monte carlo config backfills empty draft sweep ranges before display and l
 
   assert.match(appSource, /const DEFAULT_MONTE_CARLO_SWEEP = Object\.freeze/);
   assert.match(appSource, /function ensureMonteCarloSweepDefaults\(projectJson\)/);
-  assert.match(appSource, /failureRates: \[0\.06, 0\.08, 0\.1\]/);
-  assert.match(appSource, /spareMultipliers: \[0\.75, 1, 1\.25\]/);
+  assert.match(appSource, /failureRates: \[0\.06\]/);
+  assert.match(appSource, /spareMultipliers: \[1\]/);
+  assert.match(appSource, /supportCapacities: \[1\]/);
   assert.match(branchSource, /ensureMonteCarloSweepDefaults\(experimentPlanDraft\)/);
   assert.match(editorSource, /ensureMonteCarloSweepDefaults\(experimentPlanDraft\)/);
   assert.match(launchSource, /ensureMonteCarloSweepDefaults\(experimentPlanDraft\)/);
@@ -2861,9 +2878,14 @@ test("frontend modeling import demo fixture stays aligned with complete imported
   assert.ok(objects.supportActivities.some((activity) => activity.activityType === "后勤保障" && activity.transportStrategies.length >= 2));
 });
 
-test("frontend modeling import demo fixture is synchronized with canonical JSON fixture", async () => {
-  const canonical = JSON.parse(await readFile(new URL("./fixtures/modeling_import_project.json", import.meta.url), "utf8"));
+test("frontend modeling import demo fixture is synchronized with public canonical platform template", async () => {
+  const canonical = JSON.parse(await readFile(new URL("../public/import-templates/canonical_platform_case.json", import.meta.url), "utf8"));
   assert.deepEqual(MODELING_IMPORT_DEMO_FIXTURE, canonical);
+  assert.deepEqual(MODELING_IMPORT_DEMO_FIXTURE.source, {
+    type: "json_fixture",
+    name: "simulation_analysis_cases/canonical_platform_case.json",
+    derivedFrom: "tests/fixtures/case_new.json"
+  });
 });
 
 test("project list separates imported sample projects from local manual drafts", async () => {
@@ -2886,6 +2908,8 @@ test("project list separates imported sample projects from local manual drafts",
   assert.doesNotMatch(projectSeedSource, /preview_fixture/);
   assert.match(projectSeedSource, /readManualDraftProjectsFromStorage\(\)/);
   assert.match(projectListSource, /可从已发布建模导入包生成示例项目，或添加本地 Project draft/);
+  assert.match(projectListSource, /当前发布快照/);
+  assert.match(projectListSource, /从当前发布快照生成示例项目/);
   assert.match(projectListSource, /暂无项目/);
   assert.match(projectListSource, /projectSourceBadge\(project\)/);
   assert.match(projectListSource, /projectSourceHelpText\(project\)/);
@@ -2894,6 +2918,33 @@ test("project list separates imported sample projects from local manual drafts",
   assert.match(createSource, /name: projectJson\.experiment\?\.name \|\| "导入示例项目"/);
   assert.doesNotMatch(createSource, /name: projectJson\.missionProfile\?\.sourceImportId \|\| projectJson\.experiment\?\.name/);
   assert.match(createSource, /projectListStatus = `已从导入数据生成示例项目：\$\{project\.name\}；可用于正式后端测试`;/);
+});
+
+test("project list keeps the latest published modeling import id across route reloads", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const storageSource = appSource.slice(
+    appSource.indexOf("const LAST_PUBLISHED_MODELING_IMPORT_STORAGE_KEY"),
+    appSource.indexOf("let scenario =")
+  );
+  const currentImportSource = appSource.slice(
+    appSource.indexOf("function currentPublishedModelingImportId"),
+    appSource.indexOf("function editDemoProject")
+  );
+  const publishSource = appSource.slice(
+    appSource.indexOf('if (action === "publish")'),
+    appSource.indexOf('if (action === "compile-scenario")')
+  );
+  const clickSource = appSource.slice(
+    appSource.indexOf('const createFromImportButton = event.target.closest("[data-project-create-from-import]"'),
+    appSource.indexOf('const editProjectButton = event.target.closest("[data-project-edit]"')
+  );
+
+  assert.match(storageSource, /LAST_PUBLISHED_MODELING_IMPORT_STORAGE_KEY = "spare-mvp:lastPublishedModelingImportId"/);
+  assert.match(storageSource, /function readLastPublishedModelingImportId/);
+  assert.match(storageSource, /function persistLastPublishedModelingImportId/);
+  assert.match(currentImportSource, /readLastPublishedModelingImportId\(\)/);
+  assert.match(publishSource, /persistLastPublishedModelingImportId\(modelingImportPackage\.importId\)/);
+  assert.match(clickSource, /createSampleProjectFromPublishedImport\(currentPublishedModelingImportId\(\)\)/);
 });
 
 test("formal run starts only allow imported sample projects", async () => {
@@ -3434,10 +3485,11 @@ test("visual simulation layout matches operational dashboard requirements", asyn
   assert.doesNotMatch(appSource, /T-\$\{4 - index\}/);
   assert.match(styleSource, /\.availability-chart \.trend-line/);
   assert.match(styleSource, /\.availability-chart circle\.current-point/);
-  assert.match(appSource, /available: "available \/ 可用"/);
-  assert.match(appSource, /maintenance: "maintenance \/ 维修"/);
-  assert.match(appSource, /flying: "flying \/ 飞行"/);
-  assert.doesNotMatch(appSource, /function aircraftStateLaneKey/);
+  assert.match(appSource, /available: "停放"/);
+  assert.match(appSource, /maintenance: "使用保障"/);
+  assert.match(appSource, /flying: "任务"/);
+  assert.match(appSource, /repair_unavailable: "维修\/不可用"/);
+  assert.match(appSource, /function visualAircraftLaneKey/);
   assert.doesNotMatch(stageSource, /航母甲板 \/ 任务就绪/);
   assert.doesNotMatch(stageSource, /任务空域/);
   assert.doesNotMatch(stageSource, /修复性维修/);
@@ -3468,7 +3520,10 @@ test("visual simulation layout matches operational dashboard requirements", asyn
   assert.match(stageSource, /aircraft-state-node/);
   assert.match(stageSource, /aircraft-mission-timeline/);
   assert.match(stageSource, /buildAircraftMissionTimelineRows\(state\)/);
-  assert.match(styleSource, /\.aircraft-state-board[\s\S]*grid-template-columns/);
+  assert.match(styleSource, /\.aircraft-state-board[\s\S]*grid-template-columns: repeat\(4, minmax\(120px, 1fr\)\)/);
+  assert.match(styleSource, /\.aircraft-state-board[\s\S]*min-height: 320px/);
+  assert.match(styleSource, /\.aircraft-state-board[\s\S]*max-height: 320px/);
+  assert.match(styleSource, /\.aircraft-state-lane-body[\s\S]*overflow-y: auto/);
   assert.match(styleSource, /\.aircraft-mission-timeline[\s\S]*overflow: auto/);
   assert.match(styleSource, /\.mesa-visual-grid\.mission-expanded[\s\S]*grid-template-columns: minmax\(0, 1fr\)/);
   assert.match(stageSource, /保障人员/);
@@ -3637,6 +3692,25 @@ test("visual simulation exposes only replay picker replay start and new simulati
     assert.doesNotMatch(visualSource, new RegExp(label));
   }
   assert.doesNotMatch(visualSource, /data-mesa-backend-control-status/);
+});
+
+test("visual simulation replay picker exposes only the active replay", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const runOptionsSource = appSource.slice(
+    appSource.indexOf("function renderVisualizationRunOptions"),
+    appSource.indexOf("function visualizationStreamEventClass")
+  );
+  const refreshRunListSource = appSource.slice(
+    appSource.indexOf("async function refreshVisualizationRunList"),
+    appSource.indexOf("function ensureVisualizationRunListLoaded")
+  );
+
+  assert.match(runOptionsSource, /visualizationSelectedRunId \|\| backendRun\?\.run_id \|\| visualizationStateSeries\?\.run_id/);
+  assert.ok(runOptionsSource.includes('return `<option value="${htmlEscape(runId)}" selected>${htmlEscape(runId)}</option>`;'));
+  assert.doesNotMatch(runOptionsSource, /visualizationRunList\.map/);
+  assert.doesNotMatch(runOptionsSource, /Array\.from\(ids\)/);
+  assert.match(refreshRunListSource, /M9 当前回放已同步/);
+  assert.doesNotMatch(refreshRunListSource, /run 列表已刷新/);
 });
 
 test("visual simulation selection and start controls load official replays automatically", async () => {
