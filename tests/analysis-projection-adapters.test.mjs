@@ -45,6 +45,39 @@ test("normalizes spare shortfall projection payload for formal KPI and table ren
   assert.equal(view.rows[1].utilizationConstraint, "达标 0.85");
 });
 
+test("normalizes not applicable projection payloads without formal KPI computation", () => {
+  const view = normalizeAnalysisProjectionPayload("spare_shortfall", {
+    projection_type: "spare_shortfall",
+    run_id: "run-level0",
+    model_family: "aircraft_support_v1",
+    applicability: {
+      status: "not_applicable",
+      reason_code: "scope_not_modeled",
+      required_domains: ["supportActivities", "supportResources"],
+      disabled_domains: ["supportActivities", "supportResources"],
+      validation_level: "level0"
+    },
+    constraints: {
+      fill_rate: [0.85, 0.9, 0.95],
+      utilization: [0.85, 0.9, 0.95]
+    },
+    truncation: {
+      mode: "clamp_0_1",
+      fields: ["fill_rate", "utilization", "shortage_probability"]
+    },
+    data: [
+      { spare_type: "misleading-zero", fill_rate: 0, utilization: 0, shortage_probability: 0, risk_level: "low" }
+    ]
+  }, { runId: "run-level0", modelFamily: "aircraft_support_v1" });
+
+  assert.equal(view.analysisType, "spare_shortfall");
+  assert.equal(view.formal, false);
+  assert.equal(view.source, "projection applicability");
+  assert.deepEqual(view.rows, []);
+  assert.deepEqual(view.metrics, [["适用性", "不适用"]]);
+  assert.deepEqual(view.applicability.disabled_domains, ["supportActivities", "supportResources"]);
+});
+
 test("normalizes carry list projection payload for formal KPI and table rendering", () => {
   const view = normalizeAnalysisProjectionPayload("carry_list", {
     projection_type: "carry_list",

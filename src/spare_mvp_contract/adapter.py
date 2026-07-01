@@ -1614,6 +1614,7 @@ class SimulationAdapter:
                 }
             ],
             run_id=run_id,
+            validation_scope=scenario.get("compiled_from", {}).get("mapping_provenance", {}),
         )
         result["analysis_outputs"] = {
             "spare_shortage": projections["spare_shortfall"]["data"],
@@ -2012,7 +2013,13 @@ class SimulationAdapter:
         self._coerce_result_integer_metrics(aggregate)
         aggregate["mission_success_probability"] = aggregate.get("sortie_completion_rate", 0)
         base_artifact_id = f"monte_carlo_base-{run_id}"
-        projections = self._aircraft_support_v1_analysis_projections(aggregate, base_artifact_id, samples=samples, run_id=run_id)
+        projections = self._aircraft_support_v1_analysis_projections(
+            aggregate,
+            base_artifact_id,
+            samples=samples,
+            run_id=run_id,
+            validation_scope=scenario.get("compiled_from", {}).get("mapping_provenance", {}),
+        )
         behavior_scope = AircraftSupportV1Model.behavior_scope()
         input_project = self._input_project_for_scenario(scenario)
         base_artifact = {
@@ -2523,7 +2530,18 @@ class SimulationAdapter:
         source_artifact_id: str,
         samples: list[dict[str, Any]] | None = None,
         run_id: str = "",
+        validation_scope: dict[str, Any] | None = None,
     ) -> dict[str, dict[str, Any]]:
+        projection_applicability = {
+            projection_type: self._aircraft_support_v1_projection_applicability(projection_type, validation_scope or {})
+            for projection_type in (
+                "large_sample_summary",
+                "spare_shortfall",
+                "carry_list",
+                "mission_reliability",
+                "downtime_factors",
+            )
+        }
         planned_sorties = max(1.0, float(metrics.get("planned_sorties", 1) or 1))
         shortage_events = max(0.0, float(metrics.get("shortage_events", 0) or 0))
         shortage_probability = min(1.0, shortage_events / planned_sorties)
@@ -2547,6 +2565,7 @@ class SimulationAdapter:
                 "run_id": run_id,
                 "model_family": "aircraft_support_v1",
                 "base_artifact_id": source_artifact_id,
+                "applicability": projection_applicability["large_sample_summary"],
                 "data": {
                     "sample_count": len(samples or []),
                     "mission_success_probability": mission_success,
@@ -2561,6 +2580,7 @@ class SimulationAdapter:
                 "run_id": run_id,
                 "model_family": "aircraft_support_v1",
                 "base_artifact_id": source_artifact_id,
+                "applicability": projection_applicability["spare_shortfall"],
                 "constraints": {
                     "fill_rate": SPARE_SHORTFALL_CONSTRAINTS,
                     "utilization": SPARE_SHORTFALL_CONSTRAINTS,
@@ -2586,6 +2606,7 @@ class SimulationAdapter:
                 "run_id": run_id,
                 "model_family": "aircraft_support_v1",
                 "base_artifact_id": source_artifact_id,
+                "applicability": projection_applicability["carry_list"],
                 "data": [
                     {
                         "spare_type": "aircraft_support_v1_spares",
@@ -2599,6 +2620,7 @@ class SimulationAdapter:
                 "run_id": run_id,
                 "model_family": "aircraft_support_v1",
                 "base_artifact_id": source_artifact_id,
+                "applicability": projection_applicability["mission_reliability"],
                 "data": {
                     "mission_success_probability": mission_success,
                     "sortie_rate": sortie_rate,
@@ -2616,12 +2638,52 @@ class SimulationAdapter:
                 "run_id": run_id,
                 "model_family": "aircraft_support_v1",
                 "base_artifact_id": source_artifact_id,
+                "applicability": projection_applicability["downtime_factors"],
                 "data": [
                     {"factor": factor, "contribution": value / downtime_total}
                     for factor, value in downtime_values.items()
                 ],
                 "anomaly_snapshots": self._aircraft_support_v1_downtime_anomaly_snapshots(samples or [], run_id),
             },
+        }
+
+    def _aircraft_support_v1_projection_applicability(
+        self,
+        projection_type: str,
+        validation_scope: dict[str, Any],
+    ) -> dict[str, Any]:
+        required_domains_by_projection = {
+            "large_sample_summary": set(),
+            "spare_shortfall": {"supportResources", "supportActivities"},
+            "carry_list": {"supportResources"},
+            "mission_reliability": set(),
+            "downtime_factors": {"supportResources", "supportActivities"},
+        }
+        required_domains = required_domains_by_projection.get(projection_type, set())
+        disabled_domains = {
+            str(domain)
+            for domain in validation_scope.get("disabled_domains", [])
+            if isinstance(domain, str)
+        }
+        disabled_domains.update(
+            str(domain)
+            for domain, enabled in (validation_scope.get("used_tables") or {}).items()
+            if enabled is False
+        )
+        missing_domains = sorted(required_domains & disabled_domains)
+        if missing_domains:
+            return {
+                "status": "not_applicable",
+                "reason_code": "scope_not_modeled",
+                "required_domains": sorted(required_domains),
+                "disabled_domains": sorted(disabled_domains),
+                "validation_level": str(validation_scope.get("validation_level") or "level1"),
+            }
+        return {
+            "status": "applicable",
+            "required_domains": sorted(required_domains),
+            "disabled_domains": sorted(disabled_domains),
+            "validation_level": str(validation_scope.get("validation_level") or "level1"),
         }
 
     def _aircraft_support_v1_downtime_anomaly_snapshots(

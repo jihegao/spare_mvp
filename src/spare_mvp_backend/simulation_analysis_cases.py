@@ -112,6 +112,7 @@ def simulation_analysis_case_fixture_drift(repo_root: Path | str) -> list[str]:
 
 def _case(case_id: str, import_package: dict[str, Any], description: str) -> dict[str, Any]:
     validation_level, used_tables = _apply_validation_scope(case_id, import_package)
+    _ensure_large_sample_covers_sweep(import_package)
     validation = validate_modeling_import_package(import_package)
     if not validation["ok"]:
         raise ValueError(f"{case_id} modeling import package is invalid: {validation['issues']}")
@@ -336,6 +337,30 @@ def _apply_validation_scope(case_id: str, import_package: dict[str, Any]) -> tup
     import_package["validationLevel"] = validation_level
     import_package["usedTables"] = used_tables
     return validation_level, used_tables
+
+
+def _ensure_large_sample_covers_sweep(import_package: dict[str, Any]) -> None:
+    objects = import_package.get("objects") if isinstance(import_package.get("objects"), dict) else {}
+    _ensure_large_sample_config_covers_sweep(objects.get("analysisRequests"))
+    for mission in objects.get("missionProfiles") or []:
+        if isinstance(mission, dict):
+            _ensure_large_sample_config_covers_sweep(mission.get("analysisRequests"))
+
+
+def _ensure_large_sample_config_covers_sweep(analysis_requests: Any) -> None:
+    if not isinstance(analysis_requests, dict):
+        return
+    large_sample = analysis_requests.get("largeSample")
+    if not isinstance(large_sample, dict):
+        return
+    sweep = large_sample.get("sweep")
+    if not isinstance(sweep, dict):
+        return
+    try:
+        sample_count = int(large_sample.get("samples") or 0)
+    except (TypeError, ValueError):
+        sample_count = 0
+    large_sample["samples"] = max(sample_count, _sweep_point_count(sweep))
 
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
