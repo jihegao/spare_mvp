@@ -943,6 +943,44 @@ select[multiple].table-edit-select {
   max-width: 260px;
 }
 
+.equipment-tree-toolbar,
+.equipment-tree-actions,
+.equipment-import-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.equipment-tree-toolbar {
+  flex-wrap: nowrap;
+}
+
+.equipment-tree-toolbar h4 {
+  min-width: 0;
+  margin: 0;
+  white-space: nowrap;
+}
+
+.equipment-tree-actions {
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+.equipment-tree-actions button {
+  min-height: 32px;
+  padding: 5px 10px;
+  white-space: nowrap;
+}
+
+.equipment-import-row {
+  flex-wrap: wrap;
+  margin: -4px 0 12px;
+}
+
+.equipment-import-row .rms-import-status {
+  margin: 0;
+}
+
 .tag-list {
   display: flex;
   flex-wrap: wrap;

@@ -999,11 +999,14 @@ test("equipment system modeling renders one tree plus flattened editable table",
     appSource.indexOf("function renderReliabilityBlockDiagram")
   );
   assert.match(appSource, /function renderEquipmentModeling\(page\)/);
-  assert.match(appSource, /装备组成树/);
+  assert.doesNotMatch(appSource, /装备组成树/);
+  assert.match(appSource, /装备结构树/);
   assert.match(appSource, /function wholeMachineModels\(\)/);
   assert.match(appSource, /scenario\.equipment\.wholeMachineModels/);
   assert.match(appSource, /装备系统建模表/);
   assert.match(appSource, /function renderEquipmentSystemTable\(selectedState\)/);
+  assert.match(appSource, /selectedState\.kind === "aircraft-list"/);
+  assert.match(appSource, /wholeMachineModels\(\)\.map\(\(model\) => renderEquipmentAircraftTableRow\(model, \{ editable: false \}\)\)/);
   assert.match(appSource, /class="equipment-system-table"/);
   assert.match(appSource, /<th>组件名称<\/th>/);
   assert.match(appSource, /<th>父节点<\/th>/);
@@ -1106,10 +1109,23 @@ test("equipment aircraft selection keeps an editable aircraft name row", async (
   assert.match(tableSource, /<th>组件名称<\/th>/);
   assert.match(tableSource, /<th>MTBF参数<\/th>/);
   assert.match(equipmentSource, /data-equipment-import-file/);
+  assert.ok(
+    equipmentSource.indexOf("data-equipment-import-file") > equipmentSource.indexOf("<h3>装备系统建模</h3>"),
+    "equipment import button should live under the right-side equipment system title"
+  );
+  assert.ok(
+    equipmentSource.indexOf("data-equipment-add-node") < equipmentSource.indexOf("renderCollapsibleTree(buildEquipmentTreeNodes())"),
+    "add node button should stay inside the left equipment structure tree area"
+  );
+  assert.ok(
+    equipmentSource.indexOf("data-equipment-delete-node") < equipmentSource.indexOf("renderCollapsibleTree(buildEquipmentTreeNodes())"),
+    "delete button should stay inside the left equipment structure tree area"
+  );
   assert.match(equipmentSource, /equipmentImportStatus/);
   assert.match(tableSource, /renderEquipmentAircraftTableRow\(selectedState\.aircraftModel\)/);
+  assert.match(tableSource, /renderEquipmentAircraftTableRow\(model, \{ editable: false \}\)/);
   assert.match(tableSource, /renderEquipmentSystemTableRow/);
-  assert.match(equipmentSource, /function renderEquipmentAircraftTableRow\(aircraftModel\)/);
+  assert.match(equipmentSource, /function renderEquipmentAircraftTableRow\(aircraftModel, \{ editable = true \} = \{\}\)/);
   assert.match(equipmentSource, /aria-label="整机名称"/);
   assert.match(appSource, /function importEquipmentStructureTableFile\(file\)/);
   assert.match(appSource, /function normalizeEquipmentStructureImport\(input\)/);
@@ -2003,7 +2019,7 @@ test("reliability block diagram prototype exposes node edge and k-out-of-n field
   );
   assert.match(rbdSource, /装备可靠性框图/);
   assert.match(rbdSource, /organization-layout equipment-layout rbd-layout/);
-  assert.match(rbdSource, /装备组成树/);
+  assert.match(rbdSource, /装备结构树/);
   assert.match(rbdSource, /buildRbdEquipmentTreeNodes/);
   assert.match(rbdSource, /reliabilityDiagramProjectForSelection/);
   assert.match(rbdSource, /buildReliabilityBlockDiagramLayout/);

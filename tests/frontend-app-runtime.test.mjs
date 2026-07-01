@@ -292,6 +292,36 @@ test("project list imports and exports project JSON at runtime", async () => {
   }
 });
 
+test("equipment aircraft-list selection renders whole aircraft rows and descendants", async () => {
+  const runtime = await setupRuntimeApp({
+    projectJson: createRuntimeProjectJson({
+      equipment: { model: "J-15", wholeMachineModels: ["J-15", "J-35"], quantity: 2, initialReady: 2, minRequiredSorties: 1 },
+      components: [
+        { id: "j15-engine", name: "J-15发动机", aircraftModel: "J-15", parentId: "aircraft-root", productType: "LRU", quantity: 2 },
+        { id: "j15-control", name: "J-15控制模块", aircraftModel: "J-15", parentId: "j15-engine", productType: "SRU", quantity: 1 },
+        { id: "j35-radar", name: "J-35雷达", aircraftModel: "J-35", parentId: "aircraft-root", productType: "LRU", quantity: 1 }
+      ]
+    })
+  });
+
+  try {
+    await runtime.click("[data-enter-workbench]", { projectId: "runtime" });
+    await runtime.setHash("feature=spare-planning-equipment-system");
+    await runtime.click("[data-select-equipment-root]");
+
+    const rightPanel = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf("equipment-system-table-panel"));
+    assert.match(rightPanel, /2 类飞机 \/ 5 行节点/);
+    assert.match(rightPanel, /J-15/);
+    assert.match(rightPanel, /J-35/);
+    assert.match(rightPanel, /J-15发动机/);
+    assert.match(rightPanel, /J-15控制模块/);
+    assert.match(rightPanel, /J-35雷达/);
+    assert.match(rightPanel, /整机级/);
+  } finally {
+    runtime.restore();
+  }
+});
+
 test("RMS method selection updates method-specific parameters at runtime", async () => {
   const runtime = await setupRuntimeApp({ hash: "feature=system-management-equipment-rms-allocation" });
 
