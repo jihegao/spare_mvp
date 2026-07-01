@@ -104,11 +104,61 @@ test("buildRunIntent creates canonical monte carlo request shape", async () => {
   assert.equal("sweep" in intent.runRequest, false);
   assert.equal("monte_carlo" in intent.runRequest, false);
   assert.equal(intent.experimentPlanConfig.analysisRequests.largeSample.samples, 5);
-  assert.deepEqual(intent.experimentPlanConfig.analysisRequests.largeSample.sweep.supportCapacities, [2]);
+  assert.deepEqual(intent.experimentPlanConfig.analysisRequests.largeSample.sweep, {
+    failureRates: [1.0],
+    spareMultipliers: [1.0],
+    supportCapacities: [1]
+  });
   assert.deepEqual(submittedRequests, [bound.runRequest]);
 });
 
-test("buildRunIntent raises Monte Carlo samples to cover every sweep point", () => {
+test("buildRunIntent defaults Monte Carlo to single-point baseline parameter space", () => {
+  const projectJson = {
+    project_id: "project-baseline-mc",
+    experiment: { name: "baseline mc", steps: 4, samples: 9, seed: 101 },
+    supportNodes: [
+      { id: "carrier-deck", equipmentCapacity: 4, personnelCapacity: 8 },
+      { id: "carrier-stock", equipmentCapacity: 2, personnelCapacity: 5 }
+    ],
+    monteCarlo: {
+      failureRates: [0.035, 0.055, 0.075],
+      spareMultipliers: [0.75, 1, 1.25],
+      supportCapacities: [2, 3, 4]
+    },
+    analysisRequests: {
+      largeSample: {
+        enabled: true,
+        samples: 24,
+        sweep: {
+          failureRates: [0.035, 0.055, 0.075],
+          spareMultipliers: [0.75, 1, 1.25],
+          supportCapacities: [2, 3, 4]
+        }
+      }
+    }
+  };
+
+  const intent = buildRunIntent({
+    runType: "monte_carlo",
+    projectJson,
+    planProjectJson: projectJson,
+    mcExperimentId: "mc-baseline"
+  });
+
+  assert.equal(intent.experimentPlanConfig.analysisRequests.largeSample.samples, 24);
+  assert.deepEqual(intent.experimentPlanConfig.analysisRequests.largeSample.sweep, {
+    failureRates: [1.0],
+    spareMultipliers: [1.0],
+    supportCapacities: [4]
+  });
+  assert.deepEqual(intent.planProjectJson.analysisRequests.largeSample.sweep, {
+    failureRates: [1.0],
+    spareMultipliers: [1.0],
+    supportCapacities: [4]
+  });
+});
+
+test("buildRunIntent preserves explicit analysis sweep mode and raises samples to cover every sweep point", () => {
   const projectJson = {
     project_id: "project-sweep-coverage",
     experiment: { name: "sweep coverage", steps: 4, samples: 24, seed: 101 },
@@ -129,11 +179,17 @@ test("buildRunIntent raises Monte Carlo samples to cover every sweep point", () 
     runType: "monte_carlo",
     projectJson,
     planProjectJson: projectJson,
-    mcExperimentId: "mc-sweep-coverage"
+    mcExperimentId: "mc-sweep-coverage",
+    monteCarloParameterSpace: "sweep"
   });
 
   assert.equal(intent.experimentPlanConfig.samples, 27);
   assert.equal(intent.experimentPlanConfig.analysisRequests.largeSample.samples, 27);
+  assert.deepEqual(intent.experimentPlanConfig.analysisRequests.largeSample.sweep, {
+    failureRates: [0.035, 0.055, 0.075],
+    spareMultipliers: [0.75, 1, 1.25],
+    supportCapacities: [2, 3, 4]
+  });
   assert.equal(intent.experimentPlanConfig.projectJson.experiment.samples, 27);
   assert.equal(intent.experimentPlanConfig.projectJson.analysisRequests.largeSample.samples, 27);
   assert.equal(intent.planProjectJson.experiment.samples, 27);
