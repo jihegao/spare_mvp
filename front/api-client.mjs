@@ -5,6 +5,7 @@ import {
 
 const DEFAULT_API_BASE = "/api";
 const DEFAULT_TIMEOUT_MS = 10000;
+const RUN_SUBMIT_TIMEOUT_MS = 60000;
 const DEFAULT_FORMAL_MODEL_FAMILY = "aircraft_support_v1";
 
 export function createBackendApiClient({ baseUrl = DEFAULT_API_BASE, transport, getAuthToken, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
@@ -105,13 +106,15 @@ export function createBackendApiClient({ baseUrl = DEFAULT_API_BASE, transport, 
       return request({
         method: "POST",
         path: "/runs",
-        body: runRequest
+        body: runRequest,
+        timeoutMs: RUN_SUBMIT_TIMEOUT_MS
       });
     },
     startSimulationRun(projectId, experimentPlanId, modelFamily = DEFAULT_FORMAL_MODEL_FAMILY) {
       return request({
         method: "POST",
         path: "/runs",
+        timeoutMs: RUN_SUBMIT_TIMEOUT_MS,
         body: {
           project_id: projectId,
           experiment_plan_id: experimentPlanId,
@@ -370,12 +373,15 @@ function wrapAuthTransport(transport, getAuthToken) {
 }
 
 function createFetchTransport(baseUrl, { timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
-  return async ({ method, path, body, headers = {}, responseType = "json" }) => {
+  return async ({ method, path, body, headers = {}, responseType = "json", timeoutMs: requestTimeoutMs } = {}) => {
     if (typeof fetch !== "function") {
       throw new Error("Backend API fetch transport is unavailable");
     }
+    const effectiveTimeoutMs = Number.isFinite(Number(requestTimeoutMs)) && Number(requestTimeoutMs) > 0
+      ? Number(requestTimeoutMs)
+      : timeoutMs;
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    const timeoutId = setTimeout(() => controller.abort(), effectiveTimeoutMs);
     const requestHeaders = Object.assign(
       {},
       headers,
@@ -393,11 +399,11 @@ function createFetchTransport(baseUrl, { timeoutMs = DEFAULT_TIMEOUT_MS } = {}) 
       const timedOut = controller.signal.aborted;
       const error = new Error(
         timedOut
-          ? `Backend API request timed out after ${timeoutMs}ms`
+          ? `Backend API request timed out after ${effectiveTimeoutMs}ms`
           : `Backend API network request failed: ${err && err.message ? err.message : "unknown error"}`
       );
       error.code = timedOut ? "backend_request_timeout" : "backend_network_error";
-      error.details = { method, path, timeoutMs };
+      error.details = { method, path, timeoutMs: effectiveTimeoutMs };
       error.cause = err;
       throw error;
     } finally {

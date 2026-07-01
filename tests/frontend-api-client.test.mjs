@@ -334,6 +334,28 @@ test("frontend API client submitRun posts canonical run request without Monte Ca
   assert.equal("monte_carlo" in calls[0].body, false);
 });
 
+test("frontend API client gives formal run submission enough time for synchronous Monte Carlo", async () => {
+  const calls = [];
+  const client = createBackendApiClient({
+    transport: async (request) => {
+      calls.push(request);
+      return { run_id: "run-slow-mc", status: "succeeded", phase: "completed" };
+    }
+  });
+
+  await client.submitRun({
+    project_id: "project-ui",
+    experiment_plan_id: "plan-ui",
+    model_family: "aircraft_support_v1",
+    run_type: "monte_carlo"
+  });
+  await client.startSimulationRun("project-ui", "plan-ui");
+
+  assert.deepEqual(calls.map((call) => `${call.method} ${call.path}`), ["POST /runs", "POST /runs"]);
+  assert.equal(calls[0].timeoutMs, 60000);
+  assert.equal(calls[1].timeoutMs, 60000);
+});
+
 test("frontend API client exposes explicit M5 modeling import methods", async () => {
   const calls = [];
   const client = createBackendApiClient({
