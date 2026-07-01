@@ -107,11 +107,12 @@ export function projectToModelingImportPackage(projectJson, basePackage = {}) {
     referencedRunIds: Array.isArray(base.lifecycle?.referencedRunIds) ? [...base.lifecycle.referencedRunIds] : []
   };
   const usedTables = inferUsedTables(objects);
+  const validationLevel = Object.values(usedTables).every(Boolean) ? "level1" : "level0";
   const nextPackage = {
     schemaVersion: "modeling-import-v1",
     importId,
     projectId,
-    validationLevel: "level1",
+    validationLevel,
     usedTables,
     source: {
       ...(base.source && typeof base.source === "object" && !Array.isArray(base.source) ? cloneJson(base.source) : {}),
@@ -284,8 +285,9 @@ function normalizeValidationScope(importPackage, issues) {
     }));
   }
   const tableFlags = rawUsedTables && typeof rawUsedTables === "object" && !Array.isArray(rawUsedTables) ? rawUsedTables : {};
+  const normalizedValidationLevel = ["level0", "level1"].includes(validationLevel) ? validationLevel : "level1";
   for (const domain of MODELING_IMPORT_TABLE_DOMAINS) {
-    usedTables[domain] = normalizeUsedTableFlag(tableFlags, domain, issues);
+    usedTables[domain] = normalizeUsedTableFlag(tableFlags, domain, issues, normalizedValidationLevel);
   }
   for (const domain of Object.keys(tableFlags)) {
     if (MODELING_IMPORT_TABLE_DOMAINS.includes(domain)) continue;
@@ -298,12 +300,12 @@ function normalizeValidationScope(importPackage, issues) {
     }));
   }
   return {
-    validationLevel: ["level0", "level1"].includes(validationLevel) ? validationLevel : "level1",
+    validationLevel: normalizedValidationLevel,
     usedTables
   };
 }
 
-function normalizeUsedTableFlag(rawUsedTables, domain, issues) {
+function normalizeUsedTableFlag(rawUsedTables, domain, issues, validationLevel) {
   if (!(domain in rawUsedTables)) return true;
   const value = rawUsedTables[domain];
   if (typeof value === "boolean") {
@@ -314,6 +316,16 @@ function normalizeUsedTableFlag(rawUsedTables, domain, issues) {
         objectId: "modeling-import-package",
         fieldPath: `usedTables.${domain}`,
         message: `usedTables.${domain} 是核心表域，不能声明为 false。`
+      }));
+      return true;
+    }
+    if (value === false && validationLevel !== "level0") {
+      issues.push(createIssue({
+        code: "invalid_used_table_flag",
+        collection: undefined,
+        objectId: "modeling-import-package",
+        fieldPath: `usedTables.${domain}`,
+        message: `usedTables.${domain} 只有 validationLevel=level0 时才能声明为 false。`
       }));
       return true;
     }

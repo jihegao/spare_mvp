@@ -60,7 +60,7 @@ def validate_modeling_import_package(import_package: dict[str, Any]) -> dict[str
     issues: list[dict[str, Any]] = []
     warnings: list[dict[str, Any]] = []
     validation_level = _normalize_validation_level(import_package, issues)
-    used_tables = _normalize_used_tables(import_package, issues)
+    used_tables = _normalize_used_tables(import_package, issues, validation_level)
 
     _validate_package_roots(import_package, issues, warnings, validation_level, used_tables)
     objects = import_package.get("objects") if isinstance(import_package.get("objects"), dict) else {}
@@ -92,7 +92,7 @@ def validate_modeling_import_package(import_package: dict[str, Any]) -> dict[str
     }
 
 
-def modeling_import_to_project(import_package: dict[str, Any]) -> dict[str, Any]:
+def modeling_import_to_project(import_package: dict[str, Any], validation: dict[str, Any] | None = None) -> dict[str, Any]:
     objects = import_package.get("objects", {})
     mission = _first_dict(objects.get("missionProfiles")) or {}
     equipment_profile = objects.get("equipment") if isinstance(objects.get("equipment"), dict) else {}
@@ -104,7 +104,8 @@ def modeling_import_to_project(import_package: dict[str, Any]) -> dict[str, Any]
     duration_hours = _safe_positive_float(mission.get("durationHours"), 1)
     equipment = _equipment_profile_to_project(equipment_profile, equipment_assets, activities)
 
-    validation = validate_modeling_import_package(import_package)
+    if validation is None:
+        validation = validate_modeling_import_package(import_package)
 
     return {
         "schema_version": "project-v0",
@@ -146,7 +147,11 @@ def _normalize_validation_level(import_package: dict[str, Any], issues: list[dic
     return "level1"
 
 
-def _normalize_used_tables(import_package: dict[str, Any], issues: list[dict[str, Any]]) -> dict[str, bool]:
+def _normalize_used_tables(
+    import_package: dict[str, Any],
+    issues: list[dict[str, Any]],
+    validation_level: str,
+) -> dict[str, bool]:
     raw_used_tables = import_package.get("usedTables")
     if raw_used_tables is None:
         raw_used_tables = {}
@@ -156,23 +161,31 @@ def _normalize_used_tables(import_package: dict[str, Any], issues: list[dict[str
 
     normalized: dict[str, bool] = {}
     for collection in COLLECTION_RULES:
-        normalized[collection] = _normalize_used_table_flag(raw_used_tables, collection, issues)
+        normalized[collection] = _normalize_used_table_flag(raw_used_tables, collection, issues, validation_level)
     for domain in MODELING_IMPORT_TABLE_DOMAINS:
         if domain in normalized:
             continue
-        normalized[domain] = _normalize_used_table_flag(raw_used_tables, domain, issues)
+        normalized[domain] = _normalize_used_table_flag(raw_used_tables, domain, issues, validation_level)
     for domain in sorted(str(key) for key in raw_used_tables if str(key) not in normalized):
         issues.append(_issue("invalid_used_table_domain", None, "modeling-import-package", f"usedTables.{domain}", f"usedTables.{domain} 不是 modeling-import-v1 支持的表域。"))
     return normalized
 
 
-def _normalize_used_table_flag(raw_used_tables: dict[str, Any], domain: str, issues: list[dict[str, Any]]) -> bool:
+def _normalize_used_table_flag(
+    raw_used_tables: dict[str, Any],
+    domain: str,
+    issues: list[dict[str, Any]],
+    validation_level: str,
+) -> bool:
     if domain not in raw_used_tables:
         return True
     value = raw_used_tables[domain]
     if isinstance(value, bool):
         if domain in CORE_TABLE_DOMAINS and not value:
             issues.append(_issue("invalid_used_table_flag", None, "modeling-import-package", f"usedTables.{domain}", f"usedTables.{domain} 是核心表域，不能声明为 false。"))
+            return True
+        if not value and validation_level != "level0":
+            issues.append(_issue("invalid_used_table_flag", None, "modeling-import-package", f"usedTables.{domain}", f"usedTables.{domain} 只有 validationLevel=level0 时才能声明为 false。"))
             return True
         return value
     issues.append(_issue("invalid_used_table_flag", None, "modeling-import-package", f"usedTables.{domain}", f"usedTables.{domain} 必须是布尔值。"))

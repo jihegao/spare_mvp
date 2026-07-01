@@ -318,7 +318,7 @@ class BackendApi:
                 issues=validation["issues"],
             )
 
-        project = modeling_import_to_project(import_package)
+        project = modeling_import_to_project(import_package, validation=validation)
         try:
             gate = self.adapter.compile_scenario_with_gate(project, model_family=model_family)
         except AdapterError as exc:
@@ -394,7 +394,7 @@ class BackendApi:
                 issues=validation["issues"],
             )
 
-        project_json = modeling_import_to_project(import_package)
+        project_json = modeling_import_to_project(import_package, validation=validation)
         saved = self.save_project(project_json)
         project = self.repository.get_project(saved["project_id"])
         snapshot = self.create_modeling_snapshot(saved["project_id"])

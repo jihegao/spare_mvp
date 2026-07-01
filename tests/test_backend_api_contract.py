@@ -11,6 +11,7 @@ import threading
 from pathlib import Path
 from typing import Any
 import unittest
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -2298,6 +2299,27 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(issues_by_path["objects.supportActivities"]["code"], "invalid_declared_table")
         self.assertTrue(all(issue["severity"] == "error" for issue in validation["issues"]))
 
+    def test_level1_modeling_import_rejects_disabled_non_core_domains(self) -> None:
+        import_package = self._fixture("modeling_import_project.json")
+        import_package["validationLevel"] = "level1"
+        import_package["usedTables"] = {
+            "missionProfiles": True,
+            "equipmentAssets": True,
+            "reliabilityBlockDiagram": True,
+            "supportResources": False,
+            "supportActivities": True,
+            "supportOrganization": True,
+            "transportPolicies": True,
+        }
+
+        validation = validate_modeling_import_package(import_package)
+        issues_by_path = {issue["field_path"]: issue for issue in validation["issues"]}
+
+        self.assertFalse(validation["ok"])
+        self.assertEqual(validation["validationLevel"], "level1")
+        self.assertEqual(validation["usedTables"]["supportResources"], True)
+        self.assertEqual(issues_by_path["usedTables.supportResources"]["code"], "invalid_used_table_flag")
+
     def test_level1_modeling_import_rejects_declared_missing_support_scope_tables(self) -> None:
         import_package = self._fixture("modeling_import_project.json")
         import_package["validationLevel"] = "level1"
@@ -2369,6 +2391,20 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertIn("supportActivities", compiled["provenance"]["disabled_domains"])
         self.assertEqual(len(self.adapter.compile_calls), 1)
         self.assertEqual(self.adapter.compile_calls[0][1], "aircraft_support_v1")
+
+    def test_compile_modeling_import_scenario_reuses_validation_for_project_conversion(self) -> None:
+        import_package = self._fixture("modeling_import_project.json")
+        self.api.save_modeling_import_as_system(import_package)
+        self.api.publish_modeling_import_as_system(import_package["importId"])
+
+        with mock.patch(
+            "src.spare_mvp_backend.modeling_import.validate_modeling_import_package",
+            side_effect=AssertionError("duplicate modeling import validation"),
+        ):
+            compiled = self.api.compile_modeling_import_scenario(import_package["importId"])
+
+        self.assertEqual(compiled["status"], "compiled")
+        self.assertEqual(compiled["compiled_from_import"]["import_id"], import_package["importId"])
 
     def test_compile_modeling_import_scenario_rejects_retired_model_family(self) -> None:
         import_package = self._fixture("modeling_import_project.json")

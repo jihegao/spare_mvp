@@ -117,6 +117,31 @@ test("modeling import validation rejects Level 1 packages with declared missing 
   assert.equal(issuesByPath["objects.supportActivities"].code, "invalid_declared_table");
 });
 
+test("modeling import validation rejects Level 1 packages that disable non-core domains", async () => {
+  const schema = await readJson("contracts/modeling_import.schema.json");
+  const fixture = await readJson("tests/fixtures/modeling_import_project.json");
+  const level1Package = {
+    ...fixture,
+    validationLevel: "level1",
+    usedTables: {
+      missionProfiles: true,
+      equipmentAssets: true,
+      reliabilityBlockDiagram: true,
+      supportResources: false,
+      supportActivities: true,
+      supportOrganization: true,
+      transportPolicies: true
+    },
+    objects: { ...fixture.objects }
+  };
+
+  const schemaErrors = validateSchema(schema, level1Package);
+  assert.ok(schemaErrors.some((error) => error.includes("$.usedTables.supportResources expected const true")));
+
+  const issuesByPath = Object.fromEntries(validateModelingImportPackage(level1Package).map((issue) => [issue.field_path, issue]));
+  assert.equal(issuesByPath["usedTables.supportResources"].code, "invalid_used_table_flag");
+});
+
 test("modeling import schema and frontend validator reject declared Level 0 support gaps", async () => {
   const schema = await readJson("contracts/modeling_import.schema.json");
   const fixture = await readJson("tests/fixtures/modeling_import_project.json");
@@ -254,6 +279,7 @@ test("projectToModelingImportPackage backfills import draft from current Project
   assert.equal(draft.schemaVersion, "modeling-import-v1");
   assert.equal(draft.importId, "import-current");
   assert.equal(draft.projectId, "project-current");
+  assert.equal(draft.validationLevel, "level0");
   assert.equal(draft.lifecycle.state, "draft");
   assert.equal(draft.lifecycle.version, 3);
   assert.deepEqual(draft.lifecycle.referencedRunIds, ["run-001"]);
