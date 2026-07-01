@@ -2666,6 +2666,42 @@ test("M8 formal analysis pages load and render matching projection payloads", as
   assert.match(renderDashboardSource, /projection payload/);
 });
 
+test("Level 0 not-applicable analysis projections render as scoped not modeled instead of formal KPI rows", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const monteCarloFormalSource = appSource.slice(
+    appSource.indexOf("function renderMonteCarloFormalProjectionResults"),
+    appSource.indexOf("function renderMonteCarloFormalBlockedState")
+  );
+  const boundarySource = appSource.slice(
+    appSource.indexOf("function formalAnalysisBoundary"),
+    appSource.indexOf("function renderFormalAnalysisBoundaryNote")
+  );
+  const noteSource = appSource.slice(
+    appSource.indexOf("function renderFormalAnalysisBoundaryNote"),
+    appSource.indexOf("function renderFormalProjectionBody")
+  );
+  const projectionBodySource = appSource.slice(
+    appSource.indexOf("function renderFormalProjectionBody"),
+    appSource.indexOf("function visibleDowntimeAnomalySnapshots")
+  );
+  const dashboardSource = appSource.slice(
+    appSource.indexOf("function renderAnalysisDashboard"),
+    appSource.indexOf("function renderBar")
+  );
+
+  assert.match(boundarySource, /const projectionNotApplicable = .*projectionPayload/);
+  assert.match(boundarySource, /projectionNotApplicable\s*\?\s*"not_applicable"/);
+  assert.match(noteSource, /not_applicable: "不适用 \/ 未建模"/);
+  assert.match(projectionBodySource, /formalProjection\.formal === false/);
+  assert.match(projectionBodySource, /required_domains/);
+  assert.match(projectionBodySource, /disabled_domains/);
+  assert.match(projectionBodySource, /validationLevel/);
+  assert.match(projectionBodySource, /Level 0 未启用该分析所需保障域/);
+  assert.match(dashboardSource, /formalProjection\?\.formal === false \? "<em>不适用<\/em>"/);
+  assert.match(monteCarloFormalSource, /view\.payload\?\.formal === false \? "<em>不适用<\/em>"/);
+  assert.doesNotMatch(projectionBodySource, /misleading-zero/);
+});
+
 test("phase 6A spare shortfall formal table renders constraints and utilization", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const formalProjectionSource = appSource.slice(
