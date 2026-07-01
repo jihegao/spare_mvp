@@ -372,13 +372,37 @@ class ContractRepository:
             "SELECT count(*) FROM simulation_runs WHERE project_id = ?",
             (project_id,),
         ).fetchone()[0]
-        if run_count:
-            raise ValueError(f"project has simulation runs and cannot be deleted: {project_id}")
         scenario_count = self.connection.execute(
             "SELECT count(*) FROM scenarios WHERE project_id = ?",
             (project_id,),
         ).fetchone()[0]
         with self.connection:
+            deleted_artifact_manifests = self.connection.execute(
+                """
+                DELETE FROM artifact_manifests
+                WHERE run_id IN (
+                  SELECT run_id
+                  FROM simulation_runs
+                  WHERE project_id = ?
+                )
+                """,
+                (project_id,),
+            ).rowcount
+            deleted_result_summaries = self.connection.execute(
+                """
+                DELETE FROM result_summaries
+                WHERE run_id IN (
+                  SELECT run_id
+                  FROM simulation_runs
+                  WHERE project_id = ?
+                )
+                """,
+                (project_id,),
+            ).rowcount
+            deleted_runs = self.connection.execute(
+                "DELETE FROM simulation_runs WHERE project_id = ?",
+                (project_id,),
+            ).rowcount
             deleted_plans = self.connection.execute(
                 "DELETE FROM experiment_plans WHERE project_id = ?",
                 (project_id,),
@@ -406,7 +430,10 @@ class ContractRepository:
             "deleted_modeling_snapshots": deleted_snapshots,
             "deleted_project_access": deleted_access,
             "deleted_scenarios": deleted_scenarios,
-            "blocked_simulation_runs": run_count,
+            "deleted_simulation_runs": deleted_runs,
+            "deleted_result_summaries": deleted_result_summaries,
+            "deleted_artifact_manifests": deleted_artifact_manifests,
+            "blocked_simulation_runs": 0,
             "existing_scenarios": scenario_count,
         }
 

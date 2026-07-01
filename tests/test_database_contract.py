@@ -623,6 +623,38 @@ class DatabaseContractTest(unittest.TestCase):
         self.assertEqual(self.connection.execute("SELECT count(*) FROM modeling_snapshots WHERE project_id = ?", (project["project_id"],)).fetchone()[0], 0)
         self.assertEqual(self.connection.execute("SELECT count(*) FROM project_access WHERE project_id = ?", (project["project_id"],)).fetchone()[0], 0)
 
+    def test_repository_delete_project_removes_owned_run_chain(self) -> None:
+        project = self._fixture("smoke_project.json")
+        self._persist_complete_smoke_chain()
+        self.connection.execute(
+            "INSERT INTO project_access (user_id, project_id, access_role) VALUES (?, ?, ?)",
+            ("user-admin", project["project_id"], "owner"),
+        )
+        self.connection.commit()
+
+        deleted = self.repository.delete_project(project["project_id"])
+
+        self.assertEqual(deleted["project_id"], project["project_id"])
+        self.assertEqual(deleted["deleted"], True)
+        self.assertEqual(deleted["deleted_simulation_runs"], 1)
+        self.assertEqual(deleted["deleted_result_summaries"], 1)
+        self.assertEqual(deleted["deleted_artifact_manifests"], 1)
+        for table in (
+            "artifact_manifests",
+            "result_summaries",
+            "simulation_runs",
+            "scenarios",
+            "experiment_plans",
+            "modeling_snapshots",
+            "project_access",
+            "projects",
+        ):
+            self.assertEqual(
+                self.connection.execute(f"SELECT count(*) FROM {table}").fetchone()[0],
+                0,
+                table,
+            )
+
     def test_repository_does_not_silently_return_mismatched_run_artifacts(self) -> None:
         project = self._fixture("smoke_project.json")
         scenario = self._fixture("smoke_scenario.json")
