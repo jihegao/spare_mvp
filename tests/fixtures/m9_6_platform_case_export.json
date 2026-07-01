@@ -21,6 +21,7 @@
           "simulation_inputs.fuel_trucks",
           "simulation_inputs.maintenance_bays"
         ],
+        "disabled_domains": [],
         "experiment_plan_id": "experiment-plan-m9-6-platform-case",
         "ignored_fields": [
           "components[].failureRate",
@@ -30,7 +31,18 @@
         "model_family": "aviation_support",
         "modeling_snapshot_id": "snapshot-m9-6-platform-case",
         "project_id": "project-carrier-day-night",
-        "unsupported_fields": []
+        "unsupported_fields": [],
+        "used_tables": {
+          "equipmentAssets": true,
+          "missionProfiles": true,
+          "reliabilityBlockDiagram": true,
+          "supportActivities": true,
+          "supportOrganization": true,
+          "supportResources": true,
+          "transportPolicies": true
+        },
+        "validation_level": "level1",
+        "validation_warnings": []
       },
       "mesa_contract_version": "1.0.0",
       "project_id": "project-carrier-day-night",
@@ -738,6 +750,21 @@
           "repeatCycleHours": 6,
           "sourceImportId": "import-carrier-day-night-001"
         },
+        "modelingImportValidation": {
+          "disabledDomains": [],
+          "importId": "import-carrier-day-night-001",
+          "usedTables": {
+            "equipmentAssets": true,
+            "missionProfiles": true,
+            "reliabilityBlockDiagram": true,
+            "supportActivities": true,
+            "supportOrganization": true,
+            "supportResources": true,
+            "transportPolicies": true
+          },
+          "validationLevel": "level1",
+          "warnings": []
+        },
         "monteCarlo": {
           "failureRates": [
             0.035,
@@ -1214,7 +1241,36 @@
           }
         ],
         "supportOrganization": {
-          "tree": []
+          "tree": [
+            {
+              "children": [
+                {
+                  "children": [],
+                  "description": "任务优先 + 备件安全库存",
+                  "id": "carrier-deck",
+                  "name": "基地",
+                  "supportNodeId": "carrier-deck"
+                },
+                {
+                  "children": [],
+                  "description": "前置库存 + 横向支援",
+                  "id": "forward-sea-base",
+                  "name": "中继",
+                  "supportNodeId": "forward-sea-base"
+                },
+                {
+                  "children": [],
+                  "description": "集中库存 + 垂直补给",
+                  "id": "carrier-stock",
+                  "name": "基层1",
+                  "supportNodeId": "carrier-stock"
+                }
+              ],
+              "description": "由导入项目保障节点生成的初始组织树",
+              "id": "support-org-root",
+              "name": "保障组织"
+            }
+          ]
         }
       },
       "steps": 48
@@ -1885,6 +1941,21 @@
         "repeatCycleHours": 6,
         "sourceImportId": "import-carrier-day-night-001"
       },
+      "modelingImportValidation": {
+        "disabledDomains": [],
+        "importId": "import-carrier-day-night-001",
+        "usedTables": {
+          "equipmentAssets": true,
+          "missionProfiles": true,
+          "reliabilityBlockDiagram": true,
+          "supportActivities": true,
+          "supportOrganization": true,
+          "supportResources": true,
+          "transportPolicies": true
+        },
+        "validationLevel": "level1",
+        "warnings": []
+      },
       "monteCarlo": {
         "failureRates": [
           0.035,
@@ -2361,7 +2432,36 @@
         }
       ],
       "supportOrganization": {
-        "tree": []
+        "tree": [
+          {
+            "children": [
+              {
+                "children": [],
+                "description": "任务优先 + 备件安全库存",
+                "id": "carrier-deck",
+                "name": "基地",
+                "supportNodeId": "carrier-deck"
+              },
+              {
+                "children": [],
+                "description": "前置库存 + 横向支援",
+                "id": "forward-sea-base",
+                "name": "中继",
+                "supportNodeId": "forward-sea-base"
+              },
+              {
+                "children": [],
+                "description": "集中库存 + 垂直补给",
+                "id": "carrier-stock",
+                "name": "基层1",
+                "supportNodeId": "carrier-stock"
+              }
+            ],
+            "description": "由导入项目保障节点生成的初始组织树",
+            "id": "support-org-root",
+            "name": "保障组织"
+          }
+        ]
       }
     },
     "project_id": "project-carrier-day-night",
@@ -3047,6 +3147,21 @@
       "repeatCycleHours": 6,
       "sourceImportId": "import-carrier-day-night-001"
     },
+    "modelingImportValidation": {
+      "disabledDomains": [],
+      "importId": "import-carrier-day-night-001",
+      "usedTables": {
+        "equipmentAssets": true,
+        "missionProfiles": true,
+        "reliabilityBlockDiagram": true,
+        "supportActivities": true,
+        "supportOrganization": true,
+        "supportResources": true,
+        "transportPolicies": true
+      },
+      "validationLevel": "level1",
+      "warnings": []
+    },
     "monteCarlo": {
       "failureRates": [
         0.035,
@@ -3523,7 +3638,36 @@
       }
     ],
     "supportOrganization": {
-      "tree": []
+      "tree": [
+        {
+          "children": [
+            {
+              "children": [],
+              "description": "任务优先 + 备件安全库存",
+              "id": "carrier-deck",
+              "name": "基地",
+              "supportNodeId": "carrier-deck"
+            },
+            {
+              "children": [],
+              "description": "前置库存 + 横向支援",
+              "id": "forward-sea-base",
+              "name": "中继",
+              "supportNodeId": "forward-sea-base"
+            },
+            {
+              "children": [],
+              "description": "集中库存 + 垂直补给",
+              "id": "carrier-stock",
+              "name": "基层1",
+              "supportNodeId": "carrier-stock"
+            }
+          ],
+          "description": "由导入项目保障节点生成的初始组织树",
+          "id": "support-org-root",
+          "name": "保障组织"
+        }
+      ]
     }
   },
   "published_modeling_import": {
@@ -4697,7 +4841,36 @@
         }
       ],
       "supportOrganization": {
-        "tree": []
+        "tree": [
+          {
+            "children": [
+              {
+                "children": [],
+                "description": "任务优先 + 备件安全库存",
+                "id": "carrier-deck",
+                "name": "基地",
+                "supportNodeId": "carrier-deck"
+              },
+              {
+                "children": [],
+                "description": "前置库存 + 横向支援",
+                "id": "forward-sea-base",
+                "name": "中继",
+                "supportNodeId": "forward-sea-base"
+              },
+              {
+                "children": [],
+                "description": "集中库存 + 垂直补给",
+                "id": "carrier-stock",
+                "name": "基层1",
+                "supportNodeId": "carrier-stock"
+              }
+            ],
+            "description": "由导入项目保障节点生成的初始组织树",
+            "id": "support-org-root",
+            "name": "保障组织"
+          }
+        ]
       },
       "supportResources": [
         {
@@ -4833,6 +5006,17 @@
     "issues": [],
     "ok": true,
     "schemaVersion": "modeling-import-v1",
-    "status": "valid"
+    "status": "valid",
+    "usedTables": {
+      "equipmentAssets": true,
+      "missionProfiles": true,
+      "reliabilityBlockDiagram": true,
+      "supportActivities": true,
+      "supportOrganization": true,
+      "supportResources": true,
+      "transportPolicies": true
+    },
+    "validationLevel": "level1",
+    "warnings": []
   }
 }

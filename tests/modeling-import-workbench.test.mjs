@@ -30,28 +30,32 @@ test("product modeling import templates mirror the three simulation analysis cas
   const expected = [
     {
       id: "minimal-single-aircraft",
-      label: "最小单机建模粒度",
+      label: "Level 0 / 最小单机建模粒度",
+      validationLevel: "level0",
       filename: "minimal_single_aircraft.json",
       sourceCaseId: "minimal_single_aircraft"
     },
     {
       id: "canonical-platform-case",
-      label: "平台标准案例",
+      label: "Level 1 / 平台标准案例",
+      validationLevel: "level1",
       filename: "canonical_platform_case.json",
       sourceCaseId: "canonical_platform_case"
     },
     {
       id: "max-granularity-multi-aircraft",
-      label: "最大多机建模粒度",
+      label: "Level 1 / 最大多机建模粒度",
+      validationLevel: "level1",
       filename: "max_granularity_multi_aircraft.json",
       sourceCaseId: "max_granularity_multi_aircraft"
     }
   ];
   assert.deepEqual(
-    MODELING_IMPORT_TEMPLATES.map(({ id, label, path }) => ({ id, label, path })),
+    MODELING_IMPORT_TEMPLATES.map(({ id, label, validationLevel, path }) => ({ id, label, validationLevel, path })),
     expected.map((item) => ({
       id: item.id,
       label: item.label,
+      validationLevel: item.validationLevel,
       path: `/import-templates/${item.filename}`
     }))
   );
@@ -68,6 +72,8 @@ test("product modeling import templates mirror the three simulation analysis cas
     const loaded = await loadModelingImportTemplate(item.id, fetchJson);
 
     assert.deepEqual(productTemplate, sourceCase.modeling_import);
+    assert.equal(productTemplate.validationLevel, item.validationLevel);
+    assert.deepEqual(productTemplate.usedTables, sourceCase.used_tables);
     assert.deepEqual(loaded, sourceCase.modeling_import);
     assert.deepEqual(requests, [`/import-templates/${item.filename}`]);
   }
@@ -182,6 +188,41 @@ test("renderModelingImportWorkbench includes action controls lifecycle version i
   assert.match(html, /objects\.equipmentAssets\[id=j15-radar\]\.quantity/);
   assert.match(html, /任务剖面参数/);
   assert.match(html, /建模数据导入/);
+});
+
+test("renderModelingImportWorkbench surfaces compile gate blocked issues and scope metadata", async () => {
+  const draft = await readFixture();
+  const html = renderModelingImportWorkbench({
+    importPackage: draft,
+    validation: { status: "valid", issues: [] },
+    compileResult: {
+      status: "blocked",
+      validationLevel: "level1",
+      usedTables: {
+        missionProfiles: true,
+        equipmentAssets: true,
+        supportResources: true,
+        supportActivities: true
+      },
+      issues: [
+        {
+          code: "invalid_declared_table",
+          severity: "error",
+          page: "保障活动建模",
+          object_id: "modeling-import-package",
+          field_path: "objects.supportActivities",
+          message: "声明使用保障活动表，但缺少有效数据。"
+        }
+      ],
+      warnings: []
+    }
+  });
+
+  assert.match(html, /blocked/);
+  assert.match(html, /level1/);
+  assert.match(html, /invalid_declared_table/);
+  assert.match(html, /objects\.supportActivities/);
+  assert.match(html, /声明使用保障活动表/);
 });
 
 test("renderModelingImportWorkbench disables publish before save and compile before publish", async () => {

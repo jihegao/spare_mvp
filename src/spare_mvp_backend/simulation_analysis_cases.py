@@ -17,6 +17,37 @@ SIMULATION_ANALYSIS_CASE_IDS = [
     "max_granularity_multi_aircraft",
 ]
 
+DEFAULT_USED_TABLES = {
+    "missionProfiles": True,
+    "equipmentAssets": True,
+    "reliabilityBlockDiagram": True,
+    "supportResources": True,
+    "supportActivities": True,
+    "supportOrganization": True,
+    "transportPolicies": True,
+}
+
+CASE_VALIDATION_SCOPES = {
+    "minimal_single_aircraft": {
+        "validation_level": "level0",
+        "used_tables": {
+            **DEFAULT_USED_TABLES,
+            "supportResources": False,
+            "supportActivities": False,
+            "supportOrganization": False,
+            "transportPolicies": False,
+        },
+    },
+    "canonical_platform_case": {
+        "validation_level": "level1",
+        "used_tables": DEFAULT_USED_TABLES,
+    },
+    "max_granularity_multi_aircraft": {
+        "validation_level": "level1",
+        "used_tables": DEFAULT_USED_TABLES,
+    },
+}
+
 
 def build_simulation_analysis_case_pack(repo_root: Path | str) -> dict[str, Any]:
     """Build deterministic Phase 6P modeling-import cases for analysis validation."""
@@ -45,6 +76,7 @@ def write_simulation_analysis_case_fixtures(repo_root: Path | str) -> None:
     for case in build_simulation_analysis_case_pack(root)["cases"]:
         _write_json(output_dir / f"{case['case_id']}.json", case)
         _write_json(template_dir / f"{case['case_id']}.json", case["modeling_import"])
+    (template_dir / "case_new.json").unlink(missing_ok=True)
 
 
 def simulation_analysis_case_fixture_drift(repo_root: Path | str) -> list[str]:
@@ -68,10 +100,14 @@ def simulation_analysis_case_fixture_drift(repo_root: Path | str) -> list[str]:
         existing_template = json.loads(template_path.read_text(encoding="utf-8"))
         if existing_template != case["modeling_import"]:
             drifted.append(template_relative_path)
+    stale_template = root / "public" / "import-templates" / "case_new.json"
+    if stale_template.exists():
+        drifted.append("public/import-templates/case_new.json")
     return drifted
 
 
 def _case(case_id: str, import_package: dict[str, Any], description: str) -> dict[str, Any]:
+    validation_level, used_tables = _apply_validation_scope(case_id, import_package)
     validation = validate_modeling_import_package(import_package)
     if not validation["ok"]:
         raise ValueError(f"{case_id} modeling import package is invalid: {validation['issues']}")
@@ -92,6 +128,8 @@ def _case(case_id: str, import_package: dict[str, Any], description: str) -> dic
         "description": description,
         "source_fixture": "tests/fixtures/modeling_import_project.json",
         "model_family": "aircraft_support_v1",
+        "validation_level": validation_level,
+        "used_tables": used_tables,
         "modeling_import": import_package,
         "validation": validation,
         "project": project,
@@ -259,47 +297,10 @@ def _minimal_single_aircraft_import(source: dict[str, Any]) -> dict[str, Any]:
     }
     objects["reliabilityBlockDiagram"] = copy.deepcopy(minimal_rbd)
     mission["reliabilityBlockDiagram"] = copy.deepcopy(minimal_rbd)
-    support_resource = _resource_with_capacity(objects["supportResources"][0], 1)
-    support_resource["personnelCapacity"] = None
-    support_resource["equipmentCapacity"] = None
-    support_resource["inventory"] = {}
-    support_resource["lateralSupportNodes"] = []
-    support_resource["transportPolicies"] = []
-    support_resource["organizationStrategy"] = ""
-    support_resource["policy"] = ""
-    objects["supportResources"] = [support_resource]
-    objects["supportOrganization"] = {
-        "tree": [
-            {
-                "id": support_resource["id"],
-                "name": support_resource["name"],
-                "supportNodeId": support_resource["id"],
-                "description": "",
-                "children": [],
-            }
-        ]
-    }
-    empty_activity = {
-        "id": "empty-support-activity",
-        "name": "空保障活动",
-        "activityName": "空保障活动",
-        "activityType": "保障活动",
-        "planType": "",
-        "equipmentId": "whole-aircraft",
-        "resourceId": objects["supportResources"][0]["id"],
-        "durationHours": 0.5,
-        "requiredPersonnel": None,
-        "requiredDevices": None,
-        "spareType": "",
-        "spareQuantity": 0,
-        "jobs": [],
-        "preventive": {},
-        "corrective": {},
-        "logistics": {},
-        "transportStrategies": [],
-        "organizationStrategies": [],
-    }
-    objects["supportActivities"] = [empty_activity]
+    objects.pop("supportResources", None)
+    objects.pop("supportActivities", None)
+    objects.pop("supportOrganization", None)
+    mission.pop("supportOrganization", None)
     single_large_sample = {
         "enabled": True,
         "samples": 1,
@@ -394,6 +395,15 @@ def _resource_with_capacity(resource: dict[str, Any], capacity: int) -> dict[str
     updated["inventory"] = {key: 1 for key in (updated.get("inventory") or {"通用备件": 1})}
     updated["transportPolicies"] = []
     return updated
+
+
+def _apply_validation_scope(case_id: str, import_package: dict[str, Any]) -> tuple[str, dict[str, bool]]:
+    scope = CASE_VALIDATION_SCOPES[case_id]
+    validation_level = str(scope["validation_level"])
+    used_tables = copy.deepcopy(scope["used_tables"])
+    import_package["validationLevel"] = validation_level
+    import_package["usedTables"] = used_tables
+    return validation_level, used_tables
 
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:

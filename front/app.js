@@ -3073,9 +3073,10 @@ function renderModelingFieldSheet(sheet) {
 
 function renderLocalModelingImportActions(contextLabel) {
   const validationStatus = modelingImportValidation?.status || (modelingImportValidation?.ok === false ? "invalid" : "not_validated");
-  const issueCount = Array.isArray(modelingImportValidation?.issues) ? modelingImportValidation.issues.length : 0;
+  const modelingImportIssues = modelingImportDisplayIssues();
+  const issueCount = modelingImportIssues.length;
   const publishedLabel = modelingImportPublishedPackage ? `已发布 ${modelingImportPublishedPackage.importId || modelingImportPublishedPackage.import_id || ""}` : "未发布";
-  const scenarioLabel = modelingImportCompileResult?.scenario?.scenario_id || modelingImportCompileResult?.scenario?.scenarioId || "未生成";
+  const scenarioLabel = modelingImportScenarioLabel();
   return `
     <div class="local-import-panel">
       <div class="section-head">
@@ -3110,6 +3111,42 @@ function renderLocalModelingImportActions(contextLabel) {
         <button type="button" class="btn-primary" data-modeling-import-action="compile-scenario" ${modelingImportPublishedPackage ? "" : "disabled"}>生成 Scenario</button>
       </div>
       <p class="modeling-import-action-status">${htmlEscape(modelingImportStatus)}</p>
+      ${renderModelingImportIssueDisplay(modelingImportIssues)}
+    </div>
+  `;
+}
+
+function modelingImportScenarioLabel() {
+  if (!modelingImportCompileResult) return "未生成";
+  if (modelingImportCompileResult.status && modelingImportCompileResult.status !== "compiled") {
+    return modelingImportCompileResult.status;
+  }
+  return modelingImportCompileResult?.scenario?.scenario_id
+    || modelingImportCompileResult?.scenario?.scenarioId
+    || (modelingImportCompileResult.status === "compiled" ? "compiled" : "未生成");
+}
+
+function modelingImportDisplayIssues() {
+  return Array.isArray(modelingImportValidation?.issues)
+    ? modelingImportValidation.issues.map((issue) => normalizeModelingImportDisplayIssue(issue, "error"))
+    : [];
+}
+
+function renderModelingImportIssueDisplay(issues) {
+  if (!issues.length) return "";
+  return `
+    <div class="table-wrap compact">
+      <table>
+        <thead><tr><th>代码</th><th>级别</th><th>字段路径</th><th>消息</th></tr></thead>
+        <tbody>${issues.map((issue) => `
+          <tr>
+            <td>${htmlEscape(issue.code || "-")}</td>
+            <td><span class="status-badge ${issue.severity === "warning" ? "warn" : "danger"}">${htmlEscape(issue.severity || "error")}</span></td>
+            <td>${htmlEscape(issue.field_path || "-")}</td>
+            <td>${htmlEscape(issue.message || "-")}</td>
+          </tr>
+        `).join("")}</tbody>
+      </table>
     </div>
   `;
 }
@@ -10071,6 +10108,11 @@ async function handleModelingImportAction(action, options = {}) {
     }
     try {
       modelingImportCompileResult = await backendApi.compileModelingImportScenario(modelingImportPackage.importId, FORMAL_AIRCRAFT_SUPPORT_MODEL_FAMILY);
+      if (isBlockedModelingImportCompileResult(modelingImportCompileResult)) {
+        applyModelingImportCompileGateResult(modelingImportCompileResult);
+        return;
+      }
+      applyModelingImportCompileWarnings(modelingImportCompileResult);
       const scenarioId = modelingImportCompileResult?.scenario?.scenario_id || modelingImportCompileResult?.scenario?.scenarioId || "Scenario";
       modelingImportStatus = `已生成 ${scenarioId}`;
     } catch (err) {
@@ -10111,14 +10153,65 @@ function createInvalidModelingImportFixture() {
   return draft;
 }
 
+function isBlockedModelingImportCompileResult(compileResult) {
+  return Boolean(compileResult?.status && compileResult.status !== "compiled");
+}
+
+function applyModelingImportCompileGateResult(compileResult) {
+  const issues = modelingImportIssuesFromEnvelope(compileResult);
+  const status = compileResult?.status || "blocked";
+  const displayIssues = issues.length ? issues : [
+    {
+      code: "compile_gate_blocked",
+      severity: "error",
+      page: "建模数据入口",
+      object_id: modelingImportPackage.importId || "modeling-import-package",
+      field_path: "compile-scenario",
+      message: compileResult?.message || `Scenario compiler returned ${status}.`
+    }
+  ];
+  modelingImportValidation = {
+    ok: false,
+    status,
+    validationLevel: compileResult?.validationLevel,
+    usedTables: cloneModelingImportPackage(compileResult?.usedTables || {}),
+    issues: displayIssues
+  };
+  modelingImportPackage = {
+    ...modelingImportPackage,
+    validation: cloneModelingImportPackage(modelingImportValidation)
+  };
+  const errorCount = displayIssues.filter((issue) => issue.severity !== "warning").length;
+  const warningCount = displayIssues.filter((issue) => issue.severity === "warning").length;
+  modelingImportStatus = `Scenario 生成未完成：${status}（错误 ${errorCount}，警告 ${warningCount}）`;
+}
+
+function applyModelingImportCompileWarnings(compileResult) {
+  const issues = modelingImportIssuesFromEnvelope(compileResult);
+  if (!issues.length) return;
+  modelingImportValidation = {
+    ...(modelingImportValidation || {}),
+    ok: !issues.some((issue) => issue.severity !== "warning"),
+    status: issueStatusForDisplayIssues(issues),
+    validationLevel: compileResult?.validationLevel,
+    usedTables: cloneModelingImportPackage(compileResult?.usedTables || {}),
+    issues
+  };
+  modelingImportPackage = {
+    ...modelingImportPackage,
+    validation: cloneModelingImportPackage(modelingImportValidation)
+  };
+}
+
 function setModelingImportActionError(label, fieldPath, err) {
   const message = `${label}：${err && err.message ? err.message : "Backend API 不可用"}`;
-  const backendIssues = Array.isArray(err?.details?.issues) ? err.details.issues : null;
+  const backendIssues = modelingImportIssuesFromEnvelope(err?.details);
   modelingImportStatus = message;
   modelingImportValidation = {
-    status: backendIssues ? "invalid" : "blocked",
-    issues: backendIssues || [
+    status: backendIssues.length ? issueStatusForDisplayIssues(backendIssues) : "blocked",
+    issues: backendIssues.length ? backendIssues : [
       {
+        code: err?.code || "modeling_import_action_failed",
         severity: "error",
         page: "建模数据入口",
         object_id: modelingImportPackage.importId || "modeling-import-package",
@@ -10127,6 +10220,44 @@ function setModelingImportActionError(label, fieldPath, err) {
       }
     ]
   };
+}
+
+function modelingImportIssuesFromEnvelope(envelope) {
+  const errors = Array.isArray(envelope?.errors) ? envelope.errors : [];
+  const issues = Array.isArray(envelope?.issues) ? envelope.issues : [];
+  const warnings = Array.isArray(envelope?.warnings) ? envelope.warnings : [];
+  return dedupeModelingImportIssues([
+    ...errors.map((issue) => normalizeModelingImportDisplayIssue(issue, "error")),
+    ...issues.map((issue) => normalizeModelingImportDisplayIssue(issue, "error")),
+    ...warnings.map((issue) => normalizeModelingImportDisplayIssue(issue, "warning"))
+  ]);
+}
+
+function normalizeModelingImportDisplayIssue(issue, fallbackSeverity) {
+  return {
+    code: issue?.code || "-",
+    severity: issue?.severity || fallbackSeverity,
+    page: issue?.page || "建模数据入口",
+    object_id: issue?.object_id || issue?.objectId || modelingImportPackage.importId || "modeling-import-package",
+    field_path: issue?.field_path || issue?.fieldPath || issue?.path || "-",
+    message: issue?.message || "-"
+  };
+}
+
+function dedupeModelingImportIssues(issues) {
+  const seen = new Set();
+  const deduped = [];
+  for (const issue of issues) {
+    const key = [issue.severity, issue.code, issue.field_path, issue.message].join("\u0000");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(issue);
+  }
+  return deduped;
+}
+
+function issueStatusForDisplayIssues(issues) {
+  return issues.some((issue) => issue.severity !== "warning") ? "invalid" : "valid";
 }
 
 async function handleMesaControl(action) {

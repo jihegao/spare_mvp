@@ -37,8 +37,8 @@ class M96CasePackageTest(unittest.TestCase):
         self.assertEqual(export["experiment_plan"]["project_id"], export["project"]["project_id"])
         self.assertEqual(export["experiment_plan"]["config"]["projectJson"], export["project"])
         self.assertEqual(export["experiment_plan"]["config"]["analysisRequests"], export["project"]["analysisRequests"])
-        self.assertEqual(export["project"]["supportOrganization"], {"tree": []})
-        self.assertEqual(export["published_modeling_import"]["objects"]["supportOrganization"], {"tree": []})
+        self.assertEqual(export["project"]["supportOrganization"], fixture["objects"]["supportOrganization"])
+        self.assertEqual(export["published_modeling_import"]["objects"]["supportOrganization"], fixture["objects"]["supportOrganization"])
         self.assertEqual(export["run_intents"]["single"]["run_type"], "single")
         self.assertEqual(export["run_intents"]["single"]["model_family"], "aviation_support")
         self.assertEqual(export["run_intents"]["monte_carlo"]["run_type"], "monte_carlo")
@@ -60,10 +60,13 @@ class M96CasePackageTest(unittest.TestCase):
         provenance = export["compiled_scenario"]["compiled_from"]["mapping_provenance"]
         self.assertEqual(provenance["modeling_snapshot_id"], export["modeling_snapshot"]["snapshot_id"])
         self.assertEqual(provenance["experiment_plan_id"], export["experiment_plan"]["experiment_plan_id"])
-        self.assertEqual(
-            export["validation"],
-            {"ok": True, "schemaVersion": "modeling-import-v1", "status": "valid", "issues": []},
-        )
+        self.assertTrue(export["validation"]["ok"])
+        self.assertEqual(export["validation"]["schemaVersion"], "modeling-import-v1")
+        self.assertEqual(export["validation"]["status"], "valid")
+        self.assertEqual(export["validation"]["issues"], [])
+        self.assertEqual(export["validation"]["warnings"], [])
+        self.assertEqual(export["validation"]["validationLevel"], "level1")
+        self.assertTrue(export["validation"]["usedTables"]["supportOrganization"])
 
     def test_field_coverage_explains_every_business_leaf_once(self) -> None:
         fixture = self._canonical_import()
@@ -100,8 +103,7 @@ class M96CasePackageTest(unittest.TestCase):
         self.assertEqual(entry_by_path["objects.missionProfiles[].reliabilityBlockDiagram.nodes[].parentId"]["status"], "consumed")
         self.assertEqual(entry_by_path["objects.supportActivities[].jobs[].predecessors[]"]["status"], "consumed")
         self.assertEqual(entry_by_path["objects.supportActivities[].transportStrategies[].from"]["status"], "governance_only")
-        self.assertEqual(entry_by_path["objects.supportOrganization.tree"]["status"], "governance_only")
-        self.assertNotIn("objects.supportOrganization.tree[].id", entry_by_path)
+        self.assertEqual(entry_by_path["objects.supportOrganization.tree[].id"]["status"], "governance_only")
 
     def test_expected_artifact_kind_golden_lists_single_and_monte_carlo_outputs(self) -> None:
         artifact_kinds = m9_6_expected_artifact_kinds()
@@ -184,9 +186,7 @@ def _business_leaf_paths(value: object, prefix: str = "") -> list[str]:
 
 
 def _m9_6_frozen_import_fixture(fixture: dict) -> dict:
-    payload = json.loads(json.dumps(fixture))
-    payload.setdefault("objects", {})["supportOrganization"] = {"tree": []}
-    return payload
+    return json.loads(json.dumps(fixture))
 
 
 if __name__ == "__main__":

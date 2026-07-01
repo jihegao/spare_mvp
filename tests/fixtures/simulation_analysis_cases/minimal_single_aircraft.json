@@ -371,56 +371,7 @@
             "type": "system"
           }
         ]
-      },
-      "supportActivities": [
-        {
-          "activityName": "空保障活动",
-          "activityType": "保障活动",
-          "corrective": {},
-          "durationHours": 0.5,
-          "equipmentId": "whole-aircraft",
-          "id": "empty-support-activity",
-          "jobs": [],
-          "logistics": {},
-          "name": "空保障活动",
-          "organizationStrategies": [],
-          "planType": "",
-          "preventive": {},
-          "requiredDevices": null,
-          "requiredPersonnel": null,
-          "resourceId": "carrier-deck",
-          "spareQuantity": 0,
-          "spareType": "",
-          "transportStrategies": []
-        }
-      ],
-      "supportOrganization": {
-        "tree": [
-          {
-            "children": [],
-            "description": "",
-            "id": "carrier-deck",
-            "name": "基地",
-            "supportNodeId": "carrier-deck"
-          }
-        ]
-      },
-      "supportResources": [
-        {
-          "capacity": 1,
-          "equipmentCapacity": null,
-          "id": "carrier-deck",
-          "inventory": {},
-          "lateralSupportNodes": [],
-          "name": "基地",
-          "nodeType": "甲板保障点",
-          "organizationStrategy": "",
-          "personnelCapacity": null,
-          "policy": "",
-          "supportLevel": "一线保障",
-          "transportPolicies": []
-        }
-      ]
+      }
     },
     "projectId": "project-6p-minimal-single-aircraft",
     "schemaVersion": "modeling-import-v1",
@@ -429,11 +380,21 @@
       "name": "simulation_analysis_cases/minimal_single_aircraft.json",
       "type": "json_fixture"
     },
+    "usedTables": {
+      "equipmentAssets": true,
+      "missionProfiles": true,
+      "reliabilityBlockDiagram": true,
+      "supportActivities": false,
+      "supportOrganization": false,
+      "supportResources": false,
+      "transportPolicies": false
+    },
     "validation": {
       "issues": [],
       "ok": true,
       "status": "valid"
-    }
+    },
+    "validationLevel": "level0"
   },
   "monte_carlo_config": {
     "mc_experiment_id": "mc-6p-minimal_single_aircraft",
@@ -679,6 +640,59 @@
       "repeatCycleHours": 6,
       "sourceImportId": "import-6p-minimal-single-aircraft"
     },
+    "modelingImportValidation": {
+      "disabledDomains": [
+        "supportResources",
+        "supportActivities",
+        "supportOrganization",
+        "transportPolicies"
+      ],
+      "importId": "import-6p-minimal-single-aircraft",
+      "usedTables": {
+        "equipmentAssets": true,
+        "missionProfiles": true,
+        "reliabilityBlockDiagram": true,
+        "supportActivities": false,
+        "supportOrganization": false,
+        "supportResources": false,
+        "transportPolicies": false
+      },
+      "validationLevel": "level0",
+      "warnings": [
+        {
+          "code": "scope_not_modeled",
+          "field_path": "objects.supportResources",
+          "message": "导入声明未建模 supportResources，该域不会阻断校验或编译。",
+          "object_id": "modeling-import-package",
+          "page": "保障资源建模",
+          "severity": "warning"
+        },
+        {
+          "code": "scope_not_modeled",
+          "field_path": "objects.supportActivities",
+          "message": "导入声明未建模 supportActivities，该域不会阻断校验或编译。",
+          "object_id": "modeling-import-package",
+          "page": "保障活动建模",
+          "severity": "warning"
+        },
+        {
+          "code": "scope_not_modeled",
+          "field_path": "objects.supportOrganization",
+          "message": "导入声明未建模 supportOrganization，该域不会阻断校验或编译。",
+          "object_id": "modeling-import-package",
+          "page": "保障组织建模",
+          "severity": "warning"
+        },
+        {
+          "code": "scope_not_modeled",
+          "field_path": "objects.supportResources[].transportPolicies",
+          "message": "导入声明未建模 transportPolicies，该域不会阻断校验或编译。",
+          "object_id": "modeling-import-package",
+          "page": "保障资源建模",
+          "severity": "warning"
+        }
+      ]
+    },
     "monteCarlo": {
       "failureRates": [
         0.02
@@ -725,63 +739,70 @@
     },
     "scenarioId": "import-6p-minimal-single-aircraft",
     "schema_version": "project-v0",
-    "supportActivities": [
-      {
-        "activityName": "空保障活动",
-        "activityType": "保障活动",
-        "corrective": {},
-        "durationHours": 0.5,
-        "equipmentId": "whole-aircraft",
-        "id": "empty-support-activity",
-        "jobs": [],
-        "logistics": {},
-        "name": "空保障活动",
-        "organizationStrategies": [],
-        "planType": "",
-        "preventive": {},
-        "priority": 1,
-        "requiredDevices": null,
-        "requiredPersonnel": null,
-        "resourceId": "carrier-deck",
-        "spareQuantity": 0,
-        "spareType": "",
-        "transportStrategies": []
-      }
-    ],
-    "supportNodes": [
-      {
-        "capacity": 1,
-        "equipmentCapacity": null,
-        "id": "carrier-deck",
-        "inventory": {},
-        "lateralSupportNodes": [],
-        "name": "基地",
-        "nodeType": "甲板保障点",
-        "organizationStrategy": "",
-        "personnelCapacity": null,
-        "policy": "",
-        "supportLevel": "一线保障",
-        "transportPolicies": []
-      }
-    ],
-    "supportOrganization": {
-      "tree": [
-        {
-          "children": [],
-          "description": "",
-          "id": "carrier-deck",
-          "name": "基地",
-          "supportNodeId": "carrier-deck"
-        }
-      ]
-    }
+    "supportActivities": [],
+    "supportNodes": [],
+    "supportOrganization": {}
   },
   "schema_version": "simulation-analysis-case-v0",
   "source_fixture": "tests/fixtures/modeling_import_project.json",
+  "used_tables": {
+    "equipmentAssets": true,
+    "missionProfiles": true,
+    "reliabilityBlockDiagram": true,
+    "supportActivities": false,
+    "supportOrganization": false,
+    "supportResources": false,
+    "transportPolicies": false
+  },
   "validation": {
     "issues": [],
     "ok": true,
     "schemaVersion": "modeling-import-v1",
-    "status": "valid"
-  }
+    "status": "valid",
+    "usedTables": {
+      "equipmentAssets": true,
+      "missionProfiles": true,
+      "reliabilityBlockDiagram": true,
+      "supportActivities": false,
+      "supportOrganization": false,
+      "supportResources": false,
+      "transportPolicies": false
+    },
+    "validationLevel": "level0",
+    "warnings": [
+      {
+        "code": "scope_not_modeled",
+        "field_path": "objects.supportResources",
+        "message": "导入声明未建模 supportResources，该域不会阻断校验或编译。",
+        "object_id": "modeling-import-package",
+        "page": "保障资源建模",
+        "severity": "warning"
+      },
+      {
+        "code": "scope_not_modeled",
+        "field_path": "objects.supportActivities",
+        "message": "导入声明未建模 supportActivities，该域不会阻断校验或编译。",
+        "object_id": "modeling-import-package",
+        "page": "保障活动建模",
+        "severity": "warning"
+      },
+      {
+        "code": "scope_not_modeled",
+        "field_path": "objects.supportOrganization",
+        "message": "导入声明未建模 supportOrganization，该域不会阻断校验或编译。",
+        "object_id": "modeling-import-package",
+        "page": "保障组织建模",
+        "severity": "warning"
+      },
+      {
+        "code": "scope_not_modeled",
+        "field_path": "objects.supportResources[].transportPolicies",
+        "message": "导入声明未建模 transportPolicies，该域不会阻断校验或编译。",
+        "object_id": "modeling-import-package",
+        "page": "保障资源建模",
+        "severity": "warning"
+      }
+    ]
+  },
+  "validation_level": "level0"
 }

@@ -1567,7 +1567,49 @@
       "target": "M9.6 platform case package"
     },
     {
-      "field_path": "objects.supportOrganization.tree",
+      "field_path": "objects.supportOrganization.tree[].children[].children",
+      "rationale": "The field is preserved in the formal payload and provenance for audit/governance, but it is approved as non-behavior-driving in M9.7.4.",
+      "status": "governance_only",
+      "target": "M9.7.4 aircraft_support_v1 governance metadata"
+    },
+    {
+      "field_path": "objects.supportOrganization.tree[].children[].description",
+      "rationale": "The field is preserved in the formal payload and provenance for audit/governance, but it is approved as non-behavior-driving in M9.7.4.",
+      "status": "governance_only",
+      "target": "M9.7.4 aircraft_support_v1 governance metadata"
+    },
+    {
+      "field_path": "objects.supportOrganization.tree[].children[].id",
+      "rationale": "The field is preserved in the formal payload and provenance for audit/governance, but it is approved as non-behavior-driving in M9.7.4.",
+      "status": "governance_only",
+      "target": "M9.7.4 aircraft_support_v1 governance metadata"
+    },
+    {
+      "field_path": "objects.supportOrganization.tree[].children[].name",
+      "rationale": "The field is preserved in the formal payload and provenance for audit/governance, but it is approved as non-behavior-driving in M9.7.4.",
+      "status": "governance_only",
+      "target": "M9.7.4 aircraft_support_v1 governance metadata"
+    },
+    {
+      "field_path": "objects.supportOrganization.tree[].children[].supportNodeId",
+      "rationale": "The field is preserved in the formal payload and provenance for audit/governance, but it is approved as non-behavior-driving in M9.7.4.",
+      "status": "governance_only",
+      "target": "M9.7.4 aircraft_support_v1 governance metadata"
+    },
+    {
+      "field_path": "objects.supportOrganization.tree[].description",
+      "rationale": "The field is preserved in the formal payload and provenance for audit/governance, but it is approved as non-behavior-driving in M9.7.4.",
+      "status": "governance_only",
+      "target": "M9.7.4 aircraft_support_v1 governance metadata"
+    },
+    {
+      "field_path": "objects.supportOrganization.tree[].id",
+      "rationale": "The field is preserved in the formal payload and provenance for audit/governance, but it is approved as non-behavior-driving in M9.7.4.",
+      "status": "governance_only",
+      "target": "M9.7.4 aircraft_support_v1 governance metadata"
+    },
+    {
+      "field_path": "objects.supportOrganization.tree[].name",
       "rationale": "The field is preserved in the formal payload and provenance for audit/governance, but it is approved as non-behavior-driving in M9.7.4.",
       "status": "governance_only",
       "target": "M9.7.4 aircraft_support_v1 governance metadata"
@@ -1701,9 +1743,9 @@
     "consumed": 35,
     "defaulted": 0,
     "derived": 9,
-    "governance_only": 28,
+    "governance_only": 35,
     "ignored": 210,
-    "total_fields": 282,
+    "total_fields": 289,
     "unsupported": 0
   }
 }

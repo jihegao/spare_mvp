@@ -1538,9 +1538,19 @@
     "name": "simulation_analysis_cases/max_granularity_multi_aircraft.json",
     "type": "json_fixture"
   },
+  "usedTables": {
+    "equipmentAssets": true,
+    "missionProfiles": true,
+    "reliabilityBlockDiagram": true,
+    "supportActivities": true,
+    "supportOrganization": true,
+    "supportResources": true,
+    "transportPolicies": true
+  },
   "validation": {
     "issues": [],
     "ok": true,
     "status": "valid"
-  }
+  },
+  "validationLevel": "level1"
 }
