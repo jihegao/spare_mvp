@@ -156,12 +156,33 @@ def _load_canonical_import(repo_root: Path) -> dict[str, Any]:
 
 def _canonical_platform_import(source: dict[str, Any]) -> dict[str, Any]:
     case = copy.deepcopy(source)
+    _apply_combat_unit_aircraft_defaults(case, airport="A", pre_life_calendar_days=0)
     case["source"] = {
         "type": "json_fixture",
         "name": "simulation_analysis_cases/canonical_platform_case.json",
         "derivedFrom": BASE_CASE_FIXTURE,
     }
     return case
+
+
+def _apply_combat_unit_aircraft_defaults(
+    import_package: dict[str, Any],
+    *,
+    airport: str,
+    pre_life_calendar_days: int,
+) -> None:
+    objects = import_package.get("objects") if isinstance(import_package.get("objects"), dict) else {}
+    missions = objects.get("missionProfiles") if isinstance(objects.get("missionProfiles"), list) else []
+    for mission in missions:
+        combat_unit = mission.get("combatUnit") if isinstance(mission, dict) else None
+        members = combat_unit.get("members") if isinstance(combat_unit, dict) else None
+        if not isinstance(members, list):
+            continue
+        for member in members:
+            if not isinstance(member, dict):
+                continue
+            member["airport"] = airport
+            member["preLifeCalendarDays"] = pre_life_calendar_days
 
 
 def _minimal_single_aircraft_import(source: dict[str, Any]) -> dict[str, Any]:

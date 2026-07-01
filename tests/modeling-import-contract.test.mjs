@@ -22,6 +22,15 @@ function readRepoJsonSync(relativePath) {
   return JSON.parse(readFileSync(new URL(`../${relativePath}`, import.meta.url), "utf8"));
 }
 
+function assertCombatUnitAircraftDefaults(combatUnit, label) {
+  assert.ok(Array.isArray(combatUnit?.members), `${label} must define combatUnit members`);
+  assert.ok(combatUnit.members.length > 0, `${label} must include aircraft members`);
+  for (const member of combatUnit.members) {
+    assert.equal(member.airport, "A", `${label} ${member.aircraftNo} airport`);
+    assert.equal(member.preLifeCalendarDays, 0, `${label} ${member.aircraftNo} preLifeCalendarDays`);
+  }
+}
+
 test("canonical modeling import fixture covers all project authoring surfaces", () => {
   const fixture = canonicalImportFixture();
   const objects = fixture.objects;
@@ -47,6 +56,17 @@ test("canonical modeling import fixture covers all project authoring surfaces", 
   assert.ok(mission.reliabilityBlockDiagram?.edges?.length >= 1);
   assert.ok(mission.monteCarlo?.failureRates?.length >= 1);
   assert.ok(mission.analysisRequests?.largeSample || objects.analysisRequests?.largeSample);
+});
+
+test("canonical combat unit aircraft include authored airport and calendar overhaul defaults", async () => {
+  const fixture = await readJson("tests/fixtures/modeling_import_project.json");
+  const publicTemplate = await readJson("public/import-templates/canonical_platform_case.json");
+  const simulationCase = await readJson("tests/fixtures/simulation_analysis_cases/canonical_platform_case.json");
+
+  assertCombatUnitAircraftDefaults(fixture.objects.missionProfiles[0].combatUnit, "modeling_import_project mission");
+  assertCombatUnitAircraftDefaults(publicTemplate.objects.missionProfiles[0].combatUnit, "public canonical template mission");
+  assertCombatUnitAircraftDefaults(simulationCase.modeling_import.objects.missionProfiles[0].combatUnit, "simulation case modeling import mission");
+  assertCombatUnitAircraftDefaults(simulationCase.project.combatUnit, "simulation case project");
 });
 
 test("modeling import schema and fixture define the M5 first-slice package", async () => {
