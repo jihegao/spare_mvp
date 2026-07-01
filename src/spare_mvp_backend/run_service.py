@@ -35,15 +35,36 @@ class RunService:
         repository: ContractRepository,
         adapter: SimulationAdapter,
         output_dir: Path | str,
+        run_lifecycle_lock: threading.Lock | None = None,
     ) -> None:
         self.repository = repository
         self.adapter = adapter
         self.output_dir = Path(output_dir)
-        self._run_lock = threading.Lock()
+        self._run_lock = run_lifecycle_lock or threading.Lock()
 
     def submit_run(self, request: dict[str, Any]) -> dict[str, Any]:
         with self._run_lock:
             return self._submit_run_unlocked(request)
+
+    def delete_experiment_plan(self, project_id: str, experiment_plan_id: str, *, actor_user_id: str) -> dict[str, Any]:
+        with self._run_lock:
+            return self.repository.delete_experiment_plan_with_runs(
+                project_id,
+                experiment_plan_id,
+                actor_user_id=actor_user_id,
+            )
+
+    def archive_run(self, run_id: str, *, actor_user_id: str) -> dict[str, Any]:
+        with self._run_lock:
+            return self.repository.archive_run_with_audit(run_id, actor_user_id=actor_user_id)
+
+    def soft_delete_run(self, run_id: str, *, actor_user_id: str) -> dict[str, Any]:
+        with self._run_lock:
+            return self.repository.soft_delete_run_with_audit(run_id, actor_user_id=actor_user_id)
+
+    def control_run(self, run_id: str, action: str, *, actor_user_id: str) -> dict[str, Any]:
+        with self._run_lock:
+            return self.repository.control_run_with_audit(run_id, action, actor_user_id=actor_user_id)
 
     def _submit_run_unlocked(self, request: dict[str, Any]) -> dict[str, Any]:
         project_id = str(request.get("project_id") or "")

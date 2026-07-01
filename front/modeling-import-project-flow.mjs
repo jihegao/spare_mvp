@@ -11,7 +11,7 @@ export async function ensurePublishedModelingImportForSampleProject({
       try {
         const stored = await backendApi.getModelingImport(existingImportId);
         const publishedPackage = stored?.publishedPackage || null;
-        if (publishedPackage) {
+        if (publishedPackage && (explicitImportId || sampleImportPackageIsComplete(publishedPackage, fixture))) {
           const importId = publishedPackage.importId || publishedPackage.import_id || existingImportId;
           return { importId, reused: true, publishedPackage };
         }
@@ -40,4 +40,15 @@ export async function ensurePublishedModelingImportForSampleProject({
   const publishedPackage = published?.publishedPackage || published;
   const importId = publishedPackage?.importId || publishedPackage?.import_id || fixtureImportId;
   return { importId, reused: false, publishedPackage };
+}
+
+export function sampleImportPackageIsComplete(candidate, fixture) {
+  const candidateObjects = candidate?.objects || {};
+  const fixtureObjects = fixture?.objects || {};
+  return [
+    "missionProfiles",
+    "equipmentAssets",
+    "supportResources",
+    "supportActivities"
+  ].every((key) => Array.isArray(candidateObjects[key]) && candidateObjects[key].length >= (fixtureObjects[key] || []).length);
 }

@@ -55,7 +55,6 @@ export function bindExperimentPlanId(intent, experimentPlanId) {
 export async function submitRunIntent(apiClient, options) {
   const intent = buildRunIntent(options);
   const savedProject = await apiClient.saveProject(intent.projectJson);
-  const modelingSnapshot = await apiClient.createModelingSnapshot(savedProject.project_id);
   const experimentPlan = await apiClient.createExperimentPlan(savedProject.project_id, intent.experimentPlanConfig);
   const boundIntent = bindExperimentPlanId(intent, experimentPlan.experiment_plan_id);
   const run = await apiClient.submitRun({
@@ -67,7 +66,7 @@ export async function submitRunIntent(apiClient, options) {
     intent,
     boundIntent,
     savedProject,
-    modelingSnapshot,
+    modelingSnapshot: experimentPlan.modeling_snapshot_id ? { snapshot_id: experimentPlan.modeling_snapshot_id } : null,
     experimentPlan,
     run
   };

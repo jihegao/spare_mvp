@@ -251,7 +251,7 @@ test("support resource add creates a new editable row for the selected leaf orga
     const after = (runtime.appNode.innerHTML.match(/data-support-resource-field="model"/g) || []).length;
     assert.equal(before, 1);
     assert.equal(after, 2);
-    assert.match(runtime.appNode.innerHTML, /新增保障人员/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /新增保障人员/);
   } finally {
     runtime.restore();
   }
@@ -385,27 +385,100 @@ test("support activity add work item opens the editing dialog at runtime", async
     await runtime.setHash("feature=spare-planning-operations-support-activity");
 
     assert.match(runtime.appNode.innerHTML, /data-support-activity-job-add="ops_preflight"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-support-activity-job-template="ops_preflight"/);
     await runtime.click("[data-support-activity-job-add]", { supportActivityJobAdd: "ops_preflight" });
+    assert.match(runtime.appNode.innerHTML, /data-support-activity-job-template="ops_preflight"/);
+    await runtime.click("[data-support-activity-job-template]", {
+      supportActivityJobTemplate: "ops_preflight",
+      basicActivityKey: "0:0"
+    });
 
-    assert.match(runtime.appNode.innerHTML, /工作项目编辑/);
-    assert.match(runtime.appNode.innerHTML, /新增使用保障工作项目2/);
-    assert.match(runtime.appNode.innerHTML, /data-support-activity-job-template-select="ops_preflight"/);
-    assert.doesNotMatch(runtime.appNode.innerHTML, /<th>保障人员<\/th><th>保障设备<\/th><th>备件<\/th>/);
-
-    await runtime.change(
-      "[data-support-activity-job-template-select]",
-      { supportActivityJobTemplateSelect: "ops_preflight" },
-      { value: "0:0" }
-    );
     assert.match(runtime.appNode.innerHTML, /value="初始工作项目"/);
     assert.match(runtime.appNode.innerHTML, /value="BA-001"/);
+    assert.match(runtime.appNode.innerHTML, /value="BA-002"/);
+    assert.match(runtime.appNode.innerHTML, /data-support-activity-job="ops_preflight-1"/);
+
+    await runtime.click("[data-support-activity-job]", { supportActivityJob: "ops_preflight-1" });
+    assert.match(runtime.appNode.innerHTML, /工作项目编辑/);
+    assert.match(runtime.appNode.innerHTML, /data-support-activity-job-template-select="ops_preflight"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /<th>保障人员<\/th><th>保障设备<\/th><th>备件<\/th>/);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("basic support activity add uses a draft dialog before creating a row", async () => {
+  const runtime = await setupRuntimeApp({ projectJson: createRuntimeProjectJson() });
+
+  try {
+    await runtime.click("[data-enter-workbench]", { projectId: "runtime" });
+    await runtime.setHash("feature=spare-planning-basic-support-activity");
+
+    const before = (runtime.appNode.innerHTML.match(/data-basic-activity-edit=/g) || []).length;
+    await runtime.click("[data-basic-activity-add]");
+
+    assert.match(runtime.appNode.innerHTML, /新增基本保障活动/);
+    assert.match(runtime.appNode.innerHTML, /data-basic-activity-key="__new_basic_activity__"/);
+    assert.equal((runtime.appNode.innerHTML.match(/data-basic-activity-edit=/g) || []).length, before);
+
+    await runtime.change(
+      "[data-basic-activity-field]",
+      { basicActivityKey: "__new_basic_activity__", basicActivityField: "workName" },
+      { value: "新增弹窗活动" }
+    );
+    await runtime.change(
+      "[data-basic-activity-field]",
+      { basicActivityKey: "__new_basic_activity__", basicActivityField: "activityCode" },
+      { value: "BA-001" }
+    );
+    await runtime.click("[data-basic-activity-dialog-save]");
+
+    assert.equal((runtime.appNode.innerHTML.match(/data-basic-activity-edit=/g) || []).length, before + 1);
+    assert.match(runtime.appNode.innerHTML, /新增弹窗活动/);
+    assert.equal((runtime.appNode.innerHTML.match(/<td>BA-001<\/td>/g) || []).length, 1);
+    assert.match(runtime.appNode.innerHTML, /<td>BA-002<\/td>/);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("basic support activity codes stay unique when edited at runtime", async () => {
+  const projectJson = createRuntimeProjectJson();
+  projectJson.supportActivities[0].jobs.push({
+    activityCode: "BA-002",
+    workName: "第二工作项目",
+    predecessors: [],
+    durationMinutes: 15
+  });
+  const runtime = await setupRuntimeApp({ projectJson });
+
+  try {
+    await runtime.click("[data-enter-workbench]", { projectId: "runtime" });
+    await runtime.setHash("feature=spare-planning-basic-support-activity");
+
+    await runtime.click("[data-basic-activity-edit]", { basicActivityEdit: "0:1" });
+    await runtime.change(
+      "[data-basic-activity-field]",
+      { basicActivityKey: "0:1", basicActivityField: "activityCode" },
+      { value: "BA-001" }
+    );
+
+    assert.equal((runtime.appNode.innerHTML.match(/<td>BA-001<\/td>/g) || []).length, 1);
+    assert.match(runtime.appNode.innerHTML, /value="BA-002"/);
   } finally {
     runtime.restore();
   }
 });
 
 test("support activity predecessors are edited from the predecessor dialog at runtime", async () => {
-  const runtime = await setupRuntimeApp({ projectJson: createRuntimeProjectJson() });
+  const projectJson = createRuntimeProjectJson();
+  projectJson.supportActivities[0].jobs.push({
+    activityCode: "BA-002",
+    workName: "已有紧前作业",
+    predecessors: [],
+    durationMinutes: 15
+  });
+  const runtime = await setupRuntimeApp({ projectJson });
 
   try {
     await runtime.click("[data-enter-workbench]", { projectId: "runtime" });
@@ -416,15 +489,14 @@ test("support activity predecessors are edited from the predecessor dialog at ru
 
     await runtime.click("[data-support-activity-predecessor-edit]", { supportActivityPredecessorEdit: "ops_preflight-0" });
     assert.match(runtime.appNode.innerHTML, /编辑紧前作业/);
-    assert.match(runtime.appNode.innerHTML, /data-support-activity-predecessor-query/);
-    assert.match(runtime.appNode.innerHTML, /data-support-activity-predecessor-add-template="ops_preflight"/);
+    assert.match(runtime.appNode.innerHTML, /当前紧前作业清单/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-support-activity-predecessor-query/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-support-activity-predecessor-add-template="ops_preflight"/);
 
-    await runtime.click("[data-support-activity-predecessor-add-template]", {
-      supportActivityPredecessorAddTemplate: "ops_preflight",
-      basicActivityKey: "0:0"
+    await runtime.click("[data-support-activity-predecessor-toggle]", {
+      supportActivityPredecessorKey: "ops_preflight:0",
+      supportActivityPredecessorToggle: "BA-002"
     });
-
-    assert.match(runtime.appNode.innerHTML, /BA-002/);
     assert.match(runtime.appNode.innerHTML, /checked/);
   } finally {
     runtime.restore();
@@ -484,6 +556,114 @@ test("basic support activity edit opens a dialog at runtime", async () => {
     );
     assert.match(runtime.appNode.innerHTML, /<option value="航电" selected>航电<\/option>/);
     assert.match(runtime.appNode.innerHTML, /value="4"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /新增保障人员/);
+
+    await runtime.click("[data-basic-activity-resource-dialog-close]");
+    await runtime.click(
+      "[data-basic-activity-resource-dialog-open]",
+      { basicActivityKey: "0:0", basicActivityResourceDialogOpen: "spare" }
+    );
+    await runtime.click(
+      "[data-basic-activity-resource-dialog-add]",
+      { basicActivityKey: "0:0", basicActivityResourceDialogAdd: "spare" }
+    );
+    await runtime.change(
+      "[data-basic-activity-resource-dialog-field]",
+      {
+        basicActivityKey: "0:0",
+        basicActivityResourceKind: "spare",
+        basicActivityResourceIndex: "1",
+        basicActivityResourceDialogField: "model"
+      },
+      { value: "HD-01" }
+    );
+    assert.match(runtime.appNode.innerHTML, /data-basic-activity-resource-dialog-field="name" value="航电模块"/);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("basic support activity resource dialog uses modeling dictionaries and imported job resources", async () => {
+  const projectJson = createRuntimeProjectJson();
+  projectJson.modelingDictionaries = { personnelSpecialties: ["航电", "液压"] };
+  projectJson.supportNodes = [{
+    id: "carrier-deck",
+    name: "航母飞行甲板",
+    personnelCapacity: 10,
+    equipmentCapacity: 8,
+    inventory: { 航电模块: 3 }
+  }];
+  projectJson.supportActivities[0].jobs[0] = {
+    activityCode: "BA-001",
+    workName: "导入工作项目",
+    predecessors: [],
+    durationMinutes: 20,
+    personnel: "维修/航电,2",
+    equipment: "检测仪,DT-01,1",
+    spare: "航电模块,LRU,1"
+  };
+  const runtime = await setupRuntimeApp({ projectJson });
+
+  try {
+    await runtime.click("[data-enter-workbench]", { projectId: "runtime" });
+    await runtime.setHash("feature=spare-planning-basic-support-activity");
+    await runtime.click("[data-basic-activity-edit]", { basicActivityEdit: "0:0" });
+
+    await runtime.click(
+      "[data-basic-activity-resource-dialog-open]",
+      { basicActivityKey: "0:0", basicActivityResourceDialogOpen: "personnel" }
+    );
+    assert.match(runtime.appNode.innerHTML, /<option value="航电"/);
+    assert.match(runtime.appNode.innerHTML, /<option value="液压"/);
+
+    await runtime.click("[data-basic-activity-resource-dialog-close]");
+    await runtime.click(
+      "[data-basic-activity-resource-dialog-open]",
+      { basicActivityKey: "0:0", basicActivityResourceDialogOpen: "equipment" }
+    );
+    await runtime.change(
+      "[data-basic-activity-resource-dialog-field]",
+      {
+        basicActivityKey: "0:0",
+        basicActivityResourceKind: "equipment",
+        basicActivityResourceIndex: "0",
+        basicActivityResourceDialogField: "model"
+      },
+      { value: "DT-01" }
+    );
+    assert.match(runtime.appNode.innerHTML, /data-basic-activity-resource-dialog-field="name" value="检测仪"/);
+
+    await runtime.click("[data-basic-activity-resource-dialog-close]");
+    await runtime.click(
+      "[data-basic-activity-resource-dialog-open]",
+      { basicActivityKey: "0:0", basicActivityResourceDialogOpen: "spare" }
+    );
+    await runtime.change(
+      "[data-basic-activity-resource-dialog-field]",
+      {
+        basicActivityKey: "0:0",
+        basicActivityResourceKind: "spare",
+        basicActivityResourceIndex: "0",
+        basicActivityResourceDialogField: "model"
+      },
+      { value: "LRU" }
+    );
+    assert.match(runtime.appNode.innerHTML, /data-basic-activity-resource-dialog-field="name" value="航电模块"/);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("logistics support activity page only renders transport strategy list", async () => {
+  const runtime = await setupRuntimeApp({ projectJson: createRuntimeProjectJson() });
+
+  try {
+    await runtime.click("[data-enter-workbench]", { projectId: "runtime" });
+    await runtime.setHash("feature=spare-planning-logistics-support-activity");
+
+    assert.match(runtime.appNode.innerHTML, /后勤保障运输策略配置/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /工作项目清单/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /保障活动图/);
   } finally {
     runtime.restore();
   }
@@ -493,17 +673,54 @@ test("experiment plan row selection is interactive at runtime", async () => {
   const runtime = await setupRuntimeApp({ hash: "feature=spare-planning-experiment-plan-list" });
 
   try {
-    assert.match(runtime.appNode.innerHTML, /data-experiment-plan-select="本地空白预览"/);
+    assert.match(runtime.appNode.innerHTML, /data-experiment-plan-select="local:本地空白预览"/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /selected-table-row/);
 
     await runtime.change(
       "[data-experiment-plan-select]",
-      { experimentPlanSelect: "本地空白预览" },
+      { experimentPlanSelect: "local:本地空白预览" },
       { checked: true, type: "checkbox" }
     );
 
     assert.match(runtime.appNode.innerHTML, /selected-table-row/);
-    assert.match(runtime.appNode.innerHTML, /data-experiment-plan-select="本地空白预览" checked/);
+    assert.match(runtime.appNode.innerHTML, /data-experiment-plan-select="local:本地空白预览" checked/);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("experiment plan selection uses experiment_plan_id for duplicate names", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-experiment-plan-list",
+    experimentPlans: [
+      {
+        experiment_plan_id: "plan-a",
+        status: "draft",
+        config: { name: "同名方案", steps: 1, samples: 1 }
+      },
+      {
+        experiment_plan_id: "plan-b",
+        status: "draft",
+        config: { name: "同名方案", steps: 2, samples: 1 }
+      }
+    ]
+  });
+
+  try {
+    await runtime.flush();
+    assert.match(runtime.appNode.innerHTML, /data-experiment-plan-select="plan-a"/);
+    assert.match(runtime.appNode.innerHTML, /data-experiment-plan-select="plan-b"/);
+
+    await runtime.change(
+      "[data-experiment-plan-select]",
+      { experimentPlanSelect: "plan-a" },
+      { checked: true, type: "checkbox" }
+    );
+
+    const selectedRows = runtime.appNode.innerHTML.match(/selected-table-row/g) || [];
+    assert.equal(selectedRows.length, 1);
+    assert.match(runtime.appNode.innerHTML, /data-experiment-plan-select="plan-a" checked/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-experiment-plan-select="plan-b" checked/);
   } finally {
     runtime.restore();
   }
@@ -511,7 +728,7 @@ test("experiment plan row selection is interactive at runtime", async () => {
 
 let runtimeImportCounter = 0;
 
-async function setupRuntimeApp({ hash = "", projectJson = createRuntimeProjectJson(), importFile = null } = {}) {
+async function setupRuntimeApp({ hash = "", projectJson = createRuntimeProjectJson(), importFile = null, experimentPlans = [] } = {}) {
   const appListeners = {};
   const windowListeners = {};
   const requests = [];
@@ -600,6 +817,9 @@ async function setupRuntimeApp({ hash = "", projectJson = createRuntimeProjectJs
     }
     if (url === "/api/projects/project-runtime") {
       return jsonResponse(projectJson);
+    }
+    if (url === "/api/projects/project-runtime/experiment-plans" && method === "GET") {
+      return jsonResponse({ project_id: "project-runtime", experiment_plans: experimentPlans });
     }
     if (url === "/api/projects/validate") {
       return jsonResponse({ ok: true, status: "valid", issues: [] });

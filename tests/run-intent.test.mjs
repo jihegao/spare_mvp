@@ -189,6 +189,7 @@ test("submitRunIntent sends user-edited Monte Carlo samples and seed in experime
 
   const planCall = calls.find((call) => call.method === "createExperimentPlan");
   const runCall = calls.find((call) => call.method === "submitRun");
+  assert.equal(calls.some((call) => call.method === "createModelingSnapshot"), false);
   assert.notEqual(projectJson.experiment.samples, planProjectJson.experiment.samples);
   assert.notEqual(projectJson.experiment.seed, planProjectJson.experiment.seed);
   assert.equal(planCall.config.analysisRequests.largeSample.samples, 17);
@@ -251,6 +252,7 @@ test("submitRunIntent preserves edited composite task equipment quantity through
 
   const saveCall = calls.find((call) => call.method === "saveProject");
   const planCall = calls.find((call) => call.method === "createExperimentPlan");
+  assert.equal(calls.some((call) => call.method === "createModelingSnapshot"), false);
   assert.equal(saveCall.projectJson.missionProfile.compositeTasks[0].taskItems[0].equipmentQuantity, 1);
   assert.equal(planCall.config.projectJson.missionProfile.compositeTasks[0].taskItems[0].equipmentQuantity, 1);
   assert.equal(

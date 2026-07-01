@@ -98,3 +98,46 @@ test("sample project flow reuses stored published demo import before saving fixt
   assert.equal(published.reused, true);
   assert.deepEqual(calls, [["get", MODELING_IMPORT_DEMO_FIXTURE.importId]]);
 });
+
+test("sample project flow republishes demo fixture when stored demo import is incomplete", async () => {
+  const calls = [];
+  const backendApi = {
+    async getModelingImport(importId) {
+      calls.push(["get", importId]);
+      return {
+        publishedPackage: {
+          ...MODELING_IMPORT_DEMO_FIXTURE,
+          objects: {
+            ...MODELING_IMPORT_DEMO_FIXTURE.objects,
+            supportResources: [],
+            supportActivities: []
+          }
+        }
+      };
+    },
+    async saveModelingImport(payload) {
+      calls.push(["save", payload.importId]);
+      assert.equal(payload.objects.supportResources.length, MODELING_IMPORT_DEMO_FIXTURE.objects.supportResources.length);
+      assert.equal(payload.objects.supportActivities.length, MODELING_IMPORT_DEMO_FIXTURE.objects.supportActivities.length);
+      return { draftPackage: payload };
+    },
+    async publishModelingImport(importId) {
+      calls.push(["publish", importId]);
+      return { publishedPackage: { ...MODELING_IMPORT_DEMO_FIXTURE, importId } };
+    }
+  };
+
+  const published = await ensurePublishedModelingImportForSampleProject({
+    backendApi,
+    fixture: MODELING_IMPORT_DEMO_FIXTURE,
+    publishedImportId: ""
+  });
+
+  assert.equal(published.importId, MODELING_IMPORT_DEMO_FIXTURE.importId);
+  assert.equal(published.reused, false);
+  assert.deepEqual(calls, [
+    ["get", MODELING_IMPORT_DEMO_FIXTURE.importId],
+    ["save", MODELING_IMPORT_DEMO_FIXTURE.importId],
+    ["publish", MODELING_IMPORT_DEMO_FIXTURE.importId]
+  ]);
+});

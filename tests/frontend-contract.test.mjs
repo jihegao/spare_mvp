@@ -801,7 +801,7 @@ test("support organization and activity pages follow ship_front tree table edito
   assert.doesNotMatch(logisticsSource, /data-logistics-transport-edit/);
   assert.doesNotMatch(logisticsSource, /\u4fdd\u969c\u7ec4\u7ec7\u7b56\u7565\u8868/);
   assert.doesNotMatch(logisticsSource, /\u65b9\u6848\u7c7b\u578b/);
-  assert.match(logisticsSource, /renderSupportActivityJobTable\(activity, "logistics"\)/);
+  assert.doesNotMatch(logisticsSource, /renderSupportActivityJobTable\(activity, "logistics"\)/);
 });
 
 test("modeling page headers omit generic scenario helper summaries", async () => {
@@ -892,8 +892,8 @@ test("support activity pages align to page suggestion activity fields", async ()
   assert.match(supportActivitySource, /renderPreventiveMaintenanceActivity/);
   assert.match(supportActivitySource, /renderCorrectiveMaintenanceActivity/);
   assert.match(supportActivitySource, /renderLogisticsSupportActivity/);
-  assert.match(supportActivitySource, /renderSupportActivityJobTable\(activity, "logistics"\)/);
-  assert.match(supportActivitySource, /const supportNodeOptions = \(scenario\.supportNodes \|\| \[\]\)\.map/);
+  assert.doesNotMatch(supportActivitySource, /renderSupportActivityJobTable\(activity, "logistics"\)/);
+  assert.match(supportActivitySource, /const supportNodeOptions = uniqueSelectOptions\(\(scenario\.supportNodes \|\| \[\]\)\.map/);
   assert.match(supportActivitySource, /valueSelect\(`\$\{basePath\}\.from`, supportNodeOptions\)/);
   assert.match(supportActivitySource, /valueSelect\(`\$\{basePath\}\.to`, supportNodeOptions\)/);
   const supportActivityJobSource = supportActivitySource.slice(
@@ -903,9 +903,10 @@ test("support activity pages align to page suggestion activity fields", async ()
   assert.match(supportActivityJobSource, /renderSupportActivityPredecessorCell/);
   assert.match(supportActivityJobSource, /data-support-activity-predecessor-edit/);
   assert.match(supportActivityJobSource, /data-support-activity-predecessor-dialog-close/);
-  assert.match(supportActivityJobSource, /data-support-activity-predecessor-add-template/);
+  assert.doesNotMatch(supportActivityJobSource, /data-support-activity-predecessor-add-template/);
   assert.match(supportActivityJobSource, /data-support-activity-predecessor-toggle/);
   assert.match(supportActivityJobSource, /编辑紧前作业/);
+  assert.match(supportActivityJobSource, /当前紧前作业清单/);
   assert.doesNotMatch(supportActivityJobSource, /data-support-activity-predecessors/);
   assert.match(supportActivityJobSource, /data-support-activity-job-select/);
   assert.match(supportActivityJobSource, /data-support-activity-job-select-all/);
@@ -1849,7 +1850,7 @@ test("support activity controls are wired through local draft fields", async () 
   assert.match(jobTableSource, /data-support-activity-job-template/);
   assert.match(jobTableSource, /basicActivityLibraryOptions/);
   assert.match(appSource, /function applyBasicActivityToSupportActivityJob/);
-  assert.match(appSource, /function addBasicActivityAsSupportActivityPredecessor/);
+  assert.doesNotMatch(jobTableSource, /data-support-activity-predecessor-add-template/);
   assert.match(jobTableSource, /data-support-activity-job-field/);
   assert.match(jobTableSource, /renderSupportActivityJobDialog/);
   assert.match(jobTableSource, /renderSupportActivityPredecessorDialog/);
