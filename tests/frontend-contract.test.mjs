@@ -2263,6 +2263,56 @@ test("analysis pages expose current result flow without user-visible task or art
   assert.doesNotMatch(appSource, /source: "analysis:auto-created"/);
 });
 
+test("analysis current result state is hydrated, isolated, and recoverable", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const featurePageSource = appSource.slice(
+    appSource.indexOf("function renderFeaturePage"),
+    appSource.indexOf("function renderProjectDraftToolbar")
+  );
+  const hydrateSource = appSource.slice(
+    appSource.indexOf("function ensureCurrentAnalysisResultLoaded"),
+    appSource.indexOf("function hiddenCurrentAnalysisExperimentId")
+  );
+  const panelSource = appSource.slice(
+    appSource.indexOf("function renderCurrentAnalysisResultPanel"),
+    appSource.indexOf("function currentAnalysisStatusLabel")
+  );
+  const runCurrentSource = appSource.slice(
+    appSource.indexOf("async function runCurrentAnalysisPage"),
+    appSource.indexOf("function artifactHasKind")
+  );
+  const startMonteCarloSource = appSource.slice(
+    appSource.indexOf("async function startMonteCarloRunThroughApi"),
+    appSource.indexOf("async function refreshRunResultThroughApi")
+  );
+
+  assert.match(featurePageSource, /ensureCurrentAnalysisResultLoaded\(page\)/);
+  assert.match(hydrateSource, /backendApi\.getCurrentAnalysisResult\(savedProject\.project_id,\s*analysisType\)/);
+  assert.match(hydrateSource, /currentAnalysisResultLoadInFlight/);
+  assert.match(hydrateSource, /ANALYSIS_PROJECTION_TYPES\.some/);
+  assert.match(panelSource, /currentAnalysisSourceLabel\(result\)/);
+  assert.match(panelSource, /currentAnalysisShouldShowFailure\(result\)/);
+  assert.match(appSource, /function currentAnalysisSourceLabel/);
+  assert.match(appSource, /if \(status === "empty"\) return "等待正式结果"/);
+  assert.match(appSource, /function currentAnalysisShouldShowFailure/);
+  assert.match(appSource, /return \["failed", "blocked"\]\.includes/);
+  assert.match(runCurrentSource, /const previousResult = currentAnalysisResultForPage\(page\)/);
+  assert.match(runCurrentSource, /restoreCurrentAnalysisResult\(analysisType,\s*previousResult/);
+  assert.match(runCurrentSource, /status: "blocked"/);
+  assert.doesNotMatch(startMonteCarloSource, /getCurrentAnalysisResult/);
+});
+
+test("backend empty current analysis result is not treated as formal failure", async () => {
+  const apiSource = await readFile(new URL("../src/spare_mvp_backend/api.py", import.meta.url), "utf8");
+  const emptySource = apiSource.slice(
+    apiSource.indexOf("def _empty_current_analysis_result"),
+    apiSource.indexOf("def _compiler_provenance_for_run")
+  );
+
+  assert.match(emptySource, /if status != "empty":/);
+  assert.match(emptySource, /"source": "empty" if status == "empty" else "blocked"/);
+});
+
 test("experiment plan editor edits an isolated branch rather than the project draft", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const editorSource = appSource.slice(

@@ -499,6 +499,7 @@ let analysisTaskForms = {};
 let analysisProjectionPayloads = {};
 let analysisProjectionPayloadErrors = {};
 let currentAnalysisResults = {};
+let currentAnalysisResultLoadInFlight = {};
 let { previewSingleResult: singleResult, previewMonteCarloResult: monteCarloResult } = buildPreviewResultState(scenario);
 let rmsAllocationProject = createDemoRmsAllocationProject();
 let rmsAllocationPlan = createDefaultRmsAllocationPlan(rmsAllocationProject);
@@ -2465,6 +2466,7 @@ function renderSystemManagementNavigation(activePage, secondaryGroups) {
 }
 
 function renderFeaturePage(page) {
+  ensureCurrentAnalysisResultLoaded(page);
   const siblingPages = groups[page.module][page.secondary][page.tertiary];
   const currentContext = renderCurrentContext(page);
   return `
@@ -9072,23 +9074,6 @@ async function startMonteCarloRunThroughApi({ monteCarloExperimentId = selectedM
       return backendRun;
     }
     await refreshRunResultThroughApi(backendRun.run_id);
-    if (analysisType && savedProject?.project_id) {
-      try {
-        const current = await backendApi.getCurrentAnalysisResult(savedProject.project_id, analysisType);
-        currentAnalysisResults = { ...currentAnalysisResults, [analysisType]: current };
-      } catch (err) {
-        currentAnalysisResults = {
-          ...currentAnalysisResults,
-          [analysisType]: {
-            ...currentAnalysisResults[analysisType],
-            analysis_type: analysisType,
-            status: "blocked",
-            source: "blocked",
-            last_failure: { message: formatBackendError(err) }
-          }
-        };
-      }
-    }
     experimentRunStatus = backendRun.status === "succeeded" ? "完成" : backendRun.status;
     backendApiStatus = isRunComplete(backendRun)
       ? "运行完成"
@@ -12353,6 +12338,35 @@ function currentAnalysisResultForPage(page) {
   };
 }
 
+function ensureCurrentAnalysisResultLoaded(page) {
+  const analysisType = analysisTypeForPage(page);
+  if (!ANALYSIS_PROJECTION_TYPES.some((item) => item.analysisType === analysisType)) return;
+  if (!savedProject?.project_id || !backendAuthToken) return;
+  if (currentAnalysisResults[analysisType] || currentAnalysisResultLoadInFlight[analysisType]) return;
+  currentAnalysisResultLoadInFlight = { ...currentAnalysisResultLoadInFlight, [analysisType]: true };
+  backendApi.getCurrentAnalysisResult(savedProject.project_id, analysisType)
+    .then((current) => {
+      currentAnalysisResults = { ...currentAnalysisResults, [analysisType]: current };
+    })
+    .catch((err) => {
+      currentAnalysisResults = {
+        ...currentAnalysisResults,
+        [analysisType]: {
+          analysis_type: analysisType,
+          status: "blocked",
+          source: "blocked",
+          last_success_result: null,
+          last_failure: { message: formatBackendError(err) },
+          is_stale: false
+        }
+      };
+    })
+    .finally(() => {
+      currentAnalysisResultLoadInFlight = { ...currentAnalysisResultLoadInFlight, [analysisType]: false };
+      render();
+    });
+}
+
 function hiddenCurrentAnalysisExperimentId(analysisType) {
   return `current-analysis-${analysisType}`;
 }
@@ -12361,12 +12375,8 @@ function renderCurrentAnalysisResultPanel(page, title) {
   const result = currentAnalysisResultForPage(page);
   const status = result.status || "empty";
   const statusLabel = currentAnalysisStatusLabel(status);
-  const failureMessage = result.last_failure?.message || "";
-  const sourceLabel = result.source === "formal_backend"
-    ? "正式后端结果"
-    : status === "running"
-      ? "正式后端运行中"
-      : "等待正式结果";
+  const failureMessage = currentAnalysisShouldShowFailure(result) ? (result.last_failure?.message || "") : "";
+  const sourceLabel = currentAnalysisSourceLabel(result);
   return `
     <section class="analysis-task-panel">
       <div class="section-head">
@@ -12389,6 +12399,21 @@ function renderCurrentAnalysisResultPanel(page, title) {
       </div>
     </section>
   `;
+}
+
+function currentAnalysisSourceLabel(result) {
+  const status = result.status || "empty";
+  if (status === "empty") return "等待正式结果";
+  if (status === "running") return "正式后端运行中";
+  if (["failed", "blocked"].includes(status)) {
+    return result.last_success_result ? "正式后端结果（需复核）" : "等待正式结果";
+  }
+  if (result.source === "formal_backend") return result.is_stale ? "正式后端结果（已过期）" : "正式后端结果";
+  return "等待正式结果";
+}
+
+function currentAnalysisShouldShowFailure(result) {
+  return ["failed", "blocked"].includes(result.status || "") && Boolean(result.last_failure?.message);
 }
 
 function currentAnalysisStatusLabel(status) {
@@ -12416,10 +12441,11 @@ function currentAnalysisStatusMessage(result) {
 async function runCurrentAnalysisPage(page) {
   const analysisType = analysisTypeForPage(page);
   const hiddenExperimentId = hiddenCurrentAnalysisExperimentId(analysisType);
+  const previousResult = currentAnalysisResultForPage(page);
   currentAnalysisResults = {
     ...currentAnalysisResults,
     [analysisType]: {
-      ...currentAnalysisResultForPage(page),
+      ...previousResult,
       analysis_type: analysisType,
       status: "running",
       source: "formal_backend",
@@ -12431,7 +12457,10 @@ async function runCurrentAnalysisPage(page) {
     monteCarloExperimentId: hiddenExperimentId,
     analysisType
   });
-  if (!run?.run_id || !savedProject?.project_id) return;
+  if (!run?.run_id || !savedProject?.project_id) {
+    restoreCurrentAnalysisResult(analysisType, previousResult, backendApiStatus || "未创建 run_id");
+    return;
+  }
   try {
     const current = await backendApi.getCurrentAnalysisResult(savedProject.project_id, analysisType);
     currentAnalysisResults = { ...currentAnalysisResults, [analysisType]: current };
@@ -12446,6 +12475,27 @@ async function runCurrentAnalysisPage(page) {
       }
     };
   }
+}
+
+function restoreCurrentAnalysisResult(analysisType, previousResult, message) {
+  currentAnalysisResults = {
+    ...currentAnalysisResults,
+    [analysisType]: previousResult.last_success_result
+      ? {
+          ...previousResult,
+          status: "blocked",
+          source: previousResult.source || "formal_backend",
+          is_stale: true,
+          last_failure: { message }
+        }
+      : {
+          ...previousResult,
+          analysis_type: analysisType,
+          status: "blocked",
+          source: "blocked",
+          last_failure: { message }
+        }
+  };
 }
 
 function artifactHasKind(artifact, kind) {

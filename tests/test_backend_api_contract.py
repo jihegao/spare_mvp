@@ -169,7 +169,11 @@ class BackendApiContractTest(unittest.TestCase):
         self.api.publish_modeling_import_as_system(import_package["importId"])
         return self.api.create_project_from_modeling_import_as_system(import_package["importId"])
 
-    def _submit_successful_aircraft_support_monte_carlo_run(self) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+    def _submit_successful_aircraft_support_monte_carlo_run(
+        self,
+        *,
+        analysis_type: str = "spare_shortfall",
+    ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
         created = self._create_imported_sample_project()
         saved = created["savedProject"]
         plan = self.api.create_experiment_plan(
@@ -201,10 +205,90 @@ class BackendApiContractTest(unittest.TestCase):
                 "experiment_plan_id": plan["experiment_plan_id"],
                 "model_family": "aircraft_support_v1",
                 "run_type": "monte_carlo",
-                "analysis_type": "spare_shortfall",
+                "analysis_type": analysis_type,
             }
         )
         return created, plan, run
+
+    def _submit_successful_aircraft_support_monte_carlo_run_for_project(
+        self,
+        created: dict[str, Any],
+        *,
+        analysis_type: str,
+        plan_name: str,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        saved = created["savedProject"]
+        plan = self.api.create_experiment_plan(
+            saved["project_id"],
+            {
+                "name": plan_name,
+                "steps": 2,
+                "projectJson": created["project"],
+                "analysisRequests": {
+                    "largeSample": {
+                        "enabled": True,
+                        "samples": 1,
+                        "sweep": {
+                            "failureRates": [0.05],
+                            "spareMultipliers": [1.0],
+                            "supportCapacities": [2],
+                        },
+                    },
+                    "spareShortfall": {"enabled": True},
+                    "carryList": {"enabled": True},
+                    "missionReliability": {"enabled": True},
+                    "downtimeFactors": {"enabled": True},
+                },
+            },
+        )
+        run = self.api.submit_run(
+            {
+                "project_id": saved["project_id"],
+                "experiment_plan_id": plan["experiment_plan_id"],
+                "model_family": "aircraft_support_v1",
+                "run_type": "monte_carlo",
+                "analysis_type": analysis_type,
+            }
+        )
+        return plan, run
+
+    def _persist_later_failed_analysis_run(
+        self,
+        success_run: dict[str, Any],
+        *,
+        run_id: str,
+        analysis_type: str = "spare_shortfall",
+        code: str = "executor_failed",
+        message: str = "synthetic latest failure",
+    ) -> dict[str, Any]:
+        failed = copy.deepcopy(self.repository.get_run(success_run["run_id"]))
+        failed.update(
+            {
+                "run_id": run_id,
+                "status": "failed",
+                "phase": "failed",
+                "progress": 0,
+                "artifact_manifest_id": f"artifact-manifest-{run_id}",
+                "result_summary_id": None,
+                "analysis_type": analysis_type,
+                "error": {"code": code, "message": message, "details": {"analysis_type": analysis_type}},
+                "started_at": "2099-01-01T00:00:00Z",
+                "completed_at": "2099-01-01T00:00:01Z",
+                "updated_at": "2099-01-01T00:00:01Z",
+            }
+        )
+        failed["simulation_experiment_base"] = {
+            **copy.deepcopy(failed.get("simulation_experiment_base") or {}),
+            "run_id": run_id,
+            "status": "failed",
+            "analysis_type": analysis_type,
+        }
+        self.repository.upsert_run(failed)
+        self.connection.execute(
+            "UPDATE simulation_runs SET updated_at = ? WHERE run_id = ?",
+            ("2099-01-01T00:00:01Z", run_id),
+        )
+        return failed
 
     def _level0_import_package_without_support_domain(self) -> dict[str, Any]:
         import_package = self._fixture("modeling_import_project.json")
@@ -254,6 +338,56 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(current["status"], "blocked")
         self.assertEqual(current["source"], "blocked")
         self.assertIsNone(current["last_success_result"])
+        self.assertIn("projection_type mismatch", current["last_failure"]["message"])
+
+    def test_current_analysis_result_ignores_successful_runs_for_other_analysis_type(self) -> None:
+        created, _plan, spare_run = self._submit_successful_aircraft_support_monte_carlo_run(analysis_type="spare_shortfall")
+        self._submit_successful_aircraft_support_monte_carlo_run_for_project(
+            created,
+            analysis_type="carry_list",
+            plan_name="newer carry list current result",
+        )
+
+        current = self.api.get_current_analysis_result(created["savedProject"]["project_id"], "spare_shortfall")
+
+        self.assertEqual(current["status"], "completed")
+        self.assertEqual(current["last_success_result"]["run_id"], spare_run["run_id"])
+        self.assertEqual(current["last_success_result"]["projection_type"], "spare_shortfall")
+
+    def test_current_analysis_result_marks_previous_success_stale_after_latest_failure(self) -> None:
+        created, _plan, run = self._submit_successful_aircraft_support_monte_carlo_run(analysis_type="spare_shortfall")
+        failed = self._persist_later_failed_analysis_run(
+            run,
+            run_id="run-current-analysis-latest-failed",
+            analysis_type="spare_shortfall",
+        )
+
+        current = self.api.get_current_analysis_result(created["savedProject"]["project_id"], "spare_shortfall")
+
+        self.assertEqual(current["status"], "failed")
+        self.assertTrue(current["is_stale"])
+        self.assertEqual(current["last_success_result"]["run_id"], run["run_id"])
+        self.assertEqual(current["last_failure"]["run_id"], failed["run_id"])
+        self.assertEqual(current["last_failure"]["code"], "executor_failed")
+
+    def test_current_analysis_result_marks_previous_success_stale_after_latest_projection_mismatch(self) -> None:
+        created, _plan, old_run = self._submit_successful_aircraft_support_monte_carlo_run(analysis_type="spare_shortfall")
+        _new_plan, new_run = self._submit_successful_aircraft_support_monte_carlo_run_for_project(
+            created,
+            analysis_type="spare_shortfall",
+            plan_name="newer broken projection",
+        )
+        manifest = self.api.get_run_artifacts(new_run["run_id"])
+        payload = self._artifact_payload(manifest, "analysis_projection_spare_shortfall")
+        payload["projection_type"] = "carry_list"
+        self._write_artifact_payload(manifest, "analysis_projection_spare_shortfall", payload)
+
+        current = self.api.get_current_analysis_result(created["savedProject"]["project_id"], "spare_shortfall")
+
+        self.assertEqual(current["status"], "blocked")
+        self.assertTrue(current["is_stale"])
+        self.assertEqual(current["last_success_result"]["run_id"], old_run["run_id"])
+        self.assertEqual(current["last_failure"]["run_id"], new_run["run_id"])
         self.assertIn("projection_type mismatch", current["last_failure"]["message"])
 
     def test_smoke_backend_flow_persists_complete_run_chain(self) -> None:

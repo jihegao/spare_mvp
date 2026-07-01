@@ -551,43 +551,129 @@ class BackendApi:
         runs = self.repository.list_runs(
             project_id=project_id,
             run_type="monte_carlo",
-            status="succeeded",
             limit=100,
         )
-        if not runs:
+        latest_result: dict[str, Any] | None = None
+        latest_failure: dict[str, Any] | None = None
+        for run_entry in runs:
+            run_id = run_entry["run_id"]
+            run = self.repository.get_run(run_id)
+            run_analysis_type = _analysis_type_for_run(run)
+            if run_analysis_type and run_analysis_type != normalized_analysis_type:
+                continue
+            run_status = str(run.get("status") or "")
+            if run_status in {"queued", "running", "pending"}:
+                latest_result = _empty_current_analysis_result(
+                    project_id,
+                    normalized_analysis_type,
+                    status="running",
+                    message=f"Formal Monte Carlo run is {run_status}",
+                    code=run_status,
+                    run_id=run_id,
+                )
+                break
+            if run_status == "failed":
+                error = run.get("error") if isinstance(run.get("error"), dict) else {}
+                latest_failure = _current_analysis_failure_from_error(
+                    normalized_analysis_type,
+                    run,
+                    code=str(error.get("code") or "failed"),
+                    message=str(error.get("message") or "Formal Monte Carlo run failed"),
+                    details=error.get("details") if isinstance(error.get("details"), dict) else {},
+                )
+                latest_result = _empty_current_analysis_result(
+                    project_id,
+                    normalized_analysis_type,
+                    status="failed",
+                    message=latest_failure["message"],
+                    code=latest_failure["code"],
+                    details=latest_failure["details"],
+                    run_id=run_id,
+                )
+                break
+            try:
+                result = self._current_analysis_result_for_run(project_id, normalized_analysis_type, run)
+            except BackendApiError as exc:
+                latest_failure = _current_analysis_failure_from_error(
+                    normalized_analysis_type,
+                    run,
+                    code=exc.code,
+                    message=str(exc),
+                    details=exc.details,
+                )
+                latest_result = _empty_current_analysis_result(
+                    project_id,
+                    normalized_analysis_type,
+                    status="blocked",
+                    message=latest_failure["message"],
+                    code=latest_failure["code"],
+                    details=latest_failure["details"],
+                    run_id=run_id,
+                )
+                break
+            if result["status"] == "completed":
+                return result
+            latest_result = result
+            break
+
+        if latest_result is None:
             return _empty_current_analysis_result(
                 project_id,
                 normalized_analysis_type,
                 status="empty",
-                message="No successful formal Monte Carlo run exists for this project",
+                message="No formal Monte Carlo run exists for this analysis type",
             )
+        if latest_result["status"] == "completed":
+            return latest_result
 
-        last_blocked: dict[str, Any] | None = None
-        for run_entry in runs:
-            run_id = run_entry["run_id"]
-            try:
-                run = self.repository.get_run(run_id)
-                result = self._current_analysis_result_for_run(project_id, normalized_analysis_type, run)
-            except BackendApiError as exc:
-                last_blocked = _empty_current_analysis_result(
-                    project_id,
-                    normalized_analysis_type,
-                    status="blocked",
-                    message=str(exc),
-                    code=exc.code,
-                    details=exc.details,
-                    run_id=run_id,
-                )
-                continue
-            if result["status"] == "completed":
-                return result
-            last_blocked = result
-        return last_blocked or _empty_current_analysis_result(
+        previous_success = self._previous_successful_current_analysis_result(
+            project_id,
+            normalized_analysis_type,
+            runs,
+            skip_run_id=str((latest_result.get("internal_run_ref") or {}).get("run_id") or ""),
+        )
+        if previous_success is not None:
+            return {
+                **previous_success,
+                "status": latest_result["status"],
+                "last_failure": latest_failure or latest_result.get("last_failure"),
+                "is_stale": True,
+                "updated_at": latest_result.get("updated_at") or previous_success.get("updated_at"),
+                "internal_run_ref": {
+                    **(previous_success.get("internal_run_ref") or {}),
+                    "latest_run_id": (latest_failure or latest_result.get("last_failure") or {}).get("run_id"),
+                },
+            }
+        return latest_result or _empty_current_analysis_result(
             project_id,
             normalized_analysis_type,
             status="blocked",
             message="No valid formal projection is available",
         )
+
+    def _previous_successful_current_analysis_result(
+        self,
+        project_id: str,
+        analysis_type: str,
+        runs: list[dict[str, Any]],
+        *,
+        skip_run_id: str,
+    ) -> dict[str, Any] | None:
+        for run_entry in runs:
+            run_id = str(run_entry.get("run_id") or "")
+            if run_id == skip_run_id:
+                continue
+            run = self.repository.get_run(run_id)
+            run_analysis_type = _analysis_type_for_run(run)
+            if run_analysis_type and run_analysis_type != analysis_type:
+                continue
+            if run.get("status") != "succeeded":
+                continue
+            try:
+                return self._current_analysis_result_for_run(project_id, analysis_type, run)
+            except BackendApiError:
+                continue
+        return None
 
     def _current_analysis_result_for_run(
         self,
@@ -600,6 +686,15 @@ class BackendApi:
             raise BackendApiError("project_mismatch", "run does not belong to project", run_id=run_id, project_id=project_id)
         if run.get("run_type") != "monte_carlo":
             raise BackendApiError("not_monte_carlo", "run_type must be monte_carlo", run_id=run_id)
+        run_analysis_type = _analysis_type_for_run(run)
+        if run_analysis_type and run_analysis_type != analysis_type:
+            raise BackendApiError(
+                "analysis_type_mismatch",
+                f"run analysis_type mismatch: expected {analysis_type}, got {run_analysis_type}",
+                run_id=run_id,
+                analysis_type=analysis_type,
+                run_analysis_type=run_analysis_type,
+            )
         if run.get("model_family") != ACTIVE_FORMAL_MODEL_FAMILY:
             raise BackendApiError(
                 "model_family_mismatch",
@@ -951,6 +1046,36 @@ def _normalize_analysis_type(analysis_type: str) -> str:
     return normalized
 
 
+def _analysis_type_for_run(run: dict[str, Any]) -> str:
+    direct = str(run.get("analysis_type") or "").strip()
+    if direct:
+        return direct
+    base = run.get("simulation_experiment_base")
+    if isinstance(base, dict):
+        return str(base.get("analysis_type") or "").strip()
+    return ""
+
+
+def _current_analysis_failure_from_error(
+    analysis_type: str,
+    run: dict[str, Any],
+    *,
+    code: str,
+    message: str,
+    details: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    run_id = str(run.get("run_id") or "")
+    return {
+        "code": code,
+        "message": message,
+        "details": details or {},
+        "run_id": run_id,
+        "analysis_type": analysis_type,
+        "status": run.get("status"),
+        "updated_at": run.get("completed_at") or run.get("updated_at") or run.get("started_at"),
+    }
+
+
 def _empty_current_analysis_result(
     project_id: str,
     analysis_type: str,
@@ -961,6 +1086,15 @@ def _empty_current_analysis_result(
     details: dict[str, Any] | None = None,
     run_id: str | None = None,
 ) -> dict[str, Any]:
+    failure = None
+    if status != "empty":
+        failure = {
+            "code": code or status,
+            "message": message,
+            "details": details or {},
+            "run_id": run_id,
+            "analysis_type": analysis_type,
+        }
     return {
         "project_id": project_id,
         "analysis_type": analysis_type,
@@ -968,14 +1102,9 @@ def _empty_current_analysis_result(
         "base_plan_version": "",
         "status": status,
         "last_success_result": None,
-        "last_failure": {
-            "code": code or status,
-            "message": message,
-            "details": details or {},
-            "run_id": run_id,
-        },
+        "last_failure": failure,
         "is_stale": False,
-        "source": "blocked" if status == "blocked" else "formal_backend",
+        "source": "empty" if status == "empty" else "blocked",
         "internal_run_ref": {"run_id": run_id} if run_id else None,
         "internal_artifact_ref": None,
         "updated_at": None,
