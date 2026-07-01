@@ -26,7 +26,7 @@ async function readSimulationAnalysisCase(caseId) {
   return JSON.parse(await readFile(new URL(`./fixtures/simulation_analysis_cases/${caseId}.json`, import.meta.url), "utf8"));
 }
 
-test("product modeling import templates mirror the three simulation analysis cases and load by path", async () => {
+test("product modeling import templates mirror the two simulation analysis cases and load by path", async () => {
   const expected = [
     {
       id: "minimal-single-aircraft",
@@ -41,13 +41,6 @@ test("product modeling import templates mirror the three simulation analysis cas
       validationLevel: "level1",
       filename: "canonical_platform_case.json",
       sourceCaseId: "canonical_platform_case"
-    },
-    {
-      id: "max-granularity-multi-aircraft",
-      label: "Level 1 / 最大多机建模粒度",
-      validationLevel: "level1",
-      filename: "max_granularity_multi_aircraft.json",
-      sourceCaseId: "max_granularity_multi_aircraft"
     }
   ];
   assert.deepEqual(

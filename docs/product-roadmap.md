@@ -374,7 +374,7 @@ report.json 或 report.html
 
 M8.0 当前收束：`docs/superpowers/specs/2026-06-21-m8-projection-payload-analysis-design.md` 已把结果分析推进到 projection payload 驱动。结果分析按 AnalysisTask、绑定的 MonteCarloExperiment 和 M6.2 run artifacts 解锁；已绑定且运行完成的分析页必须下载并解析当前分析类型对应的 `analysis_projection_*` JSON payload，正式 KPI、表格和图形来自 payload adapter。已绑定且运行中显示进度，已绑定且运行失败显示失败原因；未创建任务、未绑定 MC 实验、缺少 M6.1 compiler provenance、缺少 projection artifact、payload 类型不匹配或解析失败时统一 fail closed，不能用静态演示图表冒充正式结果。
 
-阶段 6P 当前收束：在四个分析功能继续细化前，已新增 `tests/fixtures/simulation_analysis_cases/` 作为仿真分析验收数据包，包含 `minimal_single_aircraft`、`canonical_platform_case` 和 `max_granularity_multi_aircraft` 三类 modeling-import-v1 案例。该数据包由 `src/spare_mvp_backend/simulation_analysis_cases.py` 和 `scripts/export-simulation-analysis-cases.py --write|--check` 生成与检查，`tests/test_simulation_analysis_cases.py` 验证三类数据均可编译为 `aircraft_support_v1` Scenario 并跑出 formal Monte Carlo 的 `monte_carlo_base`、`visualization_state_series` 和四类 `analysis_projection_*` artifact。6P 用于覆盖最小建模粒度、平台标准案例和最大建模粒度，不作为生产性能压测。
+阶段 6P 当前收束：在四个分析功能继续细化前，已恢复 `tests/fixtures/case_new.json` 作为仿真分析验收数据包基础数据，并由它生成 `tests/fixtures/simulation_analysis_cases/` 下的 `minimal_single_aircraft` 和 `canonical_platform_case` 两类 modeling-import-v1 案例。该数据包由 `src/spare_mvp_backend/simulation_analysis_cases.py` 和 `scripts/export-simulation-analysis-cases.py --write|--check` 生成与检查，`tests/test_simulation_analysis_cases.py` 验证两类数据均可编译为 `aircraft_support_v1` Scenario 并跑出 formal Monte Carlo 的 `monte_carlo_base`、`visualization_state_series` 和四类 `analysis_projection_*` artifact。6P 用于覆盖最小建模粒度和平台标准案例，不作为生产性能压测。
 
 核心工作：
 
@@ -521,7 +521,7 @@ M8.0 当前收束：`docs/superpowers/specs/2026-06-21-m8-projection-payload-ana
 
 范围：
 
-1. 以 `tests/fixtures/modeling_import_project.json` 为基础，整理一套完整案例包，覆盖任务剖面、复合任务、周期任务、飞机/装备层级、LRU/SRU 故障与 RMS 字段、保障组织、保障资源、库存、运输策略、保障活动作业网络、Monte Carlo 配置和四类分析请求。
+1. 以 `tests/fixtures/case_new.json` 为基础，整理一套完整案例包，覆盖任务剖面、复合任务、周期任务、飞机/装备层级、LRU/SRU 故障与 RMS 字段、保障组织、保障资源、库存、运输策略、保障活动作业网络、Monte Carlo 配置和四类分析请求。
 2. 从案例包导出平台对象链：published modeling import、Project、ModelingSnapshot、ExperimentPlan、RunIntent、MonteCarloRunConfig 和预期 Scenario fixture。
 3. 建立字段覆盖表，逐字段标注 `consumed`、`derived`、`defaulted`、`ignored` 或 `unsupported`，并说明目标模型模块、默认规则和不支持原因。
 4. 建立 golden fixture：预期 compiled Scenario、单次 run artifact kind 列表和 Monte Carlo artifact kind 列表；`visualization_state_series` 基本结构和四类 `analysis_projection_*` payload 结构继续由既有 M9.1/M9.5 schema 与 adapter 测试约束。

@@ -25,19 +25,18 @@ class SimulationAnalysisCasePackTest(unittest.TestCase):
         path = REPO_ROOT / "tests" / "fixtures" / "simulation_analysis_cases" / f"{case_id}.json"
         return json.loads(path.read_text(encoding="utf-8"))
 
-    def test_phase_6p_case_pack_freezes_three_modeling_import_cases(self) -> None:
+    def test_phase_6p_case_pack_freezes_two_modeling_import_cases(self) -> None:
         pack = build_simulation_analysis_case_pack(REPO_ROOT)
 
         self.assertEqual(pack["schema_version"], "simulation-analysis-case-pack-v0")
         self.assertEqual([case["case_id"] for case in pack["cases"]], SIMULATION_ANALYSIS_CASE_IDS)
         by_id = {case["case_id"]: case for case in pack["cases"]}
+        self.assertEqual(set(by_id), {"minimal_single_aircraft", "canonical_platform_case"})
         self.assertEqual(by_id["minimal_single_aircraft"]["validation_level"], "level0")
         self.assertEqual(by_id["canonical_platform_case"]["validation_level"], "level1")
-        self.assertEqual(by_id["max_granularity_multi_aircraft"]["validation_level"], "level1")
         self.assertFalse(by_id["minimal_single_aircraft"]["used_tables"]["supportResources"])
         self.assertFalse(by_id["minimal_single_aircraft"]["used_tables"]["supportActivities"])
         self.assertTrue(by_id["canonical_platform_case"]["used_tables"]["supportResources"])
-        self.assertTrue(by_id["max_granularity_multi_aircraft"]["used_tables"]["supportActivities"])
         self.assertNotIn("supportResources", by_id["minimal_single_aircraft"]["modeling_import"]["objects"])
         self.assertNotIn("supportActivities", by_id["minimal_single_aircraft"]["modeling_import"]["objects"])
         self.assertEqual(by_id["minimal_single_aircraft"]["modeling_import"]["objects"]["equipment"]["quantity"], 1)
@@ -47,17 +46,16 @@ class SimulationAnalysisCasePackTest(unittest.TestCase):
         )
         self.assertEqual(
             by_id["canonical_platform_case"]["source_fixture"],
-            "tests/fixtures/modeling_import_project.json",
+            "tests/fixtures/case_new.json",
         )
-        max_case = by_id["max_granularity_multi_aircraft"]["modeling_import"]["objects"]
-        self.assertGreaterEqual(max_case["equipment"]["quantity"], 8)
-        self.assertGreaterEqual(len(max_case["missionProfiles"][0]["combatUnit"]["members"]), 8)
-        self.assertGreaterEqual(len(max_case["supportResources"]), 4)
-        self.assertGreaterEqual(len(max_case["supportActivities"]), 8)
 
     def test_phase_6p_fixture_files_match_generated_case_pack(self) -> None:
         self.assertEqual(simulation_analysis_case_fixture_drift(REPO_ROOT), [])
         self.assertFalse((REPO_ROOT / "public" / "import-templates" / "case_new.json").exists())
+        self.assertFalse(
+            (REPO_ROOT / "tests" / "fixtures" / "simulation_analysis_cases" / "max_granularity_multi_aircraft.json").exists()
+        )
+        self.assertFalse((REPO_ROOT / "public" / "import-templates" / "max_granularity_multi_aircraft.json").exists())
 
     def test_phase_6p_cases_validate_compile_and_emit_formal_analysis_artifacts(self) -> None:
         required_kinds = {
