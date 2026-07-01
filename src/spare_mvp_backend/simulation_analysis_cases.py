@@ -14,8 +14,9 @@ from src.spare_mvp_backend.monte_carlo_config import normalize_monte_carlo_run_c
 SIMULATION_ANALYSIS_CASE_IDS = [
     "minimal_single_aircraft",
     "canonical_platform_case",
-    "max_granularity_multi_aircraft",
 ]
+
+BASE_CASE_FIXTURE = "tests/fixtures/case_new.json"
 
 DEFAULT_USED_TABLES = {
     "missionProfiles": True,
@@ -42,10 +43,6 @@ CASE_VALIDATION_SCOPES = {
         "validation_level": "level1",
         "used_tables": DEFAULT_USED_TABLES,
     },
-    "max_granularity_multi_aircraft": {
-        "validation_level": "level1",
-        "used_tables": DEFAULT_USED_TABLES,
-    },
 }
 
 
@@ -56,12 +53,11 @@ def build_simulation_analysis_case_pack(repo_root: Path | str) -> dict[str, Any]
     cases = [
         _case("minimal_single_aircraft", _minimal_single_aircraft_import(canonical), "最小单机建模粒度"),
         _case("canonical_platform_case", copy.deepcopy(canonical), "M9.6/M9.7/M9.8 平台标准案例"),
-        _case("max_granularity_multi_aircraft", _max_granularity_import(canonical), "最大多机建模粒度"),
     ]
     return {
         "schema_version": "simulation-analysis-case-pack-v0",
         "phase": "6P",
-        "source_fixture": "tests/fixtures/modeling_import_project.json",
+        "source_fixture": BASE_CASE_FIXTURE,
         "cases": cases,
     }
 
@@ -77,6 +73,8 @@ def write_simulation_analysis_case_fixtures(repo_root: Path | str) -> None:
         _write_json(output_dir / f"{case['case_id']}.json", case)
         _write_json(template_dir / f"{case['case_id']}.json", case["modeling_import"])
     (template_dir / "case_new.json").unlink(missing_ok=True)
+    (output_dir / "max_granularity_multi_aircraft.json").unlink(missing_ok=True)
+    (template_dir / "max_granularity_multi_aircraft.json").unlink(missing_ok=True)
 
 
 def simulation_analysis_case_fixture_drift(repo_root: Path | str) -> list[str]:
@@ -103,6 +101,12 @@ def simulation_analysis_case_fixture_drift(repo_root: Path | str) -> list[str]:
     stale_template = root / "public" / "import-templates" / "case_new.json"
     if stale_template.exists():
         drifted.append("public/import-templates/case_new.json")
+    stale_max_case = root / "tests" / "fixtures" / "simulation_analysis_cases" / "max_granularity_multi_aircraft.json"
+    if stale_max_case.exists():
+        drifted.append("tests/fixtures/simulation_analysis_cases/max_granularity_multi_aircraft.json")
+    stale_max_template = root / "public" / "import-templates" / "max_granularity_multi_aircraft.json"
+    if stale_max_template.exists():
+        drifted.append("public/import-templates/max_granularity_multi_aircraft.json")
     return drifted
 
 
@@ -126,7 +130,7 @@ def _case(case_id: str, import_package: dict[str, Any], description: str) -> dic
         "phase": "6P",
         "case_id": case_id,
         "description": description,
-        "source_fixture": "tests/fixtures/modeling_import_project.json",
+        "source_fixture": BASE_CASE_FIXTURE,
         "model_family": "aircraft_support_v1",
         "validation_level": validation_level,
         "used_tables": used_tables,
@@ -146,7 +150,7 @@ def _case(case_id: str, import_package: dict[str, Any], description: str) -> dic
 
 
 def _load_canonical_import(repo_root: Path) -> dict[str, Any]:
-    return json.loads((repo_root / "tests" / "fixtures" / "modeling_import_project.json").read_text(encoding="utf-8"))
+    return json.loads((repo_root / BASE_CASE_FIXTURE).read_text(encoding="utf-8"))
 
 
 def _minimal_single_aircraft_import(source: dict[str, Any]) -> dict[str, Any]:
@@ -156,7 +160,7 @@ def _minimal_single_aircraft_import(source: dict[str, Any]) -> dict[str, Any]:
     case["source"] = {
         "type": "json_fixture",
         "name": "simulation_analysis_cases/minimal_single_aircraft.json",
-        "derivedFrom": "tests/fixtures/modeling_import_project.json",
+        "derivedFrom": BASE_CASE_FIXTURE,
     }
     case["lifecycle"] = {"state": "draft", "version": 1, "referencedRunIds": []}
     objects = case["objects"]
@@ -313,88 +317,6 @@ def _minimal_single_aircraft_import(source: dict[str, Any]) -> dict[str, Any]:
     objects["analysisRequests"]["largeSample"] = copy.deepcopy(single_large_sample)
     mission["analysisRequests"] = {"largeSample": copy.deepcopy(single_large_sample)}
     return case
-
-
-def _max_granularity_import(source: dict[str, Any]) -> dict[str, Any]:
-    case = copy.deepcopy(source)
-    case["importId"] = "import-6p-max-granularity-multi-aircraft"
-    case["projectId"] = "project-6p-max-granularity-multi-aircraft"
-    case["source"] = {
-        "type": "json_fixture",
-        "name": "simulation_analysis_cases/max_granularity_multi_aircraft.json",
-        "derivedFrom": "tests/fixtures/modeling_import_project.json",
-    }
-    case["lifecycle"] = {"state": "draft", "version": 1, "referencedRunIds": []}
-    objects = case["objects"]
-    mission = objects["missionProfiles"][0]
-    mission["id"] = "mission-profile-6p-max"
-    mission["name"] = "6P 最大多机多保障节点任务剖面"
-    mission["durationHours"] = 36
-    members = [copy.deepcopy(member) for member in mission["combatUnit"]["members"]]
-    for index in range(6, 9):
-        template = copy.deepcopy(members[index % len(members)])
-        template["aircraftNo"] = f"J15-6P-{index + 1:03d}"
-        template["model"] = "J-15" if index % 2 == 0 else "J-35"
-        template["status"] = "备用"
-        template["remainingLifeHours"] = 150 + index
-        members.append(template)
-    mission["combatUnit"]["members"] = members
-    for composite in mission["compositeTasks"]:
-        for item in composite.get("taskItems", []):
-            item["equipmentQuantity"] = max(3, int(item.get("equipmentQuantity") or 1))
-            item["requiredEquipmentQuantity"] = max(3, int(item.get("requiredEquipmentQuantity") or item["equipmentQuantity"]))
-            item["dailyRepeatCount"] = max(2, int(item.get("dailyRepeatCount") or 1))
-    objects["equipment"] = {
-        **copy.deepcopy(objects.get("equipment", {})),
-        "quantity": len(members),
-        "initialReady": len(members),
-        "minRequiredSorties": 6,
-    }
-    root = objects["equipmentAssets"][0]
-    root["quantity"] = len(members)
-    extra_resource = copy.deepcopy(objects["supportResources"][0])
-    extra_resource["id"] = "expeditionary-6p-node"
-    extra_resource["name"] = "6P 前出保障点"
-    extra_resource["capacity"] = 3
-    extra_resource["personnelCapacity"] = 3
-    extra_resource["equipmentCapacity"] = 2
-    extra_resource["inventory"] = {"发动机备件": 2, "液压备件": 2, "航电模块": 2}
-    objects["supportResources"].append(extra_resource)
-    for index in range(6, 9):
-        template = copy.deepcopy(objects["supportActivities"][index % 3])
-        template["id"] = f"phase-6p-extra-activity-{index}"
-        template["name"] = f"6P 扩展保障活动 {index}"
-        template["resourceId"] = "expeditionary-6p-node" if index % 2 == 0 else template["resourceId"]
-        for job_index, job in enumerate(template.get("jobs", [])):
-            job["activityCode"] = f"6P-{index}-{job_index + 1:03d}"
-            job["predecessors"] = [] if job_index == 0 else [template["jobs"][job_index - 1]["activityCode"]]
-        objects["supportActivities"].append(template)
-    objects["analysisRequests"]["largeSample"] = {
-        "enabled": True,
-        "samples": 4,
-        "sweep": {
-            "failureRates": [0.025, 0.055],
-            "spareMultipliers": [0.8, 1.2],
-            "supportCapacities": [2, 4],
-        },
-    }
-    return case
-
-
-def _asset_with_quantity(asset: dict[str, Any], quantity: int) -> dict[str, Any]:
-    updated = copy.deepcopy(asset)
-    updated["quantity"] = quantity
-    return updated
-
-
-def _resource_with_capacity(resource: dict[str, Any], capacity: int) -> dict[str, Any]:
-    updated = copy.deepcopy(resource)
-    updated["capacity"] = capacity
-    updated["personnelCapacity"] = capacity
-    updated["equipmentCapacity"] = capacity
-    updated["inventory"] = {key: 1 for key in (updated.get("inventory") or {"通用备件": 1})}
-    updated["transportPolicies"] = []
-    return updated
 
 
 def _apply_validation_scope(case_id: str, import_package: dict[str, Any]) -> tuple[str, dict[str, bool]]:

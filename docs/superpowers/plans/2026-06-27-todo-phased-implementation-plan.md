@@ -347,38 +347,37 @@
 
 **数据包分层：**
 - `minimal_single_aircraft`：Level 0 最小可运行包。只声明核心表域 `missionProfiles`、`equipmentAssets` 和 `reliabilityBlockDiagram`，并将 `supportResources`、`supportActivities`、`supportOrganization`、`transportPolicies` 标记为 `usedTables=false`；这些未建模域只产生 `scope_not_modeled` warning，并通过 `disabledDomains` / provenance 传入编译链路，不允许用空数组或空对象伪装成已建模表。该层用于验证最小闭环、缺 artifact、缺 provenance、缺支援网络和 fail-closed 边界。
-- `canonical_platform_case`：Level 1 平台标准包。继续以 `tests/fixtures/modeling_import_project.json` 为唯一完整业务案例源，所有 modeling-import 表域 `usedTables=true`，且每个声明域必须存在并包含有效内容；`supportOrganization` 虽然在 `aircraft_support_v1` 中是 governance-only，不驱动仿真行为，但在 Level 1 导入包中仍必须作为非空建模内容保留。该层保持 M9.6/M9.7/M9.8 验收链路一致。
-- `max_granularity_multi_aircraft`：Level 1 最大颗粒度包。所有表域 `usedTables=true`，在 `canonical_platform_case` 基础上扩展多飞机、多周期任务、多保障节点、多备件、多保障活动 DAG 和多 sweep 参数，用于验证 Monte Carlo、四类 projection、state-series、事件追溯和前端正式结果承载。
+- `canonical_platform_case`：Level 1 平台标准包。以恢复的 `tests/fixtures/case_new.json` 作为 6P 测试案例基础数据，所有 modeling-import 表域 `usedTables=true`，且每个声明域必须存在并包含有效内容；`supportOrganization` 虽然在 `aircraft_support_v1` 中是 governance-only，不驱动仿真行为，但在 Level 1 导入包中仍必须作为非空建模内容保留。该层保持 M9.6/M9.7/M9.8 验收链路一致。
 
 **Level 0 / Level 1 契约口径：**
 - `validationLevel=level0` 是有意缩小建模范围的导入包，允许非核心表域 `usedTables=false`，但必须把关闭的域写入 warnings/provenance，编译门按 disabled domain 放宽缺失域。
 - `validationLevel=level1` 是完整声明建模包，不允许任何非核心域 `usedTables=false`；声明为 true 的集合域必须非空，声明为 true 的对象域必须有最小有效结构。
-- 三层数据包不是三种任意严格度：当前 6P 只有一个 Level 0 最小层和两个 Level 1 完整层。后续新增“中间颗粒度”前必须先明确它是 Level 0 缩域包，还是 Level 1 完整声明包。
+- 两层数据包不是两种任意严格度：当前 6P 只有一个 Level 0 最小层和一个 Level 1 平台标准层。后续新增“中间颗粒度”前必须先明确它是 Level 0 缩域包，还是 Level 1 完整声明包。
 
 **推荐落点：**
-- [x] 新增 `src/spare_mvp_backend/simulation_analysis_cases.py` 生成 `minimal_single_aircraft`、`canonical_platform_case` 和 `max_granularity_multi_aircraft` 三类数据包。
+- [x] 新增 `src/spare_mvp_backend/simulation_analysis_cases.py` 生成 `minimal_single_aircraft` 和 `canonical_platform_case` 两类数据包。
 - [x] 新增 `tests/fixtures/simulation_analysis_cases/`，只放可复现、可校验的建模导入包或由 canonical case 派生的 fixture。
 - [x] 新增 `scripts/export-simulation-analysis-cases.py --write|--check`，用于写入和检查 6P fixture drift。
 - [x] Python 测试覆盖 `SimulationAdapter`、正式 Monte Carlo 产物、`monte_carlo_base`、四类 `analysis_projection_*` 和 `visualization_state_series`。
 - [x] 前端测试继续覆盖 projection adapter、state-series replay、蒙特卡洛实验详情和剩余分析页的正式来源阻断。
 
-**退出标准：** 三类数据都能从建模导入或 canonical case 进入正式 run 链路；Level 0 包的 disabled domain 必须在 validation warnings、Project provenance、Scenario provenance 和 run artifact 链路中可追踪，Level 1 包不得通过关闭表域绕过完整建模要求；每个分析页要么消费对应正式 artifact，要么明确显示缺少正式来源，不允许回退到本地预览数据并声明为正式结果。
+**退出标准：** 两类数据都能从建模导入或 canonical case 进入正式 run 链路；Level 0 包的 disabled domain 必须在 validation warnings、Project provenance、Scenario provenance 和 run artifact 链路中可追踪，Level 1 包不得通过关闭表域绕过完整建模要求；每个分析页要么消费对应正式 artifact，要么明确显示缺少正式来源，不允许回退到本地预览数据并声明为正式结果。
 
 **6P 文件：**
 - 新增：`src/spare_mvp_backend/simulation_analysis_cases.py`
 - 新增：`scripts/export-simulation-analysis-cases.py`
+- 新增：`tests/fixtures/case_new.json`
 - 新增：`tests/fixtures/simulation_analysis_cases/minimal_single_aircraft.json`
 - 新增：`tests/fixtures/simulation_analysis_cases/canonical_platform_case.json`
-- 新增：`tests/fixtures/simulation_analysis_cases/max_granularity_multi_aircraft.json`
 - 新增：`tests/test_simulation_analysis_cases.py`
 
 阶段 6P 验证记录：
 - [x] 运行 `PYTHONDONTWRITEBYTECODE=1 .abm-mesa-test-env/bin/python -m unittest tests.test_simulation_analysis_cases -v`。
 
-阶段 6P 已完成三类仿真分析验收数据包、fixture drift 检查和正式 `aircraft_support_v1` Monte Carlo artifact 验证。浏览器冒烟仍作为最终验证矩阵的一部分执行，不阻塞 6P 数据基线合并。
+阶段 6P 已完成两类仿真分析验收数据包、fixture drift 检查和正式 `aircraft_support_v1` Monte Carlo artifact 验证。浏览器冒烟仍作为最终验证矩阵的一部分执行，不阻塞 6P 数据基线合并。
 
 阶段 6P 后续待办：
-- [ ] 将 `系统运行支持模块 / 项目管理 / 建模颗粒度管理` 的选中字段对齐到三类 6P 导入案例标准：`minimal_single_aircraft` 作为 Level 0 最小可运行颗粒度，`canonical_platform_case` 作为 Level 1 平台标准案例，`max_granularity_multi_aircraft` 作为 Level 1 最大建模颗粒度。实现时应新增从 `modeling_import` 字段路径到前端建模字段 key 的显式映射，并用覆盖率测试防止行为字段被静默遗漏；不要仅调整 UI 默认勾选状态，也不要让 Level 1 颗粒度通过 `usedTables=false` 规避字段覆盖。
+- [ ] 将 `系统运行支持模块 / 项目管理 / 建模颗粒度管理` 的选中字段对齐到两类 6P 导入案例标准：`minimal_single_aircraft` 作为 Level 0 最小可运行颗粒度，`canonical_platform_case` 作为 Level 1 平台标准案例。实现时应新增从 `modeling_import` 字段路径到前端建模字段 key 的显式映射，并用覆盖率测试防止行为字段被静默遗漏；不要仅调整 UI 默认勾选状态，也不要让 Level 1 颗粒度通过 `usedTables=false` 规避字段覆盖。
 
 **文件：**
 - 修改：`front/app.js`

@@ -1295,8 +1295,9 @@
   "source": {
     "backfilledFromProjectId": "project-carrier-day-night",
     "backfilledFromScenarioId": "import-carrier-day-night-001",
-    "name": "modeling_import_project.json",
-    "type": "json_fixture"
+    "exportedTo": "public/import-templates/case_new.json",
+    "name": "front/modeling-import-demo-fixture.mjs",
+    "type": "frontend_current_template"
   },
   "usedTables": {
     "equipmentAssets": true,

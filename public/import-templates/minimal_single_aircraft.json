@@ -364,7 +364,7 @@
   "projectId": "project-6p-minimal-single-aircraft",
   "schemaVersion": "modeling-import-v1",
   "source": {
-    "derivedFrom": "tests/fixtures/modeling_import_project.json",
+    "derivedFrom": "tests/fixtures/case_new.json",
     "name": "simulation_analysis_cases/minimal_single_aircraft.json",
     "type": "json_fixture"
   },
