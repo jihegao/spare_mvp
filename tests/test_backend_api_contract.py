@@ -1906,6 +1906,94 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(provenance["modeling_snapshot_id"], snapshot["snapshot_id"])
         self.assertEqual(self.api.get_project(saved["project_id"]), project)
 
+    def test_create_experiment_plan_binds_explicit_or_latest_modeling_snapshot(self) -> None:
+        project = self._fixture("smoke_project.json")
+        saved = self.api.save_project(project)
+        first_snapshot = self.api.create_modeling_snapshot(saved["project_id"])
+        project["experiment"]["seed"] = 909
+        self.api.save_project(project)
+        latest_snapshot = self.api.create_modeling_snapshot(saved["project_id"])
+
+        explicit_plan = self.api.create_experiment_plan(
+            saved["project_id"],
+            {
+                "name": "explicit snapshot",
+                "steps": 1,
+                "modeling_snapshot_id": first_snapshot["snapshot_id"],
+            },
+        )
+        latest_plan = self.api.create_experiment_plan(saved["project_id"], {"name": "latest snapshot", "steps": 1})
+        run = self.api.submit_run(
+            {
+                "project_id": saved["project_id"],
+                "experiment_plan_id": explicit_plan["experiment_plan_id"],
+                "model_family": "smoke",
+                "run_type": "single",
+            }
+        )
+
+        self.assertEqual(explicit_plan["modeling_snapshot_id"], first_snapshot["snapshot_id"])
+        self.assertEqual(latest_plan["modeling_snapshot_id"], latest_snapshot["snapshot_id"])
+        self.assertEqual(self.api.get_run_chain(run["run_id"])["modeling_snapshot_id"], first_snapshot["snapshot_id"])
+
+    def test_submit_run_after_project_edit_uses_new_explicit_modeling_snapshot(self) -> None:
+        project = self._fixture("smoke_project.json")
+        saved = self.api.save_project(project)
+        old_snapshot = self.api.create_modeling_snapshot(saved["project_id"])
+        project["experiment"]["seed"] = 606
+        project["components"][0]["failureRate"] = 0.33
+        saved = self.api.save_project(project)
+        current_snapshot = self.api.create_modeling_snapshot(saved["project_id"])
+        plan = self.api.create_experiment_plan(
+            saved["project_id"],
+            {
+                "name": "current explicit snapshot",
+                "steps": 3,
+                "projectJson": project,
+                "modeling_snapshot_id": current_snapshot["snapshot_id"],
+            },
+        )
+
+        run = self.api.submit_run(
+            {
+                "project_id": saved["project_id"],
+                "experiment_plan_id": plan["experiment_plan_id"],
+                "model_family": "smoke",
+                "run_type": "single",
+            }
+        )
+
+        compiled_project, _model_family = self.adapter.compile_calls[-1]
+        compiled_scenario, _steps, _run_id = self.adapter.run_calls[-1]
+        provenance = compiled_scenario["compiled_from"]["mapping_provenance"]
+
+        self.assertNotEqual(old_snapshot["snapshot_id"], current_snapshot["snapshot_id"])
+        self.assertEqual(plan["modeling_snapshot_id"], current_snapshot["snapshot_id"])
+        self.assertEqual(self.api.get_run_chain(run["run_id"])["modeling_snapshot_id"], current_snapshot["snapshot_id"])
+        self.assertEqual(provenance["modeling_snapshot_id"], current_snapshot["snapshot_id"])
+        self.assertEqual(compiled_project["experiment"]["seed"], 606)
+        self.assertEqual(compiled_project["components"][0]["failureRate"], 0.33)
+
+    def test_backend_api_delegates_submit_run_without_outer_lifecycle_lock(self) -> None:
+        shared_lock = threading.Lock()
+        api = BackendApi(self.repository, self.adapter, output_dir=Path(self.tempdir.name), run_lifecycle_lock=shared_lock)
+        observed: dict[str, Any] = {}
+        self.assertIs(api.run_service._run_lock, shared_lock)
+
+        class FakeRunService:
+            def submit_run(self, request: dict[str, Any]) -> dict[str, Any]:
+                observed["outer_lock_held"] = shared_lock.locked()
+                observed["request"] = copy.deepcopy(request)
+                return {"run_id": "run-fake", "status": "succeeded"}
+
+        api.run_service = FakeRunService()  # type: ignore[assignment]
+
+        result = api.submit_run({"project_id": "project-fake", "experiment_plan_id": "plan-fake", "model_family": "smoke"})
+
+        self.assertEqual(result["run_id"], "run-fake")
+        self.assertEqual(observed["outer_lock_held"], False)
+        self.assertIs(api._run_lock, shared_lock)
+
     def test_repeated_smoke_runs_create_distinct_run_chains(self) -> None:
         project = self._fixture("smoke_project.json")
 

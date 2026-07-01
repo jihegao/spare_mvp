@@ -30,7 +30,7 @@ class BackendApi:
         self.adapter = adapter
         self.output_dir = Path(output_dir)
         self._run_lock = run_lifecycle_lock or threading.Lock()
-        self.run_service = RunService(repository, adapter, self.output_dir)
+        self.run_service = RunService(repository, adapter, self.output_dir, run_lifecycle_lock=self._run_lock)
 
     def validate_project(self, project_json: dict[str, Any]) -> dict[str, Any]:
         return self.adapter.validate_project(project_json)
@@ -436,18 +436,21 @@ class BackendApi:
     def create_experiment_plan(self, project_id: str, config: dict[str, Any]) -> dict[str, Any]:
         project = self.repository.get_project(project_id)
         plan_config = copy.deepcopy(config)
-        requested_snapshot_id = plan_config.pop("modeling_snapshot_id", None)
-        if requested_snapshot_id:
-            snapshot = self.repository.get_modeling_snapshot(str(requested_snapshot_id))
-            if snapshot["project_id"] != project_id:
-                raise BackendApiError(
-                    "invalid_modeling_snapshot",
-                    f"Modeling snapshot {requested_snapshot_id} does not belong to project {project_id}",
-                )
-        else:
-            snapshot = self.repository.get_latest_modeling_snapshot(project_id)
-            if snapshot is None:
-                snapshot = self.create_modeling_snapshot(project_id)
+        requested_snapshot_id = str(plan_config.pop("modeling_snapshot_id", "") or "").strip()
+        snapshot = (
+            self.repository.get_modeling_snapshot(requested_snapshot_id)
+            if requested_snapshot_id
+            else self.repository.get_latest_modeling_snapshot(project_id)
+        )
+        if snapshot is not None and snapshot.get("project_id") != project_id:
+            raise BackendApiError(
+                "modeling_snapshot_project_mismatch",
+                "modeling snapshot does not belong to project",
+                project_id=project_id,
+                modeling_snapshot_id=snapshot.get("snapshot_id"),
+            )
+        if snapshot is None:
+            snapshot = self.create_modeling_snapshot(project_id)
         plan_key = {"config": plan_config, "modeling_snapshot_id": snapshot["snapshot_id"]}
         plan = {
             "experiment_plan_id": f"experiment-plan-{project_id}-{_stable_hash(plan_key)}",
@@ -482,12 +485,11 @@ class BackendApi:
             resource_id=experiment_plan_id,
         )
         try:
-            with self._run_lock:
-                return self.repository.delete_experiment_plan_with_runs(
-                    project_id,
-                    experiment_plan_id,
-                    actor_user_id=actor_user_id,
-                )
+            return self.run_service.delete_experiment_plan(
+                project_id,
+                experiment_plan_id,
+                actor_user_id=actor_user_id,
+            )
         except KeyError as exc:
             raise BackendApiError(
                 "experiment_plan_not_found",
@@ -513,11 +515,10 @@ class BackendApi:
         )
 
     def submit_run(self, request: dict[str, Any]) -> dict[str, Any]:
-        with self._run_lock:
-            try:
-                return self.run_service.submit_run(request)
-            except RunServiceError as exc:
-                raise self._run_service_error_to_backend_error(exc) from exc
+        try:
+            return self.run_service.submit_run(request)
+        except RunServiceError as exc:
+            raise self._run_service_error_to_backend_error(exc) from exc
 
     def get_run(self, run_id: str) -> dict[str, Any]:
         return self.repository.get_run(run_id)
@@ -567,7 +568,7 @@ class BackendApi:
             resource_type="run",
             resource_id=run_id,
         )
-        return self.repository.archive_run_with_audit(run_id, actor_user_id=actor_user_id)
+        return self.run_service.archive_run(run_id, actor_user_id=actor_user_id)
 
     def soft_delete_run(self, run_id: str, actor_user_id: str | None = None) -> dict[str, Any]:
         actor_user_id = _require_m7_actor(actor_user_id)
@@ -578,7 +579,7 @@ class BackendApi:
             resource_type="run",
             resource_id=run_id,
         )
-        return self.repository.soft_delete_run_with_audit(run_id, actor_user_id=actor_user_id)
+        return self.run_service.soft_delete_run(run_id, actor_user_id=actor_user_id)
 
     def control_run(self, run_id: str, action: str, *, actor_user_id: str | None = None) -> dict[str, Any]:
         actor_user_id = _require_m7_actor(actor_user_id)
@@ -591,7 +592,7 @@ class BackendApi:
             resource_id=run_id,
         )
         try:
-            return self.repository.control_run_with_audit(run_id, action_name, actor_user_id=actor_user_id)
+            return self.run_service.control_run(run_id, action_name, actor_user_id=actor_user_id)
         except ValueError as exc:
             reason = str(exc)
             if reason == "run_deleted":
