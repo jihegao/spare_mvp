@@ -13,7 +13,7 @@ export async function ensurePublishedModelingImportForSampleProject({
         storedImportWasChecked = true;
         const stored = await backendApi.getModelingImport(existingImportId);
         const publishedPackage = stored?.publishedPackage || null;
-        if (publishedPackage && sampleImportPackageIsComplete(publishedPackage, fixture)) {
+        if (publishedPackage && sampleImportPackageShouldBeReused(publishedPackage, fixture)) {
           const importId = publishedPackage.importId || publishedPackage.import_id || existingImportId;
           return { importId, reused: true, publishedPackage };
         }
@@ -45,11 +45,19 @@ export async function ensurePublishedModelingImportForSampleProject({
 }
 
 export function sampleImportPackageIsComplete(candidate, fixture) {
+  return sampleImportPackageHasRequiredObjects(candidate, fixture)
+    && modelingImportSourceMatches(candidate?.source, fixture?.source);
+}
+
+function sampleImportPackageShouldBeReused(candidate, fixture) {
+  if (!sampleImportPackageHasRequiredObjects(candidate, fixture)) return false;
+  if (modelingImportSourceMatches(candidate?.source, fixture?.source)) return true;
+  return publishedImportHasRunReferences(candidate);
+}
+
+function sampleImportPackageHasRequiredObjects(candidate, fixture) {
   const candidateObjects = candidate?.objects || {};
   const fixtureObjects = fixture?.objects || {};
-  if (fixture?.source && !modelingImportSourceMatches(candidate?.source, fixture.source)) {
-    return false;
-  }
   return [
     "missionProfiles",
     "equipmentAssets",
@@ -59,9 +67,15 @@ export function sampleImportPackageIsComplete(candidate, fixture) {
 }
 
 function modelingImportSourceMatches(candidateSource, fixtureSource) {
+  if (!fixtureSource) return true;
   if (!candidateSource || !fixtureSource) return false;
   return ["type", "name", "derivedFrom"].every((key) => {
     if (!(key in fixtureSource)) return true;
     return candidateSource[key] === fixtureSource[key];
   });
+}
+
+function publishedImportHasRunReferences(candidate) {
+  const referencedRunIds = candidate?.lifecycle?.referencedRunIds;
+  return candidate?.lifecycle?.state === "published" && Array.isArray(referencedRunIds) && referencedRunIds.length > 0;
 }
