@@ -1901,6 +1901,44 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(latest_plan["modeling_snapshot_id"], latest_snapshot["snapshot_id"])
         self.assertEqual(self.api.get_run_chain(run["run_id"])["modeling_snapshot_id"], first_snapshot["snapshot_id"])
 
+    def test_submit_run_after_project_edit_uses_new_explicit_modeling_snapshot(self) -> None:
+        project = self._fixture("smoke_project.json")
+        saved = self.api.save_project(project)
+        old_snapshot = self.api.create_modeling_snapshot(saved["project_id"])
+        project["experiment"]["seed"] = 606
+        project["components"][0]["failureRate"] = 0.33
+        saved = self.api.save_project(project)
+        current_snapshot = self.api.create_modeling_snapshot(saved["project_id"])
+        plan = self.api.create_experiment_plan(
+            saved["project_id"],
+            {
+                "name": "current explicit snapshot",
+                "steps": 3,
+                "projectJson": project,
+                "modeling_snapshot_id": current_snapshot["snapshot_id"],
+            },
+        )
+
+        run = self.api.submit_run(
+            {
+                "project_id": saved["project_id"],
+                "experiment_plan_id": plan["experiment_plan_id"],
+                "model_family": "smoke",
+                "run_type": "single",
+            }
+        )
+
+        compiled_project, _model_family = self.adapter.compile_calls[-1]
+        compiled_scenario, _steps, _run_id = self.adapter.run_calls[-1]
+        provenance = compiled_scenario["compiled_from"]["mapping_provenance"]
+
+        self.assertNotEqual(old_snapshot["snapshot_id"], current_snapshot["snapshot_id"])
+        self.assertEqual(plan["modeling_snapshot_id"], current_snapshot["snapshot_id"])
+        self.assertEqual(self.api.get_run_chain(run["run_id"])["modeling_snapshot_id"], current_snapshot["snapshot_id"])
+        self.assertEqual(provenance["modeling_snapshot_id"], current_snapshot["snapshot_id"])
+        self.assertEqual(compiled_project["experiment"]["seed"], 606)
+        self.assertEqual(compiled_project["components"][0]["failureRate"], 0.33)
+
     def test_backend_api_delegates_submit_run_without_outer_lifecycle_lock(self) -> None:
         shared_lock = threading.Lock()
         api = BackendApi(self.repository, self.adapter, output_dir=Path(self.tempdir.name), run_lifecycle_lock=shared_lock)

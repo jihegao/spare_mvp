@@ -442,6 +442,67 @@ test("basic support activity add uses a draft dialog before creating a row", asy
   }
 });
 
+test("corrective basic activity draft uses the selected component scope", async () => {
+  const projectJson = createRuntimeProjectJson({
+    components: [
+      { id: "component-a", name: "部件A", aircraftModel: "J-15", quantity: 1 },
+      { id: "component-b", name: "部件B", aircraftModel: "J-15", quantity: 1 }
+    ]
+  });
+  projectJson.supportActivities.push({
+    id: "corrective-component-a",
+    activityType: "修复性维修",
+    planType: "修复性维修方案",
+    activityName: "部件A修复性维修方案",
+    equipmentId: "component-a",
+    jobs: [{
+      activityCode: "CM-A",
+      workName: "部件A既有修复作业",
+      predecessors: [],
+      durationMinutes: 45
+    }]
+  });
+  const runtime = await setupRuntimeApp({ projectJson });
+
+  try {
+    await runtime.click("[data-enter-workbench]", { projectId: "runtime" });
+    await runtime.setHash("feature=spare-planning-basic-support-activity");
+    await runtime.click("[data-basic-activity-add]");
+    await runtime.change(
+      "[data-basic-activity-field]",
+      { basicActivityKey: "__new_basic_activity__", basicActivityField: "type" },
+      { value: "修复性维修" }
+    );
+    await runtime.change(
+      "[data-basic-activity-field]",
+      { basicActivityKey: "__new_basic_activity__", basicActivityField: "scope" },
+      { value: "component:component-b" }
+    );
+    await runtime.change(
+      "[data-basic-activity-field]",
+      { basicActivityKey: "__new_basic_activity__", basicActivityField: "activityCode" },
+      { value: "CM-B" }
+    );
+    await runtime.change(
+      "[data-basic-activity-field]",
+      { basicActivityKey: "__new_basic_activity__", basicActivityField: "workName" },
+      { value: "部件B新增修复作业" }
+    );
+    await runtime.click("[data-basic-activity-dialog-save]");
+
+    await runtime.setHash("feature=spare-planning-corrective-maintenance-activity");
+    await runtime.click("[data-select-corrective-component]", { selectCorrectiveComponent: "component-a" });
+    assert.match(runtime.appNode.innerHTML, /部件A既有修复作业/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /部件B新增修复作业/);
+
+    await runtime.click("[data-select-corrective-component]", { selectCorrectiveComponent: "component-b" });
+    assert.match(runtime.appNode.innerHTML, /部件B新增修复作业/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /部件A既有修复作业/);
+  } finally {
+    runtime.restore();
+  }
+});
+
 test("basic support activity codes stay unique when edited at runtime", async () => {
   const projectJson = createRuntimeProjectJson();
   projectJson.supportActivities[0].jobs.push({

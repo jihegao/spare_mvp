@@ -57,7 +57,10 @@ import {
   MODELING_IMPORT_TEMPLATES,
   loadModelingImportTemplate
 } from "./modeling-import-templates.mjs";
-import { ensurePublishedModelingImportForSampleProject } from "./modeling-import-project-flow.mjs";
+import {
+  ensurePublishedModelingImportForSampleProject,
+  sampleImportPackageIsComplete
+} from "./modeling-import-project-flow.mjs";
 import {
   addEquipmentNodeForSelectionModel,
   buildEquipmentComponentTreeModel,
@@ -72,6 +75,7 @@ const app = document.querySelector("#app");
 const groups = groupFeaturePages(FEATURE_PAGES);
 const CONTRACT_BASE = "http://127.0.0.1:8521"; // Mesa 契约服务（见 agent.md「Mesa 后台契约服务」）
 const FORMAL_AIRCRAFT_SUPPORT_MODEL_FAMILY = "aircraft_support_v1";
+const DEFAULT_SAMPLE_MODELING_IMPORT_TEMPLATE_ID = "canonical-platform-case";
 const LAST_BACKEND_RUN_STORAGE_KEY = "spare-mvp:lastBackendRun";
 const AUTH_SESSION_STORAGE_KEY = "spare-mvp:m4Session";
 const MANUAL_PROJECT_DRAFTS_STORAGE_KEY = "spare-mvp:manualProjects:v1";
@@ -505,7 +509,7 @@ let modelingImportValidation = cloneModelingImportPackage(MODELING_IMPORT_DEMO_F
 let modelingImportCompileResult = null;
 let modelingImportStatus = "样例导入包已加载";
 let modelingImportSaved = false;
-let selectedModelingImportTemplateId = MODELING_IMPORT_TEMPLATES[0]?.id || "";
+let selectedModelingImportTemplateId = DEFAULT_SAMPLE_MODELING_IMPORT_TEMPLATE_ID;
 let savedProject = null;
 let modelingSnapshot = null;
 let experimentPlan = null;
@@ -7143,12 +7147,15 @@ function ensureBasicActivityDraftHostActivity(type) {
     return activity;
   }
   if (activityType === "修复性维修") {
-    const existing = activities.find((activity) => isCorrectiveMaintenanceActivity(activity));
-    if (existing) return existing;
-    const activity = createDefaultCorrectiveMaintenanceActivity();
-    activity.jobs = [];
-    activities.push(activity);
-    return activity;
+    const activity = ensureCorrectiveMaintenanceActivityForBasicActivityDraft(basicActivityDraft);
+    if (activity) {
+      activity.jobs = supportActivityJobs(activity);
+      return activity;
+    }
+    const fallback = createDefaultCorrectiveMaintenanceActivity();
+    fallback.jobs = [];
+    activities.push(fallback);
+    return fallback;
   }
   const model = defaultSupportActivityAircraftModel();
   const existing = operationsSupportPhaseActivity({ aircraftModel: model }, "直接准备方案");
@@ -7163,6 +7170,26 @@ function ensureBasicActivityDraftHostActivity(type) {
   selectedOperationsSupportAircraftModel = model;
   selectedOperationsSupportActivityKey = `supportActivity:${activities.indexOf(activity)}`;
   return activity;
+}
+
+function ensureCorrectiveMaintenanceActivityForBasicActivityDraft(draft) {
+  const scopeValue = basicActivityScopeValue(draft || {});
+  const component = correctiveComponentForBasicActivityScope(scopeValue) || selectedCorrectiveComponent();
+  const existing = correctiveMaintenanceActivityForComponent(component);
+  if (existing) return existing;
+  const created = ensureCorrectiveMaintenanceActivityForComponent(component);
+  if (created) created.jobs = [];
+  return created;
+}
+
+function correctiveComponentForBasicActivityScope(scopeValue) {
+  const text = String(scopeValue || "");
+  if (!text.startsWith("component:")) return null;
+  const componentId = text.replace(/^component:/, "");
+  return (scenario.components || []).find((component) => (
+    String(component.id || "") === componentId
+    || String(component.name || "") === componentId
+  )) || null;
 }
 
 function updateBasicActivityJobField(key, fieldName, value) {
@@ -8337,12 +8364,13 @@ function addDemoProject() {
 
 async function createSampleProjectFromPublishedImport(importId = currentPublishedModelingImportId()) {
   try {
+    const sampleFixture = await loadSampleModelingImportFixture();
     projectListStatus = importId
       ? "正在从已发布导入数据生成示例项目"
       : "正在保存并发布示例导入包";
     const published = await ensurePublishedModelingImportForSampleProject({
       backendApi,
-      fixture: MODELING_IMPORT_DEMO_FIXTURE,
+      fixture: sampleFixture,
       publishedImportId: importId
     });
     const resolvedImportId = published.importId;
@@ -8352,7 +8380,7 @@ async function createSampleProjectFromPublishedImport(importId = currentPublishe
     projectListStatus = "正在从已发布导入数据生成示例项目";
     const created = await backendApi.createProjectFromModelingImport(resolvedImportId);
     const projectJson = created.project || {};
-    const projectId = projectJson.project_id || created.savedProject?.project_id || MODELING_IMPORT_DEMO_FIXTURE.projectId;
+    const projectId = projectJson.project_id || created.savedProject?.project_id || sampleFixture.projectId;
     const project = {
       id: String(projectId || "imported-sample").replace(/^project-/, ""),
       name: projectJson.experiment?.name || "导入示例项目",
@@ -8379,6 +8407,14 @@ async function createSampleProjectFromPublishedImport(importId = currentPublishe
   } catch (err) {
     projectListStatus = `导入示例项目生成失败：${err && err.message ? err.message : "Backend API 不可用"}`;
     return null;
+  }
+}
+
+async function loadSampleModelingImportFixture() {
+  try {
+    return await loadModelingImportTemplate(DEFAULT_SAMPLE_MODELING_IMPORT_TEMPLATE_ID);
+  } catch {
+    return cloneModelingImportPackage(MODELING_IMPORT_DEMO_FIXTURE);
   }
 }
 
@@ -10276,9 +10312,17 @@ async function handleModelingImportAction(action, options = {}) {
     try {
       const templatePackage = await loadModelingImportTemplate(options.templateId || selectedModelingImportTemplateId);
       const stored = await backendApi.getModelingImport(templatePackage.importId);
-      applyModelingImportRecord(stored);
+      if (sampleImportPackageIsComplete(stored?.publishedPackage || stored?.draftPackage, templatePackage)) {
+        applyModelingImportRecord(stored);
+        modelingImportStatus = "已从后端恢复导入草稿和发布快照";
+      } else {
+        modelingImportPackage = cloneModelingImportPackage(templatePackage);
+        modelingImportPublishedPackage = null;
+        modelingImportValidation = cloneModelingImportPackage(modelingImportPackage.validation || {});
+        modelingImportSaved = false;
+        modelingImportStatus = `内置导入模板已加载：${modelingImportTemplateLabel(options.templateId || selectedModelingImportTemplateId)}`;
+      }
       modelingImportCompileResult = null;
-      modelingImportStatus = "已从后端恢复导入草稿和发布快照";
     } catch {
       try {
         modelingImportPackage = await loadModelingImportTemplate(options.templateId || selectedModelingImportTemplateId);

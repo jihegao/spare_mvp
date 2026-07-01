@@ -141,3 +141,50 @@ test("sample project flow republishes demo fixture when stored demo import is in
     ["publish", MODELING_IMPORT_DEMO_FIXTURE.importId]
   ]);
 });
+
+test("sample project flow republishes fixture when stored import source is stale", async () => {
+  const canonicalFixture = {
+    ...MODELING_IMPORT_DEMO_FIXTURE,
+    source: {
+      type: "json_fixture",
+      name: "simulation_analysis_cases/canonical_platform_case.json",
+      derivedFrom: "tests/fixtures/case_new.json"
+    }
+  };
+  const calls = [];
+  const backendApi = {
+    async getModelingImport(importId) {
+      calls.push(["get", importId]);
+      return {
+        publishedPackage: {
+          ...canonicalFixture,
+          source: {
+            type: "json_fixture",
+            name: "modeling_import_project.json"
+          }
+        }
+      };
+    },
+    async saveModelingImport(payload) {
+      calls.push(["save", payload.source.name]);
+      return { draftPackage: payload };
+    },
+    async publishModelingImport(importId) {
+      calls.push(["publish", importId]);
+      return { publishedPackage: { ...canonicalFixture, importId } };
+    }
+  };
+
+  const published = await ensurePublishedModelingImportForSampleProject({
+    backendApi,
+    fixture: canonicalFixture,
+    publishedImportId: ""
+  });
+
+  assert.equal(published.reused, false);
+  assert.deepEqual(calls, [
+    ["get", MODELING_IMPORT_DEMO_FIXTURE.importId],
+    ["save", "simulation_analysis_cases/canonical_platform_case.json"],
+    ["publish", MODELING_IMPORT_DEMO_FIXTURE.importId]
+  ]);
+});
