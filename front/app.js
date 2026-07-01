@@ -95,6 +95,11 @@ const PROJECT_SOURCE = Object.freeze({
   manual_draft: "manual_draft",
   imported_sample: "imported_sample"
 });
+const DEFAULT_MONTE_CARLO_SWEEP = Object.freeze({
+  failureRates: [0.06, 0.08, 0.1],
+  spareMultipliers: [0.75, 1, 1.25],
+  supportCapacities: [1, 2, 3]
+});
 let demoProjects = mergeProjectsById(readManualDraftProjectsFromStorage());
 let deletedDowntimeSnapshotIds = new Set();
 const ANALYSIS_PROJECTION_TYPES = [
@@ -2573,6 +2578,7 @@ function createExperimentPlanBranchFromCurrentProject() {
   if (!isExperimentPlanManagementEditor && !["experiment-plan-editor", "experiment-form", "monte-carlo-config", "monte-carlo-experiment-editor"].includes(page.component)) return;
   if (experimentPlanBranchActive) return;
   experimentPlanDraft = cloneScenario(scenario);
+  ensureMonteCarloSweepDefaults(experimentPlanDraft);
   experimentPlanBranchActive = true;
   updatePreviewResultsThroughApiClient(experimentPlanDraft);
 }
@@ -9015,6 +9021,7 @@ async function startMonteCarloRunThroughApi({ monteCarloExperimentId = selectedM
   formalRunSubmitInFlight = true;
   const runType = "monte_carlo";
   const projectJson = buildBackendProjectJson(scenario, currentProject);
+  ensureMonteCarloSweepDefaults(experimentPlanDraft);
   const planProjectJson = buildBackendProjectJson(experimentPlanDraft, currentProject);
   try {
     const submitted = await submitRunIntent(backendApi, {
@@ -11645,15 +11652,7 @@ function monteCarloExperimentByBusinessId(mcExperimentId) {
 }
 
 function monteCarloParameterSpaceForExperiment(monteCarloExperimentId) {
-  const experiment = monteCarloExperimentByBusinessId(monteCarloExperimentId);
-  const businessIds = new Set([
-    monteCarloExperimentId,
-    experiment?.id,
-    experiment?.mc_experiment_id,
-    experiment?.experiment_id
-  ].filter(Boolean));
-  const currentAnalysisRun = [...businessIds].some((id) => String(id).startsWith("current-analysis-"));
-  return currentAnalysisRun ? "sweep" : "baseline";
+  return "sweep";
 }
 
 function monteCarloExperimentSourceRows(experiment) {
@@ -11715,6 +11714,7 @@ function renderMonteCarloExperimentEditor(page) {
   if (!experiment) {
     return importedDataEmptyState("蒙特卡洛实验");
   }
+  ensureMonteCarloSweepDefaults(experimentPlanDraft);
   const detailFeatureId = getMonteCarloExperimentDetailFeatureId(page.module);
   return `
     <div class="mc-workbench">
@@ -11800,6 +11800,7 @@ function renderMonteCarloConfig() {
 }
 
 function renderLegacyMonteCarloConfig() {
+  ensureMonteCarloSweepDefaults(experimentPlanDraft);
   return `
     <div class="mc-workbench">
       <section class="mc-config-panel mc-config-panel-single">
@@ -13002,6 +13003,74 @@ function parseNumberList(value) {
     .split(",")
     .map((part) => Number(part.trim()))
     .filter((number) => Number.isFinite(number));
+}
+
+function ensureMonteCarloSweepDefaults(projectJson) {
+  if (!projectJson || typeof projectJson !== "object") return projectJson;
+  if (!projectJson.monteCarlo || typeof projectJson.monteCarlo !== "object" || Array.isArray(projectJson.monteCarlo)) {
+    projectJson.monteCarlo = {};
+  }
+  const defaultSweep = defaultMonteCarloSweepForProject(projectJson);
+  for (const key of ["failureRates", "spareMultipliers", "supportCapacities"]) {
+    const values = key === "supportCapacities"
+      ? positiveIntegerList(projectJson.monteCarlo[key])
+      : positiveNumberList(projectJson.monteCarlo[key]);
+    projectJson.monteCarlo[key] = values.length ? values : [...defaultSweep[key]];
+  }
+  const sweepPointCount = projectJson.monteCarlo.failureRates.length
+    * projectJson.monteCarlo.spareMultipliers.length
+    * projectJson.monteCarlo.supportCapacities.length;
+  projectJson.experiment = {
+    ...(projectJson.experiment || {}),
+    samples: Math.max(Number(projectJson.experiment?.samples || 0), sweepPointCount)
+  };
+  return projectJson;
+}
+
+function defaultMonteCarloSweepForProject(projectJson) {
+  return {
+    failureRates: [...DEFAULT_MONTE_CARLO_SWEEP.failureRates],
+    spareMultipliers: [...DEFAULT_MONTE_CARLO_SWEEP.spareMultipliers],
+    supportCapacities: supportCapacitySweepForProject(projectJson)
+  };
+}
+
+function supportCapacitySweepForProject(projectJson) {
+  const supportNodes = Array.isArray(projectJson?.supportNodes) ? projectJson.supportNodes : [];
+  for (const node of supportNodes) {
+    const capacity = firstPositiveInteger([
+      node?.equipmentCapacity,
+      node?.personnelCapacity,
+      node?.capacity
+    ]);
+    if (capacity !== null) return positiveIntegerList([capacity - 1, capacity, capacity + 1, capacity + 2]).slice(0, 3);
+  }
+  return [...DEFAULT_MONTE_CARLO_SWEEP.supportCapacities];
+}
+
+function positiveNumberList(values) {
+  return (Array.isArray(values) ? values : [])
+    .map((value) => Number(value))
+    .filter((number) => Number.isFinite(number) && number > 0);
+}
+
+function positiveIntegerList(values) {
+  const seen = new Set();
+  const normalized = [];
+  for (const value of Array.isArray(values) ? values : []) {
+    if (typeof value === "boolean") continue;
+    const number = Number(value);
+    if (!Number.isFinite(number) || number <= 0) continue;
+    const integer = Math.max(1, Math.round(number));
+    if (seen.has(integer)) continue;
+    seen.add(integer);
+    normalized.push(integer);
+  }
+  return normalized;
+}
+
+function firstPositiveInteger(values) {
+  return positiveIntegerList(values)[0] ?? null;
 }
 
 function updateMonteCarloArrayInput(mcArrayInput) {

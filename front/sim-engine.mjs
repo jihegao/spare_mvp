@@ -8,7 +8,7 @@ export const defaultScenario = {
   activeModule: "sparePlanning",
   airports: [],
   missionAreas: [],
-  experiment: { name: "本地空白预览", steps: 24, samples: 0, seed: 20260621 },
+  experiment: { name: "本地空白预览", steps: 24, samples: 27, seed: 20260621 },
   missionProfile: {
     name: "",
     durationHours: 0,
@@ -29,7 +29,11 @@ export const defaultScenario = {
   supportNodes: [],
   supportActivities: [],
   reliabilityBlockDiagram: { nodes: [], edges: [] },
-  monteCarlo: { failureRates: [], spareMultipliers: [], supportCapacities: [] }
+  monteCarlo: {
+    failureRates: [0.06, 0.08, 0.1],
+    spareMultipliers: [0.75, 1, 1.25],
+    supportCapacities: [1, 2, 3]
+  }
 };
 
 export function cloneScenario(scenario = defaultScenario) {

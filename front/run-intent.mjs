@@ -1,6 +1,8 @@
 import { buildExperimentPlanConfig } from "./api-client.mjs";
 
 const SUPPORTED_RUN_TYPES = new Set(["single", "monte_carlo"]);
+const DEFAULT_FAILURE_RATE_SWEEP = [0.06, 0.08, 0.1];
+const DEFAULT_SPARE_MULTIPLIER_SWEEP = [0.75, 1.0, 1.25];
 
 export function buildRunIntent({
   runType,
@@ -10,7 +12,7 @@ export function buildRunIntent({
   experimentId = "",
   analysisType = "",
   modelFamily = "aircraft_support_v1",
-  monteCarloParameterSpace = "baseline"
+  monteCarloParameterSpace = "sweep"
 }) {
   if (!SUPPORTED_RUN_TYPES.has(runType)) {
     throw new Error(`Unsupported runType: ${runType}`);
@@ -79,11 +81,11 @@ export async function submitRunIntent(apiClient, options) {
   };
 }
 
-function withCanonicalMonteCarloAnalysisRequest(planProjectJson, { parameterSpace = "baseline" } = {}) {
+function withCanonicalMonteCarloAnalysisRequest(planProjectJson, { parameterSpace = "sweep" } = {}) {
   const nextProjectJson = cloneJson(planProjectJson);
   const existingLargeSample = nextProjectJson.analysisRequests?.largeSample;
   const sweep = parameterSpace === "sweep"
-    ? cloneJson(existingLargeSample?.sweep || nextProjectJson.monteCarlo || {})
+    ? configuredMonteCarloSweep(nextProjectJson, existingLargeSample)
     : baselineMonteCarloSweep(nextProjectJson);
   const configuredSamples = Number(existingLargeSample?.samples ?? nextProjectJson.experiment?.samples ?? 1);
   const samples = Math.max(configuredSamples, monteCarloSweepPointCount(sweep));
@@ -91,6 +93,7 @@ function withCanonicalMonteCarloAnalysisRequest(planProjectJson, { parameterSpac
     ...(nextProjectJson.experiment || {}),
     samples
   };
+  nextProjectJson.monteCarlo = cloneJson(sweep);
   nextProjectJson.analysisRequests = {
     ...(nextProjectJson.analysisRequests || {}),
     largeSample: {
@@ -102,12 +105,29 @@ function withCanonicalMonteCarloAnalysisRequest(planProjectJson, { parameterSpac
   return nextProjectJson;
 }
 
+function configuredMonteCarloSweep(projectJson, existingLargeSample = {}) {
+  const sources = [
+    existingLargeSample?.sweep,
+    projectJson?.monteCarlo
+  ].filter((source) => source && typeof source === "object");
+  return {
+    failureRates: firstPositiveNumberList(sources, "failureRates") || DEFAULT_FAILURE_RATE_SWEEP,
+    spareMultipliers: firstPositiveNumberList(sources, "spareMultipliers") || DEFAULT_SPARE_MULTIPLIER_SWEEP,
+    supportCapacities: firstPositiveIntegerList(sources, "supportCapacities") || defaultSupportCapacitySweep(projectJson)
+  };
+}
+
 function baselineMonteCarloSweep(projectJson) {
   return {
     failureRates: [1.0],
     spareMultipliers: [1.0],
     supportCapacities: [baselineSupportCapacity(projectJson)]
   };
+}
+
+function defaultSupportCapacitySweep(projectJson) {
+  const baseline = baselineSupportCapacity(projectJson);
+  return uniquePositiveIntegers([baseline - 1, baseline, baseline + 1, baseline + 2]).slice(0, 3);
 }
 
 function baselineSupportCapacity(projectJson) {
@@ -130,6 +150,43 @@ function firstPositiveInteger(values) {
     if (Number.isFinite(number) && number > 0) return Math.max(1, Math.round(number));
   }
   return null;
+}
+
+function firstPositiveNumberList(sources, key) {
+  for (const source of sources) {
+    const values = positiveNumberList(source?.[key]);
+    if (values.length) return values;
+  }
+  return null;
+}
+
+function firstPositiveIntegerList(sources, key) {
+  for (const source of sources) {
+    const values = uniquePositiveIntegers(source?.[key]);
+    if (values.length) return values;
+  }
+  return null;
+}
+
+function positiveNumberList(values) {
+  return (Array.isArray(values) ? values : [])
+    .map((value) => Number(value))
+    .filter((value) => Number.isFinite(value) && value > 0);
+}
+
+function uniquePositiveIntegers(values) {
+  const seen = new Set();
+  const normalized = [];
+  for (const value of Array.isArray(values) ? values : []) {
+    if (typeof value === "boolean") continue;
+    const number = Number(value);
+    if (!Number.isFinite(number) || number <= 0) continue;
+    const integer = Math.max(1, Math.round(number));
+    if (seen.has(integer)) continue;
+    seen.add(integer);
+    normalized.push(integer);
+  }
+  return normalized;
 }
 
 function monteCarloSweepPointCount(sweep) {

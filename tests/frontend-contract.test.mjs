@@ -2359,6 +2359,7 @@ test("monte carlo launch creates a run from the current experiment plan branch",
   assert.match(launchSource, /analysisType,/);
   assert.match(launchSource, /monteCarloParameterSpace: monteCarloParameterSpaceForExperiment\(monteCarloExperimentId\)/);
   assert.match(appSource, /function monteCarloParameterSpaceForExperiment\(monteCarloExperimentId\)/);
+  assert.match(appSource, /function monteCarloParameterSpaceForExperiment\(monteCarloExperimentId\)\s*\{\s*return "sweep";\s*\}/);
   assert.match(appSource, /function hiddenCurrentAnalysisExperimentId\(analysisType\)/);
   assert.match(appSource, /startMonteCarloRunThroughApi\(\{\s*monteCarloExperimentId: hiddenExperimentId,\s*analysisType/s);
   assert.doesNotMatch(launchSource, /sample_count\s*:/);
@@ -2367,6 +2368,30 @@ test("monte carlo launch creates a run from the current experiment plan branch",
   assert.doesNotMatch(launchSource, /run_type: "single"/);
   assert.doesNotMatch(launchSource, /backendApi\.startSimulationRun/);
   assert.doesNotMatch(launchSource, /backendApi\.startMonteCarloRun/);
+});
+
+test("monte carlo config backfills empty draft sweep ranges before display and launch", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const branchSource = appSource.slice(
+    appSource.indexOf("function createExperimentPlanBranchFromCurrentProject"),
+    appSource.indexOf("function renderCollapsibleTree")
+  );
+  const editorSource = appSource.slice(
+    appSource.indexOf("function renderMonteCarloExperimentEditor"),
+    appSource.indexOf("function renderMonteCarloExperimentDetail")
+  );
+  const launchSource = appSource.slice(
+    appSource.indexOf("async function startMonteCarloRunThroughApi"),
+    appSource.indexOf("async function refreshRunResultThroughApi")
+  );
+
+  assert.match(appSource, /const DEFAULT_MONTE_CARLO_SWEEP = Object\.freeze/);
+  assert.match(appSource, /function ensureMonteCarloSweepDefaults\(projectJson\)/);
+  assert.match(appSource, /failureRates: \[0\.06, 0\.08, 0\.1\]/);
+  assert.match(appSource, /spareMultipliers: \[0\.75, 1, 1\.25\]/);
+  assert.match(branchSource, /ensureMonteCarloSweepDefaults\(experimentPlanDraft\)/);
+  assert.match(editorSource, /ensureMonteCarloSweepDefaults\(experimentPlanDraft\)/);
+  assert.match(launchSource, /ensureMonteCarloSweepDefaults\(experimentPlanDraft\)/);
 });
 
 test("M9.8 visual and formal run launches use aircraft_support_v1 through canonical runs", async () => {
