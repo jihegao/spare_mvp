@@ -4427,22 +4427,22 @@ function diffTimeMinutes(start, end) {
 function renderEquipmentModeling(page) {
   const selectedState = resolveSelectedEquipmentNode();
   const components = equipmentComponentsForSelectionModel({ scenario, selection: selectedState });
-  const showEquipmentSystemTable = components.length || selectedState.kind === "aircraft";
-  const visibleRowCount = components.length + (selectedState.kind === "aircraft" ? 1 : 0);
+  const aircraftModels = wholeMachineModels();
+  const aircraftRowCount = selectedState.kind === "aircraft-list" ? aircraftModels.length : (selectedState.kind === "aircraft" ? 1 : 0);
+  const showEquipmentSystemTable = components.length || aircraftRowCount > 0;
+  const visibleRowCount = components.length + aircraftRowCount;
   return `
     <div class="section-head section-context">
-      <span>装备组成树 / 装备系统建模表</span>
+      <span>装备结构树 / 装备系统建模表</span>
     </div>
     <div class="organization-layout equipment-layout">
       <aside class="tree-container">
-        <div class="tree-toolbar">
-          <h4>装备组成树</h4>
-          <div class="equipment-toolbar">
-            <label class="rms-file-button">导入表格<input data-equipment-import-file type="file" accept=".csv,.tsv,.json,application/json,text/csv,text/tab-separated-values"></label>
+        <div class="tree-toolbar equipment-tree-toolbar">
+          <h4>装备结构树</h4>
+          <div class="equipment-tree-actions">
             <button type="button" class="btn-primary" data-equipment-add-node>新增节点</button>
             <button type="button" class="btn-danger" data-equipment-delete-node ${selectedState.kind === "aircraft-list" ? "disabled" : ""}>删除</button>
           </div>
-          <p class="rms-import-status">${htmlEscape(equipmentImportStatus)}</p>
         </div>
         ${renderCollapsibleTree(buildEquipmentTreeNodes())}
       </aside>
@@ -4451,6 +4451,10 @@ function renderEquipmentModeling(page) {
           <div class="section-head">
             <h3>装备系统建模</h3>
             <span>${htmlEscape(equipmentSelectionSummary(selectedState, visibleRowCount))}</span>
+          </div>
+          <div class="equipment-import-row">
+            <label class="rms-file-button">导入表格<input data-equipment-import-file type="file" accept=".csv,.tsv,.json,application/json,text/csv,text/tab-separated-values"></label>
+            <p class="rms-import-status">${htmlEscape(equipmentImportStatus)}</p>
           </div>
           ${showEquipmentSystemTable ? renderEquipmentSystemTable(selectedState) : importedDataEmptyState(page.name || "装备系统建模")}
         </div>
@@ -4872,13 +4876,16 @@ function updatePreventiveMaintenanceActivityAircraftModel(oldModel, nextModel) {
 }
 
 function equipmentSelectionSummary(selectedState, componentCount) {
-  if (selectedState.kind === "aircraft-list") return `${wholeMachineModels().length} 类飞机 / ${componentCount} 个组件`;
+  if (selectedState.kind === "aircraft-list") return `${wholeMachineModels().length} 类飞机 / ${componentCount} 行节点`;
   if (selectedState.kind === "aircraft") return `${selectedState.aircraftModel} / 整机与 ${Math.max(componentCount - 1, 0)} 个组件`;
   return `${selectedState.component?.name || "组件"} / ${componentCount} 个组件`;
 }
 
 function renderEquipmentSystemTable(selectedState) {
   const rows = equipmentComponentsForSelectionModel({ scenario, selection: selectedState });
+  const aircraftRows = selectedState.kind === "aircraft-list"
+    ? wholeMachineModels().map((model) => renderEquipmentAircraftTableRow(model, { editable: false }))
+    : (selectedState.kind === "aircraft" ? [renderEquipmentAircraftTableRow(selectedState.aircraftModel)] : []);
   return `
     <div class="table-wrap equipment-system-table-wrap">
       <table class="equipment-system-table">
@@ -4896,7 +4903,7 @@ function renderEquipmentSystemTable(selectedState) {
           </tr>
         </thead>
         <tbody>
-          ${selectedState.kind === "aircraft" ? renderEquipmentAircraftTableRow(selectedState.aircraftModel) : ""}
+          ${aircraftRows.join("")}
           ${rows.map((component) => renderEquipmentSystemTableRow(component, (scenario.components || []).indexOf(component), selectedState)).join("")}
         </tbody>
       </table>
@@ -4904,12 +4911,18 @@ function renderEquipmentSystemTable(selectedState) {
   `;
 }
 
-function renderEquipmentAircraftTableRow(aircraftModel) {
+function renderEquipmentAircraftTableRow(aircraftModel, { editable = true } = {}) {
+  const aircraftNameCell = editable
+    ? `<input aria-label="整机名称" data-equipment-aircraft-model="${htmlEscape(aircraftModel)}" value="${htmlEscape(aircraftModel)}">`
+    : readOnlyTableValue(aircraftModel);
+  const aircraftQuantityCell = editable
+    ? valueInput("equipment.quantity", "number", { min: "1", step: "1", "aria-label": "整机数量" })
+    : readOnlyTableValue(scenario.equipment?.quantity ?? "");
   return `
-    <tr class="selected-table-row equipment-aircraft-row">
-      <td><input aria-label="整机名称" data-equipment-aircraft-model="${htmlEscape(aircraftModel)}" value="${htmlEscape(aircraftModel)}"></td>
+    <tr class="${editable ? "selected-table-row " : ""}equipment-aircraft-row">
+      <td>${aircraftNameCell}</td>
       <td><span class="muted">整机级</span></td>
-      <td>${valueInput("equipment.quantity", "number", { min: "1", step: "1", "aria-label": "整机数量" })}</td>
+      <td>${aircraftQuantityCell}</td>
       <td><span class="status-badge">整机</span></td>
       <td><span class="muted">-</span></td>
       <td><span class="muted">-</span></td>
@@ -5059,7 +5072,7 @@ function renderReliabilityBlockDiagram() {
     <div class="organization-layout equipment-layout rbd-layout">
       <aside class="tree-container">
         <div class="tree-toolbar">
-          <h4>装备组成树</h4>
+          <h4>装备结构树</h4>
         </div>
         ${renderCollapsibleTree(buildRbdEquipmentTreeNodes())}
       </aside>

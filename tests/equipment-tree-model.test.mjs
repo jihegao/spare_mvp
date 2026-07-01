@@ -82,6 +82,29 @@ test("equipment authoring rows hide the root example node and follow tree order 
   assert.equal(rows.some((component) => component.name === "舰载机"), false);
 });
 
+test("equipment aircraft selection refreshes rows without leaking another aircraft components", () => {
+  const scenario = {
+    equipment: { model: "J-15", wholeMachineModels: ["J-15", "J-35"] },
+    components: [
+      { id: "j15-engine", name: "J-15发动机", aircraftModel: "J-15", parentId: "aircraft-root", productType: "LRU", quantity: 2 },
+      { id: "j15-control", name: "J-15控制模块", aircraftModel: "J-15", parentId: "j15-engine", productType: "SRU", quantity: 1 },
+      { id: "j35-radar", name: "J-35雷达", aircraftModel: "J-35", parentId: "aircraft-root", productType: "LRU", quantity: 1 }
+    ]
+  };
+
+  const j15Rows = equipmentTreeModel.equipmentComponentsForSelectionModel({
+    scenario,
+    selection: { kind: "aircraft", aircraftModel: "J-15" }
+  });
+  const j35Rows = equipmentTreeModel.equipmentComponentsForSelectionModel({
+    scenario,
+    selection: { kind: "aircraft", aircraftModel: "J-35" }
+  });
+
+  assert.deepEqual(j15Rows.map((component) => component.id), ["j15-engine", "j15-control"]);
+  assert.deepEqual(j35Rows.map((component) => component.id), ["j35-radar"]);
+});
+
 test("equipment authoring rows show a selected system node and its descendants", () => {
   const scenario = {
     equipment: { model: "J-15", wholeMachineModels: ["J-15"] },
