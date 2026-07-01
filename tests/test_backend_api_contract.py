@@ -1974,7 +1974,7 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(compiled_project["experiment"]["seed"], 606)
         self.assertEqual(compiled_project["components"][0]["failureRate"], 0.33)
 
-    def test_backend_api_delegates_submit_run_without_outer_lifecycle_lock(self) -> None:
+    def test_backend_api_delegates_submit_run_without_owning_lifecycle_lock(self) -> None:
         shared_lock = threading.Lock()
         api = BackendApi(self.repository, self.adapter, output_dir=Path(self.tempdir.name), run_lifecycle_lock=shared_lock)
         observed: dict[str, Any] = {}
@@ -1992,7 +1992,74 @@ class BackendApiContractTest(unittest.TestCase):
 
         self.assertEqual(result["run_id"], "run-fake")
         self.assertEqual(observed["outer_lock_held"], False)
-        self.assertIs(api._run_lock, shared_lock)
+        self.assertFalse(hasattr(api, "_run_lock"))
+
+    def test_run_service_uses_injected_lock_for_all_lifecycle_mutations(self) -> None:
+        observations: list[tuple[str, bool]] = []
+
+        class RecordingLock:
+            def __init__(self) -> None:
+                self._locked = False
+
+            def __enter__(self) -> "RecordingLock":
+                self._locked = True
+                return self
+
+            def __exit__(self, _exc_type: object, _exc: object, _traceback: object) -> None:
+                self._locked = False
+
+            def locked(self) -> bool:
+                return self._locked
+
+        lock = RecordingLock()
+
+        class FakeRepository:
+            def delete_experiment_plan_with_runs(
+                self,
+                project_id: str,
+                experiment_plan_id: str,
+                *,
+                actor_user_id: str,
+            ) -> dict[str, Any]:
+                observations.append(("delete_plan", lock.locked()))
+                return {"project_id": project_id, "experiment_plan_id": experiment_plan_id, "deleted": True}
+
+            def archive_run_with_audit(self, run_id: str, *, actor_user_id: str) -> dict[str, Any]:
+                observations.append(("archive", lock.locked()))
+                return {"run_id": run_id, "lifecycle_status": "archived"}
+
+            def soft_delete_run_with_audit(self, run_id: str, *, actor_user_id: str) -> dict[str, Any]:
+                observations.append(("delete", lock.locked()))
+                return {"run_id": run_id, "lifecycle_status": "deleted"}
+
+            def control_run_with_audit(self, run_id: str, action: str, *, actor_user_id: str) -> dict[str, Any]:
+                observations.append(("control", lock.locked()))
+                return {"run_id": run_id, "status": "cancelled", "control": {"action": action}}
+
+        service = RunService(FakeRepository(), self.adapter, self.api.output_dir, run_lifecycle_lock=lock)  # type: ignore[arg-type]
+
+        def submit_unlocked(_request: dict[str, Any]) -> dict[str, Any]:
+            observations.append(("submit", lock.locked()))
+            return {"run_id": "run-lock", "status": "succeeded"}
+
+        service._submit_run_unlocked = submit_unlocked  # type: ignore[method-assign]
+
+        service.submit_run({"project_id": "project-lock", "experiment_plan_id": "plan-lock", "model_family": "smoke"})
+        service.delete_experiment_plan("project-lock", "plan-lock", actor_user_id="user-admin")
+        service.archive_run("run-lock", actor_user_id="user-admin")
+        service.soft_delete_run("run-lock", actor_user_id="user-admin")
+        service.control_run("run-lock", "cancel", actor_user_id="user-admin")
+
+        self.assertEqual(
+            observations,
+            [
+                ("submit", True),
+                ("delete_plan", True),
+                ("archive", True),
+                ("delete", True),
+                ("control", True),
+            ],
+        )
 
     def test_repeated_smoke_runs_create_distinct_run_chains(self) -> None:
         project = self._fixture("smoke_project.json")
