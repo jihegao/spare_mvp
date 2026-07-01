@@ -12002,7 +12002,7 @@ function renderMonteCarloFormalProjectionResults(boundary) {
               <div class="metric-card">
                 <span>${htmlEscape(name)}</span>
                 <strong>${htmlEscape(value)}</strong>
-                <em>projection payload</em>
+                ${view.payload?.formal === false ? "<em>不适用</em>" : "<em>projection payload</em>"}
               </div>
             `).join("")}
           </div>
@@ -12543,6 +12543,7 @@ function formalAnalysisBoundaryReason({ state, provenance, linkedExperiment, run
   if (monteCarloBaseArtifacts().length === 0) return "缺少正式 Monte Carlo artifact。";
   if (projectionArtifacts.length === 0) return "缺少当前分析类型的 analysis projection artifact。";
   if (!projectionPayload) return `缺少或无法解析当前分析类型的 projection payload${projectionPayloadError ? `：${projectionPayloadError}` : "。"}`;
+  if (state === "not_applicable") return notApplicableProjectionReason(projectionPayload);
   return "本页四类分析值来自前端 singleResult 局部推导，仅保留为本地预览。";
 }
 
@@ -12581,6 +12582,7 @@ function formalAnalysisBoundary(page) {
   const analysisArtifacts = projectionArtifacts;
   const projectionPayload = analysisProjectionPayloads[linkedExperiment?.runId || backendRun?.run_id || ""]?.[analysisType] || null;
   const projectionPayloadError = analysisProjectionPayloadErrors[linkedExperiment?.runId || backendRun?.run_id || ""]?.[analysisType] || "";
+  const projectionNotApplicable = Boolean(projectionPayload && projectionPayload.formal === false);
   const formalUnlocked = Boolean(
     task
     && linkedExperiment
@@ -12601,9 +12603,11 @@ function formalAnalysisBoundary(page) {
         ? "failed"
         : running
           ? "running"
-          : formalUnlocked
-            ? "formal"
-            : "local_preview";
+          : formalUnlocked && projectionNotApplicable
+            ? "not_applicable"
+            : formalUnlocked
+              ? "formal"
+              : "local_preview";
   return {
     formalUnlocked,
     state,
@@ -12620,7 +12624,7 @@ function formalAnalysisBoundary(page) {
 }
 
 function renderFormalAnalysisBoundaryNote(boundary) {
-  if (boundary.formalUnlocked) {
+  if (boundary.formalUnlocked && boundary.state !== "not_applicable") {
     return `
       <div class="result-source-note">
         <strong>正式后端结果</strong>
@@ -12635,6 +12639,7 @@ function renderFormalAnalysisBoundaryNote(boundary) {
     pending: "待运行",
     running: "运行中",
     failed: failedCompiler ? "输入未通过 Scenario compiler" : "运行失败",
+    not_applicable: "不适用 / 未建模",
     local_preview: "本地预览，不是正式后端仿真结果"
   };
   return `
@@ -12647,8 +12652,28 @@ function renderFormalAnalysisBoundaryNote(boundary) {
   `;
 }
 
+function notApplicableProjectionReason(formalProjection) {
+  const applicability = formalProjection?.applicability || {};
+  const validationLevel = applicability.validationLevel || "level0";
+  const requiredDomains = (applicability.required_domains || []).join(" / ") || "保障资源 / 保障活动";
+  const disabledDomains = (applicability.disabled_domains || []).join(" / ") || "未建模域";
+  return `Level 0 未启用该分析所需保障域；validationLevel=${validationLevel}，required_domains=${requiredDomains}，disabled_domains=${disabledDomains}。`;
+}
+
 function renderFormalProjectionBody(formalProjection) {
   if (!formalProjection) return "";
+  if (formalProjection.formal === false) {
+    const applicability = formalProjection.applicability || {};
+    const required_domains = (applicability.required_domains || []).join(" / ") || "-";
+    const disabled_domains = (applicability.disabled_domains || []).join(" / ") || "-";
+    const validationLevel = applicability.validationLevel || "level0";
+    return `
+      <div class="empty-state analysis-not-applicable">
+        <strong>不适用 / 未建模</strong>
+        <p>${htmlEscape(`Level 0 未启用该分析所需保障域；validationLevel=${validationLevel}; required_domains=${required_domains}; disabled_domains=${disabled_domains}。`)}</p>
+      </div>
+    `;
+  }
   if (formalProjection.analysisType === "spare_shortfall") {
     const rows = formalProjection.rows || [];
     const maxShortage = rows.reduce((maxValue, row) => Math.max(maxValue, row.shortage || row.shortageProbability || 0), 1);
@@ -12780,7 +12805,7 @@ function renderAnalysisDashboard({ title, mode, subtitle, config = "", metrics, 
   const formalProjection = analysisProjectionForBoundary(boundary);
   const displayedMetrics = formalProjection?.metrics || metrics;
   const displayedBody = formalProjection ? renderFormalProjectionBody(formalProjection) : body;
-  const metricSuffix = formalProjection ? "<em>projection payload</em>" : "<em>本地预览</em>";
+  const metricSuffix = formalProjection?.formal === false ? "<em>不适用</em>" : formalProjection ? "<em>projection payload</em>" : "<em>本地预览</em>";
   return `
     <div class="analysis-dashboard">
       ${renderAnalysisTaskList(page, title)}
