@@ -77,5 +77,5 @@ function modelingImportSourceMatches(candidateSource, fixtureSource) {
 
 function publishedImportHasRunReferences(candidate) {
   const referencedRunIds = candidate?.lifecycle?.referencedRunIds;
-  return Array.isArray(referencedRunIds) && referencedRunIds.length > 0;
+  return candidate?.lifecycle?.state === "published" && Array.isArray(referencedRunIds) && referencedRunIds.length > 0;
 }
