@@ -6,12 +6,14 @@ export async function ensurePublishedModelingImportForSampleProject({
   const fixtureImportId = String(fixture?.importId || "").trim();
   const explicitImportId = String(publishedImportId || "").trim();
   const existingImportId = explicitImportId || fixtureImportId;
+  let storedImportWasChecked = false;
   if (existingImportId) {
     if (backendApi && typeof backendApi.getModelingImport === "function") {
       try {
+        storedImportWasChecked = true;
         const stored = await backendApi.getModelingImport(existingImportId);
         const publishedPackage = stored?.publishedPackage || null;
-        if (publishedPackage) {
+        if (publishedPackage && sampleImportPackageIsComplete(publishedPackage, fixture)) {
           const importId = publishedPackage.importId || publishedPackage.import_id || existingImportId;
           return { importId, reused: true, publishedPackage };
         }
@@ -24,7 +26,7 @@ export async function ensurePublishedModelingImportForSampleProject({
       return { importId: explicitImportId, reused: true };
     }
   }
-  if (explicitImportId) {
+  if (explicitImportId && !storedImportWasChecked) {
     return { importId: existingImportId, reused: true };
   }
 
@@ -40,4 +42,26 @@ export async function ensurePublishedModelingImportForSampleProject({
   const publishedPackage = published?.publishedPackage || published;
   const importId = publishedPackage?.importId || publishedPackage?.import_id || fixtureImportId;
   return { importId, reused: false, publishedPackage };
+}
+
+export function sampleImportPackageIsComplete(candidate, fixture) {
+  const candidateObjects = candidate?.objects || {};
+  const fixtureObjects = fixture?.objects || {};
+  if (fixture?.source && !modelingImportSourceMatches(candidate?.source, fixture.source)) {
+    return false;
+  }
+  return [
+    "missionProfiles",
+    "equipmentAssets",
+    "supportResources",
+    "supportActivities"
+  ].every((key) => Array.isArray(candidateObjects[key]) && candidateObjects[key].length >= (fixtureObjects[key] || []).length);
+}
+
+function modelingImportSourceMatches(candidateSource, fixtureSource) {
+  if (!candidateSource || !fixtureSource) return false;
+  return ["type", "name", "derivedFrom"].every((key) => {
+    if (!(key in fixtureSource)) return true;
+    return candidateSource[key] === fixtureSource[key];
+  });
 }

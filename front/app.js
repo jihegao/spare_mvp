@@ -57,7 +57,10 @@ import {
   MODELING_IMPORT_TEMPLATES,
   loadModelingImportTemplate
 } from "./modeling-import-templates.mjs";
-import { ensurePublishedModelingImportForSampleProject } from "./modeling-import-project-flow.mjs";
+import {
+  ensurePublishedModelingImportForSampleProject,
+  sampleImportPackageIsComplete
+} from "./modeling-import-project-flow.mjs";
 import {
   addEquipmentNodeForSelectionModel,
   buildEquipmentComponentTreeModel,
@@ -72,6 +75,7 @@ const app = document.querySelector("#app");
 const groups = groupFeaturePages(FEATURE_PAGES);
 const CONTRACT_BASE = "http://127.0.0.1:8521"; // Mesa 契约服务（见 agent.md「Mesa 后台契约服务」）
 const FORMAL_AIRCRAFT_SUPPORT_MODEL_FAMILY = "aircraft_support_v1";
+const DEFAULT_SAMPLE_MODELING_IMPORT_TEMPLATE_ID = "canonical-platform-case";
 const LAST_BACKEND_RUN_STORAGE_KEY = "spare-mvp:lastBackendRun";
 const AUTH_SESSION_STORAGE_KEY = "spare-mvp:m4Session";
 const MANUAL_PROJECT_DRAFTS_STORAGE_KEY = "spare-mvp:manualProjects:v1";
@@ -505,7 +509,7 @@ let modelingImportValidation = cloneModelingImportPackage(MODELING_IMPORT_DEMO_F
 let modelingImportCompileResult = null;
 let modelingImportStatus = "样例导入包已加载";
 let modelingImportSaved = false;
-let selectedModelingImportTemplateId = MODELING_IMPORT_TEMPLATES[0]?.id || "";
+let selectedModelingImportTemplateId = DEFAULT_SAMPLE_MODELING_IMPORT_TEMPLATE_ID;
 let savedProject = null;
 let modelingSnapshot = null;
 let experimentPlan = null;
@@ -562,7 +566,7 @@ let selectedMesaView = "aircraft";
 let selectedVisualAircraftId = "";
 let collapsedTreeNodes = new Set();
 let experimentRunStatus = "当前";
-let selectedExperimentPlanNames = new Set();
+let selectedExperimentPlanKeys = new Set();
 let isProjectMenuOpen = false;
 let selectedPeriodicTaskId = "";
 let selectedPeriodicWeekIndex = 1;
@@ -591,8 +595,11 @@ let equipmentImportStatus = "可导入 CSV / TSV / JSON 装备结构表。";
 let selectedBasicActivityKeys = new Set();
 let basicActivityDialogKey = "";
 let basicActivityResourceDialog = null;
+const BASIC_ACTIVITY_DRAFT_KEY = "__new_basic_activity__";
+let basicActivityDraft = null;
 let basicActivityQuery = "";
 let supportActivityTemplateQuery = "";
+let supportActivityTemplatePickerTabKey = "";
 let supportActivityPredecessorQuery = "";
 let selectedBasicActivityImportType = "使用保障活动";
 let selectedCorrectiveComponentId = "";
@@ -1142,9 +1149,8 @@ function bindEvents() {
 
     const supportActivityJobAddButton = event.target.closest("[data-support-activity-job-add]");
     if (supportActivityJobAddButton) {
-      supportActivityJobDialogKey = addSupportActivityJob(supportActivityJobAddButton.dataset.supportActivityJobAdd) || "";
-      supportActivityPredecessorDialogKey = "";
-      markProjectDraftChanged();
+      supportActivityTemplatePickerTabKey = supportActivityJobAddButton.dataset.supportActivityJobAdd || "";
+      supportActivityTemplateQuery = "";
       render();
       return;
     }
@@ -1195,22 +1201,9 @@ function bindEvents() {
       return;
     }
 
-    const supportActivityPredecessorAddButton = event.target.closest("[data-support-activity-predecessor-add-template]");
-    if (supportActivityPredecessorAddButton) {
-      addBasicActivityAsSupportActivityPredecessor(
-        supportActivityPredecessorAddButton.dataset.supportActivityPredecessorAddTemplate,
-        supportActivityPredecessorAddButton.dataset.basicActivityKey,
-        supportActivityPredecessorDialogKey
-      );
-      markProjectDraftChanged();
-      render();
-      return;
-    }
-
     const basicActivityAddButton = event.target.closest("[data-basic-activity-add]");
     if (basicActivityAddButton) {
-      addBasicActivityLibraryJob();
-      markProjectDraftChanged();
+      openBasicActivityDraftDialog();
       render();
       return;
     }
@@ -1234,7 +1227,16 @@ function bindEvents() {
     const basicActivityDialogCloseButton = event.target.closest("[data-basic-activity-dialog-close]");
     if (basicActivityDialogCloseButton) {
       basicActivityDialogKey = "";
+      basicActivityDraft = null;
       basicActivityResourceDialog = null;
+      render();
+      return;
+    }
+
+    const basicActivityDialogSaveButton = event.target.closest("[data-basic-activity-dialog-save]");
+    if (basicActivityDialogSaveButton) {
+      saveBasicActivityDraft();
+      markProjectDraftChanged();
       render();
       return;
     }
@@ -1722,6 +1724,8 @@ function bindEvents() {
     }
     if (event.key === "Escape" && basicActivityDialogKey) {
       basicActivityDialogKey = "";
+      basicActivityDraft = null;
+      basicActivityResourceDialog = null;
       render();
       return;
     }
@@ -5319,7 +5323,7 @@ function buildSupportResourceRows(activeResourceType, selectedOrgNode) {
             key: `${baseKey}:personnel`,
             ...rowScope,
             type: "保障人员",
-            model: node.personnelModel || node.personnelType || "人员容量",
+            model: normalizePersonnelSpecialtyName(node.personnelModel || node.personnelType),
             quantity: Number(node.personnelCapacity || 0),
           }
           : null,
@@ -5387,7 +5391,7 @@ function addSupportResource(activeResourceType) {
   const node = createSupportResourceImportNode(orgNode, activeResourceType, supportResourceRowsForOrg(activeResourceType, orgNode).length);
   if (activeResourceType === "保障人员") {
     node.personnelCapacity = 1;
-    node.personnelModel = "新增保障人员";
+    node.personnelModel = "";
     selectedSupportResourceKeys = new Set([`${orgNode.id}:${node.id}:personnel`]);
   } else if (activeResourceType === "保障设备") {
     node.equipmentCapacity = 1;
@@ -5510,9 +5514,22 @@ function updateSupportResourceOverride(key, fieldName, value) {
     const orgNode = findSupportOrgTreeNode(nextValue);
     if (orgNode) nextOverride.scope = orgNode.name;
   }
+  if (String(key).includes(":spare:") && fieldName === "model") {
+    const autofill = supportSpareAutofillByModel(nextValue);
+    if (autofill.name) nextOverride.name = autofill.name;
+  }
   overrides[key] = nextOverride;
   deletedSupportResourceKeys = supportResourceDeletedKeySet();
   updatePreviewResultsThroughApiClient();
+}
+
+function supportSpareAutofillByModel(model) {
+  const normalizedModel = String(model || "").trim();
+  if (!normalizedModel) return {};
+  const root = supportOrganizationTree()[0] || null;
+  const source = buildSupportResourceRows("备件", root)
+    .find((row) => String(row.model || "").trim() === normalizedModel);
+  return source ? { name: source.name || source.model || "" } : {};
 }
 
 function activateSupportResourceEdit(key) {
@@ -6090,9 +6107,15 @@ function updateSupportActivityJobField(key, fieldName, value) {
   if (!activity || !Number.isInteger(index) || !fieldName) return;
   const jobs = supportActivityJobs(activity).slice();
   if (!jobs[index]) return;
+  const activityIndex = (scenario.supportActivities || []).indexOf(activity);
+  const basicActivityKey = activityIndex >= 0 ? `${activityIndex}:${index}` : "";
   jobs[index] = {
     ...jobs[index],
-    [fieldName]: fieldName === "durationMinutes" ? Math.max(0, Number(value || 0)) : value
+    [fieldName]: fieldName === "durationMinutes"
+      ? Math.max(0, Number(value || 0))
+      : fieldName === "activityCode"
+        ? uniqueBasicActivityCode(value, basicActivityKey)
+        : value
   };
   activity.jobs = jobs;
   updatePreviewResultsThroughApiClient();
@@ -6212,8 +6235,9 @@ function renderSupportActivityJobTable(activity, tabKey) {
 }
 
 function renderBasicActivityTemplatePicker(tabKey) {
+  if (supportActivityTemplatePickerTabKey !== tabKey) return "";
   const query = String(supportActivityTemplateQuery || "").trim().toLowerCase();
-  const options = basicActivityLibraryOptions().filter((option) => {
+  const options = basicActivityLibraryOptions(tabKey).filter((option) => {
     if (!query) return true;
     return [option.label, option.searchText].some((value) => String(value || "").toLowerCase().includes(query));
   });
@@ -6441,11 +6465,6 @@ function renderSupportActivityPredecessorDialog(selectedJob) {
   const row = selectedJob.job;
   const jobs = supportActivityJobs(selectedJob.activity);
   const selected = new Set(Array.isArray(row.predecessors) ? row.predecessors : []);
-  const query = String(supportActivityPredecessorQuery || "").trim().toLowerCase();
-  const options = basicActivityLibraryOptions().filter((option) => {
-    if (!query) return true;
-    return [option.label, option.searchText].some((value) => String(value || "").toLowerCase().includes(query));
-  });
   const existingOptions = jobs.map((candidate, candidateIndex) => {
     if (candidateIndex === selectedJob.index) return "";
     const value = supportActivityPredecessorValue(candidate, candidateIndex);
@@ -6471,18 +6490,9 @@ function renderSupportActivityPredecessorDialog(selectedJob) {
         </div>
         <div class="predecessor-dialog-grid">
           <section>
-            <h4>当前工作项目清单</h4>
+            <h4>当前紧前作业清单</h4>
             <div class="predecessor-option-list">
               ${existingOptions || `<span class="muted">暂无可选紧前作业</span>`}
-            </div>
-          </section>
-          <section>
-            <h4>新增</h4>
-            <input data-support-activity-predecessor-query value="${htmlEscape(supportActivityPredecessorQuery)}" placeholder="搜索基本保障活动库">
-            <div class="predecessor-template-list">
-              ${options.length ? options.map((option) => `
-                <button type="button" class="inline-action" data-support-activity-predecessor-add-template="${htmlEscape(selectedJob.tabKey)}" data-basic-activity-key="${htmlEscape(option.value)}">新增 ${htmlEscape(option.label)}</button>
-              `).join("") : `<span class="muted">基础库暂无匹配作业</span>`}
             </div>
           </section>
         </div>
@@ -6499,7 +6509,7 @@ function supportActivityJobBasicActivitySelect(selectedJob) {
     row.activityCode === selectedJob.job.activityCode
     && row.workName === selectedJob.job.workName
   ))?.key || "";
-  const options = basicActivityLibraryOptions();
+  const options = basicActivityLibraryOptions(selectedJob.tabKey);
   return `
     <select class="table-edit-select" data-support-activity-job-template-select="${htmlEscape(selectedJob.tabKey)}" aria-label="从基本保障活动建模表搜索作业项">
       <option value="">搜索并选择基本保障活动</option>
@@ -6522,7 +6532,9 @@ function supportActivityJobEditorInput(key, row, fieldName, label, type = "text"
 function renderBasicActivityLibrary() {
   const rows = filteredBasicActivityLibraryRows();
   const allSelected = rows.length > 0 && rows.every((row) => selectedBasicActivityKeys.has(row.key));
-  const dialogRow = basicActivityLibraryRows().find((row) => row.key === basicActivityDialogKey);
+  const dialogRow = basicActivityDialogKey === BASIC_ACTIVITY_DRAFT_KEY
+    ? basicActivityDraft
+    : basicActivityLibraryRows().find((row) => row.key === basicActivityDialogKey);
   return `
     <div class="detail-card activity-editor-card">
       <div class="section-head">
@@ -6561,18 +6573,18 @@ function renderBasicActivityLibrary() {
           `).join("")}</tbody>
         </table>
       </div>
-      ${dialogRow ? renderBasicActivityEditor(dialogRow) : ""}
+      ${dialogRow ? renderBasicActivityEditor(dialogRow, basicActivityDialogKey === BASIC_ACTIVITY_DRAFT_KEY) : ""}
     </div>
   `;
 }
 
-function renderBasicActivityEditor(row) {
+function renderBasicActivityEditor(row, isDraft = false) {
   return `
     <div class="activity-job-dialog-backdrop">
       <section class="activity-job-dialog basic-activity-dialog" role="dialog" aria-modal="true" aria-labelledby="basic-activity-dialog-title">
         <div class="section-head">
           <div>
-            <h3 id="basic-activity-dialog-title">基本保障活动编辑</h3>
+            <h3 id="basic-activity-dialog-title">${isDraft ? "新增基本保障活动" : "基本保障活动编辑"}</h3>
             <span>${htmlEscape(row.activityCode || row.workName || "未命名活动")}</span>
           </div>
           <button type="button" class="inline-action" data-basic-activity-dialog-close aria-label="关闭基本保障活动编辑">关闭</button>
@@ -6586,7 +6598,7 @@ function renderBasicActivityEditor(row) {
         </div>
         ${renderBasicActivityResourceEditor(row)}
         <div class="plan-editor-actions">
-          <button type="button" class="btn-primary" data-basic-activity-dialog-close>完成</button>
+          ${isDraft ? `<button type="button" data-basic-activity-dialog-close>取消</button><button type="button" class="btn-primary" data-basic-activity-dialog-save>完成</button>` : `<button type="button" class="btn-primary" data-basic-activity-dialog-close>完成</button>`}
         </div>
       </section>
     </div>
@@ -6781,25 +6793,77 @@ function basicActivityResourceKindLabel(resourceKind) {
 }
 
 function basicActivityPersonnelProfessionalOptions(currentValue = "") {
+  const dictionaryOptions = configuredPersonnelSpecialties()
+    .map((item) => ({ value: item, label: item }));
   const rowOptions = basicActivitySupportResourceRows("保障人员")
-    .map((item) => ({ value: item.model || "", label: item.model || "" }))
+    .map((item) => ({ value: normalizePersonnelSpecialtyName(item.model), label: normalizePersonnelSpecialtyName(item.model) }))
     .filter((item) => item.value);
   return uniqueSelectOptions([
     { value: "", label: "请选择专业" },
+    ...dictionaryOptions,
     ...rowOptions,
     ...(currentValue ? [{ value: currentValue, label: currentValue }] : [])
   ]);
 }
 
+function normalizePersonnelSpecialtyName(value) {
+  const text = String(value || "").trim();
+  return text && !["人员容量", "新增保障人员"].includes(text) ? text : "";
+}
+
 function basicActivitySupportResourceRows(resourceType) {
   const root = supportOrganizationTree()[0] || null;
-  return buildSupportResourceRows(resourceType, root)
+  const modeledRows = buildSupportResourceRows(resourceType, root)
     .filter((row) => !supportResourceDeletedKeySet().has(row.key));
+  return uniqueBasicActivitySupportResourceRows([
+    ...modeledRows,
+    ...basicActivityLegacyResourceRows(resourceType)
+  ]);
+}
+
+function uniqueBasicActivitySupportResourceRows(rows) {
+  const seen = new Set();
+  return rows.filter((row) => {
+    const key = [
+      row.type || "",
+      row.name || "",
+      row.model || "",
+      row.scope || ""
+    ].map((value) => String(value || "").trim()).join("|");
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function basicActivityLegacyResourceRows(resourceType) {
+  const resourceKind = resourceType === "保障人员" ? "personnel" : resourceType === "保障设备" ? "equipment" : resourceType === "备件" ? "spare" : "";
+  if (!resourceKind) return [];
+  return (scenario.supportActivities || []).flatMap((activity, activityIndex) =>
+    supportActivityJobs(activity).flatMap((job, jobIndex) =>
+      normalizeBasicActivityResourceRequirements(job, resourceKind)
+        .filter((item) => basicActivityLegacyResourceItemIsUsable(resourceKind, item))
+        .map((item, itemIndex) => ({
+          key: `activity:${activityIndex}:${jobIndex}:${resourceKind}:${itemIndex}`,
+          type: resourceType,
+          scope: basicActivityScopeLabel(activity),
+          name: resourceKind === "personnel" ? (item.professional || item.model || "") : (item.name || item.model || ""),
+          model: resourceKind === "personnel" ? (item.professional || item.model || "") : (item.model || item.name || ""),
+          quantity: Math.max(1, Number(item.quantity) || 1)
+        }))
+    )
+  );
+}
+
+function basicActivityLegacyResourceItemIsUsable(resourceKind, item) {
+  const model = String(resourceKind === "personnel" ? (item.professional || item.model || "") : (item.model || item.name || "")).trim();
+  if (!model || model === "无") return false;
+  return true;
 }
 
 function normalizeBasicActivityResourceRequirements(row, resourceKind) {
   const source = row[`${resourceKind}Requirements`];
-  if (Array.isArray(source)) return source.map((item) => ({ ...item }));
+  if (Array.isArray(source) && source.length) return source.map((item) => ({ ...item }));
   const legacy = String(row[resourceKind] || "").trim();
   if (!legacy) return [];
   const parts = legacy.split(/[;；]/).map((part) => part.trim()).filter(Boolean);
@@ -6890,6 +6954,7 @@ function basicActivityScopeSelect(row) {
 }
 
 function basicActivityScopeValue(row) {
+  if (row.scopeValue) return row.scopeValue;
   if (row.activity?.equipmentId) return `component:${row.activity.equipmentId}`;
   const model = supportActivityAircraftModel(row.activity) || row.scope || "";
   return model ? `aircraft:${model}` : "";
@@ -6948,8 +7013,9 @@ function filteredBasicActivityLibraryRows() {
   ].some((value) => String(value || "").toLowerCase().includes(query)));
 }
 
-function basicActivityLibraryOptions() {
-  return basicActivityLibraryRows().map((row) => ({
+function basicActivityLibraryOptions(tabKey = "") {
+  const expectedType = basicActivityTypeForJobTab(tabKey);
+  return basicActivityLibraryRows().filter((row) => !expectedType || row.type === expectedType).map((row) => ({
     value: row.key,
     label: [row.activityCode, row.workName, row.type].filter(Boolean).join(" / "),
     searchText: [
@@ -6960,6 +7026,14 @@ function basicActivityLibraryOptions() {
       row.applicableAircraft
     ].filter(Boolean).join(" ")
   }));
+}
+
+function basicActivityTypeForJobTab(tabKey = "") {
+  const key = String(tabKey || "");
+  if (key.startsWith("prev_repair")) return "预防性维修";
+  if (key.startsWith("corr_repair")) return "修复性维修";
+  if (key.startsWith("ops_")) return "使用保障活动";
+  return "";
 }
 
 function basicActivityTypeValue(activity) {
@@ -6984,7 +7058,7 @@ function addBasicActivityLibraryJob() {
   const jobs = supportActivityJobs(activity).slice();
   const index = jobs.length;
   jobs.push({
-    activityCode: `BA-${String(index + 1).padStart(3, "0")}`,
+    activityCode: nextBasicActivityCode("BA"),
     workName: `新增保障活动${index + 1}`,
     predecessors: [],
     durationProfile: { distributionType: "固定值", value: 30 },
@@ -6998,7 +7072,132 @@ function addBasicActivityLibraryJob() {
   selectedBasicActivityKeys = activityIndex >= 0 ? new Set([`${activityIndex}:${index}`]) : selectedBasicActivityKeys;
 }
 
+function openBasicActivityDraftDialog() {
+  basicActivityDraft = createBasicActivityDraft();
+  basicActivityDialogKey = BASIC_ACTIVITY_DRAFT_KEY;
+  basicActivityResourceDialog = null;
+}
+
+function createBasicActivityDraft() {
+  const type = basicActivityTypeOptions().some((option) => option.value === selectedBasicActivityImportType)
+    ? selectedBasicActivityImportType
+    : "使用保障活动";
+  return {
+    key: BASIC_ACTIVITY_DRAFT_KEY,
+    type,
+    activityCode: nextBasicActivityCode(type === "预防性维修" ? "PM" : type === "修复性维修" ? "CM" : "BA"),
+    workName: "",
+    scope: defaultSupportActivityAircraftModel(),
+    applicableAircraft: defaultSupportActivityAircraftModel(),
+    durationProfile: { distributionType: "固定值", value: 30 },
+    durationMinutes: 30,
+    personnelRequirements: [],
+    equipmentRequirements: [],
+    spareRequirements: [],
+    predecessors: []
+  };
+}
+
+function saveBasicActivityDraft() {
+  if (!basicActivityDraft) return;
+  const activity = ensureBasicActivityDraftHostActivity(basicActivityDraft.type);
+  if (!activity) return;
+  const jobs = supportActivityJobs(activity).slice();
+  const job = supportActivityJobFromBasicActivityDraft(basicActivityDraft);
+  jobs.push(job);
+  activity.jobs = jobs;
+  updateBasicActivityScope(activity, basicActivityScopeValue(basicActivityDraft));
+  const activityIndex = (scenario.supportActivities || []).indexOf(activity);
+  const key = activityIndex >= 0 ? `${activityIndex}:${jobs.length - 1}` : "";
+  selectedBasicActivityKeys = key ? new Set([key]) : selectedBasicActivityKeys;
+  basicActivityDialogKey = "";
+  basicActivityDraft = null;
+  basicActivityResourceDialog = null;
+  updatePreviewResultsThroughApiClient();
+}
+
+function supportActivityJobFromBasicActivityDraft(row) {
+  const profile = normalizeSupportActivityDurationProfile(row.durationProfile, row.durationMinutes);
+  const job = {
+    activityCode: uniqueBasicActivityCode(row.activityCode || nextBasicActivityCode("BA")),
+    workName: row.workName || "未命名基本保障活动",
+    predecessors: Array.isArray(row.predecessors) ? [...row.predecessors] : [],
+    durationProfile: profile,
+    durationMinutes: durationMinutesForSupportActivityProfile(profile, row.durationMinutes),
+    personnelRequirements: Array.isArray(row.personnelRequirements) ? row.personnelRequirements.map((item) => ({ ...item })) : [],
+    equipmentRequirements: Array.isArray(row.equipmentRequirements) ? row.equipmentRequirements.map((item) => ({ ...item })) : [],
+    spareRequirements: Array.isArray(row.spareRequirements) ? row.spareRequirements.map((item) => ({ ...item })) : []
+  };
+  syncBasicActivityResourceSummaries(job);
+  return job;
+}
+
+function ensureBasicActivityDraftHostActivity(type) {
+  const activityType = basicActivityTypeOptions().some((option) => option.value === type) ? type : "使用保障活动";
+  const activities = ensureSupportActivities();
+  if (activityType === "预防性维修") {
+    const model = defaultSupportActivityAircraftModel();
+    const existing = preventiveMaintenanceActivityEntries(model)[0]?.activity;
+    if (existing) return existing;
+    const activity = createPreventiveMaintenanceActivityForAircraftModel(model, preventiveMaintenanceActivityEntries().length + 1);
+    activity.jobs = [];
+    activities.push(activity);
+    selectedPreventiveMaintenanceActivityKey = `supportActivity:${activities.indexOf(activity)}`;
+    selectedPreventiveMaintenanceAircraftModel = model;
+    return activity;
+  }
+  if (activityType === "修复性维修") {
+    const activity = ensureCorrectiveMaintenanceActivityForBasicActivityDraft(basicActivityDraft);
+    if (activity) {
+      activity.jobs = supportActivityJobs(activity);
+      return activity;
+    }
+    const fallback = createDefaultCorrectiveMaintenanceActivity();
+    fallback.jobs = [];
+    activities.push(fallback);
+    return fallback;
+  }
+  const model = defaultSupportActivityAircraftModel();
+  const existing = operationsSupportPhaseActivity({ aircraftModel: model }, "直接准备方案");
+  if (existing) {
+    selectedOperationsSupportAircraftModel = model;
+    selectedOperationsSupportActivityKey = `supportActivity:${activities.indexOf(existing)}`;
+    return existing;
+  }
+  const activity = createOperationsSupportActivityForAircraftModel(model, operationsSupportPlanTypeConfigs()[0]);
+  activity.jobs = [];
+  activities.push(activity);
+  selectedOperationsSupportAircraftModel = model;
+  selectedOperationsSupportActivityKey = `supportActivity:${activities.indexOf(activity)}`;
+  return activity;
+}
+
+function ensureCorrectiveMaintenanceActivityForBasicActivityDraft(draft) {
+  const scopeValue = basicActivityScopeValue(draft || {});
+  const component = correctiveComponentForBasicActivityScope(scopeValue) || selectedCorrectiveComponent();
+  const existing = correctiveMaintenanceActivityForComponent(component);
+  if (existing) return existing;
+  const created = ensureCorrectiveMaintenanceActivityForComponent(component);
+  if (created) created.jobs = [];
+  return created;
+}
+
+function correctiveComponentForBasicActivityScope(scopeValue) {
+  const text = String(scopeValue || "");
+  if (!text.startsWith("component:")) return null;
+  const componentId = text.replace(/^component:/, "");
+  return (scenario.components || []).find((component) => (
+    String(component.id || "") === componentId
+    || String(component.name || "") === componentId
+  )) || null;
+}
+
 function updateBasicActivityJobField(key, fieldName, value) {
+  if (key === BASIC_ACTIVITY_DRAFT_KEY) {
+    updateBasicActivityDraftField(fieldName, value);
+    updatePreviewResultsThroughApiClient();
+    return;
+  }
   const [activityIndex, jobIndex] = String(key || "").split(":").map(Number);
   const activity = (scenario.supportActivities || [])[activityIndex];
   const jobs = supportActivityJobs(activity).slice();
@@ -7031,10 +7230,45 @@ function updateBasicActivityJobField(key, fieldName, value) {
   }
   jobs[jobIndex] = {
     ...jobs[jobIndex],
-    [fieldName]: fieldName === "durationMinutes" ? Math.max(0, Number(value || 0)) : value
+    [fieldName]: fieldName === "durationMinutes"
+      ? Math.max(0, Number(value || 0))
+      : fieldName === "activityCode"
+        ? uniqueBasicActivityCode(value, key)
+        : value
   };
   activity.jobs = jobs;
   updatePreviewResultsThroughApiClient();
+}
+
+function updateBasicActivityDraftField(fieldName, value) {
+  if (!basicActivityDraft || !fieldName) return;
+  if (fieldName === "scope") {
+    basicActivityDraft.scope = basicActivityScopeOptions(basicActivityDraft)
+      .find((option) => option.value === value)?.label || value;
+    basicActivityDraft.scopeValue = value;
+    return;
+  }
+  if (fieldName === "type") {
+    basicActivityDraft.type = basicActivityTypeOptions().some((option) => option.value === value) ? value : "使用保障活动";
+    basicActivityDraft.activityCode = nextBasicActivityCode(basicActivityDraft.type === "预防性维修" ? "PM" : basicActivityDraft.type === "修复性维修" ? "CM" : "BA");
+    return;
+  }
+  if (fieldName.startsWith("durationProfile.")) {
+    const profileField = fieldName.replace(/^durationProfile\./, "");
+    const currentProfile = normalizeSupportActivityDurationProfile(basicActivityDraft.durationProfile, basicActivityDraft.durationMinutes);
+    const nextProfile = normalizeSupportActivityDurationProfile({
+      ...currentProfile,
+      [profileField]: profileField === "distributionType" ? value : Number(value || 0)
+    }, basicActivityDraft.durationMinutes);
+    basicActivityDraft.durationProfile = nextProfile;
+    basicActivityDraft.durationMinutes = durationMinutesForSupportActivityProfile(nextProfile, basicActivityDraft.durationMinutes);
+    return;
+  }
+  basicActivityDraft[fieldName] = fieldName === "durationMinutes"
+    ? Math.max(0, Number(value || 0))
+    : fieldName === "activityCode"
+      ? uniqueBasicActivityCode(value)
+      : value;
 }
 
 function updateBasicActivityResourceField(key, fieldName, value) {
@@ -7068,8 +7302,7 @@ function updateBasicActivityResourceField(key, fieldName, value) {
     job.spareRequirements = updateBasicActivityRequirementQuantity(job, "spare", fieldName.replace(/^spareQuantity:/, ""), value);
   }
   syncBasicActivityResourceSummaries(job);
-  jobs[jobIndex] = job;
-  activity.jobs = jobs;
+  setBasicActivityTargetJob(target, job);
   updatePreviewResultsThroughApiClient();
 }
 
@@ -7085,13 +7318,22 @@ function updateBasicActivityResourceDialogField(key, resourceKind, index, fieldN
   requirements[index] = normalizeBasicActivityResourceDialogRequirement(resourceKind, {
     ...current,
     [fieldName]: nextValue,
-    ...(resourceKind === "personnel" && fieldName === "professional" ? { model: nextValue } : {})
+    ...(resourceKind === "personnel" && fieldName === "professional" ? { model: nextValue } : {}),
+    ...(resourceKind === "equipment" && fieldName === "model" ? basicActivityResourceAutofillByModel("保障设备", nextValue) : {}),
+    ...(resourceKind === "spare" && fieldName === "model" ? basicActivityResourceAutofillByModel("备件", nextValue) : {})
   }, index);
   setBasicActivityResourceRequirements(job, resourceKind, requirements);
   syncBasicActivityResourceSummaries(job);
-  jobs[jobIndex] = job;
-  activity.jobs = jobs;
+  setBasicActivityTargetJob(target, job);
   updatePreviewResultsThroughApiClient();
+}
+
+function basicActivityResourceAutofillByModel(resourceType, model) {
+  const normalizedModel = String(model || "").trim();
+  if (!normalizedModel) return {};
+  const source = basicActivitySupportResourceRows(resourceType)
+    .find((row) => String(row.model || "").trim() === normalizedModel);
+  return source ? { name: source.name || source.model || "" } : {};
 }
 
 function addBasicActivityResourceRequirement(key, resourceKind) {
@@ -7103,8 +7345,7 @@ function addBasicActivityResourceRequirement(key, resourceKind) {
   requirements.push(createBasicActivityResourceRequirement(resourceKind, requirements.length));
   setBasicActivityResourceRequirements(job, resourceKind, requirements);
   syncBasicActivityResourceSummaries(job);
-  jobs[jobIndex] = job;
-  activity.jobs = jobs;
+  setBasicActivityTargetJob(target, job);
   basicActivityResourceDialog = { key, kind: resourceKind };
   updatePreviewResultsThroughApiClient();
 }
@@ -7118,8 +7359,7 @@ function deleteBasicActivityResourceRequirement(key, resourceKind, index) {
     .filter((_, itemIndex) => itemIndex !== index);
   setBasicActivityResourceRequirements(job, resourceKind, requirements);
   syncBasicActivityResourceSummaries(job);
-  jobs[jobIndex] = job;
-  activity.jobs = jobs;
+  setBasicActivityTargetJob(target, job);
   basicActivityResourceDialog = { key, kind: resourceKind };
   updatePreviewResultsThroughApiClient();
 }
@@ -7175,11 +7415,23 @@ function setBasicActivityResourceRequirements(job, resourceKind, requirements) {
 }
 
 function basicActivityJobTarget(key) {
+  if (key === BASIC_ACTIVITY_DRAFT_KEY && basicActivityDraft) {
+    return { activity: null, jobs: [basicActivityDraft], jobIndex: 0, isDraft: true };
+  }
   const [activityIndex, jobIndex] = String(key || "").split(":").map(Number);
   const activity = (scenario.supportActivities || [])[activityIndex];
   const jobs = supportActivityJobs(activity).slice();
   if (!activity || !jobs[jobIndex]) return null;
-  return { activity, jobs, jobIndex };
+  return { activity, jobs, jobIndex, isDraft: false };
+}
+
+function setBasicActivityTargetJob(target, job) {
+  target.jobs[target.jobIndex] = job;
+  if (target.isDraft) {
+    basicActivityDraft = { ...basicActivityDraft, ...job, key: BASIC_ACTIVITY_DRAFT_KEY };
+    return;
+  }
+  target.activity.jobs = target.jobs;
 }
 
 function basicActivityResourceRequirementsFromKeys(resourceKind, keys) {
@@ -7299,13 +7551,13 @@ function toggleAllBasicActivitySelection(checked) {
 
 function importBasicActivityByType(type) {
   const activityType = basicActivityTypeOptions().some((option) => option.value === type) ? type : "使用保障活动";
-  const activity = ensureSupportActivityForBasicType(activityType);
+  const activity = ensureBasicActivityDraftHostActivity(activityType);
   if (!activity) return;
   const jobs = supportActivityJobs(activity).slice();
   const index = jobs.length;
   const prefix = activityType === "预防性维修" ? "PM" : activityType === "修复性维修" ? "CM" : "BA";
   jobs.push({
-    activityCode: `${prefix}-${String(index + 1).padStart(3, "0")}`,
+    activityCode: nextBasicActivityCode(prefix),
     workName: `${activityType}导入作业${index + 1}`,
     predecessors: [],
     durationProfile: { distributionType: "固定值", value: 30 },
@@ -7319,6 +7571,38 @@ function importBasicActivityByType(type) {
   selectedBasicActivityKeys = new Set([`${activityIndex}:${index}`]);
 }
 
+function nextBasicActivityCode(prefix) {
+  const used = new Set(basicActivityLibraryRows().map((row) => String(row.activityCode || "").trim()).filter(Boolean));
+  let index = used.size + 1;
+  let code = `${prefix}-${String(index).padStart(3, "0")}`;
+  while (used.has(code)) {
+    index += 1;
+    code = `${prefix}-${String(index).padStart(3, "0")}`;
+  }
+  return code;
+}
+
+function uniqueBasicActivityCode(value, currentKey = "") {
+  const requested = String(value || "").trim();
+  if (!requested) return requested;
+  const used = new Set(
+    basicActivityLibraryRows()
+      .filter((row) => row.key !== currentKey)
+      .map((row) => String(row.activityCode || "").trim())
+      .filter(Boolean)
+  );
+  if (!used.has(requested)) return requested;
+  const match = requested.match(/^(.*?)(?:-(\d+))?$/);
+  const prefix = (match?.[1] || requested || "BA").replace(/-$/, "");
+  let index = Number(match?.[2] || 2);
+  let code = `${prefix}-${String(index).padStart(3, "0")}`;
+  while (used.has(code)) {
+    index += 1;
+    code = `${prefix}-${String(index).padStart(3, "0")}`;
+  }
+  return code;
+}
+
 function ensureSupportActivityForBasicType(type) {
   if (type === "预防性维修") return ensurePreventiveMaintenanceActivityForAircraftModel(defaultSupportActivityAircraftModel());
   if (type === "修复性维修") return ensureCorrectiveMaintenanceActivityDraft();
@@ -7328,17 +7612,29 @@ function ensureSupportActivityForBasicType(type) {
 function applyBasicActivityToSupportActivityJob(tabKey, basicActivityKey) {
   const activity = findSupportActivityByJobTabKey(tabKey);
   if (!activity) return;
+  const allowedKeys = new Set(basicActivityLibraryOptions(tabKey).map((option) => option.value));
+  if (!allowedKeys.has(String(basicActivityKey || ""))) return;
   const template = basicActivityLibraryRows().find((row) => row.key === basicActivityKey);
   if (!template) return;
   const jobs = supportActivityJobs(activity).slice();
-  const targetIndex = selectedSupportActivityJobIndexForTab(tabKey, jobs);
+  const addMode = supportActivityTemplatePickerTabKey === tabKey;
+  const targetIndex = addMode ? jobs.length : selectedSupportActivityJobIndexForTab(tabKey, jobs);
   const current = jobs[targetIndex] || {};
+  const activityIndex = (scenario.supportActivities || []).indexOf(activity);
+  const targetKey = activityIndex >= 0 ? `${activityIndex}:${targetIndex}` : "";
+  const templateJob = supportActivityJobFromBasicActivity(template);
+  templateJob.activityCode = uniqueBasicActivityCode(
+    templateJob.activityCode || nextSupportActivityJobCode(tabKey, jobs),
+    addMode ? "" : targetKey
+  );
   jobs[targetIndex] = {
     ...current,
-    ...supportActivityJobFromBasicActivity(template)
+    ...templateJob
   };
   activity.jobs = jobs;
   selectedSupportActivityJobKeys = new Set([supportActivityJobKey(tabKey, targetIndex)]);
+  supportActivityTemplatePickerTabKey = "";
+  supportActivityTemplateQuery = "";
 }
 
 function addBasicActivityAsSupportActivityPredecessor(tabKey, basicActivityKey, targetKey) {
@@ -7357,10 +7653,7 @@ function addBasicActivityAsSupportActivityPredecessor(tabKey, basicActivityKey, 
   ));
   if (predecessorIndex < 0) {
     predecessorIndex = jobs.length;
-    const existingCodes = new Set(jobs.map((job) => String(job.activityCode || "").trim()).filter(Boolean));
-    if (templateJob.activityCode && existingCodes.has(String(templateJob.activityCode).trim())) {
-      templateJob.activityCode = nextSupportActivityJobCode(tabKey, jobs);
-    }
+    templateJob.activityCode = uniqueBasicActivityCode(templateJob.activityCode || nextSupportActivityJobCode(tabKey, jobs));
     jobs.push({
       ...templateJob,
       predecessors: Array.isArray(templateJob.predecessors) ? [...templateJob.predecessors] : []
@@ -7704,7 +7997,7 @@ function renderLogisticsSupportActivity(activePlan, activity) {
   selectedLogisticsTransportStrategyIndexes = new Set(
     Array.from(selectedLogisticsTransportStrategyIndexes).filter((index) => index >= 0 && index < transportStrategies.length)
   );
-  const supportNodeOptions = (scenario.supportNodes || []).map((node) => ({ value: node.id, label: node.name }));
+  const supportNodeOptions = uniqueSelectOptions((scenario.supportNodes || []).map((node) => ({ value: node.id, label: node.name })));
   const spareTypeOptions = spareModelingNames().map((name) => ({ value: name, label: name }));
   const directionOptions = [
     { value: "\u6a2a\u5411\u8fd0\u8f93", label: "\u6a2a\u5411\u8fd0\u8f93" },
@@ -7747,7 +8040,6 @@ function renderLogisticsSupportActivity(activePlan, activity) {
           }).join("") || `<tr><td colspan="9" class="muted">\u6682\u65e0\u8fd0\u8f93\u7b56\u7565</td></tr>`}</tbody>
         </table>
       </div>
-      ${renderSupportActivityJobTable(activity, "logistics")}
     </div>
   `;
 }
@@ -7859,6 +8151,7 @@ function renderExperimentPlanList(page) {
   const backendRows = backendExperimentPlans.map((plan) => experimentPlanRowFromBackend(plan, page));
   const fallbackRows = scenario.experiment?.name ? [{
     experiment_plan_id: "",
+    selectionKey: experimentPlanSelectionKey({ name: scenario.experiment.name }),
     name: scenario.experiment.name,
     module: page.module,
     steps: scenario.experiment.steps,
@@ -7881,8 +8174,8 @@ function renderExperimentPlanList(page) {
         <thead><tr><th>选择</th><th>方案名称</th><th>所属模块</th><th>步数</th><th>样本</th><th>关联运行</th><th>状态</th><th>方案动作</th></tr></thead>
         <tbody>
           ${plans.length ? plans.map((plan) => `
-            <tr class="${selectedExperimentPlanNames.has(plan.name) ? "selected-table-row" : ""}">
-              <td><input type="checkbox" data-experiment-plan-select="${htmlEscape(plan.name)}" ${selectedExperimentPlanNames.has(plan.name) ? "checked" : ""} aria-label="选择方案 ${htmlEscape(plan.name)}"></td>
+            <tr class="${selectedExperimentPlanKeys.has(plan.selectionKey) ? "selected-table-row" : ""}">
+              <td><input type="checkbox" data-experiment-plan-select="${htmlEscape(plan.selectionKey)}" ${selectedExperimentPlanKeys.has(plan.selectionKey) ? "checked" : ""} aria-label="选择方案 ${htmlEscape(plan.name)}"></td>
               <td>${htmlEscape(plan.name)}</td>
               <td>${htmlEscape(plan.module)}</td>
               <td>${htmlEscape(plan.steps)}</td>
@@ -7907,6 +8200,7 @@ function experimentPlanRowFromBackend(plan, page) {
   const latestRun = Array.isArray(plan.runs) && plan.runs.length ? plan.runs[0] : null;
   return {
     experiment_plan_id: plan.experiment_plan_id || "",
+    selectionKey: experimentPlanSelectionKey(plan),
     name: config.name || projectJson.experiment?.name || plan.experiment_plan_id || "未命名方案",
     module: page.module,
     steps: config.steps ?? projectJson.experiment?.steps ?? "-",
@@ -7918,12 +8212,18 @@ function experimentPlanRowFromBackend(plan, page) {
   };
 }
 
-function toggleExperimentPlanSelection(planName, checked) {
-  if (!planName) return;
-  const next = new Set(selectedExperimentPlanNames);
-  if (checked) next.add(planName);
-  else next.delete(planName);
-  selectedExperimentPlanNames = next;
+function experimentPlanSelectionKey(plan) {
+  const id = String(plan?.experiment_plan_id || "").trim();
+  if (id) return id;
+  return `local:${String(plan?.name || plan?.config?.name || plan?.config?.projectJson?.experiment?.name || "未命名方案").trim()}`;
+}
+
+function toggleExperimentPlanSelection(planKey, checked) {
+  if (!planKey) return;
+  const next = new Set(selectedExperimentPlanKeys);
+  if (checked) next.add(planKey);
+  else next.delete(planKey);
+  selectedExperimentPlanKeys = next;
 }
 
 function openExperimentPlanEditorFromList(experimentPlanId, planName) {
@@ -7937,7 +8237,7 @@ function openExperimentPlanEditorFromList(experimentPlanId, planName) {
   } else {
     createExperimentPlanBranchFromCurrentProject();
   }
-  if (planName) selectedExperimentPlanNames = new Set([planName]);
+  selectedExperimentPlanKeys = new Set([experimentPlanSelectionKey({ experiment_plan_id: experimentPlanId, name: planName })]);
   updatePreviewResultsThroughApiClient(experimentPlanDraft);
 }
 
@@ -8064,12 +8364,13 @@ function addDemoProject() {
 
 async function createSampleProjectFromPublishedImport(importId = currentPublishedModelingImportId()) {
   try {
+    const sampleFixture = await loadSampleModelingImportFixture();
     projectListStatus = importId
       ? "正在从已发布导入数据生成示例项目"
       : "正在保存并发布示例导入包";
     const published = await ensurePublishedModelingImportForSampleProject({
       backendApi,
-      fixture: MODELING_IMPORT_DEMO_FIXTURE,
+      fixture: sampleFixture,
       publishedImportId: importId
     });
     const resolvedImportId = published.importId;
@@ -8079,7 +8380,7 @@ async function createSampleProjectFromPublishedImport(importId = currentPublishe
     projectListStatus = "正在从已发布导入数据生成示例项目";
     const created = await backendApi.createProjectFromModelingImport(resolvedImportId);
     const projectJson = created.project || {};
-    const projectId = projectJson.project_id || created.savedProject?.project_id || MODELING_IMPORT_DEMO_FIXTURE.projectId;
+    const projectId = projectJson.project_id || created.savedProject?.project_id || sampleFixture.projectId;
     const project = {
       id: String(projectId || "imported-sample").replace(/^project-/, ""),
       name: projectJson.experiment?.name || "导入示例项目",
@@ -8106,6 +8407,14 @@ async function createSampleProjectFromPublishedImport(importId = currentPublishe
   } catch (err) {
     projectListStatus = `导入示例项目生成失败：${err && err.message ? err.message : "Backend API 不可用"}`;
     return null;
+  }
+}
+
+async function loadSampleModelingImportFixture() {
+  try {
+    return await loadModelingImportTemplate(DEFAULT_SAMPLE_MODELING_IMPORT_TEMPLATE_ID);
+  } catch {
+    return cloneModelingImportPackage(MODELING_IMPORT_DEMO_FIXTURE);
   }
 }
 
@@ -9554,7 +9863,7 @@ function supportResourceRowsFromSupportNodes(nodes, resourceType) {
     if (resourceType === "保障人员" && Number.isFinite(Number(node.personnelCapacity))) {
       return [{
         organizationNode,
-        model: node.personnelModel || node.personnelType || "人员容量",
+        model: normalizePersonnelSpecialtyName(node.personnelModel || node.personnelType),
         quantity: node.personnelCapacity
       }];
     }
@@ -9600,7 +9909,7 @@ function applySupportResourceImportRows(resourceType, rawRows) {
       : createSupportResourceImportNode(row.organizationNode, resourceType, index);
     if (resourceType === "保障人员") {
       node.personnelCapacity = row.quantity;
-      node.personnelModel = row.model || "人员容量";
+      node.personnelModel = normalizePersonnelSpecialtyName(row.model);
     } else if (resourceType === "保障设备") {
       node.equipmentCapacity = row.quantity;
       node.supportEquipmentName = row.name || "保障设备";
@@ -9629,7 +9938,7 @@ function normalizeSupportResourceImportRow(resourceType, row, targetOrgNodes, in
   if (resourceType === "保障人员") {
     return {
       organizationNode,
-      model: pickImportText(row, ["专业", "人员类型", "personnelType", "skills", "技能标签", "model", "type"], "人员容量"),
+      model: normalizePersonnelSpecialtyName(pickImportText(row, ["专业", "人员类型", "personnelType", "skills", "技能标签", "model", "type"], "")),
       quantity: pickImportNumber(row, ["数量", "能力人数", "capacity", "personnelCapacity", "人员容量"], 0)
     };
   }
@@ -10003,9 +10312,17 @@ async function handleModelingImportAction(action, options = {}) {
     try {
       const templatePackage = await loadModelingImportTemplate(options.templateId || selectedModelingImportTemplateId);
       const stored = await backendApi.getModelingImport(templatePackage.importId);
-      applyModelingImportRecord(stored);
+      if (sampleImportPackageIsComplete(stored?.publishedPackage || stored?.draftPackage, templatePackage)) {
+        applyModelingImportRecord(stored);
+        modelingImportStatus = "已从后端恢复导入草稿和发布快照";
+      } else {
+        modelingImportPackage = cloneModelingImportPackage(templatePackage);
+        modelingImportPublishedPackage = null;
+        modelingImportValidation = cloneModelingImportPackage(modelingImportPackage.validation || {});
+        modelingImportSaved = false;
+        modelingImportStatus = `内置导入模板已加载：${modelingImportTemplateLabel(options.templateId || selectedModelingImportTemplateId)}`;
+      }
       modelingImportCompileResult = null;
-      modelingImportStatus = "已从后端恢复导入草稿和发布快照";
     } catch {
       try {
         modelingImportPackage = await loadModelingImportTemplate(options.templateId || selectedModelingImportTemplateId);

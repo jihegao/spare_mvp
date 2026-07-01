@@ -798,6 +798,7 @@ test("frontend app routes project save run and result reads through API client",
   assert.match(appSource, /backendApi\.getProject/);
   assert.match(appSource, /submitRunIntent\(backendApi/);
   assert.match(runIntentSource, /apiClient\.createModelingSnapshot/);
+  assert.match(runIntentSource, /modeling_snapshot_id: modelingSnapshot\.snapshot_id/);
   assert.match(runIntentSource, /apiClient\.createExperimentPlan/);
   assert.match(runIntentSource, /apiClient\.submitRun/);
   assert.match(appSource, /backendApi\.getRunStatus/);
