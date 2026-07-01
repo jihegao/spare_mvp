@@ -176,7 +176,9 @@ export const MODELING_IMPORT_DEMO_FIXTURE = {
               "remainingLifeHours": 180,
               "role": "长机",
               "status": "执行",
-              "takeoffLandingCount": 36
+              "takeoffLandingCount": 36,
+              "airport": "A",
+              "preLifeCalendarDays": 0
             },
             {
               "aircraftNo": "J15-102",
@@ -186,7 +188,9 @@ export const MODELING_IMPORT_DEMO_FIXTURE = {
               "remainingLifeHours": 176,
               "role": "僚机",
               "status": "执行",
-              "takeoffLandingCount": 34
+              "takeoffLandingCount": 34,
+              "airport": "A",
+              "preLifeCalendarDays": 0
             },
             {
               "aircraftNo": "J35-201",
@@ -196,7 +200,9 @@ export const MODELING_IMPORT_DEMO_FIXTURE = {
               "remainingLifeHours": 169,
               "role": "僚机",
               "status": "执行",
-              "takeoffLandingCount": 32
+              "takeoffLandingCount": 32,
+              "airport": "A",
+              "preLifeCalendarDays": 0
             },
             {
               "aircraftNo": "J35-202",
@@ -206,7 +212,9 @@ export const MODELING_IMPORT_DEMO_FIXTURE = {
               "remainingLifeHours": 164,
               "role": "僚机",
               "status": "执行",
-              "takeoffLandingCount": 42
+              "takeoffLandingCount": 42,
+              "airport": "A",
+              "preLifeCalendarDays": 0
             },
             {
               "aircraftNo": "J15-103",
@@ -216,7 +224,9 @@ export const MODELING_IMPORT_DEMO_FIXTURE = {
               "remainingLifeHours": 171,
               "role": "备份",
               "status": "备用",
-              "takeoffLandingCount": 39
+              "takeoffLandingCount": 39,
+              "airport": "A",
+              "preLifeCalendarDays": 0
             },
             {
               "aircraftNo": "J35-203",
@@ -226,7 +236,9 @@ export const MODELING_IMPORT_DEMO_FIXTURE = {
               "remainingLifeHours": 152,
               "role": "备份",
               "status": "备用",
-              "takeoffLandingCount": 31
+              "takeoffLandingCount": 31,
+              "airport": "A",
+              "preLifeCalendarDays": 0
             }
           ],
           "quantity": 6,

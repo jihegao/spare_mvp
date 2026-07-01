@@ -257,6 +257,50 @@ test("support resource add creates a new editable row for the selected leaf orga
   }
 });
 
+test("support organization airport selector syncs from combat unit aircraft airports", async () => {
+  const runtime = await setupRuntimeApp({
+    projectJson: createRuntimeProjectJson({
+      airports: [],
+      combatUnit: {
+        members: [
+          { aircraftNo: "J15-01", model: "J-15", airport: "甲机场" },
+          { aircraftNo: "J15-02", model: "J-15", airport: "乙机场" }
+        ]
+      },
+      supportOrganization: {
+        tree: [{
+          id: "support-org-root",
+          name: "保障组织",
+          children: [
+            { id: "base-1", name: "基层1", children: [] }
+          ]
+        }]
+      },
+      supportNodes: [{
+        id: "support-node-base-1",
+        name: "基层1",
+        organizationNodeId: "base-1",
+        inventory: {}
+      }]
+    })
+  });
+  try {
+    await runtime.click("[data-enter-workbench]", { projectId: "project-runtime" });
+    await runtime.setHash("feature=spare-planning-support-organization");
+    await runtime.click("[data-select-support-org-node]", { selectSupportOrgNode: "base-1" });
+
+    assert.match(runtime.appNode.innerHTML, /关联机场/);
+    assert.match(runtime.appNode.innerHTML, /<option value="甲机场"/);
+    assert.match(runtime.appNode.innerHTML, /<option value="乙机场"/);
+
+    await runtime.change("[data-support-org-field]", { supportOrgNode: "base-1", supportOrgField: "airport" }, { value: "甲机场" });
+
+    assert.match(runtime.appNode.innerHTML, /<option value="甲机场" selected>/);
+  } finally {
+    runtime.restore();
+  }
+});
+
 test("project list imports and exports project JSON at runtime", async () => {
   const importedProjectJson = createRuntimeProjectJson({
     project_id: "project-json-runtime",

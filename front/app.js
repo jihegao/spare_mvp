@@ -232,7 +232,7 @@ const MODELING_DATA_MODULES = [
           fieldDef("nodeId", "节点ID", "supportNodes[].id"),
           fieldDef("nodeName", "节点名称", "supportNodes[].name"),
           fieldDef("nodeType", "节点类型", "supportNodes[].nodeType"),
-          fieldDef("airportId", "所属机场", "supportNodes[].airportId"),
+          fieldDef("airport", "所属机场", "supportNodes[].airport"),
           fieldDef("organizationStrategy", "组织策略", "supportNodes[].organizationStrategy")
         ]
       },
@@ -3747,7 +3747,7 @@ function renderCombatUnitModeling(page) {
       <div class="table-wrap unframed-table">
         <table class="combat-unit-table">
           <thead>
-            <tr><th rowspan="2" class="combat-unit-select-col"></th><th rowspan="2">飞机编号</th><th rowspan="2">飞机类型</th><th colspan="3" class="combat-unit-prelife-heading">大修周期</th></tr>
+            <tr><th rowspan="2" class="combat-unit-select-col"></th><th rowspan="2">飞机编号</th><th rowspan="2">飞机类型</th><th rowspan="2">所属机场</th><th colspan="3" class="combat-unit-prelife-heading">大修周期</th></tr>
             <tr><th class="combat-unit-prelife-column">大修周期（日历日）</th><th class="combat-unit-prelife-column">飞行小时</th><th class="combat-unit-prelife-column">起落次数</th></tr>
           </thead>
           <tbody>
@@ -3756,11 +3756,12 @@ function renderCombatUnitModeling(page) {
                 <td class="combat-unit-select-col"><input type="checkbox" data-select-combat-unit-member="${index}" ${index === boundedSelectedIndex ? "checked" : ""} aria-label="选择${htmlEscape(member.aircraftNo || `第${index + 1}架飞机`)}"></td>
                 <td>${combatUnitMemberInput(index, "aircraftNo", member.aircraftNo)}</td>
                 <td>${combatUnitMemberModelSelect(index, member.model)}</td>
+                <td>${combatUnitMemberInput(index, "airport", combatUnitMemberAirport(member))}</td>
                 <td class="combat-unit-prelife-cell">${combatUnitMemberInput(index, "preLifeCalendarDays", combatUnitMemberCalendarTime(member), "number", { min: "0", step: "1" })}</td>
                 <td class="combat-unit-prelife-cell">${combatUnitMemberInput(index, "preLifeFlightHours", combatUnitMemberFlightHours(member), "number", { min: "0", step: "1" })}</td>
                 <td class="combat-unit-prelife-cell">${combatUnitMemberInput(index, "preLifeTakeoffLandingCount", combatUnitMemberTakeoffLandingCount(member), "number", { min: "0", step: "1" })}</td>
               </tr>
-            `).join("") || "<tr><td colspan='6'>暂无飞机</td></tr>"}
+            `).join("") || "<tr><td colspan='7'>暂无飞机</td></tr>"}
           </tbody>
         </table>
       </div>
@@ -3786,6 +3787,15 @@ function combatUnitMemberModelSelect(index, value) {
       ${options.map((model) => `<option value="${htmlEscape(model)}" ${String(model) === currentValue ? "selected" : ""}>${htmlEscape(model)}</option>`).join("") || "<option value=\"\">暂无装备构型飞机级别</option>"}
     </select>
   `;
+}
+
+function combatUnitMemberAirport(member) {
+  return member.airport
+    ?? member.airportId
+    ?? member.homeAirport
+    ?? member.homeAirportId
+    ?? member.baseAirport
+    ?? "";
 }
 
 function combatUnitMemberCalendarTime(member) {
@@ -3842,6 +3852,7 @@ function addCombatUnitMember() {
     remainingLifeHours: Number(scenario.equipment.preLifeRequirementHours || 120),
     preLifeRequirementHours: Number(scenario.equipment.preLifeRequirementHours || 120),
     takeoffLandingCount: 0,
+    airport: "",
     deploymentLocation: scenario.equipment.deploymentLocation || scenario.combatUnit.deploymentLocation || ""
   });
   scenario.combatUnit.quantity = members.length;
@@ -5242,6 +5253,7 @@ function renderSupportOrganizationWorkbench(page) {
               <div class="form-table-grid">
                 <label>组织名称<input data-support-org-node="${htmlEscape(selectedSupportOrgNode?.id || "")}" data-support-org-field="name" value="${htmlEscape(selectedSupportOrgNode?.name || "")}"></label>
                 <div class="readonly-meta-row" data-support-org-parent-display><span>上级组织</span><strong>${htmlEscape(selectedSupportOrgParentName)}</strong></div>
+                <label>关联机场${supportOrgAirportSelect(selectedSupportOrgNode)}</label>
                 <label>组织描述<input data-support-org-node="${htmlEscape(selectedSupportOrgNode?.id || "")}" data-support-org-field="description" value="${htmlEscape(selectedSupportOrgNode?.description || "承担机务、维修、备件和设备保障资源调配")}"></label>
               </div>
             ` : `
@@ -5364,6 +5376,37 @@ function lruSpareRows() {
 function selectedSupportOrgTreeNode() {
   const orgTree = supportOrganizationTree();
   return findSupportOrgTreeNode(selectedSupportOrgNodeId, orgTree) || orgTree[0] || null;
+}
+
+function supportOrgAirportSelect(orgNode) {
+  const supportNode = supportNodeForOrgNode(orgNode, false);
+  const selectedValue = String(supportOrgNodeAirport(supportNode) || supportOrgNodeAirport(orgNode) || "");
+  return `
+    <select data-support-org-node="${htmlEscape(orgNode?.id || "")}" data-support-org-field="airport">
+      ${selectOptionsWithCurrent(supportOrgAirportOptions(), selectedValue)}
+    </select>
+  `;
+}
+
+function supportOrgNodeAirport(node) {
+  if (!node) return "";
+  return node.airport
+    ?? node.airportName
+    ?? node.baseAirport
+    ?? node.linkedAirport
+    ?? node.airportId
+    ?? "";
+}
+
+function supportOrgAirportOptions() {
+  const authoredAirports = (scenario.combatUnit?.members || [])
+    .map((member) => combatUnitMemberAirport(member))
+    .filter(Boolean)
+    .map((airport) => ({ value: airport, label: airport }));
+  return uniqueSelectOptions([
+    { value: "", label: "未关联机场" },
+    ...authoredAirports
+  ]);
 }
 
 function supportNodeForOrgNode(orgNode, createIfMissing = false) {
@@ -5635,9 +5678,14 @@ function updateSupportOrgField(id, fieldName, value) {
   const node = findSupportOrgTreeNode(id);
   if (!node || !fieldName) return;
   node[fieldName] = value;
-  const supportNode = supportNodeForOrgNode(node, false);
+  const supportNode = supportNodeForOrgNode(node, fieldName === "airport");
   if (supportNode && fieldName === "name") supportNode.name = value;
   if (supportNode && fieldName === "description") supportNode.organizationStrategy = value;
+  if (supportNode && fieldName === "airport") {
+    supportNode.airport = value;
+    delete supportNode.airportId;
+    delete node.airportId;
+  }
   updatePreviewResultsThroughApiClient();
 }
 
