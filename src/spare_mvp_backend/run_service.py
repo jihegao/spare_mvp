@@ -818,6 +818,9 @@ def _attach_simulation_experiment_base(
     if run_type == "monte_carlo":
         run["mc_experiment_id"] = run.get("mc_experiment_id") or _monte_carlo_experiment_id(request, {"config": {}}, run["run_id"])
         base["mc_experiment_id"] = run["mc_experiment_id"]
+    if request.get("analysis_type"):
+        run["analysis_type"] = str(request.get("analysis_type"))
+        base["analysis_type"] = run["analysis_type"]
     run["simulation_experiment_base"] = base
 
 

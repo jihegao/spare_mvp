@@ -16,6 +16,14 @@ from src.spare_mvp_backend.run_service import ACTIVE_FORMAL_MODEL_FAMILY, RETIRE
 from src.spare_mvp_contract.adapter import AdapterError, SimulationAdapter
 
 
+ANALYSIS_PROJECTION_ARTIFACT_KINDS = {
+    "spare_shortfall": "analysis_projection_spare_shortfall",
+    "carry_list": "analysis_projection_carry_list",
+    "mission_reliability": "analysis_projection_mission_reliability",
+    "downtime_factors": "analysis_projection_downtime_factors",
+}
+
+
 class BackendApi:
     """Thin orchestration layer over the Simulation Adapter and repository."""
 
@@ -538,6 +546,182 @@ class BackendApi:
     def get_run_artifacts(self, run_id: str) -> dict[str, Any]:
         return self.repository.get_artifact_manifest_for_run(run_id)
 
+    def get_current_analysis_result(self, project_id: str, analysis_type: str) -> dict[str, Any]:
+        normalized_analysis_type = _normalize_analysis_type(analysis_type)
+        runs = self.repository.list_runs(
+            project_id=project_id,
+            run_type="monte_carlo",
+            status="succeeded",
+            limit=100,
+        )
+        if not runs:
+            return _empty_current_analysis_result(
+                project_id,
+                normalized_analysis_type,
+                status="empty",
+                message="No successful formal Monte Carlo run exists for this project",
+            )
+
+        last_blocked: dict[str, Any] | None = None
+        for run_entry in runs:
+            run_id = run_entry["run_id"]
+            try:
+                run = self.repository.get_run(run_id)
+                result = self._current_analysis_result_for_run(project_id, normalized_analysis_type, run)
+            except BackendApiError as exc:
+                last_blocked = _empty_current_analysis_result(
+                    project_id,
+                    normalized_analysis_type,
+                    status="blocked",
+                    message=str(exc),
+                    code=exc.code,
+                    details=exc.details,
+                    run_id=run_id,
+                )
+                continue
+            if result["status"] == "completed":
+                return result
+            last_blocked = result
+        return last_blocked or _empty_current_analysis_result(
+            project_id,
+            normalized_analysis_type,
+            status="blocked",
+            message="No valid formal projection is available",
+        )
+
+    def _current_analysis_result_for_run(
+        self,
+        project_id: str,
+        analysis_type: str,
+        run: dict[str, Any],
+    ) -> dict[str, Any]:
+        run_id = str(run.get("run_id") or "")
+        if run.get("project_id") != project_id:
+            raise BackendApiError("project_mismatch", "run does not belong to project", run_id=run_id, project_id=project_id)
+        if run.get("run_type") != "monte_carlo":
+            raise BackendApiError("not_monte_carlo", "run_type must be monte_carlo", run_id=run_id)
+        if run.get("model_family") != ACTIVE_FORMAL_MODEL_FAMILY:
+            raise BackendApiError(
+                "model_family_mismatch",
+                f"model_family must be {ACTIVE_FORMAL_MODEL_FAMILY}",
+                run_id=run_id,
+                model_family=run.get("model_family"),
+            )
+        provenance = _compiler_provenance_for_run(run)
+        if not provenance:
+            raise BackendApiError("missing_compiler_provenance", "compiler provenance is required", run_id=run_id)
+        manifest = self.repository.get_artifact_manifest_for_run(run_id)
+        artifacts = manifest.get("artifacts") or []
+        base_artifact = _find_artifact_by_kind(artifacts, "monte_carlo_base")
+        if base_artifact is None:
+            raise BackendApiError("missing_monte_carlo_base", "monte_carlo_base artifact is required", run_id=run_id)
+        artifact_kind = ANALYSIS_PROJECTION_ARTIFACT_KINDS[analysis_type]
+        projection_artifact = _find_artifact_by_kind(artifacts, artifact_kind)
+        if projection_artifact is None:
+            raise BackendApiError(
+                "missing_analysis_projection",
+                f"{artifact_kind} artifact is required",
+                run_id=run_id,
+                analysis_type=analysis_type,
+            )
+        payload = self._read_json_artifact_payload(run_id, projection_artifact)
+        projection_type = payload.get("projection_type")
+        if projection_type != analysis_type:
+            raise BackendApiError(
+                "projection_type_mismatch",
+                f"projection_type mismatch: expected {analysis_type}, got {projection_type}",
+                run_id=run_id,
+                analysis_type=analysis_type,
+                projection_type=projection_type,
+            )
+        payload_run_id = payload.get("run_id")
+        if payload_run_id and payload_run_id != run_id:
+            raise BackendApiError(
+                "projection_run_mismatch",
+                "projection payload run_id does not match current run",
+                run_id=run_id,
+                payload_run_id=payload_run_id,
+            )
+        payload_model_family = payload.get("model_family")
+        if payload_model_family and payload_model_family != ACTIVE_FORMAL_MODEL_FAMILY:
+            raise BackendApiError(
+                "projection_model_family_mismatch",
+                "projection payload model_family does not match aircraft_support_v1",
+                run_id=run_id,
+                model_family=payload_model_family,
+            )
+        return {
+            "project_id": project_id,
+            "analysis_type": analysis_type,
+            "profile_version": "default-v0",
+            "base_plan_version": str(run.get("modeling_snapshot_id") or run.get("experiment_plan_id") or ""),
+            "status": "completed",
+            "last_success_result": {
+                "run_id": run_id,
+                "projection_type": projection_type,
+                "payload": payload,
+            },
+            "last_failure": None,
+            "is_stale": False,
+            "source": "formal_backend",
+            "internal_run_ref": {
+                "run_id": run_id,
+                "run_type": run.get("run_type"),
+                "model_family": run.get("model_family"),
+                "experiment_plan_id": run.get("experiment_plan_id"),
+                "modeling_snapshot_id": run.get("modeling_snapshot_id"),
+            },
+            "internal_artifact_ref": {
+                "artifact_id": projection_artifact.get("artifact_id"),
+                "kind": projection_artifact.get("kind"),
+                "source_artifact_id": projection_artifact.get("source_artifact_id") or base_artifact.get("artifact_id"),
+            },
+            "updated_at": run.get("completed_at") or run.get("updated_at") or run.get("started_at"),
+        }
+
+    def _read_json_artifact_payload(self, run_id: str, artifact: dict[str, Any]) -> dict[str, Any]:
+        relative_path = Path(str(artifact.get("path") or ""))
+        if relative_path.is_absolute() or ".." in relative_path.parts:
+            raise BackendApiError(
+                "artifact_path_escape",
+                "artifact path escapes output directory",
+                run_id=run_id,
+                artifact_id=artifact.get("artifact_id"),
+            )
+        output_root = self.output_dir.resolve()
+        target = (output_root / relative_path).resolve()
+        if output_root not in target.parents and target != output_root:
+            raise BackendApiError(
+                "artifact_path_escape",
+                "artifact path escapes output directory",
+                run_id=run_id,
+                artifact_id=artifact.get("artifact_id"),
+            )
+        if not target.is_file():
+            raise BackendApiError(
+                "artifact_missing",
+                "artifact file is missing",
+                run_id=run_id,
+                artifact_id=artifact.get("artifact_id"),
+            )
+        try:
+            payload = json.loads(target.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise BackendApiError(
+                "projection_payload_invalid",
+                "projection payload JSON is invalid",
+                run_id=run_id,
+                artifact_id=artifact.get("artifact_id"),
+            ) from exc
+        if not isinstance(payload, dict):
+            raise BackendApiError(
+                "projection_payload_invalid",
+                "projection payload must be an object",
+                run_id=run_id,
+                artifact_id=artifact.get("artifact_id"),
+            )
+        return payload
+
     def get_run_chain(self, run_id: str) -> dict[str, Any]:
         return self.repository.get_run_chain(run_id)
 
@@ -753,6 +937,69 @@ def _require_m7_actor(actor_user_id: str | None) -> str:
     if actor_user_id is None or str(actor_user_id).strip() == "":
         raise BackendApiError("missing_actor", "M7 run management action requires an actor")
     return str(actor_user_id)
+
+
+def _normalize_analysis_type(analysis_type: str) -> str:
+    normalized = str(analysis_type or "").strip()
+    if normalized not in ANALYSIS_PROJECTION_ARTIFACT_KINDS:
+        raise BackendApiError(
+            "unsupported_analysis_type",
+            f"Unsupported analysis_type: {normalized or 'empty'}",
+            analysis_type=normalized,
+            supported_analysis_types=sorted(ANALYSIS_PROJECTION_ARTIFACT_KINDS),
+        )
+    return normalized
+
+
+def _empty_current_analysis_result(
+    project_id: str,
+    analysis_type: str,
+    *,
+    status: str,
+    message: str,
+    code: str | None = None,
+    details: dict[str, Any] | None = None,
+    run_id: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "project_id": project_id,
+        "analysis_type": analysis_type,
+        "profile_version": "default-v0",
+        "base_plan_version": "",
+        "status": status,
+        "last_success_result": None,
+        "last_failure": {
+            "code": code or status,
+            "message": message,
+            "details": details or {},
+            "run_id": run_id,
+        },
+        "is_stale": False,
+        "source": "blocked" if status == "blocked" else "formal_backend",
+        "internal_run_ref": {"run_id": run_id} if run_id else None,
+        "internal_artifact_ref": None,
+        "updated_at": None,
+    }
+
+
+def _compiler_provenance_for_run(run: dict[str, Any]) -> dict[str, Any] | None:
+    candidates = [
+        run.get("compiler_provenance"),
+        run.get("compiled_from", {}).get("mapping_provenance") if isinstance(run.get("compiled_from"), dict) else None,
+        run.get("simulation_experiment_base", {}).get("mapping_provenance")
+        if isinstance(run.get("simulation_experiment_base"), dict)
+        else None,
+    ]
+    return next((candidate for candidate in candidates if isinstance(candidate, dict) and candidate), None)
+
+
+def _find_artifact_by_kind(artifacts: list[Any], kind: str) -> dict[str, Any] | None:
+    for artifact in artifacts:
+        if not isinstance(artifact, dict):
+            continue
+        if artifact.get("kind") == kind or artifact.get("artifact_type") == kind:
+            return artifact
+    return None
 
 
 def _steps_from_plan(plan: dict[str, Any]) -> int:

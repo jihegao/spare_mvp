@@ -2243,37 +2243,24 @@ test("browser smoke enters monte carlo editor or detail before using sweep input
   assert.match(smokeSource, /function openMonteCarloExperimentForRun/);
 });
 
-test("analysis pages manage analysis tasks and can auto-create a bound monte carlo experiment", async () => {
+test("analysis pages expose current result flow without user-visible task or artifact selectors", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const analysisSource = appSource.slice(
-    appSource.indexOf("function renderAnalysisTaskList"),
+    appSource.indexOf("function renderCurrentAnalysisResultPanel"),
     appSource.indexOf("function renderBar")
   );
-  const bindingSource = appSource.slice(
-    appSource.indexOf("function ensureAnalysisTaskMonteCarloExperiment"),
-    appSource.indexOf("function renderAnalysisTaskList")
-  );
 
-  assert.match(appSource, /function ensureAnalysisTaskMonteCarloExperiment/);
-  assert.match(appSource, /function createAnalysisTaskForPage/);
-  assert.match(appSource, /function updateAnalysisTaskFormField/);
-  assert.match(appSource, /function updateSelectedAnalysisTaskFromForm/);
-  assert.match(appSource, /analysisTaskInput\.tagName === "SELECT"/);
-  assert.match(analysisSource, /分析任务列表/);
-  assert.match(analysisSource, /创建\/编辑\/删除/);
-  assert.match(analysisSource, /data-analysis-action="create-with-mc"/);
-  assert.match(analysisSource, /data-analysis-action="edit"/);
-  assert.match(analysisSource, /data-analysis-action="save"/);
-  assert.match(analysisSource, /data-analysis-action="delete"/);
-  assert.match(analysisSource, /data-analysis-task-field="experimentPlanName"/);
-  assert.match(analysisSource, /data-analysis-task-field="samples"/);
-  assert.match(analysisSource, /选择方案 \+ 参数后自动创建一个新的蒙特卡洛实验并绑定分析任务/);
-  assert.match(analysisSource, /linkedMonteCarloExperimentId/);
-  assert.match(analysisSource, /mc_experiment_id/);
-  assert.match(bindingSource, /experiment\.mc_experiment_id === task\.linkedMonteCarloExperimentId/);
-  assert.match(bindingSource, /if \(existing && !options\.forceNew\) return existing/);
-  assert.match(bindingSource, /source: "analysis:auto-created"/);
-  assert.match(bindingSource, /linkedMonteCarloExperimentId: experiment\.mc_experiment_id/);
+  assert.match(appSource, /function renderCurrentAnalysisResultPanel/);
+  assert.match(appSource, /function runCurrentAnalysisPage/);
+  assert.match(analysisSource, /当前分析结果/);
+  assert.match(analysisSource, /data-analysis-action="run-current"/);
+  assert.match(analysisSource, /status-badge/);
+  assert.match(appSource, /const analysisType = analysisTypeForPage\(page\)/);
+  assert.doesNotMatch(analysisSource, /分析任务列表|创建\/编辑\/删除|选择方案 \+ 参数/);
+  assert.doesNotMatch(analysisSource, /linkedMonteCarloExperimentId|mc_experiment_id|experiment_id|artifact_manifest_id/);
+  assert.doesNotMatch(appSource, /data-analysis-task-field/);
+  assert.doesNotMatch(appSource, /data-analysis-action="create-with-mc"|data-analysis-action="edit"|data-analysis-action="save"|data-analysis-action="delete"/);
+  assert.doesNotMatch(appSource, /source: "analysis:auto-created"/);
 });
 
 test("experiment plan editor edits an isolated branch rather than the project draft", async () => {
@@ -2319,10 +2306,11 @@ test("monte carlo launch creates a run from the current experiment plan branch",
   assert.match(launchSource, /runType,/);
   assert.match(launchSource, /modelFamily: FORMAL_AIRCRAFT_SUPPORT_MODEL_FAMILY/);
   assert.match(launchSource, /mcExperimentId: monteCarloExperimentId/);
+  assert.match(launchSource, /analysisType,/);
   assert.match(launchSource, /monteCarloParameterSpace: monteCarloParameterSpaceForExperiment\(monteCarloExperimentId\)/);
   assert.match(appSource, /function monteCarloParameterSpaceForExperiment\(monteCarloExperimentId\)/);
-  assert.match(appSource, /experiment\?\.source === "analysis:auto-created"/);
-  assert.match(appSource, /startMonteCarloRunThroughApi\(\{ monteCarloExperimentId: experiment\.mc_experiment_id/);
+  assert.match(appSource, /function hiddenCurrentAnalysisExperimentId\(analysisType\)/);
+  assert.match(appSource, /startMonteCarloRunThroughApi\(\{\s*monteCarloExperimentId: hiddenExperimentId,\s*analysisType/s);
   assert.doesNotMatch(launchSource, /sample_count\s*:/);
   assert.doesNotMatch(launchSource, /samples\s*:/);
   assert.doesNotMatch(launchSource, /sweep\s*:/);

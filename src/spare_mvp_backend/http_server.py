@@ -212,6 +212,9 @@ def create_backend_server(
             if self.command == "DELETE" and len(parts) == 2 and parts[0] == "projects":
                 self._require_user()
                 return api.delete_project(parts[1])
+            if self.command == "GET" and len(parts) == 4 and parts[0] == "projects" and parts[2] == "analysis-results":
+                self._require_user()
+                return api.get_current_analysis_result(parts[1], parts[3])
             if self.command == "POST" and len(parts) == 3 and parts[0] == "projects" and parts[2] == "modeling-snapshots":
                 self._require_user()
                 return api.create_modeling_snapshot(parts[1])

@@ -177,6 +177,13 @@ export function createBackendApiClient({ baseUrl = DEFAULT_API_BASE, transport, 
         responseType: "json"
       });
     },
+    getCurrentAnalysisResult(projectId, analysisType) {
+      return request({
+        method: "GET",
+        path: `/projects/${encodeURIComponent(projectId)}/analysis-results/${encodeURIComponent(analysisType)}`,
+        responseType: "json"
+      });
+    },
     archiveRun(runId) {
       return request({ method: "POST", path: `/runs/${encodeURIComponent(runId)}/archive` });
     },

@@ -8,6 +8,7 @@ export function buildRunIntent({
   planProjectJson,
   mcExperimentId = "",
   experimentId = "",
+  analysisType = "",
   modelFamily = "aircraft_support_v1",
   monteCarloParameterSpace = "baseline"
 }) {
@@ -31,6 +32,7 @@ export function buildRunIntent({
     model_family: modelFamily,
     run_type: runType,
     ...(experimentId ? { experiment_id: experimentId } : {}),
+    ...(analysisType ? { analysis_type: analysisType } : {}),
     ...(runType === "monte_carlo" && mcExperimentId ? { mc_experiment_id: mcExperimentId } : {})
   };
 

@@ -109,6 +109,78 @@ class BackendHttpApiTest(unittest.TestCase):
                 server.server_close()
                 thread.join(timeout=5)
 
+    def test_http_current_analysis_result_returns_formal_projection_record(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            server = create_backend_server(
+                ("127.0.0.1", 0),
+                repo_root=REPO_ROOT,
+                database_path=":memory:",
+                output_dir=Path(tmp) / "artifacts",
+            )
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                base_url = f"http://127.0.0.1:{server.server_address[1]}/api"
+                created = self._create_imported_sample_project(base_url)
+                saved = created["savedProject"]
+                auth_token = created["authToken"]
+                plan = self._json(
+                    base_url,
+                    "POST",
+                    f"/projects/{saved['project_id']}/experiment-plans",
+                    {
+                        "config": {
+                            "name": "http current analysis",
+                            "steps": 2,
+                            "projectJson": created["project"],
+                            "analysisRequests": {
+                                "largeSample": {
+                                    "enabled": True,
+                                    "samples": 1,
+                                    "sweep": {
+                                        "failureRates": [0.05],
+                                        "spareMultipliers": [1.0],
+                                        "supportCapacities": [2],
+                                    },
+                                },
+                                "spareShortfall": {"enabled": True},
+                            },
+                        }
+                    },
+                    auth_token=auth_token,
+                )
+                run = self._json(
+                    base_url,
+                    "POST",
+                    "/runs",
+                    {
+                        "project_id": saved["project_id"],
+                        "experiment_plan_id": plan["experiment_plan_id"],
+                        "model_family": "aircraft_support_v1",
+                        "run_type": "monte_carlo",
+                        "analysis_type": "spare_shortfall",
+                    },
+                    auth_token=auth_token,
+                )
+
+                current = self._json(
+                    base_url,
+                    "GET",
+                    f"/projects/{quote(saved['project_id'], safe='')}/analysis-results/spare_shortfall",
+                    auth_token=auth_token,
+                )
+
+                self.assertEqual(run["status"], "succeeded")
+                self.assertEqual(current["analysis_type"], "spare_shortfall")
+                self.assertEqual(current["status"], "completed")
+                self.assertEqual(current["source"], "formal_backend")
+                self.assertEqual(current["last_success_result"]["run_id"], run["run_id"])
+                self.assertEqual(current["last_success_result"]["projection_type"], "spare_shortfall")
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
     def test_http_api_persists_stage5_system_config_and_user_delete(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             server = create_backend_server(

@@ -232,6 +232,33 @@ test("frontend API client reads run artifact JSON payloads for M8 analysis proje
   assert.equal(calls[0].responseType, "json");
 });
 
+test("frontend API client reads current analysis result records", async () => {
+  const calls = [];
+  const client = createBackendApiClient({
+    transport: async (request) => {
+      calls.push(request);
+      if (request.path === "/projects/project-ui/analysis-results/spare_shortfall") {
+        return {
+          analysis_type: "spare_shortfall",
+          status: "completed",
+          source: "formal_backend",
+          last_success_result: { projection_type: "spare_shortfall" }
+        };
+      }
+      throw new Error(`unexpected ${request.method} ${request.path}`);
+    }
+  });
+
+  const current = await client.getCurrentAnalysisResult("project-ui", "spare_shortfall");
+
+  assert.equal(current.status, "completed");
+  assert.equal(current.last_success_result.projection_type, "spare_shortfall");
+  assert.deepEqual(calls.map((call) => `${call.method} ${call.path}`), [
+    "GET /projects/project-ui/analysis-results/spare_shortfall"
+  ]);
+  assert.equal(calls[0].responseType, "json");
+});
+
 test("frontend API client preserves formal M6.2 monte carlo SimulationExperimentBase fields", async () => {
   const calls = [];
   const client = createBackendApiClient({

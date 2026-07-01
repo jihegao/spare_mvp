@@ -142,6 +142,13 @@ class BackendApiContractTest(unittest.TestCase):
         artifact = self._artifact_by_kind(manifest, kind)
         return json.loads((Path(self.api.output_dir) / artifact["path"]).read_text(encoding="utf-8"))
 
+    def _write_artifact_payload(self, manifest: dict, kind: str, payload: dict[str, Any]) -> None:
+        artifact = self._artifact_by_kind(manifest, kind)
+        (Path(self.api.output_dir) / artifact["path"]).write_text(
+            json.dumps(payload, ensure_ascii=False, sort_keys=True),
+            encoding="utf-8",
+        )
+
     def _submit_successful_smoke_run(self) -> dict[str, Any]:
         project = self._fixture("smoke_project.json")
         saved = self.api.save_project(project)
@@ -162,6 +169,43 @@ class BackendApiContractTest(unittest.TestCase):
         self.api.publish_modeling_import_as_system(import_package["importId"])
         return self.api.create_project_from_modeling_import_as_system(import_package["importId"])
 
+    def _submit_successful_aircraft_support_monte_carlo_run(self) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+        created = self._create_imported_sample_project()
+        saved = created["savedProject"]
+        plan = self.api.create_experiment_plan(
+            saved["project_id"],
+            {
+                "name": "current analysis result",
+                "steps": 2,
+                "projectJson": created["project"],
+                "analysisRequests": {
+                    "largeSample": {
+                        "enabled": True,
+                        "samples": 1,
+                        "sweep": {
+                            "failureRates": [0.05],
+                            "spareMultipliers": [1.0],
+                            "supportCapacities": [2],
+                        },
+                    },
+                    "spareShortfall": {"enabled": True},
+                    "carryList": {"enabled": True},
+                    "missionReliability": {"enabled": True},
+                    "downtimeFactors": {"enabled": True},
+                },
+            },
+        )
+        run = self.api.submit_run(
+            {
+                "project_id": saved["project_id"],
+                "experiment_plan_id": plan["experiment_plan_id"],
+                "model_family": "aircraft_support_v1",
+                "run_type": "monte_carlo",
+                "analysis_type": "spare_shortfall",
+            }
+        )
+        return created, plan, run
+
     def _level0_import_package_without_support_domain(self) -> dict[str, Any]:
         import_package = self._fixture("modeling_import_project.json")
         import_package["importId"] = "import-level0-no-support-domain"
@@ -181,6 +225,36 @@ class BackendApiContractTest(unittest.TestCase):
         import_package["objects"].pop("supportActivities", None)
         import_package["objects"].pop("supportOrganization", None)
         return import_package
+
+    def test_current_analysis_result_returns_only_valid_formal_projection(self) -> None:
+        created, _plan, run = self._submit_successful_aircraft_support_monte_carlo_run()
+
+        current = self.api.get_current_analysis_result(created["savedProject"]["project_id"], "spare_shortfall")
+
+        self.assertEqual(current["analysis_type"], "spare_shortfall")
+        self.assertEqual(current["status"], "completed")
+        self.assertEqual(current["source"], "formal_backend")
+        self.assertFalse(current["is_stale"])
+        self.assertEqual(current["last_success_result"]["run_id"], run["run_id"])
+        self.assertEqual(current["last_success_result"]["projection_type"], "spare_shortfall")
+        self.assertEqual(current["internal_run_ref"]["run_id"], run["run_id"])
+        self.assertEqual(current["internal_artifact_ref"]["kind"], "analysis_projection_spare_shortfall")
+        self.assertIn("payload", current["last_success_result"])
+
+    def test_current_analysis_result_fails_closed_on_projection_type_mismatch(self) -> None:
+        created, _plan, run = self._submit_successful_aircraft_support_monte_carlo_run()
+        manifest = self.api.get_run_artifacts(run["run_id"])
+        payload = self._artifact_payload(manifest, "analysis_projection_spare_shortfall")
+        payload["projection_type"] = "carry_list"
+        self._write_artifact_payload(manifest, "analysis_projection_spare_shortfall", payload)
+
+        current = self.api.get_current_analysis_result(created["savedProject"]["project_id"], "spare_shortfall")
+
+        self.assertEqual(current["analysis_type"], "spare_shortfall")
+        self.assertEqual(current["status"], "blocked")
+        self.assertEqual(current["source"], "blocked")
+        self.assertIsNone(current["last_success_result"])
+        self.assertIn("projection_type mismatch", current["last_failure"]["message"])
 
     def test_smoke_backend_flow_persists_complete_run_chain(self) -> None:
         project = self._fixture("smoke_project.json")
