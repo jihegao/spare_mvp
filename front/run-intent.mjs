@@ -8,7 +8,8 @@ export function buildRunIntent({
   planProjectJson,
   mcExperimentId = "",
   experimentId = "",
-  modelFamily = "aircraft_support_v1"
+  modelFamily = "aircraft_support_v1",
+  monteCarloParameterSpace = "baseline"
 }) {
   if (!SUPPORTED_RUN_TYPES.has(runType)) {
     throw new Error(`Unsupported runType: ${runType}`);
@@ -21,7 +22,7 @@ export function buildRunIntent({
   }
 
   const normalizedPlanProjectJson = runType === "monte_carlo"
-    ? withCanonicalMonteCarloAnalysisRequest(planProjectJson)
+    ? withCanonicalMonteCarloAnalysisRequest(planProjectJson, { parameterSpace: monteCarloParameterSpace })
     : cloneJson(planProjectJson);
   const experimentPlanConfig = buildExperimentPlanConfig(normalizedPlanProjectJson);
   const runRequest = {
@@ -76,10 +77,12 @@ export async function submitRunIntent(apiClient, options) {
   };
 }
 
-function withCanonicalMonteCarloAnalysisRequest(planProjectJson) {
+function withCanonicalMonteCarloAnalysisRequest(planProjectJson, { parameterSpace = "baseline" } = {}) {
   const nextProjectJson = cloneJson(planProjectJson);
   const existingLargeSample = nextProjectJson.analysisRequests?.largeSample;
-  const sweep = cloneJson(existingLargeSample?.sweep || nextProjectJson.monteCarlo || {});
+  const sweep = parameterSpace === "sweep"
+    ? cloneJson(existingLargeSample?.sweep || nextProjectJson.monteCarlo || {})
+    : baselineMonteCarloSweep(nextProjectJson);
   const configuredSamples = Number(existingLargeSample?.samples ?? nextProjectJson.experiment?.samples ?? 1);
   const samples = Math.max(configuredSamples, monteCarloSweepPointCount(sweep));
   nextProjectJson.experiment = {
@@ -95,6 +98,36 @@ function withCanonicalMonteCarloAnalysisRequest(planProjectJson) {
     }
   };
   return nextProjectJson;
+}
+
+function baselineMonteCarloSweep(projectJson) {
+  return {
+    failureRates: [1.0],
+    spareMultipliers: [1.0],
+    supportCapacities: [baselineSupportCapacity(projectJson)]
+  };
+}
+
+function baselineSupportCapacity(projectJson) {
+  const supportNodes = Array.isArray(projectJson?.supportNodes) ? projectJson.supportNodes : [];
+  for (const node of supportNodes) {
+    const capacity = firstPositiveInteger([
+      node?.equipmentCapacity,
+      node?.personnelCapacity,
+      node?.capacity
+    ]);
+    if (capacity !== null) return capacity;
+  }
+  return 1;
+}
+
+function firstPositiveInteger(values) {
+  for (const value of values) {
+    if (typeof value === "boolean") continue;
+    const number = Number(value);
+    if (Number.isFinite(number) && number > 0) return Math.max(1, Math.round(number));
+  }
+  return null;
 }
 
 function monteCarloSweepPointCount(sweep) {

@@ -9053,7 +9053,8 @@ async function startMonteCarloRunThroughApi({ monteCarloExperimentId = selectedM
       projectJson,
       planProjectJson,
       modelFamily: FORMAL_AIRCRAFT_SUPPORT_MODEL_FAMILY,
-      mcExperimentId: monteCarloExperimentId
+      mcExperimentId: monteCarloExperimentId,
+      monteCarloParameterSpace: monteCarloParameterSpaceForExperiment(monteCarloExperimentId)
     });
     savedProject = submitted.savedProject;
     modelingSnapshot = submitted.modelingSnapshot;
@@ -11669,6 +11670,18 @@ function currentMonteCarloExperiment(moduleName) {
 
 function monteCarloExperimentByBusinessId(mcExperimentId) {
   return monteCarloExperiments.find((experiment) => experiment.mc_experiment_id === mcExperimentId || experiment.id === mcExperimentId) || null;
+}
+
+function monteCarloParameterSpaceForExperiment(monteCarloExperimentId) {
+  const experiment = monteCarloExperimentByBusinessId(monteCarloExperimentId);
+  const businessIds = new Set([
+    monteCarloExperimentId,
+    experiment?.id,
+    experiment?.mc_experiment_id,
+    experiment?.experiment_id
+  ].filter(Boolean));
+  const linkedToAnalysisTask = analysisTasks.some((task) => businessIds.has(task.linkedMonteCarloExperimentId));
+  return linkedToAnalysisTask || experiment?.source === "analysis:auto-created" ? "sweep" : "baseline";
 }
 
 function monteCarloExperimentSourceRows(experiment) {

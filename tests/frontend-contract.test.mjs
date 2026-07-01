@@ -2319,6 +2319,9 @@ test("monte carlo launch creates a run from the current experiment plan branch",
   assert.match(launchSource, /runType,/);
   assert.match(launchSource, /modelFamily: FORMAL_AIRCRAFT_SUPPORT_MODEL_FAMILY/);
   assert.match(launchSource, /mcExperimentId: monteCarloExperimentId/);
+  assert.match(launchSource, /monteCarloParameterSpace: monteCarloParameterSpaceForExperiment\(monteCarloExperimentId\)/);
+  assert.match(appSource, /function monteCarloParameterSpaceForExperiment\(monteCarloExperimentId\)/);
+  assert.match(appSource, /experiment\?\.source === "analysis:auto-created"/);
   assert.match(appSource, /startMonteCarloRunThroughApi\(\{ monteCarloExperimentId: experiment\.mc_experiment_id/);
   assert.doesNotMatch(launchSource, /sample_count\s*:/);
   assert.doesNotMatch(launchSource, /samples\s*:/);
