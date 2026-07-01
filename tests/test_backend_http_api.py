@@ -770,6 +770,41 @@ class BackendHttpApiTest(unittest.TestCase):
                 server.server_close()
                 thread.join(timeout=5)
 
+    def test_http_api_deletes_project_with_run_chain_from_backend_catalog(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            server = create_backend_server(
+                ("127.0.0.1", 0),
+                repo_root=REPO_ROOT,
+                database_path=":memory:",
+                output_dir=Path(tmp) / "artifacts",
+            )
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                base_url = f"http://127.0.0.1:{server.server_address[1]}/api"
+                submitted = self._submit_m7_http_run(base_url)
+                project_id = submitted["created"]["savedProject"]["project_id"]
+                auth_token = submitted["created"]["authToken"]
+
+                deleted = self._json(
+                    base_url,
+                    "DELETE",
+                    f"/projects/{quote(project_id, safe='')}",
+                    auth_token=auth_token,
+                )
+                catalog = self._json(base_url, "GET", "/projects")
+
+                self.assertEqual(deleted["project_id"], project_id)
+                self.assertTrue(deleted["deleted"])
+                self.assertGreaterEqual(deleted["deleted_simulation_runs"], 1)
+                self.assertGreaterEqual(deleted["deleted_result_summaries"], 1)
+                self.assertGreaterEqual(deleted["deleted_artifact_manifests"], 1)
+                self.assertNotIn(project_id, [entry["project_id"] for entry in catalog["projects"]])
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
     def test_http_project_write_delete_experiment_plan_and_run_submit_require_m4_session(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             server = create_backend_server(
