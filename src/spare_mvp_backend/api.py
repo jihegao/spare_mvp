@@ -29,8 +29,8 @@ class BackendApi:
         self.repository = repository
         self.adapter = adapter
         self.output_dir = Path(output_dir)
-        self._run_lock = run_lifecycle_lock or threading.Lock()
-        self.run_service = RunService(repository, adapter, self.output_dir, run_lifecycle_lock=self._run_lock)
+        lifecycle_lock = run_lifecycle_lock or threading.Lock()
+        self.run_service = RunService(repository, adapter, self.output_dir, run_lifecycle_lock=lifecycle_lock)
 
     def validate_project(self, project_json: dict[str, Any]) -> dict[str, Any]:
         return self.adapter.validate_project(project_json)
