@@ -1293,11 +1293,9 @@
   "projectId": "project-carrier-day-night",
   "schemaVersion": "modeling-import-v1",
   "source": {
-    "backfilledFromProjectId": "project-carrier-day-night",
-    "backfilledFromScenarioId": "import-carrier-day-night-001",
-    "exportedTo": "public/import-templates/case_new.json",
-    "name": "front/modeling-import-demo-fixture.mjs",
-    "type": "frontend_current_template"
+    "derivedFrom": "tests/fixtures/case_new.json",
+    "name": "simulation_analysis_cases/canonical_platform_case.json",
+    "type": "json_fixture"
   },
   "usedTables": {
     "equipmentAssets": true,

@@ -52,7 +52,7 @@ def build_simulation_analysis_case_pack(repo_root: Path | str) -> dict[str, Any]
     canonical = _load_canonical_import(root)
     cases = [
         _case("minimal_single_aircraft", _minimal_single_aircraft_import(canonical), "最小单机建模粒度"),
-        _case("canonical_platform_case", copy.deepcopy(canonical), "M9.6/M9.7/M9.8 平台标准案例"),
+        _case("canonical_platform_case", _canonical_platform_import(canonical), "M9.6/M9.7/M9.8 平台标准案例"),
     ]
     return {
         "schema_version": "simulation-analysis-case-pack-v0",
@@ -151,6 +151,16 @@ def _case(case_id: str, import_package: dict[str, Any], description: str) -> dic
 
 def _load_canonical_import(repo_root: Path) -> dict[str, Any]:
     return json.loads((repo_root / BASE_CASE_FIXTURE).read_text(encoding="utf-8"))
+
+
+def _canonical_platform_import(source: dict[str, Any]) -> dict[str, Any]:
+    case = copy.deepcopy(source)
+    case["source"] = {
+        "type": "json_fixture",
+        "name": "simulation_analysis_cases/canonical_platform_case.json",
+        "derivedFrom": BASE_CASE_FIXTURE,
+    }
+    return case
 
 
 def _minimal_single_aircraft_import(source: dict[str, Any]) -> dict[str, Any]:

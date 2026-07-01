@@ -64,6 +64,26 @@ test("modeling import schema and fixture define the M5 first-slice package", asy
   assert.deepEqual(validateModelingImportPackage(fixture), []);
 });
 
+test("simulation analysis public import templates validate against modeling import schema", async () => {
+  const schema = await readJson("contracts/modeling_import.schema.json");
+  const templatePaths = [
+    "public/import-templates/minimal_single_aircraft.json",
+    "public/import-templates/canonical_platform_case.json"
+  ];
+
+  for (const templatePath of templatePaths) {
+    const template = await readJson(templatePath);
+    assert.deepEqual(validateSchema(schema, template), [], `${templatePath} must match modeling_import.schema.json`);
+  }
+
+  const canonicalTemplate = await readJson("public/import-templates/canonical_platform_case.json");
+  assert.deepEqual(canonicalTemplate.source, {
+    type: "json_fixture",
+    name: "simulation_analysis_cases/canonical_platform_case.json",
+    derivedFrom: "tests/fixtures/case_new.json"
+  });
+});
+
 test("modeling import validation supports Level 0 packages without support-domain stubs", async () => {
   const schema = await readJson("contracts/modeling_import.schema.json");
   const fixture = await readJson("tests/fixtures/modeling_import_project.json");
