@@ -121,6 +121,9 @@ class BackendApiContractTest(unittest.TestCase):
     def _fixture(self, name: str) -> dict:
         return json.loads((REPO_ROOT / "tests" / "fixtures" / name).read_text(encoding="utf-8"))
 
+    def _public_import_template(self, name: str) -> dict:
+        return json.loads((REPO_ROOT / "public" / "import-templates" / name).read_text(encoding="utf-8"))
+
     def _run_side_effect_counts(self) -> dict[str, int]:
         return {
             table: self.connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
@@ -134,6 +137,10 @@ class BackendApiContractTest(unittest.TestCase):
 
     def _state_series_artifact(self, run_id: str) -> dict:
         return self._artifact_by_kind(self.api.get_run_artifacts(run_id), "visualization_state_series")
+
+    def _artifact_payload(self, manifest: dict, kind: str) -> dict[str, Any]:
+        artifact = self._artifact_by_kind(manifest, kind)
+        return json.loads((Path(self.api.output_dir) / artifact["path"]).read_text(encoding="utf-8"))
 
     def _submit_successful_smoke_run(self) -> dict[str, Any]:
         project = self._fixture("smoke_project.json")
@@ -1533,6 +1540,102 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertIn("supportActivities", provenance["disabled_domains"])
         self.assertEqual(provenance["modeling_snapshot_id"], snapshot["snapshot_id"])
         self.assertEqual(provenance["experiment_plan_id"], plan["experiment_plan_id"])
+
+    def test_public_import_templates_run_through_formal_backend_api_e2e(self) -> None:
+        template_cases = [
+            ("minimal_single_aircraft.json", "level0"),
+            ("canonical_platform_case.json", "level1"),
+        ]
+        required_monte_carlo_artifacts = M7_MONTE_CARLO_ARTIFACT_KINDS
+
+        for template_name, expected_level in template_cases:
+            with self.subTest(template=template_name):
+                import_package = self._public_import_template(template_name)
+                validation = validate_modeling_import_package(import_package)
+                self.assertTrue(validation["ok"])
+                self.assertEqual(validation["issues"], [])
+                self.assertEqual(validation["validationLevel"], expected_level)
+                self.assertEqual(validation["usedTables"], import_package["usedTables"])
+
+                self.api.save_modeling_import_as_system(import_package)
+                self.api.publish_modeling_import_as_system(import_package["importId"])
+                created = self.api.create_project_from_modeling_import_as_system(import_package["importId"])
+                project = created["project"]
+                saved_project = created["savedProject"]
+                snapshot = created["modelingSnapshot"]
+
+                single_plan = self.api.create_experiment_plan(
+                    saved_project["project_id"],
+                    {
+                        "name": f"{expected_level} template single run",
+                        "steps": 4,
+                        "projectJson": copy.deepcopy(project),
+                        "modeling_snapshot_id": snapshot["snapshot_id"],
+                    },
+                )
+                single_run = self.api.submit_run(
+                    {
+                        "project_id": saved_project["project_id"],
+                        "experiment_plan_id": single_plan["experiment_plan_id"],
+                        "model_family": "aircraft_support_v1",
+                        "run_type": "single",
+                        "formal_run": True,
+                    }
+                )
+                self.assertEqual(single_run["status"], "succeeded")
+                single_chain = self.api.get_run_chain(single_run["run_id"])
+                self.assertEqual(single_chain["project_id"], saved_project["project_id"])
+                self.assertEqual(single_chain["modeling_snapshot_id"], snapshot["snapshot_id"])
+                self.assertEqual(single_chain["experiment_plan_id"], single_plan["experiment_plan_id"])
+                self.assertEqual(single_chain["run_id"], single_run["run_id"])
+                self.assertEqual(single_chain["result_summary_id"], single_run["result_summary_id"])
+                self.assertEqual(single_chain["artifact_manifest_id"], single_run["artifact_manifest_id"])
+                single_stream = self.api.subscribe_run_state_stream(single_run["run_id"])
+                self.assertIn("state_frame", [event["event_type"] for event in single_stream["events"]])
+
+                monte_carlo_plan = self.api.create_experiment_plan(
+                    saved_project["project_id"],
+                    {
+                        "name": f"{expected_level} template monte carlo run",
+                        "steps": 4,
+                        "projectJson": copy.deepcopy(project),
+                        "modeling_snapshot_id": snapshot["snapshot_id"],
+                        "analysisRequests": copy.deepcopy(project["analysisRequests"]),
+                    },
+                )
+                monte_carlo_run = self.api.submit_run(
+                    {
+                        "project_id": saved_project["project_id"],
+                        "experiment_plan_id": monte_carlo_plan["experiment_plan_id"],
+                        "model_family": "aircraft_support_v1",
+                        "run_type": "monte_carlo",
+                        "formal_run": True,
+                    }
+                )
+                self.assertEqual(monte_carlo_run["status"], "succeeded")
+                monte_carlo_chain = self.api.get_run_chain(monte_carlo_run["run_id"])
+                self.assertEqual(monte_carlo_chain["project_id"], saved_project["project_id"])
+                self.assertEqual(monte_carlo_chain["modeling_snapshot_id"], snapshot["snapshot_id"])
+                self.assertEqual(monte_carlo_chain["experiment_plan_id"], monte_carlo_plan["experiment_plan_id"])
+                self.assertEqual(monte_carlo_chain["run_id"], monte_carlo_run["run_id"])
+                self.assertEqual(monte_carlo_chain["result_summary_id"], monte_carlo_run["result_summary_id"])
+                self.assertEqual(monte_carlo_chain["artifact_manifest_id"], monte_carlo_run["artifact_manifest_id"])
+
+                manifest = self.api.get_run_artifacts(monte_carlo_run["run_id"])
+                artifact_kinds = {artifact["kind"] for artifact in manifest["artifacts"]}
+                self.assertTrue(required_monte_carlo_artifacts <= artifact_kinds)
+                stream = self.api.subscribe_run_state_stream(monte_carlo_run["run_id"])
+                self.assertIn("state_frame", [event["event_type"] for event in stream["events"]])
+                self.assertEqual(stream["events"][-1]["payload"]["kind"], "visualization_state_series")
+
+                spare_shortfall = self._artifact_payload(manifest, "analysis_projection_spare_shortfall")
+                downtime_factors = self._artifact_payload(manifest, "analysis_projection_downtime_factors")
+                expected_applicability = "not_applicable" if expected_level == "level0" else "applicable"
+                self.assertEqual(spare_shortfall["applicability"]["status"], expected_applicability)
+                self.assertEqual(downtime_factors["applicability"]["status"], expected_applicability)
+                if expected_level == "level0":
+                    self.assertIn("supportResources", spare_shortfall["applicability"]["disabled_domains"])
+                    self.assertIn("supportActivities", downtime_factors["applicability"]["disabled_domains"])
 
     def test_run_service_failed_compile_run_has_downloadable_log_artifact(self) -> None:
         project = self._fixture("smoke_project.json")
