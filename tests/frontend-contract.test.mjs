@@ -2416,6 +2416,35 @@ test("monte carlo launch creates a run from the current experiment plan branch",
   assert.doesNotMatch(launchSource, /backendApi\.startMonteCarloRun/);
 });
 
+test("monte carlo detail uses bound run ledger status over stale experiment cache", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const launchSource = appSource.slice(
+    appSource.indexOf("async function startMonteCarloRunThroughApi"),
+    appSource.indexOf("async function refreshRunResultThroughApi")
+  );
+  const detailSource = appSource.slice(
+    appSource.indexOf("function renderMonteCarloExperimentDetail"),
+    appSource.indexOf("function renderMonteCarloConfig")
+  );
+  const boundarySource = appSource.slice(
+    appSource.indexOf("function monteCarloFormalResultBoundary"),
+    appSource.indexOf("function monteCarloFormalStatusLabel")
+  );
+
+  assert.match(appSource, /function monteCarloBoundRun/);
+  assert.match(appSource, /function monteCarloBoundArtifactManifest/);
+  assert.match(appSource, /function monteCarloDisplayStatus/);
+  assert.match(detailSource, /const displayStatus = monteCarloDisplayStatus\(experiment\)/);
+  assert.match(detailSource, /const boundRun = monteCarloBoundRun\(experiment\)/);
+  assert.match(detailSource, /boundRun\?\.run_id \|\| experiment\.runId/);
+  assert.match(boundarySource, /const boundRun = monteCarloBoundRun\(experiment\)/);
+  assert.match(boundarySource, /const runStatus = String\(boundRun\?\.status \|\| experiment\?\.status \|\| ""\)/);
+  assert.match(boundarySource, /isRunComplete\(boundRun\)/);
+  assert.match(launchSource, /const existingExperiment = monteCarloExperimentByBusinessId\(monteCarloExperimentId\)/);
+  assert.match(launchSource, /if \(!existingExperiment\?\.runId\)/);
+  assert.match(launchSource, /source: "backend:submit-error"/);
+});
+
 test("monte carlo config backfills empty draft to a single baseline value before display and launch", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const branchSource = appSource.slice(
