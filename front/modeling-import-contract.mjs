@@ -151,7 +151,7 @@ function hasPlainObjectContent(value) {
 }
 
 function hasSupportOrganizationTree(value) {
-  return Boolean(value && typeof value === "object" && !Array.isArray(value) && Array.isArray(value.tree));
+  return Boolean(value && typeof value === "object" && !Array.isArray(value) && Array.isArray(value.tree) && value.tree.length > 0);
 }
 
 function projectMissionProfile(project, projectId) {
@@ -353,7 +353,8 @@ function validatePackageRoots(importPackage, issues, scope) {
   validateLifecycle(importPackage, issues);
 
   for (const collection of Object.keys(COLLECTION_RULES)) {
-    if (Array.isArray(importPackage?.objects?.[collection])) continue;
+    const value = importPackage?.objects?.[collection];
+    if (Array.isArray(value) && value.length > 0) continue;
     if (isDisabledDomain(collection, scope.usedTables) && DISABLEABLE_COLLECTIONS.has(collection)) {
       continue;
     }
@@ -374,19 +375,34 @@ function validatePackageRoots(importPackage, issues, scope) {
 
 function validateDeclaredObjectDomain(importPackage, issues, scope, domain) {
   const value = importPackage?.objects?.[domain];
+  const disabled = isDisabledDomain(domain, scope.usedTables);
   if (value && typeof value === "object" && !Array.isArray(value)) {
-    if (domain === "supportOrganization" && "tree" in value && !Array.isArray(value.tree)) {
+    if (domain === "reliabilityBlockDiagram") {
+      if (Object.keys(value).length > 0 || disabled) return;
+      issues.push(createIssue({
+        code: "invalid_declared_table",
+        collection: domain,
+        objectId: "modeling-import-package",
+        fieldPath: `objects.${domain}`,
+        message: `声明使用 ${domain} 表，但缺少有效数据。`
+      }));
+      return;
+    }
+    if (domain === "supportOrganization") {
+      if (Array.isArray(value.tree) && value.tree.length > 0) return;
+      if (disabled) return;
       issues.push(createIssue({
         code: "invalid_declared_table",
         collection: domain,
         objectId: "modeling-import-package",
         fieldPath: `objects.${domain}.tree`,
-        message: `objects.${domain}.tree 必须是数组。`
+        message: `objects.${domain}.tree 是导入包声明建模的必填组织树，且至少需要一个节点。`
       }));
+      return;
     }
     return;
   }
-  if (isDisabledDomain(domain, scope.usedTables)) return;
+  if (disabled) return;
   issues.push(createIssue({
     code: "invalid_declared_table",
     collection: domain,
@@ -406,6 +422,16 @@ function validateDeclaredTransportPolicies(importPackage, issues, scope) {
       objectId: "modeling-import-package",
       fieldPath: "objects.supportResources",
       message: "声明使用 transportPolicies，但缺少 supportResources 表。"
+    }));
+    return;
+  }
+  if (resources.length === 0) {
+    issues.push(createIssue({
+      code: "invalid_declared_table",
+      collection: "transportPolicies",
+      objectId: "modeling-import-package",
+      fieldPath: "objects.supportResources",
+      message: "声明使用 transportPolicies，但 supportResources 表没有可承载运输策略的资源行。"
     }));
     return;
   }

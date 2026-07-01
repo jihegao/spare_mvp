@@ -154,11 +154,7 @@ def m9_6_expected_artifact_kinds() -> dict[str, Any]:
 
 
 def _m9_6_frozen_import_package(import_package: dict[str, Any]) -> dict[str, Any]:
-    payload = copy.deepcopy(import_package)
-    objects = payload.setdefault("objects", {})
-    if isinstance(objects, dict):
-        objects["supportOrganization"] = {"tree": []}
-    return payload
+    return copy.deepcopy(import_package)
 
 
 def write_m9_6_golden_fixtures(repo_root: Path | str) -> None:

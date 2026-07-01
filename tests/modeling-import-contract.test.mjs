@@ -167,6 +167,43 @@ test("modeling import validation rejects malformed usedTables flags", async () =
   assert.equal(issuesByPath["objects.supportResources"].code, "invalid_declared_table");
 });
 
+test("modeling import validation rejects declared used tables with empty modeled content", async () => {
+  const schema = await readJson("contracts/modeling_import.schema.json");
+  const fixture = await readJson("tests/fixtures/modeling_import_project.json");
+  const emptyDeclaredTables = {
+    ...fixture,
+    validationLevel: "level1",
+    usedTables: {
+      missionProfiles: true,
+      equipmentAssets: true,
+      reliabilityBlockDiagram: true,
+      supportResources: true,
+      supportActivities: true,
+      supportOrganization: true,
+      transportPolicies: true
+    },
+    objects: {
+      ...fixture.objects,
+      supportResources: [],
+      supportActivities: [],
+      reliabilityBlockDiagram: {},
+      supportOrganization: { tree: [] }
+    }
+  };
+
+  const schemaErrors = validateSchema(schema, emptyDeclaredTables);
+  assert.ok(schemaErrors.some((error) => error.includes("$.objects.supportResources expected minItems")));
+  assert.ok(schemaErrors.some((error) => error.includes("$.objects.supportActivities expected minItems")));
+  assert.ok(schemaErrors.some((error) => error.includes("$.objects.reliabilityBlockDiagram expected minProperties")));
+  assert.ok(schemaErrors.some((error) => error.includes("$.objects.supportOrganization.tree expected minItems")));
+
+  const issuesByPath = Object.fromEntries(validateModelingImportPackage(emptyDeclaredTables).map((issue) => [issue.field_path, issue]));
+  assert.equal(issuesByPath["objects.supportResources"].code, "invalid_declared_table");
+  assert.equal(issuesByPath["objects.supportActivities"].code, "invalid_declared_table");
+  assert.equal(issuesByPath["objects.reliabilityBlockDiagram"].code, "invalid_declared_table");
+  assert.equal(issuesByPath["objects.supportOrganization.tree"].code, "invalid_declared_table");
+});
+
 test("projectToModelingImportPackage backfills import draft from current Project surfaces", () => {
   const schema = readRepoJsonSync("contracts/modeling_import.schema.json");
   const basePackage = {

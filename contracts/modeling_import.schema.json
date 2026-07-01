@@ -21,7 +21,10 @@
       "else": {
         "properties": {
           "objects": {
-            "required": ["supportResources"]
+            "required": ["supportResources"],
+            "properties": {
+              "supportResources": { "type": "array", "minItems": 1 }
+            }
           }
         }
       }
@@ -41,7 +44,10 @@
       "else": {
         "properties": {
           "objects": {
-            "required": ["supportActivities"]
+            "required": ["supportActivities"],
+            "properties": {
+              "supportActivities": { "type": "array", "minItems": 1 }
+            }
           }
         }
       }
@@ -61,7 +67,10 @@
       "else": {
         "properties": {
           "objects": {
-            "required": ["reliabilityBlockDiagram"]
+            "required": ["reliabilityBlockDiagram"],
+            "properties": {
+              "reliabilityBlockDiagram": { "type": "object", "minProperties": 1 }
+            }
           }
         }
       }
@@ -81,7 +90,16 @@
       "else": {
         "properties": {
           "objects": {
-            "required": ["supportOrganization"]
+            "required": ["supportOrganization"],
+            "properties": {
+              "supportOrganization": {
+                "type": "object",
+                "required": ["tree"],
+                "properties": {
+                  "tree": { "type": "array", "minItems": 1 }
+                }
+              }
+            }
           }
         }
       }
@@ -105,7 +123,10 @@
               "supportResources": {
                 "type": "array",
                 "items": {
-                  "required": ["transportPolicies"]
+                  "required": ["transportPolicies"],
+                  "properties": {
+                    "transportPolicies": { "type": "array", "minItems": 1 }
+                  }
                 }
               }
             }

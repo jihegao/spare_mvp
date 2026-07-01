@@ -133,24 +133,28 @@ class SimulationAdapter:
             }
         if model_family == "smoke":
             scenario = self._compile_smoke_scenario(project, validation)
+            provenance = self._with_modeling_import_validation_provenance(
+                scenario["compiled_from"]["mapping_provenance"],
+                project,
+            )
+            scenario = self._scenario_with_mapping_provenance(scenario, provenance)
             return {
                 "status": "compiled",
                 "scenario": scenario,
-                "provenance": self._with_modeling_import_validation_provenance(
-                    scenario["compiled_from"]["mapping_provenance"],
-                    project,
-                ),
+                "provenance": provenance,
                 "issues": [],
             }
         if model_family == "aviation_support":
             scenario = self._compile_aviation_support_scenario(project, validation)
+            provenance = self._with_modeling_import_validation_provenance(
+                scenario["compiled_from"]["mapping_provenance"],
+                project,
+            )
+            scenario = self._scenario_with_mapping_provenance(scenario, provenance)
             return {
                 "status": "compiled",
                 "scenario": scenario,
-                "provenance": self._with_modeling_import_validation_provenance(
-                    scenario["compiled_from"]["mapping_provenance"],
-                    project,
-                ),
+                "provenance": provenance,
                 "issues": [],
             }
         if model_family == "aircraft_support_v1":
@@ -175,6 +179,7 @@ class SimulationAdapter:
                     ],
                 }
             scenario = self._compile_aircraft_support_v1_scenario(project, validation)
+            scenario = self._scenario_with_mapping_provenance(scenario, provenance)
             return {
                 "status": "compiled",
                 "scenario": scenario,
@@ -1134,6 +1139,17 @@ class SimulationAdapter:
         enriched["used_tables"] = normalized_used_tables
         enriched["disabled_domains"] = [str(domain) for domain in disabled_domains]
         enriched["validation_warnings"] = copy.deepcopy(validation_scope.get("warnings") or [])
+        return enriched
+
+    def _scenario_with_mapping_provenance(
+        self,
+        scenario: dict[str, Any],
+        provenance: dict[str, Any],
+    ) -> dict[str, Any]:
+        enriched = copy.deepcopy(scenario)
+        mapping_provenance = enriched.get("compiled_from", {}).get("mapping_provenance")
+        if isinstance(mapping_provenance, dict):
+            mapping_provenance.update(copy.deepcopy(provenance))
         return enriched
 
     def _modeling_import_domain_disabled(self, project: dict[str, Any], domain: str) -> bool:

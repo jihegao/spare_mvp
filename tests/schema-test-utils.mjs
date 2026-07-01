@@ -74,8 +74,12 @@ function collectSchemaErrors(schema, value, path, errors, rootSchema) {
   const hasObjectConstraints = schema.type === "object"
     || schema.required
     || schema.properties
+    || schema.minProperties !== undefined
     || schema.additionalProperties === false;
   if (hasObjectConstraints && value && typeof value === "object" && !Array.isArray(value)) {
+    if (schema.minProperties !== undefined && Object.keys(value).length < schema.minProperties) {
+      errors.push(`${path} expected minProperties ${schema.minProperties}, got ${Object.keys(value).length}`);
+    }
     for (const key of schema.required || []) {
       if (!(key in value)) {
         errors.push(`${path}.${key} is required`);
@@ -91,8 +95,13 @@ function collectSchemaErrors(schema, value, path, errors, rootSchema) {
     }
   }
 
-  if (schema.type === "array" && Array.isArray(value) && schema.items) {
-    value.forEach((item, index) => collectSchemaErrors(schema.items, item, `${path}[${index}]`, errors, rootSchema));
+  if (schema.type === "array" && Array.isArray(value)) {
+    if (schema.minItems !== undefined && value.length < schema.minItems) {
+      errors.push(`${path} expected minItems ${schema.minItems}, got ${value.length}`);
+    }
+    if (schema.items) {
+      value.forEach((item, index) => collectSchemaErrors(schema.items, item, `${path}[${index}]`, errors, rootSchema));
+    }
   }
 }
 

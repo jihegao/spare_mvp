@@ -1499,6 +1499,40 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertIn("supportOrganization.tree", provenance["governance_only_fields"])
         self.assertEqual(report_payload["m9_7_4_behavior_scope"]["fail_closed_fields"], [])
 
+    def test_formal_run_persists_modeling_import_validation_scope_in_scenario_provenance(self) -> None:
+        import_package = self._level0_import_package_without_support_domain()
+        self.api.save_modeling_import_as_system(import_package)
+        self.api.publish_modeling_import_as_system(import_package["importId"])
+        created = self.api.create_project_from_modeling_import_as_system(import_package["importId"])
+        project = created["project"]
+        saved = self.api.save_project(project)
+        snapshot = self.api.create_modeling_snapshot(saved["project_id"])
+        plan = self.api.create_experiment_plan(
+            saved["project_id"],
+            {"name": "level0 validation scope run", "projectJson": copy.deepcopy(project)},
+        )
+
+        submitted = self.api.submit_run(
+            {
+                "project_id": saved["project_id"],
+                "experiment_plan_id": plan["experiment_plan_id"],
+                "model_family": "aircraft_support_v1",
+                "run_type": "single",
+                "formal_run": True,
+            }
+        )
+
+        manifest = self.api.get_run_artifacts(submitted["run_id"])
+        compiled_artifact = self._artifact_by_kind(manifest, "compiled_scenario")
+        compiled_payload = json.loads((Path(self.api.output_dir) / compiled_artifact["path"]).read_text(encoding="utf-8"))
+        provenance = compiled_payload["compiled_from"]["mapping_provenance"]
+
+        self.assertEqual(provenance["validation_level"], "level0")
+        self.assertIn("supportResources", provenance["disabled_domains"])
+        self.assertIn("supportActivities", provenance["disabled_domains"])
+        self.assertEqual(provenance["modeling_snapshot_id"], snapshot["snapshot_id"])
+        self.assertEqual(provenance["experiment_plan_id"], plan["experiment_plan_id"])
+
     def test_run_service_failed_compile_run_has_downloadable_log_artifact(self) -> None:
         project = self._fixture("smoke_project.json")
         saved = self.api.save_project(project)
@@ -2287,6 +2321,33 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertFalse(validation["ok"])
         self.assertEqual(issues_by_path["objects.supportOrganization"]["code"], "invalid_declared_table")
         self.assertEqual(issues_by_path["objects.supportResources[0].transportPolicies"]["code"], "invalid_declared_table")
+
+    def test_level1_modeling_import_rejects_declared_empty_support_scope_tables(self) -> None:
+        import_package = self._fixture("modeling_import_project.json")
+        import_package["validationLevel"] = "level1"
+        import_package["usedTables"] = {
+            "missionProfiles": True,
+            "equipmentAssets": True,
+            "reliabilityBlockDiagram": True,
+            "supportResources": True,
+            "supportActivities": True,
+            "supportOrganization": True,
+            "transportPolicies": True,
+        }
+        import_package["objects"] = copy.deepcopy(import_package["objects"])
+        import_package["objects"]["supportResources"] = []
+        import_package["objects"]["supportActivities"] = []
+        import_package["objects"]["reliabilityBlockDiagram"] = {}
+        import_package["objects"]["supportOrganization"] = {"tree": []}
+
+        validation = validate_modeling_import_package(import_package)
+        issues_by_path = {issue["field_path"]: issue for issue in validation["issues"]}
+
+        self.assertFalse(validation["ok"])
+        self.assertEqual(issues_by_path["objects.supportResources"]["code"], "invalid_declared_table")
+        self.assertEqual(issues_by_path["objects.supportActivities"]["code"], "invalid_declared_table")
+        self.assertEqual(issues_by_path["objects.reliabilityBlockDiagram"]["code"], "invalid_declared_table")
+        self.assertEqual(issues_by_path["objects.supportOrganization.tree"]["code"], "invalid_declared_table")
 
     def test_compile_modeling_import_scenario_returns_gate_envelope_for_level0_import(self) -> None:
         import_package = self._level0_import_package_without_support_domain()

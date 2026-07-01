@@ -96,10 +96,12 @@ class RunService:
             self._assert_formal_run_uses_imported_sample(project_for_run)
 
         compile_gate = getattr(self.adapter, "compile_scenario_with_gate", None)
+        compile_provenance = None
         if callable(compile_gate):
             compile_result = compile_gate(project_for_run, model_family=model_family)
+            compile_provenance = compile_result.get("provenance")
             _annotate_mapping_provenance(
-                compile_result.get("provenance"),
+                compile_provenance,
                 experiment_plan_id=experiment_plan_id,
                 modeling_snapshot_id=plan.get("modeling_snapshot_id"),
             )
@@ -121,6 +123,10 @@ class RunService:
                 raise RunServiceError(exc.code, str(exc), **exc.details) from exc
 
         scenario = copy.deepcopy(scenario)
+        _merge_mapping_provenance(
+            scenario.get("compiled_from", {}).get("mapping_provenance"),
+            compile_provenance,
+        )
         _annotate_mapping_provenance(
             scenario.get("compiled_from", {}).get("mapping_provenance"),
             experiment_plan_id=experiment_plan_id,
@@ -825,6 +831,15 @@ def _annotate_mapping_provenance(
         return
     provenance["experiment_plan_id"] = experiment_plan_id
     provenance["modeling_snapshot_id"] = modeling_snapshot_id
+
+
+def _merge_mapping_provenance(
+    target: dict[str, Any] | None,
+    source: dict[str, Any] | None,
+) -> None:
+    if not isinstance(target, dict) or not isinstance(source, dict):
+        return
+    target.update(copy.deepcopy(source))
 
 
 def _compile_gate_error_code(compile_result: dict[str, Any]) -> str:

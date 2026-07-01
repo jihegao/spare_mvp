@@ -197,7 +197,14 @@ def _validate_package_roots(
 
     objects = import_package.get("objects") if isinstance(import_package.get("objects"), dict) else {}
     for collection in COLLECTION_RULES:
-        if isinstance(objects.get(collection), list):
+        value = objects.get(collection)
+        if isinstance(value, list) and value:
+            continue
+        if isinstance(value, list):
+            if _is_disabled_domain(collection, used_tables):
+                _append_scope_warning(warnings, collection, f"objects.{collection}")
+                continue
+            issues.append(_issue("invalid_declared_table", collection, "modeling-import-package", f"objects.{collection}", f"objects.{collection} 是导入包声明建模的必填对象集合，且至少需要一行。"))
             continue
         if _is_disabled_domain(collection, used_tables):
             _append_scope_warning(warnings, collection, f"objects.{collection}")
@@ -222,11 +229,28 @@ def _validate_declared_object_domain(
     warnings: list[dict[str, Any]],
 ) -> None:
     value = objects.get(domain)
+    disabled = _is_disabled_domain(domain, used_tables)
     if isinstance(value, dict):
-        if domain == "supportOrganization" and "tree" in value and not isinstance(value.get("tree"), list):
-            issues.append(_issue("invalid_declared_table", domain, "modeling-import-package", f"objects.{domain}.tree", f"objects.{domain}.tree 必须是数组。"))
+        if domain == "reliabilityBlockDiagram":
+            if value:
+                return
+            if disabled:
+                _append_scope_warning(warnings, domain, f"objects.{domain}")
+                return
+            issues.append(_issue("invalid_declared_table", domain, "modeling-import-package", f"objects.{domain}", f"objects.{domain} 是导入包声明建模的必填对象，且至少需要一个字段。"))
+            return
+        if domain == "supportOrganization":
+            tree = value.get("tree")
+            if isinstance(tree, list) and tree:
+                return
+            if disabled:
+                _append_scope_warning(warnings, domain, f"objects.{domain}")
+                return
+            field_path = f"objects.{domain}.tree" if "tree" in value else f"objects.{domain}"
+            issues.append(_issue("invalid_declared_table", domain, "modeling-import-package", field_path, f"objects.{domain}.tree 是导入包声明建模的必填组织树，且至少需要一个节点。"))
+            return
         return
-    if _is_disabled_domain(domain, used_tables):
+    if disabled:
         _append_scope_warning(warnings, domain, f"objects.{domain}")
         return
     issues.append(_issue("invalid_declared_table", domain, "modeling-import-package", f"objects.{domain}", f"objects.{domain} 是导入包声明建模的必填对象。"))
@@ -244,6 +268,9 @@ def _validate_declared_transport_policies(
         return
     if not isinstance(resources, list):
         issues.append(_issue("invalid_declared_table", "transportPolicies", "modeling-import-package", "objects.supportResources", "声明使用 transportPolicies，但缺少 supportResources 表。"))
+        return
+    if not resources:
+        issues.append(_issue("invalid_declared_table", "transportPolicies", "modeling-import-package", "objects.supportResources", "声明使用 transportPolicies，但 supportResources 表没有可承载运输策略的资源行。"))
         return
     for index, resource in enumerate(resources):
         if not isinstance(resource, dict):
