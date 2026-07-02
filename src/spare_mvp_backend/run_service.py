@@ -10,6 +10,10 @@ from pathlib import Path
 import threading
 from typing import Any
 
+from src.spare_mvp_backend.analysis_profile_config import (
+    apply_analysis_profile_to_scenario,
+    normalize_analysis_profile_config,
+)
 from src.spare_mvp_backend.errors import RunServiceError
 from src.spare_mvp_backend.monte_carlo_config import (
     normalize_monte_carlo_run_config,
@@ -100,12 +104,14 @@ class RunService:
                 project_id=project_id,
                 experiment_plan_id=experiment_plan_id,
             )
+        analysis_profile = normalize_analysis_profile_config(plan.get("config") or {})
+        analysis_type = str(analysis_profile.get("analysis_type") or request.get("analysis_type") or "").strip()
         mc_config = None
         if run_type == "monte_carlo":
             mc_config = normalize_monte_carlo_run_config(
                 plan.get("config") or {},
                 mc_experiment_id=_monte_carlo_experiment_id(request, plan, ""),
-                analysis_type=str(request.get("analysis_type") or ""),
+                analysis_type=analysis_type,
             )
 
         snapshot = (
@@ -157,6 +163,7 @@ class RunService:
         scenario_base_id = f"{scenario['scenario_id']}-{_stable_hash({'experiment_plan_id': experiment_plan_id})}"
         run_id = self.repository.next_run_id(scenario_base_id)
         scenario["scenario_id"] = run_id.removeprefix("run-")
+        apply_analysis_profile_to_scenario(scenario, analysis_profile)
 
         self.repository.upsert_scenario(scenario)
         try:
@@ -208,6 +215,7 @@ class RunService:
             modeling_snapshot_id=plan.get("modeling_snapshot_id"),
             artifact_manifest=bundle["artifact_manifest"],
             request=request,
+            analysis_type=analysis_type,
         )
         self._augment_run_config_artifact(
             bundle["artifact_manifest"],
@@ -668,6 +676,7 @@ class RunService:
             "experiment_id": run.get("experiment_id"),
             "experiment_type": run.get("experiment_type"),
             "mc_experiment_id": run.get("mc_experiment_id"),
+            "analysis_type": run.get("analysis_type"),
             "simulation_experiment_base": run.get("simulation_experiment_base"),
         }
 
@@ -788,6 +797,7 @@ def _attach_simulation_experiment_base(
     modeling_snapshot_id: str | None,
     artifact_manifest: dict[str, Any],
     request: dict[str, Any],
+    analysis_type: str = "",
 ) -> None:
     experiment_type = "monte_carlo" if run_type == "monte_carlo" else "single"
     experiment_id = str(request.get("experiment_id") or run.get("experiment_id") or f"experiment-{run['run_id']}")
@@ -819,8 +829,9 @@ def _attach_simulation_experiment_base(
     if run_type == "monte_carlo":
         run["mc_experiment_id"] = run.get("mc_experiment_id") or _monte_carlo_experiment_id(request, {"config": {}}, run["run_id"])
         base["mc_experiment_id"] = run["mc_experiment_id"]
-    if request.get("analysis_type"):
-        run["analysis_type"] = str(request.get("analysis_type"))
+    normalized_analysis_type = str(analysis_type or request.get("analysis_type") or "").strip()
+    if normalized_analysis_type:
+        run["analysis_type"] = normalized_analysis_type
         base["analysis_type"] = run["analysis_type"]
     run["simulation_experiment_base"] = base
 

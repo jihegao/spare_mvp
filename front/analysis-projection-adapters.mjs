@@ -147,13 +147,20 @@ function thresholdLabel(value, thresholds) {
 }
 
 function normalizeCarryList(payload) {
+  const confidenceTarget = clamp01(optionalFiniteNumber(payload.mission_confidence_target, 0.9));
   const rows = requireArray(payload.data, "carry_list data must be an array")
     .map((row) => {
       const multiplier = Math.max(0, requireFiniteNumber(row.recommended_multiplier, "recommended_multiplier"));
+      const rowConfidenceTarget = clamp01(optionalFiniteNumber(row.confidence_target, confidenceTarget));
+      const missionSuccessProbability = clamp01(optionalFiniteNumber(row.mission_success_probability, 0));
+      const meetsConfidenceTarget = Boolean(row.meets_confidence_target ?? missionSuccessProbability >= rowConfidenceTarget);
       const priority = priorityLabel(row.risk_level);
       return {
         name: stringValue(row.spare_type, "unknown_spare"),
         multiplier,
+        confidenceTarget: rowConfidenceTarget,
+        missionSuccessProbability,
+        meetsConfidenceTarget,
         satisfy: Math.min(1, multiplier / Math.max(multiplier, 1)),
         delay: Math.max(0, Math.round((multiplier - 1) * 24)),
         qty: Math.max(1, priority === "高" ? Math.ceil(multiplier) : Math.round(multiplier)),
@@ -161,18 +168,19 @@ function normalizeCarryList(payload) {
       };
     })
     .sort((left, right) => right.qty - left.qty);
-  const highPriority = rows.filter((row) => row.priority === "高");
   return {
     analysisType: "carry_list",
     formal: true,
     source: "projection payload",
     objective: "minimize_carry_spares",
+    missionConfidenceTarget: confidenceTarget,
     rows,
     metrics: [
       ["默认目标", "携行备件越少越好"],
+      ["任务置信度目标", fixed(confidenceTarget, 2)],
       ["携行备件数量", `${rows.reduce((sum, row) => sum + row.qty, 0)} 件`],
       ["最高携行倍率", fixed(max(rows.map((row) => row.multiplier), 0), 2)],
-      ["高优先级备件", highPriority.map((row) => row.name).slice(0, 2).join(" / ") || "-"]
+      ["置信度达标", rows.every((row) => row.meetsConfidenceTarget) ? "满足" : "未达标"]
     ]
   };
 }
@@ -316,6 +324,11 @@ function requireFiniteNumber(value, fieldName) {
 
 function numberOrZero(value) {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function optionalFiniteNumber(value, fallback) {
+  if (value === undefined || value === null || value === "") return fallback;
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
 function stringValue(value, fallback) {

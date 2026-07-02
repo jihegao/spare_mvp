@@ -2299,6 +2299,53 @@ test("result analysis page main flows consume only current profiles and current 
   }
 });
 
+test("analysis pages expose controlled profile overrides without defaulting them into run config", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const runIntentSource = await readFile(new URL("../front/run-intent.mjs", import.meta.url), "utf8");
+  const sourceSlice = (startMarker, endMarker) => {
+    const start = appSource.indexOf(startMarker);
+    const end = appSource.indexOf(endMarker);
+    assert.notEqual(start, -1, `${startMarker} marker exists`);
+    assert.notEqual(end, -1, `${endMarker} marker exists`);
+    assert.ok(end > start, `${startMarker} appears before ${endMarker}`);
+    return appSource.slice(start, end);
+  };
+  const dashboardSource = sourceSlice("function renderAnalysisDashboard", "function renderAnalysisProjectionResultPanel");
+  const defaultProfileSource = sourceSlice("function defaultCurrentAnalysisProfile", "function supportPointSpareOverrideRows");
+  const profileSource = sourceSlice("function renderCurrentAnalysisProfile", "function ensureCurrentAnalysisResultLoaded");
+  const profileMutationSource = sourceSlice("function updateAnalysisProfileField", "function renderCurrentAnalysisProfile");
+  const resetSource = sourceSlice("function resetCurrentAnalysisProfilesForProjectBaselineChange", "function analysisProfileSpareRows");
+  const draftChangedSource = sourceSlice("function markProjectDraftChanged", "function scheduleProjectDraftAutosave");
+  const runCurrentSource = sourceSlice("async function runCurrentAnalysisPage", "function restoreCurrentAnalysisResult");
+  const startMonteCarloSource = sourceSlice("async function startMonteCarloRunThroughApi", "async function refreshRunResultThroughApi");
+  const boundarySource = sourceSlice("function formalAnalysisBoundaryReason", "function renderFormalAnalysisBoundaryNote");
+  const downtimeExportSource = sourceSlice("function exportDowntimeAnomalySnapshots", "function deleteDowntimeAnomalySnapshot");
+
+  assert.match(dashboardSource, /renderCurrentAnalysisResultPanel\(page, title\)/);
+  assert.match(dashboardSource, /renderCurrentAnalysisProfile\(page\)/);
+  assert.match(defaultProfileSource, /const projectJson = buildBackendProjectJson\(scenario, currentProject \|\| \{\}\)/);
+  assert.doesNotMatch(defaultProfileSource, /experimentPlanDraft/);
+  assert.match(defaultProfileSource, /scenarioBaseline:\s*\{[\s\S]*missionDurationMinutes: missionDurationMinutesForProject\(projectJson\)[\s\S]*scenarioOverrides: cloneScenario\(baseProfile\.scenarioOverrides \|\| \{\}\)/);
+  assert.doesNotMatch(defaultProfileSource, /scenarioOverrides:\s*\{[\s\S]*missionDurationMinutes: missionDurationMinutesForProject\(projectJson\)/);
+  assert.match(profileSource, /data-analysis-profile-field="scenarioOverrides\.missionDurationMinutes"/);
+  assert.match(profileSource, /data-spare-override-index/);
+  assert.match(profileSource, /data-analysis-profile-field="carryListConfig\.missionConfidenceTarget"/);
+  assert.match(profileMutationSource, /analysisProfileSpareRows\(profile\)/);
+  assert.match(profileMutationSource, /markCurrentAnalysisResultStale\(analysisType\)/);
+  assert.match(resetSource, /currentAnalysisProfiles = createDefaultCurrentAnalysisProfiles\(\)/);
+  assert.match(resetSource, /markCurrentAnalysisResultStale\(analysisType\)/);
+  assert.match(draftChangedSource, /resetCurrentAnalysisProfilesForProjectBaselineChange\(\)/);
+  assert.match(runCurrentSource, /const analysisProfile = currentAnalysisProfileForPage\(page\)/);
+  assert.match(startMonteCarloSource, /currentAnalysisProfile: analysisProfile/);
+  assert.match(startMonteCarloSource, /const planDraft = analysisType \? cloneScenario\(scenario\) : experimentPlanDraft/);
+  assert.match(boundarySource, /state === "stale"/);
+  assert.match(boundarySource, /!stale/);
+  assert.match(downtimeExportSource, /runId: boundary\?\.runId \|\| backendRun\?\.run_id \|\| ""/);
+  assert.match(runIntentSource, /analysisType: normalizedAnalysisType/);
+  assert.match(runIntentSource, /scenarioOverrides,/);
+  assert.doesNotMatch(runIntentSource, /\.\.\.\(analysisType \? \{ analysis_type/);
+});
+
 test("formal Monte Carlo projection result panels live on their matching analysis pages", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const mcResultSource = appSource.slice(
@@ -2419,7 +2466,8 @@ test("monte carlo launch creates a run from the current experiment plan branch",
     appSource.indexOf("async function refreshRunResultThroughApi")
   );
 
-  assert.match(launchSource, /const planProjectJson = buildBackendProjectJson\(experimentPlanDraft, currentProject\)/);
+  assert.match(launchSource, /const planDraft = analysisType \? cloneScenario\(scenario\) : experimentPlanDraft/);
+  assert.match(launchSource, /const planProjectJson = buildBackendProjectJson\(planDraft, currentProject\)/);
   assert.match(appSource, /import \{[^}]*buildRunIntent[^}]*submitRunIntent[^}]*\} from "\.\/run-intent\.mjs"/s);
   assert.match(launchSource, /submitRunIntent\(backendApi,\s*\{/);
   assert.match(launchSource, /const runType = "monte_carlo"/);
@@ -2491,7 +2539,7 @@ test("monte carlo config backfills empty draft to a single baseline value before
   assert.match(appSource, /supportCapacities: \[1\]/);
   assert.match(branchSource, /ensureMonteCarloSweepDefaults\(experimentPlanDraft\)/);
   assert.match(editorSource, /ensureMonteCarloSweepDefaults\(experimentPlanDraft\)/);
-  assert.match(launchSource, /ensureMonteCarloSweepDefaults\(experimentPlanDraft\)/);
+  assert.match(launchSource, /ensureMonteCarloSweepDefaults\(planDraft\)/);
 });
 
 test("M9.8 visual and formal run launches use aircraft_support_v1 through canonical runs", async () => {

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass
 from math import isfinite
 from typing import Any
@@ -135,8 +136,8 @@ def _normalized_carry_list_scenario_overrides(value: Any) -> dict[str, Any] | No
         return None
     normalized: dict[str, Any] = {}
     spares_by_support_point = value.get("sparesBySupportPoint")
-    if isinstance(spares_by_support_point, dict):
-        normalized["sparesBySupportPoint"] = dict(spares_by_support_point)
+    if isinstance(spares_by_support_point, (dict, list)):
+        normalized["sparesBySupportPoint"] = copy.deepcopy(spares_by_support_point)
     if "missionDurationMinutes" in value:
         normalized["missionDurationMinutes"] = _positive_int(
             value.get("missionDurationMinutes"),

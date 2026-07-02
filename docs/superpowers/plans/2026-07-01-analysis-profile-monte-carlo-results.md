@@ -22,6 +22,15 @@
 - 刷新或重建基础方案后，所有已存在结果都应变为过期状态，等待重新运行。
 - 失败运行不生成新的用户可见历史结果；页面只展示当前结果状态和错误信息。
 
+## 2026-07-02 实现状态
+
+- 已完成四个结果分析页的第一片 current profile/current result 主流程：页面展示当前参数空间、当前结果状态和运行入口，不再把 AnalysisTask 列表、MC 绑定、run 或 artifact 选择作为普通用户主流程。
+- 当前 profile 通过 `ExperimentPlan.config.analysisType`、`scenarioOverrides` 和 carry-list-only `carryListConfig` 进入 canonical `/api/runs`；`/api/runs` request body 不承载这些页面参数。
+- 后端只在 Scenario compiler 之后、Scenario 持久化和 adapter 执行之前应用 run-scoped override：`scenarioOverrides.sparesBySupportPoint[]` 改写 compiled support node inventory，`scenarioOverrides.missionDurationMinutes` 改写 compiled mission/time duration。
+- override traceability 写入 compiled Scenario、compiler provenance、run_config、`monte_carlo_base` 和对应 projection payload；Project、ModelingSnapshot 和 imported JSON 不被改写。
+- `carryListConfig.missionConfidenceTarget` 只允许 `analysisType = "carry_list"` 使用，并进入 carry-list projection 的 KPI 和表格字段。
+- 尚未完成六个 current result slot 的持久化、默认基础方案刷新后的 stale 传播、上一条成功结果保留和失败不覆盖策略；这些仍按本计划后续 P4/P7 收口。
+
 ## 结果数量边界
 
 在只有一个默认基础方案时，产品层最多展示 6 个当前结果：

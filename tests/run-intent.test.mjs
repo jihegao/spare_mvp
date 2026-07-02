@@ -192,6 +192,44 @@ test("buildRunIntent defaults Monte Carlo to one baseline value when no sweep is
   });
 });
 
+test("buildRunIntent stores current analysis profile in ExperimentPlan config only", () => {
+  const projectJson = {
+    project_id: "project-current-profile",
+    experiment: { name: "current profile", steps: 4, samples: 3, seed: 101 },
+    supportNodes: [{ id: "carrier-deck", equipmentCapacity: 4, inventory: { "发动机备件": 4 } }]
+  };
+  const analysisProfile = {
+    analysisType: "carry_list",
+    scenarioOverrides: {
+      sparesBySupportPoint: [
+        { supportPointId: "carrier-deck", spareTypeId: "发动机备件", quantity: 12 }
+      ],
+      missionDurationMinutes: 720
+    },
+    carryListConfig: { missionConfidenceTarget: 0.95 }
+  };
+
+  const intent = buildRunIntent({
+    runType: "monte_carlo",
+    projectJson,
+    planProjectJson: projectJson,
+    mcExperimentId: "current-carry-list",
+    analysisType: "carry_list",
+    analysisProfile
+  });
+
+  assert.equal(intent.experimentPlanConfig.analysisType, "carry_list");
+  assert.deepEqual(intent.experimentPlanConfig.scenarioOverrides, analysisProfile.scenarioOverrides);
+  assert.deepEqual(intent.experimentPlanConfig.carryListConfig, analysisProfile.carryListConfig);
+  assert.equal(intent.experimentPlanConfig.analysisProfile.analysis_type, "carry_list");
+  assert.deepEqual(intent.experimentPlanConfig.analysisProfile.scenarioOverrides, analysisProfile.scenarioOverrides);
+  assert.deepEqual(intent.experimentPlanConfig.analysisProfile.carryListConfig, analysisProfile.carryListConfig);
+  assert.equal("analysisType" in intent.runRequest, false);
+  assert.equal("analysis_type" in intent.runRequest, false);
+  assert.equal("scenarioOverrides" in intent.runRequest, false);
+  assert.equal("carryListConfig" in intent.runRequest, false);
+});
+
 test("buildRunIntent preserves explicit analysis sweep mode and raises samples to cover every sweep point", () => {
   const projectJson = {
     project_id: "project-sweep-coverage",
@@ -251,9 +289,9 @@ test("buildRunIntent applies current carry list scenario overrides only to carry
     profile_version: "carry-current-v2",
     base_plan_version: "base-current-v1",
     scenarioOverrides: {
-      sparesBySupportPoint: {
-        carrier_deck: { filter: "critical", maxItems: 8 }
-      },
+      sparesBySupportPoint: [
+        { supportPointId: "carrier-deck", spareTypeId: "发动机备件", quantity: 8 }
+      ],
       missionDurationMinutes: 240
     },
     carryListConfig: {
@@ -284,16 +322,25 @@ test("buildRunIntent applies current carry list scenario overrides only to carry
   );
   assert.deepEqual(
     carryIntent.experimentPlanConfig.analysisRequests.carryList.scenarioOverrides.sparesBySupportPoint,
-    { carrier_deck: { filter: "critical", maxItems: 8 } }
+    [{ supportPointId: "carrier-deck", spareTypeId: "发动机备件", quantity: 8 }]
   );
   assert.equal(carryIntent.experimentPlanConfig.analysisRequests.carryList.scenarioOverrides.missionDurationMinutes, 240);
   assert.equal(carryIntent.experimentPlanConfig.analysisRequests.carryList.carryListConfig.missionConfidenceTarget, 0.92);
+  assert.equal(carryIntent.experimentPlanConfig.analysisType, "carry_list");
+  assert.deepEqual(carryIntent.experimentPlanConfig.scenarioOverrides.sparesBySupportPoint, [
+    { supportPointId: "carrier-deck", spareTypeId: "发动机备件", quantity: 8 }
+  ]);
+  assert.equal(carryIntent.experimentPlanConfig.carryListConfig.missionConfidenceTarget, 0.92);
+  assert.equal("analysis_type" in carryIntent.runRequest, false);
 
   const sparePlanJson = JSON.stringify(spareIntent.experimentPlanConfig);
   assert.match(sparePlanJson, /currentAnalysisProfiles/);
   assert.doesNotMatch(sparePlanJson, /missionConfidenceTarget/);
   assert.doesNotMatch(sparePlanJson, /sparesBySupportPoint/);
   assert.doesNotMatch(sparePlanJson, /missionDurationMinutes/);
+  assert.equal(spareIntent.experimentPlanConfig.analysisType, "spare_shortfall");
+  assert.deepEqual(spareIntent.experimentPlanConfig.scenarioOverrides, {});
+  assert.equal("analysis_type" in spareIntent.runRequest, false);
 });
 
 test("submitRunIntent sends user-edited Monte Carlo samples and seed in experiment plan config", async () => {

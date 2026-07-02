@@ -16,6 +16,8 @@ M6.2 的目标是把单次仿真、大样本运行和分析类型统一到一套
 
 允许用户在分析页选择方案和参数后自动创建一个新的 Monte Carlo 实验，并把新实验的 `mc_experiment_id` 写入分析任务的 `linkedMonteCarloExperimentId`。页面必须显式展示该绑定关系，防止用户误以为分析页独立运行了另一套样本。
 
+2026-07-02 更新：四个结果分析页的普通用户主流程已由后续 PRD 收敛为 current profile/current result。`AnalysisTask`、`linkedMonteCarloExperimentId`、run 和 artifact 仍可作为内部追溯对象，但不再作为普通用户可见列表或选择器。
+
 历史过渡实现中，Monte Carlo 实验详情页启动时曾复用 `run_type: "single"` 的运行服务路径。当前 M6.2 已把 `run_type` 拆成 `single` 与 `monte_carlo`，并让两者共享 `SimulationExperimentBase`，不再把 Monte Carlo 批量实验伪装成单次运行。
 
 ## 目标
@@ -129,7 +131,7 @@ M6.2 artifact 应分为两层：
 
 ## 当前实现收束
 
-2026-06-20 当前实现已经完成同步本地 M6.2 首片：`RunService` 接受 `run_type: "monte_carlo"`，通过已编译的 smoke Scenario 运行样本，写出 `monte_carlo_base`、`analysis_projection_spare_shortfall`、`analysis_projection_carry_list`、`analysis_projection_mission_reliability` 和 `analysis_projection_downtime_factors`。Run status 返回 `SimulationExperimentBase`、`mc_experiment_id` 和 artifact manifest identity；前端 Monte Carlo 实验详情和 AnalysisTask 列表展示绑定关系、run/artifact/projection 来源，并在缺少正式 MC/projection artifact 时保持未配置、待运行、运行中、运行失败或本地预览状态。
+2026-06-20 当前实现已经完成同步本地 M6.2 首片：`RunService` 接受 `run_type: "monte_carlo"`，通过已编译的 smoke Scenario 运行样本，写出 `monte_carlo_base`、`analysis_projection_spare_shortfall`、`analysis_projection_carry_list`、`analysis_projection_mission_reliability` 和 `analysis_projection_downtime_factors`。Run status 返回 `SimulationExperimentBase`、`mc_experiment_id` 和 artifact manifest identity；前端 Monte Carlo 实验详情和 AnalysisTask 列表展示绑定关系、run/artifact/projection 来源，并在缺少正式 MC/projection artifact 时保持未配置、待运行、运行中、运行失败或本地预览状态。2026-07-02 后续收束已把四个分析页改为 current profile/current result 主流程；`scenarioOverrides` 和 carry-list-only `carryListConfig` 只作用于当前 run 的 compiled Scenario，并随 compiled Scenario、run_config、MC base 和 projection payload 记录 traceability。
 
 ## 验收标准
 

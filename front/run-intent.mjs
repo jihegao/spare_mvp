@@ -13,7 +13,8 @@ export function buildRunIntent({
   analysisType = "",
   modelFamily = "aircraft_support_v1",
   monteCarloParameterSpace = "baseline",
-  currentAnalysisProfile = null
+  currentAnalysisProfile = null,
+  analysisProfile = null
 }) {
   if (!SUPPORTED_RUN_TYPES.has(runType)) {
     throw new Error(`Unsupported runType: ${runType}`);
@@ -25,17 +26,23 @@ export function buildRunIntent({
     throw new Error("RunIntent requires planProjectJson");
   }
 
+  const profile = currentAnalysisProfile || analysisProfile || null;
   const normalizedPlanProjectJson = runType === "monte_carlo"
-    ? withCanonicalMonteCarloAnalysisRequest(planProjectJson, { parameterSpace: monteCarloParameterSpace, analysisType, currentAnalysisProfile })
+    ? withCanonicalMonteCarloAnalysisRequest(planProjectJson, { parameterSpace: monteCarloParameterSpace, analysisType, currentAnalysisProfile: profile })
     : cloneJson(planProjectJson);
-  const experimentPlanConfig = buildExperimentPlanConfig(normalizedPlanProjectJson);
+  const experimentPlanConfig = withAnalysisProfileConfig(
+    buildExperimentPlanConfig(normalizedPlanProjectJson),
+    {
+      analysisType,
+      currentAnalysisProfile: profile
+    }
+  );
   const runRequest = {
     project_id: projectJson.project_id,
     experiment_plan_id: "",
     model_family: modelFamily,
     run_type: runType,
     ...(experimentId ? { experiment_id: experimentId } : {}),
-    ...(analysisType ? { analysis_type: analysisType } : {}),
     ...(runType === "monte_carlo" && mcExperimentId ? { mc_experiment_id: mcExperimentId } : {})
   };
 
@@ -46,6 +53,36 @@ export function buildRunIntent({
     experimentPlanConfig,
     runRequest
   };
+}
+
+function withAnalysisProfileConfig(config, { analysisType = "", currentAnalysisProfile = null } = {}) {
+  const profile = cloneJson(currentAnalysisProfile || {});
+  const normalizedAnalysisType = String(
+    analysisType || profile.analysisType || profile.analysis_type || ""
+  ).trim();
+  if (!normalizedAnalysisType) return config;
+  const profileAnalysisType = String(profile.analysisType || profile.analysis_type || normalizedAnalysisType).trim();
+  const profileMatchesAnalysisType = !profileAnalysisType || profileAnalysisType === normalizedAnalysisType;
+  const scenarioOverrides = profileMatchesAnalysisType
+    ? cloneJson(profile.scenarioOverrides || profile.scenario_overrides || {})
+    : {};
+  const nextConfig = {
+    ...config,
+    analysisType: normalizedAnalysisType,
+    scenarioOverrides,
+    analysisProfile: {
+      ...(profileMatchesAnalysisType ? profile : {}),
+      analysisType: normalizedAnalysisType,
+      analysis_type: normalizedAnalysisType,
+      scenarioOverrides
+    }
+  };
+  const carryListConfig = profileMatchesAnalysisType ? (profile.carryListConfig || profile.carry_list_config) : null;
+  if (normalizedAnalysisType === "carry_list" && carryListConfig && typeof carryListConfig === "object") {
+    nextConfig.carryListConfig = cloneJson(carryListConfig);
+    nextConfig.analysisProfile.carryListConfig = cloneJson(nextConfig.carryListConfig);
+  }
+  return nextConfig;
 }
 
 export function bindExperimentPlanId(intent, experimentPlanId) {
