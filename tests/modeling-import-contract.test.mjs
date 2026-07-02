@@ -99,10 +99,20 @@ test("simulation analysis public import templates validate against modeling impo
       false,
       `${templatePath} must keep airports under missionProfiles instead of duplicating objects.airports`
     );
+    assert.equal(
+      Object.hasOwn(template.objects.equipment || {}, "deploymentLocation"),
+      false,
+      `${templatePath} objects.equipment must not carry non-behavioral deploymentLocation`
+    );
     for (const [index, mission] of (template.objects.missionProfiles || []).entries()) {
       assert.ok(
         Array.isArray(mission.airports) && mission.airports.length > 0,
         `${templatePath} missionProfiles[${index}].airports must retain airport context`
+      );
+      assert.equal(
+        Object.hasOwn(mission.equipment || {}, "deploymentLocation"),
+        false,
+        `${templatePath} missionProfiles[${index}].equipment must not carry non-behavioral deploymentLocation`
       );
     }
   }

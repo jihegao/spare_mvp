@@ -25,7 +25,6 @@
       }
     },
     "equipment": {
-      "deploymentLocation": "null",
       "initialReady": 1,
       "minRequiredSorties": 1,
       "model": "J-15",
@@ -177,7 +176,6 @@
         "durationHours": 6,
         "endCondition": "完成 1 个最小单机出动波次",
         "equipment": {
-          "deploymentLocation": "null",
           "initialReady": 1,
           "minRequiredSorties": 1,
           "model": "J-15",

@@ -43,7 +43,6 @@
         }
       },
       "equipment": {
-        "deploymentLocation": "航母飞行甲板",
         "initialReady": 6,
         "minRequiredSorties": 5,
         "model": "J-15",
@@ -619,7 +618,6 @@
           "durationHours": 24,
           "endCondition": "完成 4 个昼夜任务波次",
           "equipment": {
-            "deploymentLocation": "航母飞行甲板",
             "initialReady": 6,
             "minRequiredSorties": 5,
             "model": "J-15",
@@ -1865,7 +1863,6 @@
       }
     ],
     "equipment": {
-      "deploymentLocation": "航母飞行甲板",
       "initialReady": 6,
       "minRequiredSorties": 5,
       "model": "J-15",

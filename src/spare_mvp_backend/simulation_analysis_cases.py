@@ -157,6 +157,7 @@ def _load_canonical_import(repo_root: Path) -> dict[str, Any]:
 def _canonical_platform_import(source: dict[str, Any]) -> dict[str, Any]:
     case = copy.deepcopy(source)
     case["objects"].pop("airports", None)
+    _remove_equipment_deployment_locations(case)
     _apply_combat_unit_aircraft_defaults(case, airport="A", pre_life_calendar_days=0)
     _move_composite_equipment_quantities_to_basic_tasks(case)
     case["source"] = {
@@ -287,9 +288,9 @@ def _minimal_single_aircraft_import(source: dict[str, Any]) -> dict[str, Any]:
         "initialReady": 1,
         "minRequiredSorties": 1,
         "model": "J-15",
-        "deploymentLocation": "null",
         "wholeMachineModels": ["J-15"],
     }
+    objects["equipment"].pop("deploymentLocation", None)
     mission["equipment"] = copy.deepcopy(objects["equipment"])
     whole_aircraft_asset = {
         "id": "whole-aircraft",
@@ -351,6 +352,20 @@ def _minimal_single_aircraft_import(source: dict[str, Any]) -> dict[str, Any]:
     objects["analysisRequests"]["largeSample"] = copy.deepcopy(single_large_sample)
     mission["analysisRequests"] = {"largeSample": copy.deepcopy(single_large_sample)}
     return case
+
+
+def _remove_equipment_deployment_locations(import_package: dict[str, Any]) -> None:
+    objects = import_package.get("objects") if isinstance(import_package.get("objects"), dict) else {}
+    equipment = objects.get("equipment") if isinstance(objects.get("equipment"), dict) else None
+    if equipment is not None:
+        equipment.pop("deploymentLocation", None)
+    missions = objects.get("missionProfiles") if isinstance(objects.get("missionProfiles"), list) else []
+    for mission in missions:
+        if not isinstance(mission, dict):
+            continue
+        mission_equipment = mission.get("equipment") if isinstance(mission.get("equipment"), dict) else None
+        if mission_equipment is not None:
+            mission_equipment.pop("deploymentLocation", None)
 
 
 def _move_composite_equipment_quantities_to_basic_tasks(import_package: dict[str, Any]) -> None:
