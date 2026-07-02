@@ -12649,13 +12649,13 @@ function renderCurrentAnalysisResultPanel(page, title) {
 
 function currentAnalysisSourceLabel(result) {
   const status = result.status || "empty";
-  if (status === "empty") return "等待正式结果";
-  if (status === "running") return "正式后端运行中";
+  if (status === "empty") return "等待结果";
+  if (status === "running") return "生成中";
   if (["failed", "blocked"].includes(status)) {
-    return result.last_success_result ? "正式后端结果（需复核）" : "等待正式结果";
+    return result.last_success_result ? "上一版结果（需复核）" : "等待结果";
   }
-  if (result.source === "formal_backend") return result.is_stale ? "正式后端结果（已过期）" : "正式后端结果";
-  return "等待正式结果";
+  if (result.source === "formal_backend") return result.is_stale ? "当前结果（已过期）" : "当前结果";
+  return "等待结果";
 }
 
 function currentAnalysisShouldShowFailure(result) {
@@ -12677,12 +12677,12 @@ function currentAnalysisStatusLabel(status) {
 }
 
 function currentAnalysisStatusMessage(result) {
-  if (result.status === "completed") return "当前结果来自正式后端链路和精确 projection 校验。";
-  if (result.status === "running") return "正在生成当前页正式结果。";
+  if (result.status === "completed") return "当前分析已完成，结果如下。";
+  if (result.status === "running") return "正在生成当前页结果。";
   if (result.status === "stale" || result.is_stale) return "当前 Project 基准或分析参数已变化，请重新运行。";
   if (result.status === "failed") return result.last_failure?.message || "最近一次运行失败，上一条成功结果会继续保留。";
-  if (result.status === "blocked") return result.last_failure?.message || "缺少正式输入、provenance、base artifact 或 projection payload。";
-  return "尚无当前正式结果，可直接运行当前分析页。";
+  if (result.status === "blocked") return result.last_failure?.message || "当前分析结果暂不可用，请重新运行。";
+  return "尚无当前结果，可直接运行当前分析页。";
 }
 
 async function runCurrentAnalysisPage(page) {
@@ -12791,45 +12791,18 @@ function mappingProvenanceVersion() {
 }
 
 function formalAnalysisBoundaryReason({ state, provenance, runTypeIsMonteCarlo, projectionArtifacts, projectionPayload, projectionPayloadError, failedCompiler }) {
-  if (state === "blocked") return projectionPayloadError || "Current analysis result is blocked until a validated formal projection is available.";
-  if (state === "preview") return "Preview/demo/singleResult data is not a completed current analysis result.";
-  if (state === "formal") return "Current result passed formal backend projection validation.";
-  if (state === "unconfigured") return "当前页尚无正式分析结果。";
+  if (state === "blocked") return projectionPayloadError || "当前分析结果暂不可用。";
+  if (state === "preview") return "预览数据不会作为当前分析结果展示。";
+  if (state === "formal") return "当前分析已完成。";
+  if (state === "unconfigured") return "当前页尚无分析结果。";
   if (state === "pending") return "当前页等待运行。";
   if (state === "stale") return "当前 Project 基准或分析参数已变化，请重新运行。";
-  if (state === "running") return `当前页正式分析正在运行，进度 ${normalizeProgress(backendRun?.progress)}%。`;
-  if (state === "failed") return failedCompiler ? compileGateStatusText(backendRun) : "当前页正式分析运行失败。";
-  if (!runTypeIsMonteCarlo) return "当前 run 不是 run_type=monte_carlo。";
-  if (!provenance) return "缺少 compiler provenance。";
-  if (monteCarloBaseArtifacts().length === 0) return "缺少正式 Monte Carlo artifact。";
-  if (projectionArtifacts.length === 0) return "缺少当前分析类型的 analysis projection artifact。";
-  if (!projectionPayload) return `缺少或无法解析当前分析类型的 projection payload${projectionPayloadError ? `：${projectionPayloadError}` : "。"}`;
+  if (state === "running") return `当前页分析正在运行，进度 ${normalizeProgress(backendRun?.progress)}%。`;
+  if (state === "failed") return failedCompiler ? compileGateStatusText(backendRun) : "当前页分析运行失败。";
+  if (!runTypeIsMonteCarlo || !provenance || monteCarloBaseArtifacts().length === 0 || projectionArtifacts.length === 0) return "当前分析结果暂不可用，请重新运行。";
+  if (!projectionPayload) return projectionPayloadError || "当前分析结果暂不可用，请重新运行。";
   if (state === "not_applicable") return notApplicableProjectionReason(projectionPayload);
-  return "本地预览，不是正式后端仿真结果；preview/demo/singleResult 不会渲染为 completed。";
-}
-
-function renderFormalAnalysisSourceTable(boundary) {
-  {
-    const result = currentAnalysisResults[boundary.analysisType] || {};
-    const profile = boundary.profile || {};
-    const overrides = profile.scenarioOverrides || {};
-    const spareCount = Array.isArray(overrides.sparesBySupportPoint) ? overrides.sparesBySupportPoint.length : 0;
-    const rows = [
-      ["结果类型", boundary.formalUnlocked ? "正式后端结果" : "等待当前结果"],
-      ["当前页面", analysisLabelForType(boundary.analysisType)],
-      ["结果状态", currentAnalysisStatusLabel(result.status || boundary.state)],
-      ["profile overrides", `${spareCount} 项备件 / ${overrides.missionDurationMinutes || "-"} min`],
-      ["来源校验", boundary.formalUnlocked ? "已通过" : "等待校验"]
-    ];
-    return `<table><tbody>${rows.map(([label, value]) => `<tr><th>${htmlEscape(label)}</th><td>${htmlEscape(value)}</td></tr>`).join("")}</tbody></table>`;
-  }
-  const rows = [
-    ["运行类型", backendRun?.run_type === "monte_carlo" ? "正式蒙特卡洛" : "等待运行"],
-    ["基础产物", boundary.monteCarloArtifacts.length ? "已就绪" : "缺失"],
-    ["分析产物", boundary.analysisArtifacts.length ? "已就绪" : "缺失"],
-    ["来源校验", mappingProvenanceVersion() ? "已通过" : "等待 compiler provenance"]
-  ];
-  return `<table><tbody>${rows.map(([label, value]) => `<tr><th>${htmlEscape(label)}</th><td>${htmlEscape(value)}</td></tr>`).join("")}</tbody></table>`;
+  return "等待当前分析结果。";
 }
 
 function formalAnalysisBoundary(page) {
@@ -12946,34 +12919,7 @@ function formalAnalysisBoundary(page) {
 }
 
 function renderFormalAnalysisBoundaryNote(boundary) {
-  if (boundary.formalUnlocked && boundary.state !== "not_applicable") {
-    return `
-      <div class="result-source-note">
-        <strong>正式后端结果</strong>
-        <span>当前结果已通过正式后端 projection 校验，当前页面按 current result 展示。</span>
-        ${renderFormalAnalysisSourceTable(boundary)}
-      </div>
-    `;
-  }
-  const failedCompiler = boundary.state === "failed" && backendRun?.error?.details?.issues?.length;
-  const titleByState = {
-    unconfigured: "未配置",
-    pending: "待运行",
-    running: "运行中",
-    failed: failedCompiler ? "输入未通过 Scenario compiler" : "运行失败",
-    blocked: "正式结果阻断",
-    preview: "预览不可完成",
-    not_applicable: "不适用 / 未建模",
-    local_preview: "等待当前正式结果"
-  };
-  return `
-    <div class="result-source-note">
-      <strong>${titleByState[boundary.state] || "等待当前正式结果"}</strong>
-      <span>${failedCompiler ? compileGateStatusText(backendRun) : boundary.reason}</span>
-      <span>只有当前页正式运行完成并通过后端产物校验后，才显示正式结果。</span>
-      ${renderFormalAnalysisSourceTable(boundary)}
-    </div>
-  `;
+  return "";
 }
 
 function notApplicableProjectionReason(formalProjection) {
@@ -13032,14 +12978,14 @@ function renderFormalProjectionBody(formalProjection) {
           `).join("")}</tbody>
         </table>
       </div>
-      <div class="decision-support-card"><strong>携行清单说明</strong><span>正式来源为 projection payload，默认目标为携行备件越少越好，按推荐携行倍率和风险等级形成转场前装箱评审清单。</span></div>
+      <div class="decision-support-card"><strong>携行清单说明</strong><span>默认目标为携行备件越少越好，按推荐携行倍率和风险等级形成转场前装箱评审清单。</span></div>
     `;
   }
   if (formalProjection.analysisType === "mission_reliability") {
     const rows = formalProjection.rows || [];
     const drop = formalProjection.steepestDrop;
     return `
-      <div class="analysis-chart-panel"><div class="chart-title">projection payload 任务可靠度</div>${renderLineChart(rows.map((row) => ({ x: row.sequence, y: row.probability })))}</div>
+      <div class="analysis-chart-panel"><div class="chart-title">任务可靠度</div>${renderLineChart(rows.map((row) => ({ x: row.sequence, y: row.probability })))}</div>
       <div class="decision-support-card"><strong>最大下降区间</strong><span>${drop ? `T${drop.fromIndex} 到 T${drop.toIndex}，仿真时间 ${drop.fromTime} 到 ${drop.toTime}，下降 ${fixed(drop.drop, 3)}` : "未发现下降区间"}</span></div>
       <div class="table-wrap">
         <table>
@@ -13058,7 +13004,6 @@ function renderFormalProjectionBody(formalProjection) {
       <div class="factor-grid">
         <div class="factor-column"><h4>停机因素</h4><div class="factor-list">${primaryFactors.map((row) => `<div class="factor-item"><span>${htmlEscape(row.label)}</span><span>${row.contributionLabel}</span></div>`).join("")}</div></div>
         <div class="factor-column"><h4>二级因素</h4><div class="factor-list">${rows.map((row) => `<div class="factor-item"><span>${htmlEscape(row.label)}</span><span>${row.count}</span></div>`).join("")}</div></div>
-        <div class="factor-column"><h4>正式来源</h4><div class="factor-list"><div class="factor-item"><span>projection payload</span><span>downtime_factors</span></div></div></div>
       </div>
       <div class="table-wrap">
         <table>
@@ -13129,7 +13074,7 @@ function renderAnalysisDashboard({ title, mode, subtitle, config = "", metrics, 
   const formalProjection = analysisProjectionForBoundary(boundary);
   const displayedMetrics = formalProjection?.metrics || metrics;
   const displayedBody = formalProjection ? renderAnalysisProjectionResultPanel(formalProjection) : body;
-  const metricSuffix = formalProjection?.formal === false ? "<em>不适用</em>" : formalProjection ? "<em>projection payload</em>" : "<em>等待当前结果</em>";
+  const metricSuffix = formalProjection?.formal === false ? "<em>不适用</em>" : formalProjection ? "<em>当前结果</em>" : "<em>等待当前结果</em>";
   return `
     <div class="analysis-dashboard">
       ${renderCurrentAnalysisResultPanel(page, title)}
@@ -13141,26 +13086,25 @@ function renderAnalysisDashboard({ title, mode, subtitle, config = "", metrics, 
       ${config ? `<section class="analysis-config-grid">${config}</section>` : ""}
       <section class="kpi-strip">${displayedMetrics.map(([label, value]) => `<div class="kpi-card"><span>${label}</span><strong>${value}</strong>${metricSuffix}</div>`).join("")}</section>
       <section class="analysis-chart-panel">${displayedBody}</section>
-      <div class="decision-support-card"><strong>${mode}</strong><span>${formalProjection ? "结果已按后端 analysis projection payload 展示，供当前项目评审。" : "等待当前正式结果；非正式预览数据不会渲染为 completed。"}</span></div>
+      <div class="decision-support-card"><strong>${mode}</strong><span>${formalProjection ? "结果已生成，供当前项目评审。" : "等待当前结果；运行当前分析后将在这里展示。"}</span></div>
     </div>
   `;
 }
 
 function renderAnalysisProjectionResultPanel(formalProjection) {
   const label = analysisLabelForType(formalProjection.analysisType);
-  const artifactKind = projectionArtifactKindForAnalysisType(formalProjection.analysisType);
   return `
     <section class="analysis-projection-result-panel">
       <div class="section-head">
         <h3>${htmlEscape(label)}</h3>
-        <span>projection payload / ${htmlEscape(artifactKind)}</span>
+        <span>当前分析结果</span>
       </div>
       <div class="mc-formal-metrics">
         ${(formalProjection.metrics || []).map(([name, value]) => `
           <div class="metric-card">
             <span>${htmlEscape(name)}</span>
             <strong>${htmlEscape(value)}</strong>
-            ${formalProjection.formal === false ? "<em>不适用</em>" : "<em>projection payload</em>"}
+            ${formalProjection.formal === false ? "<em>不适用</em>" : "<em>当前结果</em>"}
           </div>
         `).join("")}
       </div>
