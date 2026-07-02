@@ -3311,18 +3311,22 @@ test("phase 6D downtime analysis renders formal anomaly snapshots with export an
   assert.match(handlerSource, /downtimeSnapshotDeleteButton/);
 });
 
-test("monte carlo detail keeps formal source status and only shows evaluation metrics", async () => {
+test("monte carlo detail only shows evaluation metric analysis after experiment details", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const mcResultSource = appSource.slice(
     appSource.indexOf("function renderMonteCarloResults"),
     appSource.indexOf("function monteCarloFormalResultBoundary")
   );
   assert.match(appSource, /function renderMonteCarloResults/);
-  assert.match(mcResultSource, /蒙特卡洛实验结果/);
-  assert.match(mcResultSource, /renderMonteCarloFormalSourceTable\(boundary\)/);
+  assert.match(mcResultSource, /评估指标结果分析/);
+  assert.match(mcResultSource, /mc-evaluation-analysis-panel/);
+  assert.doesNotMatch(mcResultSource, /蒙特卡洛实验结果/);
+  assert.doesNotMatch(mcResultSource, /renderMonteCarloFormalSourceTable\(boundary\)/);
+  assert.doesNotMatch(mcResultSource, /renderM7RunArtifactPanel\(\)/);
   assert.match(mcResultSource, /renderMonteCarloEvaluationMetricResults\(boundary\)/);
   assert.match(mcResultSource, /renderMonteCarloFormalBlockedState\(boundary\)/);
   assert.match(appSource, /评估指标结果/);
+  assert.doesNotMatch(appSource, /正式 result metrics/);
   assert.match(appSource, /function monteCarloEvaluationMetricRows/);
   for (const label of ["出动架次率", "使用可用度", "再次出动准备时间", "保障人员利用率", "保障人员满足率", "保障设备利用率", "保障设备满足率"]) {
     assert.match(appSource, new RegExp(label));

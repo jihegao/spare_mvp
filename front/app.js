@@ -11994,43 +11994,12 @@ function averageGroupMetric(metric) {
 
 function renderMonteCarloResults(experiment = null) {
   const boundary = monteCarloFormalResultBoundary(experiment);
-  const backendChainRows = backendRunChain
-    ? [
-        ["Project", backendRunChain.project_id],
-        ["Snapshot", backendRunChain.modeling_snapshot_id],
-        ["ExperimentPlan", backendRunChain.experiment_plan_id],
-        ["Scenario", backendRunChain.scenario_id],
-        ["Run", backendRunChain.run_id],
-        ["Result", backendRunChain.result_summary_id],
-        ["ArtifactManifest", backendRunChain.artifact_manifest_id]
-      ]
-    : [];
-  const artifactRows = backendArtifactManifest && backendArtifactManifest.artifacts
-    ? backendArtifactManifest.artifacts
-    : [];
   return `
-    <div class="mc-result-panel">
+    <div class="mc-result-panel mc-evaluation-analysis-panel">
       <div class="section-head">
-        <h3>蒙特卡洛实验结果</h3>
+        <h3>评估指标结果分析</h3>
         <span>${htmlEscape(boundary.statusLabel)}</span>
       </div>
-      <div class="backend-run-chain">
-        <span>后端状态：${htmlEscape(backendApiStatus)}</span>
-        <div class="result-source-note">
-          <strong>正式来源</strong>
-          <span>结果区只使用 canonical /api/runs、monte_carlo_base artifact、analysis projection artifacts 和已解析 projection payload。</span>
-          <strong>当前判定</strong>
-          <span>${htmlEscape(boundary.reason)}</span>
-        </div>
-        ${backendChainRows.length
-          ? `<table><tbody>${backendChainRows.map(([label, value]) => `<tr><th>${htmlEscape(label)}</th><td>${htmlEscape(value)}</td></tr>`).join("")}</tbody></table>`
-          : `<p>${htmlEscape(backendRun?.run_id || "尚未读取 run_id 身份链")}</p>`}
-        ${artifactRows.length
-          ? `<table><tbody>${artifactRows.map((artifact) => `<tr><th>${htmlEscape(artifact.kind)}</th><td>${htmlEscape(artifact.path)}</td></tr>`).join("")}</tbody></table>`
-          : ""}
-      </div>
-      ${renderM7RunArtifactPanel()}
-      ${renderMonteCarloFormalSourceTable(boundary)}
       ${boundary.formalUnlocked ? renderMonteCarloEvaluationMetricResults(boundary) : renderMonteCarloFormalBlockedState(boundary)}
     </div>
   `;
@@ -12189,10 +12158,6 @@ function renderMonteCarloEvaluationMetricResults(boundary) {
   const rows = monteCarloEvaluationMetricRows(boundary);
   return `
     <div class="mc-evaluation-metrics">
-      <div class="section-head">
-        <h3>评估指标结果</h3>
-        <span>正式 result metrics</span>
-      </div>
       <div class="mc-formal-metrics">
         ${rows.map(([name, value, source]) => `
           <div class="metric-card">
