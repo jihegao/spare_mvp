@@ -7,24 +7,6 @@
     "version": 1
   },
   "objects": {
-    "airports": [
-      {
-        "distanceToMissionKm": 180,
-        "id": "carrier-deck",
-        "location": "航母战斗群",
-        "name": "航母飞行甲板",
-        "runwayType": "滑跃/弹射甲板",
-        "supportNodeId": "carrier-deck"
-      },
-      {
-        "distanceToMissionKm": 260,
-        "id": "forward-sea-base",
-        "location": "近海前出补给点",
-        "name": "前出海上保障点",
-        "runwayType": "海上保障平台",
-        "supportNodeId": "forward-sea-base"
-      }
-    ],
     "analysisRequests": {
       "largeSample": {
         "enabled": true,

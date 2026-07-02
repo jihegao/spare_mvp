@@ -94,6 +94,17 @@ test("simulation analysis public import templates validate against modeling impo
   for (const templatePath of templatePaths) {
     const template = await readJson(templatePath);
     assert.deepEqual(validateSchema(schema, template), [], `${templatePath} must match modeling_import.schema.json`);
+    assert.equal(
+      Object.hasOwn(template.objects, "airports"),
+      false,
+      `${templatePath} must keep airports under missionProfiles instead of duplicating objects.airports`
+    );
+    for (const [index, mission] of (template.objects.missionProfiles || []).entries()) {
+      assert.ok(
+        Array.isArray(mission.airports) && mission.airports.length > 0,
+        `${templatePath} missionProfiles[${index}].airports must retain airport context`
+      );
+    }
   }
 
   const canonicalTemplate = await readJson("public/import-templates/canonical_platform_case.json");

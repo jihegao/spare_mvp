@@ -156,6 +156,7 @@ def _load_canonical_import(repo_root: Path) -> dict[str, Any]:
 
 def _canonical_platform_import(source: dict[str, Any]) -> dict[str, Any]:
     case = copy.deepcopy(source)
+    case["objects"].pop("airports", None)
     _apply_combat_unit_aircraft_defaults(case, airport="A", pre_life_calendar_days=0)
     _move_composite_equipment_quantities_to_basic_tasks(case)
     case["source"] = {
@@ -197,6 +198,7 @@ def _minimal_single_aircraft_import(source: dict[str, Any]) -> dict[str, Any]:
     }
     case["lifecycle"] = {"state": "draft", "version": 1, "referencedRunIds": []}
     objects = case["objects"]
+    objects.pop("airports", None)
     mission = objects["missionProfiles"][0]
     mission["id"] = "mission-profile-6p-minimal"
     mission["name"] = "6P 最小单机任务剖面"
@@ -277,7 +279,6 @@ def _minimal_single_aircraft_import(source: dict[str, Any]) -> dict[str, Any]:
         "distanceToMissionKm": 180,
         "supportNodeId": None,
     }
-    objects["airports"] = [copy.deepcopy(airport0)]
     mission["airports"] = [copy.deepcopy(airport0)]
 
     objects["equipment"] = {

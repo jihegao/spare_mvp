@@ -7,16 +7,6 @@
     "version": 1
   },
   "objects": {
-    "airports": [
-      {
-        "distanceToMissionKm": 180,
-        "id": "airport0",
-        "location": "最小案例起降点",
-        "name": "airport0",
-        "runwayType": "单一起降点",
-        "supportNodeId": null
-      }
-    ],
     "analysisRequests": {
       "largeSample": {
         "enabled": true,
