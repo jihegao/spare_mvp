@@ -2341,6 +2341,7 @@ test("analysis pages expose controlled profile overrides without defaulting them
   assert.match(boundarySource, /state === "stale"/);
   assert.match(boundarySource, /!stale/);
   assert.match(downtimeExportSource, /runId: boundary\?\.runId \|\| backendRun\?\.run_id \|\| ""/);
+  assert.doesNotMatch(downtimeExportSource, /linkedExperiment/);
   assert.match(runIntentSource, /analysisType: normalizedAnalysisType/);
   assert.match(runIntentSource, /scenarioOverrides,/);
   assert.doesNotMatch(runIntentSource, /\.\.\.\(analysisType \? \{ analysis_type/);

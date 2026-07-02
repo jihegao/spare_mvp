@@ -1435,6 +1435,28 @@ class SimulationAdapterTest(unittest.TestCase):
         self.assertEqual(row["confidence_target"], 0.5)
         self.assertTrue(row["meets_confidence_target"])
 
+    def test_carry_list_confidence_target_raises_recommended_multiplier_for_gap(self) -> None:
+        projections = self.adapter._aircraft_support_v1_analysis_projections(  # pylint: disable=protected-access
+            {
+                "planned_sorties": 10,
+                "shortage_events": 2,
+                "mission_success_rate": 0.7,
+            },
+            "monte_carlo_base-test",
+            run_id="run-confidence-target-gap",
+            analysis_profile={
+                "analysis_type": "carry_list",
+                "carryListConfig": {"missionConfidenceTarget": 0.95},
+            },
+        )
+        row = projections["carry_list"]["data"][0]
+
+        self.assertAlmostEqual(row["recommended_multiplier"], 1.45)
+        self.assertAlmostEqual(row["confidence_gap"], 0.25)
+        self.assertEqual(row["confidence_target"], 0.95)
+        self.assertFalse(row["meets_confidence_target"])
+        self.assertEqual(row["recommendation_reason"], "increase_for_confidence_gap")
+
 
 def _artifact_kinds(bundle: dict) -> list[str]:
     return [artifact["kind"] for artifact in bundle["artifact_manifest"]["artifacts"]]

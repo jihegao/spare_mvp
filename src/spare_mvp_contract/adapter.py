@@ -2556,6 +2556,8 @@ class SimulationAdapter:
         spare_utilization = min(1.0, max(0.0, float(metrics.get("spare_utilization", 0) or 0)))
         mission_success = min(1.0, max(0.0, float(metrics.get("mission_success_rate", metrics.get("sortie_completion_rate", 0)) or 0)))
         carry_confidence_target = self._carry_list_confidence_target(profile_trace)
+        carry_confidence_gap = max(0.0, carry_confidence_target - mission_success)
+        carry_recommended_multiplier = max(1.0, 1.0 + shortage_probability + carry_confidence_gap)
         sortie_rate = min(1.0, max(0.0, float(metrics.get("sortie_rate", 0) or 0)))
         downtime_values = {
             "failure": max(0.0, float(metrics.get("downtime_failure_events", 0) or 0)),
@@ -2622,10 +2624,12 @@ class SimulationAdapter:
                 "data": [
                     {
                         "spare_type": "aircraft_support_v1_spares",
-                        "recommended_multiplier": max(1.0, 1.0 + shortage_probability),
+                        "recommended_multiplier": carry_recommended_multiplier,
                         "confidence_target": carry_confidence_target,
+                        "confidence_gap": carry_confidence_gap,
                         "mission_success_probability": mission_success,
                         "meets_confidence_target": mission_success >= carry_confidence_target,
+                        "recommendation_reason": "increase_for_confidence_gap" if carry_confidence_gap > 0 else "shortage_risk_baseline",
                         "risk_level": risk_level,
                     }
                 ],
