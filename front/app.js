@@ -12316,18 +12316,10 @@ function renderSpareShortfallAnalysis() {
 }
 
 function renderCarryListAnalysis() {
-  const profile = currentAnalysisProfileForPage(getFeaturePageById(selectedFeatureId));
-  const confidenceTarget = profile.carryListConfig?.missionConfidenceTarget;
-  const missionDuration = profile.scenarioOverrides?.missionDurationMinutes;
   return renderAnalysisDashboard({
     title: "飞机转场携行清单分析",
     mode: "运行当前分析",
-    subtitle: "携行清单迭代建议",
-    config: `
-      <label>默认目标<input value="携行备件越少越好" readonly></label>
-      <label>任务置信目标<input value="${htmlEscape(confidenceTarget ?? "默认")}" readonly></label>
-      <label>任务时长覆盖<input value="${htmlEscape(missionDuration ?? "默认基础方案")}" readonly></label>
-    `,
+    subtitle: "携行清单迭代建议：携行备件越少越好",
     metrics: [
       ["当前结果", "等待运行"],
       ["结果状态", currentAnalysisStatusLabel(currentAnalysisResultForPage(getFeaturePageById(selectedFeatureId)).status)],
@@ -12574,37 +12566,6 @@ function analysisProfileMissionDurationMinutes(profile) {
   return 24 * 60;
 }
 
-function renderCurrentAnalysisProfile(page) {
-  const analysisType = analysisTypeForPage(page);
-  const profile = analysisProfileForPage(page);
-  const rows = analysisProfileSpareRows(profile);
-  const carryConfig = profile.carryListConfig || {};
-  return `
-    <section class="analysis-profile-panel">
-      <div class="section-head">
-        <h3>当前分析 Profile</h3>
-        <span>${htmlEscape(currentAnalysisStatusLabel(currentAnalysisResultForPage(page).status))}</span>
-      </div>
-      <section class="analysis-config-grid">
-        <label>任务持续时长<input data-analysis-profile-field="scenarioOverrides.missionDurationMinutes" type="number" min="1" value="${htmlEscape(analysisProfileMissionDurationMinutes(profile))}"></label>
-        ${analysisType === "carry_list" ? `<label>任务置信度目标<input data-analysis-profile-field="carryListConfig.missionConfidenceTarget" type="number" min="0.01" max="1" step="0.01" value="${htmlEscape(carryConfig.missionConfidenceTarget ?? 0.9)}"></label>` : ""}
-      </section>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>保障点</th><th>备件类型</th><th>当前页数量</th></tr></thead>
-          <tbody>${rows.length ? rows.map((row, index) => `
-            <tr>
-              <td>${htmlEscape(row.supportPointId)}</td>
-              <td>${htmlEscape(row.spareTypeId)}</td>
-              <td><input data-spare-override-index="${index}" type="number" min="0" value="${htmlEscape(row.quantity)}"></td>
-            </tr>
-          `).join("") : `<tr><td colspan="3">当前 Project 未提供保障点库存</td></tr>`}</tbody>
-        </table>
-      </div>
-    </section>
-  `;
-}
-
 function ensureCurrentAnalysisResultLoaded(page) {
   const analysisType = analysisTypeForPage(page);
   if (!ANALYSIS_PROJECTION_TYPES.some((item) => item.analysisType === analysisType)) return;
@@ -12659,7 +12620,6 @@ function hiddenCurrentAnalysisExperimentId(analysisType) {
 
 function renderCurrentAnalysisResultPanel(page, title) {
   const result = currentAnalysisResultForPage(page);
-  const profile = currentAnalysisProfileForPage(page);
   const status = result.status || "empty";
   const statusLabel = currentAnalysisStatusLabel(status);
   const failureMessage = currentAnalysisShouldShowFailure(result) ? (result.last_failure?.message || "") : "";
@@ -12676,8 +12636,7 @@ function renderCurrentAnalysisResultPanel(page, title) {
       </div>
       <div class="kpi-strip">
         <div class="kpi-card"><span>状态</span><strong><span class="status-badge ${status === "completed" ? "success" : status === "failed" || status === "blocked" ? "danger" : status === "running" ? "warn" : ""}">${htmlEscape(statusLabel)}</span></strong></div>
-        <div class="kpi-card"><span>参数空间</span><strong>${htmlEscape(result.profile_version || profile.profile_version || "default-v0")}</strong></div>
-        <div class="kpi-card"><span>基础方案</span><strong>${htmlEscape(result.base_plan_version || profile.base_plan_version || "默认基础方案")}</strong></div>
+        <div class="kpi-card"><span>结果来源</span><strong>${htmlEscape(sourceLabel)}</strong></div>
         <div class="kpi-card"><span>过期状态</span><strong>${result.is_stale ? "需重跑" : "当前"}</strong></div>
       </div>
       ${failureMessage ? `<div class="empty-state"><strong>最近失败</strong><p>${htmlEscape(failureMessage)}</p></div>` : ""}
@@ -12719,7 +12678,7 @@ function currentAnalysisStatusLabel(status) {
 
 function currentAnalysisStatusMessage(result) {
   if (result.status === "completed") return "当前结果来自正式后端链路和精确 projection 校验。";
-  if (result.status === "running") return "正在使用默认基础方案和当前页参数空间生成正式结果。";
+  if (result.status === "running") return "正在生成当前页正式结果。";
   if (result.status === "stale" || result.is_stale) return "当前 Project 基准或分析参数已变化，请重新运行。";
   if (result.status === "failed") return result.last_failure?.message || "最近一次运行失败，上一条成功结果会继续保留。";
   if (result.status === "blocked") return result.last_failure?.message || "缺少正式输入、provenance、base artifact 或 projection payload。";
@@ -12836,7 +12795,7 @@ function formalAnalysisBoundaryReason({ state, provenance, runTypeIsMonteCarlo, 
   if (state === "preview") return "Preview/demo/singleResult data is not a completed current analysis result.";
   if (state === "formal") return "Current result passed formal backend projection validation.";
   if (state === "unconfigured") return "当前页尚无正式分析结果。";
-  if (state === "pending") return "当前页参数空间已配置，等待运行。";
+  if (state === "pending") return "当前页等待运行。";
   if (state === "stale") return "当前 Project 基准或分析参数已变化，请重新运行。";
   if (state === "running") return `当前页正式分析正在运行，进度 ${normalizeProgress(backendRun?.progress)}%。`;
   if (state === "failed") return failedCompiler ? compileGateStatusText(backendRun) : "当前页正式分析运行失败。";
@@ -13174,7 +13133,6 @@ function renderAnalysisDashboard({ title, mode, subtitle, config = "", metrics, 
   return `
     <div class="analysis-dashboard">
       ${renderCurrentAnalysisResultPanel(page, title)}
-      ${renderCurrentAnalysisProfile(page)}
       <section class="analysis-filter-bar">
         <div><h3>${title}</h3><span>${subtitle}</span></div>
         <button type="button" class="btn-primary" data-analysis-action="run-current">启动</button>

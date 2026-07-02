@@ -569,9 +569,9 @@ test("empty-shell result analysis renders current-result guidance instead of syn
     assert.doesNotMatch(source, /Math\.min\(\.\.\.rows|Math\.max\(\.\.\.rows|Math\.max\(\.\.\.factors/);
     assert.doesNotMatch(source, /Infinity|-Infinity/);
   }
-  assert.match(carrySource, /currentAnalysisProfileForPage/);
-  assert.match(carrySource, /missionConfidenceTarget/);
-  assert.match(carrySource, /missionDurationMinutes/);
+  assert.doesNotMatch(carrySource, /currentAnalysisProfileForPage/);
+  assert.doesNotMatch(carrySource, /missionConfidenceTarget/);
+  assert.doesNotMatch(carrySource, /missionDurationMinutes/);
   assert.doesNotMatch(carrySource, /<select>|优化条件|carryObjectiveOption|singleResult\.carryList/);
   assert.doesNotMatch(spareSource, /P2\/P3 类备件/);
   assert.doesNotMatch(reliabilitySource, /第 7 波|wave \* 12/);
@@ -2299,7 +2299,7 @@ test("result analysis page main flows consume only current profiles and current 
   }
 });
 
-test("analysis pages expose controlled profile overrides without defaulting them into run config", async () => {
+test("analysis pages keep profile overrides internal without rendering the current profile panel", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const runIntentSource = await readFile(new URL("../front/run-intent.mjs", import.meta.url), "utf8");
   const sourceSlice = (startMarker, endMarker) => {
@@ -2312,8 +2312,7 @@ test("analysis pages expose controlled profile overrides without defaulting them
   };
   const dashboardSource = sourceSlice("function renderAnalysisDashboard", "function renderAnalysisProjectionResultPanel");
   const defaultProfileSource = sourceSlice("function defaultCurrentAnalysisProfile", "function supportPointSpareOverrideRows");
-  const profileSource = sourceSlice("function renderCurrentAnalysisProfile", "function ensureCurrentAnalysisResultLoaded");
-  const profileMutationSource = sourceSlice("function updateAnalysisProfileField", "function renderCurrentAnalysisProfile");
+  const profileMutationSource = sourceSlice("function updateAnalysisProfileField", "function boundedAnalysisProfileValue");
   const resetSource = sourceSlice("function resetCurrentAnalysisProfilesForProjectBaselineChange", "function analysisProfileSpareRows");
   const draftChangedSource = sourceSlice("function markProjectDraftChanged", "function scheduleProjectDraftAutosave");
   const runCurrentSource = sourceSlice("async function runCurrentAnalysisPage", "function restoreCurrentAnalysisResult");
@@ -2322,14 +2321,17 @@ test("analysis pages expose controlled profile overrides without defaulting them
   const downtimeExportSource = sourceSlice("function exportDowntimeAnomalySnapshots", "function deleteDowntimeAnomalySnapshot");
 
   assert.match(dashboardSource, /renderCurrentAnalysisResultPanel\(page, title\)/);
-  assert.match(dashboardSource, /renderCurrentAnalysisProfile\(page\)/);
+  assert.doesNotMatch(dashboardSource, /renderCurrentAnalysisProfile\(page\)/);
+  assert.doesNotMatch(dashboardSource, /当前分析 Profile|参数空间|基础方案/);
   assert.match(defaultProfileSource, /const projectJson = buildBackendProjectJson\(scenario, currentProject \|\| \{\}\)/);
   assert.doesNotMatch(defaultProfileSource, /experimentPlanDraft/);
   assert.match(defaultProfileSource, /scenarioBaseline:\s*\{[\s\S]*missionDurationMinutes: missionDurationMinutesForProject\(projectJson\)[\s\S]*scenarioOverrides: cloneScenario\(baseProfile\.scenarioOverrides \|\| \{\}\)/);
   assert.doesNotMatch(defaultProfileSource, /scenarioOverrides:\s*\{[\s\S]*missionDurationMinutes: missionDurationMinutesForProject\(projectJson\)/);
-  assert.match(profileSource, /data-analysis-profile-field="scenarioOverrides\.missionDurationMinutes"/);
-  assert.match(profileSource, /data-spare-override-index/);
-  assert.match(profileSource, /data-analysis-profile-field="carryListConfig\.missionConfidenceTarget"/);
+  assert.doesNotMatch(appSource, /function renderCurrentAnalysisProfile/);
+  assert.doesNotMatch(appSource, /当前分析 Profile/);
+  assert.doesNotMatch(appSource, /data-analysis-profile-field="scenarioOverrides\.missionDurationMinutes"/);
+  assert.doesNotMatch(appSource, /data-spare-override-index="\$\{index\}"/);
+  assert.doesNotMatch(appSource, /data-analysis-profile-field="carryListConfig\.missionConfidenceTarget"/);
   assert.match(profileMutationSource, /analysisProfileSpareRows\(profile\)/);
   assert.match(profileMutationSource, /markCurrentAnalysisResultStale\(analysisType\)/);
   assert.match(resetSource, /currentAnalysisProfiles = createDefaultCurrentAnalysisProfiles\(\)/);
