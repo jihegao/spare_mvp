@@ -223,8 +223,6 @@ def _minimal_single_aircraft_import(source: dict[str, Any]) -> dict[str, Any]:
                     "firstWaveTime": "08:00",
                     "groupName": "单机编队",
                     "intervalHours": 6,
-                    "minRequiredSystems": 1,
-                    "preparationMinutes": 20,
                     "priority": 1,
                     "recoveryTime": "09:30",
                     "taskDispatchTime": "07:40",
@@ -257,6 +255,7 @@ def _minimal_single_aircraft_import(source: dict[str, Any]) -> dict[str, Any]:
     mission["basicMission"]["basicTaskName"] = "最小单机巡检任务"
     mission["basicMission"]["equipmentQuantity"] = 1
     mission["basicMission"]["minRequiredSorties"] = 1
+    mission["basicMission"]["preparationMinutes"] = 20
     mission["basicMission"]["taskDurationMinutes"] = 60
     mission["basicMission"]["supportActivityName"] = ""
     mission["experiment"] = {
@@ -398,6 +397,13 @@ def _move_composite_equipment_quantities_to_basic_tasks(import_package: dict[str
             for value in (task.get("name"), task.get("basicTaskName"), task.get("missionId"), task.get("taskNo"))
             if value not in (None, "")
         }
+        existing_task_by_name = {
+            str(value): task
+            for task in existing_basic_tasks
+            if isinstance(task, dict)
+            for value in (task.get("name"), task.get("basicTaskName"), task.get("missionId"), task.get("taskNo"))
+            if value not in (None, "")
+        }
         additional_basic_tasks = [
             copy.deepcopy(task)
             for task in mission.get("basicMissions", [])
@@ -406,6 +412,7 @@ def _move_composite_equipment_quantities_to_basic_tasks(import_package: dict[str
 
         for item in task_items:
             task_name = str(item.get("basicTaskName") or "").strip()
+            preparation_minutes = _positive_int(item.get("preparationMinutes"), 0)
             if task_name and task_name not in existing_names:
                 derived = copy.deepcopy(basic_mission) if isinstance(basic_mission, dict) else {}
                 derived["name"] = task_name
@@ -420,9 +427,16 @@ def _move_composite_equipment_quantities_to_basic_tasks(import_package: dict[str
                 min_required = _positive_int(item.get("minRequiredSystems"), 0)
                 if min_required > 0:
                     derived["minRequiredSorties"] = min_required
+                if preparation_minutes > 0:
+                    derived["preparationMinutes"] = preparation_minutes
                 additional_basic_tasks.append(derived)
                 existing_names.add(task_name)
+                existing_task_by_name[task_name] = derived
+            elif preparation_minutes > 0 and task_name in existing_task_by_name:
+                existing_task_by_name[task_name]["preparationMinutes"] = preparation_minutes
             item.pop("equipmentQuantity", None)
+            item.pop("minRequiredSystems", None)
+            item.pop("preparationMinutes", None)
             item.pop("requiredEquipmentQuantity", None)
 
         if additional_basic_tasks:

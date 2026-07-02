@@ -465,7 +465,7 @@
             "minRequiredSorties": 3,
             "missionId": "night-alert-main",
             "name": "远海警戒任务",
-            "preparationMinutes": 50,
+            "preparationMinutes": 55,
             "priority": 1,
             "returnRatio": 0.35,
             "startHour": 1,
@@ -574,8 +574,6 @@
                 "groupName": "昼间制空编队",
                 "id": "day-cap-main",
                 "intervalHours": 6,
-                "minRequiredSystems": 4,
-                "preparationMinutes": 50,
                 "priority": 1,
                 "recoveryTime": "11:00",
                 "taskDispatchTime": "07:15"
@@ -594,8 +592,6 @@
                 "groupName": "夜间警戒编队",
                 "id": "night-alert-main",
                 "intervalHours": 8,
-                "minRequiredSystems": 3,
-                "preparationMinutes": 55,
                 "priority": 2,
                 "recoveryTime": "23:30",
                 "taskDispatchTime": "19:30"

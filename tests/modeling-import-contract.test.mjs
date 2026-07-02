@@ -114,6 +114,20 @@ test("simulation analysis public import templates validate against modeling impo
         false,
         `${templatePath} missionProfiles[${index}].equipment must not carry non-behavioral deploymentLocation`
       );
+      for (const compositeTask of mission.compositeTasks || []) {
+        for (const taskItem of compositeTask.taskItems || []) {
+          assert.equal(
+            Object.hasOwn(taskItem, "minRequiredSystems"),
+            false,
+            `${templatePath} ${compositeTask.id}/${taskItem.id} must inherit minRequiredSorties from basicMission`
+          );
+          assert.equal(
+            Object.hasOwn(taskItem, "preparationMinutes"),
+            false,
+            `${templatePath} ${compositeTask.id}/${taskItem.id} must inherit preparationMinutes from basicMission`
+          );
+        }
+      }
     }
   }
 
@@ -157,6 +171,16 @@ test("canonical platform composite task items inherit equipment quantity from ba
           Object.hasOwn(taskItem, "equipmentQuantity"),
           false,
           `${label} ${compositeTask.id}/${taskItem.id} must inherit equipmentQuantity from basicMission`
+        );
+        assert.equal(
+          Object.hasOwn(taskItem, "minRequiredSystems"),
+          false,
+          `${label} ${compositeTask.id}/${taskItem.id} must inherit minRequiredSorties from basicMission`
+        );
+        assert.equal(
+          Object.hasOwn(taskItem, "preparationMinutes"),
+          false,
+          `${label} ${compositeTask.id}/${taskItem.id} must inherit preparationMinutes from basicMission`
         );
       }
     }
