@@ -156,6 +156,7 @@
           "taskNo": "BM-CV-01",
           "updatedAt": "2026-06-21 08:00"
         },
+        "basicMissions": [],
         "combatUnit": {
           "basicTaskName": "近海制空巡逻任务",
           "deploymentLocation": "航母飞行甲板",
@@ -164,8 +165,10 @@
           "members": [
             {
               "aircraftNo": "J15-101",
+              "airport": "A",
               "deploymentLocation": "航母飞行甲板",
               "model": "J-15",
+              "preLifeCalendarDays": 0,
               "preLifeRequirementHours": 120,
               "remainingLifeHours": 180,
               "role": "长机",
@@ -174,8 +177,10 @@
             },
             {
               "aircraftNo": "J15-102",
+              "airport": "A",
               "deploymentLocation": "航母飞行甲板",
               "model": "J-15",
+              "preLifeCalendarDays": 0,
               "preLifeRequirementHours": 120,
               "remainingLifeHours": 176,
               "role": "僚机",
@@ -184,8 +189,10 @@
             },
             {
               "aircraftNo": "J35-201",
+              "airport": "A",
               "deploymentLocation": "航母飞行甲板",
               "model": "J-35",
+              "preLifeCalendarDays": 0,
               "preLifeRequirementHours": 120,
               "remainingLifeHours": 169,
               "role": "僚机",
@@ -194,8 +201,10 @@
             },
             {
               "aircraftNo": "J35-202",
+              "airport": "A",
               "deploymentLocation": "航母飞行甲板",
               "model": "J-35",
+              "preLifeCalendarDays": 0,
               "preLifeRequirementHours": 120,
               "remainingLifeHours": 164,
               "role": "僚机",
@@ -204,8 +213,10 @@
             },
             {
               "aircraftNo": "J15-103",
+              "airport": "A",
               "deploymentLocation": "机库甲板",
               "model": "J-15",
+              "preLifeCalendarDays": 0,
               "preLifeRequirementHours": 120,
               "remainingLifeHours": 171,
               "role": "备份",
@@ -214,8 +225,10 @@
             },
             {
               "aircraftNo": "J35-203",
+              "airport": "A",
               "deploymentLocation": "机库甲板",
               "model": "J-35",
+              "preLifeCalendarDays": 0,
               "preLifeRequirementHours": 120,
               "remainingLifeHours": 152,
               "role": "备份",
@@ -1347,6 +1360,7 @@
         "taskNo": "BM-CV-01",
         "updatedAt": "2026-06-21 08:00"
       },
+      "basicMissions": [],
       "combatUnit": {
         "basicTaskName": "近海制空巡逻任务",
         "deploymentLocation": "航母飞行甲板",
@@ -1355,8 +1369,10 @@
         "members": [
           {
             "aircraftNo": "J15-101",
+            "airport": "A",
             "deploymentLocation": "航母飞行甲板",
             "model": "J-15",
+            "preLifeCalendarDays": 0,
             "preLifeRequirementHours": 120,
             "remainingLifeHours": 180,
             "role": "长机",
@@ -1365,8 +1381,10 @@
           },
           {
             "aircraftNo": "J15-102",
+            "airport": "A",
             "deploymentLocation": "航母飞行甲板",
             "model": "J-15",
+            "preLifeCalendarDays": 0,
             "preLifeRequirementHours": 120,
             "remainingLifeHours": 176,
             "role": "僚机",
@@ -1375,8 +1393,10 @@
           },
           {
             "aircraftNo": "J35-201",
+            "airport": "A",
             "deploymentLocation": "航母飞行甲板",
             "model": "J-35",
+            "preLifeCalendarDays": 0,
             "preLifeRequirementHours": 120,
             "remainingLifeHours": 169,
             "role": "僚机",
@@ -1385,8 +1405,10 @@
           },
           {
             "aircraftNo": "J35-202",
+            "airport": "A",
             "deploymentLocation": "航母飞行甲板",
             "model": "J-35",
+            "preLifeCalendarDays": 0,
             "preLifeRequirementHours": 120,
             "remainingLifeHours": 164,
             "role": "僚机",
@@ -1395,8 +1417,10 @@
           },
           {
             "aircraftNo": "J15-103",
+            "airport": "A",
             "deploymentLocation": "机库甲板",
             "model": "J-15",
+            "preLifeCalendarDays": 0,
             "preLifeRequirementHours": 120,
             "remainingLifeHours": 171,
             "role": "备份",
@@ -1405,8 +1429,10 @@
           },
           {
             "aircraftNo": "J35-203",
+            "airport": "A",
             "deploymentLocation": "机库甲板",
             "model": "J-35",
+            "preLifeCalendarDays": 0,
             "preLifeRequirementHours": 120,
             "remainingLifeHours": 152,
             "role": "备份",
@@ -2553,6 +2579,7 @@
       "taskNo": "BM-CV-01",
       "updatedAt": "2026-06-21 08:00"
     },
+    "basicMissions": [],
     "combatUnit": {
       "basicTaskName": "近海制空巡逻任务",
       "deploymentLocation": "航母飞行甲板",
@@ -2561,8 +2588,10 @@
       "members": [
         {
           "aircraftNo": "J15-101",
+          "airport": "A",
           "deploymentLocation": "航母飞行甲板",
           "model": "J-15",
+          "preLifeCalendarDays": 0,
           "preLifeRequirementHours": 120,
           "remainingLifeHours": 180,
           "role": "长机",
@@ -2571,8 +2600,10 @@
         },
         {
           "aircraftNo": "J15-102",
+          "airport": "A",
           "deploymentLocation": "航母飞行甲板",
           "model": "J-15",
+          "preLifeCalendarDays": 0,
           "preLifeRequirementHours": 120,
           "remainingLifeHours": 176,
           "role": "僚机",
@@ -2581,8 +2612,10 @@
         },
         {
           "aircraftNo": "J35-201",
+          "airport": "A",
           "deploymentLocation": "航母飞行甲板",
           "model": "J-35",
+          "preLifeCalendarDays": 0,
           "preLifeRequirementHours": 120,
           "remainingLifeHours": 169,
           "role": "僚机",
@@ -2591,8 +2624,10 @@
         },
         {
           "aircraftNo": "J35-202",
+          "airport": "A",
           "deploymentLocation": "航母飞行甲板",
           "model": "J-35",
+          "preLifeCalendarDays": 0,
           "preLifeRequirementHours": 120,
           "remainingLifeHours": 164,
           "role": "僚机",
@@ -2601,8 +2636,10 @@
         },
         {
           "aircraftNo": "J15-103",
+          "airport": "A",
           "deploymentLocation": "机库甲板",
           "model": "J-15",
+          "preLifeCalendarDays": 0,
           "preLifeRequirementHours": 120,
           "remainingLifeHours": 171,
           "role": "备份",
@@ -2611,8 +2648,10 @@
         },
         {
           "aircraftNo": "J35-203",
+          "airport": "A",
           "deploymentLocation": "机库甲板",
           "model": "J-35",
+          "preLifeCalendarDays": 0,
           "preLifeRequirementHours": 120,
           "remainingLifeHours": 152,
           "role": "备份",
@@ -4153,8 +4192,10 @@
             "members": [
               {
                 "aircraftNo": "J15-101",
+                "airport": "A",
                 "deploymentLocation": "航母飞行甲板",
                 "model": "J-15",
+                "preLifeCalendarDays": 0,
                 "preLifeRequirementHours": 120,
                 "remainingLifeHours": 180,
                 "role": "长机",
@@ -4163,8 +4204,10 @@
               },
               {
                 "aircraftNo": "J15-102",
+                "airport": "A",
                 "deploymentLocation": "航母飞行甲板",
                 "model": "J-15",
+                "preLifeCalendarDays": 0,
                 "preLifeRequirementHours": 120,
                 "remainingLifeHours": 176,
                 "role": "僚机",
@@ -4173,8 +4216,10 @@
               },
               {
                 "aircraftNo": "J35-201",
+                "airport": "A",
                 "deploymentLocation": "航母飞行甲板",
                 "model": "J-35",
+                "preLifeCalendarDays": 0,
                 "preLifeRequirementHours": 120,
                 "remainingLifeHours": 169,
                 "role": "僚机",
@@ -4183,8 +4228,10 @@
               },
               {
                 "aircraftNo": "J35-202",
+                "airport": "A",
                 "deploymentLocation": "航母飞行甲板",
                 "model": "J-35",
+                "preLifeCalendarDays": 0,
                 "preLifeRequirementHours": 120,
                 "remainingLifeHours": 164,
                 "role": "僚机",
@@ -4193,8 +4240,10 @@
               },
               {
                 "aircraftNo": "J15-103",
+                "airport": "A",
                 "deploymentLocation": "机库甲板",
                 "model": "J-15",
+                "preLifeCalendarDays": 0,
                 "preLifeRequirementHours": 120,
                 "remainingLifeHours": 171,
                 "role": "备份",
@@ -4203,8 +4252,10 @@
               },
               {
                 "aircraftNo": "J35-203",
+                "airport": "A",
                 "deploymentLocation": "机库甲板",
                 "model": "J-35",
+                "preLifeCalendarDays": 0,
                 "preLifeRequirementHours": 120,
                 "remainingLifeHours": 152,
                 "role": "备份",

@@ -105,6 +105,7 @@ class RunService:
             mc_config = normalize_monte_carlo_run_config(
                 plan.get("config") or {},
                 mc_experiment_id=_monte_carlo_experiment_id(request, plan, ""),
+                analysis_type=str(request.get("analysis_type") or ""),
             )
 
         snapshot = (

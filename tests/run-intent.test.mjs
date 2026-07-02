@@ -230,6 +230,72 @@ test("buildRunIntent preserves explicit analysis sweep mode and raises samples t
   assert.equal(intent.planProjectJson.analysisRequests.largeSample.samples, 27);
 });
 
+test("buildRunIntent applies current carry list scenario overrides only to carry_list", () => {
+  const projectJson = {
+    project_id: "project-current-carry-profile",
+    experiment: { name: "current carry profile", steps: 4, samples: 3, seed: 101 },
+    analysisRequests: {
+      largeSample: {
+        enabled: true,
+        samples: 3,
+        sweep: {
+          failureRates: [0.06],
+          spareMultipliers: [1.0],
+          supportCapacities: [2]
+        }
+      }
+    }
+  };
+  const currentAnalysisProfile = {
+    analysis_type: "carry_list",
+    profile_version: "carry-current-v2",
+    base_plan_version: "base-current-v1",
+    scenarioOverrides: {
+      sparesBySupportPoint: {
+        carrier_deck: { filter: "critical", maxItems: 8 }
+      },
+      missionDurationMinutes: 240
+    },
+    carryListConfig: {
+      missionConfidenceTarget: 0.92
+    }
+  };
+
+  const carryIntent = buildRunIntent({
+    runType: "monte_carlo",
+    projectJson,
+    planProjectJson: projectJson,
+    mcExperimentId: "mc-current-carry",
+    analysisType: "carry_list",
+    currentAnalysisProfile
+  });
+  const spareIntent = buildRunIntent({
+    runType: "monte_carlo",
+    projectJson,
+    planProjectJson: projectJson,
+    mcExperimentId: "mc-current-spare",
+    analysisType: "spare_shortfall",
+    currentAnalysisProfile
+  });
+
+  assert.equal(
+    carryIntent.experimentPlanConfig.analysisRequests.currentAnalysisProfiles.carry_list.profile_version,
+    "carry-current-v2"
+  );
+  assert.deepEqual(
+    carryIntent.experimentPlanConfig.analysisRequests.carryList.scenarioOverrides.sparesBySupportPoint,
+    { carrier_deck: { filter: "critical", maxItems: 8 } }
+  );
+  assert.equal(carryIntent.experimentPlanConfig.analysisRequests.carryList.scenarioOverrides.missionDurationMinutes, 240);
+  assert.equal(carryIntent.experimentPlanConfig.analysisRequests.carryList.carryListConfig.missionConfidenceTarget, 0.92);
+
+  const sparePlanJson = JSON.stringify(spareIntent.experimentPlanConfig);
+  assert.match(sparePlanJson, /currentAnalysisProfiles/);
+  assert.doesNotMatch(sparePlanJson, /missionConfidenceTarget/);
+  assert.doesNotMatch(sparePlanJson, /sparesBySupportPoint/);
+  assert.doesNotMatch(sparePlanJson, /missionDurationMinutes/);
+});
+
 test("submitRunIntent sends user-edited Monte Carlo samples and seed in experiment plan config", async () => {
   const calls = [];
   const apiClient = {

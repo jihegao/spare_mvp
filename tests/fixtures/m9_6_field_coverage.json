@@ -505,6 +505,12 @@
       "target": "M9.6 platform case package"
     },
     {
+      "field_path": "objects.missionProfiles[].combatUnit.members[].airport",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "status": "ignored",
+      "target": "M9.6 platform case package"
+    },
+    {
       "field_path": "objects.missionProfiles[].combatUnit.members[].deploymentLocation",
       "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
       "status": "ignored",
@@ -512,6 +518,12 @@
     },
     {
       "field_path": "objects.missionProfiles[].combatUnit.members[].model",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "status": "ignored",
+      "target": "M9.6 platform case package"
+    },
+    {
+      "field_path": "objects.missionProfiles[].combatUnit.members[].preLifeCalendarDays",
       "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
@@ -1744,8 +1756,8 @@
     "defaulted": 0,
     "derived": 9,
     "governance_only": 35,
-    "ignored": 210,
-    "total_fields": 289,
+    "ignored": 212,
+    "total_fields": 291,
     "unsupported": 0
   }
 }

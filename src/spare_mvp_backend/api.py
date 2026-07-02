@@ -730,7 +730,13 @@ class BackendApi:
                 projection_type=projection_type,
             )
         payload_run_id = payload.get("run_id")
-        if payload_run_id and payload_run_id != run_id:
+        if not payload_run_id:
+            raise BackendApiError(
+                "projection_run_missing",
+                "projection run_id is required",
+                run_id=run_id,
+            )
+        if payload_run_id != run_id:
             raise BackendApiError(
                 "projection_run_mismatch",
                 "projection payload run_id does not match current run",
@@ -738,7 +744,13 @@ class BackendApi:
                 payload_run_id=payload_run_id,
             )
         payload_model_family = payload.get("model_family")
-        if payload_model_family and payload_model_family != ACTIVE_FORMAL_MODEL_FAMILY:
+        if not payload_model_family:
+            raise BackendApiError(
+                "projection_model_family_missing",
+                "projection model_family is required",
+                run_id=run_id,
+            )
+        if payload_model_family != ACTIVE_FORMAL_MODEL_FAMILY:
             raise BackendApiError(
                 "projection_model_family_mismatch",
                 "projection payload model_family does not match aircraft_support_v1",

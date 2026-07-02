@@ -12,7 +12,8 @@ export function buildRunIntent({
   experimentId = "",
   analysisType = "",
   modelFamily = "aircraft_support_v1",
-  monteCarloParameterSpace = "baseline"
+  monteCarloParameterSpace = "baseline",
+  currentAnalysisProfile = null
 }) {
   if (!SUPPORTED_RUN_TYPES.has(runType)) {
     throw new Error(`Unsupported runType: ${runType}`);
@@ -25,7 +26,7 @@ export function buildRunIntent({
   }
 
   const normalizedPlanProjectJson = runType === "monte_carlo"
-    ? withCanonicalMonteCarloAnalysisRequest(planProjectJson, { parameterSpace: monteCarloParameterSpace })
+    ? withCanonicalMonteCarloAnalysisRequest(planProjectJson, { parameterSpace: monteCarloParameterSpace, analysisType, currentAnalysisProfile })
     : cloneJson(planProjectJson);
   const experimentPlanConfig = buildExperimentPlanConfig(normalizedPlanProjectJson);
   const runRequest = {
@@ -81,7 +82,7 @@ export async function submitRunIntent(apiClient, options) {
   };
 }
 
-function withCanonicalMonteCarloAnalysisRequest(planProjectJson, { parameterSpace = "sweep" } = {}) {
+function withCanonicalMonteCarloAnalysisRequest(planProjectJson, { parameterSpace = "sweep", analysisType = "", currentAnalysisProfile = null } = {}) {
   const nextProjectJson = cloneJson(planProjectJson);
   const existingLargeSample = nextProjectJson.analysisRequests?.largeSample;
   const sweep = parameterSpace === "sweep"
@@ -102,7 +103,59 @@ function withCanonicalMonteCarloAnalysisRequest(planProjectJson, { parameterSpac
       sweep
     }
   };
+  applyCurrentAnalysisProfile(nextProjectJson, analysisType, currentAnalysisProfile);
   return nextProjectJson;
+}
+
+function applyCurrentAnalysisProfile(projectJson, analysisType, currentAnalysisProfile) {
+  if (!analysisType || !currentAnalysisProfile || typeof currentAnalysisProfile !== "object") return;
+  projectJson.analysisRequests = {
+    ...(projectJson.analysisRequests || {}),
+    currentAnalysisProfiles: {
+      ...(projectJson.analysisRequests?.currentAnalysisProfiles || {}),
+      [analysisType]: {
+        analysis_type: analysisType,
+        profile_version: currentAnalysisProfile.profile_version || "default-v0",
+        base_plan_version: currentAnalysisProfile.base_plan_version || "default-base-v0"
+      }
+    }
+  };
+  if (analysisType !== "carry_list") return;
+
+  const scenarioOverrides = carryListScenarioOverrides(currentAnalysisProfile);
+  const carryListConfig = carryListConfigForProfile(currentAnalysisProfile);
+  projectJson.analysisRequests.carryList = {
+    ...(projectJson.analysisRequests.carryList || {}),
+    enabled: true,
+    profile_version: currentAnalysisProfile.profile_version || "default-v0",
+    ...(Object.keys(scenarioOverrides).length ? { scenarioOverrides } : {}),
+    ...(Object.keys(carryListConfig).length ? { carryListConfig } : {})
+  };
+}
+
+function carryListScenarioOverrides(profile) {
+  const source = profile.scenarioOverrides && typeof profile.scenarioOverrides === "object" ? profile.scenarioOverrides : {};
+  const overrides = {};
+  if (source.sparesBySupportPoint && typeof source.sparesBySupportPoint === "object") {
+    overrides.sparesBySupportPoint = cloneJson(source.sparesBySupportPoint);
+  }
+  const missionDurationMinutes = finiteNumber(source.missionDurationMinutes);
+  if (missionDurationMinutes !== null) {
+    overrides.missionDurationMinutes = missionDurationMinutes;
+  }
+  return overrides;
+}
+
+function carryListConfigForProfile(profile) {
+  const source = profile.carryListConfig && typeof profile.carryListConfig === "object" ? profile.carryListConfig : {};
+  const missionConfidenceTarget = finiteNumber(source.missionConfidenceTarget);
+  return missionConfidenceTarget !== null ? { missionConfidenceTarget } : {};
+}
+
+function finiteNumber(value) {
+  if (typeof value === "boolean") return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
 }
 
 function configuredMonteCarloSweep(projectJson, existingLargeSample = {}) {

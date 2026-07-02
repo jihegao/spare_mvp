@@ -30,6 +30,9 @@ class MonteCarloRunConfig:
     sample_count: int
     sweep: dict[str, list[float] | list[int]]
     mc_experiment_id: str | None = None
+    analysis_type: str = ""
+    scenario_overrides: dict[str, Any] | None = None
+    carry_list_config: dict[str, Any] | None = None
 
     def to_adapter_payload(self) -> dict[str, Any]:
         payload = {
@@ -42,6 +45,11 @@ class MonteCarloRunConfig:
         }
         if self.mc_experiment_id:
             payload["mc_experiment_id"] = self.mc_experiment_id
+        if self.analysis_type == "carry_list":
+            if self.scenario_overrides:
+                payload["scenarioOverrides"] = dict(self.scenario_overrides)
+            if self.carry_list_config:
+                payload["carryListConfig"] = dict(self.carry_list_config)
         return payload
 
 
@@ -61,6 +69,7 @@ def normalize_monte_carlo_run_config(
     plan_config: dict[str, Any],
     *,
     mc_experiment_id: str | None = None,
+    analysis_type: str | None = None,
 ) -> MonteCarloRunConfig:
     """Normalize the only supported formal MC numeric config source."""
     analysis_requests = _require_dict(plan_config.get("analysisRequests"), "analysisRequests")
@@ -78,6 +87,11 @@ def normalize_monte_carlo_run_config(
         max_value=MAX_MONTE_CARLO_SAMPLES,
     )
     sweep = _require_dict(large_sample.get("sweep"), "analysisRequests.largeSample.sweep")
+    normalized_analysis_type = str(analysis_type or "").strip()
+    scenario_overrides, carry_list_config = _carry_list_current_result_config(
+        analysis_requests,
+        normalized_analysis_type,
+    )
     return MonteCarloRunConfig(
         sample_count=sample_count,
         sweep={
@@ -95,7 +109,71 @@ def normalize_monte_carlo_run_config(
             ),
         },
         mc_experiment_id=mc_experiment_id,
+        analysis_type=normalized_analysis_type,
+        scenario_overrides=scenario_overrides,
+        carry_list_config=carry_list_config,
     )
+
+
+def _carry_list_current_result_config(
+    analysis_requests: dict[str, Any],
+    analysis_type: str,
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    if analysis_type != "carry_list":
+        return None, None
+    carry_list = analysis_requests.get("carryList")
+    if not isinstance(carry_list, dict):
+        return None, None
+    return (
+        _normalized_carry_list_scenario_overrides(carry_list.get("scenarioOverrides")),
+        _normalized_carry_list_config(carry_list.get("carryListConfig")),
+    )
+
+
+def _normalized_carry_list_scenario_overrides(value: Any) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+    normalized: dict[str, Any] = {}
+    spares_by_support_point = value.get("sparesBySupportPoint")
+    if isinstance(spares_by_support_point, dict):
+        normalized["sparesBySupportPoint"] = dict(spares_by_support_point)
+    if "missionDurationMinutes" in value:
+        normalized["missionDurationMinutes"] = _positive_int(
+            value.get("missionDurationMinutes"),
+            field_path="analysisRequests.carryList.scenarioOverrides.missionDurationMinutes",
+            max_value=10_000_000,
+        )
+    return normalized or None
+
+
+def _normalized_carry_list_config(value: Any) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+    normalized: dict[str, Any] = {}
+    if "missionConfidenceTarget" in value:
+        normalized["missionConfidenceTarget"] = _positive_probability(
+            value.get("missionConfidenceTarget"),
+            field_path="analysisRequests.carryList.carryListConfig.missionConfidenceTarget",
+        )
+    return normalized or None
+
+
+def _positive_probability(value: Any, *, field_path: str) -> float:
+    if isinstance(value, bool):
+        raise RunServiceError("bad_run_request", f"{field_path} must be between 0 and 1", field=field_path)
+    try:
+        number = float(value)
+    except (TypeError, ValueError) as exc:
+        raise RunServiceError("bad_run_request", f"{field_path} must be between 0 and 1", field=field_path) from exc
+    if not isfinite(number) or number <= 0 or number > 1:
+        raise RunServiceError(
+            "bad_run_request",
+            f"{field_path} must be between 0 and 1",
+            field=field_path,
+            minimum=0,
+            maximum=1,
+        )
+    return number
 
 
 def _require_dict(value: Any, field_path: str) -> dict[str, Any]:

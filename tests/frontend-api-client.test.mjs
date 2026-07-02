@@ -352,8 +352,8 @@ test("frontend API client gives formal run submission enough time for synchronou
   await client.startSimulationRun("project-ui", "plan-ui");
 
   assert.deepEqual(calls.map((call) => `${call.method} ${call.path}`), ["POST /runs", "POST /runs"]);
-  assert.equal(calls[0].timeoutMs, 60000);
-  assert.equal(calls[1].timeoutMs, 60000);
+  assert.equal(calls[0].timeoutMs, 180000);
+  assert.equal(calls[1].timeoutMs, 180000);
 });
 
 test("frontend API client exposes explicit M5 modeling import methods", async () => {

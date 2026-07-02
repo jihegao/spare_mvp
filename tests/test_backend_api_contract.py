@@ -340,6 +340,34 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertIsNone(current["last_success_result"])
         self.assertIn("projection_type mismatch", current["last_failure"]["message"])
 
+    def test_current_analysis_result_fails_closed_when_projection_run_id_is_missing(self) -> None:
+        created, _plan, run = self._submit_successful_aircraft_support_monte_carlo_run()
+        manifest = self.api.get_run_artifacts(run["run_id"])
+        payload = self._artifact_payload(manifest, "analysis_projection_spare_shortfall")
+        payload.pop("run_id", None)
+        self._write_artifact_payload(manifest, "analysis_projection_spare_shortfall", payload)
+
+        current = self.api.get_current_analysis_result(created["savedProject"]["project_id"], "spare_shortfall")
+
+        self.assertEqual(current["status"], "blocked")
+        self.assertEqual(current["source"], "blocked")
+        self.assertIsNone(current["last_success_result"])
+        self.assertIn("projection run_id is required", current["last_failure"]["message"])
+
+    def test_current_analysis_result_fails_closed_when_projection_model_family_is_missing(self) -> None:
+        created, _plan, run = self._submit_successful_aircraft_support_monte_carlo_run()
+        manifest = self.api.get_run_artifacts(run["run_id"])
+        payload = self._artifact_payload(manifest, "analysis_projection_spare_shortfall")
+        payload.pop("model_family", None)
+        self._write_artifact_payload(manifest, "analysis_projection_spare_shortfall", payload)
+
+        current = self.api.get_current_analysis_result(created["savedProject"]["project_id"], "spare_shortfall")
+
+        self.assertEqual(current["status"], "blocked")
+        self.assertEqual(current["source"], "blocked")
+        self.assertIsNone(current["last_success_result"])
+        self.assertIn("projection model_family is required", current["last_failure"]["message"])
+
     def test_current_analysis_result_ignores_successful_runs_for_other_analysis_type(self) -> None:
         created, _plan, spare_run = self._submit_successful_aircraft_support_monte_carlo_run(analysis_type="spare_shortfall")
         self._submit_successful_aircraft_support_monte_carlo_run_for_project(
@@ -389,6 +417,70 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(current["last_success_result"]["run_id"], old_run["run_id"])
         self.assertEqual(current["last_failure"]["run_id"], new_run["run_id"])
         self.assertIn("projection_type mismatch", current["last_failure"]["message"])
+
+    def test_current_carry_list_parameters_reach_adapter_only_for_carry_list(self) -> None:
+        created = self._create_imported_sample_project()
+        saved = created["savedProject"]
+        plan_config = {
+            "name": "current carry list parameter propagation",
+            "steps": 2,
+            "projectJson": created["project"],
+            "analysisRequests": {
+                "largeSample": {
+                    "enabled": True,
+                    "samples": 1,
+                    "sweep": {
+                        "failureRates": [0.05],
+                        "spareMultipliers": [1.0],
+                        "supportCapacities": [2],
+                    },
+                },
+                "carryList": {
+                    "enabled": True,
+                    "scenarioOverrides": {
+                        "sparesBySupportPoint": {
+                            "carrier_deck": {"filter": "critical", "maxItems": 8}
+                        },
+                        "missionDurationMinutes": 240,
+                    },
+                    "carryListConfig": {
+                        "missionConfidenceTarget": 0.92,
+                    },
+                },
+            },
+        }
+        carry_plan = self.api.create_experiment_plan(saved["project_id"], plan_config)
+        self.api.submit_run(
+            {
+                "project_id": saved["project_id"],
+                "experiment_plan_id": carry_plan["experiment_plan_id"],
+                "model_family": "aircraft_support_v1",
+                "run_type": "monte_carlo",
+                "analysis_type": "carry_list",
+            }
+        )
+        spare_plan = self.api.create_experiment_plan(saved["project_id"], {**plan_config, "name": "spare ignores carry params"})
+        self.api.submit_run(
+            {
+                "project_id": saved["project_id"],
+                "experiment_plan_id": spare_plan["experiment_plan_id"],
+                "model_family": "aircraft_support_v1",
+                "run_type": "monte_carlo",
+                "analysis_type": "spare_shortfall",
+            }
+        )
+
+        carry_config = self.adapter.monte_carlo_run_calls[-2]["kwargs"]["monte_carlo_config"]
+        spare_config = self.adapter.monte_carlo_run_calls[-1]["kwargs"]["monte_carlo_config"]
+
+        self.assertEqual(carry_config["scenarioOverrides"]["missionDurationMinutes"], 240)
+        self.assertEqual(
+            carry_config["scenarioOverrides"]["sparesBySupportPoint"],
+            {"carrier_deck": {"filter": "critical", "maxItems": 8}},
+        )
+        self.assertEqual(carry_config["carryListConfig"]["missionConfidenceTarget"], 0.92)
+        self.assertNotIn("scenarioOverrides", spare_config)
+        self.assertNotIn("carryListConfig", spare_config)
 
     def test_smoke_backend_flow_persists_complete_run_chain(self) -> None:
         project = self._fixture("smoke_project.json")

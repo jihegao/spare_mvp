@@ -541,7 +541,7 @@ test("results analysis pages are rendered as four dedicated ship-front aligned d
   assert.match(appSource, /停机贡献因素排序/);
 });
 
-test("empty-shell result analysis renders configuration guidance instead of synthetic preview rows", async () => {
+test("empty-shell result analysis renders current-result guidance instead of synthetic preview rows", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const spareSource = appSource.slice(
     appSource.indexOf("function renderSpareShortfallAnalysis"),
@@ -560,27 +560,19 @@ test("empty-shell result analysis renders configuration guidance instead of synt
     appSource.indexOf("function analysisTypeForPage")
   );
 
-  for (const source of [spareSource, carrySource]) {
-    assert.match(source, /hasPreviewAnalysisData\(\)/);
-    assert.match(source, /renderAnalysisEmptyState/);
-    assert.match(source, /暂无分析数据，请先导入并发布建模 JSON，或创建并运行 Monte Carlo 分析任务。/);
+  for (const source of [spareSource, carrySource, reliabilitySource, downtimeSource]) {
+    assert.match(source, /renderAnalysisDashboard/);
+    assert.match(source, /等待当前分析结果/);
+    assert.match(source, /运行当前分析/);
+    assert.doesNotMatch(source, /hasPreviewAnalysisData|renderAnalysisEmptyState/);
+    assert.doesNotMatch(source, /\bsingleResult\b|\bmonteCarloResult\b/);
     assert.doesNotMatch(source, /Math\.min\(\.\.\.rows|Math\.max\(\.\.\.rows|Math\.max\(\.\.\.factors/);
     assert.doesNotMatch(source, /Infinity|-Infinity/);
   }
-  assert.match(reliabilitySource, /任务可靠度页只显示正式 projection/);
-  assert.match(reliabilitySource, /analysis_projection_mission_reliability/);
-  assert.doesNotMatch(reliabilitySource, /singleResult\.timeline|Math\.min\(\.\.\.rows|Math\.max\(\.\.\.rows|Infinity|-Infinity/);
-  assert.match(downtimeSource, /停机因素页只显示正式 projection/);
-  assert.match(downtimeSource, /analysis_projection_downtime_factors/);
-  assert.doesNotMatch(downtimeSource, /singleResult\.downtimeFactors|Math\.min\(\.\.\.rows|Math\.max\(\.\.\.rows|Math\.max\(\.\.\.factors|Infinity|-Infinity/);
-
-  const carryEmptyBranch = carrySource.slice(
-    carrySource.indexOf("if (!hasPreviewAnalysisData())"),
-    carrySource.indexOf("const rows")
-  );
-  assert.ok(carryEmptyBranch.length > 0, "carry list analysis should guard empty preview data before building preview rows");
-  assert.match(carryEmptyBranch, /renderAnalysisEmptyState\("飞机转场携行清单分析", "参数配置", "携行清单迭代建议"/);
-  assert.doesNotMatch(carryEmptyBranch, /<table|<thead|携行清单说明|carryObjectiveOption|singleResult\.carryList/);
+  assert.match(carrySource, /currentAnalysisProfileForPage/);
+  assert.match(carrySource, /missionConfidenceTarget/);
+  assert.match(carrySource, /missionDurationMinutes/);
+  assert.doesNotMatch(carrySource, /<select>|优化条件|carryObjectiveOption|singleResult\.carryList/);
   assert.doesNotMatch(spareSource, /P2\/P3 类备件/);
   assert.doesNotMatch(reliabilitySource, /第 7 波|wave \* 12/);
   assert.doesNotMatch(downtimeSource, /无可用飞机", "4"|飞机故障", "5"|平均故障维修时间/);
@@ -2277,6 +2269,36 @@ test("analysis pages expose current result flow without user-visible task or art
   assert.doesNotMatch(appSource, /source: "analysis:auto-created"/);
 });
 
+test("result analysis page main flows consume only current profiles and current results", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const sourceSlice = (startMarker, endMarker) => {
+    const start = appSource.indexOf(startMarker);
+    const end = appSource.indexOf(endMarker);
+    assert.notEqual(start, -1, `${startMarker} marker exists`);
+    assert.notEqual(end, -1, `${endMarker} marker exists`);
+    assert.ok(end > start, `${startMarker} appears before ${endMarker}`);
+    return appSource.slice(start, end);
+  };
+  const pageSources = [
+    sourceSlice("function renderSpareShortfallAnalysis", "function renderCarryListAnalysis"),
+    sourceSlice("function renderCarryListAnalysis", "function carryPriority"),
+    sourceSlice("function renderTaskReliabilityAnalysis", "function renderDowntimeFactorAnalysis"),
+    sourceSlice("function renderDowntimeFactorAnalysis", "function analysisTypeForPage")
+  ];
+  const dashboardSource = sourceSlice("function renderAnalysisDashboard", "function renderAnalysisProjectionResultPanel");
+
+  assert.match(appSource, /let currentAnalysisProfiles = createDefaultCurrentAnalysisProfiles\(\)/);
+  assert.match(appSource, /let currentAnalysisResults = createEmptyCurrentAnalysisResults\(currentAnalysisProfiles\)/);
+  assert.match(appSource, /function currentAnalysisProfileForPage/);
+  for (const source of [...pageSources, dashboardSource]) {
+    assert.match(source, /currentAnalysisResultForPage|renderAnalysisDashboard|formalProjectionFromCurrentResult/);
+    assert.doesNotMatch(source, /\bsingleResult\b|\bmonteCarloResult\b|hasPreviewAnalysisData|renderAnalysisEmptyState/);
+    assert.doesNotMatch(source, /data-mc-action|data-mc-experiment|data-mesa-run-select|data-action="m7-/);
+    assert.doesNotMatch(source, /analysisTasks|monteCarloExperiments|selectedMonteCarloExperimentId/);
+    assert.doesNotMatch(source, /artifact_manifest_id|mc_experiment_id|experiment_id|historical|history/);
+  }
+});
+
 test("formal Monte Carlo projection result panels live on their matching analysis pages", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const mcResultSource = appSource.slice(
@@ -2342,7 +2364,9 @@ test("analysis current result state is hydrated, isolated, and recoverable", asy
   assert.match(appSource, /return \["failed", "blocked"\]\.includes/);
   assert.match(runCurrentSource, /const previousResult = currentAnalysisResultForPage\(page\)/);
   assert.match(runCurrentSource, /restoreCurrentAnalysisResult\(analysisType,\s*previousResult/);
-  assert.match(runCurrentSource, /status: "blocked"/);
+  assert.match(runCurrentSource, /transitionCurrentAnalysisResult/);
+  assert.match(runCurrentSource, /type: "block"/);
+  assert.match(runCurrentSource, /finally\s*{\s*render\(\);\s*}/);
   assert.doesNotMatch(startMonteCarloSource, /getCurrentAnalysisResult/);
 });
 
@@ -3135,15 +3159,19 @@ test("run result refresh rebuilds frontend state from the experiment plan branch
 
 test("carry list analysis maps Chinese risk levels to visible priority badges", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
-  const carrySource = appSource.slice(
-    appSource.indexOf("function renderCarryListAnalysis"),
-    appSource.indexOf("function renderTaskReliabilityAnalysis")
+  const adapterSource = await readFile(new URL("../front/analysis-projection-adapters.mjs", import.meta.url), "utf8");
+  const formalProjectionSource = appSource.slice(
+    appSource.indexOf('if (formalProjection.analysisType === "carry_list")'),
+    appSource.indexOf('if (formalProjection.analysisType === "mission_reliability")')
   );
-  assert.match(carrySource, /priority: carryPriority\(row\.riskLevel\)/);
-  assert.match(appSource, /function carryPriority\(riskLevel\)/);
-  assert.match(appSource, /case "高":/);
-  assert.match(appSource, /case "中":/);
-  assert.match(appSource, /case "低":/);
+
+  assert.match(adapterSource, /const priority = priorityLabel\(row\.risk_level\)/);
+  assert.match(adapterSource, /function priorityLabel\(riskLevel\)/);
+  assert.match(adapterSource, /riskLevel === "高"/);
+  assert.match(adapterSource, /riskLevel === "中"/);
+  assert.match(formalProjectionSource, /row\.priority === "高"/);
+  assert.match(formalProjectionSource, /row\.priority === "中"/);
+  assert.match(formalProjectionSource, /htmlEscape\(row\.priority\)/);
 });
 
 test("phase 6B carry list analysis fixes objective to minimum carried spares", async () => {
@@ -3175,9 +3203,9 @@ test("phase 6C mission reliability chart uses formal projection time sequence on
     appSource.indexOf("function renderLineChart"),
     appSource.indexOf("function renderScenarioSwitch")
   );
-  const reliabilitySource = appSource.slice(
-    appSource.indexOf("function renderTaskReliabilityAnalysis"),
-    appSource.indexOf("function renderDowntimeFactorAnalysis")
+  const dashboardSource = appSource.slice(
+    appSource.indexOf("function renderAnalysisDashboard"),
+    appSource.indexOf("function renderAnalysisProjectionResultPanel")
   );
   const formalProjectionSource = appSource.slice(
     appSource.indexOf("function renderFormalProjectionBody"),
@@ -3191,21 +3219,21 @@ test("phase 6C mission reliability chart uses formal projection time sequence on
   assert.match(lineChartSource, /const minY = 0;/);
   assert.doesNotMatch(lineChartSource, /0\.84/);
   assert.match(lineChartSource, /points\.length - 1/);
-  assert.match(reliabilitySource, /analysisProjectionForBoundary\(boundary\)/);
-  assert.match(reliabilitySource, /renderFormalProjectionBody\(formalProjection\)/);
-  assert.doesNotMatch(reliabilitySource, /singleResult\.timeline|renderLineChart/);
+  assert.match(dashboardSource, /analysisProjectionForBoundary\(boundary\)/);
+  assert.match(dashboardSource, /renderAnalysisProjectionResultPanel\(formalProjection\)/);
+  assert.doesNotMatch(dashboardSource, /singleResult\.timeline|renderLineChart/);
   assert.match(formalReliabilitySource, /renderLineChart\(rows\.map\(\(row\) => \(\{ x: row\.sequence, y: row\.probability \}\)\)\)/);
   assert.match(formalReliabilitySource, /最大下降区间/);
   assert.match(formalReliabilitySource, /仿真时间/);
   assert.doesNotMatch(formalReliabilitySource, /0\.7|0\.9|阈值|目标线|风险线/);
-  assert.doesNotMatch(reliabilitySource + formalReliabilitySource, /具体需求待甲方确定/);
+  assert.doesNotMatch(dashboardSource + formalReliabilitySource, /具体需求待甲方确定/);
 });
 
 test("phase 6D downtime analysis renders formal anomaly snapshots with export and delete controls", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
-  const downtimeSource = appSource.slice(
-    appSource.indexOf("function renderDowntimeFactorAnalysis"),
-    appSource.indexOf("function analysisTypeForPage")
+  const dashboardSource = appSource.slice(
+    appSource.indexOf("function renderAnalysisDashboard"),
+    appSource.indexOf("function renderAnalysisProjectionResultPanel")
   );
   const formalDowntimeSource = appSource.slice(
     appSource.indexOf('if (formalProjection.analysisType === "downtime_factors")'),
@@ -3216,9 +3244,9 @@ test("phase 6D downtime analysis renders formal anomaly snapshots with export an
     appSource.indexOf("const experimentPlanRefreshButton")
   );
 
-  assert.match(downtimeSource, /analysisProjectionForBoundary\(boundary\)/);
-  assert.match(downtimeSource, /停机因素页只显示正式 projection/);
-  assert.doesNotMatch(downtimeSource, /singleResult\.downtimeFactors/);
+  assert.match(dashboardSource, /analysisProjectionForBoundary\(boundary\)/);
+  assert.match(dashboardSource, /renderAnalysisProjectionResultPanel\(formalProjection\)/);
+  assert.doesNotMatch(dashboardSource, /singleResult\.downtimeFactors/);
   assert.match(formalDowntimeSource, /异常停机事件快照/);
   assert.match(formalDowntimeSource, /support_activity_state/);
   assert.match(formalDowntimeSource, /jobNodeId|jobNodeLabel/);

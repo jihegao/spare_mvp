@@ -5,7 +5,7 @@ import {
 
 const DEFAULT_API_BASE = "/api";
 const DEFAULT_TIMEOUT_MS = 10000;
-const RUN_SUBMIT_TIMEOUT_MS = 60000;
+const RUN_SUBMIT_TIMEOUT_MS = 180000;
 const DEFAULT_FORMAL_MODEL_FAMILY = "aircraft_support_v1";
 
 export function createBackendApiClient({ baseUrl = DEFAULT_API_BASE, transport, getAuthToken, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
