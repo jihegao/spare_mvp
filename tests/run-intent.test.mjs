@@ -158,6 +158,41 @@ test("buildRunIntent defaults Monte Carlo to single-point baseline parameter spa
   });
 });
 
+test("buildRunIntent stores current analysis profile in ExperimentPlan config only", () => {
+  const projectJson = {
+    project_id: "project-current-profile",
+    experiment: { name: "current profile", steps: 4, samples: 3, seed: 101 },
+    supportNodes: [{ id: "carrier-deck", equipmentCapacity: 4, inventory: { "发动机备件": 4 } }]
+  };
+  const analysisProfile = {
+    analysisType: "carry_list",
+    scenarioOverrides: {
+      sparesBySupportPoint: [
+        { supportPointId: "carrier-deck", spareTypeId: "发动机备件", quantity: 12 }
+      ],
+      missionDurationMinutes: 720
+    },
+    carryListConfig: { missionConfidenceTarget: 0.95 }
+  };
+
+  const intent = buildRunIntent({
+    runType: "monte_carlo",
+    projectJson,
+    planProjectJson: projectJson,
+    mcExperimentId: "current-carry-list",
+    analysisType: "carry_list",
+    analysisProfile
+  });
+
+  assert.equal(intent.experimentPlanConfig.analysisType, "carry_list");
+  assert.deepEqual(intent.experimentPlanConfig.scenarioOverrides, analysisProfile.scenarioOverrides);
+  assert.deepEqual(intent.experimentPlanConfig.carryListConfig, analysisProfile.carryListConfig);
+  assert.deepEqual(intent.experimentPlanConfig.analysisProfile, analysisProfile);
+  assert.equal("analysisType" in intent.runRequest, false);
+  assert.equal("scenarioOverrides" in intent.runRequest, false);
+  assert.equal("carryListConfig" in intent.runRequest, false);
+});
+
 test("buildRunIntent preserves explicit analysis sweep mode and raises samples to cover every sweep point", () => {
   const projectJson = {
     project_id: "project-sweep-coverage",

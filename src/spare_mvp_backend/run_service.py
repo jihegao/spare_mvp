@@ -10,6 +10,10 @@ from pathlib import Path
 import threading
 from typing import Any
 
+from src.spare_mvp_backend.analysis_profile_config import (
+    apply_analysis_profile_to_scenario,
+    normalize_analysis_profile_config,
+)
 from src.spare_mvp_backend.errors import RunServiceError
 from src.spare_mvp_backend.monte_carlo_config import (
     normalize_monte_carlo_run_config,
@@ -100,6 +104,7 @@ class RunService:
                 project_id=project_id,
                 experiment_plan_id=experiment_plan_id,
             )
+        analysis_profile = normalize_analysis_profile_config(plan.get("config") or {})
         mc_config = None
         if run_type == "monte_carlo":
             mc_config = normalize_monte_carlo_run_config(
@@ -156,6 +161,7 @@ class RunService:
         scenario_base_id = f"{scenario['scenario_id']}-{_stable_hash({'experiment_plan_id': experiment_plan_id})}"
         run_id = self.repository.next_run_id(scenario_base_id)
         scenario["scenario_id"] = run_id.removeprefix("run-")
+        apply_analysis_profile_to_scenario(scenario, analysis_profile)
 
         self.repository.upsert_scenario(scenario)
         try:

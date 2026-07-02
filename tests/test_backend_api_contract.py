@@ -1472,6 +1472,181 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(len(self.adapter.monte_carlo_run_calls), 1)
         self.assertEqual(self.adapter.monte_carlo_run_calls[0]["scenario"]["simulation_model"]["family"], "aircraft_support_v1")
 
+    def test_current_analysis_profile_applies_run_scoped_scenario_overrides_and_traceability(self) -> None:
+        created = self._create_imported_sample_project()
+        project = copy.deepcopy(created["project"])
+        baseline_inventory = {
+            node["id"]: copy.deepcopy(node.get("inventory") or {})
+            for node in project["supportNodes"]
+        }
+        saved = self.api.save_project(project)
+        snapshot = self.api.create_modeling_snapshot(saved["project_id"])
+        plan = self.api.create_experiment_plan(
+            saved["project_id"],
+            {
+                "name": "issue 126 carry current profile",
+                "steps": 2,
+                "projectJson": copy.deepcopy(project),
+                "analysisType": "carry_list",
+                "scenarioOverrides": {
+                    "sparesBySupportPoint": [
+                        {"supportPointId": "carrier-deck", "spareTypeId": "发动机备件", "quantity": 12},
+                        {"supportPointId": "forward-sea-base", "spareTypeId": "发动机备件", "quantity": 1},
+                    ],
+                    "missionDurationMinutes": 720,
+                },
+                "carryListConfig": {"missionConfidenceTarget": 0.95},
+                "analysisRequests": {
+                    "largeSample": {
+                        "enabled": True,
+                        "samples": 2,
+                        "sweep": {
+                            "failureRates": [1.0],
+                            "spareMultipliers": [1.0],
+                            "supportCapacities": [3],
+                        },
+                    }
+                },
+            },
+        )
+
+        submitted = self.api.submit_run(
+            {
+                "project_id": saved["project_id"],
+                "experiment_plan_id": plan["experiment_plan_id"],
+                "model_family": "aircraft_support_v1",
+                "run_type": "monte_carlo",
+                "formal_run": True,
+            }
+        )
+        manifest = self.api.get_run_artifacts(submitted["run_id"])
+        compiled_payload = self._artifact_payload(manifest, "compiled_scenario")
+        input_project_payload = self._artifact_payload(manifest, "input_project")
+        base_payload = self._artifact_payload(manifest, "monte_carlo_base")
+        run_config_payload = self._artifact_payload(manifest, "run_config")
+        carry_payload = self._artifact_payload(manifest, "analysis_projection_carry_list")
+        support_nodes = {
+            node["id"]: node
+            for node in compiled_payload["simulation_inputs"]["support_network"]["nodes"]
+        }
+        applied_profile = compiled_payload["analysis_profile"]
+        provenance_profile = compiled_payload["compiled_from"]["mapping_provenance"]["analysis_profile"]
+
+        self.assertEqual(submitted["status"], "succeeded")
+        self.assertEqual(support_nodes["carrier-deck"]["inventory"]["发动机备件"], 12)
+        self.assertEqual(support_nodes["forward-sea-base"]["inventory"]["发动机备件"], 1)
+        self.assertEqual(compiled_payload["simulation_inputs"]["time"]["duration_minutes"], 720)
+        self.assertEqual(compiled_payload["simulation_inputs"]["mission_profile"]["duration_minutes"], 720)
+        self.assertEqual(applied_profile["analysis_type"], "carry_list")
+        self.assertEqual(applied_profile["scenarioOverrides"]["missionDurationMinutes"]["baselineMinutes"], 20160)
+        self.assertEqual(applied_profile["scenarioOverrides"]["missionDurationMinutes"]["overrideMinutes"], 720)
+        self.assertEqual(
+            applied_profile["scenarioOverrides"]["sparesBySupportPoint"],
+            [
+                {
+                    "supportPointId": "carrier-deck",
+                    "spareTypeId": "发动机备件",
+                    "baselineQuantity": 4,
+                    "quantity": 12,
+                },
+                {
+                    "supportPointId": "forward-sea-base",
+                    "spareTypeId": "发动机备件",
+                    "baselineQuantity": 2,
+                    "quantity": 1,
+                },
+            ],
+        )
+        self.assertEqual(provenance_profile, applied_profile)
+        self.assertEqual(base_payload["analysis_profile"], applied_profile)
+        self.assertEqual(run_config_payload["analysis_profile"], applied_profile)
+        self.assertEqual(run_config_payload["plan_config"]["scenarioOverrides"]["missionDurationMinutes"], 720)
+        self.assertEqual(carry_payload["mission_confidence_target"], 0.95)
+        self.assertEqual(carry_payload["analysis_profile"], applied_profile)
+        self.assertEqual(carry_payload["data"][0]["confidence_target"], 0.95)
+        self.assertIn("meets_confidence_target", carry_payload["data"][0])
+        self.assertEqual(input_project_payload["supportNodes"][0]["inventory"], baseline_inventory["carrier-deck"])
+        self.assertEqual(self.api.get_project(saved["project_id"])["supportNodes"][0]["inventory"], baseline_inventory["carrier-deck"])
+        stored_snapshot = self.repository.get_modeling_snapshot(snapshot["snapshot_id"])
+        self.assertEqual(stored_snapshot["project"]["supportNodes"][0]["inventory"], baseline_inventory["carrier-deck"])
+
+    def test_current_analysis_profile_rejects_invalid_overrides_without_run_side_effects(self) -> None:
+        invalid_cases = [
+            (
+                "unknown support point",
+                {
+                    "analysisType": "spare_shortfall",
+                    "scenarioOverrides": {
+                        "sparesBySupportPoint": [
+                            {"supportPointId": "missing-node", "spareTypeId": "发动机备件", "quantity": 3}
+                        ]
+                    },
+                },
+                "support point is not present",
+            ),
+            (
+                "non carry confidence",
+                {
+                    "analysisType": "mission_reliability",
+                    "carryListConfig": {"missionConfidenceTarget": 0.95},
+                },
+                "carryListConfig is only supported",
+            ),
+            (
+                "fractional quantity",
+                {
+                    "analysisType": "spare_shortfall",
+                    "scenarioOverrides": {
+                        "sparesBySupportPoint": [
+                            {"supportPointId": "carrier-deck", "spareTypeId": "发动机备件", "quantity": 1.5}
+                        ]
+                    },
+                },
+                "quantity must be an integer",
+            ),
+        ]
+
+        for label, profile_config, expected_message in invalid_cases:
+            with self.subTest(label=label):
+                created = self._create_imported_sample_project()
+                project = copy.deepcopy(created["project"])
+                saved = self.api.save_project(project)
+                self.api.create_modeling_snapshot(saved["project_id"])
+                config = {
+                    "name": f"invalid issue 126 {label}",
+                    "steps": 1,
+                    "projectJson": copy.deepcopy(project),
+                    "analysisRequests": {
+                        "largeSample": {
+                            "enabled": True,
+                            "samples": 1,
+                            "sweep": {
+                                "failureRates": [1.0],
+                                "spareMultipliers": [1.0],
+                                "supportCapacities": [3],
+                            },
+                        }
+                    },
+                    **profile_config,
+                }
+                plan = self.api.create_experiment_plan(saved["project_id"], config)
+                before_counts = self._run_side_effect_counts()
+
+                with self.assertRaises(BackendApiError) as ctx:
+                    self.api.submit_run(
+                        {
+                            "project_id": saved["project_id"],
+                            "experiment_plan_id": plan["experiment_plan_id"],
+                            "model_family": "aircraft_support_v1",
+                            "run_type": "monte_carlo",
+                            "formal_run": True,
+                        }
+                    )
+
+                self.assertEqual(ctx.exception.code, "bad_run_request")
+                self.assertIn(expected_message, str(ctx.exception))
+                self.assertEqual(self._run_side_effect_counts(), before_counts)
+
     def test_run_service_aircraft_support_v1_accepts_support_organization_as_governance_only(self) -> None:
         created = self._create_imported_sample_project()
         project = copy.deepcopy(created["project"])

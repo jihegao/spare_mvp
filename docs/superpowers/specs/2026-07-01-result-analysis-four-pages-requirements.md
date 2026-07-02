@@ -2,7 +2,7 @@
 
 日期：2026-07-01
 
-状态：开发实现版 PRD。本文以用户主流程为核心，明确四个结果分析页的产品语义、后台自动动作、正式结果校验规则和验收标准。历史设计中的 `AnalysisTask`、`MonteCarloExperiment`、`artifact`、`run` 等概念保留为内部实现语义，不作为普通用户主界面的选择项、任务列表或结果列表。
+状态：开发实现版 PRD。本文以用户主流程为核心，明确四个结果分析页的产品语义、后台自动动作、正式结果校验规则和验收标准。历史设计中的 `AnalysisTask`、`MonteCarloExperiment`、`artifact`、`run` 等概念保留为内部实现语义，不作为普通用户主界面的选择项、任务列表或结果列表。2026-07-02 第一片已实现四个分析页的 current profile/current result 运行入口和 run-scoped scenario override traceability；完整持久化、stale 传播和失败不覆盖上一条成功结果仍按后续切片收口。
 
 ## 1. 背景与目标
 
@@ -155,6 +155,13 @@ RunIntent -> /api/runs -> RunService -> SimulationAdapter -> aircraft_support_v1
 - 当前页运行完成后只替换当前页结果。
 - 当前页参数变化后只让当前页结果过期。
 - 默认基础方案变化后让四个分析页结果全部过期。
+
+2026-07-02 第一片当前 profile 字段：
+
+- `scenarioOverrides.sparesBySupportPoint[]`：按 `supportPointId`、`spareTypeId` 和 `quantity` 覆盖 run-scoped compiled Scenario 的保障点库存。
+- `scenarioOverrides.missionDurationMinutes`：覆盖 run-scoped compiled Scenario 的任务/仿真时长。
+- `carryListConfig.missionConfidenceTarget`：仅飞机转场携行清单分析页可配置，用于 carry-list projection 的任务置信度目标。
+- 这些字段只进入当前分析 run 的 ExperimentPlan config、compiled Scenario 和 projection traceability；不得回写 Project、ModelingSnapshot 或 imported JSON。
 
 ## 10. 备件短板分析
 

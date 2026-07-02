@@ -9,7 +9,9 @@ export function buildRunIntent({
   mcExperimentId = "",
   experimentId = "",
   modelFamily = "aircraft_support_v1",
-  monteCarloParameterSpace = "baseline"
+  monteCarloParameterSpace = "baseline",
+  analysisType = "",
+  analysisProfile = null
 }) {
   if (!SUPPORTED_RUN_TYPES.has(runType)) {
     throw new Error(`Unsupported runType: ${runType}`);
@@ -24,7 +26,13 @@ export function buildRunIntent({
   const normalizedPlanProjectJson = runType === "monte_carlo"
     ? withCanonicalMonteCarloAnalysisRequest(planProjectJson, { parameterSpace: monteCarloParameterSpace })
     : cloneJson(planProjectJson);
-  const experimentPlanConfig = buildExperimentPlanConfig(normalizedPlanProjectJson);
+  const experimentPlanConfig = withAnalysisProfileConfig(
+    buildExperimentPlanConfig(normalizedPlanProjectJson),
+    {
+      analysisType,
+      analysisProfile
+    }
+  );
   const runRequest = {
     project_id: projectJson.project_id,
     experiment_plan_id: "",
@@ -41,6 +49,26 @@ export function buildRunIntent({
     experimentPlanConfig,
     runRequest
   };
+}
+
+function withAnalysisProfileConfig(config, { analysisType = "", analysisProfile = null } = {}) {
+  const normalizedAnalysisType = String(analysisType || analysisProfile?.analysisType || analysisProfile?.analysis_type || "").trim();
+  if (!normalizedAnalysisType) return config;
+  const profile = cloneJson(analysisProfile || {});
+  const nextConfig = {
+    ...config,
+    analysisType: normalizedAnalysisType,
+    scenarioOverrides: cloneJson(profile.scenarioOverrides || profile.scenario_overrides || {}),
+    analysisProfile: {
+      analysisType: normalizedAnalysisType,
+      scenarioOverrides: cloneJson(profile.scenarioOverrides || profile.scenario_overrides || {})
+    }
+  };
+  if (normalizedAnalysisType === "carry_list" && (profile.carryListConfig || profile.carry_list_config)) {
+    nextConfig.carryListConfig = cloneJson(profile.carryListConfig || profile.carry_list_config || {});
+    nextConfig.analysisProfile.carryListConfig = cloneJson(nextConfig.carryListConfig);
+  }
+  return nextConfig;
 }
 
 export function bindExperimentPlanId(intent, experimentPlanId) {

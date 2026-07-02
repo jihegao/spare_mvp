@@ -498,6 +498,8 @@ let selectedAnalysisTaskId = "";
 let analysisTaskForms = {};
 let analysisProjectionPayloads = {};
 let analysisProjectionPayloadErrors = {};
+let currentAnalysisProfiles = {};
+let currentAnalysisResults = {};
 let { previewSingleResult: singleResult, previewMonteCarloResult: monteCarloResult } = buildPreviewResultState(scenario);
 let rmsAllocationProject = createDemoRmsAllocationProject();
 let rmsAllocationPlan = createDefaultRmsAllocationPlan(rmsAllocationProject);
@@ -1627,6 +1629,19 @@ function bindEvents() {
       return;
     }
 
+    const currentAnalysisRunButton = event.target.closest("[data-analysis-run-current]");
+    if (currentAnalysisRunButton) {
+      if (formalRunSubmitInFlight) {
+        backendApiStatus = "已有正式运行正在提交，请等待当前请求返回";
+        render();
+        return;
+      }
+      const page = getFeaturePageById(selectedFeatureId);
+      startCurrentAnalysisRunThroughApi(page);
+      render();
+      return;
+    }
+
     const analysisActionButton = event.target.closest("[data-analysis-action]");
     if (analysisActionButton) {
       const page = getFeaturePageById(selectedFeatureId);
@@ -2134,6 +2149,20 @@ function bindEvents() {
       return;
     }
 
+    const analysisProfileInput = event.target.closest("[data-analysis-profile-field]");
+    if (analysisProfileInput) {
+      updateAnalysisProfileField(getFeaturePageById(selectedFeatureId), analysisProfileInput);
+      render();
+      return;
+    }
+
+    const spareOverrideInput = event.target.closest("[data-spare-override-index]");
+    if (spareOverrideInput) {
+      updateSpareOverrideQuantity(getFeaturePageById(selectedFeatureId), spareOverrideInput);
+      render();
+      return;
+    }
+
     const experimentPlanInput = event.target.closest("[data-experiment-plan-path]");
     if (experimentPlanInput) {
       experimentPlanBranchActive = true;
@@ -2201,6 +2230,18 @@ function bindEvents() {
     const analysisTaskInput = event.target.closest("[data-analysis-task-field]");
     if (analysisTaskInput) {
       updateAnalysisTaskFormField(getFeaturePageById(selectedFeatureId), analysisTaskInput);
+      return;
+    }
+
+    const analysisProfileInput = event.target.closest("[data-analysis-profile-field]");
+    if (analysisProfileInput) {
+      updateAnalysisProfileField(getFeaturePageById(selectedFeatureId), analysisProfileInput);
+      return;
+    }
+
+    const spareOverrideInput = event.target.closest("[data-spare-override-index]");
+    if (spareOverrideInput) {
+      updateSpareOverrideQuantity(getFeaturePageById(selectedFeatureId), spareOverrideInput);
       return;
     }
 
@@ -9139,6 +9180,118 @@ async function startMonteCarloRunThroughApi({ monteCarloExperimentId = selectedM
   }
 }
 
+async function startCurrentAnalysisRunThroughApi(page = getFeaturePageById(selectedFeatureId)) {
+  const analysisType = analysisTypeForPage(page);
+  const formalRunGate = currentProjectCanStartFormalRun();
+  if (!formalRunGate.allowed) {
+    backendApiStatus = formalRunGate.message;
+    currentAnalysisResults = {
+      ...currentAnalysisResults,
+      [analysisType]: { status: "blocked", message: formalRunGate.message }
+    };
+    return null;
+  }
+  if (formalRunSubmitInFlight) {
+    backendApiStatus = "已有正式运行正在提交，请等待当前请求返回";
+    return null;
+  }
+  formalRunSubmitInFlight = true;
+  const runType = "monte_carlo";
+  const projectJson = buildBackendProjectJson(scenario, currentProject);
+  const planProjectJson = buildBackendProjectJson(experimentPlanDraft, currentProject);
+  const analysisProfile = analysisProfileForPage(page);
+  currentAnalysisResults = {
+    ...currentAnalysisResults,
+    [analysisType]: { status: "running", analysisType, profile: cloneScenario(analysisProfile) }
+  };
+  try {
+    const submitted = await submitRunIntent(backendApi, {
+      runType,
+      projectJson,
+      planProjectJson,
+      modelFamily: FORMAL_AIRCRAFT_SUPPORT_MODEL_FAMILY,
+      mcExperimentId: `current-${analysisType}`,
+      monteCarloParameterSpace: "baseline",
+      analysisType,
+      analysisProfile
+    });
+    savedProject = submitted.savedProject;
+    modelingSnapshot = submitted.modelingSnapshot;
+    experimentPlan = submitted.experimentPlan;
+    backendRun = submitted.run;
+    lastRunExperimentPlanProjectJson = backendRun.status === "failed"
+      ? null
+      : {
+          run_id: backendRun.run_id,
+          project_json: submitted.intent.planProjectJson
+        };
+    if (lastRunExperimentPlanProjectJson) {
+      rememberLastBackendRun(backendRun.run_id, savedProject.project_id, submitted.intent.planProjectJson);
+    } else {
+      forgetLastBackendRun();
+    }
+    await refreshExperimentPlanList(savedProject.project_id, { force: true });
+    if (backendRun.status === "failed") {
+      await refreshRunFailureArtifacts(backendRun.run_id);
+      currentAnalysisResults = {
+        ...currentAnalysisResults,
+        [analysisType]: {
+          status: "failed",
+          analysisType,
+          runId: backendRun.run_id || "",
+          run: cloneScenario(backendRun),
+          artifactManifest: cloneScenario(backendArtifactManifest || { artifacts: [] }),
+          runChain: backendRunChain ? cloneScenario(backendRunChain) : null,
+          profile: cloneScenario(analysisProfile),
+          message: compileGateStatusText(backendRun)
+        }
+      };
+      experimentRunStatus = "运行失败";
+      backendApiStatus = compileGateStatusText(backendRun);
+      return backendRun;
+    }
+    await refreshRunResultThroughApi(backendRun.run_id);
+    currentAnalysisResults = {
+      ...currentAnalysisResults,
+      [analysisType]: {
+        status: backendRun.status,
+        analysisType,
+        runId: backendRun.run_id || "",
+        run: cloneScenario(backendRun),
+        result: backendRunResult ? cloneScenario(backendRunResult) : null,
+        artifactManifest: cloneScenario(backendArtifactManifest || { artifacts: [] }),
+        runChain: backendRunChain ? cloneScenario(backendRunChain) : null,
+        profile: cloneScenario(analysisProfile),
+        completedAt: backendRun.completed_at || new Date().toISOString()
+      }
+    };
+    experimentRunStatus = backendRun.status === "succeeded" ? "完成" : backendRun.status;
+    backendApiStatus = isRunComplete(backendRun) ? "当前分析正式运行完成" : `当前分析已提交：${runStatusLabel(backendRun)}`;
+    return backendRun;
+  } catch (err) {
+    backendRun = null;
+    backendRunResult = null;
+    backendArtifactManifest = null;
+    backendRunChain = null;
+    forgetLastBackendRun();
+    experimentRunStatus = "后端不可用";
+    backendApiStatus = `当前分析提交失败：${err && err.message ? err.message : "Backend API 不可用"}`;
+    currentAnalysisResults = {
+      ...currentAnalysisResults,
+      [analysisType]: {
+        status: "failed",
+        analysisType,
+        profile: cloneScenario(analysisProfile),
+        message: backendApiStatus
+      }
+    };
+    return null;
+  } finally {
+    formalRunSubmitInFlight = false;
+    render();
+  }
+}
+
 async function refreshRunFailureArtifacts(runId) {
   if (!runId) {
     backendArtifactManifest = { artifacts: [] };
@@ -12251,6 +12404,8 @@ function renderCarryListAnalysis() {
   if (!hasPreviewAnalysisData()) {
     return renderAnalysisEmptyState("飞机转场携行清单分析", "参数配置", "携行清单迭代建议", "暂无分析数据，请先导入并发布建模 JSON，或创建并运行 Monte Carlo 分析任务。");
   }
+  const profile = analysisProfileForPage(getFeaturePageById(selectedFeatureId));
+  const confidenceTarget = Number(profile.carryListConfig?.missionConfidenceTarget ?? 0.9);
   const rows = singleResult.carryList.map((row, index) => ({
     name: row.spareType,
     satisfy: Math.max(0, 1 - row.shortage / Math.max(row.recommended, 1)),
@@ -12263,16 +12418,11 @@ function renderCarryListAnalysis() {
     title: "飞机转场携行清单分析",
     mode: "参数配置",
     subtitle: "携行清单迭代建议",
-    config: `
-      <label>默认目标<input value="携行备件越少越好" readonly></label>
-      <label>备件满足率不低于<input value="0.90"></label>
-      <label>备件利用率不低于<input value="0.70"></label>
-    `,
     metrics: [
       ["默认目标", "携行备件越少越好"],
       ["携行备件数量", `${rows.reduce((sum, row) => sum + row.qty, 0)} 件`],
-      ["备件满足率不低于", "0.90"],
-      ["目标口径", "不可由页面切换"]
+      ["任务置信度目标", fixed(confidenceTarget, 2)],
+      ["目标口径", "current profile"]
     ],
     body: `
       <div class="table-wrap">
@@ -12357,6 +12507,160 @@ function analysisTypeForPage(page) {
 function analysisTaskListForPage(page) {
   const analysisType = analysisTypeForPage(page);
   return analysisTasks.filter((task) => task.module === page.module && task.analysisType === analysisType);
+}
+
+function analysisProfileForPage(page) {
+  const analysisType = analysisTypeForPage(page);
+  if (!currentAnalysisProfiles[analysisType]) {
+    currentAnalysisProfiles = {
+      ...currentAnalysisProfiles,
+      [analysisType]: defaultCurrentAnalysisProfile(analysisType)
+    };
+  }
+  return currentAnalysisProfiles[analysisType];
+}
+
+function defaultCurrentAnalysisProfile(analysisType) {
+  const projectJson = buildBackendProjectJson(experimentPlanDraft || scenario, currentProject || {});
+  const profile = {
+    analysisType,
+    scenarioOverrides: {
+      sparesBySupportPoint: supportPointSpareOverrideRows(projectJson),
+      missionDurationMinutes: missionDurationMinutesForProject(projectJson)
+    }
+  };
+  if (analysisType === "carry_list") {
+    profile.carryListConfig = { missionConfidenceTarget: 0.9 };
+  }
+  return profile;
+}
+
+function supportPointSpareOverrideRows(projectJson = experimentPlanDraft) {
+  const rows = [];
+  const supportNodes = Array.isArray(projectJson?.supportNodes) ? projectJson.supportNodes : [];
+  for (const node of supportNodes) {
+    if (!node || typeof node !== "object") continue;
+    const supportPointId = String(node.id || node.name || "").trim();
+    const inventory = node.inventory && typeof node.inventory === "object" && !Array.isArray(node.inventory) ? node.inventory : {};
+    for (const [spareTypeId, rawQuantity] of Object.entries(inventory)) {
+      const quantity = Math.max(0, Math.round(Number(rawQuantity) || 0));
+      if (!supportPointId || !spareTypeId) continue;
+      rows.push({ supportPointId, spareTypeId, quantity });
+    }
+  }
+  return rows;
+}
+
+function missionDurationMinutesForProject(projectJson = experimentPlanDraft) {
+  const missionProfile = projectJson?.missionProfile && typeof projectJson.missionProfile === "object" ? projectJson.missionProfile : {};
+  const durationMinutes = Number(missionProfile.durationMinutes);
+  if (Number.isFinite(durationMinutes) && durationMinutes > 0) return Math.max(1, Math.round(durationMinutes));
+  const durationHours = Number(missionProfile.durationHours);
+  if (Number.isFinite(durationHours) && durationHours > 0) return Math.max(1, Math.round(durationHours * 60));
+  return 24 * 60;
+}
+
+function updateAnalysisProfileField(page, input) {
+  const analysisType = analysisTypeForPage(page);
+  const profile = cloneScenario(analysisProfileForPage(page));
+  setPath(profile, input.dataset.analysisProfileField, boundedAnalysisProfileValue(input));
+  currentAnalysisProfiles = {
+    ...currentAnalysisProfiles,
+    [analysisType]: profile
+  };
+  markCurrentAnalysisResultStale(analysisType);
+}
+
+function updateSpareOverrideQuantity(page, input) {
+  const analysisType = analysisTypeForPage(page);
+  const profile = cloneScenario(analysisProfileForPage(page));
+  const rows = Array.isArray(profile.scenarioOverrides?.sparesBySupportPoint)
+    ? profile.scenarioOverrides.sparesBySupportPoint
+    : [];
+  const index = Number(input.dataset.spareOverrideIndex);
+  if (!Number.isInteger(index) || !rows[index]) return;
+  rows[index] = {
+    ...rows[index],
+    quantity: Math.max(0, Math.round(Number(input.value) || 0))
+  };
+  currentAnalysisProfiles = {
+    ...currentAnalysisProfiles,
+    [analysisType]: profile
+  };
+  markCurrentAnalysisResultStale(analysisType);
+}
+
+function boundedAnalysisProfileValue(input) {
+  const value = parseInput(input);
+  const field = input.dataset.analysisProfileField || "";
+  if (field.endsWith("missionDurationMinutes")) return Math.max(1, Math.round(Number(value) || 1));
+  if (field.endsWith("missionConfidenceTarget")) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return 0.9;
+    return Math.min(1, Math.max(0.01, number));
+  }
+  return value;
+}
+
+function markCurrentAnalysisResultStale(analysisType) {
+  const currentResult = currentAnalysisResults[analysisType];
+  if (!currentResult || ["queued", "running", "pending"].includes(String(currentResult.status || "").toLowerCase())) {
+    return;
+  }
+  currentAnalysisResults = {
+    ...currentAnalysisResults,
+    [analysisType]: {
+      ...currentResult,
+      status: "stale",
+      message: "当前分析参数已变化，请重新运行。"
+    }
+  };
+}
+
+function renderCurrentAnalysisProfile(page) {
+  const analysisType = analysisTypeForPage(page);
+  const profile = analysisProfileForPage(page);
+  const rows = Array.isArray(profile.scenarioOverrides?.sparesBySupportPoint)
+    ? profile.scenarioOverrides.sparesBySupportPoint
+    : [];
+  const result = currentAnalysisResults[analysisType] || {};
+  const carryConfig = profile.carryListConfig || {};
+  return `
+    <section class="analysis-profile-panel">
+      <div class="section-head">
+        <h3>当前分析 Profile</h3>
+        <span>${htmlEscape(currentAnalysisStatusLabel(result.status))}</span>
+      </div>
+      <section class="analysis-config-grid">
+        <label>任务持续时长<input data-analysis-profile-field="scenarioOverrides.missionDurationMinutes" type="number" min="1" value="${htmlEscape(profile.scenarioOverrides?.missionDurationMinutes || 1440)}"></label>
+        ${analysisType === "carry_list" ? `<label>任务置信度目标<input data-analysis-profile-field="carryListConfig.missionConfidenceTarget" type="number" min="0.01" max="1" step="0.01" value="${htmlEscape(carryConfig.missionConfidenceTarget ?? 0.9)}"></label>` : ""}
+      </section>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>保障点</th><th>备件类型</th><th>当前页数量</th></tr></thead>
+          <tbody>${rows.length ? rows.map((row, index) => `
+            <tr>
+              <td>${htmlEscape(row.supportPointId)}</td>
+              <td>${htmlEscape(row.spareTypeId)}</td>
+              <td><input data-spare-override-index="${index}" type="number" min="0" value="${htmlEscape(row.quantity)}"></td>
+            </tr>
+          `).join("") : `<tr><td colspan="3">当前 Project 未提供保障点库存</td></tr>`}</tbody>
+        </table>
+      </div>
+    </section>
+  `;
+}
+
+function currentAnalysisStatusLabel(status) {
+  const labels = {
+    succeeded: "正式结果已更新",
+    running: "运行中",
+    queued: "排队中",
+    failed: "运行失败",
+    stale: "参数已变化",
+    blocked: "未满足正式运行条件"
+  };
+  return labels[status] || "等待运行";
 }
 
 function analysisFormKey(page) {
@@ -12538,21 +12842,21 @@ function artifactHasKind(artifact, kind) {
     || artifact?.type === kind;
 }
 
-function currentArtifactRows() {
-  return Array.isArray(backendArtifactManifest?.artifacts) ? backendArtifactManifest.artifacts : [];
+function currentArtifactRows(manifest = backendArtifactManifest) {
+  return Array.isArray(manifest?.artifacts) ? manifest.artifacts : [];
 }
 
-function monteCarloBaseArtifacts() {
-  return currentArtifactRows().filter((artifact) => artifactHasKind(artifact, "monte_carlo_base"));
+function monteCarloBaseArtifacts(artifactRows = currentArtifactRows()) {
+  return artifactRows.filter((artifact) => artifactHasKind(artifact, "monte_carlo_base"));
 }
 
-function analysisProjectionArtifacts(analysisType = "") {
+function analysisProjectionArtifacts(analysisType = "", artifactRows = currentArtifactRows()) {
   const projectionKind = projectionArtifactKindForAnalysisType(analysisType);
-  return currentArtifactRows().filter((artifact) => {
-    return artifact?.kind === projectionKind
-      || artifact?.artifact_type === projectionKind
-      || artifact?.analysis_type === analysisType
-      || artifact?.projection_type === analysisType;
+  return artifactRows.filter((artifact) => {
+    if (!artifactHasKind(artifact, projectionKind)) return false;
+    if (artifact?.analysis_type && artifact.analysis_type !== analysisType) return false;
+    if (artifact?.projection_type && artifact.projection_type !== analysisType) return false;
+    return true;
   });
 }
 
@@ -12571,13 +12875,13 @@ function analysisProjectionTypeForAnalysisType(analysisType) {
 
 function analysisProjectionForBoundary(boundary) {
   if (!boundary?.formalUnlocked) return null;
-  const runId = boundary?.linkedExperiment?.runId || backendRun?.run_id || "";
+  const runId = boundary?.runId || "";
   const analysisType = boundary?.analysisType || analysisTypeForPage(getFeaturePageById(selectedFeatureId));
   return analysisProjectionPayloads[runId]?.[analysisType] || null;
 }
 
 function analysisProjectionErrorForBoundary(boundary) {
-  const runId = boundary?.linkedExperiment?.runId || backendRun?.run_id || "";
+  const runId = boundary?.runId || "";
   const analysisType = boundary?.analysisType || analysisTypeForPage(getFeaturePageById(selectedFeatureId));
   return analysisProjectionPayloadErrors[runId]?.[analysisType] || "";
 }
@@ -12593,15 +12897,16 @@ function mappingProvenanceVersion() {
   return provenance?.mapping_version || provenance?.version || provenance?.model_family || "";
 }
 
-function formalAnalysisBoundaryReason({ state, provenance, linkedExperiment, runMatchesLinkedExperiment, runTypeIsMonteCarlo, projectionArtifacts, projectionPayload, projectionPayloadError, failedCompiler }) {
-  if (state === "unconfigured") return "未创建分析任务或未绑定 linkedMonteCarloExperimentId。";
-  if (state === "pending") return "已配置分析任务，但绑定的 Monte Carlo 实验尚未运行。";
-  if (state === "running") return `绑定的 Monte Carlo 实验正在运行，进度 ${normalizeProgress(linkedExperiment?.progress)}%。`;
-  if (state === "failed") return failedCompiler ? compileGateStatusText(backendRun) : "绑定的 Monte Carlo 实验运行失败。";
-  if (!runMatchesLinkedExperiment) return "当前后端 run_id 与 linkedMonteCarloExperimentId 绑定的实验不一致。";
-  if (!runTypeIsMonteCarlo) return "当前 run 不是 run_type=monte_carlo。";
+function formalAnalysisBoundaryReason({ state, provenance, run, message, runTypeIsMonteCarlo, modelFamilyMatches, baseArtifacts, projectionArtifacts, projectionPayload, projectionPayloadError, failedCompiler }) {
+  if (state === "blocked") return message || "当前分析不满足正式运行条件。";
+  if (state === "stale") return message || "当前分析参数已变化，请重新运行。";
+  if (state === "pending") return "当前分析尚未生成正式 current result。";
+  if (state === "running") return `当前分析正在运行，进度 ${normalizeProgress(run?.progress)}%。`;
+  if (state === "failed") return failedCompiler ? compileGateStatusText(run) : message || "当前分析正式运行失败。";
+  if (!runTypeIsMonteCarlo) return "当前结果不是正式 Monte Carlo 运行。";
+  if (!modelFamilyMatches) return "当前结果不是 aircraft_support_v1 正式模型族。";
   if (!provenance) return "缺少 compiler provenance。";
-  if (monteCarloBaseArtifacts().length === 0) return "缺少正式 Monte Carlo artifact。";
+  if (baseArtifacts.length === 0) return "缺少正式 Monte Carlo artifact。";
   if (projectionArtifacts.length === 0) return "缺少当前分析类型的 analysis projection artifact。";
   if (!projectionPayload) return `缺少或无法解析当前分析类型的 projection payload${projectionPayloadError ? `：${projectionPayloadError}` : "。"}`;
   if (state === "not_applicable") return notApplicableProjectionReason(projectionPayload);
@@ -12609,78 +12914,109 @@ function formalAnalysisBoundaryReason({ state, provenance, linkedExperiment, run
 }
 
 function renderFormalAnalysisSourceTable(boundary) {
-  const linkedExperiment = boundary.linkedExperiment;
+  const profile = boundary.profile || {};
+  const overrides = profile.scenarioOverrides || {};
+  const spareCount = Array.isArray(overrides.sparesBySupportPoint) ? overrides.sparesBySupportPoint.length : 0;
+  const resultStatus = ["formal", "not_applicable"].includes(boundary.state)
+    ? boundary.run?.status
+    : boundary.state || boundary.run?.status;
   const rows = [
-    ["linkedMonteCarloExperimentId", boundary.task?.linkedMonteCarloExperimentId || "未绑定"],
-    ["mc_experiment_id", linkedExperiment?.mc_experiment_id || "未绑定"],
-    ["run_id", linkedExperiment?.runId || backendRun?.run_id || "未运行"],
-    ["run_type", backendRun?.run_type || linkedExperiment?.runType || "未知"],
-    ["artifact_manifest_id", backendArtifactManifest?.artifact_manifest_id || linkedExperiment?.artifactManifestId || "等待生成"],
-    ["projection", boundary.analysisArtifacts.map((artifact) => artifact.artifact_id || artifact.id || artifact.path || artifact.kind).filter(Boolean).join(" / ") || "未配置"],
-    ["mapping/provenance", mappingProvenanceVersion() || "等待 compiler provenance"]
+    ["current result", currentAnalysisStatusLabel(resultStatus)],
+    ["analysis type", boundary.analysisType],
+    ["model family", boundary.run?.model_family || "等待正式运行"],
+    ["profile overrides", `${spareCount} 项备件 / ${overrides.missionDurationMinutes || "-"} min`],
+    ["traceability", boundary.provenance ? "已记录" : "等待 compiler provenance"]
   ];
   return `<table><tbody>${rows.map(([label, value]) => `<tr><th>${htmlEscape(label)}</th><td>${htmlEscape(value)}</td></tr>`).join("")}</tbody></table>`;
 }
 
 function formalAnalysisBoundary(page) {
   const analysisType = analysisTypeForPage(page);
-  const task = currentAnalysisTaskForPage(page);
-  const linkedExperiment = task?.linkedMonteCarloExperimentId ? monteCarloExperimentByBusinessId(task.linkedMonteCarloExperimentId) : null;
-  const provenance = backendRun?.compiler_provenance
-    || backendRun?.compiled_from?.mapping_provenance
-    || backendRunResult?.compiler_provenance
-    || backendRunResult?.compiled_from?.mapping_provenance
-    || backendRunChain?.compiler_provenance
-    || backendRun?.error?.details?.provenance
+  const currentResult = currentAnalysisResults[analysisType] || null;
+  const run = currentResult?.run || null;
+  const artifactManifest = currentResult?.artifactManifest || null;
+  const runChain = currentResult?.runChain || null;
+  const runResult = currentResult?.result || null;
+  const artifactRows = currentArtifactRows(artifactManifest);
+  const runId = currentResult?.runId || run?.run_id || "";
+  const provenance = run?.compiler_provenance
+    || run?.compiled_from?.mapping_provenance
+    || run?.simulation_experiment_base?.mapping_provenance
+    || runResult?.compiler_provenance
+    || runResult?.compiled_from?.mapping_provenance
+    || runChain?.compiler_provenance
+    || run?.error?.details?.provenance
     || null;
-  const runStatus = backendRun?.status || linkedExperiment?.status || "";
-  const failedCompiler = backendRun?.status === "failed" && backendRun?.error?.details?.issues?.length;
-  const runFailed = backendRun?.status === "failed" || linkedExperiment?.status === "运行失败";
-  const running = ["queued", "running", "pending", "运行中"].includes(String(runStatus).toLowerCase()) || linkedExperiment?.status === "运行中";
-  const runMatchesLinkedExperiment = Boolean(linkedExperiment?.runId && backendRun?.run_id && linkedExperiment.runId === backendRun.run_id);
-  const runTypeIsMonteCarlo = backendRun?.run_type === "monte_carlo";
-  const projectionArtifacts = analysisProjectionArtifacts(analysisType);
+  const runStatus = run?.status || currentResult?.status || "";
+  const failedCompiler = run?.status === "failed" && run?.error?.details?.issues?.length;
+  const runFailed = run?.status === "failed" || currentResult?.status === "failed";
+  const running = ["queued", "running", "pending", "运行中"].includes(String(runStatus).toLowerCase());
+  const runTypeIsMonteCarlo = run?.run_type === "monte_carlo";
+  const modelFamilyMatches = run?.model_family === FORMAL_AIRCRAFT_SUPPORT_MODEL_FAMILY
+    || runResult?.model_family === FORMAL_AIRCRAFT_SUPPORT_MODEL_FAMILY;
+  const projectionArtifacts = analysisProjectionArtifacts(analysisType, artifactRows);
   const analysisArtifacts = projectionArtifacts;
-  const projectionPayload = analysisProjectionPayloads[linkedExperiment?.runId || backendRun?.run_id || ""]?.[analysisType] || null;
-  const projectionPayloadError = analysisProjectionPayloadErrors[linkedExperiment?.runId || backendRun?.run_id || ""]?.[analysisType] || "";
+  const projectionPayload = analysisProjectionPayloads[runId]?.[analysisType] || null;
+  const projectionPayloadError = analysisProjectionPayloadErrors[runId]?.[analysisType] || "";
   const projectionNotApplicable = Boolean(projectionPayload && projectionPayload.formal === false);
+  const baseArtifacts = monteCarloBaseArtifacts(artifactRows);
   const formalUnlocked = Boolean(
-    task
-    && linkedExperiment
-    && runMatchesLinkedExperiment
+    currentResult
+    && runId
+    && currentResult.status !== "stale"
     && runTypeIsMonteCarlo
+    && modelFamilyMatches
     && !runFailed
     && !running
     && provenance
-    && monteCarloBaseArtifacts().length > 0
+    && baseArtifacts.length > 0
     && analysisArtifacts.length > 0
     && projectionPayload
   );
-  const state = !task || task.preview || !task.linkedMonteCarloExperimentId
-    ? "unconfigured"
-    : !linkedExperiment || !linkedExperiment.runId
-      ? "pending"
-      : runFailed
-        ? "failed"
-        : running
-          ? "running"
-          : formalUnlocked && projectionNotApplicable
-            ? "not_applicable"
-            : formalUnlocked
-              ? "formal"
-              : "local_preview";
+  let state = "local_preview";
+  if (currentResult?.status === "blocked") {
+    state = "blocked";
+  } else if (currentResult?.status === "stale") {
+    state = "stale";
+  } else if (currentResult?.status === "failed" && !runId) {
+    state = "failed";
+  } else if (!currentResult || !runId) {
+    state = "pending";
+  } else if (runFailed) {
+    state = "failed";
+  } else if (running) {
+    state = "running";
+  } else if (formalUnlocked && projectionNotApplicable) {
+    state = "not_applicable";
+  } else if (formalUnlocked) {
+    state = "formal";
+  }
   return {
     formalUnlocked,
     state,
-    task,
+    currentResult,
+    run,
+    runId,
     analysisType,
-    linkedExperiment,
+    profile: currentResult?.profile || analysisProfileForPage(page),
     provenance,
     projectionPayload,
     projectionPayloadError,
     analysisArtifacts,
-    monteCarloArtifacts: monteCarloBaseArtifacts(),
-    reason: formalAnalysisBoundaryReason({ state, provenance, linkedExperiment, runMatchesLinkedExperiment, runTypeIsMonteCarlo, projectionArtifacts, projectionPayload, projectionPayloadError, failedCompiler })
+    monteCarloArtifacts: baseArtifacts,
+    reason: formalAnalysisBoundaryReason({
+      state,
+      provenance,
+      run,
+      message: currentResult?.message || "",
+      runTypeIsMonteCarlo,
+      modelFamilyMatches,
+      baseArtifacts,
+      projectionArtifacts,
+      projectionPayload,
+      projectionPayloadError,
+      failedCompiler
+    })
   };
 }
 
@@ -12689,15 +13025,17 @@ function renderFormalAnalysisBoundaryNote(boundary) {
     return `
       <div class="result-source-note">
         <strong>正式后端结果</strong>
-        <span>已读取正式 Monte Carlo artifact 和 analysis projection payload，当前页面按绑定的 MC 产物展示。</span>
+        <span>已读取当前分析正式 Monte Carlo artifact 和 analysis projection payload。</span>
         ${renderFormalAnalysisSourceTable(boundary)}
       </div>
     `;
   }
-  const failedCompiler = boundary.state === "failed" && backendRun?.error?.details?.issues?.length;
+  const failedCompiler = boundary.state === "failed" && boundary.run?.error?.details?.issues?.length;
   const titleByState = {
     unconfigured: "未配置",
     pending: "待运行",
+    blocked: "未满足正式运行条件",
+    stale: "参数已变化",
     running: "运行中",
     failed: failedCompiler ? "输入未通过 Scenario compiler" : "运行失败",
     not_applicable: "不适用 / 未建模",
@@ -12706,8 +13044,8 @@ function renderFormalAnalysisBoundaryNote(boundary) {
   return `
     <div class="result-source-note">
       <strong>${titleByState[boundary.state] || "本地预览，不是正式后端仿真结果"}</strong>
-      <span>${failedCompiler ? compileGateStatusText(backendRun) : boundary.reason}</span>
-      <span>只有绑定的 Monte Carlo 实验完成并产出正式 MC artifact/projection 后，才显示正式结果。</span>
+      <span>${failedCompiler ? compileGateStatusText(boundary.run) : boundary.reason}</span>
+      <span>只有当前分析正式运行完成并产出 MC artifact/projection 后，才显示正式结果。</span>
       ${renderFormalAnalysisSourceTable(boundary)}
     </div>
   `;
@@ -12759,10 +13097,10 @@ function renderFormalProjectionBody(formalProjection) {
     return `
       <div class="table-wrap">
         <table>
-          <thead><tr><th>备件</th><th>推荐携行倍率</th><th>备件满足率</th><th>平均延误时间(h)</th><th>数量</th><th>携行优先级</th><th>图示</th></tr></thead>
+          <thead><tr><th>备件</th><th>推荐携行倍率</th><th>置信度目标</th><th>任务满足概率</th><th>达标</th><th>平均延误时间(h)</th><th>数量</th><th>携行优先级</th><th>图示</th></tr></thead>
           <tbody>${rows.map((row) => `
             <tr>
-              <td>${htmlEscape(row.name)}</td><td>${fixed(row.multiplier, 2)}</td><td>${fixed(row.satisfy, 2)}</td><td>${row.delay}</td><td>${row.qty}</td>
+              <td>${htmlEscape(row.name)}</td><td>${fixed(row.multiplier, 2)}</td><td>${fixed(row.confidenceTarget, 2)}</td><td>${fixed(row.missionSuccessProbability, 2)}</td><td>${row.meetsConfidenceTarget ? "满足" : "未达标"}</td><td>${row.delay}</td><td>${row.qty}</td>
               <td><span class="status-badge ${row.priority === "高" ? "danger" : row.priority === "中" ? "warn" : "success"}">${htmlEscape(row.priority)}</span></td>
               <td class="bar-cell">${renderBar(row.qty, maxCarryQuantity, "blue")}</td>
             </tr>
@@ -12841,7 +13179,7 @@ function exportDowntimeAnomalySnapshots() {
   const payload = {
     schemaVersion: "downtime-anomaly-snapshots-v1",
     exportedAt: new Date().toISOString(),
-    runId: boundary?.linkedExperiment?.runId || backendRun?.run_id || "",
+    runId: boundary?.runId || "",
     snapshots
   };
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
@@ -12869,10 +13207,10 @@ function renderAnalysisDashboard({ title, mode, subtitle, config = "", metrics, 
   const metricSuffix = formalProjection?.formal === false ? "<em>不适用</em>" : formalProjection ? "<em>projection payload</em>" : "<em>本地预览</em>";
   return `
     <div class="analysis-dashboard">
-      ${renderAnalysisTaskList(page, title)}
+      ${renderCurrentAnalysisProfile(page)}
       <section class="analysis-filter-bar">
         <div><h3>${title}</h3><span>${subtitle}</span></div>
-        <button type="button" class="btn-primary">启动</button>
+        <button type="button" class="btn-primary" data-analysis-run-current ${formalRunSubmitInFlight ? "disabled" : ""}>启动</button>
       </section>
       ${renderFormalAnalysisBoundaryNote(boundary)}
       ${config ? `<section class="analysis-config-grid">${config}</section>` : ""}

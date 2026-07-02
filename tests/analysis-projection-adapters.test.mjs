@@ -83,21 +83,40 @@ test("normalizes carry list projection payload for formal KPI and table renderin
     projection_type: "carry_list",
     run_id: "run-ui",
     model_family: "aircraft_support_v1",
+    mission_confidence_target: 0.95,
     data: [
-      { spare_type: "engine", recommended_multiplier: 1.4, risk_level: "high" },
-      { spare_type: "hydraulic", recommended_multiplier: 1.1, risk_level: "medium" }
+      {
+        spare_type: "engine",
+        recommended_multiplier: 1.4,
+        confidence_target: 0.95,
+        mission_success_probability: 0.96,
+        meets_confidence_target: true,
+        risk_level: "high"
+      },
+      {
+        spare_type: "hydraulic",
+        recommended_multiplier: 1.1,
+        confidence_target: 0.95,
+        mission_success_probability: 0.93,
+        meets_confidence_target: false,
+        risk_level: "medium"
+      }
     ]
   }, { runId: "run-ui", modelFamily: "aircraft_support_v1" });
 
   assert.deepEqual(view.metrics.slice(1), [
+    ["任务置信度目标", "0.95"],
     ["携行备件数量", "3 件"],
     ["最高携行倍率", "1.40"],
-    ["高优先级备件", "engine"]
+    ["置信度达标", "未达标"]
   ]);
   assert.equal(view.objective, "minimize_carry_spares");
+  assert.equal(view.missionConfidenceTarget, 0.95);
   assert.deepEqual(view.metrics[0], ["默认目标", "携行备件越少越好"]);
   assert.equal(view.rows[0].priority, "高");
   assert.equal(view.rows[0].qty, 2);
+  assert.equal(view.rows[0].confidenceTarget, 0.95);
+  assert.equal(view.rows[0].meetsConfidenceTarget, true);
 });
 
 test("normalizes mission reliability projection payload for formal KPI and trend rendering", () => {

@@ -609,8 +609,11 @@ test("M6.2 formal result boundary unlocks only compiler-provenanced analysis art
   assert.match(appSource, /analysisArtifacts\.length\s*>\s*0/);
   assert.match(appSource, /analysisArtifacts,/);
   assert.match(appSource, /function analysisProjectionArtifacts/);
-  assert.match(appSource, /monteCarloBaseArtifacts\(\)\.length > 0/);
-  assert.match(runTypeSource, /backendRun\?\.run_type === "monte_carlo"/);
+  assert.match(formalBoundarySource, /const artifactRows = currentArtifactRows\(artifactManifest\)/);
+  assert.match(formalBoundarySource, /analysisProjectionArtifacts\(analysisType,\s*artifactRows\)/);
+  assert.match(formalBoundarySource, /monteCarloBaseArtifacts\(artifactRows\)/);
+  assert.match(formalBoundarySource, /baseArtifacts\.length > 0/);
+  assert.match(runTypeSource, /run\?\.run_type === "monte_carlo"/);
   assert.doesNotMatch(runTypeSource, /linkedExperiment\?\.runType/);
   assert.doesNotMatch(runTypeSource, /monteCarloBaseArtifacts\(\)/);
   assert.match(baseArtifactSource, /artifactHasKind\(artifact,\s*"monte_carlo_base"\)/);
@@ -2243,37 +2246,57 @@ test("browser smoke enters monte carlo editor or detail before using sweep input
   assert.match(smokeSource, /function openMonteCarloExperimentForRun/);
 });
 
-test("analysis pages manage analysis tasks and can auto-create a bound monte carlo experiment", async () => {
+test("analysis pages expose current profile controls without internal task or artifact selectors", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
-  const analysisSource = appSource.slice(
-    appSource.indexOf("function renderAnalysisTaskList"),
+  const dashboardSource = appSource.slice(
+    appSource.indexOf("function renderAnalysisDashboard"),
     appSource.indexOf("function renderBar")
   );
-  const bindingSource = appSource.slice(
-    appSource.indexOf("function ensureAnalysisTaskMonteCarloExperiment"),
-    appSource.indexOf("function renderAnalysisTaskList")
+  const profileSource = appSource.slice(
+    appSource.indexOf("function renderCurrentAnalysisProfile"),
+    appSource.indexOf("function currentAnalysisStatusLabel")
+  );
+  const profileMutationSource = appSource.slice(
+    appSource.indexOf("function updateAnalysisProfileField"),
+    appSource.indexOf("function renderCurrentAnalysisProfile")
+  );
+  const currentRunSource = appSource.slice(
+    appSource.indexOf("async function startCurrentAnalysisRunThroughApi"),
+    appSource.indexOf("async function refreshRunFailureArtifacts")
+  );
+  const boundarySource = appSource.slice(
+    appSource.indexOf("function formalAnalysisBoundaryReason"),
+    appSource.indexOf("function renderAnalysisDashboard")
+  );
+  const boundaryNoteSource = appSource.slice(
+    appSource.indexOf("function renderFormalAnalysisBoundaryNote"),
+    appSource.indexOf("function notApplicableProjectionReason")
+  );
+  const downtimeExportSource = appSource.slice(
+    appSource.indexOf("function exportDowntimeAnomalySnapshots"),
+    appSource.indexOf("function deleteDowntimeAnomalySnapshot")
   );
 
-  assert.match(appSource, /function ensureAnalysisTaskMonteCarloExperiment/);
-  assert.match(appSource, /function createAnalysisTaskForPage/);
-  assert.match(appSource, /function updateAnalysisTaskFormField/);
-  assert.match(appSource, /function updateSelectedAnalysisTaskFromForm/);
-  assert.match(appSource, /analysisTaskInput\.tagName === "SELECT"/);
-  assert.match(analysisSource, /分析任务列表/);
-  assert.match(analysisSource, /创建\/编辑\/删除/);
-  assert.match(analysisSource, /data-analysis-action="create-with-mc"/);
-  assert.match(analysisSource, /data-analysis-action="edit"/);
-  assert.match(analysisSource, /data-analysis-action="save"/);
-  assert.match(analysisSource, /data-analysis-action="delete"/);
-  assert.match(analysisSource, /data-analysis-task-field="experimentPlanName"/);
-  assert.match(analysisSource, /data-analysis-task-field="samples"/);
-  assert.match(analysisSource, /选择方案 \+ 参数后自动创建一个新的蒙特卡洛实验并绑定分析任务/);
-  assert.match(analysisSource, /linkedMonteCarloExperimentId/);
-  assert.match(analysisSource, /mc_experiment_id/);
-  assert.match(bindingSource, /experiment\.mc_experiment_id === task\.linkedMonteCarloExperimentId/);
-  assert.match(bindingSource, /if \(existing && !options\.forceNew\) return existing/);
-  assert.match(bindingSource, /source: "analysis:auto-created"/);
-  assert.match(bindingSource, /linkedMonteCarloExperimentId: experiment\.mc_experiment_id/);
+  assert.match(dashboardSource, /renderCurrentAnalysisProfile\(page\)/);
+  assert.match(dashboardSource, /data-analysis-run-current/);
+  assert.doesNotMatch(dashboardSource, /renderAnalysisTaskList/);
+  assert.doesNotMatch(dashboardSource, /linkedMonteCarloExperimentId|mc_experiment_id|artifact_manifest_id|data-analysis-action/);
+  assert.match(profileSource, /data-analysis-profile-field="scenarioOverrides\.missionDurationMinutes"/);
+  assert.match(profileSource, /data-spare-override-index/);
+  assert.match(profileSource, /analysisType === "carry_list"/);
+  assert.match(profileSource, /data-analysis-profile-field="carryListConfig\.missionConfidenceTarget"/);
+  assert.match(profileMutationSource, /markCurrentAnalysisResultStale\(analysisType\)/);
+  assert.match(profileMutationSource, /status: "stale"/);
+  assert.match(currentRunSource, /analysisType/);
+  assert.match(currentRunSource, /analysisProfile/);
+  assert.match(currentRunSource, /currentAnalysisResults/);
+  assert.doesNotMatch(currentRunSource, /data-analysis-action|linkedMonteCarloExperimentId/);
+  assert.match(boundarySource, /currentResult\.status !== "stale"/);
+  assert.match(boundarySource, /state = "stale"/);
+  assert.match(boundaryNoteSource, /当前分析正式运行完成/);
+  assert.doesNotMatch(boundaryNoteSource, /绑定的 Monte Carlo|绑定的 MC/);
+  assert.match(downtimeExportSource, /runId: boundary\?\.runId \|\| ""/);
+  assert.doesNotMatch(downtimeExportSource, /linkedExperiment/);
 });
 
 test("experiment plan editor edits an isolated branch rather than the project draft", async () => {
@@ -2709,7 +2732,8 @@ test("Level 0 not-applicable analysis projections render as scoped not modeled i
   );
 
   assert.match(boundarySource, /const projectionNotApplicable = .*projectionPayload/);
-  assert.match(boundarySource, /projectionNotApplicable\s*\?\s*"not_applicable"/);
+  assert.match(boundarySource, /formalUnlocked && projectionNotApplicable/);
+  assert.match(boundarySource, /state = "not_applicable"/);
   assert.match(noteSource, /not_applicable: "不适用 \/ 未建模"/);
   assert.match(projectionBodySource, /formalProjection\.formal === false/);
   assert.match(projectionBodySource, /required_domains/);

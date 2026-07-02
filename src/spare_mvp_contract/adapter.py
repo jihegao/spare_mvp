@@ -1615,6 +1615,7 @@ class SimulationAdapter:
             ],
             run_id=run_id,
             validation_scope=scenario.get("compiled_from", {}).get("mapping_provenance", {}),
+            analysis_profile=scenario.get("analysis_profile", {}),
         )
         result["analysis_outputs"] = {
             "spare_shortage": projections["spare_shortfall"]["data"],
@@ -2013,12 +2014,14 @@ class SimulationAdapter:
         self._coerce_result_integer_metrics(aggregate)
         aggregate["mission_success_probability"] = aggregate.get("sortie_completion_rate", 0)
         base_artifact_id = f"monte_carlo_base-{run_id}"
+        analysis_profile = copy.deepcopy(scenario.get("analysis_profile") if isinstance(scenario.get("analysis_profile"), dict) else {})
         projections = self._aircraft_support_v1_analysis_projections(
             aggregate,
             base_artifact_id,
             samples=samples,
             run_id=run_id,
             validation_scope=scenario.get("compiled_from", {}).get("mapping_provenance", {}),
+            analysis_profile=analysis_profile,
         )
         behavior_scope = AircraftSupportV1Model.behavior_scope()
         input_project = self._input_project_for_scenario(scenario)
@@ -2035,6 +2038,7 @@ class SimulationAdapter:
             "sample_count": profile["sample_count"],
             "seed": inputs["seed"],
             "sweep": profile["sweep"],
+            "analysis_profile": copy.deepcopy(analysis_profile),
             "sample_points": profile["sample_points"],
             "samples": samples,
             "failed_samples": failed_samples,
@@ -2059,6 +2063,7 @@ class SimulationAdapter:
             "steps": steps,
             "mc_experiment_id": mc_experiment_id,
             "monte_carlo_config": copy.deepcopy(config),
+            "analysis_profile": copy.deepcopy(analysis_profile),
             "sampling_contract": copy.deepcopy(sampling_contract),
             "m9_7_4_behavior_scope": copy.deepcopy(behavior_scope),
         }
@@ -2531,7 +2536,9 @@ class SimulationAdapter:
         samples: list[dict[str, Any]] | None = None,
         run_id: str = "",
         validation_scope: dict[str, Any] | None = None,
+        analysis_profile: dict[str, Any] | None = None,
     ) -> dict[str, dict[str, Any]]:
+        profile_trace = copy.deepcopy(analysis_profile) if isinstance(analysis_profile, dict) else {}
         projection_applicability = {
             projection_type: self._aircraft_support_v1_projection_applicability(projection_type, validation_scope or {})
             for projection_type in (
@@ -2548,6 +2555,7 @@ class SimulationAdapter:
         spare_fill_rate = min(1.0, max(0.0, float(metrics.get("spare_fill_rate", 0) or 0)))
         spare_utilization = min(1.0, max(0.0, float(metrics.get("spare_utilization", 0) or 0)))
         mission_success = min(1.0, max(0.0, float(metrics.get("mission_success_rate", metrics.get("sortie_completion_rate", 0)) or 0)))
+        carry_confidence_target = self._carry_list_confidence_target(profile_trace)
         sortie_rate = min(1.0, max(0.0, float(metrics.get("sortie_rate", 0) or 0)))
         downtime_values = {
             "failure": max(0.0, float(metrics.get("downtime_failure_events", 0) or 0)),
@@ -2565,6 +2573,7 @@ class SimulationAdapter:
                 "run_id": run_id,
                 "model_family": "aircraft_support_v1",
                 "base_artifact_id": source_artifact_id,
+                "analysis_profile": copy.deepcopy(profile_trace),
                 "applicability": projection_applicability["large_sample_summary"],
                 "data": {
                     "sample_count": len(samples or []),
@@ -2580,6 +2589,7 @@ class SimulationAdapter:
                 "run_id": run_id,
                 "model_family": "aircraft_support_v1",
                 "base_artifact_id": source_artifact_id,
+                "analysis_profile": copy.deepcopy(profile_trace),
                 "applicability": projection_applicability["spare_shortfall"],
                 "constraints": {
                     "fill_rate": SPARE_SHORTFALL_CONSTRAINTS,
@@ -2606,11 +2616,16 @@ class SimulationAdapter:
                 "run_id": run_id,
                 "model_family": "aircraft_support_v1",
                 "base_artifact_id": source_artifact_id,
+                "analysis_profile": copy.deepcopy(profile_trace),
+                "mission_confidence_target": carry_confidence_target,
                 "applicability": projection_applicability["carry_list"],
                 "data": [
                     {
                         "spare_type": "aircraft_support_v1_spares",
                         "recommended_multiplier": max(1.0, 1.0 + shortage_probability),
+                        "confidence_target": carry_confidence_target,
+                        "mission_success_probability": mission_success,
+                        "meets_confidence_target": mission_success >= carry_confidence_target,
                         "risk_level": risk_level,
                     }
                 ],
@@ -2620,6 +2635,7 @@ class SimulationAdapter:
                 "run_id": run_id,
                 "model_family": "aircraft_support_v1",
                 "base_artifact_id": source_artifact_id,
+                "analysis_profile": copy.deepcopy(profile_trace),
                 "applicability": projection_applicability["mission_reliability"],
                 "data": {
                     "mission_success_probability": mission_success,
@@ -2638,6 +2654,7 @@ class SimulationAdapter:
                 "run_id": run_id,
                 "model_family": "aircraft_support_v1",
                 "base_artifact_id": source_artifact_id,
+                "analysis_profile": copy.deepcopy(profile_trace),
                 "applicability": projection_applicability["downtime_factors"],
                 "data": [
                     {"factor": factor, "contribution": value / downtime_total}
@@ -2646,6 +2663,18 @@ class SimulationAdapter:
                 "anomaly_snapshots": self._aircraft_support_v1_downtime_anomaly_snapshots(samples or [], run_id),
             },
         }
+
+    def _carry_list_confidence_target(self, analysis_profile: dict[str, Any]) -> float:
+        if analysis_profile.get("analysis_type") != "carry_list":
+            return 0.9
+        config = analysis_profile.get("carryListConfig") if isinstance(analysis_profile.get("carryListConfig"), dict) else {}
+        try:
+            target = float(config.get("missionConfidenceTarget", 0.9))
+        except (TypeError, ValueError):
+            return 0.9
+        if not math.isfinite(target):
+            return 0.9
+        return min(1.0, max(0.01, target))
 
     def _aircraft_support_v1_projection_applicability(
         self,

@@ -2,13 +2,13 @@
 
 ## 目标
 
-M8.0 将四个结果分析页从“artifact 元数据解锁 + 本地预览 KPI”推进到“正式 `analysis_projection_*` payload 驱动 KPI、表格和图形”的最小闭环。正式结果必须来自绑定 Monte Carlo run 的 artifact payload，不能继续使用 `singleResult`、`runSimulation()`、`runMonteCarlo()` 或页面内置 preview fixture 作为正式值来源。
+M8.0 将四个结果分析页从“artifact 元数据解锁 + 本地预览 KPI”推进到“正式 `analysis_projection_*` payload 驱动 KPI、表格和图形”的最小闭环。正式结果必须来自绑定 Monte Carlo run 的 artifact payload，不能继续使用 `singleResult`、`runSimulation()`、`runMonteCarlo()` 或页面内置 preview fixture 作为正式值来源。2026-07-02 后续收束后，普通用户主流程不再展示绑定关系，页面以 current profile/current result 定位当前 run 和 artifact。
 
 ## 输入边界
 
 正式分析页必须同时满足：
 
-1. AnalysisTask 已创建并绑定 `linkedMonteCarloExperimentId`。
+1. 当前分析结果记录已存在内部 run 关联；历史 AnalysisTask / `linkedMonteCarloExperimentId` 只作为内部实现或追溯语义。
 2. 绑定的 Monte Carlo 实验有完成态 `run_id`。
 3. 当前后端 run 与绑定实验一致，且 `run_type=monte_carlo`。
 4. run 带 compiler provenance。
