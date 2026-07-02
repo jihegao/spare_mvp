@@ -67,9 +67,9 @@ test("support activity jobs can be populated from a basic activity library row",
     applicableAircraft: "J-15",
     durationProfile: { distributionType: "正态分布", mean: 25, stdDev: 5 },
     durationMinutes: 25,
-    personnel: "航电,2",
-    equipment: "检测仪,1",
-    spare: "航电模块,1",
+    personnel: [{ professional: "航电", quantity: 2 }],
+    equipment: [{ model: "TEST-1", name: "检测仪", quantity: 1 }],
+    spare: [{ model: "LRU", name: "航电模块", quantity: 1 }],
     predecessors: ["BA-100"]
   };
 
@@ -79,9 +79,9 @@ test("support activity jobs can be populated from a basic activity library row",
     applicableAircraft: "J-15",
     durationProfile: { distributionType: "正态分布", mean: 25, stdDev: 5 },
     durationMinutes: 25,
-    personnel: "航电,2",
-    equipment: "检测仪,1",
-    spare: "航电模块,1",
+    personnel: [{ professional: "航电", quantity: 2 }],
+    equipment: [{ model: "TEST-1", name: "检测仪", quantity: 1 }],
+    spare: [{ model: "LRU", name: "航电模块", quantity: 1 }],
     predecessors: ["BA-100"]
   });
 });
@@ -91,23 +91,26 @@ test("support activity jobs preserve structured resource requirements from basic
     activityCode: "BA-330",
     workName: "资源配置活动",
     personnelProfessional: "航电",
-    personnelRequirements: [{ key: "personnel-a", professional: "航电", name: "保障组A" }],
+    personnel: [
+      { professional: "航电", quantity: 1 },
+      { professional: "机务人员", quantity: 2 }
+    ],
     equipmentModel: "TEST-1",
-    equipmentRequirements: [{ key: "equipment-a", name: "检测仪", model: "TEST-1", quantity: 2 }],
-    spareRequirements: [{ key: "spare-a", name: "航电模块", quantity: 3 }],
-    personnel: "航电/保障组A",
-    equipment: "检测仪,TEST-1,2",
-    spare: "航电模块,3"
+    equipment: [{ model: "TEST-1", name: "检测仪", quantity: 2 }],
+    spare: [{ model: "LRU", name: "航电模块", quantity: 3 }]
   };
 
   const job = supportActivityJobFromBasicActivity(basicActivity);
 
   assert.equal(job.personnelProfessional, "航电");
-  assert.deepEqual(job.personnelRequirements, [{ key: "personnel-a", professional: "航电", name: "保障组A" }]);
+  assert.equal(Object.hasOwn(job, "personnelRequirements"), false);
   assert.equal(job.equipmentModel, "TEST-1");
-  assert.deepEqual(job.equipmentRequirements, [{ key: "equipment-a", name: "检测仪", model: "TEST-1", quantity: 2 }]);
-  assert.deepEqual(job.spareRequirements, [{ key: "spare-a", name: "航电模块", quantity: 3 }]);
-  assert.equal(job.personnel, "航电/保障组A");
-  assert.equal(job.equipment, "检测仪,TEST-1,2");
-  assert.equal(job.spare, "航电模块,3");
+  assert.equal(Object.hasOwn(job, "equipmentRequirements"), false);
+  assert.equal(Object.hasOwn(job, "spareRequirements"), false);
+  assert.deepEqual(job.personnel, [
+    { professional: "航电", quantity: 1 },
+    { professional: "机务人员", quantity: 2 }
+  ]);
+  assert.deepEqual(job.equipment, [{ model: "TEST-1", name: "检测仪", quantity: 2 }]);
+  assert.deepEqual(job.spare, [{ model: "LRU", name: "航电模块", quantity: 3 }]);
 });

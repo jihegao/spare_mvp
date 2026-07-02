@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from src.spare_mvp_abm.aircraft_support_v1.model import AircraftSupportV1Model
+from src.spare_mvp_abm.aircraft_support_v1.model import AircraftSupportV1Model, JobState, _resource_quantity
 
 
 def _minimal_inputs() -> dict:
@@ -75,6 +75,36 @@ def aircraft_payload_nodes(model: AircraftSupportV1Model, aircraft) -> list[dict
 
 
 class AircraftSupportV1ModelTest(unittest.TestCase):
+    def test_structured_personnel_requirements_sum_resource_quantity(self) -> None:
+        quantity = _resource_quantity(
+            [
+                {"professional": "机务", "quantity": 2},
+                {"professional": "航电", "quantity": 1},
+            ],
+            None,
+            default=1,
+        )
+
+        self.assertEqual(quantity, 3)
+
+    def test_structured_spare_requirement_reads_name_and_quantity(self) -> None:
+        model = AircraftSupportV1Model(_minimal_inputs())
+        job = JobState(
+            job_id="job-1",
+            tail_number="J15-001",
+            kind="preflight",
+            activity_id="preflight",
+            activity_name="preflight",
+            tasks=[],
+            priority=1,
+            resource_node_id="deck",
+        )
+
+        self.assertEqual(
+            model._task_spare_requirement(job, {"spare": [{"model": "LRU", "name": "航电模块", "quantity": 2}]}),
+            ("航电模块", 2),
+        )
+
     def test_real_aircraft_assets_are_loaded_before_generated_tail_numbers(self) -> None:
         inputs = _minimal_inputs()
         inputs["aircraft"]["assets"] = [

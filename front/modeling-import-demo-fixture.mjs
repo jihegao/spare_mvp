@@ -9,24 +9,6 @@ export const MODELING_IMPORT_DEMO_FIXTURE = {
     "version": 1
   },
   "objects": {
-    "airports": [
-      {
-        "distanceToMissionKm": 180,
-        "id": "carrier-deck",
-        "location": "航母战斗群",
-        "name": "航母飞行甲板",
-        "runwayType": "滑跃/弹射甲板",
-        "supportNodeId": "carrier-deck"
-      },
-      {
-        "distanceToMissionKm": 260,
-        "id": "forward-sea-base",
-        "location": "近海前出补给点",
-        "name": "前出海上保障点",
-        "runwayType": "海上保障平台",
-        "supportNodeId": "forward-sea-base"
-      }
-    ],
     "analysisRequests": {
       "largeSample": {
         "enabled": true,
@@ -51,7 +33,6 @@ export const MODELING_IMPORT_DEMO_FIXTURE = {
       }
     },
     "equipment": {
-      "deploymentLocation": "航母飞行甲板",
       "initialReady": 6,
       "minRequiredSorties": 5,
       "model": "J-15",
@@ -486,7 +467,7 @@ export const MODELING_IMPORT_DEMO_FIXTURE = {
             "minRequiredSorties": 3,
             "missionId": "night-alert-main",
             "name": "远海警戒任务",
-            "preparationMinutes": 50,
+            "preparationMinutes": 55,
             "priority": 1,
             "returnRatio": 0.35,
             "startHour": 1,
@@ -595,8 +576,6 @@ export const MODELING_IMPORT_DEMO_FIXTURE = {
                 "groupName": "昼间制空编队",
                 "id": "day-cap-main",
                 "intervalHours": 6,
-                "minRequiredSystems": 4,
-                "preparationMinutes": 50,
                 "priority": 1,
                 "recoveryTime": "11:00",
                 "taskDispatchTime": "07:15"
@@ -615,8 +594,6 @@ export const MODELING_IMPORT_DEMO_FIXTURE = {
                 "groupName": "夜间警戒编队",
                 "id": "night-alert-main",
                 "intervalHours": 8,
-                "minRequiredSystems": 3,
-                "preparationMinutes": 55,
                 "priority": 2,
                 "recoveryTime": "23:30",
                 "taskDispatchTime": "19:30"
@@ -627,7 +604,6 @@ export const MODELING_IMPORT_DEMO_FIXTURE = {
         "durationHours": 24,
         "endCondition": "完成 4 个昼夜任务波次",
         "equipment": {
-          "deploymentLocation": "航母飞行甲板",
           "initialReady": 6,
           "minRequiredSorties": 5,
           "model": "J-15",
@@ -932,12 +908,26 @@ export const MODELING_IMPORT_DEMO_FIXTURE = {
               "min": 35,
               "mode": 45
             },
-            "equipment": "检测仪,DT-01,1",
+            "equipment": [
+              {
+                "model": "DT-01",
+                "name": "检测仪",
+                "quantity": 1
+              }
+            ],
             "facility": "甲板保障站位",
-            "personnel": "机务/航电,2",
+            "personnel": [
+              {
+                "professional": "机务人员",
+                "quantity": 1
+              },
+              {
+                "professional": "航电",
+                "quantity": 1
+              }
+            ],
             "predecessors": [],
-            "servicePersonnel": "勤务一组,1",
-            "spare": "无",
+            "spare": [],
             "workName": "机务检查"
           },
           {
@@ -949,14 +939,24 @@ export const MODELING_IMPORT_DEMO_FIXTURE = {
               "max": 70,
               "min": 50
             },
-            "equipment": "加油车,F-01,1",
+            "equipment": [
+              {
+                "model": "F-01",
+                "name": "加油车",
+                "quantity": 1
+              }
+            ],
             "facility": "甲板加油站位",
-            "personnel": "机务/油料,1",
+            "personnel": [
+              {
+                "professional": "油料",
+                "quantity": 1
+              }
+            ],
             "predecessors": [
               "OPS-001"
             ],
-            "servicePersonnel": "油料组,2",
-            "spare": "无",
+            "spare": [],
             "workName": "燃油加注"
           }
         ],
@@ -988,12 +988,26 @@ export const MODELING_IMPORT_DEMO_FIXTURE = {
               "min": 30,
               "mode": 40
             },
-            "equipment": "检测仪,DT-01,1",
+            "equipment": [
+              {
+                "model": "DT-01",
+                "name": "检测仪",
+                "quantity": 1
+              }
+            ],
             "facility": "维修工位",
-            "personnel": "维修/航电,2",
+            "personnel": [
+              {
+                "professional": "维修人员",
+                "quantity": 1
+              },
+              {
+                "professional": "航电",
+                "quantity": 1
+              }
+            ],
             "predecessors": [],
-            "servicePersonnel": "勤务二组,1",
-            "spare": "无",
+            "spare": [],
             "workName": "故障定位"
           },
           {
@@ -1005,14 +1019,34 @@ export const MODELING_IMPORT_DEMO_FIXTURE = {
               "mean": 90,
               "stdDev": 15
             },
-            "equipment": "通用工具箱,TK-01,1",
+            "equipment": [
+              {
+                "model": "TK-01",
+                "name": "通用工具箱",
+                "quantity": 1
+              }
+            ],
             "facility": "维修工位",
-            "personnel": "维修/航电,2",
+            "personnel": [
+              {
+                "professional": "维修人员",
+                "quantity": 1
+              },
+              {
+                "professional": "航电",
+                "quantity": 1
+              }
+            ],
             "predecessors": [
               "REP-001"
             ],
-            "servicePersonnel": "勤务二组,1",
-            "spare": "航电模块,LRU,1",
+            "spare": [
+              {
+                "model": "LRU",
+                "name": "航电模块",
+                "quantity": 1
+              }
+            ],
             "workName": "换件维修"
           }
         ],
@@ -1052,12 +1086,22 @@ export const MODELING_IMPORT_DEMO_FIXTURE = {
               "distributionType": "固定值",
               "value": 30
             },
-            "equipment": "检查灯,LT-01,1",
+            "equipment": [
+              {
+                "model": "LT-01",
+                "name": "检查灯",
+                "quantity": 1
+              }
+            ],
             "facility": "定检工位",
-            "personnel": "维修/机体,1",
+            "personnel": [
+              {
+                "professional": "机体",
+                "quantity": 1
+              }
+            ],
             "predecessors": [],
-            "servicePersonnel": "勤务一组,1",
-            "spare": "无",
+            "spare": [],
             "workName": "定检准备"
           },
           {
@@ -1070,14 +1114,34 @@ export const MODELING_IMPORT_DEMO_FIXTURE = {
               "min": 55,
               "mode": 70
             },
-            "equipment": "液压测试台,HY-01,1",
+            "equipment": [
+              {
+                "model": "HY-01",
+                "name": "液压测试台",
+                "quantity": 1
+              }
+            ],
             "facility": "定检工位",
-            "personnel": "维修/液压,2",
+            "personnel": [
+              {
+                "professional": "维修人员",
+                "quantity": 1
+              },
+              {
+                "professional": "液压",
+                "quantity": 1
+              }
+            ],
             "predecessors": [
               "PM-001"
             ],
-            "servicePersonnel": "勤务一组,1",
-            "spare": "液压密封件,SRU,1",
+            "spare": [
+              {
+                "model": "SRU",
+                "name": "液压密封件",
+                "quantity": 1
+              }
+            ],
             "workName": "液压系统检查"
           }
         ],
@@ -1165,10 +1229,21 @@ export const MODELING_IMPORT_DEMO_FIXTURE = {
           {
             "activityCode": "BA-001",
             "durationMinutes": 5,
-            "equipment": "检测仪,1",
-            "personnel": "机务人员,1",
+            "equipment": [
+              {
+                "model": "检测仪",
+                "name": "检测仪",
+                "quantity": 1
+              }
+            ],
+            "personnel": [
+              {
+                "professional": "机务人员",
+                "quantity": 1
+              }
+            ],
             "predecessors": [],
-            "spare": "",
+            "spare": [],
             "workName": "再次出动准备基本保障活动1"
           }
         ],
@@ -1189,10 +1264,21 @@ export const MODELING_IMPORT_DEMO_FIXTURE = {
           {
             "activityCode": "BA-001",
             "durationMinutes": 30,
-            "equipment": "检测仪,1",
-            "personnel": "机务人员,1",
+            "equipment": [
+              {
+                "model": "检测仪",
+                "name": "检测仪",
+                "quantity": 1
+              }
+            ],
+            "personnel": [
+              {
+                "professional": "机务人员",
+                "quantity": 1
+              }
+            ],
             "predecessors": [],
-            "spare": "",
+            "spare": [],
             "workName": "飞行后检查基本保障活动1"
           }
         ],

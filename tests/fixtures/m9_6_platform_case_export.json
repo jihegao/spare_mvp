@@ -887,12 +887,26 @@
                   "min": 35,
                   "mode": 45
                 },
-                "equipment": "检测仪,DT-01,1",
+                "equipment": [
+                  {
+                    "model": "DT-01",
+                    "name": "检测仪",
+                    "quantity": 1
+                  }
+                ],
                 "facility": "甲板保障站位",
-                "personnel": "机务/航电,2",
+                "personnel": [
+                  {
+                    "professional": "机务人员",
+                    "quantity": 1
+                  },
+                  {
+                    "professional": "航电",
+                    "quantity": 1
+                  }
+                ],
                 "predecessors": [],
-                "servicePersonnel": "勤务一组,1",
-                "spare": "无",
+                "spare": [],
                 "workName": "机务检查"
               },
               {
@@ -904,14 +918,24 @@
                   "max": 70,
                   "min": 50
                 },
-                "equipment": "加油车,F-01,1",
+                "equipment": [
+                  {
+                    "model": "F-01",
+                    "name": "加油车",
+                    "quantity": 1
+                  }
+                ],
                 "facility": "甲板加油站位",
-                "personnel": "机务/油料,1",
+                "personnel": [
+                  {
+                    "professional": "油料",
+                    "quantity": 1
+                  }
+                ],
                 "predecessors": [
                   "OPS-001"
                 ],
-                "servicePersonnel": "油料组,2",
-                "spare": "无",
+                "spare": [],
                 "workName": "燃油加注"
               }
             ],
@@ -943,12 +967,26 @@
                   "min": 30,
                   "mode": 40
                 },
-                "equipment": "检测仪,DT-01,1",
+                "equipment": [
+                  {
+                    "model": "DT-01",
+                    "name": "检测仪",
+                    "quantity": 1
+                  }
+                ],
                 "facility": "维修工位",
-                "personnel": "维修/航电,2",
+                "personnel": [
+                  {
+                    "professional": "维修人员",
+                    "quantity": 1
+                  },
+                  {
+                    "professional": "航电",
+                    "quantity": 1
+                  }
+                ],
                 "predecessors": [],
-                "servicePersonnel": "勤务二组,1",
-                "spare": "无",
+                "spare": [],
                 "workName": "故障定位"
               },
               {
@@ -960,14 +998,34 @@
                   "mean": 90,
                   "stdDev": 15
                 },
-                "equipment": "通用工具箱,TK-01,1",
+                "equipment": [
+                  {
+                    "model": "TK-01",
+                    "name": "通用工具箱",
+                    "quantity": 1
+                  }
+                ],
                 "facility": "维修工位",
-                "personnel": "维修/航电,2",
+                "personnel": [
+                  {
+                    "professional": "维修人员",
+                    "quantity": 1
+                  },
+                  {
+                    "professional": "航电",
+                    "quantity": 1
+                  }
+                ],
                 "predecessors": [
                   "REP-001"
                 ],
-                "servicePersonnel": "勤务二组,1",
-                "spare": "航电模块,LRU,1",
+                "spare": [
+                  {
+                    "model": "LRU",
+                    "name": "航电模块",
+                    "quantity": 1
+                  }
+                ],
                 "workName": "换件维修"
               }
             ],
@@ -1007,12 +1065,22 @@
                   "distributionType": "固定值",
                   "value": 30
                 },
-                "equipment": "检查灯,LT-01,1",
+                "equipment": [
+                  {
+                    "model": "LT-01",
+                    "name": "检查灯",
+                    "quantity": 1
+                  }
+                ],
                 "facility": "定检工位",
-                "personnel": "维修/机体,1",
+                "personnel": [
+                  {
+                    "professional": "机体",
+                    "quantity": 1
+                  }
+                ],
                 "predecessors": [],
-                "servicePersonnel": "勤务一组,1",
-                "spare": "无",
+                "spare": [],
                 "workName": "定检准备"
               },
               {
@@ -1025,14 +1093,34 @@
                   "min": 55,
                   "mode": 70
                 },
-                "equipment": "液压测试台,HY-01,1",
+                "equipment": [
+                  {
+                    "model": "HY-01",
+                    "name": "液压测试台",
+                    "quantity": 1
+                  }
+                ],
                 "facility": "定检工位",
-                "personnel": "维修/液压,2",
+                "personnel": [
+                  {
+                    "professional": "维修人员",
+                    "quantity": 1
+                  },
+                  {
+                    "professional": "液压",
+                    "quantity": 1
+                  }
+                ],
                 "predecessors": [
                   "PM-001"
                 ],
-                "servicePersonnel": "勤务一组,1",
-                "spare": "液压密封件,SRU,1",
+                "spare": [
+                  {
+                    "model": "SRU",
+                    "name": "液压密封件",
+                    "quantity": 1
+                  }
+                ],
                 "workName": "液压系统检查"
               }
             ],
@@ -1120,10 +1208,21 @@
               {
                 "activityCode": "BA-001",
                 "durationMinutes": 5,
-                "equipment": "检测仪,1",
-                "personnel": "机务人员,1",
+                "equipment": [
+                  {
+                    "model": "检测仪",
+                    "name": "检测仪",
+                    "quantity": 1
+                  }
+                ],
+                "personnel": [
+                  {
+                    "professional": "机务人员",
+                    "quantity": 1
+                  }
+                ],
                 "predecessors": [],
-                "spare": "",
+                "spare": [],
                 "workName": "再次出动准备基本保障活动1"
               }
             ],
@@ -1147,10 +1246,21 @@
               {
                 "activityCode": "BA-001",
                 "durationMinutes": 30,
-                "equipment": "检测仪,1",
-                "personnel": "机务人员,1",
+                "equipment": [
+                  {
+                    "model": "检测仪",
+                    "name": "检测仪",
+                    "quantity": 1
+                  }
+                ],
+                "personnel": [
+                  {
+                    "professional": "机务人员",
+                    "quantity": 1
+                  }
+                ],
                 "predecessors": [],
-                "spare": "",
+                "spare": [],
                 "workName": "飞行后检查基本保障活动1"
               }
             ],
@@ -2091,12 +2201,26 @@
                 "min": 35,
                 "mode": 45
               },
-              "equipment": "检测仪,DT-01,1",
+              "equipment": [
+                {
+                  "model": "DT-01",
+                  "name": "检测仪",
+                  "quantity": 1
+                }
+              ],
               "facility": "甲板保障站位",
-              "personnel": "机务/航电,2",
+              "personnel": [
+                {
+                  "professional": "机务人员",
+                  "quantity": 1
+                },
+                {
+                  "professional": "航电",
+                  "quantity": 1
+                }
+              ],
               "predecessors": [],
-              "servicePersonnel": "勤务一组,1",
-              "spare": "无",
+              "spare": [],
               "workName": "机务检查"
             },
             {
@@ -2108,14 +2232,24 @@
                 "max": 70,
                 "min": 50
               },
-              "equipment": "加油车,F-01,1",
+              "equipment": [
+                {
+                  "model": "F-01",
+                  "name": "加油车",
+                  "quantity": 1
+                }
+              ],
               "facility": "甲板加油站位",
-              "personnel": "机务/油料,1",
+              "personnel": [
+                {
+                  "professional": "油料",
+                  "quantity": 1
+                }
+              ],
               "predecessors": [
                 "OPS-001"
               ],
-              "servicePersonnel": "油料组,2",
-              "spare": "无",
+              "spare": [],
               "workName": "燃油加注"
             }
           ],
@@ -2147,12 +2281,26 @@
                 "min": 30,
                 "mode": 40
               },
-              "equipment": "检测仪,DT-01,1",
+              "equipment": [
+                {
+                  "model": "DT-01",
+                  "name": "检测仪",
+                  "quantity": 1
+                }
+              ],
               "facility": "维修工位",
-              "personnel": "维修/航电,2",
+              "personnel": [
+                {
+                  "professional": "维修人员",
+                  "quantity": 1
+                },
+                {
+                  "professional": "航电",
+                  "quantity": 1
+                }
+              ],
               "predecessors": [],
-              "servicePersonnel": "勤务二组,1",
-              "spare": "无",
+              "spare": [],
               "workName": "故障定位"
             },
             {
@@ -2164,14 +2312,34 @@
                 "mean": 90,
                 "stdDev": 15
               },
-              "equipment": "通用工具箱,TK-01,1",
+              "equipment": [
+                {
+                  "model": "TK-01",
+                  "name": "通用工具箱",
+                  "quantity": 1
+                }
+              ],
               "facility": "维修工位",
-              "personnel": "维修/航电,2",
+              "personnel": [
+                {
+                  "professional": "维修人员",
+                  "quantity": 1
+                },
+                {
+                  "professional": "航电",
+                  "quantity": 1
+                }
+              ],
               "predecessors": [
                 "REP-001"
               ],
-              "servicePersonnel": "勤务二组,1",
-              "spare": "航电模块,LRU,1",
+              "spare": [
+                {
+                  "model": "LRU",
+                  "name": "航电模块",
+                  "quantity": 1
+                }
+              ],
               "workName": "换件维修"
             }
           ],
@@ -2211,12 +2379,22 @@
                 "distributionType": "固定值",
                 "value": 30
               },
-              "equipment": "检查灯,LT-01,1",
+              "equipment": [
+                {
+                  "model": "LT-01",
+                  "name": "检查灯",
+                  "quantity": 1
+                }
+              ],
               "facility": "定检工位",
-              "personnel": "维修/机体,1",
+              "personnel": [
+                {
+                  "professional": "机体",
+                  "quantity": 1
+                }
+              ],
               "predecessors": [],
-              "servicePersonnel": "勤务一组,1",
-              "spare": "无",
+              "spare": [],
               "workName": "定检准备"
             },
             {
@@ -2229,14 +2407,34 @@
                 "min": 55,
                 "mode": 70
               },
-              "equipment": "液压测试台,HY-01,1",
+              "equipment": [
+                {
+                  "model": "HY-01",
+                  "name": "液压测试台",
+                  "quantity": 1
+                }
+              ],
               "facility": "定检工位",
-              "personnel": "维修/液压,2",
+              "personnel": [
+                {
+                  "professional": "维修人员",
+                  "quantity": 1
+                },
+                {
+                  "professional": "液压",
+                  "quantity": 1
+                }
+              ],
               "predecessors": [
                 "PM-001"
               ],
-              "servicePersonnel": "勤务一组,1",
-              "spare": "液压密封件,SRU,1",
+              "spare": [
+                {
+                  "model": "SRU",
+                  "name": "液压密封件",
+                  "quantity": 1
+                }
+              ],
               "workName": "液压系统检查"
             }
           ],
@@ -2324,10 +2522,21 @@
             {
               "activityCode": "BA-001",
               "durationMinutes": 5,
-              "equipment": "检测仪,1",
-              "personnel": "机务人员,1",
+              "equipment": [
+                {
+                  "model": "检测仪",
+                  "name": "检测仪",
+                  "quantity": 1
+                }
+              ],
+              "personnel": [
+                {
+                  "professional": "机务人员",
+                  "quantity": 1
+                }
+              ],
               "predecessors": [],
-              "spare": "",
+              "spare": [],
               "workName": "再次出动准备基本保障活动1"
             }
           ],
@@ -2351,10 +2560,21 @@
             {
               "activityCode": "BA-001",
               "durationMinutes": 30,
-              "equipment": "检测仪,1",
-              "personnel": "机务人员,1",
+              "equipment": [
+                {
+                  "model": "检测仪",
+                  "name": "检测仪",
+                  "quantity": 1
+                }
+              ],
+              "personnel": [
+                {
+                  "professional": "机务人员",
+                  "quantity": 1
+                }
+              ],
               "predecessors": [],
-              "spare": "",
+              "spare": [],
               "workName": "飞行后检查基本保障活动1"
             }
           ],
@@ -3310,12 +3530,26 @@
               "min": 35,
               "mode": 45
             },
-            "equipment": "检测仪,DT-01,1",
+            "equipment": [
+              {
+                "model": "DT-01",
+                "name": "检测仪",
+                "quantity": 1
+              }
+            ],
             "facility": "甲板保障站位",
-            "personnel": "机务/航电,2",
+            "personnel": [
+              {
+                "professional": "机务人员",
+                "quantity": 1
+              },
+              {
+                "professional": "航电",
+                "quantity": 1
+              }
+            ],
             "predecessors": [],
-            "servicePersonnel": "勤务一组,1",
-            "spare": "无",
+            "spare": [],
             "workName": "机务检查"
           },
           {
@@ -3327,14 +3561,24 @@
               "max": 70,
               "min": 50
             },
-            "equipment": "加油车,F-01,1",
+            "equipment": [
+              {
+                "model": "F-01",
+                "name": "加油车",
+                "quantity": 1
+              }
+            ],
             "facility": "甲板加油站位",
-            "personnel": "机务/油料,1",
+            "personnel": [
+              {
+                "professional": "油料",
+                "quantity": 1
+              }
+            ],
             "predecessors": [
               "OPS-001"
             ],
-            "servicePersonnel": "油料组,2",
-            "spare": "无",
+            "spare": [],
             "workName": "燃油加注"
           }
         ],
@@ -3366,12 +3610,26 @@
               "min": 30,
               "mode": 40
             },
-            "equipment": "检测仪,DT-01,1",
+            "equipment": [
+              {
+                "model": "DT-01",
+                "name": "检测仪",
+                "quantity": 1
+              }
+            ],
             "facility": "维修工位",
-            "personnel": "维修/航电,2",
+            "personnel": [
+              {
+                "professional": "维修人员",
+                "quantity": 1
+              },
+              {
+                "professional": "航电",
+                "quantity": 1
+              }
+            ],
             "predecessors": [],
-            "servicePersonnel": "勤务二组,1",
-            "spare": "无",
+            "spare": [],
             "workName": "故障定位"
           },
           {
@@ -3383,14 +3641,34 @@
               "mean": 90,
               "stdDev": 15
             },
-            "equipment": "通用工具箱,TK-01,1",
+            "equipment": [
+              {
+                "model": "TK-01",
+                "name": "通用工具箱",
+                "quantity": 1
+              }
+            ],
             "facility": "维修工位",
-            "personnel": "维修/航电,2",
+            "personnel": [
+              {
+                "professional": "维修人员",
+                "quantity": 1
+              },
+              {
+                "professional": "航电",
+                "quantity": 1
+              }
+            ],
             "predecessors": [
               "REP-001"
             ],
-            "servicePersonnel": "勤务二组,1",
-            "spare": "航电模块,LRU,1",
+            "spare": [
+              {
+                "model": "LRU",
+                "name": "航电模块",
+                "quantity": 1
+              }
+            ],
             "workName": "换件维修"
           }
         ],
@@ -3430,12 +3708,22 @@
               "distributionType": "固定值",
               "value": 30
             },
-            "equipment": "检查灯,LT-01,1",
+            "equipment": [
+              {
+                "model": "LT-01",
+                "name": "检查灯",
+                "quantity": 1
+              }
+            ],
             "facility": "定检工位",
-            "personnel": "维修/机体,1",
+            "personnel": [
+              {
+                "professional": "机体",
+                "quantity": 1
+              }
+            ],
             "predecessors": [],
-            "servicePersonnel": "勤务一组,1",
-            "spare": "无",
+            "spare": [],
             "workName": "定检准备"
           },
           {
@@ -3448,14 +3736,34 @@
               "min": 55,
               "mode": 70
             },
-            "equipment": "液压测试台,HY-01,1",
+            "equipment": [
+              {
+                "model": "HY-01",
+                "name": "液压测试台",
+                "quantity": 1
+              }
+            ],
             "facility": "定检工位",
-            "personnel": "维修/液压,2",
+            "personnel": [
+              {
+                "professional": "维修人员",
+                "quantity": 1
+              },
+              {
+                "professional": "液压",
+                "quantity": 1
+              }
+            ],
             "predecessors": [
               "PM-001"
             ],
-            "servicePersonnel": "勤务一组,1",
-            "spare": "液压密封件,SRU,1",
+            "spare": [
+              {
+                "model": "SRU",
+                "name": "液压密封件",
+                "quantity": 1
+              }
+            ],
             "workName": "液压系统检查"
           }
         ],
@@ -3543,10 +3851,21 @@
           {
             "activityCode": "BA-001",
             "durationMinutes": 5,
-            "equipment": "检测仪,1",
-            "personnel": "机务人员,1",
+            "equipment": [
+              {
+                "model": "检测仪",
+                "name": "检测仪",
+                "quantity": 1
+              }
+            ],
+            "personnel": [
+              {
+                "professional": "机务人员",
+                "quantity": 1
+              }
+            ],
             "predecessors": [],
-            "spare": "",
+            "spare": [],
             "workName": "再次出动准备基本保障活动1"
           }
         ],
@@ -3570,10 +3889,21 @@
           {
             "activityCode": "BA-001",
             "durationMinutes": 30,
-            "equipment": "检测仪,1",
-            "personnel": "机务人员,1",
+            "equipment": [
+              {
+                "model": "检测仪",
+                "name": "检测仪",
+                "quantity": 1
+              }
+            ],
+            "personnel": [
+              {
+                "professional": "机务人员",
+                "quantity": 1
+              }
+            ],
             "predecessors": [],
-            "spare": "",
+            "spare": [],
             "workName": "飞行后检查基本保障活动1"
           }
         ],
@@ -4620,12 +4950,26 @@
                 "min": 35,
                 "mode": 45
               },
-              "equipment": "检测仪,DT-01,1",
+              "equipment": [
+                {
+                  "model": "DT-01",
+                  "name": "检测仪",
+                  "quantity": 1
+                }
+              ],
               "facility": "甲板保障站位",
-              "personnel": "机务/航电,2",
+              "personnel": [
+                {
+                  "professional": "机务人员",
+                  "quantity": 1
+                },
+                {
+                  "professional": "航电",
+                  "quantity": 1
+                }
+              ],
               "predecessors": [],
-              "servicePersonnel": "勤务一组,1",
-              "spare": "无",
+              "spare": [],
               "workName": "机务检查"
             },
             {
@@ -4637,14 +4981,24 @@
                 "max": 70,
                 "min": 50
               },
-              "equipment": "加油车,F-01,1",
+              "equipment": [
+                {
+                  "model": "F-01",
+                  "name": "加油车",
+                  "quantity": 1
+                }
+              ],
               "facility": "甲板加油站位",
-              "personnel": "机务/油料,1",
+              "personnel": [
+                {
+                  "professional": "油料",
+                  "quantity": 1
+                }
+              ],
               "predecessors": [
                 "OPS-001"
               ],
-              "servicePersonnel": "油料组,2",
-              "spare": "无",
+              "spare": [],
               "workName": "燃油加注"
             }
           ],
@@ -4676,12 +5030,26 @@
                 "min": 30,
                 "mode": 40
               },
-              "equipment": "检测仪,DT-01,1",
+              "equipment": [
+                {
+                  "model": "DT-01",
+                  "name": "检测仪",
+                  "quantity": 1
+                }
+              ],
               "facility": "维修工位",
-              "personnel": "维修/航电,2",
+              "personnel": [
+                {
+                  "professional": "维修人员",
+                  "quantity": 1
+                },
+                {
+                  "professional": "航电",
+                  "quantity": 1
+                }
+              ],
               "predecessors": [],
-              "servicePersonnel": "勤务二组,1",
-              "spare": "无",
+              "spare": [],
               "workName": "故障定位"
             },
             {
@@ -4693,14 +5061,34 @@
                 "mean": 90,
                 "stdDev": 15
               },
-              "equipment": "通用工具箱,TK-01,1",
+              "equipment": [
+                {
+                  "model": "TK-01",
+                  "name": "通用工具箱",
+                  "quantity": 1
+                }
+              ],
               "facility": "维修工位",
-              "personnel": "维修/航电,2",
+              "personnel": [
+                {
+                  "professional": "维修人员",
+                  "quantity": 1
+                },
+                {
+                  "professional": "航电",
+                  "quantity": 1
+                }
+              ],
               "predecessors": [
                 "REP-001"
               ],
-              "servicePersonnel": "勤务二组,1",
-              "spare": "航电模块,LRU,1",
+              "spare": [
+                {
+                  "model": "LRU",
+                  "name": "航电模块",
+                  "quantity": 1
+                }
+              ],
               "workName": "换件维修"
             }
           ],
@@ -4740,12 +5128,22 @@
                 "distributionType": "固定值",
                 "value": 30
               },
-              "equipment": "检查灯,LT-01,1",
+              "equipment": [
+                {
+                  "model": "LT-01",
+                  "name": "检查灯",
+                  "quantity": 1
+                }
+              ],
               "facility": "定检工位",
-              "personnel": "维修/机体,1",
+              "personnel": [
+                {
+                  "professional": "机体",
+                  "quantity": 1
+                }
+              ],
               "predecessors": [],
-              "servicePersonnel": "勤务一组,1",
-              "spare": "无",
+              "spare": [],
               "workName": "定检准备"
             },
             {
@@ -4758,14 +5156,34 @@
                 "min": 55,
                 "mode": 70
               },
-              "equipment": "液压测试台,HY-01,1",
+              "equipment": [
+                {
+                  "model": "HY-01",
+                  "name": "液压测试台",
+                  "quantity": 1
+                }
+              ],
               "facility": "定检工位",
-              "personnel": "维修/液压,2",
+              "personnel": [
+                {
+                  "professional": "维修人员",
+                  "quantity": 1
+                },
+                {
+                  "professional": "液压",
+                  "quantity": 1
+                }
+              ],
               "predecessors": [
                 "PM-001"
               ],
-              "servicePersonnel": "勤务一组,1",
-              "spare": "液压密封件,SRU,1",
+              "spare": [
+                {
+                  "model": "SRU",
+                  "name": "液压密封件",
+                  "quantity": 1
+                }
+              ],
               "workName": "液压系统检查"
             }
           ],
@@ -4853,10 +5271,21 @@
             {
               "activityCode": "BA-001",
               "durationMinutes": 5,
-              "equipment": "检测仪,1",
-              "personnel": "机务人员,1",
+              "equipment": [
+                {
+                  "model": "检测仪",
+                  "name": "检测仪",
+                  "quantity": 1
+                }
+              ],
+              "personnel": [
+                {
+                  "professional": "机务人员",
+                  "quantity": 1
+                }
+              ],
               "predecessors": [],
-              "spare": "",
+              "spare": [],
               "workName": "再次出动准备基本保障活动1"
             }
           ],
@@ -4877,10 +5306,21 @@
             {
               "activityCode": "BA-001",
               "durationMinutes": 30,
-              "equipment": "检测仪,1",
-              "personnel": "机务人员,1",
+              "equipment": [
+                {
+                  "model": "检测仪",
+                  "name": "检测仪",
+                  "quantity": 1
+                }
+              ],
+              "personnel": [
+                {
+                  "professional": "机务人员",
+                  "quantity": 1
+                }
+              ],
               "predecessors": [],
-              "spare": "",
+              "spare": [],
               "workName": "飞行后检查基本保障活动1"
             }
           ],

@@ -1273,7 +1273,19 @@
       "target": "M9.7.4 aircraft_support_v1 governance metadata"
     },
     {
-      "field_path": "objects.supportActivities[].jobs[].equipment",
+      "field_path": "objects.supportActivities[].jobs[].equipment[].model",
+      "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
+      "status": "consumed",
+      "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
+    },
+    {
+      "field_path": "objects.supportActivities[].jobs[].equipment[].name",
+      "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
+      "status": "consumed",
+      "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
+    },
+    {
+      "field_path": "objects.supportActivities[].jobs[].equipment[].quantity",
       "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
       "status": "consumed",
       "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
@@ -1285,7 +1297,13 @@
       "target": "M9.7.4 aircraft_support_v1 governance metadata"
     },
     {
-      "field_path": "objects.supportActivities[].jobs[].personnel",
+      "field_path": "objects.supportActivities[].jobs[].personnel[].professional",
+      "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
+      "status": "consumed",
+      "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
+    },
+    {
+      "field_path": "objects.supportActivities[].jobs[].personnel[].quantity",
       "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
       "status": "consumed",
       "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
@@ -1295,12 +1313,6 @@
       "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
       "status": "consumed",
       "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
-    },
-    {
-      "field_path": "objects.supportActivities[].jobs[].servicePersonnel",
-      "rationale": "The field is preserved in the formal payload and provenance for audit/governance, but it is approved as non-behavior-driving in M9.7.4.",
-      "status": "governance_only",
-      "target": "M9.7.4 aircraft_support_v1 governance metadata"
     },
     {
       "field_path": "objects.supportActivities[].jobs[].spare",
@@ -1391,6 +1403,24 @@
       "rationale": "The field is preserved in the formal payload and provenance for audit/governance, but it is approved as non-behavior-driving in M9.7.4.",
       "status": "governance_only",
       "target": "M9.7.4 aircraft_support_v1 governance metadata"
+    },
+    {
+      "field_path": "objects.supportActivities[].jobs[].spare[].model",
+      "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
+      "status": "consumed",
+      "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
+    },
+    {
+      "field_path": "objects.supportActivities[].jobs[].spare[].name",
+      "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
+      "status": "consumed",
+      "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
+    },
+    {
+      "field_path": "objects.supportActivities[].jobs[].spare[].quantity",
+      "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
+      "status": "consumed",
+      "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
     },
     {
       "field_path": "objects.supportActivities[].maxRepairTimeMinutes",
@@ -1752,12 +1782,12 @@
   "source_fixture": "tests/fixtures/modeling_import_project.json",
   "source_import_id": "import-carrier-day-night-001",
   "summary": {
-    "consumed": 35,
+    "consumed": 41,
     "defaulted": 0,
     "derived": 9,
-    "governance_only": 35,
+    "governance_only": 34,
     "ignored": 212,
-    "total_fields": 291,
+    "total_fields": 296,
     "unsupported": 0
   }
 }

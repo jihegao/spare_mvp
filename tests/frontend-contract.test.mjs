@@ -968,7 +968,8 @@ test("support activity pages align to page suggestion activity fields", async ()
   assert.match(basicActivityLibrarySource, /\`\$\{resourceKind\}-models\`/);
   assert.match(basicActivityLibrarySource, /\`\$\{resourceKind\}-names\`/);
   assert.match(basicActivityLibrarySource, /buildSupportResourceRows\(resourceType, root\)/);
-  assert.match(basicActivityLibrarySource, /personnelRequirements/);
+  assert.match(basicActivityLibrarySource, /job\.personnel =/);
+  assert.doesNotMatch(basicActivityLibrarySource, /job\.personnelRequirements =/);
   assert.match(basicActivityLibrarySource, /equipmentRequirements/);
   assert.match(basicActivityLibrarySource, /spareRequirements/);
   assert.match(basicActivityLibrarySource, /basicActivityInput/);

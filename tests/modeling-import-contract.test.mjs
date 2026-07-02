@@ -132,6 +132,53 @@ test("simulation analysis public import templates validate against modeling impo
   }
 
   const canonicalTemplate = await readJson("public/import-templates/canonical_platform_case.json");
+  for (const activity of canonicalTemplate.objects.supportActivities || []) {
+    for (const job of activity.jobs || []) {
+      assert.equal(
+        Object.hasOwn(job, "servicePersonnel"),
+        false,
+        `canonical support activity job ${job.activityCode} must not keep legacy servicePersonnel`
+      );
+      assert.equal(
+        Array.isArray(job.personnel),
+        true,
+        `canonical support activity job ${job.activityCode} must store structured personnel on personnel`
+      );
+      assert.ok(job.personnel.length > 0, `canonical support activity job ${job.activityCode} must define personnel requirements`);
+      for (const [index, personnel] of job.personnel.entries()) {
+        assert.equal(typeof personnel, "object", `canonical support activity job ${job.activityCode} personnel[${index}] must be an object`);
+        assert.deepEqual(
+          Object.keys(personnel).sort(),
+          ["professional", "quantity"],
+          `canonical support activity job ${job.activityCode} personnel[${index}] must match the resource table structure`
+        );
+        assert.equal(typeof personnel.professional, "string", `canonical support activity job ${job.activityCode} personnel[${index}] professional`);
+        assert.equal(
+          personnel.professional.includes("/"),
+          false,
+          `canonical support activity job ${job.activityCode} personnel[${index}] professional must not keep compressed legacy role text`
+        );
+        assert.ok(Number(personnel.quantity) > 0, `canonical support activity job ${job.activityCode} personnel[${index}] quantity`);
+      }
+      for (const resourceKind of ["equipment", "spare"]) {
+        assert.equal(
+          Array.isArray(job[resourceKind]),
+          true,
+          `canonical support activity job ${job.activityCode} must store structured ${resourceKind}`
+        );
+        for (const [index, resource] of job[resourceKind].entries()) {
+          assert.deepEqual(
+            Object.keys(resource).sort(),
+            ["model", "name", "quantity"],
+            `canonical support activity job ${job.activityCode} ${resourceKind}[${index}] must match the resource table structure`
+          );
+          assert.equal(typeof resource.model, "string", `${job.activityCode} ${resourceKind}[${index}] model`);
+          assert.equal(typeof resource.name, "string", `${job.activityCode} ${resourceKind}[${index}] name`);
+          assert.ok(Number(resource.quantity) > 0, `${job.activityCode} ${resourceKind}[${index}] quantity`);
+        }
+      }
+    }
+  }
   assert.deepEqual(canonicalTemplate.source, {
     type: "json_fixture",
     name: "simulation_analysis_cases/canonical_platform_case.json",

@@ -160,6 +160,7 @@ def _canonical_platform_import(source: dict[str, Any]) -> dict[str, Any]:
     _remove_equipment_deployment_locations(case)
     _apply_combat_unit_aircraft_defaults(case, airport="A", pre_life_calendar_days=0)
     _move_composite_equipment_quantities_to_basic_tasks(case)
+    _structure_support_activity_personnel(case)
     case["source"] = {
         "type": "json_fixture",
         "name": "simulation_analysis_cases/canonical_platform_case.json",
@@ -365,6 +366,62 @@ def _remove_equipment_deployment_locations(import_package: dict[str, Any]) -> No
         mission_equipment = mission.get("equipment") if isinstance(mission.get("equipment"), dict) else None
         if mission_equipment is not None:
             mission_equipment.pop("deploymentLocation", None)
+
+
+def _structure_support_activity_personnel(import_package: dict[str, Any]) -> None:
+    objects = import_package.get("objects") if isinstance(import_package.get("objects"), dict) else {}
+    activities = objects.get("supportActivities") if isinstance(objects.get("supportActivities"), list) else []
+    for activity in activities:
+        if not isinstance(activity, dict):
+            continue
+        jobs = activity.get("jobs") if isinstance(activity.get("jobs"), list) else []
+        for job in jobs:
+            if not isinstance(job, dict):
+                continue
+            personnel = _personnel_requirements(job.get("personnel"))
+            if personnel:
+                job["personnel"] = personnel
+            job["equipment"] = _material_requirements(job.get("equipment"))
+            job["spare"] = _material_requirements(job.get("spare"))
+            job.pop("servicePersonnel", None)
+            job.pop("personnelRequirements", None)
+            job.pop("equipmentRequirements", None)
+            job.pop("spareRequirements", None)
+
+
+def _personnel_requirements(value: Any) -> list[dict[str, Any]]:
+    if isinstance(value, list):
+        return [
+            _normalize_personnel_requirement(item, index)
+            for index, item in enumerate(value)
+            if isinstance(item, dict)
+        ]
+    return []
+
+
+def _normalize_personnel_requirement(item: dict[str, Any], index: int) -> dict[str, Any]:
+    return {
+        "professional": str(item.get("professional") or "").strip(),
+        "quantity": _positive_int(item.get("quantity"), 1),
+    }
+
+
+def _material_requirements(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    return [
+        _normalize_material_requirement(item)
+        for item in value
+        if isinstance(item, dict)
+    ]
+
+
+def _normalize_material_requirement(item: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "model": str(item.get("model") or "").strip(),
+        "name": str(item.get("name") or "").strip(),
+        "quantity": _positive_int(item.get("quantity"), 1),
+    }
 
 
 def _move_composite_equipment_quantities_to_basic_tasks(import_package: dict[str, Any]) -> None:

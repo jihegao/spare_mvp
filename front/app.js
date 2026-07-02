@@ -4708,9 +4708,9 @@ function createOperationsSupportActivityForAircraftModel(aircraftModel, config =
       workName: `${config.label || "新增"}基本保障活动1`,
       predecessors: [],
       durationMinutes: config.maxWorkTimeRefMinutes ?? 30,
-      personnel: "机务人员,1",
-      equipment: "检测仪,1",
-      spare: ""
+      personnel: defaultPersonnelRequirement("机务人员", 1),
+      equipment: defaultMaterialRequirement("检测仪", "检测仪", 1),
+      spare: []
     }]
   };
 }
@@ -4855,9 +4855,9 @@ function createPreventiveMaintenanceActivityForAircraftModel(aircraftModel, sequ
       workName: "新增预防性维修工作项目1",
       predecessors: [],
       durationMinutes: 30,
-      personnel: "维修人员,1",
-      equipment: "通用工具箱,1",
-      spare: ""
+      personnel: defaultPersonnelRequirement("维修人员", 1),
+      equipment: defaultMaterialRequirement("通用工具箱", "通用工具箱", 1),
+      spare: []
     }]
   };
 }
@@ -5795,9 +5795,9 @@ function createDefaultCorrectiveMaintenanceActivity() {
       workName: "新增修复性维修工作项目1",
       predecessors: [],
       durationMinutes: 60,
-      personnel: "维修人员,1",
-      equipment: "通用工具箱,1",
-      spare: ""
+      personnel: defaultPersonnelRequirement("维修人员", 1),
+      equipment: defaultMaterialRequirement("通用工具箱", "通用工具箱", 1),
+      spare: []
     }]
   };
 }
@@ -6106,9 +6106,9 @@ function addSupportActivityJob(tabKey) {
     workName: supportActivityJobDefaultName(tabKey, nextIndex),
     predecessors: [],
     durationMinutes: 30,
-    personnel: "机务人员,1",
-    equipment: "检测仪,1",
-    spare: ""
+    personnel: defaultPersonnelRequirement("机务人员", 1),
+    equipment: defaultMaterialRequirement("检测仪", "检测仪", 1),
+    spare: []
   });
   activity.jobs = jobs;
   const key = supportActivityJobKey(tabKey, nextIndex);
@@ -6912,6 +6912,11 @@ function basicActivityLegacyResourceItemIsUsable(resourceKind, item) {
 }
 
 function normalizeBasicActivityResourceRequirements(row, resourceKind) {
+  const structured = row[resourceKind];
+  if (Array.isArray(structured) && structured.length) {
+    return structured.map((item, index) => normalizeBasicActivityResourceDialogRequirement(resourceKind, item, index));
+  }
+  if (resourceKind === "personnel") return [];
   const source = row[`${resourceKind}Requirements`];
   if (Array.isArray(source) && source.length) return source.map((item) => ({ ...item }));
   const legacy = String(row[resourceKind] || "").trim();
@@ -6927,6 +6932,21 @@ function normalizeBasicActivityResourceRequirements(row, resourceKind) {
       quantity: Number(maybeQuantity ?? modelOrQuantity ?? 1) || 1
     };
   });
+}
+
+function defaultPersonnelRequirement(professional, quantity = 1) {
+  return [normalizeBasicActivityResourceDialogRequirement("personnel", {
+    professional,
+    quantity
+  }, 0)];
+}
+
+function defaultMaterialRequirement(model, name = model, quantity = 1) {
+  return [normalizeBasicActivityResourceDialogRequirement("equipment", {
+    model,
+    name,
+    quantity
+  }, 0)];
 }
 
 function basicActivityDurationProfileEditor(row) {
@@ -7039,13 +7059,10 @@ function basicActivityLibraryRows() {
       durationProfile: normalizeSupportActivityDurationProfile(job.durationProfile || job.durationDistribution, job.durationMinutes),
       durationMinutes: job.durationMinutes,
       personnelProfessional: job.personnelProfessional || "",
-      personnelRequirements: Array.isArray(job.personnelRequirements) ? job.personnelRequirements.map((item) => ({ ...item })) : [],
       equipmentModel: job.equipmentModel || "",
-      equipmentRequirements: Array.isArray(job.equipmentRequirements) ? job.equipmentRequirements.map((item) => ({ ...item })) : [],
-      spareRequirements: Array.isArray(job.spareRequirements) ? job.spareRequirements.map((item) => ({ ...item })) : [],
-      personnel: job.personnel,
-      equipment: job.equipment,
-      spare: job.spare,
+      personnel: normalizeBasicActivityResourceRequirements(job, "personnel"),
+      equipment: normalizeBasicActivityResourceRequirements(job, "equipment"),
+      spare: normalizeBasicActivityResourceRequirements(job, "spare"),
       predecessors: Array.isArray(job.predecessors) ? [...job.predecessors] : []
     }))
   );
@@ -7113,9 +7130,9 @@ function addBasicActivityLibraryJob() {
     predecessors: [],
     durationProfile: { distributionType: "固定值", value: 30 },
     durationMinutes: 30,
-    personnel: "机务,1",
-    equipment: "检测仪,1",
-    spare: ""
+    personnel: defaultPersonnelRequirement("机务", 1),
+    equipment: defaultMaterialRequirement("检测仪", "检测仪", 1),
+    spare: []
   });
   activity.jobs = jobs;
   const activityIndex = (scenario.supportActivities || []).indexOf(activity);
@@ -7141,9 +7158,9 @@ function createBasicActivityDraft() {
     applicableAircraft: defaultSupportActivityAircraftModel(),
     durationProfile: { distributionType: "固定值", value: 30 },
     durationMinutes: 30,
-    personnelRequirements: [],
-    equipmentRequirements: [],
-    spareRequirements: [],
+    personnel: [],
+    equipment: [],
+    spare: [],
     predecessors: []
   };
 }
@@ -7174,9 +7191,9 @@ function supportActivityJobFromBasicActivityDraft(row) {
     predecessors: Array.isArray(row.predecessors) ? [...row.predecessors] : [],
     durationProfile: profile,
     durationMinutes: durationMinutesForSupportActivityProfile(profile, row.durationMinutes),
-    personnelRequirements: Array.isArray(row.personnelRequirements) ? row.personnelRequirements.map((item) => ({ ...item })) : [],
-    equipmentRequirements: Array.isArray(row.equipmentRequirements) ? row.equipmentRequirements.map((item) => ({ ...item })) : [],
-    spareRequirements: Array.isArray(row.spareRequirements) ? row.spareRequirements.map((item) => ({ ...item })) : []
+    personnel: normalizeBasicActivityResourceRequirements(row, "personnel"),
+    equipment: normalizeBasicActivityResourceRequirements(row, "equipment"),
+    spare: normalizeBasicActivityResourceRequirements(row, "spare")
   };
   syncBasicActivityResourceSummaries(job);
   return job;
@@ -7355,28 +7372,28 @@ function updateBasicActivityResourceField(key, fieldName, value) {
   const job = { ...(jobs[jobIndex] || {}) };
   if (fieldName === "personnelProfessional") {
     job.personnelProfessional = String(value || "");
-    job.personnelRequirements = normalizeBasicActivityResourceRequirements(job, "personnel").map((item) => ({
+    job.personnel = normalizeBasicActivityResourceRequirements(job, "personnel").map((item) => ({
       ...item,
-      professional: job.personnelProfessional || item.professional || item.model || ""
+      professional: job.personnelProfessional || item.professional || ""
     }));
   } else if (fieldName === "personnelKeys") {
-    job.personnelRequirements = basicActivityResourceRequirementsFromKeys("personnel", Array.isArray(value) ? value : []);
+    job.personnel = basicActivityResourceRequirementsFromKeys("personnel", Array.isArray(value) ? value : []);
   } else if (fieldName === "equipmentModel") {
     job.equipmentModel = String(value || "");
   } else if (fieldName === "equipmentKeys") {
-    job.equipmentRequirements = mergeBasicActivityResourceQuantities(
+    job.equipment = mergeBasicActivityResourceQuantities(
       normalizeBasicActivityResourceRequirements(job, "equipment"),
       basicActivityResourceRequirementsFromKeys("equipment", Array.isArray(value) ? value : [])
     );
   } else if (fieldName === "spareKeys") {
-    job.spareRequirements = mergeBasicActivityResourceQuantities(
+    job.spare = mergeBasicActivityResourceQuantities(
       normalizeBasicActivityResourceRequirements(job, "spare"),
       basicActivityResourceRequirementsFromKeys("spare", Array.isArray(value) ? value : [])
     );
   } else if (fieldName.startsWith("equipmentQuantity:")) {
-    job.equipmentRequirements = updateBasicActivityRequirementQuantity(job, "equipment", fieldName.replace(/^equipmentQuantity:/, ""), value);
+    job.equipment = updateBasicActivityRequirementQuantity(job, "equipment", fieldName.replace(/^equipmentQuantity:/, ""), value);
   } else if (fieldName.startsWith("spareQuantity:")) {
-    job.spareRequirements = updateBasicActivityRequirementQuantity(job, "spare", fieldName.replace(/^spareQuantity:/, ""), value);
+    job.spare = updateBasicActivityRequirementQuantity(job, "spare", fieldName.replace(/^spareQuantity:/, ""), value);
   }
   syncBasicActivityResourceSummaries(job);
   setBasicActivityTargetJob(target, job);
@@ -7395,7 +7412,6 @@ function updateBasicActivityResourceDialogField(key, resourceKind, index, fieldN
   requirements[index] = normalizeBasicActivityResourceDialogRequirement(resourceKind, {
     ...current,
     [fieldName]: nextValue,
-    ...(resourceKind === "personnel" && fieldName === "professional" ? { model: nextValue } : {}),
     ...(resourceKind === "equipment" && fieldName === "model" ? basicActivityResourceAutofillByModel("保障设备", nextValue) : {}),
     ...(resourceKind === "spare" && fieldName === "model" ? basicActivityResourceAutofillByModel("备件", nextValue) : {})
   }, index);
@@ -7445,9 +7461,7 @@ function createBasicActivityResourceRequirement(resourceKind, index) {
   if (resourceKind === "personnel") {
     const professional = basicActivityPersonnelProfessionalOptions()[1]?.value || "";
     return normalizeBasicActivityResourceDialogRequirement(resourceKind, {
-      key: `personnel:manual:${Date.now()}:${index}`,
       professional,
-      model: professional,
       quantity: 1
     }, index);
   }
@@ -7463,31 +7477,32 @@ function createBasicActivityResourceRequirement(resourceKind, index) {
 }
 
 function normalizeBasicActivityResourceDialogRequirement(resourceKind, item, index) {
-  const key = item.key || `${resourceKind}:manual:${Date.now()}:${index}`;
   if (resourceKind === "personnel") {
-    const professional = item.professional || item.model || "";
+    const professional = item.professional || "";
     return {
-      key,
       professional,
-      model: professional,
       quantity: Math.max(0, Number(item.quantity ?? 1))
     };
   }
   return {
-    key,
     name: item.name || "",
     model: item.model || "",
-    scope: item.scope || "",
     quantity: Math.max(0, Number(item.quantity ?? 1))
   };
 }
 
 function setBasicActivityResourceRequirements(job, resourceKind, requirements) {
-  job[`${resourceKind}Requirements`] = requirements.map((item, index) => normalizeBasicActivityResourceDialogRequirement(resourceKind, item, index));
   if (resourceKind === "personnel") {
-    job.personnelProfessional = job.personnelRequirements[0]?.professional || "";
+    job.personnel = requirements.map((item, index) => normalizeBasicActivityResourceDialogRequirement(resourceKind, item, index));
+    delete job.personnelRequirements;
+    job.personnelProfessional = job.personnel[0]?.professional || "";
   } else if (resourceKind === "equipment") {
-    job.equipmentModel = job.equipmentRequirements[0]?.model || "";
+    job.equipment = requirements.map((item, index) => normalizeBasicActivityResourceDialogRequirement(resourceKind, item, index));
+    delete job.equipmentRequirements;
+    job.equipmentModel = job.equipment[0]?.model || "";
+  } else if (resourceKind === "spare") {
+    job.spare = requirements.map((item, index) => normalizeBasicActivityResourceDialogRequirement(resourceKind, item, index));
+    delete job.spareRequirements;
   }
 }
 
@@ -7517,13 +7532,18 @@ function basicActivityResourceRequirementsFromKeys(resourceKind, keys) {
   return keys.map((key) => {
     const row = rowsByKey.get(String(key));
     if (!row) return null;
+    if (resourceKind === "personnel") {
+      return {
+        professional: row.model || "",
+        quantity: Number(row.quantity || 1)
+      };
+    }
     return {
       key: String(key),
       name: row.name || row.model || resourceType,
       model: row.model || "",
-      professional: resourceKind === "personnel" ? row.model || "" : "",
       scope: row.scope || "",
-      quantity: resourceKind === "personnel" ? Number(row.quantity || 1) : 1
+      quantity: 1
     };
   }).filter(Boolean);
 }
@@ -7548,15 +7568,12 @@ function syncBasicActivityResourceSummaries(job) {
   const personnelRequirements = normalizeBasicActivityResourceRequirements(job, "personnel");
   const equipmentRequirements = normalizeBasicActivityResourceRequirements(job, "equipment");
   const spareRequirements = normalizeBasicActivityResourceRequirements(job, "spare");
-  job.personnel = personnelRequirements
-    .map((item) => [item.professional || job.personnelProfessional || item.model, item.name || item.scope].filter(Boolean).join("/"))
-    .join("; ");
-  job.equipment = equipmentRequirements
-    .map((item) => [item.name || item.model, item.model, item.quantity ?? 1].filter(Boolean).join(","))
-    .join("; ");
-  job.spare = spareRequirements
-    .map((item) => [item.name || item.model, item.quantity ?? 1].filter(Boolean).join(","))
-    .join("; ");
+  job.personnel = personnelRequirements.map((item, index) => normalizeBasicActivityResourceDialogRequirement("personnel", item, index));
+  delete job.personnelRequirements;
+  job.equipment = equipmentRequirements.map((item, index) => normalizeBasicActivityResourceDialogRequirement("equipment", item, index));
+  delete job.equipmentRequirements;
+  job.spare = spareRequirements.map((item, index) => normalizeBasicActivityResourceDialogRequirement("spare", item, index));
+  delete job.spareRequirements;
 }
 
 function durationMinutesForSupportActivityProfile(profile, fallbackMinutes = 30) {
@@ -7639,9 +7656,9 @@ function importBasicActivityByType(type) {
     predecessors: [],
     durationProfile: { distributionType: "固定值", value: 30 },
     durationMinutes: 30,
-    personnel: "机务,1",
-    equipment: "通用工具,1",
-    spare: ""
+    personnel: defaultPersonnelRequirement("机务", 1),
+    equipment: defaultMaterialRequirement("通用工具", "通用工具", 1),
+    spare: []
   });
   activity.jobs = jobs;
   const activityIndex = (scenario.supportActivities || []).indexOf(activity);

@@ -1149,6 +1149,14 @@ class AircraftSupportV1Model:
 
     def _task_spare_requirement(self, job: JobState, task: dict[str, Any]) -> tuple[str | None, int]:
         spare = task.get("spare")
+        if isinstance(spare, list):
+            for item in spare:
+                if not isinstance(item, dict):
+                    continue
+                spare_type = str(item.get("name") or item.get("model") or "").strip()
+                quantity = _positive_int(item.get("quantity"), 1)
+                if spare_type and quantity > 0:
+                    return spare_type, quantity
         if isinstance(spare, str) and spare and spare != "无":
             parts = [part.strip() for part in spare.split(",") if part.strip()]
             if parts:
@@ -1577,6 +1585,18 @@ def _time_to_minute(value: Any, fallback: int) -> int:
 def _resource_quantity(text: Any, explicit: Any, *, default: int) -> int:
     if isinstance(explicit, (int, float)) and explicit > 0:
         return max(1, int(explicit))
+    if isinstance(text, list):
+        total = 0
+        for item in text:
+            if not isinstance(item, dict):
+                continue
+            try:
+                quantity = int(float(item.get("quantity", 1)))
+            except (TypeError, ValueError):
+                quantity = 1
+            total += max(0, quantity)
+        if total > 0:
+            return total
     if isinstance(text, str):
         for part in reversed([item.strip() for item in text.split(",") if item.strip()]):
             if part.isdigit():
