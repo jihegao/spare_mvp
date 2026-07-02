@@ -182,7 +182,12 @@ class AircraftSupportV1Model:
         self.shortage_events = 0
         self.transport_replenishment_events = 0
         self.resource_delay_events = 0
+        self.personnel_capacity_delay_events = 0
+        self.equipment_capacity_delay_events = 0
         self.failure_delay_events = 0
+        self.resource_utilization_observations = 0
+        self.personnel_utilization_sum = 0.0
+        self.equipment_utilization_sum = 0.0
 
     @staticmethod
     def behavior_scope() -> dict[str, list[str]]:
@@ -204,6 +209,7 @@ class AircraftSupportV1Model:
             self._create_due_preflight_jobs()
             self._start_waiting_jobs()
             self._dispatch_due_missions()
+            self._record_resource_utilization()
             if minute % self.sample_every_minutes == 0 or minute == self.duration_minutes:
                 frames.append(self.visualization_frame(run_id="", step=len(frames)))
                 if len(frames) > self.max_state_frames_single:
@@ -227,6 +233,9 @@ class AircraftSupportV1Model:
         ready_rate = available / max(1, len(self.aircraft))
         avg_delay = self.total_departure_delay / max(1, self.launched_sorties + self.cancelled_sorties)
         mean_transport_delay = self.total_transport_delay / max(1, self.transport_replenishment_events)
+        personnel_utilization, equipment_utilization = self._support_resource_utilization_rates()
+        personnel_work_count = sum(node["work_count"] for node in self.nodes.values())
+        equipment_work_count = personnel_work_count
         return {
             "sortie_completion_rate": sortie_completion_rate,
             "mission_success_rate": sortie_completion_rate,
@@ -263,6 +272,10 @@ class AircraftSupportV1Model:
             "downtime_resource_delay_events": self.resource_delay_events,
             "transport_replenishment_events": self.transport_replenishment_events,
             "mean_transport_delay": mean_transport_delay,
+            "support_personnel_utilization": personnel_utilization,
+            "support_personnel_satisfaction_rate": personnel_work_count / max(1, personnel_work_count + self.personnel_capacity_delay_events),
+            "support_equipment_utilization": equipment_utilization,
+            "support_equipment_satisfaction_rate": equipment_work_count / max(1, equipment_work_count + self.equipment_capacity_delay_events),
             "in_flight_failures": self.in_flight_failures,
             "rbd_root_failures": self.rbd_root_failures,
             "mean_launch_time": avg_delay,
@@ -886,10 +899,12 @@ class AircraftSupportV1Model:
             )
             if node["personnel_in_use"] + personnel > node["personnel_capacity"]:
                 self.resource_delay_events += 1
+                self.personnel_capacity_delay_events += 1
                 job.shortage_reason = "personnel_capacity"
                 continue
             if node["equipment_in_use"] + equipment > node["equipment_capacity"]:
                 self.resource_delay_events += 1
+                self.equipment_capacity_delay_events += 1
                 job.shortage_reason = "equipment_capacity"
                 continue
             spare_type, spare_qty = self._task_spare_requirement(job, task)
@@ -909,6 +924,30 @@ class AircraftSupportV1Model:
             job.started_time = job.started_time if job.started_time is not None else self.minute
             job.shortage_reason = None
             self._event("job_started", f"{job.job_id} started {task.get('workName') or task.get('activityCode') or 'task'}")
+
+    def _record_resource_utilization(self) -> None:
+        personnel_capacity = sum(node["personnel_capacity"] for node in self.nodes.values())
+        equipment_capacity = sum(node["equipment_capacity"] for node in self.nodes.values())
+        personnel_in_use = sum(node["personnel_in_use"] for node in self.nodes.values())
+        equipment_in_use = sum(node["equipment_in_use"] for node in self.nodes.values())
+        self.personnel_utilization_sum += min(1.0, personnel_in_use / max(1, personnel_capacity))
+        self.equipment_utilization_sum += min(1.0, equipment_in_use / max(1, equipment_capacity))
+        self.resource_utilization_observations += 1
+
+    def _support_resource_utilization_rates(self) -> tuple[float, float]:
+        if self.resource_utilization_observations > 0:
+            return (
+                self.personnel_utilization_sum / self.resource_utilization_observations,
+                self.equipment_utilization_sum / self.resource_utilization_observations,
+            )
+        personnel_capacity = sum(node["personnel_capacity"] for node in self.nodes.values())
+        equipment_capacity = sum(node["equipment_capacity"] for node in self.nodes.values())
+        personnel_in_use = sum(node["personnel_in_use"] for node in self.nodes.values())
+        equipment_in_use = sum(node["equipment_in_use"] for node in self.nodes.values())
+        return (
+            min(1.0, personnel_in_use / max(1, personnel_capacity)),
+            min(1.0, equipment_in_use / max(1, equipment_capacity)),
+        )
 
     def _evaluate_failures(self) -> None:
         if not self.components:

@@ -1647,7 +1647,7 @@ function bindEvents() {
       }
       selectedMonteCarloExperimentId = experiment.id;
       monteCarloExperiments = monteCarloExperiments.map((item) => item.id === experiment.id
-        ? { ...item, status: "运行中", progress: 35, runType: "monte_carlo", runId: backendRun?.run_id || item.runId }
+        ? { ...item, status: "运行中", progress: 35, runType: "monte_carlo", runId: "", artifactId: "", artifactManifestId: "", projectionArtifactIds: [] }
         : item);
       experimentRunStatus = "运行中";
       startMonteCarloRunThroughApi({ monteCarloExperimentId: experiment.mc_experiment_id });
@@ -12031,7 +12031,7 @@ function renderMonteCarloResults(experiment = null) {
       </div>
       ${renderM7RunArtifactPanel()}
       ${renderMonteCarloFormalSourceTable(boundary)}
-      ${boundary.formalUnlocked ? renderMonteCarloAnalysisResultLocations(boundary) : renderMonteCarloFormalBlockedState(boundary)}
+      ${boundary.formalUnlocked ? renderMonteCarloEvaluationMetricResults(boundary) : renderMonteCarloFormalBlockedState(boundary)}
     </div>
   `;
 }
@@ -12168,19 +12168,38 @@ function renderMonteCarloFormalSourceTable(boundary) {
   return `<div class="backend-run-chain mc-formal-source"><span>正式结果来源</span><table><tbody>${rows.map(([label, value]) => `<tr><th>${htmlEscape(label)}</th><td>${htmlEscape(value)}</td></tr>`).join("")}</tbody></table></div>`;
 }
 
-function renderMonteCarloAnalysisResultLocations(boundary) {
+function monteCarloEvaluationMetricRows(boundary) {
+  const metrics = backendRunResult?.metrics || {};
+  const candidates = [
+    ["出动架次率", "sortie_rate", pct],
+    ["使用可用度", "ready_rate", pct],
+    ["再次出动准备时间", "mean_turnaround_time", (value) => `${fixed(value, 1)} min`],
+    ["保障人员利用率", "support_personnel_utilization", pct],
+    ["保障人员满足率", "support_personnel_satisfaction_rate", pct],
+    ["保障设备利用率", "support_equipment_utilization", pct],
+    ["保障设备满足率", "support_equipment_satisfaction_rate", pct]
+  ];
+  return candidates.map(([label, key, formatter]) => {
+    const value = Number(metrics[key]);
+    return [label, Number.isFinite(value) ? formatter(value) : "待产出", key];
+  });
+}
+
+function renderMonteCarloEvaluationMetricResults(boundary) {
+  const rows = monteCarloEvaluationMetricRows(boundary);
   return `
-    <div class="backend-run-chain mc-analysis-result-locations">
-      <span>分析结果页面</span>
-      <div class="result-source-note">
-        <strong>已迁移</strong>
-        <span>四类 analysis projection 结果面板已移到对应分析页面；蒙特卡洛详情页只保留 run、artifact 与 projection 来源校验。</span>
+    <div class="mc-evaluation-metrics">
+      <div class="section-head">
+        <h3>评估指标结果</h3>
+        <span>正式 result metrics</span>
       </div>
-      <div class="toolbar-row">
-        ${boundary.projectionViews.map((view) => `
-          <button type="button" data-feature-id="${htmlEscape(analysisPageFeatureIdForType(view.analysisType))}">
-            ${htmlEscape(view.label)}
-          </button>
+      <div class="mc-formal-metrics">
+        ${rows.map(([name, value, source]) => `
+          <div class="metric-card">
+            <span>${htmlEscape(name)}</span>
+            <strong>${htmlEscape(value)}</strong>
+            <em>${htmlEscape(source)}</em>
+          </div>
         `).join("")}
       </div>
     </div>

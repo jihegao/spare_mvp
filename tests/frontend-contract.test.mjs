@@ -2347,15 +2347,11 @@ test("analysis pages expose controlled profile overrides without defaulting them
   assert.doesNotMatch(runIntentSource, /\.\.\.\(analysisType \? \{ analysis_type/);
 });
 
-test("formal Monte Carlo projection result panels live on their matching analysis pages", async () => {
+test("formal Monte Carlo projection result panels stay off the Monte Carlo detail page", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const mcResultSource = appSource.slice(
     appSource.indexOf("function renderMonteCarloResults"),
     appSource.indexOf("function monteCarloFormalResultBoundary")
-  );
-  const locationSource = appSource.slice(
-    appSource.indexOf("function renderMonteCarloAnalysisResultLocations"),
-    appSource.indexOf("function renderMonteCarloFormalBlockedState")
   );
   const dashboardSource = appSource.slice(
     appSource.indexOf("function renderAnalysisDashboard"),
@@ -2367,10 +2363,10 @@ test("formal Monte Carlo projection result panels live on their matching analysi
   );
 
   assert.match(mcResultSource, /renderMonteCarloFormalBlockedState\(boundary\)/);
-  assert.match(mcResultSource, /renderMonteCarloAnalysisResultLocations\(boundary\)/);
+  assert.match(mcResultSource, /renderMonteCarloEvaluationMetricResults\(boundary\)/);
   assert.doesNotMatch(mcResultSource, /renderMonteCarloFormalProjectionResults\(boundary\)/);
-  assert.match(locationSource, /analysisPageFeatureIdForType\(view\.analysisType\)/);
-  assert.doesNotMatch(appSource, /function renderMonteCarloFormalProjectionResults|mc-formal-results|mc-formal-projection/);
+  assert.doesNotMatch(mcResultSource, /analysisPageFeatureIdForType|data-feature-id|分析结果页面/);
+  assert.doesNotMatch(appSource, /function renderMonteCarloFormalProjectionResults|function renderMonteCarloAnalysisResultLocations|mc-formal-results|mc-formal-projection/);
   assert.match(dashboardSource, /renderAnalysisProjectionResultPanel\(formalProjection\)/);
   for (const analysisType of ["spare_shortfall", "carry_list", "mission_reliability", "downtime_factors"]) {
     assert.match(formalProjectionSource, new RegExp(`formalProjection\\.analysisType === "${analysisType}"`));
@@ -2462,6 +2458,10 @@ test("experiment plan editor edits an isolated branch rather than the project dr
 
 test("monte carlo launch creates a run from the current experiment plan branch", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const clickHandlerSource = appSource.slice(
+    appSource.indexOf("const monteCarloStartButton = event.target.closest(\"[data-mc-action='start']\")"),
+    appSource.indexOf("const analysisActionButton")
+  );
   const launchSource = appSource.slice(
     appSource.indexOf("async function startMonteCarloRunThroughApi"),
     appSource.indexOf("async function refreshRunResultThroughApi")
@@ -2477,6 +2477,10 @@ test("monte carlo launch creates a run from the current experiment plan branch",
   assert.match(launchSource, /mcExperimentId: monteCarloExperimentId/);
   assert.match(launchSource, /analysisType,/);
   assert.match(launchSource, /monteCarloParameterSpace: monteCarloParameterSpaceForExperiment\(monteCarloExperimentId\)/);
+  assert.match(clickHandlerSource, /runId: ""/);
+  assert.match(clickHandlerSource, /artifactManifestId: ""/);
+  assert.match(clickHandlerSource, /projectionArtifactIds: \[\]/);
+  assert.doesNotMatch(clickHandlerSource, /runId: backendRun\?\.run_id/);
   assert.match(appSource, /function monteCarloParameterSpaceForExperiment\(monteCarloExperimentId\)/);
   assert.match(appSource, /function monteCarloParameterSpaceForExperiment\(monteCarloExperimentId\)\s*\{\s*return "baseline";\s*\}/);
   assert.match(appSource, /function hiddenCurrentAnalysisExperimentId\(analysisType\)/);
@@ -3307,7 +3311,7 @@ test("phase 6D downtime analysis renders formal anomaly snapshots with export an
   assert.match(handlerSource, /downtimeSnapshotDeleteButton/);
 });
 
-test("monte carlo detail keeps formal source status and links to analysis pages", async () => {
+test("monte carlo detail keeps formal source status and only shows evaluation metrics", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const mcResultSource = appSource.slice(
     appSource.indexOf("function renderMonteCarloResults"),
@@ -3316,8 +3320,14 @@ test("monte carlo detail keeps formal source status and links to analysis pages"
   assert.match(appSource, /function renderMonteCarloResults/);
   assert.match(mcResultSource, /蒙特卡洛实验结果/);
   assert.match(mcResultSource, /renderMonteCarloFormalSourceTable\(boundary\)/);
-  assert.match(mcResultSource, /renderMonteCarloAnalysisResultLocations\(boundary\)/);
+  assert.match(mcResultSource, /renderMonteCarloEvaluationMetricResults\(boundary\)/);
   assert.match(mcResultSource, /renderMonteCarloFormalBlockedState\(boundary\)/);
+  assert.match(appSource, /评估指标结果/);
+  assert.match(appSource, /function monteCarloEvaluationMetricRows/);
+  for (const label of ["出动架次率", "使用可用度", "再次出动准备时间", "保障人员利用率", "保障人员满足率", "保障设备利用率", "保障设备满足率"]) {
+    assert.match(appSource, new RegExp(label));
+  }
+  assert.doesNotMatch(mcResultSource, /renderMonteCarloAnalysisResultLocations|analysisPageFeatureIdForType|data-feature-id|分析结果页面/);
   assert.match(appSource, /function renderAnalysisProjectionResultPanel/);
   assert.doesNotMatch(mcResultSource, /mc-formal-results|mc-formal-projection|renderFormalProjectionBody/);
   assert.doesNotMatch(mcResultSource, /mc-result-cards|mc-evaluation-table/);

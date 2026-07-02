@@ -75,6 +75,31 @@ def aircraft_payload_nodes(model: AircraftSupportV1Model, aircraft) -> list[dict
 
 
 class AircraftSupportV1ModelTest(unittest.TestCase):
+    def test_snapshot_reports_support_resource_evaluation_metrics(self) -> None:
+        model = AircraftSupportV1Model(_minimal_inputs())
+        execution = model.run()
+        metrics = execution["metrics"]
+
+        for key in [
+            "sortie_rate",
+            "ready_rate",
+            "mean_turnaround_time",
+            "support_personnel_utilization",
+            "support_personnel_satisfaction_rate",
+            "support_equipment_utilization",
+            "support_equipment_satisfaction_rate",
+        ]:
+            self.assertIn(key, metrics)
+
+        for key in [
+            "support_personnel_utilization",
+            "support_personnel_satisfaction_rate",
+            "support_equipment_utilization",
+            "support_equipment_satisfaction_rate",
+        ]:
+            self.assertGreaterEqual(metrics[key], 0)
+            self.assertLessEqual(metrics[key], 1)
+
     def test_real_aircraft_assets_are_loaded_before_generated_tail_numbers(self) -> None:
         inputs = _minimal_inputs()
         inputs["aircraft"]["assets"] = [
