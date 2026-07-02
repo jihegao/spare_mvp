@@ -11,6 +11,7 @@ from typing import Any
 
 from src.spare_mvp_backend.errors import BackendApiError
 from src.spare_mvp_backend.modeling_import import modeling_import_to_project, validate_modeling_import_package
+from src.spare_mvp_backend.project_payload import strip_project_sweep
 from src.spare_mvp_backend.repository import ContractRepository
 from src.spare_mvp_backend.run_service import ACTIVE_FORMAL_MODEL_FAMILY, RETIRED_FORMAL_MODEL_FAMILIES, RunService, RunServiceError
 from src.spare_mvp_contract.adapter import AdapterError, SimulationAdapter
@@ -190,11 +191,12 @@ class BackendApi:
             raise BackendApiError("project_has_runs", str(exc)) from exc
 
     def save_project(self, project_json: dict[str, Any]) -> dict[str, Any]:
-        validation = self.validate_project(project_json)
+        project_to_save = strip_project_sweep(project_json)
+        validation = self.validate_project(project_to_save)
         if not validation["ok"]:
             raise BackendApiError("invalid_project", "Project JSON failed validation", errors=validation["errors"])
 
-        project = copy.deepcopy(project_json)
+        project = copy.deepcopy(project_to_save)
         project["project_id"] = validation["project_id"]
         project["schema_version"] = validation["project_schema_version"]
         project["project_version"] = validation["project_version"]

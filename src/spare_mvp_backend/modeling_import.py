@@ -6,6 +6,8 @@ from copy import deepcopy
 from math import isfinite
 from typing import Any
 
+from src.spare_mvp_backend.project_payload import strip_project_sweep
+
 
 MODELING_IMPORT_PAGE_MAP = {
     "missionProfiles": "任务剖面参数",
@@ -107,7 +109,7 @@ def modeling_import_to_project(import_package: dict[str, Any], validation: dict[
     if validation is None:
         validation = validate_modeling_import_package(import_package)
 
-    return {
+    return strip_project_sweep({
         "schema_version": "project-v0",
         "project_id": str(import_package["projectId"]),
         "project_version": f"import-v{version}",
@@ -146,7 +148,7 @@ def modeling_import_to_project(import_package: dict[str, Any], validation: dict[
             "warnings": deepcopy(validation["warnings"]),
             "disabledDomains": _disabled_domains(validation["usedTables"]),
         },
-    }
+    })
 
 
 def _normalize_validation_level(import_package: dict[str, Any], issues: list[dict[str, Any]]) -> str:

@@ -538,6 +538,26 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(chain["result_summary_id"], run["result_summary_id"])
         self.assertEqual(chain["artifact_manifest_id"], run["artifact_manifest_id"])
 
+    def test_save_project_strips_sweep_from_project_payload(self) -> None:
+        project = self._fixture("smoke_project.json")
+        project["analysisRequests"] = {
+            "largeSample": {
+                "enabled": True,
+                "samples": 3,
+                "sweep": {
+                    "failureRates": [0.05],
+                    "spareMultipliers": [1.0],
+                    "supportCapacities": [2],
+                },
+            },
+        }
+
+        saved = self.api.save_project(project)
+
+        stored = self.api.get_project(saved["project_id"])
+        self.assertEqual(stored["analysisRequests"]["largeSample"]["samples"], 3)
+        self.assertNotIn("sweep", stored["analysisRequests"]["largeSample"])
+
     def test_run_service_submits_smoke_run_and_returns_status_envelope(self) -> None:
         project = self._fixture("smoke_project.json")
         saved = self.api.save_project(project)
@@ -1900,7 +1920,13 @@ class BackendApiContractTest(unittest.TestCase):
                         "steps": 4,
                         "projectJson": copy.deepcopy(project),
                         "modeling_snapshot_id": snapshot["snapshot_id"],
-                        "analysisRequests": copy.deepcopy(project["analysisRequests"]),
+                        "analysisRequests": {
+                            **copy.deepcopy(project["analysisRequests"]),
+                            "largeSample": {
+                                **copy.deepcopy(project["analysisRequests"]["largeSample"]),
+                                "sweep": copy.deepcopy(project["monteCarlo"]),
+                            },
+                        },
                     },
                 )
                 monte_carlo_run = self.api.submit_run(
@@ -2651,18 +2677,11 @@ class BackendApiContractTest(unittest.TestCase):
             project["analysisRequests"]["largeSample"]["samples"],
             objects["analysisRequests"]["largeSample"]["samples"],
         )
-        self.assertEqual(
-            project["analysisRequests"]["largeSample"]["sweep"],
-            objects["analysisRequests"]["largeSample"]["sweep"],
-        )
-        self.assertIsNot(
-            project["analysisRequests"]["largeSample"]["sweep"]["failureRates"],
-            objects["analysisRequests"]["largeSample"]["sweep"]["failureRates"],
-        )
+        self.assertNotIn("sweep", project["analysisRequests"]["largeSample"])
         self.assertGreaterEqual(len(project["reliabilityBlockDiagram"]["nodes"]), 4)
         self.assertEqual(project["monteCarlo"], objects["missionProfiles"][0]["monteCarlo"])
         objects["analysisRequests"]["largeSample"]["sweep"]["failureRates"].append(0.99)
-        self.assertNotIn(0.99, project["analysisRequests"]["largeSample"]["sweep"]["failureRates"])
+        self.assertNotIn("sweep", project["analysisRequests"]["largeSample"])
 
     def test_modeling_import_to_project_preserves_explicit_empty_collections(self) -> None:
         import_package = self._fixture("modeling_import_project.json")
