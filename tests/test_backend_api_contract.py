@@ -216,6 +216,7 @@ class BackendApiContractTest(unittest.TestCase):
         *,
         analysis_type: str,
         plan_name: str,
+        sample_count: int = 1,
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         saved = created["savedProject"]
         plan = self.api.create_experiment_plan(
@@ -227,7 +228,7 @@ class BackendApiContractTest(unittest.TestCase):
                 "analysisRequests": {
                     "largeSample": {
                         "enabled": True,
-                        "samples": 1,
+                        "samples": sample_count,
                         "sweep": {
                             "failureRates": [0.05],
                             "spareMultipliers": [1.0],
@@ -324,6 +325,100 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(current["internal_run_ref"]["run_id"], run["run_id"])
         self.assertEqual(current["internal_artifact_ref"]["kind"], "analysis_projection_spare_shortfall")
         self.assertIn("payload", current["last_success_result"])
+
+    def test_spare_shortfall_current_analysis_run_emits_only_spare_shortfall_projection(self) -> None:
+        created = self._create_imported_sample_project()
+        saved = created["savedProject"]
+        snapshot = self.api.create_modeling_snapshot(saved["project_id"])
+        plan = self.api.create_experiment_plan(
+            saved["project_id"],
+            {
+                "name": "current spare shortfall isolation",
+                "steps": 2,
+                "modeling_snapshot_id": snapshot["snapshot_id"],
+                "projectJson": created["project"],
+                "analysisType": "spare_shortfall",
+                "analysisRequests": {
+                    "largeSample": {
+                        "enabled": True,
+                        "samples": 3,
+                        "sweep": {
+                            "failureRates": [0.05],
+                            "spareMultipliers": [1.0],
+                            "supportCapacities": [2],
+                        },
+                    },
+                    "carryList": {"enabled": True, "carryListConfig": {"missionConfidenceTarget": 0.95}},
+                    "missionReliability": {"enabled": True},
+                    "downtimeFactors": {"enabled": True},
+                },
+            },
+        )
+
+        submitted = self.api.submit_run(
+            {
+                "project_id": saved["project_id"],
+                "experiment_plan_id": plan["experiment_plan_id"],
+                "model_family": "aircraft_support_v1",
+                "run_type": "monte_carlo",
+                "mc_experiment_id": "current-analysis-spare_shortfall",
+            }
+        )
+        manifest = self.api.get_run_artifacts(submitted["run_id"])
+        result = self.api.get_run_result(submitted["run_id"])
+        base_payload = self._artifact_payload(manifest, "monte_carlo_base")
+        run_config_payload = self._artifact_payload(manifest, "run_config")
+        projection_kinds = [
+            artifact["kind"] for artifact in manifest["artifacts"] if artifact["kind"].startswith("analysis_projection_")
+        ]
+
+        self.assertEqual(submitted["status"], "succeeded")
+        self.assertEqual(submitted["analysis_type"], "spare_shortfall")
+        self.assertEqual(submitted["simulation_experiment_base"]["analysis_type"], "spare_shortfall")
+        self.assertEqual(base_payload["sample_count"], 3)
+        self.assertEqual(run_config_payload["monte_carlo_config"]["sample_count"], 3)
+        self.assertEqual(run_config_payload["monte_carlo_config"]["analysis_type"], "spare_shortfall")
+        self.assertEqual(projection_kinds, ["analysis_projection_spare_shortfall"])
+        self.assertEqual(set(result["analysis_outputs"]), {"large_sample_summary", "spare_shortage"})
+        self.assertEqual(
+            self.api.get_current_analysis_result(saved["project_id"], "spare_shortfall")["status"],
+            "completed",
+        )
+        for analysis_type in ("carry_list", "mission_reliability", "downtime_factors"):
+            current = self.api.get_current_analysis_result(saved["project_id"], analysis_type)
+            self.assertEqual(current["status"], "empty")
+            self.assertIsNone(current["last_success_result"])
+
+    def test_current_analysis_runs_use_independent_plan_sample_counts(self) -> None:
+        created = self._create_imported_sample_project()
+        _spare_plan, spare_run = self._submit_successful_aircraft_support_monte_carlo_run_for_project(
+            created,
+            analysis_type="spare_shortfall",
+            plan_name="current spare samples",
+            sample_count=2,
+        )
+        _mission_plan, mission_run = self._submit_successful_aircraft_support_monte_carlo_run_for_project(
+            created,
+            analysis_type="mission_reliability",
+            plan_name="current mission samples",
+            sample_count=3,
+        )
+
+        spare_payload = self._artifact_payload(self.api.get_run_artifacts(spare_run["run_id"]), "monte_carlo_base")
+        mission_payload = self._artifact_payload(self.api.get_run_artifacts(mission_run["run_id"]), "monte_carlo_base")
+
+        self.assertEqual(spare_run["analysis_type"], "spare_shortfall")
+        self.assertEqual(mission_run["analysis_type"], "mission_reliability")
+        self.assertEqual(spare_payload["sample_count"], 2)
+        self.assertEqual(mission_payload["sample_count"], 3)
+        self.assertEqual(
+            self.api.get_current_analysis_result(created["savedProject"]["project_id"], "spare_shortfall")["last_success_result"]["run_id"],
+            spare_run["run_id"],
+        )
+        self.assertEqual(
+            self.api.get_current_analysis_result(created["savedProject"]["project_id"], "mission_reliability")["last_success_result"]["run_id"],
+            mission_run["run_id"],
+        )
 
     def test_current_analysis_result_fails_closed_on_projection_type_mismatch(self) -> None:
         created, _plan, run = self._submit_successful_aircraft_support_monte_carlo_run()
@@ -1825,6 +1920,9 @@ class BackendApiContractTest(unittest.TestCase):
         base_payload = self._artifact_payload(manifest, "monte_carlo_base")
         run_config_payload = self._artifact_payload(manifest, "run_config")
         carry_payload = self._artifact_payload(manifest, "analysis_projection_carry_list")
+        projection_artifacts = [
+            artifact for artifact in manifest["artifacts"] if artifact["kind"].startswith("analysis_projection_")
+        ]
         support_nodes = {
             node["id"]: node
             for node in compiled_payload["simulation_inputs"]["support_network"]["nodes"]
@@ -1835,6 +1933,7 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(submitted["status"], "succeeded")
         self.assertEqual(submitted["analysis_type"], "carry_list")
         self.assertEqual(submitted["simulation_experiment_base"]["analysis_type"], "carry_list")
+        self.assertEqual([artifact["kind"] for artifact in projection_artifacts], ["analysis_projection_carry_list"])
         self.assertEqual(support_nodes["carrier-deck"]["inventory"]["发动机备件"], 12)
         self.assertEqual(support_nodes["forward-sea-base"]["inventory"]["发动机备件"], 1)
         self.assertEqual(compiled_payload["simulation_inputs"]["time"]["duration_minutes"], 720)

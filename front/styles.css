@@ -1227,6 +1227,41 @@ select[multiple].table-edit-select {
   margin: 2px 0;
 }
 
+.analysis-current-run-config {
+  display: grid;
+  grid-template-columns: minmax(96px, max-content) minmax(120px, 220px);
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.analysis-current-run-config label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.analysis-current-run-config input {
+  width: 100%;
+}
+
+.field-error {
+  grid-column: 2;
+  margin: 0;
+  color: #b42318;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+@media (max-width: 760px) {
+  .analysis-current-run-config {
+    grid-template-columns: 1fr;
+  }
+
+  .field-error {
+    grid-column: 1;
+  }
+}
+
 .decision-support-card {
   display: flex;
   align-items: center;

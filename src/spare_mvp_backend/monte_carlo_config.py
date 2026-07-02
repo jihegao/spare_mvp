@@ -46,6 +46,8 @@ class MonteCarloRunConfig:
         }
         if self.mc_experiment_id:
             payload["mc_experiment_id"] = self.mc_experiment_id
+        if self.analysis_type:
+            payload["analysis_type"] = self.analysis_type
         if self.analysis_type == "carry_list":
             if self.scenario_overrides:
                 payload["scenarioOverrides"] = dict(self.scenario_overrides)
@@ -82,39 +84,39 @@ def normalize_monte_carlo_run_config(
             field="analysisRequests.largeSample.enabled",
         )
 
-    sample_count = _positive_int(
+    configured_sample_count = _positive_int(
         large_sample.get("samples"),
         field_path="analysisRequests.largeSample.samples",
         max_value=MAX_MONTE_CARLO_SAMPLES,
     )
     sweep = _require_dict(large_sample.get("sweep"), "analysisRequests.largeSample.sweep")
     normalized_analysis_type = str(analysis_type or "").strip()
+    normalized_sweep = {
+        "failureRates": _positive_numbers(
+            sweep.get("failureRates"),
+            "analysisRequests.largeSample.sweep.failureRates",
+        ),
+        "spareMultipliers": _positive_numbers(
+            sweep.get("spareMultipliers"),
+            "analysisRequests.largeSample.sweep.spareMultipliers",
+        ),
+        "supportCapacities": _positive_int_list(
+            sweep.get("supportCapacities"),
+            "analysisRequests.largeSample.sweep.supportCapacities",
+        ),
+    }
     scenario_overrides, carry_list_config = _carry_list_current_result_config(
         analysis_requests,
         normalized_analysis_type,
     )
     return MonteCarloRunConfig(
-        sample_count=sample_count,
-        sweep={
-            "failureRates": _positive_numbers(
-                sweep.get("failureRates"),
-                "analysisRequests.largeSample.sweep.failureRates",
-            ),
-            "spareMultipliers": _positive_numbers(
-                sweep.get("spareMultipliers"),
-                "analysisRequests.largeSample.sweep.spareMultipliers",
-            ),
-            "supportCapacities": _positive_int_list(
-                sweep.get("supportCapacities"),
-                "analysisRequests.largeSample.sweep.supportCapacities",
-            ),
-        },
+        sample_count=configured_sample_count,
+        sweep=normalized_sweep,
         mc_experiment_id=mc_experiment_id,
         analysis_type=normalized_analysis_type,
         scenario_overrides=scenario_overrides,
         carry_list_config=carry_list_config,
     )
-
 
 def _carry_list_current_result_config(
     analysis_requests: dict[str, Any],

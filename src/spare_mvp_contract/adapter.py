@@ -2104,6 +2104,7 @@ class SimulationAdapter:
             },
             "m9_7_4_behavior_scope": copy.deepcopy(behavior_scope),
         }
+        only_analysis_type = str(config.get("analysis_type") or "").strip()
         event_log = {
             "schema_version": "run-log-v0",
             "run_id": run_id,
@@ -2141,13 +2142,10 @@ class SimulationAdapter:
             "scenario_id": scenario["scenario_id"],
             "scenario_version": scenario["scenario_version"],
             "metrics": aggregate,
-            "analysis_outputs": {
-                "large_sample_summary": projections["large_sample_summary"]["data"],
-                "spare_shortage": projections["spare_shortfall"]["data"],
-                "carry_list": projections["carry_list"]["data"],
-                "mission_reliability": projections["mission_reliability"]["data"],
-                "downtime_factors": projections["downtime_factors"]["data"],
-            },
+            "analysis_outputs": self._aircraft_support_v1_result_analysis_outputs(
+                projections,
+                only_analysis_type=only_analysis_type,
+            ),
         }
         run = {
             "schema_version": RUN_SCHEMA_VERSION,
@@ -2191,11 +2189,13 @@ class SimulationAdapter:
                 visualization_state_series,
                 VISUALIZATION_STATE_SERIES_SCHEMA_VERSION,
             ),
-            ("analysis_projection_spare_shortfall", "spare-shortfall.json", projections["spare_shortfall"], "analysis-projection-v0"),
-            ("analysis_projection_carry_list", "carry-list.json", projections["carry_list"], "analysis-projection-v0"),
-            ("analysis_projection_mission_reliability", "mission-reliability.json", projections["mission_reliability"], "analysis-projection-v0"),
-            ("analysis_projection_downtime_factors", "downtime-factors.json", projections["downtime_factors"], "analysis-projection-v0"),
         ]
+        artifact_specs.extend(
+            self._analysis_projection_artifact_specs(
+                projections,
+                only_analysis_type=only_analysis_type,
+            )
+        )
         artifacts = [
             self._write_artifact(run_dir, output_root, kind, filename, payload, schema_version)
             for kind, filename, payload, schema_version in artifact_specs
@@ -2218,6 +2218,46 @@ class SimulationAdapter:
         }
         self._write_json(run_dir / "artifact-manifest.json", manifest)
         return {"run": run, "result": result, "artifact_manifest": manifest}
+
+    def _aircraft_support_v1_result_analysis_outputs(
+        self,
+        projections: dict[str, dict[str, Any]],
+        *,
+        only_analysis_type: str = "",
+    ) -> dict[str, Any]:
+        outputs = {
+            "large_sample_summary": projections["large_sample_summary"]["data"],
+        }
+        output_specs = [
+            ("spare_shortfall", "spare_shortage"),
+            ("carry_list", "carry_list"),
+            ("mission_reliability", "mission_reliability"),
+            ("downtime_factors", "downtime_factors"),
+        ]
+        if only_analysis_type:
+            output_specs = [spec for spec in output_specs if spec[0] == only_analysis_type]
+        for analysis_type, output_key in output_specs:
+            outputs[output_key] = projections[analysis_type]["data"]
+        return outputs
+
+    def _analysis_projection_artifact_specs(
+        self,
+        projections: dict[str, dict[str, Any]],
+        *,
+        only_analysis_type: str = "",
+    ) -> list[tuple[str, str, dict[str, Any], str]]:
+        specs = [
+            ("spare_shortfall", "analysis_projection_spare_shortfall", "spare-shortfall.json"),
+            ("carry_list", "analysis_projection_carry_list", "carry-list.json"),
+            ("mission_reliability", "analysis_projection_mission_reliability", "mission-reliability.json"),
+            ("downtime_factors", "analysis_projection_downtime_factors", "downtime-factors.json"),
+        ]
+        if only_analysis_type:
+            specs = [spec for spec in specs if spec[0] == only_analysis_type]
+        return [
+            (kind, filename, projections[analysis_type], "analysis-projection-v0")
+            for analysis_type, kind, filename in specs
+        ]
 
     def _aircraft_support_v1_monte_carlo_sampling_contract(self, profile: dict[str, Any]) -> dict[str, Any]:
         return {

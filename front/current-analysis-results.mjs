@@ -12,12 +12,14 @@ export function createDefaultCurrentAnalysisProfiles({ basePlanVersion = "defaul
     spare_shortfall: freezeProfile({
       analysis_type: "spare_shortfall",
       profile_version: "spare-shortfall-current-v1",
-      base_plan_version: basePlanVersion
+      base_plan_version: basePlanVersion,
+      samples: 1
     }),
     carry_list: freezeProfile({
       analysis_type: "carry_list",
       profile_version: "carry-list-current-v1",
       base_plan_version: basePlanVersion,
+      samples: 1,
       scenarioOverrides: {},
       carryListConfig: {
         missionConfidenceTarget: 0.9
@@ -26,12 +28,14 @@ export function createDefaultCurrentAnalysisProfiles({ basePlanVersion = "defaul
     mission_reliability: freezeProfile({
       analysis_type: "mission_reliability",
       profile_version: "mission-reliability-current-v1",
-      base_plan_version: basePlanVersion
+      base_plan_version: basePlanVersion,
+      samples: 1
     }),
     downtime_factors: freezeProfile({
       analysis_type: "downtime_factors",
       profile_version: "downtime-factors-current-v1",
-      base_plan_version: basePlanVersion
+      base_plan_version: basePlanVersion,
+      samples: 1
     })
   });
 }
@@ -65,7 +69,8 @@ export function currentAnalysisProfileForType(profiles, analysisType) {
   return cloneJson(profiles?.[analysisType] || {
     analysis_type: analysisType,
     profile_version: "default-v0",
-    base_plan_version: "default-base-v0"
+    base_plan_version: "default-base-v0",
+    samples: 1
   });
 }
 

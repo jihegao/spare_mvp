@@ -2312,6 +2312,8 @@ test("analysis pages keep profile overrides internal without rendering the curre
   };
   const dashboardSource = sourceSlice("function renderAnalysisDashboard", "function renderAnalysisProjectionResultPanel");
   const defaultProfileSource = sourceSlice("function defaultCurrentAnalysisProfile", "function supportPointSpareOverrideRows");
+  const sampleMutationSource = sourceSlice("function updateCurrentAnalysisSamples", "function clearCurrentAnalysisSampleError");
+  const sampleValidationSource = sourceSlice("function validateCurrentAnalysisSamplesForPage", "function supportPointSpareOverrideRows");
   const profileMutationSource = sourceSlice("function updateAnalysisProfileField", "function boundedAnalysisProfileValue");
   const resetSource = sourceSlice("function resetCurrentAnalysisProfilesForProjectBaselineChange", "function analysisProfileSpareRows");
   const draftChangedSource = sourceSlice("function markProjectDraftChanged", "function scheduleProjectDraftAutosave");
@@ -2324,6 +2326,7 @@ test("analysis pages keep profile overrides internal without rendering the curre
   assert.doesNotMatch(dashboardSource, /renderCurrentAnalysisProfile\(page\)/);
   assert.doesNotMatch(dashboardSource, /当前分析 Profile|参数空间|基础方案/);
   assert.match(defaultProfileSource, /const projectJson = buildBackendProjectJson\(scenario, currentProject \|\| \{\}\)/);
+  assert.match(defaultProfileSource, /samples: currentAnalysisSamplesForProfile\(baseProfile\)/);
   assert.doesNotMatch(defaultProfileSource, /experimentPlanDraft/);
   assert.match(defaultProfileSource, /scenarioBaseline:\s*\{[\s\S]*missionDurationMinutes: missionDurationMinutesForProject\(projectJson\)[\s\S]*scenarioOverrides: cloneScenario\(baseProfile\.scenarioOverrides \|\| \{\}\)/);
   assert.doesNotMatch(defaultProfileSource, /scenarioOverrides:\s*\{[\s\S]*missionDurationMinutes: missionDurationMinutesForProject\(projectJson\)/);
@@ -2332,12 +2335,17 @@ test("analysis pages keep profile overrides internal without rendering the curre
   assert.doesNotMatch(appSource, /data-analysis-profile-field="scenarioOverrides\.missionDurationMinutes"/);
   assert.doesNotMatch(appSource, /data-spare-override-index="\$\{index\}"/);
   assert.doesNotMatch(appSource, /data-analysis-profile-field="carryListConfig\.missionConfidenceTarget"/);
+  assert.match(sampleMutationSource, /currentAnalysisProfiles = \{[\s\S]*\[analysisType\]: profile/);
+  assert.match(sampleMutationSource, /markCurrentAnalysisResultStale\(analysisType\)/);
+  assert.match(sampleValidationSource, /data-current-analysis-samples/);
+  assert.match(sampleValidationSource, /parseCurrentAnalysisSamples/);
   assert.match(profileMutationSource, /analysisProfileSpareRows\(profile\)/);
   assert.match(profileMutationSource, /markCurrentAnalysisResultStale\(analysisType\)/);
   assert.match(resetSource, /currentAnalysisProfiles = createDefaultCurrentAnalysisProfiles\(\)/);
   assert.match(resetSource, /markCurrentAnalysisResultStale\(analysisType\)/);
   assert.match(draftChangedSource, /resetCurrentAnalysisProfilesForProjectBaselineChange\(\)/);
-  assert.match(runCurrentSource, /const analysisProfile = currentAnalysisProfileForPage\(page\)/);
+  assert.match(runCurrentSource, /currentAnalysisProfileForPage\(page\)/);
+  assert.match(runCurrentSource, /samples: sampleValidation\.samples/);
   assert.match(startMonteCarloSource, /currentAnalysisProfile: analysisProfile/);
   assert.match(startMonteCarloSource, /const planDraft = analysisType \? cloneScenario\(scenario\) : experimentPlanDraft/);
   assert.match(boundarySource, /state === "stale"/);
@@ -2397,6 +2405,10 @@ test("analysis current result state is hydrated, isolated, and recoverable", asy
     appSource.indexOf("async function startMonteCarloRunThroughApi"),
     appSource.indexOf("async function refreshRunResultThroughApi")
   );
+  const refreshSource = appSource.slice(
+    appSource.indexOf("async function refreshRunResultThroughApi"),
+    appSource.indexOf("async function hydrateLastBackendRunFromApi")
+  );
 
   assert.match(featurePageSource, /ensureCurrentAnalysisResultLoaded\(page\)/);
   assert.match(hydrateSource, /backendApi\.getCurrentAnalysisResult\(savedProject\.project_id,\s*analysisType\)/);
@@ -2404,15 +2416,21 @@ test("analysis current result state is hydrated, isolated, and recoverable", asy
   assert.match(hydrateSource, /ANALYSIS_PROJECTION_TYPES\.some/);
   assert.match(panelSource, /currentAnalysisSourceLabel\(result\)/);
   assert.match(panelSource, /currentAnalysisShouldShowFailure\(result\)/);
+  assert.match(panelSource, /data-current-analysis-samples="\$\{htmlEscape\(analysisType\)\}"/);
+  assert.match(panelSource, /运行样本数/);
+  assert.match(panelSource, /required/);
   assert.match(appSource, /function currentAnalysisSourceLabel/);
   assert.match(appSource, /if \(status === "empty"\) return "等待正式结果"/);
   assert.match(appSource, /function currentAnalysisShouldShowFailure/);
   assert.match(appSource, /return \["failed", "blocked"\]\.includes/);
+  assert.match(runCurrentSource, /validateCurrentAnalysisSamplesForPage\(page\)/);
+  assert.match(runCurrentSource, /samples: sampleValidation\.samples/);
   assert.match(runCurrentSource, /const previousResult = currentAnalysisResultForPage\(page\)/);
   assert.match(runCurrentSource, /restoreCurrentAnalysisResult\(analysisType,\s*previousResult/);
   assert.match(runCurrentSource, /transitionCurrentAnalysisResult/);
   assert.match(runCurrentSource, /type: "block"/);
   assert.match(runCurrentSource, /finally\s*{\s*render\(\);\s*}/);
+  assert.match(refreshSource, /refreshAnalysisProjectionPayloads\(runId,\s*backendRun\?\.analysis_type \|\| ""\)/);
   assert.doesNotMatch(startMonteCarloSource, /getCurrentAnalysisResult/);
 });
 
@@ -2891,7 +2909,7 @@ test("M8 formal analysis pages load and render matching projection payloads", as
   );
 
   assert.match(apiClientSource, /getRunArtifactPayload\(runId, artifactId\)/);
-  assert.match(refreshSource, /await refreshAnalysisProjectionPayloads\(runId\)/);
+  assert.match(refreshSource, /await refreshAnalysisProjectionPayloads\(runId,\s*backendRun\?\.analysis_type \|\| ""\)/);
   assert.match(payloadSource, /backendApi\.getRunArtifactPayload\(runId,\s*artifactId\)/);
   assert.match(payloadSource, /normalizeAnalysisProjectionPayload\(analysisType,\s*payload,\s*\{/);
   assert.match(payloadSource, /modelFamily: FORMAL_AIRCRAFT_SUPPORT_MODEL_FAMILY/);

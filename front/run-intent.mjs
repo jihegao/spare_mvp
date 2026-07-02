@@ -126,7 +126,10 @@ function withCanonicalMonteCarloAnalysisRequest(planProjectJson, { parameterSpac
     ? configuredMonteCarloSweep(nextProjectJson, existingLargeSample)
     : baselineMonteCarloSweep(nextProjectJson, existingLargeSample);
   const configuredSamples = Number(existingLargeSample?.samples ?? nextProjectJson.experiment?.samples ?? 1);
-  const samples = Math.max(configuredSamples, monteCarloSweepPointCount(sweep));
+  const sweepPointCount = monteCarloSweepPointCount(sweep);
+  const samples = analysisType
+    ? currentAnalysisSampleCount(currentAnalysisProfile, sweepPointCount)
+    : Math.max(configuredSamples, sweepPointCount);
   nextProjectJson.experiment = {
     ...(nextProjectJson.experiment || {}),
     samples
@@ -146,6 +149,7 @@ function withCanonicalMonteCarloAnalysisRequest(planProjectJson, { parameterSpac
 
 function applyCurrentAnalysisProfile(projectJson, analysisType, currentAnalysisProfile) {
   if (!analysisType || !currentAnalysisProfile || typeof currentAnalysisProfile !== "object") return;
+  const profileSamples = currentAnalysisSampleCount(currentAnalysisProfile, 1);
   projectJson.analysisRequests = {
     ...(projectJson.analysisRequests || {}),
     currentAnalysisProfiles: {
@@ -153,7 +157,8 @@ function applyCurrentAnalysisProfile(projectJson, analysisType, currentAnalysisP
       [analysisType]: {
         analysis_type: analysisType,
         profile_version: currentAnalysisProfile.profile_version || "default-v0",
-        base_plan_version: currentAnalysisProfile.base_plan_version || "default-base-v0"
+        base_plan_version: currentAnalysisProfile.base_plan_version || "default-base-v0",
+        samples: profileSamples
       }
     }
   };
@@ -193,6 +198,20 @@ function finiteNumber(value) {
   if (typeof value === "boolean") return null;
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
+}
+
+function currentAnalysisSampleCount(profile, fallback) {
+  if (!profile || typeof profile !== "object" || profile.samples === undefined || profile.samples === null || profile.samples === "") {
+    return Math.max(1, Math.round(Number(fallback) || 1));
+  }
+  if (typeof profile.samples === "boolean") {
+    throw new Error("Current analysis samples must be a positive integer");
+  }
+  const number = Number(profile.samples);
+  if (!Number.isFinite(number) || !Number.isInteger(number) || number < 1) {
+    throw new Error("Current analysis samples must be a positive integer");
+  }
+  return number;
 }
 
 function configuredMonteCarloSweep(projectJson, existingLargeSample = {}) {

@@ -230,6 +230,57 @@ test("buildRunIntent stores current analysis profile in ExperimentPlan config on
   assert.equal("carryListConfig" in intent.runRequest, false);
 });
 
+test("buildRunIntent scopes current spare shortfall runs to the spare shortfall analysis", () => {
+  const projectJson = {
+    project_id: "project-current-spare-scope",
+    experiment: { name: "current spare scope", steps: 4, samples: 24, seed: 101 },
+    analysisRequests: {
+      largeSample: {
+        enabled: true,
+        samples: 24,
+        sweep: {
+          failureRates: [0.06],
+          spareMultipliers: [1.0],
+          supportCapacities: [2]
+        }
+      },
+      carryList: { enabled: true },
+      missionReliability: { enabled: true },
+      downtimeFactors: { enabled: true }
+    }
+  };
+
+  const intent = buildRunIntent({
+    runType: "monte_carlo",
+    projectJson,
+    planProjectJson: projectJson,
+    mcExperimentId: "current-analysis-spare_shortfall",
+    analysisType: "spare_shortfall",
+    currentAnalysisProfile: {
+      analysis_type: "spare_shortfall",
+      profile_version: "spare-current-v2",
+      base_plan_version: "base-current-v1",
+      samples: 9
+    }
+  });
+
+  assert.equal(intent.runRequest.mc_experiment_id, "current-analysis-spare_shortfall");
+  assert.equal(intent.experimentPlanConfig.analysisType, "spare_shortfall");
+  assert.equal(intent.experimentPlanConfig.analysisProfile.analysis_type, "spare_shortfall");
+  assert.equal(
+    intent.experimentPlanConfig.analysisRequests.currentAnalysisProfiles.spare_shortfall.profile_version,
+    "spare-current-v2"
+  );
+  assert.deepEqual(Object.keys(intent.experimentPlanConfig.analysisRequests.currentAnalysisProfiles), ["spare_shortfall"]);
+  assert.equal("carryListConfig" in intent.experimentPlanConfig, false);
+  assert.equal(intent.experimentPlanConfig.analysisRequests.currentAnalysisProfiles.spare_shortfall.samples, 9);
+  assert.equal(intent.experimentPlanConfig.analysisRequests.largeSample.samples, 9);
+  assert.equal(intent.planProjectJson.analysisRequests.largeSample.samples, 9);
+  assert.equal(projectJson.analysisRequests.largeSample.samples, 24);
+  assert.equal("analysis_type" in intent.runRequest, false);
+  assert.equal("samples" in intent.runRequest, false);
+});
+
 test("buildRunIntent preserves explicit analysis sweep mode and raises samples to cover every sweep point", () => {
   const projectJson = {
     project_id: "project-sweep-coverage",

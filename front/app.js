@@ -111,6 +111,8 @@ const DEFAULT_MONTE_CARLO_SWEEP = Object.freeze({
   spareMultipliers: [1],
   supportCapacities: [1]
 });
+const DEFAULT_CURRENT_ANALYSIS_SAMPLES = 1;
+const MAX_CURRENT_ANALYSIS_SAMPLES = 1000;
 let demoProjects = mergeProjectsById(readManualDraftProjectsFromStorage());
 let deletedDowntimeSnapshotIds = new Set();
 const ANALYSIS_PROJECTION_TYPES = [
@@ -529,6 +531,7 @@ let currentAnalysisProfiles = createDefaultCurrentAnalysisProfiles();
 let currentAnalysisResults = createEmptyCurrentAnalysisResults(currentAnalysisProfiles);
 let currentAnalysisResultLoaded = {};
 let currentAnalysisResultLoadInFlight = {};
+let currentAnalysisSampleErrors = {};
 let { previewSingleResult: singleResult, previewMonteCarloResult: monteCarloResult } = buildPreviewResultState(scenario);
 let rmsAllocationProject = createDemoRmsAllocationProject();
 let rmsAllocationPlan = createDefaultRmsAllocationPlan(rmsAllocationProject);
@@ -2214,6 +2217,13 @@ function bindEvents() {
 
     const mcArrayInput = event.target.closest("[data-mc-array-path]");
     if (mcArrayInput) updateMonteCarloArrayInput(mcArrayInput);
+
+    const currentAnalysisSamplesInput = event.target.closest("[data-current-analysis-samples]");
+    if (currentAnalysisSamplesInput) {
+      updateCurrentAnalysisSamples(getFeaturePageById(selectedFeatureId), currentAnalysisSamplesInput);
+      render();
+      return;
+    }
 
     const analysisProfileInput = event.target.closest("[data-analysis-profile-field]");
     if (analysisProfileInput) {
@@ -9221,7 +9231,7 @@ async function refreshRunResultThroughApi(runId = backendRun?.run_id) {
   backendRunResult = await backendApi.getRunResult(runId);
   backendArtifactManifest = await backendApi.getRunArtifacts(runId);
   backendRunChain = await backendApi.getRunChain(runId);
-  await refreshAnalysisProjectionPayloads(runId);
+  await refreshAnalysisProjectionPayloads(runId, backendRun?.analysis_type || "");
   await refreshVisualizationStateSeries(runId);
   if (backendRun.project_id) {
     savedProject = await backendApi.getProject(backendRun.project_id);
@@ -9236,11 +9246,14 @@ async function refreshRunResultThroughApi(runId = backendRun?.run_id) {
   return backendRun;
 }
 
-async function refreshAnalysisProjectionPayloads(runId) {
+async function refreshAnalysisProjectionPayloads(runId, onlyAnalysisType = "") {
   if (!runId) return;
   const nextPayloads = {};
   const nextErrors = {};
-  for (const analysisType of ANALYSIS_PROJECTION_TYPES.map((item) => item.analysisType)) {
+  const analysisTypes = onlyAnalysisType
+    ? ANALYSIS_PROJECTION_TYPES.map((item) => item.analysisType).filter((analysisType) => analysisType === onlyAnalysisType)
+    : ANALYSIS_PROJECTION_TYPES.map((item) => item.analysisType);
+  for (const analysisType of analysisTypes) {
     const artifactKind = projectionArtifactKindForAnalysisType(analysisType);
     const projectionArtifacts = analysisProjectionArtifacts(analysisType);
     const artifact = projectionArtifacts.find((item) => item.kind === artifactKind) || projectionArtifacts[0];
@@ -12428,6 +12441,7 @@ function defaultCurrentAnalysisProfile(analysisType, baseProfile = {}) {
     ...cloneScenario(baseProfile || {}),
     analysisType,
     analysis_type: baseProfile.analysis_type || analysisType,
+    samples: currentAnalysisSamplesForProfile(baseProfile),
     scenarioBaseline: {
       sparesBySupportPoint: supportPointSpareOverrideRows(projectJson),
       missionDurationMinutes: missionDurationMinutesForProject(projectJson)
@@ -12438,6 +12452,78 @@ function defaultCurrentAnalysisProfile(analysisType, baseProfile = {}) {
     profile.carryListConfig = cloneScenario(baseProfile.carryListConfig || { missionConfidenceTarget: 0.9 });
   }
   return profile;
+}
+
+function currentAnalysisSamplesForProfile(profile = {}) {
+  const parsed = parseCurrentAnalysisSamples(profile?.samples ?? DEFAULT_CURRENT_ANALYSIS_SAMPLES);
+  return parsed.ok ? parsed.samples : DEFAULT_CURRENT_ANALYSIS_SAMPLES;
+}
+
+function parseCurrentAnalysisSamples(value) {
+  const text = String(value ?? "").trim();
+  if (!text) {
+    return { ok: false, samples: null, message: "运行样本数为必填项。" };
+  }
+  if (String(value) === "true" || String(value) === "false") {
+    return { ok: false, samples: null, message: "运行样本数必须是正整数。" };
+  }
+  const number = Number(text);
+  if (!Number.isFinite(number) || !Number.isInteger(number)) {
+    return { ok: false, samples: null, message: "运行样本数必须是正整数。" };
+  }
+  if (number < 1) {
+    return { ok: false, samples: null, message: "运行样本数不能小于 1。" };
+  }
+  if (number > MAX_CURRENT_ANALYSIS_SAMPLES) {
+    return { ok: false, samples: null, message: `运行样本数不能超过 ${MAX_CURRENT_ANALYSIS_SAMPLES}。` };
+  }
+  return { ok: true, samples: number, message: "" };
+}
+
+function updateCurrentAnalysisSamples(page, input) {
+  const analysisType = analysisTypeForPage(page);
+  const parsed = parseCurrentAnalysisSamples(input.value);
+  if (!parsed.ok) {
+    currentAnalysisSampleErrors = {
+      ...currentAnalysisSampleErrors,
+      [analysisType]: parsed.message
+    };
+    return parsed;
+  }
+  const profile = cloneScenario(analysisProfileForPage(page));
+  const previousSamples = currentAnalysisSamplesForProfile(profile);
+  profile.samples = parsed.samples;
+  currentAnalysisProfiles = {
+    ...currentAnalysisProfiles,
+    [analysisType]: profile
+  };
+  clearCurrentAnalysisSampleError(analysisType);
+  if (previousSamples !== parsed.samples) {
+    markCurrentAnalysisResultStale(analysisType);
+  }
+  return parsed;
+}
+
+function clearCurrentAnalysisSampleError(analysisType) {
+  if (!currentAnalysisSampleErrors[analysisType]) return;
+  const nextErrors = { ...currentAnalysisSampleErrors };
+  delete nextErrors[analysisType];
+  currentAnalysisSampleErrors = nextErrors;
+}
+
+function validateCurrentAnalysisSamplesForPage(page) {
+  const analysisType = analysisTypeForPage(page);
+  const input = document.querySelector(`[data-current-analysis-samples="${analysisType}"]`);
+  const parsed = input
+    ? updateCurrentAnalysisSamples(page, input)
+    : parseCurrentAnalysisSamples(currentAnalysisProfileForPage(page).samples);
+  if (!parsed.ok) {
+    currentAnalysisSampleErrors = {
+      ...currentAnalysisSampleErrors,
+      [analysisType]: parsed.message
+    };
+  }
+  return parsed;
 }
 
 function supportPointSpareOverrideRows(projectJson = scenario) {
@@ -12536,6 +12622,7 @@ function resetCurrentAnalysisProfilesForProjectBaselineChange() {
   currentAnalysisProfiles = createDefaultCurrentAnalysisProfiles();
   currentAnalysisResultLoaded = {};
   currentAnalysisResultLoadInFlight = {};
+  currentAnalysisSampleErrors = {};
   for (const { analysisType } of ANALYSIS_PROJECTION_TYPES) {
     markCurrentAnalysisResultStale(analysisType);
   }
@@ -12619,11 +12706,16 @@ function hiddenCurrentAnalysisExperimentId(analysisType) {
 }
 
 function renderCurrentAnalysisResultPanel(page, title) {
+  const analysisType = analysisTypeForPage(page);
   const result = currentAnalysisResultForPage(page);
+  const profile = currentAnalysisProfileForPage(page);
   const status = result.status || "empty";
   const statusLabel = currentAnalysisStatusLabel(status);
   const failureMessage = currentAnalysisShouldShowFailure(result) ? (result.last_failure?.message || "") : "";
   const sourceLabel = currentAnalysisSourceLabel(result);
+  const sampleError = currentAnalysisSampleErrors[analysisType] || "";
+  const samples = currentAnalysisSamplesForProfile(profile);
+  const sampleInputId = `current-analysis-samples-${analysisType}`;
   return `
     <section class="analysis-task-panel">
       <div class="section-head">
@@ -12640,6 +12732,11 @@ function renderCurrentAnalysisResultPanel(page, title) {
         <div class="kpi-card"><span>过期状态</span><strong>${result.is_stale ? "需重跑" : "当前"}</strong></div>
       </div>
       ${failureMessage ? `<div class="empty-state"><strong>最近失败</strong><p>${htmlEscape(failureMessage)}</p></div>` : ""}
+      <div class="analysis-current-run-config">
+        <label for="${htmlEscape(sampleInputId)}">运行样本数</label>
+        <input id="${htmlEscape(sampleInputId)}" data-current-analysis-samples="${htmlEscape(analysisType)}" type="number" min="1" max="${MAX_CURRENT_ANALYSIS_SAMPLES}" step="1" required value="${htmlEscape(samples)}" aria-invalid="${sampleError ? "true" : "false"}">
+        ${sampleError ? `<p class="field-error">${htmlEscape(sampleError)}</p>` : ""}
+      </div>
       <div class="toolbar-row">
         <button type="button" class="btn-primary" data-analysis-action="run-current">运行当前分析</button>
       </div>
@@ -12649,7 +12746,7 @@ function renderCurrentAnalysisResultPanel(page, title) {
 
 function currentAnalysisSourceLabel(result) {
   const status = result.status || "empty";
-  if (status === "empty") return "等待结果";
+  if (status === "empty") return "等待正式结果";
   if (status === "running") return "生成中";
   if (["failed", "blocked"].includes(status)) {
     return result.last_success_result ? "上一版结果（需复核）" : "等待结果";
@@ -12688,8 +12785,20 @@ function currentAnalysisStatusMessage(result) {
 async function runCurrentAnalysisPage(page) {
   const analysisType = analysisTypeForPage(page);
   const hiddenExperimentId = hiddenCurrentAnalysisExperimentId(analysisType);
-  const analysisProfile = currentAnalysisProfileForPage(page);
   const previousResult = currentAnalysisResultForPage(page);
+  const sampleValidation = validateCurrentAnalysisSamplesForPage(page);
+  if (!sampleValidation.ok) {
+    currentAnalysisResults = transitionCurrentAnalysisResult(currentAnalysisResults, analysisType, {
+      type: "block",
+      failure: { message: sampleValidation.message }
+    });
+    backendApiStatus = sampleValidation.message;
+    return;
+  }
+  const analysisProfile = {
+    ...currentAnalysisProfileForPage(page),
+    samples: sampleValidation.samples
+  };
   currentAnalysisResults = transitionCurrentAnalysisResult(currentAnalysisResults, analysisType, {
     type: "start"
   });
