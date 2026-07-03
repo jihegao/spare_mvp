@@ -236,7 +236,7 @@
 阶段 3 浏览器冒烟验证记录：
 - [x] 运行 `node reports/system-smoke/browser-smoke.mjs`。
 - [x] 验证项目列表、项目进入、基本任务建模编辑、保障活动建模按钮反馈、蒙特卡洛实验列表/编辑/详情结果、可视化推演。
-- [x] 验证旧结果页 alias 不再作为活跃页面：`spare-planning-monte-carlo-results` -> `spare-planning-monte-carlo-experiment-list`，`mission-reliability-monte-carlo-results` -> `mission-reliability-monte-carlo-experiment-list`，`mission-reliability-aircraft-task-reliability` -> `mission-reliability-task-reliability`。
+- [x] 验证旧结果页 alias 不再作为活跃页面：`spare-planning-monte-carlo-results` / `mission-reliability-monte-carlo-results` 不再回流到蒙特卡洛实验列表；`mission-reliability-aircraft-task-reliability` 仍兼容到 `mission-reliability-task-reliability`。
 - [x] 证据写入 `output/playwright/system-smoke-result.json` 和 `output/playwright/01-project-list.txt` 到 `output/playwright/11-legacy-aircraft-task-reliability.txt`。
 
 **退出标准：** 正式结果可从蒙特卡洛实验页面访问，旧结果页不再活跃，正式可视化不会被误认为旧演示输出。

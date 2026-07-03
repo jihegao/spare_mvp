@@ -139,7 +139,7 @@ test("retired independent-mesa source tree is removed from the active repository
   );
 });
 
-test("browser smoke covers M5 import and run restoration after backend restart", async () => {
+test("browser smoke covers M5 import restoration and embedded Lite Mesa detail after restart", async () => {
   const smoke = await readFile(new URL("../reports/m3-1-browser-backend-smoke/browser-backend-smoke.mjs", import.meta.url), "utf8");
 
   assert.match(smoke, /system-management-project-data-management/);
@@ -148,7 +148,9 @@ test("browser smoke covers M5 import and run restoration after backend restart",
   assert.match(smoke, /restartBackendServer/);
   assert.match(smoke, /已从后端恢复导入草稿和发布快照/);
   assert.match(smoke, /afterRestartImport/);
-  assert.match(smoke, /afterRestartRun/);
+  assert.match(smoke, /01-lite-mesa-detail/);
+  assert.match(smoke, /afterRefreshLiteMesa/);
+  assert.match(smoke, /Embedded Lite Mesa detail created a formal backend run after refresh/);
 });
 
 test("system browser smoke verifies modeling page buttons provide observable reactions", async () => {

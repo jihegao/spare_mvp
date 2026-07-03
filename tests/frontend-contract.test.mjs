@@ -15,14 +15,15 @@ const PAGE_REVISION_REPORT_URL = new URL("../reports/2026-06-19-page-revision-su
 const RBD_RENDERING_CONTRACT_URL = new URL("../docs/reliability-block-diagram-contract.md", import.meta.url);
 
 test("feature catalog exposes all table-2 four-level pages", () => {
-  assert.equal(FEATURE_PAGES.length, 51);
-  assert.equal(new Set(FEATURE_PAGES.map((page) => page.id)).size, 51);
-  assert.equal(FEATURE_PAGES.filter((page) => page.module === "备件规划评估模块").length, 22);
-  assert.equal(FEATURE_PAGES.filter((page) => page.module === "任务可靠度评估模块").length, 23);
+  assert.equal(FEATURE_PAGES.length, 49);
+  assert.equal(new Set(FEATURE_PAGES.map((page) => page.id)).size, 49);
+  assert.equal(FEATURE_PAGES.filter((page) => page.module === "备件规划评估模块").length, 21);
+  assert.equal(FEATURE_PAGES.filter((page) => page.module === "任务可靠度评估模块").length, 22);
   assert.equal(FEATURE_PAGES.filter((page) => page.module === "系统运行支持模块").length, 6);
-  for (const label of ["装备系统建模", "装备可靠性框图建模", "Mesa蒙特卡洛分析", "飞机转场携行清单分析", "任务可靠度评估", "停机因素分析", "建模表单管理"]) {
+  for (const label of ["装备系统建模", "装备可靠性框图建模", "飞机转场携行清单分析", "任务可靠度评估", "停机因素分析", "建模表单管理"]) {
     assert.ok(FEATURE_PAGES.some((page) => page.name === label), label);
   }
+  assert.equal(FEATURE_PAGES.some((page) => page.name === "Mesa蒙特卡洛分析"), false);
   assert.equal(FEATURE_PAGES.some((page) => page.name === "蒙特卡洛实验结果"), false);
   assert.equal(FEATURE_PAGES.some((page) => page.name === "装备组成建模"), false);
   assert.equal(FEATURE_PAGES.some((page) => page.name === "装备故障建模"), false);
@@ -97,9 +98,9 @@ test("feature grouping preserves three-level navigation and internal fourth-leve
   assert.deepEqual(grouped["备件规划评估模块"]["仿真实验"]["可视化推演"].map((page) => page.name), ["可视化实验启动与停止"]);
   assert.deepEqual(grouped["任务可靠度评估模块"]["仿真实验"]["可视化推演"].map((page) => page.name), ["可视化实验启动与停止"]);
   assert.deepEqual(grouped["备件规划评估模块"]["仿真实验"]["蒙特卡洛实验"].map((page) => page.name), ["实验列表", "添加/编辑实验", "实验详情"]);
-  assert.deepEqual(grouped["备件规划评估模块"]["仿真实验"]["Mesa分析"].map((page) => page.name), ["Mesa蒙特卡洛分析"]);
   assert.deepEqual(grouped["任务可靠度评估模块"]["仿真实验"]["蒙特卡洛实验"].map((page) => page.name), ["实验列表", "添加/编辑实验", "实验详情"]);
-  assert.deepEqual(grouped["任务可靠度评估模块"]["仿真实验"]["Mesa分析"].map((page) => page.name), ["Mesa蒙特卡洛分析"]);
+  assert.equal("Mesa分析" in grouped["备件规划评估模块"]["仿真实验"], false);
+  assert.equal("Mesa分析" in grouped["任务可靠度评估模块"]["仿真实验"], false);
   assert.deepEqual(Object.keys(grouped["备件规划评估模块"]["结果分析"]), ["备件短板分析", "飞机转场携行清单分析"]);
   assert.deepEqual(grouped["备件规划评估模块"]["结果分析"]["备件短板分析"].map((page) => page.name), ["备件短板分析"]);
   assert.equal(FEATURE_PAGES.some((page) => page.name === "仿真实验方案创建"), false);
@@ -117,10 +118,12 @@ test("feature grouping preserves three-level navigation and internal fourth-leve
   assert.equal(getFeaturePageById("mission-reliability-experiment-edit").name, "仿真实验方案管理");
   assert.equal(getFeaturePageById("spare-planning-monte-carlo-config").name, "添加/编辑实验");
   assert.equal(getFeaturePageById("mission-reliability-monte-carlo-config").name, "添加/编辑实验");
-  assert.equal(getFeaturePageById("spare-planning-monte-carlo-results").id, "spare-planning-monte-carlo-experiment-list");
-  assert.equal(getFeaturePageById("spare-planning-monte-carlo-results-display").id, "spare-planning-monte-carlo-experiment-list");
-  assert.equal(getFeaturePageById("mission-reliability-monte-carlo-results").id, "mission-reliability-monte-carlo-experiment-list");
-  assert.equal(getFeaturePageById("mission-reliability-monte-carlo-results-display").id, "mission-reliability-monte-carlo-experiment-list");
+  assert.equal(getFeaturePageById("spare-planning-monte-carlo-experiment-detail").component, "lite-mesa-monte-carlo-analysis");
+  assert.equal(getFeaturePageById("mission-reliability-monte-carlo-experiment-detail").component, "lite-mesa-monte-carlo-analysis");
+  assert.equal(getFeaturePageById("spare-planning-monte-carlo-results").id, "system-management-project-data-management");
+  assert.equal(getFeaturePageById("spare-planning-monte-carlo-results-display").id, "system-management-project-data-management");
+  assert.equal(getFeaturePageById("mission-reliability-monte-carlo-results").id, "system-management-project-data-management");
+  assert.equal(getFeaturePageById("mission-reliability-monte-carlo-results-display").id, "system-management-project-data-management");
   assert.equal(getFeaturePageById("spare-planning-scenario-switch").component, "visual-simulation");
   assert.equal(getFeaturePageById("spare-planning-visual-results").component, "visual-simulation");
   assert.equal(getFeaturePageById("mission-reliability-task-reliability").name, "任务可靠度评估");
@@ -2173,7 +2176,7 @@ test("monte carlo editor hides sweep inputs and keeps Monte Carlo local until ex
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const editorSource = appSource.slice(
     appSource.indexOf("function renderMonteCarloExperimentEditor"),
-    appSource.indexOf("function renderMonteCarloExperimentDetail")
+    appSource.indexOf("function renderLiteMesaMonteCarloAnalysis")
   );
 
   assert.doesNotMatch(editorSource, /故障率扫描/);
@@ -2204,37 +2207,22 @@ test("modeling import publish falls back to a new version when the current snaps
 test("monte carlo experiment management has list, editor, and detail pages", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const styleSource = await readFile(new URL("../front/styles.css", import.meta.url), "utf8");
-  const createExperimentSource = appSource.slice(
-    appSource.indexOf("function createMonteCarloExperiment"),
-    appSource.indexOf("function monteCarloExperimentListForModule")
+  const liteMesaSource = appSource.slice(
+    appSource.indexOf("function renderLiteMesaMonteCarloAnalysis"),
+    appSource.indexOf("function updateLiteMesaMonteCarloSetting")
   );
   assert.match(appSource, /class="mc-workbench"/);
   assert.match(appSource, /function renderMonteCarloExperimentList/);
   assert.match(appSource, /function renderMonteCarloExperimentEditor/);
-  assert.match(appSource, /function renderMonteCarloExperimentDetail/);
-  for (const sharedField of [
-    "experiment_id",
-    "experiment_type",
-    "experimentPlanName",
-    "scenarioId",
-    "seed",
-    "status",
-    "progress",
-    "runId",
-    "artifactId"
-  ]) {
-    assert.match(createExperimentSource, new RegExp(`${sharedField}(\\s*:|,)`), `MonteCarloExperiment must carry ${sharedField}`);
-  }
+  assert.doesNotMatch(appSource, /function renderMonteCarloExperimentDetail/);
   assert.match(appSource, /蒙特卡洛实验列表/);
   assert.match(appSource, /保存全部实验运行历史/);
   assert.match(appSource, /添加\/编辑蒙特卡洛实验/);
-  assert.match(appSource, /蒙特卡洛实验详情/);
+  assert.match(liteMesaSource, /Mesa蒙特卡洛分析/);
+  assert.match(liteMesaSource, /主要输出指标统计值/);
   assert.match(appSource, /选择方案/);
   assert.match(appSource, /class="readonly-field"/);
   assert.match(appSource, /仿真次数/);
-  assert.match(appSource, /data-mc-action="start"/);
-  assert.match(appSource, /experimentRunStatus = "运行中"/);
-  assert.match(appSource, /htmlEscape\(experiment\.status\)/);
   assert.match(appSource, /selectedFeatureId = getMonteCarloExperimentDetailFeatureId\(page\.module\)/);
   assert.doesNotMatch(appSource, /class="mc-main-tabs"/);
   assert.doesNotMatch(appSource, /class="mc-subtabs"/);
@@ -2245,33 +2233,31 @@ test("monte carlo experiment management has list, editor, and detail pages", asy
   assert.match(styleSource, /\.mc-config-panel/);
 });
 
-test("independent Mesa Monte Carlo page exposes experiment settings and metric statistics", async () => {
+test("monte carlo detail embeds the Mesa Monte Carlo page", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const styleSource = await readFile(new URL("../front/styles.css", import.meta.url), "utf8");
-  const page = getFeaturePageById("spare-planning-mesa-monte-carlo-analysis");
-  const missionPage = getFeaturePageById("mission-reliability-mesa-monte-carlo-analysis");
+  const page = getFeaturePageById("spare-planning-monte-carlo-experiment-detail");
+  const missionPage = getFeaturePageById("mission-reliability-monte-carlo-experiment-detail");
   const grouped = groupFeaturePages(FEATURE_PAGES);
   const renderSource = appSource.slice(
     appSource.indexOf("function renderLiteMesaMonteCarloAnalysis"),
     appSource.indexOf("function renderAnalysis")
-  );
-  const clickSource = appSource.slice(
-    appSource.indexOf("function bindEvents"),
-    appSource.indexOf("app.addEventListener(\"keydown\"")
   );
   const changeSource = appSource.slice(
     appSource.indexOf("app.addEventListener(\"change\""),
     appSource.indexOf("app.addEventListener(\"focusout\"")
   );
 
-  assert.equal(FEATURE_PAGES.length, 51);
-  assert.equal(page.name, "Mesa蒙特卡洛分析");
+  assert.equal(FEATURE_PAGES.length, 49);
+  assert.equal(page.name, "实验详情");
   assert.equal(page.secondary, "仿真实验");
-  assert.equal(page.tertiary, "Mesa分析");
+  assert.equal(page.tertiary, "蒙特卡洛实验");
   assert.equal(page.component, "lite-mesa-monte-carlo-analysis");
   assert.equal(missionPage.component, "lite-mesa-monte-carlo-analysis");
-  assert.deepEqual(grouped["备件规划评估模块"]["仿真实验"]["Mesa分析"].map((item) => item.name), ["Mesa蒙特卡洛分析"]);
-  assert.deepEqual(grouped["任务可靠度评估模块"]["仿真实验"]["Mesa分析"].map((item) => item.name), ["Mesa蒙特卡洛分析"]);
+  assert.equal(getFeaturePageById("spare-planning-mesa-monte-carlo-analysis").id, "system-management-project-data-management");
+  assert.equal(getFeaturePageById("mission-reliability-mesa-monte-carlo-analysis").id, "system-management-project-data-management");
+  assert.equal("Mesa分析" in grouped["备件规划评估模块"]["仿真实验"], false);
+  assert.equal("Mesa分析" in grouped["任务可靠度评估模块"]["仿真实验"], false);
   assert.match(appSource, /runMonteCarlo/);
   assert.match(appSource, /function runLiteMesaMonteCarloAnalysis/);
   assert.match(appSource, /let liteMesaMonteCarloSettings =/);
@@ -2279,7 +2265,6 @@ test("independent Mesa Monte Carlo page exposes experiment settings and metric s
   assert.match(renderSource, /前端建模 \+ Mesa 分析/);
   assert.match(renderSource, /data-lite-mesa-field="samples"/);
   assert.match(renderSource, /data-lite-mesa-field="seed"/);
-  assert.match(renderSource, /data-lite-mesa-action="run"/);
   assert.match(renderSource, /主要输出指标统计值/);
   assert.match(renderSource, /均值/);
   assert.match(renderSource, /最小值/);
@@ -2288,7 +2273,6 @@ test("independent Mesa Monte Carlo page exposes experiment settings and metric s
   assert.match(appSource, /mission_success_rate/);
   assert.match(appSource, /ready_rate/);
   assert.match(appSource, /shortage_events/);
-  assert.match(clickSource, /const liteMesaMonteCarloButton = event\.target\.closest\("\[data-lite-mesa-action='run'\]"\)/);
   assert.match(changeSource, /const liteMesaMonteCarloInput = event\.target\.closest\("\[data-lite-mesa-field\]"\)/);
   assert.doesNotMatch(renderSource, /非正式|预览|本地预览|正式后端结果/);
   assert.match(styleSource, /\.lite-mesa-workbench/);
@@ -2296,10 +2280,10 @@ test("independent Mesa Monte Carlo page exposes experiment settings and metric s
   assert.match(styleSource, /\.lite-mesa-stat-table/);
 });
 
-test("browser smoke enters monte carlo editor or detail before using sweep inputs", async () => {
+test("browser smoke enters monte carlo embedded Mesa detail", async () => {
   const smokeSource = await readFile(new URL("../reports/m3-1-browser-backend-smoke/browser-backend-smoke.mjs", import.meta.url), "utf8");
   const smokeStart = smokeSource.indexOf('await clickFeature(page, "spare-planning-monte-carlo-experiment-list")');
-  const smokeEnd = smokeSource.indexOf('await page.waitForFunction(() => Boolean(JSON.parse(localStorage.getItem("spare-mvp:lastBackendRun")');
+  const smokeEnd = smokeSource.indexOf('await page.screenshot({ path: `${screenshotDir}/01-lite-mesa-detail.png`, fullPage: true })');
   const smokeMonteCarloSource = smokeSource.slice(
     smokeStart,
     smokeEnd
@@ -2314,7 +2298,7 @@ test("browser smoke enters monte carlo editor or detail before using sweep input
   assert.notEqual(smokeStart, -1, "smoke Monte Carlo flow start marker exists");
   assert.doesNotMatch(smokeMonteCarloSource, /spare-planning-monte-carlo-config/);
   assert.notEqual(smokeEnd, -1, "smoke Monte Carlo flow end marker exists");
-  assert.ok(smokeEnd > smokeStart, "smoke Monte Carlo result navigation follows config flow");
+  assert.ok(smokeEnd > smokeStart, "smoke Monte Carlo detail navigation follows config flow");
   assert.notEqual(helperStart, -1, "smoke open experiment helper exists");
   assert.notEqual(helperEnd, -1, "smoke detail helper follows open experiment helper");
   assert.ok(helperEnd > helperStart, "smoke helper source slice is ordered");
@@ -2326,7 +2310,6 @@ test("browser smoke enters monte carlo editor or detail before using sweep input
       smokeMonteCarloSource.indexOf("openMonteCarloExperimentDetailForRun"),
     "smoke must leave the Monte Carlo experiment list before opening detail"
   );
-  assert.match(smokeSource, /data-mc-action="start"/);
   assert.match(smokeSource, /function openMonteCarloExperimentForRun/);
 });
 
@@ -2521,15 +2504,11 @@ test("monte carlo launch creates a run from the current experiment plan branch",
   assert.doesNotMatch(launchSource, /backendApi\.startMonteCarloRun/);
 });
 
-test("monte carlo detail uses bound run ledger status over stale experiment cache", async () => {
+test("formal Monte Carlo helpers keep bound run ledger status outside embedded detail", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const launchSource = appSource.slice(
     appSource.indexOf("async function startMonteCarloRunThroughApi"),
     appSource.indexOf("async function refreshRunResultThroughApi")
-  );
-  const detailSource = appSource.slice(
-    appSource.indexOf("function renderMonteCarloExperimentDetail"),
-    appSource.indexOf("function renderMonteCarloConfig")
   );
   const boundarySource = appSource.slice(
     appSource.indexOf("function monteCarloFormalResultBoundary"),
@@ -2539,9 +2518,7 @@ test("monte carlo detail uses bound run ledger status over stale experiment cach
   assert.match(appSource, /function monteCarloBoundRun/);
   assert.match(appSource, /function monteCarloBoundArtifactManifest/);
   assert.match(appSource, /function monteCarloDisplayStatus/);
-  assert.match(detailSource, /const displayStatus = monteCarloDisplayStatus\(experiment\)/);
-  assert.match(detailSource, /const boundRun = monteCarloBoundRun\(experiment\)/);
-  assert.match(detailSource, /boundRun\?\.run_id \|\| experiment\.runId/);
+  assert.doesNotMatch(appSource, /function renderMonteCarloExperimentDetail/);
   assert.match(boundarySource, /const boundRun = monteCarloBoundRun\(experiment\)/);
   assert.match(boundarySource, /const runStatus = String\(boundRun\?\.status \|\| experiment\?\.status \|\| ""\)/);
   assert.match(boundarySource, /isRunComplete\(boundRun\)/);
@@ -2558,7 +2535,7 @@ test("monte carlo config backfills empty draft to a single baseline value before
   );
   const editorSource = appSource.slice(
     appSource.indexOf("function renderMonteCarloExperimentEditor"),
-    appSource.indexOf("function renderMonteCarloExperimentDetail")
+    appSource.indexOf("function renderLiteMesaMonteCarloAnalysis")
   );
   const launchSource = appSource.slice(
     appSource.indexOf("async function startMonteCarloRunThroughApi"),

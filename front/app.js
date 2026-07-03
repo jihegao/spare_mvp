@@ -1558,6 +1558,7 @@ function bindEvents() {
         selectedFeatureId = getMonteCarloExperimentEditFeatureId(page.module);
       } else if (action === "detail") {
         selectedMonteCarloExperimentId = monteCarloExperimentButton.dataset.mcExperimentId || selectedMonteCarloExperimentId;
+        syncLiteMesaSettingsFromMonteCarloExperiment(currentMonteCarloExperiment(page.module));
         selectedFeatureId = getMonteCarloExperimentDetailFeatureId(page.module);
       } else if (action === "edit") {
         selectedMonteCarloExperimentId = monteCarloExperimentButton.dataset.mcExperimentId || selectedMonteCarloExperimentId;
@@ -1566,33 +1567,6 @@ function bindEvents() {
         selectedFeatureId = getMonteCarloExperimentListFeatureId(page.module);
       }
       createExperimentPlanBranchFromCurrentProject();
-      location.hash = `feature=${selectedFeatureId}`;
-      render();
-      return;
-    }
-
-    const monteCarloStartButton = event.target.closest("[data-mc-action='start']");
-    if (monteCarloStartButton) {
-      if (formalRunSubmitInFlight) {
-        backendApiStatus = "已有正式运行正在提交，请等待当前请求返回";
-        render();
-        return;
-      }
-      const page = getFeaturePageById(selectedFeatureId);
-      const experiment = currentMonteCarloExperiment(page.module);
-      if (!experiment) {
-        backendApiStatus = "暂无蒙特卡洛实验数据，请先导入并发布建模 JSON，或在当前页面创建数据。";
-        render();
-        return;
-      }
-      selectedMonteCarloExperimentId = experiment.id;
-      monteCarloExperiments = monteCarloExperiments.map((item) => item.id === experiment.id
-        ? { ...item, status: "运行中", progress: 35, runType: "monte_carlo", runId: backendRun?.run_id || item.runId }
-        : item);
-      experimentRunStatus = "运行中";
-      startMonteCarloRunThroughApi({ monteCarloExperimentId: experiment.mc_experiment_id });
-      selectedRoute = "workbench";
-      selectedFeatureId = getMonteCarloExperimentDetailFeatureId(page.module);
       location.hash = `feature=${selectedFeatureId}`;
       render();
       return;
@@ -1653,8 +1627,12 @@ function bindEvents() {
     if (featureButton) {
       selectedRoute = "workbench";
       selectedFeatureId = featureButton.dataset.featureId;
-      if (getFeaturePageById(selectedFeatureId).component === "experiment-plan-management") {
+      const selectedPage = getFeaturePageById(selectedFeatureId);
+      if (selectedPage.component === "experiment-plan-management") {
         experimentPlanManagementMode = "list";
+      }
+      if (selectedPage.component === "lite-mesa-monte-carlo-analysis" && selectedPage.tertiary === "蒙特卡洛实验") {
+        syncLiteMesaSettingsFromMonteCarloExperiment(currentMonteCarloExperiment(selectedPage.module));
       }
       createExperimentPlanBranchFromCurrentProject();
       location.hash = `feature=${selectedFeatureId}`;
@@ -2540,7 +2518,6 @@ function renderMainComponent(page) {
   });
   if (page.component === "monte-carlo-experiment-list") return renderMonteCarloExperimentList(page);
   if (page.component === "monte-carlo-experiment-editor") return renderMonteCarloExperimentEditor(page);
-  if (page.component === "monte-carlo-experiment-detail") return renderMonteCarloExperimentDetail(page);
   if (page.component === "monte-carlo-config") return renderMonteCarloConfig();
   if (page.component === "lite-mesa-monte-carlo-analysis") return renderLiteMesaMonteCarloAnalysis(page);
   if (page.component === "analysis") return renderAnalysis(page);
@@ -11778,85 +11755,8 @@ function renderMonteCarloExperimentEditor(page) {
   `;
 }
 
-function renderMonteCarloExperimentDetail(page) {
-  const experiment = currentMonteCarloExperiment(page.module);
-  if (!experiment) {
-    return importedDataEmptyState("蒙特卡洛实验");
-  }
-  const boundRun = monteCarloBoundRun(experiment);
-  const boundArtifactManifest = monteCarloBoundArtifactManifest(experiment);
-  const displayStatus = monteCarloDisplayStatus(experiment);
-  const displayProgress = boundRun ? normalizeProgress(boundRun.progress ?? experiment.progress) : experiment.progress;
-  const sourceRows = monteCarloExperimentSourceRows(experiment);
-  return `
-    <div class="mc-workbench">
-      <section class="mc-config-panel">
-        <div class="section-head">
-          <h3>蒙特卡洛实验详情</h3>
-          <span>${htmlEscape(displayStatus)}</span>
-        </div>
-        <div class="mc-detail-grid">
-          <div class="readonly-field"><span>SimulationExperimentBase</span><strong>${htmlEscape(experiment.experiment_type)}</strong></div>
-          <div class="readonly-field"><span>experiment_id</span><strong>${htmlEscape(experiment.experiment_id)}</strong></div>
-          <div class="readonly-field"><span>mc_experiment_id</span><strong>${htmlEscape(experiment.mc_experiment_id)}</strong></div>
-          <div class="readonly-field"><span>模块</span><strong>${htmlEscape(experiment.module)}</strong></div>
-          <div class="readonly-field"><span>关联方案</span><strong>${htmlEscape(experiment.experimentPlanName)}</strong></div>
-          <div class="readonly-field"><span>scenario_id</span><strong>${htmlEscape(experiment.scenario_id || experiment.scenarioId)}</strong></div>
-          <div class="readonly-field"><span>scenario_version</span><strong>${htmlEscape(experiment.scenario_version)}</strong></div>
-          <div class="readonly-field"><span>样本量</span><strong>${experiment.samples}</strong></div>
-          <div class="readonly-field"><span>随机种子</span><strong>${experiment.seed}</strong></div>
-          <div class="readonly-field"><span>run_type</span><strong>${htmlEscape(experiment.runType || "monte_carlo")}</strong></div>
-          <div class="readonly-field"><span>run_id</span><strong>${htmlEscape(boundRun?.run_id || experiment.runId || "尚未启动")}</strong></div>
-          <div class="readonly-field"><span>artifact_manifest_id</span><strong>${htmlEscape(boundArtifactManifest?.artifact_manifest_id || experiment.artifactManifestId || experiment.artifactId || "等待生成")}</strong></div>
-        </div>
-        <div class="backend-run-chain">
-          <span>run / artifact / projection 来源</span>
-          <table><tbody>${sourceRows.map(([label, value]) => `<tr><th>${htmlEscape(label)}</th><td>${htmlEscape(value)}</td></tr>`).join("")}</tbody></table>
-        </div>
-        <div class="mc-progress">
-          <span>实验进度</span>
-          <div class="bar-track"><span class="bar-fill blue" style="width:${Math.max(8, displayProgress)}%"></span></div>
-          <strong>${displayProgress}%</strong>
-        </div>
-        <div class="mc-action-row">
-          <button type="button" data-mc-experiment-action="list">返回实验列表</button>
-          <button type="button" class="btn-primary" data-mc-action="start" ${formalRunSubmitInFlight ? "disabled" : ""}>启动实验</button>
-        </div>
-        ${renderMonteCarloResults(experiment)}
-      </section>
-    </div>
-  `;
-}
-
 function renderMonteCarloConfig() {
   return renderMonteCarloExperimentEditor(getFeaturePageById(selectedFeatureId));
-}
-
-function renderLegacyMonteCarloConfig() {
-  ensureMonteCarloSweepDefaults(experimentPlanDraft);
-  return `
-    <div class="mc-workbench">
-      <section class="mc-config-panel mc-config-panel-single">
-        <div class="section-head">
-          <h3>蒙特卡洛实验参数配置</h3>
-          <span>样本 / seed</span>
-        </div>
-        <div class="mc-form">
-          <div class="readonly-field">
-            <span>当前仿真实验</span>
-            <strong>${htmlEscape(experimentPlanDraft.experiment.name)}</strong>
-          </div>
-          <div class="mc-inline-fields">
-            <label>仿真次数<input id="mc-samples" data-experiment-plan-path="experiment.samples" type="number" min="1" value="${experimentPlanDraft.experiment.samples}"></label>
-            <label>随机种子<input data-experiment-plan-path="experiment.seed" type="number" value="${experimentPlanDraft.experiment.seed}"></label>
-          </div>
-          <div class="mc-action-row">
-            <button type="button" class="btn-primary" data-mc-action="start" ${formalRunSubmitInFlight ? "disabled" : ""}>启动</button>
-          </div>
-        </div>
-      </section>
-    </div>
-  `;
 }
 
 function buildMonteCarloEvaluationRows() {
@@ -12245,6 +12145,15 @@ function renderLiteMesaMonteCarloAnalysis(page) {
       </section>
     </div>
   `;
+}
+
+function syncLiteMesaSettingsFromMonteCarloExperiment(experiment) {
+  if (!experiment) return;
+  const samples = Math.max(1, Math.min(1000, Math.trunc(Number(experiment.samples) || liteMesaMonteCarloSettings.samples || 1)));
+  const seed = Math.trunc(Number(experiment.seed) || liteMesaMonteCarloSettings.seed || 1);
+  liteMesaMonteCarloSettings = { samples, seed };
+  liteMesaMonteCarloResult = null;
+  liteMesaMonteCarloStatus = "已载入蒙特卡洛实验设置，等待运行 Mesa 分析。";
 }
 
 function updateLiteMesaMonteCarloSetting(field, value) {

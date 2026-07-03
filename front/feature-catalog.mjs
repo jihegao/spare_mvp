@@ -37,7 +37,6 @@ const FEATURE_SLUGS = {
   "添加/编辑实验": "monte-carlo-experiment-edit",
   实验详情: "monte-carlo-experiment-detail",
   蒙特卡洛实验配置: "monte-carlo-config",
-  Mesa蒙特卡洛分析: "mesa-monte-carlo-analysis",
   备件短板分析: "spare-shortfall-analysis",
   飞机转场携行清单分析: "carry-list-analysis",
   任务可靠度评估: "task-reliability",
@@ -70,7 +69,6 @@ const SOURCE_ROWS = [
   ["备件规划评估模块", "仿真实验", "蒙特卡洛实验", "实验列表"],
   ["备件规划评估模块", "仿真实验", "蒙特卡洛实验", "添加/编辑实验"],
   ["备件规划评估模块", "仿真实验", "蒙特卡洛实验", "实验详情"],
-  ["备件规划评估模块", "仿真实验", "Mesa分析", "Mesa蒙特卡洛分析"],
   ["备件规划评估模块", "结果分析", "备件短板分析", "备件短板分析"],
   ["备件规划评估模块", "结果分析", "飞机转场携行清单分析", "飞机转场携行清单分析"],
   ["任务可靠度评估模块", "仿真建模", "装备系统建模", "装备系统建模"],
@@ -93,7 +91,6 @@ const SOURCE_ROWS = [
   ["任务可靠度评估模块", "仿真实验", "蒙特卡洛实验", "实验列表"],
   ["任务可靠度评估模块", "仿真实验", "蒙特卡洛实验", "添加/编辑实验"],
   ["任务可靠度评估模块", "仿真实验", "蒙特卡洛实验", "实验详情"],
-  ["任务可靠度评估模块", "仿真实验", "Mesa分析", "Mesa蒙特卡洛分析"],
   ["任务可靠度评估模块", "结果分析", "任务可靠度评估", "任务可靠度评估"],
   ["任务可靠度评估模块", "结果分析", "停机因素分析", "停机因素分析"]
 ];
@@ -140,10 +137,6 @@ const FEATURE_ID_ALIASES = {
   "mission-reliability-experiment-edit": "mission-reliability-experiment-plan-management",
   "spare-planning-monte-carlo-config": "spare-planning-monte-carlo-experiment-edit",
   "mission-reliability-monte-carlo-config": "mission-reliability-monte-carlo-experiment-edit",
-  "spare-planning-monte-carlo-results": "spare-planning-monte-carlo-experiment-list",
-  "spare-planning-monte-carlo-results-display": "spare-planning-monte-carlo-experiment-list",
-  "mission-reliability-monte-carlo-results": "mission-reliability-monte-carlo-experiment-list",
-  "mission-reliability-monte-carlo-results-display": "mission-reliability-monte-carlo-experiment-list",
   "mission-reliability-aircraft-task-reliability": "mission-reliability-task-reliability",
   "mission-reliability-aircraft-mission-reliability": "mission-reliability-task-reliability",
   "spare-planning-mission-profile": "spare-planning-composite-task",
@@ -180,8 +173,7 @@ function resolveComponent(name, secondary, tertiary) {
   if (name.includes("场景切换")) return "scenario-switch";
   if (tertiary === "蒙特卡洛实验" && name === "实验列表") return "monte-carlo-experiment-list";
   if (tertiary === "蒙特卡洛实验" && name === "添加/编辑实验") return "monte-carlo-experiment-editor";
-  if (tertiary === "蒙特卡洛实验" && name === "实验详情") return "monte-carlo-experiment-detail";
-  if (tertiary === "Mesa分析") return "lite-mesa-monte-carlo-analysis";
+  if (tertiary === "蒙特卡洛实验" && name === "实验详情") return "lite-mesa-monte-carlo-analysis";
   if (name.includes("蒙特卡洛实验配置")) return "monte-carlo-config";
   if (secondary === "结果分析") return "analysis";
   if (name.includes("仿真实验方案")) return "experiment-form";
@@ -214,8 +206,8 @@ function resolveDataObjects(name, secondary, tertiary) {
   if (tertiary === "仿真实验方案管理") return ["experiment", "experimentPlans"];
   if (name.includes("方案") || name.includes("仿真实验方案")) return ["experiment"];
   if (name.includes("可视化") || name.includes("场景切换")) return ["visualizationState", "experiment", "scenario"];
+  if (tertiary === "蒙特卡洛实验" && name === "实验详情") return ["projectDraft", "mesaMonteCarloSettings", "mesaMetricStatistics", "monteCarloExperiments"];
   if (tertiary === "蒙特卡洛实验") return ["monteCarloExperiments", "experimentPlans", "runs", "artifacts"];
-  if (tertiary === "Mesa分析") return ["projectDraft", "mesaMonteCarloSettings", "mesaMetricStatistics"];
   if (name.includes("蒙特卡洛")) return ["monteCarlo", "runs", "summary"];
   if (secondary === "结果分析") return ["analysisTasks", "monteCarloExperiments", "runs", "decisionOutputs"];
   return ["scenario"];

@@ -953,7 +953,7 @@ test("frontend generic editing remains local until explicit save or run", async 
   );
   const saveButtonSource = appSource.slice(
     appSource.indexOf('const savePlanButton = event.target.closest("[data-save-plan]"'),
-    appSource.indexOf('const monteCarloStartButton = event.target.closest("[data-mc-action=')
+    appSource.indexOf('const analysisActionButton = event.target.closest("[data-analysis-action]"')
   );
 
   assert.match(changeHandlerSource, /setPath\(scenario, input\.dataset\.path, parseInput\(input\)\)/);

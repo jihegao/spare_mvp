@@ -61,11 +61,9 @@ Output:
 | Support activity button feedback | `output/playwright/04b-modeling-buttons-react.txt` |
 | Monte Carlo list | `output/playwright/05-monte-carlo-list.txt` |
 | Monte Carlo editor | `output/playwright/05b-monte-carlo-editor.txt` |
-| Monte Carlo detail results | `output/playwright/06-monte-carlo-detail-results.txt` |
+| Monte Carlo detail embedded Mesa page | `output/playwright/06-monte-carlo-detail-results.txt` |
 | Visual simulation | `output/playwright/08-visual-simulation.txt` |
-| Legacy spare Monte Carlo result alias | `output/playwright/09-legacy-spare-monte-carlo-results.txt` |
-| Legacy mission Monte Carlo result alias | `output/playwright/10-legacy-mission-monte-carlo-results.txt` |
-| Legacy aircraft task reliability alias | `output/playwright/11-legacy-aircraft-task-reliability.txt` |
+| Retired legacy route checks | `output/playwright/system-smoke-result.json` |
 
 Observed final state:
 

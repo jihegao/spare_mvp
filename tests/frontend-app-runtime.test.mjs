@@ -871,7 +871,7 @@ test("experiment plan selection uses experiment_plan_id for duplicate names", as
 
 test("Mesa Monte Carlo setting changes do not rerender before the run click", async () => {
   const runtime = await setupRuntimeApp({
-    hash: "feature=spare-planning-mesa-monte-carlo-analysis",
+    hash: "feature=spare-planning-monte-carlo-experiment-detail",
     projectJson: createRuntimeProjectJson({
       missionProfile: { repeatCycleHours: 6 },
       components: [

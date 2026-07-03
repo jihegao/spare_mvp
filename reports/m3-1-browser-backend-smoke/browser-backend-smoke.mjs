@@ -53,42 +53,20 @@ try {
   await expectHeading(page, "蒙特卡洛实验");
   await openMonteCarloExperimentForRun(page);
   await openMonteCarloExperimentDetailForRun(page);
-  let runResponse = await clickMonteCarloStart(page);
-  if (!runResponse) runResponse = await clickMonteCarloStartWithDomFallback(page);
-  if (!runResponse) {
-    throw new Error(`No successful run submit response on /api/runs. Recent API events: ${JSON.stringify(apiEvents.slice(-20))}. Page text: ${await page.locator("body").innerText()}`);
-  }
-  await page.waitForFunction(() => Boolean(JSON.parse(localStorage.getItem("spare-mvp:lastBackendRun") || "null")?.run_id));
-
-  await expectSectionTitle(page, "蒙特卡洛实验结果");
-  await waitForBackendIdentityChain(page);
-  const beforeRefresh = await readBackendEvidence(page);
-  assertHasIdentityChain(beforeRefresh.chain, "before refresh");
-  if (beforeRefresh.statusText.includes("离线演示") || beforeRefresh.bodyText.includes("offline-demo-run")) {
-    throw new Error("Real backend flow was replaced by offline demo fallback before refresh");
-  }
-  await page.screenshot({ path: `${screenshotDir}/01-real-backend-result.png`, fullPage: true });
+  await page.screenshot({ path: `${screenshotDir}/01-lite-mesa-detail.png`, fullPage: true });
 
   await page.reload({ waitUntil: "domcontentloaded" });
-  await page.waitForFunction(() => document.body.innerText.includes("已从后端恢复"));
-  await waitForBackendIdentityChain(page);
-  const afterRefresh = await readBackendEvidence(page);
-  assertHasIdentityChain(afterRefresh.chain, "after refresh");
-  const m7RunArtifactEvidence = await verifyM7RunArtifactManagement(page, afterRefresh.chain.Run);
-  if (afterRefresh.chain.Run !== beforeRefresh.chain.Run) {
-    throw new Error(`Refresh loaded a different run: ${afterRefresh.chain.Run} != ${beforeRefresh.chain.Run}`);
+  await expectHeading(page, "蒙特卡洛实验");
+  const afterRefreshLiteMesa = await page.evaluate(() => ({
+    bodyText: document.body.innerText,
+    hasNoFormalRun: !Boolean(JSON.parse(localStorage.getItem("spare-mvp:lastBackendRun") || "null")?.run_id)
+  }));
+  if (!afterRefreshLiteMesa.hasNoFormalRun) {
+    throw new Error("Embedded Lite Mesa detail created a formal backend run after refresh");
   }
-  await page.screenshot({ path: `${screenshotDir}/02-refresh-restored-result.png`, fullPage: true });
+  await page.screenshot({ path: `${screenshotDir}/02-refresh-lite-mesa-detail.png`, fullPage: true });
 
   const restartInfo = await restartBackendServer();
-  await page.reload({ waitUntil: "domcontentloaded" });
-  await page.waitForFunction(() => document.body.innerText.includes("已从后端恢复"));
-  await waitForBackendIdentityChain(page);
-  const afterRestartRun = await readBackendEvidence(page);
-  assertHasIdentityChain(afterRestartRun.chain, "after restart");
-  if (afterRestartRun.chain.Run !== beforeRefresh.chain.Run) {
-    throw new Error(`Restart loaded a different run: ${afterRestartRun.chain.Run} != ${beforeRefresh.chain.Run}`);
-  }
 
   await clickFeature(page, "system-management-project-data-management");
   await expectHeading(page, "项目数据管理");
@@ -125,9 +103,6 @@ try {
   await expectHeading(offlinePage, "蒙特卡洛实验");
   await openMonteCarloExperimentForRun(offlinePage);
   await openMonteCarloExperimentDetailForRun(offlinePage);
-  await offlinePage.locator('button[data-mc-action="start"]').click();
-  await offlinePage.waitForTimeout(250);
-  await offlinePage.waitForFunction(() => document.body.innerText.includes("未创建 run_id"));
   const offlineText = await offlinePage.locator("body").innerText();
   if (offlineText.includes("offline-demo-run")) {
     throw new Error("/api unavailable path created a fake offline-demo-run");
@@ -142,22 +117,16 @@ try {
       `${screenshotDir}/00-project-draft-saved.png`,
       `${screenshotDir}/00b-project-draft-restored.png`,
       `${screenshotDir}/00-m5-import-published.png`,
-      `${screenshotDir}/01-real-backend-result.png`,
-      `${screenshotDir}/02-refresh-restored-result.png`,
+      `${screenshotDir}/01-lite-mesa-detail.png`,
+      `${screenshotDir}/02-refresh-lite-mesa-detail.png`,
       `${screenshotDir}/02b-restart-restored-import.png`,
       `${screenshotDir}/03-api-unavailable-blocked.png`
     ],
-    beforeRefresh,
-    afterRefresh,
-    afterRestartRun,
+    afterRefreshLiteMesa,
     afterRestartImport,
-    m7RunArtifactEvidence,
     projectDraftEvidence,
     restartInfo,
-    offlineBlocked: {
-      hasNoFakeRun: !offlineText.includes("offline-demo-run"),
-      statusText: firstMatchingLine(offlineText, "未创建 run_id")
-    }
+    offlineHasNoFakeRun: !offlineText.includes("offline-demo-run")
   };
   await writeFile(`${screenshotDir}/browser-backend-smoke-result.json`, `${JSON.stringify(result, null, 2)}\n`);
   console.log(JSON.stringify(result, null, 2));
@@ -219,8 +188,8 @@ async function openMonteCarloExperimentForRun(page) {
 }
 
 async function openMonteCarloExperimentDetailForRun(page) {
-  const startButton = page.locator('button[data-mc-action="start"]').first();
-  if (await startButton.isVisible().catch(() => false)) return;
+  const detailHeading = page.locator("h3", { hasText: "Mesa蒙特卡洛分析" }).first();
+  if (await detailHeading.isVisible().catch(() => false)) return;
 
   const detailButton = page.locator('button[data-feature-id="spare-planning-monte-carlo-experiment-detail"]').first();
   if (await detailButton.isVisible().catch(() => false)) {
@@ -228,32 +197,12 @@ async function openMonteCarloExperimentDetailForRun(page) {
   } else {
     const listDetailButton = page.locator('button[data-mc-experiment-action="detail"]').first();
     if (!await listDetailButton.isVisible().catch(() => false)) {
-      throw new Error("Cannot find Monte Carlo experiment detail action before starting run");
+      throw new Error("Cannot find Monte Carlo experiment detail action before opening detail");
     }
     await listDetailButton.click();
   }
 
-  await startButton.waitFor({ state: "visible", timeout: 5000 });
-}
-
-async function clickMonteCarloStart(page) {
-  const runResponsePromise = page.waitForResponse(isRunSubmitResponse, { timeout: 3000 }).catch(() => null);
-  await page.locator('button[data-mc-action="start"]').click();
-  return runResponsePromise;
-}
-
-async function clickMonteCarloStartWithDomFallback(page) {
-  const runResponsePromise = page.waitForResponse(isRunSubmitResponse, { timeout: 10000 }).catch(() => null);
-  await page.evaluate(() => document.querySelector('button[data-mc-action="start"]')?.click());
-  return runResponsePromise;
-}
-
-function isRunSubmitResponse(response) {
-  return (
-    response.url().endsWith("/api/runs") &&
-    response.request().method() === "POST" &&
-    response.status() === 200
-  );
+  await detailHeading.waitFor({ state: "visible", timeout: 5000 });
 }
 
 async function verifyProjectDraftPersistence(page) {
