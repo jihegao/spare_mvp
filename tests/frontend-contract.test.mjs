@@ -15,10 +15,10 @@ const PAGE_REVISION_REPORT_URL = new URL("../reports/2026-06-19-page-revision-su
 const RBD_RENDERING_CONTRACT_URL = new URL("../docs/reliability-block-diagram-contract.md", import.meta.url);
 
 test("feature catalog exposes all table-2 four-level pages", () => {
-  assert.equal(FEATURE_PAGES.length, 49);
-  assert.equal(new Set(FEATURE_PAGES.map((page) => page.id)).size, 49);
-  assert.equal(FEATURE_PAGES.filter((page) => page.module === "备件规划评估模块").length, 21);
-  assert.equal(FEATURE_PAGES.filter((page) => page.module === "任务可靠度评估模块").length, 22);
+  assert.equal(FEATURE_PAGES.length, 45);
+  assert.equal(new Set(FEATURE_PAGES.map((page) => page.id)).size, 45);
+  assert.equal(FEATURE_PAGES.filter((page) => page.module === "备件规划评估模块").length, 19);
+  assert.equal(FEATURE_PAGES.filter((page) => page.module === "任务可靠度评估模块").length, 20);
   assert.equal(FEATURE_PAGES.filter((page) => page.module === "系统运行支持模块").length, 6);
   for (const label of ["装备系统建模", "装备可靠性框图建模", "飞机转场携行清单分析", "任务可靠度评估", "停机因素分析", "建模表单管理"]) {
     assert.ok(FEATURE_PAGES.some((page) => page.name === label), label);
@@ -95,10 +95,10 @@ test("feature grouping preserves three-level navigation and internal fourth-leve
   assert.deepEqual(grouped["系统运行支持模块"]["装备RMS指标分配"]["装备RMS指标分配"].map((page) => page.name), ["装备RMS指标分配"]);
   assert.deepEqual(grouped["备件规划评估模块"]["仿真实验"]["仿真实验方案管理"].map((page) => page.name), ["仿真实验方案管理"]);
   assert.deepEqual(grouped["任务可靠度评估模块"]["仿真实验"]["仿真实验方案管理"].map((page) => page.name), ["仿真实验方案管理"]);
-  assert.deepEqual(grouped["备件规划评估模块"]["仿真实验"]["可视化推演"].map((page) => page.name), ["可视化实验启动与停止"]);
-  assert.deepEqual(grouped["任务可靠度评估模块"]["仿真实验"]["可视化推演"].map((page) => page.name), ["可视化实验启动与停止"]);
-  assert.deepEqual(grouped["备件规划评估模块"]["仿真实验"]["蒙特卡洛实验"].map((page) => page.name), ["实验列表", "添加/编辑实验", "实验详情"]);
-  assert.deepEqual(grouped["任务可靠度评估模块"]["仿真实验"]["蒙特卡洛实验"].map((page) => page.name), ["实验列表", "添加/编辑实验", "实验详情"]);
+  assert.deepEqual(grouped["备件规划评估模块"]["仿真实验"]["可视化推演"].map((page) => page.name), ["Mesa页面"]);
+  assert.deepEqual(grouped["任务可靠度评估模块"]["仿真实验"]["可视化推演"].map((page) => page.name), ["Mesa页面"]);
+  assert.deepEqual(grouped["备件规划评估模块"]["仿真实验"]["蒙特卡洛实验"].map((page) => page.name), ["实验详情"]);
+  assert.deepEqual(grouped["任务可靠度评估模块"]["仿真实验"]["蒙特卡洛实验"].map((page) => page.name), ["实验详情"]);
   assert.equal("Mesa分析" in grouped["备件规划评估模块"]["仿真实验"], false);
   assert.equal("Mesa分析" in grouped["任务可靠度评估模块"]["仿真实验"], false);
   assert.deepEqual(Object.keys(grouped["备件规划评估模块"]["结果分析"]), ["备件短板分析", "飞机转场携行清单分析"]);
@@ -116,16 +116,26 @@ test("feature grouping preserves three-level navigation and internal fourth-leve
   assert.equal(getFeaturePageById("spare-planning-experiment-edit").name, "仿真实验方案管理");
   assert.equal(getFeaturePageById("mission-reliability-experiment-create").name, "仿真实验方案管理");
   assert.equal(getFeaturePageById("mission-reliability-experiment-edit").name, "仿真实验方案管理");
-  assert.equal(getFeaturePageById("spare-planning-monte-carlo-config").name, "添加/编辑实验");
-  assert.equal(getFeaturePageById("mission-reliability-monte-carlo-config").name, "添加/编辑实验");
+  assert.equal(getFeaturePageById("spare-planning-monte-carlo-config").id, "spare-planning-monte-carlo-experiment-detail");
+  assert.equal(getFeaturePageById("mission-reliability-monte-carlo-config").id, "mission-reliability-monte-carlo-experiment-detail");
+  assert.equal(getFeaturePageById("spare-planning-monte-carlo-experiment-list").id, "spare-planning-monte-carlo-experiment-detail");
+  assert.equal(getFeaturePageById("mission-reliability-monte-carlo-experiment-list").id, "mission-reliability-monte-carlo-experiment-detail");
+  assert.equal(getFeaturePageById("spare-planning-monte-carlo-experiment-edit").id, "spare-planning-monte-carlo-experiment-detail");
+  assert.equal(getFeaturePageById("mission-reliability-monte-carlo-experiment-edit").id, "mission-reliability-monte-carlo-experiment-detail");
   assert.equal(getFeaturePageById("spare-planning-monte-carlo-experiment-detail").component, "lite-mesa-monte-carlo-analysis");
   assert.equal(getFeaturePageById("mission-reliability-monte-carlo-experiment-detail").component, "lite-mesa-monte-carlo-analysis");
   assert.equal(getFeaturePageById("spare-planning-monte-carlo-results").id, "system-management-project-data-management");
   assert.equal(getFeaturePageById("spare-planning-monte-carlo-results-display").id, "system-management-project-data-management");
   assert.equal(getFeaturePageById("mission-reliability-monte-carlo-results").id, "system-management-project-data-management");
   assert.equal(getFeaturePageById("mission-reliability-monte-carlo-results-display").id, "system-management-project-data-management");
-  assert.equal(getFeaturePageById("spare-planning-scenario-switch").component, "visual-simulation");
-  assert.equal(getFeaturePageById("spare-planning-visual-results").component, "visual-simulation");
+  assert.equal(getFeaturePageById("spare-planning-visual-mesa-page").component, "visual-simulation");
+  assert.equal(getFeaturePageById("mission-reliability-visual-mesa-page").component, "visual-simulation");
+  assert.equal(getFeaturePageById("spare-planning-visual-start-stop").id, "spare-planning-visual-mesa-page");
+  assert.equal(getFeaturePageById("mission-reliability-visual-start-stop").id, "mission-reliability-visual-mesa-page");
+  assert.equal(getFeaturePageById("spare-planning-scenario-switch").id, "spare-planning-visual-mesa-page");
+  assert.equal(getFeaturePageById("spare-planning-visual-results").id, "spare-planning-visual-mesa-page");
+  assert.equal(getFeaturePageById("mission-reliability-scenario-switch").id, "mission-reliability-visual-mesa-page");
+  assert.equal(getFeaturePageById("mission-reliability-visual-results").id, "mission-reliability-visual-mesa-page");
   assert.equal(getFeaturePageById("mission-reliability-task-reliability").name, "任务可靠度评估");
   assert.equal(getFeaturePageById("system-management-project-data-management").component, "system-project-management");
   assert.equal(getFeaturePageById("system-management-modeling-granularity-management").component, "system-project-management");
@@ -231,7 +241,7 @@ test("frontend business authoring pages do not hydrate missing imported data fro
     sourceSlice("function renderSupportOrganizationWorkbench", "function renderOrgTreeNode"),
     sourceSlice("function renderSupportActivityWorkbench", "function renderSupportActivityTreeNode"),
     sourceSlice("function renderExperimentPlanList", "function renderExperimentPlanEditor"),
-    sourceSlice("function renderMonteCarloExperimentList", "function renderMonteCarloExperimentEditor")
+    sourceSlice("function renderLiteMesaMonteCarloAnalysis", "function syncLiteMesaSettingsFromMonteCarloExperiment")
   ].join("\n");
 
   assert.doesNotMatch(staticSeedSource, /const SUPPORT_ORG_TREE|const SUPPORT_ACTIVITY_PLANS|const MISSION_|const SUPPORT_/);
@@ -2163,27 +2173,29 @@ test("frontend tables do not use generic operation column headers", async () => 
   assert.doesNotMatch(appSource, /<th(?:\s[^>]*)?>\s*操作\s*<\/th>/);
 });
 
-test("monte carlo configuration drives the displayed result sample count", async () => {
+test("monte carlo Mesa settings drive the displayed result sample count", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   assert.doesNotMatch(appSource, /runMonteCarlo\(scenario, \{ samples: 4 \}\)/);
   assert.match(appSource, /let \{ previewSingleResult: singleResult, previewMonteCarloResult: monteCarloResult \} = buildPreviewResultState\(scenario\)/);
-  assert.match(appSource, /id="mc-samples"[^>]*data-experiment-plan-path="experiment\.samples"/);
+  assert.match(appSource, /data-lite-mesa-field="samples"/);
+  assert.match(appSource, /runMonteCarlo\(projectJson,\s*\{/);
   assert.match(appSource, /function updatePreviewResultsThroughApiClient/);
   assert.match(appSource, /data-save-plan/);
 });
 
-test("monte carlo editor hides sweep inputs and keeps Monte Carlo local until explicit save", async () => {
+test("direct Monte Carlo Mesa page hides sweep inputs and keeps formal runs explicit", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
-  const editorSource = appSource.slice(
-    appSource.indexOf("function renderMonteCarloExperimentEditor"),
-    appSource.indexOf("function renderLiteMesaMonteCarloAnalysis")
+  const mesaSource = appSource.slice(
+    appSource.indexOf("function renderLiteMesaMonteCarloAnalysis"),
+    appSource.indexOf("function updateLiteMesaMonteCarloSetting")
   );
 
-  assert.doesNotMatch(editorSource, /故障率扫描/);
-  assert.doesNotMatch(editorSource, /备件倍数/);
-  assert.doesNotMatch(editorSource, /保障容量/);
-  assert.doesNotMatch(editorSource, /data-mc-array-path/);
-  assert.doesNotMatch(editorSource, /monteCarlo\.failureRates\.join/);
+  assert.doesNotMatch(mesaSource, /故障率扫描/);
+  assert.doesNotMatch(mesaSource, /备件倍数/);
+  assert.doesNotMatch(mesaSource, /保障容量/);
+  assert.doesNotMatch(mesaSource, /data-mc-array-path/);
+  assert.doesNotMatch(mesaSource, /monteCarlo\.failureRates\.join/);
+  assert.doesNotMatch(appSource, /function renderMonteCarloExperimentEditor/);
   assert.match(appSource, /const savePlanButton = event\.target\.closest\("\[data-save-plan\]"\)/);
 });
 
@@ -2204,33 +2216,35 @@ test("modeling import publish falls back to a new version when the current snaps
   assert.match(flowSource, /createReferencedModelingImportVersion\(importPackage, versionSuffix\)/);
 });
 
-test("monte carlo experiment management has list, editor, and detail pages", async () => {
+test("monte carlo experiment navigation goes directly to embedded Mesa detail", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const styleSource = await readFile(new URL("../front/styles.css", import.meta.url), "utf8");
   const liteMesaSource = appSource.slice(
     appSource.indexOf("function renderLiteMesaMonteCarloAnalysis"),
     appSource.indexOf("function updateLiteMesaMonteCarloSetting")
   );
-  assert.match(appSource, /class="mc-workbench"/);
-  assert.match(appSource, /function renderMonteCarloExperimentList/);
-  assert.match(appSource, /function renderMonteCarloExperimentEditor/);
+  assert.doesNotMatch(appSource, /function renderMonteCarloExperimentList/);
+  assert.doesNotMatch(appSource, /function renderMonteCarloExperimentEditor/);
   assert.doesNotMatch(appSource, /function renderMonteCarloExperimentDetail/);
-  assert.match(appSource, /蒙特卡洛实验列表/);
-  assert.match(appSource, /保存全部实验运行历史/);
-  assert.match(appSource, /添加\/编辑蒙特卡洛实验/);
+  assert.doesNotMatch(appSource, /蒙特卡洛实验列表/);
+  assert.doesNotMatch(appSource, /保存全部实验运行历史/);
+  assert.doesNotMatch(appSource, /添加\/编辑蒙特卡洛实验/);
+  assert.doesNotMatch(appSource, /data-mc-experiment-action="add"/);
+  assert.doesNotMatch(appSource, /data-mc-experiment-action="edit"/);
+  assert.doesNotMatch(appSource, /data-mc-experiment-action="list"/);
+  assert.match(appSource, /function normalizeSelectedFeatureHash/);
+  assert.match(appSource, /const normalizedHash = `feature=\$\{encodeURIComponent\(featureId\)\}`/);
+  assert.match(appSource, /window\.history\.replaceState\(null, "", `\$\{location\.pathname\}\$\{location\.search\}#\$\{normalizedHash\}`\)/);
+  assert.match(appSource, /location\.hash = normalizedHash/);
   assert.match(liteMesaSource, /Mesa蒙特卡洛分析/);
   assert.match(liteMesaSource, /主要输出指标统计值/);
-  assert.match(appSource, /选择方案/);
-  assert.match(appSource, /class="readonly-field"/);
-  assert.match(appSource, /仿真次数/);
-  assert.match(appSource, /selectedFeatureId = getMonteCarloExperimentDetailFeatureId\(page\.module\)/);
   assert.doesNotMatch(appSource, /class="mc-main-tabs"/);
   assert.doesNotMatch(appSource, /class="mc-subtabs"/);
   assert.doesNotMatch(appSource, /正交实验配置与分析/);
   assert.doesNotMatch(appSource, /正交因素/);
   assert.doesNotMatch(appSource, /预检查/);
-  assert.match(styleSource, /\.mc-workbench/);
-  assert.match(styleSource, /\.mc-config-panel/);
+  assert.match(styleSource, /\.lite-mesa-workbench/);
+  assert.match(styleSource, /\.lite-mesa-settings/);
 });
 
 test("monte carlo detail embeds the Mesa Monte Carlo page", async () => {
@@ -2248,7 +2262,7 @@ test("monte carlo detail embeds the Mesa Monte Carlo page", async () => {
     appSource.indexOf("app.addEventListener(\"focusout\"")
   );
 
-  assert.equal(FEATURE_PAGES.length, 49);
+  assert.equal(FEATURE_PAGES.length, 45);
   assert.equal(page.name, "实验详情");
   assert.equal(page.secondary, "仿真实验");
   assert.equal(page.tertiary, "蒙特卡洛实验");
@@ -2282,35 +2296,21 @@ test("monte carlo detail embeds the Mesa Monte Carlo page", async () => {
 
 test("browser smoke enters monte carlo embedded Mesa detail", async () => {
   const smokeSource = await readFile(new URL("../reports/m3-1-browser-backend-smoke/browser-backend-smoke.mjs", import.meta.url), "utf8");
-  const smokeStart = smokeSource.indexOf('await clickFeature(page, "spare-planning-monte-carlo-experiment-list")');
+  const smokeStart = smokeSource.indexOf('await clickFeature(page, "spare-planning-monte-carlo-experiment-detail")');
   const smokeEnd = smokeSource.indexOf('await page.screenshot({ path: `${screenshotDir}/01-lite-mesa-detail.png`, fullPage: true })');
   const smokeMonteCarloSource = smokeSource.slice(
     smokeStart,
     smokeEnd
   );
-  const helperStart = smokeSource.indexOf("async function openMonteCarloExperimentForRun");
-  const helperEnd = smokeSource.indexOf("async function openMonteCarloExperimentDetailForRun");
-  const openExperimentSource = smokeSource.slice(
-    helperStart,
-    helperEnd
-  );
 
   assert.notEqual(smokeStart, -1, "smoke Monte Carlo flow start marker exists");
+  assert.doesNotMatch(smokeSource, /spare-planning-monte-carlo-experiment-list/);
+  assert.doesNotMatch(smokeSource, /openMonteCarloExperimentForRun/);
+  assert.doesNotMatch(smokeSource, /data-mc-experiment-action/);
   assert.doesNotMatch(smokeMonteCarloSource, /spare-planning-monte-carlo-config/);
   assert.notEqual(smokeEnd, -1, "smoke Monte Carlo flow end marker exists");
-  assert.ok(smokeEnd > smokeStart, "smoke Monte Carlo detail navigation follows config flow");
-  assert.notEqual(helperStart, -1, "smoke open experiment helper exists");
-  assert.notEqual(helperEnd, -1, "smoke detail helper follows open experiment helper");
-  assert.ok(helperEnd > helperStart, "smoke helper source slice is ordered");
-  assert.match(openExperimentSource, /data-mc-experiment-action="edit"/);
-  assert.match(openExperimentSource, /data-mc-experiment-action="add"/);
+  assert.ok(smokeEnd > smokeStart, "smoke Monte Carlo smoke opens embedded Mesa detail directly");
   assert.doesNotMatch(smokeMonteCarloSource, /data-mc-array-path="monteCarlo\.failureRates"/);
-  assert.ok(
-    smokeMonteCarloSource.indexOf("openMonteCarloExperimentForRun") <
-      smokeMonteCarloSource.indexOf("openMonteCarloExperimentDetailForRun"),
-    "smoke must leave the Monte Carlo experiment list before opening detail"
-  );
-  assert.match(smokeSource, /function openMonteCarloExperimentForRun/);
 });
 
 test("analysis pages expose current result flow without user-visible task or artifact selectors", async () => {
@@ -2533,10 +2533,6 @@ test("monte carlo config backfills empty draft to a single baseline value before
     appSource.indexOf("function createExperimentPlanBranchFromCurrentProject"),
     appSource.indexOf("function renderCollapsibleTree")
   );
-  const editorSource = appSource.slice(
-    appSource.indexOf("function renderMonteCarloExperimentEditor"),
-    appSource.indexOf("function renderLiteMesaMonteCarloAnalysis")
-  );
   const launchSource = appSource.slice(
     appSource.indexOf("async function startMonteCarloRunThroughApi"),
     appSource.indexOf("async function refreshRunResultThroughApi")
@@ -2548,8 +2544,8 @@ test("monte carlo config backfills empty draft to a single baseline value before
   assert.match(appSource, /spareMultipliers: \[1\]/);
   assert.match(appSource, /supportCapacities: \[1\]/);
   assert.match(branchSource, /ensureMonteCarloSweepDefaults\(experimentPlanDraft\)/);
-  assert.match(editorSource, /ensureMonteCarloSweepDefaults\(experimentPlanDraft\)/);
   assert.match(launchSource, /ensureMonteCarloSweepDefaults\(experimentPlanDraft\)/);
+  assert.doesNotMatch(appSource, /function renderMonteCarloExperimentEditor/);
 });
 
 test("M9.8 formal run launches use aircraft_support_v1 while visual launches use independent Mesa", async () => {
@@ -3268,7 +3264,7 @@ test("phase 6C mission reliability chart uses formal projection time sequence on
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const lineChartSource = appSource.slice(
     appSource.indexOf("function renderLineChart"),
-    appSource.indexOf("function renderScenarioSwitch")
+    appSource.indexOf("function field(label")
   );
   const dashboardSource = appSource.slice(
     appSource.indexOf("function renderAnalysisDashboard"),
@@ -3597,6 +3593,8 @@ test("visual simulation page embeds aircraft mission and support Mesa views", as
   assert.match(appSource, /点击可视化推演后直接读取当前 Project/);
   assert.doesNotMatch(appSource, /formal run \/ aircraft_support_v1/);
   assert.match(appSource, /isVisualSimulationPage/);
+  assert.match(appSource, /spare-planning-visual-mesa-page/);
+  assert.match(appSource, /mission-reliability-visual-mesa-page/);
   assert.doesNotMatch(appSource, /<h2>\$\{htmlEscape\(page\.tertiary\)\}<\/h2>/);
   assert.doesNotMatch(appSource, /return `<div>\$\{breadcrumb\}<\/div>`;/);
   assert.doesNotMatch(appSource, /可视化实验启动与停止<\/h2>/);
@@ -3614,7 +3612,7 @@ test("visual simulation layout matches operational dashboard requirements", asyn
   const styleSource = await readFile(new URL("../front/styles.css", import.meta.url), "utf8");
   const visualSource = appSource.slice(
     appSource.indexOf("function renderVisualSimulation"),
-    appSource.indexOf("function renderVisualizationRunOptions")
+    appSource.indexOf("function renderVisualizationEventStream")
   );
   const stageSource = appSource.slice(
     appSource.indexOf("function renderMesaStage"),
@@ -3785,7 +3783,7 @@ test("visual simulation places event trace at the bottom of the page", async () 
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const visualSource = appSource.slice(
     appSource.indexOf("function renderVisualSimulation"),
-    appSource.indexOf("function renderVisualizationRunOptions")
+    appSource.indexOf("function renderVisualizationEventStream")
   );
 
   const gridIndex = visualSource.indexOf('class="mesa-visual-grid ${activeView === "mission" ? "mission-expanded" : ""}"');
@@ -3824,14 +3822,17 @@ test("M9.2 visual simulation keeps state stream support behind the simplified re
   assert.doesNotMatch(controlHandlerSource, /readyState === EventSource\.CLOSED && !visualizationStreamState\.eventCount/);
 });
 
-test("visual simulation exposes only replay picker replay start and new simulation controls", async () => {
+test("visual simulation enters the Mesa page without a replay list", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const visualSource = appSource.slice(
     appSource.indexOf("function renderVisualSimulation"),
     appSource.indexOf("function mesaTab")
   );
 
-  assert.match(visualSource, /aria-label="选择回放"/);
+  assert.doesNotMatch(appSource, /function renderVisualizationRunOptions/);
+  assert.doesNotMatch(appSource, /data-mesa-run-select/);
+  assert.doesNotMatch(visualSource, /选择回放/);
+  assert.doesNotMatch(visualSource, /<select/);
   assert.match(visualSource, /data-mesa-control="play"/);
   assert.match(visualSource, /启动回放/);
   assert.match(visualSource, /暂停回放/);
@@ -3854,31 +3855,23 @@ test("visual simulation exposes only replay picker replay start and new simulati
   assert.doesNotMatch(visualSource, /data-mesa-backend-control-status/);
 });
 
-test("visual simulation replay picker exposes only the active replay", async () => {
+test("visual simulation keeps direct Mesa state without a visible run picker", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
-  const runOptionsSource = appSource.slice(
-    appSource.indexOf("function renderVisualizationRunOptions"),
-    appSource.indexOf("function visualizationStreamEventClass")
-  );
   const refreshRunListSource = appSource.slice(
     appSource.indexOf("async function refreshVisualizationRunList"),
     appSource.indexOf("function ensureVisualizationRunListLoaded")
   );
 
-  assert.match(runOptionsSource, /visualizationSelectedRunId \|\| backendRun\?\.run_id \|\| visualizationStateSeries\?\.run_id/);
-  assert.ok(runOptionsSource.includes('return `<option value="${htmlEscape(runId)}" selected>${htmlEscape(runId)}</option>`;'));
-  assert.doesNotMatch(runOptionsSource, /visualizationRunList\.map/);
-  assert.doesNotMatch(runOptionsSource, /Array\.from\(ids\)/);
+  assert.doesNotMatch(appSource, /function renderVisualizationRunOptions/);
+  assert.doesNotMatch(appSource, /data-mesa-run-select/);
+  assert.match(appSource, /visualizationSelectedRunId = runId/);
+  assert.match(appSource, /visualizationReplayStatus = `独立 Mesa 已读取当前 Project 并开始回放：run_id \$\{runId\}`/);
   assert.match(refreshRunListSource, /M9 当前回放已同步/);
   assert.doesNotMatch(refreshRunListSource, /run 列表已刷新/);
 });
 
-test("visual simulation selection keeps official replay loading but new starts use independent Mesa", async () => {
+test("visual simulation new starts use independent Mesa without list selection", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
-  const changeSource = appSource.slice(
-    appSource.indexOf('const mesaRunSelect = event.target.closest("[data-mesa-run-select]")'),
-    appSource.indexOf('const mesaTimeline = event.target.closest("[data-mesa-timeline]")')
-  );
   const controlHandlerSource = appSource.slice(
     appSource.indexOf("async function handleMesaControl"),
     appSource.indexOf("async function loadAviationSupportState")
@@ -3892,7 +3885,7 @@ test("visual simulation selection keeps official replay loading but new starts u
     controlHandlerSource.indexOf('if (["play"')
   );
 
-  assert.match(changeSource, /await loadVisualizationReplayForRun\(visualizationSelectedRunId\)/);
+  assert.doesNotMatch(appSource, /const mesaRunSelect = event\.target\.closest/);
   assert.match(newRunSource, /await startIndependentMesaVisualizationThroughApi\(\)/);
   assert.doesNotMatch(newRunSource, /await startSingleRunThroughApi\(\)/);
   assert.doesNotMatch(newRunSource, /await refreshVisualizationRunList\(newRunId\)/);

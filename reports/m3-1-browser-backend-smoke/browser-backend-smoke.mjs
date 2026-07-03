@@ -49,9 +49,8 @@ try {
     page.locator("[data-save-plan]").click()
   ]);
 
-  await clickFeature(page, "spare-planning-monte-carlo-experiment-list");
+  await clickFeature(page, "spare-planning-monte-carlo-experiment-detail");
   await expectHeading(page, "蒙特卡洛实验");
-  await openMonteCarloExperimentForRun(page);
   await openMonteCarloExperimentDetailForRun(page);
   await page.screenshot({ path: `${screenshotDir}/01-lite-mesa-detail.png`, fullPage: true });
 
@@ -99,9 +98,8 @@ try {
       body: JSON.stringify({ code: "backend_unavailable", message: "blocked by M3-1 smoke" })
     })
   );
-  await clickFeature(offlinePage, "spare-planning-monte-carlo-experiment-list");
+  await clickFeature(offlinePage, "spare-planning-monte-carlo-experiment-detail");
   await expectHeading(offlinePage, "蒙特卡洛实验");
-  await openMonteCarloExperimentForRun(offlinePage);
   await openMonteCarloExperimentDetailForRun(offlinePage);
   const offlineText = await offlinePage.locator("body").innerText();
   if (offlineText.includes("offline-demo-run")) {
@@ -170,23 +168,6 @@ async function clickFeature(page, featureId) {
   if (!clicked) throw new Error(`Cannot find feature button ${featureId}`);
 }
 
-async function openMonteCarloExperimentForRun(page) {
-  const experimentNameInput = page.locator('input[data-mc-experiment-field="name"]').first();
-  if (await experimentNameInput.isVisible().catch(() => false)) return;
-
-  const editButton = page.locator('button[data-mc-experiment-action="edit"]').first();
-  const addButton = page.locator('button[data-mc-experiment-action="add"]').first();
-  if (await editButton.isVisible().catch(() => false)) {
-    await editButton.click();
-  } else if (await addButton.isVisible().catch(() => false)) {
-    await addButton.click();
-  } else {
-    throw new Error("Cannot find Monte Carlo experiment add/edit action before opening editor");
-  }
-
-  await experimentNameInput.waitFor({ state: "visible", timeout: 5000 });
-}
-
 async function openMonteCarloExperimentDetailForRun(page) {
   const detailHeading = page.locator("h3", { hasText: "Mesa蒙特卡洛分析" }).first();
   if (await detailHeading.isVisible().catch(() => false)) return;
@@ -195,11 +176,7 @@ async function openMonteCarloExperimentDetailForRun(page) {
   if (await detailButton.isVisible().catch(() => false)) {
     await detailButton.click();
   } else {
-    const listDetailButton = page.locator('button[data-mc-experiment-action="detail"]').first();
-    if (!await listDetailButton.isVisible().catch(() => false)) {
-      throw new Error("Cannot find Monte Carlo experiment detail action before opening detail");
-    }
-    await listDetailButton.click();
+    throw new Error("Cannot find Monte Carlo experiment detail feature before opening detail");
   }
 
   await detailHeading.waitFor({ state: "visible", timeout: 5000 });

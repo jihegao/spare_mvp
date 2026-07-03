@@ -127,23 +127,6 @@ async function clickFeature(featureId) {
   fallbacks.push({ action: "dom-click-feature", featureId });
 }
 
-async function openMonteCarloExperimentForRun() {
-  const experimentNameInput = page.locator('input[data-mc-experiment-field="name"]').first();
-  if (await experimentNameInput.isVisible().catch(() => false)) return;
-
-  const editButton = page.locator('button[data-mc-experiment-action="edit"]').first();
-  const addButton = page.locator('button[data-mc-experiment-action="add"]').first();
-  if (await editButton.isVisible().catch(() => false)) {
-    await editButton.click();
-  } else if (await addButton.isVisible().catch(() => false)) {
-    await addButton.click();
-  } else {
-    throw new Error("Cannot find Monte Carlo experiment add/edit action before opening editor");
-  }
-
-  await experimentNameInput.waitFor({ state: "visible", timeout: 5000 });
-}
-
 async function openMonteCarloExperimentDetailForRun() {
   const detailHeading = page.locator("h3", { hasText: "Mesa蒙特卡洛分析" }).first();
   if (await detailHeading.isVisible().catch(() => false)) return;
@@ -152,11 +135,7 @@ async function openMonteCarloExperimentDetailForRun() {
   if (await detailTab.isVisible().catch(() => false)) {
     await detailTab.click();
   } else {
-    const listDetailButton = page.locator('button[data-mc-experiment-action="detail"]').first();
-    if (!await listDetailButton.isVisible().catch(() => false)) {
-      throw new Error("Cannot find Monte Carlo experiment detail action before checking results");
-    }
-    await listDetailButton.click();
+    throw new Error("Cannot find Monte Carlo experiment detail feature before checking results");
   }
 
   await detailHeading.waitFor({ state: "visible", timeout: 5000 });
@@ -210,16 +189,12 @@ await capture("04-modeling-after-edit", "装备任务建模");
 await verifyModelingButtonsReact();
 
 await openSecondary("仿真实验");
-await clickFeature("spare-planning-monte-carlo-experiment-list");
-await capture("05-monte-carlo-list", "蒙特卡洛实验");
-await openMonteCarloExperimentForRun();
-await capture("05b-monte-carlo-editor", "蒙特卡洛实验");
-
+await clickFeature("spare-planning-monte-carlo-experiment-detail");
 await openMonteCarloExperimentDetailForRun();
 await capture("06-monte-carlo-detail-results", "蒙特卡洛实验");
 
 await openSecondary("仿真实验");
-await clickFeature("spare-planning-visual-start-stop");
+await clickFeature("spare-planning-visual-mesa-page");
 await capture("08-visual-simulation", "可视化推演");
 
 const retiredLegacyRoutes = await verifyRetiredLegacyResultRoutes();

@@ -17,9 +17,9 @@
 9. 装备系统建模页面对齐 `vendor/ship_front` 的装备组成树和属性配置形态；默认进入单一装备系统建模页，左侧显示装备组成树，右侧按当前选中飞机或系统节点展示对应组件表，维护组件名称、父节点、数量 n、组件属性、k 值（n 中取 k）。MTBF/MTTR 先选择分布类型再显示关联参数输入，MTBF 默认指数分布，MTTR 默认固定值；分布类型当前限定为固定值、指数分布、正态分布和均匀分布；导入校验要求 SRU 的上级必须是 LRU。
 10. 装备可靠性框图建模只保留在 `任务可靠度评估模块` 下，左侧复用装备树；选中“飞机列表”根节点时右侧不显示框图，选中整机或组件时右侧只展示全部直接下一级 RBD 节点且不展示当前选中根节点，`n中取k` 节点以外层并联框展示，并在框内展开 N 个同名分支节点，门逻辑节点保持独立展示；完整绘图契约见 `docs/reliability-block-diagram-contract.md`。
 11. 保障组织建模、保障活动建模页面保留外层四级导航，删除内部重复页签；保障组织支持递归树节点，备件记录所属装备，保障人员专业使用下拉字典兼容回退且不再维护所属型号，备件、人员和设备资源表不再依赖行级编辑按钮；基本保障活动通过编辑面板维护活动编号、工作名称、适用飞机、作业时长分布、人员、设备和备件需求；使用保障、预防性维修、修复性维修和后勤保障的工作项目从基本保障活动库选择/搜索并自动回填，紧前作业通过显式编辑入口维护。
-12. 可视化推演页面恢复三级标题“可视化推演”，只保留一个可导航入口并直接嵌入 Mesa 航空保障可视化状态；当前产品口径保留飞机、任务、保障等状态视图，Mesa 内部 `Ontology视图`、Ontology Playground 导出和项目级本体校验已从当前产品、运行时代码和测试门删除。
-13. 蒙特卡洛实验已拆为实验列表、添加/编辑实验和实验详情；实验对象保存 `mc_experiment_id`、关联方案、样本量、随机种子、状态、进度、`run_id` 和 artifact 引用。
-14. 蒙特卡洛评估结果已经迁移到“蒙特卡洛实验 / 实验详情”的结果区；四个结果分析页已收敛为各自的“当前分析结果”，用户从页面直接运行当前分析，不再通过主界面创建 AnalysisTask、绑定 MC 实验或选择 run/artifact。
+12. 可视化推演页面恢复三级标题“可视化推演”，只保留 `Mesa页面` 一个可导航入口并直接读取当前 Project 启动独立 Mesa；旧 `visual-start-stop`、`scenario-switch`、`visual-results` hash 兼容到该 Mesa 页面。当前产品口径保留飞机、任务、保障等状态视图，Mesa 内部 `Ontology视图`、Ontology Playground 导出和项目级本体校验已从当前产品、运行时代码和测试门删除。
+13. 蒙特卡洛实验入口已收敛为直达嵌入的 Mesa 蒙特卡洛分析页；旧列表、添加/编辑和配置 hash 兼容到该详情页。
+14. 蒙特卡洛评估结果已经迁移到“蒙特卡洛实验”直达页面；四个结果分析页已收敛为各自的“当前分析结果”，用户从页面直接运行当前分析，不再通过主界面创建 AnalysisTask、绑定 MC 实验或选择 run/artifact。
 15. M6.2 对象一致性已落地为同步本地切片：单次仿真实验和 Monte Carlo 实验共享 `SimulationExperimentBase` 字段；正式产品运行主线走 `RunIntent -> /api/runs -> RunService -> SimulationAdapter -> aircraft_support_v1 -> SQLite + artifacts`，Monte Carlo 通过 canonical `/api/runs` 提交 `run_type: "monte_carlo"`，并生成 `monte_carlo_base` 与四类 `analysis_projection_*` artifact。前端四个分析页通过 current result 面板触发后台正式 run，并由后端 current analysis result 记录负责精确校验 compiler provenance、base artifact、projection artifact 和 payload 类型。
 16. 两个模块的结果分析页面已对齐 `vendor/ship_front/备件_front` 的页面形态。
 17. Monte Carlo 扫参输入会真实更新场景并重算结果。
