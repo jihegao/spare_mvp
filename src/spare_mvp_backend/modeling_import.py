@@ -130,16 +130,6 @@ def modeling_import_to_project(import_package: dict[str, Any], validation: dict[
         "supportActivities": [_support_activity_to_project(row) for row in activities],
         "supportOrganization": _project_object(objects, mission, "supportOrganization", {}),
         "reliabilityBlockDiagram": _project_object(objects, mission, "reliabilityBlockDiagram", {}),
-        "monteCarlo": _project_object(
-            objects,
-            mission,
-            "monteCarlo",
-            {
-                "failureRates": [0.06, 0.08, 0.1],
-                "spareMultipliers": [0.75, 1.0, 1.25],
-                "supportCapacities": [1, 2, 3],
-            },
-        ),
         "analysisRequests": _project_object(objects, mission, "analysisRequests", {}),
         "modelingImportValidation": {
             "importId": str(import_package["importId"]),

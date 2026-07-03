@@ -161,6 +161,35 @@ test("frontend API client exposes M7 run artifact management routes", async () =
   assert.equal(downloadRequest.responseType, "blob");
 });
 
+test("frontend API client posts current Project JSON to independent Mesa visualization route", async () => {
+  const calls = [];
+  const client = createBackendApiClient({
+    transport: async (request) => {
+      calls.push(request);
+      if (request.path === "/mesa-visualization-runs") {
+        return {
+          status: "succeeded",
+          source: "independent_mesa_project",
+          run_id: "independent-mesa-project-ui-1234",
+          model_family: "aircraft_support_v1",
+          state_series: { schema_version: "visualization-state-series-v0", run_id: "independent-mesa-project-ui-1234", frames: [] }
+        };
+      }
+      throw new Error(`unexpected ${request.method} ${request.path}`);
+    }
+  });
+
+  const projectJson = { project_id: "project-ui", scenarioId: "current-project", experiment: { seed: 7 } };
+  const response = await client.runIndependentMesaVisualization(projectJson);
+
+  assert.equal(response.source, "independent_mesa_project");
+  assert.deepEqual(calls.map((call) => `${call.method} ${call.path}`), [
+    "POST /mesa-visualization-runs"
+  ]);
+  assert.deepEqual(calls[0].body.project, projectJson);
+  assert.equal(calls[0].body.model_family, "aircraft_support_v1");
+});
+
 test("frontend API client lists and deletes experiment plans through project routes", async () => {
   const calls = [];
   const client = createBackendApiClient({
@@ -527,6 +556,44 @@ test("buildBackendProjectJson canonicalizes support activity job predecessor ref
   assert.deepEqual(jobs[0].predecessors, ["BA-002"]);
   assert.deepEqual(scenario.supportActivities[5].jobs[0].predecessors, ["电源车准备"]);
   assert.equal("activityCode" in scenario.supportActivities[5].jobs[1], false);
+});
+
+test("buildBackendProjectJson strips Monte Carlo config from Project modeling data", () => {
+  const scenario = {
+    scenarioId: "mc-project-boundary",
+    missionProfile: {
+      name: "Project modeling profile",
+      monteCarlo: {
+        failureRates: [0.06],
+        spareMultipliers: [1],
+        supportCapacities: [2]
+      }
+    },
+    monteCarlo: {
+      failureRates: [0.06, 0.08],
+      spareMultipliers: [1],
+      supportCapacities: [2]
+    },
+    analysisRequests: {
+      largeSample: {
+        enabled: true,
+        samples: 4,
+        sweep: {
+          failureRates: [0.06],
+          spareMultipliers: [1],
+          supportCapacities: [2]
+        }
+      }
+    }
+  };
+
+  const projectJson = buildBackendProjectJson(scenario, { id: "mc-project-boundary" });
+
+  assert.equal("monteCarlo" in projectJson, false);
+  assert.equal("monteCarlo" in projectJson.missionProfile, false);
+  assert.equal("sweep" in projectJson.analysisRequests.largeSample, false);
+  assert.ok("monteCarlo" in scenario);
+  assert.ok("monteCarlo" in scenario.missionProfile);
 });
 
 test("experiment plan config preserves Monte Carlo branch sweep settings", () => {

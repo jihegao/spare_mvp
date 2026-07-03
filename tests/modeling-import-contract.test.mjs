@@ -475,6 +475,8 @@ test("projectToModelingImportPackage backfills import draft from current Project
   assert.deepEqual(draft.objects.equipmentAssets, projectJson.components);
   assert.deepEqual(draft.objects.supportResources, projectJson.supportNodes);
   assert.deepEqual(draft.objects.supportActivities, projectJson.supportActivities);
+  assert.equal("monteCarlo" in draft.objects, false);
+  assert.equal("monteCarlo" in draft.objects.missionProfiles[0], false);
   assert.deepEqual(draft.objects.customGovernance, basePackage.objects.customGovernance);
   assert.equal("schema_version" in draft, false);
   assert.equal("project_version" in draft, false);

@@ -16,6 +16,7 @@ from urllib.parse import quote
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.spare_mvp_backend.http_server import create_backend_server
+from src.spare_mvp_backend.modeling_import import modeling_import_to_project
 from src.spare_mvp_contract.adapter import SimulationAdapter
 
 
@@ -1091,6 +1092,47 @@ class BackendHttpApiTest(unittest.TestCase):
                 self.assertEqual(error["code"], "formal_run_requires_imported_sample")
                 self.assertEqual(error["details"]["project_id"], saved["project_id"])
                 self.assertIsNone(error["details"]["source_import_id"])
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
+    def test_http_independent_mesa_visualization_reads_current_project_without_persistence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            server = create_backend_server(
+                ("127.0.0.1", 0),
+                repo_root=REPO_ROOT,
+                database_path=":memory:",
+                output_dir=Path(tmp) / "artifacts",
+            )
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                base_url = f"http://127.0.0.1:{server.server_address[1]}/api"
+                auth_token = self._login_token(base_url, "data", "data")
+                case = self._fixture("simulation_analysis_cases/minimal_single_aircraft.json")
+                project = modeling_import_to_project(case["modeling_import"])
+                project["project_id"] = "project-http-independent-visual"
+                project["missionProfile"].pop("sourceImportId", None)
+
+                payload = self._json(
+                    base_url,
+                    "POST",
+                    "/mesa-visualization-runs",
+                    {"project": project, "model_family": "aircraft_support_v1"},
+                    auth_token=auth_token,
+                )
+                catalog = self._json(base_url, "GET", "/projects")
+
+                self.assertEqual(payload["status"], "succeeded")
+                self.assertEqual(payload["source"], "independent_mesa_project")
+                self.assertEqual(payload["model_family"], "aircraft_support_v1")
+                self.assertEqual(payload["project_id"], "project-http-independent-visual")
+                self.assertEqual(payload["state_series"]["run_id"], payload["run_id"])
+                self.assertEqual(payload["state_series"]["model_family"], "aircraft_support_v1")
+                self.assertGreaterEqual(len(payload["state_series"]["frames"]), 2)
+                self.assertEqual(catalog["projects"], [])
+                self.assertEqual([path.name for path in (Path(tmp) / "artifacts").glob("*")], [])
             finally:
                 server.shutdown()
                 server.server_close()

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+from datetime import datetime, timezone
 import hashlib
 import json
 from pathlib import Path
@@ -176,7 +177,7 @@ class BackendApi:
         return saved
 
     def get_project(self, project_id: str) -> dict[str, Any]:
-        return self.repository.get_project(project_id)
+        return strip_project_sweep(self.repository.get_project(project_id))
 
     def list_projects(self) -> dict[str, Any]:
         projects = self.repository.list_projects()
@@ -529,6 +530,81 @@ class BackendApi:
             return self.run_service.submit_run(request)
         except RunServiceError as exc:
             raise self._run_service_error_to_backend_error(exc) from exc
+
+    def run_independent_mesa_visualization(
+        self,
+        project_json: dict[str, Any],
+        *,
+        model_family: str = ACTIVE_FORMAL_MODEL_FAMILY,
+    ) -> dict[str, Any]:
+        """Run a lightweight Mesa visualization directly from current Project JSON."""
+        if model_family != ACTIVE_FORMAL_MODEL_FAMILY:
+            raise BackendApiError(
+                "unsupported_independent_mesa_model_family",
+                f"independent Mesa visualization supports only {ACTIVE_FORMAL_MODEL_FAMILY}",
+                model_family=model_family,
+                replacement_model_family=ACTIVE_FORMAL_MODEL_FAMILY,
+            )
+        if not isinstance(project_json, dict) or not project_json:
+            raise BackendApiError(
+                "bad_independent_mesa_request",
+                "current Project JSON is required for independent Mesa visualization",
+            )
+        project = strip_project_sweep(copy.deepcopy(project_json))
+        compile_gate = getattr(self.adapter, "compile_scenario_with_gate", None)
+        if not callable(compile_gate):
+            raise BackendApiError(
+                "independent_mesa_compile_unavailable",
+                "SimulationAdapter does not expose compile_scenario_with_gate",
+            )
+        compile_result = compile_gate(project, model_family=model_family)
+        if compile_result.get("status") != "compiled" or compile_result.get("scenario") is None:
+            raise BackendApiError(
+                "independent_mesa_compile_blocked",
+                "current Project cannot compile to aircraft_support_v1 for independent Mesa visualization",
+                issues=compile_result.get("issues", []),
+                errors=compile_result.get("errors", []),
+                provenance=compile_result.get("provenance", {}),
+            )
+        scenario = copy.deepcopy(compile_result["scenario"])
+        scenario.get("compiled_from", {}).setdefault("mapping_provenance", compile_result.get("provenance", {}))
+        run_id = _independent_mesa_run_id(project, scenario)
+        try:
+            execution = _run_aircraft_support_v1_in_memory(scenario, run_id)
+        except ValueError as exc:
+            raise BackendApiError(
+                "independent_mesa_run_failed",
+                str(exc),
+                run_id=run_id,
+                project_id=scenario.get("project_id"),
+            ) from exc
+
+        result_id = f"independent-result-{run_id}"
+        manifest_id = f"independent-artifact-manifest-{run_id}"
+        state_series = self.adapter._visualization_state_series_payload(  # noqa: SLF001 - reuse canonical state-series shape.
+            run_id=run_id,
+            scenario=scenario,
+            model_family=model_family,
+            result_summary_id=result_id,
+            artifact_manifest_id=manifest_id,
+            frames=execution["frames"],
+        )
+        return {
+            "status": "succeeded",
+            "source": "independent_mesa_project",
+            "run_id": run_id,
+            "project_id": scenario["project_id"],
+            "scenario_id": scenario["scenario_id"],
+            "scenario_version": scenario["scenario_version"],
+            "model_family": model_family,
+            "model_id": "AircraftSupportV1Model",
+            "result_summary_id": result_id,
+            "artifact_manifest_id": manifest_id,
+            "state_series_artifact_id": f"independent-visualization-state-series-{run_id}",
+            "metrics": execution["metrics"],
+            "state_series": state_series,
+            "compile_provenance": compile_result.get("provenance", {}),
+        }
 
     def get_run(self, run_id: str) -> dict[str, Any]:
         return self.repository.get_run(run_id)
@@ -1153,6 +1229,36 @@ def _steps_from_plan(plan: dict[str, Any]) -> int:
         return max(0, int(steps))
     except (TypeError, ValueError):
         return 3
+
+
+def _independent_mesa_run_id(project: dict[str, Any], scenario: dict[str, Any]) -> str:
+    project_id = _safe_run_id_part(str(scenario.get("project_id") or project.get("project_id") or "project"))
+    created_at = datetime.now(timezone.utc).isoformat()
+    digest = _stable_hash({"project": project, "scenario_id": scenario.get("scenario_id"), "created_at": created_at})
+    return f"independent-mesa-{project_id}-{digest}"
+
+
+def _safe_run_id_part(value: str) -> str:
+    normalized = "".join(ch if ch.isalnum() or ch in {"-", "_"} else "-" for ch in value.strip())
+    normalized = "-".join(part for part in normalized.split("-") if part)
+    return normalized or "project"
+
+
+def _run_aircraft_support_v1_in_memory(scenario: dict[str, Any], run_id: str) -> dict[str, Any]:
+    from src.spare_mvp_abm.aircraft_support_v1 import AircraftSupportV1Model
+
+    model = AircraftSupportV1Model(copy.deepcopy(scenario["simulation_inputs"]))
+    execution = model.run()
+    frames = []
+    for frame in execution["frames"]:
+        traced = copy.deepcopy(frame)
+        traced["run_id"] = run_id
+        frames.append(traced)
+    return {
+        "metrics": copy.deepcopy(execution["metrics"]),
+        "frames": frames,
+        "events": copy.deepcopy(execution.get("events") or []),
+    }
 
 
 def _public_user(user: dict[str, Any]) -> dict[str, Any]:

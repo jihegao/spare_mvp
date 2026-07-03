@@ -110,6 +110,17 @@ export function createBackendApiClient({ baseUrl = DEFAULT_API_BASE, transport, 
         timeoutMs: RUN_SUBMIT_TIMEOUT_MS
       });
     },
+    runIndependentMesaVisualization(projectJson, modelFamily = DEFAULT_FORMAL_MODEL_FAMILY) {
+      return request({
+        method: "POST",
+        path: "/mesa-visualization-runs",
+        body: {
+          project: projectJson,
+          model_family: modelFamily
+        },
+        timeoutMs: RUN_SUBMIT_TIMEOUT_MS
+      });
+    },
     startSimulationRun(projectId, experimentPlanId, modelFamily = DEFAULT_FORMAL_MODEL_FAMILY) {
       return request({
         method: "POST",
@@ -200,10 +211,25 @@ export function buildBackendProjectJson(scenario, project = {}) {
   const projectJson = cloneJson(scenario);
   syncCompositeTaskInheritedBasicFields(projectJson);
   canonicalizeSupportActivityJobPredecessors(projectJson);
+  stripProjectRuntimeConfig(projectJson);
   projectJson.schema_version ||= "project-v0";
   projectJson.project_id ||= project.id ? `project-${project.id}` : `project-${projectJson.scenarioId}`;
   projectJson.project_version ||= "project-v0.1";
   return projectJson;
+}
+
+function stripProjectRuntimeConfig(value) {
+  if (Array.isArray(value)) {
+    for (const item of value) stripProjectRuntimeConfig(item);
+    return;
+  }
+  if (!value || typeof value !== "object") return;
+  delete value.monteCarlo;
+  const largeSample = value.analysisRequests?.largeSample;
+  if (largeSample && typeof largeSample === "object" && !Array.isArray(largeSample)) {
+    delete largeSample.sweep;
+  }
+  for (const child of Object.values(value)) stripProjectRuntimeConfig(child);
 }
 
 function syncCompositeTaskInheritedBasicFields(projectJson) {

@@ -2495,9 +2495,10 @@ test("monte carlo config backfills empty draft to a single baseline value before
   assert.match(launchSource, /ensureMonteCarloSweepDefaults\(experimentPlanDraft\)/);
 });
 
-test("M9.8 visual and formal run launches use aircraft_support_v1 through canonical runs", async () => {
+test("M9.8 formal run launches use aircraft_support_v1 while visual launches use independent Mesa", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const runIntentSource = await readFile(new URL("../front/run-intent.mjs", import.meta.url), "utf8");
+  const apiClientSource = await readFile(new URL("../front/api-client.mjs", import.meta.url), "utf8");
   const singleLaunchSource = appSource.slice(
     appSource.indexOf("async function startSingleRunThroughApi"),
     appSource.indexOf("async function startMonteCarloRunThroughApi")
@@ -2514,16 +2515,25 @@ test("M9.8 visual and formal run launches use aircraft_support_v1 through canoni
     appSource.indexOf('if (action === "start-new-run")'),
     appSource.indexOf("function startVisualizationReplay")
   );
+  const independentLaunchSource = appSource.slice(
+    appSource.indexOf("async function startIndependentMesaVisualizationThroughApi"),
+    appSource.indexOf("async function loadVisualizationReplayForRun")
+  );
 
   assert.match(appSource, /const FORMAL_AIRCRAFT_SUPPORT_MODEL_FAMILY = "aircraft_support_v1"/);
   assert.match(runIntentSource, /modelFamily = "aircraft_support_v1"/);
+  assert.match(apiClientSource, /runIndependentMesaVisualization\(projectJson/);
+  assert.match(apiClientSource, /path: "\/mesa-visualization-runs"/);
   assert.match(singleLaunchSource, /submitRunIntent\(backendApi,\s*\{/);
   assert.match(singleLaunchSource, /modelFamily: FORMAL_AIRCRAFT_SUPPORT_MODEL_FAMILY/);
   assert.match(monteCarloLaunchSource, /submitRunIntent\(backendApi,\s*\{/);
   assert.match(monteCarloLaunchSource, /modelFamily: FORMAL_AIRCRAFT_SUPPORT_MODEL_FAMILY/);
-  assert.match(visualNewRunSource, /await startSingleRunThroughApi\(\)/);
+  assert.match(independentLaunchSource, /backendApi\.runIndependentMesaVisualization\(projectJson\)/);
+  assert.match(visualNewRunSource, /await startIndependentMesaVisualizationThroughApi\(\)/);
+  assert.doesNotMatch(visualNewRunSource, /await startSingleRunThroughApi\(\)/);
   assert.doesNotMatch(visualSource, /formal run \/ aircraft_support_v1/);
-  assert.match(visualSource, /canonical \/api\/runs/);
+  assert.match(visualSource, /独立 Mesa/);
+  assert.match(visualSource, /当前 Project/);
   assert.doesNotMatch(visualSource, /mesa-abm-skill/);
   assert.doesNotMatch(visualSource, /Mesa ABM \/ aviation_support/);
 });
@@ -2794,7 +2804,7 @@ test("formal runs do not consume local preview outputs", async () => {
   );
   const refreshSource = appSource.slice(
     appSource.indexOf("async function refreshRunResultThroughApi"),
-    appSource.indexOf("async function hydrateLastBackendRunFromApi")
+    appSource.indexOf("async function refreshAnalysisProjectionPayloads")
   );
   const formalBoundarySource = appSource.slice(
     appSource.indexOf("function formalAnalysisBoundary"),
@@ -2825,7 +2835,7 @@ test("M8 formal analysis pages load and render matching projection payloads", as
   const apiClientSource = await readFile(new URL("../front/api-client.mjs", import.meta.url), "utf8");
   const refreshSource = appSource.slice(
     appSource.indexOf("async function refreshRunResultThroughApi"),
-    appSource.indexOf("async function hydrateLastBackendRunFromApi")
+    appSource.indexOf("async function refreshAnalysisProjectionPayloads")
   );
   const payloadSource = appSource.slice(
     appSource.indexOf("async function refreshAnalysisProjectionPayloads"),
@@ -3063,38 +3073,24 @@ test("formal run starts only allow imported sample projects", async () => {
   assert.ok(mcRunSource.indexOf("currentProjectCanStartFormalRun()") < mcRunSource.indexOf("formalRunSubmitInFlight = true"));
 });
 
-test("visual simulation new run ensures a backend-created imported sample before formal submit", async () => {
+test("visual simulation new run starts independent Mesa from current Project without imported-sample repair", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
-  const ensureSource = appSource.slice(
-    appSource.indexOf("async function ensureFormalRunImportedSampleProject"),
-    appSource.indexOf("async function startSingleRunThroughApi")
-  );
-  const hydrateSource = appSource.slice(
-    appSource.indexOf("async function hydrateCurrentProjectDraftFromApi"),
-    appSource.indexOf("async function saveCurrentProjectDraftThroughApi")
+  const independentLaunchSource = appSource.slice(
+    appSource.indexOf("async function startIndependentMesaVisualizationThroughApi"),
+    appSource.indexOf("async function loadVisualizationReplayForRun")
   );
   const startNewRunSource = appSource.slice(
     appSource.indexOf('if (action === "start-new-run")'),
     appSource.indexOf("const controlAction = backendControlActions")
   );
 
-  assert.match(ensureSource, /await hydrateCurrentProjectDraftFromApi\(\)/);
-  assert.match(ensureSource, /scenario\?\.missionProfile\?\.sourceImportId/);
-  assert.match(hydrateSource, /sourceKind: PROJECT_SOURCE\.imported_sample/);
-  assert.match(hydrateSource, /sourceImportId/);
-  assert.match(ensureSource, /createSampleProjectFromPublishedImport\(currentProject\?\.sourceImportId\)/);
-  assert.match(ensureSource, /currentProjectCanStartFormalRun\(\)/);
-  assert.match(ensureSource, /return currentProjectCanStartFormalRun\(\)/);
-  assert.ok(
-    ensureSource.indexOf("await hydrateCurrentProjectDraftFromApi()") <
-      ensureSource.indexOf("createSampleProjectFromPublishedImport(currentProject?.sourceImportId)"),
-    "visual launch should reuse a hydrated backend imported sample before asking the backend to create one"
-  );
-  assert.ok(
-    startNewRunSource.indexOf("await ensureFormalRunImportedSampleProject()") <
-      startNewRunSource.indexOf("await startSingleRunThroughApi()"),
-    "visual launch should repair the frontend/backend imported-sample boundary before formal submit"
-  );
+  assert.match(independentLaunchSource, /const projectJson = buildBackendProjectJson\(scenario, currentProject\)/);
+  assert.match(independentLaunchSource, /backendApi\.runIndependentMesaVisualization\(projectJson\)/);
+  assert.match(independentLaunchSource, /normalizeVisualizationStateSeriesPayload\(response\.state_series/);
+  assert.match(startNewRunSource, /await startIndependentMesaVisualizationThroughApi\(\)/);
+  assert.doesNotMatch(startNewRunSource, /ensureFormalRunImportedSampleProject/);
+  assert.doesNotMatch(startNewRunSource, /createSampleProjectFromPublishedImport/);
+  assert.doesNotMatch(startNewRunSource, /startSingleRunThroughApi/);
 });
 
 test("click-based modeling mutations mark project draft dirty before rendering", async () => {
@@ -3140,7 +3136,7 @@ test("run result refresh rebuilds frontend state from the experiment plan branch
   );
   const refreshSource = appSource.slice(
     appSource.indexOf("async function refreshRunResultThroughApi"),
-    appSource.indexOf("async function hydrateLastBackendRunFromApi")
+    appSource.indexOf("async function refreshAnalysisProjectionPayloads")
   );
   const runPlanSource = appSource.slice(
     appSource.indexOf("function currentRunExperimentPlanProjectJson"),
@@ -3527,7 +3523,8 @@ test("visual simulation page embeds aircraft mission and support Mesa views", as
   assert.match(appSource, /mesaTab\("aircraft"/);
   assert.match(appSource, /mesaTab\("mission"/);
   assert.match(appSource, /mesaTab\("support"/);
-  assert.match(appSource, /飞机保障正式仿真/);
+  assert.match(appSource, /飞机保障独立 Mesa 仿真/);
+  assert.match(appSource, /点击可视化推演后直接读取当前 Project/);
   assert.doesNotMatch(appSource, /formal run \/ aircraft_support_v1/);
   assert.match(appSource, /isVisualSimulationPage/);
   assert.doesNotMatch(appSource, /<h2>\$\{htmlEscape\(page\.tertiary\)\}<\/h2>/);
@@ -3806,7 +3803,7 @@ test("visual simulation replay picker exposes only the active replay", async () 
   assert.doesNotMatch(refreshRunListSource, /run 列表已刷新/);
 });
 
-test("visual simulation selection and start controls load official replays automatically", async () => {
+test("visual simulation selection keeps official replay loading but new starts use independent Mesa", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const changeSource = appSource.slice(
     appSource.indexOf('const mesaRunSelect = event.target.closest("[data-mesa-run-select]")'),
@@ -3826,9 +3823,10 @@ test("visual simulation selection and start controls load official replays autom
   );
 
   assert.match(changeSource, /await loadVisualizationReplayForRun\(visualizationSelectedRunId\)/);
-  assert.match(newRunSource, /await startSingleRunThroughApi\(\)/);
-  assert.match(newRunSource, /await refreshVisualizationRunList\(newRunId\)/);
-  assert.match(newRunSource, /await loadVisualizationReplayForRun\(newRunId\)/);
+  assert.match(newRunSource, /await startIndependentMesaVisualizationThroughApi\(\)/);
+  assert.doesNotMatch(newRunSource, /await startSingleRunThroughApi\(\)/);
+  assert.doesNotMatch(newRunSource, /await refreshVisualizationRunList\(newRunId\)/);
+  assert.doesNotMatch(newRunSource, /await loadVisualizationReplayForRun\(newRunId\)/);
   assert.match(newRunSource, /visualizationReplayPlaying = true/);
   assert.match(newRunSource, /startVisualizationReplay\(\)/);
   assert.match(playSource, /await loadVisualizationReplayForRun\(\)/);

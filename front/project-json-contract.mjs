@@ -18,12 +18,13 @@ const OBJECT_LABELS = {
   resources: "保障资源",
   supportActivities: "保障活动",
   reliabilityBlockDiagram: "可靠性框图",
-  monteCarlo: "蒙特卡洛配置",
   visualizationState: "可视化状态",
   runs: "运行记录",
   summary: "汇总结果",
   decisionOutputs: "决策输出"
 };
+
+const EXCLUDED_PROJECT_OBJECT_ROOTS = new Set(["monteCarlo"]);
 
 export const PROJECT_JSON_CONTRACT = buildProjectJsonContract(defaultScenario, FEATURE_PAGES);
 
@@ -32,6 +33,7 @@ export function buildProjectJsonContract(projectJson = defaultScenario, featureP
   const fields = [];
 
   for (const [key, value] of Object.entries(projectJson || {})) {
+    if (isExcludedProjectObjectPath(key)) continue;
     registerObject(objects, key, value);
     collectFields(value, key, fields, objects);
   }
@@ -39,6 +41,7 @@ export function buildProjectJsonContract(projectJson = defaultScenario, featureP
   for (const page of featurePages) {
     for (const dataObject of page.dataObjects || []) {
       const path = contractObjectPath(dataObject);
+      if (isExcludedProjectObjectPath(path)) continue;
       if (!objects.has(path)) {
         registerObject(objects, path, undefined);
       }
@@ -62,6 +65,10 @@ export function buildProjectJsonContract(projectJson = defaultScenario, featureP
 
 export function contractObjectPath(dataObjectPath) {
   return String(dataObjectPath || "scenario").split(".")[0];
+}
+
+function isExcludedProjectObjectPath(path) {
+  return EXCLUDED_PROJECT_OBJECT_ROOTS.has(String(path || "").split(".")[0]);
 }
 
 function collectFields(value, path, fields, objects) {

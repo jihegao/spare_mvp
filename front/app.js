@@ -571,6 +571,8 @@ let visualizationReplayIndex = 0;
 let visualizationReplayPlaying = false;
 let visualizationReplayTimer = null;
 let visualizationReplayStatus = "M9 离线状态序列尚未加载";
+let independentMesaVisualizationInFlight = false;
+let independentMesaVisualizationRequestKey = "";
 let visualizationStreamSource = null;
 let visualizationStreamState = {
   runId: "",
@@ -2500,6 +2502,7 @@ function renderSystemManagementNavigation(activePage, secondaryGroups) {
 
 function renderFeaturePage(page) {
   ensureCurrentAnalysisResultLoaded(page);
+  ensureIndependentMesaVisualizationStarted(page);
   const siblingPages = groups[page.module][page.secondary][page.tertiary];
   const currentContext = renderCurrentContext(page);
   return `
@@ -6916,7 +6919,6 @@ function normalizeBasicActivityResourceRequirements(row, resourceKind) {
   if (Array.isArray(structured) && structured.length) {
     return structured.map((item, index) => normalizeBasicActivityResourceDialogRequirement(resourceKind, item, index));
   }
-  if (resourceKind === "personnel") return [];
   const source = row[`${resourceKind}Requirements`];
   if (Array.isArray(source) && source.length) return source.map((item) => ({ ...item }));
   const legacy = String(row[resourceKind] || "").trim();
@@ -8677,8 +8679,7 @@ function validateImportedProjectJson(projectJson) {
     "components",
     "supportNodes",
     "supportActivities",
-    "reliabilityBlockDiagram",
-    "monteCarlo"
+    "reliabilityBlockDiagram"
   ].filter((field) => !(field in projectJson));
 }
 
@@ -9445,6 +9446,85 @@ function ensureVisualizationRunListLoaded() {
       visualizationRunListLoadInFlight = false;
       render();
     });
+}
+
+function ensureIndependentMesaVisualizationStarted(page) {
+  if (!isVisualSimulationPage(page)) return;
+  if (independentMesaVisualizationInFlight) return;
+  const requestKey = independentMesaVisualizationKey(page);
+  if (independentMesaVisualizationRequestKey === requestKey && visualizationStateSeries) return;
+  independentMesaVisualizationRequestKey = requestKey;
+  startIndependentMesaVisualizationThroughApi();
+}
+
+function independentMesaVisualizationKey(page) {
+  return [
+    page.id,
+    currentProject?.id || "",
+    scenario?.project_id || "",
+    scenario?.scenarioId || "",
+    scenario?.project_version || ""
+  ].join(":");
+}
+
+async function startIndependentMesaVisualizationThroughApi() {
+  if (!currentProject) {
+    visualizationReplayStatus = "启动独立 Mesa 失败：请先创建或选择项目。";
+    return null;
+  }
+  if (independentMesaVisualizationInFlight) {
+    visualizationReplayStatus = "独立 Mesa 仿真正在启动，请等待当前请求返回";
+    return null;
+  }
+  independentMesaVisualizationInFlight = true;
+  stopVisualizationRunStream("正在启动独立 Mesa，M9.2 在线订阅已停止");
+  stopVisualizationReplay();
+  const projectJson = buildBackendProjectJson(scenario, currentProject);
+  visualizationReplayStatus = "正在启动独立 Mesa 仿真并读取当前 Project";
+  try {
+    const response = await backendApi.runIndependentMesaVisualization(projectJson);
+    const runId = response?.run_id || "";
+    if (!runId || !response?.state_series) {
+      throw new Error("独立 Mesa 未返回 run_id 或 state_series");
+    }
+    visualizationStateSeries = {
+      ...normalizeVisualizationStateSeriesPayload(response.state_series, {
+        runId,
+        artifactId: response.state_series_artifact_id || `independent-state-series-${runId}`
+      }),
+      source: response.source || "independent_mesa_project"
+    };
+    visualizationSelectedRunId = runId;
+    visualizationRunList = [{ run_id: runId, status: response.status || "succeeded", source: response.source || "independent_mesa_project" }];
+    visualizationRunListLoaded = true;
+    visualizationReplayIndex = 0;
+    visualizationReplayPlaying = true;
+    backendRun = {
+      run_id: runId,
+      project_id: response.project_id || projectJson.project_id,
+      scenario_id: response.scenario_id,
+      model_family: response.model_family || FORMAL_AIRCRAFT_SUPPORT_MODEL_FAMILY,
+      status: response.status || "succeeded",
+      phase: "completed",
+      progress: 1,
+      source: response.source || "independent_mesa_project"
+    };
+    backendApiStatus = `独立 Mesa 仿真完成：${runId}`;
+    visualizationReplayStatus = `独立 Mesa 已读取当前 Project 并开始回放：run_id ${runId}`;
+    render();
+    startVisualizationReplay();
+    return backendRun;
+  } catch (err) {
+    visualizationStateSeries = null;
+    visualizationReplayIndex = 0;
+    visualizationReplayPlaying = false;
+    backendApiStatus = `独立 Mesa 仿真失败：${formatBackendError(err)}`;
+    visualizationReplayStatus = backendApiStatus;
+    render();
+    return null;
+  } finally {
+    independentMesaVisualizationInFlight = false;
+  }
 }
 
 async function loadVisualizationReplayForRun(runId = visualizationSelectedRunId || backendRun?.run_id) {
@@ -10741,24 +10821,17 @@ async function handleMesaControl(action) {
   if (action === "start-new-run") {
     stopVisualizationRunStream("正在启动新仿真，M9.2 在线订阅已停止");
     stopVisualizationReplay();
-    visualizationReplayStatus = "正在启动新仿真并准备正式回放";
-    const formalRunGate = await ensureFormalRunImportedSampleProject();
-    if (!formalRunGate.allowed) {
-      visualizationReplayStatus = `启动新仿真失败：${formalRunGate.message}`;
-      return;
-    }
-    const submittedRun = await startSingleRunThroughApi();
+    visualizationReplayStatus = "正在启动独立 Mesa 仿真并准备回放";
+    const submittedRun = await startIndependentMesaVisualizationThroughApi();
     const newRunId = submittedRun?.run_id || backendRun?.run_id || "";
     if (!newRunId) {
       visualizationReplayStatus = `启动新仿真失败：${backendApiStatus || "未返回 run_id"}`;
       return;
     }
-    await refreshVisualizationRunList(newRunId);
-    await loadVisualizationReplayForRun(newRunId);
     if (visualizationStateSeries && visualizationStateSeries.run_id === newRunId && !isVisualizationStateSeriesFromStream()) {
       visualizationReplayPlaying = true;
       startVisualizationReplay();
-      visualizationReplayStatus = `已启动新仿真并开始回放：run_id ${newRunId}`;
+      visualizationReplayStatus = `已启动独立 Mesa 仿真并开始回放：run_id ${newRunId}`;
     }
     return;
   }
@@ -10822,6 +10895,10 @@ function isVisualizationStateSeriesFromStream(series = visualizationStateSeries)
   return Boolean(series && series.stream_id && series.expected_frame_count);
 }
 
+function isIndependentMesaStateSeries(series = visualizationStateSeries) {
+  return series?.source === "independent_mesa_project";
+}
+
 function stopVisualizationReplay() {
   visualizationReplayPlaying = false;
   if (!visualizationReplayTimer) return;
@@ -10860,16 +10937,19 @@ function renderVisualSimulation(page) {
     && visualizationStreamState.runId === visualizationStateSeries.run_id
     && ["connected", "disconnected", "artifact-ready"].includes(visualizationStreamState.status)
     && visualizationStateSeries.expected_frame_count;
+  const isIndependentMesaFrame = visualizationStateSeriesFrame && isIndependentMesaStateSeries();
   const source = visualizationStateSeriesFrame || visualizationBlockedState();
   const state = normalizeAviationSupportState(source);
   const activeView = ["aircraft", "mission", "support"].includes(selectedMesaView) ? selectedMesaView : "aircraft";
   ensureVisualizationRunListLoaded();
   const sourceLabel = visualizationStateSeriesFrame
-    ? (isOnlineStreamFrame ? "在线状态流" : "state_series artifact")
+    ? (isIndependentMesaFrame ? "独立 Mesa" : (isOnlineStreamFrame ? "在线状态流" : "state_series artifact"))
     : "正式回放阻断";
   const sourceClass = visualizationStateSeriesFrame ? (isOnlineStreamFrame ? "state-stream" : "state-series") : "blocked";
   const sourceTitle = visualizationStateSeriesFrame
-    ? `数据来源：run_id ${visualizationStateSeries.run_id} / artifact_id ${visualizationStateSeries.artifact_id}${isOnlineStreamFrame ? " / M9.2 online state stream" : ""}`
+    ? (isIndependentMesaFrame
+      ? `数据来源：当前 Project -> 独立 Mesa / run_id ${visualizationStateSeries.run_id}`
+      : `数据来源：run_id ${visualizationStateSeries.run_id} / artifact_id ${visualizationStateSeries.artifact_id}${isOnlineStreamFrame ? " / M9.2 online state stream" : ""}`)
     : "缺少 aircraft_support_v1 state_series artifact，正式可视化不会回退到旧 aviation_support 或演示快照";
   const timelineMax = Math.max(0, (visualizationStateSeries?.frame_count || 1) - 1);
   const currentFrame = visualizationStateSeriesFrame ? visualizationReplayIndex + 1 : 0;
@@ -10878,7 +10958,7 @@ function renderVisualSimulation(page) {
     ? (visualizationStateSeries.event_stream || buildVisualizationEventStream(visualizationStateSeries))
     : [];
   const replayStatusDetail = visualizationStateSeriesFrame
-    ? `run_id ${htmlEscape(visualizationStateSeries.run_id)} / artifact_id ${htmlEscape(visualizationStateSeries.artifact_id)} / step ${htmlEscape(visualizationStateSeriesFrame.step)} / ${currentFrame}-${htmlEscape(visualizationStateSeries.frame_count)} 帧 / 事件 ${htmlEscape(visualizationStateSeries.event_count)}`
+    ? `${isIndependentMesaFrame ? "当前 Project -> 独立 Mesa / " : ""}run_id ${htmlEscape(visualizationStateSeries.run_id)} / artifact_id ${htmlEscape(visualizationStateSeries.artifact_id)} / step ${htmlEscape(visualizationStateSeriesFrame.step)} / ${currentFrame}-${htmlEscape(visualizationStateSeries.frame_count)} 帧 / 事件 ${htmlEscape(visualizationStateSeries.event_count)}`
     : "缺少 aircraft_support_v1 state_series 时，正式可视化保持阻断；请启动新仿真或选择已完成且带 artifact 的 run。";
   const timelineFrameLabel = visualizationStateSeriesFrame
     ? `${currentFrame} / ${htmlEscape(visualizationStateSeries.frame_count)} 帧`
@@ -10893,8 +10973,8 @@ function renderVisualSimulation(page) {
     <div class="mesa-visual-shell">
       <div class="mesa-visual-header">
         <div>
-          <h3>飞机保障正式仿真</h3>
-          <p>通过平台 Project / ExperimentPlan 提交 canonical /api/runs，并使用正式 state-series artifact 展示飞机、任务和保障资源。</p>
+          <h3>飞机保障独立 Mesa 仿真</h3>
+          <p>点击可视化推演后直接读取当前 Project，启动独立 Mesa，并用返回的 state-series 展示飞机、任务和保障资源。</p>
         </div>
         <div class="mesa-clock">T+${Number((source.snapshot && source.snapshot.elapsed_hours) || 0).toFixed(1)}h <span class="mesa-source mesa-source-${sourceClass}" title="${htmlEscape(sourceTitle)}">${htmlEscape(sourceLabel)}</span></div>
       </div>

@@ -98,7 +98,6 @@ export function projectToModelingImportPackage(projectJson, basePackage = {}) {
     missionAreas: normalizeObjectRows(project.missionAreas),
     supportOrganization: cloneJson(project.supportOrganization || base.objects?.supportOrganization || {}),
     reliabilityBlockDiagram: cloneJson(project.reliabilityBlockDiagram || missionProfile.reliabilityBlockDiagram || {}),
-    monteCarlo: cloneJson(project.monteCarlo || missionProfile.monteCarlo || {}),
     analysisRequests: cloneJson(project.analysisRequests || missionProfile.analysisRequests || {})
   };
   const lifecycle = {
@@ -158,6 +157,7 @@ function hasSupportOrganizationTree(value) {
 function projectMissionProfile(project, projectId) {
   const mission = cloneJson(project.missionProfile || {});
   delete mission.sourceImportId;
+  delete mission.monteCarlo;
   mission.id ||= mission.profileId || `${projectId}-mission-profile`;
   mission.name ||= project.projectInfo?.name || project.experiment?.name || "当前项目任务剖面";
   mission.durationHours = positiveNumber(mission.durationHours, durationHoursForProject(project));
@@ -171,7 +171,6 @@ function projectMissionProfile(project, projectId) {
     "experiment",
     "equipment",
     "reliabilityBlockDiagram",
-    "monteCarlo",
     "analysisRequests"
   ]) {
     if (mission[key] !== undefined) continue;

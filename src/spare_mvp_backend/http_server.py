@@ -226,6 +226,15 @@ def create_backend_server(
             if self.command == "DELETE" and len(parts) == 4 and parts[0] == "projects" and parts[2] == "experiment-plans":
                 actor = self._require_user({"系统管理员", "数据管理员"})
                 return api.delete_experiment_plan(parts[1], parts[3], actor_user_id=actor["user_id"])
+            if self.command == "POST" and route == "/mesa-visualization-runs":
+                self._require_user()
+                project_json = body.get("project") if isinstance(body.get("project"), dict) else body.get("projectJson")
+                if not isinstance(project_json, dict):
+                    project_json = body
+                return api.run_independent_mesa_visualization(
+                    project_json,
+                    model_family=str(body.get("model_family") or ACTIVE_FORMAL_MODEL_FAMILY),
+                )
             if self.command == "POST" and route == "/runs":
                 self._require_user()
                 formal_body = dict(body)

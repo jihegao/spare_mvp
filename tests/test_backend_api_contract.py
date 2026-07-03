@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from src.spare_mvp_backend.api import BackendApi, BackendApiError
 from src.spare_mvp_backend.http_server import create_backend_server
 from src.spare_mvp_backend.modeling_import import modeling_import_to_project, validate_modeling_import_package
+from src.spare_mvp_backend.project_payload import strip_project_sweep
 from src.spare_mvp_backend.repository import ContractRepository, initialize_database
 from src.spare_mvp_backend.run_service import RunService, RunServiceError
 from src.spare_mvp_contract.adapter import AdapterError, SimulationAdapter
@@ -512,7 +513,7 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(run["status"], "succeeded")
 
         self.assertEqual(len(self.adapter.compile_calls), 1)
-        self.assertEqual(self.adapter.compile_calls[0], (project, "smoke"))
+        self.assertEqual(self.adapter.compile_calls[0], (strip_project_sweep(project), "smoke"))
         self.assertEqual(len(self.adapter.run_calls), 1)
         self.assertEqual(self.adapter.run_calls[0][0]["scenario_id"], run["scenario_id"])
         self.assertEqual(self.adapter.run_calls[0][1], 4)
@@ -540,6 +541,23 @@ class BackendApiContractTest(unittest.TestCase):
 
     def test_save_project_strips_sweep_from_project_payload(self) -> None:
         project = self._fixture("smoke_project.json")
+        project["monteCarlo"] = {
+            "failureRates": [0.05],
+            "spareMultipliers": [1.0],
+            "supportCapacities": [2],
+        }
+        project.setdefault("missionProfile", {})["monteCarlo"] = {
+            "failureRates": [0.08],
+        }
+        project["missionProfile"]["analysisRequests"] = {
+            "largeSample": {
+                "enabled": True,
+                "samples": 5,
+                "sweep": {
+                    "failureRates": [0.07],
+                },
+            },
+        }
         project["analysisRequests"] = {
             "largeSample": {
                 "enabled": True,
@@ -557,6 +575,36 @@ class BackendApiContractTest(unittest.TestCase):
         stored = self.api.get_project(saved["project_id"])
         self.assertEqual(stored["analysisRequests"]["largeSample"]["samples"], 3)
         self.assertNotIn("sweep", stored["analysisRequests"]["largeSample"])
+        self.assertEqual(stored["missionProfile"]["analysisRequests"]["largeSample"]["samples"], 5)
+        self.assertNotIn("sweep", stored["missionProfile"]["analysisRequests"]["largeSample"])
+        self.assertNotIn("monteCarlo", stored)
+        self.assertNotIn("monteCarlo", stored["missionProfile"])
+
+    def test_get_project_strips_legacy_persisted_monte_carlo_payload(self) -> None:
+        project = self._fixture("smoke_project.json")
+        project["project_id"] = "project-legacy-mc"
+        project["monteCarlo"] = {
+            "failureRates": [0.05],
+            "spareMultipliers": [1.0],
+            "supportCapacities": [2],
+        }
+        project.setdefault("missionProfile", {})["monteCarlo"] = {"failureRates": [0.08]}
+        project["missionProfile"]["analysisRequests"] = {
+            "largeSample": {
+                "enabled": True,
+                "samples": 5,
+                "sweep": {
+                    "failureRates": [0.07],
+                },
+            },
+        }
+        self.api.repository.upsert_project(project)
+
+        stored = self.api.get_project("project-legacy-mc")
+
+        self.assertNotIn("monteCarlo", stored)
+        self.assertNotIn("monteCarlo", stored["missionProfile"])
+        self.assertNotIn("sweep", stored["missionProfile"]["analysisRequests"]["largeSample"])
 
     def test_run_service_submits_smoke_run_and_returns_status_envelope(self) -> None:
         project = self._fixture("smoke_project.json")
@@ -1719,6 +1767,32 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(len(self.adapter.run_calls), 1)
         self.assertEqual(self.adapter.run_calls[0][0]["simulation_model"]["family"], "aircraft_support_v1")
 
+    def test_independent_mesa_visualization_runs_current_project_without_formal_persistence(self) -> None:
+        case = self._fixture("simulation_analysis_cases/minimal_single_aircraft.json")
+        project = modeling_import_to_project(case["modeling_import"])
+        project["project_id"] = "project-current-visual-draft"
+        project["missionProfile"].pop("sourceImportId", None)
+
+        before_counts = self._run_side_effect_counts()
+
+        payload = self.api.run_independent_mesa_visualization(project)
+
+        self.assertEqual(payload["status"], "succeeded")
+        self.assertEqual(payload["source"], "independent_mesa_project")
+        self.assertEqual(payload["model_family"], "aircraft_support_v1")
+        self.assertTrue(payload["run_id"].startswith("independent-mesa-project-current-visual-draft-"))
+        self.assertEqual(payload["project_id"], "project-current-visual-draft")
+        self.assertEqual(payload["state_series"]["run_id"], payload["run_id"])
+        self.assertEqual(payload["state_series"]["model_family"], "aircraft_support_v1")
+        self.assertEqual(payload["state_series"]["scenario_id"], payload["scenario_id"])
+        self.assertGreaterEqual(len(payload["state_series"]["frames"]), 2)
+        self.assertIn("mission_success_rate", payload["metrics"])
+        self.assertEqual(self._run_side_effect_counts(), before_counts)
+        self.assertEqual(len(self.adapter.compile_calls), 1)
+        self.assertEqual(self.adapter.compile_calls[0][1], "aircraft_support_v1")
+        self.assertEqual(self.adapter.run_calls, [])
+        self.assertEqual(self.adapter.monte_carlo_run_calls, [])
+
     def test_run_service_submits_aircraft_support_v1_formal_monte_carlo_run(self) -> None:
         created = self._create_imported_sample_project()
         project = copy.deepcopy(created["project"])
@@ -1924,7 +1998,11 @@ class BackendApiContractTest(unittest.TestCase):
                             **copy.deepcopy(project["analysisRequests"]),
                             "largeSample": {
                                 **copy.deepcopy(project["analysisRequests"]["largeSample"]),
-                                "sweep": copy.deepcopy(project["monteCarlo"]),
+                            "sweep": copy.deepcopy(
+                                import_package["objects"].get("monteCarlo")
+                                or import_package["objects"]["missionProfiles"][0].get("monteCarlo")
+                                or {}
+                            ),
                             },
                         },
                     },
@@ -2287,7 +2365,7 @@ class BackendApiContractTest(unittest.TestCase):
 
         stored_project = self.api.get_project(saved["project_id"])
 
-        self.assertEqual(stored_project, project)
+        self.assertEqual(stored_project, strip_project_sweep(project))
         self.assertEqual(stored_project["experiment"]["seed"], project["experiment"]["seed"])
         self.assertNotIn("assumptions", stored_project["experiment"])
 
@@ -2333,7 +2411,7 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(run_id, run["run_id"])
         self.assertEqual(provenance["experiment_plan_id"], plan["experiment_plan_id"])
         self.assertEqual(provenance["modeling_snapshot_id"], snapshot["snapshot_id"])
-        self.assertEqual(self.api.get_project(saved["project_id"]), project)
+        self.assertEqual(self.api.get_project(saved["project_id"]), strip_project_sweep(project))
 
     def test_create_experiment_plan_binds_explicit_or_latest_modeling_snapshot(self) -> None:
         project = self._fixture("smoke_project.json")
@@ -2679,7 +2757,8 @@ class BackendApiContractTest(unittest.TestCase):
         )
         self.assertNotIn("sweep", project["analysisRequests"]["largeSample"])
         self.assertGreaterEqual(len(project["reliabilityBlockDiagram"]["nodes"]), 4)
-        self.assertEqual(project["monteCarlo"], objects["missionProfiles"][0]["monteCarlo"])
+        self.assertNotIn("monteCarlo", project)
+        self.assertNotIn("monteCarlo", project["missionProfile"])
         objects["analysisRequests"]["largeSample"]["sweep"]["failureRates"].append(0.99)
         self.assertNotIn("sweep", project["analysisRequests"]["largeSample"])
 
@@ -2699,15 +2778,8 @@ class BackendApiContractTest(unittest.TestCase):
 
         self.assertEqual(project["combatUnit"], {"members": []})
         self.assertEqual(project["reliabilityBlockDiagram"], {"nodes": [], "edges": []})
-        self.assertEqual(
-            project["monteCarlo"],
-            {
-                "failureRates": [],
-                "spareMultipliers": [],
-                "supportCapacities": [],
-                "minRequiredSorties": [],
-            },
-        )
+        self.assertNotIn("monteCarlo", project)
+        self.assertNotIn("monteCarlo", project["missionProfile"])
 
     def test_m4_regular_user_cannot_publish_modeling_import_and_denial_is_audited(self) -> None:
         import_package = self._fixture("modeling_import_project.json")
