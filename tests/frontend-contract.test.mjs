@@ -326,10 +326,12 @@ test("page revision project and system management controls stay wired", async ()
     appSource.indexOf("async function handleLogin")
   );
 
-  assert.match(projectListSource, /data-project-add/);
+  assert.doesNotMatch(projectListSource, /data-project-add/);
+  assert.match(projectListSource, /data-modeling-import-template/);
+  assert.match(projectListSource, /data-project-create-from-import/);
   assert.match(projectListSource, /data-project-edit/);
   assert.match(projectListSource, /data-project-delete/);
-  assert.match(projectListSource, /data-project-import/);
+  assert.doesNotMatch(projectListSource, /data-project-import/);
   assert.match(projectListSource, /data-project-export/);
   assert.match(projectListSource, /data-system-management-entry/);
   assert.doesNotMatch(projectListSource, /进入当前项目/);
@@ -370,7 +372,7 @@ test("page revision project and system management controls stay wired", async ()
   assert.match(eventSource, /const systemDataSelect = event\.target\.closest\("\[data-system-data-select\]"\)/);
   assert.match(eventSource, /const modelingFieldSheetSelect = event\.target\.closest\("\[data-modeling-field-sheet-select\]"\)/);
   assert.match(eventSource, /const modelingFieldSelect = event\.target\.closest\("\[data-modeling-field-select\]"\)/);
-  assert.match(eventSource, /const importProjectButton = event\.target\.closest\("\[data-project-import\]"\)/);
+  assert.doesNotMatch(eventSource, /data-project-import/);
   assert.match(eventSource, /const exportProjectButton = event\.target\.closest\("\[data-project-export\]"\)/);
 
   assert.match(userSource, /data-system-user-select-all/);
@@ -481,7 +483,36 @@ test("project list edit action opens a usable inline editor", async () => {
   assert.doesNotMatch(editSource, /name: project\.name\.endsWith\("（编辑）"\)/);
 });
 
-test("project list imports and exports project JSON while keeping existing card actions", async () => {
+test("project list lays out each project as a single full-width row", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const styleSource = await readFile(new URL("../front/styles.css", import.meta.url), "utf8");
+  const projectListSource = appSource.slice(
+    appSource.indexOf("function renderProjectListPage"),
+    appSource.indexOf("function renderNavigation")
+  );
+  const projectGridStyle = styleSource.slice(
+    styleSource.indexOf(".project-grid"),
+    styleSource.indexOf(".project-card")
+  );
+  const projectCardStyle = styleSource.slice(
+    styleSource.indexOf(".project-card {"),
+    styleSource.indexOf(".project-card.active")
+  );
+  const projectCardFootStyle = styleSource.slice(
+    styleSource.indexOf(".project-card-foot {"),
+    styleSource.indexOf(".project-card-foot .compact-actions")
+  );
+
+  assert.match(projectListSource, /<section class="project-grid">/);
+  assert.match(projectGridStyle, /grid-template-columns:\s*1fr/);
+  assert.doesNotMatch(projectGridStyle, /auto-fit|auto-fill|minmax\(/);
+  assert.match(projectCardStyle, /grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto/);
+  assert.match(projectCardStyle, /align-items:\s*center/);
+  assert.doesNotMatch(projectCardStyle, /flex-direction:\s*column/);
+  assert.match(projectCardFootStyle, /justify-content:\s*flex-end/);
+});
+
+test("project list exports project JSON without keeping a direct Project JSON import path", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const styleSource = await readFile(new URL("../front/styles.css", import.meta.url), "utf8");
   const projectListSource = appSource.slice(
@@ -493,7 +524,7 @@ test("project list imports and exports project JSON while keeping existing card 
     appSource.indexOf("app.addEventListener(\"change\"")
   );
   const ioSource = appSource.slice(
-    appSource.indexOf("function openProjectJsonImportPicker"),
+    appSource.indexOf("async function exportProjectJson"),
     appSource.indexOf("async function flushPendingProjectDraftAutosave")
   );
   const hydrateSource = appSource.slice(
@@ -505,23 +536,19 @@ test("project list imports and exports project JSON while keeping existing card 
     "data-enter-workbench",
     "data-project-edit",
     "data-project-delete",
-    "data-project-import",
     "data-project-export"
   ]) {
     assert.match(projectListSource, new RegExp(selector));
   }
-  assert.match(clickSource, /openProjectJsonImportPicker\(importProjectButton\.dataset\.projectImport\)/);
+  assert.doesNotMatch(projectListSource, /data-project-import/);
+  assert.doesNotMatch(clickSource, /openProjectJsonImportPicker|data-project-import/);
   assert.match(clickSource, /exportProjectJson\(exportProjectButton\.dataset\.projectExport\)/);
-  assert.match(ioSource, /input\.accept = "application\/json,\.json"/);
-  assert.match(ioSource, /input\.dataset\.projectImportFile/);
-  assert.match(ioSource, /JSON\.parse\(await file\.text\(\)\)/);
-  assert.match(ioSource, /validateImportedProjectJson\(projectJson\)/);
-  assert.match(ioSource, /persistManualProjectJsonDraft\(project\.id, normalizedProjectJson\)/);
   assert.match(ioSource, /resolveProjectJsonForExport\(project\)/);
   assert.match(ioSource, /downloadProjectJsonExport\(filename, projectJson\)/);
   assert.match(ioSource, /new Blob\(\[JSON\.stringify\(projectJson, null, 2\)\]/);
-  assert.match(ioSource, /buildBackendProjectJson\(projectJson, project\)/);
-  assert.match(hydrateSource, /readManualProjectJsonDraft\(currentProject\?\.id\)/);
+  assert.doesNotMatch(appSource, /function openProjectJsonImportPicker|function importProjectJsonFile|function validateImportedProjectJson|function projectCardFromProjectJson/);
+  assert.doesNotMatch(appSource, /persistManualProjectJsonDraft|readManualProjectJsonDraft/);
+  assert.doesNotMatch(hydrateSource, /Project JSON 草稿|本地项目 JSON/);
   assert.match(styleSource, /\.project-card-foot \.compact-actions[\s\S]*flex-wrap: wrap/);
 });
 
@@ -2982,7 +3009,7 @@ test("frontend modeling import demo fixture is synchronized with public canonica
   });
 });
 
-test("project list separates imported sample projects from local manual drafts", async () => {
+test("project list creates projects only from selected modeling import templates", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const projectSeedSource = appSource.slice(
     appSource.indexOf("const PROJECT_SOURCE"),
@@ -2996,17 +3023,29 @@ test("project list separates imported sample projects from local manual drafts",
     appSource.indexOf("async function createSampleProjectFromPublishedImport"),
     appSource.indexOf("function currentPublishedModelingImportId")
   );
+  const addProjectIndex = appSource.indexOf("function addDemoProject");
+  const hydrateSource = appSource.slice(
+    appSource.indexOf("async function hydrateProjectCatalogFromBackend"),
+    appSource.indexOf("function currentPublishedModelingImportId")
+  );
 
-  assert.match(projectSeedSource, /manual_draft: "manual_draft"/);
   assert.match(projectSeedSource, /imported_sample: "imported_sample"/);
+  assert.doesNotMatch(projectSeedSource, /manual_draft/);
   assert.doesNotMatch(projectSeedSource, /preview_fixture/);
-  assert.match(projectSeedSource, /readManualDraftProjectsFromStorage\(\)/);
-  assert.match(projectListSource, /可从已发布建模导入包生成示例项目，或添加本地 Project draft/);
+  assert.doesNotMatch(projectSeedSource, /readManualDraftProjectsFromStorage|MANUAL_PROJECT_DRAFTS_STORAGE_KEY/);
+  assert.equal(addProjectIndex, -1);
+  assert.doesNotMatch(appSource, /persistManualDraftProjects|data-project-add|本地草稿|本地空白预览/);
+  assert.match(projectListSource, /请选择模板数据创建项目/);
+  assert.match(projectListSource, /data-modeling-import-template/);
+  assert.match(projectListSource, /data-project-create-from-import/);
   assert.match(projectListSource, /当前发布快照/);
-  assert.match(projectListSource, /从当前发布快照生成示例项目/);
+  assert.match(projectListSource, /从选中模板创建项目/);
   assert.match(projectListSource, /暂无项目/);
   assert.match(projectListSource, /projectSourceBadge\(project\)/);
   assert.match(projectListSource, /projectSourceHelpText\(project\)/);
+  assert.doesNotMatch(hydrateSource, /readManualDraftProjectsFromStorage|fallbackProjects|localManualProjects/);
+  assert.match(hydrateSource, /请先选择模板数据创建项目/);
+  assert.match(createSource, /loadSampleModelingImportFixture\(\)/);
   assert.match(createSource, /sourceKind: PROJECT_SOURCE\.imported_sample/);
   assert.match(createSource, /sourceImportId: created\.sourceImport\?\.import_id \|\| resolvedImportId/);
   assert.match(createSource, /name: projectJson\.experiment\?\.name \|\| "导入示例项目"/);
@@ -3060,7 +3099,8 @@ test("formal run starts only allow imported sample projects", async () => {
   assert.match(guardSource, /currentProject\.sourceKind === PROJECT_SOURCE\.imported_sample/);
   assert.doesNotMatch(guardSource, /currentProject\.sourceKind !== PROJECT_SOURCE\.preview_fixture/);
   assert.match(guardSource, /请先创建或选择项目/);
-  assert.match(guardSource, /本地草稿需要先通过建模导入发布链路生成示例项目/);
+  assert.match(guardSource, /请先选择模板数据创建项目/);
+  assert.doesNotMatch(guardSource, /本地草稿/);
   assert.match(singleRunSource, /const formalRunGate = currentProjectCanStartFormalRun\(\);/);
   assert.match(singleRunSource, /if \(!formalRunGate\.allowed\) \{/);
   assert.match(singleRunSource, /backendApiStatus = formalRunGate\.message;/);

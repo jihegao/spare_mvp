@@ -31,8 +31,5 @@
     }
   ],
   "supportActivities": [],
-  "reliabilityBlockDiagram": {},
-  "monteCarlo": {
-    "spareMultipliers": [1]
-  }
+  "reliabilityBlockDiagram": {}
 }

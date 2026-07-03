@@ -88,8 +88,6 @@ const FORMAL_AIRCRAFT_SUPPORT_MODEL_FAMILY = "aircraft_support_v1";
 const DEFAULT_SAMPLE_MODELING_IMPORT_TEMPLATE_ID = "canonical-platform-case";
 const LAST_BACKEND_RUN_STORAGE_KEY = "spare-mvp:lastBackendRun";
 const AUTH_SESSION_STORAGE_KEY = "spare-mvp:m4Session";
-const MANUAL_PROJECT_DRAFTS_STORAGE_KEY = "spare-mvp:manualProjects:v1";
-const MANUAL_PROJECT_JSON_STORAGE_KEY = "spare-mvp:manualProjectJson:v1";
 const LAST_PUBLISHED_MODELING_IMPORT_STORAGE_KEY = "spare-mvp:lastPublishedModelingImportId";
 const SYSTEM_RUNTIME_CONFIG_KEY = "system-runtime-support";
 const PROJECT_DRAFT_AUTOSAVE_DELAY_MS = 800;
@@ -103,7 +101,6 @@ const DEMO_USERS = [
   { username: "user", role: "普通用户" }
 ];
 const PROJECT_SOURCE = Object.freeze({
-  manual_draft: "manual_draft",
   imported_sample: "imported_sample"
 });
 const DEFAULT_MONTE_CARLO_SWEEP = Object.freeze({
@@ -111,7 +108,7 @@ const DEFAULT_MONTE_CARLO_SWEEP = Object.freeze({
   spareMultipliers: [1],
   supportCapacities: [1]
 });
-let demoProjects = mergeProjectsById(readManualDraftProjectsFromStorage());
+let demoProjects = [];
 let deletedDowntimeSnapshotIds = new Set();
 const ANALYSIS_PROJECTION_TYPES = [
   { analysisType: "spare_shortfall", artifactKind: "analysis_projection_spare_shortfall", source_artifact_id: "monte_carlo_base_artifact" },
@@ -398,7 +395,7 @@ function mergeProjectsById(projects) {
       baseCode: project.baseCode || "NB",
       updatedAt: normalizeProjectUpdatedAt(project.updatedAt),
       summary: project.summary || "未设置项目说明。",
-      sourceKind: Object.values(PROJECT_SOURCE).includes(project.sourceKind) ? project.sourceKind : PROJECT_SOURCE.manual_draft,
+      sourceKind: Object.values(PROJECT_SOURCE).includes(project.sourceKind) ? project.sourceKind : PROJECT_SOURCE.imported_sample,
       sourceImportId: project.sourceImportId || "",
     };
     if (!byId.has(normalized.id)) {
@@ -432,74 +429,6 @@ function normalizeProjectUpdatedAt(updatedAt) {
     return updatedAt.slice(0, 10);
   }
   return new Date().toISOString().slice(0, 10);
-}
-
-function readManualDraftProjectsFromStorage() {
-  try {
-    const raw = localStorage.getItem(MANUAL_PROJECT_DRAFTS_STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return mergeProjectsById(
-      parsed
-        .map((project) => ({
-          ...project,
-          sourceKind: PROJECT_SOURCE.manual_draft
-        }))
-        .filter((project) => project.id)
-    );
-  } catch {
-    return [];
-  }
-}
-
-function persistManualDraftProjects() {
-  const manualDrafts = demoProjects
-    .filter((project) => project.sourceKind === PROJECT_SOURCE.manual_draft)
-    .map((project) => ({
-      id: project.id,
-      name: project.name,
-      baseCode: project.baseCode,
-      summary: project.summary,
-      updatedAt: project.updatedAt,
-      sourceKind: PROJECT_SOURCE.manual_draft
-    }));
-  localStorage.setItem(MANUAL_PROJECT_DRAFTS_STORAGE_KEY, JSON.stringify(manualDrafts));
-}
-
-function readManualProjectJsonDraftsFromStorage() {
-  try {
-    const raw = localStorage.getItem(MANUAL_PROJECT_JSON_STORAGE_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
-    return Object.fromEntries(
-      Object.entries(parsed)
-        .filter(([projectId, projectJson]) => projectId && projectJson && typeof projectJson === "object" && !Array.isArray(projectJson))
-        .map(([projectId, projectJson]) => [projectId, cloneScenario(projectJson)])
-    );
-  } catch {
-    return {};
-  }
-}
-
-function readManualProjectJsonDraft(projectId) {
-  const drafts = readManualProjectJsonDraftsFromStorage();
-  return drafts[projectId] ? cloneScenario(drafts[projectId]) : null;
-}
-
-function persistManualProjectJsonDraft(projectId, projectJson) {
-  if (!projectId || !projectJson || typeof projectJson !== "object") return;
-  const drafts = readManualProjectJsonDraftsFromStorage();
-  drafts[projectId] = cloneScenario(projectJson);
-  localStorage.setItem(MANUAL_PROJECT_JSON_STORAGE_KEY, JSON.stringify(drafts));
-}
-
-function deleteManualProjectJsonDraft(projectId) {
-  const drafts = readManualProjectJsonDraftsFromStorage();
-  if (!(projectId in drafts)) return;
-  delete drafts[projectId];
-  localStorage.setItem(MANUAL_PROJECT_JSON_STORAGE_KEY, JSON.stringify(drafts));
 }
 
 function readLastPublishedModelingImportId() {
@@ -591,7 +520,7 @@ let systemUsersLoaded = false;
 let isLoggedIn = false;
 let currentUser = DEMO_USERS[2];
 let currentProject = demoProjects[0] || null;
-let projectListStatus = "可添加本地草稿，也可从已发布导入包生成示例项目。";
+let projectListStatus = "请选择模板数据创建项目。";
 let projectEditorDraft = null;
 let selectedRoute = readRouteFromHash() || DEFAULT_ROUTE;
 let selectedFeatureId = readFeatureIdFromHash() || DEFAULT_FEATURE_ID;
@@ -1355,22 +1284,9 @@ function bindEvents() {
       return;
     }
 
-    const addProjectButton = event.target.closest("[data-project-add]");
-    if (addProjectButton) {
-      addDemoProject();
-      render();
-      return;
-    }
-
     const createFromImportButton = event.target.closest("[data-project-create-from-import]");
     if (createFromImportButton) {
       createSampleProjectFromPublishedImport(currentPublishedModelingImportId()).finally(() => render());
-      return;
-    }
-
-    const importProjectButton = event.target.closest("[data-project-import]");
-    if (importProjectButton) {
-      openProjectJsonImportPicker(importProjectButton.dataset.projectImport);
       return;
     }
 
@@ -2312,6 +2228,13 @@ function render() {
     app.innerHTML = renderProjectListPage();
     return;
   }
+  if (!currentProject) {
+    selectedRoute = "projects";
+    location.hash = "route=projects";
+    projectListStatus = "请选择模板数据创建项目";
+    app.innerHTML = renderProjectListPage();
+    return;
+  }
   const page = getFeaturePageById(selectedFeatureId);
   selectedFeatureId = page.id;
   app.innerHTML = `
@@ -2374,8 +2297,8 @@ function renderProjectMenu() {
 function renderProjectListPage() {
   const latestImportId = currentPublishedModelingImportId();
   const createFromImportLabel = latestImportId
-    ? "从当前发布快照生成示例项目"
-    : "从导入数据生成示例项目";
+    ? "从当前发布快照创建项目"
+    : "从选中模板创建项目";
   return `
     <header class="topbar">
       <div class="left">
@@ -2395,11 +2318,15 @@ function renderProjectListPage() {
         <div>
           <h2>项目列表</h2>
           <p>${htmlEscape(projectListStatus)}</p>
-          <p class="inline-status">可从已发布建模导入包生成示例项目，或添加本地 Project draft。${latestImportId ? `当前发布快照：${htmlEscape(latestImportId)}` : ""}</p>
+          <p class="inline-status">请选择模板数据创建项目。${latestImportId ? `当前发布快照：${htmlEscape(latestImportId)}` : ""}</p>
         </div>
         <div class="toolbar-row compact-actions">
+          <select data-modeling-import-template aria-label="选择内置导入模板">
+            ${MODELING_IMPORT_TEMPLATES.map((template) => `
+              <option value="${htmlEscape(template.id)}"${template.id === selectedModelingImportTemplateId ? " selected" : ""}>${htmlEscape(template.label)}</option>
+            `).join("")}
+          </select>
           <button type="button" class="btn-secondary" data-project-create-from-import>${htmlEscape(createFromImportLabel)}</button>
-          <button type="button" class="btn-primary" data-project-add>添加</button>
         </div>
       </section>
       <section class="project-grid">
@@ -2429,7 +2356,6 @@ function renderProjectListPage() {
                 <button type="button" data-enter-workbench data-project-id="${project.id}">进入</button>
                 <button type="button" data-project-edit="${project.id}">编辑</button>
                 <button type="button" class="btn-danger" data-project-delete="${project.id}">删除</button>
-                <button type="button" data-project-import="${htmlEscape(project.id)}">导入</button>
                 <button type="button" data-project-export="${htmlEscape(project.id)}">导出</button>
               </span>
             </div>
@@ -2437,7 +2363,7 @@ function renderProjectListPage() {
         `).join("") : `
           <div class="empty-state">
             <strong>暂无项目</strong>
-            <p>请添加本地草稿，或从已发布建模导入包生成示例项目。</p>
+            <p>请选择模板数据创建项目。</p>
           </div>
         `}
       </section>
@@ -2447,18 +2373,14 @@ function renderProjectListPage() {
 
 function projectSourceBadge(project) {
   const labels = {
-    [PROJECT_SOURCE.imported_sample]: "导入示例",
-    [PROJECT_SOURCE.manual_draft]: "本地草稿"
+    [PROJECT_SOURCE.imported_sample]: "模板项目"
   };
-  return `<span class="status-badge ${project.sourceKind === PROJECT_SOURCE.imported_sample ? "success" : ""}">${htmlEscape(labels[project.sourceKind] || labels[PROJECT_SOURCE.manual_draft])}</span>`;
+  return `<span class="status-badge success">${htmlEscape(labels[project.sourceKind] || labels[PROJECT_SOURCE.imported_sample])}</span>`;
 }
 
 function projectSourceHelpText(project) {
   if (project.sourceKind === PROJECT_SOURCE.imported_sample) {
-    return `来自已发布建模导入包 ${project.sourceImportId || "未知"}，可用于正式后端测试。`;
-  }
-  if (project.sourceKind === PROJECT_SOURCE.manual_draft) {
-    return "本地新增 Project draft；保存或运行前不会替代已发布导入示例。";
+    return `来自模板数据/已发布建模导入包 ${project.sourceImportId || "未知"}，可用于正式后端测试。`;
   }
   return "项目来源待确认。";
 }
@@ -8406,6 +8328,9 @@ async function restoreStoredBackendSessionOnBoot() {
     }
     backendApiStatus = "M4 会话已恢复";
     await hydrateProjectCatalogFromBackend();
+    if (selectedRoute === "workbench" && currentProject) {
+      await hydrateCurrentProjectDraftFromApi();
+    }
   } catch (err) {
     backendAuthToken = "";
     localStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
@@ -8422,7 +8347,7 @@ async function handleEnterWorkbench(projectId) {
   await flushPendingProjectDraftAutosave();
   currentProject = demoProjects.find((project) => project.id === projectId) || demoProjects[0];
   if (!currentProject) {
-    projectListStatus = "请先创建项目";
+    projectListStatus = "请先选择模板数据创建项目";
     selectedRoute = "projects";
     location.hash = "route=projects";
     return;
@@ -8439,22 +8364,6 @@ async function handleEnterWorkbench(projectId) {
   location.hash = `feature=${DEFAULT_FEATURE_ID}`;
   projectDraftHydrateStatus = "正在读取 Project draft";
   await hydrateCurrentProjectDraftFromApi();
-}
-
-function addDemoProject() {
-  const nextIndex = demoProjects.length + 1;
-  const project = {
-    id: `new-project-${nextIndex}`,
-    name: `新增项目${nextIndex}`,
-    baseCode: `NB-${String(nextIndex).padStart(2, "0")}`,
-    updatedAt: new Date().toISOString().slice(0, 10),
-    summary: "新建项目草稿，进入后可维护建模数据。",
-    sourceKind: PROJECT_SOURCE.manual_draft
-  };
-  demoProjects = mergeProjectsById([project, ...demoProjects]);
-  currentProject = project;
-  projectListStatus = `已添加项目：${project.name}`;
-  persistManualDraftProjects();
 }
 
 async function createSampleProjectFromPublishedImport(importId = currentPublishedModelingImportId()) {
@@ -8507,7 +8416,7 @@ async function createSampleProjectFromPublishedImport(importId = currentPublishe
 
 async function loadSampleModelingImportFixture() {
   try {
-    return await loadModelingImportTemplate(DEFAULT_SAMPLE_MODELING_IMPORT_TEMPLATE_ID);
+    return await loadModelingImportTemplate(selectedModelingImportTemplateId || DEFAULT_SAMPLE_MODELING_IMPORT_TEMPLATE_ID);
   } catch {
     return cloneModelingImportPackage(MODELING_IMPORT_DEMO_FIXTURE);
   }
@@ -8515,8 +8424,6 @@ async function loadSampleModelingImportFixture() {
 
 async function hydrateProjectCatalogFromBackend({ forceProjectId = "" } = {}) {
   const focusProjectId = forceProjectId || (currentProject?.id ? String(currentProject.id) : "");
-  const localManualProjects = readManualDraftProjectsFromStorage();
-  const fallbackProjects = mergeProjectsById(localManualProjects);
   projectListStatus = "正在从后端读取项目列表";
   try {
     const result = await backendApi.listProjects();
@@ -8525,16 +8432,16 @@ async function hydrateProjectCatalogFromBackend({ forceProjectId = "" } = {}) {
         .map((entry) => toProjectFromBackendApiEntry(entry))
         .filter(Boolean)
       : [];
-    demoProjects = mergeProjectsById([...backendProjects, ...fallbackProjects]);
+    demoProjects = mergeProjectsById(backendProjects);
     currentProject = demoProjects.find((project) => project.id === focusProjectId) || demoProjects[0];
     if (backendProjects.length) {
       projectListStatus = `已加载 ${backendProjects.length} 个后端项目`;
     } else {
-      projectListStatus = "后端未返回项目，使用本地项目清单";
+      projectListStatus = "后端未返回项目，请先选择模板数据创建项目";
     }
   } catch (err) {
-    demoProjects = fallbackProjects;
-    currentProject = demoProjects.find((project) => project.id === focusProjectId) || demoProjects[0];
+    demoProjects = [];
+    currentProject = null;
     projectListStatus = `后端项目列表加载失败：${err && err.message ? err.message : "Backend API 不可用"}`;
   }
 }
@@ -8575,7 +8482,6 @@ function saveProjectEditorDraft() {
   };
   demoProjects = demoProjects.map((project) => (project.id === saved.id ? saved : project));
   if (currentProject?.id === saved.id) currentProject = saved;
-  persistManualDraftProjects();
   projectEditorDraft = null;
   projectListStatus = `已保存项目：${saved.name}`;
 }
@@ -8586,115 +8492,15 @@ async function deleteDemoProject(projectId) {
     projectListStatus = "项目不存在";
     return;
   }
-  if (removed.sourceKind === PROJECT_SOURCE.manual_draft && !removed.projectBackendId) {
-    demoProjects = demoProjects.filter((project) => project.id !== projectId);
-    if (currentProject?.id === projectId) currentProject = demoProjects[0] || null;
-    deleteManualProjectJsonDraft(projectId);
-    persistManualDraftProjects();
-    projectListStatus = `已删除本地草稿：${removed.name}`;
-    return;
-  }
   const backendProjectId = removed.projectBackendId || `project-${removed.id}`;
   try {
     await backendApi.deleteProject(backendProjectId);
     demoProjects = demoProjects.filter((project) => project.id !== projectId);
     if (currentProject?.id === projectId) currentProject = demoProjects[0] || null;
-    deleteManualProjectJsonDraft(projectId);
-    persistManualDraftProjects();
     projectListStatus = `已从后端删除项目：${removed.name}`;
   } catch (err) {
     projectListStatus = `后端删除项目失败：${err && err.message ? err.message : "Backend API 不可用"}`;
   }
-}
-
-function openProjectJsonImportPicker(projectId) {
-  if (typeof document === "undefined" || !document.createElement || !document.body) {
-    projectListStatus = "当前环境不支持选择项目 JSON 文件";
-    return;
-  }
-  const input = document.createElement("input");
-  input.type = "file";
-  input.accept = "application/json,.json";
-  input.dataset.projectImportFile = projectId || "";
-  input.style.display = "none";
-  input.addEventListener("change", () => {
-    importProjectJsonFile(projectId, input.files?.[0])
-      .finally(() => {
-        input.remove();
-        render();
-      });
-  });
-  document.body.append(input);
-  input.click();
-}
-
-async function importProjectJsonFile(projectId, file) {
-  if (!file) {
-    projectListStatus = "未选择项目 JSON 文件";
-    return;
-  }
-  let projectJson;
-  try {
-    projectJson = JSON.parse(await file.text());
-  } catch (err) {
-    projectListStatus = `项目 JSON 导入失败：${err && err.message ? err.message : "文件不是合法 JSON"}`;
-    return;
-  }
-  const missingFields = validateImportedProjectJson(projectJson);
-  if (missingFields.length) {
-    projectListStatus = `项目 JSON 导入失败：缺少 ${missingFields.join(", ")}`;
-    return;
-  }
-  const fallbackProject = demoProjects.find((project) => project.id === projectId) || null;
-  const project = projectCardFromProjectJson(projectJson, fallbackProject);
-  const normalizedProjectJson = buildBackendProjectJson(projectJson, project);
-  demoProjects = mergeProjectsById([project, ...demoProjects.filter((item) => item.id !== project.id)]);
-  currentProject = project;
-  scenario = cloneScenario(normalizedProjectJson);
-  experimentPlanDraft = cloneScenario(normalizedProjectJson);
-  experimentPlanBranchActive = false;
-  persistManualDraftProjects();
-  persistManualProjectJsonDraft(project.id, normalizedProjectJson);
-  updatePreviewResultsThroughApiClient();
-  projectDraftSaveStatus = "本地项目 JSON 已导入";
-  projectDraftHydrateStatus = "项目来自本地 JSON 文件";
-  projectListStatus = `已导入项目 JSON：${project.name}`;
-}
-
-function validateImportedProjectJson(projectJson) {
-  if (!projectJson || typeof projectJson !== "object" || Array.isArray(projectJson)) {
-    return ["Project JSON root object"];
-  }
-  return [
-    "scenarioId",
-    "activeModule",
-    "airports",
-    "missionAreas",
-    "experiment",
-    "missionProfile",
-    "basicMission",
-    "missionPhases",
-    "combatUnit",
-    "equipment",
-    "components",
-    "supportNodes",
-    "supportActivities",
-    "reliabilityBlockDiagram"
-  ].filter((field) => !(field in projectJson));
-}
-
-function projectCardFromProjectJson(projectJson, fallbackProject = null) {
-  const rawId = firstNonEmptyString(projectJson.project_id, projectJson.scenarioId, fallbackProject?.id, `imported-project-${Date.now()}`);
-  const id = normalizeProjectCardId(rawId);
-  return {
-    id,
-    name: firstNonEmptyString(projectJson.experiment?.name, projectJson.projectInfo?.name, projectJson.missionProfile?.name, fallbackProject?.name, "导入项目"),
-    baseCode: firstNonEmptyString(projectJson.projectInfo?.baseCode, projectJson.project_id, projectJson.scenarioId, fallbackProject?.baseCode, "JSON"),
-    updatedAt: new Date().toISOString().slice(0, 10),
-    summary: firstNonEmptyString(projectJson.projectInfo?.summary, projectJson.summary, fallbackProject?.summary, `由项目 JSON 导入：${projectJson.scenarioId || projectJson.project_id || "未命名"}`),
-    sourceKind: PROJECT_SOURCE.manual_draft,
-    sourceImportId: ""
-  };
 }
 
 async function exportProjectJson(projectId) {
@@ -8711,12 +8517,8 @@ async function exportProjectJson(projectId) {
 }
 
 async function resolveProjectJsonForExport(project) {
-  if (currentProject?.id === project.id) {
+  if (selectedRoute === "workbench" && currentProject?.id === project.id) {
     return buildBackendProjectJson(scenario, project);
-  }
-  const localProjectJson = readManualProjectJsonDraft(project.id);
-  if (localProjectJson) {
-    return buildBackendProjectJson(localProjectJson, project);
   }
   const backendProjectId = project.projectBackendId || (project.sourceKind === PROJECT_SOURCE.imported_sample ? `project-${project.id}` : "");
   if (backendProjectId) {
@@ -8832,7 +8634,7 @@ async function refreshExperimentPlanList(projectId = currentBackendProjectId(), 
 
 async function deleteExperimentPlanFromList(experimentPlanId) {
   if (!experimentPlanId) {
-    experimentPlanListStatus = "本地草稿方案尚未保存为后端 ExperimentPlan，无法清理关联回放";
+    experimentPlanListStatus = "当前方案尚未保存为后端 ExperimentPlan，无法清理关联回放";
     return;
   }
   if (!canManageM7Lifecycle()) {
@@ -8902,16 +8704,6 @@ async function hydrateCurrentProjectDraftFromApi() {
     projectDraftHydrateStatus = "已从 Project draft 恢复";
     backendApiStatus = "Project draft 已恢复";
   } catch (err) {
-    const localProjectJson = readManualProjectJsonDraft(currentProject?.id);
-    if (localProjectJson) {
-      scenario = cloneScenario(localProjectJson);
-      experimentPlanDraft = cloneScenario(localProjectJson);
-      updatePreviewResultsThroughApiClient();
-      projectDraftSaveStatus = "本地项目 JSON 已加载";
-      projectDraftHydrateStatus = "已从本地 Project JSON 草稿恢复";
-      backendApiStatus = "Project draft 使用本地 JSON";
-      return;
-    }
     projectDraftHydrateStatus = `未读取到 Project draft：${err && err.message ? err.message : "Backend API 不可用"}`;
   }
 }
@@ -8966,7 +8758,7 @@ function currentProjectCanStartFormalRun() {
   }
   return {
     allowed: false,
-    message: "请先从已发布建模导入包生成示例项目，再启动正式后端运行；本地草稿需要先通过建模导入发布链路生成示例项目。"
+    message: "请先选择模板数据创建项目，再启动正式后端运行。"
   };
 }
 
@@ -12378,7 +12170,7 @@ function renderAnalysisEmptyState(title, mode, subtitle, message = "暂无分析
       ["配置状态", "待导入或运行"],
       ["正式结果", "等待 analysis artifact"]
     ],
-    body: `<div class="empty-state"><strong>${message}</strong><p>本地空白预览不会生成短板、携行、可靠度或停机因素结论。</p></div>`
+    body: `<div class="empty-state"><strong>${message}</strong><p>未选择模板项目时不会生成短板、携行、可靠度或停机因素结论。</p></div>`
   });
 }
 

@@ -55,7 +55,7 @@ def build_m9_6_platform_case_export(import_package: dict[str, Any], repo_root: P
         "config": {
             "steps": _positive_int(project.get("experiment", {}).get("steps"), 48),
             "projectJson": copy.deepcopy(project),
-            "analysisRequests": copy.deepcopy(project.get("analysisRequests", {})),
+            "analysisRequests": copy.deepcopy(published_import.get("objects", {}).get("analysisRequests", {})),
         },
     }
     monte_carlo_config = normalize_monte_carlo_run_config(

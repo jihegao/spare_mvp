@@ -12,7 +12,7 @@ from typing import Any
 
 from src.spare_mvp_backend.errors import BackendApiError
 from src.spare_mvp_backend.modeling_import import modeling_import_to_project, validate_modeling_import_package
-from src.spare_mvp_backend.project_payload import strip_project_sweep
+from src.spare_mvp_backend.project_payload import project_runtime_config_paths, strip_project_sweep
 from src.spare_mvp_backend.repository import ContractRepository
 from src.spare_mvp_backend.run_service import ACTIVE_FORMAL_MODEL_FAMILY, RETIRED_FORMAL_MODEL_FAMILIES, RunService, RunServiceError
 from src.spare_mvp_contract.adapter import AdapterError, SimulationAdapter
@@ -43,7 +43,23 @@ class BackendApi:
         self.run_service = RunService(repository, adapter, self.output_dir, run_lifecycle_lock=lifecycle_lock)
 
     def validate_project(self, project_json: dict[str, Any]) -> dict[str, Any]:
-        return self.adapter.validate_project(project_json)
+        validation = self.adapter.validate_project(project_json)
+        runtime_config_errors = [
+            {
+                "code": "unsupported_project_runtime_config",
+                "path": path,
+                "message": (
+                    "Project JSON must not include Monte Carlo runtime config; "
+                    "use modeling-import create-project plus ExperimentPlan.config.analysisRequests.largeSample"
+                ),
+            }
+            for path in project_runtime_config_paths(project_json)
+        ]
+        if runtime_config_errors:
+            validation = copy.deepcopy(validation)
+            validation["ok"] = False
+            validation["errors"] = [*validation.get("errors", []), *runtime_config_errors]
+        return validation
 
     def login(self, username: str, password: str) -> dict[str, Any]:
         try:
@@ -192,12 +208,11 @@ class BackendApi:
             raise BackendApiError("project_has_runs", str(exc)) from exc
 
     def save_project(self, project_json: dict[str, Any]) -> dict[str, Any]:
-        project_to_save = strip_project_sweep(project_json)
-        validation = self.validate_project(project_to_save)
+        validation = self.validate_project(project_json)
         if not validation["ok"]:
             raise BackendApiError("invalid_project", "Project JSON failed validation", errors=validation["errors"])
 
-        project = copy.deepcopy(project_to_save)
+        project = copy.deepcopy(project_json)
         project["project_id"] = validation["project_id"]
         project["schema_version"] = validation["project_schema_version"]
         project["project_version"] = validation["project_version"]
@@ -405,7 +420,7 @@ class BackendApi:
                 issues=validation["issues"],
             )
 
-        project_json = modeling_import_to_project(import_package, validation=validation)
+        project_json = self._project_instance_from_modeling_import(modeling_import_to_project(import_package, validation=validation))
         saved = self.save_project(project_json)
         project = self.repository.get_project(saved["project_id"])
         snapshot = self.create_modeling_snapshot(saved["project_id"])
@@ -431,6 +446,34 @@ class BackendApi:
             "project": project,
             "modelingSnapshot": snapshot,
         }
+
+    def _project_instance_from_modeling_import(self, project_json: dict[str, Any]) -> dict[str, Any]:
+        project = copy.deepcopy(project_json)
+        base_project_id = str(project.get("project_id") or "project-imported-sample").strip() or "project-imported-sample"
+        base_scenario_id = str(project.get("scenarioId") or base_project_id).strip() or base_project_id
+        existing_project_ids = {
+            str(entry.get("project_id") or "").strip()
+            for entry in self.repository.list_projects()
+            if str(entry.get("project_id") or "").strip()
+        }
+        if base_project_id not in existing_project_ids:
+            project["project_id"] = base_project_id
+            project["scenarioId"] = base_scenario_id
+            return project
+
+        sequence = 2
+        while True:
+            suffix = f"copy-{sequence}"
+            project_id = f"{base_project_id}-{suffix}"
+            if project_id not in existing_project_ids:
+                project["project_id"] = project_id
+                project["scenarioId"] = f"{base_scenario_id}-{suffix}"
+                experiment = project.setdefault("experiment", {})
+                name = experiment.get("name")
+                if isinstance(name, str) and name.strip():
+                    experiment["name"] = f"{name.strip()} 副本 {sequence}"
+                return project
+            sequence += 1
 
     def create_modeling_snapshot(self, project_id: str) -> dict[str, Any]:
         project = self.repository.get_project(project_id)

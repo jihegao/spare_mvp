@@ -1980,7 +1980,19 @@ class BackendHttpApiTest(unittest.TestCase):
                     f"/modeling-imports/{encoded_import_id}/create-project",
                     auth_token=data_token,
                 )
+                second_created = self._json(
+                    base_url,
+                    "POST",
+                    f"/modeling-imports/{encoded_import_id}/create-project",
+                    auth_token=data_token,
+                )
                 stored_project = self._json(base_url, "GET", f"/projects/{quote(import_package['projectId'], safe='')}")
+                second_stored_project = self._json(
+                    base_url,
+                    "GET",
+                    f"/projects/{quote(second_created['savedProject']['project_id'], safe='')}",
+                )
+                catalog = self._json(base_url, "GET", "/projects")
 
                 self.assertEqual(unauthenticated["code"], "unauthorized")
                 self.assertEqual(forbidden["code"], "forbidden")
@@ -1999,6 +2011,16 @@ class BackendHttpApiTest(unittest.TestCase):
                 self.assertEqual(created["modelingSnapshot"]["project"]["project_id"], import_package["projectId"])
                 self.assertTrue(created["modelingSnapshot"]["snapshot_id"])
                 self.assertEqual(stored_project["project_id"], import_package["projectId"])
+                self.assertNotEqual(second_created["savedProject"]["project_id"], created["savedProject"]["project_id"])
+                self.assertRegex(second_created["savedProject"]["project_id"], rf"^{import_package['projectId']}-copy-[0-9]+$")
+                self.assertEqual(second_created["project"]["project_id"], second_created["savedProject"]["project_id"])
+                self.assertEqual(second_created["project"]["missionProfile"]["sourceImportId"], import_package["importId"])
+                self.assertEqual(second_created["modelingSnapshot"]["project"]["project_id"], second_created["savedProject"]["project_id"])
+                self.assertEqual(second_stored_project["project_id"], second_created["savedProject"]["project_id"])
+                self.assertTrue({
+                    created["savedProject"]["project_id"],
+                    second_created["savedProject"]["project_id"],
+                }.issubset({entry["project_id"] for entry in catalog["projects"]}))
             finally:
                 server.shutdown()
                 server.server_close()

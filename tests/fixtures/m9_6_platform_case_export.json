@@ -117,24 +117,7 @@
         "analysisRequests": {
           "largeSample": {
             "enabled": true,
-            "samples": 24,
-            "sweep": {
-              "failureRates": [
-                0.035,
-                0.055,
-                0.075
-              ],
-              "spareMultipliers": [
-                0.75,
-                1,
-                1.25
-              ],
-              "supportCapacities": [
-                2,
-                3,
-                4
-              ]
-            }
+            "samples": 24
           }
         },
         "basicMission": {
@@ -642,24 +625,7 @@
           "analysisRequests": {
             "largeSample": {
               "enabled": true,
-              "samples": 24,
-              "sweep": {
-                "failureRates": [
-                  0.035,
-                  0.055,
-                  0.075
-                ],
-                "spareMultipliers": [
-                  0.75,
-                  1,
-                  1.25
-                ],
-                "supportCapacities": [
-                  2,
-                  3,
-                  4
-                ]
-              }
+              "samples": 24
             }
           },
           "compositeTasks": [
@@ -777,28 +743,6 @@
           },
           "validationLevel": "level1",
           "warnings": []
-        },
-        "monteCarlo": {
-          "failureRates": [
-            0.035,
-            0.055,
-            0.075
-          ],
-          "minRequiredSorties": [
-            4,
-            5,
-            6
-          ],
-          "spareMultipliers": [
-            0.75,
-            1,
-            1.25
-          ],
-          "supportCapacities": [
-            2,
-            3,
-            4
-          ]
         },
         "projectInfo": {
           "baseCode": "IMPORTED-001",
@@ -1431,24 +1375,7 @@
       "analysisRequests": {
         "largeSample": {
           "enabled": true,
-          "samples": 24,
-          "sweep": {
-            "failureRates": [
-              0.035,
-              0.055,
-              0.075
-            ],
-            "spareMultipliers": [
-              0.75,
-              1,
-              1.25
-            ],
-            "supportCapacities": [
-              2,
-              3,
-              4
-            ]
-          }
+          "samples": 24
         }
       },
       "basicMission": {
@@ -1956,24 +1883,7 @@
         "analysisRequests": {
           "largeSample": {
             "enabled": true,
-            "samples": 24,
-            "sweep": {
-              "failureRates": [
-                0.035,
-                0.055,
-                0.075
-              ],
-              "spareMultipliers": [
-                0.75,
-                1,
-                1.25
-              ],
-              "supportCapacities": [
-                2,
-                3,
-                4
-              ]
-            }
+            "samples": 24
           }
         },
         "compositeTasks": [
@@ -2091,28 +2001,6 @@
         },
         "validationLevel": "level1",
         "warnings": []
-      },
-      "monteCarlo": {
-        "failureRates": [
-          0.035,
-          0.055,
-          0.075
-        ],
-        "minRequiredSorties": [
-          4,
-          5,
-          6
-        ],
-        "spareMultipliers": [
-          0.75,
-          1,
-          1.25
-        ],
-        "supportCapacities": [
-          2,
-          3,
-          4
-        ]
       },
       "projectInfo": {
         "baseCode": "IMPORTED-001",
@@ -2760,24 +2648,7 @@
     "analysisRequests": {
       "largeSample": {
         "enabled": true,
-        "samples": 24,
-        "sweep": {
-          "failureRates": [
-            0.035,
-            0.055,
-            0.075
-          ],
-          "spareMultipliers": [
-            0.75,
-            1,
-            1.25
-          ],
-          "supportCapacities": [
-            2,
-            3,
-            4
-          ]
-        }
+        "samples": 24
       }
     },
     "basicMission": {
@@ -3285,24 +3156,7 @@
       "analysisRequests": {
         "largeSample": {
           "enabled": true,
-          "samples": 24,
-          "sweep": {
-            "failureRates": [
-              0.035,
-              0.055,
-              0.075
-            ],
-            "spareMultipliers": [
-              0.75,
-              1,
-              1.25
-            ],
-            "supportCapacities": [
-              2,
-              3,
-              4
-            ]
-          }
+          "samples": 24
         }
       },
       "compositeTasks": [
@@ -3420,28 +3274,6 @@
       },
       "validationLevel": "level1",
       "warnings": []
-    },
-    "monteCarlo": {
-      "failureRates": [
-        0.035,
-        0.055,
-        0.075
-      ],
-      "minRequiredSorties": [
-        4,
-        5,
-        6
-      ],
-      "spareMultipliers": [
-        0.75,
-        1,
-        1.25
-      ],
-      "supportCapacities": [
-        2,
-        3,
-        4
-      ]
     },
     "projectInfo": {
       "baseCode": "IMPORTED-001",

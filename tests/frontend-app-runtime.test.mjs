@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { MODELING_IMPORT_DEMO_FIXTURE } from "../front/modeling-import-demo-fixture.mjs";
 import { defaultScenario } from "../front/sim-engine.mjs";
 
 test("frontend app module initializes without Monte Carlo TDZ errors", async () => {
@@ -301,36 +302,73 @@ test("support organization airport selector syncs from combat unit aircraft airp
   }
 });
 
-test("project list imports and exports project JSON at runtime", async () => {
-  const importedProjectJson = createRuntimeProjectJson({
+test("project list exports project JSON without direct Project JSON import at runtime", async () => {
+  const projectJson = createRuntimeProjectJson({
     project_id: "project-json-runtime",
     scenarioId: "json-runtime-scenario",
-    experiment: { name: "运行时导入项目", steps: 12, samples: 3, seed: 260626 }
+    experiment: { name: "运行时项目", steps: 12, samples: 3, seed: 260626 }
   });
+  const runtime = await setupRuntimeApp({ projectJson });
+
+  try {
+    assert.match(runtime.appNode.innerHTML, /项目列表/);
+    assert.match(runtime.appNode.innerHTML, /data-modeling-import-template/);
+    assert.match(runtime.appNode.innerHTML, /data-project-create-from-import/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-project-add/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-project-import/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /添加本地 Project draft|本地草稿|本地空白预览/);
+    assert.match(runtime.appNode.innerHTML, /data-project-export="runtime"/);
+
+    await runtime.click("[data-project-export]", { projectExport: "runtime" });
+    assert.equal(runtime.downloads.length, 1);
+    assert.match(runtime.downloads[0].download, /^spare-mvp-project-runtime-/);
+    const exported = JSON.parse(await runtime.downloads[0].blob.text());
+    assert.equal(exported.scenarioId, "json-runtime-scenario");
+    assert.equal(exported.experiment.name, "运行时项目");
+    assert.equal(exported.project_id, "project-json-runtime");
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("feature routes without a template-created project return to project list", async () => {
   const runtime = await setupRuntimeApp({
-    importFile: {
-      name: "project-runtime.json",
-      async text() {
-        return JSON.stringify(importedProjectJson);
-      }
-    }
+    hash: "feature=spare-planning-experiment-plan-list",
+    backendProjects: []
   });
 
   try {
     assert.match(runtime.appNode.innerHTML, /项目列表/);
-    assert.match(runtime.appNode.innerHTML, /data-project-import="runtime"/);
+    assert.match(runtime.appNode.innerHTML, /请选择模板数据创建项目/);
+    assert.match(runtime.appNode.innerHTML, /data-modeling-import-template/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-experiment-plan-select="local:本地空白预览"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /本地空白预览/);
+  } finally {
+    runtime.restore();
+  }
+});
 
-    await runtime.click("[data-project-import]", { projectImport: "runtime" });
-    assert.match(runtime.appNode.innerHTML, /已导入项目 JSON：运行时导入项目/);
-    assert.match(runtime.appNode.innerHTML, /data-project-export="json-runtime"/);
+test("project list keeps multiple projects created from the current published snapshot", async () => {
+  const runtime = await setupRuntimeApp({
+    backendProjects: []
+  });
 
-    await runtime.click("[data-project-export]", { projectExport: "json-runtime" });
-    assert.equal(runtime.downloads.length, 1);
-    assert.match(runtime.downloads[0].download, /^spare-mvp-project-json-runtime-/);
-    const exported = JSON.parse(await runtime.downloads[0].blob.text());
-    assert.equal(exported.scenarioId, "json-runtime-scenario");
-    assert.equal(exported.experiment.name, "运行时导入项目");
-    assert.equal(exported.project_id, "project-json-runtime");
+  try {
+    assert.match(runtime.appNode.innerHTML, /请选择模板数据创建项目/);
+
+    await runtime.click("[data-project-create-from-import]");
+    await runtime.click("[data-project-create-from-import]");
+
+    assert.match(runtime.appNode.innerHTML, /已加载 2 个后端项目/);
+    assert.match(runtime.appNode.innerHTML, /运行时模板项目 1/);
+    assert.match(runtime.appNode.innerHTML, /运行时模板项目 2/);
+    assert.match(runtime.appNode.innerHTML, /data-enter-workbench data-project-id="runtime-imported"/);
+    assert.match(runtime.appNode.innerHTML, /data-enter-workbench data-project-id="runtime-imported-copy-2"/);
+    const createRequests = runtime.requests.filter((request) => (
+      request.url.endsWith("/create-project")
+      && (request.options.method || "GET") === "POST"
+    ));
+    assert.equal(createRequests.length, 2);
   } finally {
     runtime.restore();
   }
@@ -774,21 +812,21 @@ test("logistics support activity page only renders transport strategy list", asy
   }
 });
 
-test("experiment plan row selection is interactive at runtime", async () => {
+test("experiment plan row selection is interactive for template-created projects at runtime", async () => {
   const runtime = await setupRuntimeApp({ hash: "feature=spare-planning-experiment-plan-list" });
 
   try {
-    assert.match(runtime.appNode.innerHTML, /data-experiment-plan-select="local:本地空白预览"/);
+    assert.match(runtime.appNode.innerHTML, /data-experiment-plan-select="local:运行时项目"/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /selected-table-row/);
 
     await runtime.change(
       "[data-experiment-plan-select]",
-      { experimentPlanSelect: "local:本地空白预览" },
+      { experimentPlanSelect: "local:运行时项目" },
       { checked: true, type: "checkbox" }
     );
 
     assert.match(runtime.appNode.innerHTML, /selected-table-row/);
-    assert.match(runtime.appNode.innerHTML, /data-experiment-plan-select="local:本地空白预览" checked/);
+    assert.match(runtime.appNode.innerHTML, /data-experiment-plan-select="local:运行时项目" checked/);
   } finally {
     runtime.restore();
   }
@@ -833,12 +871,28 @@ test("experiment plan selection uses experiment_plan_id for duplicate names", as
 
 let runtimeImportCounter = 0;
 
-async function setupRuntimeApp({ hash = "", projectJson = createRuntimeProjectJson(), importFile = null, experimentPlans = [] } = {}) {
+async function setupRuntimeApp({
+  hash = "",
+  projectJson = createRuntimeProjectJson(),
+  importFile = null,
+  experimentPlans = [],
+  backendProjects = [{
+    project_id: "project-runtime",
+    experiment_name: "Runtime 项目",
+    base_code: "RT",
+    summary: "runtime test",
+    source_import_id: "runtime-import-template",
+    updated_at: "2026-06-26 00:00:00"
+  }]
+} = {}) {
   const appListeners = {};
   const windowListeners = {};
   const requests = [];
   const downloads = [];
   const objectUrls = new Map();
+  const backendProjectCatalog = [...backendProjects];
+  const projectPayloads = new Map([[projectJson.project_id || "project-runtime", projectJson]]);
+  let createProjectFromImportCount = 0;
   const storage = new Map([
     ["spare-mvp:m4Session", JSON.stringify({ session: { token: "m4-runtime-token" } })]
   ]);
@@ -906,25 +960,71 @@ async function setupRuntimeApp({ hash = "", projectJson = createRuntimeProjectJs
   globalThis.fetch = async (url, options = {}) => {
     requests.push({ url, options });
     const method = options.method || "GET";
+    if (url === "/import-templates/canonical_platform_case.json") {
+      return jsonResponse(MODELING_IMPORT_DEMO_FIXTURE);
+    }
     if (url === "/api/auth/session") {
       return jsonResponse({ user: { username: "data", role: "数据管理员" } });
     }
     if (url === "/api/projects" && method === "GET") {
       return jsonResponse({
-        projects: [{
-          project_id: "project-runtime",
-          experiment_name: "Runtime 项目",
-          base_code: "RT",
-          summary: "runtime test",
-          updated_at: "2026-06-26 00:00:00"
-        }]
+        projects: backendProjectCatalog
       });
     }
-    if (url === "/api/projects/project-runtime") {
-      return jsonResponse(projectJson);
+    const projectMatch = url.match(/^\/api\/projects\/([^/]+)$/);
+    if (projectMatch && method === "GET") {
+      const projectId = decodeURIComponent(projectMatch[1]);
+      return jsonResponse(projectPayloads.get(projectId) || projectJson);
     }
     if (url === "/api/projects/project-runtime/experiment-plans" && method === "GET") {
       return jsonResponse({ project_id: "project-runtime", experiment_plans: experimentPlans });
+    }
+    const modelingImportMatch = url.match(/^\/api\/modeling-imports\/([^/]+)$/);
+    if (modelingImportMatch && method === "GET") {
+      return jsonResponse({ publishedPackage: MODELING_IMPORT_DEMO_FIXTURE });
+    }
+    if (url === "/api/modeling-imports" && method === "POST") {
+      const body = JSON.parse(options.body || "{}");
+      return jsonResponse({ import_id: body.importId || body.import_id || MODELING_IMPORT_DEMO_FIXTURE.importId, status: "saved" });
+    }
+    const modelingImportPublishMatch = url.match(/^\/api\/modeling-imports\/([^/]+)\/publish$/);
+    if (modelingImportPublishMatch && method === "POST") {
+      return jsonResponse({ publishedPackage: MODELING_IMPORT_DEMO_FIXTURE });
+    }
+    const modelingImportCreateProjectMatch = url.match(/^\/api\/modeling-imports\/([^/]+)\/create-project$/);
+    if (modelingImportCreateProjectMatch && method === "POST") {
+      createProjectFromImportCount += 1;
+      const importId = decodeURIComponent(modelingImportCreateProjectMatch[1]);
+      const projectId = createProjectFromImportCount === 1
+        ? "project-runtime-imported"
+        : `project-runtime-imported-copy-${createProjectFromImportCount}`;
+      const createdProject = createRuntimeProjectJson({
+        project_id: projectId,
+        scenarioId: `${projectId}-scenario`,
+        experiment: { name: `运行时模板项目 ${createProjectFromImportCount}`, steps: 24, samples: 2, seed: 20260626 },
+        missionProfile: {
+          name: "运行时任务剖面",
+          durationHours: 8,
+          sourceImportId: importId,
+          compositeTasks: [],
+          periodicTasks: []
+        }
+      });
+      projectPayloads.set(projectId, createdProject);
+      backendProjectCatalog.unshift({
+        project_id: projectId,
+        experiment_name: createdProject.experiment.name,
+        base_code: "RT",
+        summary: `由导入包 ${importId} 生成`,
+        source_import_id: importId,
+        updated_at: "2026-06-26 00:00:00"
+      });
+      return jsonResponse({
+        sourceImport: { import_id: importId, project_id: projectId },
+        savedProject: { project_id: projectId, project_version: "project-v0.1", status: "saved" },
+        project: createdProject,
+        modelingSnapshot: { snapshot_id: `modeling-snapshot-${projectId}-001`, project_id: projectId, project: createdProject }
+      });
     }
     if (url === "/api/projects/validate") {
       return jsonResponse({ ok: true, status: "valid", issues: [] });
@@ -1039,7 +1139,7 @@ function createRuntimeProjectJson(overrides = {}) {
     project_id: "project-runtime",
     scenarioId: "runtime-scenario",
     activeModule: "sparePlanning",
-    experiment: { name: "本地空白预览", steps: 24, samples: 2, seed: 20260626 },
+    experiment: { name: "运行时项目", steps: 24, samples: 2, seed: 20260626 },
     missionProfile: { name: "运行时任务剖面", durationHours: 8, compositeTasks: [], periodicTasks: [] },
     basicMission: { name: "运行时基本任务", equipmentType: "J-15", taskDurationMinutes: 90, minRequiredSorties: 1 },
     equipment: { model: "J-15", wholeMachineModels: ["J-15"], quantity: 2, initialReady: 2, minRequiredSorties: 1 },

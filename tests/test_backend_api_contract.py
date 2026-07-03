@@ -539,7 +539,7 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(chain["result_summary_id"], run["result_summary_id"])
         self.assertEqual(chain["artifact_manifest_id"], run["artifact_manifest_id"])
 
-    def test_save_project_strips_sweep_from_project_payload(self) -> None:
+    def test_save_project_rejects_runtime_monte_carlo_config_in_project_payload(self) -> None:
         project = self._fixture("smoke_project.json")
         project["monteCarlo"] = {
             "failureRates": [0.05],
@@ -570,15 +570,22 @@ class BackendApiContractTest(unittest.TestCase):
             },
         }
 
-        saved = self.api.save_project(project)
+        validation = self.api.validate_project(project)
 
-        stored = self.api.get_project(saved["project_id"])
-        self.assertEqual(stored["analysisRequests"]["largeSample"]["samples"], 3)
-        self.assertNotIn("sweep", stored["analysisRequests"]["largeSample"])
-        self.assertEqual(stored["missionProfile"]["analysisRequests"]["largeSample"]["samples"], 5)
-        self.assertNotIn("sweep", stored["missionProfile"]["analysisRequests"]["largeSample"])
-        self.assertNotIn("monteCarlo", stored)
-        self.assertNotIn("monteCarlo", stored["missionProfile"])
+        self.assertFalse(validation["ok"])
+        self.assertEqual(
+            sorted(error["path"] for error in validation["errors"] if error["code"] == "unsupported_project_runtime_config"),
+            [
+                "analysisRequests.largeSample.sweep",
+                "missionProfile.analysisRequests.largeSample.sweep",
+                "missionProfile.monteCarlo",
+                "monteCarlo",
+            ],
+        )
+        with self.assertRaises(BackendApiError) as ctx:
+            self.api.save_project(project)
+        self.assertEqual(ctx.exception.code, "invalid_project")
+        self.assertIn("unsupported_project_runtime_config", {error["code"] for error in ctx.exception.details["errors"]})
 
     def test_get_project_strips_legacy_persisted_monte_carlo_payload(self) -> None:
         project = self._fixture("smoke_project.json")
@@ -2705,6 +2712,7 @@ class BackendApiContractTest(unittest.TestCase):
         self.api.publish_modeling_import_as_system(import_package["importId"])
 
         created = self.api.create_project_from_modeling_import_as_system(import_package["importId"])
+        second_created = self.api.create_project_from_modeling_import_as_system(import_package["importId"])
 
         self.assertEqual(created["sourceImport"]["import_id"], import_package["importId"])
         self.assertEqual(created["project"]["project_id"], import_package["projectId"])
@@ -2732,14 +2740,26 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(created["savedProject"]["project_id"], import_package["projectId"])
         self.assertEqual(created["modelingSnapshot"]["project"]["project_id"], import_package["projectId"])
         self.assertEqual(self.api.get_project(import_package["projectId"])["project_id"], import_package["projectId"])
+        self.assertNotEqual(second_created["savedProject"]["project_id"], created["savedProject"]["project_id"])
+        self.assertRegex(second_created["savedProject"]["project_id"], rf"^{import_package['projectId']}-copy-[0-9]+$")
+        self.assertEqual(second_created["project"]["project_id"], second_created["savedProject"]["project_id"])
+        self.assertEqual(second_created["project"]["missionProfile"]["sourceImportId"], import_package["importId"])
+        self.assertEqual(second_created["modelingSnapshot"]["project"]["project_id"], second_created["savedProject"]["project_id"])
+        self.assertEqual(self.api.get_project(second_created["savedProject"]["project_id"])["project_id"], second_created["savedProject"]["project_id"])
+        project_ids = {entry["project_id"] for entry in self.api.list_projects()["projects"]}
+        self.assertTrue({created["savedProject"]["project_id"], second_created["savedProject"]["project_id"]}.issubset(project_ids))
         events = self.repository.list_audit_events(resource_id=import_package["importId"])
         create_events = [event for event in events if event["action"] == "modeling_import.create_project"]
-        self.assertEqual(len(create_events), 1)
+        self.assertEqual(len(create_events), 2)
         self.assertEqual(create_events[0]["outcome"], "allowed")
         self.assertEqual(create_events[0]["resource_id"], import_package["importId"])
         self.assertEqual(create_events[0]["details"]["project_id"], import_package["projectId"])
         self.assertEqual(create_events[0]["details"]["import_version"], 1)
         self.assertEqual(create_events[0]["details"]["actor"], "system")
+        self.assertEqual(
+            {event["details"]["project_id"] for event in create_events},
+            {created["savedProject"]["project_id"], second_created["savedProject"]["project_id"]},
+        )
 
     def test_modeling_import_to_project_preserves_full_authoring_surfaces(self) -> None:
         import_package = self._fixture("modeling_import_project.json")

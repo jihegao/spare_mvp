@@ -87,7 +87,7 @@ class SimulationAdapterTest(unittest.TestCase):
                         "basicMission.minRequiredSorties",
                         "experiment.seed",
                     ],
-                    "defaults_applied": [],
+                    "defaults_applied": ["monteCarlo.spareMultipliers=1.0"],
                     "derived_fields": ["simulation_inputs.failure_rate"],
                     "ignored_fields": ["monteCarlo.failureRates", "monteCarlo.supportCapacities"],
                     "unsupported_fields": [],
@@ -115,7 +115,6 @@ class SimulationAdapterTest(unittest.TestCase):
 
     def test_smoke_mapping_provenance_records_defaults_that_feed_inputs(self) -> None:
         project = self._load_fixture("smoke_project.json")
-        project["monteCarlo"]["spareMultipliers"] = []
         project["components"] = []
         project["supportNodes"] = []
         project["equipment"] = {}

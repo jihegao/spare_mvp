@@ -152,21 +152,25 @@ h4 {
 
 .project-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  grid-template-columns: 1fr;
   gap: 12px;
 }
 
 .project-card {
-  min-height: 190px;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  gap: 14px;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
   padding: 16px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface);
   box-shadow: var(--shadow);
+}
+
+.project-card > div:first-child {
+  min-width: 0;
 }
 
 .project-card.active {
@@ -185,17 +189,33 @@ h4 {
   color: var(--muted);
 }
 
+.project-edit-form {
+  grid-column: 1 / -1;
+}
+
 .project-card-foot {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
+  justify-content: flex-end;
+  flex-wrap: nowrap;
   gap: 12px;
 }
 
 .project-card-foot .compact-actions {
   justify-content: flex-end;
   flex-wrap: wrap;
+}
+
+@media (max-width: 760px) {
+  .project-card {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .project-card-foot {
+    justify-content: space-between;
+    flex-wrap: wrap;
+  }
 }
 
 .topbar {
