@@ -1800,6 +1800,59 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(self.adapter.run_calls, [])
         self.assertEqual(self.adapter.monte_carlo_run_calls, [])
 
+    def test_lite_mesa_analysis_runs_current_project_without_formal_persistence(self) -> None:
+        case = self._fixture("simulation_analysis_cases/minimal_single_aircraft.json")
+        project = modeling_import_to_project(case["modeling_import"])
+        project["project_id"] = "project-current-analysis-draft"
+        project["missionProfile"].pop("sourceImportId", None)
+
+        before_counts = self._run_side_effect_counts()
+
+        payload = self.api.run_lite_mesa_analysis(
+            project,
+            analysis_type="spare_shortfall",
+            settings={"samples": 3, "seed": 20260704},
+        )
+
+        self.assertEqual(payload["status"], "session_complete")
+        self.assertEqual(payload["source"], "lite_mesa_aircraft_support_v1")
+        self.assertEqual(payload["model_family"], "aircraft_support_v1")
+        self.assertEqual(payload["model_id"], "AircraftSupportV1Model")
+        self.assertEqual(payload["analysis_type"], "spare_shortfall")
+        self.assertEqual(payload["sample_count"], 3)
+        self.assertEqual(payload["seed_list"], [20260704, 20260705, 20260706])
+        self.assertTrue(payload["run_id"].startswith("lite-mesa-analysis-project-current-analysis-draft-"))
+        self.assertEqual(payload["project_id"], "project-current-analysis-draft")
+        self.assertIn("mission_success_rate", payload["aggregate_metrics"])
+        self.assertIn(["发生缺件备件", "1"], payload["metrics"])
+        self.assertEqual(payload["rows"][0]["spareType"], "aircraft_support_v1_spares")
+        self.assertIn("不写入正式结果账本", " ".join(payload["limitations"]))
+        self.assertEqual(self._run_side_effect_counts(), before_counts)
+        self.assertEqual(len(self.adapter.compile_calls), 1)
+        self.assertEqual(self.adapter.compile_calls[0][1], "aircraft_support_v1")
+        self.assertEqual(self.adapter.run_calls, [])
+        self.assertEqual(self.adapter.monte_carlo_run_calls, [])
+
+    def test_lite_mesa_analysis_returns_blocked_when_project_cannot_compile(self) -> None:
+        before_counts = self._run_side_effect_counts()
+
+        payload = self.api.run_lite_mesa_analysis(
+            {"project_id": "project-incomplete"},
+            analysis_type="mission_reliability",
+            settings={"samples": 2, "seed": 7},
+        )
+
+        self.assertEqual(payload["status"], "blocked")
+        self.assertEqual(payload["source"], "lite_mesa_aircraft_support_v1")
+        self.assertEqual(payload["model_family"], "aircraft_support_v1")
+        self.assertEqual(payload["analysis_type"], "mission_reliability")
+        self.assertIn("无法编译", payload["message"])
+        self.assertEqual(payload["sample_count"], 0)
+        self.assertEqual(payload["rows"], [])
+        self.assertEqual(self._run_side_effect_counts(), before_counts)
+        self.assertEqual(self.adapter.run_calls, [])
+        self.assertEqual(self.adapter.monte_carlo_run_calls, [])
+
     def test_run_service_submits_aircraft_support_v1_formal_monte_carlo_run(self) -> None:
         created = self._create_imported_sample_project()
         project = copy.deepcopy(created["project"])

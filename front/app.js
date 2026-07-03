@@ -117,6 +117,40 @@ const LITE_MESA_MONTE_CARLO_METRICS = Object.freeze([
   { key: "shortage_events", label: "短缺事件", format: "number" },
   { key: "repair_backlog", label: "维修积压", format: "number" }
 ]);
+const LITE_MESA_ANALYSIS_DEFINITIONS = Object.freeze({
+  spare_shortfall: {
+    experimentId: "project_baseline_at_current_granularity",
+    title: "备件短板分析",
+    subtitle: "基于当前项目建模数据的短缺事件统计",
+    pageGoal: "识别当前项目在会话内 Mesa 样本下发生缺件的备件类别。",
+    fixedConfig: [["实验类型", "项目基线"], ["用户参数", "无可调参数"]],
+    metricLabels: ["发生缺件备件", "总缺件次数", "最高缺件备件", "样本数"]
+  },
+  carry_list: {
+    experimentId: "minimum_carry_list_search",
+    title: "飞机转场携行清单分析",
+    subtitle: "按备件类别独立变化的最小携行清单搜索",
+    pageGoal: "在给定置信度约束下探索建议携行数量、优先级和风险项。",
+    fixedConfig: [["实验类型", "最小携行清单搜索"], ["目标函数", "携行备件总量最小"]],
+    metricLabels: ["建议携行总数", "高优先级备件", "置信度目标", "样本数"]
+  },
+  mission_reliability: {
+    experimentId: "project_baseline_at_current_granularity",
+    title: "任务可靠度评估",
+    subtitle: "任务成功概率、出动架次率和目标达成统计",
+    pageGoal: "评估当前项目在会话内 Mesa 样本下的任务可靠度表现。",
+    fixedConfig: [["实验类型", "项目基线"], ["统计口径", "会话样本聚合"]],
+    metricLabels: ["任务成功率", "出动完成率", "战备完好率", "样本数"]
+  },
+  downtime_factors: {
+    experimentId: "project_baseline_at_current_granularity",
+    title: "停机因素分析",
+    subtitle: "停机贡献因素排序和保障延误定位",
+    pageGoal: "识别当前项目在会话内 Mesa 样本下的主要停机或延误因素。",
+    fixedConfig: [["实验类型", "项目基线"], ["快照能力", "会话内只读解释"]],
+    metricLabels: ["停机因素项", "首要因素", "最高贡献度", "样本数"]
+  }
+});
 let demoProjects = [];
 let deletedDowntimeSnapshotIds = new Set();
 const ANALYSIS_PROJECTION_TYPES = [
@@ -474,6 +508,8 @@ let liteMesaMonteCarloSettings = {
 };
 let liteMesaMonteCarloResult = null;
 let liteMesaMonteCarloStatus = "设置样本量和随机种子后运行 Mesa 分析。";
+let liteMesaAnalysisSettings = createDefaultLiteMesaAnalysisSettings();
+let liteMesaAnalysisResults = {};
 let rmsAllocationProject = createDemoRmsAllocationProject();
 let rmsAllocationPlan = createDefaultRmsAllocationPlan(rmsAllocationProject);
 let rmsAllocationResult = calculateRmsAllocation(rmsAllocationPlan, rmsAllocationProject);
@@ -1388,6 +1424,13 @@ function bindEvents() {
       return;
     }
 
+    const liteMesaAnalysisButton = event.target.closest("[data-lite-mesa-analysis-action='run']");
+    if (liteMesaAnalysisButton) {
+      runLiteMesaAnalysisPage(getFeaturePageById(selectedFeatureId)).finally(() => render());
+      render();
+      return;
+    }
+
     const mesaViewButton = event.target.closest("[data-mesa-view]");
     if (mesaViewButton) {
       selectedMesaView = mesaViewButton.dataset.mesaView;
@@ -1697,6 +1740,17 @@ function bindEvents() {
     const liteMesaMonteCarloInput = event.target.closest("[data-lite-mesa-field]");
     if (liteMesaMonteCarloInput) {
       updateLiteMesaMonteCarloSetting(liteMesaMonteCarloInput.dataset.liteMesaField, parseInput(liteMesaMonteCarloInput));
+      return;
+    }
+
+    const liteMesaAnalysisInput = event.target.closest("[data-lite-mesa-analysis-field]");
+    if (liteMesaAnalysisInput) {
+      updateLiteMesaAnalysisSetting(
+        getFeaturePageById(selectedFeatureId),
+        liteMesaAnalysisInput.dataset.liteMesaAnalysisField,
+        parseInput(liteMesaAnalysisInput)
+      );
+      render();
       return;
     }
 
@@ -2370,7 +2424,9 @@ function renderSystemManagementNavigation(activePage, secondaryGroups) {
 }
 
 function renderFeaturePage(page) {
-  ensureCurrentAnalysisResultLoaded(page);
+  if (page.component === "analysis") {
+    ensureCurrentAnalysisResultLoaded(page);
+  }
   ensureIndependentMesaVisualizationStarted(page);
   const siblingPages = groups[page.module][page.secondary][page.tertiary];
   const currentContext = renderCurrentContext(page);
@@ -2458,6 +2514,7 @@ function renderMainComponent(page) {
     pct
   });
   if (page.component === "lite-mesa-monte-carlo-analysis") return renderLiteMesaMonteCarloAnalysis(page);
+  if (page.component === "lite-mesa-analysis") return renderLiteMesaAnalysisPage(page);
   if (page.component === "analysis") return renderAnalysis(page);
   if (page.name === "内置场景") return renderBuiltInScenario(page);
   if (page.name === "基本作战单元建模") return renderCombatUnitModeling(page);
@@ -12853,6 +12910,278 @@ function renderLineChart(points) {
       <polyline points="${line}"></polyline>
       ${points.map((point) => `<circle cx="${xScale(point.x).toFixed(1)}" cy="${yScale(point.y).toFixed(1)}" r="4"></circle><text x="${xScale(point.x).toFixed(1)}" y="168">${point.x}</text>`).join("")}
     </svg>
+  `;
+}
+
+function renderLiteMesaAnalysisPage(page) {
+  const definition = liteMesaAnalysisDefinitionForPage(page);
+  const settings = liteMesaAnalysisSettings[definition.analysisType] || {};
+  const result = liteMesaAnalysisResults[definition.analysisType] || null;
+  const runCount = result?.sampleCount || 0;
+  const statusText = result?.status === "session_complete"
+    ? `会话内结果已生成：${runCount} 个样本`
+    : result?.status === "blocked"
+      ? result.message
+      : result?.status === "running"
+        ? "Mesa 分析运行中"
+        : "等待运行";
+  return `
+    <div class="lite-mesa-workbench lite-mesa-analysis-page">
+      <section class="lite-mesa-hero">
+        <div>
+          <span class="status-badge success">前端建模 + Mesa 分析</span>
+          <h3>${htmlEscape(definition.title)}</h3>
+          <p>${htmlEscape(definition.pageGoal)}</p>
+        </div>
+        <div class="lite-mesa-hero-meter" aria-label="会话内结果">
+          <strong>${runCount || "待运行"}</strong>
+          <span>会话样本</span>
+        </div>
+      </section>
+      <div class="lite-mesa-layout">
+        <section class="lite-mesa-settings">
+          <div class="section-head">
+            <h3>独立 Mesa 设置</h3>
+            <span>${htmlEscape(definition.experimentId)}</span>
+          </div>
+          <div class="lite-mesa-setting-grid">
+            ${renderLiteMesaAnalysisSettings(definition, settings)}
+          </div>
+          <button type="button" class="btn-primary" data-lite-mesa-analysis-action="run">运行 Mesa 分析</button>
+          <p class="inline-status">${htmlEscape(statusText)}</p>
+          <div class="lite-mesa-source-grid">
+            <div><span>项目</span><strong>${htmlEscape(currentProject?.name || "当前项目")}</strong></div>
+            <div><span>输出边界</span><strong>会话内结果</strong></div>
+            <div><span>持久化</span><strong>不创建 run、result 或 artifact</strong></div>
+          </div>
+        </section>
+        <section class="lite-mesa-results">
+          <div class="section-head">
+            <h3>${htmlEscape(definition.subtitle)}</h3>
+            <span>${result?.status === "session_complete" ? "会话完成" : result?.status === "running" ? "后端 Mesa 内存运行中" : "建模粒度不足时 fail closed"}</span>
+          </div>
+          ${renderLiteMesaAnalysisMetricCards(definition, result)}
+        </section>
+      </div>
+      <section class="lite-mesa-stat-section">
+        <div class="section-head">
+          <h3>会话内结果明细</h3>
+          <span>建模粒度不足时不会伪造结论</span>
+        </div>
+        ${renderLiteMesaAnalysisSessionBody(definition, result)}
+      </section>
+    </div>
+  `;
+}
+
+function liteMesaAnalysisDefinitionForPage(page) {
+  const analysisType = analysisTypeForPage(page);
+  return {
+    analysisType,
+    ...(LITE_MESA_ANALYSIS_DEFINITIONS[analysisType] || LITE_MESA_ANALYSIS_DEFINITIONS.mission_reliability)
+  };
+}
+
+function createDefaultLiteMesaAnalysisSettings() {
+  return {
+    spare_shortfall: { samples: 27, seed: 20260621 },
+    carry_list: { samples: 27, seed: 20260621, missionConfidenceTarget: 0.9 },
+    mission_reliability: { samples: 27, seed: 20260621, maxTimeWindow: "" },
+    downtime_factors: { samples: 27, seed: 20260621, topN: 4 }
+  };
+}
+
+function renderLiteMesaAnalysisSettings(definition, settings) {
+  const common = `
+    <label>样本量
+      <input data-lite-mesa-analysis-field="samples" type="number" min="1" max="1000" step="1" value="${htmlEscape(settings.samples ?? 27)}">
+    </label>
+    <label>随机种子
+      <input data-lite-mesa-analysis-field="seed" type="number" step="1" value="${htmlEscape(settings.seed ?? 20260621)}">
+    </label>
+  `;
+  const fixedRows = definition.fixedConfig
+    .map(([label, value]) => `<label>${htmlEscape(label)}<input value="${htmlEscape(value)}" readonly></label>`)
+    .join("");
+  if (definition.analysisType === "carry_list") {
+    return `${common}
+      <label>任务置信目标
+        <input data-lite-mesa-analysis-field="missionConfidenceTarget" type="number" min="0" max="1" step="0.01" value="${htmlEscape(settings.missionConfidenceTarget ?? 0.9)}">
+      </label>
+      ${fixedRows}`;
+  }
+  if (definition.analysisType === "mission_reliability") {
+    return `${common}
+      <label>最大时间窗口
+        <input data-lite-mesa-analysis-field="maxTimeWindow" type="number" min="1" step="1" value="${htmlEscape(settings.maxTimeWindow ?? "")}" placeholder="默认全任务窗口">
+      </label>
+      ${fixedRows}`;
+  }
+  if (definition.analysisType === "downtime_factors") {
+    return `${common}
+      <label>展示 TopN
+        <input data-lite-mesa-analysis-field="topN" type="number" min="1" max="20" step="1" value="${htmlEscape(settings.topN ?? 4)}">
+      </label>
+      ${fixedRows}`;
+  }
+  return `${common}${fixedRows}`;
+}
+
+function updateLiteMesaAnalysisSetting(page, field, value) {
+  const definition = liteMesaAnalysisDefinitionForPage(page);
+  const current = liteMesaAnalysisSettings[definition.analysisType] || {};
+  const numericFields = new Set(["samples", "seed", "missionConfidenceTarget", "maxTimeWindow", "topN"]);
+  const parsed = numericFields.has(field) ? Number(value) : value;
+  const next = {
+    ...current,
+    [field]: parsed
+  };
+  if (field === "samples") next.samples = Math.max(1, Math.min(1000, Math.trunc(Number(value) || 1)));
+  if (field === "seed") next.seed = Math.trunc(Number(value) || 1);
+  if (field === "missionConfidenceTarget") next.missionConfidenceTarget = Math.max(0, Math.min(1, Number(value) || 0));
+  if (field === "maxTimeWindow") next.maxTimeWindow = Number(value) > 0 ? Math.trunc(Number(value)) : "";
+  if (field === "topN") next.topN = Math.max(1, Math.min(20, Math.trunc(Number(value) || 1)));
+  liteMesaAnalysisSettings = {
+    ...liteMesaAnalysisSettings,
+    [definition.analysisType]: next
+  };
+  liteMesaAnalysisResults = {
+    ...liteMesaAnalysisResults,
+    [definition.analysisType]: null
+  };
+}
+
+async function runLiteMesaAnalysisPage(page) {
+  const definition = liteMesaAnalysisDefinitionForPage(page);
+  const settings = liteMesaAnalysisSettings[definition.analysisType] || {};
+  const samples = Math.max(1, Math.min(1000, Math.trunc(Number(settings.samples) || 1)));
+  const seed = Math.trunc(Number(settings.seed) || 1);
+  const normalizedSettings = {
+    ...settings,
+    samples,
+    seed
+  };
+  liteMesaAnalysisResults = {
+    ...liteMesaAnalysisResults,
+    [definition.analysisType]: {
+      status: "running",
+      message: "Mesa 分析运行中",
+      sampleCount: 0,
+      metrics: definition.metricLabels.map((label) => [label, "运行中"]),
+      rows: [],
+      limitations: []
+    }
+  };
+  try {
+    const projectJson = buildBackendProjectJson(scenario, currentProject);
+    const response = await backendApi.runLiteMesaAnalysis(projectJson, definition.analysisType, normalizedSettings);
+    liteMesaAnalysisResults = {
+      ...liteMesaAnalysisResults,
+      [definition.analysisType]: normalizeLiteMesaAnalysisResult(definition, response)
+    };
+  } catch (err) {
+    liteMesaAnalysisResults = {
+      ...liteMesaAnalysisResults,
+      [definition.analysisType]: {
+        status: "blocked",
+        sampleCount: 0,
+        metrics: [],
+        rows: [],
+        limitations: [],
+        message: `Mesa 分析失败：${err && err.message ? err.message : "运行错误"}`
+      }
+    };
+  }
+}
+
+function normalizeLiteMesaAnalysisResult(definition, payload) {
+  if (!payload || payload.status === "blocked") {
+    return {
+      status: "blocked",
+      source: payload?.source || "lite_mesa_aircraft_support_v1",
+      analysisType: payload?.analysis_type || definition.analysisType,
+      experimentId: definition.experimentId,
+      sampleCount: 0,
+      seedList: [],
+      metrics: [],
+      rows: [],
+      limitations: Array.isArray(payload?.limitations) ? payload.limitations : [],
+      message: payload?.message || "建模粒度不足：请补充装备数量、任务要求、任务周期、部件和保障节点。"
+    };
+  }
+  return {
+    status: payload.status === "session_complete" ? "session_complete" : "blocked",
+    source: payload.source || "lite_mesa_aircraft_support_v1",
+    analysisType: payload.analysis_type || definition.analysisType,
+    experimentId: definition.experimentId,
+    sampleCount: Number(payload.sample_count || payload.sampleCount || 0),
+    seedList: Array.isArray(payload.seed_list) ? payload.seed_list : [],
+    metrics: Array.isArray(payload.metrics) ? payload.metrics : definition.metricLabels.map((label) => [label, "无"]),
+    rows: Array.isArray(payload.rows) ? payload.rows : [],
+    limitations: Array.isArray(payload.limitations) ? payload.limitations : [],
+    message: payload.message || ""
+  };
+}
+
+function renderLiteMesaAnalysisMetricCards(definition, result) {
+  if (result?.status === "blocked") {
+    return `<div class="empty-state"><strong>建模粒度不足</strong><p>${htmlEscape(result.message)}</p></div>`;
+  }
+  const metrics = result?.metrics || definition.metricLabels.map((label) => [label, "待运行"]);
+  return `
+    <div class="lite-mesa-metric-cards">
+      ${metrics.map(([label, value]) => `
+        <div class="metric-card">
+          <span>${htmlEscape(label)}</span>
+          <strong>${htmlEscape(value)}</strong>
+          <em>${result?.status === "session_complete" ? "会话内 Mesa" : "等待运行"}</em>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+function renderLiteMesaAnalysisSessionBody(definition, result) {
+  if (!result) {
+    return `<div class="empty-state"><strong>尚未运行 Mesa 分析</strong><p>当前页会读取项目建模数据并在后端 Mesa 内存会话中生成分析摘要。</p></div>`;
+  }
+  if (result.status === "running") {
+    return `<div class="empty-state"><strong>Mesa 分析运行中</strong><p>当前项目正在后端 Mesa 内存会话中生成分析摘要。</p></div>`;
+  }
+  if (result.status === "blocked") {
+    return `<div class="empty-state"><strong>建模粒度不足</strong><p>${htmlEscape(result.message)}</p></div>`;
+  }
+  const rows = result.rows || [];
+  if (definition.analysisType === "spare_shortfall") {
+    return `<div class="table-wrap"><table class="lite-mesa-stat-table">
+      <thead><tr><th>备件类别</th><th>需求次数</th><th>满足次数</th><th>缺件次数</th><th>满足率</th><th>风险</th></tr></thead>
+      <tbody>${rows.map((row) => `<tr><td>${htmlEscape(row.spareType)}</td><td>${row.demand}</td><td>${row.filled}</td><td>${row.shortage}</td><td>${pct(row.fillRate)}</td><td>${htmlEscape(row.riskLevel)}</td></tr>`).join("")}</tbody>
+    </table></div>${renderLiteMesaAnalysisLimitations(result)}`;
+  }
+  if (definition.analysisType === "carry_list") {
+    return `<div class="table-wrap"><table class="lite-mesa-stat-table">
+      <thead><tr><th>备件类别</th><th>建议携行数量</th><th>需求次数</th><th>短缺次数</th><th>优先级</th><th>置信度目标</th></tr></thead>
+      <tbody>${rows.map((row) => `<tr><td>${htmlEscape(row.spareType)}</td><td>${row.recommended}</td><td>${row.demand}</td><td>${row.shortage}</td><td>${htmlEscape(row.riskLevel)}</td><td>${fixed(row.confidenceTarget, 2)}</td></tr>`).join("")}</tbody>
+    </table></div>${renderLiteMesaAnalysisLimitations(result)}`;
+  }
+  if (definition.analysisType === "mission_reliability") {
+    return `<div class="table-wrap"><table class="lite-mesa-stat-table">
+      <thead><tr><th>序号</th><th>seed</th><th>任务成功率</th><th>出动完成率</th><th>战备完好率</th></tr></thead>
+      <tbody>${rows.map((row) => `<tr><td>${row.sequence}</td><td>${row.seed}</td><td>${pct(row.missionSuccessRate)}</td><td>${pct(row.sortieRate)}</td><td>${pct(row.readyRate)}</td></tr>`).join("")}</tbody>
+    </table></div>${renderLiteMesaAnalysisLimitations(result)}`;
+  }
+  return `<div class="table-wrap"><table class="lite-mesa-stat-table">
+    <thead><tr><th>因素</th><th>类型</th><th>次数</th><th>贡献度</th></tr></thead>
+    <tbody>${rows.map((row) => `<tr><td>${htmlEscape(row.label)}</td><td>${htmlEscape(row.reason)}</td><td>${row.count}</td><td>${pct(row.contribution)}</td></tr>`).join("")}</tbody>
+  </table></div>${renderLiteMesaAnalysisLimitations(result)}`;
+}
+
+function renderLiteMesaAnalysisLimitations(result) {
+  return `
+    <div class="decision-support-card">
+      <strong>边界说明</strong>
+      <span>${result.limitations.map((item) => htmlEscape(item)).join(" ")}</span>
+    </div>
   `;
 }
 

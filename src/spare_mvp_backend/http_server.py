@@ -235,6 +235,18 @@ def create_backend_server(
                     project_json,
                     model_family=str(body.get("model_family") or ACTIVE_FORMAL_MODEL_FAMILY),
                 )
+            if self.command == "POST" and route == "/mesa-analysis-runs":
+                self._require_user()
+                project_json = body.get("project") if isinstance(body.get("project"), dict) else body.get("projectJson")
+                if not isinstance(project_json, dict):
+                    project_json = body
+                settings = body.get("settings") if isinstance(body.get("settings"), dict) else {}
+                return api.run_lite_mesa_analysis(
+                    project_json,
+                    analysis_type=str(body.get("analysis_type") or body.get("analysisType") or ""),
+                    settings=settings,
+                    model_family=str(body.get("model_family") or ACTIVE_FORMAL_MODEL_FAMILY),
+                )
             if self.command == "POST" and route == "/runs":
                 self._require_user()
                 formal_body = dict(body)

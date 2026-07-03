@@ -169,7 +169,7 @@ function resolveComponent(name, secondary, tertiary) {
   if (tertiary === "可视化推演" && name === "Mesa页面") return "visual-simulation";
   if (name.includes("可视化")) return "visual-simulation";
   if (tertiary === "蒙特卡洛实验" && name === "实验详情") return "lite-mesa-monte-carlo-analysis";
-  if (secondary === "结果分析") return "analysis";
+  if (secondary === "结果分析") return "lite-mesa-analysis";
   if (name.includes("仿真实验方案")) return "experiment-form";
   if (tertiary === "保障活动建模") return "activity-gantt";
   if (tertiary === "保障组织建模") return "resource-table";
@@ -178,6 +178,7 @@ function resolveComponent(name, secondary, tertiary) {
 }
 
 function resolveDataObjects(name, secondary, tertiary) {
+  if (secondary === "结果分析") return ["projectDraft", "mesaAnalysisProfile", "mesaSessionResult"];
   if (name.includes("内置场景")) return ["scenarioId", "airports", "missionAreas", "supportNodes"];
   if (name.includes("作战单元")) return ["combatUnit", "equipment", "supportNodes"];
   if (name.includes("基本任务")) return ["basicMission", "missionPhases"];

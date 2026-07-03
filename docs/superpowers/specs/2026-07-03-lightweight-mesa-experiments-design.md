@@ -1,8 +1,8 @@
 # 轻量 Mesa 实验层设计讨论稿
 
 **日期**：2026-07-03
-**状态**：讨论稿，已按“前端建模 + Mesa 分析”产品定位更新；2026-07-04 收敛为蒙特卡洛实验直达 Mesa 页面
-**主题**：形成按项目启动、读取前端建模数据、从蒙特卡洛实验入口直达的 Mesa 分析页面，优先服务 Monte Carlo 设置和主要指标统计。
+**状态**：讨论稿，已按“前端建模 + Mesa 分析”产品定位更新；2026-07-04 收敛为蒙特卡洛实验直达 Mesa 页面，并将四个结果分析页同步改为独立 Mesa 会话页面。
+**主题**：形成按项目启动、读取前端建模数据、从蒙特卡洛实验和四个结果分析入口直达的 Mesa 分析页面，优先服务 Monte Carlo 设置、主要指标统计和会话内分析摘要。
 
 ## 背景
 
@@ -25,6 +25,7 @@ RunIntent -> /api/runs -> RunService -> SimulationAdapter -> aircraft_support_v1
 5. 支持单次实验和最小携行清单搜索，用于探索在给定置信度水平下满足任务要求的各类备件数量。
 6. 页面直接展示当前会话的分析结果；后续是否持久化由产品结果账本另行设计。
 7. 保留 fail-closed 校验，非法项目数据不能伪造实验结果。
+8. 四个结果分析页（备件短板、飞机转场携行清单、任务可靠度、停机因素）与蒙特卡洛实验详情一样走独立 Mesa 会话页面；它们不读取 current result，不触发 `/api/runs`，不解锁正式 projection KPI。
 
 ## 非目标
 
@@ -35,6 +36,7 @@ RunIntent -> /api/runs -> RunService -> SimulationAdapter -> aircraft_support_v1
 5. 不接入前端 current result，也不解锁正式 KPI、表格或图形。
 6. 不恢复已删除的 `independent-mesa/GLM`、`independent-mesa/GPT` 或旁路服务。
 7. 不把小样本实验解释为工程级校准结论。
+8. 不把四个结果分析页的会话内 Mesa 输出写成 `completed` current result，也不生成 `analysis_projection_*` artifact。
 
 ## 核心边界
 
@@ -85,12 +87,15 @@ result = model.run()
 
 轻量层的主变量实验不是全局 `failureRates`、`spareMultipliers` 或 `supportCapacities` sweep，而是最小携行清单搜索。搜索通过复制 `inputs`、按备件类别独立修改携行数量、切换 seed、重复调用模型核心完成。聚合结果只保留在内存中。
 
+当前四个结果分析页的实现入口是 `POST /api/mesa-analysis-runs`。请求携带当前 Project、`analysis_type`、页面会话设置和 `model_family=aircraft_support_v1`；后端通过 `SimulationAdapter.compile_scenario_with_gate(..., model_family="aircraft_support_v1")` 编译后，只消费 `scenario["simulation_inputs"]` 并直接运行 `AircraftSupportV1Model`。前端不得调用 `runMonteCarlo()`、`runSimulation()`、`singleResult` 或 preview fixture 兜底；后端不可用或编译失败时只能返回/展示 `blocked`。
+
 ### 输出边界
 
 默认输出方式：
 
 - CLI 打印摘要 JSON。
 - Python API 返回 dict。
+- HTTP API 返回会话内 dict，例如 `source=lite_mesa_aircraft_support_v1`、`status=session_complete`、`sample_count`、`seed_list`、页面 `metrics` 与 `rows`。
 - 测试中断言关键指标。
 
 默认禁止：
@@ -100,6 +105,8 @@ result = model.run()
 - 写 SQLite。
 - 写 artifact manifest。
 - 写样本明细文件。
+- 通过 `/api/runs`、`RunService.run_scenario()` 或 `RunService.run_monte_carlo_scenario()` 生成正式结果。
+- 生成或复用正式 `analysis_projection_*` artifact 作为四页当前主流程输出。
 
 可选调试模式可以设计为 `--debug-dump /tmp/...`，但必须显式开启，且不能作为产品结果来源。
 

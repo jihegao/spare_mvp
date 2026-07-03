@@ -121,6 +121,19 @@ export function createBackendApiClient({ baseUrl = DEFAULT_API_BASE, transport, 
         timeoutMs: RUN_SUBMIT_TIMEOUT_MS
       });
     },
+    runLiteMesaAnalysis(projectJson, analysisType, settings = {}, modelFamily = DEFAULT_FORMAL_MODEL_FAMILY) {
+      return request({
+        method: "POST",
+        path: "/mesa-analysis-runs",
+        body: {
+          project: projectJson,
+          analysis_type: analysisType,
+          settings,
+          model_family: modelFamily
+        },
+        timeoutMs: RUN_SUBMIT_TIMEOUT_MS
+      });
+    },
     startSimulationRun(projectId, experimentPlanId, modelFamily = DEFAULT_FORMAL_MODEL_FAMILY) {
       return request({
         method: "POST",

@@ -567,57 +567,43 @@ test("project list exports project JSON without keeping a direct Project JSON im
   assert.match(styleSource, /\.project-card-foot \.compact-actions[\s\S]*flex-wrap: wrap/);
 });
 
-test("results analysis pages are rendered as four dedicated ship-front aligned dashboards", async () => {
+test("results analysis pages route to four independent lightweight Mesa pages", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
-  assert.match(appSource, /function renderSpareShortfallAnalysis/);
-  assert.match(appSource, /function renderCarryListAnalysis/);
-  assert.match(appSource, /function renderTaskReliabilityAnalysis/);
-  assert.match(appSource, /function renderDowntimeFactorAnalysis/);
-  assert.match(appSource, /class="analysis-dashboard"/);
-  assert.match(appSource, /class="analysis-filter-bar"/);
-  assert.match(appSource, /class="analysis-chart-panel"/);
-  assert.match(appSource, /class="decision-support-card"/);
-  assert.match(appSource, /备件需求量降序/);
-  assert.match(appSource, /携行清单迭代建议/);
-  assert.match(appSource, /任务可靠度指标分解/);
-  assert.match(appSource, /停机贡献因素排序/);
+  const pages = [
+    ["spare-planning-spare-shortfall-analysis", "spare_shortfall"],
+    ["spare-planning-carry-list-analysis", "carry_list"],
+    ["mission-reliability-task-reliability", "mission_reliability"],
+    ["mission-reliability-downtime-factor-analysis", "downtime_factors"]
+  ];
+  for (const [featureId, analysisType] of pages) {
+    const page = getFeaturePageById(featureId);
+    assert.equal(page.component, "lite-mesa-analysis", featureId);
+    assert.ok(page.dataObjects.includes("projectDraft"), featureId);
+    assert.ok(page.dataObjects.includes("mesaSessionResult"), featureId);
+    assert.match(appSource, new RegExp(`${analysisType}:\\s*\\{[\\s\\S]*experimentId`));
+  }
+  assert.match(appSource, /function renderLiteMesaAnalysisPage/);
+  assert.match(appSource, /function runLiteMesaAnalysisPage/);
+  assert.match(appSource, /let liteMesaAnalysisResults =/);
+  assert.match(appSource, /前端建模 \+ Mesa 分析/);
+  assert.match(appSource, /backendApi\.runLiteMesaAnalysis/);
+  assert.match(appSource, /不创建 run、result 或 artifact/);
 });
 
-test("empty-shell result analysis renders current-result guidance instead of synthetic preview rows", async () => {
+test("lightweight Mesa analysis pages do not render current-result or formal projection UI", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
-  const spareSource = appSource.slice(
-    appSource.indexOf("function renderSpareShortfallAnalysis"),
-    appSource.indexOf("function renderCarryListAnalysis")
+  const mesaSource = appSource.slice(
+    appSource.indexOf("function renderLiteMesaAnalysisPage"),
+    appSource.indexOf("function liteMesaAnalysisDefinitionForPage")
   );
-  const carrySource = appSource.slice(
-    appSource.indexOf("function renderCarryListAnalysis"),
-    appSource.indexOf("function carryPriority")
-  );
-  const reliabilitySource = appSource.slice(
-    appSource.indexOf("function renderTaskReliabilityAnalysis"),
-    appSource.indexOf("function renderDowntimeFactorAnalysis")
-  );
-  const downtimeSource = appSource.slice(
-    appSource.indexOf("function renderDowntimeFactorAnalysis"),
-    appSource.indexOf("function analysisTypeForPage")
-  );
-
-  for (const source of [spareSource, carrySource, reliabilitySource, downtimeSource]) {
-    assert.match(source, /renderAnalysisDashboard/);
-    assert.match(source, /等待当前分析结果/);
-    assert.match(source, /运行当前分析/);
-    assert.doesNotMatch(source, /hasPreviewAnalysisData|renderAnalysisEmptyState/);
-    assert.doesNotMatch(source, /\bsingleResult\b|\bmonteCarloResult\b/);
-    assert.doesNotMatch(source, /Math\.min\(\.\.\.rows|Math\.max\(\.\.\.rows|Math\.max\(\.\.\.factors/);
-    assert.doesNotMatch(source, /Infinity|-Infinity/);
-  }
-  assert.match(carrySource, /currentAnalysisProfileForPage/);
-  assert.match(carrySource, /missionConfidenceTarget/);
-  assert.match(carrySource, /missionDurationMinutes/);
-  assert.doesNotMatch(carrySource, /<select>|优化条件|carryObjectiveOption|singleResult\.carryList/);
-  assert.doesNotMatch(spareSource, /P2\/P3 类备件/);
-  assert.doesNotMatch(reliabilitySource, /第 7 波|wave \* 12/);
-  assert.doesNotMatch(downtimeSource, /无可用飞机", "4"|飞机故障", "5"|平均故障维修时间/);
+  assert.notEqual(mesaSource.length, 0, "renderLiteMesaAnalysisPage source exists");
+  assert.match(mesaSource, /data-lite-mesa-analysis-action="run"/);
+  assert.match(mesaSource, /会话内结果/);
+  assert.match(mesaSource, /建模粒度不足/);
+  assert.doesNotMatch(mesaSource, /renderCurrentAnalysisResultPanel|renderAnalysisDashboard|renderFormalAnalysisBoundaryNote/);
+  assert.doesNotMatch(mesaSource, /currentAnalysisResultForPage|formalProjectionFromCurrentResult|backendApi\.getCurrentAnalysisResult/);
+  assert.doesNotMatch(mesaSource, /startMonteCarloRunThroughApi|data-analysis-action="run-current"/);
+  assert.doesNotMatch(mesaSource, /\bsingleResult\b|\bmonteCarloResult\b|hasPreviewAnalysisData|renderAnalysisEmptyState/);
 });
 
 test("M6.2 formal result boundary unlocks only compiler-provenanced analysis artifacts", async () => {
@@ -2313,15 +2299,33 @@ test("browser smoke enters monte carlo embedded Mesa detail", async () => {
   assert.doesNotMatch(smokeMonteCarloSource, /data-mc-array-path="monteCarlo\.failureRates"/);
 });
 
-test("analysis pages expose current result flow without user-visible task or artifact selectors", async () => {
+test("formal current result helpers remain internal and are not routed from result analysis pages", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const analysisSource = appSource.slice(
     appSource.indexOf("function renderCurrentAnalysisResultPanel"),
     appSource.indexOf("function renderBar")
   );
+  const renderMainSource = appSource.slice(
+    appSource.indexOf("function renderMainComponent"),
+    appSource.indexOf("function createExperimentPlanBranchFromCurrentProject")
+  );
+  const pages = [
+    "spare-planning-spare-shortfall-analysis",
+    "spare-planning-carry-list-analysis",
+    "mission-reliability-task-reliability",
+    "mission-reliability-downtime-factor-analysis"
+  ].map((featureId) => getFeaturePageById(featureId));
 
   assert.match(appSource, /function renderCurrentAnalysisResultPanel/);
   assert.match(appSource, /function runCurrentAnalysisPage/);
+  assert.match(renderMainSource, /page\.component === "lite-mesa-analysis"/);
+  assert.match(renderMainSource, /renderLiteMesaAnalysisPage\(page\)/);
+  assert.match(renderMainSource, /page\.component === "analysis"/);
+  assert.match(renderMainSource, /renderAnalysis\(page\)/);
+  for (const page of pages) {
+    assert.equal(page.component, "lite-mesa-analysis", page.id);
+    assert.notEqual(page.component, "analysis", page.id);
+  }
   assert.match(analysisSource, /当前分析结果/);
   assert.match(analysisSource, /data-analysis-action="run-current"/);
   assert.match(analysisSource, /status-badge/);
@@ -2333,37 +2337,31 @@ test("analysis pages expose current result flow without user-visible task or art
   assert.doesNotMatch(appSource, /source: "analysis:auto-created"/);
 });
 
-test("result analysis page main flows consume only current profiles and current results", async () => {
+test("independent Mesa result analysis pages consume only session settings and session results", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
-  const sourceSlice = (startMarker, endMarker) => {
-    const start = appSource.indexOf(startMarker);
-    const end = appSource.indexOf(endMarker);
-    assert.notEqual(start, -1, `${startMarker} marker exists`);
-    assert.notEqual(end, -1, `${endMarker} marker exists`);
-    assert.ok(end > start, `${startMarker} appears before ${endMarker}`);
-    return appSource.slice(start, end);
-  };
-  const pageSources = [
-    sourceSlice("function renderSpareShortfallAnalysis", "function renderCarryListAnalysis"),
-    sourceSlice("function renderCarryListAnalysis", "function carryPriority"),
-    sourceSlice("function renderTaskReliabilityAnalysis", "function renderDowntimeFactorAnalysis"),
-    sourceSlice("function renderDowntimeFactorAnalysis", "function analysisTypeForPage")
-  ];
-  const dashboardSource = sourceSlice("function renderAnalysisDashboard", "function renderAnalysisProjectionResultPanel");
+  const mesaSource = appSource.slice(
+    appSource.indexOf("function renderLiteMesaAnalysisPage"),
+    appSource.indexOf("function field(label")
+  );
 
-  assert.match(appSource, /let currentAnalysisProfiles = createDefaultCurrentAnalysisProfiles\(\)/);
-  assert.match(appSource, /let currentAnalysisResults = createEmptyCurrentAnalysisResults\(currentAnalysisProfiles\)/);
-  assert.match(appSource, /function currentAnalysisProfileForPage/);
-  for (const source of [...pageSources, dashboardSource]) {
-    assert.match(source, /currentAnalysisResultForPage|renderAnalysisDashboard|formalProjectionFromCurrentResult/);
-    assert.doesNotMatch(source, /\bsingleResult\b|\bmonteCarloResult\b|hasPreviewAnalysisData|renderAnalysisEmptyState/);
-    assert.doesNotMatch(source, /data-mc-action|data-mc-experiment|data-mesa-run-select|data-action="m7-/);
-    assert.doesNotMatch(source, /analysisTasks|monteCarloExperiments|selectedMonteCarloExperimentId/);
-    assert.doesNotMatch(source, /artifact_manifest_id|mc_experiment_id|experiment_id|historical|history/);
+  assert.match(appSource, /let liteMesaAnalysisSettings = createDefaultLiteMesaAnalysisSettings\(\)/);
+  assert.match(appSource, /let liteMesaAnalysisResults = \{\}/);
+  assert.match(mesaSource, /async function runLiteMesaAnalysisPage/);
+  assert.match(mesaSource, /backendApi\.runLiteMesaAnalysis/);
+  assert.match(mesaSource, /payload\.status === "session_complete"/);
+  assert.doesNotMatch(mesaSource, /runMonteCarlo\(projectJson/);
+  assert.doesNotMatch(mesaSource, /buildLiteMesaAnalysisSessionResult/);
+  for (const analysisType of ["spare_shortfall", "carry_list", "mission_reliability", "downtime_factors"]) {
+    assert.match(appSource, new RegExp(`${analysisType}:\\s*\\{[\\s\\S]*experimentId`));
   }
+  assert.doesNotMatch(mesaSource, /currentAnalysisResultForPage|renderCurrentAnalysisResultPanel|formalProjectionFromCurrentResult/);
+  assert.doesNotMatch(mesaSource, /backendApi\.getCurrentAnalysisResult|startMonteCarloRunThroughApi|submitRunIntent/);
+  assert.doesNotMatch(mesaSource, /analysisTasks|monteCarloExperiments|selectedMonteCarloExperimentId/);
+  assert.doesNotMatch(mesaSource, /artifact_manifest_id|mc_experiment_id|experiment_id|historical|history/);
+  assert.doesNotMatch(mesaSource, /status: "completed"/);
 });
 
-test("formal Monte Carlo projection result panels live on their matching analysis pages", async () => {
+test("formal projection renderers remain isolated from independent Mesa routing", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const mcResultSource = appSource.slice(
     appSource.indexOf("function renderMonteCarloResults"),
@@ -2381,6 +2379,10 @@ test("formal Monte Carlo projection result panels live on their matching analysi
     appSource.indexOf("function renderFormalProjectionBody"),
     appSource.indexOf("function visibleDowntimeAnomalySnapshots")
   );
+  const renderMainSource = appSource.slice(
+    appSource.indexOf("function renderMainComponent"),
+    appSource.indexOf("function createExperimentPlanBranchFromCurrentProject")
+  );
 
   assert.match(mcResultSource, /renderMonteCarloFormalBlockedState\(boundary\)/);
   assert.match(mcResultSource, /renderMonteCarloAnalysisResultLocations\(boundary\)/);
@@ -2388,12 +2390,14 @@ test("formal Monte Carlo projection result panels live on their matching analysi
   assert.match(locationSource, /analysisPageFeatureIdForType\(view\.analysisType\)/);
   assert.doesNotMatch(appSource, /function renderMonteCarloFormalProjectionResults|mc-formal-results|mc-formal-projection/);
   assert.match(dashboardSource, /renderAnalysisProjectionResultPanel\(formalProjection\)/);
+  assert.match(renderMainSource, /page\.component === "lite-mesa-analysis"/);
+  assert.match(renderMainSource, /page\.component === "analysis"/);
   for (const analysisType of ["spare_shortfall", "carry_list", "mission_reliability", "downtime_factors"]) {
     assert.match(formalProjectionSource, new RegExp(`formalProjection\\.analysisType === "${analysisType}"`));
   }
 });
 
-test("analysis current result state is hydrated, isolated, and recoverable", async () => {
+test("formal current result hydration is gated away from lightweight Mesa result pages", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const featurePageSource = appSource.slice(
     appSource.indexOf("function renderFeaturePage"),
@@ -2416,6 +2420,15 @@ test("analysis current result state is hydrated, isolated, and recoverable", asy
     appSource.indexOf("async function refreshRunResultThroughApi")
   );
 
+  for (const featureId of [
+    "spare-planning-spare-shortfall-analysis",
+    "spare-planning-carry-list-analysis",
+    "mission-reliability-task-reliability",
+    "mission-reliability-downtime-factor-analysis"
+  ]) {
+    assert.equal(getFeaturePageById(featureId).component, "lite-mesa-analysis");
+  }
+  assert.match(featurePageSource, /if \(page\.component === "analysis"\) \{/);
   assert.match(featurePageSource, /ensureCurrentAnalysisResultLoaded\(page\)/);
   assert.match(hydrateSource, /backendApi\.getCurrentAnalysisResult\(savedProject\.project_id,\s*analysisType\)/);
   assert.match(hydrateSource, /currentAnalysisResultLoadInFlight/);
