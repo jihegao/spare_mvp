@@ -1576,6 +1576,137 @@ select[multiple].table-edit-select {
   gap: 14px;
 }
 
+.lite-mesa-workbench {
+  display: grid;
+  gap: 14px;
+}
+
+.lite-mesa-hero,
+.lite-mesa-settings,
+.lite-mesa-results,
+.lite-mesa-stat-section {
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.lite-mesa-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  background:
+    linear-gradient(90deg, rgba(15, 92, 191, 0.08), rgba(15, 118, 110, 0.08)),
+    #fff;
+}
+
+.lite-mesa-hero h3 {
+  margin: 8px 0 2px;
+  font-size: 20px;
+}
+
+.lite-mesa-hero p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.lite-mesa-hero-meter {
+  min-width: 112px;
+  display: grid;
+  place-items: center;
+  gap: 2px;
+  padding: 12px;
+  border: 1px solid #cfe0f6;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.lite-mesa-hero-meter strong {
+  color: var(--primary);
+  font-size: 24px;
+}
+
+.lite-mesa-hero-meter span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.lite-mesa-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.9fr) minmax(360px, 1.1fr);
+  gap: 14px;
+  align-items: stretch;
+}
+
+.lite-mesa-settings,
+.lite-mesa-results {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 12px;
+}
+
+.lite-mesa-setting-grid,
+.lite-mesa-source-grid,
+.lite-mesa-metric-cards {
+  display: grid;
+  gap: 10px;
+}
+
+.lite-mesa-setting-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.lite-mesa-setting-grid label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.lite-mesa-setting-grid input {
+  width: 100%;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+}
+
+.lite-mesa-source-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.lite-mesa-source-grid div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.lite-mesa-source-grid span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.lite-mesa-source-grid strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.lite-mesa-metric-cards {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.lite-mesa-stat-table {
+  min-width: 760px;
+}
+
 .mc-config-panel,
 .mc-result-panel {
   border: 1px solid var(--line);
@@ -3439,6 +3570,7 @@ tr.clickable-table-row.selected-table-row td {
   .system-config-layout,
   .rms-layout,
   .modeling-import-layout,
+  .lite-mesa-layout,
   .modeling-import-summary,
   .modeling-import-status-grid,
   .modeling-import-compile-grid {
@@ -3456,7 +3588,8 @@ tr.clickable-table-row.selected-table-row td {
 
   .mesa-visual-header,
   .mesa-toolbar,
-  .modeling-import-bar {
+  .modeling-import-bar,
+  .lite-mesa-hero {
     align-items: stretch;
     flex-direction: column;
   }
@@ -3481,7 +3614,10 @@ tr.clickable-table-row.selected-table-row td {
   .scenario-grid,
   .rms-parameter-grid,
   .rms-method-grid,
-  .rms-verification-metrics {
+  .rms-verification-metrics,
+  .lite-mesa-setting-grid,
+  .lite-mesa-source-grid,
+  .lite-mesa-metric-cards {
     grid-template-columns: 1fr;
   }
 }

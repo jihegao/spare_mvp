@@ -869,6 +869,39 @@ test("experiment plan selection uses experiment_plan_id for duplicate names", as
   }
 });
 
+test("Mesa Monte Carlo setting changes do not rerender before the run click", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-mesa-monte-carlo-analysis",
+    projectJson: createRuntimeProjectJson({
+      missionProfile: { repeatCycleHours: 6 },
+      components: [
+        { id: "avionics", name: "航电模块", quantity: 1, failureRate: 0.03, spareType: "航电模块" }
+      ],
+      reliabilityBlockDiagram: {
+        nodes: [{ id: "avionics", name: "航电模块", type: "component", failureRate: 0.03 }],
+        edges: []
+      }
+    })
+  });
+
+  try {
+    assert.match(runtime.appNode.innerHTML, /Mesa蒙特卡洛分析/);
+    assert.match(runtime.appNode.innerHTML, /data-lite-mesa-field="samples"/);
+
+    await runtime.change("[data-lite-mesa-field]", { liteMesaField: "samples" }, { value: "3", type: "number" });
+
+    assert.doesNotMatch(runtime.appNode.innerHTML, /设置已更新，等待重新运行 Mesa 分析/);
+
+    await runtime.click("[data-lite-mesa-action='run']");
+
+    assert.match(runtime.appNode.innerHTML, /Mesa 分析完成：3 个样本/);
+    assert.match(runtime.appNode.innerHTML, /<td>mission_success_rate<\/td>/);
+    assert.match(runtime.appNode.innerHTML, /<td>3<\/td>/);
+  } finally {
+    runtime.restore();
+  }
+});
+
 let runtimeImportCounter = 0;
 
 async function setupRuntimeApp({

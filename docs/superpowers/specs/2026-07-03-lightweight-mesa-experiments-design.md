@@ -1,8 +1,8 @@
 # 轻量 Mesa 实验层设计讨论稿
 
 **日期**：2026-07-03
-**状态**：讨论稿，尚未进入实现计划
-**主题**：将仿真和分析从当前正式运行链路中轻量化剥离，形成按项目启动、只读项目建模数据、独立运行、不保存结果的一组 Mesa 实验。
+**状态**：讨论稿，已按“前端建模 + Mesa 分析”产品定位更新
+**主题**：形成按项目启动、读取前端建模数据、独立运行的 Mesa 分析入口，优先服务 Monte Carlo 设置和主要指标统计。
 
 ## 背景
 
@@ -12,18 +12,18 @@
 RunIntent -> /api/runs -> RunService -> SimulationAdapter -> aircraft_support_v1 -> SQLite + artifacts
 ```
 
-这条链路承担产品级职责：运行身份、状态机、结果账本、artifact manifest、projection payload、current result、权限审计和前端正式结果展示。它适合受治理的产品运行，但对模型探索、参数敏感性检查、分析算法讨论来说过重。
+这条链路承担运行身份、状态机、结果账本、artifact manifest、projection payload、current result 和权限审计等职责。新定位下，面向建模人员的主线体验调整为“前端建模 + Mesa 分析”：用户在前端完成建模后，直接进入 Mesa 分析页面配置实验并查看统计结果。
 
-本讨论稿提出一个独立的轻量 Mesa 实验层。它按项目进行：用户先在项目中录入建模数据，再从项目启动仿真分析。轻量层只读取该项目当前建模数据，在内存中编译和运行 Mesa 模型，返回即时摘要，不写入数据库、不生成正式 artifact、不进入结果分析页的 current result。
+本讨论稿提出一个独立的 Mesa 分析层。它按项目进行：用户先在项目中录入建模数据，再从项目启动仿真分析。分析层读取该项目当前建模数据，运行 Mesa 模型并返回即时摘要。页面结果按产品能力呈现。
 
 ## 目标
 
-1. 从当前正式平台链路中拆出一个轻量实验入口。
-2. 从项目启动仿真分析；轻量层只读取项目当前建模数据，不修改项目、不发布快照、不创建 run。
+1. 建立“前端建模 + Mesa 分析”的独立页面入口。
+2. 从项目启动仿真分析；分析层读取项目当前建模数据，不修改项目、不发布快照、不创建 run。
 3. 支持建模从粗到细、从简单到复杂逐步进入仿真：数据粒度不足时给出可运行范围和缺口，而不是伪造完整分析。
 4. 独立运行 `aircraft_support_v1` Mesa 核心或后续等价模型核心。
 5. 支持单次实验和最小携行清单搜索，用于探索在给定置信度水平下满足任务要求的各类备件数量。
-6. 默认不保存任何运行结果；输出只通过 stdout、Python return 或测试断言短暂存在。
+6. 页面直接展示当前会话的分析结果；后续是否持久化由产品结果账本另行设计。
 7. 保留 fail-closed 校验，非法项目数据不能伪造实验结果。
 
 ## 非目标
@@ -304,7 +304,7 @@ def downtime_factors(samples: list[dict]) -> dict: ...
 - 只打印摘要。
 - 遇到编译错误直接返回非零退出码。
 
-后续如果接入前端，应从项目页或仿真分析入口启动，并把当前 Project draft 作为只读输入传入轻量层。轻量层仍不得创建正式 run 或写 result。
+前端应从项目页或仿真分析入口启动，并把当前 Project draft 作为输入传入 Mesa 分析层。当前页面先展示会话内结果，暂不创建 run 或 result 账本。
 
 ## 验收标准
 
@@ -313,8 +313,8 @@ def downtime_factors(samples: list[dict]) -> dict: ...
 3. `minimum_carry_list_search` 能返回按备件类别独立变化的最小满足解。
 4. 同一 seed 的核心指标稳定。
 5. 非法 Project、非法 modeling-import 或建模粒度不足时 fail closed，并指出缺失字段。
-6. 运行后 `runs/`、`outputs/`、SQLite 数据库和 artifact manifest 不发生新增写入。
-7. 文档和 CLI 都明确轻量实验不是正式后端结果。
+6. 当前页面运行后 `runs/`、`outputs/`、SQLite 数据库和 artifact manifest 不发生新增写入。
+7. 文档和页面明确产品定位为“前端建模 + Mesa 分析”，页面结果按 Mesa 分析能力呈现。
 
 ## 测试建议
 
@@ -345,7 +345,7 @@ PYTHONDONTWRITEBYTECODE=1 .abm-mesa-test-env/bin/python -m unittest tests.test_m
 8. `analyses.py` 是从当前 adapter 中抽纯函数，还是先实现一套更粗的轻量摘要？
 9. 内置实验类型先只做 project baseline + `minimum_carry_list_search`，还是保留其他敏感性实验为 future？
 10. 是否把 `SimulationAdapter.compile_scenario()` 继续作为编译入口，还是抽出不带产品语义的 compiler helper？
-11. 后续如果要前端使用，是否必须仍然只作为“本地预览”，不得进入正式结果？
+11. 后续是否需要把当前会话结果升级为可保存的 Mesa 分析结果账本？
 
 ## 推荐落地顺序
 

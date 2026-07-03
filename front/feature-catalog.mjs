@@ -37,6 +37,7 @@ const FEATURE_SLUGS = {
   "添加/编辑实验": "monte-carlo-experiment-edit",
   实验详情: "monte-carlo-experiment-detail",
   蒙特卡洛实验配置: "monte-carlo-config",
+  Mesa蒙特卡洛分析: "mesa-monte-carlo-analysis",
   备件短板分析: "spare-shortfall-analysis",
   飞机转场携行清单分析: "carry-list-analysis",
   任务可靠度评估: "task-reliability",
@@ -69,6 +70,7 @@ const SOURCE_ROWS = [
   ["备件规划评估模块", "仿真实验", "蒙特卡洛实验", "实验列表"],
   ["备件规划评估模块", "仿真实验", "蒙特卡洛实验", "添加/编辑实验"],
   ["备件规划评估模块", "仿真实验", "蒙特卡洛实验", "实验详情"],
+  ["备件规划评估模块", "仿真实验", "Mesa分析", "Mesa蒙特卡洛分析"],
   ["备件规划评估模块", "结果分析", "备件短板分析", "备件短板分析"],
   ["备件规划评估模块", "结果分析", "飞机转场携行清单分析", "飞机转场携行清单分析"],
   ["任务可靠度评估模块", "仿真建模", "装备系统建模", "装备系统建模"],
@@ -91,6 +93,7 @@ const SOURCE_ROWS = [
   ["任务可靠度评估模块", "仿真实验", "蒙特卡洛实验", "实验列表"],
   ["任务可靠度评估模块", "仿真实验", "蒙特卡洛实验", "添加/编辑实验"],
   ["任务可靠度评估模块", "仿真实验", "蒙特卡洛实验", "实验详情"],
+  ["任务可靠度评估模块", "仿真实验", "Mesa分析", "Mesa蒙特卡洛分析"],
   ["任务可靠度评估模块", "结果分析", "任务可靠度评估", "任务可靠度评估"],
   ["任务可靠度评估模块", "结果分析", "停机因素分析", "停机因素分析"]
 ];
@@ -178,6 +181,7 @@ function resolveComponent(name, secondary, tertiary) {
   if (tertiary === "蒙特卡洛实验" && name === "实验列表") return "monte-carlo-experiment-list";
   if (tertiary === "蒙特卡洛实验" && name === "添加/编辑实验") return "monte-carlo-experiment-editor";
   if (tertiary === "蒙特卡洛实验" && name === "实验详情") return "monte-carlo-experiment-detail";
+  if (tertiary === "Mesa分析") return "lite-mesa-monte-carlo-analysis";
   if (name.includes("蒙特卡洛实验配置")) return "monte-carlo-config";
   if (secondary === "结果分析") return "analysis";
   if (name.includes("仿真实验方案")) return "experiment-form";
@@ -211,6 +215,7 @@ function resolveDataObjects(name, secondary, tertiary) {
   if (name.includes("方案") || name.includes("仿真实验方案")) return ["experiment"];
   if (name.includes("可视化") || name.includes("场景切换")) return ["visualizationState", "experiment", "scenario"];
   if (tertiary === "蒙特卡洛实验") return ["monteCarloExperiments", "experimentPlans", "runs", "artifacts"];
+  if (tertiary === "Mesa分析") return ["projectDraft", "mesaMonteCarloSettings", "mesaMetricStatistics"];
   if (name.includes("蒙特卡洛")) return ["monteCarlo", "runs", "summary"];
   if (secondary === "结果分析") return ["analysisTasks", "monteCarloExperiments", "runs", "decisionOutputs"];
   return ["scenario"];
