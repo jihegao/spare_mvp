@@ -27,7 +27,7 @@
     "airports": { "type": "array", "items": { "type": "object" } },
     "missionAreas": { "type": "array", "items": { "type": "object" } },
     "missionProfile": { "type": "object" },
-    "basicMissions": { "type": "array", "items": { "type": "object" }, "minItems": 1 },
+    "basicMissions": { "type": "array", "items": { "type": "object" } },
     "missionPhases": { "type": "array", "items": { "type": "object" } },
     "combatUnit": { "type": "object" },
     "equipment": { "type": "object" },

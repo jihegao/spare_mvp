@@ -800,7 +800,7 @@ class BackendHttpApiTest(unittest.TestCase):
                 self.assertEqual(len(catalog["projects"]), 1)
                 entry = catalog["projects"][0]
                 self.assertEqual(entry["project_id"], saved_project["project_id"])
-                self.assertEqual(entry["experiment_name"], project_json["experiment"]["name"])
+                self.assertEqual(entry["experiment_name"], project_json["projectInfo"]["name"])
                 self.assertEqual(entry["base_code"], project_json["projectInfo"]["baseCode"])
                 self.assertEqual(entry["summary"], project_json["projectInfo"]["summary"])
                 self.assertEqual(entry["scenario_id"], project_json["scenarioId"])
@@ -2077,7 +2077,15 @@ class BackendHttpApiTest(unittest.TestCase):
                 self.assertEqual(forbidden["code"], "forbidden")
                 self.assertEqual(created["sourceImport"]["import_id"], import_package["importId"])
                 self.assertEqual(created["project"]["project_id"], import_package["projectId"])
-                self.assertEqual(created["project"]["equipment"]["wholeMachineModels"], ["J-15", "J-35"])
+                self.assertNotIn("equipment", created["project"])
+                self.assertEqual(
+                    sorted({
+                        component["aircraftModel"]
+                        for component in created["project"]["components"]
+                        if component.get("aircraftModel")
+                    }),
+                    ["J-15", "J-35"],
+                )
                 self.assertGreaterEqual(len(created["project"]["components"]), 8)
                 self.assertGreaterEqual(len(created["project"]["missionProfile"]["compositeTasks"]), 2)
                 self.assertGreaterEqual(len(created["project"]["supportNodes"]), 3)

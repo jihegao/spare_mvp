@@ -57,7 +57,7 @@ python3.12 -m venv .abm-mesa-test-env
 .abm-mesa-test-env/bin/python -m pip install -e .
 ```
 
-如果本机没有 Python 3.12，也可使用 Python 3.10+，但团队验证默认以 Python 3.12 为准。
+当前依赖要求 Python 3.12+；团队验证默认以 Python 3.12 为准。
 
 ```bash
 npm test

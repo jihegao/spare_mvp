@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "spare-mvp"
 version = "0.1.0"
 description = "备件规划与任务可靠度验证评估平台原型的本地 Python 后端与 Mesa 仿真依赖。"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 dependencies = [
   "jsonschema==4.26.0",
   "mesa==3.5.1",

@@ -60,15 +60,18 @@ def _minimal_inputs() -> dict:
         },
         "mission_profile": {
             "duration_hours": 2,
-            "basic_mission": {
-                "missionId": "mission-a",
-                "name": "mission",
-                "startHour": 0,
-                "preparationMinutes": 20,
-                "taskDurationMinutes": 30,
-                "equipmentQuantity": 2,
-                "cancelMinutes": 10,
-            },
+            "basic_missions": [
+                {
+                    "id": "mission-a",
+                    "missionId": "mission-a",
+                    "name": "mission",
+                    "startHour": 0,
+                    "preparationMinutes": 20,
+                    "taskDurationMinutes": 30,
+                    "equipmentQuantity": 2,
+                    "cancelMinutes": 10,
+                }
+            ],
             "composite_tasks": [],
         },
     }
@@ -185,8 +188,8 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
             {"tailNumber": "J35-201", "aircraftType": "J-35", "model": "J-35", "initialState": "available"},
             {"tailNumber": "J15-101", "aircraftType": "J-15", "model": "J-15A", "initialState": "available"},
         ]
-        inputs["mission_profile"]["basic_mission"]["equipmentType"] = "J-15"
-        inputs["mission_profile"]["basic_mission"]["equipmentQuantity"] = 1
+        inputs["mission_profile"]["basic_missions"][0]["equipmentType"] = "J-15"
+        inputs["mission_profile"]["basic_missions"][0]["equipmentQuantity"] = 1
         model = AircraftSupportV1Model(inputs)
         mission = model.missions[0]
         mission.planned_start = 0
