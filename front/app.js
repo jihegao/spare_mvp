@@ -1567,6 +1567,25 @@ function bindEvents() {
       return;
     }
 
+    const scenarioOverrideAddButton = event.target.closest("[data-scenario-override-add]");
+    if (scenarioOverrideAddButton) {
+      scenarioCompositionDraft().overrides.push({ path: "", valueType: "string", value: "", label: "" });
+      experimentPlanBranchActive = true;
+      render();
+      return;
+    }
+
+    const scenarioOverrideRemoveButton = event.target.closest("[data-scenario-override-remove]");
+    if (scenarioOverrideRemoveButton) {
+      const index = Number(scenarioOverrideRemoveButton.dataset.scenarioOverrideRemove);
+      if (Number.isInteger(index) && index >= 0) {
+        scenarioCompositionDraft().overrides.splice(index, 1);
+        experimentPlanBranchActive = true;
+      }
+      render();
+      return;
+    }
+
     const m7RunArtifactButton = event.target.closest("[data-action^='m7-']");
     if (m7RunArtifactButton) {
       handleM7RunArtifactAction(m7RunArtifactButton).finally(() => render());
@@ -2108,6 +2127,51 @@ function bindEvents() {
     if (experimentPlanInput) {
       experimentPlanBranchActive = true;
       setPath(experimentPlanDraft, experimentPlanInput.dataset.experimentPlanPath, parseInput(experimentPlanInput));
+      updatePreviewResultsThroughApiClient(experimentPlanDraft);
+      render();
+      return;
+    }
+
+    const experimentSeedPolicySelect = event.target.closest("[data-experiment-seed-policy]");
+    if (experimentSeedPolicySelect) {
+      const policy = experimentPlanSeedPolicy();
+      policy.mode = experimentSeedPolicySelect.value === "random" ? "random" : "fixed";
+      if (policy.mode === "random") {
+        policy.baseSeed = positiveExperimentSeed(policy.baseSeed || generatedExperimentSeed());
+      }
+      experimentPlanDraft.seedPolicy = policy;
+      experimentPlanDraft.experiment = {
+        ...(experimentPlanDraft.experiment || {}),
+        seed: policy.baseSeed
+      };
+      experimentPlanBranchActive = true;
+      updatePreviewResultsThroughApiClient(experimentPlanDraft);
+      render();
+      return;
+    }
+
+    const experimentSeedBaseInput = event.target.closest("[data-experiment-seed-base]");
+    if (experimentSeedBaseInput) {
+      const policy = experimentPlanSeedPolicy();
+      policy.baseSeed = positiveExperimentSeed(parseInput(experimentSeedBaseInput));
+      experimentPlanDraft.seedPolicy = policy;
+      experimentPlanDraft.experiment = {
+        ...(experimentPlanDraft.experiment || {}),
+        seed: policy.baseSeed
+      };
+      experimentPlanBranchActive = true;
+      updatePreviewResultsThroughApiClient(experimentPlanDraft);
+      render();
+      return;
+    }
+
+    const scenarioOverrideInput = event.target.closest("[data-scenario-override-path]")
+      || event.target.closest("[data-scenario-override-value-type]")
+      || event.target.closest("[data-scenario-override-value]")
+      || event.target.closest("[data-scenario-override-label]");
+    if (scenarioOverrideInput) {
+      updateScenarioOverrideInput(scenarioOverrideInput);
+      experimentPlanBranchActive = true;
       updatePreviewResultsThroughApiClient(experimentPlanDraft);
       render();
       return;
@@ -8682,9 +8746,9 @@ function openNewExperimentPlanEditor() {
 function openExperimentPlanEditorFromList(experimentPlanId, planName) {
   experimentPlanManagementMode = "editor";
   const backendPlan = backendExperimentPlans.find((plan) => plan.experiment_plan_id === experimentPlanId);
-  const projectJson = backendPlan?.config?.projectJson;
-  if (projectJson && typeof projectJson === "object") {
-    experimentPlanDraft = cloneScenario(projectJson);
+  const branchDraft = experimentPlanDraftFromBackendPlan(backendPlan);
+  if (branchDraft) {
+    experimentPlanDraft = branchDraft;
     experimentPlanBranchActive = true;
     experimentPlan = backendPlan;
   } else {
@@ -8694,7 +8758,43 @@ function openExperimentPlanEditorFromList(experimentPlanId, planName) {
   updatePreviewResultsThroughApiClient(experimentPlanDraft);
 }
 
+function experimentPlanDraftFromBackendPlan(backendPlan) {
+  const config = backendPlan?.config;
+  if (!config || typeof config !== "object" || Array.isArray(config)) return null;
+  const branchProjectJson = config.projectJson && typeof config.projectJson === "object" && !Array.isArray(config.projectJson)
+    ? config.projectJson
+    : scenario;
+  const draft = cloneScenario(branchProjectJson);
+  if (!draft || typeof draft !== "object" || Array.isArray(draft)) return null;
+  if (!draft.experiment || typeof draft.experiment !== "object" || Array.isArray(draft.experiment)) {
+    draft.experiment = {};
+  }
+  if (config.name !== undefined) draft.experiment.name = config.name;
+  if (config.steps !== undefined) draft.experiment.steps = config.steps;
+  if (config.samples !== undefined) draft.experiment.samples = config.samples;
+  if (config.seed !== undefined) draft.experiment.seed = config.seed;
+  if (config.parallelCores !== undefined) draft.experiment.parallelCores = config.parallelCores;
+  if (config.stopCondition !== undefined) draft.experiment.stopCondition = config.stopCondition;
+  if (config.seedPolicy && typeof config.seedPolicy === "object" && !Array.isArray(config.seedPolicy)) {
+    draft.seedPolicy = cloneScenario(config.seedPolicy);
+  } else if (config.seed !== undefined) {
+    draft.seedPolicy = { mode: "fixed", baseSeed: config.seed };
+  }
+  if (config.scenarioComposition && typeof config.scenarioComposition === "object" && !Array.isArray(config.scenarioComposition)) {
+    draft.scenarioComposition = cloneScenario(config.scenarioComposition);
+  }
+  if (config.analysisRequests && typeof config.analysisRequests === "object" && !Array.isArray(config.analysisRequests)) {
+    draft.analysisRequests = cloneScenario(config.analysisRequests);
+  }
+  if (config.monteCarlo && typeof config.monteCarlo === "object" && !Array.isArray(config.monteCarlo)) {
+    draft.monteCarlo = cloneScenario(config.monteCarlo);
+  }
+  return ensureExperimentPlanDraftDefaults(draft);
+}
+
 function renderExperimentPlanEditor(page) {
+  const seedPolicy = experimentPlanSeedPolicy();
+  const composition = scenarioCompositionDraft();
   return `
     <div class="section-head">
       <h3>方案编辑</h3>
@@ -8708,10 +8808,55 @@ function renderExperimentPlanEditor(page) {
       ${experimentPlanField("并行核心数", "experiment.parallelCores", "number")}
       ${experimentPlanField("停止条件", "experiment.stopCondition")}
     </div>
+    <div class="section-head sub-section-head">
+      <h3>随机种子</h3>
+      <span>${seedPolicy.mode === "random" ? "生成方案时固化随机 base seed" : "固定 base seed 可复现"}</span>
+    </div>
+    <div class="form-table-grid">
+      <label>种子模式
+        <select data-experiment-seed-policy>
+          <option value="fixed" ${seedPolicy.mode === "fixed" ? "selected" : ""}>固定</option>
+          <option value="random" ${seedPolicy.mode === "random" ? "selected" : ""}>随机</option>
+        </select>
+      </label>
+      <label>Base seed<input data-experiment-seed-base type="number" step="1" value="${htmlEscape(seedPolicy.baseSeed)}"></label>
+    </div>
+    <div class="section-head sub-section-head">
+      <h3>Scenario 拼接</h3>
+      <span>${composition.overrides.length ? `${composition.overrides.length} 个 Project JSON 覆盖项` : "尚未添加覆盖项"}</span>
+    </div>
+    <div class="toolbar-row">
+      <button type="button" class="btn-primary" data-scenario-override-add>新增覆盖项</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Project JSON path</th><th>类型</th><th>值</th><th>说明</th><th>动作</th></tr></thead>
+        <tbody>
+          ${composition.overrides.length ? composition.overrides.map((override, index) => renderScenarioOverrideRow(override, index)).join("") : `<tr><td colspan="5">暂无覆盖项</td></tr>`}
+        </tbody>
+      </table>
+    </div>
     <div class="plan-editor-actions">
       <button type="button" data-plan-list-link>返回方案列表</button>
       <button type="button" class="btn-primary" data-save-plan>保存方案</button>
     </div>
+  `;
+}
+
+function renderScenarioOverrideRow(override, index) {
+  const valueType = override.valueType || "string";
+  return `
+    <tr>
+      <td><input data-scenario-override-path data-scenario-override-index="${index}" value="${htmlEscape(override.path || "")}" placeholder="supportNodes.0.inventory.LRU-A"></td>
+      <td>
+        <select data-scenario-override-value-type data-scenario-override-index="${index}">
+          ${["string", "number", "boolean", "json"].map((type) => `<option value="${type}" ${valueType === type ? "selected" : ""}>${type}</option>`).join("")}
+        </select>
+      </td>
+      <td><input data-scenario-override-value data-scenario-override-index="${index}" value="${htmlEscape(override.value ?? "")}"></td>
+      <td><input data-scenario-override-label data-scenario-override-index="${index}" value="${htmlEscape(override.label || "")}"></td>
+      <td><button type="button" class="btn-danger" data-scenario-override-remove="${index}">删除</button></td>
+    </tr>
   `;
 }
 
@@ -9379,6 +9524,7 @@ async function saveCurrentProjectDraftThroughApi() {
 async function saveCurrentExperimentPlanThroughApi() {
   const projectJson = buildBackendProjectJson(scenario, currentProject);
   const planProjectJson = cloneScenario(experimentPlanDraft);
+  ensureExperimentPlanLargeSampleRequest(planProjectJson);
   try {
     savedProject = await backendApi.saveProject(projectJson);
     modelingSnapshot = await backendApi.createModelingSnapshot(savedProject.project_id);
@@ -9399,6 +9545,22 @@ async function saveCurrentExperimentPlanThroughApi() {
     experimentPlan = null;
     backendApiStatus = `实验方案保存失败：${err && err.message ? err.message : "Backend API 不可用"}`;
   }
+}
+
+function ensureExperimentPlanLargeSampleRequest(projectJson) {
+  ensureExperimentPlanDraftDefaults(projectJson);
+  ensureMonteCarloSweepDefaults(projectJson);
+  const samples = Math.max(1, Math.trunc(Number(projectJson.experiment?.samples || 1)));
+  projectJson.analysisRequests = {
+    ...(projectJson.analysisRequests || {}),
+    largeSample: {
+      ...(projectJson.analysisRequests?.largeSample || {}),
+      enabled: true,
+      samples,
+      sweep: cloneScenario(projectJson.monteCarlo || defaultMonteCarloSweepForProject(projectJson))
+    }
+  };
+  return projectJson;
 }
 
 function currentProjectCanStartFormalRun() {
@@ -14410,12 +14572,68 @@ function ensureExperimentPlanDraftDefaults(projectJson) {
   projectJson.experiment.samples = positiveExperimentNumber(projectJson.experiment.samples, defaults.samples || 27);
   const seed = Number(projectJson.experiment.seed);
   projectJson.experiment.seed = Number.isFinite(seed) ? seed : Number(defaults.seed || 20260621);
+  if (!projectJson.seedPolicy || typeof projectJson.seedPolicy !== "object" || Array.isArray(projectJson.seedPolicy)) {
+    projectJson.seedPolicy = { mode: "fixed", baseSeed: projectJson.experiment.seed };
+  }
+  projectJson.seedPolicy.mode = projectJson.seedPolicy.mode === "random" ? "random" : "fixed";
+  projectJson.seedPolicy.baseSeed = positiveExperimentSeed(projectJson.seedPolicy.baseSeed ?? projectJson.experiment.seed);
+  projectJson.experiment.seed = projectJson.seedPolicy.baseSeed;
+  if (!projectJson.scenarioComposition || typeof projectJson.scenarioComposition !== "object" || Array.isArray(projectJson.scenarioComposition)) {
+    projectJson.scenarioComposition = { schemaVersion: "scenario-composition-v0", overrides: [] };
+  }
+  if (!Array.isArray(projectJson.scenarioComposition.overrides)) {
+    projectJson.scenarioComposition.overrides = [];
+  }
   return projectJson;
 }
 
 function positiveExperimentNumber(value, fallback) {
   const number = Number(value);
   return Number.isFinite(number) && number > 0 ? number : fallback;
+}
+
+function positiveExperimentSeed(value) {
+  return Math.max(1, Math.trunc(positiveExperimentNumber(value, defaultScenario.experiment?.seed || 20260621)));
+}
+
+function generatedExperimentSeed() {
+  return Math.max(1, Math.trunc(Date.now() % 2147483647));
+}
+
+function experimentPlanSeedPolicy() {
+  ensureExperimentPlanDraftDefaults(experimentPlanDraft);
+  const policy = experimentPlanDraft.seedPolicy;
+  policy.baseSeed = positiveExperimentSeed(policy.baseSeed ?? experimentPlanDraft.experiment?.seed);
+  experimentPlanDraft.experiment.seed = policy.baseSeed;
+  return policy;
+}
+
+function scenarioCompositionDraft() {
+  ensureExperimentPlanDraftDefaults(experimentPlanDraft);
+  const composition = experimentPlanDraft.scenarioComposition;
+  composition.schemaVersion ||= "scenario-composition-v0";
+  composition.sourceProjectId = currentBackendProjectId();
+  composition.baseProjectVersion = savedProject?.project_version || scenario.project_version || "project-v0.1";
+  return composition;
+}
+
+function updateScenarioOverrideInput(input) {
+  const index = Number(input.dataset.scenarioOverrideIndex);
+  if (!Number.isInteger(index) || index < 0) return;
+  const composition = scenarioCompositionDraft();
+  if (!composition.overrides[index]) {
+    composition.overrides[index] = { path: "", valueType: "string", value: "", label: "" };
+  }
+  const override = composition.overrides[index];
+  if (input.closest("[data-scenario-override-path]")) {
+    override.path = input.value;
+  } else if (input.closest("[data-scenario-override-value-type]")) {
+    override.valueType = input.value;
+  } else if (input.closest("[data-scenario-override-value]")) {
+    override.value = input.value;
+  } else if (input.closest("[data-scenario-override-label]")) {
+    override.label = input.value;
+  }
 }
 
 function defaultMonteCarloSweepForProject(projectJson) {

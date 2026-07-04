@@ -292,6 +292,8 @@ function stripProjectRuntimeConfig(value) {
   delete value.monteCarlo;
   delete value.analysisRequests;
   delete value.experiment;
+  delete value.seedPolicy;
+  delete value.scenarioComposition;
   for (const child of Object.values(value)) stripProjectRuntimeConfig(child);
 }
 
@@ -462,16 +464,119 @@ function normalizedText(value) {
   return String(value ?? "").trim();
 }
 
+function normalizedSeedPolicy(projectJson, experiment) {
+  const source = projectJson.seedPolicy && typeof projectJson.seedPolicy === "object" && !Array.isArray(projectJson.seedPolicy)
+    ? projectJson.seedPolicy
+    : {};
+  const mode = source.mode === "random" ? "random" : "fixed";
+  const baseSeed = positiveInteger(source.baseSeed ?? experiment.seed ?? 0, 0);
+  return { mode, baseSeed };
+}
+
+function positiveInteger(value, fallback) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? Math.trunc(number) : fallback;
+}
+
+function normalizedScenarioComposition(projectJson) {
+  const source = projectJson.scenarioComposition && typeof projectJson.scenarioComposition === "object" && !Array.isArray(projectJson.scenarioComposition)
+    ? projectJson.scenarioComposition
+    : {};
+  const overrides = Array.isArray(source.overrides)
+    ? source.overrides.map(normalizedScenarioOverride).filter(Boolean)
+    : [];
+  return {
+    schemaVersion: source.schemaVersion || "scenario-composition-v0",
+    ...(source.sourceProjectId ? { sourceProjectId: String(source.sourceProjectId) } : {}),
+    ...(source.baseProjectVersion ? { baseProjectVersion: String(source.baseProjectVersion) } : {}),
+    overrides
+  };
+}
+
+function normalizedScenarioOverride(override) {
+  if (!override || typeof override !== "object" || Array.isArray(override)) return null;
+  const path = String(override.path || "").trim();
+  if (!path) return null;
+  const valueType = ["string", "number", "boolean", "json"].includes(override.valueType) ? override.valueType : "string";
+  return {
+    path,
+    valueType,
+    value: parsedScenarioOverrideValue(override.value, valueType),
+    ...(override.label ? { label: String(override.label) } : {})
+  };
+}
+
+function parsedScenarioOverrideValue(value, valueType) {
+  if (valueType === "number") return Number(value);
+  if (valueType === "boolean") return value === true || value === "true";
+  if (valueType === "json") return typeof value === "string" ? JSON.parse(value) : cloneJson(value ?? null);
+  return String(value ?? "");
+}
+
+function applyScenarioCompositionOverrides(projectJson, composition) {
+  for (const override of composition.overrides) {
+    setObjectPath(projectJson, override.path, cloneJson(override.value));
+  }
+}
+
+function setObjectPath(obj, path, value) {
+  const parts = String(path).split(".").map((part) => part.trim()).filter(Boolean);
+  if (!parts.length) throw new Error("Scenario override path is required");
+  let current = obj;
+  for (let index = 0; index < parts.length - 1; index += 1) {
+    const part = parts[index];
+    const nextPart = parts[index + 1];
+    const nextContainer = isArrayIndex(nextPart) ? [] : {};
+    if (Array.isArray(current)) {
+      const itemIndex = arrayIndex(part);
+      if (itemIndex === null) throw new Error(`Scenario override path segment must be an array index: ${part}`);
+      if (!isObjectContainer(current[itemIndex])) current[itemIndex] = nextContainer;
+      current = current[itemIndex];
+    } else {
+      if (!isObjectContainer(current[part])) current[part] = nextContainer;
+      current = current[part];
+    }
+  }
+  const lastPart = parts[parts.length - 1];
+  if (Array.isArray(current)) {
+    const itemIndex = arrayIndex(lastPart);
+    if (itemIndex === null) throw new Error(`Scenario override path segment must be an array index: ${lastPart}`);
+    current[itemIndex] = value;
+    return;
+  }
+  current[lastPart] = value;
+}
+
+function isObjectContainer(value) {
+  return value && typeof value === "object";
+}
+
+function isArrayIndex(value) {
+  return arrayIndex(value) !== null;
+}
+
+function arrayIndex(value) {
+  const text = String(value);
+  if (!/^(0|[1-9]\d*)$/.test(text)) return null;
+  return Number(text);
+}
+
 export function buildExperimentPlanConfig(projectJson) {
   const experiment = projectJson.experiment && typeof projectJson.experiment === "object" && !Array.isArray(projectJson.experiment)
     ? projectJson.experiment
     : {};
+  const seedPolicy = normalizedSeedPolicy(projectJson, experiment);
+  const scenarioComposition = normalizedScenarioComposition(projectJson);
+  const branchProjectJson = cloneJson(projectJson);
+  applyScenarioCompositionOverrides(branchProjectJson, scenarioComposition);
   const config = {
     name: experiment.name || "frontend experiment",
     steps: Number(experiment.steps ?? 3),
     samples: Number(experiment.samples ?? 1),
-    seed: Number(experiment.seed ?? 0),
-    projectJson: buildBackendProjectJson(projectJson),
+    seed: seedPolicy.baseSeed,
+    seedPolicy,
+    scenarioComposition,
+    projectJson: buildBackendProjectJson(branchProjectJson),
     monteCarlo: cloneJson(projectJson.monteCarlo || {}),
     analysisRequests: cloneJson(projectJson.analysisRequests || {})
   };

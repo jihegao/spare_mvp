@@ -282,14 +282,15 @@ M5.1 服务化入口：
 
 ### M5.3 建模草稿持久化与实验方案分支
 
-目标：把建模页的项目数据保存为后端 Project draft，同时保留概要设计中的 `仿真实验方案管理`。ExperimentPlan 是从 Project 复制出的可编辑仿真分支，编辑方案不影响项目数据；运行仿真和 Monte Carlo 时使用选中的方案保留可复现 run identity chain。
+目标：把建模页的项目数据保存为后端 Project draft，同时保留概要设计中的 `仿真实验方案管理`。ExperimentPlan 是从 Project 复制出的可编辑仿真分支，编辑方案不影响项目数据；方案编辑页可以维护 Project JSON path 覆盖项、固定/随机 base seed 策略和样本量，并在保存时生成可复现的 ExperimentPlan config。运行仿真和 Monte Carlo 时使用选中的方案保留可复现 run identity chain。
 
 边界：
 
 1. Project draft 持久化只负责当前项目建模数据的保存与恢复，不替代 `方案列表` 和 `方案编辑`。
 2. `data-save-plan` 属于 ExperimentPlan 分支保存动作；通用建模字段编辑使用 Project draft 保存路径。
-3. 创建或运行 ExperimentPlan 时从当前 Project 建模快照复制配置，方案编辑状态不回写 source Project。
-4. 本阶段不扩大 M4 用户、会话、授权或审计范围，也不把 Project 数据层模板标记或 M5 建模导入 API 扩展为完整 Excel UI。
+3. 创建或运行 ExperimentPlan 时从当前 Project 建模快照复制配置，方案编辑状态不回写 source Project；`scenarioComposition` 记录覆盖路径和覆盖值，覆盖后的 `config.projectJson` 才作为方案分支输入。
+4. `seedPolicy`、steps、samples、`analysisRequests.largeSample` 和 Monte Carlo sweep 归 `ExperimentPlan.config` 所有，不进入持久 Project JSON。
+5. 本阶段不扩大 M4 用户、会话、授权或审计范围，也不把 Project 数据层模板标记或 M5 建模导入 API 扩展为完整 Excel UI。
 
 ## M6：仿真引擎服务化
 
@@ -307,7 +308,7 @@ M6.2 当前收束：统一 Monte Carlo / analysis profile 已落地为同步本�
 
 M6.2 后续收敛切片已完成：`docs/archive/deprecated/superpowers/plans/2026-06-20-runintent-mc-config-imported-sample-project.md` 记录了 RunIntent、MonteCarloRunConfig 和 imported sample Project 的实施边界。正式产品运行入口已收敛为 `RunIntent -> /api/runs -> RunService -> SimulationAdapter -> aircraft_support_v1 -> SQLite + artifacts`；正式 Monte Carlo 数值配置只允许从 `ExperimentPlan.config.analysisRequests.largeSample` 生成 `MonteCarloRunConfig`，request-level MC numeric config 会被拒绝；Adapter 不再从 Project draft 或 legacy request params 猜测 MC sweep，缺少 normalized config 或收到 legacy params 时 fail closed；项目数据管理页只维护项目选择、模板标记、概览和 JSON 查看。`/api/runs` formal gate 基于持久 Project JSON 的 `missionProfile.sourceImportId`、已发布 import/projectId 匹配和 `modeling_import.create_project` allowed 审计记录 fail-closed，手工伪造来源不能进入正式 run；正式和预览测试运行提交、查询、结果、产物和身份链都只走 canonical `/api/runs` 路径。`defaultScenario`、`runSimulation` 和 `runMonteCarlo` 仍可作为离线 fixture、本地预览和测试 fallback，但不能作为正式结果来源。该收束仍不是生产 worker queue、object storage、完整取消/重试或长期 artifact storage；M8.0 已完成 projection payload 驱动四个分析页正式 KPI，M9.0/M9.1 已完成离线 `visualization_state_series` artifact 回放、状态序列契约和事件追溯，M9.2 已完成最小在线状态流订阅，M9.3 已完成最小 run lifecycle/control plane，M9.4/M9.5 的 `aviation_support` 能力已归档，当前正式模型族由 M9.7.3+ 的 `aircraft_support_v1` formal Monte Carlo/projection 承接。
 
-Project JSON 原始数据边界在当前实现中进一步收窄：保存和后端读取路径会剥离 `aircraft_support_v1` 不消费的草稿/预览字段与运行配置，包括根 `experiment`、根 `analysisRequests`、`monteCarlo`、`missionProfile.profileType`、`missionProfile.endCondition`、`missionProfile.repeatCycleHours`、`missionProfile.analysisRequests`、`deletedSupportResourceKeys` 和字面拼写错误的 `supportActivities[].requireDevices`。正式运行仍保留 `missionProfile.sourceImportId`、`modelingImportValidation`、`scenarioId`、`schema_version`、`project_version` 等门禁/身份/溯源字段；steps / samples / seed 与 `analysisRequests.largeSample` 的正式 Monte Carlo 数值配置继续归 `ExperimentPlan.config`、`RunIntent` 和 `MonteCarloRunConfig` 所有，不能回流成 Project 模型输入。
+Project JSON 原始数据边界在当前实现中进一步收窄：保存和后端读取路径会剥离 `aircraft_support_v1` 不消费的草稿/预览字段与运行配置，包括根 `experiment`、根 `analysisRequests`、`monteCarlo`、`seedPolicy`、`scenarioComposition`、`missionProfile.profileType`、`missionProfile.endCondition`、`missionProfile.repeatCycleHours`、`missionProfile.analysisRequests`、`deletedSupportResourceKeys` 和字面拼写错误的 `supportActivities[].requireDevices`。正式运行仍保留 `missionProfile.sourceImportId`、`modelingImportValidation`、`scenarioId`、`schema_version`、`project_version` 等门禁/身份/溯源字段；steps / samples / seed、固定/随机 base seed 策略、Project JSON path 覆盖记录与 `analysisRequests.largeSample` 的正式 Monte Carlo 数值配置继续归 `ExperimentPlan.config`、`RunIntent` 和 `MonteCarloRunConfig` 所有，不能回流成 Project 模型输入。
 
 M6.2.x 当前收束：`docs/archive/deprecated/superpowers/plans/2026-06-21-imported-json-single-source-static-data-exit.md` 记录前台静态业务数据退场实施。前台建模和正式 run 功能测试的业务样例源已收敛到 `tests/fixtures/modeling_import_project.json`：页面缺少 imported JSON 数据时显示空态或创建入口，不再由前端静态常量偷偷补出任务、装备、保障组织、保障活动或 Monte Carlo 配置；完整 JSON 导入后可通过 published modeling import 生成 imported sample Project。后端 `modeling_import_to_project()` 已保留 `projectInfo`、`supportOrganization` 和显式空集合，`objects.analysisRequests` 与 `objects.missionProfiles[].experiment` 只进入 ExperimentPlan/runtime config，不进入 Project。该切片只治理建模/运行输入源；在线状态流由 M9.2 的 run subscription 切片提供。
 

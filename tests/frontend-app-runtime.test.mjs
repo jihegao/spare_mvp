@@ -1099,6 +1099,162 @@ test("experiment plan add opens an editable plan branch", async () => {
   }
 });
 
+test("experiment plan save posts composed projectJson without mutating source project", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-experiment-plan-management",
+    projectJson: createRuntimeProjectJson({
+      supportNodes: [{
+        id: "base-a",
+        name: "基层保障点A",
+        personnelCapacity: 2,
+        equipmentCapacity: 2,
+        inventory: { "LRU-A": 2 }
+      }]
+    })
+  });
+
+  try {
+    await runtime.click("[data-experiment-plan-add]", { experimentPlanAdd: "" });
+    await runtime.change(
+      "[data-experiment-plan-path]",
+      { experimentPlanPath: "experiment.samples" },
+      { value: "5", type: "number" }
+    );
+    await runtime.change("[data-experiment-seed-policy]", {}, { value: "fixed" });
+    await runtime.change("[data-experiment-seed-base]", {}, { value: "909", type: "number" });
+    await runtime.click("[data-scenario-override-add]");
+    await runtime.change(
+      "[data-scenario-override-path]",
+      { scenarioOverrideIndex: "0" },
+      { value: "supportNodes.0.inventory.LRU-A" }
+    );
+    await runtime.change(
+      "[data-scenario-override-value-type]",
+      { scenarioOverrideIndex: "0" },
+      { value: "number" }
+    );
+    await runtime.change(
+      "[data-scenario-override-value]",
+      { scenarioOverrideIndex: "0" },
+      { value: "12" }
+    );
+    await runtime.click("[data-save-plan]");
+
+    const createPlanRequest = runtime.requests.find((request) => (
+      request.url === "/api/projects/project-runtime/experiment-plans"
+      && (request.options.method || "GET") === "POST"
+    ));
+    assert.ok(createPlanRequest, "composed experiment plan should be posted to backend");
+    const body = JSON.parse(createPlanRequest.options.body || "{}");
+    assert.equal(body.config.samples, 5);
+    assert.equal(body.config.seed, 909);
+    assert.deepEqual(body.config.seedPolicy, { mode: "fixed", baseSeed: 909 });
+    assert.equal(body.config.projectJson.supportNodes[0].inventory["LRU-A"], 12);
+    assert.equal(body.config.analysisRequests.largeSample.samples, 5);
+    assert.equal("scenarioComposition" in body.config.projectJson, false);
+
+    const projectSaveRequests = runtime.requests.filter((request) => (
+      request.url === "/api/projects"
+      && (request.options.method || "GET") === "POST"
+    ));
+    assert.ok(projectSaveRequests.length, "source Project should still be saved separately");
+    const savedProjects = projectSaveRequests.map((request) => JSON.parse(request.options.body || "{}"));
+    assert.ok(savedProjects.every((savedProject) => savedProject.supportNodes?.[0]?.inventory?.["LRU-A"] !== 12));
+    assert.ok(savedProjects.every((savedProject) => !("scenarioComposition" in savedProject)));
+    assert.ok(savedProjects.every((savedProject) => !("seedPolicy" in savedProject)));
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("experiment plan edit preserves saved seed policy scenario composition and samples", async () => {
+  const planProjectJson = createRuntimeProjectJson({
+    supportNodes: [{
+      id: "base-a",
+      name: "基层保障点A",
+      personnelCapacity: 2,
+      equipmentCapacity: 2,
+      inventory: { "LRU-A": 14 }
+    }]
+  });
+  delete planProjectJson.experiment;
+  delete planProjectJson.analysisRequests;
+  delete planProjectJson.monteCarlo;
+  delete planProjectJson.seedPolicy;
+  delete planProjectJson.scenarioComposition;
+
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-experiment-plan-management",
+    projectJson: createRuntimeProjectJson({
+      supportNodes: [{
+        id: "base-a",
+        name: "基层保障点A",
+        personnelCapacity: 2,
+        equipmentCapacity: 2,
+        inventory: { "LRU-A": 2 }
+      }]
+    }),
+    experimentPlans: [{
+      experiment_plan_id: "plan-saved-composition",
+      status: "draft",
+      config: {
+        name: "已保存拼接方案",
+        steps: 36,
+        samples: 7,
+        seed: 777,
+        seedPolicy: { mode: "random", baseSeed: 777 },
+        scenarioComposition: {
+          schemaVersion: "scenario-composition-v0",
+          sourceProjectId: "project-runtime",
+          baseProjectVersion: "project-v0.1",
+          overrides: [{
+            path: "supportNodes.0.inventory.LRU-A",
+            valueType: "number",
+            value: "14",
+            label: "LRU-A 加库存"
+          }]
+        },
+        analysisRequests: {
+          largeSample: {
+            enabled: true,
+            samples: 7,
+            sweep: { sampleCount: 7, seedBase: 777 }
+          }
+        },
+        projectJson: planProjectJson
+      }
+    }]
+  });
+
+  try {
+    await runtime.click(
+      "[data-experiment-plan-edit]",
+      { experimentPlanEdit: "plan-saved-composition", experimentPlanName: "已保存拼接方案" }
+    );
+    await runtime.click("[data-save-plan]");
+
+    const updatePlanRequest = runtime.requests.find((request) => (
+      request.url === "/api/projects/project-runtime/experiment-plans"
+      && (request.options.method || "GET") === "POST"
+    ));
+    assert.ok(updatePlanRequest, "saved experiment plan edit should be posted to backend");
+    const body = JSON.parse(updatePlanRequest.options.body || "{}");
+    assert.equal(body.config.name, "已保存拼接方案");
+    assert.equal(body.config.steps, 36);
+    assert.equal(body.config.samples, 7);
+    assert.equal(body.config.seed, 777);
+    assert.deepEqual(body.config.seedPolicy, { mode: "random", baseSeed: 777 });
+    assert.equal(body.config.scenarioComposition.overrides[0].path, "supportNodes.0.inventory.LRU-A");
+    assert.equal(body.config.scenarioComposition.overrides[0].value, 14);
+    assert.equal(body.config.projectJson.supportNodes[0].inventory["LRU-A"], 14);
+    assert.equal(body.config.analysisRequests.largeSample.samples, 7);
+    assert.equal("scenarioComposition" in body.config.projectJson, false);
+    assert.equal("seedPolicy" in body.config.projectJson, false);
+  } finally {
+    runtime.restore();
+  }
+});
+
 test("experiment plan selection uses experiment_plan_id for duplicate names", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=spare-planning-experiment-plan-list",

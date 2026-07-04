@@ -2460,6 +2460,63 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertNotIn("experiment", plan["config"]["projectJson"])
         self.assertNotIn("modeling_snapshot_id", plan["config"])
 
+    def test_create_experiment_plan_preserves_seed_policy_and_scenario_composition(self) -> None:
+        project = self._fixture("smoke_project.json")
+        saved = self.api.save_project(project)
+
+        plan = self.api.create_experiment_plan(
+            saved["project_id"],
+            {
+                "name": "composed branch",
+                "steps": 4,
+                "samples": 9,
+                "seed": 909,
+                "seedPolicy": {"mode": "fixed", "baseSeed": 909},
+                "scenarioComposition": {
+                    "schemaVersion": "scenario-composition-v0",
+                    "overrides": [
+                        {"path": "supportNodes.0.inventory.LRU-A", "valueType": "number", "value": 12}
+                    ],
+                },
+                "analysisRequests": {
+                    "largeSample": {
+                        "enabled": True,
+                        "samples": 9,
+                        "sweep": {
+                            "failureRates": [0.06],
+                            "spareMultipliers": [1],
+                            "supportCapacities": [2],
+                        },
+                    }
+                },
+                "projectJson": {
+                    **copy.deepcopy(project),
+                    "seedPolicy": {"mode": "fixed", "baseSeed": 909},
+                    "scenarioComposition": {
+                        "schemaVersion": "scenario-composition-v0",
+                        "overrides": [
+                            {"path": "supportNodes.0.inventory.LRU-A", "valueType": "number", "value": 12}
+                        ],
+                    },
+                    "experiment": {"name": "composed branch", "steps": 4, "samples": 9, "seed": 909},
+                    "analysisRequests": {"largeSample": {"enabled": True, "samples": 9}},
+                    "monteCarlo": {"failureRates": [0.06]},
+                },
+            },
+        )
+
+        self.assertEqual(plan["config"]["seedPolicy"], {"mode": "fixed", "baseSeed": 909})
+        self.assertEqual(
+            plan["config"]["scenarioComposition"]["overrides"][0]["path"],
+            "supportNodes.0.inventory.LRU-A",
+        )
+        self.assertEqual(plan["config"]["analysisRequests"]["largeSample"]["samples"], 9)
+        self.assertNotIn("experiment", plan["config"]["projectJson"])
+        self.assertNotIn("analysisRequests", plan["config"]["projectJson"])
+        self.assertNotIn("monteCarlo", plan["config"]["projectJson"])
+        self.assertNotIn("seedPolicy", plan["config"]["projectJson"])
+        self.assertNotIn("scenarioComposition", plan["config"]["projectJson"])
+
     def test_experiment_plan_config_branch_does_not_mutate_source_project(self) -> None:
         project = self._fixture("smoke_project.json")
         saved = self.api.save_project(project)

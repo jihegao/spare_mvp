@@ -846,6 +846,58 @@ test("experiment plan config preserves analysisRequests for formal Monte Carlo r
   assert.equal("monteCarlo" in config.projectJson, false);
 });
 
+test("buildExperimentPlanConfig applies scenario composition overrides to branch projectJson", () => {
+  const projectJson = {
+    project_id: "project-composition",
+    experiment: { name: "composition", steps: 6, samples: 3, seed: 101 },
+    supportNodes: [{ id: "base-a", inventory: { "LRU-A": 2 } }],
+    scenarioComposition: {
+      schemaVersion: "scenario-composition-v0",
+      overrides: [
+        { path: "supportNodes.0.inventory.LRU-A", valueType: "number", value: "12", label: "LRU-A" },
+        { path: "missionProfile.durationHours", valueType: "number", value: "8" }
+      ]
+    },
+    seedPolicy: { mode: "fixed", baseSeed: 909 }
+  };
+
+  const config = buildExperimentPlanConfig(projectJson);
+
+  assert.equal(config.seed, 909);
+  assert.deepEqual(config.seedPolicy, { mode: "fixed", baseSeed: 909 });
+  assert.equal(config.projectJson.supportNodes[0].inventory["LRU-A"], 12);
+  assert.equal(config.projectJson.missionProfile.durationHours, 8);
+  assert.deepEqual(config.scenarioComposition.overrides.map((item) => item.path), [
+    "supportNodes.0.inventory.LRU-A",
+    "missionProfile.durationHours"
+  ]);
+  assert.equal("scenarioComposition" in config.projectJson, false);
+  assert.equal("seedPolicy" in config.projectJson, false);
+});
+
+test("buildExperimentPlanConfig materializes random seed policy as a reproducible base seed", () => {
+  const config = buildExperimentPlanConfig({
+    project_id: "project-random-seed",
+    experiment: { name: "random seed", steps: 4, samples: 2, seed: 11 },
+    seedPolicy: { mode: "random", baseSeed: 123456 }
+  });
+
+  assert.equal(config.seed, 123456);
+  assert.deepEqual(config.seedPolicy, { mode: "random", baseSeed: 123456 });
+});
+
+test("buildExperimentPlanConfig rejects invalid scenario composition JSON overrides", () => {
+  assert.throws(() => buildExperimentPlanConfig({
+    project_id: "project-invalid-json-override",
+    experiment: { name: "invalid json", steps: 4, samples: 2, seed: 11 },
+    scenarioComposition: {
+      overrides: [
+        { path: "missionProfile.constraints", valueType: "json", value: "{\"min\": 1" }
+      ]
+    }
+  }), SyntaxError);
+});
+
 test("frontend API client sends experiment plan branch project JSON to backend", async () => {
   const calls = [];
   const client = createBackendApiClient({

@@ -2569,6 +2569,26 @@ test("experiment plan editor edits an isolated branch rather than the project dr
   assert.doesNotMatch(saveButtonSource, /saveCurrentProjectThroughApi\(\)/);
 });
 
+test("experiment plan editor exposes seed policy and scenario composition controls", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const editorSource = appSource.slice(
+    appSource.indexOf("function renderExperimentPlanEditor"),
+    appSource.indexOf("function experimentPlanField")
+  );
+  const experimentPlanChangeSource = appSource.slice(
+    appSource.indexOf('const experimentPlanInput = event.target.closest("[data-experiment-plan-path]"'),
+    appSource.indexOf('const rmsInput = event.target.closest("[data-rms-path]"')
+  );
+
+  assert.match(editorSource, /data-experiment-seed-policy/);
+  assert.match(editorSource, /data-experiment-seed-base/);
+  assert.match(editorSource, /data-scenario-override-path/);
+  assert.match(editorSource, /data-scenario-override-add/);
+  assert.match(editorSource, /data-scenario-override-remove/);
+  assert.match(experimentPlanChangeSource, /experimentPlanDraft/);
+  assert.doesNotMatch(experimentPlanChangeSource, /setPath\(scenario/);
+});
+
 test("monte carlo launch creates a run from the current experiment plan branch", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const launchSource = appSource.slice(

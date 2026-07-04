@@ -13,10 +13,10 @@
 
 ## 当前开发面
 
-截至 2026-07-04，当前实现的主干边界如下：
+截至 2026-07-05，当前实现的主干边界如下：
 
 1. 项目数据管理页已收敛为 Project 数据层入口：左侧显示项目列表，`projectInfo.isTemplate` 为真的项目显示【模板】；右侧只保留模板管理、数据概览和可折叠 Project JSON 原始数据。
-   后端 Project JSON 原始数据边界会剥离当前 `aircraft_support_v1` 不消费的草稿/预览字段和运行配置：根 `experiment`、根 `analysisRequests`、`monteCarlo`、`missionProfile.profileType`、`missionProfile.endCondition`、`missionProfile.repeatCycleHours`、`missionProfile.analysisRequests`、`deletedSupportResourceKeys` 和拼写错误的 `supportActivities[].requireDevices`。正式运行的 steps / samples / seed 与 Monte Carlo 数值配置归 `ExperimentPlan.config`、`RunIntent` 和 `MonteCarloRunConfig`；`requiredDevices` 是实际消费字段，不属于删除项。
+   后端 Project JSON 原始数据边界会剥离当前 `aircraft_support_v1` 不消费的草稿/预览字段和运行配置：根 `experiment`、根 `analysisRequests`、`monteCarlo`、`seedPolicy`、`scenarioComposition`、`missionProfile.profileType`、`missionProfile.endCondition`、`missionProfile.repeatCycleHours`、`missionProfile.analysisRequests`、`deletedSupportResourceKeys` 和拼写错误的 `supportActivities[].requireDevices`。正式运行的 steps / samples / seed、固定/随机 base seed 策略、Project JSON path 覆盖记录和 Monte Carlo 数值配置归 `ExperimentPlan.config`、`RunIntent` 和 `MonteCarloRunConfig`；`requiredDevices` 是实际消费字段，不属于删除项。
 2. 项目列表页从已标记的 Project 模板复制创建项目；旧的内置建模导入模板注册表、模板层级分类和模板下拉入口已退役。
 3. M5 建模导入 API 仍作为后台维护、导入转换和 `compile-scenario` 能力保留；普通项目数据管理页不展示已发布模板列表、模板预览、字段映射、v1/v2 分类或旧校验级别分类。
 4. 装备 RMS 指标分配是系统运行支持模块下的本地计算工作台。页面按顶部参数输入、左侧独立装备树导入、右侧方法选择和底部节点分配结果组织；输入为任务可靠度、任务时长、关键故障占比和 MTTR。
