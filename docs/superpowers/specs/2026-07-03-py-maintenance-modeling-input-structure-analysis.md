@@ -18,6 +18,8 @@ modeling-import-v1
 
 因此后续不应把 `py_maintenance` 的 `s_*` 直接移植进 `spare_mvp`。可复用的是它的分层思想：业务数据保持可读、可编辑；adapter 负责折叠为模型内核输入；模型内核只消费规范化后的结构。
 
+最小携行清单实验应继续沿用这个分层边界：Project 保留机场、保障点、库存、调运关系和作业需求；compiler 折叠出 `aircraft-support-v1-input-v0`；搜索层只在编译后的 `support_network.nodes[].inventory` 中修改机场绑定基层保障点的库存数量。上级库、侧向保障点和其他保障点库存仍按 Project 原值参与调运仿真，不作为优化变量。
+
 ## 当前实际链路
 
 ### py_maintenance
@@ -171,10 +173,10 @@ public/import-templates/*.json 或 tests/fixtures/simulation_analysis_cases/*.js
 | 保障活动与作业 DAG | `usageSupportActivities`, `basicActivityLibrary` | `s_jobs`, `s_aircraft_services` | `supportActivities[].jobs[]` |
 | 预防性维修 | `preventiveMaintenance` | `s_prev_maintain` | `supportActivities` 中 `activityType=preventive` 及间隔字段 |
 | 修复性维修 | `correctiveMaintenance` | `s_failure_repair`, `s_jobs` | `supportActivities` 中 `activityType=repair`、组件维修 profile |
-| 场地/设施 | `supportStations`, `supportFacilities`, `stationFacilityMatrix` | `s_facilities` | 当前主要折到 `support_network.nodes`；若要精细行为，需要新增或行为化场地功能匹配 |
+| 场地/设施 | `supportStations`, `supportFacilities`, `stationFacilityMatrix` | `s_facilities` | 当前主要折到 `airports[].supportNodeId`、`supportNodes[].nodeType/supportLevel` 和 `support_network.nodes`；若要精细行为，需要新增或行为化场地功能匹配 |
 | 保障人员 | `supportStaff` | `s_staff` | 当前主要折到 `supportNodes[].personnelCapacity`；若要精细行为，需要人员专业/组织资源池 |
 | 保障设备 | `supportEquipment` | `s_equipments` | 当前主要折到 `supportNodes[].equipmentCapacity` 和 job 需求；若要精细行为，需要设备类型/数量/实例匹配 |
-| 备件/弹药/补给 | `spareParts`, `ammunition`, 作业需求 | `s_supplies` | `supportNodes[].inventory`, `components[].spareType`；弹药/一般补给需单独明确 |
+| 备件/弹药/补给 | `spareParts`, `ammunition`, 作业需求 | `s_supplies` | `supportNodes[].inventory`, `components[].spareType`, `supportActivities[].jobs[].spare[]`；最小携行清单只优化机场绑定基层保障点库存，其他库存只作为调运资源 |
 | 时间分布 | 作业工期、维修工期、分布字段 | `time_dist` | 当前多为确定 `durationMinutes`；后续可把 `durationProfile` 行为化 |
 | 组织树 | `supportOrganizationTree` | `organization`, 资源作用域 | 当前 `supportOrganization.tree` 为 governance-only；若要驱动资源可达性需提升为行为字段 |
 
@@ -200,6 +202,15 @@ Project 或 modeling-import
 4. 任务编队、指定飞机、阶段最小架数和取消/备份规则。
 5. seeded 作业时长分布。
 
+最小携行清单搜索属于轻量层的变量实验，不属于 Project 持久化模型的新 schema。搜索输入应从当前 Project 编译结果派生：
+
+- 机场绑定基层保障点：优先由 `airports[].supportNodeId` 指向的 `supportNodes[]` 识别，并结合 `supportLevel`、`nodeType` 或用户显式选择确认基层级范围。
+- 备件类别：来自 `components[].spareType`、`supportNodes[].inventory` key 和 `supportActivities[].jobs[].spare[].name`。
+- Project 基准库存：记为 `q0[base_support_node_id][spare_type]`，用于判断每类备件应补充、削减或保持。
+- 非优化库存：上级库、侧向保障点、其他机场保障点和运输策略保持 Project 原值，只通过调运规则影响候选解表现。
+
+如果 Project 无法明确机场绑定基层保障点，轻量实验应 fail closed，要求补齐保障节点建模或由用户显式选择基层保障点，而不是退回全局 `spareMultipliers`。
+
 ## 建模输入收敛建议
 
 ### P0：明确 canonical input 层
@@ -222,13 +233,22 @@ Project 或 modeling-import
 
 ### P3：把最小携行清单建模为独立决策变量
 
-最小携行清单搜索不应只使用全局 `spareMultipliers`。应从：
+最小携行清单搜索不应只使用全局 `spareMultipliers`，也不应把所有保障点库存都纳入优化。第一版变量边界固定为“机场绑定基层保障点 × 备件类别”：
+
+```text
+q[base_support_node_id][spare_type]
+```
+
+`base_support_node_id` 来自 `airports[].supportNodeId` 指向的基层保障点，必要时结合 `supportNodes[].supportLevel`、`supportNodes[].nodeType` 或用户显式选择确认。`spare_type` 来自：
 
 - `components[].spareType`
-- `supportNodes[].inventory`
+- `supportNodes[].inventory` 的备件 key
+- `supportActivities[].jobs[].spare[].name`
 - 后续显式维护的携行类别字典
 
-生成 `spareQuantities` 候选向量，并按备件类别独立改变数量。
+生成的 `spareQuantities` 候选向量必须围绕 Project 当前配置库存 `q0` 搜索：`q0` 不满足任务成功率置信度时补充基层库存，`q0` 已满足时削减基层库存，目标函数为基层级携行总量最小。上级库、侧向保障点和其他保障点库存保持 Project 原值，只作为可调运资源参与仿真。
+
+这意味着最小携行清单是轻量实验配置和结果解释，不是 Project 持久化字段替代；正式 Project 仍保存用户配置库存，实验结果报告相对 Project 基准的补充/削减量。
 
 ### P4：保留正式运行与轻量实验的落盘边界
 
@@ -245,8 +265,9 @@ RunIntent -> /api/runs -> RunService -> SimulationAdapter -> aircraft_support_v1
 1. 不把 `py_maintenance` 的 `s_*` schema 作为 `spare_mvp` 新输入 contract。
 2. 不绕过 `modeling-import-v1`、Project schema 和 compiler gate 直接喂模型。
 3. 不把前端业务 JSON 直接交给 Mesa 内核。
-4. 不把轻量实验输出接入 current result 或正式结果分析页。
+4. 不把轻量实验输出接入 current result、正式 `analysis_projection_*` artifact 或 `/api/runs` 结果链路；若结果分析页使用轻量 Mesa 输出，也只能作为会话内页面结果。
 5. 不把小样本轻量实验解释为工程级校准结论。
+6. 不把上级库、侧向保障点或其他保障点库存纳入最小携行清单优化变量。
 
 ## 后续文档关系
 
