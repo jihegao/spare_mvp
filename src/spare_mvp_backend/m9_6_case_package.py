@@ -226,7 +226,6 @@ def _coverage_classification(field_path: str) -> tuple[str, str, str]:
         "objects.missionProfiles[].durationHours",
         "objects.missionProfiles[].basicMission.equipmentQuantity",
         "objects.missionProfiles[].experiment.seed",
-        "objects.equipment.quantity",
         "objects.supportResources[].personnelCapacity",
         "objects.supportResources[].equipmentCapacity",
         "objects.analysisRequests.largeSample.enabled",

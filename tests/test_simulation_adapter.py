@@ -304,6 +304,25 @@ class SimulationAdapterTest(unittest.TestCase):
         self.assertEqual(compiled_item["equipmentQuantity"], 1)
         self.assertEqual(compiled_item["requiredEquipmentQuantity"], 4)
 
+    def test_aircraft_support_v1_derives_aircraft_inputs_without_equipment_summary(self) -> None:
+        project = self._load_fixture("m9_6_platform_case_export.json")["project"]
+        project.pop("equipment", None)
+        project["missionProfile"].pop("equipment", None)
+
+        scenario = self.adapter.compile_scenario(project, model_family="aircraft_support_v1")
+
+        inputs = scenario["simulation_inputs"]
+        self.assertEqual(inputs["aircraft"]["fleet_count"], len(project["combatUnit"]["members"]))
+        self.assertEqual(inputs["aircraft"]["initial_ready"], len(project["combatUnit"]["members"]))
+        self.assertEqual(inputs["aircraft"]["models"], ["J-15", "J-35"])
+        self.assertEqual(
+            [asset["tail_number"] for asset in inputs["aircraft"]["assets"]],
+            [member["aircraftNo"] for member in project["combatUnit"]["members"]],
+        )
+        provenance = scenario["compiled_from"]["mapping_provenance"]
+        self.assertIn("combatUnit.members", provenance["consumed_fields"])
+        self.assertNotIn("equipment.quantity", provenance["consumed_fields"])
+
     def test_aircraft_support_v1_compile_gate_blocks_invalid_references(self) -> None:
         project = self._load_fixture("m9_6_platform_case_export.json")["project"]
         project["supportActivities"][0]["resourceId"] = "missing-support-node"
@@ -529,7 +548,8 @@ class SimulationAdapterTest(unittest.TestCase):
         )
 
         scope = report_payload["m9_7_4_behavior_scope"]
-        self.assertIn("equipment.quantity", scope["behavior_driving_fields"])
+        self.assertIn("combatUnit.members", scope["behavior_driving_fields"])
+        self.assertIn("components[].aircraftModel", scope["behavior_driving_fields"])
         self.assertIn("missionProfile.compositeTasks", scope["behavior_driving_fields"])
         self.assertIn("missionProfile.periodicTasks", scope["behavior_driving_fields"])
         self.assertIn("components[].failureDistribution", scope["behavior_driving_fields"])
@@ -866,7 +886,6 @@ class SimulationAdapterTest(unittest.TestCase):
     def test_aircraft_support_v1_transport_policies_replenish_spare_shortages(self) -> None:
         project = self._load_fixture("m9_6_platform_case_export.json")["project"]
         project["supportOrganization"] = {}
-        project["equipment"]["initialReady"] = 6
         for component in project["components"]:
             if component.get("parentId"):
                 component["failureRate"] = 0

@@ -104,9 +104,9 @@
     },
     {
       "field_path": "objects.equipment.quantity",
-      "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
-      "status": "consumed",
-      "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "status": "ignored",
+      "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.equipment.wholeMachineModels[]",
@@ -1782,11 +1782,11 @@
   "source_fixture": "tests/fixtures/modeling_import_project.json",
   "source_import_id": "import-carrier-day-night-001",
   "summary": {
-    "consumed": 41,
+    "consumed": 40,
     "defaulted": 0,
     "derived": 9,
     "governance_only": 34,
-    "ignored": 212,
+    "ignored": 213,
     "total_fields": 296,
     "unsupported": 0
   }

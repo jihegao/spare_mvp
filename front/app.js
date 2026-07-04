@@ -3126,7 +3126,7 @@ function ensureSelectedProjectDataJsonLoaded({ force = false } = {}) {
   projectDataManagementStatus = "正在读取 Project JSON";
   backendApi.getProject(projectDataProjectBackendId(project))
     .then((projectJson) => {
-      selectedProjectDataProjectJson = cloneScenario(projectJson);
+      selectedProjectDataProjectJson = buildBackendProjectJson(projectJson, { id: projectId });
       selectedProjectDataProjectJsonId = projectId;
       mergeProjectTemplateFlagFromJson(projectId, projectJson);
       projectDataManagementStatus = "已读取 Project JSON";

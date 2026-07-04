@@ -684,6 +684,44 @@ test("buildBackendProjectJson strips Monte Carlo config from Project modeling da
   assert.ok("requireDevices" in scenario.supportActivities[0]);
 });
 
+test("buildBackendProjectJson strips redundant equipment summaries from Project modeling data", () => {
+  const scenario = {
+    scenarioId: "combat-unit-is-source",
+    equipment: {
+      model: "legacy-summary",
+      quantity: 7,
+      initialReady: 6,
+      wholeMachineModels: ["legacy-summary"]
+    },
+    combatUnit: {
+      members: [
+        { aircraftNo: "J15-101", model: "J-15" },
+        { aircraftNo: "J35-201", model: "J-35" }
+      ]
+    },
+    missionProfile: {
+      equipment: {
+        model: "legacy-profile-summary",
+        quantity: 7
+      },
+      combatUnit: {
+        members: [
+          { aircraftNo: "J15-101", model: "J-15" }
+        ]
+      }
+    }
+  };
+
+  const projectJson = buildBackendProjectJson(scenario, { id: "combat-unit-is-source" });
+
+  assert.equal("equipment" in projectJson, false);
+  assert.equal("equipment" in projectJson.missionProfile, false);
+  assert.equal(projectJson.combatUnit.members.length, 2);
+  assert.equal(projectJson.missionProfile.combatUnit.members.length, 1);
+  assert.ok("equipment" in scenario);
+  assert.ok("equipment" in scenario.missionProfile);
+});
+
 test("experiment plan config preserves Monte Carlo branch sweep settings", () => {
   const projectJson = {
     experiment: {

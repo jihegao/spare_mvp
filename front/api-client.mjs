@@ -259,12 +259,14 @@ function stripProjectRuntimeConfig(value) {
 function stripProjectNonModelFields(projectJson) {
   if (!projectJson || typeof projectJson !== "object") return;
   delete projectJson.deletedSupportResourceKeys;
+  delete projectJson.equipment;
   stripMissionProfileNonModelFields(projectJson.missionProfile);
   stripSupportActivityTypoFields(projectJson);
 }
 
 function stripMissionProfileNonModelFields(missionProfile) {
   if (!missionProfile || typeof missionProfile !== "object" || Array.isArray(missionProfile)) return;
+  delete missionProfile.equipment;
   delete missionProfile.profileType;
   delete missionProfile.endCondition;
   delete missionProfile.repeatCycleHours;

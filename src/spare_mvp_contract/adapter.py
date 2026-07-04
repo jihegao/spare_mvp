@@ -731,12 +731,12 @@ class SimulationAdapter:
         validation: dict[str, Any],
     ) -> dict[str, Any]:
         mission_profile = project.get("missionProfile") if isinstance(project.get("missionProfile"), dict) else {}
-        equipment = project.get("equipment") if isinstance(project.get("equipment"), dict) else {}
+        aircraft_summary = self._aircraft_support_v1_aircraft_summary(project, mission_profile)
         experiment = project.get("experiment") if isinstance(project.get("experiment"), dict) else {}
         monte_carlo = project.get("monteCarlo") if isinstance(project.get("monteCarlo"), dict) else {}
         duration_minutes = self._aircraft_support_v1_duration_minutes(mission_profile)
-        fleet_count = self._positive_int(equipment.get("quantity"), 1)
-        initial_ready = min(self._positive_int(equipment.get("initialReady"), fleet_count), fleet_count)
+        fleet_count = aircraft_summary["fleet_count"]
+        initial_ready = aircraft_summary["initial_ready"]
 
         return {
             "schema_version": "aircraft-support-v1-input-v0",
@@ -760,8 +760,14 @@ class SimulationAdapter:
             "aircraft": {
                 "fleet_count": fleet_count,
                 "initial_ready": initial_ready,
-                "models": self._string_list(equipment.get("wholeMachineModels") or [equipment.get("model")]),
-                "assets": self._aircraft_support_v1_aircraft_assets(project, mission_profile, equipment, fleet_count, initial_ready),
+                "models": aircraft_summary["models"],
+                "assets": self._aircraft_support_v1_aircraft_assets(
+                    project,
+                    mission_profile,
+                    aircraft_summary,
+                    fleet_count,
+                    initial_ready,
+                ),
             },
             "equipment_tree": {
                 "root_component_id": self._root_component_id(project.get("components")),
@@ -817,27 +823,107 @@ class SimulationAdapter:
             ),
         }
 
+    def _aircraft_support_v1_aircraft_summary(
+        self,
+        project: dict[str, Any],
+        mission_profile: dict[str, Any],
+    ) -> dict[str, Any]:
+        equipment = project.get("equipment") if isinstance(project.get("equipment"), dict) else {}
+        combat_unit = self._aircraft_support_v1_combat_unit(project, mission_profile)
+        members = self._dict_list(combat_unit.get("members"))
+        components = self._dict_list(project.get("components"))
+        fleet_count = self._aircraft_support_v1_fleet_count(equipment, combat_unit, members, components)
+        if members:
+            initial_ready = sum(
+                1
+                for member in members[:fleet_count]
+                if not self._aircraft_support_v1_member_in_maintenance(member)
+            )
+        else:
+            initial_ready = min(self._positive_int(equipment.get("initialReady"), fleet_count), fleet_count)
+        models = self._aircraft_support_v1_aircraft_models(equipment, members, components)
+        return {
+            "fleet_count": fleet_count,
+            "initial_ready": min(initial_ready, fleet_count),
+            "models": models,
+            "model": models[0] if models else "Aircraft",
+        }
+
+    def _aircraft_support_v1_combat_unit(
+        self,
+        project: dict[str, Any],
+        mission_profile: dict[str, Any],
+    ) -> dict[str, Any]:
+        combat_unit = project.get("combatUnit") if isinstance(project.get("combatUnit"), dict) else {}
+        if combat_unit:
+            return combat_unit
+        return mission_profile.get("combatUnit") if isinstance(mission_profile.get("combatUnit"), dict) else {}
+
+    def _aircraft_support_v1_combat_members(
+        self,
+        project: dict[str, Any],
+        mission_profile: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        return self._dict_list(self._aircraft_support_v1_combat_unit(project, mission_profile).get("members"))
+
+    def _aircraft_support_v1_fleet_count(
+        self,
+        equipment: dict[str, Any],
+        combat_unit: dict[str, Any],
+        members: list[dict[str, Any]],
+        components: list[dict[str, Any]],
+    ) -> int:
+        if members:
+            return len(members)
+        if self._is_positive_number(combat_unit.get("quantity")):
+            return self._positive_int(combat_unit.get("quantity"), 1)
+        root_quantity = self._aircraft_support_v1_root_component_quantity(components)
+        if root_quantity is not None:
+            return root_quantity
+        return self._positive_int(equipment.get("quantity"), 1)
+
+    def _aircraft_support_v1_root_component_quantity(self, components: list[dict[str, Any]]) -> int | None:
+        for component in components:
+            if component.get("parentId") in (None, "") and self._is_positive_number(component.get("quantity")):
+                return self._positive_int(component.get("quantity"), 1)
+        return None
+
+    def _aircraft_support_v1_aircraft_models(
+        self,
+        equipment: dict[str, Any],
+        members: list[dict[str, Any]],
+        components: list[dict[str, Any]],
+    ) -> list[str]:
+        models = self._unique_string_list(member.get("model") for member in members)
+        if not models:
+            models = self._unique_string_list(component.get("aircraftModel") for component in components)
+        if not models:
+            models = self._unique_string_list(self._string_list(equipment.get("wholeMachineModels")) + [equipment.get("model")])
+        return models or ["Aircraft"]
+
+    def _aircraft_support_v1_member_in_maintenance(self, member: dict[str, Any]) -> bool:
+        status = str(member.get("status") or "").strip().lower()
+        unavailable_tokens = ("维修", "故障", "不可用", "maintenance", "failed", "failure", "unavailable", "down")
+        return any(token in status for token in unavailable_tokens)
+
     def _aircraft_support_v1_aircraft_assets(
         self,
         project: dict[str, Any],
         mission_profile: dict[str, Any],
-        equipment: dict[str, Any],
+        aircraft_summary: dict[str, Any],
         fleet_count: int,
         initial_ready: int,
     ) -> list[dict[str, str]]:
-        combat_unit = project.get("combatUnit") if isinstance(project.get("combatUnit"), dict) else {}
-        if not combat_unit:
-            combat_unit = mission_profile.get("combatUnit") if isinstance(mission_profile.get("combatUnit"), dict) else {}
+        combat_unit = self._aircraft_support_v1_combat_unit(project, mission_profile)
         members = self._dict_list(combat_unit.get("members"))
         if not members:
             return []
-        default_model = str(equipment.get("model") or "Aircraft")
+        default_model = str(aircraft_summary.get("model") or "Aircraft")
         assets = []
         for index, member in enumerate(members[:fleet_count]):
             model = str(member.get("model") or default_model)
-            status = str(member.get("status") or "").lower()
             initial_state = "available" if index < initial_ready else "maintenance"
-            if "维修" in status or "停" in status or "maintenance" in status:
+            if self._aircraft_support_v1_member_in_maintenance(member):
                 initial_state = "maintenance"
             assets.append(
                 {
@@ -958,9 +1044,7 @@ class SimulationAdapter:
             "model_family": "aircraft_support_v1",
             "mapping_version": "aircraft-support-v1-input-v0",
             "consumed_fields": [
-                "equipment.quantity",
-                "equipment.initialReady",
-                "equipment.wholeMachineModels",
+                "combatUnit.members",
                 "missionProfile.combatUnit.members",
                 "missionProfile.durationHours",
                 "missionProfile.compositeTasks",
@@ -969,6 +1053,7 @@ class SimulationAdapter:
                 "missionPhases",
                 "airports",
                 "missionAreas",
+                "components[].aircraftModel",
                 "components[].failureRate",
                 "components[].failureDistribution",
                 "components[].kOutOfN",
@@ -1041,8 +1126,9 @@ class SimulationAdapter:
         mission_profile = project.get("missionProfile") if isinstance(project.get("missionProfile"), dict) else {}
         experiment = project.get("experiment") if isinstance(project.get("experiment"), dict) else {}
         monte_carlo = project.get("monteCarlo") if isinstance(project.get("monteCarlo"), dict) else {}
-        if not self._is_positive_number(equipment.get("initialReady")):
-            defaults.append("equipment.initialReady=equipment.quantity")
+        combat_members = self._aircraft_support_v1_combat_members(project, mission_profile)
+        if not combat_members and not self._is_positive_number(equipment.get("initialReady")):
+            defaults.append("aircraft.initialReady=derivedFleetCount")
         if not self._is_positive_number(mission_profile.get("durationHours")) and not self._mission_profile_has_periodic_duration(mission_profile):
             defaults.append("missionProfile.durationHours=24")
         if not self._is_positive_number(experiment.get("steps")):
@@ -3707,6 +3793,19 @@ class SimulationAdapter:
         if not isinstance(value, list):
             value = [value]
         return [str(item) for item in value if item not in (None, "")]
+
+    def _unique_string_list(self, values: Any) -> list[str]:
+        result: list[str] = []
+        seen: set[str] = set()
+        for value in values:
+            if value in (None, ""):
+                continue
+            item = str(value)
+            if item in seen:
+                continue
+            result.append(item)
+            seen.add(item)
+        return result
 
     def _optional_string(self, value: Any) -> str | None:
         if value in (None, ""):

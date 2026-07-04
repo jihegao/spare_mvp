@@ -14,6 +14,7 @@
           "experiment.seed"
         ],
         "defaults_applied": [
+          "equipment.quantity=8",
           "missionProfile.missionCount=3",
           "monteCarlo.lruFailureMultipliers=1.0"
         ],
@@ -53,7 +54,7 @@
     "scenario_version": "scenario-v0.1",
     "schema_version": "scenario-v0",
     "simulation_inputs": {
-      "aircraft_count": 6,
+      "aircraft_count": 8,
       "fuel_trucks": 3,
       "lru_failure_multiplier": 1.0,
       "maintenance_bays": 3,
@@ -556,18 +557,6 @@
             }
           }
         ],
-        "equipment": {
-          "deploymentLocation": "航母飞行甲板",
-          "initialReady": 6,
-          "minRequiredSorties": 5,
-          "model": "J-15",
-          "preLifeRequirementHours": 120,
-          "quantity": 6,
-          "wholeMachineModels": [
-            "J-15",
-            "J-35"
-          ]
-        },
         "experiment": {
           "name": "导入示例项目",
           "parallelCores": 4,
@@ -1804,18 +1793,6 @@
           }
         }
       ],
-      "equipment": {
-        "deploymentLocation": "航母飞行甲板",
-        "initialReady": 6,
-        "minRequiredSorties": 5,
-        "model": "J-15",
-        "preLifeRequirementHours": 120,
-        "quantity": 6,
-        "wholeMachineModels": [
-          "J-15",
-          "J-35"
-        ]
-      },
       "experiment": {
         "name": "导入示例项目",
         "parallelCores": 4,
@@ -3067,18 +3044,6 @@
         }
       }
     ],
-    "equipment": {
-      "deploymentLocation": "航母飞行甲板",
-      "initialReady": 6,
-      "minRequiredSorties": 5,
-      "model": "J-15",
-      "preLifeRequirementHours": 120,
-      "quantity": 6,
-      "wholeMachineModels": [
-        "J-15",
-        "J-35"
-      ]
-    },
     "experiment": {
       "name": "导入示例项目",
       "parallelCores": 4,

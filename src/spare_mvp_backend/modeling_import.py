@@ -95,14 +95,12 @@ def validate_modeling_import_package(import_package: dict[str, Any]) -> dict[str
 def modeling_import_to_project(import_package: dict[str, Any], validation: dict[str, Any] | None = None) -> dict[str, Any]:
     objects = import_package.get("objects", {})
     mission = _first_dict(objects.get("missionProfiles")) or {}
-    equipment_profile = objects.get("equipment") if isinstance(objects.get("equipment"), dict) else {}
     equipment_assets = [row for row in objects.get("equipmentAssets", []) if isinstance(row, dict)]
     resources = [row for row in objects.get("supportResources", []) if isinstance(row, dict)]
     activities = [row for row in objects.get("supportActivities", []) if isinstance(row, dict)]
     lifecycle = import_package.get("lifecycle") if isinstance(import_package.get("lifecycle"), dict) else {}
     version = _safe_positive_int(lifecycle.get("version"), 1)
     duration_hours = _safe_positive_float(mission.get("durationHours"), 1)
-    equipment = _equipment_profile_to_project(equipment_profile, equipment_assets, activities)
 
     if validation is None:
         validation = validate_modeling_import_package(import_package)
@@ -122,7 +120,6 @@ def modeling_import_to_project(import_package: dict[str, Any], validation: dict[
         "basicMissions": _project_object_list(objects, mission, "basicMissions"),
         "missionPhases": _project_object_list(objects, mission, "missionPhases"),
         "combatUnit": _project_object(objects, mission, "combatUnit", {}),
-        "equipment": equipment,
         "components": [_equipment_asset_to_component(row) for row in equipment_assets],
         "supportNodes": [_support_resource_to_node(row) for row in resources],
         "supportActivities": [_support_activity_to_project(row) for row in activities],
@@ -496,26 +493,6 @@ def _mission_profile_to_project(mission: dict[str, Any], import_id: str) -> dict
     profile = {key: deepcopy(value) for key, value in mission.items() if key not in project_only_fields}
     profile["sourceImportId"] = import_id
     return profile
-
-
-def _equipment_profile_to_project(
-    equipment_profile: dict[str, Any],
-    equipment_assets: list[dict[str, Any]],
-    activities: list[dict[str, Any]],
-) -> dict[str, Any]:
-    equipment = deepcopy(equipment_profile)
-    aircraft_models = [
-        str(row.get("aircraftModel"))
-        for row in equipment_assets
-        if row.get("aircraftModel") not in (None, "")
-    ]
-    unique_models = list(dict.fromkeys(aircraft_models))
-    if unique_models:
-        equipment.setdefault("wholeMachineModels", unique_models)
-        equipment.setdefault("model", unique_models[0])
-    equipment.setdefault("quantity", sum(_safe_positive_int(row.get("quantity"), 1) for row in equipment_assets if not row.get("parentId")))
-    equipment.setdefault("minRequiredSorties", max(1, len(activities)))
-    return equipment
 
 
 def _equipment_asset_to_component(row: dict[str, Any]) -> dict[str, Any]:

@@ -14,9 +14,8 @@ from typing import Any
 
 
 BEHAVIOR_DRIVING_FIELDS = [
-    "equipment.quantity",
-    "equipment.initialReady",
-    "equipment.wholeMachineModels",
+    "combatUnit.members",
+    "missionProfile.combatUnit.members",
     "missionProfile.durationHours",
     "missionProfile.compositeTasks",
     "missionProfile.periodicTasks",
@@ -24,6 +23,7 @@ BEHAVIOR_DRIVING_FIELDS = [
     "missionPhases",
     "airports",
     "missionAreas",
+    "components[].aircraftModel",
     "components[].failureRate",
     "components[].failureDistribution",
     "components[].kOutOfN",

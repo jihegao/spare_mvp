@@ -2844,8 +2844,7 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(created["sourceImport"]["import_id"], import_package["importId"])
         self.assertEqual(created["project"]["project_id"], import_package["projectId"])
         self.assertEqual(created["project"]["missionProfile"]["sourceImportId"], import_package["importId"])
-        self.assertEqual(created["project"]["equipment"]["wholeMachineModels"], ["J-15", "J-35"])
-        self.assertGreaterEqual(created["project"]["equipment"]["quantity"], 6)
+        self.assertNotIn("equipment", created["project"])
         self.assertGreaterEqual(len(created["project"]["components"]), 8)
         self.assertTrue(any(
             component.get("id") == "j15-avionics"
