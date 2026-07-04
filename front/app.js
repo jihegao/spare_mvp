@@ -513,7 +513,7 @@ let liteMesaMonteCarloSettings = {
   seed: Number(scenario.experiment?.seed || 20260621)
 };
 let liteMesaMonteCarloResult = null;
-let liteMesaMonteCarloStatus = "设置样本量和随机种子后运行 Mesa 分析。";
+let liteMesaMonteCarloStatus = "设置样本量和随机种子后运行分析。";
 let liteMesaAnalysisSettings = createDefaultLiteMesaAnalysisSettings();
 let liteMesaAnalysisResults = {};
 let rmsAllocationProject = createDemoRmsAllocationProject();
@@ -573,6 +573,7 @@ let visualizationStreamState = {
   artifactId: ""
 };
 let visualizationBackendControlStatus = "M9.3 后端运行控制尚未触发";
+let visualSupportAirportId = "";
 let backendApiStatus = "离线演示";
 let formalRunSubmitInFlight = false;
 let systemUserEditor = null;
@@ -1715,6 +1716,13 @@ function bindEvents() {
   });
 
   app.addEventListener("change", async (event) => {
+    const mesaSupportAirportSelect = event.target.closest("[data-mesa-support-airport]");
+    if (mesaSupportAirportSelect) {
+      visualSupportAirportId = mesaSupportAirportSelect.value;
+      render();
+      return;
+    }
+
     const rmsEquipmentRootSelect = event.target.closest("[data-rms-equipment-root]");
     if (rmsEquipmentRootSelect) {
       setRmsEquipmentRoot(rmsEquipmentRootSelect.value);
@@ -11950,16 +11958,262 @@ function renderMissionScheduleRow(row) {
 }
 
 function renderMesaSupportStage(state) {
-  const personnelRows = supportMetricRows(state.resources.filter((item) => item.category === "personnel"), "保障组织 A", "机务专业");
-  const equipmentRows = supportMetricRows(state.resources.filter((item) => ["equipment", "facility"].includes(item.category)), "保障组织 A", "设备类型");
-  const spareRows = spareMetricRows(state.spares);
+  const scope = visualSupportAirportScope(state);
+  const supportAirportOptions = scope.airports.map((airport) => `
+    <option value="${htmlEscape(airport.id)}" ${airport.id === scope.selectedAirport.id ? "selected" : ""}>${htmlEscape(airport.name)}</option>
+  `).join("");
+  const rows = supportRowsForAirportScope(state, scope);
   return `
     <div class="mesa-support-dashboard">
-      ${renderSupportMetricSection("保障人员（按专业）", "按保障组织 / 人员专业", personnelRows)}
-      ${renderSupportMetricSection("保障设备（按类型）", "按保障组织 / 设备类型", equipmentRows)}
-      ${renderSupportMetricSection("备件（按类型）", "按保障组织 / 备件类型", spareRows)}
+      <div class="support-airport-switcher">
+        <div>
+          <strong>当前机场保障资源</strong>
+          <span>${htmlEscape(scope.selectedAirport.name)} / 保障点 ${htmlEscape(scope.supportNodes.map((node) => node.name || node.id).join("、") || "-")}</span>
+        </div>
+        ${scope.airports.length > 1 ? `<select data-mesa-support-airport aria-label="切换机场查看保障资源">${supportAirportOptions}</select>` : `<span>${htmlEscape(scope.selectedAirport.name)}</span>`}
+      </div>
+      ${renderSupportMetricSection("保障人员（按专业）", "当前机场关联保障点 / 人员专业", rows.personnel)}
+      ${renderSupportMetricSection("保障设备（按类型）", "当前机场关联保障点 / 设备类型", rows.equipment)}
+      ${renderSupportMetricSection("备件（按类型）", "当前机场关联保障点 / 备件类型", rows.spares)}
     </div>
   `;
+}
+
+function visualSupportAirportScope(state) {
+  const projectJson = buildBackendProjectJson(scenario, currentProject || {});
+  const airports = supportAirportOptions(projectJson);
+  const defaultAirportId = currentTaskAirportId(state, airports);
+  const selectedAirport = airports.find((airport) => airport.id === visualSupportAirportId)
+    || airports.find((airport) => airport.id === defaultAirportId)
+    || airports[0]
+    || { id: "default-airport", name: "当前机场", supportNodeId: "" };
+  const supportNodes = supportNodesForAirport(projectJson, selectedAirport);
+  return { projectJson, airports: airports.length ? airports : [selectedAirport], selectedAirport, supportNodes };
+}
+
+function supportAirportOptions(projectJson) {
+  const airports = [
+    ...(Array.isArray(projectJson?.airports) ? projectJson.airports : []),
+    ...(Array.isArray(projectJson?.missionProfiles?.[0]?.airports) ? projectJson.missionProfiles[0].airports : [])
+  ];
+  const seen = new Set();
+  return airports
+    .map((airport, index) => ({
+      id: String(airport?.id || airport?.airportId || airport?.name || `airport-${index}`),
+      name: String(airport?.name || airport?.id || airport?.airportId || `机场 ${index + 1}`),
+      supportNodeId: String(airport?.supportNodeId || "")
+    }))
+    .filter((airport) => {
+      if (seen.has(airport.id)) return false;
+      seen.add(airport.id);
+      return true;
+    });
+}
+
+function currentTaskAirportId(state, airports) {
+  const activeMission = (state.missions || []).find((mission) => {
+    const status = String(mission.status || "").toLowerCase();
+    return ["preparing", "ready", "launched", "flying", "running"].includes(status);
+  }) || (state.missions || []).find((mission) => String(mission.status || "").toLowerCase() !== "completed");
+  const activeAirportId = String(activeMission?.airportId || "").trim();
+  if (activeAirportId && airports.some((airport) => airport.id === activeAirportId || airport.name === activeAirportId)) {
+    return airports.find((airport) => airport.id === activeAirportId || airport.name === activeAirportId)?.id || activeAirportId;
+  }
+  const activeSupportNodeId = String(activeMission?.supportNodeId || "").trim();
+  if (activeSupportNodeId) {
+    const airport = airports.find((item) => item.supportNodeId === activeSupportNodeId);
+    if (airport) return airport.id;
+  }
+  return airports[0]?.id || "";
+}
+
+function supportNodesForAirport(projectJson, airport) {
+  const nodes = [
+    ...(Array.isArray(projectJson?.supportNodes) ? projectJson.supportNodes : []),
+    ...(Array.isArray(projectJson?.supportResources) ? projectJson.supportResources : [])
+  ];
+  const supportNodeId = String(airport?.supportNodeId || "");
+  const airportIds = new Set([airport?.id, airport?.name].map((value) => String(value || "")).filter(Boolean));
+  const matches = nodes.filter((node) => (
+    String(node?.id || "") === supportNodeId
+    || String(node?.supportNodeId || "") === supportNodeId
+    || airportIds.has(String(node?.airport || ""))
+    || airportIds.has(String(node?.airportId || ""))
+  ));
+  return matches.length ? matches : (nodes.length ? nodes : []);
+}
+
+function supportRowsForAirportScope(state, scope) {
+  const supportNodeIds = new Set(scope.supportNodes.map((node) => String(node.id || node.supportNodeId || "")).filter(Boolean));
+  const scopedResources = state.resources.filter((resource) => supportRowBelongsToScope(resource, supportNodeIds, scope.selectedAirport));
+  const scopedSpares = state.spares.filter((spare) => supportRowBelongsToScope(spare, supportNodeIds, scope.selectedAirport));
+  return {
+    personnel: personnelRowsForAirportScope(scope, scopedResources),
+    equipment: equipmentRowsForAirportScope(scope, scopedResources),
+    spares: spareRowsForAirportScope(scope, scopedSpares)
+  };
+}
+
+function supportRowBelongsToScope(row, supportNodeIds, airport) {
+  if (!supportNodeIds.size) return true;
+  const supportNodeId = String(row.supportNodeId || row.id || "").split(":")[0];
+  if (supportNodeIds.has(supportNodeId)) return true;
+  const airportIds = new Set([airport?.id, airport?.name].map((value) => String(value || "")).filter(Boolean));
+  return airportIds.has(String(row.airportId || ""));
+}
+
+function personnelRowsForAirportScope(scope, resources) {
+  const rows = [];
+  const resourceStats = resourceStatsBySupportNode(resources);
+  for (const node of scope.supportNodes) {
+    const nodeId = String(node.id || node.supportNodeId || "");
+    const stats = resourceStats.get(nodeId) || {};
+    const capacity = node.personnelCapacity;
+    if (Array.isArray(capacity) && capacity.length) {
+      for (const item of capacity) {
+        rows.push(supportMetricRowFromConfig({
+          organization: node.name || nodeId || scope.selectedAirport.name,
+          type: item.specialty || item.type || "人员专业",
+          name: item.name || item.specialty || item.type || "保障人员",
+          capacity: item.capacity,
+          inUse: stats.inUse,
+          workCount: stats.workCount,
+          delayCount: stats.delayCount,
+          primaryLabel: "工作次数",
+          secondaryLabel: "延误次数"
+        }));
+      }
+    } else {
+      rows.push(supportMetricRowFromConfig({
+        organization: node.name || nodeId || scope.selectedAirport.name,
+        type: "人员专业",
+        name: "保障人员",
+        capacity,
+        inUse: stats.inUse,
+        workCount: stats.workCount,
+        delayCount: stats.delayCount,
+        primaryLabel: "工作次数",
+        secondaryLabel: "延误次数"
+      }));
+    }
+  }
+  return rows.length ? rows : supportMetricRows(resources.filter((item) => item.category === "personnel"), scope.selectedAirport.name, "人员专业");
+}
+
+function equipmentRowsForAirportScope(scope, resources) {
+  const rows = [];
+  const resourceStats = resourceStatsBySupportNode(resources);
+  for (const node of scope.supportNodes) {
+    const nodeId = String(node.id || node.supportNodeId || "");
+    const stats = resourceStats.get(nodeId) || {};
+    const capacity = node.equipmentCapacity;
+    if (Array.isArray(capacity) && capacity.length) {
+      for (const item of capacity) {
+        rows.push(supportMetricRowFromConfig({
+          organization: node.name || nodeId || scope.selectedAirport.name,
+          type: item.type || item.model || "设备类型",
+          name: item.name || item.id || item.type || "保障设备",
+          capacity: item.quantity || item.capacity,
+          inUse: stats.inUse,
+          workCount: stats.workCount,
+          delayCount: stats.delayCount,
+          primaryLabel: "工作次数",
+          secondaryLabel: "延误次数"
+        }));
+      }
+    } else {
+      rows.push(supportMetricRowFromConfig({
+        organization: node.name || nodeId || scope.selectedAirport.name,
+        type: "设备类型",
+        name: "保障设备",
+        capacity,
+        inUse: stats.inUse,
+        workCount: stats.workCount,
+        delayCount: stats.delayCount,
+        primaryLabel: "工作次数",
+        secondaryLabel: "延误次数"
+      }));
+    }
+  }
+  return rows.length ? rows : supportMetricRows(resources.filter((item) => ["equipment", "facility", "support_node"].includes(item.category)), scope.selectedAirport.name, "设备类型");
+}
+
+function spareRowsForAirportScope(scope, spares) {
+  const rows = [];
+  const spareStats = spareStatsBySupportNode(spares);
+  for (const node of scope.supportNodes) {
+    const nodeId = String(node.id || node.supportNodeId || "");
+    const inventory = node.inventory || {};
+    const entries = Array.isArray(inventory)
+      ? inventory.map((item) => [item.name || item.spareType || item.id, item.quantity])
+      : Object.entries(inventory);
+    for (const [name, quantity] of entries) {
+      const stats = spareStats.get(`${nodeId}:${name}`) || spareStats.get(String(name)) || {};
+      rows.push(supportMetricRowFromConfig({
+        organization: node.name || nodeId || scope.selectedAirport.name,
+        type: "备件类型",
+        name,
+        capacity: quantity,
+        inUse: stats.consumed,
+        workCount: stats.consumed,
+        delayCount: stats.delayCount,
+        primaryLabel: "消耗量",
+        secondaryLabel: "延误次数"
+      }));
+    }
+  }
+  return rows.length ? rows : spareMetricRows(spares);
+}
+
+function resourceStatsBySupportNode(resources) {
+  const stats = new Map();
+  for (const resource of resources) {
+    const key = String(resource.supportNodeId || resource.id || "").split(":")[0];
+    if (!key) continue;
+    const current = stats.get(key) || { inUse: 0, workCount: 0, delayCount: 0 };
+    current.inUse += Number(resource.inUse || 0);
+    current.workCount += Number(resource.workCount || 0);
+    current.delayCount += Number(resource.delayCount || 0);
+    stats.set(key, current);
+  }
+  return stats;
+}
+
+function spareStatsBySupportNode(spares) {
+  const stats = new Map();
+  for (const spare of spares) {
+    const keys = [spare.id, spare.label].map((value) => String(value || "")).filter(Boolean);
+    for (const key of keys) {
+      stats.set(key, {
+        consumed: Number(spare.consumed || 0),
+        pending: Number(spare.pending || 0),
+        delayCount: Number(spare.delayCount || 0)
+      });
+    }
+  }
+  return stats;
+}
+
+function supportMetricRowFromConfig(config) {
+  const capacity = Math.max(0, Number(config.capacity || 0));
+  const inUse = Math.max(0, Number(config.inUse || 0));
+  const utilization = capacity > 0 ? Math.min(1, inUse / capacity) : 0;
+  const satisfaction = capacity > 0 ? Math.max(0, Math.min(1, 1 - inUse / Math.max(1, capacity))) : 0;
+  return {
+    organization: config.organization || "保障组织",
+    type: config.type || "资源类型",
+    name: config.name || "资源",
+    capacity,
+    inUse,
+    utilization: pct(utilization),
+    utilizationWidth: Math.round(utilization * 100),
+    satisfaction: pct(satisfaction),
+    satisfactionWidth: Math.round(satisfaction * 100),
+    primaryLabel: config.primaryLabel || "工作次数",
+    primaryValue: Number(config.workCount || 0),
+    secondaryLabel: config.secondaryLabel || "延误次数",
+    secondaryValue: Number(config.delayCount || 0)
+  };
 }
 
 function renderSupportMetricSection(title, subtitle, rows) {
@@ -12749,8 +13003,8 @@ function renderLiteMesaMonteCarloAnalysis(page) {
     <div class="lite-mesa-workbench">
       <section class="lite-mesa-hero">
         <div>
-          <span class="status-badge success">前端建模 + Mesa 分析</span>
-          <h3>Mesa蒙特卡洛分析</h3>
+          <span class="status-badge success">前端建模 + 仿真分析</span>
+          <h3>蒙特卡洛分析</h3>
           <p>${htmlEscape(projectName)} / ${htmlEscape(page.module)} / ${htmlEscape(scenario.scenarioId || "当前建模数据")}</p>
         </div>
         <div class="lite-mesa-hero-meter" aria-label="运行样本">
@@ -12772,7 +13026,7 @@ function renderLiteMesaMonteCarloAnalysis(page) {
               <input data-lite-mesa-field="seed" type="number" step="1" value="${htmlEscape(liteMesaMonteCarloSettings.seed)}">
             </label>
           </div>
-          <button type="button" class="btn-primary" data-lite-mesa-action="run">运行 Mesa 分析</button>
+          <button type="button" class="btn-primary" data-lite-mesa-action="run">运行分析</button>
           <p class="inline-status">${htmlEscape(liteMesaMonteCarloStatus)}</p>
           <div class="lite-mesa-source-grid">
             <div><span>项目</span><strong>${htmlEscape(projectName)}</strong></div>
@@ -12797,7 +13051,7 @@ function renderLiteMesaMonteCarloAnalysis(page) {
             </div>
           ` : `
             <div class="empty-state">
-              <strong>尚未运行 Mesa 分析</strong>
+              <strong>尚未运行分析</strong>
               <p>设置样本量和随机种子后运行。</p>
             </div>
           `}
@@ -12835,7 +13089,7 @@ function syncLiteMesaSettingsFromMonteCarloExperiment(experiment) {
   const seed = Math.trunc(Number(experiment.seed) || liteMesaMonteCarloSettings.seed || 1);
   liteMesaMonteCarloSettings = { samples, seed };
   liteMesaMonteCarloResult = null;
-  liteMesaMonteCarloStatus = "已载入蒙特卡洛实验设置，等待运行 Mesa 分析。";
+  liteMesaMonteCarloStatus = "已载入蒙特卡洛实验设置，等待运行分析。";
 }
 
 function updateLiteMesaMonteCarloSetting(field, value) {
@@ -12852,7 +13106,7 @@ function updateLiteMesaMonteCarloSetting(field, value) {
     };
   }
   liteMesaMonteCarloResult = null;
-  liteMesaMonteCarloStatus = "设置已更新，等待重新运行 Mesa 分析。";
+  liteMesaMonteCarloStatus = "设置已更新，等待重新运行分析。";
 }
 
 function runLiteMesaMonteCarloAnalysis() {
@@ -12873,11 +13127,11 @@ function runLiteMesaMonteCarloAnalysis() {
     });
     const runCount = liteMesaMonteCarloResult.runs?.length || 0;
     liteMesaMonteCarloStatus = runCount
-      ? `Mesa 分析完成：${runCount} 个样本，seed ${seed}。`
+      ? `分析完成：${runCount} 个样本，seed ${seed}。`
       : "当前建模数据不足：请补充装备数量、任务要求、任务周期、部件和保障节点。";
   } catch (err) {
     liteMesaMonteCarloResult = null;
-    liteMesaMonteCarloStatus = `Mesa 分析失败：${err && err.message ? err.message : "运行错误"}`;
+    liteMesaMonteCarloStatus = `分析失败：${err && err.message ? err.message : "运行错误"}`;
   }
 }
 

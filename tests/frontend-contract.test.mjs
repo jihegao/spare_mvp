@@ -2244,6 +2244,24 @@ test("direct Monte Carlo Mesa page hides sweep inputs and keeps formal runs expl
   assert.match(appSource, /const savePlanButton = event\.target\.closest\("\[data-save-plan\]"\)/);
 });
 
+test("monte carlo experiment detail hides Mesa from visible copy", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const renderSource = appSource.slice(
+    appSource.indexOf("function renderLiteMesaMonteCarloAnalysis"),
+    appSource.indexOf("function liteMesaBaselineSweep")
+  );
+
+  assert.match(renderSource, /蒙特卡洛分析/);
+  assert.match(renderSource, /运行分析/);
+  assert.match(renderSource, /尚未运行分析/);
+  assert.doesNotMatch(renderSource, /前端建模 \+ Mesa 分析/);
+  assert.doesNotMatch(renderSource, /Mesa蒙特卡洛分析/);
+  assert.doesNotMatch(renderSource, /运行 Mesa 分析/);
+  assert.doesNotMatch(renderSource, /尚未运行 Mesa 分析/);
+  assert.doesNotMatch(renderSource, /等待运行 Mesa 分析/);
+  assert.doesNotMatch(renderSource, /Mesa 分析完成|Mesa 分析失败/);
+});
+
 test("modeling import publish falls back to a new version when the current snapshot is referenced", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const flowSource = await readFile(new URL("../front/modeling-import-project-flow.mjs", import.meta.url), "utf8");
@@ -2281,7 +2299,8 @@ test("monte carlo experiment navigation goes directly to embedded Mesa detail", 
   assert.match(appSource, /const normalizedHash = `feature=\$\{encodeURIComponent\(featureId\)\}`/);
   assert.match(appSource, /window\.history\.replaceState\(null, "", `\$\{location\.pathname\}\$\{location\.search\}#\$\{normalizedHash\}`\)/);
   assert.match(appSource, /location\.hash = normalizedHash/);
-  assert.match(liteMesaSource, /Mesa蒙特卡洛分析/);
+  assert.match(liteMesaSource, /蒙特卡洛分析/);
+  assert.doesNotMatch(liteMesaSource, /Mesa蒙特卡洛分析|运行 Mesa 分析|尚未运行 Mesa 分析/);
   assert.match(liteMesaSource, /主要输出指标统计值/);
   assert.doesNotMatch(appSource, /class="mc-main-tabs"/);
   assert.doesNotMatch(appSource, /class="mc-subtabs"/);
@@ -2321,7 +2340,8 @@ test("monte carlo detail embeds the Mesa Monte Carlo page", async () => {
   assert.match(appSource, /function runLiteMesaMonteCarloAnalysis/);
   assert.match(appSource, /let liteMesaMonteCarloSettings =/);
   assert.match(appSource, /let liteMesaMonteCarloResult =/);
-  assert.match(renderSource, /前端建模 \+ Mesa 分析/);
+  assert.match(renderSource, /前端建模 \+ 仿真分析/);
+  assert.doesNotMatch(renderSource, /前端建模 \+ Mesa 分析|运行 Mesa 分析|尚未运行 Mesa 分析/);
   assert.match(renderSource, /data-lite-mesa-field="samples"/);
   assert.match(renderSource, /data-lite-mesa-field="seed"/);
   assert.match(renderSource, /主要输出指标统计值/);
@@ -3804,12 +3824,12 @@ test("visual simulation layout matches operational dashboard requirements", asyn
   assert.doesNotMatch(styleSource, /\.aircraft-mission-timeline/);
   assert.match(styleSource, /\.mesa-visual-grid\.mission-expanded[\s\S]*grid-template-columns: minmax\(0, 1fr\)/);
   assert.match(stageSource, /保障人员/);
-  assert.match(stageSource, /按保障组织 \/ 人员专业/);
+  assert.match(stageSource, /当前机场关联保障点 \/ 人员专业/);
   assert.match(stageSource, /保障设备（按类型）/);
   assert.match(stageSource, /工作次数/);
   assert.match(stageSource, /延误次数/);
   assert.doesNotMatch(stageSource, /保障设备详情清单/);
-  assert.match(stageSource, /按保障组织 \/ 备件类型/);
+  assert.match(stageSource, /当前机场关联保障点 \/ 备件类型/);
   assert.match(appSource, /mesa-event-window/);
   assert.match(appSource, /buildSimulationLogStream\(visualizationStateSeries\)/);
   assert.match(appSource, /isStateFrameEvent/);
@@ -3841,10 +3861,22 @@ test("visual support view separates collapsible resource statistics from support
   assert.match(supportStageSource, /保障人员（按专业）/);
   assert.match(supportStageSource, /保障设备（按类型）/);
   assert.match(supportStageSource, /备件（按类型）/);
+  assert.match(supportStageSource, /visualSupportAirportScope\(state\)/);
+  assert.match(supportStageSource, /data-mesa-support-airport/);
+  assert.match(supportStageSource, /supportAirportOptions/);
+  assert.match(supportStageSource, /supportRowsForAirportScope/);
   assert.match(supportStageSource, /工作次数/);
   assert.match(supportStageSource, /延误次数/);
   assert.match(supportStageSource, /消耗量/);
   assert.doesNotMatch(supportStageSource, /保障设备详情清单/);
+  assert.match(appSource, /let visualSupportAirportId = ""/);
+  assert.match(appSource, /event\.target\.closest\("\[data-mesa-support-airport\]"\)/);
+  assert.match(appSource, /currentTaskAirportId\(state, airports\)/);
+  assert.match(appSource, /supportNodesForAirport\(projectJson, selectedAirport\)/);
+  assert.match(appSource, /airport\?\.supportNodeId/);
+  assert.match(appSource, /node\.airport/);
+  assert.match(stateSource, /supportNodeId: item\.support_node_id/);
+  assert.match(stateSource, /airportId: item\.airport_id/);
   assert.match(stateSource, /delayCount: number\(item\.delay_count/);
   assert.match(stateSource, /delayCount: number\(item\.delay_count \|\| item\.shortage_count/);
 
