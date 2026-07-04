@@ -333,6 +333,130 @@ test("project list exports project JSON without direct Project JSON import at ru
   }
 });
 
+test("project data raw JSON normalizes legacy basicMission fields", async () => {
+  const projectJson = createRuntimeProjectJson({
+    project_id: "project-runtime",
+    basicMissions: [],
+    basicMission: {
+      missionId: "legacy-runtime-basic",
+      name: "旧运行时基本任务",
+      equipmentType: "J-15",
+      taskDurationMinutes: 80
+    },
+    missionProfile: {
+      name: "运行时任务剖面",
+      durationHours: 8,
+      basicMission: {
+        missionId: "legacy-profile-basic",
+        name: "旧剖面基本任务",
+        equipmentType: "J-35"
+      },
+      compositeTasks: [{
+        id: "composite-runtime",
+        taskItems: [{
+          basicMissionId: "legacy-runtime-basic",
+          basicTaskName: "旧运行时基本任务",
+          equipmentType: "stale",
+          taskDurationMinutes: 1
+        }]
+      }],
+      periodicTasks: []
+    }
+  });
+  const runtime = await setupRuntimeApp({
+    hash: "feature=system-management-project-data-management",
+    projectJson
+  });
+
+  try {
+    await runtime.flush();
+
+    assert.match(runtime.appNode.innerHTML, /project json 原始数据/);
+    assert.match(runtime.appNode.innerHTML, /<code>basicMissions<\/code><span>\[2\]<\/span>/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /<code>basicMission<\/code>/);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("visual Mesa page renders compact headerless status view with decimal KPI values", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-visual-mesa-page",
+    projectJson: createRuntimeProjectJson()
+  });
+
+  try {
+    await runtime.flush();
+
+    assert.match(runtime.appNode.innerHTML, /data-mesa-control="play"/);
+    assert.match(runtime.appNode.innerHTML, /飞机状态一览/);
+    assert.match(runtime.appNode.innerHTML, /<span>使用可用度<\/span><strong>0\.50<\/strong>/);
+    assert.match(runtime.appNode.innerHTML, /<span>出动架次率<\/span><strong>0\.50<\/strong>/);
+    assert.match(runtime.appNode.innerHTML, /<span>备件满足率<\/span><strong>0\.50<\/strong>/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /飞机保障独立 Mesa 仿真/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /点击可视化推演后直接读取当前 Project/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /<div class="mesa-clock"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /独立 Mesa/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /<strong>0%<\/strong>|<strong>100%<\/strong>/);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("four result analysis pages omit Mesa from visible copy", async () => {
+  const featureIds = [
+    "spare-planning-spare-shortfall-analysis",
+    "spare-planning-carry-list-analysis",
+    "mission-reliability-task-reliability",
+    "mission-reliability-downtime-factor-analysis"
+  ];
+
+  for (const featureId of featureIds) {
+    const runtime = await setupRuntimeApp({
+      hash: `feature=${featureId}`,
+      projectJson: createRuntimeProjectJson()
+    });
+    try {
+      assert.match(runtime.appNode.innerHTML, /分析设置/);
+      assert.match(runtime.appNode.innerHTML, /data-lite-mesa-analysis-action="run">运行分析<\/button>/);
+      assert.match(runtime.appNode.innerHTML, /尚未运行分析/);
+      for (const removedCopy of [
+        "前端建模 + Mesa 分析",
+        "运行 Mesa 分析",
+        "尚未运行 Mesa 分析",
+        "独立 Mesa 设置",
+        "后端 Mesa",
+        "会话内 Mesa",
+        "Mesa 样本"
+      ]) {
+        assert.doesNotMatch(runtime.appNode.innerHTML, new RegExp(removedCopy), `${featureId} should not show ${removedCopy}`);
+      }
+    } finally {
+      runtime.restore();
+    }
+  }
+});
+
+test("carry list analysis result omits boundary explanation card", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-carry-list-analysis",
+    projectJson: createRuntimeProjectJson()
+  });
+
+  try {
+    await runtime.click("[data-lite-mesa-analysis-action='run']");
+
+    assert.match(runtime.appNode.innerHTML, /建议携行数量/);
+    assert.match(runtime.appNode.innerHTML, /aircraft_support_v1_spares/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /边界说明/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /会话内 Mesa 分析结果/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /不写入正式结果账本/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /未创建 run、result 或 artifact/);
+  } finally {
+    runtime.restore();
+  }
+});
+
 test("feature routes without a template-created project return to project list", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=spare-planning-experiment-plan-list",
@@ -1163,6 +1287,23 @@ async function setupRuntimeApp({
       else backendProjectCatalog.unshift(catalogEntry);
       return jsonResponse({ project_id: body.project_id || "project-runtime", project_version: "project-v0.1" });
     }
+    if (url === "/api/mesa-visualization-runs" && method === "POST") {
+      const runId = "independent-mesa-runtime";
+      return jsonResponse({
+        run_id: runId,
+        project_id: "project-runtime",
+        scenario_id: "runtime-scenario",
+        model_family: "aircraft_support_v1",
+        source: "independent_mesa_project",
+        status: "succeeded",
+        state_series_artifact_id: "runtime-state-series",
+        state_series: createRuntimeVisualizationStateSeries(runId)
+      });
+    }
+    if (url === "/api/mesa-analysis-runs" && method === "POST") {
+      const body = JSON.parse(options.body || "{}");
+      return jsonResponse(createRuntimeLiteAnalysisResponse(body.analysis_type || "carry_list"));
+    }
     throw new Error(`unexpected fetch ${method} ${url}`);
   };
 
@@ -1320,6 +1461,117 @@ function createRuntimeProjectJson(overrides = {}) {
     missionProfile: { ...project.missionProfile, ...(overrides.missionProfile || {}) },
     basicMissions: overrides.basicMissions || project.basicMissions,
     equipment: { ...project.equipment, ...(overrides.equipment || {}) }
+  };
+}
+
+function createRuntimeVisualizationStateSeries(runId = "independent-mesa-runtime") {
+  const trace = {
+    run_id: runId,
+    scenario_id: "runtime-scenario",
+    scenario_version: "project-v0.1",
+    result_summary_id: "runtime-result-summary",
+    artifact_manifest_id: "runtime-artifact-manifest",
+    run_config_artifact_id: "runtime-run-config",
+    input_project_artifact_id: "runtime-input-project",
+    compiled_scenario_artifact_id: "runtime-compiled-scenario"
+  };
+  return {
+    schema_version: "visualization-state-series-v0",
+    run_id: runId,
+    scenario_id: "runtime-scenario",
+    scenario_version: "project-v0.1",
+    model_family: "aircraft_support_v1",
+    artifact_manifest_id: trace.artifact_manifest_id,
+    result_summary_id: trace.result_summary_id,
+    run_config_artifact_id: trace.run_config_artifact_id,
+    input_project_artifact_id: trace.input_project_artifact_id,
+    compiled_scenario_artifact_id: trace.compiled_scenario_artifact_id,
+    frames: [{
+      run_id: runId,
+      step: 0,
+      simulation_time: 0,
+      trace,
+      snapshot: {
+        elapsed_hours: 0,
+        aircraft_count: 2,
+        available_aircraft: 1,
+        planned_sorties: 2,
+        completed_sorties: 1,
+        active_jobs: 0,
+        spare_stock_total: 1,
+        sortie_completion_rate: 0.5
+      },
+      aircraft_state: {},
+      mission_state: {},
+      resource_state: {},
+      event_summary: {},
+      aircraft: [
+        { tail_number: "J15-101", type: "J-15", state: "available", x: 0, y: 0, systems: [] },
+        { tail_number: "J15-102", type: "J-15", state: "maintenance", x: 1, y: 0, systems: [] }
+      ],
+      missions: [{
+        mission_id: "runtime-mission",
+        name: "运行时任务",
+        required_aircraft: 2,
+        assigned_tail_numbers: ["J15-101"],
+        status: "launched"
+      }],
+      resources: [],
+      spares: [
+        { part_id: "spare-ready", name: "可用备件", quantity: 1 },
+        { part_id: "spare-empty", name: "缺货备件", quantity: 0 }
+      ],
+      jobs: [],
+      events: []
+    }]
+  };
+}
+
+function createRuntimeLiteAnalysisResponse(analysisType = "carry_list") {
+  const rowsByType = {
+    carry_list: [{
+      spareType: "aircraft_support_v1_spares",
+      recommended: 1,
+      demand: 28,
+      shortage: 0,
+      riskLevel: "低",
+      confidenceTarget: 0.9
+    }],
+    spare_shortfall: [{
+      spareType: "aircraft_support_v1_spares",
+      demand: 28,
+      filled: 28,
+      shortage: 0,
+      fillRate: 1,
+      riskLevel: "低"
+    }],
+    mission_reliability: [{
+      sequence: 1,
+      seed: 20260621,
+      missionSuccessRate: 1,
+      sortieRate: 1,
+      readyRate: 1
+    }],
+    downtime_factors: [{
+      label: "无停机因素",
+      reason: "none",
+      count: 0,
+      contribution: 0
+    }]
+  };
+  return {
+    status: "session_complete",
+    source: "lite_mesa_aircraft_support_v1",
+    analysis_type: analysisType,
+    sample_count: 27,
+    seed_list: [20260621],
+    metrics: [["样本数", "27"], ["建议携行总数", "1"]],
+    rows: rowsByType[analysisType] || rowsByType.carry_list,
+    limitations: [
+      "会话内 Mesa 分析结果，不写入正式结果账本。",
+      "未创建 run、result 或 artifact。",
+      "结论只代表当前项目建模粒度和样本设置。"
+    ]
   };
 }
 

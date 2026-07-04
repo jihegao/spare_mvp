@@ -632,9 +632,10 @@ test("results analysis pages route to four independent lightweight Mesa pages", 
   assert.match(appSource, /function renderLiteMesaAnalysisPage/);
   assert.match(appSource, /function runLiteMesaAnalysisPage/);
   assert.match(appSource, /let liteMesaAnalysisResults =/);
-  assert.match(appSource, /前端建模 \+ Mesa 分析/);
+  assert.match(appSource, /data-lite-mesa-analysis-action="run">运行分析/);
   assert.match(appSource, /backendApi\.runLiteMesaAnalysis/);
   assert.match(appSource, /不创建 run、result 或 artifact/);
+  assert.doesNotMatch(appSource, /前端建模 \+ Mesa 分析|运行 Mesa 分析|尚未运行 Mesa 分析|Mesa 分析运行中|Mesa 分析失败|独立 Mesa 设置|后端 Mesa|会话内 Mesa|Mesa 样本/);
 });
 
 test("lightweight Mesa analysis pages do not render current-result or formal projection UI", async () => {
@@ -2677,7 +2678,6 @@ test("M9.8 formal run launches use aircraft_support_v1 while visual launches use
   assert.match(visualNewRunSource, /await startIndependentMesaVisualizationThroughApi\(\)/);
   assert.doesNotMatch(visualNewRunSource, /await startSingleRunThroughApi\(\)/);
   assert.doesNotMatch(visualSource, /formal run \/ aircraft_support_v1/);
-  assert.match(visualSource, /独立 Mesa/);
   assert.match(visualSource, /当前 Project/);
   assert.doesNotMatch(visualSource, /mesa-abm-skill/);
   assert.doesNotMatch(visualSource, /Mesa ABM \/ aviation_support/);
@@ -3461,7 +3461,7 @@ test("SGR monte carlo pages label sortie_rate as 出动架次率", async () => {
   );
   const reliabilityTableSource = appSource.slice(
     reliabilityTableStart,
-    appSource.indexOf("function renderLiteMesaAnalysisLimitations")
+    appSource.indexOf("function field(label")
   );
 
   assert.match(metricSource, /key: "sortie_rate", label: "出动架次率"/);
@@ -3724,8 +3724,10 @@ test("visual simulation page embeds aircraft mission and support Mesa views", as
   assert.match(appSource, /mesaTab\("aircraft"/);
   assert.match(appSource, /mesaTab\("mission"/);
   assert.match(appSource, /mesaTab\("support"/);
-  assert.match(appSource, /飞机保障独立 Mesa 仿真/);
-  assert.match(appSource, /点击可视化推演后直接读取当前 Project/);
+  assert.doesNotMatch(appSource, /飞机保障独立 Mesa 仿真/);
+  assert.doesNotMatch(appSource, /点击可视化推演后直接读取当前 Project/);
+  assert.doesNotMatch(appSource, /mesa-visual-header/);
+  assert.doesNotMatch(appSource, /mesa-clock/);
   assert.doesNotMatch(appSource, /formal run \/ aircraft_support_v1/);
   assert.match(appSource, /isVisualSimulationPage/);
   assert.match(appSource, /spare-planning-visual-mesa-page/);
@@ -3765,7 +3767,10 @@ test("visual simulation layout matches operational dashboard requirements", asyn
   assert.match(visualSource, /mesa-control-status/);
   assert.doesNotMatch(visualSource, /mesa-status-grid/);
   assert.match(styleSource, /\.mesa-control-status\[open\][\s\S]*overflow: auto/);
-  assert.match(appSource, /可用飞机数量趋势/);
+  assert.match(appSource, /飞机状态一览/);
+  assert.match(appSource, /ratioFixed\(usableAircraft \/ aircraftCount\)/);
+  assert.match(appSource, /ratioFixed\(assignedSorties \/ Math\.max\(1, requiredSorties\)\)/);
+  assert.match(appSource, /ratioFixed\(stockedSpares \/ Math\.max\(1, state\.spares\.length\)\)/);
   assert.match(appSource, /AIRCRAFT_TREND_SERIES/);
   for (const label of ["可用飞机", "任务中", "维修中", "使用保障中"]) {
     assert.match(appSource, new RegExp(label));
@@ -4074,7 +4079,7 @@ test("visual simulation keeps direct Mesa state without a visible run picker", a
   assert.doesNotMatch(appSource, /function renderVisualizationRunOptions/);
   assert.doesNotMatch(appSource, /data-mesa-run-select/);
   assert.match(appSource, /visualizationSelectedRunId = runId/);
-  assert.match(appSource, /visualizationReplayStatus = `独立 Mesa 已读取当前 Project 并开始回放：run_id \$\{runId\}`/);
+  assert.match(appSource, /visualizationReplayStatus = `已读取当前 Project 并开始回放：run_id \$\{runId\}`/);
   assert.match(refreshRunListSource, /M9 当前回放已同步/);
   assert.doesNotMatch(refreshRunListSource, /run 列表已刷新/);
 });

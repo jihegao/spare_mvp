@@ -320,9 +320,9 @@
     },
     {
       "field_path": "objects.missionProfiles[].basicMissions[].equipmentQuantity",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
-      "status": "ignored",
-      "target": "M9.6 platform case package"
+      "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
+      "status": "consumed",
+      "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
     },
     {
       "field_path": "objects.missionProfiles[].basicMissions[].equipmentType",
@@ -344,9 +344,9 @@
     },
     {
       "field_path": "objects.missionProfiles[].basicMissions[].missionId",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
-      "status": "ignored",
-      "target": "M9.6 platform case package"
+      "rationale": "The value contributes to stable IDs, names, provenance, output sampling, or display metadata rather than direct simulation dynamics.",
+      "status": "derived",
+      "target": "M9.7.4 aircraft_support_v1 identity, output, and display metadata"
     },
     {
       "field_path": "objects.missionProfiles[].basicMissions[].name",
@@ -1710,11 +1710,11 @@
   "source_fixture": "tests/fixtures/modeling_import_project.json",
   "source_import_id": "import-carrier-day-night-001",
   "summary": {
-    "consumed": 39,
+    "consumed": 40,
     "defaulted": 0,
-    "derived": 8,
+    "derived": 9,
     "governance_only": 34,
-    "ignored": 203,
+    "ignored": 201,
     "total_fields": 284,
     "unsupported": 0
   }

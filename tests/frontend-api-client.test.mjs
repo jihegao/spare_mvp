@@ -589,6 +589,62 @@ test("buildBackendProjectJson syncs composite task inherited basic mission field
   assert.equal(scenario.missionProfile.compositeTasks[0].taskItems[0].equipmentType, "stale");
 });
 
+test("buildBackendProjectJson migrates legacy basicMission into basicMissions", () => {
+  const scenario = {
+    scenarioId: "legacy-basic-mission",
+    basicMissions: [],
+    basicMission: {
+      missionId: "legacy-basic",
+      name: "旧基本任务",
+      equipmentType: "J-15",
+      taskDurationMinutes: 75,
+      equipmentQuantity: 2,
+      preparationMinutes: 35
+    },
+    missionProfile: {
+      basicMission: {
+        missionId: "profile-legacy-basic",
+        name: "剖面旧基本任务",
+        equipmentType: "J-35"
+      },
+      basicMissions: [{
+        id: "profile-array-basic",
+        name: "剖面数组基本任务",
+        equipmentType: "J-20"
+      }],
+      compositeTasks: [{
+        id: "composite-alpha",
+        taskItems: [{
+          basicMissionId: "legacy-basic",
+          basicTaskName: "旧基本任务",
+          equipmentType: "stale",
+          taskDurationMinutes: 1,
+          equipmentQuantity: 1,
+          preparationMinutes: 1
+        }]
+      }]
+    }
+  };
+
+  const projectJson = buildBackendProjectJson(scenario, { id: "legacy-basic-mission" });
+  const syncedItem = projectJson.missionProfile.compositeTasks[0].taskItems[0];
+
+  assert.deepEqual(projectJson.basicMissions.map((task) => task.id), [
+    "legacy-basic",
+    "profile-legacy-basic",
+    "profile-array-basic"
+  ]);
+  assert.equal("basicMission" in projectJson, false);
+  assert.equal("basicMission" in projectJson.missionProfile, false);
+  assert.equal("basicMissions" in projectJson.missionProfile, false);
+  assert.equal(syncedItem.equipmentType, "J-15");
+  assert.equal(syncedItem.taskDurationMinutes, 75);
+  assert.equal(syncedItem.equipmentQuantity, 2);
+  assert.equal(syncedItem.preparationMinutes, 35);
+  assert.ok("basicMission" in scenario);
+  assert.ok("basicMission" in scenario.missionProfile);
+});
+
 test("buildBackendProjectJson canonicalizes support activity job predecessor references", () => {
   const scenario = {
     scenarioId: "support-predecessor-canonical",

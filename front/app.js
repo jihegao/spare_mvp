@@ -4,7 +4,8 @@ import {
   buildBackendProjectJson,
   buildPreviewResultState,
   buildFrontendResultState,
-  createBackendApiClient
+  createBackendApiClient,
+  normalizeProjectJsonBasicMissions
 } from "./api-client.mjs";
 import {
   normalizeAnalysisProjectionPayload,
@@ -118,7 +119,7 @@ const LITE_MESA_ANALYSIS_DEFINITIONS = Object.freeze({
     experimentId: "project_baseline_at_current_granularity",
     title: "备件短板分析",
     subtitle: "基于当前项目建模数据的短缺事件统计",
-    pageGoal: "识别当前项目在会话内 Mesa 样本下发生缺件的备件类别。",
+    pageGoal: "识别当前项目在会话样本下发生缺件的备件类别。",
     fixedConfig: [["实验类型", "项目基线"], ["用户参数", "无可调参数"]],
     metricLabels: ["发生缺件备件", "总缺件次数", "最高缺件备件", "样本数"]
   },
@@ -134,7 +135,7 @@ const LITE_MESA_ANALYSIS_DEFINITIONS = Object.freeze({
     experimentId: "project_baseline_at_current_granularity",
     title: "任务可靠度评估",
     subtitle: "任务成功概率、出动架次率和目标达成统计",
-    pageGoal: "评估当前项目在会话内 Mesa 样本下的任务可靠度表现。",
+    pageGoal: "评估当前项目在会话样本下的任务可靠度表现。",
     fixedConfig: [["实验类型", "项目基线"], ["统计口径", "会话样本聚合"]],
     metricLabels: ["任务成功率", "出动架次率", "战备完好率", "样本数"]
   },
@@ -142,7 +143,7 @@ const LITE_MESA_ANALYSIS_DEFINITIONS = Object.freeze({
     experimentId: "project_baseline_at_current_granularity",
     title: "停机因素分析",
     subtitle: "停机贡献因素排序和保障延误定位",
-    pageGoal: "识别当前项目在会话内 Mesa 样本下的主要停机或延误因素。",
+    pageGoal: "识别当前项目在会话样本下的主要停机或延误因素。",
     fixedConfig: [["实验类型", "项目基线"], ["快照能力", "会话内只读解释"]],
     metricLabels: ["停机因素项", "首要因素", "最高贡献度", "样本数"]
   }
@@ -3218,21 +3219,22 @@ async function handleProjectTemplateAction(action, projectId) {
   try {
     const projectJson = await backendApi.getProject(projectDataProjectBackendId(project));
     const nextProjectJson = {
-      ...projectJson,
+      ...normalizeProjectJsonBasicMissions(cloneScenario(projectJson)),
       projectInfo: {
         ...(projectJson.projectInfo || {}),
         isTemplate
       }
     };
     nextProjectJson.projectInfo.isTemplate = isTemplate;
-    await backendApi.saveProject(nextProjectJson);
-    selectedProjectDataProjectJson = cloneScenario(nextProjectJson);
+    const backendProjectJson = buildBackendProjectJson(nextProjectJson, { id: projectDataProjectId(project), isTemplate });
+    await backendApi.saveProject(backendProjectJson);
+    selectedProjectDataProjectJson = cloneScenario(backendProjectJson);
     selectedProjectDataProjectJsonId = projectDataProjectId(project);
     setProjectDataTemplateFlag(projectDataProjectId(project), isTemplate);
     if (currentProject && projectDataProjectId(currentProject) === projectDataProjectId(project)) {
-      scenario = cloneScenario(nextProjectJson);
+      scenario = cloneScenario(backendProjectJson);
       if (!experimentPlanBranchActive) {
-        experimentPlanDraft = cloneScenario(nextProjectJson);
+        experimentPlanDraft = cloneScenario(backendProjectJson);
       }
     }
     projectDataManagementStatus = isTemplate ? "已设为模板" : "已取消设为模板";
@@ -8811,14 +8813,15 @@ async function createProjectFromProjectTemplate(templateProject) {
 }
 
 function buildProjectCopyFromTemplateJson(templateProjectJson, templateProject) {
+  const normalizedTemplateProjectJson = normalizeProjectJsonBasicMissions(cloneScenario(templateProjectJson));
   const copyNumber = nextProjectTemplateCopyNumber(templateProject);
-  const baseProjectId = String(templateProjectJson.project_id || projectDataProjectBackendId(templateProject));
+  const baseProjectId = String(normalizedTemplateProjectJson.project_id || projectDataProjectBackendId(templateProject));
   const projectId = uniqueProjectTemplateCopyBackendId(baseProjectId, copyNumber);
   const resolvedCopyNumber = projectIdCopyNumber(projectId) || copyNumber;
-  const baseScenarioId = String(templateProjectJson.scenarioId || `${baseProjectId}-scenario`);
-  const projectName = `${templateProject.name || templateProjectJson.projectInfo?.name || templateProjectJson.experiment?.name || "未命名项目"} 副本 ${resolvedCopyNumber}`;
+  const baseScenarioId = String(normalizedTemplateProjectJson.scenarioId || `${baseProjectId}-scenario`);
+  const projectName = `${templateProject.name || normalizedTemplateProjectJson.projectInfo?.name || normalizedTemplateProjectJson.experiment?.name || "未命名项目"} 副本 ${resolvedCopyNumber}`;
   const projectJson = {
-    ...cloneScenario(templateProjectJson),
+    ...normalizedTemplateProjectJson,
     project_id: projectId,
     scenarioId: uniqueProjectTemplateCopyScenarioId(baseScenarioId, resolvedCopyNumber),
     isTemplate: false,
@@ -8826,17 +8829,17 @@ function buildProjectCopyFromTemplateJson(templateProjectJson, templateProject) 
     projectTemplate: false,
     template: false,
     metadata: {
-      ...(templateProjectJson.metadata || {}),
+      ...(normalizedTemplateProjectJson.metadata || {}),
       isTemplate: false
     },
     experiment: {
-      ...(templateProjectJson.experiment || {}),
+      ...(normalizedTemplateProjectJson.experiment || {}),
       name: projectName
     },
     projectInfo: {
-      ...(templateProjectJson.projectInfo || {}),
+      ...(normalizedTemplateProjectJson.projectInfo || {}),
       name: projectName,
-      baseCode: templateProjectJson.projectInfo?.baseCode || templateProject.baseCode || "NB",
+      baseCode: normalizedTemplateProjectJson.projectInfo?.baseCode || templateProject.baseCode || "NB",
       summary: `由项目模板 ${templateProject.name || baseProjectId} 创建`,
       isTemplate: false,
       is_template: false
@@ -9881,23 +9884,23 @@ function independentMesaVisualizationKey(page) {
 
 async function startIndependentMesaVisualizationThroughApi() {
   if (!currentProject) {
-    visualizationReplayStatus = "启动独立 Mesa 失败：请先创建或选择项目。";
+    visualizationReplayStatus = "启动仿真失败：请先创建或选择项目。";
     return null;
   }
   if (independentMesaVisualizationInFlight) {
-    visualizationReplayStatus = "独立 Mesa 仿真正在启动，请等待当前请求返回";
+    visualizationReplayStatus = "仿真正在启动，请等待当前请求返回";
     return null;
   }
   independentMesaVisualizationInFlight = true;
-  stopVisualizationRunStream("正在启动独立 Mesa，M9.2 在线订阅已停止");
+  stopVisualizationRunStream("正在启动仿真，M9.2 在线订阅已停止");
   stopVisualizationReplay();
   const projectJson = buildBackendProjectJson(scenario, currentProject);
-  visualizationReplayStatus = "正在启动独立 Mesa 仿真并读取当前 Project";
+  visualizationReplayStatus = "正在启动仿真并读取当前 Project";
   try {
     const response = await backendApi.runIndependentMesaVisualization(projectJson);
     const runId = response?.run_id || "";
     if (!runId || !response?.state_series) {
-      throw new Error("独立 Mesa 未返回 run_id 或 state_series");
+      throw new Error("仿真未返回 run_id 或 state_series");
     }
     visualizationStateSeries = {
       ...normalizeVisualizationStateSeriesPayload(response.state_series, {
@@ -9921,8 +9924,8 @@ async function startIndependentMesaVisualizationThroughApi() {
       progress: 1,
       source: response.source || "independent_mesa_project"
     };
-    backendApiStatus = `独立 Mesa 仿真完成：${runId}`;
-    visualizationReplayStatus = `独立 Mesa 已读取当前 Project 并开始回放：run_id ${runId}`;
+    backendApiStatus = `仿真完成：${runId}`;
+    visualizationReplayStatus = `已读取当前 Project 并开始回放：run_id ${runId}`;
     render();
     startVisualizationReplay();
     return backendRun;
@@ -9930,7 +9933,7 @@ async function startIndependentMesaVisualizationThroughApi() {
     visualizationStateSeries = null;
     visualizationReplayIndex = 0;
     visualizationReplayPlaying = false;
-    backendApiStatus = `独立 Mesa 仿真失败：${formatBackendError(err)}`;
+    backendApiStatus = `仿真失败：${formatBackendError(err)}`;
     visualizationReplayStatus = backendApiStatus;
     render();
     return null;
@@ -11225,7 +11228,7 @@ async function handleMesaControl(action) {
   if (action === "start-new-run") {
     stopVisualizationRunStream("正在启动新仿真，M9.2 在线订阅已停止");
     stopVisualizationReplay();
-    visualizationReplayStatus = "正在启动独立 Mesa 仿真并准备回放";
+    visualizationReplayStatus = "正在启动仿真并准备回放";
     const submittedRun = await startIndependentMesaVisualizationThroughApi();
     const newRunId = submittedRun?.run_id || backendRun?.run_id || "";
     if (!newRunId) {
@@ -11235,7 +11238,7 @@ async function handleMesaControl(action) {
     if (visualizationStateSeries && visualizationStateSeries.run_id === newRunId && !isVisualizationStateSeriesFromStream()) {
       visualizationReplayPlaying = true;
       startVisualizationReplay();
-      visualizationReplayStatus = `已启动独立 Mesa 仿真并开始回放：run_id ${newRunId}`;
+      visualizationReplayStatus = `已启动仿真并开始回放：run_id ${newRunId}`;
     }
     return;
   }
@@ -11345,21 +11348,12 @@ function renderVisualSimulation(page) {
   const source = visualizationStateSeriesFrame || visualizationBlockedState();
   const state = normalizeAviationSupportState(source);
   const activeView = ["aircraft", "mission", "support"].includes(selectedMesaView) ? selectedMesaView : "aircraft";
-  const sourceLabel = visualizationStateSeriesFrame
-    ? (isIndependentMesaFrame ? "独立 Mesa" : (isOnlineStreamFrame ? "在线状态流" : "state_series artifact"))
-    : "正式回放阻断";
-  const sourceClass = visualizationStateSeriesFrame ? (isOnlineStreamFrame ? "state-stream" : "state-series") : "blocked";
-  const sourceTitle = visualizationStateSeriesFrame
-    ? (isIndependentMesaFrame
-      ? `数据来源：当前 Project -> 独立 Mesa / run_id ${visualizationStateSeries.run_id}`
-      : `数据来源：run_id ${visualizationStateSeries.run_id} / artifact_id ${visualizationStateSeries.artifact_id}${isOnlineStreamFrame ? " / M9.2 online state stream" : ""}`)
-    : "缺少 aircraft_support_v1 state_series artifact，正式可视化不会回退到旧 aviation_support 或演示快照";
   const timelineMax = Math.max(0, (visualizationStateSeries?.frame_count || 1) - 1);
   const currentFrame = visualizationStateSeriesFrame ? visualizationReplayIndex + 1 : 0;
   const eventStream = visualizationStateSeriesFrame ? buildSimulationLogStream(visualizationStateSeries) : [];
   const replayStatusDetail = visualizationStateSeriesFrame
-    ? `${isIndependentMesaFrame ? "当前 Project -> 独立 Mesa / " : ""}run_id ${htmlEscape(visualizationStateSeries.run_id)} / artifact_id ${htmlEscape(visualizationStateSeries.artifact_id)} / step ${htmlEscape(visualizationStateSeriesFrame.step)} / ${currentFrame}-${htmlEscape(visualizationStateSeries.frame_count)} 帧 / 事件 ${htmlEscape(visualizationStateSeries.event_count)}`
-    : "缺少 aircraft_support_v1 state_series 时，正式可视化保持阻断；请启动新仿真或选择已完成且带 artifact 的 run。";
+    ? `${isIndependentMesaFrame ? "当前 Project 回放 / " : ""}run_id ${htmlEscape(visualizationStateSeries.run_id)} / artifact_id ${htmlEscape(visualizationStateSeries.artifact_id)} / step ${htmlEscape(visualizationStateSeriesFrame.step)} / ${currentFrame}-${htmlEscape(visualizationStateSeries.frame_count)} 帧 / 事件 ${htmlEscape(visualizationStateSeries.event_count)}`
+    : "缺少 aircraft_support_v1 state_series artifact 时，正式可视化不会回退到旧 aviation_support 或演示快照；请启动新仿真或选择已完成且带 artifact 的 run。";
   const timelineFrameLabel = visualizationStateSeriesFrame
     ? simulationDayMinuteLabel(visualizationStateSeriesFrame.simulation_time)
     : "等待正式回放";
@@ -11374,13 +11368,6 @@ function renderVisualSimulation(page) {
   );
   return `
     <div class="mesa-visual-shell">
-      <div class="mesa-visual-header">
-        <div>
-          <h3>飞机保障独立 Mesa 仿真</h3>
-          <p>点击可视化推演后直接读取当前 Project，启动独立 Mesa，并用返回的 state-series 展示飞机、任务和保障资源。</p>
-        </div>
-        <div class="mesa-clock">T+${Number((source.snapshot && source.snapshot.elapsed_hours) || 0).toFixed(1)}h <span class="mesa-source mesa-source-${sourceClass}" title="${htmlEscape(sourceTitle)}">${htmlEscape(sourceLabel)}</span></div>
-      </div>
       <div class="mesa-control-deck">
         <div class="mesa-control-groups" aria-label="运行控制">
           <div class="mesa-control-group mesa-control-group-primary">
@@ -11468,11 +11455,11 @@ function visualSimulationKpis(state) {
   const aircraftTrendCounts = countAircraftTrendStates(state.aircraft);
   const stockedSpares = state.spares.filter((spare) => Number(spare.quantity || 0) > 0).length;
   return [
-    { label: "使用可用度", value: pct(usableAircraft / aircraftCount) },
-    { label: "出动架次率", value: pct(assignedSorties / Math.max(1, requiredSorties)) },
+    { label: "使用可用度", value: ratioFixed(usableAircraft / aircraftCount) },
+    { label: "出动架次率", value: ratioFixed(assignedSorties / Math.max(1, requiredSorties)) },
     { label: "维修中飞机", value: `${aircraftTrendCounts.maintenance} 架` },
     { label: "保障中飞机", value: `${aircraftTrendCounts.support} 架` },
-    { label: "备件满足率", value: pct(stockedSpares / Math.max(1, state.spares.length)) }
+    { label: "备件满足率", value: ratioFixed(stockedSpares / Math.max(1, state.spares.length)) }
   ];
 }
 
@@ -11566,10 +11553,10 @@ function renderAvailabilityCurve(trend) {
   return `
     <div class="availability-chart">
       <div class="section-head">
-        <h3>飞机数量趋势</h3>
+        <h3>飞机状态一览</h3>
         <span>${points.length} 个采样点</span>
       </div>
-      <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="可用飞机数量趋势、任务中、维修中、使用保障中飞机数量随时间变化曲线">
+      <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="飞机状态一览：可用飞机、任务中、维修中、使用保障中飞机数量随时间变化曲线">
         ${AIRCRAFT_TREND_SERIES.map((series) => renderAvailabilityTrendLine(chartPoints, series)).join("")}
       </svg>
       <div class="availability-trend-legend">
@@ -13967,13 +13954,12 @@ function renderLiteMesaAnalysisPage(page) {
     : result?.status === "blocked"
       ? result.message
       : result?.status === "running"
-        ? "Mesa 分析运行中"
+        ? "分析运行中"
         : "等待运行";
   return `
     <div class="lite-mesa-workbench lite-mesa-analysis-page">
       <section class="lite-mesa-hero">
         <div>
-          <span class="status-badge success">前端建模 + Mesa 分析</span>
           <h3>${htmlEscape(definition.title)}</h3>
           <p>${htmlEscape(definition.pageGoal)}</p>
         </div>
@@ -13985,13 +13971,13 @@ function renderLiteMesaAnalysisPage(page) {
       <div class="lite-mesa-layout">
         <section class="lite-mesa-settings">
           <div class="section-head">
-            <h3>独立 Mesa 设置</h3>
+            <h3>分析设置</h3>
             <span>${htmlEscape(definition.experimentId)}</span>
           </div>
           <div class="lite-mesa-setting-grid">
             ${renderLiteMesaAnalysisSettings(definition, settings)}
           </div>
-          <button type="button" class="btn-primary" data-lite-mesa-analysis-action="run">运行 Mesa 分析</button>
+          <button type="button" class="btn-primary" data-lite-mesa-analysis-action="run">运行分析</button>
           <p class="inline-status">${htmlEscape(statusText)}</p>
           <div class="lite-mesa-source-grid">
             <div><span>项目</span><strong>${htmlEscape(currentProject?.name || "当前项目")}</strong></div>
@@ -14002,7 +13988,7 @@ function renderLiteMesaAnalysisPage(page) {
         <section class="lite-mesa-results">
           <div class="section-head">
             <h3>${htmlEscape(definition.subtitle)}</h3>
-            <span>${result?.status === "session_complete" ? "会话完成" : result?.status === "running" ? "后端 Mesa 内存运行中" : "建模粒度不足时 fail closed"}</span>
+            <span>${result?.status === "session_complete" ? "会话完成" : result?.status === "running" ? "后端内存运行中" : "建模粒度不足时 fail closed"}</span>
           </div>
           ${renderLiteMesaAnalysisMetricCards(definition, result)}
         </section>
@@ -14109,7 +14095,7 @@ async function runLiteMesaAnalysisPage(page) {
     ...liteMesaAnalysisResults,
     [definition.analysisType]: {
       status: "running",
-      message: "Mesa 分析运行中",
+      message: "分析运行中",
       sampleCount: 0,
       metrics: definition.metricLabels.map((label) => [label, "运行中"]),
       rows: [],
@@ -14132,7 +14118,7 @@ async function runLiteMesaAnalysisPage(page) {
         metrics: [],
         rows: [],
         limitations: [],
-        message: `Mesa 分析失败：${err && err.message ? err.message : "运行错误"}`
+        message: `分析失败：${err && err.message ? err.message : "运行错误"}`
       }
     };
   }
@@ -14178,7 +14164,7 @@ function renderLiteMesaAnalysisMetricCards(definition, result) {
         <div class="metric-card">
           <span>${htmlEscape(label)}</span>
           <strong>${htmlEscape(value)}</strong>
-          <em>${result?.status === "session_complete" ? "会话内 Mesa" : "等待运行"}</em>
+          <em>${result?.status === "session_complete" ? "会话样本" : "等待运行"}</em>
         </div>
       `).join("")}
     </div>
@@ -14187,10 +14173,10 @@ function renderLiteMesaAnalysisMetricCards(definition, result) {
 
 function renderLiteMesaAnalysisSessionBody(definition, result) {
   if (!result) {
-    return `<div class="empty-state"><strong>尚未运行 Mesa 分析</strong><p>当前页会读取项目建模数据并在后端 Mesa 内存会话中生成分析摘要。</p></div>`;
+    return `<div class="empty-state"><strong>尚未运行分析</strong><p>当前页会读取项目建模数据并在后端内存会话中生成分析摘要。</p></div>`;
   }
   if (result.status === "running") {
-    return `<div class="empty-state"><strong>Mesa 分析运行中</strong><p>当前项目正在后端 Mesa 内存会话中生成分析摘要。</p></div>`;
+    return `<div class="empty-state"><strong>分析运行中</strong><p>当前项目正在后端内存会话中生成分析摘要。</p></div>`;
   }
   if (result.status === "blocked") {
     return `<div class="empty-state"><strong>建模粒度不足</strong><p>${htmlEscape(result.message)}</p></div>`;
@@ -14200,33 +14186,24 @@ function renderLiteMesaAnalysisSessionBody(definition, result) {
     return `<div class="table-wrap"><table class="lite-mesa-stat-table">
       <thead><tr><th>备件类别</th><th>需求次数</th><th>满足次数</th><th>缺件次数</th><th>满足率</th><th>风险</th></tr></thead>
       <tbody>${rows.map((row) => `<tr><td>${htmlEscape(row.spareType)}</td><td>${row.demand}</td><td>${row.filled}</td><td>${row.shortage}</td><td>${pct(row.fillRate)}</td><td>${htmlEscape(row.riskLevel)}</td></tr>`).join("")}</tbody>
-    </table></div>${renderLiteMesaAnalysisLimitations(result)}`;
+    </table></div>`;
   }
   if (definition.analysisType === "carry_list") {
     return `<div class="table-wrap"><table class="lite-mesa-stat-table">
       <thead><tr><th>备件类别</th><th>建议携行数量</th><th>需求次数</th><th>短缺次数</th><th>优先级</th><th>置信度目标</th></tr></thead>
       <tbody>${rows.map((row) => `<tr><td>${htmlEscape(row.spareType)}</td><td>${row.recommended}</td><td>${row.demand}</td><td>${row.shortage}</td><td>${htmlEscape(row.riskLevel)}</td><td>${fixed(row.confidenceTarget, 2)}</td></tr>`).join("")}</tbody>
-    </table></div>${renderLiteMesaAnalysisLimitations(result)}`;
+    </table></div>`;
   }
   if (definition.analysisType === "mission_reliability") {
     return `<div class="table-wrap"><table class="lite-mesa-stat-table">
       <thead><tr><th>序号</th><th>seed</th><th>任务成功率</th><th>出动架次率</th><th>战备完好率</th></tr></thead>
       <tbody>${rows.map((row) => `<tr><td>${row.sequence}</td><td>${row.seed}</td><td>${pct(row.missionSuccessRate)}</td><td>${pct(row.sortieRate)}</td><td>${pct(row.readyRate)}</td></tr>`).join("")}</tbody>
-    </table></div>${renderLiteMesaAnalysisLimitations(result)}`;
+    </table></div>`;
   }
   return `<div class="table-wrap"><table class="lite-mesa-stat-table">
     <thead><tr><th>因素</th><th>类型</th><th>次数</th><th>贡献度</th></tr></thead>
     <tbody>${rows.map((row) => `<tr><td>${htmlEscape(row.label)}</td><td>${htmlEscape(row.reason)}</td><td>${row.count}</td><td>${pct(row.contribution)}</td></tr>`).join("")}</tbody>
-  </table></div>${renderLiteMesaAnalysisLimitations(result)}`;
-}
-
-function renderLiteMesaAnalysisLimitations(result) {
-  return `
-    <div class="decision-support-card">
-      <strong>边界说明</strong>
-      <span>${result.limitations.map((item) => htmlEscape(item)).join(" ")}</span>
-    </div>
-  `;
+  </table></div>`;
 }
 
 function field(label, path, type = "text", attrs = {}) {
@@ -14459,6 +14436,10 @@ function mesaStateClass(state) {
 
 function pct(value) {
   return `${Math.round(Number(value || 0) * 100)}%`;
+}
+
+function ratioFixed(value) {
+  return Number(value || 0).toFixed(2);
 }
 
 function fixed(value, digits = 2) {

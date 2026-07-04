@@ -241,7 +241,7 @@ def _coverage_classification(field_path: str) -> tuple[str, str, str]:
         "importId",
         "projectId",
         "objects.missionProfiles[].durationHours",
-        "objects.missionProfiles[].basicMission.equipmentQuantity",
+        "objects.missionProfiles[].basicMissions[].equipmentQuantity",
         "objects.missionProfiles[].experiment.seed",
         "objects.supportResources[].personnelCapacity",
         "objects.supportResources[].equipmentCapacity",
@@ -275,7 +275,7 @@ def _coverage_classification(field_path: str) -> tuple[str, str, str]:
         "objects.missionProfiles[].name",
         "objects.missionProfiles[].profileId",
         "objects.missionProfiles[].experiment.steps",
-        "objects.missionProfiles[].basicMission.missionId",
+        "objects.missionProfiles[].basicMissions[].missionId",
         "objects.missionProfiles[].reliabilityBlockDiagram.nodes[].name",
         "objects.projectInfo.",
     )

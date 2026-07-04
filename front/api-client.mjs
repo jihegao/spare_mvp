@@ -226,6 +226,7 @@ export function createBackendApiClient({ baseUrl = DEFAULT_API_BASE, transport, 
 
 export function buildBackendProjectJson(scenario, project = {}) {
   const projectJson = cloneJson(scenario);
+  normalizeProjectJsonBasicMissions(projectJson);
   syncCompositeTaskInheritedBasicFields(projectJson);
   canonicalizeSupportActivityJobPredecessors(projectJson);
   stripProjectRuntimeConfig(projectJson);
@@ -239,6 +240,46 @@ export function buildBackendProjectJson(scenario, project = {}) {
       isTemplate: Boolean(project.isTemplate || project.is_template)
     };
   }
+  return projectJson;
+}
+
+export function normalizeProjectJsonBasicMissions(projectJson) {
+  if (!projectJson || typeof projectJson !== "object" || Array.isArray(projectJson)) return projectJson;
+  const legacyBasicMission = projectJson.basicMission;
+  const missionProfile = projectJson.missionProfile;
+  const legacyProfileBasicMission = missionProfile && typeof missionProfile === "object" && !Array.isArray(missionProfile)
+    ? missionProfile.basicMission
+    : null;
+  const missionLists = [
+    Array.isArray(projectJson.basicMissions) ? projectJson.basicMissions : [],
+    legacyBasicMission && typeof legacyBasicMission === "object" && !Array.isArray(legacyBasicMission) ? [legacyBasicMission] : [],
+    legacyProfileBasicMission && typeof legacyProfileBasicMission === "object" && !Array.isArray(legacyProfileBasicMission)
+      ? [legacyProfileBasicMission]
+      : [],
+    Array.isArray(missionProfile?.basicMissions) ? missionProfile.basicMissions : []
+  ];
+  const normalized = [];
+  const seen = new Set();
+  for (const task of missionLists.flat()) {
+    if (!task || typeof task !== "object" || Array.isArray(task)) continue;
+    const clonedTask = cloneJson(task);
+    ensureBasicMissionIdentity(clonedTask, normalized.length);
+    const dedupeKey = basicMissionId(clonedTask) || basicMissionDisplayName(clonedTask) || `mission-${normalized.length}`;
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
+    normalized.push(clonedTask);
+  }
+  if (normalized.length) {
+    projectJson.basicMissions = normalized;
+  } else if (!Array.isArray(projectJson.basicMissions)) {
+    projectJson.basicMissions = [];
+  }
+  delete projectJson.basicMission;
+  if (missionProfile && typeof missionProfile === "object" && !Array.isArray(missionProfile)) {
+    delete missionProfile.basicMission;
+    delete missionProfile.basicMissions;
+  }
+  stripLegacyBasicMissionFields(projectJson);
   return projectJson;
 }
 
@@ -259,6 +300,7 @@ function stripProjectNonModelFields(projectJson) {
   delete projectJson.deletedSupportResourceKeys;
   delete projectJson.equipment;
   delete projectJson.basicMission;
+  stripLegacyBasicMissionFields(projectJson);
   stripMissionProfileNonModelFields(projectJson.missionProfile);
   stripSupportActivityTypoFields(projectJson);
 }
@@ -336,6 +378,24 @@ function basicMissionDisplayName(task) {
 function copyPresentValue(target, key, value) {
   if (value === undefined || value === null || value === "") return;
   target[key] = value;
+}
+
+function ensureBasicMissionIdentity(task, index) {
+  const fallbackId = `basic-mission-${index + 1}`;
+  task.id = basicMissionId(task) || fallbackId;
+  task.missionId ||= task.id;
+  task.name ||= basicMissionDisplayName(task) || task.missionId;
+  task.basicTaskName ||= task.name;
+}
+
+function stripLegacyBasicMissionFields(value) {
+  if (Array.isArray(value)) {
+    for (const item of value) stripLegacyBasicMissionFields(item);
+    return;
+  }
+  if (!value || typeof value !== "object") return;
+  delete value.basicMission;
+  for (const child of Object.values(value)) stripLegacyBasicMissionFields(child);
 }
 
 function canonicalizeSupportActivityJobPredecessors(projectJson) {
