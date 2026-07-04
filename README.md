@@ -110,6 +110,47 @@ http://127.0.0.1:4173/front/
 npm run start:system:with-contract-provider
 ```
 
+### 数据库备份与恢复
+
+本地系统默认 SQLite 数据库位于 `runs/system-start/spare_mvp.sqlite3`，备份文件默认写入 `runs/database-backups/`。`runs/` 是本机运行产物目录，不作为 Git 管理的发布资产；需要保留运行数据时应使用脚本生成备份文件。
+
+备份当前默认数据库：
+
+```bash
+scripts/backup-database.sh
+```
+
+可按需给备份文件加标签，生成的文件名会包含时间戳和标签：
+
+```bash
+scripts/backup-database.sh --label before-import
+```
+
+如果需要备份非默认数据库或写入指定目录：
+
+```bash
+scripts/backup-database.sh \
+  --database runs/system-start/spare_mvp.sqlite3 \
+  --backup-dir runs/database-backups \
+  --label before-import
+```
+
+恢复前先停止本地系统，避免正在运行的 HTTP server 继续持有旧 SQLite 连接或写入 WAL 文件：
+
+```bash
+npm run stop:system
+scripts/restore-database.sh --force runs/database-backups/spare_mvp-YYYYmmdd-HHMMSS-before-import.sqlite3
+```
+
+恢复脚本默认拒绝覆盖已有数据库；确认要覆盖时必须显式传入 `--force`。如需恢复到非默认数据库路径，可使用：
+
+```bash
+scripts/restore-database.sh \
+  --database runs/system-start/spare_mvp.sqlite3 \
+  --force \
+  runs/database-backups/spare_mvp-YYYYmmdd-HHMMSS-before-import.sqlite3
+```
+
 ## Mesa 烟测
 
 需要先按“本地运行”创建 `.abm-mesa-test-env`。本机验证使用 Python 3.12；仓库依赖由 `pyproject.toml` 管理，当前包含 `mesa==3.5.1` 和 `jsonschema==4.26.0`。创建环境不依赖 `mesa-abm-skill`，该 runner 只作为可选的实验执行工具。
