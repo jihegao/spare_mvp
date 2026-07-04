@@ -24,7 +24,7 @@ const OBJECT_LABELS = {
   decisionOutputs: "决策输出"
 };
 
-const EXCLUDED_PROJECT_OBJECT_ROOTS = new Set(["monteCarlo"]);
+const EXCLUDED_PROJECT_OBJECT_ROOTS = new Set(["equipment", "monteCarlo"]);
 
 export const PROJECT_JSON_CONTRACT = buildProjectJsonContract(defaultScenario, FEATURE_PAGES);
 

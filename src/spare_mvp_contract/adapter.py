@@ -2,7 +2,8 @@
 
 The adapter owns application-facing Project -> Scenario -> Run/Result/Artifact
 translation. The aircraft_support_v1 product runtime is the formal run target;
-retired model families remain only for explicit legacy regression coverage.
+aviation_support is retained only as historical schema/fixture context and is
+retired at the adapter entrypoints.
 """
 
 from __future__ import annotations
@@ -27,6 +28,8 @@ ARTIFACT_MANIFEST_SCHEMA_VERSION = "artifact-manifest-v0"
 VISUALIZATION_STATE_SERIES_SCHEMA_VERSION = "visualization-state-series-v0"
 MESA_CONTRACT_VERSION = "1.0.0"
 ADAPTER_NAME = "Simulation Adapter Agent"
+ACTIVE_MODEL_FAMILY = "aircraft_support_v1"
+RETIRED_ADAPTER_MODEL_FAMILIES = ("aviation_support",)
 SPARE_SHORTFALL_CONSTRAINTS = [0.85, 0.9, 0.95]
 SPARE_SHORTFALL_TRUNCATION = {
     "mode": "clamp_0_1",
@@ -95,6 +98,16 @@ class SimulationAdapter:
                 issues=result["issues"],
                 provenance=result["provenance"],
             )
+        if result["issues"] and result["issues"][0].get("code") == "retired_model_family":
+            raise AdapterError(
+                "retired_model_family",
+                result["issues"][0]["message"],
+                model_family=model_family,
+                replacement_model_family=ACTIVE_MODEL_FAMILY,
+                retired_model_families=list(RETIRED_ADAPTER_MODEL_FAMILIES),
+                issues=result["issues"],
+                provenance=result["provenance"],
+            )
         raise AdapterError(
             "unsupported_model_family",
             f"{model_family} does not have an approved Project to Scenario compiler",
@@ -107,7 +120,49 @@ class SimulationAdapter:
         """Compile with an explicit fail-closed gate result for unsupported paths."""
         return self._compile_scenario_with_gate(project, model_family=model_family)
 
+    def _retired_model_family_gate(self, model_family: str) -> dict[str, Any]:
+        message = f"{model_family} is retired; use {ACTIVE_MODEL_FAMILY}"
+        return {
+            "status": "unsupported",
+            "scenario": None,
+            "provenance": {
+                "project_id": "",
+                "modeling_snapshot_id": None,
+                "experiment_plan_id": None,
+                "model_family": model_family,
+                "mapping_version": "retired-model-family",
+                "consumed_fields": [],
+                "defaults_applied": [],
+                "derived_fields": [],
+                "ignored_fields": [],
+                "unsupported_fields": ["model_family"],
+            },
+            "issues": [
+                {
+                    "code": "retired_model_family",
+                    "message": message,
+                    "field_path": "model_family",
+                    "page": "Simulation run",
+                    "severity": "error",
+                    "suggestion": f"Use {ACTIVE_MODEL_FAMILY} for current formal and low-level adapter runs.",
+                    "replacement_model_family": ACTIVE_MODEL_FAMILY,
+                    "retired_model_families": list(RETIRED_ADAPTER_MODEL_FAMILIES),
+                }
+            ],
+        }
+
+    def _retired_model_family_error(self, model_family: str) -> AdapterError:
+        return AdapterError(
+            "retired_model_family",
+            f"{model_family} is retired; use {ACTIVE_MODEL_FAMILY}",
+            model_family=model_family,
+            replacement_model_family=ACTIVE_MODEL_FAMILY,
+            retired_model_families=list(RETIRED_ADAPTER_MODEL_FAMILIES),
+        )
+
     def _compile_scenario_with_gate(self, project: dict[str, Any], model_family: str = "smoke") -> dict[str, Any]:
+        if model_family in RETIRED_ADAPTER_MODEL_FAMILIES:
+            return self._retired_model_family_gate(model_family)
         validation = self.validate_project(project)
         if not validation["ok"]:
             issues = [
@@ -312,12 +367,7 @@ class SimulationAdapter:
         """Run a compiled single-run Scenario and write traceable contract artifacts."""
         model_family = scenario.get("simulation_model", {}).get("family")
         if model_family == "aviation_support":
-            return self._run_aviation_support_scenario(
-                scenario,
-                output_dir=output_dir,
-                steps=steps,
-                run_id=run_id,
-            )
+            raise self._retired_model_family_error(model_family)
         if model_family == "aircraft_support_v1":
             return self._run_aircraft_support_v1_scenario(
                 scenario,
@@ -483,19 +533,13 @@ class SimulationAdapter:
         **legacy_config: Any,
     ) -> dict[str, dict[str, Any]]:
         """Run a synchronous formal Monte Carlo batch from a compiled Scenario."""
+        model_family = scenario.get("simulation_model", {}).get("family")
+        if model_family == "aviation_support":
+            raise self._retired_model_family_error(model_family)
         config = self._require_monte_carlo_config(
             monte_carlo_config=monte_carlo_config,
             legacy_config=legacy_config,
         )
-        model_family = scenario.get("simulation_model", {}).get("family")
-        if model_family == "aviation_support":
-            return self._run_aviation_support_monte_carlo_scenario(
-                scenario,
-                output_dir=output_dir,
-                steps=steps,
-                run_id=run_id,
-                monte_carlo_config=config,
-            )
         if model_family == "aircraft_support_v1":
             return self._run_aircraft_support_v1_monte_carlo_scenario(
                 scenario,

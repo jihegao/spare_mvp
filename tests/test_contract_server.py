@@ -21,7 +21,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SERVER_PATH = REPO_ROOT / "src" / "spare_mvp_abm" / "contract_server.py"
 
-#: visualization_state 顶层 key，与 test_aviation_support_local.py 保持同一契约来源。
+#: visualization_state 顶层 key，用于保护 legacy/dev sidecar 的历史响应形状。
 VISUALIZATION_KEYS = [
     "snapshot",
     "aircraft",

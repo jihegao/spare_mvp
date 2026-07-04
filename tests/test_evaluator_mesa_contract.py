@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import importlib.util
 import json
-import sys
 from pathlib import Path
 import unittest
 
@@ -10,16 +8,6 @@ from src.spare_mvp_abm.smoke_model import SmokeSpareMvpModel
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-
-
-def _load_aviation_module():
-    model_path = REPO_ROOT / "src" / "spare_mvp_abm" / "aviation_support" / "model.py"
-    spec = importlib.util.spec_from_file_location("evaluator_aviation_support_model", model_path)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
 
 
 class EvaluatorMesaContractTest(unittest.TestCase):
@@ -43,23 +31,6 @@ class EvaluatorMesaContractTest(unittest.TestCase):
 
         snapshot_keys = set(model.snapshot())
         self.assertLessEqual(self._required_metrics("smoke"), snapshot_keys)
-
-    def test_aviation_result_schema_metrics_exist_in_live_snapshot(self) -> None:
-        module = _load_aviation_module()
-        asset_dir = REPO_ROOT / "src" / "spare_mvp_abm" / "aviation_support"
-        model = module.AviationSupportModel(
-            scenario_config_path=str(asset_dir / "scenario_config.json"),
-            use_scenario_config=True,
-            lru_failure_multiplier=0,
-            seed=20260618,
-        )
-        for _ in range(3):
-            model.step()
-
-        required_metrics = self._required_metrics("aviation_support")
-        snapshot_keys = set(model.snapshot())
-
-        self.assertLessEqual(required_metrics, snapshot_keys)
 
 
 if __name__ == "__main__":

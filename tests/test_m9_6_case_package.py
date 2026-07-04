@@ -41,9 +41,9 @@ class M96CasePackageTest(unittest.TestCase):
         self.assertEqual(export["project"]["supportOrganization"], fixture["objects"]["supportOrganization"])
         self.assertEqual(export["published_modeling_import"]["objects"]["supportOrganization"], fixture["objects"]["supportOrganization"])
         self.assertEqual(export["run_intents"]["single"]["run_type"], "single")
-        self.assertEqual(export["run_intents"]["single"]["model_family"], "aviation_support")
+        self.assertEqual(export["run_intents"]["single"]["model_family"], "aircraft_support_v1")
         self.assertEqual(export["run_intents"]["monte_carlo"]["run_type"], "monte_carlo")
-        self.assertEqual(export["run_intents"]["monte_carlo"]["model_family"], "aviation_support")
+        self.assertEqual(export["run_intents"]["monte_carlo"]["model_family"], "aircraft_support_v1")
         self.assertEqual(
             export["monte_carlo_config"],
             {
@@ -56,7 +56,7 @@ class M96CasePackageTest(unittest.TestCase):
                 "mc_experiment_id": "mc-m9-6-platform-case",
             },
         )
-        self.assertEqual(export["compiled_scenario"]["simulation_model"]["family"], "aviation_support")
+        self.assertEqual(export["compiled_scenario"]["simulation_model"]["family"], "aircraft_support_v1")
         self.assertEqual(export["compiled_scenario"]["project_id"], export["project"]["project_id"])
         provenance = export["compiled_scenario"]["compiled_from"]["mapping_provenance"]
         self.assertEqual(provenance["modeling_snapshot_id"], export["modeling_snapshot"]["snapshot_id"])

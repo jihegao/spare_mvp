@@ -23,7 +23,7 @@
 5. RMS 方法保留等分配法、比例分配法和相似产品分配法。装备树导入只更新 RMS 工作台独立数据，不污染项目建模数据；当前 UI 只保留计算动作，不提供保存草稿或发布到装备模型入口，也未接入后端持久化或真实仿真消费。
 6. 可靠性框图只在任务可靠度评估模块下作为正式建模页展示。完整绘图契约仍由 `reliability-block-diagram-contract.md` 维护。
 7. 正式运行主线为 `RunIntent -> /api/runs -> RunService -> SimulationAdapter -> aircraft_support_v1 -> SQLite + artifacts`。`src/spare_mvp_abm/contract_server.py :8521` 只是显式启用的 legacy/dev sidecar，不属于默认产品运行路径。
-8. `aircraft_support_v1` 是当前正式模型族；历史 `smoke` 与 `aviation_support` 只保留为低层回归和归档证据。
+8. `aircraft_support_v1` 是当前正式模型族；历史 `smoke` 仅保留为非正式低层测试模型，`aviation_support` 只保留为 schema/fixture/sidecar 归档证据且 adapter 编译运行入口返回 `retired_model_family`。
 9. 四个结果分析页通过 current result 面板和正式 projection payload 解锁结果；缺少 compiler provenance、`monte_carlo_base`、对应 projection artifact、payload 或 payload 类型不匹配时 fail closed。
 10. 阶段 6P 仿真分析验收数据包保留在 `tests/fixtures/simulation_analysis_cases/`，用于验证最小单机和平台标准两类建模导入案例可以进入 `aircraft_support_v1` formal Monte Carlo。
 

@@ -12,7 +12,7 @@ from src.spare_mvp_backend.monte_carlo_config import normalize_monte_carlo_run_c
 from src.spare_mvp_contract.adapter import SimulationAdapter
 
 
-M9_6_MODEL_FAMILY = "aviation_support"
+M9_6_MODEL_FAMILY = "aircraft_support_v1"
 M9_7_COVERAGE_MODEL_FAMILY = "aircraft_support_v1"
 M9_6_FROZEN_AT = "2026-06-23T00:00:00Z"
 M9_6_MODELING_SNAPSHOT_ID = "snapshot-m9-6-platform-case"
@@ -292,8 +292,8 @@ def _coverage_classification(field_path: str) -> tuple[str, str, str]:
     if _matches_any(field_path, defaulted_prefixes):
         return (
             "defaulted",
-            "Current aviation_support compiler default rule",
-            "The M9.5 compiler has a stable default for this input until M9.7 consumes it explicitly.",
+            "Current aircraft_support_v1 compiler default rule",
+            "The aircraft_support_v1 compiler applies a stable default for this optional frozen input.",
         )
     if _matches_any(field_path, governance_only_prefixes):
         return (
@@ -304,7 +304,7 @@ def _coverage_classification(field_path: str) -> tuple[str, str, str]:
     return (
         "ignored",
         "M9.6 platform case package",
-        "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+        "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
     )
 
 

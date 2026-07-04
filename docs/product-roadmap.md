@@ -482,7 +482,7 @@ M8.0 当前收束：`docs/archive/deprecated/superpowers/specs/2026-06-21-m8-pro
 
 ### M9.4：aviation_support 正式执行和后端输出对齐（历史归档）
 
-历史收束：在 run lifecycle/control 边界稳定后，M9.4 曾解除 `aviation_support` 的 `unsupported_model_family` gate，让航空保障模型族进入 `RunService -> SimulationAdapter -> artifacts` 单次正式执行路径，并对齐 result、projection、state-series、artifact manifest 和 run chain 的后端输出语义。2026-06-26 起该模型族已从正式和测试入口退役；历史产物和低层 adapter 回归可保留，新的 formal run 必须使用 `aircraft_support_v1`。
+历史收束：在 run lifecycle/control 边界稳定后，M9.4 曾解除 `aviation_support` 的 `unsupported_model_family` gate，让航空保障模型族进入 `RunService -> SimulationAdapter -> artifacts` 单次正式执行路径，并对齐 result、projection、state-series、artifact manifest 和 run chain 的后端输出语义。2026-06-26 起该模型族已从正式和 adapter 编译运行入口退役；历史 schema、fixture 和 sidecar 参考可保留，新的 formal run 必须使用 `aircraft_support_v1`。
 
 范围：
 
@@ -499,7 +499,7 @@ M8.0 当前收束：`docs/archive/deprecated/superpowers/specs/2026-06-21-m8-pro
 1. `model_family=aviation_support` 的正式 run 不再走 `unsupported_model_family`，并能产出可下载、可追溯、schema 校验通过的后端 artifacts。
 2. 同一个 aviation `run_id` 的 result、projection、state-series、artifact manifest 和 run chain 能相互校验 identity 与 traceability。
 3. 前端切换 smoke 和 aviation run 时，正式结果和可视化状态均随 artifact 变化，不回退到 demo frame 或前端局部推导。
-4. smoke 路径回归保持通过，aviation 解锁不改变既有 Monte Carlo/projection 口径；`aviation_support` Monte Carlo 由后续 M9.5 定义受治理采样契约并解锁。
+4. smoke 路径当时回归保持通过，aviation 解锁不改变既有 Monte Carlo/projection 口径；`aviation_support` Monte Carlo 后续由 M9.5 定义受治理采样契约并解锁，当前 adapter 入口已统一退役。
 
 ### M9.5：aviation_support formal Monte Carlo（历史归档）
 
@@ -559,7 +559,7 @@ M8.0 当前收束：`docs/archive/deprecated/superpowers/specs/2026-06-21-m8-pro
 1. `model_family=<new_aircraft_support_family>` 的 single 和 Monte Carlo run 均通过 canonical `/api/runs` 成功执行，并能下载全部正式 artifacts。
 2. 同一个 run 的 result、projection、state-series、artifact manifest 和 chain 能用 `run_id`、Scenario identity、schema version 和 seed 相互校验。
 3. 缺字段、非法引用、未来新增 unsupported 字段族、缺 compiler provenance、缺 projection 或缺 state-series 时 fail closed，不回退到前端 demo 或 `independent-mesa` 静态输出。
-4. `aviation_support` 和 smoke 路径回归保持通过，新模型族不改变既有正式 artifact 口径。
+4. 历史 `aviation_support` 和 smoke 产物/schema 口径保持兼容，新模型族不改变既有正式 artifact 口径；当前 `aviation_support` adapter/formal 入口返回 `retired_model_family`。
 
 ### M9.8：嵌入平台并退役 independent-mesa
 
@@ -581,7 +581,7 @@ M8.0 当前收束：`docs/archive/deprecated/superpowers/specs/2026-06-21-m8-pro
 3. 任务视图不再拆成独立任务计划表和任务卡片，主工作区以一张合并甘特表展示周期/复合/基本任务属性、实际天/波次、每日时间条、要求型号/数量、实际执行飞机和状态。
 4. 从平台入口完成 M9.6 案例的 single、Monte Carlo、状态回放和四类分析，且所有结果来源都是 canonical run artifacts。
 
-当前收束：M9.8 已完成平台嵌入和 `independent-mesa` 退役。前端 RunIntent 默认使用 `aircraft_support_v1`，可视化仿真页、单次正式 run、Monte Carlo run 和四类分析页均通过 `RunIntent -> /api/runs -> RunService -> SimulationAdapter -> aircraft_support_v1 -> SQLite + artifacts`、`/api/runs/{run_id}/artifacts/{artifact_id}` 与 `/api/runs/{run_id}/state-stream` 读取正式数据；缺 projection、缺 state-series 或 payload 校验失败时仍 fail closed。2026-06-26 后 `smoke` 与 `aviation_support` 只保留为历史/低层回归基线，正式和测试入口统一返回 `retired_model_family` 并指向 `aircraft_support_v1`。任务视图已合并任务计划表和每日甘特图，按周期性任务 / 复合任务 / 基本任务属性展示实际天、波次、要求型号、数量、实际执行飞机和状态；旧 artifact 缺这些字段时不再从 id/name/aircraft_type 兜底推断。`scripts/start-system.sh start` 默认只启动平台同源 app/backend 和 SQLite；`start --with-contract-provider` 才额外启动 `src/spare_mvp_abm/contract_server.py :8521` legacy/dev sidecar。该 sidecar 不属于默认产品运行路径，不能替代 canonical run artifacts；脚本不再启动 `independent-mesa/server.py` 或监听 `8765`。`independent-mesa/GLM` 与 `independent-mesa/GPT` 源码树、旁路服务和静态输出入口已从当前仓库移除；历史设计记录只保留在 `docs/archive/deprecated/superpowers/` 的归档计划和规格中。
+当前收束：M9.8 已完成平台嵌入和 `independent-mesa` 退役。前端 RunIntent 默认使用 `aircraft_support_v1`，可视化仿真页、单次正式 run、Monte Carlo run 和四类分析页均通过 `RunIntent -> /api/runs -> RunService -> SimulationAdapter -> aircraft_support_v1 -> SQLite + artifacts`、`/api/runs/{run_id}/artifacts/{artifact_id}` 与 `/api/runs/{run_id}/state-stream` 读取正式数据；缺 projection、缺 state-series 或 payload 校验失败时仍 fail closed。2026-06-26 后 `smoke` 只保留为非正式低层测试模型，`aviation_support` 只保留为历史 schema/fixture/sidecar 证据且正式、测试和 adapter 编译运行入口统一返回 `retired_model_family` 并指向 `aircraft_support_v1`。任务视图已合并任务计划表和每日甘特图，按周期性任务 / 复合任务 / 基本任务属性展示实际天、波次、要求型号、数量、实际执行飞机和状态；旧 artifact 缺这些字段时不再从 id/name/aircraft_type 兜底推断。`scripts/start-system.sh start` 默认只启动平台同源 app/backend 和 SQLite；`start --with-contract-provider` 才额外启动 `src/spare_mvp_abm/contract_server.py :8521` legacy/dev sidecar。该 sidecar 不属于默认产品运行路径，不能替代 canonical run artifacts；脚本不再启动 `independent-mesa/server.py` 或监听 `8765`。`independent-mesa/GLM` 与 `independent-mesa/GPT` 源码树、旁路服务和静态输出入口已从当前仓库移除；历史设计记录只保留在 `docs/archive/deprecated/superpowers/` 的归档计划和规格中。
 
 ## M10：工程质量和自动化测试
 
