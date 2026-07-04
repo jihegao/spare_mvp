@@ -646,6 +646,128 @@ select[multiple].table-edit-select {
   gap: 12px;
 }
 
+.project-template-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.38fr) minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.project-template-list {
+  display: grid;
+  gap: 8px;
+}
+
+.project-template-item {
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  padding: 12px;
+  text-align: left;
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.project-template-item.selected {
+  border-color: #2563eb;
+  box-shadow: inset 3px 0 0 #2563eb;
+}
+
+.project-template-item strong,
+.project-template-item small,
+.project-template-meta {
+  display: block;
+  min-width: 0;
+}
+
+.project-template-item small,
+.project-template-meta small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.project-template-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.project-template-tag {
+  margin-left: 6px;
+}
+
+.project-data-detail {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.project-data-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(100px, 1fr));
+  gap: 10px;
+}
+
+.project-data-overview-grid .modeling-config-card {
+  display: grid;
+  gap: 6px;
+}
+
+.project-data-overview-grid .modeling-config-card span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.project-data-overview-grid .modeling-config-card strong {
+  font-size: 22px;
+}
+
+.project-json-viewer {
+  max-height: 520px;
+  overflow: auto;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fafc;
+  font-size: 12px;
+}
+
+.project-json-node {
+  margin: 2px 0;
+}
+
+.project-json-node summary {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+}
+
+.project-json-node summary span,
+.project-json-leaf span {
+  color: var(--muted);
+}
+
+.project-json-children {
+  margin-left: 16px;
+  padding-left: 10px;
+  border-left: 1px solid var(--line);
+}
+
+.project-json-leaf {
+  display: grid;
+  grid-template-columns: minmax(90px, 180px) minmax(0, 1fr);
+  gap: 8px;
+  min-height: 22px;
+  align-items: start;
+}
+
 .modeling-config-card,
 .modeling-sheet-card {
   min-width: 0;
@@ -3568,6 +3690,8 @@ tr.clickable-table-row.selected-table-row td {
   .mesa-status-grid,
   .mesa-timeline-card,
   .system-config-layout,
+  .project-template-layout,
+  .project-data-overview-grid,
   .rms-layout,
   .modeling-import-layout,
   .lite-mesa-layout,

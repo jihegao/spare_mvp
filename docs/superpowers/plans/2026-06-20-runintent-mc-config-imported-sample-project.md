@@ -4,7 +4,7 @@
 
 **Goal:** 收敛前端到仿真的完整数据流：正式运行只走 `RunIntent -> /api/runs -> RunService -> SimulationAdapter -> aircraft_support_v1 -> SQLite + artifacts`，Monte Carlo 输入只由一个 canonical config 解释，同时把页面内置静态项目从正式路径中移出，功能测试和正式 single/Monte Carlo run 先通过“建模导入包生成的示例项目”创建 imported sample Project。
 
-**Architecture:** 后端新增 `MonteCarloRunConfig` 作为 `ExperimentPlan.config.analysisRequests.largeSample` 的唯一正式解释层；`RunService` 只编排 config、compiler 和 executor，不再从 request、Project draft 或 Adapter fallback 中猜测 MC 输入。前端新增 `RunIntent` helper 统一保存 Project、创建 Snapshot/Plan 和提交 run；本地 demo 结果保留为明确标注的 preview。示例项目由后端读取已发布 modeling import package，经 `modeling_import_to_project()` 生成并保存为 Project draft；项目列表入口在没有已发布包时会先保存并发布示例导入包，再 create-project。静态 `defaultScenario` 只保留为本地预览/fixture。正式 single/Monte Carlo run 如果收到页面内置 preview fixture 项目，或只伪造 `sourceImportId` 而没有后端 `modeling_import.create_project` allowed 审计证据，应 fail closed 并提示先生成 imported sample Project，不得把静态 seed 当正式输入。
+**Architecture:** 后端新增 `MonteCarloRunConfig` 作为 `ExperimentPlan.config.analysisRequests.largeSample` 的唯一正式解释层；`RunService` 只编排 config、compiler 和 executor，不再从 request、Project draft 或 Adapter fallback 中猜测 MC 输入。前端新增 `RunIntent` helper 统一保存 Project、创建 Snapshot/Plan 和提交 run；本地 demo 结果保留为明确标注的 preview。示例项目由后端读取已发布 modeling import package，经 `modeling_import_to_project()` 生成并保存为 Project draft；当前项目数据管理入口只负责项目列表、模板标记、概览和 JSON 查看，早期项目列表自动发布示例包只作为历史 fallback 记录。静态 `defaultScenario` 只保留为本地预览/fixture。正式 single/Monte Carlo run 如果收到页面内置 preview fixture 项目，或只伪造 `sourceImportId` 而没有后端 `modeling_import.create_project` allowed 审计证据，应 fail closed 并提示先生成 imported sample Project，不得把静态 seed 当正式输入。
 
 **Tech Stack:** Python stdlib + `unittest` backend contract tests, Node.js `node:test` frontend contract tests, existing SQLite repository, existing browser frontend, existing M4 bearer-token HTTP facade.
 
@@ -62,7 +62,7 @@ Do not implement worker queues, cancellation, retry, object storage, new auth sc
 
 As of the 2026-06-21 documentation sync, this plan is the active record for a small convergence slice rather than evidence that all static data has been deleted.
 
-- Formal single and Monte Carlo runs should start from a real Project created by the project-list action `从导入数据生成示例项目`, backed by a published modeling import package. If no package has been published in the current session, that action saves and publishes the demo import package before creating the Project.
+- Formal single and Monte Carlo runs should start from a real Project created from a selected published project template, backed by a published modeling import package. The original project-list action `从导入数据生成示例项目` remains historical implementation context; the current product-facing selection entry is project data management's published template list.
 - Canonical `/api/runs` requests are marked `formal_run` server-side. RunService requires `missionProfile.sourceImportId`, a published import whose `projectId` matches the run Project, and a `modeling_import.create_project` allowed audit event for the same import/project pair. A manually saved Project that spoofs `sourceImportId` must be rejected.
 - Superseded by the 2026-06-21 legacy run API retirement: the retired legacy run API now returns `410 legacy_run_api_retired`; canonical `/api/runs` is the only supported run entrypoint.
 - The page-bundled static Project/default scenario remains only for local preview, offline fixture use, and UI smoke tests.

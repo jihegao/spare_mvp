@@ -311,6 +311,22 @@ class BackendApiContractTest(unittest.TestCase):
         import_package["objects"].pop("supportOrganization", None)
         return import_package
 
+    def test_project_catalog_exposes_project_template_flag(self) -> None:
+        project = self._fixture("smoke_project.json")
+        project["projectInfo"] = {
+            "name": "模板项目",
+            "baseCode": "TPL",
+            "summary": "项目数据层模板",
+            "isTemplate": True,
+        }
+        saved = self.api.save_project(project)
+
+        catalog = self.api.list_projects()
+        entry = next(item for item in catalog["projects"] if item["project_id"] == saved["project_id"])
+
+        self.assertEqual(entry["experiment_name"], "模板项目")
+        self.assertEqual(entry["is_template"], True)
+
     def test_current_analysis_result_returns_only_valid_formal_projection(self) -> None:
         created, _plan, run = self._submit_successful_aircraft_support_monte_carlo_run()
 
@@ -2704,6 +2720,30 @@ class BackendApiContractTest(unittest.TestCase):
             ],
         )
         self.assertTrue(all(event["details"].get("actor") == "system" for event in events))
+
+    def test_project_data_template_api_lists_published_project_templates(self) -> None:
+        import_package = self._fixture("modeling_import_project.json")
+        draft_package = self._fixture("modeling_import_project.json")
+        draft_package["importId"] = "import-draft-only"
+        draft_package["projectId"] = "project-draft-only"
+        draft_package["objects"]["projectInfo"]["name"] = "草稿模板"
+
+        self.api.save_modeling_import_as_system(draft_package)
+        self.api.save_modeling_import_as_system(import_package)
+        self.api.publish_modeling_import_as_system(import_package["importId"])
+
+        templates = self.api.list_project_data_templates(state="published")
+
+        self.assertEqual([template["template_id"] for template in templates["templates"]], [import_package["importId"]])
+        self.assertEqual(templates["templates"][0]["source_import_id"], import_package["importId"])
+        self.assertEqual(templates["templates"][0]["template_type"], "project_data")
+        self.assertEqual(templates["templates"][0]["project_id"], import_package["projectId"])
+        self.assertEqual(templates["templates"][0]["name"], import_package["objects"]["projectInfo"]["name"])
+        self.assertEqual(templates["templates"][0]["validation_status"], "valid")
+        self.assertGreaterEqual(templates["templates"][0]["object_counts"]["missionProfiles"], 1)
+        self.assertNotIn("schema_version", templates["templates"][0])
+        self.assertNotIn("version", templates["templates"][0])
+        self.assertNotIn("lifecycle_state", templates["templates"][0])
 
     def test_modeling_import_api_rejects_missing_actor_for_save(self) -> None:
         import_package = self._fixture("modeling_import_project.json")

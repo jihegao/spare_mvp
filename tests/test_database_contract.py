@@ -448,6 +448,32 @@ class DatabaseContractTest(unittest.TestCase):
             "published",
         )
 
+    def test_repository_lists_only_published_project_data_templates(self) -> None:
+        import_package = self._fixture("modeling_import_project.json")
+        draft_package = self._fixture("modeling_import_project.json")
+        draft_package["importId"] = "import-draft-only"
+        draft_package["projectId"] = "project-draft-only"
+        draft_package["objects"]["projectInfo"]["name"] = "草稿模板"
+        validation = {"ok": True, "status": "valid", "issues": []}
+
+        self.repository.upsert_modeling_import(draft_package, validation)
+        self.repository.upsert_modeling_import(import_package, validation)
+        self.repository.publish_modeling_import(import_package["importId"])
+
+        templates = self.repository.list_project_data_templates(state="published")
+
+        self.assertEqual([template["template_id"] for template in templates], [import_package["importId"]])
+        self.assertEqual(templates[0]["source_import_id"], import_package["importId"])
+        self.assertEqual(templates[0]["template_type"], "project_data")
+        self.assertEqual(templates[0]["project_id"], import_package["projectId"])
+        self.assertEqual(templates[0]["name"], import_package["objects"]["projectInfo"]["name"])
+        self.assertEqual(templates[0]["validation_status"], "valid")
+        self.assertGreaterEqual(templates[0]["object_counts"]["equipmentAssets"], 1)
+        self.assertIn("updated_at", templates[0])
+        self.assertNotIn("schema_version", templates[0])
+        self.assertNotIn("version", templates[0])
+        self.assertNotIn("lifecycle_state", templates[0])
+
     def test_repository_keeps_published_snapshot_after_new_draft_and_reopen(self) -> None:
         import_package = self._fixture("modeling_import_project.json")
         validation = {"ok": True, "status": "valid", "issues": []}

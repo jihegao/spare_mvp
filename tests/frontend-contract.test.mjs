@@ -386,12 +386,15 @@ test("page revision project and system management controls stay wired", async ()
   assert.doesNotMatch(systemProjectSource, /项目独有数据/);
   assert.doesNotMatch(systemProjectSource, /新增项目数据/);
   assert.doesNotMatch(projectDataSource, /<aside class="tree-container">/);
-  assert.match(systemProjectSource, /data-system-data-export/);
-  assert.match(systemProjectSource, /data-system-data-select-all/);
-  assert.match(systemProjectSource, /data-system-data-module-select/);
-  assert.match(systemProjectSource, /data-system-data-select/);
-  assert.match(systemProjectSource, /data-system-data-status/);
-  assert.match(systemProjectSource, /data-system-data-export-preview/);
+  assert.match(systemProjectSource, /data-project-data-config-module="project-data-layer"/);
+  assert.match(systemProjectSource, /data-project-data-project-list/);
+  assert.match(systemProjectSource, /data-project-template-management/);
+  assert.match(systemProjectSource, /data-project-data-overview/);
+  assert.match(systemProjectSource, /data-project-json-viewer/);
+  assert.doesNotMatch(projectDataSource, /data-system-data-export/);
+  assert.doesNotMatch(projectDataSource, /data-system-data-select-all/);
+  assert.doesNotMatch(projectDataSource, /data-system-data-status/);
+  assert.doesNotMatch(projectDataSource, /data-system-data-export-preview/);
   assert.match(systemProjectSource, /data-modeling-import-action="load-fixture"/);
   assert.match(systemProjectSource, /data-modeling-import-action="validate"/);
   assert.match(granularitySource, /function renderModelingGranularityTable/);
@@ -408,9 +411,8 @@ test("page revision project and system management controls stay wired", async ()
   assert.doesNotMatch(granularitySource, /<th>操作<\/th>/);
   assert.doesNotMatch(projectDataSource, /<th>操作<\/th>/);
   assert.doesNotMatch(projectDataSource, />配置<\/button>/);
-  assert.match(eventSource, /const systemDataSelectAll = event\.target\.closest\("\[data-system-data-select-all\]"\)/);
-  assert.match(eventSource, /const systemDataModuleSelect = event\.target\.closest\("\[data-system-data-module-select\]"\)/);
-  assert.match(eventSource, /const systemDataSelect = event\.target\.closest\("\[data-system-data-select\]"\)/);
+  assert.match(eventSource, /const projectDataProjectButton = event\.target\.closest\("\[data-project-data-project-option\]"\)/);
+  assert.match(eventSource, /const projectTemplateAction = event\.target\.closest\("\[data-project-template-action\]"\)/);
   assert.match(eventSource, /const modelingFieldSheetSelect = event\.target\.closest\("\[data-modeling-field-sheet-select\]"\)/);
   assert.match(eventSource, /const modelingFieldSelect = event\.target\.closest\("\[data-modeling-field-select\]"\)/);
   assert.doesNotMatch(eventSource, /data-project-import/);
@@ -428,7 +430,7 @@ test("page revision project and system management controls stay wired", async ()
   assert.match(eventSource, /const permissionConfigureButton = event\.target\.closest\("\[data-permission-configure\]"\)/);
 });
 
-test("project data management exposes modeling sheet selection and local import actions", async () => {
+test("project data management exposes project list, template controls, overview, and raw json", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const systemProjectSource = appSource.slice(
     appSource.indexOf("function renderSystemProjectManagement"),
@@ -442,10 +444,6 @@ test("project data management exposes modeling sheet selection and local import 
     appSource.indexOf("function bindEvents"),
     appSource.indexOf("async function handleLogin")
   );
-  const dataActionSource = appSource.slice(
-    appSource.indexOf("function activeSystemDataDefinition"),
-    appSource.indexOf("function renderSystemBasicConfig")
-  );
 
   for (const label of ["装备系统", "装备任务", "保障组织", "保障活动"]) {
     assert.match(appSource, new RegExp(label));
@@ -454,41 +452,44 @@ test("project data management exposes modeling sheet selection and local import 
   assert.doesNotMatch(systemProjectSource, /项目独有数据/);
   assert.doesNotMatch(systemProjectSource, /新增项目数据/);
   assert.doesNotMatch(systemProjectSource, /仿真建模数据表 sheet 选择器/);
-  assert.match(systemProjectSource, /项目数据管理配置/);
-  assert.match(projectDataSource, /data-project-data-config-module="modeling-data-source"/);
-  assert.match(projectDataSource, /data-project-data-config-module="modeling-import-publish"/);
-  assert.match(systemProjectSource, /data-system-config-save/);
-  assert.match(systemProjectSource, /data-modeling-import-action="load-fixture"/);
-  assert.match(systemProjectSource, /data-modeling-import-action="backfill-current-project"/);
-  assert.match(systemProjectSource, /data-modeling-import-action="validate"/);
-  assert.match(systemProjectSource, /data-modeling-import-action="save-draft"/);
-  assert.match(projectDataSource, /data-system-data-export/);
-  assert.match(projectDataSource, /data-system-data-select-all/);
-  assert.match(systemProjectSource, /data-system-data-module-select/);
-  assert.match(systemProjectSource, /data-system-data-select="\$\{htmlEscape\(sheet\.key\)\}"/);
-  assert.match(projectDataSource, /data-system-data-status/);
-  assert.match(projectDataSource, /data-system-data-export-preview/);
+  assert.doesNotMatch(systemProjectSource, /项目数据管理配置/);
+  assert.match(projectDataSource, /data-project-data-config-module="project-data-layer"/);
+  assert.match(projectDataSource, /data-project-data-project-list/);
+  assert.match(projectDataSource, /data-project-data-project-option/);
+  assert.match(projectDataSource, /【模板】/);
+  assert.match(projectDataSource, /data-project-template-management/);
+  assert.match(projectDataSource, /data-project-template-action="set"/);
+  assert.match(projectDataSource, /data-project-template-action="unset"/);
+  assert.match(projectDataSource, /data-project-data-overview/);
+  assert.match(projectDataSource, /任务/);
+  assert.match(projectDataSource, /装备/);
+  assert.match(projectDataSource, /保障系统/);
+  assert.match(projectDataSource, /保障活动/);
+  assert.match(projectDataSource, /data-project-json-viewer/);
+  assert.match(projectDataSource, /data-project-json-node/);
+  assert.match(projectDataSource, /<details/);
+  assert.match(projectDataSource, /projectInfo\.isTemplate/);
+  assert.match(projectDataSource, /backendApi\.getProject/);
+  assert.match(projectDataSource, /backendApi\.saveProject/);
+  assert.doesNotMatch(projectDataSource, /data-project-data-config-module="modeling-data-source"/);
+  assert.doesNotMatch(projectDataSource, /建模数据源配置/);
+  assert.doesNotMatch(projectDataSource, /data-project-data-config-module="published-template-library"/);
+  assert.doesNotMatch(projectDataSource, /data-published-template-list/);
+  assert.doesNotMatch(projectDataSource, /data-published-template-preview/);
+  assert.doesNotMatch(projectDataSource, /data-modeling-import-action/);
+  assert.doesNotMatch(projectDataSource, /字段路径/);
+  assert.doesNotMatch(projectDataSource, /目标路径/);
+  assert.doesNotMatch(projectDataSource, /data-system-data-export/);
+  assert.doesNotMatch(projectDataSource, /data-system-data-select-all/);
+  assert.doesNotMatch(projectDataSource, /data-system-data-module-select/);
+  assert.doesNotMatch(projectDataSource, /data-system-data-select="\$\{htmlEscape\(sheet\.key\)\}"/);
+  assert.doesNotMatch(projectDataSource, /data-system-data-status/);
+  assert.doesNotMatch(projectDataSource, /data-system-data-export-preview/);
   assert.doesNotMatch(projectDataSource, /<th>操作<\/th>/);
   assert.doesNotMatch(projectDataSource, />配置<\/button>/);
 
-  assert.match(eventSource, /const systemDataExportButton = event\.target\.closest\("\[data-system-data-export\]"\)/);
-  assert.match(eventSource, /const systemDataSelectAll = event\.target\.closest\("\[data-system-data-select-all\]"\)/);
-  assert.match(eventSource, /const systemDataModuleSelect = event\.target\.closest\("\[data-system-data-module-select\]"\)/);
-  assert.match(eventSource, /const systemDataSelect = event\.target\.closest\("\[data-system-data-select\]"\)/);
-  assert.match(dataActionSource, /systemDataExportPreview = \{/);
-  assert.match(dataActionSource, /rowCount: rows\.length/);
-  assert.match(dataActionSource, /filename: systemDataExportFilename\(tab\)/);
-  assert.match(dataActionSource, /downloadSystemDataExport\(systemDataExportPreview\.filename,/);
-  assert.match(dataActionSource, /selectedSystemDataKeys\.has\(row\.key\)/);
-  assert.match(dataActionSource, /function systemDataExportFilename\(tab\)/);
-  assert.match(dataActionSource, /function buildSystemDataExportPayload\(tab, rows\)/);
-  assert.match(dataActionSource, /function downloadSystemDataExport\(filename, payload\)/);
-  assert.match(dataActionSource, /new Blob\(\[JSON\.stringify\(payload, null, 2\)\]/);
-  assert.match(dataActionSource, /URL\.createObjectURL\(blob\)/);
-  assert.match(dataActionSource, /anchor\.download = filename/);
-  assert.match(dataActionSource, /anchor\.click\(\)/);
-  assert.match(dataActionSource, /URL\.revokeObjectURL\(url\)/);
-  assert.match(projectDataSource, /data-system-data-export-filename/);
+  assert.match(eventSource, /const projectDataProjectButton = event\.target\.closest\("\[data-project-data-project-option\]"\)/);
+  assert.match(eventSource, /const projectTemplateAction = event\.target\.closest\("\[data-project-template-action\]"\)/);
 });
 
 test("project list edit action opens a usable inline editor", async () => {
@@ -3110,7 +3111,9 @@ test("project list creates projects only from selected modeling import templates
   assert.match(projectListSource, /请选择模板数据创建项目/);
   assert.match(projectListSource, /data-modeling-import-template/);
   assert.match(projectListSource, /data-project-create-from-import/);
-  assert.match(projectListSource, /当前发布快照/);
+  assert.match(projectListSource, /已选择当前项目数据模板/);
+  assert.match(projectListSource, /从当前项目数据模板创建项目/);
+  assert.doesNotMatch(projectListSource, /当前发布快照/);
   assert.match(projectListSource, /从选中模板创建项目/);
   assert.match(projectListSource, /暂无项目/);
   assert.match(projectListSource, /projectSourceBadge\(project\)/);
@@ -3487,7 +3490,7 @@ test("RMS allocation workbench renders parameters for only the selected method",
 
 test("system management exposes project management and base configuration pages", async () => {
   const expectedPages = [
-    ["system-management-project-data-management", "项目管理", "项目数据管理", ["modelingModules", "sheetSelections", "localImportActions"]],
+    ["system-management-project-data-management", "项目管理", "项目数据管理", ["projectList", "templateManagement", "dataOverview", "projectJsonRaw"]],
     ["system-management-modeling-granularity-management", "项目管理", "建模颗粒度管理", ["modelingModules", "sheets", "fieldSelections"]],
     ["system-management-user-management", "系统基础配置", "用户管理", ["users", "roles", "organizations"]],
     ["system-management-function-permission-management", "系统基础配置", "系统功能权限管理", ["features", "roles", "permissionRules"]],
@@ -3514,10 +3517,12 @@ test("system management exposes project management and base configuration pages"
   assert.match(appSource, /function renderPermissionManagementConfig/);
   assert.match(appSource, /function renderModelingFormManagementConfig/);
   assert.doesNotMatch(appSource, /仿真建模数据表 sheet 选择器/);
-  assert.match(appSource, /项目数据管理配置/);
-  assert.match(appSource, /data-project-data-config-module="modeling-data-source"/);
-  assert.match(appSource, /data-project-data-config-module="modeling-import-publish"/);
-  assert.match(appSource, /data-system-config-save/);
+  assert.doesNotMatch(appSource, /项目数据管理配置/);
+  assert.match(appSource, /data-project-data-config-module="project-data-layer"/);
+  assert.match(appSource, /data-project-data-project-list/);
+  assert.match(appSource, /data-project-template-management/);
+  assert.match(appSource, /data-project-json-viewer/);
+  assert.doesNotMatch(appSource, /data-project-data-config-module="modeling-data-source"/);
   assert.match(appSource, /MODELING_DATA_MODULES/);
   assert.match(appSource, /装备系统/);
   assert.match(appSource, /装备任务/);

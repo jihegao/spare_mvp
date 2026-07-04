@@ -45,6 +45,14 @@ export function createBackendApiClient({ baseUrl = DEFAULT_API_BASE, transport, 
     validateModelingImport(importPackage) {
       return request({ method: "POST", path: "/modeling-imports/validate", body: importPackage });
     },
+    listProjectDataTemplates({ state = "published" } = {}) {
+      const query = state ? `?state=${encodeURIComponent(state)}` : "";
+      return request({ method: "GET", path: `/project-data-templates${query}` });
+    },
+    listModelingImportTemplates({ state = "published" } = {}) {
+      const query = state ? `?state=${encodeURIComponent(state)}` : "";
+      return request({ method: "GET", path: `/project-data-templates${query}` });
+    },
     saveModelingImport(importPackage) {
       return request({ method: "POST", path: "/modeling-imports", body: importPackage });
     },
@@ -228,6 +236,12 @@ export function buildBackendProjectJson(scenario, project = {}) {
   projectJson.schema_version ||= "project-v0";
   projectJson.project_id ||= project.id ? `project-${project.id}` : `project-${projectJson.scenarioId}`;
   projectJson.project_version ||= "project-v0.1";
+  if (project.isTemplate !== undefined || project.is_template !== undefined) {
+    projectJson.projectInfo = {
+      ...(projectJson.projectInfo && typeof projectJson.projectInfo === "object" ? projectJson.projectInfo : {}),
+      isTemplate: Boolean(project.isTemplate || project.is_template)
+    };
+  }
   return projectJson;
 }
 

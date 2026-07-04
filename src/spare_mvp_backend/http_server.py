@@ -184,11 +184,21 @@ def create_backend_server(
                 return api.save_project(body)
             if self.command == "GET" and route == "/projects":
                 return api.list_projects()
+            if self.command == "GET" and route == "/project-data-templates":
+                self._require_user()
+                query = parse_qs(urlparse(self.path).query)
+                state = str((query.get("state") or ["published"])[-1] or "published")
+                return api.list_project_data_templates(state=state)
             if self.command == "POST" and route == "/modeling-imports/validate":
                 return api.validate_modeling_import(body)
             if self.command == "POST" and route == "/modeling-imports":
                 actor = self._require_user()
                 return api.save_modeling_import(body, actor_user_id=actor["user_id"])
+            if self.command == "GET" and route == "/modeling-imports":
+                self._require_user()
+                query = parse_qs(urlparse(self.path).query)
+                state = str((query.get("state") or ["published"])[-1] or "published")
+                return api.list_project_data_templates(state=state)
 
             if self.command == "GET" and len(parts) == 2 and parts[0] == "modeling-imports":
                 return api.get_modeling_import(parts[1])

@@ -426,6 +426,20 @@ test("frontend API client exposes explicit M5 modeling import methods", async ()
     transport: async (request) => {
       calls.push(request);
       if (request.path === "/modeling-imports/validate") return { ok: true, status: "valid", issues: [] };
+      if (request.path === "/project-data-templates?state=published") {
+        return {
+          templates: [
+            {
+              template_id: "import/ui demo",
+              source_import_id: "import/ui demo",
+              template_type: "project_data",
+              project_id: "project-ui-demo",
+              name: "UI 模板",
+              validation_status: "valid"
+            }
+          ]
+        };
+      }
       if (request.path === "/modeling-imports") return { import_id: "import/ui demo", validation_status: "valid" };
       if (request.path === "/modeling-imports/import%2Fui%20demo") {
         return {
@@ -463,6 +477,7 @@ test("frontend API client exposes explicit M5 modeling import methods", async ()
   const importPackage = { schemaVersion: "modeling-import-v1", importId: "import/ui demo" };
 
   const validation = await client.validateModelingImport(importPackage);
+  const templates = await client.listProjectDataTemplates({ state: "published" });
   const saved = await client.saveModelingImport(importPackage);
   const stored = await client.getModelingImport(importPackage.importId);
   const published = await client.publishModelingImport(importPackage.importId);
@@ -470,6 +485,12 @@ test("frontend API client exposes explicit M5 modeling import methods", async ()
   const createdProject = await client.createProjectFromModelingImport(importPackage.importId);
 
   assert.equal(validation.status, "valid");
+  assert.equal(templates.templates[0].template_id, "import/ui demo");
+  assert.equal(templates.templates[0].source_import_id, "import/ui demo");
+  assert.equal(templates.templates[0].template_type, "project_data");
+  assert.equal("version" in templates.templates[0], false);
+  assert.equal("schema_version" in templates.templates[0], false);
+  assert.equal("lifecycle_state" in templates.templates[0], false);
   assert.equal(saved.import_id, "import/ui demo");
   assert.equal(stored.importId, "import/ui demo");
   assert.equal(stored.draftPackage.lifecycle.version, 2);
@@ -481,6 +502,7 @@ test("frontend API client exposes explicit M5 modeling import methods", async ()
   assert.equal(createdProject.modelingSnapshot.project.project_id, "project-ui-demo");
   assert.deepEqual(calls.map((call) => `${call.method} ${call.path}`), [
     "POST /modeling-imports/validate",
+    "GET /project-data-templates?state=published",
     "POST /modeling-imports",
     "GET /modeling-imports/import%2Fui%20demo",
     "POST /modeling-imports/import%2Fui%20demo/publish",
@@ -488,9 +510,10 @@ test("frontend API client exposes explicit M5 modeling import methods", async ()
     "POST /modeling-imports/import%2Fui%20demo/create-project"
   ]);
   assert.equal(calls[0].body, importPackage);
-  assert.equal(calls[1].body, importPackage);
-  assert.deepEqual(calls[4].body, { model_family: "aircraft_support_v1" });
-  assert.equal(calls[5].body, undefined);
+  assert.equal(calls[1].body, undefined);
+  assert.equal(calls[2].body, importPackage);
+  assert.deepEqual(calls[5].body, { model_family: "aircraft_support_v1" });
+  assert.equal(calls[6].body, undefined);
 });
 
 test("frontend API client createProjectFromModelingImport uses protected modeling import route", async () => {

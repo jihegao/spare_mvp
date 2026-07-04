@@ -285,6 +285,14 @@ class BackendApi:
     def get_modeling_import(self, import_id: str) -> dict[str, Any]:
         return self.repository.get_modeling_import(import_id)
 
+    def list_modeling_import_templates(self, *, state: str = "published") -> dict[str, Any]:
+        return self.list_project_data_templates(state=state)
+
+    def list_project_data_templates(self, *, state: str = "published") -> dict[str, Any]:
+        return {
+            "templates": self.repository.list_project_data_templates(state=state or "published")
+        }
+
     def publish_modeling_import(self, import_id: str, *, actor_user_id: str | None = None) -> dict[str, Any]:
         return self._publish_modeling_import_trusted(import_id, actor_user_id=actor_user_id, allow_system=False)
 
@@ -1848,12 +1856,15 @@ def _project_list_entry(project: dict[str, Any]) -> dict[str, Any]:
     summary = payload.get("projectInfo", {}).get("summary")
     if not isinstance(summary, str) or not summary.strip():
         summary = "后端持久化项目"
+    project_info = payload.get("projectInfo") if isinstance(payload.get("projectInfo"), dict) else {}
+    is_template = bool(project_info.get("isTemplate") or project_info.get("is_template"))
 
     return {
         "project_id": project.get("project_id"),
         "experiment_name": str(project_name).strip(),
         "base_code": str(base_code).strip(),
         "summary": str(summary).strip(),
+        "is_template": is_template,
         "updated_at": project.get("updated_at"),
         "scenario_id": payload.get("scenarioId"),
         "source_import_id": payload.get("missionProfile", {}).get("sourceImportId"),

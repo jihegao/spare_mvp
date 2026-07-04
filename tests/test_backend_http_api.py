@@ -805,6 +805,7 @@ class BackendHttpApiTest(unittest.TestCase):
                 self.assertEqual(entry["summary"], project_json["projectInfo"]["summary"])
                 self.assertEqual(entry["scenario_id"], project_json["scenarioId"])
                 self.assertEqual(entry["source_import_id"], project_json["missionProfile"]["sourceImportId"])
+                self.assertEqual(entry["is_template"], False)
                 self.assertIn("updated_at", entry)
             finally:
                 server.shutdown()
@@ -1956,6 +1957,37 @@ class BackendHttpApiTest(unittest.TestCase):
                 second_server.shutdown()
                 second_server.server_close()
                 second_thread.join(timeout=5)
+
+    def test_http_project_data_templates_route_hides_import_versions(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            server = create_backend_server(
+                ("127.0.0.1", 0),
+                repo_root=REPO_ROOT,
+                database_path=":memory:",
+                output_dir=Path(tmp) / "artifacts",
+            )
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                base_url = f"http://127.0.0.1:{server.server_address[1]}/api"
+                import_package = self._fixture("modeling_import_project.json")
+                import_id = quote(import_package["importId"], safe="")
+                auth_token = self._login_token(base_url, "data", "data")
+
+                self._json(base_url, "POST", "/modeling-imports", import_package, auth_token=auth_token)
+                self._json(base_url, "POST", f"/modeling-imports/{import_id}/publish", auth_token=auth_token)
+                templates = self._json(base_url, "GET", "/project-data-templates?state=published", auth_token=auth_token)
+
+                self.assertEqual([template["template_id"] for template in templates["templates"]], [import_package["importId"]])
+                self.assertEqual(templates["templates"][0]["template_type"], "project_data")
+                self.assertEqual(templates["templates"][0]["source_import_id"], import_package["importId"])
+                self.assertNotIn("schema_version", templates["templates"][0])
+                self.assertNotIn("version", templates["templates"][0])
+                self.assertNotIn("lifecycle_state", templates["templates"][0])
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
 
     def test_http_modeling_import_compile_scenario_route_uses_simulation_adapter(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
