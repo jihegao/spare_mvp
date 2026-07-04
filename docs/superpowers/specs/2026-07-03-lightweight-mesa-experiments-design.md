@@ -85,7 +85,7 @@ result = model.run()
 - `frames`
 - `events`
 
-轻量层的主变量实验不是全局 `failureRates`、`spareMultipliers` 或 `supportCapacities` sweep，而是最小携行清单搜索。搜索通过复制 `inputs`、按备件类别独立修改携行数量、切换 seed、重复调用模型核心完成。聚合结果只保留在内存中。
+轻量层的主变量实验不是全局 `failureRates`、`spareMultipliers` 或 `supportCapacities` sweep，而是最小携行清单搜索。搜索通过复制 `inputs`、只按机场绑定基层保障点的“保障点 × 备件类别”独立修改库存数量、切换 seed、重复调用模型核心完成；上级库和其他保障点库存保持 Project 原值，只作为调运资源参与仿真。聚合结果只保留在内存中。
 
 当前四个结果分析页的实现入口是 `POST /api/mesa-analysis-runs`。请求携带当前 Project、`analysis_type`、页面会话设置和 `model_family=aircraft_support_v1`；后端通过 `SimulationAdapter.compile_scenario_with_gate(..., model_family="aircraft_support_v1")` 编译后，只消费 `scenario["simulation_inputs"]` 并直接运行 `AircraftSupportV1Model`。前端不得调用 `runMonteCarlo()`、`runSimulation()`、`singleResult` 或 preview fixture 兜底；后端不可用或编译失败时只能返回/展示 `blocked`。
 
@@ -169,36 +169,48 @@ tests/test_mesa_experiments_lite.py
 
 ### `minimum_carry_list_search`
 
-输入：当前项目建模数据，至少需要备件类别、任务要求、库存或携行候选范围、基础故障/保障规则。
+输入：当前项目建模数据，至少需要备件类别、任务要求、机场绑定的基层保障点、各保障点库存、调运关系、基础故障/保障规则。
 
 用途：
 
-- 探索在一定置信度水平下满足任务要求的最小备件携行清单。
-- 每一类备件数量都是独立决策变量，不使用全局备件倍率替代。
-- 输出各备件类别的建议数量、通过率、约束余量和仍然不确定的风险项。
+- 探索在一定置信度水平下满足任务要求的基层级最小备件携行清单。
+- 只优化机场绑定的基层保障点库存；上级库、侧向保障点和其他保障点库存保持 Project 原值，只通过调运规则参与仿真。
+- 每个“基层保障点 × 备件类别”的数量都是独立决策变量，不使用全局备件倍率替代。
+- 输出各基层保障点、各备件类别的建议数量、相对 Project 基准的补充/削减量、通过率、约束余量和仍然不确定的风险项。
 
 决策变量：
 
 ```json
 {
   "spareQuantities": {
-    "发动机备件": [0, 1, 2, 3, 4],
-    "航电模块": [0, 1, 2, 3, 4],
-    "液压备件": [0, 1, 2, 3, 4]
+    "carrier_deck": {
+      "发动机备件": [0, 1, 2, 3, 4],
+      "航电模块": [0, 1, 2, 3, 4],
+      "液压备件": [0, 1, 2, 3, 4]
+    }
   }
 }
 ```
 
-其中每个 key 来自项目建模数据中的备件类别，例如：
+第一层 key 是机场绑定的基层保障点 id；第二层 key 是该基层保障点可携行或可消耗的备件类别。基层保障点来自项目建模数据中的机场绑定关系和保障点层级标识；如果项目无法明确识别机场绑定基层保障点，搜索必须 fail closed，要求回到保障节点建模补齐绑定关系或由用户显式选择。
+
+备件类别来自项目建模数据，例如：
 
 - `components[].spareType`
 - `supportNodes[].inventory` 的备件 key
+- `supportActivities[].jobs[].spare[].name`
 - 后续显式维护的携行清单类别字典
+
+Project 当前配置库存是搜索基准 `q0`。搜索允许围绕 `q0` 补缺和削减：
+
+- 如果 `q0` 不满足置信度目标，逐步补充基层级库存，寻找满足解。
+- 如果 `q0` 已满足置信度目标，逐步削减基层级库存，直到再减就不满足。
+- 上级库、侧向保障点、其他机场保障点和运输策略在每个候选中保持 Project 原值，作为可调运资源和网络约束参与仿真。
 
 搜索目标：
 
 ```text
-minimize total_carry_quantity 或 weighted_carry_cost
+minimize sum(q[base_support_node_id][spare_type])
 subject to confidence(success_predicate(samples)) >= confidence_target
 ```
 
@@ -218,19 +230,21 @@ confidence_target = 0.9
 
 搜索策略分两层：
 
-1. 小类别数或小上界时，使用全组合网格搜索，返回满足约束的 Pareto frontier 和最小解。
-2. 类别数较多时，使用逐类增量搜索：从零携行开始，每轮增加对通过率提升最大的单类备件，达到置信度后再逐类回退，剔除冗余数量。
+1. 小保障点数、小类别数或小上界时，使用围绕 `q0` 的全组合网格搜索，返回满足约束的 Pareto frontier 和总量最小解。
+2. 类别数较多时，先评估 `q0`，再做双向贪心搜索：不满足时每轮补充对通过率提升最大的“基层保障点 × 备件类别”，满足后再逐项回退，剔除冗余数量。
 
 关键约束：
 
 - 不允许把所有备件乘以同一个倍率作为结果。
+- 不允许优化上级库、侧向保障点或其他保障点库存；这些库存只能作为调运资源影响基层级候选的仿真结果。
 - 不允许只做单因素敏感性后人工读数。
 - 不允许把未测试的类别数量推断为满足置信度。
 - 每个候选向量必须运行固定 seed 集或显式 seed 规则，才能比较。
+- 结果必须报告相对 Project 基准的变化量：补充、削减或保持。
 
 关注：
 
-- 哪些备件类别是真正约束项。
+- 哪些基层保障点和备件类别是真正约束项。
 - 满足 0.9 / 0.95 等置信度时，最小数量组合是否稳定。
 - 哪些类别存在替代或耦合效应。
 - 结果只表示当前模型和样本下的估计，不代表真实工程保证。
@@ -247,7 +261,7 @@ confidence_target = 0.9
 
 关注：
 
-- 每一类备件的边际贡献。
+- 每个基层保障点、每一类备件的边际贡献。
 - 最小满足解附近的风险项。
 - 支撑目标置信度的备选清单。
 - 建模假设和不确定性说明。
@@ -317,7 +331,7 @@ def downtime_factors(samples: list[dict]) -> dict: ...
 
 1. 当前项目建模数据能在内存中完成 `project_baseline_at_current_granularity`。
 2. 6P 两个 fixture 作为项目数据样例，均能通过项目入口语义完成 baseline。
-3. `minimum_carry_list_search` 能返回按备件类别独立变化的最小满足解。
+3. `minimum_carry_list_search` 能返回按“机场绑定基层保障点 × 备件类别”独立变化的总量最小满足解，并报告相对 Project 基准的补充/削减量。
 4. 同一 seed 的核心指标稳定。
 5. 非法 Project、非法 modeling-import 或建模粒度不足时 fail closed，并指出缺失字段。
 6. 当前页面运行后 `runs/`、`outputs/`、SQLite 数据库和 artifact manifest 不发生新增写入。
@@ -330,7 +344,7 @@ def downtime_factors(samples: list[dict]) -> dict: ...
 1. loader 读取 Project JSON，并能读取两个 6P case 作为项目数据样例。
 2. compiler 输出 `aircraft-support-v1-input-v0`。
 3. single runner 返回 metrics，且不写文件。
-4. 最小携行清单搜索能够独立改变每一类备件数量，返回满足置信度的最小解。
+4. 最小携行清单搜索能够只改变基层保障点的各类备件数量，保持上级/其他保障点库存不参与优化，并返回满足置信度的总量最小解。
 5. 建模粒度不足或 invalid support activity predecessor 返回结构化错误。
 6. monkeypatch 文件写入路径，确认默认运行不调用 artifact writer。
 
@@ -346,8 +360,8 @@ PYTHONDONTWRITEBYTECODE=1 .abm-mesa-test-env/bin/python -m unittest tests.test_m
 2. 轻量实验是否只保留 CLI，还是也提供 Python API 给 notebook / agent 调用？
 3. 是否允许显式 `--debug-dump`，还是严格禁止任何结果落盘？
 4. 置信度默认值先采用 0.9，还是在 CLI 必填？
-5. 最小携行清单的目标函数使用总数量最小，还是引入重量、体积、成本等加权成本？
-6. 每类备件数量的搜索上界来自项目建模中的库存/携行候选范围、用户输入，还是按缺省 `0..4` 起步？
+5. 后续是否引入重量、体积、成本等加权成本；第一版目标函数已固定为基层级携行总量最小。
+6. 每类备件数量围绕 Project 基准补缺/削减时，搜索上界来自项目建模中的库存/携行候选范围、用户输入，还是按缺省 `0..4` 起步？
 7. 粗/中/细三档建模粒度是否足够，还是需要与现有 `level0` / `level1` validationLevel 直接绑定？
 8. `analyses.py` 是从当前 adapter 中抽纯函数，还是先实现一套更粗的轻量摘要？
 9. 内置实验类型先只做 project baseline + `minimum_carry_list_search`，还是保留其他敏感性实验为 future？
