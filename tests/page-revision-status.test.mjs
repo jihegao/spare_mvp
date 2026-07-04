@@ -51,15 +51,15 @@ test("page revision #9 composite timeline splits same basic task by formation", 
   assert.match(source, /const key = `\$\{taskName\} \/ \$\{groupName\}`;/);
 });
 
-test("page revision #9 composite task item basic-mission fields render read-only", async () => {
+test("page revision #9 composite task item derived fields render read-only and minimum equipment stays editable", async () => {
   const source = await readFile(FRONT_APP_URL, "utf8");
   assert.match(source, /function compositeTaskInheritedBasicFields/);
   assert.match(source, /readOnlyTableValue\(inherited\.equipmentType\)/);
   assert.match(source, /readOnlyTableValue\(inherited\.taskDurationMinutes\)/);
   assert.match(source, /readOnlyTableValue\(inherited\.equipmentQuantity\)/);
-  assert.match(source, /readOnlyTableValue\(inherited\.minRequiredSystems\)/);
+  assert.doesNotMatch(source, /readOnlyTableValue\(inherited\.minRequiredSystems\)/);
   assert.doesNotMatch(source, /valueInput\(`\$\{compositePath\}\.taskItems\.\$\{index\}\.equipmentQuantity/);
-  assert.doesNotMatch(source, /valueInput\(`\$\{compositePath\}\.taskItems\.\$\{index\}\.minRequiredSystems/);
+  assert.match(source, /valueInput\(`\$\{compositePath\}\.taskItems\.\$\{index\}\.minRequiredSystems`, "number"/);
   assert.doesNotMatch(source, /valueInput\(`\$\{compositePath\}\.taskItems\.\$\{index\}\.equipmentType/);
   assert.doesNotMatch(source, /taskItems\.\$\{index\}\.requiredEquipmentQuantity/);
 });

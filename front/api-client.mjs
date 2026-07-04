@@ -261,7 +261,6 @@ function syncCompositeTaskInheritedBasicFields(projectJson) {
       copyPresentValue(item, "equipmentType", basicMission.equipmentType);
       copyPresentValue(item, "taskDurationMinutes", basicMission.taskDurationMinutes);
       copyPresentValue(item, "equipmentQuantity", basicMission.equipmentQuantity);
-      copyPresentValue(item, "minRequiredSystems", basicMission.minRequiredSorties);
       copyPresentValue(item, "preparationMinutes", basicMission.preparationMinutes);
     }
   }

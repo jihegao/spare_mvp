@@ -150,6 +150,32 @@ test("feature grouping preserves three-level navigation and internal fourth-leve
   assert.equal(getFeaturePageById("mission-reliability-rms-allocation").id, "system-management-equipment-rms-allocation");
 });
 
+test("modeling form management describes composite task item fields", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const compositeSheetSource = appSource.slice(
+    appSource.indexOf('key: "composite-task"'),
+    appSource.indexOf('key: "periodic-task"')
+  );
+
+  for (const label of [
+    "基本任务名称",
+    "编队名称",
+    "出发时间（HH：MM）",
+    "任务优先级（1最高）",
+    "单日重复次数",
+    "间隔小时数",
+    "装备类型",
+    "任务时长",
+    "要求装备数量",
+    "最小装备数量"
+  ]) {
+    assert.ok(compositeSheetSource.includes(`"${label}"`), label);
+  }
+  assert.doesNotMatch(compositeSheetSource, /回收时间/);
+  assert.doesNotMatch(compositeSheetSource, /任务项/);
+  assert.doesNotMatch(compositeSheetSource, /首波时间/);
+});
+
 test("system support project management removes standalone modeling import route but keeps local import actions", async () => {
   const catalogSource = await readFile(new URL("../front/feature-catalog.mjs", import.meta.url), "utf8");
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
@@ -1598,7 +1624,11 @@ test("mission task profile pages split composite and periodic task modeling", as
   assert.match(compositeSource, /典型组合任务时序表/);
   assert.match(compositeSource, /典型组合任务时序图/);
   assert.match(compositeSource, /renderCompositeTimelineChart/);
-  assert.match(compositeSource, /任务优先级/);
+  assert.ok(
+    compositeSource.includes("<thead><tr><th>基本任务名称</th><th>编队名称</th><th>出发时间（HH：MM）</th><th>任务优先级（1最高）</th><th>单日重复次数</th><th>间隔小时数</th><th>装备类型</th><th>任务时长</th><th>要求装备数量</th><th>最小装备数量</th><th>删除</th></tr></thead>"),
+    "composite task item table must follow the requested basic-task field order"
+  );
+  assert.match(compositeSource, /任务优先级（1最高）/);
   assert.match(compositeSource, /要求装备数量/);
   assert.match(compositeSource, /最小装备数量/);
   assert.doesNotMatch(compositeSource, /回收时刻/);
@@ -1717,18 +1747,21 @@ test("page revision equipment and mission input constraints are guarded", async 
   assert.match(compositeItemSource, /readOnlyTableValue\(inherited\.equipmentType\)/);
   assert.match(compositeItemSource, /readOnlyTableValue\(inherited\.taskDurationMinutes\)/);
   assert.match(compositeItemSource, /readOnlyTableValue\(inherited\.equipmentQuantity\)/);
-  assert.match(compositeItemSource, /readOnlyTableValue\(inherited\.minRequiredSystems\)/);
+  assert.doesNotMatch(compositeItemSource, /readOnlyTableValue\(inherited\.minRequiredSystems\)/);
   assert.doesNotMatch(compositeItemSource, /valueInput\(`\$\{compositePath\}\.taskItems\.\$\{index\}\.equipmentType/);
   assert.doesNotMatch(compositeItemSource, /valueInput\(`\$\{compositePath\}\.taskItems\.\$\{index\}\.taskDurationMinutes/);
   assert.doesNotMatch(compositeItemSource, /valueInput\(`\$\{compositePath\}\.taskItems\.\$\{index\}\.equipmentQuantity/);
-  assert.doesNotMatch(compositeItemSource, /valueInput\(`\$\{compositePath\}\.taskItems\.\$\{index\}\.minRequiredSystems/);
   assert.doesNotMatch(compositeItemSource, /requiredEquipmentQuantity/);
   assert.match(compositeItemSource, /minRequiredSystems/);
   assert.match(compositeItemSource, /taskItems\.\$\{index\}\.groupName/);
   assert.match(compositeItemSource, /taskItems\.\$\{index\}\.firstWaveTime/);
   assert.match(compositeItemSource, /taskItems\.\$\{index\}\.priority/);
+  assert.match(compositeItemSource, /taskItems\.\$\{index\}\.priority`, "number", \{ min: "1", step: "1" \}/);
   assert.match(compositeItemSource, /taskItems\.\$\{index\}\.dailyRepeatCount/);
+  assert.match(compositeItemSource, /taskItems\.\$\{index\}\.dailyRepeatCount`, "number", \{ min: "1", step: "1" \}/);
   assert.match(compositeItemSource, /taskItems\.\$\{index\}\.intervalHours/);
+  assert.match(compositeItemSource, /taskItems\.\$\{index\}\.intervalHours`, "number", \{ min: "0.1", step: "0.1" \}/);
+  assert.match(compositeItemSource, /valueInput\(`\$\{compositePath\}\.taskItems\.\$\{index\}\.minRequiredSystems`, "number"/);
   assert.doesNotMatch(compositeItemSource, /任务下达时间/);
   assert.doesNotMatch(compositeItemSource, /回收时刻/);
 });

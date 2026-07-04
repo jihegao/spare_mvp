@@ -555,7 +555,7 @@ test("buildBackendProjectJson syncs composite task inherited basic mission field
   assert.equal(syncedItem.equipmentType, "J-35");
   assert.equal(syncedItem.taskDurationMinutes, 95);
   assert.equal(syncedItem.equipmentQuantity, 4);
-  assert.equal(syncedItem.minRequiredSystems, 3);
+  assert.equal(syncedItem.minRequiredSystems, 1);
   assert.equal(syncedItem.preparationMinutes, 25);
   assert.equal(syncedItem.groupName, "Editable group");
   assert.equal(syncedItem.firstWaveTime, "08:30");
