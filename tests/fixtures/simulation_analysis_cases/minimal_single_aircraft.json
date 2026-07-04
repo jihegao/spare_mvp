@@ -537,12 +537,6 @@
       }
     ],
     "missionProfile": {
-      "analysisRequests": {
-        "largeSample": {
-          "enabled": true,
-          "samples": 1
-        }
-      },
       "compositeTasks": [
         {
           "id": "composite-6p-minimal",
@@ -564,7 +558,6 @@
         }
       ],
       "durationHours": 6,
-      "endCondition": "完成 1 个最小单机出动波次",
       "id": "mission-profile-6p-minimal",
       "name": "6P 最小单机任务剖面",
       "periodicTasks": [
@@ -595,8 +588,6 @@
         }
       ],
       "profileId": "MP-CV-01",
-      "profileType": "舰载机昼夜连续出动",
-      "repeatCycleHours": 6,
       "sourceImportId": "import-6p-minimal-single-aircraft"
     },
     "modelingImportValidation": {

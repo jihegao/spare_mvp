@@ -1148,7 +1148,7 @@
               "spare": [
                 {
                   "model": "SRU",
-                  "name": "液压密封件",
+                  "name": "液压备件",
                   "quantity": 1
                 }
               ],
@@ -2014,12 +2014,6 @@
       }
     ],
     "missionProfile": {
-      "analysisRequests": {
-        "largeSample": {
-          "enabled": true,
-          "samples": 27
-        }
-      },
       "compositeTasks": [
         {
           "id": "composite-day-cap",
@@ -2059,7 +2053,6 @@
         }
       ],
       "durationHours": 24,
-      "endCondition": "完成 4 个昼夜任务波次",
       "id": "mission-profile-day-night",
       "name": "舰载机昼夜混合出动任务剖面",
       "periodicTasks": [
@@ -2111,8 +2104,6 @@
         }
       ],
       "profileId": "MP-CV-01",
-      "profileType": "舰载机昼夜连续出动",
-      "repeatCycleHours": 6,
       "sourceImportId": "import-carrier-day-night-001"
     },
     "modelingImportValidation": {
@@ -2446,7 +2437,7 @@
             "spare": [
               {
                 "model": "SRU",
-                "name": "液压密封件",
+                "name": "液压备件",
                 "quantity": 1
               }
             ],

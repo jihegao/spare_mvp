@@ -734,11 +734,16 @@ test("mesa visualization escapes contract-provider fields before innerHTML inser
   assert.doesNotMatch(stageSource, /\$\{aircraft\.label\}/);
   assert.doesNotMatch(stageSource, /\$\{mission\.status\}/);
 
-  assert.match(aircraftSource, /htmlEscape\(aircraft\.label\)/);
   assert.match(aircraftSource, /htmlEscape\(aircraft\.type\)/);
   assert.match(aircraftSource, /htmlEscape\(selectedAircraft\.label\)/);
-  assert.match(aircraftSource, /htmlEscape\(selectedAircraft\.failedLru/);
+  assert.match(aircraftSource, /htmlEscape\(visualAircraftStateLabel\(aircraft\.state\)\)/);
+  assert.match(aircraftSource, /htmlEscape\(aircraft\.state \|\| "-"\)/);
+  assert.match(aircraftSource, /htmlEscape\(detail\)/);
+  assert.match(aircraftSource, /htmlEscape\(meta\)/);
+  assert.match(aircraftSource, /htmlEscape\(item\.name\)/);
   assert.doesNotMatch(aircraftSource, /\$\{selectedAircraft\.label\}/);
+  assert.doesNotMatch(aircraftSource, /\$\{detail\}/);
+  assert.doesNotMatch(aircraftSource, /\$\{item\.name\}/);
 
   assert.match(missionSource, /htmlEscape\(row\.basicTaskName\)/);
   assert.match(missionSource, /htmlEscape\(row\.id\)/);
@@ -747,12 +752,12 @@ test("mesa visualization escapes contract-provider fields before innerHTML inser
   assert.match(missionSource, /htmlEscape\(tailNumber\)/);
   assert.doesNotMatch(missionSource, /assignedTailNumbers\.join\(" \/ "\)/);
 
-  assert.match(supportSource, /htmlEscape\(resource\.label\)/);
-  assert.match(supportSource, /htmlEscape\(spare\.label\)/);
-  assert.match(supportSource, /htmlEscape\(job\.tailNumber\)/);
-  assert.match(supportSource, /htmlEscape\(job\.task\)/);
-  assert.match(supportSource, /htmlEscape\(job\.state\)/);
-  assert.match(supportSource, /htmlEscape\(event\.message\)/);
+  assert.match(stageSource, /htmlEscape\(row\.name\)/);
+  assert.match(stageSource, /htmlEscape\(row\.primaryLabel\)/);
+  assert.match(stageSource, /htmlEscape\(row\.secondaryLabel\)/);
+  assert.match(supportSource, /htmlEscape\(row\.title\)/);
+  assert.match(supportSource, /htmlEscape\(row\.message \|\| "保障作业"\)/);
+  assert.match(supportSource, /htmlEscape\(row\.meta \|\| ""\)/);
 });
 
 test("support organization and activity pages follow ship_front tree table editor structure", async () => {
@@ -3420,6 +3425,31 @@ test("monte carlo detail keeps formal source status and links to analysis pages"
   assert.doesNotMatch(mcResultSource, /mc-result-cards|mc-evaluation-table/);
 });
 
+test("SGR monte carlo pages label sortie_rate as 出动架次率", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const metricSource = appSource.slice(
+    appSource.indexOf("const LITE_MESA_MONTE_CARLO_METRICS"),
+    appSource.indexOf("const LITE_MESA_ANALYSIS_DEFINITIONS")
+  );
+  const reliabilitySource = appSource.slice(
+    appSource.indexOf("mission_reliability:"),
+    appSource.indexOf("downtime_factors:")
+  );
+  const reliabilityTableStart = appSource.indexOf(
+    'if (definition.analysisType === "mission_reliability")',
+    appSource.indexOf("function renderLiteMesaAnalysisSessionBody")
+  );
+  const reliabilityTableSource = appSource.slice(
+    reliabilityTableStart,
+    appSource.indexOf("function renderLiteMesaAnalysisLimitations")
+  );
+
+  assert.match(metricSource, /key: "sortie_rate", label: "出动架次率"/);
+  assert.match(reliabilitySource, /metricLabels: \["任务成功率", "出动架次率", "战备完好率", "样本数"\]/);
+  assert.match(reliabilityTableSource, /<th>出动架次率<\/th>/);
+  assert.doesNotMatch(metricSource + reliabilitySource + reliabilityTableSource, /出动完成率/);
+});
+
 test("system management exposes an independent equipment RMS allocation workbench", async () => {
   const page = getFeaturePageById("system-management-equipment-rms-allocation");
   assert.equal(page.module, "系统运行支持模块");
@@ -3728,10 +3758,13 @@ test("visual simulation layout matches operational dashboard requirements", asyn
   assert.doesNotMatch(appSource, /T-\$\{4 - index\}/);
   assert.match(styleSource, /\.availability-chart \.trend-line/);
   assert.match(styleSource, /\.availability-chart circle\.current-point/);
+  assert.match(visualSource, /\$\{activeView === "aircraft" \? renderAvailabilityCurve\(availabilityTrend\) : ""\}/);
   assert.match(appSource, /available: "停放"/);
-  assert.match(appSource, /maintenance: "使用保障"/);
+  assert.match(appSource, /pre_support: "使用保障"/);
+  assert.match(appSource, /maintenance: "维修\/不可用"/);
   assert.match(appSource, /flying: "任务"/);
   assert.match(appSource, /repair_unavailable: "维修\/不可用"/);
+  assert.match(appSource, /const actualStates = \["available", "pre_support", "flying", "repair_unavailable"\]/);
   assert.match(appSource, /function visualAircraftLaneKey/);
   assert.doesNotMatch(stageSource, /航母甲板 \/ 任务就绪/);
   assert.doesNotMatch(stageSource, /任务空域/);
@@ -3761,23 +3794,75 @@ test("visual simulation layout matches operational dashboard requirements", asyn
   assert.match(stageSource, /aircraft-state-board/);
   assert.match(stageSource, /aircraft-state-lane/);
   assert.match(stageSource, /aircraft-state-node/);
-  assert.match(stageSource, /aircraft-mission-timeline/);
-  assert.match(stageSource, /buildAircraftMissionTimelineRows\(state\)/);
+  assert.doesNotMatch(stageSource, /aircraft-mission-timeline/);
+  assert.doesNotMatch(appSource, /buildAircraftMissionTimelineRows\(state\)/);
   assert.match(styleSource, /\.aircraft-state-board[\s\S]*grid-template-columns: repeat\(4, minmax\(120px, 1fr\)\)/);
-  assert.match(styleSource, /\.aircraft-state-board[\s\S]*min-height: 320px/);
-  assert.match(styleSource, /\.aircraft-state-board[\s\S]*max-height: 320px/);
+  assert.match(styleSource, /\.aircraft-state-board[\s\S]*height: 520px/);
+  assert.match(styleSource, /\.aircraft-state-board[\s\S]*min-height: 520px/);
+  assert.match(styleSource, /\.aircraft-state-board[\s\S]*max-height: 520px/);
   assert.match(styleSource, /\.aircraft-state-lane-body[\s\S]*overflow-y: auto/);
-  assert.match(styleSource, /\.aircraft-mission-timeline[\s\S]*overflow: auto/);
+  assert.doesNotMatch(styleSource, /\.aircraft-mission-timeline/);
   assert.match(styleSource, /\.mesa-visual-grid\.mission-expanded[\s\S]*grid-template-columns: minmax\(0, 1fr\)/);
   assert.match(stageSource, /保障人员/);
   assert.match(stageSource, /按保障组织 \/ 人员专业/);
-  assert.match(stageSource, /保障设备详情清单/);
+  assert.match(stageSource, /保障设备（按类型）/);
+  assert.match(stageSource, /工作次数/);
+  assert.match(stageSource, /延误次数/);
+  assert.doesNotMatch(stageSource, /保障设备详情清单/);
   assert.match(stageSource, /按保障组织 \/ 备件类型/);
   assert.match(appSource, /mesa-event-window/);
+  assert.match(appSource, /buildSimulationLogStream\(visualizationStateSeries\)/);
+  assert.match(appSource, /isStateFrameEvent/);
+  assert.match(appSource, /任务成员分配/);
+  assert.match(appSource, /飞机保障作业/);
   assert.match(styleSource, /\.mesa-event-window[\s\S]*overflow: auto/);
 });
 
-test("visual aircraft panel renders backend equipment failure propagation tree", async () => {
+test("visual support view separates collapsible resource statistics from support logs", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const stateSource = await readFile(new URL("../front/aviation-support-state.mjs", import.meta.url), "utf8");
+  const styleSource = await readFile(new URL("../front/styles.css", import.meta.url), "utf8");
+  const supportStageSource = appSource.slice(
+    appSource.indexOf("function renderMesaSupportStage"),
+    appSource.indexOf("function renderMesaSidePanel")
+  );
+  const supportPanelSource = appSource.slice(
+    appSource.indexOf("function renderMesaSupportPanel"),
+    appSource.indexOf("function missionProgressWidth")
+  );
+  const eventStreamSource = appSource.slice(
+    appSource.indexOf("function renderVisualizationEventStream"),
+    appSource.indexOf("function mesaTab")
+  );
+
+  assert.match(supportStageSource, /support-collapsible-panel/);
+  assert.match(supportStageSource, /<details class="support-metric-panel support-collapsible-panel" open>/);
+  assert.match(supportStageSource, /<summary class="section-head">/);
+  assert.match(supportStageSource, /保障人员（按专业）/);
+  assert.match(supportStageSource, /保障设备（按类型）/);
+  assert.match(supportStageSource, /备件（按类型）/);
+  assert.match(supportStageSource, /工作次数/);
+  assert.match(supportStageSource, /延误次数/);
+  assert.match(supportStageSource, /消耗量/);
+  assert.doesNotMatch(supportStageSource, /保障设备详情清单/);
+  assert.match(stateSource, /delayCount: number\(item\.delay_count/);
+  assert.match(stateSource, /delayCount: number\(item\.delay_count \|\| item\.shortage_count/);
+
+  assert.match(supportPanelSource, /保障作业日志/);
+  assert.match(supportPanelSource, /supportPanelLogRows\(state\)/);
+  assert.match(supportPanelSource, /renderSupportPanelLogRow/);
+  assert.doesNotMatch(supportPanelSource, /备件库存量/);
+  assert.doesNotMatch(supportPanelSource, /state\.spares\.map/);
+  assert.doesNotMatch(supportPanelSource, /state\.resources\.map/);
+
+  assert.match(eventStreamSource, /<details class="simulation-log-collapse">/);
+  assert.match(eventStreamSource, /全部保障事件/);
+  assert.doesNotMatch(eventStreamSource, /<details class="simulation-log-collapse" open>/);
+  assert.match(styleSource, /\.support-collapsible-panel/);
+  assert.match(styleSource, /\.simulation-log-collapse/);
+});
+
+test("visual aircraft panel renders equipment status summary instead of configuration tree", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const stateSource = await readFile(new URL("../front/aviation-support-state.mjs", import.meta.url), "utf8");
   const styleSource = await readFile(new URL("../front/styles.css", import.meta.url), "utf8");
@@ -3790,13 +3875,20 @@ test("visual aircraft panel renders backend equipment failure propagation tree",
   assert.match(stateSource, /failure_tree_templates/);
   assert.match(appSource, /let selectedVisualAircraftId = ""/);
   assert.match(appSource, /data-select-visual-aircraft/);
-  assert.match(aircraftPanelSource, /renderAircraftFailureTree\(selectedAircraft\.failureTree, selectedAircraft\)/);
-  assert.match(aircraftPanelSource, /飞机内部组成与故障传递/);
-  assert.match(aircraftPanelSource, /中取/);
-  assert.match(aircraftPanelSource, /T\+\$\{htmlEscape\(node\.failureTime\)\}min/);
-  assert.match(aircraftPanelSource, /向上传递/);
-  assert.match(styleSource, /\.aircraft-failure-tree/);
-  assert.match(styleSource, /\.aircraft-failure-node\.propagated/);
+  assert.match(aircraftPanelSource, /renderAircraftStatusSummary\(selectedAircraft, state\)/);
+  assert.match(aircraftPanelSource, /装备状态/);
+  assert.match(aircraftPanelSource, /当前状态/);
+  assert.match(aircraftPanelSource, /累计任务时间/);
+  assert.match(aircraftPanelSource, /当前保障作业/);
+  assert.match(aircraftPanelSource, /故障件/);
+  assert.match(aircraftPanelSource, /currentSupportJobsForAircraft\(aircraft, state\.jobs\)/);
+  assert.match(aircraftPanelSource, /failedComponentsForAircraft\(aircraft\)/);
+  assert.doesNotMatch(aircraftPanelSource, /renderAircraftConfigurationTree\(selectedAircraft\.failureTree, selectedAircraft\)/);
+  assert.doesNotMatch(aircraftPanelSource, /装备构型树/);
+  assert.doesNotMatch(aircraftPanelSource, /role="tree"/);
+  assert.doesNotMatch(aircraftPanelSource, /故障传递/);
+  assert.match(styleSource, /\.aircraft-status-summary/);
+  assert.match(styleSource, /\.aircraft-status-row/);
 });
 
 test("visual simulation consumes formal state-series without demo fallback", async () => {

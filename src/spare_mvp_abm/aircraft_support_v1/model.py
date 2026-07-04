@@ -801,8 +801,8 @@ class AircraftSupportV1Model:
         return_minute = self.minute if early_return else aircraft.return_time
         aircraft.flight_hours += max(0.0, float(((return_minute or self.minute) - (mission.actual_start if mission else 0)) / 60.0))
         aircraft.landing_count += 1
-        aircraft.state = "maintenance"
         if aircraft.in_flight_failure:
+            aircraft.state = "maintenance"
             self.failed_sorties += 1
             component = self._component_by_id(aircraft.failed_component_id)
             self._create_job(aircraft, self.repair_activity, kind="repair", component=component)
@@ -813,10 +813,12 @@ class AircraftSupportV1Model:
             if mission is not None:
                 self._update_mission_failure_status(mission)
         elif aircraft.component_failure_minutes:
+            aircraft.state = "maintenance"
             component = self._component_by_id(self._first_failed_component_id(aircraft))
             self._create_job(aircraft, self.repair_activity, kind="repair", component=component)
             self._event("mission_returned_with_component_failure", f"{aircraft.tail_number} returned with component failure and needs repair")
         else:
+            aircraft.state = "post_support"
             aircraft.postflight_required = True
             self._create_job(aircraft, self.postflight_activity, kind="postflight")
             self._event("mission_returned", f"{aircraft.tail_number} returned from mission and needs postflight")
@@ -1000,7 +1002,7 @@ class AircraftSupportV1Model:
             needed = mission.required_aircraft - self._mission_preflight_commissioned_count(mission)
             created = 0
             for aircraft in available[: max(0, needed)]:
-                aircraft.state = "maintenance"
+                aircraft.state = "pre_support"
                 self._create_job(aircraft, self.preflight_activity, kind="preflight", mission_id=mission.mission_id)
                 created += 1
             mission.preflight_created = self._mission_preflight_commissioned_count(mission) >= mission.required_aircraft
@@ -1154,10 +1156,12 @@ class AircraftSupportV1Model:
                 if not isinstance(item, dict):
                     continue
                 spare_type = str(item.get("name") or item.get("model") or "").strip()
+                if _is_no_spare_value(spare_type):
+                    continue
                 quantity = _positive_int(item.get("quantity"), 1)
                 if spare_type and quantity > 0:
                     return spare_type, quantity
-        if isinstance(spare, str) and spare and spare != "无":
+        if isinstance(spare, str) and spare and not _is_no_spare_value(spare):
             parts = [part.strip() for part in spare.split(",") if part.strip()]
             if parts:
                 quantity = 1
@@ -1617,6 +1621,11 @@ def _positive_int(value: Any, fallback: int) -> int:
     except (TypeError, ValueError):
         return fallback
     return parsed if parsed > 0 else fallback
+
+
+def _is_no_spare_value(value: Any) -> bool:
+    text = str(value or "").strip().lower()
+    return text in {"", "无", "none", "null", "n/a", "na", "-", "不需要", "无需"}
 
 
 def _aircraft_type_tokens(value: Any) -> set[str]:

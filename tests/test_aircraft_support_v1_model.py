@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import json
 import unittest
+from pathlib import Path
 
+from src.spare_mvp_backend.modeling_import import modeling_import_to_project, validate_modeling_import_package
 from src.spare_mvp_abm.aircraft_support_v1.model import AircraftSupportV1Model, JobState, _resource_quantity
+from src.spare_mvp_contract import SimulationAdapter
 
 
 def _minimal_inputs() -> dict:
@@ -74,6 +78,14 @@ def aircraft_payload_nodes(model: AircraftSupportV1Model, aircraft) -> list[dict
     return model._aircraft_failure_tree_payload(aircraft)["nodes"]
 
 
+def _canonical_import_inputs() -> dict:
+    fixture_path = Path(__file__).parent / "fixtures" / "modeling_import_project.json"
+    import_package = json.loads(fixture_path.read_text(encoding="utf-8"))
+    validation = validate_modeling_import_package(import_package)
+    project = modeling_import_to_project(import_package, validation=validation)
+    return SimulationAdapter().compile_scenario(project, model_family="aircraft_support_v1")["simulation_inputs"]
+
+
 class AircraftSupportV1ModelTest(unittest.TestCase):
     def test_structured_personnel_requirements_sum_resource_quantity(self) -> None:
         quantity = _resource_quantity(
@@ -104,6 +116,38 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
             model._task_spare_requirement(job, {"spare": [{"model": "LRU", "name": "航电模块", "quantity": 2}]}),
             ("航电模块", 2),
         )
+
+    def test_structured_no_spare_requirement_does_not_block_preflight(self) -> None:
+        inputs = _minimal_inputs()
+        preflight = next(activity for activity in inputs["support_activities"]["activities"] if activity["id"] == "preflight")
+        preflight["jobs"][0]["spare"] = [{"name": "无", "quantity": 1}]
+        model = AircraftSupportV1Model(inputs)
+        mission = model.missions[0]
+        mission.planned_start = 30
+        mission.preparation_start = 1
+        mission.required_aircraft = 1
+
+        model.minute = 1
+        model._create_due_preflight_jobs()
+        model._start_waiting_jobs()
+
+        preflight_jobs = [job for job in model.jobs if job.kind == "preflight"]
+        self.assertEqual(len(preflight_jobs), 1)
+        self.assertEqual(preflight_jobs[0].state, "running")
+        self.assertIsNone(preflight_jobs[0].shortage_reason)
+
+    def test_preflight_jobs_mark_aircraft_as_pre_support_not_maintenance(self) -> None:
+        model = AircraftSupportV1Model(_minimal_inputs())
+        mission = model.missions[0]
+        mission.planned_start = 30
+        mission.preparation_start = 1
+        mission.required_aircraft = 1
+
+        model.minute = 1
+        model._create_due_preflight_jobs()
+
+        self.assertEqual(model.aircraft[0].state, "pre_support")
+        self.assertEqual(model.snapshot()["repairing_count"], 0)
 
     def test_real_aircraft_assets_are_loaded_before_generated_tail_numbers(self) -> None:
         inputs = _minimal_inputs()
@@ -196,9 +240,10 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
         model.minute = 10
         model._process_mission_returns()
 
-        self.assertEqual(aircraft.state, "maintenance")
+        self.assertEqual(aircraft.state, "post_support")
         self.assertTrue(aircraft.postflight_required)
         self.assertEqual(model.completed_sorties, 0)
+        self.assertEqual(model.snapshot()["repairing_count"], 0)
         self.assertEqual(model.snapshot()["postflight_backlog"], 1)
         self.assertTrue(any(job.kind == "postflight" and job.tail_number == aircraft.tail_number for job in model.jobs))
 
@@ -242,6 +287,27 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
         self.assertTrue(model.aircraft[0].preventive_due)
         self.assertEqual(model.snapshot()["preventive_backlog"], 2)
         self.assertEqual(len([job for job in model.jobs if job.kind == "preventive"]), 2)
+
+    def test_canonical_preventive_jobs_can_complete_after_day_two(self) -> None:
+        model = AircraftSupportV1Model(_canonical_import_inputs())
+        execution = model.run()
+        frame = min(execution["frames"], key=lambda item: abs(item["simulation_time"] - 2550))
+
+        self.assertEqual(
+            [job.get("shortage_reason") for job in frame["jobs"] if job["kind"] == "preventive"],
+            [],
+        )
+        self.assertEqual(
+            {aircraft["tail_number"]: aircraft["state"] for aircraft in frame["aircraft"]},
+            {
+                "J15-101": "available",
+                "J15-102": "available",
+                "J15-103": "available",
+                "J35-201": "available",
+                "J35-202": "available",
+                "J35-203": "available",
+            },
+        )
 
     def test_in_flight_failure_counts_failed_sortie_and_requires_repair_after_return(self) -> None:
         inputs = _minimal_inputs()

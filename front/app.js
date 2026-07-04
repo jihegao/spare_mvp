@@ -108,7 +108,7 @@ const DEFAULT_MONTE_CARLO_SWEEP = Object.freeze({
 const LITE_MESA_MONTE_CARLO_METRICS = Object.freeze([
   { key: "mission_success_rate", label: "任务成功率", format: "pct" },
   { key: "ready_rate", label: "战备完好率", format: "pct" },
-  { key: "sortie_rate", label: "出动完成率", format: "pct" },
+  { key: "sortie_rate", label: "出动架次率", format: "pct" },
   { key: "spare_fill_rate", label: "备件满足率", format: "pct" },
   { key: "shortage_events", label: "短缺事件", format: "number" },
   { key: "repair_backlog", label: "维修积压", format: "number" }
@@ -136,7 +136,7 @@ const LITE_MESA_ANALYSIS_DEFINITIONS = Object.freeze({
     subtitle: "任务成功概率、出动架次率和目标达成统计",
     pageGoal: "评估当前项目在会话内 Mesa 样本下的任务可靠度表现。",
     fixedConfig: [["实验类型", "项目基线"], ["统计口径", "会话样本聚合"]],
-    metricLabels: ["任务成功率", "出动完成率", "战备完好率", "样本数"]
+    metricLabels: ["任务成功率", "出动架次率", "战备完好率", "样本数"]
   },
   downtime_factors: {
     experimentId: "project_baseline_at_current_granularity",
@@ -11341,15 +11341,16 @@ function renderVisualSimulation(page) {
     : "缺少 aircraft_support_v1 state_series artifact，正式可视化不会回退到旧 aviation_support 或演示快照";
   const timelineMax = Math.max(0, (visualizationStateSeries?.frame_count || 1) - 1);
   const currentFrame = visualizationStateSeriesFrame ? visualizationReplayIndex + 1 : 0;
-  const eventStream = visualizationStateSeriesFrame
-    ? (visualizationStateSeries.event_stream || buildVisualizationEventStream(visualizationStateSeries))
-    : [];
+  const eventStream = visualizationStateSeriesFrame ? buildSimulationLogStream(visualizationStateSeries) : [];
   const replayStatusDetail = visualizationStateSeriesFrame
     ? `${isIndependentMesaFrame ? "当前 Project -> 独立 Mesa / " : ""}run_id ${htmlEscape(visualizationStateSeries.run_id)} / artifact_id ${htmlEscape(visualizationStateSeries.artifact_id)} / step ${htmlEscape(visualizationStateSeriesFrame.step)} / ${currentFrame}-${htmlEscape(visualizationStateSeries.frame_count)} 帧 / 事件 ${htmlEscape(visualizationStateSeries.event_count)}`
     : "缺少 aircraft_support_v1 state_series 时，正式可视化保持阻断；请启动新仿真或选择已完成且带 artifact 的 run。";
   const timelineFrameLabel = visualizationStateSeriesFrame
-    ? `${currentFrame} / ${htmlEscape(visualizationStateSeries.frame_count)} 帧`
+    ? simulationDayMinuteLabel(visualizationStateSeriesFrame.simulation_time)
     : "等待正式回放";
+  const timelineFrameMeta = visualizationStateSeriesFrame
+    ? `${currentFrame} / ${htmlEscape(visualizationStateSeries.frame_count)} 帧`
+    : "未加载 state_series";
   const visualKpis = visualSimulationKpis(state);
   const availabilityTrend = buildAvailabilityTrend(
     state,
@@ -11387,14 +11388,16 @@ function renderVisualSimulation(page) {
       </div>
       <div class="mesa-timeline-card">
         <div>
-          <span>state_series 时间轴</span>
+          <span>仿真时间轴</span>
           <strong>${timelineFrameLabel}</strong>
+          <small>${timelineFrameMeta}</small>
         </div>
-        <input type="range" min="0" max="${timelineMax}" value="${Math.min(visualizationReplayIndex, timelineMax)}" data-mesa-timeline ${visualizationStateSeriesFrame && !isOnlineStreamFrame ? "" : "disabled"} aria-label="M9 state_series 时间轴">
+        <input type="range" min="0" max="${timelineMax}" value="${Math.min(visualizationReplayIndex, timelineMax)}" data-mesa-timeline ${visualizationStateSeriesFrame && !isOnlineStreamFrame ? "" : "disabled"} aria-label="仿真时间轴">
       </div>
+      ${activeView === "aircraft" ? renderAvailabilityCurve(availabilityTrend) : ""}
       <div class="mesa-visual-grid ${activeView === "mission" ? "mission-expanded" : ""}">
         <section class="mesa-stage-panel">
-          ${renderMesaStage(activeView, state, availabilityTrend)}
+          ${renderMesaStage(activeView, state)}
         </section>
         ${activeView === "mission" ? "" : `<aside class="mesa-side-panel">${renderMesaSidePanel(activeView, state)}</aside>`}
       </div>
@@ -11414,20 +11417,26 @@ function renderVisualizationEventStream(events, activeFrameIndex) {
   return `
     <div class="backend-run-chain mesa-event-window" data-mesa-event-stream>
       <div class="section-head">
-        <h3>事件追溯</h3>
-        <span>${events.length ? `${events.length} 个事件` : "等待正式 state_series"}</span>
+        <h3>仿真日志</h3>
+        <span>${events.length ? `${events.length} 条日志` : "等待仿真日志"}</span>
       </div>
       ${events.length ? `
-        <div class="stack-list">
-          ${events.map((event) => `
-            <button type="button" class="event ${event.frame_index === activeFrameIndex ? "success" : "info"}" data-mesa-event-jump="${htmlEscape(event.frame_index)}">
-              <strong>T+${htmlEscape(event.simulation_time)} / step ${htmlEscape(event.step)}</strong>
-              ${htmlEscape(event.event_type || event.event)} - ${htmlEscape(event.message)}
-              <br><small>run ${htmlEscape(event.run_id)} / event ${htmlEscape(event.event_id)} / metrics ${(event.metric_refs || []).map((item) => htmlEscape(item)).join(", ") || "-"}</small>
-            </button>
-          `).join("")}
-        </div>
-      ` : `<div class="event warning">未加载正式 state_series artifact，事件流不使用演示快照。</div>`}
+        <details class="simulation-log-collapse">
+          <summary><strong>全部保障事件</strong><span>${events.length} 条，点击展开</span></summary>
+          <div class="stack-list">
+            ${events.map((event) => `
+              <button type="button" class="event simulation-log-event ${event.frame_index === activeFrameIndex ? "success" : htmlEscape(event.severity || "info")}" data-mesa-event-jump="${htmlEscape(event.frame_index)}">
+                <span class="simulation-log-head">
+                  <strong>${htmlEscape(simulationDayMinuteLabel(event.simulation_time))}</strong>
+                  <em>${htmlEscape(event.log_type || simulationLogTypeLabel(event.event_type || event.event))}</em>
+                </span>
+                <span>${htmlEscape(event.message)}</span>
+                <small>frame ${htmlEscape(Number(event.frame_index) + 1)} / step ${htmlEscape(event.step)} / run ${htmlEscape(event.run_id || "-")}</small>
+              </button>
+            `).join("")}
+          </div>
+        </details>
+      ` : `<div class="event warning">暂无任务分配、保障作业、任务启动/结束、故障或维修日志。</div>`}
     </div>
   `;
 }
@@ -11570,15 +11579,163 @@ function renderAvailabilityTrendLine(chartPoints, series) {
   `;
 }
 
-function renderMesaStage(activeView, state, availabilityTrend) {
-  if (activeView === "mission") return renderMesaMissionStage(state);
-  if (activeView === "support") return renderMesaSupportStage(state);
-  return renderMesaAircraftStage(state, availabilityTrend);
+function buildSimulationLogStream(series = {}) {
+  const frames = Array.isArray(series?.frames) ? series.frames : [];
+  const directLogs = buildVisualizationEventStream(series)
+    .filter((event) => !isStateFrameEvent(event))
+    .map((event) => ({
+      ...event,
+      log_type: simulationLogTypeLabel(event.event_type || event.event),
+      severity: simulationLogSeverity(event.event_type || event.event)
+    }));
+  const derivedLogs = deriveSimulationLogEvents(frames, series?.run_id || "");
+  return dedupeSimulationLogs([...directLogs, ...derivedLogs])
+    .sort((a, b) => Number(a.simulation_time || 0) - Number(b.simulation_time || 0) || Number(a.frame_index || 0) - Number(b.frame_index || 0))
+    .slice(-240);
 }
 
-function renderMesaAircraftStage(state, availabilityTrend) {
+function isStateFrameEvent(event = {}) {
+  const type = String(event.event_type || event.event || "").toLowerCase();
+  return type === "state_frame";
+}
+
+function deriveSimulationLogEvents(frames, runId) {
+  const logs = [];
+  let previousState = null;
+  frames.forEach((frame, frameIndex) => {
+    const state = normalizeAviationSupportState(frame);
+    deriveMissionLogs(logs, previousState, state, frame, frameIndex, runId);
+    deriveSupportJobLogs(logs, previousState, state, frame, frameIndex, runId);
+    deriveAircraftStatusLogs(logs, previousState, state, frame, frameIndex, runId);
+    previousState = state;
+  });
+  return logs;
+}
+
+function deriveMissionLogs(logs, previousState, state, frame, frameIndex, runId) {
+  const previousMissions = new Map((previousState?.missions || []).map((mission) => [String(mission.id), mission]));
+  for (const mission of state.missions || []) {
+    const missionId = String(mission.id || "");
+    const previous = previousMissions.get(missionId) || {};
+    const assigned = Array.isArray(mission.assignedTailNumbers) ? mission.assignedTailNumbers : [];
+    const previousAssigned = Array.isArray(previous.assignedTailNumbers) ? previous.assignedTailNumbers : [];
+    if (assigned.length && assigned.join("|") !== previousAssigned.join("|")) {
+      pushSimulationLog(logs, frame, frameIndex, runId, "mission_assigned", "任务成员分配", `任务 ${missionId} 分配 ${assigned.join(" / ")}`, "info", missionId);
+    }
+    if (["launched", "flying"].includes(String(mission.status)) && !["launched", "flying"].includes(String(previous.status))) {
+      pushSimulationLog(logs, frame, frameIndex, runId, "mission_started", "任务启动", `任务 ${missionId} 启动，执行飞机 ${assigned.join(" / ") || "-"}`, "success", missionId);
+    }
+    if (["completed", "succeeded", "failed", "cancelled"].includes(String(mission.status)) && String(mission.status) !== String(previous.status)) {
+      pushSimulationLog(logs, frame, frameIndex, runId, "mission_finished", "任务结束", `任务 ${missionId} ${missionStatusLabel(mission.status)}，执行飞机 ${assigned.join(" / ") || "-"}`, mission.status === "completed" || mission.status === "succeeded" ? "success" : "warning", missionId);
+    }
+  }
+}
+
+function deriveSupportJobLogs(logs, previousState, state, frame, frameIndex, runId) {
+  const previousJobs = new Map((previousState?.jobs || []).map((job) => [String(job.id), job]));
+  for (const job of state.jobs || []) {
+    const jobId = String(job.id || `${job.tailNumber}-${job.kind}-${job.task}`);
+    const previous = previousJobs.get(jobId) || {};
+    if (!previousState || (String(job.state) === String(previous.state) && String(job.remaining) === String(previous.remaining))) {
+      continue;
+    }
+    const label = job.kind === "repair" ? "维修" : "飞机保障作业";
+    const message = `${job.tailNumber || "-"} ${job.task || supportJobKindLabel(job.kind)} / ${supportJobStateLabel(job.state)} / 剩余 ${Number(job.remaining || 0)}min`;
+    pushSimulationLog(logs, frame, frameIndex, runId, `support_job_${job.kind || "job"}`, label, message, job.kind === "repair" ? "warning" : "info", jobId);
+  }
+}
+
+function deriveAircraftStatusLogs(logs, previousState, state, frame, frameIndex, runId) {
+  const previousAircraft = new Map((previousState?.aircraft || []).map((aircraft) => [String(aircraft.id), aircraft]));
+  for (const aircraft of state.aircraft || []) {
+    const previous = previousAircraft.get(String(aircraft.id)) || {};
+    if (aircraft.failedLru && aircraft.failedLru !== previous.failedLru) {
+      pushSimulationLog(logs, frame, frameIndex, runId, "aircraft_failure", "飞机故障", `${aircraft.label} 故障 LRU ${aircraft.failedLru}`, "warning", aircraft.id);
+    }
+    if (previousState && isMaintenanceAircraftState(previous.state) && !isMaintenanceAircraftState(aircraft.state) && !aircraft.failedLru) {
+      pushSimulationLog(logs, frame, frameIndex, runId, "repair_finished", "维修", `${aircraft.label} 维修结束，状态 ${visualAircraftStateLabel(aircraft.state)}`, "success", aircraft.id);
+    }
+    if (previousState && !isSupportAircraftState(previous.state) && isSupportAircraftState(aircraft.state)) {
+      pushSimulationLog(logs, frame, frameIndex, runId, "support_started", "飞机保障作业", `${aircraft.label} 进入${visualAircraftStateLabel(aircraft.state)}`, "info", aircraft.id);
+    }
+  }
+}
+
+function pushSimulationLog(logs, frame, frameIndex, runId, eventType, logType, message, severity, identity) {
+  logs.push({
+    event_id: `${runId || "run"}-${eventType}-${identity || logs.length}-${frameIndex}`,
+    run_id: runId || frame.run_id || "",
+    step: frame.step,
+    frame_index: frameIndex,
+    simulation_time: frame.simulation_time,
+    event: eventType,
+    event_type: eventType,
+    log_type: logType,
+    message,
+    severity,
+    metric_refs: []
+  });
+}
+
+function dedupeSimulationLogs(logs) {
+  const seen = new Set();
+  const deduped = [];
+  for (const log of logs) {
+    const key = [log.event || log.event_type, log.simulation_time, log.message].join("|");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(log);
+  }
+  return deduped;
+}
+
+function simulationLogTypeLabel(eventType) {
+  const type = String(eventType || "").toLowerCase();
+  if (type.includes("launch") || type.includes("started")) return "任务启动";
+  if (type.includes("assigned")) return "任务成员分配";
+  if (type.includes("mission_return") || type.includes("mission_failed") || type.includes("mission_cancel") || type.includes("mission_finished") || type.includes("completed")) return "任务结束";
+  if (type.includes("preflight") || type.includes("postflight") || type.includes("job") || type.includes("support")) return "飞机保障作业";
+  if (type.includes("repair")) return "维修";
+  if (type.includes("fail")) return "飞机故障";
+  if (type.includes("transport") || type.includes("spare")) return "备件转运";
+  return "仿真日志";
+}
+
+function simulationLogSeverity(eventType) {
+  const type = String(eventType || "").toLowerCase();
+  if (type.includes("cancel") || type.includes("fail") || type.includes("shortage")) return "warning";
+  if (type.includes("completed") || type.includes("return") || type.includes("launch") || type.includes("arrived")) return "success";
+  return "info";
+}
+
+function supportJobKindLabel(kind) {
+  const labels = {
+    preflight: "飞行前保障",
+    postflight: "航后保障",
+    repair: "修复性维修",
+    preventive: "预防性维修"
+  };
+  return labels[kind] || kind || "保障作业";
+}
+
+function supportJobStateLabel(state) {
+  const labels = {
+    waiting: "等待",
+    running: "执行中",
+    completed: "已完成",
+    blocked: "受阻"
+  };
+  return labels[state] || state || "-";
+}
+
+function renderMesaStage(activeView, state) {
+  if (activeView === "mission") return renderMesaMissionStage(state);
+  if (activeView === "support") return renderMesaSupportStage(state);
+  return renderMesaAircraftStage(state);
+}
+
+function renderMesaAircraftStage(state) {
   const lanes = aircraftStateLanes(state.aircraft);
-  const timelineRows = buildAircraftMissionTimelineRows(state);
   const selectedAircraft = selectedVisualAircraftForState(state);
   return `
     <div class="mesa-stage">
@@ -11601,29 +11758,12 @@ function renderMesaAircraftStage(state, availabilityTrend) {
         <span class="legend-item"><i class="dot flying"></i>任务</span>
         <span class="legend-item"><i class="dot repair_unavailable"></i>维修/不可用</span>
       </div>
-      ${renderAvailabilityCurve(availabilityTrend)}
-      <section class="aircraft-mission-timeline">
-        <div class="section-head">
-          <h3>飞机任务执行时间线</h3>
-          <span>按尾号聚合</span>
-        </div>
-        <div class="aircraft-timeline-table">
-          ${timelineRows.map((row) => `
-            <div class="aircraft-timeline-row">
-              <strong>${htmlEscape(row.tailNumber)}<small>${htmlEscape(row.type)}</small></strong>
-              <div>
-                ${row.events.length ? row.events.map((event) => `<span class="aircraft-timeline-pill ${htmlEscape(event.phase)}">${htmlEscape(event.label)}</span>`).join("") : `<span class="aircraft-timeline-pill idle">等待任务</span>`}
-              </div>
-            </div>
-          `).join("")}
-        </div>
-      </section>
     </div>
   `;
 }
 
 function aircraftStateLanes(aircraftList) {
-  const actualStates = ["available", "maintenance", "flying", "repair_unavailable"];
+  const actualStates = ["available", "pre_support", "flying", "repair_unavailable"];
   const lanes = actualStates.map((state) => ({
     key: state,
     title: visualAircraftStateLabel(state),
@@ -11655,31 +11795,6 @@ function renderAircraftStateNode(aircraft, selectedAircraftId = "") {
       <small>${htmlEscape(meta || `飞行 ${fixed(aircraft.flightHours, 1)}h / 起降 ${aircraft.takeoffCount}/${aircraft.landingCount}`)}</small>
     </button>
   `;
-}
-
-function buildAircraftMissionTimelineRows(state) {
-  return state.aircraft.map((aircraft) => {
-    const events = [];
-    for (const mission of state.missions || []) {
-      if (!(mission.assignedTailNumbers || []).includes(aircraft.id)) continue;
-      const plannedStart = Number(mission.plannedStart || 0);
-      const actualStart = mission.actualStart == null ? plannedStart : Number(mission.actualStart);
-      const returnTime = mission.returnTime == null
-        ? plannedStart + Number(mission.durationMinutes || 0)
-        : Number(mission.returnTime);
-      const prepStart = mission.preparationStart == null ? plannedStart : Number(mission.preparationStart);
-      events.push({ phase: "preparing", time: prepStart, label: `${simulationMinuteLabel(prepStart)} 飞行前准备` });
-      events.push({ phase: "ready", time: actualStart, label: `${simulationMinuteLabel(actualStart)} 任务就绪` });
-      events.push({ phase: "flying", time: actualStart, label: `${simulationMinuteLabel(actualStart)} 出动执行` });
-      events.push({ phase: "recovery", time: returnTime, label: `${simulationMinuteLabel(returnTime)} 回收检查` });
-      events.push({ phase: "ready", time: returnTime + 60, label: `${simulationMinuteLabel(returnTime + 60)} 任务后就绪` });
-    }
-    return {
-      tailNumber: aircraft.label,
-      type: aircraft.type,
-      events: events.sort((a, b) => a.time - b.time),
-    };
-  });
 }
 
 function renderMesaMissionStage(state) {
@@ -11840,48 +11955,36 @@ function renderMesaSupportStage(state) {
   const spareRows = spareMetricRows(state.spares);
   return `
     <div class="mesa-support-dashboard">
-      ${renderSupportMetricSection("保障人员", "按保障组织 / 人员专业", personnelRows)}
-      ${renderSupportMetricSection("保障设备", "按保障组织 / 设备类型", equipmentRows)}
-      ${renderSupportMetricSection("备件", "按保障组织 / 备件类型", spareRows)}
-      <section class="support-metric-panel support-detail-panel">
-        <div class="section-head">
-          <h3>保障设备详情清单</h3>
-          <span>按类型</span>
-        </div>
-        <div class="table-wrap compact-table">
-          <table>
-            <thead><tr><th>类型</th><th>容量</th><th>占用</th><th>利用率</th><th>满足率</th></tr></thead>
-            <tbody>${equipmentRows.map((row) => `<tr><td>${htmlEscape(row.name)}</td><td>${htmlEscape(row.capacity)}</td><td>${htmlEscape(row.inUse)}</td><td>${htmlEscape(row.utilization)}</td><td>${htmlEscape(row.satisfaction)}</td></tr>`).join("")}</tbody>
-          </table>
-        </div>
-      </section>
+      ${renderSupportMetricSection("保障人员（按专业）", "按保障组织 / 人员专业", personnelRows)}
+      ${renderSupportMetricSection("保障设备（按类型）", "按保障组织 / 设备类型", equipmentRows)}
+      ${renderSupportMetricSection("备件（按类型）", "按保障组织 / 备件类型", spareRows)}
     </div>
   `;
 }
 
 function renderSupportMetricSection(title, subtitle, rows) {
   return `
-    <section class="support-metric-panel">
-      <div class="section-head">
+    <details class="support-metric-panel support-collapsible-panel" open>
+      <summary class="section-head">
         <h3>${htmlEscape(title)}</h3>
         <span>${htmlEscape(subtitle)}</span>
-      </div>
+      </summary>
       <div class="support-metric-list">
         ${rows.map((row) => `<div class="support-metric-row">
           <div>
             <strong>${htmlEscape(row.name)}</strong>
             <span>${htmlEscape(row.organization)} / ${htmlEscape(row.type)}</span>
           </div>
-          <div class="support-meter"><small>利用率 ${htmlEscape(row.utilization)}</small><i><b style="width:${htmlEscape(row.utilizationWidth)}%"></b></i></div>
-          <div class="support-meter"><small>满足率 ${htmlEscape(row.satisfaction)}</small><i><b style="width:${htmlEscape(row.satisfactionWidth)}%"></b></i></div>
+          <div class="support-count"><small>${htmlEscape(row.primaryLabel)}</small><strong>${htmlEscape(row.primaryValue)}</strong></div>
+          <div class="support-count delay"><small>${htmlEscape(row.secondaryLabel)}</small><strong>${htmlEscape(row.secondaryValue)}</strong></div>
         </div>`).join("")}
       </div>
-    </section>
+    </details>
   `;
 }
 
 function supportMetricRows(resources, organization, typeLabel) {
-  return (resources.length ? resources : [{ label: "暂无资源", capacity: 0, inUse: 0, utilization: 0, workCount: 0 }]).map((resource) => {
+  return (resources.length ? resources : [{ label: "暂无资源", capacity: 0, inUse: 0, utilization: 0, workCount: 0, delayCount: 0 }]).map((resource) => {
     const utilization = Math.max(0, Math.min(1, Number(resource.utilization || 0)));
     const satisfaction = Number(resource.capacity || 0) > 0 ? Math.max(0, Math.min(1, 1 - Number(resource.inUse || 0) / Math.max(1, Number(resource.capacity || 0)))) : 0;
     return {
@@ -11893,7 +11996,11 @@ function supportMetricRows(resources, organization, typeLabel) {
       utilization: pct(utilization),
       utilizationWidth: Math.round(utilization * 100),
       satisfaction: pct(satisfaction),
-      satisfactionWidth: Math.round(satisfaction * 100)
+      satisfactionWidth: Math.round(satisfaction * 100),
+      primaryLabel: "工作次数",
+      primaryValue: Number(resource.workCount || 0),
+      secondaryLabel: "延误次数",
+      secondaryValue: Number(resource.delayCount || 0)
     };
   });
 }
@@ -11908,7 +12015,7 @@ function resourceCategoryLabel(category) {
 }
 
 function spareMetricRows(spares) {
-  return (spares.length ? spares : [{ label: "暂无备件", quantity: 0, consumed: 0, pending: 0 }]).map((spare) => {
+  return (spares.length ? spares : [{ label: "暂无备件", quantity: 0, consumed: 0, pending: 0, delayCount: 0 }]).map((spare) => {
     const total = Number(spare.quantity || 0) + Number(spare.consumed || 0) + Number(spare.pending || 0);
     const satisfaction = total > 0 ? Number(spare.quantity || 0) / total : 0;
     const utilization = total > 0 ? Number(spare.consumed || 0) / total : 0;
@@ -11921,7 +12028,11 @@ function spareMetricRows(spares) {
       utilization: pct(utilization),
       utilizationWidth: Math.round(utilization * 100),
       satisfaction: pct(satisfaction),
-      satisfactionWidth: Math.round(satisfaction * 100)
+      satisfactionWidth: Math.round(satisfaction * 100),
+      primaryLabel: "消耗量",
+      primaryValue: Number(spare.consumed || 0),
+      secondaryLabel: "延误次数",
+      secondaryValue: Number(spare.delayCount || 0)
     };
   });
 }
@@ -11948,9 +12059,8 @@ function renderMesaAircraftPanel(state) {
       <h3>单机状态</h3>
       <span>${htmlEscape(selectedAircraft.label)} / ${htmlEscape(aircraft.type)} / ${state.aircraft.length} 架</span>
     </div>
-    <h4>飞机内部组成与故障传递</h4>
-    <div class="event info"><strong>${htmlEscape(selectedAircraft.label)}</strong> 失效 LRU ${htmlEscape(selectedAircraft.failedLru || "-")}</div>
-    ${renderAircraftFailureTree(selectedAircraft.failureTree, selectedAircraft)}
+    <h4>装备状态</h4>
+    ${renderAircraftStatusSummary(selectedAircraft, state)}
   `;
 }
 
@@ -11959,75 +12069,153 @@ function selectedVisualAircraftForState(state) {
   return state.aircraft.find((aircraft) => aircraft.id === selectedVisualAircraftId) || state.aircraft[0];
 }
 
-function renderAircraftFailureTree(failureTree, aircraft) {
-  const nodes = Array.isArray(failureTree?.nodes) ? failureTree.nodes : [];
-  if (!nodes.length) {
-    return `<div class="event warning"><strong>${htmlEscape(aircraft.label)}</strong> 当前 state_series 未携带后端装备故障传播树。</div>`;
-  }
-  const rootId = failureTree.rootId || nodes[0]?.id || "";
-  const failedCount = nodes.filter((node) => node.failed).length;
+function renderAircraftStatusSummary(aircraft, state) {
+  const supportJobs = currentSupportJobsForAircraft(aircraft, state.jobs);
+  const failedComponents = failedComponentsForAircraft(aircraft);
   return `
-    <div class="aircraft-failure-summary ${failedCount ? "has-failure" : ""}">
-      <strong>${htmlEscape(aircraft.label)}</strong>
-      <span>组件 ${htmlEscape(nodes.length)} / 故障 ${htmlEscape(failedCount)} / 失效 LRU ${htmlEscape(aircraft.failedLru || "-")}</span>
-    </div>
-    <div class="aircraft-failure-tree" role="tree" aria-label="${htmlEscape(aircraft.label)} 装备故障传播树">
-      ${renderAircraftFailureTreeNodes(failureTree, rootId, 0)}
+    <div class="aircraft-status-summary ${failedComponents.length ? "has-failure" : ""}">
+      <div class="aircraft-status-row">
+        <span>当前状态</span>
+        <div>
+          <strong>${htmlEscape(visualAircraftStateLabel(aircraft.state))}</strong>
+          <small>${htmlEscape(aircraft.state || "-")}</small>
+        </div>
+      </div>
+      <div class="aircraft-status-row">
+        <span>累计任务时间</span>
+        <div>
+          <strong>${htmlEscape(fixed(aircraft.flightHours, 1))}h</strong>
+          <small>起降 ${htmlEscape(aircraft.takeoffCount)}/${htmlEscape(aircraft.landingCount)}</small>
+        </div>
+      </div>
+      <div class="aircraft-status-row">
+        <span>当前保障作业</span>
+        <div class="aircraft-status-list">
+          ${supportJobs.length ? supportJobs.map((job) => renderAircraftSupportJobStatus(job)).join("") : `<div class="aircraft-status-empty"><strong>无</strong><small>当前帧没有等待或执行中的保障作业</small></div>`}
+        </div>
+      </div>
+      <div class="aircraft-status-row ${failedComponents.length ? "has-failure" : ""}">
+        <span>故障件</span>
+        <div class="aircraft-status-list">
+          ${failedComponents.length ? failedComponents.map((item) => renderAircraftFailureStatus(item)).join("") : `<div class="aircraft-status-empty"><strong>无</strong><small>当前帧未报告故障 LRU</small></div>`}
+        </div>
+      </div>
     </div>
   `;
 }
 
-function renderAircraftFailureTreeNodes(tree, parentId, depth) {
-  const nodes = tree.nodes || [];
-  const children = nodes
-    .filter((node) => String(node.parentId || "") === String(parentId || ""))
-    .sort((a, b) => String(a.name).localeCompare(String(b.name), "zh-Hans-CN"));
-  const current = nodes.find((node) => String(node.id) === String(parentId));
-  const currentMarkup = current ? renderAircraftFailureTreeNode(current, tree, depth) : "";
-  const childMarkup = children.length
-    ? `<div class="aircraft-failure-children">${children.map((child) => renderAircraftFailureTreeNodes(tree, child.id, depth + 1)).join("")}</div>`
-    : "";
-  return `<div class="aircraft-failure-branch depth-${htmlEscape(depth)}">${currentMarkup}${childMarkup}</div>`;
+function currentSupportJobsForAircraft(aircraft, jobs) {
+  const aircraftIds = new Set([aircraft.id, aircraft.label].map((value) => String(value || "")).filter(Boolean));
+  return (jobs || []).filter((job) => (
+    aircraftIds.has(String(job.tailNumber || ""))
+    && String(job.state || "").toLowerCase() !== "completed"
+  ));
 }
 
-function renderAircraftFailureTreeNode(node, tree, depth) {
-  const kOut = node.kOutOfN || {};
-  const thresholdLabel = kOut.enabled ? `${kOut.n || node.quantity}中取${kOut.k || node.failureThreshold}` : "串联/单点";
-  const failureLabel = node.failed
-    ? (node.directFailed ? "直接故障" : "向上传递")
-    : "正常";
-  const edgeActive = (tree.edges || []).some((edge) => edge.to === node.id && edge.active);
+function failedComponentsForAircraft(aircraft) {
+  const nodes = Array.isArray(aircraft.failureTree?.nodes) ? aircraft.failureTree.nodes : [];
+  const failures = [];
+  const addFailure = (node, fallbackName, reason) => {
+    const id = String(node?.id || fallbackName || "").trim();
+    const name = String(node?.name || fallbackName || id || "").trim();
+    if (!name || failures.some((item) => item.id === id || item.name === name)) return;
+    failures.push({
+      id,
+      name,
+      productType: String(node?.productType || "LRU"),
+      failureTime: node?.failureTime ?? null,
+      reason
+    });
+  };
+  if (aircraft.failedLru) {
+    const primaryNode = nodes.find((node) => String(node.id) === String(aircraft.failedLru));
+    addFailure(primaryNode, aircraft.failedLru, "当前故障件");
+  }
+  nodes
+    .filter((node) => node.failed && (node.directFailed || String(node.productType || "").toUpperCase().includes("LRU")))
+    .forEach((node) => addFailure(node, node.name || node.id, node.directFailed ? "直接故障" : "受影响"));
+  return failures;
+}
+
+function renderAircraftSupportJobStatus(job) {
+  const detail = supportJobStatusLine(job);
+  const meta = [
+    job.id ? `作业 ${job.id}` : "",
+    job.remaining == null ? "" : `剩余 ${Number(job.remaining || 0)}min`
+  ].filter(Boolean).join(" / ");
   return `
-    <div class="aircraft-failure-node ${node.failed ? "failed" : "healthy"} ${node.propagatedFailed ? "propagated" : ""} ${edgeActive ? "edge-active" : ""}" role="treeitem" aria-level="${htmlEscape(depth + 1)}">
-      <div>
-        <strong>${htmlEscape(node.name)}</strong>
-        <span>${htmlEscape(node.productType || "组件")} / 数量 ${htmlEscape(node.quantity)} / ${htmlEscape(thresholdLabel)}</span>
-      </div>
-      <div class="aircraft-failure-node-meta">
-        <span>${htmlEscape(failureLabel)}</span>
-        <span>${htmlEscape(node.failedChildren)}/${htmlEscape(node.failureThreshold)} 下级故障</span>
-        <span>${node.failureTime == null ? "故障时间 -" : `T+${htmlEscape(node.failureTime)}min`}</span>
-      </div>
+    <div class="aircraft-status-item">
+      <strong>${htmlEscape(detail)}</strong>
+      ${meta ? `<small>${htmlEscape(meta)}</small>` : ""}
+    </div>
+  `;
+}
+
+function supportJobStatusLine(job) {
+  return [
+    supportJobKindLabel(job.kind),
+    job.task || "",
+    supportJobStateLabel(job.state)
+  ].filter(Boolean).join(" / ") || "保障作业";
+}
+
+function renderAircraftFailureStatus(item) {
+  const meta = [
+    item.productType || "LRU",
+    item.reason || "",
+    item.failureTime == null ? "" : `T+${item.failureTime}min`
+  ].filter(Boolean).join(" / ");
+  return `
+    <div class="aircraft-status-item fault">
+      <strong>${htmlEscape(item.name)}</strong>
+      ${meta ? `<small>${htmlEscape(meta)}</small>` : ""}
     </div>
   `;
 }
 
 function renderMesaSupportPanel(state) {
+  const rows = supportPanelLogRows(state);
   return `
     <div class="section-head">
-      <h3>保障资源</h3>
-      <span>资源 / 备件 / 作业</span>
+      <h3>保障作业日志</h3>
+      <span>${rows.length ? `${rows.length} 条` : "暂无日志"}</span>
     </div>
-    <div class="stack-list">
-      ${state.resources.map((resource) => `<div class="metric-line"><strong>${htmlEscape(resource.label)}</strong><div class="bar"><span style="width:${Math.round(resource.utilization * 100)}%"></span></div><span>${htmlEscape(resource.inUse)}/${htmlEscape(resource.capacity)}</span></div>`).join("")}
+    <div class="stack-list support-log-list">
+      ${rows.length ? rows.map((row) => renderSupportPanelLogRow(row)).join("") : `<div class="event warning">当前帧没有保障作业日志。</div>`}
     </div>
-    <h4>备件库存量 / 已消耗 / 在途</h4>
-    <div class="stack-list">
-      ${state.spares.map((spare) => `<div class="list-row"><strong>${htmlEscape(spare.label)}</strong><span>库存 ${htmlEscape(spare.quantity)}</span><span>消耗 ${htmlEscape(spare.consumed)} / 在途 ${htmlEscape(spare.pending)}</span></div>`).join("")}
+  `;
+}
+
+function supportPanelLogRows(state) {
+  const jobRows = (state.jobs || []).map((job) => ({
+    severity: String(job.state || "").toLowerCase() === "waiting" ? "warning" : "info",
+    title: job.tailNumber || "保障作业",
+    message: [supportJobKindLabel(job.kind), job.task, supportJobStateLabel(job.state)].filter(Boolean).join(" / "),
+    meta: `剩余 ${Number(job.remaining || 0)}min`
+  }));
+  const eventRows = (state.events || [])
+    .filter((event) => isSupportPanelEvent(event))
+    .map((event) => ({
+      severity: "success",
+      title: `T+${event.time}`,
+      message: event.message || simulationLogTypeLabel(event.event),
+      meta: simulationLogTypeLabel(event.event)
+    }));
+  return [...jobRows, ...eventRows].slice(-16);
+}
+
+function isSupportPanelEvent(event) {
+  const text = `${event?.event || ""} ${event?.message || ""}`.toLowerCase();
+  return text.includes("support") || text.includes("job") || text.includes("preflight") || text.includes("postflight") || text.includes("保障");
+}
+
+function renderSupportPanelLogRow(row) {
+  return `
+    <div class="event ${htmlEscape(row.severity || "info")}">
+      <strong>${htmlEscape(row.title)}</strong>
+      <span>${htmlEscape(row.message || "保障作业")}</span>
+      <small>${htmlEscape(row.meta || "")}</small>
     </div>
-    <h4>保障作业与事件</h4>
-    ${state.jobs.map((job) => `<div class="event info"><strong>${htmlEscape(job.tailNumber)}</strong> ${htmlEscape(job.task)} / ${htmlEscape(job.state)} / ${htmlEscape(job.remaining)}min</div>`).join("")}
-    ${state.events.map((event) => `<div class="event success"><strong>T+${htmlEscape(event.time)}</strong> ${htmlEscape(event.message)}</div>`).join("")}
   `;
 }
 
@@ -12046,10 +12234,10 @@ function minuteOfDayLabel(minutes) {
   return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 }
 
-function simulationMinuteLabel(minutes) {
+function simulationDayMinuteLabel(minutes) {
   const value = Math.max(0, Math.round(Number(minutes || 0)));
   const day = Math.floor(value / 1440) + 1;
-  return `D${day} ${minuteOfDayLabel(value % 1440)}`;
+  return `第${day}天 ${minuteOfDayLabel(value % 1440)}`;
 }
 
 function missionStatusClass(status) {
@@ -12076,7 +12264,7 @@ function missionStatusLabel(status) {
 function visualAircraftStateLabel(state) {
   const labels = {
     available: "停放",
-    maintenance: "使用保障",
+    maintenance: "维修/不可用",
     flying: "任务",
     repair_unavailable: "维修/不可用",
     mission_ready: "停放",
@@ -12101,13 +12289,13 @@ function visualAircraftLaneKey(state) {
   const value = String(state || "available").toLowerCase();
   if (["available", "mission_ready", "standby", "parked", "idle"].includes(value)) return "available";
   if (["flying", "mission", "launched", "sortie", "task"].includes(value)) return "flying";
-  if (["maintenance", "pre_support", "post_support", "support", "operations_support", "using_support", "flightline_support"].includes(value)) {
-    return "maintenance";
+  if (["pre_support", "post_support", "support", "operations_support", "using_support", "flightline_support"].includes(value)) {
+    return "pre_support";
   }
   if (
-    ["repair", "repairing", "preventive_maintenance", "corrective_maintenance", "unavailable", "failed", "grounded", "down", "not_available"].includes(value)
+    ["maintenance", "repair", "repairing", "preventive_maintenance", "corrective_maintenance", "unavailable", "failed", "grounded", "down", "not_available"].includes(value)
     || value.includes("repair")
-    || (value.includes("maintenance") && value !== "maintenance")
+    || value.includes("maintenance")
     || value.includes("unavailable")
   ) {
     return "repair_unavailable";
@@ -13761,7 +13949,7 @@ function renderLiteMesaAnalysisSessionBody(definition, result) {
   }
   if (definition.analysisType === "mission_reliability") {
     return `<div class="table-wrap"><table class="lite-mesa-stat-table">
-      <thead><tr><th>序号</th><th>seed</th><th>任务成功率</th><th>出动完成率</th><th>战备完好率</th></tr></thead>
+      <thead><tr><th>序号</th><th>seed</th><th>任务成功率</th><th>出动架次率</th><th>战备完好率</th></tr></thead>
       <tbody>${rows.map((row) => `<tr><td>${row.sequence}</td><td>${row.seed}</td><td>${pct(row.missionSuccessRate)}</td><td>${pct(row.sortieRate)}</td><td>${pct(row.readyRate)}</td></tr>`).join("")}</tbody>
     </table></div>${renderLiteMesaAnalysisLimitations(result)}`;
   }

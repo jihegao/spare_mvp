@@ -2982,6 +2982,36 @@ tr.clickable-table-row.selected-table-row td {
   gap: 8px;
 }
 
+.support-collapsible-panel {
+  padding: 0;
+  overflow: hidden;
+}
+
+.support-collapsible-panel > summary {
+  padding: 10px 12px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.support-collapsible-panel > summary::-webkit-details-marker {
+  display: none;
+}
+
+.support-collapsible-panel > summary::before {
+  content: "▸";
+  margin-right: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.support-collapsible-panel[open] > summary::before {
+  content: "▾";
+}
+
+.support-collapsible-panel .support-metric-list {
+  padding: 0 12px 12px;
+}
+
 .support-metric-row {
   display: grid;
   grid-template-columns: minmax(120px, 1fr) minmax(110px, 0.8fr) minmax(110px, 0.8fr);
@@ -2998,6 +3028,30 @@ tr.clickable-table-row.selected-table-row td {
   display: block;
   color: var(--muted);
   font-size: 12px;
+}
+
+.support-count {
+  min-height: 44px;
+  display: grid;
+  align-content: center;
+  gap: 2px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: #eef6ff;
+}
+
+.support-count.delay {
+  background: #fff7ed;
+}
+
+.support-count small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.support-count strong {
+  color: var(--ink);
+  font-size: 16px;
 }
 
 .support-meter i {
@@ -3047,6 +3101,13 @@ tr.clickable-table-row.selected-table-row td {
   display: block;
   margin-top: 2px;
   font-size: 13px;
+}
+
+.mesa-timeline-card small {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 11px;
 }
 
 .mesa-timeline-card input[type="range"] {
@@ -3135,8 +3196,9 @@ tr.clickable-table-row.selected-table-row td {
   display: grid;
   grid-template-columns: repeat(4, minmax(120px, 1fr));
   gap: 10px;
-  min-height: 320px;
-  max-height: 320px;
+  height: 520px;
+  min-height: 520px;
+  max-height: 520px;
   overflow-x: auto;
 }
 
@@ -3156,7 +3218,7 @@ tr.clickable-table-row.selected-table-row td {
   background: #f0fdf4;
 }
 
-.aircraft-state-lane.maintenance {
+.aircraft-state-lane.pre_support {
   background: #fff7e6;
 }
 
@@ -3236,11 +3298,8 @@ tr.clickable-table-row.selected-table-row td {
   border-left-color: #1c7ed6;
 }
 
-.aircraft-state-node.maintenance {
-  border-left-color: #f59f00;
-}
-
 .aircraft-state-node.repair_unavailable,
+.aircraft-state-node.maintenance,
 .aircraft-state-node.repair,
 .aircraft-state-node.repairing,
 .aircraft-state-node.preventive_maintenance,
@@ -3254,76 +3313,6 @@ tr.clickable-table-row.selected-table-row td {
 .aircraft-state-node.active {
   outline: 2px solid #2563eb;
   outline-offset: 2px;
-}
-
-.aircraft-mission-timeline {
-  min-width: 0;
-  overflow: auto;
-  padding: 12px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #fff;
-}
-
-.aircraft-timeline-table {
-  min-width: 720px;
-  display: grid;
-  gap: 8px;
-}
-
-.aircraft-timeline-row {
-  display: grid;
-  grid-template-columns: 96px minmax(0, 1fr);
-  gap: 10px;
-  align-items: start;
-  padding: 8px 0;
-  border-top: 1px solid #e2e8f0;
-}
-
-.aircraft-timeline-row:first-child {
-  border-top: 0;
-}
-
-.aircraft-timeline-row strong {
-  display: grid;
-  gap: 2px;
-  color: var(--ink);
-}
-
-.aircraft-timeline-row small {
-  color: var(--muted);
-  font-size: 11px;
-}
-
-.aircraft-timeline-pill {
-  display: inline-block;
-  margin: 2px;
-  padding: 3px 7px;
-  border-radius: 999px;
-  background: #64748b;
-  color: #fff;
-  font-size: 12px;
-  white-space: nowrap;
-}
-
-.aircraft-timeline-pill.idle {
-  background: #8fa3ad;
-}
-
-.aircraft-timeline-pill.ready {
-  background: #2f9e44;
-}
-
-.aircraft-timeline-pill.preparing {
-  background: #f59f00;
-}
-
-.aircraft-timeline-pill.flying {
-  background: #1c7ed6;
-}
-
-.aircraft-timeline-pill.recovery {
-  background: #7950f2;
 }
 
 .legend {
@@ -3405,93 +3394,78 @@ tr.clickable-table-row.selected-table-row td {
   font-size: 12px;
 }
 
-.aircraft-failure-summary {
+.aircraft-status-summary {
   display: grid;
-  gap: 3px;
+  gap: 10px;
+}
+
+.aircraft-status-row {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
   padding: 10px;
   border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #f8fafc;
-}
-
-.aircraft-failure-summary.has-failure {
-  border-color: #fecaca;
-  background: #fff1f2;
-}
-
-.aircraft-failure-summary span {
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.aircraft-failure-tree {
-  display: grid;
-  gap: 8px;
-  margin-top: 10px;
-}
-
-.aircraft-failure-branch {
-  display: grid;
-  gap: 6px;
-}
-
-.aircraft-failure-children {
-  display: grid;
-  gap: 6px;
-  margin-left: 12px;
-  padding-left: 12px;
-  border-left: 2px solid #cbd5e1;
-}
-
-.aircraft-failure-node {
-  display: grid;
-  gap: 6px;
-  padding: 8px;
-  border: 1px solid #cbd5e1;
-  border-left-width: 4px;
-  border-radius: 8px;
+  border-radius: 6px;
   background: #fff;
 }
 
-.aircraft-failure-node.edge-active,
-.aircraft-failure-node.failed {
-  border-left-color: #dc2626;
+.aircraft-status-row.has-failure {
+  border-color: #fecaca;
+  background: #fff7f7;
 }
 
-.aircraft-failure-node.propagated {
-  background: #fff7ed;
-}
-
-.aircraft-failure-node.healthy {
-  border-left-color: #16a34a;
-}
-
-.aircraft-failure-node strong {
-  color: var(--ink);
-  font-size: 13px;
-}
-
-.aircraft-failure-node span,
-.aircraft-failure-node-meta {
+.aircraft-status-row > span {
   color: var(--muted);
   font-size: 12px;
+  font-weight: 700;
 }
 
-.aircraft-failure-node-meta {
-  display: flex;
-  flex-wrap: wrap;
+.aircraft-status-row strong {
+  display: block;
+  min-width: 0;
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.aircraft-status-row small {
+  display: block;
+  min-width: 0;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.aircraft-status-list {
+  display: grid;
+  min-width: 0;
   gap: 6px;
 }
 
-.aircraft-failure-node-meta span {
-  padding: 2px 6px;
-  border-radius: 999px;
-  background: #f1f5f9;
+.aircraft-status-item,
+.aircraft-status-empty {
+  min-width: 0;
+  padding: 8px 9px;
+  border: 1px solid #dbeafe;
+  border-left: 3px solid #2563eb;
+  border-radius: 6px;
+  background: #f8fbff;
 }
 
-.aircraft-failure-node.failed .aircraft-failure-node-meta span {
-  background: #fee2e2;
-  color: #991b1b;
+.aircraft-status-item.fault {
+  border-color: #fecaca;
+  border-left-color: #dc2626;
+  background: #fff7f7;
+}
+
+.aircraft-status-empty {
+  border-color: var(--line);
+  border-left-color: #94a3b8;
+  background: #f8fafc;
 }
 
 .mesa-side-panel {
@@ -3586,6 +3560,81 @@ tr.clickable-table-row.selected-table-row td {
 .event.info {
   border-color: #d8e4ff;
   background: var(--primary-soft);
+}
+
+.event.warning {
+  border-color: #fde68a;
+  background: #fffbeb;
+  color: #92400e;
+}
+
+.simulation-log-event {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 4px;
+  align-items: stretch;
+  text-align: left;
+}
+
+.simulation-log-collapse {
+  display: grid;
+  gap: 8px;
+}
+
+.simulation-log-collapse > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #f8fafc;
+  cursor: pointer;
+  list-style: none;
+}
+
+.simulation-log-collapse > summary::-webkit-details-marker {
+  display: none;
+}
+
+.simulation-log-collapse > summary span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.simulation-log-collapse[open] > summary {
+  margin-bottom: 8px;
+}
+
+.support-log-list .event {
+  display: grid;
+  gap: 3px;
+}
+
+.support-log-list .event span,
+.support-log-list .event small {
+  color: inherit;
+  opacity: 0.82;
+}
+
+.simulation-log-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.simulation-log-head em {
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(15, 92, 191, 0.1);
+  color: var(--primary);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 700;
+  white-space: nowrap;
 }
 
 .event.mesa-status-card {

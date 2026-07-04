@@ -1138,7 +1138,7 @@ export const MODELING_IMPORT_DEMO_FIXTURE = {
             "spare": [
               {
                 "model": "SRU",
-                "name": "液压密封件",
+                "name": "液压备件",
                 "quantity": 1
               }
             ],

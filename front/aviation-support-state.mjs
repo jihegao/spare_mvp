@@ -159,7 +159,8 @@ export function normalizeAviationSupportState(state = AVIATION_SUPPORT_DEMO_STAT
       capacity: number(item.capacity),
       inUse: number(item.in_use),
       utilization: Number(item.utilization || 0),
-      workCount: number(item.work_count)
+      workCount: number(item.work_count),
+      delayCount: number(item.delay_count)
     })),
     spares: (state.spares || []).map((item) => ({
       id: item.part_id,
@@ -167,7 +168,8 @@ export function normalizeAviationSupportState(state = AVIATION_SUPPORT_DEMO_STAT
       quantity: number(item.quantity),
       consumed: number(item.consumed),
       pending: number(item.pending_quantity),
-      reorderPoint: number(item.reorder_point)
+      reorderPoint: number(item.reorder_point),
+      delayCount: number(item.delay_count || item.shortage_count)
     })),
     missions: (state.missions || []).map((item) => normalizeMission(resolveMission(item, missionTemplates))),
     jobs: (state.jobs || []).map((item) => ({
