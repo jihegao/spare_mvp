@@ -69,8 +69,7 @@ function normalizeProjectionApplicability(applicability) {
     status: "not_applicable",
     reasonCode: stringValue(payload.reason_code, "scope_not_modeled"),
     required_domains: Array.isArray(payload.required_domains) ? payload.required_domains.map((domain) => stringValue(domain, "")) : [],
-    disabled_domains: Array.isArray(payload.disabled_domains) ? payload.disabled_domains.map((domain) => stringValue(domain, "")) : [],
-    validationLevel: stringValue(payload.validation_level, "")
+    disabled_domains: Array.isArray(payload.disabled_domains) ? payload.disabled_domains.map((domain) => stringValue(domain, "")) : []
   };
 }
 

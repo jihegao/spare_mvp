@@ -41,7 +41,7 @@ http://127.0.0.1:4173/front/
 10. M5 建模数据入口必须校验重复 ID、悬空引用、非法数值和已发布且被运行引用后的覆盖保护，并返回页面、对象、字段路径和严重级别。
 11. M4 backfill 后，HTTP 侧建模导入 save/publish/compile-scenario 必须带 `/api/auth/login` 返回的 bearer token；未登录请求返回 `unauthorized`，普通用户发布返回 `forbidden` 并写入 `audit_events`。
 12. M5.1 本地后端路径必须通过 `/api/modeling-imports/validate`、带 M4 session 的 `/api/modeling-imports`、`/api/modeling-imports/{import_id}` 和带 M4 session 的 `/api/modeling-imports/{import_id}/publish` 验证；`modeling_imports` 必须保留 `draft_payload_json` 和 `published_payload_json`，`GET /api/modeling-imports/{import_id}` 返回 `draftPackage`、`publishedPackage`、`validation` 和 `lifecycle`；同一 `import_id` 被 run 引用后不可再发布覆盖，新版本需使用新 `import_id`。
-13. 项目数据管理当前以 Project 数据层为入口：左侧显示项目列表，`projectInfo.isTemplate` 为真的项目显示【模板】；右侧只保留模板管理（设为模板 / 取消设为模板）、数据概览（任务、装备、保障系统、保障活动）和可折叠 Project JSON 原始数据。普通项目数据管理页不得恢复建模数据源配置、sheet 选择器、已发布模板预览、字段映射或 v1/v2 分类。M5 建模导入 save/publish/compile-scenario API 仍作为后台维护和导入转换能力保留；`compile-scenario` 必须读取持久化 published payload，而不是当前 draft 或前端内存快照；该切片仍不包含完整 Excel 解析或 worker 基础设施。
+13. 项目数据管理当前以 Project 数据层为入口：左侧显示项目列表，`projectInfo.isTemplate` 为真的项目显示【模板】；右侧只保留模板管理（设为模板 / 取消设为模板）、数据概览（任务、装备、保障系统、保障活动）和可折叠 Project JSON 原始数据。项目列表页也必须从这些已标记 Project 模板复制创建项目，不得恢复旧的内置建模导入模板注册表或下拉选择器。普通项目数据管理页不得恢复建模数据源配置、sheet 选择器、已发布模板预览、字段映射、v1/v2 分类或旧校验级别分类。M5 建模导入 save/publish/compile-scenario API 仍作为后台维护和导入转换能力保留；导入范围只通过 `usedTables` 声明；局部导入入口只保留文件导入、当前项目回灌、内嵌样例恢复、校验、保存、发布和编译维护动作；`compile-scenario` 必须读取持久化 published payload，而不是当前 draft 或前端内存快照；该切片仍不包含完整 Excel 解析或 worker 基础设施。
 14. M6.0 运行服务首片必须通过 canonical `/api/runs` 创建和查询 run status；旧 `/api/simulation-runs*` 已退役，只能返回 `410 legacy_run_api_retired` 负向契约。运行 identity 必须来自 ExperimentPlan，后端输入使用该计划绑定的 ModelingSnapshot 和当前支持的 `steps` 配置，不能绕过 M5.3 的 Project/Plan 分界。
 15. M6.1/M9.4 输入一致性已形成窄闭环，但 `smoke` 和 `aviation_support` 现仅保留为历史/低层回归基线；正式 `/api/runs`、`BackendApi.start_simulation_run()`、前端 run shortcut 和 modeling import `compile-scenario` 入口只接受 `aircraft_support_v1`。旧模型族必须返回 `retired_model_family`，并在 details 中给出 `replacement_model_family: "aircraft_support_v1"`；未知模型族或无效 Project 仍必须 fail closed，返回 failed status envelope、保留 `error.details.issues/provenance`、不伪造正式产物。
 16. M6.1 前端 formal-result boundary 必须保留：四个结果分析页缺少 compiler provenance 或官方 analysis artifact 时，只能显示“本地预览，不是正式后端仿真结果”和“缺少 compiler provenance”等边界信息，不能把本地 `singleResult` 投影呈现为正式后端产物。
@@ -155,8 +155,9 @@ opener.open("http://127.0.0.1:8521/health").read().decode()
 
 1. 用旧文案和新文案分别搜索文档，例如 `rg -n "Ontology 上下文|ontology-map|Ontology视图|可视化推演" README.md docs agent.md`，确认命中仅限归档历史或删除说明。
 2. 如果测试中新增了 `doesNotMatch` 删除旧 UI 或旧路由，必须用被删除的字符串搜索文档，确认没有当前状态文档仍按旧 UI 描述。
-3. 至少检查 `README.md`、`docs/README.md`、相关 `docs/superpowers/specs/`、相关 `docs/superpowers/plans/` 和 `agent.md`。
-4. 最终回复要说明更新了哪些文档，或者说明为什么某个命中文档是历史记录而不需要改。
+3. 至少检查 `README.md`、`docs/README.md`、`docs/product-roadmap.md`、相关当前开发面文档和 `agent.md`。
+4. 历史计划、阶段规格或一次性审计只应位于 `docs/archive/deprecated/`；除非任务要求追溯历史，不要把归档文档作为当前实现依据。
+5. 最终回复要说明更新了哪些文档，或者说明为什么某个命中文档是历史记录而不需要改。
 
 ## Subagent 使用约定
 

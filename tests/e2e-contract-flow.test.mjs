@@ -71,7 +71,7 @@ test("contract-first smoke flow saves modeling state and fetches run outputs", a
   assert.match(report, /不代表 calibration quality/);
 });
 
-test("M3-0 backend loop closeout remains documented and roadmap points to M3-1 current boundary", async () => {
+test("M3-0 backend loop closeout remains documented while docs index stays current-only", async () => {
   const closeoutPath = new URL("../reports/m3-0-real-backend-loop/README.md", import.meta.url);
   assert.equal(existsSync(closeoutPath), true, "M3-0 closeout report must exist");
   const closeout = await readFile(closeoutPath, "utf8");
@@ -86,7 +86,9 @@ test("M3-0 backend loop closeout remains documented and roadmap points to M3-1 c
   assert.match(repoReadme, /reports\/m3-0-real-backend-loop\/README\.md/);
 
   const docsReadme = await readFile(new URL("../docs/README.md", import.meta.url), "utf8");
-  assert.match(docsReadme, /M3-0 真实后端闭环/);
+  assert.match(docsReadme, /当前活跃文档只保留两类/);
+  assert.match(docsReadme, /历史计划、阶段规格、原始概要设计转换稿、一次性审计/);
+  assert.match(docsReadme, /archive\/deprecated/);
 
   const roadmap = await readFile(new URL("../docs/product-roadmap.md", import.meta.url), "utf8");
   assert.match(roadmap, /截至 2026-06-19，M3-1/);

@@ -368,8 +368,11 @@ test("page revision project and system management controls stay wired", async ()
   );
 
   assert.doesNotMatch(projectListSource, /data-project-add/);
-  assert.match(projectListSource, /data-modeling-import-template/);
-  assert.match(projectListSource, /data-project-create-from-import/);
+  assert.match(projectListSource, /data-project-template-select/);
+  assert.match(projectListSource, /data-project-create-from-template/);
+  assert.doesNotMatch(projectListSource, /data-modeling-import-template/);
+  assert.doesNotMatch(projectListSource, /data-project-create-from-import/);
+  assert.doesNotMatch(projectListSource, /Level 0|Level 1|选择内置导入模板/);
   assert.match(projectListSource, /data-project-edit/);
   assert.match(projectListSource, /data-project-delete/);
   assert.doesNotMatch(projectListSource, /data-project-import/);
@@ -2959,7 +2962,7 @@ test("M8 formal analysis pages load and render matching projection payloads", as
   assert.match(renderDashboardSource, /projection payload/);
 });
 
-test("Level 0 not-applicable analysis projections render as scoped not modeled instead of formal KPI rows", async () => {
+test("not-applicable analysis projections render as scoped not modeled instead of formal KPI rows", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const boundarySource = appSource.slice(
     appSource.indexOf("function formalAnalysisBoundary"),
@@ -2988,11 +2991,33 @@ test("Level 0 not-applicable analysis projections render as scoped not modeled i
   assert.match(projectionBodySource, /formalProjection\.formal === false/);
   assert.match(projectionBodySource, /required_domains/);
   assert.match(projectionBodySource, /disabled_domains/);
-  assert.match(projectionBodySource, /validationLevel/);
-  assert.match(projectionBodySource, /Level 0 未启用该分析所需保障域/);
+  assert.match(projectionBodySource, /该分析所需保障域未建模/);
+  assert.doesNotMatch(projectionBodySource, /validationLevel|validation_level/);
+  assert.doesNotMatch(projectionBodySource, /Level 0|Level 1/);
   assert.match(dashboardSource, /formalProjection\?\.formal === false \? "<em>不适用<\/em>"/);
   assert.match(analysisPanelSource, /formalProjection\.formal === false \? "<em>不适用<\/em>"/);
   assert.doesNotMatch(projectionBodySource, /misleading-zero/);
+});
+
+test("frontend retires built-in modeling import template registry and selector", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const importTemplateModuleExists = await readFile(new URL("../front/modeling-import-templates.mjs", import.meta.url), "utf8")
+    .then(() => true)
+    .catch(() => false);
+  const localImportSource = appSource.slice(
+    appSource.indexOf("function renderLocalModelingImportActions"),
+    appSource.indexOf("function renderModelingImportIssueDisplay")
+  );
+
+  assert.equal(importTemplateModuleExists, false);
+  assert.doesNotMatch(appSource, /MODELING_IMPORT_TEMPLATES/);
+  assert.doesNotMatch(appSource, /data-modeling-import-template/);
+  assert.doesNotMatch(appSource, /selectedModelingImportTemplateId/);
+  assert.doesNotMatch(appSource, /modelingImportTemplateLabel/);
+  assert.doesNotMatch(appSource, /loadModelingImportTemplate/);
+  assert.doesNotMatch(appSource, /Level 0|Level 1|选择内置导入模板|使用内置导入模板/);
+  assert.match(localImportSource, /data-modeling-import-action="load-fixture"/);
+  assert.match(localImportSource, /恢复内嵌样例导入包/);
 });
 
 test("phase 6A spare shortfall formal table renders constraints and utilization", async () => {
@@ -3041,16 +3066,11 @@ test("formal run launch preserves queued or running backend status without treat
 
 test("project creation from modeling import uses the current or passed import id", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
-  const clickSource = appSource.slice(
-    appSource.indexOf('const createFromImportButton = event.target.closest("[data-project-create-from-import]"'),
-    appSource.indexOf('const editProjectButton = event.target.closest("[data-project-edit]"')
-  );
   const createSource = appSource.slice(
     appSource.indexOf("async function createSampleProjectFromPublishedImport"),
-    appSource.indexOf("async function enterProject")
+    appSource.indexOf("async function loadSampleModelingImportFixture")
   );
 
-  assert.match(clickSource, /createSampleProjectFromPublishedImport\(currentPublishedModelingImportId\(\)\)/);
   assert.match(createSource, /async function createSampleProjectFromPublishedImport\(importId/);
   assert.match(createSource, /ensurePublishedModelingImportForSampleProject/);
   assert.match(createSource, /backendApi\.createProjectFromModelingImport\(resolvedImportId\)/);
@@ -3082,7 +3102,7 @@ test("frontend modeling import demo fixture is synchronized with public canonica
   });
 });
 
-test("project list creates projects only from selected modeling import templates", async () => {
+test("project list creates projects only from marked project templates", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const projectSeedSource = appSource.slice(
     appSource.indexOf("const PROJECT_SOURCE"),
@@ -3093,8 +3113,8 @@ test("project list creates projects only from selected modeling import templates
     appSource.indexOf("function renderNavigation")
   );
   const createSource = appSource.slice(
-    appSource.indexOf("async function createSampleProjectFromPublishedImport"),
-    appSource.indexOf("function currentPublishedModelingImportId")
+    appSource.indexOf("async function createProjectFromSelectedProjectTemplate"),
+    appSource.indexOf("async function createSampleProjectFromPublishedImport")
   );
   const addProjectIndex = appSource.indexOf("function addDemoProject");
   const hydrateSource = appSource.slice(
@@ -3108,27 +3128,29 @@ test("project list creates projects only from selected modeling import templates
   assert.doesNotMatch(projectSeedSource, /readManualDraftProjectsFromStorage|MANUAL_PROJECT_DRAFTS_STORAGE_KEY/);
   assert.equal(addProjectIndex, -1);
   assert.doesNotMatch(appSource, /persistManualDraftProjects|data-project-add|本地草稿|本地空白预览/);
-  assert.match(projectListSource, /请选择模板数据创建项目/);
-  assert.match(projectListSource, /data-modeling-import-template/);
-  assert.match(projectListSource, /data-project-create-from-import/);
-  assert.match(projectListSource, /已选择当前项目数据模板/);
-  assert.match(projectListSource, /从当前项目数据模板创建项目/);
-  assert.doesNotMatch(projectListSource, /当前发布快照/);
-  assert.match(projectListSource, /从选中模板创建项目/);
+  assert.match(projectListSource, /请选择项目模板创建项目/);
+  assert.match(projectListSource, /data-project-template-select/);
+  assert.match(projectListSource, /data-project-create-from-template/);
+  assert.match(projectListSource, /从选中项目模板创建项目/);
+  assert.match(projectListSource, /暂无项目模板/);
+  assert.doesNotMatch(projectListSource, /data-modeling-import-template|MODELING_IMPORT_TEMPLATES|Level 0|Level 1|选择内置导入模板/);
+  assert.doesNotMatch(projectListSource, /当前发布快照|当前项目数据模板|从选中模板创建项目/);
   assert.match(projectListSource, /暂无项目/);
   assert.match(projectListSource, /projectSourceBadge\(project\)/);
   assert.match(projectListSource, /projectSourceHelpText\(project\)/);
   assert.doesNotMatch(hydrateSource, /readManualDraftProjectsFromStorage|fallbackProjects|localManualProjects/);
-  assert.match(hydrateSource, /请先选择模板数据创建项目/);
-  assert.match(createSource, /loadSampleModelingImportFixture\(\)/);
+  assert.match(hydrateSource, /请先选择项目模板创建项目/);
+  assert.match(createSource, /backendApi\.getProject/);
+  assert.match(createSource, /backendApi\.saveProject/);
+  assert.match(createSource, /projectInfo: \{/);
+  assert.match(createSource, /isTemplate: false/);
+  assert.match(createSource, /is_template: false/);
   assert.match(createSource, /sourceKind: PROJECT_SOURCE\.imported_sample/);
-  assert.match(createSource, /sourceImportId: created\.sourceImport\?\.import_id \|\| resolvedImportId/);
-  assert.match(createSource, /name: projectJson\.experiment\?\.name \|\| "导入示例项目"/);
-  assert.doesNotMatch(createSource, /name: projectJson\.missionProfile\?\.sourceImportId \|\| projectJson\.experiment\?\.name/);
-  assert.match(createSource, /projectListStatus = `已从导入数据生成示例项目：\$\{project\.name\}；可用于正式后端测试`;/);
+  assert.doesNotMatch(createSource, /createProjectFromModelingImport/);
+  assert.match(createSource, /projectListStatus = `已从项目模板创建项目：\$\{project\.name\}`;/);
 });
 
-test("project list keeps the latest published modeling import id across route reloads", async () => {
+test("modeling import publishing keeps the latest published import id for background actions", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const storageSource = appSource.slice(
     appSource.indexOf("const LAST_PUBLISHED_MODELING_IMPORT_STORAGE_KEY"),
@@ -3142,17 +3164,12 @@ test("project list keeps the latest published modeling import id across route re
     appSource.indexOf('if (action === "publish")'),
     appSource.indexOf('if (action === "compile-scenario")')
   );
-  const clickSource = appSource.slice(
-    appSource.indexOf('const createFromImportButton = event.target.closest("[data-project-create-from-import]"'),
-    appSource.indexOf('const editProjectButton = event.target.closest("[data-project-edit]"')
-  );
 
   assert.match(storageSource, /LAST_PUBLISHED_MODELING_IMPORT_STORAGE_KEY = "spare-mvp:lastPublishedModelingImportId"/);
   assert.match(storageSource, /function readLastPublishedModelingImportId/);
   assert.match(storageSource, /function persistLastPublishedModelingImportId/);
   assert.match(currentImportSource, /readLastPublishedModelingImportId\(\)/);
   assert.match(publishSource, /persistLastPublishedModelingImportId\(modelingImportPackage\.importId\)/);
-  assert.match(clickSource, /createSampleProjectFromPublishedImport\(currentPublishedModelingImportId\(\)\)/);
 });
 
 test("formal run starts only allow imported sample projects", async () => {
@@ -3174,7 +3191,7 @@ test("formal run starts only allow imported sample projects", async () => {
   assert.match(guardSource, /currentProject\.sourceKind === PROJECT_SOURCE\.imported_sample/);
   assert.doesNotMatch(guardSource, /currentProject\.sourceKind !== PROJECT_SOURCE\.preview_fixture/);
   assert.match(guardSource, /请先创建或选择项目/);
-  assert.match(guardSource, /请先选择模板数据创建项目/);
+  assert.match(guardSource, /请先选择项目模板创建项目/);
   assert.doesNotMatch(guardSource, /本地草稿/);
   assert.match(singleRunSource, /const formalRunGate = currentProjectCanStartFormalRun\(\);/);
   assert.match(singleRunSource, /if \(!formalRunGate\.allowed\) \{/);
@@ -4029,7 +4046,7 @@ test("M9.7 docs describe single-run, Monte Carlo, and coverage closure without c
     roadmap: await readFile(new URL("../docs/product-roadmap.md", import.meta.url), "utf8"),
     agent: await readFile(new URL("../agent.md", import.meta.url), "utf8"),
     contracts: await readFile(new URL("../contracts/README.md", import.meta.url), "utf8"),
-    spec: await readFile(new URL("../docs/superpowers/specs/2026-06-24-m9-7-aircraft-support-v1-design.md", import.meta.url), "utf8")
+    spec: await readFile(new URL("../docs/archive/deprecated/superpowers/specs/2026-06-24-m9-7-aircraft-support-v1-design.md", import.meta.url), "utf8")
   };
   const combined = Object.values(docs).join("\n");
 
@@ -4049,7 +4066,7 @@ test("M9.7.4 docs promote formerly payload-only fields and avoid pending coverag
     docsReadme: await readFile(new URL("../docs/README.md", import.meta.url), "utf8"),
     roadmap: await readFile(new URL("../docs/product-roadmap.md", import.meta.url), "utf8"),
     agent: await readFile(new URL("../agent.md", import.meta.url), "utf8"),
-    spec: await readFile(new URL("../docs/superpowers/specs/2026-06-24-m9-7-aircraft-support-v1-design.md", import.meta.url), "utf8")
+    spec: await readFile(new URL("../docs/archive/deprecated/superpowers/specs/2026-06-24-m9-7-aircraft-support-v1-design.md", import.meta.url), "utf8")
   };
   const combined = Object.values(docs).join("\n");
 

@@ -115,7 +115,6 @@
             "ignored_fields": { "type": "array", "items": { "type": "string" } },
             "governance_only_fields": { "type": "array", "items": { "type": "string" } },
             "unsupported_fields": { "type": "array", "items": { "type": "string" } },
-            "validation_level": { "type": "string", "enum": ["level0", "level1"] },
             "used_tables": {
               "type": "object",
               "additionalProperties": { "type": "boolean" }

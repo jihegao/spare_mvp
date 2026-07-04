@@ -160,7 +160,7 @@ public/import-templates/*.json 或 tests/fixtures/simulation_analysis_cases/*.js
 | 内核输入 | `s_* + time_dist + organization`。 | `aircraft-support-v1-input-v0` 的 `simulation_inputs`。 |
 | 转换方向 | 前端契约先转中文 survey sheet，再复用 Excel adapter 生成 `s_*`。 | import package 先校验，再转 Project，再由 Adapter 编译成正式模型输入。 |
 | 引用风格 | 混合中文名称、业务编号和派生 ID。 | 倾向稳定 ID、显式引用校验和 compiler provenance。 |
-| 校验边界 | loader 能否解析、实验脚本能否运行是主要边界。 | schema、validationLevel、usedTables、compile gate 和 fail-closed issues。 |
+| 校验边界 | loader 能否解析、实验脚本能否运行是主要边界。 | schema、usedTables 范围声明、compile gate 和 fail-closed issues。 |
 | 结果边界 | experiments 直接运行，结果文件/脚本形态较松。 | 正式链路写 Run/Result/ArtifactManifest；轻量层讨论稿要求只读 `simulation_inputs`，默认不落盘。 |
 
 ## 字段映射关系

@@ -32,8 +32,8 @@ class SimulationAnalysisCasePackTest(unittest.TestCase):
         self.assertEqual([case["case_id"] for case in pack["cases"]], SIMULATION_ANALYSIS_CASE_IDS)
         by_id = {case["case_id"]: case for case in pack["cases"]}
         self.assertEqual(set(by_id), {"minimal_single_aircraft", "canonical_platform_case"})
-        self.assertEqual(by_id["minimal_single_aircraft"]["validation_level"], "level0")
-        self.assertEqual(by_id["canonical_platform_case"]["validation_level"], "level1")
+        self.assertNotIn("validation_level", by_id["minimal_single_aircraft"])
+        self.assertNotIn("validation_level", by_id["canonical_platform_case"])
         self.assertFalse(by_id["minimal_single_aircraft"]["used_tables"]["supportResources"])
         self.assertFalse(by_id["minimal_single_aircraft"]["used_tables"]["supportActivities"])
         self.assertTrue(by_id["canonical_platform_case"]["used_tables"]["supportResources"])
@@ -73,7 +73,8 @@ class SimulationAnalysisCasePackTest(unittest.TestCase):
                 validation = validate_modeling_import_package(fixture["modeling_import"])
                 self.assertEqual(validation["issues"], [])
                 self.assertTrue(validation["ok"])
-                self.assertEqual(validation["validationLevel"], fixture["validation_level"])
+                self.assertNotIn("validationLevel", validation)
+                self.assertNotIn("validation_level", fixture)
                 self.assertEqual(validation["usedTables"], fixture["used_tables"])
                 project = fixture["project"]
                 scenario = self.adapter.compile_scenario(project, model_family="aircraft_support_v1")

@@ -975,7 +975,7 @@ class BackendHttpApiTest(unittest.TestCase):
                         migration = body["details"]["migration"]
                         self.assertEqual(
                             migration["docs"],
-                            "docs/superpowers/plans/2026-06-21-legacy-run-api-retirement.md",
+                            "docs/archive/deprecated/superpowers/plans/2026-06-21-legacy-run-api-retirement.md",
                         )
                         self.assertEqual(migration["mapping"]["/api/simulation-runs"], "/api/runs")
                         self.assertEqual(

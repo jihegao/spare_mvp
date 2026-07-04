@@ -271,7 +271,7 @@ test("artifact manifest preserves run and scenario identity chain", async () => 
 
 test("archived governance keeps historical PR-B scope available for reference", async () => {
   const governance = await readText("docs/archive/deprecated/simulation-service-governance.md");
-  const plan = await readText("docs/superpowers/plans/2026-06-18-agent-swarm-contract-first-development.md");
+  const plan = await readText("docs/archive/deprecated/superpowers/plans/2026-06-18-agent-swarm-contract-first-development.md");
 
   assert.match(governance, /状态：已过期/);
   assert.ok(governance.includes("| PR-B | Evaluator / Test Agent | 扩展 JSON Schema validation、Mesa contract smoke 和前后端字段漂移测试"));

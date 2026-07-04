@@ -312,8 +312,10 @@ test("project list exports project JSON without direct Project JSON import at ru
 
   try {
     assert.match(runtime.appNode.innerHTML, /项目列表/);
-    assert.match(runtime.appNode.innerHTML, /data-modeling-import-template/);
-    assert.match(runtime.appNode.innerHTML, /data-project-create-from-import/);
+    assert.match(runtime.appNode.innerHTML, /data-project-template-select/);
+    assert.match(runtime.appNode.innerHTML, /data-project-create-from-template/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-modeling-import-template/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-project-create-from-import/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /data-project-add/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /data-project-import/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /添加本地 Project draft|本地草稿|本地空白预览/);
@@ -339,8 +341,10 @@ test("feature routes without a template-created project return to project list",
 
   try {
     assert.match(runtime.appNode.innerHTML, /项目列表/);
-    assert.match(runtime.appNode.innerHTML, /请选择模板数据创建项目/);
-    assert.match(runtime.appNode.innerHTML, /data-modeling-import-template/);
+    assert.match(runtime.appNode.innerHTML, /请选择项目模板创建项目/);
+    assert.match(runtime.appNode.innerHTML, /data-project-template-select/);
+    assert.match(runtime.appNode.innerHTML, /暂无项目模板/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-modeling-import-template|Level 0|Level 1/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /data-experiment-plan-select="local:本地空白预览"/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /本地空白预览/);
   } finally {
@@ -348,47 +352,89 @@ test("feature routes without a template-created project return to project list",
   }
 });
 
-test("project list keeps multiple projects created from the current published snapshot", async () => {
+test("project list keeps multiple projects created from the selected project template", async () => {
+  const projectJson = createRuntimeProjectJson({
+    project_id: "project-runtime-template",
+    projectInfo: {
+      name: "运行时模板项目",
+      baseCode: "RT",
+      summary: "runtime template",
+      isTemplate: true
+    },
+    experiment: { name: "运行时模板项目", steps: 24, samples: 2, seed: 20260626 }
+  });
   const runtime = await setupRuntimeApp({
-    backendProjects: []
+    projectJson,
+    backendProjects: [{
+      project_id: "project-runtime-template",
+      experiment_name: "运行时模板项目",
+      base_code: "RT",
+      summary: "runtime template",
+      source_import_id: "runtime-import-template",
+      is_template: true,
+      updated_at: "2026-06-26 00:00:00"
+    }]
   });
 
   try {
-    assert.match(runtime.appNode.innerHTML, /请选择模板数据创建项目/);
+    assert.match(runtime.appNode.innerHTML, /请选择项目模板创建项目/);
+    assert.match(runtime.appNode.innerHTML, /运行时模板项目【模板】/);
 
-    await runtime.click("[data-project-create-from-import]");
-    await runtime.click("[data-project-create-from-import]");
+    await runtime.click("[data-project-create-from-template]");
+    await runtime.click("[data-project-create-from-template]");
 
-    assert.match(runtime.appNode.innerHTML, /已加载 2 个后端项目/);
-    assert.match(runtime.appNode.innerHTML, /运行时模板项目 1/);
-    assert.match(runtime.appNode.innerHTML, /运行时模板项目 2/);
-    assert.match(runtime.appNode.innerHTML, /data-enter-workbench data-project-id="runtime-imported"/);
-    assert.match(runtime.appNode.innerHTML, /data-enter-workbench data-project-id="runtime-imported-copy-2"/);
+    assert.match(runtime.appNode.innerHTML, /运行时模板项目 副本 2/);
+    assert.match(runtime.appNode.innerHTML, /运行时模板项目 副本 3/);
+    assert.match(runtime.appNode.innerHTML, /data-enter-workbench data-project-id="runtime-template-copy-2"/);
+    assert.match(runtime.appNode.innerHTML, /data-enter-workbench data-project-id="runtime-template-copy-3"/);
     const createRequests = runtime.requests.filter((request) => (
       request.url.endsWith("/create-project")
       && (request.options.method || "GET") === "POST"
     ));
-    assert.equal(createRequests.length, 2);
+    assert.equal(createRequests.length, 0);
+    const projectSaveRequests = runtime.requests.filter((request) => (
+      request.url === "/api/projects"
+      && (request.options.method || "GET") === "POST"
+    ));
+    assert.equal(projectSaveRequests.length, 2);
+    assert.ok(projectSaveRequests.every((request) => {
+      const body = JSON.parse(request.options.body || "{}");
+      return body.projectInfo?.isTemplate === false
+        && body.projectInfo?.is_template === false
+        && body.isTemplate === false
+        && body.is_template === false;
+    }));
   } finally {
     runtime.restore();
   }
 });
 
-test("project list rename persists and survives creating another project from the published snapshot", async () => {
+test("project list rename persists and survives creating another project from the selected template", async () => {
   const projectJson = createRuntimeProjectJson({
     project_id: "project-runtime",
-    projectInfo: { name: "Runtime 项目", baseCode: "RT", summary: "runtime test" }
+    projectInfo: { name: "Runtime 项目", baseCode: "RT", summary: "runtime test", isTemplate: true }
   });
-  const runtime = await setupRuntimeApp({ projectJson });
+  const runtime = await setupRuntimeApp({
+    projectJson,
+    backendProjects: [{
+      project_id: "project-runtime",
+      experiment_name: "Runtime 项目",
+      base_code: "RT",
+      summary: "runtime test",
+      source_import_id: "runtime-import-template",
+      is_template: true,
+      updated_at: "2026-06-26 00:00:00"
+    }]
+  });
 
   try {
     await runtime.click("[data-project-edit]", { projectEdit: "runtime" });
     await runtime.input("[data-project-edit-field]", { projectEditField: "name" }, { value: "原 Project 改名" });
     await runtime.click("[data-project-edit-save]");
-    await runtime.click("[data-project-create-from-import]");
+    await runtime.click("[data-project-create-from-template]");
 
     assert.match(runtime.appNode.innerHTML, /原 Project 改名/);
-    assert.match(runtime.appNode.innerHTML, /运行时模板项目 1/);
+    assert.match(runtime.appNode.innerHTML, /原 Project 改名 副本 2/);
     const projectSaveRequests = runtime.requests.filter((request) => (
       request.url === "/api/projects"
       && (request.options.method || "GET") === "POST"
@@ -398,6 +444,13 @@ test("project list rename persists and survives creating another project from th
       return body.project_id === "project-runtime"
         && body.experiment?.name === "原 Project 改名"
         && body.projectInfo?.name === "原 Project 改名";
+    }));
+    assert.ok(projectSaveRequests.some((request) => {
+      const body = JSON.parse(request.options.body || "{}");
+      return body.project_id === "project-runtime-copy-2"
+        && body.experiment?.name === "原 Project 改名 副本 2"
+        && body.projectInfo?.isTemplate === false
+        && body.projectInfo?.is_template === false;
     }));
   } finally {
     runtime.restore();
@@ -1102,6 +1155,7 @@ async function setupRuntimeApp({
         base_code: body.projectInfo?.baseCode || "RT",
         summary: body.projectInfo?.summary || "runtime test",
         source_import_id: body.missionProfile?.sourceImportId || "",
+        is_template: Boolean(body.projectInfo?.isTemplate),
         updated_at: "2026-06-26 00:00:00"
       };
       const existingIndex = backendProjectCatalog.findIndex((entry) => entry.project_id === projectId);

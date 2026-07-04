@@ -49,10 +49,6 @@ export function createBackendApiClient({ baseUrl = DEFAULT_API_BASE, transport, 
       const query = state ? `?state=${encodeURIComponent(state)}` : "";
       return request({ method: "GET", path: `/project-data-templates${query}` });
     },
-    listModelingImportTemplates({ state = "published" } = {}) {
-      const query = state ? `?state=${encodeURIComponent(state)}` : "";
-      return request({ method: "GET", path: `/project-data-templates${query}` });
-    },
     saveModelingImport(importPackage) {
       return request({ method: "POST", path: "/modeling-imports", body: importPackage });
     },

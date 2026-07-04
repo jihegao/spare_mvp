@@ -66,7 +66,7 @@ class M96CasePackageTest(unittest.TestCase):
         self.assertEqual(export["validation"]["status"], "valid")
         self.assertEqual(export["validation"]["issues"], [])
         self.assertEqual(export["validation"]["warnings"], [])
-        self.assertEqual(export["validation"]["validationLevel"], "level1")
+        self.assertNotIn("validationLevel", export["validation"])
         self.assertTrue(export["validation"]["usedTables"]["supportOrganization"])
 
     def test_field_coverage_explains_every_business_leaf_once(self) -> None:

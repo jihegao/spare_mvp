@@ -291,11 +291,10 @@ class BackendApiContractTest(unittest.TestCase):
         )
         return failed
 
-    def _level0_import_package_without_support_domain(self) -> dict[str, Any]:
+    def _reduced_scope_import_package_without_support_domain(self) -> dict[str, Any]:
         import_package = self._fixture("modeling_import_project.json")
-        import_package["importId"] = "import-level0-no-support-domain"
-        import_package["projectId"] = "project-level0-no-support-domain"
-        import_package["validationLevel"] = "level0"
+        import_package["importId"] = "import-reduced-scope-no-support-domain"
+        import_package["projectId"] = "project-reduced-scope-no-support-domain"
         import_package["usedTables"] = {
             "missionProfiles": True,
             "equipmentAssets": True,
@@ -1978,7 +1977,7 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(report_payload["m9_7_4_behavior_scope"]["fail_closed_fields"], [])
 
     def test_formal_run_persists_modeling_import_validation_scope_in_scenario_provenance(self) -> None:
-        import_package = self._level0_import_package_without_support_domain()
+        import_package = self._reduced_scope_import_package_without_support_domain()
         self.api.save_modeling_import_as_system(import_package)
         self.api.publish_modeling_import_as_system(import_package["importId"])
         created = self.api.create_project_from_modeling_import_as_system(import_package["importId"])
@@ -1987,7 +1986,7 @@ class BackendApiContractTest(unittest.TestCase):
         snapshot = self.api.create_modeling_snapshot(saved["project_id"])
         plan = self.api.create_experiment_plan(
             saved["project_id"],
-            {"name": "level0 validation scope run", "projectJson": copy.deepcopy(project)},
+            {"name": "reduced scope validation run", "projectJson": copy.deepcopy(project)},
         )
 
         submitted = self.api.submit_run(
@@ -2005,7 +2004,7 @@ class BackendApiContractTest(unittest.TestCase):
         compiled_payload = json.loads((Path(self.api.output_dir) / compiled_artifact["path"]).read_text(encoding="utf-8"))
         provenance = compiled_payload["compiled_from"]["mapping_provenance"]
 
-        self.assertEqual(provenance["validation_level"], "level0")
+        self.assertNotIn("validation_level", provenance)
         self.assertIn("supportResources", provenance["disabled_domains"])
         self.assertIn("supportActivities", provenance["disabled_domains"])
         self.assertEqual(provenance["modeling_snapshot_id"], snapshot["snapshot_id"])
@@ -2013,18 +2012,18 @@ class BackendApiContractTest(unittest.TestCase):
 
     def test_public_import_templates_run_through_formal_backend_api_e2e(self) -> None:
         template_cases = [
-            ("minimal_single_aircraft.json", "level0"),
-            ("canonical_platform_case.json", "level1"),
+            ("minimal_single_aircraft.json", True),
+            ("canonical_platform_case.json", False),
         ]
         required_monte_carlo_artifacts = M7_MONTE_CARLO_ARTIFACT_KINDS
 
-        for template_name, expected_level in template_cases:
+        for template_name, expected_not_applicable in template_cases:
             with self.subTest(template=template_name):
                 import_package = self._public_import_template(template_name)
                 validation = validate_modeling_import_package(import_package)
                 self.assertTrue(validation["ok"])
                 self.assertEqual(validation["issues"], [])
-                self.assertEqual(validation["validationLevel"], expected_level)
+                self.assertNotIn("validationLevel", validation)
                 self.assertEqual(validation["usedTables"], import_package["usedTables"])
 
                 self.api.save_modeling_import_as_system(import_package)
@@ -2037,7 +2036,7 @@ class BackendApiContractTest(unittest.TestCase):
                 single_plan = self.api.create_experiment_plan(
                     saved_project["project_id"],
                     {
-                        "name": f"{expected_level} template single run",
+                        "name": f"{template_name} single run",
                         "steps": 4,
                         "projectJson": copy.deepcopy(project),
                         "modeling_snapshot_id": snapshot["snapshot_id"],
@@ -2066,7 +2065,7 @@ class BackendApiContractTest(unittest.TestCase):
                 monte_carlo_plan = self.api.create_experiment_plan(
                     saved_project["project_id"],
                     {
-                        "name": f"{expected_level} template monte carlo run",
+                        "name": f"{template_name} monte carlo run",
                         "steps": 4,
                         "projectJson": copy.deepcopy(project),
                         "modeling_snapshot_id": snapshot["snapshot_id"],
@@ -2110,10 +2109,10 @@ class BackendApiContractTest(unittest.TestCase):
 
                 spare_shortfall = self._artifact_payload(manifest, "analysis_projection_spare_shortfall")
                 downtime_factors = self._artifact_payload(manifest, "analysis_projection_downtime_factors")
-                expected_applicability = "not_applicable" if expected_level == "level0" else "applicable"
+                expected_applicability = "not_applicable" if expected_not_applicable else "applicable"
                 self.assertEqual(spare_shortfall["applicability"]["status"], expected_applicability)
                 self.assertEqual(downtime_factors["applicability"]["status"], expected_applicability)
-                if expected_level == "level0":
+                if expected_not_applicable:
                     self.assertIn("supportResources", spare_shortfall["applicability"]["disabled_domains"])
                     self.assertIn("supportActivities", downtime_factors["applicability"]["disabled_domains"])
 
@@ -3068,14 +3067,14 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(len(self.adapter.compile_calls), 1)
         self.assertEqual(self.adapter.compile_calls[0][1], "aircraft_support_v1")
 
-    def test_level0_modeling_import_omits_support_domains_without_validation_failure(self) -> None:
-        import_package = self._level0_import_package_without_support_domain()
+    def test_reduced_scope_modeling_import_omits_support_domains_without_validation_failure(self) -> None:
+        import_package = self._reduced_scope_import_package_without_support_domain()
 
         validation = validate_modeling_import_package(import_package)
 
         self.assertTrue(validation["ok"])
         self.assertEqual(validation["status"], "valid")
-        self.assertEqual(validation["validationLevel"], "level0")
+        self.assertNotIn("validationLevel", validation)
         self.assertFalse(validation["usedTables"]["supportResources"])
         self.assertFalse(validation["usedTables"]["supportActivities"])
         self.assertEqual(validation["issues"], [])
@@ -3083,46 +3082,34 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertIn("scope_not_modeled", scope_codes)
         self.assertTrue(any(warning["field_path"] == "objects.supportResources" for warning in validation["warnings"]))
 
-    def test_level1_modeling_import_rejects_declared_missing_support_domains(self) -> None:
-        import_package = self._level0_import_package_without_support_domain()
-        import_package["validationLevel"] = "level1"
+    def test_declared_scope_modeling_import_rejects_declared_missing_support_domains(self) -> None:
+        import_package = self._reduced_scope_import_package_without_support_domain()
         import_package["usedTables"]["supportResources"] = True
         import_package["usedTables"]["supportActivities"] = True
 
         validation = validate_modeling_import_package(import_package)
 
         self.assertFalse(validation["ok"])
-        self.assertEqual(validation["validationLevel"], "level1")
+        self.assertNotIn("validationLevel", validation)
         self.assertEqual(validation["usedTables"]["supportResources"], True)
         issues_by_path = {issue["field_path"]: issue for issue in validation["issues"]}
         self.assertEqual(issues_by_path["objects.supportResources"]["code"], "invalid_declared_table")
         self.assertEqual(issues_by_path["objects.supportActivities"]["code"], "invalid_declared_table")
         self.assertTrue(all(issue["severity"] == "error" for issue in validation["issues"]))
 
-    def test_level1_modeling_import_rejects_disabled_non_core_domains(self) -> None:
+    def test_modeling_import_rejects_retired_validation_level(self) -> None:
         import_package = self._fixture("modeling_import_project.json")
-        import_package["validationLevel"] = "level1"
-        import_package["usedTables"] = {
-            "missionProfiles": True,
-            "equipmentAssets": True,
-            "reliabilityBlockDiagram": True,
-            "supportResources": False,
-            "supportActivities": True,
-            "supportOrganization": True,
-            "transportPolicies": True,
-        }
+        import_package["validationLevel"] = "retired"
 
         validation = validate_modeling_import_package(import_package)
         issues_by_path = {issue["field_path"]: issue for issue in validation["issues"]}
 
         self.assertFalse(validation["ok"])
-        self.assertEqual(validation["validationLevel"], "level1")
-        self.assertEqual(validation["usedTables"]["supportResources"], True)
-        self.assertEqual(issues_by_path["usedTables.supportResources"]["code"], "invalid_used_table_flag")
+        self.assertNotIn("validationLevel", validation)
+        self.assertEqual(issues_by_path["validationLevel"]["code"], "retired_validation_level")
 
-    def test_level1_modeling_import_rejects_declared_missing_support_scope_tables(self) -> None:
+    def test_declared_scope_modeling_import_rejects_declared_missing_support_scope_tables(self) -> None:
         import_package = self._fixture("modeling_import_project.json")
-        import_package["validationLevel"] = "level1"
         import_package["usedTables"] = {
             "missionProfiles": True,
             "equipmentAssets": True,
@@ -3144,9 +3131,8 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(issues_by_path["objects.supportOrganization"]["code"], "invalid_declared_table")
         self.assertEqual(issues_by_path["objects.supportResources[0].transportPolicies"]["code"], "invalid_declared_table")
 
-    def test_level1_modeling_import_rejects_declared_empty_support_scope_tables(self) -> None:
+    def test_declared_scope_modeling_import_rejects_declared_empty_support_scope_tables(self) -> None:
         import_package = self._fixture("modeling_import_project.json")
-        import_package["validationLevel"] = "level1"
         import_package["usedTables"] = {
             "missionProfiles": True,
             "equipmentAssets": True,
@@ -3171,22 +3157,22 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(issues_by_path["objects.reliabilityBlockDiagram"]["code"], "invalid_declared_table")
         self.assertEqual(issues_by_path["objects.supportOrganization.tree"]["code"], "invalid_declared_table")
 
-    def test_compile_modeling_import_scenario_returns_gate_envelope_for_level0_import(self) -> None:
-        import_package = self._level0_import_package_without_support_domain()
+    def test_compile_modeling_import_scenario_returns_gate_envelope_for_reduced_scope_import(self) -> None:
+        import_package = self._reduced_scope_import_package_without_support_domain()
         self.api.save_modeling_import_as_system(import_package)
         self.api.publish_modeling_import_as_system(import_package["importId"])
 
         compiled = self.api.compile_modeling_import_scenario(import_package["importId"])
 
         self.assertEqual(compiled["status"], "compiled")
-        self.assertEqual(compiled["validationLevel"], "level0")
+        self.assertNotIn("validationLevel", compiled)
         self.assertFalse(compiled["usedTables"]["supportResources"])
         self.assertFalse(compiled["usedTables"]["supportActivities"])
         self.assertEqual(compiled["issues"], [])
         self.assertTrue(any(warning["code"] == "scope_not_modeled" for warning in compiled["warnings"]))
         self.assertEqual(compiled["compiled_from_import"]["import_id"], import_package["importId"])
         self.assertEqual(compiled["scenario"]["simulation_model"]["family"], "aircraft_support_v1")
-        self.assertEqual(compiled["provenance"]["validation_level"], "level0")
+        self.assertNotIn("validation_level", compiled["provenance"])
         self.assertIn("supportResources", compiled["provenance"]["disabled_domains"])
         self.assertIn("supportActivities", compiled["provenance"]["disabled_domains"])
         self.assertEqual(len(self.adapter.compile_calls), 1)

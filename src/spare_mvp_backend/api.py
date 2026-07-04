@@ -285,9 +285,6 @@ class BackendApi:
     def get_modeling_import(self, import_id: str) -> dict[str, Any]:
         return self.repository.get_modeling_import(import_id)
 
-    def list_modeling_import_templates(self, *, state: str = "published") -> dict[str, Any]:
-        return self.list_project_data_templates(state=state)
-
     def list_project_data_templates(self, *, state: str = "published") -> dict[str, Any]:
         return {
             "templates": self.repository.list_project_data_templates(state=state or "published")
@@ -374,7 +371,6 @@ class BackendApi:
             "provenance": copy.deepcopy(gate.get("provenance") or {}),
             "issues": gate_issues,
             "errors": gate_errors,
-            "validationLevel": validation["validationLevel"],
             "usedTables": copy.deepcopy(validation["usedTables"]),
             "warnings": copy.deepcopy(validation.get("warnings") or []) + list(gate.get("warnings") or []),
         }

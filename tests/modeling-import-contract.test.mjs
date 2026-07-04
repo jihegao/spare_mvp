@@ -78,7 +78,8 @@ test("modeling import schema and fixture define the M5 first-slice package", asy
   assert.deepEqual(manifest.m5_fixture_files, ["tests/fixtures/modeling_import_project.json"]);
   assert.equal(schema.$id, "https://spare-mvp.local/contracts/modeling_import.schema.json");
   assert.equal(schema.properties.schemaVersion.const, "modeling-import-v1");
-  assert.deepEqual(schema.properties.validationLevel.enum, ["level0", "level1"]);
+  assert.equal(Object.hasOwn(schema.properties, "validationLevel"), false);
+  assert.equal(Object.hasOwn(fixture, "validationLevel"), false);
   assert.equal(schema.properties.usedTables.type, "object");
   assert.deepEqual(validateSchema(schema, fixture), []);
   assert.deepEqual(validateModelingImportPackage(fixture), []);
@@ -234,14 +235,13 @@ test("canonical platform composite task items inherit equipment quantity from ba
   }
 });
 
-test("modeling import validation supports Level 0 packages without support-domain stubs", async () => {
+test("modeling import validation supports reduced-scope packages without support-domain stubs", async () => {
   const schema = await readJson("contracts/modeling_import.schema.json");
   const fixture = await readJson("tests/fixtures/modeling_import_project.json");
-  const level0Package = {
+  const reducedScopePackage = {
     ...fixture,
-    importId: "import-level0-no-support-domain",
-    projectId: "project-level0-no-support-domain",
-    validationLevel: "level0",
+    importId: "import-reduced-scope-no-support-domain",
+    projectId: "project-reduced-scope-no-support-domain",
     usedTables: {
       missionProfiles: true,
       equipmentAssets: true,
@@ -253,19 +253,18 @@ test("modeling import validation supports Level 0 packages without support-domai
     },
     objects: { ...fixture.objects }
   };
-  delete level0Package.objects.supportResources;
-  delete level0Package.objects.supportActivities;
-  delete level0Package.objects.supportOrganization;
+  delete reducedScopePackage.objects.supportResources;
+  delete reducedScopePackage.objects.supportActivities;
+  delete reducedScopePackage.objects.supportOrganization;
 
-  assert.deepEqual(validateSchema(schema, level0Package), []);
-  assert.deepEqual(validateModelingImportPackage(level0Package), []);
+  assert.deepEqual(validateSchema(schema, reducedScopePackage), []);
+  assert.deepEqual(validateModelingImportPackage(reducedScopePackage), []);
 });
 
-test("modeling import validation rejects Level 1 packages with declared missing support domains", async () => {
+test("modeling import validation rejects complete-scope packages with declared missing support domains", async () => {
   const fixture = await readJson("tests/fixtures/modeling_import_project.json");
-  const level1Package = {
+  const declaredScopePackage = {
     ...fixture,
-    validationLevel: "level1",
     usedTables: {
       missionProfiles: true,
       equipmentAssets: true,
@@ -277,47 +276,33 @@ test("modeling import validation rejects Level 1 packages with declared missing 
     },
     objects: { ...fixture.objects }
   };
-  delete level1Package.objects.supportResources;
-  delete level1Package.objects.supportActivities;
+  delete declaredScopePackage.objects.supportResources;
+  delete declaredScopePackage.objects.supportActivities;
 
-  const issues = validateModelingImportPackage(level1Package);
+  const issues = validateModelingImportPackage(declaredScopePackage);
   const issuesByPath = Object.fromEntries(issues.map((issue) => [issue.field_path, issue]));
 
   assert.equal(issuesByPath["objects.supportResources"].code, "invalid_declared_table");
   assert.equal(issuesByPath["objects.supportActivities"].code, "invalid_declared_table");
 });
 
-test("modeling import validation rejects Level 1 packages that disable non-core domains", async () => {
-  const schema = await readJson("contracts/modeling_import.schema.json");
+test("modeling import validation rejects retired validationLevel classification", async () => {
   const fixture = await readJson("tests/fixtures/modeling_import_project.json");
-  const level1Package = {
+  const packageWithRetiredLevel = {
     ...fixture,
-    validationLevel: "level1",
-    usedTables: {
-      missionProfiles: true,
-      equipmentAssets: true,
-      reliabilityBlockDiagram: true,
-      supportResources: false,
-      supportActivities: true,
-      supportOrganization: true,
-      transportPolicies: true
-    },
+    validationLevel: "retired",
     objects: { ...fixture.objects }
   };
 
-  const schemaErrors = validateSchema(schema, level1Package);
-  assert.ok(schemaErrors.some((error) => error.includes("$.usedTables.supportResources expected const true")));
-
-  const issuesByPath = Object.fromEntries(validateModelingImportPackage(level1Package).map((issue) => [issue.field_path, issue]));
-  assert.equal(issuesByPath["usedTables.supportResources"].code, "invalid_used_table_flag");
+  const issuesByPath = Object.fromEntries(validateModelingImportPackage(packageWithRetiredLevel).map((issue) => [issue.field_path, issue]));
+  assert.equal(issuesByPath.validationLevel.code, "retired_validation_level");
 });
 
-test("modeling import schema and frontend validator reject declared Level 0 support gaps", async () => {
+test("modeling import schema and frontend validator reject declared reduced-scope support gaps", async () => {
   const schema = await readJson("contracts/modeling_import.schema.json");
   const fixture = await readJson("tests/fixtures/modeling_import_project.json");
   const declaredSupportPackage = {
     ...fixture,
-    validationLevel: "level0",
     usedTables: {
       missionProfiles: true,
       equipmentAssets: true,
@@ -348,7 +333,6 @@ test("modeling import validation rejects malformed usedTables flags", async () =
   const fixture = await readJson("tests/fixtures/modeling_import_project.json");
   const malformed = {
     ...fixture,
-    validationLevel: "level0",
     usedTables: {
       ...fixture.usedTables,
       supportResources: "false"
@@ -367,7 +351,6 @@ test("modeling import validation rejects declared used tables with empty modeled
   const fixture = await readJson("tests/fixtures/modeling_import_project.json");
   const emptyDeclaredTables = {
     ...fixture,
-    validationLevel: "level1",
     usedTables: {
       missionProfiles: true,
       equipmentAssets: true,
@@ -458,7 +441,7 @@ test("projectToModelingImportPackage backfills import draft from current Project
   assert.equal(draft.schemaVersion, "modeling-import-v1");
   assert.equal(draft.importId, "import-current");
   assert.equal(draft.projectId, "project-current");
-  assert.equal(draft.validationLevel, "level0");
+  assert.equal(Object.hasOwn(draft, "validationLevel"), false);
   assert.equal(draft.lifecycle.state, "draft");
   assert.equal(draft.lifecycle.version, 3);
   assert.deepEqual(draft.lifecycle.referencedRunIds, ["run-001"]);
@@ -626,16 +609,16 @@ test("modeling import schema validation resolves nested local refs", async () =>
   assert.ok(errors.some((error) => error.includes("$.objects.missionProfiles[0].durationHours expected type")));
   assert.ok(errors.some((error) => error.includes("$.validation.issues[0].severity is required")));
 
-  const defaultLevel1MissingSupport = {
+  const defaultScopeMissingSupport = {
     ...fixture,
     objects: { ...fixture.objects }
   };
-  delete defaultLevel1MissingSupport.objects.supportResources;
-  delete defaultLevel1MissingSupport.objects.supportActivities;
+  delete defaultScopeMissingSupport.objects.supportResources;
+  delete defaultScopeMissingSupport.objects.supportActivities;
 
-  const defaultLevel1Errors = validateSchema(schema, defaultLevel1MissingSupport);
-  assert.ok(defaultLevel1Errors.some((error) => error.includes("$.objects.supportResources is required")));
-  assert.ok(defaultLevel1Errors.some((error) => error.includes("$.objects.supportActivities is required")));
+  const defaultScopeErrors = validateSchema(schema, defaultScopeMissingSupport);
+  assert.ok(defaultScopeErrors.some((error) => error.includes("$.objects.supportResources is required")));
+  assert.ok(defaultScopeErrors.some((error) => error.includes("$.objects.supportActivities is required")));
 });
 
 test("modeling import validator rejects malformed package roots", () => {

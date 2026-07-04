@@ -1441,8 +1441,7 @@
       "issues": [],
       "ok": true,
       "status": "valid"
-    },
-    "validationLevel": "level1"
+    }
   },
   "monte_carlo_config": {
     "mc_experiment_id": "mc-6p-canonical_platform_case",
@@ -1489,24 +1488,7 @@
     "analysisRequests": {
       "largeSample": {
         "enabled": true,
-        "samples": 27,
-        "sweep": {
-          "failureRates": [
-            0.035,
-            0.055,
-            0.075
-          ],
-          "spareMultipliers": [
-            0.75,
-            1,
-            1.25
-          ],
-          "supportCapacities": [
-            2,
-            3,
-            4
-          ]
-        }
+        "samples": 27
       }
     },
     "basicMission": {
@@ -2035,24 +2017,7 @@
       "analysisRequests": {
         "largeSample": {
           "enabled": true,
-          "samples": 27,
-          "sweep": {
-            "failureRates": [
-              0.035,
-              0.055,
-              0.075
-            ],
-            "spareMultipliers": [
-              0.75,
-              1,
-              1.25
-            ],
-            "supportCapacities": [
-              2,
-              3,
-              4
-            ]
-          }
+          "samples": 27
         }
       },
       "compositeTasks": [
@@ -2162,30 +2127,7 @@
         "supportResources": true,
         "transportPolicies": true
       },
-      "validationLevel": "level1",
       "warnings": []
-    },
-    "monteCarlo": {
-      "failureRates": [
-        0.035,
-        0.055,
-        0.075
-      ],
-      "minRequiredSorties": [
-        4,
-        5,
-        6
-      ],
-      "spareMultipliers": [
-        0.75,
-        1,
-        1.25
-      ],
-      "supportCapacities": [
-        2,
-        3,
-        4
-      ]
     },
     "projectInfo": {
       "baseCode": "IMPORTED-001",
@@ -2808,8 +2750,6 @@
       "supportResources": true,
       "transportPolicies": true
     },
-    "validationLevel": "level1",
     "warnings": []
-  },
-  "validation_level": "level1"
+  }
 }

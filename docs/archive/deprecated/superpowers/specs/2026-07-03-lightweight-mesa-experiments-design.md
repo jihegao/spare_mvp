@@ -362,7 +362,7 @@ PYTHONDONTWRITEBYTECODE=1 .abm-mesa-test-env/bin/python -m unittest tests.test_m
 4. 置信度默认值先采用 0.9，还是在 CLI 必填？
 5. 后续是否引入重量、体积、成本等加权成本；第一版目标函数已固定为基层级携行总量最小。
 6. 每类备件数量围绕 Project 基准补缺/削减时，搜索上界来自项目建模中的库存/携行候选范围、用户输入，还是按缺省 `0..4` 起步？
-7. 粗/中/细三档建模粒度是否足够，还是需要与现有 `level0` / `level1` validationLevel 直接绑定？
+7. 粗/中/细三档建模粒度是否足够，还是只绑定 `usedTables` / `disabledDomains` 的未建模域声明？
 8. `analyses.py` 是从当前 adapter 中抽纯函数，还是先实现一套更粗的轻量摘要？
 9. 内置实验类型先只做 project baseline + `minimum_carry_list_search`，还是保留其他敏感性实验为 future？
 10. 是否把 `SimulationAdapter.compile_scenario()` 继续作为编译入口，还是抽出不带产品语义的 compiler helper？

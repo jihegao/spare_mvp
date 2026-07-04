@@ -378,8 +378,7 @@
       "issues": [],
       "ok": true,
       "status": "valid"
-    },
-    "validationLevel": "level0"
+    }
   },
   "monte_carlo_config": {
     "mc_experiment_id": "mc-6p-minimal_single_aircraft",
@@ -412,18 +411,7 @@
     "analysisRequests": {
       "largeSample": {
         "enabled": true,
-        "samples": 1,
-        "sweep": {
-          "failureRates": [
-            0.02
-          ],
-          "spareMultipliers": [
-            1.0
-          ],
-          "supportCapacities": [
-            1
-          ]
-        }
+        "samples": 1
       }
     },
     "basicMission": {
@@ -552,18 +540,7 @@
       "analysisRequests": {
         "largeSample": {
           "enabled": true,
-          "samples": 1,
-          "sweep": {
-            "failureRates": [
-              0.02
-            ],
-            "spareMultipliers": [
-              1.0
-            ],
-            "supportCapacities": [
-              1
-            ]
-          }
+          "samples": 1
         }
       },
       "compositeTasks": [
@@ -639,7 +616,6 @@
         "supportResources": false,
         "transportPolicies": false
       },
-      "validationLevel": "level0",
       "warnings": [
         {
           "code": "scope_not_modeled",
@@ -673,20 +649,6 @@
           "page": "保障资源建模",
           "severity": "warning"
         }
-      ]
-    },
-    "monteCarlo": {
-      "failureRates": [
-        0.02
-      ],
-      "minRequiredSorties": [
-        1
-      ],
-      "spareMultipliers": [
-        1.0
-      ],
-      "supportCapacities": [
-        1
       ]
     },
     "projectInfo": {
@@ -750,7 +712,6 @@
       "supportResources": false,
       "transportPolicies": false
     },
-    "validationLevel": "level0",
     "warnings": [
       {
         "code": "scope_not_modeled",
@@ -785,6 +746,5 @@
         "severity": "warning"
       }
     ]
-  },
-  "validation_level": "level0"
+  }
 }

@@ -48,14 +48,13 @@ test("normalizes spare shortfall projection payload for formal KPI and table ren
 test("normalizes not applicable projection payloads without formal KPI computation", () => {
   const view = normalizeAnalysisProjectionPayload("spare_shortfall", {
     projection_type: "spare_shortfall",
-    run_id: "run-level0",
+    run_id: "run-reduced-scope",
     model_family: "aircraft_support_v1",
     applicability: {
       status: "not_applicable",
       reason_code: "scope_not_modeled",
       required_domains: ["supportActivities", "supportResources"],
-      disabled_domains: ["supportActivities", "supportResources"],
-      validation_level: "level0"
+      disabled_domains: ["supportActivities", "supportResources"]
     },
     constraints: {
       fill_rate: [0.85, 0.9, 0.95],
@@ -68,7 +67,7 @@ test("normalizes not applicable projection payloads without formal KPI computati
     data: [
       { spare_type: "misleading-zero", fill_rate: 0, utilization: 0, shortage_probability: 0, risk_level: "low" }
     ]
-  }, { runId: "run-level0", modelFamily: "aircraft_support_v1" });
+  }, { runId: "run-reduced-scope", modelFamily: "aircraft_support_v1" });
 
   assert.equal(view.analysisType, "spare_shortfall");
   assert.equal(view.formal, false);

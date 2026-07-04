@@ -65,10 +65,6 @@ import {
 } from "./modeling-import-workbench.mjs";
 import { MODELING_IMPORT_DEMO_FIXTURE } from "./modeling-import-demo-fixture.mjs";
 import {
-  MODELING_IMPORT_TEMPLATES,
-  loadModelingImportTemplate
-} from "./modeling-import-templates.mjs";
-import {
   ensurePublishedModelingImportForSampleProject,
   publishModelingImportWithReferencedVersionFallback,
   sampleImportPackageIsComplete
@@ -87,7 +83,6 @@ const app = document.querySelector("#app");
 const groups = groupFeaturePages(FEATURE_PAGES);
 const CONTRACT_BASE = "http://127.0.0.1:8521"; // Mesa 契约服务（见 agent.md「Mesa 后台契约服务」）
 const FORMAL_AIRCRAFT_SUPPORT_MODEL_FAMILY = "aircraft_support_v1";
-const DEFAULT_SAMPLE_MODELING_IMPORT_TEMPLATE_ID = "canonical-platform-case";
 const LAST_BACKEND_RUN_STORAGE_KEY = "spare-mvp:lastBackendRun";
 const AUTH_SESSION_STORAGE_KEY = "spare-mvp:m4Session";
 const LAST_PUBLISHED_MODELING_IMPORT_STORAGE_KEY = "spare-mvp:lastPublishedModelingImportId";
@@ -447,6 +442,9 @@ function mergeProjectsById(projects) {
       sourceKind: Object.values(PROJECT_SOURCE).includes(project.sourceKind) ? project.sourceKind : PROJECT_SOURCE.imported_sample,
       sourceImportId: project.sourceImportId || "",
       isTemplate: isProjectDataTemplate(project),
+      projectBackendId: project.projectBackendId
+        || project.project_id
+        || (String(project.id).startsWith("project-") ? String(project.id) : `project-${project.id}`)
     };
     if (!byId.has(normalized.id)) {
       byId.set(normalized.id, normalized);
@@ -528,12 +526,11 @@ let modelingImportValidation = cloneModelingImportPackage(MODELING_IMPORT_DEMO_F
 let modelingImportCompileResult = null;
 let modelingImportStatus = "样例导入包已加载";
 let modelingImportSaved = false;
-let selectedModelingImportTemplateId = DEFAULT_SAMPLE_MODELING_IMPORT_TEMPLATE_ID;
-let publishedModelingImportTemplates = [];
-let publishedModelingImportTemplatesLoaded = false;
-let publishedModelingImportTemplatesLoading = false;
+let publishedModelingImportPackages = [];
+let publishedModelingImportPackagesLoaded = false;
+let publishedModelingImportPackagesLoading = false;
 let selectedPublishedModelingImportId = readLastPublishedModelingImportId();
-let publishedTemplateStatus = "已发布项目模板尚未加载";
+let publishedImportStatus = "已发布导入包尚未加载";
 let savedProject = null;
 let modelingSnapshot = null;
 let experimentPlan = null;
@@ -584,7 +581,8 @@ let systemUsersLoaded = false;
 let isLoggedIn = false;
 let currentUser = DEMO_USERS[2];
 let currentProject = demoProjects[0] || null;
-let projectListStatus = "请选择模板数据创建项目。";
+let projectListStatus = "请选择项目模板创建项目。";
+let selectedProjectTemplateProjectId = "";
 let selectedProjectDataProjectId = "";
 let selectedProjectDataProjectJson = null;
 let selectedProjectDataProjectJsonId = "";
@@ -1353,24 +1351,9 @@ function bindEvents() {
       return;
     }
 
-    const createFromImportButton = event.target.closest("[data-project-create-from-import]");
-    if (createFromImportButton) {
-      createSampleProjectFromPublishedImport(currentPublishedModelingImportId()).finally(() => render());
-      return;
-    }
-
-    const publishedTemplateButton = event.target.closest("[data-published-template-option]");
-    if (publishedTemplateButton) {
-      loadPublishedModelingImportTemplate(publishedTemplateButton.dataset.publishedTemplateOption).finally(() => render());
-      return;
-    }
-
-    const publishedTemplateAction = event.target.closest("[data-published-template-action]");
-    if (publishedTemplateAction) {
-      handlePublishedTemplateAction(
-        publishedTemplateAction.dataset.publishedTemplateAction,
-        publishedTemplateAction.dataset.modelingImportId
-      ).finally(() => render());
+    const createFromTemplateButton = event.target.closest("[data-project-create-from-template]");
+    if (createFromTemplateButton) {
+      createProjectFromSelectedProjectTemplate().finally(() => render());
       return;
     }
 
@@ -1511,8 +1494,7 @@ function bindEvents() {
     const modelingImportActionButton = event.target.closest("[data-modeling-import-action]");
     if (modelingImportActionButton) {
       handleModelingImportAction(modelingImportActionButton.dataset.modelingImportAction, {
-        importId: modelingImportActionButton.dataset.modelingImportId,
-        templateId: modelingImportActionButton.dataset.modelingImportTemplate || selectedModelingImportTemplateId
+        importId: modelingImportActionButton.dataset.modelingImportId
       }).finally(() => render());
       return;
     }
@@ -1769,10 +1751,9 @@ function bindEvents() {
       return;
     }
 
-    const modelingImportTemplateSelect = event.target.closest("[data-modeling-import-template]");
-    if (modelingImportTemplateSelect) {
-      selectedModelingImportTemplateId = modelingImportTemplateSelect.value;
-      modelingImportStatus = `已选择导入模板：${modelingImportTemplateLabel(selectedModelingImportTemplateId)}`;
+    const projectTemplateSelect = event.target.closest("[data-project-template-select]");
+    if (projectTemplateSelect) {
+      updateSelectedProjectTemplateProject(projectTemplateSelect.value);
       render();
       return;
     }
@@ -2279,7 +2260,7 @@ function render() {
   if (!currentProject) {
     selectedRoute = "projects";
     location.hash = "route=projects";
-    projectListStatus = "请选择模板数据创建项目";
+    projectListStatus = "请选择项目模板创建项目";
     app.innerHTML = renderProjectListPage();
     return;
   }
@@ -2344,10 +2325,9 @@ function renderProjectMenu() {
 }
 
 function renderProjectListPage() {
-  const latestImportId = currentPublishedModelingImportId();
-  const createFromImportLabel = latestImportId
-    ? "从当前项目数据模板创建项目"
-    : "从选中模板创建项目";
+  const templateProjects = projectTemplateOptions();
+  const selectedTemplateProject = selectedProjectTemplateProject();
+  const hasTemplateProjects = templateProjects.length > 0;
   return `
     <header class="topbar">
       <div class="left">
@@ -2367,15 +2347,17 @@ function renderProjectListPage() {
         <div>
           <h2>项目列表</h2>
           <p>${htmlEscape(projectListStatus)}</p>
-          <p class="inline-status">请选择模板数据创建项目。${latestImportId ? "已选择当前项目数据模板。" : ""}</p>
+          <p class="inline-status">请选择项目模板创建项目。${selectedTemplateProject ? `当前模板：${htmlEscape(selectedTemplateProject.name)}。` : "暂无项目模板，请先在项目数据管理设为模板。"}</p>
         </div>
         <div class="toolbar-row compact-actions">
-          <select data-modeling-import-template aria-label="选择内置导入模板">
-            ${MODELING_IMPORT_TEMPLATES.map((template) => `
-              <option value="${htmlEscape(template.id)}"${template.id === selectedModelingImportTemplateId ? " selected" : ""}>${htmlEscape(template.label)}</option>
-            `).join("")}
+          <select data-project-template-select aria-label="选择项目模板" ${hasTemplateProjects ? "" : "disabled"}>
+            ${hasTemplateProjects
+              ? templateProjects.map((template) => `
+              <option value="${htmlEscape(projectDataProjectId(template))}"${projectDataProjectId(template) === selectedProjectTemplateProjectId ? " selected" : ""}>${htmlEscape(projectTemplateOptionLabel(template))}</option>
+            `).join("")
+              : `<option value="">暂无项目模板</option>`}
           </select>
-          <button type="button" class="btn-secondary" data-project-create-from-import>${htmlEscape(createFromImportLabel)}</button>
+          <button type="button" class="btn-secondary" data-project-create-from-template ${hasTemplateProjects ? "" : "disabled"}>从选中项目模板创建项目</button>
         </div>
       </section>
       <section class="project-grid">
@@ -2412,7 +2394,7 @@ function renderProjectListPage() {
         `).join("") : `
           <div class="empty-state">
             <strong>暂无项目</strong>
-            <p>请选择模板数据创建项目。</p>
+            <p>请选择项目模板创建项目。</p>
           </div>
         `}
       </section>
@@ -2429,7 +2411,7 @@ function projectSourceBadge(project) {
 
 function projectSourceHelpText(project) {
   if (project.sourceKind === PROJECT_SOURCE.imported_sample) {
-    return "来自已发布项目数据模板，可用于正式后端测试。";
+    return "来自后端 Project 数据，可用于正式后端测试。";
   }
   return "项目来源待确认。";
 }
@@ -3203,6 +3185,11 @@ function setProjectDataTemplateFlag(projectId, isTemplate) {
       }
     };
   }
+  if (isTemplate) {
+    selectedProjectTemplateProjectId = projectId;
+  } else if (selectedProjectTemplateProjectId === projectId) {
+    selectedProjectTemplateProjectId = "";
+  }
 }
 
 async function handleProjectTemplateAction(action, projectId) {
@@ -3248,6 +3235,41 @@ function projectDataTemplateSourceImportId(template = {}) {
     || template.template_id
     || template.templateId
     || "";
+}
+
+function projectTemplateOptions() {
+  return demoProjects.filter((project) => isProjectDataTemplate(project));
+}
+
+function ensureSelectedProjectTemplateProjectId() {
+  const templates = projectTemplateOptions();
+  if (!templates.length) {
+    selectedProjectTemplateProjectId = "";
+    return "";
+  }
+  const selectedExists = templates.some((project) => projectDataProjectId(project) === selectedProjectTemplateProjectId);
+  if (!selectedProjectTemplateProjectId || !selectedExists) {
+    selectedProjectTemplateProjectId = projectDataProjectId(templates[0]);
+  }
+  return selectedProjectTemplateProjectId;
+}
+
+function selectedProjectTemplateProject() {
+  const selectedId = ensureSelectedProjectTemplateProjectId();
+  if (!selectedId) return null;
+  return projectTemplateOptions().find((project) => projectDataProjectId(project) === selectedId) || null;
+}
+
+function projectTemplateOptionLabel(project) {
+  return `${project.name || "未命名项目"}【模板】`;
+}
+
+function updateSelectedProjectTemplateProject(projectId) {
+  selectedProjectTemplateProjectId = String(projectId || "");
+  const project = selectedProjectTemplateProject();
+  projectListStatus = project
+    ? `已选择项目模板：${project.name}`
+    : "暂无项目模板，请先在项目数据管理设为模板";
 }
 
 function selectedPublishedModelingImportPackage() {
@@ -3377,39 +3399,34 @@ function renderLocalModelingImportActions(contextLabel) {
   const validationStatus = modelingImportValidation?.status || (modelingImportValidation?.ok === false ? "invalid" : "not_validated");
   const modelingImportIssues = modelingImportDisplayIssues();
   const issueCount = modelingImportIssues.length;
-  const publishedLabel = modelingImportPublishedPackage ? "已发布项目数据模板" : "未发布";
+  const publishedLabel = modelingImportPublishedPackage ? "已发布导入包" : "未发布";
   const scenarioLabel = modelingImportScenarioLabel();
   return `
     <div class="local-import-panel">
       <div class="section-head">
         <div>
-          <h4>模板维护</h4>
-          <p>${htmlEscape(contextLabel)}内维护项目数据模板草稿、校验和发布状态。</p>
+          <h4>导入包维护</h4>
+          <p>${htmlEscape(contextLabel)}内维护项目数据导入包草稿、校验和发布状态。</p>
         </div>
         <span class="status-badge">${htmlEscape(validationStatus)}</span>
       </div>
       <div class="modeling-import-summary local">
-        <div><strong>来源模板</strong><span>${htmlEscape(modelingImportPackage.objects?.projectInfo?.name || "未加载")}</span></div>
+        <div><strong>来源导入包</strong><span>${htmlEscape(modelingImportPackage.objects?.projectInfo?.name || "未加载")}</span></div>
         <div><strong>模板状态</strong><span>${htmlEscape(publishedLabel)}</span></div>
         <div><strong>字段问题</strong><span>${issueCount}</span></div>
         <div><strong>Scenario</strong><span>${htmlEscape(scenarioLabel)}</span></div>
       </div>
       <div class="modeling-import-actions">
         <label class="rms-file-button">
-          <span>选择项目数据模板 JSON</span>
+          <span>选择项目数据导入包 JSON</span>
           <input type="file" accept="application/json,.json" data-modeling-import-file>
         </label>
-        <select data-modeling-import-template aria-label="选择内置导入模板">
-          ${MODELING_IMPORT_TEMPLATES.map((template) => `
-            <option value="${htmlEscape(template.id)}"${template.id === selectedModelingImportTemplateId ? " selected" : ""}>${htmlEscape(template.label)}</option>
-          `).join("")}
-        </select>
-        <button type="button" data-modeling-import-action="load-fixture" data-modeling-import-template="${htmlEscape(selectedModelingImportTemplateId)}">使用内置导入模板</button>
+        <button type="button" data-modeling-import-action="load-fixture">恢复内嵌样例导入包</button>
         <button type="button" data-modeling-import-action="backfill-current-project">从当前项目回灌</button>
         <button type="button" data-modeling-import-action="load-invalid-fixture">导入错误样例</button>
         <button type="button" data-modeling-import-action="validate">校验导入数据</button>
         <button type="button" data-modeling-import-action="save-draft">保存导入草稿</button>
-        <button type="button" data-modeling-import-action="publish" ${modelingImportSaved ? "" : "disabled"}>发布模板</button>
+        <button type="button" data-modeling-import-action="publish" ${modelingImportSaved ? "" : "disabled"}>发布导入包</button>
         <button type="button" class="btn-primary" data-modeling-import-action="compile-scenario" ${modelingImportPublishedPackage ? "" : "disabled"}>生成 Scenario</button>
       </div>
       <p class="modeling-import-action-status">${htmlEscape(modelingImportStatus)}</p>
@@ -3500,7 +3517,7 @@ function createDefaultSystemRuntimeConfig() {
     projectDataModules: [
       {
         key: "modeling-data-source",
-        label: "建模数据源配置",
+        label: "项目数据层配置",
         sheetKeys: modelingSheetRows().map((row) => row.key)
       },
       {
@@ -3537,7 +3554,7 @@ function currentSystemRuntimeConfigPayload() {
     projectDataModules: [
       {
         key: "modeling-data-source",
-        label: "建模数据源配置",
+        label: "项目数据层配置",
         sheetKeys: Array.from(selectedSystemDataKeys)
       },
       {
@@ -8718,7 +8735,7 @@ async function handleEnterWorkbench(projectId) {
   await flushPendingProjectDraftAutosave();
   currentProject = demoProjects.find((project) => project.id === projectId) || demoProjects[0];
   if (!currentProject) {
-    projectListStatus = "请先选择模板数据创建项目";
+    projectListStatus = "请先选择项目模板创建项目";
     selectedRoute = "projects";
     location.hash = "route=projects";
     return;
@@ -8735,6 +8752,126 @@ async function handleEnterWorkbench(projectId) {
   location.hash = `feature=${DEFAULT_FEATURE_ID}`;
   projectDraftHydrateStatus = "正在读取 Project draft";
   await hydrateCurrentProjectDraftFromApi();
+}
+
+async function createProjectFromSelectedProjectTemplate() {
+  const templateProject = selectedProjectTemplateProject();
+  if (!templateProject) {
+    projectListStatus = "暂无项目模板，请先在项目数据管理设为模板";
+    return null;
+  }
+  return createProjectFromProjectTemplate(templateProject);
+}
+
+async function createProjectFromProjectTemplate(templateProject) {
+  try {
+    const templateProjectId = projectDataProjectBackendId(templateProject);
+    projectListStatus = `正在从项目模板创建项目：${templateProject.name || templateProjectId}`;
+    const templateProjectJson = await backendApi.getProject(templateProjectId);
+    const { projectJson, project } = buildProjectCopyFromTemplateJson(templateProjectJson, templateProject);
+    const saved = await backendApi.saveProject(projectJson);
+    demoProjects = mergeProjectsById([project, ...demoProjects]);
+    currentProject = project;
+    scenario = cloneScenario(projectJson);
+    experimentPlanDraft = cloneScenario(projectJson);
+    experimentPlanBranchActive = false;
+    backendExperimentPlans = [];
+    backendExperimentPlansProjectId = "";
+    backendExperimentPlansLoaded = false;
+    backendExperimentPlansLoadInFlight = false;
+    experimentPlanListStatus = "仿真实验方案列表尚未加载";
+    savedProject = saved || { project_id: projectJson.project_id, project_version: projectJson.project_version || "project-v0.1" };
+    modelingSnapshot = null;
+    await hydrateProjectCatalogFromBackend({ forceProjectId: project.id });
+    currentProject = demoProjects.find((entry) => entry.id === project.id) || project;
+    projectListStatus = `已从项目模板创建项目：${project.name}`;
+    projectDraftSaveStatus = "已保存";
+    projectDraftHydrateStatus = "项目来自 Project 模板";
+    updatePreviewResultsThroughApiClient();
+    return project;
+  } catch (err) {
+    projectListStatus = `项目模板创建失败：${err && err.message ? err.message : "Backend API 不可用"}`;
+    return null;
+  }
+}
+
+function buildProjectCopyFromTemplateJson(templateProjectJson, templateProject) {
+  const copyNumber = nextProjectTemplateCopyNumber(templateProject);
+  const baseProjectId = String(templateProjectJson.project_id || projectDataProjectBackendId(templateProject));
+  const projectId = uniqueProjectTemplateCopyBackendId(baseProjectId, copyNumber);
+  const resolvedCopyNumber = projectIdCopyNumber(projectId) || copyNumber;
+  const baseScenarioId = String(templateProjectJson.scenarioId || `${baseProjectId}-scenario`);
+  const projectName = `${templateProject.name || templateProjectJson.projectInfo?.name || templateProjectJson.experiment?.name || "未命名项目"} 副本 ${resolvedCopyNumber}`;
+  const projectJson = {
+    ...cloneScenario(templateProjectJson),
+    project_id: projectId,
+    scenarioId: uniqueProjectTemplateCopyScenarioId(baseScenarioId, resolvedCopyNumber),
+    isTemplate: false,
+    is_template: false,
+    projectTemplate: false,
+    template: false,
+    metadata: {
+      ...(templateProjectJson.metadata || {}),
+      isTemplate: false
+    },
+    experiment: {
+      ...(templateProjectJson.experiment || {}),
+      name: projectName
+    },
+    projectInfo: {
+      ...(templateProjectJson.projectInfo || {}),
+      name: projectName,
+      baseCode: templateProjectJson.projectInfo?.baseCode || templateProject.baseCode || "NB",
+      summary: `由项目模板 ${templateProject.name || baseProjectId} 创建`,
+      isTemplate: false,
+      is_template: false
+    }
+  };
+  const project = {
+    id: projectId.replace(/^project-/, ""),
+    name: projectName,
+    baseCode: projectJson.projectInfo.baseCode,
+    updatedAt: new Date().toISOString().slice(0, 10),
+    summary: projectJson.projectInfo.summary,
+    sourceKind: PROJECT_SOURCE.imported_sample,
+    sourceImportId: projectJson.missionProfile?.sourceImportId || projectDataTemplateSourceImportId(templateProject),
+    isTemplate: false,
+    projectBackendId: projectId
+  };
+  return { projectJson, project };
+}
+
+function nextProjectTemplateCopyNumber(templateProject) {
+  const baseProjectId = projectDataProjectBackendId(templateProject);
+  let copyNumber = 2;
+  while (projectCatalogBackendIds().has(`${baseProjectId}-copy-${copyNumber}`)) {
+    copyNumber += 1;
+  }
+  return copyNumber;
+}
+
+function uniqueProjectTemplateCopyBackendId(baseProjectId, copyNumber) {
+  let candidateNumber = copyNumber;
+  let projectId = `${baseProjectId}-copy-${candidateNumber}`;
+  const existingIds = projectCatalogBackendIds();
+  while (existingIds.has(projectId)) {
+    candidateNumber += 1;
+    projectId = `${baseProjectId}-copy-${candidateNumber}`;
+  }
+  return projectId;
+}
+
+function uniqueProjectTemplateCopyScenarioId(baseScenarioId, copyNumber) {
+  return `${baseScenarioId}-copy-${copyNumber}`;
+}
+
+function projectIdCopyNumber(projectId) {
+  const match = String(projectId || "").match(/-copy-(\d+)$/);
+  return match ? Number(match[1]) : 0;
+}
+
+function projectCatalogBackendIds() {
+  return new Set(demoProjects.map((project) => projectDataProjectBackendId(project)));
 }
 
 async function createSampleProjectFromPublishedImport(importId = currentPublishedModelingImportId()) {
@@ -8786,85 +8923,58 @@ async function createSampleProjectFromPublishedImport(importId = currentPublishe
 }
 
 async function loadSampleModelingImportFixture() {
-  try {
-    return await loadModelingImportTemplate(selectedModelingImportTemplateId || DEFAULT_SAMPLE_MODELING_IMPORT_TEMPLATE_ID);
-  } catch {
-    return cloneModelingImportPackage(MODELING_IMPORT_DEMO_FIXTURE);
-  }
+  return cloneModelingImportPackage(MODELING_IMPORT_DEMO_FIXTURE);
 }
 
-function ensurePublishedModelingImportTemplatesLoaded({ force = false } = {}) {
-  if (publishedModelingImportTemplatesLoading) return;
-  if (publishedModelingImportTemplatesLoaded && !force) return;
-  publishedModelingImportTemplatesLoading = true;
-  publishedTemplateStatus = "正在读取已发布项目模板";
+function ensurePublishedModelingImportPackagesLoaded({ force = false } = {}) {
+  if (publishedModelingImportPackagesLoading) return;
+  if (publishedModelingImportPackagesLoaded && !force) return;
+  publishedModelingImportPackagesLoading = true;
+  publishedImportStatus = "正在读取已发布导入包";
   backendApi.listProjectDataTemplates({ state: "published" })
     .then((result) => {
-      publishedModelingImportTemplates = Array.isArray(result?.templates) ? result.templates : [];
-      publishedModelingImportTemplatesLoaded = true;
-      publishedModelingImportTemplatesLoading = false;
-      if (!selectedPublishedModelingImportId && publishedModelingImportTemplates.length) {
-        selectedPublishedModelingImportId = projectDataTemplateSourceImportId(publishedModelingImportTemplates[0]);
+      publishedModelingImportPackages = Array.isArray(result?.templates) ? result.templates : [];
+      publishedModelingImportPackagesLoaded = true;
+      publishedModelingImportPackagesLoading = false;
+      if (!selectedPublishedModelingImportId && publishedModelingImportPackages.length) {
+        selectedPublishedModelingImportId = projectDataTemplateSourceImportId(publishedModelingImportPackages[0]);
       }
-      publishedTemplateStatus = publishedModelingImportTemplates.length
-        ? `已加载 ${publishedModelingImportTemplates.length} 个已发布项目模板`
-        : "暂无已发布项目模板";
+      publishedImportStatus = publishedModelingImportPackages.length
+        ? `已加载 ${publishedModelingImportPackages.length} 个已发布导入包`
+        : "暂无已发布导入包";
       if (selectedPublishedModelingImportId && !selectedPublishedModelingImportPackage()) {
-        loadPublishedModelingImportTemplate(selectedPublishedModelingImportId, { renderAfter: false }).finally(() => render());
+        loadPublishedModelingImportPackage(selectedPublishedModelingImportId, { renderAfter: false }).finally(() => render());
         return;
       }
       render();
     })
     .catch((err) => {
-      publishedModelingImportTemplatesLoaded = true;
-      publishedModelingImportTemplatesLoading = false;
-      publishedTemplateStatus = `已发布模板列表加载失败：${err && err.message ? err.message : "Backend API 不可用"}`;
+      publishedModelingImportPackagesLoaded = true;
+      publishedModelingImportPackagesLoading = false;
+      publishedImportStatus = `已发布导入包列表加载失败：${err && err.message ? err.message : "Backend API 不可用"}`;
       render();
     });
 }
 
-async function loadPublishedModelingImportTemplate(importId, { renderAfter = true } = {}) {
+async function loadPublishedModelingImportPackage(importId, { renderAfter = true } = {}) {
   const normalizedImportId = String(importId || "").trim();
   if (!normalizedImportId) {
-    publishedTemplateStatus = "未选择已发布项目模板";
+    publishedImportStatus = "未选择已发布导入包";
     return;
   }
   selectedPublishedModelingImportId = normalizedImportId;
-  publishedTemplateStatus = "正在读取模板数据预览";
+  publishedImportStatus = "正在读取导入包预览";
   try {
     const stored = await backendApi.getModelingImport(normalizedImportId);
     applyModelingImportRecord(stored);
-    if (!publishedModelingImportTemplates.some((template) => projectDataTemplateSourceImportId(template) === normalizedImportId)) {
-      publishedModelingImportTemplates.unshift(templateSummaryFromModelingImportRecord(stored));
+    if (!publishedModelingImportPackages.some((template) => projectDataTemplateSourceImportId(template) === normalizedImportId)) {
+      publishedModelingImportPackages.unshift(templateSummaryFromModelingImportRecord(stored));
     }
-    publishedTemplateStatus = "已选择项目数据模板";
+    publishedImportStatus = "已选择项目数据导入包";
   } catch (err) {
-    publishedTemplateStatus = `模板数据预览加载失败：${err && err.message ? err.message : "Backend API 不可用"}`;
+    publishedImportStatus = `导入包预览加载失败：${err && err.message ? err.message : "Backend API 不可用"}`;
   } finally {
     if (renderAfter) render();
-  }
-}
-
-async function handlePublishedTemplateAction(action, importId) {
-  if (action === "refresh") {
-    publishedModelingImportTemplatesLoaded = false;
-    ensurePublishedModelingImportTemplatesLoaded({ force: true });
-    return;
-  }
-  const resolvedImportId = String(importId || selectedPublishedModelingImportId || "").trim();
-  if (!resolvedImportId) {
-    publishedTemplateStatus = "请先选择已发布项目模板";
-    return;
-  }
-  if (action === "set-current") {
-    await loadPublishedModelingImportTemplate(resolvedImportId, { renderAfter: false });
-    persistLastPublishedModelingImportId(resolvedImportId);
-    publishedTemplateStatus = "已设为当前项目数据模板";
-    return;
-  }
-  if (action === "create-project") {
-    await createSampleProjectFromPublishedImport(resolvedImportId);
-    publishedTemplateStatus = projectListStatus;
   }
 }
 
@@ -8906,7 +9016,7 @@ async function hydrateProjectCatalogFromBackend({ forceProjectId = "" } = {}) {
     if (backendProjects.length) {
       projectListStatus = `已加载 ${backendProjects.length} 个后端项目`;
     } else {
-      projectListStatus = "后端未返回项目，请先选择模板数据创建项目";
+      projectListStatus = "后端未返回项目，请先选择项目模板创建项目";
     }
   } catch (err) {
     demoProjects = [];
@@ -9253,7 +9363,7 @@ function currentProjectCanStartFormalRun() {
   }
   return {
     allowed: false,
-    message: "请先选择模板数据创建项目，再启动正式后端运行。"
+    message: "请先选择项目模板创建项目，再启动正式后端运行。"
   };
 }
 
@@ -10748,10 +10858,6 @@ function backendUserStatus(status) {
   return status || "active";
 }
 
-function modelingImportTemplateLabel(templateId) {
-  return MODELING_IMPORT_TEMPLATES.find((template) => template.id === templateId)?.label || "内置导入模板";
-}
-
 async function importModelingImportJsonFile(file) {
   if (!file) {
     modelingImportStatus = "未选择导入包 JSON 文件";
@@ -10782,8 +10888,8 @@ async function importModelingImportJsonFile(file) {
 
 async function handleModelingImportAction(action, options = {}) {
   if (action === "load-fixture") {
+    const templatePackage = cloneModelingImportPackage(MODELING_IMPORT_DEMO_FIXTURE);
     try {
-      const templatePackage = await loadModelingImportTemplate(options.templateId || selectedModelingImportTemplateId);
       const stored = await backendApi.getModelingImport(templatePackage.importId);
       if (sampleImportPackageIsComplete(stored?.publishedPackage || stored?.draftPackage, templatePackage)) {
         applyModelingImportRecord(stored);
@@ -10793,17 +10899,12 @@ async function handleModelingImportAction(action, options = {}) {
         modelingImportPublishedPackage = null;
         modelingImportValidation = cloneModelingImportPackage(modelingImportPackage.validation || {});
         modelingImportSaved = false;
-        modelingImportStatus = `内置导入模板已加载：${modelingImportTemplateLabel(options.templateId || selectedModelingImportTemplateId)}`;
+        modelingImportStatus = "内嵌样例导入包已加载";
       }
       modelingImportCompileResult = null;
     } catch {
-      try {
-        modelingImportPackage = await loadModelingImportTemplate(options.templateId || selectedModelingImportTemplateId);
-        modelingImportStatus = `内置导入模板已加载：${modelingImportTemplateLabel(options.templateId || selectedModelingImportTemplateId)}`;
-      } catch {
-        modelingImportPackage = cloneModelingImportPackage(MODELING_IMPORT_DEMO_FIXTURE);
-        modelingImportStatus = "内置模板文件不可用，已加载内嵌样例导入包";
-      }
+      modelingImportPackage = templatePackage;
+      modelingImportStatus = "内嵌样例导入包已加载";
       modelingImportPublishedPackage = null;
       modelingImportValidation = cloneModelingImportPackage(
         modelingImportPackage.validation || MODELING_IMPORT_DEMO_FIXTURE.validation
@@ -10901,8 +11002,8 @@ async function handleModelingImportAction(action, options = {}) {
       applyModelingImportRecord(publishResult.published);
       persistLastPublishedModelingImportId(modelingImportPackage.importId);
       selectedPublishedModelingImportId = modelingImportPackage.importId;
-      publishedModelingImportTemplatesLoaded = false;
-      ensurePublishedModelingImportTemplatesLoaded({ force: true });
+      publishedModelingImportPackagesLoaded = false;
+      ensurePublishedModelingImportPackagesLoaded({ force: true });
       modelingImportSaved = true;
       modelingImportStatus = publishResult.versioned
         ? `原发布快照已被运行引用，已发布新版本：${modelingImportPackage.importId}`
@@ -10985,7 +11086,6 @@ function applyModelingImportCompileGateResult(compileResult) {
   modelingImportValidation = {
     ok: false,
     status,
-    validationLevel: compileResult?.validationLevel,
     usedTables: cloneModelingImportPackage(compileResult?.usedTables || {}),
     issues: displayIssues
   };
@@ -11005,7 +11105,6 @@ function applyModelingImportCompileWarnings(compileResult) {
     ...(modelingImportValidation || {}),
     ok: !issues.some((issue) => issue.severity !== "warning"),
     status: issueStatusForDisplayIssues(issues),
-    validationLevel: compileResult?.validationLevel,
     usedTables: cloneModelingImportPackage(compileResult?.usedTables || {}),
     issues
   };
@@ -13198,10 +13297,9 @@ function renderFormalAnalysisBoundaryNote(boundary) {
 
 function notApplicableProjectionReason(formalProjection) {
   const applicability = formalProjection?.applicability || {};
-  const validationLevel = applicability.validationLevel || "level0";
   const requiredDomains = (applicability.required_domains || []).join(" / ") || "保障资源 / 保障活动";
   const disabledDomains = (applicability.disabled_domains || []).join(" / ") || "未建模域";
-  return `Level 0 未启用该分析所需保障域；validationLevel=${validationLevel}，required_domains=${requiredDomains}，disabled_domains=${disabledDomains}。`;
+  return `该分析所需保障域未建模；required_domains=${requiredDomains}，disabled_domains=${disabledDomains}。`;
 }
 
 function renderFormalProjectionBody(formalProjection) {
@@ -13210,11 +13308,10 @@ function renderFormalProjectionBody(formalProjection) {
     const applicability = formalProjection.applicability || {};
     const required_domains = (applicability.required_domains || []).join(" / ") || "-";
     const disabled_domains = (applicability.disabled_domains || []).join(" / ") || "-";
-    const validationLevel = applicability.validationLevel || "level0";
     return `
       <div class="empty-state analysis-not-applicable">
         <strong>不适用 / 未建模</strong>
-        <p>${htmlEscape(`Level 0 未启用该分析所需保障域；validationLevel=${validationLevel}; required_domains=${required_domains}; disabled_domains=${disabled_domains}。`)}</p>
+        <p>${htmlEscape(`该分析所需保障域未建模；required_domains=${required_domains}; disabled_domains=${disabled_domains}。`)}</p>
       </div>
     `;
   }

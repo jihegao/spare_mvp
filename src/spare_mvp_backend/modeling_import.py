@@ -43,7 +43,6 @@ COLLECTION_RULES = {
     },
 }
 
-VALIDATION_LEVELS = {"level0", "level1"}
 CORE_TABLE_DOMAINS = {"missionProfiles", "equipmentAssets"}
 DISABLEABLE_COLLECTIONS = {"supportResources", "supportActivities"}
 OBJECT_TABLE_DOMAINS = {"reliabilityBlockDiagram", "supportOrganization"}
@@ -61,10 +60,10 @@ MODELING_IMPORT_TABLE_DOMAINS = [
 def validate_modeling_import_package(import_package: dict[str, Any]) -> dict[str, Any]:
     issues: list[dict[str, Any]] = []
     warnings: list[dict[str, Any]] = []
-    validation_level = _normalize_validation_level(import_package, issues)
-    used_tables = _normalize_used_tables(import_package, issues, validation_level)
+    _validate_retired_validation_level(import_package, issues)
+    used_tables = _normalize_used_tables(import_package, issues)
 
-    _validate_package_roots(import_package, issues, warnings, validation_level, used_tables)
+    _validate_package_roots(import_package, issues, warnings, used_tables)
     objects = import_package.get("objects") if isinstance(import_package.get("objects"), dict) else {}
     object_ids = _collect_object_ids(objects, issues)
 
@@ -87,7 +86,6 @@ def validate_modeling_import_package(import_package: dict[str, Any]) -> dict[str
         "ok": not issues,
         "schemaVersion": "modeling-import-v1",
         "status": "valid" if not issues else "invalid",
-        "validationLevel": validation_level,
         "usedTables": used_tables,
         "issues": issues,
         "warnings": warnings,
@@ -133,7 +131,6 @@ def modeling_import_to_project(import_package: dict[str, Any], validation: dict[
         "analysisRequests": _project_object(objects, mission, "analysisRequests", {}),
         "modelingImportValidation": {
             "importId": str(import_package["importId"]),
-            "validationLevel": validation["validationLevel"],
             "usedTables": deepcopy(validation["usedTables"]),
             "warnings": deepcopy(validation["warnings"]),
             "disabledDomains": _disabled_domains(validation["usedTables"]),
@@ -141,18 +138,23 @@ def modeling_import_to_project(import_package: dict[str, Any], validation: dict[
     })
 
 
-def _normalize_validation_level(import_package: dict[str, Any], issues: list[dict[str, Any]]) -> str:
-    validation_level = import_package.get("validationLevel") or "level1"
-    if validation_level in VALIDATION_LEVELS:
-        return str(validation_level)
-    issues.append(_issue("invalid_validation_level", None, "modeling-import-package", "validationLevel", "validationLevel 必须是 level0 或 level1。"))
-    return "level1"
+def _validate_retired_validation_level(import_package: dict[str, Any], issues: list[dict[str, Any]]) -> None:
+    if "validationLevel" not in import_package:
+        return
+    issues.append(
+        _issue(
+            "retired_validation_level",
+            None,
+            "modeling-import-package",
+            "validationLevel",
+            "validationLevel 已退役；请使用 usedTables 声明已建模或未建模的表域。",
+        )
+    )
 
 
 def _normalize_used_tables(
     import_package: dict[str, Any],
     issues: list[dict[str, Any]],
-    validation_level: str,
 ) -> dict[str, bool]:
     raw_used_tables = import_package.get("usedTables")
     if raw_used_tables is None:
@@ -163,11 +165,11 @@ def _normalize_used_tables(
 
     normalized: dict[str, bool] = {}
     for collection in COLLECTION_RULES:
-        normalized[collection] = _normalize_used_table_flag(raw_used_tables, collection, issues, validation_level)
+        normalized[collection] = _normalize_used_table_flag(raw_used_tables, collection, issues)
     for domain in MODELING_IMPORT_TABLE_DOMAINS:
         if domain in normalized:
             continue
-        normalized[domain] = _normalize_used_table_flag(raw_used_tables, domain, issues, validation_level)
+        normalized[domain] = _normalize_used_table_flag(raw_used_tables, domain, issues)
     for domain in sorted(str(key) for key in raw_used_tables if str(key) not in normalized):
         issues.append(_issue("invalid_used_table_domain", None, "modeling-import-package", f"usedTables.{domain}", f"usedTables.{domain} 不是 modeling-import-v1 支持的表域。"))
     return normalized
@@ -177,7 +179,6 @@ def _normalize_used_table_flag(
     raw_used_tables: dict[str, Any],
     domain: str,
     issues: list[dict[str, Any]],
-    validation_level: str,
 ) -> bool:
     if domain not in raw_used_tables:
         return True
@@ -185,9 +186,6 @@ def _normalize_used_table_flag(
     if isinstance(value, bool):
         if domain in CORE_TABLE_DOMAINS and not value:
             issues.append(_issue("invalid_used_table_flag", None, "modeling-import-package", f"usedTables.{domain}", f"usedTables.{domain} 是核心表域，不能声明为 false。"))
-            return True
-        if not value and validation_level != "level0":
-            issues.append(_issue("invalid_used_table_flag", None, "modeling-import-package", f"usedTables.{domain}", f"usedTables.{domain} 只有 validationLevel=level0 时才能声明为 false。"))
             return True
         return value
     issues.append(_issue("invalid_used_table_flag", None, "modeling-import-package", f"usedTables.{domain}", f"usedTables.{domain} 必须是布尔值。"))
@@ -198,7 +196,6 @@ def _validate_package_roots(
     import_package: dict[str, Any],
     issues: list[dict[str, Any]],
     warnings: list[dict[str, Any]],
-    validation_level: str,
     used_tables: dict[str, bool],
 ) -> None:
     if import_package.get("schemaVersion") != "modeling-import-v1":

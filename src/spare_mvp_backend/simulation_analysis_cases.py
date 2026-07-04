@@ -30,7 +30,6 @@ DEFAULT_USED_TABLES = {
 
 CASE_VALIDATION_SCOPES = {
     "minimal_single_aircraft": {
-        "validation_level": "level0",
         "used_tables": {
             **DEFAULT_USED_TABLES,
             "supportResources": False,
@@ -40,7 +39,6 @@ CASE_VALIDATION_SCOPES = {
         },
     },
     "canonical_platform_case": {
-        "validation_level": "level1",
         "used_tables": DEFAULT_USED_TABLES,
     },
 }
@@ -111,13 +109,13 @@ def simulation_analysis_case_fixture_drift(repo_root: Path | str) -> list[str]:
 
 
 def _case(case_id: str, import_package: dict[str, Any], description: str) -> dict[str, Any]:
-    validation_level, used_tables = _apply_validation_scope(case_id, import_package)
+    used_tables = _apply_validation_scope(case_id, import_package)
     _ensure_large_sample_covers_sweep(import_package)
     validation = validate_modeling_import_package(import_package)
     if not validation["ok"]:
         raise ValueError(f"{case_id} modeling import package is invalid: {validation['issues']}")
     project = modeling_import_to_project(import_package)
-    analysis_config = {"analysisRequests": copy.deepcopy(project.get("analysisRequests", {}))}
+    analysis_config = {"analysisRequests": _analysis_requests_for_monte_carlo(import_package, project)}
     monte_carlo_config = normalize_monte_carlo_run_config(
         analysis_config,
         mc_experiment_id=f"mc-6p-{case_id}",
@@ -133,7 +131,6 @@ def _case(case_id: str, import_package: dict[str, Any], description: str) -> dic
         "description": description,
         "source_fixture": BASE_CASE_FIXTURE,
         "model_family": "aircraft_support_v1",
-        "validation_level": validation_level,
         "used_tables": used_tables,
         "modeling_import": import_package,
         "validation": validation,
@@ -148,6 +145,21 @@ def _case(case_id: str, import_package: dict[str, Any], description: str) -> dic
             "analysis_projection_downtime_factors",
         ],
     }
+
+
+def _analysis_requests_for_monte_carlo(import_package: dict[str, Any], project: dict[str, Any]) -> dict[str, Any]:
+    objects = import_package.get("objects") if isinstance(import_package.get("objects"), dict) else {}
+    object_requests = objects.get("analysisRequests")
+    if isinstance(object_requests, dict) and isinstance(object_requests.get("largeSample"), dict):
+        return copy.deepcopy(object_requests)
+    for mission in objects.get("missionProfiles") or []:
+        if not isinstance(mission, dict):
+            continue
+        mission_requests = mission.get("analysisRequests")
+        if isinstance(mission_requests, dict) and isinstance(mission_requests.get("largeSample"), dict):
+            return copy.deepcopy(mission_requests)
+    project_requests = project.get("analysisRequests")
+    return copy.deepcopy(project_requests) if isinstance(project_requests, dict) else {}
 
 
 def _load_canonical_import(repo_root: Path) -> dict[str, Any]:
@@ -500,13 +512,12 @@ def _move_composite_equipment_quantities_to_basic_tasks(import_package: dict[str
             mission["basicMissions"] = additional_basic_tasks
 
 
-def _apply_validation_scope(case_id: str, import_package: dict[str, Any]) -> tuple[str, dict[str, bool]]:
+def _apply_validation_scope(case_id: str, import_package: dict[str, Any]) -> dict[str, bool]:
     scope = CASE_VALIDATION_SCOPES[case_id]
-    validation_level = str(scope["validation_level"])
     used_tables = copy.deepcopy(scope["used_tables"])
-    import_package["validationLevel"] = validation_level
+    import_package.pop("validationLevel", None)
     import_package["usedTables"] = used_tables
-    return validation_level, used_tables
+    return used_tables
 
 
 def _ensure_large_sample_covers_sweep(import_package: dict[str, Any]) -> None:

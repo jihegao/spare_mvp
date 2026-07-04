@@ -1135,7 +1135,6 @@ class SimulationAdapter:
         if not isinstance(disabled_domains, list):
             disabled_domains = [domain for domain, enabled in normalized_used_tables.items() if enabled is False]
 
-        enriched["validation_level"] = str(validation_scope.get("validationLevel") or "level1")
         enriched["used_tables"] = normalized_used_tables
         enriched["disabled_domains"] = [str(domain) for domain in disabled_domains]
         enriched["validation_warnings"] = copy.deepcopy(validation_scope.get("warnings") or [])
@@ -1155,8 +1154,6 @@ class SimulationAdapter:
     def _modeling_import_domain_disabled(self, project: dict[str, Any], domain: str) -> bool:
         validation_scope = project.get("modelingImportValidation")
         if not isinstance(validation_scope, dict):
-            return False
-        if validation_scope.get("validationLevel") != "level0":
             return False
         used_tables = validation_scope.get("usedTables") if isinstance(validation_scope.get("usedTables"), dict) else {}
         disabled_domains = validation_scope.get("disabledDomains") if isinstance(validation_scope.get("disabledDomains"), list) else []
@@ -2677,13 +2674,11 @@ class SimulationAdapter:
                 "reason_code": "scope_not_modeled",
                 "required_domains": sorted(required_domains),
                 "disabled_domains": sorted(disabled_domains),
-                "validation_level": str(validation_scope.get("validation_level") or "level1"),
             }
         return {
             "status": "applicable",
             "required_domains": sorted(required_domains),
             "disabled_domains": sorted(disabled_domains),
-            "validation_level": str(validation_scope.get("validation_level") or "level1"),
         }
 
     def _aircraft_support_v1_downtime_anomaly_snapshots(

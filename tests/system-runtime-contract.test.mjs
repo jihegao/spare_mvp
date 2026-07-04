@@ -161,10 +161,10 @@ test("canonical runtime wording and default artifact output avoid stale M3 smoke
   const productRoadmap = await readFile(new URL("../docs/product-roadmap.md", import.meta.url), "utf8");
   const agentDoc = await readFile(new URL("../agent.md", import.meta.url), "utf8");
   const contractsReadme = await readFile(new URL("../contracts/README.md", import.meta.url), "utf8");
-  const runtimeAudit = await readFile(new URL("../docs/architecture-audit/2026-07-spare-mvp-runtime-boundary-audit.md", import.meta.url), "utf8");
-  const m7Design = await readFile(new URL("../docs/superpowers/specs/2026-06-21-m7-0-run-artifact-management-design.md", import.meta.url), "utf8");
-  const runIntentPlan = await readFile(new URL("../docs/superpowers/plans/2026-06-20-runintent-mc-config-imported-sample-project.md", import.meta.url), "utf8");
-  const m7Plan = await readFile(new URL("../docs/superpowers/plans/2026-06-21-m7-0-run-artifact-management.md", import.meta.url), "utf8");
+  const runtimeAudit = await readFile(new URL("../docs/archive/deprecated/architecture-audit/2026-07-spare-mvp-runtime-boundary-audit.md", import.meta.url), "utf8");
+  const m7Design = await readFile(new URL("../docs/archive/deprecated/superpowers/specs/2026-06-21-m7-0-run-artifact-management-design.md", import.meta.url), "utf8");
+  const runIntentPlan = await readFile(new URL("../docs/archive/deprecated/superpowers/plans/2026-06-20-runintent-mc-config-imported-sample-project.md", import.meta.url), "utf8");
+  const m7Plan = await readFile(new URL("../docs/archive/deprecated/superpowers/plans/2026-06-21-m7-0-run-artifact-management.md", import.meta.url), "utf8");
   const httpServer = await readFile(new URL("../src/spare_mvp_backend/http_server.py", import.meta.url), "utf8");
   const runService = await readFile(new URL("../src/spare_mvp_backend/run_service.py", import.meta.url), "utf8");
   const adapter = await readFile(new URL("../src/spare_mvp_contract/adapter.py", import.meta.url), "utf8");

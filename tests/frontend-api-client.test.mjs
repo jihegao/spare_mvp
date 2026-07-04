@@ -421,6 +421,7 @@ test("frontend API client gives formal run submission enough time for synchronou
 });
 
 test("frontend API client exposes explicit M5 modeling import methods", async () => {
+  const apiClientSource = await readFile(new URL("../front/api-client.mjs", import.meta.url), "utf8");
   const calls = [];
   const client = createBackendApiClient({
     transport: async (request) => {
@@ -514,6 +515,7 @@ test("frontend API client exposes explicit M5 modeling import methods", async ()
   assert.equal(calls[2].body, importPackage);
   assert.deepEqual(calls[5].body, { model_family: "aircraft_support_v1" });
   assert.equal(calls[6].body, undefined);
+  assert.doesNotMatch(apiClientSource, /listModelingImportTemplates/);
 });
 
 test("frontend API client createProjectFromModelingImport uses protected modeling import route", async () => {
@@ -1075,13 +1077,13 @@ test("frontend app wires local modeling import actions through explicit backend 
   assert.doesNotMatch(featureCatalogSource, /建模数据导入/);
   assert.doesNotMatch(featureCatalogSource, /modeling-import-workbench/);
   assert.match(appSource, /from "\.\/modeling-import-workbench\.mjs"/);
-  assert.match(appSource, /from "\.\/modeling-import-templates\.mjs"/);
+  assert.doesNotMatch(appSource, /from "\.\/modeling-import-templates\.mjs"/);
   assert.match(appSource, /renderLocalModelingImportActions/);
   assert.match(appSource, /data-modeling-import-action/);
-  assert.match(appSource, /data-modeling-import-template/);
+  assert.doesNotMatch(appSource, /data-modeling-import-template/);
   assert.match(appSource, /data-modeling-import-file/);
   assert.match(appSource, /importModelingImportJsonFile/);
-  assert.match(appSource, /loadModelingImportTemplate/);
+  assert.doesNotMatch(appSource, /loadModelingImportTemplate/);
   assert.match(appSource, /load-invalid-fixture/);
   assert.match(appSource, /backendApi\.validateModelingImport/);
   assert.match(appSource, /backendApi\.saveModelingImport/);

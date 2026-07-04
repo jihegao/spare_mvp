@@ -22,7 +22,7 @@ from src.spare_mvp_contract.adapter import SimulationAdapter
 
 MAX_JSON_BODY_BYTES = 1024 * 1024
 LEGACY_RUN_API_MIGRATION = {
-    "docs": "docs/superpowers/plans/2026-06-21-legacy-run-api-retirement.md",
+    "docs": "docs/archive/deprecated/superpowers/plans/2026-06-21-legacy-run-api-retirement.md",
     "mapping": {
         "/api/simulation-runs": "/api/runs",
         "/api/simulation-runs/{run_id}": "/api/runs/{run_id}",

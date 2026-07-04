@@ -301,15 +301,15 @@ function renderCompileResult(compileResult, htmlEscape) {
   const metadata = compileResult.compiled_from_import || {};
   const scenario = compileResult.scenario || {};
   const status = compileStatusForResult(compileResult);
-  const validationLevel = compileResult.validationLevel || metadata.validation_level || "-";
   const usedTables = compileResult.usedTables || metadata.used_tables || {};
+  const disabledDomains = compileResult.disabledDomains || metadata.disabled_domains || disabledDomainsFromUsedTables(usedTables);
   const rows = compileIssueRows(compileResult);
   return `
     <div class="modeling-import-compile-grid">
       ${metric("编译状态", status, htmlEscape)}
       ${metric("来源导入", metadata.import_id || "-", htmlEscape)}
       ${metric("模型族", metadata.model_family || "aircraft_support_v1", htmlEscape)}
-      ${metric("校验级别", validationLevel, htmlEscape)}
+      ${metric("未建模域", disabledDomains.length ? disabledDomains.join(" / ") : "无", htmlEscape)}
       ${metric("使用表", formatUsedTables(usedTables), htmlEscape)}
       ${metric("Scenario", scenario.scenario_id || scenario.scenarioId || "-", htmlEscape)}
       ${metric("编译器", scenario.compiled_by || "-", htmlEscape)}
@@ -330,6 +330,12 @@ function renderCompileResult(compileResult, htmlEscape) {
       </div>
     ` : ""}
   `;
+}
+
+function disabledDomainsFromUsedTables(usedTables) {
+  return Object.entries(usedTables || {})
+    .filter(([, enabled]) => enabled === false)
+    .map(([domain]) => domain);
 }
 
 function compileStatusForResult(compileResult) {

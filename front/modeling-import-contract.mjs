@@ -106,12 +106,10 @@ export function projectToModelingImportPackage(projectJson, basePackage = {}) {
     referencedRunIds: Array.isArray(base.lifecycle?.referencedRunIds) ? [...base.lifecycle.referencedRunIds] : []
   };
   const usedTables = inferUsedTables(objects);
-  const validationLevel = Object.values(usedTables).every(Boolean) ? "level1" : "level0";
   const nextPackage = {
     schemaVersion: "modeling-import-v1",
     importId,
     projectId,
-    validationLevel,
     usedTables,
     source: {
       ...(base.source && typeof base.source === "object" && !Array.isArray(base.source) ? cloneJson(base.source) : {}),
@@ -275,14 +273,13 @@ function cloneJson(value) {
 }
 
 function normalizeValidationScope(importPackage, issues) {
-  const validationLevel = importPackage?.validationLevel || "level1";
-  if (!["level0", "level1"].includes(validationLevel)) {
+  if ("validationLevel" in (importPackage || {})) {
     issues.push(createIssue({
-      code: "invalid_validation_level",
+      code: "retired_validation_level",
       collection: undefined,
       objectId: "modeling-import-package",
       fieldPath: "validationLevel",
-      message: "validationLevel 必须是 level0 或 level1。"
+      message: "validationLevel 已退役；请使用 usedTables 声明已建模或未建模的表域。"
     }));
   }
 
@@ -298,9 +295,8 @@ function normalizeValidationScope(importPackage, issues) {
     }));
   }
   const tableFlags = rawUsedTables && typeof rawUsedTables === "object" && !Array.isArray(rawUsedTables) ? rawUsedTables : {};
-  const normalizedValidationLevel = ["level0", "level1"].includes(validationLevel) ? validationLevel : "level1";
   for (const domain of MODELING_IMPORT_TABLE_DOMAINS) {
-    usedTables[domain] = normalizeUsedTableFlag(tableFlags, domain, issues, normalizedValidationLevel);
+    usedTables[domain] = normalizeUsedTableFlag(tableFlags, domain, issues);
   }
   for (const domain of Object.keys(tableFlags)) {
     if (MODELING_IMPORT_TABLE_DOMAINS.includes(domain)) continue;
@@ -313,12 +309,11 @@ function normalizeValidationScope(importPackage, issues) {
     }));
   }
   return {
-    validationLevel: normalizedValidationLevel,
     usedTables
   };
 }
 
-function normalizeUsedTableFlag(rawUsedTables, domain, issues, validationLevel) {
+function normalizeUsedTableFlag(rawUsedTables, domain, issues) {
   if (!(domain in rawUsedTables)) return true;
   const value = rawUsedTables[domain];
   if (typeof value === "boolean") {
@@ -329,16 +324,6 @@ function normalizeUsedTableFlag(rawUsedTables, domain, issues, validationLevel) 
         objectId: "modeling-import-package",
         fieldPath: `usedTables.${domain}`,
         message: `usedTables.${domain} 是核心表域，不能声明为 false。`
-      }));
-      return true;
-    }
-    if (value === false && validationLevel !== "level0") {
-      issues.push(createIssue({
-        code: "invalid_used_table_flag",
-        collection: undefined,
-        objectId: "modeling-import-package",
-        fieldPath: `usedTables.${domain}`,
-        message: `usedTables.${domain} 只有 validationLevel=level0 时才能声明为 false。`
       }));
       return true;
     }

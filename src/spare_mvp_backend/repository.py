@@ -507,9 +507,6 @@ class ContractRepository:
             "publishedPackage": published_package,
         }
 
-    def list_modeling_import_templates(self, *, state: str = "published") -> list[dict[str, Any]]:
-        return self.list_project_data_templates(state=state)
-
     def list_project_data_templates(self, *, state: str = "published") -> list[dict[str, Any]]:
         cursor = self.connection.execute(
             """

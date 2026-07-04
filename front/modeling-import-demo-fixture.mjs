@@ -1431,6 +1431,5 @@ export const MODELING_IMPORT_DEMO_FIXTURE = {
     "issues": [],
     "ok": true,
     "status": "valid"
-  },
-  "validationLevel": "level1"
+  }
 };
