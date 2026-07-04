@@ -469,10 +469,13 @@ class BackendApi:
             if project_id not in existing_project_ids:
                 project["project_id"] = project_id
                 project["scenarioId"] = f"{base_scenario_id}-{suffix}"
-                experiment = project.setdefault("experiment", {})
-                name = experiment.get("name")
-                if isinstance(name, str) and name.strip():
-                    experiment["name"] = f"{name.strip()} 副本 {sequence}"
+                for section_key in ("experiment", "projectInfo"):
+                    section = project.get(section_key)
+                    if not isinstance(section, dict):
+                        continue
+                    name = section.get("name")
+                    if isinstance(name, str) and name.strip():
+                        section["name"] = f"{name.strip()} 副本 {sequence}"
                 return project
             sequence += 1
 

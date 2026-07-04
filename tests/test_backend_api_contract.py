@@ -2793,10 +2793,13 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(created["savedProject"]["project_id"], import_package["projectId"])
         self.assertEqual(created["modelingSnapshot"]["project"]["project_id"], import_package["projectId"])
         self.assertEqual(self.api.get_project(import_package["projectId"])["project_id"], import_package["projectId"])
+        self.assertEqual(self.api.get_project(import_package["projectId"])["projectInfo"]["name"], "导入示例项目")
         self.assertNotEqual(second_created["savedProject"]["project_id"], created["savedProject"]["project_id"])
         self.assertRegex(second_created["savedProject"]["project_id"], rf"^{import_package['projectId']}-copy-[0-9]+$")
         self.assertEqual(second_created["project"]["project_id"], second_created["savedProject"]["project_id"])
         self.assertEqual(second_created["project"]["missionProfile"]["sourceImportId"], import_package["importId"])
+        self.assertEqual(second_created["project"]["projectInfo"]["name"], "导入示例项目 副本 2")
+        self.assertEqual(self.api.get_project(import_package["projectId"])["projectInfo"]["name"], "导入示例项目")
         self.assertEqual(second_created["modelingSnapshot"]["project"]["project_id"], second_created["savedProject"]["project_id"])
         self.assertEqual(self.api.get_project(second_created["savedProject"]["project_id"])["project_id"], second_created["savedProject"]["project_id"])
         project_ids = {entry["project_id"] for entry in self.api.list_projects()["projects"]}

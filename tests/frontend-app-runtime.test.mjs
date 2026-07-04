@@ -374,6 +374,36 @@ test("project list keeps multiple projects created from the current published sn
   }
 });
 
+test("project list rename persists and survives creating another project from the published snapshot", async () => {
+  const projectJson = createRuntimeProjectJson({
+    project_id: "project-runtime",
+    projectInfo: { name: "Runtime 项目", baseCode: "RT", summary: "runtime test" }
+  });
+  const runtime = await setupRuntimeApp({ projectJson });
+
+  try {
+    await runtime.click("[data-project-edit]", { projectEdit: "runtime" });
+    await runtime.input("[data-project-edit-field]", { projectEditField: "name" }, { value: "原 Project 改名" });
+    await runtime.click("[data-project-edit-save]");
+    await runtime.click("[data-project-create-from-import]");
+
+    assert.match(runtime.appNode.innerHTML, /原 Project 改名/);
+    assert.match(runtime.appNode.innerHTML, /运行时模板项目 1/);
+    const projectSaveRequests = runtime.requests.filter((request) => (
+      request.url === "/api/projects"
+      && (request.options.method || "GET") === "POST"
+    ));
+    assert.ok(projectSaveRequests.some((request) => {
+      const body = JSON.parse(request.options.body || "{}");
+      return body.project_id === "project-runtime"
+        && body.experiment?.name === "原 Project 改名"
+        && body.projectInfo?.name === "原 Project 改名";
+    }));
+  } finally {
+    runtime.restore();
+  }
+});
+
 test("equipment aircraft-list selection renders whole aircraft rows and descendants", async () => {
   const runtime = await setupRuntimeApp({
     projectJson: createRuntimeProjectJson({
@@ -1064,6 +1094,19 @@ async function setupRuntimeApp({
     }
     if (url === "/api/projects" && method === "POST") {
       const body = JSON.parse(options.body || "{}");
+      const projectId = body.project_id || "project-runtime";
+      projectPayloads.set(projectId, body);
+      const catalogEntry = {
+        project_id: projectId,
+        experiment_name: body.experiment?.name || body.projectInfo?.name || projectId,
+        base_code: body.projectInfo?.baseCode || "RT",
+        summary: body.projectInfo?.summary || "runtime test",
+        source_import_id: body.missionProfile?.sourceImportId || "",
+        updated_at: "2026-06-26 00:00:00"
+      };
+      const existingIndex = backendProjectCatalog.findIndex((entry) => entry.project_id === projectId);
+      if (existingIndex >= 0) backendProjectCatalog[existingIndex] = { ...backendProjectCatalog[existingIndex], ...catalogEntry };
+      else backendProjectCatalog.unshift(catalogEntry);
       return jsonResponse({ project_id: body.project_id || "project-runtime", project_version: "project-v0.1" });
     }
     throw new Error(`unexpected fetch ${method} ${url}`);
@@ -1082,6 +1125,10 @@ async function setupRuntimeApp({
     },
     async change(selector, dataset = {}, props = {}) {
       await appListeners.change?.({ target: eventTarget(selector, dataset, props) });
+      await flushRuntimeTasks();
+    },
+    async input(selector, dataset = {}, props = {}) {
+      await appListeners.input?.({ target: eventTarget(selector, dataset, props) });
       await flushRuntimeTasks();
     },
     async setHash(nextHash) {

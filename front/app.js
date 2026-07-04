@@ -1356,8 +1356,7 @@ function bindEvents() {
 
     const saveProjectEditButton = event.target.closest("[data-project-edit-save]");
     if (saveProjectEditButton) {
-      saveProjectEditorDraft();
-      render();
+      saveProjectEditorDraft().finally(() => render());
       return;
     }
 
@@ -8471,7 +8470,7 @@ function updateProjectEditorDraft(fieldName, value) {
   };
 }
 
-function saveProjectEditorDraft() {
+async function saveProjectEditorDraft() {
   if (!projectEditorDraft) return;
   const saved = {
     ...projectEditorDraft,
@@ -8480,10 +8479,35 @@ function saveProjectEditorDraft() {
     summary: projectEditorDraft.summary.trim() || "项目说明待补充。",
     updatedAt: new Date().toISOString().slice(0, 10)
   };
-  demoProjects = demoProjects.map((project) => (project.id === saved.id ? saved : project));
-  if (currentProject?.id === saved.id) currentProject = saved;
-  projectEditorDraft = null;
-  projectListStatus = `已保存项目：${saved.name}`;
+  const currentEntry = demoProjects.find((project) => project.id === saved.id);
+  const backendProjectId = saved.projectBackendId || currentEntry?.projectBackendId || `project-${saved.id}`;
+  try {
+    const projectJson = await backendApi.getProject(backendProjectId);
+    const nextProjectJson = {
+      ...projectJson,
+      experiment: {
+        ...(projectJson.experiment || {}),
+        name: saved.name
+      },
+      projectInfo: {
+        ...(projectJson.projectInfo || {}),
+        name: saved.name,
+        baseCode: saved.baseCode,
+        summary: saved.summary
+      }
+    };
+    await backendApi.saveProject(nextProjectJson);
+    if (scenario?.project_id === backendProjectId || currentProject?.id === saved.id) {
+      scenario = cloneScenario(nextProjectJson);
+      experimentPlanDraft = experimentPlanBranchActive ? experimentPlanDraft : cloneScenario(nextProjectJson);
+    }
+    demoProjects = demoProjects.map((project) => (project.id === saved.id ? saved : project));
+    if (currentProject?.id === saved.id) currentProject = saved;
+    projectEditorDraft = null;
+    projectListStatus = `已保存项目：${saved.name}`;
+  } catch (err) {
+    projectListStatus = `项目保存失败：${err && err.message ? err.message : "Backend API 不可用"}`;
+  }
 }
 
 async function deleteDemoProject(projectId) {
