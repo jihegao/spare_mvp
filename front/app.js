@@ -1653,6 +1653,17 @@ function bindEvents() {
       return;
     }
 
+    const experimentPlanAddButton = event.target.closest("[data-experiment-plan-add]");
+    if (experimentPlanAddButton) {
+      const page = getFeaturePageById(selectedFeatureId);
+      openNewExperimentPlanEditor();
+      selectedRoute = "workbench";
+      selectedFeatureId = getPlanListFeatureId(page.module);
+      location.hash = `feature=${selectedFeatureId}`;
+      render();
+      return;
+    }
+
     const experimentPlanEditButton = event.target.closest("[data-experiment-plan-edit]");
     if (experimentPlanEditButton) {
       const page = getFeaturePageById(selectedFeatureId);
@@ -2498,16 +2509,26 @@ function renderProjectDraftToolbar(page) {
 
 function renderCurrentContext(page) {
   if (!shouldShowCurrentContext(page)) return "";
+  const context = currentContextSummary();
   return `
     <button class="page-head-current-context" type="button" data-plan-list-link>
-      <span>当前方案</span>
-      <strong>${htmlEscape(scenario.experiment.name)}</strong>
+      <span>${htmlEscape(context.label)}</span>
+      <strong>${htmlEscape(context.name)}</strong>
     </button>
   `;
 }
 
 function shouldShowCurrentContext(page) {
   return page.module !== SYSTEM_SUPPORT_MODULE_NAME && page.secondary !== "仿真建模";
+}
+
+function currentContextSummary() {
+  const experimentName = String(scenario.experiment?.name || experimentPlanDraft?.experiment?.name || "").trim();
+  if (experimentName) {
+    return { label: "当前方案", name: experimentName };
+  }
+  const projectName = String(currentProject?.name || scenario.projectInfo?.name || scenario.scenarioId || "").trim();
+  return { label: "当前项目", name: projectName || "未选择项目" };
 }
 
 function renderFourthLevelTabs(page, siblingPages) {
@@ -2571,6 +2592,7 @@ function createExperimentPlanBranchFromCurrentProject() {
   if (experimentPlanBranchActive) return;
   experimentPlanDraft = cloneScenario(scenario);
   ensureMonteCarloSweepDefaults(experimentPlanDraft);
+  ensureExperimentPlanDraftDefaults(experimentPlanDraft);
   experimentPlanBranchActive = true;
   updatePreviewResultsThroughApiClient(experimentPlanDraft);
 }
@@ -8589,7 +8611,7 @@ function renderExperimentPlanList(page) {
       <span>${htmlEscape(experimentPlanListStatus)}</span>
     </div>
     <div class="toolbar-row">
-      <button type="button" class="btn-primary" data-experiment-plan-add disabled>新增</button>
+      <button type="button" class="btn-primary" data-experiment-plan-add>新增</button>
       <button type="button" data-experiment-plan-refresh>刷新</button>
     </div>
     <div class="table-wrap">
@@ -8647,6 +8669,14 @@ function toggleExperimentPlanSelection(planKey, checked) {
   if (checked) next.add(planKey);
   else next.delete(planKey);
   selectedExperimentPlanKeys = next;
+}
+
+function openNewExperimentPlanEditor() {
+  experimentPlanManagementMode = "editor";
+  experimentPlan = null;
+  experimentPlanBranchActive = false;
+  createExperimentPlanBranchFromCurrentProject();
+  selectedExperimentPlanKeys = new Set();
 }
 
 function openExperimentPlanEditorFromList(experimentPlanId, planName) {
@@ -9348,7 +9378,7 @@ async function saveCurrentProjectDraftThroughApi() {
 
 async function saveCurrentExperimentPlanThroughApi() {
   const projectJson = buildBackendProjectJson(scenario, currentProject);
-  const planProjectJson = buildBackendProjectJson(experimentPlanDraft, currentProject);
+  const planProjectJson = cloneScenario(experimentPlanDraft);
   try {
     savedProject = await backendApi.saveProject(projectJson);
     modelingSnapshot = await backendApi.createModelingSnapshot(savedProject.project_id);
@@ -9360,6 +9390,8 @@ async function saveCurrentExperimentPlanThroughApi() {
     });
     experimentPlan = await backendApi.createExperimentPlan(savedProject.project_id, runIntent.experimentPlanConfig);
     await refreshExperimentPlanList(savedProject.project_id, { force: true });
+    experimentPlanManagementMode = "list";
+    selectedExperimentPlanKeys = new Set([experimentPlanSelectionKey(experimentPlan)]);
     backendApiStatus = "实验方案分支已保存";
   } catch (err) {
     savedProject = null;
@@ -14364,6 +14396,26 @@ function ensureMonteCarloSweepDefaults(projectJson) {
     samples: Math.max(Number(projectJson.experiment?.samples || 0), sweepPointCount)
   };
   return projectJson;
+}
+
+function ensureExperimentPlanDraftDefaults(projectJson) {
+  if (!projectJson || typeof projectJson !== "object") return projectJson;
+  if (!projectJson.experiment || typeof projectJson.experiment !== "object" || Array.isArray(projectJson.experiment)) {
+    projectJson.experiment = {};
+  }
+  const defaults = defaultScenario.experiment || {};
+  const projectName = String(currentProject?.name || projectJson.projectInfo?.name || projectJson.scenarioId || "当前项目").trim();
+  projectJson.experiment.name ||= `${projectName} 仿真实验方案`;
+  projectJson.experiment.steps = positiveExperimentNumber(projectJson.experiment.steps, defaults.steps || 24);
+  projectJson.experiment.samples = positiveExperimentNumber(projectJson.experiment.samples, defaults.samples || 27);
+  const seed = Number(projectJson.experiment.seed);
+  projectJson.experiment.seed = Number.isFinite(seed) ? seed : Number(defaults.seed || 20260621);
+  return projectJson;
+}
+
+function positiveExperimentNumber(value, fallback) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : fallback;
 }
 
 function defaultMonteCarloSweepForProject(projectJson) {

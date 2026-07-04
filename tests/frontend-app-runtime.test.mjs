@@ -457,6 +457,30 @@ test("carry list analysis result omits boundary explanation card", async () => {
   }
 });
 
+test("experiment and analysis pages render when Project draft has no root experiment config", async () => {
+  const featureExpectations = [
+    ["spare-planning-experiment-plan-management", /方案列表/],
+    ["spare-planning-monte-carlo-experiment-detail", /蒙特卡洛分析/],
+    ["spare-planning-spare-shortfall-analysis", /分析设置/]
+  ];
+
+  for (const [featureId, expectedCopy] of featureExpectations) {
+    const projectJson = createRuntimeProjectJson();
+    delete projectJson.experiment;
+    const runtime = await setupRuntimeApp({
+      hash: `feature=${featureId}`,
+      projectJson
+    });
+
+    try {
+      assert.match(runtime.appNode.innerHTML, expectedCopy);
+      assert.doesNotMatch(runtime.appNode.innerHTML, /保障组织结构树/);
+    } finally {
+      runtime.restore();
+    }
+  }
+});
+
 test("feature routes without a template-created project return to project list", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=spare-planning-experiment-plan-list",
@@ -1039,6 +1063,42 @@ test("experiment plan row selection is interactive for template-created projects
   }
 });
 
+test("experiment plan add opens an editable plan branch", async () => {
+  const runtime = await setupRuntimeApp({ hash: "feature=spare-planning-experiment-plan-management" });
+
+  try {
+    assert.match(runtime.appNode.innerHTML, /data-experiment-plan-add/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-experiment-plan-add disabled/);
+
+    await runtime.click("[data-experiment-plan-add]", { experimentPlanAdd: "" });
+
+    assert.match(runtime.appNode.innerHTML, /方案编辑/);
+    assert.match(runtime.appNode.innerHTML, /data-experiment-plan-path="experiment\.name"/);
+    assert.match(runtime.appNode.innerHTML, /data-save-plan/);
+
+    await runtime.change(
+      "[data-experiment-plan-path]",
+      { experimentPlanPath: "experiment.name" },
+      { value: "新增仿真实验方案" }
+    );
+    await runtime.click("[data-save-plan]");
+
+    const createPlanRequest = runtime.requests.find((request) => (
+      request.url === "/api/projects/project-runtime/experiment-plans"
+      && (request.options.method || "GET") === "POST"
+    ));
+    assert.ok(createPlanRequest, "new experiment plan should be posted to backend");
+    const body = JSON.parse(createPlanRequest.options.body || "{}");
+    assert.equal(body.config.name, "新增仿真实验方案");
+    assert.equal("experiment" in body.config.projectJson, false);
+    assert.match(runtime.appNode.innerHTML, /方案列表/);
+    assert.match(runtime.appNode.innerHTML, /data-experiment-plan-add/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-save-plan/);
+  } finally {
+    runtime.restore();
+  }
+});
+
 test("experiment plan selection uses experiment_plan_id for duplicate names", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=spare-planning-experiment-plan-list",
@@ -1218,6 +1278,16 @@ async function setupRuntimeApp({
     }
     if (url === "/api/projects/project-runtime/experiment-plans" && method === "GET") {
       return jsonResponse({ project_id: "project-runtime", experiment_plans: experimentPlans });
+    }
+    if (url === "/api/projects/project-runtime/modeling-snapshots" && method === "POST") {
+      return jsonResponse({ snapshot_id: "snapshot-runtime-plan" });
+    }
+    if (url === "/api/projects/project-runtime/experiment-plans" && method === "POST") {
+      const body = JSON.parse(options.body || "{}");
+      return jsonResponse({
+        experiment_plan_id: "plan-runtime-created",
+        config: body.config || {}
+      });
     }
     const modelingImportMatch = url.match(/^\/api\/modeling-imports\/([^/]+)$/);
     if (modelingImportMatch && method === "GET") {

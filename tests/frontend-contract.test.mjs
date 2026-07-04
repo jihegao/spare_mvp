@@ -3714,7 +3714,7 @@ test("editable and project text values are escaped before template insertion", a
   assert.match(appSource, /htmlEscape\(currentProject\?\.name \|\| "未选择项目"\)/);
   assert.match(appSource, /htmlEscape\(project\.name\)/);
   assert.match(appSource, /htmlEscape\(project\.summary\)/);
-  assert.match(appSource, /htmlEscape\(scenario\.experiment\.name\)/);
+  assert.match(appSource, /htmlEscape\(context\.name\)/);
   assert.match(appSource, /htmlEscape\(plan\.name\)/);
 });
 
