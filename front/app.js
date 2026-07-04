@@ -33,7 +33,7 @@ import {
   cloneScenario,
   defaultScenario,
   runMonteCarlo
-} from "./sim-engine.mjs?v=20260619-task-modeling";
+} from "./sim-engine.mjs";
 import {
   allowedSupportActivityDurationDistributions,
   deleteSupportActivityJobAt,
@@ -5042,6 +5042,21 @@ function updateEquipmentAircraftModel(previousModel, nextModelRaw) {
     String(model) === oldModel ? nextModel : model
   ));
   scenario.equipment.wholeMachineModels = Array.from(new Set(scenario.equipment.wholeMachineModels));
+  if (Array.isArray(scenario.equipment.aircraftTypes)) {
+    scenario.equipment.aircraftTypes = scenario.equipment.aircraftTypes.map((aircraftType) => {
+      if (typeof aircraftType === "string") {
+        return String(aircraftType) === oldModel ? nextModel : aircraftType;
+      }
+      if (!aircraftType || typeof aircraftType !== "object" || Array.isArray(aircraftType)) return aircraftType;
+      const aircraftTypeModel = String(aircraftType.model || aircraftType.name || aircraftType.id || "");
+      if (aircraftTypeModel !== oldModel) return aircraftType;
+      return {
+        ...aircraftType,
+        model: nextModel,
+        name: nextModel
+      };
+    });
+  }
   if (String(scenario.equipment.model || "") === oldModel) {
     scenario.equipment.model = nextModel;
   }

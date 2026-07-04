@@ -299,12 +299,74 @@ function stripProjectRuntimeConfig(value) {
 
 function stripProjectNonModelFields(projectJson) {
   if (!projectJson || typeof projectJson !== "object") return;
+  const equipmentCatalog = projectEquipmentCatalog(projectJson);
   delete projectJson.deletedSupportResourceKeys;
-  delete projectJson.equipment;
+  if (equipmentCatalog) {
+    projectJson.equipment = equipmentCatalog;
+  } else {
+    delete projectJson.equipment;
+  }
   delete projectJson.basicMission;
   stripLegacyBasicMissionFields(projectJson);
   stripMissionProfileNonModelFields(projectJson.missionProfile);
   stripSupportActivityTypoFields(projectJson);
+}
+
+function projectEquipmentCatalog(projectJson) {
+  const equipment = projectJson?.equipment && typeof projectJson.equipment === "object" && !Array.isArray(projectJson.equipment)
+    ? projectJson.equipment
+    : {};
+  const aircraftTypes = [];
+  const seen = new Set();
+
+  const addAircraftType = (modelValue, source = {}) => {
+    const model = cleanText(modelValue || source.model || source.name || source.id);
+    if (!model || seen.has(model)) return;
+    seen.add(model);
+    aircraftTypes.push({
+      id: cleanText(source.id) || aircraftTypeId(model, aircraftTypes.length + 1),
+      model,
+      name: cleanText(source.name) || model
+    });
+  };
+
+  if (Array.isArray(equipment.aircraftTypes)) {
+    for (const aircraftType of equipment.aircraftTypes) {
+      if (typeof aircraftType === "string") {
+        addAircraftType(aircraftType);
+      } else if (aircraftType && typeof aircraftType === "object" && !Array.isArray(aircraftType)) {
+        addAircraftType(aircraftType.model || aircraftType.name || aircraftType.id, aircraftType);
+      }
+    }
+  }
+  for (const member of projectAircraftMembers(projectJson)) addAircraftType(member.model);
+  for (const component of Array.isArray(projectJson?.components) ? projectJson.components : []) addAircraftType(component?.aircraftModel);
+  for (const model of Array.isArray(equipment.wholeMachineModels) ? equipment.wholeMachineModels : []) addAircraftType(model);
+  addAircraftType(equipment.model);
+
+  const wholeMachineModels = aircraftTypes.map((aircraftType) => aircraftType.model);
+  if (!wholeMachineModels.length) return null;
+  return {
+    model: wholeMachineModels[0],
+    wholeMachineModels,
+    aircraftTypes
+  };
+}
+
+function projectAircraftMembers(projectJson) {
+  return [
+    ...(Array.isArray(projectJson?.combatUnit?.members) ? projectJson.combatUnit.members : []),
+    ...(Array.isArray(projectJson?.missionProfile?.combatUnit?.members) ? projectJson.missionProfile.combatUnit.members : [])
+  ].filter((member) => member && typeof member === "object" && !Array.isArray(member));
+}
+
+function aircraftTypeId(model, index) {
+  const slug = String(model || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  return slug ? `aircraft-type-${slug}` : `aircraft-type-${index}`;
+}
+
+function cleanText(value) {
+  return String(value || "").trim();
 }
 
 function stripMissionProfileNonModelFields(missionProfile) {

@@ -289,6 +289,20 @@ class SimulationAdapterTest(unittest.TestCase):
         self.assertIn("combatUnit.members", provenance["consumed_fields"])
         self.assertNotIn("equipment.quantity", provenance["consumed_fields"])
 
+    def test_aircraft_support_v1_aircraft_models_accept_equipment_aircraft_types(self) -> None:
+        models = self.adapter._aircraft_support_v1_aircraft_models(
+            {
+                "aircraftTypes": [
+                    {"id": "aircraft-type-j15", "model": "J-15", "name": "歼-15"},
+                    {"id": "aircraft-type-j35", "model": "J-35", "name": "歼-35"},
+                ]
+            },
+            [],
+            [],
+        )
+
+        self.assertEqual(models, ["J-15", "J-35"])
+
     def test_aircraft_support_v1_compile_gate_blocks_invalid_references(self) -> None:
         project = self._load_fixture("m9_6_platform_case_export.json")["project"]
         project["supportActivities"][0]["resourceId"] = "missing-support-node"

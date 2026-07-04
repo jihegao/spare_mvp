@@ -1,9 +1,20 @@
 export function wholeMachineModelsForScenario(scenario) {
   const equipment = scenario?.equipment || {};
-  const models = Array.isArray(equipment.wholeMachineModels) && equipment.wholeMachineModels.length
-    ? equipment.wholeMachineModels
-    : [equipment.model];
-  return Array.from(new Set(models.filter(Boolean)));
+  const models = [
+    ...aircraftTypeModels(equipment.aircraftTypes),
+    ...(Array.isArray(equipment.wholeMachineModels) ? equipment.wholeMachineModels : []),
+    equipment.model
+  ];
+  return Array.from(new Set(models.map((model) => String(model || "").trim()).filter(Boolean)));
+}
+
+function aircraftTypeModels(aircraftTypes) {
+  if (!Array.isArray(aircraftTypes)) return [];
+  return aircraftTypes.map((aircraftType) => {
+    if (typeof aircraftType === "string") return aircraftType;
+    if (!aircraftType || typeof aircraftType !== "object" || Array.isArray(aircraftType)) return "";
+    return aircraftType.model || aircraftType.name || aircraftType.id || "";
+  });
 }
 
 export function componentBelongsToAircraftModel(component, aircraftModel) {
@@ -192,6 +203,7 @@ function deleteEquipmentAircraftForSelectionModel(scenario, aircraftModel) {
     .map((component) => String(component.id || ""))
     .filter(Boolean);
   scenario.equipment.wholeMachineModels = scenario.equipment.wholeMachineModels.filter((item) => String(item) !== model);
+  syncEquipmentAircraftTypesForModels(scenario);
   scenario.components = scenario.components.filter((component) => !deletedComponentIds.includes(String(component.id || "")));
   const fallbackModel = wholeMachineModelsForScenario(scenario)[0] || "";
   if (String(scenario.equipment.model || "") === model) {
@@ -260,6 +272,7 @@ function addEquipmentAircraftForSelectionModel(scenario) {
   }
   const aircraftModel = nextEquipmentAircraftModel(scenario);
   scenario.equipment.wholeMachineModels.push(aircraftModel);
+  syncEquipmentAircraftTypesForModels(scenario);
   if (!scenario.equipment.model) {
     scenario.equipment.model = aircraftModel;
   }
@@ -268,6 +281,40 @@ function addEquipmentAircraftForSelectionModel(scenario) {
     aircraftModel,
     selectedEquipmentNodeKey: `aircraft:${aircraftModel}`
   };
+}
+
+function syncEquipmentAircraftTypesForModels(scenario) {
+  if (!scenario.equipment) scenario.equipment = {};
+  const models = Array.from(new Set((Array.isArray(scenario.equipment.wholeMachineModels)
+    ? scenario.equipment.wholeMachineModels
+    : wholeMachineModelsForScenario(scenario)
+  ).map((model) => String(model || "").trim()).filter(Boolean)));
+  const existingTypes = Array.isArray(scenario.equipment.aircraftTypes)
+    ? scenario.equipment.aircraftTypes
+    : [];
+  scenario.equipment.aircraftTypes = models.map((model, index) => {
+    const existing = existingTypes.find((aircraftType) => aircraftTypeModel(aircraftType) === model);
+    return {
+      id: cleanText(existing?.id) || aircraftTypeId(model, index + 1),
+      model,
+      name: cleanText(existing?.name) || model
+    };
+  });
+}
+
+function aircraftTypeModel(aircraftType) {
+  if (typeof aircraftType === "string") return cleanText(aircraftType);
+  if (!aircraftType || typeof aircraftType !== "object" || Array.isArray(aircraftType)) return "";
+  return cleanText(aircraftType.model || aircraftType.name || aircraftType.id);
+}
+
+function aircraftTypeId(model, index) {
+  const slug = String(model || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  return slug ? `aircraft-type-${slug}` : `aircraft-type-${index}`;
+}
+
+function cleanText(value) {
+  return String(value || "").trim();
 }
 
 function nextEquipmentAircraftModel(scenario) {

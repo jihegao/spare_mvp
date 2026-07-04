@@ -751,14 +751,18 @@ test("buildBackendProjectJson strips Monte Carlo config from Project modeling da
   assert.ok("requireDevices" in scenario.supportActivities[0]);
 });
 
-test("buildBackendProjectJson strips redundant equipment summaries from Project modeling data", () => {
+test("buildBackendProjectJson preserves aircraft type catalog and strips redundant equipment runtime fields", () => {
   const scenario = {
     scenarioId: "combat-unit-is-source",
     equipment: {
       model: "legacy-summary",
       quantity: 7,
       initialReady: 6,
-      wholeMachineModels: ["legacy-summary"]
+      minRequiredSorties: 4,
+      wholeMachineModels: ["legacy-summary"],
+      aircraftTypes: [
+        { id: "aircraft-type-j15", model: "J-15", name: "歼-15", quantity: 8 }
+      ]
     },
     combatUnit: {
       members: [
@@ -781,10 +785,22 @@ test("buildBackendProjectJson strips redundant equipment summaries from Project 
 
   const projectJson = buildBackendProjectJson(scenario, { id: "combat-unit-is-source" });
 
-  assert.equal("equipment" in projectJson, false);
+  assert.deepEqual(projectJson.equipment, {
+    model: "J-15",
+    wholeMachineModels: ["J-15", "J-35", "legacy-summary"],
+    aircraftTypes: [
+      { id: "aircraft-type-j15", model: "J-15", name: "歼-15" },
+      { id: "aircraft-type-j-35", model: "J-35", name: "J-35" },
+      { id: "aircraft-type-legacy-summary", model: "legacy-summary", name: "legacy-summary" }
+    ]
+  });
   assert.equal("equipment" in projectJson.missionProfile, false);
   assert.equal(projectJson.combatUnit.members.length, 2);
   assert.equal(projectJson.missionProfile.combatUnit.members.length, 1);
+  assert.equal("quantity" in projectJson.equipment, false);
+  assert.equal("initialReady" in projectJson.equipment, false);
+  assert.equal("minRequiredSorties" in projectJson.equipment, false);
+  assert.equal("quantity" in projectJson.equipment.aircraftTypes[0], false);
   assert.ok("equipment" in scenario);
   assert.ok("equipment" in scenario.missionProfile);
 });

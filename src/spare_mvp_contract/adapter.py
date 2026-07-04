@@ -1008,8 +1008,21 @@ class SimulationAdapter:
         if not models:
             models = self._unique_string_list(component.get("aircraftModel") for component in components)
         if not models:
-            models = self._unique_string_list(self._string_list(equipment.get("wholeMachineModels")) + [equipment.get("model")])
+            models = self._aircraft_support_v1_equipment_aircraft_models(equipment)
         return models or ["Aircraft"]
+
+    def _aircraft_support_v1_equipment_aircraft_models(self, equipment: dict[str, Any]) -> list[str]:
+        values: list[Any] = []
+        aircraft_types = equipment.get("aircraftTypes")
+        if isinstance(aircraft_types, list):
+            for aircraft_type in aircraft_types:
+                if isinstance(aircraft_type, dict):
+                    values.append(aircraft_type.get("model") or aircraft_type.get("name") or aircraft_type.get("id"))
+                else:
+                    values.append(aircraft_type)
+        values.extend(self._string_list(equipment.get("wholeMachineModels")))
+        values.append(equipment.get("model"))
+        return self._unique_string_list(values)
 
     def _aircraft_support_v1_member_in_maintenance(self, member: dict[str, Any]) -> bool:
         status = str(member.get("status") or "").strip().lower()

@@ -71,6 +71,7 @@ test("default scenario is a schema-valid empty preview shell", () => {
   assert.deepEqual(defaultScenario.components, []);
   assert.deepEqual(defaultScenario.supportNodes, []);
   assert.deepEqual(defaultScenario.supportActivities, []);
+  assert.deepEqual(defaultScenario.equipment.aircraftTypes, []);
   assert.deepEqual(defaultScenario.equipment.wholeMachineModels, []);
   assert.deepEqual(defaultScenario.missionProfile.compositeTasks, []);
   assert.deepEqual(defaultScenario.missionProfile.periodicTasks, []);

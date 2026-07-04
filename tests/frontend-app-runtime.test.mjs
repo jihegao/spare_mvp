@@ -635,6 +635,46 @@ test("equipment aircraft-list selection renders whole aircraft rows and descenda
   }
 });
 
+test("equipment aircraft rename keeps aircraftTypes catalog in saved Project draft", async () => {
+  const runtime = await setupRuntimeApp({
+    projectJson: createRuntimeProjectJson({
+      equipment: {
+        model: "J-15",
+        wholeMachineModels: ["J-15"],
+        aircraftTypes: [{ id: "aircraft-type-j15", model: "J-15", name: "歼-15" }],
+        quantity: 2,
+        initialReady: 2,
+        minRequiredSorties: 1
+      },
+      components: [
+        { id: "j15-engine", name: "J-15发动机", aircraftModel: "J-15", parentId: "aircraft-root", productType: "LRU", quantity: 2 }
+      ]
+    })
+  });
+
+  try {
+    await runtime.click("[data-enter-workbench]", { projectId: "runtime" });
+    await runtime.setHash("feature=spare-planning-equipment-system");
+    await runtime.click("[data-select-equipment-aircraft]", { selectEquipmentAircraft: "J-15" });
+    await runtime.change("[data-equipment-aircraft-model]", { equipmentAircraftModel: "J-15" }, { value: "J-20" });
+    await runtime.click("[data-project-draft-save]");
+
+    const projectSaveRequests = runtime.requests.filter((request) => (
+      request.url === "/api/projects"
+      && (request.options.method || "GET") === "POST"
+    ));
+    const savedProject = JSON.parse(projectSaveRequests.at(-1).options.body || "{}");
+    assert.deepEqual(savedProject.equipment, {
+      model: "J-20",
+      wholeMachineModels: ["J-20"],
+      aircraftTypes: [{ id: "aircraft-type-j15", model: "J-20", name: "J-20" }]
+    });
+    assert.equal(savedProject.components[0].aircraftModel, "J-20");
+  } finally {
+    runtime.restore();
+  }
+});
+
 test("RMS method selection updates method-specific parameters at runtime", async () => {
   const runtime = await setupRuntimeApp({ hash: "feature=system-management-equipment-rms-allocation" });
 

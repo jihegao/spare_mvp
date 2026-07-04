@@ -21,6 +21,7 @@ export const defaultScenario = {
   equipment: {
     model: "",
     wholeMachineModels: [],
+    aircraftTypes: [],
     quantity: 0,
     initialReady: 0,
     minRequiredSorties: 0
