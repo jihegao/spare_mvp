@@ -2931,6 +2931,25 @@ class BackendApiContractTest(unittest.TestCase):
         objects["analysisRequests"]["largeSample"]["sweep"]["failureRates"].append(0.99)
         self.assertNotIn("analysisRequests", project)
 
+    def test_modeling_import_to_project_derives_airports_from_combat_unit_members(self) -> None:
+        import_package = self._fixture("modeling_import_project.json")
+        members = import_package["objects"]["missionProfiles"][0]["combatUnit"]["members"]
+        members[0]["airport"] = "A"
+        members[1]["airport"] = "B"
+        for member in members[2:]:
+            member["airport"] = "A"
+
+        project = modeling_import_to_project(import_package)
+
+        self.assertEqual(
+            project["airports"],
+            [
+                {"id": "airport-a", "name": "A", "location": "A", "supportNodeId": "airport-a"},
+                {"id": "airport-b", "name": "B", "location": "B", "supportNodeId": "airport-b"},
+            ],
+        )
+        self.assertFalse(any(airport.get("id") in {"carrier-deck", "forward-sea-base"} for airport in project["airports"]))
+
     def test_modeling_import_to_project_preserves_explicit_empty_collections(self) -> None:
         import_package = self._fixture("modeling_import_project.json")
         mission = import_package["objects"]["missionProfiles"][0]

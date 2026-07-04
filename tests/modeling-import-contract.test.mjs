@@ -98,7 +98,7 @@ test("simulation analysis public import templates validate against modeling impo
     assert.equal(
       Object.hasOwn(template.objects, "airports"),
       false,
-      `${templatePath} must keep airports under missionProfiles instead of duplicating objects.airports`
+      `${templatePath} objects.airports must be derived from combatUnit members, not preset`
     );
     assert.equal(
       Object.hasOwn(template.objects.equipment || {}, "deploymentLocation"),
@@ -106,9 +106,10 @@ test("simulation analysis public import templates validate against modeling impo
       `${templatePath} objects.equipment must not carry non-behavioral deploymentLocation`
     );
     for (const [index, mission] of (template.objects.missionProfiles || []).entries()) {
-      assert.ok(
-        Array.isArray(mission.airports) && mission.airports.length > 0,
-        `${templatePath} missionProfiles[${index}].airports must retain airport context`
+      assert.equal(
+        Object.hasOwn(mission, "airports"),
+        false,
+        `${templatePath} missionProfiles[${index}].airports must be derived from combatUnit members, not preset`
       );
       assert.equal(
         Object.hasOwn(mission.equipment || {}, "deploymentLocation"),
@@ -458,6 +459,8 @@ test("projectToModelingImportPackage backfills import draft from current Project
   assert.deepEqual(draft.objects.equipmentAssets, projectJson.components);
   assert.deepEqual(draft.objects.supportResources, projectJson.supportNodes);
   assert.deepEqual(draft.objects.supportActivities, projectJson.supportActivities);
+  assert.equal(Object.hasOwn(draft.objects, "airports"), false);
+  assert.equal(Object.hasOwn(draft.objects.missionProfiles[0], "airports"), false);
   assert.equal("monteCarlo" in draft.objects, false);
   assert.equal("monteCarlo" in draft.objects.missionProfiles[0], false);
   assert.deepEqual(draft.objects.customGovernance, basePackage.objects.customGovernance);

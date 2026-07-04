@@ -168,7 +168,7 @@ def _load_canonical_import(repo_root: Path) -> dict[str, Any]:
 
 def _canonical_platform_import(source: dict[str, Any]) -> dict[str, Any]:
     case = copy.deepcopy(source)
-    case["objects"].pop("airports", None)
+    _remove_preset_airports(case)
     _remove_equipment_deployment_locations(case)
     _apply_combat_unit_aircraft_defaults(case, airport="A", pre_life_calendar_days=0)
     _move_composite_equipment_quantities_to_basic_tasks(case)
@@ -212,7 +212,7 @@ def _minimal_single_aircraft_import(source: dict[str, Any]) -> dict[str, Any]:
     }
     case["lifecycle"] = {"state": "draft", "version": 1, "referencedRunIds": []}
     objects = case["objects"]
-    objects.pop("airports", None)
+    _remove_preset_airports(case)
     mission = objects["missionProfiles"][0]
     mission["id"] = "mission-profile-6p-minimal"
     mission["name"] = "6P 最小单机任务剖面"
@@ -284,16 +284,6 @@ def _minimal_single_aircraft_import(source: dict[str, Any]) -> dict[str, Any]:
     }
     objects["monteCarlo"] = copy.deepcopy(single_monte_carlo)
     mission["monteCarlo"] = copy.deepcopy(single_monte_carlo)
-    airport0 = {
-        "id": "airport0",
-        "name": "airport0",
-        "location": "最小案例起降点",
-        "runwayType": "单一起降点",
-        "distanceToMissionKm": 180,
-        "supportNodeId": None,
-    }
-    mission["airports"] = [copy.deepcopy(airport0)]
-
     objects["equipment"] = {
         **copy.deepcopy(objects.get("equipment", {})),
         "quantity": 1,
@@ -364,6 +354,15 @@ def _minimal_single_aircraft_import(source: dict[str, Any]) -> dict[str, Any]:
     objects["analysisRequests"]["largeSample"] = copy.deepcopy(single_large_sample)
     mission["analysisRequests"] = {"largeSample": copy.deepcopy(single_large_sample)}
     return case
+
+
+def _remove_preset_airports(import_package: dict[str, Any]) -> None:
+    objects = import_package.get("objects") if isinstance(import_package.get("objects"), dict) else {}
+    objects.pop("airports", None)
+    missions = objects.get("missionProfiles") if isinstance(objects.get("missionProfiles"), list) else []
+    for mission in missions:
+        if isinstance(mission, dict):
+            mission.pop("airports", None)
 
 
 def _remove_equipment_deployment_locations(import_package: dict[str, Any]) -> None:

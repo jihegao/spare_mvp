@@ -94,16 +94,6 @@
       ],
       "missionProfiles": [
         {
-          "airports": [
-            {
-              "distanceToMissionKm": 180,
-              "id": "airport0",
-              "location": "最小案例起降点",
-              "name": "airport0",
-              "runwayType": "单一起降点",
-              "supportNodeId": null
-            }
-          ],
           "analysisRequests": {
             "largeSample": {
               "enabled": true,
@@ -398,7 +388,14 @@
   "phase": "6P",
   "project": {
     "activeModule": "sparePlanning",
-    "airports": [],
+    "airports": [
+      {
+        "id": "airport-c5096230",
+        "location": "航母飞行甲板",
+        "name": "航母飞行甲板",
+        "supportNodeId": "airport-c5096230"
+      }
+    ],
     "basicMission": {
       "advanceNoticeMinutes": 60,
       "basicTaskName": "最小单机巡检任务",

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import hashlib
 from math import isfinite
 import re
 from typing import Any
@@ -491,12 +492,15 @@ def _combat_unit_airports(combat_unit: Any) -> list[dict[str, Any]]:
                 member.get("airport")
                 or member.get("airportName")
                 or member.get("deploymentAirport")
+                or member.get("deploymentLocation")
             )
-        append_airport(
-            combat_unit.get("airport")
-            or combat_unit.get("airportName")
-            or combat_unit.get("deploymentAirport")
-        )
+        if not airport_names:
+            append_airport(
+                combat_unit.get("airport")
+                or combat_unit.get("airportName")
+                or combat_unit.get("deploymentAirport")
+                or combat_unit.get("deploymentLocation")
+            )
     else:
         append_airport(combat_unit)
 
@@ -513,7 +517,9 @@ def _combat_unit_airports(combat_unit: Any) -> list[dict[str, Any]]:
 
 def _airport_id_from_name(name: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", str(name).strip().lower()).strip("-")
-    return f"airport-{slug or 'unknown'}"
+    if not slug:
+        slug = hashlib.sha1(str(name).encode("utf-8")).hexdigest()[:8]
+    return f"airport-{slug}"
 
 
 def _mission_profile_to_project(mission: dict[str, Any], import_id: str) -> dict[str, Any]:

@@ -7,42 +7,6 @@
       "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
     },
     {
-      "field_path": "objects.airports[].distanceToMissionKm",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
-      "status": "ignored",
-      "target": "M9.6 platform case package"
-    },
-    {
-      "field_path": "objects.airports[].id",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
-      "status": "ignored",
-      "target": "M9.6 platform case package"
-    },
-    {
-      "field_path": "objects.airports[].location",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
-      "status": "ignored",
-      "target": "M9.6 platform case package"
-    },
-    {
-      "field_path": "objects.airports[].name",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
-      "status": "ignored",
-      "target": "M9.6 platform case package"
-    },
-    {
-      "field_path": "objects.airports[].runwayType",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
-      "status": "ignored",
-      "target": "M9.6 platform case package"
-    },
-    {
-      "field_path": "objects.airports[].supportNodeId",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
-      "status": "ignored",
-      "target": "M9.6 platform case package"
-    },
-    {
       "field_path": "objects.analysisRequests.largeSample.enabled",
       "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
       "status": "consumed",
@@ -302,42 +266,6 @@
     },
     {
       "field_path": "objects.missionAreas[].threatLevel",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
-      "status": "ignored",
-      "target": "M9.6 platform case package"
-    },
-    {
-      "field_path": "objects.missionProfiles[].airports[].distanceToMissionKm",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
-      "status": "ignored",
-      "target": "M9.6 platform case package"
-    },
-    {
-      "field_path": "objects.missionProfiles[].airports[].id",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
-      "status": "ignored",
-      "target": "M9.6 platform case package"
-    },
-    {
-      "field_path": "objects.missionProfiles[].airports[].location",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
-      "status": "ignored",
-      "target": "M9.6 platform case package"
-    },
-    {
-      "field_path": "objects.missionProfiles[].airports[].name",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
-      "status": "ignored",
-      "target": "M9.6 platform case package"
-    },
-    {
-      "field_path": "objects.missionProfiles[].airports[].runwayType",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
-      "status": "ignored",
-      "target": "M9.6 platform case package"
-    },
-    {
-      "field_path": "objects.missionProfiles[].airports[].supportNodeId",
       "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
@@ -1786,8 +1714,8 @@
     "defaulted": 0,
     "derived": 9,
     "governance_only": 34,
-    "ignored": 213,
-    "total_fields": 296,
+    "ignored": 201,
+    "total_fields": 284,
     "unsupported": 0
   }
 }
