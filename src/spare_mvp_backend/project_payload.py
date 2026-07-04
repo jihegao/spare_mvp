@@ -15,10 +15,11 @@ def project_runtime_config_paths(project_json: dict[str, Any]) -> list[str]:
 
 
 def strip_project_sweep(project_json: dict[str, Any]) -> dict[str, Any]:
-    """Return a Project payload without runtime ExperimentPlan sweep config."""
+    """Return a Project payload without runtime or non-model Project fields."""
 
     project = deepcopy(project_json)
     _strip_project_runtime_config(project)
+    _strip_project_non_model_fields(project)
     return project
 
 
@@ -35,6 +36,27 @@ def _strip_project_runtime_config(value: Any) -> None:
     elif isinstance(value, list):
         for item in value:
             _strip_project_runtime_config(item)
+
+
+def _strip_project_non_model_fields(project: dict[str, Any]) -> None:
+    project.pop("deletedSupportResourceKeys", None)
+    mission_profile = project.get("missionProfile")
+    if isinstance(mission_profile, dict):
+        mission_profile.pop("profileType", None)
+        mission_profile.pop("endCondition", None)
+        mission_profile.pop("repeatCycleHours", None)
+        mission_profile.pop("analysisRequests", None)
+    _strip_typo_only_support_activity_fields(project)
+
+
+def _strip_typo_only_support_activity_fields(value: Any) -> None:
+    if isinstance(value, dict):
+        value.pop("requireDevices", None)
+        for child in value.values():
+            _strip_typo_only_support_activity_fields(child)
+    elif isinstance(value, list):
+        for item in value:
+            _strip_typo_only_support_activity_fields(item)
 
 
 def _collect_project_runtime_config_paths(value: Any, path: str, paths: list[str]) -> None:

@@ -213,7 +213,7 @@ class BackendApi:
         if not validation["ok"]:
             raise BackendApiError("invalid_project", "Project JSON failed validation", errors=validation["errors"])
 
-        project = copy.deepcopy(project_json)
+        project = strip_project_sweep(project_json)
         project["project_id"] = validation["project_id"]
         project["schema_version"] = validation["project_schema_version"]
         project["project_version"] = validation["project_version"]

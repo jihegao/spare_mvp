@@ -488,6 +488,10 @@ def _mission_profile_to_project(mission: dict[str, Any], import_id: str) -> dict
         "equipment",
         "reliabilityBlockDiagram",
         "monteCarlo",
+        "analysisRequests",
+        "profileType",
+        "endCondition",
+        "repeatCycleHours",
     }
     profile = {key: deepcopy(value) for key, value in mission.items() if key not in project_only_fields}
     profile["sourceImportId"] = import_id

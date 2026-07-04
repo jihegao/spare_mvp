@@ -229,6 +229,7 @@ export function buildBackendProjectJson(scenario, project = {}) {
   syncCompositeTaskInheritedBasicFields(projectJson);
   canonicalizeSupportActivityJobPredecessors(projectJson);
   stripProjectRuntimeConfig(projectJson);
+  stripProjectNonModelFields(projectJson);
   projectJson.schema_version ||= "project-v0";
   projectJson.project_id ||= project.id ? `project-${project.id}` : `project-${projectJson.scenarioId}`;
   projectJson.project_version ||= "project-v0.1";
@@ -253,6 +254,31 @@ function stripProjectRuntimeConfig(value) {
     delete largeSample.sweep;
   }
   for (const child of Object.values(value)) stripProjectRuntimeConfig(child);
+}
+
+function stripProjectNonModelFields(projectJson) {
+  if (!projectJson || typeof projectJson !== "object") return;
+  delete projectJson.deletedSupportResourceKeys;
+  stripMissionProfileNonModelFields(projectJson.missionProfile);
+  stripSupportActivityTypoFields(projectJson);
+}
+
+function stripMissionProfileNonModelFields(missionProfile) {
+  if (!missionProfile || typeof missionProfile !== "object" || Array.isArray(missionProfile)) return;
+  delete missionProfile.profileType;
+  delete missionProfile.endCondition;
+  delete missionProfile.repeatCycleHours;
+  delete missionProfile.analysisRequests;
+}
+
+function stripSupportActivityTypoFields(value) {
+  if (Array.isArray(value)) {
+    for (const item of value) stripSupportActivityTypoFields(item);
+    return;
+  }
+  if (!value || typeof value !== "object") return;
+  delete value.requireDevices;
+  for (const child of Object.values(value)) stripSupportActivityTypoFields(child);
 }
 
 function syncCompositeTaskInheritedBasicFields(projectJson) {

@@ -122,7 +122,7 @@
           "constructor_param": "time_config"
         },
         "monte_carlo": {
-          "source": "project.experiment.samples and project.monteCarlo sweep arrays",
+          "source": "project.experiment.samples and formal ExperimentPlan.config.analysisRequests.largeSample sweep via MonteCarloRunConfig; persisted Project sweep arrays are stripped",
           "constructor_param": "monte_carlo_config"
         },
         "seed": {

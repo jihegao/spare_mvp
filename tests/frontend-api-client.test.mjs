@@ -621,14 +621,34 @@ test("buildBackendProjectJson canonicalizes support activity job predecessor ref
 test("buildBackendProjectJson strips Monte Carlo config from Project modeling data", () => {
   const scenario = {
     scenarioId: "mc-project-boundary",
+    deletedSupportResourceKeys: ["support-org:legacy"],
     missionProfile: {
       name: "Project modeling profile",
+      profileType: "legacy profile label",
+      repeatCycleHours: 6,
+      endCondition: "legacy end condition",
       monteCarlo: {
         failureRates: [0.06],
         spareMultipliers: [1],
         supportCapacities: [2]
+      },
+      analysisRequests: {
+        largeSample: {
+          enabled: true,
+          samples: 9,
+          sweep: {
+            failureRates: [0.09]
+          }
+        }
       }
     },
+    supportActivities: [
+      {
+        id: "support-activity",
+        requireDevices: 3,
+        requiredDevices: 2
+      }
+    ],
     monteCarlo: {
       failureRates: [0.06, 0.08],
       spareMultipliers: [1],
@@ -651,9 +671,17 @@ test("buildBackendProjectJson strips Monte Carlo config from Project modeling da
 
   assert.equal("monteCarlo" in projectJson, false);
   assert.equal("monteCarlo" in projectJson.missionProfile, false);
+  assert.equal("profileType" in projectJson.missionProfile, false);
+  assert.equal("repeatCycleHours" in projectJson.missionProfile, false);
+  assert.equal("endCondition" in projectJson.missionProfile, false);
+  assert.equal("analysisRequests" in projectJson.missionProfile, false);
+  assert.equal("deletedSupportResourceKeys" in projectJson, false);
+  assert.equal("requireDevices" in projectJson.supportActivities[0], false);
+  assert.equal(projectJson.supportActivities[0].requiredDevices, 2);
   assert.equal("sweep" in projectJson.analysisRequests.largeSample, false);
   assert.ok("monteCarlo" in scenario);
   assert.ok("monteCarlo" in scenario.missionProfile);
+  assert.ok("requireDevices" in scenario.supportActivities[0]);
 });
 
 test("experiment plan config preserves Monte Carlo branch sweep settings", () => {

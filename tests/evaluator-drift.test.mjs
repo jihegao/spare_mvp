@@ -193,6 +193,19 @@ test("aviation mapping exposes approved formal execution constructor rules", asy
   }
 });
 
+test("aircraft support mapping keeps identity metadata separate from formal Monte Carlo config", async () => {
+  const mapping = await readJson("contracts/scenario_adapter_mapping.json");
+  const inputs = mapping.model_families.aircraft_support_v1.simulation_inputs;
+
+  assert.equal(inputs.schema_version.status, "metadata_only");
+  assert.equal(inputs.schema_version.constructor_param, undefined);
+  assert.equal(inputs.project_identity.status, "governance_only");
+  assert.equal(inputs.project_identity.constructor_param, undefined);
+  assert.match(inputs.project_identity.reason, /do not change simulation dynamics/);
+  assert.match(inputs.monte_carlo.source, /ExperimentPlan\.config\.analysisRequests\.largeSample/);
+  assert.doesNotMatch(inputs.monte_carlo.source, /project\.monteCarlo/);
+});
+
 test("scenario schema rejects values the smoke model would silently coerce", async () => {
   const schema = await readJson("contracts/scenario.schema.json");
   const inputs = await scenarioInputProperties(schema, "smoke");

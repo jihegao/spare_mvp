@@ -626,7 +626,42 @@ class BackendApiContractTest(unittest.TestCase):
 
         self.assertNotIn("monteCarlo", stored)
         self.assertNotIn("monteCarlo", stored["missionProfile"])
-        self.assertNotIn("sweep", stored["missionProfile"]["analysisRequests"]["largeSample"])
+        self.assertNotIn("analysisRequests", stored["missionProfile"])
+
+    def test_save_project_strips_non_model_project_fields(self) -> None:
+        project = self._fixture("smoke_project.json")
+        project["project_id"] = "project-non-model-fields"
+        project["deletedSupportResourceKeys"] = ["support-org:spare:legacy"]
+        project["missionProfile"] = {
+            "name": "model profile",
+            "profileType": "legacy label",
+            "repeatCycleHours": 6,
+            "endCondition": "legacy end condition",
+            "analysisRequests": {
+                "largeSample": {
+                    "enabled": True,
+                    "samples": 5,
+                },
+            },
+        }
+        project["supportActivities"] = [
+            {
+                "id": "activity-1",
+                "requireDevices": 3,
+                "requiredDevices": 2,
+            },
+        ]
+
+        saved = self.api.save_project(project)
+        stored = self.api.get_project(saved["project_id"])
+
+        self.assertNotIn("deletedSupportResourceKeys", stored)
+        self.assertNotIn("profileType", stored["missionProfile"])
+        self.assertNotIn("repeatCycleHours", stored["missionProfile"])
+        self.assertNotIn("endCondition", stored["missionProfile"])
+        self.assertNotIn("analysisRequests", stored["missionProfile"])
+        self.assertNotIn("requireDevices", stored["supportActivities"][0])
+        self.assertEqual(stored["supportActivities"][0]["requiredDevices"], 2)
 
     def test_run_service_submits_smoke_run_and_returns_status_envelope(self) -> None:
         project = self._fixture("smoke_project.json")
@@ -2874,6 +2909,10 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertGreaterEqual(len(project["reliabilityBlockDiagram"]["nodes"]), 4)
         self.assertNotIn("monteCarlo", project)
         self.assertNotIn("monteCarlo", project["missionProfile"])
+        self.assertNotIn("analysisRequests", project["missionProfile"])
+        self.assertNotIn("profileType", project["missionProfile"])
+        self.assertNotIn("endCondition", project["missionProfile"])
+        self.assertNotIn("repeatCycleHours", project["missionProfile"])
         objects["analysisRequests"]["largeSample"]["sweep"]["failureRates"].append(0.99)
         self.assertNotIn("sweep", project["analysisRequests"]["largeSample"])
 

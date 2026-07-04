@@ -107,6 +107,17 @@ test("single simulation exposes required prototype metrics and analysis outputs"
   assert.equal(typeof result.reliability.missionReliability, "number");
 });
 
+test("preview simulation falls back to mission duration after repeat cycle migration", () => {
+  const scenario = previewScenarioFixture();
+  scenario.missionProfile.durationHours = 6;
+  delete scenario.missionProfile.repeatCycleHours;
+
+  const result = runSimulation(scenario, { seed: 88, steps: 12 });
+
+  assert.equal(result.timeline.length, 12);
+  assert.ok(result.final.mission_success_rate >= 0);
+});
+
 test("monte carlo summarizes scenario groups and preserves decision outputs", () => {
   const result = runMonteCarlo(previewScenarioFixture(), {
     samples: 3,

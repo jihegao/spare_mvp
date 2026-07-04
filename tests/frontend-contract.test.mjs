@@ -495,6 +495,23 @@ test("project data management exposes project list, template controls, overview,
   assert.match(eventSource, /const projectTemplateAction = event\.target\.closest\("\[data-project-template-action\]"\)/);
 });
 
+test("active docs explain Project JSON non-model field cleanup boundary", async () => {
+  const rootReadme = await readFile(new URL("../README.md", import.meta.url), "utf8");
+  const docsReadme = await readFile(new URL("../docs/README.md", import.meta.url), "utf8");
+  const roadmap = await readFile(new URL("../docs/product-roadmap.md", import.meta.url), "utf8");
+  const contractsReadme = await readFile(new URL("../contracts/README.md", import.meta.url), "utf8");
+  const agentGuide = await readFile(new URL("../agent.md", import.meta.url), "utf8");
+  const combinedDocs = [rootReadme, docsReadme, roadmap, contractsReadme, agentGuide].join("\n");
+
+  assert.match(combinedDocs, /missionProfile\.profileType/);
+  assert.match(combinedDocs, /missionProfile\.analysisRequests/);
+  assert.match(combinedDocs, /deletedSupportResourceKeys/);
+  assert.match(combinedDocs, /supportActivities\[\]\.requireDevices/);
+  assert.match(combinedDocs, /requiredDevices[^。]*实际消费字段|supportActivities\[\]\.requiredDevices remains part/);
+  assert.match(combinedDocs, /ExperimentPlan\.config\.analysisRequests\.largeSample/);
+  assert.doesNotMatch(combinedDocs, /RunService 编译单次 smoke run/);
+});
+
 test("project list edit action opens a usable inline editor", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const projectListSource = appSource.slice(
