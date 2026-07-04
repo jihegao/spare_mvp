@@ -85,9 +85,14 @@ class SimulationAdapter:
             "errors": errors,
         }
 
-    def compile_scenario(self, project: dict[str, Any], model_family: str = "smoke") -> dict[str, Any]:
+    def compile_scenario(
+        self,
+        project: dict[str, Any],
+        model_family: str = "smoke",
+        runtime_config: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """Compile a validated Project JSON document into a model-specific Scenario."""
-        result = self._compile_scenario_with_gate(project, model_family=model_family)
+        result = self._compile_scenario_with_gate(project, model_family=model_family, runtime_config=runtime_config)
         if result["status"] == "compiled" and result["scenario"] is not None:
             return result["scenario"]
         if result["status"] == "blocked":
@@ -116,9 +121,14 @@ class SimulationAdapter:
             provenance=result["provenance"],
         )
 
-    def compile_scenario_with_gate(self, project: dict[str, Any], model_family: str = "smoke") -> dict[str, Any]:
+    def compile_scenario_with_gate(
+        self,
+        project: dict[str, Any],
+        model_family: str = "smoke",
+        runtime_config: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """Compile with an explicit fail-closed gate result for unsupported paths."""
-        return self._compile_scenario_with_gate(project, model_family=model_family)
+        return self._compile_scenario_with_gate(project, model_family=model_family, runtime_config=runtime_config)
 
     def _retired_model_family_gate(self, model_family: str) -> dict[str, Any]:
         message = f"{model_family} is retired; use {ACTIVE_MODEL_FAMILY}"
@@ -160,7 +170,12 @@ class SimulationAdapter:
             retired_model_families=list(RETIRED_ADAPTER_MODEL_FAMILIES),
         )
 
-    def _compile_scenario_with_gate(self, project: dict[str, Any], model_family: str = "smoke") -> dict[str, Any]:
+    def _compile_scenario_with_gate(
+        self,
+        project: dict[str, Any],
+        model_family: str = "smoke",
+        runtime_config: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         if model_family in RETIRED_ADAPTER_MODEL_FAMILIES:
             return self._retired_model_family_gate(model_family)
         validation = self.validate_project(project)
@@ -187,7 +202,7 @@ class SimulationAdapter:
                 "errors": validation["errors"],
             }
         if model_family == "smoke":
-            scenario = self._compile_smoke_scenario(project, validation)
+            scenario = self._compile_smoke_scenario(project, validation, runtime_config=runtime_config)
             provenance = self._with_modeling_import_validation_provenance(
                 scenario["compiled_from"]["mapping_provenance"],
                 project,
@@ -214,7 +229,7 @@ class SimulationAdapter:
             }
         if model_family == "aircraft_support_v1":
             provenance = self._with_modeling_import_validation_provenance(
-                self._aircraft_support_v1_mapping_provenance(self._project_id(project), project),
+                self._aircraft_support_v1_mapping_provenance(self._project_id(project), project, runtime_config),
                 project,
             )
             issues = self._aircraft_support_v1_compile_issues(project)
@@ -233,7 +248,7 @@ class SimulationAdapter:
                         for issue in issues
                     ],
                 }
-            scenario = self._compile_aircraft_support_v1_scenario(project, validation)
+            scenario = self._compile_aircraft_support_v1_scenario(project, validation, runtime_config=runtime_config)
             scenario = self._scenario_with_mapping_provenance(scenario, provenance)
             return {
                 "status": "compiled",
@@ -261,11 +276,16 @@ class SimulationAdapter:
             ],
         }
 
-    def _compile_smoke_scenario(self, project: dict[str, Any], validation: dict[str, Any]) -> dict[str, Any]:
+    def _compile_smoke_scenario(
+        self,
+        project: dict[str, Any],
+        validation: dict[str, Any],
+        runtime_config: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         project_id = validation["project_id"]
         project_version = validation["project_version"]
         scenario_key = _safe_identifier(str(project.get("scenarioId") or project_id))
-        inputs = self._compile_smoke_inputs(project, project_version)
+        inputs = self._compile_smoke_inputs(project, project_version, runtime_config=runtime_config)
         now = _utc_now()
 
         scenario = {
@@ -325,11 +345,16 @@ class SimulationAdapter:
         self._compiled_project_snapshots[scenario["project_id"]] = copy.deepcopy(project)
         return scenario
 
-    def _compile_aircraft_support_v1_scenario(self, project: dict[str, Any], validation: dict[str, Any]) -> dict[str, Any]:
+    def _compile_aircraft_support_v1_scenario(
+        self,
+        project: dict[str, Any],
+        validation: dict[str, Any],
+        runtime_config: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         project_id = validation["project_id"]
         project_version = validation["project_version"]
         scenario_key = _safe_identifier(str(project.get("scenarioId") or project_id))
-        inputs = self._compile_aircraft_support_v1_inputs(project, validation)
+        inputs = self._compile_aircraft_support_v1_inputs(project, validation, runtime_config=runtime_config)
         now = _utc_now()
 
         scenario = {
@@ -349,7 +374,7 @@ class SimulationAdapter:
                 "project_version": project_version,
                 "project_schema_version": validation["project_schema_version"],
                 "mesa_contract_version": MESA_CONTRACT_VERSION,
-                "mapping_provenance": self._aircraft_support_v1_mapping_provenance(project_id, project),
+                "mapping_provenance": self._aircraft_support_v1_mapping_provenance(project_id, project, runtime_config),
             },
             "simulation_inputs": inputs,
         }
@@ -738,12 +763,19 @@ class SimulationAdapter:
         schema = json.loads((self.contracts_dir / "project.schema.json").read_text(encoding="utf-8"))
         return list(schema["required"])
 
-    def _compile_smoke_inputs(self, project: dict[str, Any], project_version: str) -> dict[str, Any]:
+    def _compile_smoke_inputs(
+        self,
+        project: dict[str, Any],
+        project_version: str,
+        runtime_config: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        experiment = self._runtime_experiment_config(project, runtime_config)
+        monte_carlo = self._runtime_monte_carlo_config(project, runtime_config)
         return {
             "project_snapshot": copy.deepcopy(project),
             "project_version": project_version,
             "active_module": str(project.get("activeModule", "sparePlanning")),
-            "spare_multiplier": self._first_number(project.get("monteCarlo", {}).get("spareMultipliers"), 1.0),
+            "spare_multiplier": self._first_number(monte_carlo.get("spareMultipliers"), 1.0),
             "failure_rate": self._mean_component_failure_rate(project),
             "support_capacity": self._first_positive_int(project.get("supportNodes", []), "equipmentCapacity", 1),
             "min_required_sorties": self._positive_int(
@@ -751,7 +783,7 @@ class SimulationAdapter:
                 or project.get("basicMission", {}).get("minRequiredSorties"),
                 1,
             ),
-            "seed": self._positive_int(project.get("experiment", {}).get("seed"), 0),
+            "seed": self._positive_int(experiment.get("seed"), 0),
         }
 
     def _compile_aviation_support_inputs(self, project: dict[str, Any]) -> dict[str, Any]:
@@ -773,11 +805,12 @@ class SimulationAdapter:
         self,
         project: dict[str, Any],
         validation: dict[str, Any],
+        runtime_config: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         mission_profile = project.get("missionProfile") if isinstance(project.get("missionProfile"), dict) else {}
         aircraft_summary = self._aircraft_support_v1_aircraft_summary(project, mission_profile)
-        experiment = project.get("experiment") if isinstance(project.get("experiment"), dict) else {}
-        monte_carlo = project.get("monteCarlo") if isinstance(project.get("monteCarlo"), dict) else {}
+        experiment = self._runtime_experiment_config(project, runtime_config)
+        monte_carlo = self._runtime_monte_carlo_config(project, runtime_config)
         duration_minutes = self._aircraft_support_v1_duration_minutes(mission_profile)
         fleet_count = aircraft_summary["fleet_count"]
         initial_ready = aircraft_summary["initial_ready"]
@@ -846,6 +879,39 @@ class SimulationAdapter:
             },
             "seed": self._positive_int(experiment.get("seed"), 0),
         }
+
+    def _runtime_experiment_config(
+        self,
+        project: dict[str, Any],
+        runtime_config: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        experiment = copy.deepcopy(project.get("experiment") if isinstance(project.get("experiment"), dict) else {})
+        runtime = runtime_config if isinstance(runtime_config, dict) else {}
+        nested = runtime.get("experiment") if isinstance(runtime.get("experiment"), dict) else {}
+        for source in (nested, runtime):
+            for key in ("name", "steps", "samples", "seed"):
+                if key in source:
+                    experiment[key] = copy.deepcopy(source[key])
+        if "samples" not in experiment and "sample_count" in runtime:
+            experiment["samples"] = copy.deepcopy(runtime["sample_count"])
+        return experiment
+
+    def _runtime_monte_carlo_config(
+        self,
+        project: dict[str, Any],
+        runtime_config: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        monte_carlo = copy.deepcopy(project.get("monteCarlo") if isinstance(project.get("monteCarlo"), dict) else {})
+        runtime = runtime_config if isinstance(runtime_config, dict) else {}
+        runtime_monte_carlo = runtime.get("monteCarlo") if isinstance(runtime.get("monteCarlo"), dict) else {}
+        monte_carlo.update(copy.deepcopy(runtime_monte_carlo))
+        analysis_requests = runtime.get("analysisRequests") if isinstance(runtime.get("analysisRequests"), dict) else {}
+        large_sample = analysis_requests.get("largeSample") if isinstance(analysis_requests.get("largeSample"), dict) else {}
+        large_sample_sweep = large_sample.get("sweep") if isinstance(large_sample.get("sweep"), dict) else {}
+        monte_carlo.update(copy.deepcopy(large_sample_sweep))
+        direct_sweep = runtime.get("sweep") if isinstance(runtime.get("sweep"), dict) else {}
+        monte_carlo.update(copy.deepcopy(direct_sweep))
+        return monte_carlo
 
     def _aircraft_support_v1_component(self, component: dict[str, Any]) -> dict[str, Any]:
         return {
@@ -1080,7 +1146,12 @@ class SimulationAdapter:
             "unsupported_fields": [],
         }
 
-    def _aircraft_support_v1_mapping_provenance(self, project_id: str, project: dict[str, Any]) -> dict[str, Any]:
+    def _aircraft_support_v1_mapping_provenance(
+        self,
+        project_id: str,
+        project: dict[str, Any],
+        runtime_config: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         return {
             "project_id": project_id,
             "modeling_snapshot_id": None,
@@ -1111,19 +1182,19 @@ class SimulationAdapter:
                 "supportActivities[].jobs[]",
                 "supportActivities[].jobs[].predecessors",
                 "reliabilityBlockDiagram",
-                "monteCarlo.failureRates",
-                "monteCarlo.spareMultipliers",
-                "monteCarlo.supportCapacities",
-                "experiment.seed",
-                "experiment.samples",
+                "ExperimentPlan.config.analysisRequests.largeSample.sweep.failureRates",
+                "ExperimentPlan.config.analysisRequests.largeSample.sweep.spareMultipliers",
+                "ExperimentPlan.config.analysisRequests.largeSample.sweep.supportCapacities",
+                "ExperimentPlan.config.seed",
+                "ExperimentPlan.config.samples",
             ],
-            "defaults_applied": self._aircraft_support_v1_defaults_applied(project),
+            "defaults_applied": self._aircraft_support_v1_defaults_applied(project, runtime_config),
             "derived_fields": [
                 "simulation_inputs.project_identity",
                 "simulation_inputs.aircraft.initial_ready",
                 "simulation_inputs.time.duration_minutes",
                 "simulation_inputs.time.requested_steps",
-                "experiment.steps",
+                "ExperimentPlan.config.steps",
             ],
             "ignored_fields": [],
             "governance_only_fields": [
@@ -1160,7 +1231,11 @@ class SimulationAdapter:
             defaults.append("experiment.seed=0")
         return defaults
 
-    def _aircraft_support_v1_defaults_applied(self, project: dict[str, Any]) -> list[str]:
+    def _aircraft_support_v1_defaults_applied(
+        self,
+        project: dict[str, Any],
+        runtime_config: dict[str, Any] | None = None,
+    ) -> list[str]:
         defaults = [
             "time.tick_minutes=1",
             "time.sample_every_minutes=30",
@@ -1168,25 +1243,25 @@ class SimulationAdapter:
         ]
         equipment = project.get("equipment") if isinstance(project.get("equipment"), dict) else {}
         mission_profile = project.get("missionProfile") if isinstance(project.get("missionProfile"), dict) else {}
-        experiment = project.get("experiment") if isinstance(project.get("experiment"), dict) else {}
-        monte_carlo = project.get("monteCarlo") if isinstance(project.get("monteCarlo"), dict) else {}
+        experiment = self._runtime_experiment_config(project, runtime_config)
+        monte_carlo = self._runtime_monte_carlo_config(project, runtime_config)
         combat_members = self._aircraft_support_v1_combat_members(project, mission_profile)
         if not combat_members and not self._is_positive_number(equipment.get("initialReady")):
             defaults.append("aircraft.initialReady=derivedFleetCount")
         if not self._is_positive_number(mission_profile.get("durationHours")) and not self._mission_profile_has_periodic_duration(mission_profile):
             defaults.append("missionProfile.durationHours=24")
         if not self._is_positive_number(experiment.get("steps")):
-            defaults.append("experiment.steps=durationMinutes/sampleEveryMinutes")
+            defaults.append("ExperimentPlan.config.steps=durationMinutes/sampleEveryMinutes")
         if not self._is_positive_number(experiment.get("samples")):
-            defaults.append("experiment.samples=1")
+            defaults.append("ExperimentPlan.config.samples=1")
         if not self._has_any_number(monte_carlo.get("failureRates")):
-            defaults.append("monteCarlo.failureRates=[1.0]")
+            defaults.append("ExperimentPlan.config.analysisRequests.largeSample.sweep.failureRates=[1.0]")
         if not self._has_any_number(monte_carlo.get("spareMultipliers")):
-            defaults.append("monteCarlo.spareMultipliers=[1.0]")
+            defaults.append("ExperimentPlan.config.analysisRequests.largeSample.sweep.spareMultipliers=[1.0]")
         if not self._has_any_number(monte_carlo.get("supportCapacities")):
-            defaults.append("monteCarlo.supportCapacities=[1]")
+            defaults.append("ExperimentPlan.config.analysisRequests.largeSample.sweep.supportCapacities=[1]")
         if not self._is_number(experiment.get("seed")):
-            defaults.append("experiment.seed=0")
+            defaults.append("ExperimentPlan.config.seed=0")
         return defaults
 
     def _aircraft_support_v1_unsupported_fields(self, project: dict[str, Any]) -> list[str]:

@@ -649,6 +649,12 @@ test("buildBackendProjectJson strips Monte Carlo config from Project modeling da
         requiredDevices: 2
       }
     ],
+    experiment: {
+      name: "runtime branch",
+      steps: 12,
+      samples: 4,
+      seed: 20260620
+    },
     monteCarlo: {
       failureRates: [0.06, 0.08],
       spareMultipliers: [1],
@@ -670,6 +676,8 @@ test("buildBackendProjectJson strips Monte Carlo config from Project modeling da
   const projectJson = buildBackendProjectJson(scenario, { id: "mc-project-boundary" });
 
   assert.equal("monteCarlo" in projectJson, false);
+  assert.equal("analysisRequests" in projectJson, false);
+  assert.equal("experiment" in projectJson, false);
   assert.equal("monteCarlo" in projectJson.missionProfile, false);
   assert.equal("profileType" in projectJson.missionProfile, false);
   assert.equal("repeatCycleHours" in projectJson.missionProfile, false);
@@ -678,8 +686,9 @@ test("buildBackendProjectJson strips Monte Carlo config from Project modeling da
   assert.equal("deletedSupportResourceKeys" in projectJson, false);
   assert.equal("requireDevices" in projectJson.supportActivities[0], false);
   assert.equal(projectJson.supportActivities[0].requiredDevices, 2);
-  assert.equal("sweep" in projectJson.analysisRequests.largeSample, false);
   assert.ok("monteCarlo" in scenario);
+  assert.ok("analysisRequests" in scenario);
+  assert.ok("experiment" in scenario);
   assert.ok("monteCarlo" in scenario.missionProfile);
   assert.ok("requireDevices" in scenario.supportActivities[0]);
 });
@@ -739,20 +748,20 @@ test("experiment plan config preserves Monte Carlo branch sweep settings", () =>
   };
   const config = buildExperimentPlanConfig(projectJson);
 
-  assert.deepEqual(config, {
-    name: "branch config",
-    steps: 12,
-    samples: 24,
-    seed: 20260620,
-    projectJson,
-    monteCarlo: {
-      failureRates: [0.06, 0.08, 0.1],
-      spareMultipliers: [0.75, 1, 1.25],
-      supportCapacities: [2, 3],
-      minRequiredSorties: [4, 5]
-    },
-    analysisRequests: {}
+  assert.equal(config.name, "branch config");
+  assert.equal(config.steps, 12);
+  assert.equal(config.samples, 24);
+  assert.equal(config.seed, 20260620);
+  assert.deepEqual(config.monteCarlo, {
+    failureRates: [0.06, 0.08, 0.1],
+    spareMultipliers: [0.75, 1, 1.25],
+    supportCapacities: [2, 3],
+    minRequiredSorties: [4, 5]
   });
+  assert.deepEqual(config.analysisRequests, {});
+  assert.equal("experiment" in config.projectJson, false);
+  assert.equal("monteCarlo" in config.projectJson, false);
+  assert.equal("analysisRequests" in config.projectJson, false);
 });
 
 test("experiment plan config preserves analysisRequests for formal Monte Carlo runs", () => {
@@ -774,6 +783,9 @@ test("experiment plan config preserves analysisRequests for formal Monte Carlo r
 
   assert.equal(config.analysisRequests.largeSample.samples, 5);
   assert.deepEqual(config.analysisRequests.largeSample.sweep.supportCapacities, [2]);
+  assert.equal("experiment" in config.projectJson, false);
+  assert.equal("analysisRequests" in config.projectJson, false);
+  assert.equal("monteCarlo" in config.projectJson, false);
 });
 
 test("frontend API client sends experiment plan branch project JSON to backend", async () => {
@@ -797,9 +809,11 @@ test("frontend API client sends experiment plan branch project JSON to backend",
   await client.createExperimentPlan("project-branch", buildExperimentPlanConfig(projectJson));
 
   assert.equal(calls[0].path, "/projects/project-branch/experiment-plans");
-  assert.deepEqual(calls[0].body.config.projectJson, projectJson);
+  assert.equal(calls[0].body.config.seed, 42);
   assert.notEqual(calls[0].body.config.projectJson, projectJson);
-  assert.equal(calls[0].body.config.projectJson.experiment.seed, 42);
+  assert.equal("experiment" in calls[0].body.config.projectJson, false);
+  assert.equal("analysisRequests" in calls[0].body.config.projectJson, false);
+  assert.equal("monteCarlo" in calls[0].body.config.projectJson, false);
 });
 
 test("frontend API client logs in and attaches M4 bearer token to protected calls", async () => {

@@ -398,22 +398,7 @@
   "phase": "6P",
   "project": {
     "activeModule": "sparePlanning",
-    "airports": [
-      {
-        "distanceToMissionKm": 180,
-        "id": "airport0",
-        "location": "最小案例起降点",
-        "name": "airport0",
-        "runwayType": "单一起降点",
-        "supportNodeId": null
-      }
-    ],
-    "analysisRequests": {
-      "largeSample": {
-        "enabled": true,
-        "samples": 1
-      }
-    },
+    "airports": [],
     "basicMission": {
       "advanceNoticeMinutes": 60,
       "basicTaskName": "最小单机巡检任务",
@@ -477,24 +462,6 @@
         }
       }
     ],
-    "equipment": {
-      "initialReady": 1,
-      "minRequiredSorties": 1,
-      "model": "J-15",
-      "preLifeRequirementHours": 120,
-      "quantity": 1,
-      "wholeMachineModels": [
-        "J-15"
-      ]
-    },
-    "experiment": {
-      "name": "导入示例项目",
-      "parallelCores": 4,
-      "samples": 1,
-      "seed": 20260621,
-      "steps": 48,
-      "stopCondition": "达到样本数或备件满足率稳定"
-    },
     "missionAreas": [
       {
         "areaType": "制空",

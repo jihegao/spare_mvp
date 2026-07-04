@@ -28,26 +28,23 @@
           "supportActivities[].jobs[]",
           "supportActivities[].jobs[].predecessors",
           "reliabilityBlockDiagram",
-          "monteCarlo.failureRates",
-          "monteCarlo.spareMultipliers",
-          "monteCarlo.supportCapacities",
-          "experiment.seed",
-          "experiment.samples"
+          "ExperimentPlan.config.analysisRequests.largeSample.sweep.failureRates",
+          "ExperimentPlan.config.analysisRequests.largeSample.sweep.spareMultipliers",
+          "ExperimentPlan.config.analysisRequests.largeSample.sweep.supportCapacities",
+          "ExperimentPlan.config.seed",
+          "ExperimentPlan.config.samples"
         ],
         "defaults_applied": [
           "time.tick_minutes=1",
           "time.sample_every_minutes=30",
-          "time.max_state_frames_single=2000",
-          "monteCarlo.failureRates=[1.0]",
-          "monteCarlo.spareMultipliers=[1.0]",
-          "monteCarlo.supportCapacities=[1]"
+          "time.max_state_frames_single=2000"
         ],
         "derived_fields": [
           "simulation_inputs.project_identity",
           "simulation_inputs.aircraft.initial_ready",
           "simulation_inputs.time.duration_minutes",
           "simulation_inputs.time.requested_steps",
-          "experiment.steps"
+          "ExperimentPlan.config.steps"
         ],
         "disabled_domains": [],
         "experiment_plan_id": "experiment-plan-m9-6-platform-case",
@@ -464,20 +461,10 @@
       "mission_profile": {
         "airports": [
           {
-            "distanceToMissionKm": 180,
-            "id": "carrier-deck",
-            "location": "航母战斗群",
-            "name": "航母飞行甲板",
-            "runwayType": "滑跃/弹射甲板",
-            "supportNodeId": "carrier-deck"
-          },
-          {
-            "distanceToMissionKm": 260,
-            "id": "forward-sea-base",
-            "location": "近海前出补给点",
-            "name": "前出海上保障点",
-            "runwayType": "海上保障平台",
-            "supportNodeId": "forward-sea-base"
+            "id": "airport-a",
+            "location": "A",
+            "name": "A",
+            "supportNodeId": "airport-a"
           }
         ],
         "basic_mission": {
@@ -643,13 +630,19 @@
         "sample_count": 24,
         "sweep": {
           "failureRates": [
-            1.0
+            0.035,
+            0.055,
+            0.075
           ],
           "spareMultipliers": [
-            1.0
+            0.75,
+            1.0,
+            1.25
           ],
           "supportCapacities": [
-            1
+            2,
+            3,
+            4
           ]
         }
       },
@@ -1257,28 +1250,12 @@
         "activeModule": "sparePlanning",
         "airports": [
           {
-            "distanceToMissionKm": 180,
-            "id": "carrier-deck",
-            "location": "航母战斗群",
-            "name": "航母飞行甲板",
-            "runwayType": "滑跃/弹射甲板",
-            "supportNodeId": "carrier-deck"
-          },
-          {
-            "distanceToMissionKm": 260,
-            "id": "forward-sea-base",
-            "location": "近海前出补给点",
-            "name": "前出海上保障点",
-            "runwayType": "海上保障平台",
-            "supportNodeId": "forward-sea-base"
+            "id": "airport-a",
+            "location": "A",
+            "name": "A",
+            "supportNodeId": "airport-a"
           }
         ],
-        "analysisRequests": {
-          "largeSample": {
-            "enabled": true,
-            "samples": 24
-          }
-        },
         "basicMission": {
           "advanceNoticeMinutes": 60,
           "cancelMinutes": 20,
@@ -1716,14 +1693,6 @@
             }
           }
         ],
-        "experiment": {
-          "name": "导入示例项目",
-          "parallelCores": 4,
-          "samples": 24,
-          "seed": 20260621,
-          "steps": 48,
-          "stopCondition": "达到样本数或备件满足率稳定"
-        },
         "missionAreas": [
           {
             "areaType": "制空",
@@ -2477,6 +2446,8 @@
           ]
         }
       },
+      "samples": 24,
+      "seed": 20260621,
       "steps": 48
     },
     "created_at": "2026-06-23T00:00:00Z",
@@ -2493,28 +2464,12 @@
       "activeModule": "sparePlanning",
       "airports": [
         {
-          "distanceToMissionKm": 180,
-          "id": "carrier-deck",
-          "location": "航母战斗群",
-          "name": "航母飞行甲板",
-          "runwayType": "滑跃/弹射甲板",
-          "supportNodeId": "carrier-deck"
-        },
-        {
-          "distanceToMissionKm": 260,
-          "id": "forward-sea-base",
-          "location": "近海前出补给点",
-          "name": "前出海上保障点",
-          "runwayType": "海上保障平台",
-          "supportNodeId": "forward-sea-base"
+          "id": "airport-a",
+          "location": "A",
+          "name": "A",
+          "supportNodeId": "airport-a"
         }
       ],
-      "analysisRequests": {
-        "largeSample": {
-          "enabled": true,
-          "samples": 24
-        }
-      },
       "basicMission": {
         "advanceNoticeMinutes": 60,
         "cancelMinutes": 20,
@@ -2952,14 +2907,6 @@
           }
         }
       ],
-      "experiment": {
-        "name": "导入示例项目",
-        "parallelCores": 4,
-        "samples": 24,
-        "seed": 20260621,
-        "steps": 48,
-        "stopCondition": "达到样本数或备件满足率稳定"
-      },
       "missionAreas": [
         {
           "areaType": "制空",
@@ -3744,28 +3691,12 @@
     "activeModule": "sparePlanning",
     "airports": [
       {
-        "distanceToMissionKm": 180,
-        "id": "carrier-deck",
-        "location": "航母战斗群",
-        "name": "航母飞行甲板",
-        "runwayType": "滑跃/弹射甲板",
-        "supportNodeId": "carrier-deck"
-      },
-      {
-        "distanceToMissionKm": 260,
-        "id": "forward-sea-base",
-        "location": "近海前出补给点",
-        "name": "前出海上保障点",
-        "runwayType": "海上保障平台",
-        "supportNodeId": "forward-sea-base"
+        "id": "airport-a",
+        "location": "A",
+        "name": "A",
+        "supportNodeId": "airport-a"
       }
     ],
-    "analysisRequests": {
-      "largeSample": {
-        "enabled": true,
-        "samples": 24
-      }
-    },
     "basicMission": {
       "advanceNoticeMinutes": 60,
       "cancelMinutes": 20,
@@ -4203,14 +4134,6 @@
         }
       }
     ],
-    "experiment": {
-      "name": "导入示例项目",
-      "parallelCores": 4,
-      "samples": 24,
-      "seed": 20260621,
-      "steps": 48,
-      "stopCondition": "达到样本数或备件满足率稳定"
-    },
     "missionAreas": [
       {
         "areaType": "制空",

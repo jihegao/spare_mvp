@@ -249,10 +249,8 @@ function stripProjectRuntimeConfig(value) {
   }
   if (!value || typeof value !== "object") return;
   delete value.monteCarlo;
-  const largeSample = value.analysisRequests?.largeSample;
-  if (largeSample && typeof largeSample === "object" && !Array.isArray(largeSample)) {
-    delete largeSample.sweep;
-  }
+  delete value.analysisRequests;
+  delete value.experiment;
   for (const child of Object.values(value)) stripProjectRuntimeConfig(child);
 }
 
@@ -392,12 +390,15 @@ function normalizedText(value) {
 }
 
 export function buildExperimentPlanConfig(projectJson) {
+  const experiment = projectJson.experiment && typeof projectJson.experiment === "object" && !Array.isArray(projectJson.experiment)
+    ? projectJson.experiment
+    : {};
   const config = {
-    name: projectJson.experiment?.name || "frontend experiment",
-    steps: Number(projectJson.experiment?.steps ?? 3),
-    samples: Number(projectJson.experiment?.samples ?? 1),
-    seed: Number(projectJson.experiment?.seed ?? 0),
-    projectJson: cloneJson(projectJson),
+    name: experiment.name || "frontend experiment",
+    steps: Number(experiment.steps ?? 3),
+    samples: Number(experiment.samples ?? 1),
+    seed: Number(experiment.seed ?? 0),
+    projectJson: buildBackendProjectJson(projectJson),
     monteCarlo: cloneJson(projectJson.monteCarlo || {}),
     analysisRequests: cloneJson(projectJson.analysisRequests || {})
   };

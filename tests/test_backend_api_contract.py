@@ -48,16 +48,19 @@ class RecordingAdapter(SimulationAdapter):
     def __init__(self) -> None:
         super().__init__(REPO_ROOT)
         self.compile_calls: list[tuple[dict, str]] = []
+        self.compile_runtime_configs: list[dict | None] = []
         self.run_calls: list[tuple[dict, int]] = []
         self.monte_carlo_run_calls: list[dict] = []
 
-    def compile_scenario(self, project: dict, model_family: str = "smoke") -> dict:
+    def compile_scenario(self, project: dict, model_family: str = "smoke", runtime_config: dict | None = None) -> dict:
         self.compile_calls.append((copy.deepcopy(project), model_family))
-        return super().compile_scenario(project, model_family=model_family)
+        self.compile_runtime_configs.append(copy.deepcopy(runtime_config))
+        return super().compile_scenario(project, model_family=model_family, runtime_config=runtime_config)
 
-    def compile_scenario_with_gate(self, project: dict, model_family: str = "smoke") -> dict:
+    def compile_scenario_with_gate(self, project: dict, model_family: str = "smoke", runtime_config: dict | None = None) -> dict:
         self.compile_calls.append((copy.deepcopy(project), model_family))
-        return super().compile_scenario_with_gate(project, model_family=model_family)
+        self.compile_runtime_configs.append(copy.deepcopy(runtime_config))
+        return super().compile_scenario_with_gate(project, model_family=model_family, runtime_config=runtime_config)
 
     def run_scenario(
         self,
@@ -591,8 +594,8 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(
             sorted(error["path"] for error in validation["errors"] if error["code"] == "unsupported_project_runtime_config"),
             [
-                "analysisRequests.largeSample.sweep",
-                "missionProfile.analysisRequests.largeSample.sweep",
+                "analysisRequests",
+                "missionProfile.analysisRequests",
                 "missionProfile.monteCarlo",
                 "monteCarlo",
             ],
@@ -656,6 +659,7 @@ class BackendApiContractTest(unittest.TestCase):
         stored = self.api.get_project(saved["project_id"])
 
         self.assertNotIn("deletedSupportResourceKeys", stored)
+        self.assertNotIn("experiment", stored)
         self.assertNotIn("profileType", stored["missionProfile"])
         self.assertNotIn("repeatCycleHours", stored["missionProfile"])
         self.assertNotIn("endCondition", stored["missionProfile"])
@@ -2105,14 +2109,14 @@ class BackendApiContractTest(unittest.TestCase):
                         "projectJson": copy.deepcopy(project),
                         "modeling_snapshot_id": snapshot["snapshot_id"],
                         "analysisRequests": {
-                            **copy.deepcopy(project["analysisRequests"]),
+                            **copy.deepcopy(import_package["objects"].get("analysisRequests") or {}),
                             "largeSample": {
-                                **copy.deepcopy(project["analysisRequests"]["largeSample"]),
-                            "sweep": copy.deepcopy(
-                                import_package["objects"].get("monteCarlo")
-                                or import_package["objects"]["missionProfiles"][0].get("monteCarlo")
-                                or {}
-                            ),
+                                **copy.deepcopy((import_package["objects"].get("analysisRequests") or {})["largeSample"]),
+                                "sweep": copy.deepcopy(
+                                    import_package["objects"].get("monteCarlo")
+                                    or import_package["objects"]["missionProfiles"][0].get("monteCarlo")
+                                    or {}
+                                ),
                             },
                         },
                     },
@@ -2395,7 +2399,7 @@ class BackendApiContractTest(unittest.TestCase):
         )
 
         changed_project = copy.deepcopy(project)
-        changed_project["experiment"]["name"] = "changed after first run"
+        changed_project.setdefault("projectInfo", {})["name"] = "changed after first run"
         second_saved = self.api.save_project(changed_project)
         second_snapshot = self.api.create_modeling_snapshot(second_saved["project_id"])
         second_plan = self.api.create_experiment_plan(second_saved["project_id"], {"name": "same config", "steps": 1})
@@ -2426,7 +2430,7 @@ class BackendApiContractTest(unittest.TestCase):
         old_snapshot = self.api.create_modeling_snapshot(saved["project_id"])
 
         changed_project = copy.deepcopy(project)
-        changed_project["experiment"]["name"] = "current run input after old snapshot"
+        changed_project.setdefault("projectInfo", {})["name"] = "current run input after old snapshot"
         self.api.save_project(changed_project)
         current_snapshot = self.api.create_modeling_snapshot(saved["project_id"])
 
@@ -2452,7 +2456,8 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertNotEqual(old_snapshot["snapshot_id"], current_snapshot["snapshot_id"])
         self.assertEqual(plan["modeling_snapshot_id"], current_snapshot["snapshot_id"])
         self.assertEqual(chain["modeling_snapshot_id"], current_snapshot["snapshot_id"])
-        self.assertEqual(plan["config"]["projectJson"]["experiment"]["name"], "current run input after old snapshot")
+        self.assertEqual(plan["config"]["projectJson"]["projectInfo"]["name"], "current run input after old snapshot")
+        self.assertNotIn("experiment", plan["config"]["projectJson"])
         self.assertNotIn("modeling_snapshot_id", plan["config"])
 
     def test_experiment_plan_config_branch_does_not_mutate_source_project(self) -> None:
@@ -2476,8 +2481,8 @@ class BackendApiContractTest(unittest.TestCase):
         stored_project = self.api.get_project(saved["project_id"])
 
         self.assertEqual(stored_project, strip_project_sweep(project))
-        self.assertEqual(stored_project["experiment"]["seed"], project["experiment"]["seed"])
-        self.assertNotIn("assumptions", stored_project["experiment"])
+        self.assertNotIn("experiment", stored_project)
+        self.assertNotIn("assumptions", stored_project)
 
     def test_single_run_compiles_from_experiment_plan_project_branch(self) -> None:
         project = self._fixture("smoke_project.json")
@@ -2493,6 +2498,7 @@ class BackendApiContractTest(unittest.TestCase):
             {
                 "name": "single input branch",
                 "steps": 5,
+                "seed": 99,
                 "projectJson": branch_project,
             },
         )
@@ -2511,7 +2517,8 @@ class BackendApiContractTest(unittest.TestCase):
         provenance = compiled_scenario["compiled_from"]["mapping_provenance"]
 
         self.assertEqual(model_family, "smoke")
-        self.assertEqual(compiled_project["experiment"]["seed"], 99)
+        self.assertNotIn("experiment", compiled_project)
+        self.assertEqual(self.adapter.compile_runtime_configs[-1]["seed"], 99)
         self.assertEqual(compiled_project["components"][0]["failureRate"], 0.21)
         self.assertEqual(compiled_project["supportNodes"][0]["equipmentCapacity"], 8)
         self.assertEqual(compiled_scenario["simulation_inputs"]["seed"], 99)
@@ -2527,7 +2534,7 @@ class BackendApiContractTest(unittest.TestCase):
         project = self._fixture("smoke_project.json")
         saved = self.api.save_project(project)
         first_snapshot = self.api.create_modeling_snapshot(saved["project_id"])
-        project["experiment"]["seed"] = 909
+        project.setdefault("projectInfo", {})["name"] = "latest snapshot source"
         self.api.save_project(project)
         latest_snapshot = self.api.create_modeling_snapshot(saved["project_id"])
 
@@ -2557,7 +2564,6 @@ class BackendApiContractTest(unittest.TestCase):
         project = self._fixture("smoke_project.json")
         saved = self.api.save_project(project)
         old_snapshot = self.api.create_modeling_snapshot(saved["project_id"])
-        project["experiment"]["seed"] = 606
         project["components"][0]["failureRate"] = 0.33
         saved = self.api.save_project(project)
         current_snapshot = self.api.create_modeling_snapshot(saved["project_id"])
@@ -2566,6 +2572,7 @@ class BackendApiContractTest(unittest.TestCase):
             {
                 "name": "current explicit snapshot",
                 "steps": 3,
+                "seed": 606,
                 "projectJson": project,
                 "modeling_snapshot_id": current_snapshot["snapshot_id"],
             },
@@ -2588,7 +2595,8 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(plan["modeling_snapshot_id"], current_snapshot["snapshot_id"])
         self.assertEqual(self.api.get_run_chain(run["run_id"])["modeling_snapshot_id"], current_snapshot["snapshot_id"])
         self.assertEqual(provenance["modeling_snapshot_id"], current_snapshot["snapshot_id"])
-        self.assertEqual(compiled_project["experiment"]["seed"], 606)
+        self.assertNotIn("experiment", compiled_project)
+        self.assertEqual(compiled_scenario["simulation_inputs"]["seed"], 606)
         self.assertEqual(compiled_project["components"][0]["failureRate"], 0.33)
 
     def test_backend_api_delegates_submit_run_without_owning_lifecycle_lock(self) -> None:
@@ -2855,6 +2863,10 @@ class BackendApiContractTest(unittest.TestCase):
         ))
         self.assertGreaterEqual(len(created["project"]["missionProfile"]["compositeTasks"]), 2)
         self.assertGreaterEqual(len(created["project"]["missionProfile"]["periodicTasks"]), 1)
+        self.assertEqual(
+            created["project"]["airports"],
+            [{"id": "airport-a", "name": "A", "location": "A", "supportNodeId": "airport-a"}],
+        )
         self.assertGreaterEqual(len(created["project"]["missionPhases"]), 3)
         self.assertGreaterEqual(len(created["project"]["combatUnit"]["members"]), 4)
         self.assertGreaterEqual(len(created["project"]["supportNodes"]), 3)
@@ -2863,6 +2875,8 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertTrue({"飞行前保障", "修复性维修", "预防性维修", "后勤保障"}.issubset(activity_types))
         self.assertGreaterEqual(len(created["project"]["supportActivities"][0]["jobs"]), 2)
         self.assertGreaterEqual(len(created["project"]["reliabilityBlockDiagram"]["nodes"]), 4)
+        self.assertNotIn("experiment", created["project"])
+        self.assertNotIn("analysisRequests", created["project"])
         self.assertEqual(created["savedProject"]["project_id"], import_package["projectId"])
         self.assertEqual(created["modelingSnapshot"]["project"]["project_id"], import_package["projectId"])
         self.assertEqual(self.api.get_project(import_package["projectId"])["project_id"], import_package["projectId"])
@@ -2901,10 +2915,12 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(project["supportOrganization"]["tree"], objects["supportOrganization"]["tree"])
         self.assertIsNot(project["supportOrganization"], objects["supportOrganization"])
         self.assertEqual(
-            project["analysisRequests"]["largeSample"]["samples"],
-            objects["analysisRequests"]["largeSample"]["samples"],
+            project["airports"],
+            [{"id": "airport-a", "name": "A", "location": "A", "supportNodeId": "airport-a"}],
         )
-        self.assertNotIn("sweep", project["analysisRequests"]["largeSample"])
+        self.assertFalse(any(airport.get("id") == "carrier-deck" for airport in project["airports"]))
+        self.assertNotIn("experiment", project)
+        self.assertNotIn("analysisRequests", project)
         self.assertGreaterEqual(len(project["reliabilityBlockDiagram"]["nodes"]), 4)
         self.assertNotIn("monteCarlo", project)
         self.assertNotIn("monteCarlo", project["missionProfile"])
@@ -2913,7 +2929,7 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertNotIn("endCondition", project["missionProfile"])
         self.assertNotIn("repeatCycleHours", project["missionProfile"])
         objects["analysisRequests"]["largeSample"]["sweep"]["failureRates"].append(0.99)
-        self.assertNotIn("sweep", project["analysisRequests"]["largeSample"])
+        self.assertNotIn("analysisRequests", project)
 
     def test_modeling_import_to_project_preserves_explicit_empty_collections(self) -> None:
         import_package = self._fixture("modeling_import_project.json")

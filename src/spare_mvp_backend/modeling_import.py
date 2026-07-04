@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from math import isfinite
+import re
 from typing import Any
 
 from src.spare_mvp_backend.project_payload import strip_project_sweep
@@ -105,6 +106,8 @@ def modeling_import_to_project(import_package: dict[str, Any], validation: dict[
     if validation is None:
         validation = validate_modeling_import_package(import_package)
 
+    combat_unit = _project_object(objects, mission, "combatUnit", {})
+
     return strip_project_sweep({
         "schema_version": "project-v0",
         "project_id": str(import_package["projectId"]),
@@ -112,20 +115,18 @@ def modeling_import_to_project(import_package: dict[str, Any], validation: dict[
         "scenarioId": str(import_package["importId"]).replace("_", "-"),
         "activeModule": "sparePlanning",
         "projectInfo": _project_object(objects, mission, "projectInfo", {}),
-        "airports": _project_object_list(objects, mission, "airports"),
+        "airports": _combat_unit_airports(combat_unit),
         "missionAreas": _project_object_list(objects, mission, "missionAreas"),
-        "experiment": _project_object(objects, mission, "experiment", {"seed": 20260619, "steps": max(1, int(duration_hours))}),
         "missionProfile": _mission_profile_to_project(mission, import_package["importId"]),
         "basicMission": _project_object(objects, mission, "basicMission", {"minRequiredSorties": max(1, len(activities))}),
         "basicMissions": _project_object_list(objects, mission, "basicMissions"),
         "missionPhases": _project_object_list(objects, mission, "missionPhases"),
-        "combatUnit": _project_object(objects, mission, "combatUnit", {}),
+        "combatUnit": combat_unit,
         "components": [_equipment_asset_to_component(row) for row in equipment_assets],
         "supportNodes": [_support_resource_to_node(row) for row in resources],
         "supportActivities": [_support_activity_to_project(row) for row in activities],
         "supportOrganization": _project_object(objects, mission, "supportOrganization", {}),
         "reliabilityBlockDiagram": _project_object(objects, mission, "reliabilityBlockDiagram", {}),
-        "analysisRequests": _project_object(objects, mission, "analysisRequests", {}),
         "modelingImportValidation": {
             "importId": str(import_package["importId"]),
             "usedTables": deepcopy(validation["usedTables"]),
@@ -471,6 +472,48 @@ def _project_object_list(objects: dict[str, Any], mission: dict[str, Any], key: 
     if isinstance(value, list):
         return deepcopy([row for row in value if isinstance(row, dict)])
     return []
+
+
+def _combat_unit_airports(combat_unit: Any) -> list[dict[str, Any]]:
+    airport_names: list[str] = []
+
+    def append_airport(value: Any) -> None:
+        airport = str(value or "").strip()
+        if airport and airport not in airport_names:
+            airport_names.append(airport)
+
+    if isinstance(combat_unit, dict):
+        members = combat_unit.get("members") if isinstance(combat_unit.get("members"), list) else []
+        for member in members:
+            if not isinstance(member, dict):
+                continue
+            append_airport(
+                member.get("airport")
+                or member.get("airportName")
+                or member.get("deploymentAirport")
+            )
+        append_airport(
+            combat_unit.get("airport")
+            or combat_unit.get("airportName")
+            or combat_unit.get("deploymentAirport")
+        )
+    else:
+        append_airport(combat_unit)
+
+    return [
+        {
+            "id": _airport_id_from_name(airport),
+            "name": airport,
+            "location": airport,
+            "supportNodeId": _airport_id_from_name(airport),
+        }
+        for airport in airport_names
+    ]
+
+
+def _airport_id_from_name(name: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", str(name).strip().lower()).strip("-")
+    return f"airport-{slug or 'unknown'}"
 
 
 def _mission_profile_to_project(mission: dict[str, Any], import_id: str) -> dict[str, Any]:

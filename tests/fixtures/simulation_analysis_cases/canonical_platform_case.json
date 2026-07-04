@@ -1469,28 +1469,12 @@
     "activeModule": "sparePlanning",
     "airports": [
       {
-        "distanceToMissionKm": 180,
-        "id": "carrier-deck",
-        "location": "航母战斗群",
-        "name": "航母飞行甲板",
-        "runwayType": "滑跃/弹射甲板",
-        "supportNodeId": "carrier-deck"
-      },
-      {
-        "distanceToMissionKm": 260,
-        "id": "forward-sea-base",
-        "location": "近海前出补给点",
-        "name": "前出海上保障点",
-        "runwayType": "海上保障平台",
-        "supportNodeId": "forward-sea-base"
+        "id": "airport-a",
+        "location": "A",
+        "name": "A",
+        "supportNodeId": "airport-a"
       }
     ],
-    "analysisRequests": {
-      "largeSample": {
-        "enabled": true,
-        "samples": 27
-      }
-    },
     "basicMission": {
       "advanceNoticeMinutes": 60,
       "basicTaskName": "近海制空巡逻任务",
@@ -1950,25 +1934,6 @@
         }
       }
     ],
-    "equipment": {
-      "initialReady": 6,
-      "minRequiredSorties": 5,
-      "model": "J-15",
-      "preLifeRequirementHours": 120,
-      "quantity": 6,
-      "wholeMachineModels": [
-        "J-15",
-        "J-35"
-      ]
-    },
-    "experiment": {
-      "name": "导入示例项目",
-      "parallelCores": 4,
-      "samples": 24,
-      "seed": 20260621,
-      "steps": 48,
-      "stopCondition": "达到样本数或备件满足率稳定"
-    },
     "missionAreas": [
       {
         "areaType": "制空",

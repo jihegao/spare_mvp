@@ -50,8 +50,8 @@ class BackendApi:
                 "code": "unsupported_project_runtime_config",
                 "path": path,
                 "message": (
-                    "Project JSON must not include Monte Carlo runtime config; "
-                    "use modeling-import create-project plus ExperimentPlan.config.analysisRequests.largeSample"
+                    "Project JSON must not include runtime analysis or Monte Carlo config; "
+                    "use ExperimentPlan.config / RunIntent / MonteCarloRunConfig"
                 ),
             }
             for path in project_runtime_config_paths(project_json)
@@ -497,7 +497,7 @@ class BackendApi:
 
     def create_experiment_plan(self, project_id: str, config: dict[str, Any]) -> dict[str, Any]:
         project = self.repository.get_project(project_id)
-        plan_config = copy.deepcopy(config)
+        plan_config = _normalize_experiment_plan_config(config)
         requested_snapshot_id = str(plan_config.pop("modeling_snapshot_id", "") or "").strip()
         snapshot = (
             self.repository.get_modeling_snapshot(requested_snapshot_id)
@@ -608,7 +608,7 @@ class BackendApi:
                 "independent_mesa_compile_unavailable",
                 "SimulationAdapter does not expose compile_scenario_with_gate",
             )
-        compile_result = compile_gate(project, model_family=model_family)
+        compile_result = compile_gate(project, model_family=model_family, runtime_config=project_json)
         if compile_result.get("status") != "compiled" or compile_result.get("scenario") is None:
             raise BackendApiError(
                 "independent_mesa_compile_blocked",
@@ -687,7 +687,7 @@ class BackendApi:
                 "lite_mesa_analysis_compile_unavailable",
                 "SimulationAdapter does not expose compile_scenario_with_gate",
             )
-        compile_result = compile_gate(project, model_family=model_family)
+        compile_result = compile_gate(project, model_family=model_family, runtime_config=project_json)
         if compile_result.get("status") != "compiled" or compile_result.get("scenario") is None:
             return _blocked_lite_mesa_analysis_payload(
                 project=project,
@@ -1811,6 +1811,31 @@ def _downtime_factor_label(factor: str) -> str:
         "preventive": "定检积压",
         "transport_delay": "转运在途",
     }.get(factor, factor)
+
+
+def _normalize_experiment_plan_config(config: dict[str, Any]) -> dict[str, Any]:
+    plan_config = copy.deepcopy(config)
+    branch_project = plan_config.get("projectJson") or plan_config.get("project_json")
+    if not isinstance(branch_project, dict):
+        return plan_config
+
+    experiment = branch_project.get("experiment") if isinstance(branch_project.get("experiment"), dict) else {}
+    if "name" not in plan_config and experiment.get("name"):
+        plan_config["name"] = experiment["name"]
+    for key in ("steps", "samples", "seed"):
+        if key not in plan_config and key in experiment:
+            plan_config[key] = copy.deepcopy(experiment[key])
+    if "monteCarlo" not in plan_config and isinstance(branch_project.get("monteCarlo"), dict):
+        plan_config["monteCarlo"] = copy.deepcopy(branch_project["monteCarlo"])
+    if "analysisRequests" not in plan_config and isinstance(branch_project.get("analysisRequests"), dict):
+        plan_config["analysisRequests"] = copy.deepcopy(branch_project["analysisRequests"])
+
+    clean_project = strip_project_sweep(branch_project)
+    if "projectJson" in plan_config:
+        plan_config["projectJson"] = clean_project
+    else:
+        plan_config["project_json"] = clean_project
+    return plan_config
 
 
 def _public_user(user: dict[str, Any]) -> dict[str, Any]:

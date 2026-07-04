@@ -213,14 +213,16 @@ class SimulationAdapterTest(unittest.TestCase):
         self.assertEqual(result["issues"][0]["field_path"], "model_family")
 
     def test_compile_aircraft_support_v1_scenario_from_m9_6_platform_case(self) -> None:
-        project = self._load_fixture("m9_6_platform_case_export.json")["project"]
+        export = self._load_fixture("m9_6_platform_case_export.json")
+        project = export["project"]
+        runtime_config = export["experiment_plan"]["config"]
         scenario_schema = json.loads((REPO_ROOT / "contracts" / "scenario.schema.json").read_text(encoding="utf-8"))
         input_schema = json.loads(
             (REPO_ROOT / "contracts" / "aircraft_support_v1_input.schema.json").read_text(encoding="utf-8")
         )
         scenario_schema["oneOf"][2]["allOf"][1]["then"]["properties"]["simulation_inputs"] = input_schema
 
-        scenario = self.adapter.compile_scenario(project, model_family="aircraft_support_v1")
+        scenario = self.adapter.compile_scenario(project, model_family="aircraft_support_v1", runtime_config=runtime_config)
 
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", DeprecationWarning)
@@ -240,6 +242,9 @@ class SimulationAdapterTest(unittest.TestCase):
         self.assertEqual(inputs["time"]["max_state_frames_single"], 2000)
         self.assertEqual(inputs["aircraft"]["fleet_count"], 6)
         self.assertEqual(inputs["aircraft"]["initial_ready"], 6)
+        self.assertNotIn("experiment", project)
+        self.assertNotIn("analysisRequests", project)
+        self.assertNotIn("monteCarlo", project)
         self.assertEqual(len(inputs["equipment_tree"]["components"]), len(project["components"]))
         self.assertEqual(len(inputs["support_network"]["nodes"]), len(project["supportNodes"]))
         self.assertEqual(len(inputs["support_activities"]["activities"]), len(project["supportActivities"]))

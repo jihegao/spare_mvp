@@ -26,11 +26,8 @@ def strip_project_sweep(project_json: dict[str, Any]) -> dict[str, Any]:
 def _strip_project_runtime_config(value: Any) -> None:
     if isinstance(value, dict):
         value.pop("monteCarlo", None)
-        analysis_requests = value.get("analysisRequests")
-        if isinstance(analysis_requests, dict):
-            large_sample = analysis_requests.get("largeSample")
-            if isinstance(large_sample, dict):
-                large_sample.pop("sweep", None)
+        value.pop("analysisRequests", None)
+        value.pop("experiment", None)
         for child in value.values():
             _strip_project_runtime_config(child)
     elif isinstance(value, list):
@@ -64,10 +61,8 @@ def _collect_project_runtime_config_paths(value: Any, path: str, paths: list[str
         if "monteCarlo" in value:
             paths.append(_join_path(path, "monteCarlo"))
         analysis_requests = value.get("analysisRequests")
-        if isinstance(analysis_requests, dict):
-            large_sample = analysis_requests.get("largeSample")
-            if isinstance(large_sample, dict) and "sweep" in large_sample:
-                paths.append(_join_path(path, "analysisRequests.largeSample.sweep"))
+        if isinstance(analysis_requests, dict) and (not path or _analysis_requests_has_sweep(analysis_requests)):
+            paths.append(_join_path(path, "analysisRequests"))
         for key, child in value.items():
             _collect_project_runtime_config_paths(child, _join_path(path, str(key)), paths)
     elif isinstance(value, list):
@@ -77,3 +72,8 @@ def _collect_project_runtime_config_paths(value: Any, path: str, paths: list[str
 
 def _join_path(prefix: str, key: str) -> str:
     return f"{prefix}.{key}" if prefix else key
+
+
+def _analysis_requests_has_sweep(value: dict[str, Any]) -> bool:
+    large_sample = value.get("largeSample")
+    return isinstance(large_sample, dict) and "sweep" in large_sample

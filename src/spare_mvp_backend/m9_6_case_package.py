@@ -52,17 +52,17 @@ def build_m9_6_platform_case_export(import_package: dict[str, Any], repo_root: P
         "modeling_snapshot_id": modeling_snapshot["snapshot_id"],
         "name": "M9.6 平台案例冻结方案",
         "created_at": M9_6_FROZEN_AT,
-        "config": {
-            "steps": _positive_int(project.get("experiment", {}).get("steps"), 48),
-            "projectJson": copy.deepcopy(project),
-            "analysisRequests": copy.deepcopy(published_import.get("objects", {}).get("analysisRequests", {})),
-        },
+        "config": _experiment_plan_config_from_import(published_import, project),
     }
     monte_carlo_config = normalize_monte_carlo_run_config(
         experiment_plan["config"],
         mc_experiment_id=M9_6_MC_EXPERIMENT_ID,
     ).to_adapter_payload()
-    compiled_scenario = SimulationAdapter(repo_root).compile_scenario(project, model_family=M9_6_MODEL_FAMILY)
+    compiled_scenario = SimulationAdapter(repo_root).compile_scenario(
+        project,
+        model_family=M9_6_MODEL_FAMILY,
+        runtime_config=experiment_plan["config"],
+    )
     compiled_scenario["compiled_at"] = M9_6_FROZEN_AT
     provenance = compiled_scenario["compiled_from"]["mapping_provenance"]
     provenance["modeling_snapshot_id"] = modeling_snapshot["snapshot_id"]
@@ -150,6 +150,23 @@ def m9_6_expected_artifact_kinds() -> dict[str, Any]:
             "analysis_projection_mission_reliability",
             "analysis_projection_downtime_factors",
         ],
+    }
+
+
+def _experiment_plan_config_from_import(import_package: dict[str, Any], project: dict[str, Any]) -> dict[str, Any]:
+    objects = import_package.get("objects") if isinstance(import_package.get("objects"), dict) else {}
+    mission = _first_dict(objects.get("missionProfiles")) or {}
+    experiment = _first_dict([objects.get("experiment"), mission.get("experiment")]) or {}
+    analysis_requests = objects.get("analysisRequests")
+    if not isinstance(analysis_requests, dict):
+        analysis_requests = mission.get("analysisRequests") if isinstance(mission.get("analysisRequests"), dict) else {}
+    large_sample = analysis_requests.get("largeSample") if isinstance(analysis_requests.get("largeSample"), dict) else {}
+    return {
+        "steps": _positive_int(experiment.get("steps"), 48),
+        "samples": _positive_int(experiment.get("samples"), _positive_int(large_sample.get("samples"), 1)),
+        "seed": _positive_int(experiment.get("seed"), 0),
+        "projectJson": copy.deepcopy(project),
+        "analysisRequests": copy.deepcopy(analysis_requests),
     }
 
 
@@ -330,6 +347,13 @@ def _business_leaf_paths(value: Any, prefix: str = "") -> list[str]:
                     paths.append(path)
         return paths
     return [prefix]
+
+
+def _first_dict(values: Any) -> dict[str, Any] | None:
+    for value in values if isinstance(values, list) else [values]:
+        if isinstance(value, dict):
+            return value
+    return None
 
 
 def _positive_int(value: Any, fallback: int) -> int:
