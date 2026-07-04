@@ -99,26 +99,29 @@
             }
           }
         },
-        "basicMission": {
-          "advanceNoticeMinutes": 60,
-          "basicTaskName": "最小单机巡检任务",
-          "cancelMinutes": 20,
-          "equipmentQuantity": 1,
-          "equipmentType": "J-15",
-          "minRequiredSorties": 1,
-          "missionId": "BM-CV-01",
-          "name": "最小单机巡检任务",
-          "preparationMinutes": 20,
-          "priority": 1,
-          "returnRatio": 0.35,
-          "startHour": 1,
-          "successPoint": 0.95,
-          "supportActivityName": "",
-          "taskArea": "巡逻区",
-          "taskDurationMinutes": 60,
-          "taskNo": "BM-CV-01",
-          "updatedAt": "2026-06-21 08:00"
-        },
+        "basicMissions": [
+          {
+            "advanceNoticeMinutes": 60,
+            "basicTaskName": "最小单机巡检任务",
+            "cancelMinutes": 20,
+            "equipmentQuantity": 1,
+            "equipmentType": "J-15",
+            "id": "basic-6p-minimal",
+            "minRequiredSorties": 1,
+            "missionId": "BM-CV-01",
+            "name": "最小单机巡检任务",
+            "preparationMinutes": 20,
+            "priority": 1,
+            "returnRatio": 0.35,
+            "startHour": 1,
+            "successPoint": 0.95,
+            "supportActivityName": "",
+            "taskArea": "巡逻区",
+            "taskDurationMinutes": 60,
+            "taskNo": "BM-CV-01",
+            "updatedAt": "2026-06-21 08:00"
+          }
+        ],
         "combatUnit": {
           "basicTaskName": "近海制空巡逻任务",
           "deploymentLocation": "航母飞行甲板",
@@ -147,6 +150,7 @@
             "name": "最小单机复合任务",
             "taskItems": [
               {
+                "basicMissionId": "basic-6p-minimal",
                 "basicTaskName": "最小单机巡检任务",
                 "dailyRepeatCount": 1,
                 "equipmentType": "J-15",

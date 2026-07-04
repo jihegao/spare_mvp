@@ -34,10 +34,11 @@ class SpareMvpSmokeMesaTest(unittest.TestCase):
             "activeModule": "sparePlanning",
             "experiment": {"seed": 9001, "steps": 12},
             "missionProfile": {"repeatCycleHours": 4},
-            "basicMission": {
+            "basicMissions": [{
+                "id": "basic-smoke",
                 "minRequiredSorties": 3,
                 "taskDurationMinutes": 120,
-            },
+            }],
             "equipment": {
                 "model": "A-Prototype",
                 "quantity": 5,

@@ -158,8 +158,8 @@ function projectMissionProfile(project, projectId) {
   mission.id ||= mission.profileId || `${projectId}-mission-profile`;
   mission.name ||= project.projectInfo?.name || project.experiment?.name || "当前项目任务剖面";
   mission.durationHours = positiveNumber(mission.durationHours, durationHoursForProject(project));
+  delete mission.basicMission;
   for (const key of [
-    "basicMission",
     "basicMissions",
     "missionPhases",
     "combatUnit",
@@ -199,6 +199,7 @@ function preservedObjectSurfaces(objects = {}) {
       "missionAreas",
       "supportOrganization",
       "reliabilityBlockDiagram",
+      "basicMission",
       "monteCarlo",
       "analysisRequests"
     ].includes(key)) continue;
@@ -245,9 +246,14 @@ function durationHoursForActivity(activity) {
 }
 
 function durationHoursForProject(project) {
-  const missionMinutes = Number(project.basicMission?.taskDurationMinutes || 0);
+  const missionMinutes = Number(primaryBasicMissionRecord(project)?.taskDurationMinutes || 0);
   if (Number.isFinite(missionMinutes) && missionMinutes > 0) return missionMinutes / 60;
   return positiveNumber(project.experiment?.steps, 1);
+}
+
+function primaryBasicMissionRecord(project) {
+  const records = Array.isArray(project?.basicMissions) ? project.basicMissions : [];
+  return records.find((record) => record && typeof record === "object" && !Array.isArray(record)) || null;
 }
 
 function importIdForProject(project) {

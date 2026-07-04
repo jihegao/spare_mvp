@@ -1484,7 +1484,7 @@ test("basic mission page follows ship front basic task modeling structure", asyn
   assert.match(appSource, /data-select-basic-mission/);
   assert.match(appSource, /function addBasicMission\(\)/);
   assert.match(appSource, /selectedBasicMissionEquipmentType/);
-  assert.match(appSource, /const equipmentType = selectedBasicMissionEquipmentType \|\| selected\.task\.equipmentType \|\| scenario\.basicMission\.equipmentType/);
+  assert.match(appSource, /const equipmentType = selectedBasicMissionEquipmentType \|\| sourceTask\.equipmentType \|\| scenario\.equipment\.model/);
   assert.match(appSource, /function deleteSelectedBasicMission\(\)/);
   assert.match(appSource, /let selectedBasicMissionKey = "primary"/);
   assert.match(stylesSource, /\.tree-node-label\.selected/);
@@ -1644,7 +1644,7 @@ test("mission task profile pages split composite and periodic task modeling", as
   assert.match(compositeSource, /data-composite-task-item-add/);
   assert.match(compositeSource, /data-composite-task-item-delete/);
   assert.match(compositeSource, /basicMissionSelect/);
-  assert.match(compositeSource, /findBasicMissionByName/);
+  assert.match(compositeSource, /findBasicMissionForTaskItem/);
   assert.match(compositeSource, /compositeTaskInheritedBasicFields/);
   assert.match(compositeSource, /readOnlyTableValue/);
   assert.match(compositeSource, /典型组合任务时序表/);
@@ -1768,7 +1768,7 @@ test("page revision equipment and mission input constraints are guarded", async 
   assert.doesNotMatch(basicMissionSource, /转移条件/);
 
   assert.match(compositeItemSource, /basicMissionSelect/);
-  assert.match(compositeItemSource, /findBasicMissionByName/);
+  assert.match(compositeItemSource, /findBasicMissionForTaskItem/);
   assert.match(compositeItemSource, /const inherited = compositeTaskInheritedBasicFields\(item, basicTask\)/);
   assert.match(compositeItemSource, /readOnlyTableValue\(inherited\.equipmentType\)/);
   assert.match(compositeItemSource, /readOnlyTableValue\(inherited\.taskDurationMinutes\)/);

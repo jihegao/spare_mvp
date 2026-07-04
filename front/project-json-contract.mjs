@@ -8,7 +8,7 @@ const OBJECT_LABELS = {
   missionAreas: "任务区",
   experiment: "实验方案",
   missionProfile: "任务剖面",
-  basicMission: "基本任务",
+  basicMissions: "基本任务",
   missionPhases: "任务阶段",
   combatUnit: "基本作战单元",
   equipment: "装备",

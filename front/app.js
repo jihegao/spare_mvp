@@ -238,11 +238,11 @@ const MODELING_DATA_MODULES = [
         label: "基本任务表",
         sourcePage: "基本任务建模",
         fields: [
-          fieldDef("missionId", "任务ID", "basicMission.missionId"),
-          fieldDef("missionName", "任务名称", "basicMission.name"),
-          fieldDef("equipmentType", "装备型号", "basicMission.equipmentType"),
-          fieldDef("durationMinutes", "任务时长", "basicMission.taskDurationMinutes"),
-          fieldDef("successPoint", "成功判据", "basicMission.successPoint")
+          fieldDef("missionId", "任务ID", "basicMissions[].missionId"),
+          fieldDef("missionName", "任务名称", "basicMissions[].name"),
+          fieldDef("equipmentType", "装备型号", "basicMissions[].equipmentType"),
+          fieldDef("durationMinutes", "任务时长", "basicMissions[].taskDurationMinutes"),
+          fieldDef("successPoint", "成功判据", "basicMissions[].successPoint")
         ]
       },
       {
@@ -604,7 +604,7 @@ let selectedEquipmentComponentIndex = 0;
 let selectedEquipmentNodeKey = "";
 let selectedBasicMissionKey = "primary";
 let selectedBasicMissionTreeLevel = "mission";
-let selectedBasicMissionEquipmentType = scenario.basicMission.equipmentType || scenario.equipment.model || "";
+let selectedBasicMissionEquipmentType = primaryBasicMissionRecord().equipmentType || scenario.equipment.model || "";
 let selectedBasicMissionPhaseIndexes = new Set();
 let selectedCompositeTaskId = "";
 let selectedCombatUnitMemberIndex = 0;
@@ -2621,10 +2621,11 @@ function stableTreeNodeId(label, meta = "") {
 function basicMissionTreeNodes() {
   const tasks = editableBasicMissionRecords();
   const grouped = new Map();
+  const primary = primaryBasicMissionRecord();
   for (const record of tasks) {
     const task = record.task;
-    const equipmentType = task.equipmentType || scenario.basicMission.equipmentType || scenario.equipment.model || "未指定飞机类型";
-    const taskName = task.name || task.basicTaskName || task.taskName || scenario.basicMission.name || "未命名基本任务";
+    const equipmentType = task.equipmentType || primary.equipmentType || scenario.equipment.model || "未指定飞机类型";
+    const taskName = task.name || task.basicTaskName || task.taskName || primary.name || "未命名基本任务";
     const taskNo = task.taskNo || task.basicTaskId || task.id || "";
     const existing = grouped.get(equipmentType) || [];
     if (!existing.some((item) => item.label === taskName && item.meta === taskNo)) {
@@ -2659,19 +2660,23 @@ function basicMissionTreeNodes() {
 }
 
 function editableBasicMissionRecords() {
-  return [
-    { key: "primary", path: "basicMission", task: scenario.basicMission },
-    ...basicMissionExtras().map((task, index) => ({
-      key: `extra:${task.id || index}`,
-      path: `basicMissions.${index}`,
-      task
-    }))
-  ].filter((record) => record.task);
+  const tasks = basicMissionExtras();
+  if (!tasks.length) tasks.push(createEmptyBasicMission());
+  return tasks.map((task, index) => ({
+    key: index === 0 ? "primary" : `extra:${task.id || index}`,
+    path: `basicMissions.${index}`,
+    task,
+    index
+  })).filter((record) => record.task);
 }
 
 function basicMissionExtras() {
   if (!Array.isArray(scenario.basicMissions)) scenario.basicMissions = [];
   return scenario.basicMissions;
+}
+
+function primaryBasicMissionRecord() {
+  return editableBasicMissionRecords()[0]?.task || {};
 }
 
 function resolveSelectedBasicMission() {
@@ -2683,9 +2688,10 @@ function addBasicMission() {
   const extras = basicMissionExtras();
   const index = editableBasicMissionRecords().length + 1;
   const selected = resolveSelectedBasicMission();
-  const equipmentType = selectedBasicMissionEquipmentType || selected.task.equipmentType || scenario.basicMission.equipmentType || scenario.equipment.model || "";
+  const sourceTask = selected?.task || primaryBasicMissionRecord();
+  const equipmentType = selectedBasicMissionEquipmentType || sourceTask.equipmentType || scenario.equipment.model || "";
   const task = {
-    ...JSON.parse(JSON.stringify(scenario.basicMission)),
+    ...JSON.parse(JSON.stringify(sourceTask || createEmptyBasicMission())),
     id: `basic-mission-${index}`,
     name: `新增基本任务${index}`,
     taskNo: `BM-${String(index).padStart(2, "0")}`,
@@ -2702,20 +2708,14 @@ function deleteSelectedBasicMission() {
   if (!selectedBasicMissionKey) return;
   const selected = resolveSelectedBasicMission();
   const extras = basicMissionExtras();
-  if (selected.key === "primary") {
-    if (extras.length > 0) {
-      scenario.basicMission = extras.shift();
-    } else {
-      scenario.basicMission = createEmptyBasicMission();
-    }
-    selectedBasicMissionKey = "primary";
-    selectedBasicMissionTreeLevel = "mission";
-  } else if (selected.key.startsWith("extra:")) {
-    const index = extras.findIndex((task, taskIndex) => `extra:${task.id || taskIndex}` === selected.key);
-    if (index >= 0) extras.splice(index, 1);
-    selectedBasicMissionKey = "primary";
-    selectedBasicMissionTreeLevel = "mission";
+  if (!selected) return;
+  if (extras.length <= 1) {
+    extras.splice(0, extras.length, createEmptyBasicMission());
+  } else {
+    extras.splice(selected.index, 1);
   }
+  selectedBasicMissionKey = "primary";
+  selectedBasicMissionTreeLevel = "mission";
   updatePreviewResultsThroughApiClient();
 }
 
@@ -2797,11 +2797,13 @@ function deleteCompositeTaskItem(index) {
 }
 
 function createCompositeTaskItem(index) {
-  const basic = resolveSelectedBasicMission()?.task || scenario.basicMission || {};
+  const selected = resolveSelectedBasicMission();
+  const basic = selected?.task || primaryBasicMissionRecord() || {};
   const equipmentType = basic.equipmentType || scenario.equipment.model || "";
   const taskName = basic.name || basic.basicTaskName || basic.missionId || `基本任务${index + 1}`;
   return {
     id: `composite-task-item-${Date.now()}-${index + 1}`,
+    basicMissionId: basic.id || selected?.key || "",
     basicTaskName: taskName,
     equipmentType,
     taskDurationMinutes: Number(basic.taskDurationMinutes || 180),
@@ -2820,11 +2822,17 @@ function basicMissionOptions() {
   return editableBasicMissionRecords().map((record) => {
     const task = record.task || {};
     const name = task.name || task.basicTaskName || task.missionId || record.key;
-    return { value: name, label: name };
+    return { value: task.id || record.key, label: name };
   });
 }
 
-function findBasicMissionByName(name) {
+function findBasicMissionForTaskItem(item = {}) {
+  const itemId = String(item.basicMissionId || "").trim();
+  if (itemId) {
+    const byId = editableBasicMissionRecords().map((record) => record.task).find((task) => String(task?.id || "") === itemId);
+    if (byId) return byId;
+  }
+  const name = item.basicTaskName;
   return editableBasicMissionRecords().map((record) => record.task).find((task) => {
     const taskName = task?.name || task?.basicTaskName || task?.missionId || "";
     return String(taskName) === String(name);
@@ -3025,9 +3033,8 @@ function projectDataOverviewRows(projectJson) {
     {
       label: "任务",
       value: sumProjectCollectionCounts(projectJson, [
-        "basicMission",
         "basicMissions",
-        "missionProfile.basicMission",
+        "missionProfile.basicMissions",
         "missionProfile.compositeTasks",
         "missionProfile.periodicTasks"
       ])
@@ -3944,9 +3951,9 @@ function renderTaskModel(page) {
       ${field("任务类型", "missionProfile.profileType")}
       ${field("重复周期", "missionProfile.repeatCycleHours", "number")}
       ${field("结束条件", "missionProfile.endCondition")}
-      ${field("基本任务", "basicMission.missionId")}
-      ${field("成功点", "basicMission.successPoint", "number", { min: "0", max: "1", step: "0.01" })}
-      ${field("最低出动数量", "basicMission.minRequiredSorties", "number")}
+      ${field("基本任务", "basicMissions.0.missionId")}
+      ${field("成功点", "basicMissions.0.successPoint", "number", { min: "0", max: "1", step: "0.01" })}
+      ${field("最低出动数量", "basicMissions.0.minRequiredSorties", "number")}
       ${field("装备型号", "equipment.model")}
       ${field("装备数量", "equipment.quantity", "number")}
     </div>
@@ -4195,7 +4202,7 @@ function deleteSelectedCombatUnitMember() {
 
 function renderBasicMissionModeling(page) {
   const selectedMission = resolveSelectedBasicMission();
-  const missionPath = selectedMission.path || "basicMission";
+  const missionPath = selectedMission.path || "basicMissions.0";
   const phases = scenario.missionPhases || [];
   selectedBasicMissionPhaseIndexes = validMissionPhaseSelection(phases);
   const allPhasesSelected = phases.length > 0 && phases.every((_, index) => selectedBasicMissionPhaseIndexes.has(String(index)));
@@ -4374,11 +4381,11 @@ function renderCompositeTaskModeling(page) {
                 <thead><tr><th>基本任务名称</th><th>编队名称</th><th>出发时间（HH：MM）</th><th>任务优先级（1最高）</th><th>单日重复次数</th><th>间隔小时数</th><th>装备类型</th><th>任务时长</th><th>要求装备数量</th><th>最小装备数量</th><th>删除</th></tr></thead>
                 <tbody>
                   ${(composite.taskItems || []).map((item, index) => {
-                    const basicTask = findBasicMissionByName(item.basicTaskName);
+                    const basicTask = findBasicMissionForTaskItem(item);
                     const inherited = compositeTaskInheritedBasicFields(item, basicTask);
                     return `
                     <tr>
-                      <td>${basicMissionSelect(`${compositePath}.taskItems.${index}.basicTaskName`, item.basicTaskName)}</td>
+                      <td>${basicMissionSelect(`${compositePath}.taskItems.${index}.basicMissionId`, item.basicMissionId)}</td>
                       <td>${valueInput(`${compositePath}.taskItems.${index}.groupName`)}</td>
                       <td>${valueInput(`${compositePath}.taskItems.${index}.firstWaveTime`, "time")}</td>
                       <td>${valueInput(`${compositePath}.taskItems.${index}.priority`, "number", { min: "1", step: "1" })}</td>
@@ -4678,8 +4685,8 @@ function buildCompositeTimelineRows(composite) {
   return (composite.taskItems || []).flatMap((item) => {
     const repeatCount = Math.max(1, Math.trunc(Number(item.dailyRepeatCount || 1)));
     const intervalHours = Math.max(0.1, Number(item.intervalHours || 1));
-    const basicTask = findBasicMissionByName(item.basicTaskName);
-    const durationMinutes = Number(basicTask?.taskDurationMinutes || item.taskDurationMinutes || scenario.basicMission.taskDurationMinutes || 180);
+    const basicTask = findBasicMissionForTaskItem(item);
+    const durationMinutes = Number(basicTask?.taskDurationMinutes || item.taskDurationMinutes || primaryBasicMissionRecord().taskDurationMinutes || 180);
     return Array.from({ length: repeatCount }, (_, index) => {
       const departureTime = addHoursToTime(item.firstWaveTime, index * intervalHours);
       const totalStartMinutes = timeToDayMinutes(item.firstWaveTime) + index * intervalHours * 60;
@@ -13114,7 +13121,7 @@ function runLiteMesaMonteCarloAnalysis() {
   const seed = Math.trunc(Number(liteMesaMonteCarloSettings.seed) || 1);
   liteMesaMonteCarloSettings = { samples, seed };
   try {
-    const projectJson = buildBackendProjectJson(scenario, currentProject);
+    const projectJson = cloneScenario(scenario);
     projectJson.experiment = {
       ...(projectJson.experiment || {}),
       samples,
@@ -13138,7 +13145,7 @@ function runLiteMesaMonteCarloAnalysis() {
 function liteMesaBaselineSweep(projectJson) {
   return {
     name: "项目基线",
-    minRequiredSorties: Number(projectJson?.basicMission?.minRequiredSorties ?? projectJson?.equipment?.minRequiredSorties ?? 1)
+    minRequiredSorties: Number(projectJson?.basicMissions?.[0]?.minRequiredSorties ?? projectJson?.equipment?.minRequiredSorties ?? 1)
   };
 }
 

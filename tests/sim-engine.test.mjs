@@ -28,11 +28,12 @@ function previewScenarioFixture() {
     compositeTasks: [],
     periodicTasks: []
   };
-  scenario.basicMission = {
+  scenario.basicMissions = [{
+    id: "bm-preview",
     missionId: "BM-PREVIEW",
     name: "测试任务",
     minRequiredSorties: 1
-  };
+  }];
   scenario.combatUnit = {
     groupName: "测试编队",
     requiredCount: 1,

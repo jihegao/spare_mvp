@@ -89,6 +89,9 @@ test("project schema covers required frontend project JSON contract objects", as
   for (const root of requiredProjectRoots) {
     assert.ok(schemaFields.has(root), `missing project schema property for ${root}`);
   }
+  assert.ok(schema.required.includes("basicMissions"));
+  assert.equal(schema.required.includes("basicMission"), false);
+  assert.equal(Object.hasOwn(schema.properties, "basicMission"), false);
 });
 
 test("scenario and result schemas preserve simulation contract boundaries", async () => {

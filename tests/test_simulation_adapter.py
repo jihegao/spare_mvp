@@ -84,7 +84,7 @@ class SimulationAdapterTest(unittest.TestCase):
                         "components[].failureRate",
                         "supportNodes[].equipmentCapacity",
                         "equipment.minRequiredSorties",
-                        "basicMission.minRequiredSorties",
+                        "basicMissions[].minRequiredSorties",
                         "experiment.seed",
                     ],
                     "defaults_applied": ["monteCarlo.spareMultipliers=1.0"],
@@ -118,7 +118,7 @@ class SimulationAdapterTest(unittest.TestCase):
         project["components"] = []
         project["supportNodes"] = []
         project["equipment"] = {}
-        project["basicMission"] = {}
+        project["basicMissions"] = []
         project["experiment"] = {}
 
         scenario = self.adapter.compile_scenario(project)
@@ -129,7 +129,7 @@ class SimulationAdapterTest(unittest.TestCase):
                 "monteCarlo.spareMultipliers=1.0",
                 "components[].failureRate=0.05",
                 "supportNodes[].equipmentCapacity=1",
-                "equipment.minRequiredSorties|basicMission.minRequiredSorties=1",
+                "equipment.minRequiredSorties|basicMissions[].minRequiredSorties=1",
                 "experiment.seed=0",
             ],
         )

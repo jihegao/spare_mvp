@@ -82,6 +82,7 @@ def validate_modeling_import_package(import_package: dict[str, Any]) -> dict[str
             _validate_references(collection, row, index, rules.get("references", []), object_ids, issues)
 
     _validate_equipment_asset_hierarchy(objects.get("equipmentAssets"), issues)
+    _validate_mission_profile_basic_missions(objects.get("missionProfiles"), issues)
     _validate_published_reference_protection(import_package, issues)
 
     return {
@@ -108,6 +109,9 @@ def modeling_import_to_project(import_package: dict[str, Any], validation: dict[
         validation = validate_modeling_import_package(import_package)
 
     combat_unit = _project_object(objects, mission, "combatUnit", {})
+    basic_missions = _project_basic_missions(objects, mission, activities)
+    mission_profile = _mission_profile_to_project(mission, import_package["importId"])
+    _sync_composite_task_basic_mission_refs(mission_profile, basic_missions)
 
     return strip_project_sweep({
         "schema_version": "project-v0",
@@ -118,9 +122,8 @@ def modeling_import_to_project(import_package: dict[str, Any], validation: dict[
         "projectInfo": _project_object(objects, mission, "projectInfo", {}),
         "airports": _combat_unit_airports(combat_unit),
         "missionAreas": _project_object_list(objects, mission, "missionAreas"),
-        "missionProfile": _mission_profile_to_project(mission, import_package["importId"]),
-        "basicMission": _project_object(objects, mission, "basicMission", {"minRequiredSorties": max(1, len(activities))}),
-        "basicMissions": _project_object_list(objects, mission, "basicMissions"),
+        "missionProfile": mission_profile,
+        "basicMissions": basic_missions,
         "missionPhases": _project_object_list(objects, mission, "missionPhases"),
         "combatUnit": combat_unit,
         "components": [_equipment_asset_to_component(row) for row in equipment_assets],
@@ -408,6 +411,25 @@ def _validate_equipment_asset_hierarchy(rows: Any, issues: list[dict[str, Any]])
         issues.append(_issue("invalid_sru_parent", "equipmentAssets", str(row.get("id") or f"equipmentAssets[{index}]"), f"objects.equipmentAssets[{index}].parentId", "SRU 的上级必须是 LRU。"))
 
 
+def _validate_mission_profile_basic_missions(rows: Any, issues: list[dict[str, Any]]) -> None:
+    profiles = rows if isinstance(rows, list) else []
+    for index, row in enumerate(profiles):
+        if not isinstance(row, dict):
+            continue
+        object_id = str(row.get("id") or f"missionProfiles[{index}]")
+        if isinstance(row.get("basicMission"), dict):
+            issues.append(_issue("retired_basic_mission", "missionProfiles", object_id, f"objects.missionProfiles[{index}].basicMission", "basicMission 已退役；请使用 basicMissions 数组。"))
+        basic_missions = row.get("basicMissions")
+        if not isinstance(basic_missions, list) or not any(isinstance(item, dict) for item in basic_missions):
+            issues.append(_issue("missing_basic_missions", "missionProfiles", object_id, f"objects.missionProfiles[{index}].basicMissions", "basicMissions 必须包含至少一个基本任务。"))
+            continue
+        for mission_index, basic_mission in enumerate(basic_missions):
+            if not isinstance(basic_mission, dict):
+                continue
+            if basic_mission.get("id") in (None, ""):
+                issues.append(_issue("missing_basic_mission_id", "missionProfiles", object_id, f"objects.missionProfiles[{index}].basicMissions[{mission_index}].id", "basicMissions[].id 是必填字段。"))
+
+
 def _validate_published_reference_protection(import_package: dict[str, Any], issues: list[dict[str, Any]]) -> None:
     lifecycle = import_package.get("lifecycle") if isinstance(import_package.get("lifecycle"), dict) else {}
     referenced_run_ids = lifecycle.get("referencedRunIds") if isinstance(lifecycle.get("referencedRunIds"), list) else []
@@ -473,6 +495,60 @@ def _project_object_list(objects: dict[str, Any], mission: dict[str, Any], key: 
     if isinstance(value, list):
         return deepcopy([row for row in value if isinstance(row, dict)])
     return []
+
+
+def _project_basic_missions(objects: dict[str, Any], mission: dict[str, Any], activities: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    basic_missions = _project_object_list(objects, mission, "basicMissions")
+    if not basic_missions:
+        basic_missions = [{"minRequiredSorties": max(1, len(activities))}]
+    for index, basic_mission in enumerate(basic_missions):
+        basic_mission["id"] = _basic_mission_id(basic_mission, index)
+        if basic_mission.get("name") in (None, "") and basic_mission.get("basicTaskName") not in (None, ""):
+            basic_mission["name"] = str(basic_mission["basicTaskName"])
+        if basic_mission.get("basicTaskName") in (None, "") and basic_mission.get("name") not in (None, ""):
+            basic_mission["basicTaskName"] = str(basic_mission["name"])
+    return basic_missions
+
+
+def _sync_composite_task_basic_mission_refs(mission_profile: dict[str, Any], basic_missions: list[dict[str, Any]]) -> None:
+    basic_by_id = {str(row.get("id")): row for row in basic_missions if row.get("id") not in (None, "")}
+    basic_by_name: dict[str, dict[str, Any]] = {}
+    for row in basic_missions:
+        for value in (row.get("name"), row.get("basicTaskName"), row.get("missionId"), row.get("taskNo")):
+            key = str(value or "").strip()
+            if key:
+                basic_by_name.setdefault(key, row)
+    composite_tasks = mission_profile.get("compositeTasks") if isinstance(mission_profile.get("compositeTasks"), list) else []
+    for composite_task in composite_tasks:
+        if not isinstance(composite_task, dict):
+            continue
+        task_items = composite_task.get("taskItems") if isinstance(composite_task.get("taskItems"), list) else []
+        for item in task_items:
+            if not isinstance(item, dict):
+                continue
+            basic = None
+            basic_id = str(item.get("basicMissionId") or "").strip()
+            if basic_id:
+                basic = basic_by_id.get(basic_id)
+            if basic is None:
+                basic = basic_by_name.get(str(item.get("basicTaskName") or "").strip())
+            if basic is None:
+                continue
+            item["basicMissionId"] = str(basic.get("id"))
+            display_name = str(basic.get("name") or basic.get("basicTaskName") or basic.get("missionId") or "").strip()
+            if display_name:
+                item["basicTaskName"] = display_name
+
+
+def _basic_mission_id(basic_mission: dict[str, Any], index: int) -> str:
+    for key in ("id", "missionId", "taskNo", "basicTaskName", "name"):
+        value = str(basic_mission.get(key) or "").strip()
+        if value:
+            slug = re.sub(r"[^A-Za-z0-9_-]+", "-", value).strip("-").lower()
+            if slug:
+                return slug
+            return hashlib.sha1(value.encode("utf-8")).hexdigest()[:8]
+    return f"basic-mission-{index + 1}"
 
 
 def _combat_unit_airports(combat_unit: Any) -> list[dict[str, Any]]:

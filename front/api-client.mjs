@@ -258,12 +258,15 @@ function stripProjectNonModelFields(projectJson) {
   if (!projectJson || typeof projectJson !== "object") return;
   delete projectJson.deletedSupportResourceKeys;
   delete projectJson.equipment;
+  delete projectJson.basicMission;
   stripMissionProfileNonModelFields(projectJson.missionProfile);
   stripSupportActivityTypoFields(projectJson);
 }
 
 function stripMissionProfileNonModelFields(missionProfile) {
   if (!missionProfile || typeof missionProfile !== "object" || Array.isArray(missionProfile)) return;
+  delete missionProfile.basicMission;
+  delete missionProfile.basicMissions;
   delete missionProfile.equipment;
   delete missionProfile.profileType;
   delete missionProfile.endCondition;
@@ -294,6 +297,8 @@ function syncCompositeTaskInheritedBasicFields(projectJson) {
       if (!item || typeof item !== "object") continue;
       const basicMission = findBasicMissionForTaskItem(item, basicMissions);
       if (!basicMission) continue;
+      copyPresentValue(item, "basicMissionId", basicMissionId(basicMission));
+      copyPresentValue(item, "basicTaskName", basicMissionDisplayName(basicMission));
       copyPresentValue(item, "equipmentType", basicMission.equipmentType);
       copyPresentValue(item, "taskDurationMinutes", basicMission.taskDurationMinutes);
       copyPresentValue(item, "equipmentQuantity", basicMission.equipmentQuantity);
@@ -304,16 +309,24 @@ function syncCompositeTaskInheritedBasicFields(projectJson) {
 
 function basicMissionRecordsForProject(projectJson) {
   return [
-    projectJson.basicMission,
     ...(Array.isArray(projectJson.basicMissions) ? projectJson.basicMissions : []),
-    projectJson.missionProfile?.basicMission
+    ...(Array.isArray(projectJson.missionProfile?.basicMissions) ? projectJson.missionProfile.basicMissions : [])
   ].filter((task) => task && typeof task === "object" && !Array.isArray(task));
 }
 
 function findBasicMissionForTaskItem(item, basicMissions) {
+  const itemId = String(item.basicMissionId || "").trim();
+  if (itemId) {
+    const byId = basicMissions.find((task) => basicMissionId(task) === itemId);
+    if (byId) return byId;
+  }
   const itemName = String(item.basicTaskName || "").trim();
   if (!itemName) return null;
   return basicMissions.find((task) => basicMissionDisplayName(task) === itemName) || null;
+}
+
+function basicMissionId(task) {
+  return String(task?.id || task?.missionId || task?.taskNo || "").trim();
 }
 
 function basicMissionDisplayName(task) {

@@ -301,103 +301,115 @@
       "target": "M9.6 platform case package"
     },
     {
-      "field_path": "objects.missionProfiles[].basicMission.advanceNoticeMinutes",
+      "field_path": "objects.missionProfiles[].basicMissions[].advanceNoticeMinutes",
       "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
-      "field_path": "objects.missionProfiles[].basicMission.cancelMinutes",
+      "field_path": "objects.missionProfiles[].basicMissions[].basicTaskName",
       "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
-      "field_path": "objects.missionProfiles[].basicMission.equipmentQuantity",
-      "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
-      "status": "consumed",
-      "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
-    },
-    {
-      "field_path": "objects.missionProfiles[].basicMission.equipmentType",
+      "field_path": "objects.missionProfiles[].basicMissions[].cancelMinutes",
       "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
-      "field_path": "objects.missionProfiles[].basicMission.minRequiredSorties",
+      "field_path": "objects.missionProfiles[].basicMissions[].equipmentQuantity",
       "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
-      "field_path": "objects.missionProfiles[].basicMission.missionId",
-      "rationale": "The value contributes to stable IDs, names, provenance, output sampling, or display metadata rather than direct simulation dynamics.",
-      "status": "derived",
-      "target": "M9.7.4 aircraft_support_v1 identity, output, and display metadata"
-    },
-    {
-      "field_path": "objects.missionProfiles[].basicMission.name",
+      "field_path": "objects.missionProfiles[].basicMissions[].equipmentType",
       "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
-      "field_path": "objects.missionProfiles[].basicMission.preparationMinutes",
+      "field_path": "objects.missionProfiles[].basicMissions[].id",
       "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
-      "field_path": "objects.missionProfiles[].basicMission.priority",
+      "field_path": "objects.missionProfiles[].basicMissions[].minRequiredSorties",
       "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
-      "field_path": "objects.missionProfiles[].basicMission.returnRatio",
+      "field_path": "objects.missionProfiles[].basicMissions[].missionId",
       "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
-      "field_path": "objects.missionProfiles[].basicMission.startHour",
+      "field_path": "objects.missionProfiles[].basicMissions[].name",
       "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
-      "field_path": "objects.missionProfiles[].basicMission.successPoint",
+      "field_path": "objects.missionProfiles[].basicMissions[].preparationMinutes",
       "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
-      "field_path": "objects.missionProfiles[].basicMission.supportActivityName",
+      "field_path": "objects.missionProfiles[].basicMissions[].priority",
       "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
-      "field_path": "objects.missionProfiles[].basicMission.taskArea",
+      "field_path": "objects.missionProfiles[].basicMissions[].returnRatio",
       "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
-      "field_path": "objects.missionProfiles[].basicMission.taskDurationMinutes",
+      "field_path": "objects.missionProfiles[].basicMissions[].startHour",
       "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
-      "field_path": "objects.missionProfiles[].basicMission.taskNo",
+      "field_path": "objects.missionProfiles[].basicMissions[].successPoint",
       "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
-      "field_path": "objects.missionProfiles[].basicMission.updatedAt",
+      "field_path": "objects.missionProfiles[].basicMissions[].supportActivityName",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
+      "status": "ignored",
+      "target": "M9.6 platform case package"
+    },
+    {
+      "field_path": "objects.missionProfiles[].basicMissions[].taskArea",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
+      "status": "ignored",
+      "target": "M9.6 platform case package"
+    },
+    {
+      "field_path": "objects.missionProfiles[].basicMissions[].taskDurationMinutes",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
+      "status": "ignored",
+      "target": "M9.6 platform case package"
+    },
+    {
+      "field_path": "objects.missionProfiles[].basicMissions[].taskNo",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
+      "status": "ignored",
+      "target": "M9.6 platform case package"
+    },
+    {
+      "field_path": "objects.missionProfiles[].basicMissions[].updatedAt",
       "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
@@ -523,6 +535,12 @@
       "target": "M9.6 platform case package"
     },
     {
+      "field_path": "objects.missionProfiles[].compositeTasks[].taskItems[].basicMissionId",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
+      "status": "ignored",
+      "target": "M9.6 platform case package"
+    },
+    {
       "field_path": "objects.missionProfiles[].compositeTasks[].taskItems[].basicTaskName",
       "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
@@ -530,12 +548,6 @@
     },
     {
       "field_path": "objects.missionProfiles[].compositeTasks[].taskItems[].dailyRepeatCount",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
-      "status": "ignored",
-      "target": "M9.6 platform case package"
-    },
-    {
-      "field_path": "objects.missionProfiles[].compositeTasks[].taskItems[].equipmentQuantity",
       "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
@@ -566,18 +578,6 @@
     },
     {
       "field_path": "objects.missionProfiles[].compositeTasks[].taskItems[].intervalHours",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
-      "status": "ignored",
-      "target": "M9.6 platform case package"
-    },
-    {
-      "field_path": "objects.missionProfiles[].compositeTasks[].taskItems[].minRequiredSystems",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
-      "status": "ignored",
-      "target": "M9.6 platform case package"
-    },
-    {
-      "field_path": "objects.missionProfiles[].compositeTasks[].taskItems[].preparationMinutes",
       "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
@@ -1710,11 +1710,11 @@
   "source_fixture": "tests/fixtures/modeling_import_project.json",
   "source_import_id": "import-carrier-day-night-001",
   "summary": {
-    "consumed": 40,
+    "consumed": 39,
     "defaulted": 0,
-    "derived": 9,
+    "derived": 8,
     "governance_only": 34,
-    "ignored": 201,
+    "ignored": 203,
     "total_fields": 284,
     "unsupported": 0
   }

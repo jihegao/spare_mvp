@@ -19,7 +19,7 @@ BEHAVIOR_DRIVING_FIELDS = [
     "missionProfile.durationHours",
     "missionProfile.compositeTasks",
     "missionProfile.periodicTasks",
-    "basicMission",
+    "basicMissions",
     "missionPhases",
     "airports",
     "missionAreas",
@@ -619,7 +619,8 @@ class AircraftSupportV1Model:
 
     def _build_missions(self) -> list[MissionState]:
         profile = self.inputs.get("mission_profile", {})
-        basic = profile.get("basic_mission") or {}
+        basic_missions = self._basic_missions_by_id(profile)
+        default_basic = next(iter(basic_missions.values()), {})
         missions: list[MissionState] = []
         periodic_contexts = self._periodic_contexts_by_composite(profile)
         mission_duration_adjustment = self.mission_context["duration_adjustment_minutes"]
@@ -629,6 +630,7 @@ class AircraftSupportV1Model:
             for item in composite.get("taskItems") or []:
                 if not isinstance(item, dict):
                     continue
+                basic = self._basic_mission_for_item(item, basic_missions, default_basic)
                 interval = max(1, int(round(_non_negative_float(item.get("intervalHours"), 24) * 60)))
                 first_start = _time_to_minute(item.get("firstWaveTime"), int(basic.get("startHour") or 1) * 60)
                 prep = max(0, int(item.get("preparationMinutes") or basic.get("preparationMinutes") or 0))
@@ -661,7 +663,7 @@ class AircraftSupportV1Model:
                                 periodic_task_name=str(periodic_context.get("name") or ""),
                                 composite_task_id=composite_id,
                                 composite_task_name=str(composite.get("name") or composite_id),
-                                basic_task_id=str(item.get("id") or basic.get("id") or ""),
+                                basic_task_id=str(item.get("basicMissionId") or basic.get("id") or item.get("id") or ""),
                                 basic_task_name=str(item.get("basicTaskName") or basic.get("name") or ""),
                                 required_aircraft_type=str(item.get("equipmentType") or basic.get("equipmentType") or ""),
                                 group_name=str(item.get("groupName") or ""),
@@ -670,6 +672,7 @@ class AircraftSupportV1Model:
                             )
                         )
         if not missions:
+            basic = default_basic
             planned_start = max(0, int(basic.get("startHour") or 1) * 60)
             missions.append(
                 MissionState(
@@ -689,6 +692,32 @@ class AircraftSupportV1Model:
                 )
             )
         return sorted(missions, key=lambda item: (item.planned_start, item.priority))
+
+    def _basic_missions_by_id(self, profile: dict[str, Any]) -> dict[str, dict[str, Any]]:
+        records = profile.get("basic_missions") if isinstance(profile.get("basic_missions"), list) else []
+        result: dict[str, dict[str, Any]] = {}
+        for index, mission in enumerate(records):
+            if not isinstance(mission, dict):
+                continue
+            mission_id = str(mission.get("id") or mission.get("missionId") or mission.get("taskNo") or f"basic-{index + 1}")
+            result[mission_id] = mission
+            for alias in (mission.get("name"), mission.get("basicTaskName"), mission.get("missionId"), mission.get("taskNo")):
+                alias_text = str(alias or "").strip()
+                if alias_text:
+                    result.setdefault(alias_text, mission)
+        return result
+
+    def _basic_mission_for_item(
+        self,
+        item: dict[str, Any],
+        basic_missions: dict[str, dict[str, Any]],
+        default_basic: dict[str, Any],
+    ) -> dict[str, Any]:
+        for value in (item.get("basicMissionId"), item.get("basicTaskName")):
+            key = str(value or "").strip()
+            if key and key in basic_missions:
+                return basic_missions[key]
+        return default_basic
 
     def _periodic_contexts_by_composite(self, profile: dict[str, Any]) -> dict[str, dict[str, Any]]:
         contexts: dict[str, dict[str, Any]] = {}

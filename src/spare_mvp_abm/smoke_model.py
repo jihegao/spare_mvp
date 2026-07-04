@@ -116,7 +116,7 @@ class SmokeSpareMvpModel(BaseModel):
     def _derive_min_required_sorties(self, override: int | None) -> int:
         if override is not None:
             return self._positive_int(override, 1)
-        basic_mission = self.project_data.get("basicMission", {})
+        basic_mission = self._primary_basic_mission()
         equipment = self.project_data.get("equipment", {})
         combat_unit = self.project_data.get("combatUnit", {})
         return self._positive_int(
@@ -166,7 +166,7 @@ class SmokeSpareMvpModel(BaseModel):
         return 3
 
     def _derive_sortie_duration(self) -> int:
-        basic_mission = self.project_data.get("basicMission", {})
+        basic_mission = self._primary_basic_mission()
         minutes = basic_mission.get("taskDurationMinutes")
         if self._is_number(minutes):
             return max(1, round(float(minutes) / 60))
@@ -178,6 +178,12 @@ class SmokeSpareMvpModel(BaseModel):
     def _derive_wave_interval(self) -> int:
         mission_profile = self.project_data.get("missionProfile", {})
         return self._positive_int(mission_profile.get("repeatCycleHours"), 6)
+
+    def _primary_basic_mission(self) -> dict:
+        basic_missions = self.project_data.get("basicMissions", [])
+        if not isinstance(basic_missions, list):
+            return {}
+        return next((mission for mission in basic_missions if isinstance(mission, dict)), {})
 
     def _positive_int(self, value: Any, fallback: int) -> int:
         if not self._is_number(value):

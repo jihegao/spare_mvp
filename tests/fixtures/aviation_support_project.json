@@ -10,9 +10,6 @@
     "seed": 20260618
   },
   "missionProfile": {},
-  "basicMission": {
-    "equipmentQuantity": 5
-  },
   "missionPhases": [],
   "combatUnit": {},
   "equipment": {
@@ -32,5 +29,11 @@
     }
   ],
   "supportActivities": [],
-  "reliabilityBlockDiagram": {}
+  "reliabilityBlockDiagram": {},
+  "basicMissions": [
+    {
+      "equipmentQuantity": 5,
+      "id": "basic-mission-1"
+    }
+  ]
 }

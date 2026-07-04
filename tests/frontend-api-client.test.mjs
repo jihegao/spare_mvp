@@ -549,18 +549,20 @@ test("frontend API client createProjectFromModelingImport uses protected modelin
 test("buildBackendProjectJson syncs composite task inherited basic mission fields", () => {
   const scenario = {
     scenarioId: "sync-basic-fields",
-    basicMission: {
+    basicMissions: [{
+      id: "basic-alpha",
       name: "Basic Alpha",
       equipmentType: "J-35",
       taskDurationMinutes: 95,
       equipmentQuantity: 4,
       minRequiredSorties: 3,
       preparationMinutes: 25
-    },
+    }],
     missionProfile: {
       compositeTasks: [{
         id: "composite-alpha",
         taskItems: [{
+          basicMissionId: "basic-alpha",
           basicTaskName: "Basic Alpha",
           equipmentType: "stale",
           taskDurationMinutes: 10,

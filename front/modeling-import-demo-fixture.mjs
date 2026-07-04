@@ -417,33 +417,35 @@ export const MODELING_IMPORT_DEMO_FIXTURE = {
             }
           }
         },
-        "basicMission": {
-          "advanceNoticeMinutes": 60,
-          "basicTaskName": "近海制空巡逻任务",
-          "cancelMinutes": 20,
-          "equipmentQuantity": 2,
-          "equipmentType": "J-15",
-          "minRequiredSorties": 2,
-          "missionId": "BM-CV-01",
-          "name": "近海制空巡逻任务",
-          "preparationMinutes": 50,
-          "priority": 1,
-          "returnRatio": 0.35,
-          "startHour": 1,
-          "successPoint": 0.95,
-          "supportActivityName": "飞行前保障",
-          "taskArea": "巡逻区",
-          "taskDurationMinutes": 180,
-          "taskNo": "BM-CV-01",
-          "updatedAt": "2026-06-21 08:00"
-        },
         "basicMissions": [
+          {
+            "advanceNoticeMinutes": 60,
+            "basicTaskName": "近海制空巡逻任务",
+            "cancelMinutes": 20,
+            "equipmentQuantity": 4,
+            "equipmentType": "J-15",
+            "id": "bm-cv-01",
+            "minRequiredSorties": 4,
+            "missionId": "BM-CV-01",
+            "name": "近海制空巡逻任务",
+            "preparationMinutes": 50,
+            "priority": 1,
+            "returnRatio": 0.35,
+            "startHour": 1,
+            "successPoint": 0.95,
+            "supportActivityName": "飞行前保障",
+            "taskArea": "巡逻区",
+            "taskDurationMinutes": 180,
+            "taskNo": "BM-CV-01",
+            "updatedAt": "2026-06-21 08:00"
+          },
           {
             "advanceNoticeMinutes": 60,
             "basicTaskName": "远海警戒任务",
             "cancelMinutes": 20,
             "equipmentQuantity": 3,
             "equipmentType": "J-35",
+            "id": "night-alert-main",
             "minRequiredSorties": 3,
             "missionId": "night-alert-main",
             "name": "远海警戒任务",
@@ -549,6 +551,7 @@ export const MODELING_IMPORT_DEMO_FIXTURE = {
             "name": "昼间制空复合任务",
             "taskItems": [
               {
+                "basicMissionId": "bm-cv-01",
                 "basicTaskName": "近海制空巡逻任务",
                 "dailyRepeatCount": 2,
                 "equipmentType": "J-15",
@@ -567,6 +570,7 @@ export const MODELING_IMPORT_DEMO_FIXTURE = {
             "name": "夜间警戒复合任务",
             "taskItems": [
               {
+                "basicMissionId": "night-alert-main",
                 "basicTaskName": "远海警戒任务",
                 "dailyRepeatCount": 1,
                 "equipmentType": "J-35",

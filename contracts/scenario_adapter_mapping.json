@@ -32,7 +32,7 @@
           "constructor_param": "supportCapacity"
         },
         "min_required_sorties": {
-          "source": "project.equipment.minRequiredSorties / project.basicMission.minRequiredSorties",
+          "source": "project.equipment.minRequiredSorties / project.basicMissions[].minRequiredSorties",
           "constructor_param": "minRequiredSorties"
         },
         "seed": {
@@ -53,7 +53,7 @@
           "constructor_param": "mission_count"
         },
         "mission_aircraft_required": {
-          "source": "project.basicMission.equipmentQuantity",
+          "source": "project.basicMissions[].equipmentQuantity",
           "constructor_param": "mission_aircraft_required"
         },
         "mechanic_teams": {
@@ -94,7 +94,7 @@
           "reason": "Identity fields trace the compiled platform chain and do not change simulation dynamics."
         },
         "mission_profile": {
-          "source": "project.missionProfile, project.basicMission, project.missionPhases, project.airports, project.missionAreas",
+          "source": "project.missionProfile, project.basicMissions, project.missionPhases, project.airports, project.missionAreas",
           "constructor_param": "mission_profile"
         },
         "aircraft": {

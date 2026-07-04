@@ -97,7 +97,7 @@ class M96CasePackageTest(unittest.TestCase):
         self.assertEqual(entry_by_path["objects.equipmentAssets[].failureRate"]["status"], "ignored")
         self.assertEqual(entry_by_path["objects.supportResources[].capacity"]["status"], "ignored")
         self.assertEqual(entry_by_path["objects.equipment.initialReady"]["status"], "ignored")
-        self.assertEqual(entry_by_path["objects.missionProfiles[].basicMission.minRequiredSorties"]["status"], "ignored")
+        self.assertEqual(entry_by_path["objects.missionProfiles[].basicMissions[].minRequiredSorties"]["status"], "ignored")
         self.assertEqual(entry_by_path["objects.equipment.quantity"]["status"], "ignored")
         self.assertEqual(entry_by_path["objects.supportResources[].personnelCapacity"]["status"], "consumed")
         self.assertEqual(entry_by_path["objects.supportResources[].equipmentCapacity"]["status"], "consumed")

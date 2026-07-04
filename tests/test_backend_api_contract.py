@@ -2863,6 +2863,9 @@ class BackendApiContractTest(unittest.TestCase):
         ))
         self.assertGreaterEqual(len(created["project"]["missionProfile"]["compositeTasks"]), 2)
         self.assertGreaterEqual(len(created["project"]["missionProfile"]["periodicTasks"]), 1)
+        self.assertNotIn("basicMission", created["project"])
+        self.assertGreaterEqual(len(created["project"]["basicMissions"]), 2)
+        self.assertTrue(all(basic.get("id") for basic in created["project"]["basicMissions"]))
         self.assertEqual(
             created["project"]["airports"],
             [{"id": "airport-a", "name": "A", "location": "A", "supportNodeId": "airport-a"}],
@@ -2914,6 +2917,15 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertIsNot(project["projectInfo"], objects["projectInfo"])
         self.assertEqual(project["supportOrganization"]["tree"], objects["supportOrganization"]["tree"])
         self.assertIsNot(project["supportOrganization"], objects["supportOrganization"])
+        self.assertNotIn("basicMission", project)
+        self.assertGreaterEqual(len(project["basicMissions"]), 2)
+        self.assertTrue(all(basic.get("id") for basic in project["basicMissions"]))
+        basic_ids = {basic["id"] for basic in project["basicMissions"]}
+        self.assertTrue(all(
+            item.get("basicMissionId") in basic_ids
+            for composite in project["missionProfile"]["compositeTasks"]
+            for item in composite.get("taskItems", [])
+        ))
         self.assertEqual(
             project["airports"],
             [{"id": "airport-a", "name": "A", "location": "A", "supportNodeId": "airport-a"}],

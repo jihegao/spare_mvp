@@ -780,7 +780,7 @@ class SimulationAdapter:
             "support_capacity": self._first_positive_int(project.get("supportNodes", []), "equipmentCapacity", 1),
             "min_required_sorties": self._positive_int(
                 project.get("equipment", {}).get("minRequiredSorties")
-                or project.get("basicMission", {}).get("minRequiredSorties"),
+                or self._primary_basic_mission(project).get("minRequiredSorties"),
                 1,
             ),
             "seed": self._positive_int(experiment.get("seed"), 0),
@@ -791,7 +791,7 @@ class SimulationAdapter:
             "aircraft_count": self._positive_int(project.get("equipment", {}).get("quantity"), 8),
             "mission_count": self._positive_int(project.get("missionProfile", {}).get("missionCount"), 3),
             "mission_aircraft_required": self._positive_int(
-                project.get("basicMission", {}).get("equipmentQuantity"),
+                self._primary_basic_mission(project).get("equipmentQuantity"),
                 1,
             ),
             "mechanic_teams": self._first_positive_int(project.get("supportNodes", []), "personnelCapacity", 1),
@@ -827,7 +827,7 @@ class SimulationAdapter:
                 "profile_id": str(mission_profile.get("profileId") or mission_profile.get("id") or "mission-profile"),
                 "name": str(mission_profile.get("name") or "mission profile"),
                 "duration_minutes": duration_minutes,
-                "basic_mission": copy.deepcopy(project.get("basicMission") if isinstance(project.get("basicMission"), dict) else {}),
+                "basic_missions": copy.deepcopy(self._basic_missions(project)),
                 "composite_tasks": copy.deepcopy(self._dict_list(mission_profile.get("compositeTasks"))),
                 "periodic_tasks": copy.deepcopy(self._dict_list(mission_profile.get("periodicTasks"))),
                 "mission_phases": copy.deepcopy(self._dict_list(project.get("missionPhases"))),
@@ -1109,7 +1109,7 @@ class SimulationAdapter:
                 "components[].failureRate",
                 "supportNodes[].equipmentCapacity",
                 "equipment.minRequiredSorties",
-                "basicMission.minRequiredSorties",
+                "basicMissions[].minRequiredSorties",
                 "experiment.seed",
             ],
             "defaults_applied": self._smoke_defaults_applied(project),
@@ -1128,7 +1128,7 @@ class SimulationAdapter:
             "consumed_fields": [
                 "equipment.quantity",
                 "missionProfile.missionCount",
-                "basicMission.equipmentQuantity",
+                "basicMissions[].equipmentQuantity",
                 "supportNodes[].personnelCapacity",
                 "supportNodes[].equipmentCapacity",
                 "monteCarlo.lruFailureMultipliers",
@@ -1164,7 +1164,7 @@ class SimulationAdapter:
                 "missionProfile.durationHours",
                 "missionProfile.compositeTasks",
                 "missionProfile.periodicTasks",
-                "basicMission",
+                "basicMissions",
                 "missionPhases",
                 "airports",
                 "missionAreas",
@@ -1223,10 +1223,10 @@ class SimulationAdapter:
             defaults.append("supportNodes[].equipmentCapacity=1")
         sortie_candidates = [
             project.get("equipment", {}).get("minRequiredSorties"),
-            project.get("basicMission", {}).get("minRequiredSorties"),
+            self._primary_basic_mission(project).get("minRequiredSorties"),
         ]
         if not any(self._is_positive_number(value) for value in sortie_candidates):
-            defaults.append("equipment.minRequiredSorties|basicMission.minRequiredSorties=1")
+            defaults.append("equipment.minRequiredSorties|basicMissions[].minRequiredSorties=1")
         if not self._is_number(project.get("experiment", {}).get("seed")):
             defaults.append("experiment.seed=0")
         return defaults
@@ -1284,8 +1284,8 @@ class SimulationAdapter:
             defaults.append("equipment.quantity=8")
         if not self._is_positive_number(project.get("missionProfile", {}).get("missionCount")):
             defaults.append("missionProfile.missionCount=3")
-        if not self._is_positive_number(project.get("basicMission", {}).get("equipmentQuantity")):
-            defaults.append("basicMission.equipmentQuantity=1")
+        if not self._is_positive_number(self._primary_basic_mission(project).get("equipmentQuantity")):
+            defaults.append("basicMissions[].equipmentQuantity=1")
         if not any(
             isinstance(node, dict) and self._is_positive_number(node.get("personnelCapacity"))
             for node in project.get("supportNodes", [])
@@ -3907,6 +3907,13 @@ class SimulationAdapter:
         if not isinstance(value, list):
             return []
         return [item for item in value if isinstance(item, dict)]
+
+    def _basic_missions(self, project: dict[str, Any]) -> list[dict[str, Any]]:
+        return self._dict_list(project.get("basicMissions"))
+
+    def _primary_basic_mission(self, project: dict[str, Any]) -> dict[str, Any]:
+        missions = self._basic_missions(project)
+        return missions[0] if missions else {}
 
     def _string_list(self, value: Any) -> list[str]:
         if not isinstance(value, list):

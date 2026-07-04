@@ -42,7 +42,8 @@ test("canonical modeling import fixture covers all project authoring surfaces", 
   assert.ok(objects.projectInfo || mission.experiment);
   assert.ok(Array.isArray(objects.equipmentAssets) && objects.equipmentAssets.length >= 1);
   assert.ok(objects.equipmentAssets.some((asset) => asset.rms && asset.failureDistribution && asset.specialRepairProfile));
-  assert.ok(mission.basicMission);
+  assert.equal(Object.hasOwn(mission, "basicMission"), false);
+  assert.ok(Array.isArray(mission.basicMissions) && mission.basicMissions.length >= 1);
   assert.ok(Array.isArray(mission.compositeTasks));
   assert.ok(Array.isArray(mission.periodicTasks));
   assert.ok(mission.combatUnit);
@@ -121,12 +122,12 @@ test("simulation analysis public import templates validate against modeling impo
           assert.equal(
             Object.hasOwn(taskItem, "minRequiredSystems"),
             false,
-            `${templatePath} ${compositeTask.id}/${taskItem.id} must inherit minRequiredSorties from basicMission`
+            `${templatePath} ${compositeTask.id}/${taskItem.id} must inherit minRequiredSorties from basicMissions`
           );
           assert.equal(
             Object.hasOwn(taskItem, "preparationMinutes"),
             false,
-            `${templatePath} ${compositeTask.id}/${taskItem.id} must inherit preparationMinutes from basicMission`
+            `${templatePath} ${compositeTask.id}/${taskItem.id} must inherit preparationMinutes from basicMissions`
           );
         }
       }
@@ -198,19 +199,24 @@ test("canonical platform composite task items inherit equipment quantity from ba
 
   for (const [label, importPackage] of canonicalImports) {
     const mission = importPackage.objects.missionProfiles[0];
-    assert.ok(Number(mission.basicMission?.equipmentQuantity || 0) > 0, `${label} must define basic task equipmentQuantity`);
-    const basicTasks = [
-      mission.basicMission,
-      ...(Array.isArray(mission.basicMissions) ? mission.basicMissions : [])
-    ].filter(Boolean);
+    assert.equal(Object.hasOwn(mission, "basicMission"), false, `${label} must not emit legacy basicMission`);
+    assert.ok(Array.isArray(mission.basicMissions) && mission.basicMissions.length >= 1, `${label} must define basicMissions`);
+    assert.ok(mission.basicMissions.every((basicTask) => basicTask.id), `${label} basicMissions must carry stable ids`);
+    const basicTasks = mission.basicMissions;
     const basicTaskNames = new Set(basicTasks.flatMap((basicTask) => [
       basicTask.name,
       basicTask.basicTaskName,
       basicTask.missionId,
       basicTask.taskNo
     ]).filter(Boolean).map(String));
+    const basicTaskIds = new Set(basicTasks.map((basicTask) => String(basicTask.id)));
     for (const compositeTask of mission.compositeTasks || []) {
       for (const taskItem of compositeTask.taskItems || []) {
+        assert.equal(
+          basicTaskIds.has(String(taskItem.basicMissionId || "")),
+          true,
+          `${label} ${compositeTask.id}/${taskItem.id} must reference basicMissions[].id`
+        );
         assert.equal(
           basicTaskNames.has(String(taskItem.basicTaskName || "")),
           true,
@@ -219,17 +225,17 @@ test("canonical platform composite task items inherit equipment quantity from ba
         assert.equal(
           Object.hasOwn(taskItem, "equipmentQuantity"),
           false,
-          `${label} ${compositeTask.id}/${taskItem.id} must inherit equipmentQuantity from basicMission`
+          `${label} ${compositeTask.id}/${taskItem.id} must inherit equipmentQuantity from basicMissions`
         );
         assert.equal(
           Object.hasOwn(taskItem, "minRequiredSystems"),
           false,
-          `${label} ${compositeTask.id}/${taskItem.id} must inherit minRequiredSorties from basicMission`
+          `${label} ${compositeTask.id}/${taskItem.id} must inherit minRequiredSorties from basicMissions`
         );
         assert.equal(
           Object.hasOwn(taskItem, "preparationMinutes"),
           false,
-          `${label} ${compositeTask.id}/${taskItem.id} must inherit preparationMinutes from basicMission`
+          `${label} ${compositeTask.id}/${taskItem.id} must inherit preparationMinutes from basicMissions`
         );
       }
     }
@@ -415,6 +421,7 @@ test("projectToModelingImportPackage backfills import draft from current Project
         name: "第一波次",
         taskItems: [{
           id: "task-item-1",
+          basicMissionId: "basic-current",
           basicTaskName: "当前基本任务",
           equipmentQuantity: 4,
           groupName: "昼间编队"
@@ -422,7 +429,7 @@ test("projectToModelingImportPackage backfills import draft from current Project
       }],
       periodicTasks: [{ id: "periodic-1", name: "周期任务" }]
     },
-    basicMission: { missionId: "BM-CURRENT", name: "当前基本任务", equipmentQuantity: 2, minRequiredSorties: 2 },
+    basicMissions: [{ id: "basic-current", missionId: "BM-CURRENT", name: "当前基本任务", equipmentQuantity: 2, minRequiredSorties: 2 }],
     missionPhases: [{ id: "phase-1", name: "执行" }],
     combatUnit: { quantity: 3, requiredCount: 2 },
     equipment: { model: "J-15", quantity: 3 },
@@ -451,7 +458,8 @@ test("projectToModelingImportPackage backfills import draft from current Project
   assert.equal(draft.usedTables.transportPolicies, false);
   assert.equal(draft.objects.missionProfiles[0].sourceImportId, undefined);
   assert.equal(draft.objects.missionProfiles[0].profileId, "MP-CURRENT");
-  assert.deepEqual(draft.objects.missionProfiles[0].basicMission, projectJson.basicMission);
+  assert.equal(Object.hasOwn(draft.objects.missionProfiles[0], "basicMission"), false);
+  assert.deepEqual(draft.objects.missionProfiles[0].basicMissions, projectJson.basicMissions);
   assert.equal(
     Object.hasOwn(draft.objects.missionProfiles[0].compositeTasks[0].taskItems[0], "equipmentQuantity"),
     false

@@ -25,17 +25,15 @@
               {
                 "basicTaskName": "近海制空巡逻任务",
                 "dailyRepeatCount": 2,
-                "equipmentQuantity": 4,
                 "equipmentType": "J-15",
                 "firstWaveTime": "08:00",
                 "groupName": "昼间制空编队",
                 "id": "day-cap-main",
                 "intervalHours": 6,
-                "minRequiredSystems": 4,
-                "preparationMinutes": 50,
                 "priority": 1,
                 "recoveryTime": "11:00",
-                "taskDispatchTime": "07:15"
+                "taskDispatchTime": "07:15",
+                "basicMissionId": "bm-cv-01"
               }
             ]
           },
@@ -46,17 +44,15 @@
               {
                 "basicTaskName": "远海警戒任务",
                 "dailyRepeatCount": 1,
-                "equipmentQuantity": 3,
                 "equipmentType": "J-35",
                 "firstWaveTime": "20:15",
                 "groupName": "夜间警戒编队",
                 "id": "night-alert-main",
                 "intervalHours": 8,
-                "minRequiredSystems": 3,
-                "preparationMinutes": 55,
                 "priority": 2,
                 "recoveryTime": "23:30",
-                "taskDispatchTime": "19:30"
+                "taskDispatchTime": "19:30",
+                "basicMissionId": "night-alert-main"
               }
             ]
           }
@@ -116,25 +112,6 @@
         "profileId": "MP-CV-01",
         "profileType": "舰载机昼夜连续出动",
         "repeatCycleHours": 6,
-        "basicMission": {
-          "advanceNoticeMinutes": 60,
-          "cancelMinutes": 20,
-          "equipmentQuantity": 2,
-          "equipmentType": "J-15",
-          "minRequiredSorties": 2,
-          "missionId": "BM-CV-01",
-          "name": "巡逻任务",
-          "preparationMinutes": 50,
-          "priority": 1,
-          "returnRatio": 0.35,
-          "startHour": 1,
-          "successPoint": 0.95,
-          "supportActivityName": "飞行前保障",
-          "taskArea": "巡逻区",
-          "taskDurationMinutes": 180,
-          "taskNo": "BM-CV-01",
-          "updatedAt": "2026-06-21 08:00"
-        },
         "missionPhases": [
           {
             "id": "phase-alert",
@@ -375,7 +352,51 @@
               ]
             }
           }
-        }
+        },
+        "basicMissions": [
+          {
+            "advanceNoticeMinutes": 60,
+            "cancelMinutes": 20,
+            "equipmentQuantity": 4,
+            "equipmentType": "J-15",
+            "minRequiredSorties": 4,
+            "missionId": "BM-CV-01",
+            "name": "近海制空巡逻任务",
+            "preparationMinutes": 50,
+            "priority": 1,
+            "returnRatio": 0.35,
+            "startHour": 1,
+            "successPoint": 0.95,
+            "supportActivityName": "飞行前保障",
+            "taskArea": "巡逻区",
+            "taskDurationMinutes": 180,
+            "taskNo": "BM-CV-01",
+            "updatedAt": "2026-06-21 08:00",
+            "id": "bm-cv-01",
+            "basicTaskName": "近海制空巡逻任务"
+          },
+          {
+            "advanceNoticeMinutes": 60,
+            "cancelMinutes": 20,
+            "equipmentQuantity": 3,
+            "equipmentType": "J-35",
+            "minRequiredSorties": 3,
+            "missionId": "night-alert-main",
+            "name": "远海警戒任务",
+            "preparationMinutes": 55,
+            "priority": 1,
+            "returnRatio": 0.35,
+            "startHour": 1,
+            "successPoint": 0.95,
+            "supportActivityName": "飞行前保障",
+            "taskArea": "巡逻区",
+            "taskDurationMinutes": 180,
+            "taskNo": "night-alert-main",
+            "updatedAt": "2026-06-21 08:00",
+            "id": "night-alert-main",
+            "basicTaskName": "远海警戒任务"
+          }
+        ]
       }
     ],
     "equipmentAssets": [

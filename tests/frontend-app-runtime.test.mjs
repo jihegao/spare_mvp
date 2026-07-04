@@ -968,7 +968,7 @@ test("Mesa Monte Carlo setting changes do not rerender before the run click", as
   });
 
   try {
-    assert.match(runtime.appNode.innerHTML, /Mesa蒙特卡洛分析/);
+    assert.match(runtime.appNode.innerHTML, /蒙特卡洛分析/);
     assert.match(runtime.appNode.innerHTML, /data-lite-mesa-field="samples"/);
 
     await runtime.change("[data-lite-mesa-field]", { liteMesaField: "samples" }, { value: "3", type: "number" });
@@ -977,7 +977,7 @@ test("Mesa Monte Carlo setting changes do not rerender before the run click", as
 
     await runtime.click("[data-lite-mesa-action='run']");
 
-    assert.match(runtime.appNode.innerHTML, /Mesa 分析完成：3 个样本/);
+    assert.match(runtime.appNode.innerHTML, /分析完成：3 个样本/);
     assert.match(runtime.appNode.innerHTML, /<td>mission_success_rate<\/td>/);
     assert.match(runtime.appNode.innerHTML, /<td>3<\/td>/);
   } finally {
@@ -1275,7 +1275,13 @@ function createRuntimeProjectJson(overrides = {}) {
     activeModule: "sparePlanning",
     experiment: { name: "运行时项目", steps: 24, samples: 2, seed: 20260626 },
     missionProfile: { name: "运行时任务剖面", durationHours: 8, compositeTasks: [], periodicTasks: [] },
-    basicMission: { name: "运行时基本任务", equipmentType: "J-15", taskDurationMinutes: 90, minRequiredSorties: 1 },
+    basicMissions: [{
+      id: "basic-runtime",
+      name: "运行时基本任务",
+      equipmentType: "J-15",
+      taskDurationMinutes: 90,
+      minRequiredSorties: 1
+    }],
     equipment: { model: "J-15", wholeMachineModels: ["J-15"], quantity: 2, initialReady: 2, minRequiredSorties: 1 },
     supportNodes: [{
       id: "carrier-deck",
@@ -1312,7 +1318,7 @@ function createRuntimeProjectJson(overrides = {}) {
     ...overrides,
     experiment: { ...project.experiment, ...(overrides.experiment || {}) },
     missionProfile: { ...project.missionProfile, ...(overrides.missionProfile || {}) },
-    basicMission: { ...project.basicMission, ...(overrides.basicMission || {}) },
+    basicMissions: overrides.basicMissions || project.basicMissions,
     equipment: { ...project.equipment, ...(overrides.equipment || {}) }
   };
 }

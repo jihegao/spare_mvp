@@ -219,11 +219,17 @@
   "$defs": {
     "missionProfile": {
       "type": "object",
-      "required": ["id", "name", "durationHours"],
+      "required": ["id", "name", "durationHours", "basicMissions"],
+      "not": { "required": ["basicMission"] },
       "properties": {
         "id": { "type": "string" },
         "name": { "type": "string" },
-        "durationHours": { "type": "number", "exclusiveMinimum": 0 }
+        "durationHours": { "type": "number", "exclusiveMinimum": 0 },
+        "basicMissions": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "object", "required": ["id"] }
+        }
       }
     },
     "equipmentAsset": {
