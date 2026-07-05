@@ -24,7 +24,7 @@
     "project_version": { "type": "string" },
     "scenarioId": { "type": "string" },
     "activeModule": { "type": "string", "enum": ["sparePlanning", "missionReliability"] },
-    "airports": { "type": "array", "items": { "type": "object" } },
+    "airports": { "type": "array", "items": { "type": "string" } },
     "missionAreas": { "type": "array", "items": { "type": "object" } },
     "missionProfile": { "type": "object" },
     "basicMissions": { "type": "array", "items": { "type": "object" } },

@@ -43,7 +43,7 @@
 - M9.2 在线状态流和运行订阅已形成最小闭环：HTTP 暴露 run-scoped SSE `GET /api/runs/{run_id}/state-stream`，当前同步执行器从已持久化 `visualization_state_series` payload 输出 `run_status`、`state_frame` 和 `artifact_ready`；在线 `state_frame` 复用离线帧 schema，最终 `artifact_ready` 事件切回 canonical `/api/runs/{run_id}/artifacts/{artifact_id}` 离线回放解析路径。前端 Mesa 可视化页支持订阅运行、断线/重连提示、未授权和失败状态提示；在线帧只用于展示当前流状态，不解锁播放/单步/重置控制。
 - M9.3 Run lifecycle / control plane 已形成最小闭环：HTTP 暴露 `POST /api/runs/{run_id}/control`，后端确认 `cancel` 和 `retry` 后才更新正式 run 状态并写入 `runs.control.*` 审计；`retry` 会阻断旧 result/artifact 正式读取，并在 run detail 中展示 pending 空 artifact manifest。`pause`、`resume`、`step`、`reset` 仍 fail closed，前端 Mesa 控制区只展示后端确认状态或不可用原因，不用本地回放索引、demo frame 或计时器伪造后端控制。M9.4/M9.5 的 `aviation_support` 正式执行记录已归档，当前 lifecycle/control 的正式新 run 入口只接受 `aircraft_support_v1`；生产 worker queue、真实运行中增量推送、object storage、完整 cancel/retry 基础设施和 checkpoint restart 只在后续阶段最小需要时纳入。
 - M9.6 已冻结平台案例数据包、字段覆盖表和 golden fixtures：`tests/fixtures/modeling_import_project.json` 仍是唯一完整业务案例源，`tests/fixtures/m9_6_platform_case_export.json` 固化 published modeling import -> clean Project -> ModelingSnapshot -> ExperimentPlan runtime config -> RunIntent -> MonteCarloRunConfig -> compiled `aircraft_support_v1` Scenario 链路，`tests/fixtures/m9_6_field_coverage.json` 逐字段标注 consumed/derived/defaulted/governance_only/ignored/unsupported，且 M9.7.4 后 M9.6 已冻结业务字段的 unsupported 汇总为 0；`tests/fixtures/m9_6_expected_artifact_kinds.json` 固定 single 与 Monte Carlo artifact kind 口径。M9.8 已完成平台嵌入和 `independent-mesa` 退役：`independent-mesa/GLM` 与 `independent-mesa/GPT` 源码树已从当前仓库移除，不再保留旁路服务、静态 HTML 或离线复现实验入口；历史设计记录只保留在 `docs/archive/deprecated/superpowers/` 的归档计划和规格中。
-- 阶段 6P 仿真分析验收数据包已落地：`tests/fixtures/case_new.json` 是从前端导出恢复的测试案例基础数据，`tests/fixtures/simulation_analysis_cases/` 固定 `minimal_single_aircraft` 和 `canonical_platform_case` 两类 modeling-import-v1 案例；`src/spare_mvp_backend/simulation_analysis_cases.py` 与 `scripts/export-simulation-analysis-cases.py --write|--check` 负责生成和漂移检查；`tests/test_simulation_analysis_cases.py` 验证两类数据均可进入 `aircraft_support_v1` formal Monte Carlo，并产出 `monte_carlo_base`、`visualization_state_series` 和四类 `analysis_projection_*` artifact。6P 是分析功能前置数据基线，不是生产性能压测。
+- 阶段 6P 仿真分析验收数据包已收束：`tests/fixtures/case_new.json` 是从前端导出恢复的测试案例基础数据，`tests/fixtures/simulation_analysis_cases/` 只固定 `canonical_platform_case` 这一类 modeling-import-v1 案例；`src/spare_mvp_backend/simulation_analysis_cases.py` 与 `scripts/export-simulation-analysis-cases.py --write|--check` 负责生成和漂移检查；`tests/test_simulation_analysis_cases.py` 验证该数据可进入 `aircraft_support_v1` formal Monte Carlo，并产出 `monte_carlo_base`、`visualization_state_series` 和四类 `analysis_projection_*` artifact。旧的 minimal single-aircraft / frontend project smoke schema 文件已退役。6P 是分析功能前置数据基线，不是生产性能压测。
 
 ## 本地运行
 
@@ -133,10 +133,10 @@ scripts/restore-database.sh \
 
 需要先按“本地运行”创建 `.abm-mesa-test-env`。本机验证使用 Python 3.12；仓库依赖由 `pyproject.toml` 管理，当前包含 `mesa==3.5.1` 和 `jsonschema==4.26.0`。创建环境不依赖 `mesa-abm-skill`，该 runner 只作为可选的实验执行工具。
 
-`SmokeSpareMvpModel` 的场景输入来自前端数据模型快照
-`scenarios/frontend-project-smoke/project.json`。两个 smoke experiment 只传
-`projectJsonPath` 和前端 Monte Carlo 风格的 sweep 参数，不再使用
-`equipment_count`、`initial_spare_stock` 等旧标量输入。
+`SmokeSpareMvpModel` 的场景输入由 smoke experiment 的内联 `projectData`
+提供。两个 smoke experiment 只传 `projectData` 和前端 Monte Carlo 风格的
+sweep 参数，不再使用 `projectJsonPath`、`equipment_count`、
+`initial_spare_stock` 等旧输入。
 
 先运行仓库内 Python 测试确认环境可用：
 

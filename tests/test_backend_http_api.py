@@ -16,11 +16,60 @@ from urllib.parse import quote
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.spare_mvp_backend.http_server import create_backend_server
-from src.spare_mvp_backend.modeling_import import modeling_import_to_project
 from src.spare_mvp_contract.adapter import SimulationAdapter
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+def small_aircraft_support_project(project_id: str) -> dict:
+    return {
+        "schema_version": "project-v0",
+        "project_id": project_id,
+        "project_version": "project-v0.1",
+        "scenarioId": f"{project_id}-scenario",
+        "activeModule": "sparePlanning",
+        "projectInfo": {"name": "small current project", "baseCode": "SM", "summary": "small current project"},
+        "airports": ["A"],
+        "missionAreas": [],
+        "missionProfile": {"name": "small current mission", "durationHours": 1, "compositeTasks": [], "periodicTasks": []},
+        "basicMissions": [{
+            "id": "basic-small",
+            "name": "small sortie",
+            "missionId": "basic-small",
+            "minRequiredSorties": 1,
+            "taskDurationMinutes": 30,
+            "equipmentType": "J-15",
+        }],
+        "missionPhases": [],
+        "combatUnit": {"members": [{"aircraftNo": "J15-001", "model": "J-15", "status": "ready", "airport": "A"}]},
+        "components": [{
+            "id": "whole-aircraft",
+            "name": "whole aircraft",
+            "aircraftModel": "J-15",
+            "productType": "whole",
+            "quantity": 1,
+            "failureRate": 0.01,
+            "mtbfHours": 100,
+            "meanRepairTimeMinutes": 30,
+            "failureDistribution": {"distributionType": "exponential", "parameters": "lambda=0.01"},
+            "repairDistribution": {"distributionType": "fixed", "parameters": "value=30"},
+        }],
+        "supportNodes": [{
+            "id": "node-a",
+            "name": "node A",
+            "personnelCapacity": 1,
+            "equipmentCapacity": 1,
+            "inventory": {"aircraft_support_v1_spares": 2},
+        }],
+        "supportActivities": [{"id": "corrective", "activityType": "corrective", "durationHours": 1, "jobs": []}],
+        "supportOrganization": {},
+        "reliabilityBlockDiagram": {
+            "nodes": [{"id": "whole-aircraft", "name": "whole aircraft", "type": "system", "failureRate": 0.01}],
+            "edges": [],
+        },
+        "modelingImportValidation": {"usedTables": {}, "disabledDomains": [], "warnings": []},
+    }
 
 
 class BackendHttpApiTest(unittest.TestCase):
@@ -1111,9 +1160,7 @@ class BackendHttpApiTest(unittest.TestCase):
             try:
                 base_url = f"http://127.0.0.1:{server.server_address[1]}/api"
                 auth_token = self._login_token(base_url, "data", "data")
-                case = self._fixture("simulation_analysis_cases/minimal_single_aircraft.json")
-                project = modeling_import_to_project(case["modeling_import"])
-                project["project_id"] = "project-http-independent-visual"
+                project = small_aircraft_support_project("project-http-independent-visual")
                 project["missionProfile"].pop("sourceImportId", None)
 
                 payload = self._json(
@@ -1152,9 +1199,7 @@ class BackendHttpApiTest(unittest.TestCase):
             try:
                 base_url = f"http://127.0.0.1:{server.server_address[1]}/api"
                 auth_token = self._login_token(base_url, "data", "data")
-                case = self._fixture("simulation_analysis_cases/minimal_single_aircraft.json")
-                project = modeling_import_to_project(case["modeling_import"])
-                project["project_id"] = "project-http-lite-mesa-analysis"
+                project = small_aircraft_support_project("project-http-lite-mesa-analysis")
                 project["missionProfile"].pop("sourceImportId", None)
 
                 payload = self._json(

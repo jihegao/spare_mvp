@@ -12,7 +12,6 @@ from src.spare_mvp_backend.monte_carlo_config import normalize_monte_carlo_run_c
 
 
 SIMULATION_ANALYSIS_CASE_IDS = [
-    "minimal_single_aircraft",
     "canonical_platform_case",
 ]
 
@@ -29,15 +28,6 @@ DEFAULT_USED_TABLES = {
 }
 
 CASE_VALIDATION_SCOPES = {
-    "minimal_single_aircraft": {
-        "used_tables": {
-            **DEFAULT_USED_TABLES,
-            "supportResources": False,
-            "supportActivities": False,
-            "supportOrganization": False,
-            "transportPolicies": False,
-        },
-    },
     "canonical_platform_case": {
         "used_tables": DEFAULT_USED_TABLES,
     },
@@ -49,7 +39,6 @@ def build_simulation_analysis_case_pack(repo_root: Path | str) -> dict[str, Any]
     root = Path(repo_root)
     canonical = _load_canonical_import(root)
     cases = [
-        _case("minimal_single_aircraft", _minimal_single_aircraft_import(canonical), "最小单机建模粒度"),
         _case("canonical_platform_case", _canonical_platform_import(canonical), "M9.6/M9.7/M9.8 平台标准案例"),
     ]
     return {
@@ -71,6 +60,8 @@ def write_simulation_analysis_case_fixtures(repo_root: Path | str) -> None:
         _write_json(output_dir / f"{case['case_id']}.json", case)
         _write_json(template_dir / f"{case['case_id']}.json", case["modeling_import"])
     (template_dir / "case_new.json").unlink(missing_ok=True)
+    (output_dir / "minimal_single_aircraft.json").unlink(missing_ok=True)
+    (template_dir / "minimal_single_aircraft.json").unlink(missing_ok=True)
     (output_dir / "max_granularity_multi_aircraft.json").unlink(missing_ok=True)
     (template_dir / "max_granularity_multi_aircraft.json").unlink(missing_ok=True)
 
@@ -99,6 +90,12 @@ def simulation_analysis_case_fixture_drift(repo_root: Path | str) -> list[str]:
     stale_template = root / "public" / "import-templates" / "case_new.json"
     if stale_template.exists():
         drifted.append("public/import-templates/case_new.json")
+    stale_minimal_case = root / "tests" / "fixtures" / "simulation_analysis_cases" / "minimal_single_aircraft.json"
+    if stale_minimal_case.exists():
+        drifted.append("tests/fixtures/simulation_analysis_cases/minimal_single_aircraft.json")
+    stale_minimal_template = root / "public" / "import-templates" / "minimal_single_aircraft.json"
+    if stale_minimal_template.exists():
+        drifted.append("public/import-templates/minimal_single_aircraft.json")
     stale_max_case = root / "tests" / "fixtures" / "simulation_analysis_cases" / "max_granularity_multi_aircraft.json"
     if stale_max_case.exists():
         drifted.append("tests/fixtures/simulation_analysis_cases/max_granularity_multi_aircraft.json")
@@ -199,168 +196,6 @@ def _apply_combat_unit_aircraft_defaults(
                 continue
             member["airport"] = airport
             member["preLifeCalendarDays"] = pre_life_calendar_days
-
-
-def _minimal_single_aircraft_import(source: dict[str, Any]) -> dict[str, Any]:
-    case = copy.deepcopy(source)
-    case["importId"] = "import-6p-minimal-single-aircraft"
-    case["projectId"] = "project-6p-minimal-single-aircraft"
-    case["source"] = {
-        "type": "json_fixture",
-        "name": "simulation_analysis_cases/minimal_single_aircraft.json",
-        "derivedFrom": BASE_CASE_FIXTURE,
-    }
-    case["lifecycle"] = {"state": "draft", "version": 1, "referencedRunIds": []}
-    objects = case["objects"]
-    _remove_preset_airports(case)
-    mission = objects["missionProfiles"][0]
-    mission["id"] = "mission-profile-6p-minimal"
-    mission["name"] = "6P 最小单机任务剖面"
-    mission["durationHours"] = 6
-    mission["endCondition"] = "完成 1 个最小单机出动波次"
-    for phase in mission.get("missionPhases", []):
-        phase.pop("transitionCondition", None)
-    if isinstance(objects.get("missionPhases"), list):
-        for phase in objects["missionPhases"]:
-            phase.pop("transitionCondition", None)
-    mission["compositeTasks"] = [
-        {
-            "id": "composite-6p-minimal",
-            "name": "最小单机复合任务",
-            "taskItems": [
-                {
-                    "id": "task-6p-minimal",
-                    "basicMissionId": "basic-6p-minimal",
-                    "basicTaskName": "最小单机巡检任务",
-                    "dailyRepeatCount": 1,
-                    "equipmentType": "J-15",
-                    "firstWaveTime": "08:00",
-                    "groupName": "单机编队",
-                    "intervalHours": 6,
-                    "priority": 1,
-                    "recoveryTime": "09:30",
-                    "taskDispatchTime": "07:40",
-                }
-            ],
-        }
-    ]
-    mission["periodicTasks"] = [
-        {
-            "id": "periodic-6p-minimal",
-            "name": "单日最小周期任务",
-            "taskName": "单日最小周期任务",
-            "compositeTaskIds": ["composite-6p-minimal"],
-            "compositeTasks": [{"compositeTaskId": "composite-6p-minimal", "week": "1"}],
-            "cycleDays": 1,
-            "periodDays": 1,
-            "repeatCount": 1,
-            "repeatCycleDays": 1,
-            "repeatCycleUnit": "day",
-            "repeatCycleValue": 1,
-            "repeatRounds": 1,
-            "repeatWeeks": 1,
-            "weekdayAssignments": {"monday": "composite-6p-minimal"},
-        }
-    ]
-    mission["combatUnit"]["members"] = [copy.deepcopy(mission["combatUnit"]["members"][0])]
-    mission["combatUnit"]["members"][0]["aircraftNo"] = "J15-6P-001"
-    mission["combatUnit"]["members"][0]["status"] = "备用"
-    basic_mission = copy.deepcopy((mission.get("basicMissions") or [{}])[0] if isinstance(mission.get("basicMissions"), list) else {})
-    basic_mission.update({
-        "id": "basic-6p-minimal",
-        "name": "最小单机巡检任务",
-        "basicTaskName": "最小单机巡检任务",
-        "equipmentQuantity": 1,
-        "minRequiredSorties": 1,
-        "preparationMinutes": 20,
-        "taskDurationMinutes": 60,
-        "supportActivityName": "",
-    })
-    mission["basicMissions"] = [basic_mission]
-    mission.pop("basicMission", None)
-    mission["experiment"] = {
-        **copy.deepcopy(mission.get("experiment", {})),
-        "samples": 1,
-    }
-    objects["experiment"] = copy.deepcopy(mission["experiment"])
-    single_monte_carlo = {
-        "failureRates": [0.02],
-        "minRequiredSorties": [1],
-        "spareMultipliers": [1.0],
-        "supportCapacities": [1],
-    }
-    objects["monteCarlo"] = copy.deepcopy(single_monte_carlo)
-    mission["monteCarlo"] = copy.deepcopy(single_monte_carlo)
-    objects["equipment"] = {
-        **copy.deepcopy(objects.get("equipment", {})),
-        "quantity": 1,
-        "initialReady": 1,
-        "minRequiredSorties": 1,
-        "model": "J-15",
-        "wholeMachineModels": ["J-15"],
-    }
-    objects["equipment"].pop("deploymentLocation", None)
-    mission["equipment"] = copy.deepcopy(objects["equipment"])
-    whole_aircraft_asset = {
-        "id": "whole-aircraft",
-        "name": "全机",
-        "aircraftModel": "J-15",
-        "productType": "整机",
-        "quantity": 1,
-        "failureRate": 0.05,
-        "mtbfHours": 20,
-        "failureDistribution": {
-            "distributionType": "指数分布",
-            "parameters": "lambda=0.05",
-        },
-        "meanRepairTimeMinutes": 120,
-        "repairDistribution": {
-            "distributionType": "固定值",
-            "parameters": "value=120",
-        },
-    }
-    objects["equipmentAssets"] = [whole_aircraft_asset]
-    minimal_rbd = {
-        "nodes": [
-            {
-                "id": "whole-aircraft",
-                "name": "全机",
-                "type": "system",
-                "parentId": None,
-                "connectionType": "串联",
-                "failureRate": 0.05,
-                "mtbfHours": 20,
-                "failureDistribution": {
-                    "distributionType": "指数分布",
-                    "parameters": "lambda=0.05",
-                },
-                "meanRepairTimeMinutes": 120,
-                "repairDistribution": {
-                    "distributionType": "固定值",
-                    "parameters": "value=120",
-                },
-            }
-        ],
-        "edges": [],
-    }
-    objects["reliabilityBlockDiagram"] = copy.deepcopy(minimal_rbd)
-    mission["reliabilityBlockDiagram"] = copy.deepcopy(minimal_rbd)
-    objects.pop("supportResources", None)
-    objects.pop("supportActivities", None)
-    objects.pop("supportOrganization", None)
-    mission.pop("supportOrganization", None)
-    single_large_sample = {
-        "enabled": True,
-        "samples": 1,
-        "sweep": {
-            "failureRates": [0.02],
-            "spareMultipliers": [1.0],
-            "supportCapacities": [1],
-        },
-    }
-    objects["analysisRequests"]["largeSample"] = copy.deepcopy(single_large_sample)
-    mission["analysisRequests"] = {"largeSample": copy.deepcopy(single_large_sample)}
-    return case
 
 
 def _remove_preset_airports(import_package: dict[str, Any]) -> None:

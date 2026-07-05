@@ -62,6 +62,17 @@ test("project schema required roots stay aligned with frontend Project JSON cont
   assert.deepEqual(validateSchema(schema, defaultScenario), []);
 });
 
+test("project schema keeps airports as string inputs", async () => {
+  const schema = await readJson("contracts/project.schema.json");
+  const stringAirportProject = structuredClone(defaultScenario);
+  stringAirportProject.airports = ["A", "B"];
+  const objectAirportProject = structuredClone(defaultScenario);
+  objectAirportProject.airports = [{ id: "airport-a", name: "A" }];
+
+  assert.deepEqual(validateSchema(schema, stringAirportProject), []);
+  assert.notDeepEqual(validateSchema(schema, objectAirportProject), []);
+});
+
 test("schema manifest lists every checked fixture and each fixture validates", async () => {
   const manifest = await readJson("contracts/README.md.json");
   const expectedFixtures = [

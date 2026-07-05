@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 import unittest
 
-from src.spare_mvp_abm.smoke_model import SmokeSpareMvpModel
+from src.spare_mvp_abm.smoke_model import DEFAULT_SMOKE_PROJECT_DATA, SmokeSpareMvpModel
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -23,7 +23,7 @@ class EvaluatorMesaContractTest(unittest.TestCase):
 
     def test_smoke_result_schema_metrics_exist_in_live_snapshot(self) -> None:
         model = SmokeSpareMvpModel(
-            projectJsonPath=str(REPO_ROOT / "scenarios" / "frontend-project-smoke" / "project.json"),
+            projectData=DEFAULT_SMOKE_PROJECT_DATA,
             seed=20260618,
         )
         for _ in range(3):

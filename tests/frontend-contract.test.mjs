@@ -287,6 +287,20 @@ test("equipment task modeling omits built-in scenario and task profile parameter
   assert.match(appSource, /field\("结束条件", "missionProfile\.endCondition"\)/);
 });
 
+test("built-in scenario airport fields stay string-only in Project JSON", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const builtInScenarioSource = appSource.slice(
+    appSource.indexOf("function renderBuiltInScenario"),
+    appSource.indexOf("function renderCombatUnitModeling")
+  );
+
+  assert.match(builtInScenarioSource, /field\("机场", "airports\.0"\)/);
+  assert.doesNotMatch(builtInScenarioSource, /airports\.0\.name/);
+  assert.doesNotMatch(builtInScenarioSource, /airports\.1\.name/);
+  assert.doesNotMatch(builtInScenarioSource, /airports\.0\.supportNodeId/);
+  assert.doesNotMatch(builtInScenarioSource, /airports\.1\.distanceToMissionKm/);
+});
+
 test("support organization fourth-level tab ids resolve to distinct resource pages", () => {
   const expectedPages = [
     ["spare-planning-support-organization", "保障组织结构建模"],

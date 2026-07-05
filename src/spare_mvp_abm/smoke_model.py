@@ -20,6 +20,38 @@ except ModuleNotFoundError:  # Keep local unit smoke tests possible without Mesa
 
 BaseModel = mesa.Model if mesa is not None else object
 
+DEFAULT_SMOKE_PROJECT_DATA: dict[str, Any] = {
+    "scenarioId": "smoke-default-project",
+    "activeModule": "sparePlanning",
+    "experiment": {"seed": 9001, "steps": 12},
+    "missionProfile": {"repeatCycleHours": 4},
+    "basicMissions": [{
+        "id": "basic-smoke",
+        "minRequiredSorties": 3,
+        "taskDurationMinutes": 120,
+    }],
+    "equipment": {
+        "model": "A-Prototype",
+        "quantity": 5,
+        "initialReady": 4,
+    },
+    "components": [
+        {"id": "engine", "name": "engine", "spareType": "engine-spare", "failureRate": 0.10},
+        {"id": "avionics", "name": "avionics", "spareType": "avionics-module", "failureRate": 0.02},
+    ],
+    "supportNodes": [
+        {
+            "id": "default-support-node",
+            "equipmentCapacity": 2,
+            "inventory": {"engine-spare": 4, "avionics-module": 6},
+        }
+    ],
+    "supportActivities": [
+        {"id": "corrective", "activityType": "corrective", "durationHours": 5}
+    ],
+    "combatUnit": {"members": []},
+}
+
 
 class EquipmentState:
     def __init__(self, equipment_id: str, status: str = "ready") -> None:
@@ -93,7 +125,7 @@ class SmokeSpareMvpModel(BaseModel):
         if project_data is not None:
             return dict(project_data)
         if project_path is None:
-            raise ValueError("SmokeSpareMvpModel requires frontend projectData or projectJsonPath")
+            return dict(DEFAULT_SMOKE_PROJECT_DATA)
         return json.loads(project_path.read_text(encoding="utf-8-sig"))
 
     def _derive_equipment(self) -> list[EquipmentState]:

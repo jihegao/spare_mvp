@@ -551,7 +551,7 @@ def _basic_mission_id(basic_mission: dict[str, Any], index: int) -> str:
     return f"basic-mission-{index + 1}"
 
 
-def _combat_unit_airports(combat_unit: Any) -> list[dict[str, Any]]:
+def _combat_unit_airports(combat_unit: Any) -> list[str]:
     airport_names: list[str] = []
 
     def append_airport(value: Any) -> None:
@@ -580,22 +580,7 @@ def _combat_unit_airports(combat_unit: Any) -> list[dict[str, Any]]:
     else:
         append_airport(combat_unit)
 
-    return [
-        {
-            "id": _airport_id_from_name(airport),
-            "name": airport,
-            "location": airport,
-            "supportNodeId": _airport_id_from_name(airport),
-        }
-        for airport in airport_names
-    ]
-
-
-def _airport_id_from_name(name: str) -> str:
-    slug = re.sub(r"[^a-z0-9]+", "-", str(name).strip().lower()).strip("-")
-    if not slug:
-        slug = hashlib.sha1(str(name).encode("utf-8")).hexdigest()[:8]
-    return f"airport-{slug}"
+    return airport_names
 
 
 def _mission_profile_to_project(mission: dict[str, Any], import_id: str) -> dict[str, Any]:

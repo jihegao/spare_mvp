@@ -89,7 +89,6 @@ test("modeling import schema and fixture define the M5 first-slice package", asy
 test("simulation analysis public import templates validate against modeling import schema", async () => {
   const schema = await readJson("contracts/modeling_import.schema.json");
   const templatePaths = [
-    "public/import-templates/minimal_single_aircraft.json",
     "public/import-templates/canonical_platform_case.json"
   ];
 

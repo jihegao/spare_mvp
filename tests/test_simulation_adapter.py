@@ -270,6 +270,20 @@ class SimulationAdapterTest(unittest.TestCase):
         self.assertEqual(compiled_item["equipmentQuantity"], 1)
         self.assertEqual(compiled_item["requiredEquipmentQuantity"], 4)
 
+    def test_aircraft_support_v1_derives_runtime_airport_objects_from_project_strings(self) -> None:
+        project = self._load_fixture("m9_6_platform_case_export.json")["project"]
+        project["airports"] = ["A", "B"]
+
+        scenario = self.adapter.compile_scenario(project, model_family="aircraft_support_v1")
+
+        self.assertEqual(
+            scenario["simulation_inputs"]["mission_profile"]["airports"],
+            [
+                {"id": "airport-a", "name": "A", "location": "A", "supportNodeId": "airport-a"},
+                {"id": "airport-b", "name": "B", "location": "B", "supportNodeId": "airport-b"},
+            ],
+        )
+
     def test_aircraft_support_v1_derives_aircraft_inputs_without_equipment_summary(self) -> None:
         project = self._load_fixture("m9_6_platform_case_export.json")["project"]
         project.pop("equipment", None)

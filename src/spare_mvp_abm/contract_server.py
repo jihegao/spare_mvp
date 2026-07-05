@@ -28,7 +28,6 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 SRC_DIR = REPO_ROOT / "src"
 SCENARIOS_DIR = REPO_ROOT / "scenarios"
 AVI_DIR = SRC_DIR / "spare_mvp_abm" / "aviation_support"
-DEFAULT_SMOKE_PROJECT = SCENARIOS_DIR / "frontend-project-smoke" / "project.json"
 
 CONTRACT_VERSION = "1.0.0"
 DEFAULT_STEPS = 0
@@ -122,7 +121,7 @@ def _build_aviation_params(query: dict[str, list[str]]) -> dict[str, Any]:
     return params
 
 
-def _build_smoke_params(query: dict[str, list[str]]) -> dict[str, str]:
+def _build_smoke_params(query: dict[str, list[str]]) -> dict[str, Any]:
     raw = query.get("project", [None])[0]
     if raw:
         project_path = Path(raw)
@@ -130,15 +129,8 @@ def _build_smoke_params(query: dict[str, list[str]]) -> dict[str, str]:
             project_path = (REPO_ROOT / project_path).resolve()
         if not project_path.exists():
             raise ContractError("bad_param", f"project file not found: {raw}", param="project")
-    else:
-        project_path = DEFAULT_SMOKE_PROJECT
-        if not project_path.exists():
-            raise ContractError(
-                "bad_param",
-                f"default project file missing: {project_path}",
-                param="project",
-            )
-    return {"projectJsonPath": str(project_path)}
+        return {"projectJsonPath": str(project_path)}
+    return {}
 
 
 def _steps(query: dict[str, list[str]]) -> int:

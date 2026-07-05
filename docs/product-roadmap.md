@@ -379,7 +379,7 @@ report.json 或 report.html
 
 M8.0 当前收束：`docs/archive/deprecated/superpowers/specs/2026-06-21-m8-projection-payload-analysis-design.md` 已把结果分析推进到 projection payload 驱动，#117 后产品主流程进一步收敛为每个分析页一个 current result record。前端通过 current result 面板触发当前页正式运行；后端 `/api/projects/{project_id}/analysis-results/{analysis_type}` 从正式 `aircraft_support_v1` Monte Carlo run 中校验 compiler provenance、`monte_carlo_base`、当前分析类型 `analysis_projection_*`、payload JSON、`projection_type` 和 traceability，校验通过后才返回 `completed/formal_backend`。缺少任一正式条件、payload 类型不匹配或解析失败时统一 fail closed，不能用静态演示图表或本地 preview 冒充正式结果。
 
-阶段 6P 当前收束：在四个分析功能继续细化前，已恢复 `tests/fixtures/case_new.json` 作为仿真分析验收数据包基础数据，并由它生成 `tests/fixtures/simulation_analysis_cases/` 下的 `minimal_single_aircraft` 和 `canonical_platform_case` 两类 modeling-import-v1 案例。该数据包由 `src/spare_mvp_backend/simulation_analysis_cases.py` 和 `scripts/export-simulation-analysis-cases.py --write|--check` 生成与检查，`tests/test_simulation_analysis_cases.py` 验证两类数据均可编译为 `aircraft_support_v1` Scenario 并跑出 formal Monte Carlo 的 `monte_carlo_base`、`visualization_state_series` 和四类 `analysis_projection_*` artifact。6P 用于覆盖最小建模粒度和平台标准案例，不作为生产性能压测。
+阶段 6P 当前收束：在四个分析功能继续细化前，已恢复 `tests/fixtures/case_new.json` 作为仿真分析验收数据包基础数据，并由它生成 `tests/fixtures/simulation_analysis_cases/canonical_platform_case.json` 这一类 modeling-import-v1 案例。该数据包由 `src/spare_mvp_backend/simulation_analysis_cases.py` 和 `scripts/export-simulation-analysis-cases.py --write|--check` 生成与检查，`tests/test_simulation_analysis_cases.py` 验证该数据可编译为 `aircraft_support_v1` Scenario 并跑出 formal Monte Carlo 的 `monte_carlo_base`、`visualization_state_series` 和四类 `analysis_projection_*` artifact。旧的 minimal single-aircraft 与 frontend smoke Project JSON schema 已退役；6P 用于覆盖平台标准案例，不作为生产性能压测。
 
 核心工作：
 

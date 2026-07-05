@@ -44,6 +44,56 @@ M7_MONTE_CARLO_ARTIFACT_KINDS = {
 }
 
 
+def small_aircraft_support_project(project_id: str) -> dict[str, Any]:
+    return {
+        "schema_version": "project-v0",
+        "project_id": project_id,
+        "project_version": "project-v0.1",
+        "scenarioId": f"{project_id}-scenario",
+        "activeModule": "sparePlanning",
+        "projectInfo": {"name": "small current project", "baseCode": "SM", "summary": "small current project"},
+        "airports": ["A"],
+        "missionAreas": [],
+        "missionProfile": {"name": "small current mission", "durationHours": 1, "compositeTasks": [], "periodicTasks": []},
+        "basicMissions": [{
+            "id": "basic-small",
+            "name": "small sortie",
+            "missionId": "basic-small",
+            "minRequiredSorties": 1,
+            "taskDurationMinutes": 30,
+            "equipmentType": "J-15",
+        }],
+        "missionPhases": [],
+        "combatUnit": {"members": [{"aircraftNo": "J15-001", "model": "J-15", "status": "ready", "airport": "A"}]},
+        "components": [{
+            "id": "whole-aircraft",
+            "name": "whole aircraft",
+            "aircraftModel": "J-15",
+            "productType": "whole",
+            "quantity": 1,
+            "failureRate": 0.01,
+            "mtbfHours": 100,
+            "meanRepairTimeMinutes": 30,
+            "failureDistribution": {"distributionType": "exponential", "parameters": "lambda=0.01"},
+            "repairDistribution": {"distributionType": "fixed", "parameters": "value=30"},
+        }],
+        "supportNodes": [{
+            "id": "node-a",
+            "name": "node A",
+            "personnelCapacity": 1,
+            "equipmentCapacity": 1,
+            "inventory": {"aircraft_support_v1_spares": 2},
+        }],
+        "supportActivities": [{"id": "corrective", "activityType": "corrective", "durationHours": 1, "jobs": []}],
+        "supportOrganization": {},
+        "reliabilityBlockDiagram": {
+            "nodes": [{"id": "whole-aircraft", "name": "whole aircraft", "type": "system", "failureRate": 0.01}],
+            "edges": [],
+        },
+        "modelingImportValidation": {"usedTables": {}, "disabledDomains": [], "warnings": []},
+    }
+
+
 class RecordingAdapter(SimulationAdapter):
     def __init__(self) -> None:
         super().__init__(REPO_ROOT)
@@ -1829,9 +1879,7 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(self.adapter.run_calls[0][0]["simulation_model"]["family"], "aircraft_support_v1")
 
     def test_independent_mesa_visualization_runs_current_project_without_formal_persistence(self) -> None:
-        case = self._fixture("simulation_analysis_cases/minimal_single_aircraft.json")
-        project = modeling_import_to_project(case["modeling_import"])
-        project["project_id"] = "project-current-visual-draft"
+        project = small_aircraft_support_project("project-current-visual-draft")
         project["missionProfile"].pop("sourceImportId", None)
 
         before_counts = self._run_side_effect_counts()
@@ -1855,9 +1903,7 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(self.adapter.monte_carlo_run_calls, [])
 
     def test_lite_mesa_analysis_runs_current_project_without_formal_persistence(self) -> None:
-        case = self._fixture("simulation_analysis_cases/minimal_single_aircraft.json")
-        project = modeling_import_to_project(case["modeling_import"])
-        project["project_id"] = "project-current-analysis-draft"
+        project = small_aircraft_support_project("project-current-analysis-draft")
         project["missionProfile"].pop("sourceImportId", None)
 
         before_counts = self._run_side_effect_counts()
@@ -1888,9 +1934,7 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(self.adapter.monte_carlo_run_calls, [])
 
     def test_lite_mesa_downtime_analysis_writes_model_log_event_snapshots(self) -> None:
-        case = self._fixture("simulation_analysis_cases/minimal_single_aircraft.json")
-        project = modeling_import_to_project(case["modeling_import"])
-        project["project_id"] = "project-downtime-event-snapshots"
+        project = small_aircraft_support_project("project-downtime-event-snapshots")
         project["missionProfile"].pop("sourceImportId", None)
         project["modelingImportValidation"] = {
             **project.get("modelingImportValidation", {}),
@@ -2109,7 +2153,6 @@ class BackendApiContractTest(unittest.TestCase):
 
     def test_public_import_templates_run_through_formal_backend_api_e2e(self) -> None:
         template_cases = [
-            ("minimal_single_aircraft.json", True),
             ("canonical_platform_case.json", False),
         ]
         required_monte_carlo_artifacts = M7_MONTE_CARLO_ARTIFACT_KINDS
@@ -2981,10 +3024,7 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertNotIn("basicMission", created["project"])
         self.assertGreaterEqual(len(created["project"]["basicMissions"]), 2)
         self.assertTrue(all(basic.get("id") for basic in created["project"]["basicMissions"]))
-        self.assertEqual(
-            created["project"]["airports"],
-            [{"id": "airport-a", "name": "A", "location": "A", "supportNodeId": "airport-a"}],
-        )
+        self.assertEqual(created["project"]["airports"], ["A"])
         self.assertGreaterEqual(len(created["project"]["missionPhases"]), 3)
         self.assertGreaterEqual(len(created["project"]["combatUnit"]["members"]), 4)
         self.assertGreaterEqual(len(created["project"]["supportNodes"]), 3)
@@ -3041,11 +3081,8 @@ class BackendApiContractTest(unittest.TestCase):
             for composite in project["missionProfile"]["compositeTasks"]
             for item in composite.get("taskItems", [])
         ))
-        self.assertEqual(
-            project["airports"],
-            [{"id": "airport-a", "name": "A", "location": "A", "supportNodeId": "airport-a"}],
-        )
-        self.assertFalse(any(airport.get("id") == "carrier-deck" for airport in project["airports"]))
+        self.assertEqual(project["airports"], ["A"])
+        self.assertNotIn("carrier-deck", project["airports"])
         self.assertNotIn("experiment", project)
         self.assertNotIn("analysisRequests", project)
         self.assertGreaterEqual(len(project["reliabilityBlockDiagram"]["nodes"]), 4)
@@ -3068,14 +3105,8 @@ class BackendApiContractTest(unittest.TestCase):
 
         project = modeling_import_to_project(import_package)
 
-        self.assertEqual(
-            project["airports"],
-            [
-                {"id": "airport-a", "name": "A", "location": "A", "supportNodeId": "airport-a"},
-                {"id": "airport-b", "name": "B", "location": "B", "supportNodeId": "airport-b"},
-            ],
-        )
-        self.assertFalse(any(airport.get("id") in {"carrier-deck", "forward-sea-base"} for airport in project["airports"]))
+        self.assertEqual(project["airports"], ["A", "B"])
+        self.assertFalse({"carrier-deck", "forward-sea-base"} & set(project["airports"]))
 
     def test_modeling_import_to_project_preserves_explicit_empty_collections(self) -> None:
         import_package = self._fixture("modeling_import_project.json")

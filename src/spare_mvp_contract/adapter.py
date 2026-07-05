@@ -831,7 +831,7 @@ class SimulationAdapter:
                 "composite_tasks": copy.deepcopy(self._dict_list(mission_profile.get("compositeTasks"))),
                 "periodic_tasks": copy.deepcopy(self._dict_list(mission_profile.get("periodicTasks"))),
                 "mission_phases": copy.deepcopy(self._dict_list(project.get("missionPhases"))),
-                "airports": copy.deepcopy(self._dict_list(project.get("airports"))),
+                "airports": self._runtime_airports(project.get("airports")),
                 "mission_areas": copy.deepcopy(self._dict_list(project.get("missionAreas"))),
             },
             "aircraft": {
@@ -4032,6 +4032,34 @@ class SimulationAdapter:
         if not isinstance(value, list):
             return []
         return [item for item in value if isinstance(item, dict)]
+
+    def _runtime_airports(self, value: Any) -> list[dict[str, Any]]:
+        if not isinstance(value, list):
+            return []
+        airports: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for item in value:
+            if isinstance(item, dict):
+                airports.append(copy.deepcopy(item))
+                continue
+            airport = str(item or "").strip()
+            if not airport or airport in seen:
+                continue
+            seen.add(airport)
+            airport_id = self._airport_id_from_name(airport)
+            airports.append({
+                "id": airport_id,
+                "name": airport,
+                "location": airport,
+                "supportNodeId": airport_id,
+            })
+        return airports
+
+    def _airport_id_from_name(self, name: str) -> str:
+        slug = re.sub(r"[^a-z0-9]+", "-", str(name).strip().lower()).strip("-")
+        if not slug:
+            slug = hashlib.sha1(str(name).encode("utf-8")).hexdigest()[:8]
+        return f"airport-{slug}"
 
     def _basic_missions(self, project: dict[str, Any]) -> list[dict[str, Any]]:
         return self._dict_list(project.get("basicMissions"))

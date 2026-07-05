@@ -5,7 +5,35 @@
   "primary_metric": "mission_success_rate",
   "seeds": [201, 202, 203],
   "parameters": {
-    "projectJsonPath": "scenarios/frontend-project-smoke/project.json",
+    "projectData": {
+      "scenarioId": "smoke-default-project",
+      "activeModule": "sparePlanning",
+      "experiment": { "seed": 9001, "steps": 12 },
+      "missionProfile": { "repeatCycleHours": 4 },
+      "basicMissions": [{
+        "id": "basic-smoke",
+        "minRequiredSorties": 3,
+        "taskDurationMinutes": 120
+      }],
+      "equipment": {
+        "model": "A-Prototype",
+        "quantity": 5,
+        "initialReady": 4
+      },
+      "components": [
+        { "id": "engine", "name": "engine", "spareType": "engine-spare", "failureRate": 0.10 },
+        { "id": "avionics", "name": "avionics", "spareType": "avionics-module", "failureRate": 0.02 }
+      ],
+      "supportNodes": [{
+        "id": "default-support-node",
+        "equipmentCapacity": 2,
+        "inventory": { "engine-spare": 4, "avionics-module": 6 }
+      }],
+      "supportActivities": [
+        { "id": "corrective", "activityType": "corrective", "durationHours": 5 }
+      ],
+      "combatUnit": { "members": [] }
+    },
     "activeModule": "missionReliability",
     "minRequiredSorties": [4, 5, 6]
   }

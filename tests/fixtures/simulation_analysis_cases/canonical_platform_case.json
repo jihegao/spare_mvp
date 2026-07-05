@@ -1454,12 +1454,7 @@
   "project": {
     "activeModule": "sparePlanning",
     "airports": [
-      {
-        "id": "airport-a",
-        "location": "A",
-        "name": "A",
-        "supportNodeId": "airport-a"
-      }
+      "A"
     ],
     "basicMissions": [
       {
