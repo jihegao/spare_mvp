@@ -628,7 +628,7 @@ test("project list exports project JSON without keeping a direct Project JSON im
   assert.match(styleSource, /\.project-card-foot \.compact-actions[\s\S]*flex-wrap: wrap/);
 });
 
-test("results analysis pages route to four independent lightweight Mesa pages", async () => {
+test("results analysis pages route to formal current-analysis wrappers", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const pages = [
     ["spare-planning-spare-shortfall-analysis", "spare_shortfall"],
@@ -640,20 +640,20 @@ test("results analysis pages route to four independent lightweight Mesa pages", 
     const page = getFeaturePageById(featureId);
     assert.equal(page.component, "lite-mesa-analysis", featureId);
     assert.ok(page.dataObjects.includes("projectDraft"), featureId);
-    assert.ok(page.dataObjects.includes("mesaSessionResult"), featureId);
+    assert.ok(page.dataObjects.includes("currentAnalysisResult"), featureId);
     assert.match(appSource, new RegExp(`${analysisType}:\\s*\\{[\\s\\S]*experimentId`));
   }
   assert.match(appSource, /function renderLiteMesaAnalysisPage/);
-  assert.match(appSource, /function runLiteMesaAnalysisPage/);
+  assert.match(appSource, /function runFormalAnalysisPage/);
   assert.match(appSource, /let liteMesaAnalysisResults =/);
   assert.match(appSource, /data-lite-mesa-analysis-action="run">运行分析/);
-  assert.match(appSource, /backendApi\.runLiteMesaAnalysis/);
-  assert.match(appSource, /selectedExperimentPlanProjectJson\(\)/);
-  assert.match(appSource, /不创建 run、result 或 artifact/);
+  assert.match(appSource, /await runCurrentAnalysisPage\(page\)/);
+  assert.match(appSource, /正式 current-analysis/);
+  assert.match(appSource, /创建正式 run、result 与 artifact/);
   assert.doesNotMatch(appSource, /前端建模 \+ Mesa 分析|尚未运行 Mesa 分析|独立 Mesa 设置|Mesa 样本/);
 });
 
-test("lightweight Mesa analysis pages do not render current-result or formal projection UI", async () => {
+test("formal current-analysis wrapper pages keep projection UI isolated", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const mesaSource = appSource.slice(
     appSource.indexOf("function renderLiteMesaAnalysisPage"),
@@ -661,11 +661,11 @@ test("lightweight Mesa analysis pages do not render current-result or formal pro
   );
   assert.notEqual(mesaSource.length, 0, "renderLiteMesaAnalysisPage source exists");
   assert.match(mesaSource, /data-lite-mesa-analysis-action="run"/);
-  assert.match(mesaSource, /会话内结果/);
-  assert.match(mesaSource, /建模粒度不足/);
+  assert.match(mesaSource, /正式分析结果/);
+  assert.match(mesaSource, /正式 current-analysis/);
   assert.doesNotMatch(mesaSource, /renderCurrentAnalysisResultPanel|renderAnalysisDashboard|renderFormalAnalysisBoundaryNote/);
   assert.doesNotMatch(mesaSource, /currentAnalysisResultForPage|formalProjectionFromCurrentResult|backendApi\.getCurrentAnalysisResult/);
-  assert.doesNotMatch(mesaSource, /startMonteCarloRunThroughApi|data-analysis-action="run-current"/);
+  assert.doesNotMatch(mesaSource, /data-analysis-action="run-current"/);
   assert.doesNotMatch(mesaSource, /\bsingleResult\b|\bmonteCarloResult\b|hasPreviewAnalysisData|renderAnalysisEmptyState/);
 });
 
@@ -2244,13 +2244,14 @@ test("frontend tables do not use generic operation column headers", async () => 
   assert.doesNotMatch(appSource, /<th(?:\s[^>]*)?>\s*操作\s*<\/th>/);
 });
 
-test("monte carlo Mesa settings drive the displayed result sample count", async () => {
+test("monte carlo settings submit formal run instead of sidecar analysis", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   assert.doesNotMatch(appSource, /runMonteCarlo\(scenario, \{ samples: 4 \}\)/);
   assert.match(appSource, /let \{ previewSingleResult: singleResult, previewMonteCarloResult: monteCarloResult \} = buildPreviewResultState\(scenario\)/);
   assert.match(appSource, /data-lite-mesa-field="samples"/);
-  assert.match(appSource, /backendApi\.runLiteMesaAnalysis\(projectJson,\s*"mission_reliability"/);
-  assert.match(appSource, /normalizeLiteMesaMonteCarloResult/);
+  assert.match(appSource, /startMonteCarloRunThroughApi\(\{[\s\S]*analysisType: "mission_reliability"/);
+  assert.doesNotMatch(appSource, /normalizeLiteMesaMonteCarloResult/);
+  assert.doesNotMatch(appSource, /backendApi\.runLiteMesaAnalysis/);
   assert.match(appSource, /function updatePreviewResultsThroughApiClient/);
   assert.match(appSource, /data-save-plan/);
 });
@@ -2271,18 +2272,20 @@ test("direct Monte Carlo Mesa page hides sweep inputs and keeps formal runs expl
   assert.match(appSource, /const savePlanButton = event\.target\.closest\("\[data-save-plan\]"\)/);
 });
 
-test("monte carlo experiment detail labels backend Mesa execution without old standalone Mesa page copy", async () => {
+test("monte carlo experiment detail labels formal execution without old standalone Mesa copy", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const renderSource = appSource.slice(
     appSource.indexOf("function renderLiteMesaMonteCarloAnalysis"),
-    appSource.indexOf("function liteMesaBaselineSweep")
+    appSource.indexOf("function liteMesaMetricStatisticRows")
   );
 
   assert.match(renderSource, /蒙特卡洛分析/);
   assert.match(renderSource, /运行分析/);
   assert.match(renderSource, /尚未运行分析/);
-  assert.match(renderSource, /后端 Mesa 仿真分析/);
-  assert.match(renderSource, /运行 Mesa 分析/);
+  assert.match(renderSource, /正式 Monte Carlo run/);
+  assert.match(renderSource, /正在提交正式 Monte Carlo run/);
+  assert.doesNotMatch(renderSource, /后端 Mesa 仿真分析/);
+  assert.doesNotMatch(renderSource, /运行 Mesa 分析/);
   assert.doesNotMatch(renderSource, /前端建模 \+ Mesa 分析/);
   assert.doesNotMatch(renderSource, /Mesa蒙特卡洛分析/);
   assert.doesNotMatch(renderSource, /尚未运行 Mesa 分析/);
@@ -2328,7 +2331,8 @@ test("monte carlo experiment navigation goes directly to embedded Mesa detail", 
   assert.match(appSource, /window\.history\.replaceState\(null, "", `\$\{location\.pathname\}\$\{location\.search\}#\$\{normalizedHash\}`\)/);
   assert.match(appSource, /location\.hash = normalizedHash/);
   assert.match(liteMesaSource, /蒙特卡洛分析/);
-  assert.match(liteMesaSource, /后端 Mesa 仿真分析/);
+  assert.match(liteMesaSource, /正式 Monte Carlo run/);
+  assert.doesNotMatch(liteMesaSource, /后端 Mesa 仿真分析/);
   assert.doesNotMatch(liteMesaSource, /Mesa蒙特卡洛分析|尚未运行 Mesa 分析/);
   assert.match(liteMesaSource, /主要输出指标统计值/);
   assert.doesNotMatch(appSource, /class="mc-main-tabs"/);
@@ -2369,11 +2373,11 @@ test("monte carlo detail embeds the Mesa Monte Carlo page", async () => {
   assert.match(appSource, /function runLiteMesaMonteCarloAnalysis/);
   assert.match(appSource, /data-current-experiment-plan/);
   assert.match(renderSource, /selectedExperimentPlanName\(\)/);
-  assert.match(renderSource, /后端 Mesa 仿真分析/);
+  assert.match(renderSource, /正式 Monte Carlo run/);
   assert.match(appSource, /let liteMesaMonteCarloSettings =/);
   assert.match(appSource, /let liteMesaMonteCarloResult =/);
   assert.doesNotMatch(renderSource, /前端建模 \+ 仿真分析/);
-  assert.match(renderSource, /运行 Mesa 分析/);
+  assert.match(renderSource, /正在提交正式 Monte Carlo run/);
   assert.match(renderSource, /data-lite-mesa-field="samples"/);
   assert.match(renderSource, /data-lite-mesa-field="seed"/);
   assert.match(renderSource, /主要输出指标统计值/);
@@ -2388,10 +2392,11 @@ test("monte carlo detail embeds the Mesa Monte Carlo page", async () => {
   assert.doesNotMatch(renderSource, /非正式|预览|本地预览|正式后端结果/);
   const runSource = appSource.slice(
     appSource.indexOf("async function runLiteMesaMonteCarloAnalysis"),
-    appSource.indexOf("function liteMesaBaselineSweep")
+    appSource.indexOf("function liteMesaMetricStatisticRows")
   );
-  assert.match(runSource, /backendApi\.runLiteMesaAnalysis\(/);
-  assert.match(runSource, /selectedExperimentPlanProjectJson\(\)/);
+  assert.match(runSource, /startMonteCarloRunThroughApi\(\{/);
+  assert.match(runSource, /monteCarloExperimentId: selectedMonteCarloExperimentId/);
+  assert.match(runSource, /analysisType: "mission_reliability"/);
   assert.doesNotMatch(runSource, /runMonteCarlo\(projectJson/);
   assert.match(styleSource, /\.lite-mesa-workbench/);
   assert.match(styleSource, /\.lite-mesa-settings/);
@@ -2457,7 +2462,7 @@ test("formal current result helpers remain internal and are not routed from resu
   assert.doesNotMatch(appSource, /source: "analysis:auto-created"/);
 });
 
-test("independent Mesa result analysis pages consume only session settings and session results", async () => {
+test("formal result analysis pages submit current-analysis from compact wrappers", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const mesaSource = appSource.slice(
     appSource.indexOf("function renderLiteMesaAnalysisPage"),
@@ -2468,41 +2473,43 @@ test("independent Mesa result analysis pages consume only session settings and s
   assert.match(appSource, /let liteMesaAnalysisResults = \{\}/);
   assert.match(appSource, /data-current-experiment-plan/);
   assert.match(mesaSource, /selectedExperimentPlanName\(\)/);
-  assert.match(mesaSource, /async function runLiteMesaAnalysisPage/);
-  assert.match(mesaSource, /backendApi\.runLiteMesaAnalysis/);
-  assert.match(mesaSource, /selectedExperimentPlanProjectJson\(\)/);
-  assert.match(mesaSource, /payload\.status === "session_complete"/);
+  assert.match(mesaSource, /async function runFormalAnalysisPage/);
+  assert.match(mesaSource, /await runCurrentAnalysisPage\(page\)/);
+  assert.match(mesaSource, /正式 current-analysis/);
+  assert.doesNotMatch(mesaSource, /backendApi\.runLiteMesaAnalysis/);
+  assert.doesNotMatch(mesaSource, /selectedExperimentPlanProjectJson\(\)/);
+  assert.doesNotMatch(mesaSource, /payload\.status === "session_complete"/);
   assert.doesNotMatch(mesaSource, /runMonteCarlo\(projectJson/);
   assert.doesNotMatch(mesaSource, /buildLiteMesaAnalysisSessionResult/);
   for (const analysisType of ["spare_shortfall", "carry_list", "mission_reliability", "downtime_factors"]) {
     assert.match(appSource, new RegExp(`${analysisType}:\\s*\\{[\\s\\S]*experimentId`));
   }
   assert.doesNotMatch(mesaSource, /currentAnalysisResultForPage|renderCurrentAnalysisResultPanel|formalProjectionFromCurrentResult/);
-  assert.doesNotMatch(mesaSource, /backendApi\.getCurrentAnalysisResult|startMonteCarloRunThroughApi|submitRunIntent/);
+  assert.doesNotMatch(mesaSource, /backendApi\.getCurrentAnalysisResult|submitRunIntent/);
   assert.doesNotMatch(mesaSource, /analysisTasks|monteCarloExperiments|selectedMonteCarloExperimentId/);
   assert.doesNotMatch(mesaSource, /artifact_manifest_id|mc_experiment_id|experiment_id|historical|history/);
   assert.doesNotMatch(mesaSource, /status: "completed"/);
 });
 
-test("downtime independent analysis uses model log event snapshot contract", async () => {
+test("downtime formal analysis relies on model log event snapshot contract", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const apiSource = await readFile(new URL("../src/spare_mvp_backend/api.py", import.meta.url), "utf8");
+  const adapterSource = await readFile(new URL("../src/spare_mvp_contract/adapter.py", import.meta.url), "utf8");
   const modelSource = await readFile(new URL("../src/spare_mvp_abm/aircraft_support_v1/model.py", import.meta.url), "utf8");
   const mesaSource = appSource.slice(
     appSource.indexOf("function renderLiteMesaAnalysisPage"),
     appSource.indexOf("function field(label")
   );
 
-  assert.match(mesaSource, /write_event_snapshots:\s*true/);
   assert.match(mesaSource, /eventSnapshots/);
   assert.match(mesaSource, /事件快照/);
   assert.match(mesaSource, /飞机状态/);
   assert.match(mesaSource, /保障资源占用/);
   assert.match(mesaSource, /备件短缺/);
-  assert.match(apiSource, /write_event_snapshots/);
-  assert.match(apiSource, /event_snapshots/);
+  assert.match(adapterSource, /anomaly_snapshots/);
   assert.match(modelSource, /write_event_snapshots/);
   assert.match(modelSource, /event_snapshot/);
+  assert.doesNotMatch(apiSource, /run_lite_mesa_analysis/);
 });
 
 test("formal projection renderers remain isolated from independent Mesa routing", async () => {
@@ -2653,14 +2660,18 @@ test("experiment plan editor exposes seed policy and scenario composition contro
   assert.doesNotMatch(experimentPlanChangeSource, /setPath\(scenario/);
 });
 
-test("monte carlo launch creates a run from the current experiment plan branch", async () => {
+test("monte carlo launch creates a formal run from a plan branch or explicit override", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const launchSource = appSource.slice(
     appSource.indexOf("async function startMonteCarloRunThroughApi"),
     appSource.indexOf("async function refreshRunResultThroughApi")
   );
 
-  assert.match(launchSource, /const planProjectJson = buildBackendProjectJson\(experimentPlanDraft, currentProject\)/);
+  assert.match(launchSource, /planProjectJsonOverride = null/);
+  assert.match(
+    launchSource,
+    /const planProjectJson = planProjectJsonOverride && typeof planProjectJsonOverride === "object"\s*\?\s*buildBackendProjectJson\(planProjectJsonOverride, currentProject\)\s*:\s*selectedExperimentPlanProjectJson\(\)/
+  );
   assert.match(appSource, /import \{[^}]*buildRunIntent[^}]*submitRunIntent[^}]*\} from "\.\/run-intent\.mjs"/s);
   assert.match(launchSource, /submitRunIntent\(backendApi,\s*\{/);
   assert.match(launchSource, /const runType = "monte_carlo"/);
@@ -2673,6 +2684,7 @@ test("monte carlo launch creates a run from the current experiment plan branch",
   assert.match(appSource, /function monteCarloParameterSpaceForExperiment\(monteCarloExperimentId\)\s*\{\s*return "baseline";\s*\}/);
   assert.match(appSource, /function hiddenCurrentAnalysisExperimentId\(analysisType\)/);
   assert.match(appSource, /startMonteCarloRunThroughApi\(\{\s*monteCarloExperimentId: hiddenExperimentId,\s*analysisType/s);
+  assert.match(appSource, /planProjectJsonOverride: planProjectJson/);
   assert.doesNotMatch(launchSource, /sample_count\s*:/);
   assert.doesNotMatch(launchSource, /samples\s*:/);
   assert.doesNotMatch(launchSource, /sweep\s*:/);
@@ -2725,7 +2737,7 @@ test("monte carlo config backfills empty draft to a single baseline value before
   assert.doesNotMatch(appSource, /function renderMonteCarloExperimentEditor/);
 });
 
-test("M9.8 formal run launches use aircraft_support_v1 while visual launches use independent Mesa", async () => {
+test("M9.8 formal and visual launches use aircraft_support_v1 formal runs", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const runIntentSource = await readFile(new URL("../front/run-intent.mjs", import.meta.url), "utf8");
   const apiClientSource = await readFile(new URL("../front/api-client.mjs", import.meta.url), "utf8");
@@ -2745,28 +2757,28 @@ test("M9.8 formal run launches use aircraft_support_v1 while visual launches use
     appSource.indexOf('if (action === "start-new-run")'),
     appSource.indexOf("function startVisualizationReplay")
   );
-  const independentLaunchSource = appSource.slice(
-    appSource.indexOf("async function startIndependentMesaVisualizationThroughApi"),
+  const visualLaunchSource = appSource.slice(
+    appSource.indexOf("async function startFormalVisualizationRunThroughApi"),
     appSource.indexOf("async function loadVisualizationReplayForRun")
   );
 
   assert.match(appSource, /const FORMAL_AIRCRAFT_SUPPORT_MODEL_FAMILY = "aircraft_support_v1"/);
   assert.match(runIntentSource, /modelFamily = "aircraft_support_v1"/);
-  assert.match(apiClientSource, /runIndependentMesaVisualization\(projectJson/);
-  assert.match(apiClientSource, /path: "\/mesa-visualization-runs"/);
+  assert.doesNotMatch(apiClientSource, /runIndependentMesaVisualization\(projectJson/);
+  assert.doesNotMatch(apiClientSource, /path: "\/mesa-visualization-runs"/);
   assert.match(singleLaunchSource, /submitRunIntent\(backendApi,\s*\{/);
   assert.match(singleLaunchSource, /modelFamily: FORMAL_AIRCRAFT_SUPPORT_MODEL_FAMILY/);
   assert.match(monteCarloLaunchSource, /submitRunIntent\(backendApi,\s*\{/);
   assert.match(monteCarloLaunchSource, /modelFamily: FORMAL_AIRCRAFT_SUPPORT_MODEL_FAMILY/);
-  assert.match(independentLaunchSource, /const projectJson = selectedExperimentPlanProjectJson\(\)/);
-  assert.match(independentLaunchSource, /backendApi\.runIndependentMesaVisualization\(projectJson\)/);
-  assert.match(visualNewRunSource, /await startIndependentMesaVisualizationThroughApi\(\)/);
-  assert.doesNotMatch(visualNewRunSource, /await startSingleRunThroughApi\(\)/);
+  assert.match(visualLaunchSource, /await startSingleRunThroughApi\(\)/);
+  assert.match(visualLaunchSource, /await refreshVisualizationRunList\(runId\)/);
+  assert.match(visualLaunchSource, /await loadVisualizationReplayForRun\(runId\)/);
+  assert.match(visualNewRunSource, /await startFormalVisualizationRunThroughApi\(\)/);
   assert.doesNotMatch(appSource, /ensureIndependentMesaVisualizationStarted\(page\)/);
   assert.match(appSource, /function renderExperimentPlanContextDropdown/);
   assert.match(appSource, /data-current-experiment-plan/);
-  assert.doesNotMatch(visualSource, /formal run \/ aircraft_support_v1/);
-  assert.match(visualSource, /当前 Project/);
+  assert.match(visualSource, /正式可视化/);
+  assert.doesNotMatch(visualSource, /当前 Project 回放/);
   assert.doesNotMatch(visualSource, /mesa-abm-skill/);
   assert.doesNotMatch(visualSource, /Mesa ABM \/ aviation_support/);
 });
@@ -3335,10 +3347,10 @@ test("formal run starts only allow imported sample projects", async () => {
   assert.ok(mcRunSource.indexOf("currentProjectCanStartFormalRun()") < mcRunSource.indexOf("formalRunSubmitInFlight = true"));
 });
 
-test("visual simulation new run starts independent Mesa from current Project without imported-sample repair", async () => {
+test("visual simulation new run starts formal run and loads its state-series artifact", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
-  const independentLaunchSource = appSource.slice(
-    appSource.indexOf("async function startIndependentMesaVisualizationThroughApi"),
+  const visualLaunchSource = appSource.slice(
+    appSource.indexOf("async function startFormalVisualizationRunThroughApi"),
     appSource.indexOf("async function loadVisualizationReplayForRun")
   );
   const startNewRunSource = appSource.slice(
@@ -3346,13 +3358,12 @@ test("visual simulation new run starts independent Mesa from current Project wit
     appSource.indexOf("const controlAction = backendControlActions")
   );
 
-  assert.match(independentLaunchSource, /const projectJson = selectedExperimentPlanProjectJson\(\)/);
-  assert.match(independentLaunchSource, /backendApi\.runIndependentMesaVisualization\(projectJson\)/);
-  assert.match(independentLaunchSource, /normalizeVisualizationStateSeriesPayload\(response\.state_series/);
-  assert.match(startNewRunSource, /await startIndependentMesaVisualizationThroughApi\(\)/);
+  assert.match(visualLaunchSource, /const submittedRun = await startSingleRunThroughApi\(\)/);
+  assert.match(visualLaunchSource, /await loadVisualizationReplayForRun\(runId\)/);
+  assert.match(visualLaunchSource, /缺少正式 state-series artifact/);
+  assert.match(startNewRunSource, /await startFormalVisualizationRunThroughApi\(\)/);
   assert.doesNotMatch(startNewRunSource, /ensureFormalRunImportedSampleProject/);
   assert.doesNotMatch(startNewRunSource, /createSampleProjectFromPublishedImport/);
-  assert.doesNotMatch(startNewRunSource, /startSingleRunThroughApi/);
 });
 
 test("click-based modeling mutations mark project draft dirty before rendering", async () => {
@@ -4161,7 +4172,7 @@ test("visual simulation enters the Mesa page without a replay list", async () =>
   assert.doesNotMatch(visualSource, /data-mesa-backend-control-status/);
 });
 
-test("visual simulation keeps direct Mesa state without a visible run picker", async () => {
+test("visual simulation keeps formal state-series replay without a visible run picker", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const refreshRunListSource = appSource.slice(
     appSource.indexOf("async function refreshVisualizationRunList"),
@@ -4171,12 +4182,12 @@ test("visual simulation keeps direct Mesa state without a visible run picker", a
   assert.doesNotMatch(appSource, /function renderVisualizationRunOptions/);
   assert.doesNotMatch(appSource, /data-mesa-run-select/);
   assert.match(appSource, /visualizationSelectedRunId = runId/);
-  assert.match(appSource, /visualizationReplayStatus = `已读取当前 Project 并开始回放：run_id \$\{runId\}`/);
+  assert.match(appSource, /visualizationReplayStatus = `已读取正式 state_series 并开始回放：run_id \$\{runId\}`/);
   assert.match(refreshRunListSource, /M9 当前回放已同步/);
   assert.doesNotMatch(refreshRunListSource, /run 列表已刷新/);
 });
 
-test("visual simulation new starts use independent Mesa without list selection", async () => {
+test("visual simulation new starts use formal run replay without list selection", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const controlHandlerSource = appSource.slice(
     appSource.indexOf("async function handleMesaControl"),
@@ -4192,10 +4203,7 @@ test("visual simulation new starts use independent Mesa without list selection",
   );
 
   assert.doesNotMatch(appSource, /const mesaRunSelect = event\.target\.closest/);
-  assert.match(newRunSource, /await startIndependentMesaVisualizationThroughApi\(\)/);
-  assert.doesNotMatch(newRunSource, /await startSingleRunThroughApi\(\)/);
-  assert.doesNotMatch(newRunSource, /await refreshVisualizationRunList\(newRunId\)/);
-  assert.doesNotMatch(newRunSource, /await loadVisualizationReplayForRun\(newRunId\)/);
+  assert.match(newRunSource, /await startFormalVisualizationRunThroughApi\(\)/);
   assert.match(newRunSource, /visualizationReplayPlaying = true/);
   assert.match(newRunSource, /startVisualizationReplay\(\)/);
   assert.match(playSource, /await loadVisualizationReplayForRun\(\)/);

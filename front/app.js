@@ -1461,7 +1461,7 @@ function bindEvents() {
 
     const liteMesaAnalysisButton = event.target.closest("[data-lite-mesa-analysis-action='run']");
     if (liteMesaAnalysisButton) {
-      runLiteMesaAnalysisPage(getFeaturePageById(selectedFeatureId)).finally(() => render());
+      runFormalAnalysisPage(getFeaturePageById(selectedFeatureId)).finally(() => render());
       render();
       return;
     }
@@ -8786,7 +8786,7 @@ function experimentPlanContextOptions(page = getFeaturePageById(selectedFeatureI
     key: experimentPlanSelectionKey({ name: localName }),
     name: `${localName || "当前项目"}（当前草稿）`,
     plan: null,
-    projectJson: buildBackendProjectJson(scenario, currentProject),
+    projectJson: buildBackendProjectJson(experimentPlanDraft, currentProject),
     module: page.module
   };
   const backendOptions = backendExperimentPlans.map((plan) => {
@@ -9796,7 +9796,7 @@ async function startSingleRunThroughApi() {
   formalRunSubmitInFlight = true;
   const runType = "single";
   const projectJson = buildBackendProjectJson(scenario, currentProject);
-  const planProjectJson = buildBackendProjectJson(experimentPlanDraft, currentProject);
+  const planProjectJson = selectedExperimentPlanProjectJson();
   try {
     const submitted = await submitRunIntent(backendApi, {
       runType,
@@ -9845,7 +9845,12 @@ async function startSingleRunThroughApi() {
   }
 }
 
-async function startMonteCarloRunThroughApi({ monteCarloExperimentId = selectedMonteCarloExperimentId, analysisType = "", analysisProfile = null } = {}) {
+async function startMonteCarloRunThroughApi({
+  monteCarloExperimentId = selectedMonteCarloExperimentId,
+  analysisType = "",
+  analysisProfile = null,
+  planProjectJsonOverride = null
+} = {}) {
   const existingExperiment = monteCarloExperimentByBusinessId(monteCarloExperimentId);
   const formalRunGate = currentProjectCanStartFormalRun();
   if (!formalRunGate.allowed) {
@@ -9861,7 +9866,9 @@ async function startMonteCarloRunThroughApi({ monteCarloExperimentId = selectedM
   const runType = "monte_carlo";
   const projectJson = buildBackendProjectJson(scenario, currentProject);
   ensureMonteCarloSweepDefaults(experimentPlanDraft);
-  const planProjectJson = buildBackendProjectJson(experimentPlanDraft, currentProject);
+  const planProjectJson = planProjectJsonOverride && typeof planProjectJsonOverride === "object"
+    ? buildBackendProjectJson(planProjectJsonOverride, currentProject)
+    : selectedExperimentPlanProjectJson();
   try {
     const submitted = await submitRunIntent(backendApi, {
       runType,
@@ -10241,7 +10248,7 @@ function ensureVisualizationRunListLoaded() {
     });
 }
 
-async function startIndependentMesaVisualizationThroughApi() {
+async function startFormalVisualizationRunThroughApi() {
   if (!currentProject) {
     visualizationReplayStatus = "启动仿真失败：请先创建或选择项目。";
     return null;
@@ -10253,41 +10260,23 @@ async function startIndependentMesaVisualizationThroughApi() {
   independentMesaVisualizationInFlight = true;
   stopVisualizationRunStream("正在启动仿真，M9.2 在线订阅已停止");
   stopVisualizationReplay();
-  const projectJson = selectedExperimentPlanProjectJson();
-  visualizationReplayStatus = "正在启动仿真并读取当前 Project";
+  visualizationReplayStatus = "正在通过正式 /api/runs 启动仿真";
   try {
-    const response = await backendApi.runIndependentMesaVisualization(projectJson);
-    const runId = response?.run_id || "";
-    if (!runId || !response?.state_series) {
-      throw new Error("仿真未返回 run_id 或 state_series");
-    }
-    visualizationStateSeries = {
-      ...normalizeVisualizationStateSeriesPayload(response.state_series, {
-        runId,
-        artifactId: response.state_series_artifact_id || `independent-state-series-${runId}`
-      }),
-      source: response.source || "independent_mesa_project"
-    };
+    const submittedRun = await startSingleRunThroughApi();
+    const runId = submittedRun?.run_id || backendRun?.run_id || "";
+    if (!runId) throw new Error("正式仿真未返回 run_id");
     visualizationSelectedRunId = runId;
-    visualizationRunList = [{ run_id: runId, status: response.status || "succeeded", source: response.source || "independent_mesa_project" }];
     visualizationRunListLoaded = true;
+    await refreshVisualizationRunList(runId);
+    await loadVisualizationReplayForRun(runId);
+    if (!visualizationStateSeries) throw new Error(`run ${runId} 缺少正式 state-series artifact`);
     visualizationReplayIndex = 0;
     visualizationReplayPlaying = true;
-    backendRun = {
-      run_id: runId,
-      project_id: response.project_id || projectJson.project_id,
-      scenario_id: response.scenario_id,
-      model_family: response.model_family || FORMAL_AIRCRAFT_SUPPORT_MODEL_FAMILY,
-      status: response.status || "succeeded",
-      phase: "completed",
-      progress: 1,
-      source: response.source || "independent_mesa_project"
-    };
-    backendApiStatus = `仿真完成：${runId}`;
-    visualizationReplayStatus = `已读取当前 Project 并开始回放：run_id ${runId}`;
+    backendApiStatus = `正式仿真完成：${runId}`;
+    visualizationReplayStatus = `已读取正式 state_series 并开始回放：run_id ${runId}`;
     render();
     startVisualizationReplay();
-    return backendRun;
+    return submittedRun || backendRun;
   } catch (err) {
     visualizationStateSeries = null;
     visualizationReplayIndex = 0;
@@ -11588,7 +11577,7 @@ async function handleMesaControl(action) {
     stopVisualizationRunStream("正在启动新仿真，M9.2 在线订阅已停止");
     stopVisualizationReplay();
     visualizationReplayStatus = "正在启动仿真并准备回放";
-    const submittedRun = await startIndependentMesaVisualizationThroughApi();
+    const submittedRun = await startFormalVisualizationRunThroughApi();
     const newRunId = submittedRun?.run_id || backendRun?.run_id || "";
     if (!newRunId) {
       visualizationReplayStatus = `启动新仿真失败：${backendApiStatus || "未返回 run_id"}`;
@@ -11661,10 +11650,6 @@ function isVisualizationStateSeriesFromStream(series = visualizationStateSeries)
   return Boolean(series && series.stream_id && series.expected_frame_count);
 }
 
-function isIndependentMesaStateSeries(series = visualizationStateSeries) {
-  return series?.source === "independent_mesa_project";
-}
-
 function stopVisualizationReplay() {
   visualizationReplayPlaying = false;
   if (!visualizationReplayTimer) return;
@@ -11703,7 +11688,6 @@ function renderVisualSimulation(page) {
     && visualizationStreamState.runId === visualizationStateSeries.run_id
     && ["connected", "disconnected", "artifact-ready"].includes(visualizationStreamState.status)
     && visualizationStateSeries.expected_frame_count;
-  const isIndependentMesaFrame = visualizationStateSeriesFrame && isIndependentMesaStateSeries();
   const source = visualizationStateSeriesFrame || visualizationBlockedState();
   const state = normalizeAviationSupportState(source);
   const activeView = ["aircraft", "mission", "support"].includes(selectedMesaView) ? selectedMesaView : "aircraft";
@@ -11711,7 +11695,7 @@ function renderVisualSimulation(page) {
   const currentFrame = visualizationStateSeriesFrame ? visualizationReplayIndex + 1 : 0;
   const eventStream = visualizationStateSeriesFrame ? buildSimulationLogStream(visualizationStateSeries) : [];
   const replayStatusDetail = visualizationStateSeriesFrame
-    ? `${isIndependentMesaFrame ? "当前 Project 回放 / " : ""}run_id ${htmlEscape(visualizationStateSeries.run_id)} / artifact_id ${htmlEscape(visualizationStateSeries.artifact_id)} / step ${htmlEscape(visualizationStateSeriesFrame.step)} / ${currentFrame}-${htmlEscape(visualizationStateSeries.frame_count)} 帧 / 事件 ${htmlEscape(visualizationStateSeries.event_count)}`
+    ? `run_id ${htmlEscape(visualizationStateSeries.run_id)} / artifact_id ${htmlEscape(visualizationStateSeries.artifact_id)} / step ${htmlEscape(visualizationStateSeriesFrame.step)} / ${currentFrame}-${htmlEscape(visualizationStateSeries.frame_count)} 帧 / 事件 ${htmlEscape(visualizationStateSeries.event_count)}`
     : "缺少 aircraft_support_v1 state_series artifact 时，正式可视化不会回退到旧 aviation_support 或演示快照；请启动新仿真或选择已完成且带 artifact 的 run。";
   const timelineFrameLabel = visualizationStateSeriesFrame
     ? simulationDayMinuteLabel(visualizationStateSeriesFrame.simulation_time)
@@ -13382,7 +13366,7 @@ function renderLiteMesaMonteCarloAnalysis(page) {
     <div class="lite-mesa-workbench">
       <section class="lite-mesa-hero">
         <div>
-          <span class="status-badge success">后端 Mesa 仿真分析</span>
+          <span class="status-badge success">正式 Monte Carlo run</span>
           <h3>蒙特卡洛分析</h3>
           <p>${htmlEscape(projectName)} / ${htmlEscape(page.module)} / ${htmlEscape(experimentPlanName)}</p>
         </div>
@@ -13492,64 +13476,42 @@ async function runLiteMesaMonteCarloAnalysis() {
   const samples = Math.max(1, Math.min(1000, Math.trunc(Number(liteMesaMonteCarloSettings.samples) || 1)));
   const seed = Math.trunc(Number(liteMesaMonteCarloSettings.seed) || 1);
   liteMesaMonteCarloSettings = { samples, seed };
-  liteMesaMonteCarloStatus = "正在运行 Mesa 分析";
-  try {
-    const projectJson = selectedExperimentPlanProjectJson();
-    const response = await backendApi.runLiteMesaAnalysis(projectJson, "mission_reliability", {
+  experimentPlanDraft.experiment = {
+    ...(experimentPlanDraft.experiment || {}),
+    samples,
+    seed
+  };
+  const planProjectJson = {
+    ...selectedExperimentPlanProjectJson(),
+    experiment: {
+      ...(selectedExperimentPlanProjectJson().experiment || {}),
       samples,
       seed
+    },
+    analysisRequests: {
+      ...(selectedExperimentPlanProjectJson().analysisRequests || {}),
+      largeSample: {
+        ...(selectedExperimentPlanProjectJson().analysisRequests?.largeSample || {}),
+        enabled: true,
+        samples
+      }
+    }
+  };
+  liteMesaMonteCarloStatus = "正在提交正式 Monte Carlo run";
+  try {
+    const run = await startMonteCarloRunThroughApi({
+      monteCarloExperimentId: selectedMonteCarloExperimentId,
+      analysisType: "mission_reliability",
+      planProjectJsonOverride: planProjectJson
     });
-    liteMesaMonteCarloResult = normalizeLiteMesaMonteCarloResult(response, projectJson);
-    const runCount = liteMesaMonteCarloResult.sampleCount || liteMesaMonteCarloResult.runs?.length || 0;
-    liteMesaMonteCarloStatus = runCount
-      ? `分析完成：${runCount} 个样本，seed ${seed}。`
-      : "当前建模数据不足：请补充装备数量、任务要求、任务周期、部件和保障节点。";
+    liteMesaMonteCarloResult = null;
+    liteMesaMonteCarloStatus = run?.run_id
+      ? `正式 Monte Carlo 已提交：${run.run_id}。结果请查看正式 run artifact / current analysis。`
+      : "正式 Monte Carlo 未创建 run_id。";
   } catch (err) {
     liteMesaMonteCarloResult = null;
     liteMesaMonteCarloStatus = `分析失败：${err && err.message ? err.message : "运行错误"}`;
   }
-}
-
-function normalizeLiteMesaMonteCarloResult(payload, projectJson) {
-  if (!payload || payload.status === "blocked") {
-    return {
-      status: "blocked",
-      sampleCount: 0,
-      groups: [],
-      runs: [],
-      message: payload?.message || "Mesa 分析未返回可展示结果。"
-    };
-  }
-  const rows = Array.isArray(payload.rows) ? payload.rows : [];
-  const runs = rows.map((row, index) => ({
-    sequence: row.sequence || index + 1,
-    seed: row.seed,
-    final: {
-      mission_success_rate: Number(row.missionSuccessRate ?? row.mission_success_rate ?? 0),
-      sortie_rate: Number(row.sortieRate ?? row.sortie_rate ?? 0),
-      ready_rate: Number(row.readyRate ?? row.ready_rate ?? 0),
-      spare_fill_rate: Number(row.spareFillRate ?? row.spare_fill_rate ?? 0),
-      shortage_events: Number(row.shortageEvents ?? row.shortage_events ?? 0),
-      repair_backlog: Number(row.repairBacklog ?? row.repair_backlog ?? 0)
-    }
-  }));
-  return {
-    status: payload.status || "session_complete",
-    source: payload.source || "lite_mesa_aircraft_support_v1",
-    sampleCount: Number(payload.sample_count || payload.sampleCount || runs.length || 0),
-    seedList: Array.isArray(payload.seed_list) ? payload.seed_list : [],
-    groups: [{ name: selectedExperimentPlanName(), projectId: projectJson?.project_id || "" }],
-    rows,
-    runs,
-    metrics: Array.isArray(payload.metrics) ? payload.metrics : []
-  };
-}
-
-function liteMesaBaselineSweep(projectJson) {
-  return {
-    name: "项目基线",
-    minRequiredSorties: Number(projectJson?.basicMissions?.[0]?.minRequiredSorties ?? projectJson?.equipment?.minRequiredSorties ?? 1)
-  };
 }
 
 function liteMesaMetricStatisticRows(result) {
@@ -14367,11 +14329,11 @@ function renderLiteMesaAnalysisPage(page) {
   const runCount = result?.sampleCount || 0;
   const experimentPlanName = selectedExperimentPlanName();
   const statusText = result?.status === "session_complete"
-    ? `会话内结果已生成：${runCount} 个样本`
+    ? `正式结果已生成：${runCount} 个样本`
     : result?.status === "blocked"
       ? result.message
-      : result?.status === "running"
-        ? "分析运行中"
+    : result?.status === "running"
+        ? "正式分析运行中"
         : "等待运行";
   return `
     <div class="lite-mesa-workbench lite-mesa-analysis-page">
@@ -14380,9 +14342,9 @@ function renderLiteMesaAnalysisPage(page) {
           <h3>${htmlEscape(definition.title)}</h3>
           <p>${htmlEscape(definition.pageGoal)}</p>
         </div>
-        <div class="lite-mesa-hero-meter" aria-label="会话内结果">
+        <div class="lite-mesa-hero-meter" aria-label="正式分析结果">
           <strong>${runCount || "待运行"}</strong>
-          <span>会话样本</span>
+          <span>正式 run</span>
         </div>
       </section>
       <div class="lite-mesa-layout">
@@ -14399,22 +14361,22 @@ function renderLiteMesaAnalysisPage(page) {
           <div class="lite-mesa-source-grid">
             <div><span>项目</span><strong>${htmlEscape(currentProject?.name || "当前项目")}</strong></div>
             <div><span>实验方案</span><strong>${htmlEscape(experimentPlanName)}</strong></div>
-            <div><span>输出边界</span><strong>会话内结果</strong></div>
-            <div><span>持久化</span><strong>不创建 run、result 或 artifact</strong></div>
+            <div><span>输出边界</span><strong>正式 current-analysis</strong></div>
+            <div><span>持久化</span><strong>创建正式 run、result 与 artifact</strong></div>
           </div>
         </section>
         <section class="lite-mesa-results">
           <div class="section-head">
             <h3>${htmlEscape(definition.subtitle)}</h3>
-            <span>${result?.status === "session_complete" ? "会话完成" : result?.status === "running" ? "后端内存运行中" : "建模粒度不足时 fail closed"}</span>
+            <span>${result?.status === "session_complete" ? "正式完成" : result?.status === "running" ? "正式后端运行中" : "等待正式结果"}</span>
           </div>
           ${renderLiteMesaAnalysisMetricCards(definition, result)}
         </section>
       </div>
       <section class="lite-mesa-stat-section">
         <div class="section-head">
-          <h3>会话内结果明细</h3>
-          <span>建模粒度不足时不会伪造结论</span>
+          <h3>正式结果明细</h3>
+          <span>缺少正式结果时不会伪造结论</span>
         </div>
         ${renderLiteMesaAnalysisSessionBody(definition, result)}
       </section>
@@ -14499,17 +14461,8 @@ function updateLiteMesaAnalysisSetting(page, field, value) {
   };
 }
 
-async function runLiteMesaAnalysisPage(page) {
+async function runFormalAnalysisPage(page) {
   const definition = liteMesaAnalysisDefinitionForPage(page);
-  const settings = liteMesaAnalysisSettings[definition.analysisType] || {};
-  const samples = Math.max(1, Math.min(1000, Math.trunc(Number(settings.samples) || 1)));
-  const seed = Math.trunc(Number(settings.seed) || 1);
-  const normalizedSettings = {
-    ...settings,
-    samples,
-    seed,
-    ...(definition.analysisType === "downtime_factors" ? { write_event_snapshots: true } : {})
-  };
   liteMesaAnalysisResults = {
     ...liteMesaAnalysisResults,
     [definition.analysisType]: {
@@ -14522,11 +14475,18 @@ async function runLiteMesaAnalysisPage(page) {
     }
   };
   try {
-    const projectJson = selectedExperimentPlanProjectJson();
-    const response = await backendApi.runLiteMesaAnalysis(projectJson, definition.analysisType, normalizedSettings);
+    await runCurrentAnalysisPage(page);
     liteMesaAnalysisResults = {
       ...liteMesaAnalysisResults,
-      [definition.analysisType]: normalizeLiteMesaAnalysisResult(definition, response)
+      [definition.analysisType]: {
+        status: "blocked",
+        sampleCount: 0,
+        metrics: [],
+        rows: [],
+        eventSnapshots: [],
+        limitations: [],
+        message: "已转入正式 current-analysis 运行链路；结果请查看正式 run artifact / 当前分析结果。"
+      }
     };
   } catch (err) {
     liteMesaAnalysisResults = {
@@ -14543,37 +14503,6 @@ async function runLiteMesaAnalysisPage(page) {
   }
 }
 
-function normalizeLiteMesaAnalysisResult(definition, payload) {
-  if (!payload || payload.status === "blocked") {
-    return {
-      status: "blocked",
-      source: payload?.source || "lite_mesa_aircraft_support_v1",
-      analysisType: payload?.analysis_type || definition.analysisType,
-      experimentId: definition.experimentId,
-      sampleCount: 0,
-      seedList: [],
-      metrics: [],
-      rows: [],
-      eventSnapshots: [],
-      limitations: Array.isArray(payload?.limitations) ? payload.limitations : [],
-      message: payload?.message || "建模粒度不足：请补充装备数量、任务要求、任务周期、部件和保障节点。"
-    };
-  }
-  return {
-    status: payload.status === "session_complete" ? "session_complete" : "blocked",
-    source: payload.source || "lite_mesa_aircraft_support_v1",
-    analysisType: payload.analysis_type || definition.analysisType,
-    experimentId: definition.experimentId,
-    sampleCount: Number(payload.sample_count || payload.sampleCount || 0),
-    seedList: Array.isArray(payload.seed_list) ? payload.seed_list : [],
-    metrics: Array.isArray(payload.metrics) ? payload.metrics : definition.metricLabels.map((label) => [label, "无"]),
-    rows: Array.isArray(payload.rows) ? payload.rows : [],
-    eventSnapshots: Array.isArray(payload.event_snapshots) ? payload.event_snapshots : [],
-    limitations: Array.isArray(payload.limitations) ? payload.limitations : [],
-    message: payload.message || ""
-  };
-}
-
 function renderLiteMesaAnalysisMetricCards(definition, result) {
   if (result?.status === "blocked") {
     return `<div class="empty-state"><strong>建模粒度不足</strong><p>${htmlEscape(result.message)}</p></div>`;
@@ -14585,7 +14514,7 @@ function renderLiteMesaAnalysisMetricCards(definition, result) {
         <div class="metric-card">
           <span>${htmlEscape(label)}</span>
           <strong>${htmlEscape(value)}</strong>
-          <em>${result?.status === "session_complete" ? "会话样本" : "等待运行"}</em>
+          <em>${result?.status === "session_complete" ? "正式样本" : "等待运行"}</em>
         </div>
       `).join("")}
     </div>
@@ -14594,13 +14523,13 @@ function renderLiteMesaAnalysisMetricCards(definition, result) {
 
 function renderLiteMesaAnalysisSessionBody(definition, result) {
   if (!result) {
-    return `<div class="empty-state"><strong>尚未运行分析</strong><p>当前页会读取项目建模数据并在后端内存会话中生成分析摘要。</p></div>`;
+    return `<div class="empty-state"><strong>尚未运行分析</strong><p>当前页会提交正式 current-analysis run 并读取正式结果摘要。</p></div>`;
   }
   if (result.status === "running") {
-    return `<div class="empty-state"><strong>分析运行中</strong><p>当前项目正在后端内存会话中生成分析摘要。</p></div>`;
+    return `<div class="empty-state"><strong>分析运行中</strong><p>当前项目正在正式后端链路中生成分析摘要。</p></div>`;
   }
   if (result.status === "blocked") {
-    return `<div class="empty-state"><strong>建模粒度不足</strong><p>${htmlEscape(result.message)}</p></div>`;
+    return `<div class="empty-state"><strong>等待正式结果</strong><p>${htmlEscape(result.message)}</p></div>`;
   }
   const rows = result.rows || [];
   if (definition.analysisType === "spare_shortfall") {

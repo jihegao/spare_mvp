@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Any
 
 from src.spare_mvp_backend.modeling_import import modeling_import_to_project, validate_modeling_import_package
-from src.spare_mvp_backend.monte_carlo_config import normalize_monte_carlo_run_config
 
 
 SIMULATION_ANALYSIS_CASE_IDS = [
@@ -107,20 +106,10 @@ def simulation_analysis_case_fixture_drift(repo_root: Path | str) -> list[str]:
 
 def _case(case_id: str, import_package: dict[str, Any], description: str) -> dict[str, Any]:
     used_tables = _apply_validation_scope(case_id, import_package)
-    _ensure_large_sample_covers_sweep(import_package)
     validation = validate_modeling_import_package(import_package)
     if not validation["ok"]:
         raise ValueError(f"{case_id} modeling import package is invalid: {validation['issues']}")
     project = modeling_import_to_project(import_package)
-    analysis_config = {"analysisRequests": _analysis_requests_for_monte_carlo(import_package, project)}
-    monte_carlo_config = normalize_monte_carlo_run_config(
-        analysis_config,
-        mc_experiment_id=f"mc-6p-{case_id}",
-    ).to_adapter_payload()
-    monte_carlo_config["sample_count"] = max(
-        int(monte_carlo_config.get("sample_count") or 1),
-        _sweep_point_count(monte_carlo_config.get("sweep") or {}),
-    )
     return {
         "schema_version": "simulation-analysis-case-v0",
         "phase": "6P",
@@ -132,31 +121,7 @@ def _case(case_id: str, import_package: dict[str, Any], description: str) -> dic
         "modeling_import": import_package,
         "validation": validation,
         "project": project,
-        "monte_carlo_config": monte_carlo_config,
-        "expected_artifact_kinds": [
-            "monte_carlo_base",
-            "visualization_state_series",
-            "analysis_projection_spare_shortfall",
-            "analysis_projection_carry_list",
-            "analysis_projection_mission_reliability",
-            "analysis_projection_downtime_factors",
-        ],
     }
-
-
-def _analysis_requests_for_monte_carlo(import_package: dict[str, Any], project: dict[str, Any]) -> dict[str, Any]:
-    objects = import_package.get("objects") if isinstance(import_package.get("objects"), dict) else {}
-    object_requests = objects.get("analysisRequests")
-    if isinstance(object_requests, dict) and isinstance(object_requests.get("largeSample"), dict):
-        return copy.deepcopy(object_requests)
-    for mission in objects.get("missionProfiles") or []:
-        if not isinstance(mission, dict):
-            continue
-        mission_requests = mission.get("analysisRequests")
-        if isinstance(mission_requests, dict) and isinstance(mission_requests.get("largeSample"), dict):
-            return copy.deepcopy(mission_requests)
-    project_requests = project.get("analysisRequests")
-    return copy.deepcopy(project_requests) if isinstance(project_requests, dict) else {}
 
 
 def _load_canonical_import(repo_root: Path) -> dict[str, Any]:
@@ -387,40 +352,8 @@ def _apply_validation_scope(case_id: str, import_package: dict[str, Any]) -> dic
     return used_tables
 
 
-def _ensure_large_sample_covers_sweep(import_package: dict[str, Any]) -> None:
-    objects = import_package.get("objects") if isinstance(import_package.get("objects"), dict) else {}
-    _ensure_large_sample_config_covers_sweep(objects.get("analysisRequests"))
-    for mission in objects.get("missionProfiles") or []:
-        if isinstance(mission, dict):
-            _ensure_large_sample_config_covers_sweep(mission.get("analysisRequests"))
-
-
-def _ensure_large_sample_config_covers_sweep(analysis_requests: Any) -> None:
-    if not isinstance(analysis_requests, dict):
-        return
-    large_sample = analysis_requests.get("largeSample")
-    if not isinstance(large_sample, dict):
-        return
-    sweep = large_sample.get("sweep")
-    if not isinstance(sweep, dict):
-        return
-    try:
-        sample_count = int(large_sample.get("samples") or 0)
-    except (TypeError, ValueError):
-        sample_count = 0
-    large_sample["samples"] = max(sample_count, _sweep_point_count(sweep))
-
-
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-
-
-def _sweep_point_count(sweep: dict[str, Any]) -> int:
-    total = 1
-    for key in ("failureRates", "spareMultipliers", "supportCapacities"):
-        values = sweep.get(key)
-        total *= max(1, len(values) if isinstance(values, list) else 0)
-    return total
 
 
 def _positive_int(value: Any, fallback: int = 0) -> int:

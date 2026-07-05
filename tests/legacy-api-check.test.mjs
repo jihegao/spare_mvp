@@ -8,6 +8,13 @@ const FRONTEND_ENTRYPOINTS = [
   "front/run-intent.mjs"
 ];
 
+const ACTIVE_RUNTIME_SOURCES = [
+  "front/api-client.mjs",
+  "front/app.js",
+  "src/spare_mvp_backend/api.py",
+  "src/spare_mvp_backend/http_server.py"
+];
+
 const LEGACY_PATTERNS = [
   { name: "legacy simulation run route", pattern: /\/simulation-runs/ },
   { name: "legacy raw run alias", pattern: /\bgetRun\s*\(/ }
@@ -58,4 +65,27 @@ test("obsolete contract provider and smoke model files stay retired", async () =
   }
 
   assert.deepEqual(stillPresent, []);
+});
+
+test("retired Mesa service routes stay absent from active runtime code", async () => {
+  const retiredPatterns = [
+    { name: "independent Mesa visualization route", pattern: /\/mesa-visualization-runs/ },
+    { name: "lite Mesa analysis route", pattern: /\/mesa-analysis-runs/ },
+    { name: "independent Mesa API method", pattern: /runIndependentMesaVisualization|run_independent_mesa_visualization/ },
+    { name: "lite Mesa API method", pattern: /runLiteMesaAnalysis|run_lite_mesa_analysis/ },
+    { name: "independent Mesa source marker", pattern: /independent_mesa_project|independent-mesa-/ },
+    { name: "lite Mesa source marker", pattern: /lite_mesa_aircraft_support_v1/ }
+  ];
+  const violations = [];
+
+  for (const filePath of ACTIVE_RUNTIME_SOURCES) {
+    const source = await readFile(new URL(`../${filePath}`, import.meta.url), "utf8");
+    for (const { name, pattern } of retiredPatterns) {
+      if (pattern.test(source)) {
+        violations.push(`${filePath}: ${name}`);
+      }
+    }
+  }
+
+  assert.deepEqual(violations, []);
 });

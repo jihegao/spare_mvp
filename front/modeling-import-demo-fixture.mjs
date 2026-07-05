@@ -10,7 +10,7 @@ export const MODELING_IMPORT_DEMO_FIXTURE = {
     "analysisRequests": {
       "largeSample": {
         "enabled": true,
-        "samples": 27,
+        "samples": 24,
         "sweep": {
           "failureRates": [
             0.035,
@@ -397,7 +397,7 @@ export const MODELING_IMPORT_DEMO_FIXTURE = {
         "analysisRequests": {
           "largeSample": {
             "enabled": true,
-            "samples": 27,
+            "samples": 24,
             "sweep": {
               "failureRates": [
                 0.035,

@@ -10,7 +10,7 @@
     "analysisRequests": {
       "largeSample": {
         "enabled": true,
-        "samples": 27,
+        "samples": 24,
         "sweep": {
           "failureRates": [
             0.035,
@@ -397,7 +397,7 @@
         "analysisRequests": {
           "largeSample": {
             "enabled": true,
-            "samples": 27,
+            "samples": 24,
             "sweep": {
               "failureRates": [
                 0.035,

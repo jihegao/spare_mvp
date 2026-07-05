@@ -447,8 +447,14 @@ test("carry list analysis result omits boundary explanation card", async () => {
   try {
     await runtime.click("[data-lite-mesa-analysis-action='run']");
 
-    assert.match(runtime.appNode.innerHTML, /建议携行数量/);
-    assert.match(runtime.appNode.innerHTML, /aircraft_support_v1_spares/);
+    const analysisRun = runtime.requests
+      .filter((request) => request.url === "/api/runs")
+      .map((request) => JSON.parse(request.options.body || "{}"))
+      .find((body) => body.analysis_type === "carry_list");
+    assert.ok(analysisRun, "carry list analysis should submit a formal current-analysis run");
+    assert.equal(analysisRun.run_type, "monte_carlo");
+    assert.match(runtime.appNode.innerHTML, /正式 current-analysis/);
+    assert.match(runtime.appNode.innerHTML, /正式 run artifact/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /边界说明/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /会话内 Mesa 分析结果/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /不写入正式结果账本/);
@@ -467,16 +473,19 @@ test("downtime factors analysis enables log snapshots and renders event snapshot
   try {
     await runtime.click("[data-lite-mesa-analysis-action='run']");
 
-    const analysisRequest = runtime.requests.find((request) => request.url === "/api/mesa-analysis-runs");
-    assert.ok(analysisRequest, "downtime analysis should call the lite analysis backend route");
-    const body = JSON.parse(analysisRequest.options.body || "{}");
-    assert.equal(body.analysis_type, "downtime_factors");
-    assert.equal(body.settings.write_event_snapshots, true);
-    assert.match(runtime.appNode.innerHTML, /事件快照/);
-    assert.match(runtime.appNode.innerHTML, /飞机状态/);
-    assert.match(runtime.appNode.innerHTML, /保障资源占用/);
-    assert.match(runtime.appNode.innerHTML, /备件短缺/);
-    assert.match(runtime.appNode.innerHTML, /hyd-pump/);
+    const analysisRequest = runtime.requests
+      .filter((request) => request.url === "/api/runs")
+      .map((request) => JSON.parse(request.options.body || "{}"))
+      .find((body) => body.analysis_type === "downtime_factors");
+    assert.ok(analysisRequest, "downtime analysis should submit a formal current-analysis run");
+    assert.equal(analysisRequest.run_type, "monte_carlo");
+    assert.equal(analysisRequest.model_family, "aircraft_support_v1");
+    assert.ok(
+      runtime.requests.some((request) => request.url === "/api/projects/project-runtime/analysis-results/downtime_factors"),
+      "downtime analysis should read the formal current-analysis result"
+    );
+    assert.match(runtime.appNode.innerHTML, /正式 current-analysis/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /会话内 Mesa 分析结果/);
   } finally {
     runtime.restore();
   }
@@ -1357,7 +1366,7 @@ test("experiment plan selection uses experiment_plan_id for duplicate names", as
   }
 });
 
-test("visual simulation waits for explicit run before starting Mesa visualization", async () => {
+test("visual simulation waits for explicit run before starting formal visualization", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=spare-planning-visual-mesa-page",
     projectJson: createRuntimeProjectJson()
@@ -1367,24 +1376,25 @@ test("visual simulation waits for explicit run before starting Mesa visualizatio
     assert.match(runtime.appNode.innerHTML, /启动新仿真/);
     assert.match(runtime.appNode.innerHTML, /data-current-experiment-plan/);
     assert.equal(
-      runtime.requests.some((request) => request.url === "/api/mesa-visualization-runs"),
+      runtime.requests.some((request) => request.url === "/api/runs"),
       false,
-      "visual page load should not auto-start Mesa visualization"
+      "visual page load should not auto-start formal visualization"
     );
 
     await runtime.click("[data-mesa-control]", { mesaControl: "start-new-run" });
 
-    assert.equal(
-      runtime.requests.some((request) => request.url === "/api/mesa-visualization-runs"),
-      true,
-      "explicit start button should call Mesa visualization route"
-    );
+    const runRequest = runtime.requests
+      .filter((request) => request.url === "/api/runs")
+      .map((request) => JSON.parse(request.options.body || "{}"))
+      .find((body) => body.run_type === "single");
+    assert.ok(runRequest, "explicit start button should submit a formal single run");
+    assert.equal(runRequest.model_family, "aircraft_support_v1");
   } finally {
     runtime.restore();
   }
 });
 
-test("experiment plan dropdown drives Monte Carlo and analysis Mesa requests", async () => {
+test("experiment plan dropdown drives formal Monte Carlo and analysis requests", async () => {
   const planProjectJson = createRuntimeProjectJson({
     project_id: "project-runtime-plan-a",
     projectInfo: { name: "方案A Project", baseCode: "PLA" }
@@ -1414,11 +1424,18 @@ test("experiment plan dropdown drives Monte Carlo and analysis Mesa requests", a
     );
     await runtime.click("[data-lite-mesa-action='run']");
 
-    const monteCarloRequest = runtime.requests.find((request) => request.url === "/api/mesa-analysis-runs");
-    assert.ok(monteCarloRequest, "Monte Carlo run should use backend Mesa route");
-    const monteCarloBody = JSON.parse(monteCarloRequest.options.body || "{}");
+    const monteCarloRequest = runtime.requests
+      .filter((request) => request.url === "/api/runs")
+      .map((request) => JSON.parse(request.options.body || "{}"))
+      .find((body) => body.analysis_type === "mission_reliability");
+    assert.ok(monteCarloRequest, "Monte Carlo run should use formal run route");
+    const monteCarloBody = monteCarloRequest;
     assert.equal(monteCarloBody.analysis_type, "mission_reliability");
-    assert.equal(monteCarloBody.project.project_id, "project-runtime-plan-a");
+    const monteCarloPlanRequest = runtime.requests
+      .filter((request) => request.url === "/api/projects/project-runtime/experiment-plans" && request.options.method === "POST")
+      .map((request) => JSON.parse(request.options.body || "{}"))
+      .at(-1);
+    assert.equal(monteCarloPlanRequest.config.projectJson.project_id, "project-runtime-plan-a");
 
     await runtime.setHash("feature=spare-planning-spare-shortfall-analysis");
     await runtime.change(
@@ -1428,16 +1445,22 @@ test("experiment plan dropdown drives Monte Carlo and analysis Mesa requests", a
     );
     await runtime.click("[data-lite-mesa-analysis-action='run']");
 
-    const analysisRequests = runtime.requests.filter((request) => request.url === "/api/mesa-analysis-runs");
-    const analysisBody = JSON.parse(analysisRequests.at(-1).options.body || "{}");
+    const analysisRequests = runtime.requests
+      .filter((request) => request.url === "/api/runs")
+      .map((request) => JSON.parse(request.options.body || "{}"));
+    const analysisBody = analysisRequests.at(-1);
     assert.equal(analysisBody.analysis_type, "spare_shortfall");
-    assert.equal(analysisBody.project.project_id, "project-runtime-plan-a");
+    const analysisPlanRequest = runtime.requests
+      .filter((request) => request.url === "/api/projects/project-runtime/experiment-plans" && request.options.method === "POST")
+      .map((request) => JSON.parse(request.options.body || "{}"))
+      .at(-1);
+    assert.equal(analysisPlanRequest.config.projectJson.project_id, "project-runtime-plan-a");
   } finally {
     runtime.restore();
   }
 });
 
-test("Mesa Monte Carlo setting changes do not rerender before the run click", async () => {
+test("Monte Carlo setting changes do not rerender before formal run click", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=spare-planning-monte-carlo-experiment-detail",
     projectJson: createRuntimeProjectJson({
@@ -1463,14 +1486,18 @@ test("Mesa Monte Carlo setting changes do not rerender before the run click", as
 
     await runtime.click("[data-lite-mesa-action='run']");
 
-    const analysisRequest = runtime.requests.find((request) => request.url === "/api/mesa-analysis-runs");
-    assert.ok(analysisRequest, "Monte Carlo detail should call backend Mesa analysis");
-    const body = JSON.parse(analysisRequest.options.body || "{}");
+    const analysisRequest = runtime.requests
+      .filter((request) => request.url === "/api/runs")
+      .map((request) => JSON.parse(request.options.body || "{}"))
+      .find((body) => body.analysis_type === "mission_reliability");
+    assert.ok(analysisRequest, "Monte Carlo detail should submit a formal analysis run");
+    const body = analysisRequest;
     assert.equal(body.analysis_type, "mission_reliability");
-    assert.equal(body.settings.samples, 3);
-    assert.match(runtime.appNode.innerHTML, /分析完成：27 个样本/);
-    assert.match(runtime.appNode.innerHTML, /<td>mission_success_rate<\/td>/);
-    assert.match(runtime.appNode.innerHTML, /<td>1<\/td>/);
+    assert.ok(
+      runtime.requests.some((request) => request.url === "/api/projects/project-runtime/experiment-plans" && request.options.method === "POST"),
+      "Monte Carlo detail should create a formal experiment plan branch"
+    );
+    assert.match(runtime.appNode.innerHTML, /正式 Monte Carlo 已提交/);
   } finally {
     runtime.restore();
   }
@@ -1499,6 +1526,7 @@ async function setupRuntimeApp({
   const objectUrls = new Map();
   const backendProjectCatalog = [...backendProjects];
   const projectPayloads = new Map([[projectJson.project_id || "project-runtime", projectJson]]);
+  const runtimeRuns = new Map();
   let createProjectFromImportCount = 0;
   const storage = new Map([
     ["spare-mvp:m4Session", JSON.stringify({ session: { token: "m4-runtime-token" } })]
@@ -1583,18 +1611,27 @@ async function setupRuntimeApp({
       const projectId = decodeURIComponent(projectMatch[1]);
       return jsonResponse(projectPayloads.get(projectId) || projectJson);
     }
-    if (url === "/api/projects/project-runtime/experiment-plans" && method === "GET") {
-      return jsonResponse({ project_id: "project-runtime", experiment_plans: experimentPlans });
+    const experimentPlanListMatch = url.match(/^\/api\/projects\/([^/]+)\/experiment-plans$/);
+    if (experimentPlanListMatch && method === "GET") {
+      return jsonResponse({ project_id: decodeURIComponent(experimentPlanListMatch[1]), experiment_plans: experimentPlans });
     }
-    if (url === "/api/projects/project-runtime/modeling-snapshots" && method === "POST") {
-      return jsonResponse({ snapshot_id: "snapshot-runtime-plan" });
+    const modelingSnapshotMatch = url.match(/^\/api\/projects\/([^/]+)\/modeling-snapshots$/);
+    if (modelingSnapshotMatch && method === "POST") {
+      return jsonResponse({ snapshot_id: `snapshot-${decodeURIComponent(modelingSnapshotMatch[1])}-plan` });
     }
-    if (url === "/api/projects/project-runtime/experiment-plans" && method === "POST") {
+    if (experimentPlanListMatch && method === "POST") {
       const body = JSON.parse(options.body || "{}");
       return jsonResponse({
         experiment_plan_id: "plan-runtime-created",
         config: body.config || {}
       });
+    }
+    const currentAnalysisMatch = url.match(/^\/api\/projects\/([^/]+)\/analysis-results\/([^/]+)$/);
+    if (currentAnalysisMatch && method === "GET") {
+      return jsonResponse(createRuntimeCurrentAnalysisResult(
+        decodeURIComponent(currentAnalysisMatch[1]),
+        decodeURIComponent(currentAnalysisMatch[2])
+      ));
     }
     const modelingImportMatch = url.match(/^\/api\/modeling-imports\/([^/]+)$/);
     if (modelingImportMatch && method === "GET") {
@@ -1664,22 +1701,58 @@ async function setupRuntimeApp({
       else backendProjectCatalog.unshift(catalogEntry);
       return jsonResponse({ project_id: body.project_id || "project-runtime", project_version: "project-v0.1" });
     }
-    if (url === "/api/mesa-visualization-runs" && method === "POST") {
-      const runId = "independent-mesa-runtime";
+    if (url === "/api/runs" && method === "POST") {
+      const body = JSON.parse(options.body || "{}");
+      const runId = `formal-runtime-${body.run_type || "single"}-${runtimeRuns.size + 1}`;
+      const run = createRuntimeFormalRun(runId, body);
+      runtimeRuns.set(runId, run);
+      return jsonResponse(run);
+    }
+    if (url.startsWith("/api/runs?") && method === "GET") {
+      const runs = runtimeRuns.size ? [...runtimeRuns.values()] : [createRuntimeFormalRun("formal-runtime-seeded", {})];
+      return jsonResponse({ runs });
+    }
+    const runArtifactPayloadMatch = url.match(/^\/api\/runs\/([^/]+)\/artifacts\/([^/]+)$/);
+    if (runArtifactPayloadMatch && method === "GET") {
+      const runId = decodeURIComponent(runArtifactPayloadMatch[1]);
+      const artifactId = decodeURIComponent(runArtifactPayloadMatch[2]);
+      if (artifactId === "runtime-state-series") {
+        return jsonResponse(createRuntimeVisualizationStateSeries(runId));
+      }
+      return jsonResponse(createRuntimeAnalysisProjectionPayload(runId, artifactId));
+    }
+    const runDetailMatch = url.match(/^\/api\/runs\/([^/]+)\/detail$/);
+    if (runDetailMatch && method === "GET") {
+      const runId = decodeURIComponent(runDetailMatch[1]);
+      const run = runtimeRuns.get(runId) || createRuntimeFormalRun(runId, {});
+      return jsonResponse({ run, artifact_manifest: createRuntimeArtifactManifest(runId) });
+    }
+    const runResultMatch = url.match(/^\/api\/runs\/([^/]+)\/result$/);
+    if (runResultMatch && method === "GET") {
+      const runId = decodeURIComponent(runResultMatch[1]);
       return jsonResponse({
         run_id: runId,
-        project_id: "project-runtime",
-        scenario_id: "runtime-scenario",
         model_family: "aircraft_support_v1",
-        source: "independent_mesa_project",
-        status: "succeeded",
-        state_series_artifact_id: "runtime-state-series",
-        state_series: createRuntimeVisualizationStateSeries(runId)
+        metrics: {
+          mission_success_rate: 0.5,
+          sortie_completion_rate: 0.5,
+          spare_fill_rate: 0.5
+        }
       });
     }
-    if (url === "/api/mesa-analysis-runs" && method === "POST") {
-      const body = JSON.parse(options.body || "{}");
-      return jsonResponse(createRuntimeLiteAnalysisResponse(body.analysis_type || "carry_list"));
+    const runArtifactsMatch = url.match(/^\/api\/runs\/([^/]+)\/artifacts$/);
+    if (runArtifactsMatch && method === "GET") {
+      return jsonResponse(createRuntimeArtifactManifest(decodeURIComponent(runArtifactsMatch[1])));
+    }
+    const runChainMatch = url.match(/^\/api\/runs\/([^/]+)\/chain$/);
+    if (runChainMatch && method === "GET") {
+      const runId = decodeURIComponent(runChainMatch[1]);
+      return jsonResponse({ run_id: runId, chain: [] });
+    }
+    const runStatusMatch = url.match(/^\/api\/runs\/([^/]+)$/);
+    if (runStatusMatch && method === "GET") {
+      const runId = decodeURIComponent(runStatusMatch[1]);
+      return jsonResponse(runtimeRuns.get(runId) || createRuntimeFormalRun(runId, {}));
     }
     throw new Error(`unexpected fetch ${method} ${url}`);
   };
@@ -1841,7 +1914,35 @@ function createRuntimeProjectJson(overrides = {}) {
   };
 }
 
-function createRuntimeVisualizationStateSeries(runId = "independent-mesa-runtime") {
+function createRuntimeFormalRun(runId = "formal-runtime-run", request = {}) {
+  return {
+    run_id: runId,
+    project_id: request.project_id || "project-runtime",
+    experiment_plan_id: request.experiment_plan_id || "plan-runtime-created",
+    model_family: request.model_family || "aircraft_support_v1",
+    run_type: request.run_type || "single",
+    analysis_type: request.analysis_type || "",
+    status: "succeeded",
+    phase: "completed",
+    progress: 1,
+    lifecycle_status: "active"
+  };
+}
+
+function createRuntimeArtifactManifest(runId = "formal-runtime-run") {
+  return {
+    run_id: runId,
+    artifact_manifest_id: `runtime-artifact-manifest-${runId}`,
+    artifacts: [{
+      artifact_id: "runtime-state-series",
+      kind: "visualization_state_series",
+      path: `artifacts/${runId}/state-series.json`,
+      source_artifact_id: `runtime-result-summary-${runId}`
+    }]
+  };
+}
+
+function createRuntimeVisualizationStateSeries(runId = "formal-runtime-run") {
   const trace = {
     run_id: runId,
     scenario_id: "runtime-scenario",
@@ -1904,79 +2005,60 @@ function createRuntimeVisualizationStateSeries(runId = "independent-mesa-runtime
   };
 }
 
-function createRuntimeLiteAnalysisResponse(analysisType = "carry_list") {
-  const rowsByType = {
-    carry_list: [{
-      spareType: "aircraft_support_v1_spares",
-      recommended: 1,
-      demand: 28,
-      shortage: 0,
-      riskLevel: "低",
-      confidenceTarget: 0.9
-    }],
-    spare_shortfall: [{
-      spareType: "aircraft_support_v1_spares",
-      demand: 28,
-      filled: 28,
-      shortage: 0,
-      fillRate: 1,
-      riskLevel: "低"
-    }],
-    mission_reliability: [{
-      sequence: 1,
-      seed: 20260621,
-      missionSuccessRate: 1,
-      sortieRate: 1,
-      readyRate: 1
-    }],
-    downtime_factors: [{
-      label: "无停机因素",
-      reason: "none",
-      count: 0,
-      contribution: 0
-    }]
-  };
+function createRuntimeCurrentAnalysisResult(projectId = "project-runtime", analysisType = "carry_list") {
   return {
-    status: "session_complete",
-    source: "lite_mesa_aircraft_support_v1",
+    project_id: projectId,
     analysis_type: analysisType,
-    sample_count: 27,
-    seed_list: [20260621],
-    metrics: [["样本数", "27"], ["建议携行总数", "1"]],
-    rows: rowsByType[analysisType] || rowsByType.carry_list,
-    event_snapshots: analysisType === "downtime_factors" ? [{
-      snapshot_id: "downtime-runtime-0001",
-      source: "model_event_log",
-      event_type: "spare_shortage",
-      event_label: "备件短缺",
-      seed: 20260621,
-      simulation_time: 60,
-      aircraft_state: {
-        summary: { available_aircraft: 1, failed_count: 0, repairing_count: 0 },
-        aircraft: [{ tail_number: "J15-001", state: "available" }]
-      },
-      support_resources: [{
-        resource_id: "deck-node",
-        name: "甲板保障点",
-        personnel_in_use: 0,
-        personnel_capacity: 1,
-        equipment_in_use: 0,
-        equipment_capacity: 1,
-        inventory: { "hyd-pump": 0 }
-      }],
-      spare_shortages: [{
-        spare_type: "hyd-pump",
-        required_quantity: 1,
-        available_quantity: 0,
-        resource_id: "deck-node",
-        job_id: "job-0001"
-      }]
-    }] : [],
-    limitations: [
-      "会话内 Mesa 分析结果，不写入正式结果账本。",
-      "未创建 run、result 或 artifact。",
-      "结论只代表当前项目建模粒度和样本设置。"
-    ]
+    profile_version: `${analysisType}-current-v1`,
+    base_plan_version: "default-base-v0",
+    status: "completed",
+    source: "formal_backend",
+    is_stale: false,
+    last_failure: null,
+    internal_run_ref: {
+      run_id: "formal-runtime-analysis",
+      run_type: "monte_carlo",
+      model_family: "aircraft_support_v1"
+    },
+    internal_artifact_ref: {
+      artifact_id: `runtime-${analysisType}-projection`,
+      artifact_kind: `analysis_projection_${analysisType}`
+    },
+    last_success_result: {
+      run_id: "formal-runtime-analysis",
+      projection_type: analysisType,
+      payload: createRuntimeAnalysisProjectionPayload("formal-runtime-analysis", `runtime-${analysisType}-projection`, analysisType)
+    }
+  };
+}
+
+function createRuntimeAnalysisProjectionPayload(runId = "formal-runtime-analysis", artifactId = "", fallbackAnalysisType = "carry_list") {
+  const analysisType = artifactId.includes("spare") ? "spare_shortfall"
+    : artifactId.includes("mission") ? "mission_reliability"
+      : artifactId.includes("downtime") ? "downtime_factors"
+        : fallbackAnalysisType;
+  return {
+    schema_version: "analysis-projection-v0",
+    projection_type: analysisType,
+    analysis_type: analysisType,
+    analysisType,
+    run_id: runId,
+    model_family: "aircraft_support_v1",
+    base_artifact_id: "runtime-monte-carlo-base",
+    data: analysisType === "downtime_factors"
+      ? [{
+          factor: "spare_shortage",
+          contribution: 1,
+          eventSnapshots: [{
+            snapshot_id: "downtime-runtime-0001",
+            event_type: "spare_shortage",
+            event_label: "备件短缺",
+            aircraft_state: { summary: { available_aircraft: 1 }, aircraft: [{ tail_number: "J15-001", state: "available" }] },
+            support_resources: [{ resource_id: "deck-node", name: "甲板保障点", inventory: { "hyd-pump": 0 } }],
+            spare_shortages: [{ spare_type: "hyd-pump", required_quantity: 1, available_quantity: 0 }]
+          }]
+        }]
+      : [{ spare_type: "aircraft_support_v1_spares", recommended_quantity: 1, fill_rate: 1, risk_level: "低" }]
   };
 }
 

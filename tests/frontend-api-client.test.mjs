@@ -161,68 +161,15 @@ test("frontend API client exposes M7 run artifact management routes", async () =
   assert.equal(downloadRequest.responseType, "blob");
 });
 
-test("frontend API client posts current Project JSON to independent Mesa visualization route", async () => {
-  const calls = [];
+test("frontend API client no longer exposes retired Mesa sidecar routes", async () => {
   const client = createBackendApiClient({
     transport: async (request) => {
-      calls.push(request);
-      if (request.path === "/mesa-visualization-runs") {
-        return {
-          status: "succeeded",
-          source: "independent_mesa_project",
-          run_id: "independent-mesa-project-ui-1234",
-          model_family: "aircraft_support_v1",
-          state_series: { schema_version: "visualization-state-series-v0", run_id: "independent-mesa-project-ui-1234", frames: [] }
-        };
-      }
       throw new Error(`unexpected ${request.method} ${request.path}`);
     }
   });
 
-  const projectJson = { project_id: "project-ui", scenarioId: "current-project", experiment: { seed: 7 } };
-  const response = await client.runIndependentMesaVisualization(projectJson);
-
-  assert.equal(response.source, "independent_mesa_project");
-  assert.deepEqual(calls.map((call) => `${call.method} ${call.path}`), [
-    "POST /mesa-visualization-runs"
-  ]);
-  assert.deepEqual(calls[0].body.project, projectJson);
-  assert.equal(calls[0].body.model_family, "aircraft_support_v1");
-});
-
-test("frontend API client posts current Project JSON to independent Mesa analysis route", async () => {
-  const calls = [];
-  const client = createBackendApiClient({
-    transport: async (request) => {
-      calls.push(request);
-      if (request.path === "/mesa-analysis-runs") {
-        return {
-          status: "session_complete",
-          source: "lite_mesa_aircraft_support_v1",
-          run_id: "lite-mesa-analysis-project-ui-1234",
-          model_family: "aircraft_support_v1",
-          analysis_type: "spare_shortfall",
-          sample_count: 12,
-          metrics: [["短缺类别", "1"]],
-          rows: []
-        };
-      }
-      throw new Error(`unexpected ${request.method} ${request.path}`);
-    }
-  });
-
-  const projectJson = { project_id: "project-ui", scenarioId: "current-project", experiment: { seed: 7 } };
-  const settings = { samples: 12, seed: 20260621 };
-  const response = await client.runLiteMesaAnalysis(projectJson, "spare_shortfall", settings);
-
-  assert.equal(response.source, "lite_mesa_aircraft_support_v1");
-  assert.deepEqual(calls.map((call) => `${call.method} ${call.path}`), [
-    "POST /mesa-analysis-runs"
-  ]);
-  assert.deepEqual(calls[0].body.project, projectJson);
-  assert.equal(calls[0].body.analysis_type, "spare_shortfall");
-  assert.deepEqual(calls[0].body.settings, settings);
-  assert.equal(calls[0].body.model_family, "aircraft_support_v1");
+  assert.equal("runIndependentMesaVisualization" in client, false);
+  assert.equal("runLiteMesaAnalysis" in client, false);
 });
 
 test("frontend API client lists and deletes experiment plans through project routes", async () => {

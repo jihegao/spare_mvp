@@ -25,7 +25,7 @@
 7. 正式运行主线为 `RunIntent -> /api/runs -> RunService -> SimulationAdapter -> aircraft_support_v1 -> SQLite + artifacts`。旧 contract provider、smoke model、smoke scenarios 和 smoke JSON fixtures 已退役删除。
 8. `aircraft_support_v1` 是当前正式模型族；历史 `aviation_support` 只保留为 schema/fixture 归档证据且 adapter 编译运行入口返回 `retired_model_family`。
 9. 四个结果分析页通过 current result 面板和正式 projection payload 解锁结果；缺少 compiler provenance、`monte_carlo_base`、对应 projection artifact、payload 或 payload 类型不匹配时 fail closed。
-10. 阶段 6P 仿真分析验收数据包保留在 `tests/fixtures/simulation_analysis_cases/canonical_platform_case.json`，用于验证平台标准建模导入案例可以进入 `aircraft_support_v1` formal Monte Carlo。
+10. 阶段 6P 仿真分析验收数据包保留在 `tests/fixtures/simulation_analysis_cases/canonical_platform_case.json`，用于验证平台标准建模导入案例可以通过 validation 并编译为 `aircraft_support_v1` Scenario；不再要求 6P canonical 生成正式分析产物。
 
 ## 文档地图
 

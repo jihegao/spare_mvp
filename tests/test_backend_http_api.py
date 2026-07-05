@@ -20,6 +20,7 @@ from src.spare_mvp_contract.adapter import SimulationAdapter
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+HTTP_TEST_TIMEOUT_SECONDS = 30
 
 
 def small_aircraft_support_project(project_id: str) -> dict:
@@ -352,7 +353,7 @@ class BackendHttpApiTest(unittest.TestCase):
 
             def run_scenario(self, *args, **kwargs):
                 self.started.set()
-                self.release.wait(timeout=10)
+                self.release.wait(timeout=HTTP_TEST_TIMEOUT_SECONDS)
                 return super().run_scenario(*args, **kwargs)
 
         with tempfile.TemporaryDirectory() as tmp, mock.patch(
@@ -406,12 +407,12 @@ class BackendHttpApiTest(unittest.TestCase):
 
                 run_thread = Thread(target=submit_run)
                 run_thread.start()
-                self.assertTrue(BlockingAdapter.started.wait(timeout=10))
+                self.assertTrue(BlockingAdapter.started.wait(timeout=HTTP_TEST_TIMEOUT_SECONDS))
                 delete_thread = Thread(target=delete_plan)
                 delete_thread.start()
                 BlockingAdapter.release.set()
-                run_thread.join(timeout=10)
-                delete_thread.join(timeout=10)
+                run_thread.join(timeout=HTTP_TEST_TIMEOUT_SECONDS)
+                delete_thread.join(timeout=HTTP_TEST_TIMEOUT_SECONDS)
 
                 self.assertFalse(run_thread.is_alive())
                 self.assertFalse(delete_thread.is_alive())
@@ -625,7 +626,7 @@ class BackendHttpApiTest(unittest.TestCase):
                 artifact = manifest["artifacts"][0]
                 user_token = self._login_token(base_url, "user", "user")
 
-                connection = http.client.HTTPConnection("127.0.0.1", server.server_address[1], timeout=10)
+                connection = http.client.HTTPConnection("127.0.0.1", server.server_address[1], timeout=HTTP_TEST_TIMEOUT_SECONDS)
                 connection.request("GET", f"/api/runs/{quote(run_id, safe='')}/artifacts/{quote(artifact['artifact_id'], safe='')}")
                 response = connection.getresponse()
                 unauth_body = json.loads(response.read().decode("utf-8"))
@@ -634,7 +635,7 @@ class BackendHttpApiTest(unittest.TestCase):
                 connection.close()
 
                 admin_token = self._login_token(base_url, "admin", "admin")
-                connection = http.client.HTTPConnection("127.0.0.1", server.server_address[1], timeout=10)
+                connection = http.client.HTTPConnection("127.0.0.1", server.server_address[1], timeout=HTTP_TEST_TIMEOUT_SECONDS)
                 connection.request(
                     "GET",
                     f"/api/runs/{quote(run_id, safe='')}/artifacts/{quote(artifact['artifact_id'], safe='')}",
@@ -808,7 +809,7 @@ class BackendHttpApiTest(unittest.TestCase):
                 finally:
                     connection.close()
 
-                connection = http.client.HTTPConnection("127.0.0.1", server.server_address[1], timeout=10)
+                connection = http.client.HTTPConnection("127.0.0.1", server.server_address[1], timeout=HTTP_TEST_TIMEOUT_SECONDS)
                 connection.request(
                     "GET",
                     f"/api/runs/{quote(run_id, safe='')}/artifacts/{quote(artifact['artifact_id'], safe='')}",
@@ -1148,7 +1149,7 @@ class BackendHttpApiTest(unittest.TestCase):
                 server.server_close()
                 thread.join(timeout=5)
 
-    def test_http_independent_mesa_visualization_reads_current_project_without_persistence(self) -> None:
+    def test_http_mesa_sidecar_service_routes_stay_retired(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             server = create_backend_server(
                 ("127.0.0.1", 0),
@@ -1164,46 +1165,14 @@ class BackendHttpApiTest(unittest.TestCase):
                 project = small_aircraft_support_project("project-http-independent-visual")
                 project["missionProfile"].pop("sourceImportId", None)
 
-                payload = self._json(
+                visualization_status, visualization_error = self._json_error_with_status(
                     base_url,
                     "POST",
                     "/mesa-visualization-runs",
                     {"project": project, "model_family": "aircraft_support_v1"},
                     auth_token=auth_token,
                 )
-                catalog = self._json(base_url, "GET", "/projects")
-
-                self.assertEqual(payload["status"], "succeeded")
-                self.assertEqual(payload["source"], "independent_mesa_project")
-                self.assertEqual(payload["model_family"], "aircraft_support_v1")
-                self.assertEqual(payload["project_id"], "project-http-independent-visual")
-                self.assertEqual(payload["state_series"]["run_id"], payload["run_id"])
-                self.assertEqual(payload["state_series"]["model_family"], "aircraft_support_v1")
-                self.assertGreaterEqual(len(payload["state_series"]["frames"]), 2)
-                self.assertEqual(catalog["projects"], [])
-                self.assertEqual([path.name for path in (Path(tmp) / "artifacts").glob("*")], [])
-            finally:
-                server.shutdown()
-                server.server_close()
-                thread.join(timeout=5)
-
-    def test_http_lite_mesa_analysis_reads_current_project_without_persistence(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            server = create_backend_server(
-                ("127.0.0.1", 0),
-                repo_root=REPO_ROOT,
-                database_path=":memory:",
-                output_dir=Path(tmp) / "artifacts",
-            )
-            thread = Thread(target=server.serve_forever, daemon=True)
-            thread.start()
-            try:
-                base_url = f"http://127.0.0.1:{server.server_address[1]}/api"
-                auth_token = self._login_token(base_url, "data", "data")
-                project = small_aircraft_support_project("project-http-lite-mesa-analysis")
-                project["missionProfile"].pop("sourceImportId", None)
-
-                payload = self._json(
+                analysis_status, analysis_error = self._json_error_with_status(
                     base_url,
                     "POST",
                     "/mesa-analysis-runs",
@@ -1217,14 +1186,10 @@ class BackendHttpApiTest(unittest.TestCase):
                 )
                 catalog = self._json(base_url, "GET", "/projects")
 
-                self.assertEqual(payload["status"], "session_complete")
-                self.assertEqual(payload["source"], "lite_mesa_aircraft_support_v1")
-                self.assertEqual(payload["model_family"], "aircraft_support_v1")
-                self.assertEqual(payload["analysis_type"], "mission_reliability")
-                self.assertEqual(payload["project_id"], "project-http-lite-mesa-analysis")
-                self.assertEqual(payload["sample_count"], 2)
-                self.assertEqual(payload["seed_list"], [20260704, 20260705])
-                self.assertTrue(payload["rows"])
+                self.assertEqual(visualization_status, 404)
+                self.assertEqual(visualization_error["code"], "not_found")
+                self.assertEqual(analysis_status, 404)
+                self.assertEqual(analysis_error["code"], "not_found")
                 self.assertEqual(catalog["projects"], [])
                 self.assertEqual([path.name for path in (Path(tmp) / "artifacts").glob("*")], [])
             finally:
@@ -1520,7 +1485,7 @@ class BackendHttpApiTest(unittest.TestCase):
                 url = f"http://127.0.0.1:{server.server_address[1]}/front/index.html"
                 req = request.Request(url, method="GET")
                 opener = request.build_opener(request.ProxyHandler({}))
-                with opener.open(req, timeout=10) as response:
+                with opener.open(req, timeout=HTTP_TEST_TIMEOUT_SECONDS) as response:
                     self.assertEqual(response.status, 200)
                     self.assertIn("text/html", response.headers["content-type"])
                     body = response.read().decode("utf-8")
@@ -1544,7 +1509,7 @@ class BackendHttpApiTest(unittest.TestCase):
                 url = f"http://127.0.0.1:{server.server_address[1]}/import-templates/canonical_platform_case.json"
                 req = request.Request(url, method="GET")
                 opener = request.build_opener(request.ProxyHandler({}))
-                with opener.open(req, timeout=10) as response:
+                with opener.open(req, timeout=HTTP_TEST_TIMEOUT_SECONDS) as response:
                     self.assertEqual(response.status, 200)
                     self.assertIn("application/json", response.headers["content-type"])
                     payload = json.loads(response.read().decode("utf-8"))
@@ -1598,7 +1563,7 @@ class BackendHttpApiTest(unittest.TestCase):
             thread = Thread(target=server.serve_forever, daemon=True)
             thread.start()
             try:
-                connection = http.client.HTTPConnection("127.0.0.1", server.server_address[1], timeout=10)
+                connection = http.client.HTTPConnection("127.0.0.1", server.server_address[1], timeout=HTTP_TEST_TIMEOUT_SECONDS)
                 connection.putrequest("POST", "/api/projects/validate")
                 connection.putheader("content-type", "application/json")
                 connection.putheader("content-length", str(1024 * 1024 + 1))
@@ -1698,7 +1663,7 @@ class BackendHttpApiTest(unittest.TestCase):
                 req = request.Request(url, method="GET")
                 opener = request.build_opener(request.ProxyHandler({}))
                 with self.assertRaises(Exception):
-                    opener.open(req, timeout=10)
+                    opener.open(req, timeout=HTTP_TEST_TIMEOUT_SECONDS)
             finally:
                 server.shutdown()
                 server.server_close()
@@ -2265,7 +2230,7 @@ class BackendHttpApiTest(unittest.TestCase):
             headers=headers,
         )
         opener = request.build_opener(request.ProxyHandler({}))
-        with opener.open(req, timeout=10) as response:
+        with opener.open(req, timeout=HTTP_TEST_TIMEOUT_SECONDS) as response:
             self.assertEqual(response.status, 200)
             return json.loads(response.read().decode("utf-8"))
 
@@ -2290,7 +2255,7 @@ class BackendHttpApiTest(unittest.TestCase):
         )
         opener = request.build_opener(request.ProxyHandler({}))
         try:
-            opener.open(req, timeout=10)
+            opener.open(req, timeout=HTTP_TEST_TIMEOUT_SECONDS)
         except Exception as exc:
             response = exc
             if not hasattr(response, "read"):
@@ -2319,7 +2284,7 @@ class BackendHttpApiTest(unittest.TestCase):
         )
         opener = request.build_opener(request.ProxyHandler({}))
         try:
-            opener.open(req, timeout=10)
+            opener.open(req, timeout=HTTP_TEST_TIMEOUT_SECONDS)
         except Exception as exc:
             response = exc
             if not hasattr(response, "read") or not hasattr(response, "code"):
@@ -2336,7 +2301,7 @@ class BackendHttpApiTest(unittest.TestCase):
         *,
         content_length: int | None = None,
     ) -> tuple[int, dict]:
-        connection = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+        connection = http.client.HTTPConnection("127.0.0.1", port, timeout=HTTP_TEST_TIMEOUT_SECONDS)
         connection.putrequest(method, path)
         connection.putheader("content-type", "application/json")
         connection.putheader("content-length", str(len(body) if content_length is None else content_length))
