@@ -12,7 +12,11 @@ from typing import Any
 
 from src.spare_mvp_backend.errors import BackendApiError
 from src.spare_mvp_backend.modeling_import import modeling_import_to_project, validate_modeling_import_package
-from src.spare_mvp_backend.project_payload import project_runtime_config_paths, strip_project_sweep
+from src.spare_mvp_backend.project_payload import (
+    materialize_scenario_composition,
+    project_runtime_config_paths,
+    strip_project_sweep,
+)
 from src.spare_mvp_backend.repository import ContractRepository
 from src.spare_mvp_backend.run_service import ACTIVE_FORMAL_MODEL_FAMILY, RETIRED_FORMAL_MODEL_FAMILIES, RunService, RunServiceError
 from src.spare_mvp_contract.adapter import AdapterError, SimulationAdapter
@@ -604,7 +608,7 @@ class BackendApi:
                 "bad_lite_mesa_analysis_request",
                 "current Project JSON is required for lite Mesa analysis",
             )
-        project = strip_project_sweep(copy.deepcopy(project_json))
+        project = strip_project_sweep(materialize_scenario_composition(project_json))
         compile_gate = getattr(self.adapter, "compile_scenario_with_gate", None)
         if not callable(compile_gate):
             raise BackendApiError(
@@ -1352,7 +1356,7 @@ def _normalize_experiment_plan_config(config: dict[str, Any]) -> dict[str, Any]:
     if "analysisRequests" not in plan_config and isinstance(branch_project.get("analysisRequests"), dict):
         plan_config["analysisRequests"] = copy.deepcopy(branch_project["analysisRequests"])
 
-    clean_project = strip_project_sweep(branch_project)
+    clean_project = strip_project_sweep(materialize_scenario_composition(branch_project))
     if "projectJson" in plan_config:
         plan_config["projectJson"] = clean_project
     else:

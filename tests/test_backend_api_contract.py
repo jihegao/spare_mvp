@@ -1958,6 +1958,33 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertIn("meanMissionSuccessRate", payload["daily_rows"][0])
         self.assertEqual(self._run_side_effect_counts(), before)
 
+    def test_lite_mesa_analysis_applies_scenario_composition_before_compile(self) -> None:
+        project = small_aircraft_support_project("project-lite-mesa-composed")
+        project["scenarioComposition"] = {
+            "schemaVersion": "scenario-composition-v0",
+            "overrides": [
+                {"path": "supportNodes.0.inventory.aircraft_support_v1_spares", "valueType": "number", "value": 9}
+            ],
+        }
+
+        payload = self.api.run_lite_mesa_analysis(
+            project,
+            analysis_type="spare_shortfall",
+            settings={"samples": 1, "seed": 20260705},
+        )
+
+        self.assertEqual(payload["status"], "session_complete")
+        compiled_project = self.adapter.compile_calls[-1][0]
+        self.assertNotIn("scenarioComposition", compiled_project)
+        self.assertEqual(compiled_project["supportNodes"][0]["inventory"]["aircraft_support_v1_spares"], 9)
+
+        compile_result = self.adapter.compile_scenario_with_gate(compiled_project, model_family="aircraft_support_v1")
+        simulation_inputs = compile_result["scenario"]["simulation_inputs"]
+        self.assertEqual(
+            simulation_inputs["support_network"]["nodes"][0]["inventory"]["aircraft_support_v1_spares"],
+            9,
+        )
+
     def test_aircraft_support_v1_duration_stops_at_last_explicit_periodic_mission_day(self) -> None:
         scenario = self.adapter.compile_scenario(
             periodic_three_day_aircraft_support_project("project-three-day-duration"),
@@ -2816,6 +2843,7 @@ class BackendApiContractTest(unittest.TestCase):
             "supportNodes.0.inventory.LRU-A",
         )
         self.assertEqual(plan["config"]["analysisRequests"]["largeSample"]["samples"], 9)
+        self.assertEqual(plan["config"]["projectJson"]["supportNodes"][0]["inventory"]["LRU-A"], 12)
         self.assertNotIn("experiment", plan["config"]["projectJson"])
         self.assertNotIn("analysisRequests", plan["config"]["projectJson"])
         self.assertNotIn("monteCarlo", plan["config"]["projectJson"])
