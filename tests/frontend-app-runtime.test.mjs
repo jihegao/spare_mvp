@@ -648,8 +648,31 @@ test("spare shortfall analysis uses the shared two-column analysis layout", asyn
     assert.match(settingsPanel, /样本量[\s\S]*value="27" readonly/);
     assert.match(settingsPanel, /随机种子[\s\S]*value="20260621" readonly/);
     assert.match(settingsPanel, /实验类型[\s\S]*value="项目基线" readonly/);
+    assert.doesNotMatch(settingsPanel, /project_baseline_at_current_granularity/);
     assert.doesNotMatch(settingsPanel, /用户参数|无可调参数/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /lite-mesa-source-grid|<span>输出边界<\/span>|<span>持久化<\/span>/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /lite-mesa-hero-meter/);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("spare shortfall analysis renders average delay hours and hides session chrome", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-spare-shortfall-analysis",
+    projectJson: createRuntimeProjectJson()
+  });
+
+  try {
+    await runtime.click("[data-lite-mesa-analysis-action='run']");
+
+    assert.match(runtime.appNode.innerHTML, /备件短板一览/);
+    assert.match(runtime.appNode.innerHTML, /平均备件延误时间\(h\)/);
+    assert.match(runtime.appNode.innerHTML, /因维修延误导致的任务取消次数/);
+    assert.match(runtime.appNode.innerHTML, />1\.50</);
+    assert.match(runtime.appNode.innerHTML, /航电模块/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /会话内 Mesa|会话内结果明细|建模粒度不足时不会伪造结论|总缺件次数/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /<th>缺件次数<\/th>|<td>6222<\/td>/);
   } finally {
     runtime.restore();
   }
@@ -704,6 +727,33 @@ test("task reliability analysis embeds experiment plan selector in its title fra
   }
 });
 
+test("task reliability analysis renders daily average mission success line chart", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=mission-reliability-task-reliability",
+    projectJson: createRuntimeProjectJson()
+  });
+
+  try {
+    await runtime.click("[data-lite-mesa-analysis-action='run']");
+
+    assert.match(runtime.appNode.innerHTML, /每日平均任务成功率/);
+    assert.match(runtime.appNode.innerHTML, /class="line-chart"/);
+    assert.match(runtime.appNode.innerHTML, /line-chart-y-axis/);
+    assert.match(runtime.appNode.innerHTML, /任务失败次数/);
+    assert.match(runtime.appNode.innerHTML, /任务失败次数[\s\S]*<strong>3<\/strong>/);
+    assert.match(runtime.appNode.innerHTML, />1\.0<\/text>/);
+    assert.match(runtime.appNode.innerHTML, />0\.5<\/text>/);
+    assert.match(runtime.appNode.innerHTML, />0\.0<\/text>/);
+    assert.match(runtime.appNode.innerHTML, /第1天/);
+    assert.match(runtime.appNode.innerHTML, /0\.750/);
+    assert.match(runtime.appNode.innerHTML, /0\.500/);
+    assert.match(runtime.appNode.innerHTML, /<details class="lite-mesa-collapsible-table">/);
+    assert.match(runtime.appNode.innerHTML, /<summary>样本明细/);
+  } finally {
+    runtime.restore();
+  }
+});
+
 test("downtime factors analysis omits snapshot capability setting", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=mission-reliability-downtime-factor-analysis",
@@ -736,7 +786,7 @@ test("carry list analysis result omits boundary explanation card", async () => {
     assert.ok(analysisRun, "carry list analysis should submit a lightweight Mesa analysis request");
     assert.equal(analysisRun.model_family, "aircraft_support_v1");
     assert.equal(analysisRun.settings.missionConfidenceTarget, 0.9);
-    assert.match(runtime.appNode.innerHTML, /会话/);
+    assert.match(runtime.appNode.innerHTML, /分析结果已生成|分析完成/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /边界说明/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /正式 current-analysis|正式 run artifact/);
   } finally {
@@ -760,8 +810,13 @@ test("downtime factors analysis enables log snapshots and renders event snapshot
     assert.ok(analysisRequest, "downtime analysis should submit a lightweight Mesa analysis request");
     assert.equal(analysisRequest.model_family, "aircraft_support_v1");
     assert.equal(analysisRequest.settings.topN, 4);
-    assert.match(runtime.appNode.innerHTML, /会话/);
+    assert.match(runtime.appNode.innerHTML, /分析结果已生成|分析完成/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /正式 current-analysis/);
+    assert.match(runtime.appNode.innerHTML, /停机事件一览/);
+    assert.match(runtime.appNode.innerHTML, /备件短缺/);
+    assert.match(runtime.appNode.innerHTML, /repair-J15-101/);
+    assert.match(runtime.appNode.innerHTML, /mission_delayed_by_spare_shortage/);
+    assert.match(runtime.appNode.innerHTML, /<details class="lite-mesa-event-snapshot" open>/);
   } finally {
     runtime.restore();
   }
@@ -1517,6 +1572,63 @@ test("experiment plan save posts composed projectJson without mutating source pr
   }
 });
 
+test("experiment plan editor uses a Chinese modeling data tree for leaf override editing", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-experiment-plan-management",
+    projectJson: createRuntimeProjectJson({
+      projectInfo: { name: "中文化覆盖源项目", baseCode: "CN-01" },
+      supportNodes: [{
+        id: "base-a",
+        name: "基层保障点A",
+        personnelCapacity: 2,
+        equipmentCapacity: 2,
+        inventory: { "LRU-A": 2 }
+      }]
+    })
+  });
+
+  try {
+    await runtime.click("[data-experiment-plan-add]", { experimentPlanAdd: "" });
+
+    assert.match(runtime.appNode.innerHTML, /建模数据/);
+    assert.match(runtime.appNode.innerHTML, /任务剖面对象/);
+    assert.match(runtime.appNode.innerHTML, /任务剖面名称/);
+    assert.match(runtime.appNode.innerHTML, /保障点清单对象/);
+    assert.match(runtime.appNode.innerHTML, /库存/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /Project JSON/);
+
+    await runtime.click(
+      "[data-scenario-modeling-path]",
+      { scenarioModelingPath: "supportNodes.0.inventory.LRU-A" }
+    );
+
+    assert.match(runtime.appNode.innerHTML, /选中属性/);
+    assert.match(runtime.appNode.innerHTML, /保障点清单对象 \/ 保障点 1 \/ 库存 \/ LRU-A/);
+    assert.match(runtime.appNode.innerHTML, /data-scenario-selected-override-value/);
+    assert.match(runtime.appNode.innerHTML, /value="2"/);
+
+    await runtime.change(
+      "[data-scenario-selected-override-value]",
+      { scenarioSelectedOverridePath: "supportNodes.0.inventory.LRU-A" },
+      { value: "12" }
+    );
+    await runtime.click("[data-save-plan]");
+
+    const createPlanRequest = runtime.requests.find((request) => (
+      request.url === "/api/projects/project-runtime/experiment-plans"
+      && (request.options.method || "GET") === "POST"
+    ));
+    assert.ok(createPlanRequest, "tree-edited experiment plan should be posted to backend");
+    const body = JSON.parse(createPlanRequest.options.body || "{}");
+    assert.equal(body.config.scenarioComposition.overrides[0].path, "supportNodes.0.inventory.LRU-A");
+    assert.equal(body.config.scenarioComposition.overrides[0].valueType, "number");
+    assert.equal(body.config.scenarioComposition.overrides[0].value, 12);
+    assert.equal(body.config.projectJson.supportNodes[0].inventory["LRU-A"], 12);
+  } finally {
+    runtime.restore();
+  }
+});
+
 test("experiment plan edit preserves saved seed policy scenario composition and samples", async () => {
   const planProjectJson = createRuntimeProjectJson({
     supportNodes: [{
@@ -1715,7 +1827,7 @@ test("experiment plan dropdown drives lightweight Mesa Monte Carlo and analysis 
     assert.equal(monteCarloBody.project.project_id, "project-runtime-plan-a");
     assert.match(runtime.appNode.innerHTML, /出动架次率/);
     assert.match(runtime.appNode.innerHTML, />0\.84</);
-    assert.doesNotMatch(runtime.appNode.innerHTML, />84%<\/strong>|>84%<\/td>/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, />84%<\/strong>|>84%<\/td>|>75%<\/strong>|>75%<\/td>/);
     assert.match(runtime.appNode.innerHTML, /平均备件延误时间/);
     assert.match(runtime.appNode.innerHTML, /mean_transport_delay/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /短缺事件/);
@@ -1739,6 +1851,104 @@ test("experiment plan dropdown drives lightweight Mesa Monte Carlo and analysis 
       false,
       "lightweight Mesa pages must not submit formal runs"
     );
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("mission reliability and downtime analysis sample settings follow selected experiment plan", async () => {
+  const planProjectJson = createRuntimeProjectJson({
+    project_id: "project-runtime-analysis-plan",
+    projectInfo: { name: "分析方案 Project", baseCode: "APL" }
+  });
+  const runtime = await setupRuntimeApp({
+    hash: "feature=mission-reliability-task-reliability",
+    projectJson: createRuntimeProjectJson(),
+    experimentPlans: [{
+      experiment_plan_id: "plan-analysis",
+      status: "draft",
+      config: {
+        name: "分析方案",
+        samples: 4,
+        seed: 404,
+        projectJson: planProjectJson
+      }
+    }]
+  });
+
+  try {
+    for (const [featureId, analysisType] of [
+      ["mission-reliability-task-reliability", "mission_reliability"],
+      ["mission-reliability-downtime-factor-analysis", "downtime_factors"]
+    ]) {
+      await runtime.setHash(`feature=${featureId}`);
+      await runtime.change(
+        "[data-current-experiment-plan]",
+        { currentExperimentPlan: "" },
+        { value: "plan-analysis" }
+      );
+
+      const settingsPanel = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-settings");
+      assert.match(settingsPanel, /样本量[\s\S]*value="4" readonly/);
+      assert.match(settingsPanel, /随机种子[\s\S]*value="404" readonly/);
+
+      await runtime.click("[data-lite-mesa-analysis-action='run']");
+      const analysisBody = runtime.requests
+        .filter((request) => request.url === "/api/mesa-analysis-runs")
+        .map((request) => JSON.parse(request.options.body || "{}"))
+        .at(-1);
+      assert.equal(analysisBody.analysis_type, analysisType);
+      assert.equal(analysisBody.project.project_id, "project-runtime-analysis-plan");
+      assert.equal(analysisBody.settings.samples, 4);
+      assert.equal(analysisBody.settings.seed, 404);
+    }
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("mission reliability and downtime analysis default to the sole backend experiment plan settings", async () => {
+  const planProjectJson = createRuntimeProjectJson({
+    project_id: "project-runtime-default-analysis-plan",
+    projectInfo: { name: "默认分析方案 Project", baseCode: "DAP" }
+  });
+  const runtime = await setupRuntimeApp({
+    hash: "feature=mission-reliability-task-reliability",
+    projectJson: createRuntimeProjectJson(),
+    experimentPlans: [{
+      experiment_plan_id: "plan-default-analysis",
+      status: "draft",
+      config: {
+        name: "默认分析方案",
+        samples: 40,
+        seed: 20260621,
+        projectJson: planProjectJson
+      }
+    }]
+  });
+
+  try {
+    for (const [featureId, analysisType] of [
+      ["mission-reliability-task-reliability", "mission_reliability"],
+      ["mission-reliability-downtime-factor-analysis", "downtime_factors"]
+    ]) {
+      await runtime.setHash(`feature=${featureId}`);
+      await runtime.flush();
+
+      const settingsPanel = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-settings");
+      assert.match(settingsPanel, /样本量[\s\S]*value="40" readonly/);
+      assert.match(settingsPanel, /随机种子[\s\S]*value="20260621" readonly/);
+
+      await runtime.click("[data-lite-mesa-analysis-action='run']");
+      const analysisBody = runtime.requests
+        .filter((request) => request.url === "/api/mesa-analysis-runs")
+        .map((request) => JSON.parse(request.options.body || "{}"))
+        .at(-1);
+      assert.equal(analysisBody.analysis_type, analysisType);
+      assert.equal(analysisBody.project.project_id, "project-runtime-default-analysis-plan");
+      assert.equal(analysisBody.settings.samples, 40);
+      assert.equal(analysisBody.settings.seed, 20260621);
+    }
   } finally {
     runtime.restore();
   }
@@ -1991,15 +2201,29 @@ async function setupRuntimeApp({
 	      const body = JSON.parse(options.body || "{}");
 	      const analysisType = body.analysis_type || "mission_reliability";
 	      const samples = Number(body.settings?.samples || 2);
-	      const aggregateMetrics = {
-	        mission_success_rate: 0.5,
-	        ready_rate: 0.46,
-	        sortie_rate: 0.84,
-	        spare_fill_rate: 0.55,
-	        mean_transport_delay: 18.25,
-	        repair_backlog: 2.15
-	      };
-	      return jsonResponse({
+		      const aggregateMetrics = {
+		        mission_success_rate: 0.5,
+		        ready_rate: 0.46,
+		        sortie_rate: 0.84,
+		        spare_fill_rate: 0.55,
+		        mean_transport_delay: 18.25,
+		        repair_backlog: 2.15
+		      };
+		      const metricsByAnalysis = {
+		        spare_shortfall: [
+		          ["发生缺件备件", "1"],
+		          ["平均备件延误时间(h)", "1.50"],
+		          ["最高缺件备件", "航电模块"],
+		          ["因维修延误导致的任务取消次数", "2"]
+		        ],
+		        mission_reliability: [
+		          ["任务成功率", "0.800"],
+		          ["出动架次率", "0.750"],
+		          ["战备完好率", "0.460"],
+		          ["任务失败次数", "3"]
+		        ]
+		      };
+		      return jsonResponse({
 	        status: "session_complete",
 	        source: "lite_mesa_aircraft_support_v1",
 	        run_id: `lite-mesa-runtime-${analysisType}`,
@@ -2017,18 +2241,54 @@ async function setupRuntimeApp({
 	          sample_id: `sample-${index + 1}`,
 	          final: aggregateMetrics
 	        })),
-	        metrics: [
-	          ["任务成功率", "80%"],
-	          ["出动完成率", "75%"],
-	          ["样本数", String(samples)]
-	        ],
-	        rows: analysisType === "downtime_factors"
-	          ? [{ label: "故障停机", reason: "failure", count: 1, contribution: 0.4 }]
-	          : [{ spareType: "航电模块", demand: 2, shortage: 0, fillRate: 1, riskLevel: "低" }],
-	        event_snapshots: analysisType === "downtime_factors"
-	          ? [{ title: "sample 1", events: [{ time: 0, message: "state frame sampled" }] }]
+		        metrics: metricsByAnalysis[analysisType] || [
+		          ["任务成功率", "0.800"],
+		          ["出动架次率", "0.750"],
+		          ["样本数", String(samples)]
+		        ],
+		        rows: analysisType === "downtime_factors"
+		          ? [{ label: "故障停机", reason: "failure", count: 1, contribution: 0.4 }]
+		          : analysisType === "spare_shortfall"
+		            ? [{ spareType: "航电模块", demand: 2, filled: 1, meanTransportDelayHours: 1.5, fillRate: 0.55, riskLevel: "高" }]
+		            : [{ spareType: "航电模块", demand: 2, shortage: 0, fillRate: 1, riskLevel: "低" }],
+	        daily_rows: analysisType === "mission_reliability"
+	          ? [
+	              { day: 1, sampleCount: samples, plannedSorties: 4, meanMissionSuccessRate: 0.75, meanSortieRate: 0.9 },
+	              { day: 2, sampleCount: samples, plannedSorties: 4, meanMissionSuccessRate: 0.5, meanSortieRate: 0.75 }
+	            ]
 	          : [],
-	        limitations: ["会话内 Mesa 分析结果，不写入正式结果账本。"],
+        event_snapshots: analysisType === "downtime_factors"
+          ? [
+              {
+                snapshot_id: "downtime-runtime-0001",
+                source: "model_event_log",
+                seed: Number(body.settings?.seed || 20260704),
+                simulation_time: 42,
+                event_type: "spare_shortage",
+                event_label: "备件短缺",
+                event: { message: "repair blocked by hyd-pump shortage" },
+                result: "mission_delayed_by_spare_shortage",
+                aircraft_state: {
+                  summary: { available_aircraft: 1, failed_count: 1, repairing_count: 1 },
+                  aircraft: [{ tail_number: "J15-101", state: "maintenance" }]
+                },
+                support_resources: [
+                  {
+                    resource_id: "carrier-deck",
+                    name: "航母飞行甲板",
+                    personnel_in_use: 1,
+                    personnel_capacity: 2,
+                    equipment_in_use: 1,
+                    equipment_capacity: 2,
+                    inventory: { "hyd-pump": 0 }
+                  }
+                ],
+                spare_shortages: [{ spare_type: "hyd-pump", required_quantity: 1, available_quantity: 0, job_id: "repair-J15-101" }],
+                job_node: { job_id: "repair-J15-101", kind: "repair", state: "waiting", task: "更换液压泵", tail_number: "J15-101" }
+              }
+            ]
+          : [],
+	        limitations: ["本次分析结果不写入正式结果账本。"],
 	        message: ""
 	      });
 	    }

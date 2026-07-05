@@ -677,6 +677,7 @@ class BackendApi:
             samples=samples,
             run_id=run_id,
             validation_scope=scenario.get("compiled_from", {}).get("mapping_provenance", {}),
+            simulation_inputs=inputs,
         )
         page_result = _lite_mesa_analysis_page_result(
             normalized_analysis_type,
@@ -702,6 +703,7 @@ class BackendApi:
             "projection": projections[normalized_analysis_type],
             "metrics": page_result["metrics"],
             "rows": page_result["rows"],
+            "daily_rows": page_result.get("daily_rows", []),
             "event_snapshots": page_result.get("event_snapshots", []),
             "limitations": _lite_mesa_analysis_limitations(),
             "failed_samples": failed_samples,
@@ -1394,6 +1396,7 @@ def _run_aircraft_support_v1_analysis_sample(
         sample_inputs["write_event_snapshots"] = True
     model = AircraftSupportV1Model(sample_inputs)
     execution = model.run()
+    daily_mission_reliability = _sample_daily_mission_reliability(model.missions, aircraft_count=len(model.aircraft))
     frames = []
     for sample_step, frame in enumerate(execution.get("frames", [])[:20]):
         item = copy.deepcopy(frame)
@@ -1407,9 +1410,88 @@ def _run_aircraft_support_v1_analysis_sample(
         "seed": seed,
         "sweep": {},
         "metrics": copy.deepcopy(execution["metrics"]),
+        "daily_mission_reliability": daily_mission_reliability,
         "frames": frames,
         "events": copy.deepcopy(execution.get("events") or []),
     }
+
+
+def _sample_daily_mission_reliability(missions: list[Any], *, aircraft_count: int = 1) -> list[dict[str, Any]]:
+    by_day: dict[int, dict[str, float]] = {}
+    aircraft_denominator = max(1.0, float(aircraft_count or 1))
+    for mission in missions:
+        day = max(1, _metric_int(getattr(mission, "day_index", 1), default=1))
+        planned = max(1, _metric_int(getattr(mission, "required_aircraft", 1), default=1))
+        assigned = len(getattr(mission, "assigned_tail_numbers", []) or [])
+        failed = len(set(getattr(mission, "failed_tail_numbers", []) or []))
+        status = str(getattr(mission, "status", "") or "")
+        successful = max(0, planned - failed) if status == "completed" else 0
+        bucket = by_day.setdefault(
+            day,
+            {
+                "plannedSorties": 0.0,
+                "launchedSorties": 0.0,
+                "successfulSorties": 0.0,
+            },
+        )
+        bucket["plannedSorties"] += planned
+        bucket["launchedSorties"] += max(0, min(planned, assigned))
+        bucket["successfulSorties"] += max(0, min(planned, successful))
+    rows = []
+    for day in sorted(by_day):
+        bucket = by_day[day]
+        planned = max(1.0, float(bucket["plannedSorties"]))
+        rows.append(
+            {
+                "day": day,
+                "plannedSorties": bucket["plannedSorties"],
+                "launchedSorties": bucket["launchedSorties"],
+                "successfulSorties": bucket["successfulSorties"],
+                "missionSuccessRate": bucket["successfulSorties"] / planned,
+                "sortieRate": bucket["launchedSorties"] / aircraft_denominator,
+            }
+        )
+    return rows
+
+
+def _mean_daily_mission_reliability(samples: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    by_day: dict[int, dict[str, float]] = {}
+    for sample in samples:
+        for row in sample.get("daily_mission_reliability") or []:
+            day = max(1, _metric_int(row.get("day"), default=1))
+            bucket = by_day.setdefault(
+                day,
+                {
+                    "sampleCount": 0.0,
+                    "plannedSorties": 0.0,
+                    "launchedSorties": 0.0,
+                    "successfulSorties": 0.0,
+                    "missionSuccessRate": 0.0,
+                    "sortieRate": 0.0,
+                },
+            )
+            bucket["sampleCount"] += 1
+            bucket["plannedSorties"] += _metric_float(row.get("plannedSorties"), default=0)
+            bucket["launchedSorties"] += _metric_float(row.get("launchedSorties"), default=0)
+            bucket["successfulSorties"] += _metric_float(row.get("successfulSorties"), default=0)
+            bucket["missionSuccessRate"] += _metric_float(row.get("missionSuccessRate"), default=0)
+            bucket["sortieRate"] += _metric_float(row.get("sortieRate"), default=0)
+    rows = []
+    for day in sorted(by_day):
+        bucket = by_day[day]
+        sample_count = max(1.0, bucket["sampleCount"])
+        rows.append(
+            {
+                "day": day,
+                "sampleCount": int(bucket["sampleCount"]),
+                "plannedSorties": bucket["plannedSorties"] / sample_count,
+                "launchedSorties": bucket["launchedSorties"] / sample_count,
+                "successfulSorties": bucket["successfulSorties"] / sample_count,
+                "meanMissionSuccessRate": bucket["missionSuccessRate"] / sample_count,
+                "meanSortieRate": bucket["sortieRate"] / sample_count,
+            }
+        )
+    return rows
 
 
 def _lite_mesa_analysis_page_result(
@@ -1434,39 +1516,47 @@ def _lite_mesa_spare_shortfall_result(
     samples: list[dict[str, Any]],
 ) -> dict[str, Any]:
     planned = max(1, _metric_int(aggregate.get("planned_sorties"), default=len(samples)))
-    shortage = max(0, _metric_int(aggregate.get("shortage_events"), default=0))
+    mean_transport_delay = max(0.0, _metric_float(aggregate.get("mean_transport_delay"), default=0))
     rows = []
     for item in projection.get("data") or []:
+        fill_rate = _metric_float(item.get("fill_rate"), default=aggregate.get("spare_fill_rate", 0))
+        demand = max(0, int(round(_metric_float(item.get("demand_count"), default=planned))))
+        filled = max(0, int(round(_metric_float(item.get("filled_count"), default=demand * fill_rate))))
         rows.append(
             {
                 "spareType": str(item.get("spare_type") or "aircraft_support_v1_spares"),
-                "demand": planned,
-                "filled": max(0, planned - shortage),
-                "shortage": shortage,
-                "fillRate": _metric_float(item.get("fill_rate"), default=aggregate.get("spare_fill_rate", 0)),
+                "demand": demand,
+                "filled": filled,
+                "meanTransportDelayHours": _metric_float(item.get("mean_transport_delay"), default=mean_transport_delay),
+                "fillRate": fill_rate,
                 "riskLevel": _risk_label(item.get("risk_level")),
             }
         )
     if not rows:
+        fill_rate = _metric_float(aggregate.get("spare_fill_rate"), default=0)
         rows.append(
             {
                 "spareType": "aircraft_support_v1_spares",
                 "demand": planned,
-                "filled": max(0, planned - shortage),
-                "shortage": shortage,
-                "fillRate": _metric_float(aggregate.get("spare_fill_rate"), default=0),
+                "filled": max(0, int(round(planned * fill_rate))),
+                "meanTransportDelayHours": mean_transport_delay,
+                "fillRate": fill_rate,
                 "riskLevel": _risk_label("low"),
             }
         )
-    shortage_rows = [row for row in rows if int(row.get("shortage") or 0) > 0]
-    risk_row = shortage_rows[0] if shortage_rows else rows[0]
+    shortfall_rows = [
+        row for row in rows
+        if _metric_float(row.get("meanTransportDelayHours"), default=0) > 0
+        or _metric_float(row.get("fillRate"), default=1) < 1
+    ]
+    risk_row = shortfall_rows[0] if shortfall_rows else rows[0]
     return {
         "experiment_id": "project_baseline_at_current_granularity",
         "metrics": [
-            ["发生缺件备件", str(len(rows))],
-            ["总缺件次数", str(shortage)],
+            ["发生缺件备件", str(len(shortfall_rows))],
+            ["平均备件延误时间(h)", f"{mean_transport_delay:.2f}"],
             ["最高缺件备件", str(risk_row.get("spareType") or "无")],
-            ["样本数", str(len(samples))],
+            ["因维修延误导致的任务取消次数", str(int(round(_sample_metric_sum(samples, "cancelled_sorties"))))],
         ],
         "rows": rows,
     }
@@ -1487,12 +1577,19 @@ def _lite_mesa_carry_list_result(
     rows = []
     for item in projection.get("data") or []:
         multiplier = max(1.0, _metric_float(item.get("recommended_multiplier"), default=1.0))
+        baseline_quantity = max(0, _metric_int(item.get("baseline_quantity"), default=0))
         rows.append(
             {
                 "spareType": str(item.get("spare_type") or "aircraft_support_v1_spares"),
-                "recommended": max(1, int(math.ceil(base_quantity * multiplier))),
-                "demand": planned,
-                "shortage": max(0, _metric_int(aggregate.get("shortage_events"), default=0)),
+                "recommended": max(
+                    0,
+                    _metric_int(
+                        item.get("recommended_quantity"),
+                        default=int(math.ceil((baseline_quantity or base_quantity) * multiplier)),
+                    ),
+                ),
+                "demand": max(0, _metric_int(item.get("demand_count"), default=planned)),
+                "shortage": max(0, _metric_int(item.get("shortage_count"), default=aggregate.get("shortage_events"))),
                 "riskLevel": _risk_label(item.get("risk_level")),
                 "confidenceTarget": settings["missionConfidenceTarget"],
             }
@@ -1543,11 +1640,12 @@ def _lite_mesa_mission_reliability_result(
         "experiment_id": "project_baseline_at_current_granularity",
         "metrics": [
             ["任务成功率", _pct(data.get("mission_success_probability"))],
-            ["出动架次率", _pct(data.get("sortie_rate"))],
+            ["出动架次率", _decimal(data.get("sortie_rate"))],
             ["战备完好率", _pct(_sample_mean(samples, "ready_rate"))],
-            ["样本数", str(len(samples))],
+            ["任务失败次数", str(int(round(_sample_metric_sum(samples, "failed_sorties"))))],
         ],
         "rows": rows,
+        "daily_rows": _mean_daily_mission_reliability(samples),
     }
 
 
@@ -1586,18 +1684,245 @@ def _lite_mesa_downtime_factors_result(
 
 def _lite_mesa_downtime_event_snapshots(samples: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
     snapshots: list[dict[str, Any]] = []
+    limit = max(0, _metric_int(limit, default=0))
+    if limit <= 0:
+        return snapshots
     for sample in samples:
+        sample_index = _metric_int(sample.get("sample_index"), default=0)
+        seed = sample.get("seed")
+        sweep = copy.deepcopy(sample.get("sweep") or {})
+        snapshot_count_before_event_log = len(snapshots)
+        for event in sample.get("events") or []:
+            if not isinstance(event, dict):
+                continue
+            event_type = _lite_mesa_downtime_event_type(str(event.get("event_type") or event.get("event") or ""))
+            event_snapshot = event.get("snapshot") if isinstance(event.get("snapshot"), dict) else None
+            if not event_type or event_snapshot is None:
+                continue
+            snapshots.append(
+                _lite_mesa_downtime_event_log_snapshot(
+                    ordinal=len(snapshots) + 1,
+                    sample_index=sample_index,
+                    seed=seed,
+                    sweep=sweep,
+                    event_type=event_type,
+                    event=event,
+                    event_snapshot=event_snapshot,
+                )
+            )
+            if len(snapshots) >= limit:
+                return snapshots
+        if len(snapshots) > snapshot_count_before_event_log:
+            continue
         for frame in sample.get("frames") or []:
-            for event in frame.get("events") or []:
-                if event.get("event_type") not in {"event_snapshot", "failure", "spare_shortage", "resource_delay"}:
-                    continue
-                snapshot = copy.deepcopy(event)
-                snapshot.setdefault("seed", sample.get("seed"))
-                snapshot.setdefault("simulation_time", frame.get("simulation_time"))
-                snapshots.append(snapshot)
+            if not isinstance(frame, dict):
+                continue
+            for event_type, event in _lite_mesa_downtime_snapshot_events(frame):
+                snapshots.append(
+                    _lite_mesa_downtime_frame_snapshot(
+                        ordinal=len(snapshots) + 1,
+                        sample_index=sample_index,
+                        seed=seed,
+                        sweep=sweep,
+                        frame=frame,
+                        event_type=event_type,
+                        event=event,
+                    )
+                )
                 if len(snapshots) >= limit:
                     return snapshots
     return snapshots
+
+
+def _lite_mesa_downtime_event_log_snapshot(
+    *,
+    ordinal: int,
+    sample_index: int,
+    seed: Any,
+    sweep: dict[str, Any],
+    event_type: str,
+    event: dict[str, Any],
+    event_snapshot: dict[str, Any],
+) -> dict[str, Any]:
+    aircraft_state = copy.deepcopy(event_snapshot.get("aircraft_state") or {})
+    support_resources = copy.deepcopy(event_snapshot.get("support_resources") or [])
+    spare_shortages = copy.deepcopy(event_snapshot.get("spare_shortages") or [])
+    active_jobs = [job for job in event_snapshot.get("active_jobs") or [] if isinstance(job, dict)]
+    details = event.get("details") if isinstance(event.get("details"), dict) else {}
+    job = active_jobs[0] if active_jobs else {}
+    metrics = event_snapshot.get("metrics") if isinstance(event_snapshot.get("metrics"), dict) else {}
+    simulation_time = _metric_float(event.get("time", event_snapshot.get("time", 0)), default=0)
+    job_id = str(job.get("job_id") or details.get("job_id") or f"{event_type}-node")
+    return {
+        "snapshot_id": f"lite-downtime-{seed or 'run'}-{ordinal:04d}",
+        "source": "model_event_log",
+        "sample_index": sample_index,
+        "seed": seed,
+        "sweep": sweep,
+        "simulation_time": simulation_time,
+        "event_type": event_type,
+        "event_label": _downtime_factor_label(event_type),
+        "event": copy.deepcopy(event),
+        "result": _lite_mesa_downtime_snapshot_result(event_type),
+        "aircraft_state": aircraft_state,
+        "support_resources": support_resources,
+        "spare_shortages": spare_shortages,
+        "support_activity_state": {
+            "active_jobs": len(active_jobs),
+            "repair_backlog": sum(1 for item in active_jobs if item.get("kind") == "repair"),
+            "postflight_backlog": sum(1 for item in active_jobs if item.get("kind") == "postflight"),
+            "preventive_backlog": sum(1 for item in active_jobs if item.get("kind") == "preventive"),
+            "spare_fill_rate": _metric_float(metrics.get("spare_fill_rate"), default=0),
+        },
+        "job_node": {
+            "job_id": job_id,
+            "kind": str(job.get("kind") or details.get("kind") or event_type),
+            "state": str(job.get("state") or details.get("state") or "observed"),
+            "task": str(job.get("task") or details.get("task") or _lite_mesa_downtime_snapshot_result(event_type)),
+            "tail_number": str(job.get("tail_number") or details.get("tail_number") or ""),
+        },
+        "frame_ref": {
+            "sample_index": sample_index,
+            "sample_step": int(simulation_time),
+            "step": int(simulation_time),
+        },
+    }
+
+
+def _lite_mesa_downtime_snapshot_events(frame: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
+    events: list[tuple[str, dict[str, Any]]] = []
+    for event in frame.get("events") or []:
+        if not isinstance(event, dict):
+            continue
+        event_type = _lite_mesa_downtime_event_type(str(event.get("event_type") or event.get("event") or ""))
+        if event_type:
+            events.append((event_type, copy.deepcopy(event)))
+    if events:
+        return events
+    summary = frame.get("event_summary") if isinstance(frame.get("event_summary"), dict) else {}
+    fallback_map = [
+        ("failure", "downtime_failure_events"),
+        ("spare_shortage", "downtime_spare_shortage_events"),
+        ("resource_delay", "downtime_resource_delay_events"),
+    ]
+    for event_type, metric in fallback_map:
+        if _metric_float(summary.get(metric), default=0) > 0:
+            return [
+                (
+                    event_type,
+                    {
+                        "time": frame.get("simulation_time", frame.get("step", 0)),
+                        "event": event_type,
+                        "event_type": event_type,
+                        "message": f"{event_type} downtime metric exceeded zero",
+                        "metric_refs": [metric],
+                    },
+                )
+            ]
+    return []
+
+
+def _lite_mesa_downtime_frame_snapshot(
+    *,
+    ordinal: int,
+    sample_index: int,
+    seed: Any,
+    sweep: dict[str, Any],
+    frame: dict[str, Any],
+    event_type: str,
+    event: dict[str, Any],
+) -> dict[str, Any]:
+    resource_state = frame.get("resource_state") if isinstance(frame.get("resource_state"), dict) else {}
+    jobs = [job for job in frame.get("jobs") or [] if isinstance(job, dict)]
+    job = jobs[0] if jobs else {}
+    simulation_time = _metric_float(frame.get("simulation_time", event.get("time", frame.get("step", 0))), default=0)
+    return {
+        "snapshot_id": f"lite-downtime-{seed or 'run'}-{ordinal:04d}",
+        "source": "state_series_frame",
+        "sample_index": sample_index,
+        "seed": seed,
+        "sweep": sweep,
+        "simulation_time": simulation_time,
+        "event_type": event_type,
+        "event_label": _downtime_factor_label(event_type),
+        "event": copy.deepcopy(event),
+        "result": _lite_mesa_downtime_snapshot_result(event_type),
+        "aircraft_state": copy.deepcopy(frame.get("aircraft_state") or {}),
+        "support_resources": copy.deepcopy(frame.get("resources") or frame.get("support_resources") or []),
+        "spare_shortages": _lite_mesa_downtime_frame_spare_shortages(frame, event),
+        "support_activity_state": {
+            "active_jobs": len(jobs),
+            "repair_backlog": _metric_float(resource_state.get("repair_backlog"), default=0),
+            "postflight_backlog": _metric_float(resource_state.get("postflight_backlog"), default=0),
+            "preventive_backlog": _metric_float(resource_state.get("preventive_backlog"), default=0),
+            "spare_fill_rate": _metric_float(resource_state.get("spare_fill_rate"), default=0),
+        },
+        "job_node": {
+            "job_id": str(job.get("job_id") or f"{event_type}-node"),
+            "kind": str(job.get("kind") or event_type),
+            "state": str(job.get("state") or "observed"),
+            "task": str(job.get("task") or _lite_mesa_downtime_snapshot_result(event_type)),
+            "tail_number": str(job.get("tail_number") or ""),
+        },
+        "frame_ref": {
+            "sample_index": sample_index,
+            "sample_step": _metric_int(frame.get("sample_step", frame.get("step")), default=0),
+            "step": _metric_int(frame.get("step", frame.get("sample_step")), default=0),
+        },
+    }
+
+
+def _lite_mesa_downtime_frame_spare_shortages(frame: dict[str, Any], event: dict[str, Any]) -> list[dict[str, Any]]:
+    details = event.get("details") if isinstance(event.get("details"), dict) else {}
+    spare_type = str(details.get("spare_type") or "")
+    if spare_type:
+        return [
+            {
+                "spare_type": spare_type,
+                "required_quantity": _metric_int(details.get("required_quantity"), default=0),
+                "available_quantity": _metric_int(details.get("available_quantity"), default=0),
+                "resource_id": str(details.get("resource_id") or ""),
+                "job_id": str(details.get("job_id") or ""),
+                "reason": str(details.get("reason") or "spare_shortage"),
+            }
+        ]
+    shortages: list[dict[str, Any]] = []
+    for spare in frame.get("spares") or []:
+        if not isinstance(spare, dict):
+            continue
+        if _metric_float(spare.get("quantity"), default=0) <= 0 and _metric_float(spare.get("consumed"), default=0) >= 0:
+            shortages.append(
+                {
+                    "spare_type": str(spare.get("name") or spare.get("part_id") or ""),
+                    "required_quantity": 0,
+                    "available_quantity": _metric_int(spare.get("quantity"), default=0),
+                    "resource_id": "",
+                    "job_id": "",
+                    "reason": "spare_shortage",
+                }
+            )
+    return shortages
+
+
+def _lite_mesa_downtime_event_type(event_type: str) -> str:
+    normalized = str(event_type or "").lower()
+    if "spare" in normalized or "shortage" in normalized:
+        return "spare_shortage"
+    if "resource" in normalized or "delay" in normalized:
+        return "resource_delay"
+    if "fail" in normalized:
+        return "failure"
+    return ""
+
+
+def _lite_mesa_downtime_snapshot_result(event_type: str) -> str:
+    if event_type == "spare_shortage":
+        return "mission_delayed_by_spare_shortage"
+    if event_type == "resource_delay":
+        return "mission_delayed_by_resource_constraint"
+    if event_type == "failure":
+        return "aircraft_unavailable_after_failure"
+    return "downtime_anomaly_recorded"
 
 
 def _blocked_lite_mesa_analysis_payload(
@@ -1637,7 +1962,7 @@ def _blocked_lite_mesa_analysis_payload(
 
 def _lite_mesa_analysis_limitations() -> list[str]:
     return [
-        "会话内 Mesa 分析结果，不写入正式结果账本。",
+        "本次分析结果不写入正式结果账本。",
         "未创建 run、result 或 artifact。",
         "结论只代表当前项目建模粒度和样本设置。",
     ]
@@ -1725,6 +2050,14 @@ def _sample_mean(samples: list[dict[str, Any]], metric: str) -> float:
     if not samples:
         return 0.0
     return sum(_metric_float(sample.get("metrics", {}).get(metric), default=0) for sample in samples) / len(samples)
+
+
+def _sample_metric_sum(samples: list[dict[str, Any]], metric: str) -> float:
+    return sum(_metric_float(sample.get("metrics", {}).get(metric), default=0) for sample in samples)
+
+
+def _decimal(value: Any) -> str:
+    return f"{_metric_float(value, default=0):.3f}"
 
 
 def _pct(value: Any) -> str:

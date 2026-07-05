@@ -188,6 +188,8 @@ class AircraftSupportV1Model:
         self.transport_replenishment_events = 0
         self.resource_delay_events = 0
         self.failure_delay_events = 0
+        self.daily_readiness_samples: list[dict[str, Any]] = []
+        self._daily_readiness_sample_days: set[int] = set()
 
     @staticmethod
     def behavior_scope() -> dict[str, list[str]]:
@@ -209,6 +211,7 @@ class AircraftSupportV1Model:
             self._create_due_preflight_jobs()
             self._start_waiting_jobs()
             self._dispatch_due_missions()
+            self._record_daily_readiness_sample_if_due()
             if minute % self.sample_every_minutes == 0 or minute == self.duration_minutes:
                 frames.append(self.visualization_frame(run_id="", step=len(frames)))
                 if len(frames) > self.max_state_frames_single:
@@ -227,17 +230,27 @@ class AircraftSupportV1Model:
         preventive_backlog = sum(1 for job in self.jobs if job.kind == "preventive" and job.state in {"waiting", "running"})
         stock_total = sum(sum(max(0, int(qty)) for qty in node["inventory"].values()) for node in self.nodes.values())
         total_inventory = max(1, stock_total + self.spare_consumed_total)
+        aircraft_count = max(1, len(self.aircraft))
+        simulation_days = max(1.0, self.duration_minutes / 1440.0)
         sortie_completion_rate = min(1.0, self.completed_sorties / planned_sorties)
-        sortie_rate = min(1.0, self.launched_sorties / planned_sorties)
-        ready_rate = available / max(1, len(self.aircraft))
+        sortie_rate = max(0.0, self.launched_sorties / aircraft_count / simulation_days)
+        ready_rate = (
+            sum(float(sample["ready_rate"]) for sample in self.daily_readiness_samples)
+            / len(self.daily_readiness_samples)
+            if self.daily_readiness_samples
+            else available / aircraft_count
+        )
         avg_delay = self.total_departure_delay / max(1, self.launched_sorties + self.cancelled_sorties)
-        mean_transport_delay = self.total_transport_delay / max(1, self.transport_replenishment_events)
+        mean_transport_delay = (self.total_transport_delay / 60.0) / max(1, self.transport_replenishment_events)
         return {
             "sortie_completion_rate": sortie_completion_rate,
             "mission_success_rate": sortie_completion_rate,
             "sortie_rate": sortie_rate,
             "ready_rate": ready_rate,
+            "aircraft_count": aircraft_count,
+            "simulation_days": simulation_days,
             "available_aircraft": available,
+            "daily_readiness_sample_count": len(self.daily_readiness_samples),
             "active_jobs": active_jobs,
             "spare_stock_total": stock_total,
             "avg_departure_delay": avg_delay,
@@ -267,6 +280,7 @@ class AircraftSupportV1Model:
             "downtime_spare_shortage_events": self.shortage_events,
             "downtime_resource_delay_events": self.resource_delay_events,
             "transport_replenishment_events": self.transport_replenishment_events,
+            "total_transport_delay_minutes": self.total_transport_delay,
             "mean_transport_delay": mean_transport_delay,
             "in_flight_failures": self.in_flight_failures,
             "rbd_root_failures": self.rbd_root_failures,
@@ -274,6 +288,25 @@ class AircraftSupportV1Model:
             "mean_recovery_time": self._mean_recovery_time(),
             "mean_turnaround_time": avg_delay + self._mean_recovery_time(),
         }
+
+    def _record_daily_readiness_sample_if_due(self) -> None:
+        if self.minute <= 0 or self.minute % 1440 != 14 * 60:
+            return
+        day_index = self.minute // 1440 + 1
+        if day_index in self._daily_readiness_sample_days:
+            return
+        aircraft_count = max(1, len(self.aircraft))
+        available = sum(1 for aircraft in self.aircraft if aircraft.state == "available")
+        self.daily_readiness_samples.append(
+            {
+                "day": day_index,
+                "minute": self.minute,
+                "available_aircraft": available,
+                "aircraft_count": aircraft_count,
+                "ready_rate": available / aircraft_count,
+            }
+        )
+        self._daily_readiness_sample_days.add(day_index)
 
     def visualization_frame(self, *, run_id: str, step: int) -> dict[str, Any]:
         metrics = self.snapshot()
@@ -745,18 +778,15 @@ class AircraftSupportV1Model:
             }
             total_days = int(context["total_days"])
             period_days = int(context["period_days"])
-            composite_days: dict[str, set[int]] = {
-                str(item): set(range(total_days))
-                for item in periodic.get("compositeTaskIds") or []
-                if item
-            }
-            for item in periodic.get("compositeTasks") or []:
-                if isinstance(item, dict) and item.get("compositeTaskId"):
-                    composite_id = str(item["compositeTaskId"])
-                    start_day = max(0, _positive_int(item.get("week"), 1) - 1) * period_days
-                    active_days = set(range(start_day, min(total_days, start_day + period_days)))
-                    if active_days:
-                        composite_days.setdefault(composite_id, set()).update(active_days)
+            composite_days = _periodic_explicit_composite_days(periodic, total_days, period_days)
+            if not composite_days:
+                composite_days = _periodic_weekday_assignment_days(periodic, total_days, period_days)
+            if not composite_days:
+                composite_days = {
+                    str(item): set(range(total_days))
+                    for item in periodic.get("compositeTaskIds") or []
+                    if item
+                }
             for composite_id, active_days in composite_days.items():
                 composite_context = dict(context)
                 composite_context["active_days"] = sorted(active_days)
@@ -1253,7 +1283,16 @@ class AircraftSupportV1Model:
         if current >= spare_quantity:
             node["inventory"][spare_type] = current - spare_quantity
             self.spare_consumed_total += spare_quantity
-            self._event("spare_consumed", f"{job.job_id} consumed {spare_quantity} {spare_type}")
+            self._event(
+                "spare_consumed",
+                f"{job.job_id} consumed {spare_quantity} {spare_type}",
+                {
+                    "job_id": job.job_id,
+                    "resource_id": node["id"],
+                    "spare_type": spare_type,
+                    "quantity": spare_quantity,
+                },
+            )
 
     def _try_transport_replenishment(self, node: dict[str, Any], spare_type: str, needed: int) -> None:
         shortage = max(0, needed - int(node["inventory"].get(spare_type, 0)))
@@ -1831,6 +1870,117 @@ def _periodic_total_days(periodic: dict[str, Any]) -> int:
             repeat_count = parsed
             break
     return max(1, period_days * repeat_count)
+
+
+_WEEKDAY_INDEXES = {
+    "monday": 0,
+    "mondaycompositetaskid": 0,
+    "mon": 0,
+    "周一": 0,
+    "星期一": 0,
+    "tuesday": 1,
+    "tuesdaycompositetaskid": 1,
+    "tue": 1,
+    "周二": 1,
+    "星期二": 1,
+    "wednesday": 2,
+    "wednesdaycompositetaskid": 2,
+    "wed": 2,
+    "周三": 2,
+    "星期三": 2,
+    "thursday": 3,
+    "thursdaycompositetaskid": 3,
+    "thu": 3,
+    "周四": 3,
+    "星期四": 3,
+    "friday": 4,
+    "fridaycompositetaskid": 4,
+    "fri": 4,
+    "周五": 4,
+    "星期五": 4,
+    "saturday": 5,
+    "saturdaycompositetaskid": 5,
+    "sat": 5,
+    "周六": 5,
+    "星期六": 5,
+    "sunday": 6,
+    "sundaycompositetaskid": 6,
+    "sun": 6,
+    "周日": 6,
+    "星期日": 6,
+    "星期天": 6,
+}
+
+_WEEKDAY_ASSIGNMENT_FIELDS = (
+    "mondayCompositeTaskId",
+    "tuesdayCompositeTaskId",
+    "wednesdayCompositeTaskId",
+    "thursdayCompositeTaskId",
+    "fridayCompositeTaskId",
+    "saturdayCompositeTaskId",
+    "sundayCompositeTaskId",
+)
+
+
+def _periodic_weekday_index(value: Any) -> int | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    return _WEEKDAY_INDEXES.get(text.replace("_", "").replace("-", "").lower())
+
+
+def _periodic_explicit_composite_days(
+    periodic: dict[str, Any],
+    total_days: int,
+    period_days: int,
+) -> dict[str, set[int]]:
+    composite_days: dict[str, set[int]] = {}
+    for item in periodic.get("compositeTasks") or []:
+        if not isinstance(item, dict):
+            continue
+        composite_id = str(item.get("compositeTaskId") or "").strip()
+        if not composite_id:
+            continue
+        weekday_index = _periodic_weekday_index(item.get("weekday") or item.get("dayOfWeek"))
+        if weekday_index is not None:
+            week_index = _positive_int(item.get("weekIndex", item.get("week")), 1)
+            active_day = (week_index - 1) * period_days + weekday_index
+            if 0 <= active_day < total_days:
+                composite_days.setdefault(composite_id, set()).add(active_day)
+            continue
+        period_index = _positive_int(item.get("week", item.get("weekIndex")), 1)
+        start_day = max(0, (period_index - 1) * period_days)
+        active_days = set(range(start_day, min(total_days, start_day + period_days)))
+        if active_days:
+            composite_days.setdefault(composite_id, set()).update(active_days)
+    return composite_days
+
+
+def _periodic_weekday_assignment_days(
+    periodic: dict[str, Any],
+    total_days: int,
+    period_days: int,
+) -> dict[str, set[int]]:
+    assignments: dict[int, str] = {}
+    raw_assignments = periodic.get("weekdayAssignments") if isinstance(periodic.get("weekdayAssignments"), dict) else {}
+    for key, composite_id in raw_assignments.items():
+        weekday_index = _periodic_weekday_index(key)
+        composite_text = str(composite_id or "").strip()
+        if weekday_index is not None and composite_text:
+            assignments[weekday_index] = composite_text
+    for key in _WEEKDAY_ASSIGNMENT_FIELDS:
+        weekday_index = _periodic_weekday_index(key)
+        composite_text = str(periodic.get(key) or "").strip()
+        if weekday_index is not None and composite_text:
+            assignments[weekday_index] = composite_text
+
+    composite_days: dict[str, set[int]] = {}
+    for start_day in range(0, total_days, max(1, period_days)):
+        for weekday_index, composite_id in assignments.items():
+            active_day = start_day + weekday_index
+            if active_day < total_days:
+                composite_days.setdefault(composite_id, set()).add(active_day)
+    return composite_days
 
 
 def _bounded_float(value: Any) -> float | None:

@@ -15,7 +15,13 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src.spare_mvp_backend.api import BackendApi, BackendApiError
+from src.spare_mvp_backend.api import (
+    BackendApi,
+    BackendApiError,
+    _lite_mesa_downtime_event_snapshots,
+    _lite_mesa_mission_reliability_result,
+    _lite_mesa_spare_shortfall_result,
+)
 from src.spare_mvp_backend.http_server import create_backend_server
 from src.spare_mvp_backend.modeling_import import modeling_import_to_project, validate_modeling_import_package
 from src.spare_mvp_backend.project_payload import strip_project_sweep
@@ -93,6 +99,55 @@ def small_aircraft_support_project(project_id: str) -> dict[str, Any]:
         },
         "modelingImportValidation": {"usedTables": {}, "disabledDomains": [], "warnings": []},
     }
+
+
+def periodic_three_day_aircraft_support_project(project_id: str) -> dict[str, Any]:
+    project = small_aircraft_support_project(project_id)
+    project["missionProfile"]["durationHours"] = 24
+    project["missionProfile"]["compositeTasks"] = [
+        {
+            "id": "composite-a",
+            "name": "three-day composite",
+            "taskItems": [
+                {
+                    "id": "task-a",
+                    "basicMissionId": "basic-small",
+                    "basicTaskName": "small sortie",
+                    "firstWaveTime": "08:00",
+                    "taskDurationMinutes": 30,
+                    "equipmentQuantity": 1,
+                    "equipmentType": "J-15",
+                }
+            ],
+        }
+    ]
+    project["missionProfile"]["periodicTasks"] = [
+        {
+            "id": "periodic-three-day",
+            "name": "three-day explicit rows",
+            "periodDays": 7,
+            "repeatCount": 1,
+            "compositeTaskIds": ["composite-a"],
+            "weekdayAssignments": {
+                "monday": "composite-a",
+                "tuesday": "composite-a",
+                "sunday": "composite-a",
+            },
+            "mondayCompositeTaskId": "composite-a",
+            "tuesdayCompositeTaskId": "composite-a",
+            "sundayCompositeTaskId": "composite-a",
+            "compositeTasks": [
+                {"weekIndex": 1, "weekday": "mondayCompositeTaskId", "compositeTaskId": "composite-a"},
+                {"weekIndex": 1, "weekday": "tuesdayCompositeTaskId", "compositeTaskId": "composite-a"},
+                {"weekIndex": 1, "weekday": "wednesdayCompositeTaskId", "compositeTaskId": "composite-a"},
+                {"weekIndex": 1, "weekday": "thursdayCompositeTaskId", "compositeTaskId": ""},
+                {"weekIndex": 1, "weekday": "fridayCompositeTaskId", "compositeTaskId": ""},
+                {"weekIndex": 1, "weekday": "saturdayCompositeTaskId", "compositeTaskId": ""},
+                {"weekIndex": 1, "weekday": "sundayCompositeTaskId", "compositeTaskId": ""},
+            ],
+        }
+    ]
+    return project
 
 
 class RecordingAdapter(SimulationAdapter):
@@ -1886,7 +1941,7 @@ class BackendApiContractTest(unittest.TestCase):
         payload = self.api.run_lite_mesa_analysis(
             small_aircraft_support_project("project-lite-mesa-contract"),
             analysis_type="mission_reliability",
-            settings={"samples": 1, "seed": 20260705},
+            settings={"samples": 2, "seed": 20260705},
         )
 
         self.assertEqual(payload["status"], "session_complete")
@@ -1894,10 +1949,268 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(payload["model_family"], "aircraft_support_v1")
         self.assertEqual(payload["analysis_type"], "mission_reliability")
         self.assertEqual(payload["project_id"], "project-lite-mesa-contract")
-        self.assertEqual(payload["sample_count"], 1)
-        self.assertEqual(payload["seed_list"], [20260705])
+        self.assertEqual(payload["sample_count"], 2)
+        self.assertEqual(payload["seed_list"], [20260705, 20260706])
         self.assertTrue(payload["rows"])
+        self.assertTrue(payload["daily_rows"])
+        self.assertEqual(payload["daily_rows"][0]["day"], 1)
+        self.assertEqual(payload["daily_rows"][0]["sampleCount"], 2)
+        self.assertIn("meanMissionSuccessRate", payload["daily_rows"][0])
         self.assertEqual(self._run_side_effect_counts(), before)
+
+    def test_aircraft_support_v1_duration_stops_at_last_explicit_periodic_mission_day(self) -> None:
+        scenario = self.adapter.compile_scenario(
+            periodic_three_day_aircraft_support_project("project-three-day-duration"),
+            model_family="aircraft_support_v1",
+        )
+
+        inputs = scenario["simulation_inputs"]
+
+        self.assertEqual(inputs["time"]["duration_minutes"], 3 * 24 * 60)
+        self.assertEqual(inputs["mission_profile"]["duration_minutes"], 3 * 24 * 60)
+
+    def test_lite_mesa_mission_and_downtime_use_last_periodic_mission_day_duration(self) -> None:
+        project = periodic_three_day_aircraft_support_project("project-three-day-lite-analysis")
+
+        mission_payload = self.api.run_lite_mesa_analysis(
+            copy.deepcopy(project),
+            analysis_type="mission_reliability",
+            settings={"samples": 1, "seed": 20260705},
+        )
+        downtime_payload = self.api.run_lite_mesa_analysis(
+            copy.deepcopy(project),
+            analysis_type="downtime_factors",
+            settings={"samples": 1, "seed": 20260705},
+        )
+
+        self.assertEqual(mission_payload["aggregate_metrics"]["simulation_days"], 3.0)
+        self.assertEqual(downtime_payload["aggregate_metrics"]["simulation_days"], 3.0)
+        self.assertEqual([row["day"] for row in mission_payload["daily_rows"]], [1, 2, 3])
+
+    def test_lite_mesa_downtime_event_snapshots_use_model_event_log_snapshots(self) -> None:
+        snapshots = _lite_mesa_downtime_event_snapshots(
+            [
+                {
+                    "sample_index": 0,
+                    "seed": 20260621,
+                    "events": [
+                        {
+                            "time": 42,
+                            "event": "spare_shortage",
+                            "message": "repair blocked by hydraulic pump shortage",
+                            "snapshot": {
+                                "aircraft_state": {
+                                    "summary": {"available_aircraft": 1, "failed_count": 1, "repairing_count": 1},
+                                    "aircraft": [{"tail_number": "J15-101", "state": "maintenance"}],
+                                },
+                                "support_resources": [
+                                    {
+                                        "resource_id": "carrier-deck",
+                                        "name": "航母飞行甲板",
+                                        "personnel_in_use": 1,
+                                        "personnel_capacity": 2,
+                                        "equipment_in_use": 1,
+                                        "equipment_capacity": 2,
+                                        "inventory": {"液压泵": 0},
+                                    }
+                                ],
+                                "spare_shortages": [
+                                    {
+                                        "spare_type": "液压泵",
+                                        "required_quantity": 1,
+                                        "available_quantity": 0,
+                                        "job_id": "repair-J15-101",
+                                    }
+                                ],
+                                "active_jobs": [
+                                    {
+                                        "job_id": "repair-J15-101",
+                                        "kind": "repair",
+                                        "state": "waiting",
+                                        "task": "更换液压泵",
+                                        "tail_number": "J15-101",
+                                    }
+                                ],
+                            },
+                        }
+                    ],
+                    "frames": [
+                        {
+                            "simulation_time": 60,
+                            "events": [{"event_type": "state_frame", "message": "state frame sampled"}],
+                        }
+                    ],
+                }
+            ],
+            4,
+        )
+
+        self.assertEqual(len(snapshots), 1)
+        self.assertEqual(snapshots[0]["source"], "model_event_log")
+        self.assertEqual(snapshots[0]["event_type"], "spare_shortage")
+        self.assertEqual(snapshots[0]["event_label"], "备件短缺")
+        self.assertEqual(snapshots[0]["simulation_time"], 42.0)
+        self.assertEqual(snapshots[0]["spare_shortages"][0]["spare_type"], "液压泵")
+        self.assertEqual(snapshots[0]["job_node"]["job_id"], "repair-J15-101")
+
+    def test_lite_mesa_mission_reliability_reports_task_failure_count(self) -> None:
+        result = _lite_mesa_mission_reliability_result(
+            {"data": {"mission_success_probability": 0.8, "sortie_rate": 0.4}},
+            [
+                {"seed": 1, "metrics": {"mission_success_rate": 0.8, "sortie_rate": 0.4, "ready_rate": 0.5, "failed_sorties": 2}},
+                {"seed": 2, "metrics": {"mission_success_rate": 0.6, "sortie_rate": 0.3, "ready_rate": 0.75, "failed_sorties": 3}},
+            ],
+            {"maxTimeWindow": 12},
+        )
+
+        self.assertEqual(result["metrics"][3], ["任务失败次数", "5"])
+
+    def test_lite_mesa_spare_shortfall_reports_transport_delay_hours_and_repair_cancellations(self) -> None:
+        result = _lite_mesa_spare_shortfall_result(
+            {
+                "data": [
+                    {
+                        "spare_type": "航电模块",
+                        "fill_rate": 0.55,
+                        "risk_level": "high",
+                    }
+                ]
+            },
+            {
+                "planned_sorties": 28,
+                "shortage_events": 6222,
+                "mean_transport_delay": 1.5,
+                "spare_fill_rate": 0.55,
+            },
+            [
+                {"metrics": {"cancelled_sorties": 2}},
+                {"metrics": {"cancelled_sorties": 3}},
+            ],
+        )
+
+        self.assertEqual(
+            result["metrics"],
+            [
+                ["发生缺件备件", "1"],
+                ["平均备件延误时间(h)", "1.50"],
+                ["最高缺件备件", "航电模块"],
+                ["因维修延误导致的任务取消次数", "5"],
+            ],
+        )
+        self.assertEqual(result["rows"][0]["meanTransportDelayHours"], 1.5)
+        self.assertNotIn("shortage", result["rows"][0])
+
+    def test_lite_mesa_spare_pages_scope_rows_to_aircraft_airport_support_inventory(self) -> None:
+        project = small_aircraft_support_project("project-lite-spare-scope")
+        project["airports"] = [
+            {"id": "carrier-deck", "name": "航母飞行甲板", "supportNodeId": "carrier-deck"},
+            {"id": "forward-sea-base", "name": "前出海上保障点", "supportNodeId": "forward-sea-base"},
+        ]
+        project["combatUnit"]["members"][0]["airport"] = "legacy-A"
+        project["combatUnit"]["members"][0]["deploymentLocation"] = "航母飞行甲板"
+        project["supportNodes"] = [
+            {
+                "id": "carrier-deck",
+                "name": "基地",
+                "personnelCapacity": 4,
+                "equipmentCapacity": 4,
+                "inventory": {"发动机备件": 4, "液压备件": 5, "航电模块": 6},
+            },
+            {
+                "id": "forward-sea-base",
+                "name": "中继",
+                "personnelCapacity": 4,
+                "equipmentCapacity": 4,
+                "inventory": {"前出备件": 9},
+            },
+            {
+                "id": "carrier-stock",
+                "name": "仓库",
+                "personnelCapacity": 4,
+                "equipmentCapacity": 4,
+                "inventory": {"仓库备件": 12},
+            },
+        ]
+
+        shortfall = self.api.run_lite_mesa_analysis(
+            project,
+            analysis_type="spare_shortfall",
+            settings={"samples": 1, "seed": 20260705},
+        )
+        carry = self.api.run_lite_mesa_analysis(
+            project,
+            analysis_type="carry_list",
+            settings={"samples": 1, "seed": 20260705},
+        )
+
+        expected_types = ["发动机备件", "液压备件", "航电模块"]
+        self.assertEqual([row["spareType"] for row in shortfall["rows"]], expected_types)
+        self.assertEqual([row["spareType"] for row in carry["rows"]], expected_types)
+        self.assertNotIn("aircraft_support_v1_spares", {row["spareType"] for row in shortfall["rows"] + carry["rows"]})
+        self.assertNotIn("前出备件", {row["spareType"] for row in shortfall["rows"] + carry["rows"]})
+        self.assertNotIn("仓库备件", {row["spareType"] for row in shortfall["rows"] + carry["rows"]})
+
+    def test_aircraft_support_spare_projection_deduplicates_minute_shortage_events(self) -> None:
+        projections = self.adapter._aircraft_support_v1_analysis_projections(
+            {"planned_sorties": 4, "spare_fill_rate": 1.0, "spare_utilization": 0.0},
+            "base-artifact",
+            samples=[
+                {
+                    "sample_index": 0,
+                    "events": [
+                        {
+                            "event": "spare_shortage",
+                            "details": {
+                                "job_id": "job-001",
+                                "resource_id": "carrier-deck",
+                                "spare_type": "航电模块",
+                                "required_quantity": 1,
+                            },
+                        },
+                        {
+                            "event": "spare_shortage",
+                            "details": {
+                                "job_id": "job-001",
+                                "resource_id": "carrier-deck",
+                                "spare_type": "航电模块",
+                                "required_quantity": 1,
+                            },
+                        },
+                        {
+                            "event": "spare_consumed",
+                            "details": {
+                                "job_id": "job-001",
+                                "resource_id": "carrier-deck",
+                                "spare_type": "航电模块",
+                                "quantity": 1,
+                            },
+                        },
+                    ],
+                }
+            ],
+            simulation_inputs={
+                "mission_profile": {
+                    "airports": [{"id": "carrier-deck", "name": "航母飞行甲板", "supportNodeId": "carrier-deck"}],
+                },
+                "aircraft": {"assets": [{"tail_number": "J15-001", "deployment_location": "航母飞行甲板"}]},
+                "support_network": {
+                    "nodes": [
+                        {
+                            "id": "carrier-deck",
+                            "name": "基地",
+                            "inventory": {"航电模块": 6},
+                        }
+                    ]
+                },
+            },
+        )
+
+        shortfall_row = projections["spare_shortfall"]["data"][0]
+        carry_row = projections["carry_list"]["data"][0]
+        self.assertEqual(shortfall_row["demand_count"], 1)
+        self.assertEqual(shortfall_row["filled_count"], 1)
+        self.assertEqual(shortfall_row["shortage_count"], 1)
+        self.assertEqual(carry_row["shortage_count"], 1)
 
     def test_run_service_submits_aircraft_support_v1_formal_monte_carlo_run(self) -> None:
         created = self._create_imported_sample_project()

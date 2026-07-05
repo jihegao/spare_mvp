@@ -74,7 +74,10 @@
               "tail_number": { "type": "string" },
               "aircraft_type": { "type": "string" },
               "model": { "type": "string" },
-              "initial_state": { "type": "string", "enum": ["available", "maintenance", "flying"] }
+              "initial_state": { "type": "string", "enum": ["available", "maintenance", "flying"] },
+              "airport": { "type": "string" },
+              "airport_id": { "type": "string" },
+              "deployment_location": { "type": "string" }
             }
           }
         }

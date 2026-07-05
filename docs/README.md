@@ -24,8 +24,9 @@
 6. 可靠性框图只在任务可靠度评估模块下作为正式建模页展示。完整绘图契约仍由 `reliability-block-diagram-contract.md` 维护。
 7. 正式运行主线为 `RunIntent -> /api/runs -> RunService -> SimulationAdapter -> aircraft_support_v1 -> SQLite + artifacts`。旧 contract provider、smoke model、smoke scenarios 和 smoke JSON fixtures 已退役删除。
 8. `aircraft_support_v1` 是当前正式模型族；历史 `aviation_support` 只保留为 schema/fixture 归档证据且 adapter 编译运行入口返回 `retired_model_family`。
-9. 四个结果分析页通过 current result 面板和正式 projection payload 解锁结果；缺少 compiler provenance、`monte_carlo_base`、对应 projection artifact、payload 或 payload 类型不匹配时 fail closed。
-10. 阶段 6P 仿真分析验收数据包保留在 `tests/fixtures/simulation_analysis_cases/canonical_platform_case.json`，用于验证平台标准建模导入案例可以通过 validation 并编译为 `aircraft_support_v1` Scenario；不再要求 6P canonical 生成正式分析产物。
+9. 四个结果分析页当前为独立轻量 Mesa 会话页：前端提交当前 Project 与页面设置到 `POST /api/mesa-analysis-runs`，后端编译为 `aircraft_support_v1` simulation inputs 后只在内存中运行样本并返回页面摘要；该路径不创建 `/api/runs`、SQLite run、Result 或正式 artifact，也不读取 current result 面板。
+10. 轻量 Mesa 指标口径：`出动架次率 = 起飞总架次 / 飞机总数 / 仿真总天数`，展示为小数；`仿真总天数` 来自编译后的仿真窗口，周期任务有显式星期排程时按最后有任务日停止，没有显式任务日时才回退整周期/重复次数或 `durationHours`；`战备完好率 = 每天 14:00 的可用飞机数量 / 总飞机数量`，多天结果取日采样均值；`平均备件延误时间(h) = 总调运延误时间(分钟) / 60 / 备件调运次数`，用于备件短板页替代原先会被误读为缺件次数的分钟累计值。
+11. 阶段 6P 仿真分析验收数据包保留在 `tests/fixtures/simulation_analysis_cases/canonical_platform_case.json`，用于验证平台标准建模导入案例可以通过 validation 并编译为 `aircraft_support_v1` Scenario；不再要求 6P canonical 生成正式分析产物。
 
 ## 文档地图
 

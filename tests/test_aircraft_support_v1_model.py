@@ -250,6 +250,49 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
         self.assertEqual(model.snapshot()["postflight_backlog"], 1)
         self.assertTrue(any(job.kind == "postflight" and job.tail_number == aircraft.tail_number for job in model.jobs))
 
+    def test_snapshot_sortie_rate_is_launched_sorties_per_aircraft_per_day(self) -> None:
+        inputs = _minimal_inputs()
+        inputs["time"]["duration_minutes"] = 2880
+        model = AircraftSupportV1Model(inputs)
+        model.launched_sorties = 2
+
+        snapshot = model.snapshot()
+
+        self.assertEqual(snapshot["aircraft_count"], 2)
+        self.assertEqual(snapshot["simulation_days"], 2)
+        self.assertEqual(snapshot["sortie_rate"], 0.5)
+
+    def test_snapshot_mean_transport_delay_is_hours_per_replenishment(self) -> None:
+        model = AircraftSupportV1Model(_minimal_inputs())
+        model.total_transport_delay = 180
+        model.transport_replenishment_events = 2
+
+        snapshot = model.snapshot()
+
+        self.assertEqual(snapshot["total_transport_delay_minutes"], 180)
+        self.assertEqual(snapshot["transport_replenishment_events"], 2)
+        self.assertEqual(snapshot["mean_transport_delay"], 1.5)
+
+    def test_ready_rate_uses_daily_1400_available_aircraft_samples(self) -> None:
+        model = AircraftSupportV1Model(_minimal_inputs())
+
+        model.aircraft[0].state = "available"
+        model.aircraft[1].state = "maintenance"
+        model.minute = 14 * 60
+        model._record_daily_readiness_sample_if_due()
+
+        model.aircraft[0].state = "available"
+        model.aircraft[1].state = "available"
+        model.minute = 1440 + 14 * 60
+        model._record_daily_readiness_sample_if_due()
+
+        model.aircraft[0].state = "maintenance"
+        model.aircraft[1].state = "maintenance"
+        snapshot = model.snapshot()
+
+        self.assertEqual(snapshot["daily_readiness_sample_count"], 2)
+        self.assertEqual(snapshot["ready_rate"], 0.75)
+
     def test_transport_minutes_create_in_transit_inventory_before_arrival(self) -> None:
         inputs = _minimal_inputs()
         model = AircraftSupportV1Model(inputs)
@@ -642,6 +685,49 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "composite-a"):
             AircraftSupportV1Model(inputs)
+
+    def test_periodic_weekday_rows_restrict_active_mission_days(self) -> None:
+        inputs = _minimal_inputs()
+        inputs["time"]["duration_minutes"] = 7 * 24 * 60
+        inputs["mission_profile"]["composite_tasks"] = [
+            {
+                "id": "composite-a",
+                "name": "Three day composite",
+                "taskItems": [
+                    {
+                        "id": "task-a",
+                        "basicMissionId": "mission-a",
+                        "basicTaskName": "mission",
+                        "firstWaveTime": "00:00",
+                        "taskDurationMinutes": 30,
+                        "equipmentQuantity": 1,
+                        "equipmentType": "J-15",
+                    }
+                ],
+            }
+        ]
+        inputs["mission_profile"]["periodic_tasks"] = [
+            {
+                "id": "periodic-three-day",
+                "name": "Three day task",
+                "periodDays": 7,
+                "repeatCount": 1,
+                "compositeTaskIds": ["composite-a"],
+                "compositeTasks": [
+                    {"weekIndex": 1, "weekday": "mondayCompositeTaskId", "compositeTaskId": "composite-a"},
+                    {"weekIndex": 1, "weekday": "tuesdayCompositeTaskId", "compositeTaskId": "composite-a"},
+                    {"weekIndex": 1, "weekday": "wednesdayCompositeTaskId", "compositeTaskId": "composite-a"},
+                    {"weekIndex": 1, "weekday": "thursdayCompositeTaskId", "compositeTaskId": ""},
+                    {"weekIndex": 1, "weekday": "fridayCompositeTaskId", "compositeTaskId": ""},
+                    {"weekIndex": 1, "weekday": "saturdayCompositeTaskId", "compositeTaskId": ""},
+                    {"weekIndex": 1, "weekday": "sundayCompositeTaskId", "compositeTaskId": ""},
+                ],
+            }
+        ]
+
+        model = AircraftSupportV1Model(inputs)
+
+        self.assertEqual(sorted({mission.day_index for mission in model.missions}), [1, 2, 3])
 
 
 if __name__ == "__main__":

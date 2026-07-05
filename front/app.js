@@ -119,7 +119,7 @@ const LITE_MESA_ANALYSIS_DEFINITIONS = Object.freeze({
     title: "备件短板分析",
     subtitle: "基于当前项目建模数据的短缺事件统计",
     fixedConfig: [["实验类型", "项目基线"]],
-    metricLabels: ["发生缺件备件", "总缺件次数", "最高缺件备件", "样本数"]
+    metricLabels: ["发生缺件备件", "平均备件延误时间(h)", "最高缺件备件", "因维修延误导致的任务取消次数"]
   },
   carry_list: {
     experimentId: "minimum_carry_list_search",
@@ -133,7 +133,7 @@ const LITE_MESA_ANALYSIS_DEFINITIONS = Object.freeze({
     title: "任务可靠度评估",
     subtitle: "任务成功概率、出动架次率和目标达成统计",
     fixedConfig: [["实验类型", "项目基线"], ["统计口径", "会话样本聚合"]],
-    metricLabels: ["任务成功率", "出动架次率", "战备完好率", "样本数"]
+    metricLabels: ["任务成功率", "出动架次率", "战备完好率", "任务失败次数"]
   },
   downtime_factors: {
     experimentId: "project_baseline_at_current_granularity",
@@ -494,6 +494,7 @@ function persistLastPublishedModelingImportId(importId) {
 let scenario = cloneScenario(defaultScenario);
 let experimentPlanDraft = cloneScenario(scenario);
 let experimentPlanBranchActive = false;
+let selectedScenarioCompositionPath = "";
 let lastRunExperimentPlanProjectJson = null;
 let selectedMonteCarloExperimentId = "";
 let monteCarloExperiments = createDefaultMonteCarloExperiments();
@@ -1584,6 +1585,13 @@ function bindEvents() {
       return;
     }
 
+    const scenarioModelingPathButton = event.target.closest("[data-scenario-modeling-path]");
+    if (scenarioModelingPathButton) {
+      selectedScenarioCompositionPath = scenarioModelingPathButton.dataset.scenarioModelingPath || "";
+      render();
+      return;
+    }
+
     const m7RunArtifactButton = event.target.closest("[data-action^='m7-']");
     if (m7RunArtifactButton) {
       handleM7RunArtifactAction(m7RunArtifactButton).finally(() => render());
@@ -2176,6 +2184,16 @@ function bindEvents() {
       || event.target.closest("[data-scenario-override-label]");
     if (scenarioOverrideInput) {
       updateScenarioOverrideInput(scenarioOverrideInput);
+      experimentPlanBranchActive = true;
+      updatePreviewResultsThroughApiClient(experimentPlanDraft);
+      render();
+      return;
+    }
+
+    const selectedScenarioOverrideInput = event.target.closest("[data-scenario-selected-override-value]")
+      || event.target.closest("[data-scenario-selected-override-value-type]");
+    if (selectedScenarioOverrideInput) {
+      updateSelectedScenarioOverrideInput(selectedScenarioOverrideInput);
       experimentPlanBranchActive = true;
       updatePreviewResultsThroughApiClient(experimentPlanDraft);
       render();
@@ -8816,6 +8834,8 @@ function selectedExperimentPlanContextKey(options = experimentPlanContextOptions
   }
   const currentPlanKey = experimentPlan ? experimentPlanSelectionKey(experimentPlan) : "";
   if (validKeys.has(currentPlanKey)) return currentPlanKey;
+  const backendOptions = options.filter((option) => option.plan);
+  if (backendOptions.length === 1) return backendOptions[0].key;
   return options[0]?.key || "";
 }
 
@@ -8836,6 +8856,25 @@ function selectedExperimentPlanProjectJson() {
   return buildBackendProjectJson(source, currentProject);
 }
 
+function selectedExperimentPlanRunSettings() {
+  const context = selectedExperimentPlanContext();
+  const config = context?.plan?.config && typeof context.plan.config === "object" && !Array.isArray(context.plan.config)
+    ? context.plan.config
+    : {};
+  const projectJson = context?.projectJson && typeof context.projectJson === "object" && !Array.isArray(context.projectJson)
+    ? context.projectJson
+    : {};
+  const experiment = projectJson.experiment && typeof projectJson.experiment === "object" && !Array.isArray(projectJson.experiment)
+    ? projectJson.experiment
+    : {};
+  const samples = positiveExperimentNumber(config.samples, positiveExperimentNumber(experiment.samples, 0));
+  const seed = positiveExperimentNumber(config.seed, positiveExperimentNumber(experiment.seed, 0));
+  return {
+    ...(samples > 0 ? { samples: Math.max(1, Math.min(1000, Math.trunc(samples))) } : {}),
+    ...(seed > 0 ? { seed: Math.trunc(seed) } : {})
+  };
+}
+
 function selectCurrentExperimentPlan(planKey) {
   const options = experimentPlanContextOptions();
   const selected = options.find((option) => option.key === planKey) || options[0];
@@ -8845,14 +8884,12 @@ function selectCurrentExperimentPlan(planKey) {
   liteMesaMonteCarloResult = null;
   liteMesaMonteCarloStatus = `已绑定实验方案：${selected.name}`;
   liteMesaAnalysisResults = {};
-  if (selected.plan?.config) {
-    const config = selected.plan.config;
-    if (Number(config.samples) > 0 || Number(config.seed) > 0) {
-      liteMesaMonteCarloSettings = {
-        samples: Math.max(1, Math.min(1000, Math.trunc(Number(config.samples) || liteMesaMonteCarloSettings.samples || 1))),
-        seed: Math.trunc(Number(config.seed) || liteMesaMonteCarloSettings.seed || 1)
-      };
-    }
+  const planRunSettings = selectedExperimentPlanRunSettings();
+  if (Number(planRunSettings.samples) > 0 || Number(planRunSettings.seed) > 0) {
+    liteMesaMonteCarloSettings = {
+      ...liteMesaMonteCarloSettings,
+      ...planRunSettings
+    };
   }
 }
 
@@ -8924,7 +8961,10 @@ function experimentPlanDraftFromBackendPlan(backendPlan) {
 function renderExperimentPlanEditor(page) {
   const seedPolicy = experimentPlanSeedPolicy();
   const composition = scenarioCompositionDraft();
-  const parameterOptions = scenarioOverrideParameterOptions(scenarioCompositionSourceProjectJson());
+  const sourceProjectJson = scenarioCompositionSourceProjectJson();
+  const selectedPath = normalizedSelectedScenarioCompositionPath(sourceProjectJson, composition);
+  const selectedOverrideContext = scenarioOverrideEditorContext(sourceProjectJson, selectedPath);
+  const parameterOptions = scenarioOverrideParameterOptions(sourceProjectJson);
   return `
     <div class="section-head">
       <h3>方案编辑</h3>
@@ -8953,17 +8993,18 @@ function renderExperimentPlanEditor(page) {
     </div>
     <div class="section-head sub-section-head">
       <h3>Scenario 拼接</h3>
-      <span>${composition.overrides.length ? `${composition.overrides.length} 个 Project JSON 覆盖项` : "尚未添加覆盖项"}</span>
+      <span>${composition.overrides.length ? `${composition.overrides.length} 个建模数据覆盖项` : "尚未添加覆盖项"}</span>
     </div>
     <div class="scenario-composition-workspace">
       <section class="scenario-project-json-panel">
         <div class="section-head">
-          <h3>Project JSON</h3>
-          <span>当前源项目</span>
+          <h3>建模数据</h3>
+          <span>点选属性叶子节点</span>
         </div>
-        <pre>${htmlEscape(JSON.stringify(scenarioCompositionSourceProjectJson(), null, 2))}</pre>
+        ${renderScenarioModelingDataTree(sourceProjectJson, selectedPath)}
       </section>
       <section class="scenario-composition-editor-panel">
+        ${renderSelectedScenarioOverrideEditor(selectedOverrideContext)}
         <div class="toolbar-row">
           <button type="button" class="btn-primary" data-scenario-override-add>新增覆盖项</button>
         </div>
@@ -8972,7 +9013,7 @@ function renderExperimentPlanEditor(page) {
         </datalist>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>参数</th><th>类型</th><th>替换值</th><th>说明</th><th>动作</th></tr></thead>
+            <thead><tr><th>已设置属性</th><th>类型</th><th>替换值</th><th>说明</th><th>动作</th></tr></thead>
             <tbody>
               ${composition.overrides.length ? composition.overrides.map((override, index) => renderScenarioOverrideRow(override, index)).join("") : `<tr><td colspan="5">暂无覆盖项</td></tr>`}
             </tbody>
@@ -8985,6 +9026,315 @@ function renderExperimentPlanEditor(page) {
       <button type="button" class="btn-primary" data-save-plan>保存方案</button>
     </div>
   `;
+}
+
+const SCENARIO_TOP_LEVEL_LABELS = Object.freeze({
+  activeModule: "当前模块",
+  aircraftTypes: "飞机类型对象",
+  airports: "机场清单对象",
+  analysisRequests: "分析请求对象",
+  basicMissions: "基本任务清单对象",
+  combatUnit: "作战单元对象",
+  combatUnits: "作战单元清单对象",
+  components: "装备部件清单对象",
+  compositeTasks: "复合任务清单对象",
+  equipment: "装备系统对象",
+  experiment: "实验参数对象",
+  missionAreas: "任务区域清单对象",
+  missionPhases: "任务阶段清单对象",
+  missionProfile: "任务剖面对象",
+  modelingDictionaries: "建模字典对象",
+  monteCarlo: "蒙特卡洛设置对象",
+  objects: "对象集合",
+  projectInfo: "项目信息对象",
+  scenarioComposition: "方案拼接对象",
+  scenarioId: "场景编号",
+  seedPolicy: "随机种子策略对象",
+  supportActivities: "保障活动清单对象",
+  supportNodes: "保障点清单对象",
+  supportOrganization: "保障组织对象",
+  supportResources: "保障资源清单对象"
+});
+
+const SCENARIO_FIELD_LABELS = Object.freeze({
+  activityCode: "活动编号",
+  activityName: "活动名称",
+  activityType: "活动类型",
+  airport: "机场",
+  aircraftModel: "飞机型号",
+  aircraftTypes: "飞机类型",
+  baseCode: "基础代码",
+  baseProjectVersion: "基础项目版本",
+  basicTaskName: "基本任务名称",
+  capacity: "容量",
+  compositeTasks: "复合任务",
+  constraints: "约束条件",
+  durationHours: "持续时间(h)",
+  equipmentCapacity: "设备容量",
+  equipmentType: "装备类型",
+  failureRate: "故障率",
+  id: "编号",
+  inventory: "库存",
+  jobs: "作业",
+  meanRepairTimeMinutes: "平均修复时间(min)",
+  members: "成员",
+  minRequiredSorties: "最低出动架次",
+  missionId: "任务编号",
+  model: "型号",
+  mode: "模式",
+  name: "名称",
+  parallelCores: "并行核心数",
+  personnelCapacity: "人员容量",
+  planType: "方案类型",
+  project_id: "项目编号",
+  project_version: "项目版本",
+  projectInfo: "项目信息",
+  quantity: "数量",
+  repeatCycleHours: "重复周期(h)",
+  sampleCount: "样本数",
+  samples: "样本数",
+  scenarioId: "场景编号",
+  schemaVersion: "模式版本",
+  schema_version: "模式版本",
+  seed: "随机种子",
+  sourceImportId: "来源导入编号",
+  sourceProjectId: "来源项目编号",
+  specialty: "专业",
+  steps: "仿真步数",
+  stopCondition: "停止条件",
+  summary: "摘要",
+  supportNodeId: "保障点编号",
+  taskDurationMinutes: "任务持续时间(min)",
+  type: "类型",
+  value: "值",
+  wholeMachineModels: "整机型号"
+});
+
+const SCENARIO_ARRAY_ITEM_LABELS = Object.freeze({
+  aircraftTypes: "飞机类型",
+  airports: "机场",
+  basicMissions: "基本任务",
+  combatUnits: "作战单元",
+  components: "装备部件",
+  compositeTasks: "复合任务",
+  jobs: "作业",
+  members: "成员",
+  missionAreas: "任务区域",
+  missionPhases: "任务阶段",
+  periodicTasks: "周期性任务",
+  supportActivities: "保障活动",
+  supportNodes: "保障点",
+  supportResources: "保障资源",
+  transportStrategies: "调运策略"
+});
+
+function normalizedSelectedScenarioCompositionPath(projectJson, composition) {
+  if (isScenarioLeafPath(projectJson, selectedScenarioCompositionPath)) return selectedScenarioCompositionPath;
+  const firstOverridePath = (composition.overrides || []).find((override) => isScenarioLeafPath(projectJson, override.path))?.path || "";
+  selectedScenarioCompositionPath = firstOverridePath;
+  return selectedScenarioCompositionPath;
+}
+
+function isScenarioLeafPath(projectJson, path) {
+  if (!path) return false;
+  const value = projectPathValue(projectJson, path);
+  return value !== undefined && (value === null || typeof value !== "object");
+}
+
+function renderScenarioModelingDataTree(projectJson, selectedPath) {
+  const nodes = Object.entries(projectJson || {})
+    .filter(([key]) => !["schema_version", "project_version"].includes(key))
+    .map(([key, value]) => scenarioModelingDataTreeNode(value, key, scenarioTopLevelLabel(key), key, selectedPath, 0));
+  return nodes.length
+    ? renderCollapsibleTree(nodes, { className: "scenario-modeling-data-tree" })
+    : `<div class="empty-state"><strong>暂无建模数据</strong></div>`;
+}
+
+function scenarioModelingDataTreeNode(value, path, label, rawKey, selectedPath, depth) {
+  const nodeId = `scenario-modeling:${path}`;
+  if (value === null || typeof value !== "object") {
+    return {
+      id: nodeId,
+      label,
+      meta: scenarioModelingValueText(value),
+      selected: path === selectedPath,
+      actionAttrs: `data-scenario-modeling-path="${htmlEscape(path)}"`
+    };
+  }
+  if (Array.isArray(value)) {
+    const itemLabel = SCENARIO_ARRAY_ITEM_LABELS[rawKey] || "项目";
+    return {
+      id: nodeId,
+      label,
+      meta: `${value.length} 项`,
+      root: depth === 0,
+      children: value.slice(0, 80).map((item, index) => scenarioModelingDataTreeNode(
+        item,
+        `${path}.${index}`,
+        `${itemLabel} ${index + 1}`,
+        rawKey,
+        selectedPath,
+        depth + 1
+      ))
+    };
+  }
+  const entries = Object.entries(value).filter(([key]) => !["schema_version", "project_version"].includes(key));
+  return {
+    id: nodeId,
+    label,
+    meta: scenarioObjectMeta(value, entries.length),
+    root: depth === 0,
+    children: entries.map(([key, child]) => scenarioModelingDataTreeNode(
+      child,
+      `${path}.${key}`,
+      scenarioFieldLabelForPath(`${path}.${key}`, key),
+      key,
+      selectedPath,
+      depth + 1
+    ))
+  };
+}
+
+function scenarioTopLevelLabel(key) {
+  return SCENARIO_TOP_LEVEL_LABELS[key] || `${scenarioFieldLabel(key)}对象`;
+}
+
+function scenarioFieldLabel(key) {
+  return SCENARIO_FIELD_LABELS[key] || key;
+}
+
+function scenarioFieldLabelForPath(path, key) {
+  const contextLabels = {
+    "experiment.name": "实验名称",
+    "missionProfile.name": "任务剖面名称",
+    "projectInfo.name": "项目名称"
+  };
+  return contextLabels[path] || scenarioFieldLabel(key);
+}
+
+function scenarioObjectMeta(value, childCount) {
+  const name = String(value?.name || value?.activityName || value?.basicTaskName || value?.id || "").trim();
+  return name || `${childCount} 项`;
+}
+
+function scenarioModelingValueText(value) {
+  if (value === null) return "空";
+  if (typeof value === "boolean") return value ? "是" : "否";
+  const text = String(value);
+  return text.length > 36 ? `${text.slice(0, 36)}...` : text;
+}
+
+function scenarioOverrideEditorContext(projectJson, path) {
+  if (!isScenarioLeafPath(projectJson, path)) return null;
+  const composition = scenarioCompositionDraft();
+  const override = (composition.overrides || []).find((item) => item.path === path) || null;
+  const originalValue = projectPathValue(projectJson, path);
+  return {
+    path,
+    label: scenarioPathDisplayLabel(projectJson, path),
+    originalValue,
+    override,
+    valueType: override?.valueType || inferScenarioOverrideValueType(originalValue),
+    value: override ? override.value : scenarioOverrideInputValue(originalValue)
+  };
+}
+
+function renderSelectedScenarioOverrideEditor(context) {
+  if (!context) {
+    return `
+      <section class="scenario-selected-override-card">
+        <div class="section-head">
+          <h3>选中属性</h3>
+          <span>等待点选</span>
+        </div>
+        <div class="empty-state"><strong>请选择左侧属性叶子节点</strong></div>
+      </section>
+    `;
+  }
+  return `
+    <section class="scenario-selected-override-card">
+      <div class="section-head">
+        <h3>选中属性</h3>
+        <span>${htmlEscape(context.label)}</span>
+      </div>
+      <div class="form-table-grid scenario-selected-override-grid">
+        <label>属性
+          <input value="${htmlEscape(context.label)}" readonly>
+        </label>
+        <label>类型
+          <select data-scenario-selected-override-value-type data-scenario-selected-override-path="${htmlEscape(context.path)}">
+            ${["string", "number", "boolean", "json"].map((type) => `<option value="${type}" ${context.valueType === type ? "selected" : ""}>${scenarioValueTypeLabel(type)}</option>`).join("")}
+          </select>
+        </label>
+        <label>当前值
+          <input value="${htmlEscape(scenarioOverrideInputValue(context.originalValue))}" readonly>
+        </label>
+        <label>替换值
+          <input data-scenario-selected-override-value data-scenario-selected-override-path="${htmlEscape(context.path)}" value="${htmlEscape(context.value ?? "")}">
+        </label>
+      </div>
+    </section>
+  `;
+}
+
+function scenarioValueTypeLabel(type) {
+  return {
+    string: "文本",
+    number: "数值",
+    boolean: "布尔",
+    json: "JSON"
+  }[type] || type;
+}
+
+function scenarioOverrideInputValue(value) {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value);
+}
+
+function inferScenarioOverrideValueType(value) {
+  if (typeof value === "number") return "number";
+  if (typeof value === "boolean") return "boolean";
+  if (value && typeof value === "object") return "json";
+  return "string";
+}
+
+function scenarioPathDisplayLabel(projectJson, path) {
+  const segments = String(path || "").split(".").filter(Boolean);
+  const labels = [];
+  let current = projectJson;
+  let parentKey = "";
+  let currentPath = "";
+  segments.forEach((segment, index) => {
+    currentPath = currentPath ? `${currentPath}.${segment}` : segment;
+    if (/^\d+$/.test(segment)) {
+      const itemLabel = SCENARIO_ARRAY_ITEM_LABELS[parentKey] || "项目";
+      labels.push(`${itemLabel} ${Number(segment) + 1}`);
+    } else {
+      labels.push(index === 0 ? scenarioTopLevelLabel(segment) : scenarioFieldLabelForPath(currentPath, segment));
+      parentKey = segment;
+    }
+    current = projectPathValue(projectJson, currentPath);
+  });
+  return labels.join(" / ");
+}
+
+function upsertScenarioOverrideForPath(path, projectJson) {
+  const composition = scenarioCompositionDraft();
+  const overrides = composition.overrides;
+  let override = overrides.find((item) => item.path === path);
+  const originalValue = projectPathValue(projectJson, path);
+  if (!override) {
+    override = {
+      path,
+      valueType: inferScenarioOverrideValueType(originalValue),
+      value: scenarioOverrideInputValue(originalValue),
+      label: scenarioPathDisplayLabel(projectJson, path)
+    };
+    overrides.push(override);
+  }
+  override.label = scenarioPathDisplayLabel(projectJson, path);
+  return override;
 }
 
 function renderScenarioOverrideRow(override, index) {
@@ -14538,31 +14888,47 @@ function renderBar(value, max, color) {
 function renderLineChart(points) {
   const width = 640;
   const height = 180;
+  const plotLeft = 52;
+  const plotRight = 596;
+  const plotTop = 18;
+  const plotBottom = 146;
   const minY = 0;
   const maxY = 1;
-  const xMax = Math.max(1, points.length - 1);
-  const xScale = (x) => 36 + ((x - 1) / xMax) * 560;
-  const yScale = (y) => 18 + (1 - (y - minY) / (maxY - minY)) * 128;
+  if (!points.length) {
+    return `<div class="empty-state"><strong>暂无曲线数据</strong></div>`;
+  }
+  const minX = Math.min(...points.map((point) => Number(point.x) || 0));
+  const maxX = Math.max(...points.map((point) => Number(point.x) || 0));
+  const xSpan = Math.max(1, maxX - minX);
+  const xScale = (x) => plotLeft + ((x - minX) / xSpan) * (plotRight - plotLeft);
+  const yScale = (y) => {
+    const bounded = Math.max(minY, Math.min(maxY, Number(y) || 0));
+    return plotTop + (1 - (bounded - minY) / (maxY - minY)) * (plotBottom - plotTop);
+  };
   const line = points.map((point) => `${xScale(point.x).toFixed(1)},${yScale(point.y).toFixed(1)}`).join(" ");
+  const yTicks = [0, 0.5, 1];
   return `
     <svg class="line-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="任务可靠度趋势">
+      <line class="line-chart-axis line-chart-y-axis" x1="${plotLeft}" y1="${plotTop}" x2="${plotLeft}" y2="${plotBottom}"></line>
+      <line class="line-chart-axis line-chart-x-axis" x1="${plotLeft}" y1="${plotBottom}" x2="${plotRight}" y2="${plotBottom}"></line>
+      ${yTicks.map((tick) => `<line class="line-chart-tick" x1="${plotLeft - 4}" y1="${yScale(tick).toFixed(1)}" x2="${plotRight}" y2="${yScale(tick).toFixed(1)}"></line><text class="line-chart-y-label" x="${plotLeft - 10}" y="${(yScale(tick) + 4).toFixed(1)}">${tick.toFixed(1)}</text>`).join("")}
       <polyline points="${line}"></polyline>
-      ${points.map((point) => `<circle cx="${xScale(point.x).toFixed(1)}" cy="${yScale(point.y).toFixed(1)}" r="4"></circle><text x="${xScale(point.x).toFixed(1)}" y="168">${point.x}</text>`).join("")}
+      ${points.map((point) => `<circle cx="${xScale(point.x).toFixed(1)}" cy="${yScale(point.y).toFixed(1)}" r="4"></circle><text class="line-chart-x-label" x="${xScale(point.x).toFixed(1)}" y="168">${point.x}</text>`).join("")}
     </svg>
   `;
 }
 
 function renderLiteMesaAnalysisPage(page) {
   const definition = liteMesaAnalysisDefinitionForPage(page);
-  const settings = liteMesaAnalysisSettings[definition.analysisType] || {};
+  const settings = liteMesaAnalysisEffectiveSettings(definition);
   const result = liteMesaAnalysisResults[definition.analysisType] || null;
   const runCount = result?.sampleCount || 0;
   const statusText = result?.status === "session_complete"
-    ? `会话内结果已生成：${runCount} 个样本`
+    ? `分析结果已生成：${runCount} 个样本`
     : result?.status === "blocked"
       ? result.message
     : result?.status === "running"
-        ? "Mesa 分析运行中"
+        ? "分析运行中"
         : "等待运行";
   return `
     <div class="lite-mesa-workbench lite-mesa-analysis-page">
@@ -14572,17 +14938,12 @@ function renderLiteMesaAnalysisPage(page) {
         </div>
         <div class="lite-mesa-hero-actions">
           ${renderExperimentPlanContextDropdown(page)}
-          <div class="lite-mesa-hero-meter" aria-label="会话内结果">
-            <strong>${runCount || "待运行"}</strong>
-            <span>会话样本</span>
-          </div>
         </div>
       </section>
       <div class="lite-mesa-layout lite-mesa-analysis-layout">
         <section class="lite-mesa-settings">
           <div class="section-head">
             <h3>分析设置</h3>
-            <span>${htmlEscape(definition.experimentId)}</span>
           </div>
           <div class="lite-mesa-setting-grid">
             ${renderLiteMesaAnalysisSettings(definition, settings)}
@@ -14593,20 +14954,30 @@ function renderLiteMesaAnalysisPage(page) {
         <section class="lite-mesa-results">
           <div class="section-head">
             <h3>${htmlEscape(definition.subtitle)}</h3>
-            <span>${result?.status === "session_complete" ? "会话完成" : result?.status === "running" ? "后端 Mesa 内存运行中" : "等待运行"}</span>
+            <span>${liteMesaAnalysisResultHeader(definition, result)}</span>
           </div>
           ${renderLiteMesaAnalysisMetricCards(definition, result)}
         </section>
       </div>
       <section class="lite-mesa-stat-section">
         <div class="section-head">
-          <h3>会话内结果明细</h3>
-          <span>建模粒度不足时不会伪造结论</span>
+          <h3>${liteMesaAnalysisDetailTitle(definition)}</h3>
         </div>
         ${renderLiteMesaAnalysisSessionBody(definition, result)}
       </section>
     </div>
   `;
+}
+
+function liteMesaAnalysisResultHeader(_definition, result) {
+  if (result?.status === "session_complete") return "分析完成";
+  if (result?.status === "running") return "运行中";
+  return "等待运行";
+}
+
+function liteMesaAnalysisDetailTitle(definition) {
+  if (definition.analysisType === "spare_shortfall") return "备件短板一览";
+  return "分析结果明细";
 }
 
 function liteMesaAnalysisDefinitionForPage(page) {
@@ -14623,6 +14994,13 @@ function createDefaultLiteMesaAnalysisSettings() {
     carry_list: { samples: 27, seed: 20260621, missionConfidenceTarget: 0.9 },
     mission_reliability: { samples: 27, seed: 20260621, maxTimeWindow: "" },
     downtime_factors: { samples: 27, seed: 20260621, topN: 4 }
+  };
+}
+
+function liteMesaAnalysisEffectiveSettings(definition) {
+  return {
+    ...(liteMesaAnalysisSettings[definition.analysisType] || {}),
+    ...selectedExperimentPlanRunSettings()
   };
 }
 
@@ -14688,7 +15066,7 @@ function updateLiteMesaAnalysisSetting(page, field, value) {
 
 async function runLiteMesaAnalysisPage(page) {
   const definition = liteMesaAnalysisDefinitionForPage(page);
-  const settings = liteMesaAnalysisSettings[definition.analysisType] || {};
+  const settings = liteMesaAnalysisEffectiveSettings(definition);
   const samples = Math.max(1, Math.min(1000, Math.trunc(Number(settings.samples) || 1)));
   const seed = Math.trunc(Number(settings.seed) || 1);
   const normalizedSettings = {
@@ -14701,7 +15079,7 @@ async function runLiteMesaAnalysisPage(page) {
     ...liteMesaAnalysisResults,
     [definition.analysisType]: {
       status: "running",
-      message: "Mesa 分析运行中",
+      message: "分析运行中",
       sampleCount: 0,
       metrics: definition.metricLabels.map((label) => [label, "运行中"]),
       rows: [],
@@ -14724,7 +15102,7 @@ async function runLiteMesaAnalysisPage(page) {
         metrics: [],
         rows: [],
         limitations: [],
-        message: `Mesa 分析失败：${err && err.message ? err.message : "运行错误"}`
+        message: `分析失败：${err && err.message ? err.message : "运行错误"}`
       }
     };
   }
@@ -14741,6 +15119,7 @@ function normalizeLiteMesaAnalysisResult(definition, payload) {
       seedList: [],
       metrics: [],
       rows: [],
+      dailyRows: [],
       eventSnapshots: Array.isArray(payload?.event_snapshots) ? payload.event_snapshots : [],
       limitations: Array.isArray(payload?.limitations) ? payload.limitations : [],
       message: payload?.message || "建模粒度不足：请补充装备数量、任务要求、任务周期、部件和保障节点。"
@@ -14755,6 +15134,7 @@ function normalizeLiteMesaAnalysisResult(definition, payload) {
     seedList: Array.isArray(payload.seed_list) ? payload.seed_list : [],
     metrics: Array.isArray(payload.metrics) ? payload.metrics : definition.metricLabels.map((label) => [label, "无"]),
     rows: Array.isArray(payload.rows) ? payload.rows : [],
+    dailyRows: Array.isArray(payload.daily_rows) ? payload.daily_rows : [],
     eventSnapshots: Array.isArray(payload.event_snapshots) ? payload.event_snapshots : [],
     limitations: Array.isArray(payload.limitations) ? payload.limitations : [],
     message: payload.message || ""
@@ -14772,7 +15152,6 @@ function renderLiteMesaAnalysisMetricCards(definition, result) {
         <div class="metric-card">
           <span>${htmlEscape(label)}</span>
           <strong>${htmlEscape(value)}</strong>
-          <em>${result?.status === "session_complete" ? "会话内 Mesa" : "等待运行"}</em>
         </div>
       `).join("")}
     </div>
@@ -14781,10 +15160,10 @@ function renderLiteMesaAnalysisMetricCards(definition, result) {
 
 function renderLiteMesaAnalysisSessionBody(definition, result) {
   if (!result) {
-    return `<div class="empty-state"><strong>尚未运行分析</strong><p>当前页会读取项目建模数据并在后端内存会话中生成分析摘要。</p></div>`;
+    return `<div class="empty-state"><strong>尚未运行分析</strong><p>当前页会读取项目建模数据并在后端内存运行中生成分析摘要。</p></div>`;
   }
   if (result.status === "running") {
-    return `<div class="empty-state"><strong>分析运行中</strong><p>当前项目正在后端内存会话中生成分析摘要。</p></div>`;
+    return `<div class="empty-state"><strong>分析运行中</strong><p>当前项目正在后端内存运行中生成分析摘要。</p></div>`;
   }
   if (result.status === "blocked") {
     return `<div class="empty-state"><strong>建模粒度不足</strong><p>${htmlEscape(result.message)}</p></div>`;
@@ -14792,8 +15171,8 @@ function renderLiteMesaAnalysisSessionBody(definition, result) {
   const rows = result.rows || [];
   if (definition.analysisType === "spare_shortfall") {
     return `<div class="table-wrap"><table class="lite-mesa-stat-table">
-      <thead><tr><th>备件类别</th><th>需求次数</th><th>满足次数</th><th>缺件次数</th><th>满足率</th><th>风险</th></tr></thead>
-      <tbody>${rows.map((row) => `<tr><td>${htmlEscape(row.spareType)}</td><td>${row.demand}</td><td>${row.filled}</td><td>${row.shortage}</td><td>${pct(row.fillRate)}</td><td>${htmlEscape(row.riskLevel)}</td></tr>`).join("")}</tbody>
+      <thead><tr><th>备件类别</th><th>需求次数</th><th>满足次数</th><th>平均备件延误时间(h)</th><th>满足率</th><th>风险</th></tr></thead>
+      <tbody>${rows.map((row) => `<tr><td>${htmlEscape(row.spareType)}</td><td>${row.demand}</td><td>${row.filled}</td><td>${fixed(row.meanTransportDelayHours, 2)}</td><td>${pct(row.fillRate)}</td><td>${htmlEscape(row.riskLevel)}</td></tr>`).join("")}</tbody>
     </table></div>`;
   }
   if (definition.analysisType === "carry_list") {
@@ -14803,10 +15182,16 @@ function renderLiteMesaAnalysisSessionBody(definition, result) {
     </table></div>`;
   }
   if (definition.analysisType === "mission_reliability") {
-    return `<div class="table-wrap"><table class="lite-mesa-stat-table">
-      <thead><tr><th>序号</th><th>seed</th><th>任务成功率</th><th>出动架次率</th><th>战备完好率</th></tr></thead>
-      <tbody>${rows.map((row) => `<tr><td>${row.sequence}</td><td>${row.seed}</td><td>${pct(row.missionSuccessRate)}</td><td>${pct(row.sortieRate)}</td><td>${pct(row.readyRate)}</td></tr>`).join("")}</tbody>
-    </table></div>`;
+    return `
+      ${renderLiteMesaMissionReliabilityDailyChart(result.dailyRows || [])}
+      <details class="lite-mesa-collapsible-table">
+        <summary>样本明细（${rows.length}）</summary>
+        <div class="table-wrap"><table class="lite-mesa-stat-table">
+        <thead><tr><th>序号</th><th>seed</th><th>任务成功率</th><th>出动架次率</th><th>战备完好率</th></tr></thead>
+        <tbody>${rows.map((row) => `<tr><td>${row.sequence}</td><td>${row.seed}</td><td>${pct(row.missionSuccessRate)}</td><td>${formatLiteMesaAnalysisMetricValue("出动架次率", row.sortieRate)}</td><td>${pct(row.readyRate)}</td></tr>`).join("")}</tbody>
+        </table></div>
+      </details>
+    `;
   }
   return `
     <div class="table-wrap"><table class="lite-mesa-stat-table">
@@ -14817,15 +15202,40 @@ function renderLiteMesaAnalysisSessionBody(definition, result) {
   `;
 }
 
+function formatLiteMesaAnalysisMetricValue(label, value) {
+  if (String(label || "").includes("出动架次率")) return fixed(value, 3);
+  return pct(value);
+}
+
+function renderLiteMesaMissionReliabilityDailyChart(rows) {
+  if (!rows.length) {
+    return `<div class="empty-state"><strong>每日平均任务成功率</strong><p>当前会话未返回按天聚合的任务成功率。</p></div>`;
+  }
+  const points = rows.map((row) => ({
+    x: Number(row.day || 0),
+    y: Number(row.meanMissionSuccessRate || 0)
+  }));
+  return `
+    <div class="analysis-chart-panel">
+      <div class="chart-title">每日平均任务成功率</div>
+      ${renderLineChart(points)}
+    </div>
+    <div class="table-wrap"><table class="lite-mesa-stat-table">
+      <thead><tr><th>任务日</th><th>样本数</th><th>平均任务成功率</th><th>平均出动架次率</th><th>平均计划架次</th></tr></thead>
+      <tbody>${rows.map((row) => `<tr><td>第${htmlEscape(row.day)}天</td><td>${htmlEscape(row.sampleCount)}</td><td>${fixed(row.meanMissionSuccessRate, 3)}</td><td>${fixed(row.meanSortieRate, 3)}</td><td>${fixed(row.plannedSorties, 1)}</td></tr>`).join("")}</tbody>
+    </table></div>
+  `;
+}
+
 function renderLiteMesaDowntimeEventSnapshots(snapshots) {
   if (!snapshots.length) {
-    return `<div class="empty-state"><strong>事件快照</strong><p>当前停机因素运行未捕获到停机事件日志快照。</p></div>`;
+    return `<div class="empty-state"><strong>停机事件一览</strong><p>当前停机因素运行未捕获到停机事件日志。</p></div>`;
   }
   return `
     <div class="lite-mesa-event-snapshots">
       <div class="section-head">
-        <h3>事件快照</h3>
-        <span>${snapshots.length} 条停机日志快照</span>
+        <h3>停机事件一览</h3>
+        <span>${snapshots.length} 条停机事件</span>
       </div>
       ${snapshots.map((snapshot, index) => renderLiteMesaDowntimeEventSnapshot(snapshot, index)).join("")}
     </div>
@@ -14841,7 +15251,7 @@ function renderLiteMesaDowntimeEventSnapshot(snapshot, index) {
     <details class="lite-mesa-event-snapshot" ${index === 0 ? "open" : ""}>
       <summary>
         <strong>${htmlEscape(snapshot.event_label || snapshot.event_type || "停机事件")}</strong>
-        <span>seed ${htmlEscape(snapshot.seed ?? "-")} / t=${htmlEscape(snapshot.simulation_time ?? "-")}</span>
+        <span>seed ${htmlEscape(snapshot.seed ?? "-")} / t=${htmlEscape(snapshot.simulation_time ?? "-")} / ${htmlEscape(snapshot.result || "downtime_anomaly_recorded")}</span>
       </summary>
       <div class="downtime-snapshot-grid">
         <section>
@@ -15119,6 +15529,19 @@ function updateScenarioOverrideInput(input) {
     override.value = input.value;
   } else if (input.closest("[data-scenario-override-label]")) {
     override.label = input.value;
+  }
+}
+
+function updateSelectedScenarioOverrideInput(input) {
+  const path = input.dataset.scenarioSelectedOverridePath || selectedScenarioCompositionPath;
+  if (!path) return;
+  selectedScenarioCompositionPath = path;
+  const sourceProjectJson = scenarioCompositionSourceProjectJson();
+  const override = upsertScenarioOverrideForPath(path, sourceProjectJson);
+  if (input.closest("[data-scenario-selected-override-value-type]")) {
+    override.valueType = input.value;
+  } else if (input.closest("[data-scenario-selected-override-value]")) {
+    override.value = input.value;
   }
 }
 

@@ -347,6 +347,53 @@ h4 {
   display: none;
 }
 
+.nav-module > summary,
+.nav-secondary > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  transition: background 140ms ease, color 140ms ease, border-color 140ms ease;
+}
+
+.nav-module > summary::before,
+.nav-secondary > summary::before {
+  content: ">";
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+  background: #fff;
+}
+
+.nav-module[open] > summary::before,
+.nav-secondary[open] > summary::before {
+  content: "v";
+  border-color: #9bb7df;
+  color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.nav-module > summary:hover,
+.nav-secondary > summary:hover {
+  background: #f7fafc;
+}
+
+.nav-module > summary:focus-visible,
+.nav-secondary > summary:focus-visible {
+  outline: 2px solid rgba(15, 92, 191, 0.24);
+  outline-offset: 2px;
+}
+
 .nav-module > summary {
   margin-bottom: 10px;
   font-size: 15px;
@@ -607,7 +654,8 @@ select[multiple].table-edit-select {
   gap: 10px;
 }
 
-.scenario-project-json-panel pre {
+.scenario-project-json-panel pre,
+.scenario-modeling-data-tree {
   max-height: 520px;
   margin: 0;
   padding: 12px;
@@ -619,6 +667,37 @@ select[multiple].table-edit-select {
   font-size: 12px;
   line-height: 1.55;
   white-space: pre;
+}
+
+.scenario-modeling-data-tree {
+  display: grid;
+  gap: 8px;
+  background: #fff;
+  color: var(--text);
+  white-space: normal;
+}
+
+.scenario-modeling-data-tree .tree-node-label {
+  border: 1px solid transparent;
+}
+
+.scenario-modeling-data-tree .tree-node-label[data-scenario-modeling-path] {
+  cursor: pointer;
+}
+
+.scenario-selected-override-card {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfd;
+}
+
+.scenario-selected-override-card .section-head {
+  margin-bottom: 10px;
+}
+
+.scenario-selected-override-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .scenario-composition-editor-panel .table-wrap {
@@ -1492,6 +1571,16 @@ select[multiple].table-edit-select {
   stroke-width: 3;
 }
 
+.line-chart-axis {
+  stroke: var(--muted);
+  stroke-width: 1.2;
+}
+
+.line-chart-tick {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
 .line-chart circle {
   fill: #fff;
   stroke: var(--primary);
@@ -1501,6 +1590,14 @@ select[multiple].table-edit-select {
 .line-chart text {
   fill: var(--muted);
   font-size: 11px;
+  text-anchor: middle;
+}
+
+.line-chart .line-chart-y-label {
+  text-anchor: end;
+}
+
+.line-chart .line-chart-x-label {
   text-anchor: middle;
 }
 
@@ -1882,6 +1979,26 @@ select[multiple].table-edit-select {
 
 .lite-mesa-stat-table {
   min-width: 760px;
+}
+
+.lite-mesa-collapsible-table {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.lite-mesa-collapsible-table > summary {
+  padding: 12px 14px;
+  cursor: pointer;
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.lite-mesa-collapsible-table > .table-wrap {
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
 }
 
 .lite-mesa-event-snapshots {

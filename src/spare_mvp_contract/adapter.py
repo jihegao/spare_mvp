@@ -32,6 +32,53 @@ SPARE_SHORTFALL_TRUNCATION = {
     "mode": "clamp_0_1",
     "fields": ["fill_rate", "utilization", "shortage_probability"],
 }
+_PERIODIC_WEEKDAY_INDEXES = {
+    "monday": 0,
+    "mondaycompositetaskid": 0,
+    "mon": 0,
+    "周一": 0,
+    "星期一": 0,
+    "tuesday": 1,
+    "tuesdaycompositetaskid": 1,
+    "tue": 1,
+    "周二": 1,
+    "星期二": 1,
+    "wednesday": 2,
+    "wednesdaycompositetaskid": 2,
+    "wed": 2,
+    "周三": 2,
+    "星期三": 2,
+    "thursday": 3,
+    "thursdaycompositetaskid": 3,
+    "thu": 3,
+    "周四": 3,
+    "星期四": 3,
+    "friday": 4,
+    "fridaycompositetaskid": 4,
+    "fri": 4,
+    "周五": 4,
+    "星期五": 4,
+    "saturday": 5,
+    "saturdaycompositetaskid": 5,
+    "sat": 5,
+    "周六": 5,
+    "星期六": 5,
+    "sunday": 6,
+    "sundaycompositetaskid": 6,
+    "sun": 6,
+    "周日": 6,
+    "星期日": 6,
+    "星期天": 6,
+}
+_PERIODIC_WEEKDAY_ASSIGNMENT_FIELDS = (
+    "mondayCompositeTaskId",
+    "tuesdayCompositeTaskId",
+    "wednesdayCompositeTaskId",
+    "thursdayCompositeTaskId",
+    "fridayCompositeTaskId",
+    "saturdayCompositeTaskId",
+    "sundayCompositeTaskId",
+)
 
 
 class AdapterError(ValueError):
@@ -661,6 +708,9 @@ class SimulationAdapter:
                     "aircraft_type": model,
                     "model": model,
                     "initial_state": initial_state,
+                    "airport": self._optional_string(member.get("airport")) or "",
+                    "airport_id": self._optional_string(member.get("airportId") or member.get("baseAirportId")) or "",
+                    "deployment_location": self._optional_string(member.get("deploymentLocation")) or "",
                 }
             )
         return assets
@@ -669,6 +719,8 @@ class SimulationAdapter:
         return {
             "id": str(node.get("id") or "support-node"),
             "name": str(node.get("name") or node.get("id") or "support node"),
+            "airport": self._optional_string(node.get("airport")) or "",
+            "airport_id": self._optional_string(node.get("airportId") or node.get("baseAirportId")) or "",
             "node_type": self._optional_string(node.get("nodeType")),
             "support_level": self._optional_string(node.get("supportLevel")),
             "personnel_capacity": self._positive_int(node.get("personnelCapacity"), self._positive_int(node.get("capacity"), 1)),
@@ -1382,6 +1434,7 @@ class SimulationAdapter:
             ],
             run_id=run_id,
             validation_scope=scenario.get("compiled_from", {}).get("mapping_provenance", {}),
+            simulation_inputs=inputs,
         )
         result["analysis_outputs"] = {
             "spare_shortage": projections["spare_shortfall"]["data"],
@@ -1786,6 +1839,7 @@ class SimulationAdapter:
             samples=samples,
             run_id=run_id,
             validation_scope=scenario.get("compiled_from", {}).get("mapping_provenance", {}),
+            simulation_inputs=inputs,
         )
         behavior_scope = AircraftSupportV1Model.behavior_scope()
         input_project = self._input_project_for_scenario(scenario)
@@ -2291,6 +2345,214 @@ class SimulationAdapter:
             },
         }
 
+    def _aircraft_support_v1_scoped_spare_projection_rows(
+        self,
+        metrics: dict[str, Any],
+        samples: list[dict[str, Any]],
+        simulation_inputs: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        scoped_nodes = self._aircraft_support_v1_scoped_support_nodes(simulation_inputs)
+        scoped_node_ids = {str(node.get("id") or "") for node in scoped_nodes if str(node.get("id") or "")}
+        baseline_quantities: dict[str, int] = {}
+        for node in scoped_nodes:
+            inventory = node.get("inventory") if isinstance(node.get("inventory"), dict) else {}
+            for spare_type, quantity in inventory.items():
+                key = str(spare_type or "").strip()
+                if not key or not self._is_number(quantity):
+                    continue
+                baseline_quantities[key] = baseline_quantities.get(key, 0) + self._positive_int(quantity, 0)
+
+        stats = self._aircraft_support_v1_spare_event_stats(samples, scoped_node_ids)
+        for spare_type in stats:
+            baseline_quantities.setdefault(spare_type, 0)
+
+        rows = []
+        sample_count = max(1, len(samples))
+        planned_sorties = max(1.0, float(metrics.get("planned_sorties", 1) or 1))
+        mean_transport_delay = max(0.0, float(metrics.get("mean_transport_delay", 0) or 0))
+        for spare_type, baseline_quantity in baseline_quantities.items():
+            row_stats = stats.get(spare_type, {})
+            consumed_quantity = max(0.0, float(row_stats.get("consumed_quantity", 0) or 0))
+            shortage_count = max(0.0, float(row_stats.get("shortage_count", 0) or 0))
+            shortage_quantity = max(0.0, float(row_stats.get("shortage_quantity", 0) or 0))
+            demand_quantity = max(0.0, float(row_stats.get("demand_quantity", 0) or 0))
+            demand_count = demand_quantity if demand_quantity > 0 else consumed_quantity + shortage_quantity
+            filled_count = consumed_quantity
+            fill_rate = filled_count / demand_count if demand_count > 0 else 1.0
+            utilization = min(1.0, consumed_quantity / max(1.0, float(baseline_quantity)))
+            type_shortage_probability = min(1.0, shortage_count / planned_sorties)
+            risk_level = self._aircraft_support_v1_spare_risk_level(fill_rate, type_shortage_probability)
+            replenish_quantity = int(math.ceil(shortage_quantity / sample_count)) if shortage_quantity > 0 else 0
+            rows.append(
+                {
+                    "spare_type": spare_type,
+                    "baseline_quantity": baseline_quantity,
+                    "recommended_quantity": max(0, baseline_quantity + replenish_quantity),
+                    "demand_count": demand_count,
+                    "filled_count": filled_count,
+                    "shortage_count": shortage_count,
+                    "fill_rate": min(1.0, max(0.0, fill_rate)),
+                    "utilization": utilization,
+                    "shortage_probability": type_shortage_probability,
+                    "mean_transport_delay": mean_transport_delay if shortage_count > 0 else 0.0,
+                    "in_transit_count": 0,
+                    "risk_level": risk_level,
+                }
+            )
+        return rows
+
+    def _aircraft_support_v1_scoped_support_nodes(self, simulation_inputs: dict[str, Any]) -> list[dict[str, Any]]:
+        nodes = [
+            item for item in simulation_inputs.get("support_network", {}).get("nodes", [])
+            if isinstance(item, dict)
+        ]
+        nodes_by_id = {str(node.get("id") or ""): node for node in nodes if str(node.get("id") or "")}
+        if not nodes_by_id:
+            return []
+
+        airports = [
+            item for item in simulation_inputs.get("mission_profile", {}).get("airports", [])
+            if isinstance(item, dict)
+        ]
+        aircraft_tokens = self._aircraft_support_v1_aircraft_airport_tokens(simulation_inputs)
+        matched_airports = [
+            airport for airport in airports
+            if self._aircraft_support_v1_scope_matches(airport, aircraft_tokens)
+        ]
+        if not matched_airports and airports:
+            matched_airports = [airports[0]]
+
+        support_node_ids: set[str] = set()
+        for airport in matched_airports:
+            for key in ("supportNodeId", "support_node_id", "id"):
+                value = str(airport.get(key) or "").strip()
+                if value:
+                    support_node_ids.add(value)
+
+        scoped_nodes = [nodes_by_id[node_id] for node_id in support_node_ids if node_id in nodes_by_id]
+        if scoped_nodes:
+            return scoped_nodes
+
+        node_matches = [
+            node for node in nodes
+            if self._aircraft_support_v1_scope_matches(node, aircraft_tokens)
+            and isinstance(node.get("inventory"), dict)
+            and node.get("inventory")
+        ]
+        if node_matches:
+            return node_matches
+
+        return [
+            node for node in nodes
+            if isinstance(node.get("inventory"), dict) and node.get("inventory")
+        ][:1]
+
+    def _aircraft_support_v1_aircraft_airport_tokens(self, simulation_inputs: dict[str, Any]) -> set[str]:
+        tokens: set[str] = set()
+        for asset in simulation_inputs.get("aircraft", {}).get("assets", []) or []:
+            if not isinstance(asset, dict):
+                continue
+            for key in ("airport", "airport_id", "airportId", "baseAirportId", "deployment_location", "deploymentLocation"):
+                token = self._normalized_scope_token(asset.get(key))
+                if token:
+                    tokens.add(token)
+        return tokens
+
+    def _aircraft_support_v1_scope_matches(self, item: dict[str, Any], tokens: set[str]) -> bool:
+        if not tokens:
+            return False
+        for key in (
+            "id",
+            "name",
+            "airport",
+            "airport_id",
+            "airportId",
+            "baseAirportId",
+            "airportCode",
+            "code",
+            "location",
+            "supportNodeId",
+            "support_node_id",
+        ):
+            if self._normalized_scope_token(item.get(key)) in tokens:
+                return True
+        return False
+
+    def _normalized_scope_token(self, value: Any) -> str:
+        return str(value or "").strip().casefold()
+
+    def _aircraft_support_v1_spare_event_stats(
+        self,
+        samples: list[dict[str, Any]],
+        scoped_node_ids: set[str],
+    ) -> dict[str, dict[str, float]]:
+        demand_quantities: dict[str, dict[tuple[str, ...], float]] = {}
+        filled_quantities: dict[str, dict[tuple[str, ...], float]] = {}
+        shortage_quantities: dict[str, dict[tuple[str, ...], float]] = {}
+        for sample in samples:
+            sample_key = str(sample.get("sample_index", sample.get("seed", "")))
+            for event_index, event in enumerate(sample.get("events") or []):
+                if not isinstance(event, dict):
+                    continue
+                event_name = str(event.get("event") or event.get("event_type") or "")
+                if event_name not in {"spare_shortage", "spare_consumed"}:
+                    continue
+                details = event.get("details") if isinstance(event.get("details"), dict) else {}
+                spare_type = str(details.get("spare_type") or details.get("spareType") or "").strip()
+                if not spare_type:
+                    continue
+                node_id = str(
+                    details.get("resource_id")
+                    or details.get("support_node_id")
+                    or details.get("supportNodeId")
+                    or details.get("node_id")
+                    or ""
+                ).strip()
+                if scoped_node_ids and node_id and node_id not in scoped_node_ids:
+                    continue
+                quantity = max(1.0, self._non_negative_number(details.get("quantity"), 1.0))
+                job_id = str(details.get("job_id") or details.get("jobId") or "").strip()
+                event_key = job_id or f"event-{event_index}"
+                demand_key = (sample_key, node_id, spare_type, event_key)
+                if event_name == "spare_consumed":
+                    filled_quantities.setdefault(spare_type, {})[demand_key] = max(
+                        filled_quantities.setdefault(spare_type, {}).get(demand_key, 0.0),
+                        quantity,
+                    )
+                    demand_quantities.setdefault(spare_type, {})[demand_key] = max(
+                        demand_quantities.setdefault(spare_type, {}).get(demand_key, 0.0),
+                        quantity,
+                    )
+                else:
+                    required = max(
+                        quantity,
+                        self._non_negative_number(details.get("required_quantity"), quantity),
+                    )
+                    shortage_quantities.setdefault(spare_type, {})[demand_key] = max(
+                        shortage_quantities.setdefault(spare_type, {}).get(demand_key, 0.0),
+                        required,
+                    )
+                    demand_quantities.setdefault(spare_type, {})[demand_key] = max(
+                        demand_quantities.setdefault(spare_type, {}).get(demand_key, 0.0),
+                        required,
+                    )
+        stats: dict[str, dict[str, float]] = {}
+        for spare_type in sorted(set(demand_quantities) | set(filled_quantities) | set(shortage_quantities)):
+            stats[spare_type] = {
+                "consumed_quantity": sum(filled_quantities.get(spare_type, {}).values()),
+                "shortage_count": float(len(shortage_quantities.get(spare_type, {}))),
+                "shortage_quantity": sum(shortage_quantities.get(spare_type, {}).values()),
+                "demand_quantity": sum(demand_quantities.get(spare_type, {}).values()),
+            }
+        return stats
+
+    def _aircraft_support_v1_spare_risk_level(self, fill_rate: float, shortage_probability: float) -> str:
+        if shortage_probability >= 0.2 or fill_rate < 0.85:
+            return "high"
+        if shortage_probability > 0 or fill_rate < 1.0:
+            return "medium"
+        return "low"
+
     def _aircraft_support_v1_analysis_projections(
         self,
         metrics: dict[str, Any],
@@ -2298,6 +2560,7 @@ class SimulationAdapter:
         samples: list[dict[str, Any]] | None = None,
         run_id: str = "",
         validation_scope: dict[str, Any] | None = None,
+        simulation_inputs: dict[str, Any] | None = None,
     ) -> dict[str, dict[str, Any]]:
         projection_applicability = {
             projection_type: self._aircraft_support_v1_projection_applicability(projection_type, validation_scope or {})
@@ -2315,7 +2578,7 @@ class SimulationAdapter:
         spare_fill_rate = min(1.0, max(0.0, float(metrics.get("spare_fill_rate", 0) or 0)))
         spare_utilization = min(1.0, max(0.0, float(metrics.get("spare_utilization", 0) or 0)))
         mission_success = min(1.0, max(0.0, float(metrics.get("mission_success_rate", metrics.get("sortie_completion_rate", 0)) or 0)))
-        sortie_rate = min(1.0, max(0.0, float(metrics.get("sortie_rate", 0) or 0)))
+        sortie_rate = max(0.0, float(metrics.get("sortie_rate", 0) or 0))
         downtime_values = {
             "failure": max(0.0, float(metrics.get("downtime_failure_events", 0) or 0)),
             "spare_shortage": max(0.0, float(metrics.get("downtime_spare_shortage_events", 0) or 0)),
@@ -2326,6 +2589,29 @@ class SimulationAdapter:
         }
         downtime_total = sum(downtime_values.values()) or 1.0
         risk_level = "high" if shortage_probability >= 0.2 else "medium" if shortage_probability > 0 else "low"
+        spare_rows = self._aircraft_support_v1_scoped_spare_projection_rows(
+            metrics,
+            samples or [],
+            simulation_inputs if isinstance(simulation_inputs, dict) else {},
+        )
+        if not spare_rows:
+            fallback_quantity = max(1, int(math.ceil(max(1.0, float(metrics.get("spare_consumed_total", 0) or 0) + shortage_events))))
+            spare_rows = [
+                {
+                    "spare_type": "aircraft_support_v1_spares",
+                    "baseline_quantity": fallback_quantity,
+                    "recommended_quantity": fallback_quantity,
+                    "demand_count": planned_sorties,
+                    "filled_count": planned_sorties * spare_fill_rate,
+                    "shortage_count": shortage_events,
+                    "fill_rate": spare_fill_rate,
+                    "utilization": spare_utilization,
+                    "shortage_probability": shortage_probability,
+                    "mean_transport_delay": float(metrics.get("mean_transport_delay", 0) or 0),
+                    "in_transit_count": metrics.get("transport_in_transit_count", 0),
+                    "risk_level": risk_level,
+                }
+            ]
         return {
             "large_sample_summary": {
                 "projection_type": "large_sample_summary",
@@ -2355,17 +2641,23 @@ class SimulationAdapter:
                 "truncation": SPARE_SHORTFALL_TRUNCATION,
                 "data": [
                     {
-                        "spare_type": "aircraft_support_v1_spares",
-                        "fill_rate": spare_fill_rate,
-                        "utilization": spare_utilization,
-                        "shortage_probability": shortage_probability,
-                        "in_transit_count": metrics.get("transport_in_transit_count", 0),
-                        "risk_level": risk_level,
+                        "spare_type": row["spare_type"],
+                        "baseline_quantity": row["baseline_quantity"],
+                        "demand_count": row["demand_count"],
+                        "filled_count": row["filled_count"],
+                        "shortage_count": row["shortage_count"],
+                        "fill_rate": row["fill_rate"],
+                        "utilization": row["utilization"],
+                        "shortage_probability": row["shortage_probability"],
+                        "mean_transport_delay": row["mean_transport_delay"],
+                        "in_transit_count": row["in_transit_count"],
+                        "risk_level": row["risk_level"],
                         "constraint_results": {
-                            "fill_rate": self._spare_shortfall_constraint_result(spare_fill_rate),
-                            "utilization": self._spare_shortfall_constraint_result(spare_utilization),
+                            "fill_rate": self._spare_shortfall_constraint_result(row["fill_rate"]),
+                            "utilization": self._spare_shortfall_constraint_result(row["utilization"]),
                         },
                     }
+                    for row in spare_rows
                 ],
             },
             "carry_list": {
@@ -2376,10 +2668,19 @@ class SimulationAdapter:
                 "applicability": projection_applicability["carry_list"],
                 "data": [
                     {
-                        "spare_type": "aircraft_support_v1_spares",
-                        "recommended_multiplier": max(1.0, 1.0 + shortage_probability),
-                        "risk_level": risk_level,
+                        "spare_type": row["spare_type"],
+                        "baseline_quantity": row["baseline_quantity"],
+                        "recommended_quantity": row["recommended_quantity"],
+                        "recommended_multiplier": (
+                            row["recommended_quantity"] / row["baseline_quantity"]
+                            if row["baseline_quantity"] > 0
+                            else max(1.0, 1.0 + row["shortage_probability"])
+                        ),
+                        "demand_count": row["demand_count"],
+                        "shortage_count": row["shortage_count"],
+                        "risk_level": row["risk_level"],
                     }
+                    for row in spare_rows
                 ],
             },
             "mission_reliability": {
@@ -3340,17 +3641,88 @@ class SimulationAdapter:
         return max(1, int(round(float(duration_hours) * 60)))
 
     def _aircraft_support_v1_duration_minutes(self, mission_profile: dict[str, Any]) -> int:
-        periodic_days = [
-            days
-            for days in (
-                self._periodic_task_total_days(periodic)
-                for periodic in self._dict_list(mission_profile.get("periodicTasks"))
-            )
-            if days is not None
-        ]
+        periodic_days = []
+        for periodic in self._dict_list(mission_profile.get("periodicTasks")):
+            active_days = self._periodic_task_active_duration_days(periodic)
+            if active_days is not None:
+                periodic_days.append(active_days)
+                continue
+            total_days = self._periodic_task_total_days(periodic)
+            if total_days is not None:
+                periodic_days.append(total_days)
         if periodic_days:
             return max(1, int(round(max(periodic_days) * 24 * 60)))
         return self._duration_minutes(mission_profile.get("durationHours"))
+
+    def _periodic_task_active_duration_days(self, periodic: dict[str, Any]) -> int | None:
+        period_days = max(1, int(round(self._periodic_task_period_days(periodic) or 1)))
+        total_days = max(1, int(round(self._periodic_task_total_days(periodic) or period_days)))
+        composite_days = self._periodic_task_explicit_composite_days(periodic, total_days, period_days)
+        if not composite_days:
+            composite_days = self._periodic_task_weekday_assignment_days(periodic, total_days, period_days)
+        if not composite_days:
+            composite_ids = [item for item in periodic.get("compositeTaskIds") or [] if str(item or "").strip()]
+            return total_days if composite_ids else None
+        active_days = [day for days in composite_days.values() for day in days]
+        return max(active_days) + 1 if active_days else None
+
+    def _periodic_task_explicit_composite_days(
+        self,
+        periodic: dict[str, Any],
+        total_days: int,
+        period_days: int,
+    ) -> dict[str, set[int]]:
+        composite_days: dict[str, set[int]] = {}
+        for item in self._dict_list(periodic.get("compositeTasks")):
+            composite_id = str(item.get("compositeTaskId") or "").strip()
+            if not composite_id:
+                continue
+            weekday_index = self._periodic_weekday_index(item.get("weekday") or item.get("dayOfWeek"))
+            if weekday_index is not None:
+                week_index = self._positive_int(item.get("weekIndex", item.get("week")), 1)
+                active_day = (week_index - 1) * period_days + weekday_index
+                if 0 <= active_day < total_days:
+                    composite_days.setdefault(composite_id, set()).add(active_day)
+                continue
+            period_index = self._positive_int(item.get("week", item.get("weekIndex")), 1)
+            start_day = max(0, (period_index - 1) * period_days)
+            active_days = set(range(start_day, min(total_days, start_day + period_days)))
+            if active_days:
+                composite_days.setdefault(composite_id, set()).update(active_days)
+        return composite_days
+
+    def _periodic_task_weekday_assignment_days(
+        self,
+        periodic: dict[str, Any],
+        total_days: int,
+        period_days: int,
+    ) -> dict[str, set[int]]:
+        assignments: dict[int, str] = {}
+        raw_assignments = periodic.get("weekdayAssignments") if isinstance(periodic.get("weekdayAssignments"), dict) else {}
+        for key, composite_id in raw_assignments.items():
+            weekday_index = self._periodic_weekday_index(key)
+            composite_text = str(composite_id or "").strip()
+            if weekday_index is not None and composite_text:
+                assignments[weekday_index] = composite_text
+        for key in _PERIODIC_WEEKDAY_ASSIGNMENT_FIELDS:
+            weekday_index = self._periodic_weekday_index(key)
+            composite_text = str(periodic.get(key) or "").strip()
+            if weekday_index is not None and composite_text:
+                assignments[weekday_index] = composite_text
+
+        composite_days: dict[str, set[int]] = {}
+        for start_day in range(0, total_days, max(1, period_days)):
+            for weekday_index, composite_id in assignments.items():
+                active_day = start_day + weekday_index
+                if active_day < total_days:
+                    composite_days.setdefault(composite_id, set()).add(active_day)
+        return composite_days
+
+    def _periodic_weekday_index(self, value: Any) -> int | None:
+        text = str(value or "").strip()
+        if not text:
+            return None
+        return _PERIODIC_WEEKDAY_INDEXES.get(text.replace("_", "").replace("-", "").lower())
 
     def _periodic_task_total_days(self, periodic: dict[str, Any]) -> float | None:
         period_days = self._periodic_task_period_days(periodic)

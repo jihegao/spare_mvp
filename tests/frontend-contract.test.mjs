@@ -13,6 +13,7 @@ import { renderRmsAllocationWorkbench } from "../front/rms-allocation-workbench.
 
 const PAGE_REVISION_REPORT_URL = new URL("../reports/2026-06-19-page-revision-suggestions/README.md", import.meta.url);
 const RBD_RENDERING_CONTRACT_URL = new URL("../docs/reliability-block-diagram-contract.md", import.meta.url);
+const DOCS_README_URL = new URL("../docs/README.md", import.meta.url);
 
 test("feature catalog exposes all table-2 four-level pages", () => {
   assert.equal(FEATURE_PAGES.length, 45);
@@ -46,6 +47,16 @@ test("each feature page has page template metadata for grouped entry pages", () 
     assert.equal("ontology" in page, false, page.id);
     assert.equal("outputs" in page, false, page.id);
   }
+});
+
+test("active docs record lite Mesa analysis metric formulas", async () => {
+  const docs = await readFile(DOCS_README_URL, "utf8");
+
+  assert.match(docs, /\/api\/mesa-analysis-runs/);
+  assert.match(docs, /出动架次率 = 起飞总架次 \/ 飞机总数 \/ 仿真总天数/);
+  assert.match(docs, /战备完好率 = 每天 14:00 的可用飞机数量 \/ 总飞机数量/);
+  assert.match(docs, /平均备件延误时间\(h\) = 总调运延误时间\(分钟\) \/ 60 \/ 备件调运次数/);
+  assert.doesNotMatch(docs, /四个结果分析页通过 current result 面板和正式 projection payload 解锁结果/);
 });
 
 test("feature grouping preserves three-level navigation and internal fourth-level entries", () => {
@@ -673,8 +684,11 @@ test("independent Mesa wrapper pages keep formal projection UI isolated", async 
   );
   assert.notEqual(mesaSource.length, 0, "renderLiteMesaAnalysisPage source exists");
   assert.match(mesaSource, /data-lite-mesa-analysis-action="run"/);
-  assert.match(mesaSource, /会话内结果/);
-  assert.match(mesaSource, /会话内结果明细/);
+  assert.match(mesaSource, /liteMesaAnalysisDetailTitle/);
+  assert.match(mesaSource, /liteMesaAnalysisResultHeader/);
+  assert.doesNotMatch(mesaSource, /lite-mesa-hero-meter/);
+  assert.doesNotMatch(mesaSource, /definition\.experimentId/);
+  assert.doesNotMatch(mesaSource, /会话内结果明细|建模粒度不足时不会伪造结论/);
   assert.doesNotMatch(mesaSource, /definition\.pageGoal|<p>\$\{htmlEscape\(definition\.pageGoal\)\}<\/p>/);
   assert.doesNotMatch(mesaSource, /lite-mesa-source-grid|selectedExperimentPlanName\(\)/);
   assert.doesNotMatch(mesaSource, /renderCurrentAnalysisResultPanel|renderAnalysisDashboard|renderFormalAnalysisBoundaryNote/);
@@ -1418,6 +1432,19 @@ test("frontend source omits removed page-side context panels", async () => {
   assert.doesNotMatch(appSource, /\$\{item\.component\}/);
 });
 
+test("left feature navigation summaries show explicit collapsed and expanded indicators", async () => {
+  const styleSource = await readFile(new URL("../front/styles.css", import.meta.url), "utf8");
+  const navSource = styleSource.slice(
+    styleSource.indexOf(".nav-module summary,"),
+    styleSource.indexOf(".nav-tertiary-link")
+  );
+
+  assert.match(navSource, /\.nav-module > summary::before,\s*\.nav-secondary > summary::before/);
+  assert.match(navSource, /content:\s*">"/);
+  assert.match(navSource, /\.nav-module\[open\] > summary::before,\s*\.nav-secondary\[open\] > summary::before/);
+  assert.match(navSource, /content:\s*"v"/);
+});
+
 test("modeling and experiment pages use compact Chinese fourth-level tabs when needed", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   assert.doesNotMatch(appSource, /<h2>\$\{htmlEscape\(page\.tertiary\)\}<\/h2>/);
@@ -1948,7 +1975,10 @@ test("editable modeling lists expose page suggestion action entries", async () =
   );
   assert.match(experimentPlanEditorSource, /scenario-composition-workspace/);
   assert.match(experimentPlanEditorSource, /scenario-project-json-panel/);
-  assert.match(experimentPlanEditorSource, /JSON\.stringify\(scenarioCompositionSourceProjectJson\(\)/);
+  assert.match(experimentPlanEditorSource, /renderScenarioModelingDataTree\(sourceProjectJson, selectedPath\)/);
+  assert.match(experimentPlanEditorSource, /renderSelectedScenarioOverrideEditor\(selectedOverrideContext\)/);
+  assert.match(appSource, /data-scenario-modeling-path/);
+  assert.match(appSource, /data-scenario-selected-override-value/);
   assert.match(experimentPlanEditorSource, /scenario-composition-editor-panel/);
   assert.match(experimentPlanEditorSource, /scenario-override-path-options/);
   assert.match(experimentPlanEditorSource, /scenarioOverrideParameterOptions/);
@@ -2530,7 +2560,7 @@ test("downtime formal analysis relies on model log event snapshot contract", asy
   );
 
   assert.match(mesaSource, /eventSnapshots/);
-  assert.match(mesaSource, /事件快照/);
+  assert.match(mesaSource, /停机事件一览/);
   assert.match(mesaSource, /飞机状态/);
   assert.match(mesaSource, /保障资源占用/);
   assert.match(mesaSource, /备件短缺/);
@@ -3495,7 +3525,7 @@ test("phase 6B carry list analysis fixes objective to minimum carried spares", a
   assert.match(formalCarrySource, /projection payload/);
 });
 
-test("phase 6C mission reliability chart uses formal projection time sequence only", async () => {
+test("phase 6C mission reliability chart uses formal projection and daily sequences without hard-coded rates", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const lineChartSource = appSource.slice(
     appSource.indexOf("function renderLineChart"),
@@ -3515,12 +3545,17 @@ test("phase 6C mission reliability chart uses formal projection time sequence on
   );
 
   assert.match(lineChartSource, /const minY = 0;/);
+  assert.match(lineChartSource, /line-chart-y-axis/);
+  assert.match(lineChartSource, /line-chart-y-label/);
   assert.doesNotMatch(lineChartSource, /0\.84/);
-  assert.match(lineChartSource, /points\.length - 1/);
+  assert.match(lineChartSource, /const minX = Math\.min/);
+  assert.match(lineChartSource, /const xSpan = Math\.max\(1, maxX - minX\)/);
   assert.match(dashboardSource, /analysisProjectionForBoundary\(boundary\)/);
   assert.match(dashboardSource, /renderAnalysisProjectionResultPanel\(formalProjection\)/);
   assert.doesNotMatch(dashboardSource, /singleResult\.timeline|renderLineChart/);
   assert.match(formalReliabilitySource, /renderLineChart\(rows\.map\(\(row\) => \(\{ x: row\.sequence, y: row\.probability \}\)\)\)/);
+  assert.match(appSource, /function renderLiteMesaMissionReliabilityDailyChart/);
+  assert.match(appSource, /meanMissionSuccessRate/);
   assert.match(formalReliabilitySource, /最大下降区间/);
   assert.match(formalReliabilitySource, /仿真时间/);
   assert.doesNotMatch(formalReliabilitySource, /0\.7|0\.9|阈值|目标线|风险线/);
@@ -3592,9 +3627,49 @@ test("SGR monte carlo pages label sortie_rate as 出动架次率", async () => {
   );
 
   assert.match(metricSource, /key: "sortie_rate", label: "出动架次率"/);
-  assert.match(reliabilitySource, /metricLabels: \["任务成功率", "出动架次率", "战备完好率", "样本数"\]/);
+  assert.match(reliabilitySource, /metricLabels: \["任务成功率", "出动架次率", "战备完好率", "任务失败次数"\]/);
   assert.match(reliabilityTableSource, /<th>出动架次率<\/th>/);
+  assert.match(reliabilityTableSource, /formatLiteMesaAnalysisMetricValue\("出动架次率", row\.sortieRate\)/);
+  assert.doesNotMatch(reliabilityTableSource, /<td>\$\{pct\(row\.sortieRate\)\}<\/td>/);
   assert.doesNotMatch(metricSource + reliabilitySource + reliabilityTableSource, /出动完成率/);
+});
+
+test("lite Mesa analysis visible copy omits Mesa session wording and collapses sample rows", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const analysisSource = appSource.slice(
+    appSource.indexOf("function renderLiteMesaAnalysisPage"),
+    appSource.indexOf("function renderLiteMesaDowntimeEventSnapshots")
+  );
+  const reliabilityTableSource = analysisSource.slice(
+    analysisSource.indexOf('if (definition.analysisType === "mission_reliability")'),
+    analysisSource.indexOf('return `\\n    <div class="table-wrap"', analysisSource.indexOf('if (definition.analysisType === "mission_reliability")'))
+  );
+
+  assert.match(analysisSource, /后端内存运行/);
+  assert.match(reliabilityTableSource, /<details class="lite-mesa-collapsible-table">/);
+  assert.match(reliabilityTableSource, /<summary>样本明细/);
+  assert.doesNotMatch(analysisSource, /Mesa 分析运行中|Mesa 分析失败|会话内 Mesa|后端内存会话/);
+});
+
+test("lite Mesa spare shortfall page uses transport delay and repair cancellation labels", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const definitionSource = appSource.slice(
+    appSource.indexOf("spare_shortfall:"),
+    appSource.indexOf("carry_list:")
+  );
+  const sessionBodyStart = appSource.indexOf(
+    'if (definition.analysisType === "spare_shortfall")',
+    appSource.indexOf("function renderLiteMesaAnalysisSessionBody")
+  );
+  const sessionBodySource = appSource.slice(
+    sessionBodyStart,
+    appSource.indexOf('if (definition.analysisType === "carry_list")', sessionBodyStart)
+  );
+
+  assert.match(definitionSource, /metricLabels: \["发生缺件备件", "平均备件延误时间\(h\)", "最高缺件备件", "因维修延误导致的任务取消次数"\]/);
+  assert.match(sessionBodySource, /平均备件延误时间\(h\)/);
+  assert.match(sessionBodySource, /meanTransportDelayHours/);
+  assert.doesNotMatch(sessionBodySource, /<th>缺件次数<\/th>|row\.shortage/);
 });
 
 test("lite Mesa Monte Carlo detail uses decimal ratios and hides metadata chrome", async () => {
