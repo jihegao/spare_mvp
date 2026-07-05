@@ -9,18 +9,18 @@ import { fileURLToPath } from "node:url";
 const repoRoot = new URL("..", import.meta.url);
 const repoRootPath = fileURLToPath(repoRoot);
 
-test("contract-first smoke flow saves modeling state and fetches run outputs", async () => {
+test("canonical aircraft support flow saves modeling state and fetches run outputs", async () => {
   const flow = runPythonContractFlow();
 
   assert.equal(flow.validation.ok, true);
   assert.equal(flow.saved.status, "saved");
-  assert.equal(flow.saved.project_id, "project-smoke-contract-001");
+  assert.equal(flow.saved.project_id, "project-carrier-day-night");
   assert.equal(flow.snapshot.project_id, flow.saved.project_id);
-  assert.equal(flow.snapshot.project_version, "project-v0.1");
+  assert.equal(flow.snapshot.project_version, "import-v1");
   assert.equal(flow.plan.project_id, flow.saved.project_id);
   assert.equal(flow.plan.config.steps, 4);
   assert.equal(flow.run.status, "succeeded");
-  assert.match(flow.run.run_id, /^run-scenario-smoke-contract-demo-[0-9a-f]{12}-\d{4}$/);
+  assert.match(flow.run.run_id, /^run-scenario-import-carrier-day-night-001-[0-9a-f]{12}-\d{4}$/);
   assert.equal(flow.storedRun.experiment_plan_id, flow.plan.experiment_plan_id);
   assert.equal(flow.result.result_id, flow.run.result_summary_id);
   assert.equal(flow.result.run_id, flow.run.run_id);
@@ -33,10 +33,10 @@ test("contract-first smoke flow saves modeling state and fetches run outputs", a
   assert.equal(flow.chain.run_id, flow.run.run_id);
   assert.equal(flow.chain.result_summary_id, flow.run.result_summary_id);
   assert.equal(flow.chain.artifact_manifest_id, flow.run.artifact_manifest_id);
-  assert.equal(typeof flow.result.metrics.mission_success_rate, "number");
-  assert.equal(Number.isFinite(flow.result.metrics.mission_success_rate), true);
-  assert.ok(flow.result.metrics.mission_success_rate >= 0);
-  assert.ok(flow.result.metrics.mission_success_rate <= 1);
+  assert.equal(typeof flow.result.metrics.sortie_completion_rate, "number");
+  assert.equal(Number.isFinite(flow.result.metrics.sortie_completion_rate), true);
+  assert.ok(flow.result.metrics.sortie_completion_rate >= 0);
+  assert.ok(flow.result.metrics.sortie_completion_rate <= 1);
 
   const artifactKinds = new Set(flow.artifactManifest.artifacts.map((artifact) => artifact.kind));
   assertSetIncludes(artifactKinds, [
@@ -57,18 +57,6 @@ test("contract-first smoke flow saves modeling state and fetches run outputs", a
     assert.ok(artifact.size_bytes > 0);
   }
 
-  const reportPath = new URL("../reports/contract-first-smoke/README.md", import.meta.url);
-  assert.equal(existsSync(reportPath), true, "smoke evidence report must exist");
-  const report = await readFile(reportPath, "utf8");
-  assert.match(report, /# Contract-first smoke 证据/);
-  assert.match(report, /node --test tests\/e2e-contract-flow\.test\.mjs/);
-  assert.match(report, /python3 --version/);
-  assert.match(report, /node --version/);
-  assert.match(report, /run-scenario-smoke-contract-demo-<plan-hash>-0001/);
-  assert.match(report, /result-run-scenario-smoke-contract-demo-<plan-hash>-0001/);
-  assert.match(report, /artifact-manifest-run-scenario-smoke-contract-demo-<plan-hash>-0001/);
-  assert.match(report, /已知限制/);
-  assert.match(report, /不代表 calibration quality/);
 });
 
 test("M3-0 backend loop closeout remains documented while docs index stays current-only", async () => {
@@ -131,7 +119,10 @@ from src.spare_mvp_backend.repository import ContractRepository, initialize_data
 from src.spare_mvp_contract.adapter import SimulationAdapter
 
 repo_root = Path.cwd()
-project = json.loads((repo_root / "tests" / "fixtures" / "smoke_project.json").read_text(encoding="utf-8"))
+export = json.loads((repo_root / "tests" / "fixtures" / "m9_6_platform_case_export.json").read_text(encoding="utf-8"))
+project = export["project"]
+plan_config = dict(export["experiment_plan"]["config"])
+plan_config.update({"name": "contract-first e2e current", "steps": 4, "projectJson": project})
 
 connection = sqlite3.connect(":memory:")
 initialize_database(connection)
@@ -145,11 +136,11 @@ try:
         validation = api.validate_project(project)
         saved = api.save_project(project)
         snapshot = api.create_modeling_snapshot(saved["project_id"])
-        plan = api.create_experiment_plan(saved["project_id"], {"name": "contract-first e2e smoke", "steps": 4})
+        plan = api.create_experiment_plan(saved["project_id"], plan_config)
         run = api.submit_run({
             "project_id": saved["project_id"],
             "experiment_plan_id": plan["experiment_plan_id"],
-            "model_family": "smoke",
+            "model_family": "aircraft_support_v1",
             "run_type": "single",
         })
         payload = {

@@ -660,7 +660,7 @@ test("modeling import validation reports duplicate IDs, references, numeric fiel
     lifecycle: {
       state: "published",
       version: 2,
-      referencedRunIds: ["run-smoke-001"]
+      referencedRunIds: ["run-current-001"]
     },
     objects: {
       ...fixture.objects,
@@ -769,7 +769,7 @@ test("modeling import validation rejects malformed lifecycle state and version",
     lifecycle: {
       state: "published",
       version: 0,
-      referencedRunIds: "run-smoke-001"
+      referencedRunIds: "run-current-001"
     }
   };
 

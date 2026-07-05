@@ -14,7 +14,6 @@ test("active runtime entrypoints use the single Mesa test environment", async ()
     "../README.md",
     "../agent.md",
     "../scripts/start-system.sh",
-    "../src/spare_mvp_abm/contract_server.py",
     "../src/spare_mvp_abm/aviation_support/README.md",
   ];
 
@@ -29,7 +28,7 @@ test("system npm scripts expose persistent start and stop commands", async () =>
   const packageJson = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
 
   assert.equal(packageJson.scripts["start:system"], "bash scripts/start-system.sh start");
-  assert.equal(packageJson.scripts["start:system:with-contract-provider"], "bash scripts/start-system.sh start --with-contract-provider");
+  assert.equal(packageJson.scripts["start:system:with-contract-provider"], undefined);
   assert.equal(packageJson.scripts["stop:system"], "bash scripts/stop-system.sh");
 });
 
@@ -117,34 +116,19 @@ test("database backup and restore scripts preserve the system SQLite database", 
   assert.equal(restored.stdout.trim(), "before-backup");
 });
 
-test("start-system treats the Mesa contract provider as an opt-in legacy dev sidecar", async () => {
+test("start-system no longer exposes the retired contract provider sidecar", async () => {
   const script = await readFile(new URL("../scripts/start-system.sh", import.meta.url), "utf8");
-  const stopStartTargetsSource = script.slice(
-    script.indexOf("stop_start_targets()"),
-    script.indexOf("stop_system()")
-  );
-  const stopSystemSource = script.slice(
-    script.indexOf("stop_system()"),
-    script.indexOf("start_system()")
-  );
   const startSystemSource = script.slice(
     script.indexOf("start_system()"),
     script.indexOf("case \"$MODE\" in")
   );
 
-  assert.match(script, /WITH_CONTRACT_PROVIDER=0/);
-  assert.match(script, /--with-contract-provider/);
-  assert.match(script, /legacy\/dev Mesa contract provider/);
-  assert.match(stopStartTargetsSource, /stop_app/);
-  assert.match(stopStartTargetsSource, /if \[\[ "\$WITH_CONTRACT_PROVIDER" == "1" \]\]/);
-  assert.match(stopStartTargetsSource, /stop_contract_provider/);
-  assert.match(stopSystemSource, /stop_app/);
-  assert.match(stopSystemSource, /stop_contract_provider/);
+  assert.doesNotMatch(script, /WITH_CONTRACT_PROVIDER/);
+  assert.doesNotMatch(script, /CONTRACT_PORT|8521|contract\.pid|contract\.log/);
+  assert.doesNotMatch(script, /--with-contract-provider/);
+  assert.doesNotMatch(script, /contract provider|contract_server/);
   assert.match(startSystemSource, /Starting spare_mvp app/);
-  assert.match(startSystemSource, /if \[\[ "\$WITH_CONTRACT_PROVIDER" == "1" \]\]/);
-  assert.match(startSystemSource, /Starting legacy\/dev Mesa contract provider/);
   assert.match(startSystemSource, /wait_for_port "\$APP_PORT" "spare_mvp app"/);
-  assert.doesNotMatch(startSystemSource, /wait_for_port "\$CONTRACT_PORT" "Mesa contract provider"\n\s*\n\s*echo "App PID/s);
 });
 
 test("direct backend CLI defaults to the same persistent system-start SQLite path", async () => {
@@ -174,10 +158,9 @@ test("canonical runtime wording and default artifact output avoid stale M3 smoke
     assert.match(content, canonicalPath);
     assert.doesNotMatch(content, /RunService -> artifacts/);
   }
-  assert.match(readme, /contract_server\.py :8521.*legacy\/dev sidecar/);
-  assert.match(docsReadme, /contract_server\.py :8521.*legacy\/dev sidecar/);
-  assert.match(productRoadmap, /--with-contract-provider/);
-  assert.match(agentDoc, /--with-contract-provider/);
+  for (const content of [readme, docsReadme, productRoadmap, agentDoc, contractsReadme]) {
+    assert.doesNotMatch(content, /contract_server\.py|--with-contract-provider|127\.0\.0\.1:8521|:8521/);
+  }
   assert.doesNotMatch(agentDoc, /启动 smoke run/);
   assert.doesNotMatch(agentDoc, /M3-1 同源后端路径用 .*http_server/);
   assert.doesNotMatch(productRoadmap, /start-system\.sh` 只启动平台同源 app 和 Mesa contract provider/);

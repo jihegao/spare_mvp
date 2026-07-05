@@ -21,16 +21,16 @@
 
 ## 当前基线判断
 
-截至 2026-06-19，M3-1 已在 M3-0 函数/API smoke 基础上收束出浏览器可访问的同源后端闭环 smoke，但整体系统仍处在原型到真实系统迁移阶段：
+截至 2026-07-05，M3-1 的历史浏览器验收已被当前 canonical `/api/runs` + `aircraft_support_v1` 主线取代，但整体系统仍处在原型到真实系统迁移阶段。历史记录仍保留：截至 2026-06-19，M3-1 已证明同源后端浏览器闭环可行，但该证据不再代表现行模型族或运行入口。
 
 1. 四级功能页面化和核心静态工作台已经稳定，M0/M1 浏览器 smoke 可作为后续后端接入的对照基线。
-2. `src/spare_mvp_backend/http_server.py`、`BackendApi`、`SimulationAdapter` 和 SQLite repository 已跑通同源 `/api` + `Project -> Snapshot -> ExperimentPlan -> Scenario -> Run -> Result -> ArtifactManifest` 真实后端闭环 smoke，并已通过 M3-1 浏览器刷新恢复和 API 不可用阻断验收。
+2. `src/spare_mvp_backend/http_server.py`、`BackendApi`、`SimulationAdapter` 和 SQLite repository 已跑通同源 `/api` + `Project -> Snapshot -> ExperimentPlan -> Scenario -> Run -> Result -> ArtifactManifest` 真实后端闭环，并已通过浏览器刷新恢复和 API 不可用阻断验收。
 3. 前端已有 `front/api-client.mjs` 边界，显式保存、启动运行、读取结果和读取产物通过 API client 表达；通用建模编辑仍保持本地，直到显式保存或运行。
 4. Monte Carlo 页面仍保留本地预览能力，但正式产品运行主线已通过 `RunIntent -> /api/runs -> RunService -> SimulationAdapter -> aircraft_support_v1 -> SQLite + artifacts` 收敛到后端同步本地切片；尚未升级为生产 worker 或长期批量运行产物管理。
 5. Mesa 可视化页已嵌入本地航空保障状态；产品口径已删除 Mesa 内部 `Ontology视图`、Ontology Playground 导出和 repo 根目录 ontology 产物。M9.4/M9.5 的 `aviation_support` 路径已作为历史阶段归档；当前正式 `/api/runs`、前端 run shortcut 和 modeling import compile 入口只接受 `aircraft_support_v1`。
 6. 本地 M4 backfill 已补入最小用户、会话、建模导入授权和审计边界；完整用户管理、项目级权限矩阵、SSO、运行管理、长期 artifact storage 和生产 Web API 还没有真实系统实现。
 7. 2026-06-19 页面走查建议正在收口：优先处理项目列表、系统管理、装备/任务/保障建模页面中的死按钮、字段口径、选择/批量操作和 M6.1.1 输入风险；「建模数据导入」入口保留。
-8. `src/spare_mvp_abm/contract_server.py :8521` 只作为可选 legacy/dev sidecar，用于历史 contract-provider 调试和低层回归；默认产品运行不依赖该 sidecar，也不得用它的快照替代 canonical `/api/runs` 产物。
+8. 旧 contract provider、smoke model、smoke scenarios 和 smoke JSON fixtures 已退役删除；默认产品运行只依赖同源 app/backend、SQLite 和 canonical `/api/runs` 产物。
 
 ## M0：稳定当前原型基线
 
@@ -159,9 +159,9 @@ Simulation Contract Service
 
 目标：建立原型到真实系统的持久化分水岭。
 
-M3-0 当前收束：已完成本地标准库 HTTP facade + 函数级 Backend API 的真实后端闭环 smoke，证据见 `reports/m3-0-real-backend-loop/README.md`。该收束证明已批准的 `smoke` 模型族可以通过同源 `/api`、Backend API facade 和 repository 完成保存、编译、运行、结果、产物和身份链读取；它不代表生产 Web API、worker 队列、长期对象存储、权限体系或 `aviation_support` Scenario 编译已经完成。
+M3-0 历史收束：M3-0 函数/API smoke 已完成本地标准库 HTTP facade + Backend API 的真实后端闭环 smoke，证据见 `reports/m3-0-real-backend-loop/README.md`。该归档证据只证明当时的 `/api`、Backend API facade 和 repository 能完成保存、编译、运行、结果、产物和身份链读取；它不代表现行模型族、生产 Web API、worker 队列、长期对象存储或权限体系。
 
-M3-1 当前收束：已完成浏览器同源后端闭环 smoke，证据见 `reports/m3-1-browser-backend-smoke/README.md`。该收束证明前端可从 `/front/` 通过 `/api` 保存项目、启动 smoke run、读取 Result/ArtifactManifest，并在刷新后从持久 SQLite 恢复同一个 `run_id`；`/api` 不可用时不再生成 `offline-demo-run`。
+M3-1 当前收束：已完成浏览器同源后端闭环 smoke，证据见 `reports/m3-1-browser-backend-smoke/README.md`。该归档证据证明前端可从 `/front/` 通过 `/api` 保存项目、启动历史 smoke run、读取 Result/ArtifactManifest，并在刷新后从持久 SQLite 恢复同一个 `run_id`；`/api` 不可用时不再生成 `offline-demo-run`。现行正式运行入口只接受 `aircraft_support_v1`。
 
 核心 API：
 
@@ -424,7 +424,7 @@ M8.0 当前收束：`docs/archive/deprecated/superpowers/specs/2026-06-21-m8-pro
 
 目标：把 M9.0 的状态帧固化为可测试 contract，并补齐事件日志追溯。
 
-当前收束：`contracts/visualization_state_series.schema.json` 和 `tests/fixtures/smoke_visualization_state_series.json` 已纳入 contract bundle；状态序列 payload 记录 `result_summary_id`、`artifact_manifest_id`、run config/input project/compiled Scenario artifact id，每帧记录 `trace`，每个事件记录 `event_id`、`run_id`、`step`、`event_type` 和 `metric_refs`。`visualization_state_series` manifest entry 必须带 `source_run_id`、`source_result_summary_id` 和 `source_scenario_id`。前端 replay adapter 会校验事件引用并生成跨帧 event stream，可视化页展示事件追溯列表并支持点击事件定位到对应帧；事件流不从 demo frame 生成正式事件。
+当前收束：`contracts/visualization_state_series.schema.json` 已纳入 contract bundle；状态序列 payload 记录 `result_summary_id`、`artifact_manifest_id`、run config/input project/compiled Scenario artifact id，每帧记录 `trace`，每个事件记录 `event_id`、`run_id`、`step`、`event_type` 和 `metric_refs`。`visualization_state_series` manifest entry 必须带 `source_run_id`、`source_result_summary_id` 和 `source_scenario_id`。前端 replay adapter 会校验事件引用并生成跨帧 event stream，可视化页展示事件追溯列表并支持点击事件定位到对应帧；事件流不从 demo frame 生成正式事件。
 
 范围：
 
@@ -578,11 +578,11 @@ M8.0 当前收束：`docs/archive/deprecated/superpowers/specs/2026-06-21-m8-pro
 完成标准：
 
 1. 正式平台流程中搜索不到对 `independent-mesa` 服务地址或静态输出目录的运行依赖；如有引用，只能是归档说明、迁移记录或离线开发参考。
-2. `scripts/start-system.sh start` 启动默认产品所需的同源 app/backend 和 SQLite，不再强制启动 `independent-mesa/server.py`，也不默认启动 `src/spare_mvp_abm/contract_server.py :8521`；只有 `start --with-contract-provider` 才启用该 legacy/dev sidecar。
+2. `scripts/start-system.sh start` 启动默认产品所需的同源 app/backend 和 SQLite，不再强制启动 `independent-mesa/server.py`，也不启动旧 contract provider sidecar。
 3. 任务视图不再拆成独立任务计划表和任务卡片，主工作区以一张合并甘特表展示周期/复合/基本任务属性、实际天/波次、每日时间条、要求型号/数量、实际执行飞机和状态。
 4. 从平台入口完成 M9.6 案例的 single、Monte Carlo、状态回放和四类分析，且所有结果来源都是 canonical run artifacts。
 
-当前收束：M9.8 已完成平台嵌入和 `independent-mesa` 退役。前端 RunIntent 默认使用 `aircraft_support_v1`，可视化仿真页、单次正式 run、Monte Carlo run 和四类分析页均通过 `RunIntent -> /api/runs -> RunService -> SimulationAdapter -> aircraft_support_v1 -> SQLite + artifacts`、`/api/runs/{run_id}/artifacts/{artifact_id}` 与 `/api/runs/{run_id}/state-stream` 读取正式数据；缺 projection、缺 state-series 或 payload 校验失败时仍 fail closed。2026-06-26 后 `smoke` 只保留为非正式低层测试模型，`aviation_support` 只保留为历史 schema/fixture/sidecar 证据且正式、测试和 adapter 编译运行入口统一返回 `retired_model_family` 并指向 `aircraft_support_v1`。任务视图已合并任务计划表和每日甘特图，按周期性任务 / 复合任务 / 基本任务属性展示实际天、波次、要求型号、数量、实际执行飞机和状态；旧 artifact 缺这些字段时不再从 id/name/aircraft_type 兜底推断。`scripts/start-system.sh start` 默认只启动平台同源 app/backend 和 SQLite；`start --with-contract-provider` 才额外启动 `src/spare_mvp_abm/contract_server.py :8521` legacy/dev sidecar。该 sidecar 不属于默认产品运行路径，不能替代 canonical run artifacts；脚本不再启动 `independent-mesa/server.py` 或监听 `8765`。`independent-mesa/GLM` 与 `independent-mesa/GPT` 源码树、旁路服务和静态输出入口已从当前仓库移除；历史设计记录只保留在 `docs/archive/deprecated/superpowers/` 的归档计划和规格中。
+当前收束：M9.8 已完成平台嵌入和 `independent-mesa` 退役。前端 RunIntent 默认使用 `aircraft_support_v1`，可视化仿真页、单次正式 run、Monte Carlo run 和四类分析页均通过 `RunIntent -> /api/runs -> RunService -> SimulationAdapter -> aircraft_support_v1 -> SQLite + artifacts`、`/api/runs/{run_id}/artifacts/{artifact_id}` 与 `/api/runs/{run_id}/state-stream` 读取正式数据；缺 projection、缺 state-series 或 payload 校验失败时仍 fail closed。旧 `smoke` 执行路径、contract provider、scenarios 和 fixtures 已退役删除；`aviation_support` 只保留为历史 schema/fixture 证据且正式、测试和 adapter 编译运行入口统一返回 `retired_model_family` 并指向 `aircraft_support_v1`。任务视图已合并任务计划表和每日甘特图，按周期性任务 / 复合任务 / 基本任务属性展示实际天、波次、要求型号、数量、实际执行飞机和状态；旧 artifact 缺这些字段时不再从 id/name/aircraft_type 兜底推断。`scripts/start-system.sh start` 默认只启动平台同源 app/backend 和 SQLite；脚本不再启动 `independent-mesa/server.py`、旧 contract provider 或监听 `8765`。`independent-mesa/GLM` 与 `independent-mesa/GPT` 源码树、旁路服务和静态输出入口已从当前仓库移除；历史设计记录只保留在 `docs/archive/deprecated/superpowers/` 的归档计划和规格中。
 
 ## M10：工程质量和自动化测试
 

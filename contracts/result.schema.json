@@ -14,7 +14,7 @@
   ],
   "properties": {
     "schema_version": { "type": "string", "const": "result-v0" },
-    "model_family": { "type": "string", "enum": ["smoke", "aviation_support", "aircraft_support_v1"] },
+    "model_family": { "type": "string", "enum": ["aviation_support", "aircraft_support_v1"] },
     "result_id": { "type": "string" },
     "run_id": { "type": "string" },
     "scenario_id": { "type": "string" },
@@ -53,23 +53,6 @@
     }
   },
   "oneOf": [
-    {
-      "type": "object",
-      "required": ["model_family", "metrics"],
-      "additionalProperties": true,
-      "properties": {
-        "model_family": { "const": "smoke" },
-        "metrics": {
-          "type": "object",
-          "required": ["mission_success_rate", "spare_fill_rate"],
-          "properties": {
-            "mission_success_rate": { "type": "number", "minimum": 0, "maximum": 1 },
-            "spare_fill_rate": { "type": "number", "minimum": 0, "maximum": 1 }
-          },
-          "additionalProperties": true
-        }
-      }
-    },
     {
       "type": "object",
       "required": ["model_family", "metrics"],

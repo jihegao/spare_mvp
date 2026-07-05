@@ -2,7 +2,6 @@
   "schema_version": "spare-mvp-contracts-v0",
   "role": "Contract Curator Agent schema bundle manifest",
   "source_inputs": [
-    "src/spare_mvp_abm/smoke_model.py snapshot()",
     "src/spare_mvp_abm/aviation_support/model.py snapshot()",
     "Simulation Adapter Result normalization"
   ],
@@ -22,12 +21,6 @@
     "modeling_import.schema.json"
   ],
   "fixture_files": [
-    "tests/fixtures/smoke_project.json",
-    "tests/fixtures/smoke_scenario.json",
-    "tests/fixtures/smoke_run.json",
-    "tests/fixtures/smoke_result.json",
-    "tests/fixtures/smoke_artifact_manifest.json",
-    "tests/fixtures/smoke_visualization_state_series.json",
     "tests/fixtures/aviation_support_project.json",
     "tests/fixtures/aviation_support_scenario.json",
     "tests/fixtures/aviation_support_run.json",

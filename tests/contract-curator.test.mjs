@@ -110,10 +110,12 @@ test("scenario and result schemas preserve simulation contract boundaries", asyn
     "simulation_inputs",
   ]);
   assert.ok(scenarioSchema.properties.simulation_model.properties.family);
-  assert.equal(scenarioSchema.oneOf.length, 3);
+  assert.equal(scenarioSchema.oneOf.length, 2);
   assert.match(JSON.stringify(scenarioSchema), /aircraft_support_v1_input\.schema\.json/);
   assert.ok(scenarioSchema.properties.simulation_model.properties.family.enum.includes("aircraft_support_v1"));
+  assert.equal(scenarioSchema.properties.simulation_model.properties.family.enum.includes("smoke"), false);
   assert.ok(scenarioSchema.properties.simulation_model.properties.model_id.enum.includes("AircraftSupportV1Model"));
+  assert.equal(scenarioSchema.properties.simulation_model.properties.model_id.enum.includes("SmokeSpareMvpModel"), false);
   assert.ok(runSchema.required.includes("model_family"));
   assert.ok(runSchema.required.includes("model_id"));
   assert.ok(runSchema.properties.model_family);
@@ -160,16 +162,16 @@ test("M6.2 run schema validates the persisted formal monte carlo status payload"
   const run = {
     schema_version: "run-v0",
     run_id: "run-mc-contract-001",
-    project_id: "project-smoke-contract",
-    experiment_plan_id: "plan-smoke-contract",
-    modeling_snapshot_id: "snapshot-smoke-contract",
+    project_id: "project-aircraft-support-contract",
+    experiment_plan_id: "plan-aircraft-support-contract",
+    modeling_snapshot_id: "snapshot-aircraft-support-contract",
     project_version: "project-v0.1",
     project_schema_version: "project-v0",
-    scenario_id: "scenario-smoke-contract-001",
+    scenario_id: "scenario-aircraft-support-contract-001",
     scenario_version: "scenario-v0.1",
     scenario_schema_version: "scenario-v0",
-    model_family: "smoke",
-    model_id: "SmokeSpareMvpModel",
+    model_family: "aircraft_support_v1",
+    model_id: "AircraftSupportV1Model",
     status: "succeeded",
     phase: "completed",
     run_type: "monte_carlo",
@@ -187,10 +189,10 @@ test("M6.2 run schema validates the persisted formal monte carlo status payload"
       experiment_id: "experiment-run-mc-contract-001",
       experiment_type: "monte_carlo",
       module: "ship_front",
-      project_id: "project-smoke-contract",
-      experiment_plan_id: "plan-smoke-contract",
-      modeling_snapshot_id: "snapshot-smoke-contract",
-      scenario_id: "scenario-smoke-contract-001",
+      project_id: "project-aircraft-support-contract",
+      experiment_plan_id: "plan-aircraft-support-contract",
+      modeling_snapshot_id: "snapshot-aircraft-support-contract",
+      scenario_id: "scenario-aircraft-support-contract-001",
       scenario_version: "scenario-v0.1",
       scenario_schema_version: "scenario-v0",
       mapping_provenance: { mapping_version: "scenario-adapter-mapping-v0" },
@@ -224,7 +226,56 @@ test("M6.2 artifact manifest schema accepts monte carlo base and four analysis p
 
 test("M9.1 visualization state-series schema validates traceable frame events", async () => {
   const schema = await readJson("contracts/visualization_state_series.schema.json");
-  const fixture = await readJson("tests/fixtures/smoke_visualization_state_series.json");
+  const fixture = {
+    schema_version: "visualization-state-series-v0",
+    run_id: "run-aircraft-support-contract-001",
+    scenario_id: "scenario-aircraft-support-contract-001",
+    scenario_version: "scenario-v0.1",
+    model_family: "aircraft_support_v1",
+    artifact_manifest_id: "artifact-manifest-aircraft-support-contract-001",
+    result_summary_id: "result-aircraft-support-contract-001",
+    run_config_artifact_id: "run_config-run-aircraft-support-contract-001",
+    input_project_artifact_id: "input_project-run-aircraft-support-contract-001",
+    compiled_scenario_artifact_id: "compiled_scenario-run-aircraft-support-contract-001",
+    frames: [
+      {
+        run_id: "run-aircraft-support-contract-001",
+        step: 0,
+        simulation_time: 0,
+        aircraft_state: { ready_rate: 1, failed_count: 0, repairing_count: 0, sortie_count: 0 },
+        mission_state: { mission_success_rate: 1, sortie_rate: 1, mean_launch_time: 0, mean_recovery_time: 0, mean_turnaround_time: 0 },
+        resource_state: { spare_fill_rate: 1, spare_utilization: 0, repair_backlog: 0 },
+        event_summary: { shortage_events: 0, downtime_failure_events: 0, downtime_spare_shortage_events: 0, downtime_resource_delay_events: 0 },
+        aircraft: [],
+        missions: [],
+        resources: [],
+        spares: [],
+        jobs: [],
+        events: [
+          {
+            event_id: "run-aircraft-support-contract-001-step-0-0-state_frame",
+            run_id: "run-aircraft-support-contract-001",
+            step: 0,
+            event: "state_frame",
+            event_type: "state_frame",
+            time: 0,
+            message: "state frame generated",
+            metric_refs: ["ready_rate"]
+          }
+        ],
+        trace: {
+          run_id: "run-aircraft-support-contract-001",
+          scenario_id: "scenario-aircraft-support-contract-001",
+          scenario_version: "scenario-v0.1",
+          result_summary_id: "result-aircraft-support-contract-001",
+          artifact_manifest_id: "artifact-manifest-aircraft-support-contract-001",
+          run_config_artifact_id: "run_config-run-aircraft-support-contract-001",
+          input_project_artifact_id: "input_project-run-aircraft-support-contract-001",
+          compiled_scenario_artifact_id: "compiled_scenario-run-aircraft-support-contract-001"
+        }
+      }
+    ]
+  };
 
   assert.deepEqual(validateSchema(schema, fixture), []);
   assert.equal(fixture.schema_version, "visualization-state-series-v0");
@@ -277,7 +328,7 @@ test("M6.2 formal monte carlo manifest fixture shape validates against artifact 
     schema_version: "artifact-manifest-v0",
     artifact_manifest_id: "artifact-manifest-run-mc-contract-001",
     run_id: "run-mc-contract-001",
-    scenario_id: "scenario-smoke-contract-001",
+    scenario_id: "scenario-aircraft-support-contract-001",
     scenario_version: "scenario-v0.1",
     artifacts: [
       {
@@ -358,12 +409,6 @@ test("artifact manifest schema rejects an artifact entry without size_bytes", as
 
 test("minimal contract fixtures validate against their schemas", async () => {
   const fixturePairs = [
-    ["contracts/project.schema.json", "tests/fixtures/smoke_project.json"],
-    ["contracts/scenario.schema.json", "tests/fixtures/smoke_scenario.json"],
-    ["contracts/run.schema.json", "tests/fixtures/smoke_run.json"],
-    ["contracts/result.schema.json", "tests/fixtures/smoke_result.json"],
-    ["contracts/artifact_manifest.schema.json", "tests/fixtures/smoke_artifact_manifest.json"],
-    ["contracts/visualization_state_series.schema.json", "tests/fixtures/smoke_visualization_state_series.json"],
     ["contracts/project.schema.json", "tests/fixtures/aviation_support_project.json"],
     ["contracts/scenario.schema.json", "tests/fixtures/aviation_support_scenario.json"],
     ["contracts/run.schema.json", "tests/fixtures/aviation_support_run.json"],
@@ -379,7 +424,7 @@ test("minimal contract fixtures validate against their schemas", async () => {
 });
 
 test("minimal contract fixtures form a consistent end-to-end object graph", async () => {
-  for (const family of ["smoke", "aviation_support"]) {
+  for (const family of ["aviation_support"]) {
     const project = await readJson(`tests/fixtures/${family}_project.json`);
     const scenario = await readJson(`tests/fixtures/${family}_scenario.json`);
     const run = await readJson(`tests/fixtures/${family}_run.json`);
@@ -398,14 +443,17 @@ test("minimal contract fixtures form a consistent end-to-end object graph", asyn
   }
 });
 
-test("scenario schema rejects mismatched model selector and simulation inputs", async () => {
+test("scenario schema rejects retired smoke selector and mismatched model ids", async () => {
   const schema = await readJson("contracts/scenario.schema.json");
-  const smokeScenario = await readJson("tests/fixtures/smoke_scenario.json");
   const aviationScenario = await readJson("tests/fixtures/aviation_support_scenario.json");
 
-  const smokeModelWithAviationInputs = {
-    ...smokeScenario,
-    simulation_inputs: aviationScenario.simulation_inputs,
+  const retiredSmokeScenario = {
+    ...aviationScenario,
+    simulation_model: {
+      family: "smoke",
+      model_id: "SmokeSpareMvpModel",
+      contract_version: "1.0.0",
+    },
   };
   const aviationFamilyWithSmokeModelId = {
     ...aviationScenario,
@@ -415,23 +463,13 @@ test("scenario schema rejects mismatched model selector and simulation inputs", 
     },
   };
 
-  assert.notDeepEqual(validateSchema(schema, smokeModelWithAviationInputs), []);
+  assert.notDeepEqual(validateSchema(schema, retiredSmokeScenario), []);
   assert.notDeepEqual(validateSchema(schema, aviationFamilyWithSmokeModelId), []);
 });
 
-test("scenario schema rejects inputs that SmokeSpareMvpModel would coerce upward", async () => {
+test("scenario schema no longer exposes retired SmokeSpareMvpModel inputs", async () => {
   const schema = await readJson("contracts/scenario.schema.json");
-  const fixture = await readJson("tests/fixtures/smoke_scenario.json");
-  const invalidScenario = {
-    ...fixture,
-    simulation_inputs: {
-      ...fixture.simulation_inputs,
-      support_capacity: 0,
-      min_required_sorties: 0,
-    },
-  };
 
-  const errors = validateSchema(schema, invalidScenario);
-  assert.ok(errors.some((error) => error.includes("$.simulation_inputs.support_capacity expected minimum 1")));
-  assert.ok(errors.some((error) => error.includes("$.simulation_inputs.min_required_sorties expected minimum 1")));
+  assert.equal(schema.$defs.SmokeModelSelector, undefined);
+  assert.equal(schema.$defs.SmokeInputs, undefined);
 });

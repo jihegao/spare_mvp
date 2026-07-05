@@ -33,6 +33,7 @@ def small_aircraft_support_project(project_id: str) -> dict:
         "airports": ["A"],
         "missionAreas": [],
         "missionProfile": {"name": "small current mission", "durationHours": 1, "compositeTasks": [], "periodicTasks": []},
+        "experiment": {"seed": 42},
         "basicMissions": [{
             "id": "basic-small",
             "name": "small sortie",
@@ -124,7 +125,7 @@ class BackendHttpApiTest(unittest.TestCase):
                     base_url,
                     "POST",
                     f"/projects/{saved['project_id']}/experiment-plans",
-                    {"config": {"name": "http contract smoke", "steps": 2}},
+                    {"config": {"name": "http contract current", "steps": 2}},
                     auth_token=auth_token,
                 )
                 run = self._json(
@@ -940,7 +941,7 @@ class BackendHttpApiTest(unittest.TestCase):
             thread.start()
             try:
                 base_url = f"http://127.0.0.1:{server.server_address[1]}/api"
-                project = self._fixture("smoke_project.json")
+                project = small_aircraft_support_project("project-http-authz-current")
                 data_token = self._login_token(base_url, "data", "data")
                 saved = self._json(base_url, "POST", "/projects", project, auth_token=data_token)
                 self._json(
@@ -1109,7 +1110,7 @@ class BackendHttpApiTest(unittest.TestCase):
             thread.start()
             try:
                 base_url = f"http://127.0.0.1:{server.server_address[1]}/api"
-                project = self._fixture("smoke_project.json")
+                project = small_aircraft_support_project("project-http-formal-gate-current")
                 auth_token = self._login_token(base_url, "data", "data")
                 saved = self._json(base_url, "POST", "/projects", project, auth_token=auth_token)
                 self._json(
@@ -1252,7 +1253,7 @@ class BackendHttpApiTest(unittest.TestCase):
                     f"/modeling-imports/{quote(import_package['importId'], safe='')}/publish",
                     auth_token=auth_token,
                 )
-                forged_project = self._fixture("smoke_project.json")
+                forged_project = small_aircraft_support_project("project-http-forged-current")
                 forged_project["project_id"] = import_package["projectId"]
                 forged_project["missionProfile"] = {"sourceImportId": import_package["importId"]}
                 saved = self._json(base_url, "POST", "/projects", forged_project, auth_token=auth_token)
@@ -1633,7 +1634,7 @@ class BackendHttpApiTest(unittest.TestCase):
                     base_url,
                     "POST",
                     f"/projects/{saved['project_id']}/experiment-plans",
-                    {"config": {"name": "persistent http smoke", "steps": 2}},
+                    {"config": {"name": "persistent http current", "steps": 2}},
                     auth_token=auth_token,
                 )
                 run = self._json(
@@ -2202,7 +2203,7 @@ class BackendHttpApiTest(unittest.TestCase):
                 import_package["lifecycle"] = {
                     "state": "published",
                     "version": 1,
-                    "referencedRunIds": ["run-smoke-contract-001"],
+                    "referencedRunIds": ["run-aircraft-support-contract-001"],
                 }
                 auth_token = self._login_token(base_url, "data", "data")
                 self._json(base_url, "POST", "/modeling-imports", import_package, auth_token=auth_token)

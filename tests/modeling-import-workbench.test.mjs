@@ -101,8 +101,8 @@ test("diffModelingImports keys imported object rows by stable IDs instead of arr
 test("renderModelingImportWorkbench includes action controls lifecycle version issues and diff rows", async () => {
   const draft = await readFixture();
   const published = cloneModelingImportPackage(draft);
-  published.lifecycle = { state: "published", version: 1, referencedRunIds: ["run-smoke-001"] };
-  draft.lifecycle = { state: "draft", version: 2, referencedRunIds: ["run-smoke-001"] };
+  published.lifecycle = { state: "published", version: 1, referencedRunIds: ["run-current-001"] };
+  draft.lifecycle = { state: "draft", version: 2, referencedRunIds: ["run-current-001"] };
   const radarIndex = draft.objects.equipmentAssets.findIndex((row) => row.id === "j15-radar");
   draft.objects.equipmentAssets[radarIndex].quantity = 2;
   const validation = {

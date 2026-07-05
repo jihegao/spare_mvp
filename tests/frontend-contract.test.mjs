@@ -4029,8 +4029,7 @@ test("visual simulation consumes formal state-series without demo fallback", asy
     appSource.indexOf("function renderVisualizationEventStream")
   );
 
-  assert.match(appSource, /const CONTRACT_BASE = "http:\/\/127\.0\.0\.1:8521"/);
-  assert.doesNotMatch(appSource, /fetch\(`\$\{CONTRACT_BASE\}\/visualization/);
+  assert.doesNotMatch(appSource, /CONTRACT_BASE|127\.0\.0\.1:8521|contract_server/);
   assert.match(appSource, /createBackendApiClient\(\{ baseUrl: "\/api"/);
   assert.match(appSource, /normalizeVisualizationStateSeriesPayload\(payload, \{\s*runId,\s*artifactId: artifact\.artifact_id/);
   assert.match(replaySource, /const MODEL_FAMILY = "aircraft_support_v1"/);
