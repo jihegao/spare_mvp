@@ -1024,11 +1024,10 @@ test("equipment aircraft rename keeps aircraftTypes catalog in saved Project dra
     await runtime.change("[data-equipment-aircraft-model]", { equipmentAircraftModel: "J-15" }, { value: "J-20" });
     await runtime.click("[data-project-draft-save]");
 
-    const projectSaveRequests = runtime.requests.filter((request) => (
-      request.url === "/api/projects"
-      && (request.options.method || "GET") === "POST"
-    ));
-    const savedProject = JSON.parse(projectSaveRequests.at(-1).options.body || "{}");
+    const savedProject = await waitForProjectSave(runtime, (body) => (
+      body.equipment?.model === "J-20"
+      && body.components?.[0]?.aircraftModel === "J-20"
+    ), "expected a saved Project draft with renamed aircraft model");
     assert.deepEqual(savedProject.equipment, {
       model: "J-20",
       wholeMachineModels: ["J-20"],
@@ -2453,6 +2452,33 @@ async function flushRuntimeTasks() {
   await new Promise((resolve) => setTimeout(resolve, 0));
   await new Promise((resolve) => setTimeout(resolve, 0));
   await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+async function waitForProjectSave(runtime, predicate, message) {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const match = projectSaveBodies(runtime).find(predicate);
+    if (match) return match;
+    await runtime.flush();
+  }
+  const observed = projectSaveBodies(runtime).map((body) => ({
+    project_id: body.project_id,
+    hasEquipment: Boolean(body.equipment),
+    equipmentModel: body.equipment?.model,
+    componentAircraftModel: body.components?.[0]?.aircraftModel
+  }));
+  assert.fail(`${message}. Observed project saves: ${JSON.stringify(observed)}`);
+}
+
+function projectSaveBodies(runtime) {
+  return runtime.requests
+    .filter((request) => request.url === "/api/projects" && (request.options.method || "GET") === "POST")
+    .map((request) => {
+      try {
+        return JSON.parse(request.options.body || "{}");
+      } catch {
+        return {};
+      }
+    });
 }
 
 function createRuntimeProjectJson(overrides = {}) {
