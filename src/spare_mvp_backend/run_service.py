@@ -15,6 +15,7 @@ from src.spare_mvp_backend.monte_carlo_config import (
     normalize_monte_carlo_run_config,
     reject_request_level_monte_carlo_config,
 )
+from src.spare_mvp_backend.project_payload import strip_project_sweep
 from src.spare_mvp_backend.repository import ContractRepository
 from src.spare_mvp_contract.adapter import (
     ARTIFACT_MANIFEST_SCHEMA_VERSION,
@@ -114,13 +115,14 @@ class RunService:
             else None
         )
         project_for_run = _project_for_experiment_plan(project, plan, snapshot)
+        compile_runtime_config = _compile_runtime_config(plan, mc_config)
         if request.get("formal_run"):
             self._assert_formal_run_uses_imported_sample(project_for_run)
 
         compile_gate = getattr(self.adapter, "compile_scenario_with_gate", None)
         compile_provenance = None
         if callable(compile_gate):
-            compile_result = compile_gate(project_for_run, model_family=model_family)
+            compile_result = compile_gate(project_for_run, model_family=model_family, runtime_config=compile_runtime_config)
             compile_provenance = compile_result.get("provenance")
             _annotate_mapping_provenance(
                 compile_provenance,
@@ -140,7 +142,7 @@ class RunService:
             scenario = compile_result["scenario"]
         else:
             try:
-                scenario = self.adapter.compile_scenario(project_for_run, model_family=model_family)
+                scenario = self.adapter.compile_scenario(project_for_run, model_family=model_family, runtime_config=compile_runtime_config)
             except AdapterError as exc:
                 raise RunServiceError(exc.code, str(exc), **exc.details) from exc
 
@@ -829,7 +831,7 @@ def _project_for_experiment_plan(project: dict[str, Any], plan: dict[str, Any], 
     config = plan.get("config") or {}
     branch_project = config.get("projectJson") or config.get("project_json")
     if isinstance(branch_project, dict):
-        project_for_run = copy.deepcopy(branch_project)
+        project_for_run = strip_project_sweep(branch_project)
         expected_project_id = project.get("project_id")
         branch_project_id = project_for_run.get("project_id") or project_for_run.get("scenarioId")
         if branch_project_id and expected_project_id and branch_project_id != expected_project_id:
@@ -843,7 +845,22 @@ def _project_for_experiment_plan(project: dict[str, Any], plan: dict[str, Any], 
         if expected_project_id:
             project_for_run["project_id"] = expected_project_id
         return project_for_run
-    return copy.deepcopy(snapshot["project"]) if snapshot else project
+    return strip_project_sweep(snapshot["project"]) if snapshot else strip_project_sweep(project)
+
+
+def _compile_runtime_config(plan: dict[str, Any], mc_config: Any | None = None) -> dict[str, Any]:
+    runtime_config = copy.deepcopy(plan.get("config") or {})
+    branch_project = runtime_config.get("projectJson") or runtime_config.get("project_json")
+    if isinstance(branch_project, dict):
+        runtime_config["projectJson"] = strip_project_sweep(branch_project)
+        runtime_config.pop("project_json", None)
+    if mc_config is not None:
+        adapter_payload = mc_config.to_adapter_payload()
+        runtime_config["sample_count"] = adapter_payload.get("sample_count")
+        runtime_config["sweep"] = copy.deepcopy(adapter_payload.get("sweep") or {})
+        if adapter_payload.get("mc_experiment_id"):
+            runtime_config["mc_experiment_id"] = adapter_payload["mc_experiment_id"]
+    return runtime_config
 
 
 def _annotate_mapping_provenance(

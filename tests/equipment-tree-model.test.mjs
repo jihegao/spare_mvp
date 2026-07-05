@@ -27,8 +27,29 @@ test("zero-aircraft imported sample add node creates a whole-machine aircraft en
 
   assert.equal(result.kind, "aircraft");
   assert.deepEqual(scenario.equipment.wholeMachineModels, ["新增飞机1"]);
+  assert.deepEqual(scenario.equipment.aircraftTypes, [
+    { id: "aircraft-type-1", model: "新增飞机1", name: "新增飞机1" }
+  ]);
   assert.equal(scenario.equipment.model, "新增飞机1");
   assert.equal(result.selectedEquipmentNodeKey, "aircraft:新增飞机1");
+});
+
+test("equipment aircraftTypes define whole-machine aircraft list", () => {
+  const scenario = {
+    equipment: {
+      model: "",
+      wholeMachineModels: [],
+      aircraftTypes: [
+        { id: "aircraft-type-j15", model: "J-15", name: "歼-15" },
+        { id: "aircraft-type-j35", model: "J-35", name: "歼-35" }
+      ]
+    },
+    components: [
+      { id: "j15-engine", name: "发动机", aircraftModel: "J-15", parentId: "aircraft-root", quantity: 2 }
+    ]
+  };
+
+  assert.deepEqual(equipmentTreeModel.wholeMachineModelsForScenario(scenario), ["J-15", "J-35"]);
 });
 
 test("component tree model skips self-references and cyclic parent chains without recursion overflow", () => {
@@ -147,6 +168,9 @@ test("equipment tree deletion removes a selected aircraft and all of its compone
   assert.equal(result.kind, "aircraft");
   assert.deepEqual(result.deletedComponentIds.sort(), ["j15-control", "j15-engine"]);
   assert.deepEqual(scenario.equipment.wholeMachineModels, ["J-35"]);
+  assert.deepEqual(scenario.equipment.aircraftTypes, [
+    { id: "aircraft-type-j-35", model: "J-35", name: "J-35" }
+  ]);
   assert.equal(scenario.equipment.model, "J-35");
   assert.deepEqual(scenario.components.map((component) => component.id), ["j35-radar"]);
   assert.equal(result.selectedEquipmentNodeKey, "aircraft-list");

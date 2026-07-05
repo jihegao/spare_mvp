@@ -12,7 +12,7 @@ from src.spare_mvp_backend.monte_carlo_config import normalize_monte_carlo_run_c
 from src.spare_mvp_contract.adapter import SimulationAdapter
 
 
-M9_6_MODEL_FAMILY = "aviation_support"
+M9_6_MODEL_FAMILY = "aircraft_support_v1"
 M9_7_COVERAGE_MODEL_FAMILY = "aircraft_support_v1"
 M9_6_FROZEN_AT = "2026-06-23T00:00:00Z"
 M9_6_MODELING_SNAPSHOT_ID = "snapshot-m9-6-platform-case"
@@ -52,17 +52,17 @@ def build_m9_6_platform_case_export(import_package: dict[str, Any], repo_root: P
         "modeling_snapshot_id": modeling_snapshot["snapshot_id"],
         "name": "M9.6 平台案例冻结方案",
         "created_at": M9_6_FROZEN_AT,
-        "config": {
-            "steps": _positive_int(project.get("experiment", {}).get("steps"), 48),
-            "projectJson": copy.deepcopy(project),
-            "analysisRequests": copy.deepcopy(project.get("analysisRequests", {})),
-        },
+        "config": _experiment_plan_config_from_import(published_import, project),
     }
     monte_carlo_config = normalize_monte_carlo_run_config(
         experiment_plan["config"],
         mc_experiment_id=M9_6_MC_EXPERIMENT_ID,
     ).to_adapter_payload()
-    compiled_scenario = SimulationAdapter(repo_root).compile_scenario(project, model_family=M9_6_MODEL_FAMILY)
+    compiled_scenario = SimulationAdapter(repo_root).compile_scenario(
+        project,
+        model_family=M9_6_MODEL_FAMILY,
+        runtime_config=experiment_plan["config"],
+    )
     compiled_scenario["compiled_at"] = M9_6_FROZEN_AT
     provenance = compiled_scenario["compiled_from"]["mapping_provenance"]
     provenance["modeling_snapshot_id"] = modeling_snapshot["snapshot_id"]
@@ -153,6 +153,23 @@ def m9_6_expected_artifact_kinds() -> dict[str, Any]:
     }
 
 
+def _experiment_plan_config_from_import(import_package: dict[str, Any], project: dict[str, Any]) -> dict[str, Any]:
+    objects = import_package.get("objects") if isinstance(import_package.get("objects"), dict) else {}
+    mission = _first_dict(objects.get("missionProfiles")) or {}
+    experiment = _first_dict([objects.get("experiment"), mission.get("experiment")]) or {}
+    analysis_requests = objects.get("analysisRequests")
+    if not isinstance(analysis_requests, dict):
+        analysis_requests = mission.get("analysisRequests") if isinstance(mission.get("analysisRequests"), dict) else {}
+    large_sample = analysis_requests.get("largeSample") if isinstance(analysis_requests.get("largeSample"), dict) else {}
+    return {
+        "steps": _positive_int(experiment.get("steps"), 48),
+        "samples": _positive_int(experiment.get("samples"), _positive_int(large_sample.get("samples"), 1)),
+        "seed": _positive_int(experiment.get("seed"), 0),
+        "projectJson": copy.deepcopy(project),
+        "analysisRequests": copy.deepcopy(analysis_requests),
+    }
+
+
 def _m9_6_frozen_import_package(import_package: dict[str, Any]) -> dict[str, Any]:
     return copy.deepcopy(import_package)
 
@@ -224,9 +241,8 @@ def _coverage_classification(field_path: str) -> tuple[str, str, str]:
         "importId",
         "projectId",
         "objects.missionProfiles[].durationHours",
-        "objects.missionProfiles[].basicMission.equipmentQuantity",
+        "objects.missionProfiles[].basicMissions[].equipmentQuantity",
         "objects.missionProfiles[].experiment.seed",
-        "objects.equipment.quantity",
         "objects.supportResources[].personnelCapacity",
         "objects.supportResources[].equipmentCapacity",
         "objects.analysisRequests.largeSample.enabled",
@@ -259,7 +275,7 @@ def _coverage_classification(field_path: str) -> tuple[str, str, str]:
         "objects.missionProfiles[].name",
         "objects.missionProfiles[].profileId",
         "objects.missionProfiles[].experiment.steps",
-        "objects.missionProfiles[].basicMission.missionId",
+        "objects.missionProfiles[].basicMissions[].missionId",
         "objects.missionProfiles[].reliabilityBlockDiagram.nodes[].name",
         "objects.projectInfo.",
     )
@@ -271,7 +287,6 @@ def _coverage_classification(field_path: str) -> tuple[str, str, str]:
         "objects.supportActivities[].jobs[].ammunition",
         "objects.supportActivities[].jobs[].durationProfile.",
         "objects.supportActivities[].jobs[].facility",
-        "objects.supportActivities[].jobs[].servicePersonnel",
         "objects.supportActivities[].transportStrategies[]",
         "objects.supportActivities[].organizationStrategies[]",
         "objects.supportOrganization.",
@@ -294,8 +309,8 @@ def _coverage_classification(field_path: str) -> tuple[str, str, str]:
     if _matches_any(field_path, defaulted_prefixes):
         return (
             "defaulted",
-            "Current aviation_support compiler default rule",
-            "The M9.5 compiler has a stable default for this input until M9.7 consumes it explicitly.",
+            "Current aircraft_support_v1 compiler default rule",
+            "The aircraft_support_v1 compiler applies a stable default for this optional frozen input.",
         )
     if _matches_any(field_path, governance_only_prefixes):
         return (
@@ -306,7 +321,7 @@ def _coverage_classification(field_path: str) -> tuple[str, str, str]:
     return (
         "ignored",
         "M9.6 platform case package",
-        "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+        "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
     )
 
 
@@ -332,6 +347,13 @@ def _business_leaf_paths(value: Any, prefix: str = "") -> list[str]:
                     paths.append(path)
         return paths
     return [prefix]
+
+
+def _first_dict(values: Any) -> dict[str, Any] | None:
+    for value in values if isinstance(values, list) else [values]:
+        if isinstance(value, dict):
+            return value
+    return None
 
 
 def _positive_int(value: Any, fallback: int) -> int:

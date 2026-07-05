@@ -2,7 +2,8 @@
 
 The adapter owns application-facing Project -> Scenario -> Run/Result/Artifact
 translation. The aircraft_support_v1 product runtime is the formal run target;
-retired model families remain only for explicit legacy regression coverage.
+aviation_support is retained only as historical schema/fixture context and is
+retired at the adapter entrypoints.
 """
 
 from __future__ import annotations
@@ -16,9 +17,6 @@ from pathlib import Path
 import re
 from typing import Any
 
-from src.spare_mvp_abm.smoke_model import SmokeSpareMvpModel
-
-
 PROJECT_SCHEMA_VERSION = "project-v0"
 SCENARIO_SCHEMA_VERSION = "scenario-v0"
 RUN_SCHEMA_VERSION = "run-v0"
@@ -27,11 +25,60 @@ ARTIFACT_MANIFEST_SCHEMA_VERSION = "artifact-manifest-v0"
 VISUALIZATION_STATE_SERIES_SCHEMA_VERSION = "visualization-state-series-v0"
 MESA_CONTRACT_VERSION = "1.0.0"
 ADAPTER_NAME = "Simulation Adapter Agent"
+ACTIVE_MODEL_FAMILY = "aircraft_support_v1"
+RETIRED_ADAPTER_MODEL_FAMILIES = ("smoke", "aviation_support")
 SPARE_SHORTFALL_CONSTRAINTS = [0.85, 0.9, 0.95]
 SPARE_SHORTFALL_TRUNCATION = {
     "mode": "clamp_0_1",
     "fields": ["fill_rate", "utilization", "shortage_probability"],
 }
+_PERIODIC_WEEKDAY_INDEXES = {
+    "monday": 0,
+    "mondaycompositetaskid": 0,
+    "mon": 0,
+    "周一": 0,
+    "星期一": 0,
+    "tuesday": 1,
+    "tuesdaycompositetaskid": 1,
+    "tue": 1,
+    "周二": 1,
+    "星期二": 1,
+    "wednesday": 2,
+    "wednesdaycompositetaskid": 2,
+    "wed": 2,
+    "周三": 2,
+    "星期三": 2,
+    "thursday": 3,
+    "thursdaycompositetaskid": 3,
+    "thu": 3,
+    "周四": 3,
+    "星期四": 3,
+    "friday": 4,
+    "fridaycompositetaskid": 4,
+    "fri": 4,
+    "周五": 4,
+    "星期五": 4,
+    "saturday": 5,
+    "saturdaycompositetaskid": 5,
+    "sat": 5,
+    "周六": 5,
+    "星期六": 5,
+    "sunday": 6,
+    "sundaycompositetaskid": 6,
+    "sun": 6,
+    "周日": 6,
+    "星期日": 6,
+    "星期天": 6,
+}
+_PERIODIC_WEEKDAY_ASSIGNMENT_FIELDS = (
+    "mondayCompositeTaskId",
+    "tuesdayCompositeTaskId",
+    "wednesdayCompositeTaskId",
+    "thursdayCompositeTaskId",
+    "fridayCompositeTaskId",
+    "saturdayCompositeTaskId",
+    "sundayCompositeTaskId",
+)
 
 
 class AdapterError(ValueError):
@@ -82,9 +129,14 @@ class SimulationAdapter:
             "errors": errors,
         }
 
-    def compile_scenario(self, project: dict[str, Any], model_family: str = "smoke") -> dict[str, Any]:
+    def compile_scenario(
+        self,
+        project: dict[str, Any],
+        model_family: str = ACTIVE_MODEL_FAMILY,
+        runtime_config: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """Compile a validated Project JSON document into a model-specific Scenario."""
-        result = self._compile_scenario_with_gate(project, model_family=model_family)
+        result = self._compile_scenario_with_gate(project, model_family=model_family, runtime_config=runtime_config)
         if result["status"] == "compiled" and result["scenario"] is not None:
             return result["scenario"]
         if result["status"] == "blocked":
@@ -92,6 +144,16 @@ class SimulationAdapter:
                 "invalid_project",
                 "Project JSON failed validation",
                 errors=result.get("errors", []),
+                issues=result["issues"],
+                provenance=result["provenance"],
+            )
+        if result["issues"] and result["issues"][0].get("code") == "retired_model_family":
+            raise AdapterError(
+                "retired_model_family",
+                result["issues"][0]["message"],
+                model_family=model_family,
+                replacement_model_family=ACTIVE_MODEL_FAMILY,
+                retired_model_families=list(RETIRED_ADAPTER_MODEL_FAMILIES),
                 issues=result["issues"],
                 provenance=result["provenance"],
             )
@@ -103,11 +165,63 @@ class SimulationAdapter:
             provenance=result["provenance"],
         )
 
-    def compile_scenario_with_gate(self, project: dict[str, Any], model_family: str = "smoke") -> dict[str, Any]:
+    def compile_scenario_with_gate(
+        self,
+        project: dict[str, Any],
+        model_family: str = ACTIVE_MODEL_FAMILY,
+        runtime_config: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """Compile with an explicit fail-closed gate result for unsupported paths."""
-        return self._compile_scenario_with_gate(project, model_family=model_family)
+        return self._compile_scenario_with_gate(project, model_family=model_family, runtime_config=runtime_config)
 
-    def _compile_scenario_with_gate(self, project: dict[str, Any], model_family: str = "smoke") -> dict[str, Any]:
+    def _retired_model_family_gate(self, model_family: str) -> dict[str, Any]:
+        message = f"{model_family} is retired; use {ACTIVE_MODEL_FAMILY}"
+        return {
+            "status": "unsupported",
+            "scenario": None,
+            "provenance": {
+                "project_id": "",
+                "modeling_snapshot_id": None,
+                "experiment_plan_id": None,
+                "model_family": model_family,
+                "mapping_version": "retired-model-family",
+                "consumed_fields": [],
+                "defaults_applied": [],
+                "derived_fields": [],
+                "ignored_fields": [],
+                "unsupported_fields": ["model_family"],
+            },
+            "issues": [
+                {
+                    "code": "retired_model_family",
+                    "message": message,
+                    "field_path": "model_family",
+                    "page": "Simulation run",
+                    "severity": "error",
+                    "suggestion": f"Use {ACTIVE_MODEL_FAMILY} for current formal and low-level adapter runs.",
+                    "replacement_model_family": ACTIVE_MODEL_FAMILY,
+                    "retired_model_families": list(RETIRED_ADAPTER_MODEL_FAMILIES),
+                }
+            ],
+        }
+
+    def _retired_model_family_error(self, model_family: str) -> AdapterError:
+        return AdapterError(
+            "retired_model_family",
+            f"{model_family} is retired; use {ACTIVE_MODEL_FAMILY}",
+            model_family=model_family,
+            replacement_model_family=ACTIVE_MODEL_FAMILY,
+            retired_model_families=list(RETIRED_ADAPTER_MODEL_FAMILIES),
+        )
+
+    def _compile_scenario_with_gate(
+        self,
+        project: dict[str, Any],
+        model_family: str = ACTIVE_MODEL_FAMILY,
+        runtime_config: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        if model_family in RETIRED_ADAPTER_MODEL_FAMILIES:
+            return self._retired_model_family_gate(model_family)
         validation = self.validate_project(project)
         if not validation["ok"]:
             issues = [
@@ -131,19 +245,6 @@ class SimulationAdapter:
                 "issues": issues,
                 "errors": validation["errors"],
             }
-        if model_family == "smoke":
-            scenario = self._compile_smoke_scenario(project, validation)
-            provenance = self._with_modeling_import_validation_provenance(
-                scenario["compiled_from"]["mapping_provenance"],
-                project,
-            )
-            scenario = self._scenario_with_mapping_provenance(scenario, provenance)
-            return {
-                "status": "compiled",
-                "scenario": scenario,
-                "provenance": provenance,
-                "issues": [],
-            }
         if model_family == "aviation_support":
             scenario = self._compile_aviation_support_scenario(project, validation)
             provenance = self._with_modeling_import_validation_provenance(
@@ -159,7 +260,7 @@ class SimulationAdapter:
             }
         if model_family == "aircraft_support_v1":
             provenance = self._with_modeling_import_validation_provenance(
-                self._aircraft_support_v1_mapping_provenance(self._project_id(project), project),
+                self._aircraft_support_v1_mapping_provenance(self._project_id(project), project, runtime_config),
                 project,
             )
             issues = self._aircraft_support_v1_compile_issues(project)
@@ -178,7 +279,7 @@ class SimulationAdapter:
                         for issue in issues
                     ],
                 }
-            scenario = self._compile_aircraft_support_v1_scenario(project, validation)
+            scenario = self._compile_aircraft_support_v1_scenario(project, validation, runtime_config=runtime_config)
             scenario = self._scenario_with_mapping_provenance(scenario, provenance)
             return {
                 "status": "compiled",
@@ -205,38 +306,6 @@ class SimulationAdapter:
                 }
             ],
         }
-
-    def _compile_smoke_scenario(self, project: dict[str, Any], validation: dict[str, Any]) -> dict[str, Any]:
-        project_id = validation["project_id"]
-        project_version = validation["project_version"]
-        scenario_key = _safe_identifier(str(project.get("scenarioId") or project_id))
-        inputs = self._compile_smoke_inputs(project, project_version)
-        now = _utc_now()
-
-        scenario = {
-            "schema_version": SCENARIO_SCHEMA_VERSION,
-            "scenario_id": f"scenario-{scenario_key}",
-            "project_id": project_id,
-            "scenario_version": "scenario-v0.1",
-            "simulation_model": {
-                "family": "smoke",
-                "model_id": "SmokeSpareMvpModel",
-                "contract_version": MESA_CONTRACT_VERSION,
-            },
-            "compiled_at": now,
-            "compiled_by": ADAPTER_NAME,
-            "compiled_from": {
-                "project_id": project_id,
-                "project_version": project_version,
-                "project_schema_version": validation["project_schema_version"],
-                "mesa_contract_version": MESA_CONTRACT_VERSION,
-                "mapping_provenance": self._smoke_mapping_provenance(project_id, project),
-            },
-            "simulation_inputs": inputs,
-        }
-        self._compiled_project_snapshots[scenario["scenario_id"]] = copy.deepcopy(project)
-        self._compiled_project_snapshots[scenario["project_id"]] = copy.deepcopy(project)
-        return scenario
 
     def _compile_aviation_support_scenario(self, project: dict[str, Any], validation: dict[str, Any]) -> dict[str, Any]:
         project_id = validation["project_id"]
@@ -270,11 +339,16 @@ class SimulationAdapter:
         self._compiled_project_snapshots[scenario["project_id"]] = copy.deepcopy(project)
         return scenario
 
-    def _compile_aircraft_support_v1_scenario(self, project: dict[str, Any], validation: dict[str, Any]) -> dict[str, Any]:
+    def _compile_aircraft_support_v1_scenario(
+        self,
+        project: dict[str, Any],
+        validation: dict[str, Any],
+        runtime_config: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         project_id = validation["project_id"]
         project_version = validation["project_version"]
         scenario_key = _safe_identifier(str(project.get("scenarioId") or project_id))
-        inputs = self._compile_aircraft_support_v1_inputs(project, validation)
+        inputs = self._compile_aircraft_support_v1_inputs(project, validation, runtime_config=runtime_config)
         now = _utc_now()
 
         scenario = {
@@ -294,7 +368,7 @@ class SimulationAdapter:
                 "project_version": project_version,
                 "project_schema_version": validation["project_schema_version"],
                 "mesa_contract_version": MESA_CONTRACT_VERSION,
-                "mapping_provenance": self._aircraft_support_v1_mapping_provenance(project_id, project),
+                "mapping_provenance": self._aircraft_support_v1_mapping_provenance(project_id, project, runtime_config),
             },
             "simulation_inputs": inputs,
         }
@@ -312,12 +386,7 @@ class SimulationAdapter:
         """Run a compiled single-run Scenario and write traceable contract artifacts."""
         model_family = scenario.get("simulation_model", {}).get("family")
         if model_family == "aviation_support":
-            return self._run_aviation_support_scenario(
-                scenario,
-                output_dir=output_dir,
-                steps=steps,
-                run_id=run_id,
-            )
+            raise self._retired_model_family_error(model_family)
         if model_family == "aircraft_support_v1":
             return self._run_aircraft_support_v1_scenario(
                 scenario,
@@ -325,153 +394,11 @@ class SimulationAdapter:
                 steps=steps,
                 run_id=run_id,
             )
-        self._assert_smoke_scenario(scenario)
-        if steps < 0:
-            raise AdapterError("bad_steps", "steps must be non-negative", steps=steps)
-
-        inputs = scenario["simulation_inputs"]
-        model = SmokeSpareMvpModel(
-            projectData=copy.deepcopy(inputs["project_snapshot"]),
-            activeModule=inputs["active_module"],
-            spareMultiplier=inputs["spare_multiplier"],
-            failureRate=inputs["failure_rate"],
-            supportCapacity=inputs["support_capacity"],
-            minRequiredSorties=inputs["min_required_sorties"],
-            seed=inputs["seed"],
+        raise AdapterError(
+            "unsupported_model_family",
+            f"{model_family} does not have an executable adapter runtime",
+            model_family=model_family,
         )
-        state_series_frames: list[dict[str, Any]] = []
-        for _ in range(steps):
-            model.step()
-            state_series_frames.append(
-                self._visualization_state_frame(
-                    run_id=run_id or f"run-{scenario['scenario_id']}",
-                    step=model.step_count,
-                    metrics=model.snapshot(),
-                )
-            )
-        snapshot = model.snapshot()
-
-        run_id = run_id or f"run-{scenario['scenario_id']}"
-        if not state_series_frames:
-            state_series_frames.append(
-                self._visualization_state_frame(
-                    run_id=run_id,
-                    step=0,
-                    metrics=snapshot,
-                )
-            )
-        result_id = f"result-{run_id}"
-        manifest_id = f"artifact-manifest-{run_id}"
-        now = _utc_now()
-
-        result = {
-            "schema_version": RESULT_SCHEMA_VERSION,
-            "model_family": "smoke",
-            "result_id": result_id,
-            "run_id": run_id,
-            "scenario_id": scenario["scenario_id"],
-            "scenario_version": scenario["scenario_version"],
-            "metrics": snapshot,
-        }
-        run_config = {
-            "schema_version": "run-config-v0",
-            "run_id": run_id,
-            "run_type": "single",
-            "model_family": "smoke",
-            "project_id": scenario["project_id"],
-            "experiment_plan_id": None,
-            "modeling_snapshot_id": None,
-            "scenario_id": scenario["scenario_id"],
-            "scenario_version": scenario["scenario_version"],
-            "seed": inputs["seed"],
-            "steps": steps,
-        }
-        metrics = {
-            "schema_version": "metrics-v0",
-            "run_id": run_id,
-            "metrics": snapshot,
-        }
-        report = {
-            "schema_version": "run-report-v0",
-            "run_id": run_id,
-            "title": "Smoke single run report",
-            "summary": {
-                "status": "succeeded",
-                "steps": steps,
-                "seed": inputs["seed"],
-            },
-        }
-        event_log = {
-            "schema_version": "run-log-v0",
-            "run_id": run_id,
-            "events": [
-                {"event": "run_started", "at": now},
-                {"event": "run_completed", "at": now, "status": "succeeded"},
-            ],
-        }
-        visualization_state_series = self._visualization_state_series_payload(
-            run_id=run_id,
-            scenario=scenario,
-            model_family="smoke",
-            result_summary_id=result_id,
-            artifact_manifest_id=manifest_id,
-            frames=state_series_frames,
-        )
-        run = {
-            "schema_version": RUN_SCHEMA_VERSION,
-            "run_id": run_id,
-            "project_id": scenario["project_id"],
-            "scenario_id": scenario["scenario_id"],
-            "scenario_version": scenario["scenario_version"],
-            "model_family": "smoke",
-            "model_id": "SmokeSpareMvpModel",
-            "status": "succeeded",
-            "run_type": "single",
-            "seed": inputs["seed"],
-            "progress": 1,
-            "started_at": now,
-            "completed_at": now,
-            "result_summary_id": result_id,
-            "artifact_manifest_id": manifest_id,
-            "error": None,
-        }
-
-        output_root = Path(output_dir)
-        run_dir = output_root / run_id
-        run_dir.mkdir(parents=True, exist_ok=True)
-        artifact_specs = [
-            ("run_config", "run-config.json", run_config, "run-config-v0"),
-            ("input_project", "input-project.json", inputs["project_snapshot"], PROJECT_SCHEMA_VERSION),
-            ("compiled_scenario", "compiled-scenario.json", scenario, SCENARIO_SCHEMA_VERSION),
-            ("snapshot", "snapshot.json", snapshot, None),
-            ("result_summary", "result-summary.json", result, RESULT_SCHEMA_VERSION),
-            ("metrics", "metrics.json", metrics, "metrics-v0"),
-            ("report", "report.json", report, "run-report-v0"),
-            ("log", "events-log.json", event_log, "run-log-v0"),
-            (
-                "visualization_state_series",
-                "visualization-state-series.json",
-                visualization_state_series,
-                VISUALIZATION_STATE_SERIES_SCHEMA_VERSION,
-            ),
-        ]
-        artifacts = [
-            self._write_artifact(run_dir, output_root, kind, filename, payload, schema_version)
-            for kind, filename, payload, schema_version in artifact_specs
-        ]
-        self._annotate_state_series_artifact(artifacts, run_id, result_id, scenario["scenario_id"])
-        manifest = {
-            "schema_version": ARTIFACT_MANIFEST_SCHEMA_VERSION,
-            "artifact_manifest_id": manifest_id,
-            "run_id": run_id,
-            "scenario_id": scenario["scenario_id"],
-            "scenario_version": scenario["scenario_version"],
-            "created_at": now,
-            "artifacts": artifacts,
-        }
-        self._write_json(run_dir / "artifact-manifest.json", manifest)
-
-        return {"run": run, "result": result, "artifact_manifest": manifest}
 
     def run_monte_carlo_scenario(
         self,
@@ -483,19 +410,13 @@ class SimulationAdapter:
         **legacy_config: Any,
     ) -> dict[str, dict[str, Any]]:
         """Run a synchronous formal Monte Carlo batch from a compiled Scenario."""
+        model_family = scenario.get("simulation_model", {}).get("family")
+        if model_family == "aviation_support":
+            raise self._retired_model_family_error(model_family)
         config = self._require_monte_carlo_config(
             monte_carlo_config=monte_carlo_config,
             legacy_config=legacy_config,
         )
-        model_family = scenario.get("simulation_model", {}).get("family")
-        if model_family == "aviation_support":
-            return self._run_aviation_support_monte_carlo_scenario(
-                scenario,
-                output_dir=output_dir,
-                steps=steps,
-                run_id=run_id,
-                monte_carlo_config=config,
-            )
         if model_family == "aircraft_support_v1":
             return self._run_aircraft_support_v1_monte_carlo_scenario(
                 scenario,
@@ -504,218 +425,22 @@ class SimulationAdapter:
                 run_id=run_id,
                 monte_carlo_config=config,
             )
-        self._assert_smoke_scenario(scenario)
-        if steps < 0:
-            raise AdapterError("bad_steps", "steps must be non-negative", steps=steps)
-
-        inputs = scenario["simulation_inputs"]
-        run_id = run_id or f"run-{scenario['scenario_id']}-mc"
-        result_id = f"result-{run_id}"
-        manifest_id = f"artifact-manifest-{run_id}"
-        mc_experiment_id = config.get("mc_experiment_id") or f"mc-{run_id.removeprefix('run-')}"
-        now = _utc_now()
-
-        profile = self._monte_carlo_profile(scenario, monte_carlo_config=config)
-        samples = [
-            self._run_monte_carlo_sample(inputs, profile["sample_points"][index], steps=steps, sample_index=index)
-            for index in range(profile["sample_count"])
-        ]
-        aggregate = self._aggregate_sample_metrics(samples)
-        base_artifact_id = f"monte_carlo_base-{run_id}"
-        projections = self._analysis_projections(aggregate, samples, base_artifact_id)
-        base_artifact = {
-            "artifact_type": "monte_carlo_base",
-            "run_id": run_id,
-            "mc_experiment_id": mc_experiment_id,
-            "scenario_id": scenario["scenario_id"],
-            "scenario_version": scenario["scenario_version"],
-            "mapping_provenance": copy.deepcopy(scenario["compiled_from"]["mapping_provenance"]),
-            "mapping_version": scenario["compiled_from"]["mapping_provenance"].get("mapping_version"),
-            "sample_count": profile["sample_count"],
-            "seed": inputs["seed"],
-            "sweep": profile["sweep"],
-            "sample_points": profile["sample_points"],
-            "samples": samples,
-            "aggregate_metrics": aggregate,
-            "logs_summary": {
-                "completed_samples": profile["sample_count"],
-                "failed_samples": 0,
-                "executor": "local_sync_smoke",
-            },
-        }
-        run_config = {
-            "schema_version": "run-config-v0",
-            "run_id": run_id,
-            "run_type": "monte_carlo",
-            "model_family": "smoke",
-            "project_id": scenario["project_id"],
-            "experiment_plan_id": None,
-            "modeling_snapshot_id": None,
-            "scenario_id": scenario["scenario_id"],
-            "scenario_version": scenario["scenario_version"],
-            "seed": inputs["seed"],
-            "steps": steps,
-            "mc_experiment_id": mc_experiment_id,
-            "monte_carlo_config": copy.deepcopy(config),
-        }
-        sample_results = {
-            "schema_version": "sample-results-v0",
-            "run_id": run_id,
-            "mc_experiment_id": mc_experiment_id,
-            "samples": samples,
-        }
-        aggregate_result = {
-            "schema_version": "aggregate-result-v0",
-            "run_id": run_id,
-            "mc_experiment_id": mc_experiment_id,
-            "aggregate_metrics": aggregate,
-        }
-        metrics = {
-            "schema_version": "metrics-v0",
-            "run_id": run_id,
-            "metrics": aggregate,
-        }
-        report = {
-            "schema_version": "run-report-v0",
-            "run_id": run_id,
-            "title": "Monte Carlo run report",
-            "summary": {
-                "status": "succeeded",
-                "sample_count": profile["sample_count"],
-                "seed": inputs["seed"],
-                "mc_experiment_id": mc_experiment_id,
-            },
-        }
-        event_log = {
-            "schema_version": "run-log-v0",
-            "run_id": run_id,
-            "events": [
-                {"event": "run_started", "at": now},
-                {"event": "samples_completed", "at": now, "completed_samples": profile["sample_count"]},
-                {"event": "run_completed", "at": now, "status": "succeeded"},
-            ],
-        }
-        visualization_state_series = self._visualization_state_series_payload(
-            run_id=run_id,
-            scenario=scenario,
-            model_family="smoke",
-            result_summary_id=result_id,
-            artifact_manifest_id=manifest_id,
-            frames=self._monte_carlo_visualization_frames(run_id, samples),
+        raise AdapterError(
+            "unsupported_model_family",
+            f"{model_family} does not have an executable Monte Carlo adapter runtime",
+            model_family=model_family,
         )
-
-        result = {
-            "schema_version": RESULT_SCHEMA_VERSION,
-            "model_family": "smoke",
-            "result_id": result_id,
-            "run_id": run_id,
-            "scenario_id": scenario["scenario_id"],
-            "scenario_version": scenario["scenario_version"],
-            "metrics": aggregate,
-            "analysis_outputs": {
-                "large_sample_summary": projections["large_sample_summary"]["data"],
-                "spare_shortage": projections["spare_shortfall"]["data"],
-                "carry_list": projections["carry_list"]["data"],
-                "mission_reliability": projections["mission_reliability"]["data"],
-                "downtime_factors": projections["downtime_factors"]["data"],
-            },
-        }
-        run = {
-            "schema_version": RUN_SCHEMA_VERSION,
-            "run_id": run_id,
-            "project_id": scenario["project_id"],
-            "scenario_id": scenario["scenario_id"],
-            "scenario_version": scenario["scenario_version"],
-            "model_family": "smoke",
-            "model_id": "SmokeSpareMvpModel",
-            "status": "succeeded",
-            "run_type": "monte_carlo",
-            "seed": inputs["seed"],
-            "progress": 1,
-            "started_at": now,
-            "completed_at": now,
-            "result_summary_id": result_id,
-            "artifact_manifest_id": manifest_id,
-            "error": None,
-            "experiment_id": f"experiment-{run_id}",
-            "experiment_type": "monte_carlo",
-            "mc_experiment_id": mc_experiment_id,
-        }
-
-        output_root = Path(output_dir)
-        run_dir = output_root / run_id
-        run_dir.mkdir(parents=True, exist_ok=True)
-        artifact_specs = [
-            ("run_config", "run-config.json", run_config, "run-config-v0"),
-            ("input_project", "input-project.json", inputs["project_snapshot"], PROJECT_SCHEMA_VERSION),
-            ("compiled_scenario", "compiled-scenario.json", scenario, SCENARIO_SCHEMA_VERSION),
-            ("sample_results", "sample-results.json", sample_results, "sample-results-v0"),
-            ("aggregate_result", "aggregate-result.json", aggregate_result, "aggregate-result-v0"),
-            ("result_summary", "result-summary.json", result, RESULT_SCHEMA_VERSION),
-            ("metrics", "metrics.json", metrics, "metrics-v0"),
-            ("report", "report.json", report, "run-report-v0"),
-            ("log", "events-log.json", event_log, "run-log-v0"),
-            ("monte_carlo_base", "monte-carlo-base.json", base_artifact, None),
-            (
-                "visualization_state_series",
-                "visualization-state-series.json",
-                visualization_state_series,
-                VISUALIZATION_STATE_SERIES_SCHEMA_VERSION,
-            ),
-            ("analysis_projection_spare_shortfall", "spare-shortfall.json", projections["spare_shortfall"], "analysis-projection-v0"),
-            ("analysis_projection_carry_list", "carry-list.json", projections["carry_list"], "analysis-projection-v0"),
-            ("analysis_projection_mission_reliability", "mission-reliability.json", projections["mission_reliability"], "analysis-projection-v0"),
-            ("analysis_projection_downtime_factors", "downtime-factors.json", projections["downtime_factors"], "analysis-projection-v0"),
-        ]
-        artifacts = [
-            self._write_artifact(run_dir, output_root, kind, filename, payload, schema_version)
-            for kind, filename, payload, schema_version in artifact_specs
-        ]
-        for artifact in artifacts:
-            kind = artifact.get("kind", "")
-            if str(kind).startswith("analysis_projection_"):
-                artifact["source_artifact_id"] = base_artifact_id
-                artifact["analysis_type"] = str(kind).removeprefix("analysis_projection_")
-        self._annotate_state_series_artifact(artifacts, run_id, result_id, scenario["scenario_id"])
-        manifest = {
-            "schema_version": ARTIFACT_MANIFEST_SCHEMA_VERSION,
-            "artifact_manifest_id": manifest_id,
-            "run_id": run_id,
-            "scenario_id": scenario["scenario_id"],
-            "scenario_version": scenario["scenario_version"],
-            "created_at": now,
-            "artifacts": artifacts,
-        }
-        self._write_json(run_dir / "artifact-manifest.json", manifest)
-
-        return {"run": run, "result": result, "artifact_manifest": manifest}
 
     def _project_required_fields(self) -> list[str]:
         schema = json.loads((self.contracts_dir / "project.schema.json").read_text(encoding="utf-8"))
         return list(schema["required"])
-
-    def _compile_smoke_inputs(self, project: dict[str, Any], project_version: str) -> dict[str, Any]:
-        return {
-            "project_snapshot": copy.deepcopy(project),
-            "project_version": project_version,
-            "active_module": str(project.get("activeModule", "sparePlanning")),
-            "spare_multiplier": self._first_number(project.get("monteCarlo", {}).get("spareMultipliers"), 1.0),
-            "failure_rate": self._mean_component_failure_rate(project),
-            "support_capacity": self._first_positive_int(project.get("supportNodes", []), "equipmentCapacity", 1),
-            "min_required_sorties": self._positive_int(
-                project.get("equipment", {}).get("minRequiredSorties")
-                or project.get("basicMission", {}).get("minRequiredSorties"),
-                1,
-            ),
-            "seed": self._positive_int(project.get("experiment", {}).get("seed"), 0),
-        }
 
     def _compile_aviation_support_inputs(self, project: dict[str, Any]) -> dict[str, Any]:
         return {
             "aircraft_count": self._positive_int(project.get("equipment", {}).get("quantity"), 8),
             "mission_count": self._positive_int(project.get("missionProfile", {}).get("missionCount"), 3),
             "mission_aircraft_required": self._positive_int(
-                project.get("basicMission", {}).get("equipmentQuantity"),
+                self._primary_basic_mission(project).get("equipmentQuantity"),
                 1,
             ),
             "mechanic_teams": self._first_positive_int(project.get("supportNodes", []), "personnelCapacity", 1),
@@ -729,14 +454,15 @@ class SimulationAdapter:
         self,
         project: dict[str, Any],
         validation: dict[str, Any],
+        runtime_config: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         mission_profile = project.get("missionProfile") if isinstance(project.get("missionProfile"), dict) else {}
-        equipment = project.get("equipment") if isinstance(project.get("equipment"), dict) else {}
-        experiment = project.get("experiment") if isinstance(project.get("experiment"), dict) else {}
-        monte_carlo = project.get("monteCarlo") if isinstance(project.get("monteCarlo"), dict) else {}
+        aircraft_summary = self._aircraft_support_v1_aircraft_summary(project, mission_profile)
+        experiment = self._runtime_experiment_config(project, runtime_config)
+        monte_carlo = self._runtime_monte_carlo_config(project, runtime_config)
         duration_minutes = self._aircraft_support_v1_duration_minutes(mission_profile)
-        fleet_count = self._positive_int(equipment.get("quantity"), 1)
-        initial_ready = min(self._positive_int(equipment.get("initialReady"), fleet_count), fleet_count)
+        fleet_count = aircraft_summary["fleet_count"]
+        initial_ready = aircraft_summary["initial_ready"]
 
         return {
             "schema_version": "aircraft-support-v1-input-v0",
@@ -750,18 +476,24 @@ class SimulationAdapter:
                 "profile_id": str(mission_profile.get("profileId") or mission_profile.get("id") or "mission-profile"),
                 "name": str(mission_profile.get("name") or "mission profile"),
                 "duration_minutes": duration_minutes,
-                "basic_mission": copy.deepcopy(project.get("basicMission") if isinstance(project.get("basicMission"), dict) else {}),
+                "basic_missions": copy.deepcopy(self._basic_missions(project)),
                 "composite_tasks": copy.deepcopy(self._dict_list(mission_profile.get("compositeTasks"))),
                 "periodic_tasks": copy.deepcopy(self._dict_list(mission_profile.get("periodicTasks"))),
                 "mission_phases": copy.deepcopy(self._dict_list(project.get("missionPhases"))),
-                "airports": copy.deepcopy(self._dict_list(project.get("airports"))),
+                "airports": self._runtime_airports(project.get("airports")),
                 "mission_areas": copy.deepcopy(self._dict_list(project.get("missionAreas"))),
             },
             "aircraft": {
                 "fleet_count": fleet_count,
                 "initial_ready": initial_ready,
-                "models": self._string_list(equipment.get("wholeMachineModels") or [equipment.get("model")]),
-                "assets": self._aircraft_support_v1_aircraft_assets(project, mission_profile, equipment, fleet_count, initial_ready),
+                "models": aircraft_summary["models"],
+                "assets": self._aircraft_support_v1_aircraft_assets(
+                    project,
+                    mission_profile,
+                    aircraft_summary,
+                    fleet_count,
+                    initial_ready,
+                ),
             },
             "equipment_tree": {
                 "root_component_id": self._root_component_id(project.get("components")),
@@ -797,6 +529,39 @@ class SimulationAdapter:
             "seed": self._positive_int(experiment.get("seed"), 0),
         }
 
+    def _runtime_experiment_config(
+        self,
+        project: dict[str, Any],
+        runtime_config: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        experiment = copy.deepcopy(project.get("experiment") if isinstance(project.get("experiment"), dict) else {})
+        runtime = runtime_config if isinstance(runtime_config, dict) else {}
+        nested = runtime.get("experiment") if isinstance(runtime.get("experiment"), dict) else {}
+        for source in (nested, runtime):
+            for key in ("name", "steps", "samples", "seed"):
+                if key in source:
+                    experiment[key] = copy.deepcopy(source[key])
+        if "samples" not in experiment and "sample_count" in runtime:
+            experiment["samples"] = copy.deepcopy(runtime["sample_count"])
+        return experiment
+
+    def _runtime_monte_carlo_config(
+        self,
+        project: dict[str, Any],
+        runtime_config: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        monte_carlo = copy.deepcopy(project.get("monteCarlo") if isinstance(project.get("monteCarlo"), dict) else {})
+        runtime = runtime_config if isinstance(runtime_config, dict) else {}
+        runtime_monte_carlo = runtime.get("monteCarlo") if isinstance(runtime.get("monteCarlo"), dict) else {}
+        monte_carlo.update(copy.deepcopy(runtime_monte_carlo))
+        analysis_requests = runtime.get("analysisRequests") if isinstance(runtime.get("analysisRequests"), dict) else {}
+        large_sample = analysis_requests.get("largeSample") if isinstance(analysis_requests.get("largeSample"), dict) else {}
+        large_sample_sweep = large_sample.get("sweep") if isinstance(large_sample.get("sweep"), dict) else {}
+        monte_carlo.update(copy.deepcopy(large_sample_sweep))
+        direct_sweep = runtime.get("sweep") if isinstance(runtime.get("sweep"), dict) else {}
+        monte_carlo.update(copy.deepcopy(direct_sweep))
+        return monte_carlo
+
     def _aircraft_support_v1_component(self, component: dict[str, Any]) -> dict[str, Any]:
         return {
             "id": str(component.get("id") or "component"),
@@ -817,27 +582,120 @@ class SimulationAdapter:
             ),
         }
 
+    def _aircraft_support_v1_aircraft_summary(
+        self,
+        project: dict[str, Any],
+        mission_profile: dict[str, Any],
+    ) -> dict[str, Any]:
+        equipment = project.get("equipment") if isinstance(project.get("equipment"), dict) else {}
+        combat_unit = self._aircraft_support_v1_combat_unit(project, mission_profile)
+        members = self._dict_list(combat_unit.get("members"))
+        components = self._dict_list(project.get("components"))
+        fleet_count = self._aircraft_support_v1_fleet_count(equipment, combat_unit, members, components)
+        if members:
+            initial_ready = sum(
+                1
+                for member in members[:fleet_count]
+                if not self._aircraft_support_v1_member_in_maintenance(member)
+            )
+        else:
+            initial_ready = min(self._positive_int(equipment.get("initialReady"), fleet_count), fleet_count)
+        models = self._aircraft_support_v1_aircraft_models(equipment, members, components)
+        return {
+            "fleet_count": fleet_count,
+            "initial_ready": min(initial_ready, fleet_count),
+            "models": models,
+            "model": models[0] if models else "Aircraft",
+        }
+
+    def _aircraft_support_v1_combat_unit(
+        self,
+        project: dict[str, Any],
+        mission_profile: dict[str, Any],
+    ) -> dict[str, Any]:
+        combat_unit = project.get("combatUnit") if isinstance(project.get("combatUnit"), dict) else {}
+        if combat_unit:
+            return combat_unit
+        return mission_profile.get("combatUnit") if isinstance(mission_profile.get("combatUnit"), dict) else {}
+
+    def _aircraft_support_v1_combat_members(
+        self,
+        project: dict[str, Any],
+        mission_profile: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        return self._dict_list(self._aircraft_support_v1_combat_unit(project, mission_profile).get("members"))
+
+    def _aircraft_support_v1_fleet_count(
+        self,
+        equipment: dict[str, Any],
+        combat_unit: dict[str, Any],
+        members: list[dict[str, Any]],
+        components: list[dict[str, Any]],
+    ) -> int:
+        if members:
+            return len(members)
+        if self._is_positive_number(combat_unit.get("quantity")):
+            return self._positive_int(combat_unit.get("quantity"), 1)
+        root_quantity = self._aircraft_support_v1_root_component_quantity(components)
+        if root_quantity is not None:
+            return root_quantity
+        return self._positive_int(equipment.get("quantity"), 1)
+
+    def _aircraft_support_v1_root_component_quantity(self, components: list[dict[str, Any]]) -> int | None:
+        for component in components:
+            if component.get("parentId") in (None, "") and self._is_positive_number(component.get("quantity")):
+                return self._positive_int(component.get("quantity"), 1)
+        return None
+
+    def _aircraft_support_v1_aircraft_models(
+        self,
+        equipment: dict[str, Any],
+        members: list[dict[str, Any]],
+        components: list[dict[str, Any]],
+    ) -> list[str]:
+        models = self._unique_string_list(member.get("model") for member in members)
+        if not models:
+            models = self._unique_string_list(component.get("aircraftModel") for component in components)
+        if not models:
+            models = self._aircraft_support_v1_equipment_aircraft_models(equipment)
+        return models or ["Aircraft"]
+
+    def _aircraft_support_v1_equipment_aircraft_models(self, equipment: dict[str, Any]) -> list[str]:
+        values: list[Any] = []
+        aircraft_types = equipment.get("aircraftTypes")
+        if isinstance(aircraft_types, list):
+            for aircraft_type in aircraft_types:
+                if isinstance(aircraft_type, dict):
+                    values.append(aircraft_type.get("model") or aircraft_type.get("name") or aircraft_type.get("id"))
+                else:
+                    values.append(aircraft_type)
+        values.extend(self._string_list(equipment.get("wholeMachineModels")))
+        values.append(equipment.get("model"))
+        return self._unique_string_list(values)
+
+    def _aircraft_support_v1_member_in_maintenance(self, member: dict[str, Any]) -> bool:
+        status = str(member.get("status") or "").strip().lower()
+        unavailable_tokens = ("维修", "故障", "不可用", "maintenance", "failed", "failure", "unavailable", "down")
+        return any(token in status for token in unavailable_tokens)
+
     def _aircraft_support_v1_aircraft_assets(
         self,
         project: dict[str, Any],
         mission_profile: dict[str, Any],
-        equipment: dict[str, Any],
+        aircraft_summary: dict[str, Any],
         fleet_count: int,
         initial_ready: int,
     ) -> list[dict[str, str]]:
-        combat_unit = project.get("combatUnit") if isinstance(project.get("combatUnit"), dict) else {}
-        if not combat_unit:
-            combat_unit = mission_profile.get("combatUnit") if isinstance(mission_profile.get("combatUnit"), dict) else {}
+        combat_unit = self._aircraft_support_v1_combat_unit(project, mission_profile)
         members = self._dict_list(combat_unit.get("members"))
         if not members:
             return []
-        default_model = str(equipment.get("model") or "Aircraft")
+        default_model = str(aircraft_summary.get("model") or "Aircraft")
         assets = []
         for index, member in enumerate(members[:fleet_count]):
             model = str(member.get("model") or default_model)
-            status = str(member.get("status") or "").lower()
             initial_state = "available" if index < initial_ready else "maintenance"
-            if "维修" in status or "停" in status or "maintenance" in status:
+            if self._aircraft_support_v1_member_in_maintenance(member):
                 initial_state = "maintenance"
             assets.append(
                 {
@@ -850,6 +708,9 @@ class SimulationAdapter:
                     "aircraft_type": model,
                     "model": model,
                     "initial_state": initial_state,
+                    "airport": self._optional_string(member.get("airport")) or "",
+                    "airport_id": self._optional_string(member.get("airportId") or member.get("baseAirportId")) or "",
+                    "deployment_location": self._optional_string(member.get("deploymentLocation")) or "",
                 }
             )
         return assets
@@ -858,6 +719,8 @@ class SimulationAdapter:
         return {
             "id": str(node.get("id") or "support-node"),
             "name": str(node.get("name") or node.get("id") or "support node"),
+            "airport": self._optional_string(node.get("airport")) or "",
+            "airport_id": self._optional_string(node.get("airportId") or node.get("baseAirportId")) or "",
             "node_type": self._optional_string(node.get("nodeType")),
             "support_level": self._optional_string(node.get("supportLevel")),
             "personnel_capacity": self._positive_int(node.get("personnelCapacity"), self._positive_int(node.get("capacity"), 1)),
@@ -900,28 +763,6 @@ class SimulationAdapter:
         edges = self._dict_list(diagram.get("edges"))
         return {"nodes": copy.deepcopy(nodes), "edges": copy.deepcopy(edges)}
 
-    def _smoke_mapping_provenance(self, project_id: str, project: dict[str, Any]) -> dict[str, Any]:
-        return {
-            "project_id": project_id,
-            "modeling_snapshot_id": None,
-            "experiment_plan_id": None,
-            "model_family": "smoke",
-            "mapping_version": "smoke-input-v0",
-            "consumed_fields": [
-                "activeModule",
-                "monteCarlo.spareMultipliers",
-                "components[].failureRate",
-                "supportNodes[].equipmentCapacity",
-                "equipment.minRequiredSorties",
-                "basicMission.minRequiredSorties",
-                "experiment.seed",
-            ],
-            "defaults_applied": self._smoke_defaults_applied(project),
-            "derived_fields": ["simulation_inputs.failure_rate"],
-            "ignored_fields": ["monteCarlo.failureRates", "monteCarlo.supportCapacities"],
-            "unsupported_fields": [],
-        }
-
     def _aviation_support_mapping_provenance(self, project_id: str, project: dict[str, Any]) -> dict[str, Any]:
         return {
             "project_id": project_id,
@@ -932,7 +773,7 @@ class SimulationAdapter:
             "consumed_fields": [
                 "equipment.quantity",
                 "missionProfile.missionCount",
-                "basicMission.equipmentQuantity",
+                "basicMissions[].equipmentQuantity",
                 "supportNodes[].personnelCapacity",
                 "supportNodes[].equipmentCapacity",
                 "monteCarlo.lruFailureMultipliers",
@@ -950,7 +791,12 @@ class SimulationAdapter:
             "unsupported_fields": [],
         }
 
-    def _aircraft_support_v1_mapping_provenance(self, project_id: str, project: dict[str, Any]) -> dict[str, Any]:
+    def _aircraft_support_v1_mapping_provenance(
+        self,
+        project_id: str,
+        project: dict[str, Any],
+        runtime_config: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         return {
             "project_id": project_id,
             "modeling_snapshot_id": None,
@@ -958,17 +804,16 @@ class SimulationAdapter:
             "model_family": "aircraft_support_v1",
             "mapping_version": "aircraft-support-v1-input-v0",
             "consumed_fields": [
-                "equipment.quantity",
-                "equipment.initialReady",
-                "equipment.wholeMachineModels",
+                "combatUnit.members",
                 "missionProfile.combatUnit.members",
                 "missionProfile.durationHours",
                 "missionProfile.compositeTasks",
                 "missionProfile.periodicTasks",
-                "basicMission",
+                "basicMissions",
                 "missionPhases",
                 "airports",
                 "missionAreas",
+                "components[].aircraftModel",
                 "components[].failureRate",
                 "components[].failureDistribution",
                 "components[].kOutOfN",
@@ -982,19 +827,19 @@ class SimulationAdapter:
                 "supportActivities[].jobs[]",
                 "supportActivities[].jobs[].predecessors",
                 "reliabilityBlockDiagram",
-                "monteCarlo.failureRates",
-                "monteCarlo.spareMultipliers",
-                "monteCarlo.supportCapacities",
-                "experiment.seed",
-                "experiment.samples",
+                "ExperimentPlan.config.analysisRequests.largeSample.sweep.failureRates",
+                "ExperimentPlan.config.analysisRequests.largeSample.sweep.spareMultipliers",
+                "ExperimentPlan.config.analysisRequests.largeSample.sweep.supportCapacities",
+                "ExperimentPlan.config.seed",
+                "ExperimentPlan.config.samples",
             ],
-            "defaults_applied": self._aircraft_support_v1_defaults_applied(project),
+            "defaults_applied": self._aircraft_support_v1_defaults_applied(project, runtime_config),
             "derived_fields": [
                 "simulation_inputs.project_identity",
                 "simulation_inputs.aircraft.initial_ready",
                 "simulation_inputs.time.duration_minutes",
                 "simulation_inputs.time.requested_steps",
-                "experiment.steps",
+                "ExperimentPlan.config.steps",
             ],
             "ignored_fields": [],
             "governance_only_fields": [
@@ -1010,28 +855,11 @@ class SimulationAdapter:
             "unsupported_fields": self._aircraft_support_v1_unsupported_fields(project),
         }
 
-    def _smoke_defaults_applied(self, project: dict[str, Any]) -> list[str]:
-        defaults: list[str] = []
-        if not self._has_any_number(project.get("monteCarlo", {}).get("spareMultipliers")):
-            defaults.append("monteCarlo.spareMultipliers=1.0")
-        if not any(self._is_number(component.get("failureRate")) for component in project.get("components", [])):
-            defaults.append("components[].failureRate=0.05")
-        if not any(
-            isinstance(node, dict) and self._is_positive_number(node.get("equipmentCapacity"))
-            for node in project.get("supportNodes", [])
-        ):
-            defaults.append("supportNodes[].equipmentCapacity=1")
-        sortie_candidates = [
-            project.get("equipment", {}).get("minRequiredSorties"),
-            project.get("basicMission", {}).get("minRequiredSorties"),
-        ]
-        if not any(self._is_positive_number(value) for value in sortie_candidates):
-            defaults.append("equipment.minRequiredSorties|basicMission.minRequiredSorties=1")
-        if not self._is_number(project.get("experiment", {}).get("seed")):
-            defaults.append("experiment.seed=0")
-        return defaults
-
-    def _aircraft_support_v1_defaults_applied(self, project: dict[str, Any]) -> list[str]:
+    def _aircraft_support_v1_defaults_applied(
+        self,
+        project: dict[str, Any],
+        runtime_config: dict[str, Any] | None = None,
+    ) -> list[str]:
         defaults = [
             "time.tick_minutes=1",
             "time.sample_every_minutes=30",
@@ -1039,24 +867,25 @@ class SimulationAdapter:
         ]
         equipment = project.get("equipment") if isinstance(project.get("equipment"), dict) else {}
         mission_profile = project.get("missionProfile") if isinstance(project.get("missionProfile"), dict) else {}
-        experiment = project.get("experiment") if isinstance(project.get("experiment"), dict) else {}
-        monte_carlo = project.get("monteCarlo") if isinstance(project.get("monteCarlo"), dict) else {}
-        if not self._is_positive_number(equipment.get("initialReady")):
-            defaults.append("equipment.initialReady=equipment.quantity")
+        experiment = self._runtime_experiment_config(project, runtime_config)
+        monte_carlo = self._runtime_monte_carlo_config(project, runtime_config)
+        combat_members = self._aircraft_support_v1_combat_members(project, mission_profile)
+        if not combat_members and not self._is_positive_number(equipment.get("initialReady")):
+            defaults.append("aircraft.initialReady=derivedFleetCount")
         if not self._is_positive_number(mission_profile.get("durationHours")) and not self._mission_profile_has_periodic_duration(mission_profile):
             defaults.append("missionProfile.durationHours=24")
         if not self._is_positive_number(experiment.get("steps")):
-            defaults.append("experiment.steps=durationMinutes/sampleEveryMinutes")
+            defaults.append("ExperimentPlan.config.steps=durationMinutes/sampleEveryMinutes")
         if not self._is_positive_number(experiment.get("samples")):
-            defaults.append("experiment.samples=1")
+            defaults.append("ExperimentPlan.config.samples=1")
         if not self._has_any_number(monte_carlo.get("failureRates")):
-            defaults.append("monteCarlo.failureRates=[1.0]")
+            defaults.append("ExperimentPlan.config.analysisRequests.largeSample.sweep.failureRates=[1.0]")
         if not self._has_any_number(monte_carlo.get("spareMultipliers")):
-            defaults.append("monteCarlo.spareMultipliers=[1.0]")
+            defaults.append("ExperimentPlan.config.analysisRequests.largeSample.sweep.spareMultipliers=[1.0]")
         if not self._has_any_number(monte_carlo.get("supportCapacities")):
-            defaults.append("monteCarlo.supportCapacities=[1]")
+            defaults.append("ExperimentPlan.config.analysisRequests.largeSample.sweep.supportCapacities=[1]")
         if not self._is_number(experiment.get("seed")):
-            defaults.append("experiment.seed=0")
+            defaults.append("ExperimentPlan.config.seed=0")
         return defaults
 
     def _aircraft_support_v1_unsupported_fields(self, project: dict[str, Any]) -> list[str]:
@@ -1079,8 +908,8 @@ class SimulationAdapter:
             defaults.append("equipment.quantity=8")
         if not self._is_positive_number(project.get("missionProfile", {}).get("missionCount")):
             defaults.append("missionProfile.missionCount=3")
-        if not self._is_positive_number(project.get("basicMission", {}).get("equipmentQuantity")):
-            defaults.append("basicMission.equipmentQuantity=1")
+        if not self._is_positive_number(self._primary_basic_mission(project).get("equipmentQuantity")):
+            defaults.append("basicMissions[].equipmentQuantity=1")
         if not any(
             isinstance(node, dict) and self._is_positive_number(node.get("personnelCapacity"))
             for node in project.get("supportNodes", [])
@@ -1135,7 +964,6 @@ class SimulationAdapter:
         if not isinstance(disabled_domains, list):
             disabled_domains = [domain for domain, enabled in normalized_used_tables.items() if enabled is False]
 
-        enriched["validation_level"] = str(validation_scope.get("validationLevel") or "level1")
         enriched["used_tables"] = normalized_used_tables
         enriched["disabled_domains"] = [str(domain) for domain in disabled_domains]
         enriched["validation_warnings"] = copy.deepcopy(validation_scope.get("warnings") or [])
@@ -1155,8 +983,6 @@ class SimulationAdapter:
     def _modeling_import_domain_disabled(self, project: dict[str, Any], domain: str) -> bool:
         validation_scope = project.get("modelingImportValidation")
         if not isinstance(validation_scope, dict):
-            return False
-        if validation_scope.get("validationLevel") != "level0":
             return False
         used_tables = validation_scope.get("usedTables") if isinstance(validation_scope.get("usedTables"), dict) else {}
         disabled_domains = validation_scope.get("disabledDomains") if isinstance(validation_scope.get("disabledDomains"), list) else []
@@ -1354,13 +1180,6 @@ class SimulationAdapter:
             "severity": "error",
             "suggestion": "修正输入引用后重新编译 aircraft_support_v1 Scenario。",
         }
-
-    def _assert_smoke_scenario(self, scenario: dict[str, Any]) -> None:
-        model = scenario.get("simulation_model", {})
-        if scenario.get("schema_version") != SCENARIO_SCHEMA_VERSION:
-            raise AdapterError("invalid_scenario", "unsupported scenario schema version")
-        if model.get("family") != "smoke" or model.get("model_id") != "SmokeSpareMvpModel":
-            raise AdapterError("unsupported_model_family", "run_scenario currently supports only smoke scenarios")
 
     def _assert_aviation_support_scenario(self, scenario: dict[str, Any]) -> None:
         model = scenario.get("simulation_model", {})
@@ -1615,6 +1434,7 @@ class SimulationAdapter:
             ],
             run_id=run_id,
             validation_scope=scenario.get("compiled_from", {}).get("mapping_provenance", {}),
+            simulation_inputs=inputs,
         )
         result["analysis_outputs"] = {
             "spare_shortage": projections["spare_shortfall"]["data"],
@@ -2019,6 +1839,7 @@ class SimulationAdapter:
             samples=samples,
             run_id=run_id,
             validation_scope=scenario.get("compiled_from", {}).get("mapping_provenance", {}),
+            simulation_inputs=inputs,
         )
         behavior_scope = AircraftSupportV1Model.behavior_scope()
         input_project = self._input_project_for_scenario(scenario)
@@ -2524,6 +2345,214 @@ class SimulationAdapter:
             },
         }
 
+    def _aircraft_support_v1_scoped_spare_projection_rows(
+        self,
+        metrics: dict[str, Any],
+        samples: list[dict[str, Any]],
+        simulation_inputs: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        scoped_nodes = self._aircraft_support_v1_scoped_support_nodes(simulation_inputs)
+        scoped_node_ids = {str(node.get("id") or "") for node in scoped_nodes if str(node.get("id") or "")}
+        baseline_quantities: dict[str, int] = {}
+        for node in scoped_nodes:
+            inventory = node.get("inventory") if isinstance(node.get("inventory"), dict) else {}
+            for spare_type, quantity in inventory.items():
+                key = str(spare_type or "").strip()
+                if not key or not self._is_number(quantity):
+                    continue
+                baseline_quantities[key] = baseline_quantities.get(key, 0) + self._positive_int(quantity, 0)
+
+        stats = self._aircraft_support_v1_spare_event_stats(samples, scoped_node_ids)
+        for spare_type in stats:
+            baseline_quantities.setdefault(spare_type, 0)
+
+        rows = []
+        sample_count = max(1, len(samples))
+        planned_sorties = max(1.0, float(metrics.get("planned_sorties", 1) or 1))
+        mean_transport_delay = max(0.0, float(metrics.get("mean_transport_delay", 0) or 0))
+        for spare_type, baseline_quantity in baseline_quantities.items():
+            row_stats = stats.get(spare_type, {})
+            consumed_quantity = max(0.0, float(row_stats.get("consumed_quantity", 0) or 0))
+            shortage_count = max(0.0, float(row_stats.get("shortage_count", 0) or 0))
+            shortage_quantity = max(0.0, float(row_stats.get("shortage_quantity", 0) or 0))
+            demand_quantity = max(0.0, float(row_stats.get("demand_quantity", 0) or 0))
+            demand_count = demand_quantity if demand_quantity > 0 else consumed_quantity + shortage_quantity
+            filled_count = consumed_quantity
+            fill_rate = filled_count / demand_count if demand_count > 0 else 1.0
+            utilization = min(1.0, consumed_quantity / max(1.0, float(baseline_quantity)))
+            type_shortage_probability = min(1.0, shortage_count / planned_sorties)
+            risk_level = self._aircraft_support_v1_spare_risk_level(fill_rate, type_shortage_probability)
+            replenish_quantity = int(math.ceil(shortage_quantity / sample_count)) if shortage_quantity > 0 else 0
+            rows.append(
+                {
+                    "spare_type": spare_type,
+                    "baseline_quantity": baseline_quantity,
+                    "recommended_quantity": max(0, baseline_quantity + replenish_quantity),
+                    "demand_count": demand_count,
+                    "filled_count": filled_count,
+                    "shortage_count": shortage_count,
+                    "fill_rate": min(1.0, max(0.0, fill_rate)),
+                    "utilization": utilization,
+                    "shortage_probability": type_shortage_probability,
+                    "mean_transport_delay": mean_transport_delay if shortage_count > 0 else 0.0,
+                    "in_transit_count": 0,
+                    "risk_level": risk_level,
+                }
+            )
+        return rows
+
+    def _aircraft_support_v1_scoped_support_nodes(self, simulation_inputs: dict[str, Any]) -> list[dict[str, Any]]:
+        nodes = [
+            item for item in simulation_inputs.get("support_network", {}).get("nodes", [])
+            if isinstance(item, dict)
+        ]
+        nodes_by_id = {str(node.get("id") or ""): node for node in nodes if str(node.get("id") or "")}
+        if not nodes_by_id:
+            return []
+
+        airports = [
+            item for item in simulation_inputs.get("mission_profile", {}).get("airports", [])
+            if isinstance(item, dict)
+        ]
+        aircraft_tokens = self._aircraft_support_v1_aircraft_airport_tokens(simulation_inputs)
+        matched_airports = [
+            airport for airport in airports
+            if self._aircraft_support_v1_scope_matches(airport, aircraft_tokens)
+        ]
+        if not matched_airports and airports:
+            matched_airports = [airports[0]]
+
+        support_node_ids: set[str] = set()
+        for airport in matched_airports:
+            for key in ("supportNodeId", "support_node_id", "id"):
+                value = str(airport.get(key) or "").strip()
+                if value:
+                    support_node_ids.add(value)
+
+        scoped_nodes = [nodes_by_id[node_id] for node_id in support_node_ids if node_id in nodes_by_id]
+        if scoped_nodes:
+            return scoped_nodes
+
+        node_matches = [
+            node for node in nodes
+            if self._aircraft_support_v1_scope_matches(node, aircraft_tokens)
+            and isinstance(node.get("inventory"), dict)
+            and node.get("inventory")
+        ]
+        if node_matches:
+            return node_matches
+
+        return [
+            node for node in nodes
+            if isinstance(node.get("inventory"), dict) and node.get("inventory")
+        ][:1]
+
+    def _aircraft_support_v1_aircraft_airport_tokens(self, simulation_inputs: dict[str, Any]) -> set[str]:
+        tokens: set[str] = set()
+        for asset in simulation_inputs.get("aircraft", {}).get("assets", []) or []:
+            if not isinstance(asset, dict):
+                continue
+            for key in ("airport", "airport_id", "airportId", "baseAirportId", "deployment_location", "deploymentLocation"):
+                token = self._normalized_scope_token(asset.get(key))
+                if token:
+                    tokens.add(token)
+        return tokens
+
+    def _aircraft_support_v1_scope_matches(self, item: dict[str, Any], tokens: set[str]) -> bool:
+        if not tokens:
+            return False
+        for key in (
+            "id",
+            "name",
+            "airport",
+            "airport_id",
+            "airportId",
+            "baseAirportId",
+            "airportCode",
+            "code",
+            "location",
+            "supportNodeId",
+            "support_node_id",
+        ):
+            if self._normalized_scope_token(item.get(key)) in tokens:
+                return True
+        return False
+
+    def _normalized_scope_token(self, value: Any) -> str:
+        return str(value or "").strip().casefold()
+
+    def _aircraft_support_v1_spare_event_stats(
+        self,
+        samples: list[dict[str, Any]],
+        scoped_node_ids: set[str],
+    ) -> dict[str, dict[str, float]]:
+        demand_quantities: dict[str, dict[tuple[str, ...], float]] = {}
+        filled_quantities: dict[str, dict[tuple[str, ...], float]] = {}
+        shortage_quantities: dict[str, dict[tuple[str, ...], float]] = {}
+        for sample in samples:
+            sample_key = str(sample.get("sample_index", sample.get("seed", "")))
+            for event_index, event in enumerate(sample.get("events") or []):
+                if not isinstance(event, dict):
+                    continue
+                event_name = str(event.get("event") or event.get("event_type") or "")
+                if event_name not in {"spare_shortage", "spare_consumed"}:
+                    continue
+                details = event.get("details") if isinstance(event.get("details"), dict) else {}
+                spare_type = str(details.get("spare_type") or details.get("spareType") or "").strip()
+                if not spare_type:
+                    continue
+                node_id = str(
+                    details.get("resource_id")
+                    or details.get("support_node_id")
+                    or details.get("supportNodeId")
+                    or details.get("node_id")
+                    or ""
+                ).strip()
+                if scoped_node_ids and node_id and node_id not in scoped_node_ids:
+                    continue
+                quantity = max(1.0, self._non_negative_number(details.get("quantity"), 1.0))
+                job_id = str(details.get("job_id") or details.get("jobId") or "").strip()
+                event_key = job_id or f"event-{event_index}"
+                demand_key = (sample_key, node_id, spare_type, event_key)
+                if event_name == "spare_consumed":
+                    filled_quantities.setdefault(spare_type, {})[demand_key] = max(
+                        filled_quantities.setdefault(spare_type, {}).get(demand_key, 0.0),
+                        quantity,
+                    )
+                    demand_quantities.setdefault(spare_type, {})[demand_key] = max(
+                        demand_quantities.setdefault(spare_type, {}).get(demand_key, 0.0),
+                        quantity,
+                    )
+                else:
+                    required = max(
+                        quantity,
+                        self._non_negative_number(details.get("required_quantity"), quantity),
+                    )
+                    shortage_quantities.setdefault(spare_type, {})[demand_key] = max(
+                        shortage_quantities.setdefault(spare_type, {}).get(demand_key, 0.0),
+                        required,
+                    )
+                    demand_quantities.setdefault(spare_type, {})[demand_key] = max(
+                        demand_quantities.setdefault(spare_type, {}).get(demand_key, 0.0),
+                        required,
+                    )
+        stats: dict[str, dict[str, float]] = {}
+        for spare_type in sorted(set(demand_quantities) | set(filled_quantities) | set(shortage_quantities)):
+            stats[spare_type] = {
+                "consumed_quantity": sum(filled_quantities.get(spare_type, {}).values()),
+                "shortage_count": float(len(shortage_quantities.get(spare_type, {}))),
+                "shortage_quantity": sum(shortage_quantities.get(spare_type, {}).values()),
+                "demand_quantity": sum(demand_quantities.get(spare_type, {}).values()),
+            }
+        return stats
+
+    def _aircraft_support_v1_spare_risk_level(self, fill_rate: float, shortage_probability: float) -> str:
+        if shortage_probability >= 0.2 or fill_rate < 0.85:
+            return "high"
+        if shortage_probability > 0 or fill_rate < 1.0:
+            return "medium"
+        return "low"
+
     def _aircraft_support_v1_analysis_projections(
         self,
         metrics: dict[str, Any],
@@ -2531,6 +2560,7 @@ class SimulationAdapter:
         samples: list[dict[str, Any]] | None = None,
         run_id: str = "",
         validation_scope: dict[str, Any] | None = None,
+        simulation_inputs: dict[str, Any] | None = None,
     ) -> dict[str, dict[str, Any]]:
         projection_applicability = {
             projection_type: self._aircraft_support_v1_projection_applicability(projection_type, validation_scope or {})
@@ -2548,7 +2578,7 @@ class SimulationAdapter:
         spare_fill_rate = min(1.0, max(0.0, float(metrics.get("spare_fill_rate", 0) or 0)))
         spare_utilization = min(1.0, max(0.0, float(metrics.get("spare_utilization", 0) or 0)))
         mission_success = min(1.0, max(0.0, float(metrics.get("mission_success_rate", metrics.get("sortie_completion_rate", 0)) or 0)))
-        sortie_rate = min(1.0, max(0.0, float(metrics.get("sortie_rate", 0) or 0)))
+        sortie_rate = max(0.0, float(metrics.get("sortie_rate", 0) or 0))
         downtime_values = {
             "failure": max(0.0, float(metrics.get("downtime_failure_events", 0) or 0)),
             "spare_shortage": max(0.0, float(metrics.get("downtime_spare_shortage_events", 0) or 0)),
@@ -2559,6 +2589,29 @@ class SimulationAdapter:
         }
         downtime_total = sum(downtime_values.values()) or 1.0
         risk_level = "high" if shortage_probability >= 0.2 else "medium" if shortage_probability > 0 else "low"
+        spare_rows = self._aircraft_support_v1_scoped_spare_projection_rows(
+            metrics,
+            samples or [],
+            simulation_inputs if isinstance(simulation_inputs, dict) else {},
+        )
+        if not spare_rows:
+            fallback_quantity = max(1, int(math.ceil(max(1.0, float(metrics.get("spare_consumed_total", 0) or 0) + shortage_events))))
+            spare_rows = [
+                {
+                    "spare_type": "aircraft_support_v1_spares",
+                    "baseline_quantity": fallback_quantity,
+                    "recommended_quantity": fallback_quantity,
+                    "demand_count": planned_sorties,
+                    "filled_count": planned_sorties * spare_fill_rate,
+                    "shortage_count": shortage_events,
+                    "fill_rate": spare_fill_rate,
+                    "utilization": spare_utilization,
+                    "shortage_probability": shortage_probability,
+                    "mean_transport_delay": float(metrics.get("mean_transport_delay", 0) or 0),
+                    "in_transit_count": metrics.get("transport_in_transit_count", 0),
+                    "risk_level": risk_level,
+                }
+            ]
         return {
             "large_sample_summary": {
                 "projection_type": "large_sample_summary",
@@ -2588,17 +2641,23 @@ class SimulationAdapter:
                 "truncation": SPARE_SHORTFALL_TRUNCATION,
                 "data": [
                     {
-                        "spare_type": "aircraft_support_v1_spares",
-                        "fill_rate": spare_fill_rate,
-                        "utilization": spare_utilization,
-                        "shortage_probability": shortage_probability,
-                        "in_transit_count": metrics.get("transport_in_transit_count", 0),
-                        "risk_level": risk_level,
+                        "spare_type": row["spare_type"],
+                        "baseline_quantity": row["baseline_quantity"],
+                        "demand_count": row["demand_count"],
+                        "filled_count": row["filled_count"],
+                        "shortage_count": row["shortage_count"],
+                        "fill_rate": row["fill_rate"],
+                        "utilization": row["utilization"],
+                        "shortage_probability": row["shortage_probability"],
+                        "mean_transport_delay": row["mean_transport_delay"],
+                        "in_transit_count": row["in_transit_count"],
+                        "risk_level": row["risk_level"],
                         "constraint_results": {
-                            "fill_rate": self._spare_shortfall_constraint_result(spare_fill_rate),
-                            "utilization": self._spare_shortfall_constraint_result(spare_utilization),
+                            "fill_rate": self._spare_shortfall_constraint_result(row["fill_rate"]),
+                            "utilization": self._spare_shortfall_constraint_result(row["utilization"]),
                         },
                     }
+                    for row in spare_rows
                 ],
             },
             "carry_list": {
@@ -2609,10 +2668,19 @@ class SimulationAdapter:
                 "applicability": projection_applicability["carry_list"],
                 "data": [
                     {
-                        "spare_type": "aircraft_support_v1_spares",
-                        "recommended_multiplier": max(1.0, 1.0 + shortage_probability),
-                        "risk_level": risk_level,
+                        "spare_type": row["spare_type"],
+                        "baseline_quantity": row["baseline_quantity"],
+                        "recommended_quantity": row["recommended_quantity"],
+                        "recommended_multiplier": (
+                            row["recommended_quantity"] / row["baseline_quantity"]
+                            if row["baseline_quantity"] > 0
+                            else max(1.0, 1.0 + row["shortage_probability"])
+                        ),
+                        "demand_count": row["demand_count"],
+                        "shortage_count": row["shortage_count"],
+                        "risk_level": row["risk_level"],
                     }
+                    for row in spare_rows
                 ],
             },
             "mission_reliability": {
@@ -2677,13 +2745,11 @@ class SimulationAdapter:
                 "reason_code": "scope_not_modeled",
                 "required_domains": sorted(required_domains),
                 "disabled_domains": sorted(disabled_domains),
-                "validation_level": str(validation_scope.get("validation_level") or "level1"),
             }
         return {
             "status": "applicable",
             "required_domains": sorted(required_domains),
             "disabled_domains": sorted(disabled_domains),
-            "validation_level": str(validation_scope.get("validation_level") or "level1"),
         }
 
     def _aircraft_support_v1_downtime_anomaly_snapshots(
@@ -2696,6 +2762,28 @@ class SimulationAdapter:
             sample_index = int(sample.get("sample_index", 0) or 0)
             seed = sample.get("seed")
             sweep = copy.deepcopy(sample.get("sweep") or {})
+            snapshot_count_before_event_log = len(snapshots)
+            for event in sample.get("events") or []:
+                event_type = self._downtime_event_type(str(event.get("event_type") or event.get("event") or ""))
+                event_snapshot = event.get("snapshot") if isinstance(event.get("snapshot"), dict) else None
+                if not event_type or event_snapshot is None:
+                    continue
+                snapshots.append(
+                    self._downtime_event_log_snapshot(
+                        run_id=run_id,
+                        ordinal=len(snapshots) + 1,
+                        sample_index=sample_index,
+                        seed=seed,
+                        sweep=sweep,
+                        event_type=event_type,
+                        event=event,
+                        event_snapshot=event_snapshot,
+                    )
+                )
+                if len(snapshots) >= 20:
+                    return snapshots
+            if len(snapshots) > snapshot_count_before_event_log:
+                continue
             for frame in sample.get("frames") or []:
                 candidates = self._downtime_snapshot_events(frame)
                 for event_type, event in candidates:
@@ -2714,6 +2802,60 @@ class SimulationAdapter:
                     if len(snapshots) >= 20:
                         return snapshots
         return snapshots
+
+    def _downtime_event_log_snapshot(
+        self,
+        *,
+        run_id: str,
+        ordinal: int,
+        sample_index: int,
+        seed: Any,
+        sweep: dict[str, Any],
+        event_type: str,
+        event: dict[str, Any],
+        event_snapshot: dict[str, Any],
+    ) -> dict[str, Any]:
+        aircraft_state = copy.deepcopy(event_snapshot.get("aircraft_state") or {})
+        support_resources = copy.deepcopy(event_snapshot.get("support_resources") or [])
+        spare_shortages = copy.deepcopy(event_snapshot.get("spare_shortages") or [])
+        active_jobs = [job for job in event_snapshot.get("active_jobs") or [] if isinstance(job, dict)]
+        job = active_jobs[0] if active_jobs else {}
+        support_activity_state = {
+            "active_jobs": len(active_jobs),
+            "repair_backlog": sum(1 for item in active_jobs if item.get("kind") == "repair"),
+            "postflight_backlog": sum(1 for item in active_jobs if item.get("kind") == "postflight"),
+            "preventive_backlog": sum(1 for item in active_jobs if item.get("kind") == "preventive"),
+            "spare_fill_rate": float((event_snapshot.get("metrics") or {}).get("spare_fill_rate", 0) or 0),
+        }
+        return {
+            "snapshot_id": f"downtime-{run_id or 'run'}-{ordinal:04d}",
+            "source": "model_event_log",
+            "run_id": run_id,
+            "sample_index": sample_index,
+            "seed": seed,
+            "sweep": sweep,
+            "simulation_time": float(event.get("time", event_snapshot.get("time", 0)) or 0),
+            "event_type": event_type,
+            "event_label": event_type,
+            "event": copy.deepcopy(event),
+            "result": self._downtime_snapshot_result(event_type),
+            "aircraft_state": aircraft_state,
+            "support_resources": support_resources,
+            "spare_shortages": spare_shortages,
+            "support_activity_state": support_activity_state,
+            "job_node": {
+                "job_id": str(job.get("job_id") or f"{event_type}-node"),
+                "kind": str(job.get("kind") or event_type),
+                "state": str(job.get("state") or "observed"),
+                "task": str(job.get("task") or self._downtime_snapshot_result(event_type)),
+                "tail_number": str(job.get("tail_number") or ""),
+            },
+            "frame_ref": {
+                "sample_index": sample_index,
+                "sample_step": int(float(event.get("time", event_snapshot.get("time", 0)) or 0)),
+                "step": int(float(event.get("time", event_snapshot.get("time", 0)) or 0)),
+            },
+        }
 
     def _downtime_snapshot_events(self, frame: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
         events: list[tuple[str, dict[str, Any]]] = []
@@ -2772,8 +2914,10 @@ class SimulationAdapter:
         jobs = [job for job in frame.get("jobs") or [] if isinstance(job, dict)]
         job = jobs[0] if jobs else {}
         simulation_time = float(frame.get("simulation_time", event.get("time", frame.get("step", 0))) or 0)
+        spare_shortages = self._downtime_frame_spare_shortages(frame, event)
         return {
             "snapshot_id": f"downtime-{run_id or 'run'}-{ordinal:04d}",
+            "source": "state_series_frame",
             "run_id": run_id,
             "sample_index": sample_index,
             "seed": seed,
@@ -2783,6 +2927,9 @@ class SimulationAdapter:
             "event_label": event_type,
             "event": copy.deepcopy(event),
             "result": self._downtime_snapshot_result(event_type),
+            "aircraft_state": copy.deepcopy(frame.get("aircraft_state") or {}),
+            "support_resources": copy.deepcopy(frame.get("resources") or []),
+            "spare_shortages": spare_shortages,
             "support_activity_state": {
                 "active_jobs": len(jobs),
                 "repair_backlog": float(resource_state.get("repair_backlog", 0) or 0),
@@ -2803,6 +2950,37 @@ class SimulationAdapter:
                 "step": int(frame.get("step", frame.get("sample_step", 0)) or 0),
             },
         }
+
+    def _downtime_frame_spare_shortages(self, frame: dict[str, Any], event: dict[str, Any]) -> list[dict[str, Any]]:
+        details = event.get("details") if isinstance(event.get("details"), dict) else {}
+        spare_type = str(details.get("spare_type") or "")
+        if spare_type:
+            return [
+                {
+                    "spare_type": spare_type,
+                    "required_quantity": int(details.get("required_quantity", 0) or 0),
+                    "available_quantity": int(details.get("available_quantity", 0) or 0),
+                    "resource_id": str(details.get("resource_id") or ""),
+                    "job_id": str(details.get("job_id") or ""),
+                    "reason": str(details.get("reason") or "spare_shortage"),
+                }
+            ]
+        shortages = []
+        for spare in frame.get("spares") or []:
+            if not isinstance(spare, dict):
+                continue
+            if float(spare.get("quantity", 0) or 0) <= 0 and float(spare.get("consumed", 0) or 0) >= 0:
+                shortages.append(
+                    {
+                        "spare_type": str(spare.get("name") or spare.get("part_id") or ""),
+                        "required_quantity": 0,
+                        "available_quantity": int(float(spare.get("quantity", 0) or 0)),
+                        "resource_id": "",
+                        "job_id": "",
+                        "reason": "spare_shortage",
+                    }
+                )
+        return shortages
 
     def _downtime_snapshot_result(self, event_type: str) -> str:
         if event_type == "spare_shortage":
@@ -3063,41 +3241,6 @@ class SimulationAdapter:
             "sample_points": sample_points,
         }
 
-    def _run_monte_carlo_sample(
-        self,
-        inputs: dict[str, Any],
-        point: dict[str, Any],
-        *,
-        steps: int,
-        sample_index: int,
-    ) -> dict[str, Any]:
-        model = SmokeSpareMvpModel(
-            projectData=copy.deepcopy(inputs["project_snapshot"]),
-            activeModule=inputs["active_module"],
-            spareMultiplier=point["spare_multiplier"],
-            failureRate=point["failure_rate"],
-            supportCapacity=point["support_capacity"],
-            minRequiredSorties=inputs["min_required_sorties"],
-            seed=point["seed"],
-        )
-        frames: list[dict[str, Any]] = []
-        for _ in range(steps):
-            model.step()
-            frames.append({"sample_step": model.step_count, "metrics": model.snapshot()})
-        if not frames:
-            frames.append({"sample_step": 0, "metrics": model.snapshot()})
-        return {
-            "sample_index": sample_index,
-            "seed": point["seed"],
-            "sweep": {
-                "failure_rate": point["failure_rate"],
-                "spare_multiplier": point["spare_multiplier"],
-                "support_capacity": point["support_capacity"],
-            },
-            "metrics": model.snapshot(),
-            "frames": frames,
-        }
-
     def _aggregate_sample_metrics(self, samples: list[dict[str, Any]]) -> dict[str, Any]:
         keys = sorted({key for sample in samples for key in sample["metrics"] if self._is_number(sample["metrics"][key])})
         aggregate = {
@@ -3110,82 +3253,6 @@ class SimulationAdapter:
             sum(1 for sample in samples if float(sample["metrics"].get("shortage_events", 0)) > 0) / max(1, len(samples))
         )
         return aggregate
-
-    def _analysis_projections(
-        self,
-        aggregate: dict[str, Any],
-        samples: list[dict[str, Any]],
-        base_artifact_id: str,
-    ) -> dict[str, dict[str, Any]]:
-        shortage_probability = aggregate.get("spare_shortage_probability", 0)
-        spare_fill_rate = aggregate.get("spare_fill_rate", 0)
-        downtime_total = (
-            aggregate.get("downtime_failure_events", 0)
-            + aggregate.get("downtime_spare_shortage_events", 0)
-            + aggregate.get("downtime_resource_delay_events", 0)
-        ) or 1
-        return {
-            "large_sample_summary": {
-                "projection_type": "large_sample_summary",
-                "base_artifact_id": base_artifact_id,
-                "data": {
-                    "sample_count": len(samples),
-                    "mission_success_probability": aggregate.get("mission_success_probability", 0),
-                    "spare_fill_rate": spare_fill_rate,
-                    "mean_repair_backlog": aggregate.get("repair_backlog", 0),
-                },
-            },
-            "spare_shortfall": {
-                "projection_type": "spare_shortfall",
-                "base_artifact_id": base_artifact_id,
-                "data": [
-                    {
-                        "spare_type": "generic_spares",
-                        "fill_rate": spare_fill_rate,
-                        "shortage_probability": shortage_probability,
-                        "risk_level": "high" if shortage_probability >= 0.2 else "medium" if shortage_probability > 0 else "low",
-                    }
-                ],
-            },
-            "carry_list": {
-                "projection_type": "carry_list",
-                "base_artifact_id": base_artifact_id,
-                "data": [
-                    {
-                        "spare_type": "generic_spares",
-                        "recommended_multiplier": max(1.0, 1.0 + shortage_probability),
-                        "risk_level": "high" if spare_fill_rate < 0.75 else "medium" if spare_fill_rate < 0.95 else "low",
-                    }
-                ],
-            },
-            "mission_reliability": {
-                "projection_type": "mission_reliability",
-                "base_artifact_id": base_artifact_id,
-                "data": {
-                    "mission_success_probability": aggregate.get("mission_success_probability", 0),
-                    "sortie_rate": aggregate.get("sortie_rate", 0),
-                    "target_met": aggregate.get("mission_success_probability", 0) >= 0.9,
-                },
-            },
-            "downtime_factors": {
-                "projection_type": "downtime_factors",
-                "base_artifact_id": base_artifact_id,
-                "data": [
-                    {
-                        "factor": "failure",
-                        "contribution": aggregate.get("downtime_failure_events", 0) / downtime_total,
-                    },
-                    {
-                        "factor": "spare_shortage",
-                        "contribution": aggregate.get("downtime_spare_shortage_events", 0) / downtime_total,
-                    },
-                    {
-                        "factor": "resource_delay",
-                        "contribution": aggregate.get("downtime_resource_delay_events", 0) / downtime_total,
-                    },
-                ],
-            },
-        }
 
     def _visualization_state_series_payload(
         self,
@@ -3355,210 +3422,6 @@ class SimulationAdapter:
         ]
         return traced
 
-    def _visualization_state_frame(
-        self,
-        *,
-        run_id: str,
-        step: int,
-        metrics: dict[str, Any],
-        sample_index: int | None = None,
-        sample_step: int | None = None,
-        seed: int | None = None,
-        sweep: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
-        frame: dict[str, Any] = {
-            "run_id": run_id,
-            "step": step,
-            "simulation_time": step,
-            "aircraft_state": {
-                "ready_rate": metrics.get("ready_rate", 0),
-                "failed_count": metrics.get("failed_count", 0),
-                "repairing_count": metrics.get("repairing_count", 0),
-                "sortie_count": metrics.get("sortie_count", 0),
-            },
-            "mission_state": {
-                "mission_success_rate": metrics.get("mission_success_rate", 0),
-                "sortie_rate": metrics.get("sortie_rate", 0),
-                "mean_launch_time": metrics.get("mean_launch_time", 0),
-                "mean_recovery_time": metrics.get("mean_recovery_time", 0),
-                "mean_turnaround_time": metrics.get("mean_turnaround_time", 0),
-            },
-            "resource_state": {
-                "spare_fill_rate": metrics.get("spare_fill_rate", 0),
-                "spare_utilization": metrics.get("spare_utilization", 0),
-                "repair_backlog": metrics.get("repair_backlog", 0),
-            },
-            "event_summary": {
-                "shortage_events": metrics.get("shortage_events", 0),
-                "downtime_failure_events": metrics.get("downtime_failure_events", 0),
-                "downtime_spare_shortage_events": metrics.get("downtime_spare_shortage_events", 0),
-                "downtime_resource_delay_events": metrics.get("downtime_resource_delay_events", 0),
-            },
-            "aircraft": self._visualization_aircraft(metrics),
-            "missions": self._visualization_missions(step, metrics),
-            "resources": self._visualization_resources(metrics),
-            "spares": self._visualization_spares(metrics),
-            "jobs": self._visualization_jobs(metrics),
-            "events": self._visualization_events(step, metrics),
-        }
-        if sample_index is not None:
-            frame["sample_index"] = sample_index
-        if sample_step is not None:
-            frame["sample_step"] = sample_step
-        if seed is not None:
-            frame["seed"] = seed
-        if sweep is not None:
-            frame["sweep"] = copy.deepcopy(sweep)
-        return frame
-
-    def _monte_carlo_visualization_frames(self, run_id: str, samples: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        frames: list[dict[str, Any]] = []
-        next_step = 0
-        for sample in samples:
-            sample_frames = sample.get("frames") or [{"sample_step": 0, "metrics": sample["metrics"]}]
-            for sample_frame in sample_frames:
-                frames.append(
-                    self._visualization_state_frame(
-                        run_id=run_id,
-                        step=next_step,
-                        metrics=sample_frame["metrics"],
-                        sample_index=int(sample["sample_index"]),
-                        sample_step=int(sample_frame["sample_step"]),
-                        seed=int(sample["seed"]),
-                        sweep=sample["sweep"],
-                    )
-                )
-                next_step += 1
-        return frames
-
-    def _visualization_aircraft(self, metrics: dict[str, Any]) -> list[dict[str, Any]]:
-        return [
-            {
-                "tail_number": "SMOKE-READY",
-                "type": "SmokeAggregate",
-                "state": "available",
-                "x": 0,
-                "y": 0,
-                "count": self._round_metric(metrics.get("ready_rate", 0)),
-            },
-            {
-                "tail_number": "SMOKE-SORTIE",
-                "type": "SmokeAggregate",
-                "state": "flying" if float(metrics.get("sortie_count", 0) or 0) > 0 else "mission_ready",
-                "x": 1,
-                "y": 0,
-                "count": self._round_metric(metrics.get("sortie_count", 0)),
-            },
-            {
-                "tail_number": "SMOKE-MAINT",
-                "type": "SmokeAggregate",
-                "state": "maintenance" if float(metrics.get("repairing_count", 0) or 0) > 0 else "available",
-                "x": 2,
-                "y": 0,
-                "count": self._round_metric(metrics.get("repairing_count", 0)),
-                "failed_lru": "aggregate_failure" if float(metrics.get("failed_count", 0) or 0) > 0 else "",
-            },
-        ]
-
-    def _visualization_missions(self, step: int, metrics: dict[str, Any]) -> list[dict[str, Any]]:
-        success_rate = float(metrics.get("mission_success_rate", 0) or 0)
-        status = "completed" if success_rate >= 1 else ("launched" if float(metrics.get("sortie_count", 0) or 0) > 0 else "planned")
-        return [
-            {
-                "mission_id": 1,
-                "planned_start": 0,
-                "actual_start": step if status in {"launched", "completed"} else None,
-                "return_time": step if status == "completed" else None,
-                "required_aircraft": max(1, int(round(float(metrics.get("sortie_count", 0) or 0))) or 1),
-                "status": status,
-                "assigned_tail_numbers": ["SMOKE-SORTIE"] if status in {"launched", "completed"} else [],
-            }
-        ]
-
-    def _visualization_resources(self, metrics: dict[str, Any]) -> list[dict[str, Any]]:
-        repair_backlog = self._round_metric(metrics.get("repair_backlog", 0))
-        spare_utilization = float(metrics.get("spare_utilization", 0) or 0)
-        return [
-            {
-                "name": "repair_capacity",
-                "display_name": "维修能力",
-                "category": "resource",
-                "capacity": max(1, repair_backlog + self._round_metric(metrics.get("repairing_count", 0))),
-                "in_use": self._round_metric(metrics.get("repairing_count", 0)),
-                "utilization": min(1, max(0, spare_utilization)),
-                "work_count": repair_backlog,
-            },
-            {
-                "name": "spare_pool",
-                "display_name": "备件池",
-                "category": "spare",
-                "capacity": 100,
-                "in_use": self._round_metric(spare_utilization * 100),
-                "utilization": min(1, max(0, spare_utilization)),
-                "work_count": self._round_metric(metrics.get("shortage_events", 0)),
-            },
-        ]
-
-    def _visualization_spares(self, metrics: dict[str, Any]) -> list[dict[str, Any]]:
-        consumed = self._round_metric(float(metrics.get("spare_utilization", 0) or 0) * 100)
-        return [
-            {
-                "part_id": "smoke_spare_pool",
-                "name": "Smoke 备件池",
-                "quantity": max(0, 100 - consumed),
-                "consumed": consumed,
-                "pending_quantity": self._round_metric(metrics.get("repair_backlog", 0)),
-                "reorder_point": 20,
-            }
-        ]
-
-    def _visualization_jobs(self, metrics: dict[str, Any]) -> list[dict[str, Any]]:
-        backlog = self._round_metric(metrics.get("repair_backlog", 0))
-        if backlog <= 0:
-            return []
-        return [
-            {
-                "job_id": "smoke-repair-backlog",
-                "tail_number": "SMOKE-MAINT",
-                "kind": "repair",
-                "state": "waiting",
-                "task": "聚合维修队列",
-                "remaining": backlog,
-            }
-        ]
-
-    def _visualization_events(self, step: int, metrics: dict[str, Any]) -> list[dict[str, Any]]:
-        events = [
-            {
-                "time": step,
-                "event": "state_frame",
-                "event_type": "state_frame",
-                "message": f"状态帧 step {step} 已生成",
-                "metric_refs": ["ready_rate", "mission_success_rate", "spare_fill_rate"],
-            },
-        ]
-        if float(metrics.get("shortage_events", 0) or 0) > 0:
-            events.append(
-                {
-                    "time": step,
-                    "event": "spare_shortage",
-                    "event_type": "spare_shortage",
-                    "message": "检测到备件短缺事件",
-                    "metric_refs": ["shortage_events", "downtime_spare_shortage_events"],
-                }
-            )
-        if float(metrics.get("downtime_resource_delay_events", 0) or 0) > 0:
-            events.append(
-                {
-                    "time": step,
-                    "event": "resource_delay",
-                    "event_type": "resource_delay",
-                    "message": "检测到资源延迟事件",
-                    "metric_refs": ["downtime_resource_delay_events"],
-                }
-            )
-        return events
-
     def _event_metric_refs(self, event_type: str) -> list[str]:
         if event_type == "spare_shortage":
             return ["shortage_events", "downtime_spare_shortage_events"]
@@ -3708,10 +3571,58 @@ class SimulationAdapter:
             return []
         return [item for item in value if isinstance(item, dict)]
 
+    def _runtime_airports(self, value: Any) -> list[dict[str, Any]]:
+        if not isinstance(value, list):
+            return []
+        airports: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for item in value:
+            if isinstance(item, dict):
+                airports.append(copy.deepcopy(item))
+                continue
+            airport = str(item or "").strip()
+            if not airport or airport in seen:
+                continue
+            seen.add(airport)
+            airport_id = self._airport_id_from_name(airport)
+            airports.append({
+                "id": airport_id,
+                "name": airport,
+                "location": airport,
+                "supportNodeId": airport_id,
+            })
+        return airports
+
+    def _airport_id_from_name(self, name: str) -> str:
+        slug = re.sub(r"[^a-z0-9]+", "-", str(name).strip().lower()).strip("-")
+        if not slug:
+            slug = hashlib.sha1(str(name).encode("utf-8")).hexdigest()[:8]
+        return f"airport-{slug}"
+
+    def _basic_missions(self, project: dict[str, Any]) -> list[dict[str, Any]]:
+        return self._dict_list(project.get("basicMissions"))
+
+    def _primary_basic_mission(self, project: dict[str, Any]) -> dict[str, Any]:
+        missions = self._basic_missions(project)
+        return missions[0] if missions else {}
+
     def _string_list(self, value: Any) -> list[str]:
         if not isinstance(value, list):
             value = [value]
         return [str(item) for item in value if item not in (None, "")]
+
+    def _unique_string_list(self, values: Any) -> list[str]:
+        result: list[str] = []
+        seen: set[str] = set()
+        for value in values:
+            if value in (None, ""):
+                continue
+            item = str(value)
+            if item in seen:
+                continue
+            result.append(item)
+            seen.add(item)
+        return result
 
     def _optional_string(self, value: Any) -> str | None:
         if value in (None, ""):
@@ -3730,17 +3641,88 @@ class SimulationAdapter:
         return max(1, int(round(float(duration_hours) * 60)))
 
     def _aircraft_support_v1_duration_minutes(self, mission_profile: dict[str, Any]) -> int:
-        periodic_days = [
-            days
-            for days in (
-                self._periodic_task_total_days(periodic)
-                for periodic in self._dict_list(mission_profile.get("periodicTasks"))
-            )
-            if days is not None
-        ]
+        periodic_days = []
+        for periodic in self._dict_list(mission_profile.get("periodicTasks")):
+            active_days = self._periodic_task_active_duration_days(periodic)
+            if active_days is not None:
+                periodic_days.append(active_days)
+                continue
+            total_days = self._periodic_task_total_days(periodic)
+            if total_days is not None:
+                periodic_days.append(total_days)
         if periodic_days:
             return max(1, int(round(max(periodic_days) * 24 * 60)))
         return self._duration_minutes(mission_profile.get("durationHours"))
+
+    def _periodic_task_active_duration_days(self, periodic: dict[str, Any]) -> int | None:
+        period_days = max(1, int(round(self._periodic_task_period_days(periodic) or 1)))
+        total_days = max(1, int(round(self._periodic_task_total_days(periodic) or period_days)))
+        composite_days = self._periodic_task_explicit_composite_days(periodic, total_days, period_days)
+        if not composite_days:
+            composite_days = self._periodic_task_weekday_assignment_days(periodic, total_days, period_days)
+        if not composite_days:
+            composite_ids = [item for item in periodic.get("compositeTaskIds") or [] if str(item or "").strip()]
+            return total_days if composite_ids else None
+        active_days = [day for days in composite_days.values() for day in days]
+        return max(active_days) + 1 if active_days else None
+
+    def _periodic_task_explicit_composite_days(
+        self,
+        periodic: dict[str, Any],
+        total_days: int,
+        period_days: int,
+    ) -> dict[str, set[int]]:
+        composite_days: dict[str, set[int]] = {}
+        for item in self._dict_list(periodic.get("compositeTasks")):
+            composite_id = str(item.get("compositeTaskId") or "").strip()
+            if not composite_id:
+                continue
+            weekday_index = self._periodic_weekday_index(item.get("weekday") or item.get("dayOfWeek"))
+            if weekday_index is not None:
+                week_index = self._positive_int(item.get("weekIndex", item.get("week")), 1)
+                active_day = (week_index - 1) * period_days + weekday_index
+                if 0 <= active_day < total_days:
+                    composite_days.setdefault(composite_id, set()).add(active_day)
+                continue
+            period_index = self._positive_int(item.get("week", item.get("weekIndex")), 1)
+            start_day = max(0, (period_index - 1) * period_days)
+            active_days = set(range(start_day, min(total_days, start_day + period_days)))
+            if active_days:
+                composite_days.setdefault(composite_id, set()).update(active_days)
+        return composite_days
+
+    def _periodic_task_weekday_assignment_days(
+        self,
+        periodic: dict[str, Any],
+        total_days: int,
+        period_days: int,
+    ) -> dict[str, set[int]]:
+        assignments: dict[int, str] = {}
+        raw_assignments = periodic.get("weekdayAssignments") if isinstance(periodic.get("weekdayAssignments"), dict) else {}
+        for key, composite_id in raw_assignments.items():
+            weekday_index = self._periodic_weekday_index(key)
+            composite_text = str(composite_id or "").strip()
+            if weekday_index is not None and composite_text:
+                assignments[weekday_index] = composite_text
+        for key in _PERIODIC_WEEKDAY_ASSIGNMENT_FIELDS:
+            weekday_index = self._periodic_weekday_index(key)
+            composite_text = str(periodic.get(key) or "").strip()
+            if weekday_index is not None and composite_text:
+                assignments[weekday_index] = composite_text
+
+        composite_days: dict[str, set[int]] = {}
+        for start_day in range(0, total_days, max(1, period_days)):
+            for weekday_index, composite_id in assignments.items():
+                active_day = start_day + weekday_index
+                if active_day < total_days:
+                    composite_days.setdefault(composite_id, set()).add(active_day)
+        return composite_days
+
+    def _periodic_weekday_index(self, value: Any) -> int | None:
+        text = str(value or "").strip()
+        if not text:
+            return None
+        return _PERIODIC_WEEKDAY_INDEXES.get(text.replace("_", "").replace("-", "").lower())
 
     def _periodic_task_total_days(self, periodic: dict[str, Any]) -> float | None:
         period_days = self._periodic_task_period_days(periodic)
@@ -3797,16 +3779,6 @@ class SimulationAdapter:
         values = value if isinstance(value, list) else [value]
         numbers = [self._positive_int(item, 1) for item in values if self._is_number(item)]
         return numbers or list(fallback)
-
-    def _mean_component_failure_rate(self, project: dict[str, Any]) -> float:
-        rates = [
-            float(component["failureRate"])
-            for component in project.get("components", [])
-            if self._is_number(component.get("failureRate"))
-        ]
-        if not rates:
-            return 0.05
-        return sum(rates) / len(rates)
 
     def _first_number(self, values: Any, fallback: float) -> float:
         if isinstance(values, list):

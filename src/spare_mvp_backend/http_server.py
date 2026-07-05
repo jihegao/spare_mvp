@@ -22,7 +22,7 @@ from src.spare_mvp_contract.adapter import SimulationAdapter
 
 MAX_JSON_BODY_BYTES = 1024 * 1024
 LEGACY_RUN_API_MIGRATION = {
-    "docs": "docs/superpowers/plans/2026-06-21-legacy-run-api-retirement.md",
+    "docs": "docs/archive/deprecated/superpowers/plans/2026-06-21-legacy-run-api-retirement.md",
     "mapping": {
         "/api/simulation-runs": "/api/runs",
         "/api/simulation-runs/{run_id}": "/api/runs/{run_id}",
@@ -184,11 +184,21 @@ def create_backend_server(
                 return api.save_project(body)
             if self.command == "GET" and route == "/projects":
                 return api.list_projects()
+            if self.command == "GET" and route == "/project-data-templates":
+                self._require_user()
+                query = parse_qs(urlparse(self.path).query)
+                state = str((query.get("state") or ["published"])[-1] or "published")
+                return api.list_project_data_templates(state=state)
             if self.command == "POST" and route == "/modeling-imports/validate":
                 return api.validate_modeling_import(body)
             if self.command == "POST" and route == "/modeling-imports":
                 actor = self._require_user()
                 return api.save_modeling_import(body, actor_user_id=actor["user_id"])
+            if self.command == "GET" and route == "/modeling-imports":
+                self._require_user()
+                query = parse_qs(urlparse(self.path).query)
+                state = str((query.get("state") or ["published"])[-1] or "published")
+                return api.list_project_data_templates(state=state)
 
             if self.command == "GET" and len(parts) == 2 and parts[0] == "modeling-imports":
                 return api.get_modeling_import(parts[1])
@@ -226,6 +236,18 @@ def create_backend_server(
             if self.command == "DELETE" and len(parts) == 4 and parts[0] == "projects" and parts[2] == "experiment-plans":
                 actor = self._require_user({"系统管理员", "数据管理员"})
                 return api.delete_experiment_plan(parts[1], parts[3], actor_user_id=actor["user_id"])
+            if self.command == "POST" and route == "/mesa-analysis-runs":
+                self._require_user()
+                project_json = body.get("project") if isinstance(body.get("project"), dict) else body.get("projectJson")
+                if not isinstance(project_json, dict):
+                    project_json = body
+                settings = body.get("settings") if isinstance(body.get("settings"), dict) else {}
+                return api.run_lite_mesa_analysis(
+                    project_json,
+                    analysis_type=str(body.get("analysis_type") or body.get("analysisType") or ""),
+                    settings=settings,
+                    model_family=str(body.get("model_family") or ACTIVE_FORMAL_MODEL_FAMILY),
+                )
             if self.command == "POST" and route == "/runs":
                 self._require_user()
                 formal_body = dict(body)

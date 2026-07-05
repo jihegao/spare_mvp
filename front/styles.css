@@ -152,21 +152,25 @@ h4 {
 
 .project-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  grid-template-columns: 1fr;
   gap: 12px;
 }
 
 .project-card {
-  min-height: 190px;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  gap: 14px;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
   padding: 16px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface);
   box-shadow: var(--shadow);
+}
+
+.project-card > div:first-child {
+  min-width: 0;
 }
 
 .project-card.active {
@@ -185,17 +189,33 @@ h4 {
   color: var(--muted);
 }
 
+.project-edit-form {
+  grid-column: 1 / -1;
+}
+
 .project-card-foot {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
+  justify-content: flex-end;
+  flex-wrap: nowrap;
   gap: 12px;
 }
 
 .project-card-foot .compact-actions {
   justify-content: flex-end;
   flex-wrap: wrap;
+}
+
+@media (max-width: 760px) {
+  .project-card {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .project-card-foot {
+    justify-content: space-between;
+    flex-wrap: wrap;
+  }
 }
 
 .topbar {
@@ -327,6 +347,53 @@ h4 {
   display: none;
 }
 
+.nav-module > summary,
+.nav-secondary > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  transition: background 140ms ease, color 140ms ease, border-color 140ms ease;
+}
+
+.nav-module > summary::before,
+.nav-secondary > summary::before {
+  content: ">";
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+  background: #fff;
+}
+
+.nav-module[open] > summary::before,
+.nav-secondary[open] > summary::before {
+  content: "v";
+  border-color: #9bb7df;
+  color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.nav-module > summary:hover,
+.nav-secondary > summary:hover {
+  background: #f7fafc;
+}
+
+.nav-module > summary:focus-visible,
+.nav-secondary > summary:focus-visible {
+  outline: 2px solid rgba(15, 92, 191, 0.24);
+  outline-offset: 2px;
+}
+
 .nav-module > summary {
   margin-bottom: 10px;
   font-size: 15px;
@@ -400,6 +467,16 @@ h4 {
 .page-head-current-context:hover {
   border-color: var(--primary);
   background: var(--primary-soft);
+}
+
+.experiment-plan-context-select {
+  min-width: 260px;
+}
+
+.experiment-plan-context-select small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
 }
 
 .compact-fourth-tabs {
@@ -563,6 +640,70 @@ select[multiple].table-edit-select {
   padding: 5px 12px;
 }
 
+.scenario-composition-workspace {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.95fr) minmax(420px, 1.35fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.scenario-project-json-panel,
+.scenario-composition-editor-panel {
+  min-width: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.scenario-project-json-panel pre,
+.scenario-modeling-data-tree {
+  max-height: 520px;
+  margin: 0;
+  padding: 12px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #0f172a;
+  color: #e2e8f0;
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre;
+}
+
+.scenario-modeling-data-tree {
+  display: grid;
+  gap: 8px;
+  background: #fff;
+  color: var(--text);
+  white-space: normal;
+}
+
+.scenario-modeling-data-tree .tree-node-label {
+  border: 1px solid transparent;
+}
+
+.scenario-modeling-data-tree .tree-node-label[data-scenario-modeling-path] {
+  cursor: pointer;
+}
+
+.scenario-selected-override-card {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfd;
+}
+
+.scenario-selected-override-card .section-head {
+  margin-bottom: 10px;
+}
+
+.scenario-selected-override-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.scenario-composition-editor-panel .table-wrap {
+  margin: 0;
+}
+
 .ship-front-workbench {
   display: grid;
   gap: 12px;
@@ -624,6 +765,128 @@ select[multiple].table-edit-select {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 12px;
+}
+
+.project-template-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.38fr) minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.project-template-list {
+  display: grid;
+  gap: 8px;
+}
+
+.project-template-item {
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  padding: 12px;
+  text-align: left;
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.project-template-item.selected {
+  border-color: #2563eb;
+  box-shadow: inset 3px 0 0 #2563eb;
+}
+
+.project-template-item strong,
+.project-template-item small,
+.project-template-meta {
+  display: block;
+  min-width: 0;
+}
+
+.project-template-item small,
+.project-template-meta small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.project-template-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.project-template-tag {
+  margin-left: 6px;
+}
+
+.project-data-detail {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.project-data-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(100px, 1fr));
+  gap: 10px;
+}
+
+.project-data-overview-grid .modeling-config-card {
+  display: grid;
+  gap: 6px;
+}
+
+.project-data-overview-grid .modeling-config-card span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.project-data-overview-grid .modeling-config-card strong {
+  font-size: 22px;
+}
+
+.project-json-viewer {
+  max-height: 520px;
+  overflow: auto;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fafc;
+  font-size: 12px;
+}
+
+.project-json-node {
+  margin: 2px 0;
+}
+
+.project-json-node summary {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+}
+
+.project-json-node summary span,
+.project-json-leaf span {
+  color: var(--muted);
+}
+
+.project-json-children {
+  margin-left: 16px;
+  padding-left: 10px;
+  border-left: 1px solid var(--line);
+}
+
+.project-json-leaf {
+  display: grid;
+  grid-template-columns: minmax(90px, 180px) minmax(0, 1fr);
+  gap: 8px;
+  min-height: 22px;
+  align-items: start;
 }
 
 .modeling-config-card,
@@ -1308,6 +1571,16 @@ select[multiple].table-edit-select {
   stroke-width: 3;
 }
 
+.line-chart-axis {
+  stroke: var(--muted);
+  stroke-width: 1.2;
+}
+
+.line-chart-tick {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
 .line-chart circle {
   fill: #fff;
   stroke: var(--primary);
@@ -1317,6 +1590,14 @@ select[multiple].table-edit-select {
 .line-chart text {
   fill: var(--muted);
   font-size: 11px;
+  text-anchor: middle;
+}
+
+.line-chart .line-chart-y-label {
+  text-anchor: end;
+}
+
+.line-chart .line-chart-x-label {
   text-anchor: middle;
 }
 
@@ -1554,6 +1835,233 @@ select[multiple].table-edit-select {
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+
+.lite-mesa-workbench {
+  display: grid;
+  gap: 14px;
+}
+
+.lite-mesa-hero,
+.lite-mesa-settings,
+.lite-mesa-results,
+.lite-mesa-stat-section {
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.lite-mesa-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  background:
+    linear-gradient(90deg, rgba(15, 92, 191, 0.08), rgba(15, 118, 110, 0.08)),
+    #fff;
+}
+
+.lite-mesa-hero h3 {
+  margin: 8px 0 2px;
+  font-size: 20px;
+}
+
+.lite-mesa-hero p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.lite-mesa-hero-actions {
+  display: flex;
+  align-items: stretch;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.lite-mesa-hero-actions .experiment-plan-context-select {
+  min-width: 280px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.lite-mesa-hero-meter {
+  min-width: 112px;
+  display: grid;
+  place-items: center;
+  gap: 2px;
+  padding: 12px;
+  border: 1px solid #cfe0f6;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.lite-mesa-hero-meter strong {
+  color: var(--primary);
+  font-size: 24px;
+}
+
+.lite-mesa-hero-meter span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.lite-mesa-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.9fr) minmax(360px, 1.1fr);
+  gap: 14px;
+  align-items: stretch;
+}
+
+.lite-mesa-settings,
+.lite-mesa-results {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 12px;
+}
+
+.lite-mesa-setting-grid,
+.lite-mesa-source-grid,
+.lite-mesa-metric-cards {
+  display: grid;
+  gap: 10px;
+}
+
+.lite-mesa-setting-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.lite-mesa-setting-grid label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.lite-mesa-setting-grid input {
+  width: 100%;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+}
+
+.lite-mesa-source-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.lite-mesa-source-grid div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.lite-mesa-source-grid span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.lite-mesa-source-grid strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.lite-mesa-metric-cards {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.lite-mesa-stat-table {
+  min-width: 760px;
+}
+
+.lite-mesa-collapsible-table {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.lite-mesa-collapsible-table > summary {
+  padding: 12px 14px;
+  cursor: pointer;
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.lite-mesa-collapsible-table > .table-wrap {
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+}
+
+.lite-mesa-event-snapshots {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.lite-mesa-event-snapshot {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.lite-mesa-event-snapshot summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  cursor: pointer;
+}
+
+.lite-mesa-event-snapshot summary span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.downtime-snapshot-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  padding: 0 14px 14px;
+}
+
+.downtime-snapshot-grid section {
+  min-width: 0;
+}
+
+.downtime-snapshot-grid h4 {
+  margin: 0 0 8px;
+  font-size: 13px;
+}
+
+.downtime-snapshot-grid table {
+  width: 100%;
+  font-size: 12px;
+}
+
+.snapshot-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.snapshot-chip-row span {
+  padding: 4px 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 12px;
+  background: #f8fafc;
 }
 
 .mc-config-panel,
@@ -2180,60 +2688,11 @@ tr.clickable-table-row.selected-table-row td {
   gap: 12px;
 }
 
-.mesa-visual-header,
 .mesa-toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-}
-
-.mesa-visual-header p {
-  max-width: 820px;
-  margin: 0;
-  color: var(--muted);
-}
-
-.mesa-clock {
-  min-width: 112px;
-  padding: 9px 12px;
-  border: 1px solid #d8e4ff;
-  border-radius: 8px;
-  background: var(--primary-soft);
-  color: #1f3f75;
-  font-weight: 700;
-  text-align: center;
-}
-
-.mesa-source {
-  display: inline-block;
-  margin-left: 0.5rem;
-  padding: 1px 7px;
-  border-radius: 999px;
-  font-size: 0.68rem;
-  font-weight: 600;
-  vertical-align: middle;
-}
-
-.mesa-source-live {
-  background: rgba(34, 197, 94, 0.16);
-  color: #15803d;
-}
-
-.mesa-source-demo {
-  background: rgba(234, 179, 8, 0.18);
-  color: #a16207;
-}
-
-.mesa-source-state-series,
-.mesa-source-state-stream {
-  background: rgba(34, 197, 94, 0.16);
-  color: #15803d;
-}
-
-.mesa-source-blocked {
-  background: rgba(220, 38, 38, 0.14);
-  color: #b91c1c;
 }
 
 .mesa-tabs,
@@ -2455,8 +2914,9 @@ tr.clickable-table-row.selected-table-row td {
   background: #fff;
 }
 
-.availability-chart svg {
-  width: 100%;
+.availability-chart .availability-trend-svg {
+  inline-size: 100%;
+  max-inline-size: 100%;
   height: 118px;
   display: block;
   margin-top: 6px;
@@ -2474,6 +2934,29 @@ tr.clickable-table-row.selected-table-row td {
   stroke-width: 3;
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+
+.availability-y-axis line {
+  stroke: #94a3b8;
+  stroke-width: 1;
+}
+
+.availability-y-axis .grid-line {
+  stroke: #cbd5e1;
+  stroke-dasharray: 3 4;
+}
+
+.availability-y-axis text {
+  fill: #64748b;
+  font-size: 11px;
+  text-anchor: end;
+}
+
+.availability-y-axis .axis-title {
+  text-anchor: middle;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0;
 }
 
 .availability-chart .trend-line.available {
@@ -2704,9 +3187,69 @@ tr.clickable-table-row.selected-table-row td {
   gap: 10px;
 }
 
+.support-airport-switcher {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid #d7e1ee;
+  border-radius: 8px;
+  background: #f8fbff;
+}
+
+.support-airport-switcher div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.support-airport-switcher strong {
+  font-size: 14px;
+}
+
+.support-airport-switcher span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.support-airport-switcher select {
+  min-width: 180px;
+}
+
 .support-metric-list {
   display: grid;
   gap: 8px;
+}
+
+.support-collapsible-panel {
+  padding: 0;
+  overflow: hidden;
+}
+
+.support-collapsible-panel > summary {
+  padding: 10px 12px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.support-collapsible-panel > summary::-webkit-details-marker {
+  display: none;
+}
+
+.support-collapsible-panel > summary::before {
+  content: "▸";
+  margin-right: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.support-collapsible-panel[open] > summary::before {
+  content: "▾";
+}
+
+.support-collapsible-panel .support-metric-list {
+  padding: 0 12px 12px;
 }
 
 .support-metric-row {
@@ -2725,6 +3268,49 @@ tr.clickable-table-row.selected-table-row td {
   display: block;
   color: var(--muted);
   font-size: 12px;
+}
+
+.support-resource-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.support-resource-meta small {
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #e0f2fe;
+  color: #075985;
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.support-count {
+  min-height: 44px;
+  display: grid;
+  align-content: center;
+  gap: 2px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: #eef6ff;
+}
+
+.support-count.delay {
+  background: #fff7ed;
+}
+
+.support-count small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.support-count strong {
+  color: var(--ink);
+  font-size: 16px;
 }
 
 .support-meter i {
@@ -2774,6 +3360,13 @@ tr.clickable-table-row.selected-table-row td {
   display: block;
   margin-top: 2px;
   font-size: 13px;
+}
+
+.mesa-timeline-card small {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 11px;
 }
 
 .mesa-timeline-card input[type="range"] {
@@ -2862,8 +3455,9 @@ tr.clickable-table-row.selected-table-row td {
   display: grid;
   grid-template-columns: repeat(4, minmax(120px, 1fr));
   gap: 10px;
-  min-height: 320px;
-  max-height: 320px;
+  height: 520px;
+  min-height: 520px;
+  max-height: 520px;
   overflow-x: auto;
 }
 
@@ -2883,7 +3477,7 @@ tr.clickable-table-row.selected-table-row td {
   background: #f0fdf4;
 }
 
-.aircraft-state-lane.maintenance {
+.aircraft-state-lane.pre_support {
   background: #fff7e6;
 }
 
@@ -2963,11 +3557,8 @@ tr.clickable-table-row.selected-table-row td {
   border-left-color: #1c7ed6;
 }
 
-.aircraft-state-node.maintenance {
-  border-left-color: #f59f00;
-}
-
 .aircraft-state-node.repair_unavailable,
+.aircraft-state-node.maintenance,
 .aircraft-state-node.repair,
 .aircraft-state-node.repairing,
 .aircraft-state-node.preventive_maintenance,
@@ -2981,76 +3572,6 @@ tr.clickable-table-row.selected-table-row td {
 .aircraft-state-node.active {
   outline: 2px solid #2563eb;
   outline-offset: 2px;
-}
-
-.aircraft-mission-timeline {
-  min-width: 0;
-  overflow: auto;
-  padding: 12px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #fff;
-}
-
-.aircraft-timeline-table {
-  min-width: 720px;
-  display: grid;
-  gap: 8px;
-}
-
-.aircraft-timeline-row {
-  display: grid;
-  grid-template-columns: 96px minmax(0, 1fr);
-  gap: 10px;
-  align-items: start;
-  padding: 8px 0;
-  border-top: 1px solid #e2e8f0;
-}
-
-.aircraft-timeline-row:first-child {
-  border-top: 0;
-}
-
-.aircraft-timeline-row strong {
-  display: grid;
-  gap: 2px;
-  color: var(--ink);
-}
-
-.aircraft-timeline-row small {
-  color: var(--muted);
-  font-size: 11px;
-}
-
-.aircraft-timeline-pill {
-  display: inline-block;
-  margin: 2px;
-  padding: 3px 7px;
-  border-radius: 999px;
-  background: #64748b;
-  color: #fff;
-  font-size: 12px;
-  white-space: nowrap;
-}
-
-.aircraft-timeline-pill.idle {
-  background: #8fa3ad;
-}
-
-.aircraft-timeline-pill.ready {
-  background: #2f9e44;
-}
-
-.aircraft-timeline-pill.preparing {
-  background: #f59f00;
-}
-
-.aircraft-timeline-pill.flying {
-  background: #1c7ed6;
-}
-
-.aircraft-timeline-pill.recovery {
-  background: #7950f2;
 }
 
 .legend {
@@ -3132,93 +3653,78 @@ tr.clickable-table-row.selected-table-row td {
   font-size: 12px;
 }
 
-.aircraft-failure-summary {
+.aircraft-status-summary {
   display: grid;
-  gap: 3px;
+  gap: 10px;
+}
+
+.aircraft-status-row {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
   padding: 10px;
   border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #f8fafc;
-}
-
-.aircraft-failure-summary.has-failure {
-  border-color: #fecaca;
-  background: #fff1f2;
-}
-
-.aircraft-failure-summary span {
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.aircraft-failure-tree {
-  display: grid;
-  gap: 8px;
-  margin-top: 10px;
-}
-
-.aircraft-failure-branch {
-  display: grid;
-  gap: 6px;
-}
-
-.aircraft-failure-children {
-  display: grid;
-  gap: 6px;
-  margin-left: 12px;
-  padding-left: 12px;
-  border-left: 2px solid #cbd5e1;
-}
-
-.aircraft-failure-node {
-  display: grid;
-  gap: 6px;
-  padding: 8px;
-  border: 1px solid #cbd5e1;
-  border-left-width: 4px;
-  border-radius: 8px;
+  border-radius: 6px;
   background: #fff;
 }
 
-.aircraft-failure-node.edge-active,
-.aircraft-failure-node.failed {
-  border-left-color: #dc2626;
+.aircraft-status-row.has-failure {
+  border-color: #fecaca;
+  background: #fff7f7;
 }
 
-.aircraft-failure-node.propagated {
-  background: #fff7ed;
-}
-
-.aircraft-failure-node.healthy {
-  border-left-color: #16a34a;
-}
-
-.aircraft-failure-node strong {
-  color: var(--ink);
-  font-size: 13px;
-}
-
-.aircraft-failure-node span,
-.aircraft-failure-node-meta {
+.aircraft-status-row > span {
   color: var(--muted);
   font-size: 12px;
+  font-weight: 700;
 }
 
-.aircraft-failure-node-meta {
-  display: flex;
-  flex-wrap: wrap;
+.aircraft-status-row strong {
+  display: block;
+  min-width: 0;
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.aircraft-status-row small {
+  display: block;
+  min-width: 0;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.aircraft-status-list {
+  display: grid;
+  min-width: 0;
   gap: 6px;
 }
 
-.aircraft-failure-node-meta span {
-  padding: 2px 6px;
-  border-radius: 999px;
-  background: #f1f5f9;
+.aircraft-status-item,
+.aircraft-status-empty {
+  min-width: 0;
+  padding: 8px 9px;
+  border: 1px solid #dbeafe;
+  border-left: 3px solid #2563eb;
+  border-radius: 6px;
+  background: #f8fbff;
 }
 
-.aircraft-failure-node.failed .aircraft-failure-node-meta span {
-  background: #fee2e2;
-  color: #991b1b;
+.aircraft-status-item.fault {
+  border-color: #fecaca;
+  border-left-color: #dc2626;
+  background: #fff7f7;
+}
+
+.aircraft-status-empty {
+  border-color: var(--line);
+  border-left-color: #94a3b8;
+  background: #f8fafc;
 }
 
 .mesa-side-panel {
@@ -3313,6 +3819,81 @@ tr.clickable-table-row.selected-table-row td {
 .event.info {
   border-color: #d8e4ff;
   background: var(--primary-soft);
+}
+
+.event.warning {
+  border-color: #fde68a;
+  background: #fffbeb;
+  color: #92400e;
+}
+
+.simulation-log-event {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 4px;
+  align-items: stretch;
+  text-align: left;
+}
+
+.simulation-log-collapse {
+  display: grid;
+  gap: 8px;
+}
+
+.simulation-log-collapse > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #f8fafc;
+  cursor: pointer;
+  list-style: none;
+}
+
+.simulation-log-collapse > summary::-webkit-details-marker {
+  display: none;
+}
+
+.simulation-log-collapse > summary span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.simulation-log-collapse[open] > summary {
+  margin-bottom: 8px;
+}
+
+.support-log-list .event {
+  display: grid;
+  gap: 3px;
+}
+
+.support-log-list .event span,
+.support-log-list .event small {
+  color: inherit;
+  opacity: 0.82;
+}
+
+.simulation-log-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.simulation-log-head em {
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(15, 92, 191, 0.1);
+  color: var(--primary);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 700;
+  white-space: nowrap;
 }
 
 .event.mesa-status-card {
@@ -3417,9 +3998,13 @@ tr.clickable-table-row.selected-table-row td {
   .mesa-status-grid,
   .mesa-timeline-card,
   .system-config-layout,
+  .project-template-layout,
+  .project-data-overview-grid,
   .rms-layout,
-  .modeling-import-layout,
-  .modeling-import-summary,
+	  .modeling-import-layout,
+	  .lite-mesa-layout,
+	  .scenario-composition-workspace,
+	  .modeling-import-summary,
   .modeling-import-status-grid,
   .modeling-import-compile-grid {
     grid-template-columns: 1fr;
@@ -3434,11 +4019,20 @@ tr.clickable-table-row.selected-table-row td {
     overflow-x: auto;
   }
 
-  .mesa-visual-header,
   .mesa-toolbar,
-  .modeling-import-bar {
+  .modeling-import-bar,
+  .lite-mesa-hero {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .lite-mesa-hero-actions {
+    justify-content: flex-start;
+  }
+
+  .lite-mesa-hero-actions .experiment-plan-context-select {
+    min-width: 0;
+    width: 100%;
   }
 
   .rms-method-actions,
@@ -3461,7 +4055,10 @@ tr.clickable-table-row.selected-table-row td {
   .scenario-grid,
   .rms-parameter-grid,
   .rms-method-grid,
-  .rms-verification-metrics {
+  .rms-verification-metrics,
+  .lite-mesa-setting-grid,
+  .lite-mesa-source-grid,
+  .lite-mesa-metric-cards {
     grid-template-columns: 1fr;
   }
 }

@@ -36,13 +36,18 @@ class M96CasePackageTest(unittest.TestCase):
         self.assertEqual(export["modeling_snapshot"]["projectJson"], export["project"])
         self.assertEqual(export["experiment_plan"]["project_id"], export["project"]["project_id"])
         self.assertEqual(export["experiment_plan"]["config"]["projectJson"], export["project"])
-        self.assertEqual(export["experiment_plan"]["config"]["analysisRequests"], export["project"]["analysisRequests"])
+        self.assertEqual(export["experiment_plan"]["config"]["analysisRequests"], fixture["objects"]["analysisRequests"])
+        self.assertEqual(export["experiment_plan"]["config"]["steps"], fixture["objects"]["missionProfiles"][0]["experiment"]["steps"])
+        self.assertEqual(export["experiment_plan"]["config"]["seed"], fixture["objects"]["missionProfiles"][0]["experiment"]["seed"])
+        self.assertNotIn("experiment", export["project"])
+        self.assertNotIn("analysisRequests", export["project"])
+        self.assertNotIn("monteCarlo", export["project"])
         self.assertEqual(export["project"]["supportOrganization"], fixture["objects"]["supportOrganization"])
         self.assertEqual(export["published_modeling_import"]["objects"]["supportOrganization"], fixture["objects"]["supportOrganization"])
         self.assertEqual(export["run_intents"]["single"]["run_type"], "single")
-        self.assertEqual(export["run_intents"]["single"]["model_family"], "aviation_support")
+        self.assertEqual(export["run_intents"]["single"]["model_family"], "aircraft_support_v1")
         self.assertEqual(export["run_intents"]["monte_carlo"]["run_type"], "monte_carlo")
-        self.assertEqual(export["run_intents"]["monte_carlo"]["model_family"], "aviation_support")
+        self.assertEqual(export["run_intents"]["monte_carlo"]["model_family"], "aircraft_support_v1")
         self.assertEqual(
             export["monte_carlo_config"],
             {
@@ -55,7 +60,7 @@ class M96CasePackageTest(unittest.TestCase):
                 "mc_experiment_id": "mc-m9-6-platform-case",
             },
         )
-        self.assertEqual(export["compiled_scenario"]["simulation_model"]["family"], "aviation_support")
+        self.assertEqual(export["compiled_scenario"]["simulation_model"]["family"], "aircraft_support_v1")
         self.assertEqual(export["compiled_scenario"]["project_id"], export["project"]["project_id"])
         provenance = export["compiled_scenario"]["compiled_from"]["mapping_provenance"]
         self.assertEqual(provenance["modeling_snapshot_id"], export["modeling_snapshot"]["snapshot_id"])
@@ -65,7 +70,7 @@ class M96CasePackageTest(unittest.TestCase):
         self.assertEqual(export["validation"]["status"], "valid")
         self.assertEqual(export["validation"]["issues"], [])
         self.assertEqual(export["validation"]["warnings"], [])
-        self.assertEqual(export["validation"]["validationLevel"], "level1")
+        self.assertNotIn("validationLevel", export["validation"])
         self.assertTrue(export["validation"]["usedTables"]["supportOrganization"])
 
     def test_field_coverage_explains_every_business_leaf_once(self) -> None:
@@ -92,8 +97,8 @@ class M96CasePackageTest(unittest.TestCase):
         self.assertEqual(entry_by_path["objects.equipmentAssets[].failureRate"]["status"], "ignored")
         self.assertEqual(entry_by_path["objects.supportResources[].capacity"]["status"], "ignored")
         self.assertEqual(entry_by_path["objects.equipment.initialReady"]["status"], "ignored")
-        self.assertEqual(entry_by_path["objects.missionProfiles[].basicMission.minRequiredSorties"]["status"], "ignored")
-        self.assertEqual(entry_by_path["objects.equipment.quantity"]["status"], "consumed")
+        self.assertEqual(entry_by_path["objects.missionProfiles[].basicMissions[].minRequiredSorties"]["status"], "ignored")
+        self.assertEqual(entry_by_path["objects.equipment.quantity"]["status"], "ignored")
         self.assertEqual(entry_by_path["objects.supportResources[].personnelCapacity"]["status"], "consumed")
         self.assertEqual(entry_by_path["objects.supportResources[].equipmentCapacity"]["status"], "consumed")
         self.assertEqual(entry_by_path["objects.equipmentAssets[].failureDistribution.parameters"]["status"], "consumed")

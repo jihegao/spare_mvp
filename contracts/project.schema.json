@@ -9,17 +9,14 @@
     "activeModule",
     "airports",
     "missionAreas",
-    "experiment",
     "missionProfile",
-    "basicMission",
+    "basicMissions",
     "missionPhases",
     "combatUnit",
-    "equipment",
     "components",
     "supportNodes",
     "supportActivities",
-    "reliabilityBlockDiagram",
-    "monteCarlo"
+    "reliabilityBlockDiagram"
   ],
   "properties": {
     "schema_version": { "type": "string", "const": "project-v0", "description": "Optional application envelope version; current frontend defaultScenario does not emit this field." },
@@ -27,11 +24,10 @@
     "project_version": { "type": "string" },
     "scenarioId": { "type": "string" },
     "activeModule": { "type": "string", "enum": ["sparePlanning", "missionReliability"] },
-    "airports": { "type": "array", "items": { "type": "object" } },
+    "airports": { "type": "array", "items": { "type": "string" } },
     "missionAreas": { "type": "array", "items": { "type": "object" } },
-    "experiment": { "type": "object" },
     "missionProfile": { "type": "object" },
-    "basicMission": { "type": "object" },
+    "basicMissions": { "type": "array", "items": { "type": "object" } },
     "missionPhases": { "type": "array", "items": { "type": "object" } },
     "combatUnit": { "type": "object" },
     "equipment": { "type": "object" },
@@ -39,7 +35,6 @@
     "supportNodes": { "type": "array", "items": { "type": "object" } },
     "supportActivities": { "type": "array", "items": { "type": "object" } },
     "reliabilityBlockDiagram": { "type": "object" },
-    "monteCarlo": { "type": "object" },
     "created_at": { "type": "string" },
     "updated_at": { "type": "string" }
   }

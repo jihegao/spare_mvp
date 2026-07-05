@@ -7,42 +7,6 @@
       "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
     },
     {
-      "field_path": "objects.airports[].distanceToMissionKm",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
-      "status": "ignored",
-      "target": "M9.6 platform case package"
-    },
-    {
-      "field_path": "objects.airports[].id",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
-      "status": "ignored",
-      "target": "M9.6 platform case package"
-    },
-    {
-      "field_path": "objects.airports[].location",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
-      "status": "ignored",
-      "target": "M9.6 platform case package"
-    },
-    {
-      "field_path": "objects.airports[].name",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
-      "status": "ignored",
-      "target": "M9.6 platform case package"
-    },
-    {
-      "field_path": "objects.airports[].runwayType",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
-      "status": "ignored",
-      "target": "M9.6 platform case package"
-    },
-    {
-      "field_path": "objects.airports[].supportNodeId",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
-      "status": "ignored",
-      "target": "M9.6 platform case package"
-    },
-    {
       "field_path": "objects.analysisRequests.largeSample.enabled",
       "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
       "status": "consumed",
@@ -74,85 +38,85 @@
     },
     {
       "field_path": "objects.equipment.deploymentLocation",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.equipment.initialReady",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.equipment.minRequiredSorties",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.equipment.model",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.equipment.preLifeRequirementHours",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.equipment.quantity",
-      "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
-      "status": "consumed",
-      "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
+      "status": "ignored",
+      "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.equipment.wholeMachineModels[]",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.equipmentAssets[].failureRate",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.equipmentAssets[].id",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.equipmentAssets[].mtbfHours",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.equipmentAssets[].name",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.equipmentAssets[].quantity",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.equipmentAssets[].aircraftModel",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.equipmentAssets[].connectionType",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
@@ -170,7 +134,7 @@
     },
     {
       "field_path": "objects.equipmentAssets[].failureModel",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
@@ -194,61 +158,61 @@
     },
     {
       "field_path": "objects.equipmentAssets[].lifeLimitHours",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.equipmentAssets[].parentId",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.equipmentAssets[].productType",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.equipmentAssets[].rms.availability",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.equipmentAssets[].rms.maintainability",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.equipmentAssets[].rms.mldtHours",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.equipmentAssets[].rms.mttrHours",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.equipmentAssets[].rms.reliability",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.equipmentAssets[].rms.supportability",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.equipmentAssets[].spareType",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
@@ -272,403 +236,367 @@
     },
     {
       "field_path": "objects.missionAreas[].areaType",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionAreas[].distanceFromDepartureKm",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionAreas[].id",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionAreas[].name",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionAreas[].patrolRadiusKm",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionAreas[].threatLevel",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
-      "status": "ignored",
-      "target": "M9.6 platform case package"
-    },
-    {
-      "field_path": "objects.missionProfiles[].airports[].distanceToMissionKm",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
-      "status": "ignored",
-      "target": "M9.6 platform case package"
-    },
-    {
-      "field_path": "objects.missionProfiles[].airports[].id",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
-      "status": "ignored",
-      "target": "M9.6 platform case package"
-    },
-    {
-      "field_path": "objects.missionProfiles[].airports[].location",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
-      "status": "ignored",
-      "target": "M9.6 platform case package"
-    },
-    {
-      "field_path": "objects.missionProfiles[].airports[].name",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
-      "status": "ignored",
-      "target": "M9.6 platform case package"
-    },
-    {
-      "field_path": "objects.missionProfiles[].airports[].runwayType",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
-      "status": "ignored",
-      "target": "M9.6 platform case package"
-    },
-    {
-      "field_path": "objects.missionProfiles[].airports[].supportNodeId",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].analysisRequests.largeSample.enabled",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].analysisRequests.largeSample.samples",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].analysisRequests.largeSample.sweep.failureRates[]",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].analysisRequests.largeSample.sweep.spareMultipliers[]",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].analysisRequests.largeSample.sweep.supportCapacities[]",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
-      "field_path": "objects.missionProfiles[].basicMission.advanceNoticeMinutes",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "field_path": "objects.missionProfiles[].basicMissions[].advanceNoticeMinutes",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
-      "field_path": "objects.missionProfiles[].basicMission.cancelMinutes",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "field_path": "objects.missionProfiles[].basicMissions[].basicTaskName",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
-      "field_path": "objects.missionProfiles[].basicMission.equipmentQuantity",
+      "field_path": "objects.missionProfiles[].basicMissions[].cancelMinutes",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
+      "status": "ignored",
+      "target": "M9.6 platform case package"
+    },
+    {
+      "field_path": "objects.missionProfiles[].basicMissions[].equipmentQuantity",
       "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
       "status": "consumed",
       "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
     },
     {
-      "field_path": "objects.missionProfiles[].basicMission.equipmentType",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "field_path": "objects.missionProfiles[].basicMissions[].equipmentType",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
-      "field_path": "objects.missionProfiles[].basicMission.minRequiredSorties",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "field_path": "objects.missionProfiles[].basicMissions[].id",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
-      "field_path": "objects.missionProfiles[].basicMission.missionId",
+      "field_path": "objects.missionProfiles[].basicMissions[].minRequiredSorties",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
+      "status": "ignored",
+      "target": "M9.6 platform case package"
+    },
+    {
+      "field_path": "objects.missionProfiles[].basicMissions[].missionId",
       "rationale": "The value contributes to stable IDs, names, provenance, output sampling, or display metadata rather than direct simulation dynamics.",
       "status": "derived",
       "target": "M9.7.4 aircraft_support_v1 identity, output, and display metadata"
     },
     {
-      "field_path": "objects.missionProfiles[].basicMission.name",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "field_path": "objects.missionProfiles[].basicMissions[].name",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
-      "field_path": "objects.missionProfiles[].basicMission.preparationMinutes",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "field_path": "objects.missionProfiles[].basicMissions[].preparationMinutes",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
-      "field_path": "objects.missionProfiles[].basicMission.priority",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "field_path": "objects.missionProfiles[].basicMissions[].priority",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
-      "field_path": "objects.missionProfiles[].basicMission.returnRatio",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "field_path": "objects.missionProfiles[].basicMissions[].returnRatio",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
-      "field_path": "objects.missionProfiles[].basicMission.startHour",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "field_path": "objects.missionProfiles[].basicMissions[].startHour",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
-      "field_path": "objects.missionProfiles[].basicMission.successPoint",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "field_path": "objects.missionProfiles[].basicMissions[].successPoint",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
-      "field_path": "objects.missionProfiles[].basicMission.supportActivityName",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "field_path": "objects.missionProfiles[].basicMissions[].supportActivityName",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
-      "field_path": "objects.missionProfiles[].basicMission.taskArea",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "field_path": "objects.missionProfiles[].basicMissions[].taskArea",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
-      "field_path": "objects.missionProfiles[].basicMission.taskDurationMinutes",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "field_path": "objects.missionProfiles[].basicMissions[].taskDurationMinutes",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
-      "field_path": "objects.missionProfiles[].basicMission.taskNo",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "field_path": "objects.missionProfiles[].basicMissions[].taskNo",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
-      "field_path": "objects.missionProfiles[].basicMission.updatedAt",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "field_path": "objects.missionProfiles[].basicMissions[].updatedAt",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].combatUnit.basicTaskName",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].combatUnit.deploymentLocation",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].combatUnit.equipmentType",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].combatUnit.groupName",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].combatUnit.members[].aircraftNo",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].combatUnit.members[].airport",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].combatUnit.members[].deploymentLocation",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].combatUnit.members[].model",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].combatUnit.members[].preLifeCalendarDays",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].combatUnit.members[].preLifeRequirementHours",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].combatUnit.members[].remainingLifeHours",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].combatUnit.members[].role",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].combatUnit.members[].status",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].combatUnit.members[].takeoffLandingCount",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].combatUnit.quantity",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].combatUnit.requiredCount",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].combatUnit.standbyCount",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].combatUnit.unitId",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].compositeTasks[].id",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].compositeTasks[].name",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
+      "status": "ignored",
+      "target": "M9.6 platform case package"
+    },
+    {
+      "field_path": "objects.missionProfiles[].compositeTasks[].taskItems[].basicMissionId",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].compositeTasks[].taskItems[].basicTaskName",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].compositeTasks[].taskItems[].dailyRepeatCount",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
-      "status": "ignored",
-      "target": "M9.6 platform case package"
-    },
-    {
-      "field_path": "objects.missionProfiles[].compositeTasks[].taskItems[].equipmentQuantity",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].compositeTasks[].taskItems[].equipmentType",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].compositeTasks[].taskItems[].firstWaveTime",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].compositeTasks[].taskItems[].groupName",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].compositeTasks[].taskItems[].id",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].compositeTasks[].taskItems[].intervalHours",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
-      "status": "ignored",
-      "target": "M9.6 platform case package"
-    },
-    {
-      "field_path": "objects.missionProfiles[].compositeTasks[].taskItems[].minRequiredSystems",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
-      "status": "ignored",
-      "target": "M9.6 platform case package"
-    },
-    {
-      "field_path": "objects.missionProfiles[].compositeTasks[].taskItems[].preparationMinutes",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].compositeTasks[].taskItems[].priority",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].compositeTasks[].taskItems[].recoveryTime",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].compositeTasks[].taskItems[].taskDispatchTime",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
@@ -680,67 +608,67 @@
     },
     {
       "field_path": "objects.missionProfiles[].endCondition",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].equipment.deploymentLocation",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].equipment.initialReady",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].equipment.minRequiredSorties",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].equipment.model",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].equipment.preLifeRequirementHours",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].equipment.quantity",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].equipment.wholeMachineModels[]",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].experiment.name",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].experiment.parallelCores",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].experiment.samples",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
@@ -758,7 +686,7 @@
     },
     {
       "field_path": "objects.missionProfiles[].experiment.stopCondition",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
@@ -770,97 +698,97 @@
     },
     {
       "field_path": "objects.missionProfiles[].missionAreas[].areaType",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].missionAreas[].distanceFromDepartureKm",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].missionAreas[].id",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].missionAreas[].name",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].missionAreas[].patrolRadiusKm",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].missionAreas[].threatLevel",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].missionPhases[].id",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].missionPhases[].limitHours",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].missionPhases[].name",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].missionPhases[].phaseRatio",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].missionPhases[].state",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].missionPhases[].transitionCondition",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].monteCarlo.failureRates[]",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].monteCarlo.minRequiredSorties[]",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].monteCarlo.spareMultipliers[]",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].monteCarlo.supportCapacities[]",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
@@ -872,139 +800,139 @@
     },
     {
       "field_path": "objects.missionProfiles[].periodicTasks[].compositeTaskIds[]",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].periodicTasks[].compositeTasks[].compositeTaskId",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].periodicTasks[].compositeTasks[].week",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].periodicTasks[].cycleDays",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].periodicTasks[].dailyRepeatCount",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].periodicTasks[].id",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].periodicTasks[].name",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].periodicTasks[].periodDays",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].periodicTasks[].repeatCount",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].periodicTasks[].repeatCycleDays",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].periodicTasks[].repeatCycleUnit",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].periodicTasks[].repeatCycleValue",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].periodicTasks[].repeatRounds",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].periodicTasks[].repeatWeeks",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].periodicTasks[].taskName",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].periodicTasks[].taskPeriodDays",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].periodicTasks[].weekdayAssignments.friday",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].periodicTasks[].weekdayAssignments.monday",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].periodicTasks[].weekdayAssignments.saturday",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].periodicTasks[].weekdayAssignments.sunday",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].periodicTasks[].weekdayAssignments.thursday",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].periodicTasks[].weekdayAssignments.tuesday",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.missionProfiles[].periodicTasks[].weekdayAssignments.wednesday",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
@@ -1016,7 +944,7 @@
     },
     {
       "field_path": "objects.missionProfiles[].profileType",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
@@ -1088,31 +1016,31 @@
     },
     {
       "field_path": "objects.missionProfiles[].repeatCycleHours",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.monteCarlo.failureRates[]",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.monteCarlo.minRequiredSorties[]",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.monteCarlo.spareMultipliers[]",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.monteCarlo.supportCapacities[]",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
@@ -1136,97 +1064,97 @@
     },
     {
       "field_path": "objects.reliabilityBlockDiagram.edges[].from",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.reliabilityBlockDiagram.edges[].to",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.reliabilityBlockDiagram.edges[].type",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.reliabilityBlockDiagram.edges[].weight",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.reliabilityBlockDiagram.nodes[].connectionType",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.reliabilityBlockDiagram.nodes[].failureRate",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.reliabilityBlockDiagram.nodes[].id",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.reliabilityBlockDiagram.nodes[].mtbfHours",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.reliabilityBlockDiagram.nodes[].name",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.reliabilityBlockDiagram.nodes[].parentId",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.reliabilityBlockDiagram.nodes[].type",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.supportActivities[].activityName",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.supportActivities[].activityType",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.supportActivities[].durationHours",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.supportActivities[].equipmentId",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.supportActivities[].id",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
@@ -1273,7 +1201,19 @@
       "target": "M9.7.4 aircraft_support_v1 governance metadata"
     },
     {
-      "field_path": "objects.supportActivities[].jobs[].equipment",
+      "field_path": "objects.supportActivities[].jobs[].equipment[].model",
+      "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
+      "status": "consumed",
+      "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
+    },
+    {
+      "field_path": "objects.supportActivities[].jobs[].equipment[].name",
+      "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
+      "status": "consumed",
+      "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
+    },
+    {
+      "field_path": "objects.supportActivities[].jobs[].equipment[].quantity",
       "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
       "status": "consumed",
       "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
@@ -1285,7 +1225,13 @@
       "target": "M9.7.4 aircraft_support_v1 governance metadata"
     },
     {
-      "field_path": "objects.supportActivities[].jobs[].personnel",
+      "field_path": "objects.supportActivities[].jobs[].personnel[].professional",
+      "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
+      "status": "consumed",
+      "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
+    },
+    {
+      "field_path": "objects.supportActivities[].jobs[].personnel[].quantity",
       "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
       "status": "consumed",
       "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
@@ -1295,12 +1241,6 @@
       "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
       "status": "consumed",
       "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
-    },
-    {
-      "field_path": "objects.supportActivities[].jobs[].servicePersonnel",
-      "rationale": "The field is preserved in the formal payload and provenance for audit/governance, but it is approved as non-behavior-driving in M9.7.4.",
-      "status": "governance_only",
-      "target": "M9.7.4 aircraft_support_v1 governance metadata"
     },
     {
       "field_path": "objects.supportActivities[].jobs[].spare",
@@ -1322,61 +1262,61 @@
     },
     {
       "field_path": "objects.supportActivities[].maxWorkTimeRefMinutes",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.supportActivities[].name",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.supportActivities[].planGroupId",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.supportActivities[].planType",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.supportActivities[].priority",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.supportActivities[].requiredDevices",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.supportActivities[].requiredPersonnel",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.supportActivities[].resourceId",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.supportActivities[].spareQuantity",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.supportActivities[].spareType",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
@@ -1393,44 +1333,62 @@
       "target": "M9.7.4 aircraft_support_v1 governance metadata"
     },
     {
+      "field_path": "objects.supportActivities[].jobs[].spare[].model",
+      "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
+      "status": "consumed",
+      "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
+    },
+    {
+      "field_path": "objects.supportActivities[].jobs[].spare[].name",
+      "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
+      "status": "consumed",
+      "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
+    },
+    {
+      "field_path": "objects.supportActivities[].jobs[].spare[].quantity",
+      "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
+      "status": "consumed",
+      "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
+    },
+    {
       "field_path": "objects.supportActivities[].maxRepairTimeMinutes",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.supportActivities[].meanRepairTimeMinutes",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.supportActivities[].repairDistribution.distributionType",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.supportActivities[].repairDistribution.params",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.supportActivities[].repairTypes[]",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.supportActivities[].calendarDayFloatRatio",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.supportActivities[].calendarDayInterval",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
@@ -1442,55 +1400,55 @@
     },
     {
       "field_path": "objects.supportActivities[].plannedDowntimeHours",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.supportActivities[].runHourFloatRatio",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.supportActivities[].runHourInterval",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.supportActivities[].takeoffLandingFloatRatio",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.supportActivities[].takeoffLandingInterval",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.supportActivities[].useCalendarRule",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.supportActivities[].useFlightHourRule",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.supportActivities[].useTakeoffLandingRule",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.supportActivities[].jobs",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
@@ -1574,7 +1532,7 @@
     },
     {
       "field_path": "objects.supportActivities[].aircraftModel",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
@@ -1628,7 +1586,7 @@
     },
     {
       "field_path": "objects.supportResources[].capacity",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
@@ -1640,49 +1598,49 @@
     },
     {
       "field_path": "objects.supportResources[].id",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.supportResources[].inventory.发动机备件",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.supportResources[].inventory.液压备件",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.supportResources[].inventory.航电模块",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.supportResources[].lateralSupportNodes[]",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.supportResources[].name",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.supportResources[].nodeType",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.supportResources[].organizationStrategy",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
@@ -1694,49 +1652,49 @@
     },
     {
       "field_path": "objects.supportResources[].policy",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.supportResources[].supportLevel",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.supportResources[].transportPolicies[].capacity",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.supportResources[].transportPolicies[].from",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.supportResources[].transportPolicies[].priority",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.supportResources[].transportPolicies[].to",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.supportResources[].transportPolicies[].transportMode",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
       "field_path": "objects.supportResources[].transportPolicies[].transportTimeHours",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current M9.5 aviation_support adapter does not consume it.",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
@@ -1752,12 +1710,12 @@
   "source_fixture": "tests/fixtures/modeling_import_project.json",
   "source_import_id": "import-carrier-day-night-001",
   "summary": {
-    "consumed": 35,
+    "consumed": 40,
     "defaulted": 0,
     "derived": 9,
-    "governance_only": 35,
-    "ignored": 212,
-    "total_fields": 291,
+    "governance_only": 34,
+    "ignored": 201,
+    "total_fields": 284,
     "unsupported": 0
   }
 }

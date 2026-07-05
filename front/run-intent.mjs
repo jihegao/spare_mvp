@@ -42,7 +42,7 @@ export function buildRunIntent({
   return {
     runType,
     projectJson: cloneJson(projectJson),
-    planProjectJson: normalizedPlanProjectJson,
+    planProjectJson: cloneJson(experimentPlanConfig.projectJson),
     experimentPlanConfig,
     runRequest
   };

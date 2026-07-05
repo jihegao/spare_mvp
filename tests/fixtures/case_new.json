@@ -25,17 +25,15 @@
               {
                 "basicTaskName": "近海制空巡逻任务",
                 "dailyRepeatCount": 2,
-                "equipmentQuantity": 4,
                 "equipmentType": "J-15",
                 "firstWaveTime": "08:00",
                 "groupName": "昼间制空编队",
                 "id": "day-cap-main",
                 "intervalHours": 6,
-                "minRequiredSystems": 4,
-                "preparationMinutes": 50,
                 "priority": 1,
                 "recoveryTime": "11:00",
-                "taskDispatchTime": "07:15"
+                "taskDispatchTime": "07:15",
+                "basicMissionId": "bm-cv-01"
               }
             ]
           },
@@ -46,17 +44,15 @@
               {
                 "basicTaskName": "远海警戒任务",
                 "dailyRepeatCount": 1,
-                "equipmentQuantity": 3,
                 "equipmentType": "J-35",
                 "firstWaveTime": "20:15",
                 "groupName": "夜间警戒编队",
                 "id": "night-alert-main",
                 "intervalHours": 8,
-                "minRequiredSystems": 3,
-                "preparationMinutes": 55,
                 "priority": 2,
                 "recoveryTime": "23:30",
-                "taskDispatchTime": "19:30"
+                "taskDispatchTime": "19:30",
+                "basicMissionId": "night-alert-main"
               }
             ]
           }
@@ -116,25 +112,6 @@
         "profileId": "MP-CV-01",
         "profileType": "舰载机昼夜连续出动",
         "repeatCycleHours": 6,
-        "basicMission": {
-          "advanceNoticeMinutes": 60,
-          "cancelMinutes": 20,
-          "equipmentQuantity": 2,
-          "equipmentType": "J-15",
-          "minRequiredSorties": 2,
-          "missionId": "BM-CV-01",
-          "name": "巡逻任务",
-          "preparationMinutes": 50,
-          "priority": 1,
-          "returnRatio": 0.35,
-          "startHour": 1,
-          "successPoint": 0.95,
-          "supportActivityName": "飞行前保障",
-          "taskArea": "巡逻区",
-          "taskDurationMinutes": 180,
-          "taskNo": "BM-CV-01",
-          "updatedAt": "2026-06-21 08:00"
-        },
         "missionPhases": [
           {
             "id": "phase-alert",
@@ -233,24 +210,6 @@
           "standbyCount": 1,
           "unitId": "CU-CV-01"
         },
-        "airports": [
-          {
-            "distanceToMissionKm": 180,
-            "id": "carrier-deck",
-            "location": "航母战斗群",
-            "name": "航母飞行甲板",
-            "runwayType": "滑跃/弹射甲板",
-            "supportNodeId": "carrier-deck"
-          },
-          {
-            "distanceToMissionKm": 260,
-            "id": "forward-sea-base",
-            "location": "近海前出补给点",
-            "name": "前出海上保障点",
-            "runwayType": "海上保障平台",
-            "supportNodeId": "forward-sea-base"
-          }
-        ],
         "missionAreas": [
           {
             "areaType": "制空",
@@ -393,7 +352,51 @@
               ]
             }
           }
-        }
+        },
+        "basicMissions": [
+          {
+            "advanceNoticeMinutes": 60,
+            "cancelMinutes": 20,
+            "equipmentQuantity": 4,
+            "equipmentType": "J-15",
+            "minRequiredSorties": 4,
+            "missionId": "BM-CV-01",
+            "name": "近海制空巡逻任务",
+            "preparationMinutes": 50,
+            "priority": 1,
+            "returnRatio": 0.35,
+            "startHour": 1,
+            "successPoint": 0.95,
+            "supportActivityName": "飞行前保障",
+            "taskArea": "巡逻区",
+            "taskDurationMinutes": 180,
+            "taskNo": "BM-CV-01",
+            "updatedAt": "2026-06-21 08:00",
+            "id": "bm-cv-01",
+            "basicTaskName": "近海制空巡逻任务"
+          },
+          {
+            "advanceNoticeMinutes": 60,
+            "cancelMinutes": 20,
+            "equipmentQuantity": 3,
+            "equipmentType": "J-35",
+            "minRequiredSorties": 3,
+            "missionId": "night-alert-main",
+            "name": "远海警戒任务",
+            "preparationMinutes": 55,
+            "priority": 1,
+            "returnRatio": 0.35,
+            "startHour": 1,
+            "successPoint": 0.95,
+            "supportActivityName": "飞行前保障",
+            "taskArea": "巡逻区",
+            "taskDurationMinutes": 180,
+            "taskNo": "night-alert-main",
+            "updatedAt": "2026-06-21 08:00",
+            "id": "night-alert-main",
+            "basicTaskName": "远海警戒任务"
+          }
+        ]
       }
     ],
     "equipmentAssets": [
@@ -836,12 +839,26 @@
               "min": 35,
               "mode": 45
             },
-            "equipment": "检测仪,DT-01,1",
+            "equipment": [
+              {
+                "model": "DT-01",
+                "name": "检测仪",
+                "quantity": 1
+              }
+            ],
             "facility": "甲板保障站位",
-            "personnel": "机务/航电,2",
+            "personnel": [
+              {
+                "professional": "机务人员",
+                "quantity": 1
+              },
+              {
+                "professional": "航电",
+                "quantity": 1
+              }
+            ],
             "predecessors": [],
-            "servicePersonnel": "勤务一组,1",
-            "spare": "无",
+            "spare": [],
             "workName": "机务检查"
           },
           {
@@ -853,14 +870,24 @@
               "max": 70,
               "min": 50
             },
-            "equipment": "加油车,F-01,1",
+            "equipment": [
+              {
+                "model": "F-01",
+                "name": "加油车",
+                "quantity": 1
+              }
+            ],
             "facility": "甲板加油站位",
-            "personnel": "机务/油料,1",
+            "personnel": [
+              {
+                "professional": "油料",
+                "quantity": 1
+              }
+            ],
             "predecessors": [
               "OPS-001"
             ],
-            "servicePersonnel": "油料组,2",
-            "spare": "无",
+            "spare": [],
             "workName": "燃油加注"
           }
         ],
@@ -892,12 +919,26 @@
               "min": 30,
               "mode": 40
             },
-            "equipment": "检测仪,DT-01,1",
+            "equipment": [
+              {
+                "model": "DT-01",
+                "name": "检测仪",
+                "quantity": 1
+              }
+            ],
             "facility": "维修工位",
-            "personnel": "维修/航电,2",
+            "personnel": [
+              {
+                "professional": "维修人员",
+                "quantity": 1
+              },
+              {
+                "professional": "航电",
+                "quantity": 1
+              }
+            ],
             "predecessors": [],
-            "servicePersonnel": "勤务二组,1",
-            "spare": "无",
+            "spare": [],
             "workName": "故障定位"
           },
           {
@@ -909,14 +950,34 @@
               "mean": 90,
               "stdDev": 15
             },
-            "equipment": "通用工具箱,TK-01,1",
+            "equipment": [
+              {
+                "model": "TK-01",
+                "name": "通用工具箱",
+                "quantity": 1
+              }
+            ],
             "facility": "维修工位",
-            "personnel": "维修/航电,2",
+            "personnel": [
+              {
+                "professional": "维修人员",
+                "quantity": 1
+              },
+              {
+                "professional": "航电",
+                "quantity": 1
+              }
+            ],
             "predecessors": [
               "REP-001"
             ],
-            "servicePersonnel": "勤务二组,1",
-            "spare": "航电模块,LRU,1",
+            "spare": [
+              {
+                "model": "LRU",
+                "name": "航电模块",
+                "quantity": 1
+              }
+            ],
             "workName": "换件维修"
           }
         ],
@@ -956,12 +1017,22 @@
               "distributionType": "固定值",
               "value": 30
             },
-            "equipment": "检查灯,LT-01,1",
+            "equipment": [
+              {
+                "model": "LT-01",
+                "name": "检查灯",
+                "quantity": 1
+              }
+            ],
             "facility": "定检工位",
-            "personnel": "维修/机体,1",
+            "personnel": [
+              {
+                "professional": "机体",
+                "quantity": 1
+              }
+            ],
             "predecessors": [],
-            "servicePersonnel": "勤务一组,1",
-            "spare": "无",
+            "spare": [],
             "workName": "定检准备"
           },
           {
@@ -974,14 +1045,34 @@
               "min": 55,
               "mode": 70
             },
-            "equipment": "液压测试台,HY-01,1",
+            "equipment": [
+              {
+                "model": "HY-01",
+                "name": "液压测试台",
+                "quantity": 1
+              }
+            ],
             "facility": "定检工位",
-            "personnel": "维修/液压,2",
+            "personnel": [
+              {
+                "professional": "维修人员",
+                "quantity": 1
+              },
+              {
+                "professional": "液压",
+                "quantity": 1
+              }
+            ],
             "predecessors": [
               "PM-001"
             ],
-            "servicePersonnel": "勤务一组,1",
-            "spare": "液压密封件,SRU,1",
+            "spare": [
+              {
+                "model": "SRU",
+                "name": "液压备件",
+                "quantity": 1
+              }
+            ],
             "workName": "液压系统检查"
           }
         ],
@@ -1067,10 +1158,21 @@
           {
             "activityCode": "BA-001",
             "durationMinutes": 5,
-            "equipment": "检测仪,1",
-            "personnel": "机务人员,1",
+            "equipment": [
+              {
+                "model": "检测仪",
+                "name": "检测仪",
+                "quantity": 1
+              }
+            ],
+            "personnel": [
+              {
+                "professional": "机务人员",
+                "quantity": 1
+              }
+            ],
             "predecessors": [],
-            "spare": "",
+            "spare": [],
             "workName": "再次出动准备基本保障活动1"
           }
         ],
@@ -1091,10 +1193,21 @@
           {
             "activityCode": "BA-001",
             "durationMinutes": 30,
-            "equipment": "检测仪,1",
-            "personnel": "机务人员,1",
+            "equipment": [
+              {
+                "model": "检测仪",
+                "name": "检测仪",
+                "quantity": 1
+              }
+            ],
+            "personnel": [
+              {
+                "professional": "机务人员",
+                "quantity": 1
+              }
+            ],
             "predecessors": [],
-            "spare": "",
+            "spare": [],
             "workName": "飞行后检查基本保障活动1"
           }
         ],
@@ -1124,24 +1237,6 @@
       "name": "导入示例项目",
       "summary": "由建模导入 JSON 生成的完整页面测试项目"
     },
-    "airports": [
-      {
-        "distanceToMissionKm": 180,
-        "id": "carrier-deck",
-        "location": "航母战斗群",
-        "name": "航母飞行甲板",
-        "runwayType": "滑跃/弹射甲板",
-        "supportNodeId": "carrier-deck"
-      },
-      {
-        "distanceToMissionKm": 260,
-        "id": "forward-sea-base",
-        "location": "近海前出补给点",
-        "name": "前出海上保障点",
-        "runwayType": "海上保障平台",
-        "supportNodeId": "forward-sea-base"
-      }
-    ],
     "missionAreas": [
       {
         "areaType": "制空",

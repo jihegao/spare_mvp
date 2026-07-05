@@ -4,7 +4,8 @@ import {
   buildBackendProjectJson,
   buildPreviewResultState,
   buildFrontendResultState,
-  createBackendApiClient
+  createBackendApiClient,
+  normalizeProjectJsonBasicMissions
 } from "./api-client.mjs";
 import {
   normalizeAnalysisProjectionPayload,
@@ -30,8 +31,9 @@ import {
 import { buildRunIntent, submitRunIntent } from "./run-intent.mjs";
 import {
   cloneScenario,
-  defaultScenario
-} from "./sim-engine.mjs?v=20260619-task-modeling";
+  defaultScenario,
+  runMonteCarlo
+} from "./sim-engine.mjs";
 import {
   allowedSupportActivityDurationDistributions,
   deleteSupportActivityJobAt,
@@ -58,14 +60,11 @@ import {
   validateModelingImportPackage
 } from "./modeling-import-contract.mjs";
 import {
+  buildModelingImportPreview,
   cloneModelingImportPackage,
   normalizeModelingImportRecord
 } from "./modeling-import-workbench.mjs";
 import { MODELING_IMPORT_DEMO_FIXTURE } from "./modeling-import-demo-fixture.mjs";
-import {
-  MODELING_IMPORT_TEMPLATES,
-  loadModelingImportTemplate
-} from "./modeling-import-templates.mjs";
 import {
   ensurePublishedModelingImportForSampleProject,
   publishModelingImportWithReferencedVersionFallback,
@@ -83,13 +82,9 @@ import {
 
 const app = document.querySelector("#app");
 const groups = groupFeaturePages(FEATURE_PAGES);
-const CONTRACT_BASE = "http://127.0.0.1:8521"; // Mesa 契约服务（见 agent.md「Mesa 后台契约服务」）
 const FORMAL_AIRCRAFT_SUPPORT_MODEL_FAMILY = "aircraft_support_v1";
-const DEFAULT_SAMPLE_MODELING_IMPORT_TEMPLATE_ID = "canonical-platform-case";
 const LAST_BACKEND_RUN_STORAGE_KEY = "spare-mvp:lastBackendRun";
 const AUTH_SESSION_STORAGE_KEY = "spare-mvp:m4Session";
-const MANUAL_PROJECT_DRAFTS_STORAGE_KEY = "spare-mvp:manualProjects:v1";
-const MANUAL_PROJECT_JSON_STORAGE_KEY = "spare-mvp:manualProjectJson:v1";
 const LAST_PUBLISHED_MODELING_IMPORT_STORAGE_KEY = "spare-mvp:lastPublishedModelingImportId";
 const SYSTEM_RUNTIME_CONFIG_KEY = "system-runtime-support";
 const PROJECT_DRAFT_AUTOSAVE_DELAY_MS = 800;
@@ -103,7 +98,6 @@ const DEMO_USERS = [
   { username: "user", role: "普通用户" }
 ];
 const PROJECT_SOURCE = Object.freeze({
-  manual_draft: "manual_draft",
   imported_sample: "imported_sample"
 });
 const DEFAULT_MONTE_CARLO_SWEEP = Object.freeze({
@@ -111,7 +105,45 @@ const DEFAULT_MONTE_CARLO_SWEEP = Object.freeze({
   spareMultipliers: [1],
   supportCapacities: [1]
 });
-let demoProjects = mergeProjectsById(readManualDraftProjectsFromStorage());
+const LITE_MESA_MONTE_CARLO_METRICS = Object.freeze([
+  { key: "mission_success_rate", label: "任务成功率", format: "ratio" },
+  { key: "ready_rate", label: "战备完好率", format: "ratio" },
+  { key: "sortie_rate", label: "出动架次率", format: "ratio" },
+  { key: "spare_fill_rate", label: "备件满足率", format: "ratio" },
+  { key: "mean_transport_delay", label: "平均备件延误时间", format: "number" },
+  { key: "repair_backlog", label: "维修积压", format: "number" }
+]);
+const LITE_MESA_ANALYSIS_DEFINITIONS = Object.freeze({
+  spare_shortfall: {
+    experimentId: "project_baseline_at_current_granularity",
+    title: "备件短板分析",
+    subtitle: "基于当前项目建模数据的短缺事件统计",
+    fixedConfig: [["实验类型", "项目基线"]],
+    metricLabels: ["发生缺件备件", "平均备件延误时间(h)", "最高缺件备件", "因维修延误导致的任务取消次数"]
+  },
+  carry_list: {
+    experimentId: "minimum_carry_list_search",
+    title: "飞机转场携行清单分析",
+    subtitle: "按备件类别独立变化的最小携行清单搜索",
+    fixedConfig: [["实验类型", "最小携行清单搜索"], ["目标函数", "携行备件总量最小"]],
+    metricLabels: ["建议携行总数", "高优先级备件", "置信度目标", "样本数"]
+  },
+  mission_reliability: {
+    experimentId: "project_baseline_at_current_granularity",
+    title: "任务可靠度评估",
+    subtitle: "任务成功概率、出动架次率和目标达成统计",
+    fixedConfig: [["实验类型", "项目基线"], ["统计口径", "会话样本聚合"]],
+    metricLabels: ["任务成功率", "出动架次率", "战备完好率", "任务失败次数"]
+  },
+  downtime_factors: {
+    experimentId: "project_baseline_at_current_granularity",
+    title: "停机因素分析",
+    subtitle: "停机贡献因素排序和保障延误定位",
+    fixedConfig: [["实验类型", "项目基线"]],
+    metricLabels: ["停机因素项", "首要因素", "最高贡献度", "样本数"]
+  }
+});
+let demoProjects = [];
 let deletedDowntimeSnapshotIds = new Set();
 const ANALYSIS_PROJECTION_TYPES = [
   { analysisType: "spare_shortfall", artifactKind: "analysis_projection_spare_shortfall", source_artifact_id: "monte_carlo_base_artifact" },
@@ -202,11 +234,11 @@ const MODELING_DATA_MODULES = [
         label: "基本任务表",
         sourcePage: "基本任务建模",
         fields: [
-          fieldDef("missionId", "任务ID", "basicMission.missionId"),
-          fieldDef("missionName", "任务名称", "basicMission.name"),
-          fieldDef("equipmentType", "装备型号", "basicMission.equipmentType"),
-          fieldDef("durationMinutes", "任务时长", "basicMission.taskDurationMinutes"),
-          fieldDef("successPoint", "成功判据", "basicMission.successPoint")
+          fieldDef("missionId", "任务ID", "basicMissions[].missionId"),
+          fieldDef("missionName", "任务名称", "basicMissions[].name"),
+          fieldDef("equipmentType", "装备型号", "basicMissions[].equipmentType"),
+          fieldDef("durationMinutes", "任务时长", "basicMissions[].taskDurationMinutes"),
+          fieldDef("successPoint", "成功判据", "basicMissions[].successPoint")
         ]
       },
       {
@@ -214,11 +246,16 @@ const MODELING_DATA_MODULES = [
         label: "复合任务表",
         sourcePage: "复合任务建模",
         fields: [
-          fieldDef("taskId", "复合任务ID", "compositeTasks[].id"),
-          fieldDef("taskItems", "任务项", "compositeTasks[].taskItems"),
-          fieldDef("priority", "优先级", "compositeTasks[].priority"),
-          fieldDef("firstWaveTime", "首波时间", "compositeTasks[].firstWaveTime"),
-          fieldDef("recoveryTime", "回收时间", "compositeTasks[].recoveryTime")
+          fieldDef("basicTaskName", "基本任务名称", "compositeTasks[].taskItems[].basicTaskName"),
+          fieldDef("groupName", "编队名称", "compositeTasks[].taskItems[].groupName"),
+          fieldDef("firstWaveTime", "出发时间（HH：MM）", "compositeTasks[].taskItems[].firstWaveTime"),
+          fieldDef("priority", "任务优先级（1最高）", "compositeTasks[].taskItems[].priority"),
+          fieldDef("dailyRepeatCount", "单日重复次数", "compositeTasks[].taskItems[].dailyRepeatCount"),
+          fieldDef("intervalHours", "间隔小时数", "compositeTasks[].taskItems[].intervalHours"),
+          fieldDef("equipmentType", "装备类型", "compositeTasks[].taskItems[].equipmentType"),
+          fieldDef("taskDurationMinutes", "任务时长", "compositeTasks[].taskItems[].taskDurationMinutes"),
+          fieldDef("equipmentQuantity", "要求装备数量", "compositeTasks[].taskItems[].equipmentQuantity"),
+          fieldDef("minRequiredSystems", "最小装备数量", "compositeTasks[].taskItems[].minRequiredSystems")
         ]
       },
       {
@@ -398,8 +435,12 @@ function mergeProjectsById(projects) {
       baseCode: project.baseCode || "NB",
       updatedAt: normalizeProjectUpdatedAt(project.updatedAt),
       summary: project.summary || "未设置项目说明。",
-      sourceKind: Object.values(PROJECT_SOURCE).includes(project.sourceKind) ? project.sourceKind : PROJECT_SOURCE.manual_draft,
+      sourceKind: Object.values(PROJECT_SOURCE).includes(project.sourceKind) ? project.sourceKind : PROJECT_SOURCE.imported_sample,
       sourceImportId: project.sourceImportId || "",
+      isTemplate: isProjectDataTemplate(project),
+      projectBackendId: project.projectBackendId
+        || project.project_id
+        || (String(project.id).startsWith("project-") ? String(project.id) : `project-${project.id}`)
     };
     if (!byId.has(normalized.id)) {
       byId.set(normalized.id, normalized);
@@ -422,6 +463,7 @@ function toProjectFromBackendApiEntry(entry) {
     updatedAt: normalizeProjectUpdatedAt(entry.updated_at),
     sourceKind: PROJECT_SOURCE.imported_sample,
     sourceImportId: entry.source_import_id || entry.sourceImportId || "",
+    isTemplate: Boolean(entry.is_template || entry.isTemplate),
     scenarioId: entry.scenario_id || "",
     projectBackendId: projectId
   };
@@ -432,74 +474,6 @@ function normalizeProjectUpdatedAt(updatedAt) {
     return updatedAt.slice(0, 10);
   }
   return new Date().toISOString().slice(0, 10);
-}
-
-function readManualDraftProjectsFromStorage() {
-  try {
-    const raw = localStorage.getItem(MANUAL_PROJECT_DRAFTS_STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return mergeProjectsById(
-      parsed
-        .map((project) => ({
-          ...project,
-          sourceKind: PROJECT_SOURCE.manual_draft
-        }))
-        .filter((project) => project.id)
-    );
-  } catch {
-    return [];
-  }
-}
-
-function persistManualDraftProjects() {
-  const manualDrafts = demoProjects
-    .filter((project) => project.sourceKind === PROJECT_SOURCE.manual_draft)
-    .map((project) => ({
-      id: project.id,
-      name: project.name,
-      baseCode: project.baseCode,
-      summary: project.summary,
-      updatedAt: project.updatedAt,
-      sourceKind: PROJECT_SOURCE.manual_draft
-    }));
-  localStorage.setItem(MANUAL_PROJECT_DRAFTS_STORAGE_KEY, JSON.stringify(manualDrafts));
-}
-
-function readManualProjectJsonDraftsFromStorage() {
-  try {
-    const raw = localStorage.getItem(MANUAL_PROJECT_JSON_STORAGE_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
-    return Object.fromEntries(
-      Object.entries(parsed)
-        .filter(([projectId, projectJson]) => projectId && projectJson && typeof projectJson === "object" && !Array.isArray(projectJson))
-        .map(([projectId, projectJson]) => [projectId, cloneScenario(projectJson)])
-    );
-  } catch {
-    return {};
-  }
-}
-
-function readManualProjectJsonDraft(projectId) {
-  const drafts = readManualProjectJsonDraftsFromStorage();
-  return drafts[projectId] ? cloneScenario(drafts[projectId]) : null;
-}
-
-function persistManualProjectJsonDraft(projectId, projectJson) {
-  if (!projectId || !projectJson || typeof projectJson !== "object") return;
-  const drafts = readManualProjectJsonDraftsFromStorage();
-  drafts[projectId] = cloneScenario(projectJson);
-  localStorage.setItem(MANUAL_PROJECT_JSON_STORAGE_KEY, JSON.stringify(drafts));
-}
-
-function deleteManualProjectJsonDraft(projectId) {
-  const drafts = readManualProjectJsonDraftsFromStorage();
-  if (!(projectId in drafts)) return;
-  delete drafts[projectId];
-  localStorage.setItem(MANUAL_PROJECT_JSON_STORAGE_KEY, JSON.stringify(drafts));
 }
 
 function readLastPublishedModelingImportId() {
@@ -520,6 +494,7 @@ function persistLastPublishedModelingImportId(importId) {
 let scenario = cloneScenario(defaultScenario);
 let experimentPlanDraft = cloneScenario(scenario);
 let experimentPlanBranchActive = false;
+let selectedScenarioCompositionPath = "";
 let lastRunExperimentPlanProjectJson = null;
 let selectedMonteCarloExperimentId = "";
 let monteCarloExperiments = createDefaultMonteCarloExperiments();
@@ -530,17 +505,33 @@ let currentAnalysisResults = createEmptyCurrentAnalysisResults(currentAnalysisPr
 let currentAnalysisResultLoaded = {};
 let currentAnalysisResultLoadInFlight = {};
 let { previewSingleResult: singleResult, previewMonteCarloResult: monteCarloResult } = buildPreviewResultState(scenario);
+let liteMesaMonteCarloSettings = {
+  samples: Number(scenario.experiment?.samples || 27),
+  seed: Number(scenario.experiment?.seed || 20260621)
+};
+let liteMesaMonteCarloResult = null;
+let liteMesaMonteCarloStatus = "设置样本量和随机种子后运行分析。";
+let liteMesaAnalysisSettings = createDefaultLiteMesaAnalysisSettings();
+let liteMesaAnalysisResults = {};
 let rmsAllocationProject = createDemoRmsAllocationProject();
 let rmsAllocationPlan = createDefaultRmsAllocationPlan(rmsAllocationProject);
 let rmsAllocationResult = calculateRmsAllocation(rmsAllocationPlan, rmsAllocationProject);
 let rmsEquipmentImportStatus = "当前装备树为 RMS 分配工作台独立数据，未写入项目建模。";
 let modelingImportPackage = cloneModelingImportPackage(MODELING_IMPORT_DEMO_FIXTURE);
 let modelingImportPublishedPackage = null;
+
+function scenarioEquipmentModel() {
+  return scenario.equipment?.model || "";
+}
 let modelingImportValidation = cloneModelingImportPackage(MODELING_IMPORT_DEMO_FIXTURE.validation);
 let modelingImportCompileResult = null;
 let modelingImportStatus = "样例导入包已加载";
 let modelingImportSaved = false;
-let selectedModelingImportTemplateId = DEFAULT_SAMPLE_MODELING_IMPORT_TEMPLATE_ID;
+let publishedModelingImportPackages = [];
+let publishedModelingImportPackagesLoaded = false;
+let publishedModelingImportPackagesLoading = false;
+let selectedPublishedModelingImportId = readLastPublishedModelingImportId();
+let publishedImportStatus = "已发布导入包尚未加载";
 let savedProject = null;
 let modelingSnapshot = null;
 let experimentPlan = null;
@@ -571,6 +562,7 @@ let visualizationReplayIndex = 0;
 let visualizationReplayPlaying = false;
 let visualizationReplayTimer = null;
 let visualizationReplayStatus = "M9 离线状态序列尚未加载";
+let independentMesaVisualizationInFlight = false;
 let visualizationStreamSource = null;
 let visualizationStreamState = {
   runId: "",
@@ -581,6 +573,7 @@ let visualizationStreamState = {
   artifactId: ""
 };
 let visualizationBackendControlStatus = "M9.3 后端运行控制尚未触发";
+let visualSupportAirportId = "";
 let backendApiStatus = "离线演示";
 let formalRunSubmitInFlight = false;
 let systemUserEditor = null;
@@ -589,7 +582,13 @@ let systemUsersLoaded = false;
 let isLoggedIn = false;
 let currentUser = DEMO_USERS[2];
 let currentProject = demoProjects[0] || null;
-let projectListStatus = "可添加本地草稿，也可从已发布导入包生成示例项目。";
+let projectListStatus = "请选择项目模板创建项目。";
+let selectedProjectTemplateProjectId = "";
+let selectedProjectDataProjectId = "";
+let selectedProjectDataProjectJson = null;
+let selectedProjectDataProjectJsonId = "";
+let projectDataProjectJsonLoading = false;
+let projectDataManagementStatus = "选择项目查看 Project JSON。";
 let projectEditorDraft = null;
 let selectedRoute = readRouteFromHash() || DEFAULT_ROUTE;
 let selectedFeatureId = readFeatureIdFromHash() || DEFAULT_FEATURE_ID;
@@ -605,7 +604,7 @@ let selectedEquipmentComponentIndex = 0;
 let selectedEquipmentNodeKey = "";
 let selectedBasicMissionKey = "primary";
 let selectedBasicMissionTreeLevel = "mission";
-let selectedBasicMissionEquipmentType = scenario.basicMission.equipmentType || scenario.equipment.model || "";
+let selectedBasicMissionEquipmentType = primaryBasicMissionRecord().equipmentType || scenarioEquipmentModel() || "";
 let selectedBasicMissionPhaseIndexes = new Set();
 let selectedCompositeTaskId = "";
 let selectedCombatUnitMemberIndex = 0;
@@ -705,7 +704,7 @@ function supportActivityPlanForPage(page, activity) {
   const type = page.name;
   const aircraftModels = wholeMachineModels();
   const activityName = activity?.activityName || type;
-  const activityModel = supportActivityAircraftModel(activity) || scenario.equipment.model || "";
+  const activityModel = supportActivityAircraftModel(activity) || scenarioEquipmentModel() || "";
   if (type.includes("使用")) {
     const planNodesByModel = new Map();
     for (const model of aircraftModels.length ? aircraftModels : [activityModel].filter(Boolean)) {
@@ -1353,22 +1352,25 @@ function bindEvents() {
       return;
     }
 
-    const addProjectButton = event.target.closest("[data-project-add]");
-    if (addProjectButton) {
-      addDemoProject();
+    const createFromTemplateButton = event.target.closest("[data-project-create-from-template]");
+    if (createFromTemplateButton) {
+      createProjectFromSelectedProjectTemplate().finally(() => render());
+      return;
+    }
+
+    const projectDataProjectButton = event.target.closest("[data-project-data-project-option]");
+    if (projectDataProjectButton) {
+      selectProjectDataProject(projectDataProjectButton.dataset.projectDataProjectOption);
       render();
       return;
     }
 
-    const createFromImportButton = event.target.closest("[data-project-create-from-import]");
-    if (createFromImportButton) {
-      createSampleProjectFromPublishedImport(currentPublishedModelingImportId()).finally(() => render());
-      return;
-    }
-
-    const importProjectButton = event.target.closest("[data-project-import]");
-    if (importProjectButton) {
-      openProjectJsonImportPicker(importProjectButton.dataset.projectImport);
+    const projectTemplateAction = event.target.closest("[data-project-template-action]");
+    if (projectTemplateAction) {
+      handleProjectTemplateAction(
+        projectTemplateAction.dataset.projectTemplateAction,
+        projectTemplateAction.dataset.projectId
+      ).finally(() => render());
       return;
     }
 
@@ -1387,8 +1389,7 @@ function bindEvents() {
 
     const saveProjectEditButton = event.target.closest("[data-project-edit-save]");
     if (saveProjectEditButton) {
-      saveProjectEditorDraft();
-      render();
+      saveProjectEditorDraft().finally(() => render());
       return;
     }
 
@@ -1448,6 +1449,20 @@ function bindEvents() {
       return;
     }
 
+    const liteMesaMonteCarloButton = event.target.closest("[data-lite-mesa-action='run']");
+    if (liteMesaMonteCarloButton) {
+      runLiteMesaMonteCarloAnalysis().finally(() => render());
+      render();
+      return;
+    }
+
+    const liteMesaAnalysisButton = event.target.closest("[data-lite-mesa-analysis-action='run']");
+    if (liteMesaAnalysisButton) {
+      runLiteMesaAnalysisPage(getFeaturePageById(selectedFeatureId)).finally(() => render());
+      render();
+      return;
+    }
+
     const mesaViewButton = event.target.closest("[data-mesa-view]");
     if (mesaViewButton) {
       selectedMesaView = mesaViewButton.dataset.mesaView;
@@ -1480,8 +1495,7 @@ function bindEvents() {
     const modelingImportActionButton = event.target.closest("[data-modeling-import-action]");
     if (modelingImportActionButton) {
       handleModelingImportAction(modelingImportActionButton.dataset.modelingImportAction, {
-        importId: modelingImportActionButton.dataset.modelingImportId,
-        templateId: modelingImportActionButton.dataset.modelingImportTemplate || selectedModelingImportTemplateId
+        importId: modelingImportActionButton.dataset.modelingImportId
       }).finally(() => render());
       return;
     }
@@ -1552,6 +1566,32 @@ function bindEvents() {
       return;
     }
 
+    const scenarioOverrideAddButton = event.target.closest("[data-scenario-override-add]");
+    if (scenarioOverrideAddButton) {
+      scenarioCompositionDraft().overrides.push({ path: "", valueType: "string", value: "", label: "" });
+      experimentPlanBranchActive = true;
+      render();
+      return;
+    }
+
+    const scenarioOverrideRemoveButton = event.target.closest("[data-scenario-override-remove]");
+    if (scenarioOverrideRemoveButton) {
+      const index = Number(scenarioOverrideRemoveButton.dataset.scenarioOverrideRemove);
+      if (Number.isInteger(index) && index >= 0) {
+        scenarioCompositionDraft().overrides.splice(index, 1);
+        experimentPlanBranchActive = true;
+      }
+      render();
+      return;
+    }
+
+    const scenarioModelingPathButton = event.target.closest("[data-scenario-modeling-path]");
+    if (scenarioModelingPathButton) {
+      selectedScenarioCompositionPath = scenarioModelingPathButton.dataset.scenarioModelingPath || "";
+      render();
+      return;
+    }
+
     const m7RunArtifactButton = event.target.closest("[data-action^='m7-']");
     if (m7RunArtifactButton) {
       handleM7RunArtifactAction(m7RunArtifactButton).finally(() => render());
@@ -1607,57 +1647,6 @@ function bindEvents() {
       return;
     }
 
-    const monteCarloExperimentButton = event.target.closest("[data-mc-experiment-action]");
-    if (monteCarloExperimentButton) {
-      const page = getFeaturePageById(selectedFeatureId);
-      const action = monteCarloExperimentButton.dataset.mcExperimentAction;
-      if (action === "add") {
-        const experiment = createMonteCarloExperiment(page.module);
-        monteCarloExperiments = [...monteCarloExperiments, experiment];
-        selectedMonteCarloExperimentId = experiment.id;
-        selectedFeatureId = getMonteCarloExperimentEditFeatureId(page.module);
-      } else if (action === "detail") {
-        selectedMonteCarloExperimentId = monteCarloExperimentButton.dataset.mcExperimentId || selectedMonteCarloExperimentId;
-        selectedFeatureId = getMonteCarloExperimentDetailFeatureId(page.module);
-      } else if (action === "edit") {
-        selectedMonteCarloExperimentId = monteCarloExperimentButton.dataset.mcExperimentId || selectedMonteCarloExperimentId;
-        selectedFeatureId = getMonteCarloExperimentEditFeatureId(page.module);
-      } else if (action === "list") {
-        selectedFeatureId = getMonteCarloExperimentListFeatureId(page.module);
-      }
-      createExperimentPlanBranchFromCurrentProject();
-      location.hash = `feature=${selectedFeatureId}`;
-      render();
-      return;
-    }
-
-    const monteCarloStartButton = event.target.closest("[data-mc-action='start']");
-    if (monteCarloStartButton) {
-      if (formalRunSubmitInFlight) {
-        backendApiStatus = "已有正式运行正在提交，请等待当前请求返回";
-        render();
-        return;
-      }
-      const page = getFeaturePageById(selectedFeatureId);
-      const experiment = currentMonteCarloExperiment(page.module);
-      if (!experiment) {
-        backendApiStatus = "暂无蒙特卡洛实验数据，请先导入并发布建模 JSON，或在当前页面创建数据。";
-        render();
-        return;
-      }
-      selectedMonteCarloExperimentId = experiment.id;
-      monteCarloExperiments = monteCarloExperiments.map((item) => item.id === experiment.id
-        ? { ...item, status: "运行中", progress: 35, runType: "monte_carlo", runId: backendRun?.run_id || item.runId }
-        : item);
-      experimentRunStatus = "运行中";
-      startMonteCarloRunThroughApi({ monteCarloExperimentId: experiment.mc_experiment_id });
-      selectedRoute = "workbench";
-      selectedFeatureId = getMonteCarloExperimentDetailFeatureId(page.module);
-      location.hash = `feature=${selectedFeatureId}`;
-      render();
-      return;
-    }
-
     const analysisActionButton = event.target.closest("[data-analysis-action]");
     if (analysisActionButton) {
       const page = getFeaturePageById(selectedFeatureId);
@@ -1689,6 +1678,17 @@ function bindEvents() {
       return;
     }
 
+    const experimentPlanAddButton = event.target.closest("[data-experiment-plan-add]");
+    if (experimentPlanAddButton) {
+      const page = getFeaturePageById(selectedFeatureId);
+      openNewExperimentPlanEditor();
+      selectedRoute = "workbench";
+      selectedFeatureId = getPlanListFeatureId(page.module);
+      location.hash = `feature=${selectedFeatureId}`;
+      render();
+      return;
+    }
+
     const experimentPlanEditButton = event.target.closest("[data-experiment-plan-edit]");
     if (experimentPlanEditButton) {
       const page = getFeaturePageById(selectedFeatureId);
@@ -1713,8 +1713,12 @@ function bindEvents() {
     if (featureButton) {
       selectedRoute = "workbench";
       selectedFeatureId = featureButton.dataset.featureId;
-      if (getFeaturePageById(selectedFeatureId).component === "experiment-plan-management") {
+      const selectedPage = getFeaturePageById(selectedFeatureId);
+      if (selectedPage.component === "experiment-plan-management") {
         experimentPlanManagementMode = "list";
+      }
+      if (selectedPage.component === "lite-mesa-monte-carlo-analysis" && selectedPage.tertiary === "蒙特卡洛实验") {
+        syncLiteMesaSettingsFromMonteCarloExperiment(currentMonteCarloExperiment(selectedPage.module));
       }
       createExperimentPlanBranchFromCurrentProject();
       location.hash = `feature=${selectedFeatureId}`;
@@ -1749,6 +1753,13 @@ function bindEvents() {
   });
 
   app.addEventListener("change", async (event) => {
+    const mesaSupportAirportSelect = event.target.closest("[data-mesa-support-airport]");
+    if (mesaSupportAirportSelect) {
+      visualSupportAirportId = mesaSupportAirportSelect.value;
+      render();
+      return;
+    }
+
     const rmsEquipmentRootSelect = event.target.closest("[data-rms-equipment-root]");
     if (rmsEquipmentRootSelect) {
       setRmsEquipmentRoot(rmsEquipmentRootSelect.value);
@@ -1785,10 +1796,9 @@ function bindEvents() {
       return;
     }
 
-    const modelingImportTemplateSelect = event.target.closest("[data-modeling-import-template]");
-    if (modelingImportTemplateSelect) {
-      selectedModelingImportTemplateId = modelingImportTemplateSelect.value;
-      modelingImportStatus = `已选择导入模板：${modelingImportTemplateLabel(selectedModelingImportTemplateId)}`;
+    const projectTemplateSelect = event.target.closest("[data-project-template-select]");
+    if (projectTemplateSelect) {
+      updateSelectedProjectTemplateProject(projectTemplateSelect.value);
       render();
       return;
     }
@@ -1801,18 +1811,19 @@ function bindEvents() {
       return;
     }
 
-    const mesaRunSelect = event.target.closest("[data-mesa-run-select]");
-    if (mesaRunSelect) {
-      stopVisualizationRunStream("已切换 run，M9.2 在线订阅已停止");
-      visualizationSelectedRunId = mesaRunSelect.value;
-      if (visualizationStateSeries && visualizationStateSeries.run_id !== visualizationSelectedRunId) {
-        clearVisualizationStateSeries("", "已切换 run，需重新加载对应 M9 state_series artifact");
-      }
-      if (visualizationSelectedRunId) {
-        await loadVisualizationReplayForRun(visualizationSelectedRunId);
-      } else {
-        visualizationReplayStatus = "请选择已完成 run 加载 M9 回放";
-      }
+    const liteMesaMonteCarloInput = event.target.closest("[data-lite-mesa-field]");
+    if (liteMesaMonteCarloInput) {
+      updateLiteMesaMonteCarloSetting(liteMesaMonteCarloInput.dataset.liteMesaField, parseInput(liteMesaMonteCarloInput));
+      return;
+    }
+
+    const liteMesaAnalysisInput = event.target.closest("[data-lite-mesa-analysis-field]");
+    if (liteMesaAnalysisInput) {
+      updateLiteMesaAnalysisSetting(
+        getFeaturePageById(selectedFeatureId),
+        liteMesaAnalysisInput.dataset.liteMesaAnalysisField,
+        parseInput(liteMesaAnalysisInput)
+      );
       render();
       return;
     }
@@ -2048,6 +2059,13 @@ function bindEvents() {
       return;
     }
 
+    const currentExperimentPlanSelect = event.target.closest("[data-current-experiment-plan]");
+    if (currentExperimentPlanSelect) {
+      selectCurrentExperimentPlan(currentExperimentPlanSelect.value);
+      render();
+      return;
+    }
+
     const supportActivitySelectAll = event.target.closest("[data-support-activity-job-select-all]");
     if (supportActivitySelectAll) {
       toggleAllSupportActivityJobSelection(supportActivitySelectAll.dataset.supportActivityJobSelectAll, supportActivitySelectAll.checked);
@@ -2118,29 +2136,65 @@ function bindEvents() {
       return;
     }
 
-    const monteCarloExperimentInput = event.target.closest("[data-mc-experiment-field]");
-    if (monteCarloExperimentInput) {
-      const page = getFeaturePageById(selectedFeatureId);
-      const experiment = currentMonteCarloExperiment(page.module);
-      if (!experiment) return;
-      const parsedValue = parseInput(monteCarloExperimentInput);
-      selectedMonteCarloExperimentId = experiment.id;
-      monteCarloExperiments = monteCarloExperiments.map((item) => item.id === experiment.id
-        ? { ...item, [monteCarloExperimentInput.dataset.mcExperimentField]: parsedValue }
-        : item);
-      if (monteCarloExperimentInput.dataset.experimentPlanPath) {
-        experimentPlanBranchActive = true;
-        setPath(experimentPlanDraft, monteCarloExperimentInput.dataset.experimentPlanPath, parsedValue);
-        updatePreviewResultsThroughApiClient(experimentPlanDraft);
-      }
-      render();
-      return;
-    }
-
     const experimentPlanInput = event.target.closest("[data-experiment-plan-path]");
     if (experimentPlanInput) {
       experimentPlanBranchActive = true;
       setPath(experimentPlanDraft, experimentPlanInput.dataset.experimentPlanPath, parseInput(experimentPlanInput));
+      updatePreviewResultsThroughApiClient(experimentPlanDraft);
+      render();
+      return;
+    }
+
+    const experimentSeedPolicySelect = event.target.closest("[data-experiment-seed-policy]");
+    if (experimentSeedPolicySelect) {
+      const policy = experimentPlanSeedPolicy();
+      policy.mode = experimentSeedPolicySelect.value === "random" ? "random" : "fixed";
+      if (policy.mode === "random") {
+        policy.baseSeed = positiveExperimentSeed(policy.baseSeed || generatedExperimentSeed());
+      }
+      experimentPlanDraft.seedPolicy = policy;
+      experimentPlanDraft.experiment = {
+        ...(experimentPlanDraft.experiment || {}),
+        seed: policy.baseSeed
+      };
+      experimentPlanBranchActive = true;
+      updatePreviewResultsThroughApiClient(experimentPlanDraft);
+      render();
+      return;
+    }
+
+    const experimentSeedBaseInput = event.target.closest("[data-experiment-seed-base]");
+    if (experimentSeedBaseInput) {
+      const policy = experimentPlanSeedPolicy();
+      policy.baseSeed = positiveExperimentSeed(parseInput(experimentSeedBaseInput));
+      experimentPlanDraft.seedPolicy = policy;
+      experimentPlanDraft.experiment = {
+        ...(experimentPlanDraft.experiment || {}),
+        seed: policy.baseSeed
+      };
+      experimentPlanBranchActive = true;
+      updatePreviewResultsThroughApiClient(experimentPlanDraft);
+      render();
+      return;
+    }
+
+    const scenarioOverrideInput = event.target.closest("[data-scenario-override-path]")
+      || event.target.closest("[data-scenario-override-value-type]")
+      || event.target.closest("[data-scenario-override-value]")
+      || event.target.closest("[data-scenario-override-label]");
+    if (scenarioOverrideInput) {
+      updateScenarioOverrideInput(scenarioOverrideInput);
+      experimentPlanBranchActive = true;
+      updatePreviewResultsThroughApiClient(experimentPlanDraft);
+      render();
+      return;
+    }
+
+    const selectedScenarioOverrideInput = event.target.closest("[data-scenario-selected-override-value]")
+      || event.target.closest("[data-scenario-selected-override-value-type]");
+    if (selectedScenarioOverrideInput) {
+      updateSelectedScenarioOverrideInput(selectedScenarioOverrideInput);
+      experimentPlanBranchActive = true;
       updatePreviewResultsThroughApiClient(experimentPlanDraft);
       render();
       return;
@@ -2310,8 +2364,16 @@ function render() {
     app.innerHTML = renderProjectListPage();
     return;
   }
+  if (!currentProject) {
+    selectedRoute = "projects";
+    location.hash = "route=projects";
+    projectListStatus = "请选择项目模板创建项目";
+    app.innerHTML = renderProjectListPage();
+    return;
+  }
   const page = getFeaturePageById(selectedFeatureId);
   selectedFeatureId = page.id;
+  normalizeSelectedFeatureHash(selectedFeatureId);
   app.innerHTML = `
     <header class="topbar">
       <div class="left">
@@ -2370,10 +2432,9 @@ function renderProjectMenu() {
 }
 
 function renderProjectListPage() {
-  const latestImportId = currentPublishedModelingImportId();
-  const createFromImportLabel = latestImportId
-    ? "从当前发布快照生成示例项目"
-    : "从导入数据生成示例项目";
+  const templateProjects = projectTemplateOptions();
+  const selectedTemplateProject = selectedProjectTemplateProject();
+  const hasTemplateProjects = templateProjects.length > 0;
   return `
     <header class="topbar">
       <div class="left">
@@ -2393,11 +2454,17 @@ function renderProjectListPage() {
         <div>
           <h2>项目列表</h2>
           <p>${htmlEscape(projectListStatus)}</p>
-          <p class="inline-status">可从已发布建模导入包生成示例项目，或添加本地 Project draft。${latestImportId ? `当前发布快照：${htmlEscape(latestImportId)}` : ""}</p>
+          <p class="inline-status">请选择项目模板创建项目。${selectedTemplateProject ? `当前模板：${htmlEscape(selectedTemplateProject.name)}。` : "暂无项目模板，请先在项目数据管理设为模板。"}</p>
         </div>
         <div class="toolbar-row compact-actions">
-          <button type="button" class="btn-secondary" data-project-create-from-import>${htmlEscape(createFromImportLabel)}</button>
-          <button type="button" class="btn-primary" data-project-add>添加</button>
+          <select data-project-template-select aria-label="选择项目模板" ${hasTemplateProjects ? "" : "disabled"}>
+            ${hasTemplateProjects
+              ? templateProjects.map((template) => `
+              <option value="${htmlEscape(projectDataProjectId(template))}"${projectDataProjectId(template) === selectedProjectTemplateProjectId ? " selected" : ""}>${htmlEscape(projectTemplateOptionLabel(template))}</option>
+            `).join("")
+              : `<option value="">暂无项目模板</option>`}
+          </select>
+          <button type="button" class="btn-secondary" data-project-create-from-template ${hasTemplateProjects ? "" : "disabled"}>从选中项目模板创建项目</button>
         </div>
       </section>
       <section class="project-grid">
@@ -2427,7 +2494,6 @@ function renderProjectListPage() {
                 <button type="button" data-enter-workbench data-project-id="${project.id}">进入</button>
                 <button type="button" data-project-edit="${project.id}">编辑</button>
                 <button type="button" class="btn-danger" data-project-delete="${project.id}">删除</button>
-                <button type="button" data-project-import="${htmlEscape(project.id)}">导入</button>
                 <button type="button" data-project-export="${htmlEscape(project.id)}">导出</button>
               </span>
             </div>
@@ -2435,7 +2501,7 @@ function renderProjectListPage() {
         `).join("") : `
           <div class="empty-state">
             <strong>暂无项目</strong>
-            <p>请添加本地草稿，或从已发布建模导入包生成示例项目。</p>
+            <p>请选择项目模板创建项目。</p>
           </div>
         `}
       </section>
@@ -2445,18 +2511,14 @@ function renderProjectListPage() {
 
 function projectSourceBadge(project) {
   const labels = {
-    [PROJECT_SOURCE.imported_sample]: "导入示例",
-    [PROJECT_SOURCE.manual_draft]: "本地草稿"
+    [PROJECT_SOURCE.imported_sample]: "模板项目"
   };
-  return `<span class="status-badge ${project.sourceKind === PROJECT_SOURCE.imported_sample ? "success" : ""}">${htmlEscape(labels[project.sourceKind] || labels[PROJECT_SOURCE.manual_draft])}</span>`;
+  return `<span class="status-badge success">${htmlEscape(labels[project.sourceKind] || labels[PROJECT_SOURCE.imported_sample])}</span>`;
 }
 
 function projectSourceHelpText(project) {
   if (project.sourceKind === PROJECT_SOURCE.imported_sample) {
-    return `来自已发布建模导入包 ${project.sourceImportId || "未知"}，可用于正式后端测试。`;
-  }
-  if (project.sourceKind === PROJECT_SOURCE.manual_draft) {
-    return "本地新增 Project draft；保存或运行前不会替代已发布导入示例。";
+    return "来自后端 Project 数据，可用于正式后端测试。";
   }
   return "项目来源待确认。";
 }
@@ -2499,9 +2561,11 @@ function renderSystemManagementNavigation(activePage, secondaryGroups) {
 }
 
 function renderFeaturePage(page) {
-  ensureCurrentAnalysisResultLoaded(page);
+  if (page.component === "analysis") {
+    ensureCurrentAnalysisResultLoaded(page);
+  }
   const siblingPages = groups[page.module][page.secondary][page.tertiary];
-  const currentContext = renderCurrentContext(page);
+  const currentContext = shouldEmbedExperimentPlanContextInComponent(page) ? "" : renderCurrentContext(page);
   return `
     <section class="deck-modeling-content feature-page">
       ${currentContext ? `<div class="page-head">${currentContext}</div>` : ""}
@@ -2531,16 +2595,61 @@ function renderProjectDraftToolbar(page) {
 
 function renderCurrentContext(page) {
   if (!shouldShowCurrentContext(page)) return "";
+  if (shouldUseExperimentPlanContextDropdown(page)) {
+    return renderExperimentPlanContextDropdown(page);
+  }
+  const context = currentContextSummary();
   return `
     <button class="page-head-current-context" type="button" data-plan-list-link>
-      <span>当前方案</span>
-      <strong>${htmlEscape(scenario.experiment.name)}</strong>
+      <span>${htmlEscape(context.label)}</span>
+      <strong>${htmlEscape(context.name)}</strong>
     </button>
   `;
 }
 
 function shouldShowCurrentContext(page) {
-  return page.module !== SYSTEM_SUPPORT_MODULE_NAME && page.secondary !== "仿真建模";
+  return page.component !== "experiment-plan-management"
+    && page.module !== SYSTEM_SUPPORT_MODULE_NAME
+    && page.secondary !== "仿真建模";
+}
+
+function shouldUseExperimentPlanContextDropdown(page) {
+  return isVisualSimulationPage(page)
+    || page.component === "lite-mesa-monte-carlo-analysis"
+    || page.component === "lite-mesa-analysis";
+}
+
+function shouldEmbedExperimentPlanContextInComponent(page) {
+  return isVisualSimulationPage(page)
+    || page.component === "lite-mesa-monte-carlo-analysis"
+    || page.component === "lite-mesa-analysis";
+}
+
+function renderExperimentPlanContextDropdown(page) {
+  ensureExperimentPlanListLoaded();
+  const options = experimentPlanContextOptions(page);
+  const selectedKey = selectedExperimentPlanContextKey(options);
+  const status = backendExperimentPlansLoaded
+    ? `${options.length} 个方案`
+    : "方案列表加载中";
+  return `
+    <label class="page-head-current-context experiment-plan-context-select">
+      <span>实验方案</span>
+      <select data-current-experiment-plan>
+        ${options.map((option) => `<option value="${htmlEscape(option.key)}" ${option.key === selectedKey ? "selected" : ""}>${htmlEscape(option.name)}</option>`).join("")}
+      </select>
+      <small>${htmlEscape(status)}</small>
+    </label>
+  `;
+}
+
+function currentContextSummary() {
+  const experimentName = String(scenario.experiment?.name || experimentPlanDraft?.experiment?.name || "").trim();
+  if (experimentName) {
+    return { label: "当前方案", name: experimentName };
+  }
+  const projectName = String(currentProject?.name || scenario.projectInfo?.name || scenario.scenarioId || "").trim();
+  return { label: "当前项目", name: projectName || "未选择项目" };
 }
 
 function renderFourthLevelTabs(page, siblingPages) {
@@ -2585,12 +2694,9 @@ function renderMainComponent(page) {
     fixed,
     pct
   });
-  if (page.component === "monte-carlo-experiment-list") return renderMonteCarloExperimentList(page);
-  if (page.component === "monte-carlo-experiment-editor") return renderMonteCarloExperimentEditor(page);
-  if (page.component === "monte-carlo-experiment-detail") return renderMonteCarloExperimentDetail(page);
-  if (page.component === "monte-carlo-config") return renderMonteCarloConfig();
+  if (page.component === "lite-mesa-monte-carlo-analysis") return renderLiteMesaMonteCarloAnalysis(page);
+  if (page.component === "lite-mesa-analysis") return renderLiteMesaAnalysisPage(page);
   if (page.component === "analysis") return renderAnalysis(page);
-  if (page.component === "scenario-switch") return renderScenarioSwitch();
   if (page.name === "内置场景") return renderBuiltInScenario(page);
   if (page.name === "基本作战单元建模") return renderCombatUnitModeling(page);
   if (page.name === "基本任务建模") return renderBasicMissionModeling(page);
@@ -2603,10 +2709,11 @@ function renderMainComponent(page) {
 function createExperimentPlanBranchFromCurrentProject() {
   const page = getFeaturePageById(selectedFeatureId);
   const isExperimentPlanManagementEditor = page.component === "experiment-plan-management" && experimentPlanManagementMode === "editor";
-  if (!isExperimentPlanManagementEditor && !["experiment-plan-editor", "experiment-form", "monte-carlo-config", "monte-carlo-experiment-editor"].includes(page.component)) return;
+  if (!isExperimentPlanManagementEditor && !["experiment-plan-editor", "experiment-form"].includes(page.component)) return;
   if (experimentPlanBranchActive) return;
   experimentPlanDraft = cloneScenario(scenario);
   ensureMonteCarloSweepDefaults(experimentPlanDraft);
+  ensureExperimentPlanDraftDefaults(experimentPlanDraft);
   experimentPlanBranchActive = true;
   updatePreviewResultsThroughApiClient(experimentPlanDraft);
 }
@@ -2658,10 +2765,11 @@ function stableTreeNodeId(label, meta = "") {
 function basicMissionTreeNodes() {
   const tasks = editableBasicMissionRecords();
   const grouped = new Map();
+  const primary = primaryBasicMissionRecord();
   for (const record of tasks) {
     const task = record.task;
-    const equipmentType = task.equipmentType || scenario.basicMission.equipmentType || scenario.equipment.model || "未指定飞机类型";
-    const taskName = task.name || task.basicTaskName || task.taskName || scenario.basicMission.name || "未命名基本任务";
+    const equipmentType = task.equipmentType || primary.equipmentType || scenarioEquipmentModel() || "未指定飞机类型";
+    const taskName = task.name || task.basicTaskName || task.taskName || primary.name || "未命名基本任务";
     const taskNo = task.taskNo || task.basicTaskId || task.id || "";
     const existing = grouped.get(equipmentType) || [];
     if (!existing.some((item) => item.label === taskName && item.meta === taskNo)) {
@@ -2696,19 +2804,23 @@ function basicMissionTreeNodes() {
 }
 
 function editableBasicMissionRecords() {
-  return [
-    { key: "primary", path: "basicMission", task: scenario.basicMission },
-    ...basicMissionExtras().map((task, index) => ({
-      key: `extra:${task.id || index}`,
-      path: `basicMissions.${index}`,
-      task
-    }))
-  ].filter((record) => record.task);
+  const tasks = basicMissionExtras();
+  if (!tasks.length) tasks.push(createEmptyBasicMission());
+  return tasks.map((task, index) => ({
+    key: index === 0 ? "primary" : `extra:${task.id || index}`,
+    path: `basicMissions.${index}`,
+    task,
+    index
+  })).filter((record) => record.task);
 }
 
 function basicMissionExtras() {
   if (!Array.isArray(scenario.basicMissions)) scenario.basicMissions = [];
   return scenario.basicMissions;
+}
+
+function primaryBasicMissionRecord() {
+  return editableBasicMissionRecords()[0]?.task || {};
 }
 
 function resolveSelectedBasicMission() {
@@ -2720,9 +2832,10 @@ function addBasicMission() {
   const extras = basicMissionExtras();
   const index = editableBasicMissionRecords().length + 1;
   const selected = resolveSelectedBasicMission();
-  const equipmentType = selectedBasicMissionEquipmentType || selected.task.equipmentType || scenario.basicMission.equipmentType || scenario.equipment.model || "";
+  const sourceTask = selected?.task || primaryBasicMissionRecord();
+  const equipmentType = selectedBasicMissionEquipmentType || sourceTask.equipmentType || scenarioEquipmentModel() || "";
   const task = {
-    ...JSON.parse(JSON.stringify(scenario.basicMission)),
+    ...JSON.parse(JSON.stringify(sourceTask || createEmptyBasicMission())),
     id: `basic-mission-${index}`,
     name: `新增基本任务${index}`,
     taskNo: `BM-${String(index).padStart(2, "0")}`,
@@ -2739,20 +2852,14 @@ function deleteSelectedBasicMission() {
   if (!selectedBasicMissionKey) return;
   const selected = resolveSelectedBasicMission();
   const extras = basicMissionExtras();
-  if (selected.key === "primary") {
-    if (extras.length > 0) {
-      scenario.basicMission = extras.shift();
-    } else {
-      scenario.basicMission = createEmptyBasicMission();
-    }
-    selectedBasicMissionKey = "primary";
-    selectedBasicMissionTreeLevel = "mission";
-  } else if (selected.key.startsWith("extra:")) {
-    const index = extras.findIndex((task, taskIndex) => `extra:${task.id || taskIndex}` === selected.key);
-    if (index >= 0) extras.splice(index, 1);
-    selectedBasicMissionKey = "primary";
-    selectedBasicMissionTreeLevel = "mission";
+  if (!selected) return;
+  if (extras.length <= 1) {
+    extras.splice(0, extras.length, createEmptyBasicMission());
+  } else {
+    extras.splice(selected.index, 1);
   }
+  selectedBasicMissionKey = "primary";
+  selectedBasicMissionTreeLevel = "mission";
   updatePreviewResultsThroughApiClient();
 }
 
@@ -2761,7 +2868,7 @@ function createEmptyBasicMission() {
     id: "basic-mission-empty",
     name: "未命名基本任务",
     taskNo: "BM-01",
-    equipmentType: scenario.equipment.model || "",
+    equipmentType: scenarioEquipmentModel() || "",
     equipmentQuantity: 1,
     successPoint: 0.9,
     returnRatio: 0.3,
@@ -2834,11 +2941,13 @@ function deleteCompositeTaskItem(index) {
 }
 
 function createCompositeTaskItem(index) {
-  const basic = resolveSelectedBasicMission()?.task || scenario.basicMission || {};
-  const equipmentType = basic.equipmentType || scenario.equipment.model || "";
+  const selected = resolveSelectedBasicMission();
+  const basic = selected?.task || primaryBasicMissionRecord() || {};
+  const equipmentType = basic.equipmentType || scenarioEquipmentModel() || "";
   const taskName = basic.name || basic.basicTaskName || basic.missionId || `基本任务${index + 1}`;
   return {
     id: `composite-task-item-${Date.now()}-${index + 1}`,
+    basicMissionId: basic.id || selected?.key || "",
     basicTaskName: taskName,
     equipmentType,
     taskDurationMinutes: Number(basic.taskDurationMinutes || 180),
@@ -2857,11 +2966,17 @@ function basicMissionOptions() {
   return editableBasicMissionRecords().map((record) => {
     const task = record.task || {};
     const name = task.name || task.basicTaskName || task.missionId || record.key;
-    return { value: name, label: name };
+    return { value: task.id || record.key, label: name };
   });
 }
 
-function findBasicMissionByName(name) {
+function findBasicMissionForTaskItem(item = {}) {
+  const itemId = String(item.basicMissionId || "").trim();
+  if (itemId) {
+    const byId = editableBasicMissionRecords().map((record) => record.task).find((task) => String(task?.id || "") === itemId);
+    if (byId) return byId;
+  }
+  const name = item.basicTaskName;
   return editableBasicMissionRecords().map((record) => record.task).find((task) => {
     const taskName = task?.name || task?.basicTaskName || task?.missionId || "";
     return String(taskName) === String(name);
@@ -2872,8 +2987,7 @@ function compositeTaskInheritedBasicFields(item = {}, basicTask = null) {
   return {
     equipmentType: firstPresentValue(basicTask?.equipmentType, item.equipmentType),
     taskDurationMinutes: firstPresentValue(basicTask?.taskDurationMinutes, item.taskDurationMinutes),
-    equipmentQuantity: firstPresentValue(basicTask?.equipmentQuantity),
-    minRequiredSystems: firstPresentValue(basicTask?.minRequiredSorties, item.minRequiredSystems)
+    equipmentQuantity: firstPresentValue(basicTask?.equipmentQuantity)
   };
 }
 
@@ -2900,10 +3014,17 @@ function renderSystemProjectManagement(page) {
         ${renderProjectDataTable()}
       </section>
     `;
+  if (!isGranularityPage) {
+    return `
+      <div class="system-config-workbench">
+        ${body}
+      </div>
+    `;
+  }
   return `
     <div class="system-config-workbench">
       <div class="section-head">
-        <h3>${isGranularityPage ? "建模颗粒度配置" : "项目数据管理配置"}</h3>
+        <h3>建模颗粒度配置</h3>
         <span>${page.dataObjects.join(" / ")}</span>
       </div>
       <div class="toolbar-row">
@@ -2916,47 +3037,404 @@ function renderSystemProjectManagement(page) {
 }
 
 function renderProjectDataTable() {
-  const rows = currentSystemDataRows();
-  const allSelected = rows.length > 0 && rows.every((row) => selectedSystemDataKeys.has(row.key));
-  const selectedCount = rows.filter((row) => selectedSystemDataKeys.has(row.key)).length;
-  const project = currentProject || { id: "", name: "", baseCode: "" };
+  ensureProjectDataSelection();
+  ensureSelectedProjectDataJsonLoaded();
+  const selectedProject = selectedProjectDataProject();
+  const projectJson = projectDataJsonForSelectedProject(selectedProject);
   return `
-    <p class="inline-status">${selectedCount}/${rows.length} 个 sheet 已勾选</p>
-    <div class="modeling-config-grid">
-      <section class="system-config-section" data-project-data-config-module="modeling-data-source">
+    <div class="project-template-layout" data-project-data-config-module="project-data-layer">
+      <section class="system-config-section project-template-sidebar" data-project-data-project-list>
         <div class="section-head">
           <div>
-            <h4>建模数据源配置</h4>
-            <p>按模块维护项目可用的仿真建模数据表。</p>
+            <h4>项目列表</h4>
+            <p>设为模板的项目显示【模板】标签。</p>
           </div>
-          <span class="status-badge">${selectedCount}/${rows.length}</span>
+          <span class="status-badge">${demoProjects.length}</span>
         </div>
-        <div class="form-table-grid">
-          <label>项目标识<input value="${htmlEscape(project.id)}"></label>
-          <label>项目名称<input value="${htmlEscape(project.name)}"></label>
-          <label>基地编码<input value="${htmlEscape(project.baseCode)}"></label>
-          <label>数据表来源<input value="仿真建模数据表 / Excel sheet"></label>
-        </div>
-        <div class="toolbar-row">
-          <label class="check-inline"><input type="checkbox" data-system-data-select-all ${allSelected ? "checked" : ""}>全选 sheet</label>
-          <button type="button" data-system-data-export>导出 sheet 配置</button>
-        </div>
-        <p class="inline-status" data-system-data-status>${htmlEscape(systemDataStatus)}</p>
-        ${systemDataExportPreview ? `
-          <div class="inline-status" data-system-data-export-preview>
-            导出预览：${htmlEscape(systemDataExportPreview.label)} / ${systemDataExportPreview.rowCount} 个 sheet /
-            <span data-system-data-export-filename>${htmlEscape(systemDataExportPreview.filename)}</span>
-          </div>
-        ` : ""}
-        <div class="modeling-config-grid">
-          ${MODELING_DATA_MODULES.map((module) => renderModelingSheetModule(module)).join("")}
-        </div>
+        <p class="inline-status">${htmlEscape(projectListStatus)}</p>
+        ${renderProjectDataProjectList(selectedProject)}
       </section>
-      <section class="system-config-section" data-project-data-config-module="modeling-import-publish">
-        ${renderLocalModelingImportActions("导入发布配置")}
-      </section>
+      <div class="project-data-detail">
+        ${renderProjectTemplateManagement(selectedProject)}
+        ${renderProjectDataOverview(projectJson)}
+        ${renderProjectJsonViewer(projectJson)}
+      </div>
     </div>
   `;
+}
+
+function ensureProjectDataSelection() {
+  const selectedExists = selectedProjectDataProjectId
+    && demoProjects.some((project) => projectDataProjectId(project) === selectedProjectDataProjectId);
+  if (selectedExists) return;
+  selectedProjectDataProjectId = projectDataProjectId(currentProject) || projectDataProjectId(demoProjects[0]) || "";
+}
+
+function selectedProjectDataProject() {
+  ensureProjectDataSelection();
+  return demoProjects.find((project) => projectDataProjectId(project) === selectedProjectDataProjectId)
+    || currentProject
+    || demoProjects[0]
+    || null;
+}
+
+function selectProjectDataProject(projectId) {
+  selectedProjectDataProjectId = String(projectId || "").trim();
+  selectedProjectDataProjectJson = null;
+  selectedProjectDataProjectJsonId = "";
+  projectDataManagementStatus = "正在读取 Project JSON";
+}
+
+function renderProjectDataProjectList(selectedProject) {
+  if (!demoProjects.length) {
+    return `<div class="project-template-list"><p class="modeling-import-empty">暂无项目，请先从项目列表创建项目。</p></div>`;
+  }
+  return `
+    <div class="project-template-list">
+      ${demoProjects.map((project) => {
+        const projectId = projectDataProjectId(project);
+        const selected = projectId === projectDataProjectId(selectedProject);
+        const templateBadge = isProjectDataTemplate(project)
+          ? `<span class="status-badge success project-template-tag">【模板】</span>`
+          : "";
+        return `
+          <button type="button" class="project-template-item ${selected ? "selected" : ""}" data-project-data-project-option="${htmlEscape(projectId)}">
+            <span>
+              <strong>${htmlEscape(project.name || "未命名项目")} ${templateBadge}</strong>
+              <small>${htmlEscape(project.summary || project.baseCode || "项目数据")}</small>
+            </span>
+            <span class="project-template-meta">
+              <small>${htmlEscape(project.baseCode || "-")}</small>
+              <small>${htmlEscape(project.updatedAt || "-")}</small>
+            </span>
+          </button>
+        `;
+      }).join("")}
+    </div>
+  `;
+}
+
+function renderProjectTemplateManagement(project) {
+  const projectId = projectDataProjectId(project);
+  const isTemplate = isProjectDataTemplate(project);
+  return `
+    <section class="system-config-section" data-project-template-management>
+      <div class="section-head">
+        <div>
+          <h4>模板管理</h4>
+          <p>${htmlEscape(project ? `${project.name || "未命名项目"} / ${isTemplate ? "已设为模板" : "普通项目"}` : "尚未选择项目")}</p>
+        </div>
+        <span class="status-badge ${isTemplate ? "success" : ""}">${isTemplate ? "模板" : "项目"}</span>
+      </div>
+      <div class="toolbar-row">
+        <button type="button" class="btn-primary" data-project-template-action="set" data-project-id="${htmlEscape(projectId)}" ${project && !isTemplate ? "" : "disabled"}>设为模板</button>
+        <button type="button" data-project-template-action="unset" data-project-id="${htmlEscape(projectId)}" ${project && isTemplate ? "" : "disabled"}>取消设为模板</button>
+      </div>
+      <p class="inline-status">${htmlEscape(projectDataManagementStatus)}</p>
+    </section>
+  `;
+}
+
+function renderProjectDataOverview(projectJson) {
+  const rows = projectDataOverviewRows(projectJson);
+  return `
+    <section class="system-config-section" data-project-data-overview>
+      <div class="section-head">
+        <h4>数据概览</h4>
+        <span>${projectJson ? "Project JSON" : "等待数据"}</span>
+      </div>
+      <div class="project-data-overview-grid">
+        ${rows.map((row) => `
+          <div class="modeling-config-card">
+            <span>${htmlEscape(row.label)}</span>
+            <strong>${htmlEscape(row.value)}</strong>
+          </div>
+        `).join("")}
+      </div>
+    </section>
+  `;
+}
+
+function renderProjectJsonViewer(projectJson) {
+  const body = projectJson
+    ? renderProjectJsonNode(projectJson, "project", 0)
+    : `<p class="modeling-import-empty">${projectDataProjectJsonLoading ? "正在加载 Project JSON。" : "暂无 Project JSON 可查看。"}</p>`;
+  return `
+    <section class="system-config-section" data-project-json-viewer>
+      <div class="section-head">
+        <h4>project json 原始数据</h4>
+        <span>${projectDataProjectJsonLoading ? "加载中" : "可折叠"}</span>
+      </div>
+      <div class="project-json-viewer">
+        ${body}
+      </div>
+    </section>
+  `;
+}
+
+function projectDataOverviewRows(projectJson) {
+  return [
+    {
+      label: "任务",
+      value: sumProjectCollectionCounts(projectJson, [
+        "basicMissions",
+        "missionProfile.basicMissions",
+        "missionProfile.compositeTasks",
+        "missionProfile.periodicTasks"
+      ])
+    },
+    {
+      label: "装备",
+      value: sumProjectCollectionCounts(projectJson, [
+        "equipmentAssets",
+        "objects.equipmentAssets",
+        "equipment.components",
+        "equipment.nodes",
+        "components"
+      ])
+    },
+    {
+      label: "保障系统",
+      value: sumProjectCollectionCounts(projectJson, [
+        "supportNodes",
+        "supportResources",
+        "objects.supportResources",
+        "supportOrganization"
+      ])
+    },
+    {
+      label: "保障活动",
+      value: sumProjectCollectionCounts(projectJson, [
+        "supportActivities",
+        "objects.supportActivities",
+        "basicSupportActivities"
+      ])
+    }
+  ];
+}
+
+function sumProjectCollectionCounts(projectJson, paths) {
+  if (!projectJson) return 0;
+  return paths.reduce((sum, path) => sum + projectCollectionCount(projectPathValue(projectJson, path)), 0);
+}
+
+function projectCollectionCount(value) {
+  if (Array.isArray(value)) return value.length;
+  if (value && typeof value === "object") return Object.keys(value).length ? 1 : 0;
+  return 0;
+}
+
+function projectPathValue(obj, path) {
+  return String(path || "").split(".").reduce((current, part) => {
+    if (current == null || typeof current !== "object") return undefined;
+    return current[part];
+  }, obj);
+}
+
+function renderProjectJsonNode(value, key, depth) {
+  if (value && typeof value === "object") {
+    const isArray = Array.isArray(value);
+    const entries = isArray ? value.map((item, index) => [index, item]) : Object.entries(value);
+    const summaryMeta = isArray ? `[${entries.length}]` : `{${entries.length}}`;
+    const openAttr = depth < 2 ? " open" : "";
+    return `
+      <details class="project-json-node depth-${Math.min(depth, 4)}" data-project-json-node${openAttr}>
+        <summary><code>${htmlEscape(key)}</code><span>${summaryMeta}</span></summary>
+        <div class="project-json-children">
+          ${entries.length
+            ? entries.map(([childKey, childValue]) => renderProjectJsonNode(childValue, String(childKey), depth + 1)).join("")
+            : `<div class="project-json-leaf"><span>空对象</span></div>`}
+        </div>
+      </details>
+    `;
+  }
+  return `
+    <div class="project-json-leaf" data-project-json-leaf>
+      <code>${htmlEscape(key)}</code>
+      <span>${htmlEscape(JSON.stringify(value))}</span>
+    </div>
+  `;
+}
+
+function projectDataJsonForSelectedProject(project) {
+  const projectId = projectDataProjectId(project);
+  if (!project) return null;
+  if (selectedProjectDataProjectJson && selectedProjectDataProjectJsonId === projectId) {
+    return selectedProjectDataProjectJson;
+  }
+  if (currentProject && projectDataProjectId(currentProject) === projectId) {
+    return buildBackendProjectJson(scenario, currentProject);
+  }
+  return null;
+}
+
+function ensureSelectedProjectDataJsonLoaded({ force = false } = {}) {
+  const project = selectedProjectDataProject();
+  const projectId = projectDataProjectId(project);
+  if (!project || !projectId || projectDataProjectJsonLoading) return;
+  if (!force && selectedProjectDataProjectJsonId === projectId) return;
+  projectDataProjectJsonLoading = true;
+  projectDataManagementStatus = "正在读取 Project JSON";
+  backendApi.getProject(projectDataProjectBackendId(project))
+    .then((projectJson) => {
+      selectedProjectDataProjectJson = buildBackendProjectJson(projectJson, { id: projectId });
+      selectedProjectDataProjectJsonId = projectId;
+      mergeProjectTemplateFlagFromJson(projectId, projectJson);
+      projectDataManagementStatus = "已读取 Project JSON";
+    })
+    .catch((err) => {
+      selectedProjectDataProjectJson = null;
+      selectedProjectDataProjectJsonId = projectId;
+      projectDataManagementStatus = `Project JSON 读取失败：${err && err.message ? err.message : "Backend API 不可用"}`;
+    })
+    .finally(() => {
+      projectDataProjectJsonLoading = false;
+      render();
+    });
+}
+
+function projectDataProjectId(project) {
+  return project?.id ? String(project.id) : "";
+}
+
+function projectDataProjectBackendId(project) {
+  if (!project) return "";
+  if (project.projectBackendId) return String(project.projectBackendId);
+  if (project.project_id) return String(project.project_id);
+  const projectId = projectDataProjectId(project);
+  return projectId.startsWith("project-") ? projectId : `project-${projectId}`;
+}
+
+function isProjectDataTemplate(project = {}) {
+  return Boolean(
+    project.isTemplate
+    || project.is_template
+    || project.projectTemplate
+    || project.projectInfo?.isTemplate
+    || project.projectInfo?.is_template
+    || project.template === true
+    || project.template?.enabled
+    || project.metadata?.isTemplate
+  );
+}
+
+function isProjectJsonTemplate(projectJson = {}) {
+  return isProjectDataTemplate(projectJson) || isProjectDataTemplate(projectJson.projectInfo || {});
+}
+
+function mergeProjectTemplateFlagFromJson(projectId, projectJson) {
+  if (!projectId || !projectJson) return;
+  const isTemplate = isProjectJsonTemplate(projectJson);
+  setProjectDataTemplateFlag(projectId, isTemplate);
+}
+
+function setProjectDataTemplateFlag(projectId, isTemplate) {
+  demoProjects = demoProjects.map((project) => (
+    projectDataProjectId(project) === projectId ? { ...project, isTemplate } : project
+  ));
+  if (currentProject && projectDataProjectId(currentProject) === projectId) {
+    currentProject = { ...currentProject, isTemplate };
+  }
+  if (selectedProjectDataProjectJson && selectedProjectDataProjectJsonId === projectId) {
+    selectedProjectDataProjectJson = {
+      ...selectedProjectDataProjectJson,
+      projectInfo: {
+        ...(selectedProjectDataProjectJson.projectInfo || {}),
+        isTemplate
+      }
+    };
+  }
+  if (isTemplate) {
+    selectedProjectTemplateProjectId = projectId;
+  } else if (selectedProjectTemplateProjectId === projectId) {
+    selectedProjectTemplateProjectId = "";
+  }
+}
+
+async function handleProjectTemplateAction(action, projectId) {
+  const project = demoProjects.find((item) => projectDataProjectId(item) === String(projectId || selectedProjectDataProjectId));
+  if (!project) {
+    projectDataManagementStatus = "请先选择项目";
+    return;
+  }
+  const isTemplate = action === "set";
+  if (!["set", "unset"].includes(action)) return;
+  try {
+    const projectJson = await backendApi.getProject(projectDataProjectBackendId(project));
+    const nextProjectJson = {
+      ...normalizeProjectJsonBasicMissions(cloneScenario(projectJson)),
+      projectInfo: {
+        ...(projectJson.projectInfo || {}),
+        isTemplate
+      }
+    };
+    nextProjectJson.projectInfo.isTemplate = isTemplate;
+    const backendProjectJson = buildBackendProjectJson(nextProjectJson, { id: projectDataProjectId(project), isTemplate });
+    await backendApi.saveProject(backendProjectJson);
+    selectedProjectDataProjectJson = cloneScenario(backendProjectJson);
+    selectedProjectDataProjectJsonId = projectDataProjectId(project);
+    setProjectDataTemplateFlag(projectDataProjectId(project), isTemplate);
+    if (currentProject && projectDataProjectId(currentProject) === projectDataProjectId(project)) {
+      scenario = cloneScenario(backendProjectJson);
+      if (!experimentPlanBranchActive) {
+        experimentPlanDraft = cloneScenario(backendProjectJson);
+      }
+    }
+    projectDataManagementStatus = isTemplate ? "已设为模板" : "已取消设为模板";
+    projectListStatus = `${project.name || "项目"}：${projectDataManagementStatus}`;
+  } catch (err) {
+    projectDataManagementStatus = `模板管理保存失败：${err && err.message ? err.message : "Backend API 不可用"}`;
+  }
+}
+
+function projectDataTemplateSourceImportId(template = {}) {
+  return template.source_import_id
+    || template.sourceImportId
+    || template.import_id
+    || template.importId
+    || template.template_id
+    || template.templateId
+    || "";
+}
+
+function projectTemplateOptions() {
+  return demoProjects.filter((project) => isProjectDataTemplate(project));
+}
+
+function ensureSelectedProjectTemplateProjectId() {
+  const templates = projectTemplateOptions();
+  if (!templates.length) {
+    selectedProjectTemplateProjectId = "";
+    return "";
+  }
+  const selectedExists = templates.some((project) => projectDataProjectId(project) === selectedProjectTemplateProjectId);
+  if (!selectedProjectTemplateProjectId || !selectedExists) {
+    selectedProjectTemplateProjectId = projectDataProjectId(templates[0]);
+  }
+  return selectedProjectTemplateProjectId;
+}
+
+function selectedProjectTemplateProject() {
+  const selectedId = ensureSelectedProjectTemplateProjectId();
+  if (!selectedId) return null;
+  return projectTemplateOptions().find((project) => projectDataProjectId(project) === selectedId) || null;
+}
+
+function projectTemplateOptionLabel(project) {
+  return `${project.name || "未命名项目"}【模板】`;
+}
+
+function updateSelectedProjectTemplateProject(projectId) {
+  selectedProjectTemplateProjectId = String(projectId || "");
+  const project = selectedProjectTemplateProject();
+  projectListStatus = project
+    ? `已选择项目模板：${project.name}`
+    : "暂无项目模板，请先在项目数据管理设为模板";
+}
+
+function selectedPublishedModelingImportPackage() {
+  const importId = modelingImportPublishedPackage?.importId || modelingImportPublishedPackage?.import_id || "";
+  return importId && importId === selectedPublishedModelingImportId ? modelingImportPublishedPackage : null;
 }
 
 function renderModelingGranularityTable() {
@@ -3081,39 +3559,34 @@ function renderLocalModelingImportActions(contextLabel) {
   const validationStatus = modelingImportValidation?.status || (modelingImportValidation?.ok === false ? "invalid" : "not_validated");
   const modelingImportIssues = modelingImportDisplayIssues();
   const issueCount = modelingImportIssues.length;
-  const publishedLabel = modelingImportPublishedPackage ? `已发布 ${modelingImportPublishedPackage.importId || modelingImportPublishedPackage.import_id || ""}` : "未发布";
+  const publishedLabel = modelingImportPublishedPackage ? "已发布导入包" : "未发布";
   const scenarioLabel = modelingImportScenarioLabel();
   return `
     <div class="local-import-panel">
       <div class="section-head">
         <div>
-          <h4>局部导入入口</h4>
-          <p>${htmlEscape(contextLabel)}内触发导入、校验和发布，不再使用独立导入页面。</p>
+          <h4>导入包维护</h4>
+          <p>${htmlEscape(contextLabel)}内维护项目数据导入包草稿、校验和发布状态。</p>
         </div>
         <span class="status-badge">${htmlEscape(validationStatus)}</span>
       </div>
       <div class="modeling-import-summary local">
-        <div><strong>导入包</strong><span>${htmlEscape(modelingImportPackage.importId || "未加载")}</span></div>
-        <div><strong>发布快照</strong><span>${htmlEscape(publishedLabel)}</span></div>
+        <div><strong>来源导入包</strong><span>${htmlEscape(modelingImportPackage.objects?.projectInfo?.name || "未加载")}</span></div>
+        <div><strong>模板状态</strong><span>${htmlEscape(publishedLabel)}</span></div>
         <div><strong>字段问题</strong><span>${issueCount}</span></div>
         <div><strong>Scenario</strong><span>${htmlEscape(scenarioLabel)}</span></div>
       </div>
       <div class="modeling-import-actions">
         <label class="rms-file-button">
-          <span>选择导入包 JSON</span>
+          <span>选择项目数据导入包 JSON</span>
           <input type="file" accept="application/json,.json" data-modeling-import-file>
         </label>
-        <select data-modeling-import-template aria-label="选择内置导入模板">
-          ${MODELING_IMPORT_TEMPLATES.map((template) => `
-            <option value="${htmlEscape(template.id)}"${template.id === selectedModelingImportTemplateId ? " selected" : ""}>${htmlEscape(template.label)}</option>
-          `).join("")}
-        </select>
-        <button type="button" data-modeling-import-action="load-fixture" data-modeling-import-template="${htmlEscape(selectedModelingImportTemplateId)}">使用内置导入模板</button>
+        <button type="button" data-modeling-import-action="load-fixture">恢复内嵌样例导入包</button>
         <button type="button" data-modeling-import-action="backfill-current-project">从当前项目回灌</button>
         <button type="button" data-modeling-import-action="load-invalid-fixture">导入错误样例</button>
         <button type="button" data-modeling-import-action="validate">校验导入数据</button>
         <button type="button" data-modeling-import-action="save-draft">保存导入草稿</button>
-        <button type="button" data-modeling-import-action="publish" ${modelingImportSaved ? "" : "disabled"}>发布快照</button>
+        <button type="button" data-modeling-import-action="publish" ${modelingImportSaved ? "" : "disabled"}>发布导入包</button>
         <button type="button" class="btn-primary" data-modeling-import-action="compile-scenario" ${modelingImportPublishedPackage ? "" : "disabled"}>生成 Scenario</button>
       </div>
       <p class="modeling-import-action-status">${htmlEscape(modelingImportStatus)}</p>
@@ -3204,7 +3677,7 @@ function createDefaultSystemRuntimeConfig() {
     projectDataModules: [
       {
         key: "modeling-data-source",
-        label: "建模数据源配置",
+        label: "项目数据层配置",
         sheetKeys: modelingSheetRows().map((row) => row.key)
       },
       {
@@ -3241,7 +3714,7 @@ function currentSystemRuntimeConfigPayload() {
     projectDataModules: [
       {
         key: "modeling-data-source",
-        label: "建模数据源配置",
+        label: "项目数据层配置",
         sheetKeys: Array.from(selectedSystemDataKeys)
       },
       {
@@ -3623,9 +4096,9 @@ function renderTaskModel(page) {
       ${field("任务类型", "missionProfile.profileType")}
       ${field("重复周期", "missionProfile.repeatCycleHours", "number")}
       ${field("结束条件", "missionProfile.endCondition")}
-      ${field("基本任务", "basicMission.missionId")}
-      ${field("成功点", "basicMission.successPoint", "number", { min: "0", max: "1", step: "0.01" })}
-      ${field("最低出动数量", "basicMission.minRequiredSorties", "number")}
+      ${field("基本任务", "basicMissions.0.missionId")}
+      ${field("成功点", "basicMissions.0.successPoint", "number", { min: "0", max: "1", step: "0.01" })}
+      ${field("最低出动数量", "basicMissions.0.minRequiredSorties", "number")}
       ${field("装备型号", "equipment.model")}
       ${field("装备数量", "equipment.quantity", "number")}
     </div>
@@ -3642,7 +4115,7 @@ function renderTaskModel(page) {
         {
           id: `task-model-combat-unit:${scenario.combatUnit.unitId}`,
           label: scenario.combatUnit.unitId,
-          meta: `${scenario.equipment.quantity} 架`
+          meta: `${scenario.equipment?.quantity ?? 0} 架`
         }
       ]
     }])}
@@ -3689,15 +4162,7 @@ function renderBuiltInScenario(page) {
     </div>
     <div class="form-table-grid">
       ${field("场景编号", "scenarioId")}
-      ${field("出发机场名称", "airports.0.name")}
-      ${field("出发机场位置", "airports.0.location")}
-      ${field("出发机场跑道类型", "airports.0.runwayType")}
-      ${field("距任务区(km)", "airports.0.distanceToMissionKm", "number")}
-      ${field("关联保障节点", "airports.0.supportNodeId")}
-      ${field("备用机场名称", "airports.1.name")}
-      ${field("备用机场位置", "airports.1.location")}
-      ${field("备用机场跑道类型", "airports.1.runwayType")}
-      ${field("备用机场距任务区(km)", "airports.1.distanceToMissionKm", "number")}
+      ${field("机场", "airports.0")}
       ${field("任务区名称", "missionAreas.0.name")}
       ${field("任务区类型", "missionAreas.0.areaType")}
       ${field("距出发机场(km)", "missionAreas.0.distanceFromDepartureKm", "number")}
@@ -3713,11 +4178,19 @@ function renderBuiltInScenario(page) {
         {
           id: "scenario-tree:airports",
           label: "机场",
-          children: scenario.airports.map((airport) => ({
-            id: `scenario-airport:${airport.id || airport.name}`,
-            label: airport.name,
-            meta: `${airport.location} / 距任务区 ${airport.distanceToMissionKm} km`
-          }))
+          children: scenario.airports.map((airport, index) => {
+            const name = typeof airport === "string"
+              ? airport
+              : (airport?.name || airport?.id || `机场 ${index + 1}`);
+            const meta = typeof airport === "string"
+              ? "字符串输入"
+              : `${airport?.location || "-"} / 距任务区 ${airport?.distanceToMissionKm ?? "-"} km`;
+            return {
+              id: `scenario-airport:${name || index}`,
+              label: name || `机场 ${index + 1}`,
+              meta
+            };
+          })
         },
         {
           id: "scenario-tree:mission-areas",
@@ -3814,7 +4287,7 @@ function combatUnitMemberFlightHours(member) {
     ?? member.flightHours
     ?? member.flight_hours
     ?? member.preLifeRequirementHours
-    ?? scenario.equipment.preLifeRequirementHours
+    ?? scenario.equipment?.preLifeRequirementHours
     ?? member.remainingLifeHours
     ?? "";
 }
@@ -3843,7 +4316,7 @@ function addCombatUnitMember() {
   if (!Array.isArray(scenario.combatUnit.members)) scenario.combatUnit.members = [];
   const members = scenario.combatUnit.members;
   const index = members.length + 1;
-  const model = scenario.equipment.wholeMachineModels?.[0] || scenario.equipment.model || "";
+  const model = scenario.equipment?.wholeMachineModels?.[0] || scenarioEquipmentModel() || "";
   const aircraftNo = `${model || "AIRCRAFT"}-${String(index).padStart(2, "0")}`;
   members.push({
     aircraftNo,
@@ -3851,11 +4324,11 @@ function addCombatUnitMember() {
     role: "新增",
     status: "执行",
     preLifeCalendarDays: 0,
-    remainingLifeHours: Number(scenario.equipment.preLifeRequirementHours || 120),
-    preLifeRequirementHours: Number(scenario.equipment.preLifeRequirementHours || 120),
+    remainingLifeHours: Number(scenario.equipment?.preLifeRequirementHours || 120),
+    preLifeRequirementHours: Number(scenario.equipment?.preLifeRequirementHours || 120),
     takeoffLandingCount: 0,
     airport: "",
-    deploymentLocation: scenario.equipment.deploymentLocation || scenario.combatUnit.deploymentLocation || ""
+    deploymentLocation: scenario.equipment?.deploymentLocation || scenario.combatUnit.deploymentLocation || ""
   });
   scenario.combatUnit.quantity = members.length;
   selectedCombatUnitMemberIndex = members.length - 1;
@@ -3874,7 +4347,7 @@ function deleteSelectedCombatUnitMember() {
 
 function renderBasicMissionModeling(page) {
   const selectedMission = resolveSelectedBasicMission();
-  const missionPath = selectedMission.path || "basicMission";
+  const missionPath = selectedMission.path || "basicMissions.0";
   const phases = scenario.missionPhases || [];
   selectedBasicMissionPhaseIndexes = validMissionPhaseSelection(phases);
   const allPhasesSelected = phases.length > 0 && phases.every((_, index) => selectedBasicMissionPhaseIndexes.has(String(index)));
@@ -4050,23 +4523,23 @@ function renderCompositeTaskModeling(page) {
             </div>
             <div class="table-wrap">
               <table>
-                <thead><tr><th>基本任务名称</th><th>装备类型</th><th>任务时长</th><th>要求装备数量</th><th>编队名称</th><th>出发时间</th><th>任务优先级</th><th>最小装备数量</th><th>单日重复次数</th><th>间隔小时数</th><th>删除</th></tr></thead>
+                <thead><tr><th>基本任务名称</th><th>编队名称</th><th>出发时间（HH：MM）</th><th>任务优先级（1最高）</th><th>单日重复次数</th><th>间隔小时数</th><th>装备类型</th><th>任务时长</th><th>要求装备数量</th><th>最小装备数量</th><th>删除</th></tr></thead>
                 <tbody>
                   ${(composite.taskItems || []).map((item, index) => {
-                    const basicTask = findBasicMissionByName(item.basicTaskName);
+                    const basicTask = findBasicMissionForTaskItem(item);
                     const inherited = compositeTaskInheritedBasicFields(item, basicTask);
                     return `
                     <tr>
-                      <td>${basicMissionSelect(`${compositePath}.taskItems.${index}.basicTaskName`, item.basicTaskName)}</td>
+                      <td>${basicMissionSelect(`${compositePath}.taskItems.${index}.basicMissionId`, item.basicMissionId)}</td>
+                      <td>${valueInput(`${compositePath}.taskItems.${index}.groupName`)}</td>
+                      <td>${valueInput(`${compositePath}.taskItems.${index}.firstWaveTime`, "time")}</td>
+                      <td>${valueInput(`${compositePath}.taskItems.${index}.priority`, "number", { min: "1", step: "1" })}</td>
+                      <td>${valueInput(`${compositePath}.taskItems.${index}.dailyRepeatCount`, "number", { min: "1", step: "1" })}</td>
+                      <td>${valueInput(`${compositePath}.taskItems.${index}.intervalHours`, "number", { min: "0.1", step: "0.1" })}</td>
                       <td>${readOnlyTableValue(inherited.equipmentType)}</td>
                       <td>${readOnlyTableValue(inherited.taskDurationMinutes)}</td>
                       <td>${readOnlyTableValue(inherited.equipmentQuantity)}</td>
-                      <td>${valueInput(`${compositePath}.taskItems.${index}.groupName`)}</td>
-                      <td>${valueInput(`${compositePath}.taskItems.${index}.firstWaveTime`, "time")}</td>
-                      <td>${valueInput(`${compositePath}.taskItems.${index}.priority`, "number")}</td>
-                      <td>${readOnlyTableValue(inherited.minRequiredSystems)}</td>
-                      <td>${valueInput(`${compositePath}.taskItems.${index}.dailyRepeatCount`, "number")}</td>
-                      <td>${valueInput(`${compositePath}.taskItems.${index}.intervalHours`, "number")}</td>
+                      <td>${valueInput(`${compositePath}.taskItems.${index}.minRequiredSystems`, "number", { min: "1", step: "1" })}</td>
                       <td class="table-actions"><button type="button" class="btn-danger" data-composite-task-item-delete="${index}">删除</button></td>
                     </tr>
                   `; }).join("") || `<tr><td colspan="11">暂无基本任务</td></tr>`}
@@ -4355,10 +4828,10 @@ function periodicValueSelect(field, selectedValue, options) {
 
 function buildCompositeTimelineRows(composite) {
   return (composite.taskItems || []).flatMap((item) => {
-    const repeatCount = Math.max(1, Number(item.dailyRepeatCount || 1));
-    const intervalHours = Math.max(1, Number(item.intervalHours || 1));
-    const basicTask = findBasicMissionByName(item.basicTaskName);
-    const durationMinutes = Number(basicTask?.taskDurationMinutes || item.taskDurationMinutes || scenario.basicMission.taskDurationMinutes || 180);
+    const repeatCount = Math.max(1, Math.trunc(Number(item.dailyRepeatCount || 1)));
+    const intervalHours = Math.max(0.1, Number(item.intervalHours || 1));
+    const basicTask = findBasicMissionForTaskItem(item);
+    const durationMinutes = Number(basicTask?.taskDurationMinutes || item.taskDurationMinutes || primaryBasicMissionRecord().taskDurationMinutes || 180);
     return Array.from({ length: repeatCount }, (_, index) => {
       const departureTime = addHoursToTime(item.firstWaveTime, index * intervalHours);
       const totalStartMinutes = timeToDayMinutes(item.firstWaveTime) + index * intervalHours * 60;
@@ -4619,6 +5092,9 @@ function updateEquipmentAircraftModel(previousModel, nextModelRaw) {
   const nextModel = String(nextModelRaw || "").trim();
   const oldModel = String(previousModel || "").trim();
   if (!oldModel || !nextModel || nextModel === oldModel) return false;
+  if (!scenario.equipment || typeof scenario.equipment !== "object") {
+    scenario.equipment = { model: "", wholeMachineModels: [] };
+  }
   if (!Array.isArray(scenario.equipment.wholeMachineModels)) {
     scenario.equipment.wholeMachineModels = wholeMachineModels();
   }
@@ -4626,7 +5102,22 @@ function updateEquipmentAircraftModel(previousModel, nextModelRaw) {
     String(model) === oldModel ? nextModel : model
   ));
   scenario.equipment.wholeMachineModels = Array.from(new Set(scenario.equipment.wholeMachineModels));
-  if (String(scenario.equipment.model || "") === oldModel) {
+  if (Array.isArray(scenario.equipment.aircraftTypes)) {
+    scenario.equipment.aircraftTypes = scenario.equipment.aircraftTypes.map((aircraftType) => {
+      if (typeof aircraftType === "string") {
+        return String(aircraftType) === oldModel ? nextModel : aircraftType;
+      }
+      if (!aircraftType || typeof aircraftType !== "object" || Array.isArray(aircraftType)) return aircraftType;
+      const aircraftTypeModel = String(aircraftType.model || aircraftType.name || aircraftType.id || "");
+      if (aircraftTypeModel !== oldModel) return aircraftType;
+      return {
+        ...aircraftType,
+        model: nextModel,
+        name: nextModel
+      };
+    });
+  }
+  if (scenario.equipment && String(scenarioEquipmentModel()) === oldModel) {
     scenario.equipment.model = nextModel;
   }
   for (const component of scenario.components || []) {
@@ -4708,9 +5199,9 @@ function createOperationsSupportActivityForAircraftModel(aircraftModel, config =
       workName: `${config.label || "新增"}基本保障活动1`,
       predecessors: [],
       durationMinutes: config.maxWorkTimeRefMinutes ?? 30,
-      personnel: "机务人员,1",
-      equipment: "检测仪,1",
-      spare: ""
+      personnel: defaultPersonnelRequirement("机务人员", 1),
+      equipment: defaultMaterialRequirement("检测仪", "检测仪", 1),
+      spare: []
     }]
   };
 }
@@ -4804,7 +5295,7 @@ function selectPreventiveMaintenanceAircraftModel(aircraftModel) {
 function addPreventiveMaintenanceActivityPlan() {
   const entries = preventiveMaintenanceActivityEntries();
   const selected = selectedPreventiveMaintenanceActivity() || entries[0]?.activity || {};
-  const model = selectedPreventiveMaintenanceAircraftModel || supportActivityAircraftModel(selected) || wholeMachineModels()[0] || scenario.equipment.model || "";
+  const model = selectedPreventiveMaintenanceAircraftModel || supportActivityAircraftModel(selected) || wholeMachineModels()[0] || scenarioEquipmentModel() || "";
   if (!Array.isArray(scenario.supportActivities)) scenario.supportActivities = [];
   const activity = createPreventiveMaintenanceActivityForAircraftModel(model, entries.length + 1);
   scenario.supportActivities.push(activity);
@@ -4855,9 +5346,9 @@ function createPreventiveMaintenanceActivityForAircraftModel(aircraftModel, sequ
       workName: "新增预防性维修工作项目1",
       predecessors: [],
       durationMinutes: 30,
-      personnel: "维修人员,1",
-      equipment: "通用工具箱,1",
-      spare: ""
+      personnel: defaultPersonnelRequirement("维修人员", 1),
+      equipment: defaultMaterialRequirement("通用工具箱", "通用工具箱", 1),
+      spare: []
     }]
   };
 }
@@ -5795,9 +6286,9 @@ function createDefaultCorrectiveMaintenanceActivity() {
       workName: "新增修复性维修工作项目1",
       predecessors: [],
       durationMinutes: 60,
-      personnel: "维修人员,1",
-      equipment: "通用工具箱,1",
-      spare: ""
+      personnel: defaultPersonnelRequirement("维修人员", 1),
+      equipment: defaultMaterialRequirement("通用工具箱", "通用工具箱", 1),
+      spare: []
     }]
   };
 }
@@ -5834,7 +6325,7 @@ function supportActivityAircraftModel(activity) {
   if (activity.aircraftModel) return activity.aircraftModel;
   if (activity.equipmentType) return activity.equipmentType;
   const component = (scenario.components || []).find((item) => String(item.id || "") === String(activity.equipmentId || ""));
-  return component?.aircraftModel || scenario.equipment.model || "";
+  return component?.aircraftModel || scenarioEquipmentModel() || "";
 }
 
 function operationsSupportPlanTypeConfigs() {
@@ -5901,7 +6392,7 @@ function selectedOperationsSupportActivity() {
 
 function operationsSupportPhaseActivity(baseActivity, planType = selectedOperationsSupportPlanType, options = {}) {
   const normalizedPlanType = normalizeOperationsSupportPlanType(planType);
-  const model = supportActivityAircraftModel(baseActivity) || wholeMachineModels()[0] || scenario.equipment.model || "";
+  const model = supportActivityAircraftModel(baseActivity) || wholeMachineModels()[0] || scenarioEquipmentModel() || "";
   const planGroupId = operationsSupportPlanGroupId(baseActivity);
   const matchedByGroup = planGroupId ? (scenario.supportActivities || []).find((activity) => (
     isOperationsSupportActivity(activity)
@@ -5920,7 +6411,7 @@ function operationsSupportPhaseActivity(baseActivity, planType = selectedOperati
 }
 
 function ensureOperationsSupportPhaseActivities(baseActivity) {
-  const model = supportActivityAircraftModel(baseActivity) || wholeMachineModels()[0] || scenario.equipment.model || "";
+  const model = supportActivityAircraftModel(baseActivity) || wholeMachineModels()[0] || scenarioEquipmentModel() || "";
   if (!model) return [];
   if (!Array.isArray(scenario.supportActivities)) scenario.supportActivities = [];
   const planGroupId = ensureOperationsSupportPlanGroupId(baseActivity, model);
@@ -5938,7 +6429,7 @@ function ensureOperationsSupportPhaseActivities(baseActivity) {
 }
 
 function findOperationsSupportPhaseActivities(baseActivity) {
-  const model = supportActivityAircraftModel(baseActivity) || wholeMachineModels()[0] || scenario.equipment.model || "";
+  const model = supportActivityAircraftModel(baseActivity) || wholeMachineModels()[0] || scenarioEquipmentModel() || "";
   if (!model) return [];
   const planGroupId = operationsSupportPlanGroupId(baseActivity);
   return operationsSupportPlanTypeConfigs()
@@ -5975,7 +6466,7 @@ function selectOperationsSupportAircraftModel(aircraftModel) {
 function addOperationsSupportActivityPlan() {
   const entries = operationsSupportActivityEntries();
   const selected = selectedOperationsSupportActivity() || entries[0]?.activity || {};
-  const model = selectedOperationsSupportAircraftModel || supportActivityAircraftModel(selected) || wholeMachineModels()[0] || scenario.equipment.model || "";
+  const model = selectedOperationsSupportAircraftModel || supportActivityAircraftModel(selected) || wholeMachineModels()[0] || scenarioEquipmentModel() || "";
   const nextIndex = entries.length + 1;
   const planGroupId = nextOperationsSupportPlanGroupId(model);
   if (!Array.isArray(scenario.supportActivities)) scenario.supportActivities = [];
@@ -6106,9 +6597,9 @@ function addSupportActivityJob(tabKey) {
     workName: supportActivityJobDefaultName(tabKey, nextIndex),
     predecessors: [],
     durationMinutes: 30,
-    personnel: "机务人员,1",
-    equipment: "检测仪,1",
-    spare: ""
+    personnel: defaultPersonnelRequirement("机务人员", 1),
+    equipment: defaultMaterialRequirement("检测仪", "检测仪", 1),
+    spare: []
   });
   activity.jobs = jobs;
   const key = supportActivityJobKey(tabKey, nextIndex);
@@ -6912,6 +7403,10 @@ function basicActivityLegacyResourceItemIsUsable(resourceKind, item) {
 }
 
 function normalizeBasicActivityResourceRequirements(row, resourceKind) {
+  const structured = row[resourceKind];
+  if (Array.isArray(structured) && structured.length) {
+    return structured.map((item, index) => normalizeBasicActivityResourceDialogRequirement(resourceKind, item, index));
+  }
   const source = row[`${resourceKind}Requirements`];
   if (Array.isArray(source) && source.length) return source.map((item) => ({ ...item }));
   const legacy = String(row[resourceKind] || "").trim();
@@ -6927,6 +7422,21 @@ function normalizeBasicActivityResourceRequirements(row, resourceKind) {
       quantity: Number(maybeQuantity ?? modelOrQuantity ?? 1) || 1
     };
   });
+}
+
+function defaultPersonnelRequirement(professional, quantity = 1) {
+  return [normalizeBasicActivityResourceDialogRequirement("personnel", {
+    professional,
+    quantity
+  }, 0)];
+}
+
+function defaultMaterialRequirement(model, name = model, quantity = 1) {
+  return [normalizeBasicActivityResourceDialogRequirement("equipment", {
+    model,
+    name,
+    quantity
+  }, 0)];
 }
 
 function basicActivityDurationProfileEditor(row) {
@@ -7039,13 +7549,10 @@ function basicActivityLibraryRows() {
       durationProfile: normalizeSupportActivityDurationProfile(job.durationProfile || job.durationDistribution, job.durationMinutes),
       durationMinutes: job.durationMinutes,
       personnelProfessional: job.personnelProfessional || "",
-      personnelRequirements: Array.isArray(job.personnelRequirements) ? job.personnelRequirements.map((item) => ({ ...item })) : [],
       equipmentModel: job.equipmentModel || "",
-      equipmentRequirements: Array.isArray(job.equipmentRequirements) ? job.equipmentRequirements.map((item) => ({ ...item })) : [],
-      spareRequirements: Array.isArray(job.spareRequirements) ? job.spareRequirements.map((item) => ({ ...item })) : [],
-      personnel: job.personnel,
-      equipment: job.equipment,
-      spare: job.spare,
+      personnel: normalizeBasicActivityResourceRequirements(job, "personnel"),
+      equipment: normalizeBasicActivityResourceRequirements(job, "equipment"),
+      spare: normalizeBasicActivityResourceRequirements(job, "spare"),
       predecessors: Array.isArray(job.predecessors) ? [...job.predecessors] : []
     }))
   );
@@ -7099,7 +7606,7 @@ function basicActivityScopeLabel(activity) {
     const component = (scenario.components || []).find((item) => String(item.id || "") === String(activity.equipmentId || ""));
     return component?.name || activity.equipmentId;
   }
-  return supportActivityAircraftModel(activity) || scenario.equipment.model || "未指定";
+  return supportActivityAircraftModel(activity) || scenarioEquipmentModel() || "未指定";
 }
 
 function addBasicActivityLibraryJob() {
@@ -7113,9 +7620,9 @@ function addBasicActivityLibraryJob() {
     predecessors: [],
     durationProfile: { distributionType: "固定值", value: 30 },
     durationMinutes: 30,
-    personnel: "机务,1",
-    equipment: "检测仪,1",
-    spare: ""
+    personnel: defaultPersonnelRequirement("机务", 1),
+    equipment: defaultMaterialRequirement("检测仪", "检测仪", 1),
+    spare: []
   });
   activity.jobs = jobs;
   const activityIndex = (scenario.supportActivities || []).indexOf(activity);
@@ -7141,9 +7648,9 @@ function createBasicActivityDraft() {
     applicableAircraft: defaultSupportActivityAircraftModel(),
     durationProfile: { distributionType: "固定值", value: 30 },
     durationMinutes: 30,
-    personnelRequirements: [],
-    equipmentRequirements: [],
-    spareRequirements: [],
+    personnel: [],
+    equipment: [],
+    spare: [],
     predecessors: []
   };
 }
@@ -7174,9 +7681,9 @@ function supportActivityJobFromBasicActivityDraft(row) {
     predecessors: Array.isArray(row.predecessors) ? [...row.predecessors] : [],
     durationProfile: profile,
     durationMinutes: durationMinutesForSupportActivityProfile(profile, row.durationMinutes),
-    personnelRequirements: Array.isArray(row.personnelRequirements) ? row.personnelRequirements.map((item) => ({ ...item })) : [],
-    equipmentRequirements: Array.isArray(row.equipmentRequirements) ? row.equipmentRequirements.map((item) => ({ ...item })) : [],
-    spareRequirements: Array.isArray(row.spareRequirements) ? row.spareRequirements.map((item) => ({ ...item })) : []
+    personnel: normalizeBasicActivityResourceRequirements(row, "personnel"),
+    equipment: normalizeBasicActivityResourceRequirements(row, "equipment"),
+    spare: normalizeBasicActivityResourceRequirements(row, "spare")
   };
   syncBasicActivityResourceSummaries(job);
   return job;
@@ -7355,28 +7862,28 @@ function updateBasicActivityResourceField(key, fieldName, value) {
   const job = { ...(jobs[jobIndex] || {}) };
   if (fieldName === "personnelProfessional") {
     job.personnelProfessional = String(value || "");
-    job.personnelRequirements = normalizeBasicActivityResourceRequirements(job, "personnel").map((item) => ({
+    job.personnel = normalizeBasicActivityResourceRequirements(job, "personnel").map((item) => ({
       ...item,
-      professional: job.personnelProfessional || item.professional || item.model || ""
+      professional: job.personnelProfessional || item.professional || ""
     }));
   } else if (fieldName === "personnelKeys") {
-    job.personnelRequirements = basicActivityResourceRequirementsFromKeys("personnel", Array.isArray(value) ? value : []);
+    job.personnel = basicActivityResourceRequirementsFromKeys("personnel", Array.isArray(value) ? value : []);
   } else if (fieldName === "equipmentModel") {
     job.equipmentModel = String(value || "");
   } else if (fieldName === "equipmentKeys") {
-    job.equipmentRequirements = mergeBasicActivityResourceQuantities(
+    job.equipment = mergeBasicActivityResourceQuantities(
       normalizeBasicActivityResourceRequirements(job, "equipment"),
       basicActivityResourceRequirementsFromKeys("equipment", Array.isArray(value) ? value : [])
     );
   } else if (fieldName === "spareKeys") {
-    job.spareRequirements = mergeBasicActivityResourceQuantities(
+    job.spare = mergeBasicActivityResourceQuantities(
       normalizeBasicActivityResourceRequirements(job, "spare"),
       basicActivityResourceRequirementsFromKeys("spare", Array.isArray(value) ? value : [])
     );
   } else if (fieldName.startsWith("equipmentQuantity:")) {
-    job.equipmentRequirements = updateBasicActivityRequirementQuantity(job, "equipment", fieldName.replace(/^equipmentQuantity:/, ""), value);
+    job.equipment = updateBasicActivityRequirementQuantity(job, "equipment", fieldName.replace(/^equipmentQuantity:/, ""), value);
   } else if (fieldName.startsWith("spareQuantity:")) {
-    job.spareRequirements = updateBasicActivityRequirementQuantity(job, "spare", fieldName.replace(/^spareQuantity:/, ""), value);
+    job.spare = updateBasicActivityRequirementQuantity(job, "spare", fieldName.replace(/^spareQuantity:/, ""), value);
   }
   syncBasicActivityResourceSummaries(job);
   setBasicActivityTargetJob(target, job);
@@ -7395,7 +7902,6 @@ function updateBasicActivityResourceDialogField(key, resourceKind, index, fieldN
   requirements[index] = normalizeBasicActivityResourceDialogRequirement(resourceKind, {
     ...current,
     [fieldName]: nextValue,
-    ...(resourceKind === "personnel" && fieldName === "professional" ? { model: nextValue } : {}),
     ...(resourceKind === "equipment" && fieldName === "model" ? basicActivityResourceAutofillByModel("保障设备", nextValue) : {}),
     ...(resourceKind === "spare" && fieldName === "model" ? basicActivityResourceAutofillByModel("备件", nextValue) : {})
   }, index);
@@ -7445,9 +7951,7 @@ function createBasicActivityResourceRequirement(resourceKind, index) {
   if (resourceKind === "personnel") {
     const professional = basicActivityPersonnelProfessionalOptions()[1]?.value || "";
     return normalizeBasicActivityResourceDialogRequirement(resourceKind, {
-      key: `personnel:manual:${Date.now()}:${index}`,
       professional,
-      model: professional,
       quantity: 1
     }, index);
   }
@@ -7463,31 +7967,32 @@ function createBasicActivityResourceRequirement(resourceKind, index) {
 }
 
 function normalizeBasicActivityResourceDialogRequirement(resourceKind, item, index) {
-  const key = item.key || `${resourceKind}:manual:${Date.now()}:${index}`;
   if (resourceKind === "personnel") {
-    const professional = item.professional || item.model || "";
+    const professional = item.professional || "";
     return {
-      key,
       professional,
-      model: professional,
       quantity: Math.max(0, Number(item.quantity ?? 1))
     };
   }
   return {
-    key,
     name: item.name || "",
     model: item.model || "",
-    scope: item.scope || "",
     quantity: Math.max(0, Number(item.quantity ?? 1))
   };
 }
 
 function setBasicActivityResourceRequirements(job, resourceKind, requirements) {
-  job[`${resourceKind}Requirements`] = requirements.map((item, index) => normalizeBasicActivityResourceDialogRequirement(resourceKind, item, index));
   if (resourceKind === "personnel") {
-    job.personnelProfessional = job.personnelRequirements[0]?.professional || "";
+    job.personnel = requirements.map((item, index) => normalizeBasicActivityResourceDialogRequirement(resourceKind, item, index));
+    delete job.personnelRequirements;
+    job.personnelProfessional = job.personnel[0]?.professional || "";
   } else if (resourceKind === "equipment") {
-    job.equipmentModel = job.equipmentRequirements[0]?.model || "";
+    job.equipment = requirements.map((item, index) => normalizeBasicActivityResourceDialogRequirement(resourceKind, item, index));
+    delete job.equipmentRequirements;
+    job.equipmentModel = job.equipment[0]?.model || "";
+  } else if (resourceKind === "spare") {
+    job.spare = requirements.map((item, index) => normalizeBasicActivityResourceDialogRequirement(resourceKind, item, index));
+    delete job.spareRequirements;
   }
 }
 
@@ -7517,13 +8022,18 @@ function basicActivityResourceRequirementsFromKeys(resourceKind, keys) {
   return keys.map((key) => {
     const row = rowsByKey.get(String(key));
     if (!row) return null;
+    if (resourceKind === "personnel") {
+      return {
+        professional: row.model || "",
+        quantity: Number(row.quantity || 1)
+      };
+    }
     return {
       key: String(key),
       name: row.name || row.model || resourceType,
       model: row.model || "",
-      professional: resourceKind === "personnel" ? row.model || "" : "",
       scope: row.scope || "",
-      quantity: resourceKind === "personnel" ? Number(row.quantity || 1) : 1
+      quantity: 1
     };
   }).filter(Boolean);
 }
@@ -7548,15 +8058,12 @@ function syncBasicActivityResourceSummaries(job) {
   const personnelRequirements = normalizeBasicActivityResourceRequirements(job, "personnel");
   const equipmentRequirements = normalizeBasicActivityResourceRequirements(job, "equipment");
   const spareRequirements = normalizeBasicActivityResourceRequirements(job, "spare");
-  job.personnel = personnelRequirements
-    .map((item) => [item.professional || job.personnelProfessional || item.model, item.name || item.scope].filter(Boolean).join("/"))
-    .join("; ");
-  job.equipment = equipmentRequirements
-    .map((item) => [item.name || item.model, item.model, item.quantity ?? 1].filter(Boolean).join(","))
-    .join("; ");
-  job.spare = spareRequirements
-    .map((item) => [item.name || item.model, item.quantity ?? 1].filter(Boolean).join(","))
-    .join("; ");
+  job.personnel = personnelRequirements.map((item, index) => normalizeBasicActivityResourceDialogRequirement("personnel", item, index));
+  delete job.personnelRequirements;
+  job.equipment = equipmentRequirements.map((item, index) => normalizeBasicActivityResourceDialogRequirement("equipment", item, index));
+  delete job.equipmentRequirements;
+  job.spare = spareRequirements.map((item, index) => normalizeBasicActivityResourceDialogRequirement("spare", item, index));
+  delete job.spareRequirements;
 }
 
 function durationMinutesForSupportActivityProfile(profile, fallbackMinutes = 30) {
@@ -7581,7 +8088,7 @@ function updateBasicActivityType(activity, value) {
   activity.activityType = "使用保障活动";
   activity.planType = normalizeOperationsSupportPlanType(activity.planType);
   if (!supportActivityAircraftModel(activity)) {
-    activity.aircraftModel = wholeMachineModels()[0] || scenario.equipment.model || "";
+    activity.aircraftModel = wholeMachineModels()[0] || scenarioEquipmentModel() || "";
   }
 }
 
@@ -7639,9 +8146,9 @@ function importBasicActivityByType(type) {
     predecessors: [],
     durationProfile: { distributionType: "固定值", value: 30 },
     durationMinutes: 30,
-    personnel: "机务,1",
-    equipment: "通用工具,1",
-    spare: ""
+    personnel: defaultPersonnelRequirement("机务", 1),
+    equipment: defaultMaterialRequirement("通用工具", "通用工具", 1),
+    spare: []
   });
   activity.jobs = jobs;
   const activityIndex = (scenario.supportActivities || []).indexOf(activity);
@@ -8243,7 +8750,7 @@ function renderExperimentPlanList(page) {
       <span>${htmlEscape(experimentPlanListStatus)}</span>
     </div>
     <div class="toolbar-row">
-      <button type="button" class="btn-primary" data-experiment-plan-add disabled>新增</button>
+      <button type="button" class="btn-primary" data-experiment-plan-add>新增</button>
       <button type="button" data-experiment-plan-refresh>刷新</button>
     </div>
     <div class="table-wrap">
@@ -8295,6 +8802,97 @@ function experimentPlanSelectionKey(plan) {
   return `local:${String(plan?.name || plan?.config?.name || plan?.config?.projectJson?.experiment?.name || "未命名方案").trim()}`;
 }
 
+function experimentPlanContextOptions(page = getFeaturePageById(selectedFeatureId)) {
+  const localName = String(scenario.experiment?.name || experimentPlanDraft?.experiment?.name || currentProject?.name || "当前项目").trim();
+  const localOption = {
+    key: experimentPlanSelectionKey({ name: localName }),
+    name: `${localName || "当前项目"}（当前草稿）`,
+    plan: null,
+    projectJson: buildBackendProjectJson(experimentPlanDraft, currentProject),
+    module: page.module
+  };
+  const backendOptions = backendExperimentPlans.map((plan) => {
+    const config = plan?.config || {};
+    const projectJson = config.projectJson && typeof config.projectJson === "object" && !Array.isArray(config.projectJson)
+      ? config.projectJson
+      : null;
+    return {
+      key: experimentPlanSelectionKey(plan),
+      name: config.name || projectJson?.experiment?.name || plan.experiment_plan_id || "未命名方案",
+      plan,
+      projectJson,
+      module: page.module
+    };
+  });
+  return [localOption, ...backendOptions];
+}
+
+function selectedExperimentPlanContextKey(options = experimentPlanContextOptions()) {
+  const validKeys = new Set(options.map((option) => option.key));
+  for (const key of selectedExperimentPlanKeys) {
+    if (validKeys.has(key)) return key;
+  }
+  const currentPlanKey = experimentPlan ? experimentPlanSelectionKey(experimentPlan) : "";
+  if (validKeys.has(currentPlanKey)) return currentPlanKey;
+  const backendOptions = options.filter((option) => option.plan);
+  if (backendOptions.length === 1) return backendOptions[0].key;
+  return options[0]?.key || "";
+}
+
+function selectedExperimentPlanContext(options = experimentPlanContextOptions()) {
+  const selectedKey = selectedExperimentPlanContextKey(options);
+  return options.find((option) => option.key === selectedKey) || options[0] || null;
+}
+
+function selectedExperimentPlanName() {
+  return selectedExperimentPlanContext()?.name || currentContextSummary().name;
+}
+
+function selectedExperimentPlanProjectJson() {
+  const context = selectedExperimentPlanContext();
+  const source = context?.projectJson && typeof context.projectJson === "object" && !Array.isArray(context.projectJson)
+    ? context.projectJson
+    : scenario;
+  return buildBackendProjectJson(source, currentProject);
+}
+
+function selectedExperimentPlanRunSettings() {
+  const context = selectedExperimentPlanContext();
+  const config = context?.plan?.config && typeof context.plan.config === "object" && !Array.isArray(context.plan.config)
+    ? context.plan.config
+    : {};
+  const projectJson = context?.projectJson && typeof context.projectJson === "object" && !Array.isArray(context.projectJson)
+    ? context.projectJson
+    : {};
+  const experiment = projectJson.experiment && typeof projectJson.experiment === "object" && !Array.isArray(projectJson.experiment)
+    ? projectJson.experiment
+    : {};
+  const samples = positiveExperimentNumber(config.samples, positiveExperimentNumber(experiment.samples, 0));
+  const seed = positiveExperimentNumber(config.seed, positiveExperimentNumber(experiment.seed, 0));
+  return {
+    ...(samples > 0 ? { samples: Math.max(1, Math.min(1000, Math.trunc(samples))) } : {}),
+    ...(seed > 0 ? { seed: Math.trunc(seed) } : {})
+  };
+}
+
+function selectCurrentExperimentPlan(planKey) {
+  const options = experimentPlanContextOptions();
+  const selected = options.find((option) => option.key === planKey) || options[0];
+  if (!selected) return;
+  selectedExperimentPlanKeys = new Set([selected.key]);
+  experimentPlan = selected.plan || null;
+  liteMesaMonteCarloResult = null;
+  liteMesaMonteCarloStatus = `已绑定实验方案：${selected.name}`;
+  liteMesaAnalysisResults = {};
+  const planRunSettings = selectedExperimentPlanRunSettings();
+  if (Number(planRunSettings.samples) > 0 || Number(planRunSettings.seed) > 0) {
+    liteMesaMonteCarloSettings = {
+      ...liteMesaMonteCarloSettings,
+      ...planRunSettings
+    };
+  }
+}
+
 function toggleExperimentPlanSelection(planKey, checked) {
   if (!planKey) return;
   const next = new Set(selectedExperimentPlanKeys);
@@ -8303,12 +8901,20 @@ function toggleExperimentPlanSelection(planKey, checked) {
   selectedExperimentPlanKeys = next;
 }
 
+function openNewExperimentPlanEditor() {
+  experimentPlanManagementMode = "editor";
+  experimentPlan = null;
+  experimentPlanBranchActive = false;
+  createExperimentPlanBranchFromCurrentProject();
+  selectedExperimentPlanKeys = new Set();
+}
+
 function openExperimentPlanEditorFromList(experimentPlanId, planName) {
   experimentPlanManagementMode = "editor";
   const backendPlan = backendExperimentPlans.find((plan) => plan.experiment_plan_id === experimentPlanId);
-  const projectJson = backendPlan?.config?.projectJson;
-  if (projectJson && typeof projectJson === "object") {
-    experimentPlanDraft = cloneScenario(projectJson);
+  const branchDraft = experimentPlanDraftFromBackendPlan(backendPlan);
+  if (branchDraft) {
+    experimentPlanDraft = branchDraft;
     experimentPlanBranchActive = true;
     experimentPlan = backendPlan;
   } else {
@@ -8318,7 +8924,47 @@ function openExperimentPlanEditorFromList(experimentPlanId, planName) {
   updatePreviewResultsThroughApiClient(experimentPlanDraft);
 }
 
+function experimentPlanDraftFromBackendPlan(backendPlan) {
+  const config = backendPlan?.config;
+  if (!config || typeof config !== "object" || Array.isArray(config)) return null;
+  const branchProjectJson = config.projectJson && typeof config.projectJson === "object" && !Array.isArray(config.projectJson)
+    ? config.projectJson
+    : scenario;
+  const draft = cloneScenario(branchProjectJson);
+  if (!draft || typeof draft !== "object" || Array.isArray(draft)) return null;
+  if (!draft.experiment || typeof draft.experiment !== "object" || Array.isArray(draft.experiment)) {
+    draft.experiment = {};
+  }
+  if (config.name !== undefined) draft.experiment.name = config.name;
+  if (config.steps !== undefined) draft.experiment.steps = config.steps;
+  if (config.samples !== undefined) draft.experiment.samples = config.samples;
+  if (config.seed !== undefined) draft.experiment.seed = config.seed;
+  if (config.parallelCores !== undefined) draft.experiment.parallelCores = config.parallelCores;
+  if (config.stopCondition !== undefined) draft.experiment.stopCondition = config.stopCondition;
+  if (config.seedPolicy && typeof config.seedPolicy === "object" && !Array.isArray(config.seedPolicy)) {
+    draft.seedPolicy = cloneScenario(config.seedPolicy);
+  } else if (config.seed !== undefined) {
+    draft.seedPolicy = { mode: "fixed", baseSeed: config.seed };
+  }
+  if (config.scenarioComposition && typeof config.scenarioComposition === "object" && !Array.isArray(config.scenarioComposition)) {
+    draft.scenarioComposition = cloneScenario(config.scenarioComposition);
+  }
+  if (config.analysisRequests && typeof config.analysisRequests === "object" && !Array.isArray(config.analysisRequests)) {
+    draft.analysisRequests = cloneScenario(config.analysisRequests);
+  }
+  if (config.monteCarlo && typeof config.monteCarlo === "object" && !Array.isArray(config.monteCarlo)) {
+    draft.monteCarlo = cloneScenario(config.monteCarlo);
+  }
+  return ensureExperimentPlanDraftDefaults(draft);
+}
+
 function renderExperimentPlanEditor(page) {
+  const seedPolicy = experimentPlanSeedPolicy();
+  const composition = scenarioCompositionDraft();
+  const sourceProjectJson = scenarioCompositionSourceProjectJson();
+  const selectedPath = normalizedSelectedScenarioCompositionPath(sourceProjectJson, composition);
+  const selectedOverrideContext = scenarioOverrideEditorContext(sourceProjectJson, selectedPath);
+  const parameterOptions = scenarioOverrideParameterOptions(sourceProjectJson);
   return `
     <div class="section-head">
       <h3>方案编辑</h3>
@@ -8332,11 +8978,424 @@ function renderExperimentPlanEditor(page) {
       ${experimentPlanField("并行核心数", "experiment.parallelCores", "number")}
       ${experimentPlanField("停止条件", "experiment.stopCondition")}
     </div>
+    <div class="section-head sub-section-head">
+      <h3>随机种子</h3>
+      <span>${seedPolicy.mode === "random" ? "生成方案时固化随机 base seed" : "固定 base seed 可复现"}</span>
+    </div>
+    <div class="form-table-grid">
+      <label>种子模式
+        <select data-experiment-seed-policy>
+          <option value="fixed" ${seedPolicy.mode === "fixed" ? "selected" : ""}>固定</option>
+          <option value="random" ${seedPolicy.mode === "random" ? "selected" : ""}>随机</option>
+        </select>
+      </label>
+      <label>Base seed<input data-experiment-seed-base type="number" step="1" value="${htmlEscape(seedPolicy.baseSeed)}"></label>
+    </div>
+    <div class="section-head sub-section-head">
+      <h3>Scenario 拼接</h3>
+      <span>${composition.overrides.length ? `${composition.overrides.length} 个建模数据覆盖项` : "尚未添加覆盖项"}</span>
+    </div>
+    <div class="scenario-composition-workspace">
+      <section class="scenario-project-json-panel">
+        <div class="section-head">
+          <h3>建模数据</h3>
+          <span>点选属性叶子节点</span>
+        </div>
+        ${renderScenarioModelingDataTree(sourceProjectJson, selectedPath)}
+      </section>
+      <section class="scenario-composition-editor-panel">
+        ${renderSelectedScenarioOverrideEditor(selectedOverrideContext)}
+        <div class="toolbar-row">
+          <button type="button" class="btn-primary" data-scenario-override-add>新增覆盖项</button>
+        </div>
+        <datalist id="scenario-override-path-options">
+          ${parameterOptions.map((option) => `<option value="${htmlEscape(option.path)}">${htmlEscape(option.label)}</option>`).join("")}
+        </datalist>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>已设置属性</th><th>类型</th><th>替换值</th><th>说明</th><th>动作</th></tr></thead>
+            <tbody>
+              ${composition.overrides.length ? composition.overrides.map((override, index) => renderScenarioOverrideRow(override, index)).join("") : `<tr><td colspan="5">暂无覆盖项</td></tr>`}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
     <div class="plan-editor-actions">
       <button type="button" data-plan-list-link>返回方案列表</button>
       <button type="button" class="btn-primary" data-save-plan>保存方案</button>
     </div>
   `;
+}
+
+const SCENARIO_TOP_LEVEL_LABELS = Object.freeze({
+  activeModule: "当前模块",
+  aircraftTypes: "飞机类型对象",
+  airports: "机场清单对象",
+  analysisRequests: "分析请求对象",
+  basicMissions: "基本任务清单对象",
+  combatUnit: "作战单元对象",
+  combatUnits: "作战单元清单对象",
+  components: "装备部件清单对象",
+  compositeTasks: "复合任务清单对象",
+  equipment: "装备系统对象",
+  experiment: "实验参数对象",
+  missionAreas: "任务区域清单对象",
+  missionPhases: "任务阶段清单对象",
+  missionProfile: "任务剖面对象",
+  modelingDictionaries: "建模字典对象",
+  monteCarlo: "蒙特卡洛设置对象",
+  objects: "对象集合",
+  projectInfo: "项目信息对象",
+  scenarioComposition: "方案拼接对象",
+  scenarioId: "场景编号",
+  seedPolicy: "随机种子策略对象",
+  supportActivities: "保障活动清单对象",
+  supportNodes: "保障点清单对象",
+  supportOrganization: "保障组织对象",
+  supportResources: "保障资源清单对象"
+});
+
+const SCENARIO_FIELD_LABELS = Object.freeze({
+  activityCode: "活动编号",
+  activityName: "活动名称",
+  activityType: "活动类型",
+  airport: "机场",
+  aircraftModel: "飞机型号",
+  aircraftTypes: "飞机类型",
+  baseCode: "基础代码",
+  baseProjectVersion: "基础项目版本",
+  basicTaskName: "基本任务名称",
+  capacity: "容量",
+  compositeTasks: "复合任务",
+  constraints: "约束条件",
+  durationHours: "持续时间(h)",
+  equipmentCapacity: "设备容量",
+  equipmentType: "装备类型",
+  failureRate: "故障率",
+  id: "编号",
+  inventory: "库存",
+  jobs: "作业",
+  meanRepairTimeMinutes: "平均修复时间(min)",
+  members: "成员",
+  minRequiredSorties: "最低出动架次",
+  missionId: "任务编号",
+  model: "型号",
+  mode: "模式",
+  name: "名称",
+  parallelCores: "并行核心数",
+  personnelCapacity: "人员容量",
+  planType: "方案类型",
+  project_id: "项目编号",
+  project_version: "项目版本",
+  projectInfo: "项目信息",
+  quantity: "数量",
+  repeatCycleHours: "重复周期(h)",
+  sampleCount: "样本数",
+  samples: "样本数",
+  scenarioId: "场景编号",
+  schemaVersion: "模式版本",
+  schema_version: "模式版本",
+  seed: "随机种子",
+  sourceImportId: "来源导入编号",
+  sourceProjectId: "来源项目编号",
+  specialty: "专业",
+  steps: "仿真步数",
+  stopCondition: "停止条件",
+  summary: "摘要",
+  supportNodeId: "保障点编号",
+  taskDurationMinutes: "任务持续时间(min)",
+  type: "类型",
+  value: "值",
+  wholeMachineModels: "整机型号"
+});
+
+const SCENARIO_ARRAY_ITEM_LABELS = Object.freeze({
+  aircraftTypes: "飞机类型",
+  airports: "机场",
+  basicMissions: "基本任务",
+  combatUnits: "作战单元",
+  components: "装备部件",
+  compositeTasks: "复合任务",
+  jobs: "作业",
+  members: "成员",
+  missionAreas: "任务区域",
+  missionPhases: "任务阶段",
+  periodicTasks: "周期性任务",
+  supportActivities: "保障活动",
+  supportNodes: "保障点",
+  supportResources: "保障资源",
+  transportStrategies: "调运策略"
+});
+
+function normalizedSelectedScenarioCompositionPath(projectJson, composition) {
+  if (isScenarioLeafPath(projectJson, selectedScenarioCompositionPath)) return selectedScenarioCompositionPath;
+  const firstOverridePath = (composition.overrides || []).find((override) => isScenarioLeafPath(projectJson, override.path))?.path || "";
+  selectedScenarioCompositionPath = firstOverridePath;
+  return selectedScenarioCompositionPath;
+}
+
+function isScenarioLeafPath(projectJson, path) {
+  if (!path) return false;
+  const value = projectPathValue(projectJson, path);
+  return value !== undefined && (value === null || typeof value !== "object");
+}
+
+function renderScenarioModelingDataTree(projectJson, selectedPath) {
+  const nodes = Object.entries(projectJson || {})
+    .filter(([key]) => !["schema_version", "project_version"].includes(key))
+    .map(([key, value]) => scenarioModelingDataTreeNode(value, key, scenarioTopLevelLabel(key), key, selectedPath, 0));
+  return nodes.length
+    ? renderCollapsibleTree(nodes, { className: "scenario-modeling-data-tree" })
+    : `<div class="empty-state"><strong>暂无建模数据</strong></div>`;
+}
+
+function scenarioModelingDataTreeNode(value, path, label, rawKey, selectedPath, depth) {
+  const nodeId = `scenario-modeling:${path}`;
+  if (value === null || typeof value !== "object") {
+    return {
+      id: nodeId,
+      label,
+      meta: scenarioModelingValueText(value),
+      selected: path === selectedPath,
+      actionAttrs: `data-scenario-modeling-path="${htmlEscape(path)}"`
+    };
+  }
+  if (Array.isArray(value)) {
+    const itemLabel = SCENARIO_ARRAY_ITEM_LABELS[rawKey] || "项目";
+    return {
+      id: nodeId,
+      label,
+      meta: `${value.length} 项`,
+      root: depth === 0,
+      children: value.slice(0, 80).map((item, index) => scenarioModelingDataTreeNode(
+        item,
+        `${path}.${index}`,
+        `${itemLabel} ${index + 1}`,
+        rawKey,
+        selectedPath,
+        depth + 1
+      ))
+    };
+  }
+  const entries = Object.entries(value).filter(([key]) => !["schema_version", "project_version"].includes(key));
+  return {
+    id: nodeId,
+    label,
+    meta: scenarioObjectMeta(value, entries.length),
+    root: depth === 0,
+    children: entries.map(([key, child]) => scenarioModelingDataTreeNode(
+      child,
+      `${path}.${key}`,
+      scenarioFieldLabelForPath(`${path}.${key}`, key),
+      key,
+      selectedPath,
+      depth + 1
+    ))
+  };
+}
+
+function scenarioTopLevelLabel(key) {
+  return SCENARIO_TOP_LEVEL_LABELS[key] || `${scenarioFieldLabel(key)}对象`;
+}
+
+function scenarioFieldLabel(key) {
+  return SCENARIO_FIELD_LABELS[key] || key;
+}
+
+function scenarioFieldLabelForPath(path, key) {
+  const contextLabels = {
+    "experiment.name": "实验名称",
+    "missionProfile.name": "任务剖面名称",
+    "projectInfo.name": "项目名称"
+  };
+  return contextLabels[path] || scenarioFieldLabel(key);
+}
+
+function scenarioObjectMeta(value, childCount) {
+  const name = String(value?.name || value?.activityName || value?.basicTaskName || value?.id || "").trim();
+  return name || `${childCount} 项`;
+}
+
+function scenarioModelingValueText(value) {
+  if (value === null) return "空";
+  if (typeof value === "boolean") return value ? "是" : "否";
+  const text = String(value);
+  return text.length > 36 ? `${text.slice(0, 36)}...` : text;
+}
+
+function scenarioOverrideEditorContext(projectJson, path) {
+  if (!isScenarioLeafPath(projectJson, path)) return null;
+  const composition = scenarioCompositionDraft();
+  const override = (composition.overrides || []).find((item) => item.path === path) || null;
+  const originalValue = projectPathValue(projectJson, path);
+  return {
+    path,
+    label: scenarioPathDisplayLabel(projectJson, path),
+    originalValue,
+    override,
+    valueType: override?.valueType || inferScenarioOverrideValueType(originalValue),
+    value: override ? override.value : scenarioOverrideInputValue(originalValue)
+  };
+}
+
+function renderSelectedScenarioOverrideEditor(context) {
+  if (!context) {
+    return `
+      <section class="scenario-selected-override-card">
+        <div class="section-head">
+          <h3>选中属性</h3>
+          <span>等待点选</span>
+        </div>
+        <div class="empty-state"><strong>请选择左侧属性叶子节点</strong></div>
+      </section>
+    `;
+  }
+  return `
+    <section class="scenario-selected-override-card">
+      <div class="section-head">
+        <h3>选中属性</h3>
+        <span>${htmlEscape(context.label)}</span>
+      </div>
+      <div class="form-table-grid scenario-selected-override-grid">
+        <label>属性
+          <input value="${htmlEscape(context.label)}" readonly>
+        </label>
+        <label>类型
+          <select data-scenario-selected-override-value-type data-scenario-selected-override-path="${htmlEscape(context.path)}">
+            ${["string", "number", "boolean", "json"].map((type) => `<option value="${type}" ${context.valueType === type ? "selected" : ""}>${scenarioValueTypeLabel(type)}</option>`).join("")}
+          </select>
+        </label>
+        <label>当前值
+          <input value="${htmlEscape(scenarioOverrideInputValue(context.originalValue))}" readonly>
+        </label>
+        <label>替换值
+          <input data-scenario-selected-override-value data-scenario-selected-override-path="${htmlEscape(context.path)}" value="${htmlEscape(context.value ?? "")}">
+        </label>
+      </div>
+    </section>
+  `;
+}
+
+function scenarioValueTypeLabel(type) {
+  return {
+    string: "文本",
+    number: "数值",
+    boolean: "布尔",
+    json: "JSON"
+  }[type] || type;
+}
+
+function scenarioOverrideInputValue(value) {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value);
+}
+
+function inferScenarioOverrideValueType(value) {
+  if (typeof value === "number") return "number";
+  if (typeof value === "boolean") return "boolean";
+  if (value && typeof value === "object") return "json";
+  return "string";
+}
+
+function scenarioPathDisplayLabel(projectJson, path) {
+  const segments = String(path || "").split(".").filter(Boolean);
+  const labels = [];
+  let current = projectJson;
+  let parentKey = "";
+  let currentPath = "";
+  segments.forEach((segment, index) => {
+    currentPath = currentPath ? `${currentPath}.${segment}` : segment;
+    if (/^\d+$/.test(segment)) {
+      const itemLabel = SCENARIO_ARRAY_ITEM_LABELS[parentKey] || "项目";
+      labels.push(`${itemLabel} ${Number(segment) + 1}`);
+    } else {
+      labels.push(index === 0 ? scenarioTopLevelLabel(segment) : scenarioFieldLabelForPath(currentPath, segment));
+      parentKey = segment;
+    }
+    current = projectPathValue(projectJson, currentPath);
+  });
+  return labels.join(" / ");
+}
+
+function upsertScenarioOverrideForPath(path, projectJson) {
+  const composition = scenarioCompositionDraft();
+  const overrides = composition.overrides;
+  let override = overrides.find((item) => item.path === path);
+  const originalValue = projectPathValue(projectJson, path);
+  if (!override) {
+    override = {
+      path,
+      valueType: inferScenarioOverrideValueType(originalValue),
+      value: scenarioOverrideInputValue(originalValue),
+      label: scenarioPathDisplayLabel(projectJson, path)
+    };
+    overrides.push(override);
+  }
+  override.label = scenarioPathDisplayLabel(projectJson, path);
+  return override;
+}
+
+function renderScenarioOverrideRow(override, index) {
+  const valueType = override.valueType || "string";
+  return `
+    <tr>
+      <td><input list="scenario-override-path-options" data-scenario-override-path data-scenario-override-index="${index}" value="${htmlEscape(override.path || "")}" placeholder="supportNodes.0.inventory.LRU-A"></td>
+      <td>
+        <select data-scenario-override-value-type data-scenario-override-index="${index}">
+          ${["string", "number", "boolean", "json"].map((type) => `<option value="${type}" ${valueType === type ? "selected" : ""}>${type}</option>`).join("")}
+        </select>
+      </td>
+      <td><input data-scenario-override-value data-scenario-override-index="${index}" value="${htmlEscape(override.value ?? "")}"></td>
+      <td><input data-scenario-override-label data-scenario-override-index="${index}" value="${htmlEscape(override.label || "")}"></td>
+      <td><button type="button" class="btn-danger" data-scenario-override-remove="${index}">删除</button></td>
+    </tr>
+  `;
+}
+
+function scenarioCompositionSourceProjectJson() {
+  return buildBackendProjectJson(scenario, currentProject);
+}
+
+function scenarioOverrideParameterOptions(projectJson) {
+  const options = [];
+  collectScenarioOverrideParameterOptions(projectJson, "", options);
+  const preferred = [
+    "experiment.samples",
+    "experiment.seed",
+    "supportNodes.0.inventory",
+    "supportNodes.0.personnelCapacity",
+    "supportNodes.0.equipmentCapacity",
+    "components.0.failureRate",
+    "components.0.meanRepairTimeMinutes",
+    "basicMissions.0.minRequiredSorties"
+  ];
+  const seen = new Set(options.map((option) => option.path));
+  for (const path of preferred) {
+    if (!seen.has(path)) options.unshift({ path, label: path });
+  }
+  return options.slice(0, 160);
+}
+
+function collectScenarioOverrideParameterOptions(value, path, options) {
+  if (options.length >= 160) return;
+  if (value === null || value === undefined) return;
+  if (typeof value !== "object") {
+    if (path) options.push({ path, label: `${path} = ${String(value).slice(0, 32)}` });
+    return;
+  }
+  if (Array.isArray(value)) {
+    value.slice(0, 3).forEach((item, index) => {
+      collectScenarioOverrideParameterOptions(item, path ? `${path}.${index}` : String(index), options);
+    });
+    return;
+  }
+  for (const [key, child] of Object.entries(value)) {
+    if (["schema_version", "project_version"].includes(key)) continue;
+    collectScenarioOverrideParameterOptions(child, path ? `${path}.${key}` : key, options);
+    if (options.length >= 160) return;
+  }
 }
 
 function experimentPlanField(label, path, type = "text") {
@@ -8387,6 +9446,9 @@ async function restoreStoredBackendSessionOnBoot() {
     }
     backendApiStatus = "M4 会话已恢复";
     await hydrateProjectCatalogFromBackend();
+    if (selectedRoute === "workbench" && currentProject) {
+      await hydrateCurrentProjectDraftFromApi();
+    }
   } catch (err) {
     backendAuthToken = "";
     localStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
@@ -8403,7 +9465,7 @@ async function handleEnterWorkbench(projectId) {
   await flushPendingProjectDraftAutosave();
   currentProject = demoProjects.find((project) => project.id === projectId) || demoProjects[0];
   if (!currentProject) {
-    projectListStatus = "请先创建项目";
+    projectListStatus = "请先选择项目模板创建项目";
     selectedRoute = "projects";
     location.hash = "route=projects";
     return;
@@ -8422,20 +9484,125 @@ async function handleEnterWorkbench(projectId) {
   await hydrateCurrentProjectDraftFromApi();
 }
 
-function addDemoProject() {
-  const nextIndex = demoProjects.length + 1;
-  const project = {
-    id: `new-project-${nextIndex}`,
-    name: `新增项目${nextIndex}`,
-    baseCode: `NB-${String(nextIndex).padStart(2, "0")}`,
-    updatedAt: new Date().toISOString().slice(0, 10),
-    summary: "新建项目草稿，进入后可维护建模数据。",
-    sourceKind: PROJECT_SOURCE.manual_draft
+async function createProjectFromSelectedProjectTemplate() {
+  const templateProject = selectedProjectTemplateProject();
+  if (!templateProject) {
+    projectListStatus = "暂无项目模板，请先在项目数据管理设为模板";
+    return null;
+  }
+  return createProjectFromProjectTemplate(templateProject);
+}
+
+async function createProjectFromProjectTemplate(templateProject) {
+  try {
+    const templateProjectId = projectDataProjectBackendId(templateProject);
+    projectListStatus = `正在从项目模板创建项目：${templateProject.name || templateProjectId}`;
+    const templateProjectJson = await backendApi.getProject(templateProjectId);
+    const { projectJson, project } = buildProjectCopyFromTemplateJson(templateProjectJson, templateProject);
+    const saved = await backendApi.saveProject(projectJson);
+    demoProjects = mergeProjectsById([project, ...demoProjects]);
+    currentProject = project;
+    scenario = cloneScenario(projectJson);
+    experimentPlanDraft = cloneScenario(projectJson);
+    experimentPlanBranchActive = false;
+    backendExperimentPlans = [];
+    backendExperimentPlansProjectId = "";
+    backendExperimentPlansLoaded = false;
+    backendExperimentPlansLoadInFlight = false;
+    experimentPlanListStatus = "仿真实验方案列表尚未加载";
+    savedProject = saved || { project_id: projectJson.project_id, project_version: projectJson.project_version || "project-v0.1" };
+    modelingSnapshot = null;
+    await hydrateProjectCatalogFromBackend({ forceProjectId: project.id });
+    currentProject = demoProjects.find((entry) => entry.id === project.id) || project;
+    projectListStatus = `已从项目模板创建项目：${project.name}`;
+    projectDraftSaveStatus = "已保存";
+    projectDraftHydrateStatus = "项目来自 Project 模板";
+    updatePreviewResultsThroughApiClient();
+    return project;
+  } catch (err) {
+    projectListStatus = `项目模板创建失败：${err && err.message ? err.message : "Backend API 不可用"}`;
+    return null;
+  }
+}
+
+function buildProjectCopyFromTemplateJson(templateProjectJson, templateProject) {
+  const normalizedTemplateProjectJson = normalizeProjectJsonBasicMissions(cloneScenario(templateProjectJson));
+  const copyNumber = nextProjectTemplateCopyNumber(templateProject);
+  const baseProjectId = String(normalizedTemplateProjectJson.project_id || projectDataProjectBackendId(templateProject));
+  const projectId = uniqueProjectTemplateCopyBackendId(baseProjectId, copyNumber);
+  const resolvedCopyNumber = projectIdCopyNumber(projectId) || copyNumber;
+  const baseScenarioId = String(normalizedTemplateProjectJson.scenarioId || `${baseProjectId}-scenario`);
+  const projectName = `${templateProject.name || normalizedTemplateProjectJson.projectInfo?.name || normalizedTemplateProjectJson.experiment?.name || "未命名项目"} 副本 ${resolvedCopyNumber}`;
+  const projectJson = {
+    ...normalizedTemplateProjectJson,
+    project_id: projectId,
+    scenarioId: uniqueProjectTemplateCopyScenarioId(baseScenarioId, resolvedCopyNumber),
+    isTemplate: false,
+    is_template: false,
+    projectTemplate: false,
+    template: false,
+    metadata: {
+      ...(normalizedTemplateProjectJson.metadata || {}),
+      isTemplate: false
+    },
+    experiment: {
+      ...(normalizedTemplateProjectJson.experiment || {}),
+      name: projectName
+    },
+    projectInfo: {
+      ...(normalizedTemplateProjectJson.projectInfo || {}),
+      name: projectName,
+      baseCode: normalizedTemplateProjectJson.projectInfo?.baseCode || templateProject.baseCode || "NB",
+      summary: `由项目模板 ${templateProject.name || baseProjectId} 创建`,
+      isTemplate: false,
+      is_template: false
+    }
   };
-  demoProjects = mergeProjectsById([project, ...demoProjects]);
-  currentProject = project;
-  projectListStatus = `已添加项目：${project.name}`;
-  persistManualDraftProjects();
+  const project = {
+    id: projectId.replace(/^project-/, ""),
+    name: projectName,
+    baseCode: projectJson.projectInfo.baseCode,
+    updatedAt: new Date().toISOString().slice(0, 10),
+    summary: projectJson.projectInfo.summary,
+    sourceKind: PROJECT_SOURCE.imported_sample,
+    sourceImportId: projectJson.missionProfile?.sourceImportId || projectDataTemplateSourceImportId(templateProject),
+    isTemplate: false,
+    projectBackendId: projectId
+  };
+  return { projectJson, project };
+}
+
+function nextProjectTemplateCopyNumber(templateProject) {
+  const baseProjectId = projectDataProjectBackendId(templateProject);
+  let copyNumber = 2;
+  while (projectCatalogBackendIds().has(`${baseProjectId}-copy-${copyNumber}`)) {
+    copyNumber += 1;
+  }
+  return copyNumber;
+}
+
+function uniqueProjectTemplateCopyBackendId(baseProjectId, copyNumber) {
+  let candidateNumber = copyNumber;
+  let projectId = `${baseProjectId}-copy-${candidateNumber}`;
+  const existingIds = projectCatalogBackendIds();
+  while (existingIds.has(projectId)) {
+    candidateNumber += 1;
+    projectId = `${baseProjectId}-copy-${candidateNumber}`;
+  }
+  return projectId;
+}
+
+function uniqueProjectTemplateCopyScenarioId(baseScenarioId, copyNumber) {
+  return `${baseScenarioId}-copy-${copyNumber}`;
+}
+
+function projectIdCopyNumber(projectId) {
+  const match = String(projectId || "").match(/-copy-(\d+)$/);
+  return match ? Number(match[1]) : 0;
+}
+
+function projectCatalogBackendIds() {
+  return new Set(demoProjects.map((project) => projectDataProjectBackendId(project)));
 }
 
 async function createSampleProjectFromPublishedImport(importId = currentPublishedModelingImportId()) {
@@ -8487,17 +9654,86 @@ async function createSampleProjectFromPublishedImport(importId = currentPublishe
 }
 
 async function loadSampleModelingImportFixture() {
-  try {
-    return await loadModelingImportTemplate(DEFAULT_SAMPLE_MODELING_IMPORT_TEMPLATE_ID);
-  } catch {
-    return cloneModelingImportPackage(MODELING_IMPORT_DEMO_FIXTURE);
+  return cloneModelingImportPackage(MODELING_IMPORT_DEMO_FIXTURE);
+}
+
+function ensurePublishedModelingImportPackagesLoaded({ force = false } = {}) {
+  if (publishedModelingImportPackagesLoading) return;
+  if (publishedModelingImportPackagesLoaded && !force) return;
+  publishedModelingImportPackagesLoading = true;
+  publishedImportStatus = "正在读取已发布导入包";
+  backendApi.listProjectDataTemplates({ state: "published" })
+    .then((result) => {
+      publishedModelingImportPackages = Array.isArray(result?.templates) ? result.templates : [];
+      publishedModelingImportPackagesLoaded = true;
+      publishedModelingImportPackagesLoading = false;
+      if (!selectedPublishedModelingImportId && publishedModelingImportPackages.length) {
+        selectedPublishedModelingImportId = projectDataTemplateSourceImportId(publishedModelingImportPackages[0]);
+      }
+      publishedImportStatus = publishedModelingImportPackages.length
+        ? `已加载 ${publishedModelingImportPackages.length} 个已发布导入包`
+        : "暂无已发布导入包";
+      if (selectedPublishedModelingImportId && !selectedPublishedModelingImportPackage()) {
+        loadPublishedModelingImportPackage(selectedPublishedModelingImportId, { renderAfter: false }).finally(() => render());
+        return;
+      }
+      render();
+    })
+    .catch((err) => {
+      publishedModelingImportPackagesLoaded = true;
+      publishedModelingImportPackagesLoading = false;
+      publishedImportStatus = `已发布导入包列表加载失败：${err && err.message ? err.message : "Backend API 不可用"}`;
+      render();
+    });
+}
+
+async function loadPublishedModelingImportPackage(importId, { renderAfter = true } = {}) {
+  const normalizedImportId = String(importId || "").trim();
+  if (!normalizedImportId) {
+    publishedImportStatus = "未选择已发布导入包";
+    return;
   }
+  selectedPublishedModelingImportId = normalizedImportId;
+  publishedImportStatus = "正在读取导入包预览";
+  try {
+    const stored = await backendApi.getModelingImport(normalizedImportId);
+    applyModelingImportRecord(stored);
+    if (!publishedModelingImportPackages.some((template) => projectDataTemplateSourceImportId(template) === normalizedImportId)) {
+      publishedModelingImportPackages.unshift(templateSummaryFromModelingImportRecord(stored));
+    }
+    publishedImportStatus = "已选择项目数据导入包";
+  } catch (err) {
+    publishedImportStatus = `导入包预览加载失败：${err && err.message ? err.message : "Backend API 不可用"}`;
+  } finally {
+    if (renderAfter) render();
+  }
+}
+
+function templateSummaryFromModelingImportRecord(record) {
+  const state = normalizeModelingImportRecord(record, MODELING_IMPORT_DEMO_FIXTURE);
+  const packagePayload = state.publishedPackage || state.importPackage || {};
+  const objects = packagePayload.objects || {};
+  const projectInfo = objects.projectInfo || {};
+  const validation = packagePayload.validation || state.validation || {};
+  const importId = packagePayload.importId || record?.importId || "";
+  return {
+    template_id: importId,
+    template_type: "project_data",
+    source_import_id: importId,
+    project_id: packagePayload.projectId || record?.projectId || "",
+    name: projectInfo.name || packagePayload.importId || record?.importId || "未命名模板",
+    summary: projectInfo.summary || "",
+    validation_status: validation.status || "unknown",
+    object_counts: Object.fromEntries(
+      Object.entries(objects)
+        .filter(([, value]) => Array.isArray(value))
+        .map(([key, value]) => [key, value.length])
+    )
+  };
 }
 
 async function hydrateProjectCatalogFromBackend({ forceProjectId = "" } = {}) {
   const focusProjectId = forceProjectId || (currentProject?.id ? String(currentProject.id) : "");
-  const localManualProjects = readManualDraftProjectsFromStorage();
-  const fallbackProjects = mergeProjectsById(localManualProjects);
   projectListStatus = "正在从后端读取项目列表";
   try {
     const result = await backendApi.listProjects();
@@ -8506,16 +9742,16 @@ async function hydrateProjectCatalogFromBackend({ forceProjectId = "" } = {}) {
         .map((entry) => toProjectFromBackendApiEntry(entry))
         .filter(Boolean)
       : [];
-    demoProjects = mergeProjectsById([...backendProjects, ...fallbackProjects]);
+    demoProjects = mergeProjectsById(backendProjects);
     currentProject = demoProjects.find((project) => project.id === focusProjectId) || demoProjects[0];
     if (backendProjects.length) {
       projectListStatus = `已加载 ${backendProjects.length} 个后端项目`;
     } else {
-      projectListStatus = "后端未返回项目，使用本地项目清单";
+      projectListStatus = "后端未返回项目，请先选择项目模板创建项目";
     }
   } catch (err) {
-    demoProjects = fallbackProjects;
-    currentProject = demoProjects.find((project) => project.id === focusProjectId) || demoProjects[0];
+    demoProjects = [];
+    currentProject = null;
     projectListStatus = `后端项目列表加载失败：${err && err.message ? err.message : "Backend API 不可用"}`;
   }
 }
@@ -8523,6 +9759,7 @@ async function hydrateProjectCatalogFromBackend({ forceProjectId = "" } = {}) {
 function currentPublishedModelingImportId() {
   return modelingImportPublishedPackage?.importId
     || modelingImportPublishedPackage?.import_id
+    || selectedPublishedModelingImportId
     || readLastPublishedModelingImportId()
     || "";
 }
@@ -8545,7 +9782,7 @@ function updateProjectEditorDraft(fieldName, value) {
   };
 }
 
-function saveProjectEditorDraft() {
+async function saveProjectEditorDraft() {
   if (!projectEditorDraft) return;
   const saved = {
     ...projectEditorDraft,
@@ -8554,11 +9791,35 @@ function saveProjectEditorDraft() {
     summary: projectEditorDraft.summary.trim() || "项目说明待补充。",
     updatedAt: new Date().toISOString().slice(0, 10)
   };
-  demoProjects = demoProjects.map((project) => (project.id === saved.id ? saved : project));
-  if (currentProject?.id === saved.id) currentProject = saved;
-  persistManualDraftProjects();
-  projectEditorDraft = null;
-  projectListStatus = `已保存项目：${saved.name}`;
+  const currentEntry = demoProjects.find((project) => project.id === saved.id);
+  const backendProjectId = saved.projectBackendId || currentEntry?.projectBackendId || `project-${saved.id}`;
+  try {
+    const projectJson = await backendApi.getProject(backendProjectId);
+    const nextProjectJson = {
+      ...projectJson,
+      experiment: {
+        ...(projectJson.experiment || {}),
+        name: saved.name
+      },
+      projectInfo: {
+        ...(projectJson.projectInfo || {}),
+        name: saved.name,
+        baseCode: saved.baseCode,
+        summary: saved.summary
+      }
+    };
+    await backendApi.saveProject(nextProjectJson);
+    if (scenario?.project_id === backendProjectId || currentProject?.id === saved.id) {
+      scenario = cloneScenario(nextProjectJson);
+      experimentPlanDraft = experimentPlanBranchActive ? experimentPlanDraft : cloneScenario(nextProjectJson);
+    }
+    demoProjects = demoProjects.map((project) => (project.id === saved.id ? saved : project));
+    if (currentProject?.id === saved.id) currentProject = saved;
+    projectEditorDraft = null;
+    projectListStatus = `已保存项目：${saved.name}`;
+  } catch (err) {
+    projectListStatus = `项目保存失败：${err && err.message ? err.message : "Backend API 不可用"}`;
+  }
 }
 
 async function deleteDemoProject(projectId) {
@@ -8567,116 +9828,15 @@ async function deleteDemoProject(projectId) {
     projectListStatus = "项目不存在";
     return;
   }
-  if (removed.sourceKind === PROJECT_SOURCE.manual_draft && !removed.projectBackendId) {
-    demoProjects = demoProjects.filter((project) => project.id !== projectId);
-    if (currentProject?.id === projectId) currentProject = demoProjects[0] || null;
-    deleteManualProjectJsonDraft(projectId);
-    persistManualDraftProjects();
-    projectListStatus = `已删除本地草稿：${removed.name}`;
-    return;
-  }
   const backendProjectId = removed.projectBackendId || `project-${removed.id}`;
   try {
     await backendApi.deleteProject(backendProjectId);
     demoProjects = demoProjects.filter((project) => project.id !== projectId);
     if (currentProject?.id === projectId) currentProject = demoProjects[0] || null;
-    deleteManualProjectJsonDraft(projectId);
-    persistManualDraftProjects();
     projectListStatus = `已从后端删除项目：${removed.name}`;
   } catch (err) {
     projectListStatus = `后端删除项目失败：${err && err.message ? err.message : "Backend API 不可用"}`;
   }
-}
-
-function openProjectJsonImportPicker(projectId) {
-  if (typeof document === "undefined" || !document.createElement || !document.body) {
-    projectListStatus = "当前环境不支持选择项目 JSON 文件";
-    return;
-  }
-  const input = document.createElement("input");
-  input.type = "file";
-  input.accept = "application/json,.json";
-  input.dataset.projectImportFile = projectId || "";
-  input.style.display = "none";
-  input.addEventListener("change", () => {
-    importProjectJsonFile(projectId, input.files?.[0])
-      .finally(() => {
-        input.remove();
-        render();
-      });
-  });
-  document.body.append(input);
-  input.click();
-}
-
-async function importProjectJsonFile(projectId, file) {
-  if (!file) {
-    projectListStatus = "未选择项目 JSON 文件";
-    return;
-  }
-  let projectJson;
-  try {
-    projectJson = JSON.parse(await file.text());
-  } catch (err) {
-    projectListStatus = `项目 JSON 导入失败：${err && err.message ? err.message : "文件不是合法 JSON"}`;
-    return;
-  }
-  const missingFields = validateImportedProjectJson(projectJson);
-  if (missingFields.length) {
-    projectListStatus = `项目 JSON 导入失败：缺少 ${missingFields.join(", ")}`;
-    return;
-  }
-  const fallbackProject = demoProjects.find((project) => project.id === projectId) || null;
-  const project = projectCardFromProjectJson(projectJson, fallbackProject);
-  const normalizedProjectJson = buildBackendProjectJson(projectJson, project);
-  demoProjects = mergeProjectsById([project, ...demoProjects.filter((item) => item.id !== project.id)]);
-  currentProject = project;
-  scenario = cloneScenario(normalizedProjectJson);
-  experimentPlanDraft = cloneScenario(normalizedProjectJson);
-  experimentPlanBranchActive = false;
-  persistManualDraftProjects();
-  persistManualProjectJsonDraft(project.id, normalizedProjectJson);
-  updatePreviewResultsThroughApiClient();
-  projectDraftSaveStatus = "本地项目 JSON 已导入";
-  projectDraftHydrateStatus = "项目来自本地 JSON 文件";
-  projectListStatus = `已导入项目 JSON：${project.name}`;
-}
-
-function validateImportedProjectJson(projectJson) {
-  if (!projectJson || typeof projectJson !== "object" || Array.isArray(projectJson)) {
-    return ["Project JSON root object"];
-  }
-  return [
-    "scenarioId",
-    "activeModule",
-    "airports",
-    "missionAreas",
-    "experiment",
-    "missionProfile",
-    "basicMission",
-    "missionPhases",
-    "combatUnit",
-    "equipment",
-    "components",
-    "supportNodes",
-    "supportActivities",
-    "reliabilityBlockDiagram",
-    "monteCarlo"
-  ].filter((field) => !(field in projectJson));
-}
-
-function projectCardFromProjectJson(projectJson, fallbackProject = null) {
-  const rawId = firstNonEmptyString(projectJson.project_id, projectJson.scenarioId, fallbackProject?.id, `imported-project-${Date.now()}`);
-  const id = normalizeProjectCardId(rawId);
-  return {
-    id,
-    name: firstNonEmptyString(projectJson.experiment?.name, projectJson.projectInfo?.name, projectJson.missionProfile?.name, fallbackProject?.name, "导入项目"),
-    baseCode: firstNonEmptyString(projectJson.projectInfo?.baseCode, projectJson.project_id, projectJson.scenarioId, fallbackProject?.baseCode, "JSON"),
-    updatedAt: new Date().toISOString().slice(0, 10),
-    summary: firstNonEmptyString(projectJson.projectInfo?.summary, projectJson.summary, fallbackProject?.summary, `由项目 JSON 导入：${projectJson.scenarioId || projectJson.project_id || "未命名"}`),
-    sourceKind: PROJECT_SOURCE.manual_draft,
-    sourceImportId: ""
-  };
 }
 
 async function exportProjectJson(projectId) {
@@ -8693,12 +9853,8 @@ async function exportProjectJson(projectId) {
 }
 
 async function resolveProjectJsonForExport(project) {
-  if (currentProject?.id === project.id) {
+  if (selectedRoute === "workbench" && currentProject?.id === project.id) {
     return buildBackendProjectJson(scenario, project);
-  }
-  const localProjectJson = readManualProjectJsonDraft(project.id);
-  if (localProjectJson) {
-    return buildBackendProjectJson(localProjectJson, project);
   }
   const backendProjectId = project.projectBackendId || (project.sourceKind === PROJECT_SOURCE.imported_sample ? `project-${project.id}` : "");
   if (backendProjectId) {
@@ -8814,7 +9970,7 @@ async function refreshExperimentPlanList(projectId = currentBackendProjectId(), 
 
 async function deleteExperimentPlanFromList(experimentPlanId) {
   if (!experimentPlanId) {
-    experimentPlanListStatus = "本地草稿方案尚未保存为后端 ExperimentPlan，无法清理关联回放";
+    experimentPlanListStatus = "当前方案尚未保存为后端 ExperimentPlan，无法清理关联回放";
     return;
   }
   if (!canManageM7Lifecycle()) {
@@ -8884,16 +10040,6 @@ async function hydrateCurrentProjectDraftFromApi() {
     projectDraftHydrateStatus = "已从 Project draft 恢复";
     backendApiStatus = "Project draft 已恢复";
   } catch (err) {
-    const localProjectJson = readManualProjectJsonDraft(currentProject?.id);
-    if (localProjectJson) {
-      scenario = cloneScenario(localProjectJson);
-      experimentPlanDraft = cloneScenario(localProjectJson);
-      updatePreviewResultsThroughApiClient();
-      projectDraftSaveStatus = "本地项目 JSON 已加载";
-      projectDraftHydrateStatus = "已从本地 Project JSON 草稿恢复";
-      backendApiStatus = "Project draft 使用本地 JSON";
-      return;
-    }
     projectDraftHydrateStatus = `未读取到 Project draft：${err && err.message ? err.message : "Backend API 不可用"}`;
   }
 }
@@ -8915,7 +10061,8 @@ async function saveCurrentProjectDraftThroughApi() {
 
 async function saveCurrentExperimentPlanThroughApi() {
   const projectJson = buildBackendProjectJson(scenario, currentProject);
-  const planProjectJson = buildBackendProjectJson(experimentPlanDraft, currentProject);
+  const planProjectJson = cloneScenario(experimentPlanDraft);
+  ensureExperimentPlanLargeSampleRequest(planProjectJson);
   try {
     savedProject = await backendApi.saveProject(projectJson);
     modelingSnapshot = await backendApi.createModelingSnapshot(savedProject.project_id);
@@ -8927,6 +10074,8 @@ async function saveCurrentExperimentPlanThroughApi() {
     });
     experimentPlan = await backendApi.createExperimentPlan(savedProject.project_id, runIntent.experimentPlanConfig);
     await refreshExperimentPlanList(savedProject.project_id, { force: true });
+    experimentPlanManagementMode = "list";
+    selectedExperimentPlanKeys = new Set([experimentPlanSelectionKey(experimentPlan)]);
     backendApiStatus = "实验方案分支已保存";
   } catch (err) {
     savedProject = null;
@@ -8934,6 +10083,22 @@ async function saveCurrentExperimentPlanThroughApi() {
     experimentPlan = null;
     backendApiStatus = `实验方案保存失败：${err && err.message ? err.message : "Backend API 不可用"}`;
   }
+}
+
+function ensureExperimentPlanLargeSampleRequest(projectJson) {
+  ensureExperimentPlanDraftDefaults(projectJson);
+  ensureMonteCarloSweepDefaults(projectJson);
+  const samples = Math.max(1, Math.trunc(Number(projectJson.experiment?.samples || 1)));
+  projectJson.analysisRequests = {
+    ...(projectJson.analysisRequests || {}),
+    largeSample: {
+      ...(projectJson.analysisRequests?.largeSample || {}),
+      enabled: true,
+      samples,
+      sweep: cloneScenario(projectJson.monteCarlo || defaultMonteCarloSweepForProject(projectJson))
+    }
+  };
+  return projectJson;
 }
 
 function currentProjectCanStartFormalRun() {
@@ -8948,7 +10113,7 @@ function currentProjectCanStartFormalRun() {
   }
   return {
     allowed: false,
-    message: "请先从已发布建模导入包生成示例项目，再启动正式后端运行；本地草稿需要先通过建模导入发布链路生成示例项目。"
+    message: "请先选择项目模板创建项目，再启动正式后端运行。"
   };
 }
 
@@ -8985,7 +10150,7 @@ async function startSingleRunThroughApi() {
   formalRunSubmitInFlight = true;
   const runType = "single";
   const projectJson = buildBackendProjectJson(scenario, currentProject);
-  const planProjectJson = buildBackendProjectJson(experimentPlanDraft, currentProject);
+  const planProjectJson = selectedExperimentPlanProjectJson();
   try {
     const submitted = await submitRunIntent(backendApi, {
       runType,
@@ -9034,7 +10199,12 @@ async function startSingleRunThroughApi() {
   }
 }
 
-async function startMonteCarloRunThroughApi({ monteCarloExperimentId = selectedMonteCarloExperimentId, analysisType = "", analysisProfile = null } = {}) {
+async function startMonteCarloRunThroughApi({
+  monteCarloExperimentId = selectedMonteCarloExperimentId,
+  analysisType = "",
+  analysisProfile = null,
+  planProjectJsonOverride = null
+} = {}) {
   const existingExperiment = monteCarloExperimentByBusinessId(monteCarloExperimentId);
   const formalRunGate = currentProjectCanStartFormalRun();
   if (!formalRunGate.allowed) {
@@ -9050,7 +10220,9 @@ async function startMonteCarloRunThroughApi({ monteCarloExperimentId = selectedM
   const runType = "monte_carlo";
   const projectJson = buildBackendProjectJson(scenario, currentProject);
   ensureMonteCarloSweepDefaults(experimentPlanDraft);
-  const planProjectJson = buildBackendProjectJson(experimentPlanDraft, currentProject);
+  const planProjectJson = planProjectJsonOverride && typeof planProjectJsonOverride === "object"
+    ? buildBackendProjectJson(planProjectJsonOverride, currentProject)
+    : selectedExperimentPlanProjectJson();
   try {
     const submitted = await submitRunIntent(backendApi, {
       runType,
@@ -9428,6 +10600,48 @@ function ensureVisualizationRunListLoaded() {
       visualizationRunListLoadInFlight = false;
       render();
     });
+}
+
+async function startFormalVisualizationRunThroughApi() {
+  if (!currentProject) {
+    visualizationReplayStatus = "启动仿真失败：请先创建或选择项目。";
+    return null;
+  }
+  if (independentMesaVisualizationInFlight) {
+    visualizationReplayStatus = "仿真正在启动，请等待当前请求返回";
+    return null;
+  }
+  independentMesaVisualizationInFlight = true;
+  stopVisualizationRunStream("正在启动仿真，M9.2 在线订阅已停止");
+  stopVisualizationReplay();
+  visualizationReplayStatus = "正在通过正式 /api/runs 启动仿真";
+  try {
+    const submittedRun = await startSingleRunThroughApi();
+    const runId = submittedRun?.run_id || backendRun?.run_id || "";
+    if (!runId) throw new Error("正式仿真未返回 run_id");
+    visualizationSelectedRunId = runId;
+    visualizationRunListLoaded = true;
+    await refreshVisualizationRunList(runId);
+    await loadVisualizationReplayForRun(runId);
+    if (!visualizationStateSeries) throw new Error(`run ${runId} 缺少正式 state-series artifact`);
+    visualizationReplayIndex = 0;
+    visualizationReplayPlaying = true;
+    backendApiStatus = `正式仿真完成：${runId}`;
+    visualizationReplayStatus = `已读取正式 state_series 并开始回放：run_id ${runId}`;
+    render();
+    startVisualizationReplay();
+    return submittedRun || backendRun;
+  } catch (err) {
+    visualizationStateSeries = null;
+    visualizationReplayIndex = 0;
+    visualizationReplayPlaying = false;
+    backendApiStatus = `仿真失败：${formatBackendError(err)}`;
+    visualizationReplayStatus = backendApiStatus;
+    render();
+    return null;
+  } finally {
+    independentMesaVisualizationInFlight = false;
+  }
 }
 
 async function loadVisualizationReplayForRun(runId = visualizationSelectedRunId || backendRun?.run_id) {
@@ -10364,10 +11578,6 @@ function backendUserStatus(status) {
   return status || "active";
 }
 
-function modelingImportTemplateLabel(templateId) {
-  return MODELING_IMPORT_TEMPLATES.find((template) => template.id === templateId)?.label || "内置导入模板";
-}
-
 async function importModelingImportJsonFile(file) {
   if (!file) {
     modelingImportStatus = "未选择导入包 JSON 文件";
@@ -10398,8 +11608,8 @@ async function importModelingImportJsonFile(file) {
 
 async function handleModelingImportAction(action, options = {}) {
   if (action === "load-fixture") {
+    const templatePackage = cloneModelingImportPackage(MODELING_IMPORT_DEMO_FIXTURE);
     try {
-      const templatePackage = await loadModelingImportTemplate(options.templateId || selectedModelingImportTemplateId);
       const stored = await backendApi.getModelingImport(templatePackage.importId);
       if (sampleImportPackageIsComplete(stored?.publishedPackage || stored?.draftPackage, templatePackage)) {
         applyModelingImportRecord(stored);
@@ -10409,17 +11619,12 @@ async function handleModelingImportAction(action, options = {}) {
         modelingImportPublishedPackage = null;
         modelingImportValidation = cloneModelingImportPackage(modelingImportPackage.validation || {});
         modelingImportSaved = false;
-        modelingImportStatus = `内置导入模板已加载：${modelingImportTemplateLabel(options.templateId || selectedModelingImportTemplateId)}`;
+        modelingImportStatus = "内嵌样例导入包已加载";
       }
       modelingImportCompileResult = null;
     } catch {
-      try {
-        modelingImportPackage = await loadModelingImportTemplate(options.templateId || selectedModelingImportTemplateId);
-        modelingImportStatus = `内置导入模板已加载：${modelingImportTemplateLabel(options.templateId || selectedModelingImportTemplateId)}`;
-      } catch {
-        modelingImportPackage = cloneModelingImportPackage(MODELING_IMPORT_DEMO_FIXTURE);
-        modelingImportStatus = "内置模板文件不可用，已加载内嵌样例导入包";
-      }
+      modelingImportPackage = templatePackage;
+      modelingImportStatus = "内嵌样例导入包已加载";
       modelingImportPublishedPackage = null;
       modelingImportValidation = cloneModelingImportPackage(
         modelingImportPackage.validation || MODELING_IMPORT_DEMO_FIXTURE.validation
@@ -10516,6 +11721,9 @@ async function handleModelingImportAction(action, options = {}) {
       });
       applyModelingImportRecord(publishResult.published);
       persistLastPublishedModelingImportId(modelingImportPackage.importId);
+      selectedPublishedModelingImportId = modelingImportPackage.importId;
+      publishedModelingImportPackagesLoaded = false;
+      ensurePublishedModelingImportPackagesLoaded({ force: true });
       modelingImportSaved = true;
       modelingImportStatus = publishResult.versioned
         ? `原发布快照已被运行引用，已发布新版本：${modelingImportPackage.importId}`
@@ -10598,7 +11806,6 @@ function applyModelingImportCompileGateResult(compileResult) {
   modelingImportValidation = {
     ok: false,
     status,
-    validationLevel: compileResult?.validationLevel,
     usedTables: cloneModelingImportPackage(compileResult?.usedTables || {}),
     issues: displayIssues
   };
@@ -10618,7 +11825,6 @@ function applyModelingImportCompileWarnings(compileResult) {
     ...(modelingImportValidation || {}),
     ok: !issues.some((issue) => issue.severity !== "warning"),
     status: issueStatusForDisplayIssues(issues),
-    validationLevel: compileResult?.validationLevel,
     usedTables: cloneModelingImportPackage(compileResult?.usedTables || {}),
     issues
   };
@@ -10724,24 +11930,17 @@ async function handleMesaControl(action) {
   if (action === "start-new-run") {
     stopVisualizationRunStream("正在启动新仿真，M9.2 在线订阅已停止");
     stopVisualizationReplay();
-    visualizationReplayStatus = "正在启动新仿真并准备正式回放";
-    const formalRunGate = await ensureFormalRunImportedSampleProject();
-    if (!formalRunGate.allowed) {
-      visualizationReplayStatus = `启动新仿真失败：${formalRunGate.message}`;
-      return;
-    }
-    const submittedRun = await startSingleRunThroughApi();
+    visualizationReplayStatus = "正在启动仿真并准备回放";
+    const submittedRun = await startFormalVisualizationRunThroughApi();
     const newRunId = submittedRun?.run_id || backendRun?.run_id || "";
     if (!newRunId) {
       visualizationReplayStatus = `启动新仿真失败：${backendApiStatus || "未返回 run_id"}`;
       return;
     }
-    await refreshVisualizationRunList(newRunId);
-    await loadVisualizationReplayForRun(newRunId);
     if (visualizationStateSeries && visualizationStateSeries.run_id === newRunId && !isVisualizationStateSeriesFromStream()) {
       visualizationReplayPlaying = true;
       startVisualizationReplay();
-      visualizationReplayStatus = `已启动新仿真并开始回放：run_id ${newRunId}`;
+      visualizationReplayStatus = `已启动仿真并开始回放：run_id ${newRunId}`;
     }
     return;
   }
@@ -10846,27 +12045,21 @@ function renderVisualSimulation(page) {
   const source = visualizationStateSeriesFrame || visualizationBlockedState();
   const state = normalizeAviationSupportState(source);
   const activeView = ["aircraft", "mission", "support"].includes(selectedMesaView) ? selectedMesaView : "aircraft";
-  ensureVisualizationRunListLoaded();
-  const sourceLabel = visualizationStateSeriesFrame
-    ? (isOnlineStreamFrame ? "在线状态流" : "state_series artifact")
-    : "正式回放阻断";
-  const sourceClass = visualizationStateSeriesFrame ? (isOnlineStreamFrame ? "state-stream" : "state-series") : "blocked";
-  const sourceTitle = visualizationStateSeriesFrame
-    ? `数据来源：run_id ${visualizationStateSeries.run_id} / artifact_id ${visualizationStateSeries.artifact_id}${isOnlineStreamFrame ? " / M9.2 online state stream" : ""}`
-    : "缺少 aircraft_support_v1 state_series artifact，正式可视化不会回退到旧 aviation_support 或演示快照";
   const timelineMax = Math.max(0, (visualizationStateSeries?.frame_count || 1) - 1);
   const currentFrame = visualizationStateSeriesFrame ? visualizationReplayIndex + 1 : 0;
-  const runOptions = renderVisualizationRunOptions();
-  const eventStream = visualizationStateSeriesFrame
-    ? (visualizationStateSeries.event_stream || buildVisualizationEventStream(visualizationStateSeries))
-    : [];
+  const eventStream = visualizationStateSeriesFrame ? buildSimulationLogStream(visualizationStateSeries) : [];
   const replayStatusDetail = visualizationStateSeriesFrame
     ? `run_id ${htmlEscape(visualizationStateSeries.run_id)} / artifact_id ${htmlEscape(visualizationStateSeries.artifact_id)} / step ${htmlEscape(visualizationStateSeriesFrame.step)} / ${currentFrame}-${htmlEscape(visualizationStateSeries.frame_count)} 帧 / 事件 ${htmlEscape(visualizationStateSeries.event_count)}`
-    : "缺少 aircraft_support_v1 state_series 时，正式可视化保持阻断；请启动新仿真或选择已完成且带 artifact 的 run。";
+    : "缺少 aircraft_support_v1 state_series artifact 时，正式可视化不会回退到旧 aviation_support 或演示快照；请启动新仿真或选择已完成且带 artifact 的 run。";
   const timelineFrameLabel = visualizationStateSeriesFrame
-    ? `${currentFrame} / ${htmlEscape(visualizationStateSeries.frame_count)} 帧`
+    ? simulationDayMinuteLabel(visualizationStateSeriesFrame.simulation_time)
     : "等待正式回放";
+  const timelineFrameMeta = visualizationStateSeriesFrame
+    ? `${currentFrame} / ${htmlEscape(visualizationStateSeries.frame_count)} 帧`
+    : "未加载 state_series";
   const visualKpis = visualSimulationKpis(state);
+  const projectName = currentProject?.name || "当前项目";
+  const experimentPlanName = selectedExperimentPlanName();
   const availabilityTrend = buildAvailabilityTrend(
     state,
     visualizationStateSeries,
@@ -10874,20 +12067,19 @@ function renderVisualSimulation(page) {
   );
   return `
     <div class="mesa-visual-shell">
-      <div class="mesa-visual-header">
+      <section class="lite-mesa-hero mesa-visual-hero">
         <div>
-          <h3>飞机保障正式仿真</h3>
-          <p>通过平台 Project / ExperimentPlan 提交 canonical /api/runs，并使用正式 state-series artifact 展示飞机、任务和保障资源。</p>
+          <span class="status-badge success">正式 visualization run</span>
+          <h3>可视化推演</h3>
+          <p>${htmlEscape(projectName)} / ${htmlEscape(page.module)} / ${htmlEscape(experimentPlanName)}</p>
         </div>
-        <div class="mesa-clock">T+${Number((source.snapshot && source.snapshot.elapsed_hours) || 0).toFixed(1)}h <span class="mesa-source mesa-source-${sourceClass}" title="${htmlEscape(sourceTitle)}">${htmlEscape(sourceLabel)}</span></div>
-      </div>
+        <div class="lite-mesa-hero-actions">
+          ${renderExperimentPlanContextDropdown(page)}
+        </div>
+      </section>
       <div class="mesa-control-deck">
         <div class="mesa-control-groups" aria-label="运行控制">
           <div class="mesa-control-group mesa-control-group-primary">
-            <label class="mesa-run-picker">
-              <span>选择回放</span>
-              <select data-mesa-run-select aria-label="选择回放">${runOptions}</select>
-            </label>
             <button type="button" class="btn-primary" data-mesa-control="play">${visualizationReplayPlaying ? "暂停回放" : "启动回放"}</button>
             <button type="button" data-mesa-control="start-new-run" ${formalRunSubmitInFlight ? "disabled" : ""}>启动新仿真</button>
             <details class="mesa-control-status ${visualizationStateSeriesFrame ? "success" : "warning"}">
@@ -10907,26 +12099,22 @@ function renderVisualSimulation(page) {
       </div>
       <div class="mesa-timeline-card">
         <div>
-          <span>state_series 时间轴</span>
+          <span>仿真时间轴</span>
           <strong>${timelineFrameLabel}</strong>
+          <small>${timelineFrameMeta}</small>
         </div>
-        <input type="range" min="0" max="${timelineMax}" value="${Math.min(visualizationReplayIndex, timelineMax)}" data-mesa-timeline ${visualizationStateSeriesFrame && !isOnlineStreamFrame ? "" : "disabled"} aria-label="M9 state_series 时间轴">
+        <input type="range" min="0" max="${timelineMax}" value="${Math.min(visualizationReplayIndex, timelineMax)}" data-mesa-timeline ${visualizationStateSeriesFrame && !isOnlineStreamFrame ? "" : "disabled"} aria-label="仿真时间轴">
       </div>
+      ${activeView === "aircraft" ? renderAvailabilityCurve(availabilityTrend) : ""}
       <div class="mesa-visual-grid ${activeView === "mission" ? "mission-expanded" : ""}">
         <section class="mesa-stage-panel">
-          ${renderMesaStage(activeView, state, availabilityTrend)}
+          ${renderMesaStage(activeView, state)}
         </section>
         ${activeView === "mission" ? "" : `<aside class="mesa-side-panel">${renderMesaSidePanel(activeView, state)}</aside>`}
       </div>
       ${renderVisualizationEventStream(eventStream, visualizationReplayIndex)}
     </div>
   `;
-}
-
-function renderVisualizationRunOptions() {
-  const runId = visualizationSelectedRunId || backendRun?.run_id || visualizationStateSeries?.run_id || visualizationRunList[0]?.run_id || "";
-  if (!runId) return `<option value="">无已选择 run</option>`;
-  return `<option value="${htmlEscape(runId)}" selected>${htmlEscape(runId)}</option>`;
 }
 
 function visualizationStreamEventClass() {
@@ -10940,20 +12128,26 @@ function renderVisualizationEventStream(events, activeFrameIndex) {
   return `
     <div class="backend-run-chain mesa-event-window" data-mesa-event-stream>
       <div class="section-head">
-        <h3>事件追溯</h3>
-        <span>${events.length ? `${events.length} 个事件` : "等待正式 state_series"}</span>
+        <h3>仿真日志</h3>
+        <span>${events.length ? `${events.length} 条日志` : "等待仿真日志"}</span>
       </div>
       ${events.length ? `
-        <div class="stack-list">
-          ${events.map((event) => `
-            <button type="button" class="event ${event.frame_index === activeFrameIndex ? "success" : "info"}" data-mesa-event-jump="${htmlEscape(event.frame_index)}">
-              <strong>T+${htmlEscape(event.simulation_time)} / step ${htmlEscape(event.step)}</strong>
-              ${htmlEscape(event.event_type || event.event)} - ${htmlEscape(event.message)}
-              <br><small>run ${htmlEscape(event.run_id)} / event ${htmlEscape(event.event_id)} / metrics ${(event.metric_refs || []).map((item) => htmlEscape(item)).join(", ") || "-"}</small>
-            </button>
-          `).join("")}
-        </div>
-      ` : `<div class="event warning">未加载正式 state_series artifact，事件流不使用演示快照。</div>`}
+        <details class="simulation-log-collapse">
+          <summary><strong>全部保障事件</strong><span>${events.length} 条，点击展开</span></summary>
+          <div class="stack-list">
+            ${events.map((event) => `
+              <button type="button" class="event simulation-log-event ${event.frame_index === activeFrameIndex ? "success" : htmlEscape(event.severity || "info")}" data-mesa-event-jump="${htmlEscape(event.frame_index)}">
+                <span class="simulation-log-head">
+                  <strong>${htmlEscape(simulationDayMinuteLabel(event.simulation_time))}</strong>
+                  <em>${htmlEscape(event.log_type || simulationLogTypeLabel(event.event_type || event.event))}</em>
+                </span>
+                <span>${htmlEscape(event.message)}</span>
+                <small>frame ${htmlEscape(Number(event.frame_index) + 1)} / step ${htmlEscape(event.step)} / run ${htmlEscape(event.run_id || "-")}</small>
+              </button>
+            `).join("")}
+          </div>
+        </details>
+      ` : `<div class="event warning">暂无任务分配、保障作业、任务启动/结束、故障或维修日志。</div>`}
     </div>
   `;
 }
@@ -10970,11 +12164,11 @@ function visualSimulationKpis(state) {
   const aircraftTrendCounts = countAircraftTrendStates(state.aircraft);
   const stockedSpares = state.spares.filter((spare) => Number(spare.quantity || 0) > 0).length;
   return [
-    { label: "使用可用度", value: pct(usableAircraft / aircraftCount) },
-    { label: "出动架次率", value: pct(assignedSorties / Math.max(1, requiredSorties)) },
+    { label: "使用可用度", value: ratioFixed(usableAircraft / aircraftCount) },
+    { label: "出动架次率", value: ratioFixed(assignedSorties / Math.max(1, requiredSorties)) },
     { label: "维修中飞机", value: `${aircraftTrendCounts.maintenance} 架` },
     { label: "保障中飞机", value: `${aircraftTrendCounts.support} 架` },
-    { label: "备件满足率", value: pct(stockedSpares / Math.max(1, state.spares.length)) }
+    { label: "备件满足率", value: ratioFixed(stockedSpares / Math.max(1, state.spares.length)) }
   ];
 }
 
@@ -11052,26 +12246,32 @@ function renderAvailabilityCurve(trend) {
     ...points.map((point) => Number(point.total || 0)),
     ...points.flatMap((point) => AIRCRAFT_TREND_SERIES.map((series) => Number(point[series.key] || 0)))
   );
-  const width = 320;
-  const height = 92;
+  const width = 960;
+  const height = 120;
+  const margin = { left: 44, right: 12, top: 12, bottom: 24 };
+  const plotWidth = width - margin.left - margin.right;
+  const plotHeight = height - margin.top - margin.bottom;
   const chartPoints = points.map((point, index) => {
-    const x = points.length === 1 ? width / 2 : (index / (points.length - 1)) * width;
+    const x = points.length === 1
+      ? margin.left + plotWidth / 2
+      : margin.left + (index / (points.length - 1)) * plotWidth;
     return {
       ...point,
       x,
       seriesY: Object.fromEntries(AIRCRAFT_TREND_SERIES.map((series) => [
         series.key,
-        height - (Number(point[series.key] || 0) / maxTotal) * (height - 16) - 8
+        margin.top + (1 - Number(point[series.key] || 0) / maxTotal) * plotHeight
       ]))
     };
   });
   return `
     <div class="availability-chart">
       <div class="section-head">
-        <h3>飞机数量趋势</h3>
+        <h3>飞机状态一览</h3>
         <span>${points.length} 个采样点</span>
       </div>
-      <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="可用飞机数量趋势、任务中、维修中、使用保障中飞机数量随时间变化曲线">
+      <svg class="availability-trend-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="飞机状态一览：可用飞机、任务中、维修中、使用保障中飞机数量随时间变化曲线">
+        ${renderAvailabilityYAxis(maxTotal, { width, height, margin, plotWidth, plotHeight })}
         ${AIRCRAFT_TREND_SERIES.map((series) => renderAvailabilityTrendLine(chartPoints, series)).join("")}
       </svg>
       <div class="availability-trend-legend">
@@ -11079,6 +12279,25 @@ function renderAvailabilityCurve(trend) {
       </div>
       <div class="availability-axis"><span>${htmlEscape(points[0]?.label || "-")}</span><strong>${AIRCRAFT_TREND_SERIES.map((series) => `${series.label} ${points.at(-1)?.[series.key] ?? 0}`).join(" / ")} / 峰值 ${maxTotal} 架</strong><span>${htmlEscape(points.at(-1)?.label || "-")}</span></div>
     </div>
+  `;
+}
+
+function renderAvailabilityYAxis(maxTotal, dimensions) {
+  const { width, margin, plotWidth, plotHeight } = dimensions;
+  const ticks = [maxTotal, Math.round(maxTotal / 2), 0];
+  return `
+    <g class="availability-y-axis" aria-label="y坐标轴">
+      <line x1="${margin.left}" y1="${margin.top}" x2="${margin.left}" y2="${margin.top + plotHeight}"></line>
+      ${ticks.map((tick) => {
+        const y = margin.top + (1 - tick / Math.max(1, maxTotal)) * plotHeight;
+        return `
+          <line class="grid-line" x1="${margin.left}" y1="${y.toFixed(1)}" x2="${(margin.left + plotWidth).toFixed(1)}" y2="${y.toFixed(1)}"></line>
+          <text x="${margin.left - 8}" y="${(y + 4).toFixed(1)}">${htmlEscape(tick)}</text>
+        `;
+      }).join("")}
+      <text class="axis-title" x="12" y="${Math.round(margin.top + plotHeight / 2)}" transform="rotate(-90 12 ${Math.round(margin.top + plotHeight / 2)})">飞机数量</text>
+      <line x1="${margin.left}" y1="${margin.top + plotHeight}" x2="${width - margin.right}" y2="${margin.top + plotHeight}"></line>
+    </g>
   `;
 }
 
@@ -11096,15 +12315,163 @@ function renderAvailabilityTrendLine(chartPoints, series) {
   `;
 }
 
-function renderMesaStage(activeView, state, availabilityTrend) {
-  if (activeView === "mission") return renderMesaMissionStage(state);
-  if (activeView === "support") return renderMesaSupportStage(state);
-  return renderMesaAircraftStage(state, availabilityTrend);
+function buildSimulationLogStream(series = {}) {
+  const frames = Array.isArray(series?.frames) ? series.frames : [];
+  const directLogs = buildVisualizationEventStream(series)
+    .filter((event) => !isStateFrameEvent(event))
+    .map((event) => ({
+      ...event,
+      log_type: simulationLogTypeLabel(event.event_type || event.event),
+      severity: simulationLogSeverity(event.event_type || event.event)
+    }));
+  const derivedLogs = deriveSimulationLogEvents(frames, series?.run_id || "");
+  return dedupeSimulationLogs([...directLogs, ...derivedLogs])
+    .sort((a, b) => Number(a.simulation_time || 0) - Number(b.simulation_time || 0) || Number(a.frame_index || 0) - Number(b.frame_index || 0))
+    .slice(-240);
 }
 
-function renderMesaAircraftStage(state, availabilityTrend) {
+function isStateFrameEvent(event = {}) {
+  const type = String(event.event_type || event.event || "").toLowerCase();
+  return type === "state_frame";
+}
+
+function deriveSimulationLogEvents(frames, runId) {
+  const logs = [];
+  let previousState = null;
+  frames.forEach((frame, frameIndex) => {
+    const state = normalizeAviationSupportState(frame);
+    deriveMissionLogs(logs, previousState, state, frame, frameIndex, runId);
+    deriveSupportJobLogs(logs, previousState, state, frame, frameIndex, runId);
+    deriveAircraftStatusLogs(logs, previousState, state, frame, frameIndex, runId);
+    previousState = state;
+  });
+  return logs;
+}
+
+function deriveMissionLogs(logs, previousState, state, frame, frameIndex, runId) {
+  const previousMissions = new Map((previousState?.missions || []).map((mission) => [String(mission.id), mission]));
+  for (const mission of state.missions || []) {
+    const missionId = String(mission.id || "");
+    const previous = previousMissions.get(missionId) || {};
+    const assigned = Array.isArray(mission.assignedTailNumbers) ? mission.assignedTailNumbers : [];
+    const previousAssigned = Array.isArray(previous.assignedTailNumbers) ? previous.assignedTailNumbers : [];
+    if (assigned.length && assigned.join("|") !== previousAssigned.join("|")) {
+      pushSimulationLog(logs, frame, frameIndex, runId, "mission_assigned", "任务成员分配", `任务 ${missionId} 分配 ${assigned.join(" / ")}`, "info", missionId);
+    }
+    if (["launched", "flying"].includes(String(mission.status)) && !["launched", "flying"].includes(String(previous.status))) {
+      pushSimulationLog(logs, frame, frameIndex, runId, "mission_started", "任务启动", `任务 ${missionId} 启动，执行飞机 ${assigned.join(" / ") || "-"}`, "success", missionId);
+    }
+    if (["completed", "succeeded", "failed", "cancelled"].includes(String(mission.status)) && String(mission.status) !== String(previous.status)) {
+      pushSimulationLog(logs, frame, frameIndex, runId, "mission_finished", "任务结束", `任务 ${missionId} ${missionStatusLabel(mission.status)}，执行飞机 ${assigned.join(" / ") || "-"}`, mission.status === "completed" || mission.status === "succeeded" ? "success" : "warning", missionId);
+    }
+  }
+}
+
+function deriveSupportJobLogs(logs, previousState, state, frame, frameIndex, runId) {
+  const previousJobs = new Map((previousState?.jobs || []).map((job) => [String(job.id), job]));
+  for (const job of state.jobs || []) {
+    const jobId = String(job.id || `${job.tailNumber}-${job.kind}-${job.task}`);
+    const previous = previousJobs.get(jobId) || {};
+    if (!previousState || (String(job.state) === String(previous.state) && String(job.remaining) === String(previous.remaining))) {
+      continue;
+    }
+    const label = job.kind === "repair" ? "维修" : "飞机保障作业";
+    const message = `${job.tailNumber || "-"} ${job.task || supportJobKindLabel(job.kind)} / ${supportJobStateLabel(job.state)} / 剩余 ${Number(job.remaining || 0)}min`;
+    pushSimulationLog(logs, frame, frameIndex, runId, `support_job_${job.kind || "job"}`, label, message, job.kind === "repair" ? "warning" : "info", jobId);
+  }
+}
+
+function deriveAircraftStatusLogs(logs, previousState, state, frame, frameIndex, runId) {
+  const previousAircraft = new Map((previousState?.aircraft || []).map((aircraft) => [String(aircraft.id), aircraft]));
+  for (const aircraft of state.aircraft || []) {
+    const previous = previousAircraft.get(String(aircraft.id)) || {};
+    if (aircraft.failedLru && aircraft.failedLru !== previous.failedLru) {
+      pushSimulationLog(logs, frame, frameIndex, runId, "aircraft_failure", "飞机故障", `${aircraft.label} 故障 LRU ${aircraft.failedLru}`, "warning", aircraft.id);
+    }
+    if (previousState && isMaintenanceAircraftState(previous.state) && !isMaintenanceAircraftState(aircraft.state) && !aircraft.failedLru) {
+      pushSimulationLog(logs, frame, frameIndex, runId, "repair_finished", "维修", `${aircraft.label} 维修结束，状态 ${visualAircraftStateLabel(aircraft.state)}`, "success", aircraft.id);
+    }
+    if (previousState && !isSupportAircraftState(previous.state) && isSupportAircraftState(aircraft.state)) {
+      pushSimulationLog(logs, frame, frameIndex, runId, "support_started", "飞机保障作业", `${aircraft.label} 进入${visualAircraftStateLabel(aircraft.state)}`, "info", aircraft.id);
+    }
+  }
+}
+
+function pushSimulationLog(logs, frame, frameIndex, runId, eventType, logType, message, severity, identity) {
+  logs.push({
+    event_id: `${runId || "run"}-${eventType}-${identity || logs.length}-${frameIndex}`,
+    run_id: runId || frame.run_id || "",
+    step: frame.step,
+    frame_index: frameIndex,
+    simulation_time: frame.simulation_time,
+    event: eventType,
+    event_type: eventType,
+    log_type: logType,
+    message,
+    severity,
+    metric_refs: []
+  });
+}
+
+function dedupeSimulationLogs(logs) {
+  const seen = new Set();
+  const deduped = [];
+  for (const log of logs) {
+    const key = [log.event || log.event_type, log.simulation_time, log.message].join("|");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(log);
+  }
+  return deduped;
+}
+
+function simulationLogTypeLabel(eventType) {
+  const type = String(eventType || "").toLowerCase();
+  if (type.includes("launch") || type.includes("started")) return "任务启动";
+  if (type.includes("assigned")) return "任务成员分配";
+  if (type.includes("mission_return") || type.includes("mission_failed") || type.includes("mission_cancel") || type.includes("mission_finished") || type.includes("completed")) return "任务结束";
+  if (type.includes("preflight") || type.includes("postflight") || type.includes("job") || type.includes("support")) return "飞机保障作业";
+  if (type.includes("repair")) return "维修";
+  if (type.includes("fail")) return "飞机故障";
+  if (type.includes("transport") || type.includes("spare")) return "备件转运";
+  return "仿真日志";
+}
+
+function simulationLogSeverity(eventType) {
+  const type = String(eventType || "").toLowerCase();
+  if (type.includes("cancel") || type.includes("fail") || type.includes("shortage")) return "warning";
+  if (type.includes("completed") || type.includes("return") || type.includes("launch") || type.includes("arrived")) return "success";
+  return "info";
+}
+
+function supportJobKindLabel(kind) {
+  const labels = {
+    preflight: "飞行前保障",
+    postflight: "航后保障",
+    repair: "修复性维修",
+    preventive: "预防性维修"
+  };
+  return labels[kind] || kind || "保障作业";
+}
+
+function supportJobStateLabel(state) {
+  const labels = {
+    waiting: "等待",
+    running: "执行中",
+    completed: "已完成",
+    blocked: "受阻"
+  };
+  return labels[state] || state || "-";
+}
+
+function renderMesaStage(activeView, state) {
+  if (activeView === "mission") return renderMesaMissionStage(state);
+  if (activeView === "support") return renderMesaSupportStage(state);
+  return renderMesaAircraftStage(state);
+}
+
+function renderMesaAircraftStage(state) {
   const lanes = aircraftStateLanes(state.aircraft);
-  const timelineRows = buildAircraftMissionTimelineRows(state);
   const selectedAircraft = selectedVisualAircraftForState(state);
   return `
     <div class="mesa-stage">
@@ -11127,29 +12494,12 @@ function renderMesaAircraftStage(state, availabilityTrend) {
         <span class="legend-item"><i class="dot flying"></i>任务</span>
         <span class="legend-item"><i class="dot repair_unavailable"></i>维修/不可用</span>
       </div>
-      ${renderAvailabilityCurve(availabilityTrend)}
-      <section class="aircraft-mission-timeline">
-        <div class="section-head">
-          <h3>飞机任务执行时间线</h3>
-          <span>按尾号聚合</span>
-        </div>
-        <div class="aircraft-timeline-table">
-          ${timelineRows.map((row) => `
-            <div class="aircraft-timeline-row">
-              <strong>${htmlEscape(row.tailNumber)}<small>${htmlEscape(row.type)}</small></strong>
-              <div>
-                ${row.events.length ? row.events.map((event) => `<span class="aircraft-timeline-pill ${htmlEscape(event.phase)}">${htmlEscape(event.label)}</span>`).join("") : `<span class="aircraft-timeline-pill idle">等待任务</span>`}
-              </div>
-            </div>
-          `).join("")}
-        </div>
-      </section>
     </div>
   `;
 }
 
 function aircraftStateLanes(aircraftList) {
-  const actualStates = ["available", "maintenance", "flying", "repair_unavailable"];
+  const actualStates = ["available", "pre_support", "flying", "repair_unavailable"];
   const lanes = actualStates.map((state) => ({
     key: state,
     title: visualAircraftStateLabel(state),
@@ -11181,31 +12531,6 @@ function renderAircraftStateNode(aircraft, selectedAircraftId = "") {
       <small>${htmlEscape(meta || `飞行 ${fixed(aircraft.flightHours, 1)}h / 起降 ${aircraft.takeoffCount}/${aircraft.landingCount}`)}</small>
     </button>
   `;
-}
-
-function buildAircraftMissionTimelineRows(state) {
-  return state.aircraft.map((aircraft) => {
-    const events = [];
-    for (const mission of state.missions || []) {
-      if (!(mission.assignedTailNumbers || []).includes(aircraft.id)) continue;
-      const plannedStart = Number(mission.plannedStart || 0);
-      const actualStart = mission.actualStart == null ? plannedStart : Number(mission.actualStart);
-      const returnTime = mission.returnTime == null
-        ? plannedStart + Number(mission.durationMinutes || 0)
-        : Number(mission.returnTime);
-      const prepStart = mission.preparationStart == null ? plannedStart : Number(mission.preparationStart);
-      events.push({ phase: "preparing", time: prepStart, label: `${simulationMinuteLabel(prepStart)} 飞行前准备` });
-      events.push({ phase: "ready", time: actualStart, label: `${simulationMinuteLabel(actualStart)} 任务就绪` });
-      events.push({ phase: "flying", time: actualStart, label: `${simulationMinuteLabel(actualStart)} 出动执行` });
-      events.push({ phase: "recovery", time: returnTime, label: `${simulationMinuteLabel(returnTime)} 回收检查` });
-      events.push({ phase: "ready", time: returnTime + 60, label: `${simulationMinuteLabel(returnTime + 60)} 任务后就绪` });
-    }
-    return {
-      tailNumber: aircraft.label,
-      type: aircraft.type,
-      events: events.sort((a, b) => a.time - b.time),
-    };
-  });
 }
 
 function renderMesaMissionStage(state) {
@@ -11361,53 +12686,488 @@ function renderMissionScheduleRow(row) {
 }
 
 function renderMesaSupportStage(state) {
-  const personnelRows = supportMetricRows(state.resources.filter((item) => item.category === "personnel"), "保障组织 A", "机务专业");
-  const equipmentRows = supportMetricRows(state.resources.filter((item) => ["equipment", "facility"].includes(item.category)), "保障组织 A", "设备类型");
-  const spareRows = spareMetricRows(state.spares);
+  const scope = visualSupportAirportScope(state);
+  const supportAirportOptions = scope.airports.map((airport) => `
+    <option value="${htmlEscape(airport.id)}" ${airport.id === scope.selectedAirport.id ? "selected" : ""}>${htmlEscape(airport.name)}</option>
+  `).join("");
+  const rows = supportRowsForAirportScope(state, scope);
   return `
     <div class="mesa-support-dashboard">
-      ${renderSupportMetricSection("保障人员", "按保障组织 / 人员专业", personnelRows)}
-      ${renderSupportMetricSection("保障设备", "按保障组织 / 设备类型", equipmentRows)}
-      ${renderSupportMetricSection("备件", "按保障组织 / 备件类型", spareRows)}
-      <section class="support-metric-panel support-detail-panel">
-        <div class="section-head">
-          <h3>保障设备详情清单</h3>
-          <span>按类型</span>
+      <div class="support-airport-switcher">
+        <div>
+          <strong>当前保障点资源</strong>
+          <span>${htmlEscape(scope.selectedAirport.name)} / 建模保障点 ${htmlEscape(scope.selectedAirport.name || scope.supportNodes.map((node) => node.name || node.id).join("、") || "-")}</span>
         </div>
-        <div class="table-wrap compact-table">
-          <table>
-            <thead><tr><th>类型</th><th>容量</th><th>占用</th><th>利用率</th><th>满足率</th></tr></thead>
-            <tbody>${equipmentRows.map((row) => `<tr><td>${htmlEscape(row.name)}</td><td>${htmlEscape(row.capacity)}</td><td>${htmlEscape(row.inUse)}</td><td>${htmlEscape(row.utilization)}</td><td>${htmlEscape(row.satisfaction)}</td></tr>`).join("")}</tbody>
-          </table>
-        </div>
-      </section>
+        ${scope.airports.length > 1 ? `<select data-mesa-support-airport aria-label="切换保障点查看资源">${supportAirportOptions}</select>` : `<span>${htmlEscape(scope.selectedAirport.name)}</span>`}
+      </div>
+      ${renderSupportMetricSection("保障人员（按专业）", "当前保障点 / 人员专业", rows.personnel)}
+      ${renderSupportMetricSection("保障设备（按类型）", "当前保障点 / 设备类型", rows.equipment)}
+      ${renderSupportMetricSection("备件（按类型）", "当前保障点 / 备件类型", rows.spares)}
     </div>
   `;
 }
 
+function visualSupportAirportScope(state) {
+  const projectJson = buildBackendProjectJson(scenario, currentProject || {});
+  const airports = supportAirportOptions(projectJson);
+  const defaultAirportId = currentTaskAirportId(state, airports);
+  const selectedAirport = airports.find((airport) => airport.id === visualSupportAirportId)
+    || airports.find((airport) => airport.id === defaultAirportId)
+    || airports[0]
+    || { id: "default-airport", name: "当前机场", supportNodeId: "" };
+  const supportNodes = supportNodesForAirport(projectJson, selectedAirport);
+  return { projectJson, airports: airports.length ? airports : [selectedAirport], selectedAirport, supportNodes };
+}
+
+function supportAirportOptions(projectJson) {
+  const supportNodes = modeledSupportNodes(projectJson);
+  const seen = new Set();
+  return supportNodes
+    .map((node, index) => {
+      const id = supportNodeIdentity(node, index);
+      return {
+        id,
+        name: supportNodeDisplayName(node, id, index),
+        supportNodeId: id,
+        airportId: supportOrgNodeAirport(node)
+      };
+    })
+    .filter((scope) => {
+      if (!scope.id || seen.has(scope.id)) return false;
+      seen.add(scope.id);
+      return true;
+    });
+}
+
+function modeledSupportNodes(projectJson) {
+  const orgLeafNodes = flattenProjectSupportOrgNodes(projectJson?.supportOrganization?.tree)
+    .filter((node) => !(node.children || []).length && (node.supportNodeId || node.id || node.name));
+  if (orgLeafNodes.length) return orgLeafNodes;
+  return projectSupportResourceNodes(projectJson);
+}
+
+function projectSupportResourceNodes(projectJson) {
+  return [
+    ...(Array.isArray(projectJson?.supportNodes) ? projectJson.supportNodes : []),
+    ...(Array.isArray(projectJson?.supportResources) ? projectJson.supportResources : []),
+    ...(Array.isArray(projectJson?.objects?.supportResources) ? projectJson.objects.supportResources : [])
+  ];
+}
+
+function flattenProjectSupportOrgNodes(nodes = []) {
+  return (Array.isArray(nodes) ? nodes : []).flatMap((node) => [
+    node,
+    ...flattenProjectSupportOrgNodes(node?.children || [])
+  ]);
+}
+
+function supportNodeIdentity(node, index = 0) {
+  return String(supportNodeScopeId(node) || node?.resourceId || node?.name || `support-node-${index}`);
+}
+
+function supportNodeDisplayName(node, id, index = 0) {
+  return String(node?.name || node?.displayName || node?.nodeType || id || `保障点 ${index + 1}`);
+}
+
+function supportNodeMatchesScope(node, scope) {
+  const scopeIds = new Set([
+    scope?.id,
+    scope?.supportNodeId,
+    scope?.name,
+    ...(Array.isArray(scope?.supportNodeIds) ? scope.supportNodeIds : [])
+  ].map((value) => String(value || "")).filter(Boolean));
+  const nodeIds = [
+    node?.id,
+    node?.supportNodeId,
+    node?.resourceId,
+    node?.organizationNodeId,
+    node?.name
+  ].map((value) => String(value || "")).filter(Boolean);
+  return nodeIds.some((value) => scopeIds.has(value));
+}
+
+function supportNodeScopeId(node) {
+  return String(node?.supportNodeId || node?.id || "");
+}
+
+function supportScopeForSupportNodeId(scopes, supportNodeId) {
+  const normalized = String(supportNodeId || "").trim();
+  if (!normalized) return null;
+  return scopes.find((scope) => (
+    scope.id === normalized
+    || scope.supportNodeId === normalized
+    || (Array.isArray(scope.supportNodeIds) && scope.supportNodeIds.includes(normalized))
+  )) || null;
+}
+
+function supportScopeForAirportId(scopes, airportId) {
+  const normalized = String(airportId || "").trim();
+  if (!normalized) return null;
+  return scopes.find((scope) => (
+    scope.airportId === normalized
+    || scope.name === normalized
+  )) || null;
+}
+
+function supportScopeForStateResource(scopes, state) {
+  const resource = (state.resources || []).find((item) => String(item.supportNodeId || "").trim());
+  return supportScopeForSupportNodeId(scopes, resource?.supportNodeId);
+}
+
+function currentTaskAirportId(state, airports) {
+  const activeMission = (state.missions || []).find((mission) => {
+    const status = String(mission.status || "").toLowerCase();
+    return ["preparing", "ready", "launched", "flying", "running"].includes(status);
+  }) || (state.missions || []).find((mission) => String(mission.status || "").toLowerCase() !== "completed");
+  const activeSupportScope = supportScopeForSupportNodeId(airports, activeMission?.supportNodeId);
+  if (activeSupportScope) return activeSupportScope.id;
+  const activeAirportScope = supportScopeForAirportId(airports, activeMission?.airportId);
+  if (activeAirportScope) return activeAirportScope.id;
+  const resourceScope = supportScopeForStateResource(airports, state);
+  if (resourceScope) return resourceScope.id;
+  return airports[0]?.id || "";
+}
+
+function supportNodesForAirport(projectJson, airport) {
+  const resourceNodes = projectSupportResourceNodes(projectJson);
+  const resourceMatches = resourceNodes
+    .filter((node) => supportNodeMatchesScope(node, airport))
+    .map((node) => applyVisualSupportResourceOverrides(node, airport, projectJson));
+  if (resourceMatches.length) return resourceMatches;
+  return modeledSupportNodes(projectJson).filter((node) => supportNodeMatchesScope(node, airport));
+}
+
+function applyVisualSupportResourceOverrides(node, scope, projectJson) {
+  const nodeId = supportNodeScopeId(node);
+  const scopeId = String(scope?.id || scope?.supportNodeId || node?.organizationNodeId || nodeId || "");
+  const overrides = projectJson?.supportResourceOverrides || {};
+  const personnelOverride = overrides[`${scopeId}:${nodeId}:personnel`] || {};
+  const equipmentOverride = overrides[`${scopeId}:${nodeId}:equipment`] || {};
+  return {
+    ...node,
+    organizationNodeId: node?.organizationNodeId || scopeId,
+    personnelCapacity: personnelOverride.quantity ?? node?.personnelCapacity,
+    personnelModel: personnelOverride.model ?? node?.personnelModel,
+    personnelType: personnelOverride.type ?? node?.personnelType,
+    equipmentCapacity: equipmentOverride.quantity ?? node?.equipmentCapacity,
+    supportEquipmentName: equipmentOverride.name ?? node?.supportEquipmentName,
+    supportEquipmentModel: equipmentOverride.model ?? node?.supportEquipmentModel
+  };
+}
+
+function supportRowsForAirportScope(state, scope) {
+  const supportNodeIds = new Set([
+    scope.selectedAirport?.id,
+    scope.selectedAirport?.supportNodeId,
+    ...scope.supportNodes.flatMap((node) => [supportNodeScopeId(node), node.organizationNodeId])
+  ].map((value) => String(value || "")).filter(Boolean));
+  const scopedResources = state.resources.filter((resource) => supportRowBelongsToScope(resource, supportNodeIds, scope.selectedAirport));
+  const scopedSpares = state.spares.filter((spare) => supportRowBelongsToScope(spare, supportNodeIds, scope.selectedAirport));
+  return {
+    personnel: personnelRowsForAirportScope(scope, scopedResources),
+    equipment: equipmentRowsForAirportScope(scope, scopedResources),
+    spares: spareRowsForAirportScope(scope, scopedSpares)
+  };
+}
+
+function supportRowBelongsToScope(row, supportNodeIds, airport) {
+  if (!supportNodeIds.size) return true;
+  const supportNodeId = String(row.supportNodeId || row.id || "").split(":")[0];
+  if (supportNodeIds.has(supportNodeId)) return true;
+  const airportIds = new Set([airport?.id, airport?.name].map((value) => String(value || "")).filter(Boolean));
+  return airportIds.has(String(row.airportId || ""));
+}
+
+function personnelRowsForAirportScope(scope, resources) {
+  const runtimeRows = resources.filter(isPersonnelResource);
+  if (runtimeRows.length) {
+    return supportMetricRows(runtimeRows, scope.selectedAirport.name, "人员专业");
+  }
+  const rows = [];
+  const resourceStats = resourceStatsBySupportNode(resources);
+  for (const node of scope.supportNodes) {
+    const nodeId = supportNodeScopeId(node);
+    const organization = node.name || nodeId || scope.selectedAirport.name;
+    const resourceRows = resourcesForSupportNode(resources, nodeId, isPersonnelResource).map((resource) => {
+      const professional = resource.professional || resource.resourceType || resource.model || "";
+      return supportMetricRowFromConfig({
+        organization,
+        type: professional || "人员专业",
+        name: resource.label || professional || "保障人员",
+        capacity: resource.capacity,
+        inUse: resource.inUse,
+        workCount: resource.workCount,
+        delayCount: resource.delayCount,
+        primaryLabel: "工作次数",
+        secondaryLabel: "延误次数",
+        metadata: supportResourceMetadata("personnel", {
+          professional,
+          type: resource.resourceType,
+          model: resource.model
+        })
+      });
+    });
+    if (resourceRows.length) {
+      rows.push(...resourceRows);
+      continue;
+    }
+    const stats = resourceStats.get(nodeId) || {};
+    const capacity = node.personnelCapacity;
+    if (Array.isArray(capacity) && capacity.length) {
+      for (const item of capacity) {
+        const professional = item.professional || item.specialty || item.type || item.model || "";
+        rows.push(supportMetricRowFromConfig({
+          organization,
+          type: professional || "人员专业",
+          name: item.name || professional || "保障人员",
+          capacity: item.capacity,
+          inUse: stats.inUse,
+          workCount: stats.workCount,
+          delayCount: stats.delayCount,
+          primaryLabel: "工作次数",
+          secondaryLabel: "延误次数",
+          metadata: supportResourceMetadata("personnel", {
+            professional,
+            type: item.personnelType || item.type
+          })
+        }));
+      }
+    } else {
+      const professional = node.personnelModel || node.personnelType || "";
+      rows.push(supportMetricRowFromConfig({
+        organization,
+        type: professional || "人员专业",
+        name: "保障人员",
+        capacity,
+        inUse: stats.inUse,
+        workCount: stats.workCount,
+        delayCount: stats.delayCount,
+        primaryLabel: "工作次数",
+        secondaryLabel: "延误次数",
+        metadata: supportResourceMetadata("personnel", {
+          professional,
+          type: node.personnelType
+        })
+      }));
+    }
+  }
+  return rows.length ? rows : supportMetricRows(resources.filter((item) => item.category === "personnel"), scope.selectedAirport.name, "人员专业");
+}
+
+function equipmentRowsForAirportScope(scope, resources) {
+  const runtimeRows = resources.filter(isEquipmentResource);
+  if (runtimeRows.length) {
+    return supportMetricRows(runtimeRows, scope.selectedAirport.name, "设备类型");
+  }
+  const rows = [];
+  const resourceStats = resourceStatsBySupportNode(resources);
+  for (const node of scope.supportNodes) {
+    const nodeId = supportNodeScopeId(node);
+    const organization = node.name || nodeId || scope.selectedAirport.name;
+    const resourceRows = resourcesForSupportNode(resources, nodeId, isEquipmentResource).map((resource) => {
+      const resourceTypeValue = resource.resourceType || resource.model || resource.category || "";
+      return supportMetricRowFromConfig({
+        organization,
+        type: resourceTypeValue || "设备类型",
+        name: resource.label || resource.model || resourceTypeValue || "保障设备",
+        capacity: resource.capacity,
+        inUse: resource.inUse,
+        workCount: resource.workCount,
+        delayCount: resource.delayCount,
+        primaryLabel: "工作次数",
+        secondaryLabel: "延误次数",
+        metadata: supportResourceMetadata("equipment", {
+          type: resourceTypeValue,
+          model: resource.model
+        })
+      });
+    });
+    if (resourceRows.length) {
+      rows.push(...resourceRows);
+      continue;
+    }
+    const stats = resourceStats.get(nodeId) || {};
+    const capacity = node.equipmentCapacity;
+    if (Array.isArray(capacity) && capacity.length) {
+      for (const item of capacity) {
+        const resourceTypeValue = item.type || item.model || item.nodeType || "";
+        rows.push(supportMetricRowFromConfig({
+          organization,
+          type: resourceTypeValue || "设备类型",
+          name: item.name || item.id || resourceTypeValue || "保障设备",
+          capacity: item.quantity || item.capacity,
+          inUse: stats.inUse,
+          workCount: stats.workCount,
+          delayCount: stats.delayCount,
+          primaryLabel: "工作次数",
+          secondaryLabel: "延误次数",
+          metadata: supportResourceMetadata("equipment", {
+            type: resourceTypeValue,
+            model: item.model
+          })
+        }));
+      }
+    } else {
+      const resourceTypeValue = node.nodeType || node.supportEquipmentModel || "";
+      rows.push(supportMetricRowFromConfig({
+        organization,
+        type: resourceTypeValue || "设备类型",
+        name: node.supportEquipmentName || node.equipmentName || "保障设备",
+        capacity,
+        inUse: stats.inUse,
+        workCount: stats.workCount,
+        delayCount: stats.delayCount,
+        primaryLabel: "工作次数",
+        secondaryLabel: "延误次数",
+        metadata: supportResourceMetadata("equipment", {
+          type: resourceTypeValue,
+          model: node.supportEquipmentModel
+        })
+      }));
+    }
+  }
+  return rows.length ? rows : supportMetricRows(resources.filter((item) => ["equipment", "facility", "support_node"].includes(item.category)), scope.selectedAirport.name, "设备类型");
+}
+
+function resourcesForSupportNode(resources, nodeId, predicate) {
+  const normalizedNodeId = String(nodeId || "");
+  return resources.filter((resource) => {
+    if (!predicate(resource)) return false;
+    if (!normalizedNodeId) return true;
+    return String(resource.supportNodeId || resource.id || "").split(":")[0] === normalizedNodeId;
+  });
+}
+
+function isPersonnelResource(resource) {
+  return String(resource.category || "").toLowerCase() === "personnel";
+}
+
+function isEquipmentResource(resource) {
+  return ["equipment", "facility", "support_node"].includes(String(resource.category || "").toLowerCase());
+}
+
+function spareRowsForAirportScope(scope, spares) {
+  const rows = [];
+  const spareStats = spareStatsBySupportNode(spares);
+  for (const node of scope.supportNodes) {
+    const nodeId = supportNodeScopeId(node);
+    const inventory = node.inventory || {};
+    const entries = Array.isArray(inventory)
+      ? inventory.map((item) => [item.name || item.spareType || item.id, item.quantity])
+      : Object.entries(inventory);
+    for (const [name, quantity] of entries) {
+      const stats = spareStats.get(`${nodeId}:${name}`) || spareStats.get(String(name)) || {};
+      rows.push(supportMetricRowFromConfig({
+        organization: node.name || nodeId || scope.selectedAirport.name,
+        type: "备件类型",
+        name,
+        capacity: quantity,
+        inUse: stats.consumed,
+        workCount: stats.consumed,
+        delayCount: stats.delayCount,
+        primaryLabel: "消耗量",
+        secondaryLabel: "延误次数"
+      }));
+    }
+  }
+  return rows.length ? rows : spareMetricRows(spares);
+}
+
+function resourceStatsBySupportNode(resources) {
+  const stats = new Map();
+  for (const resource of resources) {
+    const key = String(resource.supportNodeId || resource.id || "").split(":")[0];
+    if (!key) continue;
+    const current = stats.get(key) || { inUse: 0, workCount: 0, delayCount: 0 };
+    current.inUse += Number(resource.inUse || 0);
+    current.workCount += Number(resource.workCount || 0);
+    current.delayCount += Number(resource.delayCount || 0);
+    stats.set(key, current);
+  }
+  return stats;
+}
+
+function spareStatsBySupportNode(spares) {
+  const stats = new Map();
+  for (const spare of spares) {
+    const keys = [spare.id, spare.label].map((value) => String(value || "")).filter(Boolean);
+    for (const key of keys) {
+      stats.set(key, {
+        consumed: Number(spare.consumed || 0),
+        pending: Number(spare.pending || 0),
+        delayCount: Number(spare.delayCount || 0)
+      });
+    }
+  }
+  return stats;
+}
+
+function supportMetricRowFromConfig(config) {
+  const capacity = Math.max(0, Number(config.capacity || 0));
+  const inUse = Math.max(0, Number(config.inUse || 0));
+  const utilization = capacity > 0 ? Math.min(1, inUse / capacity) : 0;
+  const satisfaction = capacity > 0 ? Math.max(0, Math.min(1, 1 - inUse / Math.max(1, capacity))) : 0;
+  return {
+    organization: config.organization || "保障组织",
+    type: config.type || "资源类型",
+    name: config.name || "资源",
+    capacity,
+    inUse,
+    utilization: pct(utilization),
+    utilizationWidth: Math.round(utilization * 100),
+    satisfaction: pct(satisfaction),
+    satisfactionWidth: Math.round(satisfaction * 100),
+    primaryLabel: config.primaryLabel || "工作次数",
+    primaryValue: Number(config.workCount || 0),
+    secondaryLabel: config.secondaryLabel || "延误次数",
+    secondaryValue: Number(config.delayCount || 0),
+    metadata: Array.isArray(config.metadata) ? config.metadata.filter((item) => item.value) : []
+  };
+}
+
+function supportResourceMetadata(kind, values = {}) {
+  const professional = String(values.professional || "").trim();
+  const resourceTypeValue = String(values.type || "").trim();
+  const model = String(values.model || "").trim();
+  if (kind === "personnel") {
+    return [
+      { label: "专业", value: professional || "未标注" },
+      resourceTypeValue && resourceTypeValue !== professional ? { label: "类型", value: resourceTypeValue } : null
+    ].filter(Boolean);
+  }
+  if (kind === "equipment") {
+    return [
+      { label: "类型", value: resourceTypeValue || model || "未标注" },
+      model && model !== resourceTypeValue ? { label: "型号", value: model } : null
+    ].filter(Boolean);
+  }
+  return [];
+}
+
 function renderSupportMetricSection(title, subtitle, rows) {
   return `
-    <section class="support-metric-panel">
-      <div class="section-head">
+    <details class="support-metric-panel support-collapsible-panel" open>
+      <summary class="section-head">
         <h3>${htmlEscape(title)}</h3>
         <span>${htmlEscape(subtitle)}</span>
-      </div>
+      </summary>
       <div class="support-metric-list">
         ${rows.map((row) => `<div class="support-metric-row">
           <div>
             <strong>${htmlEscape(row.name)}</strong>
             <span>${htmlEscape(row.organization)} / ${htmlEscape(row.type)}</span>
+            ${row.metadata?.length ? `<div class="support-resource-meta">${row.metadata.map((item) => `<small>${htmlEscape(item.label)}：${htmlEscape(item.value)}</small>`).join("")}</div>` : ""}
           </div>
-          <div class="support-meter"><small>利用率 ${htmlEscape(row.utilization)}</small><i><b style="width:${htmlEscape(row.utilizationWidth)}%"></b></i></div>
-          <div class="support-meter"><small>满足率 ${htmlEscape(row.satisfaction)}</small><i><b style="width:${htmlEscape(row.satisfactionWidth)}%"></b></i></div>
+          <div class="support-count"><small>${htmlEscape(row.primaryLabel)}</small><strong>${htmlEscape(row.primaryValue)}</strong></div>
+          <div class="support-count delay"><small>${htmlEscape(row.secondaryLabel)}</small><strong>${htmlEscape(row.secondaryValue)}</strong></div>
         </div>`).join("")}
       </div>
-    </section>
+    </details>
   `;
 }
 
 function supportMetricRows(resources, organization, typeLabel) {
-  return (resources.length ? resources : [{ label: "暂无资源", capacity: 0, inUse: 0, utilization: 0, workCount: 0 }]).map((resource) => {
+  return (resources.length ? resources : [{ label: "暂无资源", capacity: 0, inUse: 0, utilization: 0, workCount: 0, delayCount: 0 }]).map((resource) => {
     const utilization = Math.max(0, Math.min(1, Number(resource.utilization || 0)));
     const satisfaction = Number(resource.capacity || 0) > 0 ? Math.max(0, Math.min(1, 1 - Number(resource.inUse || 0) / Math.max(1, Number(resource.capacity || 0)))) : 0;
     return {
@@ -11419,7 +13179,14 @@ function supportMetricRows(resources, organization, typeLabel) {
       utilization: pct(utilization),
       utilizationWidth: Math.round(utilization * 100),
       satisfaction: pct(satisfaction),
-      satisfactionWidth: Math.round(satisfaction * 100)
+      satisfactionWidth: Math.round(satisfaction * 100),
+      primaryLabel: "工作次数",
+      primaryValue: Number(resource.workCount || 0),
+      secondaryLabel: "延误次数",
+      secondaryValue: Number(resource.delayCount || 0),
+      metadata: resource.category === "personnel"
+        ? supportResourceMetadata("personnel", { professional: resource.professional, type: resource.resourceType, model: resource.model })
+        : supportResourceMetadata("equipment", { type: resource.resourceType || resource.model, model: resource.model })
     };
   });
 }
@@ -11434,7 +13201,7 @@ function resourceCategoryLabel(category) {
 }
 
 function spareMetricRows(spares) {
-  return (spares.length ? spares : [{ label: "暂无备件", quantity: 0, consumed: 0, pending: 0 }]).map((spare) => {
+  return (spares.length ? spares : [{ label: "暂无备件", quantity: 0, consumed: 0, pending: 0, delayCount: 0 }]).map((spare) => {
     const total = Number(spare.quantity || 0) + Number(spare.consumed || 0) + Number(spare.pending || 0);
     const satisfaction = total > 0 ? Number(spare.quantity || 0) / total : 0;
     const utilization = total > 0 ? Number(spare.consumed || 0) / total : 0;
@@ -11447,7 +13214,11 @@ function spareMetricRows(spares) {
       utilization: pct(utilization),
       utilizationWidth: Math.round(utilization * 100),
       satisfaction: pct(satisfaction),
-      satisfactionWidth: Math.round(satisfaction * 100)
+      satisfactionWidth: Math.round(satisfaction * 100),
+      primaryLabel: "消耗量",
+      primaryValue: Number(spare.consumed || 0),
+      secondaryLabel: "延误次数",
+      secondaryValue: Number(spare.delayCount || 0)
     };
   });
 }
@@ -11474,9 +13245,8 @@ function renderMesaAircraftPanel(state) {
       <h3>单机状态</h3>
       <span>${htmlEscape(selectedAircraft.label)} / ${htmlEscape(aircraft.type)} / ${state.aircraft.length} 架</span>
     </div>
-    <h4>飞机内部组成与故障传递</h4>
-    <div class="event info"><strong>${htmlEscape(selectedAircraft.label)}</strong> 失效 LRU ${htmlEscape(selectedAircraft.failedLru || "-")}</div>
-    ${renderAircraftFailureTree(selectedAircraft.failureTree, selectedAircraft)}
+    <h4>装备状态</h4>
+    ${renderAircraftStatusSummary(selectedAircraft, state)}
   `;
 }
 
@@ -11485,75 +13255,153 @@ function selectedVisualAircraftForState(state) {
   return state.aircraft.find((aircraft) => aircraft.id === selectedVisualAircraftId) || state.aircraft[0];
 }
 
-function renderAircraftFailureTree(failureTree, aircraft) {
-  const nodes = Array.isArray(failureTree?.nodes) ? failureTree.nodes : [];
-  if (!nodes.length) {
-    return `<div class="event warning"><strong>${htmlEscape(aircraft.label)}</strong> 当前 state_series 未携带后端装备故障传播树。</div>`;
-  }
-  const rootId = failureTree.rootId || nodes[0]?.id || "";
-  const failedCount = nodes.filter((node) => node.failed).length;
+function renderAircraftStatusSummary(aircraft, state) {
+  const supportJobs = currentSupportJobsForAircraft(aircraft, state.jobs);
+  const failedComponents = failedComponentsForAircraft(aircraft);
   return `
-    <div class="aircraft-failure-summary ${failedCount ? "has-failure" : ""}">
-      <strong>${htmlEscape(aircraft.label)}</strong>
-      <span>组件 ${htmlEscape(nodes.length)} / 故障 ${htmlEscape(failedCount)} / 失效 LRU ${htmlEscape(aircraft.failedLru || "-")}</span>
-    </div>
-    <div class="aircraft-failure-tree" role="tree" aria-label="${htmlEscape(aircraft.label)} 装备故障传播树">
-      ${renderAircraftFailureTreeNodes(failureTree, rootId, 0)}
+    <div class="aircraft-status-summary ${failedComponents.length ? "has-failure" : ""}">
+      <div class="aircraft-status-row">
+        <span>当前状态</span>
+        <div>
+          <strong>${htmlEscape(visualAircraftStateLabel(aircraft.state))}</strong>
+          <small>${htmlEscape(aircraft.state || "-")}</small>
+        </div>
+      </div>
+      <div class="aircraft-status-row">
+        <span>累计任务时间</span>
+        <div>
+          <strong>${htmlEscape(fixed(aircraft.flightHours, 1))}h</strong>
+          <small>起降 ${htmlEscape(aircraft.takeoffCount)}/${htmlEscape(aircraft.landingCount)}</small>
+        </div>
+      </div>
+      <div class="aircraft-status-row">
+        <span>当前保障作业</span>
+        <div class="aircraft-status-list">
+          ${supportJobs.length ? supportJobs.map((job) => renderAircraftSupportJobStatus(job)).join("") : `<div class="aircraft-status-empty"><strong>无</strong><small>当前帧没有等待或执行中的保障作业</small></div>`}
+        </div>
+      </div>
+      <div class="aircraft-status-row ${failedComponents.length ? "has-failure" : ""}">
+        <span>故障件</span>
+        <div class="aircraft-status-list">
+          ${failedComponents.length ? failedComponents.map((item) => renderAircraftFailureStatus(item)).join("") : `<div class="aircraft-status-empty"><strong>无</strong><small>当前帧未报告故障 LRU</small></div>`}
+        </div>
+      </div>
     </div>
   `;
 }
 
-function renderAircraftFailureTreeNodes(tree, parentId, depth) {
-  const nodes = tree.nodes || [];
-  const children = nodes
-    .filter((node) => String(node.parentId || "") === String(parentId || ""))
-    .sort((a, b) => String(a.name).localeCompare(String(b.name), "zh-Hans-CN"));
-  const current = nodes.find((node) => String(node.id) === String(parentId));
-  const currentMarkup = current ? renderAircraftFailureTreeNode(current, tree, depth) : "";
-  const childMarkup = children.length
-    ? `<div class="aircraft-failure-children">${children.map((child) => renderAircraftFailureTreeNodes(tree, child.id, depth + 1)).join("")}</div>`
-    : "";
-  return `<div class="aircraft-failure-branch depth-${htmlEscape(depth)}">${currentMarkup}${childMarkup}</div>`;
+function currentSupportJobsForAircraft(aircraft, jobs) {
+  const aircraftIds = new Set([aircraft.id, aircraft.label].map((value) => String(value || "")).filter(Boolean));
+  return (jobs || []).filter((job) => (
+    aircraftIds.has(String(job.tailNumber || ""))
+    && String(job.state || "").toLowerCase() !== "completed"
+  ));
 }
 
-function renderAircraftFailureTreeNode(node, tree, depth) {
-  const kOut = node.kOutOfN || {};
-  const thresholdLabel = kOut.enabled ? `${kOut.n || node.quantity}中取${kOut.k || node.failureThreshold}` : "串联/单点";
-  const failureLabel = node.failed
-    ? (node.directFailed ? "直接故障" : "向上传递")
-    : "正常";
-  const edgeActive = (tree.edges || []).some((edge) => edge.to === node.id && edge.active);
+function failedComponentsForAircraft(aircraft) {
+  const nodes = Array.isArray(aircraft.failureTree?.nodes) ? aircraft.failureTree.nodes : [];
+  const failures = [];
+  const addFailure = (node, fallbackName, reason) => {
+    const id = String(node?.id || fallbackName || "").trim();
+    const name = String(node?.name || fallbackName || id || "").trim();
+    if (!name || failures.some((item) => item.id === id || item.name === name)) return;
+    failures.push({
+      id,
+      name,
+      productType: String(node?.productType || "LRU"),
+      failureTime: node?.failureTime ?? null,
+      reason
+    });
+  };
+  if (aircraft.failedLru) {
+    const primaryNode = nodes.find((node) => String(node.id) === String(aircraft.failedLru));
+    addFailure(primaryNode, aircraft.failedLru, "当前故障件");
+  }
+  nodes
+    .filter((node) => node.failed && (node.directFailed || String(node.productType || "").toUpperCase().includes("LRU")))
+    .forEach((node) => addFailure(node, node.name || node.id, node.directFailed ? "直接故障" : "受影响"));
+  return failures;
+}
+
+function renderAircraftSupportJobStatus(job) {
+  const detail = supportJobStatusLine(job);
+  const meta = [
+    job.id ? `作业 ${job.id}` : "",
+    job.remaining == null ? "" : `剩余 ${Number(job.remaining || 0)}min`
+  ].filter(Boolean).join(" / ");
   return `
-    <div class="aircraft-failure-node ${node.failed ? "failed" : "healthy"} ${node.propagatedFailed ? "propagated" : ""} ${edgeActive ? "edge-active" : ""}" role="treeitem" aria-level="${htmlEscape(depth + 1)}">
-      <div>
-        <strong>${htmlEscape(node.name)}</strong>
-        <span>${htmlEscape(node.productType || "组件")} / 数量 ${htmlEscape(node.quantity)} / ${htmlEscape(thresholdLabel)}</span>
-      </div>
-      <div class="aircraft-failure-node-meta">
-        <span>${htmlEscape(failureLabel)}</span>
-        <span>${htmlEscape(node.failedChildren)}/${htmlEscape(node.failureThreshold)} 下级故障</span>
-        <span>${node.failureTime == null ? "故障时间 -" : `T+${htmlEscape(node.failureTime)}min`}</span>
-      </div>
+    <div class="aircraft-status-item">
+      <strong>${htmlEscape(detail)}</strong>
+      ${meta ? `<small>${htmlEscape(meta)}</small>` : ""}
+    </div>
+  `;
+}
+
+function supportJobStatusLine(job) {
+  return [
+    supportJobKindLabel(job.kind),
+    job.task || "",
+    supportJobStateLabel(job.state)
+  ].filter(Boolean).join(" / ") || "保障作业";
+}
+
+function renderAircraftFailureStatus(item) {
+  const meta = [
+    item.productType || "LRU",
+    item.reason || "",
+    item.failureTime == null ? "" : `T+${item.failureTime}min`
+  ].filter(Boolean).join(" / ");
+  return `
+    <div class="aircraft-status-item fault">
+      <strong>${htmlEscape(item.name)}</strong>
+      ${meta ? `<small>${htmlEscape(meta)}</small>` : ""}
     </div>
   `;
 }
 
 function renderMesaSupportPanel(state) {
+  const rows = supportPanelLogRows(state);
   return `
     <div class="section-head">
-      <h3>保障资源</h3>
-      <span>资源 / 备件 / 作业</span>
+      <h3>保障作业日志</h3>
+      <span>${rows.length ? `${rows.length} 条` : "暂无日志"}</span>
     </div>
-    <div class="stack-list">
-      ${state.resources.map((resource) => `<div class="metric-line"><strong>${htmlEscape(resource.label)}</strong><div class="bar"><span style="width:${Math.round(resource.utilization * 100)}%"></span></div><span>${htmlEscape(resource.inUse)}/${htmlEscape(resource.capacity)}</span></div>`).join("")}
+    <div class="stack-list support-log-list">
+      ${rows.length ? rows.map((row) => renderSupportPanelLogRow(row)).join("") : `<div class="event warning">当前帧没有保障作业日志。</div>`}
     </div>
-    <h4>备件库存量 / 已消耗 / 在途</h4>
-    <div class="stack-list">
-      ${state.spares.map((spare) => `<div class="list-row"><strong>${htmlEscape(spare.label)}</strong><span>库存 ${htmlEscape(spare.quantity)}</span><span>消耗 ${htmlEscape(spare.consumed)} / 在途 ${htmlEscape(spare.pending)}</span></div>`).join("")}
+  `;
+}
+
+function supportPanelLogRows(state) {
+  const jobRows = (state.jobs || []).map((job) => ({
+    severity: String(job.state || "").toLowerCase() === "waiting" ? "warning" : "info",
+    title: job.tailNumber || "保障作业",
+    message: [supportJobKindLabel(job.kind), job.task, supportJobStateLabel(job.state)].filter(Boolean).join(" / "),
+    meta: `剩余 ${Number(job.remaining || 0)}min`
+  }));
+  const eventRows = (state.events || [])
+    .filter((event) => isSupportPanelEvent(event))
+    .map((event) => ({
+      severity: "success",
+      title: `T+${event.time}`,
+      message: event.message || simulationLogTypeLabel(event.event),
+      meta: simulationLogTypeLabel(event.event)
+    }));
+  return [...jobRows, ...eventRows].slice(-16);
+}
+
+function isSupportPanelEvent(event) {
+  const text = `${event?.event || ""} ${event?.message || ""}`.toLowerCase();
+  return text.includes("support") || text.includes("job") || text.includes("preflight") || text.includes("postflight") || text.includes("保障");
+}
+
+function renderSupportPanelLogRow(row) {
+  return `
+    <div class="event ${htmlEscape(row.severity || "info")}">
+      <strong>${htmlEscape(row.title)}</strong>
+      <span>${htmlEscape(row.message || "保障作业")}</span>
+      <small>${htmlEscape(row.meta || "")}</small>
     </div>
-    <h4>保障作业与事件</h4>
-    ${state.jobs.map((job) => `<div class="event info"><strong>${htmlEscape(job.tailNumber)}</strong> ${htmlEscape(job.task)} / ${htmlEscape(job.state)} / ${htmlEscape(job.remaining)}min</div>`).join("")}
-    ${state.events.map((event) => `<div class="event success"><strong>T+${htmlEscape(event.time)}</strong> ${htmlEscape(event.message)}</div>`).join("")}
   `;
 }
 
@@ -11572,10 +13420,10 @@ function minuteOfDayLabel(minutes) {
   return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 }
 
-function simulationMinuteLabel(minutes) {
+function simulationDayMinuteLabel(minutes) {
   const value = Math.max(0, Math.round(Number(minutes || 0)));
   const day = Math.floor(value / 1440) + 1;
-  return `D${day} ${minuteOfDayLabel(value % 1440)}`;
+  return `第${day}天 ${minuteOfDayLabel(value % 1440)}`;
 }
 
 function missionStatusClass(status) {
@@ -11602,7 +13450,7 @@ function missionStatusLabel(status) {
 function visualAircraftStateLabel(state) {
   const labels = {
     available: "停放",
-    maintenance: "使用保障",
+    maintenance: "维修/不可用",
     flying: "任务",
     repair_unavailable: "维修/不可用",
     mission_ready: "停放",
@@ -11627,13 +13475,13 @@ function visualAircraftLaneKey(state) {
   const value = String(state || "available").toLowerCase();
   if (["available", "mission_ready", "standby", "parked", "idle"].includes(value)) return "available";
   if (["flying", "mission", "launched", "sortie", "task"].includes(value)) return "flying";
-  if (["maintenance", "pre_support", "post_support", "support", "operations_support", "using_support", "flightline_support"].includes(value)) {
-    return "maintenance";
+  if (["pre_support", "post_support", "support", "operations_support", "using_support", "flightline_support"].includes(value)) {
+    return "pre_support";
   }
   if (
-    ["repair", "repairing", "preventive_maintenance", "corrective_maintenance", "unavailable", "failed", "grounded", "down", "not_available"].includes(value)
+    ["maintenance", "repair", "repairing", "preventive_maintenance", "corrective_maintenance", "unavailable", "failed", "grounded", "down", "not_available"].includes(value)
     || value.includes("repair")
-    || (value.includes("maintenance") && value !== "maintenance")
+    || value.includes("maintenance")
     || value.includes("unavailable")
   ) {
     return "repair_unavailable";
@@ -11777,168 +13625,6 @@ function monteCarloExperimentSourceRows(experiment) {
     ["projection source", projectionIds || "等待 analysis projection artifact"],
     ["mapping/provenance", experiment.mapping_version || mappingProvenanceVersion() || "等待 compiler provenance"]
   ];
-}
-
-function experimentPlanOptionsForModule(moduleName) {
-  return [scenario.experiment?.name].filter(Boolean);
-}
-
-function renderMonteCarloExperimentList(page) {
-  const experiments = monteCarloExperimentListForModule(page.module);
-  return `
-    <div class="mc-workbench">
-      <section class="mc-config-panel">
-        <div class="section-head">
-          <h3>蒙特卡洛实验列表</h3>
-          <span>保存全部实验运行历史</span>
-        </div>
-        <div class="toolbar-row">
-          <button type="button" class="btn-primary" data-mc-experiment-action="add">新增实验</button>
-          <button type="button" class="btn-danger" disabled>批量删除</button>
-        </div>
-        <div class="table-wrap mc-history-grid">
-          <table>
-            <thead><tr><th>experiment_id</th><th>mc_experiment_id</th><th>实验名称</th><th>关联方案</th><th>样本量</th><th>随机种子</th><th>状态</th><th>进度</th><th>详情/编辑/删除</th></tr></thead>
-            <tbody>${experiments.length ? experiments.map((experiment) => `
-              <tr>
-                <td>${htmlEscape(experiment.experiment_id)}</td>
-                <td>${htmlEscape(experiment.mc_experiment_id)}</td>
-                <td>${htmlEscape(experiment.name)}</td>
-                <td>${htmlEscape(experiment.experimentPlanName)}</td>
-                <td>${experiment.samples}</td>
-                <td>${experiment.seed}</td>
-                <td><span class="badge">${htmlEscape(experiment.status)}</span></td>
-                <td>${experiment.progress}%</td>
-                <td class="table-action-cell">
-                  <button type="button" class="inline-action" data-mc-experiment-action="detail" data-mc-experiment-id="${htmlEscape(experiment.id)}">详情</button>
-                  <button type="button" class="inline-action" data-mc-experiment-action="edit" data-mc-experiment-id="${htmlEscape(experiment.id)}">编辑</button>
-                  <button type="button" class="btn-danger" disabled>删除</button>
-                </td>
-              </tr>
-            `).join("") : `<tr><td colspan="9">${importedDataEmptyState("蒙特卡洛实验")}</td></tr>`}</tbody>
-          </table>
-        </div>
-      </section>
-    </div>
-  `;
-}
-
-function renderMonteCarloExperimentEditor(page) {
-  const experiment = currentMonteCarloExperiment(page.module);
-  if (!experiment) {
-    return importedDataEmptyState("蒙特卡洛实验");
-  }
-  ensureMonteCarloSweepDefaults(experimentPlanDraft);
-  const detailFeatureId = getMonteCarloExperimentDetailFeatureId(page.module);
-  return `
-    <div class="mc-workbench">
-      <section class="mc-config-panel mc-config-panel-single">
-        <div class="section-head">
-          <h3>添加/编辑蒙特卡洛实验</h3>
-          <span>选择方案 / 样本量 / 随机种子</span>
-        </div>
-        <div class="mc-form">
-          <div class="readonly-field">
-            <span>mc_experiment_id</span>
-            <strong>${htmlEscape(experiment.mc_experiment_id)}</strong>
-          </div>
-          <label>实验名称<input data-mc-experiment-field="name" value="${htmlEscape(experiment.name)}"></label>
-          <label>选择方案<select data-mc-experiment-field="experimentPlanName">
-            ${experimentPlanOptionsForModule(page.module).map((option) => `<option ${option === experiment.experimentPlanName ? "selected" : ""}>${htmlEscape(option)}</option>`).join("")}
-          </select></label>
-          <div class="mc-inline-fields">
-            <label>仿真次数<input id="mc-samples" data-experiment-plan-path="experiment.samples" data-mc-experiment-field="samples" type="number" min="1" value="${experiment.samples}"></label>
-            <label>随机种子<input data-experiment-plan-path="experiment.seed" data-mc-experiment-field="seed" type="number" value="${experiment.seed}"></label>
-          </div>
-          <div class="mc-action-row">
-            <button type="button" data-mc-experiment-action="list">返回实验列表</button>
-            <button type="button" class="btn-primary" data-feature-id="${detailFeatureId}">保存并查看详情</button>
-          </div>
-        </div>
-      </section>
-    </div>
-  `;
-}
-
-function renderMonteCarloExperimentDetail(page) {
-  const experiment = currentMonteCarloExperiment(page.module);
-  if (!experiment) {
-    return importedDataEmptyState("蒙特卡洛实验");
-  }
-  const boundRun = monteCarloBoundRun(experiment);
-  const boundArtifactManifest = monteCarloBoundArtifactManifest(experiment);
-  const displayStatus = monteCarloDisplayStatus(experiment);
-  const displayProgress = boundRun ? normalizeProgress(boundRun.progress ?? experiment.progress) : experiment.progress;
-  const sourceRows = monteCarloExperimentSourceRows(experiment);
-  return `
-    <div class="mc-workbench">
-      <section class="mc-config-panel">
-        <div class="section-head">
-          <h3>蒙特卡洛实验详情</h3>
-          <span>${htmlEscape(displayStatus)}</span>
-        </div>
-        <div class="mc-detail-grid">
-          <div class="readonly-field"><span>SimulationExperimentBase</span><strong>${htmlEscape(experiment.experiment_type)}</strong></div>
-          <div class="readonly-field"><span>experiment_id</span><strong>${htmlEscape(experiment.experiment_id)}</strong></div>
-          <div class="readonly-field"><span>mc_experiment_id</span><strong>${htmlEscape(experiment.mc_experiment_id)}</strong></div>
-          <div class="readonly-field"><span>模块</span><strong>${htmlEscape(experiment.module)}</strong></div>
-          <div class="readonly-field"><span>关联方案</span><strong>${htmlEscape(experiment.experimentPlanName)}</strong></div>
-          <div class="readonly-field"><span>scenario_id</span><strong>${htmlEscape(experiment.scenario_id || experiment.scenarioId)}</strong></div>
-          <div class="readonly-field"><span>scenario_version</span><strong>${htmlEscape(experiment.scenario_version)}</strong></div>
-          <div class="readonly-field"><span>样本量</span><strong>${experiment.samples}</strong></div>
-          <div class="readonly-field"><span>随机种子</span><strong>${experiment.seed}</strong></div>
-          <div class="readonly-field"><span>run_type</span><strong>${htmlEscape(experiment.runType || "monte_carlo")}</strong></div>
-          <div class="readonly-field"><span>run_id</span><strong>${htmlEscape(boundRun?.run_id || experiment.runId || "尚未启动")}</strong></div>
-          <div class="readonly-field"><span>artifact_manifest_id</span><strong>${htmlEscape(boundArtifactManifest?.artifact_manifest_id || experiment.artifactManifestId || experiment.artifactId || "等待生成")}</strong></div>
-        </div>
-        <div class="backend-run-chain">
-          <span>run / artifact / projection 来源</span>
-          <table><tbody>${sourceRows.map(([label, value]) => `<tr><th>${htmlEscape(label)}</th><td>${htmlEscape(value)}</td></tr>`).join("")}</tbody></table>
-        </div>
-        <div class="mc-progress">
-          <span>实验进度</span>
-          <div class="bar-track"><span class="bar-fill blue" style="width:${Math.max(8, displayProgress)}%"></span></div>
-          <strong>${displayProgress}%</strong>
-        </div>
-        <div class="mc-action-row">
-          <button type="button" data-mc-experiment-action="list">返回实验列表</button>
-          <button type="button" class="btn-primary" data-mc-action="start" ${formalRunSubmitInFlight ? "disabled" : ""}>启动实验</button>
-        </div>
-        ${renderMonteCarloResults(experiment)}
-      </section>
-    </div>
-  `;
-}
-
-function renderMonteCarloConfig() {
-  return renderMonteCarloExperimentEditor(getFeaturePageById(selectedFeatureId));
-}
-
-function renderLegacyMonteCarloConfig() {
-  ensureMonteCarloSweepDefaults(experimentPlanDraft);
-  return `
-    <div class="mc-workbench">
-      <section class="mc-config-panel mc-config-panel-single">
-        <div class="section-head">
-          <h3>蒙特卡洛实验参数配置</h3>
-          <span>样本 / seed</span>
-        </div>
-        <div class="mc-form">
-          <div class="readonly-field">
-            <span>当前仿真实验</span>
-            <strong>${htmlEscape(experimentPlanDraft.experiment.name)}</strong>
-          </div>
-          <div class="mc-inline-fields">
-            <label>仿真次数<input id="mc-samples" data-experiment-plan-path="experiment.samples" type="number" min="1" value="${experimentPlanDraft.experiment.samples}"></label>
-            <label>随机种子<input data-experiment-plan-path="experiment.seed" type="number" value="${experimentPlanDraft.experiment.seed}"></label>
-          </div>
-          <div class="mc-action-row">
-            <button type="button" class="btn-primary" data-mc-action="start" ${formalRunSubmitInFlight ? "disabled" : ""}>启动</button>
-          </div>
-        </div>
-      </section>
-    </div>
-  `;
 }
 
 function buildMonteCarloEvaluationRows() {
@@ -12238,6 +13924,213 @@ function m7RunArtifactRows() {
   return [];
 }
 
+function renderLiteMesaMonteCarloAnalysis(page) {
+  const result = liteMesaMonteCarloResult;
+  const runCount = result?.sampleCount || result?.runs?.length || 0;
+  const groupCount = result?.groups?.length || 0;
+  const metricRows = liteMesaMetricStatisticRows(result);
+  const topMetrics = metricRows.slice(0, 4);
+  const projectName = currentProject?.name || "当前项目";
+  const experimentPlanName = selectedExperimentPlanName();
+  return `
+    <div class="lite-mesa-workbench">
+      <section class="lite-mesa-hero">
+        <div>
+          <h3>蒙特卡洛分析</h3>
+          <p>${htmlEscape(projectName)} / ${htmlEscape(page.module)} / ${htmlEscape(experimentPlanName)}</p>
+        </div>
+        <div class="lite-mesa-hero-actions">
+          ${renderExperimentPlanContextDropdown(page)}
+        </div>
+      </section>
+      <div class="lite-mesa-layout">
+        <section class="lite-mesa-settings">
+          <div class="section-head">
+            <h3>实验设置</h3>
+            <span>样本量 / 随机种子</span>
+          </div>
+          <div class="lite-mesa-setting-grid">
+            <label>样本量
+              <input data-lite-mesa-field="samples" type="number" min="1" max="1000" step="1" value="${htmlEscape(liteMesaMonteCarloSettings.samples)}">
+            </label>
+            <label>随机种子
+              <input data-lite-mesa-field="seed" type="number" step="1" value="${htmlEscape(liteMesaMonteCarloSettings.seed)}">
+            </label>
+          </div>
+          <button type="button" class="btn-primary" data-lite-mesa-action="run">运行分析</button>
+          <p class="inline-status">${htmlEscape(liteMesaMonteCarloStatus)}</p>
+        </section>
+        <section class="lite-mesa-results">
+          <div class="section-head">
+            <h3>实验运行结果</h3>
+            <span>${runCount ? `${runCount} 样本 / ${groupCount} 参数组` : "等待运行"}</span>
+          </div>
+          ${runCount ? `
+            <div class="lite-mesa-metric-cards">
+              ${topMetrics.map((row) => `
+                <div class="metric-card">
+                  <span>${htmlEscape(row.label)}</span>
+                  <strong>${htmlEscape(row.meanLabel)}</strong>
+                  <em>均值 / n=${row.count}</em>
+                </div>
+              `).join("")}
+            </div>
+          ` : `
+            <div class="empty-state">
+              <strong>尚未运行分析</strong>
+              <p>设置样本量和随机种子后运行。</p>
+            </div>
+          `}
+        </section>
+      </div>
+      <section class="lite-mesa-stat-section">
+        <div class="section-head">
+          <h3>主要输出指标统计值</h3>
+          <span>均值 / 最小值 / 最大值 / 标准差</span>
+        </div>
+        <div class="table-wrap">
+          <table class="lite-mesa-stat-table">
+            <thead><tr><th>指标</th><th>metric</th><th>样本数</th><th>均值</th><th>最小值</th><th>最大值</th><th>标准差</th></tr></thead>
+            <tbody>${runCount ? metricRows.map((row) => `
+              <tr>
+                <td>${htmlEscape(row.label)}</td>
+                <td>${htmlEscape(row.key)}</td>
+                <td>${row.count}</td>
+                <td>${htmlEscape(row.meanLabel)}</td>
+                <td>${htmlEscape(row.minLabel)}</td>
+                <td>${htmlEscape(row.maxLabel)}</td>
+                <td>${htmlEscape(row.stdDevLabel)}</td>
+              </tr>
+            `).join("") : `<tr><td colspan="7">当前没有可展示的统计值。</td></tr>`}</tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  `;
+}
+
+function syncLiteMesaSettingsFromMonteCarloExperiment(experiment) {
+  if (!experiment) return;
+  const samples = Math.max(1, Math.min(1000, Math.trunc(Number(experiment.samples) || liteMesaMonteCarloSettings.samples || 1)));
+  const seed = Math.trunc(Number(experiment.seed) || liteMesaMonteCarloSettings.seed || 1);
+  liteMesaMonteCarloSettings = { samples, seed };
+  liteMesaMonteCarloResult = null;
+  liteMesaMonteCarloStatus = "已载入蒙特卡洛实验设置，等待运行 Mesa 分析。";
+}
+
+function updateLiteMesaMonteCarloSetting(field, value) {
+  if (field === "samples") {
+    liteMesaMonteCarloSettings = {
+      ...liteMesaMonteCarloSettings,
+      samples: Math.max(1, Math.min(1000, Math.trunc(Number(value) || 1)))
+    };
+  }
+  if (field === "seed") {
+    liteMesaMonteCarloSettings = {
+      ...liteMesaMonteCarloSettings,
+      seed: Math.trunc(Number(value) || 1)
+    };
+  }
+  liteMesaMonteCarloResult = null;
+  liteMesaMonteCarloStatus = "设置已更新，等待重新运行 Mesa 分析。";
+}
+
+async function runLiteMesaMonteCarloAnalysis() {
+  const samples = Math.max(1, Math.min(1000, Math.trunc(Number(liteMesaMonteCarloSettings.samples) || 1)));
+  const seed = Math.trunc(Number(liteMesaMonteCarloSettings.seed) || 1);
+  liteMesaMonteCarloSettings = { samples, seed };
+  liteMesaMonteCarloStatus = "正在运行 Mesa 分析";
+  try {
+    const projectJson = {
+      ...selectedExperimentPlanProjectJson(),
+      experiment: {
+        ...(selectedExperimentPlanProjectJson().experiment || {}),
+        samples,
+        seed
+      }
+    };
+    const response = await backendApi.runLiteMesaAnalysis(projectJson, "mission_reliability", {
+      samples,
+      seed
+    });
+    liteMesaMonteCarloResult = normalizeLiteMesaMonteCarloResult(response);
+    const runCount = liteMesaMonteCarloResult.sampleCount || liteMesaMonteCarloResult.runs?.length || 0;
+    liteMesaMonteCarloStatus = runCount
+      ? `Mesa 分析完成：${runCount} 个样本，seed ${seed}。`
+      : "当前建模数据不足：请补充装备数量、任务要求、任务周期、部件和保障节点。";
+  } catch (err) {
+    liteMesaMonteCarloResult = null;
+    liteMesaMonteCarloStatus = `Mesa 分析失败：${err && err.message ? err.message : "运行错误"}`;
+  }
+}
+
+function normalizeLiteMesaMonteCarloResult(payload) {
+  if (!payload || payload.status === "blocked") {
+    return {
+      status: "blocked",
+      sampleCount: 0,
+      groups: [],
+      runs: [],
+      metrics: Array.isArray(payload?.metrics) ? payload.metrics : [],
+      aggregateMetrics: payload?.aggregate_metrics || {},
+      message: payload?.message || "建模粒度不足：请补充装备数量、任务要求、任务周期、部件和保障节点。"
+    };
+  }
+  return {
+    status: payload.status === "session_complete" ? "session_complete" : "blocked",
+    sampleCount: Number(payload.sample_count || payload.sampleCount || 0),
+    groups: [],
+    runs: Array.isArray(payload.samples) ? payload.samples : [],
+    metrics: Array.isArray(payload.metrics) ? payload.metrics : [],
+    aggregateMetrics: payload.aggregate_metrics || {},
+    seedList: Array.isArray(payload.seed_list) ? payload.seed_list : [],
+    message: payload.message || ""
+  };
+}
+
+function liteMesaMetricStatisticRows(result) {
+  const runs = Array.isArray(result?.runs) ? result.runs : [];
+  return LITE_MESA_MONTE_CARLO_METRICS.map((metric) => {
+    const values = runs
+      .map((run) => Number(run.final?.[metric.key]))
+      .filter((value) => Number.isFinite(value));
+    const aggregateValue = Number(result?.aggregateMetrics?.[metric.key]);
+    const stats = values.length
+      ? summarizeLiteMesaValues(values)
+      : Number.isFinite(aggregateValue)
+        ? { mean: aggregateValue, min: aggregateValue, max: aggregateValue, stdDev: 0 }
+        : summarizeLiteMesaValues([]);
+    return {
+      ...metric,
+      count: values.length || Number(result?.sampleCount || 0),
+      meanLabel: formatLiteMesaMetric(stats.mean, metric.format),
+      minLabel: formatLiteMesaMetric(stats.min, metric.format),
+      maxLabel: formatLiteMesaMetric(stats.max, metric.format),
+      stdDevLabel: formatLiteMesaMetric(stats.stdDev, metric.format)
+    };
+  });
+}
+
+function summarizeLiteMesaValues(values) {
+  if (!values.length) {
+    return { mean: 0, min: 0, max: 0, stdDev: 0 };
+  }
+  const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
+  const variance = values.reduce((sum, value) => sum + (value - mean) ** 2, 0) / values.length;
+  return {
+    mean,
+    min: Math.min(...values),
+    max: Math.max(...values),
+    stdDev: Math.sqrt(variance)
+  };
+}
+
+function formatLiteMesaMetric(value, format) {
+  if (format === "ratio") return ratioFixed(value);
+  if (format === "pct") return ratioFixed(value);
+  return fixed(value, 2);
+}
+
 function renderAnalysis(page) {
   if (page.name.includes("备件短板")) return renderSpareShortfallAnalysis();
   if (page.name.includes("携行")) return renderCarryListAnalysis();
@@ -12281,7 +14174,7 @@ function renderAnalysisEmptyState(title, mode, subtitle, message = "暂无分析
       ["配置状态", "待导入或运行"],
       ["正式结果", "等待 analysis artifact"]
     ],
-    body: `<div class="empty-state"><strong>${message}</strong><p>本地空白预览不会生成短板、携行、可靠度或停机因素结论。</p></div>`
+    body: `<div class="empty-state"><strong>${message}</strong><p>未选择模板项目时不会生成短板、携行、可靠度或停机因素结论。</p></div>`
   });
 }
 
@@ -12309,7 +14202,7 @@ function renderCarryListAnalysis() {
     subtitle: "携行清单迭代建议",
     config: `
       <label>默认目标<input value="携行备件越少越好" readonly></label>
-      <label>任务置信目标<input value="${htmlEscape(confidenceTarget ?? "默认")}" readonly></label>
+      <label>能满足任务要求置信度<input value="${htmlEscape(confidenceTarget ?? "默认")}" readonly></label>
       <label>任务时长覆盖<input value="${htmlEscape(missionDuration ?? "默认基础方案")}" readonly></label>
     `,
     metrics: [
@@ -12798,10 +14691,9 @@ function renderFormalAnalysisBoundaryNote(boundary) {
 
 function notApplicableProjectionReason(formalProjection) {
   const applicability = formalProjection?.applicability || {};
-  const validationLevel = applicability.validationLevel || "level0";
   const requiredDomains = (applicability.required_domains || []).join(" / ") || "保障资源 / 保障活动";
   const disabledDomains = (applicability.disabled_domains || []).join(" / ") || "未建模域";
-  return `Level 0 未启用该分析所需保障域；validationLevel=${validationLevel}，required_domains=${requiredDomains}，disabled_domains=${disabledDomains}。`;
+  return `该分析所需保障域未建模；required_domains=${requiredDomains}，disabled_domains=${disabledDomains}。`;
 }
 
 function renderFormalProjectionBody(formalProjection) {
@@ -12810,11 +14702,10 @@ function renderFormalProjectionBody(formalProjection) {
     const applicability = formalProjection.applicability || {};
     const required_domains = (applicability.required_domains || []).join(" / ") || "-";
     const disabled_domains = (applicability.disabled_domains || []).join(" / ") || "-";
-    const validationLevel = applicability.validationLevel || "level0";
     return `
       <div class="empty-state analysis-not-applicable">
         <strong>不适用 / 未建模</strong>
-        <p>${htmlEscape(`Level 0 未启用该分析所需保障域；validationLevel=${validationLevel}; required_domains=${required_domains}; disabled_domains=${disabled_domains}。`)}</p>
+        <p>${htmlEscape(`该分析所需保障域未建模；required_domains=${required_domains}; disabled_domains=${disabled_domains}。`)}</p>
       </div>
     `;
   }
@@ -12997,30 +14888,412 @@ function renderBar(value, max, color) {
 function renderLineChart(points) {
   const width = 640;
   const height = 180;
+  const plotLeft = 52;
+  const plotRight = 596;
+  const plotTop = 18;
+  const plotBottom = 146;
   const minY = 0;
   const maxY = 1;
-  const xMax = Math.max(1, points.length - 1);
-  const xScale = (x) => 36 + ((x - 1) / xMax) * 560;
-  const yScale = (y) => 18 + (1 - (y - minY) / (maxY - minY)) * 128;
+  if (!points.length) {
+    return `<div class="empty-state"><strong>暂无曲线数据</strong></div>`;
+  }
+  const minX = Math.min(...points.map((point) => Number(point.x) || 0));
+  const maxX = Math.max(...points.map((point) => Number(point.x) || 0));
+  const xSpan = Math.max(1, maxX - minX);
+  const xScale = (x) => plotLeft + ((x - minX) / xSpan) * (plotRight - plotLeft);
+  const yScale = (y) => {
+    const bounded = Math.max(minY, Math.min(maxY, Number(y) || 0));
+    return plotTop + (1 - (bounded - minY) / (maxY - minY)) * (plotBottom - plotTop);
+  };
   const line = points.map((point) => `${xScale(point.x).toFixed(1)},${yScale(point.y).toFixed(1)}`).join(" ");
+  const yTicks = [0, 0.5, 1];
   return `
     <svg class="line-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="任务可靠度趋势">
+      <line class="line-chart-axis line-chart-y-axis" x1="${plotLeft}" y1="${plotTop}" x2="${plotLeft}" y2="${plotBottom}"></line>
+      <line class="line-chart-axis line-chart-x-axis" x1="${plotLeft}" y1="${plotBottom}" x2="${plotRight}" y2="${plotBottom}"></line>
+      ${yTicks.map((tick) => `<line class="line-chart-tick" x1="${plotLeft - 4}" y1="${yScale(tick).toFixed(1)}" x2="${plotRight}" y2="${yScale(tick).toFixed(1)}"></line><text class="line-chart-y-label" x="${plotLeft - 10}" y="${(yScale(tick) + 4).toFixed(1)}">${tick.toFixed(1)}</text>`).join("")}
       <polyline points="${line}"></polyline>
-      ${points.map((point) => `<circle cx="${xScale(point.x).toFixed(1)}" cy="${yScale(point.y).toFixed(1)}" r="4"></circle><text x="${xScale(point.x).toFixed(1)}" y="168">${point.x}</text>`).join("")}
+      ${points.map((point) => `<circle cx="${xScale(point.x).toFixed(1)}" cy="${yScale(point.y).toFixed(1)}" r="4"></circle><text class="line-chart-x-label" x="${xScale(point.x).toFixed(1)}" y="168">${point.x}</text>`).join("")}
     </svg>
   `;
 }
 
-function renderScenarioSwitch() {
+function renderLiteMesaAnalysisPage(page) {
+  const definition = liteMesaAnalysisDefinitionForPage(page);
+  const settings = liteMesaAnalysisEffectiveSettings(definition);
+  const result = liteMesaAnalysisResults[definition.analysisType] || null;
+  const runCount = result?.sampleCount || 0;
+  const statusText = result?.status === "session_complete"
+    ? `分析结果已生成：${runCount} 个样本`
+    : result?.status === "blocked"
+      ? result.message
+    : result?.status === "running"
+        ? "分析运行中"
+        : "等待运行";
   return `
-    <div class="section-head">
-      <h3>场景切换</h3>
-      <span>宏观任务视图 / 机场保障视图 / 指标统计视图</span>
-    </div>
-    <div class="scenario-grid">
-      ${["宏观任务视图", "陆基保障视图", "指标统计视图"].map((name) => `<button type="button" class="scenario-card">${name}<span>${scenario.scenarioId}</span></button>`).join("")}
+    <div class="lite-mesa-workbench lite-mesa-analysis-page">
+      <section class="lite-mesa-hero">
+        <div>
+          <h3>${htmlEscape(definition.title)}</h3>
+        </div>
+        <div class="lite-mesa-hero-actions">
+          ${renderExperimentPlanContextDropdown(page)}
+        </div>
+      </section>
+      <div class="lite-mesa-layout lite-mesa-analysis-layout">
+        <section class="lite-mesa-settings">
+          <div class="section-head">
+            <h3>分析设置</h3>
+          </div>
+          <div class="lite-mesa-setting-grid">
+            ${renderLiteMesaAnalysisSettings(definition, settings)}
+          </div>
+          <button type="button" class="btn-primary" data-lite-mesa-analysis-action="run">运行分析</button>
+          <p class="inline-status">${htmlEscape(statusText)}</p>
+        </section>
+        <section class="lite-mesa-results">
+          <div class="section-head">
+            <h3>${htmlEscape(definition.subtitle)}</h3>
+            <span>${liteMesaAnalysisResultHeader(definition, result)}</span>
+          </div>
+          ${renderLiteMesaAnalysisMetricCards(definition, result)}
+        </section>
+      </div>
+      <section class="lite-mesa-stat-section">
+        <div class="section-head">
+          <h3>${liteMesaAnalysisDetailTitle(definition)}</h3>
+        </div>
+        ${renderLiteMesaAnalysisSessionBody(definition, result)}
+      </section>
     </div>
   `;
+}
+
+function liteMesaAnalysisResultHeader(_definition, result) {
+  if (result?.status === "session_complete") return "分析完成";
+  if (result?.status === "running") return "运行中";
+  return "等待运行";
+}
+
+function liteMesaAnalysisDetailTitle(definition) {
+  if (definition.analysisType === "spare_shortfall") return "备件短板一览";
+  return "分析结果明细";
+}
+
+function liteMesaAnalysisDefinitionForPage(page) {
+  const analysisType = analysisTypeForPage(page);
+  return {
+    analysisType,
+    ...(LITE_MESA_ANALYSIS_DEFINITIONS[analysisType] || LITE_MESA_ANALYSIS_DEFINITIONS.mission_reliability)
+  };
+}
+
+function createDefaultLiteMesaAnalysisSettings() {
+  return {
+    spare_shortfall: { samples: 27, seed: 20260621 },
+    carry_list: { samples: 27, seed: 20260621, missionConfidenceTarget: 0.9 },
+    mission_reliability: { samples: 27, seed: 20260621, maxTimeWindow: "" },
+    downtime_factors: { samples: 27, seed: 20260621, topN: 4 }
+  };
+}
+
+function liteMesaAnalysisEffectiveSettings(definition) {
+  return {
+    ...(liteMesaAnalysisSettings[definition.analysisType] || {}),
+    ...selectedExperimentPlanRunSettings()
+  };
+}
+
+function renderLiteMesaAnalysisSettings(definition, settings) {
+  const common = `
+    <label>样本量
+      <input type="number" min="1" max="1000" step="1" value="${htmlEscape(settings.samples ?? 27)}" readonly>
+    </label>
+    <label>随机种子
+      <input type="number" step="1" value="${htmlEscape(settings.seed ?? 20260621)}" readonly>
+    </label>
+  `;
+  const fixedRows = definition.fixedConfig
+    .map(([label, value]) => `<label>${htmlEscape(label)}<input value="${htmlEscape(value)}" readonly></label>`)
+    .join("");
+  if (definition.analysisType === "carry_list") {
+    return `${common}
+      <label>能满足任务要求置信度
+        <input data-lite-mesa-analysis-field="missionConfidenceTarget" type="number" min="0" max="1" step="0.01" value="${htmlEscape(settings.missionConfidenceTarget ?? 0.9)}">
+      </label>
+      ${fixedRows}`;
+  }
+  if (definition.analysisType === "mission_reliability") {
+    return `${common}
+      <label>最大时间窗口
+        <input data-lite-mesa-analysis-field="maxTimeWindow" type="number" min="1" step="1" value="${htmlEscape(settings.maxTimeWindow ?? "")}" placeholder="默认全任务窗口">
+      </label>
+      ${fixedRows}`;
+  }
+  if (definition.analysisType === "downtime_factors") {
+    return `${common}
+      <label>展示 TopN
+        <input data-lite-mesa-analysis-field="topN" type="number" min="1" max="20" step="1" value="${htmlEscape(settings.topN ?? 4)}">
+      </label>
+      ${fixedRows}`;
+  }
+  return `${common}${fixedRows}`;
+}
+
+function updateLiteMesaAnalysisSetting(page, field, value) {
+  const definition = liteMesaAnalysisDefinitionForPage(page);
+  const current = liteMesaAnalysisSettings[definition.analysisType] || {};
+  const numericFields = new Set(["samples", "seed", "missionConfidenceTarget", "maxTimeWindow", "topN"]);
+  const parsed = numericFields.has(field) ? Number(value) : value;
+  const next = {
+    ...current,
+    [field]: parsed
+  };
+  if (field === "samples") next.samples = Math.max(1, Math.min(1000, Math.trunc(Number(value) || 1)));
+  if (field === "seed") next.seed = Math.trunc(Number(value) || 1);
+  if (field === "missionConfidenceTarget") next.missionConfidenceTarget = Math.max(0, Math.min(1, Number(value) || 0));
+  if (field === "maxTimeWindow") next.maxTimeWindow = Number(value) > 0 ? Math.trunc(Number(value)) : "";
+  if (field === "topN") next.topN = Math.max(1, Math.min(20, Math.trunc(Number(value) || 1)));
+  liteMesaAnalysisSettings = {
+    ...liteMesaAnalysisSettings,
+    [definition.analysisType]: next
+  };
+  liteMesaAnalysisResults = {
+    ...liteMesaAnalysisResults,
+    [definition.analysisType]: null
+  };
+}
+
+async function runLiteMesaAnalysisPage(page) {
+  const definition = liteMesaAnalysisDefinitionForPage(page);
+  const settings = liteMesaAnalysisEffectiveSettings(definition);
+  const samples = Math.max(1, Math.min(1000, Math.trunc(Number(settings.samples) || 1)));
+  const seed = Math.trunc(Number(settings.seed) || 1);
+  const normalizedSettings = {
+    ...settings,
+    samples,
+    seed,
+    ...(definition.analysisType === "downtime_factors" ? { write_event_snapshots: true } : {})
+  };
+  liteMesaAnalysisResults = {
+    ...liteMesaAnalysisResults,
+    [definition.analysisType]: {
+      status: "running",
+      message: "分析运行中",
+      sampleCount: 0,
+      metrics: definition.metricLabels.map((label) => [label, "运行中"]),
+      rows: [],
+      limitations: []
+    }
+  };
+  try {
+    const projectJson = selectedExperimentPlanProjectJson();
+    const response = await backendApi.runLiteMesaAnalysis(projectJson, definition.analysisType, normalizedSettings);
+    liteMesaAnalysisResults = {
+      ...liteMesaAnalysisResults,
+      [definition.analysisType]: normalizeLiteMesaAnalysisResult(definition, response)
+    };
+  } catch (err) {
+    liteMesaAnalysisResults = {
+      ...liteMesaAnalysisResults,
+      [definition.analysisType]: {
+        status: "blocked",
+        sampleCount: 0,
+        metrics: [],
+        rows: [],
+        limitations: [],
+        message: `分析失败：${err && err.message ? err.message : "运行错误"}`
+      }
+    };
+  }
+}
+
+function normalizeLiteMesaAnalysisResult(definition, payload) {
+  if (!payload || payload.status === "blocked") {
+    return {
+      status: "blocked",
+      source: payload?.source || "lite_mesa_aircraft_support_v1",
+      analysisType: payload?.analysis_type || definition.analysisType,
+      experimentId: definition.experimentId,
+      sampleCount: 0,
+      seedList: [],
+      metrics: [],
+      rows: [],
+      dailyRows: [],
+      eventSnapshots: Array.isArray(payload?.event_snapshots) ? payload.event_snapshots : [],
+      limitations: Array.isArray(payload?.limitations) ? payload.limitations : [],
+      message: payload?.message || "建模粒度不足：请补充装备数量、任务要求、任务周期、部件和保障节点。"
+    };
+  }
+  return {
+    status: payload.status === "session_complete" ? "session_complete" : "blocked",
+    source: payload.source || "lite_mesa_aircraft_support_v1",
+    analysisType: payload.analysis_type || definition.analysisType,
+    experimentId: payload.experiment_id || definition.experimentId,
+    sampleCount: Number(payload.sample_count || payload.sampleCount || 0),
+    seedList: Array.isArray(payload.seed_list) ? payload.seed_list : [],
+    metrics: Array.isArray(payload.metrics) ? payload.metrics : definition.metricLabels.map((label) => [label, "无"]),
+    rows: Array.isArray(payload.rows) ? payload.rows : [],
+    dailyRows: Array.isArray(payload.daily_rows) ? payload.daily_rows : [],
+    eventSnapshots: Array.isArray(payload.event_snapshots) ? payload.event_snapshots : [],
+    limitations: Array.isArray(payload.limitations) ? payload.limitations : [],
+    message: payload.message || ""
+  };
+}
+
+function renderLiteMesaAnalysisMetricCards(definition, result) {
+  if (result?.status === "blocked") {
+    return `<div class="empty-state"><strong>建模粒度不足</strong><p>${htmlEscape(result.message)}</p></div>`;
+  }
+  const metrics = result?.metrics || definition.metricLabels.map((label) => [label, "待运行"]);
+  return `
+    <div class="lite-mesa-metric-cards">
+      ${metrics.map(([label, value]) => `
+        <div class="metric-card">
+          <span>${htmlEscape(label)}</span>
+          <strong>${htmlEscape(value)}</strong>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+function renderLiteMesaAnalysisSessionBody(definition, result) {
+  if (!result) {
+    return `<div class="empty-state"><strong>尚未运行分析</strong><p>当前页会读取项目建模数据并在后端内存运行中生成分析摘要。</p></div>`;
+  }
+  if (result.status === "running") {
+    return `<div class="empty-state"><strong>分析运行中</strong><p>当前项目正在后端内存运行中生成分析摘要。</p></div>`;
+  }
+  if (result.status === "blocked") {
+    return `<div class="empty-state"><strong>建模粒度不足</strong><p>${htmlEscape(result.message)}</p></div>`;
+  }
+  const rows = result.rows || [];
+  if (definition.analysisType === "spare_shortfall") {
+    return `<div class="table-wrap"><table class="lite-mesa-stat-table">
+      <thead><tr><th>备件类别</th><th>需求次数</th><th>满足次数</th><th>平均备件延误时间(h)</th><th>满足率</th><th>风险</th></tr></thead>
+      <tbody>${rows.map((row) => `<tr><td>${htmlEscape(row.spareType)}</td><td>${row.demand}</td><td>${row.filled}</td><td>${fixed(row.meanTransportDelayHours, 2)}</td><td>${pct(row.fillRate)}</td><td>${htmlEscape(row.riskLevel)}</td></tr>`).join("")}</tbody>
+    </table></div>`;
+  }
+  if (definition.analysisType === "carry_list") {
+    return `<div class="table-wrap"><table class="lite-mesa-stat-table">
+      <thead><tr><th>备件类别</th><th>建议携行数量</th><th>需求次数</th><th>短缺次数</th><th>优先级</th><th>置信度目标</th></tr></thead>
+      <tbody>${rows.map((row) => `<tr><td>${htmlEscape(row.spareType)}</td><td>${row.recommended}</td><td>${row.demand}</td><td>${row.shortage}</td><td>${htmlEscape(row.riskLevel)}</td><td>${fixed(row.confidenceTarget, 2)}</td></tr>`).join("")}</tbody>
+    </table></div>`;
+  }
+  if (definition.analysisType === "mission_reliability") {
+    return `
+      ${renderLiteMesaMissionReliabilityDailyChart(result.dailyRows || [])}
+      <details class="lite-mesa-collapsible-table">
+        <summary>样本明细（${rows.length}）</summary>
+        <div class="table-wrap"><table class="lite-mesa-stat-table">
+        <thead><tr><th>序号</th><th>seed</th><th>任务成功率</th><th>出动架次率</th><th>战备完好率</th></tr></thead>
+        <tbody>${rows.map((row) => `<tr><td>${row.sequence}</td><td>${row.seed}</td><td>${pct(row.missionSuccessRate)}</td><td>${formatLiteMesaAnalysisMetricValue("出动架次率", row.sortieRate)}</td><td>${pct(row.readyRate)}</td></tr>`).join("")}</tbody>
+        </table></div>
+      </details>
+    `;
+  }
+  return `
+    <div class="table-wrap"><table class="lite-mesa-stat-table">
+      <thead><tr><th>因素</th><th>类型</th><th>次数</th><th>贡献度</th></tr></thead>
+      <tbody>${rows.map((row) => `<tr><td>${htmlEscape(row.label)}</td><td>${htmlEscape(row.reason)}</td><td>${row.count}</td><td>${pct(row.contribution)}</td></tr>`).join("")}</tbody>
+    </table></div>
+    ${renderLiteMesaDowntimeEventSnapshots(result.eventSnapshots || [])}
+  `;
+}
+
+function formatLiteMesaAnalysisMetricValue(label, value) {
+  if (String(label || "").includes("出动架次率")) return fixed(value, 3);
+  return pct(value);
+}
+
+function renderLiteMesaMissionReliabilityDailyChart(rows) {
+  if (!rows.length) {
+    return `<div class="empty-state"><strong>每日平均任务成功率</strong><p>当前会话未返回按天聚合的任务成功率。</p></div>`;
+  }
+  const points = rows.map((row) => ({
+    x: Number(row.day || 0),
+    y: Number(row.meanMissionSuccessRate || 0)
+  }));
+  return `
+    <div class="analysis-chart-panel">
+      <div class="chart-title">每日平均任务成功率</div>
+      ${renderLineChart(points)}
+    </div>
+    <div class="table-wrap"><table class="lite-mesa-stat-table">
+      <thead><tr><th>任务日</th><th>样本数</th><th>平均任务成功率</th><th>平均出动架次率</th><th>平均计划架次</th></tr></thead>
+      <tbody>${rows.map((row) => `<tr><td>第${htmlEscape(row.day)}天</td><td>${htmlEscape(row.sampleCount)}</td><td>${fixed(row.meanMissionSuccessRate, 3)}</td><td>${fixed(row.meanSortieRate, 3)}</td><td>${fixed(row.plannedSorties, 1)}</td></tr>`).join("")}</tbody>
+    </table></div>
+  `;
+}
+
+function renderLiteMesaDowntimeEventSnapshots(snapshots) {
+  if (!snapshots.length) {
+    return `<div class="empty-state"><strong>停机事件一览</strong><p>当前停机因素运行未捕获到停机事件日志。</p></div>`;
+  }
+  return `
+    <div class="lite-mesa-event-snapshots">
+      <div class="section-head">
+        <h3>停机事件一览</h3>
+        <span>${snapshots.length} 条停机事件</span>
+      </div>
+      ${snapshots.map((snapshot, index) => renderLiteMesaDowntimeEventSnapshot(snapshot, index)).join("")}
+    </div>
+  `;
+}
+
+function renderLiteMesaDowntimeEventSnapshot(snapshot, index) {
+  const aircraft = Array.isArray(snapshot.aircraft_state?.aircraft) ? snapshot.aircraft_state.aircraft : [];
+  const aircraftSummary = snapshot.aircraft_state?.summary || snapshot.aircraft_state || {};
+  const resources = Array.isArray(snapshot.support_resources) ? snapshot.support_resources : [];
+  const shortages = Array.isArray(snapshot.spare_shortages) ? snapshot.spare_shortages : [];
+  return `
+    <details class="lite-mesa-event-snapshot" ${index === 0 ? "open" : ""}>
+      <summary>
+        <strong>${htmlEscape(snapshot.event_label || snapshot.event_type || "停机事件")}</strong>
+        <span>seed ${htmlEscape(snapshot.seed ?? "-")} / t=${htmlEscape(snapshot.simulation_time ?? "-")} / ${htmlEscape(snapshot.result || "downtime_anomaly_recorded")}</span>
+      </summary>
+      <div class="downtime-snapshot-grid">
+        <section>
+          <h4>飞机状态</h4>
+          <table><tbody>
+            <tr><th>可用飞机</th><td>${htmlEscape(aircraftSummary.available_aircraft ?? "-")}</td></tr>
+            <tr><th>故障飞机</th><td>${htmlEscape(aircraftSummary.failed_count ?? "-")}</td></tr>
+            <tr><th>维修中</th><td>${htmlEscape(aircraftSummary.repairing_count ?? "-")}</td></tr>
+          </tbody></table>
+          <div class="snapshot-chip-row">${aircraft.slice(0, 8).map((item) => `<span>${htmlEscape(item.tail_number || item.name || "aircraft")}：${htmlEscape(item.state || "-")}</span>`).join("") || "<span>无飞机明细</span>"}</div>
+        </section>
+        <section>
+          <h4>保障资源占用</h4>
+          <table><thead><tr><th>资源</th><th>人员</th><th>设备</th><th>库存</th></tr></thead><tbody>
+            ${resources.map((resource) => `<tr>
+              <td>${htmlEscape(resource.name || resource.resource_id || "-")}</td>
+              <td>${htmlEscape(resource.personnel_in_use ?? resource.in_use ?? 0)} / ${htmlEscape(resource.personnel_capacity ?? resource.capacity ?? "-")}</td>
+              <td>${htmlEscape(resource.equipment_in_use ?? 0)} / ${htmlEscape(resource.equipment_capacity ?? "-")}</td>
+              <td>${htmlEscape(formatSnapshotInventory(resource.inventory))}</td>
+            </tr>`).join("") || `<tr><td colspan="4">无资源明细</td></tr>`}
+          </tbody></table>
+        </section>
+        <section>
+          <h4>备件短缺</h4>
+          <table><thead><tr><th>备件</th><th>需求</th><th>可用</th><th>作业</th></tr></thead><tbody>
+            ${shortages.map((item) => `<tr>
+              <td>${htmlEscape(item.spare_type || "-")}</td>
+              <td>${htmlEscape(item.required_quantity ?? "-")}</td>
+              <td>${htmlEscape(item.available_quantity ?? "-")}</td>
+              <td>${htmlEscape(item.job_id || item.reason || "-")}</td>
+            </tr>`).join("") || `<tr><td colspan="4">无备件短缺</td></tr>`}
+          </tbody></table>
+        </section>
+      </div>
+    </details>
+  `;
+}
+
+function formatSnapshotInventory(inventory) {
+  if (!inventory || typeof inventory !== "object") return "-";
+  const entries = Object.entries(inventory).slice(0, 4);
+  return entries.length ? entries.map(([key, value]) => `${key}:${value}`).join(" / ") : "-";
 }
 
 function field(label, path, type = "text", attrs = {}) {
@@ -13055,11 +15328,30 @@ function isActiveTertiary(activePage, pages) {
 }
 
 function readFeatureIdFromHash() {
+  const featureId = readRawFeatureIdFromHash();
+  return featureId ? getFeaturePageById(featureId).id : "";
+}
+
+function readRawFeatureIdFromHash() {
+  if (typeof location === "undefined") return "";
   const match = location.hash.match(/feature=([^&]+)/);
   return match ? decodeURIComponent(match[1]) : "";
 }
 
+function normalizeSelectedFeatureHash(featureId) {
+  if (typeof location === "undefined" || typeof window === "undefined") return;
+  const rawFeatureId = readRawFeatureIdFromHash();
+  if (!rawFeatureId || rawFeatureId === featureId) return;
+  const normalizedHash = `feature=${encodeURIComponent(featureId)}`;
+  if (window.history?.replaceState) {
+    window.history.replaceState(null, "", `${location.pathname}${location.search}#${normalizedHash}`);
+    return;
+  }
+  location.hash = normalizedHash;
+}
+
 function readRouteFromHash() {
+  if (typeof location === "undefined") return "";
   const match = location.hash.match(/route=([^&]+)/);
   if (match) return decodeURIComponent(match[1]);
   if (location.hash.includes("feature=")) return "workbench";
@@ -13080,18 +15372,8 @@ function getPlanListFeatureId(moduleName) {
 }
 
 function getVisualSimulationFeatureId(moduleName) {
-  if (moduleName === "任务可靠度评估模块") return "mission-reliability-visual-start-stop";
-  return "spare-planning-visual-start-stop";
-}
-
-function getMonteCarloExperimentListFeatureId(moduleName) {
-  if (moduleName === "任务可靠度评估模块") return "mission-reliability-monte-carlo-experiment-list";
-  return "spare-planning-monte-carlo-experiment-list";
-}
-
-function getMonteCarloExperimentEditFeatureId(moduleName) {
-  if (moduleName === "任务可靠度评估模块") return "mission-reliability-monte-carlo-experiment-edit";
-  return "spare-planning-monte-carlo-experiment-edit";
+  if (moduleName === "任务可靠度评估模块") return "mission-reliability-visual-mesa-page";
+  return "spare-planning-visual-mesa-page";
 }
 
 function getMonteCarloExperimentDetailFeatureId(moduleName) {
@@ -13174,6 +15456,95 @@ function ensureMonteCarloSweepDefaults(projectJson) {
   return projectJson;
 }
 
+function ensureExperimentPlanDraftDefaults(projectJson) {
+  if (!projectJson || typeof projectJson !== "object") return projectJson;
+  if (!projectJson.experiment || typeof projectJson.experiment !== "object" || Array.isArray(projectJson.experiment)) {
+    projectJson.experiment = {};
+  }
+  const defaults = defaultScenario.experiment || {};
+  const projectName = String(currentProject?.name || projectJson.projectInfo?.name || projectJson.scenarioId || "当前项目").trim();
+  projectJson.experiment.name ||= `${projectName} 仿真实验方案`;
+  projectJson.experiment.steps = positiveExperimentNumber(projectJson.experiment.steps, defaults.steps || 24);
+  projectJson.experiment.samples = positiveExperimentNumber(projectJson.experiment.samples, defaults.samples || 27);
+  const seed = Number(projectJson.experiment.seed);
+  projectJson.experiment.seed = Number.isFinite(seed) ? seed : Number(defaults.seed || 20260621);
+  if (!projectJson.seedPolicy || typeof projectJson.seedPolicy !== "object" || Array.isArray(projectJson.seedPolicy)) {
+    projectJson.seedPolicy = { mode: "fixed", baseSeed: projectJson.experiment.seed };
+  }
+  projectJson.seedPolicy.mode = projectJson.seedPolicy.mode === "random" ? "random" : "fixed";
+  projectJson.seedPolicy.baseSeed = positiveExperimentSeed(projectJson.seedPolicy.baseSeed ?? projectJson.experiment.seed);
+  projectJson.experiment.seed = projectJson.seedPolicy.baseSeed;
+  if (!projectJson.scenarioComposition || typeof projectJson.scenarioComposition !== "object" || Array.isArray(projectJson.scenarioComposition)) {
+    projectJson.scenarioComposition = { schemaVersion: "scenario-composition-v0", overrides: [] };
+  }
+  if (!Array.isArray(projectJson.scenarioComposition.overrides)) {
+    projectJson.scenarioComposition.overrides = [];
+  }
+  return projectJson;
+}
+
+function positiveExperimentNumber(value, fallback) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : fallback;
+}
+
+function positiveExperimentSeed(value) {
+  return Math.max(1, Math.trunc(positiveExperimentNumber(value, defaultScenario.experiment?.seed || 20260621)));
+}
+
+function generatedExperimentSeed() {
+  return Math.max(1, Math.trunc(Date.now() % 2147483647));
+}
+
+function experimentPlanSeedPolicy() {
+  ensureExperimentPlanDraftDefaults(experimentPlanDraft);
+  const policy = experimentPlanDraft.seedPolicy;
+  policy.baseSeed = positiveExperimentSeed(policy.baseSeed ?? experimentPlanDraft.experiment?.seed);
+  experimentPlanDraft.experiment.seed = policy.baseSeed;
+  return policy;
+}
+
+function scenarioCompositionDraft() {
+  ensureExperimentPlanDraftDefaults(experimentPlanDraft);
+  const composition = experimentPlanDraft.scenarioComposition;
+  composition.schemaVersion ||= "scenario-composition-v0";
+  composition.sourceProjectId = currentBackendProjectId();
+  composition.baseProjectVersion = savedProject?.project_version || scenario.project_version || "project-v0.1";
+  return composition;
+}
+
+function updateScenarioOverrideInput(input) {
+  const index = Number(input.dataset.scenarioOverrideIndex);
+  if (!Number.isInteger(index) || index < 0) return;
+  const composition = scenarioCompositionDraft();
+  if (!composition.overrides[index]) {
+    composition.overrides[index] = { path: "", valueType: "string", value: "", label: "" };
+  }
+  const override = composition.overrides[index];
+  if (input.closest("[data-scenario-override-path]")) {
+    override.path = input.value;
+  } else if (input.closest("[data-scenario-override-value-type]")) {
+    override.valueType = input.value;
+  } else if (input.closest("[data-scenario-override-value]")) {
+    override.value = input.value;
+  } else if (input.closest("[data-scenario-override-label]")) {
+    override.label = input.value;
+  }
+}
+
+function updateSelectedScenarioOverrideInput(input) {
+  const path = input.dataset.scenarioSelectedOverridePath || selectedScenarioCompositionPath;
+  if (!path) return;
+  selectedScenarioCompositionPath = path;
+  const sourceProjectJson = scenarioCompositionSourceProjectJson();
+  const override = upsertScenarioOverrideForPath(path, sourceProjectJson);
+  if (input.closest("[data-scenario-selected-override-value-type]")) {
+    override.valueType = input.value;
+  } else if (input.closest("[data-scenario-selected-override-value]")) {
+    override.value = input.value;
+  }
+}
+
 function defaultMonteCarloSweepForProject(projectJson) {
   return {
     failureRates: [...DEFAULT_MONTE_CARLO_SWEEP.failureRates],
@@ -13244,6 +15615,10 @@ function mesaStateClass(state) {
 
 function pct(value) {
   return `${Math.round(Number(value || 0) * 100)}%`;
+}
+
+function ratioFixed(value) {
+  return Number(value || 0).toFixed(2);
 }
 
 function fixed(value, digits = 2) {

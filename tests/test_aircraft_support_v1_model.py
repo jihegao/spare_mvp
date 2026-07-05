@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import json
 import unittest
+from pathlib import Path
 
-from src.spare_mvp_abm.aircraft_support_v1.model import AircraftSupportV1Model
+from src.spare_mvp_backend.modeling_import import modeling_import_to_project, validate_modeling_import_package
+from src.spare_mvp_abm.aircraft_support_v1.model import AircraftSupportV1Model, JobState, _resource_quantity
+from src.spare_mvp_contract import SimulationAdapter
 
 
 def _minimal_inputs() -> dict:
@@ -56,15 +60,18 @@ def _minimal_inputs() -> dict:
         },
         "mission_profile": {
             "duration_hours": 2,
-            "basic_mission": {
-                "missionId": "mission-a",
-                "name": "mission",
-                "startHour": 0,
-                "preparationMinutes": 20,
-                "taskDurationMinutes": 30,
-                "equipmentQuantity": 2,
-                "cancelMinutes": 10,
-            },
+            "basic_missions": [
+                {
+                    "id": "mission-a",
+                    "missionId": "mission-a",
+                    "name": "mission",
+                    "startHour": 0,
+                    "preparationMinutes": 20,
+                    "taskDurationMinutes": 30,
+                    "equipmentQuantity": 2,
+                    "cancelMinutes": 10,
+                }
+            ],
             "composite_tasks": [],
         },
     }
@@ -74,7 +81,77 @@ def aircraft_payload_nodes(model: AircraftSupportV1Model, aircraft) -> list[dict
     return model._aircraft_failure_tree_payload(aircraft)["nodes"]
 
 
+def _canonical_import_inputs() -> dict:
+    fixture_path = Path(__file__).parent / "fixtures" / "modeling_import_project.json"
+    import_package = json.loads(fixture_path.read_text(encoding="utf-8"))
+    validation = validate_modeling_import_package(import_package)
+    project = modeling_import_to_project(import_package, validation=validation)
+    return SimulationAdapter().compile_scenario(project, model_family="aircraft_support_v1")["simulation_inputs"]
+
+
 class AircraftSupportV1ModelTest(unittest.TestCase):
+    def test_structured_personnel_requirements_sum_resource_quantity(self) -> None:
+        quantity = _resource_quantity(
+            [
+                {"professional": "机务", "quantity": 2},
+                {"professional": "航电", "quantity": 1},
+            ],
+            None,
+            default=1,
+        )
+
+        self.assertEqual(quantity, 3)
+
+    def test_structured_spare_requirement_reads_name_and_quantity(self) -> None:
+        model = AircraftSupportV1Model(_minimal_inputs())
+        job = JobState(
+            job_id="job-1",
+            tail_number="J15-001",
+            kind="preflight",
+            activity_id="preflight",
+            activity_name="preflight",
+            tasks=[],
+            priority=1,
+            resource_node_id="deck",
+        )
+
+        self.assertEqual(
+            model._task_spare_requirement(job, {"spare": [{"model": "LRU", "name": "航电模块", "quantity": 2}]}),
+            ("航电模块", 2),
+        )
+
+    def test_structured_no_spare_requirement_does_not_block_preflight(self) -> None:
+        inputs = _minimal_inputs()
+        preflight = next(activity for activity in inputs["support_activities"]["activities"] if activity["id"] == "preflight")
+        preflight["jobs"][0]["spare"] = [{"name": "无", "quantity": 1}]
+        model = AircraftSupportV1Model(inputs)
+        mission = model.missions[0]
+        mission.planned_start = 30
+        mission.preparation_start = 1
+        mission.required_aircraft = 1
+
+        model.minute = 1
+        model._create_due_preflight_jobs()
+        model._start_waiting_jobs()
+
+        preflight_jobs = [job for job in model.jobs if job.kind == "preflight"]
+        self.assertEqual(len(preflight_jobs), 1)
+        self.assertEqual(preflight_jobs[0].state, "running")
+        self.assertIsNone(preflight_jobs[0].shortage_reason)
+
+    def test_preflight_jobs_mark_aircraft_as_pre_support_not_maintenance(self) -> None:
+        model = AircraftSupportV1Model(_minimal_inputs())
+        mission = model.missions[0]
+        mission.planned_start = 30
+        mission.preparation_start = 1
+        mission.required_aircraft = 1
+
+        model.minute = 1
+        model._create_due_preflight_jobs()
+
+        self.assertEqual(model.aircraft[0].state, "pre_support")
+        self.assertEqual(model.snapshot()["repairing_count"], 0)
+
     def test_real_aircraft_assets_are_loaded_before_generated_tail_numbers(self) -> None:
         inputs = _minimal_inputs()
         inputs["aircraft"]["assets"] = [
@@ -111,8 +188,8 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
             {"tailNumber": "J35-201", "aircraftType": "J-35", "model": "J-35", "initialState": "available"},
             {"tailNumber": "J15-101", "aircraftType": "J-15", "model": "J-15A", "initialState": "available"},
         ]
-        inputs["mission_profile"]["basic_mission"]["equipmentType"] = "J-15"
-        inputs["mission_profile"]["basic_mission"]["equipmentQuantity"] = 1
+        inputs["mission_profile"]["basic_missions"][0]["equipmentType"] = "J-15"
+        inputs["mission_profile"]["basic_missions"][0]["equipmentQuantity"] = 1
         model = AircraftSupportV1Model(inputs)
         mission = model.missions[0]
         mission.planned_start = 0
@@ -166,11 +243,55 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
         model.minute = 10
         model._process_mission_returns()
 
-        self.assertEqual(aircraft.state, "maintenance")
+        self.assertEqual(aircraft.state, "post_support")
         self.assertTrue(aircraft.postflight_required)
         self.assertEqual(model.completed_sorties, 0)
+        self.assertEqual(model.snapshot()["repairing_count"], 0)
         self.assertEqual(model.snapshot()["postflight_backlog"], 1)
         self.assertTrue(any(job.kind == "postflight" and job.tail_number == aircraft.tail_number for job in model.jobs))
+
+    def test_snapshot_sortie_rate_is_launched_sorties_per_aircraft_per_day(self) -> None:
+        inputs = _minimal_inputs()
+        inputs["time"]["duration_minutes"] = 2880
+        model = AircraftSupportV1Model(inputs)
+        model.launched_sorties = 2
+
+        snapshot = model.snapshot()
+
+        self.assertEqual(snapshot["aircraft_count"], 2)
+        self.assertEqual(snapshot["simulation_days"], 2)
+        self.assertEqual(snapshot["sortie_rate"], 0.5)
+
+    def test_snapshot_mean_transport_delay_is_hours_per_replenishment(self) -> None:
+        model = AircraftSupportV1Model(_minimal_inputs())
+        model.total_transport_delay = 180
+        model.transport_replenishment_events = 2
+
+        snapshot = model.snapshot()
+
+        self.assertEqual(snapshot["total_transport_delay_minutes"], 180)
+        self.assertEqual(snapshot["transport_replenishment_events"], 2)
+        self.assertEqual(snapshot["mean_transport_delay"], 1.5)
+
+    def test_ready_rate_uses_daily_1400_available_aircraft_samples(self) -> None:
+        model = AircraftSupportV1Model(_minimal_inputs())
+
+        model.aircraft[0].state = "available"
+        model.aircraft[1].state = "maintenance"
+        model.minute = 14 * 60
+        model._record_daily_readiness_sample_if_due()
+
+        model.aircraft[0].state = "available"
+        model.aircraft[1].state = "available"
+        model.minute = 1440 + 14 * 60
+        model._record_daily_readiness_sample_if_due()
+
+        model.aircraft[0].state = "maintenance"
+        model.aircraft[1].state = "maintenance"
+        snapshot = model.snapshot()
+
+        self.assertEqual(snapshot["daily_readiness_sample_count"], 2)
+        self.assertEqual(snapshot["ready_rate"], 0.75)
 
     def test_transport_minutes_create_in_transit_inventory_before_arrival(self) -> None:
         inputs = _minimal_inputs()
@@ -212,6 +333,27 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
         self.assertTrue(model.aircraft[0].preventive_due)
         self.assertEqual(model.snapshot()["preventive_backlog"], 2)
         self.assertEqual(len([job for job in model.jobs if job.kind == "preventive"]), 2)
+
+    def test_canonical_preventive_jobs_can_complete_after_day_two(self) -> None:
+        model = AircraftSupportV1Model(_canonical_import_inputs())
+        execution = model.run()
+        frame = min(execution["frames"], key=lambda item: abs(item["simulation_time"] - 2550))
+
+        self.assertEqual(
+            [job.get("shortage_reason") for job in frame["jobs"] if job["kind"] == "preventive"],
+            [],
+        )
+        self.assertEqual(
+            {aircraft["tail_number"]: aircraft["state"] for aircraft in frame["aircraft"]},
+            {
+                "J15-101": "available",
+                "J15-102": "available",
+                "J15-103": "available",
+                "J35-201": "available",
+                "J35-202": "available",
+                "J35-203": "available",
+            },
+        )
 
     def test_in_flight_failure_counts_failed_sortie_and_requires_repair_after_return(self) -> None:
         inputs = _minimal_inputs()
@@ -543,6 +685,49 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "composite-a"):
             AircraftSupportV1Model(inputs)
+
+    def test_periodic_weekday_rows_restrict_active_mission_days(self) -> None:
+        inputs = _minimal_inputs()
+        inputs["time"]["duration_minutes"] = 7 * 24 * 60
+        inputs["mission_profile"]["composite_tasks"] = [
+            {
+                "id": "composite-a",
+                "name": "Three day composite",
+                "taskItems": [
+                    {
+                        "id": "task-a",
+                        "basicMissionId": "mission-a",
+                        "basicTaskName": "mission",
+                        "firstWaveTime": "00:00",
+                        "taskDurationMinutes": 30,
+                        "equipmentQuantity": 1,
+                        "equipmentType": "J-15",
+                    }
+                ],
+            }
+        ]
+        inputs["mission_profile"]["periodic_tasks"] = [
+            {
+                "id": "periodic-three-day",
+                "name": "Three day task",
+                "periodDays": 7,
+                "repeatCount": 1,
+                "compositeTaskIds": ["composite-a"],
+                "compositeTasks": [
+                    {"weekIndex": 1, "weekday": "mondayCompositeTaskId", "compositeTaskId": "composite-a"},
+                    {"weekIndex": 1, "weekday": "tuesdayCompositeTaskId", "compositeTaskId": "composite-a"},
+                    {"weekIndex": 1, "weekday": "wednesdayCompositeTaskId", "compositeTaskId": "composite-a"},
+                    {"weekIndex": 1, "weekday": "thursdayCompositeTaskId", "compositeTaskId": ""},
+                    {"weekIndex": 1, "weekday": "fridayCompositeTaskId", "compositeTaskId": ""},
+                    {"weekIndex": 1, "weekday": "saturdayCompositeTaskId", "compositeTaskId": ""},
+                    {"weekIndex": 1, "weekday": "sundayCompositeTaskId", "compositeTaskId": ""},
+                ],
+            }
+        ]
+
+        model = AircraftSupportV1Model(inputs)
+
+        self.assertEqual(sorted({mission.day_index for mission in model.missions}), [1, 2, 3])
 
 
 if __name__ == "__main__":

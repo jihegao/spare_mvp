@@ -1,5 +1,5 @@
 {
-  "model_family": "aviation_support",
+  "model_family": "aircraft_support_v1",
   "monte_carlo": [
     "run_config",
     "input_project",

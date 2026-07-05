@@ -151,11 +151,9 @@ test("buildRunIntent defaults Monte Carlo to a single configured value", () => {
     spareMultipliers: [0.75],
     supportCapacities: [2]
   });
-  assert.deepEqual(intent.planProjectJson.analysisRequests.largeSample.sweep, {
-    failureRates: [0.035],
-    spareMultipliers: [0.75],
-    supportCapacities: [2]
-  });
+  assert.equal("analysisRequests" in intent.planProjectJson, false);
+  assert.equal("monteCarlo" in intent.planProjectJson, false);
+  assert.equal("experiment" in intent.planProjectJson, false);
 });
 
 test("buildRunIntent defaults Monte Carlo to one baseline value when no sweep is configured", () => {
@@ -185,11 +183,9 @@ test("buildRunIntent defaults Monte Carlo to one baseline value when no sweep is
     spareMultipliers: [1.0],
     supportCapacities: [2]
   });
-  assert.deepEqual(intent.planProjectJson.monteCarlo, {
-    failureRates: [0.06],
-    spareMultipliers: [1.0],
-    supportCapacities: [2]
-  });
+  assert.equal("monteCarlo" in intent.planProjectJson, false);
+  assert.equal("analysisRequests" in intent.planProjectJson, false);
+  assert.equal("experiment" in intent.planProjectJson, false);
 });
 
 test("buildRunIntent preserves explicit analysis sweep mode and raises samples to cover every sweep point", () => {
@@ -224,10 +220,10 @@ test("buildRunIntent preserves explicit analysis sweep mode and raises samples t
     spareMultipliers: [0.75, 1, 1.25],
     supportCapacities: [2, 3, 4]
   });
-  assert.equal(intent.experimentPlanConfig.projectJson.experiment.samples, 27);
-  assert.equal(intent.experimentPlanConfig.projectJson.analysisRequests.largeSample.samples, 27);
-  assert.equal(intent.planProjectJson.experiment.samples, 27);
-  assert.equal(intent.planProjectJson.analysisRequests.largeSample.samples, 27);
+  assert.equal("experiment" in intent.experimentPlanConfig.projectJson, false);
+  assert.equal("analysisRequests" in intent.experimentPlanConfig.projectJson, false);
+  assert.equal("experiment" in intent.planProjectJson, false);
+  assert.equal("analysisRequests" in intent.planProjectJson, false);
 });
 
 test("buildRunIntent applies current carry list scenario overrides only to carry_list", () => {
@@ -352,8 +348,9 @@ test("submitRunIntent sends user-edited Monte Carlo samples and seed in experime
   assert.notEqual(projectJson.experiment.seed, planProjectJson.experiment.seed);
   assert.equal(planCall.config.analysisRequests.largeSample.samples, 17);
   assert.equal(planCall.config.seed, 909);
-  assert.equal(planCall.config.projectJson.experiment.samples, 17);
-  assert.equal(planCall.config.projectJson.experiment.seed, 909);
+  assert.equal("experiment" in planCall.config.projectJson, false);
+  assert.equal("analysisRequests" in planCall.config.projectJson, false);
+  assert.equal("monteCarlo" in planCall.config.projectJson, false);
   assert.equal(runCall.request.run_type, "monte_carlo");
   assert.equal(runCall.request.mc_experiment_id, "mc-edited");
   assert.equal("sample_count" in runCall.request, false);

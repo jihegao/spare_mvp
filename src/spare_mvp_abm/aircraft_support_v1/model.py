@@ -14,16 +14,16 @@ from typing import Any
 
 
 BEHAVIOR_DRIVING_FIELDS = [
-    "equipment.quantity",
-    "equipment.initialReady",
-    "equipment.wholeMachineModels",
+    "combatUnit.members",
+    "missionProfile.combatUnit.members",
     "missionProfile.durationHours",
     "missionProfile.compositeTasks",
     "missionProfile.periodicTasks",
-    "basicMission",
+    "basicMissions",
     "missionPhases",
     "airports",
     "missionAreas",
+    "components[].aircraftModel",
     "components[].failureRate",
     "components[].failureDistribution",
     "components[].kOutOfN",
@@ -146,6 +146,11 @@ class AircraftSupportV1Model:
         self.inputs = copy.deepcopy(inputs)
         self.seed = int(self.inputs.get("seed", 0))
         self.rng = random.Random(self.seed)
+        self.write_event_snapshots = _truthy_input_flag(
+            self.inputs.get("write_event_snapshots")
+            or self.inputs.get("writeEventSnapshots")
+            or self.inputs.get("capture_event_snapshots")
+        )
         time_config = self.inputs.get("time", {})
         self.duration_minutes = int(time_config.get("duration_minutes", 1440))
         self.tick_minutes = int(time_config.get("tick_minutes", 1))
@@ -183,6 +188,8 @@ class AircraftSupportV1Model:
         self.transport_replenishment_events = 0
         self.resource_delay_events = 0
         self.failure_delay_events = 0
+        self.daily_readiness_samples: list[dict[str, Any]] = []
+        self._daily_readiness_sample_days: set[int] = set()
 
     @staticmethod
     def behavior_scope() -> dict[str, list[str]]:
@@ -204,6 +211,7 @@ class AircraftSupportV1Model:
             self._create_due_preflight_jobs()
             self._start_waiting_jobs()
             self._dispatch_due_missions()
+            self._record_daily_readiness_sample_if_due()
             if minute % self.sample_every_minutes == 0 or minute == self.duration_minutes:
                 frames.append(self.visualization_frame(run_id="", step=len(frames)))
                 if len(frames) > self.max_state_frames_single:
@@ -222,17 +230,27 @@ class AircraftSupportV1Model:
         preventive_backlog = sum(1 for job in self.jobs if job.kind == "preventive" and job.state in {"waiting", "running"})
         stock_total = sum(sum(max(0, int(qty)) for qty in node["inventory"].values()) for node in self.nodes.values())
         total_inventory = max(1, stock_total + self.spare_consumed_total)
+        aircraft_count = max(1, len(self.aircraft))
+        simulation_days = max(1.0, self.duration_minutes / 1440.0)
         sortie_completion_rate = min(1.0, self.completed_sorties / planned_sorties)
-        sortie_rate = min(1.0, self.launched_sorties / planned_sorties)
-        ready_rate = available / max(1, len(self.aircraft))
+        sortie_rate = max(0.0, self.launched_sorties / aircraft_count / simulation_days)
+        ready_rate = (
+            sum(float(sample["ready_rate"]) for sample in self.daily_readiness_samples)
+            / len(self.daily_readiness_samples)
+            if self.daily_readiness_samples
+            else available / aircraft_count
+        )
         avg_delay = self.total_departure_delay / max(1, self.launched_sorties + self.cancelled_sorties)
-        mean_transport_delay = self.total_transport_delay / max(1, self.transport_replenishment_events)
+        mean_transport_delay = (self.total_transport_delay / 60.0) / max(1, self.transport_replenishment_events)
         return {
             "sortie_completion_rate": sortie_completion_rate,
             "mission_success_rate": sortie_completion_rate,
             "sortie_rate": sortie_rate,
             "ready_rate": ready_rate,
+            "aircraft_count": aircraft_count,
+            "simulation_days": simulation_days,
             "available_aircraft": available,
+            "daily_readiness_sample_count": len(self.daily_readiness_samples),
             "active_jobs": active_jobs,
             "spare_stock_total": stock_total,
             "avg_departure_delay": avg_delay,
@@ -262,6 +280,7 @@ class AircraftSupportV1Model:
             "downtime_spare_shortage_events": self.shortage_events,
             "downtime_resource_delay_events": self.resource_delay_events,
             "transport_replenishment_events": self.transport_replenishment_events,
+            "total_transport_delay_minutes": self.total_transport_delay,
             "mean_transport_delay": mean_transport_delay,
             "in_flight_failures": self.in_flight_failures,
             "rbd_root_failures": self.rbd_root_failures,
@@ -269,6 +288,25 @@ class AircraftSupportV1Model:
             "mean_recovery_time": self._mean_recovery_time(),
             "mean_turnaround_time": avg_delay + self._mean_recovery_time(),
         }
+
+    def _record_daily_readiness_sample_if_due(self) -> None:
+        if self.minute <= 0 or self.minute % 1440 != 14 * 60:
+            return
+        day_index = self.minute // 1440 + 1
+        if day_index in self._daily_readiness_sample_days:
+            return
+        aircraft_count = max(1, len(self.aircraft))
+        available = sum(1 for aircraft in self.aircraft if aircraft.state == "available")
+        self.daily_readiness_samples.append(
+            {
+                "day": day_index,
+                "minute": self.minute,
+                "available_aircraft": available,
+                "aircraft_count": aircraft_count,
+                "ready_rate": available / aircraft_count,
+            }
+        )
+        self._daily_readiness_sample_days.add(day_index)
 
     def visualization_frame(self, *, run_id: str, step: int) -> dict[str, Any]:
         metrics = self.snapshot()
@@ -619,7 +657,8 @@ class AircraftSupportV1Model:
 
     def _build_missions(self) -> list[MissionState]:
         profile = self.inputs.get("mission_profile", {})
-        basic = profile.get("basic_mission") or {}
+        basic_missions = self._basic_missions_by_id(profile)
+        default_basic = next(iter(basic_missions.values()), {})
         missions: list[MissionState] = []
         periodic_contexts = self._periodic_contexts_by_composite(profile)
         mission_duration_adjustment = self.mission_context["duration_adjustment_minutes"]
@@ -629,6 +668,7 @@ class AircraftSupportV1Model:
             for item in composite.get("taskItems") or []:
                 if not isinstance(item, dict):
                     continue
+                basic = self._basic_mission_for_item(item, basic_missions, default_basic)
                 interval = max(1, int(round(_non_negative_float(item.get("intervalHours"), 24) * 60)))
                 first_start = _time_to_minute(item.get("firstWaveTime"), int(basic.get("startHour") or 1) * 60)
                 prep = max(0, int(item.get("preparationMinutes") or basic.get("preparationMinutes") or 0))
@@ -661,7 +701,7 @@ class AircraftSupportV1Model:
                                 periodic_task_name=str(periodic_context.get("name") or ""),
                                 composite_task_id=composite_id,
                                 composite_task_name=str(composite.get("name") or composite_id),
-                                basic_task_id=str(item.get("id") or basic.get("id") or ""),
+                                basic_task_id=str(item.get("basicMissionId") or basic.get("id") or item.get("id") or ""),
                                 basic_task_name=str(item.get("basicTaskName") or basic.get("name") or ""),
                                 required_aircraft_type=str(item.get("equipmentType") or basic.get("equipmentType") or ""),
                                 group_name=str(item.get("groupName") or ""),
@@ -670,6 +710,7 @@ class AircraftSupportV1Model:
                             )
                         )
         if not missions:
+            basic = default_basic
             planned_start = max(0, int(basic.get("startHour") or 1) * 60)
             missions.append(
                 MissionState(
@@ -689,6 +730,32 @@ class AircraftSupportV1Model:
                 )
             )
         return sorted(missions, key=lambda item: (item.planned_start, item.priority))
+
+    def _basic_missions_by_id(self, profile: dict[str, Any]) -> dict[str, dict[str, Any]]:
+        records = profile.get("basic_missions") if isinstance(profile.get("basic_missions"), list) else []
+        result: dict[str, dict[str, Any]] = {}
+        for index, mission in enumerate(records):
+            if not isinstance(mission, dict):
+                continue
+            mission_id = str(mission.get("id") or mission.get("missionId") or mission.get("taskNo") or f"basic-{index + 1}")
+            result[mission_id] = mission
+            for alias in (mission.get("name"), mission.get("basicTaskName"), mission.get("missionId"), mission.get("taskNo")):
+                alias_text = str(alias or "").strip()
+                if alias_text:
+                    result.setdefault(alias_text, mission)
+        return result
+
+    def _basic_mission_for_item(
+        self,
+        item: dict[str, Any],
+        basic_missions: dict[str, dict[str, Any]],
+        default_basic: dict[str, Any],
+    ) -> dict[str, Any]:
+        for value in (item.get("basicMissionId"), item.get("basicTaskName")):
+            key = str(value or "").strip()
+            if key and key in basic_missions:
+                return basic_missions[key]
+        return default_basic
 
     def _periodic_contexts_by_composite(self, profile: dict[str, Any]) -> dict[str, dict[str, Any]]:
         contexts: dict[str, dict[str, Any]] = {}
@@ -711,18 +778,15 @@ class AircraftSupportV1Model:
             }
             total_days = int(context["total_days"])
             period_days = int(context["period_days"])
-            composite_days: dict[str, set[int]] = {
-                str(item): set(range(total_days))
-                for item in periodic.get("compositeTaskIds") or []
-                if item
-            }
-            for item in periodic.get("compositeTasks") or []:
-                if isinstance(item, dict) and item.get("compositeTaskId"):
-                    composite_id = str(item["compositeTaskId"])
-                    start_day = max(0, _positive_int(item.get("week"), 1) - 1) * period_days
-                    active_days = set(range(start_day, min(total_days, start_day + period_days)))
-                    if active_days:
-                        composite_days.setdefault(composite_id, set()).update(active_days)
+            composite_days = _periodic_explicit_composite_days(periodic, total_days, period_days)
+            if not composite_days:
+                composite_days = _periodic_weekday_assignment_days(periodic, total_days, period_days)
+            if not composite_days:
+                composite_days = {
+                    str(item): set(range(total_days))
+                    for item in periodic.get("compositeTaskIds") or []
+                    if item
+                }
             for composite_id, active_days in composite_days.items():
                 composite_context = dict(context)
                 composite_context["active_days"] = sorted(active_days)
@@ -801,8 +865,8 @@ class AircraftSupportV1Model:
         return_minute = self.minute if early_return else aircraft.return_time
         aircraft.flight_hours += max(0.0, float(((return_minute or self.minute) - (mission.actual_start if mission else 0)) / 60.0))
         aircraft.landing_count += 1
-        aircraft.state = "maintenance"
         if aircraft.in_flight_failure:
+            aircraft.state = "maintenance"
             self.failed_sorties += 1
             component = self._component_by_id(aircraft.failed_component_id)
             self._create_job(aircraft, self.repair_activity, kind="repair", component=component)
@@ -813,10 +877,12 @@ class AircraftSupportV1Model:
             if mission is not None:
                 self._update_mission_failure_status(mission)
         elif aircraft.component_failure_minutes:
+            aircraft.state = "maintenance"
             component = self._component_by_id(self._first_failed_component_id(aircraft))
             self._create_job(aircraft, self.repair_activity, kind="repair", component=component)
             self._event("mission_returned_with_component_failure", f"{aircraft.tail_number} returned with component failure and needs repair")
         else:
+            aircraft.state = "post_support"
             aircraft.postflight_required = True
             self._create_job(aircraft, self.postflight_activity, kind="postflight")
             self._event("mission_returned", f"{aircraft.tail_number} returned from mission and needs postflight")
@@ -887,10 +953,30 @@ class AircraftSupportV1Model:
             if node["personnel_in_use"] + personnel > node["personnel_capacity"]:
                 self.resource_delay_events += 1
                 job.shortage_reason = "personnel_capacity"
+                self._event(
+                    "resource_delay",
+                    f"{job.job_id} waiting for personnel at {node['id']}",
+                    {
+                        "job_id": job.job_id,
+                        "resource_id": node["id"],
+                        "required_personnel": personnel,
+                        "available_personnel": max(0, node["personnel_capacity"] - node["personnel_in_use"]),
+                    },
+                )
                 continue
             if node["equipment_in_use"] + equipment > node["equipment_capacity"]:
                 self.resource_delay_events += 1
                 job.shortage_reason = "equipment_capacity"
+                self._event(
+                    "resource_delay",
+                    f"{job.job_id} waiting for equipment at {node['id']}",
+                    {
+                        "job_id": job.job_id,
+                        "resource_id": node["id"],
+                        "required_equipment": equipment,
+                        "available_equipment": max(0, node["equipment_capacity"] - node["equipment_in_use"]),
+                    },
+                )
                 continue
             spare_type, spare_qty = self._task_spare_requirement(job, task)
             if spare_type and node["inventory"].get(spare_type, 0) < spare_qty:
@@ -900,6 +986,18 @@ class AircraftSupportV1Model:
                 self.shortage_events += 1
                 reason = "in_transit" if self._has_in_transit_spare(node["id"], spare_type) else f"spare:{spare_type}"
                 job.shortage_reason = reason
+                self._event(
+                    "spare_shortage",
+                    f"{job.job_id} blocked by {spare_type} shortage at {node['id']}",
+                    {
+                        "job_id": job.job_id,
+                        "resource_id": node["id"],
+                        "spare_type": spare_type,
+                        "required_quantity": spare_qty,
+                        "available_quantity": int(node["inventory"].get(spare_type, 0) or 0),
+                        "reason": reason,
+                    },
+                )
                 continue
             node["personnel_in_use"] += personnel
             node["equipment_in_use"] += equipment
@@ -1000,7 +1098,7 @@ class AircraftSupportV1Model:
             needed = mission.required_aircraft - self._mission_preflight_commissioned_count(mission)
             created = 0
             for aircraft in available[: max(0, needed)]:
-                aircraft.state = "maintenance"
+                aircraft.state = "pre_support"
                 self._create_job(aircraft, self.preflight_activity, kind="preflight", mission_id=mission.mission_id)
                 created += 1
             mission.preflight_created = self._mission_preflight_commissioned_count(mission) >= mission.required_aircraft
@@ -1149,7 +1247,17 @@ class AircraftSupportV1Model:
 
     def _task_spare_requirement(self, job: JobState, task: dict[str, Any]) -> tuple[str | None, int]:
         spare = task.get("spare")
-        if isinstance(spare, str) and spare and spare != "无":
+        if isinstance(spare, list):
+            for item in spare:
+                if not isinstance(item, dict):
+                    continue
+                spare_type = str(item.get("name") or item.get("model") or "").strip()
+                if _is_no_spare_value(spare_type):
+                    continue
+                quantity = _positive_int(item.get("quantity"), 1)
+                if spare_type and quantity > 0:
+                    return spare_type, quantity
+        if isinstance(spare, str) and spare and not _is_no_spare_value(spare):
             parts = [part.strip() for part in spare.split(",") if part.strip()]
             if parts:
                 quantity = 1
@@ -1175,7 +1283,16 @@ class AircraftSupportV1Model:
         if current >= spare_quantity:
             node["inventory"][spare_type] = current - spare_quantity
             self.spare_consumed_total += spare_quantity
-            self._event("spare_consumed", f"{job.job_id} consumed {spare_quantity} {spare_type}")
+            self._event(
+                "spare_consumed",
+                f"{job.job_id} consumed {spare_quantity} {spare_type}",
+                {
+                    "job_id": job.job_id,
+                    "resource_id": node["id"],
+                    "spare_type": spare_type,
+                    "quantity": spare_quantity,
+                },
+            )
 
     def _try_transport_replenishment(self, node: dict[str, Any], spare_type: str, needed: int) -> None:
         shortage = max(0, needed - int(node["inventory"].get(spare_type, 0)))
@@ -1538,19 +1655,107 @@ class AircraftSupportV1Model:
         recent = [event for event in self.event_log if event["time"] >= max(0, self.minute - self.sample_every_minutes)]
         if not recent:
             recent = [{"time": self.minute, "event": "state_frame", "message": "state frame sampled"}]
-        return [
-            {
-                "time": float(event["time"]),
-                "event": str(event["event"]),
-                "event_type": str(event["event"]),
-                "message": str(event["message"]),
-                "metric_refs": self._metric_refs_for_event(str(event["event"])),
-            }
-            for event in recent[-10:]
-        ]
+        payload = []
+        for event in recent[-10:]:
+            payload.append(
+                {
+                    "time": float(event["time"]),
+                    "event": str(event["event"]),
+                    "event_type": str(event["event"]),
+                    "message": str(event["message"]),
+                    "metric_refs": self._metric_refs_for_event(str(event["event"])),
+                }
+            )
+        return payload
 
-    def _event(self, event: str, message: str) -> None:
-        self.event_log.append({"time": self.minute, "event": event, "message": message})
+    def _event(self, event: str, message: str, details: dict[str, Any] | None = None) -> None:
+        item: dict[str, Any] = {"time": self.minute, "event": event, "message": message}
+        if details:
+            item["details"] = copy.deepcopy(details)
+        if self.write_event_snapshots and self._should_write_event_snapshot(event):
+            item["snapshot"] = self._event_snapshot(event, details or {})
+        self.event_log.append(item)
+
+    def _should_write_event_snapshot(self, event: str) -> bool:
+        normalized = event.lower()
+        return any(token in normalized for token in ("fail", "shortage", "delay"))
+
+    def _event_snapshot(self, event: str, details: dict[str, Any]) -> dict[str, Any]:
+        metrics = self.snapshot()
+        return {
+            "schema_version": "aircraft-support-event-snapshot-v0",
+            "event": event,
+            "time": self.minute,
+            "aircraft_state": {
+                "summary": {
+                    "ready_rate": metrics["ready_rate"],
+                    "available_aircraft": metrics["available_aircraft"],
+                    "failed_count": metrics["failed_count"],
+                    "repairing_count": metrics["repairing_count"],
+                    "flying_count": metrics["flying_count"],
+                    "postflight_count": metrics["postflight_count"],
+                    "preventive_count": metrics["preventive_count"],
+                },
+                "aircraft": [self._aircraft_payload(item) for item in self.aircraft],
+            },
+            "support_resources": [self._event_resource_snapshot(node) for node in self.nodes.values()],
+            "spare_shortages": self._event_spare_shortages(details),
+            "active_jobs": [self._job_payload(job) for job in self.jobs if job.state != "completed"],
+        }
+
+    def _event_resource_snapshot(self, node: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "resource_id": node["id"],
+            "name": node["name"],
+            "personnel_in_use": node["personnel_in_use"],
+            "personnel_capacity": node["personnel_capacity"],
+            "equipment_in_use": node["equipment_in_use"],
+            "equipment_capacity": node["equipment_capacity"],
+            "work_count": node["work_count"],
+            "inventory": copy.deepcopy(node["inventory"]),
+        }
+
+    def _event_spare_shortages(self, details: dict[str, Any]) -> list[dict[str, Any]]:
+        shortages = []
+        spare_type = str(details.get("spare_type") or "")
+        if spare_type:
+            shortages.append(
+                {
+                    "spare_type": spare_type,
+                    "required_quantity": int(details.get("required_quantity", 0) or 0),
+                    "available_quantity": int(details.get("available_quantity", 0) or 0),
+                    "resource_id": str(details.get("resource_id") or ""),
+                    "job_id": str(details.get("job_id") or ""),
+                    "reason": str(details.get("reason") or "spare_shortage"),
+                }
+            )
+        for job in self.jobs:
+            if not job.shortage_reason or not str(job.shortage_reason).startswith("spare:"):
+                continue
+            node = self.nodes.get(job.resource_node_id)
+            task = job.current_task or {}
+            job_spare_type, job_spare_qty = self._task_spare_requirement(job, task)
+            if not job_spare_type:
+                continue
+            shortages.append(
+                {
+                    "spare_type": job_spare_type,
+                    "required_quantity": job_spare_qty,
+                    "available_quantity": int((node or {}).get("inventory", {}).get(job_spare_type, 0) or 0),
+                    "resource_id": job.resource_node_id,
+                    "job_id": job.job_id,
+                    "reason": str(job.shortage_reason),
+                }
+            )
+        seen: set[tuple[str, str, str]] = set()
+        unique = []
+        for shortage in shortages:
+            key = (shortage["spare_type"], shortage["resource_id"], shortage["job_id"])
+            if key in seen:
+                continue
+            seen.add(key)
+            unique.append(shortage)
+        return unique
 
     def _metric_refs_for_event(self, event: str) -> list[str]:
         if "mission" in event:
@@ -1574,9 +1779,29 @@ def _time_to_minute(value: Any, fallback: int) -> int:
         return fallback
 
 
+def _truthy_input_flag(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value in (None, ""):
+        return False
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
 def _resource_quantity(text: Any, explicit: Any, *, default: int) -> int:
     if isinstance(explicit, (int, float)) and explicit > 0:
         return max(1, int(explicit))
+    if isinstance(text, list):
+        total = 0
+        for item in text:
+            if not isinstance(item, dict):
+                continue
+            try:
+                quantity = int(float(item.get("quantity", 1)))
+            except (TypeError, ValueError):
+                quantity = 1
+            total += max(0, quantity)
+        if total > 0:
+            return total
     if isinstance(text, str):
         for part in reversed([item.strip() for item in text.split(",") if item.strip()]):
             if part.isdigit():
@@ -1597,6 +1822,11 @@ def _positive_int(value: Any, fallback: int) -> int:
     except (TypeError, ValueError):
         return fallback
     return parsed if parsed > 0 else fallback
+
+
+def _is_no_spare_value(value: Any) -> bool:
+    text = str(value or "").strip().lower()
+    return text in {"", "无", "none", "null", "n/a", "na", "-", "不需要", "无需"}
 
 
 def _aircraft_type_tokens(value: Any) -> set[str]:
@@ -1640,6 +1870,117 @@ def _periodic_total_days(periodic: dict[str, Any]) -> int:
             repeat_count = parsed
             break
     return max(1, period_days * repeat_count)
+
+
+_WEEKDAY_INDEXES = {
+    "monday": 0,
+    "mondaycompositetaskid": 0,
+    "mon": 0,
+    "周一": 0,
+    "星期一": 0,
+    "tuesday": 1,
+    "tuesdaycompositetaskid": 1,
+    "tue": 1,
+    "周二": 1,
+    "星期二": 1,
+    "wednesday": 2,
+    "wednesdaycompositetaskid": 2,
+    "wed": 2,
+    "周三": 2,
+    "星期三": 2,
+    "thursday": 3,
+    "thursdaycompositetaskid": 3,
+    "thu": 3,
+    "周四": 3,
+    "星期四": 3,
+    "friday": 4,
+    "fridaycompositetaskid": 4,
+    "fri": 4,
+    "周五": 4,
+    "星期五": 4,
+    "saturday": 5,
+    "saturdaycompositetaskid": 5,
+    "sat": 5,
+    "周六": 5,
+    "星期六": 5,
+    "sunday": 6,
+    "sundaycompositetaskid": 6,
+    "sun": 6,
+    "周日": 6,
+    "星期日": 6,
+    "星期天": 6,
+}
+
+_WEEKDAY_ASSIGNMENT_FIELDS = (
+    "mondayCompositeTaskId",
+    "tuesdayCompositeTaskId",
+    "wednesdayCompositeTaskId",
+    "thursdayCompositeTaskId",
+    "fridayCompositeTaskId",
+    "saturdayCompositeTaskId",
+    "sundayCompositeTaskId",
+)
+
+
+def _periodic_weekday_index(value: Any) -> int | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    return _WEEKDAY_INDEXES.get(text.replace("_", "").replace("-", "").lower())
+
+
+def _periodic_explicit_composite_days(
+    periodic: dict[str, Any],
+    total_days: int,
+    period_days: int,
+) -> dict[str, set[int]]:
+    composite_days: dict[str, set[int]] = {}
+    for item in periodic.get("compositeTasks") or []:
+        if not isinstance(item, dict):
+            continue
+        composite_id = str(item.get("compositeTaskId") or "").strip()
+        if not composite_id:
+            continue
+        weekday_index = _periodic_weekday_index(item.get("weekday") or item.get("dayOfWeek"))
+        if weekday_index is not None:
+            week_index = _positive_int(item.get("weekIndex", item.get("week")), 1)
+            active_day = (week_index - 1) * period_days + weekday_index
+            if 0 <= active_day < total_days:
+                composite_days.setdefault(composite_id, set()).add(active_day)
+            continue
+        period_index = _positive_int(item.get("week", item.get("weekIndex")), 1)
+        start_day = max(0, (period_index - 1) * period_days)
+        active_days = set(range(start_day, min(total_days, start_day + period_days)))
+        if active_days:
+            composite_days.setdefault(composite_id, set()).update(active_days)
+    return composite_days
+
+
+def _periodic_weekday_assignment_days(
+    periodic: dict[str, Any],
+    total_days: int,
+    period_days: int,
+) -> dict[str, set[int]]:
+    assignments: dict[int, str] = {}
+    raw_assignments = periodic.get("weekdayAssignments") if isinstance(periodic.get("weekdayAssignments"), dict) else {}
+    for key, composite_id in raw_assignments.items():
+        weekday_index = _periodic_weekday_index(key)
+        composite_text = str(composite_id or "").strip()
+        if weekday_index is not None and composite_text:
+            assignments[weekday_index] = composite_text
+    for key in _WEEKDAY_ASSIGNMENT_FIELDS:
+        weekday_index = _periodic_weekday_index(key)
+        composite_text = str(periodic.get(key) or "").strip()
+        if weekday_index is not None and composite_text:
+            assignments[weekday_index] = composite_text
+
+    composite_days: dict[str, set[int]] = {}
+    for start_day in range(0, total_days, max(1, period_days)):
+        for weekday_index, composite_id in assignments.items():
+            active_day = start_day + weekday_index
+            if active_day < total_days:
+                composite_days.setdefault(composite_id, set()).add(active_day)
+    return composite_days
 
 
 def _bounded_float(value: Any) -> float | None:

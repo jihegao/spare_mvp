@@ -42,7 +42,8 @@ test("canonical modeling import fixture covers all project authoring surfaces", 
   assert.ok(objects.projectInfo || mission.experiment);
   assert.ok(Array.isArray(objects.equipmentAssets) && objects.equipmentAssets.length >= 1);
   assert.ok(objects.equipmentAssets.some((asset) => asset.rms && asset.failureDistribution && asset.specialRepairProfile));
-  assert.ok(mission.basicMission);
+  assert.equal(Object.hasOwn(mission, "basicMission"), false);
+  assert.ok(Array.isArray(mission.basicMissions) && mission.basicMissions.length >= 1);
   assert.ok(Array.isArray(mission.compositeTasks));
   assert.ok(Array.isArray(mission.periodicTasks));
   assert.ok(mission.combatUnit);
@@ -78,7 +79,8 @@ test("modeling import schema and fixture define the M5 first-slice package", asy
   assert.deepEqual(manifest.m5_fixture_files, ["tests/fixtures/modeling_import_project.json"]);
   assert.equal(schema.$id, "https://spare-mvp.local/contracts/modeling_import.schema.json");
   assert.equal(schema.properties.schemaVersion.const, "modeling-import-v1");
-  assert.deepEqual(schema.properties.validationLevel.enum, ["level0", "level1"]);
+  assert.equal(Object.hasOwn(schema.properties, "validationLevel"), false);
+  assert.equal(Object.hasOwn(fixture, "validationLevel"), false);
   assert.equal(schema.properties.usedTables.type, "object");
   assert.deepEqual(validateSchema(schema, fixture), []);
   assert.deepEqual(validateModelingImportPackage(fixture), []);
@@ -87,16 +89,98 @@ test("modeling import schema and fixture define the M5 first-slice package", asy
 test("simulation analysis public import templates validate against modeling import schema", async () => {
   const schema = await readJson("contracts/modeling_import.schema.json");
   const templatePaths = [
-    "public/import-templates/minimal_single_aircraft.json",
     "public/import-templates/canonical_platform_case.json"
   ];
 
   for (const templatePath of templatePaths) {
     const template = await readJson(templatePath);
     assert.deepEqual(validateSchema(schema, template), [], `${templatePath} must match modeling_import.schema.json`);
+    assert.equal(
+      Object.hasOwn(template.objects, "airports"),
+      false,
+      `${templatePath} objects.airports must be derived from combatUnit members, not preset`
+    );
+    assert.equal(
+      Object.hasOwn(template.objects.equipment || {}, "deploymentLocation"),
+      false,
+      `${templatePath} objects.equipment must not carry non-behavioral deploymentLocation`
+    );
+    for (const [index, mission] of (template.objects.missionProfiles || []).entries()) {
+      assert.equal(
+        Object.hasOwn(mission, "airports"),
+        false,
+        `${templatePath} missionProfiles[${index}].airports must be derived from combatUnit members, not preset`
+      );
+      assert.equal(
+        Object.hasOwn(mission.equipment || {}, "deploymentLocation"),
+        false,
+        `${templatePath} missionProfiles[${index}].equipment must not carry non-behavioral deploymentLocation`
+      );
+      for (const compositeTask of mission.compositeTasks || []) {
+        for (const taskItem of compositeTask.taskItems || []) {
+          assert.equal(
+            Object.hasOwn(taskItem, "minRequiredSystems"),
+            false,
+            `${templatePath} ${compositeTask.id}/${taskItem.id} must inherit minRequiredSorties from basicMissions`
+          );
+          assert.equal(
+            Object.hasOwn(taskItem, "preparationMinutes"),
+            false,
+            `${templatePath} ${compositeTask.id}/${taskItem.id} must inherit preparationMinutes from basicMissions`
+          );
+        }
+      }
+    }
   }
 
   const canonicalTemplate = await readJson("public/import-templates/canonical_platform_case.json");
+  for (const activity of canonicalTemplate.objects.supportActivities || []) {
+    for (const job of activity.jobs || []) {
+      assert.equal(
+        Object.hasOwn(job, "servicePersonnel"),
+        false,
+        `canonical support activity job ${job.activityCode} must not keep legacy servicePersonnel`
+      );
+      assert.equal(
+        Array.isArray(job.personnel),
+        true,
+        `canonical support activity job ${job.activityCode} must store structured personnel on personnel`
+      );
+      assert.ok(job.personnel.length > 0, `canonical support activity job ${job.activityCode} must define personnel requirements`);
+      for (const [index, personnel] of job.personnel.entries()) {
+        assert.equal(typeof personnel, "object", `canonical support activity job ${job.activityCode} personnel[${index}] must be an object`);
+        assert.deepEqual(
+          Object.keys(personnel).sort(),
+          ["professional", "quantity"],
+          `canonical support activity job ${job.activityCode} personnel[${index}] must match the resource table structure`
+        );
+        assert.equal(typeof personnel.professional, "string", `canonical support activity job ${job.activityCode} personnel[${index}] professional`);
+        assert.equal(
+          personnel.professional.includes("/"),
+          false,
+          `canonical support activity job ${job.activityCode} personnel[${index}] professional must not keep compressed legacy role text`
+        );
+        assert.ok(Number(personnel.quantity) > 0, `canonical support activity job ${job.activityCode} personnel[${index}] quantity`);
+      }
+      for (const resourceKind of ["equipment", "spare"]) {
+        assert.equal(
+          Array.isArray(job[resourceKind]),
+          true,
+          `canonical support activity job ${job.activityCode} must store structured ${resourceKind}`
+        );
+        for (const [index, resource] of job[resourceKind].entries()) {
+          assert.deepEqual(
+            Object.keys(resource).sort(),
+            ["model", "name", "quantity"],
+            `canonical support activity job ${job.activityCode} ${resourceKind}[${index}] must match the resource table structure`
+          );
+          assert.equal(typeof resource.model, "string", `${job.activityCode} ${resourceKind}[${index}] model`);
+          assert.equal(typeof resource.name, "string", `${job.activityCode} ${resourceKind}[${index}] name`);
+          assert.ok(Number(resource.quantity) > 0, `${job.activityCode} ${resourceKind}[${index}] quantity`);
+        }
+      }
+    }
+  }
   assert.deepEqual(canonicalTemplate.source, {
     type: "json_fixture",
     name: "simulation_analysis_cases/canonical_platform_case.json",
@@ -114,19 +198,24 @@ test("canonical platform composite task items inherit equipment quantity from ba
 
   for (const [label, importPackage] of canonicalImports) {
     const mission = importPackage.objects.missionProfiles[0];
-    assert.ok(Number(mission.basicMission?.equipmentQuantity || 0) > 0, `${label} must define basic task equipmentQuantity`);
-    const basicTasks = [
-      mission.basicMission,
-      ...(Array.isArray(mission.basicMissions) ? mission.basicMissions : [])
-    ].filter(Boolean);
+    assert.equal(Object.hasOwn(mission, "basicMission"), false, `${label} must not emit legacy basicMission`);
+    assert.ok(Array.isArray(mission.basicMissions) && mission.basicMissions.length >= 1, `${label} must define basicMissions`);
+    assert.ok(mission.basicMissions.every((basicTask) => basicTask.id), `${label} basicMissions must carry stable ids`);
+    const basicTasks = mission.basicMissions;
     const basicTaskNames = new Set(basicTasks.flatMap((basicTask) => [
       basicTask.name,
       basicTask.basicTaskName,
       basicTask.missionId,
       basicTask.taskNo
     ]).filter(Boolean).map(String));
+    const basicTaskIds = new Set(basicTasks.map((basicTask) => String(basicTask.id)));
     for (const compositeTask of mission.compositeTasks || []) {
       for (const taskItem of compositeTask.taskItems || []) {
+        assert.equal(
+          basicTaskIds.has(String(taskItem.basicMissionId || "")),
+          true,
+          `${label} ${compositeTask.id}/${taskItem.id} must reference basicMissions[].id`
+        );
         assert.equal(
           basicTaskNames.has(String(taskItem.basicTaskName || "")),
           true,
@@ -135,21 +224,30 @@ test("canonical platform composite task items inherit equipment quantity from ba
         assert.equal(
           Object.hasOwn(taskItem, "equipmentQuantity"),
           false,
-          `${label} ${compositeTask.id}/${taskItem.id} must inherit equipmentQuantity from basicMission`
+          `${label} ${compositeTask.id}/${taskItem.id} must inherit equipmentQuantity from basicMissions`
+        );
+        assert.equal(
+          Object.hasOwn(taskItem, "minRequiredSystems"),
+          false,
+          `${label} ${compositeTask.id}/${taskItem.id} must inherit minRequiredSorties from basicMissions`
+        );
+        assert.equal(
+          Object.hasOwn(taskItem, "preparationMinutes"),
+          false,
+          `${label} ${compositeTask.id}/${taskItem.id} must inherit preparationMinutes from basicMissions`
         );
       }
     }
   }
 });
 
-test("modeling import validation supports Level 0 packages without support-domain stubs", async () => {
+test("modeling import validation supports reduced-scope packages without support-domain stubs", async () => {
   const schema = await readJson("contracts/modeling_import.schema.json");
   const fixture = await readJson("tests/fixtures/modeling_import_project.json");
-  const level0Package = {
+  const reducedScopePackage = {
     ...fixture,
-    importId: "import-level0-no-support-domain",
-    projectId: "project-level0-no-support-domain",
-    validationLevel: "level0",
+    importId: "import-reduced-scope-no-support-domain",
+    projectId: "project-reduced-scope-no-support-domain",
     usedTables: {
       missionProfiles: true,
       equipmentAssets: true,
@@ -161,19 +259,18 @@ test("modeling import validation supports Level 0 packages without support-domai
     },
     objects: { ...fixture.objects }
   };
-  delete level0Package.objects.supportResources;
-  delete level0Package.objects.supportActivities;
-  delete level0Package.objects.supportOrganization;
+  delete reducedScopePackage.objects.supportResources;
+  delete reducedScopePackage.objects.supportActivities;
+  delete reducedScopePackage.objects.supportOrganization;
 
-  assert.deepEqual(validateSchema(schema, level0Package), []);
-  assert.deepEqual(validateModelingImportPackage(level0Package), []);
+  assert.deepEqual(validateSchema(schema, reducedScopePackage), []);
+  assert.deepEqual(validateModelingImportPackage(reducedScopePackage), []);
 });
 
-test("modeling import validation rejects Level 1 packages with declared missing support domains", async () => {
+test("modeling import validation rejects complete-scope packages with declared missing support domains", async () => {
   const fixture = await readJson("tests/fixtures/modeling_import_project.json");
-  const level1Package = {
+  const declaredScopePackage = {
     ...fixture,
-    validationLevel: "level1",
     usedTables: {
       missionProfiles: true,
       equipmentAssets: true,
@@ -185,47 +282,33 @@ test("modeling import validation rejects Level 1 packages with declared missing 
     },
     objects: { ...fixture.objects }
   };
-  delete level1Package.objects.supportResources;
-  delete level1Package.objects.supportActivities;
+  delete declaredScopePackage.objects.supportResources;
+  delete declaredScopePackage.objects.supportActivities;
 
-  const issues = validateModelingImportPackage(level1Package);
+  const issues = validateModelingImportPackage(declaredScopePackage);
   const issuesByPath = Object.fromEntries(issues.map((issue) => [issue.field_path, issue]));
 
   assert.equal(issuesByPath["objects.supportResources"].code, "invalid_declared_table");
   assert.equal(issuesByPath["objects.supportActivities"].code, "invalid_declared_table");
 });
 
-test("modeling import validation rejects Level 1 packages that disable non-core domains", async () => {
-  const schema = await readJson("contracts/modeling_import.schema.json");
+test("modeling import validation rejects retired validationLevel classification", async () => {
   const fixture = await readJson("tests/fixtures/modeling_import_project.json");
-  const level1Package = {
+  const packageWithRetiredLevel = {
     ...fixture,
-    validationLevel: "level1",
-    usedTables: {
-      missionProfiles: true,
-      equipmentAssets: true,
-      reliabilityBlockDiagram: true,
-      supportResources: false,
-      supportActivities: true,
-      supportOrganization: true,
-      transportPolicies: true
-    },
+    validationLevel: "retired",
     objects: { ...fixture.objects }
   };
 
-  const schemaErrors = validateSchema(schema, level1Package);
-  assert.ok(schemaErrors.some((error) => error.includes("$.usedTables.supportResources expected const true")));
-
-  const issuesByPath = Object.fromEntries(validateModelingImportPackage(level1Package).map((issue) => [issue.field_path, issue]));
-  assert.equal(issuesByPath["usedTables.supportResources"].code, "invalid_used_table_flag");
+  const issuesByPath = Object.fromEntries(validateModelingImportPackage(packageWithRetiredLevel).map((issue) => [issue.field_path, issue]));
+  assert.equal(issuesByPath.validationLevel.code, "retired_validation_level");
 });
 
-test("modeling import schema and frontend validator reject declared Level 0 support gaps", async () => {
+test("modeling import schema and frontend validator reject declared reduced-scope support gaps", async () => {
   const schema = await readJson("contracts/modeling_import.schema.json");
   const fixture = await readJson("tests/fixtures/modeling_import_project.json");
   const declaredSupportPackage = {
     ...fixture,
-    validationLevel: "level0",
     usedTables: {
       missionProfiles: true,
       equipmentAssets: true,
@@ -256,7 +339,6 @@ test("modeling import validation rejects malformed usedTables flags", async () =
   const fixture = await readJson("tests/fixtures/modeling_import_project.json");
   const malformed = {
     ...fixture,
-    validationLevel: "level0",
     usedTables: {
       ...fixture.usedTables,
       supportResources: "false"
@@ -275,7 +357,6 @@ test("modeling import validation rejects declared used tables with empty modeled
   const fixture = await readJson("tests/fixtures/modeling_import_project.json");
   const emptyDeclaredTables = {
     ...fixture,
-    validationLevel: "level1",
     usedTables: {
       missionProfiles: true,
       equipmentAssets: true,
@@ -339,6 +420,7 @@ test("projectToModelingImportPackage backfills import draft from current Project
         name: "第一波次",
         taskItems: [{
           id: "task-item-1",
+          basicMissionId: "basic-current",
           basicTaskName: "当前基本任务",
           equipmentQuantity: 4,
           groupName: "昼间编队"
@@ -346,7 +428,7 @@ test("projectToModelingImportPackage backfills import draft from current Project
       }],
       periodicTasks: [{ id: "periodic-1", name: "周期任务" }]
     },
-    basicMission: { missionId: "BM-CURRENT", name: "当前基本任务", equipmentQuantity: 2, minRequiredSorties: 2 },
+    basicMissions: [{ id: "basic-current", missionId: "BM-CURRENT", name: "当前基本任务", equipmentQuantity: 2, minRequiredSorties: 2 }],
     missionPhases: [{ id: "phase-1", name: "执行" }],
     combatUnit: { quantity: 3, requiredCount: 2 },
     equipment: { model: "J-15", quantity: 3 },
@@ -366,7 +448,7 @@ test("projectToModelingImportPackage backfills import draft from current Project
   assert.equal(draft.schemaVersion, "modeling-import-v1");
   assert.equal(draft.importId, "import-current");
   assert.equal(draft.projectId, "project-current");
-  assert.equal(draft.validationLevel, "level0");
+  assert.equal(Object.hasOwn(draft, "validationLevel"), false);
   assert.equal(draft.lifecycle.state, "draft");
   assert.equal(draft.lifecycle.version, 3);
   assert.deepEqual(draft.lifecycle.referencedRunIds, ["run-001"]);
@@ -375,7 +457,8 @@ test("projectToModelingImportPackage backfills import draft from current Project
   assert.equal(draft.usedTables.transportPolicies, false);
   assert.equal(draft.objects.missionProfiles[0].sourceImportId, undefined);
   assert.equal(draft.objects.missionProfiles[0].profileId, "MP-CURRENT");
-  assert.deepEqual(draft.objects.missionProfiles[0].basicMission, projectJson.basicMission);
+  assert.equal(Object.hasOwn(draft.objects.missionProfiles[0], "basicMission"), false);
+  assert.deepEqual(draft.objects.missionProfiles[0].basicMissions, projectJson.basicMissions);
   assert.equal(
     Object.hasOwn(draft.objects.missionProfiles[0].compositeTasks[0].taskItems[0], "equipmentQuantity"),
     false
@@ -383,6 +466,10 @@ test("projectToModelingImportPackage backfills import draft from current Project
   assert.deepEqual(draft.objects.equipmentAssets, projectJson.components);
   assert.deepEqual(draft.objects.supportResources, projectJson.supportNodes);
   assert.deepEqual(draft.objects.supportActivities, projectJson.supportActivities);
+  assert.equal(Object.hasOwn(draft.objects, "airports"), false);
+  assert.equal(Object.hasOwn(draft.objects.missionProfiles[0], "airports"), false);
+  assert.equal("monteCarlo" in draft.objects, false);
+  assert.equal("monteCarlo" in draft.objects.missionProfiles[0], false);
   assert.deepEqual(draft.objects.customGovernance, basePackage.objects.customGovernance);
   assert.equal("schema_version" in draft, false);
   assert.equal("project_version" in draft, false);
@@ -532,16 +619,16 @@ test("modeling import schema validation resolves nested local refs", async () =>
   assert.ok(errors.some((error) => error.includes("$.objects.missionProfiles[0].durationHours expected type")));
   assert.ok(errors.some((error) => error.includes("$.validation.issues[0].severity is required")));
 
-  const defaultLevel1MissingSupport = {
+  const defaultScopeMissingSupport = {
     ...fixture,
     objects: { ...fixture.objects }
   };
-  delete defaultLevel1MissingSupport.objects.supportResources;
-  delete defaultLevel1MissingSupport.objects.supportActivities;
+  delete defaultScopeMissingSupport.objects.supportResources;
+  delete defaultScopeMissingSupport.objects.supportActivities;
 
-  const defaultLevel1Errors = validateSchema(schema, defaultLevel1MissingSupport);
-  assert.ok(defaultLevel1Errors.some((error) => error.includes("$.objects.supportResources is required")));
-  assert.ok(defaultLevel1Errors.some((error) => error.includes("$.objects.supportActivities is required")));
+  const defaultScopeErrors = validateSchema(schema, defaultScopeMissingSupport);
+  assert.ok(defaultScopeErrors.some((error) => error.includes("$.objects.supportResources is required")));
+  assert.ok(defaultScopeErrors.some((error) => error.includes("$.objects.supportActivities is required")));
 });
 
 test("modeling import validator rejects malformed package roots", () => {
@@ -573,7 +660,7 @@ test("modeling import validation reports duplicate IDs, references, numeric fiel
     lifecycle: {
       state: "published",
       version: 2,
-      referencedRunIds: ["run-smoke-001"]
+      referencedRunIds: ["run-current-001"]
     },
     objects: {
       ...fixture.objects,
@@ -682,7 +769,7 @@ test("modeling import validation rejects malformed lifecycle state and version",
     lifecycle: {
       state: "published",
       version: 0,
-      referencedRunIds: "run-smoke-001"
+      referencedRunIds: "run-current-001"
     }
   };
 

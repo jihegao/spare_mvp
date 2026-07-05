@@ -156,18 +156,27 @@ export function normalizeAviationSupportState(state = AVIATION_SUPPORT_DEMO_STAT
       id: item.name,
       label: item.display_name || item.name,
       category: item.category || "resource",
+      professional: resourceProfessional(item),
+      resourceType: resourceType(item),
+      model: item.model || item.resource_model || item.resourceModel || item.equipment_model || item.equipmentModel || "",
+      supportNodeId: item.support_node_id || item.supportNodeId || item.node_id || item.name || "",
+      airportId: item.airport_id || item.airportId || item.airport || "",
       capacity: number(item.capacity),
       inUse: number(item.in_use),
       utilization: Number(item.utilization || 0),
-      workCount: number(item.work_count)
+      workCount: number(item.work_count),
+      delayCount: number(item.delay_count)
     })),
     spares: (state.spares || []).map((item) => ({
       id: item.part_id,
       label: item.name || item.part_id,
+      supportNodeId: item.support_node_id || item.supportNodeId || item.node_id || String(item.part_id || "").split(":")[0] || "",
+      airportId: item.airport_id || item.airportId || item.airport || "",
       quantity: number(item.quantity),
       consumed: number(item.consumed),
       pending: number(item.pending_quantity),
-      reorderPoint: number(item.reorder_point)
+      reorderPoint: number(item.reorder_point),
+      delayCount: number(item.delay_count || item.shortage_count)
     })),
     missions: (state.missions || []).map((item) => normalizeMission(resolveMission(item, missionTemplates))),
     jobs: (state.jobs || []).map((item) => ({
@@ -184,6 +193,34 @@ export function normalizeAviationSupportState(state = AVIATION_SUPPORT_DEMO_STAT
       message: item.message
     }))
   };
+}
+
+function resourceProfessional(item = {}) {
+  const category = String(item.category || "").toLowerCase();
+  if (category !== "personnel") return item.professional || item.specialty || item.profession || "";
+  return item.professional
+    || item.specialty
+    || item.profession
+    || item.personnel_type
+    || item.personnelType
+    || item.type
+    || item.model
+    || "";
+}
+
+function resourceType(item = {}) {
+  const category = String(item.category || "").toLowerCase();
+  if (category === "personnel") {
+    return item.personnel_type || item.personnelType || item.type || item.professional || item.specialty || item.model || "保障人员";
+  }
+  return item.type
+    || item.resource_type
+    || item.resourceType
+    || item.equipment_type
+    || item.equipmentType
+    || item.model
+    || item.name
+    || "";
 }
 
 function resolveMission(item = {}, templates = {}) {
@@ -203,6 +240,8 @@ function normalizeMission(item = {}) {
     periodicTaskName: item.periodic_task_name || "",
     compositeTaskName: item.composite_task_name || "",
     basicTaskName: item.basic_task_name || "",
+    airportId: item.airport_id || item.airportId || item.airport || "",
+    supportNodeId: item.support_node_id || item.supportNodeId || "",
     requiredAircraftType: item.required_aircraft_type || "",
     groupName: item.group_name || "",
     waveIndex: item.wave_index == null ? null : number(item.wave_index),

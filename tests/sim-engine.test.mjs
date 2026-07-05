@@ -28,11 +28,12 @@ function previewScenarioFixture() {
     compositeTasks: [],
     periodicTasks: []
   };
-  scenario.basicMission = {
+  scenario.basicMissions = [{
+    id: "bm-preview",
     missionId: "BM-PREVIEW",
     name: "测试任务",
     minRequiredSorties: 1
-  };
+  }];
   scenario.combatUnit = {
     groupName: "测试编队",
     requiredCount: 1,
@@ -70,6 +71,7 @@ test("default scenario is a schema-valid empty preview shell", () => {
   assert.deepEqual(defaultScenario.components, []);
   assert.deepEqual(defaultScenario.supportNodes, []);
   assert.deepEqual(defaultScenario.supportActivities, []);
+  assert.deepEqual(defaultScenario.equipment.aircraftTypes, []);
   assert.deepEqual(defaultScenario.equipment.wholeMachineModels, []);
   assert.deepEqual(defaultScenario.missionProfile.compositeTasks, []);
   assert.deepEqual(defaultScenario.missionProfile.periodicTasks, []);
@@ -105,6 +107,17 @@ test("single simulation exposes required prototype metrics and analysis outputs"
   assert.ok(result.carryList.length > 0, "carry list analysis should be present");
   assert.ok(result.downtimeFactors.length >= 4, "downtime factor analysis should be present");
   assert.equal(typeof result.reliability.missionReliability, "number");
+});
+
+test("preview simulation falls back to mission duration after repeat cycle migration", () => {
+  const scenario = previewScenarioFixture();
+  scenario.missionProfile.durationHours = 6;
+  delete scenario.missionProfile.repeatCycleHours;
+
+  const result = runSimulation(scenario, { seed: 88, steps: 12 });
+
+  assert.equal(result.timeline.length, 12);
+  assert.ok(result.final.mission_success_rate >= 0);
 });
 
 test("monte carlo summarizes scenario groups and preserves decision outputs", () => {

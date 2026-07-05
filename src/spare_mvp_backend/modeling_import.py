@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import hashlib
 from math import isfinite
+import re
 from typing import Any
+
+from src.spare_mvp_backend.project_payload import strip_project_sweep
 
 
 MODELING_IMPORT_PAGE_MAP = {
@@ -41,7 +45,6 @@ COLLECTION_RULES = {
     },
 }
 
-VALIDATION_LEVELS = {"level0", "level1"}
 CORE_TABLE_DOMAINS = {"missionProfiles", "equipmentAssets"}
 DISABLEABLE_COLLECTIONS = {"supportResources", "supportActivities"}
 OBJECT_TABLE_DOMAINS = {"reliabilityBlockDiagram", "supportOrganization"}
@@ -59,10 +62,10 @@ MODELING_IMPORT_TABLE_DOMAINS = [
 def validate_modeling_import_package(import_package: dict[str, Any]) -> dict[str, Any]:
     issues: list[dict[str, Any]] = []
     warnings: list[dict[str, Any]] = []
-    validation_level = _normalize_validation_level(import_package, issues)
-    used_tables = _normalize_used_tables(import_package, issues, validation_level)
+    _validate_retired_validation_level(import_package, issues)
+    used_tables = _normalize_used_tables(import_package, issues)
 
-    _validate_package_roots(import_package, issues, warnings, validation_level, used_tables)
+    _validate_package_roots(import_package, issues, warnings, used_tables)
     objects = import_package.get("objects") if isinstance(import_package.get("objects"), dict) else {}
     object_ids = _collect_object_ids(objects, issues)
 
@@ -79,13 +82,13 @@ def validate_modeling_import_package(import_package: dict[str, Any]) -> dict[str
             _validate_references(collection, row, index, rules.get("references", []), object_ids, issues)
 
     _validate_equipment_asset_hierarchy(objects.get("equipmentAssets"), issues)
+    _validate_mission_profile_basic_missions(objects.get("missionProfiles"), issues)
     _validate_published_reference_protection(import_package, issues)
 
     return {
         "ok": not issues,
         "schemaVersion": "modeling-import-v1",
         "status": "valid" if not issues else "invalid",
-        "validationLevel": validation_level,
         "usedTables": used_tables,
         "issues": issues,
         "warnings": warnings,
@@ -95,72 +98,65 @@ def validate_modeling_import_package(import_package: dict[str, Any]) -> dict[str
 def modeling_import_to_project(import_package: dict[str, Any], validation: dict[str, Any] | None = None) -> dict[str, Any]:
     objects = import_package.get("objects", {})
     mission = _first_dict(objects.get("missionProfiles")) or {}
-    equipment_profile = objects.get("equipment") if isinstance(objects.get("equipment"), dict) else {}
     equipment_assets = [row for row in objects.get("equipmentAssets", []) if isinstance(row, dict)]
     resources = [row for row in objects.get("supportResources", []) if isinstance(row, dict)]
     activities = [row for row in objects.get("supportActivities", []) if isinstance(row, dict)]
     lifecycle = import_package.get("lifecycle") if isinstance(import_package.get("lifecycle"), dict) else {}
     version = _safe_positive_int(lifecycle.get("version"), 1)
     duration_hours = _safe_positive_float(mission.get("durationHours"), 1)
-    equipment = _equipment_profile_to_project(equipment_profile, equipment_assets, activities)
 
     if validation is None:
         validation = validate_modeling_import_package(import_package)
 
-    return {
+    combat_unit = _project_object(objects, mission, "combatUnit", {})
+    basic_missions = _project_basic_missions(objects, mission, activities)
+    mission_profile = _mission_profile_to_project(mission, import_package["importId"])
+    _sync_composite_task_basic_mission_refs(mission_profile, basic_missions)
+
+    return strip_project_sweep({
         "schema_version": "project-v0",
         "project_id": str(import_package["projectId"]),
         "project_version": f"import-v{version}",
         "scenarioId": str(import_package["importId"]).replace("_", "-"),
         "activeModule": "sparePlanning",
         "projectInfo": _project_object(objects, mission, "projectInfo", {}),
-        "airports": _project_object_list(objects, mission, "airports"),
+        "airports": _combat_unit_airports(combat_unit),
         "missionAreas": _project_object_list(objects, mission, "missionAreas"),
-        "experiment": _project_object(objects, mission, "experiment", {"seed": 20260619, "steps": max(1, int(duration_hours))}),
-        "missionProfile": _mission_profile_to_project(mission, import_package["importId"]),
-        "basicMission": _project_object(objects, mission, "basicMission", {"minRequiredSorties": max(1, len(activities))}),
-        "basicMissions": _project_object_list(objects, mission, "basicMissions"),
+        "missionProfile": mission_profile,
+        "basicMissions": basic_missions,
         "missionPhases": _project_object_list(objects, mission, "missionPhases"),
-        "combatUnit": _project_object(objects, mission, "combatUnit", {}),
-        "equipment": equipment,
+        "combatUnit": combat_unit,
         "components": [_equipment_asset_to_component(row) for row in equipment_assets],
         "supportNodes": [_support_resource_to_node(row) for row in resources],
         "supportActivities": [_support_activity_to_project(row) for row in activities],
         "supportOrganization": _project_object(objects, mission, "supportOrganization", {}),
         "reliabilityBlockDiagram": _project_object(objects, mission, "reliabilityBlockDiagram", {}),
-        "monteCarlo": _project_object(
-            objects,
-            mission,
-            "monteCarlo",
-            {
-                "failureRates": [0.06, 0.08, 0.1],
-                "spareMultipliers": [0.75, 1.0, 1.25],
-                "supportCapacities": [1, 2, 3],
-            },
-        ),
-        "analysisRequests": _project_object(objects, mission, "analysisRequests", {}),
         "modelingImportValidation": {
             "importId": str(import_package["importId"]),
-            "validationLevel": validation["validationLevel"],
             "usedTables": deepcopy(validation["usedTables"]),
             "warnings": deepcopy(validation["warnings"]),
             "disabledDomains": _disabled_domains(validation["usedTables"]),
         },
-    }
+    })
 
 
-def _normalize_validation_level(import_package: dict[str, Any], issues: list[dict[str, Any]]) -> str:
-    validation_level = import_package.get("validationLevel") or "level1"
-    if validation_level in VALIDATION_LEVELS:
-        return str(validation_level)
-    issues.append(_issue("invalid_validation_level", None, "modeling-import-package", "validationLevel", "validationLevel 必须是 level0 或 level1。"))
-    return "level1"
+def _validate_retired_validation_level(import_package: dict[str, Any], issues: list[dict[str, Any]]) -> None:
+    if "validationLevel" not in import_package:
+        return
+    issues.append(
+        _issue(
+            "retired_validation_level",
+            None,
+            "modeling-import-package",
+            "validationLevel",
+            "validationLevel 已退役；请使用 usedTables 声明已建模或未建模的表域。",
+        )
+    )
 
 
 def _normalize_used_tables(
     import_package: dict[str, Any],
     issues: list[dict[str, Any]],
-    validation_level: str,
 ) -> dict[str, bool]:
     raw_used_tables = import_package.get("usedTables")
     if raw_used_tables is None:
@@ -171,11 +167,11 @@ def _normalize_used_tables(
 
     normalized: dict[str, bool] = {}
     for collection in COLLECTION_RULES:
-        normalized[collection] = _normalize_used_table_flag(raw_used_tables, collection, issues, validation_level)
+        normalized[collection] = _normalize_used_table_flag(raw_used_tables, collection, issues)
     for domain in MODELING_IMPORT_TABLE_DOMAINS:
         if domain in normalized:
             continue
-        normalized[domain] = _normalize_used_table_flag(raw_used_tables, domain, issues, validation_level)
+        normalized[domain] = _normalize_used_table_flag(raw_used_tables, domain, issues)
     for domain in sorted(str(key) for key in raw_used_tables if str(key) not in normalized):
         issues.append(_issue("invalid_used_table_domain", None, "modeling-import-package", f"usedTables.{domain}", f"usedTables.{domain} 不是 modeling-import-v1 支持的表域。"))
     return normalized
@@ -185,7 +181,6 @@ def _normalize_used_table_flag(
     raw_used_tables: dict[str, Any],
     domain: str,
     issues: list[dict[str, Any]],
-    validation_level: str,
 ) -> bool:
     if domain not in raw_used_tables:
         return True
@@ -193,9 +188,6 @@ def _normalize_used_table_flag(
     if isinstance(value, bool):
         if domain in CORE_TABLE_DOMAINS and not value:
             issues.append(_issue("invalid_used_table_flag", None, "modeling-import-package", f"usedTables.{domain}", f"usedTables.{domain} 是核心表域，不能声明为 false。"))
-            return True
-        if not value and validation_level != "level0":
-            issues.append(_issue("invalid_used_table_flag", None, "modeling-import-package", f"usedTables.{domain}", f"usedTables.{domain} 只有 validationLevel=level0 时才能声明为 false。"))
             return True
         return value
     issues.append(_issue("invalid_used_table_flag", None, "modeling-import-package", f"usedTables.{domain}", f"usedTables.{domain} 必须是布尔值。"))
@@ -206,7 +198,6 @@ def _validate_package_roots(
     import_package: dict[str, Any],
     issues: list[dict[str, Any]],
     warnings: list[dict[str, Any]],
-    validation_level: str,
     used_tables: dict[str, bool],
 ) -> None:
     if import_package.get("schemaVersion") != "modeling-import-v1":
@@ -420,6 +411,25 @@ def _validate_equipment_asset_hierarchy(rows: Any, issues: list[dict[str, Any]])
         issues.append(_issue("invalid_sru_parent", "equipmentAssets", str(row.get("id") or f"equipmentAssets[{index}]"), f"objects.equipmentAssets[{index}].parentId", "SRU 的上级必须是 LRU。"))
 
 
+def _validate_mission_profile_basic_missions(rows: Any, issues: list[dict[str, Any]]) -> None:
+    profiles = rows if isinstance(rows, list) else []
+    for index, row in enumerate(profiles):
+        if not isinstance(row, dict):
+            continue
+        object_id = str(row.get("id") or f"missionProfiles[{index}]")
+        if isinstance(row.get("basicMission"), dict):
+            issues.append(_issue("retired_basic_mission", "missionProfiles", object_id, f"objects.missionProfiles[{index}].basicMission", "basicMission 已退役；请使用 basicMissions 数组。"))
+        basic_missions = row.get("basicMissions")
+        if not isinstance(basic_missions, list) or not any(isinstance(item, dict) for item in basic_missions):
+            issues.append(_issue("missing_basic_missions", "missionProfiles", object_id, f"objects.missionProfiles[{index}].basicMissions", "basicMissions 必须包含至少一个基本任务。"))
+            continue
+        for mission_index, basic_mission in enumerate(basic_missions):
+            if not isinstance(basic_mission, dict):
+                continue
+            if basic_mission.get("id") in (None, ""):
+                issues.append(_issue("missing_basic_mission_id", "missionProfiles", object_id, f"objects.missionProfiles[{index}].basicMissions[{mission_index}].id", "basicMissions[].id 是必填字段。"))
+
+
 def _validate_published_reference_protection(import_package: dict[str, Any], issues: list[dict[str, Any]]) -> None:
     lifecycle = import_package.get("lifecycle") if isinstance(import_package.get("lifecycle"), dict) else {}
     referenced_run_ids = lifecycle.get("referencedRunIds") if isinstance(lifecycle.get("referencedRunIds"), list) else []
@@ -487,6 +497,92 @@ def _project_object_list(objects: dict[str, Any], mission: dict[str, Any], key: 
     return []
 
 
+def _project_basic_missions(objects: dict[str, Any], mission: dict[str, Any], activities: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    basic_missions = _project_object_list(objects, mission, "basicMissions")
+    if not basic_missions:
+        basic_missions = [{"minRequiredSorties": max(1, len(activities))}]
+    for index, basic_mission in enumerate(basic_missions):
+        basic_mission["id"] = _basic_mission_id(basic_mission, index)
+        if basic_mission.get("name") in (None, "") and basic_mission.get("basicTaskName") not in (None, ""):
+            basic_mission["name"] = str(basic_mission["basicTaskName"])
+        if basic_mission.get("basicTaskName") in (None, "") and basic_mission.get("name") not in (None, ""):
+            basic_mission["basicTaskName"] = str(basic_mission["name"])
+    return basic_missions
+
+
+def _sync_composite_task_basic_mission_refs(mission_profile: dict[str, Any], basic_missions: list[dict[str, Any]]) -> None:
+    basic_by_id = {str(row.get("id")): row for row in basic_missions if row.get("id") not in (None, "")}
+    basic_by_name: dict[str, dict[str, Any]] = {}
+    for row in basic_missions:
+        for value in (row.get("name"), row.get("basicTaskName"), row.get("missionId"), row.get("taskNo")):
+            key = str(value or "").strip()
+            if key:
+                basic_by_name.setdefault(key, row)
+    composite_tasks = mission_profile.get("compositeTasks") if isinstance(mission_profile.get("compositeTasks"), list) else []
+    for composite_task in composite_tasks:
+        if not isinstance(composite_task, dict):
+            continue
+        task_items = composite_task.get("taskItems") if isinstance(composite_task.get("taskItems"), list) else []
+        for item in task_items:
+            if not isinstance(item, dict):
+                continue
+            basic = None
+            basic_id = str(item.get("basicMissionId") or "").strip()
+            if basic_id:
+                basic = basic_by_id.get(basic_id)
+            if basic is None:
+                basic = basic_by_name.get(str(item.get("basicTaskName") or "").strip())
+            if basic is None:
+                continue
+            item["basicMissionId"] = str(basic.get("id"))
+            display_name = str(basic.get("name") or basic.get("basicTaskName") or basic.get("missionId") or "").strip()
+            if display_name:
+                item["basicTaskName"] = display_name
+
+
+def _basic_mission_id(basic_mission: dict[str, Any], index: int) -> str:
+    for key in ("id", "missionId", "taskNo", "basicTaskName", "name"):
+        value = str(basic_mission.get(key) or "").strip()
+        if value:
+            slug = re.sub(r"[^A-Za-z0-9_-]+", "-", value).strip("-").lower()
+            if slug:
+                return slug
+            return hashlib.sha1(value.encode("utf-8")).hexdigest()[:8]
+    return f"basic-mission-{index + 1}"
+
+
+def _combat_unit_airports(combat_unit: Any) -> list[str]:
+    airport_names: list[str] = []
+
+    def append_airport(value: Any) -> None:
+        airport = str(value or "").strip()
+        if airport and airport not in airport_names:
+            airport_names.append(airport)
+
+    if isinstance(combat_unit, dict):
+        members = combat_unit.get("members") if isinstance(combat_unit.get("members"), list) else []
+        for member in members:
+            if not isinstance(member, dict):
+                continue
+            append_airport(
+                member.get("airport")
+                or member.get("airportName")
+                or member.get("deploymentAirport")
+                or member.get("deploymentLocation")
+            )
+        if not airport_names:
+            append_airport(
+                combat_unit.get("airport")
+                or combat_unit.get("airportName")
+                or combat_unit.get("deploymentAirport")
+                or combat_unit.get("deploymentLocation")
+            )
+    else:
+        append_airport(combat_unit)
+
+    return airport_names
+
+
 def _mission_profile_to_project(mission: dict[str, Any], import_id: str) -> dict[str, Any]:
     project_only_fields = {
         "airports",
@@ -499,30 +595,14 @@ def _mission_profile_to_project(mission: dict[str, Any], import_id: str) -> dict
         "equipment",
         "reliabilityBlockDiagram",
         "monteCarlo",
+        "analysisRequests",
+        "profileType",
+        "endCondition",
+        "repeatCycleHours",
     }
     profile = {key: deepcopy(value) for key, value in mission.items() if key not in project_only_fields}
     profile["sourceImportId"] = import_id
     return profile
-
-
-def _equipment_profile_to_project(
-    equipment_profile: dict[str, Any],
-    equipment_assets: list[dict[str, Any]],
-    activities: list[dict[str, Any]],
-) -> dict[str, Any]:
-    equipment = deepcopy(equipment_profile)
-    aircraft_models = [
-        str(row.get("aircraftModel"))
-        for row in equipment_assets
-        if row.get("aircraftModel") not in (None, "")
-    ]
-    unique_models = list(dict.fromkeys(aircraft_models))
-    if unique_models:
-        equipment.setdefault("wholeMachineModels", unique_models)
-        equipment.setdefault("model", unique_models[0])
-    equipment.setdefault("quantity", sum(_safe_positive_int(row.get("quantity"), 1) for row in equipment_assets if not row.get("parentId")))
-    equipment.setdefault("minRequiredSorties", max(1, len(activities)))
-    return equipment
 
 
 def _equipment_asset_to_component(row: dict[str, Any]) -> dict[str, Any]:

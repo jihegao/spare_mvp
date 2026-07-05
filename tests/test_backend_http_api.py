@@ -16,10 +16,63 @@ from urllib.parse import quote
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.spare_mvp_backend.http_server import create_backend_server
+from src.spare_mvp_backend.modeling_import import modeling_import_to_project
 from src.spare_mvp_contract.adapter import SimulationAdapter
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+HTTP_TEST_TIMEOUT_SECONDS = 30
+
+
+def small_aircraft_support_project(project_id: str) -> dict:
+    return {
+        "schema_version": "project-v0",
+        "project_id": project_id,
+        "project_version": "project-v0.1",
+        "scenarioId": f"{project_id}-scenario",
+        "activeModule": "sparePlanning",
+        "projectInfo": {"name": "small current project", "baseCode": "SM", "summary": "small current project"},
+        "airports": ["A"],
+        "missionAreas": [],
+        "missionProfile": {"name": "small current mission", "durationHours": 1, "compositeTasks": [], "periodicTasks": []},
+        "experiment": {"seed": 42},
+        "basicMissions": [{
+            "id": "basic-small",
+            "name": "small sortie",
+            "missionId": "basic-small",
+            "minRequiredSorties": 1,
+            "taskDurationMinutes": 30,
+            "equipmentType": "J-15",
+        }],
+        "missionPhases": [],
+        "combatUnit": {"members": [{"aircraftNo": "J15-001", "model": "J-15", "status": "ready", "airport": "A"}]},
+        "components": [{
+            "id": "whole-aircraft",
+            "name": "whole aircraft",
+            "aircraftModel": "J-15",
+            "productType": "whole",
+            "quantity": 1,
+            "failureRate": 0.01,
+            "mtbfHours": 100,
+            "meanRepairTimeMinutes": 30,
+            "failureDistribution": {"distributionType": "exponential", "parameters": "lambda=0.01"},
+            "repairDistribution": {"distributionType": "fixed", "parameters": "value=30"},
+        }],
+        "supportNodes": [{
+            "id": "node-a",
+            "name": "node A",
+            "personnelCapacity": 1,
+            "equipmentCapacity": 1,
+            "inventory": {"aircraft_support_v1_spares": 2},
+        }],
+        "supportActivities": [{"id": "corrective", "activityType": "corrective", "durationHours": 1, "jobs": []}],
+        "supportOrganization": {},
+        "reliabilityBlockDiagram": {
+            "nodes": [{"id": "whole-aircraft", "name": "whole aircraft", "type": "system", "failureRate": 0.01}],
+            "edges": [],
+        },
+        "modelingImportValidation": {"usedTables": {}, "disabledDomains": [], "warnings": []},
+    }
 
 
 class BackendHttpApiTest(unittest.TestCase):
@@ -74,7 +127,7 @@ class BackendHttpApiTest(unittest.TestCase):
                     base_url,
                     "POST",
                     f"/projects/{saved['project_id']}/experiment-plans",
-                    {"config": {"name": "http contract smoke", "steps": 2}},
+                    {"config": {"name": "http contract current", "steps": 2}},
                     auth_token=auth_token,
                 )
                 run = self._json(
@@ -301,7 +354,7 @@ class BackendHttpApiTest(unittest.TestCase):
 
             def run_scenario(self, *args, **kwargs):
                 self.started.set()
-                self.release.wait(timeout=10)
+                self.release.wait(timeout=HTTP_TEST_TIMEOUT_SECONDS)
                 return super().run_scenario(*args, **kwargs)
 
         with tempfile.TemporaryDirectory() as tmp, mock.patch(
@@ -355,12 +408,12 @@ class BackendHttpApiTest(unittest.TestCase):
 
                 run_thread = Thread(target=submit_run)
                 run_thread.start()
-                self.assertTrue(BlockingAdapter.started.wait(timeout=10))
+                self.assertTrue(BlockingAdapter.started.wait(timeout=HTTP_TEST_TIMEOUT_SECONDS))
                 delete_thread = Thread(target=delete_plan)
                 delete_thread.start()
                 BlockingAdapter.release.set()
-                run_thread.join(timeout=10)
-                delete_thread.join(timeout=10)
+                run_thread.join(timeout=HTTP_TEST_TIMEOUT_SECONDS)
+                delete_thread.join(timeout=HTTP_TEST_TIMEOUT_SECONDS)
 
                 self.assertFalse(run_thread.is_alive())
                 self.assertFalse(delete_thread.is_alive())
@@ -574,7 +627,7 @@ class BackendHttpApiTest(unittest.TestCase):
                 artifact = manifest["artifacts"][0]
                 user_token = self._login_token(base_url, "user", "user")
 
-                connection = http.client.HTTPConnection("127.0.0.1", server.server_address[1], timeout=10)
+                connection = http.client.HTTPConnection("127.0.0.1", server.server_address[1], timeout=HTTP_TEST_TIMEOUT_SECONDS)
                 connection.request("GET", f"/api/runs/{quote(run_id, safe='')}/artifacts/{quote(artifact['artifact_id'], safe='')}")
                 response = connection.getresponse()
                 unauth_body = json.loads(response.read().decode("utf-8"))
@@ -583,7 +636,7 @@ class BackendHttpApiTest(unittest.TestCase):
                 connection.close()
 
                 admin_token = self._login_token(base_url, "admin", "admin")
-                connection = http.client.HTTPConnection("127.0.0.1", server.server_address[1], timeout=10)
+                connection = http.client.HTTPConnection("127.0.0.1", server.server_address[1], timeout=HTTP_TEST_TIMEOUT_SECONDS)
                 connection.request(
                     "GET",
                     f"/api/runs/{quote(run_id, safe='')}/artifacts/{quote(artifact['artifact_id'], safe='')}",
@@ -757,7 +810,7 @@ class BackendHttpApiTest(unittest.TestCase):
                 finally:
                     connection.close()
 
-                connection = http.client.HTTPConnection("127.0.0.1", server.server_address[1], timeout=10)
+                connection = http.client.HTTPConnection("127.0.0.1", server.server_address[1], timeout=HTTP_TEST_TIMEOUT_SECONDS)
                 connection.request(
                     "GET",
                     f"/api/runs/{quote(run_id, safe='')}/artifacts/{quote(artifact['artifact_id'], safe='')}",
@@ -799,11 +852,12 @@ class BackendHttpApiTest(unittest.TestCase):
                 self.assertEqual(len(catalog["projects"]), 1)
                 entry = catalog["projects"][0]
                 self.assertEqual(entry["project_id"], saved_project["project_id"])
-                self.assertEqual(entry["experiment_name"], project_json["experiment"]["name"])
+                self.assertEqual(entry["experiment_name"], project_json["projectInfo"]["name"])
                 self.assertEqual(entry["base_code"], project_json["projectInfo"]["baseCode"])
                 self.assertEqual(entry["summary"], project_json["projectInfo"]["summary"])
                 self.assertEqual(entry["scenario_id"], project_json["scenarioId"])
                 self.assertEqual(entry["source_import_id"], project_json["missionProfile"]["sourceImportId"])
+                self.assertEqual(entry["is_template"], False)
                 self.assertIn("updated_at", entry)
             finally:
                 server.shutdown()
@@ -889,7 +943,7 @@ class BackendHttpApiTest(unittest.TestCase):
             thread.start()
             try:
                 base_url = f"http://127.0.0.1:{server.server_address[1]}/api"
-                project = self._fixture("smoke_project.json")
+                project = small_aircraft_support_project("project-http-authz-current")
                 data_token = self._login_token(base_url, "data", "data")
                 saved = self._json(base_url, "POST", "/projects", project, auth_token=data_token)
                 self._json(
@@ -973,7 +1027,7 @@ class BackendHttpApiTest(unittest.TestCase):
                         migration = body["details"]["migration"]
                         self.assertEqual(
                             migration["docs"],
-                            "docs/superpowers/plans/2026-06-21-legacy-run-api-retirement.md",
+                            "docs/archive/deprecated/superpowers/plans/2026-06-21-legacy-run-api-retirement.md",
                         )
                         self.assertEqual(migration["mapping"]["/api/simulation-runs"], "/api/runs")
                         self.assertEqual(
@@ -1058,7 +1112,7 @@ class BackendHttpApiTest(unittest.TestCase):
             thread.start()
             try:
                 base_url = f"http://127.0.0.1:{server.server_address[1]}/api"
-                project = self._fixture("smoke_project.json")
+                project = small_aircraft_support_project("project-http-formal-gate-current")
                 auth_token = self._login_token(base_url, "data", "data")
                 saved = self._json(base_url, "POST", "/projects", project, auth_token=auth_token)
                 self._json(
@@ -1096,6 +1150,62 @@ class BackendHttpApiTest(unittest.TestCase):
                 server.server_close()
                 thread.join(timeout=5)
 
+    def test_http_lite_mesa_analysis_runs_in_memory_without_formal_side_effects(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            server = create_backend_server(
+                ("127.0.0.1", 0),
+                repo_root=REPO_ROOT,
+                database_path=":memory:",
+                output_dir=Path(tmp) / "artifacts",
+            )
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                base_url = f"http://127.0.0.1:{server.server_address[1]}/api"
+                auth_token = self._login_token(base_url, "data", "data")
+                case = self._fixture("simulation_analysis_cases/canonical_platform_case.json")
+                project = modeling_import_to_project(case["modeling_import"], validation=case.get("validation"))
+                project["project_id"] = "project-http-lite-mesa-analysis"
+                project["missionProfile"].pop("sourceImportId", None)
+
+                visualization_status, visualization_error = self._json_error_with_status(
+                    base_url,
+                    "POST",
+                    "/mesa-visualization-runs",
+                    {"project": project, "model_family": "aircraft_support_v1"},
+                    auth_token=auth_token,
+                )
+                payload = self._json(
+                    base_url,
+                    "POST",
+                    "/mesa-analysis-runs",
+                    {
+                        "project": project,
+                        "analysis_type": "mission_reliability",
+                        "settings": {"samples": 2, "seed": 20260704},
+                        "model_family": "aircraft_support_v1",
+                    },
+                    auth_token=auth_token,
+                )
+                catalog = self._json(base_url, "GET", "/projects")
+
+                self.assertEqual(visualization_status, 404)
+                self.assertEqual(visualization_error["code"], "not_found")
+                self.assertEqual(payload["status"], "session_complete")
+                self.assertEqual(payload["source"], "lite_mesa_aircraft_support_v1")
+                self.assertEqual(payload["model_family"], "aircraft_support_v1")
+                self.assertEqual(payload["analysis_type"], "mission_reliability")
+                self.assertEqual(payload["project_id"], "project-http-lite-mesa-analysis")
+                self.assertEqual(payload["sample_count"], 2)
+                self.assertEqual(payload["seed_list"], [20260704, 20260705])
+                self.assertTrue(payload["rows"])
+                self.assertEqual(catalog["projects"], [])
+                self.assertEqual([path.name for path in (Path(tmp) / "artifacts").glob("*")], [])
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
     def test_http_canonical_runs_reject_forged_import_source_project(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             server = create_backend_server(
@@ -1117,7 +1227,7 @@ class BackendHttpApiTest(unittest.TestCase):
                     f"/modeling-imports/{quote(import_package['importId'], safe='')}/publish",
                     auth_token=auth_token,
                 )
-                forged_project = self._fixture("smoke_project.json")
+                forged_project = small_aircraft_support_project("project-http-forged-current")
                 forged_project["project_id"] = import_package["projectId"]
                 forged_project["missionProfile"] = {"sourceImportId": import_package["importId"]}
                 saved = self._json(base_url, "POST", "/projects", forged_project, auth_token=auth_token)
@@ -1384,7 +1494,7 @@ class BackendHttpApiTest(unittest.TestCase):
                 url = f"http://127.0.0.1:{server.server_address[1]}/front/index.html"
                 req = request.Request(url, method="GET")
                 opener = request.build_opener(request.ProxyHandler({}))
-                with opener.open(req, timeout=10) as response:
+                with opener.open(req, timeout=HTTP_TEST_TIMEOUT_SECONDS) as response:
                     self.assertEqual(response.status, 200)
                     self.assertIn("text/html", response.headers["content-type"])
                     body = response.read().decode("utf-8")
@@ -1408,7 +1518,7 @@ class BackendHttpApiTest(unittest.TestCase):
                 url = f"http://127.0.0.1:{server.server_address[1]}/import-templates/canonical_platform_case.json"
                 req = request.Request(url, method="GET")
                 opener = request.build_opener(request.ProxyHandler({}))
-                with opener.open(req, timeout=10) as response:
+                with opener.open(req, timeout=HTTP_TEST_TIMEOUT_SECONDS) as response:
                     self.assertEqual(response.status, 200)
                     self.assertIn("application/json", response.headers["content-type"])
                     payload = json.loads(response.read().decode("utf-8"))
@@ -1462,7 +1572,7 @@ class BackendHttpApiTest(unittest.TestCase):
             thread = Thread(target=server.serve_forever, daemon=True)
             thread.start()
             try:
-                connection = http.client.HTTPConnection("127.0.0.1", server.server_address[1], timeout=10)
+                connection = http.client.HTTPConnection("127.0.0.1", server.server_address[1], timeout=HTTP_TEST_TIMEOUT_SECONDS)
                 connection.putrequest("POST", "/api/projects/validate")
                 connection.putheader("content-type", "application/json")
                 connection.putheader("content-length", str(1024 * 1024 + 1))
@@ -1498,7 +1608,7 @@ class BackendHttpApiTest(unittest.TestCase):
                     base_url,
                     "POST",
                     f"/projects/{saved['project_id']}/experiment-plans",
-                    {"config": {"name": "persistent http smoke", "steps": 2}},
+                    {"config": {"name": "persistent http current", "steps": 2}},
                     auth_token=auth_token,
                 )
                 run = self._json(
@@ -1562,7 +1672,7 @@ class BackendHttpApiTest(unittest.TestCase):
                 req = request.Request(url, method="GET")
                 opener = request.build_opener(request.ProxyHandler({}))
                 with self.assertRaises(Exception):
-                    opener.open(req, timeout=10)
+                    opener.open(req, timeout=HTTP_TEST_TIMEOUT_SECONDS)
             finally:
                 server.shutdown()
                 server.server_close()
@@ -1868,6 +1978,37 @@ class BackendHttpApiTest(unittest.TestCase):
                 second_server.server_close()
                 second_thread.join(timeout=5)
 
+    def test_http_project_data_templates_route_hides_import_versions(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            server = create_backend_server(
+                ("127.0.0.1", 0),
+                repo_root=REPO_ROOT,
+                database_path=":memory:",
+                output_dir=Path(tmp) / "artifacts",
+            )
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                base_url = f"http://127.0.0.1:{server.server_address[1]}/api"
+                import_package = self._fixture("modeling_import_project.json")
+                import_id = quote(import_package["importId"], safe="")
+                auth_token = self._login_token(base_url, "data", "data")
+
+                self._json(base_url, "POST", "/modeling-imports", import_package, auth_token=auth_token)
+                self._json(base_url, "POST", f"/modeling-imports/{import_id}/publish", auth_token=auth_token)
+                templates = self._json(base_url, "GET", "/project-data-templates?state=published", auth_token=auth_token)
+
+                self.assertEqual([template["template_id"] for template in templates["templates"]], [import_package["importId"]])
+                self.assertEqual(templates["templates"][0]["template_type"], "project_data")
+                self.assertEqual(templates["templates"][0]["source_import_id"], import_package["importId"])
+                self.assertNotIn("schema_version", templates["templates"][0])
+                self.assertNotIn("version", templates["templates"][0])
+                self.assertNotIn("lifecycle_state", templates["templates"][0])
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
     def test_http_modeling_import_compile_scenario_route_uses_simulation_adapter(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             server = create_backend_server(
@@ -1938,13 +2079,33 @@ class BackendHttpApiTest(unittest.TestCase):
                     f"/modeling-imports/{encoded_import_id}/create-project",
                     auth_token=data_token,
                 )
+                second_created = self._json(
+                    base_url,
+                    "POST",
+                    f"/modeling-imports/{encoded_import_id}/create-project",
+                    auth_token=data_token,
+                )
                 stored_project = self._json(base_url, "GET", f"/projects/{quote(import_package['projectId'], safe='')}")
+                second_stored_project = self._json(
+                    base_url,
+                    "GET",
+                    f"/projects/{quote(second_created['savedProject']['project_id'], safe='')}",
+                )
+                catalog = self._json(base_url, "GET", "/projects")
 
                 self.assertEqual(unauthenticated["code"], "unauthorized")
                 self.assertEqual(forbidden["code"], "forbidden")
                 self.assertEqual(created["sourceImport"]["import_id"], import_package["importId"])
                 self.assertEqual(created["project"]["project_id"], import_package["projectId"])
-                self.assertEqual(created["project"]["equipment"]["wholeMachineModels"], ["J-15", "J-35"])
+                self.assertNotIn("equipment", created["project"])
+                self.assertEqual(
+                    sorted({
+                        component["aircraftModel"]
+                        for component in created["project"]["components"]
+                        if component.get("aircraftModel")
+                    }),
+                    ["J-15", "J-35"],
+                )
                 self.assertGreaterEqual(len(created["project"]["components"]), 8)
                 self.assertGreaterEqual(len(created["project"]["missionProfile"]["compositeTasks"]), 2)
                 self.assertGreaterEqual(len(created["project"]["supportNodes"]), 3)
@@ -1957,6 +2118,16 @@ class BackendHttpApiTest(unittest.TestCase):
                 self.assertEqual(created["modelingSnapshot"]["project"]["project_id"], import_package["projectId"])
                 self.assertTrue(created["modelingSnapshot"]["snapshot_id"])
                 self.assertEqual(stored_project["project_id"], import_package["projectId"])
+                self.assertNotEqual(second_created["savedProject"]["project_id"], created["savedProject"]["project_id"])
+                self.assertRegex(second_created["savedProject"]["project_id"], rf"^{import_package['projectId']}-copy-[0-9]+$")
+                self.assertEqual(second_created["project"]["project_id"], second_created["savedProject"]["project_id"])
+                self.assertEqual(second_created["project"]["missionProfile"]["sourceImportId"], import_package["importId"])
+                self.assertEqual(second_created["modelingSnapshot"]["project"]["project_id"], second_created["savedProject"]["project_id"])
+                self.assertEqual(second_stored_project["project_id"], second_created["savedProject"]["project_id"])
+                self.assertTrue({
+                    created["savedProject"]["project_id"],
+                    second_created["savedProject"]["project_id"],
+                }.issubset({entry["project_id"] for entry in catalog["projects"]}))
             finally:
                 server.shutdown()
                 server.server_close()
@@ -2006,7 +2177,7 @@ class BackendHttpApiTest(unittest.TestCase):
                 import_package["lifecycle"] = {
                     "state": "published",
                     "version": 1,
-                    "referencedRunIds": ["run-smoke-contract-001"],
+                    "referencedRunIds": ["run-aircraft-support-contract-001"],
                 }
                 auth_token = self._login_token(base_url, "data", "data")
                 self._json(base_url, "POST", "/modeling-imports", import_package, auth_token=auth_token)
@@ -2068,7 +2239,7 @@ class BackendHttpApiTest(unittest.TestCase):
             headers=headers,
         )
         opener = request.build_opener(request.ProxyHandler({}))
-        with opener.open(req, timeout=10) as response:
+        with opener.open(req, timeout=HTTP_TEST_TIMEOUT_SECONDS) as response:
             self.assertEqual(response.status, 200)
             return json.loads(response.read().decode("utf-8"))
 
@@ -2093,7 +2264,7 @@ class BackendHttpApiTest(unittest.TestCase):
         )
         opener = request.build_opener(request.ProxyHandler({}))
         try:
-            opener.open(req, timeout=10)
+            opener.open(req, timeout=HTTP_TEST_TIMEOUT_SECONDS)
         except Exception as exc:
             response = exc
             if not hasattr(response, "read"):
@@ -2122,7 +2293,7 @@ class BackendHttpApiTest(unittest.TestCase):
         )
         opener = request.build_opener(request.ProxyHandler({}))
         try:
-            opener.open(req, timeout=10)
+            opener.open(req, timeout=HTTP_TEST_TIMEOUT_SECONDS)
         except Exception as exc:
             response = exc
             if not hasattr(response, "read") or not hasattr(response, "code"):
@@ -2139,7 +2310,7 @@ class BackendHttpApiTest(unittest.TestCase):
         *,
         content_length: int | None = None,
     ) -> tuple[int, dict]:
-        connection = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+        connection = http.client.HTTPConnection("127.0.0.1", port, timeout=HTTP_TEST_TIMEOUT_SECONDS)
         connection.putrequest(method, path)
         connection.putheader("content-type", "application/json")
         connection.putheader("content-length", str(len(body) if content_length is None else content_length))

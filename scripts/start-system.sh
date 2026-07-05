@@ -8,28 +8,18 @@ fi
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 HOST="${HOST:-127.0.0.1}"
 APP_PORT="${APP_PORT:-4173}"
-CONTRACT_PORT="${CONTRACT_PORT:-8521}"
 RUN_DIR="$ROOT_DIR/runs/system-start"
 DATABASE_PATH="${DATABASE_PATH:-$RUN_DIR/spare_mvp.sqlite3}"
-WITH_CONTRACT_PROVIDER=0
 
 APP_PY="$ROOT_DIR/.abm-mesa-test-env/bin/python"
-CONTRACT_PY="$ROOT_DIR/.abm-mesa-test-env/bin/python"
 
 usage() {
-  echo "Usage: $0 [start|stop|restart] [--with-contract-provider]" >&2
+  echo "Usage: $0 [start|stop|restart]" >&2
 }
 
 while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --with-contract-provider)
-      WITH_CONTRACT_PROVIDER=1
-      ;;
-    *)
-      usage
-      exit 2
-      ;;
-  esac
+  usage
+  exit 2
   shift
 done
 
@@ -98,28 +88,16 @@ stop_app() {
   rm -f "$RUN_DIR/app.pid"
 }
 
-stop_contract_provider() {
-  stop_port "$CONTRACT_PORT"
-  rm -f "$RUN_DIR/contract.pid"
-}
-
 stop_start_targets() {
   stop_app
-  if [[ "$WITH_CONTRACT_PROVIDER" == "1" ]]; then
-    stop_contract_provider
-  fi
 }
 
 stop_system() {
   stop_app
-  stop_contract_provider
 }
 
 start_system() {
   require_executable "$APP_PY"
-  if [[ "$WITH_CONTRACT_PROVIDER" == "1" ]]; then
-    require_executable "$CONTRACT_PY"
-  fi
   mkdir -p "$RUN_DIR"
 
   if [[ "${SKIP_INITIAL_STOP:-0}" != "1" ]]; then
@@ -132,20 +110,9 @@ start_system() {
 
   wait_for_port "$APP_PORT" "spare_mvp app"
 
-  if [[ "$WITH_CONTRACT_PROVIDER" == "1" ]]; then
-    echo "Starting legacy/dev Mesa contract provider on http://$HOST:$CONTRACT_PORT"
-    CONTRACT_PID="$(start_detached "$CONTRACT_PY" "$RUN_DIR/contract.log" "$CONTRACT_PY" src/spare_mvp_abm/contract_server.py --host "$HOST" --port "$CONTRACT_PORT")"
-    echo "$CONTRACT_PID" >"$RUN_DIR/contract.pid"
-    wait_for_port "$CONTRACT_PORT" "legacy/dev Mesa contract provider"
-  fi
-
   echo "App PID: $APP_PID"
   echo "Database: $DATABASE_PATH"
   echo "Open: http://$HOST:$APP_PORT/front/"
-  if [[ "$WITH_CONTRACT_PROVIDER" == "1" ]]; then
-    echo "Contract PID: $CONTRACT_PID"
-    echo "Legacy/dev contract health: http://$HOST:$CONTRACT_PORT/health"
-  fi
 }
 
 case "$MODE" in

@@ -8,122 +8,6 @@
   "allOf": [
     {
       "if": {
-        "required": ["validationLevel"],
-        "properties": {
-          "validationLevel": { "const": "level1" }
-        }
-      },
-      "then": {
-        "properties": {
-          "usedTables": {
-            "properties": {
-              "reliabilityBlockDiagram": { "const": true },
-              "supportResources": { "const": true },
-              "supportActivities": { "const": true },
-              "supportOrganization": { "const": true },
-              "transportPolicies": { "const": true }
-            }
-          }
-        }
-      }
-    },
-    {
-      "if": {
-        "required": ["usedTables"],
-        "properties": {
-          "usedTables": {
-            "required": ["reliabilityBlockDiagram"],
-            "properties": {
-              "reliabilityBlockDiagram": { "const": false }
-            }
-          }
-        }
-      },
-      "then": {
-        "required": ["validationLevel"],
-        "properties": {
-          "validationLevel": { "const": "level0" }
-        }
-      }
-    },
-    {
-      "if": {
-        "required": ["usedTables"],
-        "properties": {
-          "usedTables": {
-            "required": ["supportResources"],
-            "properties": {
-              "supportResources": { "const": false }
-            }
-          }
-        }
-      },
-      "then": {
-        "required": ["validationLevel"],
-        "properties": {
-          "validationLevel": { "const": "level0" }
-        }
-      }
-    },
-    {
-      "if": {
-        "required": ["usedTables"],
-        "properties": {
-          "usedTables": {
-            "required": ["supportActivities"],
-            "properties": {
-              "supportActivities": { "const": false }
-            }
-          }
-        }
-      },
-      "then": {
-        "required": ["validationLevel"],
-        "properties": {
-          "validationLevel": { "const": "level0" }
-        }
-      }
-    },
-    {
-      "if": {
-        "required": ["usedTables"],
-        "properties": {
-          "usedTables": {
-            "required": ["supportOrganization"],
-            "properties": {
-              "supportOrganization": { "const": false }
-            }
-          }
-        }
-      },
-      "then": {
-        "required": ["validationLevel"],
-        "properties": {
-          "validationLevel": { "const": "level0" }
-        }
-      }
-    },
-    {
-      "if": {
-        "required": ["usedTables"],
-        "properties": {
-          "usedTables": {
-            "required": ["transportPolicies"],
-            "properties": {
-              "transportPolicies": { "const": false }
-            }
-          }
-        }
-      },
-      "then": {
-        "required": ["validationLevel"],
-        "properties": {
-          "validationLevel": { "const": "level0" }
-        }
-      }
-    },
-    {
-      "if": {
         "required": ["usedTables"],
         "properties": {
           "usedTables": {
@@ -255,7 +139,6 @@
     "schemaVersion": { "const": "modeling-import-v1" },
     "importId": { "type": "string" },
     "projectId": { "type": "string" },
-    "validationLevel": { "type": "string", "enum": ["level0", "level1"] },
     "usedTables": {
       "type": "object",
       "additionalProperties": false,
@@ -336,11 +219,17 @@
   "$defs": {
     "missionProfile": {
       "type": "object",
-      "required": ["id", "name", "durationHours"],
+      "required": ["id", "name", "durationHours", "basicMissions"],
+      "not": { "required": ["basicMission"] },
       "properties": {
         "id": { "type": "string" },
         "name": { "type": "string" },
-        "durationHours": { "type": "number", "exclusiveMinimum": 0 }
+        "durationHours": { "type": "number", "exclusiveMinimum": 0 },
+        "basicMissions": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "object", "required": ["id"] }
+        }
       }
     },
     "equipmentAsset": {

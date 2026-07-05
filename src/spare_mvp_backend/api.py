@@ -5,12 +5,18 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import math
 from pathlib import Path
 import threading
 from typing import Any
 
 from src.spare_mvp_backend.errors import BackendApiError
 from src.spare_mvp_backend.modeling_import import modeling_import_to_project, validate_modeling_import_package
+from src.spare_mvp_backend.project_payload import (
+    materialize_scenario_composition,
+    project_runtime_config_paths,
+    strip_project_sweep,
+)
 from src.spare_mvp_backend.repository import ContractRepository
 from src.spare_mvp_backend.run_service import ACTIVE_FORMAL_MODEL_FAMILY, RETIRED_FORMAL_MODEL_FAMILIES, RunService, RunServiceError
 from src.spare_mvp_contract.adapter import AdapterError, SimulationAdapter
@@ -41,7 +47,23 @@ class BackendApi:
         self.run_service = RunService(repository, adapter, self.output_dir, run_lifecycle_lock=lifecycle_lock)
 
     def validate_project(self, project_json: dict[str, Any]) -> dict[str, Any]:
-        return self.adapter.validate_project(project_json)
+        validation = self.adapter.validate_project(project_json)
+        runtime_config_errors = [
+            {
+                "code": "unsupported_project_runtime_config",
+                "path": path,
+                "message": (
+                    "Project JSON must not include runtime analysis or Monte Carlo config; "
+                    "use ExperimentPlan.config / RunIntent / MonteCarloRunConfig"
+                ),
+            }
+            for path in project_runtime_config_paths(project_json)
+        ]
+        if runtime_config_errors:
+            validation = copy.deepcopy(validation)
+            validation["ok"] = False
+            validation["errors"] = [*validation.get("errors", []), *runtime_config_errors]
+        return validation
 
     def login(self, username: str, password: str) -> dict[str, Any]:
         try:
@@ -175,7 +197,7 @@ class BackendApi:
         return saved
 
     def get_project(self, project_id: str) -> dict[str, Any]:
-        return self.repository.get_project(project_id)
+        return strip_project_sweep(self.repository.get_project(project_id))
 
     def list_projects(self) -> dict[str, Any]:
         projects = self.repository.list_projects()
@@ -194,7 +216,7 @@ class BackendApi:
         if not validation["ok"]:
             raise BackendApiError("invalid_project", "Project JSON failed validation", errors=validation["errors"])
 
-        project = copy.deepcopy(project_json)
+        project = strip_project_sweep(project_json)
         project["project_id"] = validation["project_id"]
         project["schema_version"] = validation["project_schema_version"]
         project["project_version"] = validation["project_version"]
@@ -265,6 +287,11 @@ class BackendApi:
 
     def get_modeling_import(self, import_id: str) -> dict[str, Any]:
         return self.repository.get_modeling_import(import_id)
+
+    def list_project_data_templates(self, *, state: str = "published") -> dict[str, Any]:
+        return {
+            "templates": self.repository.list_project_data_templates(state=state or "published")
+        }
 
     def publish_modeling_import(self, import_id: str, *, actor_user_id: str | None = None) -> dict[str, Any]:
         return self._publish_modeling_import_trusted(import_id, actor_user_id=actor_user_id, allow_system=False)
@@ -347,7 +374,6 @@ class BackendApi:
             "provenance": copy.deepcopy(gate.get("provenance") or {}),
             "issues": gate_issues,
             "errors": gate_errors,
-            "validationLevel": validation["validationLevel"],
             "usedTables": copy.deepcopy(validation["usedTables"]),
             "warnings": copy.deepcopy(validation.get("warnings") or []) + list(gate.get("warnings") or []),
         }
@@ -402,7 +428,7 @@ class BackendApi:
                 issues=validation["issues"],
             )
 
-        project_json = modeling_import_to_project(import_package, validation=validation)
+        project_json = self._project_instance_from_modeling_import(modeling_import_to_project(import_package, validation=validation))
         saved = self.save_project(project_json)
         project = self.repository.get_project(saved["project_id"])
         snapshot = self.create_modeling_snapshot(saved["project_id"])
@@ -429,6 +455,37 @@ class BackendApi:
             "modelingSnapshot": snapshot,
         }
 
+    def _project_instance_from_modeling_import(self, project_json: dict[str, Any]) -> dict[str, Any]:
+        project = copy.deepcopy(project_json)
+        base_project_id = str(project.get("project_id") or "project-imported-sample").strip() or "project-imported-sample"
+        base_scenario_id = str(project.get("scenarioId") or base_project_id).strip() or base_project_id
+        existing_project_ids = {
+            str(entry.get("project_id") or "").strip()
+            for entry in self.repository.list_projects()
+            if str(entry.get("project_id") or "").strip()
+        }
+        if base_project_id not in existing_project_ids:
+            project["project_id"] = base_project_id
+            project["scenarioId"] = base_scenario_id
+            return project
+
+        sequence = 2
+        while True:
+            suffix = f"copy-{sequence}"
+            project_id = f"{base_project_id}-{suffix}"
+            if project_id not in existing_project_ids:
+                project["project_id"] = project_id
+                project["scenarioId"] = f"{base_scenario_id}-{suffix}"
+                for section_key in ("experiment", "projectInfo"):
+                    section = project.get(section_key)
+                    if not isinstance(section, dict):
+                        continue
+                    name = section.get("name")
+                    if isinstance(name, str) and name.strip():
+                        section["name"] = f"{name.strip()} 副本 {sequence}"
+                return project
+            sequence += 1
+
     def create_modeling_snapshot(self, project_id: str) -> dict[str, Any]:
         project = self.repository.get_project(project_id)
         snapshot = {
@@ -443,7 +500,7 @@ class BackendApi:
 
     def create_experiment_plan(self, project_id: str, config: dict[str, Any]) -> dict[str, Any]:
         project = self.repository.get_project(project_id)
-        plan_config = copy.deepcopy(config)
+        plan_config = _normalize_experiment_plan_config(config)
         requested_snapshot_id = str(plan_config.pop("modeling_snapshot_id", "") or "").strip()
         snapshot = (
             self.repository.get_modeling_snapshot(requested_snapshot_id)
@@ -527,6 +584,135 @@ class BackendApi:
             return self.run_service.submit_run(request)
         except RunServiceError as exc:
             raise self._run_service_error_to_backend_error(exc) from exc
+
+    def run_lite_mesa_analysis(
+        self,
+        project_json: dict[str, Any],
+        *,
+        analysis_type: str,
+        settings: dict[str, Any] | None = None,
+        model_family: str = ACTIVE_FORMAL_MODEL_FAMILY,
+    ) -> dict[str, Any]:
+        """Run a current-project Mesa analysis in memory without formal run persistence."""
+        normalized_analysis_type = _normalize_analysis_type(analysis_type)
+        normalized_settings = _normalize_lite_mesa_analysis_settings(settings or {})
+        if model_family != ACTIVE_FORMAL_MODEL_FAMILY:
+            raise BackendApiError(
+                "unsupported_lite_mesa_analysis_model_family",
+                f"lite Mesa analysis supports only {ACTIVE_FORMAL_MODEL_FAMILY}",
+                model_family=model_family,
+                replacement_model_family=ACTIVE_FORMAL_MODEL_FAMILY,
+            )
+        if not isinstance(project_json, dict) or not project_json:
+            raise BackendApiError(
+                "bad_lite_mesa_analysis_request",
+                "current Project JSON is required for lite Mesa analysis",
+            )
+        project = strip_project_sweep(materialize_scenario_composition(project_json))
+        compile_gate = getattr(self.adapter, "compile_scenario_with_gate", None)
+        if not callable(compile_gate):
+            raise BackendApiError(
+                "lite_mesa_analysis_compile_unavailable",
+                "SimulationAdapter does not expose compile_scenario_with_gate",
+            )
+        compile_result = compile_gate(project, model_family=model_family)
+        if compile_result.get("status") != "compiled" or compile_result.get("scenario") is None:
+            return _blocked_lite_mesa_analysis_payload(
+                project=project,
+                analysis_type=normalized_analysis_type,
+                model_family=model_family,
+                settings=normalized_settings,
+                message="无法编译当前 Project 到 aircraft_support_v1；请补齐任务、装备、备件、保障节点和维修作业建模字段。",
+                issues=compile_result.get("issues", []),
+                errors=compile_result.get("errors", []),
+                provenance=compile_result.get("provenance", {}),
+            )
+
+        scenario = copy.deepcopy(compile_result["scenario"])
+        scenario.get("compiled_from", {}).setdefault("mapping_provenance", compile_result.get("provenance", {}))
+        run_id = _lite_mesa_analysis_run_id(project, scenario, normalized_analysis_type, normalized_settings)
+        inputs = copy.deepcopy(scenario["simulation_inputs"])
+        base_seed = normalized_settings["seed"] if normalized_settings["seed"] is not None else int(inputs.get("seed", 0))
+        samples: list[dict[str, Any]] = []
+        failed_samples: list[dict[str, Any]] = []
+        for sample_index in range(normalized_settings["samples"]):
+            seed = base_seed + sample_index
+            try:
+                samples.append(
+                    _run_aircraft_support_v1_analysis_sample(
+                        inputs,
+                        seed=seed,
+                        sample_index=sample_index,
+                        write_event_snapshots=normalized_settings["write_event_snapshots"],
+                    )
+                )
+            except Exception as exc:  # pragma: no cover - defensive fail-closed path.
+                failed_samples.append(
+                    {
+                        "sample_index": sample_index,
+                        "seed": seed,
+                        "error": {"code": "sample_failed", "message": str(exc), "details": {}},
+                    }
+                )
+
+        if not samples:
+            return _blocked_lite_mesa_analysis_payload(
+                project=project,
+                analysis_type=normalized_analysis_type,
+                model_family=model_family,
+                settings=normalized_settings,
+                message="Mesa 分析样本全部失败；当前建模粒度不足以生成会话内结果。",
+                issues=[],
+                errors=failed_samples,
+                provenance=compile_result.get("provenance", {}),
+                run_id=run_id,
+            )
+
+        aggregate = self.adapter._aggregate_sample_metrics(samples)  # noqa: SLF001 - in-memory aggregation, no writes.
+        self.adapter._coerce_result_integer_metrics(aggregate)  # noqa: SLF001 - reuse canonical metric coercion.
+        aggregate["mission_success_probability"] = aggregate.get(
+            "sortie_completion_rate",
+            aggregate.get("mission_success_rate", 0),
+        )
+        base_artifact_id = f"lite-mesa-analysis-base-{run_id}"
+        projections = self.adapter._aircraft_support_v1_analysis_projections(  # noqa: SLF001 - projection payload only.
+            aggregate,
+            base_artifact_id,
+            samples=samples,
+            run_id=run_id,
+            validation_scope=scenario.get("compiled_from", {}).get("mapping_provenance", {}),
+            simulation_inputs=inputs,
+        )
+        page_result = _lite_mesa_analysis_page_result(
+            normalized_analysis_type,
+            projections[normalized_analysis_type],
+            aggregate,
+            samples,
+            normalized_settings,
+        )
+        return {
+            "status": "session_complete",
+            "source": "lite_mesa_aircraft_support_v1",
+            "run_id": run_id,
+            "project_id": scenario["project_id"],
+            "scenario_id": scenario["scenario_id"],
+            "scenario_version": scenario["scenario_version"],
+            "model_family": model_family,
+            "model_id": "AircraftSupportV1Model",
+            "analysis_type": normalized_analysis_type,
+            "experiment_id": page_result["experiment_id"],
+            "sample_count": len(samples),
+            "seed_list": [sample["seed"] for sample in samples],
+            "aggregate_metrics": aggregate,
+            "projection": projections[normalized_analysis_type],
+            "metrics": page_result["metrics"],
+            "rows": page_result["rows"],
+            "daily_rows": page_result.get("daily_rows", []),
+            "event_snapshots": page_result.get("event_snapshots", []),
+            "limitations": _lite_mesa_analysis_limitations(),
+            "failed_samples": failed_samples,
+            "compile_provenance": compile_result.get("provenance", {}),
+        }
 
     def get_run(self, run_id: str) -> dict[str, Any]:
         return self.repository.get_run(run_id)
@@ -1153,6 +1339,769 @@ def _steps_from_plan(plan: dict[str, Any]) -> int:
         return 3
 
 
+def _normalize_experiment_plan_config(config: dict[str, Any]) -> dict[str, Any]:
+    plan_config = copy.deepcopy(config)
+    branch_project = plan_config.get("projectJson") or plan_config.get("project_json")
+    if not isinstance(branch_project, dict):
+        return plan_config
+
+    experiment = branch_project.get("experiment") if isinstance(branch_project.get("experiment"), dict) else {}
+    if "name" not in plan_config and experiment.get("name"):
+        plan_config["name"] = experiment["name"]
+    for key in ("steps", "samples", "seed"):
+        if key not in plan_config and key in experiment:
+            plan_config[key] = copy.deepcopy(experiment[key])
+    if "monteCarlo" not in plan_config and isinstance(branch_project.get("monteCarlo"), dict):
+        plan_config["monteCarlo"] = copy.deepcopy(branch_project["monteCarlo"])
+    if "analysisRequests" not in plan_config and isinstance(branch_project.get("analysisRequests"), dict):
+        plan_config["analysisRequests"] = copy.deepcopy(branch_project["analysisRequests"])
+
+    clean_project = strip_project_sweep(materialize_scenario_composition(branch_project))
+    if "projectJson" in plan_config:
+        plan_config["projectJson"] = clean_project
+    else:
+        plan_config["project_json"] = clean_project
+    return plan_config
+
+
+def _normalize_lite_mesa_analysis_settings(settings: dict[str, Any]) -> dict[str, Any]:
+    samples = _bounded_int(settings.get("samples"), default=27, minimum=1, maximum=1000)
+    seed = _optional_int(settings.get("seed"))
+    confidence_target = _bounded_float(
+        settings.get("missionConfidenceTarget"),
+        default=0.9,
+        minimum=0.0,
+        maximum=1.0,
+    )
+    max_time_window = _bounded_int(settings.get("maxTimeWindow"), default=0, minimum=0, maximum=10000)
+    top_n = _bounded_int(settings.get("topN"), default=4, minimum=1, maximum=20)
+    return {
+        "samples": samples,
+        "seed": seed,
+        "missionConfidenceTarget": confidence_target,
+        "maxTimeWindow": max_time_window,
+        "topN": top_n,
+        "write_event_snapshots": bool(settings.get("write_event_snapshots")),
+    }
+
+
+def _run_aircraft_support_v1_analysis_sample(
+    inputs: dict[str, Any],
+    *,
+    seed: int,
+    sample_index: int,
+    write_event_snapshots: bool = False,
+) -> dict[str, Any]:
+    from src.spare_mvp_abm.aircraft_support_v1 import AircraftSupportV1Model
+
+    sample_inputs = copy.deepcopy(inputs)
+    sample_inputs["seed"] = seed
+    if write_event_snapshots:
+        sample_inputs["write_event_snapshots"] = True
+    model = AircraftSupportV1Model(sample_inputs)
+    execution = model.run()
+    daily_mission_reliability = _sample_daily_mission_reliability(model.missions, aircraft_count=len(model.aircraft))
+    frames = []
+    for sample_step, frame in enumerate(execution.get("frames", [])[:20]):
+        item = copy.deepcopy(frame)
+        item["sample_index"] = sample_index
+        item["sample_step"] = sample_step
+        item["seed"] = seed
+        item["sweep"] = {}
+        frames.append(item)
+    return {
+        "sample_index": sample_index,
+        "seed": seed,
+        "sweep": {},
+        "metrics": copy.deepcopy(execution["metrics"]),
+        "daily_mission_reliability": daily_mission_reliability,
+        "frames": frames,
+        "events": copy.deepcopy(execution.get("events") or []),
+    }
+
+
+def _sample_daily_mission_reliability(missions: list[Any], *, aircraft_count: int = 1) -> list[dict[str, Any]]:
+    by_day: dict[int, dict[str, float]] = {}
+    aircraft_denominator = max(1.0, float(aircraft_count or 1))
+    for mission in missions:
+        day = max(1, _metric_int(getattr(mission, "day_index", 1), default=1))
+        planned = max(1, _metric_int(getattr(mission, "required_aircraft", 1), default=1))
+        assigned = len(getattr(mission, "assigned_tail_numbers", []) or [])
+        failed = len(set(getattr(mission, "failed_tail_numbers", []) or []))
+        status = str(getattr(mission, "status", "") or "")
+        successful = max(0, planned - failed) if status == "completed" else 0
+        bucket = by_day.setdefault(
+            day,
+            {
+                "plannedSorties": 0.0,
+                "launchedSorties": 0.0,
+                "successfulSorties": 0.0,
+            },
+        )
+        bucket["plannedSorties"] += planned
+        bucket["launchedSorties"] += max(0, min(planned, assigned))
+        bucket["successfulSorties"] += max(0, min(planned, successful))
+    rows = []
+    for day in sorted(by_day):
+        bucket = by_day[day]
+        planned = max(1.0, float(bucket["plannedSorties"]))
+        rows.append(
+            {
+                "day": day,
+                "plannedSorties": bucket["plannedSorties"],
+                "launchedSorties": bucket["launchedSorties"],
+                "successfulSorties": bucket["successfulSorties"],
+                "missionSuccessRate": bucket["successfulSorties"] / planned,
+                "sortieRate": bucket["launchedSorties"] / aircraft_denominator,
+            }
+        )
+    return rows
+
+
+def _mean_daily_mission_reliability(samples: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    by_day: dict[int, dict[str, float]] = {}
+    for sample in samples:
+        for row in sample.get("daily_mission_reliability") or []:
+            day = max(1, _metric_int(row.get("day"), default=1))
+            bucket = by_day.setdefault(
+                day,
+                {
+                    "sampleCount": 0.0,
+                    "plannedSorties": 0.0,
+                    "launchedSorties": 0.0,
+                    "successfulSorties": 0.0,
+                    "missionSuccessRate": 0.0,
+                    "sortieRate": 0.0,
+                },
+            )
+            bucket["sampleCount"] += 1
+            bucket["plannedSorties"] += _metric_float(row.get("plannedSorties"), default=0)
+            bucket["launchedSorties"] += _metric_float(row.get("launchedSorties"), default=0)
+            bucket["successfulSorties"] += _metric_float(row.get("successfulSorties"), default=0)
+            bucket["missionSuccessRate"] += _metric_float(row.get("missionSuccessRate"), default=0)
+            bucket["sortieRate"] += _metric_float(row.get("sortieRate"), default=0)
+    rows = []
+    for day in sorted(by_day):
+        bucket = by_day[day]
+        sample_count = max(1.0, bucket["sampleCount"])
+        rows.append(
+            {
+                "day": day,
+                "sampleCount": int(bucket["sampleCount"]),
+                "plannedSorties": bucket["plannedSorties"] / sample_count,
+                "launchedSorties": bucket["launchedSorties"] / sample_count,
+                "successfulSorties": bucket["successfulSorties"] / sample_count,
+                "meanMissionSuccessRate": bucket["missionSuccessRate"] / sample_count,
+                "meanSortieRate": bucket["sortieRate"] / sample_count,
+            }
+        )
+    return rows
+
+
+def _lite_mesa_analysis_page_result(
+    analysis_type: str,
+    projection: dict[str, Any],
+    aggregate: dict[str, Any],
+    samples: list[dict[str, Any]],
+    settings: dict[str, Any],
+) -> dict[str, Any]:
+    if analysis_type == "spare_shortfall":
+        return _lite_mesa_spare_shortfall_result(projection, aggregate, samples)
+    if analysis_type == "carry_list":
+        return _lite_mesa_carry_list_result(projection, aggregate, samples, settings)
+    if analysis_type == "mission_reliability":
+        return _lite_mesa_mission_reliability_result(projection, samples, settings)
+    return _lite_mesa_downtime_factors_result(projection, aggregate, samples, settings)
+
+
+def _lite_mesa_spare_shortfall_result(
+    projection: dict[str, Any],
+    aggregate: dict[str, Any],
+    samples: list[dict[str, Any]],
+) -> dict[str, Any]:
+    planned = max(1, _metric_int(aggregate.get("planned_sorties"), default=len(samples)))
+    mean_transport_delay = max(0.0, _metric_float(aggregate.get("mean_transport_delay"), default=0))
+    rows = []
+    for item in projection.get("data") or []:
+        fill_rate = _metric_float(item.get("fill_rate"), default=aggregate.get("spare_fill_rate", 0))
+        demand = max(0, int(round(_metric_float(item.get("demand_count"), default=planned))))
+        filled = max(0, int(round(_metric_float(item.get("filled_count"), default=demand * fill_rate))))
+        rows.append(
+            {
+                "spareType": str(item.get("spare_type") or "aircraft_support_v1_spares"),
+                "demand": demand,
+                "filled": filled,
+                "meanTransportDelayHours": _metric_float(item.get("mean_transport_delay"), default=mean_transport_delay),
+                "fillRate": fill_rate,
+                "riskLevel": _risk_label(item.get("risk_level")),
+            }
+        )
+    if not rows:
+        fill_rate = _metric_float(aggregate.get("spare_fill_rate"), default=0)
+        rows.append(
+            {
+                "spareType": "aircraft_support_v1_spares",
+                "demand": planned,
+                "filled": max(0, int(round(planned * fill_rate))),
+                "meanTransportDelayHours": mean_transport_delay,
+                "fillRate": fill_rate,
+                "riskLevel": _risk_label("low"),
+            }
+        )
+    shortfall_rows = [
+        row for row in rows
+        if _metric_float(row.get("meanTransportDelayHours"), default=0) > 0
+        or _metric_float(row.get("fillRate"), default=1) < 1
+    ]
+    risk_row = shortfall_rows[0] if shortfall_rows else rows[0]
+    return {
+        "experiment_id": "project_baseline_at_current_granularity",
+        "metrics": [
+            ["发生缺件备件", str(len(shortfall_rows))],
+            ["平均备件延误时间(h)", f"{mean_transport_delay:.2f}"],
+            ["最高缺件备件", str(risk_row.get("spareType") or "无")],
+            ["因维修延误导致的任务取消次数", str(int(round(_sample_metric_sum(samples, "cancelled_sorties"))))],
+        ],
+        "rows": rows,
+    }
+
+
+def _lite_mesa_carry_list_result(
+    projection: dict[str, Any],
+    aggregate: dict[str, Any],
+    samples: list[dict[str, Any]],
+    settings: dict[str, Any],
+) -> dict[str, Any]:
+    base_quantity = max(
+        1,
+        _metric_int(aggregate.get("spare_consumed_total"), default=0)
+        + _metric_int(aggregate.get("shortage_events"), default=0),
+    )
+    planned = max(1, _metric_int(aggregate.get("planned_sorties"), default=len(samples)))
+    rows = []
+    for item in projection.get("data") or []:
+        multiplier = max(1.0, _metric_float(item.get("recommended_multiplier"), default=1.0))
+        baseline_quantity = max(0, _metric_int(item.get("baseline_quantity"), default=0))
+        rows.append(
+            {
+                "spareType": str(item.get("spare_type") or "aircraft_support_v1_spares"),
+                "recommended": max(
+                    0,
+                    _metric_int(
+                        item.get("recommended_quantity"),
+                        default=int(math.ceil((baseline_quantity or base_quantity) * multiplier)),
+                    ),
+                ),
+                "demand": max(0, _metric_int(item.get("demand_count"), default=planned)),
+                "shortage": max(0, _metric_int(item.get("shortage_count"), default=aggregate.get("shortage_events"))),
+                "riskLevel": _risk_label(item.get("risk_level")),
+                "confidenceTarget": settings["missionConfidenceTarget"],
+            }
+        )
+    if not rows:
+        rows.append(
+            {
+                "spareType": "aircraft_support_v1_spares",
+                "recommended": base_quantity,
+                "demand": planned,
+                "shortage": max(0, _metric_int(aggregate.get("shortage_events"), default=0)),
+                "riskLevel": _risk_label("low"),
+                "confidenceTarget": settings["missionConfidenceTarget"],
+            }
+        )
+    return {
+        "experiment_id": "minimum_carry_list_search",
+        "metrics": [
+            ["建议携行总数", str(sum(int(row["recommended"]) for row in rows))],
+            ["高优先级备件", str(sum(1 for row in rows if row["riskLevel"] == "高"))],
+            ["置信度目标", f"{settings['missionConfidenceTarget']:.2f}"],
+            ["样本数", str(len(samples))],
+        ],
+        "rows": rows,
+    }
+
+
+def _lite_mesa_mission_reliability_result(
+    projection: dict[str, Any],
+    samples: list[dict[str, Any]],
+    settings: dict[str, Any],
+) -> dict[str, Any]:
+    data = projection.get("data") if isinstance(projection.get("data"), dict) else {}
+    max_rows = settings["maxTimeWindow"] or 12
+    rows = []
+    for index, sample in enumerate(samples[:max_rows]):
+        metrics = sample.get("metrics") or {}
+        rows.append(
+            {
+                "sequence": index + 1,
+                "seed": sample.get("seed"),
+                "missionSuccessRate": _metric_float(metrics.get("mission_success_rate"), default=0),
+                "sortieRate": _metric_float(metrics.get("sortie_rate"), default=0),
+                "readyRate": _metric_float(metrics.get("ready_rate"), default=0),
+            }
+        )
+    return {
+        "experiment_id": "project_baseline_at_current_granularity",
+        "metrics": [
+            ["任务成功率", _pct(data.get("mission_success_probability"))],
+            ["出动架次率", _decimal(data.get("sortie_rate"))],
+            ["战备完好率", _pct(_sample_mean(samples, "ready_rate"))],
+            ["任务失败次数", str(int(round(_sample_metric_sum(samples, "failed_sorties"))))],
+        ],
+        "rows": rows,
+        "daily_rows": _mean_daily_mission_reliability(samples),
+    }
+
+
+def _lite_mesa_downtime_factors_result(
+    projection: dict[str, Any],
+    aggregate: dict[str, Any],
+    samples: list[dict[str, Any]],
+    settings: dict[str, Any],
+) -> dict[str, Any]:
+    top_n = settings["topN"]
+    rows = []
+    for item in projection.get("data") or []:
+        factor = str(item.get("factor") or "unknown")
+        rows.append(
+            {
+                "label": _downtime_factor_label(factor),
+                "reason": factor,
+                "count": _downtime_factor_count(factor, aggregate),
+                "contribution": _metric_float(item.get("contribution"), default=0),
+            }
+        )
+    rows = sorted(rows, key=lambda row: float(row.get("contribution") or 0), reverse=True)[:top_n]
+    top_row = rows[0] if rows else {}
+    return {
+        "experiment_id": "project_baseline_at_current_granularity",
+        "metrics": [
+            ["停机因素项", str(len(rows))],
+            ["首要因素", str(top_row.get("label") or "无")],
+            ["最高贡献度", _pct(top_row.get("contribution"))],
+            ["样本数", str(len(samples))],
+        ],
+        "rows": rows,
+        "event_snapshots": _lite_mesa_downtime_event_snapshots(samples, top_n),
+    }
+
+
+def _lite_mesa_downtime_event_snapshots(samples: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
+    snapshots: list[dict[str, Any]] = []
+    limit = max(0, _metric_int(limit, default=0))
+    if limit <= 0:
+        return snapshots
+    for sample in samples:
+        sample_index = _metric_int(sample.get("sample_index"), default=0)
+        seed = sample.get("seed")
+        sweep = copy.deepcopy(sample.get("sweep") or {})
+        snapshot_count_before_event_log = len(snapshots)
+        for event in sample.get("events") or []:
+            if not isinstance(event, dict):
+                continue
+            event_type = _lite_mesa_downtime_event_type(str(event.get("event_type") or event.get("event") or ""))
+            event_snapshot = event.get("snapshot") if isinstance(event.get("snapshot"), dict) else None
+            if not event_type or event_snapshot is None:
+                continue
+            snapshots.append(
+                _lite_mesa_downtime_event_log_snapshot(
+                    ordinal=len(snapshots) + 1,
+                    sample_index=sample_index,
+                    seed=seed,
+                    sweep=sweep,
+                    event_type=event_type,
+                    event=event,
+                    event_snapshot=event_snapshot,
+                )
+            )
+            if len(snapshots) >= limit:
+                return snapshots
+        if len(snapshots) > snapshot_count_before_event_log:
+            continue
+        for frame in sample.get("frames") or []:
+            if not isinstance(frame, dict):
+                continue
+            for event_type, event in _lite_mesa_downtime_snapshot_events(frame):
+                snapshots.append(
+                    _lite_mesa_downtime_frame_snapshot(
+                        ordinal=len(snapshots) + 1,
+                        sample_index=sample_index,
+                        seed=seed,
+                        sweep=sweep,
+                        frame=frame,
+                        event_type=event_type,
+                        event=event,
+                    )
+                )
+                if len(snapshots) >= limit:
+                    return snapshots
+    return snapshots
+
+
+def _lite_mesa_downtime_event_log_snapshot(
+    *,
+    ordinal: int,
+    sample_index: int,
+    seed: Any,
+    sweep: dict[str, Any],
+    event_type: str,
+    event: dict[str, Any],
+    event_snapshot: dict[str, Any],
+) -> dict[str, Any]:
+    aircraft_state = copy.deepcopy(event_snapshot.get("aircraft_state") or {})
+    support_resources = copy.deepcopy(event_snapshot.get("support_resources") or [])
+    spare_shortages = copy.deepcopy(event_snapshot.get("spare_shortages") or [])
+    active_jobs = [job for job in event_snapshot.get("active_jobs") or [] if isinstance(job, dict)]
+    details = event.get("details") if isinstance(event.get("details"), dict) else {}
+    job = active_jobs[0] if active_jobs else {}
+    metrics = event_snapshot.get("metrics") if isinstance(event_snapshot.get("metrics"), dict) else {}
+    simulation_time = _metric_float(event.get("time", event_snapshot.get("time", 0)), default=0)
+    job_id = str(job.get("job_id") or details.get("job_id") or f"{event_type}-node")
+    return {
+        "snapshot_id": f"lite-downtime-{seed or 'run'}-{ordinal:04d}",
+        "source": "model_event_log",
+        "sample_index": sample_index,
+        "seed": seed,
+        "sweep": sweep,
+        "simulation_time": simulation_time,
+        "event_type": event_type,
+        "event_label": _downtime_factor_label(event_type),
+        "event": copy.deepcopy(event),
+        "result": _lite_mesa_downtime_snapshot_result(event_type),
+        "aircraft_state": aircraft_state,
+        "support_resources": support_resources,
+        "spare_shortages": spare_shortages,
+        "support_activity_state": {
+            "active_jobs": len(active_jobs),
+            "repair_backlog": sum(1 for item in active_jobs if item.get("kind") == "repair"),
+            "postflight_backlog": sum(1 for item in active_jobs if item.get("kind") == "postflight"),
+            "preventive_backlog": sum(1 for item in active_jobs if item.get("kind") == "preventive"),
+            "spare_fill_rate": _metric_float(metrics.get("spare_fill_rate"), default=0),
+        },
+        "job_node": {
+            "job_id": job_id,
+            "kind": str(job.get("kind") or details.get("kind") or event_type),
+            "state": str(job.get("state") or details.get("state") or "observed"),
+            "task": str(job.get("task") or details.get("task") or _lite_mesa_downtime_snapshot_result(event_type)),
+            "tail_number": str(job.get("tail_number") or details.get("tail_number") or ""),
+        },
+        "frame_ref": {
+            "sample_index": sample_index,
+            "sample_step": int(simulation_time),
+            "step": int(simulation_time),
+        },
+    }
+
+
+def _lite_mesa_downtime_snapshot_events(frame: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
+    events: list[tuple[str, dict[str, Any]]] = []
+    for event in frame.get("events") or []:
+        if not isinstance(event, dict):
+            continue
+        event_type = _lite_mesa_downtime_event_type(str(event.get("event_type") or event.get("event") or ""))
+        if event_type:
+            events.append((event_type, copy.deepcopy(event)))
+    if events:
+        return events
+    summary = frame.get("event_summary") if isinstance(frame.get("event_summary"), dict) else {}
+    fallback_map = [
+        ("failure", "downtime_failure_events"),
+        ("spare_shortage", "downtime_spare_shortage_events"),
+        ("resource_delay", "downtime_resource_delay_events"),
+    ]
+    for event_type, metric in fallback_map:
+        if _metric_float(summary.get(metric), default=0) > 0:
+            return [
+                (
+                    event_type,
+                    {
+                        "time": frame.get("simulation_time", frame.get("step", 0)),
+                        "event": event_type,
+                        "event_type": event_type,
+                        "message": f"{event_type} downtime metric exceeded zero",
+                        "metric_refs": [metric],
+                    },
+                )
+            ]
+    return []
+
+
+def _lite_mesa_downtime_frame_snapshot(
+    *,
+    ordinal: int,
+    sample_index: int,
+    seed: Any,
+    sweep: dict[str, Any],
+    frame: dict[str, Any],
+    event_type: str,
+    event: dict[str, Any],
+) -> dict[str, Any]:
+    resource_state = frame.get("resource_state") if isinstance(frame.get("resource_state"), dict) else {}
+    jobs = [job for job in frame.get("jobs") or [] if isinstance(job, dict)]
+    job = jobs[0] if jobs else {}
+    simulation_time = _metric_float(frame.get("simulation_time", event.get("time", frame.get("step", 0))), default=0)
+    return {
+        "snapshot_id": f"lite-downtime-{seed or 'run'}-{ordinal:04d}",
+        "source": "state_series_frame",
+        "sample_index": sample_index,
+        "seed": seed,
+        "sweep": sweep,
+        "simulation_time": simulation_time,
+        "event_type": event_type,
+        "event_label": _downtime_factor_label(event_type),
+        "event": copy.deepcopy(event),
+        "result": _lite_mesa_downtime_snapshot_result(event_type),
+        "aircraft_state": copy.deepcopy(frame.get("aircraft_state") or {}),
+        "support_resources": copy.deepcopy(frame.get("resources") or frame.get("support_resources") or []),
+        "spare_shortages": _lite_mesa_downtime_frame_spare_shortages(frame, event),
+        "support_activity_state": {
+            "active_jobs": len(jobs),
+            "repair_backlog": _metric_float(resource_state.get("repair_backlog"), default=0),
+            "postflight_backlog": _metric_float(resource_state.get("postflight_backlog"), default=0),
+            "preventive_backlog": _metric_float(resource_state.get("preventive_backlog"), default=0),
+            "spare_fill_rate": _metric_float(resource_state.get("spare_fill_rate"), default=0),
+        },
+        "job_node": {
+            "job_id": str(job.get("job_id") or f"{event_type}-node"),
+            "kind": str(job.get("kind") or event_type),
+            "state": str(job.get("state") or "observed"),
+            "task": str(job.get("task") or _lite_mesa_downtime_snapshot_result(event_type)),
+            "tail_number": str(job.get("tail_number") or ""),
+        },
+        "frame_ref": {
+            "sample_index": sample_index,
+            "sample_step": _metric_int(frame.get("sample_step", frame.get("step")), default=0),
+            "step": _metric_int(frame.get("step", frame.get("sample_step")), default=0),
+        },
+    }
+
+
+def _lite_mesa_downtime_frame_spare_shortages(frame: dict[str, Any], event: dict[str, Any]) -> list[dict[str, Any]]:
+    details = event.get("details") if isinstance(event.get("details"), dict) else {}
+    spare_type = str(details.get("spare_type") or "")
+    if spare_type:
+        return [
+            {
+                "spare_type": spare_type,
+                "required_quantity": _metric_int(details.get("required_quantity"), default=0),
+                "available_quantity": _metric_int(details.get("available_quantity"), default=0),
+                "resource_id": str(details.get("resource_id") or ""),
+                "job_id": str(details.get("job_id") or ""),
+                "reason": str(details.get("reason") or "spare_shortage"),
+            }
+        ]
+    shortages: list[dict[str, Any]] = []
+    for spare in frame.get("spares") or []:
+        if not isinstance(spare, dict):
+            continue
+        if _metric_float(spare.get("quantity"), default=0) <= 0 and _metric_float(spare.get("consumed"), default=0) >= 0:
+            shortages.append(
+                {
+                    "spare_type": str(spare.get("name") or spare.get("part_id") or ""),
+                    "required_quantity": 0,
+                    "available_quantity": _metric_int(spare.get("quantity"), default=0),
+                    "resource_id": "",
+                    "job_id": "",
+                    "reason": "spare_shortage",
+                }
+            )
+    return shortages
+
+
+def _lite_mesa_downtime_event_type(event_type: str) -> str:
+    normalized = str(event_type or "").lower()
+    if "spare" in normalized or "shortage" in normalized:
+        return "spare_shortage"
+    if "resource" in normalized or "delay" in normalized:
+        return "resource_delay"
+    if "fail" in normalized:
+        return "failure"
+    return ""
+
+
+def _lite_mesa_downtime_snapshot_result(event_type: str) -> str:
+    if event_type == "spare_shortage":
+        return "mission_delayed_by_spare_shortage"
+    if event_type == "resource_delay":
+        return "mission_delayed_by_resource_constraint"
+    if event_type == "failure":
+        return "aircraft_unavailable_after_failure"
+    return "downtime_anomaly_recorded"
+
+
+def _blocked_lite_mesa_analysis_payload(
+    *,
+    project: dict[str, Any],
+    analysis_type: str,
+    model_family: str,
+    settings: dict[str, Any],
+    message: str,
+    issues: list[Any],
+    errors: list[Any],
+    provenance: dict[str, Any],
+    run_id: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "status": "blocked",
+        "source": "lite_mesa_aircraft_support_v1",
+        "run_id": run_id,
+        "project_id": project.get("project_id"),
+        "model_family": model_family,
+        "model_id": "AircraftSupportV1Model",
+        "analysis_type": analysis_type,
+        "experiment_id": _lite_mesa_analysis_experiment_id(analysis_type),
+        "sample_count": 0,
+        "seed_list": [],
+        "metrics": [],
+        "rows": [],
+        "event_snapshots": [],
+        "limitations": _lite_mesa_analysis_limitations(),
+        "settings": copy.deepcopy(settings),
+        "message": message,
+        "issues": copy.deepcopy(issues),
+        "errors": copy.deepcopy(errors),
+        "compile_provenance": copy.deepcopy(provenance),
+    }
+
+
+def _lite_mesa_analysis_limitations() -> list[str]:
+    return [
+        "本次分析结果不写入正式结果账本。",
+        "未创建 run、result 或 artifact。",
+        "结论只代表当前项目建模粒度和样本设置。",
+    ]
+
+
+def _lite_mesa_analysis_run_id(
+    project: dict[str, Any],
+    scenario: dict[str, Any],
+    analysis_type: str,
+    settings: dict[str, Any],
+) -> str:
+    project_id = _safe_run_id_part(str(scenario.get("project_id") or project.get("project_id") or "project"))
+    digest = _stable_hash(
+        {
+            "project": project,
+            "scenario_id": scenario.get("scenario_id"),
+            "analysis_type": analysis_type,
+            "settings": settings,
+        }
+    )
+    return f"lite-mesa-analysis-{project_id}-{digest}"
+
+
+def _lite_mesa_analysis_experiment_id(analysis_type: str) -> str:
+    if analysis_type == "carry_list":
+        return "minimum_carry_list_search"
+    return "project_baseline_at_current_granularity"
+
+
+def _safe_run_id_part(value: str) -> str:
+    normalized = "".join(ch if ch.isalnum() or ch in {"-", "_"} else "-" for ch in value.strip())
+    normalized = "-".join(part for part in normalized.split("-") if part)
+    return normalized or "project"
+
+
+def _bounded_int(value: Any, *, default: int, minimum: int, maximum: int) -> int:
+    if isinstance(value, bool):
+        parsed = default
+    else:
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError):
+            parsed = default
+    return max(minimum, min(maximum, parsed))
+
+
+def _optional_int(value: Any) -> int | None:
+    if value in (None, "") or isinstance(value, bool):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _bounded_float(value: Any, *, default: float, minimum: float, maximum: float) -> float:
+    if isinstance(value, bool):
+        parsed = default
+    else:
+        try:
+            parsed = float(value)
+        except (TypeError, ValueError):
+            parsed = default
+    return max(minimum, min(maximum, parsed))
+
+
+def _metric_int(value: Any, *, default: int) -> int:
+    try:
+        return int(round(float(value)))
+    except (TypeError, ValueError):
+        return default
+
+
+def _metric_float(value: Any, *, default: Any) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        try:
+            return float(default)
+        except (TypeError, ValueError):
+            return 0.0
+
+
+def _sample_mean(samples: list[dict[str, Any]], metric: str) -> float:
+    if not samples:
+        return 0.0
+    return sum(_metric_float(sample.get("metrics", {}).get(metric), default=0) for sample in samples) / len(samples)
+
+
+def _sample_metric_sum(samples: list[dict[str, Any]], metric: str) -> float:
+    return sum(_metric_float(sample.get("metrics", {}).get(metric), default=0) for sample in samples)
+
+
+def _decimal(value: Any) -> str:
+    return f"{_metric_float(value, default=0):.3f}"
+
+
+def _pct(value: Any) -> str:
+    return f"{round(_metric_float(value, default=0) * 100)}%"
+
+
+def _risk_label(value: Any) -> str:
+    normalized = str(value or "").lower()
+    if normalized in {"高", "high"}:
+        return "高"
+    if normalized in {"中", "medium"}:
+        return "中"
+    if normalized in {"低", "low"}:
+        return "低"
+    return str(value or "低")
+
+
+def _downtime_factor_count(factor: str, aggregate: dict[str, Any]) -> int:
+    metric_by_factor = {
+        "failure": "downtime_failure_events",
+        "spare_shortage": "downtime_spare_shortage_events",
+        "resource_delay": "downtime_resource_delay_events",
+        "postflight": "postflight_backlog",
+        "preventive": "preventive_backlog",
+        "transport_delay": "transport_in_transit_count",
+    }
+    return max(0, _metric_int(aggregate.get(metric_by_factor.get(factor, "")), default=0))
+
+
+def _downtime_factor_label(factor: str) -> str:
+    return {
+        "failure": "故障停机",
+        "spare_shortage": "备件短缺",
+        "resource_delay": "资源等待",
+        "postflight": "飞后积压",
+        "preventive": "定检积压",
+        "transport_delay": "转运在途",
+    }.get(factor, factor)
+
+
 def _public_user(user: dict[str, Any]) -> dict[str, Any]:
     return {
         "user_id": user["user_id"],
@@ -1192,12 +2141,15 @@ def _project_list_entry(project: dict[str, Any]) -> dict[str, Any]:
     summary = payload.get("projectInfo", {}).get("summary")
     if not isinstance(summary, str) or not summary.strip():
         summary = "后端持久化项目"
+    project_info = payload.get("projectInfo") if isinstance(payload.get("projectInfo"), dict) else {}
+    is_template = bool(project_info.get("isTemplate") or project_info.get("is_template"))
 
     return {
         "project_id": project.get("project_id"),
         "experiment_name": str(project_name).strip(),
         "base_code": str(base_code).strip(),
         "summary": str(summary).strip(),
+        "is_template": is_template,
         "updated_at": project.get("updated_at"),
         "scenario_id": payload.get("scenarioId"),
         "source_import_id": payload.get("missionProfile", {}).get("sourceImportId"),

@@ -13,16 +13,18 @@ import { renderRmsAllocationWorkbench } from "../front/rms-allocation-workbench.
 
 const PAGE_REVISION_REPORT_URL = new URL("../reports/2026-06-19-page-revision-suggestions/README.md", import.meta.url);
 const RBD_RENDERING_CONTRACT_URL = new URL("../docs/reliability-block-diagram-contract.md", import.meta.url);
+const DOCS_README_URL = new URL("../docs/README.md", import.meta.url);
 
 test("feature catalog exposes all table-2 four-level pages", () => {
-  assert.equal(FEATURE_PAGES.length, 49);
-  assert.equal(new Set(FEATURE_PAGES.map((page) => page.id)).size, 49);
-  assert.equal(FEATURE_PAGES.filter((page) => page.module === "备件规划评估模块").length, 21);
-  assert.equal(FEATURE_PAGES.filter((page) => page.module === "任务可靠度评估模块").length, 22);
+  assert.equal(FEATURE_PAGES.length, 45);
+  assert.equal(new Set(FEATURE_PAGES.map((page) => page.id)).size, 45);
+  assert.equal(FEATURE_PAGES.filter((page) => page.module === "备件规划评估模块").length, 19);
+  assert.equal(FEATURE_PAGES.filter((page) => page.module === "任务可靠度评估模块").length, 20);
   assert.equal(FEATURE_PAGES.filter((page) => page.module === "系统运行支持模块").length, 6);
   for (const label of ["装备系统建模", "装备可靠性框图建模", "飞机转场携行清单分析", "任务可靠度评估", "停机因素分析", "建模表单管理"]) {
     assert.ok(FEATURE_PAGES.some((page) => page.name === label), label);
   }
+  assert.equal(FEATURE_PAGES.some((page) => page.name === "Mesa蒙特卡洛分析"), false);
   assert.equal(FEATURE_PAGES.some((page) => page.name === "蒙特卡洛实验结果"), false);
   assert.equal(FEATURE_PAGES.some((page) => page.name === "装备组成建模"), false);
   assert.equal(FEATURE_PAGES.some((page) => page.name === "装备故障建模"), false);
@@ -45,6 +47,16 @@ test("each feature page has page template metadata for grouped entry pages", () 
     assert.equal("ontology" in page, false, page.id);
     assert.equal("outputs" in page, false, page.id);
   }
+});
+
+test("active docs record lite Mesa analysis metric formulas", async () => {
+  const docs = await readFile(DOCS_README_URL, "utf8");
+
+  assert.match(docs, /\/api\/mesa-analysis-runs/);
+  assert.match(docs, /出动架次率 = 起飞总架次 \/ 飞机总数 \/ 仿真总天数/);
+  assert.match(docs, /战备完好率 = 每天 14:00 的可用飞机数量 \/ 总飞机数量/);
+  assert.match(docs, /平均备件延误时间\(h\) = 总调运延误时间\(分钟\) \/ 60 \/ 备件调运次数/);
+  assert.doesNotMatch(docs, /四个结果分析页通过 current result 面板和正式 projection payload 解锁结果/);
 });
 
 test("feature grouping preserves three-level navigation and internal fourth-level entries", () => {
@@ -94,10 +106,12 @@ test("feature grouping preserves three-level navigation and internal fourth-leve
   assert.deepEqual(grouped["系统运行支持模块"]["装备RMS指标分配"]["装备RMS指标分配"].map((page) => page.name), ["装备RMS指标分配"]);
   assert.deepEqual(grouped["备件规划评估模块"]["仿真实验"]["仿真实验方案管理"].map((page) => page.name), ["仿真实验方案管理"]);
   assert.deepEqual(grouped["任务可靠度评估模块"]["仿真实验"]["仿真实验方案管理"].map((page) => page.name), ["仿真实验方案管理"]);
-  assert.deepEqual(grouped["备件规划评估模块"]["仿真实验"]["可视化推演"].map((page) => page.name), ["可视化实验启动与停止"]);
-  assert.deepEqual(grouped["任务可靠度评估模块"]["仿真实验"]["可视化推演"].map((page) => page.name), ["可视化实验启动与停止"]);
-  assert.deepEqual(grouped["备件规划评估模块"]["仿真实验"]["蒙特卡洛实验"].map((page) => page.name), ["实验列表", "添加/编辑实验", "实验详情"]);
-  assert.deepEqual(grouped["任务可靠度评估模块"]["仿真实验"]["蒙特卡洛实验"].map((page) => page.name), ["实验列表", "添加/编辑实验", "实验详情"]);
+  assert.deepEqual(grouped["备件规划评估模块"]["仿真实验"]["可视化推演"].map((page) => page.name), ["Mesa页面"]);
+  assert.deepEqual(grouped["任务可靠度评估模块"]["仿真实验"]["可视化推演"].map((page) => page.name), ["Mesa页面"]);
+  assert.deepEqual(grouped["备件规划评估模块"]["仿真实验"]["蒙特卡洛实验"].map((page) => page.name), ["实验详情"]);
+  assert.deepEqual(grouped["任务可靠度评估模块"]["仿真实验"]["蒙特卡洛实验"].map((page) => page.name), ["实验详情"]);
+  assert.equal("Mesa分析" in grouped["备件规划评估模块"]["仿真实验"], false);
+  assert.equal("Mesa分析" in grouped["任务可靠度评估模块"]["仿真实验"], false);
   assert.deepEqual(Object.keys(grouped["备件规划评估模块"]["结果分析"]), ["备件短板分析", "飞机转场携行清单分析"]);
   assert.deepEqual(grouped["备件规划评估模块"]["结果分析"]["备件短板分析"].map((page) => page.name), ["备件短板分析"]);
   assert.equal(FEATURE_PAGES.some((page) => page.name === "仿真实验方案创建"), false);
@@ -113,14 +127,26 @@ test("feature grouping preserves three-level navigation and internal fourth-leve
   assert.equal(getFeaturePageById("spare-planning-experiment-edit").name, "仿真实验方案管理");
   assert.equal(getFeaturePageById("mission-reliability-experiment-create").name, "仿真实验方案管理");
   assert.equal(getFeaturePageById("mission-reliability-experiment-edit").name, "仿真实验方案管理");
-  assert.equal(getFeaturePageById("spare-planning-monte-carlo-config").name, "添加/编辑实验");
-  assert.equal(getFeaturePageById("mission-reliability-monte-carlo-config").name, "添加/编辑实验");
-  assert.equal(getFeaturePageById("spare-planning-monte-carlo-results").id, "spare-planning-monte-carlo-experiment-list");
-  assert.equal(getFeaturePageById("spare-planning-monte-carlo-results-display").id, "spare-planning-monte-carlo-experiment-list");
-  assert.equal(getFeaturePageById("mission-reliability-monte-carlo-results").id, "mission-reliability-monte-carlo-experiment-list");
-  assert.equal(getFeaturePageById("mission-reliability-monte-carlo-results-display").id, "mission-reliability-monte-carlo-experiment-list");
-  assert.equal(getFeaturePageById("spare-planning-scenario-switch").component, "visual-simulation");
-  assert.equal(getFeaturePageById("spare-planning-visual-results").component, "visual-simulation");
+  assert.equal(getFeaturePageById("spare-planning-monte-carlo-config").id, "spare-planning-monte-carlo-experiment-detail");
+  assert.equal(getFeaturePageById("mission-reliability-monte-carlo-config").id, "mission-reliability-monte-carlo-experiment-detail");
+  assert.equal(getFeaturePageById("spare-planning-monte-carlo-experiment-list").id, "spare-planning-monte-carlo-experiment-detail");
+  assert.equal(getFeaturePageById("mission-reliability-monte-carlo-experiment-list").id, "mission-reliability-monte-carlo-experiment-detail");
+  assert.equal(getFeaturePageById("spare-planning-monte-carlo-experiment-edit").id, "spare-planning-monte-carlo-experiment-detail");
+  assert.equal(getFeaturePageById("mission-reliability-monte-carlo-experiment-edit").id, "mission-reliability-monte-carlo-experiment-detail");
+  assert.equal(getFeaturePageById("spare-planning-monte-carlo-experiment-detail").component, "lite-mesa-monte-carlo-analysis");
+  assert.equal(getFeaturePageById("mission-reliability-monte-carlo-experiment-detail").component, "lite-mesa-monte-carlo-analysis");
+  assert.equal(getFeaturePageById("spare-planning-monte-carlo-results").id, "system-management-project-data-management");
+  assert.equal(getFeaturePageById("spare-planning-monte-carlo-results-display").id, "system-management-project-data-management");
+  assert.equal(getFeaturePageById("mission-reliability-monte-carlo-results").id, "system-management-project-data-management");
+  assert.equal(getFeaturePageById("mission-reliability-monte-carlo-results-display").id, "system-management-project-data-management");
+  assert.equal(getFeaturePageById("spare-planning-visual-mesa-page").component, "visual-simulation");
+  assert.equal(getFeaturePageById("mission-reliability-visual-mesa-page").component, "visual-simulation");
+  assert.equal(getFeaturePageById("spare-planning-visual-start-stop").id, "spare-planning-visual-mesa-page");
+  assert.equal(getFeaturePageById("mission-reliability-visual-start-stop").id, "mission-reliability-visual-mesa-page");
+  assert.equal(getFeaturePageById("spare-planning-scenario-switch").id, "spare-planning-visual-mesa-page");
+  assert.equal(getFeaturePageById("spare-planning-visual-results").id, "spare-planning-visual-mesa-page");
+  assert.equal(getFeaturePageById("mission-reliability-scenario-switch").id, "mission-reliability-visual-mesa-page");
+  assert.equal(getFeaturePageById("mission-reliability-visual-results").id, "mission-reliability-visual-mesa-page");
   assert.equal(getFeaturePageById("mission-reliability-task-reliability").name, "任务可靠度评估");
   assert.equal(getFeaturePageById("system-management-project-data-management").component, "system-project-management");
   assert.equal(getFeaturePageById("system-management-modeling-granularity-management").component, "system-project-management");
@@ -133,6 +159,32 @@ test("feature grouping preserves three-level navigation and internal fourth-leve
   assert.equal(getFeaturePageById("mission-reliability-equipment-composition").id, "mission-reliability-equipment-system");
   assert.equal(getFeaturePageById("mission-reliability-equipment-failure").id, "mission-reliability-equipment-system");
   assert.equal(getFeaturePageById("mission-reliability-rms-allocation").id, "system-management-equipment-rms-allocation");
+});
+
+test("modeling form management describes composite task item fields", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const compositeSheetSource = appSource.slice(
+    appSource.indexOf('key: "composite-task"'),
+    appSource.indexOf('key: "periodic-task"')
+  );
+
+  for (const label of [
+    "基本任务名称",
+    "编队名称",
+    "出发时间（HH：MM）",
+    "任务优先级（1最高）",
+    "单日重复次数",
+    "间隔小时数",
+    "装备类型",
+    "任务时长",
+    "要求装备数量",
+    "最小装备数量"
+  ]) {
+    assert.ok(compositeSheetSource.includes(`"${label}"`), label);
+  }
+  assert.doesNotMatch(compositeSheetSource, /回收时间/);
+  assert.doesNotMatch(compositeSheetSource, /任务项/);
+  assert.doesNotMatch(compositeSheetSource, /首波时间/);
 });
 
 test("system support project management removes standalone modeling import route but keeps local import actions", async () => {
@@ -169,6 +221,10 @@ test("page revision report is archived under reports with its screenshot evidenc
 test("experiment plan management remains visible because it is source design scope", async () => {
   const catalogSource = await readFile(new URL("../front/feature-catalog.mjs", import.meta.url), "utf8");
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const currentContextSource = appSource.slice(
+    appSource.indexOf("function shouldShowCurrentContext"),
+    appSource.indexOf("function shouldUseExperimentPlanContextDropdown")
+  );
   const sourceRows = catalogSource.slice(
     catalogSource.indexOf("const SOURCE_ROWS"),
     catalogSource.indexOf("export const FEATURE_PAGES")
@@ -180,6 +236,7 @@ test("experiment plan management remains visible because it is source design sco
   assert.doesNotMatch(sourceRows, /experiment-plan-editor/);
   assert.match(appSource, /function renderExperimentPlanList/);
   assert.match(appSource, /function renderExperimentPlanEditor/);
+  assert.match(currentContextSource, /page\.component !== "experiment-plan-management"/);
 });
 
 test("experiment plan list keeps selection with backend row actions", async () => {
@@ -226,7 +283,7 @@ test("frontend business authoring pages do not hydrate missing imported data fro
     sourceSlice("function renderSupportOrganizationWorkbench", "function renderOrgTreeNode"),
     sourceSlice("function renderSupportActivityWorkbench", "function renderSupportActivityTreeNode"),
     sourceSlice("function renderExperimentPlanList", "function renderExperimentPlanEditor"),
-    sourceSlice("function renderMonteCarloExperimentList", "function renderMonteCarloExperimentEditor")
+    sourceSlice("function renderLiteMesaMonteCarloAnalysis", "function syncLiteMesaSettingsFromMonteCarloExperiment")
   ].join("\n");
 
   assert.doesNotMatch(staticSeedSource, /const SUPPORT_ORG_TREE|const SUPPORT_ACTIVITY_PLANS|const MISSION_|const SUPPORT_/);
@@ -244,6 +301,20 @@ test("equipment task modeling omits built-in scenario and task profile parameter
   assert.match(appSource, /field\("任务类型", "missionProfile\.profileType"\)/);
   assert.match(appSource, /field\("重复周期", "missionProfile\.repeatCycleHours", "number"\)/);
   assert.match(appSource, /field\("结束条件", "missionProfile\.endCondition"\)/);
+});
+
+test("built-in scenario airport fields stay string-only in Project JSON", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const builtInScenarioSource = appSource.slice(
+    appSource.indexOf("function renderBuiltInScenario"),
+    appSource.indexOf("function renderCombatUnitModeling")
+  );
+
+  assert.match(builtInScenarioSource, /field\("机场", "airports\.0"\)/);
+  assert.doesNotMatch(builtInScenarioSource, /airports\.0\.name/);
+  assert.doesNotMatch(builtInScenarioSource, /airports\.1\.name/);
+  assert.doesNotMatch(builtInScenarioSource, /airports\.0\.supportNodeId/);
+  assert.doesNotMatch(builtInScenarioSource, /airports\.1\.distanceToMissionKm/);
 });
 
 test("support organization fourth-level tab ids resolve to distinct resource pages", () => {
@@ -326,10 +397,15 @@ test("page revision project and system management controls stay wired", async ()
     appSource.indexOf("async function handleLogin")
   );
 
-  assert.match(projectListSource, /data-project-add/);
+  assert.doesNotMatch(projectListSource, /data-project-add/);
+  assert.match(projectListSource, /data-project-template-select/);
+  assert.match(projectListSource, /data-project-create-from-template/);
+  assert.doesNotMatch(projectListSource, /data-modeling-import-template/);
+  assert.doesNotMatch(projectListSource, /data-project-create-from-import/);
+  assert.doesNotMatch(projectListSource, /Level 0|Level 1|选择内置导入模板/);
   assert.match(projectListSource, /data-project-edit/);
   assert.match(projectListSource, /data-project-delete/);
-  assert.match(projectListSource, /data-project-import/);
+  assert.doesNotMatch(projectListSource, /data-project-import/);
   assert.match(projectListSource, /data-project-export/);
   assert.match(projectListSource, /data-system-management-entry/);
   assert.doesNotMatch(projectListSource, /进入当前项目/);
@@ -343,12 +419,15 @@ test("page revision project and system management controls stay wired", async ()
   assert.doesNotMatch(systemProjectSource, /项目独有数据/);
   assert.doesNotMatch(systemProjectSource, /新增项目数据/);
   assert.doesNotMatch(projectDataSource, /<aside class="tree-container">/);
-  assert.match(systemProjectSource, /data-system-data-export/);
-  assert.match(systemProjectSource, /data-system-data-select-all/);
-  assert.match(systemProjectSource, /data-system-data-module-select/);
-  assert.match(systemProjectSource, /data-system-data-select/);
-  assert.match(systemProjectSource, /data-system-data-status/);
-  assert.match(systemProjectSource, /data-system-data-export-preview/);
+  assert.match(systemProjectSource, /data-project-data-config-module="project-data-layer"/);
+  assert.match(systemProjectSource, /data-project-data-project-list/);
+  assert.match(systemProjectSource, /data-project-template-management/);
+  assert.match(systemProjectSource, /data-project-data-overview/);
+  assert.match(systemProjectSource, /data-project-json-viewer/);
+  assert.doesNotMatch(projectDataSource, /data-system-data-export/);
+  assert.doesNotMatch(projectDataSource, /data-system-data-select-all/);
+  assert.doesNotMatch(projectDataSource, /data-system-data-status/);
+  assert.doesNotMatch(projectDataSource, /data-system-data-export-preview/);
   assert.match(systemProjectSource, /data-modeling-import-action="load-fixture"/);
   assert.match(systemProjectSource, /data-modeling-import-action="validate"/);
   assert.match(granularitySource, /function renderModelingGranularityTable/);
@@ -365,12 +444,11 @@ test("page revision project and system management controls stay wired", async ()
   assert.doesNotMatch(granularitySource, /<th>操作<\/th>/);
   assert.doesNotMatch(projectDataSource, /<th>操作<\/th>/);
   assert.doesNotMatch(projectDataSource, />配置<\/button>/);
-  assert.match(eventSource, /const systemDataSelectAll = event\.target\.closest\("\[data-system-data-select-all\]"\)/);
-  assert.match(eventSource, /const systemDataModuleSelect = event\.target\.closest\("\[data-system-data-module-select\]"\)/);
-  assert.match(eventSource, /const systemDataSelect = event\.target\.closest\("\[data-system-data-select\]"\)/);
+  assert.match(eventSource, /const projectDataProjectButton = event\.target\.closest\("\[data-project-data-project-option\]"\)/);
+  assert.match(eventSource, /const projectTemplateAction = event\.target\.closest\("\[data-project-template-action\]"\)/);
   assert.match(eventSource, /const modelingFieldSheetSelect = event\.target\.closest\("\[data-modeling-field-sheet-select\]"\)/);
   assert.match(eventSource, /const modelingFieldSelect = event\.target\.closest\("\[data-modeling-field-select\]"\)/);
-  assert.match(eventSource, /const importProjectButton = event\.target\.closest\("\[data-project-import\]"\)/);
+  assert.doesNotMatch(eventSource, /data-project-import/);
   assert.match(eventSource, /const exportProjectButton = event\.target\.closest\("\[data-project-export\]"\)/);
 
   assert.match(userSource, /data-system-user-select-all/);
@@ -385,7 +463,7 @@ test("page revision project and system management controls stay wired", async ()
   assert.match(eventSource, /const permissionConfigureButton = event\.target\.closest\("\[data-permission-configure\]"\)/);
 });
 
-test("project data management exposes modeling sheet selection and local import actions", async () => {
+test("project data management exposes project list, template controls, overview, and raw json", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const systemProjectSource = appSource.slice(
     appSource.indexOf("function renderSystemProjectManagement"),
@@ -399,10 +477,6 @@ test("project data management exposes modeling sheet selection and local import 
     appSource.indexOf("function bindEvents"),
     appSource.indexOf("async function handleLogin")
   );
-  const dataActionSource = appSource.slice(
-    appSource.indexOf("function activeSystemDataDefinition"),
-    appSource.indexOf("function renderSystemBasicConfig")
-  );
 
   for (const label of ["装备系统", "装备任务", "保障组织", "保障活动"]) {
     assert.match(appSource, new RegExp(label));
@@ -411,41 +485,61 @@ test("project data management exposes modeling sheet selection and local import 
   assert.doesNotMatch(systemProjectSource, /项目独有数据/);
   assert.doesNotMatch(systemProjectSource, /新增项目数据/);
   assert.doesNotMatch(systemProjectSource, /仿真建模数据表 sheet 选择器/);
-  assert.match(systemProjectSource, /项目数据管理配置/);
-  assert.match(projectDataSource, /data-project-data-config-module="modeling-data-source"/);
-  assert.match(projectDataSource, /data-project-data-config-module="modeling-import-publish"/);
-  assert.match(systemProjectSource, /data-system-config-save/);
-  assert.match(systemProjectSource, /data-modeling-import-action="load-fixture"/);
-  assert.match(systemProjectSource, /data-modeling-import-action="backfill-current-project"/);
-  assert.match(systemProjectSource, /data-modeling-import-action="validate"/);
-  assert.match(systemProjectSource, /data-modeling-import-action="save-draft"/);
-  assert.match(projectDataSource, /data-system-data-export/);
-  assert.match(projectDataSource, /data-system-data-select-all/);
-  assert.match(systemProjectSource, /data-system-data-module-select/);
-  assert.match(systemProjectSource, /data-system-data-select="\$\{htmlEscape\(sheet\.key\)\}"/);
-  assert.match(projectDataSource, /data-system-data-status/);
-  assert.match(projectDataSource, /data-system-data-export-preview/);
+  assert.doesNotMatch(systemProjectSource, /项目数据管理配置/);
+  assert.match(projectDataSource, /data-project-data-config-module="project-data-layer"/);
+  assert.match(projectDataSource, /data-project-data-project-list/);
+  assert.match(projectDataSource, /data-project-data-project-option/);
+  assert.match(projectDataSource, /【模板】/);
+  assert.match(projectDataSource, /data-project-template-management/);
+  assert.match(projectDataSource, /data-project-template-action="set"/);
+  assert.match(projectDataSource, /data-project-template-action="unset"/);
+  assert.match(projectDataSource, /data-project-data-overview/);
+  assert.match(projectDataSource, /任务/);
+  assert.match(projectDataSource, /装备/);
+  assert.match(projectDataSource, /保障系统/);
+  assert.match(projectDataSource, /保障活动/);
+  assert.match(projectDataSource, /data-project-json-viewer/);
+  assert.match(projectDataSource, /data-project-json-node/);
+  assert.match(projectDataSource, /<details/);
+  assert.match(projectDataSource, /projectInfo\.isTemplate/);
+  assert.match(projectDataSource, /backendApi\.getProject/);
+  assert.match(projectDataSource, /backendApi\.saveProject/);
+  assert.doesNotMatch(projectDataSource, /data-project-data-config-module="modeling-data-source"/);
+  assert.doesNotMatch(projectDataSource, /建模数据源配置/);
+  assert.doesNotMatch(projectDataSource, /data-project-data-config-module="published-template-library"/);
+  assert.doesNotMatch(projectDataSource, /data-published-template-list/);
+  assert.doesNotMatch(projectDataSource, /data-published-template-preview/);
+  assert.doesNotMatch(projectDataSource, /data-modeling-import-action/);
+  assert.doesNotMatch(projectDataSource, /字段路径/);
+  assert.doesNotMatch(projectDataSource, /目标路径/);
+  assert.doesNotMatch(projectDataSource, /data-system-data-export/);
+  assert.doesNotMatch(projectDataSource, /data-system-data-select-all/);
+  assert.doesNotMatch(projectDataSource, /data-system-data-module-select/);
+  assert.doesNotMatch(projectDataSource, /data-system-data-select="\$\{htmlEscape\(sheet\.key\)\}"/);
+  assert.doesNotMatch(projectDataSource, /data-system-data-status/);
+  assert.doesNotMatch(projectDataSource, /data-system-data-export-preview/);
   assert.doesNotMatch(projectDataSource, /<th>操作<\/th>/);
   assert.doesNotMatch(projectDataSource, />配置<\/button>/);
 
-  assert.match(eventSource, /const systemDataExportButton = event\.target\.closest\("\[data-system-data-export\]"\)/);
-  assert.match(eventSource, /const systemDataSelectAll = event\.target\.closest\("\[data-system-data-select-all\]"\)/);
-  assert.match(eventSource, /const systemDataModuleSelect = event\.target\.closest\("\[data-system-data-module-select\]"\)/);
-  assert.match(eventSource, /const systemDataSelect = event\.target\.closest\("\[data-system-data-select\]"\)/);
-  assert.match(dataActionSource, /systemDataExportPreview = \{/);
-  assert.match(dataActionSource, /rowCount: rows\.length/);
-  assert.match(dataActionSource, /filename: systemDataExportFilename\(tab\)/);
-  assert.match(dataActionSource, /downloadSystemDataExport\(systemDataExportPreview\.filename,/);
-  assert.match(dataActionSource, /selectedSystemDataKeys\.has\(row\.key\)/);
-  assert.match(dataActionSource, /function systemDataExportFilename\(tab\)/);
-  assert.match(dataActionSource, /function buildSystemDataExportPayload\(tab, rows\)/);
-  assert.match(dataActionSource, /function downloadSystemDataExport\(filename, payload\)/);
-  assert.match(dataActionSource, /new Blob\(\[JSON\.stringify\(payload, null, 2\)\]/);
-  assert.match(dataActionSource, /URL\.createObjectURL\(blob\)/);
-  assert.match(dataActionSource, /anchor\.download = filename/);
-  assert.match(dataActionSource, /anchor\.click\(\)/);
-  assert.match(dataActionSource, /URL\.revokeObjectURL\(url\)/);
-  assert.match(projectDataSource, /data-system-data-export-filename/);
+  assert.match(eventSource, /const projectDataProjectButton = event\.target\.closest\("\[data-project-data-project-option\]"\)/);
+  assert.match(eventSource, /const projectTemplateAction = event\.target\.closest\("\[data-project-template-action\]"\)/);
+});
+
+test("active docs explain Project JSON non-model field cleanup boundary", async () => {
+  const rootReadme = await readFile(new URL("../README.md", import.meta.url), "utf8");
+  const docsReadme = await readFile(new URL("../docs/README.md", import.meta.url), "utf8");
+  const roadmap = await readFile(new URL("../docs/product-roadmap.md", import.meta.url), "utf8");
+  const contractsReadme = await readFile(new URL("../contracts/README.md", import.meta.url), "utf8");
+  const agentGuide = await readFile(new URL("../agent.md", import.meta.url), "utf8");
+  const combinedDocs = [rootReadme, docsReadme, roadmap, contractsReadme, agentGuide].join("\n");
+
+  assert.match(combinedDocs, /missionProfile\.profileType/);
+  assert.match(combinedDocs, /missionProfile\.analysisRequests/);
+  assert.match(combinedDocs, /deletedSupportResourceKeys/);
+  assert.match(combinedDocs, /supportActivities\[\]\.requireDevices/);
+  assert.match(combinedDocs, /requiredDevices[^。]*实际消费字段|supportActivities\[\]\.requiredDevices remains part/);
+  assert.match(combinedDocs, /ExperimentPlan\.config\.analysisRequests\.largeSample/);
+  assert.doesNotMatch(combinedDocs, /RunService 编译单次 smoke run/);
 });
 
 test("project list edit action opens a usable inline editor", async () => {
@@ -481,7 +575,36 @@ test("project list edit action opens a usable inline editor", async () => {
   assert.doesNotMatch(editSource, /name: project\.name\.endsWith\("（编辑）"\)/);
 });
 
-test("project list imports and exports project JSON while keeping existing card actions", async () => {
+test("project list lays out each project as a single full-width row", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const styleSource = await readFile(new URL("../front/styles.css", import.meta.url), "utf8");
+  const projectListSource = appSource.slice(
+    appSource.indexOf("function renderProjectListPage"),
+    appSource.indexOf("function renderNavigation")
+  );
+  const projectGridStyle = styleSource.slice(
+    styleSource.indexOf(".project-grid"),
+    styleSource.indexOf(".project-card")
+  );
+  const projectCardStyle = styleSource.slice(
+    styleSource.indexOf(".project-card {"),
+    styleSource.indexOf(".project-card.active")
+  );
+  const projectCardFootStyle = styleSource.slice(
+    styleSource.indexOf(".project-card-foot {"),
+    styleSource.indexOf(".project-card-foot .compact-actions")
+  );
+
+  assert.match(projectListSource, /<section class="project-grid">/);
+  assert.match(projectGridStyle, /grid-template-columns:\s*1fr/);
+  assert.doesNotMatch(projectGridStyle, /auto-fit|auto-fill|minmax\(/);
+  assert.match(projectCardStyle, /grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto/);
+  assert.match(projectCardStyle, /align-items:\s*center/);
+  assert.doesNotMatch(projectCardStyle, /flex-direction:\s*column/);
+  assert.match(projectCardFootStyle, /justify-content:\s*flex-end/);
+});
+
+test("project list exports project JSON without keeping a direct Project JSON import path", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const styleSource = await readFile(new URL("../front/styles.css", import.meta.url), "utf8");
   const projectListSource = appSource.slice(
@@ -493,7 +616,7 @@ test("project list imports and exports project JSON while keeping existing card 
     appSource.indexOf("app.addEventListener(\"change\"")
   );
   const ioSource = appSource.slice(
-    appSource.indexOf("function openProjectJsonImportPicker"),
+    appSource.indexOf("async function exportProjectJson"),
     appSource.indexOf("async function flushPendingProjectDraftAutosave")
   );
   const hydrateSource = appSource.slice(
@@ -505,77 +628,73 @@ test("project list imports and exports project JSON while keeping existing card 
     "data-enter-workbench",
     "data-project-edit",
     "data-project-delete",
-    "data-project-import",
     "data-project-export"
   ]) {
     assert.match(projectListSource, new RegExp(selector));
   }
-  assert.match(clickSource, /openProjectJsonImportPicker\(importProjectButton\.dataset\.projectImport\)/);
+  assert.doesNotMatch(projectListSource, /data-project-import/);
+  assert.doesNotMatch(clickSource, /openProjectJsonImportPicker|data-project-import/);
   assert.match(clickSource, /exportProjectJson\(exportProjectButton\.dataset\.projectExport\)/);
-  assert.match(ioSource, /input\.accept = "application\/json,\.json"/);
-  assert.match(ioSource, /input\.dataset\.projectImportFile/);
-  assert.match(ioSource, /JSON\.parse\(await file\.text\(\)\)/);
-  assert.match(ioSource, /validateImportedProjectJson\(projectJson\)/);
-  assert.match(ioSource, /persistManualProjectJsonDraft\(project\.id, normalizedProjectJson\)/);
   assert.match(ioSource, /resolveProjectJsonForExport\(project\)/);
   assert.match(ioSource, /downloadProjectJsonExport\(filename, projectJson\)/);
   assert.match(ioSource, /new Blob\(\[JSON\.stringify\(projectJson, null, 2\)\]/);
-  assert.match(ioSource, /buildBackendProjectJson\(projectJson, project\)/);
-  assert.match(hydrateSource, /readManualProjectJsonDraft\(currentProject\?\.id\)/);
+  assert.doesNotMatch(appSource, /function openProjectJsonImportPicker|function importProjectJsonFile|function validateImportedProjectJson|function projectCardFromProjectJson/);
+  assert.doesNotMatch(appSource, /persistManualProjectJsonDraft|readManualProjectJsonDraft/);
+  assert.doesNotMatch(hydrateSource, /Project JSON 草稿|本地项目 JSON/);
   assert.match(styleSource, /\.project-card-foot \.compact-actions[\s\S]*flex-wrap: wrap/);
 });
 
-test("results analysis pages are rendered as four dedicated ship-front aligned dashboards", async () => {
+test("results analysis pages route to independent Mesa session wrappers", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
-  assert.match(appSource, /function renderSpareShortfallAnalysis/);
-  assert.match(appSource, /function renderCarryListAnalysis/);
-  assert.match(appSource, /function renderTaskReliabilityAnalysis/);
-  assert.match(appSource, /function renderDowntimeFactorAnalysis/);
-  assert.match(appSource, /class="analysis-dashboard"/);
-  assert.match(appSource, /class="analysis-filter-bar"/);
-  assert.match(appSource, /class="analysis-chart-panel"/);
-  assert.match(appSource, /class="decision-support-card"/);
-  assert.match(appSource, /备件需求量降序/);
-  assert.match(appSource, /携行清单迭代建议/);
-  assert.match(appSource, /任务可靠度指标分解/);
-  assert.match(appSource, /停机贡献因素排序/);
+  const wrapperSource = appSource.slice(
+    appSource.indexOf("function renderLiteMesaAnalysisPage"),
+    appSource.indexOf("function liteMesaAnalysisDefinitionForPage")
+  );
+  const pages = [
+    ["spare-planning-spare-shortfall-analysis", "spare_shortfall"],
+    ["spare-planning-carry-list-analysis", "carry_list"],
+    ["mission-reliability-task-reliability", "mission_reliability"],
+    ["mission-reliability-downtime-factor-analysis", "downtime_factors"]
+  ];
+  for (const [featureId, analysisType] of pages) {
+    const page = getFeaturePageById(featureId);
+    assert.equal(page.component, "lite-mesa-analysis", featureId);
+    assert.ok(page.dataObjects.includes("projectDraft"), featureId);
+    assert.ok(page.dataObjects.includes("mesaSessionResult"), featureId);
+    assert.match(appSource, new RegExp(`${analysisType}:\\s*\\{[\\s\\S]*experimentId`));
+  }
+  assert.match(appSource, /function renderLiteMesaAnalysisPage/);
+  assert.match(appSource, /function runLiteMesaAnalysisPage/);
+  assert.match(appSource, /let liteMesaAnalysisResults =/);
+  assert.match(appSource, /data-lite-mesa-analysis-action="run">运行分析/);
+  assert.match(appSource, /backendApi\.runLiteMesaAnalysis/);
+  assert.match(appSource, /session_complete/);
+  assert.doesNotMatch(wrapperSource, /full-settings/);
+  assert.match(appSource, /能满足任务要求置信度/);
+  assert.doesNotMatch(appSource, /\["用户参数"/);
+  assert.doesNotMatch(wrapperSource, /创建正式 run、result 与 artifact|正式 current-analysis|runFormalAnalysisPage/);
+  assert.doesNotMatch(appSource, /await runCurrentAnalysisPage\(page\)/);
 });
 
-test("empty-shell result analysis renders current-result guidance instead of synthetic preview rows", async () => {
+test("independent Mesa wrapper pages keep formal projection UI isolated", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
-  const spareSource = appSource.slice(
-    appSource.indexOf("function renderSpareShortfallAnalysis"),
-    appSource.indexOf("function renderCarryListAnalysis")
+  const mesaSource = appSource.slice(
+    appSource.indexOf("function renderLiteMesaAnalysisPage"),
+    appSource.indexOf("function liteMesaAnalysisDefinitionForPage")
   );
-  const carrySource = appSource.slice(
-    appSource.indexOf("function renderCarryListAnalysis"),
-    appSource.indexOf("function carryPriority")
-  );
-  const reliabilitySource = appSource.slice(
-    appSource.indexOf("function renderTaskReliabilityAnalysis"),
-    appSource.indexOf("function renderDowntimeFactorAnalysis")
-  );
-  const downtimeSource = appSource.slice(
-    appSource.indexOf("function renderDowntimeFactorAnalysis"),
-    appSource.indexOf("function analysisTypeForPage")
-  );
-
-  for (const source of [spareSource, carrySource, reliabilitySource, downtimeSource]) {
-    assert.match(source, /renderAnalysisDashboard/);
-    assert.match(source, /等待当前分析结果/);
-    assert.match(source, /运行当前分析/);
-    assert.doesNotMatch(source, /hasPreviewAnalysisData|renderAnalysisEmptyState/);
-    assert.doesNotMatch(source, /\bsingleResult\b|\bmonteCarloResult\b/);
-    assert.doesNotMatch(source, /Math\.min\(\.\.\.rows|Math\.max\(\.\.\.rows|Math\.max\(\.\.\.factors/);
-    assert.doesNotMatch(source, /Infinity|-Infinity/);
-  }
-  assert.match(carrySource, /currentAnalysisProfileForPage/);
-  assert.match(carrySource, /missionConfidenceTarget/);
-  assert.match(carrySource, /missionDurationMinutes/);
-  assert.doesNotMatch(carrySource, /<select>|优化条件|carryObjectiveOption|singleResult\.carryList/);
-  assert.doesNotMatch(spareSource, /P2\/P3 类备件/);
-  assert.doesNotMatch(reliabilitySource, /第 7 波|wave \* 12/);
-  assert.doesNotMatch(downtimeSource, /无可用飞机", "4"|飞机故障", "5"|平均故障维修时间/);
+  assert.notEqual(mesaSource.length, 0, "renderLiteMesaAnalysisPage source exists");
+  assert.match(mesaSource, /data-lite-mesa-analysis-action="run"/);
+  assert.match(mesaSource, /liteMesaAnalysisDetailTitle/);
+  assert.match(mesaSource, /liteMesaAnalysisResultHeader/);
+  assert.doesNotMatch(mesaSource, /lite-mesa-hero-meter/);
+  assert.doesNotMatch(mesaSource, /definition\.experimentId/);
+  assert.doesNotMatch(mesaSource, /会话内结果明细|建模粒度不足时不会伪造结论/);
+  assert.doesNotMatch(mesaSource, /definition\.pageGoal|<p>\$\{htmlEscape\(definition\.pageGoal\)\}<\/p>/);
+  assert.doesNotMatch(mesaSource, /lite-mesa-source-grid|selectedExperimentPlanName\(\)/);
+  assert.doesNotMatch(mesaSource, /renderCurrentAnalysisResultPanel|renderAnalysisDashboard|renderFormalAnalysisBoundaryNote/);
+  assert.doesNotMatch(mesaSource, /currentAnalysisResultForPage|formalProjectionFromCurrentResult|backendApi\.getCurrentAnalysisResult/);
+  assert.doesNotMatch(mesaSource, /data-analysis-action="run-current"/);
+  assert.doesNotMatch(mesaSource, /\bsingleResult\b|\bmonteCarloResult\b|hasPreviewAnalysisData|renderAnalysisEmptyState/);
 });
 
 test("M6.2 formal result boundary unlocks only compiler-provenanced analysis artifacts", async () => {
@@ -659,11 +778,16 @@ test("mesa visualization escapes contract-provider fields before innerHTML inser
   assert.doesNotMatch(stageSource, /\$\{aircraft\.label\}/);
   assert.doesNotMatch(stageSource, /\$\{mission\.status\}/);
 
-  assert.match(aircraftSource, /htmlEscape\(aircraft\.label\)/);
   assert.match(aircraftSource, /htmlEscape\(aircraft\.type\)/);
   assert.match(aircraftSource, /htmlEscape\(selectedAircraft\.label\)/);
-  assert.match(aircraftSource, /htmlEscape\(selectedAircraft\.failedLru/);
+  assert.match(aircraftSource, /htmlEscape\(visualAircraftStateLabel\(aircraft\.state\)\)/);
+  assert.match(aircraftSource, /htmlEscape\(aircraft\.state \|\| "-"\)/);
+  assert.match(aircraftSource, /htmlEscape\(detail\)/);
+  assert.match(aircraftSource, /htmlEscape\(meta\)/);
+  assert.match(aircraftSource, /htmlEscape\(item\.name\)/);
   assert.doesNotMatch(aircraftSource, /\$\{selectedAircraft\.label\}/);
+  assert.doesNotMatch(aircraftSource, /\$\{detail\}/);
+  assert.doesNotMatch(aircraftSource, /\$\{item\.name\}/);
 
   assert.match(missionSource, /htmlEscape\(row\.basicTaskName\)/);
   assert.match(missionSource, /htmlEscape\(row\.id\)/);
@@ -672,12 +796,12 @@ test("mesa visualization escapes contract-provider fields before innerHTML inser
   assert.match(missionSource, /htmlEscape\(tailNumber\)/);
   assert.doesNotMatch(missionSource, /assignedTailNumbers\.join\(" \/ "\)/);
 
-  assert.match(supportSource, /htmlEscape\(resource\.label\)/);
-  assert.match(supportSource, /htmlEscape\(spare\.label\)/);
-  assert.match(supportSource, /htmlEscape\(job\.tailNumber\)/);
-  assert.match(supportSource, /htmlEscape\(job\.task\)/);
-  assert.match(supportSource, /htmlEscape\(job\.state\)/);
-  assert.match(supportSource, /htmlEscape\(event\.message\)/);
+  assert.match(stageSource, /htmlEscape\(row\.name\)/);
+  assert.match(stageSource, /htmlEscape\(row\.primaryLabel\)/);
+  assert.match(stageSource, /htmlEscape\(row\.secondaryLabel\)/);
+  assert.match(supportSource, /htmlEscape\(row\.title\)/);
+  assert.match(supportSource, /htmlEscape\(row\.message \|\| "保障作业"\)/);
+  assert.match(supportSource, /htmlEscape\(row\.meta \|\| ""\)/);
 });
 
 test("support organization and activity pages follow ship_front tree table editor structure", async () => {
@@ -968,7 +1092,8 @@ test("support activity pages align to page suggestion activity fields", async ()
   assert.match(basicActivityLibrarySource, /\`\$\{resourceKind\}-models\`/);
   assert.match(basicActivityLibrarySource, /\`\$\{resourceKind\}-names\`/);
   assert.match(basicActivityLibrarySource, /buildSupportResourceRows\(resourceType, root\)/);
-  assert.match(basicActivityLibrarySource, /personnelRequirements/);
+  assert.match(basicActivityLibrarySource, /job\.personnel =/);
+  assert.doesNotMatch(basicActivityLibrarySource, /job\.personnelRequirements =/);
   assert.match(basicActivityLibrarySource, /equipmentRequirements/);
   assert.match(basicActivityLibrarySource, /spareRequirements/);
   assert.match(basicActivityLibrarySource, /basicActivityInput/);
@@ -1307,6 +1432,19 @@ test("frontend source omits removed page-side context panels", async () => {
   assert.doesNotMatch(appSource, /\$\{item\.component\}/);
 });
 
+test("left feature navigation summaries show explicit collapsed and expanded indicators", async () => {
+  const styleSource = await readFile(new URL("../front/styles.css", import.meta.url), "utf8");
+  const navSource = styleSource.slice(
+    styleSource.indexOf(".nav-module summary,"),
+    styleSource.indexOf(".nav-tertiary-link")
+  );
+
+  assert.match(navSource, /\.nav-module > summary::before,\s*\.nav-secondary > summary::before/);
+  assert.match(navSource, /content:\s*">"/);
+  assert.match(navSource, /\.nav-module\[open\] > summary::before,\s*\.nav-secondary\[open\] > summary::before/);
+  assert.match(navSource, /content:\s*"v"/);
+});
+
 test("modeling and experiment pages use compact Chinese fourth-level tabs when needed", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   assert.doesNotMatch(appSource, /<h2>\$\{htmlEscape\(page\.tertiary\)\}<\/h2>/);
@@ -1403,7 +1541,7 @@ test("basic mission page follows ship front basic task modeling structure", asyn
   assert.match(appSource, /data-select-basic-mission/);
   assert.match(appSource, /function addBasicMission\(\)/);
   assert.match(appSource, /selectedBasicMissionEquipmentType/);
-  assert.match(appSource, /const equipmentType = selectedBasicMissionEquipmentType \|\| selected\.task\.equipmentType \|\| scenario\.basicMission\.equipmentType/);
+  assert.match(appSource, /const equipmentType = selectedBasicMissionEquipmentType \|\| sourceTask\.equipmentType \|\| scenarioEquipmentModel\(\)/);
   assert.match(appSource, /function deleteSelectedBasicMission\(\)/);
   assert.match(appSource, /let selectedBasicMissionKey = "primary"/);
   assert.match(stylesSource, /\.tree-node-label\.selected/);
@@ -1563,13 +1701,17 @@ test("mission task profile pages split composite and periodic task modeling", as
   assert.match(compositeSource, /data-composite-task-item-add/);
   assert.match(compositeSource, /data-composite-task-item-delete/);
   assert.match(compositeSource, /basicMissionSelect/);
-  assert.match(compositeSource, /findBasicMissionByName/);
+  assert.match(compositeSource, /findBasicMissionForTaskItem/);
   assert.match(compositeSource, /compositeTaskInheritedBasicFields/);
   assert.match(compositeSource, /readOnlyTableValue/);
   assert.match(compositeSource, /典型组合任务时序表/);
   assert.match(compositeSource, /典型组合任务时序图/);
   assert.match(compositeSource, /renderCompositeTimelineChart/);
-  assert.match(compositeSource, /任务优先级/);
+  assert.ok(
+    compositeSource.includes("<thead><tr><th>基本任务名称</th><th>编队名称</th><th>出发时间（HH：MM）</th><th>任务优先级（1最高）</th><th>单日重复次数</th><th>间隔小时数</th><th>装备类型</th><th>任务时长</th><th>要求装备数量</th><th>最小装备数量</th><th>删除</th></tr></thead>"),
+    "composite task item table must follow the requested basic-task field order"
+  );
+  assert.match(compositeSource, /任务优先级（1最高）/);
   assert.match(compositeSource, /要求装备数量/);
   assert.match(compositeSource, /最小装备数量/);
   assert.doesNotMatch(compositeSource, /回收时刻/);
@@ -1683,23 +1825,26 @@ test("page revision equipment and mission input constraints are guarded", async 
   assert.doesNotMatch(basicMissionSource, /转移条件/);
 
   assert.match(compositeItemSource, /basicMissionSelect/);
-  assert.match(compositeItemSource, /findBasicMissionByName/);
+  assert.match(compositeItemSource, /findBasicMissionForTaskItem/);
   assert.match(compositeItemSource, /const inherited = compositeTaskInheritedBasicFields\(item, basicTask\)/);
   assert.match(compositeItemSource, /readOnlyTableValue\(inherited\.equipmentType\)/);
   assert.match(compositeItemSource, /readOnlyTableValue\(inherited\.taskDurationMinutes\)/);
   assert.match(compositeItemSource, /readOnlyTableValue\(inherited\.equipmentQuantity\)/);
-  assert.match(compositeItemSource, /readOnlyTableValue\(inherited\.minRequiredSystems\)/);
+  assert.doesNotMatch(compositeItemSource, /readOnlyTableValue\(inherited\.minRequiredSystems\)/);
   assert.doesNotMatch(compositeItemSource, /valueInput\(`\$\{compositePath\}\.taskItems\.\$\{index\}\.equipmentType/);
   assert.doesNotMatch(compositeItemSource, /valueInput\(`\$\{compositePath\}\.taskItems\.\$\{index\}\.taskDurationMinutes/);
   assert.doesNotMatch(compositeItemSource, /valueInput\(`\$\{compositePath\}\.taskItems\.\$\{index\}\.equipmentQuantity/);
-  assert.doesNotMatch(compositeItemSource, /valueInput\(`\$\{compositePath\}\.taskItems\.\$\{index\}\.minRequiredSystems/);
   assert.doesNotMatch(compositeItemSource, /requiredEquipmentQuantity/);
   assert.match(compositeItemSource, /minRequiredSystems/);
   assert.match(compositeItemSource, /taskItems\.\$\{index\}\.groupName/);
   assert.match(compositeItemSource, /taskItems\.\$\{index\}\.firstWaveTime/);
   assert.match(compositeItemSource, /taskItems\.\$\{index\}\.priority/);
+  assert.match(compositeItemSource, /taskItems\.\$\{index\}\.priority`, "number", \{ min: "1", step: "1" \}/);
   assert.match(compositeItemSource, /taskItems\.\$\{index\}\.dailyRepeatCount/);
+  assert.match(compositeItemSource, /taskItems\.\$\{index\}\.dailyRepeatCount`, "number", \{ min: "1", step: "1" \}/);
   assert.match(compositeItemSource, /taskItems\.\$\{index\}\.intervalHours/);
+  assert.match(compositeItemSource, /taskItems\.\$\{index\}\.intervalHours`, "number", \{ min: "0.1", step: "0.1" \}/);
+  assert.match(compositeItemSource, /valueInput\(`\$\{compositePath\}\.taskItems\.\$\{index\}\.minRequiredSystems`, "number"/);
   assert.doesNotMatch(compositeItemSource, /任务下达时间/);
   assert.doesNotMatch(compositeItemSource, /回收时刻/);
 });
@@ -1824,6 +1969,19 @@ test("editable modeling lists expose page suggestion action entries", async () =
   assert.match(experimentPlanSource, /<td>\$\{htmlEscape\(plan\.steps\)\}<\/td>/);
   assert.match(experimentPlanSource, /<td>\$\{htmlEscape\(plan\.samples\)\}<\/td>/);
   assert.doesNotMatch(experimentPlanSource, /data-experiment-plan-delete disabled/);
+  const experimentPlanEditorSource = appSource.slice(
+    appSource.indexOf("function renderExperimentPlanEditor"),
+    appSource.indexOf("function renderScenarioOverrideRow")
+  );
+  assert.match(experimentPlanEditorSource, /scenario-composition-workspace/);
+  assert.match(experimentPlanEditorSource, /scenario-project-json-panel/);
+  assert.match(experimentPlanEditorSource, /renderScenarioModelingDataTree\(sourceProjectJson, selectedPath\)/);
+  assert.match(experimentPlanEditorSource, /renderSelectedScenarioOverrideEditor\(selectedOverrideContext\)/);
+  assert.match(appSource, /data-scenario-modeling-path/);
+  assert.match(appSource, /data-scenario-selected-override-value/);
+  assert.match(experimentPlanEditorSource, /scenario-composition-editor-panel/);
+  assert.match(experimentPlanEditorSource, /scenario-override-path-options/);
+  assert.match(experimentPlanEditorSource, /scenarioOverrideParameterOptions/);
   assert.match(appSource, /return "spare-planning-experiment-plan-management"/);
 });
 
@@ -2130,28 +2288,58 @@ test("frontend tables do not use generic operation column headers", async () => 
   assert.doesNotMatch(appSource, /<th(?:\s[^>]*)?>\s*操作\s*<\/th>/);
 });
 
-test("monte carlo configuration drives the displayed result sample count", async () => {
+test("monte carlo settings submit lightweight Mesa analysis instead of formal run", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   assert.doesNotMatch(appSource, /runMonteCarlo\(scenario, \{ samples: 4 \}\)/);
   assert.match(appSource, /let \{ previewSingleResult: singleResult, previewMonteCarloResult: monteCarloResult \} = buildPreviewResultState\(scenario\)/);
-  assert.match(appSource, /id="mc-samples"[^>]*data-experiment-plan-path="experiment\.samples"/);
+  assert.match(appSource, /data-lite-mesa-field="samples"/);
+  const runSource = appSource.slice(
+    appSource.indexOf("async function runLiteMesaMonteCarloAnalysis"),
+    appSource.indexOf("function normalizeLiteMesaMonteCarloResult")
+  );
+  assert.match(runSource, /backendApi\.runLiteMesaAnalysis\(projectJson,\s*"mission_reliability"/);
+  assert.doesNotMatch(runSource, /startMonteCarloRunThroughApi/);
+  assert.match(appSource, /function normalizeLiteMesaMonteCarloResult/);
   assert.match(appSource, /function updatePreviewResultsThroughApiClient/);
   assert.match(appSource, /data-save-plan/);
 });
 
-test("monte carlo editor hides sweep inputs and keeps Monte Carlo local until explicit save", async () => {
+test("direct Monte Carlo Mesa page hides sweep inputs and keeps formal runs explicit", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
-  const editorSource = appSource.slice(
-    appSource.indexOf("function renderMonteCarloExperimentEditor"),
-    appSource.indexOf("function renderMonteCarloExperimentDetail")
+  const mesaSource = appSource.slice(
+    appSource.indexOf("function renderLiteMesaMonteCarloAnalysis"),
+    appSource.indexOf("function updateLiteMesaMonteCarloSetting")
   );
 
-  assert.doesNotMatch(editorSource, /故障率扫描/);
-  assert.doesNotMatch(editorSource, /备件倍数/);
-  assert.doesNotMatch(editorSource, /保障容量/);
-  assert.doesNotMatch(editorSource, /data-mc-array-path/);
-  assert.doesNotMatch(editorSource, /monteCarlo\.failureRates\.join/);
+  assert.doesNotMatch(mesaSource, /故障率扫描/);
+  assert.doesNotMatch(mesaSource, /备件倍数/);
+  assert.doesNotMatch(mesaSource, /保障容量/);
+  assert.doesNotMatch(mesaSource, /data-mc-array-path/);
+  assert.doesNotMatch(mesaSource, /monteCarlo\.failureRates\.join/);
+  assert.doesNotMatch(appSource, /function renderMonteCarloExperimentEditor/);
   assert.match(appSource, /const savePlanButton = event\.target\.closest\("\[data-save-plan\]"\)/);
+});
+
+test("monte carlo experiment detail labels backend Mesa execution without formal run copy", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const renderSource = appSource.slice(
+    appSource.indexOf("function renderLiteMesaMonteCarloAnalysis"),
+    appSource.indexOf("function liteMesaMetricStatisticRows")
+  );
+
+  assert.match(renderSource, /蒙特卡洛分析/);
+  assert.match(renderSource, /运行分析/);
+  assert.match(renderSource, /尚未运行分析/);
+  assert.match(renderSource, /正在运行 Mesa 分析/);
+  assert.doesNotMatch(renderSource, /正式 Monte Carlo run/);
+  assert.doesNotMatch(renderSource, /正在提交正式 Monte Carlo run/);
+  assert.doesNotMatch(renderSource, /后端 Mesa 仿真分析/);
+  assert.doesNotMatch(renderSource, /class="status-badge success"/);
+  assert.doesNotMatch(renderSource, /前端建模 \+ Mesa 分析/);
+  assert.doesNotMatch(renderSource, /Mesa蒙特卡洛分析/);
+  assert.doesNotMatch(renderSource, /尚未运行 Mesa 分析/);
+  assert.match(renderSource, /等待运行 Mesa 分析/);
+  assert.match(renderSource, /Mesa 分析完成|Mesa 分析失败/);
 });
 
 test("modeling import publish falls back to a new version when the current snapshot is referenced", async () => {
@@ -2171,93 +2359,156 @@ test("modeling import publish falls back to a new version when the current snaps
   assert.match(flowSource, /createReferencedModelingImportVersion\(importPackage, versionSuffix\)/);
 });
 
-test("monte carlo experiment management has list, editor, and detail pages", async () => {
+test("monte carlo experiment navigation goes directly to embedded Mesa detail", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const styleSource = await readFile(new URL("../front/styles.css", import.meta.url), "utf8");
-  const createExperimentSource = appSource.slice(
-    appSource.indexOf("function createMonteCarloExperiment"),
-    appSource.indexOf("function monteCarloExperimentListForModule")
+  const liteMesaSource = appSource.slice(
+    appSource.indexOf("function renderLiteMesaMonteCarloAnalysis"),
+    appSource.indexOf("function updateLiteMesaMonteCarloSetting")
   );
-  assert.match(appSource, /class="mc-workbench"/);
-  assert.match(appSource, /function renderMonteCarloExperimentList/);
-  assert.match(appSource, /function renderMonteCarloExperimentEditor/);
-  assert.match(appSource, /function renderMonteCarloExperimentDetail/);
-  for (const sharedField of [
-    "experiment_id",
-    "experiment_type",
-    "experimentPlanName",
-    "scenarioId",
-    "seed",
-    "status",
-    "progress",
-    "runId",
-    "artifactId"
-  ]) {
-    assert.match(createExperimentSource, new RegExp(`${sharedField}(\\s*:|,)`), `MonteCarloExperiment must carry ${sharedField}`);
-  }
-  assert.match(appSource, /蒙特卡洛实验列表/);
-  assert.match(appSource, /保存全部实验运行历史/);
-  assert.match(appSource, /添加\/编辑蒙特卡洛实验/);
-  assert.match(appSource, /蒙特卡洛实验详情/);
-  assert.match(appSource, /选择方案/);
-  assert.match(appSource, /class="readonly-field"/);
-  assert.match(appSource, /仿真次数/);
-  assert.match(appSource, /data-mc-action="start"/);
-  assert.match(appSource, /experimentRunStatus = "运行中"/);
-  assert.match(appSource, /htmlEscape\(experiment\.status\)/);
-  assert.match(appSource, /selectedFeatureId = getMonteCarloExperimentDetailFeatureId\(page\.module\)/);
+  assert.doesNotMatch(appSource, /function renderMonteCarloExperimentList/);
+  assert.doesNotMatch(appSource, /function renderMonteCarloExperimentEditor/);
+  assert.doesNotMatch(appSource, /function renderMonteCarloExperimentDetail/);
+  assert.doesNotMatch(appSource, /蒙特卡洛实验列表/);
+  assert.doesNotMatch(appSource, /保存全部实验运行历史/);
+  assert.doesNotMatch(appSource, /添加\/编辑蒙特卡洛实验/);
+  assert.doesNotMatch(appSource, /data-mc-experiment-action="add"/);
+  assert.doesNotMatch(appSource, /data-mc-experiment-action="edit"/);
+  assert.doesNotMatch(appSource, /data-mc-experiment-action="list"/);
+  assert.match(appSource, /function normalizeSelectedFeatureHash/);
+  assert.match(appSource, /const normalizedHash = `feature=\$\{encodeURIComponent\(featureId\)\}`/);
+  assert.match(appSource, /window\.history\.replaceState\(null, "", `\$\{location\.pathname\}\$\{location\.search\}#\$\{normalizedHash\}`\)/);
+  assert.match(appSource, /location\.hash = normalizedHash/);
+  assert.match(liteMesaSource, /蒙特卡洛分析/);
+  assert.doesNotMatch(liteMesaSource, /正式 Monte Carlo run/);
+  assert.doesNotMatch(liteMesaSource, /后端 Mesa 仿真分析/);
+  assert.doesNotMatch(liteMesaSource, /lite-mesa-hero-meter/);
+  assert.doesNotMatch(liteMesaSource, /lite-mesa-source-grid/);
+  assert.doesNotMatch(liteMesaSource, /Mesa蒙特卡洛分析|尚未运行 Mesa 分析/);
+  assert.match(liteMesaSource, /主要输出指标统计值/);
   assert.doesNotMatch(appSource, /class="mc-main-tabs"/);
   assert.doesNotMatch(appSource, /class="mc-subtabs"/);
   assert.doesNotMatch(appSource, /正交实验配置与分析/);
   assert.doesNotMatch(appSource, /正交因素/);
   assert.doesNotMatch(appSource, /预检查/);
-  assert.match(styleSource, /\.mc-workbench/);
-  assert.match(styleSource, /\.mc-config-panel/);
+  assert.match(styleSource, /\.lite-mesa-workbench/);
+  assert.match(styleSource, /\.lite-mesa-settings/);
 });
 
-test("browser smoke enters monte carlo editor or detail before using sweep inputs", async () => {
+test("monte carlo detail embeds the Mesa Monte Carlo page", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const styleSource = await readFile(new URL("../front/styles.css", import.meta.url), "utf8");
+  const page = getFeaturePageById("spare-planning-monte-carlo-experiment-detail");
+  const missionPage = getFeaturePageById("mission-reliability-monte-carlo-experiment-detail");
+  const grouped = groupFeaturePages(FEATURE_PAGES);
+  const renderSource = appSource.slice(
+    appSource.indexOf("function renderLiteMesaMonteCarloAnalysis"),
+    appSource.indexOf("function renderAnalysis")
+  );
+  const changeSource = appSource.slice(
+    appSource.indexOf("app.addEventListener(\"change\""),
+    appSource.indexOf("app.addEventListener(\"focusout\"")
+  );
+
+  assert.equal(FEATURE_PAGES.length, 45);
+  assert.equal(page.name, "实验详情");
+  assert.equal(page.secondary, "仿真实验");
+  assert.equal(page.tertiary, "蒙特卡洛实验");
+  assert.equal(page.component, "lite-mesa-monte-carlo-analysis");
+  assert.equal(missionPage.component, "lite-mesa-monte-carlo-analysis");
+  assert.equal(getFeaturePageById("spare-planning-mesa-monte-carlo-analysis").id, "system-management-project-data-management");
+  assert.equal(getFeaturePageById("mission-reliability-mesa-monte-carlo-analysis").id, "system-management-project-data-management");
+  assert.equal("Mesa分析" in grouped["备件规划评估模块"]["仿真实验"], false);
+  assert.equal("Mesa分析" in grouped["任务可靠度评估模块"]["仿真实验"], false);
+  assert.match(appSource, /runMonteCarlo/);
+  assert.match(appSource, /function runLiteMesaMonteCarloAnalysis/);
+  assert.match(appSource, /data-current-experiment-plan/);
+  assert.match(renderSource, /selectedExperimentPlanName\(\)/);
+  assert.doesNotMatch(renderSource, /后端 Mesa 仿真分析/);
+  assert.doesNotMatch(renderSource, /class="status-badge success"/);
+  assert.doesNotMatch(renderSource, /lite-mesa-hero-meter/);
+  assert.doesNotMatch(renderSource, /lite-mesa-source-grid/);
+  assert.match(appSource, /let liteMesaMonteCarloSettings =/);
+  assert.match(appSource, /let liteMesaMonteCarloResult =/);
+  assert.doesNotMatch(renderSource, /前端建模 \+ 仿真分析/);
+  assert.match(renderSource, /正在运行 Mesa 分析/);
+  assert.match(renderSource, /data-lite-mesa-field="samples"/);
+  assert.match(renderSource, /data-lite-mesa-field="seed"/);
+  assert.match(renderSource, /主要输出指标统计值/);
+  assert.match(renderSource, /均值/);
+  assert.match(renderSource, /最小值/);
+  assert.match(renderSource, /最大值/);
+  assert.match(renderSource, /标准差/);
+  assert.match(appSource, /mission_success_rate/);
+  assert.match(appSource, /ready_rate/);
+  assert.match(appSource, /key: "mean_transport_delay", label: "平均备件延误时间"/);
+  assert.doesNotMatch(appSource.slice(
+    appSource.indexOf("const LITE_MESA_MONTE_CARLO_METRICS"),
+    appSource.indexOf("const LITE_MESA_ANALYSIS_DEFINITIONS")
+  ), /shortage_events|短缺事件/);
+  assert.match(changeSource, /const liteMesaMonteCarloInput = event\.target\.closest\("\[data-lite-mesa-field\]"\)/);
+  assert.doesNotMatch(renderSource, /非正式|预览|本地预览|正式后端结果/);
+  const runSource = appSource.slice(
+    appSource.indexOf("async function runLiteMesaMonteCarloAnalysis"),
+    appSource.indexOf("function liteMesaMetricStatisticRows")
+  );
+  assert.match(runSource, /backendApi\.runLiteMesaAnalysis\(projectJson,\s*"mission_reliability"/);
+  assert.doesNotMatch(runSource, /startMonteCarloRunThroughApi/);
+  assert.doesNotMatch(runSource, /monteCarloExperimentId: selectedMonteCarloExperimentId/);
+  assert.doesNotMatch(runSource, /runMonteCarlo\(projectJson/);
+  assert.match(styleSource, /\.lite-mesa-workbench/);
+  assert.match(styleSource, /\.lite-mesa-settings/);
+  assert.match(styleSource, /\.lite-mesa-stat-table/);
+});
+
+test("browser smoke enters monte carlo embedded Mesa detail", async () => {
   const smokeSource = await readFile(new URL("../reports/m3-1-browser-backend-smoke/browser-backend-smoke.mjs", import.meta.url), "utf8");
-  const smokeStart = smokeSource.indexOf('await clickFeature(page, "spare-planning-monte-carlo-experiment-list")');
-  const smokeEnd = smokeSource.indexOf('await page.waitForFunction(() => Boolean(JSON.parse(localStorage.getItem("spare-mvp:lastBackendRun")');
+  const smokeStart = smokeSource.indexOf('await clickFeature(page, "spare-planning-monte-carlo-experiment-detail")');
+  const smokeEnd = smokeSource.indexOf('await page.screenshot({ path: `${screenshotDir}/01-lite-mesa-detail.png`, fullPage: true })');
   const smokeMonteCarloSource = smokeSource.slice(
     smokeStart,
     smokeEnd
   );
-  const helperStart = smokeSource.indexOf("async function openMonteCarloExperimentForRun");
-  const helperEnd = smokeSource.indexOf("async function openMonteCarloExperimentDetailForRun");
-  const openExperimentSource = smokeSource.slice(
-    helperStart,
-    helperEnd
-  );
 
   assert.notEqual(smokeStart, -1, "smoke Monte Carlo flow start marker exists");
+  assert.doesNotMatch(smokeSource, /spare-planning-monte-carlo-experiment-list/);
+  assert.doesNotMatch(smokeSource, /openMonteCarloExperimentForRun/);
+  assert.doesNotMatch(smokeSource, /data-mc-experiment-action/);
   assert.doesNotMatch(smokeMonteCarloSource, /spare-planning-monte-carlo-config/);
   assert.notEqual(smokeEnd, -1, "smoke Monte Carlo flow end marker exists");
-  assert.ok(smokeEnd > smokeStart, "smoke Monte Carlo result navigation follows config flow");
-  assert.notEqual(helperStart, -1, "smoke open experiment helper exists");
-  assert.notEqual(helperEnd, -1, "smoke detail helper follows open experiment helper");
-  assert.ok(helperEnd > helperStart, "smoke helper source slice is ordered");
-  assert.match(openExperimentSource, /data-mc-experiment-action="edit"/);
-  assert.match(openExperimentSource, /data-mc-experiment-action="add"/);
+  assert.ok(smokeEnd > smokeStart, "smoke Monte Carlo smoke opens embedded Mesa detail directly");
   assert.doesNotMatch(smokeMonteCarloSource, /data-mc-array-path="monteCarlo\.failureRates"/);
-  assert.ok(
-    smokeMonteCarloSource.indexOf("openMonteCarloExperimentForRun") <
-      smokeMonteCarloSource.indexOf("openMonteCarloExperimentDetailForRun"),
-    "smoke must leave the Monte Carlo experiment list before opening detail"
-  );
-  assert.match(smokeSource, /data-mc-action="start"/);
-  assert.match(smokeSource, /function openMonteCarloExperimentForRun/);
 });
 
-test("analysis pages expose current result flow without user-visible task or artifact selectors", async () => {
+test("formal current result helpers remain internal and are not routed from result analysis pages", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const analysisSource = appSource.slice(
     appSource.indexOf("function renderCurrentAnalysisResultPanel"),
     appSource.indexOf("function renderBar")
   );
+  const renderMainSource = appSource.slice(
+    appSource.indexOf("function renderMainComponent"),
+    appSource.indexOf("function createExperimentPlanBranchFromCurrentProject")
+  );
+  const pages = [
+    "spare-planning-spare-shortfall-analysis",
+    "spare-planning-carry-list-analysis",
+    "mission-reliability-task-reliability",
+    "mission-reliability-downtime-factor-analysis"
+  ].map((featureId) => getFeaturePageById(featureId));
 
   assert.match(appSource, /function renderCurrentAnalysisResultPanel/);
+  assert.match(appSource, /function renderExperimentPlanContextDropdown/);
+  assert.match(appSource, /function selectedExperimentPlanProjectJson/);
   assert.match(appSource, /function runCurrentAnalysisPage/);
+  assert.match(renderMainSource, /page\.component === "lite-mesa-analysis"/);
+  assert.match(renderMainSource, /renderLiteMesaAnalysisPage\(page\)/);
+  assert.match(renderMainSource, /page\.component === "analysis"/);
+  assert.match(renderMainSource, /renderAnalysis\(page\)/);
+  for (const page of pages) {
+    assert.equal(page.component, "lite-mesa-analysis", page.id);
+    assert.notEqual(page.component, "analysis", page.id);
+  }
   assert.match(analysisSource, /当前分析结果/);
   assert.match(analysisSource, /data-analysis-action="run-current"/);
   assert.match(analysisSource, /status-badge/);
@@ -2269,37 +2520,58 @@ test("analysis pages expose current result flow without user-visible task or art
   assert.doesNotMatch(appSource, /source: "analysis:auto-created"/);
 });
 
-test("result analysis page main flows consume only current profiles and current results", async () => {
+test("independent Mesa result analysis pages consume only session settings and session results", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
-  const sourceSlice = (startMarker, endMarker) => {
-    const start = appSource.indexOf(startMarker);
-    const end = appSource.indexOf(endMarker);
-    assert.notEqual(start, -1, `${startMarker} marker exists`);
-    assert.notEqual(end, -1, `${endMarker} marker exists`);
-    assert.ok(end > start, `${startMarker} appears before ${endMarker}`);
-    return appSource.slice(start, end);
-  };
-  const pageSources = [
-    sourceSlice("function renderSpareShortfallAnalysis", "function renderCarryListAnalysis"),
-    sourceSlice("function renderCarryListAnalysis", "function carryPriority"),
-    sourceSlice("function renderTaskReliabilityAnalysis", "function renderDowntimeFactorAnalysis"),
-    sourceSlice("function renderDowntimeFactorAnalysis", "function analysisTypeForPage")
-  ];
-  const dashboardSource = sourceSlice("function renderAnalysisDashboard", "function renderAnalysisProjectionResultPanel");
+  const mesaSource = appSource.slice(
+    appSource.indexOf("function renderLiteMesaAnalysisPage"),
+    appSource.indexOf("function field(label")
+  );
 
-  assert.match(appSource, /let currentAnalysisProfiles = createDefaultCurrentAnalysisProfiles\(\)/);
-  assert.match(appSource, /let currentAnalysisResults = createEmptyCurrentAnalysisResults\(currentAnalysisProfiles\)/);
-  assert.match(appSource, /function currentAnalysisProfileForPage/);
-  for (const source of [...pageSources, dashboardSource]) {
-    assert.match(source, /currentAnalysisResultForPage|renderAnalysisDashboard|formalProjectionFromCurrentResult/);
-    assert.doesNotMatch(source, /\bsingleResult\b|\bmonteCarloResult\b|hasPreviewAnalysisData|renderAnalysisEmptyState/);
-    assert.doesNotMatch(source, /data-mc-action|data-mc-experiment|data-mesa-run-select|data-action="m7-/);
-    assert.doesNotMatch(source, /analysisTasks|monteCarloExperiments|selectedMonteCarloExperimentId/);
-    assert.doesNotMatch(source, /artifact_manifest_id|mc_experiment_id|experiment_id|historical|history/);
+  assert.match(appSource, /let liteMesaAnalysisSettings = createDefaultLiteMesaAnalysisSettings\(\)/);
+  assert.match(appSource, /let liteMesaAnalysisResults = \{\}/);
+  assert.match(appSource, /data-current-experiment-plan/);
+  assert.match(mesaSource, /async function runLiteMesaAnalysisPage/);
+  assert.match(mesaSource, /backendApi\.runLiteMesaAnalysis/);
+  assert.match(mesaSource, /selectedExperimentPlanProjectJson\(\)/);
+  assert.match(mesaSource, /payload\.status === "session_complete"/);
+  assert.doesNotMatch(mesaSource, /async function runFormalAnalysisPage/);
+  assert.doesNotMatch(mesaSource, /await runCurrentAnalysisPage\(page\)/);
+  assert.doesNotMatch(mesaSource, /创建正式 run、result 与 artifact/);
+  assert.doesNotMatch(mesaSource, /runMonteCarlo\(projectJson/);
+  assert.doesNotMatch(mesaSource, /buildLiteMesaAnalysisSessionResult/);
+  for (const analysisType of ["spare_shortfall", "carry_list", "mission_reliability", "downtime_factors"]) {
+    assert.match(appSource, new RegExp(`${analysisType}:\\s*\\{[\\s\\S]*experimentId`));
   }
+  assert.doesNotMatch(mesaSource, /currentAnalysisResultForPage|renderCurrentAnalysisResultPanel|formalProjectionFromCurrentResult/);
+  assert.doesNotMatch(mesaSource, /backendApi\.getCurrentAnalysisResult|startMonteCarloRunThroughApi|submitRunIntent/);
+  assert.doesNotMatch(mesaSource, /analysisTasks|monteCarloExperiments|selectedMonteCarloExperimentId/);
+  assert.doesNotMatch(mesaSource, /artifact_manifest_id|mc_experiment_id|historical|history/);
+  assert.doesNotMatch(mesaSource, /status: "completed"/);
 });
 
-test("formal Monte Carlo projection result panels live on their matching analysis pages", async () => {
+test("downtime formal analysis relies on model log event snapshot contract", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const apiSource = await readFile(new URL("../src/spare_mvp_backend/api.py", import.meta.url), "utf8");
+  const adapterSource = await readFile(new URL("../src/spare_mvp_contract/adapter.py", import.meta.url), "utf8");
+  const modelSource = await readFile(new URL("../src/spare_mvp_abm/aircraft_support_v1/model.py", import.meta.url), "utf8");
+  const mesaSource = appSource.slice(
+    appSource.indexOf("function renderLiteMesaAnalysisPage"),
+    appSource.indexOf("function field(label")
+  );
+
+  assert.match(mesaSource, /eventSnapshots/);
+  assert.match(mesaSource, /停机事件一览/);
+  assert.match(mesaSource, /飞机状态/);
+  assert.match(mesaSource, /保障资源占用/);
+  assert.match(mesaSource, /备件短缺/);
+  assert.match(adapterSource, /anomaly_snapshots/);
+  assert.match(modelSource, /write_event_snapshots/);
+  assert.match(modelSource, /event_snapshot/);
+  assert.match(apiSource, /run_lite_mesa_analysis/);
+  assert.match(apiSource, /write_event_snapshots/);
+});
+
+test("formal projection renderers remain isolated from independent Mesa routing", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const mcResultSource = appSource.slice(
     appSource.indexOf("function renderMonteCarloResults"),
@@ -2317,6 +2589,10 @@ test("formal Monte Carlo projection result panels live on their matching analysi
     appSource.indexOf("function renderFormalProjectionBody"),
     appSource.indexOf("function visibleDowntimeAnomalySnapshots")
   );
+  const renderMainSource = appSource.slice(
+    appSource.indexOf("function renderMainComponent"),
+    appSource.indexOf("function createExperimentPlanBranchFromCurrentProject")
+  );
 
   assert.match(mcResultSource, /renderMonteCarloFormalBlockedState\(boundary\)/);
   assert.match(mcResultSource, /renderMonteCarloAnalysisResultLocations\(boundary\)/);
@@ -2324,12 +2600,14 @@ test("formal Monte Carlo projection result panels live on their matching analysi
   assert.match(locationSource, /analysisPageFeatureIdForType\(view\.analysisType\)/);
   assert.doesNotMatch(appSource, /function renderMonteCarloFormalProjectionResults|mc-formal-results|mc-formal-projection/);
   assert.match(dashboardSource, /renderAnalysisProjectionResultPanel\(formalProjection\)/);
+  assert.match(renderMainSource, /page\.component === "lite-mesa-analysis"/);
+  assert.match(renderMainSource, /page\.component === "analysis"/);
   for (const analysisType of ["spare_shortfall", "carry_list", "mission_reliability", "downtime_factors"]) {
     assert.match(formalProjectionSource, new RegExp(`formalProjection\\.analysisType === "${analysisType}"`));
   }
 });
 
-test("analysis current result state is hydrated, isolated, and recoverable", async () => {
+test("formal current result hydration is gated away from lightweight Mesa result pages", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const featurePageSource = appSource.slice(
     appSource.indexOf("function renderFeaturePage"),
@@ -2352,6 +2630,15 @@ test("analysis current result state is hydrated, isolated, and recoverable", asy
     appSource.indexOf("async function refreshRunResultThroughApi")
   );
 
+  for (const featureId of [
+    "spare-planning-spare-shortfall-analysis",
+    "spare-planning-carry-list-analysis",
+    "mission-reliability-task-reliability",
+    "mission-reliability-downtime-factor-analysis"
+  ]) {
+    assert.equal(getFeaturePageById(featureId).component, "lite-mesa-analysis");
+  }
+  assert.match(featurePageSource, /if \(page\.component === "analysis"\) \{/);
   assert.match(featurePageSource, /ensureCurrentAnalysisResultLoaded\(page\)/);
   assert.match(hydrateSource, /backendApi\.getCurrentAnalysisResult\(savedProject\.project_id,\s*analysisType\)/);
   assert.match(hydrateSource, /currentAnalysisResultLoadInFlight/);
@@ -2412,14 +2699,38 @@ test("experiment plan editor edits an isolated branch rather than the project dr
   assert.doesNotMatch(saveButtonSource, /saveCurrentProjectThroughApi\(\)/);
 });
 
-test("monte carlo launch creates a run from the current experiment plan branch", async () => {
+test("experiment plan editor exposes seed policy and scenario composition controls", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const editorSource = appSource.slice(
+    appSource.indexOf("function renderExperimentPlanEditor"),
+    appSource.indexOf("function experimentPlanField")
+  );
+  const experimentPlanChangeSource = appSource.slice(
+    appSource.indexOf('const experimentPlanInput = event.target.closest("[data-experiment-plan-path]"'),
+    appSource.indexOf('const rmsInput = event.target.closest("[data-rms-path]"')
+  );
+
+  assert.match(editorSource, /data-experiment-seed-policy/);
+  assert.match(editorSource, /data-experiment-seed-base/);
+  assert.match(editorSource, /data-scenario-override-path/);
+  assert.match(editorSource, /data-scenario-override-add/);
+  assert.match(editorSource, /data-scenario-override-remove/);
+  assert.match(experimentPlanChangeSource, /experimentPlanDraft/);
+  assert.doesNotMatch(experimentPlanChangeSource, /setPath\(scenario/);
+});
+
+test("monte carlo launch creates a formal run from a plan branch or explicit override", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const launchSource = appSource.slice(
     appSource.indexOf("async function startMonteCarloRunThroughApi"),
     appSource.indexOf("async function refreshRunResultThroughApi")
   );
 
-  assert.match(launchSource, /const planProjectJson = buildBackendProjectJson\(experimentPlanDraft, currentProject\)/);
+  assert.match(launchSource, /planProjectJsonOverride = null/);
+  assert.match(
+    launchSource,
+    /const planProjectJson = planProjectJsonOverride && typeof planProjectJsonOverride === "object"\s*\?\s*buildBackendProjectJson\(planProjectJsonOverride, currentProject\)\s*:\s*selectedExperimentPlanProjectJson\(\)/
+  );
   assert.match(appSource, /import \{[^}]*buildRunIntent[^}]*submitRunIntent[^}]*\} from "\.\/run-intent\.mjs"/s);
   assert.match(launchSource, /submitRunIntent\(backendApi,\s*\{/);
   assert.match(launchSource, /const runType = "monte_carlo"/);
@@ -2440,15 +2751,11 @@ test("monte carlo launch creates a run from the current experiment plan branch",
   assert.doesNotMatch(launchSource, /backendApi\.startMonteCarloRun/);
 });
 
-test("monte carlo detail uses bound run ledger status over stale experiment cache", async () => {
+test("formal Monte Carlo helpers keep bound run ledger status outside embedded detail", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const launchSource = appSource.slice(
     appSource.indexOf("async function startMonteCarloRunThroughApi"),
     appSource.indexOf("async function refreshRunResultThroughApi")
-  );
-  const detailSource = appSource.slice(
-    appSource.indexOf("function renderMonteCarloExperimentDetail"),
-    appSource.indexOf("function renderMonteCarloConfig")
   );
   const boundarySource = appSource.slice(
     appSource.indexOf("function monteCarloFormalResultBoundary"),
@@ -2458,9 +2765,7 @@ test("monte carlo detail uses bound run ledger status over stale experiment cach
   assert.match(appSource, /function monteCarloBoundRun/);
   assert.match(appSource, /function monteCarloBoundArtifactManifest/);
   assert.match(appSource, /function monteCarloDisplayStatus/);
-  assert.match(detailSource, /const displayStatus = monteCarloDisplayStatus\(experiment\)/);
-  assert.match(detailSource, /const boundRun = monteCarloBoundRun\(experiment\)/);
-  assert.match(detailSource, /boundRun\?\.run_id \|\| experiment\.runId/);
+  assert.doesNotMatch(appSource, /function renderMonteCarloExperimentDetail/);
   assert.match(boundarySource, /const boundRun = monteCarloBoundRun\(experiment\)/);
   assert.match(boundarySource, /const runStatus = String\(boundRun\?\.status \|\| experiment\?\.status \|\| ""\)/);
   assert.match(boundarySource, /isRunComplete\(boundRun\)/);
@@ -2475,10 +2780,6 @@ test("monte carlo config backfills empty draft to a single baseline value before
     appSource.indexOf("function createExperimentPlanBranchFromCurrentProject"),
     appSource.indexOf("function renderCollapsibleTree")
   );
-  const editorSource = appSource.slice(
-    appSource.indexOf("function renderMonteCarloExperimentEditor"),
-    appSource.indexOf("function renderMonteCarloExperimentDetail")
-  );
   const launchSource = appSource.slice(
     appSource.indexOf("async function startMonteCarloRunThroughApi"),
     appSource.indexOf("async function refreshRunResultThroughApi")
@@ -2490,13 +2791,14 @@ test("monte carlo config backfills empty draft to a single baseline value before
   assert.match(appSource, /spareMultipliers: \[1\]/);
   assert.match(appSource, /supportCapacities: \[1\]/);
   assert.match(branchSource, /ensureMonteCarloSweepDefaults\(experimentPlanDraft\)/);
-  assert.match(editorSource, /ensureMonteCarloSweepDefaults\(experimentPlanDraft\)/);
   assert.match(launchSource, /ensureMonteCarloSweepDefaults\(experimentPlanDraft\)/);
+  assert.doesNotMatch(appSource, /function renderMonteCarloExperimentEditor/);
 });
 
-test("M9.8 visual and formal run launches use aircraft_support_v1 through canonical runs", async () => {
+test("M9.8 formal and visual launches use aircraft_support_v1 formal runs", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const runIntentSource = await readFile(new URL("../front/run-intent.mjs", import.meta.url), "utf8");
+  const apiClientSource = await readFile(new URL("../front/api-client.mjs", import.meta.url), "utf8");
   const singleLaunchSource = appSource.slice(
     appSource.indexOf("async function startSingleRunThroughApi"),
     appSource.indexOf("async function startMonteCarloRunThroughApi")
@@ -2513,16 +2815,28 @@ test("M9.8 visual and formal run launches use aircraft_support_v1 through canoni
     appSource.indexOf('if (action === "start-new-run")'),
     appSource.indexOf("function startVisualizationReplay")
   );
+  const visualLaunchSource = appSource.slice(
+    appSource.indexOf("async function startFormalVisualizationRunThroughApi"),
+    appSource.indexOf("async function loadVisualizationReplayForRun")
+  );
 
   assert.match(appSource, /const FORMAL_AIRCRAFT_SUPPORT_MODEL_FAMILY = "aircraft_support_v1"/);
   assert.match(runIntentSource, /modelFamily = "aircraft_support_v1"/);
+  assert.doesNotMatch(apiClientSource, /runIndependentMesaVisualization\(projectJson/);
+  assert.doesNotMatch(apiClientSource, /path: "\/mesa-visualization-runs"/);
   assert.match(singleLaunchSource, /submitRunIntent\(backendApi,\s*\{/);
   assert.match(singleLaunchSource, /modelFamily: FORMAL_AIRCRAFT_SUPPORT_MODEL_FAMILY/);
   assert.match(monteCarloLaunchSource, /submitRunIntent\(backendApi,\s*\{/);
   assert.match(monteCarloLaunchSource, /modelFamily: FORMAL_AIRCRAFT_SUPPORT_MODEL_FAMILY/);
-  assert.match(visualNewRunSource, /await startSingleRunThroughApi\(\)/);
-  assert.doesNotMatch(visualSource, /formal run \/ aircraft_support_v1/);
-  assert.match(visualSource, /canonical \/api\/runs/);
+  assert.match(visualLaunchSource, /await startSingleRunThroughApi\(\)/);
+  assert.match(visualLaunchSource, /await refreshVisualizationRunList\(runId\)/);
+  assert.match(visualLaunchSource, /await loadVisualizationReplayForRun\(runId\)/);
+  assert.match(visualNewRunSource, /await startFormalVisualizationRunThroughApi\(\)/);
+  assert.doesNotMatch(appSource, /ensureIndependentMesaVisualizationStarted\(page\)/);
+  assert.match(appSource, /function renderExperimentPlanContextDropdown/);
+  assert.match(appSource, /data-current-experiment-plan/);
+  assert.match(visualSource, /正式可视化/);
+  assert.doesNotMatch(visualSource, /当前 Project 回放/);
   assert.doesNotMatch(visualSource, /mesa-abm-skill/);
   assert.doesNotMatch(visualSource, /Mesa ABM \/ aviation_support/);
 });
@@ -2793,7 +3107,7 @@ test("formal runs do not consume local preview outputs", async () => {
   );
   const refreshSource = appSource.slice(
     appSource.indexOf("async function refreshRunResultThroughApi"),
-    appSource.indexOf("async function hydrateLastBackendRunFromApi")
+    appSource.indexOf("async function refreshAnalysisProjectionPayloads")
   );
   const formalBoundarySource = appSource.slice(
     appSource.indexOf("function formalAnalysisBoundary"),
@@ -2824,7 +3138,7 @@ test("M8 formal analysis pages load and render matching projection payloads", as
   const apiClientSource = await readFile(new URL("../front/api-client.mjs", import.meta.url), "utf8");
   const refreshSource = appSource.slice(
     appSource.indexOf("async function refreshRunResultThroughApi"),
-    appSource.indexOf("async function hydrateLastBackendRunFromApi")
+    appSource.indexOf("async function refreshAnalysisProjectionPayloads")
   );
   const payloadSource = appSource.slice(
     appSource.indexOf("async function refreshAnalysisProjectionPayloads"),
@@ -2848,7 +3162,7 @@ test("M8 formal analysis pages load and render matching projection payloads", as
   assert.match(renderDashboardSource, /projection payload/);
 });
 
-test("Level 0 not-applicable analysis projections render as scoped not modeled instead of formal KPI rows", async () => {
+test("not-applicable analysis projections render as scoped not modeled instead of formal KPI rows", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const boundarySource = appSource.slice(
     appSource.indexOf("function formalAnalysisBoundary"),
@@ -2877,11 +3191,33 @@ test("Level 0 not-applicable analysis projections render as scoped not modeled i
   assert.match(projectionBodySource, /formalProjection\.formal === false/);
   assert.match(projectionBodySource, /required_domains/);
   assert.match(projectionBodySource, /disabled_domains/);
-  assert.match(projectionBodySource, /validationLevel/);
-  assert.match(projectionBodySource, /Level 0 未启用该分析所需保障域/);
+  assert.match(projectionBodySource, /该分析所需保障域未建模/);
+  assert.doesNotMatch(projectionBodySource, /validationLevel|validation_level/);
+  assert.doesNotMatch(projectionBodySource, /Level 0|Level 1/);
   assert.match(dashboardSource, /formalProjection\?\.formal === false \? "<em>不适用<\/em>"/);
   assert.match(analysisPanelSource, /formalProjection\.formal === false \? "<em>不适用<\/em>"/);
   assert.doesNotMatch(projectionBodySource, /misleading-zero/);
+});
+
+test("frontend retires built-in modeling import template registry and selector", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const importTemplateModuleExists = await readFile(new URL("../front/modeling-import-templates.mjs", import.meta.url), "utf8")
+    .then(() => true)
+    .catch(() => false);
+  const localImportSource = appSource.slice(
+    appSource.indexOf("function renderLocalModelingImportActions"),
+    appSource.indexOf("function renderModelingImportIssueDisplay")
+  );
+
+  assert.equal(importTemplateModuleExists, false);
+  assert.doesNotMatch(appSource, /MODELING_IMPORT_TEMPLATES/);
+  assert.doesNotMatch(appSource, /data-modeling-import-template/);
+  assert.doesNotMatch(appSource, /selectedModelingImportTemplateId/);
+  assert.doesNotMatch(appSource, /modelingImportTemplateLabel/);
+  assert.doesNotMatch(appSource, /loadModelingImportTemplate/);
+  assert.doesNotMatch(appSource, /Level 0|Level 1|选择内置导入模板|使用内置导入模板/);
+  assert.match(localImportSource, /data-modeling-import-action="load-fixture"/);
+  assert.match(localImportSource, /恢复内嵌样例导入包/);
 });
 
 test("phase 6A spare shortfall formal table renders constraints and utilization", async () => {
@@ -2930,16 +3266,11 @@ test("formal run launch preserves queued or running backend status without treat
 
 test("project creation from modeling import uses the current or passed import id", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
-  const clickSource = appSource.slice(
-    appSource.indexOf('const createFromImportButton = event.target.closest("[data-project-create-from-import]"'),
-    appSource.indexOf('const editProjectButton = event.target.closest("[data-project-edit]"')
-  );
   const createSource = appSource.slice(
     appSource.indexOf("async function createSampleProjectFromPublishedImport"),
-    appSource.indexOf("async function enterProject")
+    appSource.indexOf("async function loadSampleModelingImportFixture")
   );
 
-  assert.match(clickSource, /createSampleProjectFromPublishedImport\(currentPublishedModelingImportId\(\)\)/);
   assert.match(createSource, /async function createSampleProjectFromPublishedImport\(importId/);
   assert.match(createSource, /ensurePublishedModelingImportForSampleProject/);
   assert.match(createSource, /backendApi\.createProjectFromModelingImport\(resolvedImportId\)/);
@@ -2971,7 +3302,7 @@ test("frontend modeling import demo fixture is synchronized with public canonica
   });
 });
 
-test("project list separates imported sample projects from local manual drafts", async () => {
+test("project list creates projects only from marked project templates", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const projectSeedSource = appSource.slice(
     appSource.indexOf("const PROJECT_SOURCE"),
@@ -2982,28 +3313,44 @@ test("project list separates imported sample projects from local manual drafts",
     appSource.indexOf("function renderNavigation")
   );
   const createSource = appSource.slice(
-    appSource.indexOf("async function createSampleProjectFromPublishedImport"),
+    appSource.indexOf("async function createProjectFromSelectedProjectTemplate"),
+    appSource.indexOf("async function createSampleProjectFromPublishedImport")
+  );
+  const addProjectIndex = appSource.indexOf("function addDemoProject");
+  const hydrateSource = appSource.slice(
+    appSource.indexOf("async function hydrateProjectCatalogFromBackend"),
     appSource.indexOf("function currentPublishedModelingImportId")
   );
 
-  assert.match(projectSeedSource, /manual_draft: "manual_draft"/);
   assert.match(projectSeedSource, /imported_sample: "imported_sample"/);
+  assert.doesNotMatch(projectSeedSource, /manual_draft/);
   assert.doesNotMatch(projectSeedSource, /preview_fixture/);
-  assert.match(projectSeedSource, /readManualDraftProjectsFromStorage\(\)/);
-  assert.match(projectListSource, /可从已发布建模导入包生成示例项目，或添加本地 Project draft/);
-  assert.match(projectListSource, /当前发布快照/);
-  assert.match(projectListSource, /从当前发布快照生成示例项目/);
+  assert.doesNotMatch(projectSeedSource, /readManualDraftProjectsFromStorage|MANUAL_PROJECT_DRAFTS_STORAGE_KEY/);
+  assert.equal(addProjectIndex, -1);
+  assert.doesNotMatch(appSource, /persistManualDraftProjects|data-project-add|本地草稿|本地空白预览/);
+  assert.match(projectListSource, /请选择项目模板创建项目/);
+  assert.match(projectListSource, /data-project-template-select/);
+  assert.match(projectListSource, /data-project-create-from-template/);
+  assert.match(projectListSource, /从选中项目模板创建项目/);
+  assert.match(projectListSource, /暂无项目模板/);
+  assert.doesNotMatch(projectListSource, /data-modeling-import-template|MODELING_IMPORT_TEMPLATES|Level 0|Level 1|选择内置导入模板/);
+  assert.doesNotMatch(projectListSource, /当前发布快照|当前项目数据模板|从选中模板创建项目/);
   assert.match(projectListSource, /暂无项目/);
   assert.match(projectListSource, /projectSourceBadge\(project\)/);
   assert.match(projectListSource, /projectSourceHelpText\(project\)/);
+  assert.doesNotMatch(hydrateSource, /readManualDraftProjectsFromStorage|fallbackProjects|localManualProjects/);
+  assert.match(hydrateSource, /请先选择项目模板创建项目/);
+  assert.match(createSource, /backendApi\.getProject/);
+  assert.match(createSource, /backendApi\.saveProject/);
+  assert.match(createSource, /projectInfo: \{/);
+  assert.match(createSource, /isTemplate: false/);
+  assert.match(createSource, /is_template: false/);
   assert.match(createSource, /sourceKind: PROJECT_SOURCE\.imported_sample/);
-  assert.match(createSource, /sourceImportId: created\.sourceImport\?\.import_id \|\| resolvedImportId/);
-  assert.match(createSource, /name: projectJson\.experiment\?\.name \|\| "导入示例项目"/);
-  assert.doesNotMatch(createSource, /name: projectJson\.missionProfile\?\.sourceImportId \|\| projectJson\.experiment\?\.name/);
-  assert.match(createSource, /projectListStatus = `已从导入数据生成示例项目：\$\{project\.name\}；可用于正式后端测试`;/);
+  assert.doesNotMatch(createSource, /createProjectFromModelingImport/);
+  assert.match(createSource, /projectListStatus = `已从项目模板创建项目：\$\{project\.name\}`;/);
 });
 
-test("project list keeps the latest published modeling import id across route reloads", async () => {
+test("modeling import publishing keeps the latest published import id for background actions", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const storageSource = appSource.slice(
     appSource.indexOf("const LAST_PUBLISHED_MODELING_IMPORT_STORAGE_KEY"),
@@ -3017,17 +3364,12 @@ test("project list keeps the latest published modeling import id across route re
     appSource.indexOf('if (action === "publish")'),
     appSource.indexOf('if (action === "compile-scenario")')
   );
-  const clickSource = appSource.slice(
-    appSource.indexOf('const createFromImportButton = event.target.closest("[data-project-create-from-import]"'),
-    appSource.indexOf('const editProjectButton = event.target.closest("[data-project-edit]"')
-  );
 
   assert.match(storageSource, /LAST_PUBLISHED_MODELING_IMPORT_STORAGE_KEY = "spare-mvp:lastPublishedModelingImportId"/);
   assert.match(storageSource, /function readLastPublishedModelingImportId/);
   assert.match(storageSource, /function persistLastPublishedModelingImportId/);
   assert.match(currentImportSource, /readLastPublishedModelingImportId\(\)/);
   assert.match(publishSource, /persistLastPublishedModelingImportId\(modelingImportPackage\.importId\)/);
-  assert.match(clickSource, /createSampleProjectFromPublishedImport\(currentPublishedModelingImportId\(\)\)/);
 });
 
 test("formal run starts only allow imported sample projects", async () => {
@@ -3049,7 +3391,8 @@ test("formal run starts only allow imported sample projects", async () => {
   assert.match(guardSource, /currentProject\.sourceKind === PROJECT_SOURCE\.imported_sample/);
   assert.doesNotMatch(guardSource, /currentProject\.sourceKind !== PROJECT_SOURCE\.preview_fixture/);
   assert.match(guardSource, /请先创建或选择项目/);
-  assert.match(guardSource, /本地草稿需要先通过建模导入发布链路生成示例项目/);
+  assert.match(guardSource, /请先选择项目模板创建项目/);
+  assert.doesNotMatch(guardSource, /本地草稿/);
   assert.match(singleRunSource, /const formalRunGate = currentProjectCanStartFormalRun\(\);/);
   assert.match(singleRunSource, /if \(!formalRunGate\.allowed\) \{/);
   assert.match(singleRunSource, /backendApiStatus = formalRunGate\.message;/);
@@ -3062,38 +3405,23 @@ test("formal run starts only allow imported sample projects", async () => {
   assert.ok(mcRunSource.indexOf("currentProjectCanStartFormalRun()") < mcRunSource.indexOf("formalRunSubmitInFlight = true"));
 });
 
-test("visual simulation new run ensures a backend-created imported sample before formal submit", async () => {
+test("visual simulation new run starts formal run and loads its state-series artifact", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
-  const ensureSource = appSource.slice(
-    appSource.indexOf("async function ensureFormalRunImportedSampleProject"),
-    appSource.indexOf("async function startSingleRunThroughApi")
-  );
-  const hydrateSource = appSource.slice(
-    appSource.indexOf("async function hydrateCurrentProjectDraftFromApi"),
-    appSource.indexOf("async function saveCurrentProjectDraftThroughApi")
+  const visualLaunchSource = appSource.slice(
+    appSource.indexOf("async function startFormalVisualizationRunThroughApi"),
+    appSource.indexOf("async function loadVisualizationReplayForRun")
   );
   const startNewRunSource = appSource.slice(
     appSource.indexOf('if (action === "start-new-run")'),
     appSource.indexOf("const controlAction = backendControlActions")
   );
 
-  assert.match(ensureSource, /await hydrateCurrentProjectDraftFromApi\(\)/);
-  assert.match(ensureSource, /scenario\?\.missionProfile\?\.sourceImportId/);
-  assert.match(hydrateSource, /sourceKind: PROJECT_SOURCE\.imported_sample/);
-  assert.match(hydrateSource, /sourceImportId/);
-  assert.match(ensureSource, /createSampleProjectFromPublishedImport\(currentProject\?\.sourceImportId\)/);
-  assert.match(ensureSource, /currentProjectCanStartFormalRun\(\)/);
-  assert.match(ensureSource, /return currentProjectCanStartFormalRun\(\)/);
-  assert.ok(
-    ensureSource.indexOf("await hydrateCurrentProjectDraftFromApi()") <
-      ensureSource.indexOf("createSampleProjectFromPublishedImport(currentProject?.sourceImportId)"),
-    "visual launch should reuse a hydrated backend imported sample before asking the backend to create one"
-  );
-  assert.ok(
-    startNewRunSource.indexOf("await ensureFormalRunImportedSampleProject()") <
-      startNewRunSource.indexOf("await startSingleRunThroughApi()"),
-    "visual launch should repair the frontend/backend imported-sample boundary before formal submit"
-  );
+  assert.match(visualLaunchSource, /const submittedRun = await startSingleRunThroughApi\(\)/);
+  assert.match(visualLaunchSource, /await loadVisualizationReplayForRun\(runId\)/);
+  assert.match(visualLaunchSource, /缺少正式 state-series artifact/);
+  assert.match(startNewRunSource, /await startFormalVisualizationRunThroughApi\(\)/);
+  assert.doesNotMatch(startNewRunSource, /ensureFormalRunImportedSampleProject/);
+  assert.doesNotMatch(startNewRunSource, /createSampleProjectFromPublishedImport/);
 });
 
 test("click-based modeling mutations mark project draft dirty before rendering", async () => {
@@ -3139,7 +3467,7 @@ test("run result refresh rebuilds frontend state from the experiment plan branch
   );
   const refreshSource = appSource.slice(
     appSource.indexOf("async function refreshRunResultThroughApi"),
-    appSource.indexOf("async function hydrateLastBackendRunFromApi")
+    appSource.indexOf("async function refreshAnalysisProjectionPayloads")
   );
   const runPlanSource = appSource.slice(
     appSource.indexOf("function currentRunExperimentPlanProjectJson"),
@@ -3197,11 +3525,11 @@ test("phase 6B carry list analysis fixes objective to minimum carried spares", a
   assert.match(formalCarrySource, /projection payload/);
 });
 
-test("phase 6C mission reliability chart uses formal projection time sequence only", async () => {
+test("phase 6C mission reliability chart uses formal projection and daily sequences without hard-coded rates", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const lineChartSource = appSource.slice(
     appSource.indexOf("function renderLineChart"),
-    appSource.indexOf("function renderScenarioSwitch")
+    appSource.indexOf("function field(label")
   );
   const dashboardSource = appSource.slice(
     appSource.indexOf("function renderAnalysisDashboard"),
@@ -3217,12 +3545,17 @@ test("phase 6C mission reliability chart uses formal projection time sequence on
   );
 
   assert.match(lineChartSource, /const minY = 0;/);
+  assert.match(lineChartSource, /line-chart-y-axis/);
+  assert.match(lineChartSource, /line-chart-y-label/);
   assert.doesNotMatch(lineChartSource, /0\.84/);
-  assert.match(lineChartSource, /points\.length - 1/);
+  assert.match(lineChartSource, /const minX = Math\.min/);
+  assert.match(lineChartSource, /const xSpan = Math\.max\(1, maxX - minX\)/);
   assert.match(dashboardSource, /analysisProjectionForBoundary\(boundary\)/);
   assert.match(dashboardSource, /renderAnalysisProjectionResultPanel\(formalProjection\)/);
   assert.doesNotMatch(dashboardSource, /singleResult\.timeline|renderLineChart/);
   assert.match(formalReliabilitySource, /renderLineChart\(rows\.map\(\(row\) => \(\{ x: row\.sequence, y: row\.probability \}\)\)\)/);
+  assert.match(appSource, /function renderLiteMesaMissionReliabilityDailyChart/);
+  assert.match(appSource, /meanMissionSuccessRate/);
   assert.match(formalReliabilitySource, /最大下降区间/);
   assert.match(formalReliabilitySource, /仿真时间/);
   assert.doesNotMatch(formalReliabilitySource, /0\.7|0\.9|阈值|目标线|风险线/);
@@ -3272,6 +3605,93 @@ test("monte carlo detail keeps formal source status and links to analysis pages"
   assert.match(appSource, /function renderAnalysisProjectionResultPanel/);
   assert.doesNotMatch(mcResultSource, /mc-formal-results|mc-formal-projection|renderFormalProjectionBody/);
   assert.doesNotMatch(mcResultSource, /mc-result-cards|mc-evaluation-table/);
+});
+
+test("SGR monte carlo pages label sortie_rate as 出动架次率", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const metricSource = appSource.slice(
+    appSource.indexOf("const LITE_MESA_MONTE_CARLO_METRICS"),
+    appSource.indexOf("const LITE_MESA_ANALYSIS_DEFINITIONS")
+  );
+  const reliabilitySource = appSource.slice(
+    appSource.indexOf("mission_reliability:"),
+    appSource.indexOf("downtime_factors:")
+  );
+  const reliabilityTableStart = appSource.indexOf(
+    'if (definition.analysisType === "mission_reliability")',
+    appSource.indexOf("function renderLiteMesaAnalysisSessionBody")
+  );
+  const reliabilityTableSource = appSource.slice(
+    reliabilityTableStart,
+    appSource.indexOf("function field(label")
+  );
+
+  assert.match(metricSource, /key: "sortie_rate", label: "出动架次率"/);
+  assert.match(reliabilitySource, /metricLabels: \["任务成功率", "出动架次率", "战备完好率", "任务失败次数"\]/);
+  assert.match(reliabilityTableSource, /<th>出动架次率<\/th>/);
+  assert.match(reliabilityTableSource, /formatLiteMesaAnalysisMetricValue\("出动架次率", row\.sortieRate\)/);
+  assert.doesNotMatch(reliabilityTableSource, /<td>\$\{pct\(row\.sortieRate\)\}<\/td>/);
+  assert.doesNotMatch(metricSource + reliabilitySource + reliabilityTableSource, /出动完成率/);
+});
+
+test("lite Mesa analysis visible copy omits Mesa session wording and collapses sample rows", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const analysisSource = appSource.slice(
+    appSource.indexOf("function renderLiteMesaAnalysisPage"),
+    appSource.indexOf("function renderLiteMesaDowntimeEventSnapshots")
+  );
+  const reliabilityTableSource = analysisSource.slice(
+    analysisSource.indexOf('if (definition.analysisType === "mission_reliability")'),
+    analysisSource.indexOf('return `\\n    <div class="table-wrap"', analysisSource.indexOf('if (definition.analysisType === "mission_reliability")'))
+  );
+
+  assert.match(analysisSource, /后端内存运行/);
+  assert.match(reliabilityTableSource, /<details class="lite-mesa-collapsible-table">/);
+  assert.match(reliabilityTableSource, /<summary>样本明细/);
+  assert.doesNotMatch(analysisSource, /Mesa 分析运行中|Mesa 分析失败|会话内 Mesa|后端内存会话/);
+});
+
+test("lite Mesa spare shortfall page uses transport delay and repair cancellation labels", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const definitionSource = appSource.slice(
+    appSource.indexOf("spare_shortfall:"),
+    appSource.indexOf("carry_list:")
+  );
+  const sessionBodyStart = appSource.indexOf(
+    'if (definition.analysisType === "spare_shortfall")',
+    appSource.indexOf("function renderLiteMesaAnalysisSessionBody")
+  );
+  const sessionBodySource = appSource.slice(
+    sessionBodyStart,
+    appSource.indexOf('if (definition.analysisType === "carry_list")', sessionBodyStart)
+  );
+
+  assert.match(definitionSource, /metricLabels: \["发生缺件备件", "平均备件延误时间\(h\)", "最高缺件备件", "因维修延误导致的任务取消次数"\]/);
+  assert.match(sessionBodySource, /平均备件延误时间\(h\)/);
+  assert.match(sessionBodySource, /meanTransportDelayHours/);
+  assert.doesNotMatch(sessionBodySource, /<th>缺件次数<\/th>|row\.shortage/);
+});
+
+test("lite Mesa Monte Carlo detail uses decimal ratios and hides metadata chrome", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const renderSource = appSource.slice(
+    appSource.indexOf("function renderLiteMesaMonteCarloAnalysis"),
+    appSource.indexOf("function liteMesaMetricStatisticRows")
+  );
+  const metricSource = appSource.slice(
+    appSource.indexOf("const LITE_MESA_MONTE_CARLO_METRICS"),
+    appSource.indexOf("const LITE_MESA_ANALYSIS_DEFINITIONS")
+  );
+  const formatSource = appSource.slice(
+    appSource.indexOf("function formatLiteMesaMetric"),
+    appSource.indexOf("function renderAnalysis")
+  );
+
+  assert.match(metricSource, /key: "mean_transport_delay", label: "平均备件延误时间"/);
+  assert.doesNotMatch(metricSource, /shortage_events|短缺事件/);
+  assert.doesNotMatch(renderSource, /后端 Mesa 仿真分析|lite-mesa-hero-meter|lite-mesa-source-grid/);
+  assert.doesNotMatch(formatSource, /if \(format === "pct"\) return pct\(value\)/);
+  assert.match(formatSource, /if \(format === "ratio"\) return ratioFixed\(value\)/);
 });
 
 test("system management exposes an independent equipment RMS allocation workbench", async () => {
@@ -3378,7 +3798,7 @@ test("RMS allocation workbench renders parameters for only the selected method",
 
 test("system management exposes project management and base configuration pages", async () => {
   const expectedPages = [
-    ["system-management-project-data-management", "项目管理", "项目数据管理", ["modelingModules", "sheetSelections", "localImportActions"]],
+    ["system-management-project-data-management", "项目管理", "项目数据管理", ["projectList", "templateManagement", "dataOverview", "projectJsonRaw"]],
     ["system-management-modeling-granularity-management", "项目管理", "建模颗粒度管理", ["modelingModules", "sheets", "fieldSelections"]],
     ["system-management-user-management", "系统基础配置", "用户管理", ["users", "roles", "organizations"]],
     ["system-management-function-permission-management", "系统基础配置", "系统功能权限管理", ["features", "roles", "permissionRules"]],
@@ -3405,10 +3825,12 @@ test("system management exposes project management and base configuration pages"
   assert.match(appSource, /function renderPermissionManagementConfig/);
   assert.match(appSource, /function renderModelingFormManagementConfig/);
   assert.doesNotMatch(appSource, /仿真建模数据表 sheet 选择器/);
-  assert.match(appSource, /项目数据管理配置/);
-  assert.match(appSource, /data-project-data-config-module="modeling-data-source"/);
-  assert.match(appSource, /data-project-data-config-module="modeling-import-publish"/);
-  assert.match(appSource, /data-system-config-save/);
+  assert.doesNotMatch(appSource, /项目数据管理配置/);
+  assert.match(appSource, /data-project-data-config-module="project-data-layer"/);
+  assert.match(appSource, /data-project-data-project-list/);
+  assert.match(appSource, /data-project-template-management/);
+  assert.match(appSource, /data-project-json-viewer/);
+  assert.doesNotMatch(appSource, /data-project-data-config-module="modeling-data-source"/);
   assert.match(appSource, /MODELING_DATA_MODULES/);
   assert.match(appSource, /装备系统/);
   assert.match(appSource, /装备任务/);
@@ -3516,7 +3938,7 @@ test("editable and project text values are escaped before template insertion", a
   assert.match(appSource, /htmlEscape\(currentProject\?\.name \|\| "未选择项目"\)/);
   assert.match(appSource, /htmlEscape\(project\.name\)/);
   assert.match(appSource, /htmlEscape\(project\.summary\)/);
-  assert.match(appSource, /htmlEscape\(scenario\.experiment\.name\)/);
+  assert.match(appSource, /htmlEscape\(context\.name\)/);
   assert.match(appSource, /htmlEscape\(plan\.name\)/);
 });
 
@@ -3526,9 +3948,14 @@ test("visual simulation page embeds aircraft mission and support Mesa views", as
   assert.match(appSource, /mesaTab\("aircraft"/);
   assert.match(appSource, /mesaTab\("mission"/);
   assert.match(appSource, /mesaTab\("support"/);
-  assert.match(appSource, /飞机保障正式仿真/);
+  assert.doesNotMatch(appSource, /飞机保障独立 Mesa 仿真/);
+  assert.doesNotMatch(appSource, /点击可视化推演后直接读取当前 Project/);
+  assert.doesNotMatch(appSource, /mesa-visual-header/);
+  assert.doesNotMatch(appSource, /mesa-clock/);
   assert.doesNotMatch(appSource, /formal run \/ aircraft_support_v1/);
   assert.match(appSource, /isVisualSimulationPage/);
+  assert.match(appSource, /spare-planning-visual-mesa-page/);
+  assert.match(appSource, /mission-reliability-visual-mesa-page/);
   assert.doesNotMatch(appSource, /<h2>\$\{htmlEscape\(page\.tertiary\)\}<\/h2>/);
   assert.doesNotMatch(appSource, /return `<div>\$\{breadcrumb\}<\/div>`;/);
   assert.doesNotMatch(appSource, /可视化实验启动与停止<\/h2>/);
@@ -3546,7 +3973,7 @@ test("visual simulation layout matches operational dashboard requirements", asyn
   const styleSource = await readFile(new URL("../front/styles.css", import.meta.url), "utf8");
   const visualSource = appSource.slice(
     appSource.indexOf("function renderVisualSimulation"),
-    appSource.indexOf("function renderVisualizationRunOptions")
+    appSource.indexOf("function renderVisualizationEventStream")
   );
   const stageSource = appSource.slice(
     appSource.indexOf("function renderMesaStage"),
@@ -3564,23 +3991,34 @@ test("visual simulation layout matches operational dashboard requirements", asyn
   assert.match(visualSource, /mesa-control-status/);
   assert.doesNotMatch(visualSource, /mesa-status-grid/);
   assert.match(styleSource, /\.mesa-control-status\[open\][\s\S]*overflow: auto/);
-  assert.match(appSource, /可用飞机数量趋势/);
+  assert.match(appSource, /飞机状态一览/);
+  assert.match(appSource, /ratioFixed\(usableAircraft \/ aircraftCount\)/);
+  assert.match(appSource, /ratioFixed\(assignedSorties \/ Math\.max\(1, requiredSorties\)\)/);
+  assert.match(appSource, /ratioFixed\(stockedSpares \/ Math\.max\(1, state\.spares\.length\)\)/);
   assert.match(appSource, /AIRCRAFT_TREND_SERIES/);
   for (const label of ["可用飞机", "任务中", "维修中", "使用保障中"]) {
     assert.match(appSource, new RegExp(label));
   }
   assert.match(appSource, /countAircraftTrendStates\(aircraft\)/);
   assert.match(appSource, /renderAvailabilityTrendLine\(chartPoints, series\)/);
+  assert.match(appSource, /renderAvailabilityYAxis\(/);
+  assert.match(appSource, /availability-y-axis/);
+  assert.match(appSource, /飞机数量/);
   assert.match(appSource, /availability-trend-legend/);
   assert.match(appSource, /buildAvailabilityTrend\(\s*state,\s*visualizationStateSeries,\s*visualizationStateSeriesFrame \? visualizationReplayIndex : null\s*\)/);
   assert.match(appSource, /frames\.slice\(0, currentIndex \+ 1\)/);
   assert.doesNotMatch(appSource, /T-\$\{4 - index\}/);
   assert.match(styleSource, /\.availability-chart \.trend-line/);
   assert.match(styleSource, /\.availability-chart circle\.current-point/);
+  assert.match(styleSource, /\.availability-y-axis/);
+  assert.match(styleSource, /\.availability-y-axis text/);
+  assert.match(visualSource, /\$\{activeView === "aircraft" \? renderAvailabilityCurve\(availabilityTrend\) : ""\}/);
   assert.match(appSource, /available: "停放"/);
-  assert.match(appSource, /maintenance: "使用保障"/);
+  assert.match(appSource, /pre_support: "使用保障"/);
+  assert.match(appSource, /maintenance: "维修\/不可用"/);
   assert.match(appSource, /flying: "任务"/);
   assert.match(appSource, /repair_unavailable: "维修\/不可用"/);
+  assert.match(appSource, /const actualStates = \["available", "pre_support", "flying", "repair_unavailable"\]/);
   assert.match(appSource, /function visualAircraftLaneKey/);
   assert.doesNotMatch(stageSource, /航母甲板 \/ 任务就绪/);
   assert.doesNotMatch(stageSource, /任务空域/);
@@ -3610,23 +4048,93 @@ test("visual simulation layout matches operational dashboard requirements", asyn
   assert.match(stageSource, /aircraft-state-board/);
   assert.match(stageSource, /aircraft-state-lane/);
   assert.match(stageSource, /aircraft-state-node/);
-  assert.match(stageSource, /aircraft-mission-timeline/);
-  assert.match(stageSource, /buildAircraftMissionTimelineRows\(state\)/);
+  assert.doesNotMatch(stageSource, /aircraft-mission-timeline/);
+  assert.doesNotMatch(appSource, /buildAircraftMissionTimelineRows\(state\)/);
   assert.match(styleSource, /\.aircraft-state-board[\s\S]*grid-template-columns: repeat\(4, minmax\(120px, 1fr\)\)/);
-  assert.match(styleSource, /\.aircraft-state-board[\s\S]*min-height: 320px/);
-  assert.match(styleSource, /\.aircraft-state-board[\s\S]*max-height: 320px/);
+  assert.match(styleSource, /\.aircraft-state-board[\s\S]*height: 520px/);
+  assert.match(styleSource, /\.aircraft-state-board[\s\S]*min-height: 520px/);
+  assert.match(styleSource, /\.aircraft-state-board[\s\S]*max-height: 520px/);
   assert.match(styleSource, /\.aircraft-state-lane-body[\s\S]*overflow-y: auto/);
-  assert.match(styleSource, /\.aircraft-mission-timeline[\s\S]*overflow: auto/);
+  assert.doesNotMatch(styleSource, /\.aircraft-mission-timeline/);
   assert.match(styleSource, /\.mesa-visual-grid\.mission-expanded[\s\S]*grid-template-columns: minmax\(0, 1fr\)/);
   assert.match(stageSource, /保障人员/);
-  assert.match(stageSource, /按保障组织 \/ 人员专业/);
-  assert.match(stageSource, /保障设备详情清单/);
-  assert.match(stageSource, /按保障组织 \/ 备件类型/);
+  assert.match(stageSource, /当前保障点 \/ 人员专业/);
+  assert.match(stageSource, /保障设备（按类型）/);
+  assert.match(stageSource, /工作次数/);
+  assert.match(stageSource, /延误次数/);
+  assert.doesNotMatch(stageSource, /保障设备详情清单/);
+  assert.match(stageSource, /当前保障点 \/ 备件类型/);
   assert.match(appSource, /mesa-event-window/);
+  assert.match(appSource, /buildSimulationLogStream\(visualizationStateSeries\)/);
+  assert.match(appSource, /isStateFrameEvent/);
+  assert.match(appSource, /任务成员分配/);
+  assert.match(appSource, /飞机保障作业/);
   assert.match(styleSource, /\.mesa-event-window[\s\S]*overflow: auto/);
 });
 
-test("visual aircraft panel renders backend equipment failure propagation tree", async () => {
+test("visual support view separates collapsible resource statistics from support logs", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const stateSource = await readFile(new URL("../front/aviation-support-state.mjs", import.meta.url), "utf8");
+  const styleSource = await readFile(new URL("../front/styles.css", import.meta.url), "utf8");
+  const supportStageSource = appSource.slice(
+    appSource.indexOf("function renderMesaSupportStage"),
+    appSource.indexOf("function renderMesaSidePanel")
+  );
+  const supportPanelSource = appSource.slice(
+    appSource.indexOf("function renderMesaSupportPanel"),
+    appSource.indexOf("function missionProgressWidth")
+  );
+  const eventStreamSource = appSource.slice(
+    appSource.indexOf("function renderVisualizationEventStream"),
+    appSource.indexOf("function mesaTab")
+  );
+
+  assert.match(supportStageSource, /support-collapsible-panel/);
+  assert.match(supportStageSource, /<details class="support-metric-panel support-collapsible-panel" open>/);
+  assert.match(supportStageSource, /<summary class="section-head">/);
+  assert.match(supportStageSource, /保障人员（按专业）/);
+  assert.match(supportStageSource, /保障设备（按类型）/);
+  assert.match(supportStageSource, /备件（按类型）/);
+  assert.match(supportStageSource, /visualSupportAirportScope\(state\)/);
+  assert.match(supportStageSource, /data-mesa-support-airport/);
+  assert.match(supportStageSource, /supportAirportOptions/);
+  assert.match(supportStageSource, /当前保障点资源/);
+  assert.match(supportStageSource, /建模保障点/);
+  assert.match(supportStageSource, /切换保障点查看资源/);
+  assert.match(supportStageSource, /supportRowsForAirportScope/);
+  assert.match(supportStageSource, /工作次数/);
+  assert.match(supportStageSource, /延误次数/);
+  assert.match(supportStageSource, /消耗量/);
+  assert.doesNotMatch(supportStageSource, /保障设备详情清单/);
+  assert.match(appSource, /let visualSupportAirportId = ""/);
+  assert.match(appSource, /event\.target\.closest\("\[data-mesa-support-airport\]"\)/);
+  assert.match(appSource, /currentTaskAirportId\(state, airports\)/);
+  assert.match(appSource, /supportNodesForAirport\(projectJson, selectedAirport\)/);
+  assert.match(appSource, /modeledSupportNodes\(projectJson\)/);
+  assert.match(appSource, /supportNodeMatchesScope\(node, airport\)/);
+  assert.match(appSource, /supportScopeForStateResource\(airports, state\)/);
+  assert.match(appSource, /if \(orgLeafNodes\.length\) return orgLeafNodes/);
+  assert.match(appSource, /projectJson\?\.objects\?\.supportResources/);
+  assert.match(stateSource, /supportNodeId: item\.support_node_id/);
+  assert.match(stateSource, /airportId: item\.airport_id/);
+  assert.match(stateSource, /delayCount: number\(item\.delay_count/);
+  assert.match(stateSource, /delayCount: number\(item\.delay_count \|\| item\.shortage_count/);
+
+  assert.match(supportPanelSource, /保障作业日志/);
+  assert.match(supportPanelSource, /supportPanelLogRows\(state\)/);
+  assert.match(supportPanelSource, /renderSupportPanelLogRow/);
+  assert.doesNotMatch(supportPanelSource, /备件库存量/);
+  assert.doesNotMatch(supportPanelSource, /state\.spares\.map/);
+  assert.doesNotMatch(supportPanelSource, /state\.resources\.map/);
+
+  assert.match(eventStreamSource, /<details class="simulation-log-collapse">/);
+  assert.match(eventStreamSource, /全部保障事件/);
+  assert.doesNotMatch(eventStreamSource, /<details class="simulation-log-collapse" open>/);
+  assert.match(styleSource, /\.support-collapsible-panel/);
+  assert.match(styleSource, /\.simulation-log-collapse/);
+});
+
+test("visual aircraft panel renders equipment status summary instead of configuration tree", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const stateSource = await readFile(new URL("../front/aviation-support-state.mjs", import.meta.url), "utf8");
   const styleSource = await readFile(new URL("../front/styles.css", import.meta.url), "utf8");
@@ -3639,13 +4147,20 @@ test("visual aircraft panel renders backend equipment failure propagation tree",
   assert.match(stateSource, /failure_tree_templates/);
   assert.match(appSource, /let selectedVisualAircraftId = ""/);
   assert.match(appSource, /data-select-visual-aircraft/);
-  assert.match(aircraftPanelSource, /renderAircraftFailureTree\(selectedAircraft\.failureTree, selectedAircraft\)/);
-  assert.match(aircraftPanelSource, /飞机内部组成与故障传递/);
-  assert.match(aircraftPanelSource, /中取/);
-  assert.match(aircraftPanelSource, /T\+\$\{htmlEscape\(node\.failureTime\)\}min/);
-  assert.match(aircraftPanelSource, /向上传递/);
-  assert.match(styleSource, /\.aircraft-failure-tree/);
-  assert.match(styleSource, /\.aircraft-failure-node\.propagated/);
+  assert.match(aircraftPanelSource, /renderAircraftStatusSummary\(selectedAircraft, state\)/);
+  assert.match(aircraftPanelSource, /装备状态/);
+  assert.match(aircraftPanelSource, /当前状态/);
+  assert.match(aircraftPanelSource, /累计任务时间/);
+  assert.match(aircraftPanelSource, /当前保障作业/);
+  assert.match(aircraftPanelSource, /故障件/);
+  assert.match(aircraftPanelSource, /currentSupportJobsForAircraft\(aircraft, state\.jobs\)/);
+  assert.match(aircraftPanelSource, /failedComponentsForAircraft\(aircraft\)/);
+  assert.doesNotMatch(aircraftPanelSource, /renderAircraftConfigurationTree\(selectedAircraft\.failureTree, selectedAircraft\)/);
+  assert.doesNotMatch(aircraftPanelSource, /装备构型树/);
+  assert.doesNotMatch(aircraftPanelSource, /role="tree"/);
+  assert.doesNotMatch(aircraftPanelSource, /故障传递/);
+  assert.match(styleSource, /\.aircraft-status-summary/);
+  assert.match(styleSource, /\.aircraft-status-row/);
 });
 
 test("visual simulation consumes formal state-series without demo fallback", async () => {
@@ -3656,8 +4171,7 @@ test("visual simulation consumes formal state-series without demo fallback", asy
     appSource.indexOf("function renderVisualizationEventStream")
   );
 
-  assert.match(appSource, /const CONTRACT_BASE = "http:\/\/127\.0\.0\.1:8521"/);
-  assert.doesNotMatch(appSource, /fetch\(`\$\{CONTRACT_BASE\}\/visualization/);
+  assert.doesNotMatch(appSource, /CONTRACT_BASE|127\.0\.0\.1:8521|contract_server/);
   assert.match(appSource, /createBackendApiClient\(\{ baseUrl: "\/api"/);
   assert.match(appSource, /normalizeVisualizationStateSeriesPayload\(payload, \{\s*runId,\s*artifactId: artifact\.artifact_id/);
   assert.match(replaySource, /const MODEL_FAMILY = "aircraft_support_v1"/);
@@ -3717,7 +4231,7 @@ test("visual simulation places event trace at the bottom of the page", async () 
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const visualSource = appSource.slice(
     appSource.indexOf("function renderVisualSimulation"),
-    appSource.indexOf("function renderVisualizationRunOptions")
+    appSource.indexOf("function renderVisualizationEventStream")
   );
 
   const gridIndex = visualSource.indexOf('class="mesa-visual-grid ${activeView === "mission" ? "mission-expanded" : ""}"');
@@ -3756,14 +4270,17 @@ test("M9.2 visual simulation keeps state stream support behind the simplified re
   assert.doesNotMatch(controlHandlerSource, /readyState === EventSource\.CLOSED && !visualizationStreamState\.eventCount/);
 });
 
-test("visual simulation exposes only replay picker replay start and new simulation controls", async () => {
+test("visual simulation enters the Mesa page without a replay list", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const visualSource = appSource.slice(
     appSource.indexOf("function renderVisualSimulation"),
     appSource.indexOf("function mesaTab")
   );
 
-  assert.match(visualSource, /aria-label="选择回放"/);
+  assert.doesNotMatch(appSource, /function renderVisualizationRunOptions/);
+  assert.doesNotMatch(appSource, /data-mesa-run-select/);
+  assert.doesNotMatch(visualSource, /选择回放/);
+  assert.doesNotMatch(visualSource, /<select/);
   assert.match(visualSource, /data-mesa-control="play"/);
   assert.match(visualSource, /启动回放/);
   assert.match(visualSource, /暂停回放/);
@@ -3786,31 +4303,23 @@ test("visual simulation exposes only replay picker replay start and new simulati
   assert.doesNotMatch(visualSource, /data-mesa-backend-control-status/);
 });
 
-test("visual simulation replay picker exposes only the active replay", async () => {
+test("visual simulation keeps formal state-series replay without a visible run picker", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
-  const runOptionsSource = appSource.slice(
-    appSource.indexOf("function renderVisualizationRunOptions"),
-    appSource.indexOf("function visualizationStreamEventClass")
-  );
   const refreshRunListSource = appSource.slice(
     appSource.indexOf("async function refreshVisualizationRunList"),
     appSource.indexOf("function ensureVisualizationRunListLoaded")
   );
 
-  assert.match(runOptionsSource, /visualizationSelectedRunId \|\| backendRun\?\.run_id \|\| visualizationStateSeries\?\.run_id/);
-  assert.ok(runOptionsSource.includes('return `<option value="${htmlEscape(runId)}" selected>${htmlEscape(runId)}</option>`;'));
-  assert.doesNotMatch(runOptionsSource, /visualizationRunList\.map/);
-  assert.doesNotMatch(runOptionsSource, /Array\.from\(ids\)/);
+  assert.doesNotMatch(appSource, /function renderVisualizationRunOptions/);
+  assert.doesNotMatch(appSource, /data-mesa-run-select/);
+  assert.match(appSource, /visualizationSelectedRunId = runId/);
+  assert.match(appSource, /visualizationReplayStatus = `已读取正式 state_series 并开始回放：run_id \$\{runId\}`/);
   assert.match(refreshRunListSource, /M9 当前回放已同步/);
   assert.doesNotMatch(refreshRunListSource, /run 列表已刷新/);
 });
 
-test("visual simulation selection and start controls load official replays automatically", async () => {
+test("visual simulation new starts use formal run replay without list selection", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
-  const changeSource = appSource.slice(
-    appSource.indexOf('const mesaRunSelect = event.target.closest("[data-mesa-run-select]")'),
-    appSource.indexOf('const mesaTimeline = event.target.closest("[data-mesa-timeline]")')
-  );
   const controlHandlerSource = appSource.slice(
     appSource.indexOf("async function handleMesaControl"),
     appSource.indexOf("async function loadAviationSupportState")
@@ -3824,10 +4333,8 @@ test("visual simulation selection and start controls load official replays autom
     controlHandlerSource.indexOf('if (["play"')
   );
 
-  assert.match(changeSource, /await loadVisualizationReplayForRun\(visualizationSelectedRunId\)/);
-  assert.match(newRunSource, /await startSingleRunThroughApi\(\)/);
-  assert.match(newRunSource, /await refreshVisualizationRunList\(newRunId\)/);
-  assert.match(newRunSource, /await loadVisualizationReplayForRun\(newRunId\)/);
+  assert.doesNotMatch(appSource, /const mesaRunSelect = event\.target\.closest/);
+  assert.match(newRunSource, /await startFormalVisualizationRunThroughApi\(\)/);
   assert.match(newRunSource, /visualizationReplayPlaying = true/);
   assert.match(newRunSource, /startVisualizationReplay\(\)/);
   assert.match(playSource, /await loadVisualizationReplayForRun\(\)/);
@@ -3916,7 +4423,7 @@ test("M9.7 docs describe single-run, Monte Carlo, and coverage closure without c
     roadmap: await readFile(new URL("../docs/product-roadmap.md", import.meta.url), "utf8"),
     agent: await readFile(new URL("../agent.md", import.meta.url), "utf8"),
     contracts: await readFile(new URL("../contracts/README.md", import.meta.url), "utf8"),
-    spec: await readFile(new URL("../docs/superpowers/specs/2026-06-24-m9-7-aircraft-support-v1-design.md", import.meta.url), "utf8")
+    spec: await readFile(new URL("../docs/archive/deprecated/superpowers/specs/2026-06-24-m9-7-aircraft-support-v1-design.md", import.meta.url), "utf8")
   };
   const combined = Object.values(docs).join("\n");
 
@@ -3936,7 +4443,7 @@ test("M9.7.4 docs promote formerly payload-only fields and avoid pending coverag
     docsReadme: await readFile(new URL("../docs/README.md", import.meta.url), "utf8"),
     roadmap: await readFile(new URL("../docs/product-roadmap.md", import.meta.url), "utf8"),
     agent: await readFile(new URL("../agent.md", import.meta.url), "utf8"),
-    spec: await readFile(new URL("../docs/superpowers/specs/2026-06-24-m9-7-aircraft-support-v1-design.md", import.meta.url), "utf8")
+    spec: await readFile(new URL("../docs/archive/deprecated/superpowers/specs/2026-06-24-m9-7-aircraft-support-v1-design.md", import.meta.url), "utf8")
   };
   const combined = Object.values(docs).join("\n");
 

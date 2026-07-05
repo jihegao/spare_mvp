@@ -15,12 +15,13 @@ export const defaultScenario = {
     compositeTasks: [],
     periodicTasks: []
   },
-  basicMission: {},
+  basicMissions: [],
   missionPhases: [],
   combatUnit: { members: [] },
   equipment: {
     model: "",
     wholeMachineModels: [],
+    aircraftTypes: [],
     quantity: 0,
     initialReady: 0,
     minRequiredSorties: 0
@@ -69,8 +70,9 @@ export function runSimulation(inputScenario = defaultScenario, overrides = {}) {
   }
   const rng = createRng(overrides.seed ?? scenario.experiment.seed);
   const steps = Number(overrides.steps ?? scenario.experiment.steps);
+  const missionCycleHours = scenarioMissionCycleHours(scenario);
   const quantity = Number(scenario.equipment.quantity);
-  const minRequired = Number(overrides.minRequiredSorties ?? scenario.basicMission.minRequiredSorties);
+  const minRequired = Number(overrides.minRequiredSorties ?? primaryBasicMission(scenario).minRequiredSorties);
   const supportCapacity = Number(overrides.supportCapacity ?? scenario.supportNodes[0].equipmentCapacity);
   const baseFailureRate = Number(overrides.failureRate ?? average(scenario.components.map((item) => item.failureRate)));
   const spareMultiplier = Number(overrides.spareMultiplier ?? 1);
@@ -106,7 +108,7 @@ export function runSimulation(inputScenario = defaultScenario, overrides = {}) {
   };
 
   for (let step = 1; step <= steps; step += 1) {
-    if ((step - 1) % scenario.missionProfile.repeatCycleHours === 0) {
+    if ((step - 1) % missionCycleHours === 0) {
       currentWave += 1;
       const ready = equipment.filter((item) => item.status === "ready");
       const demand = Math.min(ready.length, minRequired);
@@ -192,7 +194,7 @@ export function runSimulation(inputScenario = defaultScenario, overrides = {}) {
       }
     }
 
-    if (step % scenario.missionProfile.repeatCycleHours === 0) {
+    if (step % missionCycleHours === 0) {
       missionChecks += 1;
       const waveTarget = missionChecks * minRequired;
       if (successfulSorties >= waveTarget) {
@@ -204,6 +206,7 @@ export function runSimulation(inputScenario = defaultScenario, overrides = {}) {
     }
 
     timeline.push(snapshot(step, equipment, inventory, {
+      missionCycleHours,
       minRequired,
       sortieAttempts,
       successfulSorties,
@@ -264,7 +267,7 @@ function buildMonteCarloSweep(scenario) {
   const failureRates = normalizeSweepValues(monteCarlo.failureRates, [0.08]);
   const spareMultipliers = normalizeSweepValues(monteCarlo.spareMultipliers, [1]);
   const supportCapacities = normalizeSweepValues(monteCarlo.supportCapacities, [3]);
-  const minRequiredSorties = Number(scenario.basicMission?.minRequiredSorties ?? 5);
+  const minRequiredSorties = Number(primaryBasicMission(scenario)?.minRequiredSorties ?? 5);
   const sweep = [];
   for (const failureRate of failureRates) {
     for (const spareMultiplier of spareMultipliers) {
@@ -332,7 +335,7 @@ export function summarizeMonteCarlo(runs) {
 function mergeScenario(scenario, overrides) {
   const merged = cloneScenario(scenario);
   merged.experiment ||= {};
-  merged.basicMission ||= {};
+  merged.basicMissions = normalizeBasicMissions(merged);
   merged.equipment ||= {};
   merged.supportNodes ||= [];
   merged.components ||= [];
@@ -340,7 +343,7 @@ function mergeScenario(scenario, overrides) {
   if (overrides.steps !== undefined) merged.experiment.steps = Number(overrides.steps);
   if (overrides.samples !== undefined) merged.experiment.samples = Number(overrides.samples);
   if (overrides.seed !== undefined) merged.experiment.seed = Number(overrides.seed);
-  if (overrides.minRequiredSorties !== undefined) merged.basicMission.minRequiredSorties = Number(overrides.minRequiredSorties);
+  if (overrides.minRequiredSorties !== undefined) primaryBasicMission(merged).minRequiredSorties = Number(overrides.minRequiredSorties);
   if (overrides.supportCapacity !== undefined && merged.supportNodes[0]) merged.supportNodes[0].equipmentCapacity = Number(overrides.supportCapacity);
   if (overrides.failureRate !== undefined) {
     for (const component of merged.components) {
@@ -357,11 +360,30 @@ function hasRuntimeScenarioData(scenario) {
   return Boolean(
     Number(scenario?.experiment?.steps) > 0
     && Number(scenario?.equipment?.quantity) > 0
-    && Number(scenario?.basicMission?.minRequiredSorties) > 0
-    && Number(scenario?.missionProfile?.repeatCycleHours) > 0
+    && Number(primaryBasicMission(scenario)?.minRequiredSorties) > 0
+    && scenarioMissionCycleHours(scenario) > 0
     && (scenario?.components || []).length > 0
     && (scenario?.supportNodes || []).length > 0
   );
+}
+
+function primaryBasicMission(scenario) {
+  const missions = normalizeBasicMissions(scenario);
+  return missions[0] || {};
+}
+
+function normalizeBasicMissions(scenario) {
+  if (!scenario || typeof scenario !== "object") return [];
+  if (!Array.isArray(scenario.basicMissions)) scenario.basicMissions = [];
+  return scenario.basicMissions.filter((mission) => mission && typeof mission === "object" && !Array.isArray(mission));
+}
+
+function scenarioMissionCycleHours(scenario) {
+  const legacyRepeatCycle = Number(scenario?.missionProfile?.repeatCycleHours);
+  if (Number.isFinite(legacyRepeatCycle) && legacyRepeatCycle > 0) return legacyRepeatCycle;
+  const durationHours = Number(scenario?.missionProfile?.durationHours);
+  if (Number.isFinite(durationHours) && durationHours > 0) return durationHours;
+  return 0;
 }
 
 function emptySimulationResult(scenario) {
@@ -408,7 +430,7 @@ function snapshot(step, equipment, inventory, state) {
   const initialStock = demandTotal + sumValues(inventory);
   return {
     step,
-    wave: Math.ceil(step / 6),
+    wave: Math.ceil(step / Math.max(1, Number(state.missionCycleHours) || 1)),
     ready_count: counts.ready || 0,
     preparing_count: counts.preparing || 0,
     sortie_count: counts.sortie || 0,

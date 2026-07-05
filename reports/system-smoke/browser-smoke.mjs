@@ -127,39 +127,18 @@ async function clickFeature(featureId) {
   fallbacks.push({ action: "dom-click-feature", featureId });
 }
 
-async function openMonteCarloExperimentForRun() {
-  const experimentNameInput = page.locator('input[data-mc-experiment-field="name"]').first();
-  if (await experimentNameInput.isVisible().catch(() => false)) return;
-
-  const editButton = page.locator('button[data-mc-experiment-action="edit"]').first();
-  const addButton = page.locator('button[data-mc-experiment-action="add"]').first();
-  if (await editButton.isVisible().catch(() => false)) {
-    await editButton.click();
-  } else if (await addButton.isVisible().catch(() => false)) {
-    await addButton.click();
-  } else {
-    throw new Error("Cannot find Monte Carlo experiment add/edit action before opening editor");
-  }
-
-  await experimentNameInput.waitFor({ state: "visible", timeout: 5000 });
-}
-
 async function openMonteCarloExperimentDetailForRun() {
-  const startButton = page.locator('button[data-mc-action="start"]').first();
-  if (await startButton.isVisible().catch(() => false)) return;
+  const detailHeading = page.locator("h3", { hasText: "Mesa蒙特卡洛分析" }).first();
+  if (await detailHeading.isVisible().catch(() => false)) return;
 
   const detailTab = page.locator('button[data-feature-id="spare-planning-monte-carlo-experiment-detail"]').first();
   if (await detailTab.isVisible().catch(() => false)) {
     await detailTab.click();
   } else {
-    const listDetailButton = page.locator('button[data-mc-experiment-action="detail"]').first();
-    if (!await listDetailButton.isVisible().catch(() => false)) {
-      throw new Error("Cannot find Monte Carlo experiment detail action before checking results");
-    }
-    await listDetailButton.click();
+    throw new Error("Cannot find Monte Carlo experiment detail feature before checking results");
   }
 
-  await startButton.waitFor({ state: "visible", timeout: 5000 });
+  await detailHeading.waitFor({ state: "visible", timeout: 5000 });
 }
 
 async function expectHeading(page, expected) {
@@ -210,22 +189,15 @@ await capture("04-modeling-after-edit", "装备任务建模");
 await verifyModelingButtonsReact();
 
 await openSecondary("仿真实验");
-await clickFeature("spare-planning-monte-carlo-experiment-list");
-await capture("05-monte-carlo-list", "蒙特卡洛实验");
-await openMonteCarloExperimentForRun();
-await capture("05b-monte-carlo-editor", "蒙特卡洛实验");
-
+await clickFeature("spare-planning-monte-carlo-experiment-detail");
 await openMonteCarloExperimentDetailForRun();
-await page.waitForFunction(() => document.body.innerText.includes("蒙特卡洛实验结果"), null, {
-  timeout: 5000
-});
 await capture("06-monte-carlo-detail-results", "蒙特卡洛实验");
 
 await openSecondary("仿真实验");
-await clickFeature("spare-planning-visual-start-stop");
+await clickFeature("spare-planning-visual-mesa-page");
 await capture("08-visual-simulation", "可视化推演");
 
-const legacyResultNavigation = await verifyLegacyResultNavigation();
+const retiredLegacyRoutes = await verifyRetiredLegacyResultRoutes();
 
 const result = await page.evaluate(() => ({
   title: document.title,
@@ -238,39 +210,35 @@ const result = await page.evaluate(() => ({
 
 await writeFile(
   `${screenshotDir}/system-smoke-result.json`,
-  `${JSON.stringify({ baseUrl, evidence, fallbacks, result, legacyResultNavigation }, null, 2)}\n`
+  `${JSON.stringify({ baseUrl, evidence, fallbacks, result, retiredLegacyRoutes }, null, 2)}\n`
 );
 
-console.log(JSON.stringify({ ok: true, baseUrl, evidence, fallbacks, result, legacyResultNavigation }, null, 2));
+console.log(JSON.stringify({ ok: true, baseUrl, evidence, fallbacks, result, retiredLegacyRoutes }, null, 2));
 await browser.close();
 
-async function verifyLegacyResultNavigation() {
+async function verifyRetiredLegacyResultRoutes() {
   const checks = [
     {
       featureId: "spare-planning-monte-carlo-results",
-      expectedHeading: "蒙特卡洛实验",
-      screenshot: "09-legacy-spare-monte-carlo-results"
+      retiredReason: "spare planning MC results alias removed"
     },
     {
       featureId: "mission-reliability-monte-carlo-results",
-      expectedHeading: "蒙特卡洛实验",
-      screenshot: "10-legacy-mission-monte-carlo-results"
+      retiredReason: "mission reliability MC results alias removed"
     },
     {
       featureId: "mission-reliability-aircraft-task-reliability",
-      expectedHeading: "任务可靠度评估",
-      screenshot: "11-legacy-aircraft-task-reliability"
+      retiredReason: "task reliability legacy alias still maps to active task reliability page"
     }
   ];
   const checked = [];
   for (const check of checks) {
     locationHash(check.featureId);
-    await expectHeading(page, check.expectedHeading);
-    await capture(check.screenshot, check.expectedHeading);
+    await page.waitForTimeout(50);
     const activeFeatureId = await page.evaluate(() => document.querySelector("[data-feature-id].active")?.dataset.featureId || "");
     checked.push({ ...check, activeFeatureId });
     if (activeFeatureId === check.featureId) {
-      throw new Error(`${check.featureId}: legacy result route is still active`);
+      throw new Error(`${check.featureId}: retired legacy route is still active`);
     }
   }
   return checked;

@@ -161,6 +161,37 @@ test("frontend API client exposes M7 run artifact management routes", async () =
   assert.equal(downloadRequest.responseType, "blob");
 });
 
+test("frontend API client keeps lite Mesa analysis route while visualization sidecar stays retired", async () => {
+  const calls = [];
+  const client = createBackendApiClient({
+    transport: async (request) => {
+      calls.push(request);
+      if (request.path === "/mesa-analysis-runs") {
+        return { status: "session_complete", source: "lite_mesa_aircraft_support_v1" };
+      }
+      throw new Error(`unexpected ${request.method} ${request.path}`);
+    }
+  });
+
+  assert.equal("runIndependentMesaVisualization" in client, false);
+  assert.equal(typeof client.runLiteMesaAnalysis, "function");
+
+  const result = await client.runLiteMesaAnalysis(
+    { project_id: "project-ui" },
+    "mission_reliability",
+    { samples: 2, seed: 20260705 }
+  );
+
+  assert.equal(result.source, "lite_mesa_aircraft_support_v1");
+  assert.deepEqual(calls.map((call) => `${call.method} ${call.path}`), ["POST /mesa-analysis-runs"]);
+  assert.deepEqual(calls[0].body, {
+    project: { project_id: "project-ui" },
+    analysis_type: "mission_reliability",
+    settings: { samples: 2, seed: 20260705 },
+    model_family: "aircraft_support_v1"
+  });
+});
+
 test("frontend API client lists and deletes experiment plans through project routes", async () => {
   const calls = [];
   const client = createBackendApiClient({
@@ -357,11 +388,26 @@ test("frontend API client gives formal run submission enough time for synchronou
 });
 
 test("frontend API client exposes explicit M5 modeling import methods", async () => {
+  const apiClientSource = await readFile(new URL("../front/api-client.mjs", import.meta.url), "utf8");
   const calls = [];
   const client = createBackendApiClient({
     transport: async (request) => {
       calls.push(request);
       if (request.path === "/modeling-imports/validate") return { ok: true, status: "valid", issues: [] };
+      if (request.path === "/project-data-templates?state=published") {
+        return {
+          templates: [
+            {
+              template_id: "import/ui demo",
+              source_import_id: "import/ui demo",
+              template_type: "project_data",
+              project_id: "project-ui-demo",
+              name: "UI 模板",
+              validation_status: "valid"
+            }
+          ]
+        };
+      }
       if (request.path === "/modeling-imports") return { import_id: "import/ui demo", validation_status: "valid" };
       if (request.path === "/modeling-imports/import%2Fui%20demo") {
         return {
@@ -399,6 +445,7 @@ test("frontend API client exposes explicit M5 modeling import methods", async ()
   const importPackage = { schemaVersion: "modeling-import-v1", importId: "import/ui demo" };
 
   const validation = await client.validateModelingImport(importPackage);
+  const templates = await client.listProjectDataTemplates({ state: "published" });
   const saved = await client.saveModelingImport(importPackage);
   const stored = await client.getModelingImport(importPackage.importId);
   const published = await client.publishModelingImport(importPackage.importId);
@@ -406,6 +453,12 @@ test("frontend API client exposes explicit M5 modeling import methods", async ()
   const createdProject = await client.createProjectFromModelingImport(importPackage.importId);
 
   assert.equal(validation.status, "valid");
+  assert.equal(templates.templates[0].template_id, "import/ui demo");
+  assert.equal(templates.templates[0].source_import_id, "import/ui demo");
+  assert.equal(templates.templates[0].template_type, "project_data");
+  assert.equal("version" in templates.templates[0], false);
+  assert.equal("schema_version" in templates.templates[0], false);
+  assert.equal("lifecycle_state" in templates.templates[0], false);
   assert.equal(saved.import_id, "import/ui demo");
   assert.equal(stored.importId, "import/ui demo");
   assert.equal(stored.draftPackage.lifecycle.version, 2);
@@ -417,6 +470,7 @@ test("frontend API client exposes explicit M5 modeling import methods", async ()
   assert.equal(createdProject.modelingSnapshot.project.project_id, "project-ui-demo");
   assert.deepEqual(calls.map((call) => `${call.method} ${call.path}`), [
     "POST /modeling-imports/validate",
+    "GET /project-data-templates?state=published",
     "POST /modeling-imports",
     "GET /modeling-imports/import%2Fui%20demo",
     "POST /modeling-imports/import%2Fui%20demo/publish",
@@ -424,9 +478,11 @@ test("frontend API client exposes explicit M5 modeling import methods", async ()
     "POST /modeling-imports/import%2Fui%20demo/create-project"
   ]);
   assert.equal(calls[0].body, importPackage);
-  assert.equal(calls[1].body, importPackage);
-  assert.deepEqual(calls[4].body, { model_family: "aircraft_support_v1" });
-  assert.equal(calls[5].body, undefined);
+  assert.equal(calls[1].body, undefined);
+  assert.equal(calls[2].body, importPackage);
+  assert.deepEqual(calls[5].body, { model_family: "aircraft_support_v1" });
+  assert.equal(calls[6].body, undefined);
+  assert.doesNotMatch(apiClientSource, /listModelingImportTemplates/);
 });
 
 test("frontend API client createProjectFromModelingImport uses protected modeling import route", async () => {
@@ -460,18 +516,20 @@ test("frontend API client createProjectFromModelingImport uses protected modelin
 test("buildBackendProjectJson syncs composite task inherited basic mission fields", () => {
   const scenario = {
     scenarioId: "sync-basic-fields",
-    basicMission: {
+    basicMissions: [{
+      id: "basic-alpha",
       name: "Basic Alpha",
       equipmentType: "J-35",
       taskDurationMinutes: 95,
       equipmentQuantity: 4,
       minRequiredSorties: 3,
       preparationMinutes: 25
-    },
+    }],
     missionProfile: {
       compositeTasks: [{
         id: "composite-alpha",
         taskItems: [{
+          basicMissionId: "basic-alpha",
           basicTaskName: "Basic Alpha",
           equipmentType: "stale",
           taskDurationMinutes: 10,
@@ -491,11 +549,67 @@ test("buildBackendProjectJson syncs composite task inherited basic mission field
   assert.equal(syncedItem.equipmentType, "J-35");
   assert.equal(syncedItem.taskDurationMinutes, 95);
   assert.equal(syncedItem.equipmentQuantity, 4);
-  assert.equal(syncedItem.minRequiredSystems, 3);
+  assert.equal(syncedItem.minRequiredSystems, 1);
   assert.equal(syncedItem.preparationMinutes, 25);
   assert.equal(syncedItem.groupName, "Editable group");
   assert.equal(syncedItem.firstWaveTime, "08:30");
   assert.equal(scenario.missionProfile.compositeTasks[0].taskItems[0].equipmentType, "stale");
+});
+
+test("buildBackendProjectJson migrates legacy basicMission into basicMissions", () => {
+  const scenario = {
+    scenarioId: "legacy-basic-mission",
+    basicMissions: [],
+    basicMission: {
+      missionId: "legacy-basic",
+      name: "旧基本任务",
+      equipmentType: "J-15",
+      taskDurationMinutes: 75,
+      equipmentQuantity: 2,
+      preparationMinutes: 35
+    },
+    missionProfile: {
+      basicMission: {
+        missionId: "profile-legacy-basic",
+        name: "剖面旧基本任务",
+        equipmentType: "J-35"
+      },
+      basicMissions: [{
+        id: "profile-array-basic",
+        name: "剖面数组基本任务",
+        equipmentType: "J-20"
+      }],
+      compositeTasks: [{
+        id: "composite-alpha",
+        taskItems: [{
+          basicMissionId: "legacy-basic",
+          basicTaskName: "旧基本任务",
+          equipmentType: "stale",
+          taskDurationMinutes: 1,
+          equipmentQuantity: 1,
+          preparationMinutes: 1
+        }]
+      }]
+    }
+  };
+
+  const projectJson = buildBackendProjectJson(scenario, { id: "legacy-basic-mission" });
+  const syncedItem = projectJson.missionProfile.compositeTasks[0].taskItems[0];
+
+  assert.deepEqual(projectJson.basicMissions.map((task) => task.id), [
+    "legacy-basic",
+    "profile-legacy-basic",
+    "profile-array-basic"
+  ]);
+  assert.equal("basicMission" in projectJson, false);
+  assert.equal("basicMission" in projectJson.missionProfile, false);
+  assert.equal("basicMissions" in projectJson.missionProfile, false);
+  assert.equal(syncedItem.equipmentType, "J-15");
+  assert.equal(syncedItem.taskDurationMinutes, 75);
+  assert.equal(syncedItem.equipmentQuantity, 2);
+  assert.equal(syncedItem.preparationMinutes, 35);
+  assert.ok("basicMission" in scenario);
+  assert.ok("basicMission" in scenario.missionProfile);
 });
 
 test("buildBackendProjectJson canonicalizes support activity job predecessor references", () => {
@@ -529,6 +643,135 @@ test("buildBackendProjectJson canonicalizes support activity job predecessor ref
   assert.equal("activityCode" in scenario.supportActivities[5].jobs[1], false);
 });
 
+test("buildBackendProjectJson strips Monte Carlo config from Project modeling data", () => {
+  const scenario = {
+    scenarioId: "mc-project-boundary",
+    deletedSupportResourceKeys: ["support-org:legacy"],
+    missionProfile: {
+      name: "Project modeling profile",
+      profileType: "legacy profile label",
+      repeatCycleHours: 6,
+      endCondition: "legacy end condition",
+      monteCarlo: {
+        failureRates: [0.06],
+        spareMultipliers: [1],
+        supportCapacities: [2]
+      },
+      analysisRequests: {
+        largeSample: {
+          enabled: true,
+          samples: 9,
+          sweep: {
+            failureRates: [0.09]
+          }
+        }
+      }
+    },
+    supportActivities: [
+      {
+        id: "support-activity",
+        requireDevices: 3,
+        requiredDevices: 2
+      }
+    ],
+    experiment: {
+      name: "runtime branch",
+      steps: 12,
+      samples: 4,
+      seed: 20260620
+    },
+    monteCarlo: {
+      failureRates: [0.06, 0.08],
+      spareMultipliers: [1],
+      supportCapacities: [2]
+    },
+    analysisRequests: {
+      largeSample: {
+        enabled: true,
+        samples: 4,
+        sweep: {
+          failureRates: [0.06],
+          spareMultipliers: [1],
+          supportCapacities: [2]
+        }
+      }
+    }
+  };
+
+  const projectJson = buildBackendProjectJson(scenario, { id: "mc-project-boundary" });
+
+  assert.equal("monteCarlo" in projectJson, false);
+  assert.equal("analysisRequests" in projectJson, false);
+  assert.equal("experiment" in projectJson, false);
+  assert.equal("monteCarlo" in projectJson.missionProfile, false);
+  assert.equal("profileType" in projectJson.missionProfile, false);
+  assert.equal("repeatCycleHours" in projectJson.missionProfile, false);
+  assert.equal("endCondition" in projectJson.missionProfile, false);
+  assert.equal("analysisRequests" in projectJson.missionProfile, false);
+  assert.equal("deletedSupportResourceKeys" in projectJson, false);
+  assert.equal("requireDevices" in projectJson.supportActivities[0], false);
+  assert.equal(projectJson.supportActivities[0].requiredDevices, 2);
+  assert.ok("monteCarlo" in scenario);
+  assert.ok("analysisRequests" in scenario);
+  assert.ok("experiment" in scenario);
+  assert.ok("monteCarlo" in scenario.missionProfile);
+  assert.ok("requireDevices" in scenario.supportActivities[0]);
+});
+
+test("buildBackendProjectJson preserves aircraft type catalog and strips redundant equipment runtime fields", () => {
+  const scenario = {
+    scenarioId: "combat-unit-is-source",
+    equipment: {
+      model: "legacy-summary",
+      quantity: 7,
+      initialReady: 6,
+      minRequiredSorties: 4,
+      wholeMachineModels: ["legacy-summary"],
+      aircraftTypes: [
+        { id: "aircraft-type-j15", model: "J-15", name: "歼-15", quantity: 8 }
+      ]
+    },
+    combatUnit: {
+      members: [
+        { aircraftNo: "J15-101", model: "J-15" },
+        { aircraftNo: "J35-201", model: "J-35" }
+      ]
+    },
+    missionProfile: {
+      equipment: {
+        model: "legacy-profile-summary",
+        quantity: 7
+      },
+      combatUnit: {
+        members: [
+          { aircraftNo: "J15-101", model: "J-15" }
+        ]
+      }
+    }
+  };
+
+  const projectJson = buildBackendProjectJson(scenario, { id: "combat-unit-is-source" });
+
+  assert.deepEqual(projectJson.equipment, {
+    model: "J-15",
+    wholeMachineModels: ["J-15", "J-35", "legacy-summary"],
+    aircraftTypes: [
+      { id: "aircraft-type-j15", model: "J-15", name: "歼-15" },
+      { id: "aircraft-type-j-35", model: "J-35", name: "J-35" },
+      { id: "aircraft-type-legacy-summary", model: "legacy-summary", name: "legacy-summary" }
+    ]
+  });
+  assert.equal("equipment" in projectJson.missionProfile, false);
+  assert.equal(projectJson.combatUnit.members.length, 2);
+  assert.equal(projectJson.missionProfile.combatUnit.members.length, 1);
+  assert.equal("quantity" in projectJson.equipment, false);
+  assert.equal("initialReady" in projectJson.equipment, false);
+  assert.equal("minRequiredSorties" in projectJson.equipment, false);
+  assert.equal("quantity" in projectJson.equipment.aircraftTypes[0], false);
+  assert.ok("equipment" in scenario);
+  assert.ok("equipment" in scenario.missionProfile);
+});
+
 test("experiment plan config preserves Monte Carlo branch sweep settings", () => {
   const projectJson = {
     experiment: {
@@ -546,20 +789,20 @@ test("experiment plan config preserves Monte Carlo branch sweep settings", () =>
   };
   const config = buildExperimentPlanConfig(projectJson);
 
-  assert.deepEqual(config, {
-    name: "branch config",
-    steps: 12,
-    samples: 24,
-    seed: 20260620,
-    projectJson,
-    monteCarlo: {
-      failureRates: [0.06, 0.08, 0.1],
-      spareMultipliers: [0.75, 1, 1.25],
-      supportCapacities: [2, 3],
-      minRequiredSorties: [4, 5]
-    },
-    analysisRequests: {}
+  assert.equal(config.name, "branch config");
+  assert.equal(config.steps, 12);
+  assert.equal(config.samples, 24);
+  assert.equal(config.seed, 20260620);
+  assert.deepEqual(config.monteCarlo, {
+    failureRates: [0.06, 0.08, 0.1],
+    spareMultipliers: [0.75, 1, 1.25],
+    supportCapacities: [2, 3],
+    minRequiredSorties: [4, 5]
   });
+  assert.deepEqual(config.analysisRequests, {});
+  assert.equal("experiment" in config.projectJson, false);
+  assert.equal("monteCarlo" in config.projectJson, false);
+  assert.equal("analysisRequests" in config.projectJson, false);
 });
 
 test("experiment plan config preserves analysisRequests for formal Monte Carlo runs", () => {
@@ -581,6 +824,61 @@ test("experiment plan config preserves analysisRequests for formal Monte Carlo r
 
   assert.equal(config.analysisRequests.largeSample.samples, 5);
   assert.deepEqual(config.analysisRequests.largeSample.sweep.supportCapacities, [2]);
+  assert.equal("experiment" in config.projectJson, false);
+  assert.equal("analysisRequests" in config.projectJson, false);
+  assert.equal("monteCarlo" in config.projectJson, false);
+});
+
+test("buildExperimentPlanConfig applies scenario composition overrides to branch projectJson", () => {
+  const projectJson = {
+    project_id: "project-composition",
+    experiment: { name: "composition", steps: 6, samples: 3, seed: 101 },
+    supportNodes: [{ id: "base-a", inventory: { "LRU-A": 2 } }],
+    scenarioComposition: {
+      schemaVersion: "scenario-composition-v0",
+      overrides: [
+        { path: "supportNodes.0.inventory.LRU-A", valueType: "number", value: "12", label: "LRU-A" },
+        { path: "missionProfile.durationHours", valueType: "number", value: "8" }
+      ]
+    },
+    seedPolicy: { mode: "fixed", baseSeed: 909 }
+  };
+
+  const config = buildExperimentPlanConfig(projectJson);
+
+  assert.equal(config.seed, 909);
+  assert.deepEqual(config.seedPolicy, { mode: "fixed", baseSeed: 909 });
+  assert.equal(config.projectJson.supportNodes[0].inventory["LRU-A"], 12);
+  assert.equal(config.projectJson.missionProfile.durationHours, 8);
+  assert.deepEqual(config.scenarioComposition.overrides.map((item) => item.path), [
+    "supportNodes.0.inventory.LRU-A",
+    "missionProfile.durationHours"
+  ]);
+  assert.equal("scenarioComposition" in config.projectJson, false);
+  assert.equal("seedPolicy" in config.projectJson, false);
+});
+
+test("buildExperimentPlanConfig materializes random seed policy as a reproducible base seed", () => {
+  const config = buildExperimentPlanConfig({
+    project_id: "project-random-seed",
+    experiment: { name: "random seed", steps: 4, samples: 2, seed: 11 },
+    seedPolicy: { mode: "random", baseSeed: 123456 }
+  });
+
+  assert.equal(config.seed, 123456);
+  assert.deepEqual(config.seedPolicy, { mode: "random", baseSeed: 123456 });
+});
+
+test("buildExperimentPlanConfig rejects invalid scenario composition JSON overrides", () => {
+  assert.throws(() => buildExperimentPlanConfig({
+    project_id: "project-invalid-json-override",
+    experiment: { name: "invalid json", steps: 4, samples: 2, seed: 11 },
+    scenarioComposition: {
+      overrides: [
+        { path: "missionProfile.constraints", valueType: "json", value: "{\"min\": 1" }
+      ]
+    }
+  }), SyntaxError);
 });
 
 test("frontend API client sends experiment plan branch project JSON to backend", async () => {
@@ -604,9 +902,11 @@ test("frontend API client sends experiment plan branch project JSON to backend",
   await client.createExperimentPlan("project-branch", buildExperimentPlanConfig(projectJson));
 
   assert.equal(calls[0].path, "/projects/project-branch/experiment-plans");
-  assert.deepEqual(calls[0].body.config.projectJson, projectJson);
+  assert.equal(calls[0].body.config.seed, 42);
   assert.notEqual(calls[0].body.config.projectJson, projectJson);
-  assert.equal(calls[0].body.config.projectJson.experiment.seed, 42);
+  assert.equal("experiment" in calls[0].body.config.projectJson, false);
+  assert.equal("analysisRequests" in calls[0].body.config.projectJson, false);
+  assert.equal("monteCarlo" in calls[0].body.config.projectJson, false);
 });
 
 test("frontend API client logs in and attaches M4 bearer token to protected calls", async () => {
@@ -886,7 +1186,7 @@ test("frontend generic editing remains local until explicit save or run", async 
   );
   const saveButtonSource = appSource.slice(
     appSource.indexOf('const savePlanButton = event.target.closest("[data-save-plan]"'),
-    appSource.indexOf('const monteCarloStartButton = event.target.closest("[data-mc-action=')
+    appSource.indexOf('const analysisActionButton = event.target.closest("[data-analysis-action]"')
   );
 
   assert.match(changeHandlerSource, /setPath\(scenario, input\.dataset\.path, parseInput\(input\)\)/);
@@ -950,13 +1250,13 @@ test("frontend app wires local modeling import actions through explicit backend 
   assert.doesNotMatch(featureCatalogSource, /建模数据导入/);
   assert.doesNotMatch(featureCatalogSource, /modeling-import-workbench/);
   assert.match(appSource, /from "\.\/modeling-import-workbench\.mjs"/);
-  assert.match(appSource, /from "\.\/modeling-import-templates\.mjs"/);
+  assert.doesNotMatch(appSource, /from "\.\/modeling-import-templates\.mjs"/);
   assert.match(appSource, /renderLocalModelingImportActions/);
   assert.match(appSource, /data-modeling-import-action/);
-  assert.match(appSource, /data-modeling-import-template/);
+  assert.doesNotMatch(appSource, /data-modeling-import-template/);
   assert.match(appSource, /data-modeling-import-file/);
   assert.match(appSource, /importModelingImportJsonFile/);
-  assert.match(appSource, /loadModelingImportTemplate/);
+  assert.doesNotMatch(appSource, /loadModelingImportTemplate/);
   assert.match(appSource, /load-invalid-fixture/);
   assert.match(appSource, /backendApi\.validateModelingImport/);
   assert.match(appSource, /backendApi\.saveModelingImport/);

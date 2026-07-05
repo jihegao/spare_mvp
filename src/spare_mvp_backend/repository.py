@@ -507,6 +507,39 @@ class ContractRepository:
             "publishedPackage": published_package,
         }
 
+    def list_project_data_templates(self, *, state: str = "published") -> list[dict[str, Any]]:
+        cursor = self.connection.execute(
+            """
+            SELECT
+              import_id,
+              project_id,
+              schema_version,
+              import_version,
+              status,
+              validation_status,
+              payload_json,
+              draft_payload_json,
+              published_payload_json,
+              updated_at
+            FROM modeling_imports
+            ORDER BY updated_at DESC, import_id ASC
+            """
+        )
+        templates: list[dict[str, Any]] = []
+        for row_tuple in cursor.fetchall():
+            row = _row_to_dict(cursor, row_tuple)
+            draft_package = _json_or_none(row.get("draft_payload_json")) or _json_or_none(row.get("payload_json"))
+            published_package = _json_or_none(row.get("published_payload_json"))
+            package = published_package if state == "published" else draft_package or published_package
+            if package is None:
+                continue
+            lifecycle = package.get("lifecycle") if isinstance(package.get("lifecycle"), dict) else {}
+            lifecycle_state = str(lifecycle.get("state") or row.get("status") or "")
+            if state and state != "all" and lifecycle_state != state:
+                continue
+            templates.append(_project_data_template_summary(row, package))
+        return templates
+
     def assert_modeling_import_can_publish(self, import_id: str) -> None:
         stored = self.get_modeling_import(import_id)
         lifecycle = (stored.get("publishedPackage") or {}).get("lifecycle", {})
@@ -1451,6 +1484,30 @@ def _referenced_run_ids_from_row(row: dict[str, Any]) -> list[str]:
     except (TypeError, json.JSONDecodeError):
         pass
     return list(dict.fromkeys(referenced))
+
+
+def _project_data_template_summary(row: dict[str, Any], package: dict[str, Any]) -> dict[str, Any]:
+    objects = package.get("objects") if isinstance(package.get("objects"), dict) else {}
+    project_info = objects.get("projectInfo") if isinstance(objects.get("projectInfo"), dict) else {}
+    validation = package.get("validation") if isinstance(package.get("validation"), dict) else {}
+    source_import_id = package.get("importId") or row.get("import_id")
+    object_counts = {
+        key: len(value)
+        for key, value in objects.items()
+        if isinstance(value, list)
+    }
+    return {
+        "template_id": source_import_id,
+        "template_type": "project_data",
+        "source_import_id": source_import_id,
+        "project_id": package.get("projectId") or row.get("project_id"),
+        "name": project_info.get("name") or source_import_id,
+        "summary": project_info.get("summary") or "",
+        "base_code": project_info.get("baseCode") or "",
+        "validation_status": validation.get("status") or row.get("validation_status"),
+        "object_counts": object_counts,
+        "updated_at": row.get("updated_at"),
+    }
 
 
 def _row_to_dict(cursor: sqlite3.Cursor, row: sqlite3.Row | tuple[Any, ...]) -> dict[str, Any]:

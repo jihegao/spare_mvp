@@ -40,6 +40,14 @@ export function deleteSupportActivityJobsAtIndexes(activity, indexes) {
 
 export function supportActivityJobFromBasicActivity(activity) {
   const profile = normalizeSupportActivityDurationProfile(activity?.durationProfile || activity?.durationDistribution, activity?.durationMinutes);
+  const personnel = Array.isArray(activity?.personnel)
+    ? activity.personnel.map((item) => ({
+      professional: String(item?.professional || "").trim(),
+      quantity: Math.max(1, Number(item?.quantity) || 1)
+    })).filter((item) => item.professional)
+    : [];
+  const equipment = structuredResourceRequirements(activity?.equipment);
+  const spare = structuredResourceRequirements(activity?.spare);
   return {
     activityCode: String(activity?.activityCode || activity?.id || "").trim(),
     workName: String(activity?.workName || activity?.name || activity?.activityName || "").trim(),
@@ -47,15 +55,21 @@ export function supportActivityJobFromBasicActivity(activity) {
     durationProfile: profile,
     durationMinutes: durationMinutesFromProfile(profile, activity?.durationMinutes),
     ...(activity?.personnelProfessional ? { personnelProfessional: String(activity.personnelProfessional).trim() } : {}),
-    ...(Array.isArray(activity?.personnelRequirements) ? { personnelRequirements: activity.personnelRequirements.map((item) => ({ ...item })) } : {}),
     ...(activity?.equipmentModel ? { equipmentModel: String(activity.equipmentModel).trim() } : {}),
-    ...(Array.isArray(activity?.equipmentRequirements) ? { equipmentRequirements: activity.equipmentRequirements.map((item) => ({ ...item })) } : {}),
-    ...(Array.isArray(activity?.spareRequirements) ? { spareRequirements: activity.spareRequirements.map((item) => ({ ...item })) } : {}),
-    personnel: String(activity?.personnel || activity?.personnelDemand || "").trim(),
-    equipment: String(activity?.equipment || activity?.equipmentDemand || "").trim(),
-    spare: String(activity?.spare || activity?.spareDemand || "").trim(),
+    personnel,
+    equipment,
+    spare,
     predecessors: Array.isArray(activity?.predecessors) ? [...activity.predecessors] : []
   };
+}
+
+function structuredResourceRequirements(value) {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => ({
+    model: String(item?.model || "").trim(),
+    name: String(item?.name || "").trim(),
+    quantity: Math.max(1, Number(item?.quantity) || 1)
+  })).filter((item) => item.model || item.name);
 }
 
 export function normalizeSupportActivityDurationProfile(profile, fallbackMinutes = 30) {

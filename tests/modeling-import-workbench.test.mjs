@@ -9,67 +9,21 @@ import {
   normalizeModelingImportRecord,
   renderModelingImportWorkbench
 } from "../front/modeling-import-workbench.mjs";
-import {
-  MODELING_IMPORT_TEMPLATES,
-  loadModelingImportTemplate
-} from "../front/modeling-import-templates.mjs";
 
 async function readFixture() {
   return JSON.parse(await readFile(new URL("./fixtures/modeling_import_project.json", import.meta.url), "utf8"));
-}
-
-async function readProductTemplate(filename) {
-  return JSON.parse(await readFile(new URL(`../public/import-templates/${filename}`, import.meta.url), "utf8"));
 }
 
 async function readSimulationAnalysisCase(caseId) {
   return JSON.parse(await readFile(new URL(`./fixtures/simulation_analysis_cases/${caseId}.json`, import.meta.url), "utf8"));
 }
 
-test("product modeling import templates mirror the two simulation analysis cases and load by path", async () => {
-  const expected = [
-    {
-      id: "minimal-single-aircraft",
-      label: "Level 0 / 最小单机建模粒度",
-      validationLevel: "level0",
-      filename: "minimal_single_aircraft.json",
-      sourceCaseId: "minimal_single_aircraft"
-    },
-    {
-      id: "canonical-platform-case",
-      label: "Level 1 / 平台标准案例",
-      validationLevel: "level1",
-      filename: "canonical_platform_case.json",
-      sourceCaseId: "canonical_platform_case"
-    }
-  ];
-  assert.deepEqual(
-    MODELING_IMPORT_TEMPLATES.map(({ id, label, validationLevel, path }) => ({ id, label, validationLevel, path })),
-    expected.map((item) => ({
-      id: item.id,
-      label: item.label,
-      validationLevel: item.validationLevel,
-      path: `/import-templates/${item.filename}`
-    }))
-  );
+test("canonical public import fixture remains aligned with the simulation analysis case", async () => {
+  const sourceCase = await readSimulationAnalysisCase("canonical_platform_case");
+  const productTemplate = JSON.parse(await readFile(new URL("../public/import-templates/canonical_platform_case.json", import.meta.url), "utf8"));
 
-  for (const item of expected) {
-    const sourceCase = await readSimulationAnalysisCase(item.sourceCaseId);
-    const productTemplate = await readProductTemplate(item.filename);
-    const requests = [];
-    const fetchJson = async (path) => {
-      requests.push(path);
-      return productTemplate;
-    };
-
-    const loaded = await loadModelingImportTemplate(item.id, fetchJson);
-
-    assert.deepEqual(productTemplate, sourceCase.modeling_import);
-    assert.equal(productTemplate.validationLevel, item.validationLevel);
-    assert.deepEqual(productTemplate.usedTables, sourceCase.used_tables);
-    assert.deepEqual(loaded, sourceCase.modeling_import);
-    assert.deepEqual(requests, [`/import-templates/${item.filename}`]);
-  }
+  assert.deepEqual(productTemplate, sourceCase.modeling_import);
+  assert.deepEqual(productTemplate.usedTables, sourceCase.used_tables);
 });
 
 test("cloneModelingImportPackage returns an isolated deep copy", async () => {
@@ -147,8 +101,8 @@ test("diffModelingImports keys imported object rows by stable IDs instead of arr
 test("renderModelingImportWorkbench includes action controls lifecycle version issues and diff rows", async () => {
   const draft = await readFixture();
   const published = cloneModelingImportPackage(draft);
-  published.lifecycle = { state: "published", version: 1, referencedRunIds: ["run-smoke-001"] };
-  draft.lifecycle = { state: "draft", version: 2, referencedRunIds: ["run-smoke-001"] };
+  published.lifecycle = { state: "published", version: 1, referencedRunIds: ["run-current-001"] };
+  draft.lifecycle = { state: "draft", version: 2, referencedRunIds: ["run-current-001"] };
   const radarIndex = draft.objects.equipmentAssets.findIndex((row) => row.id === "j15-radar");
   draft.objects.equipmentAssets[radarIndex].quantity = 2;
   const validation = {
@@ -190,7 +144,6 @@ test("renderModelingImportWorkbench surfaces compile gate blocked issues and sco
     validation: { status: "valid", issues: [] },
     compileResult: {
       status: "blocked",
-      validationLevel: "level1",
       usedTables: {
         missionProfiles: true,
         equipmentAssets: true,
@@ -212,7 +165,8 @@ test("renderModelingImportWorkbench surfaces compile gate blocked issues and sco
   });
 
   assert.match(html, /blocked/);
-  assert.match(html, /level1/);
+  assert.match(html, /未建模域/);
+  assert.doesNotMatch(html, /校验级别|level0|level1/);
   assert.match(html, /invalid_declared_table/);
   assert.match(html, /objects\.supportActivities/);
   assert.match(html, /声明使用保障活动表/);

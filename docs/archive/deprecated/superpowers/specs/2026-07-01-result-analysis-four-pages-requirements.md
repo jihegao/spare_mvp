@@ -2,9 +2,20 @@
 
 日期：2026-07-01
 
-状态：开发实现版 PRD。本文以用户主流程为核心，明确四个结果分析页的产品语义、后台自动动作、正式结果校验规则和验收标准。历史设计中的 `AnalysisTask`、`MonteCarloExperiment`、`artifact`、`run` 等概念保留为内部实现语义，不作为普通用户主界面的选择项、任务列表或结果列表。
+状态：开发实现版 PRD；2026-07-04 修订为正式结果账本/后端 current-result 契约参考。四个结果分析页的当前主流程已收敛到 `docs/superpowers/specs/2026-07-03-lightweight-mesa-experiments-design.md` 定义的独立 Mesa 会话页面，不再从页面入口读取 current result、触发 `/api/runs` 或解锁正式 projection KPI。本文中的 `AnalysisTask`、`MonteCarloExperiment`、`artifact`、`run`、current result 规则保留为后端正式结果账本和未来持久化结果能力的约束，不能作为四个独立 Mesa 页的用户可见流程。
+
+## 0. 2026-07-04 当前页面口径
+
+- 备件短板分析、飞机转场携行清单分析、任务可靠度评估、停机因素分析四个页面当前均为独立 Mesa 会话页面。
+- 页面读取当前项目建模数据，在会话内运行轻量 Mesa 分析并展示摘要。
+- 页面不调用 `runCurrentAnalysisPage()`，不调用 `startMonteCarloRunThroughApi()`，不读取 `getCurrentAnalysisResult()`。
+- 页面不创建 `Run`、`Result`、`ArtifactManifest`、`AnalysisTask` 或 `MonteCarloExperiment`。
+- 页面输出只能标注为会话内 Mesa 分析结果；不得进入 `completed` current result，也不得伪装成 `analysis_projection_*` 正式 artifact。
+- 下文的正式 current-result 状态机和 projection 校验规则仅约束后端正式结果账本或未来持久化结果能力。
 
 ## 1. 背景与目标
+
+> 2026-07-04 阅读说明：从本节开始到验收清单，保留的是“正式结果账本 / 后端 current-result”历史契约，用于约束未来持久化结果能力和正式 projection 校验。它不再描述四个结果分析页的当前用户主流程。四个页面当前主流程必须以第 0 节和轻量 Mesa 设计稿为准：从当前 Project 进入 `/api/mesa-analysis-runs`，后端内存运行 `aircraft_support_v1`，返回会话内结果，且不创建 run、result、artifact、AnalysisTask 或 MonteCarloExperiment。
 
 结果分析模块包含四个页面：
 

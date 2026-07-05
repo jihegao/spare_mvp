@@ -1,7 +1,5 @@
-"""Spare planning and mission reliability ABM prototype."""
+"""Spare planning and mission reliability ABM runtime package."""
 
-from .smoke_model import SmokeSpareMvpModel
+from .aircraft_support_v1.model import AircraftSupportV1Model
 
-SpareMvpModel = SmokeSpareMvpModel
-
-__all__ = ["SmokeSpareMvpModel", "SpareMvpModel"]
+__all__ = ["AircraftSupportV1Model"]

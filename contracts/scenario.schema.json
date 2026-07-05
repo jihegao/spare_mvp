@@ -18,15 +18,6 @@
       "type": "object",
       "required": ["simulation_model", "simulation_inputs"],
       "properties": {
-        "simulation_model": { "$ref": "#/$defs/SmokeModelSelector" },
-        "simulation_inputs": { "$ref": "#/$defs/SmokeInputs" }
-      },
-      "additionalProperties": true
-    },
-    {
-      "type": "object",
-      "required": ["simulation_model", "simulation_inputs"],
-      "properties": {
         "simulation_model": { "$ref": "#/$defs/AviationSupportModelSelector" },
         "simulation_inputs": { "$ref": "#/$defs/AviationSupportInputs" }
       },
@@ -75,8 +66,8 @@
       "type": "object",
       "required": ["family", "model_id", "contract_version"],
       "properties": {
-        "family": { "type": "string", "enum": ["smoke", "aviation_support", "aircraft_support_v1"] },
-        "model_id": { "type": "string", "enum": ["SmokeSpareMvpModel", "AviationSupportModel", "AircraftSupportV1Model"] },
+        "family": { "type": "string", "enum": ["aviation_support", "aircraft_support_v1"] },
+        "model_id": { "type": "string", "enum": ["AviationSupportModel", "AircraftSupportV1Model"] },
         "contract_version": { "type": "string", "const": "1.0.0" }
       },
       "additionalProperties": false
@@ -115,7 +106,6 @@
             "ignored_fields": { "type": "array", "items": { "type": "string" } },
             "governance_only_fields": { "type": "array", "items": { "type": "string" } },
             "unsupported_fields": { "type": "array", "items": { "type": "string" } },
-            "validation_level": { "type": "string", "enum": ["level0", "level1"] },
             "used_tables": {
               "type": "object",
               "additionalProperties": { "type": "boolean" }
@@ -134,16 +124,6 @@
     "simulation_inputs": { "type": "object" }
   },
   "$defs": {
-    "SmokeModelSelector": {
-      "type": "object",
-      "required": ["family", "model_id", "contract_version"],
-      "properties": {
-        "family": { "const": "smoke" },
-        "model_id": { "const": "SmokeSpareMvpModel" },
-        "contract_version": { "const": "1.0.0" }
-      },
-      "additionalProperties": false
-    },
     "AviationSupportModelSelector": {
       "type": "object",
       "required": ["family", "model_id", "contract_version"],
@@ -161,30 +141,6 @@
         "family": { "const": "aircraft_support_v1" },
         "model_id": { "const": "AircraftSupportV1Model" },
         "contract_version": { "const": "1.0.0" }
-      },
-      "additionalProperties": false
-    },
-    "SmokeInputs": {
-      "type": "object",
-      "required": [
-        "project_snapshot",
-        "project_version",
-        "active_module",
-        "spare_multiplier",
-        "failure_rate",
-        "support_capacity",
-        "min_required_sorties",
-        "seed"
-      ],
-      "properties": {
-        "project_snapshot": { "type": "object" },
-        "project_version": { "type": "string" },
-        "active_module": { "type": "string", "enum": ["sparePlanning", "missionReliability"] },
-        "spare_multiplier": { "type": "number", "minimum": 0 },
-        "failure_rate": { "type": "number", "minimum": 0 },
-        "support_capacity": { "type": "integer", "minimum": 1 },
-        "min_required_sorties": { "type": "integer", "minimum": 1 },
-        "seed": { "type": "integer" }
       },
       "additionalProperties": false
     },
