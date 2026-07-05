@@ -1887,6 +1887,64 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(self.adapter.run_calls, [])
         self.assertEqual(self.adapter.monte_carlo_run_calls, [])
 
+    def test_lite_mesa_downtime_analysis_writes_model_log_event_snapshots(self) -> None:
+        case = self._fixture("simulation_analysis_cases/minimal_single_aircraft.json")
+        project = modeling_import_to_project(case["modeling_import"])
+        project["project_id"] = "project-downtime-event-snapshots"
+        project["missionProfile"].pop("sourceImportId", None)
+        project["modelingImportValidation"] = {
+            **project.get("modelingImportValidation", {}),
+            "disabledDomains": [],
+            "usedTables": {
+                **project.get("modelingImportValidation", {}).get("usedTables", {}),
+                "supportResources": True,
+                "supportActivities": True,
+            },
+        }
+        project["supportNodes"] = [
+            {
+                "id": "deck-node",
+                "name": "甲板保障点",
+                "personnelCapacity": 1,
+                "equipmentCapacity": 1,
+                "inventory": {"hyd-pump": 0},
+            }
+        ]
+        project["supportActivities"] = [
+            {
+                "id": "preflight-spare-check",
+                "name": "飞前备件检查",
+                "activityType": "preflight",
+                "resourceId": "deck-node",
+                "requiredPersonnel": 1,
+                "requiredDevices": 1,
+                "spareType": "hyd-pump",
+                "spareQuantity": 1,
+                "durationMinutes": 30,
+                "jobs": [{"workName": "飞前备件检查", "durationMinutes": 30, "spareType": "hyd-pump", "spareQuantity": 1}],
+            }
+        ]
+
+        payload = self.api.run_lite_mesa_analysis(
+            project,
+            analysis_type="downtime_factors",
+            settings={"samples": 1, "seed": 20260705},
+        )
+
+        self.assertEqual(payload["status"], "session_complete")
+        self.assertEqual(payload["analysis_type"], "downtime_factors")
+        self.assertTrue(payload["settings"]["write_event_snapshots"])
+        self.assertGreater(len(payload["event_snapshots"]), 0)
+        snapshot = payload["event_snapshots"][0]
+        self.assertEqual(snapshot["source"], "model_event_log")
+        self.assertEqual(snapshot["event_type"], "spare_shortage")
+        self.assertIn("aircraft_state", snapshot)
+        self.assertIn("support_resources", snapshot)
+        self.assertIn("spare_shortages", snapshot)
+        self.assertGreaterEqual(len(snapshot["aircraft_state"]["aircraft"]), 1)
+        self.assertEqual(snapshot["support_resources"][0]["resource_id"], "deck-node")
+        self.assertEqual(snapshot["spare_shortages"][0]["spare_type"], "hyd-pump")
+
     def test_lite_mesa_analysis_returns_blocked_when_project_cannot_compile(self) -> None:
         before_counts = self._run_side_effect_counts()
 

@@ -389,6 +389,7 @@ test("visual Mesa page renders compact headerless status view with decimal KPI v
     await runtime.flush();
 
     assert.match(runtime.appNode.innerHTML, /data-mesa-control="play"/);
+    await runtime.click("[data-mesa-control]", { mesaControl: "start-new-run" });
     assert.match(runtime.appNode.innerHTML, /飞机状态一览/);
     assert.match(runtime.appNode.innerHTML, /<span>使用可用度<\/span><strong>0\.50<\/strong>/);
     assert.match(runtime.appNode.innerHTML, /<span>出动架次率<\/span><strong>0\.50<\/strong>/);
@@ -452,6 +453,30 @@ test("carry list analysis result omits boundary explanation card", async () => {
     assert.doesNotMatch(runtime.appNode.innerHTML, /会话内 Mesa 分析结果/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /不写入正式结果账本/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /未创建 run、result 或 artifact/);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("downtime factors analysis enables log snapshots and renders event snapshots", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=mission-reliability-downtime-factor-analysis",
+    projectJson: createRuntimeProjectJson()
+  });
+
+  try {
+    await runtime.click("[data-lite-mesa-analysis-action='run']");
+
+    const analysisRequest = runtime.requests.find((request) => request.url === "/api/mesa-analysis-runs");
+    assert.ok(analysisRequest, "downtime analysis should call the lite analysis backend route");
+    const body = JSON.parse(analysisRequest.options.body || "{}");
+    assert.equal(body.analysis_type, "downtime_factors");
+    assert.equal(body.settings.write_event_snapshots, true);
+    assert.match(runtime.appNode.innerHTML, /事件快照/);
+    assert.match(runtime.appNode.innerHTML, /飞机状态/);
+    assert.match(runtime.appNode.innerHTML, /保障资源占用/);
+    assert.match(runtime.appNode.innerHTML, /备件短缺/);
+    assert.match(runtime.appNode.innerHTML, /hyd-pump/);
   } finally {
     runtime.restore();
   }
@@ -1332,6 +1357,86 @@ test("experiment plan selection uses experiment_plan_id for duplicate names", as
   }
 });
 
+test("visual simulation waits for explicit run before starting Mesa visualization", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-visual-mesa-page",
+    projectJson: createRuntimeProjectJson()
+  });
+
+  try {
+    assert.match(runtime.appNode.innerHTML, /启动新仿真/);
+    assert.match(runtime.appNode.innerHTML, /data-current-experiment-plan/);
+    assert.equal(
+      runtime.requests.some((request) => request.url === "/api/mesa-visualization-runs"),
+      false,
+      "visual page load should not auto-start Mesa visualization"
+    );
+
+    await runtime.click("[data-mesa-control]", { mesaControl: "start-new-run" });
+
+    assert.equal(
+      runtime.requests.some((request) => request.url === "/api/mesa-visualization-runs"),
+      true,
+      "explicit start button should call Mesa visualization route"
+    );
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("experiment plan dropdown drives Monte Carlo and analysis Mesa requests", async () => {
+  const planProjectJson = createRuntimeProjectJson({
+    project_id: "project-runtime-plan-a",
+    projectInfo: { name: "方案A Project", baseCode: "PLA" }
+  });
+  delete planProjectJson.experiment;
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-monte-carlo-experiment-detail",
+    projectJson: createRuntimeProjectJson(),
+    experimentPlans: [{
+      experiment_plan_id: "plan-a",
+      status: "draft",
+      config: {
+        name: "方案A",
+        samples: 4,
+        seed: 404,
+        projectJson: planProjectJson
+      }
+    }]
+  });
+
+  try {
+    assert.match(runtime.appNode.innerHTML, /data-current-experiment-plan/);
+    await runtime.change(
+      "[data-current-experiment-plan]",
+      { currentExperimentPlan: "" },
+      { value: "plan-a" }
+    );
+    await runtime.click("[data-lite-mesa-action='run']");
+
+    const monteCarloRequest = runtime.requests.find((request) => request.url === "/api/mesa-analysis-runs");
+    assert.ok(monteCarloRequest, "Monte Carlo run should use backend Mesa route");
+    const monteCarloBody = JSON.parse(monteCarloRequest.options.body || "{}");
+    assert.equal(monteCarloBody.analysis_type, "mission_reliability");
+    assert.equal(monteCarloBody.project.project_id, "project-runtime-plan-a");
+
+    await runtime.setHash("feature=spare-planning-spare-shortfall-analysis");
+    await runtime.change(
+      "[data-current-experiment-plan]",
+      { currentExperimentPlan: "" },
+      { value: "plan-a" }
+    );
+    await runtime.click("[data-lite-mesa-analysis-action='run']");
+
+    const analysisRequests = runtime.requests.filter((request) => request.url === "/api/mesa-analysis-runs");
+    const analysisBody = JSON.parse(analysisRequests.at(-1).options.body || "{}");
+    assert.equal(analysisBody.analysis_type, "spare_shortfall");
+    assert.equal(analysisBody.project.project_id, "project-runtime-plan-a");
+  } finally {
+    runtime.restore();
+  }
+});
+
 test("Mesa Monte Carlo setting changes do not rerender before the run click", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=spare-planning-monte-carlo-experiment-detail",
@@ -1353,13 +1458,19 @@ test("Mesa Monte Carlo setting changes do not rerender before the run click", as
 
     await runtime.change("[data-lite-mesa-field]", { liteMesaField: "samples" }, { value: "3", type: "number" });
 
+    assert.match(runtime.appNode.innerHTML, /data-current-experiment-plan/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /设置已更新，等待重新运行 Mesa 分析/);
 
     await runtime.click("[data-lite-mesa-action='run']");
 
-    assert.match(runtime.appNode.innerHTML, /分析完成：3 个样本/);
+    const analysisRequest = runtime.requests.find((request) => request.url === "/api/mesa-analysis-runs");
+    assert.ok(analysisRequest, "Monte Carlo detail should call backend Mesa analysis");
+    const body = JSON.parse(analysisRequest.options.body || "{}");
+    assert.equal(body.analysis_type, "mission_reliability");
+    assert.equal(body.settings.samples, 3);
+    assert.match(runtime.appNode.innerHTML, /分析完成：27 个样本/);
     assert.match(runtime.appNode.innerHTML, /<td>mission_success_rate<\/td>/);
-    assert.match(runtime.appNode.innerHTML, /<td>3<\/td>/);
+    assert.match(runtime.appNode.innerHTML, /<td>1<\/td>/);
   } finally {
     runtime.restore();
   }
@@ -1833,6 +1944,34 @@ function createRuntimeLiteAnalysisResponse(analysisType = "carry_list") {
     seed_list: [20260621],
     metrics: [["样本数", "27"], ["建议携行总数", "1"]],
     rows: rowsByType[analysisType] || rowsByType.carry_list,
+    event_snapshots: analysisType === "downtime_factors" ? [{
+      snapshot_id: "downtime-runtime-0001",
+      source: "model_event_log",
+      event_type: "spare_shortage",
+      event_label: "备件短缺",
+      seed: 20260621,
+      simulation_time: 60,
+      aircraft_state: {
+        summary: { available_aircraft: 1, failed_count: 0, repairing_count: 0 },
+        aircraft: [{ tail_number: "J15-001", state: "available" }]
+      },
+      support_resources: [{
+        resource_id: "deck-node",
+        name: "甲板保障点",
+        personnel_in_use: 0,
+        personnel_capacity: 1,
+        equipment_in_use: 0,
+        equipment_capacity: 1,
+        inventory: { "hyd-pump": 0 }
+      }],
+      spare_shortages: [{
+        spare_type: "hyd-pump",
+        required_quantity: 1,
+        available_quantity: 0,
+        resource_id: "deck-node",
+        job_id: "job-0001"
+      }]
+    }] : [],
     limitations: [
       "会话内 Mesa 分析结果，不写入正式结果账本。",
       "未创建 run、result 或 artifact。",

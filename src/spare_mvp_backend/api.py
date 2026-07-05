@@ -668,6 +668,8 @@ class BackendApi:
         """Run a current-project Mesa analysis in memory without formal run persistence."""
         normalized_analysis_type = _normalize_analysis_type(analysis_type)
         normalized_settings = _normalize_lite_mesa_analysis_settings(settings or {})
+        if normalized_analysis_type == "downtime_factors":
+            normalized_settings["write_event_snapshots"] = True
         if model_family != ACTIVE_FORMAL_MODEL_FAMILY:
             raise BackendApiError(
                 "unsupported_lite_mesa_analysis_model_family",
@@ -715,6 +717,7 @@ class BackendApi:
                         inputs,
                         seed=seed,
                         sample_index=sample_index,
+                        write_event_snapshots=normalized_settings["write_event_snapshots"],
                     )
                 )
             except Exception as exc:  # pragma: no cover - defensive fail-closed path.
@@ -777,7 +780,9 @@ class BackendApi:
             "projection": projections[normalized_analysis_type],
             "metrics": page_result["metrics"],
             "rows": page_result["rows"],
+            "event_snapshots": page_result.get("event_snapshots", []),
             "limitations": _lite_mesa_analysis_limitations(),
+            "settings": copy.deepcopy(normalized_settings),
             "failed_samples": failed_samples,
             "compile_provenance": compile_result.get("provenance", {}),
         }
@@ -1454,6 +1459,10 @@ def _normalize_lite_mesa_analysis_settings(settings: dict[str, Any]) -> dict[str
         "missionConfidenceTarget": confidence_target,
         "maxTimeWindow": max_time_window,
         "topN": top_n,
+        "write_event_snapshots": _settings_bool(
+            settings.get("write_event_snapshots", settings.get("writeEventSnapshots")),
+            default=False,
+        ),
     }
 
 
@@ -1462,11 +1471,13 @@ def _run_aircraft_support_v1_analysis_sample(
     *,
     seed: int,
     sample_index: int,
+    write_event_snapshots: bool = False,
 ) -> dict[str, Any]:
     from src.spare_mvp_abm.aircraft_support_v1 import AircraftSupportV1Model
 
     sample_inputs = copy.deepcopy(inputs)
     sample_inputs["seed"] = seed
+    sample_inputs["write_event_snapshots"] = write_event_snapshots
     model = AircraftSupportV1Model(sample_inputs)
     execution = model.run()
     frames = []
@@ -1483,6 +1494,7 @@ def _run_aircraft_support_v1_analysis_sample(
         "sweep": {},
         "metrics": copy.deepcopy(execution["metrics"]),
         "frames": frames,
+        "events": copy.deepcopy(execution.get("events") or []),
     }
 
 
@@ -1650,6 +1662,7 @@ def _lite_mesa_downtime_factors_result(
             ["样本数", str(len(samples))],
         ],
         "rows": rows,
+        "event_snapshots": copy.deepcopy(projection.get("anomaly_snapshots") or []),
     }
 
 
@@ -1739,6 +1752,14 @@ def _optional_int(value: Any) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _settings_bool(value: Any, *, default: bool = False) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value in (None, ""):
+        return default
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _bounded_float(value: Any, *, default: float, minimum: float, maximum: float) -> float:

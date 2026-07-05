@@ -146,6 +146,11 @@ class AircraftSupportV1Model:
         self.inputs = copy.deepcopy(inputs)
         self.seed = int(self.inputs.get("seed", 0))
         self.rng = random.Random(self.seed)
+        self.write_event_snapshots = _truthy_input_flag(
+            self.inputs.get("write_event_snapshots")
+            or self.inputs.get("writeEventSnapshots")
+            or self.inputs.get("capture_event_snapshots")
+        )
         time_config = self.inputs.get("time", {})
         self.duration_minutes = int(time_config.get("duration_minutes", 1440))
         self.tick_minutes = int(time_config.get("tick_minutes", 1))
@@ -918,10 +923,30 @@ class AircraftSupportV1Model:
             if node["personnel_in_use"] + personnel > node["personnel_capacity"]:
                 self.resource_delay_events += 1
                 job.shortage_reason = "personnel_capacity"
+                self._event(
+                    "resource_delay",
+                    f"{job.job_id} waiting for personnel at {node['id']}",
+                    {
+                        "job_id": job.job_id,
+                        "resource_id": node["id"],
+                        "required_personnel": personnel,
+                        "available_personnel": max(0, node["personnel_capacity"] - node["personnel_in_use"]),
+                    },
+                )
                 continue
             if node["equipment_in_use"] + equipment > node["equipment_capacity"]:
                 self.resource_delay_events += 1
                 job.shortage_reason = "equipment_capacity"
+                self._event(
+                    "resource_delay",
+                    f"{job.job_id} waiting for equipment at {node['id']}",
+                    {
+                        "job_id": job.job_id,
+                        "resource_id": node["id"],
+                        "required_equipment": equipment,
+                        "available_equipment": max(0, node["equipment_capacity"] - node["equipment_in_use"]),
+                    },
+                )
                 continue
             spare_type, spare_qty = self._task_spare_requirement(job, task)
             if spare_type and node["inventory"].get(spare_type, 0) < spare_qty:
@@ -931,6 +956,18 @@ class AircraftSupportV1Model:
                 self.shortage_events += 1
                 reason = "in_transit" if self._has_in_transit_spare(node["id"], spare_type) else f"spare:{spare_type}"
                 job.shortage_reason = reason
+                self._event(
+                    "spare_shortage",
+                    f"{job.job_id} blocked by {spare_type} shortage at {node['id']}",
+                    {
+                        "job_id": job.job_id,
+                        "resource_id": node["id"],
+                        "spare_type": spare_type,
+                        "required_quantity": spare_qty,
+                        "available_quantity": int(node["inventory"].get(spare_type, 0) or 0),
+                        "reason": reason,
+                    },
+                )
                 continue
             node["personnel_in_use"] += personnel
             node["equipment_in_use"] += equipment
@@ -1579,19 +1616,107 @@ class AircraftSupportV1Model:
         recent = [event for event in self.event_log if event["time"] >= max(0, self.minute - self.sample_every_minutes)]
         if not recent:
             recent = [{"time": self.minute, "event": "state_frame", "message": "state frame sampled"}]
-        return [
-            {
-                "time": float(event["time"]),
-                "event": str(event["event"]),
-                "event_type": str(event["event"]),
-                "message": str(event["message"]),
-                "metric_refs": self._metric_refs_for_event(str(event["event"])),
-            }
-            for event in recent[-10:]
-        ]
+        payload = []
+        for event in recent[-10:]:
+            payload.append(
+                {
+                    "time": float(event["time"]),
+                    "event": str(event["event"]),
+                    "event_type": str(event["event"]),
+                    "message": str(event["message"]),
+                    "metric_refs": self._metric_refs_for_event(str(event["event"])),
+                }
+            )
+        return payload
 
-    def _event(self, event: str, message: str) -> None:
-        self.event_log.append({"time": self.minute, "event": event, "message": message})
+    def _event(self, event: str, message: str, details: dict[str, Any] | None = None) -> None:
+        item: dict[str, Any] = {"time": self.minute, "event": event, "message": message}
+        if details:
+            item["details"] = copy.deepcopy(details)
+        if self.write_event_snapshots and self._should_write_event_snapshot(event):
+            item["snapshot"] = self._event_snapshot(event, details or {})
+        self.event_log.append(item)
+
+    def _should_write_event_snapshot(self, event: str) -> bool:
+        normalized = event.lower()
+        return any(token in normalized for token in ("fail", "shortage", "delay"))
+
+    def _event_snapshot(self, event: str, details: dict[str, Any]) -> dict[str, Any]:
+        metrics = self.snapshot()
+        return {
+            "schema_version": "aircraft-support-event-snapshot-v0",
+            "event": event,
+            "time": self.minute,
+            "aircraft_state": {
+                "summary": {
+                    "ready_rate": metrics["ready_rate"],
+                    "available_aircraft": metrics["available_aircraft"],
+                    "failed_count": metrics["failed_count"],
+                    "repairing_count": metrics["repairing_count"],
+                    "flying_count": metrics["flying_count"],
+                    "postflight_count": metrics["postflight_count"],
+                    "preventive_count": metrics["preventive_count"],
+                },
+                "aircraft": [self._aircraft_payload(item) for item in self.aircraft],
+            },
+            "support_resources": [self._event_resource_snapshot(node) for node in self.nodes.values()],
+            "spare_shortages": self._event_spare_shortages(details),
+            "active_jobs": [self._job_payload(job) for job in self.jobs if job.state != "completed"],
+        }
+
+    def _event_resource_snapshot(self, node: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "resource_id": node["id"],
+            "name": node["name"],
+            "personnel_in_use": node["personnel_in_use"],
+            "personnel_capacity": node["personnel_capacity"],
+            "equipment_in_use": node["equipment_in_use"],
+            "equipment_capacity": node["equipment_capacity"],
+            "work_count": node["work_count"],
+            "inventory": copy.deepcopy(node["inventory"]),
+        }
+
+    def _event_spare_shortages(self, details: dict[str, Any]) -> list[dict[str, Any]]:
+        shortages = []
+        spare_type = str(details.get("spare_type") or "")
+        if spare_type:
+            shortages.append(
+                {
+                    "spare_type": spare_type,
+                    "required_quantity": int(details.get("required_quantity", 0) or 0),
+                    "available_quantity": int(details.get("available_quantity", 0) or 0),
+                    "resource_id": str(details.get("resource_id") or ""),
+                    "job_id": str(details.get("job_id") or ""),
+                    "reason": str(details.get("reason") or "spare_shortage"),
+                }
+            )
+        for job in self.jobs:
+            if not job.shortage_reason or not str(job.shortage_reason).startswith("spare:"):
+                continue
+            node = self.nodes.get(job.resource_node_id)
+            task = job.current_task or {}
+            job_spare_type, job_spare_qty = self._task_spare_requirement(job, task)
+            if not job_spare_type:
+                continue
+            shortages.append(
+                {
+                    "spare_type": job_spare_type,
+                    "required_quantity": job_spare_qty,
+                    "available_quantity": int((node or {}).get("inventory", {}).get(job_spare_type, 0) or 0),
+                    "resource_id": job.resource_node_id,
+                    "job_id": job.job_id,
+                    "reason": str(job.shortage_reason),
+                }
+            )
+        seen: set[tuple[str, str, str]] = set()
+        unique = []
+        for shortage in shortages:
+            key = (shortage["spare_type"], shortage["resource_id"], shortage["job_id"])
+            if key in seen:
+                continue
+            seen.add(key)
+            unique.append(shortage)
+        return unique
 
     def _metric_refs_for_event(self, event: str) -> list[str]:
         if "mission" in event:
@@ -1613,6 +1738,14 @@ def _time_to_minute(value: Any, fallback: int) -> int:
         return max(0, int(hour) * 60 + int(minute))
     except ValueError:
         return fallback
+
+
+def _truthy_input_flag(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value in (None, ""):
+        return False
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _resource_quantity(text: Any, explicit: Any, *, default: int) -> int:

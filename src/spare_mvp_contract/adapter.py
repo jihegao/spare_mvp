@@ -2909,6 +2909,28 @@ class SimulationAdapter:
             sample_index = int(sample.get("sample_index", 0) or 0)
             seed = sample.get("seed")
             sweep = copy.deepcopy(sample.get("sweep") or {})
+            snapshot_count_before_event_log = len(snapshots)
+            for event in sample.get("events") or []:
+                event_type = self._downtime_event_type(str(event.get("event_type") or event.get("event") or ""))
+                event_snapshot = event.get("snapshot") if isinstance(event.get("snapshot"), dict) else None
+                if not event_type or event_snapshot is None:
+                    continue
+                snapshots.append(
+                    self._downtime_event_log_snapshot(
+                        run_id=run_id,
+                        ordinal=len(snapshots) + 1,
+                        sample_index=sample_index,
+                        seed=seed,
+                        sweep=sweep,
+                        event_type=event_type,
+                        event=event,
+                        event_snapshot=event_snapshot,
+                    )
+                )
+                if len(snapshots) >= 20:
+                    return snapshots
+            if len(snapshots) > snapshot_count_before_event_log:
+                continue
             for frame in sample.get("frames") or []:
                 candidates = self._downtime_snapshot_events(frame)
                 for event_type, event in candidates:
@@ -2927,6 +2949,60 @@ class SimulationAdapter:
                     if len(snapshots) >= 20:
                         return snapshots
         return snapshots
+
+    def _downtime_event_log_snapshot(
+        self,
+        *,
+        run_id: str,
+        ordinal: int,
+        sample_index: int,
+        seed: Any,
+        sweep: dict[str, Any],
+        event_type: str,
+        event: dict[str, Any],
+        event_snapshot: dict[str, Any],
+    ) -> dict[str, Any]:
+        aircraft_state = copy.deepcopy(event_snapshot.get("aircraft_state") or {})
+        support_resources = copy.deepcopy(event_snapshot.get("support_resources") or [])
+        spare_shortages = copy.deepcopy(event_snapshot.get("spare_shortages") or [])
+        active_jobs = [job for job in event_snapshot.get("active_jobs") or [] if isinstance(job, dict)]
+        job = active_jobs[0] if active_jobs else {}
+        support_activity_state = {
+            "active_jobs": len(active_jobs),
+            "repair_backlog": sum(1 for item in active_jobs if item.get("kind") == "repair"),
+            "postflight_backlog": sum(1 for item in active_jobs if item.get("kind") == "postflight"),
+            "preventive_backlog": sum(1 for item in active_jobs if item.get("kind") == "preventive"),
+            "spare_fill_rate": float((event_snapshot.get("metrics") or {}).get("spare_fill_rate", 0) or 0),
+        }
+        return {
+            "snapshot_id": f"downtime-{run_id or 'run'}-{ordinal:04d}",
+            "source": "model_event_log",
+            "run_id": run_id,
+            "sample_index": sample_index,
+            "seed": seed,
+            "sweep": sweep,
+            "simulation_time": float(event.get("time", event_snapshot.get("time", 0)) or 0),
+            "event_type": event_type,
+            "event_label": event_type,
+            "event": copy.deepcopy(event),
+            "result": self._downtime_snapshot_result(event_type),
+            "aircraft_state": aircraft_state,
+            "support_resources": support_resources,
+            "spare_shortages": spare_shortages,
+            "support_activity_state": support_activity_state,
+            "job_node": {
+                "job_id": str(job.get("job_id") or f"{event_type}-node"),
+                "kind": str(job.get("kind") or event_type),
+                "state": str(job.get("state") or "observed"),
+                "task": str(job.get("task") or self._downtime_snapshot_result(event_type)),
+                "tail_number": str(job.get("tail_number") or ""),
+            },
+            "frame_ref": {
+                "sample_index": sample_index,
+                "sample_step": int(float(event.get("time", event_snapshot.get("time", 0)) or 0)),
+                "step": int(float(event.get("time", event_snapshot.get("time", 0)) or 0)),
+            },
+        }
 
     def _downtime_snapshot_events(self, frame: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
         events: list[tuple[str, dict[str, Any]]] = []
@@ -2985,8 +3061,10 @@ class SimulationAdapter:
         jobs = [job for job in frame.get("jobs") or [] if isinstance(job, dict)]
         job = jobs[0] if jobs else {}
         simulation_time = float(frame.get("simulation_time", event.get("time", frame.get("step", 0))) or 0)
+        spare_shortages = self._downtime_frame_spare_shortages(frame, event)
         return {
             "snapshot_id": f"downtime-{run_id or 'run'}-{ordinal:04d}",
+            "source": "state_series_frame",
             "run_id": run_id,
             "sample_index": sample_index,
             "seed": seed,
@@ -2996,6 +3074,9 @@ class SimulationAdapter:
             "event_label": event_type,
             "event": copy.deepcopy(event),
             "result": self._downtime_snapshot_result(event_type),
+            "aircraft_state": copy.deepcopy(frame.get("aircraft_state") or {}),
+            "support_resources": copy.deepcopy(frame.get("resources") or []),
+            "spare_shortages": spare_shortages,
             "support_activity_state": {
                 "active_jobs": len(jobs),
                 "repair_backlog": float(resource_state.get("repair_backlog", 0) or 0),
@@ -3016,6 +3097,37 @@ class SimulationAdapter:
                 "step": int(frame.get("step", frame.get("sample_step", 0)) or 0),
             },
         }
+
+    def _downtime_frame_spare_shortages(self, frame: dict[str, Any], event: dict[str, Any]) -> list[dict[str, Any]]:
+        details = event.get("details") if isinstance(event.get("details"), dict) else {}
+        spare_type = str(details.get("spare_type") or "")
+        if spare_type:
+            return [
+                {
+                    "spare_type": spare_type,
+                    "required_quantity": int(details.get("required_quantity", 0) or 0),
+                    "available_quantity": int(details.get("available_quantity", 0) or 0),
+                    "resource_id": str(details.get("resource_id") or ""),
+                    "job_id": str(details.get("job_id") or ""),
+                    "reason": str(details.get("reason") or "spare_shortage"),
+                }
+            ]
+        shortages = []
+        for spare in frame.get("spares") or []:
+            if not isinstance(spare, dict):
+                continue
+            if float(spare.get("quantity", 0) or 0) <= 0 and float(spare.get("consumed", 0) or 0) >= 0:
+                shortages.append(
+                    {
+                        "spare_type": str(spare.get("name") or spare.get("part_id") or ""),
+                        "required_quantity": 0,
+                        "available_quantity": int(float(spare.get("quantity", 0) or 0)),
+                        "resource_id": "",
+                        "job_id": "",
+                        "reason": "spare_shortage",
+                    }
+                )
+        return shortages
 
     def _downtime_snapshot_result(self, event_type: str) -> str:
         if event_type == "spare_shortage":

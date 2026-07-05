@@ -422,6 +422,16 @@ h4 {
   background: var(--primary-soft);
 }
 
+.experiment-plan-context-select {
+  min-width: 260px;
+}
+
+.experiment-plan-context-select small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
 .compact-fourth-tabs {
   display: flex;
   flex-wrap: wrap;
@@ -581,6 +591,38 @@ select[multiple].table-edit-select {
 .plan-editor-actions button {
   min-height: 30px;
   padding: 5px 12px;
+}
+
+.scenario-composition-workspace {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.95fr) minmax(420px, 1.35fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.scenario-project-json-panel,
+.scenario-composition-editor-panel {
+  min-width: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.scenario-project-json-panel pre {
+  max-height: 520px;
+  margin: 0;
+  padding: 12px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #0f172a;
+  color: #e2e8f0;
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre;
+}
+
+.scenario-composition-editor-panel .table-wrap {
+  margin: 0;
 }
 
 .ship-front-workbench {
@@ -1829,6 +1871,69 @@ select[multiple].table-edit-select {
   min-width: 760px;
 }
 
+.lite-mesa-event-snapshots {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.lite-mesa-event-snapshot {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.lite-mesa-event-snapshot summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  cursor: pointer;
+}
+
+.lite-mesa-event-snapshot summary span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.downtime-snapshot-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  padding: 0 14px 14px;
+}
+
+.downtime-snapshot-grid section {
+  min-width: 0;
+}
+
+.downtime-snapshot-grid h4 {
+  margin: 0 0 8px;
+  font-size: 13px;
+}
+
+.downtime-snapshot-grid table {
+  width: 100%;
+  font-size: 12px;
+}
+
+.snapshot-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.snapshot-chip-row span {
+  padding: 4px 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 12px;
+  background: #f8fafc;
+}
+
 .mc-config-panel,
 .mc-result-panel {
   border: 1px solid var(--line);
@@ -2698,6 +2803,29 @@ tr.clickable-table-row.selected-table-row td {
   stroke-width: 3;
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+
+.availability-y-axis line {
+  stroke: #94a3b8;
+  stroke-width: 1;
+}
+
+.availability-y-axis .grid-line {
+  stroke: #cbd5e1;
+  stroke-dasharray: 3 4;
+}
+
+.availability-y-axis text {
+  fill: #64748b;
+  font-size: 11px;
+  text-anchor: end;
+}
+
+.availability-y-axis .axis-title {
+  text-anchor: middle;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0;
 }
 
 .availability-chart .trend-line.available {
@@ -3723,9 +3851,10 @@ tr.clickable-table-row.selected-table-row td {
   .project-template-layout,
   .project-data-overview-grid,
   .rms-layout,
-  .modeling-import-layout,
-  .lite-mesa-layout,
-  .modeling-import-summary,
+	  .modeling-import-layout,
+	  .lite-mesa-layout,
+	  .scenario-composition-workspace,
+	  .modeling-import-summary,
   .modeling-import-status-grid,
   .modeling-import-compile-grid {
     grid-template-columns: 1fr;
