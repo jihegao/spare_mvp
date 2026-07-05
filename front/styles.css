@@ -1775,6 +1775,19 @@ select[multiple].table-edit-select {
   color: var(--muted);
 }
 
+.lite-mesa-hero-actions {
+  display: flex;
+  align-items: stretch;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.lite-mesa-hero-actions .experiment-plan-context-select {
+  min-width: 280px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
 .lite-mesa-hero-meter {
   min-width: 112px;
   display: grid;
@@ -1803,6 +1816,10 @@ select[multiple].table-edit-select {
   align-items: stretch;
 }
 
+.lite-mesa-analysis-layout.full-settings {
+  grid-template-columns: 1fr;
+}
+
 .lite-mesa-settings,
 .lite-mesa-results {
   min-width: 0;
@@ -1820,6 +1837,10 @@ select[multiple].table-edit-select {
 
 .lite-mesa-setting-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.lite-mesa-analysis-layout.full-settings .lite-mesa-setting-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .lite-mesa-setting-grid label {
@@ -2784,8 +2805,9 @@ tr.clickable-table-row.selected-table-row td {
   background: #fff;
 }
 
-.availability-chart svg {
-  width: 100%;
+.availability-chart .availability-trend-svg {
+  inline-size: 100%;
+  max-inline-size: 100%;
   height: 118px;
   display: block;
   margin-top: 6px;
@@ -3137,6 +3159,25 @@ tr.clickable-table-row.selected-table-row td {
   display: block;
   color: var(--muted);
   font-size: 12px;
+}
+
+.support-resource-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.support-resource-meta small {
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #e0f2fe;
+  color: #075985;
+  font-size: 12px;
+  line-height: 1.25;
 }
 
 .support-count {
@@ -3874,6 +3915,15 @@ tr.clickable-table-row.selected-table-row td {
   .lite-mesa-hero {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .lite-mesa-hero-actions {
+    justify-content: flex-start;
+  }
+
+  .lite-mesa-hero-actions .experiment-plan-context-select {
+    min-width: 0;
+    width: 100%;
   }
 
   .rms-method-actions,

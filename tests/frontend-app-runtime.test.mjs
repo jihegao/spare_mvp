@@ -379,7 +379,7 @@ test("project data raw JSON normalizes legacy basicMission fields", async () => 
   }
 });
 
-test("visual Mesa page renders compact headerless status view with decimal KPI values", async () => {
+test("visual Mesa page renders restored title frame with decimal KPI values", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=spare-planning-visual-mesa-page",
     projectJson: createRuntimeProjectJson()
@@ -389,16 +389,208 @@ test("visual Mesa page renders compact headerless status view with decimal KPI v
     await runtime.flush();
 
     assert.match(runtime.appNode.innerHTML, /data-mesa-control="play"/);
+    const visualHero = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-hero");
+    assert.match(visualHero, /<h3>可视化推演<\/h3>/);
+    assert.match(visualHero, /data-current-experiment-plan/);
     await runtime.click("[data-mesa-control]", { mesaControl: "start-new-run" });
     assert.match(runtime.appNode.innerHTML, /飞机状态一览/);
+    assert.match(runtime.appNode.innerHTML, /<svg class="availability-trend-svg" viewBox="0 0 960 120"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /<svg viewBox="0 0 360 120"/);
     assert.match(runtime.appNode.innerHTML, /<span>使用可用度<\/span><strong>0\.50<\/strong>/);
     assert.match(runtime.appNode.innerHTML, /<span>出动架次率<\/span><strong>0\.50<\/strong>/);
     assert.match(runtime.appNode.innerHTML, /<span>备件满足率<\/span><strong>0\.50<\/strong>/);
+    await runtime.click("[data-mesa-view]", { mesaView: "support" });
+    assert.match(runtime.appNode.innerHTML, /保障人员（按专业）/);
+    assert.match(runtime.appNode.innerHTML, /机务组/);
+    assert.match(runtime.appNode.innerHTML, /专业：机务/);
+    assert.match(runtime.appNode.innerHTML, /保障设备（按类型）/);
+    assert.match(runtime.appNode.innerHTML, /检测仪/);
+    assert.match(runtime.appNode.innerHTML, /类型：检测设备/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /飞机保障独立 Mesa 仿真/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /点击可视化推演后直接读取当前 Project/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /<div class="mesa-clock"/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /独立 Mesa/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /<strong>0%<\/strong>|<strong>100%<\/strong>/);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("visual support selector follows modeled support nodes instead of combat unit airport labels", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-visual-mesa-page",
+    projectJson: createRuntimeProjectJson({
+      combatUnit: {
+        members: [
+          { aircraftNo: "J15-101", model: "J-15", airport: "甲机场" },
+          { aircraftNo: "J15-102", model: "J-15", airport: "甲机场" }
+        ]
+      },
+      supportNodes: [
+        {
+          id: "carrier-deck",
+          name: "航母飞行甲板",
+          personnelModel: "机务",
+          personnelCapacity: 10,
+          supportEquipmentName: "检测仪",
+          supportEquipmentModel: "JY-01",
+          equipmentCapacity: 8,
+          inventory: { 航电模块: 3 }
+        },
+        {
+          id: "forward-sea-base",
+          name: "前出海上保障点",
+          personnelModel: "航电",
+          personnelCapacity: 4,
+          supportEquipmentName: "电源车",
+          supportEquipmentModel: "DY-01",
+          equipmentCapacity: 2,
+          inventory: { 航电模块: 1 }
+        }
+      ]
+    })
+  });
+
+  try {
+    await runtime.click("[data-mesa-control]", { mesaControl: "start-new-run" });
+    await runtime.click("[data-mesa-view]", { mesaView: "support" });
+
+    assert.match(runtime.appNode.innerHTML, /当前保障点资源/);
+    assert.match(runtime.appNode.innerHTML, /<option value="carrier-deck" selected>航母飞行甲板<\/option>/);
+    assert.match(runtime.appNode.innerHTML, /<option value="forward-sea-base" >前出海上保障点<\/option>/);
+    assert.match(runtime.appNode.innerHTML, /航母飞行甲板 \/ 建模保障点 航母飞行甲板/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /<option value="甲机场"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /甲机场 \/ 保障点/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /航母飞行甲板 \/ 保障点 航母飞行甲板、前出海上保障点/);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("visual support selector prefers support organization leaves over resource rows", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=mission-reliability-visual-mesa-page",
+    projectJson: createRuntimeProjectJson({
+      supportOrganization: {
+        tree: [{
+          id: "support-org-root",
+          name: "保障组织",
+          children: [
+            { id: "org-base", name: "基地", supportNodeId: "carrier-deck", children: [] },
+            { id: "org-relay", name: "中继", supportNodeId: "forward-sea-base", children: [] },
+            { id: "carrier-stock", name: "基层", supportNodeId: "carrier-stock", children: [] }
+          ]
+        }]
+      },
+      supportNodes: [
+        {
+          id: "carrier-deck",
+          name: "航母飞行甲板",
+          personnelModel: "机务",
+          personnelCapacity: 10,
+          supportEquipmentName: "检测仪",
+          supportEquipmentModel: "JY-01",
+          equipmentCapacity: 8,
+          inventory: { 航电模块: 3 }
+        },
+        {
+          id: "forward-sea-base",
+          name: "前出海上保障点",
+          personnelModel: "航电",
+          personnelCapacity: 4,
+          supportEquipmentName: "电源车",
+          supportEquipmentModel: "DY-01",
+          equipmentCapacity: 2,
+          inventory: { 航电模块: 1 }
+        },
+        {
+          id: "carrier-stock",
+          name: "后方库存点",
+          nodeType: "备件库",
+          personnelCapacity: 3,
+          equipmentCapacity: 2,
+          inventory: { 航电模块: 6 }
+        },
+        {
+          id: "carrier-stock-personnel-avionics",
+          name: "基层",
+          organizationNodeId: "carrier-stock",
+          importedResourceType: "保障人员",
+          personnelCapacity: 1
+        },
+        {
+          id: "carrier-stock-personnel-ordnance",
+          name: "基层",
+          organizationNodeId: "carrier-stock",
+          importedResourceType: "保障人员",
+          personnelCapacity: 1
+        },
+        {
+          id: "carrier-stock-personnel-special",
+          name: "基层",
+          organizationNodeId: "carrier-stock",
+          importedResourceType: "保障人员",
+          personnelCapacity: 1
+        },
+        {
+          id: "carrier-stock-equipment-power",
+          name: "基层",
+          organizationNodeId: "carrier-stock",
+          importedResourceType: "保障设备",
+          nodeType: "保障设备",
+          equipmentCapacity: 1,
+          supportEquipmentName: "新增保障设备",
+          supportEquipmentModel: "保障设备"
+        },
+        {
+          id: "carrier-stock-equipment-fuel",
+          name: "基层",
+          organizationNodeId: "carrier-stock",
+          importedResourceType: "保障设备",
+          nodeType: "保障设备",
+          equipmentCapacity: 1,
+          supportEquipmentName: "新增保障设备",
+          supportEquipmentModel: "保障设备"
+        },
+        { id: "mechanic-team", name: "机务组", supportNodeId: "carrier-deck", personnelCapacity: 2 },
+        { id: "test-equipment", name: "检测仪", supportNodeId: "carrier-deck", equipmentCapacity: 1 }
+      ],
+      supportResourceOverrides: {
+        "carrier-stock:carrier-stock:personnel": { model: "机械" },
+        "carrier-stock:carrier-stock:equipment": { name: "登机梯", model: "通用" },
+        "carrier-stock:carrier-stock-personnel-avionics:personnel": { model: "航电", quantity: 3 },
+        "carrier-stock:carrier-stock-personnel-ordnance:personnel": { model: "军械", quantity: 2 },
+        "carrier-stock:carrier-stock-personnel-special:personnel": { model: "特设", quantity: 2 },
+        "carrier-stock:carrier-stock-equipment-power:equipment": { name: "电源车", model: "通用", quantity: 2 },
+        "carrier-stock:carrier-stock-equipment-fuel:equipment": { name: "加油车", model: "通用" }
+      }
+    })
+  });
+
+  try {
+    await runtime.click("[data-mesa-control]", { mesaControl: "start-new-run" });
+    await runtime.click("[data-mesa-view]", { mesaView: "support" });
+
+    assert.match(runtime.appNode.innerHTML, /<option value="carrier-deck" selected>基地<\/option>/);
+    assert.match(runtime.appNode.innerHTML, /<option value="forward-sea-base" >中继<\/option>/);
+    assert.match(runtime.appNode.innerHTML, /<option value="carrier-stock" >基层<\/option>/);
+    assert.match(runtime.appNode.innerHTML, /基地 \/ 建模保障点 基地/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /<option value="mechanic-team"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /<option value="test-equipment"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /<option value="carrier-deck" selected>航母飞行甲板<\/option>/);
+
+    await runtime.change("[data-mesa-support-airport]", {}, { value: "carrier-stock" });
+
+    assert.match(runtime.appNode.innerHTML, /<option value="carrier-stock" selected>基层<\/option>/);
+    assert.match(runtime.appNode.innerHTML, /基层 \/ 建模保障点 基层/);
+    assert.match(runtime.appNode.innerHTML, /专业：机械/);
+    assert.match(runtime.appNode.innerHTML, /专业：航电/);
+    assert.match(runtime.appNode.innerHTML, /专业：军械/);
+    assert.match(runtime.appNode.innerHTML, /专业：特设/);
+    assert.match(runtime.appNode.innerHTML, /登机梯/);
+    assert.match(runtime.appNode.innerHTML, /电源车/);
+    assert.match(runtime.appNode.innerHTML, /加油车/);
+    assert.match(runtime.appNode.innerHTML, /型号：通用/);
   } finally {
     runtime.restore();
   }
@@ -421,6 +613,11 @@ test("four result analysis pages omit Mesa from visible copy", async () => {
       assert.match(runtime.appNode.innerHTML, /分析设置/);
       assert.match(runtime.appNode.innerHTML, /data-lite-mesa-analysis-action="run">运行分析<\/button>/);
       assert.match(runtime.appNode.innerHTML, /尚未运行分析/);
+      assert.doesNotMatch(runtime.appNode.innerHTML, /lite-mesa-source-grid/);
+      assert.doesNotMatch(runtime.appNode.innerHTML, /输出边界|持久化/);
+      const settingsPanel = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-settings");
+      assert.doesNotMatch(settingsPanel, /data-lite-mesa-analysis-field="samples"/);
+      assert.doesNotMatch(settingsPanel, /data-lite-mesa-analysis-field="seed"/);
       for (const removedCopy of [
         "前端建模 + Mesa 分析",
         "运行 Mesa 分析",
@@ -435,6 +632,74 @@ test("four result analysis pages omit Mesa from visible copy", async () => {
     } finally {
       runtime.restore();
     }
+  }
+});
+
+test("spare shortfall analysis uses full-width read-only settings without source cards", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-spare-shortfall-analysis",
+    projectJson: createRuntimeProjectJson()
+  });
+
+  try {
+    const settingsPanel = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-settings");
+    assert.match(runtime.appNode.innerHTML, /class="lite-mesa-layout lite-mesa-analysis-layout full-settings"/);
+    assert.match(settingsPanel, /样本量[\s\S]*value="27" readonly/);
+    assert.match(settingsPanel, /随机种子[\s\S]*value="20260621" readonly/);
+    assert.match(settingsPanel, /实验类型[\s\S]*value="项目基线" readonly/);
+    assert.doesNotMatch(settingsPanel, /用户参数|无可调参数/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /lite-mesa-source-grid|<span>输出边界<\/span>|<span>持久化<\/span>/);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("carry list analysis renames the mission confidence field", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-carry-list-analysis",
+    projectJson: createRuntimeProjectJson()
+  });
+
+  try {
+    const settingsPanel = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-settings");
+    assert.match(settingsPanel, /能满足任务要求置信度/);
+    assert.match(settingsPanel, /data-lite-mesa-analysis-field="missionConfidenceTarget"/);
+    assert.doesNotMatch(settingsPanel, /任务置信目标/);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("task reliability analysis embeds experiment plan selector in its title frame", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=mission-reliability-task-reliability",
+    projectJson: createRuntimeProjectJson()
+  });
+
+  try {
+    const hero = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-hero");
+    assert.match(hero, /<h3>任务可靠度评估<\/h3>/);
+    assert.match(hero, /data-current-experiment-plan/);
+    assert.match(hero, /实验方案/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /<div class="page-head">[\s\S]*data-current-experiment-plan/);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("downtime factors analysis omits snapshot capability setting", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=mission-reliability-downtime-factor-analysis",
+    projectJson: createRuntimeProjectJson()
+  });
+
+  try {
+    const settingsPanel = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-settings");
+    assert.match(settingsPanel, /展示 TopN/);
+    assert.match(settingsPanel, /实验类型/);
+    assert.doesNotMatch(settingsPanel, /快照能力|会话内只读解释/);
+  } finally {
+    runtime.restore();
   }
 });
 
@@ -1417,6 +1682,9 @@ test("experiment plan dropdown drives formal Monte Carlo and analysis requests",
 
   try {
     assert.match(runtime.appNode.innerHTML, /data-current-experiment-plan/);
+    const monteCarloHero = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-hero");
+    assert.match(monteCarloHero, /<h3>蒙特卡洛分析<\/h3>/);
+    assert.match(monteCarloHero, /data-current-experiment-plan/);
     await runtime.change(
       "[data-current-experiment-plan]",
       { currentExperimentPlan: "" },
@@ -1852,6 +2120,12 @@ function eventTarget(selector, dataset = {}, props = {}) {
   };
 }
 
+function htmlSectionByClass(html, className) {
+  const match = html.match(new RegExp(`<section class="[^"]*\\b${className}\\b[^"]*">[\\s\\S]*?<\\/section>`));
+  assert.ok(match, `expected section with class ${className}`);
+  return match[0];
+}
+
 async function flushRuntimeTasks() {
   await new Promise((resolve) => setTimeout(resolve, 0));
   await new Promise((resolve) => setTimeout(resolve, 0));
@@ -1994,7 +2268,32 @@ function createRuntimeVisualizationStateSeries(runId = "formal-runtime-run") {
         assigned_tail_numbers: ["J15-101"],
         status: "launched"
       }],
-      resources: [],
+      resources: [
+        {
+          name: "mechanic-team-runtime",
+          display_name: "机务组",
+          category: "personnel",
+          support_node_id: "carrier-deck",
+          professional: "机务",
+          type: "保障人员",
+          capacity: 10,
+          in_use: 1,
+          utilization: 0.1,
+          work_count: 2
+        },
+        {
+          name: "test-equipment-runtime",
+          display_name: "检测仪",
+          category: "equipment",
+          support_node_id: "carrier-deck",
+          model: "JY-01",
+          type: "检测设备",
+          capacity: 8,
+          in_use: 1,
+          utilization: 0.125,
+          work_count: 2
+        }
+      ],
       spares: [
         { part_id: "spare-ready", name: "可用备件", quantity: 1 },
         { part_id: "spare-empty", name: "缺货备件", quantity: 0 }

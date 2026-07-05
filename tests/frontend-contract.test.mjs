@@ -630,6 +630,10 @@ test("project list exports project JSON without keeping a direct Project JSON im
 
 test("results analysis pages route to formal current-analysis wrappers", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const wrapperSource = appSource.slice(
+    appSource.indexOf("function renderLiteMesaAnalysisPage"),
+    appSource.indexOf("function liteMesaAnalysisDefinitionForPage")
+  );
   const pages = [
     ["spare-planning-spare-shortfall-analysis", "spare_shortfall"],
     ["spare-planning-carry-list-analysis", "carry_list"],
@@ -649,7 +653,10 @@ test("results analysis pages route to formal current-analysis wrappers", async (
   assert.match(appSource, /data-lite-mesa-analysis-action="run">运行分析/);
   assert.match(appSource, /await runCurrentAnalysisPage\(page\)/);
   assert.match(appSource, /正式 current-analysis/);
-  assert.match(appSource, /创建正式 run、result 与 artifact/);
+  assert.match(appSource, /full-settings/);
+  assert.match(appSource, /能满足任务要求置信度/);
+  assert.doesNotMatch(appSource, /\["用户参数"/);
+  assert.doesNotMatch(wrapperSource, /lite-mesa-source-grid|创建正式 run、result 与 artifact|selectedExperimentPlanName\(\)/);
   assert.doesNotMatch(appSource, /前端建模 \+ Mesa 分析|尚未运行 Mesa 分析|独立 Mesa 设置|Mesa 样本/);
 });
 
@@ -662,7 +669,8 @@ test("formal current-analysis wrapper pages keep projection UI isolated", async 
   assert.notEqual(mesaSource.length, 0, "renderLiteMesaAnalysisPage source exists");
   assert.match(mesaSource, /data-lite-mesa-analysis-action="run"/);
   assert.match(mesaSource, /正式分析结果/);
-  assert.match(mesaSource, /正式 current-analysis/);
+  assert.match(mesaSource, /正式结果明细/);
+  assert.doesNotMatch(mesaSource, /lite-mesa-source-grid|selectedExperimentPlanName\(\)/);
   assert.doesNotMatch(mesaSource, /renderCurrentAnalysisResultPanel|renderAnalysisDashboard|renderFormalAnalysisBoundaryNote/);
   assert.doesNotMatch(mesaSource, /currentAnalysisResultForPage|formalProjectionFromCurrentResult|backendApi\.getCurrentAnalysisResult/);
   assert.doesNotMatch(mesaSource, /data-analysis-action="run-current"/);
@@ -2472,7 +2480,7 @@ test("formal result analysis pages submit current-analysis from compact wrappers
   assert.match(appSource, /let liteMesaAnalysisSettings = createDefaultLiteMesaAnalysisSettings\(\)/);
   assert.match(appSource, /let liteMesaAnalysisResults = \{\}/);
   assert.match(appSource, /data-current-experiment-plan/);
-  assert.match(mesaSource, /selectedExperimentPlanName\(\)/);
+  assert.doesNotMatch(mesaSource, /selectedExperimentPlanName\(\)|lite-mesa-source-grid|创建正式 run、result 与 artifact/);
   assert.match(mesaSource, /async function runFormalAnalysisPage/);
   assert.match(mesaSource, /await runCurrentAnalysisPage\(page\)/);
   assert.match(mesaSource, /正式 current-analysis/);
@@ -3933,12 +3941,12 @@ test("visual simulation layout matches operational dashboard requirements", asyn
   assert.doesNotMatch(styleSource, /\.aircraft-mission-timeline/);
   assert.match(styleSource, /\.mesa-visual-grid\.mission-expanded[\s\S]*grid-template-columns: minmax\(0, 1fr\)/);
   assert.match(stageSource, /保障人员/);
-  assert.match(stageSource, /当前机场关联保障点 \/ 人员专业/);
+  assert.match(stageSource, /当前保障点 \/ 人员专业/);
   assert.match(stageSource, /保障设备（按类型）/);
   assert.match(stageSource, /工作次数/);
   assert.match(stageSource, /延误次数/);
   assert.doesNotMatch(stageSource, /保障设备详情清单/);
-  assert.match(stageSource, /当前机场关联保障点 \/ 备件类型/);
+  assert.match(stageSource, /当前保障点 \/ 备件类型/);
   assert.match(appSource, /mesa-event-window/);
   assert.match(appSource, /buildSimulationLogStream\(visualizationStateSeries\)/);
   assert.match(appSource, /isStateFrameEvent/);
@@ -3973,6 +3981,9 @@ test("visual support view separates collapsible resource statistics from support
   assert.match(supportStageSource, /visualSupportAirportScope\(state\)/);
   assert.match(supportStageSource, /data-mesa-support-airport/);
   assert.match(supportStageSource, /supportAirportOptions/);
+  assert.match(supportStageSource, /当前保障点资源/);
+  assert.match(supportStageSource, /建模保障点/);
+  assert.match(supportStageSource, /切换保障点查看资源/);
   assert.match(supportStageSource, /supportRowsForAirportScope/);
   assert.match(supportStageSource, /工作次数/);
   assert.match(supportStageSource, /延误次数/);
@@ -3982,8 +3993,11 @@ test("visual support view separates collapsible resource statistics from support
   assert.match(appSource, /event\.target\.closest\("\[data-mesa-support-airport\]"\)/);
   assert.match(appSource, /currentTaskAirportId\(state, airports\)/);
   assert.match(appSource, /supportNodesForAirport\(projectJson, selectedAirport\)/);
-  assert.match(appSource, /airport\?\.supportNodeId/);
-  assert.match(appSource, /node\.airport/);
+  assert.match(appSource, /modeledSupportNodes\(projectJson\)/);
+  assert.match(appSource, /supportNodeMatchesScope\(node, airport\)/);
+  assert.match(appSource, /supportScopeForStateResource\(airports, state\)/);
+  assert.match(appSource, /if \(orgLeafNodes\.length\) return orgLeafNodes/);
+  assert.match(appSource, /projectJson\?\.objects\?\.supportResources/);
   assert.match(stateSource, /supportNodeId: item\.support_node_id/);
   assert.match(stateSource, /airportId: item\.airport_id/);
   assert.match(stateSource, /delayCount: number\(item\.delay_count/);
