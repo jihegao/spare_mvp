@@ -1879,9 +1879,25 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(len(self.adapter.run_calls), 1)
         self.assertEqual(self.adapter.run_calls[0][0]["simulation_model"]["family"], "aircraft_support_v1")
 
-    def test_mesa_sidecar_service_methods_stay_retired(self) -> None:
+    def test_lite_mesa_analysis_runs_in_memory_without_formal_side_effects(self) -> None:
         self.assertFalse(hasattr(self.api, "run_independent_mesa_visualization"))
-        self.assertFalse(hasattr(self.api, "run_lite_mesa_analysis"))
+        before = self._run_side_effect_counts()
+
+        payload = self.api.run_lite_mesa_analysis(
+            small_aircraft_support_project("project-lite-mesa-contract"),
+            analysis_type="mission_reliability",
+            settings={"samples": 1, "seed": 20260705},
+        )
+
+        self.assertEqual(payload["status"], "session_complete")
+        self.assertEqual(payload["source"], "lite_mesa_aircraft_support_v1")
+        self.assertEqual(payload["model_family"], "aircraft_support_v1")
+        self.assertEqual(payload["analysis_type"], "mission_reliability")
+        self.assertEqual(payload["project_id"], "project-lite-mesa-contract")
+        self.assertEqual(payload["sample_count"], 1)
+        self.assertEqual(payload["seed_list"], [20260705])
+        self.assertTrue(payload["rows"])
+        self.assertEqual(self._run_side_effect_counts(), before)
 
     def test_run_service_submits_aircraft_support_v1_formal_monte_carlo_run(self) -> None:
         created = self._create_imported_sample_project()

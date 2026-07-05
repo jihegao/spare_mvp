@@ -1816,10 +1816,6 @@ select[multiple].table-edit-select {
   align-items: stretch;
 }
 
-.lite-mesa-analysis-layout.full-settings {
-  grid-template-columns: 1fr;
-}
-
 .lite-mesa-settings,
 .lite-mesa-results {
   min-width: 0;
@@ -1837,10 +1833,6 @@ select[multiple].table-edit-select {
 
 .lite-mesa-setting-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.lite-mesa-analysis-layout.full-settings .lite-mesa-setting-grid {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .lite-mesa-setting-grid label {

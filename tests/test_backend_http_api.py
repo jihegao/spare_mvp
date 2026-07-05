@@ -16,6 +16,7 @@ from urllib.parse import quote
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.spare_mvp_backend.http_server import create_backend_server
+from src.spare_mvp_backend.modeling_import import modeling_import_to_project
 from src.spare_mvp_contract.adapter import SimulationAdapter
 
 
@@ -1149,7 +1150,7 @@ class BackendHttpApiTest(unittest.TestCase):
                 server.server_close()
                 thread.join(timeout=5)
 
-    def test_http_mesa_sidecar_service_routes_stay_retired(self) -> None:
+    def test_http_lite_mesa_analysis_runs_in_memory_without_formal_side_effects(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             server = create_backend_server(
                 ("127.0.0.1", 0),
@@ -1162,7 +1163,9 @@ class BackendHttpApiTest(unittest.TestCase):
             try:
                 base_url = f"http://127.0.0.1:{server.server_address[1]}/api"
                 auth_token = self._login_token(base_url, "data", "data")
-                project = small_aircraft_support_project("project-http-independent-visual")
+                case = self._fixture("simulation_analysis_cases/canonical_platform_case.json")
+                project = modeling_import_to_project(case["modeling_import"], validation=case.get("validation"))
+                project["project_id"] = "project-http-lite-mesa-analysis"
                 project["missionProfile"].pop("sourceImportId", None)
 
                 visualization_status, visualization_error = self._json_error_with_status(
@@ -1172,7 +1175,7 @@ class BackendHttpApiTest(unittest.TestCase):
                     {"project": project, "model_family": "aircraft_support_v1"},
                     auth_token=auth_token,
                 )
-                analysis_status, analysis_error = self._json_error_with_status(
+                payload = self._json(
                     base_url,
                     "POST",
                     "/mesa-analysis-runs",
@@ -1188,8 +1191,14 @@ class BackendHttpApiTest(unittest.TestCase):
 
                 self.assertEqual(visualization_status, 404)
                 self.assertEqual(visualization_error["code"], "not_found")
-                self.assertEqual(analysis_status, 404)
-                self.assertEqual(analysis_error["code"], "not_found")
+                self.assertEqual(payload["status"], "session_complete")
+                self.assertEqual(payload["source"], "lite_mesa_aircraft_support_v1")
+                self.assertEqual(payload["model_family"], "aircraft_support_v1")
+                self.assertEqual(payload["analysis_type"], "mission_reliability")
+                self.assertEqual(payload["project_id"], "project-http-lite-mesa-analysis")
+                self.assertEqual(payload["sample_count"], 2)
+                self.assertEqual(payload["seed_list"], [20260704, 20260705])
+                self.assertTrue(payload["rows"])
                 self.assertEqual(catalog["projects"], [])
                 self.assertEqual([path.name for path in (Path(tmp) / "artifacts").glob("*")], [])
             finally:

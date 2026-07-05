@@ -67,14 +67,11 @@ test("obsolete contract provider and smoke model files stay retired", async () =
   assert.deepEqual(stillPresent, []);
 });
 
-test("retired Mesa service routes stay absent from active runtime code", async () => {
+test("retired independent Mesa visualization route stays absent while lite analysis route is active", async () => {
   const retiredPatterns = [
     { name: "independent Mesa visualization route", pattern: /\/mesa-visualization-runs/ },
-    { name: "lite Mesa analysis route", pattern: /\/mesa-analysis-runs/ },
     { name: "independent Mesa API method", pattern: /runIndependentMesaVisualization|run_independent_mesa_visualization/ },
-    { name: "lite Mesa API method", pattern: /runLiteMesaAnalysis|run_lite_mesa_analysis/ },
-    { name: "independent Mesa source marker", pattern: /independent_mesa_project|independent-mesa-/ },
-    { name: "lite Mesa source marker", pattern: /lite_mesa_aircraft_support_v1/ }
+    { name: "independent Mesa source marker", pattern: /independent_mesa_project|independent-mesa-/ }
   ];
   const violations = [];
 
@@ -88,4 +85,12 @@ test("retired Mesa service routes stay absent from active runtime code", async (
   }
 
   assert.deepEqual(violations, []);
+
+  const activeSource = await Promise.all(
+    ACTIVE_RUNTIME_SOURCES.map(async (filePath) => readFile(new URL(`../${filePath}`, import.meta.url), "utf8"))
+  );
+  const combined = activeSource.join("\n");
+  assert.match(combined, /\/mesa-analysis-runs/);
+  assert.match(combined, /runLiteMesaAnalysis|run_lite_mesa_analysis/);
+  assert.match(combined, /lite_mesa_aircraft_support_v1/);
 });

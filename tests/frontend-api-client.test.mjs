@@ -161,15 +161,35 @@ test("frontend API client exposes M7 run artifact management routes", async () =
   assert.equal(downloadRequest.responseType, "blob");
 });
 
-test("frontend API client no longer exposes retired Mesa sidecar routes", async () => {
+test("frontend API client keeps lite Mesa analysis route while visualization sidecar stays retired", async () => {
+  const calls = [];
   const client = createBackendApiClient({
     transport: async (request) => {
+      calls.push(request);
+      if (request.path === "/mesa-analysis-runs") {
+        return { status: "session_complete", source: "lite_mesa_aircraft_support_v1" };
+      }
       throw new Error(`unexpected ${request.method} ${request.path}`);
     }
   });
 
   assert.equal("runIndependentMesaVisualization" in client, false);
-  assert.equal("runLiteMesaAnalysis" in client, false);
+  assert.equal(typeof client.runLiteMesaAnalysis, "function");
+
+  const result = await client.runLiteMesaAnalysis(
+    { project_id: "project-ui" },
+    "mission_reliability",
+    { samples: 2, seed: 20260705 }
+  );
+
+  assert.equal(result.source, "lite_mesa_aircraft_support_v1");
+  assert.deepEqual(calls.map((call) => `${call.method} ${call.path}`), ["POST /mesa-analysis-runs"]);
+  assert.deepEqual(calls[0].body, {
+    project: { project_id: "project-ui" },
+    analysis_type: "mission_reliability",
+    settings: { samples: 2, seed: 20260705 },
+    model_family: "aircraft_support_v1"
+  });
 });
 
 test("frontend API client lists and deletes experiment plans through project routes", async () => {

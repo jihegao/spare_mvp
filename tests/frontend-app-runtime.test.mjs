@@ -635,7 +635,7 @@ test("four result analysis pages omit Mesa from visible copy", async () => {
   }
 });
 
-test("spare shortfall analysis uses full-width read-only settings without source cards", async () => {
+test("spare shortfall analysis uses the shared two-column analysis layout", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=spare-planning-spare-shortfall-analysis",
     projectJson: createRuntimeProjectJson()
@@ -643,12 +643,27 @@ test("spare shortfall analysis uses full-width read-only settings without source
 
   try {
     const settingsPanel = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-settings");
-    assert.match(runtime.appNode.innerHTML, /class="lite-mesa-layout lite-mesa-analysis-layout full-settings"/);
+    assert.match(runtime.appNode.innerHTML, /class="lite-mesa-layout lite-mesa-analysis-layout"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /full-settings/);
     assert.match(settingsPanel, /样本量[\s\S]*value="27" readonly/);
     assert.match(settingsPanel, /随机种子[\s\S]*value="20260621" readonly/);
     assert.match(settingsPanel, /实验类型[\s\S]*value="项目基线" readonly/);
     assert.doesNotMatch(settingsPanel, /用户参数|无可调参数/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /lite-mesa-source-grid|<span>输出边界<\/span>|<span>持久化<\/span>/);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("experiment plan management hides page-level current project context", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-experiment-plan-management",
+    projectJson: createRuntimeProjectJson()
+  });
+
+  try {
+    assert.match(runtime.appNode.innerHTML, /方案列表/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /page-head-current-context/);
   } finally {
     runtime.restore();
   }
@@ -661,7 +676,9 @@ test("carry list analysis renames the mission confidence field", async () => {
   });
 
   try {
+    const hero = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-hero");
     const settingsPanel = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-settings");
+    assert.doesNotMatch(hero, /在给定置信度约束下探索建议携行数量、优先级和风险项。/);
     assert.match(settingsPanel, /能满足任务要求置信度/);
     assert.match(settingsPanel, /data-lite-mesa-analysis-field="missionConfidenceTarget"/);
     assert.doesNotMatch(settingsPanel, /任务置信目标/);
@@ -713,17 +730,15 @@ test("carry list analysis result omits boundary explanation card", async () => {
     await runtime.click("[data-lite-mesa-analysis-action='run']");
 
     const analysisRun = runtime.requests
-      .filter((request) => request.url === "/api/runs")
+      .filter((request) => request.url === "/api/mesa-analysis-runs")
       .map((request) => JSON.parse(request.options.body || "{}"))
       .find((body) => body.analysis_type === "carry_list");
-    assert.ok(analysisRun, "carry list analysis should submit a formal current-analysis run");
-    assert.equal(analysisRun.run_type, "monte_carlo");
-    assert.match(runtime.appNode.innerHTML, /正式 current-analysis/);
-    assert.match(runtime.appNode.innerHTML, /正式 run artifact/);
+    assert.ok(analysisRun, "carry list analysis should submit a lightweight Mesa analysis request");
+    assert.equal(analysisRun.model_family, "aircraft_support_v1");
+    assert.equal(analysisRun.settings.missionConfidenceTarget, 0.9);
+    assert.match(runtime.appNode.innerHTML, /会话/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /边界说明/);
-    assert.doesNotMatch(runtime.appNode.innerHTML, /会话内 Mesa 分析结果/);
-    assert.doesNotMatch(runtime.appNode.innerHTML, /不写入正式结果账本/);
-    assert.doesNotMatch(runtime.appNode.innerHTML, /未创建 run、result 或 artifact/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /正式 current-analysis|正式 run artifact/);
   } finally {
     runtime.restore();
   }
@@ -739,18 +754,14 @@ test("downtime factors analysis enables log snapshots and renders event snapshot
     await runtime.click("[data-lite-mesa-analysis-action='run']");
 
     const analysisRequest = runtime.requests
-      .filter((request) => request.url === "/api/runs")
+      .filter((request) => request.url === "/api/mesa-analysis-runs")
       .map((request) => JSON.parse(request.options.body || "{}"))
       .find((body) => body.analysis_type === "downtime_factors");
-    assert.ok(analysisRequest, "downtime analysis should submit a formal current-analysis run");
-    assert.equal(analysisRequest.run_type, "monte_carlo");
+    assert.ok(analysisRequest, "downtime analysis should submit a lightweight Mesa analysis request");
     assert.equal(analysisRequest.model_family, "aircraft_support_v1");
-    assert.ok(
-      runtime.requests.some((request) => request.url === "/api/projects/project-runtime/analysis-results/downtime_factors"),
-      "downtime analysis should read the formal current-analysis result"
-    );
-    assert.match(runtime.appNode.innerHTML, /正式 current-analysis/);
-    assert.doesNotMatch(runtime.appNode.innerHTML, /会话内 Mesa 分析结果/);
+    assert.equal(analysisRequest.settings.topN, 4);
+    assert.match(runtime.appNode.innerHTML, /会话/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /正式 current-analysis/);
   } finally {
     runtime.restore();
   }
@@ -1659,7 +1670,7 @@ test("visual simulation waits for explicit run before starting formal visualizat
   }
 });
 
-test("experiment plan dropdown drives formal Monte Carlo and analysis requests", async () => {
+test("experiment plan dropdown drives lightweight Mesa Monte Carlo and analysis requests", async () => {
   const planProjectJson = createRuntimeProjectJson({
     project_id: "project-runtime-plan-a",
     projectInfo: { name: "方案A Project", baseCode: "PLA" }
@@ -1685,6 +1696,8 @@ test("experiment plan dropdown drives formal Monte Carlo and analysis requests",
     const monteCarloHero = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-hero");
     assert.match(monteCarloHero, /<h3>蒙特卡洛分析<\/h3>/);
     assert.match(monteCarloHero, /data-current-experiment-plan/);
+    assert.doesNotMatch(monteCarloHero, /后端 Mesa 仿真分析|lite-mesa-hero-meter/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /lite-mesa-source-grid/);
     await runtime.change(
       "[data-current-experiment-plan]",
       { currentExperimentPlan: "" },
@@ -1693,17 +1706,19 @@ test("experiment plan dropdown drives formal Monte Carlo and analysis requests",
     await runtime.click("[data-lite-mesa-action='run']");
 
     const monteCarloRequest = runtime.requests
-      .filter((request) => request.url === "/api/runs")
+      .filter((request) => request.url === "/api/mesa-analysis-runs")
       .map((request) => JSON.parse(request.options.body || "{}"))
       .find((body) => body.analysis_type === "mission_reliability");
-    assert.ok(monteCarloRequest, "Monte Carlo run should use formal run route");
+    assert.ok(monteCarloRequest, "Monte Carlo detail should use lightweight Mesa analysis route");
     const monteCarloBody = monteCarloRequest;
     assert.equal(monteCarloBody.analysis_type, "mission_reliability");
-    const monteCarloPlanRequest = runtime.requests
-      .filter((request) => request.url === "/api/projects/project-runtime/experiment-plans" && request.options.method === "POST")
-      .map((request) => JSON.parse(request.options.body || "{}"))
-      .at(-1);
-    assert.equal(monteCarloPlanRequest.config.projectJson.project_id, "project-runtime-plan-a");
+    assert.equal(monteCarloBody.project.project_id, "project-runtime-plan-a");
+    assert.match(runtime.appNode.innerHTML, /出动架次率/);
+    assert.match(runtime.appNode.innerHTML, />0\.84</);
+    assert.doesNotMatch(runtime.appNode.innerHTML, />84%<\/strong>|>84%<\/td>/);
+    assert.match(runtime.appNode.innerHTML, /平均备件延误时间/);
+    assert.match(runtime.appNode.innerHTML, /mean_transport_delay/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /短缺事件/);
 
     await runtime.setHash("feature=spare-planning-spare-shortfall-analysis");
     await runtime.change(
@@ -1714,21 +1729,22 @@ test("experiment plan dropdown drives formal Monte Carlo and analysis requests",
     await runtime.click("[data-lite-mesa-analysis-action='run']");
 
     const analysisRequests = runtime.requests
-      .filter((request) => request.url === "/api/runs")
+      .filter((request) => request.url === "/api/mesa-analysis-runs")
       .map((request) => JSON.parse(request.options.body || "{}"));
     const analysisBody = analysisRequests.at(-1);
     assert.equal(analysisBody.analysis_type, "spare_shortfall");
-    const analysisPlanRequest = runtime.requests
-      .filter((request) => request.url === "/api/projects/project-runtime/experiment-plans" && request.options.method === "POST")
-      .map((request) => JSON.parse(request.options.body || "{}"))
-      .at(-1);
-    assert.equal(analysisPlanRequest.config.projectJson.project_id, "project-runtime-plan-a");
+    assert.equal(analysisBody.project.project_id, "project-runtime-plan-a");
+    assert.equal(
+      runtime.requests.some((request) => request.url === "/api/runs"),
+      false,
+      "lightweight Mesa pages must not submit formal runs"
+    );
   } finally {
     runtime.restore();
   }
 });
 
-test("Monte Carlo setting changes do not rerender before formal run click", async () => {
+test("Monte Carlo setting changes do not rerender before lightweight Mesa run click", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=spare-planning-monte-carlo-experiment-detail",
     projectJson: createRuntimeProjectJson({
@@ -1755,17 +1771,19 @@ test("Monte Carlo setting changes do not rerender before formal run click", asyn
     await runtime.click("[data-lite-mesa-action='run']");
 
     const analysisRequest = runtime.requests
-      .filter((request) => request.url === "/api/runs")
+      .filter((request) => request.url === "/api/mesa-analysis-runs")
       .map((request) => JSON.parse(request.options.body || "{}"))
       .find((body) => body.analysis_type === "mission_reliability");
-    assert.ok(analysisRequest, "Monte Carlo detail should submit a formal analysis run");
+    assert.ok(analysisRequest, "Monte Carlo detail should submit a lightweight Mesa analysis request");
     const body = analysisRequest;
     assert.equal(body.analysis_type, "mission_reliability");
-    assert.ok(
-      runtime.requests.some((request) => request.url === "/api/projects/project-runtime/experiment-plans" && request.options.method === "POST"),
-      "Monte Carlo detail should create a formal experiment plan branch"
+    assert.equal(body.settings.samples, 3);
+    assert.equal(
+      runtime.requests.some((request) => request.url === "/api/runs"),
+      false,
+      "Monte Carlo detail should not submit a formal run"
     );
-    assert.match(runtime.appNode.innerHTML, /正式 Monte Carlo 已提交/);
+    assert.match(runtime.appNode.innerHTML, /Mesa 分析完成|分析完成/);
   } finally {
     runtime.restore();
   }
@@ -1951,8 +1969,8 @@ async function setupRuntimeApp({
     if (url === "/api/projects/validate") {
       return jsonResponse({ ok: true, status: "valid", issues: [] });
     }
-    if (url === "/api/projects" && method === "POST") {
-      const body = JSON.parse(options.body || "{}");
+	    if (url === "/api/projects" && method === "POST") {
+	      const body = JSON.parse(options.body || "{}");
       const projectId = body.project_id || "project-runtime";
       projectPayloads.set(projectId, body);
       const catalogEntry = {
@@ -1967,10 +1985,55 @@ async function setupRuntimeApp({
       const existingIndex = backendProjectCatalog.findIndex((entry) => entry.project_id === projectId);
       if (existingIndex >= 0) backendProjectCatalog[existingIndex] = { ...backendProjectCatalog[existingIndex], ...catalogEntry };
       else backendProjectCatalog.unshift(catalogEntry);
-      return jsonResponse({ project_id: body.project_id || "project-runtime", project_version: "project-v0.1" });
-    }
-    if (url === "/api/runs" && method === "POST") {
-      const body = JSON.parse(options.body || "{}");
+	      return jsonResponse({ project_id: body.project_id || "project-runtime", project_version: "project-v0.1" });
+	    }
+	    if (url === "/api/mesa-analysis-runs" && method === "POST") {
+	      const body = JSON.parse(options.body || "{}");
+	      const analysisType = body.analysis_type || "mission_reliability";
+	      const samples = Number(body.settings?.samples || 2);
+	      const aggregateMetrics = {
+	        mission_success_rate: 0.5,
+	        ready_rate: 0.46,
+	        sortie_rate: 0.84,
+	        spare_fill_rate: 0.55,
+	        mean_transport_delay: 18.25,
+	        repair_backlog: 2.15
+	      };
+	      return jsonResponse({
+	        status: "session_complete",
+	        source: "lite_mesa_aircraft_support_v1",
+	        run_id: `lite-mesa-runtime-${analysisType}`,
+	        project_id: body.project?.project_id || "project-runtime",
+	        scenario_id: body.project?.scenarioId || "scenario-runtime",
+	        scenario_version: "scenario-v0.1",
+	        model_family: body.model_family || "aircraft_support_v1",
+	        model_id: "AircraftSupportV1Model",
+	        analysis_type: analysisType,
+	        experiment_id: analysisType === "carry_list" ? "minimum_carry_list_search" : "project_baseline_at_current_granularity",
+	        sample_count: samples,
+	        seed_list: Array.from({ length: samples }, (_, index) => Number(body.settings?.seed || 20260704) + index),
+	        aggregate_metrics: aggregateMetrics,
+	        samples: Array.from({ length: samples }, (_, index) => ({
+	          sample_id: `sample-${index + 1}`,
+	          final: aggregateMetrics
+	        })),
+	        metrics: [
+	          ["任务成功率", "80%"],
+	          ["出动完成率", "75%"],
+	          ["样本数", String(samples)]
+	        ],
+	        rows: analysisType === "downtime_factors"
+	          ? [{ label: "故障停机", reason: "failure", count: 1, contribution: 0.4 }]
+	          : [{ spareType: "航电模块", demand: 2, shortage: 0, fillRate: 1, riskLevel: "低" }],
+	        event_snapshots: analysisType === "downtime_factors"
+	          ? [{ title: "sample 1", events: [{ time: 0, message: "state frame sampled" }] }]
+	          : [],
+	        limitations: ["会话内 Mesa 分析结果，不写入正式结果账本。"],
+	        message: ""
+	      });
+	    }
+	    if (url === "/api/runs" && method === "POST") {
+	      const body = JSON.parse(options.body || "{}");
       const runId = `formal-runtime-${body.run_type || "single"}-${runtimeRuns.size + 1}`;
       const run = createRuntimeFormalRun(runId, body);
       runtimeRuns.set(runId, run);
