@@ -77,6 +77,33 @@ def _minimal_inputs() -> dict:
     }
 
 
+def _preflight_timing_inputs() -> dict:
+    inputs = _minimal_inputs()
+    inputs["time"]["duration_minutes"] = 8 * 60
+    inputs["aircraft"]["fleet_count"] = 1
+    inputs["aircraft"]["initial_ready"] = 1
+    basic = inputs["mission_profile"]["basic_missions"][0]
+    basic["preparationMinutes"] = 20
+    basic["equipmentQuantity"] = 1
+    inputs["mission_profile"]["composite_tasks"] = [
+        {
+            "id": "composite-a",
+            "name": "Composite A",
+            "taskItems": [
+                {
+                    "id": "task-a",
+                    "basicMissionId": "mission-a",
+                    "basicTaskName": "mission",
+                    "firstWaveTime": "08:00",
+                    "taskDurationMinutes": 30,
+                    "equipmentQuantity": 1,
+                }
+            ],
+        }
+    ]
+    return inputs
+
+
 def aircraft_payload_nodes(model: AircraftSupportV1Model, aircraft) -> list[dict]:
     return model._aircraft_failure_tree_payload(aircraft)["nodes"]
 
@@ -151,6 +178,40 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
 
         self.assertEqual(model.aircraft[0].state, "pre_support")
         self.assertEqual(model.snapshot()["repairing_count"], 0)
+
+    def test_preflight_start_uses_task_item_advance_notice_before_basic(self) -> None:
+        inputs = _preflight_timing_inputs()
+        inputs["mission_profile"]["basic_missions"][0]["advanceNoticeMinutes"] = 30
+        inputs["mission_profile"]["composite_tasks"][0]["taskItems"][0]["advanceNoticeMinutes"] = 60
+        model = AircraftSupportV1Model(inputs)
+        mission = model.missions[0]
+
+        self.assertEqual(mission.planned_start, 8 * 60)
+        self.assertEqual(mission.preparation_start, 7 * 60)
+        model.minute = 7 * 60 - 1
+        model._create_due_preflight_jobs()
+        self.assertEqual([job for job in model.jobs if job.kind == "preflight"], [])
+
+        model.minute = 7 * 60
+        model._create_due_preflight_jobs()
+
+        self.assertEqual(len([job for job in model.jobs if job.kind == "preflight"]), 1)
+
+    def test_preflight_start_uses_basic_advance_notice_when_item_missing(self) -> None:
+        inputs = _preflight_timing_inputs()
+        inputs["mission_profile"]["basic_missions"][0]["advanceNoticeMinutes"] = 60
+        model = AircraftSupportV1Model(inputs)
+        mission = model.missions[0]
+
+        self.assertEqual(mission.planned_start, 8 * 60)
+        self.assertEqual(mission.preparation_start, 7 * 60)
+
+    def test_preflight_start_falls_back_to_preparation_minutes_without_advance_notice(self) -> None:
+        model = AircraftSupportV1Model(_preflight_timing_inputs())
+        mission = model.missions[0]
+
+        self.assertEqual(mission.planned_start, 8 * 60)
+        self.assertEqual(mission.preparation_start, 8 * 60 - 20)
 
     def test_real_aircraft_assets_are_loaded_before_generated_tail_numbers(self) -> None:
         inputs = _minimal_inputs()

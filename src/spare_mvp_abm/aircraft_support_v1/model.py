@@ -671,7 +671,7 @@ class AircraftSupportV1Model:
                 basic = self._basic_mission_for_item(item, basic_missions, default_basic)
                 interval = max(1, int(round(_non_negative_float(item.get("intervalHours"), 24) * 60)))
                 first_start = _time_to_minute(item.get("firstWaveTime"), int(basic.get("startHour") or 1) * 60)
-                prep = max(0, int(item.get("preparationMinutes") or basic.get("preparationMinutes") or 0))
+                preflight_notice = self._preflight_notice_minutes(item, basic)
                 duration = int(item.get("taskDurationMinutes") or basic.get("taskDurationMinutes") or 120) + mission_duration_adjustment
                 recovery = _time_to_minute(item.get("recoveryTime"), -1)
                 if recovery >= 0 and recovery > first_start:
@@ -691,7 +691,7 @@ class AircraftSupportV1Model:
                                 mission_id=f"{mission_id}-d{day_index}-w{wave_index}",
                                 name=str(item.get("basicTaskName") or composite.get("name") or basic.get("name") or mission_id),
                                 planned_start=planned_start,
-                                preparation_start=max(0, planned_start - prep),
+                                preparation_start=max(0, planned_start - preflight_notice),
                                 duration_minutes=max(1, duration),
                                 required_aircraft=max(1, int(item.get("equipmentQuantity") or basic.get("equipmentQuantity") or 1)),
                                 priority=max(1, int(item.get("priority") or basic.get("priority") or 1)),
@@ -712,12 +712,13 @@ class AircraftSupportV1Model:
         if not missions:
             basic = default_basic
             planned_start = max(0, int(basic.get("startHour") or 1) * 60)
+            preflight_notice = self._preflight_notice_minutes({}, basic)
             missions.append(
                 MissionState(
                     mission_id=str(basic.get("missionId") or "mission-1"),
                     name=str(basic.get("name") or "mission"),
                     planned_start=planned_start,
-                    preparation_start=max(0, planned_start - int(basic.get("preparationMinutes") or 0)),
+                    preparation_start=max(0, planned_start - preflight_notice),
                     duration_minutes=max(1, int(basic.get("taskDurationMinutes") or 120)),
                     required_aircraft=max(1, int(basic.get("equipmentQuantity") or 1)),
                     priority=max(1, int(basic.get("priority") or 1)),
@@ -730,6 +731,15 @@ class AircraftSupportV1Model:
                 )
             )
         return sorted(missions, key=lambda item: (item.planned_start, item.priority))
+
+    def _preflight_notice_minutes(self, item: dict[str, Any], basic: dict[str, Any]) -> int:
+        for source in (item, basic):
+            if "advanceNoticeMinutes" not in source:
+                continue
+            value = source.get("advanceNoticeMinutes")
+            if value not in (None, ""):
+                return max(0, int(value))
+        return max(0, int(item.get("preparationMinutes") or basic.get("preparationMinutes") or 0))
 
     def _basic_missions_by_id(self, profile: dict[str, Any]) -> dict[str, dict[str, Any]]:
         records = profile.get("basic_missions") if isinstance(profile.get("basic_missions"), list) else []
