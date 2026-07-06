@@ -707,6 +707,7 @@ class BackendApi:
             "projection": projections[normalized_analysis_type],
             "metrics": page_result["metrics"],
             "rows": page_result["rows"],
+            "wave_rows": page_result.get("wave_rows", []),
             "daily_rows": page_result.get("daily_rows", []),
             "event_snapshots": page_result.get("event_snapshots", []),
             "limitations": _lite_mesa_analysis_limitations(),
@@ -1401,6 +1402,7 @@ def _run_aircraft_support_v1_analysis_sample(
     model = AircraftSupportV1Model(sample_inputs)
     execution = model.run()
     daily_mission_reliability = _sample_daily_mission_reliability(model.missions, aircraft_count=len(model.aircraft))
+    mission_wave_reliability = _sample_mission_wave_reliability(model.missions)
     frames = []
     for sample_step, frame in enumerate(execution.get("frames", [])[:20]):
         item = copy.deepcopy(frame)
@@ -1415,6 +1417,7 @@ def _run_aircraft_support_v1_analysis_sample(
         "sweep": {},
         "metrics": copy.deepcopy(execution["metrics"]),
         "daily_mission_reliability": daily_mission_reliability,
+        "mission_wave_reliability": mission_wave_reliability,
         "frames": frames,
         "events": copy.deepcopy(execution.get("events") or []),
     }
@@ -1496,6 +1499,112 @@ def _mean_daily_mission_reliability(samples: list[dict[str, Any]]) -> list[dict[
             }
         )
     return rows
+
+
+def _sample_mission_wave_reliability(missions: list[Any]) -> list[dict[str, Any]]:
+    by_wave: dict[tuple[int, int], dict[str, float]] = {}
+    for mission in missions:
+        day = max(1, _metric_int(getattr(mission, "day_index", 1), default=1))
+        wave = max(1, _metric_int(getattr(mission, "wave_index", 1), default=1))
+        planned = max(1, _metric_int(getattr(mission, "required_aircraft", 1), default=1))
+        assigned = len(getattr(mission, "assigned_tail_numbers", []) or [])
+        failed = len(set(getattr(mission, "failed_tail_numbers", []) or []))
+        status = str(getattr(mission, "status", "") or "")
+        successful = max(0, planned - failed) if status == "completed" else 0
+        bucket = by_wave.setdefault(
+            (day, wave),
+            {
+                "plannedSorties": 0.0,
+                "launchedSorties": 0.0,
+                "successfulSorties": 0.0,
+            },
+        )
+        bucket["plannedSorties"] += planned
+        bucket["launchedSorties"] += max(0, min(planned, assigned))
+        bucket["successfulSorties"] += max(0, min(planned, successful))
+    rows = []
+    for sequence, (day, wave) in enumerate(sorted(by_wave), start=1):
+        bucket = by_wave[(day, wave)]
+        planned = max(1.0, float(bucket["plannedSorties"]))
+        rows.append(
+            {
+                "sequence": sequence,
+                "dayIndex": day,
+                "waveIndex": wave,
+                "waveKey": _mission_wave_key(day, wave),
+                "waveLabel": _mission_wave_label(day, wave),
+                "plannedSorties": bucket["plannedSorties"],
+                "launchedSorties": bucket["launchedSorties"],
+                "successfulSorties": bucket["successfulSorties"],
+                "missionSuccessRate": _clamp01(bucket["successfulSorties"] / planned),
+                "sortieRate": _clamp01(bucket["launchedSorties"] / planned),
+            }
+        )
+    return rows
+
+
+def _mean_mission_wave_reliability(samples: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    by_wave: dict[tuple[int, int], dict[str, float]] = {}
+    for sample in samples:
+        for row in sample.get("mission_wave_reliability") or []:
+            day = max(1, _metric_int(row.get("dayIndex", row.get("day_index")), default=1))
+            wave = max(1, _metric_int(row.get("waveIndex", row.get("wave_index")), default=1))
+            bucket = by_wave.setdefault(
+                (day, wave),
+                {
+                    "sampleCount": 0.0,
+                    "plannedSorties": 0.0,
+                    "launchedSorties": 0.0,
+                    "successfulSorties": 0.0,
+                    "missionSuccessRate": 0.0,
+                    "sortieRate": 0.0,
+                },
+            )
+            bucket["sampleCount"] += 1
+            bucket["plannedSorties"] += _metric_float(row.get("plannedSorties", row.get("planned_sorties")), default=0)
+            bucket["launchedSorties"] += _metric_float(row.get("launchedSorties", row.get("launched_sorties")), default=0)
+            bucket["successfulSorties"] += _metric_float(
+                row.get("successfulSorties", row.get("successful_sorties")),
+                default=0,
+            )
+            bucket["missionSuccessRate"] += _clamp01(
+                row.get("missionSuccessRate", row.get("mean_mission_success_rate"))
+            )
+            bucket["sortieRate"] += _clamp01(row.get("sortieRate", row.get("mean_sortie_rate")))
+    rows = []
+    for sequence, (day, wave) in enumerate(sorted(by_wave), start=1):
+        bucket = by_wave[(day, wave)]
+        sample_count = max(1.0, bucket["sampleCount"])
+        if bucket["plannedSorties"] > 0:
+            mission_success = _clamp01(bucket["successfulSorties"] / bucket["plannedSorties"])
+            sortie_rate = _clamp01(bucket["launchedSorties"] / bucket["plannedSorties"])
+        else:
+            mission_success = _clamp01(bucket["missionSuccessRate"] / sample_count)
+            sortie_rate = _clamp01(bucket["sortieRate"] / sample_count)
+        rows.append(
+            {
+                "sequence": sequence,
+                "dayIndex": day,
+                "waveIndex": wave,
+                "waveKey": _mission_wave_key(day, wave),
+                "waveLabel": _mission_wave_label(day, wave),
+                "sampleCount": int(bucket["sampleCount"]),
+                "plannedSorties": bucket["plannedSorties"] / sample_count,
+                "launchedSorties": bucket["launchedSorties"] / sample_count,
+                "successfulSorties": bucket["successfulSorties"] / sample_count,
+                "meanMissionSuccessRate": mission_success,
+                "meanSortieRate": sortie_rate,
+            }
+        )
+    return rows
+
+
+def _mission_wave_key(day: int, wave: int) -> str:
+    return f"d{day}-w{wave}"
+
+
+def _mission_wave_label(day: int, wave: int) -> str:
+    return f"第{day}天 第{wave}波"
 
 
 def _lite_mesa_analysis_page_result(
@@ -1627,19 +1736,10 @@ def _lite_mesa_mission_reliability_result(
     settings: dict[str, Any],
 ) -> dict[str, Any]:
     data = projection.get("data") if isinstance(projection.get("data"), dict) else {}
-    max_rows = settings["maxTimeWindow"] or 12
-    rows = []
-    for index, sample in enumerate(samples[:max_rows]):
-        metrics = sample.get("metrics") or {}
-        rows.append(
-            {
-                "sequence": index + 1,
-                "seed": sample.get("seed"),
-                "missionSuccessRate": _metric_float(metrics.get("mission_success_rate"), default=0),
-                "sortieRate": _metric_float(metrics.get("sortie_rate"), default=0),
-                "readyRate": _metric_float(metrics.get("ready_rate"), default=0),
-            }
-        )
+    rows = _mean_mission_wave_reliability(samples)
+    max_rows = settings.get("maxTimeWindow")
+    if max_rows:
+        rows = rows[: max(1, _metric_int(max_rows, default=len(rows)))]
     return {
         "experiment_id": "project_baseline_at_current_granularity",
         "metrics": [
@@ -1649,6 +1749,7 @@ def _lite_mesa_mission_reliability_result(
             ["任务失败次数", str(int(round(_sample_metric_sum(samples, "failed_sorties"))))],
         ],
         "rows": rows,
+        "wave_rows": rows,
         "daily_rows": _mean_daily_mission_reliability(samples),
     }
 
@@ -1954,6 +2055,7 @@ def _blocked_lite_mesa_analysis_payload(
         "seed_list": [],
         "metrics": [],
         "rows": [],
+        "wave_rows": [],
         "event_snapshots": [],
         "limitations": _lite_mesa_analysis_limitations(),
         "settings": copy.deepcopy(settings),
@@ -2048,6 +2150,10 @@ def _metric_float(value: Any, *, default: Any) -> float:
             return float(default)
         except (TypeError, ValueError):
             return 0.0
+
+
+def _clamp01(value: Any) -> float:
+    return min(1.0, max(0.0, _metric_float(value, default=0)))
 
 
 def _sample_mean(samples: list[dict[str, Any]], metric: str) -> float:

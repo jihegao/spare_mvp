@@ -77,6 +77,71 @@ def _minimal_inputs() -> dict:
     }
 
 
+def _preflight_timing_inputs() -> dict:
+    inputs = _minimal_inputs()
+    inputs["time"]["duration_minutes"] = 8 * 60
+    inputs["aircraft"]["fleet_count"] = 1
+    inputs["aircraft"]["initial_ready"] = 1
+    basic = inputs["mission_profile"]["basic_missions"][0]
+    basic["preparationMinutes"] = 20
+    basic["equipmentQuantity"] = 1
+    inputs["mission_profile"]["composite_tasks"] = [
+        {
+            "id": "composite-a",
+            "name": "Composite A",
+            "taskItems": [
+                {
+                    "id": "task-a",
+                    "basicMissionId": "mission-a",
+                    "basicTaskName": "mission",
+                    "firstWaveTime": "08:00",
+                    "taskDurationMinutes": 30,
+                    "equipmentQuantity": 1,
+                }
+            ],
+        }
+    ]
+    return inputs
+
+
+def _periodic_repeat_inputs(repeat_count: int) -> dict:
+    inputs = _minimal_inputs()
+    inputs["time"] = {"duration_minutes": 14 * 24 * 60, "tick_minutes": 1, "sample_every_minutes": 24 * 60}
+    inputs["aircraft"] = {"fleet_count": 1, "initial_ready": 1, "models": ["J-15"]}
+    inputs["mission_profile"]["basic_missions"][0]["equipmentQuantity"] = 1
+    inputs["mission_profile"]["composite_tasks"] = [
+        {
+            "id": "composite-weekly",
+            "name": "weekly mission",
+            "taskItems": [
+                {
+                    "id": "weekly-sortie",
+                    "basicMissionId": "mission-a",
+                    "basicTaskName": "mission",
+                    "firstWaveTime": "00:10",
+                    "preparationMinutes": 1,
+                    "taskDurationMinutes": 5,
+                    "equipmentQuantity": 1,
+                }
+            ],
+        }
+    ]
+    inputs["mission_profile"]["periodic_tasks"] = [
+        {
+            "id": "periodic-weekly",
+            "periodicTaskName": "weekly repeat",
+            "compositeTaskIds": ["composite-weekly"],
+            "periodDays": 7,
+            "repeatCount": repeat_count,
+            "weekdayAssignments": {"monday": "composite-weekly"},
+        }
+    ]
+    for activity in inputs["support_activities"]["activities"]:
+        for job in activity["jobs"]:
+            job["durationMinutes"] = 1
+    return inputs
+
+
 def aircraft_payload_nodes(model: AircraftSupportV1Model, aircraft) -> list[dict]:
     return model._aircraft_failure_tree_payload(aircraft)["nodes"]
 
@@ -151,6 +216,40 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
 
         self.assertEqual(model.aircraft[0].state, "pre_support")
         self.assertEqual(model.snapshot()["repairing_count"], 0)
+
+    def test_preflight_start_uses_task_item_advance_notice_before_basic(self) -> None:
+        inputs = _preflight_timing_inputs()
+        inputs["mission_profile"]["basic_missions"][0]["advanceNoticeMinutes"] = 30
+        inputs["mission_profile"]["composite_tasks"][0]["taskItems"][0]["advanceNoticeMinutes"] = 60
+        model = AircraftSupportV1Model(inputs)
+        mission = model.missions[0]
+
+        self.assertEqual(mission.planned_start, 8 * 60)
+        self.assertEqual(mission.preparation_start, 7 * 60)
+        model.minute = 7 * 60 - 1
+        model._create_due_preflight_jobs()
+        self.assertEqual([job for job in model.jobs if job.kind == "preflight"], [])
+
+        model.minute = 7 * 60
+        model._create_due_preflight_jobs()
+
+        self.assertEqual(len([job for job in model.jobs if job.kind == "preflight"]), 1)
+
+    def test_preflight_start_uses_basic_advance_notice_when_item_missing(self) -> None:
+        inputs = _preflight_timing_inputs()
+        inputs["mission_profile"]["basic_missions"][0]["advanceNoticeMinutes"] = 60
+        model = AircraftSupportV1Model(inputs)
+        mission = model.missions[0]
+
+        self.assertEqual(mission.planned_start, 8 * 60)
+        self.assertEqual(mission.preparation_start, 7 * 60)
+
+    def test_preflight_start_falls_back_to_preparation_minutes_without_advance_notice(self) -> None:
+        model = AircraftSupportV1Model(_preflight_timing_inputs())
+        mission = model.missions[0]
+
+        self.assertEqual(mission.planned_start, 8 * 60)
+        self.assertEqual(mission.preparation_start, 8 * 60 - 20)
 
     def test_real_aircraft_assets_are_loaded_before_generated_tail_numbers(self) -> None:
         inputs = _minimal_inputs()
@@ -354,6 +453,115 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
                 "J35-203": "available",
             },
         )
+
+    def test_natural_stop_waits_for_future_repeat_cycle_when_today_has_no_tasks(self) -> None:
+        model = AircraftSupportV1Model(_periodic_repeat_inputs(repeat_count=2))
+
+        execution = model.run()
+
+        metrics = execution["metrics"]
+        self.assertEqual(metrics["stop_reason"], "natural_complete")
+        self.assertGreaterEqual(metrics["elapsed_minutes"], 7 * 24 * 60)
+        self.assertEqual(max(mission.day_index for mission in model.missions), 8)
+        self.assertEqual(model.completed_sorties, 2)
+
+    def test_natural_stop_ends_when_today_has_no_tasks_and_repeat_cycle_is_last(self) -> None:
+        model = AircraftSupportV1Model(_periodic_repeat_inputs(repeat_count=1))
+
+        execution = model.run()
+
+        metrics = execution["metrics"]
+        self.assertEqual(metrics["stop_reason"], "natural_complete")
+        self.assertLess(metrics["elapsed_minutes"], 24 * 60)
+        self.assertEqual(model.completed_sorties, 1)
+
+    def test_explicit_temporal_stop_policy_waits_past_natural_completion(self) -> None:
+        for condition, expected_reason in [
+            ({"type": "duration", "duration_minutes": 24 * 60}, "duration"),
+            ({"type": "specified_time", "minute": 24 * 60}, "specified_time"),
+        ]:
+            with self.subTest(condition=condition):
+                inputs = _periodic_repeat_inputs(repeat_count=1)
+                inputs["stop_policy"] = {"mode": "or", "conditions": [condition]}
+
+                execution = AircraftSupportV1Model(inputs).run()
+
+                metrics = execution["metrics"]
+                self.assertEqual(metrics["elapsed_minutes"], 24 * 60)
+                self.assertEqual(metrics["stop_reason"], expected_reason)
+                self.assertEqual(metrics["stop_conditions_met"], [expected_reason])
+                self.assertEqual(metrics["completed_sorties"], 1)
+
+    def test_stop_policy_duration_condition_stops_at_configured_duration(self) -> None:
+        inputs = _minimal_inputs()
+        inputs["stop_policy"] = {
+            "mode": "or",
+            "conditions": [{"type": "duration", "duration_minutes": 80}],
+        }
+
+        execution = AircraftSupportV1Model(inputs).run()
+
+        self.assertEqual(execution["metrics"]["elapsed_minutes"], 80)
+        self.assertEqual(execution["metrics"]["stop_reason"], "duration")
+        self.assertEqual(execution["metrics"]["stop_conditions_met"], ["duration"])
+
+    def test_stop_policy_failure_condition_stops_on_task_failure(self) -> None:
+        inputs = _minimal_inputs()
+        inputs["aircraft"] = {"fleet_count": 1, "initial_ready": 1, "models": ["J-15"]}
+        inputs["mission_profile"]["basic_missions"][0]["equipmentQuantity"] = 1
+        inputs["equipment_tree"]["components"] = [
+            {"id": "engine", "parent_id": "aircraft", "name": "Engine", "failure_rate": 1000, "spare_type": "engine"}
+        ]
+        inputs["stop_policy"] = {"mode": "or", "conditions": [{"type": "failure"}]}
+        model = AircraftSupportV1Model(inputs)
+        for aircraft in model.aircraft:
+            aircraft.lru_failure_remaining_minutes["engine"] = 1.0
+
+        execution = model.run()
+
+        self.assertEqual(execution["metrics"]["stop_reason"], "failure")
+        self.assertEqual(execution["metrics"]["stop_conditions_met"], ["failure"])
+        self.assertGreater(model.failed_sorties, 0)
+
+    def test_stop_policy_specified_time_condition_stops_at_configured_minute(self) -> None:
+        inputs = _minimal_inputs()
+        inputs["stop_policy"] = {
+            "mode": "or",
+            "conditions": [{"type": "specified_time", "minute": 45}],
+        }
+
+        execution = AircraftSupportV1Model(inputs).run()
+
+        self.assertEqual(execution["metrics"]["elapsed_minutes"], 45)
+        self.assertEqual(execution["metrics"]["stop_reason"], "specified_time")
+        self.assertEqual(execution["metrics"]["stop_conditions_met"], ["specified_time"])
+
+    def test_stop_policy_or_and_modes_compose_multiple_conditions(self) -> None:
+        or_inputs = _minimal_inputs()
+        or_inputs["stop_policy"] = {
+            "mode": "or",
+            "conditions": [
+                {"type": "specified_time", "minute": 45},
+                {"type": "duration", "duration_minutes": 80},
+            ],
+        }
+        and_inputs = _minimal_inputs()
+        and_inputs["stop_policy"] = {
+            "mode": "and",
+            "conditions": [
+                {"type": "specified_time", "minute": 45},
+                {"type": "duration", "duration_minutes": 80},
+            ],
+        }
+
+        or_execution = AircraftSupportV1Model(or_inputs).run()
+        and_execution = AircraftSupportV1Model(and_inputs).run()
+
+        self.assertEqual(or_execution["metrics"]["elapsed_minutes"], 45)
+        self.assertEqual(or_execution["metrics"]["stop_conditions_met"], ["specified_time"])
+        self.assertEqual(and_execution["metrics"]["elapsed_minutes"], 80)
+        self.assertEqual(and_execution["metrics"]["stop_reason"], "stop_policy")
+        self.assertEqual(and_execution["metrics"]["stop_conditions_met"], ["specified_time", "duration"])
 
     def test_in_flight_failure_counts_failed_sortie_and_requires_repair_after_return(self) -> None:
         inputs = _minimal_inputs()

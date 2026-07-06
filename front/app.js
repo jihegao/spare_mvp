@@ -2182,6 +2182,55 @@ function bindEvents() {
       return;
     }
 
+    const experimentStopModeSelect = event.target.closest("[data-experiment-stop-mode]");
+    if (experimentStopModeSelect) {
+      const policy = experimentPlanStopPolicy();
+      policy.mode = experimentStopModeSelect.value === "and" ? "and" : "or";
+      delete policy.defaulted;
+      experimentPlanDraft.stopPolicy = policy;
+      experimentPlanBranchActive = true;
+      updatePreviewResultsThroughApiClient(experimentPlanDraft);
+      render();
+      return;
+    }
+
+    const experimentStopConditionInput = event.target.closest("[data-experiment-stop-condition]");
+    if (experimentStopConditionInput) {
+      const policy = experimentPlanStopPolicy();
+      const type = normalizedExperimentStopConditionType(experimentStopConditionInput.dataset.experimentStopCondition);
+      const existingMinute = policy.conditions.find((condition) => normalizedExperimentStopConditionType(condition.type) === "specifiedTime")?.minute;
+      let conditions = policy.conditions.filter((condition) => normalizedExperimentStopConditionType(condition.type) !== type);
+      if (experimentStopConditionInput.checked && type) {
+        conditions.push(type === "specifiedTime" ? { type, minute: positiveExperimentStopMinute(existingMinute ?? 1440) } : { type });
+      }
+      policy.conditions = normalizedExperimentStopConditions(conditions);
+      delete policy.defaulted;
+      experimentPlanDraft.stopPolicy = policy;
+      experimentPlanBranchActive = true;
+      updatePreviewResultsThroughApiClient(experimentPlanDraft);
+      render();
+      return;
+    }
+
+    const experimentStopTimeInput = event.target.closest("[data-experiment-stop-time-minute]");
+    if (experimentStopTimeInput) {
+      const policy = experimentPlanStopPolicy();
+      const hasSpecifiedTime = policy.conditions.some(
+        (condition) => normalizedExperimentStopConditionType(condition.type) === "specifiedTime"
+      );
+      if (!hasSpecifiedTime) return;
+      policy.conditions = policy.conditions.filter(
+        (condition) => normalizedExperimentStopConditionType(condition.type) !== "specifiedTime"
+      );
+      policy.conditions.push({ type: "specifiedTime", minute: positiveExperimentStopMinute(parseInput(experimentStopTimeInput)) });
+      delete policy.defaulted;
+      experimentPlanDraft.stopPolicy = policy;
+      experimentPlanBranchActive = true;
+      updatePreviewResultsThroughApiClient(experimentPlanDraft);
+      render();
+      return;
+    }
+
     const scenarioOverrideInput = event.target.closest("[data-scenario-override-path]")
       || event.target.closest("[data-scenario-override-value-type]")
       || event.target.closest("[data-scenario-override-value]")
@@ -8956,6 +9005,9 @@ function experimentPlanDraftFromBackendPlan(backendPlan) {
   } else if (config.seed !== undefined) {
     draft.seedPolicy = { mode: "fixed", baseSeed: config.seed };
   }
+  if (config.stopPolicy && typeof config.stopPolicy === "object" && !Array.isArray(config.stopPolicy)) {
+    draft.stopPolicy = cloneScenario(config.stopPolicy);
+  }
   if (config.scenarioComposition && typeof config.scenarioComposition === "object" && !Array.isArray(config.scenarioComposition)) {
     draft.scenarioComposition = cloneScenario(config.scenarioComposition);
   }
@@ -8970,6 +9022,7 @@ function experimentPlanDraftFromBackendPlan(backendPlan) {
 
 function renderExperimentPlanEditor(page) {
   const seedPolicy = experimentPlanSeedPolicy();
+  const stopPolicy = experimentPlanStopPolicy();
   const composition = scenarioCompositionDraft();
   const sourceProjectJson = scenarioCompositionSourceProjectJson();
   const selectedPath = normalizedSelectedScenarioCompositionPath(sourceProjectJson, composition);
@@ -9001,6 +9054,7 @@ function renderExperimentPlanEditor(page) {
       </label>
       <label>Base seed<input data-experiment-seed-base type="number" step="1" value="${htmlEscape(seedPolicy.baseSeed)}"></label>
     </div>
+    ${renderExperimentStopPolicyControls(stopPolicy)}
     <div class="section-head sub-section-head">
       <h3>Scenario 拼接</h3>
       <span>${composition.overrides.length ? `${composition.overrides.length} 个建模数据覆盖项` : "尚未添加覆盖项"}</span>
@@ -9038,6 +9092,30 @@ function renderExperimentPlanEditor(page) {
   `;
 }
 
+function renderExperimentStopPolicyControls(stopPolicy) {
+  const conditions = new Set(stopPolicy.conditions.map((condition) => normalizedExperimentStopConditionType(condition.type)));
+  const specifiedTime = stopPolicy.conditions.find((condition) => normalizedExperimentStopConditionType(condition.type) === "specifiedTime");
+  const specifiedMinute = positiveExperimentStopMinute(specifiedTime?.minute ?? 1440);
+  return `
+    <div class="section-head sub-section-head">
+      <h3>停止策略</h3>
+      <span>${stopPolicy.mode === "and" ? "全部选中条件满足后停止" : "满足任一选中条件即停止"}</span>
+    </div>
+    <div class="form-table-grid">
+      <label>组合方式
+        <select data-experiment-stop-mode>
+          <option value="or" ${stopPolicy.mode === "or" ? "selected" : ""}>任一 OR</option>
+          <option value="and" ${stopPolicy.mode === "and" ? "selected" : ""}>全部 AND</option>
+        </select>
+      </label>
+      <label><input data-experiment-stop-condition="duration" type="checkbox" ${conditions.has("duration") ? "checked" : ""}> 达到任务时长</label>
+      <label><input data-experiment-stop-condition="failure" type="checkbox" ${conditions.has("failure") ? "checked" : ""}> 任务失败</label>
+      <label><input data-experiment-stop-condition="specifiedTime" type="checkbox" ${conditions.has("specifiedTime") ? "checked" : ""}> 达到指定时间</label>
+      <label>停止分钟<input data-experiment-stop-time-minute type="number" min="1" step="1" value="${htmlEscape(specifiedMinute)}" ${conditions.has("specifiedTime") ? "" : "disabled"}></label>
+    </div>
+  `;
+}
+
 const SCENARIO_TOP_LEVEL_LABELS = Object.freeze({
   activeModule: "当前模块",
   aircraftTypes: "飞机类型对象",
@@ -9060,6 +9138,7 @@ const SCENARIO_TOP_LEVEL_LABELS = Object.freeze({
   scenarioComposition: "方案拼接对象",
   scenarioId: "场景编号",
   seedPolicy: "随机种子策略对象",
+  stopPolicy: "停止策略对象",
   supportActivities: "保障活动清单对象",
   supportNodes: "保障点清单对象",
   supportOrganization: "保障组织对象",
@@ -14760,12 +14839,12 @@ function renderFormalProjectionBody(formalProjection) {
     const rows = formalProjection.rows || [];
     const drop = formalProjection.steepestDrop;
     return `
-      <div class="analysis-chart-panel"><div class="chart-title">projection payload 任务可靠度</div>${renderLineChart(rows.map((row) => ({ x: row.sequence, y: row.probability })))}</div>
-      <div class="decision-support-card"><strong>最大下降区间</strong><span>${drop ? `T${drop.fromIndex} 到 T${drop.toIndex}，仿真时间 ${drop.fromTime} 到 ${drop.toTime}，下降 ${fixed(drop.drop, 3)}` : "未发现下降区间"}</span></div>
+      <div class="analysis-chart-panel"><div class="chart-title">projection payload 任务波次平均成功率</div>${renderLineChart(rows.map((row) => ({ x: row.sequence, y: row.probability })))}</div>
+      <div class="decision-support-card"><strong>最大下降波次</strong><span>${drop ? `T${drop.fromIndex} 到 T${drop.toIndex}，${htmlEscape(drop.fromTime)} 到 ${htmlEscape(drop.toTime)}，下降 ${fixed(drop.drop, 3)}` : "未发现下降波次"}</span></div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>等距序号</th><th>仿真时间</th><th>任务成功概率</th><th>出动架次率</th><th>可用指数</th><th>状态</th></tr></thead>
-          <tbody>${rows.map((row) => `<tr><td>T${row.sequence}</td><td>${htmlEscape(row.timeLabel)}</td><td>${fixed(row.probability, 3)}</td><td>${row.sorties}</td><td>${row.available}</td><td><span class="status-badge ${row.state === "未达标" ? "warn" : "success"}">${htmlEscape(row.state)}</span></td></tr>`).join("")}</tbody>
+          <thead><tr><th>任务波次</th><th>样本数</th><th>平均任务成功率</th><th>平均出动架次率</th><th>状态</th></tr></thead>
+          <tbody>${rows.map((row) => `<tr><td>${htmlEscape(row.waveLabel || row.timeLabel)}</td><td>${htmlEscape(row.sampleCount ?? "-")}</td><td>${fixed(row.probability, 3)}</td><td>${fixed(row.sortieRate, 3)}</td><td><span class="status-badge ${row.state === "未达标" ? "warn" : "success"}">${htmlEscape(row.state)}</span></td></tr>`).join("")}</tbody>
         </table>
       </div>
     `;
@@ -15146,12 +15225,19 @@ function normalizeLiteMesaAnalysisResult(definition, payload) {
       seedList: [],
       metrics: [],
       rows: [],
+      waveRows: [],
       dailyRows: [],
       eventSnapshots: Array.isArray(payload?.event_snapshots) ? payload.event_snapshots : [],
       limitations: Array.isArray(payload?.limitations) ? payload.limitations : [],
       message: payload?.message || "建模粒度不足：请补充装备数量、任务要求、任务周期、部件和保障节点。"
     };
   }
+  const waveRows = Array.isArray(payload.wave_rows)
+    ? payload.wave_rows
+    : Array.isArray(payload.mission_wave_rows)
+      ? payload.mission_wave_rows
+      : [];
+  const rows = Array.isArray(payload.rows) ? payload.rows : waveRows;
   return {
     status: payload.status === "session_complete" ? "session_complete" : "blocked",
     source: payload.source || "lite_mesa_aircraft_support_v1",
@@ -15160,7 +15246,8 @@ function normalizeLiteMesaAnalysisResult(definition, payload) {
     sampleCount: Number(payload.sample_count || payload.sampleCount || 0),
     seedList: Array.isArray(payload.seed_list) ? payload.seed_list : [],
     metrics: Array.isArray(payload.metrics) ? payload.metrics : definition.metricLabels.map((label) => [label, "无"]),
-    rows: Array.isArray(payload.rows) ? payload.rows : [],
+    rows,
+    waveRows: waveRows.length ? waveRows : rows,
     dailyRows: Array.isArray(payload.daily_rows) ? payload.daily_rows : [],
     eventSnapshots: Array.isArray(payload.event_snapshots) ? payload.event_snapshots : [],
     limitations: Array.isArray(payload.limitations) ? payload.limitations : [],
@@ -15203,7 +15290,9 @@ function renderLiteMesaAnalysisSessionBody(definition, result) {
   if (result.status === "blocked") {
     return `<div class="empty-state"><strong>建模粒度不足</strong><p>${htmlEscape(result.message)}</p></div>`;
   }
-  const rows = result.rows || [];
+  const rows = definition.analysisType === "mission_reliability"
+    ? (result.waveRows || result.rows || [])
+    : (result.rows || []);
   if (definition.analysisType === "spare_shortfall") {
     return `<div class="table-wrap"><table class="lite-mesa-stat-table">
       <thead><tr><th>备件类别</th><th>需求次数</th><th>满足次数</th><th>平均备件延误时间(h)</th><th>满足率</th><th>风险</th></tr></thead>
@@ -15218,12 +15307,12 @@ function renderLiteMesaAnalysisSessionBody(definition, result) {
   }
   if (definition.analysisType === "mission_reliability") {
     return `
-      ${renderLiteMesaMissionReliabilityDailyChart(result.dailyRows || [])}
+      ${renderLiteMesaMissionReliabilityWaveChart(rows)}
       <details class="lite-mesa-collapsible-table">
         <summary>样本明细（${rows.length}）</summary>
         <div class="table-wrap"><table class="lite-mesa-stat-table">
-        <thead><tr><th>序号</th><th>seed</th><th>任务成功率</th><th>出动架次率</th><th>战备完好率</th></tr></thead>
-        <tbody>${rows.map((row) => `<tr><td>${row.sequence}</td><td>${row.seed}</td><td>${pct(row.missionSuccessRate)}</td><td>${formatLiteMesaAnalysisMetricValue("出动架次率", row.sortieRate)}</td><td>${pct(row.readyRate)}</td></tr>`).join("")}</tbody>
+        <thead><tr><th>任务波次</th><th>样本数</th><th>平均任务成功率</th><th>平均出动架次率</th><th>平均计划架次</th></tr></thead>
+        <tbody>${rows.map((row) => `<tr><td>${htmlEscape(row.waveLabel || row.waveKey || `波次${row.sequence ?? "-"}`)}</td><td>${htmlEscape(row.sampleCount ?? "-")}</td><td>${fixed(row.meanMissionSuccessRate ?? row.missionSuccessRate, 3)}</td><td>${formatLiteMesaAnalysisMetricValue("出动架次率", row.meanSortieRate ?? row.sortieRate)}</td><td>${fixed(row.plannedSorties, 1)}</td></tr>`).join("")}</tbody>
         </table></div>
       </details>
     `;
@@ -15242,23 +15331,19 @@ function formatLiteMesaAnalysisMetricValue(label, value) {
   return pct(value);
 }
 
-function renderLiteMesaMissionReliabilityDailyChart(rows) {
+function renderLiteMesaMissionReliabilityWaveChart(rows) {
   if (!rows.length) {
-    return `<div class="empty-state"><strong>每日平均任务成功率</strong><p>当前会话未返回按天聚合的任务成功率。</p></div>`;
+    return `<div class="empty-state"><strong>任务波次平均成功率</strong><p>当前会话未返回按任务波次聚合的任务成功率。</p></div>`;
   }
-  const points = rows.map((row) => ({
-    x: Number(row.day || 0),
-    y: Number(row.meanMissionSuccessRate || 0)
+  const points = rows.map((row, index) => ({
+    x: Number(row.sequence || index + 1),
+    y: Number(row.meanMissionSuccessRate ?? row.missionSuccessRate ?? 0)
   }));
   return `
     <div class="analysis-chart-panel">
-      <div class="chart-title">每日平均任务成功率</div>
+      <div class="chart-title">任务波次平均成功率</div>
       ${renderLineChart(points)}
     </div>
-    <div class="table-wrap"><table class="lite-mesa-stat-table">
-      <thead><tr><th>任务日</th><th>样本数</th><th>平均任务成功率</th><th>平均出动架次率</th><th>平均计划架次</th></tr></thead>
-      <tbody>${rows.map((row) => `<tr><td>第${htmlEscape(row.day)}天</td><td>${htmlEscape(row.sampleCount)}</td><td>${fixed(row.meanMissionSuccessRate, 3)}</td><td>${fixed(row.meanSortieRate, 3)}</td><td>${fixed(row.plannedSorties, 1)}</td></tr>`).join("")}</tbody>
-    </table></div>
   `;
 }
 
@@ -15509,6 +15594,12 @@ function ensureExperimentPlanDraftDefaults(projectJson) {
   projectJson.seedPolicy.mode = projectJson.seedPolicy.mode === "random" ? "random" : "fixed";
   projectJson.seedPolicy.baseSeed = positiveExperimentSeed(projectJson.seedPolicy.baseSeed ?? projectJson.experiment.seed);
   projectJson.experiment.seed = projectJson.seedPolicy.baseSeed;
+  if (!projectJson.stopPolicy || typeof projectJson.stopPolicy !== "object" || Array.isArray(projectJson.stopPolicy)) {
+    projectJson.stopPolicy = { schemaVersion: "stop-policy-v0", mode: "or", conditions: [{ type: "duration" }], defaulted: true };
+  }
+  projectJson.stopPolicy.schemaVersion ||= "stop-policy-v0";
+  projectJson.stopPolicy.mode = projectJson.stopPolicy.mode === "and" ? "and" : "or";
+  projectJson.stopPolicy.conditions = normalizedExperimentStopConditions(projectJson.stopPolicy.conditions);
   if (!projectJson.scenarioComposition || typeof projectJson.scenarioComposition !== "object" || Array.isArray(projectJson.scenarioComposition)) {
     projectJson.scenarioComposition = { schemaVersion: "scenario-composition-v0", overrides: [] };
   }
@@ -15537,6 +15628,47 @@ function experimentPlanSeedPolicy() {
   policy.baseSeed = positiveExperimentSeed(policy.baseSeed ?? experimentPlanDraft.experiment?.seed);
   experimentPlanDraft.experiment.seed = policy.baseSeed;
   return policy;
+}
+
+function experimentPlanStopPolicy() {
+  ensureExperimentPlanDraftDefaults(experimentPlanDraft);
+  experimentPlanDraft.stopPolicy.conditions = normalizedExperimentStopConditions(experimentPlanDraft.stopPolicy.conditions);
+  return experimentPlanDraft.stopPolicy;
+}
+
+function normalizedExperimentStopConditions(conditions) {
+  const sourceConditions = Array.isArray(conditions) ? conditions : [];
+  const normalized = sourceConditions.map(normalizedExperimentStopCondition).filter(Boolean);
+  return normalized.length ? normalized : [{ type: "duration" }];
+}
+
+function normalizedExperimentStopCondition(condition) {
+  if (!condition || typeof condition !== "object" || Array.isArray(condition)) return null;
+  const type = normalizedExperimentStopConditionType(condition.type);
+  if (!type) return null;
+  if (type === "specifiedTime") {
+    return { type, minute: positiveExperimentStopMinute(condition.minute ?? condition.timeMinute ?? 1440) };
+  }
+  if (type === "duration") {
+    const durationMinutes = positiveExperimentNumber(
+      condition.durationMinutes ?? condition.duration_minutes ?? condition.minute ?? condition.minutes,
+      0
+    );
+    return durationMinutes > 0 ? { type, durationMinutes: Math.trunc(durationMinutes) } : { type };
+  }
+  return { type };
+}
+
+function normalizedExperimentStopConditionType(value) {
+  const text = String(value || "").trim();
+  if (["duration", "taskDuration", "task_duration"].includes(text)) return "duration";
+  if (["failure", "taskFailure", "task_failure"].includes(text)) return "failure";
+  if (["specifiedTime", "specified_time", "time", "targetTime", "target_time"].includes(text)) return "specifiedTime";
+  return "";
+}
+
+function positiveExperimentStopMinute(value) {
+  return Math.max(1, Math.trunc(positiveExperimentNumber(value, 1440)));
 }
 
 function scenarioCompositionDraft() {

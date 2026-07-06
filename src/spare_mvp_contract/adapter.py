@@ -461,6 +461,7 @@ class SimulationAdapter:
         experiment = self._runtime_experiment_config(project, runtime_config)
         monte_carlo = self._runtime_monte_carlo_config(project, runtime_config)
         duration_minutes = self._aircraft_support_v1_duration_minutes(mission_profile)
+        stop_policy = self._runtime_stop_policy_config(project, runtime_config, duration_minutes)
         fleet_count = aircraft_summary["fleet_count"]
         initial_ready = aircraft_summary["initial_ready"]
 
@@ -527,6 +528,7 @@ class SimulationAdapter:
                 },
             },
             "seed": self._positive_int(experiment.get("seed"), 0),
+            "stop_policy": stop_policy,
         }
 
     def _runtime_experiment_config(
@@ -561,6 +563,115 @@ class SimulationAdapter:
         direct_sweep = runtime.get("sweep") if isinstance(runtime.get("sweep"), dict) else {}
         monte_carlo.update(copy.deepcopy(direct_sweep))
         return monte_carlo
+
+    def _runtime_stop_policy_config(
+        self,
+        project: dict[str, Any],
+        runtime_config: dict[str, Any] | None,
+        duration_minutes: int,
+    ) -> dict[str, Any]:
+        source: dict[str, Any] = {}
+        sources = self._runtime_stop_policy_sources(project, runtime_config)
+        for candidate in sources:
+            source.update(copy.deepcopy(candidate))
+        mode = "and" if str(source.get("mode") or "").strip().lower() == "and" else "or"
+        raw_conditions = source.get("conditions") if isinstance(source.get("conditions"), list) else []
+        if not raw_conditions and source.get("type") not in (None, ""):
+            raw_conditions = [{"type": source.get("type")}]
+        conditions = [
+            condition
+            for raw_condition in raw_conditions
+            if (condition := self._normalized_stop_policy_condition(raw_condition, duration_minutes)) is not None
+        ]
+        if not conditions:
+            conditions = [{"type": "duration", "duration_minutes": max(1, int(duration_minutes))}]
+        return {
+            "schema_version": str(source.get("schemaVersion") or source.get("schema_version") or "stop-policy-v0"),
+            "mode": mode,
+            "conditions": conditions,
+            "defaulted": not sources or self._truthy_config_flag(source.get("defaulted")),
+        }
+
+    def _runtime_stop_policy_sources(
+        self,
+        project: dict[str, Any],
+        runtime_config: dict[str, Any] | None,
+    ) -> list[dict[str, Any]]:
+        runtime = runtime_config if isinstance(runtime_config, dict) else {}
+        project_experiment = project.get("experiment") if isinstance(project.get("experiment"), dict) else {}
+        runtime_experiment = runtime.get("experiment") if isinstance(runtime.get("experiment"), dict) else {}
+        candidates = [
+            project_experiment.get("stopPolicy"),
+            project_experiment.get("stop_policy"),
+            project.get("stopPolicy"),
+            project.get("stop_policy"),
+            runtime_experiment.get("stopPolicy"),
+            runtime_experiment.get("stop_policy"),
+            runtime.get("stopPolicy"),
+            runtime.get("stop_policy"),
+        ]
+        return [candidate for candidate in candidates if isinstance(candidate, dict)]
+
+    def _normalized_stop_policy_condition(
+        self,
+        condition: Any,
+        duration_minutes: int,
+    ) -> dict[str, Any] | None:
+        if isinstance(condition, str):
+            condition = {"type": condition}
+        if not isinstance(condition, dict):
+            return None
+        condition_type = self._stop_policy_condition_type(condition.get("type"))
+        if not condition_type:
+            return None
+        if condition_type == "duration":
+            duration = max(1, int(duration_minutes))
+            for key in ("durationMinutes", "duration_minutes", "minute", "minutes"):
+                if self._is_positive_number(condition.get(key)):
+                    duration = max(1, int(round(float(condition[key]))))
+                    break
+            return {"type": "duration", "duration_minutes": duration}
+        if condition_type == "specified_time":
+            minute = self._stop_policy_condition_minute(condition)
+            if minute is None:
+                return None
+            return {"type": "specified_time", "minute": minute}
+        return {"type": "failure"}
+
+    def _stop_policy_condition_type(self, value: Any) -> str:
+        text = str(value or "").strip().lower().replace("-", "_")
+        compact = text.replace("_", "")
+        if compact in {"duration", "taskduration", "reachtaskduration", "maxduration"}:
+            return "duration"
+        if compact in {"failure", "taskfailure", "missionfailure"}:
+            return "failure"
+        if compact in {"specifiedtime", "targettime", "time", "specifiedminute"}:
+            return "specified_time"
+        return ""
+
+    def _stop_policy_condition_minute(self, condition: dict[str, Any]) -> int | None:
+        for key in ("minute", "minutes", "timeMinute", "time_minute", "specifiedMinute", "specified_minute", "targetMinute"):
+            if self._is_positive_number(condition.get(key)):
+                return max(1, int(round(float(condition[key]))))
+        for key in ("time", "targetTime", "target_time", "at", "specifiedAt"):
+            parsed = self._clock_time_to_minute(condition.get(key))
+            if parsed is not None:
+                return parsed
+        return None
+
+    def _clock_time_to_minute(self, value: Any) -> int | None:
+        text = str(value or "").strip()
+        if ":" not in text:
+            return None
+        parts = text.split(":")
+        try:
+            hour = int(parts[0])
+            minute = int(parts[1])
+        except (TypeError, ValueError):
+            return None
+        if hour < 0 or minute < 0:
+            return None
+        return max(1, hour * 60 + minute)
 
     def _aircraft_support_v1_component(self, component: dict[str, Any]) -> dict[str, Any]:
         return {
@@ -832,6 +943,7 @@ class SimulationAdapter:
                 "ExperimentPlan.config.analysisRequests.largeSample.sweep.supportCapacities",
                 "ExperimentPlan.config.seed",
                 "ExperimentPlan.config.samples",
+                "ExperimentPlan.config.stopPolicy",
             ],
             "defaults_applied": self._aircraft_support_v1_defaults_applied(project, runtime_config),
             "derived_fields": [
@@ -886,6 +998,8 @@ class SimulationAdapter:
             defaults.append("ExperimentPlan.config.analysisRequests.largeSample.sweep.supportCapacities=[1]")
         if not self._is_number(experiment.get("seed")):
             defaults.append("ExperimentPlan.config.seed=0")
+        if not self._runtime_stop_policy_sources(project, runtime_config):
+            defaults.append("ExperimentPlan.config.stopPolicy=duration")
         return defaults
 
     def _aircraft_support_v1_unsupported_fields(self, project: dict[str, Any]) -> list[str]:
@@ -2086,6 +2200,7 @@ class SimulationAdapter:
         self._apply_aircraft_support_v1_capacity(sample_inputs, point["support_capacity"])
         model = AircraftSupportV1Model(sample_inputs)
         execution = model.run()
+        mission_wave_reliability = self._aircraft_support_v1_sample_mission_wave_reliability(model.missions)
         sweep = {
             "failure_rate": point["failure_rate"],
             "spare_multiplier": point["spare_multiplier"],
@@ -2112,6 +2227,7 @@ class SimulationAdapter:
             "seed": point["seed"],
             "sweep": sweep,
             "metrics": execution["metrics"],
+            "mission_wave_reliability": mission_wave_reliability,
             "frames": frames,
         }
 
@@ -2594,6 +2710,10 @@ class SimulationAdapter:
             samples or [],
             simulation_inputs if isinstance(simulation_inputs, dict) else {},
         )
+        mission_wave_rows = self._aircraft_support_v1_mission_reliability_series(
+            metrics=metrics,
+            samples=samples or [],
+        )
         if not spare_rows:
             fallback_quantity = max(1, int(math.ceil(max(1.0, float(metrics.get("spare_consumed_total", 0) or 0) + shortage_events))))
             spare_rows = [
@@ -2695,10 +2815,8 @@ class SimulationAdapter:
                     "failed_sorties": metrics.get("failed_sorties", 0),
                     "in_flight_failures": metrics.get("in_flight_failures", 0),
                     "target_met": mission_success >= 0.9,
-                    "series": self._aircraft_support_v1_mission_reliability_series(
-                        metrics=metrics,
-                        samples=samples or [],
-                    ),
+                    "mission_wave_rows": mission_wave_rows,
+                    "series": mission_wave_rows,
                 },
             },
             "downtime_factors": {
@@ -2997,31 +3115,145 @@ class SimulationAdapter:
         metrics: dict[str, Any],
         samples: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
-        frames = samples[0].get("frames") if samples else []
-        rows: list[dict[str, Any]] = []
-        for index, frame in enumerate(frames or []):
-            mission_state = frame.get("mission_state") if isinstance(frame.get("mission_state"), dict) else {}
-            probability = mission_state.get("mission_success_rate", metrics.get("mission_success_rate", metrics.get("sortie_completion_rate", 0)))
-            sortie_rate = mission_state.get("sortie_rate", metrics.get("sortie_rate", 0))
-            rows.append(
-                {
-                    "simulation_time": int(frame.get("simulation_time", frame.get("step", index)) or 0),
-                    "mission_success_probability": min(1.0, max(0.0, float(probability or 0))),
-                    "sortie_rate": min(1.0, max(0.0, float(sortie_rate or 0))),
-                }
-            )
+        rows = self._aircraft_support_v1_mission_wave_rows(samples)
         if rows:
             return rows
+        mission_success = self._clamp01(
+            metrics.get("mission_success_rate", metrics.get("sortie_completion_rate", 0))
+        )
+        sortie_rate = self._clamp01(metrics.get("sortie_rate", 0))
         return [
             {
-                "simulation_time": 0,
-                "mission_success_probability": min(
-                    1.0,
-                    max(0.0, float(metrics.get("mission_success_rate", metrics.get("sortie_completion_rate", 0)) or 0)),
-                ),
-                "sortie_rate": min(1.0, max(0.0, float(metrics.get("sortie_rate", 0) or 0))),
+                "sequence": 1,
+                "day_index": 1,
+                "wave_index": 1,
+                "wave_key": "d1-w1",
+                "wave_label": "第1天 第1波",
+                "sample_count": len(samples),
+                "planned_sorties": max(1.0, float(metrics.get("planned_sorties", 1) or 1)),
+                "launched_sorties": max(0.0, float(metrics.get("launched_sorties", 0) or 0)),
+                "successful_sorties": max(0.0, float(metrics.get("completed_sorties", 0) or 0)),
+                "mean_mission_success_rate": mission_success,
+                "mission_success_probability": mission_success,
+                "mean_sortie_rate": sortie_rate,
+                "sortie_rate": sortie_rate,
             }
         ]
+
+    def _aircraft_support_v1_sample_mission_wave_reliability(self, missions: list[Any]) -> list[dict[str, Any]]:
+        by_wave: dict[tuple[int, int], dict[str, float]] = {}
+        for mission in missions:
+            day = max(1, self._positive_int(getattr(mission, "day_index", 1), 1))
+            wave = max(1, self._positive_int(getattr(mission, "wave_index", 1), 1))
+            planned = max(1, self._positive_int(getattr(mission, "required_aircraft", 1), 1))
+            assigned = len(getattr(mission, "assigned_tail_numbers", []) or [])
+            failed = len(set(getattr(mission, "failed_tail_numbers", []) or []))
+            status = str(getattr(mission, "status", "") or "")
+            successful = max(0, planned - failed) if status == "completed" else 0
+            bucket = by_wave.setdefault(
+                (day, wave),
+                {
+                    "planned_sorties": 0.0,
+                    "launched_sorties": 0.0,
+                    "successful_sorties": 0.0,
+                },
+            )
+            bucket["planned_sorties"] += planned
+            bucket["launched_sorties"] += max(0, min(planned, assigned))
+            bucket["successful_sorties"] += max(0, min(planned, successful))
+        rows = []
+        for sequence, (day, wave) in enumerate(sorted(by_wave), start=1):
+            bucket = by_wave[(day, wave)]
+            planned = max(1.0, float(bucket["planned_sorties"]))
+            mission_success = self._clamp01(bucket["successful_sorties"] / planned)
+            sortie_rate = self._clamp01(bucket["launched_sorties"] / planned)
+            rows.append(
+                {
+                    "sequence": sequence,
+                    "day_index": day,
+                    "wave_index": wave,
+                    "wave_key": self._mission_wave_key(day, wave),
+                    "wave_label": self._mission_wave_label(day, wave),
+                    "planned_sorties": bucket["planned_sorties"],
+                    "launched_sorties": bucket["launched_sorties"],
+                    "successful_sorties": bucket["successful_sorties"],
+                    "mission_success_rate": mission_success,
+                    "sortie_rate": sortie_rate,
+                }
+            )
+        return rows
+
+    def _aircraft_support_v1_mission_wave_rows(self, samples: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        by_wave: dict[tuple[int, int], dict[str, float]] = {}
+        for sample in samples:
+            for row in sample.get("mission_wave_reliability") or []:
+                day = max(1, self._positive_int(row.get("day_index", row.get("dayIndex", 1)), 1))
+                wave = max(1, self._positive_int(row.get("wave_index", row.get("waveIndex", 1)), 1))
+                bucket = by_wave.setdefault(
+                    (day, wave),
+                    {
+                        "sample_count": 0.0,
+                        "planned_sorties": 0.0,
+                        "launched_sorties": 0.0,
+                        "successful_sorties": 0.0,
+                        "mission_success_rate": 0.0,
+                        "sortie_rate": 0.0,
+                    },
+                )
+                bucket["sample_count"] += 1
+                bucket["planned_sorties"] += self._float_value(row.get("planned_sorties", row.get("plannedSorties")), 0.0)
+                bucket["launched_sorties"] += self._float_value(row.get("launched_sorties", row.get("launchedSorties")), 0.0)
+                bucket["successful_sorties"] += self._float_value(
+                    row.get("successful_sorties", row.get("successfulSorties")),
+                    0.0,
+                )
+                bucket["mission_success_rate"] += self._clamp01(
+                    row.get("mission_success_rate", row.get("missionSuccessRate", row.get("mean_mission_success_rate")))
+                )
+                bucket["sortie_rate"] += self._clamp01(row.get("sortie_rate", row.get("sortieRate", row.get("mean_sortie_rate"))))
+        rows = []
+        for sequence, (day, wave) in enumerate(sorted(by_wave), start=1):
+            bucket = by_wave[(day, wave)]
+            sample_count = max(1.0, bucket["sample_count"])
+            if bucket["planned_sorties"] > 0:
+                mission_success = self._clamp01(bucket["successful_sorties"] / bucket["planned_sorties"])
+                sortie_rate = self._clamp01(bucket["launched_sorties"] / bucket["planned_sorties"])
+            else:
+                mission_success = self._clamp01(bucket["mission_success_rate"] / sample_count)
+                sortie_rate = self._clamp01(bucket["sortie_rate"] / sample_count)
+            rows.append(
+                {
+                    "sequence": sequence,
+                    "day_index": day,
+                    "wave_index": wave,
+                    "wave_key": self._mission_wave_key(day, wave),
+                    "wave_label": self._mission_wave_label(day, wave),
+                    "sample_count": int(bucket["sample_count"]),
+                    "planned_sorties": bucket["planned_sorties"] / sample_count,
+                    "launched_sorties": bucket["launched_sorties"] / sample_count,
+                    "successful_sorties": bucket["successful_sorties"] / sample_count,
+                    "mean_mission_success_rate": mission_success,
+                    "mission_success_probability": mission_success,
+                    "mean_sortie_rate": sortie_rate,
+                    "sortie_rate": sortie_rate,
+                }
+            )
+        return rows
+
+    def _mission_wave_key(self, day: int, wave: int) -> str:
+        return f"d{day}-w{wave}"
+
+    def _mission_wave_label(self, day: int, wave: int) -> str:
+        return f"第{day}天 第{wave}波"
+
+    def _clamp01(self, value: Any) -> float:
+        return min(1.0, max(0.0, self._float_value(value, 0.0)))
+
+    def _float_value(self, value: Any, fallback: float) -> float:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return float(fallback)
 
     def _input_project_for_scenario(self, scenario: dict[str, Any]) -> dict[str, Any]:
         input_project = copy.deepcopy(
@@ -3821,6 +4053,13 @@ class SimulationAdapter:
 
     def _is_positive_number(self, value: Any) -> bool:
         return self._is_number(value) and float(value) > 0
+
+    def _truthy_config_flag(self, value: Any) -> bool:
+        if isinstance(value, bool):
+            return value
+        if value in (None, ""):
+            return False
+        return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
     def _has_any_number(self, value: Any) -> bool:
         if isinstance(value, list):

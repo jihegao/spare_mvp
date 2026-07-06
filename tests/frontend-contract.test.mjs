@@ -2721,9 +2721,13 @@ test("experiment plan editor exposes seed policy and scenario composition contro
 
   assert.match(editorSource, /data-experiment-seed-policy/);
   assert.match(editorSource, /data-experiment-seed-base/);
+  assert.match(editorSource, /data-experiment-stop-mode/);
+  assert.match(editorSource, /data-experiment-stop-condition/);
+  assert.match(editorSource, /data-experiment-stop-time-minute/);
   assert.match(editorSource, /data-scenario-override-path/);
   assert.match(editorSource, /data-scenario-override-add/);
   assert.match(editorSource, /data-scenario-override-remove/);
+  assert.match(experimentPlanChangeSource, /experimentPlanStopPolicy/);
   assert.match(experimentPlanChangeSource, /experimentPlanDraft/);
   assert.doesNotMatch(experimentPlanChangeSource, /setPath\(scenario/);
 });
@@ -3534,7 +3538,7 @@ test("phase 6B carry list analysis fixes objective to minimum carried spares", a
   assert.match(formalCarrySource, /projection payload/);
 });
 
-test("phase 6C mission reliability chart uses formal projection and daily sequences without hard-coded rates", async () => {
+test("phase 6C mission reliability chart uses formal projection and wave aggregates without hard-coded rates", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const lineChartSource = appSource.slice(
     appSource.indexOf("function renderLineChart"),
@@ -3563,10 +3567,10 @@ test("phase 6C mission reliability chart uses formal projection and daily sequen
   assert.match(dashboardSource, /renderAnalysisProjectionResultPanel\(formalProjection\)/);
   assert.doesNotMatch(dashboardSource, /singleResult\.timeline|renderLineChart/);
   assert.match(formalReliabilitySource, /renderLineChart\(rows\.map\(\(row\) => \(\{ x: row\.sequence, y: row\.probability \}\)\)\)/);
-  assert.match(appSource, /function renderLiteMesaMissionReliabilityDailyChart/);
+  assert.match(appSource, /function renderLiteMesaMissionReliabilityWaveChart/);
   assert.match(appSource, /meanMissionSuccessRate/);
-  assert.match(formalReliabilitySource, /最大下降区间/);
-  assert.match(formalReliabilitySource, /仿真时间/);
+  assert.match(formalReliabilitySource, /最大下降波次/);
+  assert.match(formalReliabilitySource, /任务波次/);
   assert.doesNotMatch(formalReliabilitySource, /0\.7|0\.9|阈值|目标线|风险线/);
   assert.doesNotMatch(dashboardSource + formalReliabilitySource, /具体需求待甲方确定/);
 });
@@ -3637,8 +3641,8 @@ test("SGR monte carlo pages label sortie_rate as 出动架次率", async () => {
 
   assert.match(metricSource, /key: "sortie_rate", label: "出动架次率"/);
   assert.match(reliabilitySource, /metricLabels: \["任务成功率", "出动架次率", "战备完好率", "任务失败次数"\]/);
-  assert.match(reliabilityTableSource, /<th>出动架次率<\/th>/);
-  assert.match(reliabilityTableSource, /formatLiteMesaAnalysisMetricValue\("出动架次率", row\.sortieRate\)/);
+  assert.match(reliabilityTableSource, /<th>平均出动架次率<\/th>/);
+  assert.match(reliabilityTableSource, /formatLiteMesaAnalysisMetricValue\("出动架次率", row\.meanSortieRate \?\? row\.sortieRate\)/);
   assert.doesNotMatch(reliabilityTableSource, /<td>\$\{pct\(row\.sortieRate\)\}<\/td>/);
   assert.doesNotMatch(metricSource + reliabilitySource + reliabilityTableSource, /出动完成率/);
 });
@@ -3657,6 +3661,10 @@ test("lite Mesa analysis visible copy omits Mesa session wording and collapses s
   assert.match(analysisSource, /后端内存运行/);
   assert.match(reliabilityTableSource, /<details class="lite-mesa-collapsible-table">/);
   assert.match(reliabilityTableSource, /<summary>样本明细/);
+  assert.match(reliabilityTableSource, /<th>任务波次<\/th>/);
+  assert.match(reliabilityTableSource, /<th>样本数<\/th>/);
+  assert.match(reliabilityTableSource, /<th>平均任务成功率<\/th>/);
+  assert.doesNotMatch(reliabilityTableSource, /<th>seed<\/th>|row\.seed|readyRate/);
   assert.doesNotMatch(analysisSource, /Mesa 分析运行中|Mesa 分析失败|会话内 Mesa|后端内存会话/);
 });
 

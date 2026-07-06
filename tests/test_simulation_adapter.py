@@ -136,6 +136,15 @@ class SimulationAdapterTest(unittest.TestCase):
         self.assertEqual(inputs["time"]["tick_minutes"], 1)
         self.assertEqual(inputs["time"]["sample_every_minutes"], 30)
         self.assertEqual(inputs["time"]["max_state_frames_single"], 2000)
+        self.assertEqual(
+            inputs["stop_policy"],
+            {
+                "schema_version": "stop-policy-v0",
+                "mode": "or",
+                "conditions": [{"type": "duration", "duration_minutes": inputs["time"]["duration_minutes"]}],
+                "defaulted": True,
+            },
+        )
         self.assertEqual(inputs["aircraft"]["fleet_count"], 6)
         self.assertEqual(inputs["aircraft"]["initial_ready"], 6)
         self.assertNotIn("experiment", project)
@@ -151,8 +160,40 @@ class SimulationAdapterTest(unittest.TestCase):
         self.assertIn("components[].failureDistribution", provenance["consumed_fields"])
         self.assertIn("supportOrganization.tree", provenance["governance_only_fields"])
         self.assertIn("supportActivities[].jobs[].predecessors", provenance["consumed_fields"])
+        self.assertIn("ExperimentPlan.config.stopPolicy", provenance["consumed_fields"])
         self.assertIn("projectInfo", provenance["governance_only_fields"])
         self.assertEqual(provenance["unsupported_fields"], [])
+
+    def test_aircraft_support_v1_runtime_stop_policy_reaches_model_inputs(self) -> None:
+        project = self._load_fixture("m9_6_platform_case_export.json")["project"]
+
+        scenario = self.adapter.compile_scenario(
+            project,
+            model_family="aircraft_support_v1",
+            runtime_config={
+                "stopPolicy": {
+                    "schemaVersion": "stop-policy-v0",
+                    "mode": "and",
+                    "conditions": [
+                        {"type": "specifiedTime", "minute": 90},
+                        {"type": "failure"},
+                    ],
+                }
+            },
+        )
+
+        self.assertEqual(
+            scenario["simulation_inputs"]["stop_policy"],
+            {
+                "schema_version": "stop-policy-v0",
+                "mode": "and",
+                "conditions": [
+                    {"type": "specified_time", "minute": 90},
+                    {"type": "failure"},
+                ],
+                "defaulted": False,
+            },
+        )
 
     def test_aircraft_support_v1_composite_task_equipment_quantity_reaches_model_inputs(self) -> None:
         project = self._load_fixture("m9_6_platform_case_export.json")["project"]
@@ -595,12 +636,20 @@ class SimulationAdapterTest(unittest.TestCase):
         self.assertIn("utilization", spare_shortfall_payload["data"][0])
         self.assertIn("constraint_results", spare_shortfall_payload["data"][0])
         mission_series = mission_reliability_payload["data"]["series"]
+        mission_wave_rows = mission_reliability_payload["data"]["mission_wave_rows"]
+        self.assertEqual(mission_series, mission_wave_rows)
         self.assertGreaterEqual(len(mission_series), 1)
-        simulation_times = [row["simulation_time"] for row in mission_series]
-        self.assertEqual(simulation_times, sorted(simulation_times))
-        self.assertEqual(simulation_times[0], 0)
+        wave_keys = [(row["day_index"], row["wave_index"]) for row in mission_series]
+        self.assertEqual(wave_keys, sorted(wave_keys))
+        self.assertEqual(wave_keys[0], (1, 1))
+        self.assertTrue(all(row["sample_count"] <= 4 for row in mission_series))
         self.assertTrue(
-            all(0 <= row["mission_success_probability"] <= 1 and 0 <= row["sortie_rate"] <= 1 for row in mission_series)
+            all(
+                0 <= row["mission_success_probability"] <= 1
+                and 0 <= row["mean_mission_success_rate"] <= 1
+                and 0 <= row["sortie_rate"] <= 1
+                for row in mission_series
+            )
         )
         self.assertEqual(base_payload["artifact_type"], "monte_carlo_base")
         self.assertEqual(base_payload["model_family"], "aircraft_support_v1")
@@ -632,6 +681,33 @@ class SimulationAdapterTest(unittest.TestCase):
             {state_artifact["representative_sample_id"]},
         )
         self.assertEqual(len(state_payload["frames"]), state_artifact["representative_sample_frame_count"])
+
+    def test_aircraft_support_v1_mission_reliability_series_aggregates_waves_across_samples(self) -> None:
+        rows = self.adapter._aircraft_support_v1_mission_reliability_series(
+            metrics={"mission_success_rate": 0.8, "sortie_rate": 0.9, "planned_sorties": 4},
+            samples=[
+                {
+                    "mission_wave_reliability": [
+                        {"day_index": 1, "wave_index": 1, "planned_sorties": 2, "launched_sorties": 2, "successful_sorties": 2, "mission_success_rate": 1.1, "sortie_rate": 1},
+                        {"day_index": 1, "wave_index": 2, "planned_sorties": 2, "launched_sorties": 1, "successful_sorties": 0, "mission_success_rate": 0, "sortie_rate": 0.5},
+                    ]
+                },
+                {
+                    "mission_wave_reliability": [
+                        {"day_index": 1, "wave_index": 1, "planned_sorties": 6, "launched_sorties": 4, "successful_sorties": 3, "mission_success_rate": 0.5, "sortie_rate": 4 / 6},
+                    ]
+                },
+            ],
+        )
+
+        self.assertEqual([row["wave_key"] for row in rows], ["d1-w1", "d1-w2"])
+        self.assertEqual([row["sample_count"] for row in rows], [2, 1])
+        self.assertAlmostEqual(rows[0]["planned_sorties"], 4)
+        self.assertAlmostEqual(rows[0]["successful_sorties"], 2.5)
+        self.assertAlmostEqual(rows[0]["mean_mission_success_rate"], 5 / 8)
+        self.assertAlmostEqual(rows[0]["sortie_rate"], 6 / 8)
+        self.assertEqual(rows[1]["mean_mission_success_rate"], 0)
+        self.assertTrue(all(0 <= row["mission_success_probability"] <= 1 for row in rows))
 
     def test_aircraft_support_v1_monte_carlo_isolates_failed_samples(self) -> None:
         class FailingSampleAdapter(SimulationAdapter):

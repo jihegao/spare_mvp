@@ -693,6 +693,8 @@ class BackendApiContractTest(unittest.TestCase):
                 },
             },
         }
+        project["stopPolicy"] = {"mode": "or", "conditions": [{"type": "duration"}]}
+        project["missionProfile"]["stopPolicy"] = {"mode": "or", "conditions": [{"type": "failure"}]}
 
         validation = self.api.validate_project(project)
 
@@ -703,7 +705,9 @@ class BackendApiContractTest(unittest.TestCase):
                 "analysisRequests",
                 "missionProfile.analysisRequests",
                 "missionProfile.monteCarlo",
+                "missionProfile.stopPolicy",
                 "monteCarlo",
+                "stopPolicy",
             ],
         )
         with self.assertRaises(BackendApiError) as ctx:
@@ -729,6 +733,8 @@ class BackendApiContractTest(unittest.TestCase):
                 },
             },
         }
+        project["stopPolicy"] = {"mode": "or", "conditions": [{"type": "duration"}]}
+        project["missionProfile"]["stopPolicy"] = {"mode": "or", "conditions": [{"type": "failure"}]}
         self.api.repository.upsert_project(project)
 
         stored = self.api.get_project("project-legacy-mc")
@@ -736,6 +742,8 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertNotIn("monteCarlo", stored)
         self.assertNotIn("monteCarlo", stored["missionProfile"])
         self.assertNotIn("analysisRequests", stored["missionProfile"])
+        self.assertNotIn("stopPolicy", stored)
+        self.assertNotIn("stopPolicy", stored["missionProfile"])
 
     def test_save_project_strips_non_model_project_fields(self) -> None:
         project = small_aircraft_support_project("project-aircraft-support-contract-001")
@@ -1952,10 +1960,11 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(payload["sample_count"], 2)
         self.assertEqual(payload["seed_list"], [20260705, 20260706])
         self.assertTrue(payload["rows"])
-        self.assertTrue(payload["daily_rows"])
-        self.assertEqual(payload["daily_rows"][0]["day"], 1)
-        self.assertEqual(payload["daily_rows"][0]["sampleCount"], 2)
-        self.assertIn("meanMissionSuccessRate", payload["daily_rows"][0])
+        self.assertEqual(payload["rows"], payload["wave_rows"])
+        self.assertEqual(payload["wave_rows"][0]["dayIndex"], 1)
+        self.assertEqual(payload["wave_rows"][0]["sampleCount"], 2)
+        self.assertIn("meanMissionSuccessRate", payload["wave_rows"][0])
+        self.assertNotIn("seed", payload["wave_rows"][0])
         self.assertEqual(self._run_side_effect_counts(), before)
 
     def test_lite_mesa_analysis_applies_scenario_composition_before_compile(self) -> None:
@@ -2012,7 +2021,7 @@ class BackendApiContractTest(unittest.TestCase):
 
         self.assertEqual(mission_payload["aggregate_metrics"]["simulation_days"], 3.0)
         self.assertEqual(downtime_payload["aggregate_metrics"]["simulation_days"], 3.0)
-        self.assertEqual([row["day"] for row in mission_payload["daily_rows"]], [1, 2, 3])
+        self.assertEqual(sorted({row["dayIndex"] for row in mission_payload["wave_rows"]}), [1, 2, 3])
 
     def test_lite_mesa_downtime_event_snapshots_use_model_event_log_snapshots(self) -> None:
         snapshots = _lite_mesa_downtime_event_snapshots(
@@ -2091,6 +2100,40 @@ class BackendApiContractTest(unittest.TestCase):
         )
 
         self.assertEqual(result["metrics"][3], ["任务失败次数", "5"])
+
+    def test_lite_mesa_mission_reliability_rows_aggregate_by_wave_and_skip_missing_samples(self) -> None:
+        result = _lite_mesa_mission_reliability_result(
+            {"data": {"mission_success_probability": 0.8, "sortie_rate": 0.4}},
+            [
+                {
+                    "seed": 1,
+                    "metrics": {"failed_sorties": 0, "ready_rate": 1},
+                    "mission_wave_reliability": [
+                        {"dayIndex": 1, "waveIndex": 1, "plannedSorties": 2, "launchedSorties": 2, "successfulSorties": 2, "missionSuccessRate": 1.2, "sortieRate": 1},
+                        {"dayIndex": 1, "waveIndex": 2, "plannedSorties": 2, "launchedSorties": 1, "successfulSorties": 0, "missionSuccessRate": 0, "sortieRate": 0.5},
+                    ],
+                },
+                {
+                    "seed": 2,
+                    "metrics": {"failed_sorties": 0, "ready_rate": 1},
+                    "mission_wave_reliability": [
+                        {"dayIndex": 1, "waveIndex": 1, "plannedSorties": 6, "launchedSorties": 4, "successfulSorties": 3, "missionSuccessRate": 0.5, "sortieRate": 4 / 6},
+                    ],
+                },
+            ],
+            {"maxTimeWindow": ""},
+        )
+
+        self.assertEqual(result["rows"], result["wave_rows"])
+        self.assertEqual([row["waveKey"] for row in result["rows"]], ["d1-w1", "d1-w2"])
+        self.assertEqual([row["sampleCount"] for row in result["rows"]], [2, 1])
+        self.assertAlmostEqual(result["rows"][0]["plannedSorties"], 4)
+        self.assertAlmostEqual(result["rows"][0]["successfulSorties"], 2.5)
+        self.assertAlmostEqual(result["rows"][0]["meanMissionSuccessRate"], 5 / 8)
+        self.assertAlmostEqual(result["rows"][0]["meanSortieRate"], 6 / 8)
+        self.assertEqual(result["rows"][1]["meanMissionSuccessRate"], 0)
+        self.assertTrue(all(0 <= row["meanMissionSuccessRate"] <= 1 for row in result["rows"]))
+        self.assertNotIn("seed", result["rows"][0])
 
     def test_lite_mesa_spare_shortfall_reports_transport_delay_hours_and_repair_cancellations(self) -> None:
         result = _lite_mesa_spare_shortfall_result(
@@ -2804,6 +2847,11 @@ class BackendApiContractTest(unittest.TestCase):
                 "samples": 9,
                 "seed": 909,
                 "seedPolicy": {"mode": "fixed", "baseSeed": 909},
+                "stopPolicy": {
+                    "schemaVersion": "stop-policy-v0",
+                    "mode": "and",
+                    "conditions": [{"type": "duration"}, {"type": "failure"}],
+                },
                 "scenarioComposition": {
                     "schemaVersion": "scenario-composition-v0",
                     "overrides": [
@@ -2824,6 +2872,11 @@ class BackendApiContractTest(unittest.TestCase):
                 "projectJson": {
                     **copy.deepcopy(project),
                     "seedPolicy": {"mode": "fixed", "baseSeed": 909},
+                    "stopPolicy": {
+                        "schemaVersion": "stop-policy-v0",
+                        "mode": "and",
+                        "conditions": [{"type": "duration"}, {"type": "failure"}],
+                    },
                     "scenarioComposition": {
                         "schemaVersion": "scenario-composition-v0",
                         "overrides": [
@@ -2839,6 +2892,14 @@ class BackendApiContractTest(unittest.TestCase):
 
         self.assertEqual(plan["config"]["seedPolicy"], {"mode": "fixed", "baseSeed": 909})
         self.assertEqual(
+            plan["config"]["stopPolicy"],
+            {
+                "schemaVersion": "stop-policy-v0",
+                "mode": "and",
+                "conditions": [{"type": "duration"}, {"type": "failure"}],
+            },
+        )
+        self.assertEqual(
             plan["config"]["scenarioComposition"]["overrides"][0]["path"],
             "supportNodes.0.inventory.LRU-A",
         )
@@ -2848,6 +2909,7 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertNotIn("analysisRequests", plan["config"]["projectJson"])
         self.assertNotIn("monteCarlo", plan["config"]["projectJson"])
         self.assertNotIn("seedPolicy", plan["config"]["projectJson"])
+        self.assertNotIn("stopPolicy", plan["config"]["projectJson"])
         self.assertNotIn("scenarioComposition", plan["config"]["projectJson"])
 
     def test_experiment_plan_config_branch_does_not_mutate_source_project(self) -> None:

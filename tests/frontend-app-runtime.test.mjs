@@ -749,7 +749,7 @@ test("task reliability analysis embeds experiment plan selector in its title fra
   }
 });
 
-test("task reliability analysis renders daily average mission success line chart", async () => {
+test("task reliability analysis renders mission wave average mission success line chart", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=mission-reliability-task-reliability",
     projectJson: createRuntimeProjectJson()
@@ -758,7 +758,7 @@ test("task reliability analysis renders daily average mission success line chart
   try {
     await runtime.click("[data-lite-mesa-analysis-action='run']");
 
-    assert.match(runtime.appNode.innerHTML, /每日平均任务成功率/);
+    assert.match(runtime.appNode.innerHTML, /任务波次平均成功率/);
     assert.match(runtime.appNode.innerHTML, /class="line-chart"/);
     assert.match(runtime.appNode.innerHTML, /line-chart-y-axis/);
     assert.match(runtime.appNode.innerHTML, /任务失败次数/);
@@ -771,6 +771,8 @@ test("task reliability analysis renders daily average mission success line chart
     assert.match(runtime.appNode.innerHTML, /0\.500/);
     assert.match(runtime.appNode.innerHTML, /<details class="lite-mesa-collapsible-table">/);
     assert.match(runtime.appNode.innerHTML, /<summary>样本明细/);
+    assert.match(runtime.appNode.innerHTML, /任务波次/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /<th>seed<\/th>|row\.seed/);
   } finally {
     runtime.restore();
   }
@@ -1607,6 +1609,12 @@ test("experiment plan save posts composed projectJson without mutating source pr
     );
     await runtime.change("[data-experiment-seed-policy]", {}, { value: "fixed" });
     await runtime.change("[data-experiment-seed-base]", {}, { value: "909", type: "number" });
+    await runtime.change("[data-experiment-stop-mode]", {}, { value: "and" });
+    await runtime.change(
+      "[data-experiment-stop-condition]",
+      { experimentStopCondition: "failure" },
+      { checked: true, type: "checkbox" }
+    );
     await runtime.click("[data-scenario-override-add]");
     await runtime.change(
       "[data-scenario-override-path]",
@@ -1634,9 +1642,15 @@ test("experiment plan save posts composed projectJson without mutating source pr
     assert.equal(body.config.samples, 5);
     assert.equal(body.config.seed, 909);
     assert.deepEqual(body.config.seedPolicy, { mode: "fixed", baseSeed: 909 });
+    assert.deepEqual(body.config.stopPolicy, {
+      schemaVersion: "stop-policy-v0",
+      mode: "and",
+      conditions: [{ type: "duration" }, { type: "failure" }]
+    });
     assert.equal(body.config.projectJson.supportNodes[0].inventory["LRU-A"], 12);
     assert.equal(body.config.analysisRequests.largeSample.samples, 5);
     assert.equal("scenarioComposition" in body.config.projectJson, false);
+    assert.equal("stopPolicy" in body.config.projectJson, false);
 
     const projectSaveRequests = runtime.requests.filter((request) => (
       request.url === "/api/projects"
@@ -1647,6 +1661,30 @@ test("experiment plan save posts composed projectJson without mutating source pr
     assert.ok(savedProjects.every((savedProject) => savedProject.supportNodes?.[0]?.inventory?.["LRU-A"] !== 12));
     assert.ok(savedProjects.every((savedProject) => !("scenarioComposition" in savedProject)));
     assert.ok(savedProjects.every((savedProject) => !("seedPolicy" in savedProject)));
+    assert.ok(savedProjects.every((savedProject) => !("stopPolicy" in savedProject)));
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("experiment plan stop minute edit does not enable specified time unless checked", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-experiment-plan-management",
+    projectJson: createRuntimeProjectJson()
+  });
+
+  try {
+    await runtime.click("[data-experiment-plan-add]", { experimentPlanAdd: "" });
+    await runtime.change("[data-experiment-stop-time-minute]", {}, { value: "90", type: "number" });
+    await runtime.click("[data-save-plan]");
+
+    const createPlanRequest = runtime.requests.find((request) => (
+      request.url === "/api/projects/project-runtime/experiment-plans"
+      && (request.options.method || "GET") === "POST"
+    ));
+    assert.ok(createPlanRequest, "composed experiment plan should be posted to backend");
+    const body = JSON.parse(createPlanRequest.options.body || "{}");
+    assert.deepEqual(body.config.stopPolicy.conditions, [{ type: "duration" }]);
   } finally {
     runtime.restore();
   }
@@ -2328,17 +2366,23 @@ async function setupRuntimeApp({
 		          ["出动架次率", "0.750"],
 		          ["样本数", String(samples)]
 		        ],
-		        rows: analysisType === "downtime_factors"
-		          ? [{ label: "故障停机", reason: "failure", count: 1, contribution: 0.4 }]
-		          : analysisType === "spare_shortfall"
-		            ? [{ spareType: "航电模块", demand: 2, filled: 1, meanTransportDelayHours: 1.5, fillRate: 0.55, riskLevel: "高" }]
-		            : [{ spareType: "航电模块", demand: 2, shortage: 0, fillRate: 1, riskLevel: "低" }],
-	        daily_rows: analysisType === "mission_reliability"
+		        rows: analysisType === "mission_reliability"
+		          ? [
+		              { sequence: 1, dayIndex: 1, waveIndex: 1, waveLabel: "第1天 第1波", sampleCount: samples, plannedSorties: 4, meanMissionSuccessRate: 0.75, meanSortieRate: 0.9 },
+		              { sequence: 2, dayIndex: 1, waveIndex: 2, waveLabel: "第1天 第2波", sampleCount: samples - 1, plannedSorties: 4, meanMissionSuccessRate: 0.5, meanSortieRate: 0.75 }
+		            ]
+		          : analysisType === "downtime_factors"
+		            ? [{ label: "故障停机", reason: "failure", count: 1, contribution: 0.4 }]
+		            : analysisType === "spare_shortfall"
+		              ? [{ spareType: "航电模块", demand: 2, filled: 1, meanTransportDelayHours: 1.5, fillRate: 0.55, riskLevel: "高" }]
+		              : [{ spareType: "航电模块", demand: 2, shortage: 0, fillRate: 1, riskLevel: "低" }],
+	        wave_rows: analysisType === "mission_reliability"
 	          ? [
-	              { day: 1, sampleCount: samples, plannedSorties: 4, meanMissionSuccessRate: 0.75, meanSortieRate: 0.9 },
-	              { day: 2, sampleCount: samples, plannedSorties: 4, meanMissionSuccessRate: 0.5, meanSortieRate: 0.75 }
+	              { sequence: 1, dayIndex: 1, waveIndex: 1, waveLabel: "第1天 第1波", sampleCount: samples, plannedSorties: 4, meanMissionSuccessRate: 0.75, meanSortieRate: 0.9 },
+	              { sequence: 2, dayIndex: 1, waveIndex: 2, waveLabel: "第1天 第2波", sampleCount: samples - 1, plannedSorties: 4, meanMissionSuccessRate: 0.5, meanSortieRate: 0.75 }
 	            ]
 	          : [],
+	        daily_rows: [],
         event_snapshots: analysisType === "downtime_factors"
           ? [
               {
