@@ -2108,7 +2108,11 @@ class BackendHttpApiTest(unittest.TestCase):
                 self.assertGreaterEqual(len(created["project"]["components"]), 8)
                 self.assertGreaterEqual(len(created["project"]["missionProfile"]["compositeTasks"]), 2)
                 self.assertGreaterEqual(len(created["project"]["supportNodes"]), 3)
-                self.assertIn("航电模块", created["project"]["supportNodes"][0]["inventory"])
+                self.assertTrue(all("inventory" not in node for node in created["project"]["supportNodes"]))
+                self.assertTrue(any(
+                    resource["type"] == "spare" and resource["name"] == "航电模块"
+                    for resource in created["project"]["supportResources"]
+                ))
                 self.assertTrue(any(
                     activity["activityType"] == "修复性维修" and len(activity["jobs"]) >= 2
                     for activity in created["project"]["supportActivities"]
