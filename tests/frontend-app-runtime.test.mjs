@@ -664,6 +664,40 @@ test("equipment RMS granularity locks excluded modeling pages while keeping equi
   }
 });
 
+test("modeling form management only renders personnel dictionary and time unit fields", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=system-management-modeling-form-management",
+    projectJson: createRuntimeProjectJson({
+      modelingDictionaries: {
+        personnelSpecialties: ["机务", "航电"]
+      }
+    })
+  });
+
+  try {
+    await runtime.flush();
+
+    assert.match(runtime.appNode.innerHTML, /保障人员专业字典/);
+    assert.match(runtime.appNode.innerHTML, /data-personnel-specialty-dictionary/);
+    assert.match(runtime.appNode.innerHTML, /带时间单位的表单字段/);
+    assert.match(runtime.appNode.innerHTML, /data-modeling-form-management/);
+    assert.match(runtime.appNode.innerHTML, /data-modeling-form-unit="equipment-system:mtbfHours"/);
+    assert.match(runtime.appNode.innerHTML, /data-modeling-form-unit="equipment-system:mttrMinutes"/);
+    assert.match(runtime.appNode.innerHTML, /data-modeling-form-unit="basic-mission:durationMinutes"/);
+    assert.match(runtime.appNode.innerHTML, /data-modeling-form-unit="logistics-support-activity:transportHours"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-modeling-form-unit="equipment-system:componentName"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-modeling-form-unit="support-personnel:resourceName"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-modeling-form-unit="spares:spareName"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-modeling-form-unit="composite-task:minRequiredSystems"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /组件名称/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /资源名称/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /备件名称/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /最小装备数量/);
+  } finally {
+    runtime.restore();
+  }
+});
+
 test("visual Mesa page renders restored title frame with decimal KPI values", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=spare-planning-visual-mesa-page",

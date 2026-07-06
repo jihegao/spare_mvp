@@ -2130,9 +2130,11 @@ function bindEvents() {
 
     const modelingFormUnitSelect = event.target.closest("[data-modeling-form-unit]");
     if (modelingFormUnitSelect) {
+      const key = modelingFormUnitSelect.dataset.modelingFormUnit;
+      if (!modelingFormTimeUnitFieldKeys().has(key)) return;
       modelingFormFieldUnits = {
-        ...modelingFormFieldUnits,
-        [modelingFormUnitSelect.dataset.modelingFormUnit]: modelingFormUnitSelect.value
+        ...normalizeModelingFormFieldUnits(modelingFormFieldUnits),
+        [key]: modelingFormUnitSelect.value
       };
       systemRuntimeConfigStatus = "字段单位配置已更新，待保存";
       render();
@@ -3879,13 +3881,43 @@ function createDefaultModelingFormFieldUnits() {
   for (const row of modelingSheetRows()) {
     for (const field of row.fields) {
       const key = modelingFieldKey(row.key, field.key);
-      const hint = `${field.key} ${field.path} ${field.label}`.toLowerCase();
-      if (hint.includes("minutes") || hint.includes("minute")) units[key] = "分钟";
-      else if (hint.includes("hours") || hint.includes("hour")) units[key] = "小时";
-      else units[key] = "";
+      const unit = defaultModelingFormTimeUnit(field);
+      if (unit) units[key] = unit;
     }
   }
   return units;
+}
+
+function defaultModelingFormTimeUnit(field) {
+  const hint = `${field?.key || ""} ${field?.path || ""} ${field?.label || ""}`.toLowerCase();
+  if (hint.includes("minutes") || hint.includes("minute")) return "分钟";
+  if (hint.includes("hours") || hint.includes("hour")) return "小时";
+  return "";
+}
+
+function modelingFormTimeUnitSheetRows() {
+  return modelingSheetRows()
+    .map((sheet) => ({
+      ...sheet,
+      fields: sheet.fields.filter((field) => defaultModelingFormTimeUnit(field))
+    }))
+    .filter((sheet) => sheet.fields.length);
+}
+
+function modelingFormTimeUnitFieldKeys() {
+  return new Set(modelingFormTimeUnitSheetRows().flatMap((sheet) =>
+    sheet.fields.map((field) => modelingFieldKey(sheet.key, field.key))
+  ));
+}
+
+function normalizeModelingFormFieldUnits(units = {}) {
+  const defaults = createDefaultModelingFormFieldUnits();
+  const allowedKeys = new Set(Object.keys(defaults));
+  return Object.entries({ ...defaults, ...(units || {}) }).reduce((acc, [key, value]) => {
+    if (!allowedKeys.has(key)) return acc;
+    acc[key] = ["小时", "分钟"].includes(value) ? value : "";
+    return acc;
+  }, {});
 }
 
 function createDefaultSystemRuntimeConfig() {
@@ -3931,7 +3963,7 @@ function currentSystemRuntimeConfigPayload() {
     granularityProfiles: modelingGranularityProfiles(),
     permissions: SYSTEM_PERMISSION_ROWS.map((row) => ({ ...row })),
     modelingForms: {
-      fieldUnits: { ...modelingFormFieldUnits },
+      fieldUnits: normalizeModelingFormFieldUnits(modelingFormFieldUnits),
       personnelSpecialties: configuredPersonnelSpecialties()
     }
   };
@@ -3964,10 +3996,7 @@ function applySystemRuntimeConfig(payload = {}) {
 
   if (payload.modelingForms && typeof payload.modelingForms === "object") {
     if (payload.modelingForms.fieldUnits && typeof payload.modelingForms.fieldUnits === "object") {
-      modelingFormFieldUnits = {
-        ...createDefaultModelingFormFieldUnits(),
-        ...payload.modelingForms.fieldUnits
-      };
+      modelingFormFieldUnits = normalizeModelingFormFieldUnits(payload.modelingForms.fieldUnits);
     }
     if (Array.isArray(payload.modelingForms.personnelSpecialties)) {
       setConfiguredPersonnelSpecialties(payload.modelingForms.personnelSpecialties);
@@ -4209,10 +4238,11 @@ function renderPermissionConfigEditor() {
 }
 
 function renderModelingFormManagementConfig() {
-  const rows = modelingSheetRows();
+  const timeUnitSheets = modelingFormTimeUnitSheetRows();
+  const timeUnitFieldCount = timeUnitSheets.reduce((sum, sheet) => sum + sheet.fields.length, 0);
   const specialties = configuredPersonnelSpecialties();
   return `
-    <p class="inline-status">${rows.length} 个建模表单已从仿真建模 sheet 配置同步</p>
+    <p class="inline-status">仅保留保障人员专业字典与 ${timeUnitFieldCount} 个带时间单位的表单字段配置。</p>
     <section class="system-config-section" data-personnel-specialty-dictionary>
       <div class="section-head">
         <div>
@@ -4235,46 +4265,45 @@ function renderModelingFormManagementConfig() {
       </div>
     </section>
     <div class="modeling-field-config" data-modeling-form-management>
-      ${MODELING_DATA_MODULES.map((module) => `
-        <section class="modeling-config-card">
-          <div class="section-head">
-            <div>
-              <h4>${htmlEscape(module.label)}</h4>
-              <p>${htmlEscape(module.description)}</p>
-            </div>
+      <section class="modeling-config-card">
+        <div class="section-head">
+          <div>
+            <h4>带时间单位的表单字段</h4>
+            <p>仅列出可配置小时或分钟单位的建模字段。</p>
           </div>
-          <div class="modeling-sheet-stack">
-            ${module.sheets.map((sheet) => `
-              <article class="modeling-sheet-card">
-                <div class="section-head">
-                  <div>
-                    <h4>${htmlEscape(sheet.sourcePage)}</h4>
-                    <p>${htmlEscape(sheet.label)} / ${sheet.fields.length} 个字段</p>
-                  </div>
-                  <span class="status-badge ${selectedSystemDataKeys.has(sheet.key) ? "success" : "warning"}">${selectedSystemDataKeys.has(sheet.key) ? "启用" : "停用"}</span>
+          <span class="status-badge">${timeUnitFieldCount} 字段</span>
+        </div>
+        <div class="modeling-sheet-stack">
+          ${timeUnitSheets.map((sheet) => `
+            <article class="modeling-sheet-card">
+              <div class="section-head">
+                <div>
+                  <h4>${htmlEscape(sheet.sourcePage)}</h4>
+                  <p>${htmlEscape(sheet.moduleLabel)} / ${htmlEscape(sheet.label)} / ${sheet.fields.length} 个时间字段</p>
                 </div>
-                <div class="field-checkbox-grid">
-                  ${sheet.fields.map((field) => {
-                    const key = modelingFieldKey(sheet.key, field.key);
-                    const unit = modelingFormFieldUnits[key] || "";
-                    return `
-                      <label class="field-check">
-                        <span>
-                          <strong>${htmlEscape(field.label)}</strong>
-                          <small>${htmlEscape(field.path)}</small>
-                        </span>
-                        <select data-modeling-form-unit="${htmlEscape(key)}">
-                          ${["", "小时", "分钟"].map((option) => `<option value="${htmlEscape(option)}" ${unit === option ? "selected" : ""}>${option || "无单位"}</option>`).join("")}
-                        </select>
-                      </label>
-                    `;
-                  }).join("")}
-                </div>
-              </article>
-            `).join("")}
-          </div>
-        </section>
-      `).join("")}
+                <span class="status-badge ${selectedSystemDataKeys.has(sheet.key) ? "success" : "warning"}">${selectedSystemDataKeys.has(sheet.key) ? "启用" : "停用"}</span>
+              </div>
+              <div class="field-checkbox-grid">
+                ${sheet.fields.map((field) => {
+                  const key = modelingFieldKey(sheet.key, field.key);
+                  const unit = modelingFormFieldUnits[key] ?? defaultModelingFormTimeUnit(field);
+                  return `
+                    <label class="field-check">
+                      <span>
+                        <strong>${htmlEscape(field.label)}</strong>
+                        <small>${htmlEscape(field.path)}</small>
+                      </span>
+                      <select data-modeling-form-unit="${htmlEscape(key)}">
+                        ${["", "小时", "分钟"].map((option) => `<option value="${htmlEscape(option)}" ${unit === option ? "selected" : ""}>${option || "无单位"}</option>`).join("")}
+                      </select>
+                    </label>
+                  `;
+                }).join("")}
+              </div>
+            </article>
+          `).join("")}
+        </div>
+      </section>
     </div>
   `;
 }
