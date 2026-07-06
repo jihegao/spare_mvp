@@ -1163,10 +1163,7 @@ class BackendHttpApiTest(unittest.TestCase):
             try:
                 base_url = f"http://127.0.0.1:{server.server_address[1]}/api"
                 auth_token = self._login_token(base_url, "data", "data")
-                case = self._fixture("simulation_analysis_cases/canonical_platform_case.json")
-                project = modeling_import_to_project(case["modeling_import"], validation=case.get("validation"))
-                project["project_id"] = "project-http-lite-mesa-analysis"
-                project["missionProfile"].pop("sourceImportId", None)
+                project = small_aircraft_support_project("project-http-lite-mesa-analysis")
 
                 visualization_status, visualization_error = self._json_error_with_status(
                     base_url,
@@ -1199,6 +1196,8 @@ class BackendHttpApiTest(unittest.TestCase):
                 self.assertEqual(payload["sample_count"], 2)
                 self.assertEqual(payload["seed_list"], [20260704, 20260705])
                 self.assertTrue(payload["rows"])
+                self.assertEqual(payload["rows"], payload["wave_rows"])
+                self.assertNotIn("seed", payload["rows"][0])
                 self.assertEqual(catalog["projects"], [])
                 self.assertEqual([path.name for path in (Path(tmp) / "artifacts").glob("*")], [])
             finally:

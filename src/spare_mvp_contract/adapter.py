@@ -2198,6 +2198,7 @@ class SimulationAdapter:
         self._apply_aircraft_support_v1_capacity(sample_inputs, point["support_capacity"])
         model = AircraftSupportV1Model(sample_inputs)
         execution = model.run()
+        mission_wave_reliability = self._aircraft_support_v1_sample_mission_wave_reliability(model.missions)
         sweep = {
             "failure_rate": point["failure_rate"],
             "spare_multiplier": point["spare_multiplier"],
@@ -2224,6 +2225,7 @@ class SimulationAdapter:
             "seed": point["seed"],
             "sweep": sweep,
             "metrics": execution["metrics"],
+            "mission_wave_reliability": mission_wave_reliability,
             "frames": frames,
         }
 
@@ -2706,6 +2708,10 @@ class SimulationAdapter:
             samples or [],
             simulation_inputs if isinstance(simulation_inputs, dict) else {},
         )
+        mission_wave_rows = self._aircraft_support_v1_mission_reliability_series(
+            metrics=metrics,
+            samples=samples or [],
+        )
         if not spare_rows:
             fallback_quantity = max(1, int(math.ceil(max(1.0, float(metrics.get("spare_consumed_total", 0) or 0) + shortage_events))))
             spare_rows = [
@@ -2807,10 +2813,8 @@ class SimulationAdapter:
                     "failed_sorties": metrics.get("failed_sorties", 0),
                     "in_flight_failures": metrics.get("in_flight_failures", 0),
                     "target_met": mission_success >= 0.9,
-                    "series": self._aircraft_support_v1_mission_reliability_series(
-                        metrics=metrics,
-                        samples=samples or [],
-                    ),
+                    "mission_wave_rows": mission_wave_rows,
+                    "series": mission_wave_rows,
                 },
             },
             "downtime_factors": {
@@ -3109,31 +3113,141 @@ class SimulationAdapter:
         metrics: dict[str, Any],
         samples: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
-        frames = samples[0].get("frames") if samples else []
-        rows: list[dict[str, Any]] = []
-        for index, frame in enumerate(frames or []):
-            mission_state = frame.get("mission_state") if isinstance(frame.get("mission_state"), dict) else {}
-            probability = mission_state.get("mission_success_rate", metrics.get("mission_success_rate", metrics.get("sortie_completion_rate", 0)))
-            sortie_rate = mission_state.get("sortie_rate", metrics.get("sortie_rate", 0))
-            rows.append(
-                {
-                    "simulation_time": int(frame.get("simulation_time", frame.get("step", index)) or 0),
-                    "mission_success_probability": min(1.0, max(0.0, float(probability or 0))),
-                    "sortie_rate": min(1.0, max(0.0, float(sortie_rate or 0))),
-                }
-            )
+        rows = self._aircraft_support_v1_mission_wave_rows(samples)
         if rows:
             return rows
+        mission_success = self._clamp01(
+            metrics.get("mission_success_rate", metrics.get("sortie_completion_rate", 0))
+        )
+        sortie_rate = self._clamp01(metrics.get("sortie_rate", 0))
         return [
             {
-                "simulation_time": 0,
-                "mission_success_probability": min(
-                    1.0,
-                    max(0.0, float(metrics.get("mission_success_rate", metrics.get("sortie_completion_rate", 0)) or 0)),
-                ),
-                "sortie_rate": min(1.0, max(0.0, float(metrics.get("sortie_rate", 0) or 0))),
+                "sequence": 1,
+                "day_index": 1,
+                "wave_index": 1,
+                "wave_key": "d1-w1",
+                "wave_label": "第1天 第1波",
+                "sample_count": len(samples),
+                "planned_sorties": max(1.0, float(metrics.get("planned_sorties", 1) or 1)),
+                "launched_sorties": max(0.0, float(metrics.get("launched_sorties", 0) or 0)),
+                "successful_sorties": max(0.0, float(metrics.get("completed_sorties", 0) or 0)),
+                "mean_mission_success_rate": mission_success,
+                "mission_success_probability": mission_success,
+                "mean_sortie_rate": sortie_rate,
+                "sortie_rate": sortie_rate,
             }
         ]
+
+    def _aircraft_support_v1_sample_mission_wave_reliability(self, missions: list[Any]) -> list[dict[str, Any]]:
+        by_wave: dict[tuple[int, int], dict[str, float]] = {}
+        for mission in missions:
+            day = max(1, self._positive_int(getattr(mission, "day_index", 1), 1))
+            wave = max(1, self._positive_int(getattr(mission, "wave_index", 1), 1))
+            planned = max(1, self._positive_int(getattr(mission, "required_aircraft", 1), 1))
+            assigned = len(getattr(mission, "assigned_tail_numbers", []) or [])
+            failed = len(set(getattr(mission, "failed_tail_numbers", []) or []))
+            status = str(getattr(mission, "status", "") or "")
+            successful = max(0, planned - failed) if status == "completed" else 0
+            bucket = by_wave.setdefault(
+                (day, wave),
+                {
+                    "planned_sorties": 0.0,
+                    "launched_sorties": 0.0,
+                    "successful_sorties": 0.0,
+                },
+            )
+            bucket["planned_sorties"] += planned
+            bucket["launched_sorties"] += max(0, min(planned, assigned))
+            bucket["successful_sorties"] += max(0, min(planned, successful))
+        rows = []
+        for sequence, (day, wave) in enumerate(sorted(by_wave), start=1):
+            bucket = by_wave[(day, wave)]
+            planned = max(1.0, float(bucket["planned_sorties"]))
+            mission_success = self._clamp01(bucket["successful_sorties"] / planned)
+            sortie_rate = self._clamp01(bucket["launched_sorties"] / planned)
+            rows.append(
+                {
+                    "sequence": sequence,
+                    "day_index": day,
+                    "wave_index": wave,
+                    "wave_key": self._mission_wave_key(day, wave),
+                    "wave_label": self._mission_wave_label(day, wave),
+                    "planned_sorties": bucket["planned_sorties"],
+                    "launched_sorties": bucket["launched_sorties"],
+                    "successful_sorties": bucket["successful_sorties"],
+                    "mission_success_rate": mission_success,
+                    "sortie_rate": sortie_rate,
+                }
+            )
+        return rows
+
+    def _aircraft_support_v1_mission_wave_rows(self, samples: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        by_wave: dict[tuple[int, int], dict[str, float]] = {}
+        for sample in samples:
+            for row in sample.get("mission_wave_reliability") or []:
+                day = max(1, self._positive_int(row.get("day_index", row.get("dayIndex", 1)), 1))
+                wave = max(1, self._positive_int(row.get("wave_index", row.get("waveIndex", 1)), 1))
+                bucket = by_wave.setdefault(
+                    (day, wave),
+                    {
+                        "sample_count": 0.0,
+                        "planned_sorties": 0.0,
+                        "launched_sorties": 0.0,
+                        "successful_sorties": 0.0,
+                        "mission_success_rate": 0.0,
+                        "sortie_rate": 0.0,
+                    },
+                )
+                bucket["sample_count"] += 1
+                bucket["planned_sorties"] += self._float_value(row.get("planned_sorties", row.get("plannedSorties")), 0.0)
+                bucket["launched_sorties"] += self._float_value(row.get("launched_sorties", row.get("launchedSorties")), 0.0)
+                bucket["successful_sorties"] += self._float_value(
+                    row.get("successful_sorties", row.get("successfulSorties")),
+                    0.0,
+                )
+                bucket["mission_success_rate"] += self._clamp01(
+                    row.get("mission_success_rate", row.get("missionSuccessRate", row.get("mean_mission_success_rate")))
+                )
+                bucket["sortie_rate"] += self._clamp01(row.get("sortie_rate", row.get("sortieRate", row.get("mean_sortie_rate"))))
+        rows = []
+        for sequence, (day, wave) in enumerate(sorted(by_wave), start=1):
+            bucket = by_wave[(day, wave)]
+            sample_count = max(1.0, bucket["sample_count"])
+            mission_success = self._clamp01(bucket["mission_success_rate"] / sample_count)
+            sortie_rate = self._clamp01(bucket["sortie_rate"] / sample_count)
+            rows.append(
+                {
+                    "sequence": sequence,
+                    "day_index": day,
+                    "wave_index": wave,
+                    "wave_key": self._mission_wave_key(day, wave),
+                    "wave_label": self._mission_wave_label(day, wave),
+                    "sample_count": int(bucket["sample_count"]),
+                    "planned_sorties": bucket["planned_sorties"] / sample_count,
+                    "launched_sorties": bucket["launched_sorties"] / sample_count,
+                    "successful_sorties": bucket["successful_sorties"] / sample_count,
+                    "mean_mission_success_rate": mission_success,
+                    "mission_success_probability": mission_success,
+                    "mean_sortie_rate": sortie_rate,
+                    "sortie_rate": sortie_rate,
+                }
+            )
+        return rows
+
+    def _mission_wave_key(self, day: int, wave: int) -> str:
+        return f"d{day}-w{wave}"
+
+    def _mission_wave_label(self, day: int, wave: int) -> str:
+        return f"第{day}天 第{wave}波"
+
+    def _clamp01(self, value: Any) -> float:
+        return min(1.0, max(0.0, self._float_value(value, 0.0)))
+
+    def _float_value(self, value: Any, fallback: float) -> float:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return float(fallback)
 
     def _input_project_for_scenario(self, scenario: dict[str, Any]) -> dict[str, Any]:
         input_project = copy.deepcopy(

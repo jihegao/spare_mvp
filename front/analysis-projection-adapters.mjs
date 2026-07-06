@@ -193,24 +193,46 @@ function normalizeMissionReliability(payload) {
       ["任务成功概率", fixed(probability, 2)],
       ["出动架次率", fixed(sortieRate, 2)],
       ["目标达成", state],
-      ["最大下降区间", missionReliabilityDropLabel(steepestDrop)]
+      ["最大下降波次", missionReliabilityDropLabel(steepestDrop)]
     ]
   };
 }
 
 function normalizeMissionReliabilitySeries(data, fallback) {
-  const rawRows = Array.isArray(data.series) && data.series.length ? data.series : [{
-    simulation_time: "projection",
-    mission_success_probability: fallback.probability,
-    sortie_rate: fallback.sortieRate
-  }];
+  const rawRows = Array.isArray(data.mission_wave_rows) && data.mission_wave_rows.length
+    ? data.mission_wave_rows
+    : Array.isArray(data.series) && data.series.length
+      ? data.series
+      : [{
+          wave_label: "projection",
+          sample_count: 1,
+          mission_success_probability: fallback.probability,
+          sortie_rate: fallback.sortieRate
+        }];
   return rawRows.map((row, index) => {
-    const probability = clamp01(requireFiniteNumber(row.mission_success_probability, "series mission_success_probability"));
-    const sortieRate = clamp01(requireFiniteNumber(row.sortie_rate ?? data.sortie_rate, "series sortie_rate"));
+    const probability = clamp01(requireFiniteNumber(
+      row.mean_mission_success_rate ?? row.mission_success_probability,
+      "series mission_success_probability"
+    ));
+    const sortieRate = clamp01(requireFiniteNumber(row.mean_sortie_rate ?? row.sortie_rate ?? data.sortie_rate, "series sortie_rate"));
+    const dayIndex = Number.isFinite(row.day_index) ? Math.max(1, Math.round(row.day_index)) : null;
+    const waveIndex = Number.isFinite(row.wave_index) ? Math.max(1, Math.round(row.wave_index)) : null;
+    const waveLabel = stringValue(
+      row.wave_label ?? (dayIndex && waveIndex ? `第${dayIndex}天 第${waveIndex}波` : row.simulation_time),
+      `${index + 1}`
+    );
+    const sampleCount = Number.isFinite(row.sample_count) ? Math.max(0, Math.round(row.sample_count)) : 1;
     return {
       sequence: index + 1,
-      timeLabel: stringValue(row.simulation_time, `${index + 1}`),
+      timeLabel: waveLabel,
+      waveLabel,
+      waveKey: stringValue(row.wave_key, dayIndex && waveIndex ? `d${dayIndex}-w${waveIndex}` : `wave-${index + 1}`),
+      dayIndex,
+      waveIndex,
+      sampleCount,
       probability,
+      meanMissionSuccessRate: probability,
+      sortieRate,
       sorties: Math.round(sortieRate * 100),
       available: Math.round(probability * 100),
       state: fallback.state
@@ -229,8 +251,8 @@ function missionReliabilitySteepestDrop(rows) {
       best = {
         fromIndex: from.sequence,
         toIndex: to.sequence,
-        fromTime: Number(from.timeLabel),
-        toTime: Number(to.timeLabel),
+        fromTime: from.timeLabel,
+        toTime: to.timeLabel,
         drop
       };
     }

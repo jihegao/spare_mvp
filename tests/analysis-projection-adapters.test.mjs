@@ -99,7 +99,7 @@ test("normalizes carry list projection payload for formal KPI and table renderin
   assert.equal(view.rows[0].qty, 2);
 });
 
-test("normalizes mission reliability projection payload for formal KPI and trend rendering", () => {
+test("normalizes mission reliability projection payload as mission wave aggregates for formal KPI and trend rendering", () => {
   const view = normalizeAnalysisProjectionPayload("mission_reliability", {
     projection_type: "mission_reliability",
     run_id: "run-ui",
@@ -108,11 +108,11 @@ test("normalizes mission reliability projection payload for formal KPI and trend
       mission_success_probability: 0.91,
       sortie_rate: 0.88,
       target_met: true,
-      series: [
-        { simulation_time: 0, mission_success_probability: 0.96, sortie_rate: 0.92 },
-        { simulation_time: 30, mission_success_probability: 0.94, sortie_rate: 0.91 },
-        { simulation_time: 60, mission_success_probability: 0.86, sortie_rate: 0.84 },
-        { simulation_time: 90, mission_success_probability: 0.85, sortie_rate: 0.83 }
+      mission_wave_rows: [
+        { day_index: 1, wave_index: 1, wave_label: "第1天 第1波", sample_count: 3, mean_mission_success_rate: 0.96, mean_sortie_rate: 0.92 },
+        { day_index: 1, wave_index: 2, wave_label: "第1天 第2波", sample_count: 3, mean_mission_success_rate: 0.94, mean_sortie_rate: 0.91 },
+        { day_index: 2, wave_index: 1, wave_label: "第2天 第1波", sample_count: 2, mean_mission_success_rate: 0.86, mean_sortie_rate: 0.84 },
+        { day_index: 2, wave_index: 2, wave_label: "第2天 第2波", sample_count: 1, mean_mission_success_rate: 0.85, mean_sortie_rate: 0.83 }
       ]
     }
   }, { runId: "run-ui", modelFamily: "aircraft_support_v1" });
@@ -121,20 +121,20 @@ test("normalizes mission reliability projection payload for formal KPI and trend
     ["任务成功概率", "0.91"],
     ["出动架次率", "0.88"],
     ["目标达成", "满足"],
-    ["最大下降区间", "T2 → T3 (-0.08)"]
+    ["最大下降波次", "T2 → T3 (-0.08)"]
   ]);
   assert.deepEqual(view.steepestDrop, {
     fromIndex: 2,
     toIndex: 3,
-    fromTime: 30,
-    toTime: 60,
+    fromTime: "第1天 第2波",
+    toTime: "第2天 第1波",
     drop: 0.07999999999999996
   });
-  assert.deepEqual(view.rows.map((row) => [row.sequence, row.timeLabel, row.probability, row.sorties, row.state]), [
-    [1, "0", 0.96, 92, "满足"],
-    [2, "30", 0.94, 91, "满足"],
-    [3, "60", 0.86, 84, "满足"],
-    [4, "90", 0.85, 83, "满足"]
+  assert.deepEqual(view.rows.map((row) => [row.sequence, row.waveLabel, row.sampleCount, row.probability, row.sortieRate, row.state]), [
+    [1, "第1天 第1波", 3, 0.96, 0.92, "满足"],
+    [2, "第1天 第2波", 3, 0.94, 0.91, "满足"],
+    [3, "第2天 第1波", 2, 0.86, 0.84, "满足"],
+    [4, "第2天 第2波", 1, 0.85, 0.83, "满足"]
   ]);
 });
 

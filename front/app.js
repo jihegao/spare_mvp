@@ -14832,12 +14832,12 @@ function renderFormalProjectionBody(formalProjection) {
     const rows = formalProjection.rows || [];
     const drop = formalProjection.steepestDrop;
     return `
-      <div class="analysis-chart-panel"><div class="chart-title">projection payload 任务可靠度</div>${renderLineChart(rows.map((row) => ({ x: row.sequence, y: row.probability })))}</div>
-      <div class="decision-support-card"><strong>最大下降区间</strong><span>${drop ? `T${drop.fromIndex} 到 T${drop.toIndex}，仿真时间 ${drop.fromTime} 到 ${drop.toTime}，下降 ${fixed(drop.drop, 3)}` : "未发现下降区间"}</span></div>
+      <div class="analysis-chart-panel"><div class="chart-title">projection payload 任务波次平均成功率</div>${renderLineChart(rows.map((row) => ({ x: row.sequence, y: row.probability })))}</div>
+      <div class="decision-support-card"><strong>最大下降波次</strong><span>${drop ? `T${drop.fromIndex} 到 T${drop.toIndex}，${htmlEscape(drop.fromTime)} 到 ${htmlEscape(drop.toTime)}，下降 ${fixed(drop.drop, 3)}` : "未发现下降波次"}</span></div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>等距序号</th><th>仿真时间</th><th>任务成功概率</th><th>出动架次率</th><th>可用指数</th><th>状态</th></tr></thead>
-          <tbody>${rows.map((row) => `<tr><td>T${row.sequence}</td><td>${htmlEscape(row.timeLabel)}</td><td>${fixed(row.probability, 3)}</td><td>${row.sorties}</td><td>${row.available}</td><td><span class="status-badge ${row.state === "未达标" ? "warn" : "success"}">${htmlEscape(row.state)}</span></td></tr>`).join("")}</tbody>
+          <thead><tr><th>任务波次</th><th>样本数</th><th>平均任务成功率</th><th>平均出动架次率</th><th>状态</th></tr></thead>
+          <tbody>${rows.map((row) => `<tr><td>${htmlEscape(row.waveLabel || row.timeLabel)}</td><td>${htmlEscape(row.sampleCount ?? "-")}</td><td>${fixed(row.probability, 3)}</td><td>${fixed(row.sortieRate, 3)}</td><td><span class="status-badge ${row.state === "未达标" ? "warn" : "success"}">${htmlEscape(row.state)}</span></td></tr>`).join("")}</tbody>
         </table>
       </div>
     `;
@@ -15218,12 +15218,19 @@ function normalizeLiteMesaAnalysisResult(definition, payload) {
       seedList: [],
       metrics: [],
       rows: [],
+      waveRows: [],
       dailyRows: [],
       eventSnapshots: Array.isArray(payload?.event_snapshots) ? payload.event_snapshots : [],
       limitations: Array.isArray(payload?.limitations) ? payload.limitations : [],
       message: payload?.message || "建模粒度不足：请补充装备数量、任务要求、任务周期、部件和保障节点。"
     };
   }
+  const waveRows = Array.isArray(payload.wave_rows)
+    ? payload.wave_rows
+    : Array.isArray(payload.mission_wave_rows)
+      ? payload.mission_wave_rows
+      : [];
+  const rows = Array.isArray(payload.rows) ? payload.rows : waveRows;
   return {
     status: payload.status === "session_complete" ? "session_complete" : "blocked",
     source: payload.source || "lite_mesa_aircraft_support_v1",
@@ -15232,7 +15239,8 @@ function normalizeLiteMesaAnalysisResult(definition, payload) {
     sampleCount: Number(payload.sample_count || payload.sampleCount || 0),
     seedList: Array.isArray(payload.seed_list) ? payload.seed_list : [],
     metrics: Array.isArray(payload.metrics) ? payload.metrics : definition.metricLabels.map((label) => [label, "无"]),
-    rows: Array.isArray(payload.rows) ? payload.rows : [],
+    rows,
+    waveRows: waveRows.length ? waveRows : rows,
     dailyRows: Array.isArray(payload.daily_rows) ? payload.daily_rows : [],
     eventSnapshots: Array.isArray(payload.event_snapshots) ? payload.event_snapshots : [],
     limitations: Array.isArray(payload.limitations) ? payload.limitations : [],
@@ -15275,7 +15283,9 @@ function renderLiteMesaAnalysisSessionBody(definition, result) {
   if (result.status === "blocked") {
     return `<div class="empty-state"><strong>建模粒度不足</strong><p>${htmlEscape(result.message)}</p></div>`;
   }
-  const rows = result.rows || [];
+  const rows = definition.analysisType === "mission_reliability"
+    ? (result.waveRows || result.rows || [])
+    : (result.rows || []);
   if (definition.analysisType === "spare_shortfall") {
     return `<div class="table-wrap"><table class="lite-mesa-stat-table">
       <thead><tr><th>备件类别</th><th>需求次数</th><th>满足次数</th><th>平均备件延误时间(h)</th><th>满足率</th><th>风险</th></tr></thead>
@@ -15290,12 +15300,12 @@ function renderLiteMesaAnalysisSessionBody(definition, result) {
   }
   if (definition.analysisType === "mission_reliability") {
     return `
-      ${renderLiteMesaMissionReliabilityDailyChart(result.dailyRows || [])}
+      ${renderLiteMesaMissionReliabilityWaveChart(rows)}
       <details class="lite-mesa-collapsible-table">
         <summary>样本明细（${rows.length}）</summary>
         <div class="table-wrap"><table class="lite-mesa-stat-table">
-        <thead><tr><th>序号</th><th>seed</th><th>任务成功率</th><th>出动架次率</th><th>战备完好率</th></tr></thead>
-        <tbody>${rows.map((row) => `<tr><td>${row.sequence}</td><td>${row.seed}</td><td>${pct(row.missionSuccessRate)}</td><td>${formatLiteMesaAnalysisMetricValue("出动架次率", row.sortieRate)}</td><td>${pct(row.readyRate)}</td></tr>`).join("")}</tbody>
+        <thead><tr><th>任务波次</th><th>样本数</th><th>平均任务成功率</th><th>平均出动架次率</th><th>平均计划架次</th></tr></thead>
+        <tbody>${rows.map((row) => `<tr><td>${htmlEscape(row.waveLabel || row.waveKey || `波次${row.sequence ?? "-"}`)}</td><td>${htmlEscape(row.sampleCount ?? "-")}</td><td>${fixed(row.meanMissionSuccessRate ?? row.missionSuccessRate, 3)}</td><td>${formatLiteMesaAnalysisMetricValue("出动架次率", row.meanSortieRate ?? row.sortieRate)}</td><td>${fixed(row.plannedSorties, 1)}</td></tr>`).join("")}</tbody>
         </table></div>
       </details>
     `;
@@ -15314,23 +15324,19 @@ function formatLiteMesaAnalysisMetricValue(label, value) {
   return pct(value);
 }
 
-function renderLiteMesaMissionReliabilityDailyChart(rows) {
+function renderLiteMesaMissionReliabilityWaveChart(rows) {
   if (!rows.length) {
-    return `<div class="empty-state"><strong>每日平均任务成功率</strong><p>当前会话未返回按天聚合的任务成功率。</p></div>`;
+    return `<div class="empty-state"><strong>任务波次平均成功率</strong><p>当前会话未返回按任务波次聚合的任务成功率。</p></div>`;
   }
-  const points = rows.map((row) => ({
-    x: Number(row.day || 0),
-    y: Number(row.meanMissionSuccessRate || 0)
+  const points = rows.map((row, index) => ({
+    x: Number(row.sequence || index + 1),
+    y: Number(row.meanMissionSuccessRate ?? row.missionSuccessRate ?? 0)
   }));
   return `
     <div class="analysis-chart-panel">
-      <div class="chart-title">每日平均任务成功率</div>
+      <div class="chart-title">任务波次平均成功率</div>
       ${renderLineChart(points)}
     </div>
-    <div class="table-wrap"><table class="lite-mesa-stat-table">
-      <thead><tr><th>任务日</th><th>样本数</th><th>平均任务成功率</th><th>平均出动架次率</th><th>平均计划架次</th></tr></thead>
-      <tbody>${rows.map((row) => `<tr><td>第${htmlEscape(row.day)}天</td><td>${htmlEscape(row.sampleCount)}</td><td>${fixed(row.meanMissionSuccessRate, 3)}</td><td>${fixed(row.meanSortieRate, 3)}</td><td>${fixed(row.plannedSorties, 1)}</td></tr>`).join("")}</tbody>
-    </table></div>
   `;
 }
 

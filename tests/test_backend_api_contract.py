@@ -1960,10 +1960,11 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(payload["sample_count"], 2)
         self.assertEqual(payload["seed_list"], [20260705, 20260706])
         self.assertTrue(payload["rows"])
-        self.assertTrue(payload["daily_rows"])
-        self.assertEqual(payload["daily_rows"][0]["day"], 1)
-        self.assertEqual(payload["daily_rows"][0]["sampleCount"], 2)
-        self.assertIn("meanMissionSuccessRate", payload["daily_rows"][0])
+        self.assertEqual(payload["rows"], payload["wave_rows"])
+        self.assertEqual(payload["wave_rows"][0]["dayIndex"], 1)
+        self.assertEqual(payload["wave_rows"][0]["sampleCount"], 2)
+        self.assertIn("meanMissionSuccessRate", payload["wave_rows"][0])
+        self.assertNotIn("seed", payload["wave_rows"][0])
         self.assertEqual(self._run_side_effect_counts(), before)
 
     def test_lite_mesa_analysis_applies_scenario_composition_before_compile(self) -> None:
@@ -2020,7 +2021,7 @@ class BackendApiContractTest(unittest.TestCase):
 
         self.assertEqual(mission_payload["aggregate_metrics"]["simulation_days"], 3.0)
         self.assertEqual(downtime_payload["aggregate_metrics"]["simulation_days"], 3.0)
-        self.assertEqual([row["day"] for row in mission_payload["daily_rows"]], [1, 2, 3])
+        self.assertEqual(sorted({row["dayIndex"] for row in mission_payload["wave_rows"]}), [1, 2, 3])
 
     def test_lite_mesa_downtime_event_snapshots_use_model_event_log_snapshots(self) -> None:
         snapshots = _lite_mesa_downtime_event_snapshots(
@@ -2099,6 +2100,37 @@ class BackendApiContractTest(unittest.TestCase):
         )
 
         self.assertEqual(result["metrics"][3], ["任务失败次数", "5"])
+
+    def test_lite_mesa_mission_reliability_rows_aggregate_by_wave_and_skip_missing_samples(self) -> None:
+        result = _lite_mesa_mission_reliability_result(
+            {"data": {"mission_success_probability": 0.8, "sortie_rate": 0.4}},
+            [
+                {
+                    "seed": 1,
+                    "metrics": {"failed_sorties": 0, "ready_rate": 1},
+                    "mission_wave_reliability": [
+                        {"dayIndex": 1, "waveIndex": 1, "plannedSorties": 2, "launchedSorties": 2, "successfulSorties": 2, "missionSuccessRate": 1.2, "sortieRate": 1},
+                        {"dayIndex": 1, "waveIndex": 2, "plannedSorties": 2, "launchedSorties": 1, "successfulSorties": 0, "missionSuccessRate": 0, "sortieRate": 0.5},
+                    ],
+                },
+                {
+                    "seed": 2,
+                    "metrics": {"failed_sorties": 0, "ready_rate": 1},
+                    "mission_wave_reliability": [
+                        {"dayIndex": 1, "waveIndex": 1, "plannedSorties": 2, "launchedSorties": 2, "successfulSorties": 1, "missionSuccessRate": 0.5, "sortieRate": 1},
+                    ],
+                },
+            ],
+            {"maxTimeWindow": ""},
+        )
+
+        self.assertEqual(result["rows"], result["wave_rows"])
+        self.assertEqual([row["waveKey"] for row in result["rows"]], ["d1-w1", "d1-w2"])
+        self.assertEqual([row["sampleCount"] for row in result["rows"]], [2, 1])
+        self.assertAlmostEqual(result["rows"][0]["meanMissionSuccessRate"], 0.75)
+        self.assertEqual(result["rows"][1]["meanMissionSuccessRate"], 0)
+        self.assertTrue(all(0 <= row["meanMissionSuccessRate"] <= 1 for row in result["rows"]))
+        self.assertNotIn("seed", result["rows"][0])
 
     def test_lite_mesa_spare_shortfall_reports_transport_delay_hours_and_repair_cancellations(self) -> None:
         result = _lite_mesa_spare_shortfall_result(
