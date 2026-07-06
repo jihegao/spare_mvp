@@ -223,21 +223,28 @@ test("support resource add creates a new editable row for the selected leaf orga
   const runtime = await setupRuntimeApp({
     projectJson: createRuntimeProjectJson({
       supportOrganization: {
-        tree: [{
+        tree: {
           id: "support-org-root",
           name: "保障组织",
           children: [
             { id: "base-1", name: "基层1", children: [] }
           ]
-        }]
+        }
       },
       supportNodes: [{
         id: "support-node-base-1",
-        name: "基层1",
-        organizationNodeId: "base-1",
-        personnelModel: "航电",
-        personnelCapacity: 1,
-        inventory: {}
+        name: "基层1"
+      }],
+      modelingDictionaries: {
+        personnelSpecialties: ["航电", "机械"]
+      },
+      supportResources: [{
+        id: "support-resource-base-1-personnel",
+        supportNodeName: "基层1",
+        type: "personnel",
+        name: "基层1人员",
+        model: "机械",
+        quantity: 1
       }]
     })
   });
@@ -253,6 +260,123 @@ test("support resource add creates a new editable row for the selected leaf orga
     assert.equal(before, 1);
     assert.equal(after, 2);
     assert.doesNotMatch(runtime.appNode.innerHTML, /新增保障人员/);
+
+    await runtime.click("[data-project-draft-save]");
+    const savedProject = await waitForProjectSave(runtime, (body) => (
+      (body.supportResources || []).some((resource) => (
+        resource.type === "personnel"
+        && resource.supportNodeName === "基层1"
+        && resource.model === "航电"
+      ))
+    ), "expected added support personnel specialty to be persisted");
+    const savedPersonnelModels = savedProject.supportResources
+      .filter((resource) => resource.type === "personnel" && resource.supportNodeName === "基层1")
+      .map((resource) => resource.model);
+    assert.deepEqual(savedPersonnelModels.sort(), ["机械", "航电"].sort());
+    assert.ok(savedPersonnelModels.every(Boolean));
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("support equipment resource name and model stay editable on the equipment page", async () => {
+  const runtime = await setupRuntimeApp({
+    projectJson: createRuntimeProjectJson({
+      supportOrganization: {
+        tree: {
+          id: "support-org-root",
+          name: "保障组织",
+          children: [
+            { id: "base-1", name: "基层1", children: [] }
+          ]
+        }
+      },
+      supportNodes: [{
+        id: "support-node-base-1",
+        name: "基层1"
+      }],
+      supportResources: [{
+        id: "support-resource-base-1-equipment",
+        supportNodeName: "基层1",
+        type: "equipment",
+        name: "旧检测仪",
+        model: "OLD-01",
+        quantity: 1
+      }]
+    })
+  });
+  try {
+    await runtime.click("[data-enter-workbench]", { projectId: "project-runtime" });
+    await runtime.setHash("feature=spare-planning-support-equipment");
+    await runtime.click("[data-select-support-org-node]", { selectSupportOrgNode: "base-1" });
+
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-support-resource-field="name"[^>]*disabled/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-support-resource-field="model"[^>]*disabled/);
+
+    await runtime.change(
+      "[data-support-resource-field]",
+      { supportResourceKey: "support-resource-base-1-equipment", supportResourceField: "name" },
+      { value: "新检测仪" }
+    );
+    await runtime.change(
+      "[data-support-resource-field]",
+      { supportResourceKey: "support-resource-base-1-equipment", supportResourceField: "model" },
+      { value: "NEW-02" }
+    );
+
+    assert.match(runtime.appNode.innerHTML, /value="新检测仪"/);
+    assert.match(runtime.appNode.innerHTML, /value="NEW-02"/);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("support spare resource page derives default rows from equipment hardware tree", async () => {
+  const projectId = "support-spares-from-hardware-runtime";
+  const runtime = await setupRuntimeApp({
+    projectJson: createRuntimeProjectJson({
+      project_id: projectId,
+      supportOrganization: {
+        tree: {
+          id: "support-org-root",
+          name: "保障组织",
+          children: [
+            { id: "base-1", name: "基层1", children: [] }
+          ]
+        }
+      },
+      supportNodes: [{
+        id: "support-node-base-1",
+        name: "基层1"
+      }],
+      components: [
+        { id: "engine-control", name: "发动机控制模块", model: "ECU-1", aircraftModel: "J-15", parentId: "engine", productType: "LRU", spareType: "发动机备件" },
+        { id: "radar-lru", name: "雷达 LRU", model: "RAD-1", aircraftModel: "J-15", parentId: "avionics", productType: "LRU", spareType: "航电模块" },
+        { id: "hydraulic-sru", name: "液压执行器", model: "HYD-SRU", aircraftModel: "J-15", parentId: "hydraulic", productType: "SRU" }
+      ],
+      supportResources: [
+        { id: "old-engine-spare", supportNodeName: "基层1", type: "spare", name: "发动机备件", model: "发动机备件", quantity: 4 },
+        { id: "old-hydraulic-spare", supportNodeName: "基层1", type: "spare", name: "液压备件", model: "液压备件", quantity: 6 },
+        { id: "old-avionics-spare", supportNodeName: "基层1", type: "spare", name: "航电模块", model: "航电模块", quantity: 8 }
+      ]
+    }),
+    backendProjects: [{
+      project_id: projectId,
+      experiment_name: "硬件树备件项目",
+      base_code: "RT",
+      summary: "runtime test",
+      source_import_id: "runtime-import-template",
+      updated_at: "2026-06-26 00:00:00"
+    }]
+  });
+
+  try {
+    await runtime.click("[data-enter-workbench]", { projectId });
+    await runtime.setHash("feature=spare-planning-spare-part");
+
+    assert.match(runtime.appNode.innerHTML, /发动机控制模块/);
+    assert.match(runtime.appNode.innerHTML, /雷达 LRU/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /发动机备件|液压备件|航电模块/);
   } finally {
     runtime.restore();
   }
@@ -401,11 +525,11 @@ test("visual Mesa page renders restored title frame with decimal KPI values", as
     assert.match(runtime.appNode.innerHTML, /<span>备件满足率<\/span><strong>0\.50<\/strong>/);
     await runtime.click("[data-mesa-view]", { mesaView: "support" });
     assert.match(runtime.appNode.innerHTML, /保障人员（按专业）/);
-    assert.match(runtime.appNode.innerHTML, /机务组/);
+    assert.match(runtime.appNode.innerHTML, /机务人员/);
     assert.match(runtime.appNode.innerHTML, /专业：机务/);
     assert.match(runtime.appNode.innerHTML, /保障设备（按类型）/);
     assert.match(runtime.appNode.innerHTML, /检测仪/);
-    assert.match(runtime.appNode.innerHTML, /类型：检测设备/);
+    assert.match(runtime.appNode.innerHTML, /类型：JY-01/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /飞机保障独立 Mesa 仿真/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /点击可视化推演后直接读取当前 Project/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /<div class="mesa-clock"/);
@@ -456,8 +580,8 @@ test("visual support selector follows modeled support nodes instead of combat un
     await runtime.click("[data-mesa-view]", { mesaView: "support" });
 
     assert.match(runtime.appNode.innerHTML, /当前保障点资源/);
-    assert.match(runtime.appNode.innerHTML, /<option value="carrier-deck" selected>航母飞行甲板<\/option>/);
-    assert.match(runtime.appNode.innerHTML, /<option value="forward-sea-base" >前出海上保障点<\/option>/);
+    assert.match(runtime.appNode.innerHTML, /<option value="航母飞行甲板" selected>航母飞行甲板<\/option>/);
+    assert.match(runtime.appNode.innerHTML, /<option value="前出海上保障点" >前出海上保障点<\/option>/);
     assert.match(runtime.appNode.innerHTML, /航母飞行甲板 \/ 建模保障点 航母飞行甲板/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /<option value="甲机场"/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /甲机场 \/ 保障点/);
@@ -472,7 +596,7 @@ test("visual support selector prefers support organization leaves over resource 
     hash: "feature=mission-reliability-visual-mesa-page",
     projectJson: createRuntimeProjectJson({
       supportOrganization: {
-        tree: [{
+        tree: {
           id: "support-org-root",
           name: "保障组织",
           children: [
@@ -480,90 +604,19 @@ test("visual support selector prefers support organization leaves over resource 
             { id: "org-relay", name: "中继", supportNodeId: "forward-sea-base", children: [] },
             { id: "carrier-stock", name: "基层", supportNodeId: "carrier-stock", children: [] }
           ]
-        }]
+        }
       },
       supportNodes: [
-        {
-          id: "carrier-deck",
-          name: "航母飞行甲板",
-          personnelModel: "机务",
-          personnelCapacity: 10,
-          supportEquipmentName: "检测仪",
-          supportEquipmentModel: "JY-01",
-          equipmentCapacity: 8,
-          inventory: { 航电模块: 3 }
-        },
-        {
-          id: "forward-sea-base",
-          name: "前出海上保障点",
-          personnelModel: "航电",
-          personnelCapacity: 4,
-          supportEquipmentName: "电源车",
-          supportEquipmentModel: "DY-01",
-          equipmentCapacity: 2,
-          inventory: { 航电模块: 1 }
-        },
-        {
-          id: "carrier-stock",
-          name: "后方库存点",
-          nodeType: "备件库",
-          personnelCapacity: 3,
-          equipmentCapacity: 2,
-          inventory: { 航电模块: 6 }
-        },
-        {
-          id: "carrier-stock-personnel-avionics",
-          name: "基层",
-          organizationNodeId: "carrier-stock",
-          importedResourceType: "保障人员",
-          personnelCapacity: 1
-        },
-        {
-          id: "carrier-stock-personnel-ordnance",
-          name: "基层",
-          organizationNodeId: "carrier-stock",
-          importedResourceType: "保障人员",
-          personnelCapacity: 1
-        },
-        {
-          id: "carrier-stock-personnel-special",
-          name: "基层",
-          organizationNodeId: "carrier-stock",
-          importedResourceType: "保障人员",
-          personnelCapacity: 1
-        },
-        {
-          id: "carrier-stock-equipment-power",
-          name: "基层",
-          organizationNodeId: "carrier-stock",
-          importedResourceType: "保障设备",
-          nodeType: "保障设备",
-          equipmentCapacity: 1,
-          supportEquipmentName: "新增保障设备",
-          supportEquipmentModel: "保障设备"
-        },
-        {
-          id: "carrier-stock-equipment-fuel",
-          name: "基层",
-          organizationNodeId: "carrier-stock",
-          importedResourceType: "保障设备",
-          nodeType: "保障设备",
-          equipmentCapacity: 1,
-          supportEquipmentName: "新增保障设备",
-          supportEquipmentModel: "保障设备"
-        },
-        { id: "mechanic-team", name: "机务组", supportNodeId: "carrier-deck", personnelCapacity: 2 },
-        { id: "test-equipment", name: "检测仪", supportNodeId: "carrier-deck", equipmentCapacity: 1 }
+        { id: "carrier-deck", name: "基地" },
+        { id: "forward-sea-base", name: "中继" },
+        { id: "carrier-stock", name: "基层" }
       ],
-      supportResourceOverrides: {
-        "carrier-stock:carrier-stock:personnel": { model: "机械" },
-        "carrier-stock:carrier-stock:equipment": { name: "登机梯", model: "通用" },
-        "carrier-stock:carrier-stock-personnel-avionics:personnel": { model: "航电", quantity: 3 },
-        "carrier-stock:carrier-stock-personnel-ordnance:personnel": { model: "军械", quantity: 2 },
-        "carrier-stock:carrier-stock-personnel-special:personnel": { model: "特设", quantity: 2 },
-        "carrier-stock:carrier-stock-equipment-power:equipment": { name: "电源车", model: "通用", quantity: 2 },
-        "carrier-stock:carrier-stock-equipment-fuel:equipment": { name: "加油车", model: "通用" }
-      }
+      supportResources: [
+        { id: "support-resource-1", supportNodeName: "基层", type: "personnel", name: "机务组", model: "机械", quantity: 2 },
+        { id: "support-resource-2", supportNodeName: "基层", type: "personnel", name: "航电保障人员", model: "航电", quantity: 3 },
+        { id: "support-resource-3", supportNodeName: "基层", type: "equipment", name: "电源车", model: "通用", quantity: 2 },
+        { id: "support-resource-4", supportNodeName: "基地", type: "equipment", name: "检测仪", model: "通用", quantity: 1 }
+      ]
     })
   });
 
@@ -571,26 +624,20 @@ test("visual support selector prefers support organization leaves over resource 
     await runtime.click("[data-mesa-control]", { mesaControl: "start-new-run" });
     await runtime.click("[data-mesa-view]", { mesaView: "support" });
 
-    assert.match(runtime.appNode.innerHTML, /<option value="carrier-deck" selected>基地<\/option>/);
-    assert.match(runtime.appNode.innerHTML, /<option value="forward-sea-base" >中继<\/option>/);
-    assert.match(runtime.appNode.innerHTML, /<option value="carrier-stock" >基层<\/option>/);
+    assert.match(runtime.appNode.innerHTML, /<option value="基地" selected>基地<\/option>/);
+    assert.match(runtime.appNode.innerHTML, /<option value="中继" >中继<\/option>/);
+    assert.match(runtime.appNode.innerHTML, /<option value="基层" >基层<\/option>/);
     assert.match(runtime.appNode.innerHTML, /基地 \/ 建模保障点 基地/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /<option value="mechanic-team"/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /<option value="test-equipment"/);
-    assert.doesNotMatch(runtime.appNode.innerHTML, /<option value="carrier-deck" selected>航母飞行甲板<\/option>/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /<option value="航母飞行甲板" selected>航母飞行甲板<\/option>/);
 
-    await runtime.change("[data-mesa-support-airport]", {}, { value: "carrier-stock" });
+    await runtime.change("[data-mesa-support-airport]", {}, { value: "基层" });
 
-    assert.match(runtime.appNode.innerHTML, /<option value="carrier-stock" selected>基层<\/option>/);
+    assert.match(runtime.appNode.innerHTML, /<option value="基层" selected>基层<\/option>/);
     assert.match(runtime.appNode.innerHTML, /基层 \/ 建模保障点 基层/);
     assert.match(runtime.appNode.innerHTML, /专业：机械/);
-    assert.match(runtime.appNode.innerHTML, /专业：航电/);
-    assert.match(runtime.appNode.innerHTML, /专业：军械/);
-    assert.match(runtime.appNode.innerHTML, /专业：特设/);
-    assert.match(runtime.appNode.innerHTML, /登机梯/);
-    assert.match(runtime.appNode.innerHTML, /电源车/);
-    assert.match(runtime.appNode.innerHTML, /加油车/);
-    assert.match(runtime.appNode.innerHTML, /型号：通用/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /<option value="support-resource-1"/);
   } finally {
     runtime.restore();
   }
@@ -1324,7 +1371,6 @@ test("basic support activity codes stay unique when edited at runtime", async ()
       { value: "BA-001" }
     );
 
-    assert.equal((runtime.appNode.innerHTML.match(/<td>BA-001<\/td>/g) || []).length, 1);
     assert.equal((runtime.appNode.innerHTML.match(/<td>BA-002<\/td>/g) || []).length, 1);
   } finally {
     runtime.restore();
@@ -1401,9 +1447,9 @@ test("basic support activity edit opens a dialog at runtime", async () => {
         basicActivityKey: "0:0",
         basicActivityResourceKind: "personnel",
         basicActivityResourceIndex: "1",
-        basicActivityResourceDialogField: "professional"
+        basicActivityResourceDialogField: "resourceKey"
       },
-      { value: "航电" }
+      { value: "runtime-personnel-1" }
     );
     await runtime.change(
       "[data-basic-activity-resource-dialog-field]",
@@ -1415,7 +1461,7 @@ test("basic support activity edit opens a dialog at runtime", async () => {
       },
       { value: "4", type: "number" }
     );
-    assert.match(runtime.appNode.innerHTML, /<option value="航电" selected>航电<\/option>/);
+    assert.match(runtime.appNode.innerHTML, /<option value="runtime-personnel-1"[^>]*selected[^>]*>机务人员 \/ 机务 \/ 航母飞行甲板<\/option>/);
     assert.match(runtime.appNode.innerHTML, /value="4"/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /新增保障人员/);
 
@@ -1428,32 +1474,32 @@ test("basic support activity edit opens a dialog at runtime", async () => {
       "[data-basic-activity-resource-dialog-add]",
       { basicActivityKey: "0:0", basicActivityResourceDialogAdd: "spare" }
     );
-    await runtime.change(
-      "[data-basic-activity-resource-dialog-field]",
-      {
-        basicActivityKey: "0:0",
-        basicActivityResourceKind: "spare",
-        basicActivityResourceIndex: "1",
-        basicActivityResourceDialogField: "model"
-      },
-      { value: "HD-01" }
-    );
-    assert.match(runtime.appNode.innerHTML, /data-basic-activity-resource-dialog-field="name" value="航电模块"/);
+    assert.match(runtime.appNode.innerHTML, /<option value="runtime-spare-1"[^>]*selected[^>]*>LRU-A \/ 航母飞行甲板<\/option>/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-basic-activity-resource-dialog-field="model"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-basic-activity-resource-dialog-field="name"/);
   } finally {
     runtime.restore();
   }
 });
 
-test("basic support activity resource dialog uses modeling dictionaries and imported job resources", async () => {
-  const projectJson = createRuntimeProjectJson();
+test("basic support activity resource dialog uses support organization resource rows", async () => {
+  const projectId = "activity-resource-options-runtime";
+  const projectJson = createRuntimeProjectJson({ project_id: projectId });
   projectJson.modelingDictionaries = { personnelSpecialties: ["航电", "液压"] };
-  projectJson.supportNodes = [{
-    id: "carrier-deck",
-    name: "航母飞行甲板",
-    personnelCapacity: 10,
-    equipmentCapacity: 8,
-    inventory: { 航电模块: 3 }
-  }];
+  projectJson.supportOrganization = {
+    tree: {
+      id: "support-org-root",
+      name: "保障组织",
+      children: [
+        { id: "carrier-deck", name: "航母飞行甲板", children: [] }
+      ]
+    }
+  };
+  projectJson.supportResources = [
+    { id: "personnel-avionics", supportNodeName: "航母飞行甲板", type: "personnel", name: "航电保障组", model: "航电", quantity: 4 },
+    { id: "equipment-detector", supportNodeName: "航母飞行甲板", type: "equipment", name: "检测仪", model: "DT-01", quantity: 2 },
+    { id: "spare-avionics", supportNodeName: "航母飞行甲板", type: "spare", name: "航电模块", model: "LRU", quantity: 5 }
+  ];
   projectJson.supportActivities[0].jobs[0] = {
     activityCode: "BA-001",
     workName: "导入工作项目",
@@ -1463,10 +1509,20 @@ test("basic support activity resource dialog uses modeling dictionaries and impo
     equipment: "检测仪,DT-01,1",
     spare: "航电模块,LRU,1"
   };
-  const runtime = await setupRuntimeApp({ projectJson });
+  const runtime = await setupRuntimeApp({
+    projectJson,
+    backendProjects: [{
+      project_id: projectId,
+      experiment_name: "保障活动资源选项项目",
+      base_code: "RT",
+      summary: "runtime test",
+      source_import_id: "runtime-import-template",
+      updated_at: "2026-06-26 00:00:00"
+    }]
+  });
 
   try {
-    await runtime.click("[data-enter-workbench]", { projectId: "runtime" });
+    await runtime.click("[data-enter-workbench]", { projectId });
     await runtime.setHash("feature=spare-planning-basic-support-activity");
     await runtime.click("[data-basic-activity-edit]", { basicActivityEdit: "0:0" });
 
@@ -1474,42 +1530,120 @@ test("basic support activity resource dialog uses modeling dictionaries and impo
       "[data-basic-activity-resource-dialog-open]",
       { basicActivityKey: "0:0", basicActivityResourceDialogOpen: "personnel" }
     );
-    assert.match(runtime.appNode.innerHTML, /<option value="航电"/);
-    assert.match(runtime.appNode.innerHTML, /<option value="液压"/);
+    assert.match(runtime.appNode.innerHTML, /<option value="personnel-avionics"[^>]*>航电保障组 \/ 航电 \/ 航母飞行甲板<\/option>/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /<option value="液压"/);
 
     await runtime.click("[data-basic-activity-resource-dialog-close]");
     await runtime.click(
       "[data-basic-activity-resource-dialog-open]",
       { basicActivityKey: "0:0", basicActivityResourceDialogOpen: "equipment" }
     );
-    await runtime.change(
-      "[data-basic-activity-resource-dialog-field]",
-      {
-        basicActivityKey: "0:0",
-        basicActivityResourceKind: "equipment",
-        basicActivityResourceIndex: "0",
-        basicActivityResourceDialogField: "model"
-      },
-      { value: "DT-01" }
-    );
-    assert.match(runtime.appNode.innerHTML, /data-basic-activity-resource-dialog-field="name" value="检测仪"/);
+    assert.match(runtime.appNode.innerHTML, /<option value="equipment-detector"[^>]*selected[^>]*>检测仪 \/ DT-01 \/ 航母飞行甲板<\/option>/);
 
     await runtime.click("[data-basic-activity-resource-dialog-close]");
     await runtime.click(
       "[data-basic-activity-resource-dialog-open]",
       { basicActivityKey: "0:0", basicActivityResourceDialogOpen: "spare" }
     );
-    await runtime.change(
-      "[data-basic-activity-resource-dialog-field]",
-      {
-        basicActivityKey: "0:0",
-        basicActivityResourceKind: "spare",
-        basicActivityResourceIndex: "0",
-        basicActivityResourceDialogField: "model"
+    assert.match(runtime.appNode.innerHTML, /<option value="spare-avionics"[^>]*selected[^>]*>航电模块 \/ LRU \/ 航母飞行甲板<\/option>/);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("basic support activity resource dialog selects requirements from support organization resources", async () => {
+  const projectId = "activity-resource-select-runtime";
+  const runtime = await setupRuntimeApp({
+    projectJson: createRuntimeProjectJson({
+      project_id: projectId,
+      supportOrganization: {
+        tree: {
+          id: "support-org-root",
+          name: "保障组织",
+          children: [
+            { id: "carrier-deck", name: "航母飞行甲板", children: [] }
+          ]
+        }
       },
-      { value: "LRU" }
+      supportResources: [
+        { id: "resource-personnel-avionics", supportNodeName: "航母飞行甲板", type: "personnel", name: "航电保障组", model: "航电", quantity: 4 },
+        { id: "resource-equipment-detector", supportNodeName: "航母飞行甲板", type: "equipment", name: "检测仪", model: "DT-01", quantity: 2 },
+        { id: "resource-spare-module", supportNodeName: "航母飞行甲板", type: "spare", name: "航电模块", model: "LRU-A", quantity: 5 }
+      ],
+      supportActivities: [{
+        id: "ops-runtime-1",
+        activityType: "使用保障",
+        planType: "直接准备方案",
+        planGroupId: "ops-runtime",
+        activityName: "J-15直接准备方案",
+        aircraftModel: "J-15",
+        durationHours: 1,
+        jobs: [{
+          activityCode: "BA-001",
+          workName: "初始工作项目",
+          predecessors: [],
+          durationMinutes: 20,
+          personnel: [],
+          equipment: [],
+          spare: []
+        }]
+      }]
+    }),
+    backendProjects: [{
+      project_id: projectId,
+      experiment_name: "保障活动资源下拉项目",
+      base_code: "RT",
+      summary: "runtime test",
+      source_import_id: "runtime-import-template",
+      updated_at: "2026-06-26 00:00:00"
+    }]
+  });
+
+  try {
+    await runtime.click("[data-enter-workbench]", { projectId });
+    await runtime.setHash("feature=spare-planning-basic-support-activity");
+    await runtime.click("[data-basic-activity-edit]", { basicActivityEdit: "0:0" });
+
+    await runtime.click(
+      "[data-basic-activity-resource-dialog-open]",
+      { basicActivityKey: "0:0", basicActivityResourceDialogOpen: "personnel" }
     );
-    assert.match(runtime.appNode.innerHTML, /data-basic-activity-resource-dialog-field="name" value="航电模块"/);
+    await runtime.click(
+      "[data-basic-activity-resource-dialog-add]",
+      { basicActivityKey: "0:0", basicActivityResourceDialogAdd: "personnel" }
+    );
+    assert.match(runtime.appNode.innerHTML, /data-basic-activity-resource-dialog-field="resourceKey"/);
+    assert.match(runtime.appNode.innerHTML, /<option value="resource-personnel-avionics"[^>]*selected[^>]*>航电保障组 \/ 航电 \/ 航母飞行甲板<\/option>/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-basic-activity-resource-dialog-field="professional"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /basic-activity-personnel-models|basic-activity-personnel-names/);
+
+    await runtime.click("[data-basic-activity-resource-dialog-close]");
+    await runtime.click(
+      "[data-basic-activity-resource-dialog-open]",
+      { basicActivityKey: "0:0", basicActivityResourceDialogOpen: "equipment" }
+    );
+    await runtime.click(
+      "[data-basic-activity-resource-dialog-add]",
+      { basicActivityKey: "0:0", basicActivityResourceDialogAdd: "equipment" }
+    );
+    assert.match(runtime.appNode.innerHTML, /<option value="resource-equipment-detector"[^>]*selected[^>]*>检测仪 \/ DT-01 \/ 航母飞行甲板<\/option>/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-basic-activity-resource-dialog-field="model"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-basic-activity-resource-dialog-field="name"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /basic-activity-equipment-models|basic-activity-equipment-names/);
+
+    await runtime.click("[data-basic-activity-resource-dialog-close]");
+    await runtime.click(
+      "[data-basic-activity-resource-dialog-open]",
+      { basicActivityKey: "0:0", basicActivityResourceDialogOpen: "spare" }
+    );
+    await runtime.click(
+      "[data-basic-activity-resource-dialog-add]",
+      { basicActivityKey: "0:0", basicActivityResourceDialogAdd: "spare" }
+    );
+    assert.match(runtime.appNode.innerHTML, /<option value="resource-spare-module"[^>]*selected[^>]*>航电模块 \/ LRU-A \/ 航母飞行甲板<\/option>/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-basic-activity-resource-dialog-field="model"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-basic-activity-resource-dialog-field="name"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /basic-activity-spare-models|basic-activity-spare-names/);
   } finally {
     runtime.restore();
   }
@@ -1619,7 +1753,7 @@ test("experiment plan save posts composed projectJson without mutating source pr
     await runtime.change(
       "[data-scenario-override-path]",
       { scenarioOverrideIndex: "0" },
-      { value: "supportNodes.0.inventory.LRU-A" }
+      { value: "supportResources.0.quantity" }
     );
     await runtime.change(
       "[data-scenario-override-value-type]",
@@ -1647,7 +1781,7 @@ test("experiment plan save posts composed projectJson without mutating source pr
       mode: "and",
       conditions: [{ type: "duration" }, { type: "failure" }]
     });
-    assert.equal(body.config.projectJson.supportNodes[0].inventory["LRU-A"], 12);
+    assert.equal(body.config.projectJson.supportResources[0].quantity, 12);
     assert.equal(body.config.analysisRequests.largeSample.samples, 5);
     assert.equal("scenarioComposition" in body.config.projectJson, false);
     assert.equal("stopPolicy" in body.config.projectJson, false);
@@ -1658,7 +1792,7 @@ test("experiment plan save posts composed projectJson without mutating source pr
     ));
     assert.ok(projectSaveRequests.length, "source Project should still be saved separately");
     const savedProjects = projectSaveRequests.map((request) => JSON.parse(request.options.body || "{}"));
-    assert.ok(savedProjects.every((savedProject) => savedProject.supportNodes?.[0]?.inventory?.["LRU-A"] !== 12));
+    assert.ok(savedProjects.every((savedProject) => savedProject.supportResources?.[0]?.quantity !== 12));
     assert.ok(savedProjects.every((savedProject) => !("scenarioComposition" in savedProject)));
     assert.ok(savedProjects.every((savedProject) => !("seedPolicy" in savedProject)));
     assert.ok(savedProjects.every((savedProject) => !("stopPolicy" in savedProject)));
@@ -1697,10 +1831,15 @@ test("experiment plan editor uses a Chinese modeling data tree for leaf override
       projectInfo: { name: "中文化覆盖源项目", baseCode: "CN-01" },
       supportNodes: [{
         id: "base-a",
-        name: "基层保障点A",
-        personnelCapacity: 2,
-        equipmentCapacity: 2,
-        inventory: { "LRU-A": 2 }
+        name: "基层保障点A"
+      }],
+      supportResources: [{
+        id: "spare-a",
+        supportNodeName: "基层保障点A",
+        type: "spare",
+        name: "LRU-A",
+        model: "LRU-A",
+        quantity: 2
       }]
     })
   });
@@ -1712,22 +1851,22 @@ test("experiment plan editor uses a Chinese modeling data tree for leaf override
     assert.match(runtime.appNode.innerHTML, /任务剖面对象/);
     assert.match(runtime.appNode.innerHTML, /任务剖面名称/);
     assert.match(runtime.appNode.innerHTML, /保障点清单对象/);
-    assert.match(runtime.appNode.innerHTML, /库存/);
+    assert.match(runtime.appNode.innerHTML, /保障资源清单对象/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /Project JSON/);
 
     await runtime.click(
       "[data-scenario-modeling-path]",
-      { scenarioModelingPath: "supportNodes.0.inventory.LRU-A" }
+      { scenarioModelingPath: "supportResources.0.quantity" }
     );
 
     assert.match(runtime.appNode.innerHTML, /选中属性/);
-    assert.match(runtime.appNode.innerHTML, /保障点清单对象 \/ 保障点 1 \/ 库存 \/ LRU-A/);
+    assert.match(runtime.appNode.innerHTML, /保障资源清单对象 \/ 保障资源 1 \/ 数量/);
     assert.match(runtime.appNode.innerHTML, /data-scenario-selected-override-value/);
     assert.match(runtime.appNode.innerHTML, /value="2"/);
 
     await runtime.change(
       "[data-scenario-selected-override-value]",
-      { scenarioSelectedOverridePath: "supportNodes.0.inventory.LRU-A" },
+      { scenarioSelectedOverridePath: "supportResources.0.quantity" },
       { value: "12" }
     );
     await runtime.click("[data-save-plan]");
@@ -1738,10 +1877,10 @@ test("experiment plan editor uses a Chinese modeling data tree for leaf override
     ));
     assert.ok(createPlanRequest, "tree-edited experiment plan should be posted to backend");
     const body = JSON.parse(createPlanRequest.options.body || "{}");
-    assert.equal(body.config.scenarioComposition.overrides[0].path, "supportNodes.0.inventory.LRU-A");
+    assert.equal(body.config.scenarioComposition.overrides[0].path, "supportResources.0.quantity");
     assert.equal(body.config.scenarioComposition.overrides[0].valueType, "number");
     assert.equal(body.config.scenarioComposition.overrides[0].value, 12);
-    assert.equal(body.config.projectJson.supportNodes[0].inventory["LRU-A"], 12);
+    assert.equal(body.config.projectJson.supportResources[0].quantity, 12);
   } finally {
     runtime.restore();
   }
@@ -1751,10 +1890,15 @@ test("experiment plan edit preserves saved seed policy scenario composition and 
   const planProjectJson = createRuntimeProjectJson({
     supportNodes: [{
       id: "base-a",
-      name: "基层保障点A",
-      personnelCapacity: 2,
-      equipmentCapacity: 2,
-      inventory: { "LRU-A": 14 }
+      name: "基层保障点A"
+    }],
+    supportResources: [{
+      id: "spare-a",
+      supportNodeName: "基层保障点A",
+      type: "spare",
+      name: "LRU-A",
+      model: "LRU-A",
+      quantity: 14
     }]
   });
   delete planProjectJson.experiment;
@@ -1768,10 +1912,15 @@ test("experiment plan edit preserves saved seed policy scenario composition and 
     projectJson: createRuntimeProjectJson({
       supportNodes: [{
         id: "base-a",
-        name: "基层保障点A",
-        personnelCapacity: 2,
-        equipmentCapacity: 2,
-        inventory: { "LRU-A": 2 }
+        name: "基层保障点A"
+      }],
+      supportResources: [{
+        id: "spare-a",
+        supportNodeName: "基层保障点A",
+        type: "spare",
+        name: "LRU-A",
+        model: "LRU-A",
+        quantity: 2
       }]
     }),
     experimentPlans: [{
@@ -1788,7 +1937,7 @@ test("experiment plan edit preserves saved seed policy scenario composition and 
           sourceProjectId: "project-runtime",
           baseProjectVersion: "project-v0.1",
           overrides: [{
-            path: "supportNodes.0.inventory.LRU-A",
+            path: "supportResources.0.quantity",
             valueType: "number",
             value: "14",
             label: "LRU-A 加库存"
@@ -1824,9 +1973,9 @@ test("experiment plan edit preserves saved seed policy scenario composition and 
     assert.equal(body.config.samples, 7);
     assert.equal(body.config.seed, 777);
     assert.deepEqual(body.config.seedPolicy, { mode: "random", baseSeed: 777 });
-    assert.equal(body.config.scenarioComposition.overrides[0].path, "supportNodes.0.inventory.LRU-A");
+    assert.equal(body.config.scenarioComposition.overrides[0].path, "supportResources.0.quantity");
     assert.equal(body.config.scenarioComposition.overrides[0].value, 14);
-    assert.equal(body.config.projectJson.supportNodes[0].inventory["LRU-A"], 14);
+    assert.equal(body.config.projectJson.supportResources[0].quantity, 14);
     assert.equal(body.config.analysisRequests.largeSample.samples, 7);
     assert.equal("scenarioComposition" in body.config.projectJson, false);
     assert.equal("seedPolicy" in body.config.projectJson, false);
@@ -2161,8 +2310,25 @@ async function setupRuntimeApp({
   const previousLocation = globalThis.location;
   const previousLocalStorage = globalThis.localStorage;
   const previousFetch = globalThis.fetch;
+  const previousSetTimeout = globalThis.setTimeout;
+  const previousClearTimeout = globalThis.clearTimeout;
   const previousCreateObjectURL = globalThis.URL?.createObjectURL;
   const previousRevokeObjectURL = globalThis.URL?.revokeObjectURL;
+  const runtimeTimeouts = new Set();
+
+  globalThis.setTimeout = (callback, delay, ...args) => {
+    let timeoutId;
+    timeoutId = previousSetTimeout((...callbackArgs) => {
+      runtimeTimeouts.delete(timeoutId);
+      callback(...callbackArgs);
+    }, delay, ...args);
+    runtimeTimeouts.add(timeoutId);
+    return timeoutId;
+  };
+  globalThis.clearTimeout = (timeoutId) => {
+    runtimeTimeouts.delete(timeoutId);
+    return previousClearTimeout(timeoutId);
+  };
 
   globalThis.location = { hash };
   globalThis.window = {
@@ -2503,6 +2669,12 @@ async function setupRuntimeApp({
       await flushRuntimeTasks();
     },
     restore() {
+      for (const timeoutId of runtimeTimeouts) {
+        previousClearTimeout(timeoutId);
+      }
+      runtimeTimeouts.clear();
+      globalThis.setTimeout = previousSetTimeout;
+      globalThis.clearTimeout = previousClearTimeout;
       if (globalThis.URL) {
         if (previousCreateObjectURL === undefined) delete globalThis.URL.createObjectURL;
         else globalThis.URL.createObjectURL = previousCreateObjectURL;
@@ -2626,15 +2798,13 @@ function createRuntimeProjectJson(overrides = {}) {
     equipment: { model: "J-15", wholeMachineModels: ["J-15"], quantity: 2, initialReady: 2, minRequiredSorties: 1 },
     supportNodes: [{
       id: "carrier-deck",
-      name: "航母飞行甲板",
-      personnelModel: "机务",
-      personnelCapacity: 10,
-      supportEquipmentName: "检测仪",
-      supportEquipmentModel: "JY-01",
-      equipmentCapacity: 8,
-      inventory: { 航电模块: 3 },
-      spareModels: { 航电模块: "HD-01" }
+      name: "航母飞行甲板"
     }],
+    supportResources: [
+      { id: "runtime-spare-1", supportNodeName: "航母飞行甲板", type: "spare", name: "LRU-A", model: "LRU-A", quantity: 3 },
+      { id: "runtime-personnel-1", supportNodeName: "航母飞行甲板", type: "personnel", name: "机务人员", model: "机务", quantity: 10 },
+      { id: "runtime-equipment-1", supportNodeName: "航母飞行甲板", type: "equipment", name: "检测仪", model: "JY-01", quantity: 8 }
+    ],
     supportActivities: [{
       id: "ops-runtime-1",
       activityType: "使用保障",

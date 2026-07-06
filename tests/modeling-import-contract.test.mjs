@@ -48,7 +48,8 @@ test("canonical modeling import fixture covers all project authoring surfaces", 
   assert.ok(Array.isArray(mission.periodicTasks));
   assert.ok(mission.combatUnit);
   assert.ok(Array.isArray(objects.supportResources));
-  assert.ok(objects.supportResources.some((resource) => resource.inventory && resource.transportPolicies));
+  assert.ok(objects.supportResources.some((resource) => resource.type === "spare" && resource.quantity > 0));
+  assert.ok(Array.isArray(objects.transportPolicies) && objects.transportPolicies.length >= 1);
   assert.ok(Array.isArray(objects.supportActivities));
   assert.ok(objects.supportActivities.some((activity) => activity.activityType === "修复性维修"));
   assert.ok(objects.supportActivities.some((activity) => activity.activityType === "预防性维修"));
@@ -371,7 +372,8 @@ test("modeling import validation rejects declared used tables with empty modeled
       supportResources: [],
       supportActivities: [],
       reliabilityBlockDiagram: {},
-      supportOrganization: { tree: [] }
+      supportOrganization: { tree: [] },
+      transportPolicies: []
     }
   };
 
@@ -379,13 +381,14 @@ test("modeling import validation rejects declared used tables with empty modeled
   assert.ok(schemaErrors.some((error) => error.includes("$.objects.supportResources expected minItems")));
   assert.ok(schemaErrors.some((error) => error.includes("$.objects.supportActivities expected minItems")));
   assert.ok(schemaErrors.some((error) => error.includes("$.objects.reliabilityBlockDiagram expected minProperties")));
-  assert.ok(schemaErrors.some((error) => error.includes("$.objects.supportOrganization.tree expected minItems")));
+  assert.ok(schemaErrors.some((error) => error.includes("$.objects.supportOrganization.tree expected type \"object\"")));
 
   const issuesByPath = Object.fromEntries(validateModelingImportPackage(emptyDeclaredTables).map((issue) => [issue.field_path, issue]));
   assert.equal(issuesByPath["objects.supportResources"].code, "invalid_declared_table");
   assert.equal(issuesByPath["objects.supportActivities"].code, "invalid_declared_table");
   assert.equal(issuesByPath["objects.reliabilityBlockDiagram"].code, "invalid_declared_table");
   assert.equal(issuesByPath["objects.supportOrganization.tree"].code, "invalid_declared_table");
+  assert.equal(issuesByPath["objects.transportPolicies"].code, "invalid_declared_table");
 });
 
 test("projectToModelingImportPackage backfills import draft from current Project surfaces", () => {
@@ -439,7 +442,13 @@ test("projectToModelingImportPackage backfills import draft from current Project
       { id: "aircraft-root", name: "整机", quantity: 3 },
       { id: "radar", name: "雷达", parentId: "aircraft-root", quantity: 1, mtbfHours: 120 }
     ],
-    supportNodes: [{ id: "deck", name: "甲板", capacity: 2 }],
+    supportNodes: [{ id: "support-node-deck", name: "甲板" }],
+    supportResources: [
+      { id: "personnel-deck", supportNodeName: "甲板", type: "personnel", name: "甲板人员", quantity: 2 }
+    ],
+    transportPolicies: [
+      { id: "transport-deck", fromSupportNodeName: "库房", toSupportNodeName: "甲板", spareName: "雷达备件", capacity: 1 }
+    ],
     supportActivities: [{ id: "repair-radar", name: "雷达维修", equipmentId: "radar", resourceId: "deck", durationHours: 2 }]
   };
 
@@ -454,7 +463,7 @@ test("projectToModelingImportPackage backfills import draft from current Project
   assert.deepEqual(draft.lifecycle.referencedRunIds, ["run-001"]);
   assert.equal(draft.source.type, "current_project_backfill");
   assert.equal(draft.source.name, "current_project_backfill");
-  assert.equal(draft.usedTables.transportPolicies, false);
+  assert.equal(draft.usedTables.transportPolicies, true);
   assert.equal(draft.objects.missionProfiles[0].sourceImportId, undefined);
   assert.equal(draft.objects.missionProfiles[0].profileId, "MP-CURRENT");
   assert.equal(Object.hasOwn(draft.objects.missionProfiles[0], "basicMission"), false);
@@ -464,8 +473,12 @@ test("projectToModelingImportPackage backfills import draft from current Project
     false
   );
   assert.deepEqual(draft.objects.equipmentAssets, projectJson.components);
-  assert.deepEqual(draft.objects.supportResources, projectJson.supportNodes);
-  assert.deepEqual(draft.objects.supportActivities, projectJson.supportActivities);
+  assert.deepEqual(draft.objects.supportResources, projectJson.supportResources);
+  assert.deepEqual(draft.objects.transportPolicies, projectJson.transportPolicies);
+  assert.deepEqual(draft.objects.supportActivities, [{
+    ...projectJson.supportActivities[0],
+    resourceId: "甲板"
+  }]);
   assert.equal(Object.hasOwn(draft.objects, "airports"), false);
   assert.equal(Object.hasOwn(draft.objects.missionProfiles[0], "airports"), false);
   assert.equal("monteCarlo" in draft.objects, false);
@@ -511,7 +524,7 @@ test("current project backfill normalizes support activity plan rows into import
     jobs: [{ workName: "飞行后检查", durationMinutes: 30 }],
     name: "J-15飞行后检查活动",
     equipmentId: "j15-engine",
-    resourceId: "carrier-deck",
+    resourceId: "基地",
     durationHours: 0.5
   });
 });
@@ -576,10 +589,10 @@ test("current project backfill preserves phase 2 support organization resources 
   }, fixture);
 
   assert.equal(draft.validation.ok, true);
-  assert.deepEqual(draft.objects.supportOrganization, supportOrganization);
-  assert.equal(draft.objects.supportOrganization.tree[0].children[0].children[0].children[0].name, "航电班组");
-  assert.equal(draft.objects.supportResources[0].personnelModel, "航电");
-  assert.equal(draft.objects.supportResources[0].spareEquipment["航电模块"], "J-15");
+  assert.deepEqual(draft.objects.supportOrganization.tree, supportOrganization.tree[0]);
+  assert.equal(draft.objects.supportOrganization.tree.children[0].children[0].children[0].name, "航电班组");
+  assert.equal(draft.objects.supportResources.find((resource) => resource.type === "personnel").model, "航电");
+  assert.equal(draft.objects.supportResources.find((resource) => resource.type === "spare" && resource.name === "航电模块").model, "AV-01");
   assert.deepEqual(draft.objects.supportActivities[0].jobs[0].durationProfile, {
     distributionType: "正态分布",
     mean: 25,

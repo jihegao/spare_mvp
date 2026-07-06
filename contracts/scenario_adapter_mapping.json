@@ -67,7 +67,7 @@
           "constructor_param": "equipment_tree"
         },
         "support_network": {
-          "source": "project.supportNodes[] including capacities, inventory, lateral support nodes, and transport policies",
+          "source": "project.supportNodes[] for support-point names, project.supportResources[] for personnel/equipment/spare quantities, and project.transportPolicies[] for transfer rules",
           "constructor_param": "support_network"
         },
         "support_activities": {

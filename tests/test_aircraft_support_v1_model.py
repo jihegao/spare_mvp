@@ -782,7 +782,8 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
         scope = AircraftSupportV1Model.behavior_scope()
 
         self.assertIn("components[].failureDistribution", scope["behavior_driving_fields"])
-        self.assertIn("supportNodes[].transportPolicies", scope["behavior_driving_fields"])
+        self.assertIn("transportPolicies[]", scope["behavior_driving_fields"])
+        self.assertIn("supportResources[].quantity", scope["behavior_driving_fields"])
         self.assertIn("missionProfile.periodicTasks", scope["behavior_driving_fields"])
         self.assertIn("reliabilityBlockDiagram", scope["behavior_driving_fields"])
         self.assertNotIn("experiment.steps", scope["behavior_driving_fields"])

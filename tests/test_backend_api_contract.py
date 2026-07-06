@@ -1929,9 +1929,9 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(state_payload["scenario_id"], submitted["scenario_id"])
         self.assertIn("sortie_completion_rate", result["metrics"])
         scope = report_payload["m9_7_4_behavior_scope"]
-        self.assertIn("supportNodes[].inventory", scope["behavior_driving_fields"])
+        self.assertIn("supportResources[].quantity", scope["behavior_driving_fields"])
         self.assertIn("components[].failureDistribution", scope["behavior_driving_fields"])
-        self.assertIn("supportNodes[].transportPolicies", scope["behavior_driving_fields"])
+        self.assertIn("transportPolicies[]", scope["behavior_driving_fields"])
         self.assertIn("missionProfile.periodicTasks", scope["behavior_driving_fields"])
         self.assertIn("reliabilityBlockDiagram", scope["behavior_driving_fields"])
         self.assertNotIn("experiment.steps", scope["behavior_driving_fields"])
@@ -1968,11 +1968,11 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(self._run_side_effect_counts(), before)
 
     def test_lite_mesa_analysis_applies_scenario_composition_before_compile(self) -> None:
-        project = small_aircraft_support_project("project-lite-mesa-composed")
+        project = strip_project_sweep(small_aircraft_support_project("project-lite-mesa-composed"))
         project["scenarioComposition"] = {
             "schemaVersion": "scenario-composition-v0",
             "overrides": [
-                {"path": "supportNodes.0.inventory.aircraft_support_v1_spares", "valueType": "number", "value": 9}
+                {"path": "supportResources.2.quantity", "valueType": "number", "value": 9}
             ],
         }
 
@@ -1985,7 +1985,7 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(payload["status"], "session_complete")
         compiled_project = self.adapter.compile_calls[-1][0]
         self.assertNotIn("scenarioComposition", compiled_project)
-        self.assertEqual(compiled_project["supportNodes"][0]["inventory"]["aircraft_support_v1_spares"], 9)
+        self.assertEqual(compiled_project["supportResources"][2]["quantity"], 9)
 
         compile_result = self.adapter.compile_scenario_with_gate(compiled_project, model_family="aircraft_support_v1")
         simulation_inputs = compile_result["scenario"]["simulation_inputs"]
@@ -2838,6 +2838,7 @@ class BackendApiContractTest(unittest.TestCase):
     def test_create_experiment_plan_preserves_seed_policy_and_scenario_composition(self) -> None:
         project = small_aircraft_support_project("project-aircraft-support-contract-001")
         saved = self.api.save_project(project)
+        slim_project = strip_project_sweep(project)
 
         plan = self.api.create_experiment_plan(
             saved["project_id"],
@@ -2855,7 +2856,7 @@ class BackendApiContractTest(unittest.TestCase):
                 "scenarioComposition": {
                     "schemaVersion": "scenario-composition-v0",
                     "overrides": [
-                        {"path": "supportNodes.0.inventory.LRU-A", "valueType": "number", "value": 12}
+                        {"path": "supportResources.2.quantity", "valueType": "number", "value": 12}
                     ],
                 },
                 "analysisRequests": {
@@ -2870,7 +2871,7 @@ class BackendApiContractTest(unittest.TestCase):
                     }
                 },
                 "projectJson": {
-                    **copy.deepcopy(project),
+                    **copy.deepcopy(slim_project),
                     "seedPolicy": {"mode": "fixed", "baseSeed": 909},
                     "stopPolicy": {
                         "schemaVersion": "stop-policy-v0",
@@ -2880,7 +2881,7 @@ class BackendApiContractTest(unittest.TestCase):
                     "scenarioComposition": {
                         "schemaVersion": "scenario-composition-v0",
                         "overrides": [
-                            {"path": "supportNodes.0.inventory.LRU-A", "valueType": "number", "value": 12}
+                            {"path": "supportResources.2.quantity", "valueType": "number", "value": 12}
                         ],
                     },
                     "experiment": {"name": "composed branch", "steps": 4, "samples": 9, "seed": 909},
@@ -2901,10 +2902,10 @@ class BackendApiContractTest(unittest.TestCase):
         )
         self.assertEqual(
             plan["config"]["scenarioComposition"]["overrides"][0]["path"],
-            "supportNodes.0.inventory.LRU-A",
+            "supportResources.2.quantity",
         )
         self.assertEqual(plan["config"]["analysisRequests"]["largeSample"]["samples"], 9)
-        self.assertEqual(plan["config"]["projectJson"]["supportNodes"][0]["inventory"]["LRU-A"], 12)
+        self.assertEqual(plan["config"]["projectJson"]["supportResources"][2]["quantity"], 12)
         self.assertNotIn("experiment", plan["config"]["projectJson"])
         self.assertNotIn("analysisRequests", plan["config"]["projectJson"])
         self.assertNotIn("monteCarlo", plan["config"]["projectJson"])
@@ -2941,7 +2942,9 @@ class BackendApiContractTest(unittest.TestCase):
         branch_project = copy.deepcopy(project)
         branch_project["experiment"]["seed"] = 99
         branch_project["components"][0]["failureRate"] = 0.21
-        branch_project["supportNodes"][0]["equipmentCapacity"] = 8
+        branch_project = strip_project_sweep(branch_project)
+        equipment_resource = next(resource for resource in branch_project["supportResources"] if resource["type"] == "equipment")
+        equipment_resource["quantity"] = 8
 
         saved = self.api.save_project(project)
         snapshot = self.api.create_modeling_snapshot(saved["project_id"])
@@ -2972,7 +2975,7 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertNotIn("experiment", compiled_project)
         self.assertEqual(self.adapter.compile_runtime_configs[-1]["seed"], 99)
         self.assertEqual(compiled_project["components"][0]["failureRate"], 0.21)
-        self.assertEqual(compiled_project["supportNodes"][0]["equipmentCapacity"], 8)
+        self.assertEqual(next(resource for resource in compiled_project["supportResources"] if resource["type"] == "equipment")["quantity"], 8)
         self.assertEqual(compiled_scenario["simulation_inputs"]["seed"], 99)
         self.assertEqual(compiled_scenario["simulation_inputs"]["equipment_tree"]["components"][0]["failure_rate"], 0.21)
         self.assertEqual(compiled_scenario["simulation_inputs"]["support_network"]["nodes"][0]["equipment_capacity"], 8)
@@ -3322,7 +3325,10 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertGreaterEqual(len(created["project"]["missionPhases"]), 3)
         self.assertGreaterEqual(len(created["project"]["combatUnit"]["members"]), 4)
         self.assertGreaterEqual(len(created["project"]["supportNodes"]), 3)
-        self.assertIn("航电模块", created["project"]["supportNodes"][0]["inventory"])
+        self.assertTrue(any(
+            resource["type"] == "spare" and resource["name"] == "航电模块"
+            for resource in created["project"]["supportResources"]
+        ))
         activity_types = {activity["activityType"] for activity in created["project"]["supportActivities"]}
         self.assertTrue({"飞行前保障", "修复性维修", "预防性维修", "后勤保障"}.issubset(activity_types))
         self.assertGreaterEqual(len(created["project"]["supportActivities"][0]["jobs"]), 2)
@@ -3364,7 +3370,8 @@ class BackendApiContractTest(unittest.TestCase):
 
         self.assertEqual(project["projectInfo"], objects["projectInfo"])
         self.assertIsNot(project["projectInfo"], objects["projectInfo"])
-        self.assertEqual(project["supportOrganization"]["tree"], objects["supportOrganization"]["tree"])
+        self.assertEqual(project["supportOrganization"]["tree"]["id"], objects["supportOrganization"]["tree"]["id"])
+        self.assertNotIn("supportNodeId", project["supportOrganization"]["tree"]["children"][0])
         self.assertIsNot(project["supportOrganization"], objects["supportOrganization"])
         self.assertNotIn("basicMission", project)
         self.assertGreaterEqual(len(project["basicMissions"]), 2)
@@ -3388,6 +3395,126 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertNotIn("repeatCycleHours", project["missionProfile"])
         objects["analysisRequests"]["largeSample"]["sweep"]["failureRates"].append(0.99)
         self.assertNotIn("analysisRequests", project)
+
+    def test_modeling_import_to_project_splits_support_nodes_resources_and_transport_policies(self) -> None:
+        import_package = self._fixture("modeling_import_project.json")
+
+        project = modeling_import_to_project(import_package)
+
+        self.assertEqual([node["name"] for node in project["supportNodes"]], ["基地", "中继", "基层1"])
+        for node in project["supportNodes"]:
+            self.assertEqual(set(node), {"id", "name"})
+            self.assertTrue(str(node["id"]).startswith("support-node-"))
+
+        resource_types = {resource["type"] for resource in project["supportResources"]}
+        self.assertEqual(resource_types, {"personnel", "equipment", "spare"})
+        deck_spares = [
+            resource for resource in project["supportResources"]
+            if resource["supportNodeName"] == "基地" and resource["type"] == "spare"
+        ]
+        self.assertTrue(any(resource["name"] == "航电模块" and resource["quantity"] == 6 for resource in deck_spares))
+        deck_personnel = [
+            resource for resource in project["supportResources"]
+            if resource["supportNodeName"] == "基地" and resource["type"] == "personnel"
+        ]
+        self.assertEqual(deck_personnel[0]["quantity"], 5)
+        deck_equipment = [
+            resource for resource in project["supportResources"]
+            if resource["supportNodeName"] == "基地" and resource["type"] == "equipment"
+        ]
+        self.assertEqual(deck_equipment[0]["quantity"], 3)
+
+        self.assertGreaterEqual(len(project["transportPolicies"]), 3)
+        first_policy = project["transportPolicies"][0]
+        self.assertIn("fromSupportNodeName", first_policy)
+        self.assertIn("toSupportNodeName", first_policy)
+        self.assertNotIn("transportPolicies", project["supportResources"][0])
+        self.assertIsInstance(project["supportOrganization"]["tree"], dict)
+        self.assertIn("children", project["supportOrganization"]["tree"])
+
+    def test_strip_project_sweep_removes_support_node_resource_rows_and_preserves_resources(self) -> None:
+        project = {
+            "project_id": "project-support-boundary",
+            "scenarioId": "support-boundary",
+            "supportOrganization": {
+                "tree": {
+                    "id": "support-org-root",
+                    "name": "舰载保障组织",
+                    "children": [
+                        {"id": "carrier-deck", "name": "基地"},
+                        {"id": "forward-sea-base", "name": "中继"},
+                        {"id": "line-team", "name": "基层"},
+                    ],
+                }
+            },
+            "supportResourceOverrides": {"root:line-team:personnel": {"quantity": 3}},
+            "deletedSupportResourceKeys": ["root:line-team:personnel"],
+            "supportNodes": [
+                {
+                    "id": "carrier-deck",
+                    "name": "基地",
+                    "capacity": 4,
+                    "equipmentCapacity": 3,
+                    "inventory": {"航电模块": 6},
+                    "lateralSupportNodes": ["基层"],
+                    "nodeType": "甲板保障点",
+                    "organizationStrategy": "任务优先",
+                    "personnelCapacity": 5,
+                    "policy": "高优先级",
+                    "supportLevel": "一线保障",
+                    "transportPolicies": [{"from": "line-team", "to": "carrier-deck"}],
+                },
+                {"id": "forward-sea-base", "name": "中继", "personnelCapacity": 2, "equipmentCapacity": 2},
+                {"id": "line-team", "name": "基层", "personnelCapacity": 3, "equipmentCapacity": 3},
+                {
+                    "id": "carrier-stock-personnel-mech",
+                    "name": "机械保障人员",
+                    "organizationNodeId": "line-team",
+                    "importedResourceType": "personnel",
+                    "personnelModel": "机械",
+                    "personnelCapacity": 3,
+                },
+            ],
+            "supportResources": [
+                {
+                    "id": "personnel-1",
+                    "supportNodeName": "基层",
+                    "type": "personnel",
+                    "name": "机械保障人员",
+                    "model": "机械",
+                    "quantity": 3,
+                }
+            ],
+            "transportPolicies": [
+                {
+                    "id": "transport-1",
+                    "from": "line-team",
+                    "to": "carrier-deck",
+                    "fromSupportNodeName": "基层",
+                    "toSupportNodeName": "基地",
+                    "spareName": "航电模块",
+                    "capacity": 2,
+                }
+            ],
+        }
+
+        slim_project = strip_project_sweep(project)
+
+        self.assertNotIn("supportResourceOverrides", slim_project)
+        self.assertNotIn("deletedSupportResourceKeys", slim_project)
+        self.assertEqual([node["name"] for node in slim_project["supportNodes"]], ["基地", "中继", "基层"])
+        self.assertTrue(all(set(node) == {"id", "name"} for node in slim_project["supportNodes"]))
+        self.assertFalse(any(node.get("id") == "carrier-stock-personnel-mech" for node in slim_project["supportNodes"]))
+        self.assertEqual(slim_project["supportResources"], project["supportResources"])
+        self.assertEqual(slim_project["transportPolicies"], [
+            {
+                "id": "transport-1",
+                "fromSupportNodeName": "基层",
+                "toSupportNodeName": "基地",
+                "spareName": "航电模块",
+                "capacity": 2,
+            }
+        ])
 
     def test_modeling_import_to_project_derives_airports_from_combat_unit_members(self) -> None:
         import_package = self._fixture("modeling_import_project.json")
@@ -3646,15 +3773,14 @@ class BackendApiContractTest(unittest.TestCase):
         }
         import_package["objects"] = copy.deepcopy(import_package["objects"])
         import_package["objects"].pop("supportOrganization", None)
-        for resource in import_package["objects"]["supportResources"]:
-            resource.pop("transportPolicies", None)
+        import_package["objects"].pop("transportPolicies", None)
 
         validation = validate_modeling_import_package(import_package)
         issues_by_path = {issue["field_path"]: issue for issue in validation["issues"]}
 
         self.assertFalse(validation["ok"])
         self.assertEqual(issues_by_path["objects.supportOrganization"]["code"], "invalid_declared_table")
-        self.assertEqual(issues_by_path["objects.supportResources[0].transportPolicies"]["code"], "invalid_declared_table")
+        self.assertEqual(issues_by_path["objects.transportPolicies"]["code"], "invalid_declared_table")
 
     def test_declared_scope_modeling_import_rejects_declared_empty_support_scope_tables(self) -> None:
         import_package = self._fixture("modeling_import_project.json")

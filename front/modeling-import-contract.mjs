@@ -19,8 +19,8 @@ const COLLECTION_RULES = {
     references: [{ field: "parentId", target: "equipmentAssets" }]
   },
   supportResources: {
-    requiredFields: ["id", "name", "capacity"],
-    numericFields: ["capacity"]
+    requiredFields: ["id", "name"],
+    numericFields: ["capacity", "quantity"]
   },
   supportActivities: {
     requiredFields: ["id", "name", "equipmentId", "resourceId", "durationHours"],
@@ -86,16 +86,18 @@ export function projectToModelingImportPackage(projectJson, basePackage = {}) {
   const importId = sourceImportId || String(base.importId || "").trim() || importIdForProject(project);
   const projectId = String(project.project_id || base.projectId || project.scenarioId || "project-current");
   const missionProfile = projectMissionProfile(project, projectId);
+  const supportResources = projectSupportResources(project);
   const objects = {
     ...preservedObjectSurfaces(base.objects),
     missionProfiles: [missionProfile],
     equipmentAssets: normalizeObjectRows(project.components),
-    supportResources: normalizeObjectRows(project.supportNodes),
-    supportActivities: normalizeSupportActivities(project.supportActivities, project),
+    supportResources,
+    transportPolicies: projectTransportPolicies(project),
+    supportActivities: normalizeSupportActivities(project.supportActivities, { ...project, supportResources }),
     equipment: cloneJson(project.equipment || base.objects?.equipment || {}),
     projectInfo: cloneJson(project.projectInfo || base.objects?.projectInfo || {}),
     missionAreas: normalizeObjectRows(project.missionAreas),
-    supportOrganization: cloneJson(project.supportOrganization || base.objects?.supportOrganization || {}),
+    supportOrganization: normalizeSupportOrganization(project.supportOrganization || base.objects?.supportOrganization || {}),
     reliabilityBlockDiagram: cloneJson(project.reliabilityBlockDiagram || missionProfile.reliabilityBlockDiagram || {}),
     analysisRequests: cloneJson(project.analysisRequests || missionProfile.analysisRequests || {})
   };
@@ -139,7 +141,7 @@ function inferUsedTables(objects) {
     supportResources: supportResources.length > 0,
     supportActivities: normalizeObjectRows(objects.supportActivities).length > 0,
     supportOrganization: hasSupportOrganizationTree(objects.supportOrganization),
-    transportPolicies: supportResources.some((resource) => Array.isArray(resource.transportPolicies) && resource.transportPolicies.length > 0)
+    transportPolicies: normalizeObjectRows(objects.transportPolicies).length > 0
   };
 }
 
@@ -148,7 +150,8 @@ function hasPlainObjectContent(value) {
 }
 
 function hasSupportOrganizationTree(value) {
-  return Boolean(value && typeof value === "object" && !Array.isArray(value) && Array.isArray(value.tree) && value.tree.length > 0);
+  return Boolean(value && typeof value === "object" && !Array.isArray(value)
+    && ((Array.isArray(value.tree) && value.tree.length > 0) || (value.tree && typeof value.tree === "object" && !Array.isArray(value.tree))));
 }
 
 function projectMissionProfile(project, projectId) {
@@ -216,17 +219,94 @@ function normalizeObjectRows(rows) {
 function normalizeSupportActivities(rows, project = {}) {
   if (!Array.isArray(rows)) return [];
   const equipmentAssets = Array.isArray(project.components) ? project.components : [];
-  const supportResources = Array.isArray(project.supportNodes) ? project.supportNodes : [];
+  const supportResources = Array.isArray(project.supportResources) ? project.supportResources : [];
   return rows
     .filter((row) => row && typeof row === "object" && !Array.isArray(row))
     .map((row) => {
       const next = cloneJson(row);
       next.name ||= next.activityName || next.planType || next.id;
       next.equipmentId ||= defaultEquipmentIdForActivity(next, equipmentAssets);
-      next.resourceId ||= supportResources.find((resource) => resource?.id)?.id;
+      const resourceId = String(next.resourceId || "");
+      const hasResourceScope = supportResources.some((resource) => (
+        resource?.id === resourceId || resource?.supportNodeName === resourceId
+      ));
+      if (!resourceId || !hasResourceScope) {
+        const defaultResource = supportResources.find((resource) => resource?.supportNodeName || resource?.id);
+        next.resourceId = defaultResource?.supportNodeName || defaultResource?.id;
+      }
       next.durationHours = positiveNumber(next.durationHours, durationHoursForActivity(next));
       return next;
     });
+}
+
+function projectSupportResources(project = {}) {
+  const resources = normalizeObjectRows(project.supportResources);
+  if (resources.length) return resources;
+  return legacySupportResourcesFromSupportNodes(project.supportNodes);
+}
+
+function legacySupportResourcesFromSupportNodes(supportNodes) {
+  return normalizeObjectRows(supportNodes).flatMap((node, nodeIndex) => {
+    const supportNodeName = String(node.name || node.id || "保障节点");
+    const rows = [];
+    const personnelQuantity = positiveNumber(node.personnelCapacity, positiveNumber(node.capacity, 0));
+    if (personnelQuantity > 0) {
+      rows.push({
+        id: `${node.id || `support-node-${nodeIndex}`}-personnel`,
+        supportNodeName,
+        type: "personnel",
+        name: node.personnelName || `${supportNodeName}人员`,
+        model: node.personnelModel || node.personnelType || "",
+        quantity: personnelQuantity
+      });
+    }
+    const equipmentQuantity = positiveNumber(node.equipmentCapacity, positiveNumber(node.capacity, 0));
+    if (equipmentQuantity > 0) {
+      rows.push({
+        id: `${node.id || `support-node-${nodeIndex}`}-equipment`,
+        supportNodeName,
+        type: "equipment",
+        name: node.supportEquipmentName || node.equipmentName || `${supportNodeName}设备`,
+        model: node.supportEquipmentModel || node.nodeType || "",
+        quantity: equipmentQuantity
+      });
+    }
+    Object.entries(node.inventory || {}).forEach(([spareName, quantity], spareIndex) => {
+      rows.push({
+        id: `${node.id || `support-node-${nodeIndex}`}-spare-${spareIndex}`,
+        supportNodeName,
+        type: "spare",
+        name: spareName,
+        model: node.spareModels?.[spareName] || spareName,
+        quantity: positiveNumber(quantity, 0)
+      });
+    });
+    return rows;
+  });
+}
+
+function projectTransportPolicies(project = {}) {
+  const policies = normalizeObjectRows(project.transportPolicies);
+  if (policies.length) return policies;
+  const nameById = new Map(normalizeObjectRows(project.supportNodes).map((node) => [String(node.id || ""), String(node.name || node.id || "")]));
+  return normalizeObjectRows(project.supportNodes).flatMap((node, nodeIndex) => {
+    return normalizeObjectRows(node.transportPolicies).map((policy, policyIndex) => ({
+      ...policy,
+      id: policy.id || `${node.id || `support-node-${nodeIndex}`}-transport-${policyIndex}`,
+      fromSupportNodeName: policy.fromSupportNodeName || nameById.get(String(policy.from || "")) || policy.from || "",
+      toSupportNodeName: policy.toSupportNodeName || nameById.get(String(policy.to || "")) || policy.to || "",
+      spareName: policy.spareName || policy.spareType || policy.spare_type || ""
+    }));
+  });
+}
+
+function normalizeSupportOrganization(value = {}) {
+  const organization = cloneJson(value || {});
+  if (!organization || typeof organization !== "object" || Array.isArray(organization)) return {};
+  if (Array.isArray(organization.tree)) {
+    organization.tree = organization.tree[0] || { id: "support-org-root", name: "保障组织", description: "", children: [] };
+  }
+  return organization;
 }
 
 function defaultEquipmentIdForActivity(activity, equipmentAssets) {
@@ -403,7 +483,7 @@ function validateDeclaredObjectDomain(importPackage, issues, scope, domain) {
       return;
     }
     if (domain === "supportOrganization") {
-      if (Array.isArray(value.tree) && value.tree.length > 0) return;
+      if ((Array.isArray(value.tree) && value.tree.length > 0) || (value.tree && typeof value.tree === "object" && !Array.isArray(value.tree))) return;
       if (disabled) return;
       issues.push(createIssue({
         code: "invalid_declared_table",
@@ -428,38 +508,26 @@ function validateDeclaredObjectDomain(importPackage, issues, scope, domain) {
 
 function validateDeclaredTransportPolicies(importPackage, issues, scope) {
   if (isDisabledDomain("transportPolicies", scope.usedTables)) return;
-  const resources = importPackage?.objects?.supportResources;
-  if (!Array.isArray(resources)) {
+  const policies = importPackage?.objects?.transportPolicies;
+  if (!Array.isArray(policies)) {
     issues.push(createIssue({
       code: "invalid_declared_table",
       collection: "transportPolicies",
       objectId: "modeling-import-package",
-      fieldPath: "objects.supportResources",
-      message: "声明使用 transportPolicies，但缺少 supportResources 表。"
+      fieldPath: "objects.transportPolicies",
+      message: "声明使用 transportPolicies，但缺少 transportPolicies 表。"
     }));
     return;
   }
-  if (resources.length === 0) {
+  if (policies.length === 0) {
     issues.push(createIssue({
       code: "invalid_declared_table",
       collection: "transportPolicies",
       objectId: "modeling-import-package",
-      fieldPath: "objects.supportResources",
-      message: "声明使用 transportPolicies，但 supportResources 表没有可承载运输策略的资源行。"
+      fieldPath: "objects.transportPolicies",
+      message: "声明使用 transportPolicies，但 transportPolicies 表为空。"
     }));
-    return;
   }
-  resources.forEach((resource, index) => {
-    if (!resource || typeof resource !== "object" || Array.isArray(resource)) return;
-    if (Array.isArray(resource.transportPolicies) && resource.transportPolicies.length) return;
-    issues.push(createIssue({
-      code: "invalid_declared_table",
-      collection: "transportPolicies",
-      objectId: resource.id || `supportResources[${index}]`,
-      fieldPath: `objects.supportResources[${index}].transportPolicies`,
-      message: "声明使用 transportPolicies，但保障资源缺少有效运输策略数组。"
-    }));
-  });
 }
 
 function isDisabledCollectionMissing(collection, objects, usedTables) {
@@ -530,6 +598,9 @@ function collectObjectIds(objects, issues) {
         }));
       }
       objectIds[collection].add(row.id);
+      if (collection === "supportResources" && row.supportNodeName) {
+        objectIds[collection].add(row.supportNodeName);
+      }
     });
   }
 

@@ -214,10 +214,7 @@ export function createBackendApiClient({ baseUrl = DEFAULT_API_BASE, transport, 
 }
 
 export function buildBackendProjectJson(scenario, project = {}) {
-  const projectJson = cloneJson(scenario);
-  normalizeProjectJsonBasicMissions(projectJson);
-  syncCompositeTaskInheritedBasicFields(projectJson);
-  canonicalizeSupportActivityJobPredecessors(projectJson);
+  const projectJson = normalizeProjectJsonForClientDraft(scenario);
   stripProjectRuntimeConfig(projectJson);
   stripProjectNonModelFields(projectJson);
   projectJson.schema_version ||= "project-v0";
@@ -230,6 +227,20 @@ export function buildBackendProjectJson(scenario, project = {}) {
     };
   }
   return projectJson;
+}
+
+export function normalizeProjectJsonForClientDraft(projectJson) {
+  const normalized = cloneJson(projectJson);
+  normalizeProjectJsonBasicMissions(normalized);
+  syncCompositeTaskInheritedBasicFields(normalized);
+  canonicalizeSupportActivityJobPredecessors(normalized);
+  delete normalized.deletedSupportResourceKeys;
+  delete normalized.supportResourceOverrides;
+  materializeLegacySupportTables(normalized);
+  normalizeSupportModelTables(normalized);
+  stripLegacySupportNodeResourceFields(normalized);
+  stripSupportActivityTypoFields(normalized);
+  return normalized;
 }
 
 export function normalizeProjectJsonBasicMissions(projectJson) {
@@ -291,6 +302,10 @@ function stripProjectNonModelFields(projectJson) {
   if (!projectJson || typeof projectJson !== "object") return;
   const equipmentCatalog = projectEquipmentCatalog(projectJson);
   delete projectJson.deletedSupportResourceKeys;
+  delete projectJson.supportResourceOverrides;
+  materializeLegacySupportTables(projectJson);
+  normalizeSupportModelTables(projectJson);
+  stripLegacySupportNodeResourceFields(projectJson);
   if (equipmentCatalog) {
     projectJson.equipment = equipmentCatalog;
   } else {
@@ -300,6 +315,358 @@ function stripProjectNonModelFields(projectJson) {
   stripLegacyBasicMissionFields(projectJson);
   stripMissionProfileNonModelFields(projectJson.missionProfile);
   stripSupportActivityTypoFields(projectJson);
+}
+
+function materializeLegacySupportTables(projectJson) {
+  if (!Array.isArray(projectJson.supportNodes)) return;
+  if (!Array.isArray(projectJson.supportResources) || projectJson.supportResources.length === 0) {
+    const resources = [];
+    projectJson.supportNodes.forEach((node, nodeIndex) => {
+      if (!node || typeof node !== "object" || Array.isArray(node)) return;
+      const nodeName = String(node.name || node.id || "保障节点");
+      const personnel = nonNegativeInteger(node.personnelCapacity ?? node.capacity);
+      if (personnel > 0) {
+        resources.push({
+          id: `${node.id || `support-node-${nodeIndex}`}-personnel`,
+          supportNodeName: nodeName,
+          type: "personnel",
+          name: node.personnelName || `${nodeName}人员`,
+          model: node.personnelModel || node.personnelType || "",
+          quantity: personnel
+        });
+      }
+      const equipment = nonNegativeInteger(node.equipmentCapacity ?? node.capacity);
+      if (equipment > 0) {
+        resources.push({
+          id: `${node.id || `support-node-${nodeIndex}`}-equipment`,
+          supportNodeName: nodeName,
+          type: "equipment",
+          name: node.supportEquipmentName || node.equipmentName || `${nodeName}设备`,
+          model: node.supportEquipmentModel || node.nodeType || "",
+          quantity: equipment
+        });
+      }
+      Object.entries(node.inventory || {}).forEach(([spareName, quantity], spareIndex) => {
+        resources.push({
+          id: `${node.id || `support-node-${nodeIndex}`}-spare-${spareIndex}`,
+          supportNodeName: nodeName,
+          type: "spare",
+          name: spareName,
+          model: node.spareModels?.[spareName] || spareName,
+          quantity: nonNegativeInteger(quantity)
+        });
+      });
+    });
+    if (resources.length) projectJson.supportResources = resources;
+  }
+  if (!Array.isArray(projectJson.transportPolicies) || projectJson.transportPolicies.length === 0) {
+    const nameById = new Map(projectJson.supportNodes.map((node) => [String(node?.id || ""), String(node?.name || node?.id || "")]));
+    const policies = projectJson.supportNodes.flatMap((node, nodeIndex) => {
+      if (!node || typeof node !== "object" || Array.isArray(node)) return [];
+      return (Array.isArray(node.transportPolicies) ? node.transportPolicies : []).map((policy, policyIndex) => ({
+        ...policy,
+        id: policy.id || `${node.id || `support-node-${nodeIndex}`}-transport-${policyIndex}`,
+        fromSupportNodeName: policy.fromSupportNodeName || nameById.get(String(policy.from || "")) || policy.from || "",
+        toSupportNodeName: policy.toSupportNodeName || nameById.get(String(policy.to || "")) || policy.to || "",
+        spareName: policy.spareName || policy.spareType || policy.spare_type || ""
+      }));
+    });
+    if (policies.length) projectJson.transportPolicies = policies;
+  }
+}
+
+function normalizeSupportModelTables(projectJson) {
+  if (!projectJson || typeof projectJson !== "object" || Array.isArray(projectJson)) return;
+  const legacyNameByRef = legacySupportNodeNameByRef(projectJson.supportNodes);
+  const organization = normalizeSupportOrganization(projectJson.supportOrganization, legacyNameByRef);
+  const nameByRef = new Map([...legacyNameByRef, ...organization.nameByRef]);
+  normalizeSupportResourceNodeRefs(projectJson, nameByRef);
+  const supportNodeNames = organization.supportNodeNames.length
+    ? organization.supportNodeNames
+    : supportNodeNamesFromSupportNodes(projectJson.supportNodes);
+  normalizeSupportResourcePersonnelModels(projectJson);
+  normalizeSupportResourceSpareRows(projectJson, supportNodeNames);
+  projectJson.supportNodes = supportNodeNames.map((name, index) => ({
+    id: `support-node-${index + 1}`,
+    name
+  }));
+  normalizeTopLevelTransportPolicies(projectJson, nameByRef);
+  normalizeSupportNodeRefsInProject(projectJson, nameByRef);
+}
+
+function legacySupportNodeNameByRef(supportNodes) {
+  const nameByRef = new Map();
+  if (!Array.isArray(supportNodes)) return nameByRef;
+  for (const node of supportNodes) {
+    if (!node || typeof node !== "object" || Array.isArray(node)) continue;
+    const name = cleanText(node.name || node.supportNodeName || node.id);
+    if (!name) continue;
+    for (const ref of [node.id, node.name, node.supportNodeName, node.organizationNodeId]) {
+      const key = cleanText(ref);
+      if (key) nameByRef.set(key, name);
+    }
+  }
+  return nameByRef;
+}
+
+function normalizeSupportOrganization(supportOrganization, fallbackNameByRef) {
+  const supportNodeNames = [];
+  const nameByRef = new Map();
+  if (!supportOrganization || typeof supportOrganization !== "object" || Array.isArray(supportOrganization)) {
+    return { supportNodeNames, nameByRef };
+  }
+  const rawTree = Array.isArray(supportOrganization.tree) ? supportOrganization.tree[0] : supportOrganization.tree;
+  if (!rawTree || typeof rawTree !== "object" || Array.isArray(rawTree)) return { supportNodeNames, nameByRef };
+  supportOrganization.tree = normalizeSupportOrganizationNode(rawTree, {
+    fallbackNameByRef,
+    nameByRef,
+    supportNodeNames,
+    index: { value: 0 }
+  }, true);
+  return { supportNodeNames, nameByRef };
+}
+
+function normalizeSupportOrganizationNode(node, context, isRoot) {
+  const name = cleanText(node.name || context.fallbackNameByRef.get(cleanText(node.id)) || node.id || (isRoot ? "保障组织" : "保障点"));
+  const id = cleanText(node.id) || (isRoot ? "support-org-root" : `support-org-node-${context.index.value + 1}`);
+  const normalized = { id, name };
+  const description = cleanText(node.description);
+  if (description) normalized.description = description;
+  for (const ref of [node.id, node.name, node.supportNodeId, node.code, node.sourceId]) {
+    const key = cleanText(ref);
+    if (key) context.nameByRef.set(key, name);
+  }
+  if (!isRoot) {
+    context.index.value += 1;
+    if (!context.supportNodeNames.includes(name)) context.supportNodeNames.push(name);
+  }
+  const children = Array.isArray(node.children) ? node.children : [];
+  normalized.children = children
+    .filter((child) => child && typeof child === "object" && !Array.isArray(child))
+    .map((child) => normalizeSupportOrganizationNode(child, context, false));
+  return normalized;
+}
+
+function normalizeSupportResourceNodeRefs(projectJson, nameByRef) {
+  if (!Array.isArray(projectJson.supportResources)) return;
+  for (const resource of projectJson.supportResources) {
+    if (!resource || typeof resource !== "object" || Array.isArray(resource)) continue;
+    resource.supportNodeName = supportNodeNameForRef(resource.supportNodeName || resource.supportNodeId || resource.organizationNodeId, nameByRef);
+    delete resource.supportNodeId;
+    delete resource.organizationNodeId;
+  }
+}
+
+function normalizeSupportResourcePersonnelModels(projectJson) {
+  if (!Array.isArray(projectJson.supportResources)) return;
+  const specialties = projectPersonnelSpecialties(projectJson);
+  if (!specialties.length) return;
+  const usedByNode = new Map();
+  for (const resource of projectJson.supportResources) {
+    if (!isPersonnelSupportResource(resource)) continue;
+    const model = cleanText(resource.model);
+    if (!model) continue;
+    const nodeName = cleanText(resource.supportNodeName);
+    if (!usedByNode.has(nodeName)) usedByNode.set(nodeName, new Set());
+    usedByNode.get(nodeName).add(model);
+  }
+  for (const resource of projectJson.supportResources) {
+    if (!isPersonnelSupportResource(resource) || cleanText(resource.model)) continue;
+    const nodeName = cleanText(resource.supportNodeName);
+    const used = usedByNode.get(nodeName) || new Set();
+    const nextModel = specialties.find((specialty) => !used.has(specialty)) || specialties[0];
+    resource.model = nextModel;
+    if (!usedByNode.has(nodeName)) usedByNode.set(nodeName, used);
+    used.add(nextModel);
+  }
+}
+
+function projectPersonnelSpecialties(projectJson) {
+  const rows = Array.isArray(projectJson?.modelingDictionaries?.personnelSpecialties)
+    ? projectJson.modelingDictionaries.personnelSpecialties
+    : [];
+  const seen = new Set();
+  return rows.map((item) => cleanText(typeof item === "string" ? item : item?.name || item?.value || item?.label))
+    .filter((value) => {
+      if (!value || seen.has(value)) return false;
+      seen.add(value);
+      return true;
+    });
+}
+
+function isPersonnelSupportResource(resource) {
+  return resource && typeof resource === "object" && !Array.isArray(resource)
+    && cleanText(resource.type).toLowerCase() === "personnel";
+}
+
+function normalizeSupportResourceSpareRows(projectJson, supportNodeNames) {
+  if (!Array.isArray(projectJson.supportResources)) return;
+  const hardwareSpares = projectHardwareSpareRows(projectJson);
+  if (!hardwareSpares.length || !Array.isArray(supportNodeNames) || !supportNodeNames.length) return;
+  const existingSpareByKey = new Map();
+  for (const resource of projectJson.supportResources) {
+    if (!isSpareSupportResource(resource)) continue;
+    const key = supportSpareResourceIdentityKey(
+      resource.supportNodeName,
+      resource.name,
+      resource.model,
+      resource.equipment || resource.equipmentId
+    );
+    if (!existingSpareByKey.has(key)) existingSpareByKey.set(key, resource);
+  }
+  const nonSpareResources = projectJson.supportResources.filter((resource) => !isSpareSupportResource(resource));
+  const nextSpareResources = supportNodeNames.flatMap((nodeName, nodeIndex) => {
+    return hardwareSpares.map((spare, spareIndex) => {
+      const key = supportSpareResourceIdentityKey(nodeName, spare.name, spare.model, spare.equipment);
+      const existing = existingSpareByKey.get(key);
+      return {
+        id: cleanText(existing?.id) || `support-resource-${nodeIndex + 1}-spare-${spareIndex + 1}`,
+        supportNodeName: nodeName,
+        type: "spare",
+        name: spare.name,
+        model: spare.model,
+        equipment: spare.equipment,
+        quantity: nonNegativeInteger(existing?.quantity ?? 0)
+      };
+    });
+  });
+  projectJson.supportResources = [...nonSpareResources, ...nextSpareResources];
+}
+
+function projectHardwareSpareRows(projectJson) {
+  const components = Array.isArray(projectJson?.components) ? projectJson.components : [];
+  const seen = new Set();
+  return components
+    .filter((component) => component && typeof component === "object" && !Array.isArray(component))
+    .filter((component) => {
+      const productType = cleanText(component.productType).toUpperCase();
+      const spareType = cleanText(component.spareType).toUpperCase();
+      return productType === "LRU" || spareType === "LRU";
+    })
+    .map((component, index) => ({
+      name: cleanText(component.name || component.id) || `未命名LRU${index + 1}`,
+      model: cleanText(component.model || component.partNo || component.id || component.name) || "LRU",
+      equipment: cleanText(component.aircraftModel || component.equipment || component.equipmentType)
+    }))
+    .filter((spare) => {
+      const key = supportSpareResourceIdentityKey("", spare.name, spare.model, spare.equipment);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+function isSpareSupportResource(resource) {
+  const type = cleanText(resource?.type);
+  return resource && typeof resource === "object" && !Array.isArray(resource)
+    && (type.toLowerCase() === "spare" || type === "备件");
+}
+
+function supportSpareResourceIdentityKey(nodeName, name, model, equipment) {
+  return [nodeName, name, model, equipment].map((value) => cleanText(value)).join("\u0001");
+}
+
+function supportNodeNamesFromSupportNodes(supportNodes) {
+  const names = [];
+  if (!Array.isArray(supportNodes)) return names;
+  for (const node of supportNodes) {
+    if (!node || typeof node !== "object" || Array.isArray(node)) continue;
+    if (isLegacySupportResourceRow(node)) continue;
+    const name = cleanText(node.name || node.supportNodeName || node.id);
+    if (name && !names.includes(name)) names.push(name);
+  }
+  return names;
+}
+
+function isLegacySupportResourceRow(node) {
+  return Boolean(
+    node.importedResourceType
+    || node.organizationNodeId
+    || /(^|[-_])(personnel|equipment|spare|stock)([-_]|$)/i.test(String(node.id || ""))
+  );
+}
+
+function normalizeTopLevelTransportPolicies(projectJson, nameByRef) {
+  if (!Array.isArray(projectJson.transportPolicies)) return;
+  projectJson.transportPolicies = projectJson.transportPolicies
+    .filter((policy) => policy && typeof policy === "object" && !Array.isArray(policy))
+    .map((policy, index) => {
+      const normalized = {
+        id: cleanText(policy.id) || `transport-policy-${index + 1}`,
+        fromSupportNodeName: supportNodeNameForRef(policy.fromSupportNodeName || policy.from, nameByRef),
+        toSupportNodeName: supportNodeNameForRef(policy.toSupportNodeName || policy.to, nameByRef),
+        spareName: cleanText(policy.spareName || policy.spareType || policy.spare_type)
+      };
+      for (const field of ["capacity", "priority", "transportMode", "transportTimeHours"]) {
+        if (policy[field] !== undefined) normalized[field] = policy[field];
+      }
+      return normalized;
+    });
+}
+
+function normalizeSupportNodeRefsInProject(projectJson, nameByRef) {
+  for (const airport of Array.isArray(projectJson.airports) ? projectJson.airports : []) {
+    if (airport && typeof airport === "object" && !Array.isArray(airport) && airport.supportNodeId !== undefined) {
+      airport.supportNodeId = supportNodeNameForRef(airport.supportNodeId, nameByRef);
+    }
+  }
+  for (const activity of Array.isArray(projectJson.supportActivities) ? projectJson.supportActivities : []) {
+    normalizeSupportActivityNodeRefs(activity, nameByRef);
+  }
+}
+
+function normalizeSupportActivityNodeRefs(value, nameByRef) {
+  if (Array.isArray(value)) {
+    for (const item of value) normalizeSupportActivityNodeRefs(item, nameByRef);
+    return;
+  }
+  if (!value || typeof value !== "object") return;
+  for (const field of ["supportNodeId", "resourceId"]) {
+    if (value[field] !== undefined) value[field] = supportNodeNameForRef(value[field], nameByRef);
+  }
+  for (const field of ["lateralSupportNodes"]) {
+    if (Array.isArray(value[field])) value[field] = value[field].map((ref) => supportNodeNameForRef(ref, nameByRef));
+  }
+  for (const child of Object.values(value)) normalizeSupportActivityNodeRefs(child, nameByRef);
+}
+
+function supportNodeNameForRef(value, nameByRef) {
+  const text = cleanText(value);
+  return nameByRef.get(text) || text;
+}
+
+function nonNegativeInteger(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? Math.floor(number) : 0;
+}
+
+function stripLegacySupportNodeResourceFields(projectJson) {
+  if (!Array.isArray(projectJson.supportNodes)) return;
+  const legacyFields = [
+    "capacity",
+    "equipmentCapacity",
+    "inventory",
+    "lateralSupportNodes",
+    "nodeType",
+    "organizationStrategy",
+    "personnelCapacity",
+    "policy",
+    "supportLevel",
+    "transportPolicies",
+    "organizationNodeId",
+    "importedResourceType",
+    "personnelModel",
+    "personnelType",
+    "supportEquipmentName",
+    "supportEquipmentModel",
+    "equipmentName",
+    "spareModels",
+    "spareEquipment"
+  ];
+  for (const node of projectJson.supportNodes) {
+    if (!node || typeof node !== "object" || Array.isArray(node)) continue;
+    for (const field of legacyFields) delete node[field];
+  }
 }
 
 function projectEquipmentCatalog(projectJson) {

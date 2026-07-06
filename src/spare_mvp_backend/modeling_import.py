@@ -32,8 +32,8 @@ COLLECTION_RULES = {
         "references": [{"field": "parentId", "target": "equipmentAssets"}],
     },
     "supportResources": {
-        "required_fields": ["id", "name", "capacity"],
-        "numeric_fields": ["capacity"],
+        "required_fields": ["id", "name"],
+        "numeric_fields": ["capacity", "quantity"],
     },
     "supportActivities": {
         "required_fields": ["id", "name", "equipmentId", "resourceId", "durationHours"],
@@ -100,6 +100,7 @@ def modeling_import_to_project(import_package: dict[str, Any], validation: dict[
     mission = _first_dict(objects.get("missionProfiles")) or {}
     equipment_assets = [row for row in objects.get("equipmentAssets", []) if isinstance(row, dict)]
     resources = [row for row in objects.get("supportResources", []) if isinstance(row, dict)]
+    transport_policies = [row for row in objects.get("transportPolicies", []) if isinstance(row, dict)]
     activities = [row for row in objects.get("supportActivities", []) if isinstance(row, dict)]
     lifecycle = import_package.get("lifecycle") if isinstance(import_package.get("lifecycle"), dict) else {}
     version = _safe_positive_int(lifecycle.get("version"), 1)
@@ -107,6 +108,13 @@ def modeling_import_to_project(import_package: dict[str, Any], validation: dict[
 
     if validation is None:
         validation = validate_modeling_import_package(import_package)
+    used_tables = validation.get("usedTables") if isinstance(validation.get("usedTables"), dict) else {}
+    if used_tables.get("supportResources") is False:
+        resources = []
+    if used_tables.get("transportPolicies") is False:
+        transport_policies = []
+    if used_tables.get("supportActivities") is False:
+        activities = []
 
     combat_unit = _project_object(objects, mission, "combatUnit", {})
     basic_missions = _project_basic_missions(objects, mission, activities)
@@ -127,9 +135,18 @@ def modeling_import_to_project(import_package: dict[str, Any], validation: dict[
         "missionPhases": _project_object_list(objects, mission, "missionPhases"),
         "combatUnit": combat_unit,
         "components": [_equipment_asset_to_component(row) for row in equipment_assets],
-        "supportNodes": [_support_resource_to_node(row) for row in resources],
-        "supportActivities": [_support_activity_to_project(row) for row in activities],
-        "supportOrganization": _project_object(objects, mission, "supportOrganization", {}),
+        "supportNodes": _support_nodes_from_resources(resources),
+        "supportResources": _support_resources_from_import_resources(resources),
+        "transportPolicies": _transport_policies_from_import_resources(resources, transport_policies),
+        "supportActivities": [
+            _support_activity_to_project(row, _support_resource_name_by_id(resources))
+            for row in activities
+        ],
+        "supportOrganization": (
+            {}
+            if used_tables.get("supportOrganization") is False
+            else _support_organization_to_project(_project_object(objects, mission, "supportOrganization", {}))
+        ),
         "reliabilityBlockDiagram": _project_object(objects, mission, "reliabilityBlockDiagram", {}),
         "modelingImportValidation": {
             "importId": str(import_package["importId"]),
@@ -255,7 +272,7 @@ def _validate_declared_object_domain(
             return
         if domain == "supportOrganization":
             tree = value.get("tree")
-            if isinstance(tree, list) and tree:
+            if (isinstance(tree, list) and tree) or isinstance(tree, dict):
                 return
             if disabled:
                 _append_scope_warning(warnings, domain, f"objects.{domain}")
@@ -276,23 +293,16 @@ def _validate_declared_transport_policies(
     issues: list[dict[str, Any]],
     warnings: list[dict[str, Any]],
 ) -> None:
-    resources = objects.get("supportResources")
+    policies = objects.get("transportPolicies")
     if _is_disabled_domain("transportPolicies", used_tables):
-        _append_scope_warning(warnings, "transportPolicies", "objects.supportResources[].transportPolicies")
+        _append_scope_warning(warnings, "transportPolicies", "objects.transportPolicies")
         return
-    if not isinstance(resources, list):
-        issues.append(_issue("invalid_declared_table", "transportPolicies", "modeling-import-package", "objects.supportResources", "声明使用 transportPolicies，但缺少 supportResources 表。"))
+    if not isinstance(policies, list):
+        issues.append(_issue("invalid_declared_table", "transportPolicies", "modeling-import-package", "objects.transportPolicies", "声明使用 transportPolicies，但缺少 transportPolicies 表。"))
         return
-    if not resources:
-        issues.append(_issue("invalid_declared_table", "transportPolicies", "modeling-import-package", "objects.supportResources", "声明使用 transportPolicies，但 supportResources 表没有可承载运输策略的资源行。"))
+    if not policies:
+        issues.append(_issue("invalid_declared_table", "transportPolicies", "modeling-import-package", "objects.transportPolicies", "声明使用 transportPolicies，但 transportPolicies 表为空。"))
         return
-    for index, resource in enumerate(resources):
-        if not isinstance(resource, dict):
-            continue
-        policies = resource.get("transportPolicies")
-        if isinstance(policies, list) and policies:
-            continue
-        issues.append(_issue("invalid_declared_table", "transportPolicies", str(resource.get("id") or f"supportResources[{index}]"), f"objects.supportResources[{index}].transportPolicies", "声明使用 transportPolicies，但保障资源缺少有效运输策略数组。"))
 
 
 def _is_disabled_collection_missing(collection: str, objects: dict[str, Any], used_tables: dict[str, bool]) -> bool:
@@ -350,6 +360,10 @@ def _collect_object_ids(objects: dict[str, Any], issues: list[dict[str, Any]]) -
             if object_id in object_ids[collection]:
                 issues.append(_issue("duplicate_id", collection, object_id, f"objects.{collection}[{index}].id", f"对象编号 {object_id} 在 {collection} 中重复。"))
             object_ids[collection].add(object_id)
+            if collection == "supportResources":
+                support_node_name = str(row.get("supportNodeName") or "").strip()
+                if support_node_name:
+                    object_ids[collection].add(support_node_name)
     return object_ids
 
 
@@ -619,19 +633,104 @@ def _equipment_asset_to_component(row: dict[str, Any]) -> dict[str, Any]:
     return component
 
 
-def _support_resource_to_node(row: dict[str, Any]) -> dict[str, Any]:
-    capacity = _safe_positive_int(row.get("capacity"), 1)
-    node = deepcopy(row)
-    node["id"] = str(row.get("id") or "support-resource")
-    node["name"] = str(row.get("name") or row.get("id") or "support-resource")
-    node["capacity"] = capacity
-    node.setdefault("personnelCapacity", capacity)
-    node.setdefault("equipmentCapacity", capacity)
-    node.setdefault("inventory", {})
-    return node
+def _support_nodes_from_resources(resources: list[dict[str, Any]]) -> list[dict[str, str]]:
+    nodes: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for index, row in enumerate(resources):
+        name = _support_node_name_for_resource(row)
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        nodes.append({"id": _stable_uid("support-node", name, index), "name": name})
+    return nodes
 
 
-def _support_activity_to_project(row: dict[str, Any]) -> dict[str, Any]:
+def _support_resources_from_import_resources(resources: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for index, row in enumerate(resources):
+        if _is_typed_support_resource(row):
+            rows.append(_normalized_support_resource(row, index))
+            continue
+        support_node_name = _support_node_name_for_resource(row)
+        personnel_quantity = _safe_non_negative_int(row.get("personnelCapacity"), _safe_non_negative_int(row.get("capacity"), 0))
+        if personnel_quantity > 0:
+            rows.append({
+                "id": _stable_uid("support-resource-personnel", support_node_name, index),
+                "supportNodeName": support_node_name,
+                "type": "personnel",
+                "name": str(row.get("personnelName") or row.get("name") or f"{support_node_name}人员"),
+                "model": str(row.get("personnelModel") or row.get("personnelType") or ""),
+                "quantity": personnel_quantity,
+            })
+        equipment_quantity = _safe_non_negative_int(row.get("equipmentCapacity"), _safe_non_negative_int(row.get("capacity"), 0))
+        if equipment_quantity > 0:
+            rows.append({
+                "id": _stable_uid("support-resource-equipment", support_node_name, index),
+                "supportNodeName": support_node_name,
+                "type": "equipment",
+                "name": str(row.get("supportEquipmentName") or row.get("equipmentName") or row.get("name") or f"{support_node_name}设备"),
+                "model": str(row.get("supportEquipmentModel") or row.get("nodeType") or row.get("model") or ""),
+                "quantity": equipment_quantity,
+            })
+        inventory = row.get("inventory") if isinstance(row.get("inventory"), dict) else {}
+        for spare_index, (spare_name, quantity) in enumerate(inventory.items()):
+            spare_quantity = _safe_non_negative_int(quantity, 0)
+            if spare_quantity <= 0:
+                continue
+            rows.append({
+                "id": _stable_uid("support-resource-spare", support_node_name, spare_name, spare_index),
+                "supportNodeName": support_node_name,
+                "type": "spare",
+                "name": str(spare_name),
+                "model": str((row.get("spareModels") or {}).get(spare_name) or spare_name),
+                "quantity": spare_quantity,
+            })
+    return rows
+
+
+def _transport_policies_from_import_resources(
+    resources: list[dict[str, Any]],
+    transport_policies: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    name_by_id = _support_resource_name_by_id(resources)
+    rows: list[dict[str, Any]] = []
+    for index, policy in enumerate(transport_policies):
+        rows.append(_normalized_transport_policy(policy, name_by_id, index))
+    for resource_index, resource in enumerate(resources):
+        for policy_index, policy in enumerate(resource.get("transportPolicies") if isinstance(resource.get("transportPolicies"), list) else []):
+            if isinstance(policy, dict):
+                rows.append(_normalized_transport_policy(policy, name_by_id, resource_index * 100 + policy_index))
+    return rows
+
+
+def _support_organization_to_project(value: dict[str, Any]) -> dict[str, Any]:
+    organization = deepcopy(value) if isinstance(value, dict) else {}
+    tree = organization.get("tree")
+    if isinstance(tree, list):
+        tree = tree[0] if tree else {"id": "support-org-root", "name": "保障组织", "description": "", "children": []}
+    if not isinstance(tree, dict):
+        tree = {"id": "support-org-root", "name": "保障组织", "description": "", "children": []}
+    organization["tree"] = _clean_support_organization_node(tree)
+    return organization
+
+
+def _clean_support_organization_node(node: dict[str, Any]) -> dict[str, Any]:
+    cleaned = {
+        "id": str(node.get("id") or node.get("name") or "support-org-node"),
+        "name": str(node.get("name") or node.get("id") or "保障组织"),
+        "description": str(node.get("description") or ""),
+        "children": [],
+    }
+    children = node.get("children") if isinstance(node.get("children"), list) else []
+    cleaned["children"] = [
+        _clean_support_organization_node(child)
+        for child in children
+        if isinstance(child, dict)
+    ]
+    return cleaned
+
+
+def _support_activity_to_project(row: dict[str, Any], resource_name_by_id: dict[str, str] | None = None) -> dict[str, Any]:
     activity = deepcopy(row)
     activity.setdefault("activityName", row.get("name") or row.get("id") or "保障活动")
     activity.setdefault("activityType", row.get("type") or row.get("name") or "保障活动")
@@ -639,12 +738,77 @@ def _support_activity_to_project(row: dict[str, Any]) -> dict[str, Any]:
     activity.setdefault("requiredDevices", 1)
     activity.setdefault("priority", 1)
     activity.setdefault("jobs", [])
+    resource_id = activity.get("resourceId")
+    if resource_name_by_id and resource_id not in (None, ""):
+        activity["resourceId"] = resource_name_by_id.get(str(resource_id), str(resource_id))
     return activity
+
+
+def _support_node_name_for_resource(row: dict[str, Any]) -> str:
+    return str(row.get("supportNodeName") or row.get("organizationNodeName") or row.get("name") or row.get("id") or "保障节点")
+
+
+def _support_resource_name_by_id(resources: list[dict[str, Any]]) -> dict[str, str]:
+    return {
+        str(row.get("id")): _support_node_name_for_resource(row)
+        for row in resources
+        if row.get("id") not in (None, "")
+    }
+
+
+def _is_typed_support_resource(row: dict[str, Any]) -> bool:
+    return str(row.get("type") or "").strip().lower() in {"personnel", "equipment", "spare"}
+
+
+def _normalized_support_resource(row: dict[str, Any], index: int) -> dict[str, Any]:
+    resource_type = str(row.get("type") or "").strip().lower()
+    support_node_name = _support_node_name_for_resource(row)
+    return {
+        "id": str(row.get("id") or _stable_uid("support-resource", support_node_name, index)),
+        "supportNodeName": support_node_name,
+        "type": resource_type,
+        "name": str(row.get("name") or row.get("model") or resource_type),
+        "model": str(row.get("model") or ""),
+        "quantity": _safe_non_negative_int(row.get("quantity"), _safe_non_negative_int(row.get("capacity"), 0)),
+    }
+
+
+def _normalized_transport_policy(policy: dict[str, Any], name_by_id: dict[str, str], index: int) -> dict[str, Any]:
+    from_value = str(policy.get("fromSupportNodeName") or policy.get("from") or "")
+    to_value = str(policy.get("toSupportNodeName") or policy.get("to") or "")
+    return {
+        "id": str(policy.get("id") or _stable_uid("transport-policy", from_value, to_value, index)),
+        "fromSupportNodeName": name_by_id.get(from_value, from_value),
+        "toSupportNodeName": name_by_id.get(to_value, to_value),
+        "spareName": str(policy.get("spareName") or policy.get("spareType") or policy.get("spare_type") or ""),
+        "capacity": _safe_positive_int(policy.get("capacity"), 1),
+        "priority": _safe_positive_int(policy.get("priority"), 1),
+        "transportMode": str(policy.get("transportMode") or policy.get("transport_mode") or ""),
+        "transportTimeHours": _safe_positive_float(policy.get("transportTimeHours") or policy.get("transport_time_hours"), 0),
+    }
+
+
+def _stable_uid(prefix: str, *parts: Any) -> str:
+    raw = "|".join(str(part) for part in parts if part not in (None, ""))
+    digest = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:10]
+    return f"{prefix}-{digest}"
 
 
 def _safe_positive_int(value: Any, fallback: int) -> int:
     number = _safe_positive_float(value, fallback)
     return max(1, int(number))
+
+
+def _safe_non_negative_int(value: Any, fallback: int) -> int:
+    if isinstance(value, bool):
+        return max(0, int(fallback))
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return max(0, int(fallback))
+    if not isfinite(number) or number < 0:
+        return max(0, int(fallback))
+    return int(number)
 
 
 def _is_positive_integer_value(value: Any) -> bool:

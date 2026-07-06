@@ -862,8 +862,9 @@ test("support organization and activity pages follow ship_front tree table edito
   assert.match(supportOrgSource, /children:\s*\(node\.children \|\| \[\]\)\.map\(\(child\) => orgTreeNode\(child, depth \+ 1\)\)/);
   assert.doesNotMatch(supportOrgSource, /children:\s*depth\s*>=\s*1\s*\?\s*\[\]/);
   assert.match(appSource, /function updateSupportResourceOverride/);
-  assert.match(appSource, /scenario\.supportResourceOverrides/);
-  assert.match(appSource, /scenario\.deletedSupportResourceKeys/);
+  assert.match(appSource, /scenario\.supportResources/);
+  assert.doesNotMatch(appSource, /scenario\.supportResourceOverrides/);
+  assert.doesNotMatch(appSource, /scenario\.deletedSupportResourceKeys/);
   assert.doesNotMatch(supportOrgSource, /label: "所属型号"/);
   assert.doesNotMatch(appSource, /fieldDef\("ownerModel", "所属型号"/);
   assert.match(supportOrgSource, /所属装备/);
@@ -1097,9 +1098,12 @@ test("support activity pages align to page suggestion activity fields", async ()
   assert.match(basicActivityLibrarySource, /data-basic-activity-resource-dialog-add/);
   assert.match(basicActivityLibrarySource, /data-basic-activity-resource-dialog-field/);
   assert.match(basicActivityLibrarySource, /updateBasicActivityResourceDialogField/);
-  assert.match(basicActivityLibrarySource, /basicActivityResourceDialogTextInput/);
-  assert.match(basicActivityLibrarySource, /\`\$\{resourceKind\}-models\`/);
-  assert.match(basicActivityLibrarySource, /\`\$\{resourceKind\}-names\`/);
+  assert.match(basicActivityLibrarySource, /basicActivityResourceDialogResourceSelect/);
+  assert.match(basicActivityLibrarySource, /basicActivitySupportResourceSelectOptions/);
+  assert.match(basicActivityLibrarySource, /"resourceKey"/);
+  assert.doesNotMatch(basicActivityLibrarySource, /basicActivityResourceDialogTextInput/);
+  assert.doesNotMatch(basicActivityLibrarySource, /\`\$\{resourceKind\}-models\`/);
+  assert.doesNotMatch(basicActivityLibrarySource, /\`\$\{resourceKind\}-names\`/);
   assert.match(basicActivityLibrarySource, /buildSupportResourceRows\(resourceType, root\)/);
   assert.match(basicActivityLibrarySource, /job\.personnel =/);
   assert.doesNotMatch(basicActivityLibrarySource, /job\.personnelRequirements =/);
@@ -1320,8 +1324,8 @@ test("equipment aircraft deletion cleans downstream aircraft-model references", 
   assert.match(cleanupSource, /record\.task\.equipmentType = nextModel/);
   assert.match(cleanupSource, /for \(const member of scenario\.combatUnit\?\.members \|\| \[\]\)/);
   assert.match(cleanupSource, /member\.model = nextModel/);
-  assert.match(cleanupSource, /for \(const override of Object\.values\(scenario\.supportResourceOverrides \|\| \{\}\)\)/);
-  assert.match(cleanupSource, /override\.aircraft\.filter\(\(model\) => String\(model\) !== oldModel\)/);
+  assert.match(cleanupSource, /for \(const resource of scenario\.supportResources \|\| \[\]\)/);
+  assert.match(cleanupSource, /resource\.aircraft\.filter\(\(model\) => String\(model\) !== oldModel\)/);
   assert.match(cleanupSource, /selectedBasicMissionEquipmentType = nextModel/);
 });
 
@@ -2010,10 +2014,12 @@ test("support activity controls are wired through local draft fields", async () 
   assert.match(basicActivitySource, /updateBasicActivityResourceDialogField/);
   assert.match(basicActivitySource, /syncBasicActivityResourceSummaries/);
   assert.match(basicActivitySource, /basicActivitySupportResourceRows/);
+  assert.match(basicActivitySource, /basicActivityModeledSupportResourceRows/);
   assert.match(basicActivitySource, /data-basic-activity-dialog-close/);
   assert.match(basicActivitySource, /basicActivityScopeSelect/);
-  assert.match(basicActivitySource, /basicActivityPersonnelProfessionalOptions/);
-  assert.match(basicActivitySource, /basicActivityResourceDialogTextInput/);
+  assert.match(basicActivitySource, /basicActivityResourceDialogResourceSelect/);
+  assert.doesNotMatch(basicActivitySource, /basicActivityPersonnelProfessionalOptions/);
+  assert.doesNotMatch(basicActivitySource, /basicActivityResourceDialogTextInput/);
   assert.doesNotMatch(basicActivitySource, /弹药|ammunition/);
 
   const jobTableSource = appSource.slice(
@@ -3300,7 +3306,8 @@ test("frontend modeling import demo fixture stays aligned with complete imported
   assert.ok(objects.missionProfiles[0].periodicTasks.length >= 1);
   assert.ok(objects.missionProfiles[0].combatUnit.members.length >= 4);
   assert.ok(objects.supportResources.length >= 3);
-  assert.ok(objects.supportResources[0].inventory["航电模块"] > 0);
+  assert.ok(objects.supportResources.some((resource) => resource.type === "spare" && resource.name === "航电模块" && resource.quantity > 0));
+  assert.ok(objects.transportPolicies.length >= 1);
   assert.ok(objects.supportActivities.some((activity) => activity.activityType === "修复性维修" && activity.jobs.length >= 2));
   assert.ok(objects.supportActivities.some((activity) => activity.activityType === "后勤保障" && activity.transportStrategies.length >= 2));
 });
@@ -4161,7 +4168,7 @@ test("visual support view separates collapsible resource statistics from support
   assert.match(appSource, /supportNodeMatchesScope\(node, airport\)/);
   assert.match(appSource, /supportScopeForStateResource\(airports, state\)/);
   assert.match(appSource, /if \(orgLeafNodes\.length\) return orgLeafNodes/);
-  assert.match(appSource, /projectJson\?\.objects\?\.supportResources/);
+  assert.doesNotMatch(appSource, /projectJson\?\.objects\?\.supportResources/);
   assert.match(stateSource, /supportNodeId: item\.support_node_id/);
   assert.match(stateSource, /airportId: item\.airport_id/);
   assert.match(stateSource, /delayCount: number\(item\.delay_count/);
