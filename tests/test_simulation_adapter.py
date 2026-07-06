@@ -136,6 +136,14 @@ class SimulationAdapterTest(unittest.TestCase):
         self.assertEqual(inputs["time"]["tick_minutes"], 1)
         self.assertEqual(inputs["time"]["sample_every_minutes"], 30)
         self.assertEqual(inputs["time"]["max_state_frames_single"], 2000)
+        self.assertEqual(
+            inputs["stop_policy"],
+            {
+                "schema_version": "stop-policy-v0",
+                "mode": "or",
+                "conditions": [{"type": "duration", "duration_minutes": inputs["time"]["duration_minutes"]}],
+            },
+        )
         self.assertEqual(inputs["aircraft"]["fleet_count"], 6)
         self.assertEqual(inputs["aircraft"]["initial_ready"], 6)
         self.assertNotIn("experiment", project)
@@ -151,8 +159,39 @@ class SimulationAdapterTest(unittest.TestCase):
         self.assertIn("components[].failureDistribution", provenance["consumed_fields"])
         self.assertIn("supportOrganization.tree", provenance["governance_only_fields"])
         self.assertIn("supportActivities[].jobs[].predecessors", provenance["consumed_fields"])
+        self.assertIn("ExperimentPlan.config.stopPolicy", provenance["consumed_fields"])
         self.assertIn("projectInfo", provenance["governance_only_fields"])
         self.assertEqual(provenance["unsupported_fields"], [])
+
+    def test_aircraft_support_v1_runtime_stop_policy_reaches_model_inputs(self) -> None:
+        project = self._load_fixture("m9_6_platform_case_export.json")["project"]
+
+        scenario = self.adapter.compile_scenario(
+            project,
+            model_family="aircraft_support_v1",
+            runtime_config={
+                "stopPolicy": {
+                    "schemaVersion": "stop-policy-v0",
+                    "mode": "and",
+                    "conditions": [
+                        {"type": "specifiedTime", "minute": 90},
+                        {"type": "failure"},
+                    ],
+                }
+            },
+        )
+
+        self.assertEqual(
+            scenario["simulation_inputs"]["stop_policy"],
+            {
+                "schema_version": "stop-policy-v0",
+                "mode": "and",
+                "conditions": [
+                    {"type": "specified_time", "minute": 90},
+                    {"type": "failure"},
+                ],
+            },
+        )
 
     def test_aircraft_support_v1_composite_task_equipment_quantity_reaches_model_inputs(self) -> None:
         project = self._load_fixture("m9_6_platform_case_export.json")["project"]

@@ -89,6 +89,10 @@
         "seed": {
           "source": "project.experiment.seed",
           "constructor_param": "seed"
+        },
+        "stop_policy": {
+          "source": "ExperimentPlan.config.stopPolicy, defaulted to duration stop when absent",
+          "constructor_param": "stop_policy"
         }
       }
     }

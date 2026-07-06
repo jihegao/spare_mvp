@@ -51,6 +51,7 @@ def _strip_project_runtime_config(value: Any) -> None:
         value.pop("experiment", None)
         value.pop("seedPolicy", None)
         value.pop("scenarioComposition", None)
+        value.pop("stopPolicy", None)
         for child in value.values():
             _strip_project_runtime_config(child)
     elif isinstance(value, list):
@@ -146,6 +147,8 @@ def _collect_project_runtime_config_paths(value: Any, path: str, paths: list[str
             paths.append(_join_path(path, "seedPolicy"))
         if "scenarioComposition" in value:
             paths.append(_join_path(path, "scenarioComposition"))
+        if "stopPolicy" in value:
+            paths.append(_join_path(path, "stopPolicy"))
         analysis_requests = value.get("analysisRequests")
         if isinstance(analysis_requests, dict) and (not path or _analysis_requests_has_sweep(analysis_requests)):
             paths.append(_join_path(path, "analysisRequests"))
