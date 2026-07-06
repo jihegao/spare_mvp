@@ -681,6 +681,8 @@ test("modeling form management only renders personnel dictionary and time unit f
     assert.match(runtime.appNode.innerHTML, /data-personnel-specialty-dictionary/);
     assert.match(runtime.appNode.innerHTML, /带时间单位的表单字段/);
     assert.match(runtime.appNode.innerHTML, /data-modeling-form-management/);
+    assert.match(runtime.appNode.innerHTML, /class="modeling-field-config modeling-form-config-grid" data-modeling-form-management/);
+    assert.match(runtime.appNode.innerHTML, /<section class="modeling-config-card" data-personnel-specialty-dictionary>/);
     assert.match(runtime.appNode.innerHTML, /data-modeling-form-unit="equipment-system:mtbfHours"/);
     assert.match(runtime.appNode.innerHTML, /data-modeling-form-unit="equipment-system:mttrMinutes"/);
     assert.match(runtime.appNode.innerHTML, /data-modeling-form-unit="basic-mission:durationMinutes"/);

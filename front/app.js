@@ -4243,28 +4243,28 @@ function renderModelingFormManagementConfig() {
   const specialties = configuredPersonnelSpecialties();
   return `
     <p class="inline-status">仅保留保障人员专业字典与 ${timeUnitFieldCount} 个带时间单位的表单字段配置。</p>
-    <section class="system-config-section" data-personnel-specialty-dictionary>
-      <div class="section-head">
-        <div>
-          <h4>保障人员专业字典</h4>
-          <p>该字典会接入保障人员建模的专业下拉选项。</p>
+    <div class="modeling-field-config modeling-form-config-grid" data-modeling-form-management>
+      <section class="modeling-config-card" data-personnel-specialty-dictionary>
+        <div class="section-head">
+          <div>
+            <h4>保障人员专业字典</h4>
+            <p>该字典会接入保障人员建模的专业下拉选项。</p>
+          </div>
+          <span class="status-badge">${specialties.length} 项</span>
         </div>
-        <span class="status-badge">${specialties.length} 项</span>
-      </div>
-      <div class="toolbar-row">
-        <input value="${htmlEscape(personnelSpecialtyDraft)}" placeholder="新增专业" data-personnel-specialty-draft>
-        <button type="button" data-personnel-specialty-add>新增专业</button>
-      </div>
-      <div class="tag-list">
-        ${specialties.map((item) => `
-          <span class="status-badge" data-personnel-specialty-item="${htmlEscape(item)}">
-            ${htmlEscape(item)}
-            <button type="button" class="inline-action" data-personnel-specialty-delete="${htmlEscape(item)}">删除</button>
-          </span>
-        `).join("")}
-      </div>
-    </section>
-    <div class="modeling-field-config" data-modeling-form-management>
+        <div class="toolbar-row">
+          <input value="${htmlEscape(personnelSpecialtyDraft)}" placeholder="新增专业" data-personnel-specialty-draft>
+          <button type="button" data-personnel-specialty-add>新增专业</button>
+        </div>
+        <div class="tag-list">
+          ${specialties.map((item) => `
+            <span class="status-badge" data-personnel-specialty-item="${htmlEscape(item)}">
+              ${htmlEscape(item)}
+              <button type="button" class="inline-action" data-personnel-specialty-delete="${htmlEscape(item)}">删除</button>
+            </span>
+          `).join("")}
+        </div>
+      </section>
       <section class="modeling-config-card">
         <div class="section-head">
           <div>
