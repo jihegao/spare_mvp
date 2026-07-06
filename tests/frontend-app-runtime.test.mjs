@@ -1379,9 +1379,9 @@ test("basic support activity edit opens a dialog at runtime", async () => {
         basicActivityKey: "0:0",
         basicActivityResourceKind: "personnel",
         basicActivityResourceIndex: "1",
-        basicActivityResourceDialogField: "professional"
+        basicActivityResourceDialogField: "resourceKey"
       },
-      { value: "航电" }
+      { value: "runtime-personnel-1" }
     );
     await runtime.change(
       "[data-basic-activity-resource-dialog-field]",
@@ -1393,7 +1393,7 @@ test("basic support activity edit opens a dialog at runtime", async () => {
       },
       { value: "4", type: "number" }
     );
-    assert.match(runtime.appNode.innerHTML, /<option value="航电" selected>航电<\/option>/);
+    assert.match(runtime.appNode.innerHTML, /<option value="runtime-personnel-1"[^>]*selected[^>]*>机务人员 \/ 机务 \/ 航母飞行甲板<\/option>/);
     assert.match(runtime.appNode.innerHTML, /value="4"/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /新增保障人员/);
 
@@ -1406,32 +1406,31 @@ test("basic support activity edit opens a dialog at runtime", async () => {
       "[data-basic-activity-resource-dialog-add]",
       { basicActivityKey: "0:0", basicActivityResourceDialogAdd: "spare" }
     );
-    await runtime.change(
-      "[data-basic-activity-resource-dialog-field]",
-      {
-        basicActivityKey: "0:0",
-        basicActivityResourceKind: "spare",
-        basicActivityResourceIndex: "1",
-        basicActivityResourceDialogField: "model"
-      },
-      { value: "HD-01" }
-    );
-    assert.match(runtime.appNode.innerHTML, /data-basic-activity-resource-dialog-field="name" value="LRU-A"/);
+    assert.match(runtime.appNode.innerHTML, /<option value="runtime-spare-1"[^>]*selected[^>]*>LRU-A \/ 航母飞行甲板<\/option>/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-basic-activity-resource-dialog-field="model"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-basic-activity-resource-dialog-field="name"/);
   } finally {
     runtime.restore();
   }
 });
 
-test("basic support activity resource dialog uses modeling dictionaries and imported job resources", async () => {
+test("basic support activity resource dialog uses support organization resource rows", async () => {
   const projectJson = createRuntimeProjectJson();
   projectJson.modelingDictionaries = { personnelSpecialties: ["航电", "液压"] };
-  projectJson.supportNodes = [{
-    id: "carrier-deck",
-    name: "航母飞行甲板",
-    personnelCapacity: 10,
-    equipmentCapacity: 8,
-    inventory: { 航电模块: 3 }
-  }];
+  projectJson.supportOrganization = {
+    tree: {
+      id: "support-org-root",
+      name: "保障组织",
+      children: [
+        { id: "carrier-deck", name: "航母飞行甲板", children: [] }
+      ]
+    }
+  };
+  projectJson.supportResources = [
+    { id: "personnel-avionics", supportNodeName: "航母飞行甲板", type: "personnel", name: "航电保障组", model: "航电", quantity: 4 },
+    { id: "equipment-detector", supportNodeName: "航母飞行甲板", type: "equipment", name: "检测仪", model: "DT-01", quantity: 2 },
+    { id: "spare-avionics", supportNodeName: "航母飞行甲板", type: "spare", name: "航电模块", model: "LRU", quantity: 5 }
+  ];
   projectJson.supportActivities[0].jobs[0] = {
     activityCode: "BA-001",
     workName: "导入工作项目",
@@ -1452,42 +1451,120 @@ test("basic support activity resource dialog uses modeling dictionaries and impo
       "[data-basic-activity-resource-dialog-open]",
       { basicActivityKey: "0:0", basicActivityResourceDialogOpen: "personnel" }
     );
-    assert.match(runtime.appNode.innerHTML, /<option value="航电"/);
-    assert.match(runtime.appNode.innerHTML, /<option value="液压"/);
+    assert.match(runtime.appNode.innerHTML, /<option value="personnel-avionics"[^>]*>航电保障组 \/ 航电 \/ 航母飞行甲板<\/option>/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /<option value="液压"/);
 
     await runtime.click("[data-basic-activity-resource-dialog-close]");
     await runtime.click(
       "[data-basic-activity-resource-dialog-open]",
       { basicActivityKey: "0:0", basicActivityResourceDialogOpen: "equipment" }
     );
-    await runtime.change(
-      "[data-basic-activity-resource-dialog-field]",
-      {
-        basicActivityKey: "0:0",
-        basicActivityResourceKind: "equipment",
-        basicActivityResourceIndex: "0",
-        basicActivityResourceDialogField: "model"
-      },
-      { value: "DT-01" }
-    );
-    assert.match(runtime.appNode.innerHTML, /data-basic-activity-resource-dialog-field="name" value="检测仪"/);
+    assert.match(runtime.appNode.innerHTML, /<option value="equipment-detector"[^>]*selected[^>]*>检测仪 \/ DT-01 \/ 航母飞行甲板<\/option>/);
 
     await runtime.click("[data-basic-activity-resource-dialog-close]");
     await runtime.click(
       "[data-basic-activity-resource-dialog-open]",
       { basicActivityKey: "0:0", basicActivityResourceDialogOpen: "spare" }
     );
-    await runtime.change(
-      "[data-basic-activity-resource-dialog-field]",
-      {
-        basicActivityKey: "0:0",
-        basicActivityResourceKind: "spare",
-        basicActivityResourceIndex: "0",
-        basicActivityResourceDialogField: "model"
+    assert.match(runtime.appNode.innerHTML, /<option value="spare-avionics"[^>]*selected[^>]*>航电模块 \/ LRU \/ 航母飞行甲板<\/option>/);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("basic support activity resource dialog selects requirements from support organization resources", async () => {
+  const projectId = "activity-resource-select-runtime";
+  const runtime = await setupRuntimeApp({
+    projectJson: createRuntimeProjectJson({
+      project_id: projectId,
+      supportOrganization: {
+        tree: {
+          id: "support-org-root",
+          name: "保障组织",
+          children: [
+            { id: "carrier-deck", name: "航母飞行甲板", children: [] }
+          ]
+        }
       },
-      { value: "LRU" }
+      supportResources: [
+        { id: "resource-personnel-avionics", supportNodeName: "航母飞行甲板", type: "personnel", name: "航电保障组", model: "航电", quantity: 4 },
+        { id: "resource-equipment-detector", supportNodeName: "航母飞行甲板", type: "equipment", name: "检测仪", model: "DT-01", quantity: 2 },
+        { id: "resource-spare-module", supportNodeName: "航母飞行甲板", type: "spare", name: "航电模块", model: "LRU-A", quantity: 5 }
+      ],
+      supportActivities: [{
+        id: "ops-runtime-1",
+        activityType: "使用保障",
+        planType: "直接准备方案",
+        planGroupId: "ops-runtime",
+        activityName: "J-15直接准备方案",
+        aircraftModel: "J-15",
+        durationHours: 1,
+        jobs: [{
+          activityCode: "BA-001",
+          workName: "初始工作项目",
+          predecessors: [],
+          durationMinutes: 20,
+          personnel: [],
+          equipment: [],
+          spare: []
+        }]
+      }]
+    }),
+    backendProjects: [{
+      project_id: projectId,
+      experiment_name: "保障活动资源下拉项目",
+      base_code: "RT",
+      summary: "runtime test",
+      source_import_id: "runtime-import-template",
+      updated_at: "2026-06-26 00:00:00"
+    }]
+  });
+
+  try {
+    await runtime.click("[data-enter-workbench]", { projectId });
+    await runtime.setHash("feature=spare-planning-basic-support-activity");
+    await runtime.click("[data-basic-activity-edit]", { basicActivityEdit: "0:0" });
+
+    await runtime.click(
+      "[data-basic-activity-resource-dialog-open]",
+      { basicActivityKey: "0:0", basicActivityResourceDialogOpen: "personnel" }
     );
-    assert.match(runtime.appNode.innerHTML, /data-basic-activity-resource-dialog-field="name" value="航电模块"/);
+    await runtime.click(
+      "[data-basic-activity-resource-dialog-add]",
+      { basicActivityKey: "0:0", basicActivityResourceDialogAdd: "personnel" }
+    );
+    assert.match(runtime.appNode.innerHTML, /data-basic-activity-resource-dialog-field="resourceKey"/);
+    assert.match(runtime.appNode.innerHTML, /<option value="resource-personnel-avionics"[^>]*selected[^>]*>航电保障组 \/ 航电 \/ 航母飞行甲板<\/option>/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-basic-activity-resource-dialog-field="professional"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /basic-activity-personnel-models|basic-activity-personnel-names/);
+
+    await runtime.click("[data-basic-activity-resource-dialog-close]");
+    await runtime.click(
+      "[data-basic-activity-resource-dialog-open]",
+      { basicActivityKey: "0:0", basicActivityResourceDialogOpen: "equipment" }
+    );
+    await runtime.click(
+      "[data-basic-activity-resource-dialog-add]",
+      { basicActivityKey: "0:0", basicActivityResourceDialogAdd: "equipment" }
+    );
+    assert.match(runtime.appNode.innerHTML, /<option value="resource-equipment-detector"[^>]*selected[^>]*>检测仪 \/ DT-01 \/ 航母飞行甲板<\/option>/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-basic-activity-resource-dialog-field="model"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-basic-activity-resource-dialog-field="name"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /basic-activity-equipment-models|basic-activity-equipment-names/);
+
+    await runtime.click("[data-basic-activity-resource-dialog-close]");
+    await runtime.click(
+      "[data-basic-activity-resource-dialog-open]",
+      { basicActivityKey: "0:0", basicActivityResourceDialogOpen: "spare" }
+    );
+    await runtime.click(
+      "[data-basic-activity-resource-dialog-add]",
+      { basicActivityKey: "0:0", basicActivityResourceDialogAdd: "spare" }
+    );
+    assert.match(runtime.appNode.innerHTML, /<option value="resource-spare-module"[^>]*selected[^>]*>航电模块 \/ LRU-A \/ 航母飞行甲板<\/option>/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-basic-activity-resource-dialog-field="model"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-basic-activity-resource-dialog-field="name"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /basic-activity-spare-models|basic-activity-spare-names/);
   } finally {
     runtime.restore();
   }

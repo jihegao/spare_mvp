@@ -1098,9 +1098,12 @@ test("support activity pages align to page suggestion activity fields", async ()
   assert.match(basicActivityLibrarySource, /data-basic-activity-resource-dialog-add/);
   assert.match(basicActivityLibrarySource, /data-basic-activity-resource-dialog-field/);
   assert.match(basicActivityLibrarySource, /updateBasicActivityResourceDialogField/);
-  assert.match(basicActivityLibrarySource, /basicActivityResourceDialogTextInput/);
-  assert.match(basicActivityLibrarySource, /\`\$\{resourceKind\}-models\`/);
-  assert.match(basicActivityLibrarySource, /\`\$\{resourceKind\}-names\`/);
+  assert.match(basicActivityLibrarySource, /basicActivityResourceDialogResourceSelect/);
+  assert.match(basicActivityLibrarySource, /basicActivitySupportResourceSelectOptions/);
+  assert.match(basicActivityLibrarySource, /"resourceKey"/);
+  assert.doesNotMatch(basicActivityLibrarySource, /basicActivityResourceDialogTextInput/);
+  assert.doesNotMatch(basicActivityLibrarySource, /\`\$\{resourceKind\}-models\`/);
+  assert.doesNotMatch(basicActivityLibrarySource, /\`\$\{resourceKind\}-names\`/);
   assert.match(basicActivityLibrarySource, /buildSupportResourceRows\(resourceType, root\)/);
   assert.match(basicActivityLibrarySource, /job\.personnel =/);
   assert.doesNotMatch(basicActivityLibrarySource, /job\.personnelRequirements =/);
@@ -2011,10 +2014,12 @@ test("support activity controls are wired through local draft fields", async () 
   assert.match(basicActivitySource, /updateBasicActivityResourceDialogField/);
   assert.match(basicActivitySource, /syncBasicActivityResourceSummaries/);
   assert.match(basicActivitySource, /basicActivitySupportResourceRows/);
+  assert.match(basicActivitySource, /basicActivityModeledSupportResourceRows/);
   assert.match(basicActivitySource, /data-basic-activity-dialog-close/);
   assert.match(basicActivitySource, /basicActivityScopeSelect/);
-  assert.match(basicActivitySource, /basicActivityPersonnelProfessionalOptions/);
-  assert.match(basicActivitySource, /basicActivityResourceDialogTextInput/);
+  assert.match(basicActivitySource, /basicActivityResourceDialogResourceSelect/);
+  assert.doesNotMatch(basicActivitySource, /basicActivityPersonnelProfessionalOptions/);
+  assert.doesNotMatch(basicActivitySource, /basicActivityResourceDialogTextInput/);
   assert.doesNotMatch(basicActivitySource, /弹药|ammunition/);
 
   const jobTableSource = appSource.slice(

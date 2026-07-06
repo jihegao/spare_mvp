@@ -7290,7 +7290,7 @@ function renderBasicActivityResourceConfigDialog(row, resourceKind) {
           <table class="basic-activity-resource-config-table">
             <thead>${renderBasicActivityResourceDialogHeader(kind)}</thead>
             <tbody>
-              ${requirements.map((item, index) => renderBasicActivityResourceDialogRow(row, kind, item, index)).join("") || `<tr><td colspan="${kind === "personnel" ? 3 : 4}">暂无配置</td></tr>`}
+              ${requirements.map((item, index) => renderBasicActivityResourceDialogRow(row, kind, item, index)).join("") || `<tr><td colspan="3">暂无配置</td></tr>`}
             </tbody>
           </table>
         </div>
@@ -7303,33 +7303,34 @@ function renderBasicActivityResourceConfigDialog(row, resourceKind) {
 }
 
 function renderBasicActivityResourceDialogHeader(resourceKind) {
-  if (resourceKind === "personnel") return "<tr><th>专业</th><th>数量</th><th>删除</th></tr>";
-  return "<tr><th>型号</th><th>名称</th><th>数量</th><th>删除</th></tr>";
+  return `<tr><th>${htmlEscape(basicActivityResourceKindLabel(resourceKind))}</th><th>数量</th><th>删除</th></tr>`;
 }
 
 function renderBasicActivityResourceDialogRow(row, resourceKind, item, index) {
   const commonAttrs = `data-basic-activity-key="${htmlEscape(row.key)}" data-basic-activity-resource-kind="${htmlEscape(resourceKind)}" data-basic-activity-resource-index="${htmlEscape(index)}"`;
   const quantityCell = `<td><input type="number" min="0" step="1" ${commonAttrs} data-basic-activity-resource-dialog-field="quantity" value="${htmlEscape(item.quantity ?? 1)}"></td>`;
   const deleteCell = `<td><button type="button" class="inline-action" ${commonAttrs} data-basic-activity-resource-dialog-delete>删除</button></td>`;
-  if (resourceKind === "personnel") {
-    return `
-      <tr>
-        <td>${basicActivityResourceDialogSelect(row, resourceKind, index, "professional", basicActivityPersonnelProfessionalOptions(item.professional || item.model), item.professional || item.model || "", "专业")}</td>
-        ${quantityCell}
-        ${deleteCell}
-      </tr>
-    `;
-  }
-  const sourceType = resourceKind === "equipment" ? "保障设备" : "备件";
-  const rows = basicActivitySupportResourceRows(sourceType);
   return `
     <tr>
-      <td>${basicActivityResourceDialogTextInput(row, resourceKind, index, "model", item.model || "", `${resourceKind}-models`, rows.map((source) => source.model).filter(Boolean), `搜索${basicActivityResourceKindLabel(resourceKind)}型号`)}</td>
-      <td>${basicActivityResourceDialogTextInput(row, resourceKind, index, "name", item.name || "", `${resourceKind}-names`, rows.map((source) => source.name || source.model).filter(Boolean), `搜索${basicActivityResourceKindLabel(resourceKind)}名称`)}</td>
+      <td>${basicActivityResourceDialogResourceSelect(row, resourceKind, index, item)}</td>
       ${quantityCell}
       ${deleteCell}
     </tr>
   `;
+}
+
+function basicActivityResourceDialogResourceSelect(row, resourceKind, index, item) {
+  const label = basicActivityResourceKindLabel(resourceKind);
+  const rows = basicActivityModeledSupportResourceRows(label);
+  return basicActivityResourceDialogSelect(
+    row,
+    resourceKind,
+    index,
+    "resourceKey",
+    basicActivitySupportResourceSelectOptions(label, rows),
+    basicActivitySelectedSupportResourceKey(resourceKind, item, rows),
+    label
+  );
 }
 
 function basicActivityResourceDialogSelect(row, resourceKind, index, fieldName, options, selectedValue, label) {
@@ -7340,15 +7341,48 @@ function basicActivityResourceDialogSelect(row, resourceKind, index, fieldName, 
   `;
 }
 
-function basicActivityResourceDialogTextInput(row, resourceKind, index, fieldName, value, listSuffix, values, placeholder) {
-  const listId = `basic-activity-${listSuffix}`;
-  const options = uniqueSelectOptions(values.map((item) => ({ value: item, label: item })));
-  return `
-    <input list="${htmlEscape(listId)}" ${basicActivityResourceDialogFieldAttrs(row, resourceKind, index, fieldName)} value="${htmlEscape(value)}" placeholder="${htmlEscape(placeholder)}">
-    <datalist id="${htmlEscape(listId)}">
-      ${options.map((item) => `<option value="${htmlEscape(item.value)}"></option>`).join("")}
-    </datalist>
-  `;
+function basicActivitySupportResourceSelectOptions(label, rows) {
+  return uniqueSelectOptions([
+    { value: "", label: rows.length ? `请选择${label}` : `请先在保障组织配置${label}` },
+    ...rows.map((row) => ({
+      value: String(row.key || ""),
+      label: basicActivitySupportResourceOptionLabel(row, label)
+    }))
+  ]);
+}
+
+function basicActivitySupportResourceOptionLabel(row, fallbackLabel) {
+  return [
+    row.name || row.model || fallbackLabel,
+    row.model && row.model !== row.name ? row.model : "",
+    row.scope || ""
+  ].filter(Boolean).join(" / ");
+}
+
+function basicActivitySelectedSupportResourceKey(resourceKind, item, rows) {
+  if (!item) return "";
+  const explicitKey = String(item.key || item.resourceKey || "").trim();
+  if (explicitKey && rows.some((row) => String(row.key || "") === explicitKey)) return explicitKey;
+  if (resourceKind === "personnel") {
+    const professional = normalizePersonnelSpecialtyName(item.professional || item.model || item.name);
+    if (!professional) return "";
+    return rows.find((row) => (
+      normalizePersonnelSpecialtyName(row.model) === professional
+      || normalizePersonnelSpecialtyName(row.name) === professional
+    ))?.key || "";
+  }
+  const name = String(item.name || "").trim();
+  const model = String(item.model || "").trim();
+  const exactMatch = rows.find((row) => (
+    name && model
+    && String(row.name || "").trim() === name
+    && String(row.model || "").trim() === model
+  ));
+  if (exactMatch) return exactMatch.key;
+  return rows.find((row) => (
+    (name && String(row.name || "").trim() === name)
+    || (model && String(row.model || "").trim() === model)
+  ))?.key || "";
 }
 
 function basicActivityResourceDialogFieldAttrs(row, resourceKind, index, fieldName) {
@@ -7359,33 +7393,23 @@ function basicActivityResourceKindLabel(resourceKind) {
   return resourceKind === "personnel" ? "保障人员" : resourceKind === "equipment" ? "保障设备" : "备件";
 }
 
-function basicActivityPersonnelProfessionalOptions(currentValue = "") {
-  const dictionaryOptions = configuredPersonnelSpecialties()
-    .map((item) => ({ value: item, label: item }));
-  const rowOptions = basicActivitySupportResourceRows("保障人员")
-    .map((item) => ({ value: normalizePersonnelSpecialtyName(item.model), label: normalizePersonnelSpecialtyName(item.model) }))
-    .filter((item) => item.value);
-  return uniqueSelectOptions([
-    { value: "", label: "请选择专业" },
-    ...dictionaryOptions,
-    ...rowOptions,
-    ...(currentValue ? [{ value: currentValue, label: currentValue }] : [])
-  ]);
-}
-
 function normalizePersonnelSpecialtyName(value) {
   const text = String(value || "").trim();
   return text && !["人员容量", "新增保障人员"].includes(text) ? text : "";
 }
 
 function basicActivitySupportResourceRows(resourceType) {
-  const root = supportOrganizationTree()[0] || null;
-  const modeledRows = buildSupportResourceRows(resourceType, root)
-    .filter((row) => !supportResourceDeletedKeySet().has(row.key));
+  const modeledRows = basicActivityModeledSupportResourceRows(resourceType);
   return uniqueBasicActivitySupportResourceRows([
     ...modeledRows,
     ...basicActivityLegacyResourceRows(resourceType)
   ]);
+}
+
+function basicActivityModeledSupportResourceRows(resourceType) {
+  const root = supportOrganizationTree()[0] || null;
+  return buildSupportResourceRows(resourceType, root)
+    .filter((row) => !supportResourceDeletedKeySet().has(row.key));
 }
 
 function uniqueBasicActivitySupportResourceRows(rows) {
@@ -7930,25 +7954,24 @@ function updateBasicActivityResourceDialogField(key, resourceKind, index, fieldN
   const requirements = normalizeBasicActivityResourceRequirements(job, resourceKind);
   const current = requirements[index];
   if (!current) return;
-  const nextValue = fieldName === "quantity" ? Math.max(0, Number(value || 0)) : String(value || "");
-  requirements[index] = normalizeBasicActivityResourceDialogRequirement(resourceKind, {
-    ...current,
-    [fieldName]: nextValue,
-    ...(resourceKind === "equipment" && fieldName === "model" ? basicActivityResourceAutofillByModel("保障设备", nextValue) : {}),
-    ...(resourceKind === "spare" && fieldName === "model" ? basicActivityResourceAutofillByModel("备件", nextValue) : {})
-  }, index);
+  if (fieldName === "resourceKey") {
+    requirements[index] = createBasicActivityResourceRequirementFromKey(
+      resourceKind,
+      String(value || ""),
+      Math.max(0, Number(current.quantity ?? 1)),
+      index
+    );
+  } else {
+    const nextValue = fieldName === "quantity" ? Math.max(0, Number(value || 0)) : String(value || "");
+    requirements[index] = normalizeBasicActivityResourceDialogRequirement(resourceKind, {
+      ...current,
+      [fieldName]: nextValue
+    }, index);
+  }
   setBasicActivityResourceRequirements(job, resourceKind, requirements);
   syncBasicActivityResourceSummaries(job);
   setBasicActivityTargetJob(target, job);
   updatePreviewResultsThroughApiClient();
-}
-
-function basicActivityResourceAutofillByModel(resourceType, model) {
-  const normalizedModel = String(model || "").trim();
-  if (!normalizedModel) return {};
-  const source = basicActivitySupportResourceRows(resourceType)
-    .find((row) => String(row.model || "").trim() === normalizedModel);
-  return source ? { name: source.name || source.model || "" } : {};
 }
 
 function addBasicActivityResourceRequirement(key, resourceKind) {
@@ -7980,21 +8003,29 @@ function deleteBasicActivityResourceRequirement(key, resourceKind, index) {
 }
 
 function createBasicActivityResourceRequirement(resourceKind, index) {
+  const resourceType = basicActivityResourceKindLabel(resourceKind);
+  const source = basicActivityModeledSupportResourceRows(resourceType)[0] || null;
+  return createBasicActivityResourceRequirementFromRow(resourceKind, source, 1, index);
+}
+
+function createBasicActivityResourceRequirementFromKey(resourceKind, resourceKey, quantity = 1, index = 0) {
+  const resourceType = basicActivityResourceKindLabel(resourceKind);
+  const source = basicActivityModeledSupportResourceRows(resourceType)
+    .find((row) => String(row.key || "") === String(resourceKey || ""));
+  return createBasicActivityResourceRequirementFromRow(resourceKind, source || null, quantity, index);
+}
+
+function createBasicActivityResourceRequirementFromRow(resourceKind, source, quantity = 1, index = 0) {
   if (resourceKind === "personnel") {
-    const professional = basicActivityPersonnelProfessionalOptions()[1]?.value || "";
     return normalizeBasicActivityResourceDialogRequirement(resourceKind, {
-      professional,
-      quantity: 1
+      professional: normalizePersonnelSpecialtyName(source?.model || source?.name || ""),
+      quantity
     }, index);
   }
-  const sourceType = resourceKind === "equipment" ? "保障设备" : "备件";
-  const source = basicActivitySupportResourceRows(sourceType)[0] || {};
   return normalizeBasicActivityResourceDialogRequirement(resourceKind, {
-    key: `${resourceKind}:manual:${Date.now()}:${index}`,
-    name: source.name || source.model || "",
-    model: source.model || "",
-    scope: source.scope || "",
-    quantity: 1
+    name: source?.name || source?.model || "",
+    model: source?.model || source?.name || "",
+    quantity
   }, index);
 }
 
