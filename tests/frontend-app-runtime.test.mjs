@@ -2310,8 +2310,25 @@ async function setupRuntimeApp({
   const previousLocation = globalThis.location;
   const previousLocalStorage = globalThis.localStorage;
   const previousFetch = globalThis.fetch;
+  const previousSetTimeout = globalThis.setTimeout;
+  const previousClearTimeout = globalThis.clearTimeout;
   const previousCreateObjectURL = globalThis.URL?.createObjectURL;
   const previousRevokeObjectURL = globalThis.URL?.revokeObjectURL;
+  const runtimeTimeouts = new Set();
+
+  globalThis.setTimeout = (callback, delay, ...args) => {
+    let timeoutId;
+    timeoutId = previousSetTimeout((...callbackArgs) => {
+      runtimeTimeouts.delete(timeoutId);
+      callback(...callbackArgs);
+    }, delay, ...args);
+    runtimeTimeouts.add(timeoutId);
+    return timeoutId;
+  };
+  globalThis.clearTimeout = (timeoutId) => {
+    runtimeTimeouts.delete(timeoutId);
+    return previousClearTimeout(timeoutId);
+  };
 
   globalThis.location = { hash };
   globalThis.window = {
@@ -2652,6 +2669,12 @@ async function setupRuntimeApp({
       await flushRuntimeTasks();
     },
     restore() {
+      for (const timeoutId of runtimeTimeouts) {
+        previousClearTimeout(timeoutId);
+      }
+      runtimeTimeouts.clear();
+      globalThis.setTimeout = previousSetTimeout;
+      globalThis.clearTimeout = previousClearTimeout;
       if (globalThis.URL) {
         if (previousCreateObjectURL === undefined) delete globalThis.URL.createObjectURL;
         else globalThis.URL.createObjectURL = previousCreateObjectURL;
