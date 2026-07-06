@@ -6009,8 +6009,8 @@ function supportResourceDataColumns(activeResourceType) {
     ];
   }
   return [
-    { label: "名称", field: "name", type: "text", lockIdentity: true },
-    { label: "型号", field: "model", type: "text", lockIdentity: true },
+    { label: "名称", field: "name", type: "text" },
+    { label: "型号", field: "model", type: "text" },
     { label: "数量", field: "quantity", type: "number" }
   ];
 }

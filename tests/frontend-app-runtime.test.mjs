@@ -262,6 +262,58 @@ test("support resource add creates a new editable row for the selected leaf orga
   }
 });
 
+test("support equipment resource name and model stay editable on the equipment page", async () => {
+  const runtime = await setupRuntimeApp({
+    projectJson: createRuntimeProjectJson({
+      supportOrganization: {
+        tree: {
+          id: "support-org-root",
+          name: "保障组织",
+          children: [
+            { id: "base-1", name: "基层1", children: [] }
+          ]
+        }
+      },
+      supportNodes: [{
+        id: "support-node-base-1",
+        name: "基层1"
+      }],
+      supportResources: [{
+        id: "support-resource-base-1-equipment",
+        supportNodeName: "基层1",
+        type: "equipment",
+        name: "旧检测仪",
+        model: "OLD-01",
+        quantity: 1
+      }]
+    })
+  });
+  try {
+    await runtime.click("[data-enter-workbench]", { projectId: "project-runtime" });
+    await runtime.setHash("feature=spare-planning-support-equipment");
+    await runtime.click("[data-select-support-org-node]", { selectSupportOrgNode: "base-1" });
+
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-support-resource-field="name"[^>]*disabled/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-support-resource-field="model"[^>]*disabled/);
+
+    await runtime.change(
+      "[data-support-resource-field]",
+      { supportResourceKey: "support-resource-base-1-equipment", supportResourceField: "name" },
+      { value: "新检测仪" }
+    );
+    await runtime.change(
+      "[data-support-resource-field]",
+      { supportResourceKey: "support-resource-base-1-equipment", supportResourceField: "model" },
+      { value: "NEW-02" }
+    );
+
+    assert.match(runtime.appNode.innerHTML, /value="新检测仪"/);
+    assert.match(runtime.appNode.innerHTML, /value="NEW-02"/);
+  } finally {
+    runtime.restore();
+  }
+});
+
 test("support organization airport selector syncs from combat unit aircraft airports", async () => {
   const runtime = await setupRuntimeApp({
     projectJson: createRuntimeProjectJson({
