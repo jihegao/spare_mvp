@@ -5848,6 +5848,9 @@ function buildSupportResourceRows(activeResourceType, selectedOrgNode) {
   const orgTree = supportOrganizationTree();
   const leafNodes = flattenSupportOrgTreeNodes(selectedOrgNode ? [selectedOrgNode] : orgTree).filter((node) => !(node.children || []).length);
   const orgNodes = (selectedOrgNode?.children || []).length ? leafNodes : [selectedOrgNode].filter(Boolean);
+  if (activeResourceType === "备件") {
+    syncSupportSpareResourcesFromHardwareTree(orgNodes);
+  }
   const supportResources = Array.isArray(scenario.supportResources) ? scenario.supportResources : [];
   if (!supportResources.length && Array.isArray(scenario.supportNodes)) {
     return supportResourceRowsFromSupportNodes(scenario.supportNodes, activeResourceType);
@@ -5900,13 +5903,81 @@ function supportResourceTypeValue(label) {
 }
 
 function lruSpareRows() {
+  const seen = new Set();
   return (scenario.components || [])
-    .filter((component) => component.productType === "LRU" || component.spareType === "LRU")
-    .map((component) => ({
-      name: component.name || component.id || "未命名LRU",
-      model: component.model || component.partNo || component.id || component.name || "LRU",
-      aircraft: component.aircraftModel || ""
-    }));
+    .filter((component) => component && typeof component === "object" && !Array.isArray(component))
+    .filter((component) => component.productType === "LRU" || component.spareType === "LRU"
+      || String(component.productType || "").trim().toUpperCase() === "LRU"
+      || String(component.spareType || "").trim().toUpperCase() === "LRU")
+    .map((component, index) => ({
+      name: String(component.name || component.id || `未命名LRU${index + 1}`).trim(),
+      model: String(component.model || component.partNo || component.id || component.name || "LRU").trim(),
+      aircraft: String(component.aircraftModel || component.equipment || component.equipmentType || "").trim()
+    }))
+    .filter((spare) => {
+      const key = supportSpareResourceIdentityKey("", spare.name, spare.model, spare.aircraft);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+function syncSupportSpareResourcesFromHardwareTree(orgNodes) {
+  if (!Array.isArray(scenario.supportResources)) scenario.supportResources = [];
+  const hardwareSpares = lruSpareRows();
+  const targetOrgNodes = (Array.isArray(orgNodes) ? orgNodes : []).filter(Boolean);
+  if (!hardwareSpares.length || !targetOrgNodes.length) return;
+
+  const targetOrgNames = new Set(targetOrgNodes.map((node) => String(node.name || node.id || "").trim()).filter(Boolean));
+  const targetOrgIds = new Set(targetOrgNodes.map((node) => String(node.id || "").trim()).filter(Boolean));
+  const existingSpareByKey = new Map();
+  for (const resource of scenario.supportResources) {
+    if (!isSpareSupportResource(resource)) continue;
+    const key = supportSpareResourceIdentityKey(
+      resource.supportNodeName,
+      resource.name,
+      resource.model,
+      resource.equipment || resource.equipmentId
+    );
+    if (!existingSpareByKey.has(key)) existingSpareByKey.set(key, resource);
+  }
+
+  const nextTargetSpares = targetOrgNodes.flatMap((orgNode, orgIndex) => {
+    const nodeName = String(orgNode.name || orgNode.id || "保障节点").trim();
+    return hardwareSpares.map((spare, spareIndex) => {
+      const key = supportSpareResourceIdentityKey(nodeName, spare.name, spare.model, spare.aircraft);
+      const existing = existingSpareByKey.get(key);
+      return {
+        id: String(existing?.id || `support-resource-${orgIndex + 1}-spare-${spareIndex + 1}`),
+        supportNodeName: nodeName,
+        type: "spare",
+        name: spare.name,
+        model: spare.model,
+        equipment: spare.aircraft || "",
+        quantity: Math.max(0, Number(existing?.quantity ?? 0) || 0)
+      };
+    });
+  });
+
+  scenario.supportResources = [
+    ...scenario.supportResources.filter((resource) => {
+      if (!isSpareSupportResource(resource)) return true;
+      const nodeName = String(resource.supportNodeName || "").trim();
+      const nodeId = String(resource.organizationNodeId || "").trim();
+      return !targetOrgNames.has(nodeName) && !targetOrgIds.has(nodeId);
+    }),
+    ...nextTargetSpares
+  ];
+}
+
+function isSpareSupportResource(resource) {
+  const type = String(resource?.type || "").trim().toLowerCase();
+  return resource && typeof resource === "object" && !Array.isArray(resource)
+    && (type === "spare" || type === "备件");
+}
+
+function supportSpareResourceIdentityKey(nodeName, name, model, equipment) {
+  return [nodeName, name, model, equipment].map((value) => String(value || "").trim()).join("\u0001");
 }
 
 function selectedSupportOrgTreeNode() {

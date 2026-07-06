@@ -818,6 +818,51 @@ test("buildBackendProjectJson persists visible personnel specialties for legacy 
   assert.ok(projectJson.supportResources.every((resource) => resource.type !== "personnel" || resource.model));
 });
 
+test("buildBackendProjectJson derives spare resources from equipment hardware tree", () => {
+  const scenario = {
+    scenarioId: "support-spares-from-hardware-tree",
+    supportOrganization: {
+      tree: {
+        id: "support-org-root",
+        name: "保障组织",
+        children: [
+          { id: "line-team", name: "基层", children: [] }
+        ]
+      }
+    },
+    supportNodes: [
+      { id: "line-team", name: "基层" }
+    ],
+    components: [
+      { id: "engine-control", name: "发动机控制模块", model: "ECU-1", aircraftModel: "J-15", parentId: "engine", productType: "LRU", spareType: "发动机备件" },
+      { id: "radar-lru", name: "雷达 LRU", model: "RAD-1", aircraftModel: "J-15", parentId: "avionics", productType: "LRU", spareType: "航电模块" },
+      { id: "hydraulic-sru", name: "液压执行器", model: "HYD-SRU", aircraftModel: "J-15", parentId: "hydraulic", productType: "SRU" }
+    ],
+    supportResources: [
+      { id: "personnel-1", supportNodeName: "基层", type: "personnel", name: "基层人员", model: "机械", quantity: 3 },
+      { id: "old-engine-spare", supportNodeName: "基层", type: "spare", name: "发动机备件", model: "发动机备件", quantity: 4 },
+      { id: "old-hydraulic-spare", supportNodeName: "基层", type: "spare", name: "液压备件", model: "液压备件", quantity: 6 },
+      { id: "radar-stock", supportNodeName: "基层", type: "spare", name: "雷达 LRU", model: "RAD-1", equipment: "J-15", quantity: 5 }
+    ]
+  };
+
+  const projectJson = buildBackendProjectJson(scenario, { id: "support-spares-from-hardware-tree" });
+
+  const spares = projectJson.supportResources
+    .filter((resource) => resource.type === "spare")
+    .map((resource) => ({
+      name: resource.name,
+      model: resource.model,
+      equipment: resource.equipment,
+      quantity: resource.quantity
+    }));
+  assert.deepEqual(spares, [
+    { name: "发动机控制模块", model: "ECU-1", equipment: "J-15", quantity: 0 },
+    { name: "雷达 LRU", model: "RAD-1", equipment: "J-15", quantity: 5 }
+  ]);
+  assert.equal(projectJson.supportResources.some((resource) => ["发动机备件", "液压备件", "航电模块"].includes(resource.name)), false);
+});
+
 test("buildBackendProjectJson preserves aircraft type catalog and strips redundant equipment runtime fields", () => {
   const scenario = {
     scenarioId: "combat-unit-is-source",

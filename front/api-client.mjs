@@ -381,10 +381,11 @@ function normalizeSupportModelTables(projectJson) {
   const organization = normalizeSupportOrganization(projectJson.supportOrganization, legacyNameByRef);
   const nameByRef = new Map([...legacyNameByRef, ...organization.nameByRef]);
   normalizeSupportResourceNodeRefs(projectJson, nameByRef);
-  normalizeSupportResourcePersonnelModels(projectJson);
   const supportNodeNames = organization.supportNodeNames.length
     ? organization.supportNodeNames
     : supportNodeNamesFromSupportNodes(projectJson.supportNodes);
+  normalizeSupportResourcePersonnelModels(projectJson);
+  normalizeSupportResourceSpareRows(projectJson, supportNodeNames);
   projectJson.supportNodes = supportNodeNames.map((name, index) => ({
     id: `support-node-${index + 1}`,
     name
@@ -496,6 +497,73 @@ function projectPersonnelSpecialties(projectJson) {
 function isPersonnelSupportResource(resource) {
   return resource && typeof resource === "object" && !Array.isArray(resource)
     && cleanText(resource.type).toLowerCase() === "personnel";
+}
+
+function normalizeSupportResourceSpareRows(projectJson, supportNodeNames) {
+  if (!Array.isArray(projectJson.supportResources)) return;
+  const hardwareSpares = projectHardwareSpareRows(projectJson);
+  if (!hardwareSpares.length || !Array.isArray(supportNodeNames) || !supportNodeNames.length) return;
+  const existingSpareByKey = new Map();
+  for (const resource of projectJson.supportResources) {
+    if (!isSpareSupportResource(resource)) continue;
+    const key = supportSpareResourceIdentityKey(
+      resource.supportNodeName,
+      resource.name,
+      resource.model,
+      resource.equipment || resource.equipmentId
+    );
+    if (!existingSpareByKey.has(key)) existingSpareByKey.set(key, resource);
+  }
+  const nonSpareResources = projectJson.supportResources.filter((resource) => !isSpareSupportResource(resource));
+  const nextSpareResources = supportNodeNames.flatMap((nodeName, nodeIndex) => {
+    return hardwareSpares.map((spare, spareIndex) => {
+      const key = supportSpareResourceIdentityKey(nodeName, spare.name, spare.model, spare.equipment);
+      const existing = existingSpareByKey.get(key);
+      return {
+        id: cleanText(existing?.id) || `support-resource-${nodeIndex + 1}-spare-${spareIndex + 1}`,
+        supportNodeName: nodeName,
+        type: "spare",
+        name: spare.name,
+        model: spare.model,
+        equipment: spare.equipment,
+        quantity: nonNegativeInteger(existing?.quantity ?? 0)
+      };
+    });
+  });
+  projectJson.supportResources = [...nonSpareResources, ...nextSpareResources];
+}
+
+function projectHardwareSpareRows(projectJson) {
+  const components = Array.isArray(projectJson?.components) ? projectJson.components : [];
+  const seen = new Set();
+  return components
+    .filter((component) => component && typeof component === "object" && !Array.isArray(component))
+    .filter((component) => {
+      const productType = cleanText(component.productType).toUpperCase();
+      const spareType = cleanText(component.spareType).toUpperCase();
+      return productType === "LRU" || spareType === "LRU";
+    })
+    .map((component, index) => ({
+      name: cleanText(component.name || component.id) || `未命名LRU${index + 1}`,
+      model: cleanText(component.model || component.partNo || component.id || component.name) || "LRU",
+      equipment: cleanText(component.aircraftModel || component.equipment || component.equipmentType)
+    }))
+    .filter((spare) => {
+      const key = supportSpareResourceIdentityKey("", spare.name, spare.model, spare.equipment);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+function isSpareSupportResource(resource) {
+  const type = cleanText(resource?.type);
+  return resource && typeof resource === "object" && !Array.isArray(resource)
+    && (type.toLowerCase() === "spare" || type === "备件");
+}
+
+function supportSpareResourceIdentityKey(nodeName, name, model, equipment) {
+  return [nodeName, name, model, equipment].map((value) => cleanText(value)).join("\u0001");
 }
 
 function supportNodeNamesFromSupportNodes(supportNodes) {

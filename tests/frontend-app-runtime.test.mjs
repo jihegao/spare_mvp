@@ -331,6 +331,57 @@ test("support equipment resource name and model stay editable on the equipment p
   }
 });
 
+test("support spare resource page derives default rows from equipment hardware tree", async () => {
+  const projectId = "support-spares-from-hardware-runtime";
+  const runtime = await setupRuntimeApp({
+    projectJson: createRuntimeProjectJson({
+      project_id: projectId,
+      supportOrganization: {
+        tree: {
+          id: "support-org-root",
+          name: "保障组织",
+          children: [
+            { id: "base-1", name: "基层1", children: [] }
+          ]
+        }
+      },
+      supportNodes: [{
+        id: "support-node-base-1",
+        name: "基层1"
+      }],
+      components: [
+        { id: "engine-control", name: "发动机控制模块", model: "ECU-1", aircraftModel: "J-15", parentId: "engine", productType: "LRU", spareType: "发动机备件" },
+        { id: "radar-lru", name: "雷达 LRU", model: "RAD-1", aircraftModel: "J-15", parentId: "avionics", productType: "LRU", spareType: "航电模块" },
+        { id: "hydraulic-sru", name: "液压执行器", model: "HYD-SRU", aircraftModel: "J-15", parentId: "hydraulic", productType: "SRU" }
+      ],
+      supportResources: [
+        { id: "old-engine-spare", supportNodeName: "基层1", type: "spare", name: "发动机备件", model: "发动机备件", quantity: 4 },
+        { id: "old-hydraulic-spare", supportNodeName: "基层1", type: "spare", name: "液压备件", model: "液压备件", quantity: 6 },
+        { id: "old-avionics-spare", supportNodeName: "基层1", type: "spare", name: "航电模块", model: "航电模块", quantity: 8 }
+      ]
+    }),
+    backendProjects: [{
+      project_id: projectId,
+      experiment_name: "硬件树备件项目",
+      base_code: "RT",
+      summary: "runtime test",
+      source_import_id: "runtime-import-template",
+      updated_at: "2026-06-26 00:00:00"
+    }]
+  });
+
+  try {
+    await runtime.click("[data-enter-workbench]", { projectId });
+    await runtime.setHash("feature=spare-planning-spare-part");
+
+    assert.match(runtime.appNode.innerHTML, /发动机控制模块/);
+    assert.match(runtime.appNode.innerHTML, /雷达 LRU/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /发动机备件|液压备件|航电模块/);
+  } finally {
+    runtime.restore();
+  }
+});
+
 test("support organization airport selector syncs from combat unit aircraft airports", async () => {
   const runtime = await setupRuntimeApp({
     projectJson: createRuntimeProjectJson({
