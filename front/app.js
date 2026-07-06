@@ -5966,7 +5966,8 @@ function addSupportResource(activeResourceType) {
   const resource = createSupportResourceImportNode(orgNode, activeResourceType, supportResourceRowsForOrg(activeResourceType, orgNode).length);
   if (activeResourceType === "保障人员") {
     resource.quantity = 1;
-    resource.model = "";
+    resource.name = resource.name || `${orgNode.name || "保障节点"}人员`;
+    resource.model = defaultSupportPersonnelSpecialtyForOrg(orgNode);
   } else if (activeResourceType === "保障设备") {
     resource.quantity = 1;
     resource.name = "新增保障设备";
@@ -5979,6 +5980,16 @@ function addSupportResource(activeResourceType) {
   }
   selectedSupportResourceKeys = new Set([resource.id]);
   updatePreviewResultsThroughApiClient();
+}
+
+function defaultSupportPersonnelSpecialtyForOrg(orgNode) {
+  const specialties = configuredPersonnelSpecialties();
+  const used = new Set(
+    supportResourceRowsForOrg("保障人员", orgNode)
+      .map((row) => normalizePersonnelSpecialtyName(row.model))
+      .filter(Boolean)
+  );
+  return specialties.find((item) => !used.has(normalizePersonnelSpecialtyName(item))) || specialties[0] || "";
 }
 
 function supportResourceRowsForOrg(activeResourceType, orgNode) {

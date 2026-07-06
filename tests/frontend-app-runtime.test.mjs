@@ -235,12 +235,15 @@ test("support resource add creates a new editable row for the selected leaf orga
         id: "support-node-base-1",
         name: "基层1"
       }],
+      modelingDictionaries: {
+        personnelSpecialties: ["航电", "机械"]
+      },
       supportResources: [{
         id: "support-resource-base-1-personnel",
         supportNodeName: "基层1",
         type: "personnel",
         name: "基层1人员",
-        model: "航电",
+        model: "机械",
         quantity: 1
       }]
     })
@@ -257,6 +260,20 @@ test("support resource add creates a new editable row for the selected leaf orga
     assert.equal(before, 1);
     assert.equal(after, 2);
     assert.doesNotMatch(runtime.appNode.innerHTML, /新增保障人员/);
+
+    await runtime.click("[data-project-draft-save]");
+    const savedProject = await waitForProjectSave(runtime, (body) => (
+      (body.supportResources || []).some((resource) => (
+        resource.type === "personnel"
+        && resource.supportNodeName === "基层1"
+        && resource.model === "航电"
+      ))
+    ), "expected added support personnel specialty to be persisted");
+    const savedPersonnelModels = savedProject.supportResources
+      .filter((resource) => resource.type === "personnel" && resource.supportNodeName === "基层1")
+      .map((resource) => resource.model);
+    assert.deepEqual(savedPersonnelModels.sort(), ["机械", "航电"].sort());
+    assert.ok(savedPersonnelModels.every(Boolean));
   } finally {
     runtime.restore();
   }
@@ -1415,7 +1432,8 @@ test("basic support activity edit opens a dialog at runtime", async () => {
 });
 
 test("basic support activity resource dialog uses support organization resource rows", async () => {
-  const projectJson = createRuntimeProjectJson();
+  const projectId = "activity-resource-options-runtime";
+  const projectJson = createRuntimeProjectJson({ project_id: projectId });
   projectJson.modelingDictionaries = { personnelSpecialties: ["航电", "液压"] };
   projectJson.supportOrganization = {
     tree: {
@@ -1440,10 +1458,20 @@ test("basic support activity resource dialog uses support organization resource 
     equipment: "检测仪,DT-01,1",
     spare: "航电模块,LRU,1"
   };
-  const runtime = await setupRuntimeApp({ projectJson });
+  const runtime = await setupRuntimeApp({
+    projectJson,
+    backendProjects: [{
+      project_id: projectId,
+      experiment_name: "保障活动资源选项项目",
+      base_code: "RT",
+      summary: "runtime test",
+      source_import_id: "runtime-import-template",
+      updated_at: "2026-06-26 00:00:00"
+    }]
+  });
 
   try {
-    await runtime.click("[data-enter-workbench]", { projectId: "runtime" });
+    await runtime.click("[data-enter-workbench]", { projectId });
     await runtime.setHash("feature=spare-planning-basic-support-activity");
     await runtime.click("[data-basic-activity-edit]", { basicActivityEdit: "0:0" });
 

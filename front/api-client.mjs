@@ -381,6 +381,7 @@ function normalizeSupportModelTables(projectJson) {
   const organization = normalizeSupportOrganization(projectJson.supportOrganization, legacyNameByRef);
   const nameByRef = new Map([...legacyNameByRef, ...organization.nameByRef]);
   normalizeSupportResourceNodeRefs(projectJson, nameByRef);
+  normalizeSupportResourcePersonnelModels(projectJson);
   const supportNodeNames = organization.supportNodeNames.length
     ? organization.supportNodeNames
     : supportNodeNamesFromSupportNodes(projectJson.supportNodes);
@@ -453,6 +454,48 @@ function normalizeSupportResourceNodeRefs(projectJson, nameByRef) {
     delete resource.supportNodeId;
     delete resource.organizationNodeId;
   }
+}
+
+function normalizeSupportResourcePersonnelModels(projectJson) {
+  if (!Array.isArray(projectJson.supportResources)) return;
+  const specialties = projectPersonnelSpecialties(projectJson);
+  if (!specialties.length) return;
+  const usedByNode = new Map();
+  for (const resource of projectJson.supportResources) {
+    if (!isPersonnelSupportResource(resource)) continue;
+    const model = cleanText(resource.model);
+    if (!model) continue;
+    const nodeName = cleanText(resource.supportNodeName);
+    if (!usedByNode.has(nodeName)) usedByNode.set(nodeName, new Set());
+    usedByNode.get(nodeName).add(model);
+  }
+  for (const resource of projectJson.supportResources) {
+    if (!isPersonnelSupportResource(resource) || cleanText(resource.model)) continue;
+    const nodeName = cleanText(resource.supportNodeName);
+    const used = usedByNode.get(nodeName) || new Set();
+    const nextModel = specialties.find((specialty) => !used.has(specialty)) || specialties[0];
+    resource.model = nextModel;
+    if (!usedByNode.has(nodeName)) usedByNode.set(nodeName, used);
+    used.add(nextModel);
+  }
+}
+
+function projectPersonnelSpecialties(projectJson) {
+  const rows = Array.isArray(projectJson?.modelingDictionaries?.personnelSpecialties)
+    ? projectJson.modelingDictionaries.personnelSpecialties
+    : [];
+  const seen = new Set();
+  return rows.map((item) => cleanText(typeof item === "string" ? item : item?.name || item?.value || item?.label))
+    .filter((value) => {
+      if (!value || seen.has(value)) return false;
+      seen.add(value);
+      return true;
+    });
+}
+
+function isPersonnelSupportResource(resource) {
+  return resource && typeof resource === "object" && !Array.isArray(resource)
+    && cleanText(resource.type).toLowerCase() === "personnel";
 }
 
 function supportNodeNamesFromSupportNodes(supportNodes) {

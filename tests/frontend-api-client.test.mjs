@@ -783,6 +783,41 @@ test("buildBackendProjectJson strips legacy support node resource fields and dra
   ]);
 });
 
+test("buildBackendProjectJson persists visible personnel specialties for legacy blank resource rows", () => {
+  const scenario = {
+    scenarioId: "support-personnel-specialty-default",
+    modelingDictionaries: {
+      personnelSpecialties: ["航电", "军械", "机械", "特设"]
+    },
+    supportOrganization: {
+      tree: {
+        id: "support-org-root",
+        name: "保障组织",
+        children: [
+          { id: "line-team", name: "基层", children: [] }
+        ]
+      }
+    },
+    supportNodes: [
+      { id: "line-team", name: "基层" }
+    ],
+    supportResources: [
+      { id: "line-personnel-mech", supportNodeName: "基层", type: "personnel", name: "基层人员", model: "机械", quantity: 3 },
+      { id: "line-personnel-blank", supportNodeName: "基层", type: "personnel", name: "基层人员", model: "", quantity: 3 },
+      { id: "line-personnel-ordnance", supportNodeName: "基层", type: "personnel", name: "基层人员", model: "军械", quantity: 3 },
+      { id: "line-personnel-special", supportNodeName: "基层", type: "personnel", name: "基层人员", model: "特设", quantity: 3 }
+    ]
+  };
+
+  const projectJson = buildBackendProjectJson(scenario, { id: "support-personnel-specialty-default" });
+
+  const personnelModels = projectJson.supportResources
+    .filter((resource) => resource.type === "personnel" && resource.supportNodeName === "基层")
+    .map((resource) => resource.model);
+  assert.deepEqual(personnelModels.sort(), ["军械", "机械", "特设", "航电"].sort());
+  assert.ok(projectJson.supportResources.every((resource) => resource.type !== "personnel" || resource.model));
+});
+
 test("buildBackendProjectJson preserves aircraft type catalog and strips redundant equipment runtime fields", () => {
   const scenario = {
     scenarioId: "combat-unit-is-source",
