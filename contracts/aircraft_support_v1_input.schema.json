@@ -15,7 +15,8 @@
     "reliability_block_diagram",
     "time",
     "monte_carlo",
-    "seed"
+    "seed",
+    "stop_policy"
   ],
   "properties": {
     "schema_version": { "type": "string", "const": "aircraft-support-v1-input-v0" },
@@ -171,6 +172,39 @@
         }
       }
     },
-    "seed": { "type": "integer" }
+    "seed": { "type": "integer" },
+    "stop_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "mode", "conditions"],
+      "properties": {
+        "schema_version": { "type": "string", "const": "stop-policy-v0" },
+        "mode": { "type": "string", "enum": ["or", "and"] },
+        "conditions": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["type"],
+            "properties": {
+              "type": { "type": "string", "enum": ["duration", "failure", "specified_time"] },
+              "duration_minutes": { "type": "integer", "minimum": 1 },
+              "minute": { "type": "integer", "minimum": 1 }
+            },
+            "allOf": [
+              {
+                "if": { "properties": { "type": { "const": "duration" } }, "required": ["type"] },
+                "then": { "required": ["duration_minutes"] }
+              },
+              {
+                "if": { "properties": { "type": { "const": "specified_time" } }, "required": ["type"] },
+                "then": { "required": ["minute"] }
+              }
+            ]
+          }
+        }
+      }
+    }
   }
 }

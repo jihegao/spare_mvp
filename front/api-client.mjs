@@ -283,6 +283,7 @@ function stripProjectRuntimeConfig(value) {
   delete value.experiment;
   delete value.seedPolicy;
   delete value.scenarioComposition;
+  delete value.stopPolicy;
   for (const child of Object.values(value)) stripProjectRuntimeConfig(child);
 }
 
@@ -544,6 +545,47 @@ function normalizedScenarioComposition(projectJson) {
   };
 }
 
+function normalizedStopPolicy(projectJson, experiment) {
+  const source = stopPolicySource(projectJson, experiment);
+  const mode = source.mode === "and" ? "and" : "or";
+  const conditions = Array.isArray(source.conditions)
+    ? source.conditions.map(normalizedStopCondition).filter(Boolean)
+    : [];
+  return {
+    schemaVersion: source.schemaVersion || "stop-policy-v0",
+    mode,
+    conditions: conditions.length ? conditions : [{ type: "duration" }]
+  };
+}
+
+function stopPolicySource(projectJson, experiment) {
+  if (projectJson.stopPolicy && typeof projectJson.stopPolicy === "object" && !Array.isArray(projectJson.stopPolicy)) {
+    return projectJson.stopPolicy;
+  }
+  if (experiment.stopPolicy && typeof experiment.stopPolicy === "object" && !Array.isArray(experiment.stopPolicy)) {
+    return experiment.stopPolicy;
+  }
+  return {};
+}
+
+function normalizedStopCondition(condition) {
+  if (!condition || typeof condition !== "object" || Array.isArray(condition)) return null;
+  const type = normalizedStopConditionType(condition.type);
+  if (type === "specifiedTime") {
+    const minute = positiveInteger(condition.minute ?? condition.timeMinute ?? condition.specifiedMinute, 0);
+    return minute > 0 ? { type, minute } : null;
+  }
+  return type ? { type } : null;
+}
+
+function normalizedStopConditionType(value) {
+  const text = String(value || "").trim();
+  if (["duration", "taskDuration", "task_duration"].includes(text)) return "duration";
+  if (["failure", "taskFailure", "task_failure"].includes(text)) return "failure";
+  if (["specifiedTime", "specified_time", "time", "targetTime", "target_time"].includes(text)) return "specifiedTime";
+  return "";
+}
+
 function normalizedScenarioOverride(override) {
   if (!override || typeof override !== "object" || Array.isArray(override)) return null;
   const path = String(override.path || "").trim();
@@ -618,6 +660,7 @@ export function buildExperimentPlanConfig(projectJson) {
     : {};
   const seedPolicy = normalizedSeedPolicy(projectJson, experiment);
   const scenarioComposition = normalizedScenarioComposition(projectJson);
+  const stopPolicy = normalizedStopPolicy(projectJson, experiment);
   const branchProjectJson = cloneJson(projectJson);
   applyScenarioCompositionOverrides(branchProjectJson, scenarioComposition);
   const config = {
@@ -627,6 +670,7 @@ export function buildExperimentPlanConfig(projectJson) {
     seed: seedPolicy.baseSeed,
     seedPolicy,
     scenarioComposition,
+    stopPolicy,
     projectJson: buildBackendProjectJson(branchProjectJson),
     monteCarlo: cloneJson(projectJson.monteCarlo || {}),
     analysisRequests: cloneJson(projectJson.analysisRequests || {})

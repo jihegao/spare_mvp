@@ -858,6 +858,46 @@ test("buildExperimentPlanConfig applies scenario composition overrides to branch
   assert.equal("seedPolicy" in config.projectJson, false);
 });
 
+test("buildExperimentPlanConfig preserves stop policy and strips it from branch projectJson", () => {
+  const config = buildExperimentPlanConfig({
+    project_id: "project-stop-policy",
+    experiment: { name: "stop policy", steps: 4, samples: 2, seed: 11 },
+    stopPolicy: {
+      schemaVersion: "stop-policy-v0",
+      mode: "and",
+      conditions: [
+        { type: "duration" },
+        { type: "failure" },
+        { type: "specifiedTime", minute: 90 }
+      ]
+    }
+  });
+
+  assert.deepEqual(config.stopPolicy, {
+    schemaVersion: "stop-policy-v0",
+    mode: "and",
+    conditions: [
+      { type: "duration" },
+      { type: "failure" },
+      { type: "specifiedTime", minute: 90 }
+    ]
+  });
+  assert.equal("stopPolicy" in config.projectJson, false);
+});
+
+test("buildExperimentPlanConfig defaults stop policy to duration OR semantics", () => {
+  const config = buildExperimentPlanConfig({
+    project_id: "project-default-stop-policy",
+    experiment: { name: "default stop policy", steps: 4, samples: 2, seed: 11 }
+  });
+
+  assert.deepEqual(config.stopPolicy, {
+    schemaVersion: "stop-policy-v0",
+    mode: "or",
+    conditions: [{ type: "duration" }]
+  });
+});
+
 test("buildExperimentPlanConfig materializes random seed policy as a reproducible base seed", () => {
   const config = buildExperimentPlanConfig({
     project_id: "project-random-seed",

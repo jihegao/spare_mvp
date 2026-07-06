@@ -693,6 +693,8 @@ class BackendApiContractTest(unittest.TestCase):
                 },
             },
         }
+        project["stopPolicy"] = {"mode": "or", "conditions": [{"type": "duration"}]}
+        project["missionProfile"]["stopPolicy"] = {"mode": "or", "conditions": [{"type": "failure"}]}
 
         validation = self.api.validate_project(project)
 
@@ -703,7 +705,9 @@ class BackendApiContractTest(unittest.TestCase):
                 "analysisRequests",
                 "missionProfile.analysisRequests",
                 "missionProfile.monteCarlo",
+                "missionProfile.stopPolicy",
                 "monteCarlo",
+                "stopPolicy",
             ],
         )
         with self.assertRaises(BackendApiError) as ctx:
@@ -729,6 +733,8 @@ class BackendApiContractTest(unittest.TestCase):
                 },
             },
         }
+        project["stopPolicy"] = {"mode": "or", "conditions": [{"type": "duration"}]}
+        project["missionProfile"]["stopPolicy"] = {"mode": "or", "conditions": [{"type": "failure"}]}
         self.api.repository.upsert_project(project)
 
         stored = self.api.get_project("project-legacy-mc")
@@ -736,6 +742,8 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertNotIn("monteCarlo", stored)
         self.assertNotIn("monteCarlo", stored["missionProfile"])
         self.assertNotIn("analysisRequests", stored["missionProfile"])
+        self.assertNotIn("stopPolicy", stored)
+        self.assertNotIn("stopPolicy", stored["missionProfile"])
 
     def test_save_project_strips_non_model_project_fields(self) -> None:
         project = small_aircraft_support_project("project-aircraft-support-contract-001")
@@ -2804,6 +2812,11 @@ class BackendApiContractTest(unittest.TestCase):
                 "samples": 9,
                 "seed": 909,
                 "seedPolicy": {"mode": "fixed", "baseSeed": 909},
+                "stopPolicy": {
+                    "schemaVersion": "stop-policy-v0",
+                    "mode": "and",
+                    "conditions": [{"type": "duration"}, {"type": "failure"}],
+                },
                 "scenarioComposition": {
                     "schemaVersion": "scenario-composition-v0",
                     "overrides": [
@@ -2824,6 +2837,11 @@ class BackendApiContractTest(unittest.TestCase):
                 "projectJson": {
                     **copy.deepcopy(project),
                     "seedPolicy": {"mode": "fixed", "baseSeed": 909},
+                    "stopPolicy": {
+                        "schemaVersion": "stop-policy-v0",
+                        "mode": "and",
+                        "conditions": [{"type": "duration"}, {"type": "failure"}],
+                    },
                     "scenarioComposition": {
                         "schemaVersion": "scenario-composition-v0",
                         "overrides": [
@@ -2839,6 +2857,14 @@ class BackendApiContractTest(unittest.TestCase):
 
         self.assertEqual(plan["config"]["seedPolicy"], {"mode": "fixed", "baseSeed": 909})
         self.assertEqual(
+            plan["config"]["stopPolicy"],
+            {
+                "schemaVersion": "stop-policy-v0",
+                "mode": "and",
+                "conditions": [{"type": "duration"}, {"type": "failure"}],
+            },
+        )
+        self.assertEqual(
             plan["config"]["scenarioComposition"]["overrides"][0]["path"],
             "supportNodes.0.inventory.LRU-A",
         )
@@ -2848,6 +2874,7 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertNotIn("analysisRequests", plan["config"]["projectJson"])
         self.assertNotIn("monteCarlo", plan["config"]["projectJson"])
         self.assertNotIn("seedPolicy", plan["config"]["projectJson"])
+        self.assertNotIn("stopPolicy", plan["config"]["projectJson"])
         self.assertNotIn("scenarioComposition", plan["config"]["projectJson"])
 
     def test_experiment_plan_config_branch_does_not_mutate_source_project(self) -> None:

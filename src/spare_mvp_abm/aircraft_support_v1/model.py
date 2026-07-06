@@ -39,6 +39,7 @@ BEHAVIOR_DRIVING_FIELDS = [
     "supportActivities[].jobs[].predecessors",
     "experiment.seed",
     "experiment.samples",
+    "ExperimentPlan.config.stopPolicy",
     "monteCarlo.failureRates",
     "monteCarlo.spareMultipliers",
     "monteCarlo.supportCapacities",
@@ -156,6 +157,9 @@ class AircraftSupportV1Model:
         self.tick_minutes = int(time_config.get("tick_minutes", 1))
         self.sample_every_minutes = int(time_config.get("sample_every_minutes", 30))
         self.max_state_frames_single = int(time_config.get("max_state_frames_single", 2000))
+        self.stop_policy = _normalized_stop_policy(self.inputs.get("stop_policy"), self.duration_minutes)
+        self.stop_reason = ""
+        self.stop_conditions_met: list[str] = []
         self.minute = 0
         self.event_log: list[dict[str, Any]] = []
         self.aircraft = self._build_aircraft()
@@ -212,12 +216,24 @@ class AircraftSupportV1Model:
             self._start_waiting_jobs()
             self._dispatch_due_missions()
             self._record_daily_readiness_sample_if_due()
-            if minute % self.sample_every_minutes == 0 or minute == self.duration_minutes:
+            stop_reason, stop_conditions = self._stop_decision()
+            should_stop = bool(stop_reason)
+            if should_stop:
+                self.stop_reason = stop_reason
+                self.stop_conditions_met = stop_conditions
+                self._event(
+                    "simulation_stopped",
+                    f"simulation stopped by {stop_reason}",
+                    {"reason": stop_reason, "conditions": stop_conditions},
+                )
+            if minute % self.sample_every_minutes == 0 or minute == self.duration_minutes or should_stop:
                 frames.append(self.visualization_frame(run_id="", step=len(frames)))
                 if len(frames) > self.max_state_frames_single:
                     raise ValueError(
                         "visualization_state_series exceeds max_state_frames_single; increase sample_every_minutes"
                     )
+            if should_stop:
+                break
         return {"metrics": self.snapshot(), "frames": frames, "events": copy.deepcopy(self.event_log)}
 
     def snapshot(self) -> dict[str, Any]:
@@ -282,12 +298,64 @@ class AircraftSupportV1Model:
             "transport_replenishment_events": self.transport_replenishment_events,
             "total_transport_delay_minutes": self.total_transport_delay,
             "mean_transport_delay": mean_transport_delay,
+            "elapsed_minutes": self.minute,
+            "stop_reason": self.stop_reason,
+            "stop_conditions_met": list(self.stop_conditions_met),
             "in_flight_failures": self.in_flight_failures,
             "rbd_root_failures": self.rbd_root_failures,
             "mean_launch_time": avg_delay,
             "mean_recovery_time": self._mean_recovery_time(),
             "mean_turnaround_time": avg_delay + self._mean_recovery_time(),
         }
+
+    def _stop_decision(self) -> tuple[str, list[str]]:
+        policy_met, policy_conditions = self._stop_policy_met()
+        if policy_met:
+            reason = policy_conditions[0] if len(policy_conditions) == 1 else "stop_policy"
+            return reason, policy_conditions
+        if self._natural_completion_reached():
+            return "natural_complete", ["natural_complete"]
+        return "", []
+
+    def _stop_policy_met(self) -> tuple[bool, list[str]]:
+        evaluations: list[tuple[str, bool]] = []
+        for condition in self.stop_policy.get("conditions", []):
+            condition_type = str(condition.get("type") or "")
+            if condition_type == "duration":
+                evaluations.append((condition_type, self.minute >= int(condition.get("duration_minutes") or self.duration_minutes)))
+            elif condition_type == "failure":
+                evaluations.append((condition_type, self._has_task_failure()))
+            elif condition_type == "specified_time":
+                evaluations.append((condition_type, self.minute >= int(condition.get("minute") or self.duration_minutes)))
+        if not evaluations:
+            return False, []
+        mode = str(self.stop_policy.get("mode") or "or")
+        met = all(item[1] for item in evaluations) if mode == "and" else any(item[1] for item in evaluations)
+        return met, [condition_type for condition_type, is_met in evaluations if is_met]
+
+    def _has_task_failure(self) -> bool:
+        if self.failed_sorties > 0:
+            return True
+        return any(mission.status == "failed" for mission in self.missions)
+
+    def _natural_completion_reached(self) -> bool:
+        if not self.missions:
+            return self.minute >= self.duration_minutes
+        if any(mission.status not in {"completed", "failed", "cancelled"} for mission in self.missions):
+            return False
+        if any(job.state in {"waiting", "running"} for job in self.jobs):
+            return False
+        if self.transport_shipments:
+            return False
+        if any(
+            aircraft.state in {"flying", "pre_support", "post_support"}
+            or aircraft.postflight_required
+            or aircraft.preventive_due
+            for aircraft in self.aircraft
+        ):
+            return False
+        last_planned_start = max(mission.planned_start for mission in self.missions)
+        return self.minute >= last_planned_start
 
     def _record_daily_readiness_sample_if_due(self) -> None:
         if self.minute <= 0 or self.minute % 1440 != 14 * 60:
@@ -1785,6 +1853,62 @@ def _truthy_input_flag(value: Any) -> bool:
     if value in (None, ""):
         return False
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _normalized_stop_policy(value: Any, duration_minutes: int) -> dict[str, Any]:
+    source = value if isinstance(value, dict) else {}
+    mode = "and" if str(source.get("mode") or "").strip().lower() == "and" else "or"
+    raw_conditions = source.get("conditions") if isinstance(source.get("conditions"), list) else []
+    conditions = [
+        condition
+        for raw_condition in raw_conditions
+        if (condition := _normalized_stop_condition(raw_condition, duration_minutes)) is not None
+    ]
+    if not conditions:
+        conditions = [{"type": "duration", "duration_minutes": max(1, int(duration_minutes))}]
+    return {
+        "schema_version": str(source.get("schema_version") or source.get("schemaVersion") or "stop-policy-v0"),
+        "mode": mode,
+        "conditions": conditions,
+    }
+
+
+def _normalized_stop_condition(value: Any, duration_minutes: int) -> dict[str, Any] | None:
+    if isinstance(value, str):
+        value = {"type": value}
+    if not isinstance(value, dict):
+        return None
+    condition_type = _stop_condition_type(value.get("type"))
+    if condition_type == "duration":
+        duration = _positive_int(value.get("duration_minutes") or value.get("durationMinutes"), max(1, int(duration_minutes)))
+        return {"type": "duration", "duration_minutes": duration}
+    if condition_type == "failure":
+        return {"type": "failure"}
+    if condition_type == "specified_time":
+        minute = _positive_int(
+            value.get("minute")
+            or value.get("timeMinute")
+            or value.get("time_minute")
+            or value.get("specifiedMinute")
+            or value.get("specified_minute"),
+            0,
+        )
+        if minute <= 0:
+            return None
+        return {"type": "specified_time", "minute": minute}
+    return None
+
+
+def _stop_condition_type(value: Any) -> str:
+    text = str(value or "").strip().lower().replace("-", "_")
+    compact = text.replace("_", "")
+    if compact in {"duration", "taskduration", "reachtaskduration", "maxduration"}:
+        return "duration"
+    if compact in {"failure", "taskfailure", "missionfailure"}:
+        return "failure"
+    if compact in {"specifiedtime", "targettime", "time", "specifiedminute"}:
+        return "specified_time"
+    return ""
 
 
 def _resource_quantity(text: Any, explicit: Any, *, default: int) -> int:

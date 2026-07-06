@@ -2721,9 +2721,13 @@ test("experiment plan editor exposes seed policy and scenario composition contro
 
   assert.match(editorSource, /data-experiment-seed-policy/);
   assert.match(editorSource, /data-experiment-seed-base/);
+  assert.match(editorSource, /data-experiment-stop-mode/);
+  assert.match(editorSource, /data-experiment-stop-condition/);
+  assert.match(editorSource, /data-experiment-stop-time-minute/);
   assert.match(editorSource, /data-scenario-override-path/);
   assert.match(editorSource, /data-scenario-override-add/);
   assert.match(editorSource, /data-scenario-override-remove/);
+  assert.match(experimentPlanChangeSource, /experimentPlanStopPolicy/);
   assert.match(experimentPlanChangeSource, /experimentPlanDraft/);
   assert.doesNotMatch(experimentPlanChangeSource, /setPath\(scenario/);
 });

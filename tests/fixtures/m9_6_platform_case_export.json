@@ -32,12 +32,14 @@
           "ExperimentPlan.config.analysisRequests.largeSample.sweep.spareMultipliers",
           "ExperimentPlan.config.analysisRequests.largeSample.sweep.supportCapacities",
           "ExperimentPlan.config.seed",
-          "ExperimentPlan.config.samples"
+          "ExperimentPlan.config.samples",
+          "ExperimentPlan.config.stopPolicy"
         ],
         "defaults_applied": [
           "time.tick_minutes=1",
           "time.sample_every_minutes=30",
-          "time.max_state_frames_single=2000"
+          "time.max_state_frames_single=2000",
+          "ExperimentPlan.config.stopPolicy=duration"
         ],
         "derived_fields": [
           "simulation_inputs.project_identity",
@@ -89,36 +91,54 @@
         "assets": [
           {
             "aircraft_type": "J-15",
+            "airport": "A",
+            "airport_id": "",
+            "deployment_location": "航母飞行甲板",
             "initial_state": "available",
             "model": "J-15",
             "tail_number": "J15-101"
           },
           {
             "aircraft_type": "J-15",
+            "airport": "A",
+            "airport_id": "",
+            "deployment_location": "航母飞行甲板",
             "initial_state": "available",
             "model": "J-15",
             "tail_number": "J15-102"
           },
           {
             "aircraft_type": "J-35",
+            "airport": "A",
+            "airport_id": "",
+            "deployment_location": "航母飞行甲板",
             "initial_state": "available",
             "model": "J-35",
             "tail_number": "J35-201"
           },
           {
             "aircraft_type": "J-35",
+            "airport": "A",
+            "airport_id": "",
+            "deployment_location": "航母飞行甲板",
             "initial_state": "available",
             "model": "J-35",
             "tail_number": "J35-202"
           },
           {
             "aircraft_type": "J-15",
+            "airport": "A",
+            "airport_id": "",
+            "deployment_location": "机库甲板",
             "initial_state": "available",
             "model": "J-15",
             "tail_number": "J15-103"
           },
           {
             "aircraft_type": "J-35",
+            "airport": "A",
+            "airport_id": "",
+            "deployment_location": "机库甲板",
             "initial_state": "available",
             "model": "J-35",
             "tail_number": "J35-203"
@@ -735,6 +755,16 @@
       },
       "schema_version": "aircraft-support-v1-input-v0",
       "seed": 20260621,
+      "stop_policy": {
+        "conditions": [
+          {
+            "duration_minutes": 20160,
+            "type": "duration"
+          }
+        ],
+        "mode": "or",
+        "schema_version": "stop-policy-v0"
+      },
       "support_activities": {
         "activities": [
           {
@@ -1143,6 +1173,8 @@
       "support_network": {
         "nodes": [
           {
+            "airport": "",
+            "airport_id": "",
             "equipment_capacity": 3,
             "id": "carrier-deck",
             "inventory": {
@@ -1171,6 +1203,8 @@
             ]
           },
           {
+            "airport": "",
+            "airport_id": "",
             "equipment_capacity": 2,
             "id": "forward-sea-base",
             "inventory": {
@@ -1199,6 +1233,8 @@
             ]
           },
           {
+            "airport": "",
+            "airport_id": "",
             "equipment_capacity": 2,
             "id": "carrier-stock",
             "inventory": {

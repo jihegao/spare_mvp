@@ -461,6 +461,7 @@ class SimulationAdapter:
         experiment = self._runtime_experiment_config(project, runtime_config)
         monte_carlo = self._runtime_monte_carlo_config(project, runtime_config)
         duration_minutes = self._aircraft_support_v1_duration_minutes(mission_profile)
+        stop_policy = self._runtime_stop_policy_config(project, runtime_config, duration_minutes)
         fleet_count = aircraft_summary["fleet_count"]
         initial_ready = aircraft_summary["initial_ready"]
 
@@ -527,6 +528,7 @@ class SimulationAdapter:
                 },
             },
             "seed": self._positive_int(experiment.get("seed"), 0),
+            "stop_policy": stop_policy,
         }
 
     def _runtime_experiment_config(
@@ -561,6 +563,113 @@ class SimulationAdapter:
         direct_sweep = runtime.get("sweep") if isinstance(runtime.get("sweep"), dict) else {}
         monte_carlo.update(copy.deepcopy(direct_sweep))
         return monte_carlo
+
+    def _runtime_stop_policy_config(
+        self,
+        project: dict[str, Any],
+        runtime_config: dict[str, Any] | None,
+        duration_minutes: int,
+    ) -> dict[str, Any]:
+        source: dict[str, Any] = {}
+        for candidate in self._runtime_stop_policy_sources(project, runtime_config):
+            source.update(copy.deepcopy(candidate))
+        mode = "and" if str(source.get("mode") or "").strip().lower() == "and" else "or"
+        raw_conditions = source.get("conditions") if isinstance(source.get("conditions"), list) else []
+        if not raw_conditions and source.get("type") not in (None, ""):
+            raw_conditions = [{"type": source.get("type")}]
+        conditions = [
+            condition
+            for raw_condition in raw_conditions
+            if (condition := self._normalized_stop_policy_condition(raw_condition, duration_minutes)) is not None
+        ]
+        if not conditions:
+            conditions = [{"type": "duration", "duration_minutes": max(1, int(duration_minutes))}]
+        return {
+            "schema_version": str(source.get("schemaVersion") or source.get("schema_version") or "stop-policy-v0"),
+            "mode": mode,
+            "conditions": conditions,
+        }
+
+    def _runtime_stop_policy_sources(
+        self,
+        project: dict[str, Any],
+        runtime_config: dict[str, Any] | None,
+    ) -> list[dict[str, Any]]:
+        runtime = runtime_config if isinstance(runtime_config, dict) else {}
+        project_experiment = project.get("experiment") if isinstance(project.get("experiment"), dict) else {}
+        runtime_experiment = runtime.get("experiment") if isinstance(runtime.get("experiment"), dict) else {}
+        candidates = [
+            project_experiment.get("stopPolicy"),
+            project_experiment.get("stop_policy"),
+            project.get("stopPolicy"),
+            project.get("stop_policy"),
+            runtime_experiment.get("stopPolicy"),
+            runtime_experiment.get("stop_policy"),
+            runtime.get("stopPolicy"),
+            runtime.get("stop_policy"),
+        ]
+        return [candidate for candidate in candidates if isinstance(candidate, dict)]
+
+    def _normalized_stop_policy_condition(
+        self,
+        condition: Any,
+        duration_minutes: int,
+    ) -> dict[str, Any] | None:
+        if isinstance(condition, str):
+            condition = {"type": condition}
+        if not isinstance(condition, dict):
+            return None
+        condition_type = self._stop_policy_condition_type(condition.get("type"))
+        if not condition_type:
+            return None
+        if condition_type == "duration":
+            duration = max(1, int(duration_minutes))
+            for key in ("durationMinutes", "duration_minutes", "minute", "minutes"):
+                if self._is_positive_number(condition.get(key)):
+                    duration = max(1, int(round(float(condition[key]))))
+                    break
+            return {"type": "duration", "duration_minutes": duration}
+        if condition_type == "specified_time":
+            minute = self._stop_policy_condition_minute(condition)
+            if minute is None:
+                return None
+            return {"type": "specified_time", "minute": minute}
+        return {"type": "failure"}
+
+    def _stop_policy_condition_type(self, value: Any) -> str:
+        text = str(value or "").strip().lower().replace("-", "_")
+        compact = text.replace("_", "")
+        if compact in {"duration", "taskduration", "reachtaskduration", "maxduration"}:
+            return "duration"
+        if compact in {"failure", "taskfailure", "missionfailure"}:
+            return "failure"
+        if compact in {"specifiedtime", "targettime", "time", "specifiedminute"}:
+            return "specified_time"
+        return ""
+
+    def _stop_policy_condition_minute(self, condition: dict[str, Any]) -> int | None:
+        for key in ("minute", "minutes", "timeMinute", "time_minute", "specifiedMinute", "specified_minute", "targetMinute"):
+            if self._is_positive_number(condition.get(key)):
+                return max(1, int(round(float(condition[key]))))
+        for key in ("time", "targetTime", "target_time", "at", "specifiedAt"):
+            parsed = self._clock_time_to_minute(condition.get(key))
+            if parsed is not None:
+                return parsed
+        return None
+
+    def _clock_time_to_minute(self, value: Any) -> int | None:
+        text = str(value or "").strip()
+        if ":" not in text:
+            return None
+        parts = text.split(":")
+        try:
+            hour = int(parts[0])
+            minute = int(parts[1])
+        except (TypeError, ValueError):
+            return None
+        if hour < 0 or minute < 0:
+            return None
+        return max(1, hour * 60 + minute)
 
     def _aircraft_support_v1_component(self, component: dict[str, Any]) -> dict[str, Any]:
         return {
@@ -832,6 +941,7 @@ class SimulationAdapter:
                 "ExperimentPlan.config.analysisRequests.largeSample.sweep.supportCapacities",
                 "ExperimentPlan.config.seed",
                 "ExperimentPlan.config.samples",
+                "ExperimentPlan.config.stopPolicy",
             ],
             "defaults_applied": self._aircraft_support_v1_defaults_applied(project, runtime_config),
             "derived_fields": [
@@ -886,6 +996,8 @@ class SimulationAdapter:
             defaults.append("ExperimentPlan.config.analysisRequests.largeSample.sweep.supportCapacities=[1]")
         if not self._is_number(experiment.get("seed")):
             defaults.append("ExperimentPlan.config.seed=0")
+        if not self._runtime_stop_policy_sources(project, runtime_config):
+            defaults.append("ExperimentPlan.config.stopPolicy=duration")
         return defaults
 
     def _aircraft_support_v1_unsupported_fields(self, project: dict[str, Any]) -> list[str]:

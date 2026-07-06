@@ -2182,6 +2182,48 @@ function bindEvents() {
       return;
     }
 
+    const experimentStopModeSelect = event.target.closest("[data-experiment-stop-mode]");
+    if (experimentStopModeSelect) {
+      const policy = experimentPlanStopPolicy();
+      policy.mode = experimentStopModeSelect.value === "and" ? "and" : "or";
+      experimentPlanDraft.stopPolicy = policy;
+      experimentPlanBranchActive = true;
+      updatePreviewResultsThroughApiClient(experimentPlanDraft);
+      render();
+      return;
+    }
+
+    const experimentStopConditionInput = event.target.closest("[data-experiment-stop-condition]");
+    if (experimentStopConditionInput) {
+      const policy = experimentPlanStopPolicy();
+      const type = normalizedExperimentStopConditionType(experimentStopConditionInput.dataset.experimentStopCondition);
+      const existingMinute = policy.conditions.find((condition) => normalizedExperimentStopConditionType(condition.type) === "specifiedTime")?.minute;
+      let conditions = policy.conditions.filter((condition) => normalizedExperimentStopConditionType(condition.type) !== type);
+      if (experimentStopConditionInput.checked && type) {
+        conditions.push(type === "specifiedTime" ? { type, minute: positiveExperimentStopMinute(existingMinute ?? 1440) } : { type });
+      }
+      policy.conditions = normalizedExperimentStopConditions(conditions);
+      experimentPlanDraft.stopPolicy = policy;
+      experimentPlanBranchActive = true;
+      updatePreviewResultsThroughApiClient(experimentPlanDraft);
+      render();
+      return;
+    }
+
+    const experimentStopTimeInput = event.target.closest("[data-experiment-stop-time-minute]");
+    if (experimentStopTimeInput) {
+      const policy = experimentPlanStopPolicy();
+      policy.conditions = policy.conditions.filter(
+        (condition) => normalizedExperimentStopConditionType(condition.type) !== "specifiedTime"
+      );
+      policy.conditions.push({ type: "specifiedTime", minute: positiveExperimentStopMinute(parseInput(experimentStopTimeInput)) });
+      experimentPlanDraft.stopPolicy = policy;
+      experimentPlanBranchActive = true;
+      updatePreviewResultsThroughApiClient(experimentPlanDraft);
+      render();
+      return;
+    }
+
     const scenarioOverrideInput = event.target.closest("[data-scenario-override-path]")
       || event.target.closest("[data-scenario-override-value-type]")
       || event.target.closest("[data-scenario-override-value]")
@@ -8956,6 +8998,9 @@ function experimentPlanDraftFromBackendPlan(backendPlan) {
   } else if (config.seed !== undefined) {
     draft.seedPolicy = { mode: "fixed", baseSeed: config.seed };
   }
+  if (config.stopPolicy && typeof config.stopPolicy === "object" && !Array.isArray(config.stopPolicy)) {
+    draft.stopPolicy = cloneScenario(config.stopPolicy);
+  }
   if (config.scenarioComposition && typeof config.scenarioComposition === "object" && !Array.isArray(config.scenarioComposition)) {
     draft.scenarioComposition = cloneScenario(config.scenarioComposition);
   }
@@ -8970,6 +9015,7 @@ function experimentPlanDraftFromBackendPlan(backendPlan) {
 
 function renderExperimentPlanEditor(page) {
   const seedPolicy = experimentPlanSeedPolicy();
+  const stopPolicy = experimentPlanStopPolicy();
   const composition = scenarioCompositionDraft();
   const sourceProjectJson = scenarioCompositionSourceProjectJson();
   const selectedPath = normalizedSelectedScenarioCompositionPath(sourceProjectJson, composition);
@@ -9001,6 +9047,7 @@ function renderExperimentPlanEditor(page) {
       </label>
       <label>Base seed<input data-experiment-seed-base type="number" step="1" value="${htmlEscape(seedPolicy.baseSeed)}"></label>
     </div>
+    ${renderExperimentStopPolicyControls(stopPolicy)}
     <div class="section-head sub-section-head">
       <h3>Scenario 拼接</h3>
       <span>${composition.overrides.length ? `${composition.overrides.length} 个建模数据覆盖项` : "尚未添加覆盖项"}</span>
@@ -9038,6 +9085,30 @@ function renderExperimentPlanEditor(page) {
   `;
 }
 
+function renderExperimentStopPolicyControls(stopPolicy) {
+  const conditions = new Set(stopPolicy.conditions.map((condition) => normalizedExperimentStopConditionType(condition.type)));
+  const specifiedTime = stopPolicy.conditions.find((condition) => normalizedExperimentStopConditionType(condition.type) === "specifiedTime");
+  const specifiedMinute = positiveExperimentStopMinute(specifiedTime?.minute ?? 1440);
+  return `
+    <div class="section-head sub-section-head">
+      <h3>停止策略</h3>
+      <span>${stopPolicy.mode === "and" ? "全部选中条件满足后停止" : "满足任一选中条件即停止"}</span>
+    </div>
+    <div class="form-table-grid">
+      <label>组合方式
+        <select data-experiment-stop-mode>
+          <option value="or" ${stopPolicy.mode === "or" ? "selected" : ""}>任一 OR</option>
+          <option value="and" ${stopPolicy.mode === "and" ? "selected" : ""}>全部 AND</option>
+        </select>
+      </label>
+      <label><input data-experiment-stop-condition="duration" type="checkbox" ${conditions.has("duration") ? "checked" : ""}> 达到任务时长</label>
+      <label><input data-experiment-stop-condition="failure" type="checkbox" ${conditions.has("failure") ? "checked" : ""}> 任务失败</label>
+      <label><input data-experiment-stop-condition="specifiedTime" type="checkbox" ${conditions.has("specifiedTime") ? "checked" : ""}> 达到指定时间</label>
+      <label>停止分钟<input data-experiment-stop-time-minute type="number" min="1" step="1" value="${htmlEscape(specifiedMinute)}"></label>
+    </div>
+  `;
+}
+
 const SCENARIO_TOP_LEVEL_LABELS = Object.freeze({
   activeModule: "当前模块",
   aircraftTypes: "飞机类型对象",
@@ -9060,6 +9131,7 @@ const SCENARIO_TOP_LEVEL_LABELS = Object.freeze({
   scenarioComposition: "方案拼接对象",
   scenarioId: "场景编号",
   seedPolicy: "随机种子策略对象",
+  stopPolicy: "停止策略对象",
   supportActivities: "保障活动清单对象",
   supportNodes: "保障点清单对象",
   supportOrganization: "保障组织对象",
@@ -15509,6 +15581,12 @@ function ensureExperimentPlanDraftDefaults(projectJson) {
   projectJson.seedPolicy.mode = projectJson.seedPolicy.mode === "random" ? "random" : "fixed";
   projectJson.seedPolicy.baseSeed = positiveExperimentSeed(projectJson.seedPolicy.baseSeed ?? projectJson.experiment.seed);
   projectJson.experiment.seed = projectJson.seedPolicy.baseSeed;
+  if (!projectJson.stopPolicy || typeof projectJson.stopPolicy !== "object" || Array.isArray(projectJson.stopPolicy)) {
+    projectJson.stopPolicy = { schemaVersion: "stop-policy-v0", mode: "or", conditions: [{ type: "duration" }] };
+  }
+  projectJson.stopPolicy.schemaVersion ||= "stop-policy-v0";
+  projectJson.stopPolicy.mode = projectJson.stopPolicy.mode === "and" ? "and" : "or";
+  projectJson.stopPolicy.conditions = normalizedExperimentStopConditions(projectJson.stopPolicy.conditions);
   if (!projectJson.scenarioComposition || typeof projectJson.scenarioComposition !== "object" || Array.isArray(projectJson.scenarioComposition)) {
     projectJson.scenarioComposition = { schemaVersion: "scenario-composition-v0", overrides: [] };
   }
@@ -15537,6 +15615,40 @@ function experimentPlanSeedPolicy() {
   policy.baseSeed = positiveExperimentSeed(policy.baseSeed ?? experimentPlanDraft.experiment?.seed);
   experimentPlanDraft.experiment.seed = policy.baseSeed;
   return policy;
+}
+
+function experimentPlanStopPolicy() {
+  ensureExperimentPlanDraftDefaults(experimentPlanDraft);
+  experimentPlanDraft.stopPolicy.conditions = normalizedExperimentStopConditions(experimentPlanDraft.stopPolicy.conditions);
+  return experimentPlanDraft.stopPolicy;
+}
+
+function normalizedExperimentStopConditions(conditions) {
+  const sourceConditions = Array.isArray(conditions) ? conditions : [];
+  const normalized = sourceConditions.map(normalizedExperimentStopCondition).filter(Boolean);
+  return normalized.length ? normalized : [{ type: "duration" }];
+}
+
+function normalizedExperimentStopCondition(condition) {
+  if (!condition || typeof condition !== "object" || Array.isArray(condition)) return null;
+  const type = normalizedExperimentStopConditionType(condition.type);
+  if (!type) return null;
+  if (type === "specifiedTime") {
+    return { type, minute: positiveExperimentStopMinute(condition.minute ?? condition.timeMinute ?? 1440) };
+  }
+  return { type };
+}
+
+function normalizedExperimentStopConditionType(value) {
+  const text = String(value || "").trim();
+  if (["duration", "taskDuration", "task_duration"].includes(text)) return "duration";
+  if (["failure", "taskFailure", "task_failure"].includes(text)) return "failure";
+  if (["specifiedTime", "specified_time", "time", "targetTime", "target_time"].includes(text)) return "specifiedTime";
+  return "";
+}
+
+function positiveExperimentStopMinute(value) {
+  return Math.max(1, Math.trunc(positiveExperimentNumber(value, 1440)));
 }
 
 function scenarioCompositionDraft() {
