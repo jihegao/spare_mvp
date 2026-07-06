@@ -718,6 +718,71 @@ test("buildBackendProjectJson strips Monte Carlo config from Project modeling da
   assert.ok("requireDevices" in scenario.supportActivities[0]);
 });
 
+test("buildBackendProjectJson strips legacy support node resource fields and draft overrides", () => {
+  const scenario = {
+    scenarioId: "support-resource-boundary",
+    supportOrganization: {
+      tree: {
+        id: "support-org-root",
+        name: "舰载保障组织",
+        children: [
+          { id: "carrier-deck", name: "基地" },
+          { id: "forward-sea-base", name: "中继" },
+          { id: "line-team", name: "基层" }
+        ]
+      }
+    },
+    supportResourceOverrides: {
+      "root:legacy-node:equipment": { quantity: 3 }
+    },
+    deletedSupportResourceKeys: ["root:legacy-node:equipment"],
+    supportNodes: [
+      {
+        id: "carrier-deck",
+        name: "基地",
+        capacity: 4,
+        equipmentCapacity: 3,
+        inventory: { "航电模块": 6 },
+        lateralSupportNodes: ["基层"],
+        nodeType: "甲板保障点",
+        organizationStrategy: "任务优先",
+        personnelCapacity: 5,
+        policy: "高优先级",
+        supportLevel: "一线保障",
+        transportPolicies: [{ from: "line-team", to: "carrier-deck" }]
+      },
+      { id: "forward-sea-base", name: "中继", personnelCapacity: 2, equipmentCapacity: 2 },
+      { id: "line-team", name: "基层", personnelCapacity: 3, equipmentCapacity: 3 },
+      {
+        id: "carrier-stock-personnel-mech",
+        name: "机械保障人员",
+        organizationNodeId: "line-team",
+        importedResourceType: "personnel",
+        personnelModel: "机械",
+        personnelCapacity: 3
+      }
+    ],
+    supportResources: [
+      { id: "personnel-1", supportNodeName: "基层", type: "personnel", name: "机械保障人员", model: "机械", quantity: 3 }
+    ],
+    transportPolicies: [
+      { id: "transport-1", from: "line-team", to: "carrier-deck", fromSupportNodeName: "基层", toSupportNodeName: "基地", spareName: "航电模块", capacity: 2 }
+    ]
+  };
+
+  const projectJson = buildBackendProjectJson(scenario, { id: "support-resource-boundary" });
+
+  assert.equal("supportResourceOverrides" in projectJson, false);
+  assert.equal("deletedSupportResourceKeys" in projectJson, false);
+  assert.deepEqual(projectJson.supportNodes.map((node) => node.name), ["基地", "中继", "基层"]);
+  assert.ok(projectJson.supportNodes.every((node) => Object.keys(node).sort().join(",") === "id,name"));
+  assert.equal(projectJson.supportNodes.some((node) => node.id === "carrier-stock-personnel-mech" || node.name === "机械保障人员"), false);
+  assert.deepEqual(projectJson.supportResources, scenario.supportResources);
+  assert.deepEqual(projectJson.transportPolicies, [
+    { id: "transport-1", fromSupportNodeName: "基层", toSupportNodeName: "基地", spareName: "航电模块", capacity: 2 }
+  ]);
+});
+
 test("buildBackendProjectJson preserves aircraft type catalog and strips redundant equipment runtime fields", () => {
   const scenario = {
     scenarioId: "combat-unit-is-source",
@@ -833,11 +898,12 @@ test("buildExperimentPlanConfig applies scenario composition overrides to branch
   const projectJson = {
     project_id: "project-composition",
     experiment: { name: "composition", steps: 6, samples: 3, seed: 101 },
-    supportNodes: [{ id: "base-a", inventory: { "LRU-A": 2 } }],
+    supportNodes: [{ id: "base-a", name: "基地" }],
+    supportResources: [{ id: "spare-a", supportNodeName: "基地", type: "spare", name: "LRU-A", quantity: 2 }],
     scenarioComposition: {
       schemaVersion: "scenario-composition-v0",
       overrides: [
-        { path: "supportNodes.0.inventory.LRU-A", valueType: "number", value: "12", label: "LRU-A" },
+        { path: "supportResources.0.quantity", valueType: "number", value: "12", label: "LRU-A" },
         { path: "missionProfile.durationHours", valueType: "number", value: "8" }
       ]
     },
@@ -848,10 +914,10 @@ test("buildExperimentPlanConfig applies scenario composition overrides to branch
 
   assert.equal(config.seed, 909);
   assert.deepEqual(config.seedPolicy, { mode: "fixed", baseSeed: 909 });
-  assert.equal(config.projectJson.supportNodes[0].inventory["LRU-A"], 12);
+  assert.equal(config.projectJson.supportResources[0].quantity, 12);
   assert.equal(config.projectJson.missionProfile.durationHours, 8);
   assert.deepEqual(config.scenarioComposition.overrides.map((item) => item.path), [
-    "supportNodes.0.inventory.LRU-A",
+    "supportResources.0.quantity",
     "missionProfile.durationHours"
   ]);
   assert.equal("scenarioComposition" in config.projectJson, false);

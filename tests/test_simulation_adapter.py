@@ -484,8 +484,8 @@ class SimulationAdapterTest(unittest.TestCase):
         self.assertIn("missionProfile.compositeTasks", scope["behavior_driving_fields"])
         self.assertIn("missionProfile.periodicTasks", scope["behavior_driving_fields"])
         self.assertIn("components[].failureDistribution", scope["behavior_driving_fields"])
-        self.assertIn("supportNodes[].transportPolicies", scope["behavior_driving_fields"])
-        self.assertIn("supportNodes[].inventory", scope["behavior_driving_fields"])
+        self.assertIn("transportPolicies[]", scope["behavior_driving_fields"])
+        self.assertIn("supportResources[].quantity", scope["behavior_driving_fields"])
         self.assertIn("supportActivities[].jobs[].predecessors", scope["behavior_driving_fields"])
         self.assertNotIn("experiment.steps", scope["behavior_driving_fields"])
         self.assertEqual(scope["fail_closed_fields"], [])
@@ -531,6 +531,46 @@ class SimulationAdapterTest(unittest.TestCase):
             for mission in state_payload["frames"][0]["missions"]
         ]
         self.assertEqual(max(mission["day_index"] for mission in first_frame_missions), 3)
+
+    def test_compile_aircraft_support_v1_aggregates_slim_support_resources_and_transport_policies(self) -> None:
+        project = self._load_fixture("m9_6_platform_case_export.json")["project"]
+        project["supportNodes"] = [
+            {"id": "support-node-1", "name": "基地"},
+            {"id": "support-node-2", "name": "基层"},
+        ]
+        project["supportResources"] = [
+            {"id": "personnel-1", "supportNodeName": "基地", "type": "personnel", "name": "航电人员", "quantity": 5},
+            {"id": "equipment-1", "supportNodeName": "基地", "type": "equipment", "name": "电源车", "quantity": 3},
+            {"id": "spare-1", "supportNodeName": "基地", "type": "spare", "name": "航电模块", "quantity": 6},
+            {"id": "personnel-2", "supportNodeName": "基层", "type": "personnel", "name": "库房人员", "quantity": 2},
+            {"id": "equipment-2", "supportNodeName": "基层", "type": "equipment", "name": "转运车", "quantity": 1},
+            {"id": "spare-2", "supportNodeName": "基层", "type": "spare", "name": "航电模块", "quantity": 9},
+        ]
+        project["transportPolicies"] = [{
+            "id": "transport-1",
+            "fromSupportNodeName": "基层",
+            "toSupportNodeName": "基地",
+            "spareName": "航电模块",
+            "capacity": 2,
+            "priority": 1,
+            "transportTimeHours": 1,
+        }]
+        for activity in project["supportActivities"]:
+            if activity.get("resourceId") == "carrier-stock":
+                activity["resourceId"] = "基层"
+            else:
+                activity["resourceId"] = "基地"
+
+        scenario = self.adapter.compile_scenario(project, model_family="aircraft_support_v1")
+
+        nodes = {node["id"]: node for node in scenario["simulation_inputs"]["support_network"]["nodes"]}
+        self.assertEqual(nodes["基地"]["personnel_capacity"], 5)
+        self.assertEqual(nodes["基地"]["equipment_capacity"], 3)
+        self.assertEqual(nodes["基地"]["inventory"]["航电模块"], 6)
+        self.assertEqual(nodes["基层"]["inventory"]["航电模块"], 9)
+        self.assertEqual(nodes["基地"]["transport_policies"][0]["from"], "基层")
+        self.assertEqual(nodes["基地"]["transport_policies"][0]["to"], "基地")
+        self.assertEqual(nodes["基地"]["transport_policies"][0]["spareType"], "航电模块")
 
     def test_aircraft_support_v1_treats_support_organization_as_governance_only(self) -> None:
         project = self._load_fixture("m9_6_platform_case_export.json")["project"]

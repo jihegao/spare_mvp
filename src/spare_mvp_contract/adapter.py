@@ -464,6 +464,8 @@ class SimulationAdapter:
         stop_policy = self._runtime_stop_policy_config(project, runtime_config, duration_minutes)
         fleet_count = aircraft_summary["fleet_count"]
         initial_ready = aircraft_summary["initial_ready"]
+        support_network_nodes = self._aircraft_support_v1_support_nodes(project)
+        support_node_aliases = self._support_node_reference_aliases(project)
 
         return {
             "schema_version": "aircraft-support-v1-input-v0",
@@ -501,11 +503,11 @@ class SimulationAdapter:
                 "components": [self._aircraft_support_v1_component(component) for component in self._dict_list(project.get("components"))],
             },
             "support_network": {
-                "nodes": [self._aircraft_support_v1_support_node(node) for node in self._dict_list(project.get("supportNodes"))],
+                "nodes": support_network_nodes,
             },
             "support_activities": {
                 "activities": [
-                    self._aircraft_support_v1_support_activity(activity)
+                    self._aircraft_support_v1_support_activity(activity, support_node_aliases)
                     for activity in self._dict_list(project.get("supportActivities"))
                 ],
             },
@@ -826,10 +828,57 @@ class SimulationAdapter:
             )
         return assets
 
+    def _aircraft_support_v1_support_nodes(self, project: dict[str, Any]) -> list[dict[str, Any]]:
+        raw_nodes = self._dict_list(project.get("supportNodes"))
+        resources = self._dict_list(project.get("supportResources"))
+        aliases = self._support_node_reference_aliases(project)
+        nodes_by_name: dict[str, dict[str, Any]] = {}
+
+        for raw_node in raw_nodes:
+            node = self._aircraft_support_v1_support_node(raw_node)
+            node_name = self._support_node_runtime_name(raw_node)
+            node["id"] = node_name
+            node["name"] = node_name
+            if resources and not any(field in raw_node for field in ("capacity", "personnelCapacity", "equipmentCapacity", "inventory")):
+                node["personnel_capacity"] = 0
+                node["equipment_capacity"] = 0
+                node["inventory"] = {}
+            node["transport_policies"] = []
+            nodes_by_name[node_name] = node
+
+        for resource in resources:
+            node_name = self._support_resource_node_name(resource, aliases)
+            if not node_name:
+                continue
+            node = nodes_by_name.setdefault(node_name, self._empty_aircraft_support_v1_support_node(node_name))
+            quantity = self._non_negative_int(resource.get("quantity"), self._non_negative_int(resource.get("capacity"), 0))
+            resource_type = str(resource.get("type") or "").strip().lower()
+            if resource_type == "personnel":
+                node["personnel_capacity"] = max(0, int(node.get("personnel_capacity", 0))) + quantity
+            elif resource_type == "equipment":
+                node["equipment_capacity"] = max(0, int(node.get("equipment_capacity", 0))) + quantity
+            elif resource_type == "spare":
+                spare_name = str(resource.get("name") or resource.get("spareName") or resource.get("spareType") or "").strip()
+                if spare_name:
+                    node["inventory"][spare_name] = int(node["inventory"].get(spare_name, 0)) + quantity
+
+        for node in nodes_by_name.values():
+            node["personnel_capacity"] = max(1, int(node.get("personnel_capacity", 0) or 0))
+            node["equipment_capacity"] = max(1, int(node.get("equipment_capacity", 0) or 0))
+
+        for policy in self._project_transport_policies(project):
+            normalized = self._aircraft_support_v1_transport_policy(policy, aliases)
+            destination = str(normalized.get("to") or "")
+            if not destination or destination not in nodes_by_name:
+                continue
+            nodes_by_name[destination]["transport_policies"].append(normalized)
+
+        return list(nodes_by_name.values())
+
     def _aircraft_support_v1_support_node(self, node: dict[str, Any]) -> dict[str, Any]:
         return {
-            "id": str(node.get("id") or "support-node"),
-            "name": str(node.get("name") or node.get("id") or "support node"),
+            "id": self._support_node_runtime_name(node),
+            "name": self._support_node_runtime_name(node),
             "airport": self._optional_string(node.get("airport")) or "",
             "airport_id": self._optional_string(node.get("airportId") or node.get("baseAirportId")) or "",
             "node_type": self._optional_string(node.get("nodeType")),
@@ -843,13 +892,76 @@ class SimulationAdapter:
             "organization_strategy": self._optional_string(node.get("organizationStrategy")),
         }
 
-    def _aircraft_support_v1_support_activity(self, activity: dict[str, Any]) -> dict[str, Any]:
+    def _empty_aircraft_support_v1_support_node(self, node_name: str) -> dict[str, Any]:
+        return {
+            "id": node_name,
+            "name": node_name,
+            "airport": "",
+            "airport_id": "",
+            "node_type": None,
+            "support_level": None,
+            "personnel_capacity": 0,
+            "equipment_capacity": 0,
+            "inventory": {},
+            "lateral_support_nodes": [],
+            "transport_policies": [],
+            "policy": None,
+            "organization_strategy": None,
+        }
+
+    def _support_node_runtime_name(self, node: dict[str, Any]) -> str:
+        return str(node.get("name") or node.get("supportNodeName") or node.get("id") or "support-node")
+
+    def _support_resource_node_name(self, resource: dict[str, Any], aliases: dict[str, str]) -> str:
+        for key in ("supportNodeName", "organizationNodeName", "organizationNodeId", "supportNodeId"):
+            value = resource.get(key)
+            if value not in (None, ""):
+                return aliases.get(str(value), str(value))
+        return aliases.get(str(resource.get("id") or ""), "")
+
+    def _support_node_reference_aliases(self, project: dict[str, Any]) -> dict[str, str]:
+        aliases: dict[str, str] = {}
+        for node in self._dict_list(project.get("supportNodes")):
+            name = self._support_node_runtime_name(node)
+            for key in ("id", "name", "organizationNodeId", "supportNodeId"):
+                value = node.get(key)
+                if value not in (None, ""):
+                    aliases[str(value)] = name
+            aliases[name] = name
+        for resource in self._dict_list(project.get("supportResources")):
+            node_name = str(resource.get("supportNodeName") or resource.get("organizationNodeName") or "").strip()
+            if node_name:
+                aliases[node_name] = node_name
+        return aliases
+
+    def _project_transport_policies(self, project: dict[str, Any]) -> list[dict[str, Any]]:
+        policies = copy.deepcopy(self._dict_list(project.get("transportPolicies")))
+        for node in self._dict_list(project.get("supportNodes")):
+            policies.extend(copy.deepcopy(self._dict_list(node.get("transportPolicies"))))
+        return policies
+
+    def _aircraft_support_v1_transport_policy(self, policy: dict[str, Any], aliases: dict[str, str]) -> dict[str, Any]:
+        from_value = str(policy.get("fromSupportNodeName") or policy.get("from") or "")
+        to_value = str(policy.get("toSupportNodeName") or policy.get("to") or "")
+        return {
+            "from": aliases.get(from_value, from_value),
+            "to": aliases.get(to_value, to_value),
+            "spareType": str(policy.get("spareName") or policy.get("spareType") or policy.get("spare_type") or ""),
+            "capacity": self._positive_int(policy.get("capacity"), 1),
+            "priority": self._positive_int(policy.get("priority"), 1),
+            "transportTimeHours": self._non_negative_float(policy.get("transportTimeHours"), self._non_negative_float(policy.get("transport_time_hours"), 0.0)),
+        }
+
+    def _aircraft_support_v1_support_activity(self, activity: dict[str, Any], support_node_aliases: dict[str, str] | None = None) -> dict[str, Any]:
+        resource_id = str(activity.get("resourceId") or "")
+        if support_node_aliases:
+            resource_id = support_node_aliases.get(resource_id, resource_id)
         return {
             "id": str(activity.get("id") or "support-activity"),
             "name": str(activity.get("name") or activity.get("activityName") or activity.get("id") or "support activity"),
             "activity_type": str(activity.get("activityType") or activity.get("planType") or "support activity"),
             "equipment_id": str(activity.get("equipmentId") or ""),
-            "resource_id": str(activity.get("resourceId") or ""),
+            "resource_id": resource_id,
             "priority": self._positive_int(activity.get("priority"), 1),
             "duration_minutes": self._positive_int(
                 activity.get("durationMinutes"),
@@ -931,10 +1043,10 @@ class SimulationAdapter:
                 "components[].lifeLimitHours",
                 "components[].rms",
                 "components[].specialRepairProfile",
-                "supportNodes[].personnelCapacity",
-                "supportNodes[].equipmentCapacity",
-                "supportNodes[].inventory",
-                "supportNodes[].transportPolicies",
+                "supportResources[].quantity",
+                "supportResources[].type",
+                "supportResources[].supportNodeName",
+                "transportPolicies[]",
                 "supportActivities[].jobs[]",
                 "supportActivities[].jobs[].predecessors",
                 "reliabilityBlockDiagram",
@@ -1149,7 +1261,8 @@ class SimulationAdapter:
             )
 
         component_ids = {str(component.get("id")) for component in components if component.get("id") not in (None, "")}
-        support_node_ids = {str(node.get("id")) for node in support_nodes if node.get("id") not in (None, "")}
+        support_node_aliases = self._support_node_reference_aliases(project)
+        support_node_ids = set(support_node_aliases.keys()) | set(support_node_aliases.values())
         tail_seen: dict[str, str] = {}
         combat_unit = project.get("combatUnit") if isinstance(project.get("combatUnit"), dict) else {}
         if not combat_unit:
@@ -1184,21 +1297,34 @@ class SimulationAdapter:
                     )
                 )
 
-        for node_index, node in enumerate(support_nodes):
-            for policy_index, policy in enumerate(self._dict_list(node.get("transportPolicies"))):
-                for endpoint in ("from", "to"):
-                    value = policy.get(endpoint)
-                    if value in (None, ""):
-                        continue
-                    if str(value) not in support_node_ids:
-                        issues.append(
-                            self._compile_issue(
-                                "missing_transport_node_reference",
-                                f"supportNodes[{node_index}].transportPolicies[{policy_index}].{endpoint}",
-                                f"运输策略 {endpoint} 引用了不存在的保障节点 {value}。",
-                                "保障资源建模",
-                            )
+        for policy_index, policy in enumerate(self._project_transport_policies(project)):
+            for endpoint in ("from", "to"):
+                field_name = "fromSupportNodeName" if endpoint == "from" else "toSupportNodeName"
+                value = policy.get(field_name, policy.get(endpoint))
+                if value in (None, ""):
+                    continue
+                if str(value) not in support_node_ids:
+                    issues.append(
+                        self._compile_issue(
+                            "missing_transport_node_reference",
+                            f"transportPolicies[{policy_index}].{field_name}",
+                            f"运输策略 {field_name} 引用了不存在的保障节点 {value}。",
+                            "保障资源建模",
                         )
+                    )
+            for endpoint in ("from", "to"):
+                value = policy.get(endpoint)
+                if value in (None, ""):
+                    continue
+                if str(value) not in support_node_ids:
+                    issues.append(
+                        self._compile_issue(
+                            "missing_transport_node_reference",
+                            f"transportPolicies[{policy_index}].{endpoint}",
+                            f"运输策略 {endpoint} 引用了不存在的保障节点 {value}。",
+                            "保障资源建模",
+                        )
+                    )
 
         for activity_index, activity in enumerate(support_activities):
             equipment_id = activity.get("equipmentId")
@@ -2163,14 +2289,14 @@ class SimulationAdapter:
                 },
                 {
                     "source": "analysisRequests.largeSample.sweep.spareMultipliers",
-                    "target": "AircraftSupportV1Model.supportNodes[].inventory",
-                    "interpretation": "multiplier applied to compiled support-node inventory quantities",
+                    "target": "AircraftSupportV1Model supportResources[type=spare].quantity",
+                    "interpretation": "multiplier applied to compiled spare resource quantities",
                     "values": profile["sweep"]["spareMultipliers"],
                 },
                 {
                     "source": "analysisRequests.largeSample.sweep.supportCapacities",
-                    "target": "AircraftSupportV1Model supportNodes[].personnel_capacity/equipment_capacity",
-                    "interpretation": "sample-level override for each support node capacity",
+                    "target": "AircraftSupportV1Model supportResources[type=personnel|equipment].quantity",
+                    "interpretation": "sample-level override for compiled personnel and equipment capacity",
                     "values": profile["sweep"]["supportCapacities"],
                 },
             ],
@@ -4034,6 +4160,16 @@ class SimulationAdapter:
         if int(fallback) == 0:
             return max(0, int(round(float(value))))
         return max(1, int(round(float(value))))
+
+    def _non_negative_int(self, value: Any, fallback: int) -> int:
+        if not self._is_number(value):
+            return max(0, int(fallback))
+        return max(0, int(round(float(value))))
+
+    def _non_negative_float(self, value: Any, fallback: float) -> float:
+        if not self._is_number(value):
+            return max(0.0, float(fallback))
+        return max(0.0, float(value))
 
     def _is_number(self, value: Any) -> bool:
         try:

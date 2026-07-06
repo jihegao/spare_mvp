@@ -49,8 +49,8 @@ test("buildModelingImportPreview maps four collections to page labels and field 
   assert.ok(preview.rows.some((row) => row.page === "任务剖面参数" && row.field_path === "objects.missionProfiles[0].durationHours"));
   assert.ok(preview.rows.some((row) => row.page === "装备系统建模" && row.object_id === "j15-radar" && row.field === "mtbfHours"));
   assert.ok(preview.rows.some((row) => row.page === "装备系统建模" && row.object_id === "j15-avionics" && row.field === "aircraftModel" && row.target_path === "components[3].aircraftModel"));
-  assert.ok(preview.rows.some((row) => row.page === "保障资源建模" && row.field_path === "objects.supportResources[0].capacity"));
-  assert.ok(preview.rows.some((row) => row.page === "保障资源建模" && row.object_id === "carrier-deck" && row.field === "inventory"));
+  assert.ok(preview.rows.some((row) => row.page === "保障资源建模" && row.field_path === "objects.supportResources[0].quantity"));
+  assert.ok(preview.rows.some((row) => row.page === "保障资源建模" && row.field === "supportNodeName"));
   assert.ok(preview.rows.some((row) => row.page === "保障活动建模" && row.field_path === "objects.supportActivities[0].resourceId"));
   assert.ok(preview.rows.some((row) => row.page === "保障活动建模" && row.object_id === "preflight" && row.field === "jobs"));
 });
@@ -60,7 +60,7 @@ test("diffModelingImports reports added removed and changed field paths", async 
   const draft = cloneModelingImportPackage(published);
   const radarIndex = draft.objects.equipmentAssets.findIndex((row) => row.id === "j15-radar");
   draft.objects.equipmentAssets[radarIndex].quantity = 2;
-  delete draft.objects.supportResources[0].capacity;
+  delete draft.objects.supportResources[0].quantity;
   draft.objects.supportActivities.push({
     id: "refuel-aircraft",
     name: "燃油补给",
@@ -72,9 +72,13 @@ test("diffModelingImports reports added removed and changed field paths", async 
   const diff = diffModelingImports(published, draft);
 
   assert.ok(diff.rows.some((row) => row.change === "changed" && row.field_path === "objects.equipmentAssets[id=j15-radar].quantity" && row.before === 1 && row.after === 2));
-  assert.ok(diff.rows.some((row) => row.change === "removed" && row.field_path === "objects.supportResources[id=carrier-deck].capacity" && row.before === 4));
+  assert.ok(diff.rows.some((row) => row.change === "removed" && row.field_path === `${supportResourcePath(draft.objects.supportResources[0])}.quantity` && row.before === 5));
   assert.ok(diff.rows.some((row) => row.change === "added" && row.field_path === "objects.supportActivities[id=refuel-aircraft].id" && row.after === "refuel-aircraft"));
 });
+
+function supportResourcePath(resource) {
+  return `objects.supportResources[id=${resource.id}]`;
+}
 
 test("diffModelingImports keys imported object rows by stable IDs instead of array indexes", async () => {
   const published = await readFixture();

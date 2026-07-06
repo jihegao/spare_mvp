@@ -46,7 +46,7 @@ test("buildExperimentPlanConfig applies scenario composition overrides to branch
     scenarioComposition: {
       schemaVersion: "scenario-composition-v0",
       overrides: [
-        { path: "supportNodes.0.inventory.LRU-A", valueType: "number", value: "12", label: "LRU-A" },
+        { path: "supportResources.0.quantity", valueType: "number", value: "12", label: "LRU-A" },
         { path: "missionProfile.durationHours", valueType: "number", value: "8" }
       ]
     },
@@ -60,7 +60,7 @@ test("buildExperimentPlanConfig applies scenario composition overrides to branch
   assert.equal(config.projectJson.supportNodes[0].inventory["LRU-A"], 12);
   assert.equal(config.projectJson.missionProfile.durationHours, 8);
   assert.deepEqual(config.scenarioComposition.overrides.map((item) => item.path), [
-    "supportNodes.0.inventory.LRU-A",
+    "supportResources.0.quantity",
     "missionProfile.durationHours"
   ]);
   assert.equal("scenarioComposition" in config.projectJson, false);
@@ -211,7 +211,7 @@ test("experiment plan save posts composed projectJson without mutating source pr
     await runtime.change("[data-experiment-seed-policy]", { value: "fixed" });
     await runtime.change("[data-experiment-seed-base]", { value: "909", type: "number" });
     await runtime.click("[data-scenario-override-add]");
-    await runtime.change("[data-scenario-override-path]", { scenarioOverrideIndex: "0" }, { value: "supportNodes.0.inventory.LRU-A" });
+    await runtime.change("[data-scenario-override-path]", { scenarioOverrideIndex: "0" }, { value: "supportResources.0.quantity" });
     await runtime.change("[data-scenario-override-value-type]", { scenarioOverrideIndex: "0" }, { value: "number" });
     await runtime.change("[data-scenario-override-value]", { scenarioOverrideIndex: "0" }, { value: "12" });
     await runtime.click("[data-save-plan]");
@@ -331,7 +331,7 @@ def test_create_experiment_plan_preserves_seed_policy_and_scenario_composition(s
             "scenarioComposition": {
                 "schemaVersion": "scenario-composition-v0",
                 "overrides": [
-                    {"path": "supportNodes.0.inventory.LRU-A", "valueType": "number", "value": 12}
+                    {"path": "supportResources.0.quantity", "valueType": "number", "value": 12}
                 ],
             },
             "analysisRequests": {
@@ -355,7 +355,7 @@ def test_create_experiment_plan_preserves_seed_policy_and_scenario_composition(s
     )
 
     self.assertEqual(plan["config"]["seedPolicy"], {"mode": "fixed", "baseSeed": 909})
-    self.assertEqual(plan["config"]["scenarioComposition"]["overrides"][0]["path"], "supportNodes.0.inventory.LRU-A")
+    self.assertEqual(plan["config"]["scenarioComposition"]["overrides"][0]["path"], "supportResources.0.quantity")
     self.assertEqual(plan["config"]["analysisRequests"]["largeSample"]["samples"], 9)
     self.assertNotIn("experiment", plan["config"]["projectJson"])
     self.assertNotIn("analysisRequests", plan["config"]["projectJson"])

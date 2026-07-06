@@ -5,7 +5,8 @@ import {
   buildPreviewResultState,
   buildFrontendResultState,
   createBackendApiClient,
-  normalizeProjectJsonBasicMissions
+  normalizeProjectJsonBasicMissions,
+  normalizeProjectJsonForClientDraft
 } from "./api-client.mjs";
 import {
   normalizeAnalysisProjectionPayload,
@@ -298,11 +299,11 @@ const MODELING_DATA_MODULES = [
         label: "备件表",
         sourcePage: "备件建模",
         fields: [
-          fieldDef("spareId", "备件ID", "supportNodes[].inventory[].id"),
-          fieldDef("spareName", "备件名称", "supportNodes[].inventory[].name"),
-          fieldDef("equipmentId", "适用装备", "supportNodes[].inventory[].equipmentId"),
-          fieldDef("stockQty", "库存量", "supportNodes[].inventory[].quantity"),
-          fieldDef("safetyStock", "安全库存", "supportNodes[].inventory[].safetyStock")
+          fieldDef("spareId", "备件ID", "supportResources[].id"),
+          fieldDef("spareName", "备件名称", "supportResources[].name"),
+          fieldDef("equipmentId", "适用装备", "supportResources[].equipment"),
+          fieldDef("stockQty", "库存量", "supportResources[].quantity"),
+          fieldDef("supportNodeName", "所属保障点", "supportResources[].supportNodeName")
         ]
       },
       {
@@ -310,12 +311,11 @@ const MODELING_DATA_MODULES = [
         label: "保障人员表",
         sourcePage: "保障人员建模",
         fields: [
-          fieldDef("personnelType", "人员类型", "supportNodes[].personnelCapacity[].type"),
-          fieldDef("specialty", "专业", "supportNodes[].personnelCapacity[].specialty"),
-          fieldDef("nodeId", "所属节点", "supportNodes[].personnelCapacity[].nodeId"),
-          fieldDef("shift", "班次", "supportNodes[].personnelCapacity[].shift"),
-          fieldDef("capacity", "能力人数", "supportNodes[].personnelCapacity[].capacity"),
-          fieldDef("skills", "技能标签", "supportNodes[].personnelCapacity[].skills")
+          fieldDef("personnelType", "人员类型", "supportResources[].type"),
+          fieldDef("specialty", "专业", "supportResources[].model"),
+          fieldDef("nodeId", "所属节点", "supportResources[].supportNodeName"),
+          fieldDef("capacity", "能力人数", "supportResources[].quantity"),
+          fieldDef("resourceName", "资源名称", "supportResources[].name")
         ]
       },
       {
@@ -623,7 +623,6 @@ let selectedOperationsSupportPlanType = "直接准备方案";
 let selectedPreventiveMaintenanceActivityKey = "";
 let selectedPreventiveMaintenanceAircraftModel = "";
 let selectedSupportResourceKeys = new Set();
-let deletedSupportResourceKeys = new Set();
 let supportResourceImportStatus = "可在当前资源清单导入 CSV / TSV / JSON 表格。";
 let equipmentImportStatus = "可导入 CSV / TSV / JSON 装备结构表。";
 let selectedBasicActivityKeys = new Set();
@@ -664,7 +663,11 @@ function importedDataEmptyState(label) {
 
 function supportOrganizationTree() {
   const tree = scenario.supportOrganization?.tree;
-  if (Array.isArray(tree) && tree.length) return tree;
+  if (tree && typeof tree === "object" && !Array.isArray(tree)) return [tree];
+  if (Array.isArray(tree) && tree.length) {
+    scenario.supportOrganization.tree = tree[0];
+    return [scenario.supportOrganization.tree];
+  }
   return buildSupportOrganizationTreeFromNodes();
 }
 
@@ -686,8 +689,8 @@ function buildSupportOrganizationTreeFromNodes() {
   if (!scenario.supportOrganization || typeof scenario.supportOrganization !== "object") {
     scenario.supportOrganization = {};
   }
-  scenario.supportOrganization.tree = [root];
-  return scenario.supportOrganization.tree;
+  scenario.supportOrganization.tree = root;
+  return [scenario.supportOrganization.tree];
 }
 
 function buildEmptySupportOrganizationTree() {
@@ -700,8 +703,8 @@ function buildEmptySupportOrganizationTree() {
   if (!scenario.supportOrganization || typeof scenario.supportOrganization !== "object") {
     scenario.supportOrganization = {};
   }
-  scenario.supportOrganization.tree = [root];
-  return scenario.supportOrganization.tree;
+  scenario.supportOrganization.tree = root;
+  return [scenario.supportOrganization.tree];
 }
 
 function supportActivityPlanForPage(page, activity) {
@@ -5124,10 +5127,10 @@ function cleanupDeletedEquipmentAircraftReferences(deletedModel, fallbackModel =
   for (const member of scenario.combatUnit?.members || []) {
     if (String(member.model || "") === oldModel) member.model = nextModel;
   }
-  for (const override of Object.values(scenario.supportResourceOverrides || {})) {
-    if (Array.isArray(override.aircraft)) {
-      override.aircraft = override.aircraft.filter((model) => String(model) !== oldModel);
-      if (nextModel && !override.aircraft.length) override.aircraft = [nextModel];
+  for (const resource of scenario.supportResources || []) {
+    if (Array.isArray(resource.aircraft)) {
+      resource.aircraft = resource.aircraft.filter((model) => String(model) !== oldModel);
+      if (nextModel && !resource.aircraft.length) resource.aircraft = [nextModel];
     }
   }
   if (selectedBasicMissionEquipmentType === oldModel) {
@@ -5184,9 +5187,9 @@ function updateEquipmentAircraftModel(previousModel, nextModelRaw) {
   for (const member of scenario.combatUnit?.members || []) {
     if (String(member.model || "") === oldModel) member.model = nextModel;
   }
-  for (const override of Object.values(scenario.supportResourceOverrides || {})) {
-    if (Array.isArray(override.aircraft)) {
-      override.aircraft = override.aircraft.map((model) => String(model) === oldModel ? nextModel : model);
+  for (const resource of scenario.supportResources || []) {
+    if (Array.isArray(resource.aircraft)) {
+      resource.aircraft = resource.aircraft.map((model) => String(model) === oldModel ? nextModel : model);
     }
   }
   if (selectedEquipmentNodeKey === `aircraft:${oldModel}`) {
@@ -5845,68 +5848,55 @@ function buildSupportResourceRows(activeResourceType, selectedOrgNode) {
   const orgTree = supportOrganizationTree();
   const leafNodes = flattenSupportOrgTreeNodes(selectedOrgNode ? [selectedOrgNode] : orgTree).filter((node) => !(node.children || []).length);
   const orgNodes = (selectedOrgNode?.children || []).length ? leafNodes : [selectedOrgNode].filter(Boolean);
-  const supportNodes = scenario.supportNodes || [];
-  const overrides = supportResourceOverrides();
+  const supportResources = Array.isArray(scenario.supportResources) ? scenario.supportResources : [];
+  if (!supportResources.length && Array.isArray(scenario.supportNodes)) {
+    return supportResourceRowsFromSupportNodes(scenario.supportNodes, activeResourceType);
+  }
   return orgNodes.flatMap((orgNode, orgIndex) => {
-    const matchingNodes = supportNodes.filter((node) => node.organizationNodeId === orgNode.id || node.id === orgNode.id || node.name === orgNode.name);
-    const scopedSupportNodes = (matchingNodes.length ? matchingNodes : supportNodes)
-      .filter((node) => !activeResourceType || !node.importedResourceType || node.importedResourceType === activeResourceType);
-    const rows = scopedSupportNodes.flatMap((node, nodeIndex) => {
-      const baseKey = `${orgNode.id || orgIndex}:${node.id || nodeIndex}`;
-      const rowScope = { scope: orgNode.name, organizationNodeId: orgNode.id };
-      const lruRows = lruSpareRows().map((spare, index) => ({
-        key: `${baseKey}:spare:${index}:${spare.name}`,
-        ...rowScope,
-        type: "备件",
-        name: spare.name,
-        model: spare.model,
-        quantity: Number(node.inventory?.[spare.name] || 0),
-        equipment: spare.aircraft || spare.equipment || wholeMachineModels()[0] || "",
-        lockIdentity: true
-      }));
-      const inventoryRows = Object.entries(node.inventory || {})
-        .filter(([spareType]) => !lruSpareRows().some((spare) => spare.name === spareType))
-        .map(([spareType, quantity], index) => ({
-          key: `${baseKey}:spare:custom:${index}:${spareType}`,
-          ...rowScope,
-          type: "备件",
-          name: spareType,
-          model: node.spareModels?.[spareType] || spareType,
-          quantity,
-          equipment: node.spareEquipment?.[spareType] || wholeMachineModels()[0] || ""
-        }));
-      return [
-        Number.isFinite(Number(node.personnelCapacity))
-          ? {
-            key: `${baseKey}:personnel`,
-            ...rowScope,
-            type: "保障人员",
-            model: normalizePersonnelSpecialtyName(node.personnelModel || node.personnelType),
-            quantity: Number(node.personnelCapacity || 0),
-          }
-          : null,
-        Number.isFinite(Number(node.equipmentCapacity))
-          ? {
-            key: `${baseKey}:equipment`,
-            ...rowScope,
-            type: "保障设备",
-            name: node.supportEquipmentName || node.equipmentName || node.name || "保障设备",
-            model: node.supportEquipmentModel || node.nodeType || "保障设备",
-            quantity: Number(node.equipmentCapacity || 0),
-            aircraft: wholeMachineModels()
-          }
-          : null,
-        ...lruRows,
-        ...inventoryRows
-      ].filter(Boolean);
-    });
-    const mergedRows = rows.map((row) => {
-      const merged = { ...row, ...(overrides[row.key] || {}) };
-      const selectedOrgNode = findSupportOrgTreeNode(merged.organizationNodeId, orgTree);
-      return { ...merged, scope: selectedOrgNode?.name || merged.scope };
-    });
-    return activeResourceType ? mergedRows.filter((row) => row.type === activeResourceType) : mergedRows;
+    const rows = supportResources
+      .filter((resource) => supportResourceBelongsToOrg(resource, orgNode))
+      .map((resource, resourceIndex) => supportResourceRow(resource, orgNode, orgIndex, resourceIndex));
+    return activeResourceType ? rows.filter((row) => row.type === activeResourceType) : rows;
   });
+}
+
+function supportResourceBelongsToOrg(resource, orgNode) {
+  if (!resource || !orgNode) return false;
+  const nodeName = String(resource.supportNodeName || "").trim();
+  return nodeName === String(orgNode.name || "").trim()
+    || nodeName === String(orgNode.id || "").trim()
+    || String(resource.organizationNodeId || "").trim() === String(orgNode.id || "").trim();
+}
+
+function supportResourceRow(resource, orgNode, orgIndex, resourceIndex) {
+  const type = supportResourceTypeLabel(resource.type);
+  return {
+    key: resource.id || `support-resource-${orgIndex}-${resourceIndex}`,
+    supportResourceId: resource.id,
+    scope: orgNode.name,
+    organizationNodeId: orgNode.id,
+    type,
+    name: resource.name || (type === "保障人员" ? "保障人员" : ""),
+    model: type === "保障人员" ? normalizePersonnelSpecialtyName(resource.model) : (resource.model || ""),
+    quantity: Number(resource.quantity || 0),
+    equipment: resource.equipment || resource.equipmentId || "",
+    lockIdentity: true
+  };
+}
+
+function supportResourceTypeLabel(type) {
+  const normalized = String(type || "").trim().toLowerCase();
+  if (normalized === "personnel") return "保障人员";
+  if (normalized === "equipment") return "保障设备";
+  if (normalized === "spare") return "备件";
+  return String(type || "");
+}
+
+function supportResourceTypeValue(label) {
+  if (label === "保障人员") return "personnel";
+  if (label === "保障设备") return "equipment";
+  if (label === "备件") return "spare";
+  return String(label || "");
 }
 
 function lruSpareRows() {
@@ -5962,12 +5952,7 @@ function supportNodeForOrgNode(orgNode, createIfMissing = false) {
   if (!node && createIfMissing) {
     node = {
       id: `support-node-${Date.now()}`,
-      name: orgNode.name || "新增保障节点",
-      organizationNodeId: orgNode.id,
-      nodeType: "保障节点",
-      personnelCapacity: 0,
-      equipmentCapacity: 0,
-      inventory: {}
+      name: orgNode.name || "新增保障节点"
     };
     scenario.supportNodes.push(node);
   }
@@ -5977,44 +5962,31 @@ function supportNodeForOrgNode(orgNode, createIfMissing = false) {
 function addSupportResource(activeResourceType) {
   const orgNode = selectedSupportOrgTreeNode();
   if (!orgNode || (orgNode.children || []).length) return;
-  const node = createSupportResourceImportNode(orgNode, activeResourceType, supportResourceRowsForOrg(activeResourceType, orgNode).length);
+  supportNodeForOrgNode(orgNode, true);
+  const resource = createSupportResourceImportNode(orgNode, activeResourceType, supportResourceRowsForOrg(activeResourceType, orgNode).length);
   if (activeResourceType === "保障人员") {
-    node.personnelCapacity = 1;
-    node.personnelModel = "";
-    selectedSupportResourceKeys = new Set([`${orgNode.id}:${node.id}:personnel`]);
+    resource.quantity = 1;
+    resource.model = "";
   } else if (activeResourceType === "保障设备") {
-    node.equipmentCapacity = 1;
-    node.supportEquipmentName = "新增保障设备";
-    node.supportEquipmentModel = "保障设备";
-    node.nodeType = "保障设备";
-    selectedSupportResourceKeys = new Set([`${orgNode.id}:${node.id}:equipment`]);
+    resource.quantity = 1;
+    resource.name = "新增保障设备";
+    resource.model = "保障设备";
   } else if (activeResourceType === "备件") {
-    const spare = { name: `新增备件${supportResourceRowsForOrg(activeResourceType, orgNode).length + 1}` };
-    node.inventory = { [spare.name]: 1 };
-    node.spareModels = { [spare.name]: spare.name };
-    node.spareEquipment = { [spare.name]: "" };
-    selectedSupportResourceKeys = new Set([`${orgNode.id}:${node.id}:spare:custom:0:${spare.name}`]);
+    resource.quantity = 1;
+    resource.name = `新增备件${supportResourceRowsForOrg(activeResourceType, orgNode).length + 1}`;
+    resource.model = resource.name;
+    resource.equipment = "";
   }
+  selectedSupportResourceKeys = new Set([resource.id]);
   updatePreviewResultsThroughApiClient();
 }
 
 function supportResourceRowsForOrg(activeResourceType, orgNode) {
-  return buildSupportResourceRows(activeResourceType, orgNode)
-    .filter((row) => !supportResourceDeletedKeySet().has(row.key));
-}
-
-function supportResourceOverrides() {
-  if (!scenario.supportResourceOverrides || typeof scenario.supportResourceOverrides !== "object") {
-    scenario.supportResourceOverrides = {};
-  }
-  return scenario.supportResourceOverrides;
+  return buildSupportResourceRows(activeResourceType, orgNode);
 }
 
 function supportResourceDeletedKeySet() {
-  if (!Array.isArray(scenario.deletedSupportResourceKeys)) {
-    scenario.deletedSupportResourceKeys = Array.from(deletedSupportResourceKeys);
-  }
-  return new Set(scenario.deletedSupportResourceKeys);
+  return new Set();
 }
 
 function supportResourceInput(row, fieldName, type = "text", disabled = false) {
@@ -6096,19 +6068,22 @@ function supportOrganizationSelect(key, selectedNodeId, disabled = false) {
 
 function updateSupportResourceOverride(key, fieldName, value) {
   if (!key || !fieldName) return;
-  const overrides = supportResourceOverrides();
+  if (!Array.isArray(scenario.supportResources)) scenario.supportResources = [];
+  const resource = scenario.supportResources.find((item) => item && item.id === key);
+  if (!resource) return;
   const nextValue = fieldName === "quantity" ? Math.max(0, Number(value || 0)) : value;
-  const nextOverride = { ...(overrides[key] || {}), [fieldName]: nextValue };
   if (fieldName === "organizationNodeId") {
     const orgNode = findSupportOrgTreeNode(nextValue);
-    if (orgNode) nextOverride.scope = orgNode.name;
+    if (orgNode) resource.supportNodeName = orgNode.name;
+  } else if (fieldName === "equipment") {
+    resource.equipment = nextValue;
+  } else {
+    resource[fieldName] = nextValue;
   }
-  if (String(key).includes(":spare:") && fieldName === "model") {
+  if (resource.type === "spare" && fieldName === "model") {
     const autofill = supportSpareAutofillByModel(nextValue);
-    if (autofill.name) nextOverride.name = autofill.name;
+    if (autofill.name) resource.name = autofill.name;
   }
-  overrides[key] = nextOverride;
-  deletedSupportResourceKeys = supportResourceDeletedKeySet();
   updatePreviewResultsThroughApiClient();
 }
 
@@ -6124,7 +6099,6 @@ function supportSpareAutofillByModel(model) {
 function activateSupportResourceEdit(key) {
   if (!key) return;
   selectedSupportResourceKeys = new Set([key]);
-  supportResourceOverrides()[key] = { ...(supportResourceOverrides()[key] || {}) };
 }
 
 function toggleAllSupportResourceSelection(activeResourceType, checked) {
@@ -6142,10 +6116,9 @@ function toggleAllSupportResourceSelection(activeResourceType, checked) {
 }
 
 function deleteSelectedSupportResources() {
-  const nextDeleted = supportResourceDeletedKeySet();
-  for (const key of selectedSupportResourceKeys) nextDeleted.add(key);
-  scenario.deletedSupportResourceKeys = Array.from(nextDeleted);
-  deletedSupportResourceKeys = nextDeleted;
+  if (Array.isArray(scenario.supportResources)) {
+    scenario.supportResources = scenario.supportResources.filter((resource) => !selectedSupportResourceKeys.has(resource.id));
+  }
   selectedSupportResourceKeys = new Set();
   updatePreviewResultsThroughApiClient();
 }
@@ -8640,7 +8613,7 @@ function renderLogisticsSupportActivity(activePlan, activity) {
   selectedLogisticsTransportStrategyIndexes = new Set(
     Array.from(selectedLogisticsTransportStrategyIndexes).filter((index) => index >= 0 && index < transportStrategies.length)
   );
-  const supportNodeOptions = uniqueSelectOptions((scenario.supportNodes || []).map((node) => ({ value: node.id, label: node.name })));
+  const supportNodeOptions = uniqueSelectOptions((scenario.supportNodes || []).map((node) => ({ value: node.name, label: node.name })));
   const spareTypeOptions = spareModelingNames().map((name) => ({ value: name, label: name }));
   const directionOptions = [
     { value: "\u6a2a\u5411\u8fd0\u8f93", label: "\u6a2a\u5411\u8fd0\u8f93" },
@@ -9430,7 +9403,7 @@ function renderScenarioOverrideRow(override, index) {
   const valueType = override.valueType || "string";
   return `
     <tr>
-      <td><input list="scenario-override-path-options" data-scenario-override-path data-scenario-override-index="${index}" value="${htmlEscape(override.path || "")}" placeholder="supportNodes.0.inventory.LRU-A"></td>
+      <td><input list="scenario-override-path-options" data-scenario-override-path data-scenario-override-index="${index}" value="${htmlEscape(override.path || "")}" placeholder="supportResources.0.quantity"></td>
       <td>
         <select data-scenario-override-value-type data-scenario-override-index="${index}">
           ${["string", "number", "boolean", "json"].map((type) => `<option value="${type}" ${valueType === type ? "selected" : ""}>${type}</option>`).join("")}
@@ -9453,9 +9426,9 @@ function scenarioOverrideParameterOptions(projectJson) {
   const preferred = [
     "experiment.samples",
     "experiment.seed",
-    "supportNodes.0.inventory",
-    "supportNodes.0.personnelCapacity",
-    "supportNodes.0.equipmentCapacity",
+    "supportResources.0.quantity",
+    "supportResources.0.supportNodeName",
+    "transportPolicies.0.transportTimeHours",
     "components.0.failureRate",
     "components.0.meanRepairTimeMinutes",
     "basicMissions.0.minRequiredSorties"
@@ -10107,7 +10080,8 @@ function scheduleProjectDraftAutosave() {
 
 async function hydrateCurrentProjectDraftFromApi() {
   try {
-    const projectJson = await backendApi.getProject(currentBackendProjectId());
+    const rawProjectJson = await backendApi.getProject(currentBackendProjectId());
+    const projectJson = normalizeProjectJsonForClientDraft(rawProjectJson);
     scenario = cloneScenario(projectJson);
     experimentPlanDraft = cloneScenario(projectJson);
     const sourceImportId = projectJson.missionProfile?.sourceImportId || "";
@@ -11288,25 +11262,23 @@ function applySupportResourceImportRows(resourceType, rawRows) {
     const orgId = row.organizationNode.id || row.organizationNode.name;
     const rowIndex = rowCountsByOrg.get(orgId) || 0;
     rowCountsByOrg.set(orgId, rowIndex + 1);
+    supportNodeForOrgNode(row.organizationNode, true);
     if (resourceType === "备件") {
-      const node = supportNodeForOrgNode(row.organizationNode, true);
-      if (!node.inventory || typeof node.inventory !== "object") node.inventory = {};
-      node.inventory[row.name] = Number(node.inventory[row.name] || 0) + row.quantity;
-      node.spareModels = { ...(node.spareModels || {}), [row.name]: row.model || row.name };
-      node.spareEquipment = { ...(node.spareEquipment || {}), [row.name]: row.equipment || "" };
+      const resource = createSupportResourceImportNode(row.organizationNode, resourceType, index);
+      resource.name = row.name;
+      resource.model = row.model || row.name;
+      resource.equipment = row.equipment || "";
+      resource.quantity = row.quantity;
       return;
     }
-    const node = rowIndex === 0
-      ? supportNodeForOrgNode(row.organizationNode, true)
-      : createSupportResourceImportNode(row.organizationNode, resourceType, index);
+    const resource = createSupportResourceImportNode(row.organizationNode, resourceType, index);
     if (resourceType === "保障人员") {
-      node.personnelCapacity = row.quantity;
-      node.personnelModel = normalizePersonnelSpecialtyName(row.model);
+      resource.quantity = row.quantity;
+      resource.model = normalizePersonnelSpecialtyName(row.model);
     } else if (resourceType === "保障设备") {
-      node.equipmentCapacity = row.quantity;
-      node.supportEquipmentName = row.name || "保障设备";
-      node.supportEquipmentModel = row.model || "保障设备";
-      node.nodeType = row.model || node.nodeType || "保障设备";
+      resource.quantity = row.quantity;
+      resource.name = row.name || "保障设备";
+      resource.model = row.model || "保障设备";
     }
   });
   selectedSupportResourceKeys = new Set();
@@ -11371,56 +11343,37 @@ function resolveSupportResourceImportOrgNode(row, targetOrgNodes, index) {
 }
 
 function clearSupportResourcesForImport(resourceType, orgIds) {
-  if (!Array.isArray(scenario.supportNodes)) scenario.supportNodes = [];
+  if (!Array.isArray(scenario.supportResources)) scenario.supportResources = [];
   const orgNames = new Set(Array.from(orgIds).map((id) => findSupportOrgTreeNode(id)?.name).filter(Boolean));
-  scenario.supportNodes = scenario.supportNodes.filter((node) => {
-    return !(node.importedResourceType === resourceType && supportNodeMatchesOrgSet(node, orgIds, orgNames));
+  const typeValue = supportResourceTypeValue(resourceType);
+  scenario.supportResources = scenario.supportResources.filter((resource) => {
+    return !(resource.type === typeValue && supportResourceMatchesOrgSet(resource, orgIds, orgNames));
   });
-  for (const node of scenario.supportNodes) {
-    if (!supportNodeMatchesOrgSet(node, orgIds, orgNames)) continue;
-    if (resourceType === "备件") {
-      node.inventory = {};
-      node.spareModels = {};
-      node.spareEquipment = {};
-    } else if (resourceType === "保障人员") {
-      delete node.personnelCapacity;
-      delete node.personnelModel;
-    } else if (resourceType === "保障设备") {
-      delete node.equipmentCapacity;
-      delete node.supportEquipmentName;
-      delete node.supportEquipmentModel;
-    }
-  }
 }
 
-function supportNodeMatchesOrgSet(node, orgIds, orgNames) {
-  return orgIds.has(node.organizationNodeId || "")
-    || orgIds.has(node.id || "")
-    || orgIds.has(node.name || "")
-    || orgNames.has(node.name || "");
+function supportResourceMatchesOrgSet(resource, orgIds, orgNames) {
+  return orgIds.has(resource.organizationNodeId || "")
+    || orgIds.has(resource.supportNodeName || "")
+    || orgNames.has(resource.supportNodeName || "");
 }
 
 function clearDeletedSupportResourceKeysForOrgs(orgIds) {
-  const prefixes = Array.from(orgIds).map((orgId) => `${orgId}:`);
-  const nextDeleted = new Set(
-    Array.from(supportResourceDeletedKeySet()).filter((key) => !prefixes.some((prefix) => String(key).startsWith(prefix)))
-  );
-  scenario.deletedSupportResourceKeys = Array.from(nextDeleted);
-  deletedSupportResourceKeys = nextDeleted;
+  void orgIds;
 }
 
 function createSupportResourceImportNode(orgNode, resourceType, index) {
-  const typeKey = { "保障人员": "personnel", "保障设备": "equipment" }[resourceType] || "resource";
-  const node = {
+  if (!Array.isArray(scenario.supportResources)) scenario.supportResources = [];
+  const typeKey = supportResourceTypeValue(resourceType) || "resource";
+  const resource = {
     id: `${orgNode.id || "support-org"}-${typeKey}-${Date.now()}-${index}`,
-    name: orgNode.name || resourceType,
-    organizationNodeId: orgNode.id || orgNode.name,
-    nodeType: resourceType,
-    inventory: {},
-    importedResourceType: resourceType
+    supportNodeName: orgNode.name || orgNode.id || "保障节点",
+    type: typeKey,
+    name: resourceType,
+    model: "",
+    quantity: 0
   };
-  scenario.supportNodes.push(node);
-  return node;
+  scenario.supportResources.push(resource);
+  return resource;
 }
 
 function pickImportText(row, keys, fallback = "") {
@@ -12813,11 +12766,13 @@ function supportAirportOptions(projectJson) {
   const seen = new Set();
   return supportNodes
     .map((node, index) => {
+      const legacyId = supportNodeScopeId(node);
       const id = supportNodeIdentity(node, index);
       return {
         id,
         name: supportNodeDisplayName(node, id, index),
         supportNodeId: id,
+        supportNodeIds: [id, legacyId, node?.id, node?.supportNodeId, node?.name].map((value) => String(value || "")).filter(Boolean),
         airportId: supportOrgNodeAirport(node)
       };
     })
@@ -12836,22 +12791,19 @@ function modeledSupportNodes(projectJson) {
 }
 
 function projectSupportResourceNodes(projectJson) {
-  return [
-    ...(Array.isArray(projectJson?.supportNodes) ? projectJson.supportNodes : []),
-    ...(Array.isArray(projectJson?.supportResources) ? projectJson.supportResources : []),
-    ...(Array.isArray(projectJson?.objects?.supportResources) ? projectJson.objects.supportResources : [])
-  ];
+  return Array.isArray(projectJson?.supportNodes) ? projectJson.supportNodes : [];
 }
 
 function flattenProjectSupportOrgNodes(nodes = []) {
-  return (Array.isArray(nodes) ? nodes : []).flatMap((node) => [
+  const nodeList = Array.isArray(nodes) ? nodes : (nodes && typeof nodes === "object" ? [nodes] : []);
+  return nodeList.flatMap((node) => [
     node,
     ...flattenProjectSupportOrgNodes(node?.children || [])
   ]);
 }
 
 function supportNodeIdentity(node, index = 0) {
-  return String(supportNodeScopeId(node) || node?.resourceId || node?.name || `support-node-${index}`);
+  return String(node?.name || supportNodeScopeId(node) || node?.resourceId || `support-node-${index}`);
 }
 
 function supportNodeDisplayName(node, id, index = 0) {
@@ -12929,18 +12881,26 @@ function supportNodesForAirport(projectJson, airport) {
 function applyVisualSupportResourceOverrides(node, scope, projectJson) {
   const nodeId = supportNodeScopeId(node);
   const scopeId = String(scope?.id || scope?.supportNodeId || node?.organizationNodeId || nodeId || "");
-  const overrides = projectJson?.supportResourceOverrides || {};
-  const personnelOverride = overrides[`${scopeId}:${nodeId}:personnel`] || {};
-  const equipmentOverride = overrides[`${scopeId}:${nodeId}:equipment`] || {};
+  const resources = Array.isArray(projectJson?.supportResources) ? projectJson.supportResources : [];
+  const nodeName = String(node?.name || nodeId || scopeId || "");
+  const scopedResources = resources.filter((resource) => {
+    const supportNodeName = String(resource.supportNodeName || resource.organizationNodeId || "");
+    return supportNodeName === nodeName || supportNodeName === scopeId || supportNodeName === nodeId;
+  });
+  const personnelResources = scopedResources.filter((resource) => resource.type === "personnel");
+  const equipmentResources = scopedResources.filter((resource) => resource.type === "equipment");
+  const firstPersonnel = personnelResources[0] || {};
+  const firstEquipment = equipmentResources[0] || {};
   return {
     ...node,
     organizationNodeId: node?.organizationNodeId || scopeId,
-    personnelCapacity: personnelOverride.quantity ?? node?.personnelCapacity,
-    personnelModel: personnelOverride.model ?? node?.personnelModel,
-    personnelType: personnelOverride.type ?? node?.personnelType,
-    equipmentCapacity: equipmentOverride.quantity ?? node?.equipmentCapacity,
-    supportEquipmentName: equipmentOverride.name ?? node?.supportEquipmentName,
-    supportEquipmentModel: equipmentOverride.model ?? node?.supportEquipmentModel
+    personnelCapacity: personnelResources.reduce((total, resource) => total + Number(resource.quantity || 0), 0) || node?.personnelCapacity,
+    personnelName: firstPersonnel.name ?? node?.personnelName,
+    personnelModel: firstPersonnel.model ?? node?.personnelModel,
+    personnelType: firstPersonnel.type ?? node?.personnelType,
+    equipmentCapacity: equipmentResources.reduce((total, resource) => total + Number(resource.quantity || 0), 0) || node?.equipmentCapacity,
+    supportEquipmentName: firstEquipment.name ?? node?.supportEquipmentName,
+    supportEquipmentModel: firstEquipment.model ?? node?.supportEquipmentModel
   };
 }
 
@@ -12948,7 +12908,9 @@ function supportRowsForAirportScope(state, scope) {
   const supportNodeIds = new Set([
     scope.selectedAirport?.id,
     scope.selectedAirport?.supportNodeId,
-    ...scope.supportNodes.flatMap((node) => [supportNodeScopeId(node), node.organizationNodeId])
+    scope.selectedAirport?.name,
+    ...scope.supportNodes.flatMap((node) => [supportNodeScopeId(node), node.organizationNodeId]),
+    ...scope.supportNodes.map((node) => node.name)
   ].map((value) => String(value || "")).filter(Boolean));
   const scopedResources = state.resources.filter((resource) => supportRowBelongsToScope(resource, supportNodeIds, scope.selectedAirport));
   const scopedSpares = state.spares.filter((spare) => supportRowBelongsToScope(spare, supportNodeIds, scope.selectedAirport));
@@ -13026,7 +12988,7 @@ function personnelRowsForAirportScope(scope, resources) {
       rows.push(supportMetricRowFromConfig({
         organization,
         type: professional || "人员专业",
-        name: "保障人员",
+        name: node.personnelName || "保障人员",
         capacity,
         inUse: stats.inUse,
         workCount: stats.workCount,

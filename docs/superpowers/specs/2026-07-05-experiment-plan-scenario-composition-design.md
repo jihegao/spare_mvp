@@ -58,7 +58,7 @@ ExperimentPlan config 增加以下结构：
     "baseProjectVersion": "project-v0.1",
     "overrides": [
       {
-        "path": "supportNodes.0.inventory.LRU-A",
+        "path": "supportResources.0.quantity",
         "valueType": "number",
         "value": 12,
         "label": "基层保障点 LRU-A 库存"
@@ -84,7 +84,7 @@ ExperimentPlan config 增加以下结构：
 
 ## Scenario 拼接规则
 
-1. path 使用当前前端已有的点号路径形式，例如 `experiment.steps`、`supportNodes.0.inventory.LRU-A`。
+1. path 使用当前前端已有的点号路径形式，例如 `experiment.steps`、`supportResources.0.quantity`。
 2. 覆盖项按列表顺序应用；后面的同 path 覆盖前面的同 path。
 3. `valueType` 支持 `string`、`number`、`boolean`、`json`。
 4. `json` 类型必须能解析成合法 JSON 值，否则保存失败并停留在编辑页。
