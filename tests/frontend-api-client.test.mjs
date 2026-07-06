@@ -866,7 +866,7 @@ test("buildExperimentPlanConfig preserves stop policy and strips it from branch 
       schemaVersion: "stop-policy-v0",
       mode: "and",
       conditions: [
-        { type: "duration" },
+        { type: "duration", durationMinutes: 480 },
         { type: "failure" },
         { type: "specifiedTime", minute: 90 }
       ]
@@ -877,7 +877,7 @@ test("buildExperimentPlanConfig preserves stop policy and strips it from branch 
     schemaVersion: "stop-policy-v0",
     mode: "and",
     conditions: [
-      { type: "duration" },
+      { type: "duration", durationMinutes: 480 },
       { type: "failure" },
       { type: "specifiedTime", minute: 90 }
     ]
@@ -894,7 +894,8 @@ test("buildExperimentPlanConfig defaults stop policy to duration OR semantics", 
   assert.deepEqual(config.stopPolicy, {
     schemaVersion: "stop-policy-v0",
     mode: "or",
-    conditions: [{ type: "duration" }]
+    conditions: [{ type: "duration" }],
+    defaulted: true
   });
 });
 

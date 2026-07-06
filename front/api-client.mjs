@@ -546,31 +546,40 @@ function normalizedScenarioComposition(projectJson) {
 }
 
 function normalizedStopPolicy(projectJson, experiment) {
-  const source = stopPolicySource(projectJson, experiment);
+  const { source, defaulted } = stopPolicySource(projectJson, experiment);
   const mode = source.mode === "and" ? "and" : "or";
   const conditions = Array.isArray(source.conditions)
     ? source.conditions.map(normalizedStopCondition).filter(Boolean)
     : [];
-  return {
+  const policy = {
     schemaVersion: source.schemaVersion || "stop-policy-v0",
     mode,
     conditions: conditions.length ? conditions : [{ type: "duration" }]
   };
+  if (defaulted || truthyFlag(source.defaulted)) policy.defaulted = true;
+  return policy;
 }
 
 function stopPolicySource(projectJson, experiment) {
   if (projectJson.stopPolicy && typeof projectJson.stopPolicy === "object" && !Array.isArray(projectJson.stopPolicy)) {
-    return projectJson.stopPolicy;
+    return { source: projectJson.stopPolicy, defaulted: false };
   }
   if (experiment.stopPolicy && typeof experiment.stopPolicy === "object" && !Array.isArray(experiment.stopPolicy)) {
-    return experiment.stopPolicy;
+    return { source: experiment.stopPolicy, defaulted: false };
   }
-  return {};
+  return { source: {}, defaulted: true };
 }
 
 function normalizedStopCondition(condition) {
   if (!condition || typeof condition !== "object" || Array.isArray(condition)) return null;
   const type = normalizedStopConditionType(condition.type);
+  if (type === "duration") {
+    const durationMinutes = positiveInteger(
+      condition.durationMinutes ?? condition.duration_minutes ?? condition.minute ?? condition.minutes,
+      0
+    );
+    return durationMinutes > 0 ? { type, durationMinutes } : { type };
+  }
   if (type === "specifiedTime") {
     const minute = positiveInteger(condition.minute ?? condition.timeMinute ?? condition.specifiedMinute, 0);
     return minute > 0 ? { type, minute } : null;
@@ -584,6 +593,12 @@ function normalizedStopConditionType(value) {
   if (["failure", "taskFailure", "task_failure"].includes(text)) return "failure";
   if (["specifiedTime", "specified_time", "time", "targetTime", "target_time"].includes(text)) return "specifiedTime";
   return "";
+}
+
+function truthyFlag(value) {
+  if (value === true) return true;
+  if (value === false || value === null || value === undefined || value === "") return false;
+  return ["1", "true", "yes", "on"].includes(String(value).trim().toLowerCase());
 }
 
 function normalizedScenarioOverride(override) {

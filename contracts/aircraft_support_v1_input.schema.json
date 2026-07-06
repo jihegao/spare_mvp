@@ -180,6 +180,7 @@
       "properties": {
         "schema_version": { "type": "string", "const": "stop-policy-v0" },
         "mode": { "type": "string", "enum": ["or", "and"] },
+        "defaulted": { "type": "boolean" },
         "conditions": {
           "type": "array",
           "minItems": 1,

@@ -2117,7 +2117,7 @@ class BackendApiContractTest(unittest.TestCase):
                     "seed": 2,
                     "metrics": {"failed_sorties": 0, "ready_rate": 1},
                     "mission_wave_reliability": [
-                        {"dayIndex": 1, "waveIndex": 1, "plannedSorties": 2, "launchedSorties": 2, "successfulSorties": 1, "missionSuccessRate": 0.5, "sortieRate": 1},
+                        {"dayIndex": 1, "waveIndex": 1, "plannedSorties": 6, "launchedSorties": 4, "successfulSorties": 3, "missionSuccessRate": 0.5, "sortieRate": 4 / 6},
                     ],
                 },
             ],
@@ -2127,7 +2127,10 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(result["rows"], result["wave_rows"])
         self.assertEqual([row["waveKey"] for row in result["rows"]], ["d1-w1", "d1-w2"])
         self.assertEqual([row["sampleCount"] for row in result["rows"]], [2, 1])
-        self.assertAlmostEqual(result["rows"][0]["meanMissionSuccessRate"], 0.75)
+        self.assertAlmostEqual(result["rows"][0]["plannedSorties"], 4)
+        self.assertAlmostEqual(result["rows"][0]["successfulSorties"], 2.5)
+        self.assertAlmostEqual(result["rows"][0]["meanMissionSuccessRate"], 5 / 8)
+        self.assertAlmostEqual(result["rows"][0]["meanSortieRate"], 6 / 8)
         self.assertEqual(result["rows"][1]["meanMissionSuccessRate"], 0)
         self.assertTrue(all(0 <= row["meanMissionSuccessRate"] <= 1 for row in result["rows"]))
         self.assertNotIn("seed", result["rows"][0])

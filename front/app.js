@@ -2186,6 +2186,7 @@ function bindEvents() {
     if (experimentStopModeSelect) {
       const policy = experimentPlanStopPolicy();
       policy.mode = experimentStopModeSelect.value === "and" ? "and" : "or";
+      delete policy.defaulted;
       experimentPlanDraft.stopPolicy = policy;
       experimentPlanBranchActive = true;
       updatePreviewResultsThroughApiClient(experimentPlanDraft);
@@ -2203,6 +2204,7 @@ function bindEvents() {
         conditions.push(type === "specifiedTime" ? { type, minute: positiveExperimentStopMinute(existingMinute ?? 1440) } : { type });
       }
       policy.conditions = normalizedExperimentStopConditions(conditions);
+      delete policy.defaulted;
       experimentPlanDraft.stopPolicy = policy;
       experimentPlanBranchActive = true;
       updatePreviewResultsThroughApiClient(experimentPlanDraft);
@@ -2213,10 +2215,15 @@ function bindEvents() {
     const experimentStopTimeInput = event.target.closest("[data-experiment-stop-time-minute]");
     if (experimentStopTimeInput) {
       const policy = experimentPlanStopPolicy();
+      const hasSpecifiedTime = policy.conditions.some(
+        (condition) => normalizedExperimentStopConditionType(condition.type) === "specifiedTime"
+      );
+      if (!hasSpecifiedTime) return;
       policy.conditions = policy.conditions.filter(
         (condition) => normalizedExperimentStopConditionType(condition.type) !== "specifiedTime"
       );
       policy.conditions.push({ type: "specifiedTime", minute: positiveExperimentStopMinute(parseInput(experimentStopTimeInput)) });
+      delete policy.defaulted;
       experimentPlanDraft.stopPolicy = policy;
       experimentPlanBranchActive = true;
       updatePreviewResultsThroughApiClient(experimentPlanDraft);
@@ -9104,7 +9111,7 @@ function renderExperimentStopPolicyControls(stopPolicy) {
       <label><input data-experiment-stop-condition="duration" type="checkbox" ${conditions.has("duration") ? "checked" : ""}> 达到任务时长</label>
       <label><input data-experiment-stop-condition="failure" type="checkbox" ${conditions.has("failure") ? "checked" : ""}> 任务失败</label>
       <label><input data-experiment-stop-condition="specifiedTime" type="checkbox" ${conditions.has("specifiedTime") ? "checked" : ""}> 达到指定时间</label>
-      <label>停止分钟<input data-experiment-stop-time-minute type="number" min="1" step="1" value="${htmlEscape(specifiedMinute)}"></label>
+      <label>停止分钟<input data-experiment-stop-time-minute type="number" min="1" step="1" value="${htmlEscape(specifiedMinute)}" ${conditions.has("specifiedTime") ? "" : "disabled"}></label>
     </div>
   `;
 }
@@ -15588,7 +15595,7 @@ function ensureExperimentPlanDraftDefaults(projectJson) {
   projectJson.seedPolicy.baseSeed = positiveExperimentSeed(projectJson.seedPolicy.baseSeed ?? projectJson.experiment.seed);
   projectJson.experiment.seed = projectJson.seedPolicy.baseSeed;
   if (!projectJson.stopPolicy || typeof projectJson.stopPolicy !== "object" || Array.isArray(projectJson.stopPolicy)) {
-    projectJson.stopPolicy = { schemaVersion: "stop-policy-v0", mode: "or", conditions: [{ type: "duration" }] };
+    projectJson.stopPolicy = { schemaVersion: "stop-policy-v0", mode: "or", conditions: [{ type: "duration" }], defaulted: true };
   }
   projectJson.stopPolicy.schemaVersion ||= "stop-policy-v0";
   projectJson.stopPolicy.mode = projectJson.stopPolicy.mode === "and" ? "and" : "or";
@@ -15641,6 +15648,13 @@ function normalizedExperimentStopCondition(condition) {
   if (!type) return null;
   if (type === "specifiedTime") {
     return { type, minute: positiveExperimentStopMinute(condition.minute ?? condition.timeMinute ?? 1440) };
+  }
+  if (type === "duration") {
+    const durationMinutes = positiveExperimentNumber(
+      condition.durationMinutes ?? condition.duration_minutes ?? condition.minute ?? condition.minutes,
+      0
+    );
+    return durationMinutes > 0 ? { type, durationMinutes: Math.trunc(durationMinutes) } : { type };
   }
   return { type };
 }

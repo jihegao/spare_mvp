@@ -142,6 +142,7 @@ class SimulationAdapterTest(unittest.TestCase):
                 "schema_version": "stop-policy-v0",
                 "mode": "or",
                 "conditions": [{"type": "duration", "duration_minutes": inputs["time"]["duration_minutes"]}],
+                "defaulted": True,
             },
         )
         self.assertEqual(inputs["aircraft"]["fleet_count"], 6)
@@ -190,6 +191,7 @@ class SimulationAdapterTest(unittest.TestCase):
                     {"type": "specified_time", "minute": 90},
                     {"type": "failure"},
                 ],
+                "defaulted": False,
             },
         )
 
@@ -692,7 +694,7 @@ class SimulationAdapterTest(unittest.TestCase):
                 },
                 {
                     "mission_wave_reliability": [
-                        {"day_index": 1, "wave_index": 1, "planned_sorties": 2, "launched_sorties": 2, "successful_sorties": 1, "mission_success_rate": 0.5, "sortie_rate": 1},
+                        {"day_index": 1, "wave_index": 1, "planned_sorties": 6, "launched_sorties": 4, "successful_sorties": 3, "mission_success_rate": 0.5, "sortie_rate": 4 / 6},
                     ]
                 },
             ],
@@ -700,7 +702,10 @@ class SimulationAdapterTest(unittest.TestCase):
 
         self.assertEqual([row["wave_key"] for row in rows], ["d1-w1", "d1-w2"])
         self.assertEqual([row["sample_count"] for row in rows], [2, 1])
-        self.assertAlmostEqual(rows[0]["mean_mission_success_rate"], 0.75)
+        self.assertAlmostEqual(rows[0]["planned_sorties"], 4)
+        self.assertAlmostEqual(rows[0]["successful_sorties"], 2.5)
+        self.assertAlmostEqual(rows[0]["mean_mission_success_rate"], 5 / 8)
+        self.assertAlmostEqual(rows[0]["sortie_rate"], 6 / 8)
         self.assertEqual(rows[1]["mean_mission_success_rate"], 0)
         self.assertTrue(all(0 <= row["mission_success_probability"] <= 1 for row in rows))
 

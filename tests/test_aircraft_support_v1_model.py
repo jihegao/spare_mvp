@@ -475,6 +475,23 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
         self.assertLess(metrics["elapsed_minutes"], 24 * 60)
         self.assertEqual(model.completed_sorties, 1)
 
+    def test_explicit_temporal_stop_policy_waits_past_natural_completion(self) -> None:
+        for condition, expected_reason in [
+            ({"type": "duration", "duration_minutes": 24 * 60}, "duration"),
+            ({"type": "specified_time", "minute": 24 * 60}, "specified_time"),
+        ]:
+            with self.subTest(condition=condition):
+                inputs = _periodic_repeat_inputs(repeat_count=1)
+                inputs["stop_policy"] = {"mode": "or", "conditions": [condition]}
+
+                execution = AircraftSupportV1Model(inputs).run()
+
+                metrics = execution["metrics"]
+                self.assertEqual(metrics["elapsed_minutes"], 24 * 60)
+                self.assertEqual(metrics["stop_reason"], expected_reason)
+                self.assertEqual(metrics["stop_conditions_met"], [expected_reason])
+                self.assertEqual(metrics["completed_sorties"], 1)
+
     def test_stop_policy_duration_condition_stops_at_configured_duration(self) -> None:
         inputs = _minimal_inputs()
         inputs["stop_policy"] = {

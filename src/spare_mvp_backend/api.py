@@ -1575,6 +1575,12 @@ def _mean_mission_wave_reliability(samples: list[dict[str, Any]]) -> list[dict[s
     for sequence, (day, wave) in enumerate(sorted(by_wave), start=1):
         bucket = by_wave[(day, wave)]
         sample_count = max(1.0, bucket["sampleCount"])
+        if bucket["plannedSorties"] > 0:
+            mission_success = _clamp01(bucket["successfulSorties"] / bucket["plannedSorties"])
+            sortie_rate = _clamp01(bucket["launchedSorties"] / bucket["plannedSorties"])
+        else:
+            mission_success = _clamp01(bucket["missionSuccessRate"] / sample_count)
+            sortie_rate = _clamp01(bucket["sortieRate"] / sample_count)
         rows.append(
             {
                 "sequence": sequence,
@@ -1586,8 +1592,8 @@ def _mean_mission_wave_reliability(samples: list[dict[str, Any]]) -> list[dict[s
                 "plannedSorties": bucket["plannedSorties"] / sample_count,
                 "launchedSorties": bucket["launchedSorties"] / sample_count,
                 "successfulSorties": bucket["successfulSorties"] / sample_count,
-                "meanMissionSuccessRate": _clamp01(bucket["missionSuccessRate"] / sample_count),
-                "meanSortieRate": _clamp01(bucket["sortieRate"] / sample_count),
+                "meanMissionSuccessRate": mission_success,
+                "meanSortieRate": sortie_rate,
             }
         )
     return rows

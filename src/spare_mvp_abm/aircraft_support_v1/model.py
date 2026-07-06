@@ -313,9 +313,22 @@ class AircraftSupportV1Model:
         if policy_met:
             reason = policy_conditions[0] if len(policy_conditions) == 1 else "stop_policy"
             return reason, policy_conditions
-        if self._natural_completion_reached():
+        if self._natural_completion_reached() and not self._explicit_temporal_stop_pending():
             return "natural_complete", ["natural_complete"]
         return "", []
+
+    def _explicit_temporal_stop_pending(self) -> bool:
+        if self.stop_policy.get("defaulted"):
+            return False
+        for condition in self.stop_policy.get("conditions", []):
+            condition_type = str(condition.get("type") or "")
+            if condition_type == "duration":
+                if self.minute < int(condition.get("duration_minutes") or self.duration_minutes):
+                    return True
+            elif condition_type == "specified_time":
+                if self.minute < int(condition.get("minute") or self.duration_minutes):
+                    return True
+        return False
 
     def _stop_policy_met(self) -> tuple[bool, list[str]]:
         evaluations: list[tuple[str, bool]] = []
@@ -1869,6 +1882,7 @@ def _normalized_stop_policy(value: Any, duration_minutes: int) -> dict[str, Any]
     source = value if isinstance(value, dict) else {}
     mode = "and" if str(source.get("mode") or "").strip().lower() == "and" else "or"
     raw_conditions = source.get("conditions") if isinstance(source.get("conditions"), list) else []
+    defaulted = _truthy_input_flag(source.get("defaulted")) or not isinstance(value, dict) or not raw_conditions
     conditions = [
         condition
         for raw_condition in raw_conditions
@@ -1880,6 +1894,7 @@ def _normalized_stop_policy(value: Any, duration_minutes: int) -> dict[str, Any]
         "schema_version": str(source.get("schema_version") or source.get("schemaVersion") or "stop-policy-v0"),
         "mode": mode,
         "conditions": conditions,
+        "defaulted": defaulted,
     }
 
 

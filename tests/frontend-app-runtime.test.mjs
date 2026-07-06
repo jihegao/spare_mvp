@@ -1667,6 +1667,29 @@ test("experiment plan save posts composed projectJson without mutating source pr
   }
 });
 
+test("experiment plan stop minute edit does not enable specified time unless checked", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-experiment-plan-management",
+    projectJson: createRuntimeProjectJson()
+  });
+
+  try {
+    await runtime.click("[data-experiment-plan-add]", { experimentPlanAdd: "" });
+    await runtime.change("[data-experiment-stop-time-minute]", {}, { value: "90", type: "number" });
+    await runtime.click("[data-save-plan]");
+
+    const createPlanRequest = runtime.requests.find((request) => (
+      request.url === "/api/projects/project-runtime/experiment-plans"
+      && (request.options.method || "GET") === "POST"
+    ));
+    assert.ok(createPlanRequest, "composed experiment plan should be posted to backend");
+    const body = JSON.parse(createPlanRequest.options.body || "{}");
+    assert.deepEqual(body.config.stopPolicy.conditions, [{ type: "duration" }]);
+  } finally {
+    runtime.restore();
+  }
+});
+
 test("experiment plan editor uses a Chinese modeling data tree for leaf override editing", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=spare-planning-experiment-plan-management",

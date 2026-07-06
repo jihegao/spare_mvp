@@ -571,7 +571,8 @@ class SimulationAdapter:
         duration_minutes: int,
     ) -> dict[str, Any]:
         source: dict[str, Any] = {}
-        for candidate in self._runtime_stop_policy_sources(project, runtime_config):
+        sources = self._runtime_stop_policy_sources(project, runtime_config)
+        for candidate in sources:
             source.update(copy.deepcopy(candidate))
         mode = "and" if str(source.get("mode") or "").strip().lower() == "and" else "or"
         raw_conditions = source.get("conditions") if isinstance(source.get("conditions"), list) else []
@@ -588,6 +589,7 @@ class SimulationAdapter:
             "schema_version": str(source.get("schemaVersion") or source.get("schema_version") or "stop-policy-v0"),
             "mode": mode,
             "conditions": conditions,
+            "defaulted": not sources or self._truthy_config_flag(source.get("defaulted")),
         }
 
     def _runtime_stop_policy_sources(
@@ -3213,8 +3215,12 @@ class SimulationAdapter:
         for sequence, (day, wave) in enumerate(sorted(by_wave), start=1):
             bucket = by_wave[(day, wave)]
             sample_count = max(1.0, bucket["sample_count"])
-            mission_success = self._clamp01(bucket["mission_success_rate"] / sample_count)
-            sortie_rate = self._clamp01(bucket["sortie_rate"] / sample_count)
+            if bucket["planned_sorties"] > 0:
+                mission_success = self._clamp01(bucket["successful_sorties"] / bucket["planned_sorties"])
+                sortie_rate = self._clamp01(bucket["launched_sorties"] / bucket["planned_sorties"])
+            else:
+                mission_success = self._clamp01(bucket["mission_success_rate"] / sample_count)
+                sortie_rate = self._clamp01(bucket["sortie_rate"] / sample_count)
             rows.append(
                 {
                     "sequence": sequence,
@@ -4047,6 +4053,13 @@ class SimulationAdapter:
 
     def _is_positive_number(self, value: Any) -> bool:
         return self._is_number(value) and float(value) > 0
+
+    def _truthy_config_flag(self, value: Any) -> bool:
+        if isinstance(value, bool):
+            return value
+        if value in (None, ""):
+            return False
+        return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
     def _has_any_number(self, value: Any) -> bool:
         if isinstance(value, list):
