@@ -610,14 +610,18 @@ test("four result analysis pages omit Mesa from visible copy", async () => {
       projectJson: createRuntimeProjectJson()
     });
     try {
-      assert.match(runtime.appNode.innerHTML, /分析设置/);
+      assert.match(runtime.appNode.innerHTML, /分析设定/);
+      assert.match(runtime.appNode.innerHTML, /分析结果明细/);
       assert.match(runtime.appNode.innerHTML, /data-lite-mesa-analysis-action="run">运行分析<\/button>/);
       assert.match(runtime.appNode.innerHTML, /尚未运行分析/);
       assert.doesNotMatch(runtime.appNode.innerHTML, /lite-mesa-source-grid/);
       assert.doesNotMatch(runtime.appNode.innerHTML, /输出边界|持久化/);
       const settingsPanel = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-settings");
-      assert.doesNotMatch(settingsPanel, /data-lite-mesa-analysis-field="samples"/);
-      assert.doesNotMatch(settingsPanel, /data-lite-mesa-analysis-field="seed"/);
+      assert.match(settingsPanel, /样本量 \/ 随机种子只读/);
+      assert.match(settingsPanel, /样本量[\s\S]*<strong>27<\/strong>/);
+      assert.match(settingsPanel, /随机种子[\s\S]*<strong>20260621<\/strong>/);
+      assert.doesNotMatch(settingsPanel, /data-lite-mesa-analysis-field="samples"|data-lite-mesa-analysis-field="seed"/);
+      assert.doesNotMatch(settingsPanel, /实验类型|统计口径/);
       for (const removedCopy of [
         "前端建模 + Mesa 分析",
         "运行 Mesa 分析",
@@ -635,7 +639,7 @@ test("four result analysis pages omit Mesa from visible copy", async () => {
   }
 });
 
-test("spare shortfall analysis uses the shared two-column analysis layout", async () => {
+test("spare shortfall analysis uses the shared read-only analysis setting line", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=spare-planning-spare-shortfall-analysis",
     projectJson: createRuntimeProjectJson()
@@ -643,11 +647,15 @@ test("spare shortfall analysis uses the shared two-column analysis layout", asyn
 
   try {
     const settingsPanel = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-settings");
-    assert.match(runtime.appNode.innerHTML, /class="lite-mesa-layout lite-mesa-analysis-layout"/);
+    assert.match(runtime.appNode.innerHTML, /class="lite-mesa-settings lite-mesa-analysis-settings"/);
+    assert.match(runtime.appNode.innerHTML, /class="lite-mesa-stat-section lite-mesa-analysis-detail"/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /full-settings/);
-    assert.match(settingsPanel, /样本量[\s\S]*value="27" readonly/);
-    assert.match(settingsPanel, /随机种子[\s\S]*value="20260621" readonly/);
-    assert.match(settingsPanel, /实验类型[\s\S]*value="项目基线" readonly/);
+    assert.match(settingsPanel, /样本量[\s\S]*<strong>27<\/strong>/);
+    assert.match(settingsPanel, /随机种子[\s\S]*<strong>20260621<\/strong>/);
+    assert.match(settingsPanel, /当前项目建模数据/);
+    assert.match(settingsPanel, /短缺事件统计/);
+    assert.doesNotMatch(settingsPanel, /<input|<select|type="number"/);
+    assert.doesNotMatch(settingsPanel, /实验类型|统计口径/);
     assert.doesNotMatch(settingsPanel, /project_baseline_at_current_granularity/);
     assert.doesNotMatch(settingsPanel, /用户参数|无可调参数/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /lite-mesa-source-grid|<span>输出边界<\/span>|<span>持久化<\/span>/);
@@ -666,7 +674,8 @@ test("spare shortfall analysis renders average delay hours and hides session chr
   try {
     await runtime.click("[data-lite-mesa-analysis-action='run']");
 
-    assert.match(runtime.appNode.innerHTML, /备件短板一览/);
+    assert.match(runtime.appNode.innerHTML, /分析结果明细/);
+    assert.match(runtime.appNode.innerHTML, /基于当前项目建模数据的短缺事件统计/);
     assert.match(runtime.appNode.innerHTML, /平均备件延误时间\(h\)/);
     assert.match(runtime.appNode.innerHTML, /因维修延误导致的任务取消次数/);
     assert.match(runtime.appNode.innerHTML, />1\.50</);
@@ -702,9 +711,22 @@ test("carry list analysis renames the mission confidence field", async () => {
     const hero = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-hero");
     const settingsPanel = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-settings");
     assert.doesNotMatch(hero, /在给定置信度约束下探索建议携行数量、优先级和风险项。/);
-    assert.match(settingsPanel, /能满足任务要求置信度/);
-    assert.match(settingsPanel, /data-lite-mesa-analysis-field="missionConfidenceTarget"/);
+    assert.match(settingsPanel, /置信度目标[\s\S]*data-lite-mesa-analysis-field="missionConfidenceTarget"[\s\S]*value="0\.9"/);
+    assert.match(settingsPanel, /目标函数[\s\S]*携行备件总量最小/);
+    assert.doesNotMatch(settingsPanel, /data-lite-mesa-analysis-field="samples"|data-lite-mesa-analysis-field="seed"/);
     assert.doesNotMatch(settingsPanel, /任务置信目标/);
+
+    await runtime.change(
+      "[data-lite-mesa-analysis-field]",
+      { liteMesaAnalysisField: "missionConfidenceTarget" },
+      { value: "0.82" }
+    );
+    await runtime.click("[data-lite-mesa-analysis-action='run']");
+    const analysisRun = runtime.requests
+      .filter((request) => request.url === "/api/mesa-analysis-runs")
+      .map((request) => JSON.parse(request.options.body || "{}"))
+      .at(-1);
+    assert.equal(analysisRun.settings.missionConfidenceTarget, 0.82);
   } finally {
     runtime.restore();
   }
@@ -762,8 +784,9 @@ test("downtime factors analysis omits snapshot capability setting", async () => 
 
   try {
     const settingsPanel = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-settings");
-    assert.match(settingsPanel, /展示 TopN/);
-    assert.match(settingsPanel, /实验类型/);
+    assert.match(settingsPanel, /排序范围[\s\S]*data-lite-mesa-analysis-field="topN"[\s\S]*value="4"/);
+    assert.doesNotMatch(settingsPanel, /实验类型|统计口径/);
+    assert.doesNotMatch(settingsPanel, /data-lite-mesa-analysis-field="samples"|data-lite-mesa-analysis-field="seed"/);
     assert.doesNotMatch(settingsPanel, /快照能力|会话内只读解释/);
   } finally {
     runtime.restore();
@@ -787,6 +810,8 @@ test("carry list analysis result omits boundary explanation card", async () => {
     assert.equal(analysisRun.model_family, "aircraft_support_v1");
     assert.equal(analysisRun.settings.missionConfidenceTarget, 0.9);
     assert.match(runtime.appNode.innerHTML, /分析结果已生成|分析完成/);
+    const detailPanel = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-analysis-detail");
+    assert.doesNotMatch(detailPanel, /置信度目标|样本数/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /边界说明/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /正式 current-analysis|正式 run artifact/);
   } finally {
@@ -811,6 +836,8 @@ test("downtime factors analysis enables log snapshots and renders event snapshot
     assert.equal(analysisRequest.model_family, "aircraft_support_v1");
     assert.equal(analysisRequest.settings.topN, 4);
     assert.match(runtime.appNode.innerHTML, /分析结果已生成|分析完成/);
+    const detailPanel = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-analysis-detail");
+    assert.doesNotMatch(detailPanel, /样本数/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /正式 current-analysis/);
     assert.match(runtime.appNode.innerHTML, /停机事件一览/);
     assert.match(runtime.appNode.innerHTML, /备件短缺/);
@@ -826,7 +853,7 @@ test("experiment and analysis pages render when Project draft has no root experi
   const featureExpectations = [
     ["spare-planning-experiment-plan-management", /方案列表/],
     ["spare-planning-monte-carlo-experiment-detail", /蒙特卡洛分析/],
-    ["spare-planning-spare-shortfall-analysis", /分析设置/]
+    ["spare-planning-spare-shortfall-analysis", /分析设定/]
   ];
 
   for (const [featureId, expectedCopy] of featureExpectations) {
@@ -1159,6 +1186,60 @@ test("basic support activity add uses a draft dialog before creating a row", asy
   }
 });
 
+test("basic support activity library filters rows by selected activity type", async () => {
+  const projectJson = createRuntimeProjectJson();
+  projectJson.supportActivities.push(
+    {
+      id: "preventive-runtime",
+      activityType: "预防性维修",
+      planType: "预防性维修方案",
+      activityName: "J-15定检方案",
+      aircraftModel: "J-15",
+      jobs: [{
+        activityCode: "PM-900",
+        workName: "定检基本保障活动",
+        predecessors: [],
+        durationMinutes: 40
+      }]
+    },
+    {
+      id: "corrective-runtime",
+      activityType: "修复性维修",
+      planType: "修复性维修方案",
+      activityName: "部件修复方案",
+      equipmentId: "component-x",
+      jobs: [{
+        activityCode: "CM-900",
+        workName: "部件修复作业",
+        predecessors: [],
+        durationMinutes: 55
+      }]
+    }
+  );
+  const runtime = await setupRuntimeApp({ projectJson });
+
+  try {
+    await runtime.click("[data-enter-workbench]", { projectId: "runtime" });
+    await runtime.setHash("feature=spare-planning-basic-support-activity");
+
+    assert.match(runtime.appNode.innerHTML, /初始工作项目/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /定检基本保障活动/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /部件修复作业/);
+
+    await runtime.change("[data-basic-activity-import-type-select]", {}, { value: "修复性维修" });
+    assert.match(runtime.appNode.innerHTML, /部件修复作业/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /初始工作项目/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /定检基本保障活动/);
+
+    await runtime.change("[data-basic-activity-import-type-select]", {}, { value: "预防性维修" });
+    assert.match(runtime.appNode.innerHTML, /定检基本保障活动/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /初始工作项目/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /部件修复作业/);
+  } finally {
+    runtime.restore();
+  }
+});
+
 test("corrective basic activity draft uses the selected component scope", async () => {
   const projectJson = createRuntimeProjectJson({
     components: [
@@ -1242,7 +1323,7 @@ test("basic support activity codes stay unique when edited at runtime", async ()
     );
 
     assert.equal((runtime.appNode.innerHTML.match(/<td>BA-001<\/td>/g) || []).length, 1);
-    assert.match(runtime.appNode.innerHTML, /value="BA-002"/);
+    assert.equal((runtime.appNode.innerHTML.match(/<td>BA-002<\/td>/g) || []).length, 1);
   } finally {
     runtime.restore();
   }
@@ -1888,8 +1969,9 @@ test("mission reliability and downtime analysis sample settings follow selected 
       );
 
       const settingsPanel = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-settings");
-      assert.match(settingsPanel, /样本量[\s\S]*value="4" readonly/);
-      assert.match(settingsPanel, /随机种子[\s\S]*value="404" readonly/);
+      assert.match(settingsPanel, /样本量[\s\S]*<strong>4<\/strong>/);
+      assert.match(settingsPanel, /随机种子[\s\S]*<strong>404<\/strong>/);
+      assert.doesNotMatch(settingsPanel, /data-lite-mesa-analysis-field="samples"|data-lite-mesa-analysis-field="seed"/);
 
       await runtime.click("[data-lite-mesa-analysis-action='run']");
       const analysisBody = runtime.requests
@@ -1935,8 +2017,9 @@ test("mission reliability and downtime analysis default to the sole backend expe
       await runtime.flush();
 
       const settingsPanel = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-settings");
-      assert.match(settingsPanel, /样本量[\s\S]*value="40" readonly/);
-      assert.match(settingsPanel, /随机种子[\s\S]*value="20260621" readonly/);
+      assert.match(settingsPanel, /样本量[\s\S]*<strong>40<\/strong>/);
+      assert.match(settingsPanel, /随机种子[\s\S]*<strong>20260621<\/strong>/);
+      assert.doesNotMatch(settingsPanel, /data-lite-mesa-analysis-field="samples"|data-lite-mesa-analysis-field="seed"/);
 
       await runtime.click("[data-lite-mesa-analysis-action='run']");
       const analysisBody = runtime.requests

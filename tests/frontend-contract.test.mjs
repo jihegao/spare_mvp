@@ -670,7 +670,16 @@ test("results analysis pages route to independent Mesa session wrappers", async 
   assert.match(appSource, /backendApi\.runLiteMesaAnalysis/);
   assert.match(appSource, /session_complete/);
   assert.doesNotMatch(wrapperSource, /full-settings/);
-  assert.match(appSource, /能满足任务要求置信度/);
+  assert.match(appSource, /分析设定/);
+  assert.match(appSource, /分析结果明细/);
+  assert.match(appSource, /lite-mesa-analysis-setting-line/);
+  assert.match(appSource, /置信度目标/);
+  assert.match(appSource, /data-lite-mesa-analysis-field="missionConfidenceTarget"/);
+  assert.match(appSource, /data-lite-mesa-analysis-field="maxTimeWindow"/);
+  assert.match(appSource, /data-lite-mesa-analysis-field="topN"/);
+  assert.match(appSource, /function updateLiteMesaAnalysisSetting/);
+  assert.doesNotMatch(appSource, /data-lite-mesa-analysis-field="samples"|data-lite-mesa-analysis-field="seed"/);
+  assert.doesNotMatch(appSource, /fixedConfig|实验类型|统计口径|能满足任务要求置信度/);
   assert.doesNotMatch(appSource, /\["用户参数"/);
   assert.doesNotMatch(wrapperSource, /创建正式 run、result 与 artifact|正式 current-analysis|runFormalAnalysisPage/);
   assert.doesNotMatch(appSource, /await runCurrentAnalysisPage\(page\)/);
@@ -3670,6 +3679,36 @@ test("lite Mesa spare shortfall page uses transport delay and repair cancellatio
   assert.match(sessionBodySource, /平均备件延误时间\(h\)/);
   assert.match(sessionBodySource, /meanTransportDelayHours/);
   assert.doesNotMatch(sessionBodySource, /<th>缺件次数<\/th>|row\.shortage/);
+});
+
+test("lite Mesa carry and downtime result detail hides requested setting-only fields", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const carryDefinitionSource = appSource.slice(
+    appSource.indexOf("carry_list:"),
+    appSource.indexOf("mission_reliability:")
+  );
+  const downtimeDefinitionSource = appSource.slice(
+    appSource.indexOf("downtime_factors:"),
+    appSource.indexOf("});", appSource.indexOf("downtime_factors:"))
+  );
+  const metricFilterSource = appSource.slice(
+    appSource.indexOf("function liteMesaAnalysisVisibleMetrics"),
+    appSource.indexOf("function renderLiteMesaAnalysisSessionBody")
+  );
+  const carryBodyStart = appSource.indexOf(
+    'if (definition.analysisType === "carry_list")',
+    appSource.indexOf("function renderLiteMesaAnalysisSessionBody")
+  );
+  const carryBodySource = appSource.slice(
+    carryBodyStart,
+    appSource.indexOf('if (definition.analysisType === "mission_reliability")', carryBodyStart)
+  );
+
+  assert.match(carryDefinitionSource, /metricLabels: \["建议携行总数", "高优先级备件"\]/);
+  assert.match(downtimeDefinitionSource, /metricLabels: \["停机因素项", "首要因素", "最高贡献度"\]/);
+  assert.match(metricFilterSource, /carry_list: new Set\(\["置信度目标", "样本数"\]\)/);
+  assert.match(metricFilterSource, /downtime_factors: new Set\(\["样本数"\]\)/);
+  assert.doesNotMatch(carryBodySource, /<th>置信度目标<\/th>|row\.confidenceTarget/);
 });
 
 test("lite Mesa Monte Carlo detail uses decimal ratios and hides metadata chrome", async () => {

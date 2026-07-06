@@ -1949,6 +1949,78 @@ select[multiple].table-edit-select {
   background: #fff;
 }
 
+.lite-mesa-analysis-settings {
+  gap: 10px;
+  padding: 12px 14px;
+}
+
+.lite-mesa-analysis-setting-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.lite-mesa-setting-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  min-height: 32px;
+  max-width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #f8fafc;
+  white-space: nowrap;
+}
+
+.lite-mesa-setting-chip span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.lite-mesa-setting-chip strong {
+  color: var(--text);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.lite-mesa-setting-chip.editable {
+  cursor: default;
+}
+
+.lite-mesa-setting-chip input {
+  width: 92px;
+  min-width: 0;
+  padding: 4px 6px;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  background: #fff;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.lite-mesa-analysis-action-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.lite-mesa-analysis-action-line .inline-status {
+  margin: 0;
+}
+
+.lite-mesa-analysis-detail {
+  display: grid;
+  gap: 12px;
+}
+
+.lite-mesa-analysis-detail .lite-mesa-metric-cards {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
 .lite-mesa-source-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
@@ -4058,7 +4130,8 @@ tr.clickable-table-row.selected-table-row td {
   .rms-verification-metrics,
   .lite-mesa-setting-grid,
   .lite-mesa-source-grid,
-  .lite-mesa-metric-cards {
+  .lite-mesa-metric-cards,
+  .lite-mesa-analysis-detail .lite-mesa-metric-cards {
     grid-template-columns: 1fr;
   }
 }

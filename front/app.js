@@ -118,29 +118,33 @@ const LITE_MESA_ANALYSIS_DEFINITIONS = Object.freeze({
     experimentId: "project_baseline_at_current_granularity",
     title: "备件短板分析",
     subtitle: "基于当前项目建模数据的短缺事件统计",
-    fixedConfig: [["实验类型", "项目基线"]],
+    settingSubject: "当前项目建模数据",
+    settingMethod: "短缺事件统计",
     metricLabels: ["发生缺件备件", "平均备件延误时间(h)", "最高缺件备件", "因维修延误导致的任务取消次数"]
   },
   carry_list: {
     experimentId: "minimum_carry_list_search",
     title: "飞机转场携行清单分析",
     subtitle: "按备件类别独立变化的最小携行清单搜索",
-    fixedConfig: [["实验类型", "最小携行清单搜索"], ["目标函数", "携行备件总量最小"]],
-    metricLabels: ["建议携行总数", "高优先级备件", "置信度目标", "样本数"]
+    settingSubject: "备件类别独立变化",
+    settingMethod: "最小携行清单搜索",
+    metricLabels: ["建议携行总数", "高优先级备件"]
   },
   mission_reliability: {
     experimentId: "project_baseline_at_current_granularity",
     title: "任务可靠度评估",
     subtitle: "任务成功概率、出动架次率和目标达成统计",
-    fixedConfig: [["实验类型", "项目基线"], ["统计口径", "会话样本聚合"]],
+    settingSubject: "任务维度与时间维度",
+    settingMethod: "目标达成统计",
     metricLabels: ["任务成功率", "出动架次率", "战备完好率", "任务失败次数"]
   },
   downtime_factors: {
     experimentId: "project_baseline_at_current_granularity",
     title: "停机因素分析",
     subtitle: "停机贡献因素排序和保障延误定位",
-    fixedConfig: [["实验类型", "项目基线"]],
-    metricLabels: ["停机因素项", "首要因素", "最高贡献度", "样本数"]
+    settingSubject: "停机与保障延误事件",
+    settingMethod: "贡献因素排序",
+    metricLabels: ["停机因素项", "首要因素", "最高贡献度"]
   }
 });
 let demoProjects = [];
@@ -7086,7 +7090,7 @@ function renderBasicActivityLibrary() {
         <button type="button" class="btn-primary" data-basic-activity-add>新增</button>
         <button type="button" class="btn-danger" data-basic-activity-batch-delete>批量删除</button>
         <input data-basic-activity-query value="${htmlEscape(basicActivityQuery)}" placeholder="搜索活动编号、工作名称、适用飞机">
-        <select data-basic-activity-import-type-select>
+        <select data-basic-activity-import-type-select aria-label="按活动类型筛选基本保障活动">
           ${basicActivityTypeOptions().map((option) => `<option value="${htmlEscape(option.value)}" ${option.value === selectedBasicActivityImportType ? "selected" : ""}>${htmlEscape(option.label)}</option>`).join("")}
         </select>
         <button type="button" class="inline-action" data-basic-activity-import-type="${htmlEscape(selectedBasicActivityImportType)}">按活动类型导入</button>
@@ -7559,15 +7563,21 @@ function basicActivityLibraryRows() {
 }
 
 function filteredBasicActivityLibraryRows() {
+  const typeFilter = basicActivityTypeOptions().some((option) => option.value === selectedBasicActivityImportType)
+    ? selectedBasicActivityImportType
+    : "";
   const query = String(basicActivityQuery || "").trim().toLowerCase();
-  if (!query) return basicActivityLibraryRows();
-  return basicActivityLibraryRows().filter((row) => [
-    row.type,
-    row.activityCode,
-    row.workName,
-    row.scope,
-    row.applicableAircraft
-  ].some((value) => String(value || "").toLowerCase().includes(query)));
+  return basicActivityLibraryRows().filter((row) => {
+    if (typeFilter && row.type !== typeFilter) return false;
+    if (!query) return true;
+    return [
+      row.type,
+      row.activityCode,
+      row.workName,
+      row.scope,
+      row.applicableAircraft
+    ].some((value) => String(value || "").toLowerCase().includes(query));
+  });
 }
 
 function basicActivityLibraryOptions(tabKey = "") {
@@ -14201,9 +14211,9 @@ function renderCarryListAnalysis() {
     mode: "运行当前分析",
     subtitle: "携行清单迭代建议",
     config: `
-      <label>默认目标<input value="携行备件越少越好" readonly></label>
-      <label>能满足任务要求置信度<input value="${htmlEscape(confidenceTarget ?? "默认")}" readonly></label>
-      <label>任务时长覆盖<input value="${htmlEscape(missionDuration ?? "默认基础方案")}" readonly></label>
+      <div class="readonly-field"><span>默认目标</span><strong>携行备件越少越好</strong></div>
+      <div class="readonly-field"><span>置信度目标</span><strong>${htmlEscape(confidenceTarget ?? "默认")}</strong></div>
+      <div class="readonly-field"><span>任务时长覆盖</span><strong>${htmlEscape(missionDuration ?? "默认基础方案")}</strong></div>
     `,
     metrics: [
       ["当前结果", "等待运行"],
@@ -14940,29 +14950,23 @@ function renderLiteMesaAnalysisPage(page) {
           ${renderExperimentPlanContextDropdown(page)}
         </div>
       </section>
-      <div class="lite-mesa-layout lite-mesa-analysis-layout">
-        <section class="lite-mesa-settings">
-          <div class="section-head">
-            <h3>分析设置</h3>
-          </div>
-          <div class="lite-mesa-setting-grid">
-            ${renderLiteMesaAnalysisSettings(definition, settings)}
-          </div>
+      <section class="lite-mesa-settings lite-mesa-analysis-settings">
+        <div class="section-head">
+          <h3>分析设定</h3>
+          <span>样本量 / 随机种子只读</span>
+        </div>
+        ${renderLiteMesaAnalysisSettings(definition, settings, result)}
+        <div class="lite-mesa-analysis-action-line">
           <button type="button" class="btn-primary" data-lite-mesa-analysis-action="run">运行分析</button>
           <p class="inline-status">${htmlEscape(statusText)}</p>
-        </section>
-        <section class="lite-mesa-results">
-          <div class="section-head">
-            <h3>${htmlEscape(definition.subtitle)}</h3>
-            <span>${liteMesaAnalysisResultHeader(definition, result)}</span>
-          </div>
-          ${renderLiteMesaAnalysisMetricCards(definition, result)}
-        </section>
-      </div>
-      <section class="lite-mesa-stat-section">
+        </div>
+      </section>
+      <section class="lite-mesa-stat-section lite-mesa-analysis-detail">
         <div class="section-head">
           <h3>${liteMesaAnalysisDetailTitle(definition)}</h3>
+          <span>${htmlEscape(definition.subtitle)} / ${liteMesaAnalysisResultHeader(definition, result)}</span>
         </div>
+        ${renderLiteMesaAnalysisMetricCards(definition, result)}
         ${renderLiteMesaAnalysisSessionBody(definition, result)}
       </section>
     </div>
@@ -14975,8 +14979,7 @@ function liteMesaAnalysisResultHeader(_definition, result) {
   return "等待运行";
 }
 
-function liteMesaAnalysisDetailTitle(definition) {
-  if (definition.analysisType === "spare_shortfall") return "备件短板一览";
+function liteMesaAnalysisDetailTitle(_definition) {
   return "分析结果明细";
 }
 
@@ -15004,56 +15007,80 @@ function liteMesaAnalysisEffectiveSettings(definition) {
   };
 }
 
-function renderLiteMesaAnalysisSettings(definition, settings) {
-  const common = `
-    <label>样本量
-      <input type="number" min="1" max="1000" step="1" value="${htmlEscape(settings.samples ?? 27)}" readonly>
-    </label>
-    <label>随机种子
-      <input type="number" step="1" value="${htmlEscape(settings.seed ?? 20260621)}" readonly>
-    </label>
+function renderLiteMesaAnalysisSettings(definition, settings, result = null) {
+  const items = liteMesaAnalysisSettingItems(definition, settings, result);
+  const controls = renderLiteMesaAnalysisEditableSettings(definition, settings);
+  return `
+    <div class="lite-mesa-analysis-setting-line" aria-label="分析设定">
+      ${items.map(([label, value]) => `
+        <span class="lite-mesa-setting-chip">
+          <span>${htmlEscape(label)}</span>
+          <strong>${htmlEscape(value)}</strong>
+        </span>
+      `).join("")}
+      ${controls}
+    </div>
   `;
-  const fixedRows = definition.fixedConfig
-    .map(([label, value]) => `<label>${htmlEscape(label)}<input value="${htmlEscape(value)}" readonly></label>`)
-    .join("");
+}
+
+function liteMesaAnalysisSettingItems(definition, settings, result = null) {
+  const resultStatus = liteMesaAnalysisResultHeader(definition, result);
+  const items = [
+    ["项目", currentProject?.name || selectedExperimentPlanProjectJson().projectInfo?.name || "当前项目"],
+    ["当前方案", selectedExperimentPlanName()],
+    ["分析对象", definition.settingSubject || "当前项目"],
+    ["结果内容", definition.subtitle],
+    ["运行状态", resultStatus],
+    ["样本量", settings.samples ?? 27],
+    ["随机种子", settings.seed ?? 20260621]
+  ];
   if (definition.analysisType === "carry_list") {
-    return `${common}
-      <label>能满足任务要求置信度
+    items.push(["目标函数", "携行备件总量最小"]);
+  }
+  return items;
+}
+
+function renderLiteMesaAnalysisEditableSettings(definition, settings) {
+  if (definition.analysisType === "carry_list") {
+    return `
+      <label class="lite-mesa-setting-chip editable">
+        <span>置信度目标</span>
         <input data-lite-mesa-analysis-field="missionConfidenceTarget" type="number" min="0" max="1" step="0.01" value="${htmlEscape(settings.missionConfidenceTarget ?? 0.9)}">
       </label>
-      ${fixedRows}`;
+    `;
   }
   if (definition.analysisType === "mission_reliability") {
-    return `${common}
-      <label>最大时间窗口
-        <input data-lite-mesa-analysis-field="maxTimeWindow" type="number" min="1" step="1" value="${htmlEscape(settings.maxTimeWindow ?? "")}" placeholder="默认全任务窗口">
+    return `
+      <label class="lite-mesa-setting-chip editable">
+        <span>时间窗口</span>
+        <input data-lite-mesa-analysis-field="maxTimeWindow" type="number" min="1" step="1" value="${htmlEscape(settings.maxTimeWindow ?? "")}" placeholder="全任务窗口">
       </label>
-      ${fixedRows}`;
+    `;
   }
   if (definition.analysisType === "downtime_factors") {
-    return `${common}
-      <label>展示 TopN
+    return `
+      <label class="lite-mesa-setting-chip editable">
+        <span>排序范围</span>
         <input data-lite-mesa-analysis-field="topN" type="number" min="1" max="20" step="1" value="${htmlEscape(settings.topN ?? 4)}">
       </label>
-      ${fixedRows}`;
+    `;
   }
-  return `${common}${fixedRows}`;
+  return "";
 }
 
 function updateLiteMesaAnalysisSetting(page, field, value) {
   const definition = liteMesaAnalysisDefinitionForPage(page);
   const current = liteMesaAnalysisSettings[definition.analysisType] || {};
-  const numericFields = new Set(["samples", "seed", "missionConfidenceTarget", "maxTimeWindow", "topN"]);
-  const parsed = numericFields.has(field) ? Number(value) : value;
-  const next = {
-    ...current,
-    [field]: parsed
-  };
-  if (field === "samples") next.samples = Math.max(1, Math.min(1000, Math.trunc(Number(value) || 1)));
-  if (field === "seed") next.seed = Math.trunc(Number(value) || 1);
-  if (field === "missionConfidenceTarget") next.missionConfidenceTarget = Math.max(0, Math.min(1, Number(value) || 0));
-  if (field === "maxTimeWindow") next.maxTimeWindow = Number(value) > 0 ? Math.trunc(Number(value)) : "";
-  if (field === "topN") next.topN = Math.max(1, Math.min(20, Math.trunc(Number(value) || 1)));
+  const next = { ...current };
+  if (field === "missionConfidenceTarget") {
+    next.missionConfidenceTarget = Math.max(0, Math.min(1, Number(value) || 0));
+  } else if (field === "maxTimeWindow") {
+    next.maxTimeWindow = Number(value) > 0 ? Math.trunc(Number(value)) : "";
+  } else if (field === "topN") {
+    next.topN = Math.max(1, Math.min(20, Math.trunc(Number(value) || 1)));
+  } else {
+    return;
+  }
   liteMesaAnalysisSettings = {
     ...liteMesaAnalysisSettings,
     [definition.analysisType]: next
@@ -15145,7 +15172,7 @@ function renderLiteMesaAnalysisMetricCards(definition, result) {
   if (result?.status === "blocked") {
     return `<div class="empty-state"><strong>建模粒度不足</strong><p>${htmlEscape(result.message)}</p></div>`;
   }
-  const metrics = result?.metrics || definition.metricLabels.map((label) => [label, "待运行"]);
+  const metrics = liteMesaAnalysisVisibleMetrics(definition, result?.metrics || definition.metricLabels.map((label) => [label, "待运行"]));
   return `
     <div class="lite-mesa-metric-cards">
       ${metrics.map(([label, value]) => `
@@ -15156,6 +15183,14 @@ function renderLiteMesaAnalysisMetricCards(definition, result) {
       `).join("")}
     </div>
   `;
+}
+
+function liteMesaAnalysisVisibleMetrics(definition, metrics) {
+  const hiddenLabels = {
+    carry_list: new Set(["置信度目标", "样本数"]),
+    downtime_factors: new Set(["样本数"])
+  }[definition.analysisType] || new Set();
+  return (metrics || []).filter(([label]) => !hiddenLabels.has(String(label)));
 }
 
 function renderLiteMesaAnalysisSessionBody(definition, result) {
@@ -15177,8 +15212,8 @@ function renderLiteMesaAnalysisSessionBody(definition, result) {
   }
   if (definition.analysisType === "carry_list") {
     return `<div class="table-wrap"><table class="lite-mesa-stat-table">
-      <thead><tr><th>备件类别</th><th>建议携行数量</th><th>需求次数</th><th>短缺次数</th><th>优先级</th><th>置信度目标</th></tr></thead>
-      <tbody>${rows.map((row) => `<tr><td>${htmlEscape(row.spareType)}</td><td>${row.recommended}</td><td>${row.demand}</td><td>${row.shortage}</td><td>${htmlEscape(row.riskLevel)}</td><td>${fixed(row.confidenceTarget, 2)}</td></tr>`).join("")}</tbody>
+      <thead><tr><th>备件类别</th><th>建议携行数量</th><th>需求次数</th><th>短缺次数</th><th>优先级</th></tr></thead>
+      <tbody>${rows.map((row) => `<tr><td>${htmlEscape(row.spareType)}</td><td>${row.recommended}</td><td>${row.demand}</td><td>${row.shortage}</td><td>${htmlEscape(row.riskLevel)}</td></tr>`).join("")}</tbody>
     </table></div>`;
   }
   if (definition.analysisType === "mission_reliability") {
