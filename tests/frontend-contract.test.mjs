@@ -190,6 +190,10 @@ test("modeling form management describes composite task item fields", async () =
 test("system support project management removes standalone modeling import route but keeps local import actions", async () => {
   const catalogSource = await readFile(new URL("../front/feature-catalog.mjs", import.meta.url), "utf8");
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const granularityRenderSource = appSource.slice(
+    appSource.indexOf("function renderModelingGranularityTable"),
+    appSource.indexOf("function renderLocalModelingImportActions")
+  );
 
   assert.doesNotMatch(catalogSource, /建模数据导入/);
   assert.doesNotMatch(catalogSource, /modeling-import-workbench/);
@@ -198,6 +202,9 @@ test("system support project management removes standalone modeling import route
   assert.match(appSource, /data-modeling-import-action="load-fixture"/);
   assert.match(appSource, /data-modeling-import-action="validate"/);
   assert.match(appSource, /data-modeling-import-action="save-draft"/);
+  assert.doesNotMatch(granularityRenderSource, /renderLocalModelingImportActions/);
+  assert.doesNotMatch(granularityRenderSource, /data-modeling-import-action/);
+  assert.doesNotMatch(granularityRenderSource, /导入包维护/);
   assert.doesNotMatch(appSource, /renderModelingImportWorkbench/);
   assert.equal(FEATURE_PAGES.some((page) => page.id === "system-management-modeling-import-workbench"), false);
   assert.equal(FEATURE_PAGES.some((page) => page.id === "system-management-modeling-form-management"), true);
@@ -390,7 +397,7 @@ test("page revision project and system management controls stay wired", async ()
   );
   const granularitySource = appSource.slice(
     appSource.indexOf("function renderModelingGranularityTable"),
-    appSource.indexOf("function activeSystemDataDefinition")
+    appSource.indexOf("function renderLocalModelingImportActions")
   );
   const eventSource = appSource.slice(
     appSource.indexOf("function bindEvents"),
@@ -431,6 +438,18 @@ test("page revision project and system management controls stay wired", async ()
   assert.match(systemProjectSource, /data-modeling-import-action="load-fixture"/);
   assert.match(systemProjectSource, /data-modeling-import-action="validate"/);
   assert.match(granularitySource, /function renderModelingGranularityTable/);
+  assert.match(appSource, /全要素/);
+  assert.match(appSource, /装备RMS/);
+  assert.match(granularitySource, /data-granularity-profile-select/);
+  assert.match(granularitySource, /aria-pressed/);
+  assert.match(granularitySource, /disabled/);
+  assert.match(appSource, /EQUIPMENT_RMS_EXCLUDED_SHEET_KEYS/);
+  assert.match(appSource, /support-organization-structure/);
+  assert.match(appSource, /logistics-support-activity/);
+  assert.doesNotMatch(granularitySource, /颗粒度 A/);
+  assert.doesNotMatch(granularitySource, /颗粒度 B/);
+  assert.doesNotMatch(granularitySource, /可逐 sheet 调整字段粒度/);
+  assert.doesNotMatch(granularitySource, /renderLocalModelingImportActions/);
   assert.doesNotMatch(granularitySource, /tree-container/);
   assert.doesNotMatch(granularitySource, /class=\"tree-container\"/);
   assert.doesNotMatch(granularitySource, /<button type=\"button\" class=\"btn-primary\">新增<\/button>/);
@@ -446,6 +465,7 @@ test("page revision project and system management controls stay wired", async ()
   assert.doesNotMatch(projectDataSource, />配置<\/button>/);
   assert.match(eventSource, /const projectDataProjectButton = event\.target\.closest\("\[data-project-data-project-option\]"\)/);
   assert.match(eventSource, /const projectTemplateAction = event\.target\.closest\("\[data-project-template-action\]"\)/);
+  assert.match(eventSource, /const granularityProfileButton = event\.target\.closest\("\[data-granularity-profile-select\]"\)/);
   assert.match(eventSource, /const modelingFieldSheetSelect = event\.target\.closest\("\[data-modeling-field-sheet-select\]"\)/);
   assert.match(eventSource, /const modelingFieldSelect = event\.target\.closest\("\[data-modeling-field-select\]"\)/);
   assert.doesNotMatch(eventSource, /data-project-import/);
@@ -3891,8 +3911,10 @@ test("system management exposes project management and base configuration pages"
   assert.match(appSource, /保障组织/);
   assert.match(appSource, /保障活动/);
   assert.match(appSource, /建模颗粒度配置/);
-  assert.match(appSource, /颗粒度 A/);
-  assert.match(appSource, /颗粒度 B/);
+  assert.match(appSource, /全要素/);
+  assert.match(appSource, /装备RMS/);
+  assert.doesNotMatch(appSource, /颗粒度 A/);
+  assert.doesNotMatch(appSource, /颗粒度 B/);
   assert.match(appSource, /data-modeling-field-select/);
   assert.doesNotMatch(appSource, /层级、对象及关系/);
   assert.doesNotMatch(appSource, /<th>建模层级<\/th>/);

@@ -180,6 +180,80 @@ const AIRCRAFT_TREND_SERIES = [
 ];
 const PERSONNEL_SPECIALTY_FALLBACK = ["机务", "航电", "液压", "动力", "军械", "保障调度"];
 const SYSTEM_SUPPORT_MODULE_NAME = "系统运行支持模块";
+const MODELING_GRANULARITY_FULL = "full-elements";
+const MODELING_GRANULARITY_EQUIPMENT_RMS = "equipment-rms";
+const DEFAULT_MODELING_GRANULARITY = MODELING_GRANULARITY_FULL;
+const MODELING_PAGE_LOCK_MESSAGE = "当前建模颗粒度未启用该表，建模内容只读。";
+const EQUIPMENT_RMS_EXCLUDED_SHEET_KEYS = new Set([
+  "support-organization-structure",
+  "spares",
+  "support-personnel",
+  "support-equipment",
+  "basic-support-activity",
+  "operations-support-activity",
+  "preventive-maintenance-activity",
+  "corrective-maintenance-activity",
+  "logistics-support-activity"
+]);
+const MODELING_PAGE_SHEET_KEY_BY_NAME = {
+  保障组织结构建模: "support-organization-structure",
+  备件建模: "spares",
+  保障人员建模: "support-personnel",
+  保障设备建模: "support-equipment",
+  基本保障活动建模: "basic-support-activity",
+  使用保障活动建模: "operations-support-activity",
+  预防性维修活动建模: "preventive-maintenance-activity",
+  修复性维修活动建模: "corrective-maintenance-activity",
+  后勤保障活动建模: "logistics-support-activity",
+  装备系统建模: "equipment-system",
+  装备可靠性框图建模: "reliability-block-diagram"
+};
+const LOCKED_MODELING_CLICK_SELECTORS = [
+  "[data-support-org-add-node]",
+  "[data-support-org-delete-node]",
+  "[data-support-resource-add]",
+  "[data-support-resource-batch-delete]",
+  "[data-logistics-transport-add]",
+  "[data-logistics-transport-delete]",
+  "[data-support-activity-plan-add]",
+  "[data-support-activity-plan-delete]",
+  "[data-preventive-activity-plan-add]",
+  "[data-preventive-activity-plan-delete]",
+  "[data-support-activity-job-add]",
+  "[data-support-activity-job-batch-delete]",
+  "[data-support-activity-job-template]",
+  "[data-support-activity-job-template-select]",
+  "[data-support-activity-job]",
+  "[data-support-activity-predecessor-edit]",
+  "[data-support-activity-job-delete]",
+  "[data-basic-activity-add]",
+  "[data-basic-activity-batch-delete]",
+  "[data-basic-activity-edit]",
+  "[data-basic-activity-dialog-save]",
+  "[data-basic-activity-resource-dialog-open]",
+  "[data-basic-activity-resource-dialog-add]",
+  "[data-basic-activity-resource-dialog-delete]",
+  "[data-basic-activity-import-type]",
+  "[data-basic-activity-delete]"
+];
+const LOCKED_MODELING_CHANGE_SELECTORS = [
+  "[data-support-resource-import-file]",
+  "[data-basic-activity-select-all]",
+  "[data-basic-activity-select]",
+  "[data-basic-activity-resource-field]",
+  "[data-basic-activity-resource-dialog-field]",
+  "[data-basic-activity-field]",
+  "[data-support-resource-select-all]",
+  "[data-support-resource-select]",
+  "[data-support-resource-field]",
+  "[data-support-activity-job-select-all]",
+  "[data-support-activity-job-select]",
+  "[data-logistics-transport-select]",
+  "[data-support-activity-predecessor-toggle]",
+  "[data-support-activity-job-field]",
+  "[data-support-org-field]",
+  "[data-path]"
+];
 const MODELING_DATA_MODULES = [
   {
     key: "equipment-system",
@@ -411,9 +485,10 @@ let selectedSystemUsernames = new Set();
 let permissionConfigFeature = "";
 let permissionConfigStatus = "请选择权限项配置角色权限";
 let selectedSystemDataKeys = new Set(modelingSheetRows().map((row) => row.key));
-let selectedModelingFieldKeys = new Set(modelingSheetRows().flatMap((row) => row.fields.map((field) => modelingFieldKey(row.key, field.key))));
+let selectedModelingGranularityKey = DEFAULT_MODELING_GRANULARITY;
+let selectedModelingFieldKeys = new Set(modelingGranularityFieldKeys(DEFAULT_MODELING_GRANULARITY));
 let systemDataStatus = "已按仿真建模模块加载默认 sheet 勾选，可在局部表格触发导入和校验。";
-let modelingFieldStatus = "已加载默认字段级配置，可逐 sheet 调整字段粒度。";
+let modelingFieldStatus = "默认使用全要素建模颗粒度，字段勾选由颗粒度自动维护。";
 let systemDataExportPreview = null;
 let systemRuntimeConfigLoaded = false;
 let systemRuntimeConfigStatus = "系统配置尚未同步";
@@ -821,6 +896,11 @@ function bindEvents() {
 
   app.addEventListener("click", (event) => {
     const clickedTreeToggleIcon = event.target.closest(".tree-node-toggle");
+    if (lockedModelingEventTarget(event.target, LOCKED_MODELING_CLICK_SELECTORS)) {
+      event.preventDefault?.();
+      return;
+    }
+
     const equipmentAddNodeButton = event.target.closest("[data-equipment-add-node]");
     if (equipmentAddNodeButton) {
       addEquipmentNodeForSelection();
@@ -1716,6 +1796,13 @@ function bindEvents() {
       return;
     }
 
+    const granularityProfileButton = event.target.closest("[data-granularity-profile-select]");
+    if (granularityProfileButton) {
+      applyModelingGranularityProfile(granularityProfileButton.dataset.granularityProfileSelect);
+      render();
+      return;
+    }
+
     const featureButton = event.target.closest("[data-feature-id]");
     if (featureButton) {
       selectedRoute = "workbench";
@@ -1760,6 +1847,11 @@ function bindEvents() {
   });
 
   app.addEventListener("change", async (event) => {
+    if (lockedModelingEventTarget(event.target, LOCKED_MODELING_CHANGE_SELECTORS)) {
+      event.preventDefault?.();
+      return;
+    }
+
     const mesaSupportAirportSelect = event.target.closest("[data-mesa-support-airport]");
     if (mesaSupportAirportSelect) {
       visualSupportAirportId = mesaSupportAirportSelect.value;
@@ -2017,26 +2109,14 @@ function bindEvents() {
 
     const modelingFieldSheetSelect = event.target.closest("[data-modeling-field-sheet-select]");
     if (modelingFieldSheetSelect) {
-      const sheetKey = modelingFieldSheetSelect.dataset.modelingFieldSheetSelect;
-      const fieldKeys = fieldsForSheet(sheetKey).map((field) => modelingFieldKey(sheetKey, field.key));
-      const next = new Set(selectedModelingFieldKeys);
-      for (const key of fieldKeys) {
-        if (modelingFieldSheetSelect.checked) next.add(key);
-        else next.delete(key);
-      }
-      selectedModelingFieldKeys = next;
-      const sheet = modelingSheetRows().find((row) => row.key === sheetKey);
-      modelingFieldStatus = `${modelingFieldSheetSelect.checked ? "已启用" : "已停用"} ${sheet?.label || "当前 sheet"} 的全部字段`;
+      modelingFieldStatus = "字段勾选由当前建模颗粒度自动维护，不能手工编辑。";
       render();
       return;
     }
 
     const modelingFieldSelect = event.target.closest("[data-modeling-field-select]");
     if (modelingFieldSelect) {
-      selectedModelingFieldKeys = toggleSetValue(selectedModelingFieldKeys, modelingFieldSelect.dataset.modelingFieldSelect);
-      modelingFieldStatus = selectedModelingFieldKeys.has(modelingFieldSelect.dataset.modelingFieldSelect)
-        ? "已启用字段"
-        : "已停用字段";
+      modelingFieldStatus = "字段勾选由当前建模颗粒度自动维护，不能手工编辑。";
       render();
       return;
     }
@@ -2295,6 +2375,11 @@ function bindEvents() {
   });
 
   app.addEventListener("input", (event) => {
+    if (currentModelingPageLocked() && event.target.closest("[data-path]")) {
+      event.preventDefault?.();
+      return;
+    }
+
     const projectEditInput = event.target.closest("[data-project-edit-field]");
     if (projectEditInput) {
       updateProjectEditorDraft(projectEditInput.dataset.projectEditField, projectEditInput.value);
@@ -3500,10 +3585,10 @@ function renderModelingGranularityTable() {
     (sum, row) => sum + row.fields.filter((field) => selectedModelingFieldKeys.has(modelingFieldKey(row.key, field.key))).length,
     0
   );
+  const selectedProfile = modelingGranularityProfiles().find((profile) => profile.key === selectedModelingGranularityKey);
   return `
-    <p class="inline-status">${selectedFieldCount}/${fieldCount} 个字段已启用，覆盖 ${sheetCount} 个 sheet</p>
-    ${renderGranularityProfiles(fieldCount, selectedFieldCount)}
-    ${renderLocalModelingImportActions("字段级配置")}
+    <p class="inline-status">${htmlEscape(selectedProfile?.label || "建模颗粒度")}：${selectedFieldCount}/${fieldCount} 个字段已启用，覆盖 ${sheetCount} 个 sheet；字段勾选由当前建模颗粒度自动维护。</p>
+    ${renderGranularityProfiles()}
     <p class="inline-status">${htmlEscape(modelingFieldStatus)}</p>
     <div class="modeling-field-config">
       ${MODELING_DATA_MODULES.map((module) => renderModelingFieldModule(module)).join("")}
@@ -3511,23 +3596,20 @@ function renderModelingGranularityTable() {
   `;
 }
 
-function renderGranularityProfiles(fieldCount, selectedFieldCount) {
-  const profiles = [
-    { key: "granularity-a", label: "颗粒度 A", count: fieldCount, description: "包含全部表单字段，作为完整建模颗粒度。" },
-    { key: "granularity-b", label: "颗粒度 B", count: selectedFieldCount, description: "字段清单确认后启用，跟随当前勾选字段。" }
-  ];
+function renderGranularityProfiles() {
+  const profiles = modelingGranularityProfiles();
   return `
     <div class="modeling-config-grid">
       ${profiles.map((profile) => `
-        <section class="modeling-config-card" data-granularity-profile="${profile.key}">
+        <button type="button" class="modeling-config-card granularity-profile-card ${profile.key === selectedModelingGranularityKey ? "selected" : ""}" data-granularity-profile-select="${htmlEscape(profile.key)}" aria-pressed="${profile.key === selectedModelingGranularityKey ? "true" : "false"}">
           <div class="section-head">
             <div>
-              <h4>${profile.label}</h4>
-              <p>${profile.description}</p>
+              <h4>${htmlEscape(profile.label)}</h4>
+              <p>${htmlEscape(profile.description)}</p>
             </div>
-            <span class="status-badge">${profile.count} 字段</span>
+            <span class="status-badge">${profile.fieldKeys.length} 字段</span>
           </div>
-        </section>
+        </button>
       `).join("")}
     </div>
   `;
@@ -3589,16 +3671,17 @@ function renderModelingFieldSheet(sheet) {
           <p>${htmlEscape(sheet.sourcePage)} / ${enabled ? "sheet 已勾选" : "sheet 未勾选"}</p>
         </div>
         <label class="check-inline">
-          <input type="checkbox" data-modeling-field-sheet-select="${htmlEscape(sheet.key)}" ${allFieldsSelected ? "checked" : ""}>
+          <input type="checkbox" data-modeling-field-sheet-select="${htmlEscape(sheet.key)}" ${allFieldsSelected ? "checked " : ""}disabled>
           全选字段
         </label>
       </div>
       <div class="field-checkbox-grid">
         ${sheet.fields.map((field) => {
           const key = modelingFieldKey(sheet.key, field.key);
+          const selected = selectedModelingFieldKeys.has(key);
           return `
             <label class="field-check">
-              <input type="checkbox" data-modeling-field-select="${htmlEscape(key)}" ${selectedModelingFieldKeys.has(key) ? "checked" : ""}>
+              <input type="checkbox" data-modeling-field-select="${htmlEscape(key)}" ${selected ? "checked " : ""}disabled>
               <span>
                 <strong>${htmlEscape(field.label)}</strong>
                 <small>${htmlEscape(field.path)}</small>
@@ -3714,6 +3797,83 @@ function allModelingFieldKeys() {
   return modelingSheetRows().flatMap((row) => row.fields.map((field) => modelingFieldKey(row.key, field.key)));
 }
 
+function normalizeModelingGranularityKey(key) {
+  if (key === "granularity-a") return MODELING_GRANULARITY_FULL;
+  if (key === "granularity-b") return MODELING_GRANULARITY_EQUIPMENT_RMS;
+  return [MODELING_GRANULARITY_FULL, MODELING_GRANULARITY_EQUIPMENT_RMS].includes(key)
+    ? key
+    : DEFAULT_MODELING_GRANULARITY;
+}
+
+function modelingGranularityFieldKeys(key) {
+  const normalizedKey = normalizeModelingGranularityKey(key);
+  const allKeys = allModelingFieldKeys();
+  if (normalizedKey === MODELING_GRANULARITY_EQUIPMENT_RMS) {
+    return allKeys.filter((fieldKey) => !EQUIPMENT_RMS_EXCLUDED_SHEET_KEYS.has(fieldKey.split(":")[0]));
+  }
+  return allKeys;
+}
+
+function modelingSheetKeyForFeaturePage(page = getFeaturePageById(selectedFeatureId)) {
+  if (!page || page.secondary !== "仿真建模") return "";
+  return MODELING_PAGE_SHEET_KEY_BY_NAME[page.name] || "";
+}
+
+function modelingSheetSelected(sheetKey) {
+  const sheet = modelingSheetRows().find((row) => row.key === sheetKey);
+  if (!sheet) return true;
+  return sheet.fields.some((field) => selectedModelingFieldKeys.has(modelingFieldKey(sheet.key, field.key)));
+}
+
+function modelingSheetLocked(sheetKey) {
+  return Boolean(sheetKey) && !modelingSheetSelected(sheetKey);
+}
+
+function currentModelingPageLocked(page = getFeaturePageById(selectedFeatureId)) {
+  return modelingSheetLocked(modelingSheetKeyForFeaturePage(page));
+}
+
+function modelingLockDisabledAttr(locked = currentModelingPageLocked()) {
+  return locked ? ` disabled title="${htmlEscape(MODELING_PAGE_LOCK_MESSAGE)}"` : "";
+}
+
+function modelingLockNotice(page = getFeaturePageById(selectedFeatureId)) {
+  if (!currentModelingPageLocked(page)) return "";
+  return `<div class="modeling-page-lock-notice" role="status">${htmlEscape(MODELING_PAGE_LOCK_MESSAGE)}</div>`;
+}
+
+function withModelingLockAttrs(attrs = {}, locked = currentModelingPageLocked()) {
+  return locked ? { ...attrs, disabled: "disabled", title: MODELING_PAGE_LOCK_MESSAGE } : attrs;
+}
+
+function lockedModelingEventTarget(target, selectors) {
+  return currentModelingPageLocked() && selectors.some((selector) => target.closest(selector));
+}
+
+function modelingGranularityProfiles() {
+  return [
+    {
+      key: MODELING_GRANULARITY_FULL,
+      label: "全要素",
+      description: "显示全部表单字段。",
+      fieldKeys: allModelingFieldKeys()
+    },
+    {
+      key: MODELING_GRANULARITY_EQUIPMENT_RMS,
+      label: "装备RMS",
+      description: "保留装备RMS参数，忽略保障资源对保障活动的约束关系。",
+      fieldKeys: modelingGranularityFieldKeys(MODELING_GRANULARITY_EQUIPMENT_RMS)
+    }
+  ];
+}
+
+function applyModelingGranularityProfile(key) {
+  selectedModelingGranularityKey = normalizeModelingGranularityKey(key);
+  selectedModelingFieldKeys = new Set(modelingGranularityFieldKeys(selectedModelingGranularityKey));
+  const profile = modelingGranularityProfiles().find((item) => item.key === selectedModelingGranularityKey);
+  modelingFieldStatus = `已切换为${profile?.label || "建模颗粒度"}，表单字段勾选已自动更新。`;
+}
+
 function createDefaultModelingFormFieldUnits() {
   const units = {};
   for (const row of modelingSheetRows()) {
@@ -3742,20 +3902,8 @@ function createDefaultSystemRuntimeConfig() {
         actions: ["load-fixture", "backfill-current-project", "validate", "save-draft", "publish", "compile-scenario"]
       }
     ],
-    granularityProfiles: [
-      {
-        key: "granularity-a",
-        label: "颗粒度 A",
-        description: "包含全部表单字段的完整建模颗粒度",
-        fieldKeys: allModelingFieldKeys()
-      },
-      {
-        key: "granularity-b",
-        label: "颗粒度 B",
-        description: "字段清单确认后启用的精简建模颗粒度",
-        fieldKeys: Array.from(selectedModelingFieldKeys)
-      }
-    ],
+    activeGranularityProfile: DEFAULT_MODELING_GRANULARITY,
+    granularityProfiles: modelingGranularityProfiles(),
     permissions: SYSTEM_PERMISSION_ROWS.map((row) => ({ ...row })),
     modelingForms: {
       fieldUnits: createDefaultModelingFormFieldUnits(),
@@ -3779,20 +3927,8 @@ function currentSystemRuntimeConfigPayload() {
         actions: ["load-fixture", "backfill-current-project", "validate", "save-draft", "publish", "compile-scenario"]
       }
     ],
-    granularityProfiles: [
-      {
-        key: "granularity-a",
-        label: "颗粒度 A",
-        description: "包含全部表单字段的完整建模颗粒度",
-        fieldKeys: allModelingFieldKeys()
-      },
-      {
-        key: "granularity-b",
-        label: "颗粒度 B",
-        description: "字段清单确认后启用的精简建模颗粒度",
-        fieldKeys: Array.from(selectedModelingFieldKeys)
-      }
-    ],
+    activeGranularityProfile: selectedModelingGranularityKey,
+    granularityProfiles: modelingGranularityProfiles(),
     permissions: SYSTEM_PERMISSION_ROWS.map((row) => ({ ...row })),
     modelingForms: {
       fieldUnits: { ...modelingFormFieldUnits },
@@ -3809,12 +3945,12 @@ function applySystemRuntimeConfig(payload = {}) {
     selectedSystemDataKeys = new Set(projectDataModule.sheetKeys);
   }
 
-  const granularityB = Array.isArray(payload.granularityProfiles)
-    ? payload.granularityProfiles.find((item) => item?.key === "granularity-b")
-    : null;
-  if (Array.isArray(granularityB?.fieldKeys)) {
-    selectedModelingFieldKeys = new Set(granularityB.fieldKeys);
-  }
+  const savedGranularityKey = payload.activeGranularityProfile
+    || payload.selectedGranularityProfile
+    || (Array.isArray(payload.granularityProfiles)
+      ? payload.granularityProfiles.find((item) => item?.selected)?.key
+      : "");
+  applyModelingGranularityProfile(savedGranularityKey);
 
   if (Array.isArray(payload.permissions)) {
     for (const saved of payload.permissions) {
@@ -5775,6 +5911,8 @@ function renderActivityGantt(page) {
 function renderSupportOrganizationWorkbench(page) {
   const activeTab = page.name.includes("人员") ? "保障人员建模" : page.name.includes("设备") ? "保障设备建模" : page.name.includes("备件") ? "备件建模" : "保障组织结构建模";
   const activeResourceType = page.name.includes("人员") ? "保障人员" : page.name.includes("设备") ? "保障设备" : page.name.includes("备件") ? "备件" : "";
+  const locked = currentModelingPageLocked(page);
+  const lockedAttr = modelingLockDisabledAttr(locked);
   const orgTree = supportOrganizationTree();
   const selectedSupportOrgNode = findSupportOrgTreeNode(selectedSupportOrgNodeId, orgTree) || orgTree[0];
   const selectedIsLeaf = !(selectedSupportOrgNode?.children || []).length;
@@ -5784,11 +5922,12 @@ function renderSupportOrganizationWorkbench(page) {
   const resourceColumns = supportResourceDataColumns(activeResourceType);
   return `
     <div class="ship-front-workbench">
+      ${modelingLockNotice(page)}
       <div class="organization-layout">
         <aside class="tree-container">
           <div class="tree-toolbar">
             <h4>保障组织结构树</h4>
-            ${activeTab === "保障组织结构建模" ? `<div class="equipment-toolbar"><button type="button" class="btn-primary" data-support-org-add-node>新增节点</button><button type="button" class="btn-danger" data-support-org-delete-node ${selectedSupportOrgNode === orgTree[0] ? "disabled" : ""}>删除</button></div>` : `<span class="muted">只读组织树</span>`}
+            ${activeTab === "保障组织结构建模" ? `<div class="equipment-toolbar"><button type="button" class="btn-primary" data-support-org-add-node${lockedAttr}>新增节点</button><button type="button" class="btn-danger" data-support-org-delete-node ${selectedSupportOrgNode === orgTree[0] || locked ? "disabled" : ""}>删除</button></div>` : `<span class="muted">只读组织树</span>`}
           </div>
           ${orgTree.map((node) => renderOrgTreeNode(node, 0)).join("")}
         </aside>
@@ -5800,25 +5939,25 @@ function renderSupportOrganizationWorkbench(page) {
             </div>
             ${activeTab === "保障组织结构建模" ? `
               <div class="form-table-grid">
-                <label>组织名称<input data-support-org-node="${htmlEscape(selectedSupportOrgNode?.id || "")}" data-support-org-field="name" value="${htmlEscape(selectedSupportOrgNode?.name || "")}"></label>
+                <label>组织名称<input data-support-org-node="${htmlEscape(selectedSupportOrgNode?.id || "")}" data-support-org-field="name" value="${htmlEscape(selectedSupportOrgNode?.name || "")}"${lockedAttr}></label>
                 <div class="readonly-meta-row" data-support-org-parent-display><span>上级组织</span><strong>${htmlEscape(selectedSupportOrgParentName)}</strong></div>
                 <label>关联机场${supportOrgAirportSelect(selectedSupportOrgNode)}</label>
-                <label>组织描述<input data-support-org-node="${htmlEscape(selectedSupportOrgNode?.id || "")}" data-support-org-field="description" value="${htmlEscape(selectedSupportOrgNode?.description || "承担机务、维修、备件和设备保障资源调配")}"></label>
+                <label>组织描述<input data-support-org-node="${htmlEscape(selectedSupportOrgNode?.id || "")}" data-support-org-field="description" value="${htmlEscape(selectedSupportOrgNode?.description || "承担机务、维修、备件和设备保障资源调配")}"${lockedAttr}></label>
               </div>
             ` : `
               <div class="toolbar-row">
-                <button type="button" class="btn-primary" data-support-resource-add="${htmlEscape(activeResourceType)}" ${selectedIsLeaf ? "" : "disabled"}>新增</button>
-                <label class="rms-file-button">导入表格<input data-support-resource-import-file="${htmlEscape(activeResourceType)}" type="file" accept=".csv,.tsv,.json,application/json,text/csv,text/tab-separated-values"></label>
-                <button type="button" class="btn-danger" data-support-resource-batch-delete>批量删除</button>
-                <input value="" placeholder="请输入关键词进行搜索">
-                <span class="badge">${selectedIsLeaf ? "叶子节点可编辑" : "根节点汇总显示"}</span>
+                <button type="button" class="btn-primary" data-support-resource-add="${htmlEscape(activeResourceType)}" ${selectedIsLeaf && !locked ? "" : "disabled"}>新增</button>
+                <label class="rms-file-button">导入表格<input data-support-resource-import-file="${htmlEscape(activeResourceType)}" type="file" accept=".csv,.tsv,.json,application/json,text/csv,text/tab-separated-values"${lockedAttr}></label>
+                <button type="button" class="btn-danger" data-support-resource-batch-delete${lockedAttr}>批量删除</button>
+                <input value="" placeholder="请输入关键词进行搜索"${lockedAttr}>
+                <span class="badge">${locked ? "当前颗粒度只读" : selectedIsLeaf ? "叶子节点可编辑" : "根节点汇总显示"}</span>
               </div>
               <p class="rms-import-status">${htmlEscape(supportResourceImportStatus)}</p>
               <div class="table-wrap">
                 <table>
-                  <thead><tr><th><input type="checkbox" data-support-resource-select-all="${htmlEscape(activeResourceType)}" ${allResourceRowsSelected ? "checked" : ""}></th><th>序号</th><th>组织节点</th>${resourceColumns.map((column) => `<th>${htmlEscape(column.label)}</th>`).join("")}</tr></thead>
+                  <thead><tr><th><input type="checkbox" data-support-resource-select-all="${htmlEscape(activeResourceType)}" ${allResourceRowsSelected ? "checked" : ""}${lockedAttr}></th><th>序号</th><th>组织节点</th>${resourceColumns.map((column) => `<th>${htmlEscape(column.label)}</th>`).join("")}</tr></thead>
                   <tbody>${visibleResourceRows.map((row, index) => `
-                    <tr class="${selectedSupportResourceKeys.has(row.key) ? "selected-table-row" : ""}"><td><input type="checkbox" data-support-resource-select="${htmlEscape(row.key)}" ${selectedSupportResourceKeys.has(row.key) ? "checked" : ""}></td><td>${index + 1}</td><td>${supportOrganizationSelect(row.key, row.organizationNodeId, true)}</td>${resourceColumns.map((column) => `<td>${supportResourceDataCell(row, column, !selectedIsLeaf)}</td>`).join("")}</tr>
+                    <tr class="${selectedSupportResourceKeys.has(row.key) ? "selected-table-row" : ""}"><td><input type="checkbox" data-support-resource-select="${htmlEscape(row.key)}" ${selectedSupportResourceKeys.has(row.key) ? "checked" : ""}${lockedAttr}></td><td>${index + 1}</td><td>${supportOrganizationSelect(row.key, row.organizationNodeId, true)}</td>${resourceColumns.map((column) => `<td>${supportResourceDataCell(row, column, !selectedIsLeaf || locked)}</td>`).join("")}</tr>
                   `).join("") || `<tr><td colspan="${resourceColumns.length + 3}">暂无资源</td></tr>`}</tbody>
                 </table>
               </div>
@@ -5989,7 +6128,7 @@ function supportOrgAirportSelect(orgNode) {
   const supportNode = supportNodeForOrgNode(orgNode, false);
   const selectedValue = String(supportOrgNodeAirport(supportNode) || supportOrgNodeAirport(orgNode) || "");
   return `
-    <select data-support-org-node="${htmlEscape(orgNode?.id || "")}" data-support-org-field="airport">
+    <select data-support-org-node="${htmlEscape(orgNode?.id || "")}" data-support-org-field="airport"${modelingLockDisabledAttr()}>
       ${selectOptionsWithCurrent(supportOrgAirportOptions(), selectedValue)}
     </select>
   `;
@@ -6816,17 +6955,18 @@ function describeDurationProfile(profile, fallbackMinutes) {
 
 function renderSupportActivityJobRows(activity, tabKey) {
   const jobs = supportActivityJobs(activity);
+  const lockedAttr = modelingLockDisabledAttr();
   return jobs.map((job, index) => {
     const key = supportActivityJobKey(tabKey, index);
     return `
       <tr class="${selectedSupportActivityJobKeys.has(key) ? "selected-table-row" : ""}">
-        <td><input type="checkbox" data-support-activity-job-select="${htmlEscape(key)}" ${selectedSupportActivityJobKeys.has(key) ? "checked" : ""} aria-label="选择${htmlEscape(job.workName || `工作项目${index + 1}`)}"></td>
+        <td><input type="checkbox" data-support-activity-job-select="${htmlEscape(key)}" ${selectedSupportActivityJobKeys.has(key) ? "checked" : ""} aria-label="选择${htmlEscape(job.workName || `工作项目${index + 1}`)}"${lockedAttr}></td>
         <td>${index + 1}</td>
         <td>${supportActivityJobInput(key, job, "activityCode", "text", { "aria-label": "基本保障活动编号" })}</td>
         <td>${supportActivityJobInput(key, job, "workName", "text", { "aria-label": "作业项" })}</td>
         <td>${renderSupportActivityPredecessorCell(jobs, job, index, tabKey)}</td>
         <td>${supportActivityJobInput(key, job, "durationMinutes", "number", { min: "0", step: "1", "aria-label": "工期分钟" })}</td>
-        <td class="table-actions"><button type="button" class="inline-action" data-support-activity-job="${htmlEscape(tabKey)}-${index}">编辑</button></td>
+        <td class="table-actions"><button type="button" class="inline-action" data-support-activity-job="${htmlEscape(tabKey)}-${index}"${lockedAttr}>编辑</button></td>
       </tr>
     `;
   }).join("");
@@ -6834,10 +6974,11 @@ function renderSupportActivityJobRows(activity, tabKey) {
 
 function renderSupportActivityPredecessorCell(jobs, job, index, tabKey) {
   const labels = supportActivityPredecessorLabels(jobs, job, index);
+  const lockedAttr = modelingLockDisabledAttr();
   return `
     <div class="predecessor-cell">
       <span>${labels.length ? htmlEscape(labels.join("、")) : "无"}</span>
-      <button type="button" class="inline-action" data-support-activity-predecessor-edit="${htmlEscape(tabKey)}-${index}">编辑紧前作业</button>
+      <button type="button" class="inline-action" data-support-activity-predecessor-edit="${htmlEscape(tabKey)}-${index}"${lockedAttr}>编辑紧前作业</button>
     </div>
   `;
 }
@@ -6864,16 +7005,17 @@ function renderSupportActivityJobTable(activity, tabKey) {
   const allSelected = jobs.length > 0 && selectedCount === jobs.length;
   const dialogJob = supportActivityJobByKey(supportActivityJobDialogKey);
   const predecessorDialogJob = supportActivityJobByKey(supportActivityPredecessorDialogKey);
+  const lockedAttr = modelingLockDisabledAttr();
   const body = jobs.length
     ? renderSupportActivityJobRows(activity, tabKey)
     : `<tr><td colspan="7" class="muted">暂无工作项目</td></tr>`;
   return `
     <h4>工作项目清单</h4>
-    <div class="toolbar-row"><button type="button" class="btn-primary" data-support-activity-job-add="${htmlEscape(tabKey)}">新增工作项目</button><button type="button" class="btn-danger" data-support-activity-job-batch-delete="${htmlEscape(tabKey)}">批量删除</button></div>
+    <div class="toolbar-row"><button type="button" class="btn-primary" data-support-activity-job-add="${htmlEscape(tabKey)}"${lockedAttr}>新增工作项目</button><button type="button" class="btn-danger" data-support-activity-job-batch-delete="${htmlEscape(tabKey)}"${lockedAttr}>批量删除</button></div>
     ${renderBasicActivityTemplatePicker(tabKey)}
     <div class="table-wrap">
       <table>
-        <thead><tr><th><input type="checkbox" data-support-activity-job-select-all="${htmlEscape(tabKey)}" ${allSelected ? "checked" : ""} aria-label="全选工作项目"></th><th>序号</th><th>基本保障活动编号</th><th>作业项</th><th>紧前作业</th><th>工期(min)</th><th>编辑</th></tr></thead>
+        <thead><tr><th><input type="checkbox" data-support-activity-job-select-all="${htmlEscape(tabKey)}" ${allSelected ? "checked" : ""} aria-label="全选工作项目"${lockedAttr}></th><th>序号</th><th>基本保障活动编号</th><th>作业项</th><th>紧前作业</th><th>工期(min)</th><th>编辑</th></tr></thead>
         <tbody>${body}</tbody>
       </table>
     </div>
@@ -6885,6 +7027,7 @@ function renderSupportActivityJobTable(activity, tabKey) {
 
 function renderBasicActivityTemplatePicker(tabKey) {
   if (supportActivityTemplatePickerTabKey !== tabKey) return "";
+  const lockedAttr = modelingLockDisabledAttr();
   const query = String(supportActivityTemplateQuery || "").trim().toLowerCase();
   const options = basicActivityLibraryOptions(tabKey).filter((option) => {
     if (!query) return true;
@@ -6894,11 +7037,11 @@ function renderBasicActivityTemplatePicker(tabKey) {
     <div class="basic-activity-template-picker">
       <div class="toolbar-row">
         <span class="muted">选择基本保障活动</span>
-        <input data-support-activity-template-query value="${htmlEscape(supportActivityTemplateQuery)}" placeholder="搜索编号、名称、类型、资源">
+        <input data-support-activity-template-query value="${htmlEscape(supportActivityTemplateQuery)}" placeholder="搜索编号、名称、类型、资源"${lockedAttr}>
       </div>
       <div class="toolbar-row">
         ${options.length ? options.map((option) => `
-          <button type="button" class="inline-action" data-support-activity-job-template="${htmlEscape(tabKey)}" data-basic-activity-key="${htmlEscape(option.value)}">${htmlEscape(option.label)}</button>
+          <button type="button" class="inline-action" data-support-activity-job-template="${htmlEscape(tabKey)}" data-basic-activity-key="${htmlEscape(option.value)}"${lockedAttr}>${htmlEscape(option.label)}</button>
         `).join("") : `<span class="muted">基础库暂无可回填活动</span>`}
       </div>
     </div>
@@ -6916,7 +7059,7 @@ function supportActivityJobByKey(key) {
 }
 
 function supportActivityJobInput(key, row, fieldName, type = "text", attrs = {}) {
-  const attrText = Object.entries(attrs)
+  const attrText = Object.entries(withModelingLockAttrs(attrs))
     .map(([attrName, attrValue]) => ` ${attrName}="${htmlEscape(attrValue)}"`)
     .join("");
   return `<input class="table-edit-input" data-support-activity-job-key="${htmlEscape(key)}" data-support-activity-job-field="${htmlEscape(fieldName)}" type="${type}" value="${htmlEscape(row[fieldName] ?? "")}"${attrText}>`;
@@ -6924,8 +7067,9 @@ function supportActivityJobInput(key, row, fieldName, type = "text", attrs = {})
 
 function supportActivityJobSelect(key, row, fieldName, options, label) {
   const selectedValue = String(row[fieldName] ?? "");
+  const lockedAttr = modelingLockDisabledAttr();
   return `
-    <select class="table-edit-select" data-support-activity-job-key="${htmlEscape(key)}" data-support-activity-job-field="${htmlEscape(fieldName)}" aria-label="${htmlEscape(label)}">
+    <select class="table-edit-select" data-support-activity-job-key="${htmlEscape(key)}" data-support-activity-job-field="${htmlEscape(fieldName)}" aria-label="${htmlEscape(label)}"${lockedAttr}>
       ${selectOptionsWithCurrent(options, selectedValue)}
     </select>
   `;
@@ -7114,12 +7258,13 @@ function renderSupportActivityPredecessorDialog(selectedJob) {
   const row = selectedJob.job;
   const jobs = supportActivityJobs(selectedJob.activity);
   const selected = new Set(Array.isArray(row.predecessors) ? row.predecessors : []);
+  const lockedAttr = modelingLockDisabledAttr();
   const existingOptions = jobs.map((candidate, candidateIndex) => {
     if (candidateIndex === selectedJob.index) return "";
     const value = supportActivityPredecessorValue(candidate, candidateIndex);
     return `
       <label class="check-row">
-        <input type="checkbox" data-support-activity-predecessor-key="${htmlEscape(selectedJob.key)}" data-support-activity-predecessor-toggle="${htmlEscape(value)}" ${selected.has(value) ? "checked" : ""}>
+        <input type="checkbox" data-support-activity-predecessor-key="${htmlEscape(selectedJob.key)}" data-support-activity-predecessor-toggle="${htmlEscape(value)}" ${selected.has(value) ? "checked" : ""}${lockedAttr}>
         <span>
           <strong>${htmlEscape(candidate.workName || value)}</strong>
           <small>${htmlEscape(value)}</small>
@@ -7159,8 +7304,9 @@ function supportActivityJobBasicActivitySelect(selectedJob) {
     && row.workName === selectedJob.job.workName
   ))?.key || "";
   const options = basicActivityLibraryOptions(selectedJob.tabKey);
+  const lockedAttr = modelingLockDisabledAttr();
   return `
-    <select class="table-edit-select" data-support-activity-job-template-select="${htmlEscape(selectedJob.tabKey)}" aria-label="从基本保障活动建模表搜索作业项">
+    <select class="table-edit-select" data-support-activity-job-template-select="${htmlEscape(selectedJob.tabKey)}" aria-label="从基本保障活动建模表搜索作业项"${lockedAttr}>
       <option value="">搜索并选择基本保障活动</option>
       ${selectOptionsWithCurrent(options, currentKey)}
     </select>
@@ -7184,40 +7330,42 @@ function renderBasicActivityLibrary() {
   const dialogRow = basicActivityDialogKey === BASIC_ACTIVITY_DRAFT_KEY
     ? basicActivityDraft
     : basicActivityLibraryRows().find((row) => row.key === basicActivityDialogKey);
+  const lockedAttr = modelingLockDisabledAttr();
   return `
     <div class="detail-card activity-editor-card">
+      ${modelingLockNotice()}
       <div class="section-head">
         <h3>基本保障活动基础库</h3>
         <span>展示基本保障活动清单，编辑后通过 Project draft 保存</span>
       </div>
       <div class="toolbar-row">
-        <button type="button" class="btn-primary" data-basic-activity-add>新增</button>
-        <button type="button" class="btn-danger" data-basic-activity-batch-delete>批量删除</button>
+        <button type="button" class="btn-primary" data-basic-activity-add${lockedAttr}>新增</button>
+        <button type="button" class="btn-danger" data-basic-activity-batch-delete${lockedAttr}>批量删除</button>
         <input data-basic-activity-query value="${htmlEscape(basicActivityQuery)}" placeholder="搜索活动编号、工作名称、适用飞机">
         <select data-basic-activity-import-type-select aria-label="按活动类型筛选基本保障活动">
           ${basicActivityTypeOptions().map((option) => `<option value="${htmlEscape(option.value)}" ${option.value === selectedBasicActivityImportType ? "selected" : ""}>${htmlEscape(option.label)}</option>`).join("")}
         </select>
-        <button type="button" class="inline-action" data-basic-activity-import-type="${htmlEscape(selectedBasicActivityImportType)}">按活动类型导入</button>
+        <button type="button" class="inline-action" data-basic-activity-import-type="${htmlEscape(selectedBasicActivityImportType)}"${lockedAttr}>按活动类型导入</button>
       </div>
       <div class="table-wrap">
         <table>
           <thead>
             <tr>
-              <th><input type="checkbox" data-basic-activity-select-all ${allSelected ? "checked" : ""}></th>
+              <th><input type="checkbox" data-basic-activity-select-all ${allSelected ? "checked" : ""}${lockedAttr}></th>
               <th>序号</th><th>类型</th><th>基本保障活动名称</th><th>基本保障活动编号</th><th>适用对象</th><th>工期(min)</th>
               <th>编辑</th>
             </tr>
           </thead>
           <tbody>${rows.map((row, index) => `
             <tr>
-              <td><input type="checkbox" data-basic-activity-select="${htmlEscape(row.key)}" ${selectedBasicActivityKeys.has(row.key) ? "checked" : ""} aria-label="选择${htmlEscape(row.workName || `基本保障活动${index + 1}`)}"></td>
+              <td><input type="checkbox" data-basic-activity-select="${htmlEscape(row.key)}" ${selectedBasicActivityKeys.has(row.key) ? "checked" : ""} aria-label="选择${htmlEscape(row.workName || `基本保障活动${index + 1}`)}"${lockedAttr}></td>
               <td>${index + 1}</td>
               <td>${htmlEscape(row.type)}</td>
               <td>${htmlEscape(row.workName || "")}</td>
               <td>${htmlEscape(row.activityCode || "")}</td>
               <td>${htmlEscape(row.scope || "")}</td>
               <td>${htmlEscape(describeDurationProfile(row.durationProfile, row.durationMinutes))}</td>
-              <td class="table-actions"><button type="button" class="inline-action" data-basic-activity-edit="${htmlEscape(row.key)}">编辑</button></td>
+              <td class="table-actions"><button type="button" class="inline-action" data-basic-activity-edit="${htmlEscape(row.key)}"${lockedAttr}>编辑</button></td>
             </tr>
           `).join("")}</tbody>
         </table>
@@ -7228,6 +7376,7 @@ function renderBasicActivityLibrary() {
 }
 
 function renderBasicActivityEditor(row, isDraft = false) {
+  const lockedAttr = modelingLockDisabledAttr();
   return `
     <div class="activity-job-dialog-backdrop">
       <section class="activity-job-dialog basic-activity-dialog" role="dialog" aria-modal="true" aria-labelledby="basic-activity-dialog-title">
@@ -7247,7 +7396,7 @@ function renderBasicActivityEditor(row, isDraft = false) {
         </div>
         ${renderBasicActivityResourceEditor(row)}
         <div class="plan-editor-actions">
-          ${isDraft ? `<button type="button" data-basic-activity-dialog-close>取消</button><button type="button" class="btn-primary" data-basic-activity-dialog-save>完成</button>` : `<button type="button" class="btn-primary" data-basic-activity-dialog-close>完成</button>`}
+          ${isDraft ? `<button type="button" data-basic-activity-dialog-close>取消</button><button type="button" class="btn-primary" data-basic-activity-dialog-save${lockedAttr}>完成</button>` : `<button type="button" class="btn-primary" data-basic-activity-dialog-close>完成</button>`}
         </div>
       </section>
     </div>
@@ -7323,10 +7472,11 @@ function renderBasicActivitySpareEditor(row) {
 }
 
 function renderBasicActivityResourceSectionHead(row, resourceKind, label) {
+  const lockedAttr = modelingLockDisabledAttr();
   return `
     <div class="basic-activity-resource-section-head">
       <h5>${htmlEscape(label)}</h5>
-      <button type="button" class="inline-action" data-basic-activity-key="${htmlEscape(row.key)}" data-basic-activity-resource-dialog-open="${htmlEscape(resourceKind)}">新增</button>
+      <button type="button" class="inline-action" data-basic-activity-key="${htmlEscape(row.key)}" data-basic-activity-resource-dialog-open="${htmlEscape(resourceKind)}"${lockedAttr}>新增</button>
     </div>
   `;
 }
@@ -7354,6 +7504,7 @@ function renderBasicActivityResourceConfigDialog(row, resourceKind) {
   const kind = ["personnel", "equipment", "spare"].includes(resourceKind) ? resourceKind : "personnel";
   const label = basicActivityResourceKindLabel(kind);
   const requirements = normalizeBasicActivityResourceRequirements(row, kind);
+  const lockedAttr = modelingLockDisabledAttr();
   return `
     <div class="activity-job-dialog-backdrop nested-dialog-backdrop">
       <section class="activity-job-dialog basic-activity-resource-dialog" role="dialog" aria-modal="true" aria-labelledby="basic-activity-resource-dialog-title">
@@ -7365,7 +7516,7 @@ function renderBasicActivityResourceConfigDialog(row, resourceKind) {
           <button type="button" class="inline-action" data-basic-activity-resource-dialog-close aria-label="关闭${htmlEscape(label)}需求配置">关闭</button>
         </div>
         <div class="toolbar-row">
-          <button type="button" class="btn-primary" data-basic-activity-key="${htmlEscape(row.key)}" data-basic-activity-resource-dialog-add="${htmlEscape(kind)}">新增</button>
+          <button type="button" class="btn-primary" data-basic-activity-key="${htmlEscape(row.key)}" data-basic-activity-resource-dialog-add="${htmlEscape(kind)}"${lockedAttr}>新增</button>
           <span class="muted">可一次配置多条${htmlEscape(label)}参数</span>
         </div>
         <div class="table-wrap">
@@ -7390,8 +7541,9 @@ function renderBasicActivityResourceDialogHeader(resourceKind) {
 
 function renderBasicActivityResourceDialogRow(row, resourceKind, item, index) {
   const commonAttrs = `data-basic-activity-key="${htmlEscape(row.key)}" data-basic-activity-resource-kind="${htmlEscape(resourceKind)}" data-basic-activity-resource-index="${htmlEscape(index)}"`;
-  const quantityCell = `<td><input type="number" min="0" step="1" ${commonAttrs} data-basic-activity-resource-dialog-field="quantity" value="${htmlEscape(item.quantity ?? 1)}"></td>`;
-  const deleteCell = `<td><button type="button" class="inline-action" ${commonAttrs} data-basic-activity-resource-dialog-delete>删除</button></td>`;
+  const lockedAttr = modelingLockDisabledAttr();
+  const quantityCell = `<td><input type="number" min="0" step="1" ${commonAttrs} data-basic-activity-resource-dialog-field="quantity" value="${htmlEscape(item.quantity ?? 1)}"${lockedAttr}></td>`;
+  const deleteCell = `<td><button type="button" class="inline-action" ${commonAttrs} data-basic-activity-resource-dialog-delete${lockedAttr}>删除</button></td>`;
   return `
     <tr>
       <td>${basicActivityResourceDialogResourceSelect(row, resourceKind, index, item)}</td>
@@ -7416,8 +7568,9 @@ function basicActivityResourceDialogResourceSelect(row, resourceKind, index, ite
 }
 
 function basicActivityResourceDialogSelect(row, resourceKind, index, fieldName, options, selectedValue, label) {
+  const lockedAttr = modelingLockDisabledAttr();
   return `
-    <select ${basicActivityResourceDialogFieldAttrs(row, resourceKind, index, fieldName)} aria-label="${htmlEscape(label)}">
+    <select ${basicActivityResourceDialogFieldAttrs(row, resourceKind, index, fieldName)} aria-label="${htmlEscape(label)}"${lockedAttr}>
       ${selectOptionsWithCurrent(options, selectedValue)}
     </select>
   `;
@@ -7604,7 +7757,7 @@ function basicActivityEditorInput(row, fieldName, label, type = "text") {
 }
 
 function basicActivityInput(row, fieldName, type = "text", attrs = {}) {
-  const attrText = Object.entries(attrs)
+  const attrText = Object.entries(withModelingLockAttrs(attrs))
     .map(([attrName, attrValue]) => ` ${attrName}="${htmlEscape(attrValue)}"`)
     .join("");
   return `<input class="table-edit-input" data-basic-activity-key="${htmlEscape(row.key)}" data-basic-activity-field="${htmlEscape(fieldName)}" type="${type}" value="${htmlEscape(basicActivityFieldValue(row, fieldName) ?? "")}"${attrText}>`;
@@ -7612,8 +7765,9 @@ function basicActivityInput(row, fieldName, type = "text", attrs = {}) {
 
 function basicActivitySelect(row, fieldName, options, label) {
   const selectedValue = String(basicActivityFieldValue(row, fieldName) ?? "");
+  const lockedAttr = modelingLockDisabledAttr();
   return `
-    <select class="table-edit-select" data-basic-activity-key="${htmlEscape(row.key)}" data-basic-activity-field="${htmlEscape(fieldName)}" aria-label="${htmlEscape(label)}">
+    <select class="table-edit-select" data-basic-activity-key="${htmlEscape(row.key)}" data-basic-activity-field="${htmlEscape(fieldName)}" aria-label="${htmlEscape(label)}"${lockedAttr}>
       ${selectOptionsWithCurrent(options, selectedValue)}
     </select>
   `;
@@ -7638,8 +7792,9 @@ function basicActivityTypeOptions() {
 
 function basicActivityScopeSelect(row) {
   const selectedValue = basicActivityScopeValue(row);
+  const lockedAttr = modelingLockDisabledAttr();
   return `
-    <select class="table-edit-select" data-basic-activity-key="${htmlEscape(row.key)}" data-basic-activity-field="scope" aria-label="适用对象">
+    <select class="table-edit-select" data-basic-activity-key="${htmlEscape(row.key)}" data-basic-activity-field="scope" aria-label="适用对象"${lockedAttr}>
       ${selectOptionsWithCurrent(basicActivityScopeOptions(row), selectedValue)}
     </select>
   `;
@@ -8436,6 +8591,7 @@ function renderOperationsSupportActivity(activePlan, activity) {
   `).join("");
   return `
     <div class="detail-card activity-editor-card">
+      ${modelingLockNotice()}
       <div class="form-table-grid">
         ${field("方案名称", `supportActivities.${planNameActivityIndex}.activityName`)}
       </div>
@@ -8452,15 +8608,17 @@ function renderOperationsSupportActivity(activePlan, activity) {
 function renderPreventiveMaintenanceActivity(activePlan, activity) {
   const activityIndex = Math.max(0, (scenario.supportActivities || []).indexOf(activity));
   const ruleNumberAttrs = (enabled, attrs) => (enabled ? attrs : { ...attrs, disabled: "disabled" });
+  const lockedAttr = modelingLockDisabledAttr();
   const renderRuleRow = ({ toggleLabel, togglePath, enabled, intervalLabel, intervalPath, intervalAttrs, floatLabel, floatPath, floatAttrs }) => `
     <div class="preventive-rule-row">
-      <label class="preventive-rule-toggle">${toggleLabel}<input type="checkbox" data-path="${togglePath}" ${enabled ? "checked" : ""}></label>
+      <label class="preventive-rule-toggle">${toggleLabel}<input type="checkbox" data-path="${togglePath}" ${enabled ? "checked" : ""}${lockedAttr}></label>
       ${field(intervalLabel, intervalPath, "number", ruleNumberAttrs(enabled, intervalAttrs))}
       ${field(floatLabel, floatPath, "number", ruleNumberAttrs(enabled, floatAttrs))}
     </div>
   `;
   return `
     <div class="detail-card activity-editor-card">
+      ${modelingLockNotice()}
       <div class="section-head">
         <h3>预防性维修活动编辑</h3>
         <span>${activePlan.path.map((item) => htmlEscape(item)).join(" / ")}</span>
@@ -8614,12 +8772,14 @@ function nextCorrectiveMaintenanceActivityId(equipmentId) {
 function renderCorrectiveMaintenanceActivity(activity) {
   const component = selectedCorrectiveComponent();
   const componentActivity = correctiveMaintenanceActivityForComponent(selectedCorrectiveComponent()) || (isCorrectiveMaintenanceActivity(activity) ? activity : null);
+  const lockedAttr = modelingLockDisabledAttr();
   if (!componentActivity) {
     return `
     <div class="organization-layout">
       ${renderEquipmentConfigTree()}
       <section class="detail-panel">
         <div class="detail-card activity-editor-card">
+          ${modelingLockNotice()}
           <div class="section-head">
             <h3>修复性维修活动编辑</h3>
             <span>${htmlEscape(component?.name || component?.id || "未选择组件")}</span>
@@ -8638,6 +8798,7 @@ function renderCorrectiveMaintenanceActivity(activity) {
       ${renderEquipmentConfigTree()}
       <section class="detail-panel">
         <div class="detail-card activity-editor-card">
+          ${modelingLockNotice()}
           <div class="section-head">
             <h3>修复性维修活动编辑</h3>
             <span>${htmlEscape(componentActivity.activityName || "修复性维修方案")} / ${htmlEscape(component?.name || component?.id || "未选择组件")}</span>
@@ -8646,8 +8807,8 @@ function renderCorrectiveMaintenanceActivity(activity) {
             <label>MTTR<input readonly value="${htmlEscape(mttrText)}"></label>
             <label>维修类型
               <span class="inline-radio-group">
-                <label><input data-path="supportActivities.${activityIndex}.repairType" type="radio" name="corrective-repair-type" value="原位维修" ${repairType === "原位维修" ? "checked" : ""}>原位维修</label>
-                <label><input data-path="supportActivities.${activityIndex}.repairType" type="radio" name="corrective-repair-type" value="换件维修" ${repairType === "换件维修" ? "checked" : ""}>换件维修</label>
+                <label><input data-path="supportActivities.${activityIndex}.repairType" type="radio" name="corrective-repair-type" value="原位维修" ${repairType === "原位维修" ? "checked" : ""}${lockedAttr}>原位维修</label>
+                <label><input data-path="supportActivities.${activityIndex}.repairType" type="radio" name="corrective-repair-type" value="换件维修" ${repairType === "换件维修" ? "checked" : ""}${lockedAttr}>换件维修</label>
               </span>
             </label>
           </div>
@@ -8726,6 +8887,7 @@ function renderLogisticsSupportActivity(activePlan, activity) {
   selectedLogisticsTransportStrategyIndexes = new Set(
     Array.from(selectedLogisticsTransportStrategyIndexes).filter((index) => index >= 0 && index < transportStrategies.length)
   );
+  const lockedAttr = modelingLockDisabledAttr();
   const supportNodeOptions = uniqueSelectOptions((scenario.supportNodes || []).map((node) => ({ value: node.name, label: node.name })));
   const spareTypeOptions = spareModelingNames().map((name) => ({ value: name, label: name }));
   const directionOptions = [
@@ -8738,11 +8900,12 @@ function renderLogisticsSupportActivity(activePlan, activity) {
   ];
   return `
     <div class="detail-card activity-editor-card">
+      ${modelingLockNotice()}
       <div class="section-head">
         <h3>\u540e\u52e4\u4fdd\u969c\u8fd0\u8f93\u7b56\u7565\u914d\u7f6e</h3>
         <div class="toolbar-row">
-          <button type="button" class="btn-primary" data-logistics-transport-add>\u65b0\u589e</button>
-          <button type="button" class="btn-danger" data-logistics-transport-delete ${selectedLogisticsTransportStrategyIndexes.size ? "" : "disabled"}>\u5220\u9664</button>
+          <button type="button" class="btn-primary"${lockedAttr} data-logistics-transport-add>\u65b0\u589e</button>
+          <button type="button" class="btn-danger" data-logistics-transport-delete ${selectedLogisticsTransportStrategyIndexes.size && !currentModelingPageLocked() ? "" : "disabled"}>\u5220\u9664</button>
         </div>
       </div>
       <div class="table-wrap">
@@ -8755,7 +8918,7 @@ function renderLogisticsSupportActivity(activePlan, activity) {
               : `<label class="inline-field">\u4e34\u754c\u5e93\u5b58\u6570${valueInput(`${basePath}.criticalInventory`, "number", { min: "0", step: "1" })}</label>`;
             return `
               <tr class="${selectedLogisticsTransportStrategyIndexes.has(index) ? "selected-table-row" : ""}">
-                <td><input type="checkbox" data-logistics-transport-select="${index}" ${selectedLogisticsTransportStrategyIndexes.has(index) ? "checked" : ""} aria-label="\u9009\u62e9\u8fd0\u8f93\u7b56\u7565${index + 1}"></td>
+                <td><input type="checkbox" data-logistics-transport-select="${index}" ${selectedLogisticsTransportStrategyIndexes.has(index) ? "checked" : ""} aria-label="\u9009\u62e9\u8fd0\u8f93\u7b56\u7565${index + 1}"${lockedAttr}></td>
                 <td>${valueInput(`${basePath}.name`, "text")}</td>
                 <td>${valueSelect(`${basePath}.direction`, directionOptions)}</td>
                 <td>${valueSelect(`${basePath}.spareType`, spareTypeOptions)}</td>
@@ -8792,6 +8955,8 @@ function spareModelingNames() {
 function renderSupportActivityWorkbench(page) {
   const activity = ensureSupportActivityForPage(page);
   const activePlan = supportActivityPlanForPage(page, activity);
+  const locked = currentModelingPageLocked(page);
+  const lockedAttr = modelingLockDisabledAttr(locked);
   if (page.name.includes("基本保障活动")) {
     return `<div class="ship-front-workbench">${renderBasicActivityLibrary()}</div>`;
   }
@@ -8821,8 +8986,8 @@ function renderSupportActivityWorkbench(page) {
           <div class="tree-toolbar">
             <h4>${htmlEscape(activePlan.treeTitle)}</h4>
             <div class="equipment-toolbar">
-              ${page.name.includes("使用") ? `<button type="button" class="btn-primary" data-support-activity-plan-add>新增节点</button><button type="button" class="btn-danger" data-support-activity-plan-delete="${htmlEscape(selectedOperationsKey)}" ${selectedOperationsKey && operationsEntries.length ? "" : "disabled"}>删除</button>` : ""}
-              ${page.name.includes("预防性") ? `<button type="button" class="btn-primary" data-preventive-activity-plan-add>新增节点</button><button type="button" class="btn-danger" data-preventive-activity-plan-delete="${htmlEscape(selectedPreventiveKey)}" ${selectedPreventiveKey && preventiveEntries.length ? "" : "disabled"}>删除</button>` : ""}
+              ${page.name.includes("使用") ? `<button type="button" class="btn-primary" data-support-activity-plan-add${lockedAttr}>新增节点</button><button type="button" class="btn-danger" data-support-activity-plan-delete="${htmlEscape(selectedOperationsKey)}" ${selectedOperationsKey && operationsEntries.length && !locked ? "" : "disabled"}>删除</button>` : ""}
+              ${page.name.includes("预防性") ? `<button type="button" class="btn-primary" data-preventive-activity-plan-add${lockedAttr}>新增节点</button><button type="button" class="btn-danger" data-preventive-activity-plan-delete="${htmlEscape(selectedPreventiveKey)}" ${selectedPreventiveKey && preventiveEntries.length && !locked ? "" : "disabled"}>删除</button>` : ""}
             </div>
           </div>
           ${renderSupportActivityTreeNode(activePlan.tree, activePlan.path.at(-1))}
@@ -15496,16 +15661,19 @@ function field(label, path, type = "text", attrs = {}) {
 }
 
 function valueInput(path, type = "text", attrs = {}) {
-  const attrText = Object.entries(attrs)
+  const attrText = Object.entries(withModelingLockAttrs(attrs))
     .map(([key, value]) => ` ${key}="${htmlEscape(value)}"`)
     .join("");
   return `<input data-path="${path}" type="${type}" value="${htmlEscape(getPath(scenario, path))}"${attrText}>`;
 }
 
-function valueSelect(path, options) {
+function valueSelect(path, options, attrs = {}) {
   const selectedValue = String(getPath(scenario, path));
+  const attrText = Object.entries(withModelingLockAttrs(attrs))
+    .map(([key, value]) => ` ${key}="${htmlEscape(value)}"`)
+    .join("");
   return `
-    <select data-path="${path}">
+    <select data-path="${path}"${attrText}>
       ${options.map((option) => {
         const value = String(option.value);
         return `<option value="${htmlEscape(value)}" ${value === selectedValue ? "selected" : ""}>${htmlEscape(option.label)}</option>`;
