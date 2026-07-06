@@ -767,6 +767,19 @@ select[multiple].table-edit-select {
   gap: 12px;
 }
 
+.modeling-form-config-grid {
+  width: min(100%, 1040px);
+  max-width: 1040px;
+  grid-template-columns: repeat(2, minmax(320px, 1fr));
+  align-items: start;
+}
+
+@media (max-width: 760px) {
+  .modeling-form-config-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .project-template-layout {
   display: grid;
   grid-template-columns: minmax(280px, 0.38fr) minmax(0, 1fr);
@@ -898,6 +911,17 @@ select[multiple].table-edit-select {
   background: #fbfcfd;
 }
 
+.granularity-profile-card {
+  width: 100%;
+  text-align: left;
+}
+
+.granularity-profile-card.selected {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  box-shadow: inset 3px 0 0 var(--primary);
+}
+
 .sheet-selector-list,
 .modeling-sheet-stack,
 .field-checkbox-grid {
@@ -953,6 +977,17 @@ select[multiple].table-edit-select {
 .modeling-sheet-card.disabled {
   background: #f8fafc;
   opacity: 0.72;
+}
+
+.modeling-page-lock-notice {
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border: 1px solid #f4b63f;
+  border-radius: 8px;
+  background: #fff7e6;
+  color: #7a4b00;
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .field-checkbox-grid {

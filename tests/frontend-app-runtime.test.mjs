@@ -503,6 +503,203 @@ test("project data raw JSON normalizes legacy basicMission fields", async () => 
   }
 });
 
+test("modeling granularity page switches locked field presets", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=system-management-modeling-granularity-management"
+  });
+
+  try {
+    await runtime.flush();
+
+    assert.match(runtime.appNode.innerHTML, /建模颗粒度配置/);
+    assert.match(runtime.appNode.innerHTML, /data-granularity-profile-select="full-elements" aria-pressed="true"/);
+    assert.match(runtime.appNode.innerHTML, /data-granularity-profile-select="equipment-rms" aria-pressed="false"/);
+    assert.match(runtime.appNode.innerHTML, /全要素/);
+    assert.match(runtime.appNode.innerHTML, /装备RMS/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /颗粒度 A|颗粒度 B/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /导入包维护/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-modeling-import-action/);
+    assert.match(runtime.appNode.innerHTML, /data-modeling-field-select="equipment-system:mtbfHours" checked disabled/);
+    assert.match(runtime.appNode.innerHTML, /data-modeling-field-select="basic-support-activity:resourceIds" checked disabled/);
+
+    await runtime.click("[data-granularity-profile-select]", { granularityProfileSelect: "equipment-rms" });
+
+    assert.match(runtime.appNode.innerHTML, /data-granularity-profile-select="full-elements" aria-pressed="false"/);
+    assert.match(runtime.appNode.innerHTML, /data-granularity-profile-select="equipment-rms" aria-pressed="true"/);
+    assert.match(runtime.appNode.innerHTML, /data-modeling-field-select="equipment-system:mtbfHours" checked disabled/);
+    assert.match(runtime.appNode.innerHTML, /data-modeling-field-select="reliability-block-diagram:reliabilityParameter" checked disabled/);
+    const excludedEquipmentRmsFields = [
+      "support-organization-structure:nodeId",
+      "support-organization-structure:nodeName",
+      "support-organization-structure:nodeType",
+      "support-organization-structure:airport",
+      "support-organization-structure:organizationStrategy",
+      "spares:spareId",
+      "spares:spareName",
+      "spares:equipmentId",
+      "spares:stockQty",
+      "spares:supportNodeName",
+      "support-personnel:personnelType",
+      "support-personnel:specialty",
+      "support-personnel:nodeId",
+      "support-personnel:capacity",
+      "support-personnel:resourceName",
+      "support-equipment:resourceId",
+      "support-equipment:resourceName",
+      "support-equipment:nodeId",
+      "support-equipment:quantity",
+      "support-equipment:availability",
+      "basic-support-activity:activityId",
+      "basic-support-activity:activityName",
+      "basic-support-activity:aircraftModel",
+      "basic-support-activity:durationHours",
+      "basic-support-activity:resourceIds",
+      "operations-support-activity:planType",
+      "operations-support-activity:waveId",
+      "operations-support-activity:preparationMinutes",
+      "operations-support-activity:resourcePackage",
+      "operations-support-activity:predecessors",
+      "preventive-maintenance-activity:cycle",
+      "preventive-maintenance-activity:maintenanceItem",
+      "preventive-maintenance-activity:intervalHours",
+      "preventive-maintenance-activity:personnelDemand",
+      "preventive-maintenance-activity:spareDemand",
+      "corrective-maintenance-activity:failureItem",
+      "corrective-maintenance-activity:repairHours",
+      "corrective-maintenance-activity:repairResources",
+      "corrective-maintenance-activity:replacementParts",
+      "corrective-maintenance-activity:restoreCondition",
+      "logistics-support-activity:logisticsTaskId",
+      "logistics-support-activity:sourceNodeId",
+      "logistics-support-activity:targetNodeId",
+      "logistics-support-activity:transportHours",
+      "logistics-support-activity:supplyQuantity"
+    ];
+    for (const fieldKey of excludedEquipmentRmsFields) {
+      assert.ok(
+        runtime.appNode.innerHTML.includes(`data-modeling-field-select="${fieldKey}" disabled`),
+        `${fieldKey} should stay visible but unchecked in equipment RMS granularity`
+      );
+      assert.equal(
+        runtime.appNode.innerHTML.includes(`data-modeling-field-select="${fieldKey}" checked`),
+        false,
+        `${fieldKey} should not be selected in equipment RMS granularity`
+      );
+    }
+
+    await runtime.click("[data-modeling-field-select]", { modelingFieldSelect: "basic-support-activity:resourceIds" }, { checked: true });
+
+    assert.match(runtime.appNode.innerHTML, /字段勾选由当前建模颗粒度自动维护/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-modeling-field-select="basic-support-activity:resourceIds" checked/);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("equipment RMS granularity locks excluded modeling pages while keeping equipment editable", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=system-management-modeling-granularity-management",
+    projectJson: createRuntimeProjectJson({
+      supportOrganization: {
+        tree: {
+          id: "support-org-root",
+          name: "保障组织",
+          children: [
+            { id: "base-1", name: "基层1", children: [] }
+          ]
+        }
+      },
+      supportNodes: [{
+        id: "support-node-base-1",
+        name: "基层1"
+      }],
+      supportResources: [{
+        id: "runtime-personnel-1",
+        supportNodeName: "基层1",
+        type: "personnel",
+        name: "机务人员",
+        model: "机务",
+        quantity: 10
+      }]
+    })
+  });
+
+  try {
+    await runtime.click("[data-granularity-profile-select]", { granularityProfileSelect: "equipment-rms" });
+    await runtime.setHash("feature=spare-planning-support-personnel");
+    await runtime.click("[data-select-support-org-node]", { selectSupportOrgNode: "base-1" });
+
+    assert.match(runtime.appNode.innerHTML, /当前建模颗粒度未启用该表，建模内容只读。/);
+    assert.match(runtime.appNode.innerHTML, /data-support-resource-add="保障人员"[^>]*disabled/);
+    assert.match(runtime.appNode.innerHTML, /data-support-resource-field="model"[^>]*disabled/);
+
+    const personnelRowsBefore = (runtime.appNode.innerHTML.match(/data-support-resource-field="model"/g) || []).length;
+    await runtime.click("[data-support-resource-add]", { supportResourceAdd: "保障人员" });
+    assert.equal((runtime.appNode.innerHTML.match(/data-support-resource-field="model"/g) || []).length, personnelRowsBefore);
+
+    await runtime.change(
+      "[data-support-resource-field]",
+      { supportResourceKey: "runtime-personnel-1", supportResourceField: "model" },
+      { value: "航电" }
+    );
+    assert.doesNotMatch(runtime.appNode.innerHTML, /<option value="航电" selected>航电<\/option>/);
+    assert.match(runtime.appNode.innerHTML, /<option value="机务" selected>机务<\/option>/);
+
+    await runtime.setHash("feature=spare-planning-basic-support-activity");
+
+    assert.match(runtime.appNode.innerHTML, /当前建模颗粒度未启用该表，建模内容只读。/);
+    assert.match(runtime.appNode.innerHTML, /data-basic-activity-add[^>]*disabled/);
+    assert.match(runtime.appNode.innerHTML, /data-basic-activity-edit="0:0"[^>]*disabled/);
+
+    const basicActivityEditorsBefore = (runtime.appNode.innerHTML.match(/data-basic-activity-key=/g) || []).length;
+    await runtime.click("[data-basic-activity-add]");
+    assert.equal((runtime.appNode.innerHTML.match(/data-basic-activity-key=/g) || []).length, basicActivityEditorsBefore);
+
+    await runtime.setHash("feature=spare-planning-equipment-system");
+
+    assert.doesNotMatch(runtime.appNode.innerHTML, /当前建模颗粒度未启用该表，建模内容只读。/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-path="equipment.quantity"[^>]*disabled/);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("modeling form management only renders personnel dictionary and time unit fields", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=system-management-modeling-form-management",
+    projectJson: createRuntimeProjectJson({
+      modelingDictionaries: {
+        personnelSpecialties: ["机务", "航电"]
+      }
+    })
+  });
+
+  try {
+    await runtime.flush();
+
+    assert.match(runtime.appNode.innerHTML, /保障人员专业字典/);
+    assert.match(runtime.appNode.innerHTML, /data-personnel-specialty-dictionary/);
+    assert.match(runtime.appNode.innerHTML, /带时间单位的表单字段/);
+    assert.match(runtime.appNode.innerHTML, /data-modeling-form-management/);
+    assert.match(runtime.appNode.innerHTML, /class="modeling-field-config modeling-form-config-grid" data-modeling-form-management/);
+    assert.match(runtime.appNode.innerHTML, /<section class="modeling-config-card" data-personnel-specialty-dictionary>/);
+    assert.match(runtime.appNode.innerHTML, /data-modeling-form-unit="equipment-system:mtbfHours"/);
+    assert.match(runtime.appNode.innerHTML, /data-modeling-form-unit="equipment-system:mttrMinutes"/);
+    assert.match(runtime.appNode.innerHTML, /data-modeling-form-unit="basic-mission:durationMinutes"/);
+    assert.match(runtime.appNode.innerHTML, /data-modeling-form-unit="logistics-support-activity:transportHours"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-modeling-form-unit="equipment-system:componentName"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-modeling-form-unit="support-personnel:resourceName"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-modeling-form-unit="spares:spareName"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-modeling-form-unit="composite-task:minRequiredSystems"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /组件名称/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /资源名称/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /备件名称/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /最小装备数量/);
+  } finally {
+    runtime.restore();
+  }
+});
+
 test("visual Mesa page renders restored title frame with decimal KPI values", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=spare-planning-visual-mesa-page",
