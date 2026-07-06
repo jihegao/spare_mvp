@@ -479,6 +479,8 @@ test("page revision project and system management controls stay wired", async ()
   assert.match(permissionSource, /data-permission-configure/);
   assert.match(permissionSource, /renderPermissionConfigEditor/);
   assert.match(permissionSource, /data-permission-role/);
+  assert.doesNotMatch(permissionSource, /新增权限项/);
+  assert.doesNotMatch(permissionSource, /批量删除/);
   assert.match(eventSource, /const systemManagementButton = event\.target\.closest\("\[data-system-management-entry\]"\)/);
   assert.match(eventSource, /const permissionConfigureButton = event\.target\.closest\("\[data-permission-configure\]"\)/);
 });

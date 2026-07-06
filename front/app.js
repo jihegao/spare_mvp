@@ -4204,7 +4204,6 @@ function renderSystemUserEditor() {
 
 function renderPermissionManagementConfig() {
   return `
-    <div class="toolbar-row"><button type="button" class="btn-primary">新增权限项</button><button type="button" class="btn-danger">批量删除</button></div>
     <p class="inline-status">${htmlEscape(permissionConfigStatus)}</p>
     ${permissionConfigFeature ? renderPermissionConfigEditor() : ""}
     <div class="table-wrap">
