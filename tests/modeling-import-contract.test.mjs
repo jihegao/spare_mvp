@@ -472,7 +472,10 @@ test("projectToModelingImportPackage backfills import draft from current Project
     Object.hasOwn(draft.objects.missionProfiles[0].compositeTasks[0].taskItems[0], "equipmentQuantity"),
     false
   );
-  assert.deepEqual(draft.objects.equipmentAssets, projectJson.components);
+  assert.deepEqual(draft.objects.equipmentAssets, [
+    { ...projectJson.components[0], kOutOfN: { enabled: true, n: 3, k: 3 } },
+    { ...projectJson.components[1], kOutOfN: { enabled: false, n: 1, k: 1 } }
+  ]);
   assert.deepEqual(draft.objects.supportResources, projectJson.supportResources);
   assert.deepEqual(draft.objects.transportPolicies, projectJson.transportPolicies);
   assert.deepEqual(draft.objects.supportActivities, [{
@@ -600,6 +603,32 @@ test("current project backfill preserves phase 2 support organization resources 
   });
   assert.deepEqual(draft.objects.supportActivities[0].jobs[0].predecessors, ["BA-100"]);
   assert.deepEqual(validateModelingImportPackage(draft), []);
+});
+
+test("modeling import rejects zero k-out-of-n and backfills missing k from quantity", async () => {
+  const fixture = await readJson("tests/fixtures/modeling_import_project.json");
+  const invalid = JSON.parse(JSON.stringify(fixture));
+  invalid.objects.equipmentAssets[0].quantity = 2;
+  invalid.objects.equipmentAssets[0].kOutOfN = { enabled: true, n: 2, k: 0 };
+
+  const issues = validateModelingImportPackage(invalid);
+  assert.ok(issues.some((issue) => (
+    issue.code === "invalid_equipment_k_out_of_n"
+    && issue.field_path === "objects.equipmentAssets[0].kOutOfN.k"
+    && /1 ≤ k ≤ n/.test(issue.message)
+  )));
+
+  const draft = projectToModelingImportPackage({
+    project_id: "project-k-default",
+    scenarioId: "scenario-k-default",
+    missionProfile: { name: "k default", durationHours: 8 },
+    components: [
+      { id: "engine", name: "发动机", quantity: 2, kOutOfN: { enabled: true, n: 2 } }
+    ]
+  }, fixture);
+
+  assert.equal(draft.validation.ok, true);
+  assert.deepEqual(draft.objects.equipmentAssets[0].kOutOfN, { enabled: true, n: 2, k: 2 });
 });
 
 test("modeling import schema validation resolves nested local refs", async () => {

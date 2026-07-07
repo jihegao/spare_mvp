@@ -21,6 +21,42 @@ export function componentBelongsToAircraftModel(component, aircraftModel) {
   return !component?.aircraftModel || String(component.aircraftModel) === String(aircraftModel);
 }
 
+export function equipmentKOutOfNQuantity(value) {
+  const number = Number(value);
+  return Number.isInteger(number) && number > 0 ? number : 1;
+}
+
+export function normalizeEquipmentComponentKOutOfN(component) {
+  if (!component || typeof component !== "object" || Array.isArray(component)) return component;
+  const quantity = equipmentKOutOfNQuantity(component.quantity);
+  component.quantity = quantity;
+  const rawK = component.kOutOfN && typeof component.kOutOfN === "object" && !Array.isArray(component.kOutOfN)
+    ? component.kOutOfN.k
+    : undefined;
+  const rawNumber = Number(rawK);
+  const k = Number.isInteger(rawNumber) && rawNumber >= 1 && rawNumber <= quantity ? rawNumber : quantity;
+  component.kOutOfN = { ...(component.kOutOfN || {}), enabled: quantity > 1, n: quantity, k };
+  return component;
+}
+
+export function validateEquipmentComponentKOutOfN(component) {
+  const quantity = equipmentKOutOfNQuantity(component?.quantity);
+  const rawK = component?.kOutOfN && typeof component.kOutOfN === "object" && !Array.isArray(component.kOutOfN)
+    ? component.kOutOfN.k
+    : undefined;
+  if (rawK === undefined || rawK === null || rawK === "") {
+    return "K 值不能为空；默认应等于数量 n。";
+  }
+  const number = Number(rawK);
+  if (!Number.isInteger(number) || number < 1) {
+    return "K 值必须为正整数，且满足 1 ≤ k ≤ n。";
+  }
+  if (number > quantity) {
+    return "K 值不能大于数量 n；K 值必须满足 1 ≤ k ≤ n。";
+  }
+  return "";
+}
+
 export function buildEquipmentComponentTreeModel({ scenario, aircraftModel, parentId }) {
   const components = Array.isArray(scenario?.components) ? scenario.components : [];
   const buildChildren = (currentParentId, visited = new Set()) => {
@@ -167,6 +203,7 @@ export function addEquipmentNodeForSelectionModel({ scenario, selection }) {
     specialRepairProfile: { repairTimeMinutes: 120, repairRatio: 0.5, replacementRatio: 0.5 },
     rms: { reliability: 0.95, maintainability: 0.9, supportability: 0.9, mttrHours: 2.5, mldtHours: 1.2, availability: 0.97 }
   };
+  normalizeEquipmentComponentKOutOfN(newComponent);
   scenario.components.push(newComponent);
   return {
     kind: "component",

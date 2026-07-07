@@ -14,6 +14,7 @@ from src.spare_mvp_backend.errors import BackendApiError
 from src.spare_mvp_backend.modeling_import import modeling_import_to_project, validate_modeling_import_package
 from src.spare_mvp_backend.project_payload import (
     materialize_scenario_composition,
+    project_k_out_of_n_errors,
     project_runtime_config_paths,
     strip_project_sweep,
 )
@@ -63,6 +64,11 @@ class BackendApi:
             validation = copy.deepcopy(validation)
             validation["ok"] = False
             validation["errors"] = [*validation.get("errors", []), *runtime_config_errors]
+        k_out_of_n_errors = project_k_out_of_n_errors(project_json)
+        if k_out_of_n_errors:
+            validation = copy.deepcopy(validation)
+            validation["ok"] = False
+            validation["errors"] = [*validation.get("errors", []), *k_out_of_n_errors]
         return validation
 
     def login(self, username: str, password: str) -> dict[str, Any]:

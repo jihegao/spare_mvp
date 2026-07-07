@@ -52,6 +52,22 @@ test("equipment aircraftTypes define whole-machine aircraft list", () => {
   assert.deepEqual(equipmentTreeModel.wholeMachineModelsForScenario(scenario), ["J-15", "J-35"]);
 });
 
+test("equipment k-out-of-n defaults missing or historical zero to quantity", () => {
+  assert.equal(typeof equipmentTreeModel.normalizeEquipmentComponentKOutOfN, "function");
+
+  const missing = { id: "engine", quantity: 3 };
+  equipmentTreeModel.normalizeEquipmentComponentKOutOfN(missing);
+  assert.deepEqual(missing.kOutOfN, { enabled: true, n: 3, k: 3 });
+
+  const historicalZero = { id: "radar", quantity: 2, kOutOfN: { enabled: true, n: 2, k: 0 } };
+  equipmentTreeModel.normalizeEquipmentComponentKOutOfN(historicalZero);
+  assert.deepEqual(historicalZero.kOutOfN, { enabled: true, n: 2, k: 2 });
+
+  const explicitRedundancy = { id: "avionics", quantity: 2, kOutOfN: { enabled: true, n: 2, k: 1 } };
+  equipmentTreeModel.normalizeEquipmentComponentKOutOfN(explicitRedundancy);
+  assert.deepEqual(explicitRedundancy.kOutOfN, { enabled: true, n: 2, k: 1 });
+});
+
 test("component tree model skips self-references and cyclic parent chains without recursion overflow", () => {
   const scenario = {
     equipment: { model: "J-15", wholeMachineModels: ["J-15"] },

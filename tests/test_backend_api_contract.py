@@ -715,6 +715,21 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(ctx.exception.code, "invalid_project")
         self.assertIn("unsupported_project_runtime_config", {error["code"] for error in ctx.exception.details["errors"]})
 
+    def test_save_project_rejects_invalid_equipment_k_out_of_n(self) -> None:
+        project = small_aircraft_support_project("project-invalid-k-out-of-n")
+        project["components"][0]["quantity"] = 2
+        project["components"][0]["kOutOfN"] = {"enabled": True, "n": 2, "k": 0}
+
+        validation = self.api.validate_project(project)
+
+        self.assertFalse(validation["ok"])
+        k_errors = [error for error in validation["errors"] if error["code"] == "invalid_equipment_k_out_of_n"]
+        self.assertEqual(k_errors[0]["path"], "components[0].kOutOfN.k")
+        self.assertIn("1 ≤ k ≤ n", k_errors[0]["message"])
+        with self.assertRaises(BackendApiError) as ctx:
+            self.api.save_project(project)
+        self.assertEqual(ctx.exception.code, "invalid_project")
+
     def test_get_project_strips_legacy_persisted_monte_carlo_payload(self) -> None:
         project = small_aircraft_support_project("project-aircraft-support-contract-001")
         project["project_id"] = "project-legacy-mc"

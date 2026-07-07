@@ -1177,7 +1177,8 @@ test("equipment system modeling renders one tree plus flattened editable table",
   assert.match(appSource, /<th>父节点<\/th>/);
   assert.match(appSource, /<th>数量n<\/th>/);
   assert.match(appSource, /组件属性/);
-  assert.match(appSource, /k值（n中取k）/);
+  assert.match(appSource, /可用数量要求k（n中取k）/);
+  assert.match(appSource, /aria-label="可用数量要求k说明"/);
   assert.match(appSource, /MTBF-分布类型/);
   assert.match(appSource, /MTTR-分布类型/);
   assert.match(equipmentSource, /<th>MTBF-分布类型<\/th>\s*<th>MTBF参数<\/th>\s*<th>MTTR-分布类型<\/th>\s*<th>MTTR参数<\/th>/);
@@ -1386,7 +1387,7 @@ test("equipment system table exposes composition, MTBF and MTTR distribution fie
   assert.doesNotMatch(equipmentSource, /是否为LRU/);
   assert.doesNotMatch(equipmentSource, /field\("备件类型", `components\.\$\{selectedIndex\}\.spareType`\)/);
   assert.match(equipmentSource, /equipmentKOutOfNInput\(selectedIndex\)/);
-  assert.match(equipmentSource, /k值（n中取k）/);
+  assert.match(equipmentSource, /可用数量要求k（n中取k）/);
   assert.match(equipmentSource, /components\.\$\{index\}\.mtbfHours/);
   assert.match(equipmentSource, /components\.\$\{index\}\.failureDistribution\.distributionType/);
   assert.match(equipmentSource, /components\.\$\{index\}\.meanRepairTimeMinutes/);
@@ -1404,13 +1405,14 @@ test("equipment composition constrains k-out-of-n to an integer within quantity"
   assert.match(appSource, /data-equipment-k-out-of-n-index/);
   assert.match(appSource, /function updateEquipmentKOutOfNInput\(input\)/);
   assert.match(appSource, /const liveEquipmentKOutOfNInput = event\.target\.closest\("\[data-equipment-k-out-of-n-index\]"\)/);
-  assert.match(appSource, /Math\.trunc\(Number\(input\.value\) \|\| 1\)/);
-  assert.match(appSource, /clamp\(.*1, quantity\)/);
-  assert.match(appSource, /component\.kOutOfN = \{ \.\.\.\(component\.kOutOfN \|\| \{\}\), enabled: quantity > 1 && bounded > 0, n: quantity, k: bounded \}/);
+  assert.match(appSource, /normalizeEquipmentComponentKOutOfN\(component\)/);
+  assert.match(appSource, /validateEquipmentComponentKOutOfN\(component\)/);
+  assert.match(appSource, /input\.setCustomValidity\(message\)/);
+  assert.match(appSource, /enabled: quantity > 1, n: quantity, k: nextK/);
   assert.match(appSource, /min="1"/);
   assert.match(appSource, /step="1"/);
   assert.match(appSource, /max="\$\{htmlEscape\(quantity\)\}"/);
-  assert.match(appSource, /\$\{quantity > 1 \? "" : "disabled"\}/);
+  assert.match(appSource, /placeholder="默认全部"/);
 });
 
 test("equipment system table exposes MTBF and MTTR distribution parameter rules", async () => {
@@ -1836,9 +1838,9 @@ test("page revision equipment and mission input constraints are guarded", async 
   assert.match(equipmentSource, /\{ value: "SRU", label: "SRU" \}/);
   assert.match(equipmentSource, /\{ value: "", label: "空值" \}/);
   assert.match(equipmentSource, /function equipmentKOutOfNInput/);
-  assert.match(equipmentSource, /const quantity = Math\.max\(0, Math\.trunc\(Number\(component\.quantity\) \|\| 0\)\)/);
-  assert.match(equipmentSource, /clamp\(Math\.trunc\(Number\(component\.kOutOfN\?\.k\) \|\| 1\), 1, quantity\)/);
-  assert.match(equipmentSource, /quantity > 1 \? "" : "disabled"/);
+  assert.match(equipmentSource, /normalizeEquipmentComponentKOutOfN\(component\)/);
+  assert.match(equipmentSource, /equipmentKOutOfNQuantity\(component\.quantity\)/);
+  assert.doesNotMatch(equipmentSource, /quantity > 1 \? "" : "disabled"/);
   assert.match(equipmentSource, /min="1" max="\$\{htmlEscape\(quantity\)\}" step="1"/);
   assert.match(equipmentSource, /function equipmentDistributionOptions/);
   assert.match(equipmentSource, /function renderEquipmentDistributionParameters/);
