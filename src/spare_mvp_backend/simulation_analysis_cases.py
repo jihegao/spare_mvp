@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from src.spare_mvp_backend.modeling_import import modeling_import_to_project, validate_modeling_import_package
+from src.spare_mvp_backend.project_payload import strip_project_sweep
 
 
 SIMULATION_ANALYSIS_CASE_IDS = [
@@ -109,7 +110,7 @@ def _case(case_id: str, import_package: dict[str, Any], description: str) -> dic
     validation = validate_modeling_import_package(import_package)
     if not validation["ok"]:
         raise ValueError(f"{case_id} modeling import package is invalid: {validation['issues']}")
-    project = modeling_import_to_project(import_package)
+    project = strip_project_sweep(modeling_import_to_project(import_package))
     return {
         "schema_version": "simulation-analysis-case-v0",
         "phase": "6P",

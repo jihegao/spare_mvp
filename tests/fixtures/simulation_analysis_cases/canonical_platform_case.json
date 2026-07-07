@@ -1619,6 +1619,11 @@
       {
         "failureRate": 0.0016666666666666668,
         "id": "aircraft-root",
+        "kOutOfN": {
+          "enabled": true,
+          "k": 6,
+          "n": 6
+        },
         "mtbfHours": 600.0,
         "name": "舰载机",
         "quantity": 6
@@ -2172,78 +2177,25 @@
     "schema_version": "project-v0",
     "supportActivities": [
       {
+        "activityCodes": [
+          "OPS-001",
+          "OPS-002"
+        ],
         "activityName": "典型保障方案",
         "activityType": "飞行前保障",
         "durationHours": 1,
         "equipmentId": "j15-avionics",
         "id": "preflight",
-        "jobs": [
-          {
-            "activityCode": "OPS-001",
-            "ammunition": "无",
-            "durationMinutes": 5,
-            "durationProfile": {
-              "distributionType": "三角分布",
-              "max": 60,
-              "min": 35,
-              "mode": 45
-            },
-            "equipment": [
-              {
-                "model": "DT-01",
-                "name": "检测仪",
-                "quantity": 1
-              }
-            ],
-            "facility": "甲板保障站位",
-            "personnel": [
-              {
-                "professional": "机务人员",
-                "quantity": 1
-              },
-              {
-                "professional": "航电",
-                "quantity": 1
-              }
-            ],
-            "predecessors": [],
-            "spare": [],
-            "workName": "机务检查"
-          },
-          {
-            "activityCode": "OPS-002",
-            "ammunition": "无",
-            "durationMinutes": 10,
-            "durationProfile": {
-              "distributionType": "均匀分布",
-              "max": 70,
-              "min": 50
-            },
-            "equipment": [
-              {
-                "model": "F-01",
-                "name": "加油车",
-                "quantity": 1
-              }
-            ],
-            "facility": "甲板加油站位",
-            "personnel": [
-              {
-                "professional": "油料",
-                "quantity": 1
-              }
-            ],
-            "predecessors": [
-              "OPS-001"
-            ],
-            "spare": [],
-            "workName": "燃油加注"
-          }
-        ],
         "maxWorkTimeRefMinutes": 60,
         "name": "飞行前保障",
         "planGroupId": "preflight",
         "planType": "直接准备方案",
+        "predecessors": {
+          "OPS-001": [],
+          "OPS-002": [
+            "OPS-001"
+          ]
+        },
         "priority": 1,
         "requiredDevices": 1,
         "requiredPersonnel": 2,
@@ -2252,88 +2204,25 @@
         "spareType": null
       },
       {
+        "activityCodes": [
+          "REP-001",
+          "REP-002"
+        ],
         "activityName": "航电模块故障修复方案",
         "activityType": "修复性维修",
         "durationHours": 3,
         "equipmentId": "j15-avionics",
         "id": "corrective",
-        "jobs": [
-          {
-            "activityCode": "REP-001",
-            "ammunition": "无",
-            "durationMinutes": 40,
-            "durationProfile": {
-              "distributionType": "三角分布",
-              "max": 55,
-              "min": 30,
-              "mode": 40
-            },
-            "equipment": [
-              {
-                "model": "DT-01",
-                "name": "检测仪",
-                "quantity": 1
-              }
-            ],
-            "facility": "维修工位",
-            "personnel": [
-              {
-                "professional": "维修人员",
-                "quantity": 1
-              },
-              {
-                "professional": "航电",
-                "quantity": 1
-              }
-            ],
-            "predecessors": [],
-            "spare": [],
-            "workName": "故障定位"
-          },
-          {
-            "activityCode": "REP-002",
-            "ammunition": "无",
-            "durationMinutes": 90,
-            "durationProfile": {
-              "distributionType": "正态分布",
-              "mean": 90,
-              "stdDev": 15
-            },
-            "equipment": [
-              {
-                "model": "TK-01",
-                "name": "通用工具箱",
-                "quantity": 1
-              }
-            ],
-            "facility": "维修工位",
-            "personnel": [
-              {
-                "professional": "维修人员",
-                "quantity": 1
-              },
-              {
-                "professional": "航电",
-                "quantity": 1
-              }
-            ],
-            "predecessors": [
-              "REP-001"
-            ],
-            "spare": [
-              {
-                "model": "LRU",
-                "name": "航电模块",
-                "quantity": 1
-              }
-            ],
-            "workName": "换件维修"
-          }
-        ],
         "maxRepairTimeMinutes": 240,
         "meanRepairTimeMinutes": 180,
         "name": "航电模块故障修复",
         "planType": "修复性维修方案",
+        "predecessors": {
+          "REP-001": [],
+          "REP-002": [
+            "REP-001"
+          ]
+        },
         "priority": 1,
         "repairDistribution": {
           "distributionType": "对数正态分布",
@@ -2350,6 +2239,10 @@
         "spareType": "航电模块"
       },
       {
+        "activityCodes": [
+          "PM-001",
+          "PM-002"
+        ],
         "activityName": "8小时舰载机定检",
         "activityType": "预防性维修",
         "calendarDayFloatRatio": 0.1,
@@ -2357,77 +2250,15 @@
         "durationHours": 2,
         "equipmentId": "j35-hydraulic",
         "id": "preventive",
-        "jobs": [
-          {
-            "activityCode": "PM-001",
-            "ammunition": "无",
-            "durationMinutes": 30,
-            "durationProfile": {
-              "distributionType": "固定值",
-              "value": 30
-            },
-            "equipment": [
-              {
-                "model": "LT-01",
-                "name": "检查灯",
-                "quantity": 1
-              }
-            ],
-            "facility": "定检工位",
-            "personnel": [
-              {
-                "professional": "机体",
-                "quantity": 1
-              }
-            ],
-            "predecessors": [],
-            "spare": [],
-            "workName": "定检准备"
-          },
-          {
-            "activityCode": "PM-002",
-            "ammunition": "无",
-            "durationMinutes": 70,
-            "durationProfile": {
-              "distributionType": "三角分布",
-              "max": 90,
-              "min": 55,
-              "mode": 70
-            },
-            "equipment": [
-              {
-                "model": "HY-01",
-                "name": "液压测试台",
-                "quantity": 1
-              }
-            ],
-            "facility": "定检工位",
-            "personnel": [
-              {
-                "professional": "维修人员",
-                "quantity": 1
-              },
-              {
-                "professional": "液压",
-                "quantity": 1
-              }
-            ],
-            "predecessors": [
-              "PM-001"
-            ],
-            "spare": [
-              {
-                "model": "SRU",
-                "name": "液压备件",
-                "quantity": 1
-              }
-            ],
-            "workName": "液压系统检查"
-          }
-        ],
         "name": "8小时定检",
         "planType": "预防性维修方案",
         "plannedDowntimeHours": 2,
+        "predecessors": {
+          "PM-001": [],
+          "PM-002": [
+            "PM-001"
+          ]
+        },
         "priority": 2,
         "requiredDevices": 1,
         "requiredPersonnel": 2,
@@ -2443,32 +2274,33 @@
         "useTakeoffLandingRule": true
       },
       {
+        "activityCodes": [],
         "activityName": "航母多级保障组织后勤保障方案",
         "activityType": "后勤保障",
         "durationHours": 2,
         "equipmentId": "j15-engine",
         "id": "logistics-support",
-        "jobs": [],
         "name": "后勤保障运输",
         "organizationStrategies": [
           {
             "lateralSupportNodes": [
-              "forward-sea-base"
+              "中继"
             ],
             "organizationStrategy": "任务优先 + 备件安全库存",
             "supportLevel": "一线保障",
-            "supportNodeId": "carrier-deck"
+            "supportNodeId": "基地"
           },
           {
             "lateralSupportNodes": [
-              "carrier-deck"
+              "基地"
             ],
             "organizationStrategy": "集中库存 + 垂直补给",
             "supportLevel": "后方保障",
-            "supportNodeId": "carrier-stock"
+            "supportNodeId": "基层1"
           }
         ],
         "planType": "后勤保障活动方案",
+        "predecessors": {},
         "priority": 1,
         "requiredDevices": 2,
         "requiredPersonnel": 2,
@@ -2499,93 +2331,268 @@
         ]
       },
       {
+        "activityCodes": [
+          "BA-001"
+        ],
         "activityName": "J-15再次出动准备活动",
         "activityType": "使用保障",
         "aircraftModel": "J-15",
         "durationHours": 0.08333333333333333,
         "equipmentId": "j15-engine",
         "id": "ops-support-j-15---5",
-        "jobs": [
-          {
-            "activityCode": "BA-001",
-            "durationMinutes": 5,
-            "equipment": [
-              {
-                "model": "检测仪",
-                "name": "检测仪",
-                "quantity": 1
-              }
-            ],
-            "personnel": [
-              {
-                "professional": "机务人员",
-                "quantity": 1
-              }
-            ],
-            "predecessors": [],
-            "spare": [],
-            "workName": "再次出动准备基本保障活动1"
-          }
-        ],
         "maxWorkTimeRefMinutes": 45,
         "name": "J-15再次出动准备活动",
         "planGroupId": "preflight",
         "planType": "再次出动准备方案",
+        "predecessors": {
+          "BA-001": []
+        },
         "priority": 1,
         "requiredDevices": 1,
         "requiredPersonnel": 1,
         "resourceId": "基地"
       },
       {
+        "activityCodes": [
+          "BA-001"
+        ],
         "activityName": "J-15飞行后检查活动",
         "activityType": "使用保障",
         "aircraftModel": "J-15",
         "durationHours": 0.5,
         "equipmentId": "j15-engine",
         "id": "ops-support-j-15---6",
-        "jobs": [
-          {
-            "activityCode": "BA-001",
-            "durationMinutes": 30,
-            "equipment": [
-              {
-                "model": "检测仪",
-                "name": "检测仪",
-                "quantity": 1
-              }
-            ],
-            "personnel": [
-              {
-                "professional": "机务人员",
-                "quantity": 1
-              }
-            ],
-            "predecessors": [],
-            "spare": [],
-            "workName": "飞行后检查基本保障活动1"
-          }
-        ],
         "maxWorkTimeRefMinutes": 60,
         "name": "J-15飞行后检查活动",
         "planGroupId": "preflight",
         "planType": "飞行后检查方案",
+        "predecessors": {
+          "BA-001": []
+        },
         "priority": 1,
         "requiredDevices": 1,
         "requiredPersonnel": 1,
         "resourceId": "基地"
       }
     ],
+    "supportActivityJobs": [
+      {
+        "activityCode": "OPS-001",
+        "ammunition": "无",
+        "durationMinutes": 5,
+        "durationProfile": {
+          "distributionType": "三角分布",
+          "max": 60,
+          "min": 35,
+          "mode": 45
+        },
+        "equipment": [
+          {
+            "model": "DT-01",
+            "name": "检测仪",
+            "quantity": 1
+          }
+        ],
+        "facility": "甲板保障站位",
+        "personnel": [
+          {
+            "professional": "机务人员",
+            "quantity": 1
+          },
+          {
+            "professional": "航电",
+            "quantity": 1
+          }
+        ],
+        "spare": [],
+        "workName": "机务检查"
+      },
+      {
+        "activityCode": "OPS-002",
+        "ammunition": "无",
+        "durationMinutes": 10,
+        "durationProfile": {
+          "distributionType": "均匀分布",
+          "max": 70,
+          "min": 50
+        },
+        "equipment": [
+          {
+            "model": "F-01",
+            "name": "加油车",
+            "quantity": 1
+          }
+        ],
+        "facility": "甲板加油站位",
+        "personnel": [
+          {
+            "professional": "油料",
+            "quantity": 1
+          }
+        ],
+        "spare": [],
+        "workName": "燃油加注"
+      },
+      {
+        "activityCode": "REP-001",
+        "ammunition": "无",
+        "durationMinutes": 40,
+        "durationProfile": {
+          "distributionType": "三角分布",
+          "max": 55,
+          "min": 30,
+          "mode": 40
+        },
+        "equipment": [
+          {
+            "model": "DT-01",
+            "name": "检测仪",
+            "quantity": 1
+          }
+        ],
+        "facility": "维修工位",
+        "personnel": [
+          {
+            "professional": "维修人员",
+            "quantity": 1
+          },
+          {
+            "professional": "航电",
+            "quantity": 1
+          }
+        ],
+        "spare": [],
+        "workName": "故障定位"
+      },
+      {
+        "activityCode": "REP-002",
+        "ammunition": "无",
+        "durationMinutes": 90,
+        "durationProfile": {
+          "distributionType": "正态分布",
+          "mean": 90,
+          "stdDev": 15
+        },
+        "equipment": [
+          {
+            "model": "TK-01",
+            "name": "通用工具箱",
+            "quantity": 1
+          }
+        ],
+        "facility": "维修工位",
+        "personnel": [
+          {
+            "professional": "维修人员",
+            "quantity": 1
+          },
+          {
+            "professional": "航电",
+            "quantity": 1
+          }
+        ],
+        "spare": [
+          {
+            "model": "LRU",
+            "name": "航电模块",
+            "quantity": 1
+          }
+        ],
+        "workName": "换件维修"
+      },
+      {
+        "activityCode": "PM-001",
+        "ammunition": "无",
+        "durationMinutes": 30,
+        "durationProfile": {
+          "distributionType": "固定值",
+          "value": 30
+        },
+        "equipment": [
+          {
+            "model": "LT-01",
+            "name": "检查灯",
+            "quantity": 1
+          }
+        ],
+        "facility": "定检工位",
+        "personnel": [
+          {
+            "professional": "机体",
+            "quantity": 1
+          }
+        ],
+        "spare": [],
+        "workName": "定检准备"
+      },
+      {
+        "activityCode": "PM-002",
+        "ammunition": "无",
+        "durationMinutes": 70,
+        "durationProfile": {
+          "distributionType": "三角分布",
+          "max": 90,
+          "min": 55,
+          "mode": 70
+        },
+        "equipment": [
+          {
+            "model": "HY-01",
+            "name": "液压测试台",
+            "quantity": 1
+          }
+        ],
+        "facility": "定检工位",
+        "personnel": [
+          {
+            "professional": "维修人员",
+            "quantity": 1
+          },
+          {
+            "professional": "液压",
+            "quantity": 1
+          }
+        ],
+        "spare": [
+          {
+            "model": "SRU",
+            "name": "液压备件",
+            "quantity": 1
+          }
+        ],
+        "workName": "液压系统检查"
+      },
+      {
+        "activityCode": "BA-001",
+        "durationMinutes": 5,
+        "equipment": [
+          {
+            "model": "检测仪",
+            "name": "检测仪",
+            "quantity": 1
+          }
+        ],
+        "personnel": [
+          {
+            "professional": "机务人员",
+            "quantity": 1
+          }
+        ],
+        "spare": [],
+        "workName": "再次出动准备基本保障活动1"
+      }
+    ],
     "supportNodes": [
       {
-        "id": "support-node-a1a5ec2fef",
+        "id": "support-node-1",
         "name": "基地"
       },
       {
-        "id": "support-node-8d964ce4d5",
+        "id": "support-node-2",
         "name": "中继"
       },
       {
-        "id": "support-node-8ad5c03141",
+        "id": "support-node-3",
         "name": "基层1"
       }
     ],

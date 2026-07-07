@@ -217,6 +217,7 @@ export function buildBackendProjectJson(scenario, project = {}) {
   const projectJson = normalizeProjectJsonForClientDraft(scenario);
   stripProjectRuntimeConfig(projectJson);
   stripProjectNonModelFields(projectJson);
+  liftSupportActivityJobsToTopLevel(projectJson);
   projectJson.schema_version ||= "project-v0";
   projectJson.project_id ||= project.id ? `project-${project.id}` : `project-${projectJson.scenarioId}`;
   projectJson.project_version ||= "project-v0.1";
@@ -859,6 +860,50 @@ function canonicalizeSupportActivityJobPredecessors(projectJson) {
         });
     }
   }
+}
+
+function liftSupportActivityJobsToTopLevel(projectJson) {
+  if (!projectJson || typeof projectJson !== "object" || Array.isArray(projectJson)) return;
+  const activities = Array.isArray(projectJson.supportActivities) ? projectJson.supportActivities : [];
+  const jobsByCode = new Map();
+  for (const job of Array.isArray(projectJson.supportActivityJobs) ? projectJson.supportActivityJobs : []) {
+    if (!job || typeof job !== "object" || Array.isArray(job)) continue;
+    const code = normalizedText(job.activityCode);
+    if (!code || jobsByCode.has(code)) continue;
+    jobsByCode.set(code, supportActivityJobDefinition(job));
+  }
+  for (const activity of activities) {
+    if (!activity || typeof activity !== "object" || Array.isArray(activity)) continue;
+    if (!Array.isArray(activity.jobs)) continue;
+    const jobs = activity.jobs.filter((job) => job && typeof job === "object" && !Array.isArray(job));
+    if (!jobs.length) {
+      activity.activityCodes ||= [];
+      activity.predecessors ||= {};
+      delete activity.jobs;
+      continue;
+    }
+    const activityCodes = [];
+    const predecessorsByCode = {};
+    for (const job of jobs) {
+      const code = normalizedText(job.activityCode);
+      if (!code) continue;
+      activityCodes.push(code);
+      predecessorsByCode[code] = Array.isArray(job.predecessors)
+        ? job.predecessors.map((value) => normalizedText(value)).filter(Boolean)
+        : [];
+      if (!jobsByCode.has(code)) jobsByCode.set(code, supportActivityJobDefinition(job));
+    }
+    activity.activityCodes = activityCodes;
+    activity.predecessors = predecessorsByCode;
+    delete activity.jobs;
+  }
+  projectJson.supportActivityJobs = Array.from(jobsByCode.values());
+}
+
+function supportActivityJobDefinition(job) {
+  const definition = cloneJson(job);
+  delete definition.predecessors;
+  return definition;
 }
 
 function supportActivityJobAliases(job, index) {

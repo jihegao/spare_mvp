@@ -781,6 +781,20 @@ class BackendApiContractTest(unittest.TestCase):
                 "id": "activity-1",
                 "requireDevices": 3,
                 "requiredDevices": 2,
+                "jobs": [
+                    {
+                        "activityCode": "BA-001",
+                        "workName": "电源车准备",
+                        "durationMinutes": 15,
+                        "predecessors": [],
+                    },
+                    {
+                        "activityCode": "BA-002",
+                        "workName": "通电检查",
+                        "durationMinutes": 30,
+                        "predecessors": ["BA-001"],
+                    },
+                ],
             },
         ]
 
@@ -795,6 +809,14 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertNotIn("analysisRequests", stored["missionProfile"])
         self.assertNotIn("requireDevices", stored["supportActivities"][0])
         self.assertEqual(stored["supportActivities"][0]["requiredDevices"], 2)
+        self.assertNotIn("jobs", stored["supportActivities"][0])
+        self.assertEqual(stored["supportActivities"][0]["activityCodes"], ["BA-001", "BA-002"])
+        self.assertEqual(stored["supportActivities"][0]["predecessors"], {"BA-001": [], "BA-002": ["BA-001"]})
+        self.assertEqual(
+            [job["activityCode"] for job in stored["supportActivityJobs"]],
+            ["BA-001", "BA-002"],
+        )
+        self.assertNotIn("predecessors", stored["supportActivityJobs"][1])
 
     def test_run_service_submits_current_run_and_returns_status_envelope(self) -> None:
         project = small_aircraft_support_project("project-aircraft-support-contract-001")
@@ -3346,7 +3368,9 @@ class BackendApiContractTest(unittest.TestCase):
         ))
         activity_types = {activity["activityType"] for activity in created["project"]["supportActivities"]}
         self.assertTrue({"飞行前保障", "修复性维修", "预防性维修", "后勤保障"}.issubset(activity_types))
-        self.assertGreaterEqual(len(created["project"]["supportActivities"][0]["jobs"]), 2)
+        self.assertTrue(all("jobs" not in activity for activity in created["project"]["supportActivities"]))
+        self.assertGreaterEqual(len(created["project"]["supportActivities"][0]["activityCodes"]), 2)
+        self.assertGreaterEqual(len(created["project"]["supportActivityJobs"]), 2)
         self.assertGreaterEqual(len(created["project"]["reliabilityBlockDiagram"]["nodes"]), 4)
         self.assertNotIn("experiment", created["project"])
         self.assertNotIn("analysisRequests", created["project"])

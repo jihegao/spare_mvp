@@ -447,7 +447,11 @@ class SimulationAdapter:
             },
             "support_activities": {
                 "activities": [
-                    self._aircraft_support_v1_support_activity(activity, support_node_aliases)
+                    self._aircraft_support_v1_support_activity(
+                        activity,
+                        support_node_aliases,
+                        self._support_activity_job_definitions(project),
+                    )
                     for activity in self._dict_list(project.get("supportActivities"))
                 ],
             },
@@ -892,7 +896,12 @@ class SimulationAdapter:
             "transportTimeHours": self._non_negative_float(policy.get("transportTimeHours"), self._non_negative_float(policy.get("transport_time_hours"), 0.0)),
         }
 
-    def _aircraft_support_v1_support_activity(self, activity: dict[str, Any], support_node_aliases: dict[str, str] | None = None) -> dict[str, Any]:
+    def _aircraft_support_v1_support_activity(
+        self,
+        activity: dict[str, Any],
+        support_node_aliases: dict[str, str] | None = None,
+        job_definitions: dict[str, dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
         resource_id = str(activity.get("resourceId") or "")
         if support_node_aliases:
             resource_id = support_node_aliases.get(resource_id, resource_id)
@@ -915,10 +924,41 @@ class SimulationAdapter:
             "runHourInterval": activity.get("runHourInterval"),
             "takeoffLandingInterval": activity.get("takeoffLandingInterval"),
             "floatRatio": activity.get("floatRatio"),
-            "jobs": copy.deepcopy(self._dict_list(activity.get("jobs"))),
+            "jobs": self._support_activity_jobs_for_activity(activity, job_definitions or {}),
             "transport_strategies": copy.deepcopy(self._dict_list(activity.get("transportStrategies"))),
             "organization_strategies": copy.deepcopy(self._dict_list(activity.get("organizationStrategies"))),
         }
+
+    def _support_activity_job_definitions(self, project: dict[str, Any]) -> dict[str, dict[str, Any]]:
+        definitions: dict[str, dict[str, Any]] = {}
+        for job in self._dict_list(project.get("supportActivityJobs")):
+            code = str(job.get("activityCode") or "").strip()
+            if code and code not in definitions:
+                definitions[code] = copy.deepcopy(job)
+        return definitions
+
+    def _support_activity_jobs_for_activity(
+        self,
+        activity: dict[str, Any],
+        job_definitions: dict[str, dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        legacy_jobs = self._dict_list(activity.get("jobs"))
+        if legacy_jobs:
+            return copy.deepcopy(legacy_jobs)
+        activity_codes = activity.get("activityCodes")
+        if not isinstance(activity_codes, list):
+            return []
+        predecessors = activity.get("predecessors") if isinstance(activity.get("predecessors"), dict) else {}
+        jobs: list[dict[str, Any]] = []
+        for raw_code in activity_codes:
+            code = str(raw_code or "").strip()
+            if not code or code not in job_definitions:
+                continue
+            job = copy.deepcopy(job_definitions[code])
+            raw_predecessors = predecessors.get(code)
+            job["predecessors"] = [str(value) for value in raw_predecessors] if isinstance(raw_predecessors, list) else []
+            jobs.append(job)
+        return jobs
 
     def _aircraft_support_v1_reliability_block_diagram(self, value: Any) -> dict[str, Any]:
         diagram = copy.deepcopy(value) if isinstance(value, dict) else {}
@@ -1203,6 +1243,7 @@ class SimulationAdapter:
         component_ids = {str(component.get("id")) for component in components if component.get("id") not in (None, "")}
         support_node_aliases = self._support_node_reference_aliases(project)
         support_node_ids = set(support_node_aliases.keys()) | set(support_node_aliases.values())
+        support_activity_job_definitions = self._support_activity_job_definitions(project)
         tail_seen: dict[str, str] = {}
         combat_unit = project.get("combatUnit") if isinstance(project.get("combatUnit"), dict) else {}
         if not combat_unit:
@@ -1287,7 +1328,20 @@ class SimulationAdapter:
                         "保障活动建模",
                     )
                 )
-            jobs = self._dict_list(activity.get("jobs"))
+            legacy_jobs = self._dict_list(activity.get("jobs"))
+            if not legacy_jobs and isinstance(activity.get("activityCodes"), list):
+                for code_index, raw_code in enumerate(activity.get("activityCodes") or []):
+                    code = str(raw_code or "").strip()
+                    if code and code not in support_activity_job_definitions:
+                        issues.append(
+                            self._compile_issue(
+                                "missing_support_activity_job_reference",
+                                f"supportActivities[{activity_index}].activityCodes[{code_index}]",
+                                f"保障活动引用了不存在的基本保障活动 activityCode {code}。",
+                                "保障活动建模",
+                            )
+                        )
+            jobs = self._support_activity_jobs_for_activity(activity, support_activity_job_definitions)
             job_codes = {str(job.get("activityCode")) for job in jobs if job.get("activityCode") not in (None, "")}
             predecessor_graph: dict[str, list[str]] = {}
             for job_index, job in enumerate(jobs):
@@ -1314,7 +1368,7 @@ class SimulationAdapter:
                         issues.append(
                             self._compile_issue(
                                 "missing_support_activity_predecessor",
-                                f"supportActivities[{activity_index}].jobs[{job_index}].predecessors",
+                                f"supportActivities[{activity_index}].predecessors.{job_code}" if not legacy_jobs else f"supportActivities[{activity_index}].jobs[{job_index}].predecessors",
                                 f"保障活动 job 前序引用了不存在的 activityCode {predecessor}。",
                                 "保障活动建模",
                             )
@@ -1323,7 +1377,7 @@ class SimulationAdapter:
                 issues.append(
                     self._compile_issue(
                         "circular_support_activity_predecessor",
-                        f"supportActivities[{activity_index}].jobs[].predecessors",
+                        f"supportActivities[{activity_index}].predecessors" if not legacy_jobs else f"supportActivities[{activity_index}].jobs[].predecessors",
                         "保障活动工作项目存在环形紧前关系。",
                         "保障活动建模",
                     )

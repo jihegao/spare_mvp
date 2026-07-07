@@ -257,7 +257,8 @@ class SimulationAdapterTest(unittest.TestCase):
     def test_aircraft_support_v1_compile_gate_blocks_invalid_references(self) -> None:
         project = self._load_fixture("m9_6_platform_case_export.json")["project"]
         project["supportActivities"][0]["resourceId"] = "missing-support-node"
-        project["supportActivities"][0]["jobs"][1]["predecessors"] = ["missing-job-code"]
+        second_code = project["supportActivities"][0]["activityCodes"][1]
+        project["supportActivities"][0]["predecessors"][second_code] = ["missing-job-code"]
 
         result = self.adapter.compile_scenario_with_gate(project, model_family="aircraft_support_v1")
 
@@ -267,6 +268,26 @@ class SimulationAdapterTest(unittest.TestCase):
         issue_codes = {issue["code"] for issue in result["issues"]}
         self.assertIn("missing_support_resource_reference", issue_codes)
         self.assertIn("missing_support_activity_predecessor", issue_codes)
+
+    def test_aircraft_support_v1_compile_gate_resolves_support_activity_job_table(self) -> None:
+        project = self._load_fixture("m9_6_platform_case_export.json")["project"]
+        activity = project["supportActivities"][0]
+
+        scenario = self.adapter.compile_scenario(project, model_family="aircraft_support_v1")
+
+        compiled_jobs = scenario["simulation_inputs"]["support_activities"]["activities"][0]["jobs"]
+        self.assertEqual([job["activityCode"] for job in compiled_jobs], activity["activityCodes"])
+        self.assertEqual(compiled_jobs[1]["predecessors"], activity["predecessors"][compiled_jobs[1]["activityCode"]])
+
+    def test_aircraft_support_v1_compile_gate_blocks_missing_support_activity_job_reference(self) -> None:
+        project = self._load_fixture("m9_6_platform_case_export.json")["project"]
+        activity = project["supportActivities"][0]
+        activity["activityCodes"] = [activity["activityCodes"][0], "missing-job-code"]
+
+        result = self.adapter.compile_scenario_with_gate(project, model_family="aircraft_support_v1")
+
+        self.assertEqual(result["status"], "blocked")
+        self.assertIn("missing_support_activity_job_reference", {issue["code"] for issue in result["issues"]})
 
     def test_aircraft_support_v1_compile_gate_infers_duration_from_periodic_tasks_without_duration_hours(self) -> None:
         project = self._load_fixture("m9_6_platform_case_export.json")["project"]
@@ -306,11 +327,10 @@ class SimulationAdapterTest(unittest.TestCase):
 
     def test_aircraft_support_v1_compile_gate_blocks_circular_support_activity_predecessors(self) -> None:
         project = self._load_fixture("m9_6_platform_case_export.json")["project"]
-        jobs = project["supportActivities"][0]["jobs"]
-        jobs[0]["activityCode"] = "job-a"
-        jobs[0]["predecessors"] = ["job-b"]
-        jobs[1]["activityCode"] = "job-b"
-        jobs[1]["predecessors"] = ["job-a"]
+        activity = project["supportActivities"][0]
+        codes = activity["activityCodes"][:2]
+        activity["predecessors"][codes[0]] = [codes[1]]
+        activity["predecessors"][codes[1]] = [codes[0]]
 
         result = self.adapter.compile_scenario_with_gate(project, model_family="aircraft_support_v1")
 
@@ -798,9 +818,11 @@ class SimulationAdapterTest(unittest.TestCase):
         project["supportOrganization"] = {}
         baseline_scenario = self.adapter.compile_scenario(project, model_family="aircraft_support_v1")
         constrained_project = copy.deepcopy(project)
-        constrained_project["supportNodes"][0]["personnelCapacity"] = 1
-        constrained_project["supportNodes"][0]["equipmentCapacity"] = 1
-        constrained_project["supportNodes"][0]["inventory"] = {"发动机备件": 0, "液压备件": 0, "航电模块": 0}
+        for resource in constrained_project["supportResources"]:
+            if resource["type"] in {"personnel", "equipment"}:
+                resource["quantity"] = 1
+            if resource["type"] == "spare":
+                resource["quantity"] = 0
         constrained_scenario = self.adapter.compile_scenario(constrained_project, model_family="aircraft_support_v1")
 
         with tempfile.TemporaryDirectory() as baseline_tmp, tempfile.TemporaryDirectory() as constrained_tmp:
@@ -843,6 +865,11 @@ class SimulationAdapterTest(unittest.TestCase):
             activity.pop("takeoffLandingInterval", None)
             activity["requiredPersonnel"] = 1
             activity["requiredDevices"] = 1
+        for job in low_risk_project["supportActivityJobs"]:
+            job["durationMinutes"] = 1
+            job["requiredPersonnel"] = 1
+            job["requiredDevices"] = 1
+            job["spare"] = "无"
             for job in activity.get("jobs", []):
                 job["durationMinutes"] = 1
                 job["requiredPersonnel"] = 1
@@ -907,33 +934,34 @@ class SimulationAdapterTest(unittest.TestCase):
             activity.pop("takeoffLandingInterval", None)
             activity["requiredPersonnel"] = 1
             activity["requiredDevices"] = 1
-            for job in activity.get("jobs", []):
-                job["durationMinutes"] = 1
-                job["requiredPersonnel"] = 1
-                job["requiredDevices"] = 1
-                job["spare"] = "无"
+        for job in project["supportActivityJobs"]:
+            job["durationMinutes"] = 1
+            job["requiredPersonnel"] = 1
+            job["requiredDevices"] = 1
+            job["spare"] = "无"
         for periodic_task in project["missionProfile"].get("periodicTasks", []):
             periodic_task["dailyRepeatCount"] = 1
             periodic_task["repeatCount"] = 1
         for node in project["supportNodes"]:
             node["personnelCapacity"] = 50
             node["equipmentCapacity"] = 50
-            if node["id"] == "carrier-deck":
-                node["inventory"] = {"发动机备件": 0, "液压备件": 0, "航电模块": 0}
-                node["transportPolicies"] = [
-                    {
-                        "from": "carrier-stock",
-                        "to": "carrier-deck",
-                        "spareType": "航电模块",
-                        "capacity": 4,
-                        "priority": 1,
-                        "transportTimeHours": 0,
-                    }
-                ]
-            if node["id"] == "carrier-stock":
-                node["inventory"] = {"发动机备件": 0, "液压备件": 0, "航电模块": 6}
+        for resource in project["supportResources"]:
+            if resource["type"] in {"personnel", "equipment"}:
+                resource["quantity"] = 50
+            elif resource["type"] == "spare":
+                resource["quantity"] = 6 if resource.get("supportNodeName") == "基层1" and resource.get("name") == "航电模块" else 0
+        project["transportPolicies"] = [
+            {
+                "fromSupportNodeName": "基层1",
+                "toSupportNodeName": "基地",
+                "spareName": "航电模块",
+                "capacity": 4,
+                "priority": 1,
+                "transportTimeHours": 0,
+            }
+        ]
         without_transport = copy.deepcopy(project)
-        without_transport["supportNodes"][0]["transportPolicies"] = []
+        without_transport["transportPolicies"] = []
 
         with_transport_scenario = self.adapter.compile_scenario(project, model_family="aircraft_support_v1")
         without_transport_scenario = self.adapter.compile_scenario(without_transport, model_family="aircraft_support_v1")

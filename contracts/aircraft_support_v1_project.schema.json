@@ -45,6 +45,7 @@
     "supportNodes": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/supportNode" } },
     "supportResources": { "type": "array", "items": { "$ref": "#/$defs/supportResource" } },
     "transportPolicies": { "type": "array", "items": { "$ref": "#/$defs/transportPolicy" } },
+    "supportActivityJobs": { "type": "array", "items": { "$ref": "#/$defs/supportActivityJob" } },
     "supportActivities": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/supportActivity" } },
     "supportOrganization": { "$ref": "#/$defs/supportOrganization" },
     "reliabilityBlockDiagram": { "$ref": "#/$defs/reliabilityBlockDiagram" }
@@ -238,10 +239,32 @@
         "runHourInterval": { "type": ["number", "null"], "minimum": 0 },
         "takeoffLandingInterval": { "type": ["integer", "null"], "minimum": 0 },
         "floatRatio": { "type": ["number", "null"] },
-        "jobs": { "type": "array", "items": { "$ref": "#/$defs/openModelObject" } },
+        "activityCodes": { "type": "array", "items": { "type": "string" } },
+        "predecessors": {
+          "type": "object",
+          "additionalProperties": { "type": "array", "items": { "type": "string" } }
+        },
         "transportStrategies": { "type": "array", "items": { "$ref": "#/$defs/openModelObject" } },
         "organizationStrategies": { "type": "array", "items": { "$ref": "#/$defs/openModelObject" } }
       }
+    },
+    "supportActivityJob": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["activityCode"],
+      "properties": {
+        "activityCode": { "type": "string", "minLength": 1 },
+        "workName": { "type": "string" },
+        "applicableAircraft": { "type": "string" },
+        "durationMinutes": { "type": "integer", "minimum": 0 },
+        "durationProfile": { "$ref": "#/$defs/dictionary" },
+        "personnel": { "type": "array", "items": { "$ref": "#/$defs/openModelObject" } },
+        "equipment": { "type": "array", "items": { "$ref": "#/$defs/openModelObject" } },
+        "spare": { "type": "array", "items": { "$ref": "#/$defs/openModelObject" } },
+        "ammunition": { "type": "array", "items": { "$ref": "#/$defs/openModelObject" } },
+        "facility": { "type": "string" }
+      },
+      "not": { "required": ["predecessors"] }
     },
     "supportOrganization": {
       "type": "object",

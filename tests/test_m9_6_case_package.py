@@ -95,12 +95,11 @@ class M96CasePackageTest(unittest.TestCase):
         self.assertIn("objects.analysisRequests.largeSample.sweep.failureRates[]", coverage_paths)
         entry_by_path = {entry["field_path"]: entry for entry in coverage["entries"]}
         self.assertEqual(entry_by_path["objects.equipmentAssets[].failureRate"]["status"], "ignored")
-        self.assertEqual(entry_by_path["objects.supportResources[].capacity"]["status"], "ignored")
+        self.assertEqual(entry_by_path["objects.supportResources[].quantity"]["status"], "ignored")
+        self.assertEqual(entry_by_path["objects.transportPolicies[].capacity"]["status"], "ignored")
         self.assertEqual(entry_by_path["objects.equipment.initialReady"]["status"], "ignored")
         self.assertEqual(entry_by_path["objects.missionProfiles[].basicMissions[].minRequiredSorties"]["status"], "ignored")
         self.assertEqual(entry_by_path["objects.equipment.quantity"]["status"], "ignored")
-        self.assertEqual(entry_by_path["objects.supportResources[].personnelCapacity"]["status"], "consumed")
-        self.assertEqual(entry_by_path["objects.supportResources[].equipmentCapacity"]["status"], "consumed")
         self.assertEqual(entry_by_path["objects.equipmentAssets[].failureDistribution.parameters"]["status"], "consumed")
         self.assertEqual(entry_by_path["objects.missionProfiles[].experiment.steps"]["status"], "derived")
         self.assertEqual(entry_by_path["objects.missionProfiles[].reliabilityBlockDiagram.edges[].to"]["status"], "consumed")
@@ -108,7 +107,7 @@ class M96CasePackageTest(unittest.TestCase):
         self.assertEqual(entry_by_path["objects.missionProfiles[].reliabilityBlockDiagram.nodes[].parentId"]["status"], "consumed")
         self.assertEqual(entry_by_path["objects.supportActivities[].jobs[].predecessors[]"]["status"], "consumed")
         self.assertEqual(entry_by_path["objects.supportActivities[].transportStrategies[].from"]["status"], "governance_only")
-        self.assertEqual(entry_by_path["objects.supportOrganization.tree[].id"]["status"], "governance_only")
+        self.assertEqual(entry_by_path["objects.supportOrganization.tree.id"]["status"], "governance_only")
 
     def test_expected_artifact_kind_golden_lists_single_and_monte_carlo_outputs(self) -> None:
         artifact_kinds = m9_6_expected_artifact_kinds()

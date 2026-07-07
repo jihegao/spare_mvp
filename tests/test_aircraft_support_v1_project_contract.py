@@ -99,7 +99,15 @@ class AircraftSupportV1CleanProjectSchemaTest(unittest.TestCase):
                     "activityType": "corrective",
                     "durationHours": 1,
                     "requiredDevices": 1,
-                    "jobs": [{"id": "job-1", "predecessors": []}],
+                    "activityCodes": ["job-1"],
+                    "predecessors": {"job-1": []},
+                }
+            ],
+            "supportActivityJobs": [
+                {
+                    "activityCode": "job-1",
+                    "workName": "repair",
+                    "durationMinutes": 30,
                 }
             ],
             "reliabilityBlockDiagram": {
@@ -143,6 +151,14 @@ class AircraftSupportV1CleanProjectSchemaTest(unittest.TestCase):
 
         project = self._clean_project()
         project["supportActivities"][0]["requireDevices"] = 1
+        self.assertTrue(self._schema_errors(project))
+
+        project = self._clean_project()
+        project["supportActivities"][0]["jobs"] = [{"activityCode": "job-1"}]
+        self.assertTrue(self._schema_errors(project))
+
+        project = self._clean_project()
+        project["supportActivityJobs"][0]["predecessors"] = []
         self.assertTrue(self._schema_errors(project))
 
         project = self._clean_project()

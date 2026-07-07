@@ -635,10 +635,14 @@ test("buildBackendProjectJson canonicalizes support activity job predecessor ref
   };
 
   const projectJson = buildBackendProjectJson(scenario, { id: "support-predecessor-canonical" });
-  const jobs = projectJson.supportActivities[5].jobs;
+  const activity = projectJson.supportActivities[5];
+  const jobs = projectJson.supportActivityJobs;
 
   assert.equal(jobs[1].activityCode, "BA-002");
-  assert.deepEqual(jobs[0].predecessors, ["BA-002"]);
+  assert.equal("predecessors" in jobs[0], false);
+  assert.deepEqual(activity.activityCodes, ["BA-001", "BA-002"]);
+  assert.deepEqual(activity.predecessors, { "BA-001": ["BA-002"], "BA-002": [] });
+  assert.equal("jobs" in activity, false);
   assert.deepEqual(scenario.supportActivities[5].jobs[0].predecessors, ["电源车准备"]);
   assert.equal("activityCode" in scenario.supportActivities[5].jobs[1], false);
 });

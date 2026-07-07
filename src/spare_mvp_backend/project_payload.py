@@ -152,6 +152,7 @@ def _strip_project_non_model_fields(project: dict[str, Any]) -> None:
         mission_profile.pop("repeatCycleHours", None)
         mission_profile.pop("analysisRequests", None)
     _strip_typo_only_support_activity_fields(project)
+    _lift_support_activity_jobs_to_top_level(project)
 
 
 def _project_k_out_of_n_error(index: int, message: str) -> dict[str, str]:
@@ -499,6 +500,55 @@ def _strip_typo_only_support_activity_fields(value: Any) -> None:
     elif isinstance(value, list):
         for item in value:
             _strip_typo_only_support_activity_fields(item)
+
+
+def _lift_support_activity_jobs_to_top_level(project: dict[str, Any]) -> None:
+    activities = project.get("supportActivities")
+    if not isinstance(activities, list):
+        return
+    jobs_by_code: dict[str, dict[str, Any]] = {}
+    for job in project.get("supportActivityJobs") if isinstance(project.get("supportActivityJobs"), list) else []:
+        if not isinstance(job, dict):
+            continue
+        code = _clean_text(job.get("activityCode"))
+        if not code or code in jobs_by_code:
+            continue
+        jobs_by_code[code] = _support_activity_job_definition(job)
+    for activity in activities:
+        if not isinstance(activity, dict):
+            continue
+        if not isinstance(activity.get("jobs"), list):
+            continue
+        jobs = [job for job in activity.get("jobs") if isinstance(job, dict)]
+        if not jobs:
+            activity.setdefault("activityCodes", [])
+            activity.setdefault("predecessors", {})
+            activity.pop("jobs", None)
+            continue
+        activity_codes: list[str] = []
+        predecessors: dict[str, list[str]] = {}
+        for job in jobs:
+            code = _clean_text(job.get("activityCode"))
+            if not code:
+                continue
+            activity_codes.append(code)
+            raw_predecessors = job.get("predecessors")
+            predecessors[code] = [
+                _clean_text(predecessor)
+                for predecessor in raw_predecessors
+                if _clean_text(predecessor)
+            ] if isinstance(raw_predecessors, list) else []
+            jobs_by_code.setdefault(code, _support_activity_job_definition(job))
+        activity["activityCodes"] = activity_codes
+        activity["predecessors"] = predecessors
+        activity.pop("jobs", None)
+    project["supportActivityJobs"] = list(jobs_by_code.values())
+
+
+def _support_activity_job_definition(job: dict[str, Any]) -> dict[str, Any]:
+    definition = deepcopy(job)
+    definition.pop("predecessors", None)
+    return definition
 
 
 def _collect_project_runtime_config_paths(value: Any, path: str, paths: list[str]) -> None:

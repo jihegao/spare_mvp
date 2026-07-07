@@ -2128,9 +2128,10 @@ class BackendHttpApiTest(unittest.TestCase):
                     for resource in created["project"]["supportResources"]
                 ))
                 self.assertTrue(any(
-                    activity["activityType"] == "修复性维修" and len(activity["jobs"]) >= 2
+                    activity["activityType"] == "修复性维修" and len(activity["activityCodes"]) >= 2
                     for activity in created["project"]["supportActivities"]
                 ))
+                self.assertGreaterEqual(len(created["project"]["supportActivityJobs"]), 2)
                 self.assertEqual(created["savedProject"]["project_id"], import_package["projectId"])
                 self.assertEqual(created["modelingSnapshot"]["project"]["project_id"], import_package["projectId"])
                 self.assertTrue(created["modelingSnapshot"]["snapshot_id"])

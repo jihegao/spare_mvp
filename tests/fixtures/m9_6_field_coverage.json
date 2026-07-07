@@ -1537,64 +1537,46 @@
       "target": "M9.6 platform case package"
     },
     {
-      "field_path": "objects.supportOrganization.tree[].children[].children",
+      "field_path": "objects.supportOrganization.tree.children[].children",
       "rationale": "The field is preserved in the formal payload and provenance for audit/governance, but it is approved as non-behavior-driving in M9.7.4.",
       "status": "governance_only",
       "target": "M9.7.4 aircraft_support_v1 governance metadata"
     },
     {
-      "field_path": "objects.supportOrganization.tree[].children[].description",
+      "field_path": "objects.supportOrganization.tree.children[].description",
       "rationale": "The field is preserved in the formal payload and provenance for audit/governance, but it is approved as non-behavior-driving in M9.7.4.",
       "status": "governance_only",
       "target": "M9.7.4 aircraft_support_v1 governance metadata"
     },
     {
-      "field_path": "objects.supportOrganization.tree[].children[].id",
+      "field_path": "objects.supportOrganization.tree.children[].id",
       "rationale": "The field is preserved in the formal payload and provenance for audit/governance, but it is approved as non-behavior-driving in M9.7.4.",
       "status": "governance_only",
       "target": "M9.7.4 aircraft_support_v1 governance metadata"
     },
     {
-      "field_path": "objects.supportOrganization.tree[].children[].name",
+      "field_path": "objects.supportOrganization.tree.children[].name",
       "rationale": "The field is preserved in the formal payload and provenance for audit/governance, but it is approved as non-behavior-driving in M9.7.4.",
       "status": "governance_only",
       "target": "M9.7.4 aircraft_support_v1 governance metadata"
     },
     {
-      "field_path": "objects.supportOrganization.tree[].children[].supportNodeId",
+      "field_path": "objects.supportOrganization.tree.description",
       "rationale": "The field is preserved in the formal payload and provenance for audit/governance, but it is approved as non-behavior-driving in M9.7.4.",
       "status": "governance_only",
       "target": "M9.7.4 aircraft_support_v1 governance metadata"
     },
     {
-      "field_path": "objects.supportOrganization.tree[].description",
+      "field_path": "objects.supportOrganization.tree.id",
       "rationale": "The field is preserved in the formal payload and provenance for audit/governance, but it is approved as non-behavior-driving in M9.7.4.",
       "status": "governance_only",
       "target": "M9.7.4 aircraft_support_v1 governance metadata"
     },
     {
-      "field_path": "objects.supportOrganization.tree[].id",
+      "field_path": "objects.supportOrganization.tree.name",
       "rationale": "The field is preserved in the formal payload and provenance for audit/governance, but it is approved as non-behavior-driving in M9.7.4.",
       "status": "governance_only",
       "target": "M9.7.4 aircraft_support_v1 governance metadata"
-    },
-    {
-      "field_path": "objects.supportOrganization.tree[].name",
-      "rationale": "The field is preserved in the formal payload and provenance for audit/governance, but it is approved as non-behavior-driving in M9.7.4.",
-      "status": "governance_only",
-      "target": "M9.7.4 aircraft_support_v1 governance metadata"
-    },
-    {
-      "field_path": "objects.supportResources[].capacity",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
-      "status": "ignored",
-      "target": "M9.6 platform case package"
-    },
-    {
-      "field_path": "objects.supportResources[].equipmentCapacity",
-      "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
-      "status": "consumed",
-      "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
     },
     {
       "field_path": "objects.supportResources[].id",
@@ -1603,25 +1585,7 @@
       "target": "M9.6 platform case package"
     },
     {
-      "field_path": "objects.supportResources[].inventory.发动机备件",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
-      "status": "ignored",
-      "target": "M9.6 platform case package"
-    },
-    {
-      "field_path": "objects.supportResources[].inventory.液压备件",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
-      "status": "ignored",
-      "target": "M9.6 platform case package"
-    },
-    {
-      "field_path": "objects.supportResources[].inventory.航电模块",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
-      "status": "ignored",
-      "target": "M9.6 platform case package"
-    },
-    {
-      "field_path": "objects.supportResources[].lateralSupportNodes[]",
+      "field_path": "objects.supportResources[].model",
       "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
@@ -1633,67 +1597,67 @@
       "target": "M9.6 platform case package"
     },
     {
-      "field_path": "objects.supportResources[].nodeType",
+      "field_path": "objects.supportResources[].quantity",
       "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
-      "field_path": "objects.supportResources[].organizationStrategy",
+      "field_path": "objects.supportResources[].supportNodeName",
       "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
-      "field_path": "objects.supportResources[].personnelCapacity",
-      "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
-      "status": "consumed",
-      "target": "M9.7.4 aircraft_support_v1 Scenario/runtime"
-    },
-    {
-      "field_path": "objects.supportResources[].policy",
+      "field_path": "objects.supportResources[].type",
       "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
-      "field_path": "objects.supportResources[].supportLevel",
+      "field_path": "objects.transportPolicies[].capacity",
       "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
-      "field_path": "objects.supportResources[].transportPolicies[].capacity",
+      "field_path": "objects.transportPolicies[].fromSupportNodeName",
       "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
-      "field_path": "objects.supportResources[].transportPolicies[].from",
+      "field_path": "objects.transportPolicies[].id",
       "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
-      "field_path": "objects.supportResources[].transportPolicies[].priority",
+      "field_path": "objects.transportPolicies[].priority",
       "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
-      "field_path": "objects.supportResources[].transportPolicies[].to",
+      "field_path": "objects.transportPolicies[].spareName",
       "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
-      "field_path": "objects.supportResources[].transportPolicies[].transportMode",
+      "field_path": "objects.transportPolicies[].toSupportNodeName",
       "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
     },
     {
-      "field_path": "objects.supportResources[].transportPolicies[].transportTimeHours",
+      "field_path": "objects.transportPolicies[].transportMode",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
+      "status": "ignored",
+      "target": "M9.6 platform case package"
+    },
+    {
+      "field_path": "objects.transportPolicies[].transportTimeHours",
       "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
@@ -1710,12 +1674,12 @@
   "source_fixture": "tests/fixtures/modeling_import_project.json",
   "source_import_id": "import-carrier-day-night-001",
   "summary": {
-    "consumed": 40,
+    "consumed": 38,
     "defaulted": 0,
     "derived": 9,
-    "governance_only": 34,
-    "ignored": 201,
-    "total_fields": 284,
+    "governance_only": 33,
+    "ignored": 198,
+    "total_fields": 278,
     "unsupported": 0
   }
 }
