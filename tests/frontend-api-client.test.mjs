@@ -647,6 +647,40 @@ test("buildBackendProjectJson canonicalizes support activity job predecessor ref
   assert.equal("activityCode" in scenario.supportActivities[5].jobs[1], false);
 });
 
+test("buildBackendProjectJson strips corrective MTTR fields from support activity jobs", () => {
+  const scenario = {
+    scenarioId: "support-job-mttr-boundary",
+    supportActivities: [{
+      id: "corrective-activity",
+      activityType: "修复性维修",
+      equipmentId: "component-a",
+      maxRepairTimeMinutes: 999,
+      meanRepairTimeMinutes: 888,
+      repairDistribution: { distributionType: "固定值", value: 999 },
+      jobs: [{
+        activityCode: "CM-001",
+        workName: "修复工作",
+        durationMinutes: 30,
+        predecessors: [],
+        maxRepairTimeMinutes: 999,
+        meanRepairTimeMinutes: 888,
+        mttrMinutes: 777,
+        repairDistribution: { distributionType: "固定值", value: 999 }
+      }]
+    }]
+  };
+
+  const projectJson = buildBackendProjectJson(scenario, { id: "support-job-mttr-boundary" });
+
+  assert.equal("maxRepairTimeMinutes" in projectJson.supportActivities[0], false);
+  assert.equal("meanRepairTimeMinutes" in projectJson.supportActivities[0], false);
+  assert.equal("repairDistribution" in projectJson.supportActivities[0], false);
+  assert.equal("maxRepairTimeMinutes" in projectJson.supportActivityJobs[0], false);
+  assert.equal("meanRepairTimeMinutes" in projectJson.supportActivityJobs[0], false);
+  assert.equal("mttrMinutes" in projectJson.supportActivityJobs[0], false);
+  assert.equal("repairDistribution" in projectJson.supportActivityJobs[0], false);
+});
+
 test("buildBackendProjectJson strips Monte Carlo config from Project modeling data", () => {
   const scenario = {
     scenarioId: "mc-project-boundary",

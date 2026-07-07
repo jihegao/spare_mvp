@@ -162,6 +162,14 @@ class AircraftSupportV1CleanProjectSchemaTest(unittest.TestCase):
         self.assertTrue(self._schema_errors(project))
 
         project = self._clean_project()
+        project["supportActivityJobs"][0]["maxRepairTimeMinutes"] = 999
+        self.assertTrue(self._schema_errors(project))
+
+        project = self._clean_project()
+        project["supportActivityJobs"][0]["repairDistribution"] = {"distributionType": "固定值", "value": 999}
+        self.assertTrue(self._schema_errors(project))
+
+        project = self._clean_project()
         project["missionAreas"].append({"id": "area-a", "uiState": {"expanded": True}})
         self.assertTrue(self._schema_errors(project))
 

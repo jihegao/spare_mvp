@@ -7422,7 +7422,7 @@ function renderBasicActivityLibrary() {
               <td>${htmlEscape(row.type)}</td>
               <td>${htmlEscape(row.workName || "")}</td>
               <td>${htmlEscape(row.activityCode || "")}</td>
-              <td>${htmlEscape(row.scope || "")}</td>
+              <td>${htmlEscape(row.scope ?? "")}</td>
               <td>${htmlEscape(describeDurationProfile(row.durationProfile, row.durationMinutes))}</td>
               <td class="table-actions"><button type="button" class="inline-action" data-basic-activity-edit="${htmlEscape(row.key)}"${lockedAttr}>编辑</button></td>
             </tr>
@@ -7542,21 +7542,27 @@ function renderBasicActivityResourceSectionHead(row, resourceKind, label) {
 
 function renderBasicActivityResourceSummaryTable(requirements, resourceKind) {
   if (!requirements.length) return `<div class="muted">暂无配置，点击新增配置多条${basicActivityResourceKindLabel(resourceKind)}需求</div>`;
-  const hasName = resourceKind !== "personnel";
   return `
     <div class="basic-activity-resource-summary">
       <table>
-        <thead><tr><th>${resourceKind === "personnel" ? "专业" : "型号"}</th>${hasName ? "<th>名称</th>" : ""}<th>数量</th></tr></thead>
+        <thead><tr><th>${resourceKind === "personnel" ? "专业" : "名称"}</th><th>数量</th></tr></thead>
         <tbody>${requirements.map((item) => `
           <tr>
-            <td>${htmlEscape(resourceKind === "personnel" ? (item.professional || item.model || "") : (item.model || ""))}</td>
-            ${hasName ? `<td>${htmlEscape(item.name || "")}</td>` : ""}
+            <td>${htmlEscape(basicActivityRequirementDisplayName(item, resourceKind))}</td>
             <td>${htmlEscape(item.quantity ?? 1)}</td>
           </tr>
         `).join("")}</tbody>
       </table>
     </div>
   `;
+}
+
+function basicActivityRequirementDisplayName(item, resourceKind) {
+  if (resourceKind === "personnel") return item.professional || item.model || item.name || "";
+  return [
+    item.name || item.model || "",
+    item.model && item.model !== item.name ? item.model : ""
+  ].filter(Boolean).join(" / ");
 }
 
 function renderBasicActivityResourceConfigDialog(row, resourceKind) {
@@ -7601,7 +7607,7 @@ function renderBasicActivityResourceDialogHeader(resourceKind) {
 function renderBasicActivityResourceDialogRow(row, resourceKind, item, index) {
   const commonAttrs = `data-basic-activity-key="${htmlEscape(row.key)}" data-basic-activity-resource-kind="${htmlEscape(resourceKind)}" data-basic-activity-resource-index="${htmlEscape(index)}"`;
   const lockedAttr = modelingLockDisabledAttr();
-  const quantityCell = `<td><input type="number" min="0" step="1" ${commonAttrs} data-basic-activity-resource-dialog-field="quantity" value="${htmlEscape(item.quantity ?? 1)}"${lockedAttr}></td>`;
+  const quantityCell = `<td><input type="number" min="1" step="1" ${commonAttrs} data-basic-activity-resource-dialog-field="quantity" value="${htmlEscape(item.quantity ?? 1)}"${lockedAttr}></td>`;
   const deleteCell = `<td><button type="button" class="inline-action" ${commonAttrs} data-basic-activity-resource-dialog-delete${lockedAttr}>删除</button></td>`;
   return `
     <tr>
@@ -7614,7 +7620,7 @@ function renderBasicActivityResourceDialogRow(row, resourceKind, item, index) {
 
 function basicActivityResourceDialogResourceSelect(row, resourceKind, index, item) {
   const label = basicActivityResourceKindLabel(resourceKind);
-  const rows = basicActivityModeledSupportResourceRows(label);
+  const rows = basicActivityCatalogRows(resourceKind);
   return basicActivityResourceDialogSelect(
     row,
     resourceKind,
@@ -7637,7 +7643,7 @@ function basicActivityResourceDialogSelect(row, resourceKind, index, fieldName, 
 
 function basicActivitySupportResourceSelectOptions(label, rows) {
   return uniqueSelectOptions([
-    { value: "", label: rows.length ? `请选择${label}` : `请先在保障组织配置${label}` },
+    { value: "", label: rows.length ? `请选择${label}` : `暂无${label}目录` },
     ...rows.map((row) => ({
       value: String(row.key || ""),
       label: basicActivitySupportResourceOptionLabel(row, label)
@@ -7646,10 +7652,10 @@ function basicActivitySupportResourceSelectOptions(label, rows) {
 }
 
 function basicActivitySupportResourceOptionLabel(row, fallbackLabel) {
+  if (row.resourceKind === "personnel" || fallbackLabel === "保障人员") return row.name || row.model || fallbackLabel;
   return [
     row.name || row.model || fallbackLabel,
-    row.model && row.model !== row.name ? row.model : "",
-    row.scope || ""
+    row.model && row.model !== row.name ? row.model : ""
   ].filter(Boolean).join(" / ");
 }
 
@@ -7688,22 +7694,72 @@ function basicActivityResourceKindLabel(resourceKind) {
 }
 
 function normalizePersonnelSpecialtyName(value) {
-  const text = String(value || "").trim();
+  const text = String(value || "").split(/[\/／]/).pop().trim();
   return text && !["人员容量", "新增保障人员"].includes(text) ? text : "";
 }
 
-function basicActivitySupportResourceRows(resourceType) {
-  const modeledRows = basicActivityModeledSupportResourceRows(resourceType);
+function basicActivityCatalogRows(resourceKind) {
+  if (resourceKind === "personnel") return basicActivityPersonnelCatalogRows();
+  if (resourceKind === "equipment") return basicActivityEquipmentCatalogRows();
+  if (resourceKind === "spare") return basicActivitySpareCatalogRows();
+  return [];
+}
+
+function basicActivityPersonnelCatalogRows() {
+  const professionals = [
+    ...(scenario.supportResources || [])
+      .filter((resource) => resource?.type === "personnel" || resource?.type === "保障人员")
+      .map((resource) => normalizePersonnelSpecialtyName(resource.model || resource.name || "")),
+    ...configuredPersonnelSpecialties()
+  ].filter(Boolean);
+  const rows = professionals.map((professional) => ({
+    key: `personnel:${professional}`,
+    resourceKind: "personnel",
+    type: "保障人员",
+    name: professional,
+    model: professional
+  }));
   return uniqueBasicActivitySupportResourceRows([
-    ...modeledRows,
-    ...basicActivityLegacyResourceRows(resourceType)
+    ...rows,
+    ...basicActivityLegacyResourceRows("保障人员").map((row) => ({
+      ...row,
+      key: `personnel:${row.model || row.name}`,
+      resourceKind: "personnel",
+      scope: ""
+    }))
   ]);
 }
 
-function basicActivityModeledSupportResourceRows(resourceType) {
-  const root = supportOrganizationTree()[0] || null;
-  return buildSupportResourceRows(resourceType, root)
-    .filter((row) => !supportResourceDeletedKeySet().has(row.key));
+function basicActivityEquipmentCatalogRows() {
+  return basicActivityMaterialCatalogRows("equipment", "保障设备");
+}
+
+function basicActivitySpareCatalogRows() {
+  return basicActivityMaterialCatalogRows("spare", "备件");
+}
+
+function basicActivityMaterialCatalogRows(resourceKind, resourceType) {
+  const deletedKeys = supportResourceDeletedKeySet();
+  const catalogRows = (scenario.supportResources || [])
+    .filter((resource) => resource?.type === resourceKind || resource?.type === resourceType)
+    .map((resource, index) => ({
+      key: String(resource.id || resource.key || `${resourceKind}:${index}:${resource.name || resource.model || ""}`),
+      resourceKind,
+      type: resourceType,
+      name: resource.name || resource.model || "",
+      model: resource.model || resource.name || "",
+      quantity: Math.max(1, Number(resource.quantity) || 1)
+    }))
+    .filter((row) => row.name || row.model)
+    .filter((row) => !deletedKeys.has(row.key));
+  return uniqueBasicActivitySupportResourceRows([
+    ...catalogRows,
+    ...basicActivityLegacyResourceRows(resourceType).map((row) => ({
+      ...row,
+      resourceKind,
+      scope: ""
+    }))
+  ]);
 }
 
 function uniqueBasicActivitySupportResourceRows(rows) {
@@ -7712,8 +7768,7 @@ function uniqueBasicActivitySupportResourceRows(rows) {
     const key = [
       row.type || "",
       row.name || "",
-      row.model || "",
-      row.scope || ""
+      row.model || ""
     ].map((value) => String(value || "").trim()).join("|");
     if (seen.has(key)) return false;
     seen.add(key);
@@ -7763,7 +7818,7 @@ function normalizeBasicActivityResourceRequirements(row, resourceKind) {
       name,
       model: resourceKind === "personnel" ? name : modelOrQuantity,
       professional: resourceKind === "personnel" ? name : "",
-      quantity: Number(maybeQuantity ?? modelOrQuantity ?? 1) || 1
+      quantity: Math.max(1, Number(maybeQuantity ?? modelOrQuantity ?? 1) || 1)
     };
   });
 }
@@ -7862,22 +7917,25 @@ function basicActivityScopeSelect(row) {
 function basicActivityScopeValue(row) {
   if (row.scopeValue) return row.scopeValue;
   if (row.activity?.equipmentId) return `component:${row.activity.equipmentId}`;
-  const model = supportActivityAircraftModel(row.activity) || row.scope || "";
+  const model = supportActivityAircraftModel(row.activity) || (row.scope ?? "");
   return model ? `aircraft:${model}` : "";
 }
 
 function basicActivityScopeOptions(row) {
-  const aircraftOptions = wholeMachineModels().map((model) => ({ value: `aircraft:${model}`, label: model }));
-  const componentOptions = (scenario.components || []).map((component) => ({
-    value: `component:${component.id || component.name}`,
-    label: `${component.name || component.id}${component.aircraftModel ? ` / ${component.aircraftModel}` : ""}`
-  }));
+  const currentScopeValue = basicActivityScopeValue(row);
+  const currentScopeLabel = row.scope || currentScopeValue;
+  const currentScopeOption = currentScopeValue && !currentScopeValue.startsWith("aircraft:")
+    ? [{ value: currentScopeValue, label: currentScopeLabel }]
+    : [];
   return uniqueSelectOptions([
     { value: "", label: "未指定适用对象" },
-    ...aircraftOptions,
-    ...componentOptions,
-    ...(basicActivityScopeValue(row) ? [{ value: basicActivityScopeValue(row), label: row.scope || basicActivityScopeValue(row) }] : [])
+    ...basicActivityWholeMachineScopeOptions(),
+    ...currentScopeOption
   ]);
+}
+
+function basicActivityWholeMachineScopeOptions() {
+  return wholeMachineModels().map((model) => ({ value: `aircraft:${model}`, label: model }));
 }
 
 function basicActivityLibraryRows() {
@@ -8254,11 +8312,11 @@ function updateBasicActivityResourceDialogField(key, resourceKind, index, fieldN
     requirements[index] = createBasicActivityResourceRequirementFromKey(
       resourceKind,
       String(value || ""),
-      Math.max(0, Number(current.quantity ?? 1)),
+      Math.max(1, Number(current.quantity ?? 1) || 1),
       index
     );
   } else {
-    const nextValue = fieldName === "quantity" ? Math.max(0, Number(value || 0)) : String(value || "");
+    const nextValue = fieldName === "quantity" ? Math.max(1, Number(value || 1) || 1) : String(value || "");
     requirements[index] = normalizeBasicActivityResourceDialogRequirement(resourceKind, {
       ...current,
       [fieldName]: nextValue
@@ -8299,14 +8357,12 @@ function deleteBasicActivityResourceRequirement(key, resourceKind, index) {
 }
 
 function createBasicActivityResourceRequirement(resourceKind, index) {
-  const resourceType = basicActivityResourceKindLabel(resourceKind);
-  const source = basicActivityModeledSupportResourceRows(resourceType)[0] || null;
+  const source = basicActivityCatalogRows(resourceKind)[0] || null;
   return createBasicActivityResourceRequirementFromRow(resourceKind, source, 1, index);
 }
 
 function createBasicActivityResourceRequirementFromKey(resourceKind, resourceKey, quantity = 1, index = 0) {
-  const resourceType = basicActivityResourceKindLabel(resourceKind);
-  const source = basicActivityModeledSupportResourceRows(resourceType)
+  const source = basicActivityCatalogRows(resourceKind)
     .find((row) => String(row.key || "") === String(resourceKey || ""));
   return createBasicActivityResourceRequirementFromRow(resourceKind, source || null, quantity, index);
 }
@@ -8319,6 +8375,7 @@ function createBasicActivityResourceRequirementFromRow(resourceKind, source, qua
     }, index);
   }
   return normalizeBasicActivityResourceDialogRequirement(resourceKind, {
+    key: source?.key || "",
     name: source?.name || source?.model || "",
     model: source?.model || source?.name || "",
     quantity
@@ -8327,16 +8384,17 @@ function createBasicActivityResourceRequirementFromRow(resourceKind, source, qua
 
 function normalizeBasicActivityResourceDialogRequirement(resourceKind, item, index) {
   if (resourceKind === "personnel") {
-    const professional = item.professional || "";
+    const professional = normalizePersonnelSpecialtyName(item.professional || item.model || item.name || "");
     return {
       professional,
-      quantity: Math.max(0, Number(item.quantity ?? 1))
+      quantity: Math.max(1, Number(item.quantity ?? 1) || 1)
     };
   }
   return {
+    key: item.key || item.resourceKey || "",
     name: item.name || "",
     model: item.model || "",
-    quantity: Math.max(0, Number(item.quantity ?? 1))
+    quantity: Math.max(1, Number(item.quantity ?? 1) || 1)
   };
 }
 
@@ -8377,21 +8435,20 @@ function setBasicActivityTargetJob(target, job) {
 
 function basicActivityResourceRequirementsFromKeys(resourceKind, keys) {
   const resourceType = resourceKind === "personnel" ? "保障人员" : resourceKind === "equipment" ? "保障设备" : "备件";
-  const rowsByKey = new Map(basicActivitySupportResourceRows(resourceType).map((row) => [String(row.key), row]));
+  const rowsByKey = new Map(basicActivityCatalogRows(resourceKind).map((row) => [String(row.key), row]));
   return keys.map((key) => {
     const row = rowsByKey.get(String(key));
     if (!row) return null;
     if (resourceKind === "personnel") {
       return {
         professional: row.model || "",
-        quantity: Number(row.quantity || 1)
+        quantity: Math.max(1, Number(row.quantity) || 1)
       };
     }
     return {
       key: String(key),
       name: row.name || row.model || resourceType,
       model: row.model || "",
-      scope: row.scope || "",
       quantity: 1
     };
   }).filter(Boolean);
@@ -8401,14 +8458,14 @@ function mergeBasicActivityResourceQuantities(previousRequirements, nextRequirem
   const quantityByKey = new Map((previousRequirements || []).map((item) => [String(item.key || ""), item.quantity]));
   return nextRequirements.map((item) => ({
     ...item,
-    quantity: Math.max(0, Number(quantityByKey.get(String(item.key || "")) ?? item.quantity ?? 1))
+    quantity: Math.max(1, Number(quantityByKey.get(String(item.key || "")) ?? item.quantity ?? 1) || 1)
   }));
 }
 
 function updateBasicActivityRequirementQuantity(job, resourceKind, key, value) {
   return normalizeBasicActivityResourceRequirements(job, resourceKind).map((item) => (
     String(item.key || "") === String(key)
-      ? { ...item, quantity: Math.max(0, Number(value || 0)) }
+      ? { ...item, quantity: Math.max(1, Number(value || 1) || 1) }
       : item
   ));
 }

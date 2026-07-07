@@ -264,7 +264,18 @@
         "ammunition": { "type": "array", "items": { "$ref": "#/$defs/openModelObject" } },
         "facility": { "type": "string" }
       },
-      "not": { "required": ["predecessors"] }
+      "not": {
+        "anyOf": [
+          { "required": ["predecessors"] },
+          { "required": ["maxRepairTimeMinutes"] },
+          { "required": ["meanRepairTimeMinutes"] },
+          { "required": ["mttrMinutes"] },
+          { "required": ["mttr"] },
+          { "required": ["repairDistribution"] },
+          { "required": ["repairDistributionType"] },
+          { "required": ["repairTypes"] }
+        ]
+      }
     },
     "supportOrganization": {
       "type": "object",

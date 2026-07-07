@@ -316,6 +316,8 @@ function stripProjectNonModelFields(projectJson) {
   stripLegacyBasicMissionFields(projectJson);
   stripMissionProfileNonModelFields(projectJson.missionProfile);
   stripSupportActivityTypoFields(projectJson);
+  stripSupportActivityMttrFields(projectJson.supportActivities);
+  stripSupportActivityMttrFields(projectJson.supportActivityJobs);
 }
 
 function materializeLegacySupportTables(projectJson) {
@@ -748,6 +750,29 @@ function stripSupportActivityTypoFields(value) {
   for (const child of Object.values(value)) stripSupportActivityTypoFields(child);
 }
 
+const SUPPORT_ACTIVITY_MTTR_FIELDS = [
+  "maxRepairTimeMinutes",
+  "meanRepairTimeMinutes",
+  "mttrMinutes",
+  "mttr",
+  "repairDistribution",
+  "repairDistributionType",
+  "repairTypes"
+];
+
+function stripSupportActivityMttrFields(value) {
+  if (Array.isArray(value)) {
+    for (const item of value) stripSupportActivityMttrFields(item);
+    return;
+  }
+  if (!value || typeof value !== "object") return;
+  for (const field of SUPPORT_ACTIVITY_MTTR_FIELDS) delete value[field];
+  for (const job of Array.isArray(value.jobs) ? value.jobs : []) {
+    if (!job || typeof job !== "object" || Array.isArray(job)) continue;
+    for (const field of SUPPORT_ACTIVITY_MTTR_FIELDS) delete job[field];
+  }
+}
+
 function syncCompositeTaskInheritedBasicFields(projectJson) {
   const basicMissions = basicMissionRecordsForProject(projectJson);
   const composites = Array.isArray(projectJson.missionProfile?.compositeTasks)
@@ -903,6 +928,7 @@ function liftSupportActivityJobsToTopLevel(projectJson) {
 function supportActivityJobDefinition(job) {
   const definition = cloneJson(job);
   delete definition.predecessors;
+  for (const field of SUPPORT_ACTIVITY_MTTR_FIELDS) delete definition[field];
   return definition;
 }
 

@@ -152,6 +152,8 @@ def _strip_project_non_model_fields(project: dict[str, Any]) -> None:
         mission_profile.pop("repeatCycleHours", None)
         mission_profile.pop("analysisRequests", None)
     _strip_typo_only_support_activity_fields(project)
+    _strip_support_activity_mttr_fields(project.get("supportActivities"))
+    _strip_support_activity_mttr_fields(project.get("supportActivityJobs"))
     _lift_support_activity_jobs_to_top_level(project)
 
 
@@ -502,6 +504,34 @@ def _strip_typo_only_support_activity_fields(value: Any) -> None:
             _strip_typo_only_support_activity_fields(item)
 
 
+_SUPPORT_ACTIVITY_MTTR_FIELDS = {
+    "maxRepairTimeMinutes",
+    "meanRepairTimeMinutes",
+    "mttrMinutes",
+    "mttr",
+    "repairDistribution",
+    "repairDistributionType",
+    "repairTypes",
+}
+
+
+def _strip_support_activity_mttr_fields(value: Any) -> None:
+    if isinstance(value, list):
+        for item in value:
+            _strip_support_activity_mttr_fields(item)
+        return
+    if not isinstance(value, dict):
+        return
+    for field in _SUPPORT_ACTIVITY_MTTR_FIELDS:
+        value.pop(field, None)
+    jobs = value.get("jobs")
+    if isinstance(jobs, list):
+        for job in jobs:
+            if isinstance(job, dict):
+                for field in _SUPPORT_ACTIVITY_MTTR_FIELDS:
+                    job.pop(field, None)
+
+
 def _lift_support_activity_jobs_to_top_level(project: dict[str, Any]) -> None:
     activities = project.get("supportActivities")
     if not isinstance(activities, list):
@@ -548,6 +578,8 @@ def _lift_support_activity_jobs_to_top_level(project: dict[str, Any]) -> None:
 def _support_activity_job_definition(job: dict[str, Any]) -> dict[str, Any]:
     definition = deepcopy(job)
     definition.pop("predecessors", None)
+    for field in _SUPPORT_ACTIVITY_MTTR_FIELDS:
+        definition.pop(field, None)
     return definition
 
 

@@ -164,6 +164,50 @@ class SimulationAdapterTest(unittest.TestCase):
         self.assertIn("projectInfo", provenance["governance_only_fields"])
         self.assertEqual(provenance["unsupported_fields"], [])
 
+    def test_aircraft_support_v1_components_are_corrective_mttr_source_of_truth(self) -> None:
+        project = self._load_fixture("m9_6_platform_case_export.json")["project"]
+        component = project["components"][0]
+        component_id = component["id"]
+        component["repairDistribution"] = {
+            "distributionType": "固定值",
+            "value": 42,
+        }
+        job = project["supportActivityJobs"][0]
+        job["activityCode"] = "CM-MTTR"
+        job["maxRepairTimeMinutes"] = 999
+        job["meanRepairTimeMinutes"] = 888
+        job["mttrMinutes"] = 777
+        job["repairDistribution"] = {
+            "distributionType": "固定值",
+            "value": 999,
+        }
+        project["supportActivities"] = [
+            {
+                "id": "corrective-mttr-source",
+                "activityType": "修复性维修",
+                "equipmentId": component_id,
+                "activityCodes": ["CM-MTTR"],
+                "predecessors": {"CM-MTTR": []},
+            }
+        ]
+
+        scenario = self.adapter.compile_scenario(project, model_family="aircraft_support_v1")
+
+        compiled_component = next(
+            row
+            for row in scenario["simulation_inputs"]["equipment_tree"]["components"]
+            if row["id"] == component_id
+        )
+        self.assertEqual(
+            compiled_component["repair_distribution"],
+            {"distributionType": "固定值", "value": 42},
+        )
+        compiled_job = scenario["simulation_inputs"]["support_activities"]["activities"][0]["jobs"][0]
+        self.assertNotIn("maxRepairTimeMinutes", compiled_job)
+        self.assertNotIn("meanRepairTimeMinutes", compiled_job)
+        self.assertNotIn("mttrMinutes", compiled_job)
+        self.assertNotIn("repairDistribution", compiled_job)
+
     def test_aircraft_support_v1_runtime_stop_policy_reaches_model_inputs(self) -> None:
         project = self._load_fixture("m9_6_platform_case_export.json")["project"]
 

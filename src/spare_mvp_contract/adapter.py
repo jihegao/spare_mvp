@@ -629,6 +629,7 @@ class SimulationAdapter:
             "quantity": self._positive_int(component.get("quantity"), 1),
             "failure_rate": self._non_negative_number(component.get("failureRate"), 0),
             "failure_distribution": copy.deepcopy(component.get("failureDistribution") if isinstance(component.get("failureDistribution"), dict) else {}),
+            "repair_distribution": copy.deepcopy(component.get("repairDistribution") if isinstance(component.get("repairDistribution"), dict) else {}),
             "k_out_of_n": copy.deepcopy(component.get("kOutOfN") if isinstance(component.get("kOutOfN"), dict) else {}),
             "life_limit_hours": self._optional_positive_number(component.get("lifeLimitHours")),
             "mtbf_hours": self._optional_positive_number(component.get("mtbfHours")),
@@ -934,8 +935,22 @@ class SimulationAdapter:
         for job in self._dict_list(project.get("supportActivityJobs")):
             code = str(job.get("activityCode") or "").strip()
             if code and code not in definitions:
-                definitions[code] = copy.deepcopy(job)
+                definitions[code] = self._support_activity_job_definition(job)
         return definitions
+
+    def _support_activity_job_definition(self, job: dict[str, Any]) -> dict[str, Any]:
+        definition = copy.deepcopy(job)
+        for field in (
+            "maxRepairTimeMinutes",
+            "meanRepairTimeMinutes",
+            "mttrMinutes",
+            "mttr",
+            "repairDistribution",
+            "repairDistributionType",
+            "repairTypes",
+        ):
+            definition.pop(field, None)
+        return definition
 
     def _support_activity_jobs_for_activity(
         self,

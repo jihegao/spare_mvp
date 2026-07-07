@@ -793,6 +793,10 @@ class BackendApiContractTest(unittest.TestCase):
                         "workName": "通电检查",
                         "durationMinutes": 30,
                         "predecessors": ["BA-001"],
+                        "maxRepairTimeMinutes": 999,
+                        "meanRepairTimeMinutes": 888,
+                        "mttrMinutes": 777,
+                        "repairDistribution": {"distributionType": "固定值", "value": 999},
                     },
                 ],
             },
@@ -817,6 +821,10 @@ class BackendApiContractTest(unittest.TestCase):
             ["BA-001", "BA-002"],
         )
         self.assertNotIn("predecessors", stored["supportActivityJobs"][1])
+        self.assertNotIn("maxRepairTimeMinutes", stored["supportActivityJobs"][1])
+        self.assertNotIn("meanRepairTimeMinutes", stored["supportActivityJobs"][1])
+        self.assertNotIn("mttrMinutes", stored["supportActivityJobs"][1])
+        self.assertNotIn("repairDistribution", stored["supportActivityJobs"][1])
 
     def test_run_service_submits_current_run_and_returns_status_envelope(self) -> None:
         project = small_aircraft_support_project("project-aircraft-support-contract-001")
