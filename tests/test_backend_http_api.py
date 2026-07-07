@@ -1454,6 +1454,9 @@ class BackendHttpApiTest(unittest.TestCase):
                     auth_token=auth_token,
                 )
 
+                listed_before = self._json(base_url, "GET", "/runs?include_deleted=1")
+                run_ids_before = {item["run_id"] for item in listed_before["runs"]}
+
                 for model_family, run_type in (("aviation_support", "single"), ("aviation_support", "monte_carlo"), ("smoke", "single")):
                     with self.subTest(model_family=model_family, run_type=run_type):
                         error = self._json_error(
@@ -1474,6 +1477,9 @@ class BackendHttpApiTest(unittest.TestCase):
                         self.assertEqual(error["details"]["replacement_model_family"], "aircraft_support_v1")
                         self.assertIn(model_family, error["details"]["retired_model_families"])
                         self.assertNotIn("run_id", error)
+
+                        listed_after = self._json(base_url, "GET", "/runs?include_deleted=1")
+                        self.assertEqual({item["run_id"] for item in listed_after["runs"]}, run_ids_before)
             finally:
                 server.shutdown()
                 server.server_close()

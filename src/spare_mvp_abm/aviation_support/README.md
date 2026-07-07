@@ -1,5 +1,9 @@
 # 航空保障 Mesa 场景包
 
+> Legacy note: this package is retained as historical contract/test evidence for
+> the retired `aviation_support` model family. It is not a product runtime
+> target for formal `/api/runs`; current formal runs use `aircraft_support_v1`.
+
 该场景包用于描述单条飞行保障线的出动生成过程，并显式考虑保障资源约束。
 
 ## 范围
