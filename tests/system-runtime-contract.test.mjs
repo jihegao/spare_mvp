@@ -139,23 +139,32 @@ test("direct backend CLI defaults to the same persistent system-start SQLite pat
   assert.match(source, /database_path=args\.database or default_database_path/);
 });
 
-test("canonical runtime wording and default artifact output avoid stale M3 smoke labels", async () => {
+test("active runtime wording promotes lite Mesa and demotes the old run ledger", async () => {
   const readme = await readFile(new URL("../README.md", import.meta.url), "utf8");
   const docsReadme = await readFile(new URL("../docs/README.md", import.meta.url), "utf8");
   const productRoadmap = await readFile(new URL("../docs/product-roadmap.md", import.meta.url), "utf8");
   const agentDoc = await readFile(new URL("../agent.md", import.meta.url), "utf8");
+  const liteMesaRuntime = await readFile(new URL("../docs/lite-mesa-formal-runtime.md", import.meta.url), "utf8");
   const contractsReadme = await readFile(new URL("../contracts/README.md", import.meta.url), "utf8");
   const runtimeAudit = await readFile(new URL("../docs/archive/deprecated/architecture-audit/2026-07-spare-mvp-runtime-boundary-audit.md", import.meta.url), "utf8");
-  const m7Design = await readFile(new URL("../docs/archive/deprecated/superpowers/specs/2026-06-21-m7-0-run-artifact-management-design.md", import.meta.url), "utf8");
-  const runIntentPlan = await readFile(new URL("../docs/archive/deprecated/superpowers/plans/2026-06-20-runintent-mc-config-imported-sample-project.md", import.meta.url), "utf8");
-  const m7Plan = await readFile(new URL("../docs/archive/deprecated/superpowers/plans/2026-06-21-m7-0-run-artifact-management.md", import.meta.url), "utf8");
   const httpServer = await readFile(new URL("../src/spare_mvp_backend/http_server.py", import.meta.url), "utf8");
   const runService = await readFile(new URL("../src/spare_mvp_backend/run_service.py", import.meta.url), "utf8");
   const adapter = await readFile(new URL("../src/spare_mvp_contract/adapter.py", import.meta.url), "utf8");
 
-  const canonicalPath = /RunIntent -> \/api\/runs -> RunService -> SimulationAdapter -> aircraft_support_v1 -> SQLite \+ artifacts/;
-  for (const content of [readme, docsReadme, productRoadmap, agentDoc, contractsReadme, m7Design, runIntentPlan, m7Plan]) {
-    assert.match(content, canonicalPath);
+  const liteMesaPath = /POST \/api\/mesa-analysis-runs[\s\S]{0,120}AircraftSupportV1Model[\s\S]{0,80}lite Mesa 会话/;
+  const oldLedgerBoundary = /\/api\/runs[\s\S]{0,120}(历史实现|内部治理能力|后续持久化运行治理候选)/;
+  for (const content of [readme, docsReadme, agentDoc, liteMesaRuntime]) {
+    assert.match(content, /\/api\/mesa-analysis-runs/);
+    assert.match(content, /lite Mesa 会话/);
+    assert.match(content, oldLedgerBoundary);
+    assert.doesNotMatch(content, /四个结果分析页通过 current result 面板和正式 projection payload 解锁结果/);
+    assert.doesNotMatch(content, /四个结果分析页是用户可见的 current result flow/);
+    assert.doesNotMatch(content, /正式结果必须来自 `RunIntent -> \/api\/runs/);
+  }
+  for (const content of [readme, docsReadme, agentDoc]) {
+    assert.match(content, liteMesaPath);
+  }
+  for (const content of [productRoadmap, contractsReadme]) {
     assert.doesNotMatch(content, /RunService -> artifacts/);
   }
   for (const content of [readme, docsReadme, productRoadmap, agentDoc, contractsReadme]) {

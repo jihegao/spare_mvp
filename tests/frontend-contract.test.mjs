@@ -2886,14 +2886,18 @@ test("M9.8 docs mark platform embedding complete without making independent-mesa
   const docs = {
     readme: await readFile(new URL("../README.md", import.meta.url), "utf8"),
     docsReadme: await readFile(new URL("../docs/README.md", import.meta.url), "utf8"),
-    roadmap: await readFile(new URL("../docs/product-roadmap.md", import.meta.url), "utf8"),
-    agent: await readFile(new URL("../agent.md", import.meta.url), "utf8")
+    agent: await readFile(new URL("../agent.md", import.meta.url), "utf8"),
+    liteMesaRuntime: await readFile(new URL("../docs/lite-mesa-formal-runtime.md", import.meta.url), "utf8")
   };
   const combined = Object.values(docs).join("\n");
 
-  assert.match(combined, /M9\.8[^。]*(平台嵌入|嵌入平台)[^。]*(完成|收束|已)/);
-  assert.match(combined, /aircraft_support_v1[^。]*canonical `?\/api\/runs`?/);
+  assert.match(combined, /\/api\/mesa-analysis-runs/);
+  assert.match(combined, /lite Mesa 会话/);
+  assert.match(combined, /aircraft_support_v1/);
+  assert.match(combined, /\/api\/runs[\s\S]{0,120}(历史实现|内部治理能力|后续持久化运行治理候选)/);
   assert.match(combined, /independent-mesa[^。]*(源码树已移除|源码树已从当前仓库移除|当前源码树移除)/);
+  assert.doesNotMatch(combined, /四个结果分析页是用户可见的 current result flow/);
+  assert.doesNotMatch(combined, /正式结果必须来自 `RunIntent -> \/api\/runs/);
   assert.doesNotMatch(combined, /M9\.8[^。]*(8765|independent-mesa\/server\.py)[^。]*(正式产品入口|平台运行必需|启动平台所需)/);
 });
 

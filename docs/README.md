@@ -13,16 +13,16 @@
 
 ## 当前开发面
 
-截至 2026-07-05，当前实现的主干边界如下：
+截至 2026-07-08，当前实现的主干边界如下：
 
 1. 项目数据管理页已收敛为 Project 数据层入口：左侧显示项目列表，`projectInfo.isTemplate` 为真的项目显示【模板】；右侧只保留模板管理、数据概览和可折叠 Project JSON 原始数据。
-   后端 Project JSON 原始数据边界会剥离当前 `aircraft_support_v1` 不消费的草稿/预览字段和运行配置：根 `experiment`、根 `analysisRequests`、`monteCarlo`、`seedPolicy`、`scenarioComposition`、`missionProfile.profileType`、`missionProfile.endCondition`、`missionProfile.repeatCycleHours`、`missionProfile.analysisRequests`、`supportResourceOverrides`、`deletedSupportResourceKeys` 和拼写错误的 `supportActivities[].requireDevices`。正式运行的 steps / samples / seed、固定/随机 base seed 策略、Project JSON path 覆盖记录和 Monte Carlo 数值配置归 `ExperimentPlan.config`、`RunIntent` 和 `MonteCarloRunConfig`；`requiredDevices` 是实际消费字段，不属于删除项。
+   后端 Project JSON 原始数据边界会剥离当前 `aircraft_support_v1` 不消费的草稿/预览字段和运行配置：根 `experiment`、根 `analysisRequests`、`monteCarlo`、`seedPolicy`、`scenarioComposition`、`missionProfile.profileType`、`missionProfile.endCondition`、`missionProfile.repeatCycleHours`、`missionProfile.analysisRequests`、`supportResourceOverrides`、`deletedSupportResourceKeys` 和拼写错误的 `supportActivities[].requireDevices`。lite Mesa 会话的 samples / seed、固定/随机 base seed 策略、Project JSON path 覆盖记录和 Monte Carlo 数值配置归 `ExperimentPlan.config` 与页面设置；`requiredDevices` 是实际消费字段，不属于删除项。
 2. 项目列表页从已标记的 Project 模板复制创建项目；旧的内置建模导入模板注册表、模板层级分类和模板下拉入口已退役。
 3. M5 建模导入 API 仍作为后台维护、导入转换和 `compile-scenario` 能力保留；普通项目数据管理页不展示已发布模板列表、模板预览、字段映射、v1/v2 分类或旧校验级别分类。
 4. 装备 RMS 指标分配是系统运行支持模块下的本地计算工作台。页面按顶部参数输入、左侧独立装备树导入、右侧方法选择和底部节点分配结果组织；输入为任务可靠度、任务时长、关键故障占比和 MTTR。
 5. RMS 方法保留等分配法、比例分配法和相似产品分配法。装备树导入只更新 RMS 工作台独立数据，不污染项目建模数据；当前 UI 只保留计算动作，不提供保存草稿或发布到装备模型入口，也未接入后端持久化或真实仿真消费。
 6. 可靠性框图只在任务可靠度评估模块下作为正式建模页展示。完整绘图契约仍由 `reliability-block-diagram-contract.md` 维护。
-7. 正式运行主线为 `RunIntent -> /api/runs -> RunService -> SimulationAdapter -> aircraft_support_v1 -> SQLite + artifacts`。旧 contract provider、smoke model、smoke scenarios 和 smoke JSON fixtures 已退役删除。
+7. 当前用户可见运行主线为 `当前 Project -> POST /api/mesa-analysis-runs -> aircraft_support_v1 simulation inputs -> in-memory AircraftSupportV1Model -> lite Mesa 会话摘要`。旧 `/api/runs`、RunService、SimulationRun、ResultSummary 和 ArtifactManifest 运行账本路径保留为历史实现、内部治理能力或后续持久化运行治理候选；旧 contract provider、smoke model、smoke scenarios 和 smoke JSON fixtures 已退役删除。
 8. `aircraft_support_v1` 是当前正式模型族；历史 `aviation_support` 只保留为 schema/fixture 归档证据且 adapter 编译运行入口返回 `retired_model_family`。
 9. 四个结果分析页当前为独立轻量 Mesa 会话页：前端提交当前 Project 与页面设置到 `POST /api/mesa-analysis-runs`，后端编译为 `aircraft_support_v1` simulation inputs 后只在内存中运行样本并返回页面摘要；该路径不创建 `/api/runs`、SQLite run、Result 或正式 artifact，也不读取 current result 面板。
 10. 轻量 Mesa 指标口径：`出动架次率 = 起飞总架次 / 飞机总数 / 仿真总天数`，展示为小数；`仿真总天数` 来自编译后的仿真窗口，周期任务有显式星期排程时按最后有任务日停止，没有显式任务日时才回退整周期/重复次数或 `durationHours`；`战备完好率 = 每天 14:00 的可用飞机数量 / 总飞机数量`，多天结果取日采样均值；`平均备件延误时间(h) = 总调运延误时间(分钟) / 60 / 备件调运次数`，用于备件短板页替代原先会被误读为缺件次数的分钟累计值。
@@ -36,6 +36,7 @@
 | [`product-roadmap.md`](product-roadmap.md) | 总路线图：产品里程碑、阶段依赖、主干运行路径和验收口径。 |
 | [`spare_mvp_rms_allocation_design.md`](spare_mvp_rms_allocation_design.md) | 当前 RMS 指标分配工作台的实现说明、算法口径、UI 边界和非目标。 |
 | [`reliability-block-diagram-contract.md`](reliability-block-diagram-contract.md) | 当前可靠性框图绘图契约。 |
+| [`lite-mesa-formal-runtime.md`](lite-mesa-formal-runtime.md) | lite Mesa 作为当前用户可见运行路径的边界说明。 |
 | [`archive/deprecated/README.md`](archive/deprecated/README.md) | 过期文档归档入口，包含历史计划、阶段规格、原始概要设计和运行边界审计。 |
 | [`../contracts/README.md`](../contracts/README.md) | Project / Scenario / Run / Result / ArtifactManifest schema bundle 与运行契约说明。 |
 | [`../front/rms-allocation-engine.mjs`](../front/rms-allocation-engine.mjs) | RMS 分配本地计算入口，覆盖风险预算分配、MTTR/MLDT 加权、自底向上校核和引擎级 target 写入 helper。 |
@@ -57,7 +58,7 @@ npm run start:system
 http://127.0.0.1:4173/front/
 ```
 
-`npm run start:system` 等价于 `bash scripts/start-system.sh start`，默认只启动同源 app/backend、使用 `runs/system-start/spare_mvp.sqlite3` 持久化，并通过正式主线 `RunIntent -> /api/runs -> RunService -> SimulationAdapter -> aircraft_support_v1 -> SQLite + artifacts` 运行。
+`npm run start:system` 等价于 `bash scripts/start-system.sh start`，默认只启动同源 app/backend、使用 `runs/system-start/spare_mvp.sqlite3` 持久化。当前用户可见分析通过 `/api/mesa-analysis-runs` 运行 lite Mesa 会话；旧 `/api/runs` 账本链路仅作为历史实现、内部治理能力或后续持久化运行治理候选。
 
 ## 文档维护规则
 

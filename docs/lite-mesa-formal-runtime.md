@@ -8,14 +8,14 @@
 
 当前用户可见的正式产品运行路径收敛为 lite Mesa 分析会话。
 
-主路径为：当前 Project 数据进入 Mesa 分析接口，后端编译为 `aircraft_support_v1` simulation inputs，然后在内存中运行 `AircraftSupportV1Model` 样本并返回页面摘要。
+主路径为：当前 Project 数据进入 `POST /api/mesa-analysis-runs` Mesa 分析接口，后端编译为 `aircraft_support_v1` simulation inputs，然后在内存中运行 `AircraftSupportV1Model` 样本并返回 lite Mesa 会话摘要。
 
 ## 当前边界
 
 - 用户可见分析、Monte Carlo 和可视化结果应优先来自 lite Mesa 会话结果。
 - lite Mesa 会话读取当前 Project 数据，不修改 Project，不创建运行账本，不生成持久化结果产物。
 - `aircraft_support_v1` 是当前正式模型核心。
-- 旧运行账本路径、RunService、SimulationRun、ResultSummary 和 ArtifactManifest 后续只作为历史实现、内部治理能力或后续持久化运行治理候选。
+- 旧 `/api/runs` 运行账本路径、RunService、SimulationRun、ResultSummary 和 ArtifactManifest 后续只作为历史实现、内部治理能力或后续持久化运行治理候选。
 
 ## 后续切片
 
