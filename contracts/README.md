@@ -5,6 +5,7 @@ This directory is the first Contract Curator Agent deliverable for the contract-
 The files here are draft JSON Schema contracts for the application-facing boundary:
 
 - `project.schema.json`: editable Project JSON owned by the frontend modeling workflow.
+- `aircraft_support_v1_project.schema.json`: strict clean Project JSON boundary for `aircraft_support_v1` Scenario compilation; it white-lists model-facing authoring roots and excludes UI draft state, runtime config, validation diagnostics, RMS allocation process records, and run/result artifacts.
 - `scenario.schema.json`: compiled Scenario JSON owned by the Simulation Adapter.
 - `run.schema.json`: persisted run lifecycle record.
 - `result.schema.json`: metrics and summary returned from a Mesa-backed run.
@@ -21,6 +22,8 @@ These schemas are not a replacement for the Mesa model or Claude-governed simula
 The current frontend Project JSON is the raw `defaultScenario` shape from `front/sim-engine.mjs`; `schema_version` and `project_id` may be supplied later by an application envelope but are not required inside that raw payload.
 
 The persisted/backend Project JSON boundary is narrower than the in-browser draft. `front/api-client.mjs` and `src/spare_mvp_backend/project_payload.py` strip fields that are UI draft, legacy preview, or misspelled non-model data before Project persistence or Mesa compilation: `missionProfile.profileType`, `missionProfile.endCondition`, `missionProfile.repeatCycleHours`, `missionProfile.analysisRequests`, `supportResourceOverrides`, `deletedSupportResourceKeys`, and literal `supportActivities[].requireDevices`. `supportActivities[].requiredDevices` remains part of the `aircraft_support_v1` support-activity input. Project-level `analysisRequests` can still feed ExperimentPlan construction, but formal Monte Carlo runtime values belong to `ExperimentPlan.config.analysisRequests.largeSample`, not to the Project model input.
+
+`aircraft_support_v1_project.schema.json` is the first clean-Project contract for the current formal model family. It is intentionally stricter than `project.schema.json` and earlier persisted payloads: unknown top-level fields fail closed, component `rms` keeps only `target`, and UI/runtime/RMS-allocation/validation/run-result roots are not accepted. It is also intentionally earlier than `aircraft_support_v1_input.schema.json`: Project roots such as `components`, `supportResources`, `supportActivities`, task profiles, and reliability diagrams still need the Simulation Adapter to compile them into the model-family input object. The schema is a guardrail for a future `ProjectJsonExporter(target="aircraft_support_v1")`; it must not be used to bypass Scenario compilation.
 
 `modeling_import.schema.json` is an application data-entry contract, not a Scenario contract. It can describe imported Project draft data, object IDs, references, validation issues, and publication lifecycle; final Scenario JSON must still be compiled by the Simulation Adapter.
 
