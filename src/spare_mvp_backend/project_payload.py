@@ -5,7 +5,198 @@ from __future__ import annotations
 import json
 import re
 from copy import deepcopy
+from pathlib import Path
 from typing import Any
+
+
+ACTIVE_CLEAN_PROJECT_TARGET = "aircraft_support_v1"
+_POLLUTION_KEYS = {
+    "uiState",
+    "pageState",
+    "formState",
+    "selectedNodeId",
+    "expandedKeys",
+    "treeLayout",
+    "canvasLayout",
+    "draftState",
+    "validationReports",
+    "verificationResult",
+    "rmsAllocationPlan",
+    "missionExposure",
+    "exposureMatrix",
+    "rmsNodeResult",
+    "simulationRun",
+    "resultSummary",
+    "artifactManifest",
+}
+_ROOT_CLEAN_PROJECT_FIELDS = {
+    "schema_version",
+    "project_id",
+    "project_version",
+    "scenarioId",
+    "activeModule",
+    "projectInfo",
+    "equipment",
+    "airports",
+    "missionAreas",
+    "missionProfile",
+    "basicMissions",
+    "missionPhases",
+    "combatUnit",
+    "components",
+    "supportNodes",
+    "supportResources",
+    "transportPolicies",
+    "supportActivities",
+    "supportOrganization",
+    "reliabilityBlockDiagram",
+}
+_AIRPORT_FIELDS = {"id", "name", "location", "supportNodeId"}
+_MISSION_PROFILE_FIELDS = {
+    "id",
+    "profileId",
+    "sourceImportId",
+    "name",
+    "durationHours",
+    "durationMinutes",
+    "combatUnit",
+    "compositeTasks",
+    "periodicTasks",
+}
+_COMBAT_UNIT_FIELDS = {"id", "name", "quantity", "members"}
+_COMBAT_UNIT_MEMBER_FIELDS = {
+    "id",
+    "name",
+    "aircraftNo",
+    "tailNumber",
+    "tail_number",
+    "model",
+    "status",
+    "airport",
+    "airportId",
+    "baseAirportId",
+    "deploymentLocation",
+}
+_COMPONENT_FIELDS = {
+    "id",
+    "name",
+    "parentId",
+    "aircraftModel",
+    "productType",
+    "quantity",
+    "failureRate",
+    "failureDistribution",
+    "kOutOfN",
+    "lifeLimitHours",
+    "mtbfHours",
+    "rms",
+    "spareType",
+    "specialRepairProfile",
+}
+_SUPPORT_NODE_FIELDS = {
+    "id",
+    "name",
+    "supportNodeName",
+    "airport",
+    "airportId",
+    "baseAirportId",
+    "nodeType",
+    "supportLevel",
+    "capacity",
+    "personnelCapacity",
+    "equipmentCapacity",
+    "inventory",
+    "lateralSupportNodes",
+    "transportPolicies",
+    "policy",
+    "organizationStrategy",
+}
+_SUPPORT_RESOURCE_FIELDS = {
+    "id",
+    "supportNodeName",
+    "organizationNodeName",
+    "type",
+    "name",
+    "model",
+    "quantity",
+    "capacity",
+    "spareName",
+    "spareType",
+}
+_TRANSPORT_POLICY_FIELDS = {
+    "id",
+    "fromSupportNodeName",
+    "from",
+    "toSupportNodeName",
+    "to",
+    "spareName",
+    "spareType",
+    "spare_type",
+    "capacity",
+    "priority",
+    "transportMode",
+    "transportTimeHours",
+    "transport_time_hours",
+}
+_SUPPORT_ACTIVITY_FIELDS = {
+    "id",
+    "name",
+    "activityName",
+    "activityType",
+    "planType",
+    "equipmentId",
+    "resourceId",
+    "priority",
+    "durationMinutes",
+    "durationHours",
+    "requiredPersonnel",
+    "requiredDevices",
+    "spareType",
+    "spareQuantity",
+    "calendarDayInterval",
+    "runHourInterval",
+    "takeoffLandingInterval",
+    "floatRatio",
+    "jobs",
+    "transportStrategies",
+    "organizationStrategies",
+}
+_RBD_FIELDS = {"nodes", "edges"}
+
+
+class ProjectJsonExporter:
+    """Export persisted Project JSON into a model-family clean Project boundary."""
+
+    def __init__(self, target: str = ACTIVE_CLEAN_PROJECT_TARGET, repo_root: Path | str | None = None) -> None:
+        self.target = str(target or "").strip()
+        self.repo_root = Path(repo_root).resolve() if repo_root else Path(__file__).resolve().parents[2]
+        if self.target != ACTIVE_CLEAN_PROJECT_TARGET:
+            raise ValueError(f"unsupported clean Project JSON target: {target}")
+
+    def export(self, project_json: dict[str, Any]) -> dict[str, Any]:
+        project = strip_project_sweep(project_json)
+        _strip_pollution_keys(project)
+        _prune_clean_project(project)
+        _drop_none_values(project)
+        self._validate(project)
+        return project
+
+    def _validate(self, project: dict[str, Any]) -> None:
+        import jsonschema
+
+        schema_path = self.repo_root / "contracts" / "aircraft_support_v1_project.schema.json"
+        schema = json.loads(schema_path.read_text(encoding="utf-8"))
+        jsonschema.Draft202012Validator.check_schema(schema)
+        validator = jsonschema.Draft202012Validator(schema)
+        errors = sorted(validator.iter_errors(project), key=lambda error: list(error.path))
+        if errors:
+            first = errors[0]
+            path = ".".join(str(part) for part in first.path) or "<root>"
+            raise ValueError(f"clean Project JSON failed {self.target} schema at {path}: {first.message}")
+
+
+def export_project_json(project_json: dict[str, Any], target: str = ACTIVE_CLEAN_PROJECT_TARGET) -> dict[str, Any]:
+    return ProjectJsonExporter(target=target).export(project_json)
 
 
 def project_runtime_config_paths(project_json: dict[str, Any]) -> list[str]:
@@ -499,6 +690,149 @@ def _strip_typo_only_support_activity_fields(value: Any) -> None:
     elif isinstance(value, list):
         for item in value:
             _strip_typo_only_support_activity_fields(item)
+
+
+def _strip_pollution_keys(value: Any) -> None:
+    if isinstance(value, dict):
+        for key in list(value):
+            if key in _POLLUTION_KEYS:
+                value.pop(key, None)
+                continue
+            _strip_pollution_keys(value[key])
+    elif isinstance(value, list):
+        for item in value:
+            _strip_pollution_keys(item)
+
+
+def _prune_clean_project(project: dict[str, Any]) -> None:
+    _keep_fields(project, _ROOT_CLEAN_PROJECT_FIELDS)
+    _prune_airports(project.get("airports"))
+    _prune_open_model_list(project.get("missionAreas"))
+    if isinstance(project.get("missionProfile"), dict):
+        _prune_mission_profile(project["missionProfile"])
+    _prune_open_model_list(project.get("basicMissions"))
+    _prune_open_model_list(project.get("missionPhases"))
+    if isinstance(project.get("combatUnit"), dict):
+        _prune_combat_unit(project["combatUnit"])
+    _prune_components(project.get("components"))
+    _prune_typed_list(project.get("supportNodes"), _SUPPORT_NODE_FIELDS)
+    _prune_typed_list(project.get("supportResources"), _SUPPORT_RESOURCE_FIELDS)
+    _prune_typed_list(project.get("transportPolicies"), _TRANSPORT_POLICY_FIELDS)
+    _prune_support_activities(project.get("supportActivities"))
+    if isinstance(project.get("supportOrganization"), dict):
+        _prune_support_organization(project["supportOrganization"])
+    if isinstance(project.get("reliabilityBlockDiagram"), dict):
+        _prune_reliability_block_diagram(project["reliabilityBlockDiagram"])
+
+
+def _keep_fields(value: dict[str, Any], allowed_fields: set[str]) -> None:
+    for key in list(value):
+        if key not in allowed_fields:
+            value.pop(key, None)
+
+
+def _prune_airports(value: Any) -> None:
+    if not isinstance(value, list):
+        return
+    for item in value:
+        if isinstance(item, dict):
+            _keep_fields(item, _AIRPORT_FIELDS)
+
+
+def _prune_open_model_list(value: Any) -> None:
+    if not isinstance(value, list):
+        return
+    for item in value:
+        _strip_pollution_keys(item)
+
+
+def _prune_mission_profile(value: dict[str, Any]) -> None:
+    _keep_fields(value, _MISSION_PROFILE_FIELDS)
+    if isinstance(value.get("combatUnit"), dict):
+        _prune_combat_unit(value["combatUnit"])
+    _prune_open_model_list(value.get("compositeTasks"))
+    _prune_open_model_list(value.get("periodicTasks"))
+
+
+def _prune_combat_unit(value: dict[str, Any]) -> None:
+    _keep_fields(value, _COMBAT_UNIT_FIELDS)
+    members = value.get("members")
+    if not isinstance(members, list):
+        return
+    for member in members:
+        if isinstance(member, dict):
+            _keep_fields(member, _COMBAT_UNIT_MEMBER_FIELDS)
+
+
+def _prune_components(value: Any) -> None:
+    if not isinstance(value, list):
+        return
+    for component in value:
+        if not isinstance(component, dict):
+            continue
+        _keep_fields(component, _COMPONENT_FIELDS)
+        rms = component.get("rms")
+        if isinstance(rms, dict):
+            _keep_fields(rms, {"target"})
+
+
+def _prune_typed_list(value: Any, allowed_fields: set[str]) -> None:
+    if not isinstance(value, list):
+        return
+    for item in value:
+        if isinstance(item, dict):
+            _keep_fields(item, allowed_fields)
+
+
+def _prune_support_activities(value: Any) -> None:
+    if not isinstance(value, list):
+        return
+    for activity in value:
+        if not isinstance(activity, dict):
+            continue
+        _keep_fields(activity, _SUPPORT_ACTIVITY_FIELDS)
+        _prune_open_model_list(activity.get("jobs"))
+        _prune_open_model_list(activity.get("transportStrategies"))
+        _prune_open_model_list(activity.get("organizationStrategies"))
+
+
+def _prune_support_organization(value: dict[str, Any]) -> None:
+    _keep_fields(value, {"tree"})
+    tree = value.get("tree")
+    if isinstance(tree, dict):
+        _prune_support_organization_node(tree)
+    elif isinstance(tree, list):
+        for node in tree:
+            if isinstance(node, dict):
+                _prune_support_organization_node(node)
+
+
+def _prune_support_organization_node(value: dict[str, Any]) -> None:
+    _keep_fields(value, {"id", "name", "description", "children"})
+    children = value.get("children")
+    if not isinstance(children, list):
+        return
+    for child in children:
+        if isinstance(child, dict):
+            _prune_support_organization_node(child)
+
+
+def _prune_reliability_block_diagram(value: dict[str, Any]) -> None:
+    _keep_fields(value, _RBD_FIELDS)
+    _prune_open_model_list(value.get("nodes"))
+    _prune_open_model_list(value.get("edges"))
+
+
+def _drop_none_values(value: Any) -> None:
+    if isinstance(value, dict):
+        for key in list(value):
+            if value[key] is None:
+                value.pop(key, None)
+                continue
+            _drop_none_values(value[key])
+    elif isinstance(value, list):
+        for item in value:
+            _drop_none_values(item)
 
 
 def _collect_project_runtime_config_paths(value: Any, path: str, paths: list[str]) -> None:
