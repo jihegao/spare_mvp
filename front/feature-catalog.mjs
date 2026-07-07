@@ -112,9 +112,39 @@ export function groupFeaturePages(pages = FEATURE_PAGES) {
   }, {});
 }
 
+export function getVisibleFeaturePagesForRole(pages = FEATURE_PAGES, role = "普通用户") {
+  const normalizedRole = normalizeDemoRole(role);
+  return pages.filter((page) => isFeaturePageAllowedForRole(page, normalizedRole));
+}
+
+export function getDefaultFeaturePageIdForRole(role = "普通用户") {
+  return getVisibleFeaturePagesForRole(FEATURE_PAGES, role)[0]?.id || FEATURE_PAGES[0].id;
+}
+
+export function getAccessibleFeaturePageById(id, role = "普通用户") {
+  const page = getFeaturePageById(id);
+  if (isFeaturePageAllowedForRole(page, normalizeDemoRole(role))) return page;
+  return getFeaturePageById(getDefaultFeaturePageIdForRole(role));
+}
+
 export function getFeaturePageById(id) {
   const normalizedId = FEATURE_ID_ALIASES[id] || id;
   return FEATURE_PAGES.find((page) => page.id === normalizedId) || FEATURE_PAGES[0];
+}
+
+function normalizeDemoRole(role) {
+  const value = String(role || "").trim().toLowerCase();
+  if (value === "admin" || value === "系统管理员") return "系统管理员";
+  if (value === "data" || value === "数据管理员") return "数据管理员";
+  return "普通用户";
+}
+
+function isFeaturePageAllowedForRole(page, role) {
+  if (role === "系统管理员") return page.module === "系统运行支持模块";
+  if (role === "数据管理员") {
+    return page.module !== "系统运行支持模块" || page.secondary !== "系统基础配置";
+  }
+  return page.module !== "系统运行支持模块";
 }
 
 const FEATURE_ID_ALIASES = {

@@ -258,6 +258,13 @@ class BackendHttpApiTest(unittest.TestCase):
                     "POST",
                     "/system-configs/system-runtime-support",
                     {"payload": payload},
+                    auth_token=admin_token,
+                )
+                denied_config = self._json_error(
+                    base_url,
+                    "POST",
+                    "/system-configs/system-runtime-support",
+                    {"payload": payload},
                     auth_token=data_token,
                 )
                 loaded_config = self._json(
@@ -282,6 +289,7 @@ class BackendHttpApiTest(unittest.TestCase):
                 users = self._json(base_url, "GET", "/users", auth_token=admin_token)
 
                 self.assertEqual(saved_config["payload"]["modelingForms"]["personnelSpecialties"], ["机务"])
+                self.assertEqual(denied_config["code"], "forbidden")
                 self.assertEqual(loaded_config["payload"]["modelingForms"]["fieldUnits"]["equipment-system:mtbfHours"], "小时")
                 self.assertEqual(deleted_user["deleted"], True)
                 self.assertNotIn("stage5-planner", {user["username"] for user in users["users"]})

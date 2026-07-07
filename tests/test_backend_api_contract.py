@@ -3638,7 +3638,8 @@ class BackendApiContractTest(unittest.TestCase):
             ],
         )
 
-    def test_stage5_system_config_can_be_saved_by_data_admin_and_is_audited(self) -> None:
+    def test_stage5_system_config_can_be_saved_only_by_admin_and_is_audited(self) -> None:
+        admin_session = self.api.login("admin", "admin")
         data_session = self.api.login("data", "data")
         user_session = self.api.login("user", "user")
         payload = {
@@ -3652,13 +3653,20 @@ class BackendApiContractTest(unittest.TestCase):
         saved = self.api.save_system_config(
             "system-runtime-support",
             payload,
-            actor_user_id=data_session["user"]["user_id"],
+            actor_user_id=admin_session["user"]["user_id"],
         )
         loaded = self.api.get_system_config("system-runtime-support")
 
         self.assertEqual(missing["payload"], {})
         self.assertEqual(saved["payload"]["modelingForms"]["fieldUnits"]["equipment-system:mtbfHours"], "小时")
         self.assertEqual(loaded["payload"]["modelingForms"]["personnelSpecialties"], ["机务"])
+        with self.assertRaises(BackendApiError) as data_forbidden_ctx:
+            self.api.save_system_config(
+                "system-runtime-support",
+                payload,
+                actor_user_id=data_session["user"]["user_id"],
+            )
+        self.assertEqual(data_forbidden_ctx.exception.code, "forbidden")
         with self.assertRaises(BackendApiError) as forbidden_ctx:
             self.api.save_system_config(
                 "system-runtime-support",
@@ -3668,8 +3676,10 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(forbidden_ctx.exception.code, "forbidden")
 
         events = self.repository.list_audit_events(resource_id="system-runtime-support")
+        self.assertEqual(events[-3]["action"], "system_config.save")
+        self.assertEqual(events[-3]["outcome"], "allowed")
         self.assertEqual(events[-2]["action"], "system_config.save")
-        self.assertEqual(events[-2]["outcome"], "allowed")
+        self.assertEqual(events[-2]["outcome"], "denied")
         self.assertEqual(events[-1]["action"], "system_config.save")
         self.assertEqual(events[-1]["outcome"], "denied")
 

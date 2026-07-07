@@ -1,4 +1,11 @@
-import { FEATURE_PAGES, getFeaturePageById, groupFeaturePages } from "./feature-catalog.mjs";
+import {
+  FEATURE_PAGES,
+  getAccessibleFeaturePageById,
+  getDefaultFeaturePageIdForRole,
+  getFeaturePageById,
+  getVisibleFeaturePagesForRole,
+  groupFeaturePages
+} from "./feature-catalog.mjs";
 import { normalizeAviationSupportState } from "./aviation-support-state.mjs";
 import {
   buildBackendProjectJson,
@@ -85,7 +92,6 @@ import {
 } from "./equipment-tree-model.mjs";
 
 const app = document.querySelector("#app");
-const groups = groupFeaturePages(FEATURE_PAGES);
 const FORMAL_AIRCRAFT_SUPPORT_MODEL_FAMILY = "aircraft_support_v1";
 const LAST_BACKEND_RUN_STORAGE_KEY = "spare-mvp:lastBackendRun";
 const AUTH_SESSION_STORAGE_KEY = "spare-mvp:m4Session";
@@ -1500,7 +1506,7 @@ function bindEvents() {
     const systemManagementButton = event.target.closest("[data-system-management-entry]");
     if (systemManagementButton) {
       selectedRoute = "workbench";
-      selectedFeatureId = "system-management-project-data-management";
+      selectedFeatureId = accessibleFeaturePageId("system-management-project-data-management");
       location.hash = `feature=${selectedFeatureId}`;
       render();
       return;
@@ -1809,8 +1815,8 @@ function bindEvents() {
     const featureButton = event.target.closest("[data-feature-id]");
     if (featureButton) {
       selectedRoute = "workbench";
-      selectedFeatureId = featureButton.dataset.featureId;
-      const selectedPage = getFeaturePageById(selectedFeatureId);
+      const selectedPage = accessibleFeaturePage(featureButton.dataset.featureId);
+      selectedFeatureId = selectedPage.id;
       if (selectedPage.component === "experiment-plan-management") {
         experimentPlanManagementMode = "list";
       }
@@ -2517,7 +2523,7 @@ function render() {
     app.innerHTML = renderProjectListPage();
     return;
   }
-  const page = getFeaturePageById(selectedFeatureId);
+  const page = accessibleFeaturePage(selectedFeatureId);
   selectedFeatureId = page.id;
   normalizeSelectedFeatureHash(selectedFeatureId);
   app.innerHTML = `
@@ -2591,7 +2597,7 @@ function renderProjectListPage() {
         </div>
       </div>
       <div class="right">
-        <button type="button" data-system-management-entry>${SYSTEM_SUPPORT_MODULE_NAME}</button>
+        ${canAccessSystemManagementModule() ? `<button type="button" data-system-management-entry>${SYSTEM_SUPPORT_MODULE_NAME}</button>` : ""}
         <button type="button" data-logout>退出</button>
       </div>
     </header>
@@ -2669,7 +2675,29 @@ function projectSourceHelpText(project) {
   return "项目来源待确认。";
 }
 
+function currentFeatureGroups() {
+  return groupFeaturePages(getVisibleFeaturePagesForRole(FEATURE_PAGES, currentUser?.role));
+}
+
+function accessibleFeaturePage(featureId) {
+  return getAccessibleFeaturePageById(featureId || defaultFeaturePageIdForCurrentUser(), currentUser?.role);
+}
+
+function accessibleFeaturePageId(featureId) {
+  return accessibleFeaturePage(featureId).id;
+}
+
+function defaultFeaturePageIdForCurrentUser() {
+  return getDefaultFeaturePageIdForRole(currentUser?.role);
+}
+
+function canAccessSystemManagementModule() {
+  return getVisibleFeaturePagesForRole(FEATURE_PAGES, currentUser?.role)
+    .some((page) => page.module === SYSTEM_SUPPORT_MODULE_NAME);
+}
+
 function renderNavigation(activePage) {
+  const groups = currentFeatureGroups();
   return `
     <aside class="feature-nav" aria-label="功能导航">
       ${Object.entries(groups).map(([moduleName, secondaryGroups]) => `
@@ -2710,7 +2738,7 @@ function renderFeaturePage(page) {
   if (page.component === "analysis") {
     ensureCurrentAnalysisResultLoaded(page);
   }
-  const siblingPages = groups[page.module][page.secondary][page.tertiary];
+  const siblingPages = currentFeatureGroups()[page.module]?.[page.secondary]?.[page.tertiary] || [page];
   const currentContext = shouldEmbedExperimentPlanContextInComponent(page) ? "" : renderCurrentContext(page);
   return `
     <section class="deck-modeling-content feature-page">
@@ -9843,14 +9871,14 @@ async function handleEnterWorkbench(projectId) {
   }
   isLoggedIn = true;
   selectedRoute = "workbench";
-  selectedFeatureId = DEFAULT_FEATURE_ID;
+  selectedFeatureId = defaultFeaturePageIdForCurrentUser();
   isProjectMenuOpen = false;
   backendExperimentPlans = [];
   backendExperimentPlansProjectId = "";
   backendExperimentPlansLoaded = false;
   backendExperimentPlansLoadInFlight = false;
   experimentPlanListStatus = "仿真实验方案列表尚未加载";
-  location.hash = `feature=${DEFAULT_FEATURE_ID}`;
+  location.hash = `feature=${selectedFeatureId}`;
   projectDraftHydrateStatus = "正在读取 Project draft";
   await hydrateCurrentProjectDraftFromApi();
 }

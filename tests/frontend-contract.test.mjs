@@ -2,7 +2,13 @@
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-import { FEATURE_PAGES, getFeaturePageById, groupFeaturePages } from "../front/feature-catalog.mjs";
+import {
+  FEATURE_PAGES,
+  getAccessibleFeaturePageById,
+  getFeaturePageById,
+  getVisibleFeaturePagesForRole,
+  groupFeaturePages
+} from "../front/feature-catalog.mjs";
 import { MODELING_IMPORT_DEMO_FIXTURE } from "../front/modeling-import-demo-fixture.mjs";
 import {
   calculateRmsAllocation,
@@ -159,6 +165,39 @@ test("feature grouping preserves three-level navigation and internal fourth-leve
   assert.equal(getFeaturePageById("mission-reliability-equipment-composition").id, "mission-reliability-equipment-system");
   assert.equal(getFeaturePageById("mission-reliability-equipment-failure").id, "mission-reliability-equipment-system");
   assert.equal(getFeaturePageById("mission-reliability-rms-allocation").id, "system-management-equipment-rms-allocation");
+});
+
+test("demo role permissions expose fixed module visibility without config rows", () => {
+  const modulesForRole = (role) => [...new Set(getVisibleFeaturePagesForRole(FEATURE_PAGES, role).map((page) => page.module))];
+  const adminPages = getVisibleFeaturePagesForRole(FEATURE_PAGES, "系统管理员");
+  const dataPages = getVisibleFeaturePagesForRole(FEATURE_PAGES, "数据管理员");
+  const userPages = getVisibleFeaturePagesForRole(FEATURE_PAGES, "普通用户");
+
+  assert.deepEqual(modulesForRole("系统管理员"), ["系统运行支持模块"]);
+  assert.ok(adminPages.some((page) => page.secondary === "系统基础配置"));
+  assert.deepEqual(modulesForRole("数据管理员"), ["系统运行支持模块", "备件规划评估模块", "任务可靠度评估模块"]);
+  assert.equal(dataPages.some((page) => page.secondary === "系统基础配置"), false);
+  assert.deepEqual(modulesForRole("普通用户"), ["备件规划评估模块", "任务可靠度评估模块"]);
+  assert.equal(userPages.some((page) => page.module === "系统运行支持模块"), false);
+});
+
+test("demo role permissions clamp direct feature routes to first accessible page", () => {
+  assert.equal(
+    getAccessibleFeaturePageById("spare-planning-equipment-system", "系统管理员").id,
+    "system-management-project-data-management"
+  );
+  assert.equal(
+    getAccessibleFeaturePageById("system-management-user-management", "数据管理员").id,
+    "system-management-project-data-management"
+  );
+  assert.equal(
+    getAccessibleFeaturePageById("system-management-project-data-management", "普通用户").id,
+    "spare-planning-equipment-system"
+  );
+  assert.equal(
+    getAccessibleFeaturePageById("mission-reliability-equipment-system", "数据管理员").id,
+    "mission-reliability-equipment-system"
+  );
 });
 
 test("modeling form management describes composite task item fields", async () => {
