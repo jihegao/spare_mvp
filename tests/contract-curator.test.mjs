@@ -6,6 +6,7 @@ import { validateSchema } from "./schema-test-utils.mjs";
 
 const contractFiles = [
   "project.schema.json",
+  "aircraft_support_v1_project.schema.json",
   "scenario.schema.json",
   "aircraft_support_v1_input.schema.json",
   "run.schema.json",
