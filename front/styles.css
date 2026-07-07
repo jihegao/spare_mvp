@@ -1409,6 +1409,16 @@ select[multiple].table-edit-select {
   vertical-align: top;
 }
 
+.equipment-system-table .inline-help {
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
+  padding: 0;
+  border-radius: 50%;
+  font-size: 11px;
+  line-height: 16px;
+}
+
 .equipment-system-table input,
 .equipment-system-table select {
   min-width: 112px;

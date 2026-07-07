@@ -77,6 +77,9 @@ import {
   componentBelongsToAircraftModel,
   deleteEquipmentNodeForSelectionModel,
   equipmentComponentsForSelectionModel,
+  equipmentKOutOfNQuantity,
+  normalizeEquipmentComponentKOutOfN,
+  validateEquipmentComponentKOutOfN,
   resolveEquipmentSelectionModel,
   wholeMachineModelsForScenario
 } from "./equipment-tree-model.mjs";
@@ -270,7 +273,7 @@ const MODELING_DATA_MODULES = [
           fieldDef("parentId", "父节点", "components[].parentId"),
           fieldDef("quantity", "数量n", "components[].quantity"),
           fieldDef("componentAttribute", "组件属性", "components[].productType"),
-          fieldDef("kOutOfN", "k值（n中取k）", "components[].kOutOfN.k"),
+          fieldDef("kOutOfN", "可用数量要求k（n中取k）", "components[].kOutOfN.k"),
           fieldDef("mtbfHours", "MTBF", "components[].mtbfHours"),
           fieldDef("mtbfDistributionType", "MTBF-分布类型", "components[].failureDistribution.distributionType"),
           fieldDef("mttrMinutes", "MTTR（min）", "components[].meanRepairTimeMinutes"),
@@ -5622,7 +5625,7 @@ function renderEquipmentSystemTable(selectedState) {
             <th>父节点</th>
             <th>数量n</th>
             <th>组件属性</th>
-            <th>k值（n中取k）</th>
+            <th>可用数量要求k（n中取k） <button type="button" class="inline-help" title="表示当前节点在数量 n 个同类部件中，至少需要 k 个可用，才认为该节点可用。默认取全部，即 k = n。例如 n=1,k=1 单件必须可用；n=2,k=1 二取一冗余；n=3,k=2 三取二。k 必须为整数，且满足 1 ≤ k ≤ n。" aria-label="可用数量要求k说明">?</button></th>
             <th>MTBF-分布类型</th>
             <th>MTBF参数</th>
             <th>MTTR-分布类型</th>
@@ -5693,9 +5696,10 @@ function equipmentComponentAttributeSelect(index) {
 
 function equipmentKOutOfNInput(selectedIndex) {
   const component = scenario.components[selectedIndex] || {};
-  const quantity = Math.max(0, Math.trunc(Number(component.quantity) || 0));
-  const value = quantity > 1 ? clamp(Math.trunc(Number(component.kOutOfN?.k) || 1), 1, quantity) : 0;
-  return `<input aria-label="k值（n中取k）" data-equipment-k-out-of-n-index="${selectedIndex}" type="number" min="1" max="${htmlEscape(quantity)}" step="1" value="${htmlEscape(value)}" ${quantity > 1 ? "" : "disabled"}>`;
+  normalizeEquipmentComponentKOutOfN(component);
+  const quantity = equipmentKOutOfNQuantity(component.quantity);
+  const value = component.kOutOfN?.k || quantity;
+  return `<input aria-label="可用数量要求k（n中取k）" title="至少需要 k 个可用，范围 1~n。" placeholder="默认全部" data-equipment-k-out-of-n-index="${selectedIndex}" type="number" min="1" max="${htmlEscape(quantity)}" step="1" value="${htmlEscape(value)}">`;
 }
 
 function equipmentDistributionSelect(path, selectedValue, label) {
@@ -11422,18 +11426,29 @@ function normalizeEquipmentStructureRows(rawRows, options = {}) {
     const componentAircraftModel = aircraftModel || Array.from(wholeMachineModels)[0] || options.defaultModel || "导入整机";
     wholeMachineModels.add(componentAircraftModel);
     const componentId = id || `${componentAircraftModel.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-import-${index + 1}`;
-    components.push({
+    const quantity = Math.max(1, Math.floor(pickImportNumber(row, ["quantity", "数量", "装机数量", "n"], row.quantity ?? 1)));
+    const importedKRaw = row.kOutOfN && typeof row.kOutOfN === "object" && !Array.isArray(row.kOutOfN)
+      ? String(row.kOutOfN.k ?? "").trim()
+      : pickImportText(row, ["kOutOfN", "k", "K值", "K值（n中取k）", "可用数量要求k", "n中取k"], "");
+    const importedK = importedKRaw === "" ? quantity : Number(importedKRaw);
+    const nextComponent = {
       ...row,
       id: componentId,
       name: name || componentId,
       aircraftModel: componentAircraftModel,
       parentId: parentId || "aircraft-root",
       productType: /^(LRU|SRU)$/i.test(productType) ? productType.toUpperCase() : (productType && !/整机|whole|aircraft/i.test(productType) ? productType : ""),
-      quantity: Math.max(1, Math.floor(pickImportNumber(row, ["quantity", "数量", "装机数量", "n"], row.quantity ?? 1))),
+      quantity,
+      kOutOfN: { enabled: quantity > 1, n: quantity, k: importedK },
       connectionType: pickImportText(row, ["connectionType", "连接方式", "结构类型"], row.connectionType || "串联"),
       mtbfHours: pickImportNumber(row, ["mtbfHours", "MTBF", "mtbf", "平均故障间隔"], row.mtbfHours ?? 120),
       meanRepairTimeMinutes: pickImportNumber(row, ["meanRepairTimeMinutes", "MTTR", "mttr", "平均修复时间"], row.meanRepairTimeMinutes ?? 120)
-    });
+    };
+    const kMessage = validateEquipmentComponentKOutOfN(nextComponent);
+    if (kMessage) {
+      throw new Error(`${name || componentId}：${kMessage}`);
+    }
+    components.push(normalizeEquipmentComponentKOutOfN(nextComponent));
   });
   const models = Array.from(wholeMachineModels).filter(Boolean);
   return {
@@ -15799,10 +15814,15 @@ function isLiveProjectDraftInput(input) {
 function updateEquipmentKOutOfNInput(input) {
   const component = scenario.components[Number(input.dataset.equipmentKOutOfNIndex)];
   if (!component) return;
-  const quantity = Math.max(0, Math.trunc(Number(component.quantity) || 0));
-  const bounded = quantity > 1 ? clamp(Math.trunc(Number(input.value) || 1), 1, quantity) : 0;
-  component.kOutOfN = { ...(component.kOutOfN || {}), enabled: quantity > 1 && bounded > 0, n: quantity, k: bounded };
-  input.value = String(bounded);
+  const quantity = equipmentKOutOfNQuantity(component.quantity);
+  const nextK = input.value === "" ? quantity : Number(input.value);
+  component.kOutOfN = { ...(component.kOutOfN || {}), enabled: quantity > 1, n: quantity, k: nextK };
+  const message = validateEquipmentComponentKOutOfN(component);
+  input.setCustomValidity(message);
+  if (!message) {
+    normalizeEquipmentComponentKOutOfN(component);
+    input.value = String(component.kOutOfN.k);
+  }
   updatePreviewResultsThroughApiClient();
 }
 
@@ -15811,10 +15831,14 @@ function normalizeEquipmentKOutOfNForPath(path) {
   if (!match) return;
   const component = scenario.components[Number(match[1])];
   if (!component) return;
-  const quantity = Math.max(0, Math.trunc(Number(component.quantity) || 0));
-  const bounded = quantity > 1 ? clamp(Math.trunc(Number(component.kOutOfN?.k) || 1), 1, quantity) : 0;
+  const previousK = component.kOutOfN?.k;
+  const quantity = equipmentKOutOfNQuantity(component.quantity);
   component.quantity = quantity;
-  component.kOutOfN = { ...(component.kOutOfN || {}), enabled: quantity > 1 && bounded > 0, n: quantity, k: bounded };
+  if (previousK === undefined || previousK === null || previousK === "" || Number(previousK) < 1) {
+    component.kOutOfN = { ...(component.kOutOfN || {}), enabled: quantity > 1, n: quantity, k: quantity };
+    return;
+  }
+  component.kOutOfN = { ...(component.kOutOfN || {}), enabled: quantity > 1, n: quantity, k: Number(previousK) };
 }
 
 function parseNumberList(value) {

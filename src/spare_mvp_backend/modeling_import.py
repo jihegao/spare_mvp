@@ -79,6 +79,8 @@ def validate_modeling_import_package(import_package: dict[str, Any]) -> dict[str
                 continue
             _validate_required_fields(collection, row, index, rules.get("required_fields", []), issues)
             _validate_numeric_fields(collection, row, index, rules.get("numeric_fields", []), issues)
+            if collection == "equipmentAssets":
+                _validate_equipment_asset_k_out_of_n(row, index, issues)
             _validate_references(collection, row, index, rules.get("references", []), object_ids, issues)
 
     _validate_equipment_asset_hierarchy(objects.get("equipmentAssets"), issues)
@@ -411,6 +413,24 @@ def _validate_references(
             issues.append(_issue("missing_reference", collection, str(row.get("id") or f"{collection}[{index}]"), f"objects.{collection}[{index}].{reference['field']}", f"{reference['field']} 引用了不存在的 {reference['target']} 对象 {value}。"))
 
 
+def _validate_equipment_asset_k_out_of_n(row: dict[str, Any], index: int, issues: list[dict[str, Any]]) -> None:
+    if "kOutOfN" not in row:
+        return
+    k_out = row.get("kOutOfN")
+    object_id = str(row.get("id") or f"equipmentAssets[{index}]")
+    field_path = f"objects.equipmentAssets[{index}].kOutOfN.k"
+    if not isinstance(k_out, dict):
+        issues.append(_issue("invalid_equipment_k_out_of_n", "equipmentAssets", object_id, field_path, "K 值不能为空；默认应等于数量 n。"))
+        return
+    quantity = _safe_positive_int(row.get("quantity"), 1)
+    raw_k = k_out.get("k")
+    if not _is_positive_integer_value(raw_k):
+        issues.append(_issue("invalid_equipment_k_out_of_n", "equipmentAssets", object_id, field_path, "K 值必须为正整数，且满足 1 ≤ k ≤ n。"))
+        return
+    if int(float(raw_k)) > quantity:
+        issues.append(_issue("invalid_equipment_k_out_of_n", "equipmentAssets", object_id, field_path, "K 值不能大于数量 n；K 值必须满足 1 ≤ k ≤ n。"))
+
+
 def _validate_equipment_asset_hierarchy(rows: Any, issues: list[dict[str, Any]]) -> None:
     assets = rows if isinstance(rows, list) else []
     by_id = {str(row["id"]): row for row in assets if isinstance(row, dict) and row.get("id") not in (None, "")}
@@ -624,6 +644,7 @@ def _equipment_asset_to_component(row: dict[str, Any]) -> dict[str, Any]:
     component["id"] = str(row.get("id") or "equipment")
     component["name"] = str(row.get("name") or row.get("id") or "equipment")
     component["quantity"] = _safe_positive_int(row.get("quantity"), 1)
+    component["kOutOfN"] = _normalized_equipment_k_out_of_n(row, component["quantity"])
     if row.get("parentId") not in (None, ""):
         component["parentId"] = str(row["parentId"])
     mtbf_hours = _safe_positive_float(row.get("mtbfHours"), 0)
@@ -631,6 +652,13 @@ def _equipment_asset_to_component(row: dict[str, Any]) -> dict[str, Any]:
         component["mtbfHours"] = mtbf_hours
         component.setdefault("failureRate", 1 / mtbf_hours)
     return component
+
+
+def _normalized_equipment_k_out_of_n(row: dict[str, Any], quantity: int) -> dict[str, Any]:
+    k_out = row.get("kOutOfN") if isinstance(row.get("kOutOfN"), dict) else {}
+    raw_k = k_out.get("k")
+    k = int(float(raw_k)) if _is_positive_integer_value(raw_k) and int(float(raw_k)) <= quantity else quantity
+    return {**k_out, "enabled": quantity > 1, "n": quantity, "k": k}
 
 
 def _support_nodes_from_resources(resources: list[dict[str, Any]]) -> list[dict[str, str]]:

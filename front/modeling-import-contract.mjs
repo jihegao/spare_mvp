@@ -1,3 +1,8 @@
+import {
+  normalizeEquipmentComponentKOutOfN,
+  validateEquipmentComponentKOutOfN
+} from "./equipment-tree-model.mjs";
+
 export const MODELING_IMPORT_PAGE_MAP = {
   missionProfiles: "任务剖面参数",
   equipmentAssets: "装备系统建模",
@@ -69,6 +74,9 @@ export function validateModelingImportPackage(importPackage) {
       }
       validateRequiredFields(collection, row, index, rules.requiredFields || [], issues);
       validateNumericFields(collection, row, index, rules.numericFields || [], issues);
+      if (collection === "equipmentAssets") {
+        validateEquipmentAssetKOutOfN(row, index, issues);
+      }
       validateReferences(collection, row, index, rules.references || [], objectIds, issues);
     });
   }
@@ -90,7 +98,7 @@ export function projectToModelingImportPackage(projectJson, basePackage = {}) {
   const objects = {
     ...preservedObjectSurfaces(base.objects),
     missionProfiles: [missionProfile],
-    equipmentAssets: normalizeObjectRows(project.components),
+    equipmentAssets: normalizeEquipmentAssetRows(project.components),
     supportResources,
     transportPolicies: projectTransportPolicies(project),
     supportActivities: normalizeSupportActivities(project.supportActivities, { ...project, supportResources }),
@@ -214,6 +222,10 @@ function preservedObjectSurfaces(objects = {}) {
 function normalizeObjectRows(rows) {
   if (!Array.isArray(rows)) return [];
   return rows.filter((row) => row && typeof row === "object" && !Array.isArray(row)).map((row) => cloneJson(row));
+}
+
+function normalizeEquipmentAssetRows(rows) {
+  return normalizeObjectRows(rows).map((row) => normalizeEquipmentComponentKOutOfN(row));
 }
 
 function normalizeSupportActivities(rows, project = {}) {
@@ -650,6 +662,19 @@ function validateReferences(collection, row, index, references, objectIds, issue
       }));
     }
   }
+}
+
+function validateEquipmentAssetKOutOfN(row, index, issues) {
+  if (!row || typeof row !== "object" || Array.isArray(row) || row.kOutOfN === undefined) return;
+  const message = validateEquipmentComponentKOutOfN(row);
+  if (!message) return;
+  issues.push(createIssue({
+    code: "invalid_equipment_k_out_of_n",
+    collection: "equipmentAssets",
+    objectId: row.id || `equipmentAssets[${index}]`,
+    fieldPath: `objects.equipmentAssets[${index}].kOutOfN.k`,
+    message
+  }));
 }
 
 function validateEquipmentAssetHierarchy(rows, issues) {

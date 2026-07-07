@@ -25,6 +25,25 @@ def strip_project_sweep(project_json: dict[str, Any]) -> dict[str, Any]:
     return project
 
 
+def project_k_out_of_n_errors(project_json: dict[str, Any]) -> list[dict[str, str]]:
+    errors: list[dict[str, str]] = []
+    components = project_json.get("components") if isinstance(project_json.get("components"), list) else []
+    for index, component in enumerate(components):
+        if not isinstance(component, dict):
+            continue
+        quantity = _positive_int(component.get("quantity"), 1)
+        k_out = component.get("kOutOfN")
+        if not isinstance(k_out, dict):
+            continue
+        raw_k = k_out.get("k")
+        if not _is_positive_int(raw_k):
+            errors.append(_project_k_out_of_n_error(index, "K 值必须为正整数，且满足 1 ≤ k ≤ n。"))
+            continue
+        if int(float(raw_k)) > quantity:
+            errors.append(_project_k_out_of_n_error(index, "K 值不能大于数量 n；K 值必须满足 1 ≤ k ≤ n。"))
+    return errors
+
+
 def materialize_scenario_composition(project_json: dict[str, Any]) -> dict[str, Any]:
     """Return a Project payload with scenarioComposition overrides applied."""
 
@@ -125,6 +144,7 @@ def _strip_project_non_model_fields(project: dict[str, Any]) -> None:
     _materialize_legacy_support_tables(project)
     _normalize_support_model_tables(project)
     _strip_legacy_support_node_resource_fields(project)
+    _normalize_project_component_k_out_of_n(project)
     mission_profile = project.get("missionProfile")
     if isinstance(mission_profile, dict):
         mission_profile.pop("profileType", None)
@@ -132,6 +152,46 @@ def _strip_project_non_model_fields(project: dict[str, Any]) -> None:
         mission_profile.pop("repeatCycleHours", None)
         mission_profile.pop("analysisRequests", None)
     _strip_typo_only_support_activity_fields(project)
+
+
+def _project_k_out_of_n_error(index: int, message: str) -> dict[str, str]:
+    return {
+        "code": "invalid_equipment_k_out_of_n",
+        "path": f"components[{index}].kOutOfN.k",
+        "message": message,
+    }
+
+
+def _normalize_project_component_k_out_of_n(project: dict[str, Any]) -> None:
+    components = project.get("components") if isinstance(project.get("components"), list) else []
+    for component in components:
+        if not isinstance(component, dict):
+            continue
+        quantity = _positive_int(component.get("quantity"), 1)
+        component["quantity"] = quantity
+        k_out = component.get("kOutOfN")
+        if not isinstance(k_out, dict):
+            component["kOutOfN"] = {"enabled": quantity > 1, "n": quantity, "k": quantity}
+            continue
+        raw_k = k_out.get("k")
+        k = int(float(raw_k)) if _is_positive_int(raw_k) and int(float(raw_k)) <= quantity else quantity
+        component["kOutOfN"] = {**k_out, "enabled": quantity > 1, "n": quantity, "k": k}
+
+
+def _positive_int(value: Any, fallback: int) -> int:
+    if not _is_positive_int(value):
+        return max(1, int(fallback))
+    return int(float(value))
+
+
+def _is_positive_int(value: Any) -> bool:
+    if isinstance(value, bool):
+        return False
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return False
+    return number.is_integer() and number >= 1
 
 
 def _materialize_legacy_support_tables(project: dict[str, Any]) -> None:
