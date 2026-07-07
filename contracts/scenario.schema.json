@@ -66,8 +66,16 @@
       "type": "object",
       "required": ["family", "model_id", "contract_version"],
       "properties": {
-        "family": { "type": "string", "enum": ["aviation_support", "aircraft_support_v1"] },
-        "model_id": { "type": "string", "enum": ["AviationSupportModel", "AircraftSupportV1Model"] },
+        "family": {
+          "description": "Includes aviation_support only as legacy contract evidence for archived fixtures; aviation_support is a retired formal runtime and current formal /api/runs uses aircraft_support_v1.",
+          "type": "string",
+          "enum": ["aviation_support", "aircraft_support_v1"]
+        },
+        "model_id": {
+          "description": "AviationSupportModel is retained only for legacy contract evidence; AircraftSupportV1Model is the current formal runtime model.",
+          "type": "string",
+          "enum": ["AviationSupportModel", "AircraftSupportV1Model"]
+        },
         "contract_version": { "type": "string", "const": "1.0.0" }
       },
       "additionalProperties": false
@@ -125,6 +133,7 @@
   },
   "$defs": {
     "AviationSupportModelSelector": {
+      "description": "Legacy contract evidence only: aviation_support / AviationSupportModel is a retired formal runtime. Current formal /api/runs execution must use aircraft_support_v1 / AircraftSupportV1Model.",
       "type": "object",
       "required": ["family", "model_id", "contract_version"],
       "properties": {
@@ -135,6 +144,7 @@
       "additionalProperties": false
     },
     "AircraftSupportV1ModelSelector": {
+      "description": "Current formal runtime selector for /api/runs.",
       "type": "object",
       "required": ["family", "model_id", "contract_version"],
       "properties": {
@@ -145,6 +155,7 @@
       "additionalProperties": false
     },
     "AviationSupportInputs": {
+      "description": "Legacy contract evidence only for archived aviation_support fixtures; these inputs are not accepted by the current formal /api/runs runtime.",
       "type": "object",
       "required": [
         "aircraft_count",

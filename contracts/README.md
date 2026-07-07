@@ -26,11 +26,11 @@ The persisted/backend Project JSON boundary is narrower than the in-browser draf
 
 `modeling_import.schema.json` also preserves the Phase 2 support-organization/resource and support-activity-library boundaries: recursive support organization nodes, equipment-linked spare rows, personnel specialty values with local dictionary fallback, basic support activity jobs, activity-library references, duration distributions, and predecessor job links.
 
-`scenario.schema.json` requires an explicit `simulation_model` with `family`, `model_id`, and `contract_version`. Its `simulation_inputs` field is split with `oneOf` branches for `aviation_support` and `aircraft_support_v1`, so the Simulation Adapter must compile model-specific inputs instead of coercing a mixed parameter bag. The retired `smoke` selector and inputs are no longer part of the active schema bundle.
+`scenario.schema.json` requires an explicit `simulation_model` with `family`, `model_id`, and `contract_version`. Its `simulation_inputs` field is split with `oneOf` branches for `aviation_support` and `aircraft_support_v1`, so the Simulation Adapter must compile model-specific inputs instead of coercing a mixed parameter bag. The `aviation_support` branch is legacy contract evidence for archived fixtures only; it is a retired formal runtime and must not be treated as accepted by current `/api/runs`. The retired `smoke` selector and inputs are no longer part of the active schema bundle.
 
 The Simulation Adapter lives at `src/spare_mvp_contract/adapter.py`. It validates current Project JSON contract roots, rejects retired `aviation_support` adapter entrypoints with `retired_model_family`, compiles `aircraft_support_v1` for product formal runs, and writes traceable run artifacts. M9.5 defines the archived aviation sampling contract for `aviation_support` formal Monte Carlo, and M9.7.3 defines the `aircraft_support_v1` formal Monte Carlo/projection path through the current `RunIntent -> /api/runs -> RunService -> SimulationAdapter -> aircraft_support_v1 -> SQLite + artifacts` boundary.
 
-`run.schema.json` repeats `model_family` and `model_id` for query, audit, and Result validation.
+`run.schema.json` repeats `model_family` and `model_id` for query, audit, and Result validation. `aviation_support` / `AviationSupportModel` remain allowed only so historical run fixtures continue to validate as legacy contract evidence; current formal runtime records are expected to use `aircraft_support_v1` / `AircraftSupportV1Model`.
 
 `result.schema.json` distinguishes `aviation_support` and `aircraft_support_v1` through `model_family`. It does not normalize metrics across model families, because that would change metric semantics and must go through the Mesa governance process.
 

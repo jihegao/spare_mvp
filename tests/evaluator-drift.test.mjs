@@ -196,6 +196,24 @@ test("scenario schema no longer includes the retired smoke branch", async () => 
   assert.deepEqual(schema.properties.simulation_model.properties.model_id.enum, ["AviationSupportModel", "AircraftSupportV1Model"]);
 });
 
+test("schema selectors label aviation_support as legacy contract evidence", async () => {
+  const scenarioSchema = await readJson("contracts/scenario.schema.json");
+  const runSchema = await readJson("contracts/run.schema.json");
+  const legacyText = [
+    scenarioSchema.$defs.AviationSupportModelSelector.description,
+    scenarioSchema.$defs.AviationSupportInputs.description,
+    scenarioSchema.properties.simulation_model.properties.family.description,
+    scenarioSchema.properties.simulation_model.properties.model_id.description,
+    runSchema.properties.model_family.description,
+    runSchema.properties.model_id.description,
+  ].join("\n");
+
+  assert.match(legacyText, /aviation_support/);
+  assert.match(legacyText, /legacy contract evidence/);
+  assert.match(legacyText, /retired formal runtime/);
+  assert.match(legacyText, /aircraft_support_v1/);
+});
+
 test("result schema keeps aviation support metrics scoped to historical fixtures", async () => {
   const schema = await readJson("contracts/result.schema.json");
   const aviationRequired = requiredMetricSet(schema, "aviation_support");
