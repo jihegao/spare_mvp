@@ -15,6 +15,12 @@ const ACTIVE_RUNTIME_SOURCES = [
   "src/spare_mvp_backend/http_server.py"
 ];
 
+const PRODUCT_RUNTIME_BOUNDARY_SOURCES = [
+  ...ACTIVE_RUNTIME_SOURCES,
+  "src/spare_mvp_backend/run_service.py",
+  "src/spare_mvp_contract/adapter.py"
+];
+
 const LEGACY_PATTERNS = [
   { name: "legacy simulation run route", pattern: /\/simulation-runs/ },
   { name: "legacy raw run alias", pattern: /\bgetRun\s*\(/ }
@@ -93,4 +99,41 @@ test("retired independent Mesa visualization route stays absent while lite analy
   assert.match(combined, /\/mesa-analysis-runs/);
   assert.match(combined, /runLiteMesaAnalysis|run_lite_mesa_analysis/);
   assert.match(combined, /lite_mesa_aircraft_support_v1/);
+});
+
+test("retired aviation_support execution stays outside the product runtime boundary", async () => {
+  const retiredRuntimePatterns = [
+    {
+      name: "legacy aviation_support model import",
+      pattern: /src\.spare_mvp_abm\.aviation_support/
+    },
+    {
+      name: "legacy aviation_support compile helper",
+      pattern: /def _compile_aviation_support_scenario/
+    },
+    {
+      name: "legacy aviation_support runtime helper",
+      pattern: /def _run_aviation_support_scenario/
+    },
+    {
+      name: "legacy aviation_support Monte Carlo runtime helper",
+      pattern: /def _run_aviation_support_monte_carlo_scenario/
+    },
+    {
+      name: "legacy aviation_support Monte Carlo sample helper",
+      pattern: /def _run_aviation_monte_carlo_sample/
+    }
+  ];
+  const violations = [];
+
+  for (const filePath of PRODUCT_RUNTIME_BOUNDARY_SOURCES) {
+    const source = await readFile(new URL(`../${filePath}`, import.meta.url), "utf8");
+    for (const { name, pattern } of retiredRuntimePatterns) {
+      if (pattern.test(source)) {
+        violations.push(`${filePath}: ${name}`);
+      }
+    }
+  }
+
+  assert.deepEqual(violations, []);
 });

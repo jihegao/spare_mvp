@@ -407,7 +407,7 @@ test("artifact manifest schema rejects an artifact entry without size_bytes", as
   assert.ok(errors.some((error) => error.includes("size_bytes")));
 });
 
-test("minimal contract fixtures validate against their schemas", async () => {
+test("legacy aviation_support contract fixtures validate against their schemas", async () => {
   const fixturePairs = [
     ["contracts/project.schema.json", "tests/fixtures/aviation_support_project.json"],
     ["contracts/scenario.schema.json", "tests/fixtures/aviation_support_scenario.json"],
@@ -423,7 +423,7 @@ test("minimal contract fixtures validate against their schemas", async () => {
   }
 });
 
-test("minimal contract fixtures form a consistent end-to-end object graph", async () => {
+test("legacy aviation_support contract fixtures form a consistent end-to-end object graph", async () => {
   for (const family of ["aviation_support"]) {
     const project = await readJson(`tests/fixtures/${family}_project.json`);
     const scenario = await readJson(`tests/fixtures/${family}_scenario.json`);
