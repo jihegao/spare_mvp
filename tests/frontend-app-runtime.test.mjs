@@ -503,6 +503,69 @@ test("project data raw JSON normalizes legacy basicMission fields", async () => 
   }
 });
 
+test("periodic task editor keeps total task fields on left and saves weekly details", async () => {
+  const projectJson = createRuntimeProjectJson({
+    project_id: "project-runtime",
+    missionProfile: {
+      name: "运行时任务剖面",
+      durationHours: 8,
+      compositeTasks: [
+        { id: "composite-day", name: "昼间出动", taskItems: [] },
+        { id: "composite-night", name: "夜间警戒", taskItems: [] }
+      ],
+      periodicTasks: [{
+        id: "periodic-runtime",
+        parentTaskName: "旧总任务",
+        name: "旧周期性任务名",
+        repeatWeeks: 2,
+        compositeTasks: [
+          { weekIndex: 1, weekday: "mondayCompositeTaskId", compositeTaskId: "composite-day" },
+          { weekIndex: 2, weekday: "tuesdayCompositeTaskId", compositeTaskId: "composite-night" }
+        ]
+      }]
+    }
+  });
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-periodic-task",
+    projectJson
+  });
+
+  try {
+    await runtime.flush();
+
+    assert.match(runtime.appNode.innerHTML, /总任务名称/);
+    assert.match(runtime.appNode.innerHTML, /总周数/);
+    assert.match(runtime.appNode.innerHTML, /value="旧总任务"/);
+    assert.match(runtime.appNode.innerHTML, /第1周/);
+    assert.match(runtime.appNode.innerHTML, /第2周/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /上级任务名称/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /周期性任务名称/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /每周天数/);
+
+    await runtime.input("[data-periodic-field]", { periodicField: "parentTaskName" }, { value: "舰载机总任务" });
+    await runtime.input("[data-periodic-field]", { periodicField: "repeatWeeks" }, { value: "3" });
+    await runtime.click("[data-periodic-select-week]", { periodicSelectWeek: "3" });
+    assert.match(runtime.appNode.innerHTML, /第3周/);
+
+    await runtime.input("[data-periodic-field]", { periodicField: "weekComposite:14" }, { value: "composite-night" });
+    await runtime.click("[data-project-draft-save]");
+
+    const savedProject = await waitForProjectSave(runtime, (body) => (
+      body.missionProfile?.periodicTasks?.[0]?.parentTaskName === "舰载机总任务"
+        && body.missionProfile.periodicTasks[0].repeatWeeks === 3
+        && body.missionProfile.periodicTasks[0].compositeTasks.some((row) => (
+          row.weekIndex === 3
+            && row.weekday === "mondayCompositeTaskId"
+            && row.compositeTaskId === "composite-night"
+        ))
+    ), "expected periodic task edits to save into Project draft");
+
+    assert.equal(savedProject.missionProfile.periodicTasks[0].name, "旧周期性任务名");
+  } finally {
+    runtime.restore();
+  }
+});
+
 test("modeling granularity page switches locked field presets", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=system-management-modeling-granularity-management"

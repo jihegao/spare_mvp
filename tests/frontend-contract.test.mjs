@@ -1641,7 +1641,7 @@ test("phase 1B mission modeling convergence contract is documented in source", a
   assert.match(compositeSource, /\.sort\(\(left, right\) => left\.totalStartMinutes - right\.totalStartMinutes\)/);
   assert.match(compositeSource, /\.map\(\(row, index\) => \(\{ \.\.\.row, sequence: index \+ 1 \}\)\)/);
 
-  assert.match(periodicSource, /上级任务名称/);
+  assert.match(periodicSource, /总任务名称/);
   assert.match(periodicSource, /parentTaskName/);
   assert.match(periodicSource, /总周数/);
   assert.match(periodicSource, /data-periodic-select-week/);
@@ -1649,7 +1649,8 @@ test("phase 1B mission modeling convergence contract is documented in source", a
   assert.doesNotMatch(periodicSource, /data-periodic-delete="\$\{htmlEscape\(task\.id\)\}"/);
   assert.doesNotMatch(periodicSource, /data-periodic-select="\$\{htmlEscape\(task\.id\)\}">选择<\/button>/);
   assert.doesNotMatch(periodicSource, /任务周期天数/);
-  assert.match(periodicSource, /每周天数/);
+  assert.doesNotMatch(periodicSource, /每周天数/);
+  assert.doesNotMatch(periodicSource, /周期性任务名称/);
   assert.match(periodicSource, /周次/);
   assert.match(periodicSource, /周内日/);
   assert.match(periodicModelSource, /weekIndex/);
@@ -1767,12 +1768,13 @@ test("mission task profile pages split composite and periodic task modeling", as
   assert.match(periodicSource, /data-periodic-select-week/);
   assert.match(periodicSource, /clickable-table-row \$\{weekIndex === selectedPeriodicWeekIndex \? "selected-table-row" : ""\}/);
   assert.match(periodicSource, /aria-selected="\$\{weekIndex === selectedPeriodicWeekIndex \? "true" : "false"\}"/);
-  assert.match(periodicSource, /上级任务名称/);
+  assert.match(periodicSource, /总任务名称/);
+  assert.match(periodicSource, /periodic-summary-controls/);
   assert.doesNotMatch(periodicSource, /任务周期天数/);
   assert.doesNotMatch(periodicSource, /max="30"/);
   assert.doesNotMatch(periodicSource, /重复轮次/);
-  assert.match(periodicSource, /每周天数/);
-  assert.match(periodicSource, /value="7"/);
+  assert.doesNotMatch(periodicSource, /每周天数/);
+  assert.doesNotMatch(periodicSource, /周期性任务名称/);
   assert.match(periodicSource, /周次/);
   assert.match(periodicSource, /周内日/);
   assert.match(periodicSource, /复合任务名称/);

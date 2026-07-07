@@ -4816,19 +4816,21 @@ function renderPeriodicTaskModeling(page) {
         <div class="tree-toolbar">
           <h4>周期性任务周列表</h4>
           ${selectedDraft ? `
-            <label>总周数 *<input data-periodic-field="repeatWeeks" type="number" min="1" step="1" value="${htmlEscape(totalWeeks)}"></label>
+            <div class="periodic-summary-controls">
+              <label>总任务名称 *<input data-periodic-field="parentTaskName" value="${htmlEscape(selectedDraft.parentTaskName)}" placeholder="例如：舰载机昼夜任务"></label>
+              <label>总周数 *<input data-periodic-field="repeatWeeks" type="number" min="1" step="1" value="${htmlEscape(totalWeeks)}"></label>
+            </div>
           ` : ""}
         </div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>周次</th><th>周期性任务名称</th></tr></thead>
+            <thead><tr><th>周次</th></tr></thead>
             <tbody>
               ${selectedDraft ? Array.from({ length: totalWeeks }, (_, index) => index + 1).map((weekIndex) => `
                 <tr class="clickable-table-row ${weekIndex === selectedPeriodicWeekIndex ? "selected-table-row" : ""}" data-periodic-select-week="${weekIndex}" aria-selected="${weekIndex === selectedPeriodicWeekIndex ? "true" : "false"}">
                   <td>第${weekIndex}周</td>
-                  <td>${htmlEscape(selectedDraft.name)}</td>
                 </tr>
-              `).join("") : `<tr><td colspan="2" class="muted">暂无周期性任务数据</td></tr>`}
+              `).join("") : `<tr><td class="muted">暂无周期性任务数据</td></tr>`}
             </tbody>
           </table>
         </div>
@@ -4845,10 +4847,7 @@ function renderPeriodicTaskModeling(page) {
           ${selectedDraft ? `
             ${compositeTasks.length === 0 ? `<div class="alert warn">请先在复合任务建模中维护复合任务。</div>` : ""}
             <div class="form-table-grid">
-              <label>上级任务名称 *<input data-periodic-field="parentTaskName" value="${htmlEscape(selectedDraft.parentTaskName)}" placeholder="例如：舰载机昼夜任务"></label>
-              <label>周期性任务名称 *<input data-periodic-field="name" value="${htmlEscape(selectedDraft.name)}" placeholder="例如：一周飞行训练计划A"></label>
               <label>周次<input readonly value="第${htmlEscape(selectedPeriodicWeekIndex)}周"></label>
-              <label>每周天数<input readonly value="7"></label>
             </div>
             <div class="table-wrap" style="margin-top:12px;">
               <table>

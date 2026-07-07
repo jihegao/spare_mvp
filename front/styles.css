@@ -1181,6 +1181,11 @@ select[multiple].table-edit-select {
   grid-template-columns: minmax(320px, 360px) minmax(0, 1fr);
 }
 
+.task-modeling-periodic-layout .tree-toolbar {
+  align-items: stretch;
+  flex-direction: column;
+}
+
 .periodic-panel-head {
   display: flex;
   align-items: flex-start;
@@ -1195,6 +1200,13 @@ select[multiple].table-edit-select {
 
 .periodic-panel-head p {
   margin: 4px 0 0;
+}
+
+.periodic-summary-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 96px;
+  gap: 10px;
+  width: 100%;
 }
 
 .table-actions {
