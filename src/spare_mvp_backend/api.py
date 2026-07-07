@@ -187,7 +187,7 @@ class BackendApi:
     ) -> dict[str, Any]:
         self._require_role(
             actor_user_id,
-            {"系统管理员", "数据管理员"},
+            {"系统管理员"},
             action="system_config.save",
             resource_type="system_config",
             resource_id=config_key,

@@ -730,6 +730,7 @@ test("equipment RMS granularity locks excluded modeling pages while keeping equi
 test("modeling form management only renders personnel dictionary and time unit fields", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=system-management-modeling-form-management",
+    sessionUser: { username: "admin", role: "系统管理员" },
     projectJson: createRuntimeProjectJson({
       modelingDictionaries: {
         personnelSpecialties: ["机务", "航电"]
@@ -2535,6 +2536,7 @@ async function setupRuntimeApp({
   projectJson = createRuntimeProjectJson(),
   importFile = null,
   experimentPlans = [],
+  sessionUser = { username: "data", role: "数据管理员" },
   backendProjects = [{
     project_id: "project-runtime",
     experiment_name: "Runtime 项目",
@@ -2641,7 +2643,7 @@ async function setupRuntimeApp({
       return jsonResponse(MODELING_IMPORT_DEMO_FIXTURE);
     }
     if (url === "/api/auth/session") {
-      return jsonResponse({ user: { username: "data", role: "数据管理员" } });
+      return jsonResponse({ user: sessionUser });
     }
     if (url === "/api/projects" && method === "GET") {
       return jsonResponse({
