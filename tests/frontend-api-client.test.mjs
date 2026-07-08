@@ -16,6 +16,7 @@ test("frontend API client exposes stable PR-F save run and result methods", asyn
       if (request.path === "/projects/project-ui") return { project_id: "project-ui", project_version: "project-v0.1" };
       if (request.path === "/projects/project-ui/modeling-snapshots") return { snapshot_id: "snapshot-ui" };
       if (request.path === "/projects/project-ui/experiment-plans") return { experiment_plan_id: "plan-ui" };
+      if (request.path === "/projects/project-ui/experiment-plans/plan-ui") return { experiment_plan_id: "plan-ui", status: "draft" };
       if (request.path === "/runs") {
         return {
           run_id: "run-ui",
@@ -53,9 +54,10 @@ test("frontend API client exposes stable PR-F save run and result methods", asyn
   const deletedProject = await client.deleteProject(saved.project_id);
   const snapshot = await client.createModelingSnapshot(saved.project_id);
   const plan = await client.createExperimentPlan(saved.project_id, { steps: 2 });
+  const updatedPlan = await client.updateExperimentPlan(saved.project_id, plan.experiment_plan_id, { steps: 3 });
   const run = await client.submitRun({
     project_id: saved.project_id,
-    experiment_plan_id: plan.experiment_plan_id,
+    experiment_plan_id: updatedPlan.experiment_plan_id,
     model_family: "aircraft_support_v1",
     run_type: "single"
   });
@@ -82,14 +84,15 @@ test("frontend API client exposes stable PR-F save run and result methods", asyn
     "DELETE /projects/project-ui",
     "POST /projects/project-ui/modeling-snapshots",
     "POST /projects/project-ui/experiment-plans",
+    "PUT /projects/project-ui/experiment-plans/plan-ui",
     "POST /runs",
     "GET /runs/run-ui",
     "GET /runs/run-ui/result",
     "GET /runs/run-ui/artifacts",
     "GET /runs/run-ui/chain"
   ]);
-  assert.equal(calls[7].body.model_family, "aircraft_support_v1");
-  assert.equal(calls[7].body.run_type, "single");
+  assert.equal(calls[8].body.model_family, "aircraft_support_v1");
+  assert.equal(calls[8].body.run_type, "single");
 });
 
 test("frontend API client exposes only canonical run read routes", async () => {
@@ -1409,6 +1412,9 @@ test("frontend API client sends experiment plan branch project JSON to backend",
       if (request.path === "/projects/project-branch/experiment-plans") {
         return { experiment_plan_id: "plan-branch", config: request.body.config };
       }
+      if (request.path === "/projects/project-branch/experiment-plans/plan-branch") {
+        return { experiment_plan_id: "plan-branch", config: request.body.config };
+      }
       throw new Error(`unexpected request ${request.method} ${request.path}`);
     }
   });
@@ -1420,6 +1426,10 @@ test("frontend API client sends experiment plan branch project JSON to backend",
   };
 
   await client.createExperimentPlan("project-branch", buildExperimentPlanConfig(projectJson));
+  await client.updateExperimentPlan("project-branch", "plan-branch", buildExperimentPlanConfig({
+    ...projectJson,
+    experiment: { ...projectJson.experiment, steps: 9 }
+  }));
 
   assert.equal(calls[0].path, "/projects/project-branch/experiment-plans");
   assert.equal(calls[0].body.config.seed, 42);
@@ -1427,6 +1437,9 @@ test("frontend API client sends experiment plan branch project JSON to backend",
   assert.equal("experiment" in calls[0].body.config.projectJson, false);
   assert.equal("analysisRequests" in calls[0].body.config.projectJson, false);
   assert.equal("monteCarlo" in calls[0].body.config.projectJson, false);
+  assert.equal(calls[1].method, "PUT");
+  assert.equal(calls[1].path, "/projects/project-branch/experiment-plans/plan-branch");
+  assert.equal(calls[1].body.config.steps, 9);
 });
 
 test("frontend API client logs in and attaches M4 bearer token to protected calls", async () => {

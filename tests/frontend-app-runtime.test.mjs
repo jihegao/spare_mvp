@@ -1576,24 +1576,25 @@ test("basic support activity library filters rows by selected activity type", as
     durationMinutes: 55
   });
   const runtime = await setupRuntimeApp({ projectJson });
+  const operationsWorkNamePattern = /(?:初始工作项目|飞行前准备基本保障活动1)/;
 
   try {
     await runtime.click("[data-enter-workbench]", { projectId: "project-runtime" });
     await runtime.setHash("feature=spare-planning-basic-support-activity");
 
-    await waitForRuntimeHtml(runtime, /初始工作项目/, "expected runtime project support activity rows to load");
-    assert.match(runtime.appNode.innerHTML, /初始工作项目/);
+    await waitForRuntimeHtml(runtime, operationsWorkNamePattern, "expected runtime project support activity rows to load");
+    assert.match(runtime.appNode.innerHTML, operationsWorkNamePattern);
     assert.doesNotMatch(runtime.appNode.innerHTML, /定检基本保障活动/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /部件修复作业/);
 
     await runtime.change("[data-basic-activity-import-type-select]", {}, { value: "修复性维修" });
     assert.match(runtime.appNode.innerHTML, /部件修复作业/);
-    assert.doesNotMatch(runtime.appNode.innerHTML, /初始工作项目/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, operationsWorkNamePattern);
     assert.doesNotMatch(runtime.appNode.innerHTML, /定检基本保障活动/);
 
     await runtime.change("[data-basic-activity-import-type-select]", {}, { value: "预防性维修" });
     assert.match(runtime.appNode.innerHTML, /定检基本保障活动/);
-    assert.doesNotMatch(runtime.appNode.innerHTML, /初始工作项目/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, operationsWorkNamePattern);
     assert.doesNotMatch(runtime.appNode.innerHTML, /部件修复作业/);
   } finally {
     runtime.restore();
@@ -2425,10 +2426,18 @@ test("experiment plan edit preserves saved seed policy scenario composition and 
     await runtime.click("[data-save-plan]");
 
     const updatePlanRequest = runtime.requests.find((request) => (
-      request.url === "/api/projects/project-runtime/experiment-plans"
-      && (request.options.method || "GET") === "POST"
+      request.url === "/api/projects/project-runtime/experiment-plans/plan-saved-composition"
+      && (request.options.method || "GET") === "PUT"
     ));
-    assert.ok(updatePlanRequest, "saved experiment plan edit should be posted to backend");
+    assert.ok(updatePlanRequest, "saved experiment plan edit should update the original backend plan");
+    assert.equal(
+      runtime.requests.some((request) => (
+        request.url === "/api/projects/project-runtime/experiment-plans"
+        && (request.options.method || "GET") === "POST"
+      )),
+      false,
+      "editing a saved experiment plan must not create a new plan"
+    );
     const body = JSON.parse(updatePlanRequest.options.body || "{}");
     assert.equal(body.config.name, "已保存拼接方案");
     assert.equal(body.config.steps, 36);
@@ -2483,7 +2492,7 @@ test("experiment plan selection uses experiment_plan_id for duplicate names", as
   }
 });
 
-test("visual simulation waits for explicit run before starting formal visualization", async () => {
+test("visual simulation waits for explicit start and runs lite Mesa without auto replay", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=spare-planning-visual-mesa-page",
     projectJson: createRuntimeProjectJson()
@@ -2495,17 +2504,46 @@ test("visual simulation waits for explicit run before starting formal visualizat
     assert.equal(
       runtime.requests.some((request) => request.url === "/api/runs"),
       false,
-      "visual page load should not auto-start formal visualization"
+      "visual page load should not auto-start retired formal visualization"
     );
 
     await runtime.click("[data-mesa-control]", { mesaControl: "start-new-run" });
 
     const runRequest = runtime.requests
-      .filter((request) => request.url === "/api/runs")
+      .filter((request) => request.url === "/api/mesa-analysis-runs")
       .map((request) => JSON.parse(request.options.body || "{}"))
-      .find((body) => body.run_type === "single");
-    assert.ok(runRequest, "explicit start button should submit a formal single run");
+      .find((body) => body.analysis_type === "mission_reliability");
+    assert.ok(runRequest, "explicit start button should submit a lite Mesa visualization run");
     assert.equal(runRequest.model_family, "aircraft_support_v1");
+    assert.equal(
+      runtime.requests.some((request) => request.url === "/api/runs"),
+      false,
+      "visual new start must not submit retired /api/runs"
+    );
+    assert.match(runtime.appNode.innerHTML, /Lite Mesa 仿真已完成/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /开始回放/);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("visual simulation treats lite Mesa session without run id as completed", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-visual-mesa-page",
+    projectJson: createRuntimeProjectJson(),
+    liteMesaAnalysisResponseOverrides: { run_id: "" }
+  });
+
+  try {
+    await runtime.click("[data-mesa-control]", { mesaControl: "start-new-run" });
+
+    assert.match(runtime.appNode.innerHTML, /Lite Mesa 仿真已完成/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /Lite Mesa 仿真未返回 run_id/);
+    assert.equal(
+      runtime.requests.some((request) => request.url === "/api/runs"),
+      false,
+      "visual Mesa session must not fall back to retired /api/runs"
+    );
   } finally {
     runtime.restore();
   }
@@ -2749,6 +2787,7 @@ async function setupRuntimeApp({
   importFile = null,
   experimentPlans = [],
   sessionUser = { username: "data", role: "数据管理员" },
+  liteMesaAnalysisResponseOverrides = {},
   backendProjects = [{
     project_id: "project-runtime",
     experiment_name: "Runtime 项目",
@@ -2882,6 +2921,15 @@ async function setupRuntimeApp({
         config: body.config || {}
       });
     }
+    const experimentPlanItemMatch = url.match(/^\/api\/projects\/([^/]+)\/experiment-plans\/([^/]+)$/);
+    if (experimentPlanItemMatch && method === "PUT") {
+      const body = JSON.parse(options.body || "{}");
+      return jsonResponse({
+        project_id: decodeURIComponent(experimentPlanItemMatch[1]),
+        experiment_plan_id: decodeURIComponent(experimentPlanItemMatch[2]),
+        config: body.config || {}
+      });
+    }
     const currentAnalysisMatch = url.match(/^\/api\/projects\/([^/]+)\/analysis-results\/([^/]+)$/);
     if (currentAnalysisMatch && method === "GET") {
       return jsonResponse(createRuntimeCurrentAnalysisResult(
@@ -2983,10 +3031,11 @@ async function setupRuntimeApp({
 		          ["任务失败次数", "3"]
 		        ]
 		      };
+          const runId = `lite-mesa-runtime-${analysisType}`;
 		      return jsonResponse({
 	        status: "session_complete",
 	        source: "lite_mesa_aircraft_support_v1",
-	        run_id: `lite-mesa-runtime-${analysisType}`,
+	        run_id: runId,
 	        project_id: body.project?.project_id || "project-runtime",
 	        scenario_id: body.project?.scenarioId || "scenario-runtime",
 	        scenario_version: "scenario-v0.1",
@@ -3023,8 +3072,8 @@ async function setupRuntimeApp({
 	            ]
 	          : [],
 	        daily_rows: [],
-        event_snapshots: analysisType === "downtime_factors"
-          ? [
+	        event_snapshots: analysisType === "downtime_factors"
+	          ? [
               {
                 snapshot_id: "downtime-runtime-0001",
                 source: "model_event_log",
@@ -3052,10 +3101,12 @@ async function setupRuntimeApp({
                 spare_shortages: [{ spare_type: "hyd-pump", required_quantity: 1, available_quantity: 0, job_id: "repair-J15-101" }],
                 job_node: { job_id: "repair-J15-101", kind: "repair", state: "waiting", task: "更换液压泵", tail_number: "J15-101" }
               }
-            ]
-          : [],
+	            ]
+	          : [],
+	        visualization_state_series: createRuntimeVisualizationStateSeries(runId),
 	        limitations: ["本次分析结果不写入正式结果账本。"],
-	        message: ""
+	        message: "",
+          ...liteMesaAnalysisResponseOverrides
 	      });
 	    }
 	    if (url === "/api/runs" && method === "POST") {

@@ -336,6 +336,14 @@ class BackendHttpApiTest(unittest.TestCase):
                 )
 
                 plans = self._json(base_url, "GET", f"/projects/{saved['project_id']}/experiment-plans")
+                updated = self._json(
+                    base_url,
+                    "PUT",
+                    f"/projects/{quote(saved['project_id'], safe='')}/experiment-plans/{quote(plan['experiment_plan_id'], safe='')}",
+                    {"config": {"name": "http visual cleanup", "steps": 5, "projectJson": created["project"]}},
+                    auth_token=auth_token,
+                )
+                after_update = self._json(base_url, "GET", f"/projects/{saved['project_id']}/experiment-plans")
                 deleted = self._json(
                     base_url,
                     "DELETE",
@@ -347,6 +355,9 @@ class BackendHttpApiTest(unittest.TestCase):
 
                 self.assertEqual(plans["experiment_plans"][0]["experiment_plan_id"], plan["experiment_plan_id"])
                 self.assertEqual(plans["experiment_plans"][0]["run_count"], 1)
+                self.assertEqual(updated["experiment_plan_id"], plan["experiment_plan_id"])
+                self.assertEqual(updated["config"]["steps"], 5)
+                self.assertEqual([item["experiment_plan_id"] for item in after_update["experiment_plans"]], [plan["experiment_plan_id"]])
                 self.assertEqual(deleted["soft_deleted_run_ids"], [run["run_id"]])
                 self.assertEqual(after["experiment_plans"], [])
                 deleted_run = next(item for item in run_list["runs"] if item["run_id"] == run["run_id"])

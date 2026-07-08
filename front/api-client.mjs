@@ -94,6 +94,13 @@ export function createBackendApiClient({ baseUrl = DEFAULT_API_BASE, transport, 
         body: { config }
       });
     },
+    updateExperimentPlan(projectId, experimentPlanId, config) {
+      return request({
+        method: "PUT",
+        path: `/projects/${encodeURIComponent(projectId)}/experiment-plans/${encodeURIComponent(experimentPlanId)}`,
+        body: { config }
+      });
+    },
     listExperimentPlans(projectId) {
       return request({
         method: "GET",

@@ -24,6 +24,7 @@ REMOVED_MISSION_AREA_KEYS = {"missionAreas", "mission_areas"}
 TABLE_PATHS = {
     "missionProfile": ("missionProfile",),
     "basicMissions": ("basicMissions",),
+    "basicMissions.missionPhases": ("basicMissions", "*", "missionPhases"),
     "missionProfile.compositeTasks": ("missionProfile", "compositeTasks"),
     "missionProfile.periodicTasks": ("missionProfile", "periodicTasks"),
     "components": ("components",),
@@ -383,7 +384,20 @@ def _explain_tasks(project: dict[str, Any], memory: dict[str, Any]) -> dict[str,
                 "kind": "periodic",
             }
         )
-    return {"row_count": len(rows), "tables": _memory_tables(memory, ("missionProfile", "basicMissions", "missionProfile.compositeTasks", "missionProfile.periodicTasks")), "rows": rows}
+    return {
+        "row_count": len(rows),
+        "tables": _memory_tables(
+            memory,
+            (
+                "missionProfile",
+                "basicMissions",
+                "basicMissions.missionPhases",
+                "missionProfile.compositeTasks",
+                "missionProfile.periodicTasks",
+            ),
+        ),
+        "rows": rows,
+    }
 
 
 def _explain_equipment(project: dict[str, Any], memory: dict[str, Any]) -> dict[str, Any]:

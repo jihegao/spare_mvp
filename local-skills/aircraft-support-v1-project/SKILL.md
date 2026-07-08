@@ -17,6 +17,7 @@ Use this skill for local aircraft_support_v1 analysis from Project JSON. Keep it
 2. Remember the modeling table structure.
    - Run `remember-structure --project-json <project.json> --memory <memory.json>`.
    - Treat the memory as a reusable schema note for this Project shape, not as runtime output.
+   - For clean Project JSON, expect task phases under `basicMissions[].missionPhases`, support job definitions under top-level `supportActivityJobs`, activity references under `supportActivities[].activityCodes`, and logistics links under top-level `transportPolicies` or node-scoped `supportNodes[].transportPolicies`.
 3. Explain the data in this exact order: `任务`, `装备`, `保障组织`, `保障活动`.
    - Run `explain --project-json <project.json> --memory <memory.json>`.
    - Use the four domains to separate mission/task intent, aircraft/equipment structure, organization/resources, and support work definitions.
@@ -27,6 +28,7 @@ Use this skill for local aircraft_support_v1 analysis from Project JSON. Keep it
 5. Run the independent Mesa path only after the Project JSON can be explained.
    - Run `run --project-json <project.json> --repo-root <repo-with-src-package> --duration-minutes <n> --sample-every-minutes <n> --seed <n>`.
    - This compiles Project JSON to `aircraft-support-v1-input-v0` inside the skill script and imports only the `AircraftSupportV1Model` package from the provided repo/package path.
+   - The independent compiler must prefer the clean format from issues `#160`-`#168`: no root `missionAreas`, no root `reliabilityBlockDiagram`, no required root `missionPhases`, no nested durable `supportActivities[].jobs`, and no nested `supportActivities[].transportStrategies`.
 
 ## Script Contract
 
@@ -59,7 +61,8 @@ Guardrails:
 
 - Keep Project modeling data, runtime config, experiment plans, and simulation outputs separate.
 - Save edited files as new Project templates by setting a new `project_id` plus `projectInfo.isTemplate` / `projectInfo.is_template`; preserve `sourceProjectId` for traceability.
-- Treat `supportActivities[].jobs[]` as ordered work definitions; preserve `activityCode`/`id` and `predecessors`.
+- Treat top-level `supportActivityJobs[]` as reusable work definitions; `supportActivities[].activityCodes[]` selects the jobs, and `supportActivities[].predecessors` carries the DAG order. Use legacy `supportActivities[].jobs[]` only as a fallback.
 - Treat `supportNodes`, `supportResources`, and `supportOrganization` as allocation/governance scope, not display-only metadata.
-- Treat `components`, `combatUnit.members`, and `reliabilityBlockDiagram` as equipment structure and behavior inputs.
+- Treat `components` and `combatUnit.members` as equipment structure and behavior inputs. In clean Project JSON, derive LRU repair spare names from component names when `spareType` is absent, and use `failureDistribution` / `repairDistribution` instead of restored legacy rate or repair-ratio fields.
+- Treat root `reliabilityBlockDiagram`, root `missionAreas`, and root `missionPhases` as legacy fallbacks, not required clean Project tables.
 - If the user asks whether the formal product path accepts the same Project, switch to repo inspection and adapter tests; do not infer formal acceptance from this independent script.

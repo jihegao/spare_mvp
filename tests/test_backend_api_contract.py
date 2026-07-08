@@ -2112,6 +2112,9 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(payload["wave_rows"][0]["sampleCount"], 2)
         self.assertIn("meanMissionSuccessRate", payload["wave_rows"][0])
         self.assertNotIn("seed", payload["wave_rows"][0])
+        self.assertEqual(payload["visualization_state_series"]["run_id"], payload["run_id"])
+        self.assertGreater(len(payload["visualization_state_series"]["frames"]), 0)
+        self.assertEqual(payload["visualization_state_series"]["frames"][0]["run_id"], payload["run_id"])
         self.assertEqual(self._run_side_effect_counts(), before)
 
     def test_lite_mesa_analysis_applies_scenario_composition_before_compile(self) -> None:
@@ -3174,6 +3177,27 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(latest_plan["modeling_snapshot_id"], latest_snapshot["snapshot_id"])
         self.assertEqual(self.api.get_run_chain(run["run_id"])["modeling_snapshot_id"], first_snapshot["snapshot_id"])
 
+    def test_update_experiment_plan_preserves_original_id(self) -> None:
+        project = small_aircraft_support_project("project-aircraft-support-contract-001")
+        saved = self.api.save_project(project)
+        self.api.create_modeling_snapshot(saved["project_id"])
+        plan = self.api.create_experiment_plan(saved["project_id"], {"name": "edit target", "steps": 1})
+        project.setdefault("projectInfo", {})["name"] = "edited source"
+        self.api.save_project(project)
+        latest_snapshot = self.api.create_modeling_snapshot(saved["project_id"])
+
+        updated = self.api.update_experiment_plan(
+            saved["project_id"],
+            plan["experiment_plan_id"],
+            {"name": "edit target", "steps": 9},
+        )
+        plans = self.api.list_experiment_plans(saved["project_id"])["experiment_plans"]
+
+        self.assertEqual(updated["experiment_plan_id"], plan["experiment_plan_id"])
+        self.assertEqual(updated["config"]["steps"], 9)
+        self.assertEqual(updated["modeling_snapshot_id"], latest_snapshot["snapshot_id"])
+        self.assertEqual([item["experiment_plan_id"] for item in plans], [plan["experiment_plan_id"]])
+
     def test_submit_run_after_project_edit_uses_new_explicit_modeling_snapshot(self) -> None:
         project = small_aircraft_support_project("project-aircraft-support-contract-001")
         saved = self.api.save_project(project)
@@ -3458,6 +3482,19 @@ class BackendApiContractTest(unittest.TestCase):
         login_event = next(event for event in login_events if event["action"] == "auth.login")
         self.assertNotEqual(login_event["resource_id"], session["session"]["token"])
         self.assertRegex(login_event["resource_id"], r"^session-[0-9a-f]{16}$")
+
+    def test_modeling_import_to_project_preserves_support_activity_jobs_object_surface(self) -> None:
+        import_package = self._fixture("modeling_import_project.json")
+        import_package["objects"]["supportActivityJobs"] = [
+            {"activityCode": "BA-001", "workName": "检查雷达", "durationMinutes": 30},
+            {"activityCode": "BA-002", "workName": "挂载雷达", "durationMinutes": 45},
+        ]
+
+        project = modeling_import_to_project(import_package)
+
+        jobs_by_code = {job["activityCode"]: job for job in project["supportActivityJobs"]}
+        self.assertEqual(jobs_by_code["BA-001"], {"activityCode": "BA-001", "workName": "检查雷达", "durationMinutes": 30})
+        self.assertEqual(jobs_by_code["BA-002"], {"activityCode": "BA-002", "workName": "挂载雷达", "durationMinutes": 45})
 
     def test_create_project_from_modeling_import_saves_project_and_snapshot(self) -> None:
         import_package = self._fixture("modeling_import_project.json")

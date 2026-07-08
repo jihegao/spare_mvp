@@ -79,6 +79,9 @@ def create_backend_server(
         def do_POST(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler API
             self._handle()
 
+        def do_PUT(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler API
+            self._handle()
+
         def do_DELETE(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler API
             self._handle()
 
@@ -233,6 +236,9 @@ def create_backend_server(
             if self.command == "POST" and len(parts) == 3 and parts[0] == "projects" and parts[2] == "experiment-plans":
                 self._require_user()
                 return api.create_experiment_plan(parts[1], body.get("config", {}))
+            if self.command == "PUT" and len(parts) == 4 and parts[0] == "projects" and parts[2] == "experiment-plans":
+                self._require_user()
+                return api.update_experiment_plan(parts[1], parts[3], body.get("config", {}))
             if self.command == "DELETE" and len(parts) == 4 and parts[0] == "projects" and parts[2] == "experiment-plans":
                 actor = self._require_user({"系统管理员", "数据管理员"})
                 return api.delete_experiment_plan(parts[1], parts[3], actor_user_id=actor["user_id"])

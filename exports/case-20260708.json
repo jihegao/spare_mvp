@@ -811,7 +811,7 @@
       "type": "spare",
       "name": "发动机控制模块",
       "model": "j15-engine-control",
-      "quantity": 0
+      "quantity": 2
     },
     {
       "id": "support-resource-1-spare-2",
@@ -819,7 +819,7 @@
       "type": "spare",
       "name": "雷达 LRU",
       "model": "j15-radar",
-      "quantity": 0
+      "quantity": 2
     },
     {
       "id": "support-resource-1-spare-3",
@@ -843,7 +843,7 @@
       "type": "spare",
       "name": "航电系统",
       "model": "j35-avionics",
-      "quantity": 0
+      "quantity": 2
     },
     {
       "id": "support-resource-1-spare-6",
@@ -867,7 +867,7 @@
       "type": "spare",
       "name": "发动机控制模块",
       "model": "j15-engine-control",
-      "quantity": 0
+      "quantity": 2
     },
     {
       "id": "support-resource-2-spare-2",
@@ -875,7 +875,7 @@
       "type": "spare",
       "name": "雷达 LRU",
       "model": "j15-radar",
-      "quantity": 0
+      "quantity": 2
     },
     {
       "id": "support-resource-2-spare-3",
@@ -899,7 +899,7 @@
       "type": "spare",
       "name": "航电系统",
       "model": "j35-avionics",
-      "quantity": 0
+      "quantity": 2
     },
     {
       "id": "support-resource-2-spare-6",
@@ -923,7 +923,7 @@
       "type": "spare",
       "name": "发动机控制模块",
       "model": "j15-engine-control",
-      "quantity": 1
+      "quantity": 2
     },
     {
       "id": "support-resource-1-spare-2",
@@ -931,7 +931,7 @@
       "type": "spare",
       "name": "雷达 LRU",
       "model": "j15-radar",
-      "quantity": 0
+      "quantity": 2
     },
     {
       "id": "support-resource-3-spare-3",
@@ -976,30 +976,20 @@
   ],
   "transportPolicies": [
     {
-      "id": "transport-policy-1",
-      "fromSupportNodeName": "基层",
-      "toSupportNodeName": "基地",
-      "spareName": "",
-      "capacity": 4,
-      "priority": 1,
-      "transportMode": "升降机转运",
-      "transportTimeHours": 1
-    },
-    {
       "id": "transport-policy-2",
       "fromSupportNodeName": "基地",
       "toSupportNodeName": "中继",
-      "spareName": "",
+      "spareName": "j15-engine-control",
       "capacity": 2,
       "priority": 1,
-      "transportMode": "补给艇转运",
+      "transportMode": "纵向运输",
       "transportTimeHours": 2
     },
     {
       "id": "transport-policy-3",
       "fromSupportNodeName": "基地",
       "toSupportNodeName": "基层",
-      "spareName": "",
+      "spareName": "j15-engine-control",
       "capacity": 1,
       "priority": 2,
       "transportMode": "纵向运输",
@@ -1009,7 +999,7 @@
       "id": "transport-policy-4",
       "fromSupportNodeName": "中继",
       "toSupportNodeName": "基层",
-      "spareName": "",
+      "spareName": "j15-engine-control",
       "capacity": 1,
       "priority": 2,
       "transportMode": "横向运输",

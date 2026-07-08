@@ -480,6 +480,9 @@ test("projectToModelingImportPackage backfills import draft from current Project
     supportResources: [
       { id: "personnel-deck", supportNodeName: "甲板", type: "personnel", name: "甲板人员", quantity: 2 }
     ],
+    supportActivityJobs: [
+      { activityCode: "BA-001", workName: "检查雷达", durationMinutes: 30 }
+    ],
     transportPolicies: [
       { id: "transport-deck", fromSupportNodeName: "库房", toSupportNodeName: "甲板", spareName: "雷达备件", capacity: 1 }
     ],
@@ -516,6 +519,7 @@ test("projectToModelingImportPackage backfills import draft from current Project
     ...projectJson.supportActivities[0],
     resourceId: "甲板"
   }]);
+  assert.deepEqual(draft.objects.supportActivityJobs, projectJson.supportActivityJobs);
   assert.equal(Object.hasOwn(draft.objects, "airports"), false);
   assert.equal(Object.hasOwn(draft.objects.missionProfiles[0], "airports"), false);
   assert.equal("monteCarlo" in draft.objects, false);

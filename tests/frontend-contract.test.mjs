@@ -2587,15 +2587,19 @@ test("browser smoke enters monte carlo embedded Mesa detail", async () => {
   assert.doesNotMatch(smokeMonteCarloSource, /data-mc-array-path="monteCarlo\.failureRates"/);
 });
 
-test("formal current result helpers remain internal and are not routed from result analysis pages", async () => {
+test("result analysis pages route visible runs through Lite Mesa instead of current-result formal runs", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
-  const analysisSource = appSource.slice(
-    appSource.indexOf("function renderCurrentAnalysisResultPanel"),
-    appSource.indexOf("function renderBar")
-  );
   const renderMainSource = appSource.slice(
     appSource.indexOf("function renderMainComponent"),
     appSource.indexOf("function createExperimentPlanBranchFromCurrentProject")
+  );
+  const liteMesaSource = appSource.slice(
+    appSource.indexOf("function renderLiteMesaAnalysisPage"),
+    appSource.indexOf("function normalizeLiteMesaAnalysisResult")
+  );
+  const analysisActionSource = appSource.slice(
+    appSource.indexOf('const analysisActionButton = event.target.closest("[data-analysis-action]"'),
+    appSource.indexOf('const downtimeSnapshotExportButton = event.target.closest("[data-downtime-snapshot-export]"')
   );
   const pages = [
     "spare-planning-spare-shortfall-analysis",
@@ -2607,21 +2611,21 @@ test("formal current result helpers remain internal and are not routed from resu
   assert.match(appSource, /function renderCurrentAnalysisResultPanel/);
   assert.match(appSource, /function renderExperimentPlanContextDropdown/);
   assert.match(appSource, /function selectedExperimentPlanProjectJson/);
-  assert.match(appSource, /function runCurrentAnalysisPage/);
   assert.match(renderMainSource, /page\.component === "lite-mesa-analysis"/);
   assert.match(renderMainSource, /renderLiteMesaAnalysisPage\(page\)/);
   assert.match(renderMainSource, /page\.component === "analysis"/);
-  assert.match(renderMainSource, /renderAnalysis\(page\)/);
+  assert.match(renderMainSource, /if \(page\.component === "analysis"\) return renderLiteMesaAnalysisPage\(page\)/);
   for (const page of pages) {
     assert.equal(page.component, "lite-mesa-analysis", page.id);
     assert.notEqual(page.component, "analysis", page.id);
   }
-  assert.match(analysisSource, /当前分析结果/);
-  assert.match(analysisSource, /data-analysis-action="run-current"/);
-  assert.match(analysisSource, /status-badge/);
+  assert.match(liteMesaSource, /data-lite-mesa-analysis-action="run"/);
+  assert.match(liteMesaSource, /backendApi\.runLiteMesaAnalysis\(projectJson,\s*definition\.analysisType/);
+  assert.match(analysisActionSource, /runLiteMesaAnalysisPage\(page\)/);
   assert.match(appSource, /const analysisType = analysisTypeForPage\(page\)/);
-  assert.doesNotMatch(analysisSource, /分析任务列表|创建\/编辑\/删除|选择方案 \+ 参数/);
-  assert.doesNotMatch(analysisSource, /linkedMonteCarloExperimentId|mc_experiment_id|experiment_id|artifact_manifest_id/);
+  assert.doesNotMatch(liteMesaSource, /分析任务列表|创建\/编辑\/删除|选择方案 \+ 参数/);
+  assert.doesNotMatch(liteMesaSource, /linkedMonteCarloExperimentId|mc_experiment_id|artifact_manifest_id/);
+  assert.doesNotMatch(analysisActionSource, /runCurrentAnalysisPage|startMonteCarloRunThroughApi|submitRunIntent/);
   assert.doesNotMatch(appSource, /data-analysis-task-field/);
   assert.doesNotMatch(appSource, /data-analysis-action="create-with-mc"|data-analysis-action="edit"|data-analysis-action="save"|data-analysis-action="delete"/);
   assert.doesNotMatch(appSource, /source: "analysis:auto-created"/);
@@ -2714,7 +2718,7 @@ test("formal projection renderers remain isolated from independent Mesa routing"
   }
 });
 
-test("formal current result hydration is gated away from lightweight Mesa result pages", async () => {
+test("formal current result hydration is kept away from lightweight Mesa result pages", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const featurePageSource = appSource.slice(
     appSource.indexOf("function renderFeaturePage"),
@@ -2728,13 +2732,9 @@ test("formal current result hydration is gated away from lightweight Mesa result
     appSource.indexOf("function renderCurrentAnalysisResultPanel"),
     appSource.indexOf("function currentAnalysisStatusLabel")
   );
-  const runCurrentSource = appSource.slice(
-    appSource.indexOf("async function runCurrentAnalysisPage"),
-    appSource.indexOf("function artifactHasKind")
-  );
-  const startMonteCarloSource = appSource.slice(
-    appSource.indexOf("async function startMonteCarloRunThroughApi"),
-    appSource.indexOf("async function refreshRunResultThroughApi")
+  const analysisActionSource = appSource.slice(
+    appSource.indexOf('const analysisActionButton = event.target.closest("[data-analysis-action]"'),
+    appSource.indexOf('const downtimeSnapshotExportButton = event.target.closest("[data-downtime-snapshot-export]"')
   );
 
   for (const featureId of [
@@ -2745,8 +2745,7 @@ test("formal current result hydration is gated away from lightweight Mesa result
   ]) {
     assert.equal(getFeaturePageById(featureId).component, "lite-mesa-analysis");
   }
-  assert.match(featurePageSource, /if \(page\.component === "analysis"\) \{/);
-  assert.match(featurePageSource, /ensureCurrentAnalysisResultLoaded\(page\)/);
+  assert.doesNotMatch(featurePageSource, /ensureCurrentAnalysisResultLoaded\(page\)/);
   assert.match(hydrateSource, /backendApi\.getCurrentAnalysisResult\(savedProject\.project_id,\s*analysisType\)/);
   assert.match(hydrateSource, /currentAnalysisResultLoadInFlight/);
   assert.match(hydrateSource, /ANALYSIS_PROJECTION_TYPES\.some/);
@@ -2756,12 +2755,8 @@ test("formal current result hydration is gated away from lightweight Mesa result
   assert.match(appSource, /if \(status === "empty"\) return "等待正式结果"/);
   assert.match(appSource, /function currentAnalysisShouldShowFailure/);
   assert.match(appSource, /return \["failed", "blocked"\]\.includes/);
-  assert.match(runCurrentSource, /const previousResult = currentAnalysisResultForPage\(page\)/);
-  assert.match(runCurrentSource, /restoreCurrentAnalysisResult\(analysisType,\s*previousResult/);
-  assert.match(runCurrentSource, /transitionCurrentAnalysisResult/);
-  assert.match(runCurrentSource, /type: "block"/);
-  assert.match(runCurrentSource, /finally\s*{\s*render\(\);\s*}/);
-  assert.doesNotMatch(startMonteCarloSource, /getCurrentAnalysisResult/);
+  assert.match(analysisActionSource, /runLiteMesaAnalysisPage\(page\)/);
+  assert.doesNotMatch(analysisActionSource, /runCurrentAnalysisPage|backendApi\.getCurrentAnalysisResult|startMonteCarloRunThroughApi/);
 });
 
 test("backend empty current analysis result is not treated as formal failure", async () => {
@@ -2830,36 +2825,24 @@ test("experiment plan editor exposes seed policy and scenario composition contro
   assert.doesNotMatch(experimentPlanChangeSource, /setPath\(scenario/);
 });
 
-test("monte carlo launch creates a formal run from a plan branch or explicit override", async () => {
+test("monte carlo launch uses Lite Mesa from the selected experiment plan", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const handlerSource = appSource.slice(
+    appSource.indexOf('const liteMesaMonteCarloButton = event.target.closest("[data-lite-mesa-action=\'run\']"'),
+    appSource.indexOf('const liteMesaAnalysisButton = event.target.closest("[data-lite-mesa-analysis-action=\'run\']"')
+  );
   const launchSource = appSource.slice(
-    appSource.indexOf("async function startMonteCarloRunThroughApi"),
-    appSource.indexOf("async function refreshRunResultThroughApi")
+    appSource.indexOf("async function runLiteMesaMonteCarloAnalysis"),
+    appSource.indexOf("function normalizeLiteMesaMonteCarloResult")
   );
 
-  assert.match(launchSource, /planProjectJsonOverride = null/);
-  assert.match(
-    launchSource,
-    /const planProjectJson = planProjectJsonOverride && typeof planProjectJsonOverride === "object"\s*\?\s*buildBackendProjectJson\(planProjectJsonOverride, currentProject\)\s*:\s*selectedExperimentPlanProjectJson\(\)/
-  );
-  assert.match(appSource, /import \{[^}]*buildRunIntent[^}]*submitRunIntent[^}]*\} from "\.\/run-intent\.mjs"/s);
-  assert.match(launchSource, /submitRunIntent\(backendApi,\s*\{/);
-  assert.match(launchSource, /const runType = "monte_carlo"/);
-  assert.match(launchSource, /runType,/);
-  assert.match(launchSource, /modelFamily: FORMAL_AIRCRAFT_SUPPORT_MODEL_FAMILY/);
-  assert.match(launchSource, /mcExperimentId: monteCarloExperimentId/);
-  assert.match(launchSource, /analysisType,/);
-  assert.match(launchSource, /monteCarloParameterSpace: monteCarloParameterSpaceForExperiment\(monteCarloExperimentId\)/);
-  assert.match(appSource, /function monteCarloParameterSpaceForExperiment\(monteCarloExperimentId\)/);
-  assert.match(appSource, /function monteCarloParameterSpaceForExperiment\(monteCarloExperimentId\)\s*\{\s*return "baseline";\s*\}/);
-  assert.match(appSource, /function hiddenCurrentAnalysisExperimentId\(analysisType\)/);
-  assert.match(appSource, /startMonteCarloRunThroughApi\(\{\s*monteCarloExperimentId: hiddenExperimentId,\s*analysisType/s);
-  assert.doesNotMatch(launchSource, /sample_count\s*:/);
-  assert.doesNotMatch(launchSource, /samples\s*:/);
-  assert.doesNotMatch(launchSource, /sweep\s*:/);
-  assert.doesNotMatch(launchSource, /run_type: "single"/);
-  assert.doesNotMatch(launchSource, /backendApi\.startSimulationRun/);
-  assert.doesNotMatch(launchSource, /backendApi\.startMonteCarloRun/);
+  assert.match(handlerSource, /runLiteMesaMonteCarloAnalysis\(\)/);
+  assert.match(launchSource, /selectedExperimentPlanProjectJson\(\)/);
+  assert.match(launchSource, /backendApi\.runLiteMesaAnalysis\(projectJson,\s*"mission_reliability"/);
+  assert.match(launchSource, /samples,\s*seed/s);
+  assert.doesNotMatch(handlerSource + launchSource, /startMonteCarloRunThroughApi|submitRunIntent|\/api\/runs/);
+  assert.doesNotMatch(launchSource, /run_type: "single"|runType|modelFamily: FORMAL_AIRCRAFT_SUPPORT_MODEL_FAMILY/);
+  assert.doesNotMatch(launchSource, /backendApi\.startSimulationRun|backendApi\.startMonteCarloRun/);
 });
 
 test("formal Monte Carlo helpers keep bound run ledger status outside embedded detail", async () => {
@@ -2906,17 +2889,16 @@ test("monte carlo config backfills empty draft to a single baseline value before
   assert.doesNotMatch(appSource, /function renderMonteCarloExperimentEditor/);
 });
 
-test("M9.8 formal and visual launches use aircraft_support_v1 formal runs", async () => {
+test("visible simulation, Monte Carlo, and analysis launches use Lite Mesa", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
-  const runIntentSource = await readFile(new URL("../front/run-intent.mjs", import.meta.url), "utf8");
   const apiClientSource = await readFile(new URL("../front/api-client.mjs", import.meta.url), "utf8");
-  const singleLaunchSource = appSource.slice(
-    appSource.indexOf("async function startSingleRunThroughApi"),
-    appSource.indexOf("async function startMonteCarloRunThroughApi")
-  );
   const monteCarloLaunchSource = appSource.slice(
-    appSource.indexOf("async function startMonteCarloRunThroughApi"),
-    appSource.indexOf("async function refreshRunResultThroughApi")
+    appSource.indexOf("async function runLiteMesaMonteCarloAnalysis"),
+    appSource.indexOf("function normalizeLiteMesaMonteCarloResult")
+  );
+  const analysisLaunchSource = appSource.slice(
+    appSource.indexOf("async function runLiteMesaAnalysisPage"),
+    appSource.indexOf("function normalizeLiteMesaAnalysisResult")
   );
   const visualSource = appSource.slice(
     appSource.indexOf("function renderVisualSimulation"),
@@ -2927,26 +2909,26 @@ test("M9.8 formal and visual launches use aircraft_support_v1 formal runs", asyn
     appSource.indexOf("function startVisualizationReplay")
   );
   const visualLaunchSource = appSource.slice(
-    appSource.indexOf("async function startFormalVisualizationRunThroughApi"),
+    appSource.indexOf("async function startLiteMesaVisualizationThroughApi"),
     appSource.indexOf("async function loadVisualizationReplayForRun")
   );
 
-  assert.match(appSource, /const FORMAL_AIRCRAFT_SUPPORT_MODEL_FAMILY = "aircraft_support_v1"/);
-  assert.match(runIntentSource, /modelFamily = "aircraft_support_v1"/);
+  assert.match(apiClientSource, /path: "\/mesa-analysis-runs"/);
   assert.doesNotMatch(apiClientSource, /runIndependentMesaVisualization\(projectJson/);
   assert.doesNotMatch(apiClientSource, /path: "\/mesa-visualization-runs"/);
-  assert.match(singleLaunchSource, /submitRunIntent\(backendApi,\s*\{/);
-  assert.match(singleLaunchSource, /modelFamily: FORMAL_AIRCRAFT_SUPPORT_MODEL_FAMILY/);
-  assert.match(monteCarloLaunchSource, /submitRunIntent\(backendApi,\s*\{/);
-  assert.match(monteCarloLaunchSource, /modelFamily: FORMAL_AIRCRAFT_SUPPORT_MODEL_FAMILY/);
-  assert.match(visualLaunchSource, /await startSingleRunThroughApi\(\)/);
-  assert.match(visualLaunchSource, /await refreshVisualizationRunList\(runId\)/);
-  assert.match(visualLaunchSource, /await loadVisualizationReplayForRun\(runId\)/);
-  assert.match(visualNewRunSource, /await startFormalVisualizationRunThroughApi\(\)/);
+  assert.match(monteCarloLaunchSource, /backendApi\.runLiteMesaAnalysis\(projectJson,\s*"mission_reliability"/);
+  assert.match(analysisLaunchSource, /backendApi\.runLiteMesaAnalysis\(projectJson,\s*definition\.analysisType/);
+  assert.match(visualLaunchSource, /backendApi\.runLiteMesaAnalysis\(/);
+  assert.match(visualLaunchSource, /"mission_reliability"/);
+  assert.match(visualLaunchSource, /const responseSeries = response\?\.visualization_state_series/);
+  assert.match(visualLaunchSource, /normalizeVisualizationStateSeriesPayload\(responseSeries/);
+  assert.match(visualLaunchSource, /visualizationReplayPlaying = false/);
+  assert.doesNotMatch(monteCarloLaunchSource + analysisLaunchSource + visualLaunchSource, /startSingleRunThroughApi|startMonteCarloRunThroughApi|submitRunIntent|\/api\/runs/);
+  assert.match(visualNewRunSource, /await startLiteMesaVisualizationThroughApi\(\)/);
   assert.doesNotMatch(appSource, /ensureIndependentMesaVisualizationStarted\(page\)/);
   assert.match(appSource, /function renderExperimentPlanContextDropdown/);
   assert.match(appSource, /data-current-experiment-plan/);
-  assert.match(visualSource, /正式可视化/);
+  assert.match(visualSource, /Lite Mesa visualization/);
   assert.doesNotMatch(visualSource, /当前 Project 回放/);
   assert.doesNotMatch(visualSource, /mesa-abm-skill/);
   assert.doesNotMatch(visualSource, /Mesa ABM \/ aviation_support/);
@@ -3523,10 +3505,10 @@ test("formal run starts only allow imported sample projects", async () => {
   assert.ok(mcRunSource.indexOf("currentProjectCanStartFormalRun()") < mcRunSource.indexOf("formalRunSubmitInFlight = true"));
 });
 
-test("visual simulation new run starts formal run and loads its state-series artifact", async () => {
+test("visual simulation new run starts Lite Mesa and loads static state-series", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const visualLaunchSource = appSource.slice(
-    appSource.indexOf("async function startFormalVisualizationRunThroughApi"),
+    appSource.indexOf("async function startLiteMesaVisualizationThroughApi"),
     appSource.indexOf("async function loadVisualizationReplayForRun")
   );
   const startNewRunSource = appSource.slice(
@@ -3534,10 +3516,15 @@ test("visual simulation new run starts formal run and loads its state-series art
     appSource.indexOf("const controlAction = backendControlActions")
   );
 
-  assert.match(visualLaunchSource, /const submittedRun = await startSingleRunThroughApi\(\)/);
-  assert.match(visualLaunchSource, /await loadVisualizationReplayForRun\(runId\)/);
-  assert.match(visualLaunchSource, /缺少正式 state-series artifact/);
-  assert.match(startNewRunSource, /await startFormalVisualizationRunThroughApi\(\)/);
+  assert.match(visualLaunchSource, /backendApi\.runLiteMesaAnalysis\(/);
+  assert.match(visualLaunchSource, /"mission_reliability"/);
+  assert.match(visualLaunchSource, /response\?\.visualization_state_series/);
+  assert.match(visualLaunchSource, /Lite Mesa 仿真已完成/);
+  assert.match(visualLaunchSource, /已加载静态状态/);
+  assert.match(visualLaunchSource, /visualizationReplayPlaying = false/);
+  assert.match(startNewRunSource, /await startLiteMesaVisualizationThroughApi\(\)/);
+  assert.doesNotMatch(startNewRunSource, /startVisualizationReplay\(\)/);
+  assert.doesNotMatch(visualLaunchSource + startNewRunSource, /startSingleRunThroughApi|submitRunIntent|\/api\/runs/);
   assert.doesNotMatch(startNewRunSource, /ensureFormalRunImportedSampleProject/);
   assert.doesNotMatch(startNewRunSource, /createSampleProjectFromPublishedImport/);
 });
@@ -4320,7 +4307,7 @@ test("visual aircraft panel renders equipment status summary instead of configur
   assert.match(styleSource, /\.aircraft-status-row/);
 });
 
-test("visual simulation consumes formal state-series without demo fallback", async () => {
+test("visual simulation consumes Lite Mesa state-series without demo fallback", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const replaySource = await readFile(new URL("../front/state-series-replay.mjs", import.meta.url), "utf8");
   const visualSource = appSource.slice(
@@ -4333,9 +4320,10 @@ test("visual simulation consumes formal state-series without demo fallback", asy
   assert.match(appSource, /normalizeVisualizationStateSeriesPayload\(payload, \{\s*runId,\s*artifactId: artifact\.artifact_id/);
   assert.match(replaySource, /const MODEL_FAMILY = "aircraft_support_v1"/);
   assert.match(replaySource, /model_family: requireModelFamily\(payload\.model_family\)/);
-  assert.match(visualSource, /缺少 aircraft_support_v1 state_series artifact/);
-  assert.match(visualSource, /正式可视化不会回退到旧 aviation_support 或演示快照/);
-  assert.match(appSource, /clearVisualizationStateSeries\(runId, `run \$\{runId\} 缺少 visualization_state_series artifact，M9 正式回放保持阻断`\)/);
+  assert.match(visualSource, /缺少 aircraft_support_v1 state_series 时/);
+  assert.match(visualSource, /可视化不会回退到旧 aviation_support 或演示快照/);
+  assert.match(visualSource, /请启动 Lite Mesa 仿真/);
+  assert.doesNotMatch(visualSource, /请启动 Lite Mesa 仿真生成回放/);
   assert.doesNotMatch(appSource, /visualizationStateSeriesFrame \|\| liveAviationState \|\| AVIATION_SUPPORT_DEMO_STATE/);
   assert.doesNotMatch(appSource, /aviationSource = "demo"/);
   assert.doesNotMatch(appSource, /loadAviationSupportState\(\)/);
@@ -4460,7 +4448,7 @@ test("visual simulation enters the Mesa page without a replay list", async () =>
   assert.doesNotMatch(visualSource, /data-mesa-backend-control-status/);
 });
 
-test("visual simulation keeps formal state-series replay without a visible run picker", async () => {
+test("visual simulation keeps Lite Mesa static state without a visible run picker", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const refreshRunListSource = appSource.slice(
     appSource.indexOf("async function refreshVisualizationRunList"),
@@ -4470,12 +4458,13 @@ test("visual simulation keeps formal state-series replay without a visible run p
   assert.doesNotMatch(appSource, /function renderVisualizationRunOptions/);
   assert.doesNotMatch(appSource, /data-mesa-run-select/);
   assert.match(appSource, /visualizationSelectedRunId = runId/);
-  assert.match(appSource, /visualizationReplayStatus = `已读取正式 state_series 并开始回放：run_id \$\{runId\}`/);
+  assert.match(appSource, /Lite Mesa 仿真已完成/);
+  assert.match(appSource, /已加载静态状态/);
   assert.match(refreshRunListSource, /M9 当前回放已同步/);
   assert.doesNotMatch(refreshRunListSource, /run 列表已刷新/);
 });
 
-test("visual simulation new starts use formal run replay without list selection", async () => {
+test("visual simulation new starts use Lite Mesa session without list selection", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const controlHandlerSource = appSource.slice(
     appSource.indexOf("async function handleMesaControl"),
@@ -4491,9 +4480,10 @@ test("visual simulation new starts use formal run replay without list selection"
   );
 
   assert.doesNotMatch(appSource, /const mesaRunSelect = event\.target\.closest/);
-  assert.match(newRunSource, /await startFormalVisualizationRunThroughApi\(\)/);
-  assert.match(newRunSource, /visualizationReplayPlaying = true/);
-  assert.match(newRunSource, /startVisualizationReplay\(\)/);
+  assert.match(newRunSource, /await startLiteMesaVisualizationThroughApi\(\)/);
+  assert.match(newRunSource, /正在启动 Lite Mesa 仿真/);
+  assert.doesNotMatch(newRunSource, /visualizationReplayPlaying = true/);
+  assert.doesNotMatch(newRunSource, /startVisualizationReplay\(\)/);
   assert.match(playSource, /await loadVisualizationReplayForRun\(\)/);
   assert.match(playSource, /visualizationReplayPlaying = !visualizationReplayPlaying/);
 });

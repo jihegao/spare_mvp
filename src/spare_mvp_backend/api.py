@@ -511,6 +511,45 @@ class BackendApi:
         return snapshot
 
     def create_experiment_plan(self, project_id: str, config: dict[str, Any]) -> dict[str, Any]:
+        return self._upsert_experiment_plan(project_id, config)
+
+    def update_experiment_plan(
+        self,
+        project_id: str,
+        experiment_plan_id: str,
+        config: dict[str, Any],
+    ) -> dict[str, Any]:
+        try:
+            existing = self.repository.get_experiment_plan(experiment_plan_id)
+        except KeyError as exc:
+            raise BackendApiError(
+                "experiment_plan_not_found",
+                "ExperimentPlan not found",
+                project_id=project_id,
+                experiment_plan_id=experiment_plan_id,
+            ) from exc
+        if existing.get("project_id") != project_id:
+            raise BackendApiError(
+                "experiment_plan_project_mismatch",
+                "ExperimentPlan does not belong to project",
+                project_id=project_id,
+                experiment_plan_id=experiment_plan_id,
+            )
+        return self._upsert_experiment_plan(
+            project_id,
+            config,
+            experiment_plan_id=experiment_plan_id,
+            status=existing.get("status", "draft"),
+        )
+
+    def _upsert_experiment_plan(
+        self,
+        project_id: str,
+        config: dict[str, Any],
+        *,
+        experiment_plan_id: str | None = None,
+        status: str = "draft",
+    ) -> dict[str, Any]:
         project = self.repository.get_project(project_id)
         plan_config = _normalize_experiment_plan_config(config)
         requested_snapshot_id = str(plan_config.pop("modeling_snapshot_id", "") or "").strip()
@@ -530,12 +569,12 @@ class BackendApi:
             snapshot = self.create_modeling_snapshot(project_id)
         plan_key = {"config": plan_config, "modeling_snapshot_id": snapshot["snapshot_id"]}
         plan = {
-            "experiment_plan_id": f"experiment-plan-{project_id}-{_stable_hash(plan_key)}",
+            "experiment_plan_id": experiment_plan_id or f"experiment-plan-{project_id}-{_stable_hash(plan_key)}",
             "project_id": project_id,
             "modeling_snapshot_id": snapshot["snapshot_id"],
             "schema_version": "experiment-plan-v0",
             "project_version": project["project_version"],
-            "status": "draft",
+            "status": status,
             "config": plan_config,
         }
         self.repository.upsert_experiment_plan(plan)
@@ -702,6 +741,14 @@ class BackendApi:
             samples,
             normalized_settings,
         )
+        visualization_state_series = self.adapter._visualization_state_series_payload(  # noqa: SLF001 - session-only replay payload, no run persistence.
+            run_id=run_id,
+            scenario=scenario,
+            model_family=model_family,
+            result_summary_id=f"lite-mesa-analysis-summary-{run_id}",
+            artifact_manifest_id=f"lite-mesa-analysis-manifest-{run_id}",
+            frames=copy.deepcopy(samples[0].get("frames") or []),
+        )
         return {
             "status": "session_complete",
             "source": "lite_mesa_aircraft_support_v1",
@@ -722,6 +769,7 @@ class BackendApi:
             "wave_rows": page_result.get("wave_rows", []),
             "daily_rows": page_result.get("daily_rows", []),
             "event_snapshots": page_result.get("event_snapshots", []),
+            "visualization_state_series": visualization_state_series,
             "limitations": _lite_mesa_analysis_limitations(),
             "failed_samples": failed_samples,
             "compile_provenance": compile_result.get("provenance", {}),

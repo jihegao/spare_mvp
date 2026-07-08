@@ -1688,7 +1688,7 @@ function bindEvents() {
 
     const singleRunButton = event.target.closest("[data-run-intent-single]");
     if (singleRunButton) {
-      startSingleRunThroughApi().finally(() => render());
+      startLiteMesaVisualizationThroughApi().finally(() => render());
       return;
     }
 
@@ -1740,7 +1740,7 @@ function bindEvents() {
       const page = getFeaturePageById(selectedFeatureId);
       const action = analysisActionButton.dataset.analysisAction;
       if (action === "run-current") {
-        runCurrentAnalysisPage(page);
+        runLiteMesaAnalysisPage(page).finally(() => render());
       }
       render();
       return;
@@ -2727,9 +2727,6 @@ function renderSystemManagementNavigation(activePage, secondaryGroups) {
 }
 
 function renderFeaturePage(page) {
-  if (page.component === "analysis") {
-    ensureCurrentAnalysisResultLoaded(page);
-  }
   const siblingPages = currentFeatureGroups()[page.module]?.[page.secondary]?.[page.tertiary] || [page];
   const currentContext = shouldEmbedExperimentPlanContextInComponent(page) ? "" : renderCurrentContext(page);
   return `
@@ -2782,13 +2779,15 @@ function shouldShowCurrentContext(page) {
 function shouldUseExperimentPlanContextDropdown(page) {
   return isVisualSimulationPage(page)
     || page.component === "lite-mesa-monte-carlo-analysis"
-    || page.component === "lite-mesa-analysis";
+    || page.component === "lite-mesa-analysis"
+    || page.component === "analysis";
 }
 
 function shouldEmbedExperimentPlanContextInComponent(page) {
   return isVisualSimulationPage(page)
     || page.component === "lite-mesa-monte-carlo-analysis"
-    || page.component === "lite-mesa-analysis";
+    || page.component === "lite-mesa-analysis"
+    || page.component === "analysis";
 }
 
 function renderExperimentPlanContextDropdown(page) {
@@ -2862,7 +2861,7 @@ function renderMainComponent(page) {
   });
   if (page.component === "lite-mesa-monte-carlo-analysis") return renderLiteMesaMonteCarloAnalysis(page);
   if (page.component === "lite-mesa-analysis") return renderLiteMesaAnalysisPage(page);
-  if (page.component === "analysis") return renderAnalysis(page);
+  if (page.component === "analysis") return renderLiteMesaAnalysisPage(page);
   if (page.name === "内置场景") return renderBuiltInScenario(page);
   if (page.name === "基本作战单元建模") return renderCombatUnitModeling(page);
   if (page.name === "基本任务建模") return renderBasicMissionModeling(page);
@@ -10767,6 +10766,7 @@ async function saveCurrentExperimentPlanThroughApi() {
   const projectJson = buildBackendProjectJson(scenario, currentProject);
   const planProjectJson = cloneScenario(experimentPlanDraft);
   ensureExperimentPlanLargeSampleRequest(planProjectJson);
+  const existingExperimentPlanId = String(experimentPlan?.experiment_plan_id || "").trim();
   try {
     savedProject = await backendApi.saveProject(projectJson);
     modelingSnapshot = await backendApi.createModelingSnapshot(savedProject.project_id);
@@ -10776,11 +10776,13 @@ async function saveCurrentExperimentPlanThroughApi() {
       planProjectJson,
       modelFamily: FORMAL_AIRCRAFT_SUPPORT_MODEL_FAMILY
     });
-    experimentPlan = await backendApi.createExperimentPlan(savedProject.project_id, runIntent.experimentPlanConfig);
+    experimentPlan = existingExperimentPlanId
+      ? await backendApi.updateExperimentPlan(savedProject.project_id, existingExperimentPlanId, runIntent.experimentPlanConfig)
+      : await backendApi.createExperimentPlan(savedProject.project_id, runIntent.experimentPlanConfig);
     await refreshExperimentPlanList(savedProject.project_id, { force: true });
     experimentPlanManagementMode = "list";
     selectedExperimentPlanKeys = new Set([experimentPlanSelectionKey(experimentPlan)]);
-    backendApiStatus = "实验方案分支已保存";
+    backendApiStatus = existingExperimentPlanId ? "实验方案已更新" : "实验方案分支已保存";
   } catch (err) {
     savedProject = null;
     modelingSnapshot = null;
@@ -11306,7 +11308,7 @@ function ensureVisualizationRunListLoaded() {
     });
 }
 
-async function startFormalVisualizationRunThroughApi() {
+async function startLiteMesaVisualizationThroughApi() {
   if (!currentProject) {
     visualizationReplayStatus = "启动仿真失败：请先创建或选择项目。";
     return null;
@@ -11318,23 +11320,32 @@ async function startFormalVisualizationRunThroughApi() {
   independentMesaVisualizationInFlight = true;
   stopVisualizationRunStream("正在启动仿真，M9.2 在线订阅已停止");
   stopVisualizationReplay();
-  visualizationReplayStatus = "正在通过正式 /api/runs 启动仿真";
+  visualizationReplayStatus = "正在通过 Lite Mesa 启动可视化仿真";
   try {
-    const submittedRun = await startSingleRunThroughApi();
-    const runId = submittedRun?.run_id || backendRun?.run_id || "";
-    if (!runId) throw new Error("正式仿真未返回 run_id");
+    const settings = selectedExperimentPlanRunSettings();
+    const seed = Math.trunc(Number(settings.seed) || 20260621);
+    const response = await backendApi.runLiteMesaAnalysis(
+      selectedExperimentPlanProjectJson(),
+      "mission_reliability",
+      { ...settings, samples: 1, seed }
+    );
+    const responseSeries = response?.visualization_state_series;
+    const runId = response?.run_id || responseSeries?.run_id || response?.experiment_id || "";
     visualizationSelectedRunId = runId;
-    visualizationRunListLoaded = true;
-    await refreshVisualizationRunList(runId);
-    await loadVisualizationReplayForRun(runId);
-    if (!visualizationStateSeries) throw new Error(`run ${runId} 缺少正式 state-series artifact`);
+    visualizationStateSeries = responseSeries
+      ? normalizeVisualizationStateSeriesPayload(responseSeries, {
+        runId,
+        artifactId: responseSeries.artifact_manifest_id || (runId ? `lite-mesa-analysis-manifest-${runId}` : "lite-mesa-analysis-manifest")
+      })
+      : null;
     visualizationReplayIndex = 0;
-    visualizationReplayPlaying = true;
-    backendApiStatus = `正式仿真完成：${runId}`;
-    visualizationReplayStatus = `已读取正式 state_series 并开始回放：run_id ${runId}`;
+    visualizationReplayPlaying = false;
+    backendApiStatus = runId ? `Lite Mesa 仿真已完成：${runId}` : "Lite Mesa 仿真已完成";
+    visualizationReplayStatus = responseSeries
+      ? `${backendApiStatus}，已加载静态状态`
+      : `${backendApiStatus}，未返回 state_series`;
     render();
-    startVisualizationReplay();
-    return submittedRun || backendRun;
+    return { run_id: runId, status: response.status || "session_complete" };
   } catch (err) {
     visualizationStateSeries = null;
     visualizationReplayIndex = 0;
@@ -12624,17 +12635,10 @@ async function handleMesaControl(action) {
   if (action === "start-new-run") {
     stopVisualizationRunStream("正在启动新仿真，M9.2 在线订阅已停止");
     stopVisualizationReplay();
-    visualizationReplayStatus = "正在启动仿真并准备回放";
-    const submittedRun = await startFormalVisualizationRunThroughApi();
-    const newRunId = submittedRun?.run_id || backendRun?.run_id || "";
-    if (!newRunId) {
+    visualizationReplayStatus = "正在启动 Lite Mesa 仿真";
+    const submittedRun = await startLiteMesaVisualizationThroughApi();
+    if (!submittedRun) {
       visualizationReplayStatus = `启动新仿真失败：${backendApiStatus || "未返回 run_id"}`;
-      return;
-    }
-    if (visualizationStateSeries && visualizationStateSeries.run_id === newRunId && !isVisualizationStateSeriesFromStream()) {
-      visualizationReplayPlaying = true;
-      startVisualizationReplay();
-      visualizationReplayStatus = `已启动仿真并开始回放：run_id ${newRunId}`;
     }
     return;
   }
@@ -12678,7 +12682,7 @@ async function handleMesaControl(action) {
   }
   if (["step", "reset"].includes(action)) {
     stopVisualizationReplay();
-    visualizationReplayStatus = "后端暂停、单步和重置属于 M9.3；尚未加载正式 state_series artifact 时不会在前端伪造运行控制";
+    visualizationReplayStatus = "尚未加载 Lite Mesa state_series 时不会在前端伪造运行控制";
   }
 }
 
@@ -12742,12 +12746,15 @@ function renderVisualSimulation(page) {
   const timelineMax = Math.max(0, (visualizationStateSeries?.frame_count || 1) - 1);
   const currentFrame = visualizationStateSeriesFrame ? visualizationReplayIndex + 1 : 0;
   const eventStream = visualizationStateSeriesFrame ? buildSimulationLogStream(visualizationStateSeries) : [];
+  const hasCompletedLiteMesaVisualization = visualizationReplayStatus.includes("Lite Mesa 仿真已完成");
   const replayStatusDetail = visualizationStateSeriesFrame
     ? `run_id ${htmlEscape(visualizationStateSeries.run_id)} / artifact_id ${htmlEscape(visualizationStateSeries.artifact_id)} / step ${htmlEscape(visualizationStateSeriesFrame.step)} / ${currentFrame}-${htmlEscape(visualizationStateSeries.frame_count)} 帧 / 事件 ${htmlEscape(visualizationStateSeries.event_count)}`
-    : "缺少 aircraft_support_v1 state_series artifact 时，正式可视化不会回退到旧 aviation_support 或演示快照；请启动新仿真或选择已完成且带 artifact 的 run。";
+    : hasCompletedLiteMesaVisualization
+      ? "本次 Lite Mesa 仿真已完成，未加载回放序列。"
+      : "缺少 aircraft_support_v1 state_series 时，可视化不会回退到旧 aviation_support 或演示快照；请启动 Lite Mesa 仿真。";
   const timelineFrameLabel = visualizationStateSeriesFrame
     ? simulationDayMinuteLabel(visualizationStateSeriesFrame.simulation_time)
-    : "等待正式回放";
+    : "等待 Lite Mesa 仿真";
   const timelineFrameMeta = visualizationStateSeriesFrame
     ? `${currentFrame} / ${htmlEscape(visualizationStateSeries.frame_count)} 帧`
     : "未加载 state_series";
@@ -12763,7 +12770,7 @@ function renderVisualSimulation(page) {
     <div class="mesa-visual-shell">
       <section class="lite-mesa-hero mesa-visual-hero">
         <div>
-          <span class="status-badge success">正式 visualization run</span>
+          <span class="status-badge success">Lite Mesa visualization</span>
           <h3>可视化推演</h3>
           <p>${htmlEscape(projectName)} / ${htmlEscape(page.module)} / ${htmlEscape(experimentPlanName)}</p>
         </div>
@@ -12776,8 +12783,8 @@ function renderVisualSimulation(page) {
           <div class="mesa-control-group mesa-control-group-primary">
             <button type="button" class="btn-primary" data-mesa-control="play">${visualizationReplayPlaying ? "暂停回放" : "启动回放"}</button>
             <button type="button" data-mesa-control="start-new-run" ${formalRunSubmitInFlight ? "disabled" : ""}>启动新仿真</button>
-            <details class="mesa-control-status ${visualizationStateSeriesFrame ? "success" : "warning"}">
-              <summary><span>回放状态</span><strong>${htmlEscape(visualizationReplayStatus)}</strong></summary>
+            <details class="mesa-control-status ${visualizationStateSeriesFrame || hasCompletedLiteMesaVisualization ? "success" : "warning"}">
+              <summary><span>仿真状态</span><strong>${htmlEscape(visualizationReplayStatus)}</strong></summary>
               <small>${replayStatusDetail}</small>
             </details>
           </div>

@@ -110,6 +110,7 @@ def modeling_import_to_project(import_package: dict[str, Any], validation: dict[
     resources = [row for row in objects.get("supportResources", []) if isinstance(row, dict)]
     transport_policies = [row for row in objects.get("transportPolicies", []) if isinstance(row, dict)]
     activities = [row for row in objects.get("supportActivities", []) if isinstance(row, dict)]
+    support_activity_jobs = [row for row in objects.get("supportActivityJobs", []) if isinstance(row, dict)]
     lifecycle = import_package.get("lifecycle") if isinstance(import_package.get("lifecycle"), dict) else {}
     version = _safe_positive_int(lifecycle.get("version"), 1)
     duration_hours = _safe_positive_float(mission.get("durationHours"), 1)
@@ -147,6 +148,7 @@ def modeling_import_to_project(import_package: dict[str, Any], validation: dict[
         "supportNodes": _support_nodes_from_resources(resources),
         "supportResources": _support_resources_from_import_resources(resources),
         "transportPolicies": _transport_policies_from_import_resources(resources, transport_policies, activities),
+        "supportActivityJobs": deepcopy(support_activity_jobs),
         "supportActivities": [
             _support_activity_to_project(row, _support_resource_name_by_id(resources))
             for row in activities

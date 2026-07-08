@@ -909,6 +909,21 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
 
         self.assertEqual(model.snapshot()["mean_recovery_time"], 30)
 
+    def test_mission_return_without_actual_start_keeps_flight_hours_non_negative(self) -> None:
+        model = AircraftSupportV1Model(_minimal_inputs())
+        aircraft = model.aircraft[0]
+        mission = model.missions[0]
+        mission.actual_start = None
+        aircraft.state = "flying"
+        aircraft.current_mission_id = mission.mission_id
+        aircraft.return_time = 45
+        model.minute = 45
+
+        model._return_aircraft_from_mission(aircraft, early_return=False)
+
+        self.assertGreaterEqual(aircraft.flight_hours, 0.0)
+        self.assertEqual(aircraft.landing_count, 1)
+
     def test_failed_count_tracks_aircraft_under_failed_component_maintenance(self) -> None:
         model = AircraftSupportV1Model(_minimal_inputs())
         model.aircraft[0].state = "maintenance"

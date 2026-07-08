@@ -3353,6 +3353,11 @@ class SimulationAdapter:
 
     def _trace_visualization_frame(self, frame: dict[str, Any], trace: dict[str, Any]) -> dict[str, Any]:
         traced = copy.deepcopy(frame)
+        traced["run_id"] = trace["run_id"]
+        traced["scenario_id"] = trace["scenario_id"]
+        traced["scenario_version"] = trace["scenario_version"]
+        traced["artifact_manifest_id"] = trace["artifact_manifest_id"]
+        traced["result_summary_id"] = trace["result_summary_id"]
         traced["trace"] = copy.deepcopy(trace)
         step = int(traced["step"])
         traced["events"] = [

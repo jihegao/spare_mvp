@@ -876,7 +876,11 @@ class AircraftSupportV1Model:
         if mission is not None and aircraft.tail_number not in mission.failed_tail_numbers and aircraft.in_flight_failure:
             mission.failed_tail_numbers.append(aircraft.tail_number)
         return_minute = self.minute if early_return else aircraft.return_time
-        aircraft.flight_hours += max(0.0, float(((return_minute or self.minute) - (mission.actual_start if mission else 0)) / 60.0))
+        end_minute = return_minute if return_minute is not None else self.minute
+        start_minute = 0
+        if mission is not None:
+            start_minute = mission.actual_start if mission.actual_start is not None else mission.planned_start
+        aircraft.flight_hours += max(0.0, float((end_minute - start_minute) / 60.0))
         aircraft.landing_count += 1
         if aircraft.in_flight_failure:
             aircraft.state = "maintenance"

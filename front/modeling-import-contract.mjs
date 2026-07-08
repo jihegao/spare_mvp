@@ -105,6 +105,7 @@ export function projectToModelingImportPackage(projectJson, basePackage = {}) {
     supportResources,
     transportPolicies: projectTransportPolicies(project),
     supportActivities: normalizeSupportActivities(project.supportActivities, { ...project, supportResources }),
+    supportActivityJobs: normalizeObjectRows(project.supportActivityJobs),
     equipment: cloneJson(project.equipment || base.objects?.equipment || {}),
     projectInfo: cloneJson(project.projectInfo || base.objects?.projectInfo || {}),
     supportOrganization: normalizeSupportOrganization(project.supportOrganization || base.objects?.supportOrganization || {}),
