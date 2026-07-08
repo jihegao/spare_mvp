@@ -24,7 +24,7 @@ from src.spare_mvp_backend.api import (
 )
 from src.spare_mvp_backend.http_server import create_backend_server
 from src.spare_mvp_backend.modeling_import import modeling_import_to_project, validate_modeling_import_package
-from src.spare_mvp_backend.project_payload import strip_project_sweep
+from src.spare_mvp_backend.project_payload import export_project_json, strip_project_sweep
 from src.spare_mvp_backend.repository import ContractRepository, initialize_database
 from src.spare_mvp_backend.run_service import RunService, RunServiceError
 from src.spare_mvp_contract.adapter import AdapterError, SimulationAdapter
@@ -637,7 +637,7 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(run["status"], "succeeded")
 
         self.assertEqual(len(self.adapter.compile_calls), 1)
-        self.assertEqual(self.adapter.compile_calls[0], (strip_project_sweep(project), "aircraft_support_v1"))
+        self.assertEqual(self.adapter.compile_calls[0], (export_project_json(project), "aircraft_support_v1"))
         self.assertEqual(len(self.adapter.run_calls), 1)
         self.assertEqual(self.adapter.run_calls[0][0]["scenario_id"], run["scenario_id"])
         self.assertEqual(self.adapter.run_calls[0][1], 4)
@@ -2987,6 +2987,8 @@ class BackendApiContractTest(unittest.TestCase):
         branch_project = copy.deepcopy(project)
         branch_project["experiment"]["seed"] = 99
         branch_project["components"][0]["failureRate"] = 0.21
+        branch_project["components"][0].setdefault("rms", {})["prediction"] = {"mtbfHours": 100}
+        branch_project["resultSummary"] = {"mission_success_rate": 1}
         branch_project = strip_project_sweep(branch_project)
         equipment_resource = next(resource for resource in branch_project["supportResources"] if resource["type"] == "equipment")
         equipment_resource["quantity"] = 8
@@ -3018,6 +3020,14 @@ class BackendApiContractTest(unittest.TestCase):
 
         self.assertEqual(model_family, "aircraft_support_v1")
         self.assertNotIn("experiment", compiled_project)
+        self.assertNotIn("resultSummary", compiled_project)
+        self.assertNotIn("prediction", compiled_project["components"][0]["rms"])
+        self.assertNotIn("resultSummary", self.adapter.compile_runtime_configs[-1]["projectJson"])
+        self.assertNotIn("prediction", self.adapter.compile_runtime_configs[-1]["projectJson"]["components"][0]["rms"])
+        clean_export = provenance["clean_project_export"]
+        self.assertEqual(clean_export["target"], "aircraft_support_v1")
+        self.assertIn("resultSummary", clean_export["stripped_fields"])
+        self.assertIn("components[0].rms.prediction", clean_export["stripped_fields"])
         self.assertEqual(self.adapter.compile_runtime_configs[-1]["seed"], 99)
         self.assertEqual(compiled_project["components"][0]["failureRate"], 0.21)
         self.assertEqual(next(resource for resource in compiled_project["supportResources"] if resource["type"] == "equipment")["quantity"], 8)

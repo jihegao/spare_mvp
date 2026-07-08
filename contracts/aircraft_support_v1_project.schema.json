@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://spare-mvp.local/contracts/aircraft_support_v1_project.schema.json",
   "title": "Spare MVP Aircraft Support V1 Clean Project JSON",
-  "description": "Strict white-list Project JSON boundary for aircraft_support_v1 Scenario compilation. Runtime, UI draft, validation, RMS allocation process, and run/result artifacts belong outside this payload.",
+  "description": "Strict white-list Project JSON boundary for aircraft_support_v1 Scenario compilation. Runtime, UI draft, RMS allocation process, and run/result artifacts belong outside this payload; modeling import validation scope is retained as input provenance.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -42,13 +42,14 @@
     "missionPhases": { "type": "array", "items": { "$ref": "#/$defs/openModelObject" } },
     "combatUnit": { "$ref": "#/$defs/combatUnit" },
     "components": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/component" } },
-    "supportNodes": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/supportNode" } },
+    "supportNodes": { "type": "array", "items": { "$ref": "#/$defs/supportNode" } },
     "supportResources": { "type": "array", "items": { "$ref": "#/$defs/supportResource" } },
     "transportPolicies": { "type": "array", "items": { "$ref": "#/$defs/transportPolicy" } },
     "supportActivityJobs": { "type": "array", "items": { "$ref": "#/$defs/supportActivityJob" } },
-    "supportActivities": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/supportActivity" } },
+    "supportActivities": { "type": "array", "items": { "$ref": "#/$defs/supportActivity" } },
     "supportOrganization": { "$ref": "#/$defs/supportOrganization" },
-    "reliabilityBlockDiagram": { "$ref": "#/$defs/reliabilityBlockDiagram" }
+    "reliabilityBlockDiagram": { "$ref": "#/$defs/reliabilityBlockDiagram" },
+    "modelingImportValidation": { "$ref": "#/$defs/modelingImportValidation" }
   },
   "$defs": {
     "dictionary": { "type": "object", "additionalProperties": true },
@@ -142,6 +143,7 @@
         "quantity": { "type": "integer", "minimum": 0 },
         "failureRate": { "type": "number", "minimum": 0 },
         "failureDistribution": { "$ref": "#/$defs/dictionary" },
+        "repairDistribution": { "$ref": "#/$defs/dictionary" },
         "kOutOfN": { "$ref": "#/$defs/dictionary" },
         "lifeLimitHours": { "type": ["number", "null"], "minimum": 0 },
         "mtbfHours": { "type": ["number", "null"], "minimum": 0 },
@@ -307,6 +309,25 @@
       "properties": {
         "nodes": { "type": "array", "items": { "$ref": "#/$defs/openModelObject" } },
         "edges": { "type": "array", "items": { "$ref": "#/$defs/openModelObject" } }
+      }
+    },
+    "modelingImportValidation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "importId": { "type": "string" },
+        "usedTables": {
+          "type": "object",
+          "additionalProperties": { "type": "boolean" }
+        },
+        "disabledDomains": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "warnings": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/dictionary" }
+        }
       }
     },
     "pollutionKeys": {
