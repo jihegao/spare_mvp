@@ -826,6 +826,58 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertNotIn("mttrMinutes", stored["supportActivityJobs"][1])
         self.assertNotIn("repairDistribution", stored["supportActivityJobs"][1])
 
+    def test_save_project_preserves_distinct_legacy_support_jobs_with_duplicate_codes(self) -> None:
+        project = small_aircraft_support_project("project-duplicate-support-activity-codes")
+        project["supportActivities"] = [
+            {
+                "id": "ops-activity",
+                "activityType": "使用保障",
+                "jobs": [
+                    {
+                        "activityCode": "BA-001",
+                        "workName": "使用保障准备",
+                        "durationMinutes": 20,
+                        "predecessors": [],
+                    }
+                ],
+            },
+            {
+                "id": "preventive-activity",
+                "activityType": "预防性维修",
+                "jobs": [
+                    {
+                        "activityCode": "BA-001",
+                        "workName": "定检准备",
+                        "durationMinutes": 45,
+                        "predecessors": [],
+                    },
+                    {
+                        "activityCode": "BA-003",
+                        "workName": "定检执行",
+                        "durationMinutes": 60,
+                        "predecessors": ["BA-001"],
+                    }
+                ],
+            },
+        ]
+
+        saved = self.api.save_project(project)
+        stored = self.api.get_project(saved["project_id"])
+
+        self.assertEqual(stored["supportActivities"][0]["activityCodes"], ["BA-001"])
+        self.assertEqual(stored["supportActivities"][1]["activityCodes"], ["BA-002", "BA-003"])
+        self.assertEqual(stored["supportActivities"][1]["predecessors"], {"BA-002": [], "BA-003": ["BA-002"]})
+        self.assertEqual(
+            [(job["activityCode"], job["workName"], job["durationMinutes"]) for job in stored["supportActivityJobs"]],
+            [
+                ("BA-001", "使用保障准备", 20),
+                ("BA-002", "定检准备", 45),
+                ("BA-003", "定检执行", 60),
+            ],
+        )
+        self.assertNotIn("jobs", stored["supportActivities"][0])
+        self.assertNotIn("jobs", stored["supportActivities"][1])
+
     def test_run_service_submits_current_run_and_returns_status_envelope(self) -> None:
         project = small_aircraft_support_project("project-aircraft-support-contract-001")
         saved = self.api.save_project(project)

@@ -44,7 +44,6 @@ import {
 } from "./sim-engine.mjs";
 import {
   allowedSupportActivityDurationDistributions,
-  supportActivityJobs as legacySupportActivityJobs,
   normalizeSupportActivityDurationProfile,
   supportActivityJobFromBasicActivity
 } from "./support-activity-jobs.mjs";
@@ -1512,8 +1511,7 @@ function bindEvents() {
 
     const enterWorkbenchButton = event.target.closest("[data-enter-workbench]");
     if (enterWorkbenchButton) {
-      handleEnterWorkbench(enterWorkbenchButton.dataset.projectId).finally(() => render());
-      return;
+      return handleEnterWorkbench(enterWorkbenchButton.dataset.projectId).finally(() => render());
     }
 
     const projectMenuButton = event.target.closest("[data-project-menu-toggle]");
@@ -6876,49 +6874,87 @@ function supportActivityJobDefinition(job) {
   return definition;
 }
 
+function supportActivityJobDefinitionsEqual(left, right) {
+  return stableSupportActivityJobStringify(left) === stableSupportActivityJobStringify(right);
+}
+
+function stableSupportActivityJobStringify(value) {
+  if (Array.isArray(value)) return `[${value.map((item) => stableSupportActivityJobStringify(item)).join(",")}]`;
+  if (!value || typeof value !== "object") return JSON.stringify(value);
+  return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableSupportActivityJobStringify(value[key])}`).join(",")}}`;
+}
+
+function supportActivityJobCodeForDefinition(requestedCode, definition, tableByCode, currentActivityCodes, nextActivityCodes) {
+  const existing = tableByCode.get(requestedCode);
+  if (!existing && !nextActivityCodes.includes(requestedCode)) return requestedCode;
+  if (!nextActivityCodes.includes(requestedCode) && (currentActivityCodes.has(requestedCode) || supportActivityJobDefinitionsEqual(existing, definition))) {
+    return requestedCode;
+  }
+  return uniqueSupportActivityJobCode(requestedCode, new Set([...tableByCode.keys(), ...nextActivityCodes]));
+}
+
+function uniqueSupportActivityJobCode(requestedCode, usedCodes) {
+  if (!usedCodes.has(requestedCode)) return requestedCode;
+  const match = requestedCode.match(/^(.*?)(?:-(\d+))?$/);
+  const prefix = (match?.[1] || requestedCode || "BA").replace(/-$/, "");
+  let index = Number(match?.[2] || 2);
+  let code = `${prefix}-${String(index).padStart(3, "0")}`;
+  while (usedCodes.has(code)) {
+    index += 1;
+    code = `${prefix}-${String(index).padStart(3, "0")}`;
+  }
+  return code;
+}
+
 function supportActivityJobs(activity) {
   if (!activity || typeof activity !== "object") return [];
-  if (!Array.isArray(activity.activityCodes) && Array.isArray(activity.jobs)) {
-    setSupportActivityJobs(activity, legacySupportActivityJobs(activity).map((job) => ({ ...job })));
-    return supportActivityJobs(activity);
-  }
+  if (!Array.isArray(activity.activityCodes)) return [];
   const definitions = supportActivityJobDefinitionsByCode();
-  if (Array.isArray(activity.activityCodes)) {
-    return activity.activityCodes.map((rawCode, index) => {
-      const code = supportActivityJobCode(rawCode);
-      const definition = definitions.get(code) || legacySupportActivityJobs(activity)[index] || {};
-      return {
-        ...definition,
-        activityCode: code || definition.activityCode || `BA-${String(index + 1).padStart(3, "0")}`,
-        predecessors: Array.isArray(activity.predecessors?.[code])
-          ? [...activity.predecessors[code]]
-          : []
-      };
-    }).filter((job) => supportActivityJobCode(job.activityCode));
-  }
-  return legacySupportActivityJobs(activity).map((job) => ({ ...job }));
+  return activity.activityCodes.map((rawCode, index) => {
+    const code = supportActivityJobCode(rawCode);
+    const definition = definitions.get(code) || {};
+    return {
+      ...definition,
+      activityCode: code || definition.activityCode || `BA-${String(index + 1).padStart(3, "0")}`,
+      predecessors: Array.isArray(activity.predecessors?.[code])
+        ? [...activity.predecessors[code]]
+        : []
+    };
+  }).filter((job) => supportActivityJobCode(job.activityCode));
 }
 
 function setSupportActivityJobs(activity, jobs) {
   if (!activity || typeof activity !== "object") return;
   const table = ensureSupportActivityJobTable();
   const tableByCode = new Map(table.map((job) => [supportActivityJobCode(job?.activityCode), job]).filter(([code]) => code));
+  const currentActivityCodes = new Set(Array.isArray(activity.activityCodes) ? activity.activityCodes.map((code) => supportActivityJobCode(code)).filter(Boolean) : []);
   const activityCodes = [];
+  const codeAssignments = [];
+  const localCodeMap = new Map();
   const predecessors = {};
   for (const job of Array.isArray(jobs) ? jobs : []) {
     if (!job || typeof job !== "object" || Array.isArray(job)) continue;
-    const code = supportActivityJobCode(job.activityCode);
-    if (!code) continue;
+    const requestedCode = supportActivityJobCode(job.activityCode);
+    if (!requestedCode) continue;
+    const definition = supportActivityJobDefinition({ ...job, activityCode: requestedCode });
+    const code = supportActivityJobCodeForDefinition(requestedCode, definition, tableByCode, currentActivityCodes, activityCodes);
+    definition.activityCode = code;
     activityCodes.push(code);
-    predecessors[code] = Array.isArray(job.predecessors)
-      ? job.predecessors.map((value) => supportActivityJobCode(value)).filter(Boolean)
-      : [];
-    const definition = supportActivityJobDefinition({ ...job, activityCode: code });
+    codeAssignments.push({ job, requestedCode, code });
+    if (!localCodeMap.has(requestedCode)) localCodeMap.set(requestedCode, code);
     if (tableByCode.has(code)) Object.assign(tableByCode.get(code), definition);
     else {
       table.push(definition);
       tableByCode.set(code, definition);
     }
+  }
+  const activityCodeSet = new Set(activityCodes);
+  for (const assignment of codeAssignments) {
+    predecessors[assignment.code] = Array.isArray(assignment.job.predecessors)
+      ? assignment.job.predecessors
+        .map((value) => localCodeMap.get(supportActivityJobCode(value)) || supportActivityJobCode(value))
+        .filter((value) => value && activityCodeSet.has(value))
+      : [];
   }
   activity.activityCodes = activityCodes;
   activity.predecessors = predecessors;
@@ -6959,6 +6995,26 @@ function deleteSupportActivityJobsAtIndexes(activity, indexes) {
   if (nextJobs.length === jobs.length) return false;
   setSupportActivityJobs(activity, nextJobs);
   return true;
+}
+
+function remapSupportActivityJobPredecessors(jobs, oldCode, newCode) {
+  const from = supportActivityJobCode(oldCode);
+  const to = supportActivityJobCode(newCode);
+  if (!from || !to || from === to) return jobs;
+  return jobs.map((job) => {
+    if (!Array.isArray(job.predecessors)) return job;
+    const seen = new Set();
+    return {
+      ...job,
+      predecessors: job.predecessors
+        .map((value) => (supportActivityJobCode(value) === from ? to : supportActivityJobCode(value)))
+        .filter((value) => {
+          if (!value || seen.has(value)) return false;
+          seen.add(value);
+          return true;
+        })
+    };
+  });
 }
 
 function toggleAllSupportActivityJobSelection(tabKey, checked) {
@@ -7065,15 +7121,20 @@ function updateSupportActivityJobField(key, fieldName, value) {
   if (!jobs[index]) return;
   const activityIndex = (scenario.supportActivities || []).indexOf(activity);
   const basicActivityKey = activityIndex >= 0 ? `${activityIndex}:${index}` : "";
+  const oldCode = jobs[index].activityCode;
+  const nextValue = fieldName === "durationMinutes"
+    ? Math.max(0, Number(value || 0))
+    : fieldName === "activityCode"
+      ? uniqueBasicActivityCode(value, basicActivityKey)
+      : value;
   jobs[index] = {
     ...jobs[index],
-    [fieldName]: fieldName === "durationMinutes"
-      ? Math.max(0, Number(value || 0))
-      : fieldName === "activityCode"
-        ? uniqueBasicActivityCode(value, basicActivityKey)
-        : value
+    [fieldName]: nextValue
   };
-  setSupportActivityJobs(activity, jobs);
+  setSupportActivityJobs(
+    activity,
+    fieldName === "activityCode" ? remapSupportActivityJobPredecessors(jobs, oldCode, nextValue) : jobs
+  );
   updatePreviewResultsThroughApiClient();
 }
 
@@ -8305,15 +8366,20 @@ function updateBasicActivityJobField(key, fieldName, value) {
     updatePreviewResultsThroughApiClient();
     return;
   }
+  const oldCode = jobs[jobIndex].activityCode;
+  const nextValue = fieldName === "durationMinutes"
+    ? Math.max(0, Number(value || 0))
+    : fieldName === "activityCode"
+      ? uniqueBasicActivityCode(value, key)
+      : value;
   jobs[jobIndex] = {
     ...jobs[jobIndex],
-    [fieldName]: fieldName === "durationMinutes"
-      ? Math.max(0, Number(value || 0))
-      : fieldName === "activityCode"
-        ? uniqueBasicActivityCode(value, key)
-        : value
+    [fieldName]: nextValue
   };
-  setSupportActivityJobs(activity, jobs);
+  setSupportActivityJobs(
+    activity,
+    fieldName === "activityCode" ? remapSupportActivityJobPredecessors(jobs, oldCode, nextValue) : jobs
+  );
   updatePreviewResultsThroughApiClient();
 }
 

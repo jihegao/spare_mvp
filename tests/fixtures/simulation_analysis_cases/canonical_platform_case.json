@@ -2344,7 +2344,7 @@
       },
       {
         "activityCodes": [
-          "BA-001"
+          "BA-002"
         ],
         "activityName": "J-15飞行后检查活动",
         "activityType": "使用保障",
@@ -2357,7 +2357,7 @@
         "planGroupId": "preflight",
         "planType": "飞行后检查方案",
         "predecessors": {
-          "BA-001": []
+          "BA-002": []
         },
         "priority": 1,
         "requiredDevices": 1,
@@ -2564,6 +2564,25 @@
         ],
         "spare": [],
         "workName": "再次出动准备基本保障活动1"
+      },
+      {
+        "activityCode": "BA-002",
+        "durationMinutes": 30,
+        "equipment": [
+          {
+            "model": "检测仪",
+            "name": "检测仪",
+            "quantity": 1
+          }
+        ],
+        "personnel": [
+          {
+            "professional": "机务人员",
+            "quantity": 1
+          }
+        ],
+        "spare": [],
+        "workName": "飞行后检查基本保障活动1"
       }
     ],
     "supportNodes": [

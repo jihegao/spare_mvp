@@ -1565,6 +1565,7 @@ test("basic support activity library filters rows by selected activity type", as
     await runtime.click("[data-enter-workbench]", { projectId: "project-runtime" });
     await runtime.setHash("feature=spare-planning-basic-support-activity");
 
+    await waitForRuntimeHtml(runtime, /初始工作项目/, "expected runtime project support activity rows to load");
     assert.match(runtime.appNode.innerHTML, /初始工作项目/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /定检基本保障活动/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /部件修复作业/);
@@ -1584,7 +1585,9 @@ test("basic support activity library filters rows by selected activity type", as
 });
 
 test("corrective maintenance view uses selected component activities and MTTR", async () => {
+  const projectId = "project-corrective-runtime";
   const projectJson = createRuntimeProjectJson({
+    project_id: projectId,
     components: [
       {
         id: "aircraft-root",
@@ -1649,11 +1652,22 @@ test("corrective maintenance view uses selected component activities and MTTR", 
       meanRepairTimeMinutes: 999
     }
   ];
-  const runtime = await setupRuntimeApp({ projectJson });
+  const runtime = await setupRuntimeApp({
+    projectJson,
+    backendProjects: [{
+      project_id: projectId,
+      experiment_name: "修复性维修运行时项目",
+      base_code: "RT",
+      summary: "runtime test",
+      source_import_id: "runtime-import-template",
+      updated_at: "2026-06-26 00:00:00"
+    }]
+  });
 
   try {
-    await runtime.click("[data-enter-workbench]", { projectId: "project-runtime" });
+    await runtime.click("[data-enter-workbench]", { projectId: "corrective-runtime" });
     await runtime.setHash("feature=spare-planning-corrective-maintenance-activity");
+    await waitForRuntimeHtml(runtime, /部件A/, "expected runtime component tree to load");
     await runtime.click("[data-select-corrective-component]", { selectCorrectiveComponent: "component-a" });
     assert.match(runtime.appNode.innerHTML, /部件A既有修复作业/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /部件B既有修复作业/);
@@ -1725,6 +1739,37 @@ test("support activity predecessors are edited from the predecessor dialog at ru
       supportActivityPredecessorToggle: "BA-002"
     });
     assert.match(runtime.appNode.innerHTML, /checked/);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("support activity predecessor references follow activity code edits", async () => {
+  const projectJson = createRuntimeProjectJson();
+  appendRuntimeSupportActivityJob(projectJson, 0, {
+    activityCode: "BA-002",
+    workName: "依赖首项的作业",
+    predecessors: ["BA-001"],
+    durationMinutes: 15
+  });
+  const runtime = await setupRuntimeApp({ projectJson });
+
+  try {
+    await runtime.click("[data-enter-workbench]", { projectId: "project-runtime" });
+    await runtime.setHash("feature=spare-planning-basic-support-activity");
+    await runtime.click("[data-basic-activity-edit]", { basicActivityEdit: "0:0" });
+    await runtime.change(
+      "[data-basic-activity-field]",
+      { basicActivityKey: "0:0", basicActivityField: "activityCode" },
+      { value: "BA-010" }
+    );
+    await runtime.click("[data-project-draft-save]");
+
+    const savedProject = await waitForProjectSave(runtime, (body) => (
+      body.supportActivities?.[0]?.predecessors?.["BA-002"]?.[0] === "BA-010"
+    ), "expected predecessor references to follow activity code edits");
+    assert.deepEqual(savedProject.supportActivities[0].activityCodes, ["BA-010", "BA-002"]);
+    assert.deepEqual(savedProject.supportActivities[0].predecessors, { "BA-010": [], "BA-002": ["BA-010"] });
   } finally {
     runtime.restore();
   }
@@ -3132,6 +3177,14 @@ async function waitForProjectSave(runtime, predicate, message) {
   assert.fail(`${message}. Observed project saves: ${JSON.stringify(observed)}`);
 }
 
+async function waitForRuntimeHtml(runtime, pattern, message) {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    if (pattern.test(runtime.appNode.innerHTML)) return;
+    await runtime.flush();
+  }
+  assert.match(runtime.appNode.innerHTML, pattern, message);
+}
+
 function projectSaveBodies(runtime) {
   return runtime.requests
     .filter((request) => request.url === "/api/projects" && (request.options.method || "GET") === "POST")
@@ -3171,7 +3224,7 @@ function createRuntimeProjectJson(overrides = {}) {
     ],
     supportActivities: [{
       id: "ops-runtime-1",
-      activityType: "使用保障",
+      activityType: "使用保障活动",
       planType: "直接准备方案",
       planGroupId: "ops-runtime",
       activityName: "J-15直接准备方案",

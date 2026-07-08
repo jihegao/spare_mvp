@@ -647,6 +647,53 @@ test("buildBackendProjectJson canonicalizes support activity job predecessor ref
   assert.equal("activityCode" in scenario.supportActivities[5].jobs[1], false);
 });
 
+test("buildBackendProjectJson preserves distinct legacy support jobs with duplicate codes", () => {
+  const scenario = {
+    scenarioId: "support-duplicate-code-canonical",
+    supportActivities: [
+      {
+        id: "ops-activity",
+        activityType: "使用保障",
+        jobs: [{
+          activityCode: "BA-001",
+          workName: "使用保障准备",
+          durationMinutes: 20,
+          predecessors: []
+        }]
+      },
+      {
+        id: "preventive-activity",
+        activityType: "预防性维修",
+        jobs: [{
+          activityCode: "BA-001",
+          workName: "定检准备",
+          durationMinutes: 45,
+          predecessors: []
+        }, {
+          activityCode: "BA-003",
+          workName: "定检执行",
+          durationMinutes: 60,
+          predecessors: ["BA-001"]
+        }]
+      }
+    ]
+  };
+
+  const projectJson = buildBackendProjectJson(scenario, { id: "support-duplicate-code-canonical" });
+
+  assert.deepEqual(projectJson.supportActivities[0].activityCodes, ["BA-001"]);
+  assert.deepEqual(projectJson.supportActivities[1].activityCodes, ["BA-002", "BA-003"]);
+  assert.deepEqual(projectJson.supportActivities[1].predecessors, { "BA-002": [], "BA-003": ["BA-002"] });
+  assert.deepEqual(
+    projectJson.supportActivityJobs.map((job) => [job.activityCode, job.workName, job.durationMinutes]),
+    [
+      ["BA-001", "使用保障准备", 20],
+      ["BA-002", "定检准备", 45],
+      ["BA-003", "定检执行", 60]
+    ]
+  );
+});
+
 test("buildBackendProjectJson strips corrective MTTR fields from support activity jobs", () => {
   const scenario = {
     scenarioId: "support-job-mttr-boundary",

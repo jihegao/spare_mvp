@@ -1277,23 +1277,57 @@ def _lift_support_activity_jobs_to_top_level(project: dict[str, Any]) -> None:
             activity.pop("jobs", None)
             continue
         activity_codes: list[str] = []
+        code_assignments: list[tuple[dict[str, Any], str, str]] = []
+        local_code_map: dict[str, str] = {}
         predecessors: dict[str, list[str]] = {}
         for job in jobs:
-            code = _clean_text(job.get("activityCode"))
-            if not code:
+            requested_code = _clean_text(job.get("activityCode"))
+            if not requested_code:
                 continue
+            definition = _support_activity_job_definition(job)
+            code = _support_activity_job_code_for_definition(requested_code, definition, jobs_by_code)
+            definition["activityCode"] = code
             activity_codes.append(code)
+            code_assignments.append((job, requested_code, code))
+            local_code_map.setdefault(requested_code, code)
+            jobs_by_code.setdefault(code, definition)
+        activity_code_set = set(activity_codes)
+        for job, _requested_code, code in code_assignments:
             raw_predecessors = job.get("predecessors")
             predecessors[code] = [
-                _clean_text(predecessor)
+                mapped
                 for predecessor in raw_predecessors
-                if _clean_text(predecessor)
+                if (mapped := local_code_map.get(_clean_text(predecessor), _clean_text(predecessor)))
+                and mapped in activity_code_set
             ] if isinstance(raw_predecessors, list) else []
-            jobs_by_code.setdefault(code, _support_activity_job_definition(job))
         activity["activityCodes"] = activity_codes
         activity["predecessors"] = predecessors
         activity.pop("jobs", None)
     project["supportActivityJobs"] = list(jobs_by_code.values())
+
+
+def _support_activity_job_code_for_definition(
+    requested_code: str,
+    definition: dict[str, Any],
+    jobs_by_code: dict[str, dict[str, Any]],
+) -> str:
+    existing = jobs_by_code.get(requested_code)
+    if existing is None or existing == definition:
+        return requested_code
+    return _unique_support_activity_job_code(requested_code, set(jobs_by_code))
+
+
+def _unique_support_activity_job_code(requested_code: str, used_codes: set[str]) -> str:
+    if requested_code not in used_codes:
+        return requested_code
+    match = re.match(r"^(.*?)(?:-(\d+))?$", requested_code)
+    prefix = (match.group(1) if match else requested_code).rstrip("-") or "BA"
+    index = int(match.group(2)) if match and match.group(2) else 2
+    code = f"{prefix}-{index:03d}"
+    while code in used_codes:
+        index += 1
+        code = f"{prefix}-{index:03d}"
+    return code
 
 
 def _support_activity_job_definition(job: dict[str, Any]) -> dict[str, Any]:

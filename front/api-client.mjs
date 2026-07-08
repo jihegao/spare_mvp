@@ -908,21 +908,62 @@ function liftSupportActivityJobsToTopLevel(projectJson) {
       continue;
     }
     const activityCodes = [];
-    const predecessorsByCode = {};
+    const codeAssignments = [];
+    const localCodeMap = new Map();
     for (const job of jobs) {
-      const code = normalizedText(job.activityCode);
-      if (!code) continue;
+      const requestedCode = normalizedText(job.activityCode);
+      if (!requestedCode) continue;
+      const definition = supportActivityJobDefinition(job);
+      const code = supportActivityJobCodeForDefinition(requestedCode, definition, jobsByCode);
+      definition.activityCode = code;
       activityCodes.push(code);
-      predecessorsByCode[code] = Array.isArray(job.predecessors)
-        ? job.predecessors.map((value) => normalizedText(value)).filter(Boolean)
+      codeAssignments.push({ job, requestedCode, code });
+      if (!localCodeMap.has(requestedCode)) localCodeMap.set(requestedCode, code);
+      if (!jobsByCode.has(code)) jobsByCode.set(code, definition);
+    }
+    const activityCodeSet = new Set(activityCodes);
+    const predecessorsByCode = {};
+    for (const assignment of codeAssignments) {
+      predecessorsByCode[assignment.code] = Array.isArray(assignment.job.predecessors)
+        ? assignment.job.predecessors
+          .map((value) => localCodeMap.get(normalizedText(value)) || normalizedText(value))
+          .filter((value) => value && activityCodeSet.has(value))
         : [];
-      if (!jobsByCode.has(code)) jobsByCode.set(code, supportActivityJobDefinition(job));
     }
     activity.activityCodes = activityCodes;
     activity.predecessors = predecessorsByCode;
     delete activity.jobs;
   }
   projectJson.supportActivityJobs = Array.from(jobsByCode.values());
+}
+
+function supportActivityJobCodeForDefinition(requestedCode, definition, jobsByCode) {
+  const existing = jobsByCode.get(requestedCode);
+  if (!existing || supportActivityJobDefinitionsEqual(existing, definition)) return requestedCode;
+  return uniqueSupportActivityJobCode(requestedCode, new Set(jobsByCode.keys()));
+}
+
+function supportActivityJobDefinitionsEqual(left, right) {
+  return stableStringify(left) === stableStringify(right);
+}
+
+function stableStringify(value) {
+  if (Array.isArray(value)) return `[${value.map((item) => stableStringify(item)).join(",")}]`;
+  if (!value || typeof value !== "object") return JSON.stringify(value);
+  return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`).join(",")}}`;
+}
+
+function uniqueSupportActivityJobCode(requestedCode, usedCodes) {
+  if (!usedCodes.has(requestedCode)) return requestedCode;
+  const match = requestedCode.match(/^(.*?)(?:-(\d+))?$/);
+  const prefix = (match?.[1] || requestedCode || "BA").replace(/-$/, "");
+  let index = Number(match?.[2] || 2);
+  let code = `${prefix}-${String(index).padStart(3, "0")}`;
+  while (usedCodes.has(code)) {
+    index += 1;
+    code = `${prefix}-${String(index).padStart(3, "0")}`;
+  }
+  return code;
 }
 
 function supportActivityJobDefinition(job) {
