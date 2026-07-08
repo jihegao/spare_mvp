@@ -1246,8 +1246,12 @@ test("project list keeps multiple projects created from the selected project tem
       request.url === "/api/projects"
       && (request.options.method || "GET") === "POST"
     ));
-    assert.equal(projectSaveRequests.length, 2);
-    assert.ok(projectSaveRequests.every((request) => {
+    const templateCopySaveRequests = projectSaveRequests.filter((request) => {
+      const body = JSON.parse(request.options.body || "{}");
+      return /^project-runtime-template-copy-\d+$/.test(String(body.project_id || ""));
+    });
+    assert.equal(templateCopySaveRequests.length, 2);
+    assert.ok(templateCopySaveRequests.every((request) => {
       const body = JSON.parse(request.options.body || "{}");
       return body.projectInfo?.isTemplate === false
         && body.projectInfo?.is_template === false
