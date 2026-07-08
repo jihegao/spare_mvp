@@ -781,6 +781,24 @@ class BackendApiContractTest(unittest.TestCase):
                 "id": "activity-1",
                 "requireDevices": 3,
                 "requiredDevices": 2,
+                "jobs": [
+                    {
+                        "activityCode": "BA-001",
+                        "workName": "电源车准备",
+                        "durationMinutes": 15,
+                        "predecessors": [],
+                    },
+                    {
+                        "activityCode": "BA-002",
+                        "workName": "通电检查",
+                        "durationMinutes": 30,
+                        "predecessors": ["BA-001"],
+                        "maxRepairTimeMinutes": 999,
+                        "meanRepairTimeMinutes": 888,
+                        "mttrMinutes": 777,
+                        "repairDistribution": {"distributionType": "固定值", "value": 999},
+                    },
+                ],
             },
         ]
 
@@ -795,6 +813,70 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertNotIn("analysisRequests", stored["missionProfile"])
         self.assertNotIn("requireDevices", stored["supportActivities"][0])
         self.assertEqual(stored["supportActivities"][0]["requiredDevices"], 2)
+        self.assertNotIn("jobs", stored["supportActivities"][0])
+        self.assertEqual(stored["supportActivities"][0]["activityCodes"], ["BA-001", "BA-002"])
+        self.assertEqual(stored["supportActivities"][0]["predecessors"], {"BA-001": [], "BA-002": ["BA-001"]})
+        self.assertEqual(
+            [job["activityCode"] for job in stored["supportActivityJobs"]],
+            ["BA-001", "BA-002"],
+        )
+        self.assertNotIn("predecessors", stored["supportActivityJobs"][1])
+        self.assertNotIn("maxRepairTimeMinutes", stored["supportActivityJobs"][1])
+        self.assertNotIn("meanRepairTimeMinutes", stored["supportActivityJobs"][1])
+        self.assertNotIn("mttrMinutes", stored["supportActivityJobs"][1])
+        self.assertNotIn("repairDistribution", stored["supportActivityJobs"][1])
+
+    def test_save_project_preserves_distinct_legacy_support_jobs_with_duplicate_codes(self) -> None:
+        project = small_aircraft_support_project("project-duplicate-support-activity-codes")
+        project["supportActivities"] = [
+            {
+                "id": "ops-activity",
+                "activityType": "使用保障",
+                "jobs": [
+                    {
+                        "activityCode": "BA-001",
+                        "workName": "使用保障准备",
+                        "durationMinutes": 20,
+                        "predecessors": [],
+                    }
+                ],
+            },
+            {
+                "id": "preventive-activity",
+                "activityType": "预防性维修",
+                "jobs": [
+                    {
+                        "activityCode": "BA-001",
+                        "workName": "定检准备",
+                        "durationMinutes": 45,
+                        "predecessors": [],
+                    },
+                    {
+                        "activityCode": "BA-003",
+                        "workName": "定检执行",
+                        "durationMinutes": 60,
+                        "predecessors": ["BA-001"],
+                    }
+                ],
+            },
+        ]
+
+        saved = self.api.save_project(project)
+        stored = self.api.get_project(saved["project_id"])
+
+        self.assertEqual(stored["supportActivities"][0]["activityCodes"], ["BA-001"])
+        self.assertEqual(stored["supportActivities"][1]["activityCodes"], ["BA-002", "BA-003"])
+        self.assertEqual(stored["supportActivities"][1]["predecessors"], {"BA-002": [], "BA-003": ["BA-002"]})
+        self.assertEqual(
+            [(job["activityCode"], job["workName"], job["durationMinutes"]) for job in stored["supportActivityJobs"]],
+            [
+                ("BA-001", "使用保障准备", 20),
+                ("BA-002", "定检准备", 45),
+                ("BA-003", "定检执行", 60),
+            ],
+        )
+        self.assertNotIn("jobs", stored["supportActivities"][0])
+        self.assertNotIn("jobs", stored["supportActivities"][1])
 
     def test_run_service_submits_current_run_and_returns_status_envelope(self) -> None:
         project = small_aircraft_support_project("project-aircraft-support-contract-001")
@@ -3356,7 +3438,9 @@ class BackendApiContractTest(unittest.TestCase):
         ))
         activity_types = {activity["activityType"] for activity in created["project"]["supportActivities"]}
         self.assertTrue({"飞行前保障", "修复性维修", "预防性维修", "后勤保障"}.issubset(activity_types))
-        self.assertGreaterEqual(len(created["project"]["supportActivities"][0]["jobs"]), 2)
+        self.assertTrue(all("jobs" not in activity for activity in created["project"]["supportActivities"]))
+        self.assertGreaterEqual(len(created["project"]["supportActivities"][0]["activityCodes"]), 2)
+        self.assertGreaterEqual(len(created["project"]["supportActivityJobs"]), 2)
         self.assertGreaterEqual(len(created["project"]["reliabilityBlockDiagram"]["nodes"]), 4)
         self.assertNotIn("experiment", created["project"])
         self.assertNotIn("analysisRequests", created["project"])

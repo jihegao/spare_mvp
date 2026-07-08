@@ -73,9 +73,9 @@ class CleanProjectGoldenFixtureTest(unittest.TestCase):
         self.assertNotIn("uiState", clean["components"][0])
         self.assertNotIn("resultArtifacts", clean["components"][0])
         self.assertNotIn("draftState", clean["supportActivities"][0])
-        self.assertNotIn("futureUiPanelState", clean["supportActivities"][0]["jobs"][0])
-        self.assertNotIn("analysisRequests", clean["supportActivities"][0]["jobs"][0])
-        self.assertNotIn("runtimeOutputs", clean["supportActivities"][0]["jobs"][0])
+        self.assertNotIn("futureUiPanelState", clean["supportActivityJobs"][0])
+        self.assertNotIn("analysisRequests", clean["supportActivityJobs"][0])
+        self.assertNotIn("runtimeOutputs", clean["supportActivityJobs"][0])
         self.assertNotIn("canvasLayout", clean["reliabilityBlockDiagram"]["nodes"][0])
         self.assertNotIn("futureFrontendPanelState", clean["reliabilityBlockDiagram"]["nodes"][0])
 

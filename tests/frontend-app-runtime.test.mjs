@@ -1246,8 +1246,12 @@ test("project list keeps multiple projects created from the selected project tem
       request.url === "/api/projects"
       && (request.options.method || "GET") === "POST"
     ));
-    assert.equal(projectSaveRequests.length, 2);
-    assert.ok(projectSaveRequests.every((request) => {
+    const templateCopySaveRequests = projectSaveRequests.filter((request) => {
+      const body = JSON.parse(request.options.body || "{}");
+      return /^project-runtime-template-copy-\d+$/.test(String(body.project_id || ""));
+    });
+    assert.equal(templateCopySaveRequests.length, 2);
+    assert.ok(templateCopySaveRequests.every((request) => {
       const body = JSON.parse(request.options.body || "{}");
       return body.projectInfo?.isTemplate === false
         && body.projectInfo?.is_template === false
@@ -1320,7 +1324,7 @@ test("equipment aircraft-list selection renders whole aircraft rows and descenda
   });
 
   try {
-    await runtime.click("[data-enter-workbench]", { projectId: "runtime" });
+    await runtime.click("[data-enter-workbench]", { projectId: "project-runtime" });
     await runtime.setHash("feature=spare-planning-equipment-system");
     await runtime.click("[data-select-equipment-root]");
 
@@ -1355,7 +1359,7 @@ test("equipment aircraft rename keeps aircraftTypes catalog in saved Project dra
   });
 
   try {
-    await runtime.click("[data-enter-workbench]", { projectId: "runtime" });
+    await runtime.click("[data-enter-workbench]", { projectId: "project-runtime" });
     await runtime.setHash("feature=spare-planning-equipment-system");
     await runtime.click("[data-select-equipment-aircraft]", { selectEquipmentAircraft: "J-15" });
     await runtime.change("[data-equipment-aircraft-model]", { equipmentAircraftModel: "J-15" }, { value: "J-20" });
@@ -1435,7 +1439,7 @@ test("support activity add work item opens the editing dialog at runtime", async
   const runtime = await setupRuntimeApp({ projectJson: createRuntimeProjectJson() });
 
   try {
-    await runtime.click("[data-enter-workbench]", { projectId: "runtime" });
+    await runtime.click("[data-enter-workbench]", { projectId: "project-runtime" });
     await runtime.setHash("feature=spare-planning-operations-support-activity");
 
     assert.match(runtime.appNode.innerHTML, /data-support-activity-job-add="ops_preflight"/);
@@ -1465,7 +1469,7 @@ test("basic support activity add uses a draft dialog before creating a row", asy
   const runtime = await setupRuntimeApp({ projectJson: createRuntimeProjectJson() });
 
   try {
-    await runtime.click("[data-enter-workbench]", { projectId: "runtime" });
+    await runtime.click("[data-enter-workbench]", { projectId: "project-runtime" });
     await runtime.setHash("feature=spare-planning-basic-support-activity");
 
     const before = (runtime.appNode.innerHTML.match(/data-basic-activity-edit=/g) || []).length;
@@ -1487,10 +1491,39 @@ test("basic support activity add uses a draft dialog before creating a row", asy
     );
     await runtime.click("[data-basic-activity-dialog-save]");
 
-    assert.equal((runtime.appNode.innerHTML.match(/data-basic-activity-edit=/g) || []).length, before + 1);
     assert.match(runtime.appNode.innerHTML, /新增弹窗活动/);
-    assert.equal((runtime.appNode.innerHTML.match(/<td>BA-001<\/td>/g) || []).length, 1);
-    assert.match(runtime.appNode.innerHTML, /<td>BA-002<\/td>/);
+    assert.deepEqual(
+      Array.from(runtime.appNode.innerHTML.matchAll(/<td>(BA-\d+)<\/td>/g)).map((match) => match[1]).sort(),
+      ["BA-001", "BA-002"]
+    );
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("basic support activity UI reads and writes top-level job table references", async () => {
+  const projectJson = createRuntimeProjectJson();
+  const runtime = await setupRuntimeApp({ projectJson });
+
+  try {
+    await runtime.click("[data-enter-workbench]", { projectId: "project-runtime" });
+    await runtime.setHash("feature=spare-planning-basic-support-activity");
+
+    assert.match(runtime.appNode.innerHTML, /初始工作项目/);
+    await runtime.change(
+      "[data-basic-activity-field]",
+      { basicActivityKey: "0:0", basicActivityField: "workName" },
+      { value: "顶层作业表编辑" }
+    );
+    assert.match(runtime.appNode.innerHTML, /顶层作业表编辑/);
+
+    await runtime.click("[data-project-draft-save]");
+    const savedProject = await waitForProjectSave(runtime, (body) => (
+      body.supportActivityJobs?.[0]?.workName === "顶层作业表编辑"
+        && body.supportActivities?.[0]?.activityCodes?.[0] === "BA-001"
+    ), "expected support activity UI to persist top-level job table edits");
+    assert.equal(savedProject.supportActivities[0].jobs, undefined);
+    assert.deepEqual(savedProject.supportActivities[0].predecessors, { "BA-001": [] });
   } finally {
     runtime.restore();
   }
@@ -1505,12 +1538,8 @@ test("basic support activity library filters rows by selected activity type", as
       planType: "预防性维修方案",
       activityName: "J-15定检方案",
       aircraftModel: "J-15",
-      jobs: [{
-        activityCode: "PM-900",
-        workName: "定检基本保障活动",
-        predecessors: [],
-        durationMinutes: 40
-      }]
+      activityCodes: [],
+      predecessors: {}
     },
     {
       id: "corrective-runtime",
@@ -1518,20 +1547,29 @@ test("basic support activity library filters rows by selected activity type", as
       planType: "修复性维修方案",
       activityName: "部件修复方案",
       equipmentId: "component-x",
-      jobs: [{
-        activityCode: "CM-900",
-        workName: "部件修复作业",
-        predecessors: [],
-        durationMinutes: 55
-      }]
+      activityCodes: [],
+      predecessors: {}
     }
   );
+  appendRuntimeSupportActivityJob(projectJson, 1, {
+    activityCode: "PM-900",
+    workName: "定检基本保障活动",
+    predecessors: [],
+    durationMinutes: 40
+  });
+  appendRuntimeSupportActivityJob(projectJson, 2, {
+    activityCode: "CM-900",
+    workName: "部件修复作业",
+    predecessors: [],
+    durationMinutes: 55
+  });
   const runtime = await setupRuntimeApp({ projectJson });
 
   try {
-    await runtime.click("[data-enter-workbench]", { projectId: "runtime" });
+    await runtime.click("[data-enter-workbench]", { projectId: "project-runtime" });
     await runtime.setHash("feature=spare-planning-basic-support-activity");
 
+    await waitForRuntimeHtml(runtime, /初始工作项目/, "expected runtime project support activity rows to load");
     assert.match(runtime.appNode.innerHTML, /初始工作项目/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /定检基本保障活动/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /部件修复作业/);
@@ -1550,9 +1588,18 @@ test("basic support activity library filters rows by selected activity type", as
   }
 });
 
-test("corrective basic activity draft uses the selected component scope", async () => {
+test("corrective maintenance view uses selected component activities and MTTR", async () => {
+  const projectId = "project-corrective-runtime";
   const projectJson = createRuntimeProjectJson({
+    project_id: projectId,
     components: [
+      {
+        id: "aircraft-root",
+        name: "J-15",
+        aircraftModel: "J-15",
+        productType: "whole",
+        quantity: 1
+      },
       {
         id: "component-a",
         name: "部件A",
@@ -1560,7 +1607,8 @@ test("corrective basic activity draft uses the selected component scope", async 
         parentId: "aircraft-root",
         productType: "LRU",
         quantity: 1,
-        failureRate: 0.01
+        failureRate: 0.01,
+        repairDistribution: { distributionType: "固定值", value: 42 }
       },
       {
         id: "component-b",
@@ -1569,59 +1617,71 @@ test("corrective basic activity draft uses the selected component scope", async 
         parentId: "aircraft-root",
         productType: "LRU",
         quantity: 1,
-        failureRate: 0.01
+        failureRate: 0.01,
+        repairDistribution: { distributionType: "固定值", value: 66 }
       }
     ]
   });
-  projectJson.supportActivities.push({
-    id: "corrective-component-a",
-    activityType: "修复性维修",
-    planType: "修复性维修方案",
-    activityName: "部件A修复性维修方案",
-    equipmentId: "component-a",
-    jobs: [{
+  projectJson.supportActivities.push(
+    {
+      id: "corrective-component-a",
+      activityType: "修复性维修",
+      planType: "修复性维修方案",
+      activityName: "部件A修复性维修方案",
+      equipmentId: "component-a",
+      activityCodes: ["CM-A"],
+      predecessors: { "CM-A": [] }
+    },
+    {
+      id: "corrective-component-b",
+      activityType: "修复性维修",
+      planType: "修复性维修方案",
+      activityName: "部件B修复性维修方案",
+      equipmentId: "component-b",
+      activityCodes: ["CM-B"],
+      predecessors: { "CM-B": [] }
+    }
+  );
+  projectJson.supportActivityJobs = [
+    ...(projectJson.supportActivityJobs || []),
+    {
       activityCode: "CM-A",
       workName: "部件A既有修复作业",
-      predecessors: [],
       durationMinutes: 45
+    },
+    {
+      activityCode: "CM-B",
+      workName: "部件B既有修复作业",
+      durationMinutes: 55,
+      meanRepairTimeMinutes: 999
+    }
+  ];
+  const runtime = await setupRuntimeApp({
+    projectJson,
+    backendProjects: [{
+      project_id: projectId,
+      experiment_name: "修复性维修运行时项目",
+      base_code: "RT",
+      summary: "runtime test",
+      source_import_id: "runtime-import-template",
+      updated_at: "2026-06-26 00:00:00"
     }]
   });
-  const runtime = await setupRuntimeApp({ projectJson });
 
   try {
-    await runtime.click("[data-enter-workbench]", { projectId: "runtime" });
-    await runtime.setHash("feature=spare-planning-basic-support-activity");
-    await runtime.click("[data-basic-activity-add]");
-    await runtime.change(
-      "[data-basic-activity-field]",
-      { basicActivityKey: "__new_basic_activity__", basicActivityField: "type" },
-      { value: "修复性维修" }
-    );
-    await runtime.change(
-      "[data-basic-activity-field]",
-      { basicActivityKey: "__new_basic_activity__", basicActivityField: "scope" },
-      { value: "component:component-b" }
-    );
-    await runtime.change(
-      "[data-basic-activity-field]",
-      { basicActivityKey: "__new_basic_activity__", basicActivityField: "activityCode" },
-      { value: "CM-B" }
-    );
-    await runtime.change(
-      "[data-basic-activity-field]",
-      { basicActivityKey: "__new_basic_activity__", basicActivityField: "workName" },
-      { value: "部件B新增修复作业" }
-    );
-    await runtime.click("[data-basic-activity-dialog-save]");
-
+    await runtime.click("[data-enter-workbench]", { projectId: "corrective-runtime" });
     await runtime.setHash("feature=spare-planning-corrective-maintenance-activity");
+    await waitForRuntimeHtml(runtime, /部件A/, "expected runtime component tree to load");
     await runtime.click("[data-select-corrective-component]", { selectCorrectiveComponent: "component-a" });
     assert.match(runtime.appNode.innerHTML, /部件A既有修复作业/);
-    assert.doesNotMatch(runtime.appNode.innerHTML, /部件B新增修复作业/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /部件B既有修复作业/);
+    assert.match(runtime.appNode.innerHTML, /固定值 42 min/);
 
     await runtime.click("[data-select-corrective-component]", { selectCorrectiveComponent: "component-b" });
-    assert.match(runtime.appNode.innerHTML, /部件B新增修复作业/);
+    assert.match(runtime.appNode.innerHTML, /部件B既有修复作业/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /部件A既有修复作业/);
+    assert.match(runtime.appNode.innerHTML, /固定值 66 min/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /999/);
   } finally {
     runtime.restore();
   }
@@ -1629,7 +1689,7 @@ test("corrective basic activity draft uses the selected component scope", async 
 
 test("basic support activity codes stay unique when edited at runtime", async () => {
   const projectJson = createRuntimeProjectJson();
-  projectJson.supportActivities[0].jobs.push({
+  appendRuntimeSupportActivityJob(projectJson, 0, {
     activityCode: "BA-002",
     workName: "第二工作项目",
     predecessors: [],
@@ -1638,7 +1698,7 @@ test("basic support activity codes stay unique when edited at runtime", async ()
   const runtime = await setupRuntimeApp({ projectJson });
 
   try {
-    await runtime.click("[data-enter-workbench]", { projectId: "runtime" });
+    await runtime.click("[data-enter-workbench]", { projectId: "project-runtime" });
     await runtime.setHash("feature=spare-planning-basic-support-activity");
 
     await runtime.click("[data-basic-activity-edit]", { basicActivityEdit: "0:1" });
@@ -1647,6 +1707,7 @@ test("basic support activity codes stay unique when edited at runtime", async ()
       { basicActivityKey: "0:1", basicActivityField: "activityCode" },
       { value: "BA-001" }
     );
+    await runtime.flush();
 
     assert.equal((runtime.appNode.innerHTML.match(/<td>BA-002<\/td>/g) || []).length, 1);
   } finally {
@@ -1656,7 +1717,7 @@ test("basic support activity codes stay unique when edited at runtime", async ()
 
 test("support activity predecessors are edited from the predecessor dialog at runtime", async () => {
   const projectJson = createRuntimeProjectJson();
-  projectJson.supportActivities[0].jobs.push({
+  appendRuntimeSupportActivityJob(projectJson, 0, {
     activityCode: "BA-002",
     workName: "已有紧前作业",
     predecessors: [],
@@ -1665,7 +1726,7 @@ test("support activity predecessors are edited from the predecessor dialog at ru
   const runtime = await setupRuntimeApp({ projectJson });
 
   try {
-    await runtime.click("[data-enter-workbench]", { projectId: "runtime" });
+    await runtime.click("[data-enter-workbench]", { projectId: "project-runtime" });
     await runtime.setHash("feature=spare-planning-operations-support-activity");
 
     assert.match(runtime.appNode.innerHTML, /data-support-activity-predecessor-edit="ops_preflight-0"/);
@@ -1687,11 +1748,42 @@ test("support activity predecessors are edited from the predecessor dialog at ru
   }
 });
 
+test("support activity predecessor references follow activity code edits", async () => {
+  const projectJson = createRuntimeProjectJson();
+  appendRuntimeSupportActivityJob(projectJson, 0, {
+    activityCode: "BA-002",
+    workName: "依赖首项的作业",
+    predecessors: ["BA-001"],
+    durationMinutes: 15
+  });
+  const runtime = await setupRuntimeApp({ projectJson });
+
+  try {
+    await runtime.click("[data-enter-workbench]", { projectId: "project-runtime" });
+    await runtime.setHash("feature=spare-planning-basic-support-activity");
+    await runtime.click("[data-basic-activity-edit]", { basicActivityEdit: "0:0" });
+    await runtime.change(
+      "[data-basic-activity-field]",
+      { basicActivityKey: "0:0", basicActivityField: "activityCode" },
+      { value: "BA-010" }
+    );
+    await runtime.click("[data-project-draft-save]");
+
+    const savedProject = await waitForProjectSave(runtime, (body) => (
+      body.supportActivities?.[0]?.predecessors?.["BA-002"]?.[0] === "BA-010"
+    ), "expected predecessor references to follow activity code edits");
+    assert.deepEqual(savedProject.supportActivities[0].activityCodes, ["BA-010", "BA-002"]);
+    assert.deepEqual(savedProject.supportActivities[0].predecessors, { "BA-010": [], "BA-002": ["BA-010"] });
+  } finally {
+    runtime.restore();
+  }
+});
+
 test("basic support activity edit opens a dialog at runtime", async () => {
   const runtime = await setupRuntimeApp({ projectJson: createRuntimeProjectJson() });
 
   try {
-    await runtime.click("[data-enter-workbench]", { projectId: "runtime" });
+    await runtime.click("[data-enter-workbench]", { projectId: "project-runtime" });
     await runtime.setHash("feature=spare-planning-basic-support-activity");
 
     assert.match(runtime.appNode.innerHTML, /data-basic-activity-edit=/);
@@ -1726,7 +1818,7 @@ test("basic support activity edit opens a dialog at runtime", async () => {
         basicActivityResourceIndex: "1",
         basicActivityResourceDialogField: "resourceKey"
       },
-      { value: "runtime-personnel-1" }
+      { value: "personnel:机务" }
     );
     await runtime.change(
       "[data-basic-activity-resource-dialog-field]",
@@ -1738,8 +1830,9 @@ test("basic support activity edit opens a dialog at runtime", async () => {
       },
       { value: "4", type: "number" }
     );
-    assert.match(runtime.appNode.innerHTML, /<option value="runtime-personnel-1"[^>]*selected[^>]*>机务人员 \/ 机务 \/ 航母飞行甲板<\/option>/);
+    assert.match(runtime.appNode.innerHTML, /<option value="personnel:机务"[^>]*selected[^>]*>机务<\/option>/);
     assert.match(runtime.appNode.innerHTML, /value="4"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /航母飞行甲板/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /新增保障人员/);
 
     await runtime.click("[data-basic-activity-resource-dialog-close]");
@@ -1751,7 +1844,8 @@ test("basic support activity edit opens a dialog at runtime", async () => {
       "[data-basic-activity-resource-dialog-add]",
       { basicActivityKey: "0:0", basicActivityResourceDialogAdd: "spare" }
     );
-    assert.match(runtime.appNode.innerHTML, /<option value="runtime-spare-1"[^>]*selected[^>]*>LRU-A \/ 航母飞行甲板<\/option>/);
+    assert.match(runtime.appNode.innerHTML, /<option value="runtime-spare-1"[^>]*selected[^>]*>LRU-A<\/option>/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /航母飞行甲板/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /data-basic-activity-resource-dialog-field="model"/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /data-basic-activity-resource-dialog-field="name"/);
   } finally {
@@ -1759,7 +1853,7 @@ test("basic support activity edit opens a dialog at runtime", async () => {
   }
 });
 
-test("basic support activity resource dialog uses support organization resource rows", async () => {
+test("basic support activity resource dialog uses non-organization resource catalogs", async () => {
   const projectId = "activity-resource-options-runtime";
   const projectJson = createRuntimeProjectJson({ project_id: projectId });
   projectJson.modelingDictionaries = { personnelSpecialties: ["航电", "液压"] };
@@ -1777,10 +1871,9 @@ test("basic support activity resource dialog uses support organization resource 
     { id: "equipment-detector", supportNodeName: "航母飞行甲板", type: "equipment", name: "检测仪", model: "DT-01", quantity: 2 },
     { id: "spare-avionics", supportNodeName: "航母飞行甲板", type: "spare", name: "航电模块", model: "LRU", quantity: 5 }
   ];
-  projectJson.supportActivities[0].jobs[0] = {
+  projectJson.supportActivityJobs[0] = {
     activityCode: "BA-001",
     workName: "导入工作项目",
-    predecessors: [],
     durationMinutes: 20,
     personnel: "维修/航电,2",
     equipment: "检测仪,DT-01,1",
@@ -1807,28 +1900,55 @@ test("basic support activity resource dialog uses support organization resource 
       "[data-basic-activity-resource-dialog-open]",
       { basicActivityKey: "0:0", basicActivityResourceDialogOpen: "personnel" }
     );
-    assert.match(runtime.appNode.innerHTML, /<option value="personnel-avionics"[^>]*>航电保障组 \/ 航电 \/ 航母飞行甲板<\/option>/);
-    assert.doesNotMatch(runtime.appNode.innerHTML, /<option value="液压"/);
+    assert.match(runtime.appNode.innerHTML, /<option value="personnel:航电"[^>]*selected[^>]*>航电<\/option>/);
+    assert.match(runtime.appNode.innerHTML, /<option value="personnel:液压"[^>]*>液压<\/option>/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /航母飞行甲板/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /航电保障组/);
 
     await runtime.click("[data-basic-activity-resource-dialog-close]");
     await runtime.click(
       "[data-basic-activity-resource-dialog-open]",
       { basicActivityKey: "0:0", basicActivityResourceDialogOpen: "equipment" }
     );
-    assert.match(runtime.appNode.innerHTML, /<option value="equipment-detector"[^>]*selected[^>]*>检测仪 \/ DT-01 \/ 航母飞行甲板<\/option>/);
+    assert.match(runtime.appNode.innerHTML, /<option value="equipment-detector"[^>]*selected[^>]*>检测仪 \/ DT-01<\/option>/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /航母飞行甲板/);
 
     await runtime.click("[data-basic-activity-resource-dialog-close]");
     await runtime.click(
       "[data-basic-activity-resource-dialog-open]",
       { basicActivityKey: "0:0", basicActivityResourceDialogOpen: "spare" }
     );
-    assert.match(runtime.appNode.innerHTML, /<option value="spare-avionics"[^>]*selected[^>]*>航电模块 \/ LRU \/ 航母飞行甲板<\/option>/);
+    assert.match(runtime.appNode.innerHTML, /<option value="spare-avionics"[^>]*selected[^>]*>航电模块 \/ LRU<\/option>/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /航母飞行甲板/);
   } finally {
     runtime.restore();
   }
 });
 
-test("basic support activity resource dialog selects requirements from support organization resources", async () => {
+test("basic support activity applicability only offers whole-machine objects", async () => {
+  const projectJson = createRuntimeProjectJson();
+  projectJson.equipment.wholeMachineModels = ["J-15", "J-35"];
+  projectJson.components = [
+    { id: "component-a", name: "部件A", aircraftModel: "J-15", parentId: "aircraft-root", quantity: 1 },
+    { id: "component-b", name: "部件B", aircraftModel: "J-35", parentId: "aircraft-root", quantity: 1 }
+  ];
+  const runtime = await setupRuntimeApp({ projectJson });
+
+  try {
+    await runtime.click("[data-enter-workbench]", { projectId: "project-runtime" });
+    await runtime.setHash("feature=spare-planning-basic-support-activity");
+    await runtime.click("[data-basic-activity-add]");
+
+    assert.match(runtime.appNode.innerHTML, /<option value="aircraft:J-15"/);
+    assert.match(runtime.appNode.innerHTML, /<option value="aircraft:J-35"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /component:component-a/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /component:component-b/);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("basic support activity resource dialog selects resource requirements without organization coupling", async () => {
   const projectId = "activity-resource-select-runtime";
   const runtime = await setupRuntimeApp({
     projectJson: createRuntimeProjectJson({
@@ -1855,15 +1975,16 @@ test("basic support activity resource dialog selects requirements from support o
         activityName: "J-15直接准备方案",
         aircraftModel: "J-15",
         durationHours: 1,
-        jobs: [{
+        activityCodes: ["BA-001"],
+        predecessors: { "BA-001": [] }
+      }],
+      supportActivityJobs: [{
           activityCode: "BA-001",
           workName: "初始工作项目",
-          predecessors: [],
           durationMinutes: 20,
           personnel: [],
           equipment: [],
           spare: []
-        }]
       }]
     }),
     backendProjects: [{
@@ -1890,7 +2011,19 @@ test("basic support activity resource dialog selects requirements from support o
       { basicActivityKey: "0:0", basicActivityResourceDialogAdd: "personnel" }
     );
     assert.match(runtime.appNode.innerHTML, /data-basic-activity-resource-dialog-field="resourceKey"/);
-    assert.match(runtime.appNode.innerHTML, /<option value="resource-personnel-avionics"[^>]*selected[^>]*>航电保障组 \/ 航电 \/ 航母飞行甲板<\/option>/);
+    assert.match(runtime.appNode.innerHTML, /<option value="personnel:航电"[^>]*selected[^>]*>航电<\/option>/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /航母飞行甲板/);
+    await runtime.change(
+      "[data-basic-activity-resource-dialog-field]",
+      {
+        basicActivityKey: "0:0",
+        basicActivityResourceKind: "personnel",
+        basicActivityResourceIndex: "0",
+        basicActivityResourceDialogField: "quantity"
+      },
+      { value: "0", type: "number" }
+    );
+    assert.match(runtime.appNode.innerHTML, /value="1"/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /data-basic-activity-resource-dialog-field="professional"/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /basic-activity-personnel-models|basic-activity-personnel-names/);
 
@@ -1903,7 +2036,8 @@ test("basic support activity resource dialog selects requirements from support o
       "[data-basic-activity-resource-dialog-add]",
       { basicActivityKey: "0:0", basicActivityResourceDialogAdd: "equipment" }
     );
-    assert.match(runtime.appNode.innerHTML, /<option value="resource-equipment-detector"[^>]*selected[^>]*>检测仪 \/ DT-01 \/ 航母飞行甲板<\/option>/);
+    assert.match(runtime.appNode.innerHTML, /<option value="resource-equipment-detector"[^>]*selected[^>]*>检测仪 \/ DT-01<\/option>/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /航母飞行甲板/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /data-basic-activity-resource-dialog-field="model"/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /data-basic-activity-resource-dialog-field="name"/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /basic-activity-equipment-models|basic-activity-equipment-names/);
@@ -1917,7 +2051,8 @@ test("basic support activity resource dialog selects requirements from support o
       "[data-basic-activity-resource-dialog-add]",
       { basicActivityKey: "0:0", basicActivityResourceDialogAdd: "spare" }
     );
-    assert.match(runtime.appNode.innerHTML, /<option value="resource-spare-module"[^>]*selected[^>]*>航电模块 \/ LRU-A \/ 航母飞行甲板<\/option>/);
+    assert.match(runtime.appNode.innerHTML, /<option value="resource-spare-module"[^>]*selected[^>]*>航电模块 \/ LRU-A<\/option>/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /航母飞行甲板/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /data-basic-activity-resource-dialog-field="model"/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /data-basic-activity-resource-dialog-field="name"/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /basic-activity-spare-models|basic-activity-spare-names/);
@@ -1930,7 +2065,7 @@ test("logistics support activity page only renders transport strategy list", asy
   const runtime = await setupRuntimeApp({ projectJson: createRuntimeProjectJson() });
 
   try {
-    await runtime.click("[data-enter-workbench]", { projectId: "runtime" });
+    await runtime.click("[data-enter-workbench]", { projectId: "project-runtime" });
     await runtime.setHash("feature=spare-planning-logistics-support-activity");
 
     assert.match(runtime.appNode.innerHTML, /后勤保障运输策略配置/);
@@ -3046,6 +3181,14 @@ async function waitForProjectSave(runtime, predicate, message) {
   assert.fail(`${message}. Observed project saves: ${JSON.stringify(observed)}`);
 }
 
+async function waitForRuntimeHtml(runtime, pattern, message) {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    if (pattern.test(runtime.appNode.innerHTML)) return;
+    await runtime.flush();
+  }
+  assert.match(runtime.appNode.innerHTML, pattern, message);
+}
+
 function projectSaveBodies(runtime) {
   return runtime.requests
     .filter((request) => request.url === "/api/projects" && (request.options.method || "GET") === "POST")
@@ -3085,23 +3228,24 @@ function createRuntimeProjectJson(overrides = {}) {
     ],
     supportActivities: [{
       id: "ops-runtime-1",
-      activityType: "使用保障",
+      activityType: "使用保障活动",
       planType: "直接准备方案",
       planGroupId: "ops-runtime",
       activityName: "J-15直接准备方案",
       aircraftModel: "J-15",
       durationHours: 1,
-      jobs: [{
-        activityCode: "BA-001",
-        workName: "初始工作项目",
-        predecessors: [],
-        durationMinutes: 20,
-        personnel: "机务人员,1",
-        equipment: "检测仪,1",
-        spare: "航电模块"
-      }]
+      activityCodes: ["BA-001"],
+      predecessors: { "BA-001": [] }
     }]
   });
+  project.supportActivityJobs = [{
+    activityCode: "BA-001",
+    workName: "初始工作项目",
+    durationMinutes: 20,
+    personnel: "机务人员,1",
+    equipment: "检测仪,1",
+    spare: "航电模块"
+  }];
   return {
     ...project,
     ...overrides,
@@ -3110,6 +3254,25 @@ function createRuntimeProjectJson(overrides = {}) {
     basicMissions: overrides.basicMissions || project.basicMissions,
     equipment: { ...project.equipment, ...(overrides.equipment || {}) }
   };
+}
+
+function appendRuntimeSupportActivityJob(projectJson, activityIndex, job) {
+  const activity = projectJson.supportActivities[activityIndex];
+  assert.ok(activity, `missing support activity ${activityIndex}`);
+  if (!Array.isArray(projectJson.supportActivityJobs)) projectJson.supportActivityJobs = [];
+  const activityCode = String(job.activityCode || `BA-${projectJson.supportActivityJobs.length + 1}`).trim();
+  projectJson.supportActivityJobs.push({
+    ...job,
+    activityCode,
+    predecessors: undefined
+  });
+  delete projectJson.supportActivityJobs[projectJson.supportActivityJobs.length - 1].predecessors;
+  activity.activityCodes = [...(Array.isArray(activity.activityCodes) ? activity.activityCodes : []), activityCode];
+  activity.predecessors = {
+    ...(activity.predecessors && typeof activity.predecessors === "object" ? activity.predecessors : {}),
+    [activityCode]: Array.isArray(job.predecessors) ? [...job.predecessors] : []
+  };
+  delete activity.jobs;
 }
 
 function createRuntimeFormalRun(runId = "formal-runtime-run", request = {}) {

@@ -217,6 +217,7 @@ export function buildBackendProjectJson(scenario, project = {}) {
   const projectJson = normalizeProjectJsonForClientDraft(scenario);
   stripProjectRuntimeConfig(projectJson);
   stripProjectNonModelFields(projectJson);
+  liftSupportActivityJobsToTopLevel(projectJson);
   projectJson.schema_version ||= "project-v0";
   projectJson.project_id ||= project.id ? `project-${project.id}` : `project-${projectJson.scenarioId}`;
   projectJson.project_version ||= "project-v0.1";
@@ -315,6 +316,8 @@ function stripProjectNonModelFields(projectJson) {
   stripLegacyBasicMissionFields(projectJson);
   stripMissionProfileNonModelFields(projectJson.missionProfile);
   stripSupportActivityTypoFields(projectJson);
+  stripSupportActivityMttrFields(projectJson.supportActivities);
+  stripSupportActivityMttrFields(projectJson.supportActivityJobs);
 }
 
 function materializeLegacySupportTables(projectJson) {
@@ -747,6 +750,29 @@ function stripSupportActivityTypoFields(value) {
   for (const child of Object.values(value)) stripSupportActivityTypoFields(child);
 }
 
+const SUPPORT_ACTIVITY_MTTR_FIELDS = [
+  "maxRepairTimeMinutes",
+  "meanRepairTimeMinutes",
+  "mttrMinutes",
+  "mttr",
+  "repairDistribution",
+  "repairDistributionType",
+  "repairTypes"
+];
+
+function stripSupportActivityMttrFields(value) {
+  if (Array.isArray(value)) {
+    for (const item of value) stripSupportActivityMttrFields(item);
+    return;
+  }
+  if (!value || typeof value !== "object") return;
+  for (const field of SUPPORT_ACTIVITY_MTTR_FIELDS) delete value[field];
+  for (const job of Array.isArray(value.jobs) ? value.jobs : []) {
+    if (!job || typeof job !== "object" || Array.isArray(job)) continue;
+    for (const field of SUPPORT_ACTIVITY_MTTR_FIELDS) delete job[field];
+  }
+}
+
 function syncCompositeTaskInheritedBasicFields(projectJson) {
   const basicMissions = basicMissionRecordsForProject(projectJson);
   const composites = Array.isArray(projectJson.missionProfile?.compositeTasks)
@@ -859,6 +885,92 @@ function canonicalizeSupportActivityJobPredecessors(projectJson) {
         });
     }
   }
+}
+
+function liftSupportActivityJobsToTopLevel(projectJson) {
+  if (!projectJson || typeof projectJson !== "object" || Array.isArray(projectJson)) return;
+  const activities = Array.isArray(projectJson.supportActivities) ? projectJson.supportActivities : [];
+  const jobsByCode = new Map();
+  for (const job of Array.isArray(projectJson.supportActivityJobs) ? projectJson.supportActivityJobs : []) {
+    if (!job || typeof job !== "object" || Array.isArray(job)) continue;
+    const code = normalizedText(job.activityCode);
+    if (!code || jobsByCode.has(code)) continue;
+    jobsByCode.set(code, supportActivityJobDefinition(job));
+  }
+  for (const activity of activities) {
+    if (!activity || typeof activity !== "object" || Array.isArray(activity)) continue;
+    if (!Array.isArray(activity.jobs)) continue;
+    const jobs = activity.jobs.filter((job) => job && typeof job === "object" && !Array.isArray(job));
+    if (!jobs.length) {
+      activity.activityCodes ||= [];
+      activity.predecessors ||= {};
+      delete activity.jobs;
+      continue;
+    }
+    const activityCodes = [];
+    const codeAssignments = [];
+    const localCodeMap = new Map();
+    for (const job of jobs) {
+      const requestedCode = normalizedText(job.activityCode);
+      if (!requestedCode) continue;
+      const definition = supportActivityJobDefinition(job);
+      const code = supportActivityJobCodeForDefinition(requestedCode, definition, jobsByCode);
+      definition.activityCode = code;
+      activityCodes.push(code);
+      codeAssignments.push({ job, requestedCode, code });
+      if (!localCodeMap.has(requestedCode)) localCodeMap.set(requestedCode, code);
+      if (!jobsByCode.has(code)) jobsByCode.set(code, definition);
+    }
+    const activityCodeSet = new Set(activityCodes);
+    const predecessorsByCode = {};
+    for (const assignment of codeAssignments) {
+      predecessorsByCode[assignment.code] = Array.isArray(assignment.job.predecessors)
+        ? assignment.job.predecessors
+          .map((value) => localCodeMap.get(normalizedText(value)) || normalizedText(value))
+          .filter((value) => value && activityCodeSet.has(value))
+        : [];
+    }
+    activity.activityCodes = activityCodes;
+    activity.predecessors = predecessorsByCode;
+    delete activity.jobs;
+  }
+  projectJson.supportActivityJobs = Array.from(jobsByCode.values());
+}
+
+function supportActivityJobCodeForDefinition(requestedCode, definition, jobsByCode) {
+  const existing = jobsByCode.get(requestedCode);
+  if (!existing || supportActivityJobDefinitionsEqual(existing, definition)) return requestedCode;
+  return uniqueSupportActivityJobCode(requestedCode, new Set(jobsByCode.keys()));
+}
+
+function supportActivityJobDefinitionsEqual(left, right) {
+  return stableStringify(left) === stableStringify(right);
+}
+
+function stableStringify(value) {
+  if (Array.isArray(value)) return `[${value.map((item) => stableStringify(item)).join(",")}]`;
+  if (!value || typeof value !== "object") return JSON.stringify(value);
+  return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`).join(",")}}`;
+}
+
+function uniqueSupportActivityJobCode(requestedCode, usedCodes) {
+  if (!usedCodes.has(requestedCode)) return requestedCode;
+  const match = requestedCode.match(/^(.*?)(?:-(\d+))?$/);
+  const prefix = (match?.[1] || requestedCode || "BA").replace(/-$/, "");
+  let index = Number(match?.[2] || 2);
+  let code = `${prefix}-${String(index).padStart(3, "0")}`;
+  while (usedCodes.has(code)) {
+    index += 1;
+    code = `${prefix}-${String(index).padStart(3, "0")}`;
+  }
+  return code;
+}
+
+function supportActivityJobDefinition(job) {
+  const definition = cloneJson(job);
+  delete definition.predecessors;
+  for (const field of SUPPORT_ACTIVITY_MTTR_FIELDS) delete definition[field];
+  return definition;
 }
 
 function supportActivityJobAliases(job, index) {

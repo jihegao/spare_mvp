@@ -9,6 +9,7 @@ from typing import Any
 
 from src.spare_mvp_backend.modeling_import import modeling_import_to_project, validate_modeling_import_package
 from src.spare_mvp_backend.monte_carlo_config import normalize_monte_carlo_run_config
+from src.spare_mvp_backend.project_payload import strip_project_sweep
 from src.spare_mvp_contract.adapter import SimulationAdapter
 
 
@@ -35,7 +36,7 @@ def build_m9_6_platform_case_export(import_package: dict[str, Any], repo_root: P
     lifecycle.setdefault("referencedRunIds", [])
     published_import.setdefault("validation", {"status": "valid", "issues": []})
 
-    project = modeling_import_to_project(published_import)
+    project = strip_project_sweep(modeling_import_to_project(published_import))
     modeling_snapshot = {
         "schema_version": "modeling-snapshot-v0",
         "snapshot_id": M9_6_MODELING_SNAPSHOT_ID,

@@ -71,7 +71,7 @@
           "constructor_param": "support_network"
         },
         "support_activities": {
-          "source": "project.supportActivities[] including jobs, duration profiles, resources, spares, and predecessor DAG",
+          "source": "project.supportActivityJobs[] definitions plus project.supportActivities[] activityCodes/predecessors DAG",
           "constructor_param": "support_activities"
         },
         "reliability_block_diagram": {

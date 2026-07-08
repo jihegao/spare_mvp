@@ -96,6 +96,7 @@ class M96CasePackageTest(unittest.TestCase):
         entry_by_path = {entry["field_path"]: entry for entry in coverage["entries"]}
         self.assertEqual(entry_by_path["objects.equipmentAssets[].failureRate"]["status"], "ignored")
         self.assertEqual(entry_by_path["objects.supportResources[].quantity"]["status"], "ignored")
+        self.assertEqual(entry_by_path["objects.transportPolicies[].capacity"]["status"], "ignored")
         self.assertEqual(entry_by_path["objects.equipment.initialReady"]["status"], "ignored")
         self.assertEqual(entry_by_path["objects.missionProfiles[].basicMissions[].minRequiredSorties"]["status"], "ignored")
         self.assertEqual(entry_by_path["objects.equipment.quantity"]["status"], "ignored")

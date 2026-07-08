@@ -35,6 +35,7 @@
     "supportNodes": { "type": "array", "items": { "type": "object" } },
     "supportResources": { "type": "array", "items": { "type": "object" } },
     "transportPolicies": { "type": "array", "items": { "type": "object" } },
+    "supportActivityJobs": { "type": "array", "items": { "type": "object" } },
     "supportActivities": { "type": "array", "items": { "type": "object" } },
     "reliabilityBlockDiagram": { "type": "object" },
     "created_at": { "type": "string" },

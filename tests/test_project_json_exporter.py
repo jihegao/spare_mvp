@@ -137,6 +137,7 @@ class ProjectJsonExporterTest(unittest.TestCase):
                     "jobs": [
                         {
                             "id": "job-1",
+                            "activityCode": "JOB-1",
                             "predecessors": [],
                             "selectedNodeId": "debug-node",
                         }
@@ -175,7 +176,11 @@ class ProjectJsonExporterTest(unittest.TestCase):
         self.assertGreaterEqual(len(clean["supportResources"]), 3)
         self.assertNotIn("requireDevices", clean["supportActivities"][0])
         self.assertEqual(clean["supportActivities"][0]["requiredDevices"], 1)
-        self.assertNotIn("selectedNodeId", clean["supportActivities"][0]["jobs"][0])
+        self.assertNotIn("jobs", clean["supportActivities"][0])
+        self.assertEqual(clean["supportActivities"][0]["activityCodes"], ["JOB-1"])
+        self.assertEqual(clean["supportActivities"][0]["predecessors"], {"JOB-1": []})
+        self.assertNotIn("selectedNodeId", clean["supportActivityJobs"][0])
+        self.assertNotIn("predecessors", clean["supportActivityJobs"][0])
 
     def test_aircraft_support_v1_exporter_rejects_unknown_target(self) -> None:
         with self.assertRaises(ValueError):
@@ -268,11 +273,6 @@ print(strip_project_sweep({"scenarioId": "scenario-a"})["scenarioId"])
         invalid_rbd["reliabilityBlockDiagram"]["nodes"] = [1]
         with self.assertRaisesRegex(ValueError, "reliabilityBlockDiagram.nodes.0: expected object"):
             self._export_with_old_jsonschema(invalid_rbd)
-
-        invalid_jobs = self._polluted_project()
-        invalid_jobs["supportActivities"][0]["jobs"] = [1]
-        with self.assertRaisesRegex(ValueError, "supportActivities.0.jobs.0: expected object"):
-            self._export_with_old_jsonschema(invalid_jobs)
 
     def test_aircraft_support_v1_exporter_accepts_full_platform_case(self) -> None:
         package = json.loads((REPO_ROOT / "tests" / "fixtures" / "m9_6_platform_case_export.json").read_text(encoding="utf-8"))

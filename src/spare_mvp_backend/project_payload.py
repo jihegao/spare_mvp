@@ -60,6 +60,7 @@ _ROOT_CLEAN_PROJECT_FIELDS = {
     "supportNodes",
     "supportResources",
     "transportPolicies",
+    "supportActivityJobs",
     "supportActivities",
     "supportOrganization",
     "reliabilityBlockDiagram",
@@ -115,6 +116,7 @@ _COMPONENT_FIELDS = {
     "quantity",
     "failureRate",
     "failureDistribution",
+    "repairDistribution",
     "kOutOfN",
     "lifeLimitHours",
     "mtbfHours",
@@ -186,10 +188,21 @@ _SUPPORT_ACTIVITY_FIELDS = {
     "runHourInterval",
     "takeoffLandingInterval",
     "floatRatio",
-    "jobs",
+    "activityCodes",
+    "predecessors",
     "transportStrategies",
     "organizationStrategies",
 }
+_SUPPORT_ACTIVITY_MTTR_FIELDS = {
+    "maxRepairTimeMinutes",
+    "meanRepairTimeMinutes",
+    "mttrMinutes",
+    "mttr",
+    "repairDistribution",
+    "repairDistributionType",
+    "repairTypes",
+}
+_SUPPORT_ACTIVITY_JOB_FORBIDDEN_FIELDS = {"predecessors", *_SUPPORT_ACTIVITY_MTTR_FIELDS}
 _RBD_FIELDS = {"nodes", "edges"}
 
 
@@ -274,6 +287,8 @@ def _validate_clean_project_fallback(project: dict[str, Any], target: str) -> No
         _validate_clean_support_resources(project["supportResources"], target)
     if "transportPolicies" in project:
         _validate_clean_transport_policies(project["transportPolicies"], "transportPolicies", target)
+    if "supportActivityJobs" in project:
+        _validate_clean_support_activity_jobs(project["supportActivityJobs"], target)
     if "supportOrganization" in project:
         _validate_clean_support_organization(project["supportOrganization"], target)
     _validate_clean_support_activities(project.get("supportActivities"), target)
@@ -402,7 +417,7 @@ def _validate_clean_components(components: list[Any], target: str) -> None:
             _validate_optional_clean_string(component, field, f"components.{index}.{field}", target)
         for field in ("lifeLimitHours", "mtbfHours"):
             _validate_optional_clean_number(component, field, f"components.{index}.{field}", target, minimum=0, nullable=True)
-        for field in ("failureDistribution", "kOutOfN", "specialRepairProfile"):
+        for field in ("failureDistribution", "repairDistribution", "kOutOfN", "specialRepairProfile"):
             _validate_optional_clean_dict(component, field, f"components.{index}.{field}", target)
         rms = component.get("rms")
         if isinstance(rms, dict):
@@ -520,13 +535,41 @@ def _validate_clean_support_activities(activities: Any, target: str) -> None:
             nullable=True,
         )
         _validate_optional_clean_number(activity, "floatRatio", f"supportActivities.{index}.floatRatio", target, nullable=True)
-        for field in ("jobs", "transportStrategies", "organizationStrategies"):
+        if "activityCodes" in activity:
+            codes = activity["activityCodes"]
+            if not isinstance(codes, list) or any(not isinstance(code, str) for code in codes):
+                raise ValueError(f"clean Project JSON failed {target} schema at supportActivities.{index}.activityCodes: expected string array")
+        if "predecessors" in activity:
+            predecessors = activity["predecessors"]
+            if not isinstance(predecessors, dict) or any(
+                not isinstance(values, list) or any(not isinstance(value, str) for value in values)
+                for values in predecessors.values()
+            ):
+                raise ValueError(
+                    f"clean Project JSON failed {target} schema at supportActivities.{index}.predecessors: expected string array map"
+                )
+        for field in ("transportStrategies", "organizationStrategies"):
             if field not in activity:
                 continue
             path = f"supportActivities.{index}.{field}"
             if not isinstance(activity[field], list):
                 raise ValueError(f"clean Project JSON failed {target} schema at {path}: expected array")
             _validate_clean_open_model_array(activity[field], path, target)
+
+
+def _validate_clean_support_activity_jobs(jobs: Any, target: str) -> None:
+    if not isinstance(jobs, list):
+        raise ValueError(f"clean Project JSON failed {target} schema at supportActivityJobs: expected array")
+    for index, job in enumerate(jobs):
+        path = f"supportActivityJobs.{index}"
+        if not isinstance(job, dict):
+            raise ValueError(f"clean Project JSON failed {target} schema at {path}: expected object")
+        if "activityCode" not in job:
+            raise ValueError(f"clean Project JSON failed {target} schema at {path}.activityCode: required")
+        _require_clean_non_empty_string(job, "activityCode", f"{path}.activityCode", target)
+        forbidden = sorted(field for field in job if field in _SUPPORT_ACTIVITY_JOB_FORBIDDEN_FIELDS)
+        if forbidden:
+            raise ValueError(f"clean Project JSON failed {target} schema at {path}: unexpected field {forbidden[0]}")
 
 
 def _validate_clean_rbd(value: Any, target: str) -> None:
@@ -841,6 +884,9 @@ def _strip_project_non_model_fields(project: dict[str, Any]) -> None:
         mission_profile.pop("repeatCycleHours", None)
         mission_profile.pop("analysisRequests", None)
     _strip_typo_only_support_activity_fields(project)
+    _strip_support_activity_mttr_fields(project.get("supportActivities"))
+    _strip_support_activity_mttr_fields(project.get("supportActivityJobs"))
+    _lift_support_activity_jobs_to_top_level(project)
 
 
 def _project_k_out_of_n_error(index: int, message: str) -> dict[str, str]:
@@ -1190,6 +1236,115 @@ def _strip_typo_only_support_activity_fields(value: Any) -> None:
             _strip_typo_only_support_activity_fields(item)
 
 
+def _strip_support_activity_mttr_fields(value: Any) -> None:
+    if isinstance(value, list):
+        for item in value:
+            _strip_support_activity_mttr_fields(item)
+        return
+    if not isinstance(value, dict):
+        return
+    for field in _SUPPORT_ACTIVITY_MTTR_FIELDS:
+        value.pop(field, None)
+    jobs = value.get("jobs")
+    if isinstance(jobs, list):
+        for job in jobs:
+            if isinstance(job, dict):
+                for field in _SUPPORT_ACTIVITY_MTTR_FIELDS:
+                    job.pop(field, None)
+
+
+def _lift_support_activity_jobs_to_top_level(project: dict[str, Any]) -> None:
+    activities = project.get("supportActivities")
+    if not isinstance(activities, list):
+        return
+    jobs_by_code: dict[str, dict[str, Any]] = {}
+    for job in project.get("supportActivityJobs") if isinstance(project.get("supportActivityJobs"), list) else []:
+        if not isinstance(job, dict):
+            continue
+        code = _clean_text(job.get("activityCode"))
+        if not code or code in jobs_by_code:
+            continue
+        jobs_by_code[code] = _support_activity_job_definition(job)
+    for activity in activities:
+        if not isinstance(activity, dict):
+            continue
+        if not isinstance(activity.get("jobs"), list):
+            continue
+        jobs = [job for job in activity.get("jobs") if isinstance(job, dict)]
+        if not jobs:
+            activity.setdefault("activityCodes", [])
+            activity.setdefault("predecessors", {})
+            activity.pop("jobs", None)
+            continue
+        activity_codes: list[str] = []
+        code_assignments: list[tuple[dict[str, Any], str, str]] = []
+        local_code_map: dict[str, str] = {}
+        predecessors: dict[str, list[str]] = {}
+        for job in jobs:
+            requested_code = _clean_text(job.get("activityCode"))
+            if not requested_code:
+                continue
+            definition = _support_activity_job_definition(job)
+            code = _support_activity_job_code_for_definition(requested_code, definition, jobs_by_code)
+            definition["activityCode"] = code
+            activity_codes.append(code)
+            code_assignments.append((job, requested_code, code))
+            local_code_map.setdefault(requested_code, code)
+            jobs_by_code.setdefault(code, definition)
+        activity_code_set = set(activity_codes)
+        for job, _requested_code, code in code_assignments:
+            raw_predecessors = job.get("predecessors")
+            predecessors[code] = [
+                mapped
+                for predecessor in raw_predecessors
+                if (mapped := local_code_map.get(_clean_text(predecessor), _clean_text(predecessor)))
+                and mapped in activity_code_set
+            ] if isinstance(raw_predecessors, list) else []
+        activity["activityCodes"] = activity_codes
+        activity["predecessors"] = predecessors
+        activity.pop("jobs", None)
+    project["supportActivityJobs"] = list(jobs_by_code.values())
+
+
+def _support_activity_job_code_for_definition(
+    requested_code: str,
+    definition: dict[str, Any],
+    jobs_by_code: dict[str, dict[str, Any]],
+) -> str:
+    existing = jobs_by_code.get(requested_code)
+    if existing is None or existing == definition:
+        return requested_code
+    return _unique_support_activity_job_code(requested_code, set(jobs_by_code))
+
+
+def _unique_support_activity_job_code(requested_code: str, used_codes: set[str]) -> str:
+    if requested_code not in used_codes:
+        return requested_code
+    match = re.match(r"^(.*?)(?:-(\d+))?$", requested_code)
+    prefix = (match.group(1) if match else requested_code).rstrip("-") or "BA"
+    index = int(match.group(2)) if match and match.group(2) else 2
+    code = f"{prefix}-{index:03d}"
+    while code in used_codes:
+        index += 1
+        code = f"{prefix}-{index:03d}"
+    return code
+
+
+def _support_activity_job_definition(job: dict[str, Any]) -> dict[str, Any]:
+    definition = deepcopy(job)
+    definition.pop("predecessors", None)
+    for field in _SUPPORT_ACTIVITY_MTTR_FIELDS:
+        definition.pop(field, None)
+    _normalize_support_activity_job_resource_fields(definition)
+    return definition
+
+
+def _normalize_support_activity_job_resource_fields(job: dict[str, Any]) -> None:
+    for field in ("personnel", "equipment", "spare", "ammunition"):
+        if field in job and not isinstance(job[field], list):
+            job.pop(field, None)
+
+
 def _strip_pollution_keys(value: Any) -> None:
     if isinstance(value, dict):
         for key in list(value):
@@ -1216,6 +1371,7 @@ def _prune_clean_project(project: dict[str, Any]) -> None:
     _prune_typed_list(project.get("supportNodes"), _SUPPORT_NODE_FIELDS)
     _prune_typed_list(project.get("supportResources"), _SUPPORT_RESOURCE_FIELDS)
     _prune_typed_list(project.get("transportPolicies"), _TRANSPORT_POLICY_FIELDS)
+    _prune_support_activity_jobs(project.get("supportActivityJobs"))
     _prune_support_activities(project.get("supportActivities"))
     if isinstance(project.get("supportOrganization"), dict):
         _prune_support_organization(project["supportOrganization"])
@@ -1289,9 +1445,19 @@ def _prune_support_activities(value: Any) -> None:
         if not isinstance(activity, dict):
             continue
         _keep_fields(activity, _SUPPORT_ACTIVITY_FIELDS)
-        _prune_open_model_list(activity.get("jobs"))
         _prune_open_model_list(activity.get("transportStrategies"))
         _prune_open_model_list(activity.get("organizationStrategies"))
+
+
+def _prune_support_activity_jobs(value: Any) -> None:
+    if not isinstance(value, list):
+        return
+    for job in value:
+        if not isinstance(job, dict):
+            continue
+        for field in _SUPPORT_ACTIVITY_JOB_FORBIDDEN_FIELDS:
+            job.pop(field, None)
+        _normalize_support_activity_job_resource_fields(job)
 
 
 def _prune_support_organization(value: dict[str, Any]) -> None:

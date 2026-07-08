@@ -89,9 +89,11 @@ def minimal_clean_project() -> dict[str, Any]:
                 "activityType": "corrective",
                 "durationHours": 1,
                 "requiredDevices": 1,
-                "jobs": [{"id": "job-1", "predecessors": []}],
+                "activityCodes": ["job-1"],
+                "predecessors": {"job-1": []},
             }
         ],
+        "supportActivityJobs": [{"activityCode": "job-1"}],
         "reliabilityBlockDiagram": {
             "nodes": [{"id": "whole-aircraft", "type": "system"}],
             "edges": [],
@@ -194,6 +196,7 @@ def legacy_polluted_project() -> dict[str, Any]:
                 "requireDevices": 999,
                 "jobs": [
                     {
+                        "activityCode": "job-1",
                         "id": "job-1",
                         "predecessors": [],
                         "selectedNodeId": "debug-node",

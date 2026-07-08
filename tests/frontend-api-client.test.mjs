@@ -635,12 +635,97 @@ test("buildBackendProjectJson canonicalizes support activity job predecessor ref
   };
 
   const projectJson = buildBackendProjectJson(scenario, { id: "support-predecessor-canonical" });
-  const jobs = projectJson.supportActivities[5].jobs;
+  const activity = projectJson.supportActivities[5];
+  const jobs = projectJson.supportActivityJobs;
 
   assert.equal(jobs[1].activityCode, "BA-002");
-  assert.deepEqual(jobs[0].predecessors, ["BA-002"]);
+  assert.equal("predecessors" in jobs[0], false);
+  assert.deepEqual(activity.activityCodes, ["BA-001", "BA-002"]);
+  assert.deepEqual(activity.predecessors, { "BA-001": ["BA-002"], "BA-002": [] });
+  assert.equal("jobs" in activity, false);
   assert.deepEqual(scenario.supportActivities[5].jobs[0].predecessors, ["电源车准备"]);
   assert.equal("activityCode" in scenario.supportActivities[5].jobs[1], false);
+});
+
+test("buildBackendProjectJson preserves distinct legacy support jobs with duplicate codes", () => {
+  const scenario = {
+    scenarioId: "support-duplicate-code-canonical",
+    supportActivities: [
+      {
+        id: "ops-activity",
+        activityType: "使用保障",
+        jobs: [{
+          activityCode: "BA-001",
+          workName: "使用保障准备",
+          durationMinutes: 20,
+          predecessors: []
+        }]
+      },
+      {
+        id: "preventive-activity",
+        activityType: "预防性维修",
+        jobs: [{
+          activityCode: "BA-001",
+          workName: "定检准备",
+          durationMinutes: 45,
+          predecessors: []
+        }, {
+          activityCode: "BA-003",
+          workName: "定检执行",
+          durationMinutes: 60,
+          predecessors: ["BA-001"]
+        }]
+      }
+    ]
+  };
+
+  const projectJson = buildBackendProjectJson(scenario, { id: "support-duplicate-code-canonical" });
+
+  assert.deepEqual(projectJson.supportActivities[0].activityCodes, ["BA-001"]);
+  assert.deepEqual(projectJson.supportActivities[1].activityCodes, ["BA-002", "BA-003"]);
+  assert.deepEqual(projectJson.supportActivities[1].predecessors, { "BA-002": [], "BA-003": ["BA-002"] });
+  assert.deepEqual(
+    projectJson.supportActivityJobs.map((job) => [job.activityCode, job.workName, job.durationMinutes]),
+    [
+      ["BA-001", "使用保障准备", 20],
+      ["BA-002", "定检准备", 45],
+      ["BA-003", "定检执行", 60]
+    ]
+  );
+});
+
+test("buildBackendProjectJson strips corrective MTTR fields from support activity jobs", () => {
+  const scenario = {
+    scenarioId: "support-job-mttr-boundary",
+    supportActivities: [{
+      id: "corrective-activity",
+      activityType: "修复性维修",
+      equipmentId: "component-a",
+      maxRepairTimeMinutes: 999,
+      meanRepairTimeMinutes: 888,
+      repairDistribution: { distributionType: "固定值", value: 999 },
+      jobs: [{
+        activityCode: "CM-001",
+        workName: "修复工作",
+        durationMinutes: 30,
+        predecessors: [],
+        maxRepairTimeMinutes: 999,
+        meanRepairTimeMinutes: 888,
+        mttrMinutes: 777,
+        repairDistribution: { distributionType: "固定值", value: 999 }
+      }]
+    }]
+  };
+
+  const projectJson = buildBackendProjectJson(scenario, { id: "support-job-mttr-boundary" });
+
+  assert.equal("maxRepairTimeMinutes" in projectJson.supportActivities[0], false);
+  assert.equal("meanRepairTimeMinutes" in projectJson.supportActivities[0], false);
+  assert.equal("repairDistribution" in projectJson.supportActivities[0], false);
+  assert.equal("maxRepairTimeMinutes" in projectJson.supportActivityJobs[0], false);
+  assert.equal("meanRepairTimeMinutes" in projectJson.supportActivityJobs[0], false);
+  assert.equal("mttrMinutes" in projectJson.supportActivityJobs[0], false);
+  assert.equal("repairDistribution" in projectJson.supportActivityJobs[0], false);
 });
 
 test("buildBackendProjectJson strips Monte Carlo config from Project modeling data", () => {

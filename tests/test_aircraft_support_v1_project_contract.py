@@ -99,7 +99,15 @@ class AircraftSupportV1CleanProjectSchemaTest(unittest.TestCase):
                     "activityType": "corrective",
                     "durationHours": 1,
                     "requiredDevices": 1,
-                    "jobs": [{"id": "job-1", "predecessors": []}],
+                    "activityCodes": ["job-1"],
+                    "predecessors": {"job-1": []},
+                }
+            ],
+            "supportActivityJobs": [
+                {
+                    "activityCode": "job-1",
+                    "workName": "repair",
+                    "durationMinutes": 30,
                 }
             ],
             "reliabilityBlockDiagram": {
@@ -154,6 +162,22 @@ class AircraftSupportV1CleanProjectSchemaTest(unittest.TestCase):
         self.assertTrue(self._schema_errors(project))
 
         project = self._clean_project()
+        project["supportActivities"][0]["jobs"] = [{"activityCode": "job-1"}]
+        self.assertTrue(self._schema_errors(project))
+
+        project = self._clean_project()
+        project["supportActivityJobs"][0]["predecessors"] = []
+        self.assertTrue(self._schema_errors(project))
+
+        project = self._clean_project()
+        project["supportActivityJobs"][0]["maxRepairTimeMinutes"] = 999
+        self.assertTrue(self._schema_errors(project))
+
+        project = self._clean_project()
+        project["supportActivityJobs"][0]["repairDistribution"] = {"distributionType": "固定值", "value": 999}
+        self.assertTrue(self._schema_errors(project))
+
+        project = self._clean_project()
         project["missionAreas"].append({"id": "area-a", "uiState": {"expanded": True}})
         self.assertTrue(self._schema_errors(project))
 
@@ -167,7 +191,7 @@ class AircraftSupportV1CleanProjectSchemaTest(unittest.TestCase):
         ):
             with self.subTest(field=field):
                 project = self._clean_project()
-                project["supportActivities"][0]["jobs"][0][field] = {}
+                project["supportActivities"][0][field] = {}
                 self.assertTrue(self._schema_errors(project))
 
 

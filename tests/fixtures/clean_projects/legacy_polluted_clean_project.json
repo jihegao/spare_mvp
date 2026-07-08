@@ -76,16 +76,22 @@
   "schema_version": "project-v0",
   "supportActivities": [
     {
+      "activityCodes": [
+        "job-1"
+      ],
       "activityType": "corrective",
       "durationHours": 1,
       "id": "corrective",
-      "jobs": [
-        {
-          "id": "job-1",
-          "predecessors": []
-        }
-      ],
+      "predecessors": {
+        "job-1": []
+      },
       "requiredDevices": 1
+    }
+  ],
+  "supportActivityJobs": [
+    {
+      "activityCode": "job-1",
+      "id": "job-1"
     }
   ],
   "supportNodes": [

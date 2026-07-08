@@ -1161,11 +1161,19 @@ test("support activity pages align to page suggestion activity fields", async ()
   assert.match(basicActivityLibrarySource, /updateBasicActivityResourceDialogField/);
   assert.match(basicActivityLibrarySource, /basicActivityResourceDialogResourceSelect/);
   assert.match(basicActivityLibrarySource, /basicActivitySupportResourceSelectOptions/);
+  assert.match(basicActivityLibrarySource, /basicActivityPersonnelCatalogRows/);
+  assert.match(basicActivityLibrarySource, /basicActivityEquipmentCatalogRows/);
+  assert.match(basicActivityLibrarySource, /basicActivitySpareCatalogRows/);
+  assert.match(basicActivityLibrarySource, /basicActivityWholeMachineScopeOptions/);
   assert.match(basicActivityLibrarySource, /"resourceKey"/);
   assert.doesNotMatch(basicActivityLibrarySource, /basicActivityResourceDialogTextInput/);
   assert.doesNotMatch(basicActivityLibrarySource, /\`\$\{resourceKind\}-models\`/);
   assert.doesNotMatch(basicActivityLibrarySource, /\`\$\{resourceKind\}-names\`/);
-  assert.match(basicActivityLibrarySource, /buildSupportResourceRows\(resourceType, root\)/);
+  assert.doesNotMatch(basicActivityLibrarySource, /buildSupportResourceRows\(resourceType, root\)/);
+  assert.doesNotMatch(basicActivityLibrarySource, /supportOrganizationTree\(\)/);
+  assert.doesNotMatch(basicActivityLibrarySource, /请先在保障组织配置/);
+  assert.doesNotMatch(basicActivityLibrarySource, /row\.scope \|\| ""/);
+  assert.match(basicActivityLibrarySource, /min="1"/);
   assert.match(basicActivityLibrarySource, /job\.personnel =/);
   assert.doesNotMatch(basicActivityLibrarySource, /job\.personnelRequirements =/);
   assert.match(basicActivityLibrarySource, /equipmentRequirements/);
@@ -2078,8 +2086,10 @@ test("support activity controls are wired through local draft fields", async () 
   assert.match(basicActivitySource, /data-basic-activity-resource-dialog-field/);
   assert.match(basicActivitySource, /updateBasicActivityResourceDialogField/);
   assert.match(basicActivitySource, /syncBasicActivityResourceSummaries/);
-  assert.match(basicActivitySource, /basicActivitySupportResourceRows/);
-  assert.match(basicActivitySource, /basicActivityModeledSupportResourceRows/);
+  assert.match(basicActivitySource, /basicActivityCatalogRows/);
+  assert.match(basicActivitySource, /basicActivityPersonnelCatalogRows/);
+  assert.match(basicActivitySource, /basicActivityEquipmentCatalogRows/);
+  assert.match(basicActivitySource, /basicActivitySpareCatalogRows/);
   assert.match(basicActivitySource, /data-basic-activity-dialog-close/);
   assert.match(basicActivitySource, /basicActivityScopeSelect/);
   assert.match(basicActivitySource, /basicActivityResourceDialogResourceSelect/);
@@ -2256,7 +2266,7 @@ test("basic corrective activity scope edits move only the edited job to the targ
   assert.match(moveSource, /sourceJobs\.splice\(jobIndex, 1\)/);
   assert.match(moveSource, /targetJobs\.push\(job\)/);
   assert.match(ensureSource, /copyTemplateJobs = true/);
-  assert.match(ensureSource, /activity\.jobs = copyTemplateJobs \? supportActivityJobs\(template\)\.map/);
+  assert.match(ensureSource, /setSupportActivityJobs\(activity, copyTemplateJobs \? supportActivityJobs\(template\)\.map/);
 });
 
 test("modeling data-path inputs commit on change instead of rerendering on each keystroke", async () => {
