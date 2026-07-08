@@ -85,6 +85,12 @@ def validate_modeling_import_package(import_package: dict[str, Any]) -> dict[str
 
     _validate_equipment_asset_hierarchy(objects.get("equipmentAssets"), issues)
     _validate_mission_profile_basic_missions(objects.get("missionProfiles"), issues)
+    if used_tables.get("supportActivities") is not False:
+        _validate_basic_mission_support_activity_names(
+            objects.get("missionProfiles"),
+            objects.get("supportActivities"),
+            issues,
+        )
     _validate_published_reference_protection(import_package, issues)
 
     return {
@@ -120,6 +126,8 @@ def modeling_import_to_project(import_package: dict[str, Any], validation: dict[
 
     combat_unit = _project_object(objects, mission, "combatUnit", {})
     basic_missions = _project_basic_missions(objects, mission, activities)
+    if used_tables.get("supportActivities") is False:
+        _drop_basic_mission_support_activity_names(basic_missions)
     mission_profile = _mission_profile_to_project(mission, import_package["importId"])
     _sync_composite_task_basic_mission_refs(mission_profile, basic_missions)
 
@@ -462,6 +470,50 @@ def _validate_mission_profile_basic_missions(rows: Any, issues: list[dict[str, A
                 continue
             if basic_mission.get("id") in (None, ""):
                 issues.append(_issue("missing_basic_mission_id", "missionProfiles", object_id, f"objects.missionProfiles[{index}].basicMissions[{mission_index}].id", "basicMissions[].id 是必填字段。"))
+
+
+def _validate_basic_mission_support_activity_names(
+    mission_profiles: Any,
+    support_activities: Any,
+    issues: list[dict[str, Any]],
+) -> None:
+    activity_name_counts: dict[str, int] = {}
+    for activity in support_activities if isinstance(support_activities, list) else []:
+        if not isinstance(activity, dict):
+            continue
+        activity_name = _clean_text(activity.get("activityName"))
+        if activity_name:
+            activity_name_counts[activity_name] = activity_name_counts.get(activity_name, 0) + 1
+
+    profiles = mission_profiles if isinstance(mission_profiles, list) else []
+    for profile_index, profile in enumerate(profiles):
+        if not isinstance(profile, dict):
+            continue
+        object_id = str(profile.get("id") or f"missionProfiles[{profile_index}]")
+        basic_missions = profile.get("basicMissions")
+        if not isinstance(basic_missions, list):
+            continue
+        for mission_index, basic_mission in enumerate(basic_missions):
+            if not isinstance(basic_mission, dict):
+                continue
+            support_activity_name = _clean_text(basic_mission.get("supportActivityName"))
+            if not support_activity_name:
+                continue
+            if activity_name_counts.get(support_activity_name, 0) == 1:
+                continue
+            issues.append(_issue(
+                "invalid_basic_mission_support_activity_name",
+                "missionProfiles",
+                object_id,
+                f"objects.missionProfiles[{profile_index}].basicMissions[{mission_index}].supportActivityName",
+                "basicMissions[].supportActivityName 必须唯一匹配 supportActivities[].activityName，不能回退匹配 name 或 id。",
+            ))
+
+
+def _drop_basic_mission_support_activity_names(basic_missions: list[dict[str, Any]]) -> None:
+    for basic_mission in basic_missions:
+        if isinstance(basic_mission, dict):
+            basic_mission.pop("supportActivityName", None)
 
 
 def _validate_published_reference_protection(import_package: dict[str, Any], issues: list[dict[str, Any]]) -> None:
@@ -812,6 +864,10 @@ def _normalized_transport_policy(policy: dict[str, Any], name_by_id: dict[str, s
         "transportMode": str(policy.get("transportMode") or policy.get("transport_mode") or ""),
         "transportTimeHours": _safe_positive_float(policy.get("transportTimeHours") or policy.get("transport_time_hours"), 0),
     }
+
+
+def _clean_text(value: Any) -> str:
+    return str(value or "").strip()
 
 
 def _stable_uid(prefix: str, *parts: Any) -> str:

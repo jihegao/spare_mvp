@@ -93,6 +93,7 @@
         "id": { "type": "string" },
         "name": { "type": "string" },
         "missionId": { "type": "string" },
+        "supportActivityName": { "type": "string" },
         "minRequiredSorties": { "type": "integer", "minimum": 0 },
         "taskDurationMinutes": { "type": "integer", "minimum": 1 },
         "equipmentType": { "type": "string" },

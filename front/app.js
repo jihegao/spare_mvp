@@ -6673,14 +6673,18 @@ function operationsSupportActivityEntries(aircraftModel = "") {
       || (!activity.planType && (activity.activityType === "飞行前保障" || activity.activityType === "使用保障" || activity.activityType === "使用保障活动"))
     ))
     .filter(({ activity }) => !targetModel || supportActivityAircraftModel(activity) === targetModel)
-    .map(({ activity, index, key }) => ({
-      activity,
-      index,
-      key,
-      value: activity.activityName || activity.name || activity.id || "未命名使用保障方案",
-      label: activity.activityName || activity.name || activity.id || "未命名使用保障方案",
-      aircraftModel: supportActivityAircraftModel(activity)
-    }));
+    .map(({ activity, index, key }) => {
+      const activityName = String(activity.activityName || "").trim();
+      return {
+        activity,
+        index,
+        key,
+        value: activityName,
+        label: activityName,
+        aircraftModel: supportActivityAircraftModel(activity)
+      };
+    })
+    .filter((entry) => entry.value);
 }
 
 function operationsSupportActivityOptions(aircraftModel = "") {

@@ -82,6 +82,9 @@ export function validateModelingImportPackage(importPackage) {
   }
 
   validateEquipmentAssetHierarchy(objects.equipmentAssets, issues);
+  if (scope.usedTables.supportActivities !== false) {
+    validateBasicMissionSupportActivityNames(objects.missionProfiles, objects.supportActivities, issues);
+  }
   validatePublishedReferenceProtection(importPackage, issues);
 
   return issues;
@@ -691,6 +694,33 @@ function validateEquipmentAssetHierarchy(rows, issues) {
       fieldPath: `objects.equipmentAssets[${index}].parentId`,
       message: "SRU 的上级必须是 LRU。"
     }));
+  });
+}
+
+function validateBasicMissionSupportActivityNames(missionProfiles, supportActivities, issues) {
+  const activityNameCounts = new Map();
+  for (const activity of Array.isArray(supportActivities) ? supportActivities : []) {
+    if (!activity || typeof activity !== "object" || Array.isArray(activity)) continue;
+    const activityName = String(activity.activityName || "").trim();
+    if (!activityName) continue;
+    activityNameCounts.set(activityName, (activityNameCounts.get(activityName) || 0) + 1);
+  }
+
+  (Array.isArray(missionProfiles) ? missionProfiles : []).forEach((profile, profileIndex) => {
+    if (!profile || typeof profile !== "object" || Array.isArray(profile)) return;
+    const basicMissions = Array.isArray(profile.basicMissions) ? profile.basicMissions : [];
+    basicMissions.forEach((basicMission, missionIndex) => {
+      if (!basicMission || typeof basicMission !== "object" || Array.isArray(basicMission)) return;
+      const supportActivityName = String(basicMission.supportActivityName || "").trim();
+      if (!supportActivityName || activityNameCounts.get(supportActivityName) === 1) return;
+      issues.push(createIssue({
+        code: "invalid_basic_mission_support_activity_name",
+        collection: "missionProfiles",
+        objectId: profile.id || `missionProfiles[${profileIndex}]`,
+        fieldPath: `objects.missionProfiles[${profileIndex}].basicMissions[${missionIndex}].supportActivityName`,
+        message: "basicMissions[].supportActivityName 必须唯一匹配 supportActivities[].activityName，不能回退匹配 name 或 id。"
+      }));
+    });
   });
 }
 
