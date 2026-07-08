@@ -96,8 +96,8 @@ class AircraftSupportV1CleanProjectSchemaTest(unittest.TestCase):
                 {
                     "id": "corrective",
                     "activityType": "corrective",
+                    "planType": "修复性维修方案",
                     "durationHours": 1,
-                    "requiredDevices": 1,
                     "activityCodes": ["job-1"],
                     "predecessors": {"job-1": []},
                 }

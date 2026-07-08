@@ -175,17 +175,16 @@ _TRANSPORT_POLICY_FIELDS = {
 }
 _SUPPORT_ACTIVITY_FIELDS = {
     "id",
-    "name",
     "activityName",
     "activityType",
     "planType",
+    "aircraftModel",
     "equipmentId",
-    "resourceId",
     "priority",
     "durationMinutes",
     "durationHours",
-    "requiredPersonnel",
-    "requiredDevices",
+    "maxWorkTimeRefMinutes",
+    "plannedDowntimeHours",
     "spareType",
     "spareQuantity",
     "calendarDayInterval",
@@ -194,6 +193,12 @@ _SUPPORT_ACTIVITY_FIELDS = {
     "floatRatio",
     "activityCodes",
     "predecessors",
+}
+_SUPPORT_ACTIVITY_PLAN_TYPES = {
+    "使用保障方案",
+    "修复性维修方案",
+    "预防性维修方案",
+    "后勤保障方案",
 }
 _SUPPORT_ACTIVITY_MTTR_FIELDS = {
     "maxRepairTimeMinutes",
@@ -231,10 +236,12 @@ class ProjectJsonExporter:
         except ModuleNotFoundError:
             _validate_clean_project_fallback(project, self.target)
             _validate_basic_mission_support_activity_names(project, self.target)
+            _validate_clean_support_activity_references(project, self.target)
             return
         if not hasattr(jsonschema, "Draft202012Validator"):
             _validate_clean_project_fallback(project, self.target)
             _validate_basic_mission_support_activity_names(project, self.target)
+            _validate_clean_support_activity_references(project, self.target)
             return
 
         schema_path = self.repo_root / "contracts" / "aircraft_support_v1_project.schema.json"
@@ -247,6 +254,7 @@ class ProjectJsonExporter:
             path = ".".join(str(part) for part in first.path) or "<root>"
             raise ValueError(f"clean Project JSON failed {self.target} schema at {path}: {first.message}")
         _validate_basic_mission_support_activity_names(project, self.target)
+        _validate_clean_support_activity_references(project, self.target)
 
 
 def export_project_json(project_json: dict[str, Any], target: str = ACTIVE_CLEAN_PROJECT_TARGET) -> dict[str, Any]:
@@ -558,9 +566,13 @@ def _validate_clean_support_activities(activities: Any, target: str) -> None:
         extra = sorted(field for field in activity if field not in _SUPPORT_ACTIVITY_FIELDS)
         if extra:
             raise ValueError(f"clean Project JSON failed {target} schema at supportActivities.{index}: unexpected field {extra[0]}")
-        for field in ("name", "activityName", "activityType", "planType", "equipmentId", "resourceId", "spareType"):
+        for field in ("activityName", "activityType", "planType", "aircraftModel", "equipmentId", "spareType"):
             _validate_optional_clean_string(activity, field, f"supportActivities.{index}.{field}", target)
-        for field in ("priority", "durationMinutes", "requiredPersonnel", "requiredDevices", "spareQuantity"):
+        if activity.get("planType") not in (None, "") and activity.get("planType") not in _SUPPORT_ACTIVITY_PLAN_TYPES:
+            raise ValueError(
+                f"clean Project JSON failed {target} schema at supportActivities.{index}.planType: unexpected plan type"
+            )
+        for field in ("priority", "durationMinutes", "maxWorkTimeRefMinutes", "spareQuantity"):
             minimum = 1 if field == "durationMinutes" else 0
             _validate_optional_clean_integer(activity, field, f"supportActivities.{index}.{field}", target, minimum=minimum)
         for field in ("calendarDayInterval", "takeoffLandingInterval"):
@@ -573,6 +585,7 @@ def _validate_clean_support_activities(activities: Any, target: str) -> None:
                 nullable=True,
             )
         _validate_optional_clean_number(activity, "durationHours", f"supportActivities.{index}.durationHours", target, minimum=0)
+        _validate_optional_clean_number(activity, "plannedDowntimeHours", f"supportActivities.{index}.plannedDowntimeHours", target, minimum=0)
         _validate_optional_clean_number(
             activity,
             "runHourInterval",
@@ -595,6 +608,41 @@ def _validate_clean_support_activities(activities: Any, target: str) -> None:
                 raise ValueError(
                     f"clean Project JSON failed {target} schema at supportActivities.{index}.predecessors: expected string array map"
                 )
+
+
+def _validate_clean_support_activity_references(project: dict[str, Any], target: str) -> None:
+    job_codes = {
+        str(job.get("activityCode"))
+        for job in project.get("supportActivityJobs", [])
+        if isinstance(job, dict) and job.get("activityCode") not in (None, "")
+    }
+    activities = project.get("supportActivities")
+    if not isinstance(activities, list):
+        return
+    for activity_index, activity in enumerate(activities):
+        if not isinstance(activity, dict):
+            continue
+        raw_codes = activity.get("activityCodes") if isinstance(activity.get("activityCodes"), list) else []
+        activity_codes = [str(code) for code in raw_codes if str(code or "").strip()]
+        activity_code_set = set(activity_codes)
+        for code_index, code in enumerate(activity_codes):
+            if code not in job_codes:
+                raise ValueError(
+                    f"clean Project JSON failed {target} schema at supportActivities.{activity_index}.activityCodes.{code_index}: unknown supportActivityJobs activityCode"
+                )
+        predecessors = activity.get("predecessors") if isinstance(activity.get("predecessors"), dict) else {}
+        for code, values in predecessors.items():
+            code_text = str(code)
+            if code_text not in activity_code_set:
+                raise ValueError(
+                    f"clean Project JSON failed {target} schema at supportActivities.{activity_index}.predecessors.{code_text}: predecessor key is outside activityCodes"
+                )
+            for predecessor in values:
+                predecessor_text = str(predecessor)
+                if predecessor_text not in activity_code_set:
+                    raise ValueError(
+                        f"clean Project JSON failed {target} schema at supportActivities.{activity_index}.predecessors.{code_text}: predecessor value is outside activityCodes"
+                    )
 def _validate_clean_support_activity_jobs(jobs: Any, target: str) -> None:
     if not isinstance(jobs, list):
         raise ValueError(f"clean Project JSON failed {target} schema at supportActivityJobs: expected array")
@@ -926,6 +974,7 @@ def _strip_project_non_model_fields(project: dict[str, Any]) -> None:
     _strip_support_activity_mttr_fields(project.get("supportActivities"))
     _strip_support_activity_mttr_fields(project.get("supportActivityJobs"))
     _lift_support_activity_jobs_to_top_level(project)
+    _normalize_support_activity_reference_fields(project)
 
 
 def _project_k_out_of_n_error(index: int, message: str) -> dict[str, str]:
@@ -1316,6 +1365,37 @@ def _strip_deprecated_support_activity_strategy_fields(project: dict[str, Any]) 
         activity.pop("organizationStrategies", None)
 
 
+def _normalize_support_activity_reference_fields(project: dict[str, Any]) -> None:
+    activities = project.get("supportActivities")
+    if not isinstance(activities, list):
+        return
+    for activity in activities:
+        if not isinstance(activity, dict):
+            continue
+        if activity.get("activityName") in (None, ""):
+            activity["activityName"] = str(activity.get("name") or activity.get("id") or "保障活动")
+        activity["planType"] = _canonical_support_activity_plan_type(activity)
+        for field in ("name", "planGroupId", "resourceId", "supportNodeId", "requiredDevices", "requiredPersonnel"):
+            activity.pop(field, None)
+
+
+def _canonical_support_activity_plan_type(activity: dict[str, Any]) -> str:
+    plan_type = str(activity.get("planType") or "").strip()
+    activity_type = str(activity.get("activityType") or "").strip()
+    combined = f"{plan_type} {activity_type}".lower()
+    if plan_type == "修复性维修方案" or "修复性维修" in combined or "corrective" in combined:
+        return "修复性维修方案"
+    if plan_type == "预防性维修方案" or "预防性维修" in combined or "preventive" in combined:
+        return "预防性维修方案"
+    if plan_type in {"后勤保障方案", "后勤保障活动方案"} or "后勤保障" in combined or "logistics" in combined:
+        return "后勤保障方案"
+    if plan_type in {"使用保障方案", "直接准备方案", "再次出动准备方案", "飞行后检查方案"}:
+        return "使用保障方案"
+    if any(token in combined for token in ("飞行前保障", "使用保障", "operations", "preflight", "relaunch", "postflight")):
+        return "使用保障方案"
+    return "使用保障方案"
+
+
 def _strip_support_activity_mttr_fields(value: Any) -> None:
     if isinstance(value, list):
         for item in value:
@@ -1523,6 +1603,9 @@ def _prune_support_activities(value: Any) -> None:
     for activity in value:
         if not isinstance(activity, dict):
             continue
+        if activity.get("activityName") in (None, ""):
+            activity["activityName"] = str(activity.get("name") or activity.get("id") or "保障活动")
+        activity["planType"] = _canonical_support_activity_plan_type(activity)
         _keep_fields(activity, _SUPPORT_ACTIVITY_FIELDS)
 
 

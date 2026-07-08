@@ -795,12 +795,54 @@ test("buildBackendProjectJson strips Monte Carlo config from Project modeling da
   assert.equal("analysisRequests" in projectJson.missionProfile, false);
   assert.equal("deletedSupportResourceKeys" in projectJson, false);
   assert.equal("requireDevices" in projectJson.supportActivities[0], false);
-  assert.equal(projectJson.supportActivities[0].requiredDevices, 2);
+  assert.equal("requiredDevices" in projectJson.supportActivities[0], false);
   assert.ok("monteCarlo" in scenario);
   assert.ok("analysisRequests" in scenario);
   assert.ok("experiment" in scenario);
   assert.ok("monteCarlo" in scenario.missionProfile);
   assert.ok("requireDevices" in scenario.supportActivities[0]);
+});
+
+test("buildBackendProjectJson strips support activity plan-layer legacy fields", () => {
+  const scenario = {
+    scenarioId: "support-activity-reference-boundary",
+    supportActivities: [
+      {
+        id: "ops-plan",
+        name: "Legacy display name",
+        activityType: "飞行前保障",
+        planType: "直接准备方案",
+        planGroupId: "ops-plan-group",
+        resourceId: "carrier-deck",
+        requiredDevices: 2,
+        requiredPersonnel: 3,
+        maxWorkTimeRefMinutes: 30,
+        jobs: [
+          {
+            activityCode: "OPS-001",
+            workName: "飞前检查",
+            durationMinutes: 20,
+            predecessors: []
+          }
+        ]
+      }
+    ]
+  };
+
+  const projectJson = buildBackendProjectJson(scenario, { id: "support-activity-reference-boundary" });
+
+  assert.equal(projectJson.supportActivities[0].activityName, "Legacy display name");
+  assert.equal(projectJson.supportActivities[0].planType, "使用保障方案");
+  assert.equal(projectJson.supportActivities[0].maxWorkTimeRefMinutes, 30);
+  assert.equal("name" in projectJson.supportActivities[0], false);
+  assert.equal("planGroupId" in projectJson.supportActivities[0], false);
+  assert.equal("resourceId" in projectJson.supportActivities[0], false);
+  assert.equal("requiredDevices" in projectJson.supportActivities[0], false);
+  assert.equal("requiredPersonnel" in projectJson.supportActivities[0], false);
+  assert.equal("jobs" in projectJson.supportActivities[0], false);
+  assert.deepEqual(projectJson.supportActivities[0].activityCodes, ["OPS-001"]);
+  assert.deepEqual(projectJson.supportActivities[0].predecessors, { "OPS-001": [] });
+  assert.equal(projectJson.supportActivityJobs[0].activityCode, "OPS-001");
 });
 
 test("buildBackendProjectJson strips legacy support node resource fields and draft overrides", () => {

@@ -817,8 +817,13 @@ class BackendApiContractTest(unittest.TestCase):
         project["supportActivities"] = [
             {
                 "id": "activity-1",
+                "name": "Legacy display name",
+                "activityType": "飞行前保障",
+                "planType": "直接准备方案",
+                "resourceId": "legacy-node",
                 "requireDevices": 3,
                 "requiredDevices": 2,
+                "requiredPersonnel": 4,
                 "jobs": [
                     {
                         "activityCode": "BA-001",
@@ -850,7 +855,12 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertNotIn("endCondition", stored["missionProfile"])
         self.assertNotIn("analysisRequests", stored["missionProfile"])
         self.assertNotIn("requireDevices", stored["supportActivities"][0])
-        self.assertEqual(stored["supportActivities"][0]["requiredDevices"], 2)
+        self.assertNotIn("name", stored["supportActivities"][0])
+        self.assertNotIn("resourceId", stored["supportActivities"][0])
+        self.assertNotIn("requiredDevices", stored["supportActivities"][0])
+        self.assertNotIn("requiredPersonnel", stored["supportActivities"][0])
+        self.assertEqual(stored["supportActivities"][0]["activityName"], "Legacy display name")
+        self.assertEqual(stored["supportActivities"][0]["planType"], "使用保障方案")
         self.assertNotIn("jobs", stored["supportActivities"][0])
         self.assertEqual(stored["supportActivities"][0]["activityCodes"], ["BA-001", "BA-002"])
         self.assertEqual(stored["supportActivities"][0]["predecessors"], {"BA-001": [], "BA-002": ["BA-001"]})
@@ -3714,7 +3724,12 @@ class BackendApiContractTest(unittest.TestCase):
                 "capacity": 2,
             }
         ])
-        self.assertEqual(slim_project["supportActivities"], [{"id": "logistics-plan", "activityType": "后勤保障"}])
+        self.assertEqual(slim_project["supportActivities"], [{
+            "id": "logistics-plan",
+            "activityName": "logistics-plan",
+            "activityType": "后勤保障",
+            "planType": "后勤保障方案",
+        }])
 
     def test_strip_project_sweep_promotes_legacy_activity_transport_strategies(self) -> None:
         project = {

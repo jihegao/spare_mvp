@@ -841,16 +841,33 @@ def _support_activity_to_project(row: dict[str, Any], resource_name_by_id: dict[
     activity = deepcopy(row)
     activity.pop("transportStrategies", None)
     activity.pop("organizationStrategies", None)
-    activity.setdefault("activityName", row.get("name") or row.get("id") or "保障活动")
+    activity.setdefault("activityName", row.get("activityName") or row.get("name") or row.get("id") or "保障活动")
     activity.setdefault("activityType", row.get("type") or row.get("name") or "保障活动")
-    activity.setdefault("requiredPersonnel", 1)
-    activity.setdefault("requiredDevices", 1)
+    activity["planType"] = _canonical_support_activity_plan_type(activity)
     activity.setdefault("priority", 1)
-    activity.setdefault("jobs", [])
     resource_id = activity.get("resourceId")
     if resource_name_by_id and resource_id not in (None, ""):
         activity["resourceId"] = resource_name_by_id.get(str(resource_id), str(resource_id))
+    for field in ("name", "planGroupId", "resourceId", "supportNodeId", "requiredPersonnel", "requiredDevices"):
+        activity.pop(field, None)
     return activity
+
+
+def _canonical_support_activity_plan_type(activity: dict[str, Any]) -> str:
+    plan_type = str(activity.get("planType") or "").strip()
+    activity_type = str(activity.get("activityType") or "").strip()
+    combined = f"{plan_type} {activity_type}".lower()
+    if plan_type == "修复性维修方案" or "修复性维修" in combined or "corrective" in combined:
+        return "修复性维修方案"
+    if plan_type == "预防性维修方案" or "预防性维修" in combined or "preventive" in combined:
+        return "预防性维修方案"
+    if plan_type in {"后勤保障方案", "后勤保障活动方案"} or "后勤保障" in combined or "logistics" in combined:
+        return "后勤保障方案"
+    if plan_type in {"使用保障方案", "直接准备方案", "再次出动准备方案", "飞行后检查方案"}:
+        return "使用保障方案"
+    if any(token in combined for token in ("飞行前保障", "使用保障", "operations", "preflight", "relaunch", "postflight")):
+        return "使用保障方案"
+    return "使用保障方案"
 
 
 def _support_node_name_for_resource(row: dict[str, Any]) -> str:

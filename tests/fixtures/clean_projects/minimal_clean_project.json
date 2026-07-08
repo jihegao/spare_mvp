@@ -72,10 +72,10 @@
       "activityType": "corrective",
       "durationHours": 1,
       "id": "corrective",
+      "planType": "修复性维修方案",
       "predecessors": {
         "job-1": []
-      },
-      "requiredDevices": 1
+      }
     }
   ],
   "supportActivityJobs": [

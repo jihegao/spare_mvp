@@ -824,11 +824,11 @@
                 "workName": "燃油加注"
               }
             ],
-            "name": "飞行前保障",
+            "name": "典型保障方案",
             "priority": 1,
             "required_devices": 1,
-            "required_personnel": 2,
-            "resource_id": "基地",
+            "required_personnel": 1,
+            "resource_id": "",
             "runHourInterval": null,
             "spare_quantity": 0,
             "spare_type": null,
@@ -912,11 +912,11 @@
                 "workName": "换件维修"
               }
             ],
-            "name": "航电模块故障修复",
+            "name": "航电模块故障修复方案",
             "priority": 1,
             "required_devices": 1,
-            "required_personnel": 3,
-            "resource_id": "基地",
+            "required_personnel": 1,
+            "resource_id": "",
             "runHourInterval": null,
             "spare_quantity": 1,
             "spare_type": "航电模块",
@@ -995,11 +995,11 @@
                 "workName": "液压系统检查"
               }
             ],
-            "name": "8小时定检",
+            "name": "8小时舰载机定检",
             "priority": 2,
             "required_devices": 1,
-            "required_personnel": 2,
-            "resource_id": "基地",
+            "required_personnel": 1,
+            "resource_id": "",
             "runHourInterval": 8,
             "spare_quantity": 1,
             "spare_type": "液压备件",
@@ -1013,11 +1013,11 @@
             "floatRatio": null,
             "id": "logistics-support",
             "jobs": [],
-            "name": "后勤保障运输",
+            "name": "航母多级保障组织后勤保障方案",
             "priority": 1,
-            "required_devices": 2,
-            "required_personnel": 2,
-            "resource_id": "基层1",
+            "required_devices": 1,
+            "required_personnel": 1,
+            "resource_id": "",
             "runHourInterval": null,
             "spare_quantity": 1,
             "spare_type": "发动机备件",
@@ -1056,7 +1056,7 @@
             "priority": 1,
             "required_devices": 1,
             "required_personnel": 1,
-            "resource_id": "基地",
+            "resource_id": "",
             "runHourInterval": null,
             "spare_quantity": 0,
             "spare_type": null,
@@ -1095,7 +1095,7 @@
             "priority": 1,
             "required_devices": 1,
             "required_personnel": 1,
-            "resource_id": "基地",
+            "resource_id": "",
             "runHourInterval": null,
             "spare_quantity": 0,
             "spare_type": null,
@@ -1926,9 +1926,7 @@
             "equipmentId": "j15-avionics",
             "id": "preflight",
             "maxWorkTimeRefMinutes": 60,
-            "name": "飞行前保障",
-            "planGroupId": "preflight",
-            "planType": "直接准备方案",
+            "planType": "使用保障方案",
             "predecessors": {
               "OPS-001": [],
               "OPS-002": [
@@ -1936,9 +1934,6 @@
               ]
             },
             "priority": 1,
-            "requiredDevices": 1,
-            "requiredPersonnel": 2,
-            "resourceId": "基地",
             "spareQuantity": 0,
             "spareType": null
           },
@@ -1952,7 +1947,6 @@
             "durationHours": 3,
             "equipmentId": "j15-avionics",
             "id": "corrective",
-            "name": "航电模块故障修复",
             "planType": "修复性维修方案",
             "predecessors": {
               "REP-001": [],
@@ -1961,9 +1955,6 @@
               ]
             },
             "priority": 1,
-            "requiredDevices": 1,
-            "requiredPersonnel": 3,
-            "resourceId": "基地",
             "spareQuantity": 1,
             "spareType": "航电模块"
           },
@@ -1979,7 +1970,6 @@
             "durationHours": 2,
             "equipmentId": "j35-hydraulic",
             "id": "preventive",
-            "name": "8小时定检",
             "planType": "预防性维修方案",
             "plannedDowntimeHours": 2,
             "predecessors": {
@@ -1989,9 +1979,6 @@
               ]
             },
             "priority": 2,
-            "requiredDevices": 1,
-            "requiredPersonnel": 2,
-            "resourceId": "基地",
             "runHourFloatRatio": 0.15,
             "runHourInterval": 8,
             "spareQuantity": 1,
@@ -2009,13 +1996,9 @@
             "durationHours": 2,
             "equipmentId": "j15-engine",
             "id": "logistics-support",
-            "name": "后勤保障运输",
-            "planType": "后勤保障活动方案",
+            "planType": "后勤保障方案",
             "predecessors": {},
             "priority": 1,
-            "requiredDevices": 2,
-            "requiredPersonnel": 2,
-            "resourceId": "基层1",
             "spareQuantity": 1,
             "spareType": "发动机备件"
           },
@@ -2030,16 +2013,11 @@
             "equipmentId": "j15-engine",
             "id": "ops-support-j-15---5",
             "maxWorkTimeRefMinutes": 45,
-            "name": "J-15再次出动准备活动",
-            "planGroupId": "preflight",
-            "planType": "再次出动准备方案",
+            "planType": "使用保障方案",
             "predecessors": {
               "BA-001": []
             },
-            "priority": 1,
-            "requiredDevices": 1,
-            "requiredPersonnel": 1,
-            "resourceId": "基地"
+            "priority": 1
           },
           {
             "activityCodes": [
@@ -2052,16 +2030,11 @@
             "equipmentId": "j15-engine",
             "id": "ops-support-j-15---6",
             "maxWorkTimeRefMinutes": 60,
-            "name": "J-15飞行后检查活动",
-            "planGroupId": "preflight",
-            "planType": "飞行后检查方案",
+            "planType": "使用保障方案",
             "predecessors": {
               "BA-002": []
             },
-            "priority": 1,
-            "requiredDevices": 1,
-            "requiredPersonnel": 1,
-            "resourceId": "基地"
+            "priority": 1
           }
         ],
         "supportActivityJobs": [
@@ -3202,9 +3175,7 @@
           "equipmentId": "j15-avionics",
           "id": "preflight",
           "maxWorkTimeRefMinutes": 60,
-          "name": "飞行前保障",
-          "planGroupId": "preflight",
-          "planType": "直接准备方案",
+          "planType": "使用保障方案",
           "predecessors": {
             "OPS-001": [],
             "OPS-002": [
@@ -3212,9 +3183,6 @@
             ]
           },
           "priority": 1,
-          "requiredDevices": 1,
-          "requiredPersonnel": 2,
-          "resourceId": "基地",
           "spareQuantity": 0,
           "spareType": null
         },
@@ -3228,7 +3196,6 @@
           "durationHours": 3,
           "equipmentId": "j15-avionics",
           "id": "corrective",
-          "name": "航电模块故障修复",
           "planType": "修复性维修方案",
           "predecessors": {
             "REP-001": [],
@@ -3237,9 +3204,6 @@
             ]
           },
           "priority": 1,
-          "requiredDevices": 1,
-          "requiredPersonnel": 3,
-          "resourceId": "基地",
           "spareQuantity": 1,
           "spareType": "航电模块"
         },
@@ -3255,7 +3219,6 @@
           "durationHours": 2,
           "equipmentId": "j35-hydraulic",
           "id": "preventive",
-          "name": "8小时定检",
           "planType": "预防性维修方案",
           "plannedDowntimeHours": 2,
           "predecessors": {
@@ -3265,9 +3228,6 @@
             ]
           },
           "priority": 2,
-          "requiredDevices": 1,
-          "requiredPersonnel": 2,
-          "resourceId": "基地",
           "runHourFloatRatio": 0.15,
           "runHourInterval": 8,
           "spareQuantity": 1,
@@ -3285,13 +3245,9 @@
           "durationHours": 2,
           "equipmentId": "j15-engine",
           "id": "logistics-support",
-          "name": "后勤保障运输",
-          "planType": "后勤保障活动方案",
+          "planType": "后勤保障方案",
           "predecessors": {},
           "priority": 1,
-          "requiredDevices": 2,
-          "requiredPersonnel": 2,
-          "resourceId": "基层1",
           "spareQuantity": 1,
           "spareType": "发动机备件"
         },
@@ -3306,16 +3262,11 @@
           "equipmentId": "j15-engine",
           "id": "ops-support-j-15---5",
           "maxWorkTimeRefMinutes": 45,
-          "name": "J-15再次出动准备活动",
-          "planGroupId": "preflight",
-          "planType": "再次出动准备方案",
+          "planType": "使用保障方案",
           "predecessors": {
             "BA-001": []
           },
-          "priority": 1,
-          "requiredDevices": 1,
-          "requiredPersonnel": 1,
-          "resourceId": "基地"
+          "priority": 1
         },
         {
           "activityCodes": [
@@ -3328,16 +3279,11 @@
           "equipmentId": "j15-engine",
           "id": "ops-support-j-15---6",
           "maxWorkTimeRefMinutes": 60,
-          "name": "J-15飞行后检查活动",
-          "planGroupId": "preflight",
-          "planType": "飞行后检查方案",
+          "planType": "使用保障方案",
           "predecessors": {
             "BA-002": []
           },
-          "priority": 1,
-          "requiredDevices": 1,
-          "requiredPersonnel": 1,
-          "resourceId": "基地"
+          "priority": 1
         }
       ],
       "supportActivityJobs": [
@@ -4491,9 +4437,7 @@
         "equipmentId": "j15-avionics",
         "id": "preflight",
         "maxWorkTimeRefMinutes": 60,
-        "name": "飞行前保障",
-        "planGroupId": "preflight",
-        "planType": "直接准备方案",
+        "planType": "使用保障方案",
         "predecessors": {
           "OPS-001": [],
           "OPS-002": [
@@ -4501,9 +4445,6 @@
           ]
         },
         "priority": 1,
-        "requiredDevices": 1,
-        "requiredPersonnel": 2,
-        "resourceId": "基地",
         "spareQuantity": 0,
         "spareType": null
       },
@@ -4517,7 +4458,6 @@
         "durationHours": 3,
         "equipmentId": "j15-avionics",
         "id": "corrective",
-        "name": "航电模块故障修复",
         "planType": "修复性维修方案",
         "predecessors": {
           "REP-001": [],
@@ -4526,9 +4466,6 @@
           ]
         },
         "priority": 1,
-        "requiredDevices": 1,
-        "requiredPersonnel": 3,
-        "resourceId": "基地",
         "spareQuantity": 1,
         "spareType": "航电模块"
       },
@@ -4544,7 +4481,6 @@
         "durationHours": 2,
         "equipmentId": "j35-hydraulic",
         "id": "preventive",
-        "name": "8小时定检",
         "planType": "预防性维修方案",
         "plannedDowntimeHours": 2,
         "predecessors": {
@@ -4554,9 +4490,6 @@
           ]
         },
         "priority": 2,
-        "requiredDevices": 1,
-        "requiredPersonnel": 2,
-        "resourceId": "基地",
         "runHourFloatRatio": 0.15,
         "runHourInterval": 8,
         "spareQuantity": 1,
@@ -4574,13 +4507,9 @@
         "durationHours": 2,
         "equipmentId": "j15-engine",
         "id": "logistics-support",
-        "name": "后勤保障运输",
-        "planType": "后勤保障活动方案",
+        "planType": "后勤保障方案",
         "predecessors": {},
         "priority": 1,
-        "requiredDevices": 2,
-        "requiredPersonnel": 2,
-        "resourceId": "基层1",
         "spareQuantity": 1,
         "spareType": "发动机备件"
       },
@@ -4595,16 +4524,11 @@
         "equipmentId": "j15-engine",
         "id": "ops-support-j-15---5",
         "maxWorkTimeRefMinutes": 45,
-        "name": "J-15再次出动准备活动",
-        "planGroupId": "preflight",
-        "planType": "再次出动准备方案",
+        "planType": "使用保障方案",
         "predecessors": {
           "BA-001": []
         },
-        "priority": 1,
-        "requiredDevices": 1,
-        "requiredPersonnel": 1,
-        "resourceId": "基地"
+        "priority": 1
       },
       {
         "activityCodes": [
@@ -4617,16 +4541,11 @@
         "equipmentId": "j15-engine",
         "id": "ops-support-j-15---6",
         "maxWorkTimeRefMinutes": 60,
-        "name": "J-15飞行后检查活动",
-        "planGroupId": "preflight",
-        "planType": "飞行后检查方案",
+        "planType": "使用保障方案",
         "predecessors": {
           "BA-002": []
         },
-        "priority": 1,
-        "requiredDevices": 1,
-        "requiredPersonnel": 1,
-        "resourceId": "基地"
+        "priority": 1
       }
     ],
     "supportActivityJobs": [
