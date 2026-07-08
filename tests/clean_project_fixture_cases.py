@@ -29,9 +29,11 @@ def minimal_clean_project() -> dict[str, Any]:
                 "missionId": "basic-small",
                 "taskDurationMinutes": 30,
                 "equipmentType": "J-15",
+                "missionPhases": [
+                    {"id": "phase-sortie", "name": "sortie", "sequence": 1, "durationMinutes": 30}
+                ],
             }
         ],
-        "missionPhases": [],
         "combatUnit": {
             "members": [
                 {
@@ -124,10 +126,12 @@ def legacy_polluted_project() -> dict[str, Any]:
                 "missionId": "basic-small",
                 "taskDurationMinutes": 30,
                 "equipmentType": "J-15",
+                "missionPhases": [
+                    {"id": "phase-sortie", "name": "sortie", "sequence": 1, "durationMinutes": 30}
+                ],
                 "draftState": {"dirty": True},
             }
         ],
-        "missionPhases": [],
         "combatUnit": {
             "members": [
                 {

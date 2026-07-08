@@ -1,6 +1,9 @@
 export function compileMissionExposure(project, equipmentNodes) {
   const missionHours = Number(project.targets?.reliability?.atHours || project.missionProfile?.missionHours || 3);
-  const phases = project.missionPhases?.length
+  const basicMissionPhases = nestedMissionPhases(project);
+  const phases = basicMissionPhases.length
+    ? basicMissionPhases
+    : project.missionPhases?.length
     ? project.missionPhases
     : [{ id: "phase-sortie", name: "出动执行", state: "active", durationHours: missionHours }];
   const rows = [];
@@ -54,4 +57,22 @@ export function compileMissionExposure(project, equipmentNodes) {
     totalsByNode,
     warnings
   };
+}
+
+function nestedMissionPhases(project) {
+  const missions = Array.isArray(project?.basicMissions) ? project.basicMissions : [];
+  const phases = [];
+  for (const mission of missions) {
+    if (!mission || typeof mission !== "object") continue;
+    const missionId = mission.id || mission.missionId || mission.name || "";
+    const missionPhases = Array.isArray(mission.missionPhases) ? mission.missionPhases : [];
+    for (const phase of missionPhases) {
+      if (!phase || typeof phase !== "object") continue;
+      phases.push({
+        ...phase,
+        basicMissionId: phase.basicMissionId || missionId
+      });
+    }
+  }
+  return phases;
 }

@@ -1938,7 +1938,7 @@ function bindEvents() {
 
     const basicMissionPhaseSelectAll = event.target.closest("[data-basic-mission-phase-select-all]");
     if (basicMissionPhaseSelectAll) {
-      const phases = Array.isArray(scenario.missionPhases) ? scenario.missionPhases : [];
+      const phases = selectedBasicMissionPhases();
       selectedBasicMissionPhaseIndexes = basicMissionPhaseSelectAll.checked
         ? new Set(phases.map((_, index) => String(index)))
         : new Set();
@@ -2992,6 +2992,19 @@ function primaryBasicMissionRecord() {
 function resolveSelectedBasicMission() {
   const records = editableBasicMissionRecords();
   return records.find((record) => record.key === selectedBasicMissionKey) || records[0];
+}
+
+function selectedBasicMissionPhases() {
+  return ensureBasicMissionPhases(resolveSelectedBasicMission()?.task);
+}
+
+function ensureBasicMissionPhases(mission) {
+  if (!mission || typeof mission !== "object") return [];
+  if (!Array.isArray(mission.missionPhases)) {
+    const legacyPhases = Array.isArray(scenario.missionPhases) ? scenario.missionPhases : [];
+    mission.missionPhases = legacyPhases.map((phase) => JSON.parse(JSON.stringify(phase)));
+  }
+  return mission.missionPhases;
 }
 
 function addBasicMission() {
@@ -4576,7 +4589,7 @@ function deleteSelectedCombatUnitMember() {
 function renderBasicMissionModeling(page) {
   const selectedMission = resolveSelectedBasicMission();
   const missionPath = selectedMission.path || "basicMissions.0";
-  const phases = scenario.missionPhases || [];
+  const phases = selectedBasicMissionPhases();
   selectedBasicMissionPhaseIndexes = validMissionPhaseSelection(phases);
   const allPhasesSelected = phases.length > 0 && phases.every((_, index) => selectedBasicMissionPhaseIndexes.has(String(index)));
   const phaseRatioTotal = missionPhaseRatioTotal(phases);
@@ -4630,8 +4643,8 @@ function renderBasicMissionModeling(page) {
                   <tr class="${selectedBasicMissionPhaseIndexes.has(String(index)) ? "selected-table-row" : ""}">
                     <td><input type="checkbox" data-basic-mission-phase-select="${index}" aria-label="选择任务阶段${index + 1}" ${selectedBasicMissionPhaseIndexes.has(String(index)) ? "checked" : ""}></td>
                     <td>${index + 1}</td>
-                    <td>${valueInput(`missionPhases.${index}.name`)}</td>
-                    <td>${valueInput(`missionPhases.${index}.phaseRatio`, "number", { min: "0", max: "1", step: "0.01" })}</td>
+                    <td>${valueInput(`${missionPath}.missionPhases.${index}.name`)}</td>
+                    <td>${valueInput(`${missionPath}.missionPhases.${index}.phaseRatio`, "number", { min: "0", max: "1", step: "0.01" })}</td>
                     <td><button type="button" class="btn-danger" data-basic-mission-phase-delete="${index}">删除</button></td>
                   </tr>
                 `).join("")}
@@ -4654,11 +4667,11 @@ function renderBasicMissionModeling(page) {
   `;
 }
 
-function missionPhaseRatioTotal(phases = scenario.missionPhases || []) {
+function missionPhaseRatioTotal(phases = selectedBasicMissionPhases()) {
   return phases.reduce((sum, phase) => sum + Number(phase.phaseRatio || 0), 0);
 }
 
-function validMissionPhaseSelection(phases = scenario.missionPhases || []) {
+function validMissionPhaseSelection(phases = selectedBasicMissionPhases()) {
   const phaseCount = Array.isArray(phases) ? phases.length : 0;
   return new Set(
     Array.from(selectedBasicMissionPhaseIndexes)
@@ -4674,23 +4687,21 @@ function supportActivityPlanSelect(path, aircraftModel) {
 }
 
 function addMissionPhase() {
-  const phases = Array.isArray(scenario.missionPhases) ? scenario.missionPhases : [];
+  const phases = selectedBasicMissionPhases();
   const remainingRatio = Math.max(0, 1 - missionPhaseRatioTotal(phases));
-  scenario.missionPhases = [
-    ...phases,
-    { name: `阶段${phases.length + 1}`, phaseRatio: Number(remainingRatio.toFixed(2)) }
-  ];
+  phases.push({ name: `阶段${phases.length + 1}`, phaseRatio: Number(remainingRatio.toFixed(2)) });
 }
 
 function deleteMissionPhase(index) {
-  scenario.missionPhases = (Array.isArray(scenario.missionPhases) ? scenario.missionPhases : []).filter((_, rowIndex) => rowIndex !== index);
+  const phases = selectedBasicMissionPhases();
+  phases.splice(0, phases.length, ...phases.filter((_, rowIndex) => rowIndex !== index));
   selectedBasicMissionPhaseIndexes = new Set(
     Array.from(selectedBasicMissionPhaseIndexes)
       .map((key) => Number(key))
       .filter((selectedIndex) => Number.isInteger(selectedIndex) && selectedIndex !== index)
       .map((selectedIndex) => String(selectedIndex > index ? selectedIndex - 1 : selectedIndex))
   );
-  selectedBasicMissionPhaseIndexes = validMissionPhaseSelection(scenario.missionPhases);
+  selectedBasicMissionPhaseIndexes = validMissionPhaseSelection(phases);
 }
 
 function deleteSelectedMissionPhases() {
@@ -4700,8 +4711,8 @@ function deleteSelectedMissionPhases() {
       .filter(Number.isInteger)
   );
   if (!selectedIndexes.size) return;
-  scenario.missionPhases = (Array.isArray(scenario.missionPhases) ? scenario.missionPhases : [])
-    .filter((_, index) => !selectedIndexes.has(index));
+  const phases = selectedBasicMissionPhases();
+  phases.splice(0, phases.length, ...phases.filter((_, index) => !selectedIndexes.has(index)));
   selectedBasicMissionPhaseIndexes = new Set();
 }
 

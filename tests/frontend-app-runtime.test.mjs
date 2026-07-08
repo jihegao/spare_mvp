@@ -2735,7 +2735,7 @@ async function setupRuntimeApp({
     experiment_name: "Runtime 项目",
     base_code: "RT",
     summary: "runtime test",
-    source_import_id: "runtime-import-template",
+    source_import_id: "",
     updated_at: "2026-06-26 00:00:00"
   }]
 } = {}) {

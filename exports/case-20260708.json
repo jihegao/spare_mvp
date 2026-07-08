@@ -17,7 +17,33 @@
       "taskArea": "巡逻区",
       "taskDurationMinutes": 180,
       "missionId": "BM-CV-01",
-      "basicTaskName": "巡逻任务"
+      "basicTaskName": "巡逻任务",
+      "missionPhases": [
+        {
+          "id": "phase-alert",
+          "limitHours": 1,
+          "name": "出航",
+          "phaseRatio": 0.3,
+          "state": "idle",
+          "transitionCondition": "任务波次触发"
+        },
+        {
+          "id": "phase-prep",
+          "limitHours": 2,
+          "name": "任务",
+          "phaseRatio": 0.4,
+          "state": "preparing",
+          "transitionCondition": "保障完成"
+        },
+        {
+          "id": "phase-sortie",
+          "limitHours": 4,
+          "name": "返航",
+          "phaseRatio": 0.3,
+          "state": "sortie",
+          "transitionCondition": "任务完成或故障"
+        }
+      ]
     }
   ],
   "combatUnit": {
@@ -278,32 +304,6 @@
       }
     ]
   },
-  "missionPhases": [
-    {
-      "id": "phase-alert",
-      "limitHours": 1,
-      "name": "出航",
-      "phaseRatio": 0.3,
-      "state": "idle",
-      "transitionCondition": "任务波次触发"
-    },
-    {
-      "id": "phase-prep",
-      "limitHours": 2,
-      "name": "任务",
-      "phaseRatio": 0.4,
-      "state": "preparing",
-      "transitionCondition": "保障完成"
-    },
-    {
-      "id": "phase-sortie",
-      "limitHours": 4,
-      "name": "返航",
-      "phaseRatio": 0.3,
-      "state": "sortie",
-      "transitionCondition": "任务完成或故障"
-    }
-  ],
   "missionProfile": {
     "compositeTasks": [
       {

@@ -221,6 +221,7 @@ def compile_project_json_to_aircraft_support_inputs(
     support_nodes = _support_nodes(project)
     support_aliases = _support_node_aliases(project)
     job_definitions = _support_activity_job_definitions(project)
+    basic_missions = _list(project.get("basicMissions"))
     activities = [
         _support_activity(activity, support_aliases, job_definitions)
         for activity in _list(project.get("supportActivities"))
@@ -237,10 +238,10 @@ def compile_project_json_to_aircraft_support_inputs(
             "profile_id": str(mission_profile.get("profileId") or mission_profile.get("id") or "mission-profile"),
             "name": str(mission_profile.get("name") or "mission profile"),
             "duration_minutes": duration_minutes,
-            "basic_missions": _runtime_copy(_list(project.get("basicMissions"))),
+            "basic_missions": _runtime_copy(basic_missions),
             "composite_tasks": _runtime_copy(_list(mission_profile.get("compositeTasks"))),
             "periodic_tasks": _runtime_copy(_list(mission_profile.get("periodicTasks"))),
-            "mission_phases": _runtime_copy(_list(project.get("missionPhases"))),
+            "mission_phases": _mission_phases(project, basic_missions),
             "airports": _runtime_airports(project.get("airports")),
         },
         "aircraft": {
@@ -571,6 +572,24 @@ def _transport_policy(policy: dict[str, Any], aliases: dict[str, str], default_n
         "priority": _positive_int(policy.get("priority"), 1),
         "transportTimeHours": _non_negative_float(policy.get("transportTimeHours"), _non_negative_float(policy.get("transport_time_hours"), 0.0)),
     }
+
+
+def _mission_phases(project: dict[str, Any], basic_missions: list[Any]) -> list[dict[str, Any]]:
+    phases: list[dict[str, Any]] = []
+    for mission in basic_missions:
+        if not isinstance(mission, dict):
+            continue
+        mission_id = str(mission.get("id") or mission.get("missionId") or mission.get("name") or "").strip()
+        for phase in _list(mission.get("missionPhases")):
+            if not isinstance(phase, dict):
+                continue
+            row = copy.deepcopy(phase)
+            if mission_id and row.get("basicMissionId") in (None, ""):
+                row["basicMissionId"] = mission_id
+            phases.append(row)
+    if phases:
+        return _runtime_copy(phases)
+    return _runtime_copy(_list(project.get("missionPhases")))
 
 
 def _support_activity(

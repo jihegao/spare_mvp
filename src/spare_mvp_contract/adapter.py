@@ -407,6 +407,7 @@ class SimulationAdapter:
         initial_ready = aircraft_summary["initial_ready"]
         support_network_nodes = self._aircraft_support_v1_support_nodes(project)
         support_node_aliases = self._support_node_reference_aliases(project)
+        basic_missions = self._basic_missions(project)
 
         inputs = {
             "schema_version": "aircraft-support-v1-input-v0",
@@ -420,10 +421,10 @@ class SimulationAdapter:
                 "profile_id": str(mission_profile.get("profileId") or mission_profile.get("id") or "mission-profile"),
                 "name": str(mission_profile.get("name") or "mission profile"),
                 "duration_minutes": duration_minutes,
-                "basic_missions": copy.deepcopy(self._basic_missions(project)),
+                "basic_missions": copy.deepcopy(basic_missions),
                 "composite_tasks": copy.deepcopy(self._dict_list(mission_profile.get("compositeTasks"))),
                 "periodic_tasks": copy.deepcopy(self._dict_list(mission_profile.get("periodicTasks"))),
-                "mission_phases": copy.deepcopy(self._dict_list(project.get("missionPhases"))),
+                "mission_phases": self._aircraft_support_v1_mission_phases(project, basic_missions),
                 "airports": self._runtime_airports(project.get("airports")),
             },
             "aircraft": {
@@ -1054,7 +1055,7 @@ class SimulationAdapter:
                 "missionProfile.compositeTasks",
                 "missionProfile.periodicTasks",
                 "basicMissions",
-                "missionPhases",
+                "basicMissions[].missionPhases",
                 "airports",
                 "components[].aircraftModel",
                 "components[].failureDistribution",
@@ -1113,6 +1114,8 @@ class SimulationAdapter:
             defaults.append("aircraft.initialReady=derivedFleetCount")
         if not self._is_positive_number(mission_profile.get("durationHours")) and not self._mission_profile_has_periodic_duration(mission_profile):
             defaults.append("missionProfile.durationHours=24")
+        if self._uses_root_mission_phase_fallback(project):
+            defaults.append("basicMissions[].missionPhases=legacyRootMissionPhases")
         if not self._is_positive_number(experiment.get("steps")):
             defaults.append("ExperimentPlan.config.steps=durationMinutes/sampleEveryMinutes")
         if not self._is_positive_number(experiment.get("samples")):
@@ -3555,6 +3558,29 @@ class SimulationAdapter:
 
     def _basic_missions(self, project: dict[str, Any]) -> list[dict[str, Any]]:
         return self._dict_list(project.get("basicMissions"))
+
+    def _aircraft_support_v1_mission_phases(
+        self,
+        project: dict[str, Any],
+        basic_missions: list[dict[str, Any]] | None = None,
+    ) -> list[dict[str, Any]]:
+        missions = basic_missions if basic_missions is not None else self._basic_missions(project)
+        phases: list[dict[str, Any]] = []
+        for mission in missions:
+            mission_id = str(mission.get("id") or mission.get("missionId") or mission.get("name") or "").strip()
+            for phase in self._dict_list(mission.get("missionPhases")):
+                row = copy.deepcopy(phase)
+                if mission_id and row.get("basicMissionId") in (None, ""):
+                    row["basicMissionId"] = mission_id
+                phases.append(row)
+        if phases:
+            return phases
+        return copy.deepcopy(self._dict_list(project.get("missionPhases")))
+
+    def _uses_root_mission_phase_fallback(self, project: dict[str, Any]) -> bool:
+        if not self._dict_list(project.get("missionPhases")):
+            return False
+        return not self._aircraft_support_v1_mission_phases({**project, "missionPhases": []})
 
     def _primary_basic_mission(self, project: dict[str, Any]) -> dict[str, Any]:
         missions = self._basic_missions(project)

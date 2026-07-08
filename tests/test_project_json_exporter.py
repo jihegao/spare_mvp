@@ -128,11 +128,13 @@ class ProjectJsonExporterTest(unittest.TestCase):
                     "taskDurationMinutes": 30,
                     "equipmentType": "J-15",
                     "supportActivityName": "Corrective support plan",
+                    "missionPhases": [
+                        {"id": "phase-sortie", "name": "sortie", "sequence": 1, "durationMinutes": 30}
+                    ],
                     "missionAreas": [{"id": "basic-nested-area"}],
                     "draftState": {"dirty": True},
                 }
             ],
-            "missionPhases": [],
             "combatUnit": {
                 "members": [
                     {
@@ -343,6 +345,35 @@ class ProjectJsonExporterTest(unittest.TestCase):
         })
 
         with self.assertRaisesRegex(ValueError, "basicMissions.0.supportActivityName"):
+            ProjectJsonExporter(target="aircraft_support_v1").export(project)
+
+    def test_exporter_allows_basic_mission_local_phase_ids(self) -> None:
+        project = self._polluted_project()
+        project["basicMissions"].append({
+            **deepcopy(project["basicMissions"][0]),
+            "id": "basic-large",
+            "name": "large sortie",
+            "missionId": "basic-large",
+            "missionPhases": [
+                {"id": "phase-sortie", "name": "large sortie", "sequence": 1, "durationMinutes": 45}
+            ],
+        })
+
+        clean = ProjectJsonExporter(target="aircraft_support_v1").export(project)
+
+        self.assertEqual(clean["basicMissions"][0]["missionPhases"][0]["id"], "phase-sortie")
+        self.assertEqual(clean["basicMissions"][1]["missionPhases"][0]["id"], "phase-sortie")
+
+    def test_exporter_rejects_duplicate_phase_id_within_basic_mission(self) -> None:
+        project = self._polluted_project()
+        project["basicMissions"][0]["missionPhases"].append({
+            "id": "phase-sortie",
+            "name": "duplicate sortie",
+            "sequence": 2,
+            "durationMinutes": 45,
+        })
+
+        with self.assertRaisesRegex(ValueError, "basicMissions.0.missionPhases.1.id"):
             ProjectJsonExporter(target="aircraft_support_v1").export(project)
 
     def test_aircraft_support_v1_exporter_rejects_unknown_target(self) -> None:

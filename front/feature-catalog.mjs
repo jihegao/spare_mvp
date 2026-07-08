@@ -211,10 +211,10 @@ function resolveDataObjects(name, secondary, tertiary) {
   if (secondary === "结果分析") return ["projectDraft", "mesaAnalysisProfile", "mesaSessionResult"];
   if (name.includes("内置场景")) return ["scenarioId", "airports", "supportNodes"];
   if (name.includes("作战单元")) return ["combatUnit", "equipment", "supportNodes"];
-  if (name.includes("基本任务")) return ["basicMissions", "missionPhases"];
+  if (name.includes("基本任务")) return ["basicMissions", "basicMissions.missionPhases"];
   if (name.includes("任务剖面参数")) return ["missionProfile"];
   if (name.includes("复合任务")) return ["missionProfile", "basicMissions"];
-  if (name.includes("周期性任务")) return ["missionProfile", "missionPhases"];
+  if (name.includes("周期性任务")) return ["missionProfile", "basicMissions.missionPhases"];
   if (name.includes("装备系统")) return ["equipment", "components", "failureModel"];
   if (name.includes("可靠性框图")) return ["reliabilityBlockDiagram", "components"];
   if (name.includes("RMS分配") || name.includes("RMS指标分配")) return ["rmsAllocationPlan", "equipmentNodes", "missionExposure", "allocationResults"];

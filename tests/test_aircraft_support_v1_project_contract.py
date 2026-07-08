@@ -39,9 +39,11 @@ class AircraftSupportV1CleanProjectSchemaTest(unittest.TestCase):
                     "missionId": "basic-small",
                     "taskDurationMinutes": 30,
                     "equipmentType": "J-15",
+                    "missionPhases": [
+                        {"id": "phase-sortie", "name": "sortie", "sequence": 1, "durationMinutes": 30}
+                    ],
                 }
             ],
-            "missionPhases": [],
             "combatUnit": {
                 "members": [
                     {

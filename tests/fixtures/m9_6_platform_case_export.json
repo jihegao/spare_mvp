@@ -11,7 +11,7 @@
           "missionProfile.compositeTasks",
           "missionProfile.periodicTasks",
           "basicMissions",
-          "missionPhases",
+          "basicMissions[].missionPhases",
           "airports",
           "components[].aircraftModel",
           "components[].failureDistribution",
@@ -378,6 +378,32 @@
             "id": "bm-cv-01",
             "minRequiredSorties": 4,
             "missionId": "BM-CV-01",
+            "missionPhases": [
+              {
+                "id": "phase-alert",
+                "limitHours": 1,
+                "name": "出航",
+                "phaseRatio": 0.3,
+                "state": "idle",
+                "transitionCondition": "任务波次触发"
+              },
+              {
+                "id": "phase-prep",
+                "limitHours": 2,
+                "name": "任务",
+                "phaseRatio": 0.4,
+                "state": "preparing",
+                "transitionCondition": "保障完成"
+              },
+              {
+                "id": "phase-sortie",
+                "limitHours": 4,
+                "name": "返航",
+                "phaseRatio": 0.3,
+                "state": "sortie",
+                "transitionCondition": "任务完成或故障"
+              }
+            ],
             "name": "近海制空巡逻任务",
             "preparationMinutes": 50,
             "priority": 1,
@@ -399,6 +425,32 @@
             "id": "night-alert-main",
             "minRequiredSorties": 3,
             "missionId": "night-alert-main",
+            "missionPhases": [
+              {
+                "id": "phase-alert",
+                "limitHours": 1,
+                "name": "出航",
+                "phaseRatio": 0.3,
+                "state": "idle",
+                "transitionCondition": "任务波次触发"
+              },
+              {
+                "id": "phase-prep",
+                "limitHours": 2,
+                "name": "任务",
+                "phaseRatio": 0.4,
+                "state": "preparing",
+                "transitionCondition": "保障完成"
+              },
+              {
+                "id": "phase-sortie",
+                "limitHours": 4,
+                "name": "返航",
+                "phaseRatio": 0.3,
+                "state": "sortie",
+                "transitionCondition": "任务完成或故障"
+              }
+            ],
             "name": "远海警戒任务",
             "preparationMinutes": 55,
             "priority": 1,
@@ -447,6 +499,7 @@
         "duration_minutes": 20160,
         "mission_phases": [
           {
+            "basicMissionId": "bm-cv-01",
             "id": "phase-alert",
             "limitHours": 1,
             "name": "出航",
@@ -455,6 +508,7 @@
             "transitionCondition": "任务波次触发"
           },
           {
+            "basicMissionId": "bm-cv-01",
             "id": "phase-prep",
             "limitHours": 2,
             "name": "任务",
@@ -463,6 +517,34 @@
             "transitionCondition": "保障完成"
           },
           {
+            "basicMissionId": "bm-cv-01",
+            "id": "phase-sortie",
+            "limitHours": 4,
+            "name": "返航",
+            "phaseRatio": 0.3,
+            "state": "sortie",
+            "transitionCondition": "任务完成或故障"
+          },
+          {
+            "basicMissionId": "night-alert-main",
+            "id": "phase-alert",
+            "limitHours": 1,
+            "name": "出航",
+            "phaseRatio": 0.3,
+            "state": "idle",
+            "transitionCondition": "任务波次触发"
+          },
+          {
+            "basicMissionId": "night-alert-main",
+            "id": "phase-prep",
+            "limitHours": 2,
+            "name": "任务",
+            "phaseRatio": 0.4,
+            "state": "preparing",
+            "transitionCondition": "保障完成"
+          },
+          {
+            "basicMissionId": "night-alert-main",
             "id": "phase-sortie",
             "limitHours": 4,
             "name": "返航",
@@ -1044,6 +1126,32 @@
             "id": "bm-cv-01",
             "minRequiredSorties": 4,
             "missionId": "BM-CV-01",
+            "missionPhases": [
+              {
+                "id": "phase-alert",
+                "limitHours": 1,
+                "name": "出航",
+                "phaseRatio": 0.3,
+                "state": "idle",
+                "transitionCondition": "任务波次触发"
+              },
+              {
+                "id": "phase-prep",
+                "limitHours": 2,
+                "name": "任务",
+                "phaseRatio": 0.4,
+                "state": "preparing",
+                "transitionCondition": "保障完成"
+              },
+              {
+                "id": "phase-sortie",
+                "limitHours": 4,
+                "name": "返航",
+                "phaseRatio": 0.3,
+                "state": "sortie",
+                "transitionCondition": "任务完成或故障"
+              }
+            ],
             "name": "近海制空巡逻任务",
             "preparationMinutes": 50,
             "priority": 1,
@@ -1065,6 +1173,32 @@
             "id": "night-alert-main",
             "minRequiredSorties": 3,
             "missionId": "night-alert-main",
+            "missionPhases": [
+              {
+                "id": "phase-alert",
+                "limitHours": 1,
+                "name": "出航",
+                "phaseRatio": 0.3,
+                "state": "idle",
+                "transitionCondition": "任务波次触发"
+              },
+              {
+                "id": "phase-prep",
+                "limitHours": 2,
+                "name": "任务",
+                "phaseRatio": 0.4,
+                "state": "preparing",
+                "transitionCondition": "保障完成"
+              },
+              {
+                "id": "phase-sortie",
+                "limitHours": 4,
+                "name": "返航",
+                "phaseRatio": 0.3,
+                "state": "sortie",
+                "transitionCondition": "任务完成或故障"
+              }
+            ],
             "name": "远海警戒任务",
             "preparationMinutes": 55,
             "priority": 1,
@@ -1345,32 +1479,6 @@
             "specialRepairProfile": {
               "repairTimeMinutes": 130
             }
-          }
-        ],
-        "missionPhases": [
-          {
-            "id": "phase-alert",
-            "limitHours": 1,
-            "name": "出航",
-            "phaseRatio": 0.3,
-            "state": "idle",
-            "transitionCondition": "任务波次触发"
-          },
-          {
-            "id": "phase-prep",
-            "limitHours": 2,
-            "name": "任务",
-            "phaseRatio": 0.4,
-            "state": "preparing",
-            "transitionCondition": "保障完成"
-          },
-          {
-            "id": "phase-sortie",
-            "limitHours": 4,
-            "name": "返航",
-            "phaseRatio": 0.3,
-            "state": "sortie",
-            "transitionCondition": "任务完成或故障"
           }
         ],
         "missionProfile": {
@@ -2056,6 +2164,32 @@
           "id": "bm-cv-01",
           "minRequiredSorties": 4,
           "missionId": "BM-CV-01",
+          "missionPhases": [
+            {
+              "id": "phase-alert",
+              "limitHours": 1,
+              "name": "出航",
+              "phaseRatio": 0.3,
+              "state": "idle",
+              "transitionCondition": "任务波次触发"
+            },
+            {
+              "id": "phase-prep",
+              "limitHours": 2,
+              "name": "任务",
+              "phaseRatio": 0.4,
+              "state": "preparing",
+              "transitionCondition": "保障完成"
+            },
+            {
+              "id": "phase-sortie",
+              "limitHours": 4,
+              "name": "返航",
+              "phaseRatio": 0.3,
+              "state": "sortie",
+              "transitionCondition": "任务完成或故障"
+            }
+          ],
           "name": "近海制空巡逻任务",
           "preparationMinutes": 50,
           "priority": 1,
@@ -2077,6 +2211,32 @@
           "id": "night-alert-main",
           "minRequiredSorties": 3,
           "missionId": "night-alert-main",
+          "missionPhases": [
+            {
+              "id": "phase-alert",
+              "limitHours": 1,
+              "name": "出航",
+              "phaseRatio": 0.3,
+              "state": "idle",
+              "transitionCondition": "任务波次触发"
+            },
+            {
+              "id": "phase-prep",
+              "limitHours": 2,
+              "name": "任务",
+              "phaseRatio": 0.4,
+              "state": "preparing",
+              "transitionCondition": "保障完成"
+            },
+            {
+              "id": "phase-sortie",
+              "limitHours": 4,
+              "name": "返航",
+              "phaseRatio": 0.3,
+              "state": "sortie",
+              "transitionCondition": "任务完成或故障"
+            }
+          ],
           "name": "远海警戒任务",
           "preparationMinutes": 55,
           "priority": 1,
@@ -2357,32 +2517,6 @@
           "specialRepairProfile": {
             "repairTimeMinutes": 130
           }
-        }
-      ],
-      "missionPhases": [
-        {
-          "id": "phase-alert",
-          "limitHours": 1,
-          "name": "出航",
-          "phaseRatio": 0.3,
-          "state": "idle",
-          "transitionCondition": "任务波次触发"
-        },
-        {
-          "id": "phase-prep",
-          "limitHours": 2,
-          "name": "任务",
-          "phaseRatio": 0.4,
-          "state": "preparing",
-          "transitionCondition": "保障完成"
-        },
-        {
-          "id": "phase-sortie",
-          "limitHours": 4,
-          "name": "返航",
-          "phaseRatio": 0.3,
-          "state": "sortie",
-          "transitionCondition": "任务完成或故障"
         }
       ],
       "missionProfile": {
@@ -3081,6 +3215,32 @@
         "id": "bm-cv-01",
         "minRequiredSorties": 4,
         "missionId": "BM-CV-01",
+        "missionPhases": [
+          {
+            "id": "phase-alert",
+            "limitHours": 1,
+            "name": "出航",
+            "phaseRatio": 0.3,
+            "state": "idle",
+            "transitionCondition": "任务波次触发"
+          },
+          {
+            "id": "phase-prep",
+            "limitHours": 2,
+            "name": "任务",
+            "phaseRatio": 0.4,
+            "state": "preparing",
+            "transitionCondition": "保障完成"
+          },
+          {
+            "id": "phase-sortie",
+            "limitHours": 4,
+            "name": "返航",
+            "phaseRatio": 0.3,
+            "state": "sortie",
+            "transitionCondition": "任务完成或故障"
+          }
+        ],
         "name": "近海制空巡逻任务",
         "preparationMinutes": 50,
         "priority": 1,
@@ -3102,6 +3262,32 @@
         "id": "night-alert-main",
         "minRequiredSorties": 3,
         "missionId": "night-alert-main",
+        "missionPhases": [
+          {
+            "id": "phase-alert",
+            "limitHours": 1,
+            "name": "出航",
+            "phaseRatio": 0.3,
+            "state": "idle",
+            "transitionCondition": "任务波次触发"
+          },
+          {
+            "id": "phase-prep",
+            "limitHours": 2,
+            "name": "任务",
+            "phaseRatio": 0.4,
+            "state": "preparing",
+            "transitionCondition": "保障完成"
+          },
+          {
+            "id": "phase-sortie",
+            "limitHours": 4,
+            "name": "返航",
+            "phaseRatio": 0.3,
+            "state": "sortie",
+            "transitionCondition": "任务完成或故障"
+          }
+        ],
         "name": "远海警戒任务",
         "preparationMinutes": 55,
         "priority": 1,
@@ -3382,32 +3568,6 @@
         "specialRepairProfile": {
           "repairTimeMinutes": 130
         }
-      }
-    ],
-    "missionPhases": [
-      {
-        "id": "phase-alert",
-        "limitHours": 1,
-        "name": "出航",
-        "phaseRatio": 0.3,
-        "state": "idle",
-        "transitionCondition": "任务波次触发"
-      },
-      {
-        "id": "phase-prep",
-        "limitHours": 2,
-        "name": "任务",
-        "phaseRatio": 0.4,
-        "state": "preparing",
-        "transitionCondition": "保障完成"
-      },
-      {
-        "id": "phase-sortie",
-        "limitHours": 4,
-        "name": "返航",
-        "phaseRatio": 0.3,
-        "state": "sortie",
-        "transitionCondition": "任务完成或故障"
       }
     ],
     "missionProfile": {

@@ -42,8 +42,10 @@ def small_aircraft_support_project(project_id: str) -> dict:
             "minRequiredSorties": 1,
             "taskDurationMinutes": 30,
             "equipmentType": "J-15",
+            "missionPhases": [
+                {"id": "phase-sortie", "name": "sortie", "sequence": 1, "durationMinutes": 30}
+            ],
         }],
-        "missionPhases": [],
         "combatUnit": {"members": [{"aircraftNo": "J15-001", "model": "J-15", "status": "ready", "airport": "A"}]},
         "components": [{
             "id": "whole-aircraft",
