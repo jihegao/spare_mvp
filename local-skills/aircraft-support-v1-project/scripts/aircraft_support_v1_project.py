@@ -594,8 +594,6 @@ def _support_activity(
         "runHourInterval": activity.get("runHourInterval"),
         "takeoffLandingInterval": activity.get("takeoffLandingInterval"),
         "floatRatio": activity.get("floatRatio"),
-        "transport_strategies": copy.deepcopy(_list(activity.get("transportStrategies"))),
-        "organization_strategies": copy.deepcopy(_list(activity.get("organizationStrategies"))),
         "jobs": [_support_job(job, activity) for job in _activity_jobs(activity, job_definitions)],
     }
     return compiled

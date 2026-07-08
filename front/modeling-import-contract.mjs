@@ -248,6 +248,8 @@ function normalizeSupportActivities(rows, project = {}) {
         next.resourceId = defaultResource?.supportNodeName || defaultResource?.id;
       }
       next.durationHours = positiveNumber(next.durationHours, durationHoursForActivity(next));
+      delete next.transportStrategies;
+      delete next.organizationStrategies;
       return next;
     });
 }
@@ -302,7 +304,7 @@ function projectTransportPolicies(project = {}) {
   const policies = normalizeObjectRows(project.transportPolicies);
   if (policies.length) return policies;
   const nameById = new Map(normalizeObjectRows(project.supportNodes).map((node) => [String(node.id || ""), String(node.name || node.id || "")]));
-  return normalizeObjectRows(project.supportNodes).flatMap((node, nodeIndex) => {
+  const nodePolicies = normalizeObjectRows(project.supportNodes).flatMap((node, nodeIndex) => {
     return normalizeObjectRows(node.transportPolicies).map((policy, policyIndex) => ({
       ...policy,
       id: policy.id || `${node.id || `support-node-${nodeIndex}`}-transport-${policyIndex}`,
@@ -310,6 +312,27 @@ function projectTransportPolicies(project = {}) {
       toSupportNodeName: policy.toSupportNodeName || nameById.get(String(policy.to || "")) || policy.to || "",
       spareName: policy.spareName || policy.spareType || policy.spare_type || ""
     }));
+  });
+  return [
+    ...nodePolicies,
+    ...legacyTransportPoliciesFromSupportActivities(project, nameById)
+  ];
+}
+
+function legacyTransportPoliciesFromSupportActivities(project = {}, nameByRef = new Map()) {
+  return normalizeObjectRows(project.supportActivities).flatMap((activity, activityIndex) => {
+    return normalizeObjectRows(activity.transportStrategies).map((policy, policyIndex) => {
+      const fromRef = policy.fromSupportNodeName || policy.from || "";
+      const toRef = policy.toSupportNodeName || policy.to || "";
+      return {
+        ...policy,
+        id: policy.id || `${activity.id || `support-activity-${activityIndex}`}-transport-${policyIndex}`,
+        fromSupportNodeName: policy.fromSupportNodeName || nameByRef.get(String(fromRef)) || fromRef,
+        toSupportNodeName: policy.toSupportNodeName || nameByRef.get(String(toRef)) || toRef,
+        spareName: policy.spareName || policy.spareType || policy.spare_type || "",
+        transportMode: policy.transportMode || policy.direction || ""
+      };
+    });
   });
 }
 
@@ -522,7 +545,9 @@ function validateDeclaredObjectDomain(importPackage, issues, scope, domain) {
 function validateDeclaredTransportPolicies(importPackage, issues, scope) {
   if (isDisabledDomain("transportPolicies", scope.usedTables)) return;
   const policies = importPackage?.objects?.transportPolicies;
+  const legacyPolicies = legacyTransportPoliciesFromSupportActivities(importPackage?.objects || {});
   if (!Array.isArray(policies)) {
+    if (legacyPolicies.length > 0) return;
     issues.push(createIssue({
       code: "invalid_declared_table",
       collection: "transportPolicies",
@@ -533,6 +558,7 @@ function validateDeclaredTransportPolicies(importPackage, issues, scope) {
     return;
   }
   if (policies.length === 0) {
+    if (legacyPolicies.length > 0) return;
     issues.push(createIssue({
       code: "invalid_declared_table",
       collection: "transportPolicies",

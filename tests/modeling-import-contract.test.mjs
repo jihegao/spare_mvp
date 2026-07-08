@@ -527,6 +527,66 @@ test("projectToModelingImportPackage backfills import draft from current Project
   assert.deepEqual(validateModelingImportPackage(draft), []);
 });
 
+test("current project backfill migrates legacy activity transport strategies to top-level policies", () => {
+  const basePackage = canonicalImportFixture();
+  const projectJson = {
+    project_id: "project-legacy-logistics",
+    scenarioId: "legacy-logistics",
+    missionProfile: { name: "Legacy mission", durationHours: 4, compositeTasks: [], periodicTasks: [] },
+    basicMissions: [{ id: "mission-1", name: "mission", taskDurationMinutes: 60 }],
+    components: [{ id: "aircraft", name: "J-15", quantity: 1, failureRate: 0.01 }],
+    supportNodes: [
+      { id: "base", name: "基地" },
+      { id: "deck", name: "甲板" }
+    ],
+    supportResources: [
+      { id: "personnel-deck", supportNodeName: "甲板", type: "personnel", name: "甲板人员", quantity: 2 }
+    ],
+    supportActivities: [{
+      id: "logistics-plan",
+      name: "后勤保障活动方案",
+      activityName: "后勤保障活动方案",
+      activityType: "后勤保障",
+      equipmentId: "aircraft",
+      resourceId: "甲板",
+      durationHours: 1,
+      transportStrategies: [{
+        name: "旧调运策略",
+        direction: "横向运输",
+        spareType: "航电模块",
+        triggerMode: "周期性调运",
+        transferCycleHours: 6,
+        from: "base",
+        to: "deck",
+        transportTimeHours: 2
+      }],
+      organizationStrategies: [{ supportLevel: "base" }]
+    }]
+  };
+
+  const draft = projectToModelingImportPackage(projectJson, basePackage);
+
+  assert.equal(draft.usedTables.transportPolicies, true);
+  assert.deepEqual(draft.objects.transportPolicies, [{
+    name: "旧调运策略",
+    direction: "横向运输",
+    spareType: "航电模块",
+    triggerMode: "周期性调运",
+    transferCycleHours: 6,
+    from: "base",
+    to: "deck",
+    transportTimeHours: 2,
+    id: "logistics-plan-transport-0",
+    fromSupportNodeName: "基地",
+    toSupportNodeName: "甲板",
+    spareName: "航电模块",
+    transportMode: "横向运输"
+  }]);
+  assert.equal("transportStrategies" in draft.objects.supportActivities[0], false);
+  assert.equal("organizationStrategies" in draft.objects.supportActivities[0], false);
+  assert.equal(draft.validation.ok, true);
+});
+
 test("current project backfill normalizes support activity plan rows into importable activities", async () => {
   const fixture = await readJson("tests/fixtures/modeling_import_project.json");
   const draft = projectToModelingImportPackage({

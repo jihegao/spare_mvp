@@ -241,6 +241,7 @@ export function normalizeProjectJsonForClientDraft(projectJson) {
   normalizeSupportModelTables(normalized);
   stripLegacySupportNodeResourceFields(normalized);
   stripSupportActivityTypoFields(normalized);
+  stripDeprecatedSupportActivityStrategyFields(normalized);
   return normalized;
 }
 
@@ -316,15 +317,16 @@ function stripProjectNonModelFields(projectJson) {
   stripLegacyBasicMissionFields(projectJson);
   stripMissionProfileNonModelFields(projectJson.missionProfile);
   stripSupportActivityTypoFields(projectJson);
+  stripDeprecatedSupportActivityStrategyFields(projectJson);
   stripSupportActivityMttrFields(projectJson.supportActivities);
   stripSupportActivityMttrFields(projectJson.supportActivityJobs);
 }
 
 function materializeLegacySupportTables(projectJson) {
-  if (!Array.isArray(projectJson.supportNodes)) return;
-  if (!Array.isArray(projectJson.supportResources) || projectJson.supportResources.length === 0) {
+  const supportNodes = Array.isArray(projectJson.supportNodes) ? projectJson.supportNodes : [];
+  if (supportNodes.length && (!Array.isArray(projectJson.supportResources) || projectJson.supportResources.length === 0)) {
     const resources = [];
-    projectJson.supportNodes.forEach((node, nodeIndex) => {
+    supportNodes.forEach((node, nodeIndex) => {
       if (!node || typeof node !== "object" || Array.isArray(node)) return;
       const nodeName = String(node.name || node.id || "保障节点");
       const personnel = nonNegativeInteger(node.personnelCapacity ?? node.capacity);
@@ -363,8 +365,8 @@ function materializeLegacySupportTables(projectJson) {
     if (resources.length) projectJson.supportResources = resources;
   }
   if (!Array.isArray(projectJson.transportPolicies) || projectJson.transportPolicies.length === 0) {
-    const nameById = new Map(projectJson.supportNodes.map((node) => [String(node?.id || ""), String(node?.name || node?.id || "")]));
-    const policies = projectJson.supportNodes.flatMap((node, nodeIndex) => {
+    const nameById = new Map(supportNodes.map((node) => [String(node?.id || ""), String(node?.name || node?.id || "")]));
+    const nodePolicies = supportNodes.flatMap((node, nodeIndex) => {
       if (!node || typeof node !== "object" || Array.isArray(node)) return [];
       return (Array.isArray(node.transportPolicies) ? node.transportPolicies : []).map((policy, policyIndex) => ({
         ...policy,
@@ -374,8 +376,33 @@ function materializeLegacySupportTables(projectJson) {
         spareName: policy.spareName || policy.spareType || policy.spare_type || ""
       }));
     });
+    const policies = [
+      ...nodePolicies,
+      ...legacyTransportPoliciesFromSupportActivities(projectJson, nameById)
+    ];
     if (policies.length) projectJson.transportPolicies = policies;
   }
+}
+
+function legacyTransportPoliciesFromSupportActivities(projectJson, nameByRef = new Map()) {
+  if (!Array.isArray(projectJson.supportActivities)) return [];
+  return projectJson.supportActivities.flatMap((activity, activityIndex) => {
+    if (!activity || typeof activity !== "object" || Array.isArray(activity) || !Array.isArray(activity.transportStrategies)) return [];
+    return activity.transportStrategies
+      .filter((policy) => policy && typeof policy === "object" && !Array.isArray(policy))
+      .map((policy, policyIndex) => {
+        const fromRef = policy.fromSupportNodeName || policy.from || "";
+        const toRef = policy.toSupportNodeName || policy.to || "";
+        return {
+          ...policy,
+          id: policy.id || `${activity.id || `support-activity-${activityIndex}`}-transport-${policyIndex}`,
+          fromSupportNodeName: policy.fromSupportNodeName || nameByRef.get(String(fromRef)) || fromRef,
+          toSupportNodeName: policy.toSupportNodeName || nameByRef.get(String(toRef)) || toRef,
+          spareName: policy.spareName || policy.spareType || policy.spare_type || "",
+          transportMode: policy.transportMode || policy.direction || ""
+        };
+      });
+  });
 }
 
 function normalizeSupportModelTables(projectJson) {
@@ -600,9 +627,10 @@ function normalizeTopLevelTransportPolicies(projectJson, nameByRef) {
         toSupportNodeName: supportNodeNameForRef(policy.toSupportNodeName || policy.to, nameByRef),
         spareName: cleanText(policy.spareName || policy.spareType || policy.spare_type)
       };
-      for (const field of ["capacity", "priority", "transportMode", "transportTimeHours"]) {
+      for (const field of ["name", "direction", "triggerMode", "criticalInventory", "transferCycleHours", "capacity", "priority", "transportMode", "transportTimeHours"]) {
         if (policy[field] !== undefined) normalized[field] = policy[field];
       }
+      if (normalized.direction !== undefined && normalized.transportMode === undefined) normalized.transportMode = normalized.direction;
       return normalized;
     });
 }
@@ -748,6 +776,15 @@ function stripSupportActivityTypoFields(value) {
   if (!value || typeof value !== "object") return;
   delete value.requireDevices;
   for (const child of Object.values(value)) stripSupportActivityTypoFields(child);
+}
+
+function stripDeprecatedSupportActivityStrategyFields(projectJson) {
+  if (!Array.isArray(projectJson?.supportActivities)) return;
+  for (const activity of projectJson.supportActivities) {
+    if (!activity || typeof activity !== "object" || Array.isArray(activity)) continue;
+    delete activity.transportStrategies;
+    delete activity.organizationStrategies;
+  }
 }
 
 const SUPPORT_ACTIVITY_MTTR_FIELDS = [

@@ -1453,84 +1453,6 @@
       "target": "M9.6 platform case package"
     },
     {
-      "field_path": "objects.supportActivities[].organizationStrategies[].lateralSupportNodes[]",
-      "rationale": "The field is preserved in the formal payload and provenance for audit/governance, but it is approved as non-behavior-driving in M9.7.4.",
-      "status": "governance_only",
-      "target": "M9.7.4 aircraft_support_v1 governance metadata"
-    },
-    {
-      "field_path": "objects.supportActivities[].organizationStrategies[].organizationStrategy",
-      "rationale": "The field is preserved in the formal payload and provenance for audit/governance, but it is approved as non-behavior-driving in M9.7.4.",
-      "status": "governance_only",
-      "target": "M9.7.4 aircraft_support_v1 governance metadata"
-    },
-    {
-      "field_path": "objects.supportActivities[].organizationStrategies[].supportLevel",
-      "rationale": "The field is preserved in the formal payload and provenance for audit/governance, but it is approved as non-behavior-driving in M9.7.4.",
-      "status": "governance_only",
-      "target": "M9.7.4 aircraft_support_v1 governance metadata"
-    },
-    {
-      "field_path": "objects.supportActivities[].organizationStrategies[].supportNodeId",
-      "rationale": "The field is preserved in the formal payload and provenance for audit/governance, but it is approved as non-behavior-driving in M9.7.4.",
-      "status": "governance_only",
-      "target": "M9.7.4 aircraft_support_v1 governance metadata"
-    },
-    {
-      "field_path": "objects.supportActivities[].transportStrategies[].criticalInventory",
-      "rationale": "The field is preserved in the formal payload and provenance for audit/governance, but it is approved as non-behavior-driving in M9.7.4.",
-      "status": "governance_only",
-      "target": "M9.7.4 aircraft_support_v1 governance metadata"
-    },
-    {
-      "field_path": "objects.supportActivities[].transportStrategies[].direction",
-      "rationale": "The field is preserved in the formal payload and provenance for audit/governance, but it is approved as non-behavior-driving in M9.7.4.",
-      "status": "governance_only",
-      "target": "M9.7.4 aircraft_support_v1 governance metadata"
-    },
-    {
-      "field_path": "objects.supportActivities[].transportStrategies[].from",
-      "rationale": "The field is preserved in the formal payload and provenance for audit/governance, but it is approved as non-behavior-driving in M9.7.4.",
-      "status": "governance_only",
-      "target": "M9.7.4 aircraft_support_v1 governance metadata"
-    },
-    {
-      "field_path": "objects.supportActivities[].transportStrategies[].name",
-      "rationale": "The field is preserved in the formal payload and provenance for audit/governance, but it is approved as non-behavior-driving in M9.7.4.",
-      "status": "governance_only",
-      "target": "M9.7.4 aircraft_support_v1 governance metadata"
-    },
-    {
-      "field_path": "objects.supportActivities[].transportStrategies[].spareType",
-      "rationale": "The field is preserved in the formal payload and provenance for audit/governance, but it is approved as non-behavior-driving in M9.7.4.",
-      "status": "governance_only",
-      "target": "M9.7.4 aircraft_support_v1 governance metadata"
-    },
-    {
-      "field_path": "objects.supportActivities[].transportStrategies[].to",
-      "rationale": "The field is preserved in the formal payload and provenance for audit/governance, but it is approved as non-behavior-driving in M9.7.4.",
-      "status": "governance_only",
-      "target": "M9.7.4 aircraft_support_v1 governance metadata"
-    },
-    {
-      "field_path": "objects.supportActivities[].transportStrategies[].transportTimeHours",
-      "rationale": "The field is preserved in the formal payload and provenance for audit/governance, but it is approved as non-behavior-driving in M9.7.4.",
-      "status": "governance_only",
-      "target": "M9.7.4 aircraft_support_v1 governance metadata"
-    },
-    {
-      "field_path": "objects.supportActivities[].transportStrategies[].triggerMode",
-      "rationale": "The field is preserved in the formal payload and provenance for audit/governance, but it is approved as non-behavior-driving in M9.7.4.",
-      "status": "governance_only",
-      "target": "M9.7.4 aircraft_support_v1 governance metadata"
-    },
-    {
-      "field_path": "objects.supportActivities[].transportStrategies[].transferCycleHours",
-      "rationale": "The field is preserved in the formal payload and provenance for audit/governance, but it is approved as non-behavior-driving in M9.7.4.",
-      "status": "governance_only",
-      "target": "M9.7.4 aircraft_support_v1 governance metadata"
-    },
-    {
       "field_path": "objects.supportActivities[].aircraftModel",
       "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
@@ -1663,6 +1585,36 @@
       "target": "M9.6 platform case package"
     },
     {
+      "field_path": "objects.transportPolicies[].criticalInventory",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
+      "status": "ignored",
+      "target": "M9.6 platform case package"
+    },
+    {
+      "field_path": "objects.transportPolicies[].direction",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
+      "status": "ignored",
+      "target": "M9.6 platform case package"
+    },
+    {
+      "field_path": "objects.transportPolicies[].name",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
+      "status": "ignored",
+      "target": "M9.6 platform case package"
+    },
+    {
+      "field_path": "objects.transportPolicies[].triggerMode",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
+      "status": "ignored",
+      "target": "M9.6 platform case package"
+    },
+    {
+      "field_path": "objects.transportPolicies[].transferCycleHours",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
+      "status": "ignored",
+      "target": "M9.6 platform case package"
+    },
+    {
       "field_path": "projectId",
       "rationale": "The formal aircraft_support_v1 compiler or runtime reads this frozen business field directly.",
       "status": "consumed",
@@ -1677,9 +1629,9 @@
     "consumed": 38,
     "defaulted": 0,
     "derived": 9,
-    "governance_only": 33,
-    "ignored": 198,
-    "total_fields": 278,
+    "governance_only": 20,
+    "ignored": 203,
+    "total_fields": 270,
     "unsupported": 0
   }
 }

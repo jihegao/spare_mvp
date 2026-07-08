@@ -147,7 +147,7 @@ class AircraftSupportV1ProjectSkillTest(unittest.TestCase):
             self.assertGreaterEqual(explanation["保障组织"]["row_count"], 1)
             self.assertGreaterEqual(explanation["保障活动"]["row_count"], 1)
 
-    def test_compiles_activity_level_spares_and_preventive_strategy_without_breaking_job_normalization(self) -> None:
+    def test_compiles_activity_level_spares_without_deprecated_strategy_payload(self) -> None:
         skill = _load_skill_module()
         project = self._project()
         activity = project["supportActivities"][0]
@@ -174,8 +174,8 @@ class AircraftSupportV1ProjectSkillTest(unittest.TestCase):
         self.assertEqual(compiled_activity["runHourInterval"], 12)
         self.assertEqual(compiled_activity["takeoffLandingInterval"], 3)
         self.assertEqual(compiled_activity["floatRatio"], 0.2)
-        self.assertEqual(compiled_activity["transport_strategies"], [{"from": "node-a", "to": "node-a", "spareType": "hydraulic-pump"}])
-        self.assertEqual(compiled_activity["organization_strategies"], [{"supportLevel": "base", "supportNodeId": "node-a"}])
+        self.assertNotIn("transport_strategies", compiled_activity)
+        self.assertNotIn("organization_strategies", compiled_activity)
         self.assertEqual(compiled_activity["jobs"][0]["activityCode"], "job-1")
         self.assertEqual(compiled_activity["jobs"][0]["workName"], "Inspect pump")
 

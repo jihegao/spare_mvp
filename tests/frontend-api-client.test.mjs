@@ -868,6 +868,57 @@ test("buildBackendProjectJson strips legacy support node resource fields and dra
   ]);
 });
 
+test("buildBackendProjectJson migrates legacy activity transport strategies to top-level policies", () => {
+  const scenario = {
+    scenarioId: "legacy-logistics-strategy",
+    equipment: { model: "J-15", wholeMachineModels: ["J-15"] },
+    missionProfile: { name: "任务", durationHours: 4, compositeTasks: [], periodicTasks: [] },
+    basicMissions: [{ id: "mission-1", name: "任务", taskDurationMinutes: 60 }],
+    components: [{ id: "aircraft", name: "J-15", quantity: 1, failureRate: 0.01 }],
+    supportNodes: [
+      { id: "base", name: "基地" },
+      { id: "deck", name: "甲板" }
+    ],
+    supportResources: [
+      { id: "personnel-deck", supportNodeName: "甲板", type: "personnel", name: "甲板人员", quantity: 2 }
+    ],
+    supportActivities: [{
+      id: "logistics-plan",
+      activityType: "后勤保障",
+      activityName: "后勤保障活动方案",
+      durationHours: 1,
+      transportStrategies: [{
+        name: "旧调运策略",
+        direction: "横向运输",
+        spareType: "航电模块",
+        triggerMode: "临界库存",
+        criticalInventory: 2,
+        from: "base",
+        to: "deck",
+        transportTimeHours: 1.5
+      }],
+      organizationStrategies: [{ supportLevel: "base" }]
+    }]
+  };
+
+  const projectJson = buildBackendProjectJson(scenario, { id: "legacy-logistics-strategy" });
+
+  assert.deepEqual(projectJson.transportPolicies, [{
+    id: "logistics-plan-transport-0",
+    fromSupportNodeName: "基地",
+    toSupportNodeName: "甲板",
+    spareName: "航电模块",
+    name: "旧调运策略",
+    direction: "横向运输",
+    triggerMode: "临界库存",
+    criticalInventory: 2,
+    transportMode: "横向运输",
+    transportTimeHours: 1.5
+  }]);
+  assert.equal("transportStrategies" in projectJson.supportActivities[0], false);
+  assert.equal("organizationStrategies" in projectJson.supportActivities[0], false);
+});
+
 test("buildBackendProjectJson persists visible personnel specialties for legacy blank resource rows", () => {
   const scenario = {
     scenarioId: "support-personnel-specialty-default",

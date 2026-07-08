@@ -302,8 +302,6 @@ def _coverage_classification(field_path: str) -> tuple[str, str, str]:
         "objects.supportActivities[].jobs[].ammunition",
         "objects.supportActivities[].jobs[].durationProfile.",
         "objects.supportActivities[].jobs[].facility",
-        "objects.supportActivities[].transportStrategies[]",
-        "objects.supportActivities[].organizationStrategies[]",
         "objects.supportOrganization.",
     )
     defaulted_prefixes = (

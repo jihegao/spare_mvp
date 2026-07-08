@@ -146,7 +146,7 @@ def modeling_import_to_project(import_package: dict[str, Any], validation: dict[
         "components": [_equipment_asset_to_component(row) for row in equipment_assets],
         "supportNodes": _support_nodes_from_resources(resources),
         "supportResources": _support_resources_from_import_resources(resources),
-        "transportPolicies": _transport_policies_from_import_resources(resources, transport_policies),
+        "transportPolicies": _transport_policies_from_import_resources(resources, transport_policies, activities),
         "supportActivities": [
             _support_activity_to_project(row, _support_resource_name_by_id(resources))
             for row in activities
@@ -303,13 +303,18 @@ def _validate_declared_transport_policies(
     warnings: list[dict[str, Any]],
 ) -> None:
     policies = objects.get("transportPolicies")
+    legacy_policies = _legacy_transport_policies_from_import_activities(objects.get("supportActivities"))
     if _is_disabled_domain("transportPolicies", used_tables):
         _append_scope_warning(warnings, "transportPolicies", "objects.transportPolicies")
         return
     if not isinstance(policies, list):
+        if legacy_policies:
+            return
         issues.append(_issue("invalid_declared_table", "transportPolicies", "modeling-import-package", "objects.transportPolicies", "声明使用 transportPolicies，但缺少 transportPolicies 表。"))
         return
     if not policies:
+        if legacy_policies:
+            return
         issues.append(_issue("invalid_declared_table", "transportPolicies", "modeling-import-package", "objects.transportPolicies", "声明使用 transportPolicies，但 transportPolicies 表为空。"))
         return
 
@@ -768,15 +773,40 @@ def _support_resources_from_import_resources(resources: list[dict[str, Any]]) ->
 def _transport_policies_from_import_resources(
     resources: list[dict[str, Any]],
     transport_policies: list[dict[str, Any]],
+    activities: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     name_by_id = _support_resource_name_by_id(resources)
     rows: list[dict[str, Any]] = []
     for index, policy in enumerate(transport_policies):
         rows.append(_normalized_transport_policy(policy, name_by_id, index))
+    if not rows:
+        for index, policy in enumerate(_legacy_transport_policies_from_import_activities(activities)):
+            rows.append(_normalized_transport_policy(policy, name_by_id, index))
     for resource_index, resource in enumerate(resources):
         for policy_index, policy in enumerate(resource.get("transportPolicies") if isinstance(resource.get("transportPolicies"), list) else []):
             if isinstance(policy, dict):
                 rows.append(_normalized_transport_policy(policy, name_by_id, resource_index * 100 + policy_index))
+    return rows
+
+
+def _legacy_transport_policies_from_import_activities(activities: Any) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    if not isinstance(activities, list):
+        return rows
+    for activity_index, activity in enumerate(activities):
+        if not isinstance(activity, dict):
+            continue
+        strategies = activity.get("transportStrategies")
+        if not isinstance(strategies, list):
+            continue
+        for policy_index, policy in enumerate(strategies):
+            if not isinstance(policy, dict):
+                continue
+            next_policy = deepcopy(policy)
+            next_policy.setdefault("id", f"{activity.get('id') or f'support-activity-{activity_index}'}-transport-{policy_index}")
+            if "transportMode" not in next_policy and "direction" in next_policy:
+                next_policy["transportMode"] = next_policy["direction"]
+            rows.append(next_policy)
     return rows
 
 
@@ -809,6 +839,8 @@ def _clean_support_organization_node(node: dict[str, Any]) -> dict[str, Any]:
 
 def _support_activity_to_project(row: dict[str, Any], resource_name_by_id: dict[str, str] | None = None) -> dict[str, Any]:
     activity = deepcopy(row)
+    activity.pop("transportStrategies", None)
+    activity.pop("organizationStrategies", None)
     activity.setdefault("activityName", row.get("name") or row.get("id") or "保障活动")
     activity.setdefault("activityType", row.get("type") or row.get("name") or "保障活动")
     activity.setdefault("requiredPersonnel", 1)
@@ -853,16 +885,20 @@ def _normalized_support_resource(row: dict[str, Any], index: int) -> dict[str, A
 def _normalized_transport_policy(policy: dict[str, Any], name_by_id: dict[str, str], index: int) -> dict[str, Any]:
     from_value = str(policy.get("fromSupportNodeName") or policy.get("from") or "")
     to_value = str(policy.get("toSupportNodeName") or policy.get("to") or "")
-    return {
+    normalized = {
         "id": str(policy.get("id") or _stable_uid("transport-policy", from_value, to_value, index)),
         "fromSupportNodeName": name_by_id.get(from_value, from_value),
         "toSupportNodeName": name_by_id.get(to_value, to_value),
         "spareName": str(policy.get("spareName") or policy.get("spareType") or policy.get("spare_type") or ""),
         "capacity": _safe_positive_int(policy.get("capacity"), 1),
         "priority": _safe_positive_int(policy.get("priority"), 1),
-        "transportMode": str(policy.get("transportMode") or policy.get("transport_mode") or ""),
+        "transportMode": str(policy.get("transportMode") or policy.get("transport_mode") or policy.get("direction") or ""),
         "transportTimeHours": _safe_positive_float(policy.get("transportTimeHours") or policy.get("transport_time_hours"), 0),
     }
+    for field in ("name", "direction", "triggerMode", "criticalInventory", "transferCycleHours"):
+        if field in policy:
+            normalized[field] = policy[field]
+    return normalized
 
 
 def _clean_text(value: Any) -> str:

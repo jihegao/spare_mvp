@@ -992,9 +992,14 @@ test("support organization and activity pages follow ship_front tree table edito
   assert.match(logisticsSource, /spareModelingNames\(\)\.map/);
   assert.match(logisticsSource, /valueSelect/);
   assert.match(logisticsSource, /valueInput/);
+  assert.match(logisticsSource, /const basePath = `transportPolicies\.\$\{index\}`/);
   assert.match(logisticsSource, /valueInput\(`\$\{basePath\}\.name`, "text"\)/);
+  assert.match(logisticsSource, /valueSelect\(`\$\{basePath\}\.spareName`/);
+  assert.match(logisticsSource, /valueSelect\(`\$\{basePath\}\.fromSupportNodeName`/);
+  assert.match(logisticsSource, /valueSelect\(`\$\{basePath\}\.toSupportNodeName`/);
   assert.match(logisticsSource, /data-logistics-transport-select/);
   assert.match(logisticsSource, /data-logistics-transport-delete/);
+  assert.doesNotMatch(logisticsSource, /supportActivities\.\$\{activityIndex\}\.transportStrategies/);
   assert.doesNotMatch(logisticsSource, /data-logistics-transport-delete="\$\{index\}"/);
   assert.doesNotMatch(logisticsSource, /\\u64cd\\u4f5c/);
   assert.doesNotMatch(logisticsSource, /data-logistics-transport-edit/);
@@ -1092,9 +1097,9 @@ test("support activity pages align to page suggestion activity fields", async ()
   assert.match(supportActivitySource, /renderCorrectiveMaintenanceActivity/);
   assert.match(supportActivitySource, /renderLogisticsSupportActivity/);
   assert.doesNotMatch(supportActivitySource, /renderSupportActivityJobTable\(activity, "logistics"\)/);
-  assert.match(supportActivitySource, /const supportNodeOptions = uniqueSelectOptions\(\(scenario\.supportNodes \|\| \[\]\)\.map/);
-  assert.match(supportActivitySource, /valueSelect\(`\$\{basePath\}\.from`, supportNodeOptions\)/);
-  assert.match(supportActivitySource, /valueSelect\(`\$\{basePath\}\.to`, supportNodeOptions\)/);
+  assert.match(supportActivitySource, /const supportNodeOptions = uniqueSelectOptions\(\(scenario\.supportNodes \|\| \[\]\)/);
+  assert.match(supportActivitySource, /valueSelect\(`\$\{basePath\}\.fromSupportNodeName`, supportNodeOptions\)/);
+  assert.match(supportActivitySource, /valueSelect\(`\$\{basePath\}\.toSupportNodeName`, supportNodeOptions\)/);
   const supportActivityJobSource = supportActivitySource.slice(
     supportActivitySource.indexOf("function renderSupportActivityJobRows"),
     supportActivitySource.indexOf("function renderBasicActivityLibrary")
@@ -2038,6 +2043,8 @@ test("editable modeling lists expose page suggestion action entries", async () =
   assert.match(logisticsSource, /data-logistics-transport-delete/);
   assert.match(logisticsSource, /data-logistics-transport-select/);
   assert.match(logisticsSource, /\\u7b56\\u7565\\u540d\\u79f0/);
+  assert.match(logisticsSource, /const basePath = `transportPolicies\.\$\{index\}`/);
+  assert.doesNotMatch(logisticsSource, /supportActivities\.\$\{activityIndex\}\.transportStrategies/);
   assert.doesNotMatch(logisticsSource, /data-logistics-transport-edit/);
   assert.doesNotMatch(logisticsSource, /data-logistics-transport-delete="\$\{index\}"/);
   assert.doesNotMatch(logisticsSource, /\\u64cd\\u4f5c/);
@@ -3396,8 +3403,10 @@ test("frontend modeling import demo fixture stays aligned with complete imported
   assert.ok(objects.supportResources.length >= 3);
   assert.ok(objects.supportResources.some((resource) => resource.type === "spare" && resource.name === "航电模块" && resource.quantity > 0));
   assert.ok(objects.transportPolicies.length >= 1);
+  assert.ok(objects.transportPolicies.some((policy) => policy.name && policy.direction && policy.triggerMode));
   assert.ok(objects.supportActivities.some((activity) => activity.activityType === "修复性维修" && activity.jobs.length >= 2));
-  assert.ok(objects.supportActivities.some((activity) => activity.activityType === "后勤保障" && activity.transportStrategies.length >= 2));
+  assert.ok(objects.supportActivities.some((activity) => activity.activityType === "后勤保障"));
+  assert.ok(objects.supportActivities.every((activity) => !("transportStrategies" in activity) && !("organizationStrategies" in activity)));
 });
 
 test("frontend modeling import demo fixture is synchronized with public canonical platform template", async () => {
