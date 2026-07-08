@@ -42,8 +42,7 @@
         "composite_tasks",
         "periodic_tasks",
         "mission_phases",
-        "airports",
-        "mission_areas"
+        "airports"
       ],
       "properties": {
         "profile_id": { "type": "string" },
@@ -53,8 +52,7 @@
         "composite_tasks": { "type": "array", "items": { "type": "object", "additionalProperties": true } },
         "periodic_tasks": { "type": "array", "items": { "type": "object", "additionalProperties": true } },
         "mission_phases": { "type": "array", "items": { "type": "object", "additionalProperties": true } },
-        "airports": { "type": "array", "items": { "type": "object", "additionalProperties": true } },
-        "mission_areas": { "type": "array", "items": { "type": "object", "additionalProperties": true } }
+        "airports": { "type": "array", "items": { "type": "object", "additionalProperties": true } }
       }
     },
     "aircraft": {

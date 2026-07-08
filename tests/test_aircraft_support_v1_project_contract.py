@@ -26,7 +26,6 @@ class AircraftSupportV1CleanProjectSchemaTest(unittest.TestCase):
             "scenarioId": "scenario-clean-aircraft-support-v1",
             "activeModule": "sparePlanning",
             "airports": ["A"],
-            "missionAreas": [],
             "missionProfile": {
                 "name": "clean mission",
                 "durationHours": 1,
@@ -130,6 +129,7 @@ class AircraftSupportV1CleanProjectSchemaTest(unittest.TestCase):
             "experiment",
             "monteCarlo",
             "analysisRequests",
+            "missionAreas",
             "seedPolicy",
             "scenarioComposition",
             "stopPolicy",
@@ -181,9 +181,41 @@ class AircraftSupportV1CleanProjectSchemaTest(unittest.TestCase):
         project["combatUnit"]["members"][0]["deploymentLocation"] = "航母飞行甲板"
         self.assertTrue(self._schema_errors(project))
 
-        project = self._clean_project()
-        project["missionAreas"].append({"id": "area-a", "uiState": {"expanded": True}})
-        self.assertTrue(self._schema_errors(project))
+        for field in ("missionAreas", "mission_areas"):
+            with self.subTest(field=field, path="basicMissions"):
+                project = self._clean_project()
+                project["basicMissions"][0][field] = []
+                self.assertTrue(self._schema_errors(project))
+
+            with self.subTest(field=field, path="missionProfile.compositeTasks"):
+                project = self._clean_project()
+                project["missionProfile"]["compositeTasks"] = [{field: []}]
+                self.assertTrue(self._schema_errors(project))
+
+            with self.subTest(field=field, path="missionProfile.periodicTasks"):
+                project = self._clean_project()
+                project["missionProfile"]["periodicTasks"] = [{field: []}]
+                self.assertTrue(self._schema_errors(project))
+
+            with self.subTest(field=field, path="supportActivityJobs"):
+                project = self._clean_project()
+                project["supportActivityJobs"][0][field] = []
+                self.assertTrue(self._schema_errors(project))
+
+            with self.subTest(field=field, path="reliabilityBlockDiagram.nodes"):
+                project = self._clean_project()
+                project["reliabilityBlockDiagram"]["nodes"][0][field] = []
+                self.assertTrue(self._schema_errors(project))
+
+            with self.subTest(field=field, path="reliabilityBlockDiagram.edges"):
+                project = self._clean_project()
+                project["reliabilityBlockDiagram"]["edges"] = [{field: []}]
+                self.assertTrue(self._schema_errors(project))
+
+            with self.subTest(field=field, path="supportActivities.transportStrategies"):
+                project = self._clean_project()
+                project["supportActivities"][0]["transportStrategies"] = [{field: []}]
+                self.assertTrue(self._schema_errors(project))
 
         for field in (
             "monteCarlo",

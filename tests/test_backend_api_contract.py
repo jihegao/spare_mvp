@@ -59,7 +59,6 @@ def small_aircraft_support_project(project_id: str) -> dict[str, Any]:
         "activeModule": "sparePlanning",
         "projectInfo": {"name": "small current project", "baseCode": "SM", "summary": "small current project"},
         "airports": ["A"],
-        "missionAreas": [],
         "missionProfile": {"name": "small current mission", "durationHours": 1, "compositeTasks": [], "periodicTasks": []},
         "experiment": {"seed": 42},
         "basicMissions": [{

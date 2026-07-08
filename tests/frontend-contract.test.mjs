@@ -1544,17 +1544,19 @@ test("modeling and experiment pages use compact Chinese fourth-level tabs when n
   assert.doesNotMatch(appSource, /aria-label="同组四级功能"/);
 });
 
-test("built-in scenario page configures airport and mission area attributes", async () => {
+test("built-in scenario page configures only managed airport attributes", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const catalogSource = await readFile(new URL("../front/feature-catalog.mjs", import.meta.url), "utf8");
   assert.match(appSource, /if \(page\.name === "内置场景"\) return renderBuiltInScenario\(page\)/);
   assert.match(appSource, /function renderBuiltInScenario\(page\)/);
-  assert.match(appSource, /出发机场/);
-  assert.match(appSource, /任务区/);
-  assert.match(appSource, /距任务区/);
-  assert.match(appSource, /distanceToMissionKm/);
-  assert.match(appSource, /distanceFromDepartureKm/);
-  assert.match(catalogSource, /return \["scenarioId", "airports", "missionAreas", "supportNodes"\]/);
+  const builtInScenarioSource = appSource.slice(
+    appSource.indexOf("function renderBuiltInScenario"),
+    appSource.indexOf("function renderCombatUnitModeling")
+  );
+  assert.match(builtInScenarioSource, /field\("机场", "airports\.0"\)/);
+  assert.match(builtInScenarioSource, /distanceToMissionKm/);
+  assert.doesNotMatch(builtInScenarioSource, /missionAreas|任务区|distanceFromDepartureKm|patrolRadiusKm/);
+  assert.match(catalogSource, /return \["scenarioId", "airports", "supportNodes"\]/);
 });
 
 test("combat unit page follows ship front basic unit modeling structure", async () => {

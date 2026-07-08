@@ -22,7 +22,6 @@ BEHAVIOR_DRIVING_FIELDS = [
     "basicMissions",
     "missionPhases",
     "airports",
-    "missionAreas",
     "components[].aircraftModel",
     "components[].failureRate",
     "components[].failureDistribution",
@@ -912,14 +911,10 @@ class AircraftSupportV1Model:
     def _mission_context(self) -> dict[str, int]:
         profile = self.inputs.get("mission_profile", {})
         airports = [item for item in profile.get("airports") or [] if isinstance(item, dict)]
-        areas = [item for item in profile.get("mission_areas") or [] if isinstance(item, dict)]
         phases = [item for item in profile.get("mission_phases") or [] if isinstance(item, dict)]
         distance_km = 0.0
         if airports:
             distance_km += max(_non_negative_float(item.get("distanceToMissionKm"), 0.0) for item in airports)
-        if areas:
-            distance_km += max(_non_negative_float(item.get("distanceFromDepartureKm"), 0.0) for item in areas)
-            distance_km += max(_non_negative_float(item.get("patrolRadiusKm"), 0.0) for item in areas) * 0.25
         phase_minutes = sum(int(round(_non_negative_float(item.get("limitHours"), 0.0) * 10)) for item in phases)
         travel_minutes = int(round((distance_km / 900.0) * 60)) if distance_km else 0
         return {"duration_adjustment_minutes": max(0, travel_minutes + phase_minutes)}

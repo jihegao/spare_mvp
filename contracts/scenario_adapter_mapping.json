@@ -55,7 +55,7 @@
           "reason": "Identity fields trace the compiled platform chain and do not change simulation dynamics."
         },
         "mission_profile": {
-          "source": "project.missionProfile, project.basicMissions, project.missionPhases, project.airports, project.missionAreas",
+          "source": "project.missionProfile, project.basicMissions, project.missionPhases, project.airports",
           "constructor_param": "mission_profile"
         },
         "aircraft": {

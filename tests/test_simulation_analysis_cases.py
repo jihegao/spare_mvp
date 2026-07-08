@@ -75,6 +75,9 @@ class SimulationAnalysisCasePackTest(unittest.TestCase):
                     "aircraft_support_v1",
                 )
                 self.assertIn("supportResources", validation["usedTables"])
+                self.assertNotIn("missionAreas", project)
+                self.assertNotIn("missionAreas", project.get("missionProfile", {}))
+                self.assertNotIn("mission_areas", scenario["simulation_inputs"]["mission_profile"])
 
 
 if __name__ == "__main__":

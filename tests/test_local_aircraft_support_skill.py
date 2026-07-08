@@ -56,7 +56,7 @@ class AircraftSupportV1ProjectSkillTest(unittest.TestCase):
             self._insert_project(db_path, project)
             modified = json.loads(json.dumps(project))
             modified.setdefault("projectInfo", {})["name"] = "修改后的模板案例"
-            modified["supportActivities"][0]["jobs"][0]["workName"] = "模板维修作业"
+            modified["supportActivityJobs"][0]["workName"] = "模板维修作业"
 
             saved = skill.save_project_template(
                 db_path,
@@ -77,7 +77,7 @@ class AircraftSupportV1ProjectSkillTest(unittest.TestCase):
             self.assertTrue(template["projectInfo"]["is_template"])
             self.assertEqual(template["projectInfo"]["name"], "本地案例模板")
             self.assertEqual(template["projectInfo"]["sourceProjectId"], project["project_id"])
-            self.assertEqual(template["supportActivities"][0]["jobs"][0]["workName"], "模板维修作业")
+            self.assertEqual(template["supportActivityJobs"][0]["workName"], "模板维修作业")
 
     def test_save_template_cli_rejects_existing_template_id_by_default(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -137,7 +137,7 @@ class AircraftSupportV1ProjectSkillTest(unittest.TestCase):
             self.assertEqual(memory["project_id"], project["project_id"])
             self.assertIn("basicMissions", memory["tables"])
             self.assertIn("components", memory["tables"])
-            self.assertIn("supportActivities.jobs", memory["tables"])
+            self.assertIn("supportActivityJobs", memory["tables"])
             self.assertIn("durationHours", memory["tables"]["missionProfile"]["fields"])
 
             explanation = skill.explain_project(project, memory=memory)
@@ -163,7 +163,7 @@ class AircraftSupportV1ProjectSkillTest(unittest.TestCase):
                 "organizationStrategies": [{"supportLevel": "base", "supportNodeId": "node-a"}],
             }
         )
-        activity["jobs"][0].update({"name": "Inspect pump", "durationMinutes": 45})
+        project["supportActivityJobs"][0].update({"name": "Inspect pump", "durationMinutes": 45})
 
         inputs = skill.compile_project_json_to_aircraft_support_inputs(project)
 
@@ -238,6 +238,11 @@ class AircraftSupportV1ProjectSkillTest(unittest.TestCase):
     def test_compiles_project_json_and_runs_aircraft_support_v1_without_simulation_adapter(self) -> None:
         skill = _load_skill_module()
         project = self._project()
+        project["basicMissions"][0]["missionAreas"] = [{"id": "nested-basic-area"}]
+        project["missionProfile"]["compositeTasks"] = [{"id": "composite-a", "mission_areas": [{"id": "nested-composite-area"}]}]
+        project["supportActivityJobs"][0]["missionAreas"] = [{"id": "nested-job-area"}]
+        project["reliabilityBlockDiagram"]["nodes"][0]["mission_areas"] = [{"id": "nested-rbd-area"}]
+        project["supportActivities"][0]["transportStrategies"] = [{"missionAreas": [{"id": "nested-strategy-area"}]}]
 
         inputs = skill.compile_project_json_to_aircraft_support_inputs(
             project,
@@ -246,6 +251,10 @@ class AircraftSupportV1ProjectSkillTest(unittest.TestCase):
 
         self.assertEqual(inputs["schema_version"], "aircraft-support-v1-input-v0")
         self.assertEqual(inputs["project_identity"]["project_id"], project["project_id"])
+        self.assertNotIn("mission_areas", inputs["mission_profile"])
+        serialized_inputs = json.dumps(inputs, ensure_ascii=False)
+        self.assertNotIn("missionAreas", serialized_inputs)
+        self.assertNotIn("mission_areas", serialized_inputs)
         self.assertEqual(inputs["aircraft"]["fleet_count"], 1)
         self.assertEqual(inputs["support_activities"]["activities"][0]["jobs"][0]["activityCode"], "job-1")
 

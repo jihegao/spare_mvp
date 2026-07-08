@@ -40,7 +40,6 @@ function previewScenarioFixture() {
     members: []
   };
   scenario.airports = [{ id: "base", name: "测试机场", distanceToMissionKm: 100 }];
-  scenario.missionAreas = [{ id: "area", name: "测试任务区", distanceFromDepartureKm: 100 }];
   scenario.equipment = {
     model: "TEST-AIRCRAFT",
     wholeMachineModels: ["TEST-AIRCRAFT"],
@@ -67,7 +66,7 @@ test("default scenario is a schema-valid empty preview shell", () => {
   assert.deepEqual(validateScenario(defaultScenario), []);
   assert.equal(defaultScenario.schema_version, undefined);
   assert.deepEqual(defaultScenario.airports, []);
-  assert.deepEqual(defaultScenario.missionAreas, []);
+  assert.equal("missionAreas" in defaultScenario, false);
   assert.deepEqual(defaultScenario.components, []);
   assert.deepEqual(defaultScenario.supportNodes, []);
   assert.deepEqual(defaultScenario.supportActivities, []);

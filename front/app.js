@@ -4410,11 +4410,6 @@ function renderBuiltInScenario(page) {
     <div class="form-table-grid">
       ${field("场景编号", "scenarioId")}
       ${field("机场", "airports.0")}
-      ${field("任务区名称", "missionAreas.0.name")}
-      ${field("任务区类型", "missionAreas.0.areaType")}
-      ${field("距出发机场(km)", "missionAreas.0.distanceFromDepartureKm", "number")}
-      ${field("任务区半径(km)", "missionAreas.0.patrolRadiusKm", "number")}
-      ${field("威胁等级", "missionAreas.0.threatLevel")}
     </div>
     ${renderCollapsibleTree([{
       id: `scenario-tree:${scenario.scenarioId}`,
@@ -4431,22 +4426,13 @@ function renderBuiltInScenario(page) {
               : (airport?.name || airport?.id || `机场 ${index + 1}`);
             const meta = typeof airport === "string"
               ? "字符串输入"
-              : `${airport?.location || "-"} / 距任务区 ${airport?.distanceToMissionKm ?? "-"} km`;
+              : `${airport?.location || "-"} / 航程距离 ${airport?.distanceToMissionKm ?? "-"} km`;
             return {
               id: `scenario-airport:${name || index}`,
               label: name || `机场 ${index + 1}`,
               meta
             };
           })
-        },
-        {
-          id: "scenario-tree:mission-areas",
-          label: "任务区",
-          children: scenario.missionAreas.map((area) => ({
-            id: `scenario-area:${area.id || area.name}`,
-            label: area.name,
-            meta: `${area.areaType} / 距出发机场 ${area.distanceFromDepartureKm} km`
-          }))
         }
       ]
     }])}
@@ -9670,7 +9656,6 @@ const SCENARIO_TOP_LEVEL_LABELS = Object.freeze({
   compositeTasks: "复合任务清单对象",
   equipment: "装备系统对象",
   experiment: "实验参数对象",
-  missionAreas: "任务区域清单对象",
   missionPhases: "任务阶段清单对象",
   missionProfile: "任务剖面对象",
   modelingDictionaries: "建模字典对象",
@@ -9750,7 +9735,6 @@ const SCENARIO_ARRAY_ITEM_LABELS = Object.freeze({
   compositeTasks: "复合任务",
   jobs: "作业",
   members: "成员",
-  missionAreas: "任务区域",
   missionPhases: "任务阶段",
   periodicTasks: "周期性任务",
   supportActivities: "保障活动",

@@ -48,12 +48,6 @@
       }
     }
   ],
-  "missionAreas": [
-    {
-      "id": "area-a",
-      "name": "Area A"
-    }
-  ],
   "missionPhases": [],
   "missionProfile": {
     "compositeTasks": [],

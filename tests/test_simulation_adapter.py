@@ -117,6 +117,13 @@ class SimulationAdapterTest(unittest.TestCase):
             .endswith("/AircraftSupportV1ModelSelector")
         )
         aircraft_branch["allOf"][1]["then"]["properties"]["simulation_inputs"] = input_schema
+        project["basicMissions"][0]["missionAreas"] = [{"id": "nested-basic-area"}]
+        project["missionProfile"]["compositeTasks"][0]["mission_areas"] = [{"id": "nested-composite-area"}]
+        project["supportActivityJobs"][0]["missionAreas"] = [{"id": "nested-job-area"}]
+        project["reliabilityBlockDiagram"]["nodes"][0]["mission_areas"] = [{"id": "nested-rbd-area"}]
+        project["supportActivities"][0].setdefault("transportStrategies", []).append(
+            {"missionAreas": [{"id": "nested-strategy-area"}]}
+        )
 
         scenario = self.adapter.compile_scenario(project, model_family="aircraft_support_v1", runtime_config=runtime_config)
 
@@ -147,6 +154,10 @@ class SimulationAdapterTest(unittest.TestCase):
         )
         self.assertEqual(inputs["aircraft"]["fleet_count"], 6)
         self.assertEqual(inputs["aircraft"]["initial_ready"], 6)
+        self.assertNotIn("mission_areas", inputs["mission_profile"])
+        serialized_inputs = json.dumps(inputs, ensure_ascii=False)
+        self.assertNotIn("missionAreas", serialized_inputs)
+        self.assertNotIn("mission_areas", serialized_inputs)
         self.assertNotIn("experiment", project)
         self.assertNotIn("analysisRequests", project)
         self.assertNotIn("monteCarlo", project)
@@ -163,6 +174,7 @@ class SimulationAdapterTest(unittest.TestCase):
         self.assertIn("supportActivities[].activityCodes", provenance["consumed_fields"])
         self.assertIn("supportActivities[].predecessors", provenance["consumed_fields"])
         self.assertIn("ExperimentPlan.config.stopPolicy", provenance["consumed_fields"])
+        self.assertNotIn("missionAreas", provenance["consumed_fields"])
         self.assertIn("projectInfo", provenance["governance_only_fields"])
         self.assertEqual(provenance["unsupported_fields"], [])
 

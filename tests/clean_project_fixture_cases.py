@@ -16,7 +16,6 @@ def minimal_clean_project() -> dict[str, Any]:
         "scenarioId": "scenario-clean-aircraft-support-v1",
         "activeModule": "sparePlanning",
         "airports": ["A"],
-        "missionAreas": [],
         "missionProfile": {
             "name": "clean mission",
             "durationHours": 1,

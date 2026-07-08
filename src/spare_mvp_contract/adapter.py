@@ -27,6 +27,7 @@ MESA_CONTRACT_VERSION = "1.0.0"
 ADAPTER_NAME = "Simulation Adapter Agent"
 ACTIVE_MODEL_FAMILY = "aircraft_support_v1"
 RETIRED_ADAPTER_MODEL_FAMILIES = ("smoke", "aviation_support")
+REMOVED_MISSION_AREA_KEYS = {"missionAreas", "mission_areas"}
 SPARE_SHORTFALL_CONSTRAINTS = [0.85, 0.9, 0.95]
 SPARE_SHORTFALL_TRUNCATION = {
     "mode": "clamp_0_1",
@@ -407,7 +408,7 @@ class SimulationAdapter:
         support_network_nodes = self._aircraft_support_v1_support_nodes(project)
         support_node_aliases = self._support_node_reference_aliases(project)
 
-        return {
+        inputs = {
             "schema_version": "aircraft-support-v1-input-v0",
             "project_identity": {
                 "project_id": validation["project_id"],
@@ -424,7 +425,6 @@ class SimulationAdapter:
                 "periodic_tasks": copy.deepcopy(self._dict_list(mission_profile.get("periodicTasks"))),
                 "mission_phases": copy.deepcopy(self._dict_list(project.get("missionPhases"))),
                 "airports": self._runtime_airports(project.get("airports")),
-                "mission_areas": copy.deepcopy(self._dict_list(project.get("missionAreas"))),
             },
             "aircraft": {
                 "fleet_count": fleet_count,
@@ -476,6 +476,8 @@ class SimulationAdapter:
             "seed": self._positive_int(experiment.get("seed"), 0),
             "stop_policy": stop_policy,
         }
+        self._strip_removed_mission_area_fields(inputs)
+        return inputs
 
     def _runtime_experiment_config(
         self,
@@ -1029,7 +1031,6 @@ class SimulationAdapter:
                 "basicMissions",
                 "missionPhases",
                 "airports",
-                "missionAreas",
                 "components[].aircraftModel",
                 "components[].failureRate",
                 "components[].failureDistribution",
@@ -3503,6 +3504,17 @@ class SimulationAdapter:
         if not isinstance(value, list):
             return []
         return [item for item in value if isinstance(item, dict)]
+
+    def _strip_removed_mission_area_fields(self, value: Any) -> None:
+        if isinstance(value, dict):
+            for key in list(value):
+                if key in REMOVED_MISSION_AREA_KEYS:
+                    value.pop(key, None)
+                    continue
+                self._strip_removed_mission_area_fields(value[key])
+        elif isinstance(value, list):
+            for item in value:
+                self._strip_removed_mission_area_fields(item)
 
     def _runtime_airports(self, value: Any) -> list[dict[str, Any]]:
         if not isinstance(value, list):
