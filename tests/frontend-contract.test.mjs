@@ -2139,6 +2139,13 @@ test("support activity controls are wired through local draft fields", async () 
   assert.match(appSource, /function selectPreventiveMaintenanceActivityPlan/);
   assert.match(appSource, /function addPreventiveMaintenanceActivityPlan/);
   assert.match(appSource, /function deletePreventiveMaintenanceActivityPlan/);
+  const operationsActivityEntriesSource = appSource.slice(
+    appSource.indexOf("function operationsSupportActivityEntries"),
+    appSource.indexOf("function operationsSupportActivityOptions")
+  );
+  assert.match(operationsActivityEntriesSource, /const activityName = String\(activity\.activityName \|\| ""\)\.trim\(\)/);
+  assert.match(operationsActivityEntriesSource, /value: activityName/);
+  assert.doesNotMatch(operationsActivityEntriesSource, /value: activity\.activityName \|\| activity\.name \|\| activity\.id/);
 
   const operationsSource = appSource.slice(
     appSource.indexOf("function renderOperationsSupportActivity"),

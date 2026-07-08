@@ -71,6 +71,7 @@ class ProjectJsonExporterTest(unittest.TestCase):
                     "missionId": "basic-small",
                     "taskDurationMinutes": 30,
                     "equipmentType": "J-15",
+                    "supportActivityName": "Corrective support plan",
                     "draftState": {"dirty": True},
                 }
             ],
@@ -131,6 +132,7 @@ class ProjectJsonExporterTest(unittest.TestCase):
             "supportActivities": [
                 {
                     "id": "corrective",
+                    "activityName": "Corrective support plan",
                     "activityType": "corrective",
                     "durationHours": 1,
                     "requiredDevices": 1,
@@ -168,6 +170,7 @@ class ProjectJsonExporterTest(unittest.TestCase):
         self.assertEqual(clean["components"][0]["rms"], {"target": {"reliability": 0.98}})
         self.assertNotIn("formState", clean["components"][0])
         self.assertNotIn("draftState", clean["basicMissions"][0])
+        self.assertEqual(clean["basicMissions"][0]["supportActivityName"], "Corrective support plan")
         self.assertNotIn("uiState", clean["airports"][0])
         self.assertNotIn("canvasLayout", clean["missionAreas"][0])
         self.assertNotIn("deploymentLocation", clean["combatUnit"]["members"][0])
@@ -183,6 +186,25 @@ class ProjectJsonExporterTest(unittest.TestCase):
         self.assertEqual(clean["supportActivities"][0]["predecessors"], {"JOB-1": []})
         self.assertNotIn("selectedNodeId", clean["supportActivityJobs"][0])
         self.assertNotIn("predecessors", clean["supportActivityJobs"][0])
+
+    def test_exporter_rejects_basic_mission_support_activity_name_matching_only_legacy_name(self) -> None:
+        project = self._polluted_project()
+        project["basicMissions"][0]["supportActivityName"] = "Legacy display name"
+        project["supportActivities"][0]["name"] = "Legacy display name"
+        project["supportActivities"][0]["activityName"] = "Canonical support plan"
+
+        with self.assertRaisesRegex(ValueError, "basicMissions.0.supportActivityName"):
+            ProjectJsonExporter(target="aircraft_support_v1").export(project)
+
+    def test_exporter_rejects_basic_mission_support_activity_name_with_duplicate_activity_names(self) -> None:
+        project = self._polluted_project()
+        project["supportActivities"].append({
+            **project["supportActivities"][0],
+            "id": "duplicate-corrective",
+        })
+
+        with self.assertRaisesRegex(ValueError, "basicMissions.0.supportActivityName"):
+            ProjectJsonExporter(target="aircraft_support_v1").export(project)
 
     def test_aircraft_support_v1_exporter_rejects_unknown_target(self) -> None:
         with self.assertRaises(ValueError):

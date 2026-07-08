@@ -31,6 +31,25 @@ function assertCombatUnitAircraftDefaults(combatUnit, label) {
   }
 }
 
+function assertBasicMissionSupportActivityNames(importPackage, label) {
+  const activityNames = new Map();
+  for (const activity of importPackage.objects.supportActivities || []) {
+    if (!activity?.activityName) continue;
+    activityNames.set(activity.activityName, (activityNames.get(activity.activityName) || 0) + 1);
+  }
+  for (const [profileIndex, mission] of (importPackage.objects.missionProfiles || []).entries()) {
+    for (const [missionIndex, basicMission] of (mission.basicMissions || []).entries()) {
+      const supportActivityName = String(basicMission.supportActivityName || "").trim();
+      if (!supportActivityName) continue;
+      assert.equal(
+        activityNames.get(supportActivityName),
+        1,
+        `${label} missionProfiles[${profileIndex}].basicMissions[${missionIndex}].supportActivityName must uniquely match supportActivities[].activityName`
+      );
+    }
+  }
+}
+
 test("canonical modeling import fixture covers all project authoring surfaces", () => {
   const fixture = canonicalImportFixture();
   const objects = fixture.objects;
@@ -58,6 +77,7 @@ test("canonical modeling import fixture covers all project authoring surfaces", 
   assert.ok(mission.reliabilityBlockDiagram?.edges?.length >= 1);
   assert.ok(mission.monteCarlo?.failureRates?.length >= 1);
   assert.ok(mission.analysisRequests?.largeSample || objects.analysisRequests?.largeSample);
+  assertBasicMissionSupportActivityNames(fixture, "modeling_import_project");
 });
 
 test("canonical combat unit aircraft include authored airport and calendar overhaul defaults", async () => {
@@ -96,6 +116,7 @@ test("simulation analysis public import templates validate against modeling impo
   for (const templatePath of templatePaths) {
     const template = await readJson(templatePath);
     assert.deepEqual(validateSchema(schema, template), [], `${templatePath} must match modeling_import.schema.json`);
+    assertBasicMissionSupportActivityNames(template, templatePath);
     assert.equal(
       Object.hasOwn(template.objects, "airports"),
       false,
@@ -240,6 +261,19 @@ test("canonical platform composite task items inherit equipment quantity from ba
       }
     }
   }
+});
+
+test("modeling import validation rejects basic mission supportActivityName matching only legacy activity name", async () => {
+  const fixture = await readJson("tests/fixtures/modeling_import_project.json");
+  const invalidPackage = structuredClone(fixture);
+  const legacyName = invalidPackage.objects.supportActivities[0].name;
+  assert.notEqual(legacyName, invalidPackage.objects.supportActivities[0].activityName);
+  invalidPackage.objects.missionProfiles[0].basicMissions[0].supportActivityName = legacyName;
+
+  const issues = validateModelingImportPackage(invalidPackage);
+  const issue = issues.find((item) => item.code === "invalid_basic_mission_support_activity_name");
+
+  assert.equal(issue?.field_path, "objects.missionProfiles[0].basicMissions[0].supportActivityName");
 });
 
 test("modeling import validation supports reduced-scope packages without support-domain stubs", async () => {
@@ -717,6 +751,7 @@ test("modeling import validation reports duplicate IDs, references, numeric fiel
         }
       ],
       supportActivities: [
+        fixture.objects.supportActivities[0],
         {
           id: "replace-radar",
           name: "更换雷达 LRU",

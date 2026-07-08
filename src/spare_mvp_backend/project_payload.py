@@ -227,9 +227,11 @@ class ProjectJsonExporter:
             import jsonschema
         except ModuleNotFoundError:
             _validate_clean_project_fallback(project, self.target)
+            _validate_basic_mission_support_activity_names(project, self.target)
             return
         if not hasattr(jsonschema, "Draft202012Validator"):
             _validate_clean_project_fallback(project, self.target)
+            _validate_basic_mission_support_activity_names(project, self.target)
             return
 
         schema_path = self.repo_root / "contracts" / "aircraft_support_v1_project.schema.json"
@@ -241,10 +243,54 @@ class ProjectJsonExporter:
             first = errors[0]
             path = ".".join(str(part) for part in first.path) or "<root>"
             raise ValueError(f"clean Project JSON failed {self.target} schema at {path}: {first.message}")
+        _validate_basic_mission_support_activity_names(project, self.target)
 
 
 def export_project_json(project_json: dict[str, Any], target: str = ACTIVE_CLEAN_PROJECT_TARGET) -> dict[str, Any]:
     return ProjectJsonExporter(target=target).export(project_json)
+
+
+def project_basic_mission_support_activity_name_errors(project: dict[str, Any]) -> list[dict[str, str]]:
+    activity_name_counts: dict[str, int] = {}
+    activities = project.get("supportActivities")
+    if isinstance(activities, list):
+        for activity in activities:
+            if not isinstance(activity, dict):
+                continue
+            activity_name = _clean_text(activity.get("activityName"))
+            if activity_name:
+                activity_name_counts[activity_name] = activity_name_counts.get(activity_name, 0) + 1
+
+    errors: list[dict[str, str]] = []
+    basic_missions = project.get("basicMissions")
+    if not isinstance(basic_missions, list):
+        return errors
+    for index, mission in enumerate(basic_missions):
+        if not isinstance(mission, dict):
+            continue
+        support_activity_name = _clean_text(mission.get("supportActivityName"))
+        if not support_activity_name:
+            continue
+        match_count = activity_name_counts.get(support_activity_name, 0)
+        if match_count != 1:
+            errors.append({
+                "code": "invalid_basic_mission_support_activity_name",
+                "path": f"basicMissions[{index}].supportActivityName",
+                "message": (
+                    "basicMissions[].supportActivityName must uniquely match "
+                    "supportActivities[].activityName; supportActivities[].name/id fallback is not allowed"
+                ),
+            })
+    return errors
+
+
+def _validate_basic_mission_support_activity_names(project: dict[str, Any], target: str) -> None:
+    errors = project_basic_mission_support_activity_name_errors(project)
+    if not errors:
+        return
+    first = errors[0]
+    schema_path = first["path"].replace("[", ".").replace("]", "")
+    raise ValueError(f"clean Project JSON failed {target} schema at {schema_path}: {first['message']}")
 
 
 def _validate_clean_project_fallback(project: dict[str, Any], target: str) -> None:
@@ -367,7 +413,7 @@ def _validate_clean_basic_missions(missions: list[Any], target: str) -> None:
             if field not in mission:
                 raise ValueError(f"clean Project JSON failed {target} schema at {path}.{field}: required")
             _require_clean_string(mission, field, f"{path}.{field}", target)
-        for field in ("missionId", "equipmentType"):
+        for field in ("missionId", "equipmentType", "supportActivityName"):
             _validate_optional_clean_string(mission, field, f"{path}.{field}", target)
         for field in ("minRequiredSorties", "equipmentQuantity", "requiredEquipmentQuantity"):
             _validate_optional_clean_integer(mission, field, f"{path}.{field}", target, minimum=0)

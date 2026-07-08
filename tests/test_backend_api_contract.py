@@ -730,6 +730,45 @@ class BackendApiContractTest(unittest.TestCase):
             self.api.save_project(project)
         self.assertEqual(ctx.exception.code, "invalid_project")
 
+    def test_save_project_rejects_basic_mission_support_activity_name_matching_only_legacy_name(self) -> None:
+        project = small_aircraft_support_project("project-invalid-support-activity-name")
+        project["basicMissions"][0]["supportActivityName"] = "Legacy display name"
+        project["supportActivities"][0]["name"] = "Legacy display name"
+        project["supportActivities"][0]["activityName"] = "Canonical support plan"
+
+        validation = self.api.validate_project(project)
+
+        self.assertFalse(validation["ok"])
+        relationship_errors = [
+            error for error in validation["errors"]
+            if error["code"] == "invalid_basic_mission_support_activity_name"
+        ]
+        self.assertEqual(relationship_errors[0]["path"], "basicMissions[0].supportActivityName")
+        with self.assertRaises(BackendApiError) as ctx:
+            self.api.save_project(project)
+        self.assertEqual(ctx.exception.code, "invalid_project")
+
+    def test_save_project_rejects_duplicate_basic_mission_support_activity_name_matches(self) -> None:
+        project = small_aircraft_support_project("project-duplicate-support-activity-name")
+        project["basicMissions"][0]["supportActivityName"] = "Canonical support plan"
+        project["supportActivities"][0]["activityName"] = "Canonical support plan"
+        project["supportActivities"].append({
+            **project["supportActivities"][0],
+            "id": "duplicate-support-plan",
+        })
+
+        validation = self.api.validate_project(project)
+
+        self.assertFalse(validation["ok"])
+        relationship_errors = [
+            error for error in validation["errors"]
+            if error["code"] == "invalid_basic_mission_support_activity_name"
+        ]
+        self.assertEqual(relationship_errors[0]["path"], "basicMissions[0].supportActivityName")
+        with self.assertRaises(BackendApiError) as ctx:
+            self.api.save_project(project)
+        self.assertEqual(ctx.exception.code, "invalid_project")
+
     def test_get_project_strips_legacy_persisted_monte_carlo_payload(self) -> None:
         project = small_aircraft_support_project("project-aircraft-support-contract-001")
         project["project_id"] = "project-legacy-mc"
@@ -3894,6 +3933,20 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertFalse(validation["ok"])
         self.assertNotIn("validationLevel", validation)
         self.assertEqual(issues_by_path["validationLevel"]["code"], "retired_validation_level")
+
+    def test_modeling_import_rejects_basic_mission_support_activity_name_matching_only_legacy_name(self) -> None:
+        import_package = self._fixture("modeling_import_project.json")
+        mission = import_package["objects"]["missionProfiles"][0]
+        legacy_name = import_package["objects"]["supportActivities"][0]["name"]
+        self.assertNotEqual(legacy_name, import_package["objects"]["supportActivities"][0]["activityName"])
+        mission["basicMissions"][0]["supportActivityName"] = legacy_name
+
+        validation = validate_modeling_import_package(import_package)
+        issues_by_path = {issue["field_path"]: issue for issue in validation["issues"]}
+
+        self.assertFalse(validation["ok"])
+        issue = issues_by_path["objects.missionProfiles[0].basicMissions[0].supportActivityName"]
+        self.assertEqual(issue["code"], "invalid_basic_mission_support_activity_name")
 
     def test_declared_scope_modeling_import_rejects_declared_missing_support_scope_tables(self) -> None:
         import_package = self._fixture("modeling_import_project.json")
