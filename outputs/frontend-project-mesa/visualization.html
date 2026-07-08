@@ -1,0 +1,754 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>frontend_project 独立 Mesa 可视化</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #172026;
+      --muted: #66717a;
+      --line: #d8dee4;
+      --surface: #ffffff;
+      --bg: #f6f7f9;
+      --primary: #1f5f9e;
+      --primary-soft: #eaf2fb;
+      --success: #2f7d5c;
+      --warning: #a66a10;
+      --danger: #b44747;
+      --violet: #7056a8;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--bg);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      letter-spacing: 0;
+    }
+    button, input {
+      font: inherit;
+    }
+    button {
+      min-height: 34px;
+      padding: 7px 12px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fff;
+      color: var(--ink);
+      cursor: pointer;
+      font-weight: 700;
+    }
+    button:hover { border-color: #9aa8b5; }
+    .btn-primary {
+      border-color: var(--primary);
+      background: var(--primary);
+      color: #fff;
+    }
+    .page-shell {
+      max-width: 1500px;
+      margin: 0 auto;
+      padding: 14px;
+    }
+    .mesa-visual-shell {
+      display: grid;
+      gap: 12px;
+    }
+    .lite-mesa-hero {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: flex-start;
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+    }
+    .lite-mesa-hero h1 {
+      margin: 6px 0 5px;
+      font-size: 21px;
+      line-height: 1.15;
+      letter-spacing: 0;
+    }
+    .lite-mesa-hero p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 24px;
+      padding: 3px 8px;
+      border-radius: 999px;
+      background: #eef2f5;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+    }
+    .status-badge.success {
+      background: #e7f4ee;
+      color: var(--success);
+    }
+    .lite-mesa-hero-actions {
+      min-width: 260px;
+      display: grid;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 12px;
+      text-align: right;
+    }
+    .mesa-control-deck,
+    .mesa-view-tabs,
+    .mesa-stage-panel,
+    .mesa-side-panel,
+    .availability-chart,
+    .backend-run-chain {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+    }
+    .mesa-control-deck {
+      padding: 10px;
+      background: #f8fafc;
+    }
+    .mesa-control-group {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px;
+      padding: 8px;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      background: var(--surface);
+    }
+    .mesa-control-status {
+      flex: 1 1 360px;
+      min-width: 260px;
+      max-height: 34px;
+      overflow: hidden;
+      padding: 6px 8px;
+      border: 1px solid #bbf7d0;
+      border-radius: 6px;
+      background: #f0fdf4;
+      color: var(--muted);
+    }
+    .mesa-control-status[open] {
+      max-height: 96px;
+      overflow: auto;
+    }
+    .mesa-control-status summary {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      gap: 8px;
+      align-items: center;
+      cursor: pointer;
+      list-style: none;
+    }
+    .mesa-control-status summary::-webkit-details-marker { display: none; }
+    .mesa-control-status summary::after {
+      content: "展开";
+      justify-self: end;
+      color: var(--muted);
+      font-size: 11px;
+    }
+    .mesa-control-status[open] summary::after { content: "收起"; }
+    .mesa-control-status summary span,
+    .mesa-control-status small {
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .mesa-control-status summary strong {
+      min-width: 0;
+      overflow: hidden;
+      color: var(--ink);
+      font-size: 12px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .mesa-control-status small {
+      display: block;
+      margin-top: 6px;
+      line-height: 1.35;
+    }
+    .kpi-strip {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(118px, 1fr));
+      gap: 10px;
+    }
+    .kpi-card {
+      min-width: 0;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+    }
+    .kpi-card span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 5px;
+    }
+    .kpi-card strong {
+      display: block;
+      font-size: 22px;
+      line-height: 1.05;
+      font-variant-numeric: tabular-nums;
+    }
+    .mesa-view-tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      padding: 8px;
+      background: #f8fafc;
+    }
+    .mesa-tab {
+      background: #fbfcfd;
+      color: var(--muted);
+    }
+    .mesa-tab.active {
+      border-color: var(--primary);
+      background: var(--primary);
+      color: #fff;
+    }
+    .mesa-timeline-card {
+      display: grid;
+      grid-template-columns: minmax(180px, auto) minmax(0, 1fr);
+      gap: 14px;
+      align-items: center;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+    }
+    .mesa-timeline-card span,
+    .mesa-timeline-card small {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .mesa-timeline-card strong {
+      display: block;
+      margin: 2px 0;
+      font-size: 15px;
+    }
+    input[type="range"] { width: 100%; }
+    .availability-chart {
+      padding: 12px;
+    }
+    .section-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .section-head h2,
+    .section-head h3 {
+      margin: 0;
+      font-size: 15px;
+      line-height: 1.2;
+    }
+    .section-head span {
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .availability-trend-svg {
+      width: 100%;
+      height: 120px;
+      display: block;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      background:
+        linear-gradient(0deg, rgba(31, 95, 158, 0.07) 1px, transparent 1px),
+        #f8fafc;
+      background-size: 100% 24px;
+    }
+    .trend-line {
+      fill: none;
+      stroke-width: 3;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+    .trend-line.available, circle.available { stroke: var(--success); fill: var(--success); }
+    .trend-line.mission, circle.mission { stroke: var(--primary); fill: var(--primary); }
+    .trend-line.maintenance, circle.maintenance { stroke: var(--danger); fill: var(--danger); }
+    .trend-line.support, circle.support { stroke: var(--warning); fill: var(--warning); }
+    .axis-line, .grid-line { stroke: #cbd5e1; stroke-width: 1; }
+    .grid-line { stroke-dasharray: 3 4; }
+    .axis-label { fill: #64748b; font-size: 11px; }
+    .availability-trend-legend,
+    .availability-axis {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: 8px;
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .availability-trend-legend span {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .availability-trend-legend i {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+    .legend-available { background: var(--success); }
+    .legend-mission { background: var(--primary); }
+    .legend-maintenance { background: var(--danger); }
+    .legend-support { background: var(--warning); }
+    .mesa-visual-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 340px;
+      gap: 12px;
+      align-items: stretch;
+    }
+    .mesa-visual-grid.mission-expanded {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .mesa-stage-panel,
+    .mesa-side-panel {
+      min-width: 0;
+      padding: 12px;
+      background: #fbfcfd;
+    }
+    .mesa-aircraft-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(58px, 1fr));
+      gap: 8px;
+    }
+    .aircraft-tile {
+      min-height: 48px;
+      display: grid;
+      place-items: center;
+      padding: 7px 4px;
+      border: 1px solid transparent;
+      border-radius: 7px;
+      font-size: 12px;
+      font-weight: 800;
+      overflow: hidden;
+      white-space: nowrap;
+    }
+    .state-available { background: #e7f4ee; color: var(--success); border-color: #b7dccb; }
+    .state-mission { background: var(--primary-soft); color: var(--primary); border-color: #bad0ec; }
+    .state-maintenance { background: #faeaea; color: var(--danger); border-color: #efc0c0; }
+    .state-support { background: #fff3dd; color: var(--warning); border-color: #f0d29c; }
+    .state-other { background: #f0eef8; color: var(--violet); border-color: #d5cdec; }
+    .stack-list {
+      display: grid;
+      gap: 8px;
+    }
+    .mission-row,
+    .support-row,
+    .event {
+      display: grid;
+      gap: 4px;
+      padding: 9px 10px;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      background: var(--surface);
+      text-align: left;
+    }
+    .mission-row strong,
+    .support-row strong,
+    .event strong {
+      font-size: 13px;
+    }
+    .mission-row small,
+    .support-row small,
+    .event small {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+    .status-pill {
+      display: inline-flex;
+      width: fit-content;
+      max-width: 100%;
+      padding: 2px 7px;
+      border-radius: 999px;
+      background: #eef2f5;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .status-pill.success { background: #e7f4ee; color: var(--success); }
+    .status-pill.warning { background: #fff3dd; color: var(--warning); }
+    .status-pill.info { background: var(--primary-soft); color: var(--primary); }
+    .support-metric-panel {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .support-metric-panel div {
+      padding: 9px;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      background: var(--surface);
+    }
+    .support-metric-panel span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 3px;
+    }
+    .support-metric-panel strong {
+      font-size: 18px;
+      font-variant-numeric: tabular-nums;
+    }
+    .mesa-event-window {
+      padding: 12px;
+    }
+    .event {
+      border-left: 3px solid var(--primary);
+    }
+    .event.success { border-left-color: var(--success); }
+    .event.warning { border-left-color: var(--warning); }
+    .event.info { border-left-color: var(--primary); }
+    .empty {
+      padding: 14px;
+      border: 1px dashed var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+      color: var(--muted);
+      font-size: 13px;
+    }
+    @media (max-width: 980px) {
+      .page-shell { padding: 10px; }
+      .lite-mesa-hero,
+      .mesa-timeline-card {
+        grid-template-columns: 1fr;
+        display: grid;
+      }
+      .lite-mesa-hero-actions { text-align: left; min-width: 0; }
+      .kpi-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .mesa-visual-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page-shell">
+    <div class="mesa-visual-shell">
+      <section class="lite-mesa-hero mesa-visual-hero">
+        <div>
+          <span class="status-badge success">独立 visualization run</span>
+          <h1>可视化推演</h1>
+          <p id="heroMeta">加载 Mesa 状态帧...</p>
+        </div>
+        <div class="lite-mesa-hero-actions">
+          <span>frontend_project.json</span>
+          <strong id="runMeta">等待数据</strong>
+        </div>
+      </section>
+
+      <div class="mesa-control-deck">
+        <div class="mesa-control-group">
+          <button id="play" type="button" class="btn-primary">启动回放</button>
+          <button id="reset" type="button">回到起点</button>
+          <details class="mesa-control-status" open>
+            <summary><span>回放状态</span><strong id="replayStatus">等待状态帧</strong></summary>
+            <small id="replayDetail">state_series 加载后可回放。</small>
+          </details>
+        </div>
+      </div>
+
+      <div class="kpi-strip mesa-kpi-strip" id="kpis"></div>
+
+      <div class="mesa-view-tabs" role="tablist" aria-label="Mesa 可视化视图">
+        <button class="mesa-tab active" type="button" data-view="aircraft">飞机视图</button>
+        <button class="mesa-tab" type="button" data-view="mission">任务视图</button>
+        <button class="mesa-tab" type="button" data-view="support">保障视图</button>
+      </div>
+
+      <div class="mesa-timeline-card">
+        <div>
+          <span>仿真时间轴</span>
+          <strong id="timeLabel">T+0 min</strong>
+          <small id="frameMeta">0 / 0 帧</small>
+        </div>
+        <input id="timeline" type="range" min="0" max="0" value="0" aria-label="仿真时间轴">
+      </div>
+
+      <div class="availability-chart" id="availabilityChart"></div>
+
+      <div class="mesa-visual-grid" id="visualGrid">
+        <section class="mesa-stage-panel" id="stage"></section>
+        <aside class="mesa-side-panel" id="sidePanel"></aside>
+      </div>
+
+      <div class="backend-run-chain mesa-event-window" id="eventWindow"></div>
+    </div>
+  </div>
+
+  <script src="visualization_data.js"></script>
+  <script>
+    const state = { series: null, frameIndex: 0, timer: null, activeView: "aircraft" };
+    const $ = (id) => document.getElementById(id);
+    const fmt = (value) => Number(value || 0).toFixed(0);
+    const pct = (value) => `${(Number(value || 0) * 100).toFixed(1)}%`;
+    const html = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
+    const trendSeries = [
+      { key: "available", label: "可用飞机", css: "available" },
+      { key: "mission", label: "任务中", css: "mission" },
+      { key: "maintenance", label: "维修中", css: "maintenance" },
+      { key: "support", label: "使用保障中", css: "support" }
+    ];
+
+    function aircraftBucket(raw) {
+      const value = String(raw || "available").toLowerCase();
+      if (["available", "ready", "mission_ready"].includes(value)) return "available";
+      if (["flying", "mission", "mission_active", "launched", "executing"].includes(value)) return "mission";
+      if (value.includes("maintenance") || value.includes("repair")) return "maintenance";
+      if (value.includes("support") || value.includes("postflight") || value.includes("preflight")) return "support";
+      return "other";
+    }
+
+    function stateLabel(value) {
+      const labels = {
+        available: "可用",
+        flying: "任务中",
+        maintenance: "维修中",
+        post_support: "使用保障中",
+        pre_support: "使用保障中"
+      };
+      return labels[value] || value || "-";
+    }
+
+    function statusLabel(value) {
+      const labels = { scheduled: "计划", launched: "已起飞", completed: "完成", cancelled: "取消", delayed: "延迟", running: "执行中", waiting: "等待" };
+      return labels[value] || value || "-";
+    }
+
+    function statusClass(value) {
+      if (["completed", "launched", "running"].includes(String(value))) return "success";
+      if (["cancelled", "delayed", "maintenance"].includes(String(value))) return "warning";
+      return "info";
+    }
+
+    function timeText(minutes) {
+      const total = Number(minutes || 0);
+      const day = Math.floor(total / 1440) + 1;
+      const minuteOfDay = total % 1440;
+      const hour = Math.floor(minuteOfDay / 60);
+      const minute = minuteOfDay % 60;
+      return `D${day} ${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")} / T+${fmt(total)} min`;
+    }
+
+    function countAircraft(aircraft = []) {
+      return aircraft.reduce((counts, item) => {
+        const bucket = aircraftBucket(item.state);
+        if (bucket !== "maintenance") counts.available += 1;
+        if (bucket === "mission") counts.mission += 1;
+        if (bucket === "maintenance") counts.maintenance += 1;
+        if (bucket === "support") counts.support += 1;
+        return counts;
+      }, { available: 0, mission: 0, maintenance: 0, support: 0 });
+    }
+
+    function totalLaunchedSorties(frame) {
+      return (frame.missions || []).reduce((sum, mission) => {
+        if (mission.actual_start == null) return sum;
+        const assigned = Array.isArray(mission.assigned_tail_numbers) ? mission.assigned_tail_numbers.length : 0;
+        return sum + (assigned || Number(mission.required_aircraft || 0));
+      }, 0);
+    }
+
+    function activeMissions(frame) {
+      return (frame.missions || [])
+        .filter((mission) => ["launched", "completed", "delayed", "cancelled"].includes(mission.status) || Math.abs(Number(mission.planned_start || 0) - Number(frame.simulation_time || 0)) <= 90)
+        .slice(0, state.activeView === "mission" ? 14 : 6);
+    }
+
+    function renderKpis(frame) {
+      const aircraftState = frame.aircraft_state || {};
+      const missionState = frame.mission_state || {};
+      const resourceState = frame.resource_state || {};
+      const counts = countAircraft(frame.aircraft || []);
+      const values = [
+        { label: "使用可用度", value: pct(aircraftState.ready_rate) },
+        { label: "任务成功率", value: pct(missionState.mission_success_rate) },
+        { label: "总出动架次", value: fmt(totalLaunchedSorties(frame)) },
+        { label: "维修中飞机", value: `${counts.maintenance} 架` },
+        { label: "备件满足率", value: pct(resourceState.spare_fill_rate ?? 1) }
+      ];
+      $("kpis").innerHTML = values.map((item) => `<div class="kpi-card"><span>${html(item.label)}</span><strong>${html(item.value)}</strong></div>`).join("");
+    }
+
+    function renderAvailabilityChart() {
+      const frames = state.series.frames.slice(0, state.frameIndex + 1);
+      const points = frames.slice(-12).map((frame) => ({
+        label: `T+${fmt(frame.simulation_time)}`,
+        total: (frame.aircraft || []).length || 1,
+        ...countAircraft(frame.aircraft || [])
+      }));
+      const maxTotal = Math.max(1, ...points.flatMap((point) => trendSeries.map((series) => Number(point[series.key] || 0))));
+      const width = 960;
+      const height = 120;
+      const margin = { left: 44, right: 12, top: 12, bottom: 24 };
+      const plotWidth = width - margin.left - margin.right;
+      const plotHeight = height - margin.top - margin.bottom;
+      const chartPoints = points.map((point, index) => ({
+        ...point,
+        x: points.length === 1 ? margin.left + plotWidth / 2 : margin.left + (index / (points.length - 1)) * plotWidth,
+        y: Object.fromEntries(trendSeries.map((series) => [series.key, margin.top + (1 - Number(point[series.key] || 0) / maxTotal) * plotHeight]))
+      }));
+      const lines = trendSeries.map((series) => {
+        const polyline = chartPoints.map((point) => `${point.x.toFixed(1)},${point.y[series.key].toFixed(1)}`).join(" ");
+        return `<polyline class="trend-line ${series.css}" points="${polyline}"></polyline>${chartPoints.map((point, index) => `<circle class="${series.css}" cx="${point.x.toFixed(1)}" cy="${point.y[series.key].toFixed(1)}" r="${index === chartPoints.length - 1 ? 4 : 3}"><title>${html(point.label)} / ${html(series.label)} ${html(point[series.key])} 架</title></circle>`).join("")}`;
+      }).join("");
+      const ticks = [maxTotal, Math.round(maxTotal / 2), 0].map((tick) => {
+        const y = margin.top + (1 - tick / maxTotal) * plotHeight;
+        return `<line class="grid-line" x1="${margin.left}" y1="${y.toFixed(1)}" x2="${(margin.left + plotWidth).toFixed(1)}" y2="${y.toFixed(1)}"></line><text class="axis-label" x="${margin.left - 8}" y="${(y + 4).toFixed(1)}" text-anchor="end">${tick}</text>`;
+      }).join("");
+      $("availabilityChart").innerHTML = `
+        <div class="section-head"><h2>飞机状态一览</h2><span>${points.length} 个采样点</span></div>
+        <svg class="availability-trend-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="飞机状态一览">
+          <line class="axis-line" x1="${margin.left}" y1="${margin.top}" x2="${margin.left}" y2="${margin.top + plotHeight}"></line>
+          <line class="axis-line" x1="${margin.left}" y1="${margin.top + plotHeight}" x2="${width - margin.right}" y2="${margin.top + plotHeight}"></line>
+          ${ticks}
+          ${lines}
+        </svg>
+        <div class="availability-trend-legend">${trendSeries.map((series) => `<span><i class="legend-${series.css}"></i>${html(series.label)}</span>`).join("")}</div>
+        <div class="availability-axis"><span>${html(points[0]?.label || "-")}</span><strong>${trendSeries.map((series) => `${series.label} ${points.at(-1)?.[series.key] ?? 0}`).join(" / ")}</strong><span>${html(points.at(-1)?.label || "-")}</span></div>
+      `;
+    }
+
+    function renderAircraftStage(frame) {
+      return `<div class="section-head"><h2>飞机视图</h2><span>${(frame.aircraft || []).length} 架</span></div><div class="mesa-aircraft-grid">${(frame.aircraft || []).map((aircraft) => {
+        const bucket = aircraftBucket(aircraft.state);
+        const label = aircraft.tail_number || aircraft.id || aircraft.name || "-";
+        return `<div class="aircraft-tile state-${bucket}" title="${html(label)} / ${html(stateLabel(aircraft.state))}">${html(label)}</div>`;
+      }).join("")}</div>`;
+    }
+
+    function renderMissionStage(frame) {
+      const rows = activeMissions(frame);
+      return `<div class="section-head"><h2>任务视图</h2><span>${rows.length} 条任务</span></div><div class="stack-list">${rows.length ? rows.map((mission) => `
+        <div class="mission-row">
+          <strong>${html(mission.name || mission.mission_id)}</strong>
+          <span class="status-pill ${statusClass(mission.status)}">${html(statusLabel(mission.status))}</span>
+          <small>${html(timeText(mission.planned_start).split(" / ")[0])} / ${(mission.assigned_tail_numbers || []).join(" / ") || `${mission.required_aircraft || 0} 架`}</small>
+        </div>`).join("") : `<div class="empty">当前窗口没有临近或已执行任务。</div>`}</div>`;
+    }
+
+    function renderSupportStage(frame) {
+      const jobs = frame.jobs || [];
+      return `<div class="section-head"><h2>保障视图</h2><span>${jobs.length} 条作业</span></div><div class="stack-list">${jobs.length ? jobs.slice(0, 12).map((job) => `
+        <div class="support-row">
+          <strong>${html(job.task || job.job_id)}</strong>
+          <span class="status-pill ${statusClass(job.state)}">${html(statusLabel(job.state))}</span>
+          <small>${html(job.tail_number || "-")} / ${html(job.kind || "-")} / 剩余 ${fmt(job.remaining)} min</small>
+        </div>`).join("") : `<div class="empty">当前帧没有运行或等待中的保障作业。</div>`}</div>`;
+    }
+
+    function renderSidePanel(frame) {
+      const counts = countAircraft(frame.aircraft || []);
+      if (state.activeView === "support") {
+        const resourceState = frame.resource_state || {};
+        $("sidePanel").innerHTML = `<div class="section-head"><h3>保障指标</h3><span>${html(timeText(frame.simulation_time).split(" / ")[0])}</span></div><div class="support-metric-panel">
+          <div><span>维修积压</span><strong>${fmt(resourceState.repair_backlog)}</strong></div>
+          <div><span>飞后积压</span><strong>${fmt(resourceState.postflight_backlog)}</strong></div>
+          <div><span>预防维修积压</span><strong>${fmt(resourceState.preventive_backlog)}</strong></div>
+          <div><span>备件满足率</span><strong>${pct(resourceState.spare_fill_rate ?? 1)}</strong></div>
+        </div>`;
+        return;
+      }
+      $("sidePanel").innerHTML = `<div class="section-head"><h3>状态分布</h3><span>${html(timeText(frame.simulation_time).split(" / ")[0])}</span></div><div class="support-metric-panel">
+        <div><span>可用飞机</span><strong>${counts.available}</strong></div>
+        <div><span>任务中</span><strong>${counts.mission}</strong></div>
+        <div><span>维修中</span><strong>${counts.maintenance}</strong></div>
+        <div><span>使用保障中</span><strong>${counts.support}</strong></div>
+      </div>`;
+    }
+
+    function eventSeverity(event) {
+      const type = String(event.event || "").toLowerCase();
+      if (type.includes("fail") || type.includes("cancel") || type.includes("shortage")) return "warning";
+      if (type.includes("completed") || type.includes("launch") || type.includes("return")) return "success";
+      return "info";
+    }
+
+    function eventLabel(type) {
+      const value = String(type || "").toLowerCase();
+      if (value.includes("launch")) return "任务启动";
+      if (value.includes("return") || value.includes("completed")) return "任务结束";
+      if (value.includes("preflight") || value.includes("postflight") || value.includes("job")) return "飞机保障作业";
+      if (value.includes("repair")) return "维修";
+      if (value.includes("fail")) return "飞机故障";
+      return "仿真日志";
+    }
+
+    function renderEvents(frame) {
+      const events = (state.series.events || []).filter((event) => Number(event.time || 0) <= Number(frame.simulation_time || 0)).slice(-12).reverse();
+      $("eventWindow").innerHTML = `<div class="section-head"><h3>仿真日志</h3><span>${events.length ? `${events.length} 条日志` : "等待仿真日志"}</span></div>${events.length ? `<div class="stack-list">${events.map((event) => `<div class="event ${eventSeverity(event)}"><small>${html(timeText(event.time))} / ${html(eventLabel(event.event))}</small><strong>${html(event.message || "")}</strong></div>`).join("")}</div>` : `<div class="empty">暂无任务分配、保障作业、任务启动/结束、故障或维修日志。</div>`}`;
+    }
+
+    function render(index) {
+      const frame = state.series.frames[index];
+      state.frameIndex = index;
+      $("timeline").value = index;
+      $("timeLabel").textContent = timeText(frame.simulation_time);
+      $("frameMeta").textContent = `${index + 1} / ${state.series.frames.length} 帧`;
+      $("replayStatus").textContent = `frame ${index + 1} / ${state.series.frames.length}`;
+      $("replayDetail").textContent = `${state.series.run_id} / step ${frame.step} / 事件 ${state.series.event_count}`;
+      renderKpis(frame);
+      renderAvailabilityChart();
+      $("visualGrid").classList.toggle("mission-expanded", state.activeView === "mission");
+      $("sidePanel").style.display = state.activeView === "mission" ? "none" : "";
+      if (state.activeView === "mission") $("stage").innerHTML = renderMissionStage(frame);
+      else if (state.activeView === "support") $("stage").innerHTML = renderSupportStage(frame);
+      else $("stage").innerHTML = renderAircraftStage(frame);
+      renderSidePanel(frame);
+      renderEvents(frame);
+    }
+
+    function togglePlay() {
+      if (state.timer) {
+        clearInterval(state.timer);
+        state.timer = null;
+        $("play").textContent = "启动回放";
+        return;
+      }
+      $("play").textContent = "暂停回放";
+      state.timer = setInterval(() => {
+        const next = state.frameIndex >= state.series.frames.length - 1 ? 0 : state.frameIndex + 1;
+        render(next);
+      }, 850);
+    }
+
+    function boot(series) {
+      state.series = series;
+      $("heroMeta").textContent = `${series.project_id} / ${series.scenario_id}`;
+      $("runMeta").textContent = `${series.frame_count} 帧 / ${series.event_count} 事件`;
+      $("timeline").max = Math.max(0, series.frames.length - 1);
+      $("timeline").addEventListener("input", (event) => render(Number(event.target.value)));
+      $("play").addEventListener("click", togglePlay);
+      $("reset").addEventListener("click", () => render(0));
+      document.querySelectorAll("[data-view]").forEach((button) => {
+        button.addEventListener("click", () => {
+          state.activeView = button.dataset.view;
+          document.querySelectorAll("[data-view]").forEach((item) => item.classList.toggle("active", item === button));
+          render(state.frameIndex);
+        });
+      });
+      render(0);
+    }
+
+    if (window.MESA_SERIES) {
+      boot(window.MESA_SERIES);
+    } else {
+      fetch("state_series.json").then((response) => response.json()).then(boot).catch((error) => {
+        $("heroMeta").textContent = `加载失败: ${error.message}`;
+      });
+    }
+  </script>
+</body>
+</html>

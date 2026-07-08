@@ -1,0 +1,30 @@
+{
+  "project_json": "/Users/gaojihe/.codex/worktrees/8ba9/spare_mvp/exports/frontend_project.json",
+  "issues_applied": {
+    "#160": "removed combatUnit.members[].deploymentLocation; airport remains location source",
+    "#161": "moved root missionPhases into each basicMissions[].missionPhases and removed root missionPhases",
+    "#162": "filled basicMissions[].supportActivityName from unique matching supportActivities[].activityName by aircraft model",
+    "#164": "removed root missionAreas",
+    "#165": "removed reliabilityBlockDiagram and legacy component fields; kept component tree, failureDistribution, repairDistribution, kOutOfN",
+    "#166": "removed missionProfile duration/task-item/periodic redundant fields from persisted shape",
+    "#167": "reduced supportActivities to plan-reference layer and normalized planType enum",
+    "#168": "migrated nested logistics transportStrategies to top-level transportPolicies"
+  },
+  "counts": {
+    "basicMissions": 5,
+    "basicMissionsWithMissionPhases": 5,
+    "components": 442,
+    "supportActivities": 8,
+    "supportActivityJobs": 51,
+    "transportPolicies": 1
+  },
+  "current_runtime_compatibility": {
+    "status": "blocked_in_current_checkout",
+    "reason": "current SimulationAdapter/project schema still requires root missionAreas, missionPhases, and reliabilityBlockDiagram; issue-target data format intentionally removes them",
+    "blocked_required_fields": [
+      "missionAreas",
+      "missionPhases",
+      "reliabilityBlockDiagram"
+    ]
+  }
+}
