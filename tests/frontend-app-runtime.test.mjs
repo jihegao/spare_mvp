@@ -1440,10 +1440,14 @@ test("RMS imported aircraft models filter the tree and remain available as simil
 });
 
 test("support activity add work item opens the editing dialog at runtime", async () => {
-  const runtime = await setupRuntimeApp({ projectJson: createRuntimeProjectJson() });
+  const projectId = "support-activity-add-runtime";
+  const runtime = await setupRuntimeApp({
+    projectJson: createRuntimeProjectJson({ project_id: projectId }),
+    backendProjects: [runtimeBackendProjectEntry(projectId, "保障活动新增项目")]
+  });
 
   try {
-    await runtime.click("[data-enter-workbench]", { projectId: "project-runtime" });
+    await runtime.click("[data-enter-workbench]", { projectId });
     await runtime.setHash("feature=spare-planning-operations-support-activity");
 
     assert.match(runtime.appNode.innerHTML, /data-support-activity-job-add="ops_preflight"/);
@@ -1506,14 +1510,18 @@ test("basic support activity add uses a draft dialog before creating a row", asy
 });
 
 test("basic support activity UI reads and writes top-level job table references", async () => {
-  const projectJson = createRuntimeProjectJson();
-  const runtime = await setupRuntimeApp({ projectJson });
+  const projectId = "basic-activity-job-runtime";
+  const projectJson = createRuntimeProjectJson({ project_id: projectId });
+  const runtime = await setupRuntimeApp({
+    projectJson,
+    backendProjects: [runtimeBackendProjectEntry(projectId, "基本保障活动作业项目")]
+  });
 
   try {
-    await runtime.click("[data-enter-workbench]", { projectId: "project-runtime" });
+    await runtime.click("[data-enter-workbench]", { projectId });
     await runtime.setHash("feature=spare-planning-basic-support-activity");
 
-    assert.match(runtime.appNode.innerHTML, /初始工作项目/);
+    await waitForRuntimeHtml(runtime, /初始工作项目/, "expected runtime project support activity rows to load");
     await runtime.change(
       "[data-basic-activity-field]",
       { basicActivityKey: "0:0", basicActivityField: "workName" },
@@ -2723,6 +2731,17 @@ test("Monte Carlo setting changes do not rerender before lightweight Mesa run cl
 });
 
 let runtimeImportCounter = 0;
+
+function runtimeBackendProjectEntry(projectId, experimentName = "Runtime 项目") {
+  return {
+    project_id: projectId,
+    experiment_name: experimentName,
+    base_code: "RT",
+    summary: "runtime test",
+    source_import_id: "runtime-import-template",
+    updated_at: "2026-06-26 00:00:00"
+  };
+}
 
 async function setupRuntimeApp({
   hash = "",

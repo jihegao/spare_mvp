@@ -237,6 +237,14 @@ _SUPPORT_ACTIVITY_MTTR_FIELDS = {
     "repairTypes",
 }
 _SUPPORT_ACTIVITY_JOB_FORBIDDEN_FIELDS = {"predecessors", *_SUPPORT_ACTIVITY_MTTR_FIELDS}
+_SUPPORT_ACTIVITY_RULE_UI_FIELDS = {
+    "calendarDayFloatRatio",
+    "runHourFloatRatio",
+    "takeoffLandingFloatRatio",
+    "useCalendarRule",
+    "useFlightHourRule",
+    "useTakeoffLandingRule",
+}
 
 
 class ProjectJsonExporter:
@@ -1096,6 +1104,9 @@ def _strip_project_non_model_fields(project: dict[str, Any]) -> None:
     project.pop("supportResourceOverrides", None)
     _materialize_legacy_support_tables(project)
     _normalize_support_model_tables(project)
+    project.pop("modelingDictionaries", None)
+    _strip_modeling_import_validation_non_model_fields(project)
+    _strip_support_resource_non_model_fields(project)
     _strip_legacy_support_node_resource_fields(project)
     _normalize_project_component_k_out_of_n(project)
     _strip_component_non_model_fields(project.get("components"))
@@ -1111,6 +1122,7 @@ def _strip_project_non_model_fields(project: dict[str, Any]) -> None:
         _normalize_mission_profile_reference_fields(project)
     _strip_typo_only_support_activity_fields(project)
     _strip_deprecated_support_activity_strategy_fields(project)
+    _strip_support_activity_rule_ui_fields(project.get("supportActivities"))
     _strip_support_activity_spare_type_fields(project.get("supportActivities"))
     _strip_support_activity_mttr_fields(project.get("supportActivities"))
     _strip_support_activity_mttr_fields(project.get("supportActivityJobs"))
@@ -1716,6 +1728,23 @@ def _strip_legacy_support_node_resource_fields(project: dict[str, Any]) -> None:
             node.pop(field, None)
 
 
+def _strip_modeling_import_validation_non_model_fields(project: dict[str, Any]) -> None:
+    validation = project.get("modelingImportValidation")
+    if isinstance(validation, dict):
+        validation.pop("validationLevel", None)
+
+
+def _strip_support_resource_non_model_fields(project: dict[str, Any]) -> None:
+    resources = project.get("supportResources")
+    if not isinstance(resources, list):
+        return
+    for resource in resources:
+        if not isinstance(resource, dict):
+            continue
+        resource.pop("equipment", None)
+        resource.pop("equipmentId", None)
+
+
 def _strip_typo_only_support_activity_fields(value: Any) -> None:
     if isinstance(value, dict):
         value.pop("requireDevices", None)
@@ -1735,6 +1764,16 @@ def _strip_deprecated_support_activity_strategy_fields(project: dict[str, Any]) 
             continue
         activity.pop("transportStrategies", None)
         activity.pop("organizationStrategies", None)
+
+
+def _strip_support_activity_rule_ui_fields(value: Any) -> None:
+    if not isinstance(value, list):
+        return
+    for activity in value:
+        if not isinstance(activity, dict):
+            continue
+        for field in _SUPPORT_ACTIVITY_RULE_UI_FIELDS:
+            activity.pop(field, None)
 
 
 def _strip_support_activity_spare_type_fields(value: Any) -> None:
@@ -1917,6 +1956,8 @@ def _prune_clean_project(project: dict[str, Any]) -> None:
     _prune_support_activities(project.get("supportActivities"))
     if isinstance(project.get("supportOrganization"), dict):
         _prune_support_organization(project["supportOrganization"])
+    if isinstance(project.get("modelingImportValidation"), dict):
+        _keep_fields(project["modelingImportValidation"], _MODELING_IMPORT_VALIDATION_FIELDS)
 
 
 def _keep_fields(value: dict[str, Any], allowed_fields: set[str]) -> None:
