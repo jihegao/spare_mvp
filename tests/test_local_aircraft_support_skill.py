@@ -147,6 +147,94 @@ class AircraftSupportV1ProjectSkillTest(unittest.TestCase):
             self.assertGreaterEqual(explanation["保障组织"]["row_count"], 1)
             self.assertGreaterEqual(explanation["保障活动"]["row_count"], 1)
 
+    def test_compiles_activity_level_spares_and_preventive_strategy_without_breaking_job_normalization(self) -> None:
+        skill = _load_skill_module()
+        project = self._project()
+        activity = project["supportActivities"][0]
+        activity.update(
+            {
+                "spareType": "hydraulic-pump",
+                "spareQuantity": 2,
+                "calendarDayInterval": 7,
+                "runHourInterval": 12,
+                "takeoffLandingInterval": 3,
+                "floatRatio": 0.2,
+                "transportStrategies": [{"from": "node-a", "to": "node-a", "spareType": "hydraulic-pump"}],
+                "organizationStrategies": [{"supportLevel": "base", "supportNodeId": "node-a"}],
+            }
+        )
+        activity["jobs"][0].update({"name": "Inspect pump", "durationMinutes": 45})
+
+        inputs = skill.compile_project_json_to_aircraft_support_inputs(project)
+
+        compiled_activity = inputs["support_activities"]["activities"][0]
+        self.assertEqual(compiled_activity["spare_type"], "hydraulic-pump")
+        self.assertEqual(compiled_activity["spare_quantity"], 2)
+        self.assertEqual(compiled_activity["calendarDayInterval"], 7)
+        self.assertEqual(compiled_activity["runHourInterval"], 12)
+        self.assertEqual(compiled_activity["takeoffLandingInterval"], 3)
+        self.assertEqual(compiled_activity["floatRatio"], 0.2)
+        self.assertEqual(compiled_activity["transport_strategies"], [{"from": "node-a", "to": "node-a", "spareType": "hydraulic-pump"}])
+        self.assertEqual(compiled_activity["organization_strategies"], [{"supportLevel": "base", "supportNodeId": "node-a"}])
+        self.assertEqual(compiled_activity["jobs"][0]["activityCode"], "job-1")
+        self.assertEqual(compiled_activity["jobs"][0]["workName"], "Inspect pump")
+
+    def test_compiles_missing_or_zero_spare_quantity_as_zero(self) -> None:
+        skill = _load_skill_module()
+        project = self._project()
+        activity = project["supportActivities"][0]
+        activity["spareType"] = "hydraulic-pump"
+        activity.pop("spareQuantity", None)
+
+        missing_quantity_inputs = skill.compile_project_json_to_aircraft_support_inputs(project)
+        self.assertEqual(missing_quantity_inputs["support_activities"]["activities"][0]["spare_quantity"], 0)
+
+        activity["spareQuantity"] = 0
+        zero_quantity_inputs = skill.compile_project_json_to_aircraft_support_inputs(project)
+        self.assertEqual(zero_quantity_inputs["support_activities"]["activities"][0]["spare_quantity"], 0)
+
+    def test_nested_support_node_transport_policies_are_remembered_explained_and_compiled(self) -> None:
+        skill = _load_skill_module()
+        project = self._project()
+        project["transportPolicies"] = []
+        project["supportNodes"][0]["transportPolicies"] = [
+            {
+                "id": "nested-tp-1",
+                "fromSupportNodeId": "node-a",
+                "toSupportNodeId": "node-a",
+                "spareType": "nested-spare",
+                "capacity": 3,
+                "priority": 2,
+                "transportTimeHours": 1.5,
+            }
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            memory = skill.remember_project_structure(
+                project,
+                memory_path=Path(tmp) / "schema-memory.json",
+                project_source="unit-test",
+            )
+        explanation = skill.explain_project(project, memory=memory)
+        inputs = skill.compile_project_json_to_aircraft_support_inputs(project)
+
+        self.assertIn("supportNodes.transportPolicies", memory["tables"])
+        self.assertIn("spareType", memory["tables"]["supportNodes.transportPolicies"]["fields"])
+        self.assertIn("supportNodes.transportPolicies", explanation["保障组织"]["tables"])
+        self.assertEqual(
+            inputs["support_network"]["nodes"][0]["transport_policies"],
+            [
+                {
+                    "from": "node A",
+                    "to": "node A",
+                    "spareType": "nested-spare",
+                    "capacity": 3,
+                    "priority": 2,
+                    "transportTimeHours": 1.5,
+                }
+            ],
+        )
+
     def test_compiles_project_json_and_runs_aircraft_support_v1_without_simulation_adapter(self) -> None:
         skill = _load_skill_module()
         project = self._project()

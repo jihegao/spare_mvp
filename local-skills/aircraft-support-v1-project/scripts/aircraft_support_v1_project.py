@@ -27,6 +27,7 @@ TABLE_PATHS = {
     "components": ("components",),
     "combatUnit.members": ("combatUnit", "members"),
     "supportNodes": ("supportNodes",),
+    "supportNodes.transportPolicies": ("supportNodes", "*", "transportPolicies"),
     "supportResources": ("supportResources",),
     "supportOrganization": ("supportOrganization",),
     "transportPolicies": ("transportPolicies",),
@@ -419,7 +420,14 @@ def _explain_support_organization(project: dict[str, Any], memory: dict[str, Any
                 "quantity": resource.get("quantity"),
             }
         )
-    return {"row_count": len(rows), "tables": _memory_tables(memory, ("supportNodes", "supportResources", "supportOrganization", "transportPolicies")), "rows": rows}
+    return {
+        "row_count": len(rows),
+        "tables": _memory_tables(
+            memory,
+            ("supportNodes", "supportNodes.transportPolicies", "supportResources", "supportOrganization", "transportPolicies"),
+        ),
+        "rows": rows,
+    }
 
 
 def _explain_support_activities(project: dict[str, Any], memory: dict[str, Any]) -> dict[str, Any]:
@@ -512,6 +520,12 @@ def _support_nodes(project: dict[str, Any]) -> list[dict[str, Any]]:
         destination = str(normalized.get("to") or "")
         if destination in nodes_by_name:
             nodes_by_name[destination]["transport_policies"].append(normalized)
+    for raw in _list(project.get("supportNodes")):
+        node_name = _support_node_name(raw)
+        for policy in _list(raw.get("transportPolicies")):
+            normalized = _transport_policy(policy, aliases, default_node=node_name)
+            if node_name in nodes_by_name:
+                nodes_by_name[node_name]["transport_policies"].append(normalized)
     return list(nodes_by_name.values()) or [{"id": "support-node", "name": "support node", "personnel_capacity": 1, "equipment_capacity": 1, "inventory": {}, "transport_policies": []}]
 
 
@@ -534,9 +548,9 @@ def _support_node_name(node: dict[str, Any]) -> str:
     return str(node.get("name") or node.get("supportNodeName") or node.get("id") or "support-node")
 
 
-def _transport_policy(policy: dict[str, Any], aliases: dict[str, str]) -> dict[str, Any]:
-    from_value = str(policy.get("fromSupportNodeName") or policy.get("from") or "")
-    to_value = str(policy.get("toSupportNodeName") or policy.get("to") or "")
+def _transport_policy(policy: dict[str, Any], aliases: dict[str, str], default_node: str = "") -> dict[str, Any]:
+    from_value = str(policy.get("fromSupportNodeName") or policy.get("fromSupportNodeId") or policy.get("from") or default_node)
+    to_value = str(policy.get("toSupportNodeName") or policy.get("toSupportNodeId") or policy.get("to") or default_node)
     return {
         "from": aliases.get(from_value, from_value),
         "to": aliases.get(to_value, to_value),
@@ -549,7 +563,7 @@ def _transport_policy(policy: dict[str, Any], aliases: dict[str, str]) -> dict[s
 
 def _support_activity(activity: dict[str, Any], aliases: dict[str, str]) -> dict[str, Any]:
     resource_id = str(activity.get("resourceId") or activity.get("supportNodeId") or "")
-    return {
+    compiled = {
         "id": str(activity.get("id") or "support-activity"),
         "name": str(activity.get("name") or activity.get("activityName") or activity.get("id") or "support activity"),
         "activity_type": str(activity.get("activityType") or activity.get("planType") or "support activity"),
@@ -558,8 +572,17 @@ def _support_activity(activity: dict[str, Any], aliases: dict[str, str]) -> dict
         "duration_minutes": _positive_int(activity.get("durationMinutes"), _positive_int(activity.get("durationHours"), 1) * 60),
         "required_personnel": _positive_int(activity.get("requiredPersonnel"), 1),
         "required_devices": _positive_int(activity.get("requiredDevices"), 1),
+        "spare_type": _optional_string(activity.get("spareType")),
+        "spare_quantity": _non_negative_int(activity.get("spareQuantity"), 0),
+        "calendarDayInterval": activity.get("calendarDayInterval"),
+        "runHourInterval": activity.get("runHourInterval"),
+        "takeoffLandingInterval": activity.get("takeoffLandingInterval"),
+        "floatRatio": activity.get("floatRatio"),
+        "transport_strategies": copy.deepcopy(_list(activity.get("transportStrategies"))),
+        "organization_strategies": copy.deepcopy(_list(activity.get("organizationStrategies"))),
         "jobs": [_support_job(job, activity) for job in _list(activity.get("jobs"))],
     }
+    return compiled
 
 
 def _support_job(job: dict[str, Any], activity: dict[str, Any]) -> dict[str, Any]:
