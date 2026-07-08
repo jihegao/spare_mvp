@@ -85,6 +85,91 @@ def load_backend_project(db_path: Path | str, project_id: str) -> dict[str, Any]
         connection.close()
 
 
+def save_project_template(
+    db_path: Path | str,
+    project: dict[str, Any],
+    *,
+    template_id: str | None = None,
+    template_name: str | None = None,
+    scenario_id: str | None = None,
+    replace: bool = False,
+) -> dict[str, Any]:
+    source_project_id = str(project.get("project_id") or project.get("projectId") or "").strip()
+    if not source_project_id:
+        raise ValueError("source Project JSON must include project_id")
+    target_project_id = str(template_id or f"{source_project_id}-template").strip()
+    if not target_project_id:
+        raise ValueError("template_id is required")
+    if target_project_id == source_project_id:
+        raise ValueError("template_id must differ from the source project_id")
+
+    template = copy.deepcopy(project)
+    original_scenario_id = str(project.get("scenarioId") or source_project_id)
+    target_scenario_id = str(scenario_id or f"{original_scenario_id}-template").strip()
+    if target_scenario_id == original_scenario_id:
+        target_scenario_id = f"{target_scenario_id}-template"
+
+    project_info = _dict(template.get("projectInfo")).copy()
+    original_name = _project_name(project) or source_project_id
+    project_info["name"] = str(template_name or f"{original_name} 模板")
+    project_info["isTemplate"] = True
+    project_info["is_template"] = True
+    project_info["sourceProjectId"] = source_project_id
+
+    template["project_id"] = target_project_id
+    template["schema_version"] = str(template.get("schema_version") or "project-v0")
+    template["project_version"] = str(template.get("project_version") or "project-v0.1")
+    template["scenarioId"] = target_scenario_id
+    template["activeModule"] = str(template.get("activeModule") or "sparePlanning")
+    template["projectInfo"] = project_info
+
+    connection = sqlite3.connect(str(db_path))
+    try:
+        existing = connection.execute(
+            "SELECT 1 FROM projects WHERE project_id = ?",
+            (target_project_id,),
+        ).fetchone()
+        if existing is not None and not replace:
+            raise ValueError(f"project template already exists: {target_project_id}")
+        connection.execute(
+            """
+            INSERT INTO projects (
+              project_id, schema_version, project_version, scenario_id,
+              active_module, payload_json, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(project_id) DO UPDATE SET
+              schema_version = excluded.schema_version,
+              project_version = excluded.project_version,
+              scenario_id = excluded.scenario_id,
+              active_module = excluded.active_module,
+              payload_json = excluded.payload_json,
+              updated_at = CURRENT_TIMESTAMP
+            """,
+            (
+                target_project_id,
+                template["schema_version"],
+                template["project_version"],
+                template.get("scenarioId"),
+                template.get("activeModule"),
+                json.dumps(template, ensure_ascii=False, sort_keys=True),
+            ),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+    return {
+        "status": "saved",
+        "project_id": target_project_id,
+        "schema_version": template["schema_version"],
+        "project_version": template["project_version"],
+        "scenario_id": template["scenarioId"],
+        "source_project_id": source_project_id,
+        "is_template": True,
+        "replaced": bool(existing),
+    }
+
+
 def remember_project_structure(
     project: dict[str, Any],
     *,
@@ -624,6 +709,14 @@ def main(argv: list[str] | None = None) -> int:
     explain_parser.add_argument("--memory", type=Path)
     explain_parser.add_argument("--output", type=Path)
 
+    save_template_parser = subparsers.add_parser("save-template")
+    save_template_parser.add_argument("--db", required=True, type=Path)
+    save_template_parser.add_argument("--project-json", required=True, type=Path)
+    save_template_parser.add_argument("--template-id", required=True)
+    save_template_parser.add_argument("--template-name")
+    save_template_parser.add_argument("--scenario-id")
+    save_template_parser.add_argument("--replace", action="store_true")
+
     run_parser = subparsers.add_parser("run")
     run_parser.add_argument("--project-json", required=True, type=Path)
     run_parser.add_argument("--repo-root", type=Path)
@@ -647,6 +740,22 @@ def main(argv: list[str] | None = None) -> int:
         project = _read_project(args.project_json)
         memory = _loads_object(args.memory.read_text(encoding="utf-8")) if args.memory else None
         _write_json(explain_project(project, memory=memory), args.output)
+        return 0
+    if args.command == "save-template":
+        project = _read_project(args.project_json)
+        try:
+            saved = save_project_template(
+                args.db,
+                project,
+                template_id=args.template_id,
+                template_name=args.template_name,
+                scenario_id=args.scenario_id,
+                replace=args.replace,
+            )
+        except (KeyError, ValueError, sqlite3.Error) as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+        _write_json(saved, None)
         return 0
     if args.command == "run":
         project = _read_project(args.project_json)

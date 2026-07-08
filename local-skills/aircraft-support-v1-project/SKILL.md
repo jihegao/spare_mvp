@@ -20,7 +20,11 @@ Use this skill for local aircraft_support_v1 analysis from Project JSON. Keep it
 3. Explain the data in this exact order: `任务`, `装备`, `保障组织`, `保障活动`.
    - Run `explain --project-json <project.json> --memory <memory.json>`.
    - Use the four domains to separate mission/task intent, aircraft/equipment structure, organization/resources, and support work definitions.
-4. Run the independent Mesa path only after the Project JSON can be explained.
+4. Save edited Project JSON back as a new Project template when the user wants to reuse it.
+   - Prefer `save-template --db <sqlite> --project-json <project.json> --template-id <new-id> --template-name <name>`.
+   - Use a new `template-id`; the command fails by default if that id already exists.
+   - Do not overwrite the source Project unless the user explicitly requests an overwrite and you use `--replace` for an existing template id.
+5. Run the independent Mesa path only after the Project JSON can be explained.
    - Run `run --project-json <project.json> --repo-root <repo-with-src-package> --duration-minutes <n> --sample-every-minutes <n> --seed <n>`.
    - This compiles Project JSON to `aircraft-support-v1-input-v0` inside the skill script and imports only the `AircraftSupportV1Model` package from the provided repo/package path.
 
@@ -33,6 +37,7 @@ python3 scripts/aircraft_support_v1_project.py list-projects --db runs/system-st
 python3 scripts/aircraft_support_v1_project.py get-project --db runs/system-start/spare_mvp.sqlite3 --project-id PROJECT_ID --output /tmp/project.json
 python3 scripts/aircraft_support_v1_project.py remember-structure --project-json /tmp/project.json --memory /tmp/schema-memory.json
 python3 scripts/aircraft_support_v1_project.py explain --project-json /tmp/project.json --memory /tmp/schema-memory.json
+python3 scripts/aircraft_support_v1_project.py save-template --db runs/system-start/spare_mvp.sqlite3 --project-json /tmp/project.json --template-id project-edited-template --template-name "编辑后案例模板"
 python3 scripts/aircraft_support_v1_project.py run --project-json /tmp/project.json --repo-root /path/to/spare_mvp --duration-minutes 120 --seed 7
 ```
 
@@ -42,6 +47,7 @@ The script exposes importable Python helpers with the same semantics:
 - `load_backend_project(db_path, project_id)`
 - `remember_project_structure(project, memory_path=..., project_source=...)`
 - `explain_project(project, memory=...)`
+- `save_project_template(db_path, project, template_id=..., template_name=..., replace=False)`
 - `compile_project_json_to_aircraft_support_inputs(project, runtime_config=...)`
 - `run_aircraft_support_v1_project(project, repo_root=..., runtime_config=...)`
 
@@ -52,6 +58,7 @@ Read `references/project-json-four-domain-map.md` when you need field-level mapp
 Guardrails:
 
 - Keep Project modeling data, runtime config, experiment plans, and simulation outputs separate.
+- Save edited files as new Project templates by setting a new `project_id` plus `projectInfo.isTemplate` / `projectInfo.is_template`; preserve `sourceProjectId` for traceability.
 - Treat `supportActivities[].jobs[]` as ordered work definitions; preserve `activityCode`/`id` and `predecessors`.
 - Treat `supportNodes`, `supportResources`, and `supportOrganization` as allocation/governance scope, not display-only metadata.
 - Treat `components`, `combatUnit.members`, and `reliabilityBlockDiagram` as equipment structure and behavior inputs.
