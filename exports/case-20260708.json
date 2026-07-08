@@ -15,7 +15,9 @@
       "successPoint": 0.75,
       "supportActivityName": "典型保障方案",
       "taskArea": "巡逻区",
-      "taskDurationMinutes": 180
+      "taskDurationMinutes": 180,
+      "missionId": "BM-CV-01",
+      "basicTaskName": "巡逻任务"
     }
   ],
   "combatUnit": {
@@ -258,6 +260,11 @@
     }
   ],
   "equipment": {
+    "model": "J-15",
+    "wholeMachineModels": [
+      "J-15",
+      "J-35"
+    ],
     "aircraftTypes": [
       {
         "id": "aircraft-type-j-15",
@@ -269,11 +276,6 @@
         "model": "J-35",
         "name": "J-35"
       }
-    ],
-    "model": "J-15",
-    "wholeMachineModels": [
-      "J-15",
-      "J-35"
     ]
   },
   "missionPhases": [
@@ -311,30 +313,23 @@
           {
             "basicMissionId": "BM-CV-01",
             "basicTaskName": "巡逻任务",
-            "dailyRepeatCount": 2,
-            "equipmentQuantity": 2,
-            "equipmentType": "J-15",
-            "firstWaveTime": "08:45",
             "groupName": "A",
-            "id": "composite-task-item-1783136470403-1",
+            "firstWaveTime": "08:45",
+            "dailyRepeatCount": 2,
             "intervalHours": 5,
-            "minRequiredSystems": 2,
-            "preparationMinutes": 50,
-            "priority": 1,
-            "recoveryTime": "11:45",
-            "taskDurationMinutes": 180
+            "equipmentType": "J-15"
           }
         ]
       }
     ],
-    "durationHours": 24,
     "id": "mission-profile-day-night",
     "name": "日夜间任务剖面",
     "periodicTasks": [
       {
-        "compositeTaskIds": [
-          "composite-day-cap"
-        ],
+        "id": "periodic-carrier-day-night",
+        "name": "三天任务",
+        "repeatWeeks": 2,
+        "cycleDays": 7,
         "compositeTasks": [
           {
             "compositeTaskId": "composite-day-cap",
@@ -352,26 +347,6 @@
             "weekday": "wednesdayCompositeTaskId"
           },
           {
-            "compositeTaskId": "",
-            "weekIndex": 1,
-            "weekday": "thursdayCompositeTaskId"
-          },
-          {
-            "compositeTaskId": "",
-            "weekIndex": 1,
-            "weekday": "fridayCompositeTaskId"
-          },
-          {
-            "compositeTaskId": "",
-            "weekIndex": 1,
-            "weekday": "saturdayCompositeTaskId"
-          },
-          {
-            "compositeTaskId": "",
-            "weekIndex": 1,
-            "weekday": "sundayCompositeTaskId"
-          },
-          {
             "compositeTaskId": "composite-day-cap",
             "weekIndex": 2,
             "weekday": "mondayCompositeTaskId"
@@ -382,11 +357,6 @@
             "weekday": "tuesdayCompositeTaskId"
           },
           {
-            "compositeTaskId": "",
-            "weekIndex": 2,
-            "weekday": "wednesdayCompositeTaskId"
-          },
-          {
             "compositeTaskId": "composite-day-cap",
             "weekIndex": 2,
             "weekday": "thursdayCompositeTaskId"
@@ -397,58 +367,14 @@
             "weekday": "fridayCompositeTaskId"
           },
           {
-            "compositeTaskId": "",
-            "weekIndex": 2,
-            "weekday": "saturdayCompositeTaskId"
-          },
-          {
             "compositeTaskId": "composite-day-cap",
             "weekIndex": 2,
             "weekday": "sundayCompositeTaskId"
           }
         ],
-        "cycleDays": 7,
-        "dailyRepeatCount": 2,
-        "experimentName": "三天任务",
-        "fridayCompositeTaskId": "composite-day-cap",
-        "id": "periodic-carrier-day-night",
-        "mondayCompositeTaskId": "composite-day-cap",
-        "name": "三天任务",
-        "parentTask": "默认任务",
-        "parentTaskName": "默认任务",
-        "periodDays": 7,
-        "periodicTaskName": "三天任务",
-        "repeatCount": 2,
-        "repeatCycleDays": 7,
-        "repeatCycleUnit": "day",
-        "repeatCycleValue": 7,
-        "repeatRounds": 2,
-        "repeatWeeks": 2,
-        "saturdayCompositeTaskId": "",
-        "sundayCompositeTaskId": "composite-day-cap",
-        "taskCategory": "periodic",
-        "taskGroupName": "默认任务",
-        "taskName": "三天任务",
-        "taskPeriodDays": 7,
-        "thursdayCompositeTaskId": "composite-day-cap",
-        "tuesdayCompositeTaskId": "composite-day-cap",
-        "wednesdayCompositeTaskId": "",
-        "weekdayAssignments": {
-          "friday": "composite-day-cap",
-          "fridayCompositeTaskId": "composite-day-cap",
-          "monday": "composite-day-cap",
-          "mondayCompositeTaskId": "composite-day-cap",
-          "saturday": "",
-          "saturdayCompositeTaskId": "",
-          "sunday": "composite-day-cap",
-          "sundayCompositeTaskId": "composite-day-cap",
-          "thursday": "composite-day-cap",
-          "thursdayCompositeTaskId": "composite-day-cap",
-          "tuesday": "composite-day-cap",
-          "tuesdayCompositeTaskId": "composite-day-cap",
-          "wednesday": "",
-          "wednesdayCompositeTaskId": ""
-        }
+        "compositeTaskIds": [
+          "composite-day-cap"
+        ]
       }
     ],
     "profileId": "MP-CV-01",
@@ -517,8 +443,6 @@
       "aircraftModel": "J-15",
       "durationHours": 3,
       "id": "corrective",
-      "maxRepairTimeMinutes": 240,
-      "meanRepairTimeMinutes": 180,
       "planType": "修复性维修方案",
       "predecessors": {
         "REP-001": [],
@@ -526,15 +450,7 @@
           "REP-001"
         ]
       },
-      "priority": 1,
-      "repairDistribution": {
-        "distributionType": "对数正态分布",
-        "params": "mu=5.1, sigma=0.35"
-      },
-      "repairTypes": [
-        "换件修复",
-        "功能复测"
-      ]
+      "priority": 1
     },
     {
       "activityCodes": [
@@ -814,29 +730,29 @@
   ],
   "supportOrganization": {
     "tree": {
+      "id": "support-org-root",
+      "name": "保障组织",
+      "description": "由导入项目保障节点生成的初始组织树",
       "children": [
         {
-          "children": [],
-          "description": "任务优先 + 备件安全库存",
           "id": "support-node-1",
-          "name": "基地"
+          "name": "基地",
+          "description": "任务优先 + 备件安全库存",
+          "children": []
         },
         {
-          "children": [],
-          "description": "前置库存 + 横向支援",
           "id": "support-node-2",
-          "name": "中继"
+          "name": "中继",
+          "description": "前置库存 + 横向支援",
+          "children": []
         },
         {
-          "children": [],
-          "description": "机场保障点",
           "id": "support-node-3",
-          "name": "基层"
+          "name": "基层",
+          "description": "机场保障点",
+          "children": []
         }
-      ],
-      "description": "由导入项目保障节点生成的初始组织树",
-      "id": "support-org-root",
-      "name": "保障组织"
+      ]
     }
   },
   "supportResources": [
@@ -905,233 +821,233 @@
       "type": "personnel"
     },
     {
-      "equipment": "J-15",
       "id": "support-resource-1-spare-1",
-      "model": "j15-engine-control",
+      "supportNodeName": "基地",
+      "type": "spare",
       "name": "发动机控制模块",
-      "quantity": 0,
-      "supportNodeName": "基地",
-      "type": "spare"
+      "model": "j15-engine-control",
+      "equipment": "J-15",
+      "quantity": 0
     },
     {
-      "equipment": "J-15",
       "id": "support-resource-1-spare-2",
-      "model": "j15-radar",
-      "name": "雷达 LRU",
-      "quantity": 0,
       "supportNodeName": "基地",
-      "type": "spare"
+      "type": "spare",
+      "name": "雷达 LRU",
+      "model": "j15-radar",
+      "equipment": "J-15",
+      "quantity": 0
     },
     {
-      "equipment": "J-15",
       "id": "support-resource-1-spare-3",
-      "model": "j15-hydraulic",
-      "name": "液压系统",
-      "quantity": 0,
       "supportNodeName": "基地",
-      "type": "spare"
+      "type": "spare",
+      "name": "液压系统",
+      "model": "j15-hydraulic",
+      "equipment": "J-15",
+      "quantity": 0
     },
     {
-      "equipment": "J-35",
       "id": "support-resource-1-spare-4",
-      "model": "j35-engine",
-      "name": "发动机",
-      "quantity": 0,
       "supportNodeName": "基地",
-      "type": "spare"
+      "type": "spare",
+      "name": "发动机",
+      "model": "j35-engine",
+      "equipment": "J-35",
+      "quantity": 0
     },
     {
-      "equipment": "J-35",
       "id": "support-resource-1-spare-5",
-      "model": "j35-avionics",
-      "name": "航电系统",
-      "quantity": 0,
       "supportNodeName": "基地",
-      "type": "spare"
+      "type": "spare",
+      "name": "航电系统",
+      "model": "j35-avionics",
+      "equipment": "J-35",
+      "quantity": 0
     },
     {
-      "equipment": "J-35",
       "id": "support-resource-1-spare-6",
-      "model": "j35-hydraulic",
-      "name": "液压系统",
-      "quantity": 0,
       "supportNodeName": "基地",
-      "type": "spare"
+      "type": "spare",
+      "name": "液压系统",
+      "model": "j35-hydraulic",
+      "equipment": "J-35",
+      "quantity": 0
     },
     {
-      "equipment": "J-15",
       "id": "support-resource-1-spare-7",
-      "model": "j-15-j15-engine-control-node-11",
-      "name": "新增子系统1",
-      "quantity": 0,
       "supportNodeName": "基地",
-      "type": "spare"
+      "type": "spare",
+      "name": "新增子系统1",
+      "model": "j-15-j15-engine-control-node-11",
+      "equipment": "J-15",
+      "quantity": 0
     },
     {
-      "equipment": "J-15",
       "id": "support-resource-2-spare-1",
-      "model": "j15-engine-control",
-      "name": "发动机控制模块",
-      "quantity": 0,
       "supportNodeName": "中继",
-      "type": "spare"
+      "type": "spare",
+      "name": "发动机控制模块",
+      "model": "j15-engine-control",
+      "equipment": "J-15",
+      "quantity": 0
     },
     {
-      "equipment": "J-15",
       "id": "support-resource-2-spare-2",
-      "model": "j15-radar",
-      "name": "雷达 LRU",
-      "quantity": 0,
       "supportNodeName": "中继",
-      "type": "spare"
+      "type": "spare",
+      "name": "雷达 LRU",
+      "model": "j15-radar",
+      "equipment": "J-15",
+      "quantity": 0
     },
     {
-      "equipment": "J-15",
       "id": "support-resource-2-spare-3",
-      "model": "j15-hydraulic",
-      "name": "液压系统",
-      "quantity": 0,
       "supportNodeName": "中继",
-      "type": "spare"
+      "type": "spare",
+      "name": "液压系统",
+      "model": "j15-hydraulic",
+      "equipment": "J-15",
+      "quantity": 0
     },
     {
-      "equipment": "J-35",
       "id": "support-resource-2-spare-4",
-      "model": "j35-engine",
-      "name": "发动机",
-      "quantity": 0,
       "supportNodeName": "中继",
-      "type": "spare"
+      "type": "spare",
+      "name": "发动机",
+      "model": "j35-engine",
+      "equipment": "J-35",
+      "quantity": 0
     },
     {
-      "equipment": "J-35",
       "id": "support-resource-2-spare-5",
-      "model": "j35-avionics",
-      "name": "航电系统",
-      "quantity": 0,
       "supportNodeName": "中继",
-      "type": "spare"
+      "type": "spare",
+      "name": "航电系统",
+      "model": "j35-avionics",
+      "equipment": "J-35",
+      "quantity": 0
     },
     {
-      "equipment": "J-35",
       "id": "support-resource-2-spare-6",
-      "model": "j35-hydraulic",
-      "name": "液压系统",
-      "quantity": 0,
       "supportNodeName": "中继",
-      "type": "spare"
+      "type": "spare",
+      "name": "液压系统",
+      "model": "j35-hydraulic",
+      "equipment": "J-35",
+      "quantity": 0
     },
     {
-      "equipment": "J-15",
       "id": "support-resource-2-spare-7",
-      "model": "j-15-j15-engine-control-node-11",
-      "name": "新增子系统1",
-      "quantity": 0,
       "supportNodeName": "中继",
-      "type": "spare"
-    },
-    {
-      "equipment": "J-15",
-      "id": "support-resource-3-spare-1",
-      "model": "j15-engine-control",
-      "name": "发动机控制模块",
-      "quantity": 1,
-      "supportNodeName": "基层",
-      "type": "spare"
-    },
-    {
-      "equipment": "J-15",
-      "id": "support-resource-1-spare-2",
-      "model": "j15-radar",
-      "name": "雷达 LRU",
-      "quantity": 0,
-      "supportNodeName": "基层",
-      "type": "spare"
-    },
-    {
-      "equipment": "J-15",
-      "id": "support-resource-3-spare-3",
-      "model": "j15-hydraulic",
-      "name": "液压系统",
-      "quantity": 1,
-      "supportNodeName": "基层",
-      "type": "spare"
-    },
-    {
-      "equipment": "J-35",
-      "id": "support-resource-3-spare-4",
-      "model": "j35-engine",
-      "name": "发动机",
-      "quantity": 1,
-      "supportNodeName": "基层",
-      "type": "spare"
-    },
-    {
-      "equipment": "J-35",
-      "id": "support-resource-3-spare-5",
-      "model": "j35-avionics",
-      "name": "航电系统",
-      "quantity": 1,
-      "supportNodeName": "基层",
-      "type": "spare"
-    },
-    {
-      "equipment": "J-35",
-      "id": "support-resource-3-spare-6",
-      "model": "j35-hydraulic",
-      "name": "液压系统",
-      "quantity": 1,
-      "supportNodeName": "基层",
-      "type": "spare"
-    },
-    {
-      "equipment": "J-15",
-      "id": "support-resource-3-spare-7",
-      "model": "j-15-j15-engine-control-node-11",
+      "type": "spare",
       "name": "新增子系统1",
-      "quantity": 0,
+      "model": "j-15-j15-engine-control-node-11",
+      "equipment": "J-15",
+      "quantity": 0
+    },
+    {
+      "id": "support-resource-3-spare-1",
       "supportNodeName": "基层",
-      "type": "spare"
+      "type": "spare",
+      "name": "发动机控制模块",
+      "model": "j15-engine-control",
+      "equipment": "J-15",
+      "quantity": 1
+    },
+    {
+      "id": "support-resource-1-spare-2",
+      "supportNodeName": "基层",
+      "type": "spare",
+      "name": "雷达 LRU",
+      "model": "j15-radar",
+      "equipment": "J-15",
+      "quantity": 0
+    },
+    {
+      "id": "support-resource-3-spare-3",
+      "supportNodeName": "基层",
+      "type": "spare",
+      "name": "液压系统",
+      "model": "j15-hydraulic",
+      "equipment": "J-15",
+      "quantity": 1
+    },
+    {
+      "id": "support-resource-3-spare-4",
+      "supportNodeName": "基层",
+      "type": "spare",
+      "name": "发动机",
+      "model": "j35-engine",
+      "equipment": "J-35",
+      "quantity": 1
+    },
+    {
+      "id": "support-resource-3-spare-5",
+      "supportNodeName": "基层",
+      "type": "spare",
+      "name": "航电系统",
+      "model": "j35-avionics",
+      "equipment": "J-35",
+      "quantity": 1
+    },
+    {
+      "id": "support-resource-3-spare-6",
+      "supportNodeName": "基层",
+      "type": "spare",
+      "name": "液压系统",
+      "model": "j35-hydraulic",
+      "equipment": "J-35",
+      "quantity": 1
+    },
+    {
+      "id": "support-resource-3-spare-7",
+      "supportNodeName": "基层",
+      "type": "spare",
+      "name": "新增子系统1",
+      "model": "j-15-j15-engine-control-node-11",
+      "equipment": "J-15",
+      "quantity": 0
     }
   ],
   "transportPolicies": [
     {
-      "capacity": 4,
-      "fromSupportNodeName": "基层",
       "id": "transport-policy-1",
-      "priority": 1,
-      "spareName": "",
+      "fromSupportNodeName": "基层",
       "toSupportNodeName": "基地",
+      "spareName": "",
+      "capacity": 4,
+      "priority": 1,
       "transportMode": "升降机转运",
       "transportTimeHours": 1
     },
     {
-      "capacity": 2,
-      "fromSupportNodeName": "基地",
       "id": "transport-policy-2",
-      "priority": 1,
-      "spareName": "",
+      "fromSupportNodeName": "基地",
       "toSupportNodeName": "中继",
+      "spareName": "",
+      "capacity": 2,
+      "priority": 1,
       "transportMode": "补给艇转运",
       "transportTimeHours": 2
     },
     {
-      "capacity": 1,
-      "fromSupportNodeName": "基地",
       "id": "transport-policy-3",
-      "priority": 2,
-      "spareName": "",
+      "fromSupportNodeName": "基地",
       "toSupportNodeName": "基层",
+      "spareName": "",
+      "capacity": 1,
+      "priority": 2,
       "transportMode": "纵向运输",
       "transportTimeHours": 24
     },
     {
-      "capacity": 1,
-      "fromSupportNodeName": "中继",
       "id": "transport-policy-4",
-      "priority": 2,
-      "spareName": "",
+      "fromSupportNodeName": "中继",
       "toSupportNodeName": "基层",
+      "spareName": "",
+      "capacity": 1,
+      "priority": 2,
       "transportMode": "横向运输",
       "transportTimeHours": 2
     }

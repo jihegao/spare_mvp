@@ -513,7 +513,7 @@ test("frontend API client createProjectFromModelingImport uses protected modelin
   assert.equal(calls[0].body, undefined);
 });
 
-test("buildBackendProjectJson syncs composite task inherited basic mission fields", () => {
+test("buildBackendProjectJson saves composite task items as mission references", () => {
   const scenario = {
     scenarioId: "sync-basic-fields",
     basicMissions: [{
@@ -546,11 +546,13 @@ test("buildBackendProjectJson syncs composite task inherited basic mission field
   const projectJson = buildBackendProjectJson(scenario, { id: "sync" });
   const syncedItem = projectJson.missionProfile.compositeTasks[0].taskItems[0];
 
+  assert.equal(syncedItem.basicMissionId, "basic-alpha");
+  assert.equal(syncedItem.basicTaskName, "Basic Alpha");
   assert.equal(syncedItem.equipmentType, "J-35");
-  assert.equal(syncedItem.taskDurationMinutes, 95);
-  assert.equal(syncedItem.equipmentQuantity, 4);
-  assert.equal(syncedItem.minRequiredSystems, 1);
-  assert.equal(syncedItem.preparationMinutes, 25);
+  assert.equal("taskDurationMinutes" in syncedItem, false);
+  assert.equal("equipmentQuantity" in syncedItem, false);
+  assert.equal("minRequiredSystems" in syncedItem, false);
+  assert.equal("preparationMinutes" in syncedItem, false);
   assert.equal(syncedItem.groupName, "Editable group");
   assert.equal(syncedItem.firstWaveTime, "08:30");
   assert.equal(scenario.missionProfile.compositeTasks[0].taskItems[0].equipmentType, "stale");
@@ -605,11 +607,115 @@ test("buildBackendProjectJson migrates legacy basicMission into basicMissions", 
   assert.equal("basicMission" in projectJson.missionProfile, false);
   assert.equal("basicMissions" in projectJson.missionProfile, false);
   assert.equal(syncedItem.equipmentType, "J-15");
-  assert.equal(syncedItem.taskDurationMinutes, 75);
-  assert.equal(syncedItem.equipmentQuantity, 2);
-  assert.equal(syncedItem.preparationMinutes, 35);
+  assert.equal("taskDurationMinutes" in syncedItem, false);
+  assert.equal("equipmentQuantity" in syncedItem, false);
+  assert.equal("preparationMinutes" in syncedItem, false);
   assert.ok("basicMission" in scenario);
   assert.ok("basicMission" in scenario.missionProfile);
+});
+
+test("buildBackendProjectJson normalizes periodic task save aliases", () => {
+  const scenario = {
+    scenarioId: "periodic-canonical-save",
+    basicMissions: [{
+      id: "basic-alpha",
+      name: "Basic Alpha",
+      equipmentType: "J-35"
+    }],
+    missionProfile: {
+      name: "周期任务",
+      durationHours: 24,
+      compositeTasks: [{
+        id: "composite-alpha",
+        taskItems: [{
+          id: "task-item-alpha",
+          basicMissionId: "basic-alpha",
+          basicTaskName: "Basic Alpha",
+          dailyRepeatCount: 2,
+          equipmentQuantity: 2,
+          equipmentType: "stale",
+          firstWaveTime: "08:00",
+          groupName: "A",
+          intervalHours: 6,
+          minRequiredSystems: 2,
+          preparationMinutes: 30,
+          priority: 1,
+          recoveryTime: "11:00",
+          taskDurationMinutes: 180
+        }]
+      }],
+      periodicTasks: [{
+        id: "periodic-alpha",
+        dailyRepeatCount: 2,
+        experimentName: "旧实验",
+        mondayCompositeTaskId: "composite-alpha",
+        name: "周期任务 A",
+        parentTask: "旧总任务",
+        parentTaskName: "旧总任务",
+        periodDays: 7,
+        periodicTaskName: "旧周期任务",
+        repeatCount: 2,
+        repeatCycleDays: 7,
+        repeatCycleUnit: "day",
+        repeatCycleValue: 7,
+        repeatRounds: 2,
+        taskCategory: "periodic",
+        taskGroupName: "旧分组",
+        taskName: "旧任务名",
+        taskPeriodDays: 7,
+        weekdayAssignments: {
+          monday: "composite-alpha",
+          tuesday: "composite-alpha"
+        }
+      }]
+    }
+  };
+
+  const projectJson = buildBackendProjectJson(scenario, { id: "periodic-canonical-save" });
+  const taskItem = projectJson.missionProfile.compositeTasks[0].taskItems[0];
+  const periodicTask = projectJson.missionProfile.periodicTasks[0];
+
+  assert.equal("durationHours" in projectJson.missionProfile, false);
+  assert.deepEqual(taskItem, {
+    basicMissionId: "basic-alpha",
+    basicTaskName: "Basic Alpha",
+    groupName: "A",
+    firstWaveTime: "08:00",
+    dailyRepeatCount: 2,
+    intervalHours: 6,
+    equipmentType: "J-35"
+  });
+  assert.equal(periodicTask.id, "periodic-alpha");
+  assert.equal(periodicTask.name, "周期任务 A");
+  assert.equal(periodicTask.repeatWeeks, 2);
+  assert.equal(periodicTask.cycleDays, 7);
+  assert.deepEqual(periodicTask.compositeTaskIds, ["composite-alpha"]);
+  assert.deepEqual(periodicTask.compositeTasks, [
+    { compositeTaskId: "composite-alpha", weekIndex: 1, weekday: "monday" },
+    { compositeTaskId: "composite-alpha", weekIndex: 1, weekday: "tuesday" },
+    { compositeTaskId: "composite-alpha", weekIndex: 2, weekday: "monday" },
+    { compositeTaskId: "composite-alpha", weekIndex: 2, weekday: "tuesday" }
+  ]);
+  for (const field of [
+    "dailyRepeatCount",
+    "experimentName",
+    "parentTask",
+    "parentTaskName",
+    "periodDays",
+    "periodicTaskName",
+    "repeatCount",
+    "repeatCycleDays",
+    "repeatCycleUnit",
+    "repeatCycleValue",
+    "repeatRounds",
+    "taskCategory",
+    "taskGroupName",
+    "taskName",
+    "taskPeriodDays",
+    "weekdayAssignments"
+  ]) {
+    assert.equal(field in periodicTask, false, `${field} should not be saved`);
+  }
 });
 
 test("buildBackendProjectJson canonicalizes support activity job predecessor references", () => {

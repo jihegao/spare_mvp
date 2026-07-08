@@ -69,8 +69,56 @@ class ProjectJsonExporterTest(unittest.TestCase):
                 "durationHours": 1,
                 "profileType": "legacy-ui",
                 "analysisRequests": {"largeSample": {"samples": 10}},
-                "compositeTasks": [{"id": "wave-a", "missionAreas": [{"id": "nested-area"}]}],
-                "periodicTasks": [{"id": "periodic-a", "mission_areas": [{"id": "nested-area"}]}],
+                "compositeTasks": [
+                    {
+                        "id": "wave-a",
+                        "missionAreas": [{"id": "nested-area"}],
+                        "taskItems": [
+                            {
+                                "id": "basic-small",
+                                "basicMissionId": "basic-small",
+                                "basicTaskName": "small sortie",
+                                "dailyRepeatCount": 2,
+                                "equipmentQuantity": 2,
+                                "equipmentType": "J-15",
+                                "firstWaveTime": "08:00",
+                                "groupName": "A",
+                                "intervalHours": 6,
+                                "minRequiredSystems": 2,
+                                "preparationMinutes": 30,
+                                "priority": 1,
+                                "recoveryTime": "11:00",
+                                "taskDurationMinutes": 180,
+                            }
+                        ],
+                    }
+                ],
+                "periodicTasks": [
+                    {
+                        "id": "periodic-a",
+                        "name": "periodic clean",
+                        "dailyRepeatCount": 2,
+                        "experimentName": "legacy experiment",
+                        "mission_areas": [{"id": "nested-area"}],
+                        "parentTask": "legacy parent",
+                        "parentTaskName": "legacy parent",
+                        "periodDays": 7,
+                        "periodicTaskName": "legacy periodic",
+                        "repeatCount": 2,
+                        "repeatCycleDays": 7,
+                        "repeatCycleUnit": "day",
+                        "repeatCycleValue": 7,
+                        "repeatRounds": 2,
+                        "taskCategory": "periodic",
+                        "taskGroupName": "legacy group",
+                        "taskName": "legacy task",
+                        "taskPeriodDays": 7,
+                        "weekdayAssignments": {
+                            "monday": "wave-a",
+                            "tuesday": "wave-a",
+                        },
+                    }
+                ],
             },
             "basicMissions": [
                 {
@@ -188,6 +236,54 @@ class ProjectJsonExporterTest(unittest.TestCase):
         self.assertNotIn("deploymentLocation", clean["combatUnit"]["members"][0])
         self.assertNotIn("profileType", clean["missionProfile"])
         self.assertNotIn("analysisRequests", clean["missionProfile"])
+        self.assertNotIn("durationHours", clean["missionProfile"])
+        task_item = clean["missionProfile"]["compositeTasks"][0]["taskItems"][0]
+        self.assertEqual(
+            task_item,
+            {
+                "basicMissionId": "basic-small",
+                "basicTaskName": "small sortie",
+                "groupName": "A",
+                "firstWaveTime": "08:00",
+                "dailyRepeatCount": 2,
+                "intervalHours": 6,
+                "equipmentType": "J-15",
+            },
+        )
+        periodic_task = clean["missionProfile"]["periodicTasks"][0]
+        self.assertEqual(periodic_task["id"], "periodic-a")
+        self.assertEqual(periodic_task["name"], "periodic clean")
+        self.assertEqual(periodic_task["repeatWeeks"], 2)
+        self.assertEqual(periodic_task["cycleDays"], 7)
+        self.assertEqual(periodic_task["compositeTaskIds"], ["wave-a"])
+        self.assertEqual(
+            periodic_task["compositeTasks"],
+            [
+                {"compositeTaskId": "wave-a", "weekIndex": 1, "weekday": "monday"},
+                {"compositeTaskId": "wave-a", "weekIndex": 1, "weekday": "tuesday"},
+                {"compositeTaskId": "wave-a", "weekIndex": 2, "weekday": "monday"},
+                {"compositeTaskId": "wave-a", "weekIndex": 2, "weekday": "tuesday"},
+            ],
+        )
+        for field in (
+            "dailyRepeatCount",
+            "experimentName",
+            "parentTask",
+            "parentTaskName",
+            "periodDays",
+            "periodicTaskName",
+            "repeatCount",
+            "repeatCycleDays",
+            "repeatCycleUnit",
+            "repeatCycleValue",
+            "repeatRounds",
+            "taskCategory",
+            "taskGroupName",
+            "taskName",
+            "taskPeriodDays",
+            "weekdayAssignments",
+        ):
+            self.assertNotIn(field, periodic_task)
         self.assertNotIn("inventory", clean["supportNodes"][0])
         self.assertNotIn("transportPolicies", clean["supportNodes"][0])
         self.assertGreaterEqual(len(clean["supportResources"]), 3)

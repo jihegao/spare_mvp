@@ -121,6 +121,103 @@ class AircraftSupportV1CleanProjectSchemaTest(unittest.TestCase):
     def test_schema_accepts_minimal_clean_project(self) -> None:
         self.assertEqual(self._schema_errors(self._clean_project()), [])
 
+    def test_schema_accepts_canonical_mission_profile_tasks(self) -> None:
+        project = self._clean_project()
+        project["missionProfile"].pop("durationHours", None)
+        project["missionProfile"]["compositeTasks"] = [
+            {
+                "id": "composite-day",
+                "name": "day mission",
+                "taskItems": [
+                    {
+                        "basicMissionId": "basic-small",
+                        "basicTaskName": "small sortie",
+                        "groupName": "A",
+                        "firstWaveTime": "08:00",
+                        "dailyRepeatCount": 2,
+                        "intervalHours": 6,
+                        "equipmentType": "J-15",
+                    }
+                ],
+            }
+        ]
+        project["missionProfile"]["periodicTasks"] = [
+            {
+                "id": "periodic-a",
+                "name": "weekly mission",
+                "repeatWeeks": 2,
+                "cycleDays": 7,
+                "compositeTaskIds": ["composite-day"],
+                "compositeTasks": [
+                    {"compositeTaskId": "composite-day", "weekIndex": 1, "weekday": "monday"},
+                ],
+            }
+        ]
+
+        self.assertEqual(self._schema_errors(project), [])
+
+    def test_schema_rejects_legacy_mission_profile_task_fields(self) -> None:
+        for field in (
+            "id",
+            "equipmentQuantity",
+            "minRequiredSystems",
+            "preparationMinutes",
+            "priority",
+            "recoveryTime",
+            "taskDurationMinutes",
+        ):
+            with self.subTest(field=field, path="missionProfile.compositeTasks.taskItems"):
+                project = self._clean_project()
+                project["missionProfile"]["compositeTasks"] = [
+                    {
+                        "id": "composite-day",
+                        "taskItems": [
+                            {
+                                "basicMissionId": "basic-small",
+                                "basicTaskName": "small sortie",
+                                field: "legacy",
+                            }
+                        ],
+                    }
+                ]
+                self.assertTrue(self._schema_errors(project))
+
+        for field in (
+            "dailyRepeatCount",
+            "experimentName",
+            "fridayCompositeTaskId",
+            "mondayCompositeTaskId",
+            "parentTask",
+            "parentTaskName",
+            "periodDays",
+            "periodicTaskName",
+            "repeatCount",
+            "repeatCycleDays",
+            "repeatCycleUnit",
+            "repeatCycleValue",
+            "repeatRounds",
+            "saturdayCompositeTaskId",
+            "sundayCompositeTaskId",
+            "taskCategory",
+            "taskGroupName",
+            "taskName",
+            "taskPeriodDays",
+            "thursdayCompositeTaskId",
+            "tuesdayCompositeTaskId",
+            "wednesdayCompositeTaskId",
+            "weekdayAssignments",
+        ):
+            with self.subTest(field=field, path="missionProfile.periodicTasks"):
+                project = self._clean_project()
+                project["missionProfile"]["periodicTasks"] = [{"id": "periodic-a", field: "legacy"}]
+                self.assertTrue(self._schema_errors(project))
+
+    def test_schema_rejects_duration_hours_when_periodic_duration_exists(self) -> None:
+        project = self._clean_project()
+        project["missionProfile"]["periodicTasks"] = [{"id": "periodic-a", "repeatWeeks": 2, "cycleDays": 7}]
+
+        self.assertTrue(self._schema_errors(project))
+
     def test_schema_rejects_polluting_roots(self) -> None:
         for field in (
             "uiState",

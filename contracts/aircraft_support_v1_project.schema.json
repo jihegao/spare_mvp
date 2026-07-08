@@ -71,6 +71,24 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["name"],
+      "allOf": [
+        {
+          "if": {
+            "required": ["periodicTasks"],
+            "properties": {
+              "periodicTasks": {
+                "contains": {
+                  "anyOf": [
+                    { "required": ["repeatWeeks"] },
+                    { "required": ["cycleDays"] }
+                  ]
+                }
+              }
+            }
+          },
+          "then": { "not": { "required": ["durationHours"] } }
+        }
+      ],
       "properties": {
         "id": { "type": "string" },
         "profileId": { "type": "string" },
@@ -79,8 +97,52 @@
         "durationHours": { "type": "number", "minimum": 0 },
         "durationMinutes": { "type": "integer", "minimum": 1 },
         "combatUnit": { "$ref": "#/$defs/combatUnit" },
-        "compositeTasks": { "type": "array", "items": { "$ref": "#/$defs/openModelObject" } },
-        "periodicTasks": { "type": "array", "items": { "$ref": "#/$defs/openModelObject" } }
+        "compositeTasks": { "type": "array", "items": { "$ref": "#/$defs/compositeTask" } },
+        "periodicTasks": { "type": "array", "items": { "$ref": "#/$defs/periodicTask" } }
+      }
+    },
+    "compositeTask": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "taskItems": { "type": "array", "items": { "$ref": "#/$defs/compositeTaskItem" } }
+      },
+      "not": { "$ref": "#/$defs/pollutionKeys" }
+    },
+    "compositeTaskItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "basicMissionId": { "type": "string" },
+        "basicTaskName": { "type": "string" },
+        "groupName": { "type": "string" },
+        "firstWaveTime": { "type": "string" },
+        "dailyRepeatCount": { "type": "integer", "minimum": 0 },
+        "intervalHours": { "type": "number", "minimum": 0 },
+        "equipmentType": { "type": "string" }
+      }
+    },
+    "periodicTask": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "repeatWeeks": { "type": "number", "minimum": 0 },
+        "cycleDays": { "type": "number", "minimum": 0 },
+        "compositeTasks": { "type": "array", "items": { "$ref": "#/$defs/periodicCompositeTask" } },
+        "compositeTaskIds": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "periodicCompositeTask": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "compositeTaskId": { "type": "string" },
+        "week": { "type": ["string", "integer"] },
+        "weekIndex": { "type": ["string", "integer"] },
+        "weekday": { "type": ["string", "integer"] },
+        "dayOfWeek": { "type": ["string", "integer"] }
       }
     },
     "basicMission": {

@@ -549,11 +549,7 @@
                 "equipmentType": "J-15",
                 "firstWaveTime": "08:00",
                 "groupName": "昼间制空编队",
-                "id": "day-cap-main",
-                "intervalHours": 6,
-                "priority": 1,
-                "recoveryTime": "11:00",
-                "taskDispatchTime": "07:15"
+                "intervalHours": 6
               }
             ]
           },
@@ -568,11 +564,7 @@
                 "equipmentType": "J-35",
                 "firstWaveTime": "20:15",
                 "groupName": "夜间警戒编队",
-                "id": "night-alert-main",
-                "intervalHours": 8,
-                "priority": 2,
-                "recoveryTime": "23:30",
-                "taskDispatchTime": "19:30"
+                "intervalHours": 8
               }
             ]
           }
@@ -629,28 +621,10 @@
                 "week": "4"
               }
             ],
-            "cycleDays": 7,
-            "dailyRepeatCount": 2,
+            "cycleDays": 7.0,
             "id": "periodic-carrier-day-night",
             "name": "航母昼夜保障周期任务",
-            "periodDays": 7,
-            "repeatCount": 2,
-            "repeatCycleDays": 7,
-            "repeatCycleUnit": "day",
-            "repeatCycleValue": 7,
-            "repeatRounds": 2,
-            "repeatWeeks": 2,
-            "taskName": "航母昼夜保障周期任务",
-            "taskPeriodDays": 7,
-            "weekdayAssignments": {
-              "friday": "composite-day-cap",
-              "monday": "composite-day-cap",
-              "saturday": "composite-night-alert",
-              "sunday": "composite-day-cap",
-              "thursday": "composite-day-cap",
-              "tuesday": "composite-day-cap",
-              "wednesday": "composite-night-alert"
-            }
+            "repeatWeeks": 2.0
           }
         ],
         "profile_id": "MP-CV-01"
@@ -1749,11 +1723,7 @@
                   "equipmentType": "J-15",
                   "firstWaveTime": "08:00",
                   "groupName": "昼间制空编队",
-                  "id": "day-cap-main",
-                  "intervalHours": 6,
-                  "priority": 1,
-                  "recoveryTime": "11:00",
-                  "taskDispatchTime": "07:15"
+                  "intervalHours": 6
                 }
               ]
             },
@@ -1768,16 +1738,11 @@
                   "equipmentType": "J-35",
                   "firstWaveTime": "20:15",
                   "groupName": "夜间警戒编队",
-                  "id": "night-alert-main",
-                  "intervalHours": 8,
-                  "priority": 2,
-                  "recoveryTime": "23:30",
-                  "taskDispatchTime": "19:30"
+                  "intervalHours": 8
                 }
               ]
             }
           ],
-          "durationHours": 24,
           "id": "mission-profile-day-night",
           "name": "舰载机昼夜混合出动任务剖面",
           "periodicTasks": [
@@ -1804,28 +1769,10 @@
                   "week": "4"
                 }
               ],
-              "cycleDays": 7,
-              "dailyRepeatCount": 2,
+              "cycleDays": 7.0,
               "id": "periodic-carrier-day-night",
               "name": "航母昼夜保障周期任务",
-              "periodDays": 7,
-              "repeatCount": 2,
-              "repeatCycleDays": 7,
-              "repeatCycleUnit": "day",
-              "repeatCycleValue": 7,
-              "repeatRounds": 2,
-              "repeatWeeks": 2,
-              "taskName": "航母昼夜保障周期任务",
-              "taskPeriodDays": 7,
-              "weekdayAssignments": {
-                "friday": "composite-day-cap",
-                "monday": "composite-day-cap",
-                "saturday": "composite-night-alert",
-                "sunday": "composite-day-cap",
-                "thursday": "composite-day-cap",
-                "tuesday": "composite-day-cap",
-                "wednesday": "composite-night-alert"
-              }
+              "repeatWeeks": 2.0
             }
           ],
           "profileId": "MP-CV-01",
@@ -2998,11 +2945,7 @@
                 "equipmentType": "J-15",
                 "firstWaveTime": "08:00",
                 "groupName": "昼间制空编队",
-                "id": "day-cap-main",
-                "intervalHours": 6,
-                "priority": 1,
-                "recoveryTime": "11:00",
-                "taskDispatchTime": "07:15"
+                "intervalHours": 6
               }
             ]
           },
@@ -3017,16 +2960,11 @@
                 "equipmentType": "J-35",
                 "firstWaveTime": "20:15",
                 "groupName": "夜间警戒编队",
-                "id": "night-alert-main",
-                "intervalHours": 8,
-                "priority": 2,
-                "recoveryTime": "23:30",
-                "taskDispatchTime": "19:30"
+                "intervalHours": 8
               }
             ]
           }
         ],
-        "durationHours": 24,
         "id": "mission-profile-day-night",
         "name": "舰载机昼夜混合出动任务剖面",
         "periodicTasks": [
@@ -3053,28 +2991,10 @@
                 "week": "4"
               }
             ],
-            "cycleDays": 7,
-            "dailyRepeatCount": 2,
+            "cycleDays": 7.0,
             "id": "periodic-carrier-day-night",
             "name": "航母昼夜保障周期任务",
-            "periodDays": 7,
-            "repeatCount": 2,
-            "repeatCycleDays": 7,
-            "repeatCycleUnit": "day",
-            "repeatCycleValue": 7,
-            "repeatRounds": 2,
-            "repeatWeeks": 2,
-            "taskName": "航母昼夜保障周期任务",
-            "taskPeriodDays": 7,
-            "weekdayAssignments": {
-              "friday": "composite-day-cap",
-              "monday": "composite-day-cap",
-              "saturday": "composite-night-alert",
-              "sunday": "composite-day-cap",
-              "thursday": "composite-day-cap",
-              "tuesday": "composite-day-cap",
-              "wednesday": "composite-night-alert"
-            }
+            "repeatWeeks": 2.0
           }
         ],
         "profileId": "MP-CV-01",
@@ -4260,11 +4180,7 @@
               "equipmentType": "J-15",
               "firstWaveTime": "08:00",
               "groupName": "昼间制空编队",
-              "id": "day-cap-main",
-              "intervalHours": 6,
-              "priority": 1,
-              "recoveryTime": "11:00",
-              "taskDispatchTime": "07:15"
+              "intervalHours": 6
             }
           ]
         },
@@ -4279,16 +4195,11 @@
               "equipmentType": "J-35",
               "firstWaveTime": "20:15",
               "groupName": "夜间警戒编队",
-              "id": "night-alert-main",
-              "intervalHours": 8,
-              "priority": 2,
-              "recoveryTime": "23:30",
-              "taskDispatchTime": "19:30"
+              "intervalHours": 8
             }
           ]
         }
       ],
-      "durationHours": 24,
       "id": "mission-profile-day-night",
       "name": "舰载机昼夜混合出动任务剖面",
       "periodicTasks": [
@@ -4315,28 +4226,10 @@
               "week": "4"
             }
           ],
-          "cycleDays": 7,
-          "dailyRepeatCount": 2,
+          "cycleDays": 7.0,
           "id": "periodic-carrier-day-night",
           "name": "航母昼夜保障周期任务",
-          "periodDays": 7,
-          "repeatCount": 2,
-          "repeatCycleDays": 7,
-          "repeatCycleUnit": "day",
-          "repeatCycleValue": 7,
-          "repeatRounds": 2,
-          "repeatWeeks": 2,
-          "taskName": "航母昼夜保障周期任务",
-          "taskPeriodDays": 7,
-          "weekdayAssignments": {
-            "friday": "composite-day-cap",
-            "monday": "composite-day-cap",
-            "saturday": "composite-night-alert",
-            "sunday": "composite-day-cap",
-            "thursday": "composite-day-cap",
-            "tuesday": "composite-day-cap",
-            "wednesday": "composite-night-alert"
-          }
+          "repeatWeeks": 2.0
         }
       ],
       "profileId": "MP-CV-01",
