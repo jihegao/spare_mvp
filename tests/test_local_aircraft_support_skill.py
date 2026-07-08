@@ -168,7 +168,7 @@ class AircraftSupportV1ProjectSkillTest(unittest.TestCase):
         inputs = skill.compile_project_json_to_aircraft_support_inputs(project)
 
         compiled_activity = inputs["support_activities"]["activities"][0]
-        self.assertEqual(compiled_activity["spare_type"], "hydraulic-pump")
+        self.assertNotIn("spare_type", compiled_activity)
         self.assertEqual(compiled_activity["spare_quantity"], 2)
         self.assertEqual(compiled_activity["calendarDayInterval"], 7)
         self.assertEqual(compiled_activity["runHourInterval"], 12)
@@ -183,7 +183,6 @@ class AircraftSupportV1ProjectSkillTest(unittest.TestCase):
         skill = _load_skill_module()
         project = self._project()
         activity = project["supportActivities"][0]
-        activity["spareType"] = "hydraulic-pump"
         activity.pop("spareQuantity", None)
 
         missing_quantity_inputs = skill.compile_project_json_to_aircraft_support_inputs(project)
@@ -241,7 +240,6 @@ class AircraftSupportV1ProjectSkillTest(unittest.TestCase):
         project["basicMissions"][0]["missionAreas"] = [{"id": "nested-basic-area"}]
         project["missionProfile"]["compositeTasks"] = [{"id": "composite-a", "mission_areas": [{"id": "nested-composite-area"}]}]
         project["supportActivityJobs"][0]["missionAreas"] = [{"id": "nested-job-area"}]
-        project["reliabilityBlockDiagram"]["nodes"][0]["mission_areas"] = [{"id": "nested-rbd-area"}]
         project["supportActivities"][0]["transportStrategies"] = [{"missionAreas": [{"id": "nested-strategy-area"}]}]
 
         inputs = skill.compile_project_json_to_aircraft_support_inputs(
@@ -255,6 +253,7 @@ class AircraftSupportV1ProjectSkillTest(unittest.TestCase):
         serialized_inputs = json.dumps(inputs, ensure_ascii=False)
         self.assertNotIn("missionAreas", serialized_inputs)
         self.assertNotIn("mission_areas", serialized_inputs)
+        self.assertNotIn("reliability_block_diagram", inputs)
         self.assertEqual(inputs["aircraft"]["fleet_count"], 1)
         self.assertEqual(inputs["support_activities"]["activities"][0]["jobs"][0]["activityCode"], "job-1")
 

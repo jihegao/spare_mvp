@@ -23,12 +23,8 @@ BEHAVIOR_DRIVING_FIELDS = [
     "missionPhases",
     "airports",
     "components[].aircraftModel",
-    "components[].failureRate",
     "components[].failureDistribution",
     "components[].kOutOfN",
-    "components[].lifeLimitHours",
-    "components[].rms",
-    "reliabilityBlockDiagram",
     "components[].specialRepairProfile",
     "supportResources[].quantity",
     "supportResources[].type",
@@ -186,7 +182,6 @@ class AircraftSupportV1Model:
         self.total_transport_delay = 0
         self.lru_failures = 0
         self.in_flight_failures = 0
-        self.rbd_root_failures = 0
         self.spare_consumed_total = 0
         self.shortage_events = 0
         self.transport_replenishment_events = 0
@@ -302,7 +297,6 @@ class AircraftSupportV1Model:
             "stop_reason": self.stop_reason,
             "stop_conditions_met": list(self.stop_conditions_met),
             "in_flight_failures": self.in_flight_failures,
-            "rbd_root_failures": self.rbd_root_failures,
             "mean_launch_time": avg_delay,
             "mean_recovery_time": self._mean_recovery_time(),
             "mean_turnaround_time": avg_delay + self._mean_recovery_time(),
@@ -490,20 +484,18 @@ class AircraftSupportV1Model:
     def _behavior_components(self) -> list[dict[str, Any]]:
         components = []
         for item in self.equipment_tree_components:
-            rate = _non_negative_float(item.get("failure_rate"), 0.0)
             if item.get("parent_id") in (None, ""):
                 continue
             component = copy.deepcopy(item)
             component["quantity"] = max(1, int(component.get("quantity") or 1))
             component["root_component_id"] = self.inputs.get("equipment_tree", {}).get("root_component_id")
-            effective_rate = self._effective_component_failure_rate(component, rate)
+            effective_rate = self._effective_component_failure_rate(component)
             effective_rate *= max(1.0, math.sqrt(float(component["quantity"])))
             if effective_rate <= 0:
                 continue
             component["failure_rate"] = effective_rate
             component["repair_duration_minutes"] = self._component_repair_duration_minutes(component)
             components.append(component)
-        components.extend(self._rbd_components())
         return components
 
     def _equipment_tree_components(self) -> list[dict[str, Any]]:
@@ -523,84 +515,24 @@ class AircraftSupportV1Model:
             components.append(component)
         return components
 
-    def _effective_component_failure_rate(self, component: dict[str, Any], fallback_rate: float) -> float:
+    def _effective_component_failure_rate(self, component: dict[str, Any]) -> float:
         distribution = component.get("failure_distribution")
-        rate = fallback_rate
-        if isinstance(distribution, dict):
-            parsed_rate = _failure_distribution_rate(distribution)
-            if parsed_rate is not None:
-                rate = parsed_rate
+        rate = _failure_distribution_rate(distribution) if isinstance(distribution, dict) else None
+        if rate is None:
+            rate = 0.0
         k_out = component.get("k_out_of_n") if isinstance(component.get("k_out_of_n"), dict) else {}
         if k_out.get("enabled"):
             k = max(1, int(k_out.get("k") or 1))
             n = max(k, int(k_out.get("n") or k))
             tolerated_failures = max(0, n - k)
             rate = rate / max(1, tolerated_failures + 1)
-        rms = component.get("rms") if isinstance(component.get("rms"), dict) else {}
-        reliability = _bounded_float(rms.get("reliability"))
-        if reliability is not None:
-            rate *= max(0.05, 1.0 - reliability)
         return max(0.0, rate)
 
     def _component_repair_duration_minutes(self, component: dict[str, Any]) -> int | None:
         profile = component.get("special_repair_profile") if isinstance(component.get("special_repair_profile"), dict) else {}
         if profile.get("repairTimeMinutes"):
             return max(1, int(profile["repairTimeMinutes"]))
-        rms = component.get("rms") if isinstance(component.get("rms"), dict) else {}
-        mttr = _non_negative_float(rms.get("mttrHours"), 0.0)
-        mldt = _non_negative_float(rms.get("mldtHours"), 0.0)
-        if mttr or mldt:
-            return max(1, int(round((mttr + mldt) * 60)))
         return None
-
-    def _rbd_components(self) -> list[dict[str, Any]]:
-        diagram = self.inputs.get("reliability_block_diagram") if isinstance(self.inputs.get("reliability_block_diagram"), dict) else {}
-        incoming_edges = {
-            str(edge.get("to")): edge
-            for edge in diagram.get("edges") or []
-            if isinstance(edge, dict) and edge.get("to") not in (None, "")
-        }
-        children_by_parent: dict[str, list[dict[str, Any]]] = {}
-        for node in diagram.get("nodes") or []:
-            if isinstance(node, dict) and node.get("parentId") not in (None, ""):
-                children_by_parent.setdefault(str(node["parentId"]), []).append(node)
-        components = []
-        for node in diagram.get("nodes") or []:
-            if not isinstance(node, dict):
-                continue
-            node_id = str(node.get("id") or len(components) + 1)
-            rate = _non_negative_float(node.get("failureRate"), 0.0)
-            mtbf = _non_negative_float(node.get("mtbfHours"), 0.0)
-            if rate <= 0 and mtbf > 0:
-                rate = 1.0 / mtbf
-            if rate <= 0:
-                continue
-            edge = incoming_edges.get(node_id) if node_id else None
-            edge_type = str(edge.get("type") if isinstance(edge, dict) else "").lower()
-            edge_weight = _non_negative_float(edge.get("weight") if isinstance(edge, dict) else None, 1.0)
-            parent_id = str(node.get("parentId") or "")
-            sibling_count = len(children_by_parent.get(parent_id, [])) if parent_id else 1
-            connection = f"{node.get('connectionType') or ''} {edge_type}".lower()
-            if "并" in connection or "parallel" in connection or "备用" in connection:
-                rate *= 0.5
-            if parent_id and sibling_count > 1:
-                rate /= math.sqrt(float(sibling_count))
-            rate *= edge_weight if edge_weight > 0 else 1.0
-            components.append(
-                {
-                    "id": f"rbd:{node_id}",
-                    "name": str(node.get("name") or node_id or "rbd node"),
-                    "failure_rate": rate,
-                    "parent_id": f"rbd:{parent_id}" if parent_id else "",
-                    "spare_type": "",
-                    "special_repair_profile": {},
-                    "repair_duration_minutes": None,
-                    "quantity": 1,
-                    "root_component_id": parent_id or node_id,
-                    "rbd_root": parent_id == "",
-                }
-            )
-        return components
 
     def _initialize_aircraft_lru_failure_timers(self) -> None:
         for aircraft in self.aircraft:
@@ -611,16 +543,10 @@ class AircraftSupportV1Model:
 
     def _sample_lru_failure_minutes(self, component: dict[str, Any]) -> float:
         hourly_rate = _non_negative_float(component.get("failure_rate"), 0.0)
-        life_limit = component.get("life_limit_hours")
-        life_limit_minutes = math.inf
-        if isinstance(life_limit, (int, float)) and life_limit > 0:
-            life_limit_minutes = float(life_limit) * 60.0
         samples: list[float] = []
         quantity = max(1, int(component.get("quantity") or 1))
         if hourly_rate > 0:
             samples.extend(self.rng.expovariate(hourly_rate) * 60.0 for _ in range(quantity))
-        if math.isfinite(life_limit_minutes):
-            samples.append(life_limit_minutes)
         return min(samples) if samples else math.inf
 
     def _build_support_nodes(self) -> dict[str, dict[str, Any]]:
@@ -1119,8 +1045,6 @@ class AircraftSupportV1Model:
                     if self._aircraft_failure_tree_root_failed(aircraft):
                         aircraft.failed_component_id = component_id
                         aircraft.failed_component_minute = self.minute
-                        if component.get("rbd_root"):
-                            self.rbd_root_failures += 1
                         self.failure_delay_events += 1
                         aircraft.in_flight_failure = True
                         self.in_flight_failures += 1
@@ -1293,13 +1217,13 @@ class AircraftSupportV1Model:
             task.setdefault("durationMinutes", activity.get("duration_minutes") or 30)
             task.setdefault("requiredPersonnel", activity.get("required_personnel") or 1)
             task.setdefault("requiredDevices", activity.get("required_devices") or 1)
-            if activity.get("spare_type") and activity.get("spare_quantity") and not task.get("spare"):
-                task["spare"] = f"{activity['spare_type']},{activity['spare_quantity']}"
         if kind == "repair" and component is not None:
             if component.get("repair_duration_minutes"):
                 tasks[-1]["durationMinutes"] = max(1, int(component["repair_duration_minutes"]))
-            if component.get("spare_type"):
-                tasks[-1]["spare"] = f"{component['spare_type']},1"
+            if str(component.get("product_type") or "").strip().upper() == "LRU":
+                spare_name = str(component.get("name") or "").strip()
+                if spare_name:
+                    tasks[-1]["spare"] = f"{spare_name},1"
         self.jobs.append(
             JobState(
                 job_id=f"job-{self._job_sequence:04d}",
@@ -1353,12 +1277,6 @@ class AircraftSupportV1Model:
                         quantity = max(1, int(part))
                         break
                 return parts[0], quantity
-        if job.kind == "repair":
-            activity = next((item for item in self.activities if str(item.get("id")) == job.activity_id), {})
-            spare_type = activity.get("spare_type")
-            spare_quantity = int(activity.get("spare_quantity") or 0)
-            if spare_type and spare_quantity > 0:
-                return str(spare_type), spare_quantity
         return None, 0
 
     def _consume_task_spare(self, job: JobState, task: dict[str, Any]) -> None:
@@ -1512,7 +1430,7 @@ class AircraftSupportV1Model:
                 {
                     "id": failed_id,
                     "name": str(failed_component.get("name") or failed_id),
-                    "parent_id": equipment_root_id if failed_component.get("rbd_root") else str(failed_component.get("parent_id") or equipment_root_id),
+                    "parent_id": str(failed_component.get("parent_id") or equipment_root_id),
                     "aircraft_model": item.aircraft_type,
                     "product_type": str(failed_component.get("product_type") or "LRU"),
                     "quantity": max(1, int(failed_component.get("quantity") or 1)),

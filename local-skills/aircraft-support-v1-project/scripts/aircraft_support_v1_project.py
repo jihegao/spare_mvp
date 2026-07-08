@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import copy
 import json
+import math
 from pathlib import Path
 import sqlite3
 import sys
@@ -254,7 +255,6 @@ def compile_project_json_to_aircraft_support_inputs(
         },
         "support_network": {"nodes": support_nodes},
         "support_activities": {"activities": activities},
-        "reliability_block_diagram": _runtime_copy(_dict(project.get("reliabilityBlockDiagram"))),
         "time": {
             "duration_minutes": duration_minutes,
             "tick_minutes": 1,
@@ -397,10 +397,10 @@ def _explain_equipment(project: dict[str, Any], memory: dict[str, Any]) -> dict[
                 "name": component.get("name"),
                 "parent_id": component.get("parentId"),
                 "aircraft_model": component.get("aircraftModel"),
-                "failure_rate": component.get("failureRate"),
+                "failure_distribution": component.get("failureDistribution"),
             }
         )
-    return {"row_count": len(rows), "tables": _memory_tables(memory, ("combatUnit.members", "components", "reliabilityBlockDiagram.nodes", "reliabilityBlockDiagram.edges")), "rows": rows}
+    return {"row_count": len(rows), "tables": _memory_tables(memory, ("combatUnit.members", "components")), "rows": rows}
 
 
 def _explain_support_organization(project: dict[str, Any], memory: dict[str, Any]) -> dict[str, Any]:
@@ -588,7 +588,6 @@ def _support_activity(
         "duration_minutes": _positive_int(activity.get("durationMinutes"), _positive_int(activity.get("durationHours"), 1) * 60),
         "required_personnel": _positive_int(activity.get("requiredPersonnel"), 1),
         "required_devices": _positive_int(activity.get("requiredDevices"), 1),
-        "spare_type": _optional_string(activity.get("spareType")),
         "spare_quantity": _non_negative_int(activity.get("spareQuantity"), 0),
         "calendarDayInterval": activity.get("calendarDayInterval"),
         "runHourInterval": activity.get("runHourInterval"),
@@ -634,6 +633,7 @@ def _support_job(job: dict[str, Any], activity: dict[str, Any]) -> dict[str, Any
 
 
 def _component(component: dict[str, Any]) -> dict[str, Any]:
+    failure_distribution = copy.deepcopy(_dict(component.get("failureDistribution")))
     return {
         "id": str(component.get("id") or "component"),
         "name": str(component.get("name") or component.get("id") or "component"),
@@ -641,15 +641,52 @@ def _component(component: dict[str, Any]) -> dict[str, Any]:
         "aircraft_model": _optional_string(component.get("aircraftModel")),
         "product_type": _optional_string(component.get("productType")),
         "quantity": _positive_int(component.get("quantity"), 1),
-        "failure_rate": _non_negative_float(component.get("failureRate"), 0.0),
-        "failure_distribution": copy.deepcopy(_dict(component.get("failureDistribution"))),
+        "failure_rate": _component_failure_rate(failure_distribution),
+        "failure_distribution": failure_distribution,
         "k_out_of_n": copy.deepcopy(_dict(component.get("kOutOfN"))),
-        "life_limit_hours": _optional_positive_number(component.get("lifeLimitHours")),
-        "mtbf_hours": _optional_positive_number(component.get("mtbfHours")),
-        "rms": copy.deepcopy(_dict(component.get("rms"))),
-        "spare_type": _optional_string(component.get("spareType")),
         "special_repair_profile": copy.deepcopy(_dict(component.get("specialRepairProfile"))),
     }
+
+
+def _component_failure_rate(distribution: dict[str, Any]) -> float:
+    parameters = distribution.get("parameters") or distribution.get("params")
+    multiplier = _non_negative_float(distribution.get("_rate_multiplier"), 1.0)
+    if isinstance(parameters, (int, float)) and not isinstance(parameters, bool):
+        return max(0.0, float(parameters)) * multiplier
+    if not isinstance(parameters, str):
+        return 0.0
+    values = _distribution_parameters(parameters)
+    distribution_type = str(distribution.get("distributionType") or distribution.get("distribution_type") or "").lower()
+    if "lambda" in values or "λ" in values or "rate" in values or "failure_rate" in values:
+        return (
+            values.get("lambda")
+            or values.get("λ")
+            or values.get("rate")
+            or values.get("failure_rate")
+            or 0.0
+        ) * multiplier
+    if "weibull" in distribution_type or "威布尔" in distribution_type:
+        beta = values.get("beta") or values.get("shape") or 1.0
+        eta = values.get("eta") or values.get("scale") or values.get("mean")
+        if eta and eta > 0:
+            mean_time = eta * math.gamma(1.0 + 1.0 / max(beta, 0.001))
+            return (1.0 / mean_time) * multiplier
+    if "normal" in distribution_type or "正态" in distribution_type:
+        mean = values.get("mean") or values.get("mu")
+        if mean and mean > 0:
+            return (1.0 / mean) * multiplier
+    return 0.0
+
+
+def _distribution_parameters(parameters: str) -> dict[str, float]:
+    text = parameters.replace("，", ",").replace("；", ",").replace(";", ",")
+    values: dict[str, float] = {}
+    for item in text.split(","):
+        if "=" not in item:
+            continue
+        key, value = [part.strip().lower() for part in item.split("=", 1)]
+        values[key] = _non_negative_float(value, 0.0)
+    return values
 
 
 def _runtime_copy(value: Any) -> Any:

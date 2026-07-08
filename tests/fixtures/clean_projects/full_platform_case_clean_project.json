@@ -90,14 +90,12 @@
   },
   "components": [
     {
-      "failureRate": 0.0016666666666666668,
       "id": "aircraft-root",
       "kOutOfN": {
         "enabled": true,
         "k": 6,
         "n": 6
       },
-      "mtbfHours": 600.0,
       "name": "舰载机",
       "quantity": 6
     },
@@ -107,25 +105,18 @@
         "distributionType": "指数分布",
         "parameters": "lambda=0.055"
       },
-      "failureRate": 0.055,
       "id": "j15-engine",
       "kOutOfN": {
         "enabled": true,
         "k": 1,
         "n": 2
       },
-      "lifeLimitHours": 240,
-      "mtbfHours": 95.0,
       "name": "发动机",
       "parentId": "aircraft-root",
       "productType": "LRU",
       "quantity": 2,
-      "rms": {},
-      "spareType": "发动机备件",
       "specialRepairProfile": {
-        "repairRatio": 0.4,
-        "repairTimeMinutes": 220,
-        "replacementRatio": 0.6
+        "repairTimeMinutes": 220
       }
     },
     {
@@ -134,25 +125,18 @@
         "distributionType": "指数分布",
         "parameters": "lambda=0.04"
       },
-      "failureRate": 0.04,
       "id": "j15-engine-control",
       "kOutOfN": {
         "enabled": false,
         "k": 1,
         "n": 1
       },
-      "lifeLimitHours": 260,
-      "mtbfHours": 120.0,
       "name": "发动机控制模块",
       "parentId": "j15-engine",
       "productType": "SRU",
       "quantity": 1,
-      "rms": {},
-      "spareType": "发动机备件",
       "specialRepairProfile": {
-        "repairRatio": 0.45,
-        "repairTimeMinutes": 160,
-        "replacementRatio": 0.55
+        "repairTimeMinutes": 160
       }
     },
     {
@@ -161,25 +145,18 @@
         "distributionType": "正态分布",
         "parameters": "mean=125, sigma=14"
       },
-      "failureRate": 0.04,
       "id": "j15-avionics",
       "kOutOfN": {
         "enabled": true,
         "k": 1,
         "n": 2
       },
-      "lifeLimitHours": 280,
-      "mtbfHours": 125.0,
       "name": "航电系统",
       "parentId": "aircraft-root",
       "productType": "LRU",
       "quantity": 2,
-      "rms": {},
-      "spareType": "航电模块",
       "specialRepairProfile": {
-        "repairRatio": 0.55,
-        "repairTimeMinutes": 150,
-        "replacementRatio": 0.45
+        "repairTimeMinutes": 150
       }
     },
     {
@@ -188,25 +165,18 @@
         "distributionType": "正态分布",
         "parameters": "mean=135, sigma=15"
       },
-      "failureRate": 0.035,
       "id": "j15-radar",
       "kOutOfN": {
         "enabled": false,
         "k": 1,
         "n": 1
       },
-      "lifeLimitHours": 300,
-      "mtbfHours": 135.0,
       "name": "雷达 LRU",
       "parentId": "j15-avionics",
       "productType": "SRU",
       "quantity": 1,
-      "rms": {},
-      "spareType": "航电模块",
       "specialRepairProfile": {
-        "repairRatio": 0.58,
-        "repairTimeMinutes": 145,
-        "replacementRatio": 0.42
+        "repairTimeMinutes": 145
       }
     },
     {
@@ -215,25 +185,18 @@
         "distributionType": "正态分布",
         "parameters": "mean=105, sigma=12"
       },
-      "failureRate": 0.05,
       "id": "j15-hydraulic",
       "kOutOfN": {
         "enabled": false,
         "k": 1,
         "n": 1
       },
-      "lifeLimitHours": 220,
-      "mtbfHours": 105.0,
       "name": "液压系统",
       "parentId": "aircraft-root",
       "productType": "LRU",
       "quantity": 1,
-      "rms": {},
-      "spareType": "液压备件",
       "specialRepairProfile": {
-        "repairRatio": 0.72,
-        "repairTimeMinutes": 135,
-        "replacementRatio": 0.28
+        "repairTimeMinutes": 135
       }
     },
     {
@@ -242,25 +205,18 @@
         "distributionType": "指数分布",
         "parameters": "lambda=0.05"
       },
-      "failureRate": 0.05,
       "id": "j35-engine",
       "kOutOfN": {
         "enabled": true,
         "k": 1,
         "n": 2
       },
-      "lifeLimitHours": 250,
-      "mtbfHours": 105.0,
       "name": "发动机",
       "parentId": "aircraft-root",
       "productType": "LRU",
       "quantity": 2,
-      "rms": {},
-      "spareType": "发动机备件",
       "specialRepairProfile": {
-        "repairRatio": 0.42,
-        "repairTimeMinutes": 210,
-        "replacementRatio": 0.58
+        "repairTimeMinutes": 210
       }
     },
     {
@@ -269,25 +225,18 @@
         "distributionType": "正态分布",
         "parameters": "mean=140, sigma=16"
       },
-      "failureRate": 0.035,
       "id": "j35-avionics",
       "kOutOfN": {
         "enabled": true,
         "k": 1,
         "n": 2
       },
-      "lifeLimitHours": 300,
-      "mtbfHours": 140.0,
       "name": "航电系统",
       "parentId": "aircraft-root",
       "productType": "LRU",
       "quantity": 2,
-      "rms": {},
-      "spareType": "航电模块",
       "specialRepairProfile": {
-        "repairRatio": 0.6,
-        "repairTimeMinutes": 150,
-        "replacementRatio": 0.4
+        "repairTimeMinutes": 150
       }
     },
     {
@@ -296,25 +245,18 @@
         "distributionType": "正态分布",
         "parameters": "mean=155, sigma=18"
       },
-      "failureRate": 0.03,
       "id": "j35-mission-computer",
       "kOutOfN": {
         "enabled": true,
         "k": 1,
         "n": 2
       },
-      "lifeLimitHours": 320,
-      "mtbfHours": 155.0,
       "name": "任务计算机模块",
       "parentId": "j35-avionics",
       "productType": "SRU",
       "quantity": 2,
-      "rms": {},
-      "spareType": "航电模块",
       "specialRepairProfile": {
-        "repairRatio": 0.62,
-        "repairTimeMinutes": 125,
-        "replacementRatio": 0.38
+        "repairTimeMinutes": 125
       }
     },
     {
@@ -323,25 +265,18 @@
         "distributionType": "正态分布",
         "parameters": "mean=110, sigma=13"
       },
-      "failureRate": 0.045,
       "id": "j35-hydraulic",
       "kOutOfN": {
         "enabled": false,
         "k": 1,
         "n": 1
       },
-      "lifeLimitHours": 230,
-      "mtbfHours": 115.0,
       "name": "液压系统",
       "parentId": "aircraft-root",
       "productType": "LRU",
       "quantity": 1,
-      "rms": {},
-      "spareType": "液压备件",
       "specialRepairProfile": {
-        "repairRatio": 0.74,
-        "repairTimeMinutes": 130,
-        "replacementRatio": 0.26
+        "repairTimeMinutes": 130
       }
     }
   ],
@@ -460,65 +395,6 @@
   },
   "project_id": "project-carrier-day-night",
   "project_version": "import-v1",
-  "reliabilityBlockDiagram": {
-    "edges": [
-      {
-        "from": "aircraft",
-        "to": "engine",
-        "type": "串联",
-        "weight": 1
-      },
-      {
-        "from": "aircraft",
-        "to": "avionics",
-        "type": "串联",
-        "weight": 1
-      },
-      {
-        "from": "aircraft",
-        "to": "hydraulic",
-        "type": "串联",
-        "weight": 1
-      }
-    ],
-    "nodes": [
-      {
-        "connectionType": "串联",
-        "failureRate": 0.01,
-        "id": "aircraft",
-        "mtbfHours": 300,
-        "name": "整机",
-        "type": "system"
-      },
-      {
-        "connectionType": "串联",
-        "failureRate": 0.055,
-        "id": "engine",
-        "mtbfHours": 95,
-        "name": "发动机",
-        "parentId": "aircraft",
-        "type": "component"
-      },
-      {
-        "connectionType": "串联",
-        "failureRate": 0.04,
-        "id": "avionics",
-        "mtbfHours": 120,
-        "name": "航电系统",
-        "parentId": "aircraft",
-        "type": "component"
-      },
-      {
-        "connectionType": "串联",
-        "failureRate": 0.05,
-        "id": "hydraulic",
-        "mtbfHours": 105,
-        "name": "液压系统",
-        "parentId": "aircraft",
-        "type": "component"
-      }
-    ]
-  },
   "scenarioId": "import-carrier-day-night-001",
   "schema_version": "project-v0",
   "supportActivities": [
@@ -561,8 +437,7 @@
         ]
       },
       "priority": 1,
-      "spareQuantity": 1,
-      "spareType": "航电模块"
+      "spareQuantity": 1
     },
     {
       "activityCodes": [
@@ -586,7 +461,6 @@
       "priority": 2,
       "runHourInterval": 8,
       "spareQuantity": 1,
-      "spareType": "液压备件",
       "takeoffLandingInterval": 6
     },
     {
@@ -599,8 +473,7 @@
       "planType": "后勤保障方案",
       "predecessors": {},
       "priority": 1,
-      "spareQuantity": 1,
-      "spareType": "发动机备件"
+      "spareQuantity": 1
     },
     {
       "activityCodes": [

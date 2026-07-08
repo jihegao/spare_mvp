@@ -26,9 +26,9 @@
     {
       "aircraftModel": "J-15",
       "failureDistribution": {
-        "distributionType": "exponential"
+        "distributionType": "指数分布",
+        "parameters": "lambda=0.01"
       },
-      "failureRate": 0.01,
       "id": "whole-aircraft",
       "kOutOfN": {
         "k": 1,
@@ -36,12 +36,7 @@
       },
       "name": "whole aircraft",
       "productType": "whole",
-      "quantity": 1,
-      "rms": {
-        "target": {
-          "reliability": 0.98
-        }
-      }
+      "quantity": 1
     }
   ],
   "missionPhases": [],
@@ -53,15 +48,6 @@
   },
   "project_id": "project-clean-aircraft-support-v1",
   "project_version": "project-v0.1",
-  "reliabilityBlockDiagram": {
-    "edges": [],
-    "nodes": [
-      {
-        "id": "whole-aircraft",
-        "type": "system"
-      }
-    ]
-  },
   "scenarioId": "scenario-clean-aircraft-support-v1",
   "schema_version": "project-v0",
   "supportActivities": [

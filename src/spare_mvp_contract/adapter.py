@@ -455,9 +455,6 @@ class SimulationAdapter:
                     for activity in self._dict_list(project.get("supportActivities"))
                 ],
             },
-            "reliability_block_diagram": self._aircraft_support_v1_reliability_block_diagram(
-                project.get("reliabilityBlockDiagram")
-            ),
             "time": {
                 "duration_minutes": duration_minutes,
                 "tick_minutes": 1,
@@ -622,6 +619,8 @@ class SimulationAdapter:
         return max(1, hour * 60 + minute)
 
     def _aircraft_support_v1_component(self, component: dict[str, Any]) -> dict[str, Any]:
+        failure_distribution = copy.deepcopy(component.get("failureDistribution") if isinstance(component.get("failureDistribution"), dict) else {})
+        failure_rate = self._failure_distribution_rate(failure_distribution)
         return {
             "id": str(component.get("id") or "component"),
             "name": str(component.get("name") or component.get("id") or "component"),
@@ -629,18 +628,53 @@ class SimulationAdapter:
             "aircraft_model": self._optional_string(component.get("aircraftModel")),
             "product_type": self._optional_string(component.get("productType")),
             "quantity": self._positive_int(component.get("quantity"), 1),
-            "failure_rate": self._non_negative_number(component.get("failureRate"), 0),
-            "failure_distribution": copy.deepcopy(component.get("failureDistribution") if isinstance(component.get("failureDistribution"), dict) else {}),
+            "failure_rate": 0.0 if failure_rate is None else failure_rate,
+            "failure_distribution": failure_distribution,
             "repair_distribution": copy.deepcopy(component.get("repairDistribution") if isinstance(component.get("repairDistribution"), dict) else {}),
             "k_out_of_n": copy.deepcopy(component.get("kOutOfN") if isinstance(component.get("kOutOfN"), dict) else {}),
-            "life_limit_hours": self._optional_positive_number(component.get("lifeLimitHours")),
-            "mtbf_hours": self._optional_positive_number(component.get("mtbfHours")),
-            "rms": copy.deepcopy(component.get("rms") if isinstance(component.get("rms"), dict) else {}),
-            "spare_type": self._optional_string(component.get("spareType")),
             "special_repair_profile": copy.deepcopy(
                 component.get("specialRepairProfile") if isinstance(component.get("specialRepairProfile"), dict) else {}
             ),
         }
+
+    def _failure_distribution_rate(self, distribution: dict[str, Any]) -> float | None:
+        parameters = distribution.get("parameters") or distribution.get("params")
+        multiplier = self._non_negative_number(distribution.get("_rate_multiplier"), 1.0)
+        if isinstance(parameters, (int, float)) and not isinstance(parameters, bool):
+            return max(0.0, float(parameters)) * multiplier
+        if not isinstance(parameters, str):
+            return None
+        values = self._distribution_parameters(parameters)
+        distribution_type = str(distribution.get("distributionType") or distribution.get("distribution_type") or "").lower()
+        if "lambda" in values or "λ" in values or "rate" in values or "failure_rate" in values:
+            return (
+                values.get("lambda")
+                or values.get("λ")
+                or values.get("rate")
+                or values.get("failure_rate")
+                or 0.0
+            ) * multiplier
+        if "weibull" in distribution_type or "威布尔" in distribution_type:
+            beta = values.get("beta") or values.get("shape") or 1.0
+            eta = values.get("eta") or values.get("scale") or values.get("mean")
+            if eta and eta > 0:
+                mean_time = eta * math.gamma(1.0 + 1.0 / max(beta, 0.001))
+                return (1.0 / mean_time) * multiplier
+        if "normal" in distribution_type or "正态" in distribution_type:
+            mean = values.get("mean") or values.get("mu")
+            if mean and mean > 0:
+                return (1.0 / mean) * multiplier
+        return None
+
+    def _distribution_parameters(self, parameters: str) -> dict[str, float]:
+        text = parameters.replace("，", ",").replace("；", ",").replace(";", ",")
+        values: dict[str, float] = {}
+        for item in text.split(","):
+            if "=" not in item:
+                continue
+            key, value = [part.strip().lower() for part in item.split("=", 1)]
+            values[key] = self._non_negative_number(value, 0.0)
+        return values
 
     def _aircraft_support_v1_aircraft_summary(
         self,
@@ -920,7 +954,6 @@ class SimulationAdapter:
             ),
             "required_personnel": self._positive_int(activity.get("requiredPersonnel"), 1),
             "required_devices": self._positive_int(activity.get("requiredDevices"), 1),
-            "spare_type": self._optional_string(activity.get("spareType")),
             "spare_quantity": self._positive_int(activity.get("spareQuantity"), 0),
             "calendarDayInterval": activity.get("calendarDayInterval"),
             "runHourInterval": activity.get("runHourInterval"),
@@ -974,12 +1007,6 @@ class SimulationAdapter:
             jobs.append(job)
         return jobs
 
-    def _aircraft_support_v1_reliability_block_diagram(self, value: Any) -> dict[str, Any]:
-        diagram = copy.deepcopy(value) if isinstance(value, dict) else {}
-        nodes = self._dict_list(diagram.get("nodes"))
-        edges = self._dict_list(diagram.get("edges"))
-        return {"nodes": copy.deepcopy(nodes), "edges": copy.deepcopy(edges)}
-
     def _aviation_support_mapping_provenance(self, project_id: str, project: dict[str, Any]) -> dict[str, Any]:
         return {
             "project_id": project_id,
@@ -1030,11 +1057,8 @@ class SimulationAdapter:
                 "missionPhases",
                 "airports",
                 "components[].aircraftModel",
-                "components[].failureRate",
                 "components[].failureDistribution",
                 "components[].kOutOfN",
-                "components[].lifeLimitHours",
-                "components[].rms",
                 "components[].specialRepairProfile",
                 "supportResources[].quantity",
                 "supportResources[].type",
@@ -1043,7 +1067,6 @@ class SimulationAdapter:
                 "supportActivityJobs[]",
                 "supportActivities[].activityCodes",
                 "supportActivities[].predecessors",
-                "reliabilityBlockDiagram",
                 "ExperimentPlan.config.analysisRequests.largeSample.sweep.failureRates",
                 "ExperimentPlan.config.analysisRequests.largeSample.sweep.spareMultipliers",
                 "ExperimentPlan.config.analysisRequests.largeSample.sweep.supportCapacities",
@@ -1289,6 +1312,16 @@ class SimulationAdapter:
                         "装备系统建模",
                     )
                 )
+            distribution = component.get("failureDistribution")
+            if not isinstance(distribution, dict) or self._failure_distribution_rate(distribution) is None:
+                issues.append(
+                    self._compile_issue(
+                        "invalid_component_failure_distribution",
+                        f"components[{index}].failureDistribution",
+                        "非根组件必须提供可解析的 failureDistribution，不能回退到 failureRate 或默认失效率。",
+                        "装备系统建模",
+                    )
+                )
 
         for policy_index, policy in enumerate(self._project_transport_policies(project)):
             for endpoint in ("from", "to"):
@@ -1395,26 +1428,6 @@ class SimulationAdapter:
                     )
                 )
 
-        diagram = project.get("reliabilityBlockDiagram") if isinstance(project.get("reliabilityBlockDiagram"), dict) else {}
-        rbd_nodes = {
-            str(node.get("id"))
-            for node in self._dict_list(diagram.get("nodes"))
-            if node.get("id") not in (None, "")
-        }
-        for edge_index, edge in enumerate(self._dict_list(diagram.get("edges"))):
-            for endpoint in ("from", "to"):
-                value = edge.get(endpoint)
-                if value in (None, ""):
-                    continue
-                if str(value) not in rbd_nodes:
-                    issues.append(
-                        self._compile_issue(
-                            "missing_rbd_node_reference",
-                            f"reliabilityBlockDiagram.edges[{edge_index}].{endpoint}",
-                            f"可靠性框图 edge {endpoint} 引用了不存在的节点 {value}。",
-                            "任务可靠性分析",
-                        )
-                    )
         return issues
 
     def _compile_issue(self, code: str, field_path: str, message: str, page: str) -> dict[str, str]:

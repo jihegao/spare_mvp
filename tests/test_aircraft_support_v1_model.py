@@ -146,6 +146,26 @@ def aircraft_payload_nodes(model: AircraftSupportV1Model, aircraft) -> list[dict
     return model._aircraft_failure_tree_payload(aircraft)["nodes"]
 
 
+def _runtime_component(
+    component_id: str,
+    parent_id: str,
+    name: str,
+    rate: float,
+    *,
+    product_type: str = "LRU",
+    **overrides,
+) -> dict:
+    component = {
+        "id": component_id,
+        "parent_id": parent_id,
+        "name": name,
+        "product_type": product_type,
+        "failure_distribution": {"distributionType": "指数分布", "parameters": f"lambda={rate}"},
+    }
+    component.update(overrides)
+    return component
+
+
 def _canonical_import_inputs() -> dict:
     fixture_path = Path(__file__).parent / "fixtures" / "modeling_import_project.json"
     import_package = json.loads(fixture_path.read_text(encoding="utf-8"))
@@ -510,7 +530,7 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
         inputs["aircraft"] = {"fleet_count": 1, "initial_ready": 1, "models": ["J-15"]}
         inputs["mission_profile"]["basic_missions"][0]["equipmentQuantity"] = 1
         inputs["equipment_tree"]["components"] = [
-            {"id": "engine", "parent_id": "aircraft", "name": "Engine", "failure_rate": 1000, "spare_type": "engine"}
+            _runtime_component("engine", "aircraft", "Engine", 1000)
         ]
         inputs["stop_policy"] = {"mode": "or", "conditions": [{"type": "failure"}]}
         model = AircraftSupportV1Model(inputs)
@@ -566,7 +586,7 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
     def test_in_flight_failure_counts_failed_sortie_and_requires_repair_after_return(self) -> None:
         inputs = _minimal_inputs()
         inputs["equipment_tree"]["components"] = [
-            {"id": "engine", "parent_id": "aircraft", "name": "Engine", "failure_rate": 1000, "spare_type": "engine"}
+            _runtime_component("engine", "aircraft", "Engine", 1000)
         ]
         model = AircraftSupportV1Model(inputs)
         mission = model.missions[0]
@@ -594,7 +614,7 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
         inputs["aircraft"]["fleet_count"] = 1
         inputs["aircraft"]["initial_ready"] = 1
         inputs["equipment_tree"]["components"] = [
-            {"id": "engine", "parent_id": "aircraft", "name": "Engine", "failure_rate": 1000, "spare_type": "engine"}
+            _runtime_component("engine", "aircraft", "Engine", 1000)
         ]
         model = AircraftSupportV1Model(inputs)
         aircraft = model.aircraft[0]
@@ -611,7 +631,7 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
         inputs["aircraft"]["fleet_count"] = 1
         inputs["aircraft"]["initial_ready"] = 1
         inputs["equipment_tree"]["components"] = [
-            {"id": "engine", "parent_id": "aircraft", "name": "Engine", "failure_rate": 1000, "spare_type": "engine"}
+            _runtime_component("engine", "aircraft", "Engine", 1000)
         ]
         model = AircraftSupportV1Model(inputs)
         mission = model.missions[0]
@@ -645,9 +665,16 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
         inputs["aircraft"]["fleet_count"] = 1
         inputs["aircraft"]["initial_ready"] = 1
         inputs["equipment_tree"]["components"] = [
-            {"id": "avionics", "parent_id": "aircraft-root", "name": "Avionics", "failure_rate": 0, "k_out_of_n": {"enabled": True, "n": 2, "k": 2}},
-            {"id": "radar", "parent_id": "avionics", "name": "Radar LRU", "failure_rate": 1000},
-            {"id": "computer", "parent_id": "avionics", "name": "Mission Computer LRU", "failure_rate": 1000},
+            _runtime_component(
+                "avionics",
+                "aircraft-root",
+                "Avionics",
+                0,
+                product_type="system",
+                k_out_of_n={"enabled": True, "n": 2, "k": 2},
+            ),
+            _runtime_component("radar", "avionics", "Radar LRU", 1000),
+            _runtime_component("computer", "avionics", "Mission Computer LRU", 1000),
         ]
         model = AircraftSupportV1Model(inputs)
         mission = model.missions[0]
@@ -684,9 +711,16 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
         inputs["aircraft"]["fleet_count"] = 1
         inputs["aircraft"]["initial_ready"] = 1
         inputs["equipment_tree"]["components"] = [
-            {"id": "avionics", "parent_id": "aircraft-root", "name": "Avionics", "failure_rate": 0, "k_out_of_n": {"enabled": True, "n": 2, "k": 2}},
-            {"id": "radar", "parent_id": "avionics", "name": "Radar LRU", "failure_rate": 1000},
-            {"id": "computer", "parent_id": "avionics", "name": "Mission Computer LRU", "failure_rate": 1000},
+            _runtime_component(
+                "avionics",
+                "aircraft-root",
+                "Avionics",
+                0,
+                product_type="system",
+                k_out_of_n={"enabled": True, "n": 2, "k": 2},
+            ),
+            _runtime_component("radar", "avionics", "Radar LRU", 1000),
+            _runtime_component("computer", "avionics", "Mission Computer LRU", 1000),
         ]
         model = AircraftSupportV1Model(inputs)
         mission = model.missions[0]
@@ -717,17 +751,13 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
         self.assertEqual(model.snapshot()["failed_sorties"], 1)
         self.assertTrue(any(job.kind == "repair" and job.tail_number == aircraft.tail_number for job in model.jobs))
 
-    def test_non_root_rbd_failure_does_not_increment_root_failure_metric(self) -> None:
+    def test_lru_repair_uses_component_name_as_auto_spare(self) -> None:
         inputs = _minimal_inputs()
         inputs["aircraft"]["fleet_count"] = 1
         inputs["aircraft"]["initial_ready"] = 1
-        inputs["reliability_block_diagram"] = {
-            "nodes": [
-                {"id": "system", "name": "System", "failureRate": 0},
-                {"id": "sensor", "name": "Sensor", "parentId": "system", "failureRate": 1000},
-            ],
-            "edges": [{"from": "system", "to": "sensor", "type": "series", "weight": 1}],
-        }
+        inputs["equipment_tree"]["components"] = [
+            _runtime_component("radar", "aircraft", "Radar LRU", 1000)
+        ]
         model = AircraftSupportV1Model(inputs)
         mission = model.missions[0]
         mission.planned_start = 0
@@ -736,14 +766,38 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
         mission.required_aircraft = 1
         aircraft = model.aircraft[0]
         aircraft.prepared_mission_ids.add(mission.mission_id)
-        aircraft.lru_failure_remaining_minutes["rbd:sensor"] = 1.0
+        aircraft.lru_failure_remaining_minutes["radar"] = 1.0
         model._dispatch_due_missions()
 
         model.minute = 1
         model._evaluate_failures()
 
-        self.assertEqual(model.snapshot()["lru_failures"], 1)
-        self.assertEqual(model.snapshot()["rbd_root_failures"], 0)
+        repair_job = next(job for job in model.jobs if job.kind == "repair")
+        self.assertEqual(repair_job.tasks[-1]["spare"], "Radar LRU,1")
+
+    def test_non_lru_repair_does_not_auto_create_spare_requirement(self) -> None:
+        inputs = _minimal_inputs()
+        inputs["aircraft"]["fleet_count"] = 1
+        inputs["aircraft"]["initial_ready"] = 1
+        inputs["equipment_tree"]["components"] = [
+            _runtime_component("wing", "aircraft", "Wing Assembly", 1000, product_type="SRU")
+        ]
+        model = AircraftSupportV1Model(inputs)
+        mission = model.missions[0]
+        mission.planned_start = 0
+        mission.preparation_start = 0
+        mission.duration_minutes = 5
+        mission.required_aircraft = 1
+        aircraft = model.aircraft[0]
+        aircraft.prepared_mission_ids.add(mission.mission_id)
+        aircraft.lru_failure_remaining_minutes["wing"] = 1.0
+        model._dispatch_due_missions()
+
+        model.minute = 1
+        model._evaluate_failures()
+
+        repair_job = next(job for job in model.jobs if job.kind == "repair")
+        self.assertNotIn("spare", repair_job.tasks[-1])
 
     def test_dispatch_requires_every_aircraft_to_complete_preflight(self) -> None:
         model = AircraftSupportV1Model(_minimal_inputs())
@@ -785,7 +839,7 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
         self.assertIn("transportPolicies[]", scope["behavior_driving_fields"])
         self.assertIn("supportResources[].quantity", scope["behavior_driving_fields"])
         self.assertIn("missionProfile.periodicTasks", scope["behavior_driving_fields"])
-        self.assertIn("reliabilityBlockDiagram", scope["behavior_driving_fields"])
+        self.assertNotIn("reliabilityBlockDiagram", scope["behavior_driving_fields"])
         self.assertIn("supportActivityJobs[]", scope["behavior_driving_fields"])
         self.assertIn("supportActivities[].activityCodes", scope["behavior_driving_fields"])
         self.assertIn("supportActivities[].predecessors", scope["behavior_driving_fields"])
@@ -799,13 +853,11 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
             {
                 "id": "weibull",
                 "parent_id": "aircraft",
-                "failure_rate": 0,
                 "failure_distribution": {"distributionType": "威布尔分布", "parameters": "beta=2, eta=100"},
             },
             {
                 "id": "normal",
                 "parent_id": "aircraft",
-                "failure_rate": 0,
                 "failure_distribution": {"distributionType": "正态分布", "parameters": "mean=50, sigma=5"},
             },
         ]
@@ -816,24 +868,15 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
         self.assertGreater(rates["weibull"], 0)
         self.assertAlmostEqual(rates["normal"], 0.02)
 
-    def test_rbd_edges_parent_topology_and_weights_drive_rates(self) -> None:
+    def test_scalar_failure_rate_is_not_a_runtime_fallback(self) -> None:
         inputs = _minimal_inputs()
-        inputs["reliability_block_diagram"] = {
-            "nodes": [
-                {"id": "root", "failureRate": 0.1, "parentId": None, "connectionType": "串联"},
-                {"id": "parallel", "failureRate": 0.1, "parentId": "root", "connectionType": "串联"},
-                {"id": "series", "failureRate": 0.1, "parentId": "root", "connectionType": "串联"},
-            ],
-            "edges": [
-                {"from": "root", "to": "parallel", "type": "并联", "weight": 0.5},
-                {"from": "root", "to": "series", "type": "串联", "weight": 1.0},
-            ],
-        }
+        inputs["equipment_tree"]["components"] = [
+            {"id": "legacy", "parent_id": "aircraft", "name": "Legacy", "failure_rate": 1000}
+        ]
 
         model = AircraftSupportV1Model(inputs)
 
-        rates = {component["id"]: component["failure_rate"] for component in model.components}
-        self.assertLess(rates["rbd:parallel"], rates["rbd:series"])
+        self.assertEqual(model.components, [])
 
     def test_transport_policy_capacity_limits_single_replenishment(self) -> None:
         inputs = _minimal_inputs()

@@ -151,13 +151,23 @@ class ProjectJsonExporterTest(unittest.TestCase):
                     "aircraftModel": "J-15",
                     "productType": "whole",
                     "quantity": 1,
+                    "connectionType": "series",
+                    "failureModel": "legacy",
                     "failureRate": 0.01,
                     "failureDistribution": {"distributionType": "exponential"},
                     "kOutOfN": {"k": 1, "n": 1},
+                    "lifeLimitHours": 240,
+                    "mtbfHours": 100,
                     "rms": {
                         "target": {"reliability": 0.98},
                         "prediction": {"mtbfHours": 100},
                         "actual": {"mtbfHours": 90},
+                    },
+                    "spareType": "legacy spare",
+                    "specialRepairProfile": {
+                        "repairTimeMinutes": 45,
+                        "repairRatio": 0.5,
+                        "replacementRatio": 0.5,
                     },
                     "formState": {"open": True},
                 }
@@ -192,6 +202,7 @@ class ProjectJsonExporterTest(unittest.TestCase):
                     "activityName": "Corrective support plan",
                     "activityType": "corrective",
                     "durationHours": 1,
+                    "spareType": "legacy spare",
                     "requiredDevices": 1,
                     "requireDevices": 999,
                     "transportStrategies": [{"missionAreas": [{"id": "transport-nested-area"}]}],
@@ -227,7 +238,18 @@ class ProjectJsonExporterTest(unittest.TestCase):
         self.assertNotIn("scenarioComposition", clean)
         self.assertNotIn("resultSummary", clean)
         self.assertNotIn("rmsAllocationPlan", clean)
-        self.assertEqual(clean["components"][0]["rms"], {"target": {"reliability": 0.98}})
+        self.assertNotIn("reliabilityBlockDiagram", clean)
+        for field in (
+            "connectionType",
+            "failureModel",
+            "failureRate",
+            "lifeLimitHours",
+            "mtbfHours",
+            "rms",
+            "spareType",
+        ):
+            self.assertNotIn(field, clean["components"][0])
+        self.assertEqual(clean["components"][0]["specialRepairProfile"], {"repairTimeMinutes": 45})
         self.assertNotIn("formState", clean["components"][0])
         self.assertNotIn("draftState", clean["basicMissions"][0])
         self.assertEqual(clean["basicMissions"][0]["supportActivityName"], "Corrective support plan")
@@ -294,6 +316,7 @@ class ProjectJsonExporterTest(unittest.TestCase):
         self.assertNotIn("resourceId", clean["supportActivities"][0])
         self.assertNotIn("requiredDevices", clean["supportActivities"][0])
         self.assertNotIn("requiredPersonnel", clean["supportActivities"][0])
+        self.assertNotIn("spareType", clean["supportActivities"][0])
         self.assertEqual(clean["supportActivities"][0]["planType"], "修复性维修方案")
         self.assertNotIn("jobs", clean["supportActivities"][0])
         self.assertEqual(clean["supportActivities"][0]["activityCodes"], ["JOB-1"])
@@ -366,25 +389,26 @@ print(strip_project_sweep({"scenarioId": "scenario-a"})["scenarioId"])
             clean = ProjectJsonExporter(target="aircraft_support_v1").export(self._polluted_project())
 
         self.assertNotIn("resultSummary", clean)
-        self.assertNotIn("prediction", clean["components"][0]["rms"])
+        self.assertNotIn("rms", clean["components"][0])
+        self.assertNotIn("repairRatio", clean["components"][0]["specialRepairProfile"])
         self.assertEqual(clean["scenarioId"], "scenario-polluted-aircraft-support-v1")
 
     def test_aircraft_support_v1_exporter_uses_builtin_guard_for_old_jsonschema(self) -> None:
         clean = self._export_with_old_jsonschema(self._polluted_project())
 
         self.assertNotIn("resultSummary", clean)
-        self.assertEqual(clean["components"][0]["rms"], {"target": {"reliability": 0.98}})
+        self.assertNotIn("reliabilityBlockDiagram", clean)
+        self.assertNotIn("failureRate", clean["components"][0])
+        self.assertEqual(clean["components"][0]["specialRepairProfile"], {"repairTimeMinutes": 45})
 
-    def test_aircraft_support_v1_builtin_guard_rejects_invalid_component_numbers(self) -> None:
-        invalid_failure_rate = self._polluted_project()
-        invalid_failure_rate["components"][0]["failureRate"] = "not-a-number"
-        with self.assertRaisesRegex(ValueError, "components.0.failureRate: expected number"):
-            self._export_with_old_jsonschema(invalid_failure_rate)
-
-        invalid_life_limit = self._polluted_project()
-        invalid_life_limit["components"][0]["lifeLimitHours"] = "bad"
-        with self.assertRaisesRegex(ValueError, "components.0.lifeLimitHours: expected number"):
-            self._export_with_old_jsonschema(invalid_life_limit)
+    def test_aircraft_support_v1_builtin_guard_rejects_invalid_component_profile_numbers(self) -> None:
+        invalid_repair_time = self._polluted_project()
+        invalid_repair_time["components"][0]["specialRepairProfile"]["repairTimeMinutes"] = "not-an-integer"
+        with self.assertRaisesRegex(
+            ValueError,
+            "components.0.specialRepairProfile.repairTimeMinutes: expected integer",
+        ):
+            self._export_with_old_jsonschema(invalid_repair_time)
 
     def test_aircraft_support_v1_builtin_guard_rejects_invalid_activity_numbers(self) -> None:
         invalid_duration = self._polluted_project()
@@ -424,12 +448,6 @@ print(strip_project_sweep({"scenarioId": "scenario-a"})["scenarioId"])
         invalid_support_organization["supportOrganization"] = "bad"
         with self.assertRaisesRegex(ValueError, "supportOrganization: expected object"):
             self._export_with_old_jsonschema(invalid_support_organization)
-
-    def test_aircraft_support_v1_builtin_guard_rejects_invalid_open_model_items(self) -> None:
-        invalid_rbd = self._polluted_project()
-        invalid_rbd["reliabilityBlockDiagram"]["nodes"] = [1]
-        with self.assertRaisesRegex(ValueError, "reliabilityBlockDiagram.nodes.0: expected object"):
-            self._export_with_old_jsonschema(invalid_rbd)
 
     def test_aircraft_support_v1_exporter_accepts_full_platform_case(self) -> None:
         package = json.loads((REPO_ROOT / "tests" / "fixtures" / "m9_6_platform_case_export.json").read_text(encoding="utf-8"))

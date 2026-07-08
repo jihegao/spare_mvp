@@ -15,8 +15,7 @@
     "combatUnit",
     "components",
     "supportNodes",
-    "supportActivities",
-    "reliabilityBlockDiagram"
+    "supportActivities"
   ],
   "properties": {
     "schema_version": { "type": "string", "const": "project-v0" },
@@ -46,7 +45,6 @@
     "supportActivityJobs": { "type": "array", "items": { "$ref": "#/$defs/supportActivityJob" } },
     "supportActivities": { "type": "array", "items": { "$ref": "#/$defs/supportActivity" } },
     "supportOrganization": { "$ref": "#/$defs/supportOrganization" },
-    "reliabilityBlockDiagram": { "$ref": "#/$defs/reliabilityBlockDiagram" },
     "modelingImportValidation": { "$ref": "#/$defs/modelingImportValidation" }
   },
   "$defs": {
@@ -193,7 +191,7 @@
     "component": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "name", "quantity", "failureRate"],
+      "required": ["id", "name", "quantity"],
       "properties": {
         "id": { "type": "string", "minLength": 1 },
         "name": { "type": "string", "minLength": 1 },
@@ -201,22 +199,17 @@
         "aircraftModel": { "type": "string" },
         "productType": { "type": "string" },
         "quantity": { "type": "integer", "minimum": 0 },
-        "failureRate": { "type": "number", "minimum": 0 },
         "failureDistribution": { "$ref": "#/$defs/dictionary" },
         "repairDistribution": { "$ref": "#/$defs/dictionary" },
         "kOutOfN": { "$ref": "#/$defs/dictionary" },
-        "lifeLimitHours": { "type": ["number", "null"], "minimum": 0 },
-        "mtbfHours": { "type": ["number", "null"], "minimum": 0 },
-        "rms": { "$ref": "#/$defs/rms" },
-        "spareType": { "type": "string" },
-        "specialRepairProfile": { "$ref": "#/$defs/dictionary" }
+        "specialRepairProfile": { "$ref": "#/$defs/specialRepairProfile" }
       }
     },
-    "rms": {
+    "specialRepairProfile": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "target": { "$ref": "#/$defs/dictionary" }
+        "repairTimeMinutes": { "type": "integer", "minimum": 1 }
       }
     },
     "supportNode": {
@@ -302,7 +295,6 @@
         "durationHours": { "type": "number", "minimum": 0 },
         "maxWorkTimeRefMinutes": { "type": "integer", "minimum": 0 },
         "plannedDowntimeHours": { "type": "number", "minimum": 0 },
-        "spareType": { "type": "string" },
         "spareQuantity": { "type": "integer", "minimum": 0 },
         "calendarDayInterval": { "type": ["integer", "null"], "minimum": 0 },
         "runHourInterval": { "type": ["number", "null"], "minimum": 0 },
@@ -366,15 +358,6 @@
         "name": { "type": "string" },
         "description": { "type": "string" },
         "children": { "type": "array", "items": { "$ref": "#/$defs/supportOrganizationNode" } }
-      }
-    },
-    "reliabilityBlockDiagram": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["nodes", "edges"],
-      "properties": {
-        "nodes": { "type": "array", "items": { "$ref": "#/$defs/openModelObject" } },
-        "edges": { "type": "array", "items": { "$ref": "#/$defs/openModelObject" } }
       }
     },
     "modelingImportValidation": {

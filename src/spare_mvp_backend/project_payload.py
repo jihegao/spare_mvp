@@ -64,7 +64,6 @@ _ROOT_CLEAN_PROJECT_FIELDS = {
     "supportActivityJobs",
     "supportActivities",
     "supportOrganization",
-    "reliabilityBlockDiagram",
     "modelingImportValidation",
 }
 _REQUIRED_CLEAN_PROJECT_FIELDS = {
@@ -78,7 +77,6 @@ _REQUIRED_CLEAN_PROJECT_FIELDS = {
     "components",
     "supportNodes",
     "supportActivities",
-    "reliabilityBlockDiagram",
 }
 _MODELING_IMPORT_VALIDATION_FIELDS = {"importId", "usedTables", "disabledDomains", "warnings"}
 _AIRPORT_FIELDS = {"id", "name", "location", "supportNodeId"}
@@ -149,16 +147,12 @@ _COMPONENT_FIELDS = {
     "aircraftModel",
     "productType",
     "quantity",
-    "failureRate",
     "failureDistribution",
     "repairDistribution",
     "kOutOfN",
-    "lifeLimitHours",
-    "mtbfHours",
-    "rms",
-    "spareType",
     "specialRepairProfile",
 }
+_SPECIAL_REPAIR_PROFILE_FIELDS = {"repairTimeMinutes"}
 _SUPPORT_NODE_FIELDS = {
     "id",
     "name",
@@ -221,7 +215,6 @@ _SUPPORT_ACTIVITY_FIELDS = {
     "durationHours",
     "maxWorkTimeRefMinutes",
     "plannedDowntimeHours",
-    "spareType",
     "spareQuantity",
     "calendarDayInterval",
     "runHourInterval",
@@ -246,7 +239,6 @@ _SUPPORT_ACTIVITY_MTTR_FIELDS = {
     "repairTypes",
 }
 _SUPPORT_ACTIVITY_JOB_FORBIDDEN_FIELDS = {"predecessors", *_SUPPORT_ACTIVITY_MTTR_FIELDS}
-_RBD_FIELDS = {"nodes", "edges"}
 
 
 class ProjectJsonExporter:
@@ -383,7 +375,6 @@ def _validate_clean_project_fallback(project: dict[str, Any], target: str) -> No
     if "supportOrganization" in project:
         _validate_clean_support_organization(project["supportOrganization"], target)
     _validate_clean_support_activities(project.get("supportActivities"), target)
-    _validate_clean_rbd(project.get("reliabilityBlockDiagram"), target)
     if "modelingImportValidation" in project:
         _validate_clean_modeling_import_validation(project["modelingImportValidation"], target)
 
@@ -559,31 +550,35 @@ def _validate_clean_components(components: list[Any], target: str) -> None:
     for index, component in enumerate(components):
         if not isinstance(component, dict):
             raise ValueError(f"clean Project JSON failed {target} schema at components.{index}: expected object")
-        for field in ("id", "name", "quantity", "failureRate"):
+        for field in ("id", "name", "quantity"):
             if field not in component:
                 raise ValueError(f"clean Project JSON failed {target} schema at components.{index}.{field}: required")
         _require_clean_non_empty_string(component, "id", f"components.{index}.id", target)
         _require_clean_non_empty_string(component, "name", f"components.{index}.name", target)
         _require_clean_integer(component, "quantity", f"components.{index}.quantity", target, minimum=0)
-        _require_clean_number(component, "failureRate", f"components.{index}.failureRate", target, minimum=0)
         extra = sorted(field for field in component if field not in _COMPONENT_FIELDS)
         if extra:
             raise ValueError(f"clean Project JSON failed {target} schema at components.{index}: unexpected field {extra[0]}")
         _validate_optional_clean_string(component, "parentId", f"components.{index}.parentId", target, nullable=True)
-        for field in ("aircraftModel", "productType", "spareType"):
+        for field in ("aircraftModel", "productType"):
             _validate_optional_clean_string(component, field, f"components.{index}.{field}", target)
-        for field in ("lifeLimitHours", "mtbfHours"):
-            _validate_optional_clean_number(component, field, f"components.{index}.{field}", target, minimum=0, nullable=True)
         for field in ("failureDistribution", "repairDistribution", "kOutOfN", "specialRepairProfile"):
             _validate_optional_clean_dict(component, field, f"components.{index}.{field}", target)
-        rms = component.get("rms")
-        if isinstance(rms, dict):
-            extra_rms = sorted(field for field in rms if field != "target")
-            if extra_rms:
-                raise ValueError(f"clean Project JSON failed {target} schema at components.{index}.rms: unexpected field {extra_rms[0]}")
-            _validate_optional_clean_dict(rms, "target", f"components.{index}.rms.target", target)
-        elif rms is not None:
-            raise ValueError(f"clean Project JSON failed {target} schema at components.{index}.rms: expected object")
+        profile = component.get("specialRepairProfile")
+        if isinstance(profile, dict):
+            extra_profile = sorted(field for field in profile if field not in _SPECIAL_REPAIR_PROFILE_FIELDS)
+            if extra_profile:
+                raise ValueError(
+                    f"clean Project JSON failed {target} schema at components.{index}.specialRepairProfile: "
+                    f"unexpected field {extra_profile[0]}"
+                )
+            _validate_optional_clean_integer(
+                profile,
+                "repairTimeMinutes",
+                f"components.{index}.specialRepairProfile.repairTimeMinutes",
+                target,
+                minimum=1,
+            )
 
 
 def _validate_clean_support_nodes(nodes: list[Any], target: str) -> None:
@@ -668,7 +663,7 @@ def _validate_clean_support_activities(activities: Any, target: str) -> None:
         extra = sorted(field for field in activity if field not in _SUPPORT_ACTIVITY_FIELDS)
         if extra:
             raise ValueError(f"clean Project JSON failed {target} schema at supportActivities.{index}: unexpected field {extra[0]}")
-        for field in ("activityName", "activityType", "planType", "aircraftModel", "equipmentId", "spareType"):
+        for field in ("activityName", "activityType", "planType", "aircraftModel", "equipmentId"):
             _validate_optional_clean_string(activity, field, f"supportActivities.{index}.{field}", target)
         if activity.get("planType") not in (None, "") and activity.get("planType") not in _SUPPORT_ACTIVITY_PLAN_TYPES:
             raise ValueError(
@@ -758,19 +753,6 @@ def _validate_clean_support_activity_jobs(jobs: Any, target: str) -> None:
         forbidden = sorted(field for field in job if field in _SUPPORT_ACTIVITY_JOB_FORBIDDEN_FIELDS)
         if forbidden:
             raise ValueError(f"clean Project JSON failed {target} schema at {path}: unexpected field {forbidden[0]}")
-
-
-def _validate_clean_rbd(value: Any, target: str) -> None:
-    if not isinstance(value, dict):
-        raise ValueError(f"clean Project JSON failed {target} schema at reliabilityBlockDiagram: expected object")
-    extra = sorted(field for field in value if field not in _RBD_FIELDS)
-    if extra:
-        raise ValueError(f"clean Project JSON failed {target} schema at reliabilityBlockDiagram: unexpected field {extra[0]}")
-    for field in ("nodes", "edges"):
-        if not isinstance(value.get(field), list):
-            raise ValueError(f"clean Project JSON failed {target} schema at reliabilityBlockDiagram.{field}: expected array")
-        _validate_clean_open_model_array(value[field], f"reliabilityBlockDiagram.{field}", target)
-
 
 def _validate_clean_support_organization(value: Any, target: str) -> None:
     if not isinstance(value, dict):
@@ -1065,6 +1047,8 @@ def _strip_project_non_model_fields(project: dict[str, Any]) -> None:
     _normalize_support_model_tables(project)
     _strip_legacy_support_node_resource_fields(project)
     _normalize_project_component_k_out_of_n(project)
+    _strip_component_non_model_fields(project.get("components"))
+    project.pop("reliabilityBlockDiagram", None)
     mission_profile = project.get("missionProfile")
     if isinstance(mission_profile, dict):
         mission_profile.pop("profileType", None)
@@ -1074,6 +1058,7 @@ def _strip_project_non_model_fields(project: dict[str, Any]) -> None:
         _normalize_mission_profile_reference_fields(project)
     _strip_typo_only_support_activity_fields(project)
     _strip_deprecated_support_activity_strategy_fields(project)
+    _strip_support_activity_spare_type_fields(project.get("supportActivities"))
     _strip_support_activity_mttr_fields(project.get("supportActivities"))
     _strip_support_activity_mttr_fields(project.get("supportActivityJobs"))
     _lift_support_activity_jobs_to_top_level(project)
@@ -1102,6 +1087,29 @@ def _normalize_project_component_k_out_of_n(project: dict[str, Any]) -> None:
         raw_k = k_out.get("k")
         k = int(float(raw_k)) if _is_positive_int(raw_k) and int(float(raw_k)) <= quantity else quantity
         component["kOutOfN"] = {**k_out, "enabled": quantity > 1, "n": quantity, "k": k}
+
+
+def _strip_component_non_model_fields(value: Any) -> None:
+    if not isinstance(value, list):
+        return
+    for component in value:
+        if not isinstance(component, dict):
+            continue
+        for field in (
+            "connectionType",
+            "failureModel",
+            "failureRate",
+            "lifeLimitHours",
+            "mtbfHours",
+            "rms",
+            "spareType",
+        ):
+            component.pop(field, None)
+        profile = component.get("specialRepairProfile")
+        if isinstance(profile, dict):
+            _keep_fields(profile, _SPECIAL_REPAIR_PROFILE_FIELDS)
+            if not profile:
+                component.pop("specialRepairProfile", None)
 
 
 def _normalize_mission_profile_reference_fields(project: dict[str, Any]) -> None:
@@ -1657,6 +1665,18 @@ def _strip_deprecated_support_activity_strategy_fields(project: dict[str, Any]) 
         activity.pop("organizationStrategies", None)
 
 
+def _strip_support_activity_spare_type_fields(value: Any) -> None:
+    if isinstance(value, list):
+        for item in value:
+            _strip_support_activity_spare_type_fields(item)
+        return
+    if not isinstance(value, dict):
+        return
+    value.pop("spareType", None)
+    for child in value.values():
+        _strip_support_activity_spare_type_fields(child)
+
+
 def _normalize_support_activity_reference_fields(project: dict[str, Any]) -> None:
     activities = project.get("supportActivities")
     if not isinstance(activities, list):
@@ -1826,8 +1846,6 @@ def _prune_clean_project(project: dict[str, Any]) -> None:
     _prune_support_activities(project.get("supportActivities"))
     if isinstance(project.get("supportOrganization"), dict):
         _prune_support_organization(project["supportOrganization"])
-    if isinstance(project.get("reliabilityBlockDiagram"), dict):
-        _prune_reliability_block_diagram(project["reliabilityBlockDiagram"])
 
 
 def _keep_fields(value: dict[str, Any], allowed_fields: set[str]) -> None:
@@ -1905,9 +1923,11 @@ def _prune_components(value: Any) -> None:
         if not isinstance(component, dict):
             continue
         _keep_fields(component, _COMPONENT_FIELDS)
-        rms = component.get("rms")
-        if isinstance(rms, dict):
-            _keep_fields(rms, {"target"})
+        profile = component.get("specialRepairProfile")
+        if isinstance(profile, dict):
+            _keep_fields(profile, _SPECIAL_REPAIR_PROFILE_FIELDS)
+            if not profile:
+                component.pop("specialRepairProfile", None)
 
 
 def _prune_typed_list(value: Any, allowed_fields: set[str]) -> None:
@@ -1960,12 +1980,6 @@ def _prune_support_organization_node(value: dict[str, Any]) -> None:
     for child in children:
         if isinstance(child, dict):
             _prune_support_organization_node(child)
-
-
-def _prune_reliability_block_diagram(value: dict[str, Any]) -> None:
-    _keep_fields(value, _RBD_FIELDS)
-    _prune_open_model_list(value.get("nodes"))
-    _prune_open_model_list(value.get("edges"))
 
 
 def _drop_none_values(value: Any) -> None:

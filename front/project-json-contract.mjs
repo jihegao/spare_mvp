@@ -24,6 +24,7 @@ const OBJECT_LABELS = {
 };
 
 const EXCLUDED_PROJECT_OBJECT_ROOTS = new Set(["equipment", "experiment", "monteCarlo", "analysisRequests"]);
+const NON_REQUIRED_PROJECT_OBJECT_ROOTS = new Set(["reliabilityBlockDiagram"]);
 
 export const PROJECT_JSON_CONTRACT = buildProjectJsonContract(defaultScenario, FEATURE_PAGES);
 
@@ -104,11 +105,12 @@ function collectFields(value, path, fields, objects) {
 
 function registerObject(objects, path, value) {
   if (!path || objects.has(path)) return;
+  const root = path.split(".")[0];
   objects.set(path, {
     path,
-    label: OBJECT_LABELS[path] || OBJECT_LABELS[path.split(".")[0]] || humanizePath(path),
+    label: OBJECT_LABELS[path] || OBJECT_LABELS[root] || humanizePath(path),
     type: Array.isArray(value) ? "array" : isPlainObject(value) ? "object" : value === undefined ? "declared" : valueType(value),
-    required: value !== undefined,
+    required: value !== undefined && !NON_REQUIRED_PROJECT_OBJECT_ROOTS.has(root),
     source: value === undefined ? "feature-catalog:dataObjects" : "defaultScenario"
   });
 }
