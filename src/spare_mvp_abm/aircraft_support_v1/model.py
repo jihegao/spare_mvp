@@ -157,6 +157,7 @@ class AircraftSupportV1Model:
         self.stop_reason = ""
         self.stop_conditions_met: list[str] = []
         self.minute = 0
+        self.time = 0
         self.event_log: list[dict[str, Any]] = []
         self.aircraft = self._build_aircraft()
         self.equipment_tree_components = self._equipment_tree_components()
@@ -189,6 +190,8 @@ class AircraftSupportV1Model:
         self.failure_delay_events = 0
         self.daily_readiness_samples: list[dict[str, Any]] = []
         self._daily_readiness_sample_days: set[int] = set()
+        self.running = True
+        self.steps = 0
 
     @staticmethod
     def behavior_scope() -> dict[str, list[str]]:
@@ -200,8 +203,27 @@ class AircraftSupportV1Model:
 
     def run(self) -> dict[str, Any]:
         frames = [self.visualization_frame(run_id="", step=0)]
-        for minute in range(1, self.duration_minutes + 1, self.tick_minutes):
-            self.minute = minute
+        while self.running:
+            self.step()
+            should_stop = not self.running
+            if self.minute % self.sample_every_minutes == 0 or self.minute == self.duration_minutes or should_stop:
+                frames.append(self.visualization_frame(run_id="", step=len(frames)))
+                if len(frames) > self.max_state_frames_single:
+                    raise ValueError(
+                        "visualization_state_series exceeds max_state_frames_single; increase sample_every_minutes"
+                    )
+            if should_stop:
+                break
+        return {"metrics": self.snapshot(), "frames": frames, "events": copy.deepcopy(self.event_log)}
+
+    def step(self) -> bool:
+        """Advance the model by one runtime tick for Solara/Mesa controls."""
+        if not self.running:
+            return False
+        self.minute = 1 if self.minute <= 0 else min(self.duration_minutes, self.minute + self.tick_minutes)
+        self.time = self.minute
+        self.steps += 1
+        try:
             self._process_transport_arrivals()
             self._process_mission_returns()
             self._process_job_progress_and_completions()
@@ -221,15 +243,12 @@ class AircraftSupportV1Model:
                     f"simulation stopped by {stop_reason}",
                     {"reason": stop_reason, "conditions": stop_conditions},
                 )
-            if minute % self.sample_every_minutes == 0 or minute == self.duration_minutes or should_stop:
-                frames.append(self.visualization_frame(run_id="", step=len(frames)))
-                if len(frames) > self.max_state_frames_single:
-                    raise ValueError(
-                        "visualization_state_series exceeds max_state_frames_single; increase sample_every_minutes"
-                    )
-            if should_stop:
-                break
-        return {"metrics": self.snapshot(), "frames": frames, "events": copy.deepcopy(self.event_log)}
+            if should_stop or self.minute >= self.duration_minutes:
+                self.running = False
+            return True
+        except Exception:
+            self.running = False
+            raise
 
     def snapshot(self) -> dict[str, Any]:
         planned_sorties = sum(mission.required_aircraft for mission in self.missions) or 1

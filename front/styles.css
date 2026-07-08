@@ -2817,6 +2817,23 @@ tr.clickable-table-row.selected-table-row td {
   gap: 12px;
 }
 
+.solara-visualization-frame-wrap {
+  min-height: 720px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  background: #ffffff;
+}
+
+.solara-visualization-frame {
+  display: block;
+  width: 100%;
+  height: min(78vh, 960px);
+  min-height: 720px;
+  border: 0;
+  background: #ffffff;
+}
+
 .mesa-toolbar {
   display: flex;
   align-items: center;

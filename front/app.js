@@ -30,13 +30,16 @@ import {
 } from "./current-analysis-results.mjs";
 import {
   findVisualizationStateSeriesArtifact,
-  frameAt,
   buildVisualizationEventStream,
   mergeVisualizationStateStreamFrame,
   nextReplayIndex,
   normalizeVisualizationStateSeriesPayload
 } from "./state-series-replay.mjs";
 import { buildRunIntent, submitRunIntent } from "./run-intent.mjs";
+import {
+  buildSolaraVisualizationUrl,
+  resolveSolaraVisualizationBaseUrl
+} from "./solara-visualization.mjs";
 import {
   cloneScenario,
   defaultScenario,
@@ -659,6 +662,7 @@ let visualizationStreamState = {
 };
 let visualizationBackendControlStatus = "M9.3 后端运行控制尚未触发";
 let visualSupportAirportId = "";
+let solaraVisualizationReloadNonce = 0;
 let backendApiStatus = "离线演示";
 let formalRunSubmitInFlight = false;
 let systemUserEditor = null;
@@ -12597,6 +12601,11 @@ function issueStatusForDisplayIssues(issues) {
 }
 
 async function handleMesaControl(action) {
+  if (action === "reload-solara") {
+    solaraVisualizationReloadNonce += 1;
+    visualizationReplayStatus = "Solara iframe 已刷新，推演由 Mesa/Solara 页面直接驱动";
+    return;
+  }
   if (action === "refresh-runs") {
     await refreshVisualizationRunList();
     return;
@@ -12629,16 +12638,6 @@ async function handleMesaControl(action) {
       else stopVisualizationReplay();
     } else {
       stopVisualizationReplay();
-    }
-    return;
-  }
-  if (action === "start-new-run") {
-    stopVisualizationRunStream("正在启动新仿真，M9.2 在线订阅已停止");
-    stopVisualizationReplay();
-    visualizationReplayStatus = "正在启动 Lite Mesa 仿真";
-    const submittedRun = await startLiteMesaVisualizationThroughApi();
-    if (!submittedRun) {
-      visualizationReplayStatus = `启动新仿真失败：${backendApiStatus || "未返回 run_id"}`;
     }
     return;
   }
@@ -12732,45 +12731,23 @@ function visualizationBlockedState() {
 }
 
 function renderVisualSimulation(page) {
-  const loadedReplayMatchesSelection =
-    visualizationStateSeries && (!visualizationSelectedRunId || visualizationStateSeries.run_id === visualizationSelectedRunId);
-  const visualizationStateSeriesFrame = loadedReplayMatchesSelection ? frameAt(visualizationStateSeries, visualizationReplayIndex) : null;
-  const isOnlineStreamFrame =
-    visualizationStateSeriesFrame
-    && visualizationStreamState.runId === visualizationStateSeries.run_id
-    && ["connected", "disconnected", "artifact-ready"].includes(visualizationStreamState.status)
-    && visualizationStateSeries.expected_frame_count;
-  const source = visualizationStateSeriesFrame || visualizationBlockedState();
-  const state = normalizeAviationSupportState(source);
-  const activeView = ["aircraft", "mission", "support"].includes(selectedMesaView) ? selectedMesaView : "aircraft";
-  const timelineMax = Math.max(0, (visualizationStateSeries?.frame_count || 1) - 1);
-  const currentFrame = visualizationStateSeriesFrame ? visualizationReplayIndex + 1 : 0;
-  const eventStream = visualizationStateSeriesFrame ? buildSimulationLogStream(visualizationStateSeries) : [];
-  const hasCompletedLiteMesaVisualization = visualizationReplayStatus.includes("Lite Mesa 仿真已完成");
-  const replayStatusDetail = visualizationStateSeriesFrame
-    ? `run_id ${htmlEscape(visualizationStateSeries.run_id)} / artifact_id ${htmlEscape(visualizationStateSeries.artifact_id)} / step ${htmlEscape(visualizationStateSeriesFrame.step)} / ${currentFrame}-${htmlEscape(visualizationStateSeries.frame_count)} 帧 / 事件 ${htmlEscape(visualizationStateSeries.event_count)}`
-    : hasCompletedLiteMesaVisualization
-      ? "本次 Lite Mesa 仿真已完成，未加载回放序列。"
-      : "缺少 aircraft_support_v1 state_series 时，可视化不会回退到旧 aviation_support 或演示快照；请启动 Lite Mesa 仿真。";
-  const timelineFrameLabel = visualizationStateSeriesFrame
-    ? simulationDayMinuteLabel(visualizationStateSeriesFrame.simulation_time)
-    : "等待 Lite Mesa 仿真";
-  const timelineFrameMeta = visualizationStateSeriesFrame
-    ? `${currentFrame} / ${htmlEscape(visualizationStateSeries.frame_count)} 帧`
-    : "未加载 state_series";
-  const visualKpis = visualSimulationKpis(state);
   const projectName = currentProject?.name || "当前项目";
   const experimentPlanName = selectedExperimentPlanName();
-  const availabilityTrend = buildAvailabilityTrend(
-    state,
-    visualizationStateSeries,
-    visualizationStateSeriesFrame ? visualizationReplayIndex : null
-  );
+  const solaraUrl = buildSolaraVisualizationUrl(resolveSolaraVisualizationBaseUrl(), {
+    projectId: currentProject?.project_id || scenario.project_id || scenario.scenarioId || "",
+    projectName,
+    featureId: page.id,
+    experimentPlanName,
+    reload: solaraVisualizationReloadNonce
+  });
+  const statusMessage = visualizationReplayStatus.startsWith("Solara")
+    ? visualizationReplayStatus
+    : "推演由 Solara iframe 内的 Mesa 控制器直接驱动";
   return `
     <div class="mesa-visual-shell">
       <section class="lite-mesa-hero mesa-visual-hero">
         <div>
-          <span class="status-badge success">Lite Mesa visualization</span>
+          <span class="status-badge success">Solara Mesa iframe</span>
           <h3>可视化推演</h3>
           <p>${htmlEscape(projectName)} / ${htmlEscape(page.module)} / ${htmlEscape(experimentPlanName)}</p>
         </div>
@@ -12781,39 +12758,24 @@ function renderVisualSimulation(page) {
       <div class="mesa-control-deck">
         <div class="mesa-control-groups" aria-label="运行控制">
           <div class="mesa-control-group mesa-control-group-primary">
-            <button type="button" class="btn-primary" data-mesa-control="play">${visualizationReplayPlaying ? "暂停回放" : "启动回放"}</button>
-            <button type="button" data-mesa-control="start-new-run" ${formalRunSubmitInFlight ? "disabled" : ""}>启动新仿真</button>
-            <details class="mesa-control-status ${visualizationStateSeriesFrame || hasCompletedLiteMesaVisualization ? "success" : "warning"}">
-              <summary><span>仿真状态</span><strong>${htmlEscape(visualizationReplayStatus)}</strong></summary>
-              <small>${replayStatusDetail}</small>
+            <button type="button" class="btn-primary" data-mesa-control="reload-solara">刷新 Solara</button>
+            <details class="mesa-control-status success">
+              <summary><span>仿真状态</span><strong>${htmlEscape(statusMessage)}</strong></summary>
+              <small>iframe: ${htmlEscape(solaraUrl)}</small>
             </details>
           </div>
         </div>
       </div>
-      <div class="kpi-strip mesa-kpi-strip">
-        ${visualKpis.map((item) => `<div class="kpi-card"><span>${htmlEscape(item.label)}</span><strong>${htmlEscape(item.value)}</strong></div>`).join("")}
+      <div class="solara-visualization-frame-wrap" data-solara-visualization-frame>
+        <iframe
+          class="solara-visualization-frame"
+          title="Solara Mesa 可视化"
+          src="${htmlEscape(solaraUrl)}"
+          sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+          loading="eager"
+          referrerpolicy="no-referrer"
+        ></iframe>
       </div>
-      <div class="mesa-tabs mesa-view-tabs" role="tablist" aria-label="Mesa 可视化视图">
-        ${mesaTab("aircraft", "飞机视图", activeView)}
-        ${mesaTab("mission", "任务视图", activeView)}
-        ${mesaTab("support", "保障视图", activeView)}
-      </div>
-      <div class="mesa-timeline-card">
-        <div>
-          <span>仿真时间轴</span>
-          <strong>${timelineFrameLabel}</strong>
-          <small>${timelineFrameMeta}</small>
-        </div>
-        <input type="range" min="0" max="${timelineMax}" value="${Math.min(visualizationReplayIndex, timelineMax)}" data-mesa-timeline ${visualizationStateSeriesFrame && !isOnlineStreamFrame ? "" : "disabled"} aria-label="仿真时间轴">
-      </div>
-      ${activeView === "aircraft" ? renderAvailabilityCurve(availabilityTrend) : ""}
-      <div class="mesa-visual-grid ${activeView === "mission" ? "mission-expanded" : ""}">
-        <section class="mesa-stage-panel">
-          ${renderMesaStage(activeView, state)}
-        </section>
-        ${activeView === "mission" ? "" : `<aside class="mesa-side-panel">${renderMesaSidePanel(activeView, state)}</aside>`}
-      </div>
-      ${renderVisualizationEventStream(eventStream, visualizationReplayIndex)}
     </div>
   `;
 }

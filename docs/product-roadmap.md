@@ -396,7 +396,7 @@ M8.0 当前收束：`docs/archive/deprecated/superpowers/specs/2026-06-21-m8-pro
 
 ## M9：可视化推演接入真实运行状态
 
-目标：Mesa 可视化页从静态状态帧升级为真实状态序列或在线状态流。
+目标：Mesa 可视化页从静态状态帧和前端回放升级为平台管理的 Solara iframe，由 Solara/Mesa 控制器直接推进 `aircraft_support_v1` 模型；旧状态序列和在线状态流保留为历史账本能力。
 
 分阶段目标：
 
@@ -568,21 +568,21 @@ M8.0 当前收束：`docs/archive/deprecated/superpowers/specs/2026-06-21-m8-pro
 
 范围：
 
-1. 前端可视化仿真页通过平台 Project/ExperimentPlan 选择正式模型族并提交 canonical `/api/runs`，不跳转到 `independent-mesa/server.py` 或 `8765` 旁路入口。
-2. 状态回放只通过 `/api/runs/{run_id}/artifacts/{artifact_id}` 下载 `visualization_state_series`；在线展示继续使用 `/api/runs/{run_id}/state-stream`；四类分析页只消费 run projection payload。
-3. 可视化仿真任务视图直接消费 `visualization_state_series.missions[]` 的任务属性，将任务计划表与每日甘特图合并，按周期性任务 / 复合任务 / 基本任务展示实际天、波次、要求型号、数量、实际执行飞机和状态；缺少正式任务计划字段时 fail closed，不从旧 artifact 兜底推断。
+1. 前端可视化仿真页通过平台管理的 Solara iframe 承载 Mesa 页面，由 Solara/Mesa 控制器直接推进 `aircraft_support_v1`；不跳转到 `independent-mesa/server.py`，也不提交用户主流程 `/api/runs`。
+2. 旧状态回放、`/api/runs/{run_id}/artifacts/{artifact_id}`、`visualization_state_series` 和 `/api/runs/{run_id}/state-stream` 只保留为历史账本/内部治理能力；四类分析页继续消费 lite Mesa session payload。
+3. Solara 页面直接读取模型当前状态展示任务、飞机、资源和事件；旧前端任务计划表、每日甘特图和状态序列解析不再作为可视化推演主承载。
 4. `independent-mesa/GLM` 和 `independent-mesa/GPT` 的源码树、旁路服务和静态输出入口从当前仓库移除；历史参考只保留在归档计划和规格文档中，不再保留离线复现实验命令。
-5. 删除或标记过期所有把 `independent-mesa`、`8765`、静态 HTML 输出当作正式产品入口的 README、roadmap、agent 约束、测试和启动脚本引用。
-6. 浏览器 smoke 覆盖完整平台流：导入案例数据、创建方案、启动正式 single run、回放状态序列、启动 Monte Carlo、查看四类正式分析结果。
+5. 删除或标记过期所有把 `independent-mesa`、静态 HTML 输出、旧 contract provider 或 `/api/runs` 当作当前用户主流程的 README、roadmap、agent 约束、测试和启动脚本引用；`8765` 仅允许作为平台管理的 Solara iframe 默认端口出现。
+6. 浏览器 smoke 覆盖完整平台流：导入案例数据、创建方案、打开 Solara iframe 可视化、启动 Monte Carlo、查看四类 lite Mesa 分析结果。
 
 完成标准：
 
 1. 正式平台流程中搜索不到对 `independent-mesa` 服务地址或静态输出目录的运行依赖；如有引用，只能是归档说明、迁移记录或离线开发参考。
-2. `scripts/start-system.sh start` 启动默认产品所需的同源 app/backend 和 SQLite，不再强制启动 `independent-mesa/server.py`，也不启动旧 contract provider sidecar。
-3. 任务视图不再拆成独立任务计划表和任务卡片，主工作区以一张合并甘特表展示周期/复合/基本任务属性、实际天/波次、每日时间条、要求型号/数量、实际执行飞机和状态。
-4. 从平台入口完成 M9.6 案例的 single、Monte Carlo、状态回放和四类分析，且所有结果来源都是 canonical run artifacts。
+2. `scripts/start-system.sh start` 启动默认产品所需的同源 app/backend、SQLite 和 Solara iframe sidecar，不再强制启动 `independent-mesa/server.py`，也不启动旧 contract provider sidecar。
+3. 可视化推演主工作区由 Solara iframe 承载，前端不再以本地时间轴播放 `visualization_state_series`。
+4. 从平台入口完成 M9.6 案例的 Solara 可视化、Monte Carlo 和四类分析，且分析结果来源都是 lite Mesa session payload。
 
-当前收束：M9.8 已完成平台嵌入和 `independent-mesa` 退役。前端 RunIntent 默认使用 `aircraft_support_v1`，可视化仿真页、单次正式 run、Monte Carlo run 和四类分析页均通过 `RunIntent -> /api/runs -> RunService -> SimulationAdapter -> aircraft_support_v1 -> SQLite + artifacts`、`/api/runs/{run_id}/artifacts/{artifact_id}` 与 `/api/runs/{run_id}/state-stream` 读取正式数据；缺 projection、缺 state-series 或 payload 校验失败时仍 fail closed。旧 `smoke` 执行路径、contract provider、scenarios 和 fixtures 已退役删除；`aviation_support` 只保留为历史 schema/fixture 证据且正式、测试和 adapter 编译运行入口统一返回 `retired_model_family` 并指向 `aircraft_support_v1`。任务视图已合并任务计划表和每日甘特图，按周期性任务 / 复合任务 / 基本任务属性展示实际天、波次、要求型号、数量、实际执行飞机和状态；旧 artifact 缺这些字段时不再从 id/name/aircraft_type 兜底推断。`scripts/start-system.sh start` 默认只启动平台同源 app/backend 和 SQLite；脚本不再启动 `independent-mesa/server.py`、旧 contract provider 或监听 `8765`。`independent-mesa/GLM` 与 `independent-mesa/GPT` 源码树、旁路服务和静态输出入口已从当前仓库移除；历史设计记录只保留在 `docs/archive/deprecated/superpowers/` 的归档计划和规格中。
+当前收束：M9.8 已完成平台嵌入和 `independent-mesa` 退役。可视化仿真页嵌入平台管理的 Solara iframe，Solara/Mesa 控制器直接推进 `aircraft_support_v1`；Monte Carlo 和四类分析页通过 `/api/mesa-analysis-runs` 读取 lite Mesa session 指标、表格和事件摘要。旧 `/api/runs`、artifact state-series、state-stream 和 run control 保留为历史账本/内部治理能力，不作为用户主流程。旧 `smoke` 执行路径、contract provider、scenarios 和 fixtures 已退役删除；`aviation_support` 只保留为历史 schema/fixture 证据且正式、测试和 adapter 编译运行入口统一返回 `retired_model_family` 并指向 `aircraft_support_v1`。`scripts/start-system.sh start` 默认启动平台同源 app/backend、SQLite 和 Solara 可视化 sidecar；脚本不启动 `independent-mesa/server.py` 或旧 contract provider。`independent-mesa/GLM` 与 `independent-mesa/GPT` 源码树、旁路服务和静态输出入口已从当前仓库移除；历史设计记录只保留在 `docs/archive/deprecated/superpowers/` 的归档计划和规格中。
 
 ## M10：工程质量和自动化测试
 
@@ -707,6 +707,6 @@ M3/M6 的第一步不是直接建设完整生产平台，而是把保存、编�
 4. 项目数据管理当前聚焦项目列表、模板标记、数据概览和 Project JSON 原始数据；M5 建模导入 API 继续作为后台导入转换能力，完整 Excel UI 或生产 worker 仍不在本阶段。
 5. RunIntent / MonteCarloRunConfig / imported sample Project 收敛已作为 M6.2 后续切片完成；M7.0 已补入本地运行/产物管理，M8.0 已补入 projection payload 消费，M9.0/M9.1 已补入离线状态序列回放、状态契约和事件追溯，M9.2 已补入在线状态流和运行订阅，M9.3 已补入最小 run lifecycle、后端控制、控制审计和 UI 状态确认，M9.4/M9.5 的 `aviation_support` 正式执行与 formal Monte Carlo 已归档，当前正式路径只接受 `aircraft_support_v1`。生产 worker、object storage、完整 cancel/retry、checkpoint restart 和真实运行中暂停/单步只在对应阶段最小需要时纳入。
 6. M9.6 已完成平台案例数据包、字段覆盖表、导出链路和 golden fixtures 冻结；M9.7 已完成 `aircraft_support_v1` 正式飞机保障仿真模型族、single run、Monte Carlo 和 coverage hardening。
-7. M9.8 已完成平台嵌入和 `independent-mesa` 退役；平台通过 canonical `/api/runs` 完成 single、Monte Carlo、状态回放和四类分析，`independent-mesa` 旁路源码树已从当前仓库移除。
+7. M9.8 已完成平台嵌入和 `independent-mesa` 退役；平台通过 Solara iframe 承载可视化推演，通过 `/api/mesa-analysis-runs` 完成 Monte Carlo 和四类分析，`independent-mesa` 旁路源码树已从当前仓库移除。
 8. 2026-06-27 TODO 阶段 2 已完成保障组织、资源表和基本保障活动库收敛；后续阶段 3 才迁移仿真实验、可视化与结果承载信息架构，不应把阶段 2 的页面编辑收敛扩大为结果页重构。
 9. 每次 PR 更新页面流转、数据对象或结果口径时，同步更新本文档或相关验收清单。
