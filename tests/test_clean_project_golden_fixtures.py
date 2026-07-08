@@ -65,9 +65,17 @@ class CleanProjectGoldenFixtureTest(unittest.TestCase):
 
         self.assertEqual(clean, golden)
         self.assertNotIn("artifactManifest", clean)
+        self.assertNotIn("artifactPayload", clean)
+        self.assertNotIn("rmsAllocationResult", clean)
+        self.assertNotIn("allocationResults", clean)
+        self.assertNotIn("runResults", clean)
+        self.assertNotIn("runtimeOutputs", clean)
         self.assertNotIn("uiState", clean["components"][0])
+        self.assertNotIn("resultArtifacts", clean["components"][0])
         self.assertNotIn("draftState", clean["supportActivities"][0])
         self.assertNotIn("futureUiPanelState", clean["supportActivities"][0]["jobs"][0])
+        self.assertNotIn("analysisRequests", clean["supportActivities"][0]["jobs"][0])
+        self.assertNotIn("runtimeOutputs", clean["supportActivities"][0]["jobs"][0])
         self.assertNotIn("canvasLayout", clean["reliabilityBlockDiagram"]["nodes"][0])
         self.assertNotIn("futureFrontendPanelState", clean["reliabilityBlockDiagram"]["nodes"][0])
 
