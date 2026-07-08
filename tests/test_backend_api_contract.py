@@ -68,8 +68,10 @@ def small_aircraft_support_project(project_id: str) -> dict[str, Any]:
             "minRequiredSorties": 1,
             "taskDurationMinutes": 30,
             "equipmentType": "J-15",
+            "missionPhases": [
+                {"id": "phase-sortie", "name": "sortie", "sequence": 1, "durationMinutes": 30}
+            ],
         }],
-        "missionPhases": [],
         "combatUnit": {"members": [{"aircraftNo": "J15-001", "model": "J-15", "status": "ready", "airport": "A"}]},
         "components": [{
             "id": "whole-aircraft",
@@ -3484,7 +3486,8 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertGreaterEqual(len(created["project"]["basicMissions"]), 2)
         self.assertTrue(all(basic.get("id") for basic in created["project"]["basicMissions"]))
         self.assertEqual(created["project"]["airports"], ["A"])
-        self.assertGreaterEqual(len(created["project"]["missionPhases"]), 3)
+        self.assertNotIn("missionPhases", created["project"])
+        self.assertTrue(all(len(basic.get("missionPhases", [])) >= 3 for basic in created["project"]["basicMissions"]))
         self.assertGreaterEqual(len(created["project"]["combatUnit"]["members"]), 4)
         self.assertGreaterEqual(len(created["project"]["supportNodes"]), 3)
         self.assertTrue(any(

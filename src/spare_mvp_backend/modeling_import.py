@@ -126,6 +126,7 @@ def modeling_import_to_project(import_package: dict[str, Any], validation: dict[
 
     combat_unit = _project_object(objects, mission, "combatUnit", {})
     basic_missions = _project_basic_missions(objects, mission, activities)
+    _attach_mission_phases_to_basic_missions(basic_missions, _project_object_list(objects, mission, "missionPhases"))
     if used_tables.get("supportActivities") is False:
         _drop_basic_mission_support_activity_names(basic_missions)
     mission_profile = _mission_profile_to_project(mission, import_package["importId"])
@@ -141,7 +142,6 @@ def modeling_import_to_project(import_package: dict[str, Any], validation: dict[
         "airports": _combat_unit_airports(combat_unit),
         "missionProfile": mission_profile,
         "basicMissions": basic_missions,
-        "missionPhases": _project_object_list(objects, mission, "missionPhases"),
         "combatUnit": combat_unit,
         "components": [_equipment_asset_to_component(row) for row in equipment_assets],
         "supportNodes": _support_nodes_from_resources(resources),
@@ -598,6 +598,18 @@ def _project_basic_missions(objects: dict[str, Any], mission: dict[str, Any], ac
         if basic_mission.get("basicTaskName") in (None, "") and basic_mission.get("name") not in (None, ""):
             basic_mission["basicTaskName"] = str(basic_mission["name"])
     return basic_missions
+
+
+def _attach_mission_phases_to_basic_missions(basic_missions: list[dict[str, Any]], root_phases: list[dict[str, Any]]) -> None:
+    if not root_phases:
+        return
+    for basic_mission in basic_missions:
+        if not isinstance(basic_mission, dict):
+            continue
+        phases = basic_mission.get("missionPhases")
+        if isinstance(phases, list) and phases:
+            continue
+        basic_mission["missionPhases"] = deepcopy(root_phases)
 
 
 def _sync_composite_task_basic_mission_refs(mission_profile: dict[str, Any], basic_missions: list[dict[str, Any]]) -> None:

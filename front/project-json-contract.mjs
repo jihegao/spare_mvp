@@ -24,7 +24,7 @@ const OBJECT_LABELS = {
 };
 
 const EXCLUDED_PROJECT_OBJECT_ROOTS = new Set(["equipment", "experiment", "monteCarlo", "analysisRequests"]);
-const NON_REQUIRED_PROJECT_OBJECT_ROOTS = new Set(["reliabilityBlockDiagram"]);
+const NON_REQUIRED_PROJECT_OBJECT_ROOTS = new Set(["missionPhases", "reliabilityBlockDiagram"]);
 
 export const PROJECT_JSON_CONTRACT = buildProjectJsonContract(defaultScenario, FEATURE_PAGES);
 

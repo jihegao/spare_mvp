@@ -317,6 +317,8 @@ function stripProjectNonModelFields(projectJson) {
   stripLegacyBasicMissionFields(projectJson);
   stripMissionProfileNonModelFields(projectJson.missionProfile);
   normalizeMissionProfileReferenceFields(projectJson);
+  migrateRootMissionPhasesToBasicMissions(projectJson);
+  delete projectJson.missionPhases;
   stripComponentNonModelFields(projectJson.components);
   delete projectJson.reliabilityBlockDiagram;
   stripSupportActivityTypoFields(projectJson);
@@ -980,6 +982,18 @@ function stripComponentNonModelFields(components) {
       delete profile.replacementRatio;
       if (Object.keys(profile).length === 0) delete component.specialRepairProfile;
     }
+  }
+}
+
+function migrateRootMissionPhasesToBasicMissions(projectJson) {
+  const rootPhases = Array.isArray(projectJson?.missionPhases)
+    ? projectJson.missionPhases.filter((phase) => phase && typeof phase === "object" && !Array.isArray(phase))
+    : [];
+  if (!rootPhases.length || !Array.isArray(projectJson?.basicMissions)) return;
+  for (const mission of projectJson.basicMissions) {
+    if (!mission || typeof mission !== "object" || Array.isArray(mission)) continue;
+    if (Array.isArray(mission.missionPhases) && mission.missionPhases.length > 0) continue;
+    mission.missionPhases = cloneJson(rootPhases);
   }
 }
 

@@ -20,7 +20,7 @@ BEHAVIOR_DRIVING_FIELDS = [
     "missionProfile.compositeTasks",
     "missionProfile.periodicTasks",
     "basicMissions",
-    "missionPhases",
+    "basicMissions[].missionPhases",
     "airports",
     "components[].aircraftModel",
     "components[].failureDistribution",

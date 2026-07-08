@@ -8,6 +8,14 @@
       "equipmentType": "J-15",
       "id": "basic-small",
       "missionId": "basic-small",
+      "missionPhases": [
+        {
+          "durationMinutes": 30,
+          "id": "phase-sortie",
+          "name": "sortie",
+          "sequence": 1
+        }
+      ],
       "name": "small sortie",
       "taskDurationMinutes": 30
     }
@@ -39,7 +47,6 @@
       "quantity": 1
     }
   ],
-  "missionPhases": [],
   "missionProfile": {
     "compositeTasks": [],
     "durationHours": 1,

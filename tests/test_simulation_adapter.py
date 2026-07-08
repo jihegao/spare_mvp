@@ -315,6 +315,51 @@ class SimulationAdapterTest(unittest.TestCase):
 
         self.assertEqual(models, ["J-15", "J-35"])
 
+    def test_aircraft_support_v1_compiles_nested_mission_phases_per_basic_mission(self) -> None:
+        project = self._load_fixture("m9_6_platform_case_export.json")["project"]
+        project.pop("missionPhases", None)
+        project["basicMissions"][0]["missionPhases"] = [
+            {"id": "phase-shared", "name": "day prep", "phaseRatio": 0.25},
+            {"id": "phase-day-sortie", "name": "day sortie", "phaseRatio": 0.75},
+        ]
+        project["basicMissions"][1]["missionPhases"] = [
+            {"id": "phase-shared", "name": "night prep", "phaseRatio": 0.2},
+            {"id": "phase-night-return", "name": "night return", "phaseRatio": 0.8},
+        ]
+
+        scenario = self.adapter.compile_scenario(project, model_family="aircraft_support_v1")
+
+        phases = scenario["simulation_inputs"]["mission_profile"]["mission_phases"]
+        self.assertEqual(
+            [(phase["basicMissionId"], phase["id"], phase["name"]) for phase in phases],
+            [
+                ("bm-cv-01", "phase-shared", "day prep"),
+                ("bm-cv-01", "phase-day-sortie", "day sortie"),
+                ("night-alert-main", "phase-shared", "night prep"),
+                ("night-alert-main", "phase-night-return", "night return"),
+            ],
+        )
+        provenance = scenario["compiled_from"]["mapping_provenance"]
+        self.assertIn("basicMissions[].missionPhases", provenance["consumed_fields"])
+        self.assertNotIn("basicMissions[].missionPhases=legacyRootMissionPhases", provenance["defaults_applied"])
+
+    def test_aircraft_support_v1_falls_back_to_legacy_root_mission_phases(self) -> None:
+        project = self._load_fixture("m9_6_platform_case_export.json")["project"]
+        project["missionPhases"] = [
+            {"id": "legacy-root-phase", "name": "legacy root phase", "phaseRatio": 1}
+        ]
+        for mission in project["basicMissions"]:
+            mission.pop("missionPhases", None)
+
+        scenario = self.adapter.compile_scenario(project, model_family="aircraft_support_v1")
+
+        self.assertEqual(
+            scenario["simulation_inputs"]["mission_profile"]["mission_phases"],
+            [{"id": "legacy-root-phase", "name": "legacy root phase", "phaseRatio": 1}],
+        )
+        provenance = scenario["compiled_from"]["mapping_provenance"]
+        self.assertIn("basicMissions[].missionPhases=legacyRootMissionPhases", provenance["defaults_applied"])
+
     def test_aircraft_support_v1_compile_gate_blocks_invalid_references(self) -> None:
         project = self._load_fixture("m9_6_platform_case_export.json")["project"]
         project["supportActivities"][0]["resourceId"] = "missing-support-node"

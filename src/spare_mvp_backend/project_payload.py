@@ -55,7 +55,6 @@ _ROOT_CLEAN_PROJECT_FIELDS = {
     "airports",
     "missionProfile",
     "basicMissions",
-    "missionPhases",
     "combatUnit",
     "components",
     "supportNodes",
@@ -72,7 +71,6 @@ _REQUIRED_CLEAN_PROJECT_FIELDS = {
     "airports",
     "missionProfile",
     "basicMissions",
-    "missionPhases",
     "combatUnit",
     "components",
     "supportNodes",
@@ -264,11 +262,13 @@ class ProjectJsonExporter:
         except ModuleNotFoundError:
             _validate_clean_project_fallback(project, self.target)
             _validate_basic_mission_support_activity_names(project, self.target)
+            _validate_basic_mission_phase_ids(project, self.target)
             _validate_clean_support_activity_references(project, self.target)
             return
         if not hasattr(jsonschema, "Draft202012Validator"):
             _validate_clean_project_fallback(project, self.target)
             _validate_basic_mission_support_activity_names(project, self.target)
+            _validate_basic_mission_phase_ids(project, self.target)
             _validate_clean_support_activity_references(project, self.target)
             return
 
@@ -282,6 +282,7 @@ class ProjectJsonExporter:
             path = ".".join(str(part) for part in first.path) or "<root>"
             raise ValueError(f"clean Project JSON failed {self.target} schema at {path}: {first.message}")
         _validate_basic_mission_support_activity_names(project, self.target)
+        _validate_basic_mission_phase_ids(project, self.target)
         _validate_clean_support_activity_references(project, self.target)
 
 
@@ -332,6 +333,53 @@ def _validate_basic_mission_support_activity_names(project: dict[str, Any], targ
     raise ValueError(f"clean Project JSON failed {target} schema at {schema_path}: {first['message']}")
 
 
+def project_basic_mission_phase_id_errors(project: dict[str, Any]) -> list[dict[str, str]]:
+    errors: list[dict[str, str]] = []
+    basic_missions = project.get("basicMissions")
+    if not isinstance(basic_missions, list):
+        return errors
+    for mission_index, mission in enumerate(basic_missions):
+        if not isinstance(mission, dict):
+            continue
+        phases = mission.get("missionPhases")
+        if not isinstance(phases, list):
+            continue
+        seen_ids: set[str] = set()
+        for phase_index, phase in enumerate(phases):
+            if not isinstance(phase, dict) or "id" not in phase or phase.get("id") in (None, ""):
+                continue
+            path = f"basicMissions[{mission_index}].missionPhases[{phase_index}].id"
+            phase_id = phase.get("id")
+            if not isinstance(phase_id, str):
+                errors.append({
+                    "code": "invalid_basic_mission_phase_id",
+                    "path": path,
+                    "message": "basicMissions[].missionPhases[].id must be a string when present",
+                })
+                continue
+            normalized = phase_id.strip()
+            if not normalized:
+                continue
+            if normalized in seen_ids:
+                errors.append({
+                    "code": "duplicate_basic_mission_phase_id",
+                    "path": path,
+                    "message": "basicMissions[].missionPhases[].id must be unique within its basic mission",
+                })
+                continue
+            seen_ids.add(normalized)
+    return errors
+
+
+def _validate_basic_mission_phase_ids(project: dict[str, Any], target: str) -> None:
+    errors = project_basic_mission_phase_id_errors(project)
+    if not errors:
+        return
+    first = errors[0]
+    schema_path = first["path"].replace("[", ".").replace("]", "")
+    raise ValueError(f"clean Project JSON failed {target} schema at {schema_path}: {first['message']}")
+
+
 def _validate_clean_project_fallback(project: dict[str, Any], target: str) -> None:
     """Small runtime guard used when the optional jsonschema package is unavailable."""
 
@@ -352,13 +400,12 @@ def _validate_clean_project_fallback(project: dict[str, Any], target: str) -> No
     _require_clean_non_empty_string(project, "scenarioId", "scenarioId", target)
     if project.get("activeModule") not in {"sparePlanning", "missionReliability"}:
         raise ValueError(f"clean Project JSON failed {target} schema at activeModule: unsupported module")
-    for field in ("airports", "basicMissions", "missionPhases", "supportNodes", "supportActivities"):
+    for field in ("airports", "basicMissions", "supportNodes", "supportActivities"):
         _require_clean_list(project, field, target)
     _require_clean_dict(project, "missionProfile", target)
     _validate_clean_airports(project["airports"], target)
     _validate_clean_mission_profile(project["missionProfile"], target)
     _validate_clean_basic_missions(project["basicMissions"], target)
-    _validate_clean_open_model_array(project["missionPhases"], "missionPhases", target)
     _require_clean_dict(project, "combatUnit", target)
     _validate_clean_combat_unit(project["combatUnit"], target)
     components = _require_clean_list(project, "components", target)
@@ -521,6 +568,10 @@ def _validate_clean_basic_missions(missions: list[Any], target: str) -> None:
         for field in ("minRequiredSorties", "equipmentQuantity", "requiredEquipmentQuantity"):
             _validate_optional_clean_integer(mission, field, f"{path}.{field}", target, minimum=0)
         _validate_optional_clean_integer(mission, "taskDurationMinutes", f"{path}.taskDurationMinutes", target, minimum=1)
+        if "missionPhases" in mission:
+            if not isinstance(mission["missionPhases"], list):
+                raise ValueError(f"clean Project JSON failed {target} schema at {path}.missionPhases: expected array")
+            _validate_clean_open_model_array(mission["missionPhases"], f"{path}.missionPhases", target)
 
 
 def _validate_clean_combat_unit(value: dict[str, Any], target: str, path: str = "combatUnit") -> None:
@@ -1049,6 +1100,8 @@ def _strip_project_non_model_fields(project: dict[str, Any]) -> None:
     _normalize_project_component_k_out_of_n(project)
     _strip_component_non_model_fields(project.get("components"))
     project.pop("reliabilityBlockDiagram", None)
+    _migrate_root_mission_phases_to_basic_missions(project)
+    project.pop("missionPhases", None)
     mission_profile = project.get("missionProfile")
     if isinstance(mission_profile, dict):
         mission_profile.pop("profileType", None)
@@ -1087,6 +1140,25 @@ def _normalize_project_component_k_out_of_n(project: dict[str, Any]) -> None:
         raw_k = k_out.get("k")
         k = int(float(raw_k)) if _is_positive_int(raw_k) and int(float(raw_k)) <= quantity else quantity
         component["kOutOfN"] = {**k_out, "enabled": quantity > 1, "n": quantity, "k": k}
+
+
+def _migrate_root_mission_phases_to_basic_missions(project: dict[str, Any]) -> None:
+    root_phases = project.get("missionPhases")
+    basic_missions = project.get("basicMissions")
+    if not isinstance(root_phases, list) or not root_phases:
+        return
+    if not isinstance(basic_missions, list):
+        return
+    clean_phases = [deepcopy(phase) for phase in root_phases if isinstance(phase, dict)]
+    if not clean_phases:
+        return
+    for mission in basic_missions:
+        if not isinstance(mission, dict):
+            continue
+        phases = mission.get("missionPhases")
+        if isinstance(phases, list) and phases:
+            continue
+        mission["missionPhases"] = deepcopy(clean_phases)
 
 
 def _strip_component_non_model_fields(value: Any) -> None:
@@ -1835,7 +1907,6 @@ def _prune_clean_project(project: dict[str, Any]) -> None:
     if isinstance(project.get("missionProfile"), dict):
         _prune_mission_profile(project["missionProfile"])
     _prune_open_model_list(project.get("basicMissions"))
-    _prune_open_model_list(project.get("missionPhases"))
     if isinstance(project.get("combatUnit"), dict):
         _prune_combat_unit(project["combatUnit"])
     _prune_components(project.get("components"))
