@@ -35,6 +35,13 @@ class ProjectJsonExporterTest(unittest.TestCase):
     def _schema_errors(self, project: dict) -> list[jsonschema.ValidationError]:
         return sorted(self.validator.iter_errors(project), key=lambda error: list(error.path))
 
+    def test_case_20260708_export_is_clean_project(self) -> None:
+        case_project = json.loads((REPO_ROOT / "exports" / "case-20260708.json").read_text(encoding="utf-8"))
+
+        self.assertEqual(self._schema_errors(case_project), [])
+        self.assertNotIn("missionPhases", case_project)
+        self.assertTrue(all(basic.get("missionPhases") for basic in case_project["basicMissions"]))
+
     def _export_with_old_jsonschema(self, project: dict) -> dict:
         class OldJsonschema:
             pass
@@ -56,6 +63,14 @@ class ProjectJsonExporterTest(unittest.TestCase):
             "project_version": "project-v0.1",
             "scenarioId": "scenario-polluted-aircraft-support-v1",
             "activeModule": "sparePlanning",
+            "modelingImportValidation": {
+                "importId": "import-polluted",
+                "usedTables": {"supportResources": True},
+                "validationLevel": "level1",
+            },
+            "modelingDictionaries": {
+                "personnelSpecialties": ["航电", "军械", "机械", "特设"],
+            },
             "uiState": {"selected": "debug"},
             "analysisRequests": {"largeSample": {"sweep": [1, 2]}},
             "seedPolicy": {"mode": "fixed"},
@@ -198,6 +213,34 @@ class ProjectJsonExporterTest(unittest.TestCase):
                     ],
                 }
             ],
+            "supportResources": [
+                {
+                    "id": "node-a-personnel",
+                    "supportNodeName": "node A",
+                    "type": "personnel",
+                    "name": "node A人员",
+                    "model": "机械",
+                    "quantity": 1,
+                },
+                {
+                    "id": "node-a-equipment",
+                    "supportNodeName": "node A",
+                    "type": "equipment",
+                    "name": "node A设备",
+                    "model": "通用设备",
+                    "quantity": 1,
+                    "equipmentId": "J-15",
+                },
+                {
+                    "id": "node-a-spare",
+                    "supportNodeName": "node A",
+                    "type": "spare",
+                    "name": "aircraft_support_v1_spares",
+                    "model": "aircraft_support_v1_spares",
+                    "quantity": 2,
+                    "equipment": "J-15",
+                },
+            ],
             "supportActivities": [
                 {
                     "id": "corrective",
@@ -207,6 +250,12 @@ class ProjectJsonExporterTest(unittest.TestCase):
                     "spareType": "legacy spare",
                     "requiredDevices": 1,
                     "requireDevices": 999,
+                    "useCalendarRule": True,
+                    "useFlightHourRule": True,
+                    "useTakeoffLandingRule": False,
+                    "calendarDayFloatRatio": 0.2,
+                    "runHourFloatRatio": 0.3,
+                    "takeoffLandingFloatRatio": 0.4,
                     "transportStrategies": [{"missionAreas": [{"id": "transport-nested-area"}]}],
                     "organizationStrategies": [{"mission_areas": [{"id": "organization-nested-area"}]}],
                     "jobs": [
@@ -241,6 +290,8 @@ class ProjectJsonExporterTest(unittest.TestCase):
         self.assertNotIn("resultSummary", clean)
         self.assertNotIn("rmsAllocationPlan", clean)
         self.assertNotIn("reliabilityBlockDiagram", clean)
+        self.assertNotIn("modelingDictionaries", clean)
+        self.assertNotIn("validationLevel", clean["modelingImportValidation"])
         for field in (
             "connectionType",
             "failureModel",
@@ -311,6 +362,9 @@ class ProjectJsonExporterTest(unittest.TestCase):
         self.assertNotIn("inventory", clean["supportNodes"][0])
         self.assertNotIn("transportPolicies", clean["supportNodes"][0])
         self.assertGreaterEqual(len(clean["supportResources"]), 3)
+        for resource in clean["supportResources"]:
+            self.assertNotIn("equipment", resource)
+            self.assertNotIn("equipmentId", resource)
         self.assertNotIn("requireDevices", clean["supportActivities"][0])
         self.assertNotIn("transportStrategies", clean["supportActivities"][0])
         self.assertNotIn("organizationStrategies", clean["supportActivities"][0])
@@ -319,6 +373,15 @@ class ProjectJsonExporterTest(unittest.TestCase):
         self.assertNotIn("requiredDevices", clean["supportActivities"][0])
         self.assertNotIn("requiredPersonnel", clean["supportActivities"][0])
         self.assertNotIn("spareType", clean["supportActivities"][0])
+        for field in (
+            "calendarDayFloatRatio",
+            "runHourFloatRatio",
+            "takeoffLandingFloatRatio",
+            "useCalendarRule",
+            "useFlightHourRule",
+            "useTakeoffLandingRule",
+        ):
+            self.assertNotIn(field, clean["supportActivities"][0])
         self.assertEqual(clean["supportActivities"][0]["planType"], "修复性维修方案")
         self.assertNotIn("jobs", clean["supportActivities"][0])
         self.assertEqual(clean["supportActivities"][0]["activityCodes"], ["JOB-1"])

@@ -1973,7 +1973,6 @@
         ],
         "activityName": "8小时舰载机定检",
         "activityType": "预防性维修",
-        "calendarDayFloatRatio": 0.1,
         "calendarDayInterval": 1,
         "durationHours": 2,
         "equipmentId": "j35-hydraulic",
@@ -1987,14 +1986,9 @@
           ]
         },
         "priority": 2,
-        "runHourFloatRatio": 0.15,
         "runHourInterval": 8,
         "spareQuantity": 1,
-        "takeoffLandingFloatRatio": 0.1,
-        "takeoffLandingInterval": 6,
-        "useCalendarRule": true,
-        "useFlightHourRule": true,
-        "useTakeoffLandingRule": true
+        "takeoffLandingInterval": 6
       },
       {
         "activityCodes": [],

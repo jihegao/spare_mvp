@@ -3647,6 +3647,12 @@ class BackendApiContractTest(unittest.TestCase):
         project = {
             "project_id": "project-support-boundary",
             "scenarioId": "support-boundary",
+            "modelingDictionaries": {"personnelSpecialties": ["航电"]},
+            "modelingImportValidation": {
+                "importId": "import-support-boundary",
+                "usedTables": {"supportResources": True},
+                "validationLevel": "level1",
+            },
             "supportOrganization": {
                 "tree": {
                     "id": "support-org-root",
@@ -3694,6 +3700,8 @@ class BackendApiContractTest(unittest.TestCase):
                     "name": "机械保障人员",
                     "model": "机械",
                     "quantity": 3,
+                    "equipment": "J-15",
+                    "equipmentId": "aircraft-type-j15",
                 }
             ],
             "transportPolicies": [
@@ -3711,6 +3719,12 @@ class BackendApiContractTest(unittest.TestCase):
                 {
                     "id": "logistics-plan",
                     "activityType": "后勤保障",
+                    "useCalendarRule": True,
+                    "useFlightHourRule": True,
+                    "useTakeoffLandingRule": False,
+                    "calendarDayFloatRatio": 0.2,
+                    "runHourFloatRatio": 0.3,
+                    "takeoffLandingFloatRatio": 0.4,
                     "transportStrategies": [{"from": "line-team", "to": "carrier-deck", "spareType": "航电模块"}],
                     "organizationStrategies": [{"supportLevel": "base"}],
                 }
@@ -3721,10 +3735,21 @@ class BackendApiContractTest(unittest.TestCase):
 
         self.assertNotIn("supportResourceOverrides", slim_project)
         self.assertNotIn("deletedSupportResourceKeys", slim_project)
+        self.assertNotIn("modelingDictionaries", slim_project)
+        self.assertNotIn("validationLevel", slim_project["modelingImportValidation"])
         self.assertEqual([node["name"] for node in slim_project["supportNodes"]], ["基地", "中继", "基层"])
         self.assertTrue(all(set(node) == {"id", "name"} for node in slim_project["supportNodes"]))
         self.assertFalse(any(node.get("id") == "carrier-stock-personnel-mech" for node in slim_project["supportNodes"]))
-        self.assertEqual(slim_project["supportResources"], project["supportResources"])
+        self.assertEqual(slim_project["supportResources"], [
+            {
+                "id": "personnel-1",
+                "supportNodeName": "基层",
+                "type": "personnel",
+                "name": "机械保障人员",
+                "model": "机械",
+                "quantity": 3,
+            }
+        ])
         self.assertEqual(slim_project["transportPolicies"], [
             {
                 "id": "transport-1",

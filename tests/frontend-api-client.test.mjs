@@ -1100,6 +1100,55 @@ test("buildBackendProjectJson persists visible personnel specialties for legacy 
     .map((resource) => resource.model);
   assert.deepEqual(personnelModels.sort(), ["军械", "机械", "特设", "航电"].sort());
   assert.ok(projectJson.supportResources.every((resource) => resource.type !== "personnel" || resource.model));
+  assert.equal("modelingDictionaries" in projectJson, false);
+});
+
+test("buildBackendProjectJson strips clean Project non-model helper fields", () => {
+  const scenario = {
+    scenarioId: "strip-clean-project-non-model-helper-fields",
+    modelingDictionaries: {
+      personnelSpecialties: ["航电"]
+    },
+    modelingImportValidation: {
+      importId: "import-strip",
+      usedTables: { supportResources: true },
+      validationLevel: "level1"
+    },
+    supportResources: [
+      { id: "spare-1", supportNodeName: "基层", type: "spare", name: "雷达 LRU", model: "RAD-1", equipment: "J-15", equipmentId: "aircraft-type-j15", quantity: 2 }
+    ],
+    supportActivities: [{
+      id: "preventive-plan",
+      activityName: "定检方案",
+      activityType: "预防性维修",
+      useCalendarRule: true,
+      useFlightHourRule: true,
+      useTakeoffLandingRule: false,
+      calendarDayFloatRatio: 0.2,
+      runHourFloatRatio: 0.3,
+      takeoffLandingFloatRatio: 0.4
+    }]
+  };
+
+  const projectJson = buildBackendProjectJson(scenario, { id: "strip-clean-project-non-model-helper-fields" });
+
+  assert.equal("modelingDictionaries" in projectJson, false);
+  assert.deepEqual(projectJson.modelingImportValidation, {
+    importId: "import-strip",
+    usedTables: { supportResources: true }
+  });
+  assert.equal("equipment" in projectJson.supportResources[0], false);
+  assert.equal("equipmentId" in projectJson.supportResources[0], false);
+  for (const field of [
+    "calendarDayFloatRatio",
+    "runHourFloatRatio",
+    "takeoffLandingFloatRatio",
+    "useCalendarRule",
+    "useFlightHourRule",
+    "useTakeoffLandingRule"
+  ]) {
+    assert.equal(field in projectJson.supportActivities[0], false);
+  }
 });
 
 test("buildBackendProjectJson derives spare resources from equipment hardware tree", () => {
@@ -1137,13 +1186,13 @@ test("buildBackendProjectJson derives spare resources from equipment hardware tr
     .map((resource) => ({
       name: resource.name,
       model: resource.model,
-      equipment: resource.equipment,
       quantity: resource.quantity
     }));
   assert.deepEqual(spares, [
-    { name: "发动机控制模块", model: "ECU-1", equipment: "J-15", quantity: 0 },
-    { name: "雷达 LRU", model: "RAD-1", equipment: "J-15", quantity: 5 }
+    { name: "发动机控制模块", model: "ECU-1", quantity: 0 },
+    { name: "雷达 LRU", model: "RAD-1", quantity: 5 }
   ]);
+  assert.ok(projectJson.supportResources.every((resource) => !("equipment" in resource) && !("equipmentId" in resource)));
   assert.equal(projectJson.supportResources.some((resource) => ["发动机备件", "液压备件", "航电模块"].includes(resource.name)), false);
 });
 

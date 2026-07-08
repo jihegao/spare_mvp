@@ -307,7 +307,10 @@ function stripProjectNonModelFields(projectJson) {
   delete projectJson.supportResourceOverrides;
   materializeLegacySupportTables(projectJson);
   normalizeSupportModelTables(projectJson);
+  delete projectJson.modelingDictionaries;
+  stripModelingImportValidationNonModelFields(projectJson);
   stripLegacySupportNodeResourceFields(projectJson);
+  stripSupportResourceNonModelFields(projectJson);
   if (equipmentCatalog) {
     projectJson.equipment = equipmentCatalog;
   } else {
@@ -323,6 +326,7 @@ function stripProjectNonModelFields(projectJson) {
   delete projectJson.reliabilityBlockDiagram;
   stripSupportActivityTypoFields(projectJson);
   stripDeprecatedSupportActivityStrategyFields(projectJson);
+  stripSupportActivityRuleUiFields(projectJson.supportActivities);
   normalizeSupportActivityReferenceFields(projectJson);
   stripSupportActivitySpareTypeFields(projectJson.supportActivities);
   stripSupportActivityMttrFields(projectJson.supportActivities);
@@ -550,24 +554,40 @@ function normalizeSupportResourceSpareRows(projectJson, supportNodeNames) {
       resource.equipment || resource.equipmentId
     );
     if (!existingSpareByKey.has(key)) existingSpareByKey.set(key, resource);
+    const fallbackKey = supportSpareResourceIdentityKey(resource.supportNodeName, resource.name, resource.model, "");
+    if (!existingSpareByKey.has(fallbackKey)) existingSpareByKey.set(fallbackKey, resource);
   }
   const nonSpareResources = projectJson.supportResources.filter((resource) => !isSpareSupportResource(resource));
   const nextSpareResources = supportNodeNames.flatMap((nodeName, nodeIndex) => {
     return hardwareSpares.map((spare, spareIndex) => {
       const key = supportSpareResourceIdentityKey(nodeName, spare.name, spare.model, spare.equipment);
-      const existing = existingSpareByKey.get(key);
+      const fallbackKey = supportSpareResourceIdentityKey(nodeName, spare.name, spare.model, "");
+      const existing = existingSpareByKey.get(key) || existingSpareByKey.get(fallbackKey);
       return {
         id: cleanText(existing?.id) || `support-resource-${nodeIndex + 1}-spare-${spareIndex + 1}`,
         supportNodeName: nodeName,
         type: "spare",
         name: spare.name,
         model: spare.model,
-        equipment: spare.equipment,
         quantity: nonNegativeInteger(existing?.quantity ?? 0)
       };
     });
   });
   projectJson.supportResources = [...nonSpareResources, ...nextSpareResources];
+}
+
+function stripModelingImportValidationNonModelFields(projectJson) {
+  if (!projectJson?.modelingImportValidation || typeof projectJson.modelingImportValidation !== "object") return;
+  delete projectJson.modelingImportValidation.validationLevel;
+}
+
+function stripSupportResourceNonModelFields(projectJson) {
+  if (!Array.isArray(projectJson?.supportResources)) return;
+  for (const resource of projectJson.supportResources) {
+    if (!resource || typeof resource !== "object" || Array.isArray(resource)) continue;
+    delete resource.equipment;
+    delete resource.equipmentId;
+  }
 }
 
 function projectHardwareSpareRows(projectJson) {
@@ -963,6 +983,22 @@ function stripSupportActivityTypoFields(value) {
   if (!value || typeof value !== "object") return;
   delete value.requireDevices;
   for (const child of Object.values(value)) stripSupportActivityTypoFields(child);
+}
+
+function stripSupportActivityRuleUiFields(value) {
+  if (!Array.isArray(value)) return;
+  const fields = [
+    "calendarDayFloatRatio",
+    "runHourFloatRatio",
+    "takeoffLandingFloatRatio",
+    "useCalendarRule",
+    "useFlightHourRule",
+    "useTakeoffLandingRule"
+  ];
+  for (const activity of value) {
+    if (!activity || typeof activity !== "object" || Array.isArray(activity)) continue;
+    for (const field of fields) delete activity[field];
+  }
 }
 
 function stripComponentNonModelFields(components) {
