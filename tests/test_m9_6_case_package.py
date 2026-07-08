@@ -110,7 +110,8 @@ class M96CasePackageTest(unittest.TestCase):
         self.assertEqual(entry_by_path["objects.missionProfiles[].reliabilityBlockDiagram.edges[].from"]["status"], "governance_only")
         self.assertEqual(entry_by_path["objects.missionProfiles[].reliabilityBlockDiagram.nodes[].parentId"]["status"], "consumed")
         self.assertEqual(entry_by_path["objects.supportActivities[].jobs[].predecessors[]"]["status"], "consumed")
-        self.assertEqual(entry_by_path["objects.supportActivities[].transportStrategies[].from"]["status"], "governance_only")
+        self.assertNotIn("objects.supportActivities[].transportStrategies[].from", entry_by_path)
+        self.assertNotIn("objects.supportActivities[].organizationStrategies[].supportNodeId", entry_by_path)
         self.assertEqual(entry_by_path["objects.supportOrganization.tree.id"]["status"], "governance_only")
 
     def test_expected_artifact_kind_golden_lists_single_and_monte_carlo_outputs(self) -> None:

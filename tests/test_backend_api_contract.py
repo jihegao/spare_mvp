@@ -3579,6 +3579,50 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertIsInstance(project["supportOrganization"]["tree"], dict)
         self.assertIn("children", project["supportOrganization"]["tree"])
 
+    def test_modeling_import_to_project_promotes_legacy_activity_transport_strategies(self) -> None:
+        import_package = self._fixture("modeling_import_project.json")
+        import_package["objects"] = copy.deepcopy(import_package["objects"])
+        import_package["objects"].pop("transportPolicies", None)
+        for mission in import_package["objects"]["missionProfiles"]:
+            for basic_mission in mission.get("basicMissions", []):
+                basic_mission["supportActivityName"] = "后勤保障活动方案"
+        import_package["objects"]["supportActivities"] = [
+            {
+                "id": "logistics-plan",
+                "name": "后勤保障活动方案",
+                "activityName": "后勤保障活动方案",
+                "equipmentId": import_package["objects"]["equipmentAssets"][0]["id"],
+                "resourceId": import_package["objects"]["supportResources"][0]["id"],
+                "durationHours": 1,
+                "activityType": "后勤保障",
+                "transportStrategies": [
+                    {
+                        "name": "旧调运策略",
+                        "direction": "横向运输",
+                        "spareType": "航电模块",
+                        "triggerMode": "周期性调运",
+                        "transferCycleHours": 6,
+                        "from": import_package["objects"]["supportResources"][0]["id"],
+                        "to": import_package["objects"]["supportResources"][1]["id"],
+                        "transportTimeHours": 2,
+                    }
+                ],
+                "organizationStrategies": [{"supportLevel": "base"}],
+            }
+        ]
+
+        validation = validate_modeling_import_package(import_package)
+        project = modeling_import_to_project(import_package, validation=validation)
+
+        self.assertTrue(validation["ok"])
+        self.assertEqual(project["transportPolicies"][0]["name"], "旧调运策略")
+        self.assertEqual(project["transportPolicies"][0]["spareName"], "航电模块")
+        self.assertEqual(project["transportPolicies"][0]["direction"], "横向运输")
+        self.assertEqual(project["transportPolicies"][0]["transportMode"], "横向运输")
+        self.assertEqual(project["transportPolicies"][0]["transferCycleHours"], 6)
+        self.assertNotIn("transportStrategies", project["supportActivities"][0])
+        self.assertNotIn("organizationStrategies", project["supportActivities"][0])
+
     def test_strip_project_sweep_removes_support_node_resource_rows_and_preserves_resources(self) -> None:
         project = {
             "project_id": "project-support-boundary",
@@ -3643,6 +3687,14 @@ class BackendApiContractTest(unittest.TestCase):
                     "capacity": 2,
                 }
             ],
+            "supportActivities": [
+                {
+                    "id": "logistics-plan",
+                    "activityType": "后勤保障",
+                    "transportStrategies": [{"from": "line-team", "to": "carrier-deck", "spareType": "航电模块"}],
+                    "organizationStrategies": [{"supportLevel": "base"}],
+                }
+            ],
         }
 
         slim_project = strip_project_sweep(project)
@@ -3662,6 +3714,55 @@ class BackendApiContractTest(unittest.TestCase):
                 "capacity": 2,
             }
         ])
+        self.assertEqual(slim_project["supportActivities"], [{"id": "logistics-plan", "activityType": "后勤保障"}])
+
+    def test_strip_project_sweep_promotes_legacy_activity_transport_strategies(self) -> None:
+        project = {
+            "project_id": "project-legacy-logistics",
+            "scenarioId": "legacy-logistics",
+            "supportNodes": [
+                {"id": "base", "name": "基地"},
+                {"id": "deck", "name": "甲板"},
+            ],
+            "supportActivities": [
+                {
+                    "id": "logistics-plan",
+                    "activityType": "后勤保障",
+                    "transportStrategies": [
+                        {
+                            "name": "旧调运策略",
+                            "direction": "横向运输",
+                            "spareType": "航电模块",
+                            "triggerMode": "临界库存",
+                            "criticalInventory": 2,
+                            "from": "base",
+                            "to": "deck",
+                            "transportTimeHours": 1.5,
+                        }
+                    ],
+                    "organizationStrategies": [{"supportLevel": "base"}],
+                }
+            ],
+        }
+
+        slim_project = strip_project_sweep(project)
+
+        self.assertEqual(slim_project["transportPolicies"], [
+            {
+                "id": "logistics-plan-transport-0",
+                "fromSupportNodeName": "基地",
+                "toSupportNodeName": "甲板",
+                "spareName": "航电模块",
+                "name": "旧调运策略",
+                "direction": "横向运输",
+                "triggerMode": "临界库存",
+                "criticalInventory": 2,
+                "transportMode": "横向运输",
+                "transportTimeHours": 1.5,
+            }
+        ])
+        self.assertNotIn("transportStrategies", slim_project["supportActivities"][0])
+        self.assertNotIn("organizationStrategies", slim_project["supportActivities"][0])
 
     def test_modeling_import_to_project_derives_airports_from_combat_unit_members(self) -> None:
         import_package = self._fixture("modeling_import_project.json")

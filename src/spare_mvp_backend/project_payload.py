@@ -155,6 +155,7 @@ _SUPPORT_RESOURCE_FIELDS = {
 }
 _TRANSPORT_POLICY_FIELDS = {
     "id",
+    "name",
     "fromSupportNodeName",
     "from",
     "toSupportNodeName",
@@ -162,6 +163,10 @@ _TRANSPORT_POLICY_FIELDS = {
     "spareName",
     "spareType",
     "spare_type",
+    "direction",
+    "triggerMode",
+    "criticalInventory",
+    "transferCycleHours",
     "capacity",
     "priority",
     "transportMode",
@@ -189,8 +194,6 @@ _SUPPORT_ACTIVITY_FIELDS = {
     "floatRatio",
     "activityCodes",
     "predecessors",
-    "transportStrategies",
-    "organizationStrategies",
 }
 _SUPPORT_ACTIVITY_MTTR_FIELDS = {
     "maxRepairTimeMinutes",
@@ -535,11 +538,11 @@ def _validate_clean_transport_policies(policies: Any, path: str, target: str) ->
         extra = sorted(field for field in policy if field not in _TRANSPORT_POLICY_FIELDS)
         if extra:
             raise ValueError(f"clean Project JSON failed {target} schema at {policy_path}: unexpected field {extra[0]}")
-        for field in ("id", "fromSupportNodeName", "from", "toSupportNodeName", "to", "spareName", "spareType", "spare_type", "transportMode"):
+        for field in ("id", "name", "fromSupportNodeName", "from", "toSupportNodeName", "to", "spareName", "spareType", "spare_type", "direction", "triggerMode", "transportMode"):
             _validate_optional_clean_string(policy, field, f"{policy_path}.{field}", target)
-        for field in ("capacity", "priority"):
+        for field in ("capacity", "priority", "criticalInventory"):
             _validate_optional_clean_integer(policy, field, f"{policy_path}.{field}", target, minimum=0)
-        for field in ("transportTimeHours", "transport_time_hours"):
+        for field in ("transferCycleHours", "transportTimeHours", "transport_time_hours"):
             _validate_optional_clean_number(policy, field, f"{policy_path}.{field}", target, minimum=0)
 
 
@@ -592,15 +595,6 @@ def _validate_clean_support_activities(activities: Any, target: str) -> None:
                 raise ValueError(
                     f"clean Project JSON failed {target} schema at supportActivities.{index}.predecessors: expected string array map"
                 )
-        for field in ("transportStrategies", "organizationStrategies"):
-            if field not in activity:
-                continue
-            path = f"supportActivities.{index}.{field}"
-            if not isinstance(activity[field], list):
-                raise ValueError(f"clean Project JSON failed {target} schema at {path}: expected array")
-            _validate_clean_open_model_array(activity[field], path, target)
-
-
 def _validate_clean_support_activity_jobs(jobs: Any, target: str) -> None:
     if not isinstance(jobs, list):
         raise ValueError(f"clean Project JSON failed {target} schema at supportActivityJobs: expected array")
@@ -928,6 +922,7 @@ def _strip_project_non_model_fields(project: dict[str, Any]) -> None:
         mission_profile.pop("repeatCycleHours", None)
         mission_profile.pop("analysisRequests", None)
     _strip_typo_only_support_activity_fields(project)
+    _strip_deprecated_support_activity_strategy_fields(project)
     _strip_support_activity_mttr_fields(project.get("supportActivities"))
     _strip_support_activity_mttr_fields(project.get("supportActivityJobs"))
     _lift_support_activity_jobs_to_top_level(project)
@@ -1034,8 +1029,36 @@ def _materialize_legacy_support_tables(project: dict[str, Any]) -> None:
                 next_policy["toSupportNodeName"] = str(policy.get("toSupportNodeName") or name_by_id.get(str(policy.get("to") or ""), policy.get("to") or ""))
                 next_policy["spareName"] = str(policy.get("spareName") or policy.get("spareType") or policy.get("spare_type") or "")
                 policies.append(next_policy)
+        policies.extend(_legacy_transport_policies_from_support_activities(project.get("supportActivities"), name_by_id))
         if policies:
             project["transportPolicies"] = policies
+
+
+def _legacy_transport_policies_from_support_activities(activities: Any, name_by_ref: dict[str, str] | None = None) -> list[dict[str, Any]]:
+    policies: list[dict[str, Any]] = []
+    aliases = name_by_ref or {}
+    if not isinstance(activities, list):
+        return policies
+    for activity_index, activity in enumerate(activities):
+        if not isinstance(activity, dict):
+            continue
+        strategies = activity.get("transportStrategies")
+        if not isinstance(strategies, list):
+            continue
+        for policy_index, policy in enumerate(strategies):
+            if not isinstance(policy, dict):
+                continue
+            next_policy = deepcopy(policy)
+            next_policy.setdefault("id", f"{activity.get('id') or f'support-activity-{activity_index}'}-transport-{policy_index}")
+            from_ref = str(policy.get("fromSupportNodeName") or policy.get("from") or "")
+            to_ref = str(policy.get("toSupportNodeName") or policy.get("to") or "")
+            next_policy["fromSupportNodeName"] = str(policy.get("fromSupportNodeName") or aliases.get(from_ref, from_ref))
+            next_policy["toSupportNodeName"] = str(policy.get("toSupportNodeName") or aliases.get(to_ref, to_ref))
+            next_policy["spareName"] = str(policy.get("spareName") or policy.get("spareType") or policy.get("spare_type") or "")
+            if "transportMode" not in next_policy and "direction" in next_policy:
+                next_policy["transportMode"] = next_policy["direction"]
+            policies.append(next_policy)
+    return policies
 
 
 def _normalize_support_model_tables(project: dict[str, Any]) -> None:
@@ -1184,9 +1207,11 @@ def _normalize_top_level_transport_policies(project: dict[str, Any], name_by_ref
             "toSupportNodeName": _support_node_name_for_ref(policy.get("toSupportNodeName") or policy.get("to"), name_by_ref),
             "spareName": _clean_text(policy.get("spareName") or policy.get("spareType") or policy.get("spare_type")),
         }
-        for field in ("capacity", "priority", "transportMode", "transportTimeHours"):
+        for field in ("name", "direction", "triggerMode", "criticalInventory", "transferCycleHours", "capacity", "priority", "transportMode", "transportTimeHours"):
             if field in policy:
                 normalized[field] = policy[field]
+        if "direction" in normalized and "transportMode" not in normalized:
+            normalized["transportMode"] = normalized["direction"]
         normalized_policies.append(normalized)
     project["transportPolicies"] = normalized_policies
 
@@ -1278,6 +1303,17 @@ def _strip_typo_only_support_activity_fields(value: Any) -> None:
     elif isinstance(value, list):
         for item in value:
             _strip_typo_only_support_activity_fields(item)
+
+
+def _strip_deprecated_support_activity_strategy_fields(project: dict[str, Any]) -> None:
+    activities = project.get("supportActivities")
+    if not isinstance(activities, list):
+        return
+    for activity in activities:
+        if not isinstance(activity, dict):
+            continue
+        activity.pop("transportStrategies", None)
+        activity.pop("organizationStrategies", None)
 
 
 def _strip_support_activity_mttr_fields(value: Any) -> None:
@@ -1488,8 +1524,6 @@ def _prune_support_activities(value: Any) -> None:
         if not isinstance(activity, dict):
             continue
         _keep_fields(activity, _SUPPORT_ACTIVITY_FIELDS)
-        _prune_open_model_list(activity.get("transportStrategies"))
-        _prune_open_model_list(activity.get("organizationStrategies"))
 
 
 def _prune_support_activity_jobs(value: Any) -> None:

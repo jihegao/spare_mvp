@@ -1140,12 +1140,10 @@ function bindEvents() {
 
     const logisticsAddButton = event.target.closest("[data-logistics-transport-add]");
     if (logisticsAddButton) {
-      const activity = ensureLogisticsSupportActivityDraft();
-      const transportIndex = Array.isArray(activity.transportStrategies) ? activity.transportStrategies.length : 0;
-      activity.transportStrategies = [
-        ...(Array.isArray(activity.transportStrategies) ? activity.transportStrategies : []),
-        { name: `\u65b0\u589e\u8fd0\u8f93\u7b56\u7565${transportIndex + 1}`, direction: "\u6a2a\u5411\u8fd0\u8f93", spareType: spareModelingNames()[0] || "", triggerMode: "\u4e34\u754c\u5e93\u5b58", criticalInventory: 1, from: scenario.supportNodes[0]?.id || "", to: scenario.supportNodes[1]?.id || "", transportTimeHours: 1 }
-      ];
+      ensureLogisticsSupportActivityDraft();
+      const transportPolicies = ensureTransportPolicies();
+      const transportIndex = transportPolicies.length;
+      transportPolicies.push(defaultLogisticsTransportPolicy(transportIndex));
       selectedLogisticsTransportStrategyIndexes = new Set([transportIndex]);
       markProjectDraftChanged();
       render();
@@ -1154,9 +1152,7 @@ function bindEvents() {
 
     const logisticsDeleteButton = event.target.closest("[data-logistics-transport-delete]");
     if (logisticsDeleteButton) {
-      const activity = findLogisticsSupportActivity();
-      if (!activity) return;
-      activity.transportStrategies = (Array.isArray(activity.transportStrategies) ? activity.transportStrategies : [])
+      scenario.transportPolicies = ensureTransportPolicies()
         .filter((_, rowIndex) => !selectedLogisticsTransportStrategyIndexes.has(rowIndex));
       selectedLogisticsTransportStrategyIndexes = new Set();
       markProjectDraftChanged();
@@ -6588,8 +6584,7 @@ function ensureLogisticsSupportActivityDraft() {
     id: nextSupportActivityId("logistics"),
     activityType: "后勤保障",
     planType: "后勤保障活动方案",
-    activityName: "后勤保障活动方案",
-    transportStrategies: []
+    activityName: "后勤保障活动方案"
   };
   activities.push(activity);
   return activity;
@@ -9158,14 +9153,90 @@ function toggleLogisticsTransportStrategySelection(index, checked) {
   selectedLogisticsTransportStrategyIndexes = next;
 }
 
+function ensureTransportPolicies() {
+  if (!Array.isArray(scenario.transportPolicies)) scenario.transportPolicies = [];
+  if (scenario.transportPolicies.length) return scenario.transportPolicies;
+  const migrated = legacyTransportPoliciesFromSupportActivities();
+  if (migrated.length) scenario.transportPolicies = migrated;
+  return scenario.transportPolicies;
+}
+
+function legacyTransportPoliciesFromSupportActivities() {
+  return (Array.isArray(scenario.supportActivities) ? scenario.supportActivities : []).flatMap((activity, activityIndex) => {
+    if (!Array.isArray(activity?.transportStrategies)) return [];
+    return activity.transportStrategies
+      .filter((policy) => policy && typeof policy === "object" && !Array.isArray(policy))
+      .map((policy, policyIndex) => normalizedLogisticsTransportPolicy(policy, activity, activityIndex, policyIndex));
+  });
+}
+
+function normalizedLogisticsTransportPolicy(policy, activity, activityIndex, policyIndex) {
+  const fromRef = policy.fromSupportNodeName || policy.from || "";
+  const toRef = policy.toSupportNodeName || policy.to || "";
+  return {
+    ...policy,
+    id: policy.id || `${activity?.id || `logistics-${activityIndex + 1}`}-transport-${policyIndex + 1}`,
+    name: policy.name || `运输策略${policyIndex + 1}`,
+    fromSupportNodeName: supportNodeDisplayNameForRef(fromRef),
+    toSupportNodeName: supportNodeDisplayNameForRef(toRef),
+    spareName: policy.spareName || policy.spareType || policy.spare_type || "",
+    transportMode: policy.transportMode || policy.direction || ""
+  };
+}
+
+function supportNodeDisplayNameForRef(ref) {
+  const value = String(ref || "");
+  if (!value) return "";
+  const matched = (scenario.supportNodes || []).find((node) => (
+    String(node?.name || "") === value
+    || String(node?.supportNodeName || "") === value
+    || String(node?.id || "") === value
+  ));
+  return String(matched?.name || matched?.supportNodeName || matched?.id || value);
+}
+
+function defaultSupportNodeName(index) {
+  const node = (scenario.supportNodes || [])[index];
+  return String(node?.name || node?.supportNodeName || node?.id || "");
+}
+
+function defaultLogisticsTransportPolicy(index) {
+  const fromSupportNodeName = defaultSupportNodeName(0);
+  const toSupportNodeName = defaultSupportNodeName(1) || fromSupportNodeName;
+  const direction = "\u6a2a\u5411\u8fd0\u8f93";
+  return {
+    id: nextTransportPolicyId(),
+    name: `\u65b0\u589e\u8fd0\u8f93\u7b56\u7565${index + 1}`,
+    direction,
+    transportMode: direction,
+    spareName: spareModelingNames()[0] || "",
+    triggerMode: "\u4e34\u754c\u5e93\u5b58",
+    criticalInventory: 1,
+    fromSupportNodeName,
+    toSupportNodeName,
+    transportTimeHours: 1
+  };
+}
+
+function nextTransportPolicyId() {
+  const usedIds = new Set((Array.isArray(scenario.transportPolicies) ? scenario.transportPolicies : []).map((policy) => String(policy?.id || "")));
+  let index = usedIds.size + 1;
+  while (usedIds.has(`transport-policy-${index}`)) index += 1;
+  return `transport-policy-${index}`;
+}
+
 function renderLogisticsSupportActivity(activePlan, activity) {
-  const activityIndex = Math.max(0, (scenario.supportActivities || []).indexOf(activity));
-  const transportStrategies = Array.isArray(activity.transportStrategies) ? activity.transportStrategies : [];
+  const transportPolicies = ensureTransportPolicies();
   selectedLogisticsTransportStrategyIndexes = new Set(
-    Array.from(selectedLogisticsTransportStrategyIndexes).filter((index) => index >= 0 && index < transportStrategies.length)
+    Array.from(selectedLogisticsTransportStrategyIndexes).filter((index) => index >= 0 && index < transportPolicies.length)
   );
   const lockedAttr = modelingLockDisabledAttr();
-  const supportNodeOptions = uniqueSelectOptions((scenario.supportNodes || []).map((node) => ({ value: node.name, label: node.name })));
+  const supportNodeOptions = uniqueSelectOptions((scenario.supportNodes || [])
+    .map((node) => {
+      const name = String(node?.name || node?.supportNodeName || node?.id || "");
+      return { value: name, label: name };
+    })
+    .filter((option) => option.value));
   const spareTypeOptions = spareModelingNames().map((name) => ({ value: name, label: name }));
   const directionOptions = [
     { value: "\u6a2a\u5411\u8fd0\u8f93", label: "\u6a2a\u5411\u8fd0\u8f93" },
@@ -9188,8 +9259,8 @@ function renderLogisticsSupportActivity(activePlan, activity) {
       <div class="table-wrap">
         <table>
           <thead><tr><th>\u9009\u62e9</th><th>\u7b56\u7565\u540d\u79f0</th><th>\u7b56\u7565\u65b9\u5411</th><th>\u5907\u4ef6\u79cd\u7c7b</th><th>\u89e6\u53d1\u65b9\u5f0f</th><th>\u89e6\u53d1\u53c2\u6570</th><th>\u8fd0\u8f93\u8d77\u70b9</th><th>\u8fd0\u8f93\u7ec8\u70b9</th><th>\u8fd0\u8f93\u65f6\u95f4(h)</th></tr></thead>
-          <tbody>${transportStrategies.map((row, index) => {
-            const basePath = `supportActivities.${activityIndex}.transportStrategies.${index}`;
+          <tbody>${transportPolicies.map((row, index) => {
+            const basePath = `transportPolicies.${index}`;
             const triggerControl = row.triggerMode === "\u5468\u671f\u6027\u8c03\u8fd0"
               ? `<label class="inline-field">\u8c03\u8fd0\u5468\u671f(h)${valueInput(`${basePath}.transferCycleHours`, "number", { min: "1", step: "1" })}</label>`
               : `<label class="inline-field">\u4e34\u754c\u5e93\u5b58\u6570${valueInput(`${basePath}.criticalInventory`, "number", { min: "0", step: "1" })}</label>`;
@@ -9198,11 +9269,11 @@ function renderLogisticsSupportActivity(activePlan, activity) {
                 <td><input type="checkbox" data-logistics-transport-select="${index}" ${selectedLogisticsTransportStrategyIndexes.has(index) ? "checked" : ""} aria-label="\u9009\u62e9\u8fd0\u8f93\u7b56\u7565${index + 1}"${lockedAttr}></td>
                 <td>${valueInput(`${basePath}.name`, "text")}</td>
                 <td>${valueSelect(`${basePath}.direction`, directionOptions)}</td>
-                <td>${valueSelect(`${basePath}.spareType`, spareTypeOptions)}</td>
+                <td>${valueSelect(`${basePath}.spareName`, spareTypeOptions)}</td>
                 <td>${valueSelect(`${basePath}.triggerMode`, triggerModeOptions)}</td>
                 <td>${triggerControl}</td>
-                <td>${valueSelect(`${basePath}.from`, supportNodeOptions)}</td>
-                <td>${valueSelect(`${basePath}.to`, supportNodeOptions)}</td>
+                <td>${valueSelect(`${basePath}.fromSupportNodeName`, supportNodeOptions)}</td>
+                <td>${valueSelect(`${basePath}.toSupportNodeName`, supportNodeOptions)}</td>
                 <td>${valueInput(`${basePath}.transportTimeHours`, "number", { min: "0", step: "0.1" })}</td>
               </tr>
             `;
@@ -9225,7 +9296,12 @@ function supportNodeName(id) {
 
 function spareModelingNames() {
   return Array.from(new Set(
-    (scenario.supportNodes || []).flatMap((node) => Object.keys(node.inventory || {}))
+    [
+      ...(scenario.supportNodes || []).flatMap((node) => Object.keys(node.inventory || {})),
+      ...(scenario.supportResources || [])
+        .filter((resource) => String(resource?.type || "").toLowerCase() === "spare")
+        .map((resource) => resource.name || resource.spareName || resource.spareType || resource.model || "")
+    ].filter(Boolean)
   ));
 }
 
@@ -9740,7 +9816,7 @@ const SCENARIO_ARRAY_ITEM_LABELS = Object.freeze({
   supportActivities: "保障活动",
   supportNodes: "保障点",
   supportResources: "保障资源",
-  transportStrategies: "调运策略"
+  transportPolicies: "运输策略"
 });
 
 function normalizedSelectedScenarioCompositionPath(projectJson, composition) {

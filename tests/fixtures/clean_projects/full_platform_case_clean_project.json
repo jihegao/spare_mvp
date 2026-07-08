@@ -634,24 +634,6 @@
       "equipmentId": "j15-engine",
       "id": "logistics-support",
       "name": "后勤保障运输",
-      "organizationStrategies": [
-        {
-          "lateralSupportNodes": [
-            "中继"
-          ],
-          "organizationStrategy": "任务优先 + 备件安全库存",
-          "supportLevel": "一线保障",
-          "supportNodeId": "基地"
-        },
-        {
-          "lateralSupportNodes": [
-            "基地"
-          ],
-          "organizationStrategy": "集中库存 + 垂直补给",
-          "supportLevel": "后方保障",
-          "supportNodeId": "基层1"
-        }
-      ],
       "planType": "后勤保障活动方案",
       "predecessors": {},
       "priority": 1,
@@ -659,29 +641,7 @@
       "requiredPersonnel": 2,
       "resourceId": "基层1",
       "spareQuantity": 1,
-      "spareType": "发动机备件",
-      "transportStrategies": [
-        {
-          "criticalInventory": 2,
-          "direction": "纵向运输",
-          "from": "carrier-stock",
-          "name": "1",
-          "spareType": "发动机备件",
-          "to": "carrier-deck",
-          "transportTimeHours": 1,
-          "triggerMode": "临界库存"
-        },
-        {
-          "direction": "横向运输",
-          "from": "carrier-deck",
-          "name": "2",
-          "spareType": "航电模块",
-          "to": "forward-sea-base",
-          "transferCycleHours": 24,
-          "transportTimeHours": 2,
-          "triggerMode": "周期性调运"
-        }
-      ]
+      "spareType": "发动机备件"
     },
     {
       "activityCodes": [
@@ -958,29 +918,29 @@
   ],
   "supportOrganization": {
     "tree": {
+      "id": "support-org-root",
+      "name": "保障组织",
+      "description": "由导入项目保障节点生成的初始组织树",
       "children": [
         {
-          "children": [],
-          "description": "任务优先 + 备件安全库存",
           "id": "carrier-deck",
-          "name": "基地"
+          "name": "基地",
+          "description": "任务优先 + 备件安全库存",
+          "children": []
         },
         {
-          "children": [],
-          "description": "前置库存 + 横向支援",
           "id": "forward-sea-base",
-          "name": "中继"
+          "name": "中继",
+          "description": "前置库存 + 横向支援",
+          "children": []
         },
         {
-          "children": [],
-          "description": "集中库存 + 垂直补给",
           "id": "carrier-stock",
-          "name": "基层1"
+          "name": "基层1",
+          "description": "集中库存 + 垂直补给",
+          "children": []
         }
-      ],
-      "description": "由导入项目保障节点生成的初始组织树",
-      "id": "support-org-root",
-      "name": "保障组织"
+      ]
     }
   },
   "supportResources": [
@@ -1107,34 +1067,62 @@
   ],
   "transportPolicies": [
     {
-      "capacity": 4,
-      "fromSupportNodeName": "基层1",
       "id": "transport-policy-21ae58b0d0",
-      "priority": 1,
-      "spareName": "",
+      "fromSupportNodeName": "基层1",
       "toSupportNodeName": "基地",
+      "spareName": "",
+      "capacity": 4,
+      "priority": 1,
       "transportMode": "升降机转运",
       "transportTimeHours": 1.0
     },
     {
-      "capacity": 2,
-      "fromSupportNodeName": "基地",
       "id": "transport-policy-9bbb44d0c0",
-      "priority": 1,
-      "spareName": "",
+      "fromSupportNodeName": "基地",
       "toSupportNodeName": "中继",
+      "spareName": "",
+      "capacity": 2,
+      "priority": 1,
       "transportMode": "补给艇转运",
       "transportTimeHours": 2.0
     },
     {
-      "capacity": 3,
-      "fromSupportNodeName": "基地",
       "id": "transport-policy-0b15cac048",
-      "priority": 2,
-      "spareName": "",
+      "fromSupportNodeName": "基地",
       "toSupportNodeName": "基层1",
+      "spareName": "",
+      "capacity": 3,
+      "priority": 2,
       "transportMode": "返修转运",
       "transportTimeHours": 3.0
+    },
+    {
+      "id": "logistics-support-transport-1",
+      "fromSupportNodeName": "基层1",
+      "toSupportNodeName": "基地",
+      "spareName": "发动机备件",
+      "name": "1",
+      "direction": "纵向运输",
+      "triggerMode": "临界库存",
+      "criticalInventory": 2,
+      "capacity": 1,
+      "priority": 1,
+      "transportMode": "纵向运输",
+      "transportTimeHours": 1.0
+    },
+    {
+      "id": "logistics-support-transport-2",
+      "fromSupportNodeName": "基地",
+      "toSupportNodeName": "中继",
+      "spareName": "航电模块",
+      "name": "2",
+      "direction": "横向运输",
+      "triggerMode": "周期性调运",
+      "transferCycleHours": 24,
+      "capacity": 1,
+      "priority": 1,
+      "transportMode": "横向运输",
+      "transportTimeHours": 2.0
     }
   ]
 }

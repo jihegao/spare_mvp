@@ -202,6 +202,7 @@
       "additionalProperties": false,
       "properties": {
         "id": { "type": "string" },
+        "name": { "type": "string" },
         "fromSupportNodeName": { "type": "string" },
         "from": { "type": "string" },
         "toSupportNodeName": { "type": "string" },
@@ -209,6 +210,10 @@
         "spareName": { "type": "string" },
         "spareType": { "type": "string" },
         "spare_type": { "type": "string" },
+        "direction": { "type": "string" },
+        "triggerMode": { "type": "string" },
+        "criticalInventory": { "type": "integer", "minimum": 0 },
+        "transferCycleHours": { "type": "number", "minimum": 0 },
         "capacity": { "type": "integer", "minimum": 0 },
         "priority": { "type": "integer", "minimum": 0 },
         "transportMode": { "type": "string" },
@@ -243,9 +248,7 @@
         "predecessors": {
           "type": "object",
           "additionalProperties": { "type": "array", "items": { "type": "string" } }
-        },
-        "transportStrategies": { "type": "array", "items": { "$ref": "#/$defs/openModelObject" } },
-        "organizationStrategies": { "type": "array", "items": { "$ref": "#/$defs/openModelObject" } }
+        }
       }
     },
     "supportActivityJob": {

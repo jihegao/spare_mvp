@@ -158,6 +158,8 @@ class SimulationAdapterTest(unittest.TestCase):
         serialized_inputs = json.dumps(inputs, ensure_ascii=False)
         self.assertNotIn("missionAreas", serialized_inputs)
         self.assertNotIn("mission_areas", serialized_inputs)
+        self.assertFalse(any("transport_strategies" in activity for activity in inputs["support_activities"]["activities"]))
+        self.assertFalse(any("organization_strategies" in activity for activity in inputs["support_activities"]["activities"]))
         self.assertNotIn("experiment", project)
         self.assertNotIn("analysisRequests", project)
         self.assertNotIn("monteCarlo", project)

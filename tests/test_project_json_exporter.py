@@ -192,6 +192,8 @@ class ProjectJsonExporterTest(unittest.TestCase):
         self.assertNotIn("transportPolicies", clean["supportNodes"][0])
         self.assertGreaterEqual(len(clean["supportResources"]), 3)
         self.assertNotIn("requireDevices", clean["supportActivities"][0])
+        self.assertNotIn("transportStrategies", clean["supportActivities"][0])
+        self.assertNotIn("organizationStrategies", clean["supportActivities"][0])
         self.assertEqual(clean["supportActivities"][0]["requiredDevices"], 1)
         self.assertNotIn("jobs", clean["supportActivities"][0])
         self.assertEqual(clean["supportActivities"][0]["activityCodes"], ["JOB-1"])

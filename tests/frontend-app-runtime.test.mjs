@@ -2076,6 +2076,44 @@ test("logistics support activity page only renders transport strategy list", asy
   }
 });
 
+test("logistics transport editing writes top-level transport policies", async () => {
+  const projectJson = createRuntimeProjectJson({
+    supportNodes: [
+      { id: "base", name: "基地" },
+      { id: "deck", name: "甲板" }
+    ],
+    transportPolicies: []
+  });
+  const runtime = await setupRuntimeApp({ projectJson });
+
+  try {
+    await runtime.click("[data-enter-workbench]", { projectId: "project-runtime" });
+    await runtime.setHash("feature=spare-planning-logistics-support-activity");
+    await runtime.click("[data-logistics-transport-add]");
+
+    assert.match(runtime.appNode.innerHTML, /data-path="transportPolicies\.0\.name"/);
+    assert.match(runtime.appNode.innerHTML, /data-path="transportPolicies\.0\.fromSupportNodeName"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /supportActivities\.\d+\.transportStrategies/);
+
+    await runtime.change("[data-path]", { path: "transportPolicies.0.name" }, { value: "加急调运", type: "text" });
+    await runtime.change("[data-path]", { path: "transportPolicies.0.transportTimeHours" }, { value: "2.5", type: "number" });
+    await runtime.click("[data-project-draft-save]");
+
+    const saved = await waitForProjectSave(
+      runtime,
+      (body) => body.transportPolicies?.[0]?.name === "加急调运",
+      "expected logistics save to persist top-level transport policy"
+    );
+    assert.equal(saved.transportPolicies[0].fromSupportNodeName, "基地");
+    assert.equal(saved.transportPolicies[0].toSupportNodeName, "甲板");
+    assert.equal(saved.transportPolicies[0].spareName, "LRU-A");
+    assert.equal(saved.transportPolicies[0].transportTimeHours, 2.5);
+    assert.ok(saved.supportActivities.every((activity) => !("transportStrategies" in activity) && !("organizationStrategies" in activity)));
+  } finally {
+    runtime.restore();
+  }
+});
+
 test("experiment plan row selection is interactive for template-created projects at runtime", async () => {
   const runtime = await setupRuntimeApp({ hash: "feature=spare-planning-experiment-plan-list" });
 

@@ -1147,53 +1147,13 @@ export const MODELING_IMPORT_DEMO_FIXTURE = {
         "id": "logistics-support",
         "jobs": [],
         "name": "后勤保障运输",
-        "organizationStrategies": [
-          {
-            "lateralSupportNodes": [
-              "forward-sea-base"
-            ],
-            "organizationStrategy": "任务优先 + 备件安全库存",
-            "supportLevel": "一线保障",
-            "supportNodeId": "carrier-deck"
-          },
-          {
-            "lateralSupportNodes": [
-              "carrier-deck"
-            ],
-            "organizationStrategy": "集中库存 + 垂直补给",
-            "supportLevel": "后方保障",
-            "supportNodeId": "carrier-stock"
-          }
-        ],
         "planType": "后勤保障活动方案",
         "priority": 1,
         "requiredDevices": 2,
         "requiredPersonnel": 2,
         "resourceId": "基层1",
         "spareQuantity": 1,
-        "spareType": "发动机备件",
-        "transportStrategies": [
-          {
-            "criticalInventory": 2,
-            "direction": "纵向运输",
-            "from": "carrier-stock",
-            "name": "1",
-            "spareType": "发动机备件",
-            "to": "carrier-deck",
-            "transportTimeHours": 1,
-            "triggerMode": "临界库存"
-          },
-          {
-            "direction": "横向运输",
-            "from": "carrier-deck",
-            "name": "2",
-            "spareType": "航电模块",
-            "to": "forward-sea-base",
-            "transferCycleHours": 24,
-            "transportTimeHours": 2,
-            "triggerMode": "周期性调运"
-          }
-        ]
+        "spareType": "发动机备件"
       },
       {
         "activityName": "J-15再次出动准备活动",
@@ -1445,6 +1405,34 @@ export const MODELING_IMPORT_DEMO_FIXTURE = {
         "toSupportNodeName": "基层1",
         "transportMode": "返修转运",
         "transportTimeHours": 3
+      },
+      {
+        "capacity": 1,
+        "criticalInventory": 2,
+        "direction": "纵向运输",
+        "fromSupportNodeName": "基层1",
+        "id": "logistics-support-transport-1",
+        "name": "1",
+        "priority": 1,
+        "spareName": "发动机备件",
+        "toSupportNodeName": "基地",
+        "transportMode": "纵向运输",
+        "transportTimeHours": 1,
+        "triggerMode": "临界库存"
+      },
+      {
+        "capacity": 1,
+        "direction": "横向运输",
+        "fromSupportNodeName": "基地",
+        "id": "logistics-support-transport-2",
+        "name": "2",
+        "priority": 1,
+        "spareName": "航电模块",
+        "toSupportNodeName": "中继",
+        "transferCycleHours": 24,
+        "transportMode": "横向运输",
+        "transportTimeHours": 2,
+        "triggerMode": "周期性调运"
       }
     ]
   },

@@ -927,8 +927,6 @@ class SimulationAdapter:
             "takeoffLandingInterval": activity.get("takeoffLandingInterval"),
             "floatRatio": activity.get("floatRatio"),
             "jobs": self._support_activity_jobs_for_activity(activity, job_definitions or {}),
-            "transport_strategies": copy.deepcopy(self._dict_list(activity.get("transportStrategies"))),
-            "organization_strategies": copy.deepcopy(self._dict_list(activity.get("organizationStrategies"))),
         }
 
     def _support_activity_job_definitions(self, project: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -1069,8 +1067,6 @@ class SimulationAdapter:
                 "project_id",
                 "project_version",
                 "supportOrganization.tree",
-                "supportActivities[].transportStrategies",
-                "supportActivities[].organizationStrategies",
             ],
             "unsupported_fields": self._aircraft_support_v1_unsupported_fields(project),
         }
