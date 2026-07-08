@@ -1,0 +1,4 @@
+interface:
+  display_name: "Aircraft Support V1 Project"
+  short_description: "从 Project JSON 独立解释并运行 aircraft_support_v1"
+  default_prompt: "Use $aircraft-support-v1-project to select a backend Project, remember its modeling table structure, explain it by task, equipment, support organization, and support activity, then run aircraft_support_v1 from Project JSON."
