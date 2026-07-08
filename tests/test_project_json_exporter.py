@@ -82,6 +82,7 @@ class ProjectJsonExporterTest(unittest.TestCase):
                         "model": "J-15",
                         "status": "ready",
                         "airport": "Airport A",
+                        "deploymentLocation": "航母飞行甲板",
                     }
                 ]
             },
@@ -169,6 +170,7 @@ class ProjectJsonExporterTest(unittest.TestCase):
         self.assertNotIn("draftState", clean["basicMissions"][0])
         self.assertNotIn("uiState", clean["airports"][0])
         self.assertNotIn("canvasLayout", clean["missionAreas"][0])
+        self.assertNotIn("deploymentLocation", clean["combatUnit"]["members"][0])
         self.assertNotIn("profileType", clean["missionProfile"])
         self.assertNotIn("analysisRequests", clean["missionProfile"])
         self.assertNotIn("inventory", clean["supportNodes"][0])

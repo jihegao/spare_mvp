@@ -77,8 +77,7 @@
               "model": { "type": "string" },
               "initial_state": { "type": "string", "enum": ["available", "maintenance", "flying"] },
               "airport": { "type": "string" },
-              "airport_id": { "type": "string" },
-              "deployment_location": { "type": "string" }
+              "airport_id": { "type": "string" }
             }
           }
         }

@@ -271,6 +271,7 @@ class SimulationAdapterTest(unittest.TestCase):
         project = self._load_fixture("m9_6_platform_case_export.json")["project"]
         project.pop("equipment", None)
         project["missionProfile"].pop("equipment", None)
+        project["combatUnit"]["members"][0]["deploymentLocation"] = "航母飞行甲板"
 
         scenario = self.adapter.compile_scenario(project, model_family="aircraft_support_v1")
 
@@ -282,6 +283,7 @@ class SimulationAdapterTest(unittest.TestCase):
             [asset["tail_number"] for asset in inputs["aircraft"]["assets"]],
             [member["aircraftNo"] for member in project["combatUnit"]["members"]],
         )
+        self.assertNotIn("deployment_location", inputs["aircraft"]["assets"][0])
         provenance = scenario["compiled_from"]["mapping_provenance"]
         self.assertIn("combatUnit.members", provenance["consumed_fields"])
         self.assertNotIn("equipment.quantity", provenance["consumed_fields"])

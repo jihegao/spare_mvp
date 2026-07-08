@@ -768,7 +768,6 @@ class SimulationAdapter:
                     "initial_state": initial_state,
                     "airport": self._optional_string(member.get("airport")) or "",
                     "airport_id": self._optional_string(member.get("airportId") or member.get("baseAirportId")) or "",
-                    "deployment_location": self._optional_string(member.get("deploymentLocation")) or "",
                 }
             )
         return assets
@@ -2321,7 +2320,7 @@ class SimulationAdapter:
         for asset in simulation_inputs.get("aircraft", {}).get("assets", []) or []:
             if not isinstance(asset, dict):
                 continue
-            for key in ("airport", "airport_id", "airportId", "baseAirportId", "deployment_location", "deploymentLocation"):
+            for key in ("airport", "airport_id", "airportId", "baseAirportId"):
                 token = self._normalized_scope_token(asset.get(key))
                 if token:
                     tokens.add(token)

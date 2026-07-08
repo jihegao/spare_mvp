@@ -602,14 +602,12 @@ def _combat_unit_airports(combat_unit: Any) -> list[str]:
                 member.get("airport")
                 or member.get("airportName")
                 or member.get("deploymentAirport")
-                or member.get("deploymentLocation")
             )
         if not airport_names:
             append_airport(
                 combat_unit.get("airport")
                 or combat_unit.get("airportName")
                 or combat_unit.get("deploymentAirport")
-                or combat_unit.get("deploymentLocation")
             )
     else:
         append_airport(combat_unit)

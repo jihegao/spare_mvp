@@ -37,6 +37,7 @@ def build_m9_6_platform_case_export(import_package: dict[str, Any], repo_root: P
     published_import.setdefault("validation", {"status": "valid", "issues": []})
 
     project = strip_project_sweep(modeling_import_to_project(published_import))
+    _remove_combat_unit_deployment_locations(project)
     modeling_snapshot = {
         "schema_version": "modeling-snapshot-v0",
         "snapshot_id": M9_6_MODELING_SNAPSHOT_ID,
@@ -173,6 +174,19 @@ def _experiment_plan_config_from_import(import_package: dict[str, Any], project:
 
 def _m9_6_frozen_import_package(import_package: dict[str, Any]) -> dict[str, Any]:
     return copy.deepcopy(import_package)
+
+
+def _remove_combat_unit_deployment_locations(project: dict[str, Any]) -> None:
+    combat_unit = project.get("combatUnit")
+    if not isinstance(combat_unit, dict):
+        return
+    combat_unit.pop("deploymentLocation", None)
+    members = combat_unit.get("members")
+    if not isinstance(members, list):
+        return
+    for member in members:
+        if isinstance(member, dict):
+            member.pop("deploymentLocation", None)
 
 
 def write_m9_6_golden_fixtures(repo_root: Path | str) -> None:

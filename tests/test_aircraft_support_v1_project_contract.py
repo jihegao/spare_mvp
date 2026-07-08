@@ -178,6 +178,10 @@ class AircraftSupportV1CleanProjectSchemaTest(unittest.TestCase):
         self.assertTrue(self._schema_errors(project))
 
         project = self._clean_project()
+        project["combatUnit"]["members"][0]["deploymentLocation"] = "航母飞行甲板"
+        self.assertTrue(self._schema_errors(project))
+
+        project = self._clean_project()
         project["missionAreas"].append({"id": "area-a", "uiState": {"expanded": True}})
         self.assertTrue(self._schema_errors(project))
 
