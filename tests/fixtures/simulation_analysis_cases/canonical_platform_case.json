@@ -2213,8 +2213,6 @@
         "durationHours": 3,
         "equipmentId": "j15-avionics",
         "id": "corrective",
-        "maxRepairTimeMinutes": 240,
-        "meanRepairTimeMinutes": 180,
         "name": "航电模块故障修复",
         "planType": "修复性维修方案",
         "predecessors": {
@@ -2224,14 +2222,6 @@
           ]
         },
         "priority": 1,
-        "repairDistribution": {
-          "distributionType": "对数正态分布",
-          "params": "mu=5.1, sigma=0.35"
-        },
-        "repairTypes": [
-          "换件修复",
-          "功能复测"
-        ],
         "requiredDevices": 1,
         "requiredPersonnel": 3,
         "resourceId": "基地",
@@ -2378,7 +2368,6 @@
     "supportActivityJobs": [
       {
         "activityCode": "OPS-001",
-        "ammunition": "无",
         "durationMinutes": 5,
         "durationProfile": {
           "distributionType": "三角分布",
@@ -2409,7 +2398,6 @@
       },
       {
         "activityCode": "OPS-002",
-        "ammunition": "无",
         "durationMinutes": 10,
         "durationProfile": {
           "distributionType": "均匀分布",
@@ -2435,7 +2423,6 @@
       },
       {
         "activityCode": "REP-001",
-        "ammunition": "无",
         "durationMinutes": 40,
         "durationProfile": {
           "distributionType": "三角分布",
@@ -2466,7 +2453,6 @@
       },
       {
         "activityCode": "REP-002",
-        "ammunition": "无",
         "durationMinutes": 90,
         "durationProfile": {
           "distributionType": "正态分布",
@@ -2502,7 +2488,6 @@
       },
       {
         "activityCode": "PM-001",
-        "ammunition": "无",
         "durationMinutes": 30,
         "durationProfile": {
           "distributionType": "固定值",
@@ -2527,7 +2512,6 @@
       },
       {
         "activityCode": "PM-002",
-        "ammunition": "无",
         "durationMinutes": 70,
         "durationProfile": {
           "distributionType": "三角分布",

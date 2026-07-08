@@ -19,16 +19,29 @@ _POLLUTION_KEYS = {
     "treeLayout",
     "canvasLayout",
     "draftState",
+    "monteCarlo",
+    "analysisRequests",
+    "experiment",
+    "seedPolicy",
+    "scenarioComposition",
+    "stopPolicy",
     "validationReports",
     "verificationResult",
     "rmsAllocationPlan",
+    "rmsAllocationResult",
+    "allocationResults",
     "missionExposure",
     "exposureMatrix",
     "rmsNodeResult",
     "simulationRun",
     "resultSummary",
+    "runResults",
+    "runtimeOutputs",
     "artifactManifest",
+    "resultArtifacts",
+    "artifactPayload",
 }
+_FRONTEND_POLLUTION_TOKENS = {"frontend", "ui"}
 _ROOT_CLEAN_PROJECT_FIELDS = {
     "schema_version",
     "project_id",
@@ -316,7 +329,7 @@ def _validate_clean_open_model_array(values: list[Any], path: str, target: str) 
     for index, item in enumerate(values):
         if not isinstance(item, dict):
             raise ValueError(f"clean Project JSON failed {target} schema at {path}.{index}: expected object")
-        pollution = sorted(field for field in item if field in _POLLUTION_KEYS)
+        pollution = sorted(field for field in item if _is_pollution_key(field))
         if pollution:
             raise ValueError(f"clean Project JSON failed {target} schema at {path}.{index}: unexpected field {pollution[0]}")
 
@@ -348,7 +361,7 @@ def _validate_clean_basic_missions(missions: list[Any], target: str) -> None:
         path = f"basicMissions.{index}"
         if not isinstance(mission, dict):
             raise ValueError(f"clean Project JSON failed {target} schema at {path}: expected object")
-        pollution = sorted(field for field in mission if field in _POLLUTION_KEYS)
+        pollution = sorted(field for field in mission if _is_pollution_key(field))
         if pollution:
             raise ValueError(f"clean Project JSON failed {target} schema at {path}: unexpected field {pollution[0]}")
         for field in ("id", "name"):
@@ -1301,7 +1314,7 @@ def _normalize_support_activity_job_resource_fields(job: dict[str, Any]) -> None
 def _strip_pollution_keys(value: Any) -> None:
     if isinstance(value, dict):
         for key in list(value):
-            if key in _POLLUTION_KEYS:
+            if _is_pollution_key(key):
                 value.pop(key, None)
                 continue
             _strip_pollution_keys(value[key])
@@ -1450,6 +1463,21 @@ def _drop_none_values(value: Any) -> None:
     elif isinstance(value, list):
         for item in value:
             _drop_none_values(item)
+
+
+def _is_pollution_key(key: Any) -> bool:
+    if key in _POLLUTION_KEYS:
+        return True
+    if not isinstance(key, str):
+        return False
+    return bool(_FRONTEND_POLLUTION_TOKENS & set(_field_name_tokens(key)))
+
+
+def _field_name_tokens(key: str) -> list[str]:
+    tokens: list[str] = []
+    for part in re.sub(r"[^0-9A-Za-z]+", " ", key).split():
+        tokens.extend(match.group(0).lower() for match in re.finditer(r"[A-Z]?[a-z]+|[A-Z]+(?=[A-Z]|$)|\d+", part))
+    return tokens
 
 
 def _collect_project_runtime_config_paths(value: Any, path: str, paths: list[str]) -> None:

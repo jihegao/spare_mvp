@@ -1553,8 +1553,26 @@ test("basic support activity library filters rows by selected activity type", as
 test("corrective maintenance view uses selected component activities and MTTR", async () => {
   const projectJson = createRuntimeProjectJson({
     components: [
-      { id: "component-a", name: "部件A", aircraftModel: "J-15", quantity: 1, repairDistribution: { distributionType: "固定值", value: 42 } },
-      { id: "component-b", name: "部件B", aircraftModel: "J-15", quantity: 1, repairDistribution: { distributionType: "固定值", value: 66 } }
+      {
+        id: "component-a",
+        name: "部件A",
+        aircraftModel: "J-15",
+        parentId: "aircraft-root",
+        productType: "LRU",
+        quantity: 1,
+        failureRate: 0.01,
+        repairDistribution: { distributionType: "固定值", value: 42 }
+      },
+      {
+        id: "component-b",
+        name: "部件B",
+        aircraftModel: "J-15",
+        parentId: "aircraft-root",
+        productType: "LRU",
+        quantity: 1,
+        failureRate: 0.01,
+        repairDistribution: { distributionType: "固定值", value: 66 }
+      }
     ]
   });
   projectJson.supportActivities.push(

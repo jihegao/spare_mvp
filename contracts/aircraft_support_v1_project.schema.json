@@ -340,15 +340,27 @@
         { "required": ["treeLayout"] },
         { "required": ["canvasLayout"] },
         { "required": ["draftState"] },
+        { "required": ["monteCarlo"] },
+        { "required": ["analysisRequests"] },
+        { "required": ["experiment"] },
+        { "required": ["seedPolicy"] },
+        { "required": ["scenarioComposition"] },
+        { "required": ["stopPolicy"] },
         { "required": ["validationReports"] },
         { "required": ["verificationResult"] },
         { "required": ["rmsAllocationPlan"] },
+        { "required": ["rmsAllocationResult"] },
+        { "required": ["allocationResults"] },
         { "required": ["missionExposure"] },
         { "required": ["exposureMatrix"] },
         { "required": ["rmsNodeResult"] },
         { "required": ["simulationRun"] },
         { "required": ["resultSummary"] },
-        { "required": ["artifactManifest"] }
+        { "required": ["runResults"] },
+        { "required": ["runtimeOutputs"] },
+        { "required": ["artifactManifest"] },
+        { "required": ["resultArtifacts"] },
+        { "required": ["artifactPayload"] }
       ]
     }
   }

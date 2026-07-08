@@ -100,6 +100,7 @@ class M96CasePackageTest(unittest.TestCase):
         self.assertEqual(entry_by_path["objects.equipment.initialReady"]["status"], "ignored")
         self.assertEqual(entry_by_path["objects.missionProfiles[].basicMissions[].minRequiredSorties"]["status"], "ignored")
         self.assertEqual(entry_by_path["objects.equipment.quantity"]["status"], "ignored")
+        self.assertEqual(entry_by_path["objects.supportResources[].type"]["status"], "ignored")
         self.assertEqual(entry_by_path["objects.equipmentAssets[].failureDistribution.parameters"]["status"], "consumed")
         self.assertEqual(entry_by_path["objects.missionProfiles[].experiment.steps"]["status"], "derived")
         self.assertEqual(entry_by_path["objects.missionProfiles[].reliabilityBlockDiagram.edges[].to"]["status"], "consumed")

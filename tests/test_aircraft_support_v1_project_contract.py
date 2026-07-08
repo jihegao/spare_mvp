@@ -134,10 +134,18 @@ class AircraftSupportV1CleanProjectSchemaTest(unittest.TestCase):
             "scenarioComposition",
             "stopPolicy",
             "rmsAllocationPlan",
+            "rmsAllocationResult",
+            "allocationResults",
             "missionExposure",
+            "exposureMatrix",
+            "rmsNodeResult",
             "simulationRun",
             "resultSummary",
+            "runResults",
+            "runtimeOutputs",
             "artifactManifest",
+            "resultArtifacts",
+            "artifactPayload",
         ):
             with self.subTest(field=field):
                 project = self._clean_project()
@@ -172,6 +180,19 @@ class AircraftSupportV1CleanProjectSchemaTest(unittest.TestCase):
         project = self._clean_project()
         project["missionAreas"].append({"id": "area-a", "uiState": {"expanded": True}})
         self.assertTrue(self._schema_errors(project))
+
+        for field in (
+            "monteCarlo",
+            "analysisRequests",
+            "experiment",
+            "seedPolicy",
+            "scenarioComposition",
+            "stopPolicy",
+        ):
+            with self.subTest(field=field):
+                project = self._clean_project()
+                project["supportActivities"][0][field] = {}
+                self.assertTrue(self._schema_errors(project))
 
 
 if __name__ == "__main__":
