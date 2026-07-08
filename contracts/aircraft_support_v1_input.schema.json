@@ -12,7 +12,6 @@
     "equipment_tree",
     "support_network",
     "support_activities",
-    "reliability_block_diagram",
     "time",
     "monte_carlo",
     "seed",
@@ -128,15 +127,6 @@
             "required": ["id", "name", "activity_type", "equipment_id", "resource_id", "jobs"]
           }
         }
-      }
-    },
-    "reliability_block_diagram": {
-      "type": "object",
-      "additionalProperties": true,
-      "required": ["nodes", "edges"],
-      "properties": {
-        "nodes": { "type": "array", "items": { "type": "object", "additionalProperties": true } },
-        "edges": { "type": "array", "items": { "type": "object", "additionalProperties": true } }
       }
     },
     "time": {

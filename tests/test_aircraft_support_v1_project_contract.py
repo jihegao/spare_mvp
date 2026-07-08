@@ -59,10 +59,8 @@ class AircraftSupportV1CleanProjectSchemaTest(unittest.TestCase):
                     "aircraftModel": "J-15",
                     "productType": "whole",
                     "quantity": 1,
-                    "failureRate": 0.01,
-                    "failureDistribution": {"distributionType": "exponential"},
+                    "failureDistribution": {"distributionType": "指数分布", "parameters": "lambda=0.01"},
                     "kOutOfN": {"k": 1, "n": 1},
-                    "rms": {"target": {"reliability": 0.98}},
                 }
             ],
             "supportNodes": [
@@ -109,10 +107,6 @@ class AircraftSupportV1CleanProjectSchemaTest(unittest.TestCase):
                     "durationMinutes": 30,
                 }
             ],
-            "reliabilityBlockDiagram": {
-                "nodes": [{"id": "whole-aircraft", "type": "system"}],
-                "edges": [],
-            },
         }
 
     def _schema_errors(self, project: dict) -> list[jsonschema.ValidationError]:
@@ -243,6 +237,7 @@ class AircraftSupportV1CleanProjectSchemaTest(unittest.TestCase):
             "artifactManifest",
             "resultArtifacts",
             "artifactPayload",
+            "reliabilityBlockDiagram",
         ):
             with self.subTest(field=field):
                 project = self._clean_project()
@@ -250,9 +245,25 @@ class AircraftSupportV1CleanProjectSchemaTest(unittest.TestCase):
                 self.assertTrue(self._schema_errors(project))
 
     def test_schema_rejects_nested_non_model_fields(self) -> None:
-        project = self._clean_project()
-        project["components"][0]["rms"]["prediction"] = {"reliability": 0.95}
-        self.assertTrue(self._schema_errors(project))
+        for field in (
+            "connectionType",
+            "failureModel",
+            "failureRate",
+            "lifeLimitHours",
+            "mtbfHours",
+            "rms",
+            "spareType",
+        ):
+            with self.subTest(field=field, path="components"):
+                project = self._clean_project()
+                project["components"][0][field] = 0
+                self.assertTrue(self._schema_errors(project))
+
+        for field in ("repairRatio", "replacementRatio"):
+            with self.subTest(field=field, path="components.specialRepairProfile"):
+                project = self._clean_project()
+                project["components"][0]["specialRepairProfile"] = {"repairTimeMinutes": 30, field: 0.5}
+                self.assertTrue(self._schema_errors(project))
 
         project = self._clean_project()
         project["supportActivities"][0]["requireDevices"] = 1
@@ -260,6 +271,10 @@ class AircraftSupportV1CleanProjectSchemaTest(unittest.TestCase):
 
         project = self._clean_project()
         project["supportActivities"][0]["jobs"] = [{"activityCode": "job-1"}]
+        self.assertTrue(self._schema_errors(project))
+
+        project = self._clean_project()
+        project["supportActivities"][0]["spareType"] = "legacy"
         self.assertTrue(self._schema_errors(project))
 
         project = self._clean_project()
@@ -297,16 +312,6 @@ class AircraftSupportV1CleanProjectSchemaTest(unittest.TestCase):
             with self.subTest(field=field, path="supportActivityJobs"):
                 project = self._clean_project()
                 project["supportActivityJobs"][0][field] = []
-                self.assertTrue(self._schema_errors(project))
-
-            with self.subTest(field=field, path="reliabilityBlockDiagram.nodes"):
-                project = self._clean_project()
-                project["reliabilityBlockDiagram"]["nodes"][0][field] = []
-                self.assertTrue(self._schema_errors(project))
-
-            with self.subTest(field=field, path="reliabilityBlockDiagram.edges"):
-                project = self._clean_project()
-                project["reliabilityBlockDiagram"]["edges"] = [{field: []}]
                 self.assertTrue(self._schema_errors(project))
 
             with self.subTest(field=field, path="supportActivities.transportStrategies"):

@@ -2078,7 +2078,7 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertIn("components[].failureDistribution", scope["behavior_driving_fields"])
         self.assertIn("transportPolicies[]", scope["behavior_driving_fields"])
         self.assertIn("missionProfile.periodicTasks", scope["behavior_driving_fields"])
-        self.assertIn("reliabilityBlockDiagram", scope["behavior_driving_fields"])
+        self.assertNotIn("reliabilityBlockDiagram", scope["behavior_driving_fields"])
         self.assertNotIn("experiment.steps", scope["behavior_driving_fields"])
         self.assertEqual(scope["fail_closed_fields"], [])
         self.assertEqual(scope["m9_7_4_coverage_hardening_fields"], [])
@@ -3086,7 +3086,10 @@ class BackendApiContractTest(unittest.TestCase):
         project = small_aircraft_support_project("project-aircraft-support-contract-001")
         branch_project = copy.deepcopy(project)
         branch_project["experiment"]["seed"] = 99
-        branch_project["components"][0]["failureRate"] = 0.21
+        branch_project["components"][0]["failureDistribution"] = {
+            "distributionType": "exponential",
+            "parameters": "lambda=0.21",
+        }
         branch_project["components"][0].setdefault("rms", {})["prediction"] = {"mtbfHours": 100}
         branch_project["resultSummary"] = {"mission_success_rate": 1}
         branch_project = strip_project_sweep(branch_project)
@@ -3121,15 +3124,14 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(model_family, "aircraft_support_v1")
         self.assertNotIn("experiment", compiled_project)
         self.assertNotIn("resultSummary", compiled_project)
-        self.assertNotIn("prediction", compiled_project["components"][0]["rms"])
+        self.assertNotIn("rms", compiled_project["components"][0])
         self.assertNotIn("resultSummary", self.adapter.compile_runtime_configs[-1]["projectJson"])
-        self.assertNotIn("prediction", self.adapter.compile_runtime_configs[-1]["projectJson"]["components"][0]["rms"])
+        self.assertNotIn("rms", self.adapter.compile_runtime_configs[-1]["projectJson"]["components"][0])
         clean_export = provenance["clean_project_export"]
         self.assertEqual(clean_export["target"], "aircraft_support_v1")
         self.assertIn("resultSummary", clean_export["stripped_fields"])
-        self.assertIn("components[0].rms.prediction", clean_export["stripped_fields"])
         self.assertEqual(self.adapter.compile_runtime_configs[-1]["seed"], 99)
-        self.assertEqual(compiled_project["components"][0]["failureRate"], 0.21)
+        self.assertEqual(compiled_project["components"][0]["failureDistribution"]["parameters"], "lambda=0.21")
         self.assertEqual(next(resource for resource in compiled_project["supportResources"] if resource["type"] == "equipment")["quantity"], 8)
         self.assertEqual(compiled_scenario["simulation_inputs"]["seed"], 99)
         self.assertEqual(compiled_scenario["simulation_inputs"]["equipment_tree"]["components"][0]["failure_rate"], 0.21)
@@ -3174,7 +3176,10 @@ class BackendApiContractTest(unittest.TestCase):
         project = small_aircraft_support_project("project-aircraft-support-contract-001")
         saved = self.api.save_project(project)
         old_snapshot = self.api.create_modeling_snapshot(saved["project_id"])
-        project["components"][0]["failureRate"] = 0.33
+        project["components"][0]["failureDistribution"] = {
+            "distributionType": "exponential",
+            "parameters": "lambda=0.33",
+        }
         saved = self.api.save_project(project)
         current_snapshot = self.api.create_modeling_snapshot(saved["project_id"])
         plan = self.api.create_experiment_plan(
@@ -3207,7 +3212,8 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(provenance["modeling_snapshot_id"], current_snapshot["snapshot_id"])
         self.assertNotIn("experiment", compiled_project)
         self.assertEqual(compiled_scenario["simulation_inputs"]["seed"], 606)
-        self.assertEqual(compiled_project["components"][0]["failureRate"], 0.33)
+        self.assertEqual(compiled_project["components"][0]["failureDistribution"]["parameters"], "lambda=0.33")
+        self.assertEqual(compiled_scenario["simulation_inputs"]["equipment_tree"]["components"][0]["failure_rate"], 0.33)
 
     def test_backend_api_delegates_submit_run_without_owning_lifecycle_lock(self) -> None:
         shared_lock = threading.Lock()
@@ -3468,7 +3474,8 @@ class BackendApiContractTest(unittest.TestCase):
             component.get("id") == "j15-avionics"
             and component.get("aircraftModel") == "J-15"
             and component.get("parentId") == "aircraft-root"
-            and component.get("spareType") == "航电模块"
+            and component.get("productType") == "LRU"
+            and "spareType" not in component
             for component in created["project"]["components"]
         ))
         self.assertGreaterEqual(len(created["project"]["missionProfile"]["compositeTasks"]), 2)
@@ -3489,7 +3496,7 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertTrue(all("jobs" not in activity for activity in created["project"]["supportActivities"]))
         self.assertGreaterEqual(len(created["project"]["supportActivities"][0]["activityCodes"]), 2)
         self.assertGreaterEqual(len(created["project"]["supportActivityJobs"]), 2)
-        self.assertGreaterEqual(len(created["project"]["reliabilityBlockDiagram"]["nodes"]), 4)
+        self.assertNotIn("reliabilityBlockDiagram", created["project"])
         self.assertNotIn("experiment", created["project"])
         self.assertNotIn("analysisRequests", created["project"])
         self.assertEqual(created["savedProject"]["project_id"], import_package["projectId"])
@@ -3543,7 +3550,7 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertNotIn("carrier-deck", project["airports"])
         self.assertNotIn("experiment", project)
         self.assertNotIn("analysisRequests", project)
-        self.assertGreaterEqual(len(project["reliabilityBlockDiagram"]["nodes"]), 4)
+        self.assertNotIn("reliabilityBlockDiagram", project)
         self.assertNotIn("monteCarlo", project)
         self.assertNotIn("monteCarlo", project["missionProfile"])
         self.assertNotIn("analysisRequests", project["missionProfile"])
@@ -3823,7 +3830,7 @@ class BackendApiContractTest(unittest.TestCase):
         project = modeling_import_to_project(import_package)
 
         self.assertEqual(project["combatUnit"], {"members": []})
-        self.assertEqual(project["reliabilityBlockDiagram"], {"nodes": [], "edges": []})
+        self.assertNotIn("reliabilityBlockDiagram", project)
         self.assertNotIn("monteCarlo", project)
         self.assertNotIn("monteCarlo", project["missionProfile"])
 

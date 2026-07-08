@@ -317,9 +317,12 @@ function stripProjectNonModelFields(projectJson) {
   stripLegacyBasicMissionFields(projectJson);
   stripMissionProfileNonModelFields(projectJson.missionProfile);
   normalizeMissionProfileReferenceFields(projectJson);
+  stripComponentNonModelFields(projectJson.components);
+  delete projectJson.reliabilityBlockDiagram;
   stripSupportActivityTypoFields(projectJson);
   stripDeprecatedSupportActivityStrategyFields(projectJson);
   normalizeSupportActivityReferenceFields(projectJson);
+  stripSupportActivitySpareTypeFields(projectJson.supportActivities);
   stripSupportActivityMttrFields(projectJson.supportActivities);
   stripSupportActivityMttrFields(projectJson.supportActivityJobs);
 }
@@ -572,8 +575,7 @@ function projectHardwareSpareRows(projectJson) {
     .filter((component) => component && typeof component === "object" && !Array.isArray(component))
     .filter((component) => {
       const productType = cleanText(component.productType).toUpperCase();
-      const spareType = cleanText(component.spareType).toUpperCase();
-      return productType === "LRU" || spareType === "LRU";
+      return productType === "LRU";
     })
     .map((component, index) => ({
       name: cleanText(component.name || component.id) || `未命名LRU${index + 1}`,
@@ -959,6 +961,35 @@ function stripSupportActivityTypoFields(value) {
   if (!value || typeof value !== "object") return;
   delete value.requireDevices;
   for (const child of Object.values(value)) stripSupportActivityTypoFields(child);
+}
+
+function stripComponentNonModelFields(components) {
+  if (!Array.isArray(components)) return;
+  for (const component of components) {
+    if (!component || typeof component !== "object" || Array.isArray(component)) continue;
+    delete component.connectionType;
+    delete component.failureModel;
+    delete component.failureRate;
+    delete component.lifeLimitHours;
+    delete component.mtbfHours;
+    delete component.rms;
+    delete component.spareType;
+    const profile = component.specialRepairProfile;
+    if (profile && typeof profile === "object" && !Array.isArray(profile)) {
+      delete profile.repairRatio;
+      delete profile.replacementRatio;
+      if (Object.keys(profile).length === 0) delete component.specialRepairProfile;
+    }
+  }
+}
+
+function stripSupportActivitySpareTypeFields(value) {
+  if (Array.isArray(value)) {
+    for (const item of value) stripSupportActivitySpareTypeFields(item);
+    return;
+  }
+  if (!value || typeof value !== "object") return;
+  delete value.spareType;
 }
 
 function stripDeprecatedSupportActivityStrategyFields(projectJson) {

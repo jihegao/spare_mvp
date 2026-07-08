@@ -14,8 +14,7 @@
     "combatUnit",
     "components",
     "supportNodes",
-    "supportActivities",
-    "reliabilityBlockDiagram"
+    "supportActivities"
   ],
   "properties": {
     "schema_version": { "type": "string", "const": "project-v0", "description": "Optional application envelope version; current frontend defaultScenario does not emit this field." },
@@ -35,7 +34,6 @@
     "transportPolicies": { "type": "array", "items": { "type": "object" } },
     "supportActivityJobs": { "type": "array", "items": { "type": "object" } },
     "supportActivities": { "type": "array", "items": { "type": "object" } },
-    "reliabilityBlockDiagram": { "type": "object" },
     "created_at": { "type": "string" },
     "updated_at": { "type": "string" }
   }

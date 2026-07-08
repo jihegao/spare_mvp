@@ -63,7 +63,7 @@
           "constructor_param": "aircraft"
         },
         "equipment_tree": {
-          "source": "project.components[] including failureDistribution, kOutOfN, lifeLimitHours, RMS, spareType, and specialRepairProfile",
+          "source": "project.components[] hierarchy with failureDistribution, kOutOfN, productType, quantity, and specialRepairProfile",
           "constructor_param": "equipment_tree"
         },
         "support_network": {
@@ -73,10 +73,6 @@
         "support_activities": {
           "source": "project.supportActivityJobs[] definitions plus project.supportActivities[] activityCodes/predecessors DAG",
           "constructor_param": "support_activities"
-        },
-        "reliability_block_diagram": {
-          "source": "project.reliabilityBlockDiagram",
-          "constructor_param": "reliability_block_diagram"
         },
         "time": {
           "source": "project.missionProfile.durationHours and M9.7 default tick/sample policy",

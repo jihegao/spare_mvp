@@ -120,7 +120,6 @@ class SimulationAdapterTest(unittest.TestCase):
         project["basicMissions"][0]["missionAreas"] = [{"id": "nested-basic-area"}]
         project["missionProfile"]["compositeTasks"][0]["mission_areas"] = [{"id": "nested-composite-area"}]
         project["supportActivityJobs"][0]["missionAreas"] = [{"id": "nested-job-area"}]
-        project["reliabilityBlockDiagram"]["nodes"][0]["mission_areas"] = [{"id": "nested-rbd-area"}]
         project["supportActivities"][0].setdefault("transportStrategies", []).append(
             {"missionAreas": [{"id": "nested-strategy-area"}]}
         )
@@ -521,7 +520,6 @@ class SimulationAdapterTest(unittest.TestCase):
             "postflight_backlog",
             "preventive_backlog",
             "transport_in_transit_count",
-            "rbd_root_failures",
         ]:
             self.assertIn(metric, result["metrics"])
         for frame in state_payload["frames"]:
@@ -945,12 +943,8 @@ class SimulationAdapterTest(unittest.TestCase):
                 job["spare"] = "无"
         for component in low_risk_project["components"]:
             if component.get("parentId"):
-                component["failureRate"] = 0
                 component["failureDistribution"] = {"distributionType": "指数分布", "parameters": "lambda=0"}
                 component["kOutOfN"] = {"enabled": True, "k": 1, "n": 2}
-        for node in low_risk_project["reliabilityBlockDiagram"]["nodes"]:
-            node["failureRate"] = 0
-            node["mtbfHours"] = 100000
         low_risk_project["missionProfile"]["periodicTasks"][0]["dailyRepeatCount"] = 1
         low_risk_project["missionProfile"]["periodicTasks"][0]["repeatCount"] = 1
 
@@ -959,9 +953,6 @@ class SimulationAdapterTest(unittest.TestCase):
             if component.get("parentId"):
                 component["failureDistribution"] = {"distributionType": "指数分布", "parameters": "lambda=0.8"}
                 component["kOutOfN"] = {"enabled": False, "k": 1, "n": 1}
-        for node in high_risk_project["reliabilityBlockDiagram"]["nodes"]:
-            node["failureRate"] = 0.5
-            node["mtbfHours"] = 2
         high_risk_project["missionProfile"]["periodicTasks"][0]["dailyRepeatCount"] = 3
         high_risk_project["missionProfile"]["periodicTasks"][0]["repeatCount"] = 3
 
@@ -987,15 +978,19 @@ class SimulationAdapterTest(unittest.TestCase):
     def test_aircraft_support_v1_transport_policies_replenish_spare_shortages(self) -> None:
         project = self._load_fixture("m9_6_platform_case_export.json")["project"]
         project["supportOrganization"] = {}
+        target_lru = next(
+            component
+            for component in project["components"]
+            if component.get("parentId") and str(component.get("productType") or "").upper() == "LRU"
+        )
+        target_spare_name = str(target_lru["name"])
         for component in project["components"]:
             if component.get("parentId"):
-                component["failureRate"] = 0
-                component["failureDistribution"] = {"distributionType": "指数分布", "parameters": "lambda=0.8"}
+                component["failureDistribution"] = {
+                    "distributionType": "指数分布",
+                    "parameters": "lambda=0.8" if component.get("id") == target_lru.get("id") else "lambda=0",
+                }
                 component["kOutOfN"] = {"enabled": False, "k": 1, "n": 1}
-                component["spareType"] = "航电模块"
-        for rbd_node in project["reliabilityBlockDiagram"]["nodes"]:
-            rbd_node["failureRate"] = 0
-            rbd_node["mtbfHours"] = 100000
         for activity in project["supportActivities"]:
             activity.pop("calendarDayInterval", None)
             activity.pop("runHourInterval", None)
@@ -1017,12 +1012,30 @@ class SimulationAdapterTest(unittest.TestCase):
             if resource["type"] in {"personnel", "equipment"}:
                 resource["quantity"] = 50
             elif resource["type"] == "spare":
-                resource["quantity"] = 6 if resource.get("supportNodeName") == "基层1" and resource.get("name") == "航电模块" else 0
+                resource["quantity"] = 0
+        project.setdefault("supportResources", []).append(
+            {
+                "id": "target-lru-spare-source",
+                "supportNodeName": "基层1",
+                "type": "spare",
+                "name": target_spare_name,
+                "quantity": 6,
+            }
+        )
+        project.setdefault("supportResources", []).append(
+            {
+                "id": "target-lru-spare-base",
+                "supportNodeName": "基地",
+                "type": "spare",
+                "name": target_spare_name,
+                "quantity": 0,
+            }
+        )
         project["transportPolicies"] = [
             {
                 "fromSupportNodeName": "基层1",
                 "toSupportNodeName": "基地",
-                "spareName": "航电模块",
+                "spareName": target_spare_name,
                 "capacity": 4,
                 "priority": 1,
                 "transportTimeHours": 0,
