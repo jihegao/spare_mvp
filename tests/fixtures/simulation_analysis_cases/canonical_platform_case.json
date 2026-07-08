@@ -1619,6 +1619,11 @@
       {
         "failureRate": 0.0016666666666666668,
         "id": "aircraft-root",
+        "kOutOfN": {
+          "enabled": true,
+          "k": 6,
+          "n": 6
+        },
         "mtbfHours": 600.0,
         "name": "舰载机",
         "quantity": 6
@@ -2453,19 +2458,19 @@
         "organizationStrategies": [
           {
             "lateralSupportNodes": [
-              "forward-sea-base"
+              "中继"
             ],
             "organizationStrategy": "任务优先 + 备件安全库存",
             "supportLevel": "一线保障",
-            "supportNodeId": "carrier-deck"
+            "supportNodeId": "基地"
           },
           {
             "lateralSupportNodes": [
-              "carrier-deck"
+              "基地"
             ],
             "organizationStrategy": "集中库存 + 垂直补给",
             "supportLevel": "后方保障",
-            "supportNodeId": "carrier-stock"
+            "supportNodeId": "基层1"
           }
         ],
         "planType": "后勤保障活动方案",
@@ -2577,15 +2582,15 @@
     ],
     "supportNodes": [
       {
-        "id": "support-node-a1a5ec2fef",
+        "id": "support-node-1",
         "name": "基地"
       },
       {
-        "id": "support-node-8d964ce4d5",
+        "id": "support-node-2",
         "name": "中继"
       },
       {
-        "id": "support-node-8ad5c03141",
+        "id": "support-node-3",
         "name": "基层1"
       }
     ],
