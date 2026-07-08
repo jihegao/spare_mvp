@@ -221,9 +221,17 @@ def clean_project_fixture_payloads(repo_root: Path) -> dict[str, dict[str, Any]]
 def add_frontend_drift_fields(project: dict[str, Any]) -> dict[str, Any]:
     drifted = deepcopy(project)
     drifted["artifactManifest"] = {"draft": True}
+    drifted["artifactPayload"] = {"kind": "debug-export"}
+    drifted["rmsAllocationResult"] = {"status": "calculated"}
+    drifted["allocationResults"] = [{"nodeId": "whole-aircraft"}]
+    drifted["runResults"] = [{"runId": "run-debug"}]
+    drifted["runtimeOutputs"] = {"state": "debug"}
     drifted["components"][0]["uiState"] = {"open": True}
+    drifted["components"][0]["resultArtifacts"] = [{"artifact_id": "artifact-debug"}]
     drifted["supportActivities"][0]["draftState"] = {"dirty": True}
     drifted["supportActivities"][0]["jobs"][0]["futureUiPanelState"] = "must stay out of clean Project"
+    drifted["supportActivities"][0]["jobs"][0]["analysisRequests"] = {"largeSample": {"samples": 10}}
+    drifted["supportActivities"][0]["jobs"][0]["runtimeOutputs"] = {"state": "debug"}
     drifted["reliabilityBlockDiagram"]["nodes"][0]["canvasLayout"] = {"x": 1, "y": 2}
     drifted["reliabilityBlockDiagram"]["nodes"][0]["futureFrontendPanelState"] = "must stay out of clean Project"
     return drifted
