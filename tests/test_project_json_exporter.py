@@ -6,6 +6,7 @@ from pathlib import Path
 import subprocess
 import sys
 import unittest
+from unittest import mock
 
 import jsonschema
 
@@ -25,6 +26,20 @@ class ProjectJsonExporterTest(unittest.TestCase):
 
     def _schema_errors(self, project: dict) -> list[jsonschema.ValidationError]:
         return sorted(self.validator.iter_errors(project), key=lambda error: list(error.path))
+
+    def _export_with_old_jsonschema(self, project: dict) -> dict:
+        class OldJsonschema:
+            pass
+
+        real_import = __import__
+
+        def guarded_import(name, *args, **kwargs):
+            if name == "jsonschema":
+                return OldJsonschema()
+            return real_import(name, *args, **kwargs)
+
+        with mock.patch("builtins.__import__", side_effect=guarded_import):
+            return ProjectJsonExporter(target="aircraft_support_v1").export(project)
 
     def _polluted_project(self) -> dict:
         return {
@@ -194,6 +209,71 @@ print(strip_project_sweep({"scenarioId": "scenario-a"})["scenarioId"])
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.strip(), "scenario-a")
 
+    def test_aircraft_support_v1_exporter_uses_builtin_guard_without_jsonschema(self) -> None:
+        real_import = __import__
+
+        def guarded_import(name, *args, **kwargs):
+            if name == "jsonschema":
+                raise ModuleNotFoundError("blocked jsonschema")
+            return real_import(name, *args, **kwargs)
+
+        with mock.patch("builtins.__import__", side_effect=guarded_import):
+            clean = ProjectJsonExporter(target="aircraft_support_v1").export(self._polluted_project())
+
+        self.assertNotIn("resultSummary", clean)
+        self.assertNotIn("prediction", clean["components"][0]["rms"])
+        self.assertEqual(clean["scenarioId"], "scenario-polluted-aircraft-support-v1")
+
+    def test_aircraft_support_v1_exporter_uses_builtin_guard_for_old_jsonschema(self) -> None:
+        clean = self._export_with_old_jsonschema(self._polluted_project())
+
+        self.assertNotIn("resultSummary", clean)
+        self.assertEqual(clean["components"][0]["rms"], {"target": {"reliability": 0.98}})
+
+    def test_aircraft_support_v1_builtin_guard_rejects_invalid_component_numbers(self) -> None:
+        invalid_failure_rate = self._polluted_project()
+        invalid_failure_rate["components"][0]["failureRate"] = "not-a-number"
+        with self.assertRaisesRegex(ValueError, "components.0.failureRate: expected number"):
+            self._export_with_old_jsonschema(invalid_failure_rate)
+
+        invalid_life_limit = self._polluted_project()
+        invalid_life_limit["components"][0]["lifeLimitHours"] = "bad"
+        with self.assertRaisesRegex(ValueError, "components.0.lifeLimitHours: expected number"):
+            self._export_with_old_jsonschema(invalid_life_limit)
+
+    def test_aircraft_support_v1_builtin_guard_rejects_invalid_activity_numbers(self) -> None:
+        invalid_duration = self._polluted_project()
+        invalid_duration["supportActivities"][0]["durationHours"] = -1
+        with self.assertRaisesRegex(ValueError, "supportActivities.0.durationHours: expected >= 0"):
+            self._export_with_old_jsonschema(invalid_duration)
+
+        invalid_required_devices = self._polluted_project()
+        invalid_required_devices["supportActivities"][0]["requiredDevices"] = True
+        with self.assertRaisesRegex(ValueError, "supportActivities.0.requiredDevices: expected integer"):
+            self._export_with_old_jsonschema(invalid_required_devices)
+
+    def test_aircraft_support_v1_builtin_guard_rejects_invalid_object_shapes(self) -> None:
+        invalid_project_info = self._polluted_project()
+        invalid_project_info["projectInfo"] = "bad"
+        with self.assertRaisesRegex(ValueError, "projectInfo: expected object"):
+            self._export_with_old_jsonschema(invalid_project_info)
+
+        invalid_support_organization = self._polluted_project()
+        invalid_support_organization["supportOrganization"] = "bad"
+        with self.assertRaisesRegex(ValueError, "supportOrganization: expected object"):
+            self._export_with_old_jsonschema(invalid_support_organization)
+
+    def test_aircraft_support_v1_builtin_guard_rejects_invalid_open_model_items(self) -> None:
+        invalid_rbd = self._polluted_project()
+        invalid_rbd["reliabilityBlockDiagram"]["nodes"] = [1]
+        with self.assertRaisesRegex(ValueError, "reliabilityBlockDiagram.nodes.0: expected object"):
+            self._export_with_old_jsonschema(invalid_rbd)
+
+        invalid_jobs = self._polluted_project()
+        invalid_jobs["supportActivities"][0]["jobs"] = [1]
+        with self.assertRaisesRegex(ValueError, "supportActivities.0.jobs.0: expected object"):
+            self._export_with_old_jsonschema(invalid_jobs)
+
     def test_aircraft_support_v1_exporter_accepts_full_platform_case(self) -> None:
         package = json.loads((REPO_ROOT / "tests" / "fixtures" / "m9_6_platform_case_export.json").read_text(encoding="utf-8"))
 
@@ -201,7 +281,8 @@ print(strip_project_sweep({"scenarioId": "scenario-a"})["scenarioId"])
 
         self.assertEqual(self._schema_errors(clean), [])
         self.assertEqual(clean["project_id"], package["project"]["project_id"])
-        self.assertNotIn("modelingImportValidation", clean)
+        self.assertEqual(clean["modelingImportValidation"]["importId"], package["project"]["modelingImportValidation"]["importId"])
+        self.assertEqual(clean["modelingImportValidation"]["usedTables"]["supportResources"], True)
         self.assertGreater(len(clean["components"]), 1)
         self.assertGreater(len(clean["supportActivities"]), 1)
         compile_result = SimulationAdapter(repo_root=REPO_ROOT).compile_scenario_with_gate(

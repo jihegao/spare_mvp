@@ -50,7 +50,23 @@ _ROOT_CLEAN_PROJECT_FIELDS = {
     "supportActivities",
     "supportOrganization",
     "reliabilityBlockDiagram",
+    "modelingImportValidation",
 }
+_REQUIRED_CLEAN_PROJECT_FIELDS = {
+    "scenarioId",
+    "activeModule",
+    "airports",
+    "missionAreas",
+    "missionProfile",
+    "basicMissions",
+    "missionPhases",
+    "combatUnit",
+    "components",
+    "supportNodes",
+    "supportActivities",
+    "reliabilityBlockDiagram",
+}
+_MODELING_IMPORT_VALIDATION_FIELDS = {"importId", "usedTables", "disabledDomains", "warnings"}
 _AIRPORT_FIELDS = {"id", "name", "location", "supportNodeId"}
 _MISSION_PROFILE_FIELDS = {
     "id",
@@ -182,7 +198,14 @@ class ProjectJsonExporter:
         return project
 
     def _validate(self, project: dict[str, Any]) -> None:
-        import jsonschema
+        try:
+            import jsonschema
+        except ModuleNotFoundError:
+            _validate_clean_project_fallback(project, self.target)
+            return
+        if not hasattr(jsonschema, "Draft202012Validator"):
+            _validate_clean_project_fallback(project, self.target)
+            return
 
         schema_path = self.repo_root / "contracts" / "aircraft_support_v1_project.schema.json"
         schema = json.loads(schema_path.read_text(encoding="utf-8"))
@@ -197,6 +220,468 @@ class ProjectJsonExporter:
 
 def export_project_json(project_json: dict[str, Any], target: str = ACTIVE_CLEAN_PROJECT_TARGET) -> dict[str, Any]:
     return ProjectJsonExporter(target=target).export(project_json)
+
+
+def _validate_clean_project_fallback(project: dict[str, Any], target: str) -> None:
+    """Small runtime guard used when the optional jsonschema package is unavailable."""
+
+    if not isinstance(project, dict):
+        raise ValueError(f"clean Project JSON failed {target} schema at <root>: expected object")
+    missing = sorted(field for field in _REQUIRED_CLEAN_PROJECT_FIELDS if field not in project)
+    if missing:
+        raise ValueError(f"clean Project JSON failed {target} schema at <root>: missing required {missing[0]}")
+    extra = sorted(field for field in project if field not in _ROOT_CLEAN_PROJECT_FIELDS)
+    if extra:
+        raise ValueError(f"clean Project JSON failed {target} schema at <root>: unexpected field {extra[0]}")
+    if project.get("schema_version") not in (None, "project-v0"):
+        raise ValueError(f"clean Project JSON failed {target} schema at schema_version: expected project-v0")
+    for field in ("project_id", "project_version"):
+        _validate_optional_clean_string(project, field, field, target)
+    for field in ("projectInfo", "equipment"):
+        _validate_optional_clean_dict(project, field, field, target)
+    _require_clean_non_empty_string(project, "scenarioId", "scenarioId", target)
+    if project.get("activeModule") not in {"sparePlanning", "missionReliability"}:
+        raise ValueError(f"clean Project JSON failed {target} schema at activeModule: unsupported module")
+    for field in ("airports", "missionAreas", "basicMissions", "missionPhases", "supportNodes", "supportActivities"):
+        _require_clean_list(project, field, target)
+    _require_clean_dict(project, "missionProfile", target)
+    _validate_clean_airports(project["airports"], target)
+    _validate_clean_open_model_array(project["missionAreas"], "missionAreas", target)
+    _validate_clean_mission_profile(project["missionProfile"], target)
+    _validate_clean_basic_missions(project["basicMissions"], target)
+    _validate_clean_open_model_array(project["missionPhases"], "missionPhases", target)
+    _require_clean_dict(project, "combatUnit", target)
+    _validate_clean_combat_unit(project["combatUnit"], target)
+    components = _require_clean_list(project, "components", target)
+    if not components:
+        raise ValueError(f"clean Project JSON failed {target} schema at components: expected at least one component")
+    _validate_clean_components(components, target)
+    _validate_clean_support_nodes(project["supportNodes"], target)
+    if "supportResources" in project:
+        _validate_clean_support_resources(project["supportResources"], target)
+    if "transportPolicies" in project:
+        _validate_clean_transport_policies(project["transportPolicies"], "transportPolicies", target)
+    if "supportOrganization" in project:
+        _validate_clean_support_organization(project["supportOrganization"], target)
+    _validate_clean_support_activities(project.get("supportActivities"), target)
+    _validate_clean_rbd(project.get("reliabilityBlockDiagram"), target)
+    if "modelingImportValidation" in project:
+        _validate_clean_modeling_import_validation(project["modelingImportValidation"], target)
+
+
+def _require_clean_dict(project: dict[str, Any], field: str, target: str) -> dict[str, Any]:
+    value = project.get(field)
+    if not isinstance(value, dict):
+        raise ValueError(f"clean Project JSON failed {target} schema at {field}: expected object")
+    return value
+
+
+def _require_clean_list(project: dict[str, Any], field: str, target: str) -> list[Any]:
+    value = project.get(field)
+    if not isinstance(value, list):
+        raise ValueError(f"clean Project JSON failed {target} schema at {field}: expected array")
+    return value
+
+
+def _validate_clean_airports(airports: list[Any], target: str) -> None:
+    for index, airport in enumerate(airports):
+        path = f"airports.{index}"
+        if isinstance(airport, str):
+            continue
+        if not isinstance(airport, dict):
+            raise ValueError(f"clean Project JSON failed {target} schema at {path}: expected string or object")
+        extra = sorted(field for field in airport if field not in _AIRPORT_FIELDS)
+        if extra:
+            raise ValueError(f"clean Project JSON failed {target} schema at {path}: unexpected field {extra[0]}")
+        for field in _AIRPORT_FIELDS:
+            _validate_optional_clean_string(airport, field, f"{path}.{field}", target)
+
+
+def _validate_clean_open_model_array(values: list[Any], path: str, target: str) -> None:
+    for index, item in enumerate(values):
+        if not isinstance(item, dict):
+            raise ValueError(f"clean Project JSON failed {target} schema at {path}.{index}: expected object")
+        pollution = sorted(field for field in item if field in _POLLUTION_KEYS)
+        if pollution:
+            raise ValueError(f"clean Project JSON failed {target} schema at {path}.{index}: unexpected field {pollution[0]}")
+
+
+def _validate_clean_mission_profile(profile: dict[str, Any], target: str) -> None:
+    extra = sorted(field for field in profile if field not in _MISSION_PROFILE_FIELDS)
+    if extra:
+        raise ValueError(f"clean Project JSON failed {target} schema at missionProfile: unexpected field {extra[0]}")
+    if "name" not in profile:
+        raise ValueError(f"clean Project JSON failed {target} schema at missionProfile.name: required")
+    _require_clean_non_empty_string(profile, "name", "missionProfile.name", target)
+    for field in ("id", "profileId", "sourceImportId"):
+        _validate_optional_clean_string(profile, field, f"missionProfile.{field}", target)
+    _validate_optional_clean_number(profile, "durationHours", "missionProfile.durationHours", target, minimum=0)
+    _validate_optional_clean_integer(profile, "durationMinutes", "missionProfile.durationMinutes", target, minimum=1)
+    if "combatUnit" in profile:
+        if not isinstance(profile["combatUnit"], dict):
+            raise ValueError(f"clean Project JSON failed {target} schema at missionProfile.combatUnit: expected object")
+        _validate_clean_combat_unit(profile["combatUnit"], target, path="missionProfile.combatUnit")
+    for field in ("compositeTasks", "periodicTasks"):
+        if field in profile:
+            if not isinstance(profile[field], list):
+                raise ValueError(f"clean Project JSON failed {target} schema at missionProfile.{field}: expected array")
+            _validate_clean_open_model_array(profile[field], f"missionProfile.{field}", target)
+
+
+def _validate_clean_basic_missions(missions: list[Any], target: str) -> None:
+    for index, mission in enumerate(missions):
+        path = f"basicMissions.{index}"
+        if not isinstance(mission, dict):
+            raise ValueError(f"clean Project JSON failed {target} schema at {path}: expected object")
+        pollution = sorted(field for field in mission if field in _POLLUTION_KEYS)
+        if pollution:
+            raise ValueError(f"clean Project JSON failed {target} schema at {path}: unexpected field {pollution[0]}")
+        for field in ("id", "name"):
+            if field not in mission:
+                raise ValueError(f"clean Project JSON failed {target} schema at {path}.{field}: required")
+            _require_clean_string(mission, field, f"{path}.{field}", target)
+        for field in ("missionId", "equipmentType"):
+            _validate_optional_clean_string(mission, field, f"{path}.{field}", target)
+        for field in ("minRequiredSorties", "equipmentQuantity", "requiredEquipmentQuantity"):
+            _validate_optional_clean_integer(mission, field, f"{path}.{field}", target, minimum=0)
+        _validate_optional_clean_integer(mission, "taskDurationMinutes", f"{path}.taskDurationMinutes", target, minimum=1)
+
+
+def _validate_clean_combat_unit(value: dict[str, Any], target: str, path: str = "combatUnit") -> None:
+    extra = sorted(field for field in value if field not in _COMBAT_UNIT_FIELDS)
+    if extra:
+        raise ValueError(f"clean Project JSON failed {target} schema at {path}: unexpected field {extra[0]}")
+    for field in ("id", "name"):
+        _validate_optional_clean_string(value, field, f"{path}.{field}", target)
+    _validate_optional_clean_integer(value, "quantity", f"{path}.quantity", target, minimum=0)
+    if "members" not in value:
+        return
+    members = value["members"]
+    if not isinstance(members, list):
+        raise ValueError(f"clean Project JSON failed {target} schema at {path}.members: expected array")
+    for index, member in enumerate(members):
+        member_path = f"{path}.members.{index}"
+        if not isinstance(member, dict):
+            raise ValueError(f"clean Project JSON failed {target} schema at {member_path}: expected object")
+        extra_member = sorted(field for field in member if field not in _COMBAT_UNIT_MEMBER_FIELDS)
+        if extra_member:
+            raise ValueError(f"clean Project JSON failed {target} schema at {member_path}: unexpected field {extra_member[0]}")
+        for field in _COMBAT_UNIT_MEMBER_FIELDS:
+            _validate_optional_clean_string(member, field, f"{member_path}.{field}", target)
+
+
+def _validate_clean_components(components: list[Any], target: str) -> None:
+    for index, component in enumerate(components):
+        if not isinstance(component, dict):
+            raise ValueError(f"clean Project JSON failed {target} schema at components.{index}: expected object")
+        for field in ("id", "name", "quantity", "failureRate"):
+            if field not in component:
+                raise ValueError(f"clean Project JSON failed {target} schema at components.{index}.{field}: required")
+        _require_clean_non_empty_string(component, "id", f"components.{index}.id", target)
+        _require_clean_non_empty_string(component, "name", f"components.{index}.name", target)
+        _require_clean_integer(component, "quantity", f"components.{index}.quantity", target, minimum=0)
+        _require_clean_number(component, "failureRate", f"components.{index}.failureRate", target, minimum=0)
+        extra = sorted(field for field in component if field not in _COMPONENT_FIELDS)
+        if extra:
+            raise ValueError(f"clean Project JSON failed {target} schema at components.{index}: unexpected field {extra[0]}")
+        _validate_optional_clean_string(component, "parentId", f"components.{index}.parentId", target, nullable=True)
+        for field in ("aircraftModel", "productType", "spareType"):
+            _validate_optional_clean_string(component, field, f"components.{index}.{field}", target)
+        for field in ("lifeLimitHours", "mtbfHours"):
+            _validate_optional_clean_number(component, field, f"components.{index}.{field}", target, minimum=0, nullable=True)
+        for field in ("failureDistribution", "kOutOfN", "specialRepairProfile"):
+            _validate_optional_clean_dict(component, field, f"components.{index}.{field}", target)
+        rms = component.get("rms")
+        if isinstance(rms, dict):
+            extra_rms = sorted(field for field in rms if field != "target")
+            if extra_rms:
+                raise ValueError(f"clean Project JSON failed {target} schema at components.{index}.rms: unexpected field {extra_rms[0]}")
+            _validate_optional_clean_dict(rms, "target", f"components.{index}.rms.target", target)
+        elif rms is not None:
+            raise ValueError(f"clean Project JSON failed {target} schema at components.{index}.rms: expected object")
+
+
+def _validate_clean_support_nodes(nodes: list[Any], target: str) -> None:
+    for index, node in enumerate(nodes):
+        path = f"supportNodes.{index}"
+        if not isinstance(node, dict):
+            raise ValueError(f"clean Project JSON failed {target} schema at {path}: expected object")
+        for field in ("id", "name"):
+            if field not in node:
+                raise ValueError(f"clean Project JSON failed {target} schema at {path}.{field}: required")
+            _require_clean_string(node, field, f"{path}.{field}", target)
+        extra = sorted(field for field in node if field not in _SUPPORT_NODE_FIELDS)
+        if extra:
+            raise ValueError(f"clean Project JSON failed {target} schema at {path}: unexpected field {extra[0]}")
+        for field in ("supportNodeName", "airport", "airportId", "baseAirportId", "nodeType", "supportLevel", "policy", "organizationStrategy"):
+            _validate_optional_clean_string(node, field, f"{path}.{field}", target)
+        for field in ("capacity", "personnelCapacity", "equipmentCapacity"):
+            _validate_optional_clean_integer(node, field, f"{path}.{field}", target, minimum=0)
+        inventory = node.get("inventory")
+        if inventory is not None:
+            if not isinstance(inventory, dict) or any(
+                not isinstance(quantity, int) or isinstance(quantity, bool) or quantity < 0
+                for quantity in inventory.values()
+            ):
+                raise ValueError(f"clean Project JSON failed {target} schema at {path}.inventory: expected non-negative integer map")
+        if "lateralSupportNodes" in node:
+            lateral_nodes = node["lateralSupportNodes"]
+            if not isinstance(lateral_nodes, list) or any(not isinstance(item, str) for item in lateral_nodes):
+                raise ValueError(f"clean Project JSON failed {target} schema at {path}.lateralSupportNodes: expected string array")
+        if "transportPolicies" in node:
+            _validate_clean_transport_policies(node["transportPolicies"], f"{path}.transportPolicies", target)
+
+
+def _validate_clean_support_resources(resources: Any, target: str) -> None:
+    if not isinstance(resources, list):
+        raise ValueError(f"clean Project JSON failed {target} schema at supportResources: expected array")
+    for index, resource in enumerate(resources):
+        path = f"supportResources.{index}"
+        if not isinstance(resource, dict):
+            raise ValueError(f"clean Project JSON failed {target} schema at {path}: expected object")
+        for field in ("id", "type", "name", "quantity"):
+            if field not in resource:
+                raise ValueError(f"clean Project JSON failed {target} schema at {path}.{field}: required")
+        extra = sorted(field for field in resource if field not in _SUPPORT_RESOURCE_FIELDS)
+        if extra:
+            raise ValueError(f"clean Project JSON failed {target} schema at {path}: unexpected field {extra[0]}")
+        for field in ("id", "supportNodeName", "organizationNodeName", "name", "model", "spareName", "spareType"):
+            _validate_optional_clean_string(resource, field, f"{path}.{field}", target)
+        if resource.get("type") not in {"personnel", "equipment", "spare"}:
+            raise ValueError(f"clean Project JSON failed {target} schema at {path}.type: unsupported resource type")
+        for field in ("quantity", "capacity"):
+            _validate_optional_clean_integer(resource, field, f"{path}.{field}", target, minimum=0)
+
+
+def _validate_clean_transport_policies(policies: Any, path: str, target: str) -> None:
+    if not isinstance(policies, list):
+        raise ValueError(f"clean Project JSON failed {target} schema at {path}: expected array")
+    for index, policy in enumerate(policies):
+        policy_path = f"{path}.{index}"
+        if not isinstance(policy, dict):
+            raise ValueError(f"clean Project JSON failed {target} schema at {policy_path}: expected object")
+        extra = sorted(field for field in policy if field not in _TRANSPORT_POLICY_FIELDS)
+        if extra:
+            raise ValueError(f"clean Project JSON failed {target} schema at {policy_path}: unexpected field {extra[0]}")
+        for field in ("id", "fromSupportNodeName", "from", "toSupportNodeName", "to", "spareName", "spareType", "spare_type", "transportMode"):
+            _validate_optional_clean_string(policy, field, f"{policy_path}.{field}", target)
+        for field in ("capacity", "priority"):
+            _validate_optional_clean_integer(policy, field, f"{policy_path}.{field}", target, minimum=0)
+        for field in ("transportTimeHours", "transport_time_hours"):
+            _validate_optional_clean_number(policy, field, f"{policy_path}.{field}", target, minimum=0)
+
+
+def _validate_clean_support_activities(activities: Any, target: str) -> None:
+    if not isinstance(activities, list):
+        return
+    for index, activity in enumerate(activities):
+        if not isinstance(activity, dict):
+            raise ValueError(f"clean Project JSON failed {target} schema at supportActivities.{index}: expected object")
+        if "id" not in activity:
+            raise ValueError(f"clean Project JSON failed {target} schema at supportActivities.{index}.id: required")
+        _require_clean_string(activity, "id", f"supportActivities.{index}.id", target)
+        extra = sorted(field for field in activity if field not in _SUPPORT_ACTIVITY_FIELDS)
+        if extra:
+            raise ValueError(f"clean Project JSON failed {target} schema at supportActivities.{index}: unexpected field {extra[0]}")
+        for field in ("name", "activityName", "activityType", "planType", "equipmentId", "resourceId", "spareType"):
+            _validate_optional_clean_string(activity, field, f"supportActivities.{index}.{field}", target)
+        for field in ("priority", "durationMinutes", "requiredPersonnel", "requiredDevices", "spareQuantity"):
+            minimum = 1 if field == "durationMinutes" else 0
+            _validate_optional_clean_integer(activity, field, f"supportActivities.{index}.{field}", target, minimum=minimum)
+        for field in ("calendarDayInterval", "takeoffLandingInterval"):
+            _validate_optional_clean_integer(
+                activity,
+                field,
+                f"supportActivities.{index}.{field}",
+                target,
+                minimum=0,
+                nullable=True,
+            )
+        _validate_optional_clean_number(activity, "durationHours", f"supportActivities.{index}.durationHours", target, minimum=0)
+        _validate_optional_clean_number(
+            activity,
+            "runHourInterval",
+            f"supportActivities.{index}.runHourInterval",
+            target,
+            minimum=0,
+            nullable=True,
+        )
+        _validate_optional_clean_number(activity, "floatRatio", f"supportActivities.{index}.floatRatio", target, nullable=True)
+        for field in ("jobs", "transportStrategies", "organizationStrategies"):
+            if field not in activity:
+                continue
+            path = f"supportActivities.{index}.{field}"
+            if not isinstance(activity[field], list):
+                raise ValueError(f"clean Project JSON failed {target} schema at {path}: expected array")
+            _validate_clean_open_model_array(activity[field], path, target)
+
+
+def _validate_clean_rbd(value: Any, target: str) -> None:
+    if not isinstance(value, dict):
+        raise ValueError(f"clean Project JSON failed {target} schema at reliabilityBlockDiagram: expected object")
+    extra = sorted(field for field in value if field not in _RBD_FIELDS)
+    if extra:
+        raise ValueError(f"clean Project JSON failed {target} schema at reliabilityBlockDiagram: unexpected field {extra[0]}")
+    for field in ("nodes", "edges"):
+        if not isinstance(value.get(field), list):
+            raise ValueError(f"clean Project JSON failed {target} schema at reliabilityBlockDiagram.{field}: expected array")
+        _validate_clean_open_model_array(value[field], f"reliabilityBlockDiagram.{field}", target)
+
+
+def _validate_clean_support_organization(value: Any, target: str) -> None:
+    if not isinstance(value, dict):
+        raise ValueError(f"clean Project JSON failed {target} schema at supportOrganization: expected object")
+    extra = sorted(field for field in value if field != "tree")
+    if extra:
+        raise ValueError(f"clean Project JSON failed {target} schema at supportOrganization: unexpected field {extra[0]}")
+    if "tree" not in value:
+        return
+    tree = value["tree"]
+    if isinstance(tree, list):
+        for index, node in enumerate(tree):
+            _validate_clean_support_organization_node(node, f"supportOrganization.tree.{index}", target)
+        return
+    _validate_clean_support_organization_node(tree, "supportOrganization.tree", target)
+
+
+def _validate_clean_support_organization_node(value: Any, path: str, target: str) -> None:
+    if not isinstance(value, dict):
+        raise ValueError(f"clean Project JSON failed {target} schema at {path}: expected object")
+    for field in ("id", "name"):
+        if field not in value:
+            raise ValueError(f"clean Project JSON failed {target} schema at {path}.{field}: required")
+        _require_clean_string(value, field, f"{path}.{field}", target)
+    extra = sorted(field for field in value if field not in {"id", "name", "description", "children"})
+    if extra:
+        raise ValueError(f"clean Project JSON failed {target} schema at {path}: unexpected field {extra[0]}")
+    _validate_optional_clean_string(value, "description", f"{path}.description", target)
+    if "children" not in value:
+        return
+    children = value["children"]
+    if not isinstance(children, list):
+        raise ValueError(f"clean Project JSON failed {target} schema at {path}.children: expected array")
+    for index, child in enumerate(children):
+        _validate_clean_support_organization_node(child, f"{path}.children.{index}", target)
+
+
+def _validate_clean_modeling_import_validation(value: Any, target: str) -> None:
+    if not isinstance(value, dict):
+        raise ValueError(f"clean Project JSON failed {target} schema at modelingImportValidation: expected object")
+    extra = sorted(field for field in value if field not in _MODELING_IMPORT_VALIDATION_FIELDS)
+    if extra:
+        raise ValueError(f"clean Project JSON failed {target} schema at modelingImportValidation: unexpected field {extra[0]}")
+    used_tables = value.get("usedTables")
+    if used_tables is not None and (
+        not isinstance(used_tables, dict) or any(not isinstance(enabled, bool) for enabled in used_tables.values())
+    ):
+        raise ValueError(f"clean Project JSON failed {target} schema at modelingImportValidation.usedTables: expected boolean map")
+    for field in ("disabledDomains", "warnings"):
+        if field in value and not isinstance(value[field], list):
+            raise ValueError(f"clean Project JSON failed {target} schema at modelingImportValidation.{field}: expected array")
+    if "importId" in value:
+        _require_clean_string(value, "importId", "modelingImportValidation.importId", target)
+    if "disabledDomains" in value and any(not isinstance(domain, str) for domain in value["disabledDomains"]):
+        raise ValueError(
+            f"clean Project JSON failed {target} schema at modelingImportValidation.disabledDomains: expected string array"
+        )
+
+
+def _require_clean_non_empty_string(value: dict[str, Any], field: str, path: str, target: str) -> None:
+    _require_clean_string(value, field, path, target)
+    if not value[field]:
+        raise ValueError(f"clean Project JSON failed {target} schema at {path}: expected non-empty string")
+
+
+def _require_clean_string(value: dict[str, Any], field: str, path: str, target: str) -> None:
+    if not isinstance(value.get(field), str):
+        raise ValueError(f"clean Project JSON failed {target} schema at {path}: expected string")
+
+
+def _validate_optional_clean_string(
+    value: dict[str, Any],
+    field: str,
+    path: str,
+    target: str,
+    *,
+    nullable: bool = False,
+) -> None:
+    if field not in value:
+        return
+    if nullable and value[field] is None:
+        return
+    _require_clean_string(value, field, path, target)
+
+
+def _require_clean_integer(
+    value: dict[str, Any],
+    field: str,
+    path: str,
+    target: str,
+    *,
+    minimum: int | None = None,
+) -> None:
+    raw_value = value.get(field)
+    if not isinstance(raw_value, int) or isinstance(raw_value, bool):
+        raise ValueError(f"clean Project JSON failed {target} schema at {path}: expected integer")
+    if minimum is not None and raw_value < minimum:
+        raise ValueError(f"clean Project JSON failed {target} schema at {path}: expected >= {minimum}")
+
+
+def _validate_optional_clean_integer(
+    value: dict[str, Any],
+    field: str,
+    path: str,
+    target: str,
+    *,
+    minimum: int | None = None,
+    nullable: bool = False,
+) -> None:
+    if field not in value:
+        return
+    if nullable and value[field] is None:
+        return
+    _require_clean_integer(value, field, path, target, minimum=minimum)
+
+
+def _require_clean_number(
+    value: dict[str, Any],
+    field: str,
+    path: str,
+    target: str,
+    *,
+    minimum: float | None = None,
+) -> None:
+    raw_value = value.get(field)
+    if not isinstance(raw_value, (int, float)) or isinstance(raw_value, bool):
+        raise ValueError(f"clean Project JSON failed {target} schema at {path}: expected number")
+    if minimum is not None and raw_value < minimum:
+        raise ValueError(f"clean Project JSON failed {target} schema at {path}: expected >= {minimum:g}")
+
+
+def _validate_optional_clean_number(
+    value: dict[str, Any],
+    field: str,
+    path: str,
+    target: str,
+    *,
+    minimum: float | None = None,
+    nullable: bool = False,
+) -> None:
+    if field not in value:
+        return
+    if nullable and value[field] is None:
+        return
+    _require_clean_number(value, field, path, target, minimum=minimum)
+
+
+def _validate_optional_clean_dict(value: dict[str, Any], field: str, path: str, target: str) -> None:
+    if field in value and not isinstance(value[field], dict):
+        raise ValueError(f"clean Project JSON failed {target} schema at {path}: expected object")
+
+
+def _validate_optional_clean_list(value: dict[str, Any], field: str, path: str, target: str) -> None:
+    if field in value and not isinstance(value[field], list):
+        raise ValueError(f"clean Project JSON failed {target} schema at {path}: expected array")
 
 
 def project_runtime_config_paths(project_json: dict[str, Any]) -> list[str]:

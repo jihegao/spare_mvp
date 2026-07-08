@@ -15,7 +15,7 @@ from src.spare_mvp_backend.monte_carlo_config import (
     normalize_monte_carlo_run_config,
     reject_request_level_monte_carlo_config,
 )
-from src.spare_mvp_backend.project_payload import strip_project_sweep
+from src.spare_mvp_backend.project_payload import export_project_json, strip_project_sweep
 from src.spare_mvp_backend.repository import ContractRepository
 from src.spare_mvp_contract.adapter import (
     ARTIFACT_MANIFEST_SCHEMA_VERSION,
@@ -114,16 +114,18 @@ class RunService:
             if plan.get("modeling_snapshot_id")
             else None
         )
-        project_for_run = _project_for_experiment_plan(project, plan, snapshot)
-        compile_runtime_config = _compile_runtime_config(plan, mc_config)
+        project_source_for_run = _project_for_experiment_plan(project, plan, snapshot)
         if request.get("formal_run"):
-            self._assert_formal_run_uses_imported_sample(project_for_run)
+            self._assert_formal_run_uses_imported_sample(project_source_for_run)
+        project_for_run, clean_project_export = _export_project_for_model_family(project_source_for_run, model_family)
+        compile_runtime_config = _compile_runtime_config(plan, mc_config, model_family=model_family)
 
         compile_gate = getattr(self.adapter, "compile_scenario_with_gate", None)
         compile_provenance = None
         if callable(compile_gate):
             compile_result = compile_gate(project_for_run, model_family=model_family, runtime_config=compile_runtime_config)
             compile_provenance = compile_result.get("provenance")
+            _annotate_clean_project_export_provenance(compile_provenance, clean_project_export)
             _annotate_mapping_provenance(
                 compile_provenance,
                 experiment_plan_id=experiment_plan_id,
@@ -827,7 +829,11 @@ def _attach_simulation_experiment_base(
     run["simulation_experiment_base"] = base
 
 
-def _project_for_experiment_plan(project: dict[str, Any], plan: dict[str, Any], snapshot: dict[str, Any] | None) -> dict[str, Any]:
+def _project_for_experiment_plan(
+    project: dict[str, Any],
+    plan: dict[str, Any],
+    snapshot: dict[str, Any] | None,
+) -> dict[str, Any]:
     config = plan.get("config") or {}
     branch_project = config.get("projectJson") or config.get("project_json")
     if isinstance(branch_project, dict):
@@ -848,11 +854,12 @@ def _project_for_experiment_plan(project: dict[str, Any], plan: dict[str, Any], 
     return strip_project_sweep(snapshot["project"]) if snapshot else strip_project_sweep(project)
 
 
-def _compile_runtime_config(plan: dict[str, Any], mc_config: Any | None = None) -> dict[str, Any]:
+def _compile_runtime_config(plan: dict[str, Any], mc_config: Any | None = None, *, model_family: str) -> dict[str, Any]:
     runtime_config = copy.deepcopy(plan.get("config") or {})
     branch_project = runtime_config.get("projectJson") or runtime_config.get("project_json")
     if isinstance(branch_project, dict):
-        runtime_config["projectJson"] = strip_project_sweep(branch_project)
+        project_for_config, _metadata = _export_project_for_model_family(strip_project_sweep(branch_project), model_family)
+        runtime_config["projectJson"] = project_for_config
         runtime_config.pop("project_json", None)
     if mc_config is not None:
         adapter_payload = mc_config.to_adapter_payload()
@@ -861,6 +868,51 @@ def _compile_runtime_config(plan: dict[str, Any], mc_config: Any | None = None) 
         if adapter_payload.get("mc_experiment_id"):
             runtime_config["mc_experiment_id"] = adapter_payload["mc_experiment_id"]
     return runtime_config
+
+
+def _export_project_for_model_family(
+    project: dict[str, Any],
+    model_family: str,
+) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    if model_family != ACTIVE_FORMAL_MODEL_FAMILY:
+        return project, None
+    clean_project = export_project_json(project, target=ACTIVE_FORMAL_MODEL_FAMILY)
+    return clean_project, {
+        "target": ACTIVE_FORMAL_MODEL_FAMILY,
+        "source": "ProjectJsonExporter",
+        "stripped_fields": _removed_field_paths(project, clean_project),
+    }
+
+
+def _removed_field_paths(source: Any, clean: Any, path: str = "") -> list[str]:
+    removed: list[str] = []
+    if isinstance(source, dict) and isinstance(clean, dict):
+        for key in sorted(source):
+            next_path = _join_export_path(path, str(key))
+            if key not in clean:
+                removed.append(next_path)
+                continue
+            removed.extend(_removed_field_paths(source[key], clean[key], next_path))
+        return removed
+    if isinstance(source, list) and isinstance(clean, list):
+        for index, item in enumerate(source[: len(clean)]):
+            removed.extend(_removed_field_paths(item, clean[index], f"{path}[{index}]" if path else f"[{index}]"))
+        for index in range(len(clean), len(source)):
+            removed.append(f"{path}[{index}]" if path else f"[{index}]")
+    return removed
+
+
+def _join_export_path(prefix: str, key: str) -> str:
+    return f"{prefix}.{key}" if prefix else key
+
+
+def _annotate_clean_project_export_provenance(
+    provenance: dict[str, Any] | None,
+    clean_project_export: dict[str, Any] | None,
+) -> None:
+    if not isinstance(provenance, dict) or not isinstance(clean_project_export, dict):
+        return
+    provenance["clean_project_export"] = copy.deepcopy(clean_project_export)
 
 
 def _annotate_mapping_provenance(
