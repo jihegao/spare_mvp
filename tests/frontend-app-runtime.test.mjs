@@ -1553,8 +1553,24 @@ test("basic support activity library filters rows by selected activity type", as
 test("corrective basic activity draft uses the selected component scope", async () => {
   const projectJson = createRuntimeProjectJson({
     components: [
-      { id: "component-a", name: "部件A", aircraftModel: "J-15", quantity: 1 },
-      { id: "component-b", name: "部件B", aircraftModel: "J-15", quantity: 1 }
+      {
+        id: "component-a",
+        name: "部件A",
+        aircraftModel: "J-15",
+        parentId: "aircraft-root",
+        productType: "LRU",
+        quantity: 1,
+        failureRate: 0.01
+      },
+      {
+        id: "component-b",
+        name: "部件B",
+        aircraftModel: "J-15",
+        parentId: "aircraft-root",
+        productType: "LRU",
+        quantity: 1,
+        failureRate: 0.01
+      }
     ]
   });
   projectJson.supportActivities.push({
