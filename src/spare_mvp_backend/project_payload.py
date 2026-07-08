@@ -19,6 +19,8 @@ _POLLUTION_KEYS = {
     "treeLayout",
     "canvasLayout",
     "draftState",
+    "missionAreas",
+    "mission_areas",
     "monteCarlo",
     "analysisRequests",
     "experiment",
@@ -51,7 +53,6 @@ _ROOT_CLEAN_PROJECT_FIELDS = {
     "projectInfo",
     "equipment",
     "airports",
-    "missionAreas",
     "missionProfile",
     "basicMissions",
     "missionPhases",
@@ -70,7 +71,6 @@ _REQUIRED_CLEAN_PROJECT_FIELDS = {
     "scenarioId",
     "activeModule",
     "airports",
-    "missionAreas",
     "missionProfile",
     "basicMissions",
     "missionPhases",
@@ -313,11 +313,10 @@ def _validate_clean_project_fallback(project: dict[str, Any], target: str) -> No
     _require_clean_non_empty_string(project, "scenarioId", "scenarioId", target)
     if project.get("activeModule") not in {"sparePlanning", "missionReliability"}:
         raise ValueError(f"clean Project JSON failed {target} schema at activeModule: unsupported module")
-    for field in ("airports", "missionAreas", "basicMissions", "missionPhases", "supportNodes", "supportActivities"):
+    for field in ("airports", "basicMissions", "missionPhases", "supportNodes", "supportActivities"):
         _require_clean_list(project, field, target)
     _require_clean_dict(project, "missionProfile", target)
     _validate_clean_airports(project["airports"], target)
-    _validate_clean_open_model_array(project["missionAreas"], "missionAreas", target)
     _validate_clean_mission_profile(project["missionProfile"], target)
     _validate_clean_basic_missions(project["basicMissions"], target)
     _validate_clean_open_model_array(project["missionPhases"], "missionPhases", target)
@@ -1405,7 +1404,6 @@ def _strip_pollution_keys(value: Any) -> None:
 def _prune_clean_project(project: dict[str, Any]) -> None:
     _keep_fields(project, _ROOT_CLEAN_PROJECT_FIELDS)
     _prune_airports(project.get("airports"))
-    _prune_open_model_list(project.get("missionAreas"))
     if isinstance(project.get("missionProfile"), dict):
         _prune_mission_profile(project["missionProfile"])
     _prune_open_model_list(project.get("basicMissions"))

@@ -9,7 +9,6 @@
     "scenarioId",
     "activeModule",
     "airports",
-    "missionAreas",
     "missionProfile",
     "basicMissions",
     "missionPhases",
@@ -36,7 +35,6 @@
         ]
       }
     },
-    "missionAreas": { "type": "array", "items": { "$ref": "#/$defs/openModelObject" } },
     "missionProfile": { "$ref": "#/$defs/missionProfile" },
     "basicMissions": { "type": "array", "items": { "$ref": "#/$defs/basicMission" } },
     "missionPhases": { "type": "array", "items": { "$ref": "#/$defs/openModelObject" } },
@@ -268,6 +266,7 @@
       },
       "not": {
         "anyOf": [
+          { "$ref": "#/$defs/pollutionKeys" },
           { "required": ["predecessors"] },
           { "required": ["maxRepairTimeMinutes"] },
           { "required": ["meanRepairTimeMinutes"] },
@@ -340,6 +339,8 @@
         { "required": ["treeLayout"] },
         { "required": ["canvasLayout"] },
         { "required": ["draftState"] },
+        { "required": ["missionAreas"] },
+        { "required": ["mission_areas"] },
         { "required": ["monteCarlo"] },
         { "required": ["analysisRequests"] },
         { "required": ["experiment"] },

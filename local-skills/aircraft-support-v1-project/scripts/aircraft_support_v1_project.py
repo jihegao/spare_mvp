@@ -19,6 +19,7 @@ from typing import Any
 
 
 DEFAULT_MEMORY_PATH = Path.home() / ".codex" / "memory" / "aircraft-support-v1-project-schema.json"
+REMOVED_MISSION_AREA_KEYS = {"missionAreas", "mission_areas"}
 TABLE_PATHS = {
     "missionProfile": ("missionProfile",),
     "basicMissions": ("basicMissions",),
@@ -32,6 +33,7 @@ TABLE_PATHS = {
     "supportOrganization": ("supportOrganization",),
     "transportPolicies": ("transportPolicies",),
     "supportActivities": ("supportActivities",),
+    "supportActivityJobs": ("supportActivityJobs",),
     "supportActivities.jobs": ("supportActivities", "*", "jobs"),
     "reliabilityBlockDiagram.nodes": ("reliabilityBlockDiagram", "nodes"),
     "reliabilityBlockDiagram.edges": ("reliabilityBlockDiagram", "edges"),
@@ -217,8 +219,12 @@ def compile_project_json_to_aircraft_support_inputs(
     aircraft_summary = _aircraft_summary(project)
     support_nodes = _support_nodes(project)
     support_aliases = _support_node_aliases(project)
-    activities = [_support_activity(activity, support_aliases) for activity in _list(project.get("supportActivities"))]
-    return {
+    job_definitions = _support_activity_job_definitions(project)
+    activities = [
+        _support_activity(activity, support_aliases, job_definitions)
+        for activity in _list(project.get("supportActivities"))
+    ]
+    inputs = {
         "schema_version": "aircraft-support-v1-input-v0",
         "project_identity": {
             "project_id": str(project.get("project_id") or project.get("projectId") or "project"),
@@ -230,12 +236,11 @@ def compile_project_json_to_aircraft_support_inputs(
             "profile_id": str(mission_profile.get("profileId") or mission_profile.get("id") or "mission-profile"),
             "name": str(mission_profile.get("name") or "mission profile"),
             "duration_minutes": duration_minutes,
-            "basic_missions": copy.deepcopy(_list(project.get("basicMissions"))),
-            "composite_tasks": copy.deepcopy(_list(mission_profile.get("compositeTasks"))),
-            "periodic_tasks": copy.deepcopy(_list(mission_profile.get("periodicTasks"))),
-            "mission_phases": copy.deepcopy(_list(project.get("missionPhases"))),
+            "basic_missions": _runtime_copy(_list(project.get("basicMissions"))),
+            "composite_tasks": _runtime_copy(_list(mission_profile.get("compositeTasks"))),
+            "periodic_tasks": _runtime_copy(_list(mission_profile.get("periodicTasks"))),
+            "mission_phases": _runtime_copy(_list(project.get("missionPhases"))),
             "airports": _runtime_airports(project.get("airports")),
-            "mission_areas": copy.deepcopy(_list(project.get("missionAreas"))),
         },
         "aircraft": {
             "fleet_count": aircraft_summary["fleet_count"],
@@ -249,7 +254,7 @@ def compile_project_json_to_aircraft_support_inputs(
         },
         "support_network": {"nodes": support_nodes},
         "support_activities": {"activities": activities},
-        "reliability_block_diagram": copy.deepcopy(_dict(project.get("reliabilityBlockDiagram"))),
+        "reliability_block_diagram": _runtime_copy(_dict(project.get("reliabilityBlockDiagram"))),
         "time": {
             "duration_minutes": duration_minutes,
             "tick_minutes": 1,
@@ -266,6 +271,8 @@ def compile_project_json_to_aircraft_support_inputs(
             "defaulted": True,
         },
     }
+    _strip_removed_mission_area_fields(inputs)
+    return inputs
 
 
 def run_aircraft_support_v1_project(
@@ -432,8 +439,9 @@ def _explain_support_organization(project: dict[str, Any], memory: dict[str, Any
 
 def _explain_support_activities(project: dict[str, Any], memory: dict[str, Any]) -> dict[str, Any]:
     rows = []
+    job_definitions = _support_activity_job_definitions(project)
     for activity in _list(project.get("supportActivities")):
-        jobs = _list(activity.get("jobs"))
+        jobs = _activity_jobs(activity, job_definitions)
         rows.append(
             {
                 "id": activity.get("id"),
@@ -454,7 +462,11 @@ def _explain_support_activities(project: dict[str, Any], memory: dict[str, Any])
                     "predecessors": job.get("predecessors") or [],
                 }
             )
-    return {"row_count": len(rows), "tables": _memory_tables(memory, ("supportActivities", "supportActivities.jobs")), "rows": rows}
+    return {
+        "row_count": len(rows),
+        "tables": _memory_tables(memory, ("supportActivities", "supportActivityJobs", "supportActivities.jobs")),
+        "rows": rows,
+    }
 
 
 def _memory_tables(memory: dict[str, Any], names: tuple[str, ...]) -> dict[str, Any]:
@@ -561,7 +573,11 @@ def _transport_policy(policy: dict[str, Any], aliases: dict[str, str], default_n
     }
 
 
-def _support_activity(activity: dict[str, Any], aliases: dict[str, str]) -> dict[str, Any]:
+def _support_activity(
+    activity: dict[str, Any],
+    aliases: dict[str, str],
+    job_definitions: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
     resource_id = str(activity.get("resourceId") or activity.get("supportNodeId") or "")
     compiled = {
         "id": str(activity.get("id") or "support-activity"),
@@ -580,14 +596,38 @@ def _support_activity(activity: dict[str, Any], aliases: dict[str, str]) -> dict
         "floatRatio": activity.get("floatRatio"),
         "transport_strategies": copy.deepcopy(_list(activity.get("transportStrategies"))),
         "organization_strategies": copy.deepcopy(_list(activity.get("organizationStrategies"))),
-        "jobs": [_support_job(job, activity) for job in _list(activity.get("jobs"))],
+        "jobs": [_support_job(job, activity) for job in _activity_jobs(activity, job_definitions)],
     }
     return compiled
 
 
+def _support_activity_job_definitions(project: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    definitions: dict[str, dict[str, Any]] = {}
+    for job in _list(project.get("supportActivityJobs")):
+        code = str(job.get("activityCode") or job.get("id") or "")
+        if code:
+            definitions[code] = _runtime_copy(job)
+    return definitions
+
+
+def _activity_jobs(activity: dict[str, Any], job_definitions: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    jobs = [_runtime_copy(job) for job in _list(activity.get("jobs"))]
+    if jobs:
+        return jobs
+    predecessors = _dict(activity.get("predecessors"))
+    resolved: list[dict[str, Any]] = []
+    for code in _list(activity.get("activityCodes")):
+        code_text = str(code)
+        job = copy.deepcopy(job_definitions.get(code_text, {"activityCode": code_text}))
+        job["activityCode"] = str(job.get("activityCode") or code_text)
+        job["predecessors"] = list(predecessors.get(code_text) or job.get("predecessors") or [])
+        resolved.append(job)
+    return resolved
+
+
 def _support_job(job: dict[str, Any], activity: dict[str, Any]) -> dict[str, Any]:
     return {
-        **copy.deepcopy(job),
+        **_runtime_copy(job),
         "activityCode": str(job.get("activityCode") or job.get("id") or "job"),
         "workName": str(job.get("workName") or job.get("name") or activity.get("name") or activity.get("id") or "job"),
         "durationMinutes": _positive_int(job.get("durationMinutes"), _positive_int(activity.get("durationMinutes"), _positive_int(activity.get("durationHours"), 1) * 60)),
@@ -612,6 +652,24 @@ def _component(component: dict[str, Any]) -> dict[str, Any]:
         "spare_type": _optional_string(component.get("spareType")),
         "special_repair_profile": copy.deepcopy(_dict(component.get("specialRepairProfile"))),
     }
+
+
+def _runtime_copy(value: Any) -> Any:
+    copied = copy.deepcopy(value)
+    _strip_removed_mission_area_fields(copied)
+    return copied
+
+
+def _strip_removed_mission_area_fields(value: Any) -> None:
+    if isinstance(value, dict):
+        for key in list(value):
+            if key in REMOVED_MISSION_AREA_KEYS:
+                value.pop(key, None)
+                continue
+            _strip_removed_mission_area_fields(value[key])
+    elif isinstance(value, list):
+        for item in value:
+            _strip_removed_mission_area_fields(item)
 
 
 def _runtime_airports(value: Any) -> list[dict[str, Any]]:

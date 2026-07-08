@@ -17,6 +17,14 @@ from src.spare_mvp_contract.adapter import SimulationAdapter
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
+def _contains_key(value: object, key: str) -> bool:
+    if isinstance(value, dict):
+        return key in value or any(_contains_key(child, key) for child in value.values())
+    if isinstance(value, list):
+        return any(_contains_key(item, key) for item in value)
+    return False
+
+
 class ProjectJsonExporterTest(unittest.TestCase):
     def setUp(self) -> None:
         schema = json.loads(
@@ -61,8 +69,8 @@ class ProjectJsonExporterTest(unittest.TestCase):
                 "durationHours": 1,
                 "profileType": "legacy-ui",
                 "analysisRequests": {"largeSample": {"samples": 10}},
-                "compositeTasks": [],
-                "periodicTasks": [],
+                "compositeTasks": [{"id": "wave-a", "missionAreas": [{"id": "nested-area"}]}],
+                "periodicTasks": [{"id": "periodic-a", "mission_areas": [{"id": "nested-area"}]}],
             },
             "basicMissions": [
                 {
@@ -72,6 +80,7 @@ class ProjectJsonExporterTest(unittest.TestCase):
                     "taskDurationMinutes": 30,
                     "equipmentType": "J-15",
                     "supportActivityName": "Corrective support plan",
+                    "missionAreas": [{"id": "basic-nested-area"}],
                     "draftState": {"dirty": True},
                 }
             ],
@@ -137,10 +146,13 @@ class ProjectJsonExporterTest(unittest.TestCase):
                     "durationHours": 1,
                     "requiredDevices": 1,
                     "requireDevices": 999,
+                    "transportStrategies": [{"missionAreas": [{"id": "transport-nested-area"}]}],
+                    "organizationStrategies": [{"mission_areas": [{"id": "organization-nested-area"}]}],
                     "jobs": [
                         {
                             "id": "job-1",
                             "activityCode": "JOB-1",
+                            "missionAreas": [{"id": "job-nested-area"}],
                             "predecessors": [],
                             "selectedNodeId": "debug-node",
                         }
@@ -148,8 +160,8 @@ class ProjectJsonExporterTest(unittest.TestCase):
                 }
             ],
             "reliabilityBlockDiagram": {
-                "nodes": [{"id": "whole-aircraft", "type": "system", "treeLayout": {"x": 1}}],
-                "edges": [],
+                "nodes": [{"id": "whole-aircraft", "type": "system", "mission_areas": [], "treeLayout": {"x": 1}}],
+                "edges": [{"from": "whole-aircraft", "to": "whole-aircraft", "missionAreas": []}],
             },
         }
 
@@ -172,7 +184,7 @@ class ProjectJsonExporterTest(unittest.TestCase):
         self.assertNotIn("draftState", clean["basicMissions"][0])
         self.assertEqual(clean["basicMissions"][0]["supportActivityName"], "Corrective support plan")
         self.assertNotIn("uiState", clean["airports"][0])
-        self.assertNotIn("canvasLayout", clean["missionAreas"][0])
+        self.assertNotIn("missionAreas", clean)
         self.assertNotIn("deploymentLocation", clean["combatUnit"]["members"][0])
         self.assertNotIn("profileType", clean["missionProfile"])
         self.assertNotIn("analysisRequests", clean["missionProfile"])
@@ -186,6 +198,8 @@ class ProjectJsonExporterTest(unittest.TestCase):
         self.assertEqual(clean["supportActivities"][0]["predecessors"], {"JOB-1": []})
         self.assertNotIn("selectedNodeId", clean["supportActivityJobs"][0])
         self.assertNotIn("predecessors", clean["supportActivityJobs"][0])
+        self.assertFalse(_contains_key(clean, "missionAreas"))
+        self.assertFalse(_contains_key(clean, "mission_areas"))
 
     def test_exporter_rejects_basic_mission_support_activity_name_matching_only_legacy_name(self) -> None:
         project = self._polluted_project()

@@ -107,7 +107,6 @@ export function projectToModelingImportPackage(projectJson, basePackage = {}) {
     supportActivities: normalizeSupportActivities(project.supportActivities, { ...project, supportResources }),
     equipment: cloneJson(project.equipment || base.objects?.equipment || {}),
     projectInfo: cloneJson(project.projectInfo || base.objects?.projectInfo || {}),
-    missionAreas: normalizeObjectRows(project.missionAreas),
     supportOrganization: normalizeSupportOrganization(project.supportOrganization || base.objects?.supportOrganization || {}),
     reliabilityBlockDiagram: cloneJson(project.reliabilityBlockDiagram || missionProfile.reliabilityBlockDiagram || {}),
     analysisRequests: cloneJson(project.analysisRequests || missionProfile.analysisRequests || {})
@@ -168,6 +167,7 @@ function hasSupportOrganizationTree(value) {
 function projectMissionProfile(project, projectId) {
   const mission = cloneJson(project.missionProfile || {});
   delete mission.sourceImportId;
+  delete mission.missionAreas;
   delete mission.monteCarlo;
   mission.id ||= mission.profileId || `${projectId}-mission-profile`;
   mission.name ||= project.projectInfo?.name || project.experiment?.name || "当前项目任务剖面";
@@ -177,7 +177,6 @@ function projectMissionProfile(project, projectId) {
     "basicMissions",
     "missionPhases",
     "combatUnit",
-    "missionAreas",
     "experiment",
     "equipment",
     "reliabilityBlockDiagram",
@@ -210,7 +209,6 @@ function preservedObjectSurfaces(objects = {}) {
       "equipment",
       "projectInfo",
       "airports",
-      "missionAreas",
       "supportOrganization",
       "reliabilityBlockDiagram",
       "basicMission",

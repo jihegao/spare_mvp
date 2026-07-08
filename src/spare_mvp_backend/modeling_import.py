@@ -139,7 +139,6 @@ def modeling_import_to_project(import_package: dict[str, Any], validation: dict[
         "activeModule": "sparePlanning",
         "projectInfo": _project_object(objects, mission, "projectInfo", {}),
         "airports": _combat_unit_airports(combat_unit),
-        "missionAreas": _project_object_list(objects, mission, "missionAreas"),
         "missionProfile": mission_profile,
         "basicMissions": basic_missions,
         "missionPhases": _project_object_list(objects, mission, "missionPhases"),

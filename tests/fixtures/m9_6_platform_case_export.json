@@ -13,7 +13,6 @@
           "basicMissions",
           "missionPhases",
           "airports",
-          "missionAreas",
           "components[].aircraftModel",
           "components[].failureRate",
           "components[].failureDistribution",
@@ -581,24 +580,6 @@
           }
         ],
         "duration_minutes": 20160,
-        "mission_areas": [
-          {
-            "areaType": "制空",
-            "distanceFromDepartureKm": 180,
-            "id": "near-sea-cap",
-            "name": "近海制空区",
-            "patrolRadiusKm": 100,
-            "threatLevel": "中"
-          },
-          {
-            "areaType": "警戒",
-            "distanceFromDepartureKm": 420,
-            "id": "far-sea-alert",
-            "name": "远海警戒区",
-            "patrolRadiusKm": 160,
-            "threatLevel": "高"
-          }
-        ],
         "mission_phases": [
           {
             "id": "phase-alert",
@@ -1763,24 +1744,6 @@
               "repairTimeMinutes": 130,
               "replacementRatio": 0.26
             }
-          }
-        ],
-        "missionAreas": [
-          {
-            "areaType": "制空",
-            "distanceFromDepartureKm": 180,
-            "id": "near-sea-cap",
-            "name": "近海制空区",
-            "patrolRadiusKm": 100,
-            "threatLevel": "中"
-          },
-          {
-            "areaType": "警戒",
-            "distanceFromDepartureKm": 420,
-            "id": "far-sea-alert",
-            "name": "远海警戒区",
-            "patrolRadiusKm": 160,
-            "threatLevel": "高"
           }
         ],
         "missionPhases": [
@@ -3069,24 +3032,6 @@
             "repairTimeMinutes": 130,
             "replacementRatio": 0.26
           }
-        }
-      ],
-      "missionAreas": [
-        {
-          "areaType": "制空",
-          "distanceFromDepartureKm": 180,
-          "id": "near-sea-cap",
-          "name": "近海制空区",
-          "patrolRadiusKm": 100,
-          "threatLevel": "中"
-        },
-        {
-          "areaType": "警戒",
-          "distanceFromDepartureKm": 420,
-          "id": "far-sea-alert",
-          "name": "远海警戒区",
-          "patrolRadiusKm": 160,
-          "threatLevel": "高"
         }
       ],
       "missionPhases": [
@@ -4388,24 +4333,6 @@
           "repairTimeMinutes": 130,
           "replacementRatio": 0.26
         }
-      }
-    ],
-    "missionAreas": [
-      {
-        "areaType": "制空",
-        "distanceFromDepartureKm": 180,
-        "id": "near-sea-cap",
-        "name": "近海制空区",
-        "patrolRadiusKm": 100,
-        "threatLevel": "中"
-      },
-      {
-        "areaType": "警戒",
-        "distanceFromDepartureKm": 420,
-        "id": "far-sea-alert",
-        "name": "远海警戒区",
-        "patrolRadiusKm": 160,
-        "threatLevel": "高"
       }
     ],
     "missionPhases": [

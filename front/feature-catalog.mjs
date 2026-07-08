@@ -209,7 +209,7 @@ function resolveComponent(name, secondary, tertiary) {
 
 function resolveDataObjects(name, secondary, tertiary) {
   if (secondary === "结果分析") return ["projectDraft", "mesaAnalysisProfile", "mesaSessionResult"];
-  if (name.includes("内置场景")) return ["scenarioId", "airports", "missionAreas", "supportNodes"];
+  if (name.includes("内置场景")) return ["scenarioId", "airports", "supportNodes"];
   if (name.includes("作战单元")) return ["combatUnit", "equipment", "supportNodes"];
   if (name.includes("基本任务")) return ["basicMissions", "missionPhases"];
   if (name.includes("任务剖面参数")) return ["missionProfile"];

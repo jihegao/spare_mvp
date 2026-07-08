@@ -12,14 +12,13 @@ Sources:
 - `missionProfile.periodicTasks[]`
 - `missionPhases[]`
 - `airports[]`
-- `missionAreas[]`
 
 Interpretation:
 
 - Basic missions describe sortie/task units and default durations.
 - Composite tasks group basic mission items into waves or task packages.
 - Periodic tasks describe calendar or repeat rules that create mission instances.
-- Mission phases, airports, and areas provide context for timing/location.
+- Mission phases and airports provide context for timing/location.
 
 ## 装备
 
@@ -59,11 +58,12 @@ Interpretation:
 Sources:
 
 - `supportActivities[]`
+- `supportActivityJobs[]`
 - `supportActivities[].jobs[]`
 - `supportActivities[].jobs[].predecessors[]`
 
 Interpretation:
 
 - Support activities are process definitions such as preflight, repair, postflight, or preventive support.
-- Jobs are ordered work steps within an activity.
+- Jobs are ordered work steps within an activity; current clean Projects may store job definitions in top-level `supportActivityJobs[]` and reference them from `supportActivities[].activityCodes[]`.
 - `predecessors` encode DAG ordering and must be preserved when compiling or explaining.

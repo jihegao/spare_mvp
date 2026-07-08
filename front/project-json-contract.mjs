@@ -5,7 +5,6 @@ const OBJECT_LABELS = {
   scenarioId: "场景编号",
   activeModule: "当前模块",
   airports: "机场",
-  missionAreas: "任务区",
   experiment: "实验方案",
   missionProfile: "任务剖面",
   basicMissions: "基本任务",
