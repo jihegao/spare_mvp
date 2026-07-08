@@ -52,42 +52,36 @@
       {
         "aircraftNo": "J15-101",
         "airport": "A",
-        "deploymentLocation": "航母飞行甲板",
         "model": "J-15",
         "status": "执行"
       },
       {
         "aircraftNo": "J15-102",
         "airport": "A",
-        "deploymentLocation": "航母飞行甲板",
         "model": "J-15",
         "status": "执行"
       },
       {
         "aircraftNo": "J35-201",
         "airport": "A",
-        "deploymentLocation": "航母飞行甲板",
         "model": "J-35",
         "status": "执行"
       },
       {
         "aircraftNo": "J35-202",
         "airport": "A",
-        "deploymentLocation": "航母飞行甲板",
         "model": "J-35",
         "status": "执行"
       },
       {
         "aircraftNo": "J15-103",
         "airport": "A",
-        "deploymentLocation": "机库甲板",
         "model": "J-15",
         "status": "备用"
       },
       {
         "aircraftNo": "J35-203",
         "airport": "A",
-        "deploymentLocation": "机库甲板",
         "model": "J-35",
         "status": "备用"
       }

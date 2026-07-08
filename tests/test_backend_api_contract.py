@@ -2273,8 +2273,8 @@ class BackendApiContractTest(unittest.TestCase):
             {"id": "carrier-deck", "name": "航母飞行甲板", "supportNodeId": "carrier-deck"},
             {"id": "forward-sea-base", "name": "前出海上保障点", "supportNodeId": "forward-sea-base"},
         ]
-        project["combatUnit"]["members"][0]["airport"] = "legacy-A"
-        project["combatUnit"]["members"][0]["deploymentLocation"] = "航母飞行甲板"
+        project["combatUnit"]["members"][0]["airport"] = "航母飞行甲板"
+        project["combatUnit"]["members"][0]["deploymentLocation"] = "前出海上保障点"
         project["supportNodes"] = [
             {
                 "id": "carrier-deck",
@@ -2359,7 +2359,7 @@ class BackendApiContractTest(unittest.TestCase):
                 "mission_profile": {
                     "airports": [{"id": "carrier-deck", "name": "航母飞行甲板", "supportNodeId": "carrier-deck"}],
                 },
-                "aircraft": {"assets": [{"tail_number": "J15-001", "deployment_location": "航母飞行甲板"}]},
+                "aircraft": {"assets": [{"tail_number": "J15-001", "airport": "航母飞行甲板"}]},
                 "support_network": {
                     "nodes": [
                         {
@@ -3637,6 +3637,22 @@ class BackendApiContractTest(unittest.TestCase):
 
         self.assertEqual(project["airports"], ["A", "B"])
         self.assertFalse({"carrier-deck", "forward-sea-base"} & set(project["airports"]))
+
+    def test_modeling_import_to_project_does_not_derive_airports_from_deployment_location(self) -> None:
+        import_package = self._fixture("modeling_import_project.json")
+        import_package["objects"].pop("airports", None)
+        mission = import_package["objects"]["missionProfiles"][0]
+        mission.pop("airports", None)
+        mission["combatUnit"].pop("airport", None)
+        mission["combatUnit"]["deploymentLocation"] = "航母飞行甲板"
+        for member in mission["combatUnit"]["members"]:
+            member.pop("airport", None)
+            member.pop("airportName", None)
+            member.pop("deploymentAirport", None)
+
+        project = modeling_import_to_project(import_package)
+
+        self.assertEqual(project["airports"], [])
 
     def test_modeling_import_to_project_preserves_explicit_empty_collections(self) -> None:
         import_package = self._fixture("modeling_import_project.json")

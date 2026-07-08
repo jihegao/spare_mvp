@@ -105,7 +105,6 @@ _COMBAT_UNIT_MEMBER_FIELDS = {
     "airport",
     "airportId",
     "baseAirportId",
-    "deploymentLocation",
 }
 _COMPONENT_FIELDS = {
     "id",

@@ -467,14 +467,12 @@
           ],
           "combatUnit": {
             "basicTaskName": "近海制空巡逻任务",
-            "deploymentLocation": "航母飞行甲板",
             "equipmentType": "J-15 / J-35",
             "groupName": "航母第一出动编队",
             "members": [
               {
                 "aircraftNo": "J15-101",
                 "airport": "A",
-                "deploymentLocation": "航母飞行甲板",
                 "model": "J-15",
                 "preLifeCalendarDays": 0,
                 "preLifeRequirementHours": 120,
@@ -486,7 +484,6 @@
               {
                 "aircraftNo": "J15-102",
                 "airport": "A",
-                "deploymentLocation": "航母飞行甲板",
                 "model": "J-15",
                 "preLifeCalendarDays": 0,
                 "preLifeRequirementHours": 120,
@@ -498,7 +495,6 @@
               {
                 "aircraftNo": "J35-201",
                 "airport": "A",
-                "deploymentLocation": "航母飞行甲板",
                 "model": "J-35",
                 "preLifeCalendarDays": 0,
                 "preLifeRequirementHours": 120,
@@ -510,7 +506,6 @@
               {
                 "aircraftNo": "J35-202",
                 "airport": "A",
-                "deploymentLocation": "航母飞行甲板",
                 "model": "J-35",
                 "preLifeCalendarDays": 0,
                 "preLifeRequirementHours": 120,
@@ -522,7 +517,6 @@
               {
                 "aircraftNo": "J15-103",
                 "airport": "A",
-                "deploymentLocation": "机库甲板",
                 "model": "J-15",
                 "preLifeCalendarDays": 0,
                 "preLifeRequirementHours": 120,
@@ -534,7 +528,6 @@
               {
                 "aircraftNo": "J35-203",
                 "airport": "A",
-                "deploymentLocation": "机库甲板",
                 "model": "J-35",
                 "preLifeCalendarDays": 0,
                 "preLifeRequirementHours": 120,
@@ -1533,14 +1526,12 @@
     ],
     "combatUnit": {
       "basicTaskName": "近海制空巡逻任务",
-      "deploymentLocation": "航母飞行甲板",
       "equipmentType": "J-15 / J-35",
       "groupName": "航母第一出动编队",
       "members": [
         {
           "aircraftNo": "J15-101",
           "airport": "A",
-          "deploymentLocation": "航母飞行甲板",
           "model": "J-15",
           "preLifeCalendarDays": 0,
           "preLifeRequirementHours": 120,
@@ -1552,7 +1543,6 @@
         {
           "aircraftNo": "J15-102",
           "airport": "A",
-          "deploymentLocation": "航母飞行甲板",
           "model": "J-15",
           "preLifeCalendarDays": 0,
           "preLifeRequirementHours": 120,
@@ -1564,7 +1554,6 @@
         {
           "aircraftNo": "J35-201",
           "airport": "A",
-          "deploymentLocation": "航母飞行甲板",
           "model": "J-35",
           "preLifeCalendarDays": 0,
           "preLifeRequirementHours": 120,
@@ -1576,7 +1565,6 @@
         {
           "aircraftNo": "J35-202",
           "airport": "A",
-          "deploymentLocation": "航母飞行甲板",
           "model": "J-35",
           "preLifeCalendarDays": 0,
           "preLifeRequirementHours": 120,
@@ -1588,7 +1576,6 @@
         {
           "aircraftNo": "J15-103",
           "airport": "A",
-          "deploymentLocation": "机库甲板",
           "model": "J-15",
           "preLifeCalendarDays": 0,
           "preLifeRequirementHours": 120,
@@ -1600,7 +1587,6 @@
         {
           "aircraftNo": "J35-203",
           "airport": "A",
-          "deploymentLocation": "机库甲板",
           "model": "J-35",
           "preLifeCalendarDays": 0,
           "preLifeRequirementHours": 120,

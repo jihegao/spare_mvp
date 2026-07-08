@@ -4574,8 +4574,7 @@ function addCombatUnitMember() {
     remainingLifeHours: Number(scenario.equipment?.preLifeRequirementHours || 120),
     preLifeRequirementHours: Number(scenario.equipment?.preLifeRequirementHours || 120),
     takeoffLandingCount: 0,
-    airport: "",
-    deploymentLocation: scenario.equipment?.deploymentLocation || scenario.combatUnit.deploymentLocation || ""
+    airport: ""
   });
   scenario.combatUnit.quantity = members.length;
   selectedCombatUnitMemberIndex = members.length - 1;

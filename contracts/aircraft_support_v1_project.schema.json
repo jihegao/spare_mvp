@@ -123,8 +123,7 @@
               "status": { "type": "string" },
               "airport": { "type": "string" },
               "airportId": { "type": "string" },
-              "baseAirportId": { "type": "string" },
-              "deploymentLocation": { "type": "string" }
+              "baseAirportId": { "type": "string" }
             }
           }
         }

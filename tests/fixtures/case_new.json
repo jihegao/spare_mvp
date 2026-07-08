@@ -140,13 +140,11 @@
         ],
         "combatUnit": {
           "basicTaskName": "近海制空巡逻任务",
-          "deploymentLocation": "航母飞行甲板",
           "equipmentType": "J-15 / J-35",
           "groupName": "航母第一出动编队",
           "members": [
             {
               "aircraftNo": "J15-101",
-              "deploymentLocation": "航母飞行甲板",
               "model": "J-15",
               "preLifeRequirementHours": 120,
               "remainingLifeHours": 180,
@@ -156,7 +154,6 @@
             },
             {
               "aircraftNo": "J15-102",
-              "deploymentLocation": "航母飞行甲板",
               "model": "J-15",
               "preLifeRequirementHours": 120,
               "remainingLifeHours": 176,
@@ -166,7 +163,6 @@
             },
             {
               "aircraftNo": "J35-201",
-              "deploymentLocation": "航母飞行甲板",
               "model": "J-35",
               "preLifeRequirementHours": 120,
               "remainingLifeHours": 169,
@@ -176,7 +172,6 @@
             },
             {
               "aircraftNo": "J35-202",
-              "deploymentLocation": "航母飞行甲板",
               "model": "J-35",
               "preLifeRequirementHours": 120,
               "remainingLifeHours": 164,
@@ -186,7 +181,6 @@
             },
             {
               "aircraftNo": "J15-103",
-              "deploymentLocation": "机库甲板",
               "model": "J-15",
               "preLifeRequirementHours": 120,
               "remainingLifeHours": 171,
@@ -196,7 +190,6 @@
             },
             {
               "aircraftNo": "J35-203",
-              "deploymentLocation": "机库甲板",
               "model": "J-35",
               "preLifeRequirementHours": 120,
               "remainingLifeHours": 152,
@@ -237,7 +230,6 @@
           "stopCondition": "达到样本数或备件满足率稳定"
         },
         "equipment": {
-          "deploymentLocation": "航母飞行甲板",
           "initialReady": 6,
           "minRequiredSorties": 5,
           "model": "J-15",
@@ -1254,7 +1246,6 @@
       }
     ],
     "equipment": {
-      "deploymentLocation": "航母飞行甲板",
       "initialReady": 6,
       "minRequiredSorties": 5,
       "model": "J-15",
