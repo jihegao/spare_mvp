@@ -1,4 +1,4 @@
-import { buildExperimentPlanConfig } from "./api-client.mjs";
+import { buildBackendProjectJson, buildExperimentPlanConfig } from "./api-client.mjs";
 
 const SUPPORTED_RUN_TYPES = new Set(["single", "monte_carlo"]);
 const DEFAULT_FAILURE_RATE_SWEEP = [0.06];
@@ -60,7 +60,7 @@ export function bindExperimentPlanId(intent, experimentPlanId) {
 
 export async function submitRunIntent(apiClient, options) {
   const intent = buildRunIntent(options);
-  const savedProject = await apiClient.saveProject(intent.projectJson);
+  const savedProject = await apiClient.saveProject(buildBackendProjectJson(intent.projectJson));
   const modelingSnapshot = await apiClient.createModelingSnapshot(savedProject.project_id);
   const experimentPlan = await apiClient.createExperimentPlan(savedProject.project_id, {
     ...intent.experimentPlanConfig,

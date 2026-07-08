@@ -358,7 +358,7 @@ test("submitRunIntent sends user-edited Monte Carlo samples and seed in experime
   assert.equal("sweep" in runCall.request, false);
 });
 
-test("submitRunIntent preserves edited composite task equipment quantity through save and plan config", async () => {
+test("submitRunIntent keeps composite task quantities on basic missions through save and plan config", async () => {
   const calls = [];
   const apiClient = {
     saveProject: async (projectJson) => {
@@ -382,13 +382,23 @@ test("submitRunIntent preserves edited composite task equipment quantity through
   const projectJson = {
     project_id: "project-edited-quantity",
     experiment: { name: "quantity edit", steps: 4, seed: 101 },
+    basicMissions: [
+      {
+        id: "basic-edited",
+        name: "edited mission",
+        equipmentType: "J-15",
+        equipmentQuantity: 1,
+        taskDurationMinutes: 90
+      }
+    ],
     missionProfile: {
       compositeTasks: [
         {
           id: "composite-edited",
           taskItems: [
             {
-              id: "task-edited",
+              basicMissionId: "basic-edited",
+              basicTaskName: "edited mission",
               equipmentType: "J-15",
               equipmentQuantity: 1
             }
@@ -410,8 +420,10 @@ test("submitRunIntent preserves edited composite task equipment quantity through
   const snapshotCall = calls.find((call) => call.method === "createModelingSnapshot");
   assert.equal(snapshotCall.projectId, "project-edited-quantity");
   assert.equal(planCall.config.modeling_snapshot_id, "snapshot-edited-quantity");
-  assert.equal(saveCall.projectJson.missionProfile.compositeTasks[0].taskItems[0].equipmentQuantity, 1);
-  assert.equal(planCall.config.projectJson.missionProfile.compositeTasks[0].taskItems[0].equipmentQuantity, 1);
+  assert.equal(saveCall.projectJson.basicMissions[0].equipmentQuantity, 1);
+  assert.equal(planCall.config.projectJson.basicMissions[0].equipmentQuantity, 1);
+  assert.equal("equipmentQuantity" in saveCall.projectJson.missionProfile.compositeTasks[0].taskItems[0], false);
+  assert.equal("equipmentQuantity" in planCall.config.projectJson.missionProfile.compositeTasks[0].taskItems[0], false);
   assert.equal(
     "requiredEquipmentQuantity" in planCall.config.projectJson.missionProfile.compositeTasks[0].taskItems[0],
     false

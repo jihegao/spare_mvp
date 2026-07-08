@@ -316,6 +316,7 @@ function stripProjectNonModelFields(projectJson) {
   delete projectJson.basicMission;
   stripLegacyBasicMissionFields(projectJson);
   stripMissionProfileNonModelFields(projectJson.missionProfile);
+  normalizeMissionProfileReferenceFields(projectJson);
   stripSupportActivityTypoFields(projectJson);
   stripDeprecatedSupportActivityStrategyFields(projectJson);
   normalizeSupportActivityReferenceFields(projectJson);
@@ -769,6 +770,187 @@ function stripMissionProfileNonModelFields(missionProfile) {
   delete missionProfile.analysisRequests;
 }
 
+const MISSION_PROFILE_TASK_ITEM_FIELDS = [
+  "basicMissionId",
+  "basicTaskName",
+  "groupName",
+  "firstWaveTime",
+  "dailyRepeatCount",
+  "intervalHours",
+  "equipmentType"
+];
+
+const MISSION_PROFILE_PERIODIC_TASK_FIELDS = [
+  "id",
+  "name",
+  "repeatWeeks",
+  "cycleDays",
+  "compositeTasks",
+  "compositeTaskIds"
+];
+
+const PERIODIC_COMPOSITE_TASK_FIELDS = [
+  "compositeTaskId",
+  "week",
+  "weekIndex",
+  "weekday",
+  "dayOfWeek"
+];
+
+const PERIODIC_WEEKDAY_ASSIGNMENT_FIELDS = [
+  ["mondayCompositeTaskId", "monday"],
+  ["tuesdayCompositeTaskId", "tuesday"],
+  ["wednesdayCompositeTaskId", "wednesday"],
+  ["thursdayCompositeTaskId", "thursday"],
+  ["fridayCompositeTaskId", "friday"],
+  ["saturdayCompositeTaskId", "saturday"],
+  ["sundayCompositeTaskId", "sunday"]
+];
+
+function normalizeMissionProfileReferenceFields(projectJson) {
+  const missionProfile = projectJson?.missionProfile;
+  if (!missionProfile || typeof missionProfile !== "object" || Array.isArray(missionProfile)) return;
+  normalizeMissionProfileCompositeTasks(projectJson, missionProfile);
+  normalizeMissionProfilePeriodicTasks(missionProfile);
+  if (missionProfileHasPeriodicDuration(missionProfile)) delete missionProfile.durationHours;
+}
+
+function normalizeMissionProfileCompositeTasks(projectJson, missionProfile) {
+  if (!Array.isArray(missionProfile.compositeTasks)) return;
+  const basicMissionIds = new Set(basicMissionRecordsForProject(projectJson).map((task) => basicMissionId(task)).filter(Boolean));
+  for (const composite of missionProfile.compositeTasks) {
+    if (!composite || typeof composite !== "object" || Array.isArray(composite)) continue;
+    if (!Array.isArray(composite.taskItems)) continue;
+    composite.taskItems = composite.taskItems
+      .filter((item) => item && typeof item === "object" && !Array.isArray(item))
+      .map((item) => normalizedMissionProfileTaskItem(item, basicMissionIds))
+      .filter((item) => Object.keys(item).length > 0);
+  }
+}
+
+function normalizedMissionProfileTaskItem(item, basicMissionIds) {
+  const normalized = {};
+  const basicMissionIdValue = cleanText(item.basicMissionId || item.missionId);
+  if (basicMissionIdValue) {
+    normalized.basicMissionId = basicMissionIdValue;
+  } else {
+    const legacyId = cleanText(item.id);
+    if (legacyId && basicMissionIds.has(legacyId)) normalized.basicMissionId = legacyId;
+  }
+  for (const field of MISSION_PROFILE_TASK_ITEM_FIELDS) {
+    if (field === "basicMissionId") continue;
+    copyPresentValue(normalized, field, item[field]);
+  }
+  return normalized;
+}
+
+function normalizeMissionProfilePeriodicTasks(missionProfile) {
+  if (!Array.isArray(missionProfile.periodicTasks)) return;
+  missionProfile.periodicTasks = missionProfile.periodicTasks
+    .filter((task) => task && typeof task === "object" && !Array.isArray(task))
+    .map((task) => normalizedMissionProfilePeriodicTask(task))
+    .filter((task) => Object.keys(task).length > 0);
+}
+
+function normalizedMissionProfilePeriodicTask(task) {
+  const normalized = {};
+  copyPresentValue(normalized, "id", task.id);
+  copyPresentValue(normalized, "name", task.name || task.periodicTaskName || task.taskName || task.experimentName);
+  const repeatWeeks = firstPositiveNumber(task.repeatWeeks, task.repeatRounds, task.repeatCount);
+  if (repeatWeeks !== null) normalized.repeatWeeks = repeatWeeks;
+  const cycleDays = periodicCycleDays(task) ?? (repeatWeeks !== null ? 7 : null);
+  if (cycleDays !== null) normalized.cycleDays = cycleDays;
+  const compositeTasks = normalizedPeriodicCompositeTasks(task, repeatWeeks);
+  const compositeTaskIds = uniqueStrings([
+    ...(Array.isArray(task.compositeTaskIds) ? task.compositeTaskIds : []),
+    ...compositeTasks.map((item) => item.compositeTaskId)
+  ]);
+  if (compositeTasks.length) normalized.compositeTasks = compositeTasks;
+  if (compositeTaskIds.length) normalized.compositeTaskIds = compositeTaskIds;
+  for (const field of Object.keys(normalized)) {
+    if (!MISSION_PROFILE_PERIODIC_TASK_FIELDS.includes(field)) delete normalized[field];
+  }
+  return normalized;
+}
+
+function normalizedPeriodicCompositeTasks(task, repeatWeeks) {
+  const explicit = Array.isArray(task.compositeTasks)
+    ? task.compositeTasks
+        .filter((item) => item && typeof item === "object" && !Array.isArray(item))
+        .map((item) => normalizedPeriodicCompositeTask(item))
+        .filter((item) => item.compositeTaskId)
+    : [];
+  if (explicit.length) return explicit;
+
+  const assignments = [];
+  const rawAssignments = task.weekdayAssignments && typeof task.weekdayAssignments === "object" && !Array.isArray(task.weekdayAssignments)
+    ? task.weekdayAssignments
+    : {};
+  for (const [legacyField, weekday] of PERIODIC_WEEKDAY_ASSIGNMENT_FIELDS) {
+    assignments.push([weekday, rawAssignments[weekday] || rawAssignments[legacyField] || task[legacyField]]);
+  }
+  const weekCount = Math.max(1, Math.round(repeatWeeks || 1));
+  const compositeTasks = [];
+  for (let weekIndex = 1; weekIndex <= weekCount; weekIndex += 1) {
+    for (const [weekday, compositeTaskId] of assignments) {
+      const compositeId = cleanText(compositeTaskId);
+      if (!compositeId) continue;
+      compositeTasks.push({ compositeTaskId: compositeId, weekIndex, weekday });
+    }
+  }
+  return compositeTasks;
+}
+
+function normalizedPeriodicCompositeTask(item) {
+  const normalized = {};
+  for (const field of PERIODIC_COMPOSITE_TASK_FIELDS) copyPresentValue(normalized, field, item[field]);
+  return normalized;
+}
+
+function periodicCycleDays(task) {
+  const direct = firstPositiveNumber(task.cycleDays, task.repeatCycleDays, task.periodDays, task.taskPeriodDays);
+  if (direct !== null) return direct;
+  const value = positiveNumber(task.repeatCycleValue);
+  if (value === null) return null;
+  const unit = cleanText(task.repeatCycleUnit || "day").toLowerCase();
+  if (["week", "weeks", "周", "星期"].includes(unit)) return value * 7;
+  if (["hour", "hours", "小时"].includes(unit)) return value / 24;
+  return value;
+}
+
+function missionProfileHasPeriodicDuration(missionProfile) {
+  return Array.isArray(missionProfile.periodicTasks)
+    && missionProfile.periodicTasks.some((task) => task && typeof task === "object" && (
+      positiveNumber(task.repeatWeeks) !== null || positiveNumber(task.cycleDays) !== null
+    ));
+}
+
+function firstPositiveNumber(...values) {
+  for (const value of values) {
+    const number = positiveNumber(value);
+    if (number !== null) return number;
+  }
+  return null;
+}
+
+function positiveNumber(value) {
+  if (value === null || value === undefined || value === "" || typeof value === "boolean") return null;
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : null;
+}
+
+function uniqueStrings(values) {
+  const result = [];
+  const seen = new Set();
+  for (const value of values) {
+    const text = cleanText(value);
+    if (!text || seen.has(text)) continue;
+    seen.add(text);
+    result.push(text);
+  }
+  return result;
+}
+
 function stripSupportActivityTypoFields(value) {
   if (Array.isArray(value)) {
     for (const item of value) stripSupportActivityTypoFields(item);
@@ -861,9 +1043,6 @@ function syncCompositeTaskInheritedBasicFields(projectJson) {
       copyPresentValue(item, "basicMissionId", basicMissionId(basicMission));
       copyPresentValue(item, "basicTaskName", basicMissionDisplayName(basicMission));
       copyPresentValue(item, "equipmentType", basicMission.equipmentType);
-      copyPresentValue(item, "taskDurationMinutes", basicMission.taskDurationMinutes);
-      copyPresentValue(item, "equipmentQuantity", basicMission.equipmentQuantity);
-      copyPresentValue(item, "preparationMinutes", basicMission.preparationMinutes);
     }
   }
 }
@@ -879,6 +1058,11 @@ function findBasicMissionForTaskItem(item, basicMissions) {
   const itemId = String(item.basicMissionId || "").trim();
   if (itemId) {
     const byId = basicMissions.find((task) => basicMissionId(task) === itemId);
+    if (byId) return byId;
+  }
+  const legacyItemId = String(item.id || "").trim();
+  if (legacyItemId) {
+    const byId = basicMissions.find((task) => basicMissionId(task) === legacyItemId);
     if (byId) return byId;
   }
   const itemName = String(item.basicTaskName || "").trim();

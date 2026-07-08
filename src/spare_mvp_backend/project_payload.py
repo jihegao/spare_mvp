@@ -93,6 +93,42 @@ _MISSION_PROFILE_FIELDS = {
     "compositeTasks",
     "periodicTasks",
 }
+_MISSION_PROFILE_TASK_ITEM_FIELDS = (
+    "basicMissionId",
+    "basicTaskName",
+    "groupName",
+    "firstWaveTime",
+    "dailyRepeatCount",
+    "intervalHours",
+    "equipmentType",
+)
+_MISSION_PROFILE_TASK_ITEM_FIELD_SET = set(_MISSION_PROFILE_TASK_ITEM_FIELDS)
+_MISSION_PROFILE_PERIODIC_TASK_FIELDS = (
+    "id",
+    "name",
+    "repeatWeeks",
+    "cycleDays",
+    "compositeTasks",
+    "compositeTaskIds",
+)
+_MISSION_PROFILE_PERIODIC_TASK_FIELD_SET = set(_MISSION_PROFILE_PERIODIC_TASK_FIELDS)
+_MISSION_PROFILE_PERIODIC_COMPOSITE_TASK_FIELDS = (
+    "compositeTaskId",
+    "week",
+    "weekIndex",
+    "weekday",
+    "dayOfWeek",
+)
+_MISSION_PROFILE_PERIODIC_COMPOSITE_TASK_FIELD_SET = set(_MISSION_PROFILE_PERIODIC_COMPOSITE_TASK_FIELDS)
+_PERIODIC_WEEKDAY_ASSIGNMENT_FIELDS = (
+    ("mondayCompositeTaskId", "monday"),
+    ("tuesdayCompositeTaskId", "tuesday"),
+    ("wednesdayCompositeTaskId", "wednesday"),
+    ("thursdayCompositeTaskId", "thursday"),
+    ("fridayCompositeTaskId", "friday"),
+    ("saturdayCompositeTaskId", "saturday"),
+    ("sundayCompositeTaskId", "sunday"),
+)
 _COMBAT_UNIT_FIELDS = {"id", "name", "quantity", "members"}
 _COMBAT_UNIT_MEMBER_FIELDS = {
     "id",
@@ -400,15 +436,81 @@ def _validate_clean_mission_profile(profile: dict[str, Any], target: str) -> Non
         _validate_optional_clean_string(profile, field, f"missionProfile.{field}", target)
     _validate_optional_clean_number(profile, "durationHours", "missionProfile.durationHours", target, minimum=0)
     _validate_optional_clean_integer(profile, "durationMinutes", "missionProfile.durationMinutes", target, minimum=1)
+    if "durationHours" in profile and _mission_profile_has_periodic_duration(profile):
+        raise ValueError(
+            f"clean Project JSON failed {target} schema at missionProfile.durationHours: "
+            "unexpected when periodicTasks define duration"
+        )
     if "combatUnit" in profile:
         if not isinstance(profile["combatUnit"], dict):
             raise ValueError(f"clean Project JSON failed {target} schema at missionProfile.combatUnit: expected object")
         _validate_clean_combat_unit(profile["combatUnit"], target, path="missionProfile.combatUnit")
-    for field in ("compositeTasks", "periodicTasks"):
-        if field in profile:
-            if not isinstance(profile[field], list):
-                raise ValueError(f"clean Project JSON failed {target} schema at missionProfile.{field}: expected array")
-            _validate_clean_open_model_array(profile[field], f"missionProfile.{field}", target)
+    if "compositeTasks" in profile:
+        if not isinstance(profile["compositeTasks"], list):
+            raise ValueError(f"clean Project JSON failed {target} schema at missionProfile.compositeTasks: expected array")
+        _validate_clean_composite_tasks(profile["compositeTasks"], target)
+    if "periodicTasks" in profile:
+        if not isinstance(profile["periodicTasks"], list):
+            raise ValueError(f"clean Project JSON failed {target} schema at missionProfile.periodicTasks: expected array")
+        _validate_clean_periodic_tasks(profile["periodicTasks"], target)
+
+
+def _validate_clean_composite_tasks(values: list[Any], target: str) -> None:
+    for index, item in enumerate(values):
+        path = f"missionProfile.compositeTasks.{index}"
+        if not isinstance(item, dict):
+            raise ValueError(f"clean Project JSON failed {target} schema at {path}: expected object")
+        pollution = sorted(field for field in item if _is_pollution_key(field))
+        if pollution:
+            raise ValueError(f"clean Project JSON failed {target} schema at {path}: unexpected field {pollution[0]}")
+        task_items = item.get("taskItems")
+        if task_items is None:
+            continue
+        if not isinstance(task_items, list):
+            raise ValueError(f"clean Project JSON failed {target} schema at {path}.taskItems: expected array")
+        for item_index, task_item in enumerate(task_items):
+            item_path = f"{path}.taskItems.{item_index}"
+            if not isinstance(task_item, dict):
+                raise ValueError(f"clean Project JSON failed {target} schema at {item_path}: expected object")
+            extra = sorted(field for field in task_item if field not in _MISSION_PROFILE_TASK_ITEM_FIELD_SET)
+            if extra:
+                raise ValueError(f"clean Project JSON failed {target} schema at {item_path}: unexpected field {extra[0]}")
+            for field in ("basicMissionId", "basicTaskName", "groupName", "firstWaveTime", "equipmentType"):
+                _validate_optional_clean_string(task_item, field, f"{item_path}.{field}", target)
+            _validate_optional_clean_integer(task_item, "dailyRepeatCount", f"{item_path}.dailyRepeatCount", target, minimum=0)
+            _validate_optional_clean_number(task_item, "intervalHours", f"{item_path}.intervalHours", target, minimum=0)
+
+
+def _validate_clean_periodic_tasks(values: list[Any], target: str) -> None:
+    for index, item in enumerate(values):
+        path = f"missionProfile.periodicTasks.{index}"
+        if not isinstance(item, dict):
+            raise ValueError(f"clean Project JSON failed {target} schema at {path}: expected object")
+        extra = sorted(field for field in item if field not in _MISSION_PROFILE_PERIODIC_TASK_FIELD_SET)
+        if extra:
+            raise ValueError(f"clean Project JSON failed {target} schema at {path}: unexpected field {extra[0]}")
+        for field in ("id", "name"):
+            _validate_optional_clean_string(item, field, f"{path}.{field}", target)
+        _validate_optional_clean_number(item, "repeatWeeks", f"{path}.repeatWeeks", target, minimum=0)
+        _validate_optional_clean_number(item, "cycleDays", f"{path}.cycleDays", target, minimum=0)
+        if "compositeTaskIds" in item:
+            if not isinstance(item["compositeTaskIds"], list):
+                raise ValueError(f"clean Project JSON failed {target} schema at {path}.compositeTaskIds: expected array")
+            if any(not isinstance(value, str) for value in item["compositeTaskIds"]):
+                raise ValueError(f"clean Project JSON failed {target} schema at {path}.compositeTaskIds: expected string array")
+        if "compositeTasks" in item:
+            if not isinstance(item["compositeTasks"], list):
+                raise ValueError(f"clean Project JSON failed {target} schema at {path}.compositeTasks: expected array")
+            for task_index, composite in enumerate(item["compositeTasks"]):
+                composite_path = f"{path}.compositeTasks.{task_index}"
+                if not isinstance(composite, dict):
+                    raise ValueError(f"clean Project JSON failed {target} schema at {composite_path}: expected object")
+                extra = sorted(field for field in composite if field not in _MISSION_PROFILE_PERIODIC_COMPOSITE_TASK_FIELD_SET)
+                if extra:
+                    raise ValueError(f"clean Project JSON failed {target} schema at {composite_path}: unexpected field {extra[0]}")
+                for field in ("compositeTaskId", "week", "weekIndex", "weekday", "dayOfWeek"):
+                    if field in composite and not isinstance(composite[field], (str, int)):
+                        raise ValueError(f"clean Project JSON failed {target} schema at {composite_path}.{field}: expected string or integer")
 
 
 def _validate_clean_basic_missions(missions: list[Any], target: str) -> None:
@@ -969,6 +1071,7 @@ def _strip_project_non_model_fields(project: dict[str, Any]) -> None:
         mission_profile.pop("endCondition", None)
         mission_profile.pop("repeatCycleHours", None)
         mission_profile.pop("analysisRequests", None)
+        _normalize_mission_profile_reference_fields(project)
     _strip_typo_only_support_activity_fields(project)
     _strip_deprecated_support_activity_strategy_fields(project)
     _strip_support_activity_mttr_fields(project.get("supportActivities"))
@@ -999,6 +1102,195 @@ def _normalize_project_component_k_out_of_n(project: dict[str, Any]) -> None:
         raw_k = k_out.get("k")
         k = int(float(raw_k)) if _is_positive_int(raw_k) and int(float(raw_k)) <= quantity else quantity
         component["kOutOfN"] = {**k_out, "enabled": quantity > 1, "n": quantity, "k": k}
+
+
+def _normalize_mission_profile_reference_fields(project: dict[str, Any]) -> None:
+    mission_profile = project.get("missionProfile")
+    if not isinstance(mission_profile, dict):
+        return
+    basic_missions = project.get("basicMissions") if isinstance(project.get("basicMissions"), list) else []
+    basic_mission_ids = {mission_id for mission in basic_missions for mission_id in [_basic_mission_id(mission)] if mission_id}
+    _normalize_mission_profile_composite_tasks(mission_profile, basic_mission_ids)
+    _normalize_mission_profile_periodic_tasks(mission_profile)
+    if _mission_profile_has_periodic_duration(mission_profile):
+        mission_profile.pop("durationHours", None)
+
+
+def _basic_mission_id(value: Any) -> str:
+    if not isinstance(value, dict):
+        return ""
+    return _clean_text(value.get("id") or value.get("missionId") or value.get("taskNo"))
+
+
+def _normalize_mission_profile_composite_tasks(mission_profile: dict[str, Any], basic_mission_ids: set[str]) -> None:
+    composites = mission_profile.get("compositeTasks")
+    if not isinstance(composites, list):
+        return
+    for composite in composites:
+        if not isinstance(composite, dict):
+            continue
+        task_items = composite.get("taskItems")
+        if not isinstance(task_items, list):
+            continue
+        normalized_items: list[dict[str, Any]] = []
+        for item in task_items:
+            if not isinstance(item, dict):
+                continue
+            normalized = _normalized_mission_profile_task_item(item, basic_mission_ids)
+            if normalized:
+                normalized_items.append(normalized)
+        composite["taskItems"] = normalized_items
+
+
+def _normalized_mission_profile_task_item(item: dict[str, Any], basic_mission_ids: set[str]) -> dict[str, Any]:
+    normalized: dict[str, Any] = {}
+    basic_mission_id = _clean_text(item.get("basicMissionId") or item.get("missionId"))
+    if basic_mission_id:
+        normalized["basicMissionId"] = basic_mission_id
+    else:
+        legacy_id = _clean_text(item.get("id"))
+        if legacy_id and legacy_id in basic_mission_ids:
+            normalized["basicMissionId"] = legacy_id
+    for field in _MISSION_PROFILE_TASK_ITEM_FIELDS:
+        if field == "basicMissionId":
+            continue
+        if item.get(field) not in (None, ""):
+            normalized[field] = deepcopy(item[field])
+    return normalized
+
+
+def _normalize_mission_profile_periodic_tasks(mission_profile: dict[str, Any]) -> None:
+    periodic_tasks = mission_profile.get("periodicTasks")
+    if not isinstance(periodic_tasks, list):
+        return
+    normalized_tasks: list[dict[str, Any]] = []
+    for task in periodic_tasks:
+        if not isinstance(task, dict):
+            continue
+        normalized = _normalized_mission_profile_periodic_task(task)
+        if normalized:
+            normalized_tasks.append(normalized)
+    mission_profile["periodicTasks"] = normalized_tasks
+
+
+def _normalized_mission_profile_periodic_task(task: dict[str, Any]) -> dict[str, Any]:
+    normalized: dict[str, Any] = {}
+    for field in ("id",):
+        if task.get(field) not in (None, ""):
+            normalized[field] = deepcopy(task[field])
+    name = _clean_text(task.get("name") or task.get("periodicTaskName") or task.get("taskName") or task.get("experimentName"))
+    if name:
+        normalized["name"] = name
+    repeat_weeks = _first_positive_number(task.get("repeatWeeks"), task.get("repeatRounds"), task.get("repeatCount"))
+    if repeat_weeks is not None:
+        normalized["repeatWeeks"] = repeat_weeks
+    cycle_days = _periodic_cycle_days(task)
+    if cycle_days is None and repeat_weeks is not None:
+        cycle_days = 7.0
+    if cycle_days is not None:
+        normalized["cycleDays"] = cycle_days
+    composite_tasks = _normalized_periodic_composite_tasks(task, repeat_weeks)
+    composite_task_ids = _unique_clean_strings([
+        *(task.get("compositeTaskIds") if isinstance(task.get("compositeTaskIds"), list) else []),
+        *(item.get("compositeTaskId") for item in composite_tasks),
+    ])
+    if composite_tasks:
+        normalized["compositeTasks"] = composite_tasks
+    if composite_task_ids:
+        normalized["compositeTaskIds"] = composite_task_ids
+    _keep_fields(normalized, _MISSION_PROFILE_PERIODIC_TASK_FIELD_SET)
+    return normalized
+
+
+def _normalized_periodic_composite_tasks(task: dict[str, Any], repeat_weeks: float | None) -> list[dict[str, Any]]:
+    raw_composites = task.get("compositeTasks")
+    if isinstance(raw_composites, list):
+        explicit_tasks: list[dict[str, Any]] = []
+        for item in raw_composites:
+            if not isinstance(item, dict):
+                continue
+            normalized: dict[str, Any] = {}
+            for field in _MISSION_PROFILE_PERIODIC_COMPOSITE_TASK_FIELDS:
+                if item.get(field) not in (None, ""):
+                    normalized[field] = deepcopy(item[field])
+            if _clean_text(normalized.get("compositeTaskId")):
+                explicit_tasks.append(normalized)
+        if explicit_tasks:
+            return explicit_tasks
+
+    assignments: list[tuple[str, Any]] = []
+    raw_assignments = task.get("weekdayAssignments") if isinstance(task.get("weekdayAssignments"), dict) else {}
+    for legacy_field, weekday in _PERIODIC_WEEKDAY_ASSIGNMENT_FIELDS:
+        assignments.append((weekday, raw_assignments.get(weekday) or raw_assignments.get(legacy_field) or task.get(legacy_field)))
+    week_count = max(1, int(round(repeat_weeks or 1)))
+    composite_tasks: list[dict[str, Any]] = []
+    for week_index in range(1, week_count + 1):
+        for weekday, composite_id in assignments:
+            composite_text = _clean_text(composite_id)
+            if not composite_text:
+                continue
+            composite_tasks.append({
+                "compositeTaskId": composite_text,
+                "weekIndex": week_index,
+                "weekday": weekday,
+            })
+    return composite_tasks
+
+
+def _periodic_cycle_days(task: dict[str, Any]) -> float | None:
+    direct = _first_positive_number(
+        task.get("cycleDays"),
+        task.get("repeatCycleDays"),
+        task.get("periodDays"),
+        task.get("taskPeriodDays"),
+    )
+    if direct is not None:
+        return direct
+    value = _first_positive_number(task.get("repeatCycleValue"))
+    if value is None:
+        return None
+    unit = _clean_text(task.get("repeatCycleUnit") or "day").lower()
+    if unit in {"week", "weeks", "周", "星期"}:
+        return value * 7
+    if unit in {"hour", "hours", "小时"}:
+        return value / 24
+    return value
+
+
+def _mission_profile_has_periodic_duration(mission_profile: dict[str, Any]) -> bool:
+    periodic_tasks = mission_profile.get("periodicTasks")
+    if not isinstance(periodic_tasks, list):
+        return False
+    return any(
+        isinstance(task, dict)
+        and (_first_positive_number(task.get("repeatWeeks")) is not None or _first_positive_number(task.get("cycleDays")) is not None)
+        for task in periodic_tasks
+    )
+
+
+def _first_positive_number(*values: Any) -> float | None:
+    for value in values:
+        if isinstance(value, bool):
+            continue
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            continue
+        if number > 0:
+            return number
+    return None
+
+
+def _unique_clean_strings(values: list[Any]) -> list[str]:
+    result: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        text = _clean_text(value)
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        result.append(text)
+    return result
 
 
 def _positive_int(value: Any, fallback: int) -> int:
@@ -1563,8 +1855,37 @@ def _prune_mission_profile(value: dict[str, Any]) -> None:
     _keep_fields(value, _MISSION_PROFILE_FIELDS)
     if isinstance(value.get("combatUnit"), dict):
         _prune_combat_unit(value["combatUnit"])
-    _prune_open_model_list(value.get("compositeTasks"))
-    _prune_open_model_list(value.get("periodicTasks"))
+    _prune_composite_tasks(value.get("compositeTasks"))
+    _prune_periodic_tasks(value.get("periodicTasks"))
+
+
+def _prune_composite_tasks(value: Any) -> None:
+    if not isinstance(value, list):
+        return
+    for composite in value:
+        if not isinstance(composite, dict):
+            continue
+        _strip_pollution_keys(composite)
+        task_items = composite.get("taskItems")
+        if not isinstance(task_items, list):
+            continue
+        for item in task_items:
+            if isinstance(item, dict):
+                _keep_fields(item, _MISSION_PROFILE_TASK_ITEM_FIELD_SET)
+
+
+def _prune_periodic_tasks(value: Any) -> None:
+    if not isinstance(value, list):
+        return
+    for periodic in value:
+        if not isinstance(periodic, dict):
+            continue
+        _keep_fields(periodic, _MISSION_PROFILE_PERIODIC_TASK_FIELD_SET)
+        composite_tasks = periodic.get("compositeTasks")
+        if isinstance(composite_tasks, list):
+            for composite in composite_tasks:
+                if isinstance(composite, dict):
+                    _keep_fields(composite, _MISSION_PROFILE_PERIODIC_COMPOSITE_TASK_FIELD_SET)
 
 
 def _prune_combat_unit(value: dict[str, Any]) -> None:

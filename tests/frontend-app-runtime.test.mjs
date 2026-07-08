@@ -550,15 +550,19 @@ test("periodic task editor keeps total task fields on left and saves weekly deta
     await runtime.input("[data-periodic-field]", { periodicField: "weekComposite:14" }, { value: "composite-night" });
     await runtime.click("[data-project-draft-save]");
 
-    const savedProject = await waitForProjectSave(runtime, (body) => (
-      body.missionProfile?.periodicTasks?.[0]?.parentTaskName === "舰载机总任务"
-        && body.missionProfile.periodicTasks[0].repeatWeeks === 3
-        && body.missionProfile.periodicTasks[0].compositeTasks.some((row) => (
+    const savedProject = await waitForProjectSave(runtime, (body) => {
+      const periodicTask = body.missionProfile?.periodicTasks?.[0];
+      return periodicTask
+        && !("parentTaskName" in periodicTask)
+        && periodicTask.repeatWeeks === 3
+        && periodicTask.cycleDays === 7
+        && !("durationHours" in body.missionProfile)
+        && periodicTask.compositeTasks.some((row) => (
           row.weekIndex === 3
             && row.weekday === "mondayCompositeTaskId"
             && row.compositeTaskId === "composite-night"
-        ))
-    ), "expected periodic task edits to save into Project draft");
+        ));
+    }, "expected periodic task edits to save canonical Project draft fields");
 
     assert.equal(savedProject.missionProfile.periodicTasks[0].name, "旧周期性任务名");
   } finally {
