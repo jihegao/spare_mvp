@@ -2266,7 +2266,7 @@ test("basic corrective activity scope edits move only the edited job to the targ
   assert.match(moveSource, /sourceJobs\.splice\(jobIndex, 1\)/);
   assert.match(moveSource, /targetJobs\.push\(job\)/);
   assert.match(ensureSource, /copyTemplateJobs = true/);
-  assert.match(ensureSource, /activity\.jobs = copyTemplateJobs \? supportActivityJobs\(template\)\.map/);
+  assert.match(ensureSource, /setSupportActivityJobs\(activity, copyTemplateJobs \? supportActivityJobs\(template\)\.map/);
 });
 
 test("modeling data-path inputs commit on change instead of rerendering on each keystroke", async () => {

@@ -1320,7 +1320,7 @@ test("equipment aircraft-list selection renders whole aircraft rows and descenda
   });
 
   try {
-    await runtime.click("[data-enter-workbench]", { projectId: "runtime" });
+    await runtime.click("[data-enter-workbench]", { projectId: "project-runtime" });
     await runtime.setHash("feature=spare-planning-equipment-system");
     await runtime.click("[data-select-equipment-root]");
 
@@ -1355,7 +1355,7 @@ test("equipment aircraft rename keeps aircraftTypes catalog in saved Project dra
   });
 
   try {
-    await runtime.click("[data-enter-workbench]", { projectId: "runtime" });
+    await runtime.click("[data-enter-workbench]", { projectId: "project-runtime" });
     await runtime.setHash("feature=spare-planning-equipment-system");
     await runtime.click("[data-select-equipment-aircraft]", { selectEquipmentAircraft: "J-15" });
     await runtime.change("[data-equipment-aircraft-model]", { equipmentAircraftModel: "J-15" }, { value: "J-20" });
@@ -1435,7 +1435,7 @@ test("support activity add work item opens the editing dialog at runtime", async
   const runtime = await setupRuntimeApp({ projectJson: createRuntimeProjectJson() });
 
   try {
-    await runtime.click("[data-enter-workbench]", { projectId: "runtime" });
+    await runtime.click("[data-enter-workbench]", { projectId: "project-runtime" });
     await runtime.setHash("feature=spare-planning-operations-support-activity");
 
     assert.match(runtime.appNode.innerHTML, /data-support-activity-job-add="ops_preflight"/);
@@ -1465,7 +1465,7 @@ test("basic support activity add uses a draft dialog before creating a row", asy
   const runtime = await setupRuntimeApp({ projectJson: createRuntimeProjectJson() });
 
   try {
-    await runtime.click("[data-enter-workbench]", { projectId: "runtime" });
+    await runtime.click("[data-enter-workbench]", { projectId: "project-runtime" });
     await runtime.setHash("feature=spare-planning-basic-support-activity");
 
     const before = (runtime.appNode.innerHTML.match(/data-basic-activity-edit=/g) || []).length;
@@ -1487,10 +1487,39 @@ test("basic support activity add uses a draft dialog before creating a row", asy
     );
     await runtime.click("[data-basic-activity-dialog-save]");
 
-    assert.equal((runtime.appNode.innerHTML.match(/data-basic-activity-edit=/g) || []).length, before + 1);
     assert.match(runtime.appNode.innerHTML, /新增弹窗活动/);
-    assert.equal((runtime.appNode.innerHTML.match(/<td>BA-001<\/td>/g) || []).length, 1);
-    assert.match(runtime.appNode.innerHTML, /<td>BA-002<\/td>/);
+    assert.deepEqual(
+      Array.from(runtime.appNode.innerHTML.matchAll(/<td>(BA-\d+)<\/td>/g)).map((match) => match[1]).sort(),
+      ["BA-001", "BA-002"]
+    );
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("basic support activity UI reads and writes top-level job table references", async () => {
+  const projectJson = createRuntimeProjectJson();
+  const runtime = await setupRuntimeApp({ projectJson });
+
+  try {
+    await runtime.click("[data-enter-workbench]", { projectId: "project-runtime" });
+    await runtime.setHash("feature=spare-planning-basic-support-activity");
+
+    assert.match(runtime.appNode.innerHTML, /初始工作项目/);
+    await runtime.change(
+      "[data-basic-activity-field]",
+      { basicActivityKey: "0:0", basicActivityField: "workName" },
+      { value: "顶层作业表编辑" }
+    );
+    assert.match(runtime.appNode.innerHTML, /顶层作业表编辑/);
+
+    await runtime.click("[data-project-draft-save]");
+    const savedProject = await waitForProjectSave(runtime, (body) => (
+      body.supportActivityJobs?.[0]?.workName === "顶层作业表编辑"
+        && body.supportActivities?.[0]?.activityCodes?.[0] === "BA-001"
+    ), "expected support activity UI to persist top-level job table edits");
+    assert.equal(savedProject.supportActivities[0].jobs, undefined);
+    assert.deepEqual(savedProject.supportActivities[0].predecessors, { "BA-001": [] });
   } finally {
     runtime.restore();
   }
@@ -1505,12 +1534,8 @@ test("basic support activity library filters rows by selected activity type", as
       planType: "预防性维修方案",
       activityName: "J-15定检方案",
       aircraftModel: "J-15",
-      jobs: [{
-        activityCode: "PM-900",
-        workName: "定检基本保障活动",
-        predecessors: [],
-        durationMinutes: 40
-      }]
+      activityCodes: [],
+      predecessors: {}
     },
     {
       id: "corrective-runtime",
@@ -1518,18 +1543,26 @@ test("basic support activity library filters rows by selected activity type", as
       planType: "修复性维修方案",
       activityName: "部件修复方案",
       equipmentId: "component-x",
-      jobs: [{
-        activityCode: "CM-900",
-        workName: "部件修复作业",
-        predecessors: [],
-        durationMinutes: 55
-      }]
+      activityCodes: [],
+      predecessors: {}
     }
   );
+  appendRuntimeSupportActivityJob(projectJson, 1, {
+    activityCode: "PM-900",
+    workName: "定检基本保障活动",
+    predecessors: [],
+    durationMinutes: 40
+  });
+  appendRuntimeSupportActivityJob(projectJson, 2, {
+    activityCode: "CM-900",
+    workName: "部件修复作业",
+    predecessors: [],
+    durationMinutes: 55
+  });
   const runtime = await setupRuntimeApp({ projectJson });
 
   try {
-    await runtime.click("[data-enter-workbench]", { projectId: "runtime" });
+    await runtime.click("[data-enter-workbench]", { projectId: "project-runtime" });
     await runtime.setHash("feature=spare-planning-basic-support-activity");
 
     assert.match(runtime.appNode.innerHTML, /初始工作项目/);
@@ -1553,6 +1586,13 @@ test("basic support activity library filters rows by selected activity type", as
 test("corrective maintenance view uses selected component activities and MTTR", async () => {
   const projectJson = createRuntimeProjectJson({
     components: [
+      {
+        id: "aircraft-root",
+        name: "J-15",
+        aircraftModel: "J-15",
+        productType: "whole",
+        quantity: 1
+      },
       {
         id: "component-a",
         name: "部件A",
@@ -1582,12 +1622,8 @@ test("corrective maintenance view uses selected component activities and MTTR", 
       planType: "修复性维修方案",
       activityName: "部件A修复性维修方案",
       equipmentId: "component-a",
-      jobs: [{
-        activityCode: "CM-A",
-        workName: "部件A既有修复作业",
-        predecessors: [],
-        durationMinutes: 45
-      }]
+      activityCodes: ["CM-A"],
+      predecessors: { "CM-A": [] }
     },
     {
       id: "corrective-component-b",
@@ -1595,19 +1631,28 @@ test("corrective maintenance view uses selected component activities and MTTR", 
       planType: "修复性维修方案",
       activityName: "部件B修复性维修方案",
       equipmentId: "component-b",
-      jobs: [{
-        activityCode: "CM-B",
-        workName: "部件B既有修复作业",
-        predecessors: [],
-        durationMinutes: 55,
-        meanRepairTimeMinutes: 999
-      }]
+      activityCodes: ["CM-B"],
+      predecessors: { "CM-B": [] }
     }
   );
+  projectJson.supportActivityJobs = [
+    ...(projectJson.supportActivityJobs || []),
+    {
+      activityCode: "CM-A",
+      workName: "部件A既有修复作业",
+      durationMinutes: 45
+    },
+    {
+      activityCode: "CM-B",
+      workName: "部件B既有修复作业",
+      durationMinutes: 55,
+      meanRepairTimeMinutes: 999
+    }
+  ];
   const runtime = await setupRuntimeApp({ projectJson });
 
   try {
-    await runtime.click("[data-enter-workbench]", { projectId: "runtime" });
+    await runtime.click("[data-enter-workbench]", { projectId: "project-runtime" });
     await runtime.setHash("feature=spare-planning-corrective-maintenance-activity");
     await runtime.click("[data-select-corrective-component]", { selectCorrectiveComponent: "component-a" });
     assert.match(runtime.appNode.innerHTML, /部件A既有修复作业/);
@@ -1626,7 +1671,7 @@ test("corrective maintenance view uses selected component activities and MTTR", 
 
 test("basic support activity codes stay unique when edited at runtime", async () => {
   const projectJson = createRuntimeProjectJson();
-  projectJson.supportActivities[0].jobs.push({
+  appendRuntimeSupportActivityJob(projectJson, 0, {
     activityCode: "BA-002",
     workName: "第二工作项目",
     predecessors: [],
@@ -1635,7 +1680,7 @@ test("basic support activity codes stay unique when edited at runtime", async ()
   const runtime = await setupRuntimeApp({ projectJson });
 
   try {
-    await runtime.click("[data-enter-workbench]", { projectId: "runtime" });
+    await runtime.click("[data-enter-workbench]", { projectId: "project-runtime" });
     await runtime.setHash("feature=spare-planning-basic-support-activity");
 
     await runtime.click("[data-basic-activity-edit]", { basicActivityEdit: "0:1" });
@@ -1644,6 +1689,7 @@ test("basic support activity codes stay unique when edited at runtime", async ()
       { basicActivityKey: "0:1", basicActivityField: "activityCode" },
       { value: "BA-001" }
     );
+    await runtime.flush();
 
     assert.equal((runtime.appNode.innerHTML.match(/<td>BA-002<\/td>/g) || []).length, 1);
   } finally {
@@ -1653,7 +1699,7 @@ test("basic support activity codes stay unique when edited at runtime", async ()
 
 test("support activity predecessors are edited from the predecessor dialog at runtime", async () => {
   const projectJson = createRuntimeProjectJson();
-  projectJson.supportActivities[0].jobs.push({
+  appendRuntimeSupportActivityJob(projectJson, 0, {
     activityCode: "BA-002",
     workName: "已有紧前作业",
     predecessors: [],
@@ -1662,7 +1708,7 @@ test("support activity predecessors are edited from the predecessor dialog at ru
   const runtime = await setupRuntimeApp({ projectJson });
 
   try {
-    await runtime.click("[data-enter-workbench]", { projectId: "runtime" });
+    await runtime.click("[data-enter-workbench]", { projectId: "project-runtime" });
     await runtime.setHash("feature=spare-planning-operations-support-activity");
 
     assert.match(runtime.appNode.innerHTML, /data-support-activity-predecessor-edit="ops_preflight-0"/);
@@ -1688,7 +1734,7 @@ test("basic support activity edit opens a dialog at runtime", async () => {
   const runtime = await setupRuntimeApp({ projectJson: createRuntimeProjectJson() });
 
   try {
-    await runtime.click("[data-enter-workbench]", { projectId: "runtime" });
+    await runtime.click("[data-enter-workbench]", { projectId: "project-runtime" });
     await runtime.setHash("feature=spare-planning-basic-support-activity");
 
     assert.match(runtime.appNode.innerHTML, /data-basic-activity-edit=/);
@@ -1776,10 +1822,9 @@ test("basic support activity resource dialog uses non-organization resource cata
     { id: "equipment-detector", supportNodeName: "航母飞行甲板", type: "equipment", name: "检测仪", model: "DT-01", quantity: 2 },
     { id: "spare-avionics", supportNodeName: "航母飞行甲板", type: "spare", name: "航电模块", model: "LRU", quantity: 5 }
   ];
-  projectJson.supportActivities[0].jobs[0] = {
+  projectJson.supportActivityJobs[0] = {
     activityCode: "BA-001",
     workName: "导入工作项目",
-    predecessors: [],
     durationMinutes: 20,
     personnel: "维修/航电,2",
     equipment: "检测仪,DT-01,1",
@@ -1841,7 +1886,7 @@ test("basic support activity applicability only offers whole-machine objects", a
   const runtime = await setupRuntimeApp({ projectJson });
 
   try {
-    await runtime.click("[data-enter-workbench]", { projectId: "runtime" });
+    await runtime.click("[data-enter-workbench]", { projectId: "project-runtime" });
     await runtime.setHash("feature=spare-planning-basic-support-activity");
     await runtime.click("[data-basic-activity-add]");
 
@@ -1881,15 +1926,16 @@ test("basic support activity resource dialog selects resource requirements witho
         activityName: "J-15直接准备方案",
         aircraftModel: "J-15",
         durationHours: 1,
-        jobs: [{
+        activityCodes: ["BA-001"],
+        predecessors: { "BA-001": [] }
+      }],
+      supportActivityJobs: [{
           activityCode: "BA-001",
           workName: "初始工作项目",
-          predecessors: [],
           durationMinutes: 20,
           personnel: [],
           equipment: [],
           spare: []
-        }]
       }]
     }),
     backendProjects: [{
@@ -1970,7 +2016,7 @@ test("logistics support activity page only renders transport strategy list", asy
   const runtime = await setupRuntimeApp({ projectJson: createRuntimeProjectJson() });
 
   try {
-    await runtime.click("[data-enter-workbench]", { projectId: "runtime" });
+    await runtime.click("[data-enter-workbench]", { projectId: "project-runtime" });
     await runtime.setHash("feature=spare-planning-logistics-support-activity");
 
     assert.match(runtime.appNode.innerHTML, /后勤保障运输策略配置/);
@@ -3131,17 +3177,18 @@ function createRuntimeProjectJson(overrides = {}) {
       activityName: "J-15直接准备方案",
       aircraftModel: "J-15",
       durationHours: 1,
-      jobs: [{
-        activityCode: "BA-001",
-        workName: "初始工作项目",
-        predecessors: [],
-        durationMinutes: 20,
-        personnel: "机务人员,1",
-        equipment: "检测仪,1",
-        spare: "航电模块"
-      }]
+      activityCodes: ["BA-001"],
+      predecessors: { "BA-001": [] }
     }]
   });
+  project.supportActivityJobs = [{
+    activityCode: "BA-001",
+    workName: "初始工作项目",
+    durationMinutes: 20,
+    personnel: "机务人员,1",
+    equipment: "检测仪,1",
+    spare: "航电模块"
+  }];
   return {
     ...project,
     ...overrides,
@@ -3150,6 +3197,25 @@ function createRuntimeProjectJson(overrides = {}) {
     basicMissions: overrides.basicMissions || project.basicMissions,
     equipment: { ...project.equipment, ...(overrides.equipment || {}) }
   };
+}
+
+function appendRuntimeSupportActivityJob(projectJson, activityIndex, job) {
+  const activity = projectJson.supportActivities[activityIndex];
+  assert.ok(activity, `missing support activity ${activityIndex}`);
+  if (!Array.isArray(projectJson.supportActivityJobs)) projectJson.supportActivityJobs = [];
+  const activityCode = String(job.activityCode || `BA-${projectJson.supportActivityJobs.length + 1}`).trim();
+  projectJson.supportActivityJobs.push({
+    ...job,
+    activityCode,
+    predecessors: undefined
+  });
+  delete projectJson.supportActivityJobs[projectJson.supportActivityJobs.length - 1].predecessors;
+  activity.activityCodes = [...(Array.isArray(activity.activityCodes) ? activity.activityCodes : []), activityCode];
+  activity.predecessors = {
+    ...(activity.predecessors && typeof activity.predecessors === "object" ? activity.predecessors : {}),
+    [activityCode]: Array.isArray(job.predecessors) ? [...job.predecessors] : []
+  };
+  delete activity.jobs;
 }
 
 function createRuntimeFormalRun(runId = "formal-runtime-run", request = {}) {

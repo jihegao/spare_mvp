@@ -44,11 +44,9 @@ import {
 } from "./sim-engine.mjs";
 import {
   allowedSupportActivityDurationDistributions,
-  deleteSupportActivityJobAt,
-  deleteSupportActivityJobsAtIndexes,
+  supportActivityJobs as legacySupportActivityJobs,
   normalizeSupportActivityDurationProfile,
-  supportActivityJobFromBasicActivity,
-  supportActivityJobs
+  supportActivityJobFromBasicActivity
 } from "./support-activity-jobs.mjs";
 import {
   buildReliabilityBlockDiagramLayout,
@@ -5436,15 +5434,16 @@ function createOperationsSupportActivityForAircraftModel(aircraftModel, config =
     isOperationsSupportActivity(activity) && String(supportActivityAircraftModel(activity) || "") === model
   )).length;
   const suffix = existingCount + 1;
-  return {
+  const activity = {
     id: nextOperationsSupportActivityId(model, config.planType),
     activityType: "使用保障",
     planType: config.planType,
     planGroupId,
     activityName: `${model}${config.activitySuffix || `保障活动${suffix}`}`,
     aircraftModel: model,
-    maxWorkTimeRefMinutes: config.maxWorkTimeRefMinutes ?? 30,
-    jobs: [{
+    maxWorkTimeRefMinutes: config.maxWorkTimeRefMinutes ?? 30
+  };
+  return setSupportActivityJobs(activity, [{
       activityCode: "BA-001",
       workName: `${config.label || "新增"}基本保障活动1`,
       predecessors: [],
@@ -5452,8 +5451,7 @@ function createOperationsSupportActivityForAircraftModel(aircraftModel, config =
       personnel: defaultPersonnelRequirement("机务人员", 1),
       equipment: defaultMaterialRequirement("检测仪", "检测仪", 1),
       spare: []
-    }]
-  };
+  }]);
 }
 
 function nextOperationsSupportActivityId(aircraftModel, planType = "") {
@@ -5574,7 +5572,7 @@ function deletePreventiveMaintenanceActivityPlan(key = "") {
 
 function createPreventiveMaintenanceActivityForAircraftModel(aircraftModel, sequence = 1) {
   const model = String(aircraftModel || "").trim() || "未指定机型";
-  return {
+  const activity = {
     id: nextPreventiveMaintenanceActivityId(model),
     activityType: "预防性维修",
     planType: "预防性维修方案",
@@ -5590,8 +5588,9 @@ function createPreventiveMaintenanceActivityForAircraftModel(aircraftModel, sequ
     runHourFloatRatio: 0.15,
     useTakeoffLandingRule: true,
     takeoffLandingInterval: 6,
-    takeoffLandingFloatRatio: 0.1,
-    jobs: [{
+    takeoffLandingFloatRatio: 0.1
+  };
+  return setSupportActivityJobs(activity, [{
       activityCode: "PM-001",
       workName: "新增预防性维修工作项目1",
       predecessors: [],
@@ -5599,8 +5598,7 @@ function createPreventiveMaintenanceActivityForAircraftModel(aircraftModel, sequ
       personnel: defaultPersonnelRequirement("维修人员", 1),
       equipment: defaultMaterialRequirement("通用工具箱", "通用工具箱", 1),
       spare: []
-    }]
-  };
+  }]);
 }
 
 function nextPreventiveMaintenanceActivityId(aircraftModel) {
@@ -6579,15 +6577,16 @@ function isCorrectiveMaintenanceActivity(activity) {
 }
 
 function createDefaultCorrectiveMaintenanceActivity() {
-  return {
+  const activity = {
     id: nextSupportActivityId("corrective-unassigned"),
     activityType: "修复性维修",
     planType: "修复性维修方案",
     activityName: "默认修复性维修方案",
     equipmentId: "",
     maxRepairTimeMinutes: 60,
-    repairType: "原位维修",
-    jobs: [{
+    repairType: "原位维修"
+  };
+  return setSupportActivityJobs(activity, [{
       activityCode: "CM-001",
       workName: "新增修复性维修工作项目1",
       predecessors: [],
@@ -6595,8 +6594,7 @@ function createDefaultCorrectiveMaintenanceActivity() {
       personnel: defaultPersonnelRequirement("维修人员", 1),
       equipment: defaultMaterialRequirement("通用工具箱", "通用工具箱", 1),
       spare: []
-    }]
-  };
+  }]);
 }
 
 function ensureLogisticsSupportActivityDraft() {
@@ -6852,6 +6850,117 @@ function toggleSupportActivityJobSelection(key, checked) {
   selectedSupportActivityJobKeys = next;
 }
 
+function ensureSupportActivityJobTable() {
+  if (!Array.isArray(scenario.supportActivityJobs)) scenario.supportActivityJobs = [];
+  return scenario.supportActivityJobs;
+}
+
+function supportActivityJobCode(value) {
+  return String(value || "").trim();
+}
+
+function supportActivityJobDefinitionsByCode() {
+  const definitions = new Map();
+  for (const job of Array.isArray(scenario.supportActivityJobs) ? scenario.supportActivityJobs : []) {
+    if (!job || typeof job !== "object" || Array.isArray(job)) continue;
+    const code = supportActivityJobCode(job.activityCode);
+    if (!code || definitions.has(code)) continue;
+    definitions.set(code, job);
+  }
+  return definitions;
+}
+
+function supportActivityJobDefinition(job) {
+  const definition = { ...(job || {}) };
+  delete definition.predecessors;
+  return definition;
+}
+
+function supportActivityJobs(activity) {
+  if (!activity || typeof activity !== "object") return [];
+  if (!Array.isArray(activity.activityCodes) && Array.isArray(activity.jobs)) {
+    setSupportActivityJobs(activity, legacySupportActivityJobs(activity).map((job) => ({ ...job })));
+    return supportActivityJobs(activity);
+  }
+  const definitions = supportActivityJobDefinitionsByCode();
+  if (Array.isArray(activity.activityCodes)) {
+    return activity.activityCodes.map((rawCode, index) => {
+      const code = supportActivityJobCode(rawCode);
+      const definition = definitions.get(code) || legacySupportActivityJobs(activity)[index] || {};
+      return {
+        ...definition,
+        activityCode: code || definition.activityCode || `BA-${String(index + 1).padStart(3, "0")}`,
+        predecessors: Array.isArray(activity.predecessors?.[code])
+          ? [...activity.predecessors[code]]
+          : []
+      };
+    }).filter((job) => supportActivityJobCode(job.activityCode));
+  }
+  return legacySupportActivityJobs(activity).map((job) => ({ ...job }));
+}
+
+function setSupportActivityJobs(activity, jobs) {
+  if (!activity || typeof activity !== "object") return;
+  const table = ensureSupportActivityJobTable();
+  const tableByCode = new Map(table.map((job) => [supportActivityJobCode(job?.activityCode), job]).filter(([code]) => code));
+  const activityCodes = [];
+  const predecessors = {};
+  for (const job of Array.isArray(jobs) ? jobs : []) {
+    if (!job || typeof job !== "object" || Array.isArray(job)) continue;
+    const code = supportActivityJobCode(job.activityCode);
+    if (!code) continue;
+    activityCodes.push(code);
+    predecessors[code] = Array.isArray(job.predecessors)
+      ? job.predecessors.map((value) => supportActivityJobCode(value)).filter(Boolean)
+      : [];
+    const definition = supportActivityJobDefinition({ ...job, activityCode: code });
+    if (tableByCode.has(code)) Object.assign(tableByCode.get(code), definition);
+    else {
+      table.push(definition);
+      tableByCode.set(code, definition);
+    }
+  }
+  activity.activityCodes = activityCodes;
+  activity.predecessors = predecessors;
+  delete activity.jobs;
+  pruneUnreferencedSupportActivityJobs(activity);
+  return activity;
+}
+
+function pruneUnreferencedSupportActivityJobs(extraActivity = null) {
+  if (!Array.isArray(scenario.supportActivityJobs)) return;
+  const referenced = new Set();
+  const activities = [
+    ...(Array.isArray(scenario.supportActivities) ? scenario.supportActivities : []),
+    ...(extraActivity ? [extraActivity] : [])
+  ];
+  for (const activity of activities) {
+    for (const code of Array.isArray(activity?.activityCodes) ? activity.activityCodes : []) {
+      const normalized = supportActivityJobCode(code);
+      if (normalized) referenced.add(normalized);
+    }
+  }
+  scenario.supportActivityJobs = scenario.supportActivityJobs.filter((job) => referenced.has(supportActivityJobCode(job?.activityCode)));
+}
+
+function deleteSupportActivityJobAt(activity, index) {
+  const jobs = supportActivityJobs(activity);
+  if (!activity || !Number.isInteger(index) || index < 0 || index >= jobs.length) return false;
+  jobs.splice(index, 1);
+  setSupportActivityJobs(activity, jobs);
+  return true;
+}
+
+function deleteSupportActivityJobsAtIndexes(activity, indexes) {
+  const selectedIndexes = new Set(indexes.filter((index) => Number.isInteger(index) && index >= 0));
+  if (!activity || selectedIndexes.size === 0) return false;
+  const jobs = supportActivityJobs(activity);
+  const nextJobs = jobs.filter((_, index) => !selectedIndexes.has(index));
+  if (nextJobs.length === jobs.length) return false;
+  setSupportActivityJobs(activity, nextJobs);
+  return true;
+}
+
 function toggleAllSupportActivityJobSelection(tabKey, checked) {
   const activity = findSupportActivityByJobTabKey(tabKey);
   const keys = supportActivityJobs(activity || {}).map((_, index) => supportActivityJobKey(tabKey, index));
@@ -6907,7 +7016,7 @@ function addSupportActivityJob(tabKey) {
     equipment: defaultMaterialRequirement("检测仪", "检测仪", 1),
     spare: []
   });
-  activity.jobs = jobs;
+  setSupportActivityJobs(activity, jobs);
   const key = supportActivityJobKey(tabKey, nextIndex);
   selectedSupportActivityJobKeys = new Set([key]);
   updatePreviewResultsThroughApiClient();
@@ -6964,7 +7073,7 @@ function updateSupportActivityJobField(key, fieldName, value) {
         ? uniqueBasicActivityCode(value, basicActivityKey)
         : value
   };
-  activity.jobs = jobs;
+  setSupportActivityJobs(activity, jobs);
   updatePreviewResultsThroughApiClient();
 }
 
@@ -6976,7 +7085,7 @@ function updateSupportActivityJobPredecessors(encodedJob, predecessors) {
   const jobs = supportActivityJobs(activity).slice();
   if (!jobs[index]) return;
   jobs[index] = { ...jobs[index], predecessors };
-  activity.jobs = jobs;
+  setSupportActivityJobs(activity, jobs);
   updatePreviewResultsThroughApiClient();
 }
 
@@ -6996,7 +7105,7 @@ function updateSupportActivityJobPredecessorSelection(encodedJob, predecessorVal
     next.delete(value);
   }
   jobs[index] = { ...jobs[index], predecessors: Array.from(next) };
-  activity.jobs = jobs;
+  setSupportActivityJobs(activity, jobs);
   updatePreviewResultsThroughApiClient();
 }
 
@@ -8034,7 +8143,7 @@ function addBasicActivityLibraryJob() {
     equipment: defaultMaterialRequirement("检测仪", "检测仪", 1),
     spare: []
   });
-  activity.jobs = jobs;
+  setSupportActivityJobs(activity, jobs);
   const activityIndex = (scenario.supportActivities || []).indexOf(activity);
   selectedBasicActivityKeys = activityIndex >= 0 ? new Set([`${activityIndex}:${index}`]) : selectedBasicActivityKeys;
 }
@@ -8072,7 +8181,7 @@ function saveBasicActivityDraft() {
   const jobs = supportActivityJobs(activity).slice();
   const job = supportActivityJobFromBasicActivityDraft(basicActivityDraft);
   jobs.push(job);
-  activity.jobs = jobs;
+  setSupportActivityJobs(activity, jobs);
   updateBasicActivityScope(activity, basicActivityScopeValue(basicActivityDraft));
   const activityIndex = (scenario.supportActivities || []).indexOf(activity);
   const key = activityIndex >= 0 ? `${activityIndex}:${jobs.length - 1}` : "";
@@ -8107,7 +8216,7 @@ function ensureBasicActivityDraftHostActivity(type) {
     const existing = preventiveMaintenanceActivityEntries(model)[0]?.activity;
     if (existing) return existing;
     const activity = createPreventiveMaintenanceActivityForAircraftModel(model, preventiveMaintenanceActivityEntries().length + 1);
-    activity.jobs = [];
+    setSupportActivityJobs(activity, []);
     activities.push(activity);
     selectedPreventiveMaintenanceActivityKey = `supportActivity:${activities.indexOf(activity)}`;
     selectedPreventiveMaintenanceAircraftModel = model;
@@ -8115,12 +8224,9 @@ function ensureBasicActivityDraftHostActivity(type) {
   }
   if (activityType === "修复性维修") {
     const activity = ensureCorrectiveMaintenanceActivityForBasicActivityDraft(basicActivityDraft);
-    if (activity) {
-      activity.jobs = supportActivityJobs(activity);
-      return activity;
-    }
+    if (activity) return activity;
     const fallback = createDefaultCorrectiveMaintenanceActivity();
-    fallback.jobs = [];
+    setSupportActivityJobs(fallback, []);
     activities.push(fallback);
     return fallback;
   }
@@ -8132,7 +8238,7 @@ function ensureBasicActivityDraftHostActivity(type) {
     return existing;
   }
   const activity = createOperationsSupportActivityForAircraftModel(model, operationsSupportPlanTypeConfigs()[0]);
-  activity.jobs = [];
+  setSupportActivityJobs(activity, []);
   activities.push(activity);
   selectedOperationsSupportAircraftModel = model;
   selectedOperationsSupportActivityKey = `supportActivity:${activities.indexOf(activity)}`;
@@ -8145,7 +8251,7 @@ function ensureCorrectiveMaintenanceActivityForBasicActivityDraft(draft) {
   const existing = correctiveMaintenanceActivityForComponent(component);
   if (existing) return existing;
   const created = ensureCorrectiveMaintenanceActivityForComponent(component);
-  if (created) created.jobs = [];
+  if (created) setSupportActivityJobs(created, []);
   return created;
 }
 
@@ -8195,7 +8301,7 @@ function updateBasicActivityJobField(key, fieldName, value) {
       durationProfile: nextProfile,
       durationMinutes: durationMinutesForSupportActivityProfile(nextProfile, jobs[jobIndex].durationMinutes)
     };
-    activity.jobs = jobs;
+    setSupportActivityJobs(activity, jobs);
     updatePreviewResultsThroughApiClient();
     return;
   }
@@ -8207,7 +8313,7 @@ function updateBasicActivityJobField(key, fieldName, value) {
         ? uniqueBasicActivityCode(value, key)
         : value
   };
-  activity.jobs = jobs;
+  setSupportActivityJobs(activity, jobs);
   updatePreviewResultsThroughApiClient();
 }
 
@@ -8223,10 +8329,10 @@ function moveCorrectiveBasicActivityJobToScope(activity, jobIndex, value) {
   const sourceJobs = supportActivityJobs(activity).slice();
   const [job] = sourceJobs.splice(jobIndex, 1);
   if (!job) return false;
-  activity.jobs = sourceJobs;
+  setSupportActivityJobs(activity, sourceJobs);
   const targetJobs = supportActivityJobs(targetActivity).slice();
   targetJobs.push(job);
-  targetActivity.jobs = targetJobs;
+  setSupportActivityJobs(targetActivity, targetJobs);
   const targetActivityIndex = (scenario.supportActivities || []).indexOf(targetActivity);
   if (targetActivityIndex >= 0) {
     selectedBasicActivityKeys = new Set([`${targetActivityIndex}:${targetJobs.length - 1}`]);
@@ -8430,7 +8536,7 @@ function setBasicActivityTargetJob(target, job) {
     basicActivityDraft = { ...basicActivityDraft, ...job, key: BASIC_ACTIVITY_DRAFT_KEY };
     return;
   }
-  target.activity.jobs = target.jobs;
+  setSupportActivityJobs(target.activity, target.jobs);
 }
 
 function basicActivityResourceRequirementsFromKeys(resourceKind, keys) {
@@ -8566,7 +8672,7 @@ function importBasicActivityByType(type) {
     equipment: defaultMaterialRequirement("通用工具", "通用工具", 1),
     spare: []
   });
-  activity.jobs = jobs;
+  setSupportActivityJobs(activity, jobs);
   const activityIndex = (scenario.supportActivities || []).indexOf(activity);
   selectedBasicActivityKeys = new Set([`${activityIndex}:${index}`]);
 }
@@ -8631,7 +8737,7 @@ function applyBasicActivityToSupportActivityJob(tabKey, basicActivityKey) {
     ...current,
     ...templateJob
   };
-  activity.jobs = jobs;
+  setSupportActivityJobs(activity, jobs);
   selectedSupportActivityJobKeys = new Set([supportActivityJobKey(tabKey, targetIndex)]);
   supportActivityTemplatePickerTabKey = "";
   supportActivityTemplateQuery = "";
@@ -8664,7 +8770,7 @@ function addBasicActivityAsSupportActivityPredecessor(tabKey, basicActivityKey, 
   const predecessors = new Set(Array.isArray(targetJob.predecessors) ? targetJob.predecessors : []);
   predecessors.add(predecessorValue);
   jobs[target.index] = { ...targetJob, predecessors: Array.from(predecessors) };
-  activity.jobs = jobs;
+  setSupportActivityJobs(activity, jobs);
   selectedSupportActivityJobKeys = new Set([supportActivityJobKey(tabKey, target.index)]);
   updatePreviewResultsThroughApiClient();
 }
@@ -8872,7 +8978,7 @@ function ensureCorrectiveMaintenanceActivityForComponent(component, { copyTempla
   activity.activityName = `${componentName}修复性维修方案`;
   activity.planType = "修复性维修方案";
   activity.equipmentId = equipmentId;
-  activity.jobs = copyTemplateJobs ? supportActivityJobs(template).map((job) => ({ ...job })) : [];
+  setSupportActivityJobs(activity, copyTemplateJobs ? supportActivityJobs(template).map((job) => ({ ...job })) : []);
   scenario.supportActivities.push(activity);
   return activity;
 }
