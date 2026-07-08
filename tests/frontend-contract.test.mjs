@@ -598,7 +598,8 @@ test("active docs explain Project JSON non-model field cleanup boundary", async 
   assert.match(combinedDocs, /missionProfile\.analysisRequests/);
   assert.match(combinedDocs, /deletedSupportResourceKeys/);
   assert.match(combinedDocs, /supportActivities\[\]\.requireDevices/);
-  assert.match(combinedDocs, /requiredDevices[^。]*实际消费字段|supportActivities\[\]\.requiredDevices remains part/);
+  assert.match(combinedDocs, /supportActivities\[\]\.requiredDevices/);
+  assert.match(combinedDocs, /supportActivityJobs\[\]/);
   assert.match(combinedDocs, /ExperimentPlan\.config\.analysisRequests\.largeSample/);
   assert.doesNotMatch(combinedDocs, /RunService 编译单次 smoke run/);
 });

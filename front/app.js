@@ -6583,7 +6583,7 @@ function ensureLogisticsSupportActivityDraft() {
   const activity = {
     id: nextSupportActivityId("logistics"),
     activityType: "后勤保障",
-    planType: "后勤保障活动方案",
+    planType: "后勤保障方案",
     activityName: "后勤保障活动方案"
   };
   activities.push(activity);
@@ -6591,7 +6591,7 @@ function ensureLogisticsSupportActivityDraft() {
 }
 
 function isLogisticsSupportActivity(activity) {
-  return activity?.activityType === "后勤保障" || activity?.planType === "后勤保障活动方案";
+  return activity?.activityType === "后勤保障" || activity?.planType === "后勤保障方案" || activity?.planType === "后勤保障活动方案";
 }
 
 function nextSupportActivityId(prefix) {
@@ -9287,6 +9287,7 @@ function renderLogisticsSupportActivity(activePlan, activity) {
 function findLogisticsSupportActivity() {
   const activities = scenario.supportActivities || [];
   return activities.find((item) => item.activityType === "后勤保障")
+    || activities.find((item) => item.planType === "后勤保障方案")
     || activities.find((item) => item.planType === "后勤保障活动方案");
 }
 

@@ -194,7 +194,11 @@ class ProjectJsonExporterTest(unittest.TestCase):
         self.assertNotIn("requireDevices", clean["supportActivities"][0])
         self.assertNotIn("transportStrategies", clean["supportActivities"][0])
         self.assertNotIn("organizationStrategies", clean["supportActivities"][0])
-        self.assertEqual(clean["supportActivities"][0]["requiredDevices"], 1)
+        self.assertNotIn("name", clean["supportActivities"][0])
+        self.assertNotIn("resourceId", clean["supportActivities"][0])
+        self.assertNotIn("requiredDevices", clean["supportActivities"][0])
+        self.assertNotIn("requiredPersonnel", clean["supportActivities"][0])
+        self.assertEqual(clean["supportActivities"][0]["planType"], "修复性维修方案")
         self.assertNotIn("jobs", clean["supportActivities"][0])
         self.assertEqual(clean["supportActivities"][0]["activityCodes"], ["JOB-1"])
         self.assertEqual(clean["supportActivities"][0]["predecessors"], {"JOB-1": []})
@@ -292,10 +296,27 @@ print(strip_project_sweep({"scenarioId": "scenario-a"})["scenarioId"])
         with self.assertRaisesRegex(ValueError, "supportActivities.0.durationHours: expected >= 0"):
             self._export_with_old_jsonschema(invalid_duration)
 
-        invalid_required_devices = self._polluted_project()
-        invalid_required_devices["supportActivities"][0]["requiredDevices"] = True
-        with self.assertRaisesRegex(ValueError, "supportActivities.0.requiredDevices: expected integer"):
-            self._export_with_old_jsonschema(invalid_required_devices)
+        invalid_plan_type = self._polluted_project()
+        invalid_plan_type["supportActivities"][0]["activityType"] = ""
+        invalid_plan_type["supportActivities"][0]["planType"] = "自定义保障方案"
+        clean = self._export_with_old_jsonschema(invalid_plan_type)
+        self.assertEqual(clean["supportActivities"][0]["planType"], "使用保障方案")
+
+    def test_aircraft_support_v1_exporter_rejects_invalid_support_activity_references(self) -> None:
+        unknown_job = self._polluted_project()
+        unknown_job["supportActivities"][0]["jobs"] = []
+        unknown_job["supportActivities"][0]["activityCodes"] = ["missing-job"]
+        unknown_job["supportActivities"][0]["predecessors"] = {"missing-job": []}
+        with self.assertRaisesRegex(ValueError, "unknown supportActivityJobs activityCode"):
+            ProjectJsonExporter(target="aircraft_support_v1").export(unknown_job)
+
+        cross_plan_predecessor = self._polluted_project()
+        cross_plan_predecessor["supportActivityJobs"] = [{"activityCode": "JOB-1"}]
+        cross_plan_predecessor["supportActivities"][0].pop("jobs", None)
+        cross_plan_predecessor["supportActivities"][0]["activityCodes"] = ["JOB-1"]
+        cross_plan_predecessor["supportActivities"][0]["predecessors"] = {"JOB-1": ["OTHER-JOB"]}
+        with self.assertRaisesRegex(ValueError, "predecessor value is outside activityCodes"):
+            ProjectJsonExporter(target="aircraft_support_v1").export(cross_plan_predecessor)
 
     def test_aircraft_support_v1_builtin_guard_rejects_invalid_object_shapes(self) -> None:
         invalid_project_info = self._polluted_project()

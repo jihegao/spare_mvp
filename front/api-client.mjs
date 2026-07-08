@@ -318,6 +318,7 @@ function stripProjectNonModelFields(projectJson) {
   stripMissionProfileNonModelFields(projectJson.missionProfile);
   stripSupportActivityTypoFields(projectJson);
   stripDeprecatedSupportActivityStrategyFields(projectJson);
+  normalizeSupportActivityReferenceFields(projectJson);
   stripSupportActivityMttrFields(projectJson.supportActivities);
   stripSupportActivityMttrFields(projectJson.supportActivityJobs);
 }
@@ -785,6 +786,40 @@ function stripDeprecatedSupportActivityStrategyFields(projectJson) {
     delete activity.transportStrategies;
     delete activity.organizationStrategies;
   }
+}
+
+function normalizeSupportActivityReferenceFields(projectJson) {
+  if (!Array.isArray(projectJson?.supportActivities)) return;
+  for (const activity of projectJson.supportActivities) {
+    if (!activity || typeof activity !== "object" || Array.isArray(activity)) continue;
+    activity.activityName ||= activity.name || activity.id || "保障活动";
+    activity.planType = canonicalSupportActivityPlanType(activity);
+    delete activity.name;
+    delete activity.planGroupId;
+    delete activity.resourceId;
+    delete activity.supportNodeId;
+    delete activity.requiredDevices;
+    delete activity.requiredPersonnel;
+  }
+}
+
+function canonicalSupportActivityPlanType(activity = {}) {
+  const planType = String(activity.planType || "").trim();
+  const activityType = String(activity.activityType || "").trim();
+  const combined = `${planType} ${activityType}`.toLowerCase();
+  if (planType === "修复性维修方案" || /修复性维修|corrective/.test(combined)) return "修复性维修方案";
+  if (planType === "预防性维修方案" || /预防性维修|preventive/.test(combined)) return "预防性维修方案";
+  if (planType === "后勤保障方案" || planType === "后勤保障活动方案" || /后勤保障|logistics/.test(combined)) return "后勤保障方案";
+  if (
+    planType === "使用保障方案"
+    || planType === "直接准备方案"
+    || planType === "再次出动准备方案"
+    || planType === "飞行后检查方案"
+    || /飞行前保障|使用保障|operations|preflight|relaunch|postflight/.test(combined)
+  ) {
+    return "使用保障方案";
+  }
+  return "使用保障方案";
 }
 
 const SUPPORT_ACTIVITY_MTTR_FIELDS = [

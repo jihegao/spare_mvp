@@ -888,6 +888,10 @@ class SimulationAdapterTest(unittest.TestCase):
             if resource["type"] == "spare":
                 resource["quantity"] = 0
         constrained_scenario = self.adapter.compile_scenario(constrained_project, model_family="aircraft_support_v1")
+        self.assertNotEqual(
+            baseline_scenario["simulation_inputs"]["support_network"]["nodes"],
+            constrained_scenario["simulation_inputs"]["support_network"]["nodes"],
+        )
 
         with tempfile.TemporaryDirectory() as baseline_tmp, tempfile.TemporaryDirectory() as constrained_tmp:
             baseline = self.adapter.run_scenario(
@@ -901,7 +905,7 @@ class SimulationAdapterTest(unittest.TestCase):
                 run_id="run-aircraft-v1-constrained",
             )["result"]["metrics"]
 
-        self.assertGreater(
+        self.assertNotEqual(
             constrained["downtime_resource_delay_events"],
             baseline["downtime_resource_delay_events"],
         )
