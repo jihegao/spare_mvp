@@ -1426,7 +1426,7 @@ def _normalize_experiment_plan_config(config: dict[str, Any]) -> dict[str, Any]:
 
 
 def _normalize_lite_mesa_analysis_settings(settings: dict[str, Any]) -> dict[str, Any]:
-    samples = _bounded_int(settings.get("samples"), default=27, minimum=1, maximum=1000)
+    samples = _bounded_int(settings.get("samples"), default=4, minimum=1, maximum=1000)
     seed = _optional_int(settings.get("seed"))
     confidence_target = _bounded_float(
         settings.get("missionConfidenceTarget"),

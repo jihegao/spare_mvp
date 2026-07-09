@@ -7,7 +7,7 @@ export const defaultScenario = {
   scenarioId: "preview-empty-shell",
   activeModule: "sparePlanning",
   airports: [],
-  experiment: { name: "本地空白预览", steps: 24, samples: 27, seed: 20260621 },
+  experiment: { name: "本地空白预览", steps: 24, samples: 4, seed: 20260621 },
   missionProfile: {
     name: "",
     durationHours: 0,

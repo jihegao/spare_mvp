@@ -21,6 +21,7 @@ from src.spare_mvp_backend.api import (
     _lite_mesa_downtime_event_snapshots,
     _lite_mesa_mission_reliability_result,
     _lite_mesa_spare_shortfall_result,
+    _normalize_lite_mesa_analysis_settings,
 )
 from src.spare_mvp_backend.http_server import create_backend_server
 from src.spare_mvp_backend.modeling_import import modeling_import_to_project, validate_modeling_import_package
@@ -228,6 +229,9 @@ class BackendApiContractTest(unittest.TestCase):
     def tearDown(self) -> None:
         self.connection.close()
         self.tempdir.cleanup()
+
+    def test_lite_mesa_analysis_defaults_to_four_samples(self) -> None:
+        self.assertEqual(_normalize_lite_mesa_analysis_settings({})["samples"], 4)
 
     def _fixture(self, name: str) -> dict:
         return json.loads((REPO_ROOT / "tests" / "fixtures" / name).read_text(encoding="utf-8"))

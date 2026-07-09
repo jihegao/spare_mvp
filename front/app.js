@@ -594,7 +594,7 @@ let currentAnalysisResultLoaded = {};
 let currentAnalysisResultLoadInFlight = {};
 let { previewSingleResult: singleResult, previewMonteCarloResult: monteCarloResult } = buildPreviewResultState(scenario);
 let liteMesaMonteCarloSettings = {
-  samples: Number(scenario.experiment?.samples || 27),
+  samples: Number(scenario.experiment?.samples || 4),
   seed: Number(scenario.experiment?.seed || 20260621)
 };
 let liteMesaMonteCarloResult = null;
@@ -16277,7 +16277,7 @@ function ensureExperimentPlanDraftDefaults(projectJson) {
   const projectName = String(currentProject?.name || projectJson.projectInfo?.name || projectJson.scenarioId || "当前项目").trim();
   projectJson.experiment.name ||= `${projectName} 仿真实验方案`;
   projectJson.experiment.steps = positiveExperimentNumber(projectJson.experiment.steps, defaults.steps || 24);
-  projectJson.experiment.samples = positiveExperimentNumber(projectJson.experiment.samples, defaults.samples || 27);
+  projectJson.experiment.samples = positiveExperimentNumber(projectJson.experiment.samples, defaults.samples || 4);
   const seed = Number(projectJson.experiment.seed);
   projectJson.experiment.seed = Number.isFinite(seed) ? seed : Number(defaults.seed || 20260621);
   if (!projectJson.seedPolicy || typeof projectJson.seedPolicy !== "object" || Array.isArray(projectJson.seedPolicy)) {
