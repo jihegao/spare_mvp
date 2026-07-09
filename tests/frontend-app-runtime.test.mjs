@@ -907,7 +907,8 @@ test("four result analysis pages omit Mesa from visible copy", async () => {
       assert.doesNotMatch(runtime.appNode.innerHTML, /输出边界|持久化/);
       const settingsPanel = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-settings");
       assert.match(settingsPanel, /样本量 \/ 随机种子只读/);
-      assert.match(settingsPanel, /样本量[\s\S]*<strong>27<\/strong>/);
+      const expectedSamples = featureId === "mission-reliability-downtime-factor-analysis" ? "1" : "27";
+      assert.match(settingsPanel, new RegExp(`样本量[\\s\\S]*<strong>${expectedSamples}<\\/strong>`));
       assert.match(settingsPanel, /随机种子[\s\S]*<strong>20260621<\/strong>/);
       assert.doesNotMatch(settingsPanel, /data-lite-mesa-analysis-field="samples"|data-lite-mesa-analysis-field="seed"/);
       assert.doesNotMatch(settingsPanel, /实验类型|统计口径/);
@@ -1125,6 +1126,7 @@ test("downtime factors analysis enables log snapshots and renders event snapshot
       .find((body) => body.analysis_type === "downtime_factors");
     assert.ok(analysisRequest, "downtime analysis should submit a lightweight Mesa analysis request");
     assert.equal(analysisRequest.model_family, "aircraft_support_v1");
+    assert.equal(analysisRequest.settings.samples, 1);
     assert.equal(analysisRequest.settings.topN, 4);
     assert.match(runtime.appNode.innerHTML, /分析结果已生成|分析完成/);
     const detailPanel = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-analysis-detail");

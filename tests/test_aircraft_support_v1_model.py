@@ -751,6 +751,44 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
         self.assertEqual(model.snapshot()["failed_sorties"], 1)
         self.assertTrue(any(job.kind == "repair" and job.tail_number == aircraft.tail_number for job in model.jobs))
 
+    def test_event_snapshots_keep_aircraft_state_lightweight(self) -> None:
+        inputs = _minimal_inputs()
+        inputs["write_event_snapshots"] = True
+        inputs["aircraft"]["fleet_count"] = 1
+        inputs["aircraft"]["initial_ready"] = 1
+        inputs["equipment_tree"]["components"] = [
+            _runtime_component("aircraft-root", None, "Aircraft Root", 1000),
+            _runtime_component("avionics", "aircraft-root", "Avionics", 1000),
+            _runtime_component("radar", "avionics", "Radar LRU", 1000),
+        ]
+        model = AircraftSupportV1Model(inputs)
+        aircraft = model.aircraft[0]
+        aircraft.state = "maintenance"
+        aircraft.failed_component_id = "radar"
+        aircraft.component_failure_minutes["radar"] = 1.0
+
+        model._event("failure", "synthetic failure")
+
+        snapshot = model.event_log[-1]["snapshot"]
+        aircraft_payload = snapshot["aircraft_state"]["aircraft"][0]
+        self.assertEqual(aircraft_payload["tail_number"], aircraft.tail_number)
+        self.assertEqual(aircraft_payload["state"], "maintenance")
+        self.assertEqual(aircraft_payload["failed_lru"], "radar")
+        self.assertNotIn("failure_tree", aircraft_payload)
+
+    def test_event_snapshots_are_limited_per_run(self) -> None:
+        inputs = _minimal_inputs()
+        inputs["write_event_snapshots"] = True
+        inputs["event_snapshot_limit"] = 2
+        model = AircraftSupportV1Model(inputs)
+
+        for index in range(5):
+            model._event("resource_delay", f"synthetic delay {index}")
+
+        snapshots = [event for event in model.event_log if "snapshot" in event]
+        self.assertEqual(len(snapshots), 2)
+        self.assertNotIn("snapshot", model.event_log[-1])
+
     def test_lru_repair_uses_component_name_as_auto_spare(self) -> None:
         inputs = _minimal_inputs()
         inputs["aircraft"]["fleet_count"] = 1

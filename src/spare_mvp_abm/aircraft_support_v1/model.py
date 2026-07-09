@@ -148,6 +148,11 @@ class AircraftSupportV1Model:
             or self.inputs.get("writeEventSnapshots")
             or self.inputs.get("capture_event_snapshots")
         )
+        self.event_snapshot_limit = _positive_int(
+            self.inputs.get("event_snapshot_limit") or self.inputs.get("eventSnapshotLimit"),
+            20,
+        )
+        self._event_snapshot_count = 0
         time_config = self.inputs.get("time", {})
         self.disable_visualization_frames = _truthy_input_flag(
             self.inputs.get("disable_visualization_frames")
@@ -1707,8 +1712,13 @@ class AircraftSupportV1Model:
         item: dict[str, Any] = {"time": self.minute, "event": event, "message": message}
         if details:
             item["details"] = copy.deepcopy(details)
-        if self.write_event_snapshots and self._should_write_event_snapshot(event):
+        if (
+            self.write_event_snapshots
+            and self._event_snapshot_count < self.event_snapshot_limit
+            and self._should_write_event_snapshot(event)
+        ):
             item["snapshot"] = self._event_snapshot(event, details or {})
+            self._event_snapshot_count += 1
         self.event_log.append(item)
 
     def _should_write_event_snapshot(self, event: str) -> bool:
@@ -1731,11 +1741,26 @@ class AircraftSupportV1Model:
                     "postflight_count": metrics["postflight_count"],
                     "preventive_count": metrics["preventive_count"],
                 },
-                "aircraft": [self._aircraft_payload(item) for item in self.aircraft],
+                "aircraft": [self._event_aircraft_snapshot_payload(item) for item in self.aircraft],
             },
             "support_resources": [self._event_resource_snapshot(node) for node in self.nodes.values()],
             "spare_shortages": self._event_spare_shortages(details),
             "active_jobs": [self._job_payload(job) for job in self.jobs if job.state != "completed"],
+        }
+
+    def _event_aircraft_snapshot_payload(self, item: AircraftState) -> dict[str, Any]:
+        return {
+            "tail_number": item.tail_number,
+            "type": item.aircraft_type,
+            "state": item.state,
+            "current_mission_id": item.current_mission_id,
+            "failed_lru": item.failed_component_id or self._first_failed_component_id(item) or "",
+            "flight_hours": item.flight_hours,
+            "takeoff_count": item.takeoff_count,
+            "landing_count": item.landing_count,
+            "postflight_required": item.postflight_required,
+            "preventive_due": item.preventive_due,
+            "in_flight_failure": item.in_flight_failure,
         }
 
     def _event_resource_snapshot(self, node: dict[str, Any]) -> dict[str, Any]:

@@ -15726,7 +15726,7 @@ function createDefaultLiteMesaAnalysisSettings() {
     spare_shortfall: { samples: 27, seed: 20260621 },
     carry_list: { samples: 27, seed: 20260621, missionConfidenceTarget: 0.9 },
     mission_reliability: { samples: 27, seed: 20260621, maxTimeWindow: "" },
-    downtime_factors: { samples: 27, seed: 20260621, topN: 4 }
+    downtime_factors: { samples: 1, seed: 20260621, topN: 4 }
   };
 }
 
