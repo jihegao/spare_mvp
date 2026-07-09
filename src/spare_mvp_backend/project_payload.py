@@ -1556,12 +1556,18 @@ def _legacy_transport_policies_from_support_activities(activities: Any, name_by_
 
 def _normalize_support_model_tables(project: dict[str, Any]) -> None:
     legacy_name_by_ref = _legacy_support_node_name_by_ref(project.get("supportNodes"))
+    node_scope_by_ref = _support_node_scope_by_ref(project.get("supportNodes"))
     organization_names, organization_name_by_ref = _normalize_support_organization(project.get("supportOrganization"), legacy_name_by_ref)
     name_by_ref = {**legacy_name_by_ref, **organization_name_by_ref}
+    node_scope_by_name = _support_node_scope_by_name(node_scope_by_ref, name_by_ref)
     _normalize_support_resource_refs(project, name_by_ref)
     support_node_names = organization_names or _support_node_names_from_support_nodes(project.get("supportNodes"))
     project["supportNodes"] = [
-        {"id": f"support-node-{index + 1}", "name": name}
+        {
+            "id": f"support-node-{index + 1}",
+            "name": name,
+            **node_scope_by_name.get(name, {}),
+        }
         for index, name in enumerate(support_node_names)
     ]
     _normalize_top_level_transport_policies(project, name_by_ref)
@@ -1583,6 +1589,39 @@ def _legacy_support_node_name_by_ref(support_nodes: Any) -> dict[str, str]:
             if key:
                 name_by_ref[key] = name
     return name_by_ref
+
+
+def _support_node_scope_by_ref(support_nodes: Any) -> dict[str, dict[str, str]]:
+    scope_by_ref: dict[str, dict[str, str]] = {}
+    if not isinstance(support_nodes, list):
+        return scope_by_ref
+    for node in support_nodes:
+        if not isinstance(node, dict):
+            continue
+        scope = {
+            field: value
+            for field in ("airport", "airportId", "baseAirportId")
+            if (value := _clean_text(node.get(field)))
+        }
+        if not scope:
+            continue
+        for ref in (node.get("id"), node.get("name"), node.get("supportNodeName"), node.get("organizationNodeId")):
+            key = _clean_text(ref)
+            if key:
+                scope_by_ref[key] = scope
+    return scope_by_ref
+
+
+def _support_node_scope_by_name(
+    scope_by_ref: dict[str, dict[str, str]],
+    name_by_ref: dict[str, str],
+) -> dict[str, dict[str, str]]:
+    scope_by_name: dict[str, dict[str, str]] = {}
+    for ref, scope in scope_by_ref.items():
+        name = _clean_text(name_by_ref.get(ref) or ref)
+        if name:
+            scope_by_name[name] = scope
+    return scope_by_name
 
 
 def _normalize_support_organization(support_organization: Any, fallback_name_by_ref: dict[str, str]) -> tuple[list[str], dict[str, str]]:
