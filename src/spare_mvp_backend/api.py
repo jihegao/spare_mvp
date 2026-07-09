@@ -722,8 +722,8 @@ class BackendApi:
         aggregate = self.adapter._aggregate_sample_metrics(samples)  # noqa: SLF001 - in-memory aggregation, no writes.
         self.adapter._coerce_result_integer_metrics(aggregate)  # noqa: SLF001 - reuse canonical metric coercion.
         aggregate["mission_success_probability"] = aggregate.get(
-            "sortie_completion_rate",
-            aggregate.get("mission_success_rate", 0),
+            "mission_success_rate",
+            aggregate.get("sortie_completion_rate", 0),
         )
         base_artifact_id = f"lite-mesa-analysis-base-{run_id}"
         projections = self.adapter._aircraft_support_v1_analysis_projections(  # noqa: SLF001 - projection payload only.
@@ -1491,31 +1491,36 @@ def _sample_daily_mission_reliability(missions: list[Any], *, aircraft_count: in
         day = max(1, _metric_int(getattr(mission, "day_index", 1), default=1))
         planned = max(1, _metric_int(getattr(mission, "required_aircraft", 1), default=1))
         assigned = len(getattr(mission, "assigned_tail_numbers", []) or [])
-        failed = len(set(getattr(mission, "failed_tail_numbers", []) or []))
-        status = str(getattr(mission, "status", "") or "")
-        successful = max(0, planned - failed) if status == "completed" else 0
+        evaluated = bool(getattr(mission, "success_evaluated", False))
+        successful = int(bool(getattr(mission, "succeeded", False))) if evaluated else 0
         bucket = by_day.setdefault(
             day,
             {
                 "plannedSorties": 0.0,
                 "launchedSorties": 0.0,
                 "successfulSorties": 0.0,
+                "plannedWaves": 0.0,
+                "successfulWaves": 0.0,
             },
         )
         bucket["plannedSorties"] += planned
         bucket["launchedSorties"] += max(0, min(planned, assigned))
-        bucket["successfulSorties"] += max(0, min(planned, successful))
+        bucket["successfulSorties"] += successful
+        bucket["plannedWaves"] += int(evaluated)
+        bucket["successfulWaves"] += successful
     rows = []
     for day in sorted(by_day):
         bucket = by_day[day]
-        planned = max(1.0, float(bucket["plannedSorties"]))
+        planned_waves = max(1.0, float(bucket["plannedWaves"]))
         rows.append(
             {
                 "day": day,
                 "plannedSorties": bucket["plannedSorties"],
                 "launchedSorties": bucket["launchedSorties"],
                 "successfulSorties": bucket["successfulSorties"],
-                "missionSuccessRate": bucket["successfulSorties"] / planned,
+                "plannedWaves": bucket["plannedWaves"],
+                "successfulWaves": bucket["successfulWaves"],
+                "missionSuccessRate": bucket["successfulWaves"] / planned_waves,
                 "sortieRate": bucket["launchedSorties"] / aircraft_denominator,
             }
         )
@@ -1534,6 +1539,8 @@ def _mean_daily_mission_reliability(samples: list[dict[str, Any]]) -> list[dict[
                     "plannedSorties": 0.0,
                     "launchedSorties": 0.0,
                     "successfulSorties": 0.0,
+                    "plannedWaves": 0.0,
+                    "successfulWaves": 0.0,
                     "missionSuccessRate": 0.0,
                     "sortieRate": 0.0,
                 },
@@ -1542,12 +1549,19 @@ def _mean_daily_mission_reliability(samples: list[dict[str, Any]]) -> list[dict[
             bucket["plannedSorties"] += _metric_float(row.get("plannedSorties"), default=0)
             bucket["launchedSorties"] += _metric_float(row.get("launchedSorties"), default=0)
             bucket["successfulSorties"] += _metric_float(row.get("successfulSorties"), default=0)
+            bucket["plannedWaves"] += _metric_float(row.get("plannedWaves"), default=0)
+            bucket["successfulWaves"] += _metric_float(row.get("successfulWaves"), default=0)
             bucket["missionSuccessRate"] += _metric_float(row.get("missionSuccessRate"), default=0)
             bucket["sortieRate"] += _metric_float(row.get("sortieRate"), default=0)
     rows = []
     for day in sorted(by_day):
         bucket = by_day[day]
         sample_count = max(1.0, bucket["sampleCount"])
+        mission_success = (
+            bucket["successfulWaves"] / bucket["plannedWaves"]
+            if bucket["plannedWaves"] > 0
+            else bucket["missionSuccessRate"] / sample_count
+        )
         rows.append(
             {
                 "day": day,
@@ -1555,7 +1569,9 @@ def _mean_daily_mission_reliability(samples: list[dict[str, Any]]) -> list[dict[
                 "plannedSorties": bucket["plannedSorties"] / sample_count,
                 "launchedSorties": bucket["launchedSorties"] / sample_count,
                 "successfulSorties": bucket["successfulSorties"] / sample_count,
-                "meanMissionSuccessRate": bucket["missionSuccessRate"] / sample_count,
+                "plannedWaves": bucket["plannedWaves"] / sample_count,
+                "successfulWaves": bucket["successfulWaves"] / sample_count,
+                "meanMissionSuccessRate": _clamp01(mission_success),
                 "meanSortieRate": bucket["sortieRate"] / sample_count,
             }
         )
@@ -1569,24 +1585,27 @@ def _sample_mission_wave_reliability(missions: list[Any]) -> list[dict[str, Any]
         wave = max(1, _metric_int(getattr(mission, "wave_index", 1), default=1))
         planned = max(1, _metric_int(getattr(mission, "required_aircraft", 1), default=1))
         assigned = len(getattr(mission, "assigned_tail_numbers", []) or [])
-        failed = len(set(getattr(mission, "failed_tail_numbers", []) or []))
-        status = str(getattr(mission, "status", "") or "")
-        successful = max(0, planned - failed) if status == "completed" else 0
+        evaluated = bool(getattr(mission, "success_evaluated", False))
+        successful = int(bool(getattr(mission, "succeeded", False))) if evaluated else 0
         bucket = by_wave.setdefault(
             (day, wave),
             {
                 "plannedSorties": 0.0,
                 "launchedSorties": 0.0,
                 "successfulSorties": 0.0,
+                "plannedWaves": 0.0,
+                "successfulWaves": 0.0,
             },
         )
         bucket["plannedSorties"] += planned
         bucket["launchedSorties"] += max(0, min(planned, assigned))
-        bucket["successfulSorties"] += max(0, min(planned, successful))
+        bucket["successfulSorties"] += successful
+        bucket["plannedWaves"] += int(evaluated)
+        bucket["successfulWaves"] += successful
     rows = []
     for sequence, (day, wave) in enumerate(sorted(by_wave), start=1):
         bucket = by_wave[(day, wave)]
-        planned = max(1.0, float(bucket["plannedSorties"]))
+        planned_waves = max(1.0, float(bucket["plannedWaves"]))
         rows.append(
             {
                 "sequence": sequence,
@@ -1597,8 +1616,10 @@ def _sample_mission_wave_reliability(missions: list[Any]) -> list[dict[str, Any]
                 "plannedSorties": bucket["plannedSorties"],
                 "launchedSorties": bucket["launchedSorties"],
                 "successfulSorties": bucket["successfulSorties"],
-                "missionSuccessRate": _clamp01(bucket["successfulSorties"] / planned),
-                "sortieRate": _clamp01(bucket["launchedSorties"] / planned),
+                "plannedWaves": bucket["plannedWaves"],
+                "successfulWaves": bucket["successfulWaves"],
+                "missionSuccessRate": _clamp01(bucket["successfulWaves"] / planned_waves),
+                "sortieRate": _clamp01(bucket["launchedSorties"] / max(1.0, bucket["plannedSorties"])),
             }
         )
     return rows
@@ -1617,6 +1638,8 @@ def _mean_mission_wave_reliability(samples: list[dict[str, Any]]) -> list[dict[s
                     "plannedSorties": 0.0,
                     "launchedSorties": 0.0,
                     "successfulSorties": 0.0,
+                    "plannedWaves": 0.0,
+                    "successfulWaves": 0.0,
                     "missionSuccessRate": 0.0,
                     "sortieRate": 0.0,
                 },
@@ -1628,6 +1651,8 @@ def _mean_mission_wave_reliability(samples: list[dict[str, Any]]) -> list[dict[s
                 row.get("successfulSorties", row.get("successful_sorties")),
                 default=0,
             )
+            bucket["plannedWaves"] += _metric_float(row.get("plannedWaves", row.get("planned_waves")), default=0)
+            bucket["successfulWaves"] += _metric_float(row.get("successfulWaves", row.get("successful_waves")), default=0)
             bucket["missionSuccessRate"] += _clamp01(
                 row.get("missionSuccessRate", row.get("mean_mission_success_rate"))
             )
@@ -1636,8 +1661,8 @@ def _mean_mission_wave_reliability(samples: list[dict[str, Any]]) -> list[dict[s
     for sequence, (day, wave) in enumerate(sorted(by_wave), start=1):
         bucket = by_wave[(day, wave)]
         sample_count = max(1.0, bucket["sampleCount"])
-        if bucket["plannedSorties"] > 0:
-            mission_success = _clamp01(bucket["successfulSorties"] / bucket["plannedSorties"])
+        if bucket["plannedWaves"] > 0:
+            mission_success = _clamp01(bucket["successfulWaves"] / bucket["plannedWaves"])
             sortie_rate = _clamp01(bucket["launchedSorties"] / bucket["plannedSorties"])
         else:
             mission_success = _clamp01(bucket["missionSuccessRate"] / sample_count)
@@ -1653,6 +1678,8 @@ def _mean_mission_wave_reliability(samples: list[dict[str, Any]]) -> list[dict[s
                 "plannedSorties": bucket["plannedSorties"] / sample_count,
                 "launchedSorties": bucket["launchedSorties"] / sample_count,
                 "successfulSorties": bucket["successfulSorties"] / sample_count,
+                "plannedWaves": bucket["plannedWaves"] / sample_count,
+                "successfulWaves": bucket["successfulWaves"] / sample_count,
                 "meanMissionSuccessRate": mission_success,
                 "meanSortieRate": sortie_rate,
             }

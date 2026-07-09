@@ -2262,15 +2262,15 @@ class BackendApiContractTest(unittest.TestCase):
                     "seed": 1,
                     "metrics": {"failed_sorties": 0, "ready_rate": 1},
                     "mission_wave_reliability": [
-                        {"dayIndex": 1, "waveIndex": 1, "plannedSorties": 2, "launchedSorties": 2, "successfulSorties": 2, "missionSuccessRate": 1.2, "sortieRate": 1},
-                        {"dayIndex": 1, "waveIndex": 2, "plannedSorties": 2, "launchedSorties": 1, "successfulSorties": 0, "missionSuccessRate": 0, "sortieRate": 0.5},
+                        {"dayIndex": 1, "waveIndex": 1, "plannedSorties": 2, "launchedSorties": 2, "successfulSorties": 1, "plannedWaves": 1, "successfulWaves": 1, "missionSuccessRate": 1, "sortieRate": 1},
+                        {"dayIndex": 1, "waveIndex": 2, "plannedSorties": 2, "launchedSorties": 1, "successfulSorties": 0, "plannedWaves": 1, "successfulWaves": 0, "missionSuccessRate": 0, "sortieRate": 0.5},
                     ],
                 },
                 {
                     "seed": 2,
                     "metrics": {"failed_sorties": 0, "ready_rate": 1},
                     "mission_wave_reliability": [
-                        {"dayIndex": 1, "waveIndex": 1, "plannedSorties": 6, "launchedSorties": 4, "successfulSorties": 3, "missionSuccessRate": 0.5, "sortieRate": 4 / 6},
+                        {"dayIndex": 1, "waveIndex": 1, "plannedSorties": 6, "launchedSorties": 4, "successfulSorties": 0, "plannedWaves": 1, "successfulWaves": 0, "missionSuccessRate": 0, "sortieRate": 4 / 6},
                     ],
                 },
             ],
@@ -2281,8 +2281,10 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual([row["waveKey"] for row in result["rows"]], ["d1-w1", "d1-w2"])
         self.assertEqual([row["sampleCount"] for row in result["rows"]], [2, 1])
         self.assertAlmostEqual(result["rows"][0]["plannedSorties"], 4)
-        self.assertAlmostEqual(result["rows"][0]["successfulSorties"], 2.5)
-        self.assertAlmostEqual(result["rows"][0]["meanMissionSuccessRate"], 5 / 8)
+        self.assertAlmostEqual(result["rows"][0]["successfulSorties"], 0.5)
+        self.assertAlmostEqual(result["rows"][0]["plannedWaves"], 1)
+        self.assertAlmostEqual(result["rows"][0]["successfulWaves"], 0.5)
+        self.assertAlmostEqual(result["rows"][0]["meanMissionSuccessRate"], 1 / 2)
         self.assertAlmostEqual(result["rows"][0]["meanSortieRate"], 6 / 8)
         self.assertEqual(result["rows"][1]["meanMissionSuccessRate"], 0)
         self.assertTrue(all(0 <= row["meanMissionSuccessRate"] <= 1 for row in result["rows"]))
