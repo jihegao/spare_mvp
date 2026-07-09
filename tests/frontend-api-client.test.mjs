@@ -807,6 +807,32 @@ test("buildBackendProjectJson preserves distinct legacy support jobs with duplic
   );
 });
 
+test("buildBackendProjectJson materializes legacy support applicability on top-level jobs", () => {
+  const scenario = {
+    scenarioId: "support-job-applicability",
+    components: [{ id: "component-a", aircraftModel: "J-15" }],
+    supportActivities: [{
+      id: "ops-activity",
+      activityType: "使用保障",
+      aircraftModel: "J-15",
+      activityCodes: ["BA-001", "BA-002"],
+      predecessors: { "BA-001": [], "BA-002": [] }
+    }],
+    supportActivityJobs: [
+      { activityCode: "BA-001", workName: "检查", durationMinutes: 20 },
+      { activityCode: "BA-002", workName: "挂载", durationMinutes: 30, applicableAircraft: "J-35" }
+    ]
+  };
+
+  const projectJson = buildBackendProjectJson(scenario, { id: "support-job-applicability" });
+  const jobsByCode = new Map(projectJson.supportActivityJobs.map((job) => [job.activityCode, job]));
+
+  assert.equal(jobsByCode.get("BA-001").applicableAircraft, "J-15");
+  assert.equal(jobsByCode.get("BA-002").applicableAircraft, "J-35");
+  assert.equal(projectJson.supportActivities[0].aircraftModel, "J-15");
+  assert.deepEqual(projectJson.supportActivities[0].activityCodes, ["BA-001", "BA-002"]);
+});
+
 test("buildBackendProjectJson strips corrective MTTR fields from support activity jobs", () => {
   const scenario = {
     scenarioId: "support-job-mttr-boundary",

@@ -2261,14 +2261,10 @@ test("support activity render paths do not mutate supportActivities implicitly",
   assert.doesNotMatch(correctiveSource, /scenario\.supportActivities\.push/);
 });
 
-test("basic support activity scope edits move only the edited job to the target scope", async () => {
+test("basic support activity scope edits write the selected top-level job", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const updateSource = appSource.slice(
     appSource.indexOf("function updateBasicActivityJobField"),
-    appSource.indexOf("function updateBasicActivityResourceField")
-  );
-  const moveSource = appSource.slice(
-    appSource.indexOf("function moveBasicActivityJobToScope"),
     appSource.indexOf("function updateBasicActivityResourceField")
   );
   const ensureSource = appSource.slice(
@@ -2276,15 +2272,12 @@ test("basic support activity scope edits move only the edited job to the target 
     appSource.indexOf("function nextCorrectiveMaintenanceActivityId")
   );
 
-  assert.match(updateSource, /moveBasicActivityJobToScope\(activity, jobIndex, value\)/);
-  assert.match(moveSource, /basicActivityScopeHostActivity\(activity, value\)/);
-  assert.match(moveSource, /isCorrectiveMaintenanceActivity\(activity\)/);
-  assert.match(moveSource, /correctiveComponentForBasicActivityScope\(value\)/);
-  assert.match(moveSource, /ensureCorrectiveMaintenanceActivityForComponent\(component, \{ copyTemplateJobs: false \}\)/);
-  assert.match(moveSource, /ensureBasicActivityOperationsScopeHostActivity\(activity, aircraftModel\)/);
-  assert.match(moveSource, /ensureBasicActivityPreventiveScopeHostActivity\(aircraftModel\)/);
-  assert.match(moveSource, /sourceJobs\.splice\(jobIndex, 1\)/);
-  assert.match(moveSource, /targetJobs\.push\(job\)/);
+  assert.match(updateSource, /applicableAircraft: basicActivityApplicableAircraftFromScope\(value\)/);
+  assert.match(updateSource, /setSupportActivityJobs\(activity, jobs\)/);
+  assert.doesNotMatch(updateSource, /moveBasicActivityJobToScope/);
+  assert.doesNotMatch(appSource, /function basicActivityScopeHostActivity/);
+  assert.doesNotMatch(appSource, /function ensureBasicActivityOperationsScopeHostActivity/);
+  assert.doesNotMatch(appSource, /function ensureBasicActivityPreventiveScopeHostActivity/);
   assert.match(ensureSource, /copyTemplateJobs = true/);
   assert.match(ensureSource, /setSupportActivityJobs\(activity, copyTemplateJobs \? supportActivityJobs\(template\)\.map/);
 });

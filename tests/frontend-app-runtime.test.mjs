@@ -1523,7 +1523,7 @@ test("basic support activity UI reads and writes top-level job table references"
   }
 });
 
-test("basic support activity scope edits only affect the selected activity row", async () => {
+test("basic support activity scope edits persist on the selected top-level job", async () => {
   const projectJson = createRuntimeProjectJson({
     equipment: { wholeMachineModels: ["J-15", "J-35"] }
   });
@@ -1549,22 +1549,13 @@ test("basic support activity scope edits only affect the selected activity row",
     await runtime.click("[data-project-draft-save]");
 
     const savedProject = await waitForProjectSave(runtime, (body) => (
-      body.supportActivities?.some((activity) => (
-        Array.isArray(activity.activityCodes)
-        && activity.activityCodes.includes("BA-001")
-        && String(activity.aircraftModel || "") === "J-15"
-      ))
-      && body.supportActivities?.some((activity) => (
-        Array.isArray(activity.activityCodes)
-        && activity.activityCodes.includes("BA-002")
-        && String(activity.aircraftModel || "") === "J-35"
-      ))
-    ), "expected scope edit to move only the selected basic support activity row");
-    const firstActivity = savedProject.supportActivities.find((activity) => activity.activityCodes?.includes("BA-001"));
-    const secondActivity = savedProject.supportActivities.find((activity) => activity.activityCodes?.includes("BA-002"));
-    assert.notEqual(firstActivity, secondActivity);
-    assert.deepEqual(firstActivity.activityCodes, ["BA-001"]);
-    assert.deepEqual(secondActivity.activityCodes, ["BA-002"]);
+      body.supportActivities?.length === 1
+      && body.supportActivities[0]?.activityCodes?.join(",") === "BA-001,BA-002"
+      && body.supportActivityJobs?.some((job) => job.activityCode === "BA-001" && job.applicableAircraft === "J-15")
+      && body.supportActivityJobs?.some((job) => job.activityCode === "BA-002" && job.applicableAircraft === "J-35")
+    ), "expected scope edit to update only the selected top-level job");
+    assert.equal(savedProject.supportActivities[0].aircraftModel, "J-15");
+    assert.deepEqual(savedProject.supportActivities[0].activityCodes, ["BA-001", "BA-002"]);
   } finally {
     runtime.restore();
   }
