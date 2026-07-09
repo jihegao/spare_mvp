@@ -2930,10 +2930,14 @@ test("visible simulation embeds Solara while Monte Carlo and analysis launches u
   assert.doesNotMatch(monteCarloLaunchSource + analysisLaunchSource, /startSingleRunThroughApi|startMonteCarloRunThroughApi|submitRunIntent|\/api\/runs/);
   assert.match(solaraSource, /DEFAULT_SOLARA_VISUALIZATION_URL = "http:\/\/127\.0\.0\.1:8765"/);
   assert.match(visualSource, /data-solara-visualization-frame/);
-  assert.match(visualSource, /title="Solara Mesa 可视化"/);
+  assert.match(visualSource, /title="Solara 可视化推演"/);
   assert.match(visualSource, /sandbox="allow-scripts allow-same-origin allow-forms allow-popups"/);
   assert.match(visualSource, /buildSolaraVisualizationUrl\(resolveSolaraVisualizationBaseUrl\(\)/);
   assert.match(visualSource, /solaraVisualizationProjectIdOverride/);
+  const frameWrapIndex = visualSource.indexOf("solara-visualization-frame-wrap");
+  const reloadIndex = visualSource.indexOf('data-mesa-control="reload-solara"', frameWrapIndex);
+  const iframeIndex = visualSource.indexOf("solara-visualization-frame", reloadIndex);
+  assert.ok(frameWrapIndex > -1 && reloadIndex > frameWrapIndex && iframeIndex > reloadIndex, "Solara refresh button should render inside the visualization frame before the iframe");
   assert.doesNotMatch(visualSource, /data-mesa-control="start-new-run"/);
   assert.doesNotMatch(visualSource, /data-mesa-control="play"/);
   assert.doesNotMatch(visualSource, /data-mesa-timeline/);
@@ -2942,7 +2946,8 @@ test("visible simulation embeds Solara while Monte Carlo and analysis launches u
   assert.doesNotMatch(appSource, /ensureIndependentMesaVisualizationStarted\(page\)/);
   assert.match(appSource, /function renderExperimentPlanContextDropdown/);
   assert.match(appSource, /data-current-experiment-plan/);
-  assert.match(visualSource, /Solara Mesa iframe/);
+  assert.doesNotMatch(visualSource, /Solara 可视化内嵌页/);
+  assert.doesNotMatch(visualSource, /mesa-control-deck|mesa-control-status|仿真状态|推演由 Solara/);
   assert.doesNotMatch(visualSource, /当前 Project 回放/);
   assert.doesNotMatch(visualSource, /mesa-abm-skill/);
   assert.doesNotMatch(visualSource, /Mesa ABM \/ aviation_support/);
@@ -3537,7 +3542,7 @@ test("visual simulation refreshes Solara iframe instead of starting Lite Mesa re
   assert.match(appSource, /backendApi\.saveProject\(projectJson\)/);
   assert.match(reloadSource, /solaraVisualizationReloadNonce \+= 1/);
   assert.match(reloadSource, /saveSelectedProjectJsonForSolaraVisualization\(\)/);
-  assert.match(reloadSource, /后端 Project 重新编译推演输入/);
+  assert.match(reloadSource, /后端项目重新编译推演输入/);
   assert.doesNotMatch(visualSource + reloadSource, /startLiteMesaVisualizationThroughApi\(\)|backendApi\.runLiteMesaAnalysis|startSingleRunThroughApi|submitRunIntent|\/api\/runs/);
   assert.doesNotMatch(reloadSource, /ensureFormalRunImportedSampleProject|createSampleProjectFromPublishedImport/);
 });
@@ -4099,7 +4104,7 @@ test("editable and project text values are escaped before template insertion", a
   assert.match(appSource, /htmlEscape\(plan\.name\)/);
 });
 
-test("visual simulation page embeds the Solara Mesa iframe", async () => {
+test("visual simulation page embeds the Solara visualization frame", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const visualSource = appSource.slice(
     appSource.indexOf("function renderVisualSimulation"),
@@ -4108,7 +4113,7 @@ test("visual simulation page embeds the Solara Mesa iframe", async () => {
   assert.match(appSource, /mesa-visual-shell/);
   assert.match(appSource, /solara-visualization-frame/);
   assert.match(appSource, /data-solara-visualization-frame/);
-  assert.match(appSource, /Solara Mesa iframe/);
+  assert.doesNotMatch(appSource, /Solara 可视化内嵌页/);
   assert.match(appSource, /data-mesa-control="reload-solara"/);
   assert.doesNotMatch(appSource, /飞机保障独立 Mesa 仿真/);
   assert.doesNotMatch(appSource, /点击可视化推演后直接读取当前 Project/);
@@ -4147,17 +4152,17 @@ test("visual simulation layout matches operational dashboard requirements", asyn
   for (const label of ["使用可用度", "出动架次率", "维修中飞机", "保障中飞机", "备件满足率"]) {
     assert.match(appSource, new RegExp(label));
   }
-  const controlIndex = visualSource.indexOf("mesa-control-deck");
-  const iframeIndex = visualSource.indexOf("solara-visualization-frame-wrap");
-  assert.ok(controlIndex > -1 && iframeIndex > -1 && controlIndex < iframeIndex, "run control panel should render above Solara iframe");
-  assert.match(visualSource, /mesa-control-status/);
+  const frameWrapIndex = visualSource.indexOf("solara-visualization-frame-wrap");
+  const reloadIndex = visualSource.indexOf('data-mesa-control="reload-solara"', frameWrapIndex);
+  const iframeIndex = visualSource.indexOf("solara-visualization-frame", reloadIndex);
+  assert.ok(frameWrapIndex > -1 && reloadIndex > frameWrapIndex && iframeIndex > reloadIndex, "Solara refresh button should render inside the visualization frame");
+  assert.doesNotMatch(visualSource, /mesa-control-deck|mesa-control-status|仿真状态/);
   assert.match(visualSource, /sandbox="allow-scripts allow-same-origin allow-forms allow-popups"/);
   assert.match(styleSource, /\.solara-visualization-frame-wrap[\s\S]*min-height: 720px/);
   assert.match(styleSource, /\.solara-visualization-frame[\s\S]*height: min\(78vh, 960px\)/);
   assert.doesNotMatch(visualSource, /mesa-status-grid/);
   assert.doesNotMatch(visualSource, /mesa-kpi-strip|mesa-view-tabs|data-mesa-timeline/);
   assert.doesNotMatch(visualSource, /renderAvailabilityCurve\(availabilityTrend\)/);
-  assert.match(styleSource, /\.mesa-control-status\[open\][\s\S]*overflow: auto/);
   assert.match(appSource, /飞机状态一览/);
   assert.match(appSource, /ratioFixed\(usableAircraft \/ aircraftCount\)/);
   assert.match(appSource, /ratioFixed\(assignedSorties \/ Math\.max\(1, requiredSorties\)\)/);
@@ -4189,7 +4194,7 @@ test("visual simulation layout matches operational dashboard requirements", asyn
   assert.doesNotMatch(visualSource, /renderMesaStage\(|renderMesaSidePanel\(|renderVisualizationEventStream\(/);
   assert.doesNotMatch(visualSource, /mission-expanded|aircraft-state-board|mesa-event-window/);
   assert.match(visualSource, /solara-visualization-frame-wrap/);
-  assert.match(visualSource, /Solara Mesa 可视化/);
+  assert.match(visualSource, /Solara 可视化推演/);
 });
 
 test("Solara visual panels subscribe to Mesa controller updates", async () => {
@@ -4205,6 +4210,8 @@ test("Solara visual panels subscribe to Mesa controller updates", async () => {
   assert.match(solaraSource, /parse_qs\(router\.search/);
   assert.match(solaraSource, /def _safe_model_inputs/);
   assert.match(solaraSource, /_safe_model_inputs\(project_id\)/);
+  assert.match(solaraSource, /控制面板/);
+  assert.doesNotMatch(solaraSource, /SolaraViz\(/);
   assert.doesNotMatch(solaraSource, /except Exception as exc:\s*fallback_reason/s);
   assert.doesNotMatch(solaraSource, /try:\s*\n\s*inputs,\s*_source\s*=\s*solara\.use_memo/s);
   assert.doesNotMatch(solaraSource, /INITIAL_INPUTS,\s*INITIAL_SOURCE\s*=\s*_model_inputs\(\)/);
@@ -4323,9 +4330,10 @@ test("visual simulation embeds Solara without demo fallback", async () => {
   assert.match(appSource, /normalizeVisualizationStateSeriesPayload\(payload, \{\s*runId,\s*artifactId: artifact\.artifact_id/);
   assert.match(replaySource, /const MODEL_FAMILY = "aircraft_support_v1"/);
   assert.match(replaySource, /model_family: requireModelFamily\(payload\.model_family\)/);
-  assert.match(visualSource, /Solara Mesa iframe/);
+  assert.doesNotMatch(visualSource, /Solara 可视化内嵌页/);
   assert.match(visualSource, /solara-visualization-frame/);
-  assert.match(visualSource, /推演由 Solara iframe 内的 Mesa 控制器直接驱动/);
+  assert.doesNotMatch(visualSource, /推演由 Solara 内嵌页中的 Mesa 控制器直接驱动/);
+  assert.doesNotMatch(visualSource, /mesa-control-deck|mesa-control-status|仿真状态/);
   assert.doesNotMatch(visualSource, /AVIATION_SUPPORT_DEMO_STATE|请启动 Lite Mesa 仿真/);
   assert.doesNotMatch(appSource, /visualizationStateSeriesFrame \|\| liveAviationState \|\| AVIATION_SUPPORT_DEMO_STATE/);
   assert.doesNotMatch(appSource, /aviationSource = "demo"/);
@@ -4375,18 +4383,21 @@ test("M9 state-series replay remains internal while visual page embeds Solara", 
   assert.doesNotMatch(controlSource, /loadAviationSupportState\(\)/);
 });
 
-test("visual simulation places Solara iframe below the control deck", async () => {
+test("visual simulation places Solara refresh inside the iframe frame", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const visualSource = appSource.slice(
     appSource.indexOf("function renderVisualSimulation"),
     appSource.indexOf("function renderVisualizationEventStream")
   );
 
-  const controlIndex = visualSource.indexOf("mesa-control-deck");
-  const iframeIndex = visualSource.indexOf("solara-visualization-frame-wrap");
-  assert.ok(controlIndex > -1, "visual simulation control deck should render");
+  const frameWrapIndex = visualSource.indexOf("solara-visualization-frame-wrap");
+  const reloadIndex = visualSource.indexOf('data-mesa-control="reload-solara"', frameWrapIndex);
+  const iframeIndex = visualSource.indexOf("solara-visualization-frame", reloadIndex);
+  assert.ok(frameWrapIndex > -1, "Solara frame should render");
+  assert.ok(reloadIndex > frameWrapIndex, "Solara refresh should render inside frame wrap");
   assert.ok(iframeIndex > -1, "Solara iframe should render");
-  assert.ok(iframeIndex > controlIndex, "Solara iframe should render after controls");
+  assert.ok(iframeIndex > reloadIndex, "Solara iframe should render after its refresh action");
+  assert.doesNotMatch(visualSource, /mesa-control-deck|mesa-control-status/);
 });
 
 test("M9.2 visual simulation keeps state stream support behind the simplified replay flow", async () => {
@@ -4459,7 +4470,7 @@ test("visual simulation keeps Solara iframe without a visible run picker", async
   assert.doesNotMatch(appSource, /function renderVisualizationRunOptions/);
   assert.doesNotMatch(appSource, /data-mesa-run-select/);
   assert.match(appSource, /solara-visualization-frame/);
-  assert.match(appSource, /后端 Project 重新编译推演输入/);
+  assert.match(appSource, /后端项目重新编译推演输入/);
   assert.match(refreshRunListSource, /M9 当前回放已同步/);
   assert.doesNotMatch(refreshRunListSource, /run 列表已刷新/);
 });
@@ -4482,7 +4493,7 @@ test("visual simulation refresh uses Solara iframe without list selection", asyn
   assert.doesNotMatch(appSource, /const mesaRunSelect = event\.target\.closest/);
   assert.match(reloadSource, /solaraVisualizationReloadNonce \+= 1/);
   assert.match(reloadSource, /saveSelectedProjectJsonForSolaraVisualization\(\)/);
-  assert.match(reloadSource, /后端 Project 重新编译推演输入/);
+  assert.match(reloadSource, /后端项目重新编译推演输入/);
   assert.doesNotMatch(reloadSource, /visualizationReplayPlaying = true/);
   assert.doesNotMatch(reloadSource, /startVisualizationReplay\(\)|startLiteMesaVisualizationThroughApi\(\)/);
   assert.match(playSource, /await loadVisualizationReplayForRun\(\)/);

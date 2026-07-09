@@ -12663,13 +12663,13 @@ function issueStatusForDisplayIssues(issues) {
 
 async function handleMesaControl(action) {
   if (action === "reload-solara") {
-    visualizationReplayStatus = "Solara 正在保存当前建模数据并刷新 iframe";
+    visualizationReplayStatus = "Solara 正在保存当前建模数据并刷新内嵌页";
     try {
       await saveSelectedProjectJsonForSolaraVisualization();
       solaraVisualizationReloadNonce += 1;
-      visualizationReplayStatus = "Solara 已保存当前建模数据，将从后端 Project 重新编译推演输入";
+      visualizationReplayStatus = "Solara 已保存当前建模数据，将从后端项目重新编译推演输入";
     } catch (err) {
-      visualizationReplayStatus = `Solara 刷新失败：当前建模数据未保存（${err && err.message ? err.message : "Backend API 不可用"}）`;
+      visualizationReplayStatus = `Solara 刷新失败：当前建模数据未保存（${err && err.message ? err.message : "后端接口不可用"}）`;
     }
     return;
   }
@@ -12807,14 +12807,10 @@ function renderVisualSimulation(page) {
     experimentPlanName,
     reload: solaraVisualizationReloadNonce
   });
-  const statusMessage = visualizationReplayStatus.startsWith("Solara")
-    ? visualizationReplayStatus
-    : "推演由 Solara iframe 内的 Mesa 控制器直接驱动";
   return `
     <div class="mesa-visual-shell">
       <section class="lite-mesa-hero mesa-visual-hero">
         <div>
-          <span class="status-badge success">Solara Mesa iframe</span>
           <h3>可视化推演</h3>
           <p>${htmlEscape(projectName)} / ${htmlEscape(page.module)} / ${htmlEscape(experimentPlanName)}</p>
         </div>
@@ -12822,21 +12818,13 @@ function renderVisualSimulation(page) {
           ${renderExperimentPlanContextDropdown(page)}
         </div>
       </section>
-      <div class="mesa-control-deck">
-        <div class="mesa-control-groups" aria-label="运行控制">
-          <div class="mesa-control-group mesa-control-group-primary">
-            <button type="button" class="btn-primary" data-mesa-control="reload-solara">刷新 Solara</button>
-            <details class="mesa-control-status success">
-              <summary><span>仿真状态</span><strong>${htmlEscape(statusMessage)}</strong></summary>
-              <small>iframe: ${htmlEscape(solaraUrl)}</small>
-            </details>
-          </div>
-        </div>
-      </div>
       <div class="solara-visualization-frame-wrap" data-solara-visualization-frame>
+        <div class="visual-frame-toolbar">
+          <button type="button" class="btn-primary" data-mesa-control="reload-solara">刷新 Solara</button>
+        </div>
         <iframe
           class="solara-visualization-frame"
-          title="Solara Mesa 可视化"
+          title="Solara 可视化推演"
           src="${htmlEscape(solaraUrl)}"
           sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
           loading="eager"

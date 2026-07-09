@@ -2825,6 +2825,16 @@ tr.clickable-table-row.selected-table-row td {
   background: #ffffff;
 }
 
+.visual-frame-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  background: #f8fafc;
+}
+
 .solara-visualization-frame {
   display: block;
   width: 100%;

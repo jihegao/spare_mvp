@@ -783,8 +783,10 @@ test("visual Mesa page renders Solara iframe shell", async () => {
     assert.match(visualHero, /data-current-experiment-plan/);
     assert.match(runtime.appNode.innerHTML, /data-solara-visualization-frame/);
     assert.match(runtime.appNode.innerHTML, /class="solara-visualization-frame"/);
-    assert.match(runtime.appNode.innerHTML, /title="Solara Mesa 可视化"/);
+    assert.match(runtime.appNode.innerHTML, /title="Solara 可视化推演"/);
     assert.match(runtime.appNode.innerHTML, /sandbox="allow-scripts allow-same-origin allow-forms allow-popups"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /Solara 可视化内嵌页/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /mesa-control-deck|mesa-control-status|仿真状态/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /飞机保障独立 Mesa 仿真/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /点击可视化推演后直接读取当前 Project/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /<div class="mesa-clock"/);
@@ -832,7 +834,8 @@ test("visual iframe hides legacy support selector from the host page", async () 
 
   try {
     assert.match(runtime.appNode.innerHTML, /data-solara-visualization-frame/);
-    assert.match(runtime.appNode.innerHTML, /Solara Mesa iframe/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /Solara 可视化内嵌页/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /Solara Mesa iframe|iframe:/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /data-mesa-support-airport/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /当前保障点资源/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /<option value="甲机场"/);
@@ -2478,11 +2481,15 @@ test("visual simulation renders Solara iframe without starting retired run APIs"
   });
 
   try {
-    assert.match(runtime.appNode.innerHTML, /Solara Mesa iframe/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /Solara 可视化内嵌页/);
     assert.match(runtime.appNode.innerHTML, /data-solara-visualization-frame/);
-    assert.match(runtime.appNode.innerHTML, /title="Solara Mesa 可视化"/);
+    assert.match(runtime.appNode.innerHTML, /title="Solara 可视化推演"/);
     assert.match(runtime.appNode.innerHTML, /http:\/\/127\.0\.0\.1:8765/);
     assert.match(runtime.appNode.innerHTML, /data-mesa-control="reload-solara"/);
+    const frameWrapIndex = runtime.appNode.innerHTML.indexOf("solara-visualization-frame-wrap");
+    const reloadIndex = runtime.appNode.innerHTML.indexOf('data-mesa-control="reload-solara"', frameWrapIndex);
+    const iframeIndex = runtime.appNode.innerHTML.indexOf("solara-visualization-frame", reloadIndex);
+    assert.ok(frameWrapIndex > -1 && reloadIndex > frameWrapIndex && iframeIndex > reloadIndex);
     assert.match(runtime.appNode.innerHTML, /data-current-experiment-plan/);
     assert.equal(
       runtime.requests.some((request) => request.url === "/api/runs"),
@@ -2503,6 +2510,8 @@ test("visual simulation renders Solara iframe without starting retired run APIs"
       "Solara iframe page is driven by the sidecar, not the lite Mesa summary endpoint"
     );
     assert.match(runtime.appNode.innerHTML, /reload=1/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /Solara Mesa iframe|iframe:/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /mesa-control-deck|mesa-control-status|仿真状态|推演由 Solara/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /启动回放|data-mesa-timeline|Lite Mesa 仿真未返回 run_id/);
   } finally {
     runtime.restore();
@@ -2519,7 +2528,8 @@ test("visual simulation does not depend on lite Mesa run id", async () => {
   try {
     await runtime.click("[data-mesa-control]", { mesaControl: "reload-solara" });
 
-    assert.match(runtime.appNode.innerHTML, /后端 Project 重新编译推演输入/);
+    assert.match(runtime.appNode.innerHTML, /reload=1/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /后端项目重新编译推演输入|后端 Project 重新编译推演输入/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /Lite Mesa 仿真未返回 run_id/);
     assert.equal(
       runtime.requests.some((request) => request.url === "/api/runs"),
