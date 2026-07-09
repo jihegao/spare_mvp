@@ -8,9 +8,12 @@ version = "0.1.0"
 description = "备件规划与任务可靠度验证评估平台原型的本地 Python 后端与 Mesa 仿真依赖。"
 requires-python = ">=3.12"
 dependencies = [
+  "altair>=6.0",
   "jsonschema==4.26.0",
+  "matplotlib>=3.10",
   "mesa==3.5.1",
   "networkx>=3.6",
+  "solara==1.57.5",
 ]
 
 [tool.setuptools.packages.find]

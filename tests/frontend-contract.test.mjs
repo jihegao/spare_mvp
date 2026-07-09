@@ -2837,12 +2837,28 @@ test("monte carlo launch uses Lite Mesa from the selected experiment plan", asyn
   );
 
   assert.match(handlerSource, /runLiteMesaMonteCarloAnalysis\(\)/);
-  assert.match(launchSource, /selectedExperimentPlanProjectJson\(\)/);
+  assert.match(launchSource, /resolveSelectedExperimentPlanProjectJsonForRun\(\)/);
   assert.match(launchSource, /backendApi\.runLiteMesaAnalysis\(projectJson,\s*"mission_reliability"/);
   assert.match(launchSource, /samples,\s*seed/s);
   assert.doesNotMatch(handlerSource + launchSource, /startMonteCarloRunThroughApi|submitRunIntent|\/api\/runs/);
   assert.doesNotMatch(launchSource, /run_type: "single"|runType|modelFamily: FORMAL_AIRCRAFT_SUPPORT_MODEL_FAMILY/);
   assert.doesNotMatch(launchSource, /backendApi\.startSimulationRun|backendApi\.startMonteCarloRun/);
+});
+
+test("lite Mesa local current plan uses hydrated project data instead of empty experiment draft", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const contextSource = appSource.slice(
+    appSource.indexOf("function projectJsonHasExecutableModelingData"),
+    appSource.indexOf("function selectedExperimentPlanContextKey")
+  );
+
+  assert.match(contextSource, /function currentProjectJsonForExperimentContext/);
+  assert.match(contextSource, /projectJsonHasExecutableModelingData\(scenario\)/);
+  assert.match(contextSource, /function projectDataJsonMatchesCurrentProject/);
+  assert.match(contextSource, /projectJsonId === backendProjectId/);
+  assert.match(contextSource, /projectDataJsonMatchesCurrentProject\(selectedProjectDataProjectJson\)/);
+  assert.match(contextSource, /buildBackendProjectJson\(currentProjectJson,\s*currentProject\)/);
+  assert.doesNotMatch(contextSource, /projectJson:\s*buildBackendProjectJson\(experimentPlanDraft,\s*currentProject\)/);
 });
 
 test("formal Monte Carlo helpers keep bound run ledger status outside embedded detail", async () => {
@@ -2889,9 +2905,10 @@ test("monte carlo config backfills empty draft to a single baseline value before
   assert.doesNotMatch(appSource, /function renderMonteCarloExperimentEditor/);
 });
 
-test("visible simulation, Monte Carlo, and analysis launches use Lite Mesa", async () => {
+test("visible simulation embeds Solara while Monte Carlo and analysis launches use Lite Mesa", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const apiClientSource = await readFile(new URL("../front/api-client.mjs", import.meta.url), "utf8");
+  const solaraSource = await readFile(new URL("../front/solara-visualization.mjs", import.meta.url), "utf8");
   const monteCarloLaunchSource = appSource.slice(
     appSource.indexOf("async function runLiteMesaMonteCarloAnalysis"),
     appSource.indexOf("function normalizeLiteMesaMonteCarloResult")
@@ -2902,15 +2919,7 @@ test("visible simulation, Monte Carlo, and analysis launches use Lite Mesa", asy
   );
   const visualSource = appSource.slice(
     appSource.indexOf("function renderVisualSimulation"),
-    appSource.indexOf("function mesaTab")
-  );
-  const visualNewRunSource = appSource.slice(
-    appSource.indexOf('if (action === "start-new-run")'),
-    appSource.indexOf("function startVisualizationReplay")
-  );
-  const visualLaunchSource = appSource.slice(
-    appSource.indexOf("async function startLiteMesaVisualizationThroughApi"),
-    appSource.indexOf("async function loadVisualizationReplayForRun")
+    appSource.indexOf("function visualizationStreamEventClass")
   );
 
   assert.match(apiClientSource, /path: "\/mesa-analysis-runs"/);
@@ -2918,17 +2927,22 @@ test("visible simulation, Monte Carlo, and analysis launches use Lite Mesa", asy
   assert.doesNotMatch(apiClientSource, /path: "\/mesa-visualization-runs"/);
   assert.match(monteCarloLaunchSource, /backendApi\.runLiteMesaAnalysis\(projectJson,\s*"mission_reliability"/);
   assert.match(analysisLaunchSource, /backendApi\.runLiteMesaAnalysis\(projectJson,\s*definition\.analysisType/);
-  assert.match(visualLaunchSource, /backendApi\.runLiteMesaAnalysis\(/);
-  assert.match(visualLaunchSource, /"mission_reliability"/);
-  assert.match(visualLaunchSource, /const responseSeries = response\?\.visualization_state_series/);
-  assert.match(visualLaunchSource, /normalizeVisualizationStateSeriesPayload\(responseSeries/);
-  assert.match(visualLaunchSource, /visualizationReplayPlaying = false/);
-  assert.doesNotMatch(monteCarloLaunchSource + analysisLaunchSource + visualLaunchSource, /startSingleRunThroughApi|startMonteCarloRunThroughApi|submitRunIntent|\/api\/runs/);
-  assert.match(visualNewRunSource, /await startLiteMesaVisualizationThroughApi\(\)/);
+  assert.doesNotMatch(monteCarloLaunchSource + analysisLaunchSource, /startSingleRunThroughApi|startMonteCarloRunThroughApi|submitRunIntent|\/api\/runs/);
+  assert.match(solaraSource, /DEFAULT_SOLARA_VISUALIZATION_URL = "http:\/\/127\.0\.0\.1:8765"/);
+  assert.match(visualSource, /data-solara-visualization-frame/);
+  assert.match(visualSource, /title="Solara Mesa 可视化"/);
+  assert.match(visualSource, /sandbox="allow-scripts allow-same-origin allow-forms allow-popups"/);
+  assert.match(visualSource, /buildSolaraVisualizationUrl\(resolveSolaraVisualizationBaseUrl\(\)/);
+  assert.match(visualSource, /solaraVisualizationProjectIdOverride/);
+  assert.doesNotMatch(visualSource, /data-mesa-control="start-new-run"/);
+  assert.doesNotMatch(visualSource, /data-mesa-control="play"/);
+  assert.doesNotMatch(visualSource, /data-mesa-timeline/);
+  assert.doesNotMatch(visualSource, /backendApi\.runLiteMesaAnalysis/);
+  assert.doesNotMatch(visualSource, /127\.0\.0\.1:8521|independent-mesa|mesa-visualization-runs/);
   assert.doesNotMatch(appSource, /ensureIndependentMesaVisualizationStarted\(page\)/);
   assert.match(appSource, /function renderExperimentPlanContextDropdown/);
   assert.match(appSource, /data-current-experiment-plan/);
-  assert.match(visualSource, /Lite Mesa visualization/);
+  assert.match(visualSource, /Solara Mesa iframe/);
   assert.doesNotMatch(visualSource, /当前 Project 回放/);
   assert.doesNotMatch(visualSource, /mesa-abm-skill/);
   assert.doesNotMatch(visualSource, /Mesa ABM \/ aviation_support/);
@@ -3505,28 +3519,27 @@ test("formal run starts only allow imported sample projects", async () => {
   assert.ok(mcRunSource.indexOf("currentProjectCanStartFormalRun()") < mcRunSource.indexOf("formalRunSubmitInFlight = true"));
 });
 
-test("visual simulation new run starts Lite Mesa and loads static state-series", async () => {
+test("visual simulation refreshes Solara iframe instead of starting Lite Mesa replay", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
-  const visualLaunchSource = appSource.slice(
-    appSource.indexOf("async function startLiteMesaVisualizationThroughApi"),
-    appSource.indexOf("async function loadVisualizationReplayForRun")
+  const visualSource = appSource.slice(
+    appSource.indexOf("function renderVisualSimulation"),
+    appSource.indexOf("function visualizationStreamEventClass")
   );
-  const startNewRunSource = appSource.slice(
-    appSource.indexOf('if (action === "start-new-run")'),
+  const reloadSource = appSource.slice(
+    appSource.indexOf('if (action === "reload-solara")'),
     appSource.indexOf("const controlAction = backendControlActions")
   );
 
-  assert.match(visualLaunchSource, /backendApi\.runLiteMesaAnalysis\(/);
-  assert.match(visualLaunchSource, /"mission_reliability"/);
-  assert.match(visualLaunchSource, /response\?\.visualization_state_series/);
-  assert.match(visualLaunchSource, /Lite Mesa 仿真已完成/);
-  assert.match(visualLaunchSource, /已加载静态状态/);
-  assert.match(visualLaunchSource, /visualizationReplayPlaying = false/);
-  assert.match(startNewRunSource, /await startLiteMesaVisualizationThroughApi\(\)/);
-  assert.doesNotMatch(startNewRunSource, /startVisualizationReplay\(\)/);
-  assert.doesNotMatch(visualLaunchSource + startNewRunSource, /startSingleRunThroughApi|submitRunIntent|\/api\/runs/);
-  assert.doesNotMatch(startNewRunSource, /ensureFormalRunImportedSampleProject/);
-  assert.doesNotMatch(startNewRunSource, /createSampleProjectFromPublishedImport/);
+  assert.match(visualSource, /data-mesa-control="reload-solara"/);
+  assert.match(visualSource, /src="\$\{htmlEscape\(solaraUrl\)\}"/);
+  assert.match(appSource, /async function saveSelectedProjectJsonForSolaraVisualization/);
+  assert.match(appSource, /resolveSelectedExperimentPlanProjectJsonForRun\(\)/);
+  assert.match(appSource, /backendApi\.saveProject\(projectJson\)/);
+  assert.match(reloadSource, /solaraVisualizationReloadNonce \+= 1/);
+  assert.match(reloadSource, /saveSelectedProjectJsonForSolaraVisualization\(\)/);
+  assert.match(reloadSource, /后端 Project 重新编译推演输入/);
+  assert.doesNotMatch(visualSource + reloadSource, /startLiteMesaVisualizationThroughApi\(\)|backendApi\.runLiteMesaAnalysis|startSingleRunThroughApi|submitRunIntent|\/api\/runs/);
+  assert.doesNotMatch(reloadSource, /ensureFormalRunImportedSampleProject|createSampleProjectFromPublishedImport/);
 });
 
 test("click-based modeling mutations mark project draft dirty before rendering", async () => {
@@ -4086,17 +4099,24 @@ test("editable and project text values are escaped before template insertion", a
   assert.match(appSource, /htmlEscape\(plan\.name\)/);
 });
 
-test("visual simulation page embeds aircraft mission and support Mesa views", async () => {
+test("visual simulation page embeds the Solara Mesa iframe", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const visualSource = appSource.slice(
+    appSource.indexOf("function renderVisualSimulation"),
+    appSource.indexOf("function visualizationStreamEventClass")
+  );
   assert.match(appSource, /mesa-visual-shell/);
-  assert.match(appSource, /mesaTab\("aircraft"/);
-  assert.match(appSource, /mesaTab\("mission"/);
-  assert.match(appSource, /mesaTab\("support"/);
+  assert.match(appSource, /solara-visualization-frame/);
+  assert.match(appSource, /data-solara-visualization-frame/);
+  assert.match(appSource, /Solara Mesa iframe/);
+  assert.match(appSource, /data-mesa-control="reload-solara"/);
   assert.doesNotMatch(appSource, /飞机保障独立 Mesa 仿真/);
   assert.doesNotMatch(appSource, /点击可视化推演后直接读取当前 Project/);
   assert.doesNotMatch(appSource, /mesa-visual-header/);
   assert.doesNotMatch(appSource, /mesa-clock/);
   assert.doesNotMatch(appSource, /formal run \/ aircraft_support_v1/);
+  assert.doesNotMatch(visualSource, /data-mesa-control="start-new-run"/);
+  assert.doesNotMatch(visualSource, /data-mesa-timeline/);
   assert.match(appSource, /isVisualSimulationPage/);
   assert.match(appSource, /spare-planning-visual-mesa-page/);
   assert.match(appSource, /mission-reliability-visual-mesa-page/);
@@ -4128,12 +4148,15 @@ test("visual simulation layout matches operational dashboard requirements", asyn
     assert.match(appSource, new RegExp(label));
   }
   const controlIndex = visualSource.indexOf("mesa-control-deck");
-  const kpiIndex = visualSource.indexOf("mesa-kpi-strip");
-  const tabsIndex = visualSource.indexOf("mesa-view-tabs");
-  assert.ok(controlIndex > -1 && kpiIndex > -1 && controlIndex < kpiIndex, "run control panel should render above KPI row");
-  assert.ok(kpiIndex > -1 && tabsIndex > -1 && tabsIndex > kpiIndex, "view tabs should render below KPI row");
+  const iframeIndex = visualSource.indexOf("solara-visualization-frame-wrap");
+  assert.ok(controlIndex > -1 && iframeIndex > -1 && controlIndex < iframeIndex, "run control panel should render above Solara iframe");
   assert.match(visualSource, /mesa-control-status/);
+  assert.match(visualSource, /sandbox="allow-scripts allow-same-origin allow-forms allow-popups"/);
+  assert.match(styleSource, /\.solara-visualization-frame-wrap[\s\S]*min-height: 720px/);
+  assert.match(styleSource, /\.solara-visualization-frame[\s\S]*height: min\(78vh, 960px\)/);
   assert.doesNotMatch(visualSource, /mesa-status-grid/);
+  assert.doesNotMatch(visualSource, /mesa-kpi-strip|mesa-view-tabs|data-mesa-timeline/);
+  assert.doesNotMatch(visualSource, /renderAvailabilityCurve\(availabilityTrend\)/);
   assert.match(styleSource, /\.mesa-control-status\[open\][\s\S]*overflow: auto/);
   assert.match(appSource, /飞机状态一览/);
   assert.match(appSource, /ratioFixed\(usableAircraft \/ aircraftCount\)/);
@@ -4149,14 +4172,13 @@ test("visual simulation layout matches operational dashboard requirements", asyn
   assert.match(appSource, /availability-y-axis/);
   assert.match(appSource, /飞机数量/);
   assert.match(appSource, /availability-trend-legend/);
-  assert.match(appSource, /buildAvailabilityTrend\(\s*state,\s*visualizationStateSeries,\s*visualizationStateSeriesFrame \? visualizationReplayIndex : null\s*\)/);
+  assert.doesNotMatch(visualSource, /buildAvailabilityTrend\(/);
   assert.match(appSource, /frames\.slice\(0, currentIndex \+ 1\)/);
   assert.doesNotMatch(appSource, /T-\$\{4 - index\}/);
   assert.match(styleSource, /\.availability-chart \.trend-line/);
   assert.match(styleSource, /\.availability-chart circle\.current-point/);
   assert.match(styleSource, /\.availability-y-axis/);
   assert.match(styleSource, /\.availability-y-axis text/);
-  assert.match(visualSource, /\$\{activeView === "aircraft" \? renderAvailabilityCurve\(availabilityTrend\) : ""\}/);
   assert.match(appSource, /available: "停放"/);
   assert.match(appSource, /pre_support: "使用保障"/);
   assert.match(appSource, /maintenance: "维修\/不可用"/);
@@ -4164,56 +4186,37 @@ test("visual simulation layout matches operational dashboard requirements", asyn
   assert.match(appSource, /repair_unavailable: "维修\/不可用"/);
   assert.match(appSource, /const actualStates = \["available", "pre_support", "flying", "repair_unavailable"\]/);
   assert.match(appSource, /function visualAircraftLaneKey/);
-  assert.doesNotMatch(stageSource, /航母甲板 \/ 任务就绪/);
-  assert.doesNotMatch(stageSource, /任务空域/);
-  assert.doesNotMatch(stageSource, /修复性维修/);
-  assert.match(stageSource, /任务计划甘特图/);
-  assert.match(stageSource, /mission-schedule-table/);
-  assert.match(stageSource, /按周期性任务 \/ 复合任务 \/ 每天基本任务/);
-  assert.match(stageSource, /要求型号 \/ 数量/);
-  assert.match(stageSource, /实际执行飞机/);
-  assert.match(stageSource, /每日甘特图/);
-  assert.match(stageSource, /buildMissionScheduleRows\(state\.missions\)/);
-  assert.match(stageSource, /hasFormalMissionScheduleFields/);
-  assert.match(stageSource, /day_index、wave_index、duration_minutes/);
-  assert.match(stageSource, /mission\.periodicTaskName/);
-  assert.match(stageSource, /type !== "periodic"/);
-  assert.match(stageSource, /type === "basic"/);
-  assert.match(stageSource, /numbers\.durationMinutes > 0/);
-  assert.doesNotMatch(stageSource, /mesa-mission-cards/);
-  assert.doesNotMatch(appSource, /任务状态<\/h3>/);
-  assert.doesNotMatch(appSource, /任务成员飞机/);
-  assert.doesNotMatch(appSource, /function renderMesaMissionPanel/);
-  assert.doesNotMatch(appSource, /inferMissionAircraftType/);
-  assert.doesNotMatch(appSource, /requiredAircraftType: item\.required_aircraft_type \|\| item\.aircraft_type/);
-  assert.doesNotMatch(stageSource, /row\.requiredAircraftType \|\|/);
-  assert.match(appSource, /mission-expanded/);
-  assert.match(styleSource, /\.mission-schedule-row[\s\S]*grid-template-columns/);
-  assert.match(stageSource, /aircraft-state-board/);
-  assert.match(stageSource, /aircraft-state-lane/);
-  assert.match(stageSource, /aircraft-state-node/);
-  assert.doesNotMatch(stageSource, /aircraft-mission-timeline/);
-  assert.doesNotMatch(appSource, /buildAircraftMissionTimelineRows\(state\)/);
-  assert.match(styleSource, /\.aircraft-state-board[\s\S]*grid-template-columns: repeat\(4, minmax\(120px, 1fr\)\)/);
-  assert.match(styleSource, /\.aircraft-state-board[\s\S]*height: 520px/);
-  assert.match(styleSource, /\.aircraft-state-board[\s\S]*min-height: 520px/);
-  assert.match(styleSource, /\.aircraft-state-board[\s\S]*max-height: 520px/);
-  assert.match(styleSource, /\.aircraft-state-lane-body[\s\S]*overflow-y: auto/);
-  assert.doesNotMatch(styleSource, /\.aircraft-mission-timeline/);
-  assert.match(styleSource, /\.mesa-visual-grid\.mission-expanded[\s\S]*grid-template-columns: minmax\(0, 1fr\)/);
-  assert.match(stageSource, /保障人员/);
-  assert.match(stageSource, /当前保障点 \/ 人员专业/);
-  assert.match(stageSource, /保障设备（按类型）/);
-  assert.match(stageSource, /工作次数/);
-  assert.match(stageSource, /延误次数/);
-  assert.doesNotMatch(stageSource, /保障设备详情清单/);
-  assert.match(stageSource, /当前保障点 \/ 备件类型/);
-  assert.match(appSource, /mesa-event-window/);
-  assert.match(appSource, /buildSimulationLogStream\(visualizationStateSeries\)/);
-  assert.match(appSource, /isStateFrameEvent/);
-  assert.match(appSource, /任务成员分配/);
-  assert.match(appSource, /飞机保障作业/);
-  assert.match(styleSource, /\.mesa-event-window[\s\S]*overflow: auto/);
+  assert.doesNotMatch(visualSource, /renderMesaStage\(|renderMesaSidePanel\(|renderVisualizationEventStream\(/);
+  assert.doesNotMatch(visualSource, /mission-expanded|aircraft-state-board|mesa-event-window/);
+  assert.match(visualSource, /solara-visualization-frame-wrap/);
+  assert.match(visualSource, /Solara Mesa 可视化/);
+});
+
+test("Solara visual panels subscribe to Mesa controller updates", async () => {
+  const solaraSource = await readFile(
+    new URL("../src/spare_mvp_abm/aircraft_support_v1/solara_app.py", import.meta.url),
+    "utf8"
+  );
+  assert.match(solaraSource, /from mesa\.visualization\.solara_viz import update_counter/);
+  assert.match(solaraSource, /SOLARA_BACKEND_API_BASE_ENV/);
+  assert.match(solaraSource, /ProxyHandler\(\{\}\)/);
+  assert.match(solaraSource, /def _load_backend_project_json/);
+  assert.match(solaraSource, /solara\.use_router\(\)/);
+  assert.match(solaraSource, /parse_qs\(router\.search/);
+  assert.match(solaraSource, /def _safe_model_inputs/);
+  assert.match(solaraSource, /_safe_model_inputs\(project_id\)/);
+  assert.doesNotMatch(solaraSource, /except Exception as exc:\s*fallback_reason/s);
+  assert.doesNotMatch(solaraSource, /try:\s*\n\s*inputs,\s*_source\s*=\s*solara\.use_memo/s);
+  assert.doesNotMatch(solaraSource, /INITIAL_INPUTS,\s*INITIAL_SOURCE\s*=\s*_model_inputs\(\)/);
+
+  for (const panelName of ["MetricsPanel", "AircraftPanel", "EventPanel"]) {
+    const start = solaraSource.indexOf(`def ${panelName}`);
+    const nextPanel = solaraSource.indexOf("@solara.component", start + 1);
+    const panelSource = solaraSource.slice(start, nextPanel > start ? nextPanel : undefined);
+    assert.match(panelSource, /update_counter\.get\(\)/);
+    assert.match(solaraSource, new RegExp(`\\(${panelName},\\s*[01]\\)`));
+  }
+  assert.doesNotMatch(solaraSource, /\(SourcePanel,\s*[01]\)/);
 });
 
 test("visual support view separates collapsible resource statistics from support logs", async () => {
@@ -4307,7 +4310,7 @@ test("visual aircraft panel renders equipment status summary instead of configur
   assert.match(styleSource, /\.aircraft-status-row/);
 });
 
-test("visual simulation consumes Lite Mesa state-series without demo fallback", async () => {
+test("visual simulation embeds Solara without demo fallback", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const replaySource = await readFile(new URL("../front/state-series-replay.mjs", import.meta.url), "utf8");
   const visualSource = appSource.slice(
@@ -4320,17 +4323,17 @@ test("visual simulation consumes Lite Mesa state-series without demo fallback", 
   assert.match(appSource, /normalizeVisualizationStateSeriesPayload\(payload, \{\s*runId,\s*artifactId: artifact\.artifact_id/);
   assert.match(replaySource, /const MODEL_FAMILY = "aircraft_support_v1"/);
   assert.match(replaySource, /model_family: requireModelFamily\(payload\.model_family\)/);
-  assert.match(visualSource, /缺少 aircraft_support_v1 state_series 时/);
-  assert.match(visualSource, /可视化不会回退到旧 aviation_support 或演示快照/);
-  assert.match(visualSource, /请启动 Lite Mesa 仿真/);
-  assert.doesNotMatch(visualSource, /请启动 Lite Mesa 仿真生成回放/);
+  assert.match(visualSource, /Solara Mesa iframe/);
+  assert.match(visualSource, /solara-visualization-frame/);
+  assert.match(visualSource, /推演由 Solara iframe 内的 Mesa 控制器直接驱动/);
+  assert.doesNotMatch(visualSource, /AVIATION_SUPPORT_DEMO_STATE|请启动 Lite Mesa 仿真/);
   assert.doesNotMatch(appSource, /visualizationStateSeriesFrame \|\| liveAviationState \|\| AVIATION_SUPPORT_DEMO_STATE/);
   assert.doesNotMatch(appSource, /aviationSource = "demo"/);
   assert.doesNotMatch(appSource, /loadAviationSupportState\(\)/);
   assert.match(appSource, /data-mesa-control/);
 });
 
-test("M9 visual simulation replays canonical state-series artifacts without backend control", async () => {
+test("M9 state-series replay remains internal while visual page embeds Solara", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const replaySource = await readFile(new URL("../front/state-series-replay.mjs", import.meta.url), "utf8");
   const refreshSource = appSource.slice(
@@ -4339,7 +4342,7 @@ test("M9 visual simulation replays canonical state-series artifacts without back
   );
   const visualSource = appSource.slice(
     appSource.indexOf("function renderVisualSimulation"),
-    appSource.indexOf("function mesaTab")
+    appSource.indexOf("function visualizationStreamEventClass")
   );
   const controlSource = appSource.slice(
     appSource.indexOf('const mesaControlButton = event.target.closest("[data-mesa-control]")'),
@@ -4356,15 +4359,15 @@ test("M9 visual simulation replays canonical state-series artifacts without back
 
   assert.match(appSource, /findVisualizationStateSeriesArtifact/);
   assert.match(appSource, /normalizeVisualizationStateSeriesPayload/);
-  assert.match(appSource, /frameAt\(visualizationStateSeries/);
+  assert.doesNotMatch(appSource, /frameAt\(visualizationStateSeries/);
   assert.match(refreshSource, /await refreshVisualizationStateSeries\(runId\)/);
   assert.match(replaySource, /visualization_state_series/);
   assert.match(replaySource, /schema_version: String\(payload\.schema_version \|\| STATE_SERIES_SCHEMA_VERSION\)/);
-  assert.match(visualSource, /run_id/);
-  assert.match(visualSource, /artifact_id/);
-  assert.match(visualSource, /data-mesa-timeline/);
-  assert.match(visualSource, /data-mesa-event-stream/);
-  assert.match(visualSource, /data-mesa-event-jump/);
+  assert.match(visualSource, /solara-visualization-frame/);
+  assert.match(visualSource, /data-mesa-control="reload-solara"/);
+  assert.doesNotMatch(visualSource, /data-mesa-timeline/);
+  assert.doesNotMatch(visualSource, /data-mesa-event-stream/);
+  assert.doesNotMatch(visualSource, /data-mesa-event-jump/);
   assert.match(controlHandlerSource, /nextReplayIndex\(visualizationStateSeries/);
   assert.match(controlHandlerSource, /visualizationReplayPlaying = !visualizationReplayPlaying/);
   assert.match(eventHandlerSource, /stopVisualizationReplay\(\)/);
@@ -4372,18 +4375,18 @@ test("M9 visual simulation replays canonical state-series artifacts without back
   assert.doesNotMatch(controlSource, /loadAviationSupportState\(\)/);
 });
 
-test("visual simulation places event trace at the bottom of the page", async () => {
+test("visual simulation places Solara iframe below the control deck", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const visualSource = appSource.slice(
     appSource.indexOf("function renderVisualSimulation"),
     appSource.indexOf("function renderVisualizationEventStream")
   );
 
-  const gridIndex = visualSource.indexOf('class="mesa-visual-grid ${activeView === "mission" ? "mission-expanded" : ""}"');
-  const eventTraceIndex = visualSource.indexOf("renderVisualizationEventStream(eventStream, visualizationReplayIndex)");
-  assert.ok(gridIndex > -1, "visual simulation grid should render");
-  assert.ok(eventTraceIndex > -1, "event trace should render");
-  assert.ok(eventTraceIndex > gridIndex, "event trace should render after the main visualization content");
+  const controlIndex = visualSource.indexOf("mesa-control-deck");
+  const iframeIndex = visualSource.indexOf("solara-visualization-frame-wrap");
+  assert.ok(controlIndex > -1, "visual simulation control deck should render");
+  assert.ok(iframeIndex > -1, "Solara iframe should render");
+  assert.ok(iframeIndex > controlIndex, "Solara iframe should render after controls");
 });
 
 test("M9.2 visual simulation keeps state stream support behind the simplified replay flow", async () => {
@@ -4391,7 +4394,7 @@ test("M9.2 visual simulation keeps state stream support behind the simplified re
   const replaySource = await readFile(new URL("../front/state-series-replay.mjs", import.meta.url), "utf8");
   const visualSource = appSource.slice(
     appSource.indexOf("function renderVisualSimulation"),
-    appSource.indexOf("function mesaTab")
+    appSource.indexOf("function visualizationStreamEventClass")
   );
   const controlHandlerSource = appSource.slice(
     appSource.indexOf("async function handleMesaControl"),
@@ -4415,23 +4418,21 @@ test("M9.2 visual simulation keeps state stream support behind the simplified re
   assert.doesNotMatch(controlHandlerSource, /readyState === EventSource\.CLOSED && !visualizationStreamState\.eventCount/);
 });
 
-test("visual simulation enters the Mesa page without a replay list", async () => {
+test("visual simulation enters the Solara Mesa page without a replay list", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const visualSource = appSource.slice(
     appSource.indexOf("function renderVisualSimulation"),
-    appSource.indexOf("function mesaTab")
+    appSource.indexOf("function visualizationStreamEventClass")
   );
 
   assert.doesNotMatch(appSource, /function renderVisualizationRunOptions/);
   assert.doesNotMatch(appSource, /data-mesa-run-select/);
   assert.doesNotMatch(visualSource, /选择回放/);
   assert.doesNotMatch(visualSource, /<select/);
-  assert.match(visualSource, /data-mesa-control="play"/);
-  assert.match(visualSource, /启动回放/);
-  assert.match(visualSource, /暂停回放/);
-  assert.match(visualSource, /data-mesa-control="start-new-run"/);
-  assert.match(visualSource, /启动新仿真/);
-  for (const action of ["refresh-runs", "load-replay", "subscribe-run", "stop-subscription", "step", "reset"]) {
+  assert.match(visualSource, /data-mesa-control="reload-solara"/);
+  assert.match(visualSource, /刷新 Solara/);
+  assert.doesNotMatch(visualSource, /启动回放|暂停回放|启动新仿真/);
+  for (const action of ["play", "start-new-run", "refresh-runs", "load-replay", "subscribe-run", "stop-subscription", "step", "reset"]) {
     assert.doesNotMatch(visualSource, new RegExp(`data-mesa-control="${action}"`));
   }
   for (const [action, label] of [
@@ -4448,7 +4449,7 @@ test("visual simulation enters the Mesa page without a replay list", async () =>
   assert.doesNotMatch(visualSource, /data-mesa-backend-control-status/);
 });
 
-test("visual simulation keeps Lite Mesa static state without a visible run picker", async () => {
+test("visual simulation keeps Solara iframe without a visible run picker", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const refreshRunListSource = appSource.slice(
     appSource.indexOf("async function refreshVisualizationRunList"),
@@ -4457,22 +4458,21 @@ test("visual simulation keeps Lite Mesa static state without a visible run picke
 
   assert.doesNotMatch(appSource, /function renderVisualizationRunOptions/);
   assert.doesNotMatch(appSource, /data-mesa-run-select/);
-  assert.match(appSource, /visualizationSelectedRunId = runId/);
-  assert.match(appSource, /Lite Mesa 仿真已完成/);
-  assert.match(appSource, /已加载静态状态/);
+  assert.match(appSource, /solara-visualization-frame/);
+  assert.match(appSource, /后端 Project 重新编译推演输入/);
   assert.match(refreshRunListSource, /M9 当前回放已同步/);
   assert.doesNotMatch(refreshRunListSource, /run 列表已刷新/);
 });
 
-test("visual simulation new starts use Lite Mesa session without list selection", async () => {
+test("visual simulation refresh uses Solara iframe without list selection", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const controlHandlerSource = appSource.slice(
     appSource.indexOf("async function handleMesaControl"),
     appSource.indexOf("async function loadAviationSupportState")
   );
-  const newRunSource = controlHandlerSource.slice(
-    controlHandlerSource.indexOf('if (action === "start-new-run")'),
-    controlHandlerSource.indexOf("const controlAction = backendControlActions")
+  const reloadSource = controlHandlerSource.slice(
+    controlHandlerSource.indexOf('if (action === "reload-solara")'),
+    controlHandlerSource.indexOf('if (action === "refresh-runs")')
   );
   const playSource = controlHandlerSource.slice(
     controlHandlerSource.indexOf('if (action === "play")'),
@@ -4480,10 +4480,11 @@ test("visual simulation new starts use Lite Mesa session without list selection"
   );
 
   assert.doesNotMatch(appSource, /const mesaRunSelect = event\.target\.closest/);
-  assert.match(newRunSource, /await startLiteMesaVisualizationThroughApi\(\)/);
-  assert.match(newRunSource, /正在启动 Lite Mesa 仿真/);
-  assert.doesNotMatch(newRunSource, /visualizationReplayPlaying = true/);
-  assert.doesNotMatch(newRunSource, /startVisualizationReplay\(\)/);
+  assert.match(reloadSource, /solaraVisualizationReloadNonce \+= 1/);
+  assert.match(reloadSource, /saveSelectedProjectJsonForSolaraVisualization\(\)/);
+  assert.match(reloadSource, /后端 Project 重新编译推演输入/);
+  assert.doesNotMatch(reloadSource, /visualizationReplayPlaying = true/);
+  assert.doesNotMatch(reloadSource, /startVisualizationReplay\(\)|startLiteMesaVisualizationThroughApi\(\)/);
   assert.match(playSource, /await loadVisualizationReplayForRun\(\)/);
   assert.match(playSource, /visualizationReplayPlaying = !visualizationReplayPlaying/);
 });

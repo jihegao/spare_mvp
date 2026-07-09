@@ -768,7 +768,7 @@ test("modeling form management only renders personnel dictionary and time unit f
   }
 });
 
-test("visual Mesa page renders restored title frame with decimal KPI values", async () => {
+test("visual Mesa page renders Solara iframe shell", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=spare-planning-visual-mesa-page",
     projectJson: createRuntimeProjectJson()
@@ -777,35 +777,25 @@ test("visual Mesa page renders restored title frame with decimal KPI values", as
   try {
     await runtime.flush();
 
-    assert.match(runtime.appNode.innerHTML, /data-mesa-control="play"/);
+    assert.match(runtime.appNode.innerHTML, /data-mesa-control="reload-solara"/);
     const visualHero = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-hero");
     assert.match(visualHero, /<h3>可视化推演<\/h3>/);
     assert.match(visualHero, /data-current-experiment-plan/);
-    await runtime.click("[data-mesa-control]", { mesaControl: "start-new-run" });
-    assert.match(runtime.appNode.innerHTML, /飞机状态一览/);
-    assert.match(runtime.appNode.innerHTML, /<svg class="availability-trend-svg" viewBox="0 0 960 120"/);
-    assert.doesNotMatch(runtime.appNode.innerHTML, /<svg viewBox="0 0 360 120"/);
-    assert.match(runtime.appNode.innerHTML, /<span>使用可用度<\/span><strong>0\.50<\/strong>/);
-    assert.match(runtime.appNode.innerHTML, /<span>出动架次率<\/span><strong>0\.50<\/strong>/);
-    assert.match(runtime.appNode.innerHTML, /<span>备件满足率<\/span><strong>0\.50<\/strong>/);
-    await runtime.click("[data-mesa-view]", { mesaView: "support" });
-    assert.match(runtime.appNode.innerHTML, /保障人员（按专业）/);
-    assert.match(runtime.appNode.innerHTML, /机务人员/);
-    assert.match(runtime.appNode.innerHTML, /专业：机务/);
-    assert.match(runtime.appNode.innerHTML, /保障设备（按类型）/);
-    assert.match(runtime.appNode.innerHTML, /检测仪/);
-    assert.match(runtime.appNode.innerHTML, /类型：JY-01/);
+    assert.match(runtime.appNode.innerHTML, /data-solara-visualization-frame/);
+    assert.match(runtime.appNode.innerHTML, /class="solara-visualization-frame"/);
+    assert.match(runtime.appNode.innerHTML, /title="Solara Mesa 可视化"/);
+    assert.match(runtime.appNode.innerHTML, /sandbox="allow-scripts allow-same-origin allow-forms allow-popups"/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /飞机保障独立 Mesa 仿真/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /点击可视化推演后直接读取当前 Project/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /<div class="mesa-clock"/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /独立 Mesa/);
-    assert.doesNotMatch(runtime.appNode.innerHTML, /<strong>0%<\/strong>|<strong>100%<\/strong>/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-mesa-control="play"|data-mesa-view|data-mesa-timeline/);
   } finally {
     runtime.restore();
   }
 });
 
-test("visual support selector follows modeled support nodes instead of combat unit airport labels", async () => {
+test("visual iframe hides legacy support selector from the host page", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=spare-planning-visual-mesa-page",
     projectJson: createRuntimeProjectJson({
@@ -841,13 +831,10 @@ test("visual support selector follows modeled support nodes instead of combat un
   });
 
   try {
-    await runtime.click("[data-mesa-control]", { mesaControl: "start-new-run" });
-    await runtime.click("[data-mesa-view]", { mesaView: "support" });
-
-    assert.match(runtime.appNode.innerHTML, /当前保障点资源/);
-    assert.match(runtime.appNode.innerHTML, /<option value="航母飞行甲板" selected>航母飞行甲板<\/option>/);
-    assert.match(runtime.appNode.innerHTML, /<option value="前出海上保障点" >前出海上保障点<\/option>/);
-    assert.match(runtime.appNode.innerHTML, /航母飞行甲板 \/ 建模保障点 航母飞行甲板/);
+    assert.match(runtime.appNode.innerHTML, /data-solara-visualization-frame/);
+    assert.match(runtime.appNode.innerHTML, /Solara Mesa iframe/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-mesa-support-airport/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /当前保障点资源/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /<option value="甲机场"/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /甲机场 \/ 保障点/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /航母飞行甲板 \/ 保障点 航母飞行甲板、前出海上保障点/);
@@ -856,7 +843,7 @@ test("visual support selector follows modeled support nodes instead of combat un
   }
 });
 
-test("visual support selector prefers support organization leaves over resource rows", async () => {
+test("visual iframe host page does not expose support organization selector rows", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=mission-reliability-visual-mesa-page",
     projectJson: createRuntimeProjectJson({
@@ -886,22 +873,12 @@ test("visual support selector prefers support organization leaves over resource 
   });
 
   try {
-    await runtime.click("[data-mesa-control]", { mesaControl: "start-new-run" });
-    await runtime.click("[data-mesa-view]", { mesaView: "support" });
-
-    assert.match(runtime.appNode.innerHTML, /<option value="基地" selected>基地<\/option>/);
-    assert.match(runtime.appNode.innerHTML, /<option value="中继" >中继<\/option>/);
-    assert.match(runtime.appNode.innerHTML, /<option value="基层" >基层<\/option>/);
-    assert.match(runtime.appNode.innerHTML, /基地 \/ 建模保障点 基地/);
+    assert.match(runtime.appNode.innerHTML, /data-solara-visualization-frame/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-mesa-support-airport/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /<option value="基地" selected>基地<\/option>/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /<option value="mechanic-team"/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /<option value="test-equipment"/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /<option value="航母飞行甲板" selected>航母飞行甲板<\/option>/);
-
-    await runtime.change("[data-mesa-support-airport]", {}, { value: "基层" });
-
-    assert.match(runtime.appNode.innerHTML, /<option value="基层" selected>基层<\/option>/);
-    assert.match(runtime.appNode.innerHTML, /基层 \/ 建模保障点 基层/);
-    assert.match(runtime.appNode.innerHTML, /专业：机械/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /<option value="support-resource-1"/);
   } finally {
     runtime.restore();
@@ -2492,14 +2469,18 @@ test("experiment plan selection uses experiment_plan_id for duplicate names", as
   }
 });
 
-test("visual simulation waits for explicit start and runs lite Mesa without auto replay", async () => {
+test("visual simulation renders Solara iframe without starting retired run APIs", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=spare-planning-visual-mesa-page",
     projectJson: createRuntimeProjectJson()
   });
 
   try {
-    assert.match(runtime.appNode.innerHTML, /启动新仿真/);
+    assert.match(runtime.appNode.innerHTML, /Solara Mesa iframe/);
+    assert.match(runtime.appNode.innerHTML, /data-solara-visualization-frame/);
+    assert.match(runtime.appNode.innerHTML, /title="Solara Mesa 可视化"/);
+    assert.match(runtime.appNode.innerHTML, /http:\/\/127\.0\.0\.1:8765/);
+    assert.match(runtime.appNode.innerHTML, /data-mesa-control="reload-solara"/);
     assert.match(runtime.appNode.innerHTML, /data-current-experiment-plan/);
     assert.equal(
       runtime.requests.some((request) => request.url === "/api/runs"),
@@ -2507,27 +2488,26 @@ test("visual simulation waits for explicit start and runs lite Mesa without auto
       "visual page load should not auto-start retired formal visualization"
     );
 
-    await runtime.click("[data-mesa-control]", { mesaControl: "start-new-run" });
+    await runtime.click("[data-mesa-control]", { mesaControl: "reload-solara" });
 
-    const runRequest = runtime.requests
-      .filter((request) => request.url === "/api/mesa-analysis-runs")
-      .map((request) => JSON.parse(request.options.body || "{}"))
-      .find((body) => body.analysis_type === "mission_reliability");
-    assert.ok(runRequest, "explicit start button should submit a lite Mesa visualization run");
-    assert.equal(runRequest.model_family, "aircraft_support_v1");
     assert.equal(
       runtime.requests.some((request) => request.url === "/api/runs"),
       false,
-      "visual new start must not submit retired /api/runs"
+      "Solara refresh must not submit retired /api/runs"
     );
-    assert.match(runtime.appNode.innerHTML, /Lite Mesa 仿真已完成/);
-    assert.doesNotMatch(runtime.appNode.innerHTML, /开始回放/);
+    assert.equal(
+      runtime.requests.some((request) => request.url === "/api/mesa-analysis-runs"),
+      false,
+      "Solara iframe page is driven by the sidecar, not the lite Mesa summary endpoint"
+    );
+    assert.match(runtime.appNode.innerHTML, /reload=1/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /启动回放|data-mesa-timeline|Lite Mesa 仿真未返回 run_id/);
   } finally {
     runtime.restore();
   }
 });
 
-test("visual simulation treats lite Mesa session without run id as completed", async () => {
+test("visual simulation does not depend on lite Mesa run id", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=spare-planning-visual-mesa-page",
     projectJson: createRuntimeProjectJson(),
@@ -2535,9 +2515,9 @@ test("visual simulation treats lite Mesa session without run id as completed", a
   });
 
   try {
-    await runtime.click("[data-mesa-control]", { mesaControl: "start-new-run" });
+    await runtime.click("[data-mesa-control]", { mesaControl: "reload-solara" });
 
-    assert.match(runtime.appNode.innerHTML, /Lite Mesa 仿真已完成/);
+    assert.match(runtime.appNode.innerHTML, /后端 Project 重新编译推演输入/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /Lite Mesa 仿真未返回 run_id/);
     assert.equal(
       runtime.requests.some((request) => request.url === "/api/runs"),

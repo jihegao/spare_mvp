@@ -2113,8 +2113,7 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertIn("meanMissionSuccessRate", payload["wave_rows"][0])
         self.assertNotIn("seed", payload["wave_rows"][0])
         self.assertEqual(payload["visualization_state_series"]["run_id"], payload["run_id"])
-        self.assertGreater(len(payload["visualization_state_series"]["frames"]), 0)
-        self.assertEqual(payload["visualization_state_series"]["frames"][0]["run_id"], payload["run_id"])
+        self.assertEqual(payload["visualization_state_series"]["frames"], [])
         self.assertEqual(self._run_side_effect_counts(), before)
 
     def test_lite_mesa_analysis_applies_scenario_composition_before_compile(self) -> None:

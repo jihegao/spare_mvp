@@ -116,7 +116,7 @@ test("database backup and restore scripts preserve the system SQLite database", 
   assert.equal(restored.stdout.trim(), "before-backup");
 });
 
-test("start-system no longer exposes the retired contract provider sidecar", async () => {
+test("start-system manages Solara iframe sidecar without restoring retired providers", async () => {
   const script = await readFile(new URL("../scripts/start-system.sh", import.meta.url), "utf8");
   const startSystemSource = script.slice(
     script.indexOf("start_system()"),
@@ -127,8 +127,17 @@ test("start-system no longer exposes the retired contract provider sidecar", asy
   assert.doesNotMatch(script, /CONTRACT_PORT|8521|contract\.pid|contract\.log/);
   assert.doesNotMatch(script, /--with-contract-provider/);
   assert.doesNotMatch(script, /contract provider|contract_server/);
+  assert.doesNotMatch(script, /independent-mesa|mesa-visualization-runs/);
+  assert.match(script, /SOLARA_PORT="\$\{SOLARA_PORT:-8765\}"/);
+  assert.match(script, /SOLARA_ENABLED="\$\{SOLARA_ENABLED:-1\}"/);
+  assert.match(script, /solara\.pid/);
+  assert.match(script, /solara\.log/);
+  assert.match(script, /stop_solara/);
   assert.match(startSystemSource, /Starting spare_mvp app/);
+  assert.match(startSystemSource, /Starting Solara Mesa visualization/);
+  assert.match(startSystemSource, /solara_app/);
   assert.match(startSystemSource, /wait_for_port "\$APP_PORT" "spare_mvp app"/);
+  assert.match(startSystemSource, /wait_for_port "\$SOLARA_PORT" "Solara Mesa visualization"/);
 });
 
 test("direct backend CLI defaults to the same persistent system-start SQLite path", async () => {

@@ -22,7 +22,7 @@
 4. 装备 RMS 指标分配是系统运行支持模块下的本地计算工作台。页面按顶部参数输入、左侧独立装备树导入、右侧方法选择和底部节点分配结果组织；输入为任务可靠度、任务时长、关键故障占比和 MTTR。
 5. RMS 方法保留等分配法、比例分配法和相似产品分配法。装备树导入只更新 RMS 工作台独立数据，不污染项目建模数据；当前 UI 只保留计算动作，不提供保存草稿或发布到装备模型入口，也未接入后端持久化或真实仿真消费。
 6. 可靠性框图只在任务可靠度评估模块下作为正式建模页展示。完整绘图契约仍由 `reliability-block-diagram-contract.md` 维护。
-7. 当前用户可见运行主线为 `当前 Project -> POST /api/mesa-analysis-runs -> aircraft_support_v1 simulation inputs -> in-memory AircraftSupportV1Model -> lite Mesa 会话摘要`。旧 `/api/runs`、RunService、SimulationRun、ResultSummary 和 ArtifactManifest 运行账本路径保留为历史实现、内部治理能力或后续持久化运行治理候选；旧 contract provider、smoke model、smoke scenarios 和 smoke JSON fixtures 已退役删除。
+7. 当前用户可见分析主线为 `当前 Project -> POST /api/mesa-analysis-runs -> aircraft_support_v1 simulation inputs -> in-memory AircraftSupportV1Model -> lite Mesa 会话摘要`；可视化推演主线为平台管理的 Solara iframe 直接驱动 `AircraftSupportV1Model.step()`。旧 `/api/runs`、RunService、SimulationRun、ResultSummary 和 ArtifactManifest 运行账本路径保留为历史实现、内部治理能力或后续持久化运行治理候选；旧 contract provider、`independent-mesa` sidecar、smoke model、smoke scenarios 和 smoke JSON fixtures 已退役删除。
 8. `aircraft_support_v1` 是当前正式模型族；历史 `aviation_support` 只保留为 schema/fixture 归档证据且 adapter 编译运行入口返回 `retired_model_family`。
 9. 四个结果分析页当前为独立轻量 Mesa 会话页：前端提交当前 Project 与页面设置到 `POST /api/mesa-analysis-runs`，后端编译为 `aircraft_support_v1` simulation inputs 后只在内存中运行样本并返回页面摘要；该路径不创建 `/api/runs`、SQLite run、Result 或正式 artifact，也不读取 current result 面板。
 10. 轻量 Mesa 指标口径：`出动架次率 = 起飞总架次 / 飞机总数 / 仿真总天数`，展示为小数；`仿真总天数` 来自编译后的仿真窗口，周期任务有显式星期排程时按最后有任务日停止，没有显式任务日时才回退整周期/重复次数或 `durationHours`；`战备完好率 = 每天 14:00 的可用飞机数量 / 总飞机数量`，多天结果取日采样均值；`平均备件延误时间(h) = 总调运延误时间(分钟) / 60 / 备件调运次数`，用于备件短板页替代原先会被误读为缺件次数的分钟累计值。
@@ -58,7 +58,7 @@ npm run start:system
 http://127.0.0.1:4173/front/
 ```
 
-`npm run start:system` 等价于 `bash scripts/start-system.sh start`，默认只启动同源 app/backend、使用 `runs/system-start/spare_mvp.sqlite3` 持久化。当前用户可见分析通过 `/api/mesa-analysis-runs` 运行 lite Mesa 会话；旧 `/api/runs` 账本链路仅作为历史实现、内部治理能力或后续持久化运行治理候选。
+`npm run start:system` 等价于 `bash scripts/start-system.sh start`，默认启动同源 app/backend、SQLite 和平台管理的 Solara 可视化 sidecar（默认 `http://127.0.0.1:8765/`）。当前用户可见分析通过 `/api/mesa-analysis-runs` 运行 lite Mesa 会话；可视化推演页嵌入 Solara iframe；旧 `/api/runs` 账本链路仅作为历史实现、内部治理能力或后续持久化运行治理候选。
 
 ## 文档维护规则
 

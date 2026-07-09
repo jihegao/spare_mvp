@@ -92,6 +92,10 @@
       ],
       "properties": {
         "run_id": { "type": "string" },
+        "scenario_id": { "type": "string" },
+        "scenario_version": { "type": "string" },
+        "artifact_manifest_id": { "type": "string" },
+        "result_summary_id": { "type": "string" },
         "step": { "type": "integer", "minimum": 0 },
         "simulation_time": { "type": "number", "minimum": 0 },
         "sample_index": { "type": "integer", "minimum": 0 },
