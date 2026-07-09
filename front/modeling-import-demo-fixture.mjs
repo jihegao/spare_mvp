@@ -429,7 +429,6 @@ export const MODELING_IMPORT_DEMO_FIXTURE = {
             "missionId": "BM-CV-01",
             "name": "近海制空巡逻任务",
             "preparationMinutes": 50,
-            "priority": 1,
             "returnRatio": 0.35,
             "startHour": 1,
             "successPoint": 0.95,
@@ -450,7 +449,6 @@ export const MODELING_IMPORT_DEMO_FIXTURE = {
             "missionId": "night-alert-main",
             "name": "远海警戒任务",
             "preparationMinutes": 55,
-            "priority": 1,
             "returnRatio": 0.35,
             "startHour": 1,
             "successPoint": 0.95,
@@ -542,6 +540,7 @@ export const MODELING_IMPORT_DEMO_FIXTURE = {
           {
             "id": "composite-day-cap",
             "name": "昼间制空复合任务",
+            "priority": 1,
             "taskItems": [
               {
                 "basicMissionId": "bm-cv-01",
@@ -552,7 +551,6 @@ export const MODELING_IMPORT_DEMO_FIXTURE = {
                 "groupName": "昼间制空编队",
                 "id": "day-cap-main",
                 "intervalHours": 6,
-                "priority": 1,
                 "recoveryTime": "11:00",
                 "taskDispatchTime": "07:15"
               }
@@ -561,6 +559,7 @@ export const MODELING_IMPORT_DEMO_FIXTURE = {
           {
             "id": "composite-night-alert",
             "name": "夜间警戒复合任务",
+            "priority": 2,
             "taskItems": [
               {
                 "basicMissionId": "night-alert-main",
@@ -571,7 +570,6 @@ export const MODELING_IMPORT_DEMO_FIXTURE = {
                 "groupName": "夜间警戒编队",
                 "id": "night-alert-main",
                 "intervalHours": 8,
-                "priority": 2,
                 "recoveryTime": "23:30",
                 "taskDispatchTime": "19:30"
               }

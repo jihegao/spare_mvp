@@ -21,6 +21,7 @@
           {
             "id": "composite-day-cap",
             "name": "昼间制空复合任务",
+            "priority": 1,
             "taskItems": [
               {
                 "basicTaskName": "近海制空巡逻任务",
@@ -30,7 +31,6 @@
                 "groupName": "昼间制空编队",
                 "id": "day-cap-main",
                 "intervalHours": 6,
-                "priority": 1,
                 "recoveryTime": "11:00",
                 "taskDispatchTime": "07:15",
                 "basicMissionId": "bm-cv-01"
@@ -40,6 +40,7 @@
           {
             "id": "composite-night-alert",
             "name": "夜间警戒复合任务",
+            "priority": 2,
             "taskItems": [
               {
                 "basicTaskName": "远海警戒任务",
@@ -49,7 +50,6 @@
                 "groupName": "夜间警戒编队",
                 "id": "night-alert-main",
                 "intervalHours": 8,
-                "priority": 2,
                 "recoveryTime": "23:30",
                 "taskDispatchTime": "19:30",
                 "basicMissionId": "night-alert-main"
@@ -355,7 +355,6 @@
             "missionId": "BM-CV-01",
             "name": "近海制空巡逻任务",
             "preparationMinutes": 50,
-            "priority": 1,
             "returnRatio": 0.35,
             "startHour": 1,
             "successPoint": 0.95,
@@ -376,7 +375,6 @@
             "missionId": "night-alert-main",
             "name": "远海警戒任务",
             "preparationMinutes": 55,
-            "priority": 1,
             "returnRatio": 0.35,
             "startHour": 1,
             "successPoint": 0.95,

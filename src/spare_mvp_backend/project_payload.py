@@ -509,6 +509,7 @@ def _validate_clean_composite_tasks(values: list[Any], target: str) -> None:
         pollution = sorted(field for field in item if _is_pollution_key(field))
         if pollution:
             raise ValueError(f"clean Project JSON failed {target} schema at {path}: unexpected field {pollution[0]}")
+        _validate_optional_clean_integer(item, "priority", f"{path}.priority", target, minimum=1)
         task_items = item.get("taskItems")
         if task_items is None:
             continue
@@ -567,6 +568,8 @@ def _validate_clean_basic_missions(missions: list[Any], target: str) -> None:
         pollution = sorted(field for field in mission if _is_pollution_key(field))
         if pollution:
             raise ValueError(f"clean Project JSON failed {target} schema at {path}: unexpected field {pollution[0]}")
+        if "priority" in mission:
+            raise ValueError(f"clean Project JSON failed {target} schema at {path}.priority: priority belongs to compositeTasks")
         for field in ("id", "name"):
             if field not in mission:
                 raise ValueError(f"clean Project JSON failed {target} schema at {path}.{field}: required")
@@ -986,6 +989,14 @@ def strip_project_sweep(project_json: dict[str, Any]) -> dict[str, Any]:
     return project
 
 
+def normalize_project_mission_task_field_ownership(project_json: dict[str, Any]) -> dict[str, Any]:
+    """Migrate only issue-127 mission task ownership without pruning Project data."""
+
+    project = deepcopy(project_json)
+    _normalize_mission_task_field_ownership(project)
+    return project
+
+
 def project_k_out_of_n_errors(project_json: dict[str, Any]) -> list[dict[str, str]]:
     errors: list[dict[str, str]] = []
     components = project_json.get("components") if isinstance(project_json.get("components"), list) else []
@@ -1119,6 +1130,7 @@ def _strip_project_non_model_fields(project: dict[str, Any]) -> None:
         mission_profile.pop("endCondition", None)
         mission_profile.pop("repeatCycleHours", None)
         mission_profile.pop("analysisRequests", None)
+        _normalize_mission_task_field_ownership(project)
         _normalize_mission_profile_reference_fields(project)
     _strip_typo_only_support_activity_fields(project)
     _strip_deprecated_support_activity_strategy_fields(project)
@@ -1206,6 +1218,54 @@ def _normalize_mission_profile_reference_fields(project: dict[str, Any]) -> None
     _normalize_mission_profile_periodic_tasks(mission_profile)
     if _mission_profile_has_periodic_duration(mission_profile):
         mission_profile.pop("durationHours", None)
+
+
+def _normalize_mission_task_field_ownership(project: dict[str, Any]) -> None:
+    basic_missions = project.get("basicMissions") if isinstance(project.get("basicMissions"), list) else []
+    basics_by_ref: dict[str, dict[str, Any]] = {}
+    for basic in basic_missions:
+        if not isinstance(basic, dict):
+            continue
+        basic.pop("priority", None)
+        for value in (basic.get("id"), basic.get("missionId"), basic.get("taskNo"), basic.get("name"), basic.get("basicTaskName")):
+            reference = _clean_text(value)
+            if reference:
+                basics_by_ref[reference] = basic
+
+    mission_profile = project.get("missionProfile")
+    composites = mission_profile.get("compositeTasks") if isinstance(mission_profile, dict) else []
+    if not isinstance(composites, list):
+        return
+    for composite in composites:
+        if not isinstance(composite, dict):
+            continue
+        task_items = composite.get("taskItems") if isinstance(composite.get("taskItems"), list) else []
+        inherited_priority = next(
+            (
+                _positive_int(item.get("priority"), 0)
+                for item in task_items
+                if isinstance(item, dict) and _positive_int(item.get("priority"), 0) > 0
+            ),
+            1,
+        )
+        composite["priority"] = _positive_int(composite.get("priority"), inherited_priority)
+        for item in task_items:
+            if not isinstance(item, dict):
+                continue
+            legacy_minimum = int(float(item["minRequiredSystems"])) if _is_positive_int(item.get("minRequiredSystems")) else 0
+            basic = basics_by_ref.get(_clean_text(item.get("basicMissionId"))) or basics_by_ref.get(_clean_text(item.get("basicTaskName")))
+            if legacy_minimum and isinstance(basic, dict):
+                basic_minimum = int(float(basic["minRequiredSorties"])) if _is_positive_int(basic.get("minRequiredSorties")) else 0
+                if basic_minimum and basic_minimum != legacy_minimum:
+                    raise ValueError(
+                        "clean Project JSON cannot migrate conflicting minRequiredSystems for "
+                        f"basic mission {_basic_mission_id(basic) or basic.get('name') or '<unknown>'}"
+                    )
+                basic["minRequiredSorties"] = legacy_minimum
+            item.pop("priority", None)
+            item.pop("minRequiredSystems", None)
+            item.pop("equipmentQuantity", None)
+            item.pop("requiredEquipmentQuantity", None)
 
 
 def _basic_mission_id(value: Any) -> str:

@@ -139,6 +139,11 @@ test("simulation analysis public import templates validate against modeling impo
         `${templatePath} missionProfiles[${index}].equipment must not carry non-behavioral deploymentLocation`
       );
       for (const compositeTask of mission.compositeTasks || []) {
+        assert.equal(
+          Number.isInteger(compositeTask.priority) && compositeTask.priority >= 1,
+          true,
+          `${templatePath} ${compositeTask.id} must own task priority`
+        );
         for (const taskItem of compositeTask.taskItems || []) {
           assert.equal(
             Object.hasOwn(taskItem, "minRequiredSystems"),
@@ -149,6 +154,11 @@ test("simulation analysis public import templates validate against modeling impo
             Object.hasOwn(taskItem, "preparationMinutes"),
             false,
             `${templatePath} ${compositeTask.id}/${taskItem.id} must inherit preparationMinutes from basicMissions`
+          );
+          assert.equal(
+            Object.hasOwn(taskItem, "priority"),
+            false,
+            `${templatePath} ${compositeTask.id}/${taskItem.id} must not own task priority`
           );
         }
       }
@@ -224,6 +234,11 @@ test("canonical platform composite task items inherit equipment quantity from ba
     assert.ok(Array.isArray(mission.basicMissions) && mission.basicMissions.length >= 1, `${label} must define basicMissions`);
     assert.ok(mission.basicMissions.every((basicTask) => basicTask.id), `${label} basicMissions must carry stable ids`);
     const basicTasks = mission.basicMissions;
+    assert.equal(
+      basicTasks.some((basicTask) => Object.hasOwn(basicTask, "priority")),
+      false,
+      `${label} basicMissions must not own task priority`
+    );
     const basicTaskNames = new Set(basicTasks.flatMap((basicTask) => [
       basicTask.name,
       basicTask.basicTaskName,
@@ -232,6 +247,11 @@ test("canonical platform composite task items inherit equipment quantity from ba
     ]).filter(Boolean).map(String));
     const basicTaskIds = new Set(basicTasks.map((basicTask) => String(basicTask.id)));
     for (const compositeTask of mission.compositeTasks || []) {
+      assert.equal(
+        Number.isInteger(compositeTask.priority) && compositeTask.priority >= 1,
+        true,
+        `${label} ${compositeTask.id} must own task priority`
+      );
       for (const taskItem of compositeTask.taskItems || []) {
         assert.equal(
           basicTaskIds.has(String(taskItem.basicMissionId || "")),
@@ -257,6 +277,11 @@ test("canonical platform composite task items inherit equipment quantity from ba
           Object.hasOwn(taskItem, "preparationMinutes"),
           false,
           `${label} ${compositeTask.id}/${taskItem.id} must inherit preparationMinutes from basicMissions`
+        );
+        assert.equal(
+          Object.hasOwn(taskItem, "priority"),
+          false,
+          `${label} ${compositeTask.id}/${taskItem.id} must not own task priority`
         );
       }
     }

@@ -56,6 +56,25 @@ class ProjectJsonExporterTest(unittest.TestCase):
         with mock.patch("builtins.__import__", side_effect=guarded_import):
             return ProjectJsonExporter(target="aircraft_support_v1").export(project)
 
+    def test_export_migrates_legacy_task_item_ownership(self) -> None:
+        project = self._polluted_project()
+        project["basicMissions"][0]["priority"] = 9
+        composite = project["missionProfile"]["compositeTasks"][0]
+        composite.pop("priority", None)
+        item = composite["taskItems"][0]
+        item["priority"] = 3
+        item["minRequiredSystems"] = 2
+
+        exported = ProjectJsonExporter(target="aircraft_support_v1").export(project)
+
+        exported_composite = exported["missionProfile"]["compositeTasks"][0]
+        exported_item = exported_composite["taskItems"][0]
+        self.assertEqual(exported_composite["priority"], 3)
+        self.assertEqual(exported["basicMissions"][0]["minRequiredSorties"], 2)
+        self.assertNotIn("priority", exported["basicMissions"][0])
+        self.assertNotIn("priority", exported_item)
+        self.assertNotIn("minRequiredSystems", exported_item)
+
     def _polluted_project(self) -> dict:
         return {
             "schema_version": "project-v0",

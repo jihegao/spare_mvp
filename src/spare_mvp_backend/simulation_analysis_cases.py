@@ -134,6 +134,7 @@ def _canonical_platform_import(source: dict[str, Any]) -> dict[str, Any]:
     _remove_preset_airports(case)
     _remove_equipment_deployment_locations(case)
     _apply_combat_unit_aircraft_defaults(case, airport="A", pre_life_calendar_days=0)
+    _normalize_mission_task_field_ownership(case)
     _move_composite_equipment_quantities_to_basic_tasks(case)
     _structure_support_activity_personnel(case)
     case["source"] = {
@@ -324,6 +325,54 @@ def _move_composite_equipment_quantities_to_basic_tasks(import_package: dict[str
             item.pop("requiredEquipmentQuantity", None)
 
         mission["basicMissions"] = normalized_basic_tasks
+
+
+def _normalize_mission_task_field_ownership(import_package: dict[str, Any]) -> None:
+    """Move legacy task-item fields to their single canonical owners."""
+
+    objects = import_package.get("objects") if isinstance(import_package.get("objects"), dict) else {}
+    missions = objects.get("missionProfiles") if isinstance(objects.get("missionProfiles"), list) else []
+    for mission in missions:
+        if not isinstance(mission, dict):
+            continue
+        basic_missions = mission.get("basicMissions") if isinstance(mission.get("basicMissions"), list) else []
+        basics_by_ref: dict[str, dict[str, Any]] = {}
+        for basic in basic_missions:
+            if not isinstance(basic, dict):
+                continue
+            basic.pop("priority", None)
+            for value in (basic.get("id"), basic.get("missionId"), basic.get("taskNo"), basic.get("name"), basic.get("basicTaskName")):
+                reference = str(value or "").strip()
+                if reference:
+                    basics_by_ref[reference] = basic
+        composites = mission.get("compositeTasks") if isinstance(mission.get("compositeTasks"), list) else []
+        for composite in composites:
+            if not isinstance(composite, dict):
+                continue
+            task_items = composite.get("taskItems") if isinstance(composite.get("taskItems"), list) else []
+            inherited_priority = next(
+                (
+                    _positive_int(item.get("priority"), 0)
+                    for item in task_items
+                    if isinstance(item, dict) and _positive_int(item.get("priority"), 0) > 0
+                ),
+                1,
+            )
+            composite["priority"] = _positive_int(composite.get("priority"), inherited_priority)
+            for item in task_items:
+                if not isinstance(item, dict):
+                    continue
+                legacy_minimum = _positive_int(item.get("minRequiredSystems"), 0)
+                basic = basics_by_ref.get(str(item.get("basicMissionId") or "").strip()) or basics_by_ref.get(str(item.get("basicTaskName") or "").strip())
+                if legacy_minimum and isinstance(basic, dict):
+                    current = _positive_int(basic.get("minRequiredSorties"), 0)
+                    if current and current != legacy_minimum:
+                        raise ValueError(f"conflicting minRequiredSystems for basic mission {basic.get('id') or basic.get('name')}")
+                    basic["minRequiredSorties"] = legacy_minimum
+                item.pop("priority", None)
+                item.pop("minRequiredSystems", None)
+                item.pop("equipmentQuantity", None)
+                item.pop("requiredEquipmentQuantity", None)
         mission.pop("basicMission", None)
 
 

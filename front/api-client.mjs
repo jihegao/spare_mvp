@@ -240,6 +240,7 @@ export function buildBackendProjectJson(scenario, project = {}) {
 export function normalizeProjectJsonForClientDraft(projectJson) {
   const normalized = cloneJson(projectJson);
   normalizeProjectJsonBasicMissions(normalized);
+  normalizeMissionTaskFieldOwnership(normalized);
   syncCompositeTaskInheritedBasicFields(normalized);
   canonicalizeSupportActivityJobPredecessors(normalized);
   delete normalized.deletedSupportResourceKeys;
@@ -292,6 +293,48 @@ export function normalizeProjectJsonBasicMissions(projectJson) {
   return projectJson;
 }
 
+// Basic missions own aircraft demand. Composite tasks own scheduling priority.
+// Read old child-level values once, then remove them so new drafts have one
+// behavior-driving source for each field.
+function normalizeMissionTaskFieldOwnership(projectJson) {
+  if (!projectJson || typeof projectJson !== "object" || Array.isArray(projectJson)) return;
+  const basicMissions = Array.isArray(projectJson.basicMissions) ? projectJson.basicMissions : [];
+  const basicsByReference = new Map();
+  for (const mission of basicMissions) {
+    if (!mission || typeof mission !== "object" || Array.isArray(mission)) continue;
+    delete mission.priority;
+    for (const value of [mission.id, mission.missionId, mission.taskNo, mission.name, mission.basicTaskName]) {
+      const reference = String(value || "").trim();
+      if (reference) basicsByReference.set(reference, mission);
+    }
+  }
+
+  const composites = Array.isArray(projectJson.missionProfile?.compositeTasks)
+    ? projectJson.missionProfile.compositeTasks
+    : [];
+  for (const composite of composites) {
+    if (!composite || typeof composite !== "object" || Array.isArray(composite)) continue;
+    const items = Array.isArray(composite.taskItems) ? composite.taskItems : [];
+    const inheritedPriority = items
+      .map((item) => positiveInteger(item?.priority, 0))
+      .find((priority) => priority > 0);
+    composite.priority = positiveInteger(composite.priority, inheritedPriority || 1);
+    for (const item of items) {
+      if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+      const legacyMinimum = positiveInteger(item.minRequiredSystems, 0);
+      const basic = basicsByReference.get(String(item.basicMissionId || "").trim())
+        || basicsByReference.get(String(item.basicTaskName || "").trim());
+      if (legacyMinimum > 0 && basic && positiveInteger(basic.minRequiredSorties, 0) === 0) {
+        basic.minRequiredSorties = legacyMinimum;
+      }
+      delete item.priority;
+      delete item.minRequiredSystems;
+      delete item.equipmentQuantity;
+      delete item.requiredEquipmentQuantity;
+    }
+  }
+}
+
 function stripProjectRuntimeConfig(value) {
   if (Array.isArray(value)) {
     for (const item of value) stripProjectRuntimeConfig(item);
@@ -325,6 +368,7 @@ function stripProjectNonModelFields(projectJson) {
   }
   delete projectJson.basicMission;
   stripLegacyBasicMissionFields(projectJson);
+  normalizeMissionTaskFieldOwnership(projectJson);
   stripMissionProfileNonModelFields(projectJson.missionProfile);
   normalizeMissionProfileReferenceFields(projectJson);
   migrateRootMissionPhasesToBasicMissions(projectJson);
