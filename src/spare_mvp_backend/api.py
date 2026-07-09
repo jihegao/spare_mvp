@@ -1457,6 +1457,7 @@ def _run_aircraft_support_v1_analysis_sample(
 
     sample_inputs = copy.deepcopy(inputs)
     sample_inputs["seed"] = seed
+    sample_inputs["disable_visualization_frames"] = True
     if write_event_snapshots:
         sample_inputs["write_event_snapshots"] = True
     model = AircraftSupportV1Model(sample_inputs)

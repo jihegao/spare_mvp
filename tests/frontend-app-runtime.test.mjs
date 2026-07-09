@@ -2517,7 +2517,7 @@ test("visual simulation does not depend on lite Mesa run id", async () => {
   try {
     await runtime.click("[data-mesa-control]", { mesaControl: "reload-solara" });
 
-    assert.match(runtime.appNode.innerHTML, /Solara iframe 已刷新/);
+    assert.match(runtime.appNode.innerHTML, /后端 Project 重新编译推演输入/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /Lite Mesa 仿真未返回 run_id/);
     assert.equal(
       runtime.requests.some((request) => request.url === "/api/runs"),

@@ -149,6 +149,11 @@ class AircraftSupportV1Model:
             or self.inputs.get("capture_event_snapshots")
         )
         time_config = self.inputs.get("time", {})
+        self.disable_visualization_frames = _truthy_input_flag(
+            self.inputs.get("disable_visualization_frames")
+            or self.inputs.get("disableVisualizationFrames")
+            or time_config.get("disable_visualization_frames")
+        )
         self.duration_minutes = int(time_config.get("duration_minutes", 1440))
         self.tick_minutes = int(time_config.get("tick_minutes", 1))
         self.sample_every_minutes = int(time_config.get("sample_every_minutes", 30))
@@ -202,11 +207,13 @@ class AircraftSupportV1Model:
         }
 
     def run(self) -> dict[str, Any]:
-        frames = [self.visualization_frame(run_id="", step=0)]
+        frames = [] if self.disable_visualization_frames else [self.visualization_frame(run_id="", step=0)]
         while self.running:
             self.step()
             should_stop = not self.running
-            if self.minute % self.sample_every_minutes == 0 or self.minute == self.duration_minutes or should_stop:
+            if not self.disable_visualization_frames and (
+                self.minute % self.sample_every_minutes == 0 or self.minute == self.duration_minutes or should_stop
+            ):
                 frames.append(self.visualization_frame(run_id="", step=len(frames)))
                 if len(frames) > self.max_state_frames_single:
                     raise ValueError(

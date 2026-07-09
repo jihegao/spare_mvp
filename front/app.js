@@ -663,6 +663,7 @@ let visualizationStreamState = {
 let visualizationBackendControlStatus = "M9.3 后端运行控制尚未触发";
 let visualSupportAirportId = "";
 let solaraVisualizationReloadNonce = 0;
+let solaraVisualizationProjectIdOverride = "";
 let backendApiStatus = "离线演示";
 let formalRunSubmitInFlight = false;
 let systemUserEditor = null;
@@ -9480,13 +9481,50 @@ function experimentPlanSelectionKey(plan) {
   return `local:${String(plan?.name || plan?.config?.name || plan?.config?.projectJson?.experiment?.name || "未命名方案").trim()}`;
 }
 
+function projectJsonHasExecutableModelingData(projectJson) {
+  if (!projectJson || typeof projectJson !== "object" || Array.isArray(projectJson)) return false;
+  return Boolean(
+    (Array.isArray(projectJson.basicMissions) && projectJson.basicMissions.length)
+    || (Array.isArray(projectJson.components) && projectJson.components.length)
+    || (Array.isArray(projectJson.supportNodes) && projectJson.supportNodes.length)
+    || (Array.isArray(projectJson.supportResources) && projectJson.supportResources.length)
+    || (Array.isArray(projectJson.supportActivities) && projectJson.supportActivities.length)
+    || (Array.isArray(projectJson.combatUnit?.members) && projectJson.combatUnit.members.length)
+    || Number(projectJson.missionProfile?.durationHours) > 0
+  );
+}
+
+function projectDataJsonMatchesCurrentProject(projectJson) {
+  if (!projectJson || typeof projectJson !== "object" || Array.isArray(projectJson)) return false;
+  const backendProjectId = String(currentBackendProjectId() || "").trim();
+  const projectJsonId = String(projectJson.project_id || "").trim();
+  return Boolean(
+    (selectedProjectDataProjectJsonId && selectedProjectDataProjectJsonId === projectDataProjectId(currentProject))
+    || (backendProjectId && projectJsonId && projectJsonId === backendProjectId)
+  );
+}
+
+function currentProjectJsonForExperimentContext() {
+  if (experimentPlanBranchActive) return experimentPlanDraft;
+  if (projectJsonHasExecutableModelingData(scenario)) return scenario;
+  if (
+    selectedProjectDataProjectJson
+    && projectDataJsonMatchesCurrentProject(selectedProjectDataProjectJson)
+    && projectJsonHasExecutableModelingData(selectedProjectDataProjectJson)
+  ) {
+    return selectedProjectDataProjectJson;
+  }
+  return scenario;
+}
+
 function experimentPlanContextOptions(page = getFeaturePageById(selectedFeatureId)) {
-  const localName = String(scenario.experiment?.name || experimentPlanDraft?.experiment?.name || currentProject?.name || "当前项目").trim();
+  const currentProjectJson = currentProjectJsonForExperimentContext();
+  const localName = String(currentProjectJson.experiment?.name || currentProjectJson.projectInfo?.name || currentProject?.name || "当前项目").trim();
   const localOption = {
     key: experimentPlanSelectionKey({ name: localName }),
     name: `${localName || "当前项目"}（当前草稿）`,
     plan: null,
-    projectJson: buildBackendProjectJson(experimentPlanDraft, currentProject),
+    projectJson: buildBackendProjectJson(currentProjectJson, currentProject),
     module: page.module
   };
   const backendOptions = backendExperimentPlans.map((plan) => {
@@ -9532,6 +9570,29 @@ function selectedExperimentPlanProjectJson() {
     ? context.projectJson
     : scenario;
   return buildBackendProjectJson(source, currentProject);
+}
+
+async function resolveSelectedExperimentPlanProjectJsonForRun() {
+  const projectJson = selectedExperimentPlanProjectJson();
+  if (projectJsonHasExecutableModelingData(projectJson)) return projectJson;
+  const projectId = currentBackendProjectId();
+  if (!projectId) return projectJson;
+  const hydratedProjectJson = normalizeProjectJsonForClientDraft(await backendApi.getProject(projectId));
+  if (!experimentPlanBranchActive) {
+    scenario = cloneScenario(hydratedProjectJson);
+    experimentPlanDraft = cloneScenario(hydratedProjectJson);
+  }
+  return buildBackendProjectJson(hydratedProjectJson, currentProject);
+}
+
+async function saveSelectedProjectJsonForSolaraVisualization() {
+  const projectJson = await resolveSelectedExperimentPlanProjectJsonForRun();
+  const saved = await backendApi.saveProject(projectJson);
+  savedProject = saved || savedProject;
+  solaraVisualizationProjectIdOverride = String(saved?.project_id || projectJson.project_id || currentBackendProjectId() || "").trim();
+  projectDraftSaveStatus = "已保存";
+  projectDraftLastSavedAt = new Date().toLocaleTimeString("zh-CN", { hour12: false });
+  return saved;
 }
 
 function selectedExperimentPlanRunSettings() {
@@ -12602,8 +12663,14 @@ function issueStatusForDisplayIssues(issues) {
 
 async function handleMesaControl(action) {
   if (action === "reload-solara") {
-    solaraVisualizationReloadNonce += 1;
-    visualizationReplayStatus = "Solara iframe 已刷新，推演由 Mesa/Solara 页面直接驱动";
+    visualizationReplayStatus = "Solara 正在保存当前建模数据并刷新 iframe";
+    try {
+      await saveSelectedProjectJsonForSolaraVisualization();
+      solaraVisualizationReloadNonce += 1;
+      visualizationReplayStatus = "Solara 已保存当前建模数据，将从后端 Project 重新编译推演输入";
+    } catch (err) {
+      visualizationReplayStatus = `Solara 刷新失败：当前建模数据未保存（${err && err.message ? err.message : "Backend API 不可用"}）`;
+    }
     return;
   }
   if (action === "refresh-runs") {
@@ -12734,7 +12801,7 @@ function renderVisualSimulation(page) {
   const projectName = currentProject?.name || "当前项目";
   const experimentPlanName = selectedExperimentPlanName();
   const solaraUrl = buildSolaraVisualizationUrl(resolveSolaraVisualizationBaseUrl(), {
-    projectId: currentProject?.project_id || scenario.project_id || scenario.scenarioId || "",
+    projectId: solaraVisualizationProjectIdOverride || currentProject?.project_id || scenario.project_id || scenario.scenarioId || "",
     projectName,
     featureId: page.id,
     experimentPlanName,
@@ -14713,10 +14780,11 @@ async function runLiteMesaMonteCarloAnalysis() {
   liteMesaMonteCarloSettings = { samples, seed };
   liteMesaMonteCarloStatus = "正在运行 Mesa 分析";
   try {
+    const selectedProjectJson = await resolveSelectedExperimentPlanProjectJsonForRun();
     const projectJson = {
-      ...selectedExperimentPlanProjectJson(),
+      ...selectedProjectJson,
       experiment: {
-        ...(selectedExperimentPlanProjectJson().experiment || {}),
+        ...(selectedProjectJson.experiment || {}),
         samples,
         seed
       }
@@ -15776,7 +15844,7 @@ async function runLiteMesaAnalysisPage(page) {
     }
   };
   try {
-    const projectJson = selectedExperimentPlanProjectJson();
+    const projectJson = await resolveSelectedExperimentPlanProjectJsonForRun();
     const response = await backendApi.runLiteMesaAnalysis(projectJson, definition.analysisType, normalizedSettings);
     liteMesaAnalysisResults = {
       ...liteMesaAnalysisResults,
