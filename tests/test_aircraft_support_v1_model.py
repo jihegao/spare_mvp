@@ -175,6 +175,18 @@ def _canonical_import_inputs() -> dict:
 
 
 class AircraftSupportV1ModelTest(unittest.TestCase):
+    def test_composite_priority_overrides_legacy_child_and_basic_priority(self) -> None:
+        inputs = _preflight_timing_inputs()
+        basic = inputs["mission_profile"]["basic_missions"][0]
+        composite = inputs["mission_profile"]["composite_tasks"][0]
+        basic["priority"] = 1
+        composite["priority"] = 4
+        composite["taskItems"][0]["priority"] = 1
+
+        model = AircraftSupportV1Model(inputs)
+
+        self.assertEqual(model.missions[0].priority, 4)
+
     def test_structured_personnel_requirements_sum_resource_quantity(self) -> None:
         quantity = _resource_quantity(
             [

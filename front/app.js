@@ -334,16 +334,16 @@ const MODELING_DATA_MODULES = [
         label: "复合任务表",
         sourcePage: "复合任务建模",
         fields: [
+          fieldDef("priority", "任务优先级（1最高）", "compositeTasks[].priority"),
           fieldDef("basicTaskName", "基本任务名称", "compositeTasks[].taskItems[].basicTaskName"),
           fieldDef("groupName", "编队名称", "compositeTasks[].taskItems[].groupName"),
           fieldDef("firstWaveTime", "出发时间（HH：MM）", "compositeTasks[].taskItems[].firstWaveTime"),
-          fieldDef("priority", "任务优先级（1最高）", "compositeTasks[].taskItems[].priority"),
           fieldDef("dailyRepeatCount", "单日重复次数", "compositeTasks[].taskItems[].dailyRepeatCount"),
           fieldDef("intervalHours", "间隔小时数", "compositeTasks[].taskItems[].intervalHours"),
           fieldDef("equipmentType", "装备类型", "compositeTasks[].taskItems[].equipmentType"),
           fieldDef("taskDurationMinutes", "任务时长", "compositeTasks[].taskItems[].taskDurationMinutes"),
           fieldDef("equipmentQuantity", "要求装备数量", "compositeTasks[].taskItems[].equipmentQuantity"),
-          fieldDef("minRequiredSystems", "最小装备数量", "compositeTasks[].taskItems[].minRequiredSystems")
+          fieldDef("minRequiredSorties", "最小装备数量（继承）", "basicMissions[].minRequiredSorties")
         ]
       },
       {
@@ -3055,7 +3055,6 @@ function createEmptyBasicMission() {
     equipmentQuantity: 1,
     successPoint: 0.9,
     returnRatio: 0.3,
-    priority: 1,
     minRequiredSorties: 1,
     taskDurationMinutes: 60,
     preparationMinutes: 30,
@@ -3091,6 +3090,7 @@ function addCompositeTask() {
   const task = {
     id: `composite-task-${Date.now()}-${index}`,
     name: `新增复合任务${index}`,
+    priority: 1,
     taskItems: [createCompositeTaskItem(0)]
   };
   tasks.push(task);
@@ -3137,8 +3137,6 @@ function createCompositeTaskItem(index) {
     groupName: `新增编队${index + 1}`,
     firstWaveTime: "08:45",
     recoveryTime: "11:45",
-    priority: index + 1,
-    minRequiredSystems: Number(basic.minRequiredSorties || 1),
     dailyRepeatCount: 1,
     intervalHours: 6,
     preparationMinutes: 45
@@ -3170,7 +3168,8 @@ function compositeTaskInheritedBasicFields(item = {}, basicTask = null) {
   return {
     equipmentType: firstPresentValue(basicTask?.equipmentType, item.equipmentType),
     taskDurationMinutes: firstPresentValue(basicTask?.taskDurationMinutes, item.taskDurationMinutes),
-    equipmentQuantity: firstPresentValue(basicTask?.equipmentQuantity)
+    equipmentQuantity: firstPresentValue(basicTask?.equipmentQuantity),
+    minRequiredSorties: firstPresentValue(basicTask?.minRequiredSorties)
   };
 }
 
@@ -4626,7 +4625,6 @@ function renderBasicMissionModeling(page) {
                 <tr><th>装备数量</th><td>${valueInput(`${missionPath}.equipmentQuantity`, "number")}</td></tr>
                 <tr><th>最小装备数量</th><td>${valueInput(`${missionPath}.minRequiredSorties`, "number")}</td></tr>
                 <tr><th>任务成功点</th><td>${valueInput(`${missionPath}.successPoint`, "number", { min: "0", max: "1", step: "0.01" })}</td></tr>
-                <tr><th>任务优先级</th><td>${valueInput(`${missionPath}.priority`, "number")}</td></tr>
                 <tr><th>任务时长（分钟）</th><td>${valueInput(`${missionPath}.taskDurationMinutes`, "number")}</td></tr>
               </tbody>
             </table>
@@ -4763,10 +4761,11 @@ function renderCompositeTaskModeling(page) {
           ${selected.task ? `
             <div class="form-table-grid" style="grid-template-columns:1fr;margin-bottom:12px;">
               ${field("复合任务名称", `${compositePath}.name`)}
+              ${field("任务优先级（1最高）", `${compositePath}.priority`, "number", { min: "1", step: "1" })}
             </div>
             <div class="table-wrap">
               <table>
-                <thead><tr><th>基本任务名称</th><th>编队名称</th><th>出发时间（HH：MM）</th><th>任务优先级（1最高）</th><th>单日重复次数</th><th>间隔小时数</th><th>装备类型</th><th>任务时长</th><th>要求装备数量</th><th>最小装备数量</th><th>删除</th></tr></thead>
+                <thead><tr><th>基本任务名称</th><th>编队名称</th><th>出发时间（HH：MM）</th><th>单日重复次数</th><th>间隔小时数</th><th>装备类型</th><th>任务时长</th><th>要求装备数量</th><th>最小装备数量（继承）</th><th>删除</th></tr></thead>
                 <tbody>
                   ${(composite.taskItems || []).map((item, index) => {
                     const basicTask = findBasicMissionForTaskItem(item);
@@ -4776,16 +4775,15 @@ function renderCompositeTaskModeling(page) {
                       <td>${basicMissionSelect(`${compositePath}.taskItems.${index}.basicMissionId`, item.basicMissionId)}</td>
                       <td>${valueInput(`${compositePath}.taskItems.${index}.groupName`)}</td>
                       <td>${valueInput(`${compositePath}.taskItems.${index}.firstWaveTime`, "time")}</td>
-                      <td>${valueInput(`${compositePath}.taskItems.${index}.priority`, "number", { min: "1", step: "1" })}</td>
                       <td>${valueInput(`${compositePath}.taskItems.${index}.dailyRepeatCount`, "number", { min: "1", step: "1" })}</td>
                       <td>${valueInput(`${compositePath}.taskItems.${index}.intervalHours`, "number", { min: "0.1", step: "0.1" })}</td>
                       <td>${readOnlyTableValue(inherited.equipmentType)}</td>
                       <td>${readOnlyTableValue(inherited.taskDurationMinutes)}</td>
                       <td>${readOnlyTableValue(inherited.equipmentQuantity)}</td>
-                      <td>${valueInput(`${compositePath}.taskItems.${index}.minRequiredSystems`, "number", { min: "1", step: "1" })}</td>
+                      <td>${readOnlyTableValue(inherited.minRequiredSorties)}</td>
                       <td class="table-actions"><button type="button" class="btn-danger" data-composite-task-item-delete="${index}">删除</button></td>
                     </tr>
-                  `; }).join("") || `<tr><td colspan="11">暂无基本任务</td></tr>`}
+                  `; }).join("") || `<tr><td colspan="10">暂无基本任务</td></tr>`}
                 </tbody>
               </table>
             </div>

@@ -191,12 +191,35 @@ function projectMissionProfile(project, projectId) {
 }
 
 function stripCompositeTaskItemEquipmentQuantity(mission) {
+  const basicsByReference = new Map();
+  for (const basic of Array.isArray(mission?.basicMissions) ? mission.basicMissions : []) {
+    if (!basic || typeof basic !== "object" || Array.isArray(basic)) continue;
+    delete basic.priority;
+    for (const value of [basic.id, basic.missionId, basic.taskNo, basic.name, basic.basicTaskName]) {
+      const reference = String(value || "").trim();
+      if (reference) basicsByReference.set(reference, basic);
+    }
+  }
   const compositeTasks = Array.isArray(mission?.compositeTasks) ? mission.compositeTasks : [];
   for (const compositeTask of compositeTasks) {
+    if (!compositeTask || typeof compositeTask !== "object" || Array.isArray(compositeTask)) continue;
     const taskItems = Array.isArray(compositeTask?.taskItems) ? compositeTask.taskItems : [];
+    const inheritedPriority = taskItems
+      .map((taskItem) => positiveInteger(taskItem?.priority, 0))
+      .find((priority) => priority > 0);
+    compositeTask.priority = positiveInteger(compositeTask.priority, inheritedPriority || 1);
     for (const taskItem of taskItems) {
       if (taskItem && typeof taskItem === "object" && !Array.isArray(taskItem)) {
+        const minimum = positiveInteger(taskItem.minRequiredSystems, 0);
+        const basic = basicsByReference.get(String(taskItem.basicMissionId || "").trim())
+          || basicsByReference.get(String(taskItem.basicTaskName || "").trim());
+        if (minimum > 0 && basic && positiveInteger(basic.minRequiredSorties, 0) === 0) {
+          basic.minRequiredSorties = minimum;
+        }
         delete taskItem.equipmentQuantity;
+        delete taskItem.requiredEquipmentQuantity;
+        delete taskItem.minRequiredSystems;
+        delete taskItem.priority;
       }
     }
   }

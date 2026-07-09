@@ -525,7 +525,6 @@ test("buildBackendProjectJson saves composite task items as mission references",
       equipmentType: "J-35",
       taskDurationMinutes: 95,
       equipmentQuantity: 4,
-      minRequiredSorties: 3,
       preparationMinutes: 25
     }],
     missionProfile: {
@@ -538,6 +537,7 @@ test("buildBackendProjectJson saves composite task items as mission references",
           taskDurationMinutes: 10,
           equipmentQuantity: 1,
           minRequiredSystems: 1,
+          priority: 2,
           preparationMinutes: 5,
           groupName: "Editable group",
           firstWaveTime: "08:30"
@@ -547,6 +547,7 @@ test("buildBackendProjectJson saves composite task items as mission references",
   };
 
   const projectJson = buildBackendProjectJson(scenario, { id: "sync" });
+  const composite = projectJson.missionProfile.compositeTasks[0];
   const syncedItem = projectJson.missionProfile.compositeTasks[0].taskItems[0];
 
   assert.equal(syncedItem.basicMissionId, "basic-alpha");
@@ -555,6 +556,9 @@ test("buildBackendProjectJson saves composite task items as mission references",
   assert.equal("taskDurationMinutes" in syncedItem, false);
   assert.equal("equipmentQuantity" in syncedItem, false);
   assert.equal("minRequiredSystems" in syncedItem, false);
+  assert.equal("priority" in syncedItem, false);
+  assert.equal(composite.priority, 2);
+  assert.equal(projectJson.basicMissions[0].minRequiredSorties, 1);
   assert.equal("preparationMinutes" in syncedItem, false);
   assert.equal(syncedItem.groupName, "Editable group");
   assert.equal(syncedItem.firstWaveTime, "08:30");

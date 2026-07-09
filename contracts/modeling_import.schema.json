@@ -224,7 +224,33 @@
         "basicMissions": {
           "type": "array",
           "minItems": 1,
-          "items": { "type": "object", "required": ["id"] }
+          "items": {
+            "type": "object",
+            "required": ["id"],
+            "not": { "required": ["priority"] }
+          }
+        },
+        "compositeTasks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["priority"],
+            "properties": {
+              "priority": { "type": "integer", "minimum": 1 },
+              "taskItems": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "not": {
+                    "anyOf": [
+                      { "required": ["priority"] },
+                      { "required": ["minRequiredSystems"] }
+                    ]
+                  }
+                }
+              }
+            }
+          }
         }
       }
     },

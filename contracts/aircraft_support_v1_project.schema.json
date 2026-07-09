@@ -101,6 +101,7 @@
       "type": "object",
       "additionalProperties": true,
       "properties": {
+        "priority": { "type": "integer", "minimum": 1 },
         "taskItems": { "type": "array", "items": { "$ref": "#/$defs/compositeTaskItem" } }
       },
       "not": { "$ref": "#/$defs/pollutionKeys" }
@@ -157,7 +158,10 @@
         "requiredEquipmentQuantity": { "type": "integer", "minimum": 0 },
         "missionPhases": { "type": "array", "items": { "$ref": "#/$defs/openModelObject" } }
       },
-      "not": { "$ref": "#/$defs/pollutionKeys" }
+      "allOf": [
+        { "not": { "$ref": "#/$defs/pollutionKeys" } },
+        { "not": { "required": ["priority"] } }
+      ]
     },
     "combatUnit": {
       "type": "object",

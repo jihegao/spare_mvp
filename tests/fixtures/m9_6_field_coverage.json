@@ -361,12 +361,6 @@
       "target": "M9.6 platform case package"
     },
     {
-      "field_path": "objects.missionProfiles[].basicMissions[].priority",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
-      "status": "ignored",
-      "target": "M9.6 platform case package"
-    },
-    {
       "field_path": "objects.missionProfiles[].basicMissions[].returnRatio",
       "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
@@ -535,6 +529,12 @@
       "target": "M9.6 platform case package"
     },
     {
+      "field_path": "objects.missionProfiles[].compositeTasks[].priority",
+      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
+      "status": "ignored",
+      "target": "M9.6 platform case package"
+    },
+    {
       "field_path": "objects.missionProfiles[].compositeTasks[].taskItems[].basicMissionId",
       "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
@@ -578,12 +578,6 @@
     },
     {
       "field_path": "objects.missionProfiles[].compositeTasks[].taskItems[].intervalHours",
-      "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
-      "status": "ignored",
-      "target": "M9.6 platform case package"
-    },
-    {
-      "field_path": "objects.missionProfiles[].compositeTasks[].taskItems[].priority",
       "rationale": "The field is preserved in the Project and golden fixtures, but the current aircraft_support_v1 formal runtime does not consume it.",
       "status": "ignored",
       "target": "M9.6 platform case package"
@@ -1630,8 +1624,8 @@
     "defaulted": 0,
     "derived": 9,
     "governance_only": 20,
-    "ignored": 203,
-    "total_fields": 270,
+    "ignored": 202,
+    "total_fields": 269,
     "unsupported": 0
   }
 }

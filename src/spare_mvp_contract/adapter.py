@@ -407,7 +407,9 @@ class SimulationAdapter:
         initial_ready = aircraft_summary["initial_ready"]
         support_network_nodes = self._aircraft_support_v1_support_nodes(project)
         support_node_aliases = self._support_node_reference_aliases(project)
-        basic_missions = self._basic_missions(project)
+        basic_missions = copy.deepcopy(self._basic_missions(project))
+        composite_tasks = copy.deepcopy(self._dict_list(mission_profile.get("compositeTasks")))
+        self._normalize_mission_task_field_ownership(basic_missions, composite_tasks)
 
         inputs = {
             "schema_version": "aircraft-support-v1-input-v0",
@@ -421,8 +423,8 @@ class SimulationAdapter:
                 "profile_id": str(mission_profile.get("profileId") or mission_profile.get("id") or "mission-profile"),
                 "name": str(mission_profile.get("name") or "mission profile"),
                 "duration_minutes": duration_minutes,
-                "basic_missions": copy.deepcopy(basic_missions),
-                "composite_tasks": copy.deepcopy(self._dict_list(mission_profile.get("compositeTasks"))),
+                "basic_missions": basic_missions,
+                "composite_tasks": composite_tasks,
                 "periodic_tasks": copy.deepcopy(self._dict_list(mission_profile.get("periodicTasks"))),
                 "mission_phases": self._aircraft_support_v1_mission_phases(project, basic_missions),
                 "airports": self._runtime_airports(project.get("airports")),
@@ -3563,6 +3565,39 @@ class SimulationAdapter:
 
     def _basic_missions(self, project: dict[str, Any]) -> list[dict[str, Any]]:
         return self._dict_list(project.get("basicMissions"))
+
+    def _normalize_mission_task_field_ownership(
+        self,
+        basic_missions: list[dict[str, Any]],
+        composite_tasks: list[dict[str, Any]],
+    ) -> None:
+        basic_by_reference: dict[str, dict[str, Any]] = {}
+        for basic in basic_missions:
+            basic.pop("priority", None)
+            for value in (basic.get("id"), basic.get("missionId"), basic.get("taskNo"), basic.get("name"), basic.get("basicTaskName")):
+                reference = str(value or "").strip()
+                if reference:
+                    basic_by_reference[reference] = basic
+        for composite in composite_tasks:
+            task_items = self._dict_list(composite.get("taskItems"))
+            inherited_priority = next(
+                (
+                    self._positive_int(item.get("priority"), 0)
+                    for item in task_items
+                    if self._positive_int(item.get("priority"), 0) > 0
+                ),
+                1,
+            )
+            composite["priority"] = self._positive_int(composite.get("priority"), inherited_priority)
+            for item in task_items:
+                minimum = self._positive_int(item.get("minRequiredSystems"), 0)
+                basic = basic_by_reference.get(str(item.get("basicMissionId") or "").strip()) or basic_by_reference.get(str(item.get("basicTaskName") or "").strip())
+                if minimum and basic and not self._positive_int(basic.get("minRequiredSorties"), 0):
+                    basic["minRequiredSorties"] = minimum
+                item.pop("priority", None)
+                item.pop("minRequiredSystems", None)
+                item.pop("equipmentQuantity", None)
+                item.pop("requiredEquipmentQuantity", None)
 
     def _aircraft_support_v1_mission_phases(
         self,
