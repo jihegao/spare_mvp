@@ -12,3 +12,4 @@ runs/*
 .superpowers/
 .playwright-cli/
 .agent-screenshots/
+scripts/start-system.bat

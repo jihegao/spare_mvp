@@ -8336,7 +8336,7 @@ function updateBasicActivityJobField(key, fieldName, value) {
   const jobs = supportActivityJobs(activity).slice();
   if (!activity || !jobs[jobIndex] || !fieldName) return;
   if (fieldName === "scope") {
-    if (moveCorrectiveBasicActivityJobToScope(activity, jobIndex, value)) {
+    if (moveBasicActivityJobToScope(activity, jobIndex, value)) {
       updatePreviewResultsThroughApiClient();
       return;
     }
@@ -8382,14 +8382,8 @@ function updateBasicActivityJobField(key, fieldName, value) {
   updatePreviewResultsThroughApiClient();
 }
 
-function moveCorrectiveBasicActivityJobToScope(activity, jobIndex, value) {
-  if (!isCorrectiveMaintenanceActivity(activity)) return false;
-  const component = correctiveComponentForBasicActivityScope(value);
-  if (!component) return false;
-  const equipmentId = correctiveComponentActivityEquipmentId(component);
-  if (!equipmentId) return false;
-  if (String(activity.equipmentId || "") === equipmentId) return false;
-  const targetActivity = ensureCorrectiveMaintenanceActivityForComponent(component, { copyTemplateJobs: false });
+function moveBasicActivityJobToScope(activity, jobIndex, value) {
+  const targetActivity = basicActivityScopeHostActivity(activity, value);
   if (!targetActivity || targetActivity === activity) return false;
   const sourceJobs = supportActivityJobs(activity).slice();
   const [job] = sourceJobs.splice(jobIndex, 1);
@@ -8403,6 +8397,53 @@ function moveCorrectiveBasicActivityJobToScope(activity, jobIndex, value) {
     selectedBasicActivityKeys = new Set([`${targetActivityIndex}:${targetJobs.length - 1}`]);
   }
   return true;
+}
+
+function basicActivityScopeHostActivity(activity, value) {
+  if (isCorrectiveMaintenanceActivity(activity)) {
+    const component = correctiveComponentForBasicActivityScope(value);
+    if (!component) return null;
+    const equipmentId = correctiveComponentActivityEquipmentId(component);
+    if (!equipmentId || String(activity.equipmentId || "") === equipmentId) return null;
+    return ensureCorrectiveMaintenanceActivityForComponent(component, { copyTemplateJobs: false });
+  }
+  const text = String(value || "");
+  if (!text.startsWith("aircraft:")) return null;
+  const aircraftModel = text.replace(/^aircraft:/, "").trim();
+  if (!aircraftModel || String(supportActivityAircraftModel(activity) || "") === aircraftModel) return null;
+  if (isPreventiveMaintenanceActivity(activity)) {
+    return ensureBasicActivityPreventiveScopeHostActivity(aircraftModel);
+  }
+  if (isOperationsSupportActivity(activity)) {
+    return ensureBasicActivityOperationsScopeHostActivity(activity, aircraftModel);
+  }
+  return null;
+}
+
+function ensureBasicActivityOperationsScopeHostActivity(sourceActivity, aircraftModel) {
+  const planType = normalizeOperationsSupportPlanType(sourceActivity?.planType);
+  const existing = operationsSupportPhaseActivity({ aircraftModel }, planType);
+  if (existing) return existing;
+  const activities = ensureSupportActivities();
+  const config = operationsSupportPlanTypeConfigs().find((item) => item.planType === planType) || operationsSupportPlanTypeConfigs()[0];
+  const activity = createOperationsSupportActivityForAircraftModel(aircraftModel, config);
+  setSupportActivityJobs(activity, []);
+  activities.push(activity);
+  selectedOperationsSupportAircraftModel = aircraftModel;
+  selectedOperationsSupportActivityKey = `supportActivity:${activities.indexOf(activity)}`;
+  return activity;
+}
+
+function ensureBasicActivityPreventiveScopeHostActivity(aircraftModel) {
+  const existing = preventiveMaintenanceActivityEntries(aircraftModel)[0]?.activity;
+  if (existing) return existing;
+  const activities = ensureSupportActivities();
+  const activity = createPreventiveMaintenanceActivityForAircraftModel(aircraftModel, preventiveMaintenanceActivityEntries().length + 1);
+  setSupportActivityJobs(activity, []);
+  activities.push(activity);
+  selectedPreventiveMaintenanceAircraftModel = aircraftModel;
+  selectedPreventiveMaintenanceActivityKey = `supportActivity:${activities.indexOf(activity)}`;
+  return activity;
 }
 
 function updateBasicActivityDraftField(fieldName, value) {

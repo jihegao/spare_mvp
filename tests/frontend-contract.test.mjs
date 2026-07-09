@@ -2261,14 +2261,14 @@ test("support activity render paths do not mutate supportActivities implicitly",
   assert.doesNotMatch(correctiveSource, /scenario\.supportActivities\.push/);
 });
 
-test("basic corrective activity scope edits move only the edited job to the target component", async () => {
+test("basic support activity scope edits move only the edited job to the target scope", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const updateSource = appSource.slice(
     appSource.indexOf("function updateBasicActivityJobField"),
     appSource.indexOf("function updateBasicActivityResourceField")
   );
   const moveSource = appSource.slice(
-    appSource.indexOf("function moveCorrectiveBasicActivityJobToScope"),
+    appSource.indexOf("function moveBasicActivityJobToScope"),
     appSource.indexOf("function updateBasicActivityResourceField")
   );
   const ensureSource = appSource.slice(
@@ -2276,10 +2276,13 @@ test("basic corrective activity scope edits move only the edited job to the targ
     appSource.indexOf("function nextCorrectiveMaintenanceActivityId")
   );
 
-  assert.match(updateSource, /moveCorrectiveBasicActivityJobToScope\(activity, jobIndex, value\)/);
+  assert.match(updateSource, /moveBasicActivityJobToScope\(activity, jobIndex, value\)/);
+  assert.match(moveSource, /basicActivityScopeHostActivity\(activity, value\)/);
   assert.match(moveSource, /isCorrectiveMaintenanceActivity\(activity\)/);
   assert.match(moveSource, /correctiveComponentForBasicActivityScope\(value\)/);
   assert.match(moveSource, /ensureCorrectiveMaintenanceActivityForComponent\(component, \{ copyTemplateJobs: false \}\)/);
+  assert.match(moveSource, /ensureBasicActivityOperationsScopeHostActivity\(activity, aircraftModel\)/);
+  assert.match(moveSource, /ensureBasicActivityPreventiveScopeHostActivity\(aircraftModel\)/);
   assert.match(moveSource, /sourceJobs\.splice\(jobIndex, 1\)/);
   assert.match(moveSource, /targetJobs\.push\(job\)/);
   assert.match(ensureSource, /copyTemplateJobs = true/);

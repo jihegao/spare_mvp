@@ -1523,6 +1523,53 @@ test("basic support activity UI reads and writes top-level job table references"
   }
 });
 
+test("basic support activity scope edits only affect the selected activity row", async () => {
+  const projectJson = createRuntimeProjectJson({
+    equipment: { wholeMachineModels: ["J-15", "J-35"] }
+  });
+  appendRuntimeSupportActivityJob(projectJson, 0, {
+    activityCode: "BA-002",
+    workName: "第二工作项目",
+    predecessors: [],
+    durationMinutes: 15
+  });
+  const runtime = await setupRuntimeApp({ projectJson });
+
+  try {
+    await runtime.click("[data-enter-workbench]", { projectId: "project-runtime" });
+    await runtime.setHash("feature=spare-planning-basic-support-activity");
+    await waitForRuntimeHtml(runtime, /第二工作项目/, "expected second basic support activity row to load");
+
+    await runtime.click("[data-basic-activity-edit]", { basicActivityEdit: "0:1" });
+    await runtime.change(
+      "[data-basic-activity-field]",
+      { basicActivityKey: "0:1", basicActivityField: "scope" },
+      { value: "aircraft:J-35" }
+    );
+    await runtime.click("[data-project-draft-save]");
+
+    const savedProject = await waitForProjectSave(runtime, (body) => (
+      body.supportActivities?.some((activity) => (
+        Array.isArray(activity.activityCodes)
+        && activity.activityCodes.includes("BA-001")
+        && String(activity.aircraftModel || "") === "J-15"
+      ))
+      && body.supportActivities?.some((activity) => (
+        Array.isArray(activity.activityCodes)
+        && activity.activityCodes.includes("BA-002")
+        && String(activity.aircraftModel || "") === "J-35"
+      ))
+    ), "expected scope edit to move only the selected basic support activity row");
+    const firstActivity = savedProject.supportActivities.find((activity) => activity.activityCodes?.includes("BA-001"));
+    const secondActivity = savedProject.supportActivities.find((activity) => activity.activityCodes?.includes("BA-002"));
+    assert.notEqual(firstActivity, secondActivity);
+    assert.deepEqual(firstActivity.activityCodes, ["BA-001"]);
+    assert.deepEqual(secondActivity.activityCodes, ["BA-002"]);
+  } finally {
+    runtime.restore();
+  }
+});
+
 test("basic support activity library filters rows by selected activity type", async () => {
   const projectJson = createRuntimeProjectJson();
   projectJson.supportActivities.push(
