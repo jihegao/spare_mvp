@@ -4210,7 +4210,10 @@ test("Solara visual panels subscribe to Mesa controller updates", async () => {
   assert.match(solaraSource, /parse_qs\(router\.search/);
   assert.match(solaraSource, /def _safe_model_inputs/);
   assert.match(solaraSource, /_safe_model_inputs\(project_id\)/);
-  assert.match(solaraSource, /控制面板/);
+  assert.match(solaraSource, /运行控制/);
+  assert.match(solaraSource, /VISUAL_TAB_LABELS = \["装备状态", "事件日志"\]/);
+  assert.match(solaraSource, /solara\.v\.Tabs/);
+  assert.match(solaraSource, /solara\.v\.Tab/);
   assert.doesNotMatch(solaraSource, /SolaraViz\(/);
   assert.doesNotMatch(solaraSource, /except Exception as exc:\s*fallback_reason/s);
   assert.doesNotMatch(solaraSource, /try:\s*\n\s*inputs,\s*_source\s*=\s*solara\.use_memo/s);
@@ -4221,8 +4224,10 @@ test("Solara visual panels subscribe to Mesa controller updates", async () => {
     const nextPanel = solaraSource.indexOf("@solara.component", start + 1);
     const panelSource = solaraSource.slice(start, nextPanel > start ? nextPanel : undefined);
     assert.match(panelSource, /update_counter\.get\(\)/);
-    assert.match(solaraSource, new RegExp(`\\(${panelName},\\s*[01]\\)`));
   }
+  assert.match(solaraSource, /MetricsPanel\(model_state\.value\)/);
+  assert.match(solaraSource, /AircraftPanel\(model\)/);
+  assert.match(solaraSource, /EventPanel\(model\)/);
   assert.doesNotMatch(solaraSource, /\(SourcePanel,\s*[01]\)/);
 });
 
