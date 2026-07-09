@@ -75,6 +75,23 @@ class ProjectJsonExporterTest(unittest.TestCase):
         self.assertNotIn("priority", exported_item)
         self.assertNotIn("minRequiredSystems", exported_item)
 
+    def test_export_preserves_support_node_airport_association(self) -> None:
+        project = self._polluted_project()
+        project["supportNodes"][0].update({"name": "历史基层", "airport": "Airport A"})
+        project["supportOrganization"]["tree"]["children"] = [{
+            "id": "org-line",
+            "name": "基层",
+            "supportNodeId": "node-a",
+        }]
+
+        exported = ProjectJsonExporter(target="aircraft_support_v1").export(project)
+
+        self.assertEqual(exported["supportNodes"], [{
+            "id": "support-node-1",
+            "name": "基层",
+            "airport": "Airport A",
+        }])
+
     def _polluted_project(self) -> dict:
         return {
             "schema_version": "project-v0",

@@ -1049,6 +1049,31 @@ test("buildBackendProjectJson strips legacy support node resource fields and dra
   ]);
 });
 
+test("buildBackendProjectJson retains organization-managed airport associations", () => {
+  const projectJson = buildBackendProjectJson({
+    scenarioId: "support-node-airport-association",
+    supportOrganization: {
+      tree: {
+        id: "support-org-root",
+        name: "保障组织",
+        children: [
+          { id: "org-relay", name: "中继", supportNodeId: "relay" },
+          { id: "org-line", name: "基层", supportNodeId: "line" }
+        ]
+      }
+    },
+    supportNodes: [
+      { id: "relay", name: "历史中继", airport: "前出基地" },
+      { id: "line", name: "历史基层", airport: "大队" }
+    ]
+  }, { id: "support-node-airport-association" });
+
+  assert.deepEqual(projectJson.supportNodes, [
+    { id: "support-node-1", name: "中继", airport: "前出基地" },
+    { id: "support-node-2", name: "基层", airport: "大队" }
+  ]);
+});
+
 test("buildBackendProjectJson migrates legacy activity transport strategies to top-level policies", () => {
   const scenario = {
     scenarioId: "legacy-logistics-strategy",

@@ -472,8 +472,10 @@ function legacyTransportPoliciesFromSupportActivities(projectJson, nameByRef = n
 function normalizeSupportModelTables(projectJson) {
   if (!projectJson || typeof projectJson !== "object" || Array.isArray(projectJson)) return;
   const legacyNameByRef = legacySupportNodeNameByRef(projectJson.supportNodes);
+  const nodeScopeByRef = supportNodeScopeByRef(projectJson.supportNodes);
   const organization = normalizeSupportOrganization(projectJson.supportOrganization, legacyNameByRef);
   const nameByRef = new Map([...legacyNameByRef, ...organization.nameByRef]);
+  const nodeScopeByName = supportNodeScopeByName(nodeScopeByRef, nameByRef);
   normalizeSupportResourceNodeRefs(projectJson, nameByRef);
   const supportNodeNames = organization.supportNodeNames.length
     ? organization.supportNodeNames
@@ -482,10 +484,39 @@ function normalizeSupportModelTables(projectJson) {
   normalizeSupportResourceSpareRows(projectJson, supportNodeNames);
   projectJson.supportNodes = supportNodeNames.map((name, index) => ({
     id: `support-node-${index + 1}`,
-    name
+    name,
+    ...(nodeScopeByName.get(name) || {})
   }));
   normalizeTopLevelTransportPolicies(projectJson, nameByRef);
   normalizeSupportNodeRefsInProject(projectJson, nameByRef);
+}
+
+function supportNodeScopeByRef(supportNodes) {
+  const scopeByRef = new Map();
+  if (!Array.isArray(supportNodes)) return scopeByRef;
+  for (const node of supportNodes) {
+    if (!node || typeof node !== "object" || Array.isArray(node)) continue;
+    const scope = {};
+    for (const field of ["airport", "airportId", "baseAirportId"]) {
+      const value = cleanText(node[field]);
+      if (value) scope[field] = value;
+    }
+    if (!Object.keys(scope).length) continue;
+    for (const ref of [node.id, node.name, node.supportNodeName, node.organizationNodeId]) {
+      const key = cleanText(ref);
+      if (key) scopeByRef.set(key, scope);
+    }
+  }
+  return scopeByRef;
+}
+
+function supportNodeScopeByName(scopeByRef, nameByRef) {
+  const scopeByName = new Map();
+  for (const [ref, scope] of scopeByRef) {
+    const name = cleanText(nameByRef.get(ref) || ref);
+    if (name) scopeByName.set(name, scope);
+  }
+  return scopeByName;
 }
 
 function legacySupportNodeNameByRef(supportNodes) {

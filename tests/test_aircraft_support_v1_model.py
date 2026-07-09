@@ -175,6 +175,26 @@ def _canonical_import_inputs() -> dict:
 
 
 class AircraftSupportV1ModelTest(unittest.TestCase):
+    def test_blank_activity_resource_uses_aircraft_airport_support_node(self) -> None:
+        inputs = _minimal_inputs()
+        inputs["aircraft"] = {
+            "fleet_count": 1,
+            "initial_ready": 1,
+            "models": ["J-15"],
+            "assets": [{"tail_number": "AC-001", "model": "J-15", "airportId": "SQUADRON-BASE"}],
+        }
+        inputs["support_network"]["nodes"] = [
+            {"id": "relay", "name": "中继", "airport": "前出基地", "personnel_capacity": 1, "equipment_capacity": 1, "inventory": {}},
+            {"id": "line", "name": "基层", "airport_id": "squadron-base", "personnel_capacity": 1, "equipment_capacity": 1, "inventory": {}},
+        ]
+        activity = inputs["support_activities"]["activities"][0]
+        activity.pop("resource_id")
+        model = AircraftSupportV1Model(inputs)
+
+        model._create_job(model.aircraft[0], activity, kind="preflight")
+
+        self.assertEqual(model.jobs[-1].resource_node_id, "line")
+
     def test_composite_priority_overrides_legacy_child_and_basic_priority(self) -> None:
         inputs = _preflight_timing_inputs()
         basic = inputs["mission_profile"]["basic_missions"][0]

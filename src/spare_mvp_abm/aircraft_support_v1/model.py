@@ -54,6 +54,8 @@ class AircraftState:
     x: int
     y: int
     model: str = ""
+    airport: str = ""
+    airport_id: str = ""
     current_mission_id: str | None = None
     return_time: int | None = None
     failed_component_id: str | None = None
@@ -497,6 +499,8 @@ class AircraftSupportV1Model:
                         tail_number=tail_number,
                         aircraft_type=aircraft_type,
                         model=str(item.get("model") or aircraft_type),
+                        airport=str(item.get("airport") or ""),
+                        airport_id=str(item.get("airport_id") or item.get("airportId") or item.get("baseAirportId") or ""),
                         state=state,
                         x=index % 6,
                         y=index // 6,
@@ -608,6 +612,8 @@ class AircraftSupportV1Model:
             nodes[node_id] = {
                 "id": node_id,
                 "name": str(item.get("name") or node_id),
+                "airport": str(item.get("airport") or ""),
+                "airport_id": str(item.get("airport_id") or item.get("airportId") or item.get("baseAirportId") or ""),
                 "personnel_capacity": max(1, int(item.get("personnel_capacity", 1))),
                 "equipment_capacity": max(1, int(item.get("equipment_capacity", 1))),
                 "personnel_in_use": 0,
@@ -624,6 +630,8 @@ class AircraftSupportV1Model:
             nodes["support-node"] = {
                 "id": "support-node",
                 "name": "support node",
+                "airport": "",
+                "airport_id": "",
                 "personnel_capacity": 1,
                 "equipment_capacity": 1,
                 "personnel_in_use": 0,
@@ -1333,11 +1341,24 @@ class AircraftSupportV1Model:
                 activity_name=str(activity.get("name") or activity.get("activity_name") or kind),
                 tasks=tasks,
                 priority=max(1, int(activity.get("priority") or 1)),
-                resource_node_id=str(activity.get("resource_id") or next(iter(self.nodes))),
+                resource_node_id=str(activity.get("resource_id") or self._default_resource_node_id(aircraft)),
                 mission_id=mission_id,
                 component_id=str(component.get("id")) if component else None,
             )
         )
+
+    def _default_resource_node_id(self, aircraft: AircraftState) -> str:
+        """Choose the aircraft's explicitly associated support node before list-order fallback."""
+        aircraft_scope = {value.strip().casefold() for value in (aircraft.airport, aircraft.airport_id) if value and value.strip()}
+        if aircraft_scope:
+            for node_id, node in self.nodes.items():
+                node_scope = {
+                    str(node.get("airport") or "").strip().casefold(),
+                    str(node.get("airport_id") or "").strip().casefold(),
+                }
+                if aircraft_scope & (node_scope - {""}):
+                    return node_id
+        return next(iter(self.nodes))
 
     def _release_job_resources(self, job: JobState) -> None:
         task = job.current_task or {}
