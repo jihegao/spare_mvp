@@ -1712,7 +1712,9 @@ class SimulationAdapter:
 
         aggregate = self._aggregate_sample_metrics(samples)
         self._coerce_result_integer_metrics(aggregate)
-        aggregate["mission_success_probability"] = aggregate.get("sortie_completion_rate", 0)
+        aggregate["mission_success_probability"] = aggregate.get(
+            "mission_success_rate", aggregate.get("sortie_completion_rate", 0)
+        )
         base_artifact_id = f"monte_carlo_base-{run_id}"
         projections = self._aircraft_support_v1_analysis_projections(
             aggregate,
@@ -2121,7 +2123,9 @@ class SimulationAdapter:
                 "sortie_count": float(metrics.get("launched_sorties", 0) or 0),
             },
             "mission_state": {
-                "mission_success_rate": float(metrics.get("sortie_completion_rate", 0) or 0),
+                "mission_success_rate": float(
+                    metrics.get("mission_success_rate", metrics.get("sortie_completion_rate", 0)) or 0
+                ),
                 "sortie_rate": float(metrics.get("launched_sorties", 0) or 0) / planned_sorties,
                 "mean_launch_time": float(metrics.get("avg_departure_delay", 0) or 0),
                 "mean_recovery_time": float(metrics.get("avg_departure_delay", 0) or 0),
@@ -2899,7 +2903,9 @@ class SimulationAdapter:
                 "sample_count": len(samples),
                 "planned_sorties": max(1.0, float(metrics.get("planned_sorties", 1) or 1)),
                 "launched_sorties": max(0.0, float(metrics.get("launched_sorties", 0) or 0)),
-                "successful_sorties": max(0.0, float(metrics.get("completed_sorties", 0) or 0)),
+                "successful_sorties": max(0.0, float(metrics.get("successful_mission_waves", 0) or 0)),
+                "planned_waves": max(1.0, float(metrics.get("planned_mission_waves", 1) or 1)),
+                "successful_waves": max(0.0, float(metrics.get("successful_mission_waves", 0) or 0)),
                 "mean_mission_success_rate": mission_success,
                 "mission_success_probability": mission_success,
                 "mean_sortie_rate": sortie_rate,
@@ -2914,26 +2920,29 @@ class SimulationAdapter:
             wave = max(1, self._positive_int(getattr(mission, "wave_index", 1), 1))
             planned = max(1, self._positive_int(getattr(mission, "required_aircraft", 1), 1))
             assigned = len(getattr(mission, "assigned_tail_numbers", []) or [])
-            failed = len(set(getattr(mission, "failed_tail_numbers", []) or []))
-            status = str(getattr(mission, "status", "") or "")
-            successful = max(0, planned - failed) if status == "completed" else 0
+            evaluated = bool(getattr(mission, "success_evaluated", False))
+            successful = int(bool(getattr(mission, "succeeded", False))) if evaluated else 0
             bucket = by_wave.setdefault(
                 (day, wave),
                 {
                     "planned_sorties": 0.0,
                     "launched_sorties": 0.0,
                     "successful_sorties": 0.0,
+                    "planned_waves": 0.0,
+                    "successful_waves": 0.0,
                 },
             )
             bucket["planned_sorties"] += planned
             bucket["launched_sorties"] += max(0, min(planned, assigned))
-            bucket["successful_sorties"] += max(0, min(planned, successful))
+            bucket["successful_sorties"] += successful
+            bucket["planned_waves"] += int(evaluated)
+            bucket["successful_waves"] += successful
         rows = []
         for sequence, (day, wave) in enumerate(sorted(by_wave), start=1):
             bucket = by_wave[(day, wave)]
-            planned = max(1.0, float(bucket["planned_sorties"]))
-            mission_success = self._clamp01(bucket["successful_sorties"] / planned)
-            sortie_rate = self._clamp01(bucket["launched_sorties"] / planned)
+            planned_waves = max(1.0, float(bucket["planned_waves"]))
+            mission_success = self._clamp01(bucket["successful_waves"] / planned_waves)
+            sortie_rate = self._clamp01(bucket["launched_sorties"] / max(1.0, bucket["planned_sorties"]))
             rows.append(
                 {
                     "sequence": sequence,
@@ -2944,6 +2953,8 @@ class SimulationAdapter:
                     "planned_sorties": bucket["planned_sorties"],
                     "launched_sorties": bucket["launched_sorties"],
                     "successful_sorties": bucket["successful_sorties"],
+                    "planned_waves": bucket["planned_waves"],
+                    "successful_waves": bucket["successful_waves"],
                     "mission_success_rate": mission_success,
                     "sortie_rate": sortie_rate,
                 }
@@ -2963,6 +2974,8 @@ class SimulationAdapter:
                         "planned_sorties": 0.0,
                         "launched_sorties": 0.0,
                         "successful_sorties": 0.0,
+                        "planned_waves": 0.0,
+                        "successful_waves": 0.0,
                         "mission_success_rate": 0.0,
                         "sortie_rate": 0.0,
                     },
@@ -2974,6 +2987,8 @@ class SimulationAdapter:
                     row.get("successful_sorties", row.get("successfulSorties")),
                     0.0,
                 )
+                bucket["planned_waves"] += self._float_value(row.get("planned_waves", row.get("plannedWaves")), 0.0)
+                bucket["successful_waves"] += self._float_value(row.get("successful_waves", row.get("successfulWaves")), 0.0)
                 bucket["mission_success_rate"] += self._clamp01(
                     row.get("mission_success_rate", row.get("missionSuccessRate", row.get("mean_mission_success_rate")))
                 )
@@ -2982,8 +2997,8 @@ class SimulationAdapter:
         for sequence, (day, wave) in enumerate(sorted(by_wave), start=1):
             bucket = by_wave[(day, wave)]
             sample_count = max(1.0, bucket["sample_count"])
-            if bucket["planned_sorties"] > 0:
-                mission_success = self._clamp01(bucket["successful_sorties"] / bucket["planned_sorties"])
+            if bucket["planned_waves"] > 0:
+                mission_success = self._clamp01(bucket["successful_waves"] / bucket["planned_waves"])
                 sortie_rate = self._clamp01(bucket["launched_sorties"] / bucket["planned_sorties"])
             else:
                 mission_success = self._clamp01(bucket["mission_success_rate"] / sample_count)
@@ -2999,6 +3014,8 @@ class SimulationAdapter:
                     "planned_sorties": bucket["planned_sorties"] / sample_count,
                     "launched_sorties": bucket["launched_sorties"] / sample_count,
                     "successful_sorties": bucket["successful_sorties"] / sample_count,
+                    "planned_waves": bucket["planned_waves"] / sample_count,
+                    "successful_waves": bucket["successful_waves"] / sample_count,
                     "mean_mission_success_rate": mission_success,
                     "mission_success_probability": mission_success,
                     "mean_sortie_rate": sortie_rate,

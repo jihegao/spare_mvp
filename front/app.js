@@ -10285,6 +10285,11 @@ async function handleEnterWorkbench(projectId) {
   backendExperimentPlansLoaded = false;
   backendExperimentPlansLoadInFlight = false;
   experimentPlanListStatus = "仿真实验方案列表尚未加载";
+  selectedExperimentPlanKeys = new Set();
+  experimentPlan = null;
+  liteMesaMonteCarloResult = null;
+  liteMesaAnalysisResults = {};
+  liteMesaMonteCarloStatus = "项目已切换，请重新运行 Mesa 分析。";
   location.hash = `feature=${selectedFeatureId}`;
   projectDraftHydrateStatus = "正在读取 Project draft";
   await hydrateCurrentProjectDraftFromApi();
@@ -15989,8 +15994,8 @@ function renderLiteMesaAnalysisSessionBody(definition, result) {
       <details class="lite-mesa-collapsible-table">
         <summary>样本明细（${rows.length}）</summary>
         <div class="table-wrap"><table class="lite-mesa-stat-table">
-        <thead><tr><th>任务波次</th><th>样本数</th><th>平均任务成功率</th><th>平均出动架次率</th><th>平均计划架次</th></tr></thead>
-        <tbody>${rows.map((row) => `<tr><td>${htmlEscape(row.waveLabel || row.waveKey || `波次${row.sequence ?? "-"}`)}</td><td>${htmlEscape(row.sampleCount ?? "-")}</td><td>${fixed(row.meanMissionSuccessRate ?? row.missionSuccessRate, 3)}</td><td>${formatLiteMesaAnalysisMetricValue("出动架次率", row.meanSortieRate ?? row.sortieRate)}</td><td>${fixed(row.plannedSorties, 1)}</td></tr>`).join("")}</tbody>
+        <thead><tr><th>任务波次</th><th>样本数</th><th>平均任务成功率</th><th>平均出动架次率</th><th>平均应执行波次</th><th>平均成功波次</th></tr></thead>
+        <tbody>${rows.map((row) => `<tr><td>${htmlEscape(row.waveLabel || row.waveKey || `波次${row.sequence ?? "-"}`)}</td><td>${htmlEscape(row.sampleCount ?? "-")}</td><td>${fixed(row.meanMissionSuccessRate ?? row.missionSuccessRate, 3)}</td><td>${formatLiteMesaAnalysisMetricValue("出动架次率", row.meanSortieRate ?? row.sortieRate)}</td><td>${fixed(row.plannedWaves ?? row.planned_waves, 1)}</td><td>${fixed(row.successfulWaves ?? row.successful_waves, 1)}</td></tr>`).join("")}</tbody>
         </table></div>
       </details>
     `;

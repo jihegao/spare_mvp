@@ -78,8 +78,10 @@ class MissionState:
     preparation_start: int
     duration_minutes: int
     required_aircraft: int
+    min_required_aircraft: int
     priority: int
     cancel_minutes: int
+    success_point: float = 1.0
     status: str = "scheduled"
     actual_start: int | None = None
     return_time: int | None = None
@@ -98,6 +100,16 @@ class MissionState:
     wave_index: int = 1
     day_index: int = 1
     failed_tail_numbers: list[str] = field(default_factory=list)
+    success_evaluated: bool = False
+    success_member_count: int = 0
+    success_at_minute: int | None = None
+    succeeded: bool = False
+
+    @property
+    def success_minute(self) -> int:
+        """Task-success checkpoint, anchored to the actual task start when launched."""
+        start = self.actual_start if self.actual_start is not None else self.planned_start
+        return start + math.ceil(self.duration_minutes * self.success_point)
 
 
 @dataclass
@@ -216,6 +228,8 @@ class AircraftSupportV1Model:
         while self.running:
             self.step()
             should_stop = not self.running
+            if should_stop:
+                self._finalize_unresolved_mission_successes()
             if not self.disable_visualization_frames and (
                 self.minute % self.sample_every_minutes == 0 or self.minute == self.duration_minutes or should_stop
             ):
@@ -226,6 +240,7 @@ class AircraftSupportV1Model:
                     )
             if should_stop:
                 break
+        self._finalize_unresolved_mission_successes()
         return {"metrics": self.snapshot(), "frames": frames, "events": copy.deepcopy(self.event_log)}
 
     def step(self) -> bool:
@@ -244,6 +259,7 @@ class AircraftSupportV1Model:
             self._create_due_preflight_jobs()
             self._start_waiting_jobs()
             self._dispatch_due_missions()
+            self._evaluate_mission_success_points()
             self._record_daily_readiness_sample_if_due()
             stop_reason, stop_conditions = self._stop_decision()
             should_stop = bool(stop_reason)
@@ -275,6 +291,9 @@ class AircraftSupportV1Model:
         aircraft_count = max(1, len(self.aircraft))
         simulation_days = max(1.0, self.duration_minutes / 1440.0)
         sortie_completion_rate = min(1.0, self.completed_sorties / planned_sorties)
+        executable_missions = [mission for mission in self.missions if mission.planned_start <= self.minute]
+        successful_mission_waves = sum(1 for mission in executable_missions if mission.succeeded)
+        mission_success_rate = successful_mission_waves / max(1, len(executable_missions))
         sortie_rate = max(0.0, self.launched_sorties / aircraft_count / simulation_days)
         ready_rate = (
             sum(float(sample["ready_rate"]) for sample in self.daily_readiness_samples)
@@ -286,7 +305,7 @@ class AircraftSupportV1Model:
         mean_transport_delay = (self.total_transport_delay / 60.0) / max(1, self.transport_replenishment_events)
         return {
             "sortie_completion_rate": sortie_completion_rate,
-            "mission_success_rate": sortie_completion_rate,
+            "mission_success_rate": mission_success_rate,
             "sortie_rate": sortie_rate,
             "ready_rate": ready_rate,
             "aircraft_count": aircraft_count,
@@ -309,6 +328,8 @@ class AircraftSupportV1Model:
             "postflight_count": sum(1 for aircraft in self.aircraft if aircraft.postflight_required),
             "preventive_count": sum(1 for aircraft in self.aircraft if aircraft.preventive_due),
             "planned_sorties": planned_sorties,
+            "planned_mission_waves": len(executable_missions),
+            "successful_mission_waves": successful_mission_waves,
             "launched_sorties": self.launched_sorties,
             "completed_sorties": self.completed_sorties,
             "failed_sorties": self.failed_sorties,
@@ -732,8 +753,10 @@ class AircraftSupportV1Model:
                                 preparation_start=max(0, planned_start - preflight_notice),
                                 duration_minutes=max(1, duration),
                                 required_aircraft=max(1, int(item.get("equipmentQuantity") or basic.get("equipmentQuantity") or 1)),
+                                min_required_aircraft=max(1, int(basic.get("minRequiredSorties") or basic.get("equipmentQuantity") or 1)),
                                 priority=max(1, int(composite.get("priority") or 1)),
                                 cancel_minutes=max(0, int(basic.get("cancelMinutes") or 20)),
+                                success_point=_success_point(basic.get("successPoint")),
                                 task_category="periodic" if periodic_context else "composite",
                                 periodic_task_id=str(periodic_context.get("id") or ""),
                                 periodic_task_name=str(periodic_context.get("name") or ""),
@@ -759,8 +782,10 @@ class AircraftSupportV1Model:
                     preparation_start=max(0, planned_start - preflight_notice),
                     duration_minutes=max(1, int(basic.get("taskDurationMinutes") or 120)),
                     required_aircraft=max(1, int(basic.get("equipmentQuantity") or 1)),
+                    min_required_aircraft=max(1, int(basic.get("minRequiredSorties") or basic.get("equipmentQuantity") or 1)),
                     priority=1,
                     cancel_minutes=max(0, int(basic.get("cancelMinutes") or 20)),
+                    success_point=_success_point(basic.get("successPoint")),
                     task_category="basic",
                     basic_task_id=str(basic.get("id") or basic.get("missionId") or ""),
                     basic_task_name=str(basic.get("name") or "mission"),
@@ -941,7 +966,7 @@ class AircraftSupportV1Model:
 
     def _update_mission_failure_status(self, mission: MissionState) -> None:
         effective_aircraft = len(set(mission.assigned_tail_numbers) - set(mission.failed_tail_numbers))
-        if effective_aircraft < mission.required_aircraft and mission.status not in {"failed", "cancelled"}:
+        if effective_aircraft < mission.min_required_aircraft and mission.status not in {"failed", "cancelled"}:
             mission.status = "failed"
             mission.return_time = self.minute
             self._event("mission_failed_minimum_aircraft", f"{mission.mission_id} failed below required aircraft count")
@@ -1190,6 +1215,46 @@ class AircraftSupportV1Model:
             else:
                 mission.status = "delayed"
                 self.delayed_sorties += 1
+
+    def _evaluate_mission_success_points(self) -> None:
+        """Lock each task wave's outcome at its task-success checkpoint.
+
+        The checkpoint is part of the task timeline, not the postflight process.
+        Members that have already returned normally at a 100% checkpoint count as
+        available; members that suffered an in-flight failure do not.
+        """
+        for mission in self.missions:
+            if mission.success_evaluated or mission.success_minute > self.minute:
+                continue
+            failed_members = set(mission.failed_tail_numbers)
+            mission.success_member_count = sum(
+                1 for tail_number in mission.assigned_tail_numbers if tail_number not in failed_members
+            )
+            mission.success_at_minute = self.minute
+            mission.success_evaluated = True
+            mission.succeeded = mission.success_member_count >= mission.min_required_aircraft
+            outcome = "succeeded" if mission.succeeded else "failed"
+            self._event(
+                f"mission_success_point_{outcome}",
+                (
+                    f"{mission.mission_id} {outcome} at success point with "
+                    f"{mission.success_member_count}/{mission.min_required_aircraft} available members"
+                ),
+            )
+
+    def _finalize_unresolved_mission_successes(self) -> None:
+        """Fail waves that entered the executed time window without reaching success."""
+        for mission in self.missions:
+            if mission.success_evaluated or mission.planned_start > self.minute:
+                continue
+            mission.success_evaluated = True
+            mission.success_member_count = 0
+            mission.success_at_minute = self.minute
+            mission.succeeded = False
+            self._event(
+                "mission_success_point_failed",
+                f"{mission.mission_id} did not reach its success point in the simulation window",
+            )
 
     def _has_in_transit_spare(self, node_id: str, spare_type: str) -> bool:
         return any(
@@ -2107,6 +2172,12 @@ def _bounded_float(value: Any) -> float | None:
     except (TypeError, ValueError):
         return None
     return min(1.0, max(0.0, parsed))
+
+
+def _success_point(value: Any) -> float:
+    """Normalize the Project's 0..1 task-success point; task end is the fallback."""
+    normalized = _bounded_float(value)
+    return normalized if normalized is not None else 1.0
 
 
 def _failure_distribution_rate(distribution: dict[str, Any]) -> float | None:

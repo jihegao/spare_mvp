@@ -786,6 +786,10 @@ class SimulationAdapterTest(unittest.TestCase):
         self.assertEqual(run["mc_experiment_id"], "mc-aircraft-v1-contract")
         self.assertEqual(result["model_family"], "aircraft_support_v1")
         self.assertEqual(result["metrics"], second["result"]["metrics"])
+        self.assertEqual(
+            result["metrics"]["mission_success_probability"],
+            result["metrics"]["mission_success_rate"],
+        )
         self.assertEqual(base_payload["aggregate_metrics"], second_base_payload["aggregate_metrics"])
         self.assertEqual(
             kinds & {"sample_results", "aggregate_result", "monte_carlo_base", "visualization_state_series"},
@@ -815,6 +819,7 @@ class SimulationAdapterTest(unittest.TestCase):
                 0 <= row["mission_success_probability"] <= 1
                 and 0 <= row["mean_mission_success_rate"] <= 1
                 and 0 <= row["sortie_rate"] <= 1
+                and row["successful_waves"] <= row["planned_waves"]
                 for row in mission_series
             )
         )
@@ -855,13 +860,13 @@ class SimulationAdapterTest(unittest.TestCase):
             samples=[
                 {
                     "mission_wave_reliability": [
-                        {"day_index": 1, "wave_index": 1, "planned_sorties": 2, "launched_sorties": 2, "successful_sorties": 2, "mission_success_rate": 1.1, "sortie_rate": 1},
-                        {"day_index": 1, "wave_index": 2, "planned_sorties": 2, "launched_sorties": 1, "successful_sorties": 0, "mission_success_rate": 0, "sortie_rate": 0.5},
+                        {"day_index": 1, "wave_index": 1, "planned_sorties": 2, "launched_sorties": 2, "successful_sorties": 1, "planned_waves": 1, "successful_waves": 1, "mission_success_rate": 1, "sortie_rate": 1},
+                        {"day_index": 1, "wave_index": 2, "planned_sorties": 2, "launched_sorties": 1, "successful_sorties": 0, "planned_waves": 1, "successful_waves": 0, "mission_success_rate": 0, "sortie_rate": 0.5},
                     ]
                 },
                 {
                     "mission_wave_reliability": [
-                        {"day_index": 1, "wave_index": 1, "planned_sorties": 6, "launched_sorties": 4, "successful_sorties": 3, "mission_success_rate": 0.5, "sortie_rate": 4 / 6},
+                        {"day_index": 1, "wave_index": 1, "planned_sorties": 6, "launched_sorties": 4, "successful_sorties": 0, "planned_waves": 1, "successful_waves": 0, "mission_success_rate": 0, "sortie_rate": 4 / 6},
                     ]
                 },
             ],
@@ -870,8 +875,10 @@ class SimulationAdapterTest(unittest.TestCase):
         self.assertEqual([row["wave_key"] for row in rows], ["d1-w1", "d1-w2"])
         self.assertEqual([row["sample_count"] for row in rows], [2, 1])
         self.assertAlmostEqual(rows[0]["planned_sorties"], 4)
-        self.assertAlmostEqual(rows[0]["successful_sorties"], 2.5)
-        self.assertAlmostEqual(rows[0]["mean_mission_success_rate"], 5 / 8)
+        self.assertAlmostEqual(rows[0]["successful_sorties"], 0.5)
+        self.assertAlmostEqual(rows[0]["planned_waves"], 1)
+        self.assertAlmostEqual(rows[0]["successful_waves"], 0.5)
+        self.assertAlmostEqual(rows[0]["mean_mission_success_rate"], 1 / 2)
         self.assertAlmostEqual(rows[0]["sortie_rate"], 6 / 8)
         self.assertEqual(rows[1]["mean_mission_success_rate"], 0)
         self.assertTrue(all(0 <= row["mission_success_probability"] <= 1 for row in rows))

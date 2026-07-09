@@ -381,6 +381,50 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
         self.assertEqual(model.snapshot()["postflight_backlog"], 1)
         self.assertTrue(any(job.kind == "postflight" and job.tail_number == aircraft.tail_number for job in model.jobs))
 
+    def test_mission_success_rate_uses_success_point_wave_threshold_not_postflight_completion(self) -> None:
+        model = AircraftSupportV1Model(_minimal_inputs())
+        mission = model.missions[0]
+        mission.planned_start = 0
+        mission.preparation_start = 0
+        mission.duration_minutes = 10
+        mission.required_aircraft = 2
+        mission.min_required_aircraft = 1
+        mission.success_point = 0.5
+        for aircraft in model.aircraft:
+            aircraft.prepared_mission_ids.add(mission.mission_id)
+
+        model._dispatch_due_missions()
+        model.minute = 5
+        model._evaluate_mission_success_points()
+
+        snapshot = model.snapshot()
+        self.assertTrue(mission.succeeded)
+        self.assertEqual(mission.success_member_count, 2)
+        self.assertEqual(model.completed_sorties, 0)
+        self.assertEqual(snapshot["planned_mission_waves"], 1)
+        self.assertEqual(snapshot["successful_mission_waves"], 1)
+        self.assertEqual(snapshot["mission_success_rate"], 1)
+
+    def test_mission_success_point_fails_when_available_members_below_minimum(self) -> None:
+        model = AircraftSupportV1Model(_minimal_inputs())
+        mission = model.missions[0]
+        mission.planned_start = 0
+        mission.duration_minutes = 10
+        mission.min_required_aircraft = 2
+        mission.success_point = 0.5
+        mission.assigned_tail_numbers = [aircraft.tail_number for aircraft in model.aircraft]
+        mission.failed_tail_numbers = [model.aircraft[0].tail_number]
+        model.minute = 5
+
+        model._evaluate_mission_success_points()
+
+        snapshot = model.snapshot()
+        self.assertFalse(mission.succeeded)
+        self.assertEqual(mission.success_member_count, 1)
+        self.assertEqual(snapshot["planned_mission_waves"], 1)
+        self.assertEqual(snapshot["successful_mission_waves"], 0)
+        self.assertEqual(snapshot["mission_success_rate"], 0)
+
     def test_snapshot_sortie_rate_is_launched_sorties_per_aircraft_per_day(self) -> None:
         inputs = _minimal_inputs()
         inputs["time"]["duration_minutes"] = 2880

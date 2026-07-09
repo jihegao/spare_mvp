@@ -1770,6 +1770,10 @@ test("project switch flushes pending project draft autosave before changing proj
     enterWorkbenchSource.indexOf("await flushPendingProjectDraftAutosave()") < enterWorkbenchSource.indexOf("currentProject ="),
     "pending draft save must flush before currentProject changes"
   );
+  assert.match(enterWorkbenchSource, /selectedExperimentPlanKeys = new Set\(\)/);
+  assert.match(enterWorkbenchSource, /experimentPlan = null/);
+  assert.match(enterWorkbenchSource, /liteMesaMonteCarloResult = null/);
+  assert.match(enterWorkbenchSource, /liteMesaAnalysisResults = \{\}/);
   assert.match(flushSource, /clearTimeout\(projectDraftAutosaveTimer\)/);
   assert.match(flushSource, /projectDraftAutosaveTimer = null/);
   assert.match(flushSource, /projectDraftSaveStatus === "有未保存修改"/);
