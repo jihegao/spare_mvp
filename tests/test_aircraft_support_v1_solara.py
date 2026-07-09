@@ -69,7 +69,7 @@ class AircraftSupportV1SolaraTest(unittest.TestCase):
     def test_solara_page_labels_match_platform_copy(self) -> None:
         self.assertEqual(solara_app.APP_TITLE, "可视化推演")
         self.assertEqual(solara_app.METRICS_PANEL_TITLE, "指标")
-        self.assertEqual(solara_app.VISUAL_TAB_LABELS, ["装备状态", "事件日志"])
+        self.assertEqual(solara_app.VISUAL_TAB_LABELS, ["飞机视图", "任务视图", "保障视图"])
         self.assertEqual(solara_app.CONTROL_PANEL_TITLE, "运行控制")
         self.assertEqual(solara_app.PLAY_INTERVAL_LABEL, "刷新间隔(ms)")
         self.assertEqual(solara_app.RENDER_INTERVAL_LABEL, "渲染周期帧数")

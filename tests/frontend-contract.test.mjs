@@ -4214,9 +4214,11 @@ test("Solara visual panels subscribe to Mesa controller updates", async () => {
   assert.match(solaraSource, /def _safe_model_inputs/);
   assert.match(solaraSource, /_safe_model_inputs\(project_id\)/);
   assert.match(solaraSource, /运行控制/);
-  assert.match(solaraSource, /VISUAL_TAB_LABELS = \["装备状态", "事件日志"\]/);
-  assert.match(solaraSource, /solara\.v\.Tabs/);
-  assert.match(solaraSource, /solara\.v\.Tab/);
+  assert.match(solaraSource, /VISUAL_TAB_LABELS = \["飞机视图", "任务视图", "保障视图"\]/);
+  assert.match(solaraSource, /solara\.Button\(/);
+  assert.match(solaraSource, /def AircraftStage/);
+  assert.match(solaraSource, /def MissionStage/);
+  assert.match(solaraSource, /def SupportStage/);
   assert.doesNotMatch(solaraSource, /SolaraViz\(/);
   assert.doesNotMatch(solaraSource, /except Exception as exc:\s*fallback_reason/s);
   assert.doesNotMatch(solaraSource, /try:\s*\n\s*inputs,\s*_source\s*=\s*solara\.use_memo/s);
@@ -4229,7 +4231,7 @@ test("Solara visual panels subscribe to Mesa controller updates", async () => {
     assert.match(panelSource, /update_counter\.get\(\)/);
   }
   assert.match(solaraSource, /MetricsPanel\(model_state\.value\)/);
-  assert.match(solaraSource, /AircraftPanel\(model\)/);
+  assert.match(solaraSource, /AircraftStage\(model, selected_tail\)/);
   assert.match(solaraSource, /EventPanel\(model\)/);
   assert.doesNotMatch(solaraSource, /\(SourcePanel,\s*[01]\)/);
 });
