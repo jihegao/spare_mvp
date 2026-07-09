@@ -410,6 +410,15 @@ class ProjectJsonExporterTest(unittest.TestCase):
         self.assertFalse(_contains_key(clean, "missionAreas"))
         self.assertFalse(_contains_key(clean, "mission_areas"))
 
+    def test_exporter_materializes_legacy_activity_applicability_on_jobs(self) -> None:
+        project = self._polluted_project()
+        project["supportActivities"][0]["aircraftModel"] = "J-15"
+
+        clean = ProjectJsonExporter(target="aircraft_support_v1").export(project)
+
+        self.assertEqual(clean["supportActivities"][0]["aircraftModel"], "J-15")
+        self.assertEqual(clean["supportActivityJobs"][0]["applicableAircraft"], "J-15")
+
     def test_exporter_rejects_basic_mission_support_activity_name_matching_only_legacy_name(self) -> None:
         project = self._polluted_project()
         project["basicMissions"][0]["supportActivityName"] = "Legacy display name"

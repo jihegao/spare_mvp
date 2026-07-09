@@ -8083,26 +8083,23 @@ function basicActivityScopeSelect(row) {
 
 function basicActivityScopeValue(row) {
   if (row.scopeValue) return row.scopeValue;
-  if (row.activity?.equipmentId) return `component:${row.activity.equipmentId}`;
-  const model = supportActivityAircraftModel(row.activity) || (row.scope ?? "");
+  const model = basicActivityApplicableAircraft(row);
   return model ? `aircraft:${model}` : "";
 }
 
 function basicActivityScopeOptions(row) {
-  const currentScopeValue = basicActivityScopeValue(row);
-  const currentScopeLabel = row.scope || currentScopeValue;
-  const currentScopeOption = currentScopeValue && !currentScopeValue.startsWith("aircraft:")
-    ? [{ value: currentScopeValue, label: currentScopeLabel }]
-    : [];
   return uniqueSelectOptions([
     { value: "", label: "未指定适用对象" },
-    ...basicActivityWholeMachineScopeOptions(),
-    ...currentScopeOption
+    ...basicActivityWholeMachineScopeOptions()
   ]);
 }
 
 function basicActivityWholeMachineScopeOptions() {
   return wholeMachineModels().map((model) => ({ value: `aircraft:${model}`, label: model }));
+}
+
+function basicActivityApplicableAircraft(row) {
+  return String(row?.applicableAircraft || "").trim();
 }
 
 function basicActivityLibraryRows() {
@@ -8115,8 +8112,8 @@ function basicActivityLibraryRows() {
       type: basicActivityTypeValue(activity),
       activityCode: job.activityCode,
       workName: job.workName,
-      scope: basicActivityScopeLabel(activity),
-      applicableAircraft: supportActivityAircraftModel(activity),
+      scope: basicActivityApplicableAircraft(job) || "未指定",
+      applicableAircraft: basicActivityApplicableAircraft(job),
       durationProfile: normalizeSupportActivityDurationProfile(job.durationProfile || job.durationDistribution, job.durationMinutes),
       durationMinutes: job.durationMinutes,
       personnelProfessional: job.personnelProfessional || "",
@@ -8240,7 +8237,6 @@ function saveBasicActivityDraft() {
   const job = supportActivityJobFromBasicActivityDraft(basicActivityDraft);
   jobs.push(job);
   setSupportActivityJobs(activity, jobs);
-  updateBasicActivityScope(activity, basicActivityScopeValue(basicActivityDraft));
   const activityIndex = (scenario.supportActivities || []).indexOf(activity);
   const key = activityIndex >= 0 ? `${activityIndex}:${jobs.length - 1}` : "";
   selectedBasicActivityKeys = key ? new Set([key]) : selectedBasicActivityKeys;
@@ -8255,6 +8251,7 @@ function supportActivityJobFromBasicActivityDraft(row) {
   const job = {
     activityCode: uniqueBasicActivityCode(row.activityCode || nextBasicActivityCode("BA")),
     workName: row.workName || "未命名基本保障活动",
+    applicableAircraft: basicActivityApplicableAircraft(row),
     predecessors: Array.isArray(row.predecessors) ? [...row.predecessors] : [],
     durationProfile: profile,
     durationMinutes: durationMinutesForSupportActivityProfile(profile, row.durationMinutes),
@@ -8334,11 +8331,11 @@ function updateBasicActivityJobField(key, fieldName, value) {
   const jobs = supportActivityJobs(activity).slice();
   if (!activity || !jobs[jobIndex] || !fieldName) return;
   if (fieldName === "scope") {
-    if (moveBasicActivityJobToScope(activity, jobIndex, value)) {
-      updatePreviewResultsThroughApiClient();
-      return;
-    }
-    updateBasicActivityScope(activity, value);
+    jobs[jobIndex] = {
+      ...jobs[jobIndex],
+      applicableAircraft: basicActivityApplicableAircraftFromScope(value)
+    };
+    setSupportActivityJobs(activity, jobs);
     updatePreviewResultsThroughApiClient();
     return;
   }
@@ -8380,76 +8377,10 @@ function updateBasicActivityJobField(key, fieldName, value) {
   updatePreviewResultsThroughApiClient();
 }
 
-function moveBasicActivityJobToScope(activity, jobIndex, value) {
-  const targetActivity = basicActivityScopeHostActivity(activity, value);
-  if (!targetActivity || targetActivity === activity) return false;
-  const sourceJobs = supportActivityJobs(activity).slice();
-  const [job] = sourceJobs.splice(jobIndex, 1);
-  if (!job) return false;
-  setSupportActivityJobs(activity, sourceJobs);
-  const targetJobs = supportActivityJobs(targetActivity).slice();
-  targetJobs.push(job);
-  setSupportActivityJobs(targetActivity, targetJobs);
-  const targetActivityIndex = (scenario.supportActivities || []).indexOf(targetActivity);
-  if (targetActivityIndex >= 0) {
-    selectedBasicActivityKeys = new Set([`${targetActivityIndex}:${targetJobs.length - 1}`]);
-  }
-  return true;
-}
-
-function basicActivityScopeHostActivity(activity, value) {
-  if (isCorrectiveMaintenanceActivity(activity)) {
-    const component = correctiveComponentForBasicActivityScope(value);
-    if (!component) return null;
-    const equipmentId = correctiveComponentActivityEquipmentId(component);
-    if (!equipmentId || String(activity.equipmentId || "") === equipmentId) return null;
-    return ensureCorrectiveMaintenanceActivityForComponent(component, { copyTemplateJobs: false });
-  }
-  const text = String(value || "");
-  if (!text.startsWith("aircraft:")) return null;
-  const aircraftModel = text.replace(/^aircraft:/, "").trim();
-  if (!aircraftModel || String(supportActivityAircraftModel(activity) || "") === aircraftModel) return null;
-  if (isPreventiveMaintenanceActivity(activity)) {
-    return ensureBasicActivityPreventiveScopeHostActivity(aircraftModel);
-  }
-  if (isOperationsSupportActivity(activity)) {
-    return ensureBasicActivityOperationsScopeHostActivity(activity, aircraftModel);
-  }
-  return null;
-}
-
-function ensureBasicActivityOperationsScopeHostActivity(sourceActivity, aircraftModel) {
-  const planType = normalizeOperationsSupportPlanType(sourceActivity?.planType);
-  const existing = operationsSupportPhaseActivity({ aircraftModel }, planType);
-  if (existing) return existing;
-  const activities = ensureSupportActivities();
-  const config = operationsSupportPlanTypeConfigs().find((item) => item.planType === planType) || operationsSupportPlanTypeConfigs()[0];
-  const activity = createOperationsSupportActivityForAircraftModel(aircraftModel, config);
-  setSupportActivityJobs(activity, []);
-  activities.push(activity);
-  selectedOperationsSupportAircraftModel = aircraftModel;
-  selectedOperationsSupportActivityKey = `supportActivity:${activities.indexOf(activity)}`;
-  return activity;
-}
-
-function ensureBasicActivityPreventiveScopeHostActivity(aircraftModel) {
-  const existing = preventiveMaintenanceActivityEntries(aircraftModel)[0]?.activity;
-  if (existing) return existing;
-  const activities = ensureSupportActivities();
-  const activity = createPreventiveMaintenanceActivityForAircraftModel(aircraftModel, preventiveMaintenanceActivityEntries().length + 1);
-  setSupportActivityJobs(activity, []);
-  activities.push(activity);
-  selectedPreventiveMaintenanceAircraftModel = aircraftModel;
-  selectedPreventiveMaintenanceActivityKey = `supportActivity:${activities.indexOf(activity)}`;
-  return activity;
-}
-
 function updateBasicActivityDraftField(fieldName, value) {
   if (!basicActivityDraft || !fieldName) return;
   if (fieldName === "scope") {
-    basicActivityDraft.scope = basicActivityScopeOptions(basicActivityDraft)
-      .find((option) => option.value === value)?.label || value;
-    basicActivityDraft.scopeValue = value;
+    basicActivityDraft.applicableAircraft = basicActivityApplicableAircraftFromScope(value);
     return;
   }
   if (fieldName === "type") {
@@ -8718,20 +8649,9 @@ function updateBasicActivityType(activity, value) {
   }
 }
 
-function updateBasicActivityScope(activity, value) {
+function basicActivityApplicableAircraftFromScope(value) {
   const text = String(value || "");
-  if (text.startsWith("component:")) {
-    const componentId = text.replace(/^component:/, "");
-    const component = (scenario.components || []).find((item) => String(item.id || item.name || "") === componentId);
-    activity.equipmentId = componentId;
-    if (component?.aircraftModel) activity.aircraftModel = component.aircraftModel;
-    return;
-  }
-  if (text.startsWith("aircraft:")) {
-    const aircraftModel = text.replace(/^aircraft:/, "");
-    activity.aircraftModel = aircraftModel;
-    if (activity.equipmentId) delete activity.equipmentId;
-  }
+  return text.startsWith("aircraft:") ? text.replace(/^aircraft:/, "").trim() : "";
 }
 
 function deleteBasicActivityJob(key) {

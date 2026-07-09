@@ -1139,6 +1139,7 @@ def _strip_project_non_model_fields(project: dict[str, Any]) -> None:
     _strip_support_activity_mttr_fields(project.get("supportActivities"))
     _strip_support_activity_mttr_fields(project.get("supportActivityJobs"))
     _lift_support_activity_jobs_to_top_level(project)
+    _materialize_support_activity_job_applicability(project)
     _normalize_support_activity_reference_fields(project)
 
 
@@ -1947,6 +1948,39 @@ def _lift_support_activity_jobs_to_top_level(project: dict[str, Any]) -> None:
         activity["predecessors"] = predecessors
         activity.pop("jobs", None)
     project["supportActivityJobs"] = list(jobs_by_code.values())
+
+
+def _materialize_support_activity_job_applicability(project: dict[str, Any]) -> None:
+    jobs = project.get("supportActivityJobs")
+    activities = project.get("supportActivities")
+    if not isinstance(jobs, list) or not isinstance(activities, list):
+        return
+    jobs_by_code = {
+        _clean_text(job.get("activityCode")): job
+        for job in jobs
+        if isinstance(job, dict) and _clean_text(job.get("activityCode"))
+    }
+    components_by_id = {
+        _clean_text(component.get("id")): component
+        for component in project.get("components", [])
+        if isinstance(component, dict) and _clean_text(component.get("id"))
+    }
+    for activity in activities:
+        if not isinstance(activity, dict):
+            continue
+        component = components_by_id.get(_clean_text(activity.get("equipmentId")), {})
+        aircraft_model = (
+            _clean_text(activity.get("aircraftModel"))
+            or _clean_text(activity.get("equipmentType"))
+            or _clean_text(component.get("aircraftModel"))
+        )
+        if not aircraft_model or not isinstance(activity.get("activityCodes"), list):
+            continue
+        for raw_code in activity["activityCodes"]:
+            job = jobs_by_code.get(_clean_text(raw_code))
+            if not isinstance(job, dict) or "applicableAircraft" in job:
+                continue
+            job["applicableAircraft"] = aircraft_model
 
 
 def _support_activity_job_code_for_definition(

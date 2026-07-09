@@ -225,6 +225,7 @@ export function buildBackendProjectJson(scenario, project = {}) {
   stripProjectRuntimeConfig(projectJson);
   stripProjectNonModelFields(projectJson);
   liftSupportActivityJobsToTopLevel(projectJson);
+  materializeSupportActivityJobApplicability(projectJson);
   projectJson.schema_version ||= "project-v0";
   projectJson.project_id ||= project.id ? `project-${project.id}` : `project-${projectJson.scenarioId}`;
   projectJson.project_version ||= "project-v0.1";
@@ -247,6 +248,7 @@ export function normalizeProjectJsonForClientDraft(projectJson) {
   delete normalized.supportResourceOverrides;
   materializeLegacySupportTables(normalized);
   normalizeSupportModelTables(normalized);
+  materializeSupportActivityJobApplicability(normalized);
   stripLegacySupportNodeResourceFields(normalized);
   stripSupportActivityTypoFields(normalized);
   stripDeprecatedSupportActivityStrategyFields(normalized);
@@ -1323,6 +1325,37 @@ function liftSupportActivityJobsToTopLevel(projectJson) {
     delete activity.jobs;
   }
   projectJson.supportActivityJobs = Array.from(jobsByCode.values());
+}
+
+function materializeSupportActivityJobApplicability(projectJson) {
+  if (!projectJson || typeof projectJson !== "object" || Array.isArray(projectJson)) return;
+  const jobs = Array.isArray(projectJson.supportActivityJobs) ? projectJson.supportActivityJobs : [];
+  const activities = Array.isArray(projectJson.supportActivities) ? projectJson.supportActivities : [];
+  const componentsById = new Map(
+    (Array.isArray(projectJson.components) ? projectJson.components : [])
+      .filter((component) => component && typeof component === "object" && !Array.isArray(component))
+      .map((component) => [normalizedText(component.id), component])
+      .filter(([id]) => id)
+  );
+  const jobsByCode = new Map(
+    jobs
+      .filter((job) => job && typeof job === "object" && !Array.isArray(job))
+      .map((job) => [normalizedText(job.activityCode), job])
+      .filter(([code]) => code)
+  );
+  for (const activity of activities) {
+    if (!activity || typeof activity !== "object" || Array.isArray(activity)) continue;
+    const component = componentsById.get(normalizedText(activity.equipmentId));
+    const aircraftModel = normalizedText(activity.aircraftModel)
+      || normalizedText(activity.equipmentType)
+      || normalizedText(component?.aircraftModel);
+    if (!aircraftModel || !Array.isArray(activity.activityCodes)) continue;
+    for (const rawCode of activity.activityCodes) {
+      const job = jobsByCode.get(normalizedText(rawCode));
+      if (!job || Object.hasOwn(job, "applicableAircraft")) continue;
+      job.applicableAircraft = aircraftModel;
+    }
+  }
 }
 
 function supportActivityJobCodeForDefinition(requestedCode, definition, jobsByCode) {
