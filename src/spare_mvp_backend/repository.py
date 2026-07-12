@@ -343,14 +343,14 @@ class ContractRepository:
               project_id, schema_version, project_version, scenario_id,
               active_module, payload_json, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            VALUES (?, ?, ?, ?, ?, ?, strftime('%Y-%m-%d %H:%M:%f', 'now') || '-' || lower(hex(randomblob(4))))
             ON CONFLICT(project_id) DO UPDATE SET
               schema_version = excluded.schema_version,
               project_version = excluded.project_version,
               scenario_id = excluded.scenario_id,
               active_module = excluded.active_module,
               payload_json = excluded.payload_json,
-              updated_at = CURRENT_TIMESTAMP
+              updated_at = strftime('%Y-%m-%d %H:%M:%f', 'now') || '-' || lower(hex(randomblob(4)))
             """,
             (
                 project_id,
@@ -362,6 +362,57 @@ class ContractRepository:
             ),
         )
         self.connection.commit()
+
+    def project_updated_at(self, project_id: str) -> str:
+        cursor = self.connection.execute(
+            "SELECT updated_at FROM projects WHERE project_id = ?",
+            (str(project_id or "").strip(),),
+        )
+        row = cursor.fetchone()
+        if row is None:
+            raise KeyError(project_id)
+        return str(row[0] or "")
+
+    def replace_project_if_current(
+        self,
+        project: dict[str, Any],
+        *,
+        expected_updated_at: str,
+        actor_user_id: str,
+    ) -> dict[str, Any] | None:
+        """Replace a project and write its audit row in one optimistic transaction."""
+        project_id = _required(project, "project_id")
+        new_updated_at = f"replace-{uuid4()}"
+        with self.connection:
+            cursor = self.connection.execute(
+                """
+                UPDATE projects SET
+                  schema_version = ?, project_version = ?, scenario_id = ?,
+                  active_module = ?, payload_json = ?, updated_at = ?
+                WHERE project_id = ? AND updated_at = ?
+                """,
+                (
+                    str(project.get("schema_version") or "project-v0"),
+                    str(project.get("project_version") or "project-v0.1"),
+                    project.get("scenarioId"),
+                    project.get("activeModule"),
+                    _to_json(project),
+                    new_updated_at,
+                    project_id,
+                    expected_updated_at,
+                ),
+            )
+            if cursor.rowcount != 1:
+                return None
+            audit = self._insert_audit_event_no_commit(
+                actor_user_id=actor_user_id,
+                action="project.replace",
+                resource_type="project",
+                resource_id=project_id,
+                outcome="allowed",
+                details={"previous_updated_at": expected_updated_at, "updated_at": new_updated_at},
+            )
+        return {"updated_at": new_updated_at, "audit": audit}
 
     def delete_project(self, project_id: str) -> dict[str, Any]:
         project_id = str(project_id or "").strip()

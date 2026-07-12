@@ -1045,7 +1045,7 @@ test("buildBackendProjectJson strips legacy support node resource fields and dra
   assert.equal(projectJson.supportNodes.some((node) => node.id === "carrier-stock-personnel-mech" || node.name === "机械保障人员"), false);
   assert.deepEqual(projectJson.supportResources, scenario.supportResources);
   assert.deepEqual(projectJson.transportPolicies, [
-    { id: "transport-1", fromSupportNodeName: "基层", toSupportNodeName: "基地", spareName: "航电模块", capacity: 2 }
+    { id: "transport-1", fromSupportNodeName: "基层", toSupportNodeName: "基地", capacity: 2 }
   ]);
 });
 
@@ -1113,7 +1113,6 @@ test("buildBackendProjectJson migrates legacy activity transport strategies to t
     id: "logistics-plan-transport-0",
     fromSupportNodeName: "基地",
     toSupportNodeName: "甲板",
-    spareName: "航电模块",
     name: "旧调运策略",
     direction: "横向运输",
     triggerMode: "临界库存",

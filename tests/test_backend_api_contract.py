@@ -19,6 +19,7 @@ from src.spare_mvp_backend.api import (
     BackendApi,
     BackendApiError,
     _lite_mesa_downtime_event_snapshots,
+    _lite_mesa_downtime_factors_result,
     _lite_mesa_mission_reliability_result,
     _lite_mesa_spare_shortfall_result,
     _normalize_lite_mesa_analysis_settings,
@@ -232,6 +233,70 @@ class BackendApiContractTest(unittest.TestCase):
 
     def test_lite_mesa_analysis_defaults_to_four_samples(self) -> None:
         self.assertEqual(_normalize_lite_mesa_analysis_settings({})["samples"], 4)
+
+    def test_replace_project_requires_current_version_and_records_audit(self) -> None:
+        project = small_aircraft_support_project("project-replace-contract")
+        self.api.save_project(project)
+        expected = self.repository.project_updated_at(project["project_id"])
+        replacement = copy.deepcopy(project)
+        replacement["projectInfo"] = {"name": "覆盖后的项目"}
+        result = self.api.replace_project(
+            project["project_id"],
+            replacement,
+            expected_updated_at=expected,
+            actor_user_id="user-admin",
+        )
+        self.assertEqual(result["status"], "replaced")
+        self.assertEqual(self.api.get_project(project["project_id"])["projectInfo"]["name"], "覆盖后的项目")
+        self.assertEqual(self.repository.list_audit_events(resource_id=project["project_id"])[-1]["action"], "project.replace")
+        with self.assertRaises(BackendApiError) as conflict:
+            self.api.replace_project(project["project_id"], replacement, expected_updated_at=expected, actor_user_id="user-admin")
+        self.assertEqual(conflict.exception.code, "project_version_conflict")
+
+    def test_seven_day_completion_and_four_downtime_contract(self) -> None:
+        daily_success = [{"day": day, "plannedWaves": 1, "successfulWaves": 1} for day in range(1, 8)]
+        daily_failure = copy.deepcopy(daily_success)
+        daily_failure[3]["successfulWaves"] = 0
+        reliability = _lite_mesa_mission_reliability_result(
+            {"data": {"mission_success_probability": 0.91, "sortie_rate": 0.8}},
+            [
+                {"metrics": {"ready_rate": 1, "failed_sorties": 0, "simulation_days": 7}, "daily_mission_reliability": daily_success},
+                {"metrics": {"ready_rate": 1, "failed_sorties": 1, "simulation_days": 7}, "daily_mission_reliability": daily_failure},
+                {"metrics": {"ready_rate": 1, "failed_sorties": 0, "simulation_days": 3}, "daily_mission_reliability": daily_success[:3]},
+            ],
+            {"maxTimeWindow": 20},
+        )
+        self.assertEqual(reliability["successful_samples"], 1)
+        self.assertEqual(reliability["valid_samples"], 2)
+        self.assertEqual(reliability["period_completion_probability"], 0.5)
+        downtime = _lite_mesa_downtime_factors_result(
+            {"data": []},
+            {
+                "downtime_failure_events": 2, "downtime_failure_hours": 10,
+                "downtime_equipment_shortage_events": 3, "downtime_equipment_shortage_hours": 5,
+                "downtime_spare_shortage_events": 4, "downtime_spare_shortage_hours": 4,
+                "downtime_preventive_events": 1, "downtime_preventive_hours": 1,
+            },
+            [],
+            {"topN": 10},
+        )
+        self.assertEqual({row["label"] for row in downtime["rows"]}, {"装备故障", "保障设备短缺", "备件短缺", "预防性维修"})
+        self.assertAlmostEqual(sum(row["duration_contribution"] for row in downtime["rows"]), 1.0)
+
+    def test_rms_export_is_a_real_xlsx_workbook(self) -> None:
+        from openpyxl import load_workbook
+        from io import BytesIO
+
+        download = self.api.export_rms_allocation_xlsx({
+            "project_name": "RMS案例",
+            "method": "equal",
+            "generated_at": "2026-07-12T00:00:00Z",
+            "rows": [{"level": "系统", "nodeName": "动力", "runningRatio": 1, "failureRate": 0.001, "mtbfHours": 1000, "mttrHours": 2}],
+        })
+        self.assertEqual(download["filename"], "rms-allocation-result.xlsx")
+        workbook = load_workbook(BytesIO(download["body"]), read_only=True)
+        self.assertEqual(workbook["RMS分配结果"]["A6"].value, "系统")
+        self.assertEqual(workbook["RMS分配结果"]["E6"].value, 1000)
 
     def _fixture(self, name: str) -> dict:
         return json.loads((REPO_ROOT / "tests" / "fixtures" / name).read_text(encoding="utf-8"))

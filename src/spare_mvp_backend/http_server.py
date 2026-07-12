@@ -185,6 +185,9 @@ def create_backend_server(
             if self.command == "POST" and route == "/projects":
                 self._require_user()
                 return api.save_project(body)
+            if self.command == "POST" and route == "/rms-allocation/export-xlsx":
+                self._require_user()
+                return {"__file_download__": api.export_rms_allocation_xlsx(body)}
             if self.command == "GET" and route == "/projects":
                 return api.list_projects()
             if self.command == "GET" and route == "/project-data-templates":
@@ -222,6 +225,14 @@ def create_backend_server(
                 return api.compile_modeling_import_scenario(parts[1], body.get("model_family", ACTIVE_FORMAL_MODEL_FAMILY))
             if self.command == "GET" and len(parts) == 2 and parts[0] == "projects":
                 return api.get_project(parts[1])
+            if self.command == "PUT" and len(parts) == 3 and parts[0] == "projects" and parts[2] == "replace":
+                actor = self._require_user({"系统管理员", "数据管理员"})
+                return api.replace_project(
+                    parts[1],
+                    body.get("project_json") or {},
+                    expected_updated_at=str(body.get("expected_updated_at") or ""),
+                    actor_user_id=actor["user_id"],
+                )
             if self.command == "DELETE" and len(parts) == 2 and parts[0] == "projects":
                 self._require_user()
                 return api.delete_project(parts[1])

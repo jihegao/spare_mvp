@@ -13,25 +13,24 @@ import {
   selectRmsAllocationEquipmentRoot
 } from "../front/rms-allocation-engine.mjs";
 
-test("equal allocation derives MTBCF and MTBF from task reliability duration and critical failure ratio", () => {
+test("equal allocation derives reliability allocation from direct equipment MTBF", () => {
   const project = createDemoRmsAllocationProject();
   const plan = createDefaultRmsAllocationPlan(project);
   plan.methods.reliability = "equal";
-  plan.targets.reliability.value = 0.95;
   plan.targets.taskDurationHours = 3;
-  plan.targets.criticalFailureRatio = 0.8;
+  plan.targets.mtbfHours = 1000;
 
   const result = calculateRmsAllocation(plan, project);
-  const expectedMtbcf = -3 / Math.log(0.95);
+  const expectedReliability = Math.exp(-3 / 1000);
 
   assert.equal(result.status, "validated");
   assert.equal(result.nodeResults.length, project.equipmentNodes.filter((node) => node.parentId === "aircraft-root").length);
-  assert.ok(Math.abs(result.verification.calculated.reliability - 0.95) < 1e-9);
-  assert.ok(Math.abs(result.targetMetrics.mtbcfHours - expectedMtbcf) < 1e-9);
-  assert.ok(Math.abs(result.targetMetrics.mtbfHours - expectedMtbcf * 0.8) < 1e-9);
+  assert.ok(Math.abs(result.verification.calculated.reliability - expectedReliability) < 1e-9);
+  assert.equal(result.targetMetrics.mtbcfHours, 1000);
+  assert.equal(result.targetMetrics.mtbfHours, 1000);
   assert.equal("equivalentHours" in result.nodeResults[0], false);
   assert.equal("reliability" in result.nodeResults[0], false);
-  assert.ok(result.nodeResults.every((row) => row.mtbcfHours > row.mtbfHours));
+  assert.ok(result.nodeResults.every((row) => row.mtbcfHours === row.mtbfHours));
 });
 
 test("different running ratio produces different product intensity and MTBF requirements", () => {

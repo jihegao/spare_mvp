@@ -7,9 +7,9 @@ const PROJECTION_KINDS = Object.freeze({
 
 const DOWNTIME_FACTOR_LABELS = Object.freeze({
   failure: "装备故障",
+  equipment_shortage: "保障设备短缺",
   spare_shortage: "备件短缺",
-  resource_delay: "资源延误",
-  schedule_delay: "计划延误"
+  preventive: "预防性维修"
 });
 
 const SPARE_SHORTFALL_CONSTRAINTS = Object.freeze([0.85, 0.9, 0.95]);
@@ -82,7 +82,9 @@ function normalizeSpareShortfall(payload) {
       const utilization = clamp01(requireFiniteNumber(row.utilization, "utilization"));
       const shortageProbability = clamp01(requireFiniteNumber(row.shortage_probability, "shortage_probability"));
       return {
+        aircraftModel: stringValue(row.aircraft_model, "全部机型"),
         name: stringValue(row.spare_type, "unknown_spare"),
+        demand: Math.max(0, Math.round(numberOrZero(row.demand_count))),
         satisfy: fillRate,
         utilization,
         shortageProbability,
@@ -97,15 +99,21 @@ function normalizeSpareShortfall(payload) {
     })
     .sort((left, right) => right.shortageProbability - left.shortageProbability);
   const shortageRows = rows.filter((row) => row.shortageProbability > 0);
+  const highestShortage = Math.max(0, ...rows.map((row) => row.shortage));
+  const highestShortfallNames = highestShortage > 0
+    ? rows.filter((row) => row.shortage === highestShortage).map((row) => row.name)
+    : [];
   return {
     analysisType: "spare_shortfall",
     formal: true,
     source: "projection payload",
     constraints,
     truncation,
+    highestShortfallNames,
     rows,
     metrics: [
       ["短板备件", `${shortageRows.length} 项`],
+      ["最高缺件备件", highestShortfallNames.length ? highestShortfallNames.join("、") : "无"],
       ["最低备件满足率", fixed(min(rows.map((row) => row.satisfy), 1), 2)],
       ["最低备件利用率", fixed(min(rows.map((row) => row.utilization), 1), 2)],
       ["约束档位", constraints.fillRate.map((value) => fixed(value, 2)).join(" / ")]
@@ -151,12 +159,19 @@ function normalizeCarryList(payload) {
       const multiplier = Math.max(0, requireFiniteNumber(row.recommended_multiplier, "recommended_multiplier"));
       const priority = priorityLabel(row.risk_level);
       return {
+        aircraftModel: stringValue(row.aircraft_model, "全部机型"),
         name: stringValue(row.spare_type, "unknown_spare"),
         multiplier,
         satisfy: Math.min(1, multiplier / Math.max(multiplier, 1)),
         delay: Math.max(0, Math.round((multiplier - 1) * 24)),
         qty: Math.max(1, priority === "高" ? Math.ceil(multiplier) : Math.round(multiplier)),
-        priority
+        priority,
+        demand: Math.max(0, Math.round(numberOrZero(row.demand_count))),
+        minimumSatisfactionRate: clamp01(numberOrZero(row.minimum_satisfaction_rate) || 0.9),
+        hideZeroDemand: row.hide_zero_demand !== false,
+        lifeLimited: Boolean(row.life_limited),
+        lifeLandings: Math.max(0, Math.round(numberOrZero(row.life_landings))),
+        lifeCalendarDays: Math.max(0, Math.round(numberOrZero(row.life_calendar_days)))
       };
     })
     .sort((left, right) => right.qty - left.qty);
@@ -189,6 +204,10 @@ function normalizeMissionReliability(payload) {
     source: "projection payload",
     rows: seriesRows,
     steepestDrop,
+    profileReliability: clamp01(numberOrZero(data.profile_reliability ?? probability)),
+    periodCompletionProbability: clamp01(numberOrZero(data.period_completion_probability)),
+    successfulSamples: Math.max(0, Math.round(numberOrZero(data.successful_samples))),
+    validSamples: Math.max(0, Math.round(numberOrZero(data.valid_samples))),
     metrics: [
       ["任务成功概率", fixed(probability, 2)],
       ["出动架次率", fixed(sortieRate, 2)],
@@ -273,8 +292,10 @@ function normalizeDowntimeFactors(payload) {
       return {
         factor,
         label: DOWNTIME_FACTOR_LABELS[factor] || factor,
-        count: Math.round(contribution * 100),
+        count: Math.max(0, Math.round(numberOrZero(row.event_count))),
+        downtimeHours: Math.max(0, numberOrZero(row.downtime_hours)),
         contribution,
+        durationContribution: clamp01(numberOrZero(row.duration_contribution ?? contribution)),
         contributionLabel: pct(contribution)
       };
     })

@@ -140,7 +140,7 @@ function normalizeDemoRole(role) {
 }
 
 function isFeaturePageAllowedForRole(page, role) {
-  if (role === "系统管理员") return page.module === "系统运行支持模块";
+  if (role === "系统管理员") return true;
   if (role === "数据管理员") {
     return page.module !== "系统运行支持模块" || page.secondary !== "系统基础配置";
   }

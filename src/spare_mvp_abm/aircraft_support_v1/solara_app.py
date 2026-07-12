@@ -345,7 +345,7 @@ def ControlPanel(model_state: solara.Reactive[AircraftSupportV1Model], inputs: d
         with solara.Row(justify="space-between"):
             solara.Button(label=RESET_BUTTON_LABEL, color="primary", on_click=reset_model)
             solara.Button(
-                label="暂停" if playing.value else "播放",
+                label="暂停" if playing.value else "推演",
                 color="primary",
                 on_click=toggle_playing,
                 disabled=not model_state.value.running,

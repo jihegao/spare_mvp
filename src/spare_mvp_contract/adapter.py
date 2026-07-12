@@ -2467,14 +2467,28 @@ class SimulationAdapter:
         mission_success = min(1.0, max(0.0, float(metrics.get("mission_success_rate", metrics.get("sortie_completion_rate", 0)) or 0)))
         sortie_rate = max(0.0, float(metrics.get("sortie_rate", 0) or 0))
         downtime_values = {
-            "failure": max(0.0, float(metrics.get("downtime_failure_events", 0) or 0)),
-            "spare_shortage": max(0.0, float(metrics.get("downtime_spare_shortage_events", 0) or 0)),
-            "resource_delay": max(0.0, float(metrics.get("downtime_resource_delay_events", 0) or 0)),
-            "postflight": max(0.0, float(metrics.get("postflight_backlog", 0) or 0)),
-            "preventive": max(0.0, float(metrics.get("preventive_backlog", 0) or 0)),
-            "transport_delay": max(0.0, float(metrics.get("transport_in_transit_count", 0) or 0)),
+            "failure": max(0.0, float(metrics.get("downtime_failure_hours", 0) or 0)),
+            "equipment_shortage": max(0.0, float(metrics.get("downtime_equipment_shortage_hours", 0) or 0)),
+            "spare_shortage": max(0.0, float(metrics.get("downtime_spare_shortage_hours", 0) or 0)),
+            "preventive": max(0.0, float(metrics.get("downtime_preventive_hours", 0) or 0)),
         }
         downtime_total = sum(downtime_values.values()) or 1.0
+        downtime_counts = {
+            "failure": max(0, int(round(float(metrics.get("downtime_failure_events", 0) or 0)))),
+            "equipment_shortage": max(0, int(round(float(metrics.get("downtime_equipment_shortage_events", 0) or 0)))),
+            "spare_shortage": max(0, int(round(float(metrics.get("downtime_spare_shortage_events", 0) or 0)))),
+            "preventive": max(0, int(round(float(metrics.get("downtime_preventive_events", 0) or 0)))),
+        }
+        valid_period_samples = 0
+        successful_period_samples = 0
+        for sample in samples or []:
+            daily_rows = [row for row in sample.get("daily_mission_reliability") or [] if 1 <= int(row.get("day", 0) or 0) <= 7]
+            if float((sample.get("metrics") or {}).get("simulation_days", 0) or 0) < 7:
+                continue
+            valid_period_samples += 1
+            if all(float(row.get("successfulWaves", 0) or 0) >= float(row.get("plannedWaves", 0) or 0) for row in daily_rows):
+                successful_period_samples += 1
+        period_completion_probability = successful_period_samples / valid_period_samples if valid_period_samples else 0.0
         risk_level = "high" if shortage_probability >= 0.2 else "medium" if shortage_probability > 0 else "low"
         spare_rows = self._aircraft_support_v1_scoped_spare_projection_rows(
             metrics,
@@ -2532,6 +2546,7 @@ class SimulationAdapter:
                 "truncation": SPARE_SHORTFALL_TRUNCATION,
                 "data": [
                     {
+                        "aircraft_model": row.get("aircraft_model", "全部机型"),
                         "spare_type": row["spare_type"],
                         "baseline_quantity": row["baseline_quantity"],
                         "demand_count": row["demand_count"],
@@ -2559,6 +2574,7 @@ class SimulationAdapter:
                 "applicability": projection_applicability["carry_list"],
                 "data": [
                     {
+                        "aircraft_model": row.get("aircraft_model", "全部机型"),
                         "spare_type": row["spare_type"],
                         "baseline_quantity": row["baseline_quantity"],
                         "recommended_quantity": row["recommended_quantity"],
@@ -2570,6 +2586,11 @@ class SimulationAdapter:
                         "demand_count": row["demand_count"],
                         "shortage_count": row["shortage_count"],
                         "risk_level": row["risk_level"],
+                        "minimum_satisfaction_rate": 0.9,
+                        "hide_zero_demand": True,
+                        "life_limited": False,
+                        "life_landings": 0,
+                        "life_calendar_days": 0,
                     }
                     for row in spare_rows
                 ],
@@ -2586,6 +2607,10 @@ class SimulationAdapter:
                     "failed_sorties": metrics.get("failed_sorties", 0),
                     "in_flight_failures": metrics.get("in_flight_failures", 0),
                     "target_met": mission_success >= 0.9,
+                    "profile_reliability": mission_success,
+                    "period_completion_probability": period_completion_probability,
+                    "successful_samples": successful_period_samples,
+                    "valid_samples": valid_period_samples,
                     "mission_wave_rows": mission_wave_rows,
                     "series": mission_wave_rows,
                 },
@@ -2597,7 +2622,13 @@ class SimulationAdapter:
                 "base_artifact_id": source_artifact_id,
                 "applicability": projection_applicability["downtime_factors"],
                 "data": [
-                    {"factor": factor, "contribution": value / downtime_total}
+                    {
+                        "factor": factor,
+                        "event_count": downtime_counts[factor],
+                        "downtime_hours": value,
+                        "contribution": value / downtime_total,
+                        "duration_contribution": value / downtime_total,
+                    }
                     for factor, value in downtime_values.items()
                 ],
                 "anomaly_snapshots": self._aircraft_support_v1_downtime_anomaly_snapshots(samples or [], run_id),

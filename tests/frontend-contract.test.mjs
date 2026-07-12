@@ -173,7 +173,7 @@ test("demo role permissions expose fixed module visibility without config rows",
   const dataPages = getVisibleFeaturePagesForRole(FEATURE_PAGES, "数据管理员");
   const userPages = getVisibleFeaturePagesForRole(FEATURE_PAGES, "普通用户");
 
-  assert.deepEqual(modulesForRole("系统管理员"), ["系统运行支持模块"]);
+  assert.deepEqual(modulesForRole("系统管理员"), ["系统运行支持模块", "备件规划评估模块", "任务可靠度评估模块"]);
   assert.ok(adminPages.some((page) => page.secondary === "系统基础配置"));
   assert.deepEqual(modulesForRole("数据管理员"), ["系统运行支持模块", "备件规划评估模块", "任务可靠度评估模块"]);
   assert.equal(dataPages.some((page) => page.secondary === "系统基础配置"), false);
@@ -184,7 +184,7 @@ test("demo role permissions expose fixed module visibility without config rows",
 test("demo role permissions clamp direct feature routes to first accessible page", () => {
   assert.equal(
     getAccessibleFeaturePageById("spare-planning-equipment-system", "系统管理员").id,
-    "system-management-project-data-management"
+    "spare-planning-equipment-system"
   );
   assert.equal(
     getAccessibleFeaturePageById("system-management-user-management", "数据管理员").id,
@@ -978,7 +978,7 @@ test("support organization and activity pages follow ship_front tree table edito
   assert.match(logisticsSource, /\\u7b56\\u7565\\u65b9\\u5411/);
   assert.match(logisticsSource, /\\u6a2a\\u5411\\u8fd0\\u8f93/);
   assert.match(logisticsSource, /\\u7eb5\\u5411\\u8fd0\\u8f93/);
-  assert.match(logisticsSource, /\\u5907\\u4ef6\\u79cd\\u7c7b/);
+  assert.doesNotMatch(logisticsSource, /\\u5907\\u4ef6\\u79cd\\u7c7b/);
   assert.match(logisticsSource, /\\u89e6\\u53d1\\u65b9\\u5f0f/);
   assert.match(logisticsSource, /\\u4e34\\u754c\\u5e93\\u5b58/);
   assert.match(logisticsSource, /\\u5468\\u671f\\u6027\\u8c03\\u8fd0/);
@@ -990,12 +990,12 @@ test("support organization and activity pages follow ship_front tree table edito
   assert.match(logisticsSource, /\\u8fd0\\u8f93\\u8d77\\u70b9/);
   assert.match(logisticsSource, /\\u8fd0\\u8f93\\u7ec8\\u70b9/);
   assert.match(logisticsSource, /\\u8fd0\\u8f93\\u65f6\\u95f4\(h\)/);
-  assert.match(logisticsSource, /spareModelingNames\(\)\.map/);
+  assert.doesNotMatch(logisticsSource, /spareModelingNames\(\)\.map/);
   assert.match(logisticsSource, /valueSelect/);
   assert.match(logisticsSource, /valueInput/);
   assert.match(logisticsSource, /const basePath = `transportPolicies\.\$\{index\}`/);
   assert.match(logisticsSource, /valueInput\(`\$\{basePath\}\.name`, "text"\)/);
-  assert.match(logisticsSource, /valueSelect\(`\$\{basePath\}\.spareName`/);
+  assert.doesNotMatch(logisticsSource, /valueSelect\(`\$\{basePath\}\.spareName`/);
   assert.match(logisticsSource, /valueSelect\(`\$\{basePath\}\.fromSupportNodeName`/);
   assert.match(logisticsSource, /valueSelect\(`\$\{basePath\}\.toSupportNodeName`/);
   assert.match(logisticsSource, /data-logistics-transport-select/);
@@ -1081,7 +1081,6 @@ test("support activity pages align to page suggestion activity fields", async ()
     /\u6362\u4ef6\u7ef4\u4fee/,
     /\\u540e\\u52e4\\u4fdd\\u969c\\u8fd0\\u8f93\\u7b56\\u7565\\u914d\\u7f6e/,
     /data-logistics-transport-add>\\u65b0\\u589e/,
-    /\\u5907\\u4ef6\\u79cd\\u7c7b/,
     /\\u89e6\\u53d1\\u65b9\\u5f0f/
   ]) {
     assert.match(supportActivitySource, pattern);
@@ -1581,10 +1580,10 @@ test("combat unit page follows ship front basic unit modeling structure", async 
   assert.match(combatUnitSource, /type="checkbox" data-select-combat-unit-member/);
   assert.match(combatUnitSource, /<th rowspan="2" class="combat-unit-select-col"><\/th>/);
   assert.match(combatUnitSource, /<th rowspan="2">所属机场<\/th>/);
-  assert.match(combatUnitSource, /class="combat-unit-prelife-heading">大修周期<\/th>/);
-  assert.match(combatUnitSource, /class="combat-unit-prelife-column">大修周期（日历日）<\/th>/);
-  assert.match(combatUnitSource, /class="combat-unit-prelife-column">飞行小时<\/th>/);
-  assert.match(combatUnitSource, /class="combat-unit-prelife-column">起落次数<\/th>/);
+  assert.match(combatUnitSource, /class="combat-unit-prelife-heading">寿命初始状态<\/th>/);
+  assert.match(combatUnitSource, /class="combat-unit-prelife-column">日历寿命（天）<\/th>/);
+  assert.match(combatUnitSource, /class="combat-unit-prelife-column">剩余飞行小时<\/th>/);
+  assert.match(combatUnitSource, /class="combat-unit-prelife-column">剩余起落次数<\/th>/);
   assert.match(appSource, /飞机编号/);
   assert.match(combatUnitSource, /combatUnitMemberInput\(index, "aircraftNo", member\.aircraftNo\)/);
   assert.match(combatUnitSource, /combatUnitMemberInput\(index, "airport", combatUnitMemberAirport\(member\)\)/);
@@ -1681,7 +1680,7 @@ test("phase 1B mission modeling convergence contract is documented in source", a
     appSource.indexOf("function periodicValueSelect")
   );
 
-  assert.match(combatUnitSource, /大修周期/);
+  assert.match(combatUnitSource, /寿命初始状态/);
   assert.doesNotMatch(combatUnitSource, /class="combat-unit-prelife-column">日历时间<\/th>/);
 
   assert.match(basicMissionSource, /提前通知时间/);
@@ -2069,15 +2068,13 @@ test("editable modeling lists expose page suggestion action entries", async () =
     appSource.indexOf("function renderExperimentPlanEditor"),
     appSource.indexOf("function renderScenarioOverrideRow")
   );
-  assert.match(experimentPlanEditorSource, /scenario-composition-workspace/);
-  assert.match(experimentPlanEditorSource, /scenario-project-json-panel/);
-  assert.match(experimentPlanEditorSource, /renderScenarioModelingDataTree\(sourceProjectJson, selectedPath\)/);
-  assert.match(experimentPlanEditorSource, /renderSelectedScenarioOverrideEditor\(selectedOverrideContext\)/);
+  assert.match(experimentPlanEditorSource, /基本信息/);
+  assert.match(experimentPlanEditorSource, /运行配置/);
+  assert.match(experimentPlanEditorSource, /分析配置/);
+  assert.doesNotMatch(experimentPlanEditorSource, /scenario-composition-workspace/);
   assert.match(appSource, /data-scenario-modeling-path/);
   assert.match(appSource, /data-scenario-selected-override-value/);
-  assert.match(experimentPlanEditorSource, /scenario-composition-editor-panel/);
-  assert.match(experimentPlanEditorSource, /scenario-override-path-options/);
-  assert.match(experimentPlanEditorSource, /scenarioOverrideParameterOptions/);
+  assert.doesNotMatch(experimentPlanEditorSource, /scenario-composition-editor-panel/);
   assert.match(appSource, /return "spare-planning-experiment-plan-management"/);
 });
 
@@ -2797,7 +2794,7 @@ test("experiment plan editor edits an isolated branch rather than the project dr
   assert.doesNotMatch(saveButtonSource, /saveCurrentProjectThroughApi\(\)/);
 });
 
-test("experiment plan editor exposes seed policy and scenario composition controls", async () => {
+test("experiment plan editor exposes one runtime configuration and removes Scenario controls", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const editorSource = appSource.slice(
     appSource.indexOf("function renderExperimentPlanEditor"),
@@ -2813,9 +2810,10 @@ test("experiment plan editor exposes seed policy and scenario composition contro
   assert.match(editorSource, /data-experiment-stop-mode/);
   assert.match(editorSource, /data-experiment-stop-condition/);
   assert.match(editorSource, /data-experiment-stop-time-minute/);
-  assert.match(editorSource, /data-scenario-override-path/);
-  assert.match(editorSource, /data-scenario-override-add/);
-  assert.match(editorSource, /data-scenario-override-remove/);
+  assert.match(editorSource, /基本信息/);
+  assert.match(editorSource, /运行配置/);
+  assert.match(editorSource, /分析配置/);
+  assert.doesNotMatch(editorSource, /data-scenario-override-add/);
   assert.match(experimentPlanChangeSource, /experimentPlanStopPolicy/);
   assert.match(experimentPlanChangeSource, /experimentPlanDraft/);
   assert.doesNotMatch(experimentPlanChangeSource, /setPath\(scenario/);
@@ -3876,14 +3874,14 @@ test("system management exposes an independent equipment RMS allocation workbenc
   const workbenchSource = await readFile(new URL("../front/rms-allocation-workbench.mjs", import.meta.url), "utf8");
   assert.match(workbenchSource, /装备 RMS 指标分配/);
   assert.doesNotMatch(workbenchSource, /plan\.name/);
-  assert.match(workbenchSource, /导入表格/);
+  assert.match(workbenchSource, /下载模板/);
+  assert.match(workbenchSource, /上传文件/);
   assert.doesNotMatch(workbenchSource, /import-sample/);
   assert.doesNotMatch(workbenchSource, /导入 15/);
-  assert.match(workbenchSource, /任务可靠度/);
   assert.match(workbenchSource, /任务时长\(h\)/);
-  assert.match(workbenchSource, /关键故障占比/);
+  assert.match(workbenchSource, /整机 MTBF\(h\)/);
   assert.match(workbenchSource, /MTTR\(h\)/);
-  assert.doesNotMatch(workbenchSource, /MTBF\(h\)/);
+  assert.doesNotMatch(workbenchSource, /关键故障占比/);
   assert.match(workbenchSource, /data-rms-equipment-root/);
   assert.match(workbenchSource, /可靠性分配方法/);
   assert.match(workbenchSource, /等分配法/);
@@ -3903,8 +3901,8 @@ test("system management exposes an independent equipment RMS allocation workbenc
   assert.doesNotMatch(workbenchSource, /反算 R/);
   assert.match(workbenchSource, /校核可靠度/);
   assert.match(workbenchSource, /运行比/);
-  assert.match(workbenchSource, /产品强度/);
-  assert.match(workbenchSource, /MTBCF/);
+  assert.doesNotMatch(workbenchSource, /<th>产品强度<\/th>/);
+  assert.doesNotMatch(workbenchSource, /<th>结构<\/th>/);
 });
 
 test("RMS allocation workbench renders parameters for only the selected method", () => {
@@ -3935,8 +3933,8 @@ test("RMS allocation workbench renders parameters for only the selected method",
   assert.doesNotMatch(equalHtml, /反算 R/);
   assert.match(equalHtml, /校核可靠度/);
   assert.match(equalHtml, /运行比<\/th>/);
-  assert.match(equalHtml, /产品强度/);
-  assert.match(equalHtml, /MTBCF/);
+  assert.doesNotMatch(equalHtml, /产品强度/);
+  assert.doesNotMatch(equalHtml, /<th>MTBCF<\/th>/);
   assert.match(equalHtml, /任务计算机LRU/);
   assert.match(equalHtml, /运行比 0\.65/);
 
@@ -4154,8 +4152,8 @@ test("visual simulation layout matches operational dashboard requirements", asyn
   assert.ok(frameWrapIndex > -1 && reloadIndex > frameWrapIndex && iframeIndex > reloadIndex, "Solara refresh button should render inside the visualization frame");
   assert.doesNotMatch(visualSource, /mesa-control-deck|mesa-control-status|仿真状态/);
   assert.match(visualSource, /sandbox="allow-scripts allow-same-origin allow-forms allow-popups"/);
-  assert.match(styleSource, /\.solara-visualization-frame-wrap[\s\S]*min-height: 720px/);
-  assert.match(styleSource, /\.solara-visualization-frame[\s\S]*height: min\(78vh, 960px\)/);
+  assert.match(styleSource, /\.solara-visualization-frame-wrap[\s\S]*min-height: calc\(100vh - 190px\)/);
+  assert.match(styleSource, /\.solara-visualization-frame[\s\S]*height: calc\(100vh - 235px\)/);
   assert.doesNotMatch(visualSource, /mesa-status-grid/);
   assert.doesNotMatch(visualSource, /mesa-kpi-strip|mesa-view-tabs|data-mesa-timeline/);
   assert.doesNotMatch(visualSource, /renderAvailabilityCurve\(availabilityTrend\)/);
@@ -4444,7 +4442,7 @@ test("visual simulation enters the Solara Mesa page without a replay list", asyn
   assert.doesNotMatch(visualSource, /选择回放/);
   assert.doesNotMatch(visualSource, /<select/);
   assert.match(visualSource, /data-mesa-control="reload-solara"/);
-  assert.match(visualSource, /刷新 Solara/);
+  assert.match(visualSource, /刷新推演/);
   assert.doesNotMatch(visualSource, /启动回放|暂停回放|启动新仿真/);
   for (const action of ["play", "start-new-run", "refresh-runs", "load-replay", "subscribe-run", "stop-subscription", "step", "reset"]) {
     assert.doesNotMatch(visualSource, new RegExp(`data-mesa-control="${action}"`));

@@ -922,6 +922,24 @@ select[multiple].table-edit-select {
   box-shadow: inset 3px 0 0 var(--primary);
 }
 
+.granularity-profile-card:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--primary) 35%, transparent);
+  outline-offset: 2px;
+}
+
+.granularity-check {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  color: #fff;
+  background: var(--primary);
+  border-radius: 50%;
+  font-weight: 800;
+}
+
+.granularity-check:empty { background: #dce3ea; }
+
 .sheet-selector-list,
 .modeling-sheet-stack,
 .field-checkbox-grid {
@@ -2814,11 +2832,26 @@ tr.clickable-table-row.selected-table-row td {
 
 .mesa-visual-shell {
   display: grid;
-  gap: 12px;
+  gap: 8px;
 }
 
+.mesa-visual-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 42px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.mesa-visual-toolbar > div:first-child { display: flex; gap: 10px; align-items: baseline; }
+.mesa-visual-toolbar span { color: var(--muted); font-size: 12px; }
+
 .solara-visualization-frame-wrap {
-  min-height: 720px;
+  min-height: calc(100vh - 190px);
   border: 1px solid var(--line);
   border-radius: 8px;
   overflow: hidden;
@@ -2838,8 +2871,8 @@ tr.clickable-table-row.selected-table-row td {
 .solara-visualization-frame {
   display: block;
   width: 100%;
-  height: min(78vh, 960px);
-  min-height: 720px;
+  height: calc(100vh - 235px);
+  min-height: 680px;
   border: 0;
   background: #ffffff;
 }

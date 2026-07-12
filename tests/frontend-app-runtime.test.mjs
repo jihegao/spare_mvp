@@ -495,7 +495,7 @@ test("project data raw JSON normalizes legacy basicMission fields", async () => 
   try {
     await runtime.flush();
 
-    assert.match(runtime.appNode.innerHTML, /project json 原始数据/);
+    assert.match(runtime.appNode.innerHTML, /Project JSON 原始数据/);
     assert.match(runtime.appNode.innerHTML, /<code>basicMissions<\/code><span>\[2\]<\/span>/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /<code>basicMission<\/code>/);
   } finally {
@@ -778,8 +778,8 @@ test("visual Mesa page renders Solara iframe shell", async () => {
     await runtime.flush();
 
     assert.match(runtime.appNode.innerHTML, /data-mesa-control="reload-solara"/);
-    const visualHero = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-hero");
-    assert.match(visualHero, /<h3>可视化推演<\/h3>/);
+    const visualHero = htmlSectionByClass(runtime.appNode.innerHTML, "mesa-visual-toolbar");
+    assert.match(visualHero, /<strong>可视化推演<\/strong>/);
     assert.match(visualHero, /data-current-experiment-plan/);
     assert.match(runtime.appNode.innerHTML, /data-solara-visualization-frame/);
     assert.match(runtime.appNode.innerHTML, /class="solara-visualization-frame"/);
@@ -2139,7 +2139,7 @@ test("logistics transport editing writes top-level transport policies", async ()
     );
     assert.equal(saved.transportPolicies[0].fromSupportNodeName, "基地");
     assert.equal(saved.transportPolicies[0].toSupportNodeName, "甲板");
-    assert.equal(saved.transportPolicies[0].spareName, "LRU-A");
+    assert.equal("spareName" in saved.transportPolicies[0], false);
     assert.equal(saved.transportPolicies[0].transportTimeHours, 2.5);
     assert.ok(saved.supportActivities.every((activity) => !("transportStrategies" in activity) && !("organizationStrategies" in activity)));
   } finally {
@@ -2307,7 +2307,7 @@ test("experiment plan stop minute edit does not enable specified time unless che
   }
 });
 
-test("experiment plan editor uses a Chinese modeling data tree for leaf override editing", async () => {
+test("experiment plan editor separates basic runtime and analysis configuration without Scenario editing", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=spare-planning-experiment-plan-management",
     projectJson: createRuntimeProjectJson({
@@ -2330,40 +2330,12 @@ test("experiment plan editor uses a Chinese modeling data tree for leaf override
   try {
     await runtime.click("[data-experiment-plan-add]", { experimentPlanAdd: "" });
 
-    assert.match(runtime.appNode.innerHTML, /建模数据/);
-    assert.match(runtime.appNode.innerHTML, /任务剖面对象/);
-    assert.match(runtime.appNode.innerHTML, /任务剖面名称/);
-    assert.match(runtime.appNode.innerHTML, /保障点清单对象/);
-    assert.match(runtime.appNode.innerHTML, /保障资源清单对象/);
-    assert.doesNotMatch(runtime.appNode.innerHTML, /Project JSON/);
-
-    await runtime.click(
-      "[data-scenario-modeling-path]",
-      { scenarioModelingPath: "supportResources.0.quantity" }
-    );
-
-    assert.match(runtime.appNode.innerHTML, /选中属性/);
-    assert.match(runtime.appNode.innerHTML, /保障资源清单对象 \/ 保障资源 1 \/ 数量/);
-    assert.match(runtime.appNode.innerHTML, /data-scenario-selected-override-value/);
-    assert.match(runtime.appNode.innerHTML, /value="2"/);
-
-    await runtime.change(
-      "[data-scenario-selected-override-value]",
-      { scenarioSelectedOverridePath: "supportResources.0.quantity" },
-      { value: "12" }
-    );
-    await runtime.click("[data-save-plan]");
-
-    const createPlanRequest = runtime.requests.find((request) => (
-      request.url === "/api/projects/project-runtime/experiment-plans"
-      && (request.options.method || "GET") === "POST"
-    ));
-    assert.ok(createPlanRequest, "tree-edited experiment plan should be posted to backend");
-    const body = JSON.parse(createPlanRequest.options.body || "{}");
-    assert.equal(body.config.scenarioComposition.overrides[0].path, "supportResources.0.quantity");
-    assert.equal(body.config.scenarioComposition.overrides[0].valueType, "number");
-    assert.equal(body.config.scenarioComposition.overrides[0].value, 12);
-    assert.equal(body.config.projectJson.supportResources[0].quantity, 12);
+    assert.match(runtime.appNode.innerHTML, /基本信息/);
+    assert.match(runtime.appNode.innerHTML, /运行配置/);
+    assert.match(runtime.appNode.innerHTML, /分析配置/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /Scenario 拼接/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /scenario-composition-workspace/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-scenario-selected-override-value/);
   } finally {
     runtime.restore();
   }

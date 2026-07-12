@@ -17,25 +17,29 @@ export function renderRmsAllocationWorkbench({ project, plan, result, importStat
           <span>${htmlEscape(project.name)} / ${htmlEscape(result.algorithmVersion)}</span>
         </div>
         <div class="rms-parameter-grid">
-          ${input("任务可靠度", "targets.reliability.value", plan.targets.reliability.value, "number", "0.001", htmlEscape)}
           ${input("任务时长(h)", "targets.taskDurationHours", plan.targets.taskDurationHours ?? plan.targets.reliability.atHours, "number", "0.1", htmlEscape)}
-          ${input("关键故障占比", "targets.criticalFailureRatio", plan.targets.criticalFailureRatio ?? 1, "number", "0.01", htmlEscape)}
+          ${input("整机 MTBF(h)", "targets.mtbfHours", plan.targets.mtbfHours ?? 1000, "number", "1", htmlEscape)}
           ${input("MTTR(h)", "targets.mttrHours", plan.targets.mttrHours, "number", "0.1", htmlEscape)}
         </div>
       </section>
 
       <section class="rms-layout">
         <div class="rms-equipment-tree">
-          <div class="section-head"><h3>装备树</h3><span>独立导入数据</span></div>
+          <div class="section-head"><h3>安装树</h3><span>独立导入数据</span></div>
           <div class="rms-import-actions">
-            <label class="rms-file-button">导入表格<input data-rms-equipment-import-file type="file" accept=".csv,.json,application/json,text/csv"></label>
+            <button type="button" data-rms-action="download-template">下载模板</button>
+            <label class="rms-file-button">上传文件<input data-rms-equipment-import-file type="file" accept=".csv,.json,application/json,text/csv"></label>
           </div>
           ${equipmentRootSelect(project.rootId, equipmentRoots, htmlEscape)}
           <p class="rms-import-status">${htmlEscape(importStatus || "当前装备树为 RMS 分配工作台独立数据。")}</p>
           ${renderEquipmentTree(project, result, htmlEscape)}
         </div>
         <div class="rms-method-panel">
-          <div class="section-head"><h3>方法选择</h3><span>${statusLabel(result.status)}</span></div>
+          <div class="section-head"><h3>系统参数</h3><span>${statusLabel(result.status)}</span></div>
+          <div class="table-wrap"><table><thead><tr><th>系统名称</th><th>型号</th><th>安装数</th><th>运行比</th></tr></thead><tbody>
+            ${result.nodeResults.map((row) => `<tr><td>${htmlEscape(row.nodeName)}</td><td>${htmlEscape(row.node?.model || row.node?.partNumber || "-")}</td><td>${row.quantity}</td><td>${compactNumber(row.runningRatio)}</td></tr>`).join("")}
+          </tbody></table></div>
+          <div class="section-head"><h3>计算方法</h3><span>平铺配置</span></div>
           <div class="rms-method-grid">
             <label>可靠性分配方法
               <select data-rms-path="methods.reliability">
@@ -48,7 +52,7 @@ export function renderRmsAllocationWorkbench({ project, plan, result, importStat
             <button type="button" class="btn-primary" data-rms-action="calculate">计算</button>
           </div>
           <div class="rms-verification-metrics">
-            ${metric("目标 R", fixed(result.verification.equipmentTarget.reliability, 3))}
+            ${metric("目标 R", fixed(result.targetMetrics.reliability, 3))}
             ${metric("校核可靠度", fixed(result.verification.calculated.reliability, 3))}
             ${metric("MTBCF", `${fixed(targetMetrics.mtbcfHours, 1)} h`)}
             ${metric("MTBF", `${fixed(targetMetrics.mtbfHours, 1)} h`)}
@@ -63,24 +67,18 @@ export function renderRmsAllocationWorkbench({ project, plan, result, importStat
       </section>
 
       <section class="analysis-chart-panel rms-result-panel">
-        <div class="section-head"><h3>节点分配结果</h3><span>系统级 / LRU 级 RMS target</span></div>
+        <div class="section-head"><h3>节点分配结果</h3><button type="button" data-rms-action="export-excel">导出 Excel</button></div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>层级</th><th>节点</th><th>结构</th><th>运行比</th><th>产品强度</th><th>失效率</th><th>MTBCF</th><th>MTBF</th><th>MTTR</th><th>Ai</th><th>Ao</th><th>状态</th></tr></thead>
+            <thead><tr><th>层级</th><th>节点</th><th>运行比</th><th>失效率</th><th>MTBF</th><th>MTTR</th></tr></thead>
             <tbody>${result.nodeResults.map((row) => `
               <tr>
                 <td>${htmlEscape(row.level)}</td>
                 <td>${htmlEscape(row.nodeName)}</td>
-                <td>${htmlEscape(row.structure)}</td>
                 <td>${compactNumber(row.runningRatio)}</td>
-                <td>${fixed(row.productIntensityHours, 2)} h</td>
                 <td>${fixed(row.failureRate, 5)}</td>
-                <td>${fixed(row.mtbcfHours, 1)} h</td>
                 <td>${fixed(row.mtbfHours, 1)} h</td>
                 <td>${fixed(row.mttrHours, 2)} h</td>
-                <td>${pct(row.inherentAvailability)}</td>
-                <td>${pct(row.operationalAvailability)}</td>
-                <td><span class="status-badge ${row.status === "风险" ? "warn" : "success"}">${row.status}</span></td>
               </tr>
             `).join("")}</tbody>
           </table>

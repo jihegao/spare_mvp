@@ -679,6 +679,7 @@ let selectedProjectDataProjectJson = null;
 let selectedProjectDataProjectJsonId = "";
 let projectDataProjectJsonLoading = false;
 let projectDataManagementStatus = "选择项目查看 Project JSON。";
+let projectReplacementPreview = null;
 let projectEditorDraft = null;
 let selectedRoute = readRouteFromHash() || DEFAULT_ROUTE;
 let selectedFeatureId = readFeatureIdFromHash() || DEFAULT_FEATURE_ID;
@@ -692,6 +693,9 @@ let selectedPeriodicTaskId = "";
 let selectedPeriodicWeekIndex = 1;
 let selectedEquipmentComponentIndex = 0;
 let selectedEquipmentNodeKey = "";
+let equipmentSearchQuery = "";
+let spareDemandSort = "default";
+let carryHideZeroDemand = true;
 let selectedBasicMissionKey = "primary";
 let selectedBasicMissionTreeLevel = "mission";
 let selectedBasicMissionEquipmentType = primaryBasicMissionRecord().equipmentType || scenarioEquipmentModel() || "";
@@ -1468,6 +1472,20 @@ function bindEvents() {
       return;
     }
 
+    const projectReplacementConfirm = event.target.closest("[data-project-replacement-confirm]");
+    if (projectReplacementConfirm) {
+      confirmProjectReplacement().finally(() => render());
+      return;
+    }
+
+    const projectReplacementCancel = event.target.closest("[data-project-replacement-cancel]");
+    if (projectReplacementCancel) {
+      projectReplacementPreview = null;
+      projectDataManagementStatus = "已取消覆盖";
+      render();
+      return;
+    }
+
     const exportProjectButton = event.target.closest("[data-project-export]");
     if (exportProjectButton) {
       exportProjectJson(exportProjectButton.dataset.projectExport).finally(() => render());
@@ -1733,10 +1751,33 @@ function bindEvents() {
       return;
     }
 
+    const periodicRepeatButton = event.target.closest("[data-periodic-repeat]");
+    if (periodicRepeatButton) {
+      repeatSelectedPeriodicWeek(periodicRepeatButton.dataset.periodicRepeat);
+      markProjectDraftChanged();
+      render();
+      return;
+    }
+
     const rmsActionButton = event.target.closest("[data-rms-action]");
     if (rmsActionButton) {
-      recalculateRmsAllocation();
+      const action = rmsActionButton.dataset.rmsAction;
+      if (action === "download-template") downloadRmsEquipmentTemplate();
+      else if (action === "export-excel") exportRmsAllocationExcel().finally(() => render());
+      else recalculateRmsAllocation();
       render();
+      return;
+    }
+
+    const equipmentTemplateButton = event.target.closest("[data-equipment-download-template]");
+    if (equipmentTemplateButton) {
+      downloadEquipmentStructureTemplate();
+      return;
+    }
+
+    const supportJobsTemplateButton = event.target.closest("[data-support-jobs-download-template]");
+    if (supportJobsTemplateButton) {
+      downloadSupportActivityJobsTemplate();
       return;
     }
 
@@ -1747,6 +1788,13 @@ function bindEvents() {
       if (action === "run-current") {
         runLiteMesaAnalysisPage(page).finally(() => render());
       }
+      render();
+      return;
+    }
+
+    const spareSortButton = event.target.closest("[data-spare-demand-sort]");
+    if (spareSortButton) {
+      spareDemandSort = spareSortButton.dataset.spareDemandSort || "default";
       render();
       return;
     }
@@ -1853,6 +1901,19 @@ function bindEvents() {
   });
 
   app.addEventListener("change", async (event) => {
+    const projectReplacementFile = event.target.closest("[data-project-replacement-file]");
+    if (projectReplacementFile) {
+      await previewProjectReplacement(projectReplacementFile.files?.[0]);
+      projectReplacementFile.value = "";
+      render();
+      return;
+    }
+    const carryZeroFilter = event.target.closest("[data-carry-hide-zero]");
+    if (carryZeroFilter) {
+      carryHideZeroDemand = carryZeroFilter.checked;
+      render();
+      return;
+    }
     if (lockedModelingEventTarget(event.target, LOCKED_MODELING_CHANGE_SELECTORS)) {
       event.preventDefault?.();
       return;
@@ -1885,6 +1946,15 @@ function bindEvents() {
       const imported = await importEquipmentStructureTableFile(equipmentImportFile.files?.[0]);
       equipmentImportFile.value = "";
       if (imported) markProjectDraftChanged();
+      render();
+      return;
+    }
+
+    const supportJobsImportFile = event.target.closest("[data-support-jobs-import-file]");
+    if (supportJobsImportFile) {
+      await importSupportActivityJobsFile(supportJobsImportFile.dataset.supportJobsImportFile, supportJobsImportFile.files?.[0]);
+      supportJobsImportFile.value = "";
+      markProjectDraftChanged();
       render();
       return;
     }
@@ -2391,6 +2461,30 @@ function bindEvents() {
     const projectEditInput = event.target.closest("[data-project-edit-field]");
     if (projectEditInput) {
       updateProjectEditorDraft(projectEditInput.dataset.projectEditField, projectEditInput.value);
+      return;
+    }
+
+    const equipmentSearchInput = event.target.closest("[data-equipment-search]");
+    if (equipmentSearchInput) {
+      equipmentSearchQuery = equipmentSearchInput.value;
+      const selectionStart = equipmentSearchInput.selectionStart;
+      const selectionEnd = equipmentSearchInput.selectionEnd;
+      const query = equipmentSearchQuery.trim().toLowerCase();
+      if (query) {
+        const component = (scenario.components || []).find((item) => String(item.name || item.componentName || "").toLowerCase().includes(query));
+        const aircraft = wholeMachineModels().find((model) => String(model).toLowerCase().includes(query));
+        if (component) selectedEquipmentNodeKey = `component:${component.id}`;
+        else if (aircraft) selectedEquipmentNodeKey = `aircraft:${aircraft}`;
+        collapsedTreeNodes.clear();
+      }
+      render();
+      queueMicrotask(() => {
+        const restoredInput = app.querySelector?.("[data-equipment-search]");
+        restoredInput?.focus();
+        if (Number.isInteger(selectionStart) && Number.isInteger(selectionEnd)) {
+          restoredInput?.setSelectionRange(selectionStart, selectionEnd);
+        }
+      });
       return;
     }
 
@@ -3311,7 +3405,9 @@ function renderProjectTemplateManagement(project) {
       <div class="toolbar-row">
         <button type="button" class="btn-primary" data-project-template-action="set" data-project-id="${htmlEscape(projectId)}" ${project && !isTemplate ? "" : "disabled"}>设为模板</button>
         <button type="button" data-project-template-action="unset" data-project-id="${htmlEscape(projectId)}" ${project && isTemplate ? "" : "disabled"}>取消设为模板</button>
+        <label class="btn-secondary">数据管理<input type="file" hidden data-project-replacement-file accept=".json,application/json" ${project ? "" : "disabled"}></label>
       </div>
+      ${renderProjectReplacementPreview()}
       <p class="inline-status">${htmlEscape(projectDataManagementStatus)}</p>
     </section>
   `;
@@ -3342,16 +3438,68 @@ function renderProjectJsonViewer(projectJson) {
     ? renderProjectJsonNode(projectJson, "project", 0)
     : `<p class="modeling-import-empty">${projectDataProjectJsonLoading ? "正在加载 Project JSON。" : "暂无 Project JSON 可查看。"}</p>`;
   return `
-    <section class="system-config-section" data-project-json-viewer>
-      <div class="section-head">
-        <h4>project json 原始数据</h4>
-        <span>${projectDataProjectJsonLoading ? "加载中" : "可折叠"}</span>
-      </div>
-      <div class="project-json-viewer">
-        ${body}
-      </div>
-    </section>
+    <details class="system-config-section" data-project-json-viewer>
+      <summary class="section-head">
+        <h4>Project JSON 原始数据</h4>
+        <span>${projectDataProjectJsonLoading ? "加载中" : "默认隐藏，点击展开"}</span>
+      </summary>
+      <div class="project-json-viewer">${body}</div>
+    </details>
   `;
+}
+
+function renderProjectReplacementPreview() {
+  if (!projectReplacementPreview) return "";
+  const { fileName, projectJson, validation, error } = projectReplacementPreview;
+  if (error) return `<div class="alert warn"><strong>${htmlEscape(fileName)}</strong><p>${htmlEscape(error)}</p></div>`;
+  const overview = projectDataOverviewRows(projectJson);
+  const errors = Array.isArray(validation?.errors) ? validation.errors : [];
+  return `
+    <div class="project-replacement-preview">
+      <div class="section-head"><h4>覆盖预览</h4><span>${validation?.ok ? "校验通过" : `发现 ${errors.length} 个错误`}</span></div>
+      <p><strong>${htmlEscape(projectJson?.projectInfo?.name || projectJson?.name || fileName)}</strong></p>
+      <div class="project-data-overview-grid">${overview.map((row) => `<div class="modeling-config-card"><span>${htmlEscape(row.label)}</span><strong>${row.value}</strong></div>`).join("")}</div>
+      ${errors.length ? `<div class="alert warn">${errors.map((item) => `<p>${htmlEscape(item.message || item.code || String(item))}</p>`).join("")}</div>` : ""}
+      <div class="toolbar-row">
+        <button type="button" class="btn-primary" data-project-replacement-confirm ${validation?.ok ? "" : "disabled"}>确认覆盖当前项目</button>
+        <button type="button" data-project-replacement-cancel>取消</button>
+      </div>
+    </div>`;
+}
+
+async function previewProjectReplacement(file) {
+  if (!file) return;
+  projectDataManagementStatus = `正在校验 ${file.name}`;
+  try {
+    const projectJson = JSON.parse(await file.text());
+    const validation = await backendApi.validateProject(projectJson);
+    projectReplacementPreview = { fileName: file.name, projectJson, validation };
+    projectDataManagementStatus = validation.ok ? "Project JSON 校验通过，请确认覆盖" : "Project JSON 校验失败，不允许覆盖";
+  } catch (err) {
+    projectReplacementPreview = { fileName: file.name, error: err?.message || "JSON 文件无法解析" };
+    projectDataManagementStatus = "Project JSON 文件无效";
+  }
+}
+
+async function confirmProjectReplacement() {
+  const selectedProject = selectedProjectDataProject();
+  if (!selectedProject || !projectReplacementPreview?.validation?.ok) return;
+  const projectId = projectDataProjectBackendId(selectedProject);
+  const loaded = selectedProjectDataProjectJsonId === projectDataProjectId(selectedProject)
+    ? selectedProjectDataProjectJson
+    : await backendApi.getProject(projectId);
+  projectDataManagementStatus = "正在覆盖当前项目";
+  try {
+    const result = await backendApi.replaceProject(projectId, projectReplacementPreview.projectJson, loaded?.updated_at || selectedProject.updatedAt || "");
+    projectReplacementPreview = null;
+    selectedProjectDataProjectJson = null;
+    selectedProjectDataProjectJsonId = "";
+    projectDataManagementStatus = `覆盖完成，审计记录 ${result.audit_event_id || "已生成"}`;
+    await refreshBackendProjects();
+    ensureSelectedProjectDataJsonLoaded({ force: true });
+  } catch (err) {
+    projectDataManagementStatus = err?.code === "project_version_conflict" ? "覆盖失败：项目已被其他用户更新，请重新加载" : `覆盖失败：${formatBackendError(err)}`;
+  }
 }
 
 function projectDataOverviewRows(projectJson) {
@@ -3648,7 +3796,7 @@ function renderGranularityProfiles() {
               <h4>${htmlEscape(profile.label)}</h4>
               <p>${htmlEscape(profile.description)}</p>
             </div>
-            <span class="status-badge">${profile.fieldKeys.length} 字段</span>
+            <span class="granularity-check" aria-hidden="true">${profile.key === selectedModelingGranularityKey ? "✓" : ""}</span>
           </div>
         </button>
       `).join("")}
@@ -3895,14 +4043,14 @@ function modelingGranularityProfiles() {
   return [
     {
       key: MODELING_GRANULARITY_FULL,
-      label: "全要素",
-      description: "显示全部表单字段。",
+      label: "保障仿真（含保障资源）",
+      description: "启用保障资源及其对保障活动的约束。",
       fieldKeys: allModelingFieldKeys()
     },
     {
       key: MODELING_GRANULARITY_EQUIPMENT_RMS,
-      label: "装备RMS",
-      description: "保留装备RMS参数，忽略保障资源对保障活动的约束关系。",
+      label: "保障仿真（不含保障资源）",
+      description: "保留任务与装备建模，不启用保障资源约束。",
       fieldKeys: modelingGranularityFieldKeys(MODELING_GRANULARITY_EQUIPMENT_RMS)
     }
   ];
@@ -4467,8 +4615,8 @@ function renderCombatUnitModeling(page) {
       <div class="table-wrap unframed-table">
         <table class="combat-unit-table">
           <thead>
-            <tr><th rowspan="2" class="combat-unit-select-col"></th><th rowspan="2">飞机编号</th><th rowspan="2">飞机类型</th><th rowspan="2">所属机场</th><th colspan="3" class="combat-unit-prelife-heading">大修周期</th></tr>
-            <tr><th class="combat-unit-prelife-column">大修周期（日历日）</th><th class="combat-unit-prelife-column">飞行小时</th><th class="combat-unit-prelife-column">起落次数</th></tr>
+            <tr><th rowspan="2" class="combat-unit-select-col"></th><th rowspan="2">飞机编号</th><th rowspan="2">飞机类型</th><th rowspan="2">所属机场</th><th colspan="3" class="combat-unit-prelife-heading">寿命初始状态</th></tr>
+            <tr><th class="combat-unit-prelife-column">日历寿命（天）</th><th class="combat-unit-prelife-column">剩余飞行小时</th><th class="combat-unit-prelife-column">剩余起落次数</th></tr>
           </thead>
           <tbody>
             ${members.map((member, index) => `
@@ -4621,7 +4769,7 @@ function renderBasicMissionModeling(page) {
               <tbody>
                 <tr><th>基本任务名称</th><td>${valueInput(`${missionPath}.name`)}</td></tr>
                 <tr><th>任务编号</th><td>${valueInput(`${missionPath}.taskNo`)}</td></tr>
-                <tr><th>装备类型</th><td>${valueInput(`${missionPath}.equipmentType`)}</td></tr>
+                <tr><th>装备名称</th><td><input value="${htmlEscape(selectedMission.task?.equipmentType || scenarioEquipmentModel() || "")}" readonly aria-readonly="true" title="装备名称由装备系统建模回填"></td></tr>
                 <tr><th>装备数量</th><td>${valueInput(`${missionPath}.equipmentQuantity`, "number")}</td></tr>
                 <tr><th>最小装备数量</th><td>${valueInput(`${missionPath}.minRequiredSorties`, "number")}</td></tr>
                 <tr><th>任务成功点</th><td>${valueInput(`${missionPath}.successPoint`, "number", { min: "0", max: "1", step: "0.01" })}</td></tr>
@@ -4819,7 +4967,7 @@ function renderPeriodicTaskModeling(page) {
   const periodicTasks = periodicTaskList();
   const selectedTask = selectedPeriodicTask(periodicTasks);
   const selectedDraft = selectedTask ? normalizePeriodicTask(selectedTask) : null;
-  const totalWeeks = selectedDraft ? Math.max(1, Math.floor(Number(selectedDraft.repeatWeeks || 1))) : 1;
+  const totalWeeks = selectedDraft ? clamp(Math.floor(Number(selectedDraft.repeatWeeks || 1)), 1, 52) : 1;
   selectedPeriodicWeekIndex = clamp(Math.floor(Number(selectedPeriodicWeekIndex || 1)), 1, totalWeeks);
   const selectedWeekRows = selectedDraft
     ? selectedDraft.compositeTasks.filter((row) => Number(row.weekIndex) === selectedPeriodicWeekIndex)
@@ -4839,7 +4987,7 @@ function renderPeriodicTaskModeling(page) {
           ${selectedDraft ? `
             <div class="periodic-summary-controls">
               <label>总任务名称 *<input data-periodic-field="parentTaskName" value="${htmlEscape(selectedDraft.parentTaskName)}" placeholder="例如：舰载机昼夜任务"></label>
-              <label>总周数 *<input data-periodic-field="repeatWeeks" type="number" min="1" step="1" value="${htmlEscape(totalWeeks)}"></label>
+              <label>年度周数 *<input data-periodic-field="repeatWeeks" type="number" min="1" max="52" step="1" value="${htmlEscape(totalWeeks)}"></label>
             </div>
           ` : ""}
         </div>
@@ -4869,7 +5017,9 @@ function renderPeriodicTaskModeling(page) {
             ${compositeTasks.length === 0 ? `<div class="alert warn">请先在复合任务建模中维护复合任务。</div>` : ""}
             <div class="form-table-grid">
               <label>周次<input readonly value="第${htmlEscape(selectedPeriodicWeekIndex)}周"></label>
+              <label>重复周数<input data-periodic-repeat-count type="number" min="1" max="${Math.max(1, 52 - selectedPeriodicWeekIndex)}" value="1"></label>
             </div>
+            <div class="toolbar-row"><button type="button" data-periodic-repeat="count">重复 X 周</button><button type="button" data-periodic-repeat="remaining">重复至第 52 周</button></div>
             <div class="table-wrap" style="margin-top:12px;">
               <table>
                 <thead><tr><th style="width:96px;">周次</th><th style="width:96px;">周内日</th><th>复合任务名称</th></tr></thead>
@@ -4899,6 +5049,26 @@ function periodicTaskList() {
   }
   scenario.missionProfile.periodicTasks = scenario.missionProfile.periodicTasks.map((task) => normalizePeriodicTask(task));
   return scenario.missionProfile.periodicTasks;
+}
+
+function repeatSelectedPeriodicWeek(mode) {
+  const task = selectedPeriodicTask();
+  if (!task) return;
+  const sourceRows = (task.compositeTasks || []).filter((row) => Number(row.weekIndex) === selectedPeriodicWeekIndex);
+  const countInput = app.querySelector?.("[data-periodic-repeat-count]");
+  const requested = Math.max(1, Math.floor(Number(countInput?.value || 1)));
+  const lastWeek = mode === "remaining" ? 52 : Math.min(52, selectedPeriodicWeekIndex + requested);
+  const existing = new Map((task.compositeTasks || []).map((row) => [`${row.weekIndex}:${row.weekday}`, row]));
+  for (let week = selectedPeriodicWeekIndex + 1; week <= lastWeek; week += 1) {
+    for (const source of sourceRows) {
+      const copy = { ...structuredClone(source), weekIndex: week };
+      if ("id" in copy) copy.id = `${source.id || "periodic-task"}-week-${week}-${source.weekday || "day"}`;
+      existing.set(`${week}:${source.weekday}`, copy);
+    }
+  }
+  task.repeatWeeks = Math.max(Number(task.repeatWeeks || 1), lastWeek);
+  task.compositeTasks = [...existing.values()].sort((a, b) => a.weekIndex - b.weekIndex || String(a.weekday).localeCompare(String(b.weekday)));
+  updatePreviewResultsThroughApiClient();
 }
 
 function selectedPeriodicTask(periodicTasks = periodicTaskList()) {
@@ -4980,7 +5150,7 @@ function normalizePeriodicTask(source = {}) {
     weekdayAssignments[field.legacyKey] = weekdayAssignments[field.key];
   });
   const cycleDays = normalizePeriodicTaskCycleDays(source);
-  const repeatWeeks = Math.max(1, Math.floor(Number(source.repeatWeeks ?? source.repeatRounds ?? source.rounds ?? source.repeatCount ?? source.dailyRepeatCount ?? 1)));
+  const repeatWeeks = clamp(Math.floor(Number(source.repeatWeeks ?? source.repeatRounds ?? source.rounds ?? source.repeatCount ?? source.dailyRepeatCount ?? 1)), 1, 52);
   const compositeTasks = parsePeriodicCompositeTasks(source, repeatWeeks, weekdayAssignments, validCompositeIds);
   const legacyLinkedCompositeIds = PERIODIC_WEEKDAY_FIELDS
     .map((field) => weekdayAssignments[field.key])
@@ -5038,7 +5208,7 @@ function updateSelectedPeriodicTask(field, value, options = {}) {
     draft.repeatCycleValue = draft.cycleDays;
     draft.repeatCycleUnit = "day";
   } else if (field === "repeatWeeks") {
-    draft.repeatWeeks = Math.max(1, Math.floor(Number(value || 1)));
+    draft.repeatWeeks = clamp(Math.floor(Number(value || 1)), 1, 52);
     draft.repeatRounds = draft.repeatWeeks;
     draft.repeatCount = draft.repeatWeeks;
     draft.dailyRepeatCount = draft.repeatWeeks;
@@ -5174,6 +5344,7 @@ function renderEquipmentModeling(page) {
             <button type="button" class="btn-danger" data-equipment-delete-node ${selectedState.kind === "aircraft-list" ? "disabled" : ""}>删除</button>
           </div>
         </div>
+        <label class="equipment-tree-search">搜索名称<input data-equipment-search value="${htmlEscape(equipmentSearchQuery)}" placeholder="输入系统或组件名称"></label>
         ${renderCollapsibleTree(buildEquipmentTreeNodes())}
       </aside>
       <section class="detail-panel equipment-system-table-panel">
@@ -5183,7 +5354,8 @@ function renderEquipmentModeling(page) {
             <span>${htmlEscape(equipmentSelectionSummary(selectedState, visibleRowCount))}</span>
           </div>
           <div class="equipment-import-row">
-            <label class="rms-file-button">导入表格<input data-equipment-import-file type="file" accept=".csv,.tsv,.json,application/json,text/csv,text/tab-separated-values"></label>
+            <button type="button" data-equipment-download-template>下载模板</button>
+            <label class="rms-file-button">上传文件<input data-equipment-import-file type="file" accept=".csv,.tsv,.json,application/json,text/csv,text/tab-separated-values"></label>
             <p class="rms-import-status">${htmlEscape(equipmentImportStatus)}</p>
           </div>
           ${showEquipmentSystemTable ? renderEquipmentSystemTable(selectedState) : importedDataEmptyState(page.name || "装备系统建模")}
@@ -7237,7 +7409,7 @@ function renderSupportActivityJobTable(activity, tabKey) {
     : `<tr><td colspan="7" class="muted">暂无工作项目</td></tr>`;
   return `
     <h4>工作项目清单</h4>
-    <div class="toolbar-row"><button type="button" class="btn-primary" data-support-activity-job-add="${htmlEscape(tabKey)}"${lockedAttr}>新增工作项目</button><button type="button" class="btn-danger" data-support-activity-job-batch-delete="${htmlEscape(tabKey)}"${lockedAttr}>批量删除</button></div>
+    <div class="toolbar-row"><button type="button" class="btn-primary" data-support-activity-job-add="${htmlEscape(tabKey)}"${lockedAttr}>新增工作项目</button><button type="button" data-support-jobs-download-template>下载模板</button><label class="rms-file-button">上传文件<input type="file" data-support-jobs-import-file="${htmlEscape(tabKey)}" accept=".csv,.json,application/json,text/csv"${lockedAttr}></label><button type="button" class="btn-danger" data-support-activity-job-batch-delete="${htmlEscape(tabKey)}"${lockedAttr}>批量删除</button></div>
     ${renderBasicActivityTemplatePicker(tabKey)}
     <div class="table-wrap">
       <table>
@@ -9129,10 +9301,29 @@ function toggleLogisticsTransportStrategySelection(index, checked) {
 
 function ensureTransportPolicies() {
   if (!Array.isArray(scenario.transportPolicies)) scenario.transportPolicies = [];
-  if (scenario.transportPolicies.length) return scenario.transportPolicies;
+  if (scenario.transportPolicies.length) {
+    scenario.transportPolicies = coalesceTransportPolicies(scenario.transportPolicies);
+    return scenario.transportPolicies;
+  }
   const migrated = legacyTransportPoliciesFromSupportActivities();
-  if (migrated.length) scenario.transportPolicies = migrated;
+  if (migrated.length) scenario.transportPolicies = coalesceTransportPolicies(migrated);
   return scenario.transportPolicies;
+}
+
+function coalesceTransportPolicies(policies) {
+  const byRoute = new Map();
+  for (const source of policies || []) {
+    const policy = { ...source };
+    delete policy.spareName;
+    delete policy.spareType;
+    delete policy.spare_type;
+    const key = [policy.fromSupportNodeName || policy.from, policy.toSupportNodeName || policy.to, policy.transportMode || policy.direction].join("|");
+    if (!byRoute.has(key)) byRoute.set(key, policy);
+    else if (Number(byRoute.get(key).transportTimeHours) !== Number(policy.transportTimeHours)) {
+      projectDraftStatus = `运输策略 ${key} 存在多个旧运输时间，已采用第一条；请确认后保存。`;
+    }
+  }
+  return [...byRoute.values()];
 }
 
 function legacyTransportPoliciesFromSupportActivities() {
@@ -9153,7 +9344,6 @@ function normalizedLogisticsTransportPolicy(policy, activity, activityIndex, pol
     name: policy.name || `运输策略${policyIndex + 1}`,
     fromSupportNodeName: supportNodeDisplayNameForRef(fromRef),
     toSupportNodeName: supportNodeDisplayNameForRef(toRef),
-    spareName: policy.spareName || policy.spareType || policy.spare_type || "",
     transportMode: policy.transportMode || policy.direction || ""
   };
 }
@@ -9183,7 +9373,6 @@ function defaultLogisticsTransportPolicy(index) {
     name: `\u65b0\u589e\u8fd0\u8f93\u7b56\u7565${index + 1}`,
     direction,
     transportMode: direction,
-    spareName: spareModelingNames()[0] || "",
     triggerMode: "\u4e34\u754c\u5e93\u5b58",
     criticalInventory: 1,
     fromSupportNodeName,
@@ -9211,7 +9400,6 @@ function renderLogisticsSupportActivity(activePlan, activity) {
       return { value: name, label: name };
     })
     .filter((option) => option.value));
-  const spareTypeOptions = spareModelingNames().map((name) => ({ value: name, label: name }));
   const directionOptions = [
     { value: "\u6a2a\u5411\u8fd0\u8f93", label: "\u6a2a\u5411\u8fd0\u8f93" },
     { value: "\u7eb5\u5411\u8fd0\u8f93", label: "\u7eb5\u5411\u8fd0\u8f93" }
@@ -9232,7 +9420,7 @@ function renderLogisticsSupportActivity(activePlan, activity) {
       </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>\u9009\u62e9</th><th>\u7b56\u7565\u540d\u79f0</th><th>\u7b56\u7565\u65b9\u5411</th><th>\u5907\u4ef6\u79cd\u7c7b</th><th>\u89e6\u53d1\u65b9\u5f0f</th><th>\u89e6\u53d1\u53c2\u6570</th><th>\u8fd0\u8f93\u8d77\u70b9</th><th>\u8fd0\u8f93\u7ec8\u70b9</th><th>\u8fd0\u8f93\u65f6\u95f4(h)</th></tr></thead>
+          <thead><tr><th>\u9009\u62e9</th><th>\u7b56\u7565\u540d\u79f0</th><th>\u7b56\u7565\u65b9\u5411</th><th>\u89e6\u53d1\u65b9\u5f0f</th><th>\u89e6\u53d1\u53c2\u6570</th><th>\u8fd0\u8f93\u8d77\u70b9</th><th>\u8fd0\u8f93\u7ec8\u70b9</th><th>\u8fd0\u8f93\u65f6\u95f4(h)</th></tr></thead>
           <tbody>${transportPolicies.map((row, index) => {
             const basePath = `transportPolicies.${index}`;
             const triggerControl = row.triggerMode === "\u5468\u671f\u6027\u8c03\u8fd0"
@@ -9243,7 +9431,6 @@ function renderLogisticsSupportActivity(activePlan, activity) {
                 <td><input type="checkbox" data-logistics-transport-select="${index}" ${selectedLogisticsTransportStrategyIndexes.has(index) ? "checked" : ""} aria-label="\u9009\u62e9\u8fd0\u8f93\u7b56\u7565${index + 1}"${lockedAttr}></td>
                 <td>${valueInput(`${basePath}.name`, "text")}</td>
                 <td>${valueSelect(`${basePath}.direction`, directionOptions)}</td>
-                <td>${valueSelect(`${basePath}.spareName`, spareTypeOptions)}</td>
                 <td>${valueSelect(`${basePath}.triggerMode`, triggerModeOptions)}</td>
                 <td>${triggerControl}</td>
                 <td>${valueSelect(`${basePath}.fromSupportNodeName`, supportNodeOptions)}</td>
@@ -9251,7 +9438,7 @@ function renderLogisticsSupportActivity(activePlan, activity) {
                 <td>${valueInput(`${basePath}.transportTimeHours`, "number", { min: "0", step: "0.1" })}</td>
               </tr>
             `;
-          }).join("") || `<tr><td colspan="9" class="muted">\u6682\u65e0\u8fd0\u8f93\u7b56\u7565</td></tr>`}</tbody>
+          }).join("") || `<tr><td colspan="8" class="muted">\u6682\u65e0\u8fd0\u8f93\u7b56\u7565</td></tr>`}</tbody>
         </table>
       </div>
     </div>
@@ -9662,26 +9849,19 @@ function experimentPlanDraftFromBackendPlan(backendPlan) {
 function renderExperimentPlanEditor(page) {
   const seedPolicy = experimentPlanSeedPolicy();
   const stopPolicy = experimentPlanStopPolicy();
-  const composition = scenarioCompositionDraft();
-  const sourceProjectJson = scenarioCompositionSourceProjectJson();
-  const selectedPath = normalizedSelectedScenarioCompositionPath(sourceProjectJson, composition);
-  const selectedOverrideContext = scenarioOverrideEditorContext(sourceProjectJson, selectedPath);
-  const parameterOptions = scenarioOverrideParameterOptions(sourceProjectJson);
   return `
     <div class="section-head">
       <h3>方案编辑</h3>
-      <span>实验方案参数</span>
+      <span>基本信息、运行配置与分析配置</span>
     </div>
+    <div class="section-head sub-section-head"><h3>基本信息</h3><span>方案标识与说明</span></div>
     <div class="form-table-grid">
       ${experimentPlanField("实验名称", "experiment.name")}
-      ${experimentPlanField("仿真步数", "experiment.steps", "number")}
       ${experimentPlanField("样本数", "experiment.samples", "number")}
-      ${experimentPlanField("随机种子", "experiment.seed", "number")}
       ${experimentPlanField("并行核心数", "experiment.parallelCores", "number")}
-      ${experimentPlanField("停止条件", "experiment.stopCondition")}
     </div>
     <div class="section-head sub-section-head">
-      <h3>随机种子</h3>
+      <h3>运行配置</h3>
       <span>${seedPolicy.mode === "random" ? "生成方案时固化随机 base seed" : "固定 base seed 可复现"}</span>
     </div>
     <div class="form-table-grid">
@@ -9695,34 +9875,11 @@ function renderExperimentPlanEditor(page) {
     </div>
     ${renderExperimentStopPolicyControls(stopPolicy)}
     <div class="section-head sub-section-head">
-      <h3>Scenario 拼接</h3>
-      <span>${composition.overrides.length ? `${composition.overrides.length} 个建模数据覆盖项` : "尚未添加覆盖项"}</span>
+      <h3>分析配置</h3>
+      <span>分析项沿用实验方案的独立配置，不写回 Project JSON</span>
     </div>
-    <div class="scenario-composition-workspace">
-      <section class="scenario-project-json-panel">
-        <div class="section-head">
-          <h3>建模数据</h3>
-          <span>点选属性叶子节点</span>
-        </div>
-        ${renderScenarioModelingDataTree(sourceProjectJson, selectedPath)}
-      </section>
-      <section class="scenario-composition-editor-panel">
-        ${renderSelectedScenarioOverrideEditor(selectedOverrideContext)}
-        <div class="toolbar-row">
-          <button type="button" class="btn-primary" data-scenario-override-add>新增覆盖项</button>
-        </div>
-        <datalist id="scenario-override-path-options">
-          ${parameterOptions.map((option) => `<option value="${htmlEscape(option.path)}">${htmlEscape(option.label)}</option>`).join("")}
-        </datalist>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>已设置属性</th><th>类型</th><th>替换值</th><th>说明</th><th>动作</th></tr></thead>
-            <tbody>
-              ${composition.overrides.length ? composition.overrides.map((override, index) => renderScenarioOverrideRow(override, index)).join("") : `<tr><td colspan="5">暂无覆盖项</td></tr>`}
-            </tbody>
-          </table>
-        </div>
-      </section>
+    <div class="alert info">
+      任务可靠性、备件规划、停机因素等分析项在运行后按结果页配置展示。
     </div>
     <div class="plan-editor-actions">
       <button type="button" data-plan-list-link>返回方案列表</button>
@@ -11733,6 +11890,44 @@ async function importRmsEquipmentTableFile(file) {
   }
 }
 
+function downloadRmsEquipmentTemplate() {
+  const header = "节点ID,父节点ID,系统名称,型号,层级,安装数,运行比,MTBF,MTTR\n";
+  const sample = "aircraft-root,,示例整机,MODEL-A,装备,1,1,1000,1.5\nsystem-1,aircraft-root,动力系统,SYS-001,系统,2,1,1200,2\n";
+  downloadTextFile("RMS安装树导入模板.csv", `\uFEFF${header}${sample}`, "text/csv;charset=utf-8");
+}
+
+async function exportRmsAllocationExcel() {
+  const rows = rmsAllocationResult.nodeResults || [];
+  rmsEquipmentImportStatus = "正在生成 XLSX 结果";
+  try {
+    const blob = await backendApi.exportRmsAllocationXlsx({
+      project_name: rmsAllocationProject.name,
+      method: rmsAllocationResult.method,
+      generated_at: new Date().toISOString(),
+      rows
+    });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "RMS指标分配结果.xlsx";
+    anchor.click();
+    URL.revokeObjectURL(url);
+    rmsEquipmentImportStatus = "已导出 RMS指标分配结果.xlsx";
+  } catch (err) {
+    rmsEquipmentImportStatus = `XLSX 导出失败：${formatBackendError(err)}`;
+  }
+}
+
+function downloadTextFile(filename, content, type = "text/plain;charset=utf-8") {
+  if (typeof document === "undefined" || typeof Blob === "undefined" || typeof URL === "undefined") return;
+  const url = URL.createObjectURL(new Blob([content], { type }));
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
 async function importEquipmentStructureTableFile(file) {
   if (!file) {
     equipmentImportStatus = "未选择装备结构树导入文件。";
@@ -11759,6 +11954,50 @@ async function importEquipmentStructureTableFile(file) {
   } catch (err) {
     equipmentImportStatus = `装备结构树导入失败：${err && err.message ? err.message : "文件无法解析"}`;
     return false;
+  }
+}
+
+function downloadEquipmentStructureTemplate() {
+  const content = "\uFEFF节点ID,父节点ID,系统名称,型号,层级,安装数,运行比,MTBF,MTTR,维修分布类型\naircraft-root,,示例整机,MODEL-A,装备,1,1,1000,1.5,固定\nsystem-1,aircraft-root,动力系统,SYS-001,系统,2,1,1200,2,正态分布\n";
+  downloadTextFile("装备系统建模导入模板.csv", content, "text/csv;charset=utf-8");
+}
+
+function downloadSupportActivityJobsTemplate() {
+  const content = "\uFEFF活动编号,工作项目名称,工期分钟,紧前作业\nBA-001,飞行前检查,30,\nBA-002,通电检查,15,BA-001\n";
+  downloadTextFile("工作项目清单导入模板.csv", content, "text/csv;charset=utf-8");
+}
+
+async function importSupportActivityJobsFile(tabKey, file) {
+  const activity = findSupportActivityByJobTabKey(tabKey);
+  if (!activity || !file) return;
+  try {
+    const parsed = parseRmsEquipmentImportText(await file.text(), file.name);
+    const rows = Array.isArray(parsed) ? parsed : (parsed.rows || parsed.supportActivityJobs || []);
+    if (!Array.isArray(rows) || !rows.length) throw new Error("导入文件没有工作项目");
+    const codes = new Set();
+    const jobs = rows.map((row, index) => {
+      const activityCode = String(row.activityCode || row["活动编号"] || row.code || `BA-${index + 1}`).trim();
+      if (!activityCode || codes.has(activityCode)) throw new Error(`活动编号为空或重复：${activityCode || `第${index + 1}行`}`);
+      codes.add(activityCode);
+      const predecessorText = row.predecessors ?? row["紧前作业"] ?? "";
+      const workName = String(row.workName || row["工作项目名称"] || row.name || "").trim();
+      const durationMinutes = Number(row.durationMinutes ?? row["工期分钟"] ?? 0);
+      if (!workName) throw new Error(`工作项目名称为空：第${index + 1}行`);
+      if (!Number.isFinite(durationMinutes) || durationMinutes < 0) throw new Error(`工期分钟必须为非负数：第${index + 1}行`);
+      return {
+        activityCode,
+        workName,
+        durationMinutes,
+        predecessors: Array.isArray(predecessorText) ? predecessorText : String(predecessorText).split(/[、,;；]/).map((item) => item.trim()).filter(Boolean)
+      };
+    });
+    const invalidPredecessor = jobs.flatMap((job) => job.predecessors).find((code) => !codes.has(code));
+    if (invalidPredecessor) throw new Error(`紧前作业不存在：${invalidPredecessor}`);
+    setSupportActivityJobs(activity, jobs);
+    projectDraftStatus = `已导入 ${file.name}：${jobs.length} 个工作项目`;
+    updatePreviewResultsThroughApiClient();
+  } catch (err) {
+    projectDraftStatus = `工作项目导入失败：${err?.message || "文件无法解析"}`;
   }
 }
 
@@ -12773,18 +13012,15 @@ function renderVisualSimulation(page) {
   });
   return `
     <div class="mesa-visual-shell">
-      <section class="lite-mesa-hero mesa-visual-hero">
-        <div>
-          <h3>可视化推演</h3>
-          <p>${htmlEscape(projectName)} / ${htmlEscape(page.module)} / ${htmlEscape(experimentPlanName)}</p>
-        </div>
+      <section class="mesa-visual-toolbar">
+        <div><strong>可视化推演</strong><span>${htmlEscape(projectName)}</span></div>
         <div class="lite-mesa-hero-actions">
           ${renderExperimentPlanContextDropdown(page)}
         </div>
       </section>
       <div class="solara-visualization-frame-wrap" data-solara-visualization-frame>
         <div class="visual-frame-toolbar">
-          <button type="button" class="btn-primary" data-mesa-control="reload-solara">刷新 Solara</button>
+          <button type="button" class="btn-primary" data-mesa-control="reload-solara">刷新推演</button>
         </div>
         <iframe
           class="solara-visualization-frame"
@@ -15402,15 +15638,16 @@ function renderFormalProjectionBody(formalProjection) {
     `;
   }
   if (formalProjection.analysisType === "spare_shortfall") {
-    const rows = formalProjection.rows || [];
+    const sourceRows = formalProjection.rows || [];
+    const rows = spareDemandSort === "asc" ? [...sourceRows].sort((a, b) => a.demand - b.demand) : spareDemandSort === "desc" ? [...sourceRows].sort((a, b) => b.demand - a.demand) : sourceRows;
     const maxShortage = rows.reduce((maxValue, row) => Math.max(maxValue, row.shortage || row.shortageProbability || 0), 1);
     return `
-      <div class="table-wrap">
+      <div class="toolbar-row"><span>需求数量排序</span><button type="button" data-spare-demand-sort="asc">升序</button><button type="button" data-spare-demand-sort="desc">降序</button><button type="button" data-spare-demand-sort="default">恢复默认</button></div><div class="table-wrap">
         <table>
-          <thead><tr><th>备件</th><th>备件满足率</th><th>备件利用率</th><th>满足率约束</th><th>利用率约束</th><th>短缺概率</th><th>平均延误时间(h)</th><th>基层级数量</th><th>初始基层级库存</th><th>短板等级</th><th>图示</th></tr></thead>
+          <thead><tr><th>机型</th><th>备件</th><th>需求数量</th><th>备件满足率</th><th>备件利用率</th><th>满足率约束</th><th>利用率约束</th><th>短缺概率</th><th>平均延误时间(h)</th><th>基层级数量</th><th>初始基层级库存</th><th>短板等级</th><th>图示</th></tr></thead>
           <tbody>${rows.map((row) => `
             <tr>
-              <td>${htmlEscape(row.name)}</td><td>${fixed(row.satisfy, 2)}</td><td>${fixed(row.utilization, 2)}</td><td>${htmlEscape(row.fillRateConstraint)}</td><td>${htmlEscape(row.utilizationConstraint)}</td><td>${pct(row.shortageProbability)}</td><td>${row.delay}</td><td>${row.baseCount}</td><td>${row.stock}</td>
+              <td>${htmlEscape(row.aircraftModel)}</td><td>${htmlEscape(row.name)}</td><td>${row.demand}</td><td>${fixed(row.satisfy, 2)}</td><td>${fixed(row.utilization, 2)}</td><td>${htmlEscape(row.fillRateConstraint)}</td><td>${htmlEscape(row.utilizationConstraint)}</td><td>${pct(row.shortageProbability)}</td><td>${row.delay}</td><td>${row.baseCount}</td><td>${row.stock}</td>
               <td><span class="status-badge ${row.level === "严重" ? "danger" : row.level === "短缺" ? "warn" : ""}">${htmlEscape(row.level)}</span></td>
               <td class="bar-cell">${renderBar(row.shortage || row.shortageProbability, maxShortage, "red")}</td>
             </tr>
@@ -15420,15 +15657,15 @@ function renderFormalProjectionBody(formalProjection) {
     `;
   }
   if (formalProjection.analysisType === "carry_list") {
-    const rows = formalProjection.rows || [];
+    const rows = (formalProjection.rows || []).filter((row) => !carryHideZeroDemand || row.demand > 0);
     const maxCarryQuantity = rows.reduce((maxValue, row) => Math.max(maxValue, row.qty || 0), 1);
     return `
-      <div class="table-wrap">
+      <div class="toolbar-row"><label class="check-inline"><input type="checkbox" data-carry-hide-zero ${carryHideZeroDemand ? "checked" : ""}>隐藏需求量为 0</label><span>满足率下限：${fixed(rows[0]?.minimumSatisfactionRate || 0.9, 2)}；满足约束后利用率越高越优</span></div><div class="table-wrap">
         <table>
-          <thead><tr><th>备件</th><th>推荐携行倍率</th><th>备件满足率</th><th>平均延误时间(h)</th><th>数量</th><th>携行优先级</th><th>图示</th></tr></thead>
+          <thead><tr><th>机型</th><th>备件</th><th>需求</th><th>推荐携行倍率</th><th>备件满足率</th><th>数量</th><th>有寿件约束</th><th>携行优先级</th><th>图示</th></tr></thead>
           <tbody>${rows.map((row) => `
             <tr>
-              <td>${htmlEscape(row.name)}</td><td>${fixed(row.multiplier, 2)}</td><td>${fixed(row.satisfy, 2)}</td><td>${row.delay}</td><td>${row.qty}</td>
+              <td>${htmlEscape(row.aircraftModel)}</td><td>${htmlEscape(row.name)}</td><td>${row.demand}</td><td>${fixed(row.multiplier, 2)}</td><td>${fixed(row.satisfy, 2)}</td><td>${row.qty}</td><td>${row.lifeLimited ? `${row.lifeLandings} 起落 / ${row.lifeCalendarDays} 天（先到）` : "无"}</td>
               <td><span class="status-badge ${row.priority === "高" ? "danger" : row.priority === "中" ? "warn" : "success"}">${htmlEscape(row.priority)}</span></td>
               <td class="bar-cell">${renderBar(row.qty, maxCarryQuantity, "blue")}</td>
             </tr>
@@ -15442,7 +15679,7 @@ function renderFormalProjectionBody(formalProjection) {
     const rows = formalProjection.rows || [];
     const drop = formalProjection.steepestDrop;
     return `
-      <div class="analysis-chart-panel"><div class="chart-title">projection payload 任务波次平均成功率</div>${renderLineChart(rows.map((row) => ({ x: row.sequence, y: row.probability })))}</div>
+      <div class="kpi-strip"><div class="kpi-card"><span>任务剖面可靠性</span><strong>${pct(formalProjection.profileReliability)}</strong></div><div class="kpi-card"><span>连续7天完成可靠性</span><strong>${pct(formalProjection.periodCompletionProbability)}</strong></div><div class="kpi-card"><span>成功/有效样本</span><strong>${formalProjection.successfulSamples}/${formalProjection.validSamples}</strong></div></div><div class="analysis-chart-panel"><div class="chart-title">projection payload 任务波次平均成功率</div>${renderLineChart(rows.map((row) => ({ x: row.sequence, y: row.probability })))}</div>
       <div class="decision-support-card"><strong>最大下降波次</strong><span>${drop ? `T${drop.fromIndex} 到 T${drop.toIndex}，${htmlEscape(drop.fromTime)} 到 ${htmlEscape(drop.toTime)}，下降 ${fixed(drop.drop, 3)}` : "未发现下降波次"}</span></div>
       <div class="table-wrap">
         <table>
@@ -15465,8 +15702,8 @@ function renderFormalProjectionBody(formalProjection) {
       </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>二级因素</th><th>贡献指数</th><th>贡献度</th><th>图示</th></tr></thead>
-          <tbody>${rows.map((row) => `<tr><td>${htmlEscape(row.label)}</td><td>${row.count}</td><td>${row.contributionLabel}</td><td class="bar-cell">${renderBar(row.count, maxFactorCount, row.count >= 35 ? "red" : "blue")}</td></tr>`).join("")}</tbody>
+          <thead><tr><th>停机因素</th><th>事件次数</th><th>累计停机时长(h)</th><th>时长贡献度</th><th>图示</th></tr></thead>
+          <tbody>${rows.map((row) => `<tr><td>${htmlEscape(row.label)}</td><td>${row.count}</td><td>${fixed(row.downtimeHours, 2)}</td><td>${pct(row.durationContribution)}</td><td class="bar-cell">${renderBar(row.downtimeHours, Math.max(1, ...rows.map((item) => item.downtimeHours)), row.durationContribution >= 0.35 ? "red" : "blue")}</td></tr>`).join("")}</tbody>
         </table>
       </div>
       <div class="toolbar-row">

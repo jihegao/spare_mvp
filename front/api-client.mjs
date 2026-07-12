@@ -81,6 +81,16 @@ export function createBackendApiClient({ baseUrl = DEFAULT_API_BASE, transport, 
     getProject(projectId) {
       return request({ method: "GET", path: `/projects/${encodeURIComponent(projectId)}` });
     },
+    replaceProject(projectId, projectJson, expectedUpdatedAt) {
+      return request({
+        method: "PUT",
+        path: `/projects/${encodeURIComponent(projectId)}/replace`,
+        body: { project_json: projectJson, expected_updated_at: expectedUpdatedAt }
+      });
+    },
+    exportRmsAllocationXlsx(payload) {
+      return request({ method: "POST", path: "/rms-allocation/export-xlsx", body: payload, responseType: "blob" });
+    },
     deleteProject(projectId) {
       return request({ method: "DELETE", path: `/projects/${encodeURIComponent(projectId)}` });
     },
@@ -436,8 +446,7 @@ function materializeLegacySupportTables(projectJson) {
         ...policy,
         id: policy.id || `${node.id || `support-node-${nodeIndex}`}-transport-${policyIndex}`,
         fromSupportNodeName: policy.fromSupportNodeName || nameById.get(String(policy.from || "")) || policy.from || "",
-        toSupportNodeName: policy.toSupportNodeName || nameById.get(String(policy.to || "")) || policy.to || "",
-        spareName: policy.spareName || policy.spareType || policy.spare_type || ""
+        toSupportNodeName: policy.toSupportNodeName || nameById.get(String(policy.to || "")) || policy.to || ""
       }));
     });
     const policies = [
@@ -462,7 +471,6 @@ function legacyTransportPoliciesFromSupportActivities(projectJson, nameByRef = n
           id: policy.id || `${activity.id || `support-activity-${activityIndex}`}-transport-${policyIndex}`,
           fromSupportNodeName: policy.fromSupportNodeName || nameByRef.get(String(fromRef)) || fromRef,
           toSupportNodeName: policy.toSupportNodeName || nameByRef.get(String(toRef)) || toRef,
-          spareName: policy.spareName || policy.spareType || policy.spare_type || "",
           transportMode: policy.transportMode || policy.direction || ""
         };
       });
@@ -734,8 +742,7 @@ function normalizeTopLevelTransportPolicies(projectJson, nameByRef) {
       const normalized = {
         id: cleanText(policy.id) || `transport-policy-${index + 1}`,
         fromSupportNodeName: supportNodeNameForRef(policy.fromSupportNodeName || policy.from, nameByRef),
-        toSupportNodeName: supportNodeNameForRef(policy.toSupportNodeName || policy.to, nameByRef),
-        spareName: cleanText(policy.spareName || policy.spareType || policy.spare_type)
+        toSupportNodeName: supportNodeNameForRef(policy.toSupportNodeName || policy.to, nameByRef)
       };
       for (const field of ["name", "direction", "triggerMode", "criticalInventory", "transferCycleHours", "capacity", "priority", "transportMode", "transportTimeHours"]) {
         if (policy[field] !== undefined) normalized[field] = policy[field];

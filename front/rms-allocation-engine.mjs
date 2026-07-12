@@ -1,7 +1,7 @@
 import { compileMissionExposure } from "./mission-exposure-compiler.mjs";
 import { evaluateBottomUpReliability, seriesReliability } from "./rbd-evaluator.mjs";
 
-export const RMS_ALLOCATION_ALGORITHM_VERSION = "rms-engine-1.2.0";
+export const RMS_ALLOCATION_ALGORITHM_VERSION = "rms-engine-2.0.0";
 
 export function createDemoRmsAllocationProject() {
   return {
@@ -549,6 +549,12 @@ export function normalizeRmsEquipmentImportRows(input, { baseProject = createDem
     parentId: pickText(row, ["parentId", "parent_id", "父节点", "上级节点"], ""),
     level: pickText(row, ["level", "层级", "节点层级"], "")
   }));
+  const ids = indexedRows.map((item) => item.id);
+  const duplicateIds = ids.filter((id, index) => ids.indexOf(id) !== index);
+  if (duplicateIds.length) throw new Error(`RMS_EQUIPMENT_DUPLICATE_ID: 节点ID重复 ${[...new Set(duplicateIds)].join("、")}`);
+  const idSet = new Set(ids);
+  const orphan = indexedRows.find((item) => item.parentId && !idSet.has(stableNodeId(item.parentId)));
+  if (orphan) throw new Error(`RMS_EQUIPMENT_ORPHAN_PARENT: ${orphan.id} 的父节点 ${orphan.parentId} 不存在`);
   const explicitRoots = indexedRows.filter((item) => !item.parentId);
   const primaryRoot = explicitRoots.find((item) => /装备|整机|root/i.test(item.level)) || explicitRoots[0];
   const rootId = primaryRoot?.id || "rms-import-root";
@@ -599,7 +605,7 @@ export function createDefaultRmsAllocationPlan(project = createDemoRmsAllocation
     targets: {
       reliability: { value: 0.95, atHours: Number(project.missionProfile?.missionHours || 3) },
       taskDurationHours: Number(project.missionProfile?.missionHours || 3),
-      criticalFailureRatio: 1,
+      mtbfHours: 1000,
       maintainability: { value: 0.9, withinHours: 2 },
       supportability: { value: 0.9, withinHours: 4 },
       mttrHours: 1.5,
@@ -639,7 +645,7 @@ export function calculateRmsAllocation(plan, project) {
     const riskBudget = equipmentRiskBudget * weights[node.id];
     const reliabilityForVerification = Math.exp(-riskBudget);
     const mtbcfHours = riskBudget > 0 ? productIntensityHours / riskBudget : Number.POSITIVE_INFINITY;
-    const mtbfHours = mtbcfHours * targetMetrics.criticalFailureRatio;
+    const mtbfHours = mtbcfHours;
     const failureRate = mtbfHours > 0 ? 1 / mtbfHours : 0;
     return {
       node,
@@ -671,7 +677,7 @@ export function calculateRmsAllocation(plan, project) {
     ...exposure.warnings,
     ...methodWarnings(plan, project)
   ];
-  const status = calculatedReliability + 1e-9 >= plan.targets.reliability.value
+  const status = calculatedReliability + 1e-9 >= targetMetrics.reliability
     && calculatedMttr <= plan.targets.mttrHours + 1e-9
     && calculatedMldt <= plan.targets.mldtHours + 1e-9
     ? "validated"
@@ -691,7 +697,7 @@ export function calculateRmsAllocation(plan, project) {
     nodeResults,
     verification: {
       equipmentTarget: {
-        reliability: Number(plan.targets.reliability.value),
+        reliability: targetMetrics.reliability,
         mttrHours: Number(plan.targets.mttrHours),
         mldtHours: Number(plan.targets.mldtHours)
       },
@@ -701,7 +707,7 @@ export function calculateRmsAllocation(plan, project) {
         mldtHours: calculatedMldt
       },
       margin: {
-        reliability: calculatedReliability - Number(plan.targets.reliability.value),
+        reliability: calculatedReliability - targetMetrics.reliability,
         mttrHours: Number(plan.targets.mttrHours) - calculatedMttr,
         mldtHours: Number(plan.targets.mldtHours) - calculatedMldt
       },
@@ -893,18 +899,16 @@ export function aggregateSeriesReliability(nodeResults) {
 }
 
 function deriveTargetMetrics(plan, project) {
-  const reliability = normalizedReliability(plan.targets?.reliability?.value);
   const taskDurationHours = normalizedTaskDuration(plan, project);
-  const criticalFailureRatio = normalizedCriticalFailureRatio(plan.targets?.criticalFailureRatio);
-  const riskBudget = -Math.log(reliability);
-  const mtbcfHours = taskDurationHours / riskBudget;
+  const mtbfHours = normalizedMtbfHours(plan.targets?.mtbfHours);
+  const riskBudget = taskDurationHours / mtbfHours;
+  const reliability = Math.exp(-riskBudget);
   return {
     reliability,
     taskDurationHours,
-    criticalFailureRatio,
     riskBudget,
-    mtbcfHours,
-    mtbfHours: mtbcfHours * criticalFailureRatio
+    mtbcfHours: mtbfHours,
+    mtbfHours
   };
 }
 
@@ -919,10 +923,10 @@ function normalizedTaskDuration(plan, project) {
   return Number.isFinite(number) && number > 0 ? number : 3;
 }
 
-function normalizedCriticalFailureRatio(value) {
+function normalizedMtbfHours(value) {
   const number = Number(value);
-  if (Number.isFinite(number) && number > 0 && number <= 1) return number;
-  return 1;
+  if (Number.isFinite(number) && number > 0) return number;
+  return 1000;
 }
 
 function runningRatioForNode(node) {
@@ -989,6 +993,7 @@ function importedNodeFromRow(row, { id, parentId, fallbackLevel, index }) {
   return {
     id,
     name: pickText(row, ["name", "componentName", "nodeName", "节点名称", "组件名称"], `导入节点${index + 1}`),
+    model: pickText(row, ["model", "partNumber", "型号", "系统型号"], ""),
     level: pickText(row, ["level", "层级", "节点层级"], fallbackLevel),
     parentId,
     quantity: pickNumber(row, ["quantity", "数量", "数量n"], 1),
