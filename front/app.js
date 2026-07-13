@@ -3333,7 +3333,6 @@ function renderProjectDataTable() {
       <div class="project-data-detail">
         ${renderProjectTemplateManagement(selectedProject)}
         ${renderProjectDataOverview(projectJson)}
-        ${renderProjectJsonViewer(projectJson)}
       </div>
     </div>
   `;
@@ -3430,21 +3429,6 @@ function renderProjectDataOverview(projectJson) {
         `).join("")}
       </div>
     </section>
-  `;
-}
-
-function renderProjectJsonViewer(projectJson) {
-  const body = projectJson
-    ? renderProjectJsonNode(projectJson, "project", 0)
-    : `<p class="modeling-import-empty">${projectDataProjectJsonLoading ? "正在加载 Project JSON。" : "暂无 Project JSON 可查看。"}</p>`;
-  return `
-    <details class="system-config-section" data-project-json-viewer>
-      <summary class="section-head">
-        <h4>Project JSON 原始数据</h4>
-        <span>${projectDataProjectJsonLoading ? "加载中" : "默认隐藏，点击展开"}</span>
-      </summary>
-      <div class="project-json-viewer">${body}</div>
-    </details>
   `;
 }
 
@@ -3559,31 +3543,6 @@ function projectPathValue(obj, path) {
     if (current == null || typeof current !== "object") return undefined;
     return current[part];
   }, obj);
-}
-
-function renderProjectJsonNode(value, key, depth) {
-  if (value && typeof value === "object") {
-    const isArray = Array.isArray(value);
-    const entries = isArray ? value.map((item, index) => [index, item]) : Object.entries(value);
-    const summaryMeta = isArray ? `[${entries.length}]` : `{${entries.length}}`;
-    const openAttr = depth < 2 ? " open" : "";
-    return `
-      <details class="project-json-node depth-${Math.min(depth, 4)}" data-project-json-node${openAttr}>
-        <summary><code>${htmlEscape(key)}</code><span>${summaryMeta}</span></summary>
-        <div class="project-json-children">
-          ${entries.length
-            ? entries.map(([childKey, childValue]) => renderProjectJsonNode(childValue, String(childKey), depth + 1)).join("")
-            : `<div class="project-json-leaf"><span>空对象</span></div>`}
-        </div>
-      </details>
-    `;
-  }
-  return `
-    <div class="project-json-leaf" data-project-json-leaf>
-      <code>${htmlEscape(key)}</code>
-      <span>${htmlEscape(JSON.stringify(value))}</span>
-    </div>
-  `;
 }
 
 function projectDataJsonForSelectedProject(project) {
