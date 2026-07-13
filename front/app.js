@@ -3819,7 +3819,7 @@ function renderModelingFieldSheet(sheet) {
           <p>${htmlEscape(sheet.sourcePage)} / ${enabled ? "sheet 已勾选" : "sheet 未勾选"}</p>
         </div>
         <label class="check-inline">
-          <input type="checkbox" data-modeling-field-sheet-select="${htmlEscape(sheet.key)}" ${allFieldsSelected ? "checked " : ""}disabled>
+          <input class="granularity-field-checkbox" type="checkbox" data-modeling-field-sheet-select="${htmlEscape(sheet.key)}" ${allFieldsSelected ? "checked " : ""}disabled>
           全选字段
         </label>
       </div>
@@ -3829,7 +3829,7 @@ function renderModelingFieldSheet(sheet) {
           const selected = selectedModelingFieldKeys.has(key);
           return `
             <label class="field-check">
-              <input type="checkbox" data-modeling-field-select="${htmlEscape(key)}" ${selected ? "checked " : ""}disabled>
+              <input class="granularity-field-checkbox" type="checkbox" data-modeling-field-select="${htmlEscape(key)}" ${selected ? "checked " : ""}disabled>
               <span>
                 <strong>${htmlEscape(field.label)}</strong>
                 <small>${htmlEscape(field.path)}</small>

@@ -584,18 +584,20 @@ test("modeling granularity page switches locked field presets", async () => {
     assert.match(runtime.appNode.innerHTML, /建模颗粒度配置/);
     assert.match(runtime.appNode.innerHTML, /data-granularity-profile-select="full-elements" aria-pressed="true"/);
     assert.match(runtime.appNode.innerHTML, /data-granularity-profile-select="equipment-rms" aria-pressed="false"/);
+    assert.match(runtime.appNode.innerHTML, /aria-pressed="true"[^>]*>[\s\S]*?<span class="granularity-check" aria-hidden="true">✓<\/span>/);
     assert.match(runtime.appNode.innerHTML, /全要素/);
     assert.match(runtime.appNode.innerHTML, /装备RMS/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /颗粒度 A|颗粒度 B/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /导入包维护/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /data-modeling-import-action/);
-    assert.match(runtime.appNode.innerHTML, /data-modeling-field-select="equipment-system:mtbfHours" checked disabled/);
-    assert.match(runtime.appNode.innerHTML, /data-modeling-field-select="basic-support-activity:resourceIds" checked disabled/);
+    assert.match(runtime.appNode.innerHTML, /class="granularity-field-checkbox" type="checkbox" data-modeling-field-select="equipment-system:mtbfHours" checked disabled/);
+    assert.match(runtime.appNode.innerHTML, /class="granularity-field-checkbox" type="checkbox" data-modeling-field-select="basic-support-activity:resourceIds" checked disabled/);
 
     await runtime.click("[data-granularity-profile-select]", { granularityProfileSelect: "equipment-rms" });
 
     assert.match(runtime.appNode.innerHTML, /data-granularity-profile-select="full-elements" aria-pressed="false"/);
     assert.match(runtime.appNode.innerHTML, /data-granularity-profile-select="equipment-rms" aria-pressed="true"/);
+    assert.match(runtime.appNode.innerHTML, /data-modeling-field-sheet-select="equipment-system" checked disabled/);
     assert.match(runtime.appNode.innerHTML, /data-modeling-field-select="equipment-system:mtbfHours" checked disabled/);
     assert.match(runtime.appNode.innerHTML, /data-modeling-field-select="reliability-block-diagram:reliabilityParameter" checked disabled/);
     const excludedEquipmentRmsFields = [

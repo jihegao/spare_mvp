@@ -891,13 +891,61 @@ select[multiple].table-edit-select {
   place-items: center;
   width: 24px;
   height: 24px;
-  color: #fff;
-  background: var(--primary);
+  color: var(--primary);
+  background: var(--primary-soft);
   border-radius: 50%;
   font-weight: 800;
 }
 
 .granularity-check:empty { background: #dce3ea; }
+
+.granularity-field-checkbox {
+  appearance: none;
+  -webkit-appearance: none;
+  display: inline-grid;
+  place-content: center;
+  flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
+  border: 1px solid #aeb8c2;
+  border-radius: 3px;
+  background: #fff;
+  opacity: 1;
+}
+
+.check-inline input.granularity-field-checkbox,
+.field-check input.granularity-field-checkbox {
+  width: 16px;
+}
+
+.granularity-field-checkbox::after {
+  width: 8px;
+  height: 4px;
+  border: solid var(--primary);
+  border-width: 0 0 2px 2px;
+  content: "";
+  transform: translateY(-1px) rotate(-45deg) scale(0);
+  transform-origin: center;
+}
+
+.granularity-field-checkbox:checked {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.granularity-field-checkbox:checked::after {
+  transform: translateY(-1px) rotate(-45deg) scale(1);
+}
+
+.granularity-field-checkbox:disabled {
+  cursor: not-allowed;
+  opacity: 1;
+}
+
+.granularity-field-checkbox:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--primary) 35%, transparent);
+  outline-offset: 2px;
+}
 
 .sheet-selector-list,
 .modeling-sheet-stack,

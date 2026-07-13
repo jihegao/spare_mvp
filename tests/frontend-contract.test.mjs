@@ -4005,6 +4005,10 @@ test("system management exposes project management and base configuration pages"
   assert.match(styleSource, /\.modeling-form-config-grid\s*\{[^}]*max-width:\s*1040px/s);
   assert.match(styleSource, /\.modeling-form-config-grid\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(320px,\s*1fr\)\)/s);
   assert.match(styleSource, /\.field-checkbox-grid/);
+  assert.match(styleSource, /\.granularity-check\s*\{[^}]*color:\s*var\(--primary\)/s);
+  assert.match(styleSource, /\.granularity-field-checkbox\s*\{[^}]*appearance:\s*none[^}]*opacity:\s*1/s);
+  assert.match(styleSource, /\.granularity-field-checkbox:checked::after\s*\{/);
+  assert.match(styleSource, /\.granularity-field-checkbox:disabled\s*\{[^}]*opacity:\s*1/s);
 });
 
 test("user management add and edit actions open an editable user form", async () => {
