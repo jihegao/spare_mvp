@@ -1688,17 +1688,13 @@ select[multiple].table-edit-select {
   gap: 14px;
 }
 
-.rms-parameter-panel,
 .rms-equipment-tree,
-.rms-method-panel {
+.rms-method-panel,
+.rms-installation-panel {
   padding: 14px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fbfcfd;
-}
-
-.rms-parameter-panel h3 {
-  margin: 3px 0;
 }
 
 .rms-equipment-tree span,
@@ -1708,7 +1704,6 @@ select[multiple].table-edit-select {
   font-size: 12px;
 }
 
-.rms-parameter-grid,
 .rms-method-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(150px, 1fr));
@@ -1719,7 +1714,6 @@ select[multiple].table-edit-select {
   grid-template-columns: repeat(2, minmax(150px, 1fr));
 }
 
-.rms-parameter-grid label,
 .rms-method-grid label {
   display: grid;
   gap: 5px;
@@ -1728,7 +1722,6 @@ select[multiple].table-edit-select {
   font-weight: 700;
 }
 
-.rms-parameter-grid input,
 .rms-method-grid input,
 .rms-method-grid select {
   min-width: 0;
@@ -1764,6 +1757,24 @@ select[multiple].table-edit-select {
 
 .rms-file-button input {
   display: none;
+}
+
+.rms-import-button {
+  box-sizing: border-box;
+  width: 96px;
+  height: 34px;
+  min-height: 34px;
+  padding: 0 12px;
+}
+
+.rms-installation-import-row {
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.rms-installation-import-row .rms-import-status {
+  flex: 1 1 240px;
+  margin: 0;
 }
 
 .rms-import-status {
@@ -1806,12 +1817,6 @@ select[multiple].table-edit-select {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fff;
-}
-
-.rms-verification-metrics {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
 }
 
 .rms-warning-list {
@@ -4249,9 +4254,7 @@ tr.clickable-table-row.selected-table-row td {
   .preventive-rule-row,
   .kpi-strip,
   .scenario-grid,
-  .rms-parameter-grid,
   .rms-method-grid,
-  .rms-verification-metrics,
   .lite-mesa-setting-grid,
   .lite-mesa-source-grid,
   .lite-mesa-metric-cards,

@@ -7,7 +7,7 @@
 | 页面 | 修改前 | 修改后 | 并排对比 | 说明 |
 |---|---|---|---|---|
 | 项目列表 | `before/01-project-list-before.jpg` | `after/01-project-list-after.png` | `compare/01-project-list-before-after.png` | 历史基线账号、项目数据和视口不同，仅作为布局辅助证据 |
-| RMS 指标分配 | `before/02-rms-allocation-before.jpg` | `after/04-rms-allocation-after.png` | `compare/02-rms-allocation-before-after.png` | 同页核心对比；可见旧 Ai/Ao/状态区域移除，以及安装树、MTBF、导入/导出布局 |
+| RMS 指标分配 | `before/02-rms-allocation-before.jpg` | `after/04-rms-allocation-after.png` | `compare/02-rms-allocation-before-after.png` | 历史截图证据；当前实现已进一步收敛为装备结构树、导入安装数、独立计算方法和份额结果导出，截图不再代表最新字段契约 |
 
 ## 仅修改后证据
 

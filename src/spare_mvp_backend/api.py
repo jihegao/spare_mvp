@@ -251,12 +251,13 @@ class BackendApi:
         sheet.append(["计算方法", str(payload.get("method") or "")])
         sheet.append(["生成时间", str(payload.get("generated_at") or "")])
         sheet.append([])
-        sheet.append(["层级", "节点", "运行比", "失效率", "MTBF(h)", "MTTR(h)"])
+        sheet.append(["层级", "节点", "型号", "安装数", "运行比", "分配份额", "状态"])
         for row in payload.get("rows") or []:
             sheet.append([
                 str(row.get("level") or ""), str(row.get("nodeName") or ""),
-                float(row.get("runningRatio") or 0), float(row.get("failureRate") or 0),
-                float(row.get("mtbfHours") or 0), float(row.get("mttrHours") or 0),
+                str(row.get("model") or ""), int(row.get("installationCount") or 0),
+                float(row.get("runningRatio") or 0), float(row.get("allocationShare") or 0),
+                str(row.get("status") or ""),
             ])
         output = io.BytesIO()
         workbook.save(output)

@@ -291,12 +291,23 @@ class BackendApiContractTest(unittest.TestCase):
             "project_name": "RMS案例",
             "method": "equal",
             "generated_at": "2026-07-12T00:00:00Z",
-            "rows": [{"level": "系统", "nodeName": "动力", "runningRatio": 1, "failureRate": 0.001, "mtbfHours": 1000, "mttrHours": 2}],
+            "rows": [{
+                "level": "系统", "nodeName": "动力", "model": "SYS-001",
+                "installationCount": 2, "runningRatio": 0.8,
+                "allocationShare": 0.625, "status": "已分配",
+            }],
         })
         self.assertEqual(download["filename"], "rms-allocation-result.xlsx")
         workbook = load_workbook(BytesIO(download["body"]), read_only=True)
-        self.assertEqual(workbook["RMS分配结果"]["A6"].value, "系统")
-        self.assertEqual(workbook["RMS分配结果"]["E6"].value, 1000)
+        sheet = workbook["RMS分配结果"]
+        self.assertEqual(
+            [sheet.cell(5, column).value for column in range(1, 8)],
+            ["层级", "节点", "型号", "安装数", "运行比", "分配份额", "状态"],
+        )
+        self.assertEqual(
+            [sheet.cell(6, column).value for column in range(1, 8)],
+            ["系统", "动力", "SYS-001", 2, 0.8, 0.625, "已分配"],
+        )
 
     def _fixture(self, name: str) -> dict:
         return json.loads((REPO_ROOT / "tests" / "fixtures" / name).read_text(encoding="utf-8"))

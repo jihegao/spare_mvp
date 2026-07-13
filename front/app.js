@@ -58,6 +58,7 @@ import {
   calculateRmsAllocation,
   createDefaultRmsAllocationPlan,
   createDemoRmsAllocationProject,
+  createRmsAllocationFailureResult,
   normalizeRmsEquipmentImportRows,
   rmsEquipmentRoots,
   selectRmsAllocationEquipmentRoot
@@ -11759,27 +11760,7 @@ function recalculateRmsAllocation() {
   try {
     rmsAllocationResult = calculateRmsAllocation(rmsAllocationPlan, rmsAllocationProject);
   } catch (err) {
-    rmsAllocationResult = {
-      ok: false,
-      planId: rmsAllocationPlan.planId,
-      planVersion: rmsAllocationPlan.planVersion,
-      status: "method_not_applicable",
-      algorithmVersion: rmsAllocationPlan.algorithmVersion || "rms-engine-1.0.0",
-      exposure: { rows: [], warnings: [] },
-      nodeResults: [],
-      verification: {
-        equipmentTarget: {
-          reliability: Number(rmsAllocationPlan.targets.reliability.value),
-          mttrHours: Number(rmsAllocationPlan.targets.mttrHours),
-          mldtHours: Number(rmsAllocationPlan.targets.mldtHours)
-        },
-        calculated: { reliability: 0, mttrHours: 0, mldtHours: 0 },
-        margin: { reliability: 0, mttrHours: 0, mldtHours: 0 },
-        status: "method_not_applicable"
-      },
-      warnings: [{ code: "RMS_METHOD_NOT_APPLICABLE", message: err && err.message ? err.message : "当前分配方法不适用" }],
-      assumptions: rmsAllocationPlan.assumptions || []
-    };
+    rmsAllocationResult = createRmsAllocationFailureResult(rmsAllocationPlan, err);
   }
 }
 
@@ -11804,8 +11785,7 @@ function applyRmsEquipmentImport(rowsOrProject, statusText) {
       similarProduct: {
         ...(rmsAllocationPlan.methods?.similarProduct || {}),
         sourceModel,
-        targetModel: selectedRoot?.name || importedSimilarProduct?.targetModel || rmsAllocationPlan.methods?.similarProduct?.targetModel || "",
-        adjustmentFactor: importedSimilarProduct?.adjustmentFactor ?? rmsAllocationPlan.methods?.similarProduct?.adjustmentFactor ?? 0.92
+        targetModel: selectedRoot?.name || importedSimilarProduct?.targetModel || rmsAllocationPlan.methods?.similarProduct?.targetModel || ""
       }
     }
   };
@@ -11850,9 +11830,9 @@ async function importRmsEquipmentTableFile(file) {
 }
 
 function downloadRmsEquipmentTemplate() {
-  const header = "节点ID,父节点ID,系统名称,型号,层级,安装数,运行比,MTBF,MTTR\n";
-  const sample = "aircraft-root,,示例整机,MODEL-A,装备,1,1,1000,1.5\nsystem-1,aircraft-root,动力系统,SYS-001,系统,2,1,1200,2\n";
-  downloadTextFile("RMS安装树导入模板.csv", `\uFEFF${header}${sample}`, "text/csv;charset=utf-8");
+  const header = "节点ID,父节点ID,系统名称,型号,层级,安装数,运行比\n";
+  const sample = "aircraft-root,,示例整机,MODEL-A,装备,1,1\nsystem-1,aircraft-root,动力系统,SYS-001,系统,2,1\n";
+  downloadTextFile("RMS安装数导入模板.csv", `\uFEFF${header}${sample}`, "text/csv;charset=utf-8");
 }
 
 async function exportRmsAllocationExcel() {

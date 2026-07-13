@@ -2,9 +2,9 @@
 
 ## 已完成
 
-- 前端完整测试：`npm test`，441/441 通过。
+- 前端完整测试：`npm test`，440/440 通过。
 - 后端完整目标测试：`tests.test_aircraft_support_v1_model`、`tests.test_backend_api_contract`、`tests.test_backend_http_api`，216/216 通过。
-- RMS `.xlsx` 导出已通过针对性测试，文件由真实 Excel 工作簿生成。
+- RMS `.xlsx` 导出由真实 Excel 工作簿生成；#188 后表头与页面节点结果统一为层级、节点、型号、安装数、运行比、分配份额、状态，并由 openpyxl 真实性和逐字段测试覆盖。
 
 ## 本轮复核范围
 

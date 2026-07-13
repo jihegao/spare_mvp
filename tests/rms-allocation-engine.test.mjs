@@ -1,233 +1,175 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
   calculateRmsAllocation,
   createDefaultRmsAllocationPlan,
   createDemoRmsAllocationProject,
+  createRmsAllocationFailureResult,
   createRmsEquipmentImportFixture,
   normalizeRmsEquipmentImportRows,
-  publishRmsAllocation,
   rmsEquipmentRoots,
   rmsEquipmentSubtree,
   selectRmsAllocationEquipmentRoot
 } from "../front/rms-allocation-engine.mjs";
+import { validateSchema } from "./schema-test-utils.mjs";
 
-test("equal allocation derives reliability allocation from direct equipment MTBF", () => {
+test("equal allocation returns a normalized forward allocation contract", () => {
   const project = createDemoRmsAllocationProject();
   const plan = createDefaultRmsAllocationPlan(project);
-  plan.methods.reliability = "equal";
-  plan.targets.taskDurationHours = 3;
-  plan.targets.mtbfHours = 1000;
-
   const result = calculateRmsAllocation(plan, project);
-  const expectedReliability = Math.exp(-3 / 1000);
 
-  assert.equal(result.status, "validated");
-  assert.equal(result.nodeResults.length, project.equipmentNodes.filter((node) => node.parentId === "aircraft-root").length);
-  assert.ok(Math.abs(result.verification.calculated.reliability - expectedReliability) < 1e-9);
-  assert.equal(result.targetMetrics.mtbcfHours, 1000);
-  assert.equal(result.targetMetrics.mtbfHours, 1000);
-  assert.equal("equivalentHours" in result.nodeResults[0], false);
-  assert.equal("reliability" in result.nodeResults[0], false);
-  assert.ok(result.nodeResults.every((row) => row.mtbcfHours === row.mtbfHours));
+  assert.equal(plan.schemaVersion, "rms-allocation-plan-v2");
+  assert.equal(result.method, "equal");
+  assert.equal(result.status, "calculated");
+  assert.equal(result.nodeResults.length, 4);
+  assert.ok(Math.abs(result.totals.allocationShare - 1) < 1e-12);
+  assert.ok(result.nodeResults.every((row) => row.allocationShare === 0.25));
+  for (const removedField of ["targetMetrics", "verification", "exposure"]) {
+    assert.equal(removedField in result, false);
+  }
+  for (const row of result.nodeResults) {
+    assert.deepEqual(Object.keys(row), [
+      "nodeId", "nodeName", "level", "model", "installationCount", "runningRatio", "allocationShare", "status"
+    ]);
+  }
 });
 
-test("different running ratio produces different product intensity and MTBF requirements", () => {
-  const project = createDemoRmsAllocationProject();
-  const plan = createDefaultRmsAllocationPlan(project);
-  plan.methods.reliability = "equal";
-  plan.targets.taskDurationHours = 3;
-
-  const result = calculateRmsAllocation(plan, project);
-  const longerExposure = result.nodeResults.find((row) => row.nodeId === "propulsion-system");
-  const shorterExposure = result.nodeResults.find((row) => row.nodeId === "mission-computer");
-
-  assert.equal(longerExposure.runningRatio, 1);
-  assert.equal(shorterExposure.runningRatio, 0.65);
-  assert.equal(shorterExposure.productIntensityHours, 1.95);
-  assert.ok(longerExposure.productIntensityHours > shorterExposure.productIntensityHours);
-  assert.ok(longerExposure.mtbfHours > shorterExposure.mtbfHours);
-});
-
-test("proportional allocation gives more risk budget to weaker predicted nodes", () => {
-  const project = createDemoRmsAllocationProject();
-  const plan = createDefaultRmsAllocationPlan(project);
-  plan.methods.reliability = "proportional";
-
-  const result = calculateRmsAllocation(plan, project);
-  const propulsion = result.nodeResults.find((row) => row.nodeId === "propulsion-system");
-  const avionics = result.nodeResults.find((row) => row.nodeId === "avionics-system");
-
-  assert.ok(propulsion.riskBudget > avionics.riskBudget);
-  assert.ok(propulsion.mtbfHours < avionics.mtbfHours);
-});
-
-test("similar product allocation supports baselining F16 from F15 data", () => {
-  const project = createDemoRmsAllocationProject();
-  const plan = createDefaultRmsAllocationPlan(project);
-  plan.methods.reliability = "similar";
-  plan.methods.similarProduct = {
-    sourceModel: "F15",
-    targetModel: "F16",
-    adjustmentFactor: 0.92
-  };
-
-  const result = calculateRmsAllocation(plan, project);
-  const propulsion = result.nodeResults.find((row) => row.nodeId === "propulsion-system");
-  const missionComputer = result.nodeResults.find((row) => row.nodeId === "mission-computer");
-
-  assert.equal(result.method, "similar");
-  assert.equal(result.similarProduct.sourceModel, "F15");
-  assert.equal(result.similarProduct.targetModel, "F16");
-  assert.ok(propulsion.riskBudget > missionComputer.riskBudget);
-  assert.ok(propulsion.mtbfHours < missionComputer.mtbfHours);
-});
-
-test("demo RMS project includes F15 F16 and F18 aircraft models for manual workbench testing", () => {
-  const project = createDemoRmsAllocationProject();
-  const plan = createDefaultRmsAllocationPlan(project);
-  plan.methods.reliability = "similar";
-
-  const result = calculateRmsAllocation(plan, project);
-
-  assert.deepEqual(rmsEquipmentRoots(project).map((node) => node.name), ["F16", "F15", "F18"]);
-  assert.equal(project.rootId, "aircraft-root");
-  assert.equal(plan.methods.similarProduct.sourceModel, "F15");
-  assert.equal(plan.methods.similarProduct.targetModel, "F16");
-  assert.deepEqual(result.nodeResults.map((row) => row.nodeId), [
-    "propulsion-system",
-    "avionics-system",
-    "hydraulic-system",
-    "mission-computer"
+test("proportional allocation uses imported installation count and running ratio", () => {
+  const imported = normalizeRmsEquipmentImportRows([
+    { id: "root", name: "测试整机", level: "装备", quantity: 1 },
+    { id: "engine", parentId: "root", name: "发动机", model: "E-1", level: "系统", 安装数: 2, 运行比: 1 },
+    { id: "radar", parentId: "root", name: "雷达", model: "R-1", level: "系统", 安装数: 1, 运行比: 0.5 }
   ]);
+  const plan = createDefaultRmsAllocationPlan(imported);
+  plan.methods.allocation = "proportional";
+  const result = calculateRmsAllocation(plan, imported);
+  const engine = result.nodeResults.find((row) => row.nodeId === "engine");
+  const radar = result.nodeResults.find((row) => row.nodeId === "radar");
+
+  assert.equal(engine.model, "E-1");
+  assert.equal(engine.installationCount, 2);
+  assert.equal(radar.runningRatio, 0.5);
+  assert.ok(engine.allocationShare > radar.allocationShare);
+  assert.ok(Math.abs(result.totals.allocationShare - 1) < 1e-12);
 });
 
-test("RMS equipment table import creates an independent allocation project", () => {
+test("similar product allocation uses matching baseline installation exposure", () => {
+  const imported = normalizeRmsEquipmentImportRows([
+    { id: "f15-root", name: "F15", level: "装备", quantity: 1 },
+    { id: "f15-engine", name: "F15 发动机", parentId: "f15-root", level: "系统", quantity: 2, runningRatio: 1 },
+    { id: "f15-radar", name: "F15 雷达", parentId: "f15-root", level: "系统", quantity: 1, runningRatio: 0.5 },
+    { id: "f16-root", name: "F16", level: "装备", quantity: 1 },
+    { id: "f16-engine", name: "F16 发动机", parentId: "f16-root", level: "系统", quantity: 1, runningRatio: 1 },
+    { id: "f16-radar", name: "F16 雷达", parentId: "f16-root", level: "系统", quantity: 1, runningRatio: 1 }
+  ]);
+  const selected = selectRmsAllocationEquipmentRoot(imported, "f16-root");
+  const plan = createDefaultRmsAllocationPlan(selected);
+  plan.methods.allocation = "similar";
+  plan.methods.similarProduct = { sourceModel: "F15", targetModel: "F16" };
+  const result = calculateRmsAllocation(plan, selected);
+
+  assert.equal(result.similarProduct.sourceModel, "F15");
+  assert.ok(
+    result.nodeResults.find((row) => row.nodeId === "f16-engine").allocationShare
+      > result.nodeResults.find((row) => row.nodeId === "f16-radar").allocationShare
+  );
+});
+
+test("demo and fixture imports remain independent and selectable by equipment root", () => {
   const sourceProject = createDemoRmsAllocationProject();
-  const imported = normalizeRmsEquipmentImportRows(createRmsEquipmentImportFixture(), {
-    baseProject: sourceProject
-  });
+  const imported = normalizeRmsEquipmentImportRows(createRmsEquipmentImportFixture(), { baseProject: sourceProject });
+  const selected = selectRmsAllocationEquipmentRoot(imported, "f16-root");
 
   assert.notEqual(imported, sourceProject);
   assert.equal(sourceProject.rootId, "aircraft-root");
-  assert.equal(sourceProject.equipmentNodes.some((node) => node.id === "f16-propulsion"), false);
-  assert.equal(imported.rootId, "f16-root");
-  assert.ok(imported.equipmentNodes.some((node) => node.id === "f16-propulsion"));
-  assert.deepEqual(imported.reliabilityGroups[0].children, [
-    "f16-propulsion",
-    "f16-avionics",
-    "f16-hydraulic",
-    "f16-mission-computer"
-  ]);
   assert.deepEqual(rmsEquipmentRoots(imported).map((node) => node.name), ["F16", "F15", "F18"]);
+  assert.deepEqual(rmsEquipmentSubtree(selected).map((node) => node.id), [
+    "f16-root", "f16-propulsion", "f16-avionics", "f16-hydraulic", "f16-mission-computer"
+  ]);
+  assert.deepEqual(calculateRmsAllocation(createDefaultRmsAllocationPlan(selected), selected).nodeResults.map((row) => row.nodeId), [
+    "f16-propulsion", "f16-avionics", "f16-hydraulic", "f16-mission-computer"
+  ]);
 });
 
-test("RMS allocation can select one equipment root from an imported equipment list", () => {
-  const sourceProject = createDemoRmsAllocationProject();
-  const imported = normalizeRmsEquipmentImportRows([
-    { id: "f15-root", name: "F15", parentId: "", level: "装备", quantity: 1 },
-    { id: "f15-engine", name: "F15 发动机", parentId: "f15-root", level: "系统", mtbfHours: 760 },
-    { id: "f16-root", name: "F16", parentId: "", level: "装备", quantity: 1 },
-    { id: "f16-engine", name: "F16 发动机", parentId: "f16-root", level: "系统", mtbfHours: 700 },
-    { id: "f18-root", name: "F18", parentId: "", level: "装备", quantity: 1 },
-    { id: "f18-engine", name: "F18 发动机", parentId: "f18-root", level: "系统", mtbfHours: 820 }
-  ], {
-    baseProject: sourceProject
-  });
-  const selected = selectRmsAllocationEquipmentRoot(imported, "f16-root");
-  const plan = createDefaultRmsAllocationPlan(selected);
+test("allocation fails closed for an empty equipment root and zero proportional weight", () => {
+  const emptyProject = normalizeRmsEquipmentImportRows([
+    { id: "root", name: "空整机", level: "装备", quantity: 1, runningRatio: 1 }
+  ]);
+  assert.throws(
+    () => calculateRmsAllocation(createDefaultRmsAllocationPlan(emptyProject), emptyProject),
+    /RMS_ALLOCATION_EMPTY/
+  );
 
-  const result = calculateRmsAllocation(plan, selected);
-
-  assert.deepEqual(rmsEquipmentRoots(selected).map((node) => node.name), ["F15", "F16", "F18"]);
-  assert.equal(selected.rootId, "f16-root");
-  assert.deepEqual(result.nodeResults.map((row) => row.nodeId), ["f16-engine"]);
+  const zeroProject = normalizeRmsEquipmentImportRows([
+    { id: "root", name: "零权重整机", level: "装备", quantity: 1, runningRatio: 1 },
+    { id: "a", name: "系统A", parentId: "root", level: "系统", quantity: 1, runningRatio: 0 },
+    { id: "b", name: "系统B", parentId: "root", level: "系统", quantity: 2, runningRatio: 0 }
+  ]);
+  const plan = createDefaultRmsAllocationPlan(zeroProject);
+  plan.methods.allocation = "proportional";
+  assert.throws(() => calculateRmsAllocation(plan, zeroProject), /RMS_ALLOCATION_ZERO_WEIGHT/);
 });
 
-test("similar product allocation can reference another imported aircraft model", () => {
+test("similar allocation rejects missing source, target-as-source and unmatched nodes", () => {
   const imported = normalizeRmsEquipmentImportRows([
-    { id: "f15-root", name: "F15", parentId: "", level: "装备", quantity: 1 },
-    { id: "f15-engine", name: "F15 发动机", parentId: "f15-root", level: "系统", mtbfHours: 2000 },
-    { id: "f15-avionics", name: "F15 航电", parentId: "f15-root", level: "系统", mtbfHours: 800 },
-    { id: "f16-root", name: "F16", parentId: "", level: "装备", quantity: 1 },
-    {
-      id: "f16-engine",
-      name: "F16 发动机",
-      parentId: "f16-root",
-      level: "系统",
-      mtbfHours: 400,
-      similarProductModel: "F15",
-      adjustmentFactor: 1
-    },
-    {
-      id: "f16-avionics",
-      name: "F16 航电",
-      parentId: "f16-root",
-      level: "系统",
-      mtbfHours: 400,
-      similarProductModel: "F15",
-      adjustmentFactor: 1
-    },
-    { id: "f18-root", name: "F18", parentId: "", level: "装备", quantity: 1 },
-    { id: "f18-engine", name: "F18 发动机", parentId: "f18-root", level: "系统", mtbfHours: 820 }
+    { id: "f15-root", name: "F15", level: "装备", quantity: 1, runningRatio: 1 },
+    { id: "f15-engine", name: "F15 发动机", parentId: "f15-root", level: "系统", quantity: 2, runningRatio: 1 },
+    { id: "f16-root", name: "F16", level: "装备", quantity: 1, runningRatio: 1 },
+    { id: "f16-engine", name: "F16 发动机", parentId: "f16-root", level: "系统", quantity: 1, runningRatio: 1 },
+    { id: "f16-radar", name: "F16 雷达", parentId: "f16-root", level: "系统", quantity: 1, runningRatio: 1 }
   ]);
   const selected = selectRmsAllocationEquipmentRoot(imported, "f16-root");
   const plan = createDefaultRmsAllocationPlan(selected);
-  plan.methods.reliability = "similar";
-  plan.methods.similarProduct = { sourceModel: "F15", targetModel: "F16", adjustmentFactor: 1 };
+  plan.methods.allocation = "similar";
 
-  const result = calculateRmsAllocation(plan, selected);
+  plan.methods.similarProduct.sourceModel = "不存在";
+  assert.throws(() => calculateRmsAllocation(plan, selected), /RMS_SIMILAR_SOURCE_MISSING/);
+  plan.methods.similarProduct.sourceModel = "F16";
+  assert.throws(() => calculateRmsAllocation(plan, selected), /RMS_SIMILAR_SOURCE_IS_TARGET/);
+  plan.methods.similarProduct.sourceModel = "F15";
+  assert.throws(() => calculateRmsAllocation(plan, selected), /RMS_SIMILAR_NODE_MISSING.*F16 雷达/);
+});
 
-  assert.deepEqual(rmsEquipmentRoots(selected).map((node) => node.name), ["F15", "F16", "F18"]);
-  assert.deepEqual(rmsEquipmentSubtree(selected).map((node) => node.id), ["f16-root", "f16-engine", "f16-avionics"]);
-  assert.deepEqual(result.nodeResults.map((row) => row.nodeId), ["f16-engine", "f16-avionics"]);
-  assert.ok(
-    result.nodeResults.find((row) => row.nodeId === "f16-avionics").riskBudget
-      > result.nodeResults.find((row) => row.nodeId === "f16-engine").riskBudget
+test("installation imports reject missing or invalid counts and running ratios", () => {
+  const root = { id: "root", name: "整机", level: "装备", quantity: 1, runningRatio: 1 };
+  const child = { id: "child", name: "系统", parentId: "root", level: "系统", quantity: 1, runningRatio: 0.5 };
+  for (const [field, value, pattern] of [
+    ["quantity", 0, /INSTALLATION_INVALID/],
+    ["quantity", 1.5, /INSTALLATION_INVALID/],
+    ["quantity", "", /FIELD_MISSING/],
+    ["runningRatio", -0.1, /RUNNING_RATIO_INVALID/],
+    ["runningRatio", 1.1, /RUNNING_RATIO_INVALID/],
+    ["runningRatio", "NaN", /RUNNING_RATIO_INVALID/],
+    ["runningRatio", "", /FIELD_MISSING/]
+  ]) {
+    assert.throws(
+      () => normalizeRmsEquipmentImportRows([root, { ...child, [field]: value }]),
+      pattern,
+      `${field}=${String(value)} should fail`
+    );
+  }
+  assert.equal(
+    normalizeRmsEquipmentImportRows([root, { ...child, runningRatio: 0 }]).equipmentNodes.find((node) => node.id === "child").missionUse.runningRatio,
+    0
   );
 });
 
-test("similar product allocation can switch F16 baseline from F15 to F18", () => {
-  const imported = normalizeRmsEquipmentImportRows([
-    { id: "f15-root", name: "F15", parentId: "", level: "装备", quantity: 1 },
-    { id: "f15-engine", name: "F15 发动机", parentId: "f15-root", level: "系统", mtbfHours: 2000 },
-    { id: "f15-avionics", name: "F15 航电", parentId: "f15-root", level: "系统", mtbfHours: 800 },
-    { id: "f16-root", name: "F16", parentId: "", level: "装备", quantity: 1 },
-    { id: "f16-engine", name: "F16 发动机", parentId: "f16-root", level: "系统", mtbfHours: 400, adjustmentFactor: 1 },
-    { id: "f16-avionics", name: "F16 航电", parentId: "f16-root", level: "系统", mtbfHours: 400, adjustmentFactor: 1 },
-    { id: "f18-root", name: "F18", parentId: "", level: "装备", quantity: 1 },
-    { id: "f18-engine", name: "F18 发动机", parentId: "f18-root", level: "系统", mtbfHours: 820 },
-    { id: "f18-avionics", name: "F18 航电", parentId: "f18-root", level: "系统", mtbfHours: 1180 }
+test("default plan and successful allocation validate against the active schemas", async () => {
+  const [planSchema, resultSchema] = await Promise.all([
+    readFile(new URL("../contracts/rms_allocation_plan.schema.json", import.meta.url), "utf8").then(JSON.parse),
+    readFile(new URL("../contracts/rms_allocation_result.schema.json", import.meta.url), "utf8").then(JSON.parse)
   ]);
-  const selected = selectRmsAllocationEquipmentRoot(imported, "f16-root");
-  const plan = createDefaultRmsAllocationPlan(selected);
-  plan.methods.reliability = "similar";
-  plan.methods.similarProduct = { sourceModel: "F18", targetModel: "F16", adjustmentFactor: 1 };
-
-  const result = calculateRmsAllocation(plan, selected);
-
-  assert.equal(result.similarProduct.sourceModel, "F18");
-  assert.deepEqual(result.nodeResults.map((row) => row.nodeId), ["f16-engine", "f16-avionics"]);
-  assert.ok(
-    result.nodeResults.find((row) => row.nodeId === "f16-engine").riskBudget
-      > result.nodeResults.find((row) => row.nodeId === "f16-avionics").riskBudget
-  );
-});
-
-test("publishing allocation writes only target RMS values", () => {
   const project = createDemoRmsAllocationProject();
   const plan = createDefaultRmsAllocationPlan(project);
   const result = calculateRmsAllocation(plan, project);
 
-  const published = publishRmsAllocation(project, result);
-  const sourceNode = project.equipmentNodes.find((node) => node.id === "propulsion-system");
-  const publishedNode = published.equipmentNodes.find((node) => node.id === "propulsion-system");
-
-  assert.ok(publishedNode.rms.target.mtbfHours > 0);
-  assert.ok(publishedNode.rms.target.mtbcfHours > 0);
-  assert.equal("reliability" in publishedNode.rms.target, false);
-  assert.equal(publishedNode.rms.target.allocationPlanId, plan.planId);
-  assert.deepEqual(publishedNode.rms.prediction, sourceNode.rms.prediction);
-  assert.deepEqual(publishedNode.rms.actual, sourceNode.rms.actual);
+  assert.deepEqual(validateSchema(planSchema, plan), []);
+  assert.deepEqual(validateSchema(resultSchema, result), []);
+  assert.ok(Math.abs(result.totals.allocationShare - 1) < 1e-12);
+  const failure = createRmsAllocationFailureResult(plan, new Error("测试失败"));
+  assert.deepEqual(validateSchema(resultSchema, failure), []);
+  assert.equal(failure.method, plan.methods.allocation);
+  assert.deepEqual(failure.totals, { installationCount: 0, allocationShare: 0 });
 });

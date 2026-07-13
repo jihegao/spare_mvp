@@ -1378,10 +1378,10 @@ test("RMS method selection updates method-specific parameters at runtime", async
     assert.match(runtime.appNode.innerHTML, /装备 RMS 指标分配/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /基准机型/);
 
-    await runtime.change("[data-rms-path]", { rmsPath: "methods.reliability" }, { value: "similar" });
+    await runtime.change("[data-rms-path]", { rmsPath: "methods.allocation" }, { value: "similar" });
 
     assert.match(runtime.appNode.innerHTML, /基准机型/);
-    assert.match(runtime.appNode.innerHTML, /相似修正系数/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /相似修正系数|比例修正系数/);
     assert.match(runtime.appNode.innerHTML, /data-rms-path="methods\.similarProduct\.sourceModel"/);
   } finally {
     runtime.restore();
@@ -1396,13 +1396,13 @@ test("RMS imported aircraft models filter the tree and remain available as simil
       name: "rms-models.csv",
       async text() {
         return [
-          "id,name,parentId,level,mtbfHours,similarProductModel",
-          "f15-root,F15,,装备,,",
-          "f15-engine,F15 发动机,f15-root,系统,2000,",
-          "f16-root,F16,,装备,,",
-          "f16-engine,F16 发动机,f16-root,系统,400,F15",
-          "f18-root,F18,,装备,,",
-          "f18-engine,F18 发动机,f18-root,系统,820,"
+          "id,name,parentId,level,quantity,runningRatio,similarProductModel",
+          "f15-root,F15,,装备,1,1,",
+          "f15-engine,F15 发动机,f15-root,系统,2,1,",
+          "f16-root,F16,,装备,1,1,",
+          "f16-engine,F16 发动机,f16-root,系统,1,1,F15",
+          "f18-root,F18,,装备,1,1,",
+          "f18-engine,F18 发动机,f18-root,系统,2,1,"
         ].join("\n");
       }
     };
@@ -1416,11 +1416,36 @@ test("RMS imported aircraft models filter the tree and remain available as simil
     assert.doesNotMatch(runtime.appNode.innerHTML, /F15 发动机/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /F18 发动机/);
 
-    await runtime.change("[data-rms-path]", { rmsPath: "methods.reliability" }, { value: "similar" });
+    await runtime.change("[data-rms-path]", { rmsPath: "methods.allocation" }, { value: "similar" });
     assert.match(runtime.appNode.innerHTML, /基准机型/);
     assert.match(runtime.appNode.innerHTML, /<option value="F15" selected>F15<\/option>/);
-    assert.match(runtime.appNode.innerHTML, /<option value="F16"\s*>F16<\/option>/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /<option value="F16"[^>]*>F16<\/option>/);
     assert.match(runtime.appNode.innerHTML, /<option value="F18"\s*>F18<\/option>/);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("RMS runtime shows an explicit failure when proportional weights sum to zero", async () => {
+  const runtime = await setupRuntimeApp({ hash: "feature=system-management-equipment-rms-allocation" });
+  try {
+    const file = {
+      name: "zero-running-ratio.csv",
+      async text() {
+        return [
+          "id,name,parentId,level,quantity,runningRatio",
+          "root,测试整机,,装备,1,1",
+          "system-a,系统A,root,系统,1,0",
+          "system-b,系统B,root,系统,2,0"
+        ].join("\n");
+      }
+    };
+    await runtime.change("[data-rms-equipment-import-file]", {}, { files: [file], value: file.name });
+    await runtime.change("[data-rms-path]", { rmsPath: "methods.allocation" }, { value: "proportional" });
+
+    assert.match(runtime.appNode.innerHTML, /方法不适用/);
+    assert.match(runtime.appNode.innerHTML, /RMS_ALLOCATION_ZERO_WEIGHT/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /节点份额合计为 100%/);
   } finally {
     runtime.restore();
   }

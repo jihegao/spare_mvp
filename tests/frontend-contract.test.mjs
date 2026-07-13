@@ -3867,9 +3867,10 @@ test("system management exposes an independent equipment RMS allocation workbenc
   assert.match(appSource, /<p>\$\{htmlEscape\(currentProject\?\.name \|\| "未选择项目"\)\}<\/p>/);
   assert.doesNotMatch(appSource, /SYSTEM_SUPPORT_MODULE_NAME} \/ \$\{htmlEscape\(page\.secondary\)\} \/ \$\{htmlEscape\(page\.tertiary\)\}/);
   assert.match(styleSource, /\.rms-allocation-workbench/);
-  assert.match(styleSource, /\.rms-parameter-panel/);
   assert.match(styleSource, /\.rms-equipment-tree/);
   assert.match(styleSource, /\.rms-method-panel/);
+  assert.match(styleSource, /\.rms-installation-panel/);
+  assert.match(styleSource, /\.rms-import-button\s*\{[^}]*width: 96px;[^}]*height: 34px;/s);
 
   const workbenchSource = await readFile(new URL("../front/rms-allocation-workbench.mjs", import.meta.url), "utf8");
   assert.match(workbenchSource, /装备 RMS 指标分配/);
@@ -3878,17 +3879,16 @@ test("system management exposes an independent equipment RMS allocation workbenc
   assert.match(workbenchSource, /上传文件/);
   assert.doesNotMatch(workbenchSource, /import-sample/);
   assert.doesNotMatch(workbenchSource, /导入 15/);
-  assert.match(workbenchSource, /任务时长\(h\)/);
-  assert.match(workbenchSource, /整机 MTBF\(h\)/);
-  assert.match(workbenchSource, /MTTR\(h\)/);
-  assert.doesNotMatch(workbenchSource, /关键故障占比/);
+  assert.match(workbenchSource, /导入安装数/);
+  assert.match(workbenchSource, /装备结构树/);
+  assert.match(workbenchSource, /<th>系统名称<\/th><th>型号<\/th><th>安装数<\/th><th>运行比<\/th>/);
   assert.match(workbenchSource, /data-rms-equipment-root/);
-  assert.match(workbenchSource, /可靠性分配方法/);
+  assert.match(workbenchSource, /指标分配方法/);
   assert.match(workbenchSource, /等分配法/);
   assert.match(workbenchSource, /比例分配法/);
   assert.match(workbenchSource, /相似产品分配法/);
-  assert.match(workbenchSource, /比例修正系数/);
-  assert.match(workbenchSource, /plan\.methods\.reliability === "similar"/);
+  assert.doesNotMatch(workbenchSource, /比例修正系数|相似修正系数/);
+  assert.match(workbenchSource, /plan\.methods\.allocation === "similar"/);
   assert.match(workbenchSource, /基准机型/);
   assert.match(workbenchSource, /data-rms-action="calculate">计算/);
   assert.doesNotMatch(workbenchSource, /data-rms-action="save-draft"/);
@@ -3899,7 +3899,8 @@ test("system management exposes an independent equipment RMS allocation workbenc
   assert.doesNotMatch(workbenchSource, /暴露时间/);
   assert.doesNotMatch(workbenchSource, /R目标/);
   assert.doesNotMatch(workbenchSource, /反算 R/);
-  assert.match(workbenchSource, /校核可靠度/);
+  assert.doesNotMatch(workbenchSource, /目标 R|校核可靠度|MTBCF|MTBF|MTTR 裕度/);
+  assert.ok(workbenchSource.indexOf("<h3>计算方法</h3>") < workbenchSource.indexOf("<h3>节点分配结果</h3>"));
   assert.match(workbenchSource, /运行比/);
   assert.doesNotMatch(workbenchSource, /<th>产品强度<\/th>/);
   assert.doesNotMatch(workbenchSource, /<th>结构<\/th>/);
@@ -3909,7 +3910,7 @@ test("RMS allocation workbench renders parameters for only the selected method",
   const project = createDemoRmsAllocationProject();
   const plan = createDefaultRmsAllocationPlan(project);
   const renderWithMethod = (method) => {
-    plan.methods.reliability = method;
+    plan.methods.allocation = method;
     return renderRmsAllocationWorkbench({
       project,
       plan,
@@ -3929,22 +3930,19 @@ test("RMS allocation workbench renders parameters for only the selected method",
   assert.doesNotMatch(equalHtml, /基准机型/);
   assert.doesNotMatch(equalHtml, /比例修正系数/);
   assert.doesNotMatch(equalHtml, /暴露时间/);
-  assert.doesNotMatch(equalHtml, /R目标/);
-  assert.doesNotMatch(equalHtml, /反算 R/);
-  assert.match(equalHtml, /校核可靠度/);
+  assert.doesNotMatch(equalHtml, /目标 R|校核可靠度|MTBCF|MTBF|MTTR 裕度/);
   assert.match(equalHtml, /运行比<\/th>/);
-  assert.doesNotMatch(equalHtml, /产品强度/);
-  assert.doesNotMatch(equalHtml, /<th>MTBCF<\/th>/);
+  assert.match(equalHtml, /分配份额/);
   assert.match(equalHtml, /任务计算机LRU/);
   assert.match(equalHtml, /运行比 0\.65/);
 
   const proportionalHtml = renderWithMethod("proportional");
-  assert.match(proportionalHtml, /比例修正系数/);
+  assert.doesNotMatch(proportionalHtml, /比例修正系数|相似修正系数/);
   assert.doesNotMatch(proportionalHtml, /基准机型/);
 
   const similarHtml = renderWithMethod("similar");
   assert.match(similarHtml, /基准机型/);
-  assert.match(similarHtml, /相似修正系数/);
+  assert.doesNotMatch(similarHtml, /比例修正系数|相似修正系数/);
 });
 
 test("system management exposes project management and base configuration pages", async () => {
