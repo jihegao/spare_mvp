@@ -457,7 +457,7 @@ test("project list exports project JSON without direct Project JSON import at ru
   }
 });
 
-test("project data raw JSON normalizes legacy basicMission fields", async () => {
+test("project data management omits raw JSON while keeping overview and replacement controls", async () => {
   const projectJson = createRuntimeProjectJson({
     project_id: "project-runtime",
     basicMissions: [],
@@ -495,9 +495,12 @@ test("project data raw JSON normalizes legacy basicMission fields", async () => 
   try {
     await runtime.flush();
 
-    assert.match(runtime.appNode.innerHTML, /Project JSON 原始数据/);
-    assert.match(runtime.appNode.innerHTML, /<code>basicMissions<\/code><span>\[2\]<\/span>/);
-    assert.doesNotMatch(runtime.appNode.innerHTML, /<code>basicMission<\/code>/);
+    assert.match(runtime.appNode.innerHTML, /data-project-template-management/);
+    assert.match(runtime.appNode.innerHTML, /data-project-replacement-file/);
+    assert.match(runtime.appNode.innerHTML, /data-project-data-overview/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-project-json-viewer/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /Project JSON 原始数据/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-project-json-node/);
   } finally {
     runtime.restore();
   }

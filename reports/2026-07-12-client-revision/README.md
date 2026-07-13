@@ -13,7 +13,7 @@
 
 | 截图 | 验收内容 |
 |---|---|
-| `after/02-project-data-management-after.png` | 数据管理入口、数据概览、Project JSON 默认折叠 |
+| `after/02-project-data-management-after.png` | 历史证据：数据管理入口、数据概览及 #185 移除前的 Project JSON 折叠区；不再作为当前页面验收图 |
 | `after/03-granularity-management-after.png` | 两种保障仿真颗粒度和蓝色选中状态 |
 | `after/05-visual-simulation-after.png` | 顶部方案工具栏、压缩标题区和扩大后的推演区域 |
 
@@ -32,3 +32,7 @@
 - 证据评审确认 RMS 是本轮最强修改前后证据；项目列表只作为辅助对比，其他新页面只列修改后截图，避免扩大截图可证明的范围。
 
 自动化验证结果见 `test-results.md`。
+
+## #185 后续收口
+
+项目数据管理页不再渲染 Project JSON 原始数据区及递归查看器。当前验收以运行时测试确认查看区完全缺席，同时确认模板管理、数据概览、JSON 文件选择和覆盖流程入口仍存在；上述历史截图保留用于说明变更前状态。

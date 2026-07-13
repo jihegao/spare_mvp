@@ -469,7 +469,7 @@ test("page revision project and system management controls stay wired", async ()
   assert.match(systemProjectSource, /data-project-data-project-list/);
   assert.match(systemProjectSource, /data-project-template-management/);
   assert.match(systemProjectSource, /data-project-data-overview/);
-  assert.match(systemProjectSource, /data-project-json-viewer/);
+  assert.doesNotMatch(systemProjectSource, /data-project-json-viewer/);
   assert.doesNotMatch(projectDataSource, /data-system-data-export/);
   assert.doesNotMatch(projectDataSource, /data-system-data-select-all/);
   assert.doesNotMatch(projectDataSource, /data-system-data-status/);
@@ -524,7 +524,7 @@ test("page revision project and system management controls stay wired", async ()
   assert.match(eventSource, /const permissionConfigureButton = event\.target\.closest\("\[data-permission-configure\]"\)/);
 });
 
-test("project data management exposes project list, template controls, overview, and raw json", async () => {
+test("project data management exposes project list, template controls, and overview without raw json", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const systemProjectSource = appSource.slice(
     appSource.indexOf("function renderSystemProjectManagement"),
@@ -559,9 +559,9 @@ test("project data management exposes project list, template controls, overview,
   assert.match(projectDataSource, /装备/);
   assert.match(projectDataSource, /保障系统/);
   assert.match(projectDataSource, /保障活动/);
-  assert.match(projectDataSource, /data-project-json-viewer/);
-  assert.match(projectDataSource, /data-project-json-node/);
-  assert.match(projectDataSource, /<details/);
+  assert.doesNotMatch(projectDataSource, /data-project-json-viewer/);
+  assert.doesNotMatch(projectDataSource, /data-project-json-node/);
+  assert.doesNotMatch(projectDataSource, /Project JSON 原始数据/);
   assert.match(projectDataSource, /projectInfo\.isTemplate/);
   assert.match(projectDataSource, /backendApi\.getProject/);
   assert.match(projectDataSource, /backendApi\.saveProject/);
@@ -3949,7 +3949,7 @@ test("RMS allocation workbench renders parameters for only the selected method",
 
 test("system management exposes project management and base configuration pages", async () => {
   const expectedPages = [
-    ["system-management-project-data-management", "项目管理", "项目数据管理", ["projectList", "templateManagement", "dataOverview", "projectJsonRaw"]],
+    ["system-management-project-data-management", "项目管理", "项目数据管理", ["projectList", "templateManagement", "dataOverview"]],
     ["system-management-modeling-granularity-management", "项目管理", "建模颗粒度管理", ["modelingModules", "sheets", "fieldSelections"]],
     ["system-management-user-management", "系统基础配置", "用户管理", ["users", "roles", "organizations"]],
     ["system-management-function-permission-management", "系统基础配置", "系统功能权限管理", ["features", "roles", "permissionRules"]],
@@ -3980,7 +3980,7 @@ test("system management exposes project management and base configuration pages"
   assert.match(appSource, /data-project-data-config-module="project-data-layer"/);
   assert.match(appSource, /data-project-data-project-list/);
   assert.match(appSource, /data-project-template-management/);
-  assert.match(appSource, /data-project-json-viewer/);
+  assert.doesNotMatch(appSource, /data-project-json-viewer/);
   assert.doesNotMatch(appSource, /data-project-data-config-module="modeling-data-source"/);
   assert.match(appSource, /MODELING_DATA_MODULES/);
   assert.match(appSource, /装备系统/);
