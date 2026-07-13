@@ -2839,11 +2839,15 @@ test("monte carlo launch uses Lite Mesa from the selected experiment plan", asyn
   assert.doesNotMatch(launchSource, /backendApi\.startSimulationRun|backendApi\.startMonteCarloRun/);
 });
 
-test("lite Mesa local current plan uses hydrated project data instead of empty experiment draft", async () => {
+test("lite Mesa run context separates the current Project from persisted ExperimentPlans", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const contextSource = appSource.slice(
     appSource.indexOf("function projectJsonHasExecutableModelingData"),
-    appSource.indexOf("function selectedExperimentPlanContextKey")
+    appSource.indexOf("function selectedExperimentPlanName")
+  );
+  const contextRenderSource = appSource.slice(
+    appSource.indexOf("function renderExperimentPlanContextDropdown"),
+    appSource.indexOf("function currentContextSummary")
   );
 
   assert.match(contextSource, /function currentProjectJsonForExperimentContext/);
@@ -2852,7 +2856,25 @@ test("lite Mesa local current plan uses hydrated project data instead of empty e
   assert.match(contextSource, /projectJsonId === backendProjectId/);
   assert.match(contextSource, /projectDataJsonMatchesCurrentProject\(selectedProjectDataProjectJson\)/);
   assert.match(contextSource, /buildBackendProjectJson\(currentProjectJson,\s*currentProject\)/);
-  assert.doesNotMatch(contextSource, /projectJson:\s*buildBackendProjectJson\(experimentPlanDraft,\s*currentProject\)/);
+  assert.doesNotMatch(contextSource, /currentProjectJsonForExperimentContext\(\)[\s\S]*experimentPlanDraft/);
+  assert.match(contextSource, /kind:\s*"current-project"/);
+  assert.match(contextSource, /kind:\s*"experiment-plan"/);
+  assert.match(contextSource, /backendExperimentPlans\.filter\(\(plan\) => String\(plan\?\.experiment_plan_id/);
+  assert.match(appSource, /let selectedRunContextKey = ""/);
+  assert.match(contextSource, /validKeys\.has\(selectedRunContextKey\)/);
+  assert.doesNotMatch(contextSource, /for \(const key of selectedExperimentPlanKeys\)/);
+  assert.doesNotMatch(contextSource, /currentPlanKey/);
+  assert.match(contextSource, /options\.find\(\(option\) => option\.kind === "current-project"\)/);
+  assert.doesNotMatch(contextSource, /backendOptions\.length === 1/);
+  assert.match(contextRenderSource, /运行上下文/);
+  assert.match(contextRenderSource, /已保存实验方案/);
+  assert.doesNotMatch(contextRenderSource, /当前草稿/);
+  const runContextSelectionSource = appSource.slice(
+    appSource.indexOf("function selectCurrentExperimentPlan"),
+    appSource.indexOf("function toggleExperimentPlanSelection")
+  );
+  assert.match(runContextSelectionSource, /selectedRunContextKey = selected\.key/);
+  assert.doesNotMatch(runContextSelectionSource, /selectedExperimentPlanKeys|experimentPlan =/);
 });
 
 test("formal Monte Carlo helpers keep bound run ledger status outside embedded detail", async () => {
@@ -2915,6 +2937,10 @@ test("visible simulation embeds Solara while Monte Carlo and analysis launches u
     appSource.indexOf("function renderVisualSimulation"),
     appSource.indexOf("function visualizationStreamEventClass")
   );
+  const visualSaveSource = appSource.slice(
+    appSource.indexOf("async function saveSelectedProjectJsonForSolaraVisualization"),
+    appSource.indexOf("function selectedExperimentPlanRunSettings")
+  );
 
   assert.match(apiClientSource, /path: "\/mesa-analysis-runs"/);
   assert.doesNotMatch(apiClientSource, /runIndependentMesaVisualization\(projectJson/);
@@ -2936,6 +2962,13 @@ test("visible simulation embeds Solara while Monte Carlo and analysis launches u
   assert.doesNotMatch(visualSource, /data-mesa-control="play"/);
   assert.doesNotMatch(visualSource, /data-mesa-timeline/);
   assert.doesNotMatch(visualSource, /backendApi\.runLiteMesaAnalysis/);
+  assert.match(visualSaveSource, /resolveSelectedExperimentPlanProjectJsonForRun\(\)/);
+  assert.match(visualSaveSource, /backendApi\.saveProject\(projectJson\)/);
+  assert.doesNotMatch(visualSaveSource, /planRunOverrides|experiment:\s*\{/);
+  assert.match(visualSource, /experimentPlanId:\s*context\.plan\.experiment_plan_id/);
+  assert.match(visualSource, /planSteps:\s*planConfig\.steps/);
+  assert.match(visualSource, /planSamples:\s*planConfig\.samples/);
+  assert.match(visualSource, /planSeed:\s*planConfig\.seed/);
   assert.doesNotMatch(visualSource, /127\.0\.0\.1:8521|independent-mesa|mesa-visualization-runs/);
   assert.doesNotMatch(appSource, /ensureIndependentMesaVisualizationStarted\(page\)/);
   assert.match(appSource, /function renderExperimentPlanContextDropdown/);
@@ -4204,8 +4237,13 @@ test("Solara visual panels subscribe to Mesa controller updates", async () => {
   assert.match(solaraSource, /def _load_backend_project_json/);
   assert.match(solaraSource, /solara\.use_router\(\)/);
   assert.match(solaraSource, /parse_qs\(router\.search/);
+  assert.match(solaraSource, /def _query_runtime_config/);
+  assert.match(solaraSource, /"plan_steps", "steps"/);
+  assert.match(solaraSource, /"plan_samples", "samples"/);
+  assert.match(solaraSource, /"plan_seed", "seed"/);
   assert.match(solaraSource, /def _safe_model_inputs/);
-  assert.match(solaraSource, /_safe_model_inputs\(project_id\)/);
+  assert.match(solaraSource, /_safe_model_inputs\(project_id, runtime_config=runtime_config\)/);
+  assert.match(solaraSource, /compile_scenario_with_gate\([\s\S]*runtime_config=runtime_config/);
   assert.match(solaraSource, /运行控制/);
   assert.match(solaraSource, /VISUAL_TAB_LABELS = \["飞机视图", "任务视图", "保障视图"\]/);
   assert.match(solaraSource, /solara\.Button\(/);

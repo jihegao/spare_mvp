@@ -34,7 +34,11 @@ test("Solara iframe URL carries visual simulation context without using legacy s
   const url = buildSolaraVisualizationUrl("http://127.0.0.1:8765/", {
     projectId: "project-ui",
     featureId: "spare-planning-visual-mesa-page",
+    experimentPlanId: "plan-a",
     experimentPlanName: "方案A",
+    planSteps: 77,
+    planSamples: 8,
+    planSeed: 88,
     reload: 2
   });
 
@@ -43,6 +47,10 @@ test("Solara iframe URL carries visual simulation context without using legacy s
   assert.match(url, /project_id=project-ui/);
   assert.match(url, /feature_id=spare-planning-visual-mesa-page/);
   assert.match(url, /experiment_plan_name=/);
+  assert.match(url, /experiment_plan_id=plan-a/);
+  assert.match(url, /plan_steps=77/);
+  assert.match(url, /plan_samples=8/);
+  assert.match(url, /plan_seed=88/);
   assert.match(url, /reload=2/);
   assert.doesNotMatch(url, /8521|independent-mesa|mesa-visualization-runs/);
 });

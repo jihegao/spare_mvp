@@ -689,6 +689,7 @@ let selectedVisualAircraftId = "";
 let collapsedTreeNodes = new Set();
 let experimentRunStatus = "当前";
 let selectedExperimentPlanKeys = new Set();
+let selectedRunContextKey = "";
 let isProjectMenuOpen = false;
 let selectedPeriodicTaskId = "";
 let selectedPeriodicWeekIndex = 1;
@@ -2894,14 +2895,17 @@ function renderExperimentPlanContextDropdown(page) {
   ensureExperimentPlanListLoaded();
   const options = experimentPlanContextOptions(page);
   const selectedKey = selectedExperimentPlanContextKey(options);
+  const currentProjectOption = options.find((option) => option.kind === "current-project");
+  const savedPlanOptions = options.filter((option) => option.kind === "experiment-plan");
   const status = backendExperimentPlansLoaded
-    ? `${options.length} 个方案`
+    ? `${savedPlanOptions.length} 个已保存方案`
     : "方案列表加载中";
   return `
     <label class="page-head-current-context experiment-plan-context-select">
-      <span>实验方案</span>
+      <span>运行上下文</span>
       <select data-current-experiment-plan>
-        ${options.map((option) => `<option value="${htmlEscape(option.key)}" ${option.key === selectedKey ? "selected" : ""}>${htmlEscape(option.name)}</option>`).join("")}
+        ${currentProjectOption ? `<option value="${htmlEscape(currentProjectOption.key)}" ${currentProjectOption.key === selectedKey ? "selected" : ""}>${htmlEscape(currentProjectOption.name)}</option>` : ""}
+        ${savedPlanOptions.length ? `<optgroup label="已保存实验方案">${savedPlanOptions.map((option) => `<option value="${htmlEscape(option.key)}" ${option.key === selectedKey ? "selected" : ""}>${htmlEscape(option.name)}</option>`).join("")}</optgroup>` : ""}
       </select>
       <small>${htmlEscape(status)}</small>
     </label>
@@ -9611,7 +9615,6 @@ function projectDataJsonMatchesCurrentProject(projectJson) {
 }
 
 function currentProjectJsonForExperimentContext() {
-  if (experimentPlanBranchActive) return experimentPlanDraft;
   if (projectJsonHasExecutableModelingData(scenario)) return scenario;
   if (
     selectedProjectDataProjectJson
@@ -9625,15 +9628,16 @@ function currentProjectJsonForExperimentContext() {
 
 function experimentPlanContextOptions(page = getFeaturePageById(selectedFeatureId)) {
   const currentProjectJson = currentProjectJsonForExperimentContext();
-  const localName = String(currentProjectJson.experiment?.name || currentProjectJson.projectInfo?.name || currentProject?.name || "当前项目").trim();
-  const localOption = {
-    key: experimentPlanSelectionKey({ name: localName }),
-    name: `${localName || "当前项目"}（当前草稿）`,
+  const projectName = String(currentProjectJson.projectInfo?.name || currentProject?.name || currentProjectJson.experiment?.name || "未选择项目").trim();
+  const currentProjectOption = {
+    key: `current-project:${String(currentBackendProjectId() || currentProject?.id || "none").trim()}`,
+    name: `当前项目：${projectName || "未选择项目"}`,
+    kind: "current-project",
     plan: null,
     projectJson: buildBackendProjectJson(currentProjectJson, currentProject),
     module: page.module
   };
-  const backendOptions = backendExperimentPlans.map((plan) => {
+  const backendOptions = backendExperimentPlans.filter((plan) => String(plan?.experiment_plan_id || "").trim()).map((plan) => {
     const config = plan?.config || {};
     const projectJson = config.projectJson && typeof config.projectJson === "object" && !Array.isArray(config.projectJson)
       ? config.projectJson
@@ -9641,24 +9645,19 @@ function experimentPlanContextOptions(page = getFeaturePageById(selectedFeatureI
     return {
       key: experimentPlanSelectionKey(plan),
       name: config.name || projectJson?.experiment?.name || plan.experiment_plan_id || "未命名方案",
+      kind: "experiment-plan",
       plan,
       projectJson,
       module: page.module
     };
   });
-  return [localOption, ...backendOptions];
+  return [currentProjectOption, ...backendOptions];
 }
 
 function selectedExperimentPlanContextKey(options = experimentPlanContextOptions()) {
   const validKeys = new Set(options.map((option) => option.key));
-  for (const key of selectedExperimentPlanKeys) {
-    if (validKeys.has(key)) return key;
-  }
-  const currentPlanKey = experimentPlan ? experimentPlanSelectionKey(experimentPlan) : "";
-  if (validKeys.has(currentPlanKey)) return currentPlanKey;
-  const backendOptions = options.filter((option) => option.plan);
-  if (backendOptions.length === 1) return backendOptions[0].key;
-  return options[0]?.key || "";
+  if (validKeys.has(selectedRunContextKey)) return selectedRunContextKey;
+  return options.find((option) => option.kind === "current-project")?.key || options[0]?.key || "";
 }
 
 function selectedExperimentPlanContext(options = experimentPlanContextOptions()) {
@@ -9670,22 +9669,28 @@ function selectedExperimentPlanName() {
   return selectedExperimentPlanContext()?.name || currentContextSummary().name;
 }
 
+function selectedRunContextLabel() {
+  return selectedExperimentPlanContext()?.kind === "experiment-plan" ? "实验方案" : "当前项目";
+}
+
 function selectedExperimentPlanProjectJson() {
   const context = selectedExperimentPlanContext();
   const source = context?.projectJson && typeof context.projectJson === "object" && !Array.isArray(context.projectJson)
     ? context.projectJson
-    : scenario;
+    : (context?.kind === "current-project" ? currentProjectJsonForExperimentContext() : {});
   return buildBackendProjectJson(source, currentProject);
 }
 
 async function resolveSelectedExperimentPlanProjectJsonForRun() {
+  const context = selectedExperimentPlanContext();
   const projectJson = selectedExperimentPlanProjectJson();
   if (projectJsonHasExecutableModelingData(projectJson)) return projectJson;
+  if (context?.kind !== "current-project") return projectJson;
   const projectId = currentBackendProjectId();
   if (!projectId) return projectJson;
   const hydratedProjectJson = normalizeProjectJsonForClientDraft(await backendApi.getProject(projectId));
+  scenario = cloneScenario(hydratedProjectJson);
   if (!experimentPlanBranchActive) {
-    scenario = cloneScenario(hydratedProjectJson);
     experimentPlanDraft = cloneScenario(hydratedProjectJson);
   }
   return buildBackendProjectJson(hydratedProjectJson, currentProject);
@@ -9720,22 +9725,46 @@ function selectedExperimentPlanRunSettings() {
   };
 }
 
+function resetRunContextToCurrentProject() {
+  selectedRunContextKey = "";
+  const projectJson = currentProjectJsonForExperimentContext();
+  const experiment = projectJson?.experiment && typeof projectJson.experiment === "object" && !Array.isArray(projectJson.experiment)
+    ? projectJson.experiment
+    : {};
+  const samples = positiveExperimentNumber(experiment.samples, 0);
+  const seed = positiveExperimentNumber(experiment.seed, 0);
+  liteMesaMonteCarloSettings = {
+    samples: samples > 0 ? Math.max(1, Math.min(1000, Math.trunc(samples))) : 4,
+    seed: seed > 0 ? Math.trunc(seed) : 20260621
+  };
+  liteMesaMonteCarloResult = null;
+  liteMesaAnalysisResults = {};
+  liteMesaMonteCarloStatus = "已切换运行来源：当前项目";
+}
+
+function resetMissingRunContextAfterPlanRefresh() {
+  if (!selectedRunContextKey || selectedRunContextKey.startsWith("current-project:")) return;
+  const selectedPlanStillExists = backendExperimentPlans.some((plan) => (
+    String(plan?.experiment_plan_id || "").trim() === selectedRunContextKey
+  ));
+  if (!selectedPlanStillExists) resetRunContextToCurrentProject();
+}
+
 function selectCurrentExperimentPlan(planKey) {
   const options = experimentPlanContextOptions();
   const selected = options.find((option) => option.key === planKey) || options[0];
   if (!selected) return;
-  selectedExperimentPlanKeys = new Set([selected.key]);
-  experimentPlan = selected.plan || null;
+  selectedRunContextKey = selected.key;
   liteMesaMonteCarloResult = null;
-  liteMesaMonteCarloStatus = `已绑定实验方案：${selected.name}`;
+  liteMesaMonteCarloStatus = selected.kind === "experiment-plan"
+    ? `已绑定实验方案：${selected.name}`
+    : `已切换运行来源：${selected.name}`;
   liteMesaAnalysisResults = {};
   const planRunSettings = selectedExperimentPlanRunSettings();
-  if (Number(planRunSettings.samples) > 0 || Number(planRunSettings.seed) > 0) {
-    liteMesaMonteCarloSettings = {
-      ...liteMesaMonteCarloSettings,
-      ...planRunSettings
-    };
-  }
+  liteMesaMonteCarloSettings = {
+    samples: Number(planRunSettings.samples) > 0 ? Number(planRunSettings.samples) : 4,
+    seed: Number(planRunSettings.seed) > 0 ? Number(planRunSettings.seed) : 20260621
+  };
 }
 
 function toggleExperimentPlanSelection(planKey, checked) {
@@ -10323,6 +10352,7 @@ async function handleEnterWorkbench(projectId) {
   backendExperimentPlansLoadInFlight = false;
   experimentPlanListStatus = "仿真实验方案列表尚未加载";
   selectedExperimentPlanKeys = new Set();
+  selectedRunContextKey = "";
   experimentPlan = null;
   liteMesaMonteCarloResult = null;
   liteMesaAnalysisResults = {};
@@ -10330,6 +10360,7 @@ async function handleEnterWorkbench(projectId) {
   location.hash = `feature=${selectedFeatureId}`;
   projectDraftHydrateStatus = "正在读取 Project draft";
   await hydrateCurrentProjectDraftFromApi();
+  resetRunContextToCurrentProject();
 }
 
 async function createProjectFromSelectedProjectTemplate() {
@@ -10353,6 +10384,7 @@ async function createProjectFromProjectTemplate(templateProject) {
     scenario = cloneScenario(projectJson);
     experimentPlanDraft = cloneScenario(projectJson);
     experimentPlanBranchActive = false;
+    resetRunContextToCurrentProject();
     backendExperimentPlans = [];
     backendExperimentPlansProjectId = "";
     backendExperimentPlansLoaded = false;
@@ -10486,6 +10518,7 @@ async function createSampleProjectFromPublishedImport(importId = currentPublishe
     scenario = cloneScenario(projectJson);
     experimentPlanDraft = cloneScenario(scenario);
     experimentPlanBranchActive = false;
+    resetRunContextToCurrentProject();
     savedProject = created.savedProject || null;
     modelingSnapshot = created.modelingSnapshot || null;
     projectListStatus = `已从导入数据生成示例项目：${project.name}；可用于正式后端测试`;
@@ -10806,10 +10839,12 @@ async function refreshExperimentPlanList(projectId = currentBackendProjectId(), 
     const response = await backendApi.listExperimentPlans(projectId);
     backendExperimentPlans = Array.isArray(response?.experiment_plans) ? response.experiment_plans : [];
     backendExperimentPlansLoaded = true;
+    resetMissingRunContextAfterPlanRefresh();
     experimentPlanListStatus = `已加载后端方案 ${backendExperimentPlans.length} 条`;
   } catch (err) {
     backendExperimentPlans = [];
     backendExperimentPlansLoaded = true;
+    resetMissingRunContextAfterPlanRefresh();
     experimentPlanListStatus = `后端方案列表读取失败：${formatBackendError(err)}`;
   } finally {
     backendExperimentPlansLoadInFlight = false;
@@ -10835,6 +10870,9 @@ async function deleteExperimentPlanFromList(experimentPlanId) {
     }
     if (deletedRunIds.has(backendRun?.run_id)) {
       backendRun = { ...(backendRun || {}), lifecycle_status: "deleted" };
+    }
+    if (selectedRunContextKey === experimentPlanId) {
+      resetRunContextToCurrentProject();
     }
     experimentPlanListStatus = `已删除方案 ${experimentPlanId}，软删除关联 run ${deletedRunIds.size} 条`;
     await refreshExperimentPlanList(projectId, { force: true });
@@ -12941,12 +12979,25 @@ function visualizationBlockedState() {
 
 function renderVisualSimulation(page) {
   const projectName = currentProject?.name || "当前项目";
+  const context = selectedExperimentPlanContext();
   const experimentPlanName = selectedExperimentPlanName();
+  const planConfig = context?.kind === "experiment-plan" && context.plan?.config && typeof context.plan.config === "object" && !Array.isArray(context.plan.config)
+    ? context.plan.config
+    : {};
+  const planRuntimeContext = context?.kind === "experiment-plan"
+    ? {
+        experimentPlanId: context.plan.experiment_plan_id,
+        planSteps: planConfig.steps,
+        planSamples: planConfig.samples,
+        planSeed: planConfig.seed
+      }
+    : {};
   const solaraUrl = buildSolaraVisualizationUrl(resolveSolaraVisualizationBaseUrl(), {
     projectId: solaraVisualizationProjectIdOverride || currentProject?.project_id || scenario.project_id || scenario.scenarioId || "",
     projectName,
     featureId: page.id,
-    experimentPlanName,
+    ...(context?.kind === "experiment-plan" ? { experimentPlanName } : {}),
+    ...planRuntimeContext,
     reload: solaraVisualizationReloadNonce
   });
   return `
@@ -15885,7 +15936,7 @@ function liteMesaAnalysisSettingItems(definition, settings, result = null) {
   const resultStatus = liteMesaAnalysisResultHeader(definition, result);
   const items = [
     ["项目", currentProject?.name || selectedExperimentPlanProjectJson().projectInfo?.name || "当前项目"],
-    ["当前方案", selectedExperimentPlanName()],
+    [selectedRunContextLabel(), selectedExperimentPlanName()],
     ["分析对象", definition.settingSubject || "当前项目"],
     ["结果内容", definition.subtitle],
     ["运行状态", resultStatus],

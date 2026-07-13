@@ -36,3 +36,7 @@
 ## #185 后续收口
 
 项目数据管理页不再渲染 Project JSON 原始数据区及递归查看器。当前验收以运行时测试确认查看区完全缺席，同时确认模板管理、数据概览、JSON 文件选择和覆盖流程入口仍存在；上述历史截图保留用于说明变更前状态。
+
+## #181 实验方案上下文收口
+
+可视化、Monte Carlo 和分析页的上下文选择器现统一标记为“运行上下文”：当前 Project 作为独立的“当前项目”来源，已保存 ExperimentPlan 单独分组且必须具有有效 `experiment_plan_id`。方案编辑器内未保存的 `experimentPlanDraft` 不进入运行选择；没有保存方案时直接提交当前 Project，也不会隐式创建 ExperimentPlan。Solara 的方案运行参数通过独立 iframe 上下文进入 sidecar 编译器，不污染 clean Project。
