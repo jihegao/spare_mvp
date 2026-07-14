@@ -506,7 +506,7 @@ test("project data management omits raw JSON while keeping overview and replacem
   }
 });
 
-test("periodic task editor keeps total task fields on left and saves weekly details", async () => {
+test("periodic task editor uses named week month and year profiles without total task name", async () => {
   const projectJson = createRuntimeProjectJson({
     project_id: "project-runtime",
     missionProfile: {
@@ -536,38 +536,104 @@ test("periodic task editor keeps total task fields on left and saves weekly deta
   try {
     await runtime.flush();
 
-    assert.match(runtime.appNode.innerHTML, /总任务名称/);
-    assert.match(runtime.appNode.innerHTML, /总周数/);
-    assert.match(runtime.appNode.innerHTML, /value="旧总任务"/);
-    assert.match(runtime.appNode.innerHTML, /第1周/);
-    assert.match(runtime.appNode.innerHTML, /第2周/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /总任务名称/);
+    assert.match(runtime.appNode.innerHTML, /周剖面/);
+    assert.match(runtime.appNode.innerHTML, /月剖面/);
+    assert.match(runtime.appNode.innerHTML, /年剖面/);
+    assert.match(runtime.appNode.innerHTML, /旧周期性任务名/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /上级任务名称/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /周期性任务名称/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /每周天数/);
+    assert.match(runtime.appNode.innerHTML, /class="periodic-profile-name"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-periodic-profile-name=/);
 
-    await runtime.input("[data-periodic-field]", { periodicField: "parentTaskName" }, { value: "舰载机总任务" });
-    await runtime.input("[data-periodic-field]", { periodicField: "repeatWeeks" }, { value: "3" });
-    await runtime.click("[data-periodic-select-week]", { periodicSelectWeek: "3" });
-    assert.match(runtime.appNode.innerHTML, /第3周/);
+    await runtime.click("[data-periodic-profile-tab]", { periodicProfileTab: "month" });
+    assert.match(runtime.appNode.innerHTML, /月剖面配置/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /重复周数/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-periodic-composition-field="repeatWeeks"/);
+    assert.equal((runtime.appNode.innerHTML.match(/data-periodic-month-slot=/g) || []).length, 4);
+    assert.match(runtime.appNode.innerHTML, /第 4 周/);
+    await runtime.click("[data-periodic-composition-action]", {
+      periodicCompositionAction: "add",
+      periodicCompositionType: "month",
+      periodicCompositionProfile: "month-default"
+    });
+    assert.equal((runtime.appNode.innerHTML.match(/data-periodic-month-slot=/g) || []).length, 5);
+    assert.match(runtime.appNode.innerHTML, /第 5 周（可选）/);
+    await runtime.click("[data-periodic-composition-action]", {
+      periodicCompositionAction: "remove",
+      periodicCompositionType: "month",
+      periodicCompositionProfile: "month-default",
+      periodicCompositionIndex: "4"
+    });
+    assert.equal((runtime.appNode.innerHTML.match(/data-periodic-month-slot=/g) || []).length, 4);
+    await runtime.click("[data-periodic-profile-tab]", { periodicProfileTab: "week" });
 
-    await runtime.input("[data-periodic-field]", { periodicField: "weekComposite:14" }, { value: "composite-night" });
+    await runtime.click("[data-periodic-profile-add]", { periodicProfileAdd: "week" });
+    await runtime.click("[data-periodic-profile-select]", {
+      periodicProfileSelect: "periodic-runtime",
+      periodicProfileType: "week"
+    });
+    assert.match(runtime.appNode.innerHTML, /periodic-profile-item is-selected[^>]*data-periodic-profile-select="periodic-runtime"/);
+    await runtime.click("[data-periodic-profile-rename-start]", {
+      periodicProfileRenameStart: "periodic-runtime",
+      periodicProfileType: "week"
+    });
+    assert.match(runtime.appNode.innerHTML, /data-periodic-profile-name="periodic-runtime"/);
+    await runtime.input("[data-periodic-profile-name]", {
+      periodicProfileName: "periodic-runtime",
+      periodicProfileType: "week"
+    }, { value: "周剖面2" });
+    await runtime.click("[data-periodic-profile-rename-save]", {
+      periodicProfileRenameSave: "periodic-runtime",
+      periodicProfileType: "week"
+    });
+    assert.match(runtime.appNode.innerHTML, /名称已存在，请换一个名称/);
+    await runtime.input("[data-periodic-profile-name]", {
+      periodicProfileName: "periodic-runtime",
+      periodicProfileType: "week"
+    }, { value: "更新后的周剖面" });
+    await runtime.click("[data-periodic-profile-rename-save]", {
+      periodicProfileRenameSave: "periodic-runtime",
+      periodicProfileType: "week"
+    });
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-periodic-profile-name=/);
+    assert.match(runtime.appNode.innerHTML, /更新后的周剖面/);
+    await runtime.click("[data-periodic-profile-rename-start]", {
+      periodicProfileRenameStart: "periodic-runtime",
+      periodicProfileType: "week"
+    });
+    await runtime.input("[data-periodic-profile-name]", {
+      periodicProfileName: "periodic-runtime",
+      periodicProfileType: "week"
+    }, { value: "不应保存的名称" });
+    await runtime.click("[data-periodic-profile-rename-cancel]", {
+      periodicProfileRenameCancel: "periodic-runtime",
+      periodicProfileType: "week"
+    });
+    assert.doesNotMatch(runtime.appNode.innerHTML, /不应保存的名称/);
+    assert.match(runtime.appNode.innerHTML, /更新后的周剖面/);
+    await runtime.input("[data-periodic-field]", { periodicField: "weekComposite:0" }, { value: "composite-night" });
     await runtime.click("[data-project-draft-save]");
 
     const savedProject = await waitForProjectSave(runtime, (body) => {
       const periodicTask = body.missionProfile?.periodicTasks?.[0];
       return periodicTask
         && !("parentTaskName" in periodicTask)
-        && periodicTask.repeatWeeks === 3
+        && periodicTask.repeatWeeks === 2
         && periodicTask.cycleDays === 7
         && !("durationHours" in body.missionProfile)
         && periodicTask.compositeTasks.some((row) => (
-          row.weekIndex === 3
+          row.weekIndex === 1
             && row.weekday === "mondayCompositeTaskId"
             && row.compositeTaskId === "composite-night"
         ));
     }, "expected periodic task edits to save canonical Project draft fields");
 
-    assert.equal(savedProject.missionProfile.periodicTasks[0].name, "旧周期性任务名");
+    assert.equal(savedProject.missionProfile.periodicTasks[0].name, "更新后的周剖面");
+    const savedMonthProfile = savedProject.missionProfile.periodicProfileLists.month[0];
+    assert.deepEqual(savedMonthProfile.weekProfileIds, Array(4).fill("periodic-runtime"));
+    assert.equal("weekSegments" in savedMonthProfile, false);
   } finally {
     runtime.restore();
   }

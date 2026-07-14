@@ -651,6 +651,11 @@ test("buildBackendProjectJson normalizes periodic task save aliases", () => {
           taskDurationMinutes: 180
         }]
       }],
+      periodicProfileLists: {
+        week: [{ id: "periodic-alpha", name: "常规周" }],
+        month: [{ id: "month-1", name: "常规月", weekProfileIds: Array(4).fill("periodic-alpha") }],
+        year: [{ id: "year-1", name: "第1年", monthProfileIds: Array(12).fill("month-1") }]
+      },
       periodicTasks: [{
         id: "periodic-alpha",
         dailyRepeatCount: 2,
@@ -693,6 +698,7 @@ test("buildBackendProjectJson normalizes periodic task save aliases", () => {
     equipmentType: "J-35"
   });
   assert.equal(periodicTask.id, "periodic-alpha");
+  assert.deepEqual(projectJson.missionProfile.periodicProfileLists, scenario.missionProfile.periodicProfileLists);
   assert.equal(periodicTask.name, "周期任务 A");
   assert.equal(periodicTask.repeatWeeks, 2);
   assert.equal(periodicTask.cycleDays, 7);
