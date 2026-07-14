@@ -1626,7 +1626,7 @@ test("basic support activity library filters rows by selected activity type", as
     durationMinutes: 55
   });
   const runtime = await setupRuntimeApp({ projectJson });
-  const operationsWorkNamePattern = /(?:初始工作项目|飞行前准备基本保障活动1)/;
+  const operationsWorkNamePattern = /初始工作项目/;
 
   try {
     await runtime.click("[data-enter-workbench]", { projectId: "project-runtime" });
@@ -1638,11 +1638,13 @@ test("basic support activity library filters rows by selected activity type", as
     assert.doesNotMatch(runtime.appNode.innerHTML, /部件修复作业/);
 
     await runtime.change("[data-basic-activity-import-type-select]", {}, { value: "修复性维修" });
+    await waitForRuntimeHtml(runtime, /部件修复作业/, "expected corrective activity rows after filtering");
     assert.match(runtime.appNode.innerHTML, /部件修复作业/);
     assert.doesNotMatch(runtime.appNode.innerHTML, operationsWorkNamePattern);
     assert.doesNotMatch(runtime.appNode.innerHTML, /定检基本保障活动/);
 
     await runtime.change("[data-basic-activity-import-type-select]", {}, { value: "预防性维修" });
+    await waitForRuntimeHtml(runtime, /定检基本保障活动/, "expected preventive activity rows after filtering");
     assert.match(runtime.appNode.innerHTML, /定检基本保障活动/);
     assert.doesNotMatch(runtime.appNode.innerHTML, operationsWorkNamePattern);
     assert.doesNotMatch(runtime.appNode.innerHTML, /部件修复作业/);
@@ -3488,7 +3490,12 @@ async function setupRuntimeApp({
   };
 
   await import(`../front/app.js?runtime-app=${Date.now()}-${++runtimeImportCounter}`);
-  await flushRuntimeTasks();
+  await waitForRuntimeAppBootstrap({
+    requests,
+    hash,
+    projectId: backendProjects[0]?.project_id || projectJson.project_id || "project-runtime",
+    expectProjectDraft: String(hash || "").includes("feature=") && backendProjects.length > 0
+  });
 
   return {
     appNode,
@@ -3598,6 +3605,28 @@ async function flushRuntimeTasks() {
   await new Promise((resolve) => setTimeout(resolve, 0));
   await new Promise((resolve) => setTimeout(resolve, 0));
   await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+async function waitForRuntimeAppBootstrap({ requests, projectId, expectProjectDraft }) {
+  const encodedProjectId = encodeURIComponent(projectId);
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    const projectCatalogRequested = requests.some((request) => (
+      request.url === "/api/projects"
+      && (request.options.method || "GET") === "GET"
+    ));
+    const projectDraftRequested = requests.some((request) => (
+      request.url === `/api/projects/${encodedProjectId}`
+      && (request.options.method || "GET") === "GET"
+    ));
+    if (projectCatalogRequested && (!expectProjectDraft || projectDraftRequested)) {
+      await flushRuntimeTasks();
+      return;
+    }
+    await flushRuntimeTasks();
+  }
+  assert.fail(expectProjectDraft
+    ? `runtime app did not request Project draft ${projectId} during bootstrap`
+    : "runtime app did not request the project catalog during bootstrap");
 }
 
 async function waitForProjectSave(runtime, predicate, message) {
