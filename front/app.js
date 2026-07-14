@@ -693,6 +693,9 @@ let selectedRunContextKey = "";
 let isProjectMenuOpen = false;
 let selectedPeriodicTaskId = "";
 let selectedPeriodicWeekIndex = 1;
+let periodicActiveProfile = "week";
+let selectedPeriodicProfileIds = { week: "", month: "", year: "" };
+let periodicProfileRenameState = null;
 let selectedEquipmentComponentIndex = 0;
 let selectedEquipmentNodeKey = "";
 let equipmentSearchQuery = "";
@@ -1728,6 +1731,96 @@ function bindEvents() {
       return;
     }
 
+    const periodicProfileTab = event.target.closest("[data-periodic-profile-tab]");
+    if (periodicProfileTab) {
+      periodicProfileRenameState = null;
+      periodicActiveProfile = periodicProfileTab.dataset.periodicProfileTab || "week";
+      render();
+      return;
+    }
+
+    const periodicProfileAddButton = event.target.closest("[data-periodic-profile-add]");
+    if (periodicProfileAddButton) {
+      addPeriodicProfile(periodicProfileAddButton.dataset.periodicProfileAdd || periodicActiveProfile);
+      markProjectDraftChanged();
+      render();
+      return;
+    }
+
+    const periodicProfileRenameStartButton = event.target.closest("[data-periodic-profile-rename-start]");
+    if (periodicProfileRenameStartButton) {
+      beginPeriodicProfileRename(
+        periodicProfileRenameStartButton.dataset.periodicProfileRenameStart,
+        periodicProfileRenameStartButton.dataset.periodicProfileType || periodicActiveProfile
+      );
+      return;
+    }
+
+    const periodicProfileRenameSaveButton = event.target.closest("[data-periodic-profile-rename-save]");
+    if (periodicProfileRenameSaveButton) {
+      commitPeriodicProfileRename(app.querySelector?.("[data-periodic-profile-name]"));
+      return;
+    }
+
+    const periodicProfileRenameCancelButton = event.target.closest("[data-periodic-profile-rename-cancel]");
+    if (periodicProfileRenameCancelButton) {
+      cancelPeriodicProfileRename();
+      return;
+    }
+
+    const periodicProfileDeleteButton = event.target.closest("[data-periodic-profile-delete]");
+    if (periodicProfileDeleteButton) {
+      periodicProfileRenameState = null;
+      deletePeriodicProfile(
+        periodicProfileDeleteButton.dataset.periodicProfileDelete,
+        periodicProfileDeleteButton.dataset.periodicProfileType || periodicActiveProfile
+      );
+      markProjectDraftChanged();
+      render();
+      return;
+    }
+
+    const periodicProfileSelectButton = event.target.closest("[data-periodic-profile-select]");
+    if (periodicProfileSelectButton) {
+      if (event.target.closest("[data-periodic-profile-name]")) return;
+      const type = periodicProfileSelectButton.dataset.periodicProfileType || periodicActiveProfile;
+      if (
+        periodicProfileRenameState
+        && (
+          periodicProfileRenameState.type !== type
+          || periodicProfileRenameState.id !== periodicProfileSelectButton.dataset.periodicProfileSelect
+        )
+      ) periodicProfileRenameState = null;
+      selectedPeriodicProfileIds[type] = periodicProfileSelectButton.dataset.periodicProfileSelect || "";
+      if (type === "week") selectedPeriodicTaskId = selectedPeriodicProfileIds.week;
+      render();
+      return;
+    }
+
+    const periodicCompositionAction = event.target.closest("[data-periodic-composition-action]");
+    if (periodicCompositionAction) {
+      updatePeriodicComposition(
+        periodicCompositionAction.dataset.periodicCompositionType,
+        periodicCompositionAction.dataset.periodicCompositionProfile,
+        periodicCompositionAction.dataset.periodicCompositionAction,
+        Number(periodicCompositionAction.dataset.periodicCompositionIndex || 0)
+      );
+      markProjectDraftChanged();
+      render();
+      return;
+    }
+
+    const periodicYearAction = event.target.closest("[data-periodic-year-action]");
+    if (periodicYearAction) {
+      updatePeriodicYearList(
+        periodicYearAction.dataset.periodicYearAction,
+        periodicYearAction.dataset.periodicYearProfile
+      );
+      markProjectDraftChanged();
+      render();
+      return;
+    }
+
     const periodicDeleteButton = event.target.closest("[data-periodic-delete-selected]");
     if (periodicDeleteButton) {
       const taskId = selectedPeriodicTaskId;
@@ -1877,6 +1970,26 @@ function bindEvents() {
   });
 
   app.addEventListener("keydown", (event) => {
+    const periodicProfileNameInput = event.target.closest("[data-periodic-profile-name]");
+    if (periodicProfileNameInput && event.key === "Enter") {
+      event.preventDefault();
+      commitPeriodicProfileRename(periodicProfileNameInput);
+      return;
+    }
+    if (periodicProfileNameInput && event.key === "Escape") {
+      event.preventDefault();
+      cancelPeriodicProfileRename();
+      return;
+    }
+    const periodicProfileItem = event.target.closest("[data-periodic-profile-select]");
+    if (periodicProfileItem && event.key === "F2") {
+      event.preventDefault();
+      beginPeriodicProfileRename(
+        periodicProfileItem.dataset.periodicProfileSelect,
+        periodicProfileItem.dataset.periodicProfileType || periodicActiveProfile
+      );
+      return;
+    }
     if (event.key === "Escape" && supportActivityPredecessorDialogKey) {
       supportActivityPredecessorDialogKey = "";
       render();
@@ -2296,6 +2409,20 @@ function bindEvents() {
       return;
     }
 
+    const periodicCompositionField = event.target.closest("[data-periodic-composition-field]");
+    if (periodicCompositionField) {
+      updatePeriodicCompositionField(
+        periodicCompositionField.dataset.periodicCompositionType,
+        periodicCompositionField.dataset.periodicCompositionProfile,
+        Number(periodicCompositionField.dataset.periodicCompositionIndex || 0),
+        periodicCompositionField.dataset.periodicCompositionField,
+        parseInput(periodicCompositionField)
+      );
+      markProjectDraftChanged();
+      render();
+      return;
+    }
+
     const periodicInput = event.target.closest("[data-periodic-field]");
     if (periodicInput) {
       markProjectDraftChanged();
@@ -2448,6 +2575,13 @@ function bindEvents() {
   });
 
   app.addEventListener("focusout", (event) => {
+    const periodicProfileNameInput = event.target.closest("[data-periodic-profile-name]");
+    if (periodicProfileNameInput) {
+      const nextTarget = event.relatedTarget;
+      if (nextTarget?.closest?.("[data-periodic-profile-rename-save], [data-periodic-profile-rename-cancel]")) return;
+      commitPeriodicProfileRename(periodicProfileNameInput);
+      return;
+    }
     const equipmentAircraftModelInput = event.target.closest("[data-equipment-aircraft-model]");
     if (equipmentAircraftModelInput) {
       commitEquipmentAircraftModelInput(equipmentAircraftModelInput);
@@ -2504,6 +2638,15 @@ function bindEvents() {
     if (livePeriodicInput) {
       markProjectDraftChanged();
       updateSelectedPeriodicTask(livePeriodicInput.dataset.periodicField, parseInput(livePeriodicInput), { renderAfter: false });
+      return;
+    }
+
+    const livePeriodicProfileName = event.target.closest("[data-periodic-profile-name]");
+    if (livePeriodicProfileName) {
+      if (periodicProfileRenameState) {
+        periodicProfileRenameState.draft = livePeriodicProfileName.value;
+        periodicProfileRenameState.error = "";
+      }
       return;
     }
 
@@ -4931,80 +5074,320 @@ function renderPeriodicTaskModeling(page) {
   const periodicTasks = periodicTaskList();
   const selectedTask = selectedPeriodicTask(periodicTasks);
   const selectedDraft = selectedTask ? normalizePeriodicTask(selectedTask) : null;
-  const totalWeeks = selectedDraft ? clamp(Math.floor(Number(selectedDraft.repeatWeeks || 1)), 1, 52) : 1;
-  selectedPeriodicWeekIndex = clamp(Math.floor(Number(selectedPeriodicWeekIndex || 1)), 1, totalWeeks);
   const selectedWeekRows = selectedDraft
-    ? selectedDraft.compositeTasks.filter((row) => Number(row.weekIndex) === selectedPeriodicWeekIndex)
+    ? selectedDraft.compositeTasks.filter((row) => Number(row.weekIndex) === 1)
     : [];
+  const profiles = periodicProfileLists(periodicTasks);
+  if (!selectedPeriodicProfileIds.week || !profiles.week.some((item) => item.id === selectedPeriodicProfileIds.week)) {
+    selectedPeriodicProfileIds.week = String(selectedTask?.id || profiles.week[0]?.id || "");
+  }
+  if (!selectedPeriodicProfileIds.month || !profiles.month.some((item) => item.id === selectedPeriodicProfileIds.month)) {
+    selectedPeriodicProfileIds.month = String(profiles.month[0]?.id || "");
+  }
+  if (!selectedPeriodicProfileIds.year || !profiles.year.some((item) => item.id === selectedPeriodicProfileIds.year)) {
+    selectedPeriodicProfileIds.year = String(profiles.year[0]?.id || "");
+  }
   const compositeOptions = [
     { value: "", label: "请选择复合任务" },
     ...compositeTasks.map((task) => ({ value: task.id, label: task.name }))
   ];
+  const activeProfiles = profiles[periodicActiveProfile];
+  const selectedProfileId = selectedPeriodicProfileIds[periodicActiveProfile];
+  const selectedProfile = activeProfiles.find((item) => item.id === selectedProfileId) || activeProfiles[0];
+  const profileLabels = { week: "周", month: "月", year: "年" };
+  const activeLabel = profileLabels[periodicActiveProfile];
+  const activeProfileList = `
+    <div class="periodic-profile-list" aria-label="${activeLabel}剖面列表">
+      <div class="periodic-list-head"><strong>${activeLabel}剖面列表</strong><button type="button" data-periodic-profile-add="${periodicActiveProfile}" title="新增${activeLabel}剖面">＋ 新增</button></div>
+      ${activeProfiles.length ? activeProfiles.map((item, itemIndex) => {
+        const isSelected = item.id === selectedProfile?.id;
+        const isRenaming = periodicProfileRenameState?.id === String(item.id) && periodicProfileRenameState?.type === periodicActiveProfile;
+        const renameErrorId = `periodic-profile-rename-error-${periodicActiveProfile}-${itemIndex}`;
+        return `
+          <div class="periodic-profile-item ${isSelected ? "is-selected" : ""} ${isRenaming ? "is-renaming" : ""}" data-periodic-profile-select="${htmlEscape(item.id)}" data-periodic-profile-type="${periodicActiveProfile}">
+            <div class="periodic-profile-main">
+              ${periodicActiveProfile === "year" ? `<span class="periodic-profile-order">第 ${itemIndex + 1} 年</span>` : ""}
+              ${isRenaming ? `
+                <input class="periodic-profile-rename" data-periodic-profile-name="${htmlEscape(item.id)}" data-periodic-profile-type="${periodicActiveProfile}" value="${htmlEscape(periodicProfileRenameState.draft)}" aria-label="重命名${activeLabel}剖面" aria-invalid="${periodicProfileRenameState.error ? "true" : "false"}" ${periodicProfileRenameState.error ? `aria-describedby="${renameErrorId}"` : ""} />
+                ${periodicProfileRenameState.error ? `<span class="periodic-profile-rename-error" id="${renameErrorId}">${htmlEscape(periodicProfileRenameState.error)}</span>` : ""}
+              ` : `
+                <button type="button" class="periodic-profile-name" data-periodic-profile-select="${htmlEscape(item.id)}" data-periodic-profile-type="${periodicActiveProfile}" aria-current="${isSelected ? "true" : "false"}" title="选择${activeLabel}剖面；按 F2 可重命名">${htmlEscape(item.name)}</button>
+              `}
+            </div>
+            <div class="periodic-profile-actions">
+              ${isRenaming ? `
+                <button type="button" class="periodic-profile-icon is-confirm" data-periodic-profile-rename-save="${htmlEscape(item.id)}" data-periodic-profile-type="${periodicActiveProfile}" aria-label="保存${activeLabel}剖面名称" title="保存名称（Enter）">✓</button>
+                <button type="button" class="periodic-profile-icon" data-periodic-profile-rename-cancel="${htmlEscape(item.id)}" data-periodic-profile-type="${periodicActiveProfile}" aria-label="取消重命名${activeLabel}剖面" title="取消（Esc）">×</button>
+              ` : `
+                <button type="button" class="periodic-profile-icon periodic-profile-edit" data-periodic-profile-rename-start="${htmlEscape(item.id)}" data-periodic-profile-type="${periodicActiveProfile}" aria-label="重命名${activeLabel}剖面" title="重命名${activeLabel}剖面（F2）">✎</button>
+                <button type="button" class="periodic-profile-icon periodic-profile-delete" data-periodic-profile-delete="${htmlEscape(item.id)}" data-periodic-profile-type="${periodicActiveProfile}" aria-label="删除${activeLabel}剖面" title="删除${activeLabel}剖面">×</button>
+              `}
+            </div>
+          </div>
+        `;
+      }).join("") : `<div class="muted periodic-list-empty">暂无${activeLabel}剖面，请新增。</div>`}
+    </div>
+  `;
+  const profileTabs = ["week", "month", "year"].map((type) => {
+    const label = profileLabels[type];
+    return `<button type="button" class="periodic-profile-tab ${periodicActiveProfile === type ? "is-active" : ""}" data-periodic-profile-tab="${type}">${label}剖面 <span>${profiles[type].length}</span></button>`;
+  }).join("");
+  const weekEditor = `
+    <div class="periodic-panel-head">
+      <div><h4>周剖面内容</h4><p class="muted">一个周剖面固定表示周一至周日七天，可在月剖面的各周次中选用。</p></div>
+      ${selectedDraft ? `<span class="status-badge">当前：${htmlEscape(selectedProfile?.name || selectedDraft.name)}</span>` : ""}
+    </div>
+    ${selectedDraft ? `
+      ${compositeTasks.length === 0 ? `<div class="alert warn">请先在复合任务建模中维护复合任务。</div>` : ""}
+      <div class="table-wrap"><table><thead><tr><th style="width:96px;">周内日</th><th>复合任务名称</th></tr></thead><tbody>${selectedWeekRows.map((row) => {
+        const rowIndex = selectedDraft.compositeTasks.findIndex((candidate) => candidate.weekIndex === row.weekIndex && candidate.weekday === row.weekday);
+        return `<tr><td>${htmlEscape(periodicWeekdayLabel(row.weekday))}</td><td>${periodicValueSelect(`weekComposite:${rowIndex}`, row.compositeTaskId, compositeOptions)}</td></tr>`;
+      }).join("")}</tbody></table></div>
+    ` : `<div class="alert warn">暂无周剖面，请先新增。</div>`}
+  `;
+  const monthWeekProfileIds = selectedProfile?.weekProfileIds || [];
+  const monthWeekCount = monthWeekProfileIds.length;
+  const monthCanAddFifthWeek = monthWeekCount === 4;
+  const monthEditor = `
+    <div class="periodic-panel-head"><div><h4>月剖面配置</h4><p class="muted">按周次依次选择周剖面。前 4 周为固定坑位；需要覆盖第 5 周时再添加。</p></div>${selectedProfile ? `<span class="status-badge">${monthWeekCount} 个周剖面</span>` : ""}</div>
+    ${selectedProfile ? `<div class="periodic-month-slot-grid" aria-label="${htmlEscape(selectedProfile.name)}的周剖面坑位">${monthWeekProfileIds.map((weekProfileId, index) => `<label class="periodic-month-slot ${index === 4 ? "is-optional" : ""}" data-periodic-month-slot="${index + 1}"><span>第 ${index + 1} 周${index === 4 ? "（可选）" : ""}</span><select data-periodic-composition-field="weekProfileId" data-periodic-composition-type="month" data-periodic-composition-profile="${htmlEscape(selectedProfile.id)}" data-periodic-composition-index="${index}" aria-label="第 ${index + 1} 周周剖面">${profiles.week.map((profile) => `<option value="${htmlEscape(profile.id)}" ${profile.id === weekProfileId ? "selected" : ""}>${htmlEscape(profile.name)}</option>`).join("")}</select>${index === 4 ? `<button type="button" class="periodic-slot-remove" data-periodic-composition-action="remove" data-periodic-composition-type="month" data-periodic-composition-profile="${htmlEscape(selectedProfile.id)}" data-periodic-composition-index="${index}">移除第 5 周</button>` : ""}</label>`).join("")}</div><div class="toolbar-row periodic-month-slot-actions">${monthCanAddFifthWeek ? `<button type="button" data-periodic-composition-action="add" data-periodic-composition-type="month" data-periodic-composition-profile="${htmlEscape(selectedProfile.id)}">＋ 添加第 5 周</button>` : ""}<span class="muted">每个月配置 4 个周剖面；少数跨 5 周的月份可增加第 5 个坑位。</span></div>` : `<div class="alert warn">暂无月剖面，请先新增。</div>`}
+  `;
+  const yearMonths = selectedProfile?.monthProfileIds || [];
+  const selectedYearIndex = Math.max(0, profiles.year.findIndex((item) => item.id === selectedProfile?.id));
+  const yearTotalWeeks = yearMonths.reduce((sum, monthProfileId) => {
+    const monthProfile = profiles.month.find((item) => item.id === monthProfileId);
+    return sum + (monthProfile?.weekProfileIds?.length || 0);
+  }, 0);
+  const yearEditor = `
+    <div class="periodic-panel-head"><div><h4>年剖面组合</h4><p class="muted">年剖面列表按顺序组成多年任务；每个规划年度的 12 个月合计应为 52 周。</p></div>${selectedProfile ? `<span class="status-badge ${yearTotalWeeks === 52 ? "" : "warn"}">第 ${selectedYearIndex + 1} 年 · ${yearTotalWeeks} / 52 周</span>` : ""}</div>
+    ${selectedProfile ? `<div class="toolbar-row periodic-year-actions"><button type="button" data-periodic-year-action="duplicate" data-periodic-year-profile="${htmlEscape(selectedProfile.id)}">复制为下一年</button><button type="button" data-periodic-year-action="up" data-periodic-year-profile="${htmlEscape(selectedProfile.id)}">上移一年</button><button type="button" data-periodic-year-action="down" data-periodic-year-profile="${htmlEscape(selectedProfile.id)}">下移一年</button></div>` : ""}
+    ${selectedProfile ? `<div class="periodic-year-grid">${Array.from({ length: 12 }, (_, index) => `<label><span>${index + 1} 月</span><select data-periodic-composition-field="monthProfileId" data-periodic-composition-type="year" data-periodic-composition-profile="${htmlEscape(selectedProfile.id)}" data-periodic-composition-index="${index}">${profiles.month.map((profile) => `<option value="${htmlEscape(profile.id)}" ${profile.id === yearMonths[index] ? "selected" : ""}>${htmlEscape(profile.name)}</option>`).join("")}</select></label>`).join("")}</div>` : `<div class="alert warn">暂无年剖面，请先新增。</div>`}
+  `;
+  const profileEditor = periodicActiveProfile === "week" ? weekEditor : periodicActiveProfile === "month" ? monthEditor : yearEditor;
   return `
     <div class="section-head section-context">
       <span>${page.dataObjects.join(" / ")}</span>
     </div>
+    <div class="periodic-profile-tabs">${profileTabs}</div>
     <div class="organization-layout task-modeling-periodic-layout">
-      <div class="tree-container">
-        <div class="tree-toolbar">
-          <h4>周期性任务周列表</h4>
-          ${selectedDraft ? `
-            <div class="periodic-summary-controls">
-              <label>总任务名称 *<input data-periodic-field="parentTaskName" value="${htmlEscape(selectedDraft.parentTaskName)}" placeholder="例如：舰载机昼夜任务"></label>
-              <label>年度周数 *<input data-periodic-field="repeatWeeks" type="number" min="1" max="52" step="1" value="${htmlEscape(totalWeeks)}"></label>
-            </div>
-          ` : ""}
-        </div>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>周次</th></tr></thead>
-            <tbody>
-              ${selectedDraft ? Array.from({ length: totalWeeks }, (_, index) => index + 1).map((weekIndex) => `
-                <tr class="clickable-table-row ${weekIndex === selectedPeriodicWeekIndex ? "selected-table-row" : ""}" data-periodic-select-week="${weekIndex}" aria-selected="${weekIndex === selectedPeriodicWeekIndex ? "true" : "false"}">
-                  <td>第${weekIndex}周</td>
-                </tr>
-              `).join("") : `<tr><td class="muted">暂无周期性任务数据</td></tr>`}
-            </tbody>
-          </table>
-        </div>
+      <div class="tree-container periodic-profile-sidebar">
+        ${activeProfileList}
       </div>
-      <div class="detail-panel">
-        <div class="detail-card">
-          <div class="periodic-panel-head">
-            <div>
-              <h4>周期性任务建模</h4>
-              <p class="muted">先配置总周数，左侧选择周次，右侧按固定 7 天维护周内复合任务。</p>
-            </div>
-            ${selectedDraft ? `<span class="status-badge">当前：第${selectedPeriodicWeekIndex}周</span>` : ""}
-          </div>
-          ${selectedDraft ? `
-            ${compositeTasks.length === 0 ? `<div class="alert warn">请先在复合任务建模中维护复合任务。</div>` : ""}
-            <div class="form-table-grid">
-              <label>周次<input readonly value="第${htmlEscape(selectedPeriodicWeekIndex)}周"></label>
-              <label>重复周数<input data-periodic-repeat-count type="number" min="1" max="${Math.max(1, 52 - selectedPeriodicWeekIndex)}" value="1"></label>
-            </div>
-            <div class="toolbar-row"><button type="button" data-periodic-repeat="count">重复 X 周</button><button type="button" data-periodic-repeat="remaining">重复至第 52 周</button></div>
-            <div class="table-wrap" style="margin-top:12px;">
-              <table>
-                <thead><tr><th style="width:96px;">周次</th><th style="width:96px;">周内日</th><th>复合任务名称</th></tr></thead>
-                <tbody>
-                  ${selectedWeekRows.map((row) => {
-                    const rowIndex = selectedDraft.compositeTasks.findIndex((candidate) => candidate.weekIndex === row.weekIndex && candidate.weekday === row.weekday);
-                    return `
-                    <tr>
-                      <td>${htmlEscape(`第${selectedPeriodicWeekIndex}周`)}</td>
-                      <td>${htmlEscape(periodicWeekdayLabel(row.weekday))}</td>
-                      <td>${periodicValueSelect(`weekComposite:${rowIndex}`, row.compositeTaskId, compositeOptions)}</td>
-                    </tr>
-                  `}).join("")}
-                </tbody>
-              </table>
-            </div>
-          ` : `<div class="alert warn">暂无周期性任务，请先在左侧列表新增。</div>`}
-        </div>
-      </div>
+      <div class="detail-panel"><div class="detail-card">${profileEditor}</div></div>
     </div>
   `;
+}
+
+function periodicProfileLists(periodicTasks = periodicTaskList()) {
+  if (!scenario.missionProfile.periodicProfileLists || typeof scenario.missionProfile.periodicProfileLists !== "object") {
+    scenario.missionProfile.periodicProfileLists = { week: [], month: [], year: [] };
+  }
+  const lists = scenario.missionProfile.periodicProfileLists;
+  const weekIds = periodicTasks.map((task) => String(task.id));
+  lists.week = periodicTasks.map((task) => {
+    const existing = Array.isArray(lists.week) ? lists.week.find((item) => String(item.id) === String(task.id)) : null;
+    return { id: String(task.id), name: String(existing?.name || task.name || "周剖面") };
+  });
+  lists.month = (Array.isArray(lists.month) ? lists.month : []).filter((item) => item && item.id).map((item) => {
+    const legacyWeekIds = Array.isArray(item.weekProfileIds) ? item.weekProfileIds : [];
+    const legacySegments = Array.isArray(item.weekSegments) ? item.weekSegments : [];
+    const expandedLegacySlots = legacySegments.flatMap((segment) => Array.from(
+      { length: clamp(Math.floor(Number(segment.repeatWeeks || 1)), 1, 5) },
+      () => segment.weekProfileId
+    ));
+    const sourceSlots = legacyWeekIds.length ? legacyWeekIds : expandedLegacySlots;
+    const fallbackWeekId = String(weekIds[0] || "");
+    const weekProfileIds = sourceSlots
+      .map((weekProfileId) => weekIds.includes(String(weekProfileId)) ? String(weekProfileId) : fallbackWeekId)
+      .filter(Boolean)
+      .slice(0, 5);
+    while (weekProfileIds.length < 4 && fallbackWeekId) weekProfileIds.push(fallbackWeekId);
+    const { weekSegments: _legacyWeekSegments, ...monthProfile } = item;
+    return { ...monthProfile, name: String(item.name || "未命名月剖面"), weekProfileIds };
+  });
+  if (!lists.month.length) lists.month.push({ id: "month-default", name: "常规月", weekProfileIds: Array(4).fill(String(weekIds[0] || "")) });
+  const monthIds = lists.month.map((item) => String(item.id));
+  lists.year = (Array.isArray(lists.year) ? lists.year : []).filter((item) => item && item.id).map((item) => {
+    const sourceMonths = Array.isArray(item.monthProfileIds) ? item.monthProfileIds : [];
+    const monthProfileIds = Array.from({ length: 12 }, (_, index) => monthIds.includes(String(sourceMonths[index])) ? String(sourceMonths[index]) : String(monthIds[0] || ""));
+    return { ...item, name: String(item.name || "未命名年剖面"), monthProfileIds };
+  });
+  if (!lists.year.length) lists.year.push({ id: "year-default", name: "基准年度", monthProfileIds: Array(12).fill(String(monthIds[0] || "")) });
+  return lists;
+}
+
+function addPeriodicProfile(type) {
+  const lists = periodicProfileLists();
+  const order = lists[type].length + 1;
+  if (type === "week") {
+    const task = createPeriodicTaskDraft({ name: `周剖面${order}` });
+    scenario.missionProfile.periodicTasks = [...periodicTaskList(), task];
+    selectedPeriodicTaskId = task.id;
+    selectedPeriodicProfileIds.week = task.id;
+  } else {
+    const prefix = type === "month" ? "月剖面" : "年剖面";
+    const item = { id: `${type}-${Date.now()}`, name: `${prefix}${order}` };
+    if (type === "month") item.weekProfileIds = Array(4).fill(String(lists.week[0]?.id || ""));
+    if (type === "year") item.monthProfileIds = Array(12).fill(String(lists.month[0]?.id || ""));
+    lists[type].push(item);
+    selectedPeriodicProfileIds[type] = item.id;
+  }
+  updatePreviewResultsThroughApiClient();
+}
+
+function deletePeriodicProfile(id, type) {
+  const lists = periodicProfileLists();
+  if (!id || !Array.isArray(lists[type]) || lists[type].length <= 1) return;
+  if (type === "week") {
+    scenario.missionProfile.periodicTasks = periodicTaskList().filter((task) => String(task.id) !== String(id));
+    selectedPeriodicTaskId = String(periodicTaskList()[0]?.id || "");
+    const fallbackWeekId = String(periodicTaskList()[0]?.id || "");
+    lists.month.forEach((month) => {
+      month.weekProfileIds = (month.weekProfileIds || []).map((weekProfileId) => (
+        String(weekProfileId) === String(id) ? fallbackWeekId : String(weekProfileId)
+      ));
+    });
+  } else {
+    lists[type] = lists[type].filter((item) => String(item.id) !== String(id));
+    selectedPeriodicProfileIds[type] = String(lists[type][0]?.id || "");
+    if (type === "month") {
+      const fallbackMonthId = String(lists.month[0]?.id || "");
+      lists.year.forEach((year) => {
+        year.monthProfileIds = (year.monthProfileIds || []).map((monthId) => String(monthId) === String(id) ? fallbackMonthId : monthId);
+      });
+    }
+  }
+  updatePreviewResultsThroughApiClient();
+}
+
+function updatePeriodicComposition(type, profileId, action, index) {
+  if (type !== "month") return;
+  const lists = periodicProfileLists();
+  const profile = lists.month.find((item) => String(item.id) === String(profileId));
+  if (!profile) return;
+  const weekProfileIds = Array.isArray(profile.weekProfileIds) ? profile.weekProfileIds : [];
+  if (action === "add" && weekProfileIds.length === 4) {
+    weekProfileIds.push(String(lists.week[0]?.id || ""));
+  } else if (action === "remove" && weekProfileIds.length === 5 && index === 4) {
+    weekProfileIds.pop();
+  }
+  profile.weekProfileIds = weekProfileIds;
+  updatePreviewResultsThroughApiClient();
+}
+
+function updatePeriodicCompositionField(type, profileId, index, field, value) {
+  const lists = periodicProfileLists();
+  if (type === "month") {
+    const profile = lists.month.find((item) => String(item.id) === String(profileId));
+    if (!profile?.weekProfileIds?.[index]) return;
+    if (field === "weekProfileId" && lists.week.some((item) => item.id === String(value))) profile.weekProfileIds[index] = String(value);
+  }
+  if (type === "year") {
+    const profile = lists.year.find((item) => String(item.id) === String(profileId));
+    if (!profile || field !== "monthProfileId" || !lists.month.some((item) => item.id === String(value))) return;
+    profile.monthProfileIds[index] = String(value);
+  }
+  updatePreviewResultsThroughApiClient();
+}
+
+function updatePeriodicYearList(action, profileId) {
+  const lists = periodicProfileLists();
+  const index = lists.year.findIndex((item) => String(item.id) === String(profileId));
+  if (index < 0) return;
+  if (action === "duplicate") {
+    const copy = {
+      ...structuredClone(lists.year[index]),
+      id: `year-${Date.now()}`,
+      name: `第${lists.year.length + 1}年`
+    };
+    lists.year.splice(index + 1, 0, copy);
+    selectedPeriodicProfileIds.year = copy.id;
+  } else if (action === "up" && index > 0) {
+    [lists.year[index - 1], lists.year[index]] = [lists.year[index], lists.year[index - 1]];
+  } else if (action === "down" && index < lists.year.length - 1) {
+    [lists.year[index + 1], lists.year[index]] = [lists.year[index], lists.year[index + 1]];
+  }
+  updatePreviewResultsThroughApiClient();
+}
+
+function focusPeriodicProfileRenameInput() {
+  queueMicrotask(() => {
+    const input = app.querySelector?.("[data-periodic-profile-name]");
+    input?.focus();
+    input?.select?.();
+  });
+}
+
+function beginPeriodicProfileRename(id, type) {
+  const lists = periodicProfileLists();
+  const item = lists[type]?.find((profile) => String(profile.id) === String(id));
+  if (!item) return;
+  selectedPeriodicProfileIds[type] = String(id);
+  if (type === "week") selectedPeriodicTaskId = String(id);
+  periodicProfileRenameState = {
+    id: String(id),
+    type,
+    draft: String(item.name || ""),
+    error: ""
+  };
+  render();
+  focusPeriodicProfileRenameInput();
+}
+
+function periodicProfileRenameError(id, type, value) {
+  const name = String(value || "").trim();
+  if (!name) return "名称不能为空。";
+  const lists = periodicProfileLists();
+  if (lists[type]?.some((profile) => String(profile.id) !== String(id) && String(profile.name || "").trim() === name)) {
+    return "名称已存在，请换一个名称。";
+  }
+  return "";
+}
+
+function commitPeriodicProfileRename(input) {
+  if (!periodicProfileRenameState) return false;
+  const state = periodicProfileRenameState;
+  const draft = String(input?.value ?? state.draft ?? "");
+  const error = periodicProfileRenameError(state.id, state.type, draft);
+  if (error) {
+    periodicProfileRenameState = { ...state, draft, error };
+    render();
+    focusPeriodicProfileRenameInput();
+    return false;
+  }
+  const renamed = renamePeriodicProfile(state.id, state.type, draft);
+  if (!renamed) return false;
+  periodicProfileRenameState = null;
+  markProjectDraftChanged();
+  render();
+  return true;
+}
+
+function cancelPeriodicProfileRename() {
+  if (!periodicProfileRenameState) return;
+  periodicProfileRenameState = null;
+  render();
+}
+
+function renamePeriodicProfile(id, type, value, options = {}) {
+  const name = String(value || "").trim();
+  if (!name) return false;
+  const lists = periodicProfileLists();
+  const item = lists[type]?.find((profile) => String(profile.id) === String(id));
+  if (!item) return false;
+  if (lists[type].some((profile) => String(profile.id) !== String(id) && profile.name === name)) return false;
+  item.name = name;
+  if (type === "week") {
+    const task = periodicTaskList().find((candidate) => String(candidate.id) === String(id));
+    if (task) {
+      task.name = name;
+      task.taskName = name;
+      task.periodicTaskName = name;
+      task.experimentName = name;
+    }
+  }
+  if (options.updatePreview !== false) updatePreviewResultsThroughApiClient();
+  return true;
 }
 
 function periodicTaskList() {
