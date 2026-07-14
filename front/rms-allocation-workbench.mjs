@@ -6,81 +6,69 @@ const RELIABILITY_METHODS = [
 
 export function renderRmsAllocationWorkbench({ project, plan, result, importStatus, htmlEscape, fixed, pct }) {
   const equipmentRoots = project.equipmentNodes.filter((node) => !node.parentId);
-  const targetMetrics = result.targetMetrics || {};
   return `
     <div class="rms-allocation-workbench">
-      <section class="rms-parameter-panel">
-        <div class="section-head">
-          <div>
-            <span class="eyebrow">装备 RMS 指标分配</span>
-          </div>
-          <span>${htmlEscape(project.name)} / ${htmlEscape(result.algorithmVersion)}</span>
-        </div>
-        <div class="rms-parameter-grid">
-          ${input("任务可靠度", "targets.reliability.value", plan.targets.reliability.value, "number", "0.001", htmlEscape)}
-          ${input("任务时长(h)", "targets.taskDurationHours", plan.targets.taskDurationHours ?? plan.targets.reliability.atHours, "number", "0.1", htmlEscape)}
-          ${input("关键故障占比", "targets.criticalFailureRatio", plan.targets.criticalFailureRatio ?? 1, "number", "0.01", htmlEscape)}
-          ${input("MTTR(h)", "targets.mttrHours", plan.targets.mttrHours, "number", "0.1", htmlEscape)}
-        </div>
-      </section>
+      <div class="section-head section-context">
+        <span>装备 RMS 指标分配 / 导入安装数</span>
+        <span>${htmlEscape(project.name)} / ${htmlEscape(result.algorithmVersion)}</span>
+      </div>
 
       <section class="rms-layout">
         <div class="rms-equipment-tree">
-          <div class="section-head"><h3>装备树</h3><span>独立导入数据</span></div>
-          <div class="rms-import-actions">
-            <label class="rms-file-button">导入表格<input data-rms-equipment-import-file type="file" accept=".csv,.json,application/json,text/csv"></label>
+          <div class="tree-toolbar equipment-tree-toolbar">
+            <h4>装备结构树</h4>
+            <span>独立导入数据</span>
           </div>
           ${equipmentRootSelect(project.rootId, equipmentRoots, htmlEscape)}
-          <p class="rms-import-status">${htmlEscape(importStatus || "当前装备树为 RMS 分配工作台独立数据。")}</p>
           ${renderEquipmentTree(project, result, htmlEscape)}
         </div>
-        <div class="rms-method-panel">
-          <div class="section-head"><h3>方法选择</h3><span>${statusLabel(result.status)}</span></div>
+        <div class="rms-installation-panel">
+          <div class="section-head"><h3>导入安装数</h3><span>${statusLabel(result.status)}</span></div>
+          <div class="equipment-import-row rms-installation-import-row">
+            <button type="button" class="rms-import-button" data-rms-action="download-template">下载模板</button>
+            <label class="rms-file-button rms-import-button">上传文件<input data-rms-equipment-import-file type="file" accept=".csv,.json,application/json,text/csv"></label>
+            <p class="rms-import-status">${htmlEscape(importStatus || "当前安装数为 RMS 分配工作台独立数据。")}</p>
+          </div>
+          <div class="table-wrap"><table><thead><tr><th>系统名称</th><th>型号</th><th>安装数</th><th>运行比</th></tr></thead><tbody>
+            ${result.nodeResults.map((row) => `<tr><td>${htmlEscape(row.nodeName)}</td><td>${htmlEscape(row.model || "-")}</td><td>${row.installationCount}</td><td>${compactNumber(row.runningRatio)}</td></tr>`).join("")}
+          </tbody></table></div>
+        </div>
+      </section>
+
+      <section class="rms-method-panel">
+          <div class="section-head"><h3>计算方法</h3><span>选择节点份额分配规则</span></div>
           <div class="rms-method-grid">
-            <label>可靠性分配方法
-              <select data-rms-path="methods.reliability">
-                ${RELIABILITY_METHODS.map(([value, label]) => `<option value="${value}" ${plan.methods.reliability === value ? "selected" : ""}>${label}</option>`).join("")}
+            <label>指标分配方法
+              <select data-rms-path="methods.allocation">
+                ${RELIABILITY_METHODS.map(([value, label]) => `<option value="${value}" ${plan.methods.allocation === value ? "selected" : ""}>${label}</option>`).join("")}
               </select>
             </label>
-            ${renderMethodParameters(plan, equipmentRoots, htmlEscape)}
+            ${renderMethodParameters(plan, equipmentRoots, project.rootId, htmlEscape)}
           </div>
           <div class="rms-method-actions">
             <button type="button" class="btn-primary" data-rms-action="calculate">计算</button>
           </div>
-          <div class="rms-verification-metrics">
-            ${metric("目标 R", fixed(result.verification.equipmentTarget.reliability, 3))}
-            ${metric("校核可靠度", fixed(result.verification.calculated.reliability, 3))}
-            ${metric("MTBCF", `${fixed(targetMetrics.mtbcfHours, 1)} h`)}
-            ${metric("MTBF", `${fixed(targetMetrics.mtbfHours, 1)} h`)}
-            ${metric("MTTR 裕度", `${fixed(result.verification.margin.mttrHours, 2)} h`)}
-          </div>
           <div class="rms-warning-list">
             ${result.warnings.length
               ? result.warnings.map((warning) => `<span>${htmlEscape(warning.code)}：${htmlEscape(warning.message)}</span>`).join("")
-              : "<span>校核通过，未发现不可行原因。</span>"}
+              : "<span>分配完成，节点份额合计为 100%。</span>"}
           </div>
-        </div>
       </section>
 
       <section class="analysis-chart-panel rms-result-panel">
-        <div class="section-head"><h3>节点分配结果</h3><span>系统级 / LRU 级 RMS target</span></div>
+        <div class="section-head"><h3>节点分配结果</h3><button type="button" data-rms-action="export-excel">导出 Excel</button></div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>层级</th><th>节点</th><th>结构</th><th>运行比</th><th>产品强度</th><th>失效率</th><th>MTBCF</th><th>MTBF</th><th>MTTR</th><th>Ai</th><th>Ao</th><th>状态</th></tr></thead>
+            <thead><tr><th>层级</th><th>节点</th><th>型号</th><th>安装数</th><th>运行比</th><th>分配份额</th><th>状态</th></tr></thead>
             <tbody>${result.nodeResults.map((row) => `
               <tr>
                 <td>${htmlEscape(row.level)}</td>
                 <td>${htmlEscape(row.nodeName)}</td>
-                <td>${htmlEscape(row.structure)}</td>
+                <td>${htmlEscape(row.model || "-")}</td>
+                <td>${row.installationCount}</td>
                 <td>${compactNumber(row.runningRatio)}</td>
-                <td>${fixed(row.productIntensityHours, 2)} h</td>
-                <td>${fixed(row.failureRate, 5)}</td>
-                <td>${fixed(row.mtbcfHours, 1)} h</td>
-                <td>${fixed(row.mtbfHours, 1)} h</td>
-                <td>${fixed(row.mttrHours, 2)} h</td>
-                <td>${pct(row.inherentAvailability)}</td>
-                <td>${pct(row.operationalAvailability)}</td>
-                <td><span class="status-badge ${row.status === "风险" ? "warn" : "success"}">${row.status}</span></td>
+                <td>${pct(row.allocationShare)}</td>
+                <td>${htmlEscape(row.status)}</td>
               </tr>
             `).join("")}</tbody>
           </table>
@@ -143,27 +131,20 @@ function equipmentRootSelect(value, equipmentRoots, htmlEscape) {
   `;
 }
 
-function renderMethodParameters(plan, equipmentRoots, htmlEscape) {
-  if (plan.methods.reliability === "proportional") {
-    return input("比例修正系数", "methods.proportional.adjustmentFactor", plan.methods?.proportional?.adjustmentFactor ?? 1, "number", "0.01", htmlEscape);
-  }
-  if (plan.methods.reliability === "similar") {
+function renderMethodParameters(plan, equipmentRoots, currentRootId, htmlEscape) {
+  if (plan.methods.allocation === "similar") {
     const similarProduct = plan.methods?.similarProduct || {};
+    const sourceRoots = equipmentRoots.filter((node) => node.id !== currentRootId);
     return `
-      ${select("基准机型", "methods.similarProduct.sourceModel", similarProduct.sourceModel || equipmentRoots[0]?.name || "", equipmentRoots.map((node) => [node.name, node.name]), htmlEscape)}
-      ${input("相似修正系数", "methods.similarProduct.adjustmentFactor", similarProduct.adjustmentFactor ?? 0.92, "number", "0.01", htmlEscape)}
+      ${select("基准机型", "methods.similarProduct.sourceModel", similarProduct.sourceModel || sourceRoots[0]?.name || "", sourceRoots.map((node) => [node.name, node.name]), htmlEscape)}
     `;
   }
   return "";
 }
 
-function metric(label, value) {
-  return `<div class="kpi-card"><span>${label}</span><strong>${value}</strong></div>`;
-}
-
 function statusLabel(status) {
   if (status === "method_not_applicable") return "方法不适用";
-  return status === "validated" ? "已校核" : "已计算";
+  return status === "calculated" ? "已计算" : "待计算";
 }
 
 function compactNumber(value, digits = 2) {

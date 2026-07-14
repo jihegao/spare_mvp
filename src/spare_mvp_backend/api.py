@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import io
 import json
 import math
 from pathlib import Path
@@ -238,6 +239,87 @@ class BackendApi:
             "project_version": project["project_version"],
             "schema_version": project["schema_version"],
             "status": "saved",
+        }
+
+    def export_rms_allocation_xlsx(self, payload: dict[str, Any]) -> dict[str, Any]:
+        from openpyxl import Workbook
+
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.title = "RMS分配结果"
+        sheet.append(["项目", str(payload.get("project_name") or "")])
+        sheet.append(["计算方法", str(payload.get("method") or "")])
+        sheet.append(["生成时间", str(payload.get("generated_at") or "")])
+        sheet.append([])
+        sheet.append(["层级", "节点", "型号", "安装数", "运行比", "分配份额", "状态"])
+        for row in payload.get("rows") or []:
+            sheet.append([
+                str(row.get("level") or ""), str(row.get("nodeName") or ""),
+                str(row.get("model") or ""), int(row.get("installationCount") or 0),
+                float(row.get("runningRatio") or 0), float(row.get("allocationShare") or 0),
+                str(row.get("status") or ""),
+            ])
+        output = io.BytesIO()
+        workbook.save(output)
+        return {
+            "body": output.getvalue(),
+            "content_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "filename": "rms-allocation-result.xlsx",
+        }
+
+    def replace_project(
+        self,
+        project_id: str,
+        project_json: dict[str, Any],
+        *,
+        expected_updated_at: str,
+        actor_user_id: str,
+    ) -> dict[str, Any]:
+        self._require_role(
+            actor_user_id,
+            {"系统管理员", "数据管理员"},
+            action="project.replace",
+            resource_type="project",
+            resource_id=project_id,
+        )
+        current_updated_at = self.repository.project_updated_at(project_id)
+        if not expected_updated_at or expected_updated_at != current_updated_at:
+            raise BackendApiError(
+                "project_version_conflict",
+                "Project has changed since it was loaded",
+                expected_updated_at=expected_updated_at,
+                current_updated_at=current_updated_at,
+            )
+        replacement = copy.deepcopy(project_json)
+        replacement["project_id"] = project_id
+        validation = self.validate_project(replacement)
+        if not validation["ok"]:
+            raise BackendApiError("invalid_project", "Project JSON failed validation", errors=validation["errors"])
+        replacement = strip_project_sweep(replacement)
+        replacement["schema_version"] = validation["project_schema_version"]
+        replacement["project_version"] = validation["project_version"]
+        replace_result = self.repository.replace_project_if_current(
+            replacement,
+            expected_updated_at=expected_updated_at,
+            actor_user_id=actor_user_id,
+        )
+        if replace_result is None:
+            raise BackendApiError(
+                "project_version_conflict",
+                "Project has changed since it was validated",
+                expected_updated_at=expected_updated_at,
+                current_updated_at=self.repository.project_updated_at(project_id),
+            )
+        updated_at = replace_result["updated_at"]
+        audit = replace_result["audit"]
+        return {
+            "project_id": project_id,
+            "project_version": replacement["project_version"],
+            "schema_version": replacement["schema_version"],
+            "updated_at": updated_at,
+            "validation": validation,
+            "audit_event_id": audit.get("audit_event_id") or audit.get("event_id"),
+            "status": "replaced",
         }
 
     def validate_modeling_import(self, import_package: dict[str, Any]) -> dict[str, Any]:
@@ -769,6 +851,10 @@ class BackendApi:
             "wave_rows": page_result.get("wave_rows", []),
             "daily_rows": page_result.get("daily_rows", []),
             "event_snapshots": page_result.get("event_snapshots", []),
+            "profile_reliability": page_result.get("profile_reliability"),
+            "period_completion_probability": page_result.get("period_completion_probability"),
+            "successful_samples": page_result.get("successful_samples"),
+            "valid_samples": page_result.get("valid_samples"),
             "visualization_state_series": visualization_state_series,
             "limitations": _lite_mesa_analysis_limitations(),
             "failed_samples": failed_samples,
@@ -1725,6 +1811,7 @@ def _lite_mesa_spare_shortfall_result(
         filled = max(0, int(round(_metric_float(item.get("filled_count"), default=demand * fill_rate))))
         rows.append(
             {
+                "aircraftModel": str(item.get("aircraft_model") or item.get("aircraftModel") or "全部机型"),
                 "spareType": str(item.get("spare_type") or "aircraft_support_v1_spares"),
                 "demand": demand,
                 "filled": filled,
@@ -1737,6 +1824,7 @@ def _lite_mesa_spare_shortfall_result(
         fill_rate = _metric_float(aggregate.get("spare_fill_rate"), default=0)
         rows.append(
             {
+                "aircraftModel": "全部机型",
                 "spareType": "aircraft_support_v1_spares",
                 "demand": planned,
                 "filled": max(0, int(round(planned * fill_rate))),
@@ -1750,13 +1838,14 @@ def _lite_mesa_spare_shortfall_result(
         if _metric_float(row.get("meanTransportDelayHours"), default=0) > 0
         or _metric_float(row.get("fillRate"), default=1) < 1
     ]
-    risk_row = shortfall_rows[0] if shortfall_rows else rows[0]
+    max_shortage = max((max(0, int(row["demand"]) - int(row["filled"])) for row in rows), default=0)
+    highest_shortfall = [str(row.get("spareType") or "") for row in rows if max_shortage > 0 and max(0, int(row["demand"]) - int(row["filled"])) == max_shortage]
     return {
         "experiment_id": "project_baseline_at_current_granularity",
         "metrics": [
             ["发生缺件备件", str(len(shortfall_rows))],
             ["平均备件延误时间(h)", f"{mean_transport_delay:.2f}"],
-            ["最高缺件备件", str(risk_row.get("spareType") or "无")],
+            ["最高缺件备件", "、".join(highest_shortfall) or "无"],
             ["因维修延误导致的任务取消次数", str(int(round(_sample_metric_sum(samples, "cancelled_sorties"))))],
         ],
         "rows": rows,
@@ -1781,6 +1870,7 @@ def _lite_mesa_carry_list_result(
         baseline_quantity = max(0, _metric_int(item.get("baseline_quantity"), default=0))
         rows.append(
             {
+                "aircraftModel": str(item.get("aircraft_model") or item.get("aircraftModel") or "全部机型"),
                 "spareType": str(item.get("spare_type") or "aircraft_support_v1_spares"),
                 "recommended": max(
                     0,
@@ -1793,17 +1883,28 @@ def _lite_mesa_carry_list_result(
                 "shortage": max(0, _metric_int(item.get("shortage_count"), default=aggregate.get("shortage_events"))),
                 "riskLevel": _risk_label(item.get("risk_level")),
                 "confidenceTarget": settings["missionConfidenceTarget"],
+                "minimumSatisfactionRate": settings["missionConfidenceTarget"],
+                "hideZeroDemand": True,
+                "lifeLimited": bool(item.get("life_limited") or item.get("lifeLimited")),
+                "lifeLandings": _metric_int(item.get("life_landings", item.get("lifeLandings")), default=0),
+                "lifeCalendarDays": _metric_int(item.get("life_calendar_days", item.get("lifeCalendarDays")), default=0),
             }
         )
     if not rows:
         rows.append(
             {
+                "aircraftModel": "全部机型",
                 "spareType": "aircraft_support_v1_spares",
                 "recommended": base_quantity,
                 "demand": planned,
                 "shortage": max(0, _metric_int(aggregate.get("shortage_events"), default=0)),
                 "riskLevel": _risk_label("low"),
                 "confidenceTarget": settings["missionConfidenceTarget"],
+                "minimumSatisfactionRate": settings["missionConfidenceTarget"],
+                "hideZeroDemand": True,
+                "lifeLimited": False,
+                "lifeLandings": 0,
+                "lifeCalendarDays": 0,
             }
         )
     return {
@@ -1828,6 +1929,17 @@ def _lite_mesa_mission_reliability_result(
     max_rows = settings.get("maxTimeWindow")
     if max_rows:
         rows = rows[: max(1, _metric_int(max_rows, default=len(rows)))]
+    valid_samples = 0
+    successful_samples = 0
+    for sample in samples:
+        daily = [row for row in sample.get("daily_mission_reliability") or [] if 1 <= _metric_int(row.get("day"), default=0) <= 7]
+        if _metric_float((sample.get("metrics") or {}).get("simulation_days"), default=0) < 7:
+            continue
+        valid_samples += 1
+        if all(_metric_float(row.get("successfulWaves"), default=0) >= _metric_float(row.get("plannedWaves"), default=0) for row in daily):
+            successful_samples += 1
+    profile_reliability = _clamp01(data.get("mission_success_probability"))
+    period_completion_probability = successful_samples / valid_samples if valid_samples else 0.0
     return {
         "experiment_id": "project_baseline_at_current_granularity",
         "metrics": [
@@ -1835,10 +1947,16 @@ def _lite_mesa_mission_reliability_result(
             ["出动架次率", _decimal(data.get("sortie_rate"))],
             ["战备完好率", _pct(_sample_mean(samples, "ready_rate"))],
             ["任务失败次数", str(int(round(_sample_metric_sum(samples, "failed_sorties"))))],
+            ["任务剖面可靠性", _pct(profile_reliability)],
+            ["连续7天任务完成可靠性", _pct(period_completion_probability)],
         ],
         "rows": rows,
         "wave_rows": rows,
         "daily_rows": _mean_daily_mission_reliability(samples),
+        "profile_reliability": profile_reliability,
+        "period_completion_probability": period_completion_probability,
+        "successful_samples": successful_samples,
+        "valid_samples": valid_samples,
     }
 
 
@@ -1849,18 +1967,27 @@ def _lite_mesa_downtime_factors_result(
     settings: dict[str, Any],
 ) -> dict[str, Any]:
     top_n = settings["topN"]
+    factor_specs = [
+        ("failure", "装备故障", "downtime_failure_events", "downtime_failure_hours"),
+        ("equipment_shortage", "保障设备短缺", "downtime_equipment_shortage_events", "downtime_equipment_shortage_hours"),
+        ("spare_shortage", "备件短缺", "downtime_spare_shortage_events", "downtime_spare_shortage_hours"),
+        ("preventive", "预防性维修", "downtime_preventive_events", "downtime_preventive_hours"),
+    ]
+    total_hours = sum(max(0.0, _metric_float(aggregate.get(hours_key), default=0)) for _, _, _, hours_key in factor_specs)
     rows = []
-    for item in projection.get("data") or []:
-        factor = str(item.get("factor") or "unknown")
-        rows.append(
-            {
-                "label": _downtime_factor_label(factor),
-                "reason": factor,
-                "count": _downtime_factor_count(factor, aggregate),
-                "contribution": _metric_float(item.get("contribution"), default=0),
-            }
-        )
-    rows = sorted(rows, key=lambda row: float(row.get("contribution") or 0), reverse=True)[:top_n]
+    for reason, label, count_key, hours_key in factor_specs:
+        downtime_hours = max(0.0, _metric_float(aggregate.get(hours_key), default=0))
+        contribution = downtime_hours / total_hours if total_hours > 0 else 0.0
+        rows.append({
+            "label": label,
+            "reason": reason,
+            "count": max(0, _metric_int(aggregate.get(count_key), default=0)),
+            "event_count": max(0, _metric_int(aggregate.get(count_key), default=0)),
+            "downtime_hours": downtime_hours,
+            "contribution": contribution,
+            "duration_contribution": contribution,
+        })
+    rows = sorted(rows, key=lambda row: float(row.get("downtime_hours") or 0), reverse=True)
     top_row = rows[0] if rows else {}
     return {
         "experiment_id": "project_baseline_at_current_granularity",
@@ -2099,10 +2226,10 @@ def _lite_mesa_downtime_frame_spare_shortages(frame: dict[str, Any], event: dict
 
 def _lite_mesa_downtime_event_type(event_type: str) -> str:
     normalized = str(event_type or "").lower()
-    if "spare" in normalized or "shortage" in normalized:
+    if "spare" in normalized:
         return "spare_shortage"
-    if "resource" in normalized or "delay" in normalized:
-        return "resource_delay"
+    if "equipment_shortage" in normalized:
+        return "equipment_shortage"
     if "fail" in normalized:
         return "failure"
     return ""
@@ -2111,8 +2238,8 @@ def _lite_mesa_downtime_event_type(event_type: str) -> str:
 def _lite_mesa_downtime_snapshot_result(event_type: str) -> str:
     if event_type == "spare_shortage":
         return "mission_delayed_by_spare_shortage"
-    if event_type == "resource_delay":
-        return "mission_delayed_by_resource_constraint"
+    if event_type == "equipment_shortage":
+        return "mission_delayed_by_equipment_shortage"
     if event_type == "failure":
         return "aircraft_unavailable_after_failure"
     return "downtime_anomaly_recorded"

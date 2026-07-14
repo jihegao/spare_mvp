@@ -1,11 +1,12 @@
 import ast
+import copy
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
 from src.spare_mvp_abm.aircraft_support_v1 import AircraftSupportV1Model
 from src.spare_mvp_abm.aircraft_support_v1 import solara_app
-from src.spare_mvp_abm.aircraft_support_v1.solara_app import _load_backend_project_json, _model_inputs
+from src.spare_mvp_abm.aircraft_support_v1.solara_app import _load_backend_project_json, _model_inputs, _query_runtime_config
 
 
 class AircraftSupportV1SolaraTest(unittest.TestCase):
@@ -61,6 +62,41 @@ class AircraftSupportV1SolaraTest(unittest.TestCase):
         ):
             with self.assertRaisesRegex(RuntimeError, "backend unavailable"):
                 _model_inputs("missing-project")
+
+    def test_model_inputs_apply_validated_plan_runtime_config_without_mutating_project(self) -> None:
+        project = copy.deepcopy(self.default_source["project"])
+        project["project_id"] = "project-solara-runtime"
+        project.pop("experiment", None)
+        original_project = copy.deepcopy(project)
+        runtime_config = _query_runtime_config({
+            "experiment_plan_id": ["plan-solara-runtime"],
+            "plan_steps": ["77"],
+            "plan_samples": ["8"],
+            "plan_seed": ["88"],
+        })
+
+        with patch(
+            "src.spare_mvp_abm.aircraft_support_v1.solara_app._load_backend_project_json",
+            return_value=project,
+        ):
+            inputs, source = _model_inputs("project-solara-runtime", runtime_config=runtime_config)
+
+        self.assertEqual(inputs["time"]["requested_steps"], 77)
+        self.assertEqual(inputs["monte_carlo"]["sample_count"], 8)
+        self.assertEqual(inputs["seed"], 88)
+        self.assertEqual(inputs["source_context"]["experiment_plan_id"], "plan-solara-runtime")
+        self.assertEqual(source["project"], original_project)
+        self.assertEqual(project, original_project)
+
+    def test_query_runtime_config_ignores_invalid_or_unbounded_values(self) -> None:
+        self.assertEqual(_query_runtime_config({"experiment_plan_id": ["invalid plan id"]}), {})
+        runtime_config = _query_runtime_config({
+            "experiment_plan_id": ["plan-valid"],
+            "plan_steps": ["0"],
+            "plan_samples": ["1001"],
+            "plan_seed": ["-1"],
+        })
+        self.assertEqual(runtime_config, {"experiment_plan_id": "plan-valid"})
 
     def test_backend_project_errors_are_user_facing_chinese(self) -> None:
         with self.assertRaisesRegex(ValueError, "缺少项目编号"):

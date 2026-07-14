@@ -12,8 +12,8 @@ The files here are draft JSON Schema contracts for the application-facing bounda
 - `artifact_manifest.schema.json`: versioned index of run artifacts.
 - `visualization_state_series.schema.json`: M9.1 offline visualization replay frames, event references, and run/result/artifact traceability; M9.2 online `state_frame` SSE events reuse the same frame fields.
 - `scenario_adapter_mapping.json`: evaluator-visible mapping from compiled Scenario JSON input fields to Mesa constructor inputs.
-- `rms_allocation_plan.schema.json`: local RMS allocation plan boundary for top-level R/M/S targets, method selection, and algorithm versioning.
-- `rms_allocation_result.schema.json`: RMS allocation result boundary for node-level targets, bottom-up verification, warnings, and assumptions.
+- `rms_allocation_plan.schema.json`: local RMS allocation v2 plan boundary for allocation method selection and algorithm versioning; it contains no reverse-calculation target fields.
+- `rms_allocation_result.schema.json`: RMS allocation v3 result boundary for node installation count, running ratio, normalized allocation share, status, warnings, and assumptions.
 - `mission_exposure.schema.json`: task-profile exposure matrix boundary for node/phase equivalent mission hours.
 - `modeling_import.schema.json`: M5 first-slice modeling data import and validation boundary for draft/published lifecycle, object collections, field-level validation issues, and run-reference overwrite protection.
 

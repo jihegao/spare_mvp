@@ -6,6 +6,7 @@ import copy
 import html
 import json
 import os
+import re
 import time
 from pathlib import Path
 from typing import Any
@@ -115,11 +116,40 @@ def _int_env(name: str, default: int) -> int:
         return default
 
 
-def _model_inputs(project_id: str | None = None) -> tuple[dict[str, Any], dict[str, Any]]:
+def _query_runtime_config(query: dict[str, list[str]]) -> dict[str, Any]:
+    experiment_plan_id = str((query.get("experiment_plan_id") or [""])[-1] or "").strip()
+    if not experiment_plan_id or len(experiment_plan_id) > 200 or not re.fullmatch(r"[A-Za-z0-9._:-]+", experiment_plan_id):
+        return {}
+    experiment: dict[str, int] = {}
+    for query_key, config_key, minimum, maximum in (
+        ("plan_steps", "steps", 1, 1_000_000),
+        ("plan_samples", "samples", 1, 1_000),
+        ("plan_seed", "seed", 0, 2_147_483_647),
+    ):
+        raw_value = str((query.get(query_key) or [""])[-1] or "").strip()
+        if not re.fullmatch(r"[0-9]+", raw_value):
+            continue
+        value = int(raw_value)
+        if minimum <= value <= maximum:
+            experiment[config_key] = value
+    return {
+        "experiment_plan_id": experiment_plan_id,
+        **({"experiment": experiment} if experiment else {}),
+    }
+
+
+def _model_inputs(
+    project_id: str | None = None,
+    runtime_config: dict[str, Any] | None = None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
     source = _load_project_source(project_id)
     project = source["project"]
     adapter = SimulationAdapter(_repo_root())
-    result = adapter.compile_scenario_with_gate(project, model_family="aircraft_support_v1")
+    result = adapter.compile_scenario_with_gate(
+        project,
+        model_family="aircraft_support_v1",
+        runtime_config=runtime_config,
+    )
     if result.get("status") != "compiled" or not isinstance(result.get("scenario"), dict):
         issues = result.get("issues") or result.get("errors") or []
         raise ValueError(f"项目数据无法编译为 aircraft_support_v1：{issues}")
@@ -133,13 +163,17 @@ def _model_inputs(project_id: str | None = None) -> tuple[dict[str, Any], dict[s
         "path": source["path"],
         "project_id": project.get("project_id") or project.get("scenarioId") or source.get("requested_project_id") or "",
         "fallback_reason": source.get("fallback_reason", ""),
+        "experiment_plan_id": str((runtime_config or {}).get("experiment_plan_id") or ""),
     }
     return inputs, {"project": project, "scenario": scenario, **source}
 
 
-def _safe_model_inputs(project_id: str | None = None) -> tuple[dict[str, Any] | None, dict[str, Any] | None, str]:
+def _safe_model_inputs(
+    project_id: str | None = None,
+    runtime_config: dict[str, Any] | None = None,
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None, str]:
     try:
-        inputs, source = _model_inputs(project_id)
+        inputs, source = _model_inputs(project_id, runtime_config=runtime_config)
         return inputs, source, ""
     except Exception as exc:
         return None, None, str(exc)
@@ -345,7 +379,7 @@ def ControlPanel(model_state: solara.Reactive[AircraftSupportV1Model], inputs: d
         with solara.Row(justify="space-between"):
             solara.Button(label=RESET_BUTTON_LABEL, color="primary", on_click=reset_model)
             solara.Button(
-                label="暂停" if playing.value else "播放",
+                label="暂停" if playing.value else "推演",
                 color="primary",
                 on_click=toggle_playing,
                 disabled=not model_state.value.running,
@@ -633,7 +667,12 @@ def Page() -> None:
     router = solara.use_router()
     query = parse_qs(router.search or "")
     project_id = str((query.get("project_id") or [""])[-1] or "").strip()
-    inputs, _source, error = solara.use_memo(lambda: _safe_model_inputs(project_id), [project_id])
+    runtime_config = _query_runtime_config(query)
+    runtime_config_key = json.dumps(runtime_config, ensure_ascii=False, sort_keys=True)
+    inputs, _source, error = solara.use_memo(
+        lambda: _safe_model_inputs(project_id, runtime_config=runtime_config),
+        [project_id, runtime_config_key],
+    )
     if error or inputs is None:
         solara.Markdown(f"### Solara 推演输入加载失败\n\n{error or '未知错误'}")
         return

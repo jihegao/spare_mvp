@@ -140,7 +140,7 @@ function normalizeDemoRole(role) {
 }
 
 function isFeaturePageAllowedForRole(page, role) {
-  if (role === "系统管理员") return page.module === "系统运行支持模块";
+  if (role === "系统管理员") return true;
   if (role === "数据管理员") {
     return page.module !== "系统运行支持模块" || page.secondary !== "系统基础配置";
   }
@@ -218,7 +218,7 @@ function resolveDataObjects(name, secondary, tertiary) {
   if (name.includes("装备系统")) return ["equipment", "components", "failureModel"];
   if (name.includes("可靠性框图")) return ["reliabilityBlockDiagram", "components"];
   if (name.includes("RMS分配") || name.includes("RMS指标分配")) return ["rmsAllocationPlan", "equipmentNodes", "missionExposure", "allocationResults"];
-  if (name.includes("项目数据管理")) return ["projectList", "templateManagement", "dataOverview", "projectJsonRaw"];
+  if (name.includes("项目数据管理")) return ["projectList", "templateManagement", "dataOverview"];
   if (name.includes("建模颗粒度")) return ["modelingModules", "sheets", "fieldSelections"];
   if (name.includes("用户管理")) return ["users", "roles", "organizations"];
   if (name.includes("功能权限")) return ["features", "roles", "permissionRules"];

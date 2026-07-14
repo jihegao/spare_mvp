@@ -211,6 +211,9 @@ class AircraftSupportV1Model:
         self.shortage_events = 0
         self.transport_replenishment_events = 0
         self.resource_delay_events = 0
+        self.equipment_shortage_events = 0
+        self.preventive_maintenance_events = 0
+        self.downtime_minutes = {"failure": 0.0, "equipment_shortage": 0.0, "spare_shortage": 0.0, "preventive": 0.0}
         self.failure_delay_events = 0
         self.daily_readiness_samples: list[dict[str, Any]] = []
         self._daily_readiness_sample_days: set[int] = set()
@@ -263,6 +266,7 @@ class AircraftSupportV1Model:
             self._dispatch_due_missions()
             self._evaluate_mission_success_points()
             self._record_daily_readiness_sample_if_due()
+            self._record_downtime_minutes()
             stop_reason, stop_conditions = self._stop_decision()
             should_stop = bool(stop_reason)
             if should_stop:
@@ -329,6 +333,7 @@ class AircraftSupportV1Model:
             "sortie_count": sum(1 for aircraft in self.aircraft if aircraft.state == "flying"),
             "postflight_count": sum(1 for aircraft in self.aircraft if aircraft.postflight_required),
             "preventive_count": sum(1 for aircraft in self.aircraft if aircraft.preventive_due),
+            "downtime_preventive_events": self.preventive_maintenance_events,
             "planned_sorties": planned_sorties,
             "planned_mission_waves": len(executable_missions),
             "successful_mission_waves": successful_mission_waves,
@@ -344,6 +349,11 @@ class AircraftSupportV1Model:
             "downtime_failure_events": self.failure_delay_events,
             "downtime_spare_shortage_events": self.shortage_events,
             "downtime_resource_delay_events": self.resource_delay_events,
+            "downtime_equipment_shortage_events": self.equipment_shortage_events,
+            "downtime_failure_hours": self.downtime_minutes["failure"] / 60.0,
+            "downtime_equipment_shortage_hours": self.downtime_minutes["equipment_shortage"] / 60.0,
+            "downtime_spare_shortage_hours": self.downtime_minutes["spare_shortage"] / 60.0,
+            "downtime_preventive_hours": self.downtime_minutes["preventive"] / 60.0,
             "transport_replenishment_events": self.transport_replenishment_events,
             "total_transport_delay_minutes": self.total_transport_delay,
             "mean_transport_delay": mean_transport_delay,
@@ -355,6 +365,20 @@ class AircraftSupportV1Model:
             "mean_recovery_time": self._mean_recovery_time(),
             "mean_turnaround_time": avg_delay + self._mean_recovery_time(),
         }
+
+    def _record_downtime_minutes(self) -> None:
+        tick = max(1.0, float(self.tick_minutes or 1))
+        failed_tails = {item.tail_number for item in self.aircraft if item.failed_component_id is not None}
+        equipment_tails = {job.tail_number for job in self.jobs if job.state == "waiting" and job.shortage_reason == "equipment_capacity"}
+        spare_tails = {job.tail_number for job in self.jobs if job.state == "waiting" and str(job.shortage_reason or "").startswith(("spare:", "in_transit"))}
+        preventive_tails = {job.tail_number for job in self.jobs if job.kind == "preventive" and job.state in {"waiting", "running"}}
+        equipment_tails -= failed_tails
+        spare_tails -= failed_tails | equipment_tails
+        preventive_tails -= failed_tails | equipment_tails | spare_tails
+        self.downtime_minutes["failure"] += len(failed_tails) * tick
+        self.downtime_minutes["equipment_shortage"] += len(equipment_tails) * tick
+        self.downtime_minutes["spare_shortage"] += len(spare_tails) * tick
+        self.downtime_minutes["preventive"] += len(preventive_tails) * tick
 
     def _stop_decision(self) -> tuple[str, list[str]]:
         policy_met, policy_conditions = self._stop_policy_met()
@@ -470,6 +494,11 @@ class AircraftSupportV1Model:
                 "downtime_failure_events": metrics["downtime_failure_events"],
                 "downtime_spare_shortage_events": metrics["downtime_spare_shortage_events"],
                 "downtime_resource_delay_events": metrics["downtime_resource_delay_events"],
+                "downtime_equipment_shortage_events": metrics["downtime_equipment_shortage_events"],
+                "downtime_failure_hours": metrics["downtime_failure_hours"],
+                "downtime_equipment_shortage_hours": metrics["downtime_equipment_shortage_hours"],
+                "downtime_spare_shortage_hours": metrics["downtime_spare_shortage_hours"],
+                "downtime_preventive_hours": metrics["downtime_preventive_hours"],
             },
             "aircraft": [self._aircraft_payload(item) for item in self.aircraft],
             "missions": [self._mission_payload(item) for item in self.missions],
@@ -1035,7 +1064,7 @@ class AircraftSupportV1Model:
                 self.resource_delay_events += 1
                 job.shortage_reason = "personnel_capacity"
                 self._event(
-                    "resource_delay",
+                    "personnel_delay",
                     f"{job.job_id} waiting for personnel at {node['id']}",
                     {
                         "job_id": job.job_id,
@@ -1047,9 +1076,10 @@ class AircraftSupportV1Model:
                 continue
             if node["equipment_in_use"] + equipment > node["equipment_capacity"]:
                 self.resource_delay_events += 1
+                self.equipment_shortage_events += 1
                 job.shortage_reason = "equipment_capacity"
                 self._event(
-                    "resource_delay",
+                    "equipment_shortage",
                     f"{job.job_id} waiting for equipment at {node['id']}",
                     {
                         "job_id": job.job_id,
@@ -1137,6 +1167,7 @@ class AircraftSupportV1Model:
             if due_by_day or due_by_hours or due_by_landings:
                 aircraft.state = "maintenance"
                 aircraft.preventive_due = True
+                self.preventive_maintenance_events += 1
                 self._create_job(aircraft, self.preventive_activity, kind="preventive")
                 self._event("preventive_created", f"{aircraft.tail_number} preventive maintenance created")
 

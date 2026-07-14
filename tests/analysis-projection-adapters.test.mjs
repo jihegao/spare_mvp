@@ -33,10 +33,12 @@ test("normalizes spare shortfall projection payload for formal KPI and table ren
   assert.equal(view.truncation.mode, "clamp_0_1");
   assert.deepEqual(view.metrics, [
     ["短板备件", "1 项"],
+    ["最高缺件备件", "engine"],
     ["最低备件满足率", "0.81"],
     ["最低备件利用率", "0.72"],
     ["约束档位", "0.85 / 0.90 / 0.95"]
   ]);
+  assert.deepEqual(view.highestShortfallNames, ["engine"]);
   assert.equal(view.rows[0].name, "engine");
   assert.equal(view.rows[0].level, "严重");
   assert.equal(view.rows[0].fillRateConstraint, "未达 0.85");

@@ -861,47 +861,6 @@ select[multiple].table-edit-select {
   font-size: 22px;
 }
 
-.project-json-viewer {
-  max-height: 520px;
-  overflow: auto;
-  padding: 10px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #f8fafc;
-  font-size: 12px;
-}
-
-.project-json-node {
-  margin: 2px 0;
-}
-
-.project-json-node summary {
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 24px;
-}
-
-.project-json-node summary span,
-.project-json-leaf span {
-  color: var(--muted);
-}
-
-.project-json-children {
-  margin-left: 16px;
-  padding-left: 10px;
-  border-left: 1px solid var(--line);
-}
-
-.project-json-leaf {
-  display: grid;
-  grid-template-columns: minmax(90px, 180px) minmax(0, 1fr);
-  gap: 8px;
-  min-height: 22px;
-  align-items: start;
-}
-
 .modeling-config-card,
 .modeling-sheet-card {
   min-width: 0;
@@ -920,6 +879,72 @@ select[multiple].table-edit-select {
   border-color: var(--primary);
   background: var(--primary-soft);
   box-shadow: inset 3px 0 0 var(--primary);
+}
+
+.granularity-profile-card:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--primary) 35%, transparent);
+  outline-offset: 2px;
+}
+
+.granularity-check {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  color: var(--primary);
+  background: var(--primary-soft);
+  border-radius: 50%;
+  font-weight: 800;
+}
+
+.granularity-check:empty { background: #dce3ea; }
+
+.granularity-field-checkbox {
+  appearance: none;
+  -webkit-appearance: none;
+  display: inline-grid;
+  place-content: center;
+  flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
+  border: 1px solid #aeb8c2;
+  border-radius: 3px;
+  background: #fff;
+  opacity: 1;
+}
+
+.check-inline input.granularity-field-checkbox,
+.field-check input.granularity-field-checkbox {
+  width: 16px;
+}
+
+.granularity-field-checkbox::after {
+  width: 8px;
+  height: 4px;
+  border: solid var(--primary);
+  border-width: 0 0 2px 2px;
+  content: "";
+  transform: translateY(-1px) rotate(-45deg) scale(0);
+  transform-origin: center;
+}
+
+.granularity-field-checkbox:checked {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.granularity-field-checkbox:checked::after {
+  transform: translateY(-1px) rotate(-45deg) scale(1);
+}
+
+.granularity-field-checkbox:disabled {
+  cursor: not-allowed;
+  opacity: 1;
+}
+
+.granularity-field-checkbox:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--primary) 35%, transparent);
+  outline-offset: 2px;
 }
 
 .sheet-selector-list,
@@ -1663,17 +1688,13 @@ select[multiple].table-edit-select {
   gap: 14px;
 }
 
-.rms-parameter-panel,
 .rms-equipment-tree,
-.rms-method-panel {
+.rms-method-panel,
+.rms-installation-panel {
   padding: 14px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fbfcfd;
-}
-
-.rms-parameter-panel h3 {
-  margin: 3px 0;
 }
 
 .rms-equipment-tree span,
@@ -1683,7 +1704,6 @@ select[multiple].table-edit-select {
   font-size: 12px;
 }
 
-.rms-parameter-grid,
 .rms-method-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(150px, 1fr));
@@ -1694,7 +1714,6 @@ select[multiple].table-edit-select {
   grid-template-columns: repeat(2, minmax(150px, 1fr));
 }
 
-.rms-parameter-grid label,
 .rms-method-grid label {
   display: grid;
   gap: 5px;
@@ -1703,7 +1722,6 @@ select[multiple].table-edit-select {
   font-weight: 700;
 }
 
-.rms-parameter-grid input,
 .rms-method-grid input,
 .rms-method-grid select {
   min-width: 0;
@@ -1739,6 +1757,24 @@ select[multiple].table-edit-select {
 
 .rms-file-button input {
   display: none;
+}
+
+.rms-import-button {
+  box-sizing: border-box;
+  width: 96px;
+  height: 34px;
+  min-height: 34px;
+  padding: 0 12px;
+}
+
+.rms-installation-import-row {
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.rms-installation-import-row .rms-import-status {
+  flex: 1 1 240px;
+  margin: 0;
 }
 
 .rms-import-status {
@@ -1781,12 +1817,6 @@ select[multiple].table-edit-select {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fff;
-}
-
-.rms-verification-metrics {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
 }
 
 .rms-warning-list {
@@ -2814,11 +2844,26 @@ tr.clickable-table-row.selected-table-row td {
 
 .mesa-visual-shell {
   display: grid;
-  gap: 12px;
+  gap: 8px;
 }
 
+.mesa-visual-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 42px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.mesa-visual-toolbar > div:first-child { display: flex; gap: 10px; align-items: baseline; }
+.mesa-visual-toolbar span { color: var(--muted); font-size: 12px; }
+
 .solara-visualization-frame-wrap {
-  min-height: 720px;
+  min-height: calc(100vh - 190px);
   border: 1px solid var(--line);
   border-radius: 8px;
   overflow: hidden;
@@ -2838,8 +2883,8 @@ tr.clickable-table-row.selected-table-row td {
 .solara-visualization-frame {
   display: block;
   width: 100%;
-  height: min(78vh, 960px);
-  min-height: 720px;
+  height: calc(100vh - 235px);
+  min-height: 680px;
   border: 0;
   background: #ffffff;
 }
@@ -4209,9 +4254,7 @@ tr.clickable-table-row.selected-table-row td {
   .preventive-rule-row,
   .kpi-strip,
   .scenario-grid,
-  .rms-parameter-grid,
   .rms-method-grid,
-  .rms-verification-metrics,
   .lite-mesa-setting-grid,
   .lite-mesa-source-grid,
   .lite-mesa-metric-cards,

@@ -457,7 +457,7 @@ test("project list exports project JSON without direct Project JSON import at ru
   }
 });
 
-test("project data raw JSON normalizes legacy basicMission fields", async () => {
+test("project data management omits raw JSON while keeping overview and replacement controls", async () => {
   const projectJson = createRuntimeProjectJson({
     project_id: "project-runtime",
     basicMissions: [],
@@ -495,9 +495,12 @@ test("project data raw JSON normalizes legacy basicMission fields", async () => 
   try {
     await runtime.flush();
 
-    assert.match(runtime.appNode.innerHTML, /project json 原始数据/);
-    assert.match(runtime.appNode.innerHTML, /<code>basicMissions<\/code><span>\[2\]<\/span>/);
-    assert.doesNotMatch(runtime.appNode.innerHTML, /<code>basicMission<\/code>/);
+    assert.match(runtime.appNode.innerHTML, /data-project-template-management/);
+    assert.match(runtime.appNode.innerHTML, /data-project-replacement-file/);
+    assert.match(runtime.appNode.innerHTML, /data-project-data-overview/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-project-json-viewer/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /Project JSON 原始数据/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-project-json-node/);
   } finally {
     runtime.restore();
   }
@@ -581,18 +584,20 @@ test("modeling granularity page switches locked field presets", async () => {
     assert.match(runtime.appNode.innerHTML, /建模颗粒度配置/);
     assert.match(runtime.appNode.innerHTML, /data-granularity-profile-select="full-elements" aria-pressed="true"/);
     assert.match(runtime.appNode.innerHTML, /data-granularity-profile-select="equipment-rms" aria-pressed="false"/);
+    assert.match(runtime.appNode.innerHTML, /aria-pressed="true"[^>]*>[\s\S]*?<span class="granularity-check" aria-hidden="true">✓<\/span>/);
     assert.match(runtime.appNode.innerHTML, /全要素/);
     assert.match(runtime.appNode.innerHTML, /装备RMS/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /颗粒度 A|颗粒度 B/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /导入包维护/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /data-modeling-import-action/);
-    assert.match(runtime.appNode.innerHTML, /data-modeling-field-select="equipment-system:mtbfHours" checked disabled/);
-    assert.match(runtime.appNode.innerHTML, /data-modeling-field-select="basic-support-activity:resourceIds" checked disabled/);
+    assert.match(runtime.appNode.innerHTML, /class="granularity-field-checkbox" type="checkbox" data-modeling-field-select="equipment-system:mtbfHours" checked disabled/);
+    assert.match(runtime.appNode.innerHTML, /class="granularity-field-checkbox" type="checkbox" data-modeling-field-select="basic-support-activity:resourceIds" checked disabled/);
 
     await runtime.click("[data-granularity-profile-select]", { granularityProfileSelect: "equipment-rms" });
 
     assert.match(runtime.appNode.innerHTML, /data-granularity-profile-select="full-elements" aria-pressed="false"/);
     assert.match(runtime.appNode.innerHTML, /data-granularity-profile-select="equipment-rms" aria-pressed="true"/);
+    assert.match(runtime.appNode.innerHTML, /data-modeling-field-sheet-select="equipment-system" checked disabled/);
     assert.match(runtime.appNode.innerHTML, /data-modeling-field-select="equipment-system:mtbfHours" checked disabled/);
     assert.match(runtime.appNode.innerHTML, /data-modeling-field-select="reliability-block-diagram:reliabilityParameter" checked disabled/);
     const excludedEquipmentRmsFields = [
@@ -778,8 +783,8 @@ test("visual Mesa page renders Solara iframe shell", async () => {
     await runtime.flush();
 
     assert.match(runtime.appNode.innerHTML, /data-mesa-control="reload-solara"/);
-    const visualHero = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-hero");
-    assert.match(visualHero, /<h3>可视化推演<\/h3>/);
+    const visualHero = htmlSectionByClass(runtime.appNode.innerHTML, "mesa-visual-toolbar");
+    assert.match(visualHero, /<strong>可视化推演<\/strong>/);
     assert.match(visualHero, /data-current-experiment-plan/);
     assert.match(runtime.appNode.innerHTML, /data-solara-visualization-frame/);
     assert.match(runtime.appNode.innerHTML, /class="solara-visualization-frame"/);
@@ -1035,7 +1040,7 @@ test("task reliability analysis embeds experiment plan selector in its title fra
     const hero = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-hero");
     assert.match(hero, /<h3>任务可靠度评估<\/h3>/);
     assert.match(hero, /data-current-experiment-plan/);
-    assert.match(hero, /实验方案/);
+    assert.match(hero, /运行上下文/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /<div class="page-head">[\s\S]*data-current-experiment-plan/);
   } finally {
     runtime.restore();
@@ -1373,10 +1378,10 @@ test("RMS method selection updates method-specific parameters at runtime", async
     assert.match(runtime.appNode.innerHTML, /装备 RMS 指标分配/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /基准机型/);
 
-    await runtime.change("[data-rms-path]", { rmsPath: "methods.reliability" }, { value: "similar" });
+    await runtime.change("[data-rms-path]", { rmsPath: "methods.allocation" }, { value: "similar" });
 
     assert.match(runtime.appNode.innerHTML, /基准机型/);
-    assert.match(runtime.appNode.innerHTML, /相似修正系数/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /相似修正系数|比例修正系数/);
     assert.match(runtime.appNode.innerHTML, /data-rms-path="methods\.similarProduct\.sourceModel"/);
   } finally {
     runtime.restore();
@@ -1391,13 +1396,13 @@ test("RMS imported aircraft models filter the tree and remain available as simil
       name: "rms-models.csv",
       async text() {
         return [
-          "id,name,parentId,level,mtbfHours,similarProductModel",
-          "f15-root,F15,,装备,,",
-          "f15-engine,F15 发动机,f15-root,系统,2000,",
-          "f16-root,F16,,装备,,",
-          "f16-engine,F16 发动机,f16-root,系统,400,F15",
-          "f18-root,F18,,装备,,",
-          "f18-engine,F18 发动机,f18-root,系统,820,"
+          "id,name,parentId,level,quantity,runningRatio,similarProductModel",
+          "f15-root,F15,,装备,1,1,",
+          "f15-engine,F15 发动机,f15-root,系统,2,1,",
+          "f16-root,F16,,装备,1,1,",
+          "f16-engine,F16 发动机,f16-root,系统,1,1,F15",
+          "f18-root,F18,,装备,1,1,",
+          "f18-engine,F18 发动机,f18-root,系统,2,1,"
         ].join("\n");
       }
     };
@@ -1411,11 +1416,36 @@ test("RMS imported aircraft models filter the tree and remain available as simil
     assert.doesNotMatch(runtime.appNode.innerHTML, /F15 发动机/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /F18 发动机/);
 
-    await runtime.change("[data-rms-path]", { rmsPath: "methods.reliability" }, { value: "similar" });
+    await runtime.change("[data-rms-path]", { rmsPath: "methods.allocation" }, { value: "similar" });
     assert.match(runtime.appNode.innerHTML, /基准机型/);
     assert.match(runtime.appNode.innerHTML, /<option value="F15" selected>F15<\/option>/);
-    assert.match(runtime.appNode.innerHTML, /<option value="F16"\s*>F16<\/option>/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /<option value="F16"[^>]*>F16<\/option>/);
     assert.match(runtime.appNode.innerHTML, /<option value="F18"\s*>F18<\/option>/);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("RMS runtime shows an explicit failure when proportional weights sum to zero", async () => {
+  const runtime = await setupRuntimeApp({ hash: "feature=system-management-equipment-rms-allocation" });
+  try {
+    const file = {
+      name: "zero-running-ratio.csv",
+      async text() {
+        return [
+          "id,name,parentId,level,quantity,runningRatio",
+          "root,测试整机,,装备,1,1",
+          "system-a,系统A,root,系统,1,0",
+          "system-b,系统B,root,系统,2,0"
+        ].join("\n");
+      }
+    };
+    await runtime.change("[data-rms-equipment-import-file]", {}, { files: [file], value: file.name });
+    await runtime.change("[data-rms-path]", { rmsPath: "methods.allocation" }, { value: "proportional" });
+
+    assert.match(runtime.appNode.innerHTML, /方法不适用/);
+    assert.match(runtime.appNode.innerHTML, /RMS_ALLOCATION_ZERO_WEIGHT/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /节点份额合计为 100%/);
   } finally {
     runtime.restore();
   }
@@ -1596,7 +1626,7 @@ test("basic support activity library filters rows by selected activity type", as
     durationMinutes: 55
   });
   const runtime = await setupRuntimeApp({ projectJson });
-  const operationsWorkNamePattern = /(?:初始工作项目|飞行前准备基本保障活动1)/;
+  const operationsWorkNamePattern = /初始工作项目/;
 
   try {
     await runtime.click("[data-enter-workbench]", { projectId: "project-runtime" });
@@ -1608,11 +1638,13 @@ test("basic support activity library filters rows by selected activity type", as
     assert.doesNotMatch(runtime.appNode.innerHTML, /部件修复作业/);
 
     await runtime.change("[data-basic-activity-import-type-select]", {}, { value: "修复性维修" });
+    await waitForRuntimeHtml(runtime, /部件修复作业/, "expected corrective activity rows after filtering");
     assert.match(runtime.appNode.innerHTML, /部件修复作业/);
     assert.doesNotMatch(runtime.appNode.innerHTML, operationsWorkNamePattern);
     assert.doesNotMatch(runtime.appNode.innerHTML, /定检基本保障活动/);
 
     await runtime.change("[data-basic-activity-import-type-select]", {}, { value: "预防性维修" });
+    await waitForRuntimeHtml(runtime, /定检基本保障活动/, "expected preventive activity rows after filtering");
     assert.match(runtime.appNode.innerHTML, /定检基本保障活动/);
     assert.doesNotMatch(runtime.appNode.innerHTML, operationsWorkNamePattern);
     assert.doesNotMatch(runtime.appNode.innerHTML, /部件修复作业/);
@@ -2139,7 +2171,7 @@ test("logistics transport editing writes top-level transport policies", async ()
     );
     assert.equal(saved.transportPolicies[0].fromSupportNodeName, "基地");
     assert.equal(saved.transportPolicies[0].toSupportNodeName, "甲板");
-    assert.equal(saved.transportPolicies[0].spareName, "LRU-A");
+    assert.equal("spareName" in saved.transportPolicies[0], false);
     assert.equal(saved.transportPolicies[0].transportTimeHours, 2.5);
     assert.ok(saved.supportActivities.every((activity) => !("transportStrategies" in activity) && !("organizationStrategies" in activity)));
   } finally {
@@ -2307,7 +2339,7 @@ test("experiment plan stop minute edit does not enable specified time unless che
   }
 });
 
-test("experiment plan editor uses a Chinese modeling data tree for leaf override editing", async () => {
+test("experiment plan editor separates basic runtime and analysis configuration without Scenario editing", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=spare-planning-experiment-plan-management",
     projectJson: createRuntimeProjectJson({
@@ -2330,40 +2362,12 @@ test("experiment plan editor uses a Chinese modeling data tree for leaf override
   try {
     await runtime.click("[data-experiment-plan-add]", { experimentPlanAdd: "" });
 
-    assert.match(runtime.appNode.innerHTML, /建模数据/);
-    assert.match(runtime.appNode.innerHTML, /任务剖面对象/);
-    assert.match(runtime.appNode.innerHTML, /任务剖面名称/);
-    assert.match(runtime.appNode.innerHTML, /保障点清单对象/);
-    assert.match(runtime.appNode.innerHTML, /保障资源清单对象/);
-    assert.doesNotMatch(runtime.appNode.innerHTML, /Project JSON/);
-
-    await runtime.click(
-      "[data-scenario-modeling-path]",
-      { scenarioModelingPath: "supportResources.0.quantity" }
-    );
-
-    assert.match(runtime.appNode.innerHTML, /选中属性/);
-    assert.match(runtime.appNode.innerHTML, /保障资源清单对象 \/ 保障资源 1 \/ 数量/);
-    assert.match(runtime.appNode.innerHTML, /data-scenario-selected-override-value/);
-    assert.match(runtime.appNode.innerHTML, /value="2"/);
-
-    await runtime.change(
-      "[data-scenario-selected-override-value]",
-      { scenarioSelectedOverridePath: "supportResources.0.quantity" },
-      { value: "12" }
-    );
-    await runtime.click("[data-save-plan]");
-
-    const createPlanRequest = runtime.requests.find((request) => (
-      request.url === "/api/projects/project-runtime/experiment-plans"
-      && (request.options.method || "GET") === "POST"
-    ));
-    assert.ok(createPlanRequest, "tree-edited experiment plan should be posted to backend");
-    const body = JSON.parse(createPlanRequest.options.body || "{}");
-    assert.equal(body.config.scenarioComposition.overrides[0].path, "supportResources.0.quantity");
-    assert.equal(body.config.scenarioComposition.overrides[0].valueType, "number");
-    assert.equal(body.config.scenarioComposition.overrides[0].value, 12);
-    assert.equal(body.config.projectJson.supportResources[0].quantity, 12);
+    assert.match(runtime.appNode.innerHTML, /基本信息/);
+    assert.match(runtime.appNode.innerHTML, /运行配置/);
+    assert.match(runtime.appNode.innerHTML, /分析配置/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /Scenario 拼接/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /scenario-composition-workspace/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /data-scenario-selected-override-value/);
   } finally {
     runtime.restore();
   }
@@ -2547,6 +2551,14 @@ test("visual simulation renders Solara iframe without starting retired run APIs"
       false,
       "Solara iframe page is driven by the sidecar, not the lite Mesa summary endpoint"
     );
+    assert.equal(
+      runtime.requests.some((request) => (
+        request.url === "/api/projects/project-runtime/experiment-plans"
+        && (request.options.method || "GET") === "POST"
+      )),
+      false,
+      "current Project visualization must not auto-create an ExperimentPlan"
+    );
     assert.match(runtime.appNode.innerHTML, /reload=1/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /Solara Mesa iframe|iframe:/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /mesa-control-deck|mesa-control-status|仿真状态|推演由 Solara/);
@@ -2564,6 +2576,7 @@ test("visual simulation does not depend on lite Mesa run id", async () => {
   });
 
   try {
+    assert.doesNotMatch(runtime.appNode.innerHTML, /experiment_plan_id=|plan_steps=|plan_samples=|plan_seed=/);
     await runtime.click("[data-mesa-control]", { mesaControl: "reload-solara" });
 
     assert.match(runtime.appNode.innerHTML, /reload=1/);
@@ -2573,6 +2586,72 @@ test("visual simulation does not depend on lite Mesa run id", async () => {
       runtime.requests.some((request) => request.url === "/api/runs"),
       false,
       "visual Mesa session must not fall back to retired /api/runs"
+    );
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("visual simulation applies saved plan runtime settings without changing current Project settings", async () => {
+  const currentProjectJson = createRuntimeProjectJson({
+    experiment: { name: "当前项目实验", steps: 11, samples: 2, seed: 22 }
+  });
+  const planProjectJson = createRuntimeProjectJson({
+    project_id: "project-visual-plan",
+    projectInfo: { name: "可视化方案 Project", baseCode: "VIS" }
+  });
+  delete planProjectJson.experiment;
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-visual-mesa-page",
+    projectJson: currentProjectJson,
+    experimentPlans: [{
+      experiment_plan_id: "plan-visual",
+      status: "draft",
+      config: {
+        name: "可视化保存方案",
+        steps: 77,
+        samples: 8,
+        seed: 88,
+        projectJson: planProjectJson
+      }
+    }]
+  });
+
+  try {
+    await runtime.click("[data-mesa-control]", { mesaControl: "reload-solara" });
+    const currentProjectSave = runtime.requests
+      .filter((request) => request.url === "/api/projects" && (request.options.method || "GET") === "POST")
+      .map((request) => JSON.parse(request.options.body || "{}"))
+      .at(-1);
+    assert.equal(
+      "experiment" in currentProjectSave,
+      false,
+      "current Project visualization should keep the clean Project persistence boundary"
+    );
+
+    await runtime.change(
+      "[data-current-experiment-plan]",
+      { currentExperimentPlan: "" },
+      { value: "plan-visual" }
+    );
+    await runtime.click("[data-mesa-control]", { mesaControl: "reload-solara" });
+    const planProjectSave = runtime.requests
+      .filter((request) => request.url === "/api/projects" && (request.options.method || "GET") === "POST")
+      .map((request) => JSON.parse(request.options.body || "{}"))
+      .at(-1);
+    assert.equal(planProjectSave.project_id, "project-visual-plan");
+    assert.equal("experiment" in planProjectSave, false, "saved plan visualization must keep Project persistence clean");
+    assert.match(runtime.appNode.innerHTML, /experiment_plan_id=plan-visual/);
+    assert.match(runtime.appNode.innerHTML, /plan_steps=77/);
+    assert.match(runtime.appNode.innerHTML, /plan_samples=8/);
+    assert.match(runtime.appNode.innerHTML, /plan_seed=88/);
+    assert.equal(
+      runtime.requests.some((request) => (
+        request.url === "/api/projects/project-runtime/experiment-plans"
+        && (request.options.method || "GET") === "POST"
+      )),
+      false,
+      "visualization refresh must not create an ExperimentPlan"
     );
   } finally {
     runtime.restore();
@@ -2653,6 +2732,212 @@ test("experiment plan dropdown drives lightweight Mesa Monte Carlo and analysis 
   }
 });
 
+test("run context defaults to current Project and excludes unsaved or invalid experiment plans", async () => {
+  const sourceProjectJson = createRuntimeProjectJson({
+    project_id: "project-runtime",
+    projectInfo: { name: "运行来源项目", baseCode: "CTX" }
+  });
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-experiment-plan-management",
+    projectJson: sourceProjectJson,
+    experimentPlans: [{
+      experiment_plan_id: "",
+      config: {
+        name: "无持久化标识方案",
+        projectJson: createRuntimeProjectJson({ project_id: "project-invalid-plan" })
+      }
+    }]
+  });
+
+  try {
+    await runtime.click("[data-experiment-plan-add]", { experimentPlanAdd: "" });
+    await runtime.change(
+      "[data-experiment-plan-path]",
+      { experimentPlanPath: "experiment.name" },
+      { value: "尚未保存的内存分支" }
+    );
+
+    await runtime.setHash("feature=spare-planning-spare-shortfall-analysis");
+
+    const hero = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-hero");
+    assert.match(hero, /运行上下文/);
+    assert.match(hero, /当前项目：运行来源项目/);
+    assert.match(hero, /0 个已保存方案/);
+    assert.doesNotMatch(hero, /当前草稿|尚未保存的内存分支|无持久化标识方案|已保存实验方案/);
+
+    await runtime.click("[data-lite-mesa-analysis-action='run']");
+
+    const analysisBody = runtime.requests
+      .filter((request) => request.url === "/api/mesa-analysis-runs")
+      .map((request) => JSON.parse(request.options.body || "{}"))
+      .at(-1);
+    assert.equal(analysisBody.project.project_id, "project-runtime");
+    assert.equal(analysisBody.project.projectInfo.name, "运行来源项目");
+    assert.equal(
+      runtime.requests.some((request) => (
+        request.url === "/api/projects/project-runtime/experiment-plans"
+        && (request.options.method || "GET") === "POST"
+      )),
+      false,
+      "direct Project analysis must not auto-create an ExperimentPlan"
+    );
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("experiment plan list selection editing and saving do not change the run context", async () => {
+  const planProjectJson = createRuntimeProjectJson({
+    project_id: "project-management-plan",
+    projectInfo: { name: "管理中的方案 Project", baseCode: "MGT" }
+  });
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-experiment-plan-management",
+    projectJson: createRuntimeProjectJson(),
+    experimentPlans: [{
+      experiment_plan_id: "plan-management",
+      status: "draft",
+      config: {
+        name: "管理中的方案",
+        samples: 12,
+        seed: 1212,
+        projectJson: planProjectJson
+      }
+    }]
+  });
+
+  try {
+    await runtime.change(
+      "[data-experiment-plan-select]",
+      { experimentPlanSelect: "plan-management" },
+      { checked: true, type: "checkbox" }
+    );
+    await runtime.click(
+      "[data-experiment-plan-edit]",
+      { experimentPlanEdit: "plan-management", experimentPlanName: "管理中的方案" }
+    );
+    await runtime.click("[data-save-plan]");
+    await runtime.setHash("feature=spare-planning-spare-shortfall-analysis");
+
+    const hero = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-hero");
+    assert.match(hero, /当前项目：Runtime 项目/);
+    assert.doesNotMatch(hero, /<option value="plan-management" selected/);
+
+    await runtime.click("[data-lite-mesa-analysis-action='run']");
+    const analysisBody = runtime.requests
+      .filter((request) => request.url === "/api/mesa-analysis-runs")
+      .map((request) => JSON.parse(request.options.body || "{}"))
+      .at(-1);
+    assert.equal(analysisBody.project.project_id, "project-runtime");
+    assert.notEqual(analysisBody.project.project_id, "project-management-plan");
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("switching from a saved plan to a Project without experiment resets Monte Carlo settings", async () => {
+  const currentProjectJson = createRuntimeProjectJson();
+  delete currentProjectJson.experiment;
+  const planProjectJson = createRuntimeProjectJson({
+    project_id: "project-settings-plan",
+    projectInfo: { name: "参数方案 Project", baseCode: "SET" }
+  });
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-monte-carlo-experiment-detail",
+    projectJson: currentProjectJson,
+    experimentPlans: [{
+      experiment_plan_id: "plan-settings",
+      status: "draft",
+      config: {
+        name: "参数方案",
+        samples: 19,
+        seed: 1919,
+        projectJson: planProjectJson
+      }
+    }]
+  });
+
+  try {
+    await runtime.change(
+      "[data-current-experiment-plan]",
+      { currentExperimentPlan: "" },
+      { value: "plan-settings" }
+    );
+    assert.match(runtime.appNode.innerHTML, /data-lite-mesa-field="samples"[^>]*value="19"/);
+    assert.match(runtime.appNode.innerHTML, /data-lite-mesa-field="seed"[^>]*value="1919"/);
+
+    await runtime.change(
+      "[data-current-experiment-plan]",
+      { currentExperimentPlan: "" },
+      { value: "current-project:project-runtime" }
+    );
+    assert.match(runtime.appNode.innerHTML, /data-lite-mesa-field="samples"[^>]*value="4"/);
+    assert.match(runtime.appNode.innerHTML, /data-lite-mesa-field="seed"[^>]*value="20260621"/);
+
+    await runtime.click("[data-lite-mesa-action='run']");
+    const analysisBody = runtime.requests
+      .filter((request) => request.url === "/api/mesa-analysis-runs")
+      .map((request) => JSON.parse(request.options.body || "{}"))
+      .at(-1);
+    assert.equal(analysisBody.project.project_id, "project-runtime");
+    assert.equal(analysisBody.settings.samples, 4);
+    assert.equal(analysisBody.settings.seed, 20260621);
+  } finally {
+    runtime.restore();
+  }
+});
+
+test("refreshing away the selected saved plan resets the run context and Monte Carlo settings", async () => {
+  const currentProjectJson = createRuntimeProjectJson();
+  delete currentProjectJson.experiment;
+  const experimentPlans = [{
+    experiment_plan_id: "plan-disappearing",
+    status: "draft",
+    config: {
+      name: "即将失效的方案",
+      samples: 23,
+      seed: 2323,
+      projectJson: createRuntimeProjectJson({ project_id: "project-disappearing-plan" })
+    }
+  }];
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-monte-carlo-experiment-detail",
+    projectJson: currentProjectJson,
+    experimentPlans
+  });
+
+  try {
+    await runtime.change(
+      "[data-current-experiment-plan]",
+      { currentExperimentPlan: "" },
+      { value: "plan-disappearing" }
+    );
+    assert.match(runtime.appNode.innerHTML, /data-lite-mesa-field="samples"[^>]*value="23"/);
+
+    experimentPlans.splice(0);
+    await runtime.setHash("feature=spare-planning-experiment-plan-management");
+    await runtime.click("[data-experiment-plan-refresh]", { experimentPlanRefresh: "" });
+    await runtime.flush();
+    await runtime.setHash("feature=spare-planning-monte-carlo-experiment-detail");
+
+    assert.match(runtime.appNode.innerHTML, /当前项目：Runtime 项目/);
+    assert.match(runtime.appNode.innerHTML, /data-lite-mesa-field="samples"[^>]*value="4"/);
+    assert.match(runtime.appNode.innerHTML, /data-lite-mesa-field="seed"[^>]*value="20260621"/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /即将失效的方案/);
+
+    await runtime.click("[data-lite-mesa-action='run']");
+    const analysisBody = runtime.requests
+      .filter((request) => request.url === "/api/mesa-analysis-runs")
+      .map((request) => JSON.parse(request.options.body || "{}"))
+      .at(-1);
+    assert.equal(analysisBody.project.project_id, "project-runtime");
+    assert.equal(analysisBody.settings.samples, 4);
+    assert.equal(analysisBody.settings.seed, 20260621);
+  } finally {
+    runtime.restore();
+  }
+});
+
 test("mission reliability and downtime analysis sample settings follow selected experiment plan", async () => {
   const planProjectJson = createRuntimeProjectJson({
     project_id: "project-runtime-analysis-plan",
@@ -2705,7 +2990,7 @@ test("mission reliability and downtime analysis sample settings follow selected 
   }
 });
 
-test("mission reliability and downtime analysis default to the sole backend experiment plan settings", async () => {
+test("mission reliability and downtime analysis keep current Project as default with one saved plan", async () => {
   const planProjectJson = createRuntimeProjectJson({
     project_id: "project-runtime-default-analysis-plan",
     projectInfo: { name: "默认分析方案 Project", baseCode: "DAP" }
@@ -2726,15 +3011,16 @@ test("mission reliability and downtime analysis default to the sole backend expe
   });
 
   try {
-    for (const [featureId, analysisType] of [
-      ["mission-reliability-task-reliability", "mission_reliability"],
-      ["mission-reliability-downtime-factor-analysis", "downtime_factors"]
+    for (const [featureId, analysisType, defaultSamples] of [
+      ["mission-reliability-task-reliability", "mission_reliability", 27],
+      ["mission-reliability-downtime-factor-analysis", "downtime_factors", 1]
     ]) {
       await runtime.setHash(`feature=${featureId}`);
       await runtime.flush();
 
       const settingsPanel = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-settings");
-      assert.match(settingsPanel, /样本量[\s\S]*<strong>40<\/strong>/);
+      assert.match(settingsPanel, /当前项目[\s\S]*<strong>当前项目：Runtime 项目<\/strong>/);
+      assert.match(settingsPanel, new RegExp(`样本量[\\s\\S]*<strong>${defaultSamples}<\\/strong>`));
       assert.match(settingsPanel, /随机种子[\s\S]*<strong>20260621<\/strong>/);
       assert.doesNotMatch(settingsPanel, /data-lite-mesa-analysis-field="samples"|data-lite-mesa-analysis-field="seed"/);
 
@@ -2744,8 +3030,8 @@ test("mission reliability and downtime analysis default to the sole backend expe
         .map((request) => JSON.parse(request.options.body || "{}"))
         .at(-1);
       assert.equal(analysisBody.analysis_type, analysisType);
-      assert.equal(analysisBody.project.project_id, "project-runtime-default-analysis-plan");
-      assert.equal(analysisBody.settings.samples, 40);
+      assert.equal(analysisBody.project.project_id, "project-runtime");
+      assert.equal(analysisBody.settings.samples, defaultSamples);
       assert.equal(analysisBody.settings.seed, 20260621);
     }
   } finally {
@@ -2791,6 +3077,14 @@ test("Monte Carlo setting changes do not rerender before lightweight Mesa run cl
       runtime.requests.some((request) => request.url === "/api/runs"),
       false,
       "Monte Carlo detail should not submit a formal run"
+    );
+    assert.equal(
+      runtime.requests.some((request) => (
+        request.url === "/api/projects/project-runtime/experiment-plans"
+        && (request.options.method || "GET") === "POST"
+      )),
+      false,
+      "current Project Monte Carlo must not auto-create an ExperimentPlan"
     );
     assert.match(runtime.appNode.innerHTML, /Mesa 分析完成|分析完成/);
   } finally {
@@ -3196,7 +3490,12 @@ async function setupRuntimeApp({
   };
 
   await import(`../front/app.js?runtime-app=${Date.now()}-${++runtimeImportCounter}`);
-  await flushRuntimeTasks();
+  await waitForRuntimeAppBootstrap({
+    requests,
+    hash,
+    projectId: backendProjects[0]?.project_id || projectJson.project_id || "project-runtime",
+    expectProjectDraft: String(hash || "").includes("feature=") && backendProjects.length > 0
+  });
 
   return {
     appNode,
@@ -3306,6 +3605,28 @@ async function flushRuntimeTasks() {
   await new Promise((resolve) => setTimeout(resolve, 0));
   await new Promise((resolve) => setTimeout(resolve, 0));
   await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+async function waitForRuntimeAppBootstrap({ requests, projectId, expectProjectDraft }) {
+  const encodedProjectId = encodeURIComponent(projectId);
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    const projectCatalogRequested = requests.some((request) => (
+      request.url === "/api/projects"
+      && (request.options.method || "GET") === "GET"
+    ));
+    const projectDraftRequested = requests.some((request) => (
+      request.url === `/api/projects/${encodedProjectId}`
+      && (request.options.method || "GET") === "GET"
+    ));
+    if (projectCatalogRequested && (!expectProjectDraft || projectDraftRequested)) {
+      await flushRuntimeTasks();
+      return;
+    }
+    await flushRuntimeTasks();
+  }
+  assert.fail(expectProjectDraft
+    ? `runtime app did not request Project draft ${projectId} during bootstrap`
+    : "runtime app did not request the project catalog during bootstrap");
 }
 
 async function waitForProjectSave(runtime, predicate, message) {
