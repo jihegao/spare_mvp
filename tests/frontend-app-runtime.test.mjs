@@ -460,12 +460,16 @@ test("project list exports project JSON without direct Project JSON import at ru
 test("project data management omits raw JSON while keeping overview and replacement controls", async () => {
   const projectJson = createRuntimeProjectJson({
     project_id: "project-runtime",
-    basicMissions: [],
-    basicMission: {
-      missionId: "legacy-runtime-basic",
-      name: "旧运行时基本任务",
-      equipmentType: "J-15",
-      taskDurationMinutes: 80
+    basicMissions: [
+      { id: "mission-runtime-1", name: "巡逻任务", minRequiredSorties: 3, supportActivityName: "J-15直接准备方案" },
+      { id: "mission-runtime-2", name: "警戒任务", minRequiredSorties: 4, supportActivityName: "J-15直接准备方案" }
+    ],
+    combatUnit: {
+      members: [
+        { aircraftNo: "J15-101", model: "J-15", airport: "甲板" },
+        { aircraftNo: "J15-102", model: "J-15", airport: "甲板" },
+        { aircraftNo: "J35-201", model: "J-35", airport: "基地" }
+      ]
     },
     missionProfile: {
       name: "运行时任务剖面",
@@ -496,8 +500,19 @@ test("project data management omits raw JSON while keeping overview and replacem
     await runtime.flush();
 
     assert.match(runtime.appNode.innerHTML, /data-project-template-management/);
+    assert.match(runtime.appNode.innerHTML, /<label class="btn-primary project-replacement-file-button">数据管理<input type="file" hidden data-project-replacement-file/);
     assert.match(runtime.appNode.innerHTML, /data-project-replacement-file/);
     assert.match(runtime.appNode.innerHTML, /data-project-data-overview/);
+    assert.match(runtime.appNode.innerHTML, /项目数据概览/);
+    assert.match(runtime.appNode.innerHTML, /总出动架次/);
+    assert.match(runtime.appNode.innerHTML, /作战单元飞机/);
+    assert.match(runtime.appNode.innerHTML, /<span>总出动架次<\/span>\s*<strong>7<\/strong>/);
+    assert.match(runtime.appNode.innerHTML, /<span>作战单元飞机<\/span>\s*<strong>3<\/strong>/);
+    assert.match(runtime.appNode.innerHTML, /data-project-data-relationship-map/);
+    assert.match(runtime.appNode.innerHTML, /对象关系/);
+    assert.match(runtime.appNode.innerHTML, /任务关联/);
+    await runtime.click("[data-project-data-relation-focus]", { projectDataRelationFocus: "activity" });
+    assert.match(runtime.appNode.innerHTML, /保障活动对象/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /data-project-json-viewer/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /Project JSON 原始数据/);
     assert.doesNotMatch(runtime.appNode.innerHTML, /data-project-json-node/);

@@ -20,6 +20,7 @@ import { renderRmsAllocationWorkbench } from "../front/rms-allocation-workbench.
 const PAGE_REVISION_REPORT_URL = new URL("../reports/2026-06-19-page-revision-suggestions/README.md", import.meta.url);
 const RBD_RENDERING_CONTRACT_URL = new URL("../docs/reliability-block-diagram-contract.md", import.meta.url);
 const DOCS_README_URL = new URL("../docs/README.md", import.meta.url);
+const FRONTEND_STYLES_URL = new URL("../front/styles.css", import.meta.url);
 
 test("feature catalog exposes all table-2 four-level pages", () => {
   assert.equal(FEATURE_PAGES.length, 45);
@@ -526,6 +527,7 @@ test("page revision project and system management controls stay wired", async ()
 
 test("project data management exposes project list, template controls, and overview without raw json", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const stylesSource = await readFile(FRONTEND_STYLES_URL, "utf8");
   const systemProjectSource = appSource.slice(
     appSource.indexOf("function renderSystemProjectManagement"),
     appSource.indexOf("function renderSystemBasicConfig")
@@ -554,7 +556,18 @@ test("project data management exposes project list, template controls, and overv
   assert.match(projectDataSource, /data-project-template-management/);
   assert.match(projectDataSource, /data-project-template-action="set"/);
   assert.match(projectDataSource, /data-project-template-action="unset"/);
+  assert.match(projectDataSource, /class="btn-primary project-replacement-file-button">数据管理/);
+  assert.match(stylesSource, /\.project-replacement-file-button\s*\{[\s\S]*border:\s*1px solid var\(--primary\);[\s\S]*border-radius:\s*8px;/);
   assert.match(projectDataSource, /data-project-data-overview/);
+  assert.match(projectDataSource, /data-project-data-relationship-map/);
+  assert.match(projectDataSource, /项目数据概览/);
+  assert.match(projectDataSource, /对象关系/);
+  assert.match(projectDataSource, /总出动架次/);
+  assert.match(projectDataSource, /作战单元飞机/);
+  assert.match(projectDataSource, /projectDataTotalSorties/);
+  assert.match(projectDataSource, /projectDataCombatUnitMembers/);
+  assert.match(projectDataSource, /projectDataRelationshipOverview/);
+  assert.match(stylesSource, /\.project-data-relationship-map\s*\{/);
   assert.match(projectDataSource, /任务/);
   assert.match(projectDataSource, /装备/);
   assert.match(projectDataSource, /保障系统/);
@@ -583,6 +596,7 @@ test("project data management exposes project list, template controls, and overv
   assert.doesNotMatch(projectDataSource, />配置<\/button>/);
 
   assert.match(eventSource, /const projectDataProjectButton = event\.target\.closest\("\[data-project-data-project-option\]"\)/);
+  assert.match(eventSource, /const projectDataRelationButton = event\.target\.closest\("\[data-project-data-relation-focus\]"\)/);
   assert.match(eventSource, /const projectTemplateAction = event\.target\.closest\("\[data-project-template-action\]"\)/);
 });
 

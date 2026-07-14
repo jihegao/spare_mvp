@@ -262,6 +262,17 @@ h4 {
   color: #fff;
 }
 
+.project-replacement-file-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1px 6px;
+  border: 1px solid var(--primary);
+  border-radius: 8px;
+  font: inherit;
+  cursor: pointer;
+}
+
 .topbar button {
   padding: 8px 12px;
 }
@@ -859,6 +870,188 @@ select[multiple].table-edit-select {
 
 .project-data-overview-grid .modeling-config-card strong {
   font-size: 22px;
+}
+
+.project-data-overview-card {
+  width: 100%;
+  text-align: left;
+}
+
+.project-data-overview-card:hover,
+.project-data-overview-card.selected {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.project-data-overview-card.selected strong {
+  color: var(--primary);
+}
+
+.project-data-relationship-section {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.project-data-relationship-head {
+  margin-bottom: 4px;
+}
+
+.project-data-relationship-map {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-areas:
+    "task activity"
+    "equipment support";
+  gap: 60px 100px;
+  padding: 22px 54px;
+}
+
+.project-data-relation-node {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 10px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfd;
+  color: var(--ink);
+  text-align: left;
+}
+
+.project-data-relation-node:hover,
+.project-data-relation-node.selected {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.project-data-relation-node span,
+.project-data-relation-node strong {
+  font-size: 14px;
+}
+
+.project-data-relation-node strong {
+  color: var(--primary);
+}
+
+.project-data-relation-node small {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.project-data-relation-node--task {
+  grid-area: task;
+}
+
+.project-data-relation-node--activity {
+  grid-area: activity;
+}
+
+.project-data-relation-node--support {
+  grid-area: support;
+}
+
+.project-data-relation-node--equipment {
+  grid-area: equipment;
+}
+
+.project-data-relation-edge {
+  position: absolute;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 88px;
+  padding: 2px 5px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.2;
+  pointer-events: none;
+}
+
+.project-data-relation-edge::after {
+  color: var(--primary);
+  font-size: 16px;
+  line-height: 1;
+}
+
+.project-data-relation-edge--task-activity {
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.project-data-relation-edge--task-activity::after {
+  content: "→";
+}
+
+.project-data-relation-edge--activity-support {
+  top: 50%;
+  right: 0;
+  transform: translateY(-50%);
+}
+
+.project-data-relation-edge--activity-support::after {
+  content: "↓";
+}
+
+.project-data-relation-edge--support-equipment {
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.project-data-relation-edge--support-equipment::after {
+  content: "←";
+}
+
+.project-data-relation-edge--equipment-task {
+  top: 50%;
+  left: 0;
+  transform: translateY(-50%);
+}
+
+.project-data-relation-edge--equipment-task::after {
+  content: "↑";
+}
+
+.project-data-relationship-detail {
+  margin-top: 6px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.project-data-relationship-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.project-data-relationship-list > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 8px 10px;
+  border-left: 3px solid var(--primary);
+  background: var(--primary-soft);
+}
+
+.project-data-relationship-list strong,
+.project-data-relationship-list span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-data-relationship-list span {
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .modeling-config-card,
@@ -4583,6 +4776,7 @@ tr.clickable-table-row.selected-table-row td {
   .system-config-layout,
   .project-template-layout,
   .project-data-overview-grid,
+  .project-data-relationship-list,
   .rms-layout,
 	  .modeling-import-layout,
 	  .lite-mesa-layout,
@@ -4596,6 +4790,21 @@ tr.clickable-table-row.selected-table-row td {
   .mesa-kpi-strip,
   .support-metric-row {
     grid-template-columns: 1fr;
+  }
+
+  .project-data-relationship-map {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "task"
+      "activity"
+      "support"
+      "equipment";
+    gap: 8px;
+    padding: 0;
+  }
+
+  .project-data-relation-edge {
+    display: none;
   }
 
   .mission-schedule-stage {

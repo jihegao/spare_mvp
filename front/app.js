@@ -679,8 +679,9 @@ let selectedProjectDataProjectId = "";
 let selectedProjectDataProjectJson = null;
 let selectedProjectDataProjectJsonId = "";
 let projectDataProjectJsonLoading = false;
-let projectDataManagementStatus = "选择项目查看 Project JSON。";
+let projectDataManagementStatus = "选择项目查看项目数据。";
 let projectReplacementPreview = null;
+let selectedProjectDataRelationFocus = "task";
 let projectEditorDraft = null;
 let selectedRoute = readRouteFromHash() || DEFAULT_ROUTE;
 let selectedFeatureId = readFeatureIdFromHash() || DEFAULT_FEATURE_ID;
@@ -1464,6 +1465,13 @@ function bindEvents() {
     const projectDataProjectButton = event.target.closest("[data-project-data-project-option]");
     if (projectDataProjectButton) {
       selectProjectDataProject(projectDataProjectButton.dataset.projectDataProjectOption);
+      render();
+      return;
+    }
+
+    const projectDataRelationButton = event.target.closest("[data-project-data-relation-focus]");
+    if (projectDataRelationButton) {
+      selectedProjectDataRelationFocus = projectDataRelationButton.dataset.projectDataRelationFocus || "task";
       render();
       return;
     }
@@ -3505,7 +3513,7 @@ function selectProjectDataProject(projectId) {
   selectedProjectDataProjectId = String(projectId || "").trim();
   selectedProjectDataProjectJson = null;
   selectedProjectDataProjectJsonId = "";
-  projectDataManagementStatus = "正在读取 Project JSON";
+  projectDataManagementStatus = "正在读取项目数据";
 }
 
 function renderProjectDataProjectList(selectedProject) {
@@ -3552,7 +3560,7 @@ function renderProjectTemplateManagement(project) {
       <div class="toolbar-row">
         <button type="button" class="btn-primary" data-project-template-action="set" data-project-id="${htmlEscape(projectId)}" ${project && !isTemplate ? "" : "disabled"}>设为模板</button>
         <button type="button" data-project-template-action="unset" data-project-id="${htmlEscape(projectId)}" ${project && isTemplate ? "" : "disabled"}>取消设为模板</button>
-        <label class="btn-secondary">数据管理<input type="file" hidden data-project-replacement-file accept=".json,application/json" ${project ? "" : "disabled"}></label>
+        <label class="btn-primary project-replacement-file-button">数据管理<input type="file" hidden data-project-replacement-file accept=".json,application/json" ${project ? "" : "disabled"}></label>
       </div>
       ${renderProjectReplacementPreview()}
       <p class="inline-status">${htmlEscape(projectDataManagementStatus)}</p>
@@ -3562,20 +3570,72 @@ function renderProjectTemplateManagement(project) {
 
 function renderProjectDataOverview(projectJson) {
   const rows = projectDataOverviewRows(projectJson);
+  const relationship = projectDataRelationshipOverview(projectJson, rows);
+  const activeRelationship = relationship.nodes.find((node) => node.id === selectedProjectDataRelationFocus)
+    || relationship.nodes[0];
   return `
     <section class="system-config-section" data-project-data-overview>
       <div class="section-head">
-        <h4>数据概览</h4>
-        <span>${projectJson ? "Project JSON" : "等待数据"}</span>
+        <div>
+          <h4>项目数据概览</h4>
+          <p>从四类顶层对象查看项目规模与已保存的引用关系。</p>
+        </div>
+        <span>${projectJson ? "已读取项目数据" : "等待读取项目数据"}</span>
       </div>
       <div class="project-data-overview-grid">
         ${rows.map((row) => `
-          <div class="modeling-config-card">
+          <button type="button" class="modeling-config-card project-data-overview-card ${activeRelationship.id === row.id ? "selected" : ""}" data-project-data-relation-focus="${htmlEscape(row.id)}" aria-pressed="${activeRelationship.id === row.id}">
             <span>${htmlEscape(row.label)}</span>
             <strong>${htmlEscape(row.value)}</strong>
-          </div>
+          </button>
         `).join("")}
       </div>
+      <div class="project-data-relationship-section" data-project-data-relationship-map>
+        <div class="section-head project-data-relationship-head">
+          <div>
+            <h4>对象关系</h4>
+            <p>箭头仅表示当前项目中可读取的关联，不补造不存在的数据。</p>
+          </div>
+          <span>${htmlEscape(relationship.summary)}</span>
+        </div>
+        <div class="project-data-relationship-map" aria-label="项目顶层对象关系图">
+          ${relationship.nodes.map((node) => `
+            <button type="button" class="project-data-relation-node project-data-relation-node--${htmlEscape(node.id)} ${activeRelationship.id === node.id ? "selected" : ""}" data-project-data-relation-focus="${htmlEscape(node.id)}" aria-pressed="${activeRelationship.id === node.id}">
+              <span>${htmlEscape(node.label)}</span>
+              <strong>${htmlEscape(node.value)}</strong>
+              <small>${htmlEscape(node.subtitle)}</small>
+            </button>
+          `).join("")}
+          <span class="project-data-relation-edge project-data-relation-edge--task-activity">${htmlEscape(relationship.taskToActivityLabel)}</span>
+          <span class="project-data-relation-edge project-data-relation-edge--activity-support">${htmlEscape(relationship.activityToSupportLabel)}</span>
+          <span class="project-data-relation-edge project-data-relation-edge--support-equipment">${htmlEscape(relationship.supportToEquipmentLabel)}</span>
+          <span class="project-data-relation-edge project-data-relation-edge--equipment-task">${htmlEscape(relationship.equipmentToTaskLabel)}</span>
+        </div>
+        ${renderProjectDataRelationshipDetail(activeRelationship)}
+      </div>
+    </section>
+  `;
+}
+
+function renderProjectDataRelationshipDetail(node) {
+  const items = node.items || [];
+  return `
+    <section class="project-data-relationship-detail" data-project-data-relationship-detail>
+      <div class="section-head">
+        <div>
+          <h4>${htmlEscape(node.label)}对象</h4>
+          <p>${htmlEscape(node.description)}</p>
+        </div>
+        <span>${htmlEscape(node.value)}</span>
+      </div>
+      ${items.length
+        ? `<div class="project-data-relationship-list">${items.slice(0, 6).map((item) => `
+          <div>
+            <strong>${htmlEscape(item.name)}</strong>
+            <span>${htmlEscape(item.detail)}</span>
+          </div>
+        `).join("")}</div>${items.length > 6 ? `<p class="inline-status">另有 ${items.length - 6} 个${htmlEscape(node.label)}对象未在此展开。</p>` : ""}`
+        : `<p class="modeling-import-empty">当前项目未发现可展示的${htmlEscape(node.label)}对象。</p>`}
     </section>
   `;
 }
@@ -3606,10 +3666,10 @@ async function previewProjectReplacement(file) {
     const projectJson = JSON.parse(await file.text());
     const validation = await backendApi.validateProject(projectJson);
     projectReplacementPreview = { fileName: file.name, projectJson, validation };
-    projectDataManagementStatus = validation.ok ? "Project JSON 校验通过，请确认覆盖" : "Project JSON 校验失败，不允许覆盖";
+    projectDataManagementStatus = validation.ok ? "项目数据校验通过，请确认覆盖" : "项目数据校验失败，不允许覆盖";
   } catch (err) {
     projectReplacementPreview = { fileName: file.name, error: err?.message || "JSON 文件无法解析" };
-    projectDataManagementStatus = "Project JSON 文件无效";
+    projectDataManagementStatus = "项目数据文件无效";
   }
 }
 
@@ -3637,25 +3697,17 @@ async function confirmProjectReplacement() {
 function projectDataOverviewRows(projectJson) {
   return [
     {
-      label: "任务",
-      value: sumProjectCollectionCounts(projectJson, [
-        "basicMissions",
-        "missionProfile.basicMissions",
-        "missionProfile.compositeTasks",
-        "missionProfile.periodicTasks"
-      ])
+      id: "task",
+      label: "总出动架次",
+      value: projectDataTotalSorties(projectJson)
     },
     {
-      label: "装备",
-      value: sumProjectCollectionCounts(projectJson, [
-        "equipmentAssets",
-        "objects.equipmentAssets",
-        "equipment.components",
-        "equipment.nodes",
-        "components"
-      ])
+      id: "equipment",
+      label: "作战单元飞机",
+      value: projectDataCombatUnitMembers(projectJson).length
     },
     {
+      id: "support",
       label: "保障系统",
       value: sumProjectCollectionCounts(projectJson, [
         "supportNodes",
@@ -3665,6 +3717,7 @@ function projectDataOverviewRows(projectJson) {
       ])
     },
     {
+      id: "activity",
       label: "保障活动",
       value: sumProjectCollectionCounts(projectJson, [
         "supportActivities",
@@ -3673,6 +3726,159 @@ function projectDataOverviewRows(projectJson) {
       ])
     }
   ];
+}
+
+function projectDataRelationshipOverview(projectJson, rows = projectDataOverviewRows(projectJson)) {
+  const missions = projectDataCollectionItems(projectJson, ["basicMissions", "missionProfile.basicMissions"]);
+  const combatUnitMembers = projectDataCombatUnitMembers(projectJson);
+  const supportResources = projectDataCollectionItems(projectJson, ["supportNodes", "supportResources", "objects.supportResources"]);
+  const supportActivities = projectDataCollectionItems(projectJson, ["supportActivities", "objects.supportActivities", "basicSupportActivities"]);
+  const supportJobs = projectDataCollectionItems(projectJson, ["supportActivityJobs"]);
+  const activityNames = new Set(supportActivities.map((activity) => String(activity?.activityName || activity?.name || "").trim()).filter(Boolean));
+  const taskActivityLinks = missions.filter((mission) => activityNames.has(String(mission?.supportActivityName || "").trim()));
+  const activityEquipmentLinks = supportActivities.filter((activity) => String(activity?.equipmentId || activity?.equipmentName || "").trim());
+  const activityResourceLinks = supportJobs.reduce((sum, job) => sum
+    + projectCollectionCount(job?.personnel)
+    + projectCollectionCount(job?.equipment)
+    + projectCollectionCount(job?.spare), 0);
+  const taskEquipmentLinks = missions.filter((mission) => String(mission?.equipmentType || mission?.equipmentName || "").trim());
+  const supportEquipmentResources = supportResources.filter((resource) => String(resource?.type || "").trim() === "equipment");
+  const rowById = new Map(rows.map((row) => [row.id, row]));
+  const nodes = [
+    {
+      id: "task",
+      label: "任务",
+      value: rowById.get("task")?.value || 0,
+      subtitle: `总出动架次，${taskActivityLinks.length} 个已关联保障活动`,
+      description: "数值按基本任务的出动架次汇总；任务通过已填写的保障活动名称关联保障方案。",
+      items: missions.map((mission, index) => ({
+        name: projectDataObjectName(mission, "任务", index),
+        detail: `出动架次：${projectDataMissionSorties(mission)}${mission?.supportActivityName ? ` · 关联保障活动：${mission.supportActivityName}` : " · 尚未关联保障活动"}`
+      }))
+    },
+    {
+      id: "equipment",
+      label: "装备",
+      value: rowById.get("equipment")?.value || 0,
+      subtitle: `作战单元飞机数量，${activityEquipmentLinks.length} 个保障活动指向装备`,
+      description: "数值按作战单元飞机成员统计；详情列出已保存的作战单元飞机。",
+      items: combatUnitMembers.map((member, index) => ({
+        name: projectDataCombatUnitMemberName(member, index),
+        detail: projectDataCombatUnitMemberDetail(member)
+      }))
+    },
+    {
+      id: "support",
+      label: "保障系统",
+      value: rowById.get("support")?.value || 0,
+      subtitle: `${activityResourceLinks} 项活动资源需求`,
+      description: "保障系统包含保障节点、人员、设备和备件等可用资源。",
+      items: supportResources.map((item, index) => ({
+        name: projectDataObjectName(item, "保障资源", index),
+        detail: projectDataSupportDetail(item)
+      }))
+    },
+    {
+      id: "activity",
+      label: "保障活动",
+      value: rowById.get("activity")?.value || 0,
+      subtitle: `${supportJobs.length} 个工作项目`,
+      description: "保障活动关联装备对象；其工作项目可声明人员、设备、备件与前序关系。",
+      items: supportActivities.map((activity, index) => ({
+        name: projectDataObjectName(activity, "保障活动", index),
+        detail: projectDataActivityDetail(activity)
+      }))
+    }
+  ];
+  return {
+    nodes,
+    summary: `已识别 ${taskActivityLinks.length + activityEquipmentLinks.length + activityResourceLinks + taskEquipmentLinks.length} 条关联`,
+    taskToActivityLabel: `${taskActivityLinks.length} 条任务关联`,
+    activityToSupportLabel: `${activityResourceLinks} 项资源需求`,
+    supportToEquipmentLabel: `${supportEquipmentResources.length} 个保障设备`,
+    equipmentToTaskLabel: `${taskEquipmentLinks.length} 个任务使用装备`
+  };
+}
+
+function projectDataTotalSorties(projectJson) {
+  return projectDataCollectionItems(projectJson, ["basicMissions", "missionProfile.basicMissions"])
+    .reduce((sum, mission) => sum + projectDataMissionSorties(mission), 0);
+}
+
+function projectDataMissionSorties(mission) {
+  const value = Number(mission?.minRequiredSorties);
+  return Number.isFinite(value) && value > 0 ? value : 0;
+}
+
+function projectDataCombatUnitMembers(projectJson) {
+  const members = projectPathValue(projectJson, "combatUnit.members");
+  return Array.isArray(members) ? members : [];
+}
+
+function projectDataCombatUnitMemberName(member, index) {
+  const name = String(member?.name || "").trim();
+  return name || `作战单元飞机${index + 1}`;
+}
+
+function projectDataCombatUnitMemberDetail(member) {
+  const model = String(member?.model || member?.equipmentType || "").trim();
+  const airport = String(member?.airport || "").trim();
+  const aircraftNo = String(member?.aircraftNo || "").trim();
+  return [model ? `装备型号：${model}` : "", aircraftNo ? `飞机编号：${aircraftNo}` : "", airport ? `所属机场：${airport}` : ""]
+    .filter(Boolean)
+    .join(" · ") || "已保存的作战单元飞机";
+}
+
+function projectDataCollectionItems(projectJson, paths) {
+  const entries = [];
+  const seen = new Set();
+  for (const path of paths) {
+    const value = projectPathValue(projectJson, path);
+    const items = Array.isArray(value) ? value : [];
+    for (const item of items) {
+      const stableKey = item && typeof item === "object"
+        ? `${path}:${item.id || item.activityCode || item.missionId || item.name || item.activityName || entries.length}`
+        : `${path}:${entries.length}`;
+      if (seen.has(stableKey)) continue;
+      seen.add(stableKey);
+      entries.push(item);
+    }
+  }
+  return entries;
+}
+
+function projectDataObjectName(item, fallbackType, index) {
+  const name = [
+    item?.name,
+    item?.basicTaskName,
+    item?.activityName,
+    item?.workName,
+    item?.componentName,
+    item?.equipmentName,
+    item?.model
+  ].find((value) => String(value || "").trim());
+  return String(name || `未命名${fallbackType}${index + 1}`).trim();
+}
+
+function projectDataSupportDetail(item) {
+  const type = projectDataChineseTypeLabel(item?.type || "");
+  const nodeName = String(item?.supportNodeName || item?.nodeName || "").trim();
+  const quantity = Number(item?.quantity || 0);
+  return [type, nodeName ? `所属保障节点：${nodeName}` : "", quantity ? `数量：${quantity}` : ""].filter(Boolean).join(" · ") || "已保存的保障资源";
+}
+
+function projectDataActivityDetail(activity) {
+  const equipment = String(activity?.equipmentName || activity?.equipmentId || "").trim();
+  const planType = String(activity?.planType || activity?.activityType || "").trim();
+  return [planType, equipment ? "已关联装备对象" : "未关联装备对象"].filter(Boolean).join(" · ");
+}
+
+function projectDataChineseTypeLabel(value) {
+  return {
+    personnel: "保障人员",
+    equipment: "保障设备",
+    spare: "备件"
+  }[String(value || "").trim()] || "";
 }
 
 function sumProjectCollectionCounts(projectJson, paths) {
@@ -3711,18 +3917,18 @@ function ensureSelectedProjectDataJsonLoaded({ force = false } = {}) {
   if (!project || !projectId || projectDataProjectJsonLoading) return;
   if (!force && selectedProjectDataProjectJsonId === projectId) return;
   projectDataProjectJsonLoading = true;
-  projectDataManagementStatus = "正在读取 Project JSON";
+  projectDataManagementStatus = "正在读取项目数据";
   backendApi.getProject(projectDataProjectBackendId(project))
     .then((projectJson) => {
       selectedProjectDataProjectJson = buildBackendProjectJson(projectJson, { id: projectId });
       selectedProjectDataProjectJsonId = projectId;
       mergeProjectTemplateFlagFromJson(projectId, projectJson);
-      projectDataManagementStatus = "已读取 Project JSON";
+      projectDataManagementStatus = "已读取项目数据";
     })
     .catch((err) => {
       selectedProjectDataProjectJson = null;
       selectedProjectDataProjectJsonId = projectId;
-      projectDataManagementStatus = `Project JSON 读取失败：${err && err.message ? err.message : "Backend API 不可用"}`;
+      projectDataManagementStatus = `项目数据读取失败：${err && err.message ? err.message : "后端服务不可用"}`;
     })
     .finally(() => {
       projectDataProjectJsonLoading = false;
