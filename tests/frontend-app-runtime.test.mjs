@@ -1494,6 +1494,11 @@ test("equipment aircraft-list selection renders whole aircraft rows and descenda
   try {
     await runtime.click("[data-enter-workbench]", { projectId: "project-runtime" });
     await runtime.setHash("feature=spare-planning-equipment-system");
+    await waitForRuntimeHtml(
+      runtime,
+      /data-select-equipment-aircraft="J-15"/,
+      "equipment project data should hydrate before rendering the aircraft list"
+    );
     await runtime.click("[data-select-equipment-root]");
 
     const rightPanel = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf("equipment-system-table-panel"));
@@ -1523,6 +1528,11 @@ test("equipment parent node selector uses Chinese names while retaining parent I
   try {
     await runtime.click("[data-enter-workbench]", { projectId: "project-runtime" });
     await runtime.setHash("feature=spare-planning-equipment-system");
+    await waitForRuntimeHtml(
+      runtime,
+      /data-select-equipment-aircraft="J-15"/,
+      "equipment project data should hydrate before selecting the aircraft"
+    );
     await runtime.click("[data-select-equipment-aircraft]", { selectEquipmentAircraft: "J-15" });
 
     const rightPanel = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf("equipment-system-table-panel"));
@@ -1559,6 +1569,11 @@ test("equipment aircraft rename keeps aircraftTypes catalog in saved Project dra
   try {
     await runtime.click("[data-enter-workbench]", { projectId: "project-runtime" });
     await runtime.setHash("feature=spare-planning-equipment-system");
+    await waitForRuntimeHtml(
+      runtime,
+      /data-select-equipment-aircraft="J-15"/,
+      "equipment project data should hydrate before renaming the aircraft"
+    );
     await runtime.click("[data-select-equipment-aircraft]", { selectEquipmentAircraft: "J-15" });
     await runtime.change("[data-equipment-aircraft-model]", { equipmentAircraftModel: "J-15" }, { value: "J-20" });
     await runtime.click("[data-project-draft-save]");
