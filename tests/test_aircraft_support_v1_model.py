@@ -175,6 +175,79 @@ def _canonical_import_inputs() -> dict:
 
 
 class AircraftSupportV1ModelTest(unittest.TestCase):
+    def test_downtime_ledger_uses_unique_direct_cause_intervals(self) -> None:
+        inputs = _minimal_inputs()
+        inputs["aircraft"] = {"fleet_count": 4, "initial_ready": 4, "models": ["J-15"]}
+        model = AircraftSupportV1Model(inputs)
+        tails = [aircraft.tail_number for aircraft in model.aircraft]
+        model.jobs.extend(
+            [
+                JobState(
+                    job_id="spare-job", tail_number=tails[0], kind="repair", activity_id="repair",
+                    activity_name="repair", tasks=[{"workName": "replace LRU", "spare": "LRU,1"}],
+                    priority=1, resource_node_id="deck", state="waiting", shortage_reason="spare:LRU",
+                ),
+                JobState(
+                    job_id="equipment-job", tail_number=tails[1], kind="repair", activity_id="repair",
+                    activity_name="repair", tasks=[{"workName": "repair", "requiredDevices": 3}],
+                    priority=1, resource_node_id="deck", state="waiting", shortage_reason="equipment_capacity",
+                ),
+                JobState(
+                    job_id="failure-job", tail_number=tails[2], kind="repair", activity_id="repair",
+                    activity_name="repair", tasks=[{"workName": "repair"}], priority=1,
+                    resource_node_id="deck", state="running", remaining=10,
+                ),
+                JobState(
+                    job_id="preventive-job", tail_number=tails[3], kind="preventive", activity_id="preventive",
+                    activity_name="preventive", tasks=[{"workName": "inspection"}], priority=1,
+                    resource_node_id="deck", state="running", remaining=10,
+                ),
+            ]
+        )
+        model.aircraft[0].failed_component_id = "underlying-failure"
+        model.aircraft[1].failed_component_id = "underlying-failure"
+        model.aircraft[2].failed_component_id = "underlying-failure"
+        model.aircraft[3].preventive_due = True
+
+        for minute in (1, 2):
+            model.minute = minute
+            model._record_downtime_minutes()
+
+        self.assertEqual(
+            {tail: event["factor"] for tail, event in model._active_downtime_events.items()},
+            {
+                tails[0]: "spare_shortage",
+                tails[1]: "equipment_shortage",
+                tails[2]: "failure",
+                tails[3]: "preventive",
+            },
+        )
+        # A direct blocker change closes the prior interval instead of double-counting it.
+        model.jobs[0].shortage_reason = "equipment_capacity"
+        model.minute = 3
+        model._record_downtime_minutes()
+        model._close_all_downtime_events()
+
+        metrics = model.snapshot()
+        self.assertEqual(metrics["downtime_spare_shortage_events"], 1)
+        self.assertEqual(metrics["downtime_equipment_shortage_events"], 2)
+        self.assertEqual(metrics["downtime_failure_events"], 1)
+        self.assertEqual(metrics["downtime_preventive_events"], 1)
+        self.assertEqual(sum(event["duration_minutes"] for event in model.downtime_events), 12)
+        self.assertEqual(len({event["event_id"] for event in model.downtime_events}), 5)
+        spare = next(event for event in model.downtime_events if event["factor"] == "spare_shortage")
+        self.assertEqual(spare["details"]["shortage_quantity"], 1)
+        self.assertIsNone(spare["details"]["arrival_minute"])
+        self.assertEqual(spare["details"]["wait_end_minute"], 2)
+        equipment = next(
+            event for event in model.downtime_events
+            if event["factor"] == "equipment_shortage" and event["tail_number"] == tails[1]
+        )
+        self.assertEqual(equipment["details"]["wait_minutes"], 3)
+        model.jobs[1].shortage_reason = "personnel_capacity"
+        personnel_wait = model._current_downtime_event(model.aircraft[1], 3)
+        self.assertEqual(personnel_wait["factor"], "failure")
+
     def test_blank_activity_resource_uses_aircraft_airport_support_node(self) -> None:
         inputs = _minimal_inputs()
         inputs["aircraft"] = {

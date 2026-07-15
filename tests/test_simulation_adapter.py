@@ -25,6 +25,47 @@ class SimulationAdapterTest(unittest.TestCase):
         path = REPO_ROOT / "tests" / "fixtures" / name
         return json.loads(path.read_text(encoding="utf-8"))
 
+    def test_downtime_projection_maps_four_factor_event_ledger_without_duplicate_ids(self) -> None:
+        samples = [
+            {
+                "sample_index": sample_index,
+                "seed": 100 + sample_index,
+                "downtime_events": [
+                    {
+                        "event_id": "downtime-000001",
+                        "factor": factor,
+                        "start_minute": 0,
+                        "end_minute": duration,
+                        "duration_minutes": duration,
+                        "details": {},
+                    }
+                ],
+            }
+            for sample_index, (factor, duration) in enumerate([
+                ("spare_shortage", 120),
+                ("equipment_shortage", 60),
+                ("failure", 30),
+                ("preventive", 15),
+            ])
+        ]
+
+        projection = self.adapter._aircraft_support_v1_analysis_projections(
+            {},
+            "base-artifact",
+            samples=samples,
+            run_id="run-downtime-ledger",
+        )["downtime_factors"]
+
+        rows = {row["factor"]: row for row in projection["data"]}
+        self.assertEqual(set(rows), {"spare_shortage", "equipment_shortage", "failure", "preventive"})
+        self.assertEqual(rows["spare_shortage"]["event_count"], 1)
+        self.assertEqual(rows["spare_shortage"]["downtime_hours"], 2)
+        self.assertAlmostEqual(sum(row["duration_contribution"] for row in rows.values()), 1.0)
+        details = projection["event_details"]
+        self.assertEqual(len(details), 4)
+        self.assertEqual(len({event["event_id"] for event in details}), 4)
+        self.assertEqual({event["source_event_id"] for event in details}, {"downtime-000001"})
+
     def test_validate_project_accepts_contract_fixture(self) -> None:
         project = self._load_fixture("aviation_support_project.json")
 
@@ -517,7 +558,10 @@ class SimulationAdapterTest(unittest.TestCase):
         self.assertIn("anomaly_snapshots", projection_payload)
         self.assertTrue(projection_payload["anomaly_snapshots"])
         downtime_snapshot = projection_payload["anomaly_snapshots"][0]
-        self.assertIn(downtime_snapshot["event_type"], {"failure", "spare_shortage", "resource_delay"})
+        self.assertIn(
+            downtime_snapshot["event_type"],
+            {"failure", "equipment_shortage", "spare_shortage", "preventive"},
+        )
         self.assertIn("simulation_time", downtime_snapshot)
         self.assertIn("result", downtime_snapshot)
         self.assertIn("support_activity_state", downtime_snapshot)

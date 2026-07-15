@@ -215,6 +215,9 @@ class AircraftSupportV1Model:
         self.equipment_shortage_events = 0
         self.preventive_maintenance_events = 0
         self.downtime_minutes = {"failure": 0.0, "equipment_shortage": 0.0, "spare_shortage": 0.0, "preventive": 0.0}
+        self.downtime_events: list[dict[str, Any]] = []
+        self._active_downtime_events: dict[str, dict[str, Any]] = {}
+        self._downtime_event_sequence = 0
         self.failure_delay_events = 0
         self.daily_readiness_samples: list[dict[str, Any]] = []
         self._daily_readiness_sample_days: set[int] = set()
@@ -247,7 +250,13 @@ class AircraftSupportV1Model:
             if should_stop:
                 break
         self._finalize_unresolved_mission_successes()
-        return {"metrics": self.snapshot(), "frames": frames, "events": copy.deepcopy(self.event_log)}
+        self._close_all_downtime_events()
+        return {
+            "metrics": self.snapshot(),
+            "frames": frames,
+            "events": copy.deepcopy(self.event_log),
+            "downtime_events": copy.deepcopy(self.downtime_events),
+        }
 
     def step(self) -> bool:
         """Advance the model by one runtime tick for Solara/Mesa controls."""
@@ -286,6 +295,7 @@ class AircraftSupportV1Model:
             raise
 
     def snapshot(self) -> dict[str, Any]:
+        downtime_summary = self._downtime_event_summary()
         planned_sorties = sum(mission.required_aircraft for mission in self.missions) or 1
         available = sum(1 for aircraft in self.aircraft if aircraft.state == "available")
         active_jobs = sum(1 for job in self.jobs if job.state == "running")
@@ -334,7 +344,7 @@ class AircraftSupportV1Model:
             "sortie_count": sum(1 for aircraft in self.aircraft if aircraft.state == "flying"),
             "postflight_count": sum(1 for aircraft in self.aircraft if aircraft.postflight_required),
             "preventive_count": sum(1 for aircraft in self.aircraft if aircraft.preventive_due),
-            "downtime_preventive_events": self.preventive_maintenance_events,
+            "downtime_preventive_events": downtime_summary["preventive"]["event_count"],
             "planned_sorties": planned_sorties,
             "planned_mission_waves": len(executable_missions),
             "successful_mission_waves": successful_mission_waves,
@@ -347,14 +357,14 @@ class AircraftSupportV1Model:
             "spare_utilization": min(1.0, self.spare_consumed_total / total_inventory),
             "shortage_events": self.shortage_events,
             "transport_in_transit_count": len(self.transport_shipments),
-            "downtime_failure_events": self.failure_delay_events,
-            "downtime_spare_shortage_events": self.shortage_events,
+            "downtime_failure_events": downtime_summary["failure"]["event_count"],
+            "downtime_spare_shortage_events": downtime_summary["spare_shortage"]["event_count"],
             "downtime_resource_delay_events": self.resource_delay_events,
-            "downtime_equipment_shortage_events": self.equipment_shortage_events,
-            "downtime_failure_hours": self.downtime_minutes["failure"] / 60.0,
-            "downtime_equipment_shortage_hours": self.downtime_minutes["equipment_shortage"] / 60.0,
-            "downtime_spare_shortage_hours": self.downtime_minutes["spare_shortage"] / 60.0,
-            "downtime_preventive_hours": self.downtime_minutes["preventive"] / 60.0,
+            "downtime_equipment_shortage_events": downtime_summary["equipment_shortage"]["event_count"],
+            "downtime_failure_hours": downtime_summary["failure"]["duration_minutes"] / 60.0,
+            "downtime_equipment_shortage_hours": downtime_summary["equipment_shortage"]["duration_minutes"] / 60.0,
+            "downtime_spare_shortage_hours": downtime_summary["spare_shortage"]["duration_minutes"] / 60.0,
+            "downtime_preventive_hours": downtime_summary["preventive"]["duration_minutes"] / 60.0,
             "transport_replenishment_events": self.transport_replenishment_events,
             "total_transport_delay_minutes": self.total_transport_delay,
             "mean_transport_delay": mean_transport_delay,
@@ -369,17 +379,212 @@ class AircraftSupportV1Model:
 
     def _record_downtime_minutes(self) -> None:
         tick = max(1.0, float(self.tick_minutes or 1))
-        failed_tails = {item.tail_number for item in self.aircraft if item.failed_component_id is not None}
-        equipment_tails = {job.tail_number for job in self.jobs if job.state == "waiting" and job.shortage_reason == "equipment_capacity"}
-        spare_tails = {job.tail_number for job in self.jobs if job.state == "waiting" and str(job.shortage_reason or "").startswith(("spare:", "in_transit"))}
-        preventive_tails = {job.tail_number for job in self.jobs if job.kind == "preventive" and job.state in {"waiting", "running"}}
-        equipment_tails -= failed_tails
-        spare_tails -= failed_tails | equipment_tails
-        preventive_tails -= failed_tails | equipment_tails | spare_tails
-        self.downtime_minutes["failure"] += len(failed_tails) * tick
-        self.downtime_minutes["equipment_shortage"] += len(equipment_tails) * tick
-        self.downtime_minutes["spare_shortage"] += len(spare_tails) * tick
-        self.downtime_minutes["preventive"] += len(preventive_tails) * tick
+        interval_start = max(0.0, float(self.minute) - tick)
+        current: dict[str, dict[str, Any]] = {}
+        for aircraft in self.aircraft:
+            event = self._current_downtime_event(aircraft, interval_start)
+            if event is not None:
+                current[aircraft.tail_number] = event
+
+        for tail_number, active in list(self._active_downtime_events.items()):
+            candidate = current.get(tail_number)
+            if (
+                candidate is None
+                or candidate["factor"] != active["factor"]
+                or candidate.get("job_id") != active.get("job_id")
+                or candidate.get("task_name") != active.get("task_name")
+            ):
+                self._close_downtime_event(tail_number)
+
+        for tail_number, candidate in current.items():
+            active = self._active_downtime_events.get(tail_number)
+            if active is None:
+                self._downtime_event_sequence += 1
+                candidate["event_id"] = f"downtime-{self._downtime_event_sequence:06d}"
+                self._active_downtime_events[tail_number] = candidate
+                active = candidate
+            active["end_minute"] = float(self.minute)
+            active["duration_minutes"] = max(0.0, float(active["end_minute"]) - float(active["start_minute"]))
+
+        summary = self._downtime_event_summary()
+        self.downtime_minutes = {factor: values["duration_minutes"] for factor, values in summary.items()}
+
+    def _current_downtime_event(self, aircraft: AircraftState, start_minute: float) -> dict[str, Any] | None:
+        active_jobs = [
+            job for job in self.jobs
+            if job.tail_number == aircraft.tail_number and job.state in {"waiting", "running"}
+        ]
+        spare_job = next(
+            (job for job in active_jobs if job.state == "waiting" and str(job.shortage_reason or "").startswith(("spare:", "in_transit"))),
+            None,
+        )
+        equipment_job = next(
+            (job for job in active_jobs if job.state == "waiting" and job.shortage_reason == "equipment_capacity"),
+            None,
+        )
+        repair_job = next((job for job in active_jobs if job.kind == "repair"), None)
+        preventive_job = next((job for job in active_jobs if job.kind == "preventive"), None)
+        # A direct waiting gate overrides the underlying maintenance cause.  If no
+        # gate exists, unplanned repair precedes planned preventive maintenance.
+        if spare_job is not None:
+            return self._downtime_event_payload("spare_shortage", aircraft, spare_job, start_minute)
+        if equipment_job is not None:
+            return self._downtime_event_payload("equipment_shortage", aircraft, equipment_job, start_minute)
+        if aircraft.failed_component_id is not None or repair_job is not None:
+            return self._downtime_event_payload("failure", aircraft, repair_job, start_minute)
+        if preventive_job is not None or aircraft.preventive_due:
+            return self._downtime_event_payload("preventive", aircraft, preventive_job, start_minute)
+        return None
+
+    def _downtime_event_payload(
+        self,
+        factor: str,
+        aircraft: AircraftState,
+        job: JobState | None,
+        start_minute: float,
+    ) -> dict[str, Any]:
+        task = job.current_task if job is not None else None
+        task = task if isinstance(task, dict) else {}
+        node = self.nodes.get(job.resource_node_id) if job is not None else None
+        mission_id = job.mission_id if job is not None else aircraft.current_mission_id
+        mission = self._mission_by_id(mission_id)
+        component = self._component_by_id(job.component_id if job is not None else aircraft.failed_component_id)
+        details: dict[str, Any]
+        if factor == "spare_shortage":
+            spare_name, required = self._task_spare_requirement(job, task) if job is not None else (None, 0)
+            available = int((node or {}).get("inventory", {}).get(spare_name, 0) or 0) if spare_name else None
+            arrivals = [
+                shipment.arrival_minute for shipment in self.transport_shipments
+                if job is not None
+                and shipment.destination_node_id == job.resource_node_id
+                and shipment.spare_type == spare_name
+            ]
+            details = {
+                "spare_name": spare_name,
+                "spare_model": None,
+                "required_quantity": required or None,
+                "available_quantity": available,
+                "shortage_quantity": max(0, required - available) if available is not None else None,
+                "arrival_minute": min(arrivals) if arrivals else None,
+                "wait_end_minute": None,
+            }
+        elif factor == "equipment_shortage":
+            activity = self._activity_by_id(job.activity_id) if job is not None else {}
+            required = _resource_quantity(
+                task.get("equipment"),
+                task.get("requiredDevices", task.get("required_devices", activity.get("required_devices"))),
+                default=1,
+            )
+            available = max(0, int((node or {}).get("equipment_capacity", 0)) - int((node or {}).get("equipment_in_use", 0)))
+            details = {
+                "equipment_name": task.get("equipmentName") or task.get("equipment_name"),
+                "equipment_model": task.get("equipmentModel") or task.get("equipment_model"),
+                "required_quantity": required,
+                "available_quantity": available,
+                "shortage_quantity": max(0, required - available),
+                "wait_minutes": None,
+            }
+        elif factor == "failure":
+            details = {
+                "component_id": (component or {}).get("id") or aircraft.failed_component_id,
+                "component_name": (component or {}).get("name"),
+                "failure_mode": (component or {}).get("failure_mode"),
+                "failure_minute": aircraft.failed_component_minute,
+                "repair_completed_minute": None,
+            }
+        else:
+            trigger_types = []
+            if self._preventive_interval_days() > 0 and self.minute - aircraft.last_preventive_minute >= self._preventive_interval_days() * 1440:
+                trigger_types.append("calendar_time")
+            if self._preventive_interval_hours() > 0 and aircraft.flight_hours >= self._preventive_interval_hours():
+                trigger_types.append("flight_hours")
+            if self._preventive_interval_landings() > 0 and aircraft.landing_count >= self._preventive_interval_landings():
+                trigger_types.append("landings")
+            details = {
+                "maintenance_type": job.activity_name if job is not None else self.preventive_activity.get("name"),
+                "trigger_type": ",".join(trigger_types) if trigger_types else None,
+                "trigger_condition": None,
+                "planned_start_minute": start_minute,
+                "completed_minute": None,
+            }
+        return {
+            "event_id": "",
+            "factor": factor,
+            "tail_number": aircraft.tail_number,
+            "aircraft_type": aircraft.aircraft_type,
+            "mission_id": mission_id,
+            "mission_name": getattr(mission, "basic_task_name", None) if mission is not None else None,
+            "mission_phase": job.kind if job is not None else None,
+            "support_node_id": job.resource_node_id if job is not None else None,
+            "support_node_name": (node or {}).get("name"),
+            "job_id": job.job_id if job is not None else None,
+            "job_kind": job.kind if job is not None else None,
+            "task_name": task.get("workName") or task.get("activityCode") or (job.activity_name if job is not None else None),
+            "start_minute": start_minute,
+            "end_minute": float(self.minute),
+            "duration_minutes": max(0.0, float(self.minute) - start_minute),
+            "description": self._downtime_description(factor, aircraft, job),
+            "details": details,
+        }
+
+    @staticmethod
+    def _downtime_description(factor: str, aircraft: AircraftState, job: JobState | None) -> str:
+        labels = {
+            "spare_shortage": "waiting for required spare",
+            "equipment_shortage": "waiting for support equipment",
+            "failure": "unavailable after equipment failure",
+            "preventive": "under preventive maintenance",
+        }
+        suffix = f" ({job.job_id})" if job is not None else ""
+        return f"{aircraft.tail_number} {labels[factor]}{suffix}"
+
+    def _close_downtime_event(self, tail_number: str) -> None:
+        event = self._active_downtime_events.pop(tail_number, None)
+        if event is None or float(event.get("duration_minutes", 0) or 0) <= 0:
+            return
+        details = event.get("details") if isinstance(event.get("details"), dict) else {}
+        factor = str(event.get("factor") or "")
+        if factor == "equipment_shortage":
+            details["wait_minutes"] = float(event["duration_minutes"])
+        elif factor == "spare_shortage":
+            details["wait_end_minute"] = event.get("end_minute")
+        elif factor == "failure":
+            aircraft = self._aircraft_by_tail(tail_number)
+            active_repair = any(
+                job.tail_number == tail_number and job.kind == "repair" and job.state in {"waiting", "running"}
+                for job in self.jobs
+            )
+            if aircraft is not None and aircraft.failed_component_id is None and not active_repair:
+                details["repair_completed_minute"] = event.get("end_minute")
+        elif factor == "preventive":
+            aircraft = self._aircraft_by_tail(tail_number)
+            active_preventive = any(
+                job.tail_number == tail_number and job.kind == "preventive" and job.state in {"waiting", "running"}
+                for job in self.jobs
+            )
+            if aircraft is not None and not aircraft.preventive_due and not active_preventive:
+                details["completed_minute"] = event.get("end_minute")
+        self.downtime_events.append(copy.deepcopy(event))
+
+    def _close_all_downtime_events(self) -> None:
+        for tail_number in list(self._active_downtime_events):
+            self._close_downtime_event(tail_number)
+
+    def _downtime_event_summary(self) -> dict[str, dict[str, float | int]]:
+        events = [*self.downtime_events, *self._active_downtime_events.values()]
+        summary: dict[str, dict[str, float | int]] = {
+            factor: {"event_count": 0, "duration_minutes": 0.0}
+            for factor in ("failure", "equipment_shortage", "spare_shortage", "preventive")
+        }
+        for event in events:
+            factor = str(event.get("factor") or "")
+            if factor not in summary:
+                continue
+            summary[factor]["event_count"] = int(summary[factor]["event_count"]) + 1
+            summary[factor]["duration_minutes"] = float(summary[factor]["duration_minutes"]) + max(
+                0.0, float(event.get("duration_minutes", 0) or 0)
+            )
+        return summary
 
     def _stop_decision(self) -> tuple[str, list[str]]:
         policy_met, policy_conditions = self._stop_policy_met()

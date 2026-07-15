@@ -288,6 +288,54 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual({row["label"] for row in downtime["rows"]}, {"装备故障", "保障设备短缺", "备件短缺", "预防性维修"})
         self.assertAlmostEqual(sum(row["duration_contribution"] for row in downtime["rows"]), 1.0)
 
+        event_backed = _lite_mesa_downtime_factors_result(
+            {"data": []},
+            {"downtime_failure_events": 99, "downtime_failure_hours": 99},
+            [
+                {
+                    "sample_index": 0,
+                    "seed": 17,
+                    "downtime_events": [
+                        {
+                            "event_id": "d-1", "factor": "spare_shortage", "tail_number": "A-1",
+                            "start_minute": 0, "end_minute": 120, "duration_minutes": 120,
+                            "details": {"spare_name": "LRU", "required_quantity": 1, "available_quantity": 0},
+                        },
+                        {
+                            "event_id": "d-2", "factor": "preventive", "tail_number": "A-2",
+                            "start_minute": 0, "end_minute": 60, "duration_minutes": 60,
+                            "details": {"trigger_type": None},
+                        },
+                    ],
+                },
+                {
+                    "sample_index": 1,
+                    "seed": 18,
+                    "downtime_events": [
+                        {
+                            "event_id": "d-1", "factor": "spare_shortage", "tail_number": "A-3",
+                            "start_minute": 0, "end_minute": 60, "duration_minutes": 60,
+                            "details": {"spare_name": "LRU", "required_quantity": 1, "available_quantity": 0},
+                        }
+                    ],
+                },
+            ],
+            {"topN": 10},
+        )
+        self.assertEqual(len(event_backed["event_details"]), 3)
+        self.assertEqual(event_backed["event_details"][0]["sample_index"], 0)
+        self.assertEqual(len({event["event_id"] for event in event_backed["event_details"]}), 3)
+        self.assertEqual(event_backed["event_details"][0]["source_event_id"], "d-1")
+        by_reason = {row["reason"]: row for row in event_backed["rows"]}
+        self.assertEqual(by_reason["spare_shortage"]["event_count"], 2)
+        self.assertEqual(by_reason["spare_shortage"]["downtime_hours"], 3)
+        self.assertEqual(by_reason["preventive"]["event_count"], 1)
+        self.assertEqual(by_reason["failure"]["event_count"], 0)
+        self.assertAlmostEqual(
+            sum(row["downtime_hours"] for row in event_backed["rows"]),
+            sum(event["duration_minutes"] for event in event_backed["event_details"]) / 60,
+        )
+
     def test_rms_export_is_a_real_xlsx_workbook(self) -> None:
         from openpyxl import load_workbook
         from io import BytesIO
