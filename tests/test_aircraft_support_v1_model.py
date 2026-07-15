@@ -248,6 +248,36 @@ class AircraftSupportV1ModelTest(unittest.TestCase):
         personnel_wait = model._current_downtime_event(model.aircraft[1], 3)
         self.assertEqual(personnel_wait["factor"], "failure")
 
+    def test_downtime_ledger_keeps_same_factor_across_task_transitions(self) -> None:
+        model = AircraftSupportV1Model(_minimal_inputs())
+        aircraft = model.aircraft[0]
+        aircraft.failed_component_id = "component-1"
+        job = JobState(
+            job_id="repair-1",
+            tail_number=aircraft.tail_number,
+            kind="repair",
+            activity_id="repair",
+            activity_name="repair",
+            tasks=[{"workName": "diagnose"}, {"workName": "replace"}],
+            priority=1,
+            resource_node_id="deck",
+            state="running",
+            remaining=10,
+        )
+        model.jobs.append(job)
+
+        model.minute = 1
+        model._record_downtime_minutes()
+        job.task_index = 1
+        model.minute = 2
+        model._record_downtime_minutes()
+        model._close_all_downtime_events()
+
+        self.assertEqual(len(model.downtime_events), 1)
+        self.assertEqual(model.downtime_events[0]["factor"], "failure")
+        self.assertEqual(model.downtime_events[0]["duration_minutes"], 2)
+        self.assertEqual(model.snapshot()["downtime_failure_events"], 1)
+
     def test_blank_activity_resource_uses_aircraft_airport_support_node(self) -> None:
         inputs = _minimal_inputs()
         inputs["aircraft"] = {

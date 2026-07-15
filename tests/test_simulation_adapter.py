@@ -649,7 +649,7 @@ class SimulationAdapterTest(unittest.TestCase):
         self.assertEqual(projection_payload["model_family"], "aircraft_support_v1")
         self.assertEqual(
             {row["factor"] for row in projection_payload["data"]},
-            {"failure", "spare_shortage", "resource_delay", "postflight", "preventive", "transport_delay"},
+            {"failure", "equipment_shortage", "spare_shortage", "preventive"},
         )
 
         scope = report_payload["m9_7_4_behavior_scope"]

@@ -391,8 +391,6 @@ class AircraftSupportV1Model:
             if (
                 candidate is None
                 or candidate["factor"] != active["factor"]
-                or candidate.get("job_id") != active.get("job_id")
-                or candidate.get("task_name") != active.get("task_name")
             ):
                 self._close_downtime_event(tail_number)
 
