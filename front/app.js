@@ -84,6 +84,7 @@ import {
   buildEquipmentComponentTreeModel,
   componentBelongsToAircraftModel,
   deleteEquipmentNodeForSelectionModel,
+  equipmentComponentSubtreeIds,
   equipmentComponentsForSelectionModel,
   equipmentKOutOfNQuantity,
   normalizeEquipmentComponentKOutOfN,
@@ -5710,8 +5711,8 @@ function renderEquipmentModeling(page) {
             <span>${htmlEscape(equipmentSelectionSummary(selectedState, visibleRowCount))}</span>
           </div>
           <div class="equipment-import-row">
-            <button type="button" data-equipment-download-template>下载模板</button>
-            <label class="rms-file-button">上传文件<input data-equipment-import-file type="file" accept=".csv,.tsv,.json,application/json,text/csv,text/tab-separated-values"></label>
+            <button type="button" class="equipment-template-action" data-equipment-download-template>下载模板</button>
+            <label class="equipment-template-action">上传文件<input data-equipment-import-file type="file" accept=".csv,.tsv,.json,application/json,text/csv,text/tab-separated-values"></label>
             <p class="rms-import-status">${htmlEscape(equipmentImportStatus)}</p>
           </div>
           ${showEquipmentSystemTable ? renderEquipmentSystemTable(selectedState) : importedDataEmptyState(page.name || "装备系统建模")}
@@ -6216,7 +6217,7 @@ function renderEquipmentSystemTableRow(component, index, selectedState) {
   return `
     <tr class="${selected ? "selected-table-row" : ""}">
       <td>${equipmentTableInput("组件名称", `components.${index}.name`)}</td>
-      <td>${equipmentTableInput("父节点", `components.${index}.parentId`)}</td>
+      <td>${equipmentParentNodeSelect(component, index)}</td>
       <td>${equipmentTableInput("数量n", `components.${index}.quantity`, "number", { min: "1", step: "1" })}</td>
       <td>${equipmentComponentAttributeSelect(index)}</td>
       <td>${equipmentKOutOfNInput(index)}</td>
@@ -6230,6 +6231,33 @@ function renderEquipmentSystemTableRow(component, index, selectedState) {
 
 function equipmentTableInput(label, path, type = "text", attrs = {}) {
   return valueInput(path, type, { ...attrs, "aria-label": label });
+}
+
+function equipmentParentNodeSelect(component, index) {
+  const componentId = String(component?.id || "");
+  const aircraftModel = component?.aircraftModel || wholeMachineModels()[0] || "";
+  const selectedParentId = String(component?.parentId || "aircraft-root");
+  const excludedParentIds = new Set(equipmentComponentSubtreeIds(scenario, {
+    aircraftModel,
+    rootComponentId: componentId
+  }));
+  const options = [
+    { value: "aircraft-root", label: "整机级" },
+    ...(scenario.components || [])
+      .filter((candidate) => (
+        String(candidate?.id || "")
+        && !excludedParentIds.has(String(candidate.id))
+        && componentBelongsToAircraft(candidate, aircraftModel)
+      ))
+      .map((candidate) => ({
+        value: String(candidate.id),
+        label: String(candidate.name || "未命名组件")
+      }))
+  ];
+  if (!options.some((option) => option.value === selectedParentId)) {
+    options.push({ value: selectedParentId, label: "未找到父节点" });
+  }
+  return equipmentSelect(`components.${index}.parentId`, options, "父节点", selectedParentId);
 }
 
 function equipmentComponentAttributeSelect(index) {

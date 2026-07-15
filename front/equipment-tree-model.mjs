@@ -261,7 +261,7 @@ function deleteEquipmentComponentForSelectionModel(scenario, selectedState) {
   const componentId = String(component.id || "");
   if (!componentId) return { kind: "none", deletedComponentIds: [] };
   const aircraftModel = selectedState.aircraftModel || component.aircraftModel || wholeMachineModelsForScenario(scenario)[0] || "";
-  const deletedIds = collectEquipmentComponentSubtreeIds(scenario, {
+  const deletedIds = equipmentComponentSubtreeIds(scenario, {
     aircraftModel,
     rootComponentId: componentId
   });
@@ -281,7 +281,7 @@ function deleteEquipmentComponentForSelectionModel(scenario, selectedState) {
   };
 }
 
-function collectEquipmentComponentSubtreeIds(scenario, { aircraftModel, rootComponentId }) {
+export function equipmentComponentSubtreeIds(scenario, { aircraftModel, rootComponentId }) {
   const components = Array.isArray(scenario?.components) ? scenario.components : [];
   const deletedIds = [];
   const visited = new Set();

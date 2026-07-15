@@ -5,6 +5,7 @@ import {
   addEquipmentNodeForSelectionModel,
   buildEquipmentComponentTreeModel,
   deleteEquipmentNodeForSelectionModel,
+  equipmentComponentSubtreeIds,
   resolveEquipmentSelectionModel
 } from "../front/equipment-tree-model.mjs";
 import * as equipmentTreeModel from "../front/equipment-tree-model.mjs";
@@ -90,6 +91,24 @@ test("component tree model skips self-references and cyclic parent chains withou
   assert.equal(nodes[0].children.length, 1);
   assert.equal(nodes[0].children[0].component.id, "cycle-b");
   assert.deepEqual(nodes[0].children[0].children, []);
+});
+
+test("equipment component subtree identifies the current node and every descendant", () => {
+  const scenario = {
+    equipment: { model: "J-15", wholeMachineModels: ["J-15"] },
+    components: [
+      { id: "engine", aircraftModel: "J-15", parentId: "aircraft-root" },
+      { id: "control", aircraftModel: "J-15", parentId: "engine" },
+      { id: "sensor", aircraftModel: "J-15", parentId: "control" },
+      { id: "radar", aircraftModel: "J-15", parentId: "aircraft-root" },
+      { id: "other-aircraft", aircraftModel: "J-35", parentId: "engine" }
+    ]
+  };
+
+  assert.deepEqual(
+    equipmentComponentSubtreeIds(scenario, { aircraftModel: "J-15", rootComponentId: "engine" }),
+    ["engine", "control", "sensor"]
+  );
 });
 
 test("equipment authoring rows hide the root example node and follow tree order for aircraft selection", () => {

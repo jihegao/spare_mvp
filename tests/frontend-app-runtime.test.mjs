@@ -1450,6 +1450,36 @@ test("equipment aircraft-list selection renders whole aircraft rows and descenda
   }
 });
 
+test("equipment parent node selector uses Chinese names while retaining parent IDs", async () => {
+  const runtime = await setupRuntimeApp({
+    projectJson: createRuntimeProjectJson({
+      equipment: { model: "J-15", wholeMachineModels: ["J-15"], quantity: 2, initialReady: 2, minRequiredSorties: 1 },
+      components: [
+        { id: "engine-system", name: "发动机系统", aircraftModel: "J-15", parentId: "aircraft-root", productType: "LRU", quantity: 1 },
+        { id: "control-unit", name: "控制单元", aircraftModel: "J-15", parentId: "engine-system", productType: "SRU", quantity: 1 }
+      ]
+    })
+  });
+
+  try {
+    await runtime.click("[data-enter-workbench]", { projectId: "project-runtime" });
+    await runtime.setHash("feature=spare-planning-equipment-system");
+    await runtime.click("[data-select-equipment-aircraft]", { selectEquipmentAircraft: "J-15" });
+
+    const rightPanel = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf("equipment-system-table-panel"));
+    assert.match(rightPanel, /<option value="aircraft-root" selected>整机级<\/option>/);
+    assert.match(rightPanel, /<option value="engine-system" selected>发动机系统<\/option>/);
+    assert.doesNotMatch(rightPanel, /value="engine-system"[^>]*>engine-system<\/option>/);
+    assert.match(rightPanel, /class="equipment-template-action" data-equipment-download-template/);
+    assert.match(rightPanel, /<label class="equipment-template-action">上传文件/);
+
+    await runtime.change("[data-path]", { path: "components.1.parentId" }, { value: "aircraft-root" });
+    assert.match(runtime.appNode.innerHTML, /<option value="aircraft-root" selected>整机级<\/option>/);
+  } finally {
+    runtime.restore();
+  }
+});
+
 test("equipment aircraft rename keeps aircraftTypes catalog in saved Project draft", async () => {
   const runtime = await setupRuntimeApp({
     projectJson: createRuntimeProjectJson({
