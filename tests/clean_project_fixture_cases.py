@@ -232,14 +232,6 @@ def add_frontend_drift_fields(project: dict[str, Any]) -> dict[str, Any]:
     drifted["supportActivities"][0]["jobs"][0]["futureUiPanelState"] = "must stay out of clean Project"
     drifted["supportActivities"][0]["jobs"][0]["analysisRequests"] = {"largeSample": {"samples": 10}}
     drifted["supportActivities"][0]["jobs"][0]["runtimeOutputs"] = {"state": "debug"}
-    drifted["reliabilityBlockDiagram"] = {
-        "nodes": [
-            {
-                "id": "whole-aircraft",
-                "canvasLayout": {"x": 1, "y": 2},
-                "futureFrontendPanelState": "must stay out of clean Project",
-            }
-        ],
-        "edges": [],
-    }
+    drifted["reliabilityBlockDiagram"]["nodes"][0]["canvasLayout"] = {"x": 1, "y": 2}
+    drifted["reliabilityBlockDiagram"]["nodes"][0]["futureFrontendPanelState"] = "must stay out of clean Project"
     return drifted

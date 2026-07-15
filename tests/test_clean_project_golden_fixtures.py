@@ -76,7 +76,8 @@ class CleanProjectGoldenFixtureTest(unittest.TestCase):
         self.assertNotIn("futureUiPanelState", clean["supportActivityJobs"][0])
         self.assertNotIn("analysisRequests", clean["supportActivityJobs"][0])
         self.assertNotIn("runtimeOutputs", clean["supportActivityJobs"][0])
-        self.assertNotIn("reliabilityBlockDiagram", clean)
+        self.assertIn("reliabilityBlockDiagram", clean)
+        self.assertNotIn("treeLayout", clean["reliabilityBlockDiagram"]["nodes"][0])
 
     def test_public_template_m9_6_and_clean_fixture_derivation_stays_locked(self) -> None:
         public_template = json.loads(

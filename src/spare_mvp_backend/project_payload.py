@@ -57,6 +57,7 @@ _ROOT_CLEAN_PROJECT_FIELDS = {
     "basicMissions",
     "combatUnit",
     "components",
+    "reliabilityBlockDiagram",
     "supportNodes",
     "supportResources",
     "transportPolicies",
@@ -150,6 +151,31 @@ _COMPONENT_FIELDS = {
     "repairDistribution",
     "kOutOfN",
     "specialRepairProfile",
+}
+_RELIABILITY_BLOCK_NODE_FIELDS = {
+    "id",
+    "name",
+    "type",
+    "parentId",
+    "componentId",
+    "aircraftModel",
+    "connectionType",
+    "relation",
+    "logic",
+    "gateType",
+    "quantity",
+    "k",
+    "failureRate",
+    "failureRateUnit",
+    "mtbfHours",
+    "mtbfUnit",
+    "reliability",
+    "reliabilityUnit",
+    "failureDistribution",
+    "kOutOfN",
+}
+_RELIABILITY_BLOCK_EDGE_FIELDS = {
+    "from", "to", "source", "target", "type", "relation", "logic", "connectionType", "weight"
 }
 _SPECIAL_REPAIR_PROFILE_FIELDS = {"repairTimeMinutes"}
 _SUPPORT_NODE_FIELDS = {
@@ -470,6 +496,8 @@ def _validate_clean_project_fallback(project: dict[str, Any], target: str) -> No
     if not components:
         raise ValueError(f"clean Project JSON failed {target} schema at components: expected at least one component")
     _validate_clean_components(components, target)
+    if "reliabilityBlockDiagram" in project:
+        _validate_clean_reliability_block_diagram(project["reliabilityBlockDiagram"], target)
     _validate_clean_support_nodes(project["supportNodes"], target)
     if "supportResources" in project:
         _validate_clean_support_resources(project["supportResources"], target)
@@ -482,6 +510,41 @@ def _validate_clean_project_fallback(project: dict[str, Any], target: str) -> No
     _validate_clean_support_activities(project.get("supportActivities"), target)
     if "modelingImportValidation" in project:
         _validate_clean_modeling_import_validation(project["modelingImportValidation"], target)
+
+
+def _validate_clean_reliability_block_diagram(value: Any, target: str) -> None:
+    if not isinstance(value, dict):
+        raise ValueError(f"clean Project JSON failed {target} schema at reliabilityBlockDiagram: expected object")
+    extra = sorted(field for field in value if field not in {"nodes", "edges"})
+    if extra:
+        raise ValueError(
+            f"clean Project JSON failed {target} schema at reliabilityBlockDiagram: unexpected field {extra[0]}"
+        )
+    for collection, allowed_fields in (
+        ("nodes", _RELIABILITY_BLOCK_NODE_FIELDS),
+        ("edges", _RELIABILITY_BLOCK_EDGE_FIELDS),
+    ):
+        rows = value.get(collection)
+        if not isinstance(rows, list):
+            raise ValueError(
+                f"clean Project JSON failed {target} schema at reliabilityBlockDiagram.{collection}: expected array"
+            )
+        for index, row in enumerate(rows):
+            if not isinstance(row, dict):
+                raise ValueError(
+                    f"clean Project JSON failed {target} schema at reliabilityBlockDiagram.{collection}.{index}: expected object"
+                )
+            unexpected = sorted(field for field in row if field not in allowed_fields)
+            if unexpected:
+                raise ValueError(
+                    f"clean Project JSON failed {target} schema at reliabilityBlockDiagram.{collection}.{index}: "
+                    f"unexpected field {unexpected[0]}"
+                )
+            if collection == "nodes" and not isinstance(row.get("id"), str):
+                raise ValueError(
+                    f"clean Project JSON failed {target} schema at reliabilityBlockDiagram.nodes.{index}.id: "
+                    "expected string"
+                )
 
 
 def _require_clean_dict(project: dict[str, Any], field: str, target: str) -> dict[str, Any]:
@@ -1172,7 +1235,7 @@ def _strip_project_non_model_fields(project: dict[str, Any]) -> None:
     _strip_legacy_support_node_resource_fields(project)
     _normalize_project_component_k_out_of_n(project)
     _strip_component_non_model_fields(project.get("components"))
-    project.pop("reliabilityBlockDiagram", None)
+    _strip_reliability_block_diagram_non_model_fields(project.get("reliabilityBlockDiagram"))
     _migrate_root_mission_phases_to_basic_missions(project)
     project.pop("missionPhases", None)
     mission_profile = project.get("missionProfile")
@@ -1257,6 +1320,22 @@ def _strip_component_non_model_fields(value: Any) -> None:
             _keep_fields(profile, _SPECIAL_REPAIR_PROFILE_FIELDS)
             if not profile:
                 component.pop("specialRepairProfile", None)
+
+
+def _strip_reliability_block_diagram_non_model_fields(value: Any) -> None:
+    if not isinstance(value, dict):
+        return
+    _keep_fields(value, {"nodes", "edges"})
+    nodes = value.get("nodes")
+    if isinstance(nodes, list):
+        for node in nodes:
+            if isinstance(node, dict):
+                _keep_fields(node, _RELIABILITY_BLOCK_NODE_FIELDS)
+    edges = value.get("edges")
+    if isinstance(edges, list):
+        for edge in edges:
+            if isinstance(edge, dict):
+                _keep_fields(edge, _RELIABILITY_BLOCK_EDGE_FIELDS)
 
 
 def _normalize_mission_profile_reference_fields(project: dict[str, Any]) -> None:
@@ -2132,6 +2211,7 @@ def _prune_clean_project(project: dict[str, Any]) -> None:
     if isinstance(project.get("combatUnit"), dict):
         _prune_combat_unit(project["combatUnit"])
     _prune_components(project.get("components"))
+    _strip_reliability_block_diagram_non_model_fields(project.get("reliabilityBlockDiagram"))
     _prune_typed_list(project.get("supportNodes"), _SUPPORT_NODE_FIELDS)
     _prune_typed_list(project.get("supportResources"), _SUPPORT_RESOURCE_FIELDS)
     _prune_typed_list(project.get("transportPolicies"), _TRANSPORT_POLICY_FIELDS)

@@ -8,8 +8,10 @@ import io
 import json
 import math
 from pathlib import Path
+import sqlite3
 import threading
 from typing import Any
+from uuid import uuid4
 
 from src.spare_mvp_backend.errors import BackendApiError
 from src.spare_mvp_backend.modeling_import import modeling_import_to_project, validate_modeling_import_package
@@ -222,6 +224,63 @@ class BackendApi:
         projects = self.repository.list_projects()
         return {
             "projects": [_project_list_entry(project) for project in projects],
+        }
+
+    def save_aircraft_mission_reliability_analysis(
+        self,
+        project_id: str,
+        payload: dict[str, Any],
+        *,
+        actor_user_id: str,
+    ) -> dict[str, Any]:
+        """Persist a server-owned, immutable copy of an analysis result."""
+        self.repository.get_project(project_id)
+        analysis_id = str(payload.get("analysis_id") or payload.get("analysisId") or "").strip()
+        if not analysis_id:
+            analysis_id = f"aircraft-mission-reliability-analysis-{uuid4()}"
+        aircraft_model = _required_text(payload, "aircraft_model", "aircraftModel")
+        mission_profile_id = _required_text(payload, "mission_profile_id", "missionProfileId")
+        mission_profile_name = _required_text(payload, "mission_profile_name", "missionProfileName")
+        duration_hours = _required_finite_number(payload, "duration_hours", "durationHours")
+        if duration_hours <= 0:
+            raise ValueError("duration_hours must be greater than 0")
+        aircraft_reliability = _required_finite_number(
+            payload,
+            "aircraft_reliability",
+            "aircraftReliability",
+        )
+        if not 0 <= aircraft_reliability <= 1:
+            raise ValueError("aircraft_reliability must be between 0 and 1")
+        snapshot = payload.get("snapshot")
+        if not isinstance(snapshot, dict):
+            raise ValueError("snapshot must be an object")
+        analysis = {
+            "analysis_id": analysis_id,
+            "project_id": project_id,
+            "created_by": actor_user_id,
+            "aircraft_model": aircraft_model,
+            "mission_profile_id": mission_profile_id,
+            "mission_profile_name": mission_profile_name,
+            "duration_hours": duration_hours,
+            "aircraft_reliability": aircraft_reliability,
+            "snapshot": copy.deepcopy(snapshot),
+        }
+        try:
+            return self.repository.insert_aircraft_mission_reliability_analysis(analysis)
+        except sqlite3.IntegrityError as exc:
+            if "UNIQUE constraint failed" not in str(exc):
+                raise
+            raise BackendApiError(
+                "analysis_already_exists",
+                "Aircraft mission reliability analysis already exists",
+                analysis_id=analysis_id,
+            ) from exc
+
+    def list_aircraft_mission_reliability_analyses(self, project_id: str) -> dict[str, Any]:
+        self.repository.get_project(project_id)
+        return {
+            "project_id": project_id,
+            "analyses": self.repository.list_aircraft_mission_reliability_analyses(project_id),
         }
 
     def delete_project(self, project_id: str) -> dict[str, Any]:
@@ -1370,6 +1429,26 @@ class BackendApi:
 def _stable_hash(payload: dict[str, Any]) -> str:
     encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()[:12]
+
+
+def _required_text(payload: dict[str, Any], field: str, alias: str) -> str:
+    value = str(payload.get(field) or payload.get(alias) or "").strip()
+    if not value:
+        raise ValueError(f"{field} is required")
+    return value
+
+
+def _required_finite_number(payload: dict[str, Any], field: str, alias: str) -> float:
+    raw = payload.get(field) if field in payload else payload.get(alias)
+    if isinstance(raw, bool):
+        raise ValueError(f"{field} must be a finite number")
+    try:
+        value = float(raw)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{field} must be a finite number") from exc
+    if not math.isfinite(value):
+        raise ValueError(f"{field} must be a finite number")
+    return value
 
 
 def _truthy_query_flag(value: Any) -> bool:

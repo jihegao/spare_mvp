@@ -64,6 +64,24 @@ CREATE TABLE IF NOT EXISTS projects (
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS aircraft_mission_reliability_analyses (
+  analysis_id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  created_by TEXT NOT NULL,
+  aircraft_model TEXT NOT NULL,
+  mission_profile_id TEXT NOT NULL,
+  mission_profile_name TEXT NOT NULL,
+  duration_hours REAL NOT NULL,
+  aircraft_reliability REAL NOT NULL,
+  snapshot_json TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (project_id) REFERENCES projects(project_id),
+  FOREIGN KEY (created_by) REFERENCES users(user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_aircraft_mission_reliability_analyses_project_created
+ON aircraft_mission_reliability_analyses(project_id, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS modeling_imports (
   import_id TEXT PRIMARY KEY,
   project_id TEXT NOT NULL,

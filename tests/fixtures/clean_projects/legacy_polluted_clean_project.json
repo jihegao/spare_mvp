@@ -58,6 +58,15 @@
   },
   "project_id": "project-polluted-aircraft-support-v1",
   "project_version": "project-v0.1",
+  "reliabilityBlockDiagram": {
+    "edges": [],
+    "nodes": [
+      {
+        "id": "whole-aircraft",
+        "type": "system"
+      }
+    ]
+  },
   "scenarioId": "scenario-polluted-aircraft-support-v1",
   "schema_version": "project-v0",
   "supportActivities": [

@@ -14,6 +14,7 @@
           "basicMissions[].missionPhases",
           "airports",
           "components[].aircraftModel",
+          "components[].spareType",
           "components[].failureDistribution",
           "components[].kOutOfN",
           "components[].specialRepairProfile",
@@ -156,6 +157,7 @@
             "product_type": null,
             "quantity": 6,
             "repair_distribution": {},
+            "spare_type": null,
             "special_repair_profile": {}
           },
           {
@@ -176,6 +178,7 @@
             "product_type": "LRU",
             "quantity": 2,
             "repair_distribution": {},
+            "spare_type": "发动机备件",
             "special_repair_profile": {
               "repairTimeMinutes": 220
             }
@@ -198,6 +201,7 @@
             "product_type": "SRU",
             "quantity": 1,
             "repair_distribution": {},
+            "spare_type": "发动机备件",
             "special_repair_profile": {
               "repairTimeMinutes": 160
             }
@@ -220,6 +224,7 @@
             "product_type": "LRU",
             "quantity": 2,
             "repair_distribution": {},
+            "spare_type": "航电模块",
             "special_repair_profile": {
               "repairTimeMinutes": 150
             }
@@ -242,6 +247,7 @@
             "product_type": "SRU",
             "quantity": 1,
             "repair_distribution": {},
+            "spare_type": "航电模块",
             "special_repair_profile": {
               "repairTimeMinutes": 145
             }
@@ -264,6 +270,7 @@
             "product_type": "LRU",
             "quantity": 1,
             "repair_distribution": {},
+            "spare_type": "液压备件",
             "special_repair_profile": {
               "repairTimeMinutes": 135
             }
@@ -286,6 +293,7 @@
             "product_type": "LRU",
             "quantity": 2,
             "repair_distribution": {},
+            "spare_type": "发动机备件",
             "special_repair_profile": {
               "repairTimeMinutes": 210
             }
@@ -308,6 +316,7 @@
             "product_type": "LRU",
             "quantity": 2,
             "repair_distribution": {},
+            "spare_type": "航电模块",
             "special_repair_profile": {
               "repairTimeMinutes": 150
             }
@@ -330,6 +339,7 @@
             "product_type": "SRU",
             "quantity": 2,
             "repair_distribution": {},
+            "spare_type": "航电模块",
             "special_repair_profile": {
               "repairTimeMinutes": 125
             }
@@ -352,6 +362,7 @@
             "product_type": "LRU",
             "quantity": 1,
             "repair_distribution": {},
+            "spare_type": "液压备件",
             "special_repair_profile": {
               "repairTimeMinutes": 130
             }
@@ -637,6 +648,7 @@
             "jobs": [
               {
                 "activityCode": "OPS-001",
+                "applicableAircraft": "J-15",
                 "durationMinutes": 5,
                 "durationProfile": {
                   "distributionType": "三角分布",
@@ -668,6 +680,7 @@
               },
               {
                 "activityCode": "OPS-002",
+                "applicableAircraft": "J-15",
                 "durationMinutes": 10,
                 "durationProfile": {
                   "distributionType": "均匀分布",
@@ -714,6 +727,7 @@
             "jobs": [
               {
                 "activityCode": "REP-001",
+                "applicableAircraft": "J-15",
                 "durationMinutes": 40,
                 "durationProfile": {
                   "distributionType": "三角分布",
@@ -745,6 +759,7 @@
               },
               {
                 "activityCode": "REP-002",
+                "applicableAircraft": "J-15",
                 "durationMinutes": 90,
                 "durationProfile": {
                   "distributionType": "正态分布",
@@ -801,6 +816,7 @@
             "jobs": [
               {
                 "activityCode": "PM-001",
+                "applicableAircraft": "J-35",
                 "durationMinutes": 30,
                 "durationProfile": {
                   "distributionType": "固定值",
@@ -826,6 +842,7 @@
               },
               {
                 "activityCode": "PM-002",
+                "applicableAircraft": "J-35",
                 "durationMinutes": 70,
                 "durationProfile": {
                   "distributionType": "三角分布",
@@ -900,6 +917,7 @@
             "jobs": [
               {
                 "activityCode": "BA-001",
+                "applicableAircraft": "J-15",
                 "durationMinutes": 5,
                 "equipment": [
                   {
@@ -938,6 +956,7 @@
             "jobs": [
               {
                 "activityCode": "BA-002",
+                "applicableAircraft": "J-15",
                 "durationMinutes": 30,
                 "equipment": [
                   {
@@ -1314,6 +1333,7 @@
             "parentId": "aircraft-root",
             "productType": "LRU",
             "quantity": 2,
+            "spareType": "发动机备件",
             "specialRepairProfile": {
               "repairTimeMinutes": 220
             }
@@ -1334,6 +1354,7 @@
             "parentId": "j15-engine",
             "productType": "SRU",
             "quantity": 1,
+            "spareType": "发动机备件",
             "specialRepairProfile": {
               "repairTimeMinutes": 160
             }
@@ -1354,6 +1375,7 @@
             "parentId": "aircraft-root",
             "productType": "LRU",
             "quantity": 2,
+            "spareType": "航电模块",
             "specialRepairProfile": {
               "repairTimeMinutes": 150
             }
@@ -1374,6 +1396,7 @@
             "parentId": "j15-avionics",
             "productType": "SRU",
             "quantity": 1,
+            "spareType": "航电模块",
             "specialRepairProfile": {
               "repairTimeMinutes": 145
             }
@@ -1394,6 +1417,7 @@
             "parentId": "aircraft-root",
             "productType": "LRU",
             "quantity": 1,
+            "spareType": "液压备件",
             "specialRepairProfile": {
               "repairTimeMinutes": 135
             }
@@ -1414,6 +1438,7 @@
             "parentId": "aircraft-root",
             "productType": "LRU",
             "quantity": 2,
+            "spareType": "发动机备件",
             "specialRepairProfile": {
               "repairTimeMinutes": 210
             }
@@ -1434,6 +1459,7 @@
             "parentId": "aircraft-root",
             "productType": "LRU",
             "quantity": 2,
+            "spareType": "航电模块",
             "specialRepairProfile": {
               "repairTimeMinutes": 150
             }
@@ -1454,6 +1480,7 @@
             "parentId": "j35-avionics",
             "productType": "SRU",
             "quantity": 2,
+            "spareType": "航电模块",
             "specialRepairProfile": {
               "repairTimeMinutes": 125
             }
@@ -1474,6 +1501,7 @@
             "parentId": "aircraft-root",
             "productType": "LRU",
             "quantity": 1,
+            "spareType": "液压备件",
             "specialRepairProfile": {
               "repairTimeMinutes": 130
             }
@@ -1570,6 +1598,66 @@
         },
         "project_id": "project-carrier-day-night",
         "project_version": "import-v1",
+        "reliabilityBlockDiagram": {
+          "edges": [
+            {
+              "from": "aircraft",
+              "to": "engine",
+              "type": "串联",
+              "weight": 1
+            },
+            {
+              "from": "aircraft",
+              "to": "avionics",
+              "type": "串联",
+              "weight": 1
+            },
+            {
+              "from": "aircraft",
+              "to": "hydraulic",
+              "type": "串联",
+              "weight": 1
+            }
+          ],
+          "nodes": [
+            {
+              "connectionType": "串联",
+              "failureRate": 0.01,
+              "id": "aircraft",
+              "mtbfHours": 300,
+              "name": "整机",
+              "parentId": null,
+              "type": "system"
+            },
+            {
+              "connectionType": "串联",
+              "failureRate": 0.055,
+              "id": "engine",
+              "mtbfHours": 95,
+              "name": "发动机",
+              "parentId": "aircraft",
+              "type": "component"
+            },
+            {
+              "connectionType": "串联",
+              "failureRate": 0.04,
+              "id": "avionics",
+              "mtbfHours": 120,
+              "name": "航电系统",
+              "parentId": "aircraft",
+              "type": "component"
+            },
+            {
+              "connectionType": "串联",
+              "failureRate": 0.05,
+              "id": "hydraulic",
+              "mtbfHours": 105,
+              "name": "液压系统",
+              "parentId": "aircraft",
+              "type": "component"
+            }
+          ]
+        },
         "scenarioId": "import-carrier-day-night-001",
         "schema_version": "project-v0",
         "supportActivities": [
@@ -1688,6 +1776,7 @@
         "supportActivityJobs": [
           {
             "activityCode": "OPS-001",
+            "applicableAircraft": "J-15",
             "durationMinutes": 5,
             "durationProfile": {
               "distributionType": "三角分布",
@@ -1718,6 +1807,7 @@
           },
           {
             "activityCode": "OPS-002",
+            "applicableAircraft": "J-15",
             "durationMinutes": 10,
             "durationProfile": {
               "distributionType": "均匀分布",
@@ -1743,6 +1833,7 @@
           },
           {
             "activityCode": "REP-001",
+            "applicableAircraft": "J-15",
             "durationMinutes": 40,
             "durationProfile": {
               "distributionType": "三角分布",
@@ -1773,6 +1864,7 @@
           },
           {
             "activityCode": "REP-002",
+            "applicableAircraft": "J-15",
             "durationMinutes": 90,
             "durationProfile": {
               "distributionType": "正态分布",
@@ -1808,6 +1900,7 @@
           },
           {
             "activityCode": "PM-001",
+            "applicableAircraft": "J-35",
             "durationMinutes": 30,
             "durationProfile": {
               "distributionType": "固定值",
@@ -1832,6 +1925,7 @@
           },
           {
             "activityCode": "PM-002",
+            "applicableAircraft": "J-35",
             "durationMinutes": 70,
             "durationProfile": {
               "distributionType": "三角分布",
@@ -1868,6 +1962,7 @@
           },
           {
             "activityCode": "BA-001",
+            "applicableAircraft": "J-15",
             "durationMinutes": 5,
             "equipment": [
               {
@@ -1887,6 +1982,7 @@
           },
           {
             "activityCode": "BA-002",
+            "applicableAircraft": "J-15",
             "durationMinutes": 30,
             "equipment": [
               {
@@ -2346,6 +2442,7 @@
           "parentId": "aircraft-root",
           "productType": "LRU",
           "quantity": 2,
+          "spareType": "发动机备件",
           "specialRepairProfile": {
             "repairTimeMinutes": 220
           }
@@ -2366,6 +2463,7 @@
           "parentId": "j15-engine",
           "productType": "SRU",
           "quantity": 1,
+          "spareType": "发动机备件",
           "specialRepairProfile": {
             "repairTimeMinutes": 160
           }
@@ -2386,6 +2484,7 @@
           "parentId": "aircraft-root",
           "productType": "LRU",
           "quantity": 2,
+          "spareType": "航电模块",
           "specialRepairProfile": {
             "repairTimeMinutes": 150
           }
@@ -2406,6 +2505,7 @@
           "parentId": "j15-avionics",
           "productType": "SRU",
           "quantity": 1,
+          "spareType": "航电模块",
           "specialRepairProfile": {
             "repairTimeMinutes": 145
           }
@@ -2426,6 +2526,7 @@
           "parentId": "aircraft-root",
           "productType": "LRU",
           "quantity": 1,
+          "spareType": "液压备件",
           "specialRepairProfile": {
             "repairTimeMinutes": 135
           }
@@ -2446,6 +2547,7 @@
           "parentId": "aircraft-root",
           "productType": "LRU",
           "quantity": 2,
+          "spareType": "发动机备件",
           "specialRepairProfile": {
             "repairTimeMinutes": 210
           }
@@ -2466,6 +2568,7 @@
           "parentId": "aircraft-root",
           "productType": "LRU",
           "quantity": 2,
+          "spareType": "航电模块",
           "specialRepairProfile": {
             "repairTimeMinutes": 150
           }
@@ -2486,6 +2589,7 @@
           "parentId": "j35-avionics",
           "productType": "SRU",
           "quantity": 2,
+          "spareType": "航电模块",
           "specialRepairProfile": {
             "repairTimeMinutes": 125
           }
@@ -2506,6 +2610,7 @@
           "parentId": "aircraft-root",
           "productType": "LRU",
           "quantity": 1,
+          "spareType": "液压备件",
           "specialRepairProfile": {
             "repairTimeMinutes": 130
           }
@@ -2602,6 +2707,66 @@
       },
       "project_id": "project-carrier-day-night",
       "project_version": "import-v1",
+      "reliabilityBlockDiagram": {
+        "edges": [
+          {
+            "from": "aircraft",
+            "to": "engine",
+            "type": "串联",
+            "weight": 1
+          },
+          {
+            "from": "aircraft",
+            "to": "avionics",
+            "type": "串联",
+            "weight": 1
+          },
+          {
+            "from": "aircraft",
+            "to": "hydraulic",
+            "type": "串联",
+            "weight": 1
+          }
+        ],
+        "nodes": [
+          {
+            "connectionType": "串联",
+            "failureRate": 0.01,
+            "id": "aircraft",
+            "mtbfHours": 300,
+            "name": "整机",
+            "parentId": null,
+            "type": "system"
+          },
+          {
+            "connectionType": "串联",
+            "failureRate": 0.055,
+            "id": "engine",
+            "mtbfHours": 95,
+            "name": "发动机",
+            "parentId": "aircraft",
+            "type": "component"
+          },
+          {
+            "connectionType": "串联",
+            "failureRate": 0.04,
+            "id": "avionics",
+            "mtbfHours": 120,
+            "name": "航电系统",
+            "parentId": "aircraft",
+            "type": "component"
+          },
+          {
+            "connectionType": "串联",
+            "failureRate": 0.05,
+            "id": "hydraulic",
+            "mtbfHours": 105,
+            "name": "液压系统",
+            "parentId": "aircraft",
+            "type": "component"
+          }
+        ]
+      },
       "scenarioId": "import-carrier-day-night-001",
       "schema_version": "project-v0",
       "supportActivities": [
@@ -2720,6 +2885,7 @@
       "supportActivityJobs": [
         {
           "activityCode": "OPS-001",
+          "applicableAircraft": "J-15",
           "durationMinutes": 5,
           "durationProfile": {
             "distributionType": "三角分布",
@@ -2750,6 +2916,7 @@
         },
         {
           "activityCode": "OPS-002",
+          "applicableAircraft": "J-15",
           "durationMinutes": 10,
           "durationProfile": {
             "distributionType": "均匀分布",
@@ -2775,6 +2942,7 @@
         },
         {
           "activityCode": "REP-001",
+          "applicableAircraft": "J-15",
           "durationMinutes": 40,
           "durationProfile": {
             "distributionType": "三角分布",
@@ -2805,6 +2973,7 @@
         },
         {
           "activityCode": "REP-002",
+          "applicableAircraft": "J-15",
           "durationMinutes": 90,
           "durationProfile": {
             "distributionType": "正态分布",
@@ -2840,6 +3009,7 @@
         },
         {
           "activityCode": "PM-001",
+          "applicableAircraft": "J-35",
           "durationMinutes": 30,
           "durationProfile": {
             "distributionType": "固定值",
@@ -2864,6 +3034,7 @@
         },
         {
           "activityCode": "PM-002",
+          "applicableAircraft": "J-35",
           "durationMinutes": 70,
           "durationProfile": {
             "distributionType": "三角分布",
@@ -2900,6 +3071,7 @@
         },
         {
           "activityCode": "BA-001",
+          "applicableAircraft": "J-15",
           "durationMinutes": 5,
           "equipment": [
             {
@@ -2919,6 +3091,7 @@
         },
         {
           "activityCode": "BA-002",
+          "applicableAircraft": "J-15",
           "durationMinutes": 30,
           "equipment": [
             {
@@ -3391,6 +3564,7 @@
         "parentId": "aircraft-root",
         "productType": "LRU",
         "quantity": 2,
+        "spareType": "发动机备件",
         "specialRepairProfile": {
           "repairTimeMinutes": 220
         }
@@ -3411,6 +3585,7 @@
         "parentId": "j15-engine",
         "productType": "SRU",
         "quantity": 1,
+        "spareType": "发动机备件",
         "specialRepairProfile": {
           "repairTimeMinutes": 160
         }
@@ -3431,6 +3606,7 @@
         "parentId": "aircraft-root",
         "productType": "LRU",
         "quantity": 2,
+        "spareType": "航电模块",
         "specialRepairProfile": {
           "repairTimeMinutes": 150
         }
@@ -3451,6 +3627,7 @@
         "parentId": "j15-avionics",
         "productType": "SRU",
         "quantity": 1,
+        "spareType": "航电模块",
         "specialRepairProfile": {
           "repairTimeMinutes": 145
         }
@@ -3471,6 +3648,7 @@
         "parentId": "aircraft-root",
         "productType": "LRU",
         "quantity": 1,
+        "spareType": "液压备件",
         "specialRepairProfile": {
           "repairTimeMinutes": 135
         }
@@ -3491,6 +3669,7 @@
         "parentId": "aircraft-root",
         "productType": "LRU",
         "quantity": 2,
+        "spareType": "发动机备件",
         "specialRepairProfile": {
           "repairTimeMinutes": 210
         }
@@ -3511,6 +3690,7 @@
         "parentId": "aircraft-root",
         "productType": "LRU",
         "quantity": 2,
+        "spareType": "航电模块",
         "specialRepairProfile": {
           "repairTimeMinutes": 150
         }
@@ -3531,6 +3711,7 @@
         "parentId": "j35-avionics",
         "productType": "SRU",
         "quantity": 2,
+        "spareType": "航电模块",
         "specialRepairProfile": {
           "repairTimeMinutes": 125
         }
@@ -3551,6 +3732,7 @@
         "parentId": "aircraft-root",
         "productType": "LRU",
         "quantity": 1,
+        "spareType": "液压备件",
         "specialRepairProfile": {
           "repairTimeMinutes": 130
         }
@@ -3647,6 +3829,66 @@
     },
     "project_id": "project-carrier-day-night",
     "project_version": "import-v1",
+    "reliabilityBlockDiagram": {
+      "edges": [
+        {
+          "from": "aircraft",
+          "to": "engine",
+          "type": "串联",
+          "weight": 1
+        },
+        {
+          "from": "aircraft",
+          "to": "avionics",
+          "type": "串联",
+          "weight": 1
+        },
+        {
+          "from": "aircraft",
+          "to": "hydraulic",
+          "type": "串联",
+          "weight": 1
+        }
+      ],
+      "nodes": [
+        {
+          "connectionType": "串联",
+          "failureRate": 0.01,
+          "id": "aircraft",
+          "mtbfHours": 300,
+          "name": "整机",
+          "parentId": null,
+          "type": "system"
+        },
+        {
+          "connectionType": "串联",
+          "failureRate": 0.055,
+          "id": "engine",
+          "mtbfHours": 95,
+          "name": "发动机",
+          "parentId": "aircraft",
+          "type": "component"
+        },
+        {
+          "connectionType": "串联",
+          "failureRate": 0.04,
+          "id": "avionics",
+          "mtbfHours": 120,
+          "name": "航电系统",
+          "parentId": "aircraft",
+          "type": "component"
+        },
+        {
+          "connectionType": "串联",
+          "failureRate": 0.05,
+          "id": "hydraulic",
+          "mtbfHours": 105,
+          "name": "液压系统",
+          "parentId": "aircraft",
+          "type": "component"
+        }
+      ]
+    },
     "scenarioId": "import-carrier-day-night-001",
     "schema_version": "project-v0",
     "supportActivities": [
@@ -3765,6 +4007,7 @@
     "supportActivityJobs": [
       {
         "activityCode": "OPS-001",
+        "applicableAircraft": "J-15",
         "durationMinutes": 5,
         "durationProfile": {
           "distributionType": "三角分布",
@@ -3795,6 +4038,7 @@
       },
       {
         "activityCode": "OPS-002",
+        "applicableAircraft": "J-15",
         "durationMinutes": 10,
         "durationProfile": {
           "distributionType": "均匀分布",
@@ -3820,6 +4064,7 @@
       },
       {
         "activityCode": "REP-001",
+        "applicableAircraft": "J-15",
         "durationMinutes": 40,
         "durationProfile": {
           "distributionType": "三角分布",
@@ -3850,6 +4095,7 @@
       },
       {
         "activityCode": "REP-002",
+        "applicableAircraft": "J-15",
         "durationMinutes": 90,
         "durationProfile": {
           "distributionType": "正态分布",
@@ -3885,6 +4131,7 @@
       },
       {
         "activityCode": "PM-001",
+        "applicableAircraft": "J-35",
         "durationMinutes": 30,
         "durationProfile": {
           "distributionType": "固定值",
@@ -3909,6 +4156,7 @@
       },
       {
         "activityCode": "PM-002",
+        "applicableAircraft": "J-35",
         "durationMinutes": 70,
         "durationProfile": {
           "distributionType": "三角分布",
@@ -3945,6 +4193,7 @@
       },
       {
         "activityCode": "BA-001",
+        "applicableAircraft": "J-15",
         "durationMinutes": 5,
         "equipment": [
           {
@@ -3964,6 +4213,7 @@
       },
       {
         "activityCode": "BA-002",
+        "applicableAircraft": "J-15",
         "durationMinutes": 30,
         "equipment": [
           {
