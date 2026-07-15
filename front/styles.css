@@ -2314,6 +2314,31 @@ select[multiple].table-edit-select {
   min-width: 0;
 }
 
+.rms-table-context {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.rms-installation-panel td input {
+  width: 100%;
+  min-width: 88px;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+
+.rms-installation-panel td input:hover,
+.rms-installation-panel td input:focus {
+  border-color: var(--primary);
+  background: #fff;
+  outline: none;
+}
+
 .rms-equipment-tree > .tree-toolbar > span,
 .rms-import-status,
 .rms-warning-list {
