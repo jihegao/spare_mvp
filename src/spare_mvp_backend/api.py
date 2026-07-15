@@ -23,6 +23,10 @@ from src.spare_mvp_backend.project_payload import (
 )
 from src.spare_mvp_backend.repository import ContractRepository
 from src.spare_mvp_backend.run_service import ACTIVE_FORMAL_MODEL_FAMILY, RETIRED_FORMAL_MODEL_FAMILIES, RunService, RunServiceError
+from src.spare_mvp_abm.aircraft_support_v1.mission_reliability import (
+    mission_period_outcome,
+    period_completion_summary,
+)
 from src.spare_mvp_contract.adapter import AdapterError, SimulationAdapter
 
 
@@ -857,6 +861,9 @@ class BackendApi:
             "event_snapshots": page_result.get("event_snapshots", []),
             "profile_reliability": page_result.get("profile_reliability"),
             "period_completion_probability": page_result.get("period_completion_probability"),
+            "period_duration_days": page_result.get("period_duration_days"),
+            "period_total_samples": page_result.get("total_samples"),
+            "period_failed_samples": page_result.get("failed_samples"),
             "successful_samples": page_result.get("successful_samples"),
             "valid_samples": page_result.get("valid_samples"),
             "visualization_state_series": visualization_state_series,
@@ -1554,6 +1561,10 @@ def _run_aircraft_support_v1_analysis_sample(
     execution = model.run()
     daily_mission_reliability = _sample_daily_mission_reliability(model.missions, aircraft_count=len(model.aircraft))
     mission_wave_reliability = _sample_mission_wave_reliability(model.missions)
+    period_outcome = mission_period_outcome(
+        model.missions,
+        duration_days=execution.get("metrics", {}).get("simulation_days", 0),
+    )
     frames = []
     for sample_step, frame in enumerate(execution.get("frames", [])[:20]):
         item = copy.deepcopy(frame)
@@ -1569,6 +1580,7 @@ def _run_aircraft_support_v1_analysis_sample(
         "metrics": copy.deepcopy(execution["metrics"]),
         "daily_mission_reliability": daily_mission_reliability,
         "mission_wave_reliability": mission_wave_reliability,
+        "period_outcome": period_outcome,
         "frames": frames,
         "events": copy.deepcopy(execution.get("events") or []),
     }
@@ -1596,7 +1608,7 @@ def _sample_daily_mission_reliability(missions: list[Any], *, aircraft_count: in
         bucket["plannedSorties"] += planned
         bucket["launchedSorties"] += max(0, min(planned, assigned))
         bucket["successfulSorties"] += successful
-        bucket["plannedWaves"] += int(evaluated)
+        bucket["plannedWaves"] += 1
         bucket["successfulWaves"] += successful
     rows = []
     for day in sorted(by_day):
@@ -1690,7 +1702,7 @@ def _sample_mission_wave_reliability(missions: list[Any]) -> list[dict[str, Any]
         bucket["plannedSorties"] += planned
         bucket["launchedSorties"] += max(0, min(planned, assigned))
         bucket["successfulSorties"] += successful
-        bucket["plannedWaves"] += int(evaluated)
+        bucket["plannedWaves"] += 1
         bucket["successfulWaves"] += successful
     rows = []
     for sequence, (day, wave) in enumerate(sorted(by_wave), start=1):
@@ -1924,17 +1936,13 @@ def _lite_mesa_mission_reliability_result(
     max_rows = settings.get("maxTimeWindow")
     if max_rows:
         rows = rows[: max(1, _metric_int(max_rows, default=len(rows)))]
-    valid_samples = 0
-    successful_samples = 0
-    for sample in samples:
-        daily = [row for row in sample.get("daily_mission_reliability") or [] if 1 <= _metric_int(row.get("day"), default=0) <= 7]
-        if _metric_float((sample.get("metrics") or {}).get("simulation_days"), default=0) < 7:
-            continue
-        valid_samples += 1
-        if all(_metric_float(row.get("successfulWaves"), default=0) >= _metric_float(row.get("plannedWaves"), default=0) for row in daily):
-            successful_samples += 1
+    period_summary = period_completion_summary(samples)
+    total_samples = period_summary["total_samples"]
+    successful_samples = period_summary["successful_samples"]
+    failed_samples = period_summary["failed_samples"]
     profile_reliability = _clamp01(data.get("mission_success_probability"))
-    period_completion_probability = successful_samples / valid_samples if valid_samples else 0.0
+    period_completion_probability = period_summary["completion_probability"]
+    period_duration_days = period_summary["duration_days"]
     return {
         "experiment_id": "project_baseline_at_current_granularity",
         "metrics": [
@@ -1943,15 +1951,22 @@ def _lite_mesa_mission_reliability_result(
             ["战备完好率", _pct(_sample_mean(samples, "ready_rate"))],
             ["任务失败次数", str(int(round(_sample_metric_sum(samples, "failed_sorties"))))],
             ["任务剖面可靠性", _pct(profile_reliability)],
-            ["连续7天任务完成可靠性", _pct(period_completion_probability)],
+            ["仿真实验总次数", str(total_samples)],
+            ["整周期任务成功次数", str(successful_samples)],
+            ["整周期任务失败次数", str(failed_samples)],
+            ["整周期任务可靠度", _decimal(period_completion_probability)],
+            ["任务可靠度百分比", _pct(period_completion_probability)],
         ],
         "rows": rows,
         "wave_rows": rows,
         "daily_rows": _mean_daily_mission_reliability(samples),
         "profile_reliability": profile_reliability,
         "period_completion_probability": period_completion_probability,
+        "period_duration_days": period_duration_days,
+        "total_samples": total_samples,
         "successful_samples": successful_samples,
-        "valid_samples": valid_samples,
+        "failed_samples": failed_samples,
+        "valid_samples": total_samples,
     }
 
 

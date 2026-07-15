@@ -3862,7 +3862,7 @@ test("SGR monte carlo pages label sortie_rate as 出动架次率", async () => {
   );
 
   assert.match(metricSource, /key: "sortie_rate", label: "出动架次率"/);
-  assert.match(reliabilitySource, /metricLabels: \["任务成功率", "出动架次率", "战备完好率", "任务失败次数"\]/);
+  assert.match(reliabilitySource, /metricLabels: \["仿真实验总次数", "整周期任务成功次数", "整周期任务失败次数", "整周期任务可靠度", "任务可靠度百分比"\]/);
   assert.match(reliabilityTableSource, /<th>平均出动架次率<\/th>/);
   assert.match(reliabilityTableSource, /formatLiteMesaAnalysisMetricValue\("出动架次率", row\.meanSortieRate \?\? row\.sortieRate\)/);
   assert.doesNotMatch(reliabilityTableSource, /<td>\$\{pct\(row\.sortieRate\)\}<\/td>/);
@@ -3886,6 +3886,9 @@ test("lite Mesa analysis visible copy omits Mesa session wording and collapses s
   assert.match(reliabilityTableSource, /<th>任务波次<\/th>/);
   assert.match(reliabilityTableSource, /<th>样本数<\/th>/);
   assert.match(reliabilityTableSource, /<th>平均任务成功率<\/th>/);
+  assert.match(reliabilityTableSource, /任务周期/);
+  assert.match(reliabilityTableSource, /成功 \/ 总实验/);
+  assert.match(reliabilityTableSource, /整周期任务可靠度/);
   assert.doesNotMatch(reliabilityTableSource, /<th>seed<\/th>|row\.seed|readyRate/);
   assert.doesNotMatch(analysisSource, /Mesa 分析运行中|Mesa 分析失败|会话内 Mesa|后端内存会话/);
 });

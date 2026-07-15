@@ -17,6 +17,11 @@ from pathlib import Path
 import re
 from typing import Any
 
+from src.spare_mvp_abm.aircraft_support_v1.mission_reliability import (
+    mission_period_outcome,
+    period_completion_summary,
+)
+
 PROJECT_SCHEMA_VERSION = "project-v0"
 SCENARIO_SCHEMA_VERSION = "scenario-v0"
 RUN_SCHEMA_VERSION = "run-v0"
@@ -1972,6 +1977,10 @@ class SimulationAdapter:
         model = AircraftSupportV1Model(sample_inputs)
         execution = model.run()
         mission_wave_reliability = self._aircraft_support_v1_sample_mission_wave_reliability(model.missions)
+        period_outcome = mission_period_outcome(
+            model.missions,
+            duration_days=execution.get("metrics", {}).get("simulation_days", 0),
+        )
         sweep = {
             "failure_rate": point["failure_rate"],
             "spare_multiplier": point["spare_multiplier"],
@@ -1999,6 +2008,7 @@ class SimulationAdapter:
             "sweep": sweep,
             "metrics": execution["metrics"],
             "mission_wave_reliability": mission_wave_reliability,
+            "period_outcome": period_outcome,
             "frames": frames,
         }
 
@@ -2538,16 +2548,11 @@ class SimulationAdapter:
             "spare_shortage": max(0, int(round(float(metrics.get("downtime_spare_shortage_events", 0) or 0)))),
             "preventive": max(0, int(round(float(metrics.get("downtime_preventive_events", 0) or 0)))),
         }
-        valid_period_samples = 0
-        successful_period_samples = 0
-        for sample in samples or []:
-            daily_rows = [row for row in sample.get("daily_mission_reliability") or [] if 1 <= int(row.get("day", 0) or 0) <= 7]
-            if float((sample.get("metrics") or {}).get("simulation_days", 0) or 0) < 7:
-                continue
-            valid_period_samples += 1
-            if all(float(row.get("successfulWaves", 0) or 0) >= float(row.get("plannedWaves", 0) or 0) for row in daily_rows):
-                successful_period_samples += 1
-        period_completion_probability = successful_period_samples / valid_period_samples if valid_period_samples else 0.0
+        period_summary = period_completion_summary(samples or [])
+        total_period_samples = period_summary["total_samples"]
+        successful_period_samples = period_summary["successful_samples"]
+        failed_period_samples = period_summary["failed_samples"]
+        period_completion_probability = period_summary["completion_probability"]
         risk_level = "high" if shortage_probability >= 0.2 else "medium" if shortage_probability > 0 else "low"
         spare_rows = self._aircraft_support_v1_scoped_spare_projection_rows(
             metrics,
@@ -2650,8 +2655,11 @@ class SimulationAdapter:
                     "target_met": mission_success >= 0.9,
                     "profile_reliability": mission_success,
                     "period_completion_probability": period_completion_probability,
+                    "period_duration_days": period_summary["duration_days"],
+                    "total_samples": total_period_samples,
                     "successful_samples": successful_period_samples,
-                    "valid_samples": valid_period_samples,
+                    "failed_samples": failed_period_samples,
+                    "valid_samples": total_period_samples,
                     "mission_wave_rows": mission_wave_rows,
                     "series": mission_wave_rows,
                 },
@@ -3007,7 +3015,7 @@ class SimulationAdapter:
             bucket["planned_sorties"] += planned
             bucket["launched_sorties"] += max(0, min(planned, assigned))
             bucket["successful_sorties"] += successful
-            bucket["planned_waves"] += int(evaluated)
+            bucket["planned_waves"] += 1
             bucket["successful_waves"] += successful
         rows = []
         for sequence, (day, wave) in enumerate(sorted(by_wave), start=1):

@@ -139,6 +139,12 @@ test("normalizes mission reliability projection payload as mission wave aggregat
       mission_success_probability: 0.91,
       sortie_rate: 0.88,
       target_met: true,
+      period_completion_probability: 2 / 3,
+      period_duration_days: 21,
+      total_samples: 3,
+      successful_samples: 2,
+      failed_samples: 1,
+      valid_samples: 3,
       mission_wave_rows: [
         { day_index: 1, wave_index: 1, wave_label: "第1天 第1波", sample_count: 3, mean_mission_success_rate: 0.96, mean_sortie_rate: 0.92 },
         { day_index: 1, wave_index: 2, wave_label: "第1天 第2波", sample_count: 3, mean_mission_success_rate: 0.94, mean_sortie_rate: 0.91 },
@@ -161,6 +167,11 @@ test("normalizes mission reliability projection payload as mission wave aggregat
     toTime: "第2天 第1波",
     drop: 0.07999999999999996
   });
+  assert.equal(view.periodCompletionProbability, 2 / 3);
+  assert.equal(view.periodDurationDays, 21);
+  assert.equal(view.totalSamples, 3);
+  assert.equal(view.successfulSamples, 2);
+  assert.equal(view.failedSamples, 1);
   assert.deepEqual(view.rows.map((row) => [row.sequence, row.waveLabel, row.sampleCount, row.probability, row.sortieRate, row.state]), [
     [1, "第1天 第1波", 3, 0.96, 0.92, "满足"],
     [2, "第1天 第2波", 3, 0.94, 0.91, "满足"],
