@@ -25,26 +25,26 @@ class DatabaseContractTest(unittest.TestCase):
         return json.loads((REPO_ROOT / "tests" / "fixtures" / name).read_text(encoding="utf-8"))
 
     def _persist_complete_contract_chain(self) -> None:
-        project = self._fixture("aviation_support_project.json")
-        run = self._fixture("aviation_support_run.json")
-        result = self._fixture("aviation_support_result.json")
-        manifest = self._fixture("aviation_support_artifact_manifest.json")
-        scenario = self._fixture("aviation_support_scenario.json")
+        project = self._fixture("aircraft_support_v1_project.json")
+        run = self._fixture("aircraft_support_v1_run.json")
+        result = self._fixture("aircraft_support_v1_result.json")
+        manifest = self._fixture("aircraft_support_v1_artifact_manifest.json")
+        scenario = self._fixture("aircraft_support_v1_scenario.json")
         snapshot = {
-            "snapshot_id": "modeling-snapshot-project-aviation-support-contract-001",
+            "snapshot_id": "modeling-snapshot-project-aircraft-support-contract-001",
             "project_id": project["project_id"],
             "schema_version": "modeling-snapshot-v0",
             "project_version": project["project_version"],
             "project": project,
         }
         plan = {
-            "experiment_plan_id": "experiment-plan-project-aviation-support-contract-001",
+            "experiment_plan_id": "experiment-plan-project-aircraft-support-contract-001",
             "project_id": project["project_id"],
             "modeling_snapshot_id": snapshot["snapshot_id"],
             "schema_version": "experiment-plan-v0",
             "project_version": project["project_version"],
             "status": "draft",
-            "config": {"name": "contract aviation", "steps": 3},
+            "config": {"name": "contract aircraft support", "steps": 3},
         }
         run = {
             **run,
@@ -182,11 +182,11 @@ class DatabaseContractTest(unittest.TestCase):
                 self.assertLessEqual(columns, actual)
 
     def test_repository_persists_contract_identity_chain(self) -> None:
-        project = self._fixture("aviation_support_project.json")
-        scenario = self._fixture("aviation_support_scenario.json")
-        run = self._fixture("aviation_support_run.json")
-        result = self._fixture("aviation_support_result.json")
-        manifest = self._fixture("aviation_support_artifact_manifest.json")
+        project = self._fixture("aircraft_support_v1_project.json")
+        scenario = self._fixture("aircraft_support_v1_scenario.json")
+        run = self._fixture("aircraft_support_v1_run.json")
+        result = self._fixture("aircraft_support_v1_result.json")
+        manifest = self._fixture("aircraft_support_v1_artifact_manifest.json")
 
         self.repository.upsert_project(project)
         self.repository.upsert_scenario(scenario)
@@ -194,32 +194,32 @@ class DatabaseContractTest(unittest.TestCase):
         self.repository.upsert_result_summary(result)
         self.repository.upsert_artifact_manifest(manifest)
 
-        chain = self.repository.get_run_chain("run-aviation-support-contract-001")
+        chain = self.repository.get_run_chain("run-aircraft-support-contract-001")
 
         self.assertEqual(
             chain,
             {
-                "project_id": "project-aviation-support-contract-001",
+                "project_id": "project-aircraft-support-contract-001",
                 "project_version": "project-v0.1",
                 "project_schema_version": "project-v0",
-                "experiment_plan_id": "experiment-plan-aviation-support-001",
-                "scenario_id": "scenario-aviation-support-contract-001",
+                "experiment_plan_id": "experiment-plan-aircraft-support-001",
+                "scenario_id": "scenario-aircraft-support-contract-001",
                 "scenario_version": "scenario-v0.1",
                 "scenario_schema_version": "scenario-v0",
-                "run_id": "run-aviation-support-contract-001",
+                "run_id": "run-aircraft-support-contract-001",
                 "run_schema_version": "run-v0",
-                "result_summary_id": "result-aviation-support-contract-001",
+                "result_summary_id": "result-aircraft-support-contract-001",
                 "result_schema_version": "result-v0",
-                "artifact_manifest_id": "artifact-manifest-aviation-support-contract-001",
+                "artifact_manifest_id": "artifact-manifest-aircraft-support-contract-001",
                 "artifact_manifest_schema_version": "artifact-manifest-v0",
             },
         )
 
     def test_repository_lists_runs_and_hides_soft_deleted_by_default(self) -> None:
-        project = self._fixture("aviation_support_project.json")
-        scenario = self._fixture("aviation_support_scenario.json")
-        run = self._fixture("aviation_support_run.json")
-        manifest = self._fixture("aviation_support_artifact_manifest.json")
+        project = self._fixture("aircraft_support_v1_project.json")
+        scenario = self._fixture("aircraft_support_v1_scenario.json")
+        run = self._fixture("aircraft_support_v1_run.json")
+        manifest = self._fixture("aircraft_support_v1_artifact_manifest.json")
         self.repository.upsert_project(project)
         self.repository.upsert_scenario(scenario)
         self.repository.upsert_run({**run, "lifecycle_status": "active", "created_by": "system"})
@@ -240,9 +240,9 @@ class DatabaseContractTest(unittest.TestCase):
         self.assertEqual([item["run_id"] for item in self.repository.list_runs(include_deleted=True)], [run["run_id"]])
 
     def test_upsert_run_preserves_existing_lifecycle_when_stale_status_refresh_replays_active(self) -> None:
-        project = self._fixture("aviation_support_project.json")
-        scenario = self._fixture("aviation_support_scenario.json")
-        run = self._fixture("aviation_support_run.json")
+        project = self._fixture("aircraft_support_v1_project.json")
+        scenario = self._fixture("aircraft_support_v1_scenario.json")
+        run = self._fixture("aircraft_support_v1_run.json")
         self.repository.upsert_project(project)
         self.repository.upsert_scenario(scenario)
         self.repository.upsert_run({**run, "lifecycle_status": "active", "created_by": "system"})
@@ -268,12 +268,12 @@ class DatabaseContractTest(unittest.TestCase):
 
     def test_repository_get_run_detail_combines_chain_result_and_artifacts(self) -> None:
         self._persist_complete_contract_chain()
-        detail = self.repository.get_run_detail("run-aviation-support-contract-001")
+        detail = self.repository.get_run_detail("run-aircraft-support-contract-001")
 
-        self.assertEqual(detail["run"]["run_id"], "run-aviation-support-contract-001")
-        self.assertEqual(detail["chain"]["run_id"], "run-aviation-support-contract-001")
-        self.assertEqual(detail["result_summary"]["run_id"], "run-aviation-support-contract-001")
-        self.assertEqual(detail["artifact_manifest"]["run_id"], "run-aviation-support-contract-001")
+        self.assertEqual(detail["run"]["run_id"], "run-aircraft-support-contract-001")
+        self.assertEqual(detail["chain"]["run_id"], "run-aircraft-support-contract-001")
+        self.assertEqual(detail["result_summary"]["run_id"], "run-aircraft-support-contract-001")
+        self.assertEqual(detail["artifact_manifest"]["run_id"], "run-aircraft-support-contract-001")
 
     def test_initialize_database_migrates_existing_experiment_plan_table(self) -> None:
         connection = sqlite3.connect(":memory:")
@@ -609,7 +609,7 @@ class DatabaseContractTest(unittest.TestCase):
         import_package["lifecycle"] = {
             "state": "published",
             "version": 1,
-            "referencedRunIds": ["run-aviation-support-contract-001"],
+            "referencedRunIds": ["run-aircraft-support-contract-001"],
         }
         validation = {"ok": True, "status": "valid", "issues": []}
 
@@ -631,7 +631,7 @@ class DatabaseContractTest(unittest.TestCase):
             WHERE import_id = ?
             """,
             (
-                json.dumps(["run-aviation-support-contract-001"]),
+                json.dumps(["run-aircraft-support-contract-001"]),
                 import_package["importId"],
             ),
         )
@@ -662,7 +662,7 @@ class DatabaseContractTest(unittest.TestCase):
             WHERE import_id = ?
             """,
             (
-                json.dumps(["run-aviation-support-contract-001"]),
+                json.dumps(["run-aircraft-support-contract-001"]),
                 import_package["importId"],
             ),
         )
@@ -682,10 +682,10 @@ class DatabaseContractTest(unittest.TestCase):
         stored = self.repository.get_modeling_import(import_package["importId"])
         self.assertEqual(stored["publishedPackage"]["objects"]["missionProfiles"][0]["name"], original_mission_name)
         row = self.repository._get_modeling_import_row(import_package["importId"])
-        self.assertEqual(json.loads(row["referenced_run_ids_json"]), ["run-aviation-support-contract-001"])
+        self.assertEqual(json.loads(row["referenced_run_ids_json"]), ["run-aircraft-support-contract-001"])
 
     def test_repository_delete_project_removes_catalog_data_and_project_branches(self) -> None:
-        project = self._fixture("aviation_support_project.json")
+        project = self._fixture("aircraft_support_v1_project.json")
         snapshot = {
             "snapshot_id": "snapshot-delete-project",
             "project_id": project["project_id"],
@@ -721,7 +721,7 @@ class DatabaseContractTest(unittest.TestCase):
         self.assertEqual(self.connection.execute("SELECT count(*) FROM project_access WHERE project_id = ?", (project["project_id"],)).fetchone()[0], 0)
 
     def test_repository_delete_project_removes_owned_run_chain(self) -> None:
-        project = self._fixture("aviation_support_project.json")
+        project = self._fixture("aircraft_support_v1_project.json")
         self._persist_complete_contract_chain()
         self.connection.execute(
             "INSERT INTO project_access (user_id, project_id, access_role) VALUES (?, ?, ?)",
@@ -753,20 +753,20 @@ class DatabaseContractTest(unittest.TestCase):
             )
 
     def test_repository_does_not_silently_return_mismatched_run_artifacts(self) -> None:
-        project = self._fixture("aviation_support_project.json")
-        scenario = self._fixture("aviation_support_scenario.json")
-        run = self._fixture("aviation_support_run.json")
-        result = self._fixture("aviation_support_result.json")
-        manifest = self._fixture("aviation_support_artifact_manifest.json")
-        other_run = {**run, "run_id": "run-aviation-support-contract-002"}
+        project = self._fixture("aircraft_support_v1_project.json")
+        scenario = self._fixture("aircraft_support_v1_scenario.json")
+        run = self._fixture("aircraft_support_v1_run.json")
+        result = self._fixture("aircraft_support_v1_result.json")
+        manifest = self._fixture("aircraft_support_v1_artifact_manifest.json")
+        other_run = {**run, "run_id": "run-aircraft-support-contract-002"}
         other_result = {
             **result,
-            "result_id": "result-aviation-support-contract-002",
+            "result_id": "result-aircraft-support-contract-002",
             "run_id": other_run["run_id"],
         }
         other_manifest = {
             **manifest,
-            "artifact_manifest_id": "artifact-manifest-aviation-support-contract-002",
+            "artifact_manifest_id": "artifact-manifest-aircraft-support-contract-002",
             "run_id": other_run["run_id"],
         }
 

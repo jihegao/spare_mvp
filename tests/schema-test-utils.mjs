@@ -1,24 +1,27 @@
-export function validateSchema(schema, value, path = "$") {
+export function validateSchema(schema, value, path = "$", referencedSchemas = {}) {
   const errors = [];
-  collectSchemaErrors(schema, value, path, errors, schema);
+  collectSchemaErrors(schema, value, path, errors, schema, referencedSchemas);
   return errors;
 }
 
-function collectSchemaErrors(schema, value, path, errors, rootSchema) {
+function collectSchemaErrors(schema, value, path, errors, rootSchema, referencedSchemas) {
   if (schema.$ref) {
-    const resolved = resolveLocalRef(rootSchema, schema.$ref);
+    const resolved = schema.$ref.startsWith("#/")
+      ? resolveLocalRef(rootSchema, schema.$ref)
+      : referencedSchemas[schema.$ref];
     if (!resolved) {
       errors.push(`${path} unresolved ref ${schema.$ref}`);
       return;
     }
-    collectSchemaErrors(resolved, value, path, errors, rootSchema);
+    const resolvedRoot = schema.$ref.startsWith("#/") ? rootSchema : resolved;
+    collectSchemaErrors(resolved, value, path, errors, resolvedRoot, referencedSchemas);
     return;
   }
 
   if (schema.oneOf) {
     const branchResults = schema.oneOf.map((branch) => {
       const branchErrors = [];
-      collectSchemaErrors(branch, value, path, branchErrors, rootSchema);
+      collectSchemaErrors(branch, value, path, branchErrors, rootSchema, referencedSchemas);
       return branchErrors;
     });
     if (!branchResults.some((branchErrors) => branchErrors.length === 0)) {
@@ -28,18 +31,18 @@ function collectSchemaErrors(schema, value, path, errors, rootSchema) {
 
   if (schema.allOf) {
     for (const branch of schema.allOf) {
-      collectSchemaErrors(branch, value, path, errors, rootSchema);
+      collectSchemaErrors(branch, value, path, errors, rootSchema, referencedSchemas);
     }
   }
 
   if (schema.if) {
     const ifErrors = [];
-    collectSchemaErrors(schema.if, value, path, ifErrors, rootSchema);
+    collectSchemaErrors(schema.if, value, path, ifErrors, rootSchema, referencedSchemas);
     if (ifErrors.length === 0 && schema.then) {
-      collectSchemaErrors(schema.then, value, path, errors, rootSchema);
+      collectSchemaErrors(schema.then, value, path, errors, rootSchema, referencedSchemas);
     }
     if (ifErrors.length > 0 && schema.else) {
-      collectSchemaErrors(schema.else, value, path, errors, rootSchema);
+      collectSchemaErrors(schema.else, value, path, errors, rootSchema, referencedSchemas);
     }
   }
 
@@ -88,7 +91,7 @@ function collectSchemaErrors(schema, value, path, errors, rootSchema) {
     const properties = schema.properties || {};
     for (const [key, childValue] of Object.entries(value)) {
       if (properties[key]) {
-        collectSchemaErrors(properties[key], childValue, `${path}.${key}`, errors, rootSchema);
+        collectSchemaErrors(properties[key], childValue, `${path}.${key}`, errors, rootSchema, referencedSchemas);
       } else if (schema.additionalProperties === false) {
         errors.push(`${path}.${key} is not allowed`);
       }
@@ -100,7 +103,14 @@ function collectSchemaErrors(schema, value, path, errors, rootSchema) {
       errors.push(`${path} expected minItems ${schema.minItems}, got ${value.length}`);
     }
     if (schema.items) {
-      value.forEach((item, index) => collectSchemaErrors(schema.items, item, `${path}[${index}]`, errors, rootSchema));
+      value.forEach((item, index) => collectSchemaErrors(
+        schema.items,
+        item,
+        `${path}[${index}]`,
+        errors,
+        rootSchema,
+        referencedSchemas
+      ));
     }
   }
 }

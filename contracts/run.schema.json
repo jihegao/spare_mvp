@@ -27,14 +27,14 @@
     "scenario_version": { "type": ["string", "null"] },
     "scenario_schema_version": { "type": ["string", "null"] },
     "model_family": {
-      "description": "Includes aviation_support only as legacy contract evidence for archived run fixtures; aviation_support is a retired formal runtime and current formal /api/runs uses aircraft_support_v1.",
+      "description": "Current formal /api/runs model family.",
       "type": "string",
-      "enum": ["aviation_support", "aircraft_support_v1"]
+      "const": "aircraft_support_v1"
     },
     "model_id": {
-      "description": "AviationSupportModel is retained only for legacy contract evidence; AircraftSupportV1Model is the current formal runtime model and ScenarioCompilerGate records compile-gate failures.",
+      "description": "AircraftSupportV1Model is the current formal runtime model and ScenarioCompilerGate records compile-gate failures.",
       "type": "string",
-      "enum": ["AviationSupportModel", "AircraftSupportV1Model", "ScenarioCompilerGate"]
+      "enum": ["AircraftSupportV1Model", "ScenarioCompilerGate"]
     },
     "status": { "type": "string", "enum": ["queued", "running", "succeeded", "failed", "cancelled"] },
     "phase": { "type": "string", "enum": ["queued", "running", "completed", "failed", "cancelled"] },
