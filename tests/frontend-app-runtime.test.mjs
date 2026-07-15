@@ -521,6 +521,50 @@ test("project data management omits raw JSON while keeping overview and replacem
   }
 });
 
+test("project data replacement preserves the opaque backend version token", async () => {
+  const replacement = createRuntimeProjectJson({
+    project_id: "project-imported-replacement",
+    projectInfo: { name: "覆盖后的项目", isTemplate: true },
+    basicMissions: [{ id: "replacement-mission", name: "覆盖任务", minRequiredSorties: 5 }]
+  });
+  const file = {
+    name: "replacement.json",
+    async text() {
+      return JSON.stringify(replacement);
+    }
+  };
+  const runtime = await setupRuntimeApp({
+    hash: "feature=system-management-project-data-management",
+    projectJson: createRuntimeProjectJson({ project_id: "project-runtime" }),
+    backendProjects: [{
+      project_id: "project-runtime",
+      experiment_name: "Runtime 项目",
+      base_code: "RT",
+      summary: "runtime test",
+      source_import_id: "",
+      updated_at: "2026-06-26 00:00:00.123-opaque"
+    }]
+  });
+
+  try {
+    await runtime.change("[data-project-replacement-file]", {}, { files: [file], value: file.name });
+    assert.match(runtime.appNode.innerHTML, /项目数据校验通过，请确认覆盖/);
+    await runtime.click("[data-project-replacement-confirm]");
+
+    const request = runtime.requests.find((item) => (
+      item.url === "/api/projects/project-runtime/replace"
+      && (item.options.method || "GET") === "PUT"
+    ));
+    assert.ok(request, "expected project replacement request");
+    const body = JSON.parse(request.options.body || "{}");
+    assert.equal(body.expected_updated_at, "2026-06-26 00:00:00.123-opaque");
+    assert.equal(body.project_json.projectInfo.name, "覆盖后的项目");
+    assert.match(runtime.appNode.innerHTML, /覆盖完成，审计记录 audit-runtime-replace/);
+  } finally {
+    runtime.restore();
+  }
+});
+
 test("periodic task editor uses named week month and year profiles without total task name", async () => {
   const projectJson = createRuntimeProjectJson({
     project_id: "project-runtime",
@@ -3310,6 +3354,19 @@ async function setupRuntimeApp({
     if (projectMatch && method === "GET") {
       const projectId = decodeURIComponent(projectMatch[1]);
       return jsonResponse(projectPayloads.get(projectId) || projectJson);
+    }
+    const projectReplaceMatch = url.match(/^\/api\/projects\/([^/]+)\/replace$/);
+    if (projectReplaceMatch && method === "PUT") {
+      const projectId = decodeURIComponent(projectReplaceMatch[1]);
+      const body = JSON.parse(options.body || "{}");
+      projectPayloads.set(projectId, body.project_json);
+      const catalogEntry = backendProjectCatalog.find((entry) => entry.project_id === projectId);
+      if (catalogEntry) catalogEntry.updated_at = "2026-06-26 00:00:01.456-replaced";
+      return jsonResponse({
+        project_id: projectId,
+        updated_at: "2026-06-26 00:00:01.456-replaced",
+        audit_event_id: "audit-runtime-replace"
+      });
     }
     const experimentPlanListMatch = url.match(/^\/api\/projects\/([^/]+)\/experiment-plans$/);
     if (experimentPlanListMatch && method === "GET") {

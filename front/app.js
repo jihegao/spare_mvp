@@ -523,6 +523,7 @@ function mergeProjectsById(projects) {
       name: project.name || "未命名项目",
       baseCode: project.baseCode || "NB",
       updatedAt: normalizeProjectUpdatedAt(project.updatedAt),
+      backendUpdatedAt: project.backendUpdatedAt || project.updated_at || "",
       summary: project.summary || "未设置项目说明。",
       sourceKind: Object.values(PROJECT_SOURCE).includes(project.sourceKind) ? project.sourceKind : PROJECT_SOURCE.imported_sample,
       sourceImportId: project.sourceImportId || "",
@@ -550,6 +551,7 @@ function toProjectFromBackendApiEntry(entry) {
     baseCode: entry.base_code || "NB",
     summary: entry.summary || "后端持久化项目",
     updatedAt: normalizeProjectUpdatedAt(entry.updated_at),
+    backendUpdatedAt: String(entry.updated_at || ""),
     sourceKind: PROJECT_SOURCE.imported_sample,
     sourceImportId: entry.source_import_id || entry.sourceImportId || "",
     isTemplate: Boolean(entry.is_template || entry.isTemplate),
@@ -680,6 +682,7 @@ let selectedProjectDataProjectJson = null;
 let selectedProjectDataProjectJsonId = "";
 let projectDataProjectJsonLoading = false;
 let projectDataManagementStatus = "选择项目查看项目数据。";
+let pendingProjectDataManagementSuccessStatus = "";
 let projectReplacementPreview = null;
 let selectedProjectDataRelationFocus = "task";
 let projectEditorDraft = null;
@@ -3682,14 +3685,20 @@ async function confirmProjectReplacement() {
     : await backendApi.getProject(projectId);
   projectDataManagementStatus = "正在覆盖当前项目";
   try {
-    const result = await backendApi.replaceProject(projectId, projectReplacementPreview.projectJson, loaded?.updated_at || selectedProject.updatedAt || "");
+    const result = await backendApi.replaceProject(
+      projectId,
+      projectReplacementPreview.projectJson,
+      selectedProject.backendUpdatedAt || loaded?.updated_at || ""
+    );
     projectReplacementPreview = null;
     selectedProjectDataProjectJson = null;
     selectedProjectDataProjectJsonId = "";
-    projectDataManagementStatus = `覆盖完成，审计记录 ${result.audit_event_id || "已生成"}`;
-    await refreshBackendProjects();
-    ensureSelectedProjectDataJsonLoaded({ force: true });
+    const successStatus = `覆盖完成，审计记录 ${result.audit_event_id || "已生成"}`;
+    pendingProjectDataManagementSuccessStatus = successStatus;
+    await hydrateProjectCatalogFromBackend({ forceProjectId: projectDataProjectId(selectedProject) });
+    await ensureSelectedProjectDataJsonLoaded({ force: true, successStatus });
   } catch (err) {
+    pendingProjectDataManagementSuccessStatus = "";
     projectDataManagementStatus = err?.code === "project_version_conflict" ? "覆盖失败：项目已被其他用户更新，请重新加载" : `覆盖失败：${formatBackendError(err)}`;
   }
 }
@@ -3911,21 +3920,23 @@ function projectDataJsonForSelectedProject(project) {
   return null;
 }
 
-function ensureSelectedProjectDataJsonLoaded({ force = false } = {}) {
+function ensureSelectedProjectDataJsonLoaded({ force = false, successStatus = "" } = {}) {
   const project = selectedProjectDataProject();
   const projectId = projectDataProjectId(project);
-  if (!project || !projectId || projectDataProjectJsonLoading) return;
-  if (!force && selectedProjectDataProjectJsonId === projectId) return;
+  if (!project || !projectId || projectDataProjectJsonLoading) return Promise.resolve();
+  if (!force && selectedProjectDataProjectJsonId === projectId) return Promise.resolve();
   projectDataProjectJsonLoading = true;
   projectDataManagementStatus = "正在读取项目数据";
-  backendApi.getProject(projectDataProjectBackendId(project))
+  return backendApi.getProject(projectDataProjectBackendId(project))
     .then((projectJson) => {
       selectedProjectDataProjectJson = buildBackendProjectJson(projectJson, { id: projectId });
       selectedProjectDataProjectJsonId = projectId;
       mergeProjectTemplateFlagFromJson(projectId, projectJson);
-      projectDataManagementStatus = "已读取项目数据";
+      projectDataManagementStatus = successStatus || pendingProjectDataManagementSuccessStatus || "已读取项目数据";
+      pendingProjectDataManagementSuccessStatus = "";
     })
     .catch((err) => {
+      pendingProjectDataManagementSuccessStatus = "";
       selectedProjectDataProjectJson = null;
       selectedProjectDataProjectJsonId = projectId;
       projectDataManagementStatus = `项目数据读取失败：${err && err.message ? err.message : "后端服务不可用"}`;
