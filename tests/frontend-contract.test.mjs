@@ -3924,8 +3924,11 @@ test("system management exposes an independent equipment RMS allocation workbenc
   assert.doesNotMatch(workbenchSource, /导入 15/);
   assert.match(workbenchSource, /导入安装数/);
   assert.match(workbenchSource, /装备结构树/);
+  assert.match(workbenchSource, /organization-layout equipment-layout rms-layout/);
+  assert.match(workbenchSource, /tree-node-label root/);
   assert.match(workbenchSource, /<th>系统名称<\/th><th>型号<\/th><th>安装数<\/th><th>运行比<\/th>/);
   assert.match(workbenchSource, /data-rms-equipment-root/);
+  assert.doesNotMatch(workbenchSource, /<select data-rms-equipment-root/);
   assert.match(workbenchSource, /指标分配方法/);
   assert.match(workbenchSource, /等分配法/);
   assert.match(workbenchSource, /比例分配法/);
@@ -3933,7 +3936,7 @@ test("system management exposes an independent equipment RMS allocation workbenc
   assert.doesNotMatch(workbenchSource, /比例修正系数|相似修正系数/);
   assert.match(workbenchSource, /plan\.methods\.allocation === "similar"/);
   assert.match(workbenchSource, /基准机型/);
-  assert.match(workbenchSource, /data-rms-action="calculate">计算/);
+  assert.match(workbenchSource, /data-rms-action="calculate"\$\{isCalculating \? " disabled" : ""\}/);
   assert.doesNotMatch(workbenchSource, /data-rms-action="save-draft"/);
   assert.doesNotMatch(workbenchSource, /data-rms-action="publish"/);
   assert.doesNotMatch(workbenchSource, /AGREE 分配法/);
@@ -3947,6 +3950,10 @@ test("system management exposes an independent equipment RMS allocation workbenc
   assert.match(workbenchSource, /运行比/);
   assert.doesNotMatch(workbenchSource, /<th>产品强度<\/th>/);
   assert.doesNotMatch(workbenchSource, /<th>结构<\/th>/);
+  assert.match(workbenchSource, /计算完成。/);
+  assert.match(workbenchSource, /rms-calculation-overlay/);
+  assert.match(appSource, /function startRmsAllocationCalculation\(\)/);
+  assert.match(appSource, /globalThis\.setTimeout\([\s\S]*?\}, 2000\);/);
 });
 
 test("RMS allocation workbench renders parameters for only the selected method", () => {
@@ -3986,6 +3993,19 @@ test("RMS allocation workbench renders parameters for only the selected method",
   const similarHtml = renderWithMethod("similar");
   assert.match(similarHtml, /基准机型/);
   assert.doesNotMatch(similarHtml, /比例修正系数|相似修正系数/);
+
+  const calculatingHtml = renderRmsAllocationWorkbench({
+    project,
+    plan,
+    result: calculateRmsAllocation(plan, project),
+    importStatus: "",
+    isCalculating: true,
+    htmlEscape: (value) => String(value ?? ""),
+    fixed: (value, digits = 2) => Number(value || 0).toFixed(digits),
+    pct: (value) => `${Math.round(Number(value || 0) * 100)}%`
+  });
+  assert.match(calculatingHtml, /data-rms-action="calculate" disabled>计算中/);
+  assert.match(calculatingHtml, /class="rms-calculation-overlay"/);
 });
 
 test("system management exposes project management and base configuration pages", async () => {

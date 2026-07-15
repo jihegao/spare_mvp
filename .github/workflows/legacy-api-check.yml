@@ -23,8 +23,8 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install backend ABM dependencies
-        run: python3 -m pip install "mesa==3.5.1" "networkx==3.6.1"
+      - name: Install backend dependencies
+        run: python3 -m pip install .
 
       - name: Run frontend contract tests
         run: npm test

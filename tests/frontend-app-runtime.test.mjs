@@ -1454,6 +1454,23 @@ test("RMS method selection updates method-specific parameters at runtime", async
   }
 });
 
+test("RMS calculation shows a blocking two-second progress state before completing", async () => {
+  const runtime = await setupRuntimeApp({ hash: "feature=system-management-equipment-rms-allocation" });
+
+  try {
+    await runtime.click("[data-rms-action]", { rmsAction: "calculate" });
+    assert.match(runtime.appNode.innerHTML, /rms-calculation-overlay/);
+    assert.match(runtime.appNode.innerHTML, /data-rms-action="calculate" disabled>计算中/);
+
+    await new Promise((resolve) => setTimeout(resolve, 2050));
+
+    assert.doesNotMatch(runtime.appNode.innerHTML, /rms-calculation-overlay/);
+    assert.match(runtime.appNode.innerHTML, /计算完成。/);
+  } finally {
+    runtime.restore();
+  }
+});
+
 test("RMS imported aircraft models filter the tree and remain available as similar references", async () => {
   const runtime = await setupRuntimeApp({ hash: "feature=system-management-equipment-rms-allocation" });
 
@@ -1477,10 +1494,9 @@ test("RMS imported aircraft models filter the tree and remain available as simil
     assert.match(runtime.appNode.innerHTML, /已导入 rms-models\.csv/);
     assert.match(runtime.appNode.innerHTML, /F15 发动机/);
 
-    await runtime.change("[data-rms-equipment-root]", {}, { value: "f16-root" });
+    await runtime.click("[data-rms-equipment-root]", { rmsEquipmentRoot: "f16-root" });
     assert.match(runtime.appNode.innerHTML, /F16 发动机/);
-    assert.doesNotMatch(runtime.appNode.innerHTML, /F15 发动机/);
-    assert.doesNotMatch(runtime.appNode.innerHTML, /F18 发动机/);
+    assert.match(runtime.appNode.innerHTML, /tree-node-label selected" data-rms-equipment-root="f16-root"/);
 
     await runtime.change("[data-rms-path]", { rmsPath: "methods.allocation" }, { value: "similar" });
     assert.match(runtime.appNode.innerHTML, /基准机型/);

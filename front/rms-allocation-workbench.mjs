@@ -4,26 +4,26 @@ const RELIABILITY_METHODS = [
   ["similar", "相似产品分配法"]
 ];
 
-export function renderRmsAllocationWorkbench({ project, plan, result, importStatus, htmlEscape, fixed, pct }) {
+export function renderRmsAllocationWorkbench({ project, plan, result, importStatus, isCalculating = false, htmlEscape, fixed, pct }) {
   const equipmentRoots = project.equipmentNodes.filter((node) => !node.parentId);
   return `
-    <div class="rms-allocation-workbench">
+    <div class="rms-allocation-workbench" aria-busy="${isCalculating ? "true" : "false"}">
       <div class="section-head section-context">
         <span>装备 RMS 指标分配 / 导入安装数</span>
         <span>${htmlEscape(project.name)} / ${htmlEscape(result.algorithmVersion)}</span>
       </div>
 
-      <section class="rms-layout">
-        <div class="rms-equipment-tree">
+      <section class="organization-layout equipment-layout rms-layout">
+        <aside class="tree-container rms-equipment-tree">
           <div class="tree-toolbar equipment-tree-toolbar">
             <h4>装备结构树</h4>
             <span>独立导入数据</span>
           </div>
-          ${equipmentRootSelect(project.rootId, equipmentRoots, htmlEscape)}
           ${renderEquipmentTree(project, result, htmlEscape)}
-        </div>
-        <div class="rms-installation-panel">
-          <div class="section-head"><h3>导入安装数</h3><span>${statusLabel(result.status)}</span></div>
+        </aside>
+        <section class="detail-panel equipment-system-table-panel rms-installation-panel">
+          <div class="detail-card">
+            <div class="section-head"><h3>导入安装数</h3><span>${statusLabel(result.status)}</span></div>
           <div class="equipment-import-row rms-installation-import-row">
             <button type="button" class="rms-import-button" data-rms-action="download-template">下载模板</button>
             <label class="rms-file-button rms-import-button">上传文件<input data-rms-equipment-import-file type="file" accept=".csv,.json,application/json,text/csv"></label>
@@ -32,7 +32,8 @@ export function renderRmsAllocationWorkbench({ project, plan, result, importStat
           <div class="table-wrap"><table><thead><tr><th>系统名称</th><th>型号</th><th>安装数</th><th>运行比</th></tr></thead><tbody>
             ${result.nodeResults.map((row) => `<tr><td>${htmlEscape(row.nodeName)}</td><td>${htmlEscape(row.model || "-")}</td><td>${row.installationCount}</td><td>${compactNumber(row.runningRatio)}</td></tr>`).join("")}
           </tbody></table></div>
-        </div>
+          </div>
+        </section>
       </section>
 
       <section class="rms-method-panel">
@@ -46,12 +47,12 @@ export function renderRmsAllocationWorkbench({ project, plan, result, importStat
             ${renderMethodParameters(plan, equipmentRoots, project.rootId, htmlEscape)}
           </div>
           <div class="rms-method-actions">
-            <button type="button" class="btn-primary" data-rms-action="calculate">计算</button>
+            <button type="button" class="btn-primary" data-rms-action="calculate"${isCalculating ? " disabled" : ""}>${isCalculating ? "计算中" : "计算"}</button>
           </div>
           <div class="rms-warning-list">
             ${result.warnings.length
               ? result.warnings.map((warning) => `<span>${htmlEscape(warning.code)}：${htmlEscape(warning.message)}</span>`).join("")
-              : "<span>分配完成，节点份额合计为 100%。</span>"}
+              : "<span>计算完成。</span>"}
           </div>
       </section>
 
@@ -74,11 +75,13 @@ export function renderRmsAllocationWorkbench({ project, plan, result, importStat
           </table>
         </div>
       </section>
+      ${isCalculating ? '<div class="rms-calculation-overlay" role="status" aria-live="assertive"><span>计算中</span></div>' : ""}
     </div>
   `;
 }
 
 function renderEquipmentTree(project, result, htmlEscape) {
+  const rootNodes = project.equipmentNodes.filter((node) => !node.parentId);
   const childNodesByParent = project.equipmentNodes.reduce((acc, node) => {
     if (node.parentId) {
       acc[node.parentId] ||= [];
@@ -86,22 +89,43 @@ function renderEquipmentTree(project, result, htmlEscape) {
     }
     return acc;
   }, {});
-  const root = project.equipmentNodes.find((node) => node.id === project.rootId);
-  const renderChildren = (parentId, depth = 1) => (childNodesByParent[parentId] || []).map((node) => {
+  const renderChildren = (parentId) => (childNodesByParent[parentId] || []).map((node) => {
     const row = result.nodeResults.find((item) => item.nodeId === node.id);
     return `
-      <li style="--tree-depth:${depth}">
-        <strong>${htmlEscape(node.name)}</strong>
-        <span>${htmlEscape(node.level)} / 运行比 ${compactNumber(row?.runningRatio)}</span>
-      </li>
-      ${renderChildren(node.id, depth + 1)}
+      <div class="tree-node-item">
+        <div class="tree-node-row">
+          <span class="tree-node-label">
+            <span class="tree-node-toggle">•</span>
+            <span class="tree-node-text">${htmlEscape(node.name)}</span>
+            <span class="tree-node-meta">${htmlEscape(node.level)} / 运行比 ${compactNumber(row?.runningRatio)}</span>
+          </span>
+        </div>
+        ${childNodesByParent[node.id]?.length ? `<div class="tree-node-children">${renderChildren(node.id)}</div>` : ""}
+      </div>
     `;
   }).join("");
   return `
-    <ul>
-      <li style="--tree-depth:0"><strong>${htmlEscape(root?.name || "整机")}</strong><span>装备</span></li>
-      ${renderChildren(project.rootId)}
-    </ul>
+    <div class="object-tree rms-equipment-tree-list">
+      <div class="tree-node-item">
+        <div class="tree-node-row">
+          <span class="tree-node-label root"><span class="tree-node-toggle">▼</span><span class="tree-node-text">飞机列表</span><span class="tree-node-meta">${rootNodes.length} 类飞机</span></span>
+        </div>
+        <div class="tree-node-children">
+          ${rootNodes.map((root) => `
+            <div class="tree-node-item">
+              <div class="tree-node-row">
+                <button type="button" class="tree-node-label${root.id === project.rootId ? " selected" : ""}" data-rms-equipment-root="${htmlEscape(root.id)}">
+                  <span class="tree-node-toggle">${childNodesByParent[root.id]?.length ? "▼" : "•"}</span>
+                  <span class="tree-node-text">${htmlEscape(root.name)}</span>
+                  <span class="tree-node-meta">整机级</span>
+                </button>
+              </div>
+              ${childNodesByParent[root.id]?.length ? `<div class="tree-node-children">${renderChildren(root.id)}</div>` : ""}
+            </div>
+          `).join("")}
+        </div>
+      </div>
+    </div>
   `;
 }
 
@@ -116,17 +140,6 @@ function select(label, path, value, options, htmlEscape) {
       <select data-rms-path="${htmlEscape(path)}">
         ${options.map(([optionValue, optionLabel]) => `<option value="${htmlEscape(optionValue)}" ${String(value) === String(optionValue) ? "selected" : ""}>${htmlEscape(optionLabel)}</option>`).join("")}
       </select>
-    </label>
-  `;
-}
-
-function equipmentRootSelect(value, equipmentRoots, htmlEscape) {
-  return `
-    <label>装备
-      <select data-rms-equipment-root>
-        ${equipmentRoots.map((node) => `<option value="${htmlEscape(node.id)}" ${String(value) === String(node.id) ? "selected" : ""}>${htmlEscape(node.name)}</option>`).join("")}
-      </select>
-      <span>先选定机型后展示对应结构树</span>
     </label>
   `;
 }

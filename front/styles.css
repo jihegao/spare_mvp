@@ -2066,20 +2066,23 @@ select[multiple].table-edit-select {
 }
 
 .rms-allocation-workbench {
+  position: relative;
   display: grid;
   gap: 14px;
 }
 
-.rms-equipment-tree,
-.rms-method-panel,
-.rms-installation-panel {
+.rms-method-panel {
   padding: 14px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fbfcfd;
 }
 
-.rms-equipment-tree span,
+.rms-installation-panel {
+  min-width: 0;
+}
+
+.rms-equipment-tree > .tree-toolbar > span,
 .rms-import-status,
 .rms-warning-list {
   color: var(--muted);
@@ -2163,42 +2166,35 @@ select[multiple].table-edit-select {
   margin: 0 0 10px;
 }
 
-.rms-equipment-tree label {
-  display: grid;
-  gap: 5px;
-  margin-bottom: 10px;
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.rms-equipment-tree select {
-  min-width: 0;
-}
-
 .rms-layout {
-  display: grid;
-  grid-template-columns: minmax(260px, 0.95fr) minmax(360px, 1.4fr);
-  gap: 12px;
-  align-items: stretch;
+  grid-template-columns: 300px minmax(0, 1fr);
 }
 
-.rms-equipment-tree ul {
-  display: grid;
-  gap: 8px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
+.rms-equipment-tree .tree-node-label {
+  cursor: default;
 }
 
-.rms-equipment-tree li {
+.rms-equipment-tree button.tree-node-label {
+  cursor: pointer;
+}
+
+.rms-calculation-overlay {
+  position: absolute;
+  z-index: 3;
+  inset: 0;
   display: grid;
-  gap: 2px;
-  padding: 9px 10px;
-  margin-left: calc(var(--tree-depth, 0) * 14px);
-  border: 1px solid var(--line);
+  place-items: center;
+  border-radius: 8px;
+  background: rgb(15 23 42 / 42%);
+}
+
+.rms-calculation-overlay span {
+  padding: 14px 22px;
   border-radius: 8px;
   background: #fff;
+  color: var(--text);
+  font-weight: 700;
+  box-shadow: 0 8px 24px rgb(15 23 42 / 18%);
 }
 
 .rms-warning-list {

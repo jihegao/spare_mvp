@@ -606,6 +606,7 @@ let rmsAllocationProject = createDemoRmsAllocationProject();
 let rmsAllocationPlan = createDefaultRmsAllocationPlan(rmsAllocationProject);
 let rmsAllocationResult = calculateRmsAllocation(rmsAllocationPlan, rmsAllocationProject);
 let rmsEquipmentImportStatus = "当前装备树为 RMS 分配工作台独立数据，未写入项目建模。";
+let rmsCalculationInFlight = false;
 let modelingImportPackage = cloneModelingImportPackage(MODELING_IMPORT_DEMO_FIXTURE);
 let modelingImportPublishedPackage = null;
 
@@ -1859,7 +1860,14 @@ function bindEvents() {
       const action = rmsActionButton.dataset.rmsAction;
       if (action === "download-template") downloadRmsEquipmentTemplate();
       else if (action === "export-excel") exportRmsAllocationExcel().finally(() => render());
-      else recalculateRmsAllocation();
+      else if (action === "calculate") startRmsAllocationCalculation();
+      render();
+      return;
+    }
+
+    const rmsEquipmentRootButton = event.target.closest("[data-rms-equipment-root]");
+    if (rmsEquipmentRootButton) {
+      setRmsEquipmentRoot(rmsEquipmentRootButton.dataset.rmsEquipmentRoot);
       render();
       return;
     }
@@ -2037,13 +2045,6 @@ function bindEvents() {
     const mesaSupportAirportSelect = event.target.closest("[data-mesa-support-airport]");
     if (mesaSupportAirportSelect) {
       visualSupportAirportId = mesaSupportAirportSelect.value;
-      render();
-      return;
-    }
-
-    const rmsEquipmentRootSelect = event.target.closest("[data-rms-equipment-root]");
-    if (rmsEquipmentRootSelect) {
-      setRmsEquipmentRoot(rmsEquipmentRootSelect.value);
       render();
       return;
     }
@@ -3102,6 +3103,7 @@ function renderMainComponent(page) {
     plan: rmsAllocationPlan,
     result: rmsAllocationResult,
     importStatus: rmsEquipmentImportStatus,
+    isCalculating: rmsCalculationInFlight,
     htmlEscape,
     fixed,
     pct
@@ -12183,6 +12185,17 @@ function recalculateRmsAllocation() {
   } catch (err) {
     rmsAllocationResult = createRmsAllocationFailureResult(rmsAllocationPlan, err);
   }
+}
+
+function startRmsAllocationCalculation() {
+  if (rmsCalculationInFlight) return;
+  rmsCalculationInFlight = true;
+  render();
+  globalThis.setTimeout(() => {
+    recalculateRmsAllocation();
+    rmsCalculationInFlight = false;
+    render();
+  }, 2000);
 }
 
 function applyRmsEquipmentImport(rowsOrProject, statusText) {
