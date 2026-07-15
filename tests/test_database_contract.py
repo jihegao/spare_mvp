@@ -73,6 +73,7 @@ class DatabaseContractTest(unittest.TestCase):
         self.assertEqual(
             tables,
             {
+                "schema_migrations",
                 "projects",
                 "users",
                 "sessions",
@@ -87,6 +88,22 @@ class DatabaseContractTest(unittest.TestCase):
                 "result_summaries",
                 "artifact_manifests",
             },
+        )
+
+    def test_initialize_database_records_versioned_compatibility_migrations(self) -> None:
+        applied = self.connection.execute(
+            "SELECT version, name FROM schema_migrations ORDER BY version"
+        ).fetchall()
+
+        self.assertEqual(
+            applied,
+            [
+                (1, "simulation_runs_nullable_scenarios"),
+                (2, "simulation_run_lifecycle_columns"),
+                (3, "user_authentication_columns"),
+                (4, "experiment_plan_snapshot_column"),
+                (5, "modeling_import_payload_columns"),
+            ],
         )
 
     def test_schema_preserves_version_and_traceability_columns(self) -> None:
@@ -278,6 +295,60 @@ class DatabaseContractTest(unittest.TestCase):
             initialize_database(connection)
             columns = {row[1] for row in connection.execute("pragma table_info(experiment_plans)")}
             self.assertIn("modeling_snapshot_id", columns)
+        finally:
+            connection.close()
+
+    def test_initialize_database_migrates_legacy_columns_through_versioned_migrations(self) -> None:
+        connection = sqlite3.connect(":memory:")
+        try:
+            connection.executescript(
+                """
+                CREATE TABLE users (
+                  user_id TEXT PRIMARY KEY,
+                  username TEXT NOT NULL,
+                  role TEXT NOT NULL
+                );
+
+                CREATE TABLE modeling_imports (
+                  import_id TEXT PRIMARY KEY,
+                  project_id TEXT NOT NULL,
+                  schema_version TEXT NOT NULL,
+                  import_version INTEGER NOT NULL,
+                  status TEXT NOT NULL,
+                  validation_status TEXT NOT NULL,
+                  referenced_run_ids_json TEXT NOT NULL,
+                  payload_json TEXT NOT NULL,
+                  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+                """
+            )
+
+            initialize_database(connection)
+
+            columns_by_table = {
+                table: {row[1] for row in connection.execute(f"PRAGMA table_info({table})")}
+                for table in ("users", "experiment_plans", "modeling_imports")
+            }
+            self.assertLessEqual(
+                {"password_hash", "display_name", "status"},
+                columns_by_table["users"],
+            )
+            self.assertIn("modeling_snapshot_id", columns_by_table["experiment_plans"])
+            self.assertLessEqual(
+                {"draft_payload_json", "published_payload_json"},
+                columns_by_table["modeling_imports"],
+            )
+            self.assertEqual(
+                connection.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0],
+                5,
+            )
+
+            initialize_database(connection)
+            self.assertEqual(
+                connection.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0],
+                5,
+            )
         finally:
             connection.close()
 
