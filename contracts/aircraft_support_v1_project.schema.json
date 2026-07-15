@@ -201,6 +201,7 @@
         "parentId": { "type": ["string", "null"] },
         "aircraftModel": { "type": "string" },
         "productType": { "type": "string" },
+        "spareType": { "type": "string" },
         "quantity": { "type": "integer", "minimum": 0 },
         "failureDistribution": { "$ref": "#/$defs/dictionary" },
         "repairDistribution": { "$ref": "#/$defs/dictionary" },

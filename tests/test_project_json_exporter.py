@@ -335,9 +335,9 @@ class ProjectJsonExporterTest(unittest.TestCase):
             "lifeLimitHours",
             "mtbfHours",
             "rms",
-            "spareType",
         ):
             self.assertNotIn(field, clean["components"][0])
+        self.assertEqual(clean["components"][0]["spareType"], "legacy spare")
         self.assertEqual(clean["components"][0]["specialRepairProfile"], {"repairTimeMinutes": 45})
         self.assertNotIn("formState", clean["components"][0])
         self.assertNotIn("draftState", clean["basicMissions"][0])

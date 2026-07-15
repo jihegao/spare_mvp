@@ -23,6 +23,7 @@ BEHAVIOR_DRIVING_FIELDS = [
     "basicMissions[].missionPhases",
     "airports",
     "components[].aircraftModel",
+    "components[].spareType",
     "components[].failureDistribution",
     "components[].kOutOfN",
     "components[].specialRepairProfile",
@@ -594,6 +595,7 @@ class AircraftSupportV1Model:
             parent_id = component.get("parent_id")
             component["parent_id"] = "" if parent_id in (None, "") else str(parent_id)
             component["aircraft_model"] = str(component.get("aircraft_model") or "")
+            component["spare_type"] = str(component.get("spare_type") or component.get("spareType") or "")
             component["product_type"] = str(component.get("product_type") or "")
             component["quantity"] = max(1, int(component.get("quantity") or 1))
             component["k_out_of_n"] = component.get("k_out_of_n") if isinstance(component.get("k_out_of_n"), dict) else {}
@@ -1097,11 +1099,13 @@ class AircraftSupportV1Model:
                 self.shortage_events += 1
                 reason = "in_transit" if self._has_in_transit_spare(node["id"], spare_type) else f"spare:{spare_type}"
                 job.shortage_reason = reason
+                aircraft = self._aircraft_by_tail(job.tail_number)
                 self._event(
                     "spare_shortage",
                     f"{job.job_id} blocked by {spare_type} shortage at {node['id']}",
                     {
                         "job_id": job.job_id,
+                        "aircraft_model": aircraft.aircraft_type if aircraft is not None else "全部机型",
                         "resource_id": node["id"],
                         "spare_type": spare_type,
                         "required_quantity": spare_qty,
@@ -1360,7 +1364,7 @@ class AircraftSupportV1Model:
             if component.get("repair_duration_minutes"):
                 tasks[-1]["durationMinutes"] = max(1, int(component["repair_duration_minutes"]))
             if str(component.get("product_type") or "").strip().upper() == "LRU":
-                spare_name = str(component.get("name") or "").strip()
+                spare_name = str(component.get("spare_type") or component.get("name") or "").strip()
                 if spare_name:
                     tasks[-1]["spare"] = f"{spare_name},1"
         self.jobs.append(
@@ -1440,11 +1444,13 @@ class AircraftSupportV1Model:
         if current >= spare_quantity:
             node["inventory"][spare_type] = current - spare_quantity
             self.spare_consumed_total += spare_quantity
+            aircraft = self._aircraft_by_tail(job.tail_number)
             self._event(
                 "spare_consumed",
                 f"{job.job_id} consumed {spare_quantity} {spare_type}",
                 {
                     "job_id": job.job_id,
+                    "aircraft_model": aircraft.aircraft_type if aircraft is not None else "全部机型",
                     "resource_id": node["id"],
                     "spare_type": spare_type,
                     "quantity": spare_quantity,

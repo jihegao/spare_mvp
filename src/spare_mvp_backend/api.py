@@ -1806,31 +1806,22 @@ def _lite_mesa_spare_shortfall_result(
     mean_transport_delay = max(0.0, _metric_float(aggregate.get("mean_transport_delay"), default=0))
     rows = []
     for item in projection.get("data") or []:
+        aircraft_model = str(item.get("aircraft_model") or item.get("aircraftModel") or "").strip()
+        spare_type = str(item.get("spare_type") or "").strip()
+        if not aircraft_model or not spare_type:
+            continue
         fill_rate = _metric_float(item.get("fill_rate"), default=aggregate.get("spare_fill_rate", 0))
         demand = max(0, int(round(_metric_float(item.get("demand_count"), default=planned))))
         filled = max(0, int(round(_metric_float(item.get("filled_count"), default=demand * fill_rate))))
         rows.append(
             {
-                "aircraftModel": str(item.get("aircraft_model") or item.get("aircraftModel") or "全部机型"),
-                "spareType": str(item.get("spare_type") or "aircraft_support_v1_spares"),
+                "aircraftModel": aircraft_model,
+                "spareType": spare_type,
                 "demand": demand,
                 "filled": filled,
                 "meanTransportDelayHours": _metric_float(item.get("mean_transport_delay"), default=mean_transport_delay),
                 "fillRate": fill_rate,
                 "riskLevel": _risk_label(item.get("risk_level")),
-            }
-        )
-    if not rows:
-        fill_rate = _metric_float(aggregate.get("spare_fill_rate"), default=0)
-        rows.append(
-            {
-                "aircraftModel": "全部机型",
-                "spareType": "aircraft_support_v1_spares",
-                "demand": planned,
-                "filled": max(0, int(round(planned * fill_rate))),
-                "meanTransportDelayHours": mean_transport_delay,
-                "fillRate": fill_rate,
-                "riskLevel": _risk_label("low"),
             }
         )
     shortfall_rows = [

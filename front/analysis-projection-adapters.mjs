@@ -81,17 +81,22 @@ function normalizeSpareShortfall(payload) {
       const fillRate = clamp01(requireFiniteNumber(row.fill_rate, "fill_rate"));
       const utilization = clamp01(requireFiniteNumber(row.utilization, "utilization"));
       const shortageProbability = clamp01(requireFiniteNumber(row.shortage_probability, "shortage_probability"));
+      const demand = Math.max(0, Math.round(numberOrZero(row.demand_count)));
+      const filled = Math.max(0, Math.round(numberOrZero(row.filled_count)));
+      const reportedShortage = numberOrZero(row.shortage_count);
       return {
         aircraftModel: stringValue(row.aircraft_model, "全部机型"),
         name: stringValue(row.spare_type, "unknown_spare"),
-        demand: Math.max(0, Math.round(numberOrZero(row.demand_count))),
+        demand,
         satisfy: fillRate,
         utilization,
         shortageProbability,
         delay: Math.round(shortageProbability * 100),
         baseCount: Math.max(0, Math.round(fillRate * 10)),
         stock: Math.max(1, Math.round((1 + shortageProbability) * 10)),
-        shortage: Math.round(shortageProbability * 10),
+        shortage: row.shortage_count != null
+          ? Math.max(0, Math.round(reportedShortage))
+          : Math.max(0, Math.round((demand - filled) || (shortageProbability * 10))),
         level: riskLevelLabel(row.risk_level, shortageProbability),
         fillRateConstraint: thresholdLabel(fillRate, constraints.fillRate),
         utilizationConstraint: thresholdLabel(utilization, constraints.utilization)

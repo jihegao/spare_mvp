@@ -254,12 +254,15 @@ class AircraftSupportV1CleanProjectSchemaTest(unittest.TestCase):
             "lifeLimitHours",
             "mtbfHours",
             "rms",
-            "spareType",
         ):
             with self.subTest(field=field, path="components"):
                 project = self._clean_project()
                 project["components"][0][field] = 0
                 self.assertTrue(self._schema_errors(project))
+
+        project = self._clean_project()
+        project["components"][0]["spareType"] = "发动机备件"
+        self.assertEqual(self._schema_errors(project), [])
 
         for field in ("repairRatio", "replacementRatio"):
             with self.subTest(field=field, path="components.specialRepairProfile"):

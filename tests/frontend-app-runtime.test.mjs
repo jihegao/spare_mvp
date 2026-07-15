@@ -1051,6 +1051,58 @@ test("spare shortfall analysis renders average delay hours and hides session chr
   }
 });
 
+test("spare shortfall result keeps aircraft-spare pairs and sorts demand quantity in both directions", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=spare-planning-spare-shortfall-analysis",
+    projectJson: createRuntimeProjectJson(),
+    liteMesaAnalysisResponseOverrides: {
+      metrics: [
+        ["发生缺件备件", "3"],
+        ["平均备件延误时间(h)", "1.50"],
+        ["最高缺件备件", "发动机备件、雷达备件"],
+        ["因维修延误导致的任务取消次数", "2"]
+      ],
+      rows: [
+        { aircraftModel: "J-15", spareType: "发动机备件", demand: 8, filled: 3, meanTransportDelayHours: 1.5, fillRate: 0.38, riskLevel: "高" },
+        { aircraftModel: "J-35", spareType: "雷达备件", demand: 2, filled: 0, meanTransportDelayHours: 1.5, fillRate: 0, riskLevel: "高" },
+        { aircraftModel: "J-15", spareType: "液压备件", demand: 5, filled: 4, meanTransportDelayHours: 0, fillRate: 0.8, riskLevel: "中" },
+        { aircraftModel: "全部机型", spareType: "泛化备件", demand: 99, filled: 0, meanTransportDelayHours: 0, fillRate: 0, riskLevel: "高" }
+      ]
+    }
+  });
+
+  try {
+    await runtime.click("[data-lite-mesa-analysis-action='run']");
+
+    assert.match(runtime.appNode.innerHTML, /<th>机型<\/th><th>备件类别<\/th><th>需求数量<\/th>/);
+    assert.match(runtime.appNode.innerHTML, /J-15[\s\S]*发动机备件/);
+    assert.match(runtime.appNode.innerHTML, /J-35[\s\S]*雷达备件/);
+    assert.match(runtime.appNode.innerHTML, /最高缺件备件[\s\S]*发动机备件、雷达备件/);
+    assert.match(runtime.appNode.innerHTML, /data-spare-aircraft-filter/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /泛化备件|<td>全部机型<\/td>/);
+
+    await runtime.change("[data-spare-aircraft-filter]", {}, { value: "J-35" });
+    const j35Rows = runtime.appNode.innerHTML.slice(runtime.appNode.innerHTML.indexOf('<table class="lite-mesa-stat-table">'));
+    assert.match(j35Rows, /J-35[\s\S]*雷达备件/);
+    assert.doesNotMatch(j35Rows, /J-15|发动机备件|液压备件/);
+
+    await runtime.change("[data-spare-aircraft-filter]", {}, { value: "" });
+    await runtime.click("[data-spare-demand-sort]", { spareDemandSort: "asc" });
+    const ascending = runtime.appNode.innerHTML;
+    const ascendingRows = ascending.slice(ascending.indexOf('<table class="lite-mesa-stat-table">'));
+    assert.ok(ascendingRows.indexOf("雷达备件") < ascendingRows.indexOf("液压备件"));
+    assert.ok(ascendingRows.indexOf("液压备件") < ascendingRows.indexOf("发动机备件"));
+
+    await runtime.click("[data-spare-demand-sort]", { spareDemandSort: "desc" });
+    const descending = runtime.appNode.innerHTML;
+    const descendingRows = descending.slice(descending.indexOf('<table class="lite-mesa-stat-table">'));
+    assert.ok(descendingRows.indexOf("发动机备件") < descendingRows.indexOf("液压备件"));
+    assert.ok(descendingRows.indexOf("液压备件") < descendingRows.indexOf("雷达备件"));
+  } finally {
+    runtime.restore();
+  }
+});
+
 test("experiment plan management hides page-level current project context", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=spare-planning-experiment-plan-management",

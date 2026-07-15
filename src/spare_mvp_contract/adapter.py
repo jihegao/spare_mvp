@@ -629,6 +629,7 @@ class SimulationAdapter:
             "name": str(component.get("name") or component.get("id") or "component"),
             "parent_id": self._optional_string(component.get("parentId")),
             "aircraft_model": self._optional_string(component.get("aircraftModel")),
+            "spare_type": self._optional_string(component.get("spareType") or component.get("spare_type")),
             "product_type": self._optional_string(component.get("productType")),
             "quantity": self._positive_int(component.get("quantity"), 1),
             "failure_rate": 0.0 if failure_rate is None else failure_rate,
@@ -1060,6 +1061,7 @@ class SimulationAdapter:
                 "basicMissions[].missionPhases",
                 "airports",
                 "components[].aircraftModel",
+                "components[].spareType",
                 "components[].failureDistribution",
                 "components[].kOutOfN",
                 "components[].specialRepairProfile",
@@ -2240,6 +2242,8 @@ class SimulationAdapter:
     ) -> list[dict[str, Any]]:
         scoped_nodes = self._aircraft_support_v1_scoped_support_nodes(simulation_inputs)
         scoped_node_ids = {str(node.get("id") or "") for node in scoped_nodes if str(node.get("id") or "")}
+        modeled_aircraft_models = self._aircraft_support_v1_modeled_aircraft_models(simulation_inputs)
+        spare_models = self._aircraft_support_v1_spare_models(simulation_inputs, modeled_aircraft_models)
         baseline_quantities: dict[str, int] = {}
         for node in scoped_nodes:
             inventory = node.get("inventory") if isinstance(node.get("inventory"), dict) else {}
@@ -2250,15 +2254,32 @@ class SimulationAdapter:
                 baseline_quantities[key] = baseline_quantities.get(key, 0) + self._positive_int(quantity, 0)
 
         stats = self._aircraft_support_v1_spare_event_stats(samples, scoped_node_ids)
-        for spare_type in stats:
+        for _aircraft_model, spare_type in stats:
+            baseline_quantities.setdefault(spare_type, 0)
+        for spare_type in spare_models:
             baseline_quantities.setdefault(spare_type, 0)
 
         rows = []
         sample_count = max(1, len(samples))
         planned_sorties = max(1.0, float(metrics.get("planned_sorties", 1) or 1))
         mean_transport_delay = max(0.0, float(metrics.get("mean_transport_delay", 0) or 0))
-        for spare_type, baseline_quantity in baseline_quantities.items():
-            row_stats = stats.get(spare_type, {})
+        row_keys: list[tuple[str, str]] = []
+        for spare_type in baseline_quantities:
+            event_models = {
+                aircraft_model
+                for aircraft_model, stat_spare_type in stats
+                if stat_spare_type == spare_type and aircraft_model in modeled_aircraft_models
+            }
+            models = event_models | spare_models.get(spare_type, set())
+            for aircraft_model in sorted(models):
+                row_keys.append((aircraft_model, spare_type))
+        for row_key in sorted(stats):
+            if row_key[0] in modeled_aircraft_models and row_key not in row_keys:
+                row_keys.append(row_key)
+
+        for aircraft_model, spare_type in row_keys:
+            baseline_quantity = baseline_quantities.get(spare_type, 0)
+            row_stats = stats.get((aircraft_model, spare_type), {})
             consumed_quantity = max(0.0, float(row_stats.get("consumed_quantity", 0) or 0))
             shortage_count = max(0.0, float(row_stats.get("shortage_count", 0) or 0))
             shortage_quantity = max(0.0, float(row_stats.get("shortage_quantity", 0) or 0))
@@ -2272,6 +2293,7 @@ class SimulationAdapter:
             replenish_quantity = int(math.ceil(shortage_quantity / sample_count)) if shortage_quantity > 0 else 0
             rows.append(
                 {
+                    "aircraft_model": aircraft_model,
                     "spare_type": spare_type,
                     "baseline_quantity": baseline_quantity,
                     "recommended_quantity": max(0, baseline_quantity + replenish_quantity),
@@ -2287,6 +2309,35 @@ class SimulationAdapter:
                 }
             )
         return rows
+
+    def _aircraft_support_v1_modeled_aircraft_models(self, simulation_inputs: dict[str, Any]) -> set[str]:
+        models = {
+            str(asset.get("aircraft_type") or asset.get("aircraftType") or asset.get("model") or "").strip()
+            for asset in simulation_inputs.get("aircraft", {}).get("assets", []) or []
+            if isinstance(asset, dict)
+        }
+        models.update(
+            str(component.get("aircraft_model") or component.get("aircraftModel") or "").strip()
+            for component in simulation_inputs.get("equipment_tree", {}).get("components", []) or []
+            if isinstance(component, dict)
+        )
+        return {model for model in models if model}
+
+    def _aircraft_support_v1_spare_models(
+        self,
+        simulation_inputs: dict[str, Any],
+        modeled_aircraft_models: set[str],
+    ) -> dict[str, set[str]]:
+        spare_models: dict[str, set[str]] = {}
+        for component in simulation_inputs.get("equipment_tree", {}).get("components", []) or []:
+            if not isinstance(component, dict):
+                continue
+            aircraft_model = str(component.get("aircraft_model") or component.get("aircraftModel") or "").strip()
+            spare_type = str(component.get("spare_type") or component.get("spareType") or "").strip()
+            if aircraft_model not in modeled_aircraft_models or not spare_type:
+                continue
+            spare_models.setdefault(spare_type, set()).add(aircraft_model)
+        return spare_models
 
     def _aircraft_support_v1_scoped_support_nodes(self, simulation_inputs: dict[str, Any]) -> list[dict[str, Any]]:
         nodes = [
@@ -2372,10 +2423,10 @@ class SimulationAdapter:
         self,
         samples: list[dict[str, Any]],
         scoped_node_ids: set[str],
-    ) -> dict[str, dict[str, float]]:
-        demand_quantities: dict[str, dict[tuple[str, ...], float]] = {}
-        filled_quantities: dict[str, dict[tuple[str, ...], float]] = {}
-        shortage_quantities: dict[str, dict[tuple[str, ...], float]] = {}
+    ) -> dict[tuple[str, str], dict[str, float]]:
+        demand_quantities: dict[tuple[str, str], dict[tuple[str, ...], float]] = {}
+        filled_quantities: dict[tuple[str, str], dict[tuple[str, ...], float]] = {}
+        shortage_quantities: dict[tuple[str, str], dict[tuple[str, ...], float]] = {}
         for sample in samples:
             sample_key = str(sample.get("sample_index", sample.get("seed", "")))
             for event_index, event in enumerate(sample.get("events") or []):
@@ -2387,6 +2438,13 @@ class SimulationAdapter:
                 details = event.get("details") if isinstance(event.get("details"), dict) else {}
                 spare_type = str(details.get("spare_type") or details.get("spareType") or "").strip()
                 if not spare_type:
+                    continue
+                aircraft_model = str(
+                    details.get("aircraft_model")
+                    or details.get("aircraftModel")
+                    or ""
+                ).strip()
+                if not aircraft_model:
                     continue
                 node_id = str(
                     details.get("resource_id")
@@ -2400,14 +2458,15 @@ class SimulationAdapter:
                 quantity = max(1.0, self._non_negative_number(details.get("quantity"), 1.0))
                 job_id = str(details.get("job_id") or details.get("jobId") or "").strip()
                 event_key = job_id or f"event-{event_index}"
-                demand_key = (sample_key, node_id, spare_type, event_key)
+                spare_key = (aircraft_model, spare_type)
+                demand_key = (sample_key, node_id, aircraft_model, spare_type, event_key)
                 if event_name == "spare_consumed":
-                    filled_quantities.setdefault(spare_type, {})[demand_key] = max(
-                        filled_quantities.setdefault(spare_type, {}).get(demand_key, 0.0),
+                    filled_quantities.setdefault(spare_key, {})[demand_key] = max(
+                        filled_quantities.setdefault(spare_key, {}).get(demand_key, 0.0),
                         quantity,
                     )
-                    demand_quantities.setdefault(spare_type, {})[demand_key] = max(
-                        demand_quantities.setdefault(spare_type, {}).get(demand_key, 0.0),
+                    demand_quantities.setdefault(spare_key, {})[demand_key] = max(
+                        demand_quantities.setdefault(spare_key, {}).get(demand_key, 0.0),
                         quantity,
                     )
                 else:
@@ -2415,21 +2474,21 @@ class SimulationAdapter:
                         quantity,
                         self._non_negative_number(details.get("required_quantity"), quantity),
                     )
-                    shortage_quantities.setdefault(spare_type, {})[demand_key] = max(
-                        shortage_quantities.setdefault(spare_type, {}).get(demand_key, 0.0),
+                    shortage_quantities.setdefault(spare_key, {})[demand_key] = max(
+                        shortage_quantities.setdefault(spare_key, {}).get(demand_key, 0.0),
                         required,
                     )
-                    demand_quantities.setdefault(spare_type, {})[demand_key] = max(
-                        demand_quantities.setdefault(spare_type, {}).get(demand_key, 0.0),
+                    demand_quantities.setdefault(spare_key, {})[demand_key] = max(
+                        demand_quantities.setdefault(spare_key, {}).get(demand_key, 0.0),
                         required,
                     )
-        stats: dict[str, dict[str, float]] = {}
-        for spare_type in sorted(set(demand_quantities) | set(filled_quantities) | set(shortage_quantities)):
-            stats[spare_type] = {
-                "consumed_quantity": sum(filled_quantities.get(spare_type, {}).values()),
-                "shortage_count": float(len(shortage_quantities.get(spare_type, {}))),
-                "shortage_quantity": sum(shortage_quantities.get(spare_type, {}).values()),
-                "demand_quantity": sum(demand_quantities.get(spare_type, {}).values()),
+        stats: dict[tuple[str, str], dict[str, float]] = {}
+        for spare_key in sorted(set(demand_quantities) | set(filled_quantities) | set(shortage_quantities)):
+            stats[spare_key] = {
+                "consumed_quantity": sum(filled_quantities.get(spare_key, {}).values()),
+                "shortage_count": float(len(shortage_quantities.get(spare_key, {}))),
+                "shortage_quantity": sum(shortage_quantities.get(spare_key, {}).values()),
+                "demand_quantity": sum(demand_quantities.get(spare_key, {}).values()),
             }
         return stats
 
@@ -2499,24 +2558,6 @@ class SimulationAdapter:
             metrics=metrics,
             samples=samples or [],
         )
-        if not spare_rows:
-            fallback_quantity = max(1, int(math.ceil(max(1.0, float(metrics.get("spare_consumed_total", 0) or 0) + shortage_events))))
-            spare_rows = [
-                {
-                    "spare_type": "aircraft_support_v1_spares",
-                    "baseline_quantity": fallback_quantity,
-                    "recommended_quantity": fallback_quantity,
-                    "demand_count": planned_sorties,
-                    "filled_count": planned_sorties * spare_fill_rate,
-                    "shortage_count": shortage_events,
-                    "fill_rate": spare_fill_rate,
-                    "utilization": spare_utilization,
-                    "shortage_probability": shortage_probability,
-                    "mean_transport_delay": float(metrics.get("mean_transport_delay", 0) or 0),
-                    "in_transit_count": metrics.get("transport_in_transit_count", 0),
-                    "risk_level": risk_level,
-                }
-            ]
         return {
             "large_sample_summary": {
                 "projection_type": "large_sample_summary",

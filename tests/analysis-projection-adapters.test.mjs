@@ -47,6 +47,35 @@ test("normalizes spare shortfall projection payload for formal KPI and table ren
   assert.equal(view.rows[1].utilizationConstraint, "达标 0.85");
 });
 
+test("lists every exactly tied highest spare shortfall using the reported shortage count", () => {
+  const view = normalizeAnalysisProjectionPayload("spare_shortfall", {
+    projection_type: "spare_shortfall",
+    run_id: "run-ties",
+    model_family: "aircraft_support_v1",
+    constraints: {
+      fill_rate: [0.85, 0.9, 0.95],
+      utilization: [0.85, 0.9, 0.95]
+    },
+    truncation: {
+      mode: "clamp_0_1",
+      fields: ["fill_rate", "utilization", "shortage_probability"]
+    },
+    data: [
+      { aircraft_model: "J-15", spare_type: "engine", demand_count: 8, filled_count: 3, shortage_count: 5, fill_rate: 0.38, utilization: 0.7, shortage_probability: 0.25, risk_level: "high" },
+      { aircraft_model: "J-35", spare_type: "radar", demand_count: 7, filled_count: 2, shortage_count: 5, fill_rate: 0.29, utilization: 0.7, shortage_probability: 0.24, risk_level: "high" },
+      { aircraft_model: "J-15", spare_type: "hydraulic", demand_count: 10, filled_count: 6, shortage_count: 4, fill_rate: 0.6, utilization: 0.7, shortage_probability: 0.25, risk_level: "high" }
+    ]
+  }, { runId: "run-ties", modelFamily: "aircraft_support_v1" });
+
+  assert.deepEqual(view.highestShortfallNames, ["engine", "radar"]);
+  assert.equal(view.metrics[1][1], "engine、radar");
+  assert.deepEqual(view.rows.map((row) => [row.aircraftModel, row.name, row.shortage]), [
+    ["J-15", "engine", 5],
+    ["J-15", "hydraulic", 4],
+    ["J-35", "radar", 5]
+  ]);
+});
+
 test("normalizes not applicable projection payloads without formal KPI computation", () => {
   const view = normalizeAnalysisProjectionPayload("spare_shortfall", {
     projection_type: "spare_shortfall",
