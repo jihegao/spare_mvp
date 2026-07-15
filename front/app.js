@@ -8007,7 +8007,7 @@ function renderSupportActivityJobTable(activity, tabKey) {
     : `<tr><td colspan="7" class="muted">暂无工作项目</td></tr>`;
   return `
     <h4>工作项目清单</h4>
-    <div class="toolbar-row"><button type="button" class="btn-primary" data-support-activity-job-add="${htmlEscape(tabKey)}"${lockedAttr}>新增工作项目</button><button type="button" data-support-jobs-download-template>下载模板</button><label class="rms-file-button">上传文件<input type="file" data-support-jobs-import-file="${htmlEscape(tabKey)}" accept=".csv,.json,application/json,text/csv"${lockedAttr}></label><button type="button" class="btn-danger" data-support-activity-job-batch-delete="${htmlEscape(tabKey)}"${lockedAttr}>批量删除</button></div>
+    <div class="toolbar-row"><button type="button" class="btn-primary" data-support-activity-job-add="${htmlEscape(tabKey)}"${lockedAttr}>新增工作项目</button><button type="button" class="rms-file-button rms-import-button" data-support-jobs-download-template>下载模板</button><label class="rms-file-button rms-import-button">上传数据<input type="file" data-support-jobs-import-file="${htmlEscape(tabKey)}" accept=".csv,.json,application/json,text/csv"${lockedAttr}></label><button type="button" class="btn-danger" data-support-activity-job-batch-delete="${htmlEscape(tabKey)}"${lockedAttr}>批量删除</button></div>
     ${renderBasicActivityTemplatePicker(tabKey)}
     <div class="table-wrap">
       <table>

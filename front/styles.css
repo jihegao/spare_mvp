@@ -2376,6 +2376,12 @@ select[multiple].table-edit-select {
   display: none;
 }
 
+.rms-file-button:hover,
+.rms-file-button:focus-visible,
+.rms-file-button:focus-within {
+  border-color: var(--primary);
+}
+
 .rms-import-button {
   box-sizing: border-box;
   width: 96px;
