@@ -1522,6 +1522,8 @@ class SimulationAdapter:
                     "seed": inputs["seed"],
                     "sweep": {},
                     "frames": state_series_frames,
+                    "events": copy.deepcopy(execution.get("events") or []),
+                    "downtime_events": copy.deepcopy(execution.get("downtime_events") or []),
                 }
             ],
             run_id=run_id,
@@ -2010,6 +2012,8 @@ class SimulationAdapter:
             "mission_wave_reliability": mission_wave_reliability,
             "period_outcome": period_outcome,
             "frames": frames,
+            "events": copy.deepcopy(execution.get("events") or []),
+            "downtime_events": copy.deepcopy(execution.get("downtime_events") or []),
         }
 
     def _apply_aircraft_support_v1_failure_multiplier(self, inputs: dict[str, Any], multiplier: float) -> None:
@@ -2548,6 +2552,28 @@ class SimulationAdapter:
             "spare_shortage": max(0, int(round(float(metrics.get("downtime_spare_shortage_events", 0) or 0)))),
             "preventive": max(0, int(round(float(metrics.get("downtime_preventive_events", 0) or 0)))),
         }
+        downtime_event_details: list[dict[str, Any]] = []
+        for sample in samples or []:
+            for event in sample.get("downtime_events") or []:
+                if not isinstance(event, dict) or event.get("factor") not in downtime_values:
+                    continue
+                item = copy.deepcopy(event)
+                item["sample_index"] = int(sample.get("sample_index", 0) or 0)
+                item["seed"] = sample.get("seed")
+                item["source_event_id"] = str(event.get("event_id") or "")
+                item["event_id"] = (
+                    f"sample-{item['sample_index']}-"
+                    f"{item['source_event_id'] or len(downtime_event_details) + 1}"
+                )
+                downtime_event_details.append(item)
+        if downtime_event_details:
+            downtime_values = {factor: 0.0 for factor in downtime_values}
+            downtime_counts = {factor: 0 for factor in downtime_counts}
+            for event in downtime_event_details:
+                factor = str(event["factor"])
+                downtime_counts[factor] += 1
+                downtime_values[factor] += max(0.0, float(event.get("duration_minutes", 0) or 0)) / 60.0
+            downtime_total = sum(downtime_values.values()) or 1.0
         period_summary = period_completion_summary(samples or [])
         total_period_samples = period_summary["total_samples"]
         successful_period_samples = period_summary["successful_samples"]
@@ -2680,6 +2706,7 @@ class SimulationAdapter:
                     }
                     for factor, value in downtime_values.items()
                 ],
+                "event_details": downtime_event_details,
                 "anomaly_snapshots": self._aircraft_support_v1_downtime_anomaly_snapshots(samples or [], run_id),
             },
         }
@@ -2838,8 +2865,9 @@ class SimulationAdapter:
         summary = frame.get("event_summary") if isinstance(frame.get("event_summary"), dict) else {}
         fallback_map = [
             ("failure", "downtime_failure_events"),
+            ("equipment_shortage", "downtime_equipment_shortage_events"),
             ("spare_shortage", "downtime_spare_shortage_events"),
-            ("resource_delay", "downtime_resource_delay_events"),
+            ("preventive", "downtime_preventive_events"),
         ]
         for event_type, metric in fallback_map:
             if float(summary.get(metric, 0) or 0) > 0:
@@ -2859,10 +2887,12 @@ class SimulationAdapter:
 
     def _downtime_event_type(self, event_type: str) -> str:
         normalized = event_type.lower()
-        if "spare" in normalized or "shortage" in normalized:
+        if "spare" in normalized:
             return "spare_shortage"
-        if "resource" in normalized or "delay" in normalized:
-            return "resource_delay"
+        if "equipment_shortage" in normalized:
+            return "equipment_shortage"
+        if "preventive" in normalized:
+            return "preventive"
         if "fail" in normalized:
             return "failure"
         return ""
@@ -2954,8 +2984,10 @@ class SimulationAdapter:
     def _downtime_snapshot_result(self, event_type: str) -> str:
         if event_type == "spare_shortage":
             return "mission_delayed_by_spare_shortage"
-        if event_type == "resource_delay":
-            return "mission_delayed_by_resource_constraint"
+        if event_type == "equipment_shortage":
+            return "mission_delayed_by_equipment_shortage"
+        if event_type == "preventive":
+            return "aircraft_unavailable_for_preventive_maintenance"
         if event_type == "failure":
             return "aircraft_unavailable_after_failure"
         return "downtime_anomaly_recorded"

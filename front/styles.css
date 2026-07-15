@@ -2900,6 +2900,54 @@ select[multiple].table-edit-select {
   background: #f8fafc;
 }
 
+.downtime-factor-filter {
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.downtime-factor-option {
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+}
+
+.downtime-factor-option:has(input:checked) {
+  border-color: #7aa7d9;
+  background: #eef6ff;
+  color: #174a7c;
+}
+
+.downtime-factor-kpis {
+  margin: 12px 0;
+}
+
+.downtime-event-detail-head {
+  margin-top: 16px;
+}
+
+.downtime-event-detail-table {
+  min-width: 1180px;
+}
+
+.downtime-factor-specific summary {
+  color: var(--primary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.downtime-factor-specific div {
+  display: grid;
+  grid-template-columns: minmax(72px, auto) minmax(90px, 1fr);
+  gap: 8px;
+  padding: 3px 0;
+  white-space: nowrap;
+}
+
+.downtime-factor-specific span {
+  color: var(--muted);
+}
+
 .mc-config-panel,
 .mc-result-panel {
   border: 1px solid var(--line);

@@ -240,7 +240,12 @@
         "shortage_events": { "type": "number" },
         "downtime_failure_events": { "type": "number" },
         "downtime_spare_shortage_events": { "type": "number" },
-        "downtime_resource_delay_events": { "type": "number" }
+        "downtime_resource_delay_events": { "type": "number" },
+        "downtime_equipment_shortage_events": { "type": "number" },
+        "downtime_failure_hours": { "type": "number" },
+        "downtime_equipment_shortage_hours": { "type": "number" },
+        "downtime_spare_shortage_hours": { "type": "number" },
+        "downtime_preventive_hours": { "type": "number" }
       }
     },
     "event": {
