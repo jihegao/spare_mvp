@@ -87,6 +87,7 @@ class DatabaseContractTest(unittest.TestCase):
                 "simulation_runs",
                 "result_summaries",
                 "artifact_manifests",
+                "aircraft_mission_reliability_analyses",
             },
         )
 
