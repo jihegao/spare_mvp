@@ -8,6 +8,16 @@ import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 
+function resolvePythonExecutable({ python = process.env.PYTHON, platform = process.platform } = {}) {
+  return python || (platform === "win32" ? "python" : "python3");
+}
+
+test("database runtime test selects a cross-platform Python command", () => {
+  assert.equal(resolvePythonExecutable({ python: "custom-python", platform: "win32" }), "custom-python");
+  assert.equal(resolvePythonExecutable({ python: "", platform: "win32" }), "python");
+  assert.equal(resolvePythonExecutable({ python: "", platform: "linux" }), "python3");
+});
+
 test("active runtime entrypoints use the single Mesa test environment", async () => {
   const files = [
     "../.gitignore",
@@ -27,6 +37,7 @@ test("active runtime entrypoints use the single Mesa test environment", async ()
 test("system npm scripts expose persistent start and stop commands", async () => {
   const packageJson = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
 
+  assert.equal(packageJson.scripts.test, "node scripts/run-node-tests.mjs");
   assert.equal(packageJson.scripts["start:system"], "bash scripts/start-system.sh start");
   assert.equal(packageJson.scripts["start:system:with-contract-provider"], undefined);
   assert.equal(packageJson.scripts["stop:system"], "bash scripts/stop-system.sh");
@@ -60,10 +71,12 @@ test("database backup and restore scripts preserve the system SQLite database", 
   const scriptEnv = {
     ...process.env,
     DATABASE_PATH: databasePath,
-    BACKUP_DIR: backupDir
+    BACKUP_DIR: backupDir,
+    PYTHON: resolvePythonExecutable()
   };
+  const pythonExecutable = resolvePythonExecutable();
 
-  await execFileAsync("python3", [
+  await execFileAsync(pythonExecutable, [
     "-c",
     [
       "import sqlite3, sys",
@@ -85,7 +98,7 @@ test("database backup and restore scripts preserve the system SQLite database", 
   assert.equal(backupFiles.length, 1);
   const backupPath = join(backupDir, backupFiles[0]);
 
-  await execFileAsync("python3", [
+  await execFileAsync(pythonExecutable, [
     "-c",
     [
       "import sqlite3, sys",
@@ -108,12 +121,24 @@ test("database backup and restore scripts preserve the system SQLite database", 
   });
   assert.match(restoreResult.stdout, /Database restored:/);
 
-  const restored = await execFileAsync("python3", [
+  const restored = await execFileAsync(pythonExecutable, [
     "-c",
     "import sqlite3, sys; print(sqlite3.connect(sys.argv[1]).execute('select value from marker').fetchone()[0])",
     databasePath,
   ]);
   assert.equal(restored.stdout.trim(), "before-backup");
+});
+
+test("database maintenance scripts honor PYTHON and fall back to installed command names", async () => {
+  const backupScript = await readFile(new URL("../scripts/backup-database.sh", import.meta.url), "utf8");
+  const restoreScript = await readFile(new URL("../scripts/restore-database.sh", import.meta.url), "utf8");
+
+  for (const script of [backupScript, restoreScript]) {
+    assert.match(script, /PYTHON_COMMAND="\$\{PYTHON:-\}"/);
+    assert.match(script, /command -v python3/);
+    assert.match(script, /command -v python/);
+    assert.match(script, /"\$PYTHON_COMMAND" -/);
+  }
 });
 
 test("start-system manages Solara iframe sidecar without restoring retired providers", async () => {
