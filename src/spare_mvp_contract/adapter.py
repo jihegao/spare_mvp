@@ -2,8 +2,8 @@
 
 The adapter owns application-facing Project -> Scenario -> Run/Result/Artifact
 translation. The aircraft_support_v1 product runtime is the formal run target;
-aviation_support is retained only as historical schema/fixture context and is
-retired at the adapter entrypoints.
+aviation_support is retained only as historical model source and is retired at
+the adapter entrypoints.
 """
 
 from __future__ import annotations

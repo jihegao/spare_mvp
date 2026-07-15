@@ -2050,7 +2050,7 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(self.adapter.monte_carlo_run_calls, [])
 
     def test_monte_carlo_bad_request_wins_before_compile_gate_model_family(self) -> None:
-        project = self._fixture("aviation_support_project.json")
+        project = self._fixture("aircraft_support_v1_project.json")
         saved = self.api.save_project(project)
         self.api.create_modeling_snapshot(saved["project_id"])
         plan = self.api.create_experiment_plan(
@@ -3118,7 +3118,7 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertEqual(self.adapter.run_calls, [])
 
     def test_backend_api_formal_run_still_rejects_non_imported_sample_project(self) -> None:
-        project = self._fixture("aviation_support_project.json")
+        project = self._fixture("aircraft_support_v1_project.json")
         saved = self.api.save_project(project)
         self.api.create_modeling_snapshot(saved["project_id"])
         plan = self.api.create_experiment_plan(saved["project_id"], {"name": "aviation formal gate", "steps": 1})

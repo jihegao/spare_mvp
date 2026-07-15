@@ -17,15 +17,6 @@
     {
       "type": "object",
       "required": ["simulation_model", "simulation_inputs"],
-      "properties": {
-        "simulation_model": { "$ref": "#/$defs/AviationSupportModelSelector" },
-        "simulation_inputs": { "$ref": "#/$defs/AviationSupportInputs" }
-      },
-      "additionalProperties": true
-    },
-    {
-      "type": "object",
-      "required": ["simulation_model", "simulation_inputs"],
       "allOf": [
         {
           "properties": {
@@ -67,14 +58,14 @@
       "required": ["family", "model_id", "contract_version"],
       "properties": {
         "family": {
-          "description": "Includes aviation_support only as legacy contract evidence for archived fixtures; aviation_support is a retired formal runtime and current formal /api/runs uses aircraft_support_v1.",
+          "description": "Current formal /api/runs model family.",
           "type": "string",
-          "enum": ["aviation_support", "aircraft_support_v1"]
+          "const": "aircraft_support_v1"
         },
         "model_id": {
-          "description": "AviationSupportModel is retained only for legacy contract evidence; AircraftSupportV1Model is the current formal runtime model.",
+          "description": "Current formal runtime model.",
           "type": "string",
-          "enum": ["AviationSupportModel", "AircraftSupportV1Model"]
+          "const": "AircraftSupportV1Model"
         },
         "contract_version": { "type": "string", "const": "1.0.0" }
       },
@@ -132,17 +123,6 @@
     "simulation_inputs": { "type": "object" }
   },
   "$defs": {
-    "AviationSupportModelSelector": {
-      "description": "Legacy contract evidence only: aviation_support / AviationSupportModel is a retired formal runtime. Current formal /api/runs execution must use aircraft_support_v1 / AircraftSupportV1Model.",
-      "type": "object",
-      "required": ["family", "model_id", "contract_version"],
-      "properties": {
-        "family": { "const": "aviation_support" },
-        "model_id": { "const": "AviationSupportModel" },
-        "contract_version": { "const": "1.0.0" }
-      },
-      "additionalProperties": false
-    },
     "AircraftSupportV1ModelSelector": {
       "description": "Current formal runtime selector for /api/runs.",
       "type": "object",
@@ -151,31 +131,6 @@
         "family": { "const": "aircraft_support_v1" },
         "model_id": { "const": "AircraftSupportV1Model" },
         "contract_version": { "const": "1.0.0" }
-      },
-      "additionalProperties": false
-    },
-    "AviationSupportInputs": {
-      "description": "Legacy contract evidence only for archived aviation_support fixtures; these inputs are not accepted by the current formal /api/runs runtime.",
-      "type": "object",
-      "required": [
-        "aircraft_count",
-        "mission_count",
-        "mission_aircraft_required",
-        "mechanic_teams",
-        "fuel_trucks",
-        "maintenance_bays",
-        "lru_failure_multiplier",
-        "seed"
-      ],
-      "properties": {
-        "aircraft_count": { "type": "integer", "minimum": 1 },
-        "mission_count": { "type": "integer", "minimum": 1 },
-        "mission_aircraft_required": { "type": "integer", "minimum": 1 },
-        "mechanic_teams": { "type": "integer", "minimum": 1 },
-        "fuel_trucks": { "type": "integer", "minimum": 1 },
-        "maintenance_bays": { "type": "integer", "minimum": 1 },
-        "lru_failure_multiplier": { "type": "number", "minimum": 0 },
-        "seed": { "type": "integer" }
       },
       "additionalProperties": false
     }

@@ -26,17 +26,17 @@ class SimulationAdapterTest(unittest.TestCase):
         return json.loads(path.read_text(encoding="utf-8"))
 
     def test_validate_project_accepts_contract_fixture(self) -> None:
-        project = self._load_fixture("aviation_support_project.json")
+        project = self._load_fixture("aircraft_support_v1_project.json")
 
         result = self.adapter.validate_project(project)
 
         self.assertTrue(result["ok"])
-        self.assertEqual(result["project_id"], "project-aviation-support-contract-001")
+        self.assertEqual(result["project_id"], "project-aircraft-support-contract-001")
         self.assertEqual(result["project_schema_version"], "project-v0")
         self.assertEqual(result["errors"], [])
 
     def test_validate_project_reports_missing_contract_roots(self) -> None:
-        project = self._load_fixture("aviation_support_project.json")
+        project = self._load_fixture("aircraft_support_v1_project.json")
         del project["components"]
 
         result = self.adapter.validate_project(project)
@@ -46,7 +46,7 @@ class SimulationAdapterTest(unittest.TestCase):
         self.assertEqual(result["errors"][0]["code"], "missing_required")
 
     def test_compile_smoke_scenario_is_retired(self) -> None:
-        project = self._load_fixture("aviation_support_project.json")
+        project = self._load_fixture("aircraft_support_v1_project.json")
 
         with self.assertRaises(AdapterError) as ctx:
             self.adapter.compile_scenario(project, model_family="smoke")
@@ -56,7 +56,7 @@ class SimulationAdapterTest(unittest.TestCase):
         self.assertEqual(ctx.exception.details["replacement_model_family"], "aircraft_support_v1")
 
     def test_smoke_compile_gate_returns_retired_family(self) -> None:
-        project = self._load_fixture("aviation_support_project.json")
+        project = self._load_fixture("aircraft_support_v1_project.json")
 
         result = self.adapter.compile_scenario_with_gate(project, model_family="smoke")
 
@@ -77,7 +77,7 @@ class SimulationAdapterTest(unittest.TestCase):
         self.assertEqual(ctx.exception.details["errors"][0]["code"], "missing_required")
 
     def test_compile_aviation_support_scenario_is_retired(self) -> None:
-        project = self._load_fixture("aviation_support_project.json")
+        project = self._load_fixture("aircraft_support_v1_project.json")
 
         with self.assertRaises(AdapterError) as ctx:
             self.adapter.compile_scenario(project, model_family="aviation_support")
@@ -87,7 +87,7 @@ class SimulationAdapterTest(unittest.TestCase):
         self.assertEqual(ctx.exception.details["replacement_model_family"], "aircraft_support_v1")
 
     def test_aviation_support_compile_gate_returns_retired_family(self) -> None:
-        project = self._load_fixture("aviation_support_project.json")
+        project = self._load_fixture("aircraft_support_v1_project.json")
         del project["components"]
 
         result = self.adapter.compile_scenario_with_gate(project, model_family="aviation_support")

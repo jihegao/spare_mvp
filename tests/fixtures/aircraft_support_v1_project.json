@@ -1,0 +1,108 @@
+{
+  "activeModule": "sparePlanning",
+  "airports": [
+    "A"
+  ],
+  "basicMissions": [
+    {
+      "equipmentType": "J-15",
+      "id": "basic-small",
+      "missionId": "basic-small",
+      "missionPhases": [
+        {
+          "durationMinutes": 30,
+          "id": "phase-sortie",
+          "name": "sortie",
+          "sequence": 1
+        }
+      ],
+      "name": "small sortie",
+      "taskDurationMinutes": 30
+    }
+  ],
+  "combatUnit": {
+    "members": [
+      {
+        "aircraftNo": "J15-001",
+        "airport": "A",
+        "model": "J-15",
+        "status": "ready"
+      }
+    ]
+  },
+  "components": [
+    {
+      "aircraftModel": "J-15",
+      "failureDistribution": {
+        "distributionType": "指数分布",
+        "parameters": "lambda=0.01"
+      },
+      "id": "whole-aircraft",
+      "kOutOfN": {
+        "k": 1,
+        "n": 1
+      },
+      "name": "whole aircraft",
+      "productType": "whole",
+      "quantity": 1
+    }
+  ],
+  "missionProfile": {
+    "compositeTasks": [],
+    "durationHours": 1,
+    "name": "current aircraft support mission",
+    "periodicTasks": []
+  },
+  "project_id": "project-aircraft-support-contract-001",
+  "project_version": "project-v0.1",
+  "scenarioId": "aircraft-support-contract-demo",
+  "schema_version": "project-v0",
+  "supportActivities": [
+    {
+      "activityCodes": [
+        "job-1"
+      ],
+      "activityType": "corrective",
+      "durationHours": 1,
+      "id": "corrective",
+      "planType": "修复性维修方案",
+      "predecessors": {
+        "job-1": []
+      }
+    }
+  ],
+  "supportActivityJobs": [
+    {
+      "activityCode": "job-1"
+    }
+  ],
+  "supportNodes": [
+    {
+      "equipmentCapacity": 1,
+      "id": "node-a",
+      "inventory": {
+        "aircraft_support_v1_spares": 2
+      },
+      "name": "node A",
+      "personnelCapacity": 1
+    }
+  ],
+  "supportResources": [
+    {
+      "id": "node-a-personnel",
+      "name": "crew",
+      "quantity": 1,
+      "supportNodeName": "node A",
+      "type": "personnel"
+    }
+  ],
+  "transportPolicies": [
+    {
+      "capacity": 1,
+      "fromSupportNodeName": "node A",
+      "id": "tp-1",
+      "spareName": "aircraft_support_v1_spares",
+      "toSupportNodeName": "node A"
+    }
+  ]
+}
