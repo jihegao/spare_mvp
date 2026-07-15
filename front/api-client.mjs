@@ -251,6 +251,7 @@ export function buildBackendProjectJson(scenario, project = {}) {
 export function normalizeProjectJsonForClientDraft(projectJson) {
   const normalized = cloneJson(projectJson);
   normalizeProjectJsonBasicMissions(normalized);
+  ensureUniqueSupportActivityNames(normalized);
   normalizeMissionTaskFieldOwnership(normalized);
   syncCompositeTaskInheritedBasicFields(normalized);
   canonicalizeSupportActivityJobPredecessors(normalized);
@@ -1154,6 +1155,26 @@ function normalizeSupportActivityReferenceFields(projectJson) {
     delete activity.supportNodeId;
     delete activity.requiredDevices;
     delete activity.requiredPersonnel;
+  }
+}
+
+// basicMissions[].supportActivityName is a name-based reference.  Keep the
+// first existing name stable and deterministically disambiguate later copies
+// so a legacy project can be saved without creating an ambiguous reference.
+function ensureUniqueSupportActivityNames(projectJson) {
+  const activities = Array.isArray(projectJson?.supportActivities) ? projectJson.supportActivities : [];
+  const usedNames = new Set();
+  for (const [index, activity] of activities.entries()) {
+    if (!activity || typeof activity !== "object" || Array.isArray(activity)) continue;
+    const baseName = normalizedText(activity.activityName || activity.name || activity.id) || `保障活动${index + 1}`;
+    let activityName = baseName;
+    let duplicateIndex = 2;
+    while (usedNames.has(activityName)) {
+      activityName = `${baseName}（${duplicateIndex}）`;
+      duplicateIndex += 1;
+    }
+    activity.activityName = activityName;
+    usedNames.add(activityName);
   }
 }
 

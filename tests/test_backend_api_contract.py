@@ -850,6 +850,51 @@ class BackendApiContractTest(unittest.TestCase):
             self.api.save_project(project)
         self.assertEqual(ctx.exception.code, "invalid_project")
 
+    def test_save_project_persists_basic_mission_support_activity_name_after_duplicate_name_migration(self) -> None:
+        project = small_aircraft_support_project("project-support-activity-name-migration")
+        project["basicMissions"] = [
+            {
+                **copy.deepcopy(project["basicMissions"][0]),
+                "id": f"j16-basic-{index}",
+                "missionId": f"j16-basic-{index}",
+                "name": f"J16 basic mission {index}",
+                "supportActivityName": "J16基本方案",
+            }
+            for index in range(1, 5)
+        ]
+        project["supportActivities"] = [
+            {
+                "id": "j16-primary",
+                "activityType": "使用保障",
+                "planType": "使用保障方案",
+                "aircraftModel": "J16",
+                "activityName": "J16基本方案",
+                "jobs": [],
+            },
+            {
+                "id": "j16-duplicate-renamed",
+                "activityType": "使用保障",
+                "planType": "使用保障方案",
+                "aircraftModel": "J16",
+                "activityName": "J16基本方案（2）",
+                "jobs": [],
+            },
+        ]
+
+        validation = self.api.validate_project(project)
+        self.assertTrue(validation["ok"])
+        self.api.save_project(project)
+        stored = self.api.get_project(project["project_id"])
+
+        self.assertEqual(
+            [mission["supportActivityName"] for mission in stored["basicMissions"]],
+            ["J16基本方案"] * 4,
+        )
+        self.assertEqual(
+            [activity["activityName"] for activity in stored["supportActivities"]],
+            ["J16基本方案", "J16基本方案（2）"],
+        )
+
     def test_get_project_strips_legacy_persisted_monte_carlo_payload(self) -> None:
         project = small_aircraft_support_project("project-aircraft-support-contract-001")
         project["project_id"] = "project-legacy-mc"

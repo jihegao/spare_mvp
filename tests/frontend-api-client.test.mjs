@@ -990,6 +990,38 @@ test("buildBackendProjectJson strips support activity plan-layer legacy fields",
   assert.equal(projectJson.supportActivityJobs[0].activityCode, "OPS-001");
 });
 
+test("buildBackendProjectJson migrates duplicate operations activity names into stable mission references", () => {
+  const scenario = {
+    scenarioId: "case-large-support-activity-persistence",
+    basicMissions: Array.from({ length: 4 }, (_, index) => ({
+      id: `j16-basic-${index + 1}`,
+      name: `J16基本任务${index + 1}`,
+      equipmentType: "J16",
+      supportActivityName: "J16基本方案"
+    })),
+    supportActivities: [
+      { id: "j16-primary", activityType: "使用保障", planType: "使用保障方案", aircraftModel: "J16", activityName: "J16基本方案" },
+      { id: "j16-copy", activityType: "使用保障", planType: "使用保障方案", aircraftModel: "J16", activityName: "J16基本方案" },
+      { id: "j16d-copy", activityType: "使用保障", planType: "使用保障方案", aircraftModel: "J16D", activityName: "J16基本方案" }
+    ]
+  };
+
+  const firstSave = buildBackendProjectJson(scenario, { id: "case-large" });
+  const reloadedSave = buildBackendProjectJson(firstSave, { id: "case-large" });
+
+  assert.deepEqual(firstSave.supportActivities.map((activity) => activity.activityName), [
+    "J16基本方案",
+    "J16基本方案（2）",
+    "J16基本方案（3）"
+  ]);
+  assert.deepEqual(firstSave.basicMissions.map((mission) => mission.supportActivityName), Array(4).fill("J16基本方案"));
+  assert.deepEqual(reloadedSave.supportActivities.map((activity) => activity.activityName), firstSave.supportActivities.map((activity) => activity.activityName));
+  assert.equal(
+    firstSave.supportActivities.filter((activity) => activity.activityName === firstSave.basicMissions[0].supportActivityName).length,
+    1
+  );
+});
+
 test("buildBackendProjectJson strips legacy support node resource fields and draft overrides", () => {
   const scenario = {
     scenarioId: "support-resource-boundary",
