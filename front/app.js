@@ -4885,7 +4885,7 @@ function renderBasicMissionModeling(page) {
               <tbody>
                 <tr><th>基本任务名称</th><td>${valueInput(`${missionPath}.name`)}</td></tr>
                 <tr><th>任务编号</th><td>${valueInput(`${missionPath}.taskNo`)}</td></tr>
-                <tr><th>装备名称</th><td><input value="${htmlEscape(selectedMission.task?.equipmentType || scenarioEquipmentModel() || "")}" readonly aria-readonly="true" title="装备名称由装备系统建模回填"></td></tr>
+                <tr><th>装备名称</th><td><input class="basic-mission-equipment-name" value="${htmlEscape(selectedMission.task?.equipmentType || scenarioEquipmentModel() || "")}" readonly aria-readonly="true" title="装备名称由装备系统建模回填"></td></tr>
                 <tr><th>装备数量</th><td>${valueInput(`${missionPath}.equipmentQuantity`, "number")}</td></tr>
                 <tr><th>最小装备数量</th><td>${valueInput(`${missionPath}.minRequiredSorties`, "number")}</td></tr>
                 <tr><th>任务成功点</th><td>${valueInput(`${missionPath}.successPoint`, "number", { min: "0", max: "1", step: "0.01" })}</td></tr>
