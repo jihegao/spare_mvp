@@ -84,6 +84,7 @@ import {
   buildEquipmentComponentTreeModel,
   componentBelongsToAircraftModel,
   deleteEquipmentNodeForSelectionModel,
+  equipmentComponentSubtreeIds,
   equipmentComponentsForSelectionModel,
   equipmentKOutOfNQuantity,
   normalizeEquipmentComponentKOutOfN,
@@ -6227,12 +6228,16 @@ function equipmentParentNodeSelect(component, index) {
   const componentId = String(component?.id || "");
   const aircraftModel = component?.aircraftModel || wholeMachineModels()[0] || "";
   const selectedParentId = String(component?.parentId || "aircraft-root");
+  const excludedParentIds = new Set(equipmentComponentSubtreeIds(scenario, {
+    aircraftModel,
+    rootComponentId: componentId
+  }));
   const options = [
     { value: "aircraft-root", label: "整机级" },
     ...(scenario.components || [])
       .filter((candidate) => (
         String(candidate?.id || "")
-        && String(candidate.id) !== componentId
+        && !excludedParentIds.has(String(candidate.id))
         && componentBelongsToAircraft(candidate, aircraftModel)
       ))
       .map((candidate) => ({

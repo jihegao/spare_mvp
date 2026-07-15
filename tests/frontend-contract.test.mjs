@@ -1433,6 +1433,8 @@ test("equipment system table exposes composition, MTBF and MTTR distribution fie
   assert.match(equipmentSource, /equipmentTableInput\("组件名称", `components\.\$\{index\}\.name`\)/);
   assert.match(equipmentSource, /equipmentParentNodeSelect\(component, index\)/);
   assert.match(equipmentSource, /function equipmentParentNodeSelect\(component, index\)/);
+  assert.match(equipmentSource, /const excludedParentIds = new Set\(equipmentComponentSubtreeIds\(scenario/);
+  assert.match(equipmentSource, /!excludedParentIds\.has\(String\(candidate\.id\)\)/);
   assert.match(equipmentSource, /\{ value: "aircraft-root", label: "整机级" \}/);
   assert.match(equipmentSource, /label: String\(candidate\.name \|\| "未命名组件"\)/);
   assert.match(equipmentSource, /label: "未找到父节点"/);
