@@ -2118,8 +2118,12 @@ test("support activity controls are wired through local draft fields", async () 
     appSource.indexOf("function renderSupportActivityJobTable"),
     appSource.indexOf("function renderBasicActivityLibrary")
   );
+  const stylesSource = await readFile(new URL("../front/styles.css", import.meta.url), "utf8");
   assert.match(jobTableSource, /data-support-activity-job-add="\$\{htmlEscape\(tabKey\)\}"/);
   assert.match(jobTableSource, /data-support-activity-job-batch-delete="\$\{htmlEscape\(tabKey\)\}"/);
+  assert.match(jobTableSource, /class="rms-file-button rms-import-button" data-support-jobs-download-template>下载模板/);
+  assert.match(jobTableSource, /<label class="rms-file-button rms-import-button">上传数据<input type="file" data-support-jobs-import-file=/);
+  assert.match(stylesSource, /\.rms-file-button:hover,\s*\.rms-file-button:focus-visible,\s*\.rms-file-button:focus-within/);
   assert.match(jobTableSource, /data-support-activity-job-template/);
   assert.match(jobTableSource, /basicActivityLibraryOptions/);
   assert.match(appSource, /function applyBasicActivityToSupportActivityJob/);
