@@ -3198,6 +3198,59 @@ select[multiple].table-edit-select {
   border-radius: 0;
 }
 
+.permission-menu-module-row th,
+.permission-menu-secondary-row th {
+  text-align: left;
+}
+
+.permission-menu-module-row th {
+  padding-top: 12px;
+  padding-bottom: 12px;
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-size: 13px;
+}
+
+.permission-menu-secondary-row th {
+  padding-left: 22px;
+  background: #f8fafc;
+  color: #3a4652;
+  font-weight: 700;
+}
+
+.permission-menu-leaf {
+  padding-left: 40px;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.permission-menu-leaf span {
+  display: inline-block;
+  width: 18px;
+  color: #8a98a8;
+}
+
+.permission-visibility {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 46px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.permission-visibility.is-visible {
+  background: #e8f7ee;
+  color: #167442;
+}
+
+.permission-visibility.is-hidden {
+  background: #f2f4f7;
+  color: #697586;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;

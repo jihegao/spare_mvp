@@ -9,6 +9,7 @@ import {
   getVisibleFeaturePagesForRole,
   groupFeaturePages
 } from "../front/feature-catalog.mjs";
+import { buildPermissionMenuTree, PERMISSION_MENU_ROLES } from "../front/permission-menu-tree.mjs";
 import { MODELING_IMPORT_DEMO_FIXTURE } from "../front/modeling-import-demo-fixture.mjs";
 import {
   calculateRmsAllocation,
@@ -180,6 +181,37 @@ test("demo role permissions expose fixed module visibility without config rows",
   assert.equal(dataPages.some((page) => page.secondary === "系统基础配置"), false);
   assert.deepEqual(modulesForRole("普通用户"), ["备件规划评估模块", "任务可靠度评估模块"]);
   assert.equal(userPages.some((page) => page.module === "系统运行支持模块"), false);
+});
+
+test("permission management mirrors the left-navigation leaf tree and fixed role visibility", () => {
+  const menuTree = buildPermissionMenuTree();
+  const leaves = menuTree.flatMap(({ module, secondaryGroups }) => secondaryGroups.flatMap(({ secondary, leaves }) => (
+    leaves.map((leaf) => ({ module, secondary, ...leaf }))
+  )));
+  const navigationLeaves = Object.entries(groupFeaturePages(FEATURE_PAGES)).flatMap(([module, secondaryGroups]) => (
+    Object.entries(secondaryGroups).flatMap(([secondary, tertiaryGroups]) => (
+      Object.keys(tertiaryGroups).map((tertiary) => ({ module, secondary, tertiary }))
+    ))
+  ));
+
+  assert.deepEqual(PERMISSION_MENU_ROLES.map(({ label }) => label), ["系统管理员", "数据管理员", "项目用户"]);
+  assert.equal(leaves.length, 24);
+  assert.deepEqual(
+    leaves.map(({ module, secondary, tertiary }) => ({ module, secondary, tertiary })),
+    navigationLeaves
+  );
+  assert.deepEqual(
+    leaves.find((leaf) => leaf.module === "系统运行支持模块" && leaf.tertiary === "项目数据管理").visibility,
+    { admin: true, data: true, user: false }
+  );
+  assert.deepEqual(
+    leaves.find((leaf) => leaf.module === "系统运行支持模块" && leaf.tertiary === "用户管理").visibility,
+    { admin: true, data: false, user: false }
+  );
+  assert.deepEqual(
+    leaves.find((leaf) => leaf.module === "备件规划评估模块" && leaf.tertiary === "装备任务建模").visibility,
+    { admin: true, data: true, user: true }
+  );
 });
 
 test("demo role permissions clamp direct feature routes to first accessible page", () => {
@@ -520,9 +552,11 @@ test("page revision project and system management controls stay wired", async ()
   assert.match(userSource, /data-system-user-delete/);
   assert.doesNotMatch(userSource, /User is not allowed to perform this action/);
 
-  assert.match(permissionSource, /data-permission-configure/);
-  assert.match(permissionSource, /renderPermissionConfigEditor/);
-  assert.match(permissionSource, /data-permission-role/);
+  assert.match(permissionSource, /buildPermissionMenuTree/);
+  assert.match(permissionSource, /PERMISSION_MENU_ROLES/);
+  assert.match(permissionSource, /data-permission-menu-leaf/);
+  assert.match(permissionSource, /可见/);
+  assert.match(permissionSource, /不可见/);
   assert.doesNotMatch(permissionSource, /新增权限项/);
   assert.doesNotMatch(permissionSource, /批量删除/);
   assert.match(eventSource, /const systemManagementButton = event\.target\.closest\("\[data-system-management-entry\]"\)/);
