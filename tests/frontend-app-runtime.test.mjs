@@ -1068,6 +1068,65 @@ test("four result analysis pages omit Mesa from visible copy", async () => {
   }
 });
 
+test("aircraft mission reliability page computes, saves, reloads, and exports an RBD snapshot without Mesa", async () => {
+  const runtime = await setupRuntimeApp({
+    hash: "feature=mission-reliability-aircraft-mission-reliability",
+    projectJson: createRuntimeProjectJson({
+      basicMissions: [{
+        id: "mission-5h",
+        name: "五小时任务剖面",
+        equipmentType: "J-15",
+        taskDurationMinutes: 300
+      }],
+      components: [
+        { id: "a1", name: "产品 A1", aircraftModel: "J-15", quantity: 1, failureRate: 0.01 },
+        { id: "a2", name: "产品 A2", aircraftModel: "J-15", quantity: 1, failureRate: 0.02 }
+      ],
+      reliabilityBlockDiagram: {
+        nodes: [
+          { id: "aircraft", name: "J-15 整机", type: "aircraft", relation: "series" },
+          { id: "a1", name: "产品 A1", type: "product", parentId: "aircraft" },
+          { id: "a2", name: "产品 A2", type: "product", parentId: "aircraft" }
+        ],
+        edges: []
+      }
+    })
+  });
+
+  try {
+    assert.match(runtime.appNode.innerHTML, /飞机任务可靠性评估/);
+    assert.match(runtime.appNode.innerHTML, /aria-label="飞机型号"/);
+    assert.match(runtime.appNode.innerHTML, /五小时任务剖面/);
+    assert.match(runtime.appNode.innerHTML, /value="5"/);
+
+    await runtime.click("[data-aircraft-reliability-action]", { aircraftReliabilityAction: "run" });
+
+    assert.match(runtime.appNode.innerHTML, /整机任务可靠度/);
+    assert.match(runtime.appNode.innerHTML, /产品 A1/);
+    assert.match(runtime.appNode.innerHTML, /串联/);
+    assert.equal(runtime.requests.some((request) => request.url === "/api/mesa-analysis-runs"), false);
+
+    await runtime.click("[data-aircraft-reliability-action]", { aircraftReliabilityAction: "save" });
+
+    const saveRequest = runtime.requests.find((request) => (
+      request.url === "/api/projects/project-runtime/aircraft-mission-reliability-analyses"
+      && (request.options.method || "GET") === "POST"
+    ));
+    assert.ok(saveRequest);
+    const saveBody = JSON.parse(saveRequest.options.body || "{}");
+    assert.equal(saveBody.aircraftModel, "J-15");
+    assert.equal(saveBody.durationHours, 5);
+    assert.equal(saveBody.snapshot.rbdSnapshot.nodes.length, 3);
+    assert.match(runtime.appNode.innerHTML, /analysis-runtime-1/);
+
+    await runtime.click("[data-aircraft-reliability-action]", { aircraftReliabilityAction: "export" });
+    assert.equal(runtime.downloads.length, 1);
+    assert.match(runtime.downloads[0].download, /^aircraft-mission-reliability-J-15\.csv$/);
+  } finally {
+    runtime.restore();
+  }
+});
+
 test("spare shortfall analysis uses the shared read-only analysis setting line", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=spare-planning-spare-shortfall-analysis",
@@ -3592,6 +3651,7 @@ async function setupRuntimeApp({
   const backendProjectCatalog = [...backendProjects];
   const projectPayloads = new Map([[projectJson.project_id || "project-runtime", projectJson]]);
   const runtimeRuns = new Map();
+  const aircraftReliabilityHistory = [];
   let createProjectFromImportCount = 0;
   const storage = new Map([
     ["spare-mvp:m4Session", JSON.stringify({ session: { token: "m4-runtime-token" } })]
@@ -3736,6 +3796,29 @@ async function setupRuntimeApp({
         decodeURIComponent(currentAnalysisMatch[1]),
         decodeURIComponent(currentAnalysisMatch[2])
       ));
+    }
+    const aircraftReliabilityHistoryMatch = url.match(/^\/api\/projects\/([^/]+)\/aircraft-mission-reliability-analyses$/);
+    if (aircraftReliabilityHistoryMatch && method === "GET") {
+      return jsonResponse({
+        project_id: decodeURIComponent(aircraftReliabilityHistoryMatch[1]),
+        analyses: aircraftReliabilityHistory
+      });
+    }
+    if (aircraftReliabilityHistoryMatch && method === "POST") {
+      const body = JSON.parse(options.body || "{}");
+      const record = {
+        analysis_id: `analysis-runtime-${aircraftReliabilityHistory.length + 1}`,
+        project_id: decodeURIComponent(aircraftReliabilityHistoryMatch[1]),
+        aircraft_model: body.aircraftModel,
+        mission_profile_id: body.missionProfileId,
+        mission_profile_name: body.missionProfileName,
+        duration_hours: body.durationHours,
+        aircraft_reliability: body.aircraftReliability,
+        snapshot: body.snapshot,
+        created_at: "2026-07-16T00:00:00Z"
+      };
+      aircraftReliabilityHistory.unshift(record);
+      return jsonResponse(record);
     }
     const modelingImportMatch = url.match(/^\/api\/modeling-imports\/([^/]+)$/);
     if (modelingImportMatch && method === "GET") {

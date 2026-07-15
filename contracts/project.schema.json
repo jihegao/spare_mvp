@@ -28,6 +28,7 @@
     "combatUnit": { "type": "object" },
     "equipment": { "type": "object" },
     "components": { "type": "array", "items": { "type": "object" } },
+    "reliabilityBlockDiagram": { "type": "object" },
     "supportNodes": { "type": "array", "items": { "type": "object" } },
     "supportResources": { "type": "array", "items": { "type": "object" } },
     "transportPolicies": { "type": "array", "items": { "type": "object" } },

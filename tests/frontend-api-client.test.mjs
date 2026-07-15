@@ -195,6 +195,36 @@ test("frontend API client keeps lite Mesa analysis route while visualization sid
   });
 });
 
+test("frontend API client saves and lists aircraft mission reliability snapshots", async () => {
+  const calls = [];
+  const client = createBackendApiClient({
+    transport: async (request) => {
+      calls.push(request);
+      if (request.method === "POST") return { analysis_id: "analysis-202", snapshot: request.body.snapshot };
+      return { project_id: "project-ui", analyses: [{ analysis_id: "analysis-202" }] };
+    }
+  });
+  const snapshot = { aircraftModel: "J-15", aircraftReliability: 0.98, rows: [] };
+
+  const saved = await client.saveAircraftMissionReliabilityAnalysis("project-ui", {
+    aircraftModel: "J-15",
+    missionProfileId: "mission-1",
+    missionProfileName: "任务一",
+    durationHours: 5,
+    aircraftReliability: 0.98,
+    snapshot
+  });
+  const history = await client.listAircraftMissionReliabilityAnalyses("project-ui");
+
+  assert.equal(saved.analysis_id, "analysis-202");
+  assert.equal(history.analyses.length, 1);
+  assert.deepEqual(calls.map((call) => `${call.method} ${call.path}`), [
+    "POST /projects/project-ui/aircraft-mission-reliability-analyses",
+    "GET /projects/project-ui/aircraft-mission-reliability-analyses"
+  ]);
+  assert.deepEqual(calls[0].body.snapshot, snapshot);
+});
+
 test("frontend API client lists and deletes experiment plans through project routes", async () => {
   const calls = [];
   const client = createBackendApiClient({
@@ -1209,6 +1239,21 @@ test("buildBackendProjectJson strips clean Project non-model helper fields", () 
       usedTables: { supportResources: true },
       validationLevel: "level1"
     },
+    reliabilityBlockDiagram: {
+      selectedNodeId: "whole-aircraft",
+      nodes: [{
+        id: "whole-aircraft",
+        name: "整机",
+        connectionType: "串联",
+        treeLayout: { x: 20, y: 30 }
+      }],
+      edges: [{
+        from: "whole-aircraft",
+        to: "engine",
+        relation: "串联",
+        selected: true
+      }]
+    },
     supportResources: [
       { id: "spare-1", supportNodeName: "基层", type: "spare", name: "雷达 LRU", model: "RAD-1", equipment: "J-15", equipmentId: "aircraft-type-j15", quantity: 2 }
     ],
@@ -1234,6 +1279,10 @@ test("buildBackendProjectJson strips clean Project non-model helper fields", () 
   });
   assert.equal("equipment" in projectJson.supportResources[0], false);
   assert.equal("equipmentId" in projectJson.supportResources[0], false);
+  assert.deepEqual(projectJson.reliabilityBlockDiagram, {
+    nodes: [{ id: "whole-aircraft", name: "整机", connectionType: "串联" }],
+    edges: [{ from: "whole-aircraft", to: "engine", relation: "串联" }]
+  });
   for (const field of [
     "calendarDayFloatRatio",
     "runHourFloatRatio",

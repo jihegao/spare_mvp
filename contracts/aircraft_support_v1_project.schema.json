@@ -37,6 +37,7 @@
     "basicMissions": { "type": "array", "items": { "$ref": "#/$defs/basicMission" } },
     "combatUnit": { "$ref": "#/$defs/combatUnit" },
     "components": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/component" } },
+    "reliabilityBlockDiagram": { "$ref": "#/$defs/reliabilityBlockDiagram" },
     "supportNodes": { "type": "array", "items": { "$ref": "#/$defs/supportNode" } },
     "supportResources": { "type": "array", "items": { "$ref": "#/$defs/supportResource" } },
     "transportPolicies": { "type": "array", "items": { "$ref": "#/$defs/transportPolicy" } },
@@ -207,6 +208,57 @@
         "repairDistribution": { "$ref": "#/$defs/dictionary" },
         "kOutOfN": { "$ref": "#/$defs/dictionary" },
         "specialRepairProfile": { "$ref": "#/$defs/specialRepairProfile" }
+      }
+    },
+    "reliabilityBlockDiagram": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["nodes", "edges"],
+      "properties": {
+        "nodes": { "type": "array", "items": { "$ref": "#/$defs/reliabilityBlockNode" } },
+        "edges": { "type": "array", "items": { "$ref": "#/$defs/reliabilityBlockEdge" } }
+      }
+    },
+    "reliabilityBlockNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string" },
+        "type": { "type": "string" },
+        "parentId": { "type": ["string", "null"] },
+        "componentId": { "type": "string" },
+        "aircraftModel": { "type": "string" },
+        "connectionType": { "type": "string" },
+        "relation": { "type": "string" },
+        "logic": { "type": "string" },
+        "gateType": { "type": "string" },
+        "quantity": { "type": "integer", "minimum": 0 },
+        "k": { "type": "integer", "minimum": 1 },
+        "failureRate": { "type": "number", "minimum": 0 },
+        "failureRateUnit": { "type": "string" },
+        "mtbfHours": { "type": "number", "exclusiveMinimum": 0 },
+        "mtbfUnit": { "type": "string" },
+        "reliability": { "type": "number", "minimum": 0, "maximum": 1 },
+        "reliabilityUnit": { "type": "string" },
+        "failureDistribution": { "$ref": "#/$defs/dictionary" },
+        "kOutOfN": { "$ref": "#/$defs/dictionary" }
+      }
+    },
+    "reliabilityBlockEdge": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "from": { "type": "string" },
+        "to": { "type": "string" },
+        "source": { "type": "string" },
+        "target": { "type": "string" },
+        "type": { "type": "string" },
+        "relation": { "type": "string" },
+        "logic": { "type": "string" },
+        "connectionType": { "type": "string" },
+        "weight": { "type": "number" }
       }
     },
     "specialRepairProfile": {

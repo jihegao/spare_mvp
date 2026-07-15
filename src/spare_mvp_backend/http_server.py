@@ -239,6 +239,26 @@ def create_backend_server(
             if self.command == "GET" and len(parts) == 4 and parts[0] == "projects" and parts[2] == "analysis-results":
                 self._require_user()
                 return api.get_current_analysis_result(parts[1], parts[3])
+            if (
+                self.command == "POST"
+                and len(parts) == 3
+                and parts[0] == "projects"
+                and parts[2] == "aircraft-mission-reliability-analyses"
+            ):
+                actor = self._require_user()
+                return api.save_aircraft_mission_reliability_analysis(
+                    parts[1],
+                    body,
+                    actor_user_id=actor["user_id"],
+                )
+            if (
+                self.command == "GET"
+                and len(parts) == 3
+                and parts[0] == "projects"
+                and parts[2] == "aircraft-mission-reliability-analyses"
+            ):
+                self._require_user()
+                return api.list_aircraft_mission_reliability_analyses(parts[1])
             if self.command == "POST" and len(parts) == 3 and parts[0] == "projects" and parts[2] == "modeling-snapshots":
                 self._require_user()
                 return api.create_modeling_snapshot(parts[1])

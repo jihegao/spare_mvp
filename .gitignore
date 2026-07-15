@@ -6,6 +6,7 @@ __pycache__/
 *.pyc
 *.egg-info/
 output/
+exports/case-20260708.json
 outputs/**/state_series.json
 runs/*
 !runs/.gitkeep

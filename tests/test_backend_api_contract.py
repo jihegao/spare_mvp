@@ -234,6 +234,92 @@ class BackendApiContractTest(unittest.TestCase):
     def test_lite_mesa_analysis_defaults_to_four_samples(self) -> None:
         self.assertEqual(_normalize_lite_mesa_analysis_settings({})["samples"], 4)
 
+    def test_aircraft_mission_reliability_analysis_history_is_immutable_and_project_scoped(self) -> None:
+        first_project = small_aircraft_support_project("project-aircraft-reliability-history-a")
+        second_project = small_aircraft_support_project("project-aircraft-reliability-history-b")
+        self.api.save_project(first_project)
+        self.api.save_project(second_project)
+        first_snapshot = {
+            "reliability_block_diagram": {"nodes": [{"id": "engine", "reliability": 0.98}]},
+            "calculation_details": [{"node_id": "engine", "failure_probability": 0.02}],
+        }
+
+        first = self.api.save_aircraft_mission_reliability_analysis(
+            first_project["project_id"],
+            {
+                "analysis_id": "analysis-client-stable-001",
+                "aircraft_model": "J-15",
+                "mission_profile_id": "profile-five-hour",
+                "mission_profile_name": "五小时任务",
+                "duration_hours": 5,
+                "aircraft_reliability": 0.98,
+                "snapshot": first_snapshot,
+            },
+            actor_user_id="user-basic",
+        )
+        first_snapshot["calculation_details"][0]["failure_probability"] = 1
+        second = self.api.save_aircraft_mission_reliability_analysis(
+            first_project["project_id"],
+            {
+                "aircraft_model": "J-15",
+                "mission_profile_id": "profile-ten-hour",
+                "mission_profile_name": "十小时任务",
+                "duration_hours": 10,
+                "aircraft_reliability": 0.91,
+                "snapshot": {"calculation_details": [{"node_id": "engine", "reliability": 0.91}]},
+            },
+            actor_user_id="user-data",
+        )
+
+        history = self.api.list_aircraft_mission_reliability_analyses(first_project["project_id"])
+        self.assertEqual(history["project_id"], first_project["project_id"])
+        self.assertEqual([entry["analysis_id"] for entry in history["analyses"]], [second["analysis_id"], first["analysis_id"]])
+        self.assertEqual(history["analyses"][1]["snapshot"]["calculation_details"][0]["failure_probability"], 0.02)
+        self.assertEqual(first["analysis_id"], "analysis-client-stable-001")
+        self.assertEqual(first["created_by"], "user-basic")
+        self.assertTrue(first["created_at"])
+        self.assertEqual(self.api.list_aircraft_mission_reliability_analyses(second_project["project_id"])["analyses"], [])
+
+        with self.assertRaises(BackendApiError) as duplicate:
+            self.api.save_aircraft_mission_reliability_analysis(
+                first_project["project_id"],
+                {
+                    "analysis_id": first["analysis_id"],
+                    "aircraft_model": "J-15",
+                    "mission_profile_id": "profile-five-hour",
+                    "mission_profile_name": "五小时任务",
+                    "duration_hours": 5,
+                    "aircraft_reliability": 0.5,
+                    "snapshot": {},
+                },
+                actor_user_id="user-basic",
+            )
+        self.assertEqual(duplicate.exception.code, "analysis_already_exists")
+
+    def test_aircraft_mission_reliability_analysis_requires_valid_summary_and_project(self) -> None:
+        project = small_aircraft_support_project("project-aircraft-reliability-validation")
+        self.api.save_project(project)
+        valid = {
+            "aircraft_model": "J-15",
+            "mission_profile_id": "profile-one",
+            "mission_profile_name": "任务一",
+            "duration_hours": 5,
+            "aircraft_reliability": 0.95,
+            "snapshot": {},
+        }
+        with self.assertRaises(KeyError):
+            self.api.save_aircraft_mission_reliability_analysis(
+                "project-missing",
+                valid,
+                actor_user_id="user-basic",
+            )
+        with self.assertRaisesRegex(ValueError, "between 0 and 1"):
+            self.api.save_aircraft_mission_reliability_analysis(
+                project["project_id"],
+                {**valid, "aircraft_reliability": 1.1},
+                actor_user_id="user-basic",
+            )
+
     def test_replace_project_requires_current_version_and_records_audit(self) -> None:
         project = small_aircraft_support_project("project-replace-contract")
         self.api.save_project(project)
@@ -3861,7 +3947,7 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertTrue(all("jobs" not in activity for activity in created["project"]["supportActivities"]))
         self.assertGreaterEqual(len(created["project"]["supportActivities"][0]["activityCodes"]), 2)
         self.assertGreaterEqual(len(created["project"]["supportActivityJobs"]), 2)
-        self.assertNotIn("reliabilityBlockDiagram", created["project"])
+        self.assertEqual(created["project"]["reliabilityBlockDiagram"], import_package["objects"]["reliabilityBlockDiagram"])
         self.assertNotIn("experiment", created["project"])
         self.assertNotIn("analysisRequests", created["project"])
         self.assertEqual(created["savedProject"]["project_id"], import_package["projectId"])
@@ -3915,7 +4001,8 @@ class BackendApiContractTest(unittest.TestCase):
         self.assertNotIn("carrier-deck", project["airports"])
         self.assertNotIn("experiment", project)
         self.assertNotIn("analysisRequests", project)
-        self.assertNotIn("reliabilityBlockDiagram", project)
+        self.assertEqual(project["reliabilityBlockDiagram"], objects["reliabilityBlockDiagram"])
+        self.assertIsNot(project["reliabilityBlockDiagram"], objects["reliabilityBlockDiagram"])
         self.assertNotIn("monteCarlo", project)
         self.assertNotIn("monteCarlo", project["missionProfile"])
         self.assertNotIn("analysisRequests", project["missionProfile"])
@@ -4220,7 +4307,7 @@ class BackendApiContractTest(unittest.TestCase):
         project = modeling_import_to_project(import_package)
 
         self.assertEqual(project["combatUnit"], {"members": []})
-        self.assertNotIn("reliabilityBlockDiagram", project)
+        self.assertEqual(project["reliabilityBlockDiagram"], {"nodes": [], "edges": []})
         self.assertNotIn("monteCarlo", project)
         self.assertNotIn("monteCarlo", project["missionProfile"])
 

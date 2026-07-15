@@ -358,6 +358,77 @@ class ContractRepository:
             raise KeyError(project_id)
         return str(row[0] or "")
 
+    def insert_aircraft_mission_reliability_analysis(
+        self,
+        analysis: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Insert one immutable aircraft mission reliability analysis snapshot."""
+        self.connection.execute(
+            """
+            INSERT INTO aircraft_mission_reliability_analyses (
+              analysis_id, project_id, created_by, aircraft_model,
+              mission_profile_id, mission_profile_name, duration_hours,
+              aircraft_reliability, snapshot_json
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                _required(analysis, "analysis_id"),
+                _required(analysis, "project_id"),
+                _required(analysis, "created_by"),
+                _required(analysis, "aircraft_model"),
+                _required(analysis, "mission_profile_id"),
+                _required(analysis, "mission_profile_name"),
+                _required(analysis, "duration_hours"),
+                _required(analysis, "aircraft_reliability"),
+                _to_json(_required(analysis, "snapshot")),
+            ),
+        )
+        self.connection.commit()
+        return self.get_aircraft_mission_reliability_analysis(str(analysis["analysis_id"]))
+
+    def get_aircraft_mission_reliability_analysis(self, analysis_id: str) -> dict[str, Any]:
+        cursor = self.connection.execute(
+            """
+            SELECT analysis_id, project_id, created_by, created_at,
+                   aircraft_model, mission_profile_id, mission_profile_name,
+                   duration_hours, aircraft_reliability, snapshot_json
+            FROM aircraft_mission_reliability_analyses
+            WHERE analysis_id = ?
+            """,
+            (analysis_id,),
+        )
+        row = cursor.fetchone()
+        if row is None:
+            raise KeyError(analysis_id)
+        return self._serialize_aircraft_mission_reliability_analysis(cursor, row)
+
+    def list_aircraft_mission_reliability_analyses(self, project_id: str) -> list[dict[str, Any]]:
+        cursor = self.connection.execute(
+            """
+            SELECT analysis_id, project_id, created_by, created_at,
+                   aircraft_model, mission_profile_id, mission_profile_name,
+                   duration_hours, aircraft_reliability, snapshot_json
+            FROM aircraft_mission_reliability_analyses
+            WHERE project_id = ?
+            ORDER BY datetime(created_at) DESC, rowid DESC
+            """,
+            (project_id,),
+        )
+        return [
+            self._serialize_aircraft_mission_reliability_analysis(cursor, row)
+            for row in cursor.fetchall()
+        ]
+
+    @staticmethod
+    def _serialize_aircraft_mission_reliability_analysis(
+        cursor: sqlite3.Cursor,
+        row: sqlite3.Row | tuple[Any, ...],
+    ) -> dict[str, Any]:
+        analysis = _row_to_dict(cursor, row)
+        analysis["snapshot"] = json.loads(analysis.pop("snapshot_json"))
+        return analysis
+
     def replace_project_if_current(
         self,
         project: dict[str, Any],
@@ -447,6 +518,10 @@ class ContractRepository:
                 "DELETE FROM modeling_snapshots WHERE project_id = ?",
                 (project_id,),
             ).rowcount
+            self.connection.execute(
+                "DELETE FROM aircraft_mission_reliability_analyses WHERE project_id = ?",
+                (project_id,),
+            )
             deleted_access = self.connection.execute(
                 "DELETE FROM project_access WHERE project_id = ?",
                 (project_id,),

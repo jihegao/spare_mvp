@@ -24,12 +24,12 @@ const DOCS_README_URL = new URL("../docs/README.md", import.meta.url);
 const FRONTEND_STYLES_URL = new URL("../front/styles.css", import.meta.url);
 
 test("feature catalog exposes all table-2 four-level pages", () => {
-  assert.equal(FEATURE_PAGES.length, 45);
-  assert.equal(new Set(FEATURE_PAGES.map((page) => page.id)).size, 45);
+  assert.equal(FEATURE_PAGES.length, 46);
+  assert.equal(new Set(FEATURE_PAGES.map((page) => page.id)).size, 46);
   assert.equal(FEATURE_PAGES.filter((page) => page.module === "备件规划评估模块").length, 19);
-  assert.equal(FEATURE_PAGES.filter((page) => page.module === "任务可靠度评估模块").length, 20);
+  assert.equal(FEATURE_PAGES.filter((page) => page.module === "任务可靠度评估模块").length, 21);
   assert.equal(FEATURE_PAGES.filter((page) => page.module === "系统运行支持模块").length, 6);
-  for (const label of ["装备系统建模", "装备可靠性框图建模", "飞机转场携行清单分析", "任务可靠度评估", "停机因素分析", "建模表单管理"]) {
+  for (const label of ["装备系统建模", "装备可靠性框图建模", "飞机转场携行清单分析", "飞机任务可靠性评估", "任务可靠度评估", "停机因素分析", "建模表单管理"]) {
     assert.ok(FEATURE_PAGES.some((page) => page.name === label), label);
   }
   assert.equal(FEATURE_PAGES.some((page) => page.name === "Mesa蒙特卡洛分析"), false);
@@ -122,6 +122,7 @@ test("feature grouping preserves three-level navigation and internal fourth-leve
   assert.equal("Mesa分析" in grouped["任务可靠度评估模块"]["仿真实验"], false);
   assert.deepEqual(Object.keys(grouped["备件规划评估模块"]["结果分析"]), ["备件短板分析", "飞机转场携行清单分析"]);
   assert.deepEqual(grouped["备件规划评估模块"]["结果分析"]["备件短板分析"].map((page) => page.name), ["备件短板分析"]);
+  assert.deepEqual(Object.keys(grouped["任务可靠度评估模块"]["结果分析"]), ["飞机任务可靠性评估", "任务可靠度评估", "停机因素分析"]);
   assert.equal(FEATURE_PAGES.some((page) => page.name === "仿真实验方案创建"), false);
   assert.equal(FEATURE_PAGES.some((page) => page.name === "仿真实验方案编辑"), false);
   assert.equal(FEATURE_PAGES.some((page) => page.name === "场景切换"), false);
@@ -156,6 +157,9 @@ test("feature grouping preserves three-level navigation and internal fourth-leve
   assert.equal(getFeaturePageById("mission-reliability-scenario-switch").id, "mission-reliability-visual-mesa-page");
   assert.equal(getFeaturePageById("mission-reliability-visual-results").id, "mission-reliability-visual-mesa-page");
   assert.equal(getFeaturePageById("mission-reliability-task-reliability").name, "任务可靠度评估");
+  assert.equal(getFeaturePageById("mission-reliability-aircraft-mission-reliability").name, "飞机任务可靠性评估");
+  assert.equal(getFeaturePageById("mission-reliability-aircraft-mission-reliability").component, "aircraft-mission-reliability-analysis");
+  assert.equal(getFeaturePageById("mission-reliability-aircraft-task-reliability").id, "mission-reliability-aircraft-mission-reliability");
   assert.equal(getFeaturePageById("system-management-project-data-management").component, "system-project-management");
   assert.equal(getFeaturePageById("system-management-modeling-granularity-management").component, "system-project-management");
   assert.equal(getFeaturePageById("system-management-user-management").component, "system-basic-config");
@@ -195,7 +199,7 @@ test("permission management mirrors the left-navigation leaf tree and fixed role
   ));
 
   assert.deepEqual(PERMISSION_MENU_ROLES.map(({ label }) => label), ["系统管理员", "数据管理员", "项目用户"]);
-  assert.equal(leaves.length, 24);
+  assert.equal(leaves.length, 25);
   assert.deepEqual(
     leaves.map(({ module, secondary, tertiary }) => ({ module, secondary, tertiary })),
     navigationLeaves
@@ -2588,7 +2592,7 @@ test("monte carlo detail embeds the Mesa Monte Carlo page", async () => {
     appSource.indexOf("app.addEventListener(\"focusout\"")
   );
 
-  assert.equal(FEATURE_PAGES.length, 45);
+  assert.equal(FEATURE_PAGES.length, 46);
   assert.equal(page.name, "实验详情");
   assert.equal(page.secondary, "仿真实验");
   assert.equal(page.tertiary, "蒙特卡洛实验");

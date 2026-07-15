@@ -221,6 +221,19 @@ export function createBackendApiClient({ baseUrl = DEFAULT_API_BASE, transport, 
         responseType: "json"
       });
     },
+    listAircraftMissionReliabilityAnalyses(projectId) {
+      return request({
+        method: "GET",
+        path: `/projects/${encodeURIComponent(projectId)}/aircraft-mission-reliability-analyses`
+      });
+    },
+    saveAircraftMissionReliabilityAnalysis(projectId, snapshot) {
+      return request({
+        method: "POST",
+        path: `/projects/${encodeURIComponent(projectId)}/aircraft-mission-reliability-analyses`,
+        body: snapshot
+      });
+    },
     archiveRun(runId) {
       return request({ method: "POST", path: `/runs/${encodeURIComponent(runId)}/archive` });
     },
@@ -387,7 +400,7 @@ function stripProjectNonModelFields(projectJson) {
   migrateRootMissionPhasesToBasicMissions(projectJson);
   delete projectJson.missionPhases;
   stripComponentNonModelFields(projectJson.components);
-  delete projectJson.reliabilityBlockDiagram;
+  stripReliabilityBlockDiagramNonModelFields(projectJson.reliabilityBlockDiagram);
   stripSupportActivityTypoFields(projectJson);
   stripDeprecatedSupportActivityStrategyFields(projectJson);
   stripSupportActivityRuleUiFields(projectJson.supportActivities);
@@ -395,6 +408,30 @@ function stripProjectNonModelFields(projectJson) {
   stripSupportActivitySpareTypeFields(projectJson.supportActivities);
   stripSupportActivityMttrFields(projectJson.supportActivities);
   stripSupportActivityMttrFields(projectJson.supportActivityJobs);
+}
+
+function stripReliabilityBlockDiagramNonModelFields(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return;
+  keepObjectFields(value, new Set(["nodes", "edges"]));
+  const nodeFields = new Set([
+    "id", "name", "type", "parentId", "componentId", "aircraftModel", "connectionType",
+    "relation", "logic", "gateType", "quantity", "k", "failureRate", "failureRateUnit", "mtbfHours",
+    "mtbfUnit", "reliability", "reliabilityUnit", "failureDistribution", "kOutOfN"
+  ]);
+  const edgeFields = new Set(["from", "to", "source", "target", "type", "relation", "logic", "connectionType", "weight"]);
+  if (Array.isArray(value.nodes)) {
+    value.nodes.forEach((node) => keepObjectFields(node, nodeFields));
+  }
+  if (Array.isArray(value.edges)) {
+    value.edges.forEach((edge) => keepObjectFields(edge, edgeFields));
+  }
+}
+
+function keepObjectFields(value, allowedFields) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return;
+  Object.keys(value).forEach((key) => {
+    if (!allowedFields.has(key)) delete value[key];
+  });
 }
 
 function materializeLegacySupportTables(projectJson) {

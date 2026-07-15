@@ -34,6 +34,7 @@ const FEATURE_SLUGS = {
   实验详情: "monte-carlo-experiment-detail",
   备件短板分析: "spare-shortfall-analysis",
   飞机转场携行清单分析: "carry-list-analysis",
+  飞机任务可靠性评估: "aircraft-mission-reliability",
   任务可靠度评估: "task-reliability",
   停机因素分析: "downtime-factor-analysis"
 };
@@ -82,6 +83,7 @@ const SOURCE_ROWS = [
   ["任务可靠度评估模块", "仿真实验", "仿真实验方案管理", "仿真实验方案管理"],
   ["任务可靠度评估模块", "仿真实验", "可视化推演", "Mesa页面"],
   ["任务可靠度评估模块", "仿真实验", "蒙特卡洛实验", "实验详情"],
+  ["任务可靠度评估模块", "结果分析", "飞机任务可靠性评估", "飞机任务可靠性评估"],
   ["任务可靠度评估模块", "结果分析", "任务可靠度评估", "任务可靠度评估"],
   ["任务可靠度评估模块", "结果分析", "停机因素分析", "停机因素分析"]
 ];
@@ -162,8 +164,7 @@ const FEATURE_ID_ALIASES = {
   "mission-reliability-monte-carlo-experiment-list": "mission-reliability-monte-carlo-experiment-detail",
   "spare-planning-monte-carlo-experiment-edit": "spare-planning-monte-carlo-experiment-detail",
   "mission-reliability-monte-carlo-experiment-edit": "mission-reliability-monte-carlo-experiment-detail",
-  "mission-reliability-aircraft-task-reliability": "mission-reliability-task-reliability",
-  "mission-reliability-aircraft-mission-reliability": "mission-reliability-task-reliability",
+  "mission-reliability-aircraft-task-reliability": "mission-reliability-aircraft-mission-reliability",
   "spare-planning-mission-profile": "spare-planning-composite-task",
   "mission-reliability-mission-profile": "mission-reliability-composite-task",
   "spare-planning-support-resource-demand": "spare-planning-basic-support-activity",
@@ -191,6 +192,7 @@ const FEATURE_ID_ALIASES = {
 
 function resolveComponent(name, secondary, tertiary) {
   if (tertiary === "仿真实验方案管理") return "experiment-plan-management";
+  if (name === "飞机任务可靠性评估") return "aircraft-mission-reliability-analysis";
   if (name.includes("可靠性框图")) return "reliability-block-diagram";
   if (name.includes("RMS分配") || name.includes("RMS指标分配")) return "rms-allocation";
   if (secondary === "项目管理") return "system-project-management";

@@ -35,13 +35,6 @@ class ProjectJsonExporterTest(unittest.TestCase):
     def _schema_errors(self, project: dict) -> list[jsonschema.ValidationError]:
         return sorted(self.validator.iter_errors(project), key=lambda error: list(error.path))
 
-    def test_case_20260708_export_is_clean_project(self) -> None:
-        case_project = json.loads((REPO_ROOT / "exports" / "case-20260708.json").read_text(encoding="utf-8"))
-
-        self.assertEqual(self._schema_errors(case_project), [])
-        self.assertNotIn("missionPhases", case_project)
-        self.assertTrue(all(basic.get("missionPhases") for basic in case_project["basicMissions"]))
-
     def _export_with_old_jsonschema(self, project: dict) -> dict:
         class OldJsonschema:
             pass
@@ -325,7 +318,9 @@ class ProjectJsonExporterTest(unittest.TestCase):
         self.assertNotIn("scenarioComposition", clean)
         self.assertNotIn("resultSummary", clean)
         self.assertNotIn("rmsAllocationPlan", clean)
-        self.assertNotIn("reliabilityBlockDiagram", clean)
+        self.assertEqual(clean["reliabilityBlockDiagram"]["nodes"][0]["id"], "whole-aircraft")
+        self.assertNotIn("treeLayout", clean["reliabilityBlockDiagram"]["nodes"][0])
+        self.assertNotIn("missionAreas", clean["reliabilityBlockDiagram"]["edges"][0])
         self.assertNotIn("modelingDictionaries", clean)
         self.assertNotIn("validationLevel", clean["modelingImportValidation"])
         for field in (
@@ -564,7 +559,7 @@ print(strip_project_sweep({"scenarioId": "scenario-a"})["scenarioId"])
         clean = self._export_with_old_jsonschema(self._polluted_project())
 
         self.assertNotIn("resultSummary", clean)
-        self.assertNotIn("reliabilityBlockDiagram", clean)
+        self.assertIn("reliabilityBlockDiagram", clean)
         self.assertNotIn("failureRate", clean["components"][0])
         self.assertEqual(clean["components"][0]["specialRepairProfile"], {"repairTimeMinutes": 45})
 

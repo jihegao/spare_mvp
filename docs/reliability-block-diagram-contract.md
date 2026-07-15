@@ -6,6 +6,7 @@
 
 - 左侧树复用装备组成树，选择状态来自 `resolveSelectedEquipmentNode()`。
 - 绘图输入优先读取 Project 中的 `reliabilityBlockDiagram`，并用 `components` 补齐节点名称、失效率、MTBF、RMS 可靠度、数量和 `kOutOfN`。
+- `reliabilityBlockDiagram` 是 clean Project 的正式建模输入；保存时只剥离画布坐标等 UI 字段，必须保留节点、连线、串并联关系和可靠性参数。
 - 显式 reliabilityBlockDiagram 只有顶层节点时，组件下钻必须回退/融合 components 的真实直接子级，不能停留在通用顶层 RBD 节点。
 - 缺少可绘制节点时，右侧显示空态，不从静态 demo 数据静默补业务样例。
 
@@ -43,4 +44,12 @@
 ## 测试锚点
 
 - `tests/rbd-evaluator.test.mjs` 固定 RBD 投影、直接下一级选择、`n中取k` 外框/分支、逻辑表格去重和导入样例验收。
+- `tests/aircraft-mission-reliability.test.mjs` 固定任务时长产品可靠度、串联/并联/n 中取 k 逐级计算、层级明细和失败关闭校验。
 - `tests/frontend-contract.test.mjs` 固定前端页面入口、字段、选择属性和本文档关键条款。
+
+## 飞机任务可靠性分析
+
+- “结果分析 / 飞机任务可靠性评估”与 Mesa“任务可靠度评估”是两个独立口径，前者计算产品结构可靠度，后者统计完整任务周期实验成功比例。
+- 叶产品根据任务时长和失效率、MTBF 或失效分布计算可靠度；串联系统取子节点可靠度乘积，并联系统取 `1 - ∏(1-Ri)`，n 中取 k 使用至少 k 个分支成功的概率。
+- 关系、参数或单位缺失/非法，任务时长无效，或者框图存在重复、孤立、无效引用和循环节点时，不得生成分析结果。
+- 保存历史时固化飞机型号、任务剖面、任务时长、框图和逐节点结果；后续修改建模数据不改变已有快照。

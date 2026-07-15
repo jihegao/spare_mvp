@@ -105,6 +105,64 @@ class BackendHttpApiTest(unittest.TestCase):
         )
         return {"created": created, "plan": plan, "run": submitted}
 
+    def test_http_aircraft_mission_reliability_analysis_history_requires_auth(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            server = create_backend_server(
+                ("127.0.0.1", 0),
+                repo_root=REPO_ROOT,
+                database_path=":memory:",
+                output_dir=Path(tmp) / "artifacts",
+            )
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                base_url = f"http://127.0.0.1:{server.server_address[1]}/api"
+                auth_token = self._login_token(base_url, "user", "user")
+                project = small_aircraft_support_project("project-http-aircraft-reliability-history")
+                self._json(base_url, "POST", "/projects", project, auth_token=auth_token)
+                route = f"/projects/{quote(project['project_id'], safe='')}/aircraft-mission-reliability-analyses"
+                payload = {
+                    "analysisId": "analysis-http-stable-001",
+                    "aircraftModel": "J-15",
+                    "missionProfileId": "profile-five-hour",
+                    "missionProfileName": "五小时任务",
+                    "durationHours": 5,
+                    "aircraftReliability": 0.975,
+                    "snapshot": {
+                        "reliabilityBlockDiagram": {"nodes": [{"id": "engine"}]},
+                        "calculationDetails": [{"nodeId": "engine", "reliability": 0.975}],
+                    },
+                }
+
+                unauthenticated_post = self._json_error(base_url, "POST", route, payload)
+                unauthenticated_get = self._json_error(base_url, "GET", route)
+                saved = self._json(base_url, "POST", route, payload, auth_token=auth_token)
+                history = self._json(base_url, "GET", route, auth_token=auth_token)
+
+                self.assertEqual(unauthenticated_post["code"], "unauthorized")
+                self.assertEqual(unauthenticated_get["code"], "unauthorized")
+                self.assertEqual(saved["analysis_id"], "analysis-http-stable-001")
+                self.assertEqual(saved["created_by"], "user-basic")
+                self.assertEqual(saved["project_id"], project["project_id"])
+                self.assertEqual(saved["snapshot"], payload["snapshot"])
+                self.assertEqual(history["project_id"], project["project_id"])
+                self.assertEqual([entry["analysis_id"] for entry in history["analyses"]], [saved["analysis_id"]])
+
+                missing_route = "/projects/project-missing/aircraft-mission-reliability-analyses"
+                status, error = self._json_error_with_status(
+                    base_url,
+                    "POST",
+                    missing_route,
+                    payload,
+                    auth_token=auth_token,
+                )
+                self.assertEqual(status, 404)
+                self.assertEqual(error["code"], "not_found")
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
     def test_http_api_serves_frontend_contract_flow(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             server = create_backend_server(
