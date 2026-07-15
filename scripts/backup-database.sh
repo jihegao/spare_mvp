@@ -6,6 +6,22 @@ RUN_DIR="$ROOT_DIR/runs/system-start"
 DATABASE_PATH="${DATABASE_PATH:-$RUN_DIR/spare_mvp.sqlite3}"
 BACKUP_DIR="${BACKUP_DIR:-$ROOT_DIR/runs/database-backups}"
 BACKUP_LABEL="${BACKUP_LABEL:-}"
+PYTHON_COMMAND="${PYTHON:-}"
+
+resolve_python_command() {
+  if [[ -n "$PYTHON_COMMAND" ]]; then
+    return
+  fi
+
+  if command -v python3 >/dev/null 2>&1; then
+    PYTHON_COMMAND="python3"
+  elif command -v python >/dev/null 2>&1; then
+    PYTHON_COMMAND="python"
+  else
+    echo "Python interpreter not found. Set PYTHON to the Python executable." >&2
+    exit 1
+  fi
+}
 
 usage() {
   cat >&2 <<'EOF'
@@ -67,7 +83,8 @@ if [[ -e "$backup_path" ]]; then
   backup_path="$BACKUP_DIR/spare_mvp-$timestamp$label_suffix-$$.sqlite3"
 fi
 
-python3 - "$DATABASE_PATH" "$backup_path" <<'PY'
+resolve_python_command
+"$PYTHON_COMMAND" - "$DATABASE_PATH" "$backup_path" <<'PY'
 import os
 import sqlite3
 import sys
