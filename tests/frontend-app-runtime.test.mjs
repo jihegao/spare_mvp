@@ -1168,7 +1168,7 @@ test("spare shortfall result keeps aircraft-spare pairs and sorts demand quantit
   }
 });
 
-test("carry list result displays the modeled aircraft for each spare row", async () => {
+test("carry list result exposes satisfaction, zero-demand, life-limit, and aircraft UI", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=spare-planning-carry-list-analysis",
     projectJson: createRuntimeProjectJson(),
@@ -1178,8 +1178,9 @@ test("carry list result displays the modeled aircraft for each spare row", async
         ["高优先级备件", "1"]
       ],
       rows: [
-        { aircraftModel: "J-15", spareType: "发动机备件", recommended: 5, demand: 6, shortage: 1, riskLevel: "高" },
-        { aircraftModel: "J-35", spareType: "雷达备件", recommended: 2, demand: 2, shortage: 0, riskLevel: "低" }
+        { aircraftModel: "J-15", spareType: "发动机备件", recommended: 5, demand: 6, shortage: 1, riskLevel: "高", lifeLimited: true, lifeLandings: 120, lifeHours: 240 },
+        { aircraftModel: "J-35", spareType: "雷达备件", recommended: 2, demand: 2, shortage: 0, riskLevel: "低", lifeLimited: false, lifeLandings: 0, lifeHours: 0 },
+        { aircraftModel: "J-15", spareType: "零需求备件", recommended: 0, demand: 0, shortage: 0, riskLevel: "低", lifeLimited: false, lifeLandings: 0, lifeHours: 0 }
       ]
     }
   });
@@ -1189,8 +1190,17 @@ test("carry list result displays the modeled aircraft for each spare row", async
 
     const detailPanel = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-analysis-detail");
     assert.match(detailPanel, /<th>机型<\/th><th>备件类别<\/th><th>建议携行数量<\/th>/);
+    assert.match(detailPanel, /隐藏需求数值为 0 的备件/);
+    assert.match(detailPanel, /data-carry-hide-zero checked/);
+    assert.match(detailPanel, /有寿件寿命在预防性维修中配置/);
+    assert.match(detailPanel, /<th>有寿件<\/th><th>起落寿命<\/th><th>使用寿命\(h\)<\/th>/);
     assert.match(detailPanel, /J-15[\s\S]*发动机备件/);
     assert.match(detailPanel, /J-35[\s\S]*雷达备件/);
+    assert.match(detailPanel, /发动机备件[\s\S]*<td>是<\/td><td>120<\/td><td>240<\/td>/);
+    assert.doesNotMatch(detailPanel, /零需求备件/);
+
+    await runtime.change("[data-carry-hide-zero]", {}, { checked: false });
+    assert.match(runtime.appNode.innerHTML, /零需求备件/);
   } finally {
     runtime.restore();
   }
@@ -1210,7 +1220,7 @@ test("experiment plan management hides page-level current project context", asyn
   }
 });
 
-test("carry list analysis renames the mission confidence field", async () => {
+test("carry list analysis labels its satisfaction floor and utilization objective", async () => {
   const runtime = await setupRuntimeApp({
     hash: "feature=spare-planning-carry-list-analysis",
     projectJson: createRuntimeProjectJson()
@@ -1220,8 +1230,8 @@ test("carry list analysis renames the mission confidence field", async () => {
     const hero = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-hero");
     const settingsPanel = htmlSectionByClass(runtime.appNode.innerHTML, "lite-mesa-settings");
     assert.doesNotMatch(hero, /在给定置信度约束下探索建议携行数量、优先级和风险项。/);
-    assert.match(settingsPanel, /置信度目标[\s\S]*data-lite-mesa-analysis-field="missionConfidenceTarget"[\s\S]*value="0\.9"/);
-    assert.match(settingsPanel, /目标函数[\s\S]*携行备件总量最小/);
+    assert.match(settingsPanel, /备件满足率下限[\s\S]*data-lite-mesa-analysis-field="missionConfidenceTarget"[\s\S]*value="0\.9"/);
+    assert.match(settingsPanel, /优化方向[\s\S]*满足率达标后，备件利用率越高越好/);
     assert.doesNotMatch(settingsPanel, /data-lite-mesa-analysis-field="samples"|data-lite-mesa-analysis-field="seed"/);
     assert.doesNotMatch(settingsPanel, /任务置信目标/);
 

@@ -2631,7 +2631,7 @@ class SimulationAdapter:
                         "hide_zero_demand": True,
                         "life_limited": False,
                         "life_landings": 0,
-                        "life_calendar_days": 0,
+                        "life_hours": 0,
                     }
                     for row in spare_rows
                 ],

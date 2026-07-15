@@ -1882,7 +1882,7 @@ def _lite_mesa_carry_list_result(
                 "hideZeroDemand": True,
                 "lifeLimited": bool(item.get("life_limited") or item.get("lifeLimited")),
                 "lifeLandings": _metric_int(item.get("life_landings", item.get("lifeLandings")), default=0),
-                "lifeCalendarDays": _metric_int(item.get("life_calendar_days", item.get("lifeCalendarDays")), default=0),
+                "lifeHours": _metric_int(item.get("life_hours", item.get("lifeHours")), default=0),
             }
         )
     if not rows:
@@ -1899,7 +1899,7 @@ def _lite_mesa_carry_list_result(
                 "hideZeroDemand": True,
                 "lifeLimited": False,
                 "lifeLandings": 0,
-                "lifeCalendarDays": 0,
+                "lifeHours": 0,
             }
         )
     return {
@@ -1907,7 +1907,7 @@ def _lite_mesa_carry_list_result(
         "metrics": [
             ["建议携行总数", str(sum(int(row["recommended"]) for row in rows))],
             ["高优先级备件", str(sum(1 for row in rows if row["riskLevel"] == "高"))],
-            ["置信度目标", f"{settings['missionConfidenceTarget']:.2f}"],
+            ["备件满足率下限", f"{settings['missionConfidenceTarget']:.2f}"],
             ["样本数", str(len(samples))],
         ],
         "rows": rows,
