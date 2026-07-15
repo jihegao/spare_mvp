@@ -2574,7 +2574,6 @@ function bindEvents() {
     const rmsInput = event.target.closest("[data-rms-path]");
     if (rmsInput) {
       setPath(rmsAllocationPlan, rmsInput.dataset.rmsPath, parseInput(rmsInput));
-      recalculateRmsAllocation();
       render();
       return;
     }

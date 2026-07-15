@@ -1638,6 +1638,32 @@ test("RMS method selection updates method-specific parameters at runtime", async
   }
 });
 
+test("RMS method changes retain results until the calculation overlay completes", async () => {
+  const runtime = await setupRuntimeApp({ hash: "feature=system-management-equipment-rms-allocation" });
+
+  try {
+    const initialResultPanel = htmlSectionByClass(runtime.appNode.innerHTML, "rms-result-panel");
+    assert.match(initialResultPanel, /25%/);
+
+    await runtime.change("[data-rms-path]", { rmsPath: "methods.allocation" }, { value: "proportional" });
+
+    assert.match(runtime.appNode.innerHTML, /<option value="proportional" selected>比例分配法<\/option>/);
+    assert.equal(htmlSectionByClass(runtime.appNode.innerHTML, "rms-result-panel"), initialResultPanel);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /rms-calculation-overlay/);
+
+    await runtime.click("[data-rms-action]", { rmsAction: "calculate" });
+    assert.match(runtime.appNode.innerHTML, /rms-calculation-overlay/);
+    assert.equal(htmlSectionByClass(runtime.appNode.innerHTML, "rms-result-panel"), initialResultPanel);
+
+    await new Promise((resolve) => setTimeout(resolve, 2050));
+
+    assert.doesNotMatch(runtime.appNode.innerHTML, /rms-calculation-overlay/);
+    assert.match(htmlSectionByClass(runtime.appNode.innerHTML, "rms-result-panel"), /40%/);
+  } finally {
+    runtime.restore();
+  }
+});
+
 test("RMS calculation shows a blocking two-second progress state before completing", async () => {
   const runtime = await setupRuntimeApp({ hash: "feature=system-management-equipment-rms-allocation" });
 
@@ -1764,6 +1790,11 @@ test("RMS runtime shows an explicit failure when proportional weights sum to zer
     };
     await runtime.change("[data-rms-equipment-import-file]", {}, { files: [file], value: file.name });
     await runtime.change("[data-rms-path]", { rmsPath: "methods.allocation" }, { value: "proportional" });
+
+    assert.doesNotMatch(runtime.appNode.innerHTML, /方法不适用|RMS_ALLOCATION_ZERO_WEIGHT/);
+    await runtime.click("[data-rms-action]", { rmsAction: "calculate" });
+    assert.match(runtime.appNode.innerHTML, /rms-calculation-overlay/);
+    await new Promise((resolve) => setTimeout(resolve, 2050));
 
     assert.match(runtime.appNode.innerHTML, /方法不适用/);
     assert.match(runtime.appNode.innerHTML, /RMS_ALLOCATION_ZERO_WEIGHT/);

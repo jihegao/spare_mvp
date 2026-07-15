@@ -3990,6 +3990,12 @@ test("system management exposes an independent equipment RMS allocation workbenc
   assert.match(workbenchSource, /rms-calculation-overlay/);
   assert.match(appSource, /function startRmsAllocationCalculation\(\)/);
   assert.match(appSource, /globalThis\.setTimeout\([\s\S]*?\}, 2000\);/);
+  const rmsInputChangeSource = appSource.slice(
+    appSource.indexOf('const rmsInput = event.target.closest("[data-rms-path]")'),
+    appSource.indexOf('const mcArrayInput = event.target.closest("[data-mc-array-path]")')
+  );
+  assert.match(rmsInputChangeSource, /setPath\(rmsAllocationPlan/);
+  assert.doesNotMatch(rmsInputChangeSource, /recalculateRmsAllocation\(\)/);
 });
 
 test("RMS allocation workbench renders parameters for only the selected method", () => {
