@@ -3738,7 +3738,7 @@ class BackendApiContractTest(unittest.TestCase):
             and component.get("aircraftModel") == "J-15"
             and component.get("parentId") == "aircraft-root"
             and component.get("productType") == "LRU"
-            and "spareType" not in component
+            and component.get("spareType") == "航电模块"
             for component in created["project"]["components"]
         ))
         self.assertGreaterEqual(len(created["project"]["missionProfile"]["compositeTasks"]), 2)
