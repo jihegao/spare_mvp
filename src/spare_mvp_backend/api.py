@@ -15,6 +15,7 @@ from src.spare_mvp_backend.errors import BackendApiError
 from src.spare_mvp_backend.modeling_import import modeling_import_to_project, validate_modeling_import_package
 from src.spare_mvp_backend.project_payload import (
     materialize_scenario_composition,
+    normalize_project_basic_mission_support_activity_names,
     project_basic_mission_support_activity_name_errors,
     project_k_out_of_n_errors,
     project_runtime_config_paths,
@@ -50,7 +51,8 @@ class BackendApi:
         self.run_service = RunService(repository, adapter, self.output_dir, run_lifecycle_lock=lifecycle_lock)
 
     def validate_project(self, project_json: dict[str, Any]) -> dict[str, Any]:
-        validation = self.adapter.validate_project(project_json)
+        project = normalize_project_basic_mission_support_activity_names(project_json)
+        validation = self.adapter.validate_project(project)
         runtime_config_errors = [
             {
                 "code": "unsupported_project_runtime_config",
@@ -60,18 +62,18 @@ class BackendApi:
                     "use ExperimentPlan.config / RunIntent / MonteCarloRunConfig"
                 ),
             }
-            for path in project_runtime_config_paths(project_json)
+            for path in project_runtime_config_paths(project)
         ]
         if runtime_config_errors:
             validation = copy.deepcopy(validation)
             validation["ok"] = False
             validation["errors"] = [*validation.get("errors", []), *runtime_config_errors]
-        k_out_of_n_errors = project_k_out_of_n_errors(project_json)
+        k_out_of_n_errors = project_k_out_of_n_errors(project)
         if k_out_of_n_errors:
             validation = copy.deepcopy(validation)
             validation["ok"] = False
             validation["errors"] = [*validation.get("errors", []), *k_out_of_n_errors]
-        support_activity_name_errors = project_basic_mission_support_activity_name_errors(project_json)
+        support_activity_name_errors = project_basic_mission_support_activity_name_errors(project)
         if support_activity_name_errors:
             validation = copy.deepcopy(validation)
             validation["ok"] = False
@@ -225,6 +227,7 @@ class BackendApi:
             raise BackendApiError("project_has_runs", str(exc)) from exc
 
     def save_project(self, project_json: dict[str, Any]) -> dict[str, Any]:
+        project_json = normalize_project_basic_mission_support_activity_names(project_json)
         validation = self.validate_project(project_json)
         if not validation["ok"]:
             raise BackendApiError("invalid_project", "Project JSON failed validation", errors=validation["errors"])
@@ -292,6 +295,7 @@ class BackendApi:
             )
         replacement = copy.deepcopy(project_json)
         replacement["project_id"] = project_id
+        replacement = normalize_project_basic_mission_support_activity_names(replacement)
         validation = self.validate_project(replacement)
         if not validation["ok"]:
             raise BackendApiError("invalid_project", "Project JSON failed validation", errors=validation["errors"])

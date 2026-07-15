@@ -299,6 +299,55 @@ def export_project_json(project_json: dict[str, Any], target: str = ACTIVE_CLEAN
     return ProjectJsonExporter(target=target).export(project_json)
 
 
+def normalize_project_basic_mission_support_activity_names(project_json: dict[str, Any]) -> dict[str, Any]:
+    """Migrate unambiguous legacy support-activity display-name references.
+
+    ``basicMissions[].supportActivityName`` is formally a reference to
+    ``supportActivities[].activityName``.  Older saved projects instead used
+    the activity's former ``name`` field.  Preserve the formal relationship
+    when it is already valid, and only rewrite a legacy reference when both
+    the old-name source and the canonical target are unique.
+    """
+
+    project = deepcopy(project_json)
+    _normalize_basic_mission_support_activity_names(project)
+    return project
+
+
+def _normalize_basic_mission_support_activity_names(project: dict[str, Any]) -> None:
+    activities = project.get("supportActivities")
+    basic_missions = project.get("basicMissions")
+    if not isinstance(activities, list) or not isinstance(basic_missions, list):
+        return
+
+    activity_name_counts: dict[str, int] = {}
+    activities_by_legacy_name: dict[str, list[dict[str, Any]]] = {}
+    for activity in activities:
+        if not isinstance(activity, dict):
+            continue
+        activity_name = _clean_text(activity.get("activityName"))
+        if activity_name:
+            activity_name_counts[activity_name] = activity_name_counts.get(activity_name, 0) + 1
+        legacy_name = _clean_text(activity.get("name"))
+        if legacy_name:
+            activities_by_legacy_name.setdefault(legacy_name, []).append(activity)
+
+    for mission in basic_missions:
+        if not isinstance(mission, dict):
+            continue
+        reference = _clean_text(mission.get("supportActivityName"))
+        # A unique canonical reference always takes precedence over any old
+        # display name that happens to have the same text.
+        if not reference or activity_name_counts.get(reference) == 1:
+            continue
+        legacy_matches = activities_by_legacy_name.get(reference, [])
+        if len(legacy_matches) != 1:
+            continue
+        canonical_name = _clean_text(legacy_matches[0].get("activityName"))
+        if canonical_name and activity_name_counts.get(canonical_name) == 1:
+            mission["supportActivityName"] = canonical_name
+
+
 def project_basic_mission_support_activity_name_errors(project: dict[str, Any]) -> list[dict[str, str]]:
     activity_name_counts: dict[str, int] = {}
     activities = project.get("supportActivities")
@@ -1115,6 +1164,7 @@ def _strip_project_non_model_fields(project: dict[str, Any]) -> None:
     project.pop("deletedSupportResourceKeys", None)
     project.pop("supportResourceOverrides", None)
     _materialize_legacy_support_tables(project)
+    _normalize_basic_mission_support_activity_names(project)
     _normalize_support_model_tables(project)
     project.pop("modelingDictionaries", None)
     _strip_modeling_import_validation_non_model_fields(project)
