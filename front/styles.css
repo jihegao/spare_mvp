@@ -1698,6 +1698,41 @@ select[multiple].table-edit-select {
   margin: 0;
 }
 
+.equipment-template-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-width: 96px;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.equipment-template-action:hover {
+  border-color: var(--primary);
+}
+
+.equipment-template-action:active {
+  background: var(--primary-soft);
+}
+
+.equipment-template-action:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.equipment-template-action input {
+  display: none;
+}
+
 .tag-list {
   display: flex;
   flex-wrap: wrap;
