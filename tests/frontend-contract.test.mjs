@@ -2676,8 +2676,11 @@ test("independent Mesa result analysis pages consume only session settings and s
   assert.match(appSource, /data-current-experiment-plan/);
   assert.match(mesaSource, /async function runLiteMesaAnalysisPage/);
   assert.match(mesaSource, /backendApi\.runLiteMesaAnalysis/);
-  assert.match(mesaSource, /selectedExperimentPlanProjectJson\(\)/);
+  assert.match(mesaSource, /resolveSelectedExperimentPlanProjectJsonForRun\(\)/);
   assert.match(mesaSource, /payload\.status === "session_complete"/);
+  for (const hiddenSetting of ["项目", "当前项目", "分析对象", "结果内容"]) {
+    assert.doesNotMatch(mesaSource, new RegExp(`\\["${hiddenSetting}"`));
+  }
   assert.doesNotMatch(mesaSource, /async function runFormalAnalysisPage/);
   assert.doesNotMatch(mesaSource, /await runCurrentAnalysisPage\(page\)/);
   assert.doesNotMatch(mesaSource, /创建正式 run、result 与 artifact/);
