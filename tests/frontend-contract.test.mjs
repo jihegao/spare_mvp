@@ -2162,7 +2162,11 @@ test("support activity controls are wired through local draft fields", async () 
   );
   assert.match(operationsActivityEntriesSource, /const activityName = String\(activity\.activityName \|\| ""\)\.trim\(\)/);
   assert.match(operationsActivityEntriesSource, /value: activityName/);
+  assert.match(operationsActivityEntriesSource, /\.filter\(\(\{ activity \}\) => isOperationsSupportActivity\(activity\)\)/);
+  assert.doesNotMatch(operationsActivityEntriesSource, /activity\.planType === "直接准备方案"/);
   assert.doesNotMatch(operationsActivityEntriesSource, /value: activity\.activityName \|\| activity\.name \|\| activity\.id/);
+  assert.match(appSource, /function projectDraftSaveFailureText\(err\)/);
+  assert.match(appSource, /自动保存未成功：\$\{failureText\}/);
 
   const operationsSource = appSource.slice(
     appSource.indexOf("function renderOperationsSupportActivity"),

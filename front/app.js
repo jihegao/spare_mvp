@@ -7181,10 +7181,7 @@ function operationsSupportActivityEntries(aircraftModel = "") {
   const targetModel = String(aircraftModel || "").trim();
   return (scenario.supportActivities || [])
     .map((activity, index) => ({ activity, index, key: `supportActivity:${index}` }))
-    .filter(({ activity }) => (
-      activity.planType === "直接准备方案"
-      || (!activity.planType && (activity.activityType === "飞行前保障" || activity.activityType === "使用保障" || activity.activityType === "使用保障活动"))
-    ))
+    .filter(({ activity }) => isOperationsSupportActivity(activity))
     .filter(({ activity }) => !targetModel || supportActivityAircraftModel(activity) === targetModel)
     .map(({ activity, index, key }) => {
       const activityName = String(activity.activityName || "").trim();
@@ -11325,8 +11322,18 @@ async function saveCurrentProjectDraftThroughApi() {
   } catch (err) {
     savedProject = null;
     projectDraftSaveStatus = "保存失败";
-    backendApiStatus = `后端保存失败，Project draft 未保存：${err && err.message ? err.message : "Backend API 不可用"}`;
+    const failureText = projectDraftSaveFailureText(err);
+    projectDraftHydrateStatus = `自动保存未成功：${failureText}`;
+    backendApiStatus = `后端保存失败，Project draft 未保存：${failureText}`;
   }
+}
+
+function projectDraftSaveFailureText(err) {
+  const validationErrors = Array.isArray(err?.details?.errors) ? err.details.errors : [];
+  const fieldErrors = validationErrors
+    .map((item) => [item?.path, item?.message || item?.code].filter(Boolean).join("："))
+    .filter(Boolean);
+  return fieldErrors.length ? fieldErrors.join("；") : formatBackendError(err);
 }
 
 async function saveCurrentExperimentPlanThroughApi() {
