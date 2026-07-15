@@ -917,6 +917,7 @@ class BackendApi:
             "rows": page_result["rows"],
             "wave_rows": page_result.get("wave_rows", []),
             "daily_rows": page_result.get("daily_rows", []),
+            "event_details": page_result.get("event_details", []),
             "event_snapshots": page_result.get("event_snapshots", []),
             "profile_reliability": page_result.get("profile_reliability"),
             "period_completion_probability": page_result.get("period_completion_probability"),
@@ -1662,6 +1663,7 @@ def _run_aircraft_support_v1_analysis_sample(
         "period_outcome": period_outcome,
         "frames": frames,
         "events": copy.deepcopy(execution.get("events") or []),
+        "downtime_events": copy.deepcopy(execution.get("downtime_events") or []),
     }
 
 
@@ -2062,16 +2064,44 @@ def _lite_mesa_downtime_factors_result(
         ("spare_shortage", "备件短缺", "downtime_spare_shortage_events", "downtime_spare_shortage_hours"),
         ("preventive", "预防性维修", "downtime_preventive_events", "downtime_preventive_hours"),
     ]
-    total_hours = sum(max(0.0, _metric_float(aggregate.get(hours_key), default=0)) for _, _, _, hours_key in factor_specs)
+    event_details = _lite_mesa_downtime_event_details(samples)
+    event_summary: dict[str, dict[str, float | int]] = {
+        reason: {"event_count": 0, "downtime_hours": 0.0}
+        for reason, _, _, _ in factor_specs
+    }
+    for event in event_details:
+        reason = str(event.get("factor") or "")
+        if reason not in event_summary:
+            continue
+        event_summary[reason]["event_count"] = int(event_summary[reason]["event_count"]) + 1
+        event_summary[reason]["downtime_hours"] = float(event_summary[reason]["downtime_hours"]) + (
+            max(0.0, _metric_float(event.get("duration_minutes"), default=0)) / 60.0
+        )
+    use_event_details = bool(event_details)
+    total_hours = sum(
+        float(event_summary[reason]["downtime_hours"])
+        if use_event_details
+        else max(0.0, _metric_float(aggregate.get(hours_key), default=0))
+        for reason, _, _, hours_key in factor_specs
+    )
     rows = []
     for reason, label, count_key, hours_key in factor_specs:
-        downtime_hours = max(0.0, _metric_float(aggregate.get(hours_key), default=0))
+        downtime_hours = (
+            float(event_summary[reason]["downtime_hours"])
+            if use_event_details
+            else max(0.0, _metric_float(aggregate.get(hours_key), default=0))
+        )
+        event_count = (
+            int(event_summary[reason]["event_count"])
+            if use_event_details
+            else max(0, _metric_int(aggregate.get(count_key), default=0))
+        )
         contribution = downtime_hours / total_hours if total_hours > 0 else 0.0
         rows.append({
             "label": label,
             "reason": reason,
-            "count": max(0, _metric_int(aggregate.get(count_key), default=0)),
-            "event_count": max(0, _metric_int(aggregate.get(count_key), default=0)),
+            "count": event_count,
+            "event_count": event_count,
             "downtime_hours": downtime_hours,
             "contribution": contribution,
             "duration_contribution": contribution,
@@ -2087,8 +2117,37 @@ def _lite_mesa_downtime_factors_result(
             ["样本数", str(len(samples))],
         ],
         "rows": rows,
+        "event_details": event_details,
         "event_snapshots": _lite_mesa_downtime_event_snapshots(samples, top_n),
     }
+
+
+def _lite_mesa_downtime_event_details(samples: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    details: list[dict[str, Any]] = []
+    for sample in samples:
+        sample_index = _metric_int(sample.get("sample_index"), default=0)
+        seed = sample.get("seed")
+        for event in sample.get("downtime_events") or []:
+            if not isinstance(event, dict):
+                continue
+            factor = str(event.get("factor") or "")
+            if factor not in {"failure", "equipment_shortage", "spare_shortage", "preventive"}:
+                continue
+            item = copy.deepcopy(event)
+            item["sample_index"] = sample_index
+            item["seed"] = seed
+            item["source_event_id"] = str(event.get("event_id") or "")
+            item["event_id"] = f"sample-{sample_index}-{item['source_event_id'] or len(details) + 1}"
+            item["factor_label"] = _downtime_factor_label(factor)
+            details.append(item)
+    return sorted(
+        details,
+        key=lambda item: (
+            _metric_int(item.get("sample_index"), default=0),
+            _metric_float(item.get("start_minute"), default=0),
+            str(item.get("event_id") or ""),
+        ),
+    )
 
 
 def _lite_mesa_downtime_event_snapshots(samples: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
@@ -2211,8 +2270,9 @@ def _lite_mesa_downtime_snapshot_events(frame: dict[str, Any]) -> list[tuple[str
     summary = frame.get("event_summary") if isinstance(frame.get("event_summary"), dict) else {}
     fallback_map = [
         ("failure", "downtime_failure_events"),
+        ("equipment_shortage", "downtime_equipment_shortage_events"),
         ("spare_shortage", "downtime_spare_shortage_events"),
-        ("resource_delay", "downtime_resource_delay_events"),
+        ("preventive", "downtime_preventive_events"),
     ]
     for event_type, metric in fallback_map:
         if _metric_float(summary.get(metric), default=0) > 0:
@@ -2319,6 +2379,8 @@ def _lite_mesa_downtime_event_type(event_type: str) -> str:
         return "spare_shortage"
     if "equipment_shortage" in normalized:
         return "equipment_shortage"
+    if "preventive" in normalized:
+        return "preventive"
     if "fail" in normalized:
         return "failure"
     return ""
@@ -2329,6 +2391,8 @@ def _lite_mesa_downtime_snapshot_result(event_type: str) -> str:
         return "mission_delayed_by_spare_shortage"
     if event_type == "equipment_shortage":
         return "mission_delayed_by_equipment_shortage"
+    if event_type == "preventive":
+        return "aircraft_unavailable_for_preventive_maintenance"
     if event_type == "failure":
         return "aircraft_unavailable_after_failure"
     return "downtime_anomaly_recorded"
@@ -2360,6 +2424,7 @@ def _blocked_lite_mesa_analysis_payload(
         "metrics": [],
         "rows": [],
         "wave_rows": [],
+        "event_details": [],
         "event_snapshots": [],
         "limitations": _lite_mesa_analysis_limitations(),
         "settings": copy.deepcopy(settings),
@@ -2503,11 +2568,12 @@ def _downtime_factor_count(factor: str, aggregate: dict[str, Any]) -> int:
 
 def _downtime_factor_label(factor: str) -> str:
     return {
-        "failure": "故障停机",
+        "failure": "装备故障",
         "spare_shortage": "备件短缺",
+        "equipment_shortage": "保障设备短缺",
         "resource_delay": "资源等待",
         "postflight": "飞后积压",
-        "preventive": "定检积压",
+        "preventive": "预防性维修",
         "transport_delay": "转运在途",
     }.get(factor, factor)
 

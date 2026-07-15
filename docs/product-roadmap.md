@@ -483,7 +483,7 @@ M8.0 当前收束：`docs/archive/deprecated/superpowers/specs/2026-06-21-m8-pro
 
 ### M9.4：aviation_support 正式执行和后端输出对齐（历史归档）
 
-历史收束：在 run lifecycle/control 边界稳定后，M9.4 曾解除 `aviation_support` 的 `unsupported_model_family` gate，让航空保障模型族进入 `RunService -> SimulationAdapter -> artifacts` 单次正式执行路径，并对齐 result、projection、state-series、artifact manifest 和 run chain 的后端输出语义。2026-06-26 起该模型族已从正式和 adapter 编译运行入口退役；历史 schema、fixture 和 sidecar 参考可保留，新的 formal run 必须使用 `aircraft_support_v1`。
+历史收束：在 run lifecycle/control 边界稳定后，M9.4 曾解除 `aviation_support` 的 `unsupported_model_family` gate，让航空保障模型族进入 `RunService -> SimulationAdapter -> artifacts` 单次正式执行路径，并对齐 result、projection、state-series、artifact manifest 和 run chain 的后端输出语义。2026-06-26 起该模型族已从正式和 adapter 编译运行入口退役；2026-07-16 起也不再保留于活动 schema、mapping 和 fixtures，新的 formal run 必须使用 `aircraft_support_v1`。
 
 范围：
 
@@ -582,7 +582,7 @@ M8.0 当前收束：`docs/archive/deprecated/superpowers/specs/2026-06-21-m8-pro
 3. 可视化推演主工作区由 Solara iframe 承载，前端不再以本地时间轴播放 `visualization_state_series`。
 4. 从平台入口完成 M9.6 案例的 Solara 可视化、Monte Carlo 和四类分析，且分析结果来源都是 lite Mesa session payload。
 
-当前收束：M9.8 已完成平台嵌入和 `independent-mesa` 退役。可视化仿真页嵌入平台管理的 Solara iframe，Solara/Mesa 控制器直接推进 `aircraft_support_v1`；Monte Carlo 和四类分析页通过 `/api/mesa-analysis-runs` 读取 lite Mesa session 指标、表格和事件摘要。旧 `/api/runs`、artifact state-series、state-stream 和 run control 保留为历史账本/内部治理能力，不作为用户主流程。旧 `smoke` 执行路径、contract provider、scenarios 和 fixtures 已退役删除；`aviation_support` 只保留为历史 schema/fixture 证据且正式、测试和 adapter 编译运行入口统一返回 `retired_model_family` 并指向 `aircraft_support_v1`。`scripts/start-system.sh start` 默认启动平台同源 app/backend、SQLite 和 Solara 可视化 sidecar；脚本不启动 `independent-mesa/server.py` 或旧 contract provider。`independent-mesa/GLM` 与 `independent-mesa/GPT` 源码树、旁路服务和静态输出入口已从当前仓库移除；历史设计记录只保留在 `docs/archive/deprecated/superpowers/` 的归档计划和规格中。
+当前收束：M9.8 已完成平台嵌入和 `independent-mesa` 退役。可视化仿真页嵌入平台管理的 Solara iframe，Solara/Mesa 控制器直接推进 `aircraft_support_v1`；Monte Carlo 和四类分析页通过 `/api/mesa-analysis-runs` 读取 lite Mesa session 指标、表格和事件摘要。旧 `/api/runs`、artifact state-series、state-stream 和 run control 保留为历史账本/内部治理能力，不作为用户主流程。旧 `smoke` 执行路径、contract provider、scenarios 和 fixtures 已退役删除；`aviation_support` 已从活动 schema、mapping 和 fixtures 删除，正式、测试和 adapter 编译运行入口统一返回 `retired_model_family` 并指向 `aircraft_support_v1`。`scripts/start-system.sh start` 默认启动平台同源 app/backend、SQLite 和 Solara 可视化 sidecar；脚本不启动 `independent-mesa/server.py` 或旧 contract provider。`independent-mesa/GLM` 与 `independent-mesa/GPT` 源码树、旁路服务和静态输出入口已从当前仓库移除；历史设计记录只保留在 `docs/archive/deprecated/superpowers/` 的归档计划和规格中。
 
 ## M10：工程质量和自动化测试
 

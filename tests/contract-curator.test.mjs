@@ -111,17 +111,15 @@ test("scenario and result schemas preserve simulation contract boundaries", asyn
     "simulation_inputs",
   ]);
   assert.ok(scenarioSchema.properties.simulation_model.properties.family);
-  assert.equal(scenarioSchema.oneOf.length, 2);
+  assert.equal(scenarioSchema.oneOf.length, 1);
   assert.match(JSON.stringify(scenarioSchema), /aircraft_support_v1_input\.schema\.json/);
-  assert.ok(scenarioSchema.properties.simulation_model.properties.family.enum.includes("aircraft_support_v1"));
-  assert.equal(scenarioSchema.properties.simulation_model.properties.family.enum.includes("smoke"), false);
-  assert.ok(scenarioSchema.properties.simulation_model.properties.model_id.enum.includes("AircraftSupportV1Model"));
-  assert.equal(scenarioSchema.properties.simulation_model.properties.model_id.enum.includes("SmokeSpareMvpModel"), false);
+  assert.equal(scenarioSchema.properties.simulation_model.properties.family.const, "aircraft_support_v1");
+  assert.equal(scenarioSchema.properties.simulation_model.properties.model_id.const, "AircraftSupportV1Model");
   assert.ok(runSchema.required.includes("model_family"));
   assert.ok(runSchema.required.includes("model_id"));
   assert.ok(runSchema.properties.model_family);
   assert.ok(runSchema.properties.model_id);
-  assert.ok(runSchema.properties.model_family.enum.includes("aircraft_support_v1"));
+  assert.equal(runSchema.properties.model_family.const, "aircraft_support_v1");
   assert.ok(runSchema.properties.model_id.enum.includes("AircraftSupportV1Model"));
   const inputSchema = await readJson("contracts/aircraft_support_v1_input.schema.json");
   assert.ok(inputSchema.properties.support_activities);
@@ -408,24 +406,35 @@ test("artifact manifest schema rejects an artifact entry without size_bytes", as
   assert.ok(errors.some((error) => error.includes("size_bytes")));
 });
 
-test("legacy aviation_support contract fixtures validate against their schemas", async () => {
+test("current aircraft_support_v1 contract fixtures validate against their schemas", async () => {
   const fixturePairs = [
-    ["contracts/project.schema.json", "tests/fixtures/aviation_support_project.json"],
-    ["contracts/scenario.schema.json", "tests/fixtures/aviation_support_scenario.json"],
-    ["contracts/run.schema.json", "tests/fixtures/aviation_support_run.json"],
-    ["contracts/result.schema.json", "tests/fixtures/aviation_support_result.json"],
-    ["contracts/artifact_manifest.schema.json", "tests/fixtures/aviation_support_artifact_manifest.json"],
+    ["contracts/project.schema.json", "tests/fixtures/aircraft_support_v1_project.json"],
+    ["contracts/scenario.schema.json", "tests/fixtures/aircraft_support_v1_scenario.json"],
+    ["contracts/run.schema.json", "tests/fixtures/aircraft_support_v1_run.json"],
+    ["contracts/result.schema.json", "tests/fixtures/aircraft_support_v1_result.json"],
+    ["contracts/artifact_manifest.schema.json", "tests/fixtures/aircraft_support_v1_artifact_manifest.json"],
   ];
 
   for (const [schemaPath, fixturePath] of fixturePairs) {
     const schema = await readJson(schemaPath);
     const fixture = await readJson(fixturePath);
-    assert.deepEqual(validateSchema(schema, fixture), [], `${fixturePath} should validate against ${schemaPath}`);
+    const referencedSchemas = fixturePath.endsWith("_scenario.json")
+      ? {
+          "https://spare-mvp.local/contracts/aircraft_support_v1_input.schema.json": await readJson(
+            "contracts/aircraft_support_v1_input.schema.json"
+          ),
+        }
+      : {};
+    assert.deepEqual(
+      validateSchema(schema, fixture, "$", referencedSchemas),
+      [],
+      `${fixturePath} should validate against ${schemaPath}`
+    );
   }
 });
 
-test("legacy aviation_support contract fixtures form a consistent end-to-end object graph", async () => {
-  for (const family of ["aviation_support"]) {
+test("current aircraft_support_v1 contract fixtures form a consistent end-to-end object graph", async () => {
+  for (const family of ["aircraft_support_v1"]) {
     const project = await readJson(`tests/fixtures/${family}_project.json`);
     const scenario = await readJson(`tests/fixtures/${family}_scenario.json`);
     const run = await readJson(`tests/fixtures/${family}_run.json`);
@@ -444,33 +453,48 @@ test("legacy aviation_support contract fixtures form a consistent end-to-end obj
   }
 });
 
-test("scenario schema rejects retired smoke selector and mismatched model ids", async () => {
+test("scenario schema rejects retired model families and mismatched model ids", async () => {
   const schema = await readJson("contracts/scenario.schema.json");
-  const aviationScenario = await readJson("tests/fixtures/aviation_support_scenario.json");
+  const currentScenario = await readJson("tests/fixtures/aircraft_support_v1_scenario.json");
+  const inputSchema = await readJson("contracts/aircraft_support_v1_input.schema.json");
+  const referencedSchemas = {
+    "https://spare-mvp.local/contracts/aircraft_support_v1_input.schema.json": inputSchema,
+  };
 
   const retiredSmokeScenario = {
-    ...aviationScenario,
+    ...currentScenario,
     simulation_model: {
       family: "smoke",
       model_id: "SmokeSpareMvpModel",
       contract_version: "1.0.0",
     },
   };
-  const aviationFamilyWithSmokeModelId = {
-    ...aviationScenario,
+  const retiredAviationScenario = {
+    ...currentScenario,
     simulation_model: {
-      ...aviationScenario.simulation_model,
-      model_id: "SmokeSpareMvpModel",
+      family: "aviation_support",
+      model_id: "AviationSupportModel",
+      contract_version: "1.0.0",
+    },
+  };
+  const currentFamilyWithRetiredModelId = {
+    ...currentScenario,
+    simulation_model: {
+      ...currentScenario.simulation_model,
+      model_id: "AviationSupportModel",
     },
   };
 
-  assert.notDeepEqual(validateSchema(schema, retiredSmokeScenario), []);
-  assert.notDeepEqual(validateSchema(schema, aviationFamilyWithSmokeModelId), []);
+  assert.notDeepEqual(validateSchema(schema, retiredSmokeScenario, "$", referencedSchemas), []);
+  assert.notDeepEqual(validateSchema(schema, retiredAviationScenario, "$", referencedSchemas), []);
+  assert.notDeepEqual(validateSchema(schema, currentFamilyWithRetiredModelId, "$", referencedSchemas), []);
 });
 
-test("scenario schema no longer exposes retired SmokeSpareMvpModel inputs", async () => {
+test("scenario schema no longer exposes retired model-family inputs", async () => {
   const schema = await readJson("contracts/scenario.schema.json");
 
   assert.equal(schema.$defs.SmokeModelSelector, undefined);
   assert.equal(schema.$defs.SmokeInputs, undefined);
+  assert.equal(schema.$defs.AviationSupportModelSelector, undefined);
+  assert.equal(schema.$defs.AviationSupportInputs, undefined);
 });

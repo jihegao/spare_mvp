@@ -1,0 +1,18 @@
+{
+  "schema_version": "result-v0",
+  "model_family": "aircraft_support_v1",
+  "result_id": "result-aircraft-support-contract-001",
+  "run_id": "run-aircraft-support-contract-001",
+  "scenario_id": "scenario-aircraft-support-contract-001",
+  "scenario_version": "scenario-v0.1",
+  "metrics": {
+    "sortie_completion_rate": 1,
+    "available_aircraft": 1,
+    "active_jobs": 0,
+    "spare_stock_total": 2,
+    "avg_departure_delay": 0,
+    "spare_consumed_total": 0,
+    "maintenance_backlog": 0,
+    "lru_failures": 0
+  }
+}

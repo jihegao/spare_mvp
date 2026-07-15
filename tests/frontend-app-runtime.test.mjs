@@ -1433,6 +1433,82 @@ test("downtime factors analysis enables log snapshots and renders event snapshot
   }
 });
 
+test("downtime factor filters update summaries, ranking, and complete event details without rerunning", async () => {
+  const event = (factor, durationHours, description, details = {}) => ({
+    event_id: `event-${factor}`,
+    factor,
+    tail_number: `AC-${factor}`,
+    aircraft_type: "J-15",
+    mission_id: "mission-01",
+    mission_phase: "任务准备",
+    support_node_name: "前线保障点",
+    start_minute: 60,
+    end_minute: 60 + durationHours * 60,
+    duration_minutes: durationHours * 60,
+    duration_hours: durationHours,
+    description,
+    details
+  });
+  const runtime = await setupRuntimeApp({
+    hash: "feature=mission-reliability-downtime-factor-analysis",
+    projectJson: createRuntimeProjectJson(),
+    liteMesaAnalysisResponseOverrides: {
+      rows: [
+        { label: "备件短缺", reason: "spare_shortage", count: 1, event_count: 1, downtime_hours: 2, duration_contribution: 0.2 },
+        { label: "装备故障", reason: "failure", count: 1, event_count: 1, downtime_hours: 4, duration_contribution: 0.4 },
+        { label: "保障设备短缺", reason: "equipment_shortage", count: 1, event_count: 1, downtime_hours: 1, duration_contribution: 0.1 },
+        { label: "预防性维修", reason: "preventive", count: 1, event_count: 1, downtime_hours: 3, duration_contribution: 0.3 }
+      ],
+      event_details: [
+        event("spare_shortage", 2, "液压泵等待到货", { spare_name: "液压泵", required_quantity: 2, available_quantity: 0, shortage_quantity: 2, arrival_minute: 180 }),
+        event("failure", 4, "发动机控制器故障", { component_name: "发动机控制器", failure_mode: "随机故障", failure_minute: 60, repair_completed_minute: 300 }),
+        event("equipment_shortage", 1, "检测仪被占用", { equipment_name: "综合检测仪", required_quantity: 1, available_quantity: 0, shortage_quantity: 1, wait_minutes: 60 }),
+        event("preventive", 3, "定寿维修", { maintenance_item: "发动机定寿检查", trigger_condition: "使用寿命达到 240 h", planned_start_minute: 60, completed_minute: null })
+      ]
+    }
+  });
+
+  try {
+    await runtime.click("[data-lite-mesa-analysis-action='run']");
+    const initialRequestCount = runtime.requests.filter((request) => request.url === "/api/mesa-analysis-runs").length;
+    const initial = runtime.appNode.innerHTML;
+    assert.equal((initial.match(/data-downtime-factor-filter checked/g) || []).length, 4);
+    assert.match(initial, /停机事件次数[\s\S]*<strong>4<\/strong>/);
+    assert.match(initial, /累计停机时长[\s\S]*<strong>10\.00 h<\/strong>/);
+    assert.ok(initial.indexOf("装备故障</td>") < initial.indexOf("预防性维修</td>"));
+    assert.ok(initial.indexOf("预防性维修</td>") < initial.indexOf("备件短缺</td>"));
+    assert.match(initial, /液压泵等待到货/);
+    assert.match(initial, /发动机控制器故障/);
+    assert.match(initial, /综合检测仪/);
+    assert.match(initial, /发动机定寿检查/);
+    assert.match(initial, /实际完成[\s\S]*--/);
+
+    await runtime.change("[data-downtime-factor-filter]", {}, { value: "spare_shortage", checked: false });
+    await runtime.change("[data-downtime-factor-filter]", {}, { value: "equipment_shortage", checked: false });
+    await runtime.change("[data-downtime-factor-filter]", {}, { value: "preventive", checked: false });
+    const failureOnly = runtime.appNode.innerHTML;
+    assert.match(failureOnly, /停机事件次数[\s\S]*<strong>1<\/strong>/);
+    assert.match(failureOnly, /累计停机时长[\s\S]*<strong>4\.00 h<\/strong>/);
+    assert.match(failureOnly, /发动机控制器故障/);
+    assert.doesNotMatch(failureOnly, /液压泵等待到货|检测仪被占用|定寿维修/);
+
+    await runtime.change("[data-downtime-factor-filter]", {}, { value: "spare_shortage", checked: true });
+    const combined = runtime.appNode.innerHTML;
+    assert.match(combined, /停机事件次数[\s\S]*<strong>2<\/strong>/);
+    assert.match(combined, /累计停机时长[\s\S]*<strong>6\.00 h<\/strong>/);
+    assert.match(combined, /液压泵等待到货/);
+    assert.match(combined, /发动机控制器故障/);
+
+    await runtime.change("[data-downtime-factor-filter]", {}, { value: "failure", checked: false });
+    await runtime.change("[data-downtime-factor-filter]", {}, { value: "spare_shortage", checked: false });
+    assert.match(runtime.appNode.innerHTML, /请选择至少一种停机因素/);
+    assert.doesNotMatch(runtime.appNode.innerHTML, /downtime-factor-summary-table|液压泵等待到货|发动机控制器故障/);
+    assert.equal(runtime.requests.filter((request) => request.url === "/api/mesa-analysis-runs").length, initialRequestCount);
+  } finally {
+    runtime.restore();
+  }
+});
+
 test("experiment and analysis pages render when Project draft has no root experiment config", async () => {
   const featureExpectations = [
     ["spare-planning-experiment-plan-management", /方案列表/],

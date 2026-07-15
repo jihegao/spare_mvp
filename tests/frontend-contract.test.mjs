@@ -3952,6 +3952,45 @@ test("lite Mesa carry and downtime result detail hides requested setting-only fi
   assert.match(carryBodySource, /<th>有寿件<\/th><th>起落寿命<\/th><th>使用寿命\(h\)<\/th>/);
 });
 
+test("downtime analysis exposes four-factor multi-select, linked summaries, and typed event details", async () => {
+  const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
+  const styleSource = await readFile(new URL("../front/styles.css", import.meta.url), "utf8");
+  const optionsSource = appSource.slice(
+    appSource.indexOf("const DOWNTIME_FACTOR_OPTIONS"),
+    appSource.indexOf("let demoProjects")
+  );
+  const renderSource = appSource.slice(
+    appSource.indexOf("function renderLiteMesaDowntimeFactorAnalysis"),
+    appSource.indexOf("function formatPeriodDurationDays")
+  );
+  const changeSource = appSource.slice(
+    appSource.indexOf('const downtimeFactorFilter = event.target.closest("[data-downtime-factor-filter]")'),
+    appSource.indexOf("const spareAircraftFilterSelect", appSource.indexOf('const downtimeFactorFilter'))
+  );
+
+  for (const [factor, label] of [
+    ["spare_shortage", "备件短缺"],
+    ["failure", "装备故障"],
+    ["equipment_shortage", "保障设备短缺"],
+    ["preventive", "预防性维修"]
+  ]) {
+    assert.match(optionsSource, new RegExp(`value: "${factor}", label: "${label}"`));
+  }
+  assert.match(appSource, /selectedDowntimeFactorTypes = new Set\(DOWNTIME_FACTOR_OPTIONS/);
+  assert.match(changeSource, /selectedDowntimeFactorTypes\.add/);
+  assert.match(changeSource, /selectedDowntimeFactorTypes\.delete/);
+  assert.match(renderSource, /请选择至少一种停机因素/);
+  assert.match(renderSource, /暂无该类型停机事件/);
+  assert.match(renderSource, /累计停机时长\(h\)/);
+  assert.match(renderSource, /当前范围时长占比/);
+  assert.match(renderSource, /\.sort\(\(left, right\) => right\.downtimeHours - left\.downtimeHours\)/);
+  assert.match(renderSource, /停机事件明细/);
+  assert.match(renderSource, /停机因素类型/);
+  assert.match(renderSource, /保障组织节点/);
+  assert.match(renderSource, /downtimeDisplayValue\(value\)/);
+  assert.match(styleSource, /\.downtime-factor-option:has\(input:checked\)/);
+});
+
 test("lite Mesa Monte Carlo detail uses decimal ratios and hides metadata chrome", async () => {
   const appSource = await readFile(new URL("../front/app.js", import.meta.url), "utf8");
   const renderSource = appSource.slice(

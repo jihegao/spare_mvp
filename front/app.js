@@ -165,6 +165,12 @@ const LITE_MESA_ANALYSIS_DEFINITIONS = Object.freeze({
     metricLabels: ["停机因素项", "首要因素", "最高贡献度"]
   }
 });
+const DOWNTIME_FACTOR_OPTIONS = Object.freeze([
+  { value: "spare_shortage", label: "备件短缺" },
+  { value: "failure", label: "装备故障" },
+  { value: "equipment_shortage", label: "保障设备短缺" },
+  { value: "preventive", label: "预防性维修" }
+]);
 let demoProjects = [];
 let deletedDowntimeSnapshotIds = new Set();
 const ANALYSIS_PROJECTION_TYPES = [
@@ -716,6 +722,7 @@ let equipmentSearchQuery = "";
 let spareDemandSort = "default";
 let spareAircraftFilter = "";
 let carryHideZeroDemand = true;
+let selectedDowntimeFactorTypes = new Set(DOWNTIME_FACTOR_OPTIONS.map((item) => item.value));
 let selectedBasicMissionKey = "primary";
 let selectedBasicMissionTreeLevel = "mission";
 let selectedBasicMissionEquipmentType = primaryBasicMissionRecord().equipmentType || scenarioEquipmentModel() || "";
@@ -2071,6 +2078,14 @@ function bindEvents() {
     const carryZeroFilter = event.target.closest("[data-carry-hide-zero]");
     if (carryZeroFilter) {
       carryHideZeroDemand = carryZeroFilter.checked;
+      render();
+      return;
+    }
+    const downtimeFactorFilter = event.target.closest("[data-downtime-factor-filter]");
+    if (downtimeFactorFilter) {
+      const factor = String(downtimeFactorFilter.value || "");
+      if (downtimeFactorFilter.checked) selectedDowntimeFactorTypes.add(factor);
+      else selectedDowntimeFactorTypes.delete(factor);
       render();
       return;
     }
@@ -17083,6 +17098,8 @@ function normalizeLiteMesaAnalysisResult(definition, payload) {
       waveRows: [],
       dailyRows: [],
       eventSnapshots: Array.isArray(payload?.event_snapshots) ? payload.event_snapshots : [],
+      eventDetails: Array.isArray(payload?.event_details) ? payload.event_details : [],
+      eventDetailsComplete: Array.isArray(payload?.event_details),
       limitations: Array.isArray(payload?.limitations) ? payload.limitations : [],
       message: payload?.message || "建模粒度不足：请补充装备数量、任务要求、任务周期、部件和保障节点。"
     };
@@ -17105,6 +17122,8 @@ function normalizeLiteMesaAnalysisResult(definition, payload) {
     waveRows: waveRows.length ? waveRows : rows,
     dailyRows: Array.isArray(payload.daily_rows) ? payload.daily_rows : [],
     eventSnapshots: Array.isArray(payload.event_snapshots) ? payload.event_snapshots : [],
+    eventDetails: Array.isArray(payload.event_details) ? payload.event_details : [],
+    eventDetailsComplete: Array.isArray(payload.event_details),
     periodDurationDays: Number(payload.period_duration_days || 0),
     periodTotalSamples: Number(payload.period_total_samples || payload.sample_count || 0),
     periodSuccessfulSamples: Number(payload.successful_samples || 0),
@@ -17119,6 +17138,7 @@ function renderLiteMesaAnalysisMetricCards(definition, result) {
   if (result?.status === "blocked") {
     return `<div class="empty-state"><strong>建模粒度不足</strong><p>${htmlEscape(result.message)}</p></div>`;
   }
+  if (definition.analysisType === "downtime_factors" && result?.status === "session_complete") return "";
   const metrics = liteMesaAnalysisVisibleMetrics(definition, result?.metrics || definition.metricLabels.map((label) => [label, "待运行"]));
   return `
     <div class="lite-mesa-metric-cards">
@@ -17200,6 +17220,9 @@ function renderLiteMesaAnalysisSessionBody(definition, result) {
       </details>
     `;
   }
+  if (definition.analysisType === "downtime_factors") {
+    return renderLiteMesaDowntimeFactorAnalysis(result);
+  }
   return `
     <div class="table-wrap"><table class="lite-mesa-stat-table">
       <thead><tr><th>因素</th><th>类型</th><th>次数</th><th>贡献度</th></tr></thead>
@@ -17207,6 +17230,129 @@ function renderLiteMesaAnalysisSessionBody(definition, result) {
     </table></div>
     ${renderLiteMesaDowntimeEventSnapshots(result.eventSnapshots || [])}
   `;
+}
+
+function renderLiteMesaDowntimeFactorAnalysis(result) {
+  const selected = selectedDowntimeFactorTypes;
+  const filterControls = DOWNTIME_FACTOR_OPTIONS.map((option) => `
+    <label class="check-inline downtime-factor-option">
+      <input type="checkbox" value="${option.value}" data-downtime-factor-filter ${selected.has(option.value) ? "checked" : ""}>
+      ${htmlEscape(option.label)}
+    </label>
+  `).join("");
+  if (!selected.size) {
+    return `
+      <div class="toolbar-row downtime-factor-filter" aria-label="停机因素筛选"><strong>停机因素</strong>${filterControls}</div>
+      <div class="empty-state"><strong>请选择至少一种停机因素</strong><p>当前未选择停机因素，不展示历史筛选结果。</p></div>
+    `;
+  }
+  const selectedEvents = (result.eventDetails || [])
+    .filter((event) => selected.has(downtimeEventFactor(event)))
+    .sort((left, right) => Number(left.start_minute ?? left.start_time ?? 0) - Number(right.start_minute ?? right.start_time ?? 0));
+  const sourceRows = (result.rows || []).filter((row) => selected.has(String(row.reason || row.factor || "")));
+  const rows = DOWNTIME_FACTOR_OPTIONS
+    .filter((option) => selected.has(option.value))
+    .map((option) => {
+      const source = sourceRows.find((row) => String(row.reason || row.factor || "") === option.value) || {};
+      const factorEvents = selectedEvents.filter((event) => downtimeEventFactor(event) === option.value);
+      const eventCount = result.eventDetailsComplete ? factorEvents.length : Number(source.event_count ?? source.count ?? 0);
+      const downtimeHours = result.eventDetailsComplete
+        ? factorEvents.reduce((sum, event) => sum + downtimeEventDurationHours(event), 0)
+        : Number(source.downtime_hours ?? source.downtimeHours ?? 0);
+      return { factor: option.value, label: option.label, eventCount, downtimeHours };
+    })
+    .sort((left, right) => right.downtimeHours - left.downtimeHours);
+  const totalEvents = rows.reduce((sum, row) => sum + row.eventCount, 0);
+  const totalHours = rows.reduce((sum, row) => sum + row.downtimeHours, 0);
+  const primaryFactor = rows.find((row) => row.downtimeHours > 0)?.label || "--";
+  const tableRows = rows.map((row, index) => {
+    const contribution = totalHours > 0 ? row.downtimeHours / totalHours : 0;
+    return `<tr><td>${index + 1}</td><td>${htmlEscape(row.label)}</td><td>${row.eventCount}</td><td>${fixed(row.downtimeHours, 2)}</td><td>${pct(contribution)}</td><td class="bar-cell">${renderBar(row.downtimeHours, Math.max(1, ...rows.map((item) => item.downtimeHours)), contribution >= 0.35 ? "red" : "blue")}</td></tr>`;
+  }).join("");
+  return `
+    <div class="toolbar-row downtime-factor-filter" aria-label="停机因素筛选"><strong>停机因素</strong>${filterControls}</div>
+    <div class="kpi-strip downtime-factor-kpis">
+      <div class="kpi-card"><span>停机事件次数</span><strong>${totalEvents}</strong></div>
+      <div class="kpi-card"><span>累计停机时长</span><strong>${fixed(totalHours, 2)} h</strong></div>
+      <div class="kpi-card"><span>首要停机因素</span><strong>${htmlEscape(primaryFactor)}</strong></div>
+    </div>
+    <div class="table-wrap"><table class="lite-mesa-stat-table downtime-factor-summary-table">
+      <thead><tr><th>排序</th><th>停机因素</th><th>事件次数</th><th>累计停机时长(h)</th><th>当前范围时长占比</th><th>图示</th></tr></thead>
+      <tbody>${tableRows}</tbody>
+    </table></div>
+    ${renderLiteMesaDowntimeEventDetails(selectedEvents)}
+    ${renderLiteMesaDowntimeEventSnapshots((result.eventSnapshots || []).filter((snapshot) => selected.has(downtimeEventFactor(snapshot))))}
+  `;
+}
+
+function downtimeEventFactor(event) {
+  return String(event?.factor || event?.event_type || event?.reason || "");
+}
+
+function downtimeEventDurationHours(event) {
+  const hours = Number(event?.duration_hours);
+  if (Number.isFinite(hours) && hours >= 0) return hours;
+  const minutes = Number(event?.duration_minutes);
+  return Number.isFinite(minutes) && minutes >= 0 ? minutes / 60 : 0;
+}
+
+function renderLiteMesaDowntimeEventDetails(events) {
+  if (!events.length) {
+    return `<div class="empty-state"><strong>暂无该类型停机事件</strong><p>当前筛选范围内没有可展示的停机事件明细。</p></div>`;
+  }
+  return `
+    <div class="section-head downtime-event-detail-head"><h3>停机事件明细</h3><span>${events.length} 条</span></div>
+    <div class="table-wrap"><table class="lite-mesa-stat-table downtime-event-detail-table">
+      <thead><tr><th>停机因素类型</th><th>装备/产品名称</th><th>任务/阶段</th><th>保障组织节点</th><th>开始时间</th><th>结束时间</th><th>持续时长(h)</th><th>事件说明</th><th>分类信息</th></tr></thead>
+      <tbody>${events.map((event) => `<tr>
+        <td>${htmlEscape(downtimeFactorLabel(downtimeEventFactor(event)))}</td>
+        <td>${htmlEscape(downtimeDisplayValue(event.equipment_name || event.aircraft_type || event.tail_number))}</td>
+        <td>${htmlEscape(downtimeTaskLabel(event))}</td>
+        <td>${htmlEscape(downtimeDisplayValue(event.support_node_name || event.support_node_id))}</td>
+        <td>${htmlEscape(downtimeTimeLabel(event.start_minute ?? event.start_time))}</td>
+        <td>${htmlEscape(downtimeTimeLabel(event.end_minute ?? event.end_time))}</td>
+        <td>${fixed(downtimeEventDurationHours(event), 2)}</td>
+        <td>${htmlEscape(downtimeDisplayValue(event.description || event.message))}</td>
+        <td>${renderDowntimeFactorSpecificDetails(event)}</td>
+      </tr>`).join("")}</tbody>
+    </table></div>
+  `;
+}
+
+function downtimeFactorLabel(factor) {
+  return DOWNTIME_FACTOR_OPTIONS.find((item) => item.value === factor)?.label || downtimeDisplayValue(factor);
+}
+
+function downtimeDisplayValue(value) {
+  return value === null || value === undefined || value === "" ? "--" : String(value);
+}
+
+function downtimeTimeLabel(value) {
+  if (value === null || value === undefined || value === "") return "--";
+  const minute = Number(value);
+  return Number.isFinite(minute) ? `${fixed(minute, 0)} min` : "--";
+}
+
+function downtimeTaskLabel(event) {
+  const mission = downtimeDisplayValue(event.mission_name || event.mission_id);
+  const phase = downtimeDisplayValue(event.mission_phase);
+  return mission === "--" && phase === "--" ? "--" : `${mission}${phase === "--" ? "" : ` / ${phase}`}`;
+}
+
+function renderDowntimeFactorSpecificDetails(event) {
+  const details = event.details && typeof event.details === "object" ? event.details : {};
+  const factor = downtimeEventFactor(event);
+  let rows = [];
+  if (factor === "spare_shortage") {
+    rows = [["备件", details.spare_name || details.spare_type], ["需求", details.required_quantity], ["可用", details.available_quantity], ["短缺", details.shortage_quantity], ["到货/等待结束", downtimeTimeLabel(details.arrival_minute ?? details.wait_end_minute)]];
+  } else if (factor === "failure") {
+    rows = [["故障部件", details.component_name || details.component_id], ["故障模式", details.failure_mode], ["故障发生", downtimeTimeLabel(details.failure_minute)], ["修复完成", downtimeTimeLabel(details.repair_completed_minute)]];
+  } else if (factor === "equipment_shortage") {
+    rows = [["保障设备", details.equipment_name || details.equipment_model], ["需求", details.required_quantity], ["可用", details.available_quantity], ["短缺", details.shortage_quantity], ["等待时长", details.wait_minutes === null || details.wait_minutes === undefined ? "--" : `${details.wait_minutes} min`]];
+  } else if (factor === "preventive") {
+    rows = [["维修项目", details.maintenance_item || details.maintenance_type], ["触发条件", details.trigger_condition], ["计划开始", downtimeTimeLabel(details.planned_start_minute)], ["实际完成", downtimeTimeLabel(details.completed_minute)]];
+  }
+  return `<details class="downtime-factor-specific"><summary>查看</summary>${rows.map(([label, value]) => `<div><span>${htmlEscape(label)}</span><strong>${htmlEscape(downtimeDisplayValue(value))}</strong></div>`).join("")}</details>`;
 }
 
 function formatPeriodDurationDays(value) {
